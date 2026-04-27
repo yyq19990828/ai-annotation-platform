@@ -28,6 +28,7 @@ class ProjectOut(BaseModel):
     review_tasks: int
     due_date: date | None
     created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

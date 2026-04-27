@@ -4,21 +4,24 @@ import { ToastRack, useToastStore } from "@/components/ui/Toast";
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { WorkbenchPage } from "@/pages/Workbench/WorkbenchPage";
 import { UsersPage } from "@/pages/Users/UsersPage";
+import { LoginPage } from "@/pages/Login/LoginPage";
 import { useAppStore } from "@/stores/appStore";
-import { projects } from "@/data/mock";
-import type { Project } from "@/types";
+import { useAuthStore } from "@/stores/authStore";
+import type { ProjectResponse } from "@/api/projects";
 
 export function App() {
   const { page, setPage, workspace } = useAppStore();
   const pushToast = useToastStore((s) => s.push);
-  const reviewCount = projects.reduce((s, p) => s + p.review, 0);
+  const token = useAuthStore((s) => s.token);
 
-  const onOpenProject = (p: Project) => {
-    if (p.typeKey === "image-det") {
+  if (!token) return <LoginPage />;
+
+  const onOpenProject = (p: ProjectResponse) => {
+    if (p.type_key === "image-det") {
       useAppStore.getState().setCurrentProject(p);
       setPage("annotate");
     } else {
-      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type} 的标注界面尚未实现` });
+      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type_label} 的标注界面尚未实现` });
     }
   };
 
@@ -33,7 +36,7 @@ export function App() {
       }}
     >
       <TopBar workspace={workspace} onWorkspaceChange={() => pushToast({ msg: "切换工作区面板已展开" })} />
-      <Sidebar page={page} setPage={setPage} reviewCount={reviewCount} />
+      <Sidebar page={page} setPage={setPage} reviewCount={0} />
       <main style={{ overflow: "auto", background: "var(--color-bg)" }}>
         {page === "dashboard" && <DashboardPage onOpenProject={onOpenProject} />}
         {page === "annotate" && <WorkbenchPage onBack={() => setPage("dashboard")} />}

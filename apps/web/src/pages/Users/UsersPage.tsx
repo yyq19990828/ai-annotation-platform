@@ -7,9 +7,10 @@ import { Avatar } from "@/components/ui/Avatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
-import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
-import { users, roles } from "@/data/mock";
+import { useUsers } from "@/hooks/useUsers";
+import { roles } from "@/data/mock";
+import type { UserResponse } from "@/api/users";
 
 const ROLE_COLORS: Record<string, "accent" | "ai" | "warning" | "success" | "outline" | "danger"> = {
   项目管理员: "accent",
@@ -18,6 +19,14 @@ const ROLE_COLORS: Record<string, "accent" | "ai" | "warning" | "success" | "out
   数据工程师: "success",
   标注员: "outline",
   系统管理员: "danger",
+  超级管理员: "danger",
+  质检员: "ai",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  online: "在线",
+  offline: "离线",
+  busy: "忙碌",
 };
 
 const STATUS_COLORS: Record<string, "success" | "warning" | "outline"> = {
@@ -26,13 +35,19 @@ const STATUS_COLORS: Record<string, "success" | "warning" | "outline"> = {
   离线: "outline",
 };
 
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("zh-CN");
+}
+
 export function UsersPage() {
   const [tab, setTab] = useState("members");
   const [selectedRole, setSelectedRole] = useState("全部");
   const [query, setQuery] = useState("");
   const pushToast = useToastStore((s) => s.push);
 
-  const filtered = users.filter((u) => {
+  const { data: allUsers = [], isLoading } = useUsers();
+
+  const filtered = allUsers.filter((u: UserResponse) => {
     if (selectedRole !== "全部" && u.role !== selectedRole) return false;
     if (query && !u.name.includes(query) && !u.email.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
@@ -55,19 +70,23 @@ export function UsersPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-        <StatCard icon="users" label="团队成员" value={users.length} hint="活跃" sparkValues={[8, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 12]} sparkColor="var(--color-accent)" />
+        <StatCard icon="users" label="团队成员" value={allUsers.length} hint="活跃" sparkValues={[8, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 12]} sparkColor="var(--color-accent)" />
         <StatCard icon="shield" label="角色组" value={roles.length} hint="自定义" />
-        <StatCard icon="check" label="平均准确率" value="96.2%" trend={2} sparkValues={[91, 92, 93, 93, 94, 94, 95, 95, 96, 96, 96, 96]} sparkColor="var(--color-success)" />
-        <StatCard icon="activity" label="本周活跃" value="9" hint="昨日 11 人" sparkValues={[6, 7, 8, 7, 9, 10, 11, 9]} sparkColor="var(--color-ai)" />
+        <StatCard icon="check" label="平均准确率" value="—" hint="暂无数据" />
+        <StatCard icon="activity" label="本周活跃" value={allUsers.filter((u: UserResponse) => u.status === "online").length} hint="在线" sparkValues={[6, 7, 8, 7, 9, 10, 11, 9]} sparkColor="var(--color-ai)" />
       </div>
 
       <Card>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--color-border)" }}>
-          <TabRow tabs={[`成员 (${users.length})`, `角色 (${roles.length})`, "数据组"]} active={tab === "members" ? `成员 (${users.length})` : tab === "roles" ? `角色 (${roles.length})` : "数据组"} onChange={(t) => {
-            if (t.startsWith("成员")) setTab("members");
-            else if (t.startsWith("角色")) setTab("roles");
-            else setTab("groups");
-          }} />
+          <TabRow
+            tabs={[`成员 (${allUsers.length})`, `角色 (${roles.length})`, "数据组"]}
+            active={tab === "members" ? `成员 (${allUsers.length})` : tab === "roles" ? `角色 (${roles.length})` : "数据组"}
+            onChange={(t) => {
+              if (t.startsWith("成员")) setTab("members");
+              else if (t.startsWith("角色")) setTab("roles");
+              else setTab("groups");
+            }}
+          />
           {tab === "members" && (
             <div style={{ display: "flex", gap: 8 }}>
               <select
@@ -101,49 +120,49 @@ export function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((u) => (
-                <tr key={u.id} style={{ cursor: "pointer" }}>
-                  <td style={{ padding: "12px 12px 12px 16px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <Avatar initial={u.initial} size="md" />
-                      <div>
-                        <div style={{ fontWeight: 500, fontSize: 13.5 }}>{u.name}</div>
-                        <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{u.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-                    <Badge variant={ROLE_COLORS[u.role] || "outline"}>{u.role}</Badge>
-                  </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle", fontSize: 12.5 }}>{u.group}</td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-                    <Badge variant={STATUS_COLORS[u.status] || "outline"} dot>{u.status}</Badge>
-                  </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-                    {u.tasks > 0 ? (
-                      <div>
-                        <div className="mono" style={{ fontSize: 13, fontWeight: 500 }}>{u.tasks}</div>
-                        <ProgressBar value={Math.min(100, u.tasks / 4)} style={{ marginTop: 3, width: 80 }} />
-                      </div>
-                    ) : <span style={{ color: "var(--color-fg-subtle)", fontSize: 12 }}>—</span>}
-                  </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-                    {u.accuracy ? (
-                      <span className="mono" style={{
-                        fontWeight: 500, fontSize: 13,
-                        color: u.accuracy > 0.97 ? "var(--color-success)" : u.accuracy > 0.94 ? "var(--color-fg)" : "var(--color-warning)",
-                      }}>
-                        {(u.accuracy * 100).toFixed(1)}%
-                      </span>
-                    ) : <span style={{ color: "var(--color-fg-subtle)", fontSize: 12 }}>—</span>}
-                  </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle", fontSize: 12, color: "var(--color-fg-muted)" }}>{u.joined}</td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", textAlign: "right", verticalAlign: "middle" }}>
-                    <Button variant="ghost" size="sm"><Icon name="edit" size={11} /></Button>
-                    <Button variant="ghost" size="sm"><Icon name="settings" size={11} /></Button>
-                  </td>
+              {isLoading && (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>加载中...</td>
                 </tr>
-              ))}
+              )}
+              {filtered.map((u: UserResponse) => {
+                const statusLabel = STATUS_LABEL[u.status] ?? u.status;
+                return (
+                  <tr key={u.id} style={{ cursor: "pointer" }}>
+                    <td style={{ padding: "12px 12px 12px 16px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <Avatar initial={u.name[0]} size="md" />
+                        <div>
+                          <div style={{ fontWeight: 500, fontSize: 13.5 }}>{u.name}</div>
+                          <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{u.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+                      <Badge variant={ROLE_COLORS[u.role] || "outline"}>{u.role}</Badge>
+                    </td>
+                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle", fontSize: 12.5 }}>
+                      {u.group_name ?? "—"}
+                    </td>
+                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+                      <Badge variant={STATUS_COLORS[statusLabel] || "outline"} dot>{statusLabel}</Badge>
+                    </td>
+                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+                      <span style={{ color: "var(--color-fg-subtle)", fontSize: 12 }}>—</span>
+                    </td>
+                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+                      <span style={{ color: "var(--color-fg-subtle)", fontSize: 12 }}>—</span>
+                    </td>
+                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle", fontSize: 12, color: "var(--color-fg-muted)" }}>
+                      {formatDate(u.created_at)}
+                    </td>
+                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", textAlign: "right", verticalAlign: "middle" }}>
+                      <Button variant="ghost" size="sm"><Icon name="edit" size={11} /></Button>
+                      <Button variant="ghost" size="sm"><Icon name="settings" size={11} /></Button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -155,7 +174,9 @@ export function UsersPage() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <Badge variant={ROLE_COLORS[r.key] || "outline"} style={{ fontSize: 12, padding: "3px 10px" }}>{r.key}</Badge>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{r.count} 人</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                      {allUsers.filter((u: UserResponse) => u.role === r.key).length} 人
+                    </span>
                   </div>
                   <Button variant="ghost" size="sm"><Icon name="edit" size={11} />编辑</Button>
                 </div>
@@ -186,7 +207,7 @@ export function UsersPage() {
         {tab === "groups" && (
           <div style={{ padding: 16 }}>
             {["标注组A", "标注组B", "标注组C", "质检组", "算法部", "数据组", "运维部"].map((g) => {
-              const members = users.filter((u) => u.group === g);
+              const members = allUsers.filter((u: UserResponse) => u.group_name === g);
               return (
                 <div key={g} style={{
                   display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -203,7 +224,7 @@ export function UsersPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div style={{ display: "flex" }}>
                       {members.slice(0, 5).map((m, i) => (
-                        <Avatar key={m.id} initial={m.initial} size="sm" style={{ marginLeft: i ? -6 : 0, border: "2px solid var(--color-bg-elev)" }} />
+                        <Avatar key={m.id} initial={m.name[0]} size="sm" style={{ marginLeft: i ? -6 : 0, border: "2px solid var(--color-bg-elev)" }} />
                       ))}
                       {members.length > 5 && (
                         <Avatar initial={`+${members.length - 5}`} size="sm" style={{ marginLeft: -6, border: "2px solid var(--color-bg-elev)", background: "var(--color-bg-sunken)", color: "var(--color-fg-muted)" }} />
@@ -218,7 +239,6 @@ export function UsersPage() {
         )}
       </Card>
 
-      {/* Storage & Model Integrations */}
       <Card style={{ marginTop: 16 }}>
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>存储与模型集成</h3>

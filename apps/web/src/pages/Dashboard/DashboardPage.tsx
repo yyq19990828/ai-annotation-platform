@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -9,8 +9,8 @@ import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
-import { projects } from "@/data/mock";
-import type { Project } from "@/types";
+import { useProjects, useProjectStats } from "@/hooks/useProjects";
+import type { ProjectResponse } from "@/api/projects";
 
 const TYPE_ICONS: Record<string, string> = {
   "image-det": "rect",
@@ -22,52 +22,54 @@ const TYPE_ICONS: Record<string, string> = {
   mm: "mm",
 };
 
-function ProjectRow({ p, onOpen }: { p: Project; onOpen: (p: Project) => void }) {
-  const pct = Math.round((p.done / p.total) * 100);
-  const aiPct = p.ai ? Math.round(pct * 0.6) : 0;
+function ProjectRow({ p, onOpen }: { p: ProjectResponse; onOpen: (p: ProjectResponse) => void }) {
+  const total = p.total_tasks || 1;
+  const pct = Math.round((p.completed_tasks / total) * 100);
+  const aiPct = p.ai_enabled ? Math.round(pct * 0.6) : 0;
+  const due = p.due_date ?? "—";
+  const updated = p.updated_at ? new Date(p.updated_at).toLocaleDateString("zh-CN") : "—";
+
   return (
     <tr onClick={() => onOpen(p)} style={{ cursor: "pointer" }}>
       <td style={{ padding: "12px 12px 12px 16px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div
-            style={{
-              width: 28, height: 28, borderRadius: 6,
-              background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "var(--color-fg-muted)", flex: "0 0 28px",
-            }}
-          >
-            <Icon name={(TYPE_ICONS[p.typeKey] || "image") as any} size={14} />
+          <div style={{
+            width: 28, height: 28, borderRadius: 6,
+            background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "var(--color-fg-muted)", flex: "0 0 28px",
+          }}>
+            <Icon name={(TYPE_ICONS[p.type_key] || "image") as any} size={14} />
           </div>
           <div>
             <div style={{ fontWeight: 500, fontSize: 13.5 }}>{p.name}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
-              <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{p.id}</span>
+              <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{p.display_id}</span>
               <span style={{ color: "var(--color-fg-faint)" }}>·</span>
-              <span style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>{p.type}</span>
+              <span style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>{p.type_label}</span>
             </div>
           </div>
         </div>
       </td>
       <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Avatar initial={p.ownerInitial} size="sm" />
+          <Avatar initial="?" size="sm" />
           <div>
-            <div style={{ fontSize: 12.5 }}>{p.owner}</div>
-            <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>+{p.members - 1} 成员</div>
+            <div style={{ fontSize: 12.5 }}>负责人</div>
+            <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>—</div>
           </div>
         </div>
       </td>
       <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle", minWidth: 220 }}>
         <ProgressBar value={pct} aiValue={aiPct} />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "var(--color-fg-muted)" }}>
-          <span className="mono">{p.done.toLocaleString()} / {p.total.toLocaleString()}</span>
+          <span className="mono">{p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}</span>
           <span style={{ fontWeight: 500, color: "var(--color-fg)" }}>{pct}%</span>
         </div>
       </td>
       <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        {p.ai ? (
-          <Badge variant="ai"><Icon name="sparkles" size={10} />{p.aiModel}</Badge>
+        {p.ai_enabled ? (
+          <Badge variant="ai"><Icon name="sparkles" size={10} />{p.ai_model}</Badge>
         ) : (
           <span style={{ fontSize: 12, color: "var(--color-fg-subtle)" }}>未启用</span>
         )}
@@ -78,8 +80,8 @@ function ProjectRow({ p, onOpen }: { p: Project; onOpen: (p: Project) => void })
         {p.status === "待审核" && <Badge variant="warning" dot>待审核</Badge>}
       </td>
       <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <div style={{ fontSize: 12 }}>{p.due}</div>
-        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>更新 {p.updated}</div>
+        <div style={{ fontSize: 12 }}>{due}</div>
+        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>更新 {updated}</div>
       </td>
       <td style={{ padding: "12px 16px 12px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right", verticalAlign: "middle" }}>
         <Button size="sm">打开 <Icon name="chevRight" size={11} /></Button>
@@ -90,23 +92,17 @@ function ProjectRow({ p, onOpen }: { p: Project; onOpen: (p: Project) => void })
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
 
-export function DashboardPage({ onOpenProject }: { onOpenProject: (p: Project) => void }) {
+export function DashboardPage({ onOpenProject }: { onOpenProject: (p: ProjectResponse) => void }) {
   const [filter, setFilter] = useState<string>("全部");
   const [query, setQuery] = useState("");
   const pushToast = useToastStore((s) => s.push);
 
-  const filtered = projects.filter((p) => {
-    if (filter !== "全部" && p.status !== filter) return false;
-    if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !p.id.includes(query)) return false;
-    return true;
+  const { data: projects = [], isLoading } = useProjects({
+    status: filter !== "全部" ? filter : undefined,
+    search: query || undefined,
   });
 
-  const stats = useMemo(() => {
-    const total = projects.reduce((s, p) => s + p.total, 0);
-    const done = projects.reduce((s, p) => s + p.done, 0);
-    const review = projects.reduce((s, p) => s + p.review, 0);
-    return { total, done, review };
-  }, []);
+  const { data: stats } = useProjectStats();
 
   return (
     <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
@@ -126,10 +122,10 @@ export function DashboardPage({ onOpenProject }: { onOpenProject: (p: Project) =
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-        <StatCard icon="layers" label="数据总量" value={stats.total.toLocaleString()} trend={12} sparkValues={[42, 50, 48, 56, 60, 65, 78, 82, 89, 95, 102, 108]} sparkColor="var(--color-accent)" hint="近 12 周" />
-        <StatCard icon="check" label="已完成标注" value={stats.done.toLocaleString()} trend={8} sparkValues={[20, 28, 24, 36, 42, 48, 56, 62, 68, 74, 80, 86]} sparkColor="var(--color-success)" hint="近 12 周" />
-        <StatCard icon="sparkles" label="AI 接管率" value="62.4%" trend={5} sparkValues={[42, 48, 50, 52, 55, 56, 58, 59, 60, 61, 62, 62]} sparkColor="var(--color-ai)" hint="自动通过" />
-        <StatCard icon="flag" label="待审核" value={stats.review.toLocaleString()} trend={-14} sparkValues={[820, 760, 920, 880, 760, 700, 680, 620, 580, 540, 480, 412]} sparkColor="var(--color-warning)" hint="近 12 周" />
+        <StatCard icon="layers" label="数据总量" value={(stats?.total_data ?? 0).toLocaleString()} trend={12} sparkValues={[42, 50, 48, 56, 60, 65, 78, 82, 89, 95, 102, 108]} sparkColor="var(--color-accent)" hint="近 12 周" />
+        <StatCard icon="check" label="已完成标注" value={(stats?.completed ?? 0).toLocaleString()} trend={8} sparkValues={[20, 28, 24, 36, 42, 48, 56, 62, 68, 74, 80, 86]} sparkColor="var(--color-success)" hint="近 12 周" />
+        <StatCard icon="sparkles" label="AI 接管率" value={`${stats?.ai_rate ?? 0}%`} trend={5} sparkValues={[42, 48, 50, 52, 55, 56, 58, 59, 60, 61, 62, 62]} sparkColor="var(--color-ai)" hint="自动通过" />
+        <StatCard icon="flag" label="待审核" value={(stats?.pending_review ?? 0).toLocaleString()} trend={-14} sparkValues={[820, 760, 920, 880, 760, 700, 680, 620, 580, 540, 480, 412]} sparkColor="var(--color-warning)" hint="近 12 周" />
       </div>
 
       <Card>
@@ -148,30 +144,31 @@ export function DashboardPage({ onOpenProject }: { onOpenProject: (p: Project) =
           <thead>
             <tr>
               {["项目", "负责人", "进度", "AI 模型", "状态", "截止 / 更新", ""].map((h, i) => (
-                <th
-                  key={i}
-                  style={{
-                    textAlign: "left",
-                    fontWeight: 500,
-                    fontSize: 12,
-                    color: "var(--color-fg-muted)",
-                    padding: "10px 12px",
-                    borderBottom: "1px solid var(--color-border)",
-                    background: "var(--color-bg-sunken)",
-                    ...(i === 0 ? { paddingLeft: 16 } : {}),
-                    ...(i === 6 ? { paddingRight: 16 } : {}),
-                  }}
-                >
+                <th key={i} style={{
+                  textAlign: "left", fontWeight: 500, fontSize: 12,
+                  color: "var(--color-fg-muted)", padding: "10px 12px",
+                  borderBottom: "1px solid var(--color-border)",
+                  background: "var(--color-bg-sunken)",
+                  ...(i === 0 ? { paddingLeft: 16 } : {}),
+                  ...(i === 6 ? { paddingRight: 16 } : {}),
+                }}>
                   {h}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => (
+            {isLoading && (
+              <tr>
+                <td colSpan={7} style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>
+                  加载中...
+                </td>
+              </tr>
+            )}
+            {!isLoading && projects.map((p) => (
               <ProjectRow key={p.id} p={p} onOpen={onOpenProject} />
             ))}
-            {filtered.length === 0 && (
+            {!isLoading && projects.length === 0 && (
               <tr>
                 <td colSpan={7} style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>
                   没有匹配的项目
@@ -228,13 +225,11 @@ export function DashboardPage({ onOpenProject }: { onOpenProject: (p: Project) =
             ].map((a, i) => (
               <div key={i} style={{ display: "flex", gap: 10, padding: "10px 0", borderBottom: i < 4 ? "1px solid var(--color-border)" : "none", alignItems: "flex-start" }}>
                 {a.isAi ? (
-                  <div
-                    style={{
-                      width: 24, height: 24, borderRadius: "50%",
-                      background: "var(--color-ai-soft)", color: "var(--color-ai)",
-                      display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 24px",
-                    }}
-                  >
+                  <div style={{
+                    width: 24, height: 24, borderRadius: "50%",
+                    background: "var(--color-ai-soft)", color: "var(--color-ai)",
+                    display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 24px",
+                  }}>
                     <Icon name="sparkles" size={12} />
                   </div>
                 ) : (

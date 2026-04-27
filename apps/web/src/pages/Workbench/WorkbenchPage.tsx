@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
-import { projects, taskImages } from "@/data/mock";
+import { useAppStore } from "@/stores/appStore";
+import { taskImages } from "@/data/mock";
 import type { Annotation } from "@/types";
 
 const CLASS_COLORS: Record<string, string> = {
@@ -159,12 +160,12 @@ function BoxListItem({ b, isAi, selected, onSelect, onAccept, onReject, onDelete
 }
 
 export function WorkbenchPage({ onBack }: { onBack: () => void }) {
-  const project = projects[0];
+  const currentProject = useAppStore((s) => s.currentProject);
   const pushToast = useToastStore((s) => s.push);
 
   const [taskIdx, setTaskIdx] = useState(0);
   const [tool, setTool] = useState<"box" | "hand">("box");
-  const [activeClass, setActiveClass] = useState("商品");
+  const [activeClass, setActiveClass] = useState("");
   const [boxes, setBoxes] = useState<Record<string, Annotation[]>>({});
   const [aiBoxesByTask, setAiBoxesByTask] = useState<Record<string, Annotation[]>>(() => {
     const m: Record<string, Annotation[]> = {};
@@ -178,6 +179,15 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
   const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLDivElement>(null);
 
+  const classes: string[] = currentProject?.classes ?? [];
+  const projectName = currentProject?.name ?? "标注工作台";
+  const projectDisplayId = currentProject?.display_id ?? "—";
+  const aiModel = currentProject?.ai_model ?? "GroundingDINO + SAM";
+
+  useEffect(() => {
+    if (classes.length > 0) setActiveClass(classes[0]);
+  }, [currentProject?.id]);
+
   const task = taskImages[taskIdx];
   const userBoxes = boxes[task.id] || [];
   const aiBoxes = (aiBoxesByTask[task.id] || []).filter((b) => b.conf >= confThreshold);
@@ -187,14 +197,14 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
       if ((e.target as HTMLElement).tagName === "INPUT") return;
       if (e.key === "v" || e.key === "V") setTool("hand");
       if (e.key === "b" || e.key === "B") setTool("box");
-      if (e.key >= "1" && e.key <= "5") setActiveClass(project.classes[parseInt(e.key) - 1] || activeClass);
+      if (e.key >= "1" && e.key <= "5") setActiveClass(classes[parseInt(e.key) - 1] || activeClass);
       if (e.key === "Delete" || e.key === "Backspace") { if (selectedId) deleteBox(selectedId); }
       if (e.key === "ArrowRight" && (e.metaKey || e.ctrlKey)) nextTask();
       if (e.key === "ArrowLeft" && (e.metaKey || e.ctrlKey)) prevTask();
     };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
-  }, [selectedId, taskIdx, activeClass]);
+  }, [selectedId, taskIdx, activeClass, classes]);
 
   const deleteBox = (id: string) => {
     setBoxes((b) => ({ ...b, [task.id]: (b[task.id] || []).filter((x) => x.id !== id) }));
@@ -220,7 +230,7 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
 
   const runAi = () => {
     setAiRunning(true);
-    pushToast({ msg: "AI 正在分析图像...", sub: "GroundingDINO + SAM" });
+    pushToast({ msg: "AI 正在分析图像...", sub: aiModel });
     setTimeout(() => {
       setAiBoxesByTask((b) => ({
         ...b,
@@ -278,6 +288,16 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
   const nextTask = () => setTaskIdx((i) => Math.min(i + 1, taskImages.length - 1));
   const prevTask = () => setTaskIdx((i) => Math.max(0, i - 1));
 
+  if (!currentProject) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12, color: "var(--color-fg-muted)" }}>
+        <Icon name="layers" size={40} />
+        <div style={{ fontSize: 15 }}>请先从项目总览选择一个项目</div>
+        <Button onClick={onBack}><Icon name="chevLeft" size={12} />返回总览</Button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "260px 1fr 280px", height: "100%", overflow: "hidden", background: "var(--color-bg-sunken)" }}>
       {/* Left: Task Queue */}
@@ -286,9 +306,9 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
           <Button variant="ghost" size="sm" onClick={onBack} style={{ padding: "2px 6px", marginBottom: 6 }}>
             <Icon name="chevLeft" size={11} />返回总览
           </Button>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{project.name}</div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{projectName}</div>
           <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
-            <span className="mono">{project.id}</span> · {project.classes.length} 个类别
+            <span className="mono">{projectDisplayId}</span> · {classes.length} 个类别
           </div>
         </div>
 
@@ -328,7 +348,7 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
 
         <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px" }}>
           <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>类别 (按数字键切换)</div>
-          {project.classes.map((c, i) => (
+          {classes.map((c, i) => (
             <div
               key={c}
               onClick={() => setActiveClass(c)}
@@ -455,7 +475,7 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
             <Badge variant="ai" dot style={{ fontSize: 10 }}>{aiRunning ? "推理中" : "在线"}</Badge>
           </div>
           <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginBottom: 8 }}>
-            模型: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{project.aiModel || "GroundingDINO + SAM"}</span>
+            模型: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{aiModel}</span>
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
             <Button variant="ai" size="sm" onClick={runAi} disabled={aiRunning} style={{ flex: 1 }}>

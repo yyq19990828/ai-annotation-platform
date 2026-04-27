@@ -58,6 +58,12 @@ const iconPaths: Record<string, string> = {
   cube: "M12 3l9 5v8l-9 5-9-5V8zM3 8l9 5 9-5M12 13v10",
   video: "M3 6h12v12H3zM15 10l6-3v10l-6-3z",
   mm: "M4 5h10v8H4zM14 13l4 4M16 9l4 4M9 9h.01",
+  eyeOff:
+    "M17.9 17.9A10 10 0 0 1 2 12s3-7 10-7a10 10 0 0 1 5.9 2.1M6.1 6.1A10 10 0 0 0 2 12s4 7 10 7a10 10 0 0 0 5.9-2.1M2 2l20 20M12 15a3 3 0 0 1-3-3m3.3-5.7A3 3 0 0 1 15 9",
+  warning:
+    "M12 4L2 20h20zM12 9v5M12 17h.01",
+  logout:
+    "M9 5H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2M15 16l4-4-4-4M9 12h11",
 };
 
 export type IconName = keyof typeof iconPaths;

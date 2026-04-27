@@ -1,6 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Avatar } from "@/components/ui/Avatar";
+import { useAuthStore } from "@/stores/authStore";
 
 interface TopBarProps {
   workspace: string;
@@ -8,6 +9,9 @@ interface TopBarProps {
 }
 
 export function TopBar({ workspace, onWorkspaceChange }: TopBarProps) {
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+
   return (
     <header
       style={{
@@ -139,12 +143,30 @@ export function TopBar({ workspace, onWorkspaceChange }: TopBarProps) {
             cursor: "pointer",
           }}
         >
-          <Avatar initial="张" size="sm" />
+          <Avatar initial={user?.name?.[0] ?? "?"} size="sm" />
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.2 }}>
-            <span style={{ fontSize: 12, fontWeight: 500 }}>张明轩</span>
-            <span style={{ fontSize: 10.5, color: "var(--color-fg-muted)" }}>项目管理员</span>
+            <span style={{ fontSize: 12, fontWeight: 500 }}>{user?.name ?? "—"}</span>
+            <span style={{ fontSize: 10.5, color: "var(--color-fg-muted)" }}>{user?.role ?? "—"}</span>
           </div>
         </div>
+        <button
+          title="退出登录"
+          onClick={logout}
+          style={{
+            width: 30,
+            height: 30,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "transparent",
+            border: "1px solid transparent",
+            borderRadius: "var(--radius-md)",
+            color: "var(--color-fg-muted)",
+            cursor: "pointer",
+          }}
+        >
+          <Icon name="logout" size={15} />
+        </button>
       </div>
     </header>
   );
