@@ -1,0 +1,10 @@
+{
+  "name": "ai-annotation-platform",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter @anno/web dev",
+    "build:web": "pnpm --filter @anno/web build",
+    "dev:api": "cd apps/api && uvicorn app.main:app --reload --port 8000",
+    "lint": "pnpm --filter @anno/web lint"
+  }
+}

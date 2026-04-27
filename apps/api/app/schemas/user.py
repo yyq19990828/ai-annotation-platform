@@ -1,0 +1,33 @@
+from pydantic import BaseModel
+from uuid import UUID
+from datetime import datetime
+
+
+class UserCreate(BaseModel):
+    email: str
+    name: str
+    password: str
+    role: str = "标注员"
+
+
+class UserOut(BaseModel):
+    id: UUID
+    email: str
+    name: str
+    role: str
+    group_name: str | None
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str

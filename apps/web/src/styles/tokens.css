@@ -1,0 +1,66 @@
+/* ============================================
+   AI 标注平台 - 设计 Token 系统
+   精确移植自原型 styles.css
+   ============================================ */
+
+:root {
+  --color-bg: #f7f7f8;
+  --color-bg-elev: #ffffff;
+  --color-bg-sunken: #f1f1f3;
+  --color-bg-hover: #ebebef;
+  --color-panel: #fafafb;
+
+  --color-fg: #18181b;
+  --color-fg-muted: #52525b;
+  --color-fg-subtle: #a1a1aa;
+  --color-fg-faint: #d4d4d8;
+
+  --color-border: #e4e4e7;
+  --color-border-strong: #d4d4d8;
+
+  --color-accent: oklch(0.58 0.18 252);
+  --color-accent-hover: oklch(0.52 0.18 252);
+  --color-accent-soft: oklch(0.96 0.03 252);
+  --color-accent-fg: oklch(0.42 0.18 252);
+
+  --color-success: oklch(0.62 0.16 152);
+  --color-success-soft: oklch(0.96 0.04 152);
+  --color-warning: oklch(0.72 0.15 75);
+  --color-warning-soft: oklch(0.96 0.05 75);
+  --color-danger: oklch(0.62 0.20 25);
+  --color-danger-soft: oklch(0.96 0.04 25);
+  --color-ai: oklch(0.60 0.20 295);
+  --color-ai-soft: oklch(0.96 0.04 295);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Menlo", "Consolas", monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--color-fg);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root { min-height: 100vh; }
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; }
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
