@@ -1,5 +1,6 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -35,13 +36,42 @@ async def get_stats(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    from sqlalchemy import func
+    from app.db.models.annotation import Annotation
+
     result = await db.execute(select(Project))
     projects = result.scalars().all()
     total = sum(p.total_tasks for p in projects)
     completed = sum(p.completed_tasks for p in projects)
     review = sum(p.review_tasks for p in projects)
-    ai_rate = round(completed / total * 100, 1) if total else 0.0
-    return ProjectStats(total_data=total, completed=completed, ai_rate=ai_rate, pending_review=review)
+
+    total_ann_result = await db.execute(
+        select(func.count()).select_from(Annotation).where(
+            Annotation.is_active.is_(True),
+            Annotation.was_cancelled.is_(False),
+        )
+    )
+    total_annotations = total_ann_result.scalar() or 0
+
+    ai_ann_result = await db.execute(
+        select(func.count()).select_from(Annotation).where(
+            Annotation.is_active.is_(True),
+            Annotation.was_cancelled.is_(False),
+            Annotation.parent_prediction_id.isnot(None),
+        )
+    )
+    ai_derived_annotations = ai_ann_result.scalar() or 0
+
+    ai_rate = round(ai_derived_annotations / total_annotations * 100, 1) if total_annotations else 0.0
+
+    return ProjectStats(
+        total_data=total,
+        completed=completed,
+        ai_rate=ai_rate,
+        pending_review=review,
+        total_annotations=total_annotations,
+        ai_derived_annotations=ai_derived_annotations,
+    )
 
 
 @router.post("", response_model=ProjectOut)
@@ -73,6 +103,45 @@ async def get_project(
     if project is None:
         raise HTTPException(status_code=404, detail="项目不存在")
     return project
+
+
+@router.get("/{project_id}/export")
+async def export_project(
+    project_id: uuid.UUID,
+    format: str = Query("coco", pattern="^(coco|voc|yolo)$"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    from app.services.export import ExportService
+
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    svc = ExportService(db)
+
+    if format == "coco":
+        content = await svc.export_coco(project_id)
+        return Response(
+            content=content,
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename={project.display_id}_coco.json"},
+        )
+
+    if format == "yolo":
+        data = await svc.export_yolo(project_id)
+        return Response(
+            content=data,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename={project.display_id}_yolo.zip"},
+        )
+
+    data = await svc.export_voc(project_id)
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={project.display_id}_voc.zip"},
+    )
 
 
 class PreannotateRequest(BaseModel):

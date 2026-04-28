@@ -46,3 +46,5 @@ class ProjectStats(BaseModel):
     completed: int
     ai_rate: float
     pending_review: int
+    total_annotations: int = 0
+    ai_derived_annotations: int = 0

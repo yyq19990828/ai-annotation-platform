@@ -4,6 +4,7 @@ import { ToastRack, useToastStore } from "@/components/ui/Toast";
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { WorkbenchPage } from "@/pages/Workbench/WorkbenchPage";
 import { UsersPage } from "@/pages/Users/UsersPage";
+import { ReviewPage } from "@/pages/Review/ReviewPage";
 import { LoginPage } from "@/pages/Login/LoginPage";
 import { useAppStore } from "@/stores/appStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -41,7 +42,8 @@ export function App() {
         {page === "dashboard" && <DashboardPage onOpenProject={onOpenProject} />}
         {page === "annotate" && <WorkbenchPage onBack={() => setPage("dashboard")} />}
         {page === "users" && <UsersPage />}
-        {page !== "dashboard" && page !== "annotate" && page !== "users" && (
+        {page === "review" && <ReviewPage />}
+        {page !== "dashboard" && page !== "annotate" && page !== "users" && page !== "review" && (
           <div style={{ padding: "60px 28px", textAlign: "center", color: "var(--color-fg-subtle)" }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🚧</div>
             <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--color-fg)", margin: "0 0 8px" }}>

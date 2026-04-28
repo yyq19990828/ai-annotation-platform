@@ -1,16 +1,15 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAppStore } from "@/stores/appStore";
-import { taskImages } from "@/data/mock";
-// API hooks ready for integration (replace mock data when backend is running):
-// import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
-// import { useMLBackends, useInteractiveAnnotate } from "@/hooks/useMLBackends";
-// import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
-import type { Annotation } from "@/types";
+import { useTaskList, useAnnotations, useCreateAnnotation, useDeleteAnnotation, useSubmitTask } from "@/hooks/useTasks";
+import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
+import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
+import { useTaskLock } from "@/hooks/useTaskLock";
+import type { Annotation, TaskResponse, PredictionResponse, AnnotationResponse } from "@/types";
 
 const CLASS_COLORS: Record<string, string> = {
   商品: "oklch(0.62 0.18 252)",
@@ -20,7 +19,48 @@ const CLASS_COLORS: Record<string, string> = {
   促销贴: "oklch(0.60 0.20 295)",
 };
 
-function ShelfBackdrop({ seed = 0 }: { seed: number }) {
+function annotationToBox(a: AnnotationResponse): Annotation {
+  return {
+    id: a.id,
+    x: a.geometry.x,
+    y: a.geometry.y,
+    w: a.geometry.w,
+    h: a.geometry.h,
+    cls: a.class_name,
+    conf: a.confidence ?? 1,
+    source: a.source as Annotation["source"],
+    parent_prediction_id: a.parent_prediction_id,
+    lead_time: a.lead_time,
+  };
+}
+
+function predictionsToBoxes(predictions: PredictionResponse[]): (Annotation & { predictionId: string })[] {
+  return predictions.flatMap((p) =>
+    p.result.map((shape, i) => ({
+      id: `pred-${p.id}-${i}`,
+      predictionId: p.id,
+      x: shape.geometry.x,
+      y: shape.geometry.y,
+      w: shape.geometry.w,
+      h: shape.geometry.h,
+      cls: shape.class_name,
+      conf: shape.confidence,
+      source: "prediction_based" as const,
+    })),
+  );
+}
+
+function ImageBackdrop({ url, seed = 0 }: { url: string | null; seed: number }) {
+  if (url) {
+    return (
+      <img
+        src={url}
+        alt="task"
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+        draggable={false}
+      />
+    );
+  }
   const items: { x: number; y: number; w: number; h: number; hue: number }[] = [];
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 6; c++) {
@@ -54,7 +94,7 @@ function ShelfBackdrop({ seed = 0 }: { seed: number }) {
       ))}
       <rect x="20" y="442" width="860" height="32" fill="#f4f1e8" stroke="#bcb8a8" />
       <text x="40" y="50" fill="#6b6f78" fontSize="13" fontFamily="ui-monospace, monospace">
-        CAM-02 · AISLE-03 · 2026-04-27 14:32:18
+        CAM-02 · AISLE-03 · {new Date().toISOString().slice(0, 19).replace("T", " ")}
       </text>
     </svg>
   );
@@ -167,34 +207,84 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
   const currentProject = useAppStore((s) => s.currentProject);
   const pushToast = useToastStore((s) => s.push);
 
-  const [taskIdx, setTaskIdx] = useState(0);
-  const [tool, setTool] = useState<"box" | "hand">("box");
-  const [activeClass, setActiveClass] = useState("");
-  const [boxes, setBoxes] = useState<Record<string, Annotation[]>>({});
-  const [aiBoxesByTask, setAiBoxesByTask] = useState<Record<string, Annotation[]>>(() => {
-    const m: Record<string, Annotation[]> = {};
-    taskImages.forEach((t) => { m[t.id] = []; });
-    return m;
-  });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [drawing, setDrawing] = useState<{ x: number; y: number; w: number; h: number; sx: number; sy: number } | null>(null);
-  const [aiRunning, setAiRunning] = useState(false);
-  const [confThreshold, setConfThreshold] = useState(0.5);
-  const [zoom, setZoom] = useState(1);
-  const canvasRef = useRef<HTMLDivElement>(null);
-
+  const projectId = currentProject?.id;
   const classes: string[] = currentProject?.classes ?? [];
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
   const aiModel = currentProject?.ai_model ?? "GroundingDINO + SAM";
 
+  const { data: taskListData } = useTaskList(projectId);
+  const tasks = taskListData?.items ?? [];
+
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [tool, setTool] = useState<"box" | "hand">("box");
+  const [activeClass, setActiveClass] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drawing, setDrawing] = useState<{ x: number; y: number; w: number; h: number; sx: number; sy: number } | null>(null);
+  const [confThreshold, setConfThreshold] = useState(0.5);
+  const [zoom, setZoom] = useState(1);
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  const task: TaskResponse | undefined = useMemo(
+    () => tasks.find((t) => t.id === currentTaskId) ?? tasks[0],
+    [tasks, currentTaskId],
+  );
+  const taskId = task?.id;
+
+  useEffect(() => {
+    if (tasks.length > 0 && !currentTaskId) {
+      setCurrentTaskId(tasks[0].id);
+    }
+  }, [tasks, currentTaskId]);
+
   useEffect(() => {
     if (classes.length > 0) setActiveClass(classes[0]);
-  }, [currentProject?.id]);
+  }, [projectId]);
 
-  const task = taskImages[taskIdx];
-  const userBoxes = boxes[task.id] || [];
-  const aiBoxes = (aiBoxesByTask[task.id] || []).filter((b) => b.conf >= confThreshold);
+  const { data: annotationsData } = useAnnotations(taskId);
+  const { data: predictionsData } = usePredictions(taskId);
+
+  const userBoxes: Annotation[] = useMemo(
+    () => (annotationsData ?? []).map(annotationToBox),
+    [annotationsData],
+  );
+
+  const allAiBoxes = useMemo(
+    () => predictionsToBoxes(predictionsData ?? []),
+    [predictionsData],
+  );
+  const aiBoxes = useMemo(
+    () => allAiBoxes.filter((b) => b.conf >= confThreshold),
+    [allAiBoxes, confThreshold],
+  );
+
+  const aiTakeoverRate = useMemo(() => {
+    if (!annotationsData || annotationsData.length === 0) return 0;
+    const aiDerived = annotationsData.filter((a) => a.parent_prediction_id).length;
+    return Math.round((aiDerived / annotationsData.length) * 100);
+  }, [annotationsData]);
+
+  const createAnnotation = useCreateAnnotation(taskId);
+  const deleteAnnotationMut = useDeleteAnnotation(taskId);
+  const submitTaskMut = useSubmitTask();
+  const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
+  const triggerPreannotation = useTriggerPreannotation(projectId);
+  const preannotationProgress = usePreannotationProgress(projectId);
+  const { lockError } = useTaskLock(taskId);
+
+  const aiRunning = preannotationProgress?.status === "running" || triggerPreannotation.isPending;
+
+  const taskIdx = tasks.findIndex((t) => t.id === taskId);
+
+  const navigateTask = useCallback((direction: "next" | "prev") => {
+    if (tasks.length === 0) return;
+    const idx = tasks.findIndex((t) => t.id === taskId);
+    const newIdx = direction === "next"
+      ? Math.min(idx + 1, tasks.length - 1)
+      : Math.max(0, idx - 1);
+    setCurrentTaskId(tasks[newIdx].id);
+    setSelectedId(null);
+  }, [tasks, taskId]);
 
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
@@ -202,48 +292,59 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
       if (e.key === "v" || e.key === "V") setTool("hand");
       if (e.key === "b" || e.key === "B") setTool("box");
       if (e.key >= "1" && e.key <= "5") setActiveClass(classes[parseInt(e.key) - 1] || activeClass);
-      if (e.key === "Delete" || e.key === "Backspace") { if (selectedId) deleteBox(selectedId); }
-      if (e.key === "ArrowRight" && (e.metaKey || e.ctrlKey)) nextTask();
-      if (e.key === "ArrowLeft" && (e.metaKey || e.ctrlKey)) prevTask();
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedId) handleDeleteBox(selectedId);
+      }
+      if (e.key === "ArrowRight" && (e.metaKey || e.ctrlKey)) navigateTask("next");
+      if (e.key === "ArrowLeft" && (e.metaKey || e.ctrlKey)) navigateTask("prev");
     };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
-  }, [selectedId, taskIdx, activeClass, classes]);
+  }, [selectedId, activeClass, classes, navigateTask]);
 
-  const deleteBox = (id: string) => {
-    setBoxes((b) => ({ ...b, [task.id]: (b[task.id] || []).filter((x) => x.id !== id) }));
-    setAiBoxesByTask((b) => ({ ...b, [task.id]: (b[task.id] || []).filter((x) => x.id !== id) }));
+  const handleDeleteBox = (id: string) => {
+    const isUserBox = userBoxes.some((b) => b.id === id);
+    if (isUserBox) {
+      deleteAnnotationMut.mutate(id, {
+        onSuccess: () => pushToast({ msg: "已删除标注", kind: "success" }),
+      });
+    }
     setSelectedId(null);
   };
 
-  const acceptAi = (box: Annotation) => {
-    setAiBoxesByTask((b) => ({ ...b, [task.id]: (b[task.id] || []).filter((x) => x.id !== box.id) }));
-    setBoxes((b) => ({
-      ...b,
-      [task.id]: [...(b[task.id] || []), { ...box, id: "u-" + Date.now() + Math.random(), source: "prediction_based" }],
-    }));
-    pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
+  const handleAcceptPrediction = (box: Annotation & { predictionId?: string }) => {
+    if (!box.predictionId) return;
+    acceptPredictionMut.mutate(box.predictionId, {
+      onSuccess: () => {
+        pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
+      },
+    });
   };
 
-  const acceptAll = () => {
-    const accepted = aiBoxes.map((b) => ({ ...b, id: "u-" + Date.now() + Math.random() + b.id, source: "prediction_based" as const }));
-    setBoxes((b) => ({ ...b, [task.id]: [...(b[task.id] || []), ...accepted] }));
-    setAiBoxesByTask((b) => ({ ...b, [task.id]: (b[task.id] || []).filter((x) => x.conf < confThreshold) }));
-    pushToast({ msg: `已批量采纳 ${accepted.length} 个 AI 标注`, kind: "success" });
+  const handleAcceptAll = () => {
+    const uniquePredictionIds = [...new Set(aiBoxes.map((b) => b.predictionId))];
+    let accepted = 0;
+    uniquePredictionIds.forEach((pid) => {
+      acceptPredictionMut.mutate(pid, {
+        onSuccess: () => {
+          accepted++;
+          if (accepted === uniquePredictionIds.length) {
+            pushToast({ msg: `已批量采纳 ${aiBoxes.length} 个 AI 标注`, kind: "success" });
+          }
+        },
+      });
+    });
   };
 
-  const runAi = () => {
-    setAiRunning(true);
+  const handleRunAi = () => {
+    if (!projectId) return;
     pushToast({ msg: "AI 正在分析图像...", sub: aiModel });
-    setTimeout(() => {
-      setAiBoxesByTask((b) => ({
-        ...b,
-        [task.id]: task.aiBoxes.map((x) => ({ ...x, source: "prediction_based" as const })),
-      }));
-      setAiRunning(false);
-      const avg = task.aiBoxes.reduce((s, b) => s + b.conf, 0) / Math.max(1, task.aiBoxes.length) * 100;
-      pushToast({ msg: `AI 预标注完成,识别 ${task.aiBoxes.length} 个目标`, sub: `平均置信度 ${avg.toFixed(1)}%`, kind: "success" });
-    }, 1400);
+    triggerPreannotation.mutate(
+      { ml_backend_id: "", task_ids: taskId ? [taskId] : undefined },
+      {
+        onError: (err) => pushToast({ msg: "AI 预标注失败", sub: String(err) }),
+      },
+    );
   };
 
   const onCanvasMouseDown = (e: React.MouseEvent) => {
@@ -267,36 +368,52 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
   };
   const onCanvasMouseUp = () => {
     if (drawing && drawing.w > 0.005 && drawing.h > 0.005) {
-      const newBox: Annotation = {
-        id: "u-" + Date.now(),
-        x: drawing.x, y: drawing.y, w: drawing.w, h: drawing.h,
-        cls: activeClass,
-        conf: 1,
-        source: "manual",
-      };
-      setBoxes((b) => ({ ...b, [task.id]: [...(b[task.id] || []), newBox] }));
-      setSelectedId(newBox.id);
+      createAnnotation.mutate(
+        {
+          annotation_type: "bbox",
+          class_name: activeClass,
+          geometry: { x: drawing.x, y: drawing.y, w: drawing.w, h: drawing.h },
+          confidence: 1,
+        },
+        {
+          onSuccess: (newAnnotation) => {
+            setSelectedId(newAnnotation.id);
+          },
+        },
+      );
     }
     setDrawing(null);
   };
 
-  const submitTask = () => {
-    pushToast({
-      msg: `已提交 ${task.id} 至质检`,
-      sub: `共 ${userBoxes.length} 个标注 · 下一个: ${taskImages[(taskIdx + 1) % taskImages.length].id}`,
-      kind: "success",
+  const handleSubmitTask = () => {
+    if (!taskId) return;
+    submitTaskMut.mutate(taskId, {
+      onSuccess: () => {
+        pushToast({
+          msg: `已提交 ${task?.display_id} 至质检`,
+          sub: `共 ${userBoxes.length} 个标注`,
+          kind: "success",
+        });
+        navigateTask("next");
+      },
     });
-    nextTask();
   };
-
-  const nextTask = () => setTaskIdx((i) => Math.min(i + 1, taskImages.length - 1));
-  const prevTask = () => setTaskIdx((i) => Math.max(0, i - 1));
 
   if (!currentProject) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12, color: "var(--color-fg-muted)" }}>
         <Icon name="layers" size={40} />
         <div style={{ fontSize: 15 }}>请先从项目总览选择一个项目</div>
+        <Button onClick={onBack}><Icon name="chevLeft" size={12} />返回总览</Button>
+      </div>
+    );
+  }
+
+  if (tasks.length === 0) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12, color: "var(--color-fg-muted)" }}>
+        <Icon name="inbox" size={40} />
+        <div style={{ fontSize: 15 }}>该项目暂无任务</div>
         <Button onClick={onBack}><Icon name="chevLeft" size={12} />返回总览</Button>
       </div>
     );
@@ -317,20 +434,18 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
         </div>
 
         <div style={{ padding: "10px 14px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 12, fontWeight: 600 }}>分配给我的任务</div>
-          <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{taskIdx + 1} / {taskImages.length}</span>
+          <div style={{ fontSize: 12, fontWeight: 600 }}>任务队列</div>
+          <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{taskIdx + 1} / {tasks.length}</span>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 10px" }}>
-          {taskImages.map((t, i) => {
-            const tb = boxes[t.id] || [];
-            const ab = aiBoxesByTask[t.id] || [];
-            const isActive = i === taskIdx;
-            const status = tb.length > 0 ? "进行中" : ab.length > 0 ? "AI 已预标" : "未开始";
+          {tasks.map((t) => {
+            const isActive = t.id === taskId;
+            const statusLabel = t.status === "completed" ? "已完成" : t.status === "review" ? "待审核" : t.total_annotations > 0 ? "进行中" : t.total_predictions > 0 ? "AI 已预标" : "未开始";
             return (
               <div
                 key={t.id}
-                onClick={() => setTaskIdx(i)}
+                onClick={() => { setCurrentTaskId(t.id); setSelectedId(null); }}
                 style={{
                   padding: "8px 10px", margin: "2px 0",
                   borderRadius: "var(--radius-md)",
@@ -340,11 +455,11 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="mono" style={{ fontSize: 11.5, fontWeight: 500 }}>{t.id}</span>
-                  {tb.length > 0 && <Badge variant="accent" style={{ fontSize: 10, padding: "1px 6px" }}>{tb.length}</Badge>}
+                  <span className="mono" style={{ fontSize: 11.5, fontWeight: 500 }}>{t.display_id}</span>
+                  {t.total_annotations > 0 && <Badge variant="accent" style={{ fontSize: 10, padding: "1px 6px" }}>{t.total_annotations}</Badge>}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
-                <div style={{ fontSize: 10.5, color: isActive ? "var(--color-accent-fg)" : "var(--color-fg-subtle)", marginTop: 2 }}>{status}</div>
+                <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.file_name}</div>
+                <div style={{ fontSize: 10.5, color: isActive ? "var(--color-accent-fg)" : "var(--color-fg-subtle)", marginTop: 2 }}>{statusLabel}</div>
               </div>
             );
           })}
@@ -378,6 +493,12 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
 
       {/* Center: Canvas */}
       <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+        {lockError && (
+          <div style={{ padding: "6px 14px", background: "oklch(0.95 0.05 25)", borderBottom: "1px solid oklch(0.85 0.10 25)", fontSize: 12, color: "oklch(0.45 0.15 25)", display: "flex", alignItems: "center", gap: 6 }}>
+            <Icon name="warning" size={13} />
+            {lockError === "Lock expired" ? "任务锁已过期，请刷新页面" : "该任务正被其他用户编辑"}
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", background: "var(--color-bg-elev)", borderBottom: "1px solid var(--color-border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <Button variant={tool === "hand" ? "primary" : "ghost"} size="sm" onClick={() => setTool("hand")} title="平移 (V)">
@@ -396,15 +517,17 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setZoom(1)} style={{ fontSize: 11 }}>适应</Button>
           </div>
-          <span className="mono" style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>{task.id} · {task.name}</span>
+          <span className="mono" style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>{task?.display_id} · {task?.file_name}</span>
           <div style={{ display: "flex", gap: 6 }}>
-            <Button variant="ai" size="sm" onClick={runAi} disabled={aiRunning}>
+            <Button variant="ai" size="sm" onClick={handleRunAi} disabled={aiRunning}>
               <Icon name="sparkles" size={13} />{aiRunning ? "AI 推理中..." : "AI 一键预标"}
             </Button>
             <div style={{ width: 1, height: 20, background: "var(--color-border)" }} />
-            <Button size="sm" onClick={prevTask}><Icon name="chevLeft" size={13} />上一</Button>
-            <Button variant="primary" size="sm" onClick={submitTask}><Icon name="check" size={13} />提交质检</Button>
-            <Button size="sm" onClick={nextTask}>下一<Icon name="chevRight" size={13} /></Button>
+            <Button size="sm" onClick={() => navigateTask("prev")}><Icon name="chevLeft" size={13} />上一</Button>
+            <Button variant="primary" size="sm" onClick={handleSubmitTask} disabled={submitTaskMut.isPending}>
+              <Icon name="check" size={13} />提交质检
+            </Button>
+            <Button size="sm" onClick={() => navigateTask("next")}>下一<Icon name="chevRight" size={13} /></Button>
           </div>
         </div>
 
@@ -425,18 +548,18 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
               userSelect: "none", overflow: "hidden",
             }}
           >
-            <ShelfBackdrop seed={taskIdx} />
+            <ImageBackdrop url={task?.file_url ?? null} seed={taskIdx} />
             {aiBoxes.map((b) => (
               <BoxOverlay key={b.id} b={b} isAi selected={selectedId === b.id}
                 onClick={() => setSelectedId(b.id)}
-                onAccept={() => acceptAi(b)}
-                onReject={() => deleteBox(b.id)}
+                onAccept={() => handleAcceptPrediction(b)}
+                onReject={() => setSelectedId(null)}
               />
             ))}
             {userBoxes.map((b) => (
               <BoxOverlay key={b.id} b={b} selected={selectedId === b.id}
                 onClick={() => setSelectedId(b.id)}
-                onDelete={() => deleteBox(b.id)}
+                onDelete={() => handleDeleteBox(b.id)}
               />
             ))}
             {drawing && drawing.w > 0 && (
@@ -462,8 +585,11 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
           </div>
           <div style={{ display: "flex", gap: 16 }}>
             <span>分辨率 1920×1280</span>
-            <span>已用时 04:23</span>
-            <span style={{ color: "var(--color-success)" }}>● 自动保存于 12 秒前</span>
+            {preannotationProgress && (
+              <span style={{ color: "var(--color-ai)" }}>
+                预标注 {preannotationProgress.current}/{preannotationProgress.total}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -482,10 +608,10 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
             模型: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{aiModel}</span>
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-            <Button variant="ai" size="sm" onClick={runAi} disabled={aiRunning} style={{ flex: 1 }}>
+            <Button variant="ai" size="sm" onClick={handleRunAi} disabled={aiRunning} style={{ flex: 1 }}>
               <Icon name="sparkles" size={11} />一键预标
             </Button>
-            <Button size="sm" onClick={acceptAll} disabled={aiBoxes.length === 0} style={{ flex: 1 }}>
+            <Button size="sm" onClick={handleAcceptAll} disabled={aiBoxes.length === 0} style={{ flex: 1 }}>
               <Icon name="check" size={11} />全部采纳
             </Button>
           </div>
@@ -518,7 +644,7 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 8px" }}>
           {aiBoxes.map((b) => (
             <BoxListItem key={b.id} b={b} isAi selected={selectedId === b.id}
-              onSelect={() => setSelectedId(b.id)} onAccept={() => acceptAi(b)} onReject={() => deleteBox(b.id)} />
+              onSelect={() => setSelectedId(b.id)} onAccept={() => handleAcceptPrediction(b)} onReject={() => setSelectedId(null)} />
           ))}
           {userBoxes.length > 0 && (
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-fg-muted)", padding: "10px 6px 4px", textTransform: "uppercase", letterSpacing: 0.5 }}>
@@ -527,7 +653,7 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
           )}
           {userBoxes.map((b) => (
             <BoxListItem key={b.id} b={b} selected={selectedId === b.id}
-              onSelect={() => setSelectedId(b.id)} onDelete={() => deleteBox(b.id)} />
+              onSelect={() => setSelectedId(b.id)} onDelete={() => handleDeleteBox(b.id)} />
           ))}
         </div>
 
@@ -535,10 +661,9 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
           <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>本次效率</div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
             <span>AI 接管率</span>
-            <span className="mono" style={{ fontWeight: 600, color: "var(--color-ai)" }}>72%</span>
+            <span className="mono" style={{ fontWeight: 600, color: "var(--color-ai)" }}>{aiTakeoverRate}%</span>
           </div>
-          <ProgressBar value={72} color="var(--color-ai)" />
-          <div style={{ fontSize: 10.5, color: "var(--color-fg-subtle)", marginTop: 6 }}>预计节省 ~ 38 分钟标注时间</div>
+          <ProgressBar value={aiTakeoverRate} color="var(--color-ai)" />
         </div>
       </div>
     </div>

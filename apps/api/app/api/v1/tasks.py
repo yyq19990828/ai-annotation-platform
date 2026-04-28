@@ -1,13 +1,14 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, get_current_user, require_roles
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
-from app.schemas.task import TaskOut, TaskLockResponse
+from app.schemas.task import TaskOut, TaskListResponse, TaskLockResponse
 from app.schemas.annotation import AnnotationCreate, AnnotationOut
 from app.schemas.prediction import PredictionOut
 from app.services.annotation import AnnotationService
@@ -20,6 +21,35 @@ router = APIRouter()
 
 _ANNOTATORS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER, UserRole.ANNOTATOR)
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
+
+
+@router.get("", response_model=TaskListResponse)
+async def list_tasks(
+    project_id: uuid.UUID = Query(...),
+    status: str | None = None,
+    assignee_id: uuid.UUID | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    q = select(Task).where(Task.project_id == project_id)
+    count_q = select(func.count()).select_from(Task).where(Task.project_id == project_id)
+    if status:
+        q = q.where(Task.status == status)
+        count_q = count_q.where(Task.status == status)
+    if assignee_id:
+        q = q.where(Task.assignee_id == assignee_id)
+        count_q = count_q.where(Task.assignee_id == assignee_id)
+    total = (await db.execute(count_q)).scalar() or 0
+    result = await db.execute(q.order_by(Task.sequence_order, Task.created_at).limit(limit).offset(offset))
+    tasks = result.scalars().all()
+    return TaskListResponse(
+        items=[_task_with_url(t) for t in tasks],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/next", response_model=TaskOut | None)
@@ -104,6 +134,20 @@ async def accept_prediction(
     return await svc.list_by_task(task_id)
 
 
+@router.delete("/{task_id}/annotations/{annotation_id}", status_code=204)
+async def delete_annotation(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    svc = AnnotationService(db)
+    ok = await svc.delete(annotation_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    await db.commit()
+
+
 @router.post("/{task_id}/submit")
 async def submit_task(
     task_id: uuid.UUID,
@@ -119,6 +163,58 @@ async def submit_task(
     await lock_svc.release(task_id, current_user.id)
     await db.commit()
     return {"status": "submitted", "task_id": str(task_id)}
+
+
+# ── Review endpoints ───────────────────���────────────────────────────────────
+
+class ReviewAction(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/{task_id}/review/approve")
+async def approve_task(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != "review":
+        raise HTTPException(status_code=400, detail="Task is not in review status")
+
+    task.status = "completed"
+
+    from app.db.models.project import Project
+    project = await db.get(Project, task.project_id)
+    if project:
+        project.completed_tasks = (project.completed_tasks or 0) + 1
+        project.review_tasks = max((project.review_tasks or 0) - 1, 0)
+    await db.commit()
+    return {"status": "approved", "task_id": str(task_id)}
+
+
+@router.post("/{task_id}/review/reject")
+async def reject_task(
+    task_id: uuid.UUID,
+    body: ReviewAction | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != "review":
+        raise HTTPException(status_code=400, detail="Task is not in review status")
+
+    task.status = "pending"
+
+    from app.db.models.project import Project
+    project = await db.get(Project, task.project_id)
+    if project:
+        project.review_tasks = max((project.review_tasks or 0) - 1, 0)
+    await db.commit()
+    return {"status": "rejected", "task_id": str(task_id), "reason": body.reason if body else None}
 
 
 # ── Task Lock endpoints ─────────────────────────────────────────────────────

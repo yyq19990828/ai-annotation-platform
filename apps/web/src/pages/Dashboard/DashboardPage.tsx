@@ -10,7 +10,7 @@ import { TabRow } from "@/components/ui/TabRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
-import type { ProjectResponse } from "@/api/projects";
+import { projectsApi, type ExportFormat, type ProjectResponse } from "@/api/projects";
 
 const TYPE_ICONS: Record<string, string> = {
   "image-det": "rect",
@@ -84,7 +84,30 @@ function ProjectRow({ p, onOpen }: { p: ProjectResponse; onOpen: (p: ProjectResp
         <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>更新 {updated}</div>
       </td>
       <td style={{ padding: "12px 16px 12px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right", verticalAlign: "middle" }}>
-        <Button size="sm">打开 <Icon name="chevRight" size={11} /></Button>
+        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+          <select
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              const fmt = e.target.value as ExportFormat;
+              if (fmt) {
+                projectsApi.exportProject(p.id, fmt);
+                e.target.value = "";
+              }
+            }}
+            defaultValue=""
+            style={{
+              padding: "4px 6px", fontSize: 11, borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--color-border)", background: "var(--color-bg-elev)",
+              cursor: "pointer", color: "var(--color-fg-muted)",
+            }}
+          >
+            <option value="" disabled>导出</option>
+            <option value="coco">COCO</option>
+            <option value="voc">VOC</option>
+            <option value="yolo">YOLO</option>
+          </select>
+          <Button size="sm">打开 <Icon name="chevRight" size={11} /></Button>
+        </div>
       </td>
     </tr>
   );
@@ -183,31 +206,11 @@ export function DashboardPage({ onOpenProject }: { onOpenProject: (p: ProjectRes
         <Card>
           <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>AI 预标注队列</h3>
-            <Badge variant="ai" dot>3 个任务运行中</Badge>
           </div>
-          <div style={{ padding: "8px 16px 16px" }}>
-            {[
-              { name: "智能门店货架商品检测", model: "GroundingDINO + SAM", pct: 78, eta: "约 14 分钟", gpu: "GPU-A100 #2" },
-              { name: "自动驾驶激光点云路况", model: "PointPillars", pct: 34, eta: "约 1 小时 22 分", gpu: "GPU-A100 #5" },
-              { name: "短视频内容审核多模态", model: "GPT-4V (API)", pct: 52, eta: "约 38 分钟", gpu: "API 调用" },
-            ].map((q, i) => (
-              <div key={i} style={{ padding: "10px 0", borderBottom: i < 2 ? "1px solid var(--color-border)" : "none" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{q.name}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginTop: 2 }}>
-                      <Icon name="bot" size={11} style={{ verticalAlign: "-2px", marginRight: 4 }} />
-                      {q.model} · {q.gpu}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{q.pct}%</div>
-                    <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>剩余 {q.eta}</div>
-                  </div>
-                </div>
-                <ProgressBar value={q.pct} color="var(--color-ai)" />
-              </div>
-            ))}
+          <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+            <Icon name="sparkles" size={28} style={{ opacity: 0.25, marginBottom: 8 }} />
+            <div>暂无运行中的预标注任务</div>
+            <div style={{ fontSize: 11.5, marginTop: 4 }}>在标注工作台中点击"AI 一键预标"启动</div>
           </div>
         </Card>
 
@@ -215,34 +218,10 @@ export function DashboardPage({ onOpenProject }: { onOpenProject: (p: ProjectRes
           <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>近期活动</h3>
           </div>
-          <div style={{ padding: "4px 16px 14px" }}>
-            {[
-              { who: "李静雯", act: "通过审核了", what: "412 个商品检测样本", when: "12 分钟前", isAi: false },
-              { who: "AI 助手", act: "完成预标注", what: "1,840 帧点云数据", when: "32 分钟前", isAi: true },
-              { who: "陈思琪", act: "提交了", what: "短视频内容审核 88 个样本", when: "1 小时前", isAi: false },
-              { who: "AI 助手", act: "驳回低置信度样本", what: "62 个样本需人工复核", when: "2 小时前", isAi: true },
-              { who: "张明轩", act: "新建项目", what: "智能门店货架商品检测", when: "今天 09:18", isAi: false },
-            ].map((a, i) => (
-              <div key={i} style={{ display: "flex", gap: 10, padding: "10px 0", borderBottom: i < 4 ? "1px solid var(--color-border)" : "none", alignItems: "flex-start" }}>
-                {a.isAi ? (
-                  <div style={{
-                    width: 24, height: 24, borderRadius: "50%",
-                    background: "var(--color-ai-soft)", color: "var(--color-ai)",
-                    display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 24px",
-                  }}>
-                    <Icon name="sparkles" size={12} />
-                  </div>
-                ) : (
-                  <Avatar initial={a.who[0]} size="sm" style={{ flex: "0 0 24px", width: 24, height: 24 }} />
-                )}
-                <div style={{ flex: 1, fontSize: 12.5, lineHeight: 1.5 }}>
-                  <span style={{ fontWeight: 500 }}>{a.who}</span>
-                  <span style={{ color: "var(--color-fg-muted)" }}> {a.act} </span>
-                  <span>{a.what}</span>
-                  <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>{a.when}</div>
-                </div>
-              </div>
-            ))}
+          <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+            <Icon name="activity" size={28} style={{ opacity: 0.25, marginBottom: 8 }} />
+            <div>暂无活动记录</div>
+            <div style={{ fontSize: 11.5, marginTop: 4 }}>审计日志功能将在后续版本上线</div>
           </div>
         </Card>
       </div>

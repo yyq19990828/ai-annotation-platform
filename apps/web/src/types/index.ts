@@ -177,6 +177,7 @@ export interface Role {
 export type PageKey =
   | "dashboard"
   | "annotate"
+  | "review"
   | "users"
   | "datasets"
   | "storage"

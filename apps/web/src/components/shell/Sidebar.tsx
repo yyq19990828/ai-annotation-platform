@@ -24,6 +24,7 @@ const sections: { label: string; items: NavItem[] }[] = [
     items: [
       { key: "dashboard", icon: "dashboard", label: "项目总览" },
       { key: "annotate", icon: "target", label: "标注工作台" },
+      { key: "review", icon: "check", label: "质检审核" },
       { key: "datasets", icon: "layers", label: "数据集", count: 42 },
       { key: "storage", icon: "db", label: "存储管理" },
     ],

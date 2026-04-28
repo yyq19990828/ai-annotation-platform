@@ -36,6 +36,8 @@ export interface ProjectCreatePayload {
   due_date?: string | null;
 }
 
+export type ExportFormat = "coco" | "voc" | "yolo";
+
 export const projectsApi = {
   list: (params?: { status?: string; search?: string }) => {
     const q = new URLSearchParams(
@@ -52,4 +54,22 @@ export const projectsApi = {
 
   create: (payload: ProjectCreatePayload) =>
     apiClient.post<ProjectResponse>("/projects", payload),
+
+  exportProject: async (id: string, format: ExportFormat) => {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`/api/v1/projects/${id}/export?format=${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("Export failed");
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") ?? "";
+    const match = disposition.match(/filename=(.+)/);
+    const filename = match ? match[1] : `export.${format === "coco" ? "json" : "zip"}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };

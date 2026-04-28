@@ -1,38 +1,31 @@
 import { apiClient } from "./client";
+import type {
+  TaskResponse,
+  AnnotationResponse,
+  TaskLockResponse,
+} from "@/types";
 
-export interface TaskResponse {
-  id: string;
-  project_id: string;
-  display_id: string;
-  file_name: string;
-  file_path: string;
-  file_type: string;
-  tags: string[];
-  status: string;
-  assignee_id: string | null;
-  sequence_order: number | null;
-  created_at: string;
+export interface TaskListResponse {
+  items: TaskResponse[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
-export interface AnnotationResponse {
-  id: string;
-  task_id: string;
-  user_id: string | null;
-  source: "human" | "ai" | "ai-accepted";
-  annotation_type: string;
-  class_name: string;
-  geometry: { x: number; y: number; w: number; h: number };
-  confidence: number | null;
-  is_active: boolean;
-  created_at: string;
+export interface TaskListParams {
+  status?: string;
+  assignee_id?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface AnnotationPayload {
-  source: "human" | "ai" | "ai-accepted";
   annotation_type?: string;
   class_name: string;
   geometry: { x: number; y: number; w: number; h: number };
   confidence?: number;
+  parent_prediction_id?: string;
+  lead_time?: number;
 }
 
 export interface SubmitResponse {
@@ -41,6 +34,18 @@ export interface SubmitResponse {
 }
 
 export const tasksApi = {
+  listByProject: (projectId: string, params?: TaskListParams) => {
+    const q = new URLSearchParams({ project_id: projectId });
+    if (params?.status) q.set("status", params.status);
+    if (params?.assignee_id) q.set("assignee_id", params.assignee_id);
+    if (params?.limit) q.set("limit", String(params.limit));
+    if (params?.offset) q.set("offset", String(params.offset));
+    return apiClient.get<TaskListResponse>(`/tasks?${q}`);
+  },
+
+  getNext: (projectId: string) =>
+    apiClient.get<TaskResponse | null>(`/tasks/next?project_id=${projectId}`),
+
   get: (id: string) => apiClient.get<TaskResponse>(`/tasks/${id}`),
 
   getAnnotations: (id: string) =>
@@ -49,6 +54,27 @@ export const tasksApi = {
   createAnnotation: (id: string, payload: AnnotationPayload) =>
     apiClient.post<AnnotationResponse>(`/tasks/${id}/annotations`, payload),
 
+  deleteAnnotation: (taskId: string, annotationId: string) =>
+    apiClient.delete<void>(`/tasks/${taskId}/annotations/${annotationId}`),
+
   submit: (id: string) =>
     apiClient.post<SubmitResponse>(`/tasks/${id}/submit`),
+
+  approve: (id: string) =>
+    apiClient.post<{ status: string; task_id: string }>(`/tasks/${id}/review/approve`),
+
+  reject: (id: string, reason?: string) =>
+    apiClient.post<{ status: string; task_id: string; reason: string | null }>(
+      `/tasks/${id}/review/reject`,
+      reason ? { reason } : undefined,
+    ),
+
+  acquireLock: (taskId: string) =>
+    apiClient.post<TaskLockResponse>(`/tasks/${taskId}/lock`),
+
+  heartbeatLock: (taskId: string) =>
+    apiClient.post<{ status: string }>(`/tasks/${taskId}/lock/heartbeat`),
+
+  releaseLock: (taskId: string) =>
+    apiClient.delete<void>(`/tasks/${taskId}/lock`),
 };

@@ -6,6 +6,65 @@
 
 ---
 
+## [0.4.0] - 2026-04-28
+
+### 新增
+
+#### WorkbenchPage 真实 API 对接（P0 — 核心里程碑）
+- WorkbenchPage 全面替换 mock 数据，使用 React Query hooks 对接后端 API
+- 任务队列从 `useTaskList(projectId)` 加载真实任务列表
+- 标注绘制通过 `useCreateAnnotation` 实时持久化到数据库
+- AI 预测通过 `usePredictions(taskId)` 加载，支持置信度阈值过滤
+- 采纳 AI 预测通过 `useAcceptPrediction` 调用，自动关联 `parent_prediction_id`
+- 批量预标注通过 `useTriggerPreannotation` + WebSocket 进度推送
+- 删除标注通过 `useDeleteAnnotation` 调用后端软删除
+- 提交质检通过 `useSubmitTask` 调用，自动释放任务锁
+- 真实图片加载：优先使用 presigned URL，fallback 到 SVG 占位图
+- 移除 `data/mock.ts` 中 `taskImages` 的依赖
+
+#### 后端新端点
+- `GET /tasks?project_id=&status=&limit=&offset=` — 任务列表（分页 + 过滤）
+- `DELETE /tasks/{task_id}/annotations/{annotation_id}` — 删除标注
+- `POST /tasks/{task_id}/review/approve` — 审核通过（status → completed）
+- `POST /tasks/{task_id}/review/reject` — 审核退回（status → pending），支持 reason
+- `GET /projects/{id}/export?format=coco|voc|yolo` — 数据导出（COCO JSON / VOC XML ZIP / YOLO TXT ZIP）
+
+#### 任务锁前端集成
+- 新增 `useTaskLock` hook：进入任务自动获取锁 → 120s 心跳续约 → 离开/切换自动释放
+- WorkbenchPage 锁冲突提示条（409 Conflict 时显示"该任务正被其他用户编辑"）
+
+#### 质检审核流
+- 新增 ReviewPage（`/review`）：展示 status=review 的任务列表，支持通过/退回操作
+- Sidebar 新增"质检审核"导航入口
+- 新增 `useApproveTask` / `useRejectTask` hooks
+
+#### AI 接管率真实统计
+- 后端 `GET /projects/stats` 增强：基于 `parent_prediction_id IS NOT NULL` 计算真实 AI 接管率
+- `ProjectStats` schema 新增 `total_annotations` / `ai_derived_annotations` 字段
+- DashboardPage "AI 接管率" StatCard 自动使用真实数据
+- WorkbenchPage 右侧面板 AI 接管率基于当前任务实时计算
+
+#### 数据导出
+- 新增 `ExportService`：COCO JSON / Pascal VOC XML / YOLO TXT 三种格式
+- 归一化坐标 → 像素坐标自动转换（COCO bbox / VOC xmin-ymax / YOLO cx-cy-wh）
+- VOC/YOLO 导出为 ZIP 包，COCO 为单个 JSON 文件
+- DashboardPage 项目行新增导出下拉菜单
+
+### 变更
+- `tasksApi` 重构：移除旧版 `source` 字段（从 `AnnotationPayload`），新增 `parent_prediction_id` / `lead_time` 字段
+- `useTasks` hooks 全部接受 `undefined` 参数（条件查询安全）
+- `WorkbenchPage` 从 546 行 mock 驱动重写为 ~500 行 API 驱动
+- PageKey 新增 `"review"` 类型
+
+### 待实现
+- Grounded-SAM-2 ML Backend Demo 部署（端到端验证）
+- 交互式 SAM 前端（API 已就绪，v0.5 实现）
+- 审计日志 + Webhook 出口
+- 多源存储抽象（S3 / 阿里云 OSS）
+- 持续训练触发器
+
+---
+
 ## [0.3.0] - 2026-04-28
 
 ### 新增

@@ -40,6 +40,13 @@ class TaskLockResponse(BaseModel):
         from_attributes = True
 
 
+class TaskListResponse(BaseModel):
+    items: list[TaskOut]
+    total: int
+    limit: int
+    offset: int
+
+
 class UploadInitRequest(BaseModel):
     project_id: UUID
     file_name: str

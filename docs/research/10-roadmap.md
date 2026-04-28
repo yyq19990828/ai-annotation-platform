@@ -18,18 +18,19 @@
 - [x] PredictionMeta 完整 token cost 追踪
 - [x] Tasks API 从 stub 替换为真实实现（14 个端点）
 
-## v0.4（2 周）— 协同 + 质检 + 前端真实对接
+## v0.4（2026-04-28）— 协同 + 质检 + 前端真实对接 ✅ 已完成
 
-- [ ] WorkbenchPage 完整对接真实 API（替换 mock 数据）
+- [x] WorkbenchPage 完整对接真实 API（替换 mock 数据）
 - [ ] 部署 Grounded-SAM-2 ML Backend Demo 并端到端验证
-- [ ] Workbench 交互式 SAM（鼠标点/拖框 → 出 mask）
-- [ ] 任务锁前端集成（进入任务→获取锁→心跳续约→离开释放）
-- [ ] 审核流：annotator → reviewer 二级流转
-- [ ] AI 接管率统计仪表盘（基于 `parent_prediction_id`）
-- [ ] 数据导出 COCO/VOC/YOLO
+- [x] 任务锁前端集成（进入任务→获取锁→心跳续约→离开释放）
+- [x] 审核流：annotator → reviewer 二级流转 + ReviewPage
+- [x] AI 接管率统计仪表盘（基于 `parent_prediction_id`）
+- [x] 数据导出 COCO/VOC/YOLO
 
-## v0.5（3-4 周）— Agent + 质量保证
+## v0.5（3-4 周）— Agent + 质量保证 + 交互式 SAM
 
+- [ ] Workbench 交互式 SAM（鼠标点/拖框 → 出 mask）— API 已就绪
+- [ ] 部署 Grounded-SAM-2 ML Backend Demo
 - [ ] Adala 服务集成 + LabelStudioSkill 适配自己 schema
 - [ ] LLM Judge 模式（VLM 判别 AI 预标质量）
 - [ ] 多人交叉标注前端支持
