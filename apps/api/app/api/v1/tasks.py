@@ -261,8 +261,9 @@ async def release_lock(
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _task_with_url(task: Task) -> dict:
+    bucket = storage_service.datasets_bucket if task.dataset_item_id else storage_service.bucket
     try:
-        file_url = storage_service.generate_download_url(task.file_path)
+        file_url = storage_service.generate_download_url(task.file_path, bucket=bucket)
     except Exception:
         file_url = None
 
