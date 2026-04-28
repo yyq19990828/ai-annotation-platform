@@ -1,0 +1,79 @@
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.deps import get_db, get_current_user
+from app.db.models.user import User
+from app.db.models.task import Task
+from app.schemas.task import UploadInitRequest, UploadInitResponse, TaskFileUrlResponse
+from app.services.storage import storage_service
+
+router = APIRouter()
+
+
+@router.post("/upload-init", response_model=UploadInitResponse)
+async def upload_init(
+    data: UploadInitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task_id = uuid.uuid4()
+    storage_key = f"{data.project_id}/{task_id}/{data.file_name}"
+
+    task = Task(
+        id=task_id,
+        project_id=data.project_id,
+        display_id=f"T-{str(task_id)[:6].upper()}",
+        file_name=data.file_name,
+        file_path=storage_key,
+        file_type=_infer_file_type(data.content_type),
+        status="uploading",
+    )
+    db.add(task)
+    await db.commit()
+
+    upload_url = storage_service.generate_upload_url(storage_key, data.content_type)
+    return UploadInitResponse(task_id=task_id, upload_url=upload_url, expires_in=900)
+
+
+@router.post("/upload-complete/{task_id}")
+async def upload_complete(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != "uploading":
+        raise HTTPException(status_code=400, detail="Task is not in uploading state")
+
+    meta = storage_service.verify_upload(task.file_path)
+    if not meta:
+        raise HTTPException(status_code=400, detail="File not found in storage")
+
+    task.status = "pending"
+    await db.commit()
+    return {"status": "ok", "task_id": str(task_id)}
+
+
+@router.get("/tasks/{task_id}/file-url", response_model=TaskFileUrlResponse)
+async def get_file_url(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    url = storage_service.generate_download_url(task.file_path)
+    return TaskFileUrlResponse(url=url, expires_in=3600)
+
+
+def _infer_file_type(content_type: str) -> str:
+    if content_type.startswith("image/"):
+        return "image"
+    if content_type.startswith("video/"):
+        return "video"
+    return "other"

@@ -1,15 +1,17 @@
-from fastapi import APIRouter, Depends
+import uuid
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.deps import get_db, get_current_user, require_roles
+from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.schemas.project import ProjectOut, ProjectCreate, ProjectStats
-import uuid
 
 router = APIRouter()
 
-_MANAGERS = ("超级管理员", "项目管理员")
+_MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 
 
 @router.get("", response_model=list[ProjectOut])
@@ -69,6 +71,37 @@ async def get_project(
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if project is None:
-        from fastapi import HTTPException, status
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
+        raise HTTPException(status_code=404, detail="项目不存在")
     return project
+
+
+class PreannotateRequest(BaseModel):
+    ml_backend_id: uuid.UUID
+    task_ids: list[uuid.UUID] | None = None
+
+
+@router.post("/{project_id}/preannotate")
+async def trigger_preannotation(
+    project_id: uuid.UUID,
+    body: PreannotateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    from app.services.ml_backend import MLBackendService
+
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    svc = MLBackendService(db)
+    backend = await svc.get(body.ml_backend_id)
+    if not backend:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+
+    from app.workers.tasks import batch_predict
+    job = batch_predict.delay(
+        str(project_id),
+        str(body.ml_backend_id),
+        [str(tid) for tid in body.task_ids] if body.task_ids else None,
+    )
+    return {"job_id": job.id, "status": "queued"}

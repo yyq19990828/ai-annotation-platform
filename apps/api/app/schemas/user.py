@@ -7,7 +7,7 @@ class UserCreate(BaseModel):
     email: str
     name: str
     password: str
-    role: str = "标注员"
+    role: str = "annotator"
 
 
 class UserOut(BaseModel):

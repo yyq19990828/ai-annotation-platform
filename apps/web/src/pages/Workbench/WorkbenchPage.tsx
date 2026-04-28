@@ -6,6 +6,10 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAppStore } from "@/stores/appStore";
 import { taskImages } from "@/data/mock";
+// API hooks ready for integration (replace mock data when backend is running):
+// import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
+// import { useMLBackends, useInteractiveAnnotate } from "@/hooks/useMLBackends";
+// import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import type { Annotation } from "@/types";
 
 const CLASS_COLORS: Record<string, string> = {
@@ -133,8 +137,8 @@ function BoxListItem({ b, isAi, selected, onSelect, onAccept, onReject, onDelete
             <Icon name="sparkles" size={8} />{(b.conf * 100).toFixed(0)}%
           </Badge>
         ) : (
-          <Badge variant={b.source === "ai-accepted" ? "default" : "accent"} style={{ fontSize: 9.5, padding: "1px 5px", marginLeft: "auto" }}>
-            {b.source === "ai-accepted" ? "AI 采纳" : "手动"}
+          <Badge variant={b.source === "prediction_based" ? "default" : "accent"} style={{ fontSize: 9.5, padding: "1px 5px", marginLeft: "auto" }}>
+            {b.source === "prediction_based" ? "AI 采纳" : "手动"}
           </Badge>
         )}
       </div>
@@ -216,13 +220,13 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
     setAiBoxesByTask((b) => ({ ...b, [task.id]: (b[task.id] || []).filter((x) => x.id !== box.id) }));
     setBoxes((b) => ({
       ...b,
-      [task.id]: [...(b[task.id] || []), { ...box, id: "u-" + Date.now() + Math.random(), source: "ai-accepted" }],
+      [task.id]: [...(b[task.id] || []), { ...box, id: "u-" + Date.now() + Math.random(), source: "prediction_based" }],
     }));
     pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
   };
 
   const acceptAll = () => {
-    const accepted = aiBoxes.map((b) => ({ ...b, id: "u-" + Date.now() + Math.random() + b.id, source: "ai-accepted" as const }));
+    const accepted = aiBoxes.map((b) => ({ ...b, id: "u-" + Date.now() + Math.random() + b.id, source: "prediction_based" as const }));
     setBoxes((b) => ({ ...b, [task.id]: [...(b[task.id] || []), ...accepted] }));
     setAiBoxesByTask((b) => ({ ...b, [task.id]: (b[task.id] || []).filter((x) => x.conf < confThreshold) }));
     pushToast({ msg: `已批量采纳 ${accepted.length} 个 AI 标注`, kind: "success" });
@@ -234,7 +238,7 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
     setTimeout(() => {
       setAiBoxesByTask((b) => ({
         ...b,
-        [task.id]: task.aiBoxes.map((x) => ({ ...x, source: "ai" as const })),
+        [task.id]: task.aiBoxes.map((x) => ({ ...x, source: "prediction_based" as const })),
       }));
       setAiRunning(false);
       const avg = task.aiBoxes.reduce((s, b) => s + b.conf, 0) / Math.max(1, task.aiBoxes.length) * 100;
@@ -268,7 +272,7 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
         x: drawing.x, y: drawing.y, w: drawing.w, h: drawing.h,
         cls: activeClass,
         conf: 1,
-        source: "human",
+        source: "manual",
       };
       setBoxes((b) => ({ ...b, [task.id]: [...(b[task.id] || []), newBox] }));
       setSelectedId(newBox.id);

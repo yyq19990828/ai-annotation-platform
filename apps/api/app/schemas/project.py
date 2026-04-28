@@ -15,6 +15,7 @@ class ProjectCreate(BaseModel):
 
 class ProjectOut(BaseModel):
     id: UUID
+    organization_id: UUID | None = None
     display_id: str
     name: str
     type_label: str
@@ -23,6 +24,12 @@ class ProjectOut(BaseModel):
     ai_enabled: bool
     ai_model: str | None
     classes: list
+    label_config: dict = {}
+    sampling: str = "sequence"
+    maximum_annotations: int = 1
+    show_overlap_first: bool = False
+    model_version: str | None = None
+    task_lock_ttl_seconds: int = 300
     total_tasks: int
     completed_tasks: int
     review_tasks: int

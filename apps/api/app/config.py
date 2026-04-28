@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     minio_bucket: str = "annotations"
     minio_use_ssl: bool = False
 
+    ml_predict_timeout: int = 100
+    ml_health_timeout: int = 10
+    celery_broker_url: str = ""
+
+    @property
+    def effective_celery_broker(self) -> str:
+        return self.celery_broker_url or self.redis_url
+
     class Config:
         env_file = ".env"
 

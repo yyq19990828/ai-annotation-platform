@@ -13,7 +13,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(String(50), default="标注员")
+    role: Mapped[str] = mapped_column(String(50), default="annotator")
     group_name: Mapped[str | None] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(20), default="offline")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

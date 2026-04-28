@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends
 from app.deps import require_roles
 from app.db.models.user import User
+from app.db.enums import UserRole
 
 router = APIRouter()
 
-_MANAGERS = ("超级管理员", "项目管理员")
+_MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 
 
 @router.get("")

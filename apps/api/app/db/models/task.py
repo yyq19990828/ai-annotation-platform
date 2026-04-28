@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Integer, DateTime, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
+from sqlalchemy import String, Boolean, Integer, Float, DateTime, ForeignKey, func
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
@@ -18,5 +18,11 @@ class Task(Base):
     tags: Mapped[list] = mapped_column(JSONB, default=list)
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    is_labeled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    overlap: Mapped[int] = mapped_column(Integer, default=1)
+    total_annotations: Mapped[int] = mapped_column(Integer, default=0)
+    total_predictions: Mapped[int] = mapped_column(Integer, default=0)
+    precomputed_agreement: Mapped[float | None] = mapped_column(Float)
     sequence_order: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
