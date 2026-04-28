@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
-import { useAppStore } from "@/stores/appStore";
+import { useProject } from "@/hooks/useProjects";
 import { useTaskList, useAnnotations, useCreateAnnotation, useDeleteAnnotation, useSubmitTask } from "@/hooks/useTasks";
 import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
@@ -137,7 +138,7 @@ function BoxOverlay({ b, isAi, selected, onClick, onAccept, onReject, onDelete }
         {b.conf !== undefined && <span style={{ opacity: 0.85, fontFamily: "var(--font-mono)" }}>{(b.conf * 100).toFixed(0)}</span>}
       </div>
       {isAi && selected && (
-        <div style={{ position: "absolute", bottom: -28, right: 0, display: "flex", gap: 4, background: "white", borderRadius: 4, padding: 2, boxShadow: "var(--shadow-md)" }}>
+        <div onMouseDown={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: -28, right: 0, display: "flex", gap: 4, background: "white", borderRadius: 4, padding: 2, boxShadow: "var(--shadow-md)" }}>
           <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); onAccept?.(); }}>
             <Icon name="check" size={10} />采纳
           </Button>
@@ -147,7 +148,7 @@ function BoxOverlay({ b, isAi, selected, onClick, onAccept, onReject, onDelete }
         </div>
       )}
       {!isAi && selected && (
-        <div style={{ position: "absolute", bottom: -28, right: 0, display: "flex", gap: 4, background: "white", borderRadius: 4, padding: 2, boxShadow: "var(--shadow-md)" }}>
+        <div onMouseDown={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: -28, right: 0, display: "flex", gap: 4, background: "white", borderRadius: 4, padding: 2, boxShadow: "var(--shadow-md)" }}>
           <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onDelete?.(); }}>
             <Icon name="trash" size={10} />删除
           </Button>
@@ -203,8 +204,11 @@ function BoxListItem({ b, isAi, selected, onSelect, onAccept, onReject, onDelete
   );
 }
 
-export function WorkbenchPage({ onBack }: { onBack: () => void }) {
-  const currentProject = useAppStore((s) => s.currentProject);
+export function WorkbenchPage() {
+  const { id: routeId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const onBack = useCallback(() => navigate("/dashboard"), [navigate]);
+  const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const pushToast = useToastStore((s) => s.push);
 
   const projectId = currentProject?.id;
@@ -401,11 +405,19 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
     });
   };
 
+  if (isProjectLoading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--color-fg-muted)", fontSize: 14 }}>
+        加载项目中...
+      </div>
+    );
+  }
+
   if (!currentProject) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12, color: "var(--color-fg-muted)" }}>
-        <Icon name="layers" size={40} />
-        <div style={{ fontSize: 15 }}>请先从项目总览选择一个项目</div>
+        <Icon name="warning" size={40} />
+        <div style={{ fontSize: 15 }}>项目不存在或无访问权限</div>
         <Button onClick={onBack}><Icon name="chevLeft" size={12} />返回总览</Button>
       </div>
     );

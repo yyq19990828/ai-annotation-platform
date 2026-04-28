@@ -3,16 +3,16 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
+import { useNavigate } from "react-router-dom";
 import { useToastStore } from "@/components/ui/Toast";
 import { useReviewerStats } from "@/hooks/useDashboard";
 import { useApproveTask, useRejectTask } from "@/hooks/useTasks";
-import { useAppStore } from "@/stores/appStore";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReviewTaskItem } from "@/api/dashboard";
 
 export function ReviewerDashboard() {
   const { data: stats, isLoading } = useReviewerStats();
-  const setPage = useAppStore((s) => s.setPage);
+  const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
   const qc = useQueryClient();
   const approveMut = useApproveTask();
@@ -51,7 +51,7 @@ export function ReviewerDashboard() {
           <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>质检工作台</h1>
           <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>审核标注质量，确保数据准确性</p>
         </div>
-        <Button variant="primary" onClick={() => setPage("review")}>
+        <Button variant="primary" onClick={() => navigate("/review")}>
           <Icon name="check" size={13} />进入审核页面
         </Button>
       </div>

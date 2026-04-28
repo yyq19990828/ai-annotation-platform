@@ -1,13 +1,29 @@
+import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useAppStore } from "@/stores/appStore";
 import { ROLE_LABELS } from "@/constants/roles";
+import type { PageKey } from "@/types";
+
+const PAGE_PATH: Record<PageKey, string> = {
+  dashboard: "/dashboard",
+  annotate: "/dashboard",
+  review: "/review",
+  users: "/users",
+  datasets: "/datasets",
+  storage: "/storage",
+  "ai-pre": "/ai-pre",
+  "model-market": "/model-market",
+  training: "/training",
+  audit: "/audit",
+  settings: "/settings",
+};
 
 export function UnauthorizedPage() {
   const { role, allowedPages } = usePermissions();
-  const setPage = useAppStore((s) => s.setPage);
+  const navigate = useNavigate();
+  const fallback = PAGE_PATH[allowedPages[0] ?? "dashboard"] ?? "/dashboard";
 
   return (
     <div style={{ padding: "80px 28px", textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
@@ -28,7 +44,7 @@ export function UnauthorizedPage() {
         您当前的角色 <Badge variant="outline">{ROLE_LABELS[role]}</Badge> 没有访问此功能的权限。
         如需获取权限，请联系项目管理员。
       </p>
-      <Button variant="primary" onClick={() => setPage(allowedPages[0] ?? "dashboard")}>
+      <Button variant="primary" onClick={() => navigate(fallback)}>
         <Icon name="chevLeft" size={12} />返回首页
       </Button>
     </div>

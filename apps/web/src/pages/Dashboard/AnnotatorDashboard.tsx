@@ -4,11 +4,13 @@ import { Card } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { useAnnotatorStats } from "@/hooks/useDashboard";
-import { useAppStore } from "@/stores/appStore";
+import { useToastStore } from "@/components/ui/Toast";
 
 export function AnnotatorDashboard() {
   const { data: stats, isLoading } = useAnnotatorStats();
-  const setPage = useAppStore((s) => s.setPage);
+  const pushToast = useToastStore((s) => s.push);
+  const startAnnotating = () =>
+    pushToast({ msg: "请从分配给你的项目中选择一个开始", sub: "项目列表面板将在后续版本上线" });
 
   if (isLoading || !stats) {
     return (
@@ -28,7 +30,7 @@ export function AnnotatorDashboard() {
           <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>我的工作台</h1>
           <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>查看任务进度，高效完成标注工作</p>
         </div>
-        <Button variant="primary" onClick={() => setPage("annotate")}>
+        <Button variant="primary" onClick={startAnnotating}>
           <Icon name="target" size={13} />开始标注
         </Button>
       </div>
@@ -83,7 +85,7 @@ export function AnnotatorDashboard() {
               {stats.weekly_completed} / {weeklyTarget} 个标注
             </div>
             <div style={{ marginTop: 16 }}>
-              <Button onClick={() => setPage("annotate")}>
+              <Button onClick={startAnnotating}>
                 <Icon name="target" size={12} />继续标注
               </Button>
             </div>

@@ -6,6 +6,79 @@
 
 ---
 
+## 待实现 (Roadmap)
+
+> 仅记录代码中明确观察到的未兑现 / 占位项，按模块归类。已实现的功能见下方各版本条目。
+
+### 项目模块
+- **项目编辑 / 设置页**：后端 `apps/api/app/api/v1/projects.py` 缺 `PATCH /projects/:id` 与 `DELETE /projects/:id`；前端 `api/projects.ts` 无 `update`；无 `/projects/:id/settings` 页面。新建项目向导步骤 2 文案「后续可在项目设置中调整」目前无兑现路径。
+- **非 image-det 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / video-track / mm 共 6 类点击「打开」仅显示 toast `类型 X 的标注界面尚未实现`（`DashboardPage.tsx:139`、`ViewerDashboard.tsx:31`）。
+
+### 数据 & 存储
+- **数据集导入面板**：Dashboard 顶部「导入数据集」按钮（`DashboardPage.tsx:170`）与 DatasetsPage 上传按钮（`DatasetsPage.tsx:141`）均为 toast 占位，未实现 OSS / 本地 / 数据库三种声明的来源。
+- **存储文件大小统计**：`StoragePage.tsx:163` 明示「文件大小统计将在后续版本中支持」。
+
+### AI / 模型
+- **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态。
+- **模型市场**：路由 `/model-market` 占位；项目级 ML Backend 真实选择 / 挂接 UI 缺失（向导步骤 3 仅录入模型名称字符串）。
+- **训练队列**：路由 `/training` 占位。
+
+### 平台 / 治理
+- **审计日志**：路由 `/audit` 占位；Dashboard「近期活动」卡片注明「审计日志功能将在后续版本上线」（`DashboardPage.tsx:260`）。
+- **设置页**：路由 `/settings` 占位。
+- **用户邀请**：UsersPage「邀请」按钮（`UsersPage.tsx:65`）的 toast `邀请链接已复制` 为虚假提示，无真实邀请链接生成。
+- **个人任务面板**：AnnotatorDashboard「开始标注」按钮（`AnnotatorDashboard.tsx:13`）目前 toast 提示「项目列表面板将在后续版本上线」。
+
+### TopBar / Dashboard 控件
+- **全局搜索**：TopBar 的 `<SearchInput placeholder="搜索项目、任务、数据集、成员..." kbd="⌘K">` 无 `value` / `onChange` / 提交 handler。
+- **通知 / 刷新按钮**：TopBar 两个 icon button 无 onClick。
+- **工作区切换**：TopBar `onWorkspaceChange` 仅 toast「切换工作区面板已展开」。
+- **Dashboard 高级筛选 / 网格视图**：`DashboardPage.tsx:198-199` 两个 Button 无 onClick。
+
+### 一致性 / 体验
+- **Modal 内的非自定义 confirm/alert 替换**：当前若有删除类破坏性操作仍可能用浏览器原生 confirm（待审视各页面），需改为 Modal 二次确认。
+- **路由守卫粒度**：`RequirePagePermission` 当前按页判定；项目级权限（如「仅自己项目」）仍依赖后端校验，前端尚未在 `/projects/:id/annotate` 做同等检查。
+
+---
+
+## [0.4.4] - 2026-04-28
+
+### 新增
+
+#### 真实路由（URL 即状态）
+- `react-router-dom` v6.28 启用：`main.tsx` 包 `<BrowserRouter>`，`App.tsx` 重写为 `<Routes>` + `AppShell`（`<Outlet />`）
+- 路由表：`/login`、`/dashboard`、`/projects/:id/annotate`、`/review`、`/users`、`/datasets`、`/storage`、`/ai-pre`、`/model-market`、`/training`、`/audit`、`/settings`、`/unauthorized`，未匹配路径回落 `/dashboard`
+- 新增 `components/routing/RequireAuth.tsx`：未登录跳 `/login` 并通过 `state.from` 承接登录后回跳
+- 新增 `components/routing/RequirePagePermission.tsx`：基于 `usePermissions().canAccessPage()` 守卫，无权限重定向 `/unauthorized`
+- `Sidebar.tsx` 改用 `<NavLink>`，激活态由 URL 驱动；导航不再依赖 Zustand 内存态
+- `LoginPage.tsx` 已登录则 `<Navigate>` 回 `from` 或 `/dashboard`，避免重复登录
+- 标注工作台改为按 URL 加载：`WorkbenchPage` 通过 `useParams<{ id }>()` 读取项目 ID，`useProject(id)` 拉取数据；刷新 `/projects/<id>/annotate` 不再掉回 dashboard
+
+#### 新建项目向导
+- 新增 `components/ui/Modal.tsx`：通用对话框（`createPortal` + ESC + 点击遮罩 + body 锁滚），无第三方依赖
+- 新增 `components/projects/CreateProjectWizard.tsx`：三步向导
+  - 步骤 1 类型：项目名称（2-60）+ 数据类型卡片（7 种，与 `TYPE_ICONS` 对齐）+ 截止日期
+  - 步骤 2 类别：标注类别 chip（回车快速添加，× 删除，去重，单条 ≤30）
+  - 步骤 3 AI 接入：开关 + 预设模型下拉（`YOLOv8` / `GroundingDINO+SAM` / `SAM-HQ` / `GPT-4V` / `Qwen2-VL` / `PointPillars`）+「自定义」自由输入
+  - 成功页：显示 `display_id`，CTA「关联数据集」跳 `/datasets`、「打开项目」（仅 image-det）跳工作台
+- 新增 `constants/projectTypes.ts`：`PROJECT_TYPES` + `PRESET_AI_MODELS` + `CUSTOM_MODEL_KEY`
+- `DashboardPage.tsx`「新建项目」按钮接通向导：`useSearchParams` 控制 `?new=1`，模态状态写进 URL（刷新可保持），仍由 `<Can permission="project.create">` 守卫
+- 创建成功后通过 `useCreateProject` 的 `invalidateQueries` 自动刷新项目列表与统计卡
+
+### 变更
+
+#### 移除 Zustand 页面状态
+- `stores/appStore.ts` 删除 `page` / `setPage` / `currentProject` / `setCurrentProject`，仅保留 `workspace`
+- 全部页面切换改用 `useNavigate()`：`AnnotatorDashboard` / `ReviewerDashboard` / `ViewerDashboard` / `UnauthorizedPage` / `DashboardPage`
+- `DashboardPage` / `ViewerDashboard` 不再接收 `onOpenProject` prop，内联 `useNavigate` 决定跳转目标
+- Sidebar 移除「标注工作台」顶层入口（无项目上下文不可用），改由 dashboard 列表行点击进入
+
+### 修复
+- 解决浏览器刷新一律回到 dashboard 的问题：URL 即真实导航状态
+- 浏览器前进/后退按钮恢复正常工作
+
+---
+
 ## [0.4.3] - 2026-04-28
 
 ### 新增
@@ -91,13 +164,6 @@
 | `anno@test.com` | 标注员 |
 | `viewer@test.com` | 观察者 |
 
-### 待实现
-- 自定义角色创建（UsersPage 角色管理 Tab 的"新建角色"按钮）
-- 用户邀请流程（当前 `/invite` 仍为 stub）
-- 审计日志页面（审计日志 Tab 占位 → 真实数据）
-- 项目级权限（当前为全局角色，不支持"仅限某项目的管理员"）
-- 组织/工作区切换（多租户）
-
 ---
 
 ## [0.4.1] - 2026-04-28
@@ -165,14 +231,6 @@
 - 文件存储路径格式新增 `datasets/{dataset_id}/{item_id}/{filename}`（原有 `{project_id}/{task_id}/{filename}` 路径保持兼容）
 - `App.tsx` 中 datasets 和 storage 页面从占位替换为实际组件
 
-### 待实现
-- 拖拽批量上传 UI
-- 文件预览/缩略图
-- 数据集版本管理
-- 多存储后端管理（OSS / S3）
-- 文件去重检测
-- 跨数据集搜索
-
 ---
 
 ## [0.4.0] - 2026-04-28
@@ -224,13 +282,6 @@
 - `useTasks` hooks 全部接受 `undefined` 参数（条件查询安全）
 - `WorkbenchPage` 从 546 行 mock 驱动重写为 ~500 行 API 驱动
 - PageKey 新增 `"review"` 类型
-
-### 待实现
-- Grounded-SAM-2 ML Backend Demo 部署（端到端验证）
-- 交互式 SAM 前端（API 已就绪，v0.5 实现）
-- 审计日志 + Webhook 出口
-- 多源存储抽象（S3 / 阿里云 OSS）
-- 持续训练触发器
 
 ---
 
@@ -306,13 +357,6 @@
 - 项目状态字段从中文改为英文枚举
 - 数据库从 4 张表扩展到 12 张表
 
-### 待实现
-- WorkbenchPage 完整对接真实 API（当前 hooks 已就绪，mock 数据仍保留作为降级）
-- 审计日志 + Webhook 出口
-- 数据导出（COCO / VOC / YOLO）
-- 持续训练触发器
-- 多源存储抽象（S3 / 阿里云 OSS）
-
 ---
 
 ## [0.2.0] - 2026-04-27
@@ -363,14 +407,6 @@
 - `tsconfig.json` `ignoreDeprecations` 值改为 `"5.0"` 以兼容 TypeScript 5.6
 - `UsersPage.tsx` 移除未使用的 `ProgressBar` import，消除编译警告
 - `appStore` `currentProject` 类型从 mock `Project` 改为 `ProjectResponse | null`
-
-### 待实现
-- Celery + Redis 异步任务队列（AI 推理）
-- 文件上传 Presigned URL 直传流程
-- WebSocket 实时协同标注 + AI 任务进度推送
-- 审计日志、数据导出（COCO / VOC / YOLO）
-- 全局搜索 Command Palette
-- 通知系统
 
 ---
 
@@ -440,14 +476,3 @@
 - Nginx 反向代理配置 (SPA fallback + /api/ 代理 + /ws/ WebSocket)
 - 环境变量模板 (.env.example)
 - 开发环境初始化脚本 (scripts/setup.sh)
-
-### 待实现 (留白)
-- JWT 认证与 RBAC 权限校验
-- Alembic 数据库迁移
-- 前后端 API 联调 (当前前端使用 mock 数据)
-- Celery + Redis 异步任务队列 (AI 推理)
-- 文件上传 Presigned URL 直传流程
-- WebSocket 实时协同标注 + AI 任务进度推送
-- 审计日志、数据导出 (COCO/VOC/YOLO)
-- 全局搜索 Command Palette
-- 通知系统

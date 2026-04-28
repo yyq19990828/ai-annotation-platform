@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -6,6 +7,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { useToastStore } from "@/components/ui/Toast";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import type { ProjectResponse } from "@/api/projects";
 
@@ -17,9 +19,18 @@ const FILTER_STATUS_MAP: Record<string, string | undefined> = {
   "已完成": "completed",
 };
 
-export function ViewerDashboard({ onOpenProject }: { onOpenProject: (p: ProjectResponse) => void }) {
+export function ViewerDashboard() {
   const [filter, setFilter] = useState<string>("全部");
   const [query, setQuery] = useState("");
+  const navigate = useNavigate();
+  const pushToast = useToastStore((s) => s.push);
+  const onOpenProject = (p: ProjectResponse) => {
+    if (p.type_key === "image-det") {
+      navigate(`/projects/${p.id}/annotate`);
+    } else {
+      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type_label} 的标注界面尚未实现` });
+    }
+  };
 
   const { data: projects = [], isLoading } = useProjects({
     status: FILTER_STATUS_MAP[filter],

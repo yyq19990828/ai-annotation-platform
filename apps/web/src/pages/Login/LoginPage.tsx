@@ -1,12 +1,19 @@
 import { useState } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { useLogin } from "@/hooks/useAuth";
+import { useAuthStore } from "@/stores/authStore";
 import { Icon } from "@/components/ui/Icon";
 
 export function LoginPage() {
+  const token = useAuthStore((s) => s.token);
+  const location = useLocation();
+  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const login = useLogin();
+
+  if (token) return <Navigate to={from} replace />;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

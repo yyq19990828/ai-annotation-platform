@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -12,6 +13,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { Can } from "@/components/guards/Can";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import { projectsApi, type ExportFormat, type ProjectResponse } from "@/api/projects";
+import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
 
 const TYPE_ICONS: Record<string, string> = {
   "image-det": "rect",
@@ -122,10 +124,32 @@ const FILTER_STATUS_MAP: Record<string, string | undefined> = {
   "已完成": "completed",
 };
 
-export function DashboardPage({ onOpenProject }: { onOpenProject: (p: ProjectResponse) => void }) {
+export function DashboardPage() {
   const [filter, setFilter] = useState<string>("全部");
   const [query, setQuery] = useState("");
   const pushToast = useToastStore((s) => s.push);
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const wizardOpen = searchParams.get("new") === "1";
+
+  const onOpenProject = (p: ProjectResponse) => {
+    if (p.type_key === "image-det") {
+      navigate(`/projects/${p.id}/annotate`);
+    } else {
+      pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type_label} 的标注界面尚未实现` });
+    }
+  };
+
+  const openWizard = () => {
+    const next = new URLSearchParams(searchParams);
+    next.set("new", "1");
+    setSearchParams(next);
+  };
+  const closeWizard = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("new");
+    setSearchParams(next, { replace: true });
+  };
 
   const { data: projects = [], isLoading } = useProjects({
     status: FILTER_STATUS_MAP[filter],
@@ -148,9 +172,10 @@ export function DashboardPage({ onOpenProject }: { onOpenProject: (p: ProjectRes
             </Button>
           </Can>
           <Can permission="project.create">
-            <Button variant="primary" onClick={() => pushToast({ msg: "新建项目向导", sub: "选择数据类型 → 配置类别 → 接入模型" })}>
+            <Button variant="primary" onClick={openWizard}>
               <Icon name="plus" size={13} />新建项目
             </Button>
+            <CreateProjectWizard open={wizardOpen} onClose={closeWizard} />
           </Can>
         </div>
       </div>
