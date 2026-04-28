@@ -6,6 +6,8 @@ import { WorkbenchPage } from "@/pages/Workbench/WorkbenchPage";
 import { UsersPage } from "@/pages/Users/UsersPage";
 import { ReviewPage } from "@/pages/Review/ReviewPage";
 import { LoginPage } from "@/pages/Login/LoginPage";
+import { DatasetsPage } from "@/pages/Datasets/DatasetsPage";
+import { StoragePage } from "@/pages/Storage/StoragePage";
 import { useAppStore } from "@/stores/appStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { ProjectResponse } from "@/api/projects";
@@ -43,13 +45,13 @@ export function App() {
         {page === "annotate" && <WorkbenchPage onBack={() => setPage("dashboard")} />}
         {page === "users" && <UsersPage />}
         {page === "review" && <ReviewPage />}
-        {page !== "dashboard" && page !== "annotate" && page !== "users" && page !== "review" && (
+        {page === "datasets" && <DatasetsPage />}
+        {page === "storage" && <StoragePage />}
+        {page !== "dashboard" && page !== "annotate" && page !== "users" && page !== "review" && page !== "datasets" && page !== "storage" && (
           <div style={{ padding: "60px 28px", textAlign: "center", color: "var(--color-fg-subtle)" }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🚧</div>
             <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--color-fg)", margin: "0 0 8px" }}>
-              {page === "datasets" ? "数据集" :
-               page === "storage" ? "存储管理" :
-               page === "ai-pre" ? "AI 预标注" :
+              {page === "ai-pre" ? "AI 预标注" :
                page === "model-market" ? "模型市场" :
                page === "training" ? "训练队列" :
                page === "audit" ? "审计日志" :

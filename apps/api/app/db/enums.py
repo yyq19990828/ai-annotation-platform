@@ -46,3 +46,11 @@ class OrgMemberRole(str, Enum):
     OWNER = "owner"
     ADMIN = "admin"
     MEMBER = "member"
+
+
+class DatasetDataType(str, Enum):
+    IMAGE = "image"
+    VIDEO = "video"
+    POINT_CLOUD = "point_cloud"
+    MULTIMODAL = "multimodal"
+    OTHER = "other"

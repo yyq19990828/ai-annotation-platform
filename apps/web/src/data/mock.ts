@@ -18,7 +18,7 @@ export const projects: Project[] = [
     aiModel: "GroundingDINO + SAM",
     classes: ["商品", "价签", "标识牌", "缺货位", "促销贴"],
     updated: "12 分钟前",
-    status: "进行中",
+    status: "in_progress",
     due: "2026-05-12",
   },
   {
@@ -38,7 +38,7 @@ export const projects: Project[] = [
     aiModel: "SAM-HQ (私有化)",
     classes: ["气孔", "裂纹", "未熔合", "夹渣"],
     updated: "2 小时前",
-    status: "已完成",
+    status: "completed",
     due: "2026-04-20",
   },
   {
@@ -58,7 +58,7 @@ export const projects: Project[] = [
     aiModel: "PointPillars + 人工",
     classes: ["车辆", "行人", "骑行者", "障碍物"],
     updated: "刚刚",
-    status: "进行中",
+    status: "in_progress",
     due: "2026-06-30",
   },
   {
@@ -78,7 +78,7 @@ export const projects: Project[] = [
     aiModel: "GPT-4V (API)",
     classes: ["违规", "广告", "剧透", "敏感词", "正常"],
     updated: "今天 09:32",
-    status: "进行中",
+    status: "in_progress",
     due: "2026-05-05",
   },
   {
@@ -98,7 +98,7 @@ export const projects: Project[] = [
     aiModel: null,
     classes: ["结节中心", "钙化点", "边缘"],
     updated: "昨天",
-    status: "待审核",
+    status: "pending_review",
     due: "2026-05-28",
   },
   {
@@ -118,7 +118,7 @@ export const projects: Project[] = [
     aiModel: "Qwen2-VL",
     classes: [],
     updated: "3 天前",
-    status: "已完成",
+    status: "completed",
     due: "2026-04-10",
   },
   {
@@ -138,7 +138,7 @@ export const projects: Project[] = [
     aiModel: null,
     classes: ["小型车", "卡车", "公交", "工程车"],
     updated: "4 小时前",
-    status: "进行中",
+    status: "in_progress",
     due: "2026-07-15",
   },
 ];
@@ -226,25 +226,24 @@ export const taskImages: TaskImage[] = [
 ];
 
 export const users: User[] = [
-  { id: "u-01", name: "张明轩", email: "zhang.mx@company.cn", role: "项目管理员", group: "标注组A", status: "在线", tasks: 0, accuracy: 0.985, joined: "2024-09-12", initial: "张" },
-  { id: "u-02", name: "李静雯", email: "li.jw@company.cn", role: "审核员", group: "质检组", status: "在线", tasks: 142, accuracy: 0.992, joined: "2024-11-03", initial: "李" },
-  { id: "u-03", name: "王浩然", email: "wang.hr@company.cn", role: "算法工程师", group: "算法部", status: "在线", tasks: 0, accuracy: null, joined: "2024-06-22", initial: "王" },
-  { id: "u-04", name: "陈思琪", email: "chen.sq@company.cn", role: "标注员", group: "标注组A", status: "在线", tasks: 380, accuracy: 0.946, joined: "2025-01-15", initial: "陈" },
-  { id: "u-05", name: "赵子谦", email: "zhao.zq@company.cn", role: "标注员", group: "标注组B", status: "离线", tasks: 412, accuracy: 0.961, joined: "2025-02-08", initial: "赵" },
-  { id: "u-06", name: "周可昕", email: "zhou.kx@company.cn", role: "标注员", group: "标注组B", status: "在线", tasks: 298, accuracy: 0.972, joined: "2025-03-01", initial: "周" },
-  { id: "u-07", name: "刘启航", email: "liu.qh@company.cn", role: "数据工程师", group: "数据组", status: "在线", tasks: 0, accuracy: null, joined: "2024-08-19", initial: "刘" },
-  { id: "u-08", name: "吴晓萌", email: "wu.xm@company.cn", role: "标注员", group: "标注组A", status: "忙碌", tasks: 256, accuracy: 0.938, joined: "2025-04-12", initial: "吴" },
-  { id: "u-09", name: "孙佳怡", email: "sun.jy@company.cn", role: "审核员", group: "质检组", status: "在线", tasks: 88, accuracy: 0.989, joined: "2024-12-05", initial: "孙" },
-  { id: "u-10", name: "郑文博", email: "zheng.wb@company.cn", role: "系统管理员", group: "运维部", status: "在线", tasks: 0, accuracy: null, joined: "2024-05-04", initial: "郑" },
-  { id: "u-11", name: "马心怡", email: "ma.xy@company.cn", role: "标注员", group: "标注组C", status: "在线", tasks: 178, accuracy: 0.954, joined: "2025-05-18", initial: "马" },
-  { id: "u-12", name: "黄昕妍", email: "huang.xy@company.cn", role: "标注员", group: "标注组C", status: "离线", tasks: 64, accuracy: 0.921, joined: "2025-06-02", initial: "黄" },
+  { id: "u-01", name: "张明轩", email: "zhang.mx@company.cn", role: "project_admin", group: "标注组A", status: "online", tasks: 0, accuracy: 0.985, joined: "2024-09-12", initial: "张" },
+  { id: "u-02", name: "李静雯", email: "li.jw@company.cn", role: "reviewer", group: "质检组", status: "online", tasks: 142, accuracy: 0.992, joined: "2024-11-03", initial: "李" },
+  { id: "u-03", name: "王浩然", email: "wang.hr@company.cn", role: "viewer", group: "算法部", status: "online", tasks: 0, accuracy: null, joined: "2024-06-22", initial: "王" },
+  { id: "u-04", name: "陈思琪", email: "chen.sq@company.cn", role: "annotator", group: "标注组A", status: "online", tasks: 380, accuracy: 0.946, joined: "2025-01-15", initial: "陈" },
+  { id: "u-05", name: "赵子谦", email: "zhao.zq@company.cn", role: "annotator", group: "标注组B", status: "offline", tasks: 412, accuracy: 0.961, joined: "2025-02-08", initial: "赵" },
+  { id: "u-06", name: "周可昕", email: "zhou.kx@company.cn", role: "annotator", group: "标注组B", status: "online", tasks: 298, accuracy: 0.972, joined: "2025-03-01", initial: "周" },
+  { id: "u-07", name: "刘启航", email: "liu.qh@company.cn", role: "viewer", group: "数据组", status: "online", tasks: 0, accuracy: null, joined: "2024-08-19", initial: "刘" },
+  { id: "u-08", name: "吴晓萌", email: "wu.xm@company.cn", role: "annotator", group: "标注组A", status: "busy", tasks: 256, accuracy: 0.938, joined: "2025-04-12", initial: "吴" },
+  { id: "u-09", name: "孙佳怡", email: "sun.jy@company.cn", role: "reviewer", group: "质检组", status: "online", tasks: 88, accuracy: 0.989, joined: "2024-12-05", initial: "孙" },
+  { id: "u-10", name: "郑文博", email: "zheng.wb@company.cn", role: "super_admin", group: "运维部", status: "online", tasks: 0, accuracy: null, joined: "2024-05-04", initial: "郑" },
+  { id: "u-11", name: "马心怡", email: "ma.xy@company.cn", role: "annotator", group: "标注组C", status: "online", tasks: 178, accuracy: 0.954, joined: "2025-05-18", initial: "马" },
+  { id: "u-12", name: "黄昕妍", email: "huang.xy@company.cn", role: "annotator", group: "标注组C", status: "offline", tasks: 64, accuracy: 0.921, joined: "2025-06-02", initial: "黄" },
 ];
 
 export const roles: Role[] = [
-  { key: "标注员", desc: "执行标注任务,提交质检", count: 6, perms: ["查看任务", "提交标注", "评论"] },
-  { key: "审核员", desc: "质检复核,判定通过/驳回", count: 2, perms: ["查看任务", "提交标注", "审核驳回", "导出样本"] },
-  { key: "项目管理员", desc: "创建项目、分配任务、查看报表", count: 1, perms: ["创建项目", "分配任务", "查看报表", "管理成员"] },
-  { key: "算法工程师", desc: "配置 AI 模型与预标注流水线", count: 1, perms: ["接入模型", "配置预标注", "查看 GPU 队列", "查看埋点"] },
-  { key: "数据工程师", desc: "数据集导入、导出、对接外部存储", count: 1, perms: ["导入数据", "导出数据", "对接 OSS/S3", "查看存储"] },
-  { key: "系统管理员", desc: "全局权限、密钥、审计日志", count: 1, perms: ["所有权限"] },
+  { key: "annotator", desc: "执行标注任务,提交质检", count: 6, perms: ["查看任务", "提交标注", "评论"] },
+  { key: "reviewer", desc: "质检复核,判定通过/驳回", count: 2, perms: ["查看任务", "提交标注", "审核驳回", "导出样本"] },
+  { key: "project_admin", desc: "创建项目、分配任务、查看报表", count: 1, perms: ["创建项目", "分配任务", "查看报表", "管理成员"] },
+  { key: "viewer", desc: "浏览项目数据与标注结果", count: 2, perms: ["查看任务", "查看报表", "查看存储"] },
+  { key: "super_admin", desc: "全局权限、密钥、审计日志", count: 1, perms: ["所有权限"] },
 ];

@@ -75,9 +75,9 @@ function ProjectRow({ p, onOpen }: { p: ProjectResponse; onOpen: (p: ProjectResp
         )}
       </td>
       <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        {p.status === "进行中" && <Badge variant="accent" dot>进行中</Badge>}
-        {p.status === "已完成" && <Badge variant="success" dot>已完成</Badge>}
-        {p.status === "待审核" && <Badge variant="warning" dot>待审核</Badge>}
+        {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
+        {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
+        {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
       </td>
       <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
         <div style={{ fontSize: 12 }}>{due}</div>
@@ -114,6 +114,12 @@ function ProjectRow({ p, onOpen }: { p: ProjectResponse; onOpen: (p: ProjectResp
 }
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
+const FILTER_STATUS_MAP: Record<string, string | undefined> = {
+  "全部": undefined,
+  "进行中": "in_progress",
+  "待审核": "pending_review",
+  "已完成": "completed",
+};
 
 export function DashboardPage({ onOpenProject }: { onOpenProject: (p: ProjectResponse) => void }) {
   const [filter, setFilter] = useState<string>("全部");
@@ -121,7 +127,7 @@ export function DashboardPage({ onOpenProject }: { onOpenProject: (p: ProjectRes
   const pushToast = useToastStore((s) => s.push);
 
   const { data: projects = [], isLoading } = useProjects({
-    status: filter !== "全部" ? filter : undefined,
+    status: FILTER_STATUS_MAP[filter],
     search: query || undefined,
   });
 

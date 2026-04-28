@@ -10,17 +10,16 @@ import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUsers } from "@/hooks/useUsers";
 import { roles } from "@/data/mock";
+import { ROLE_LABELS } from "@/constants/roles";
 import type { UserResponse } from "@/api/users";
+import type { UserRole } from "@/types";
 
 const ROLE_COLORS: Record<string, "accent" | "ai" | "warning" | "success" | "outline" | "danger"> = {
-  项目管理员: "accent",
-  审核员: "ai",
-  算法工程师: "warning",
-  数据工程师: "success",
-  标注员: "outline",
-  系统管理员: "danger",
-  超级管理员: "danger",
-  质检员: "ai",
+  super_admin: "danger",
+  project_admin: "accent",
+  reviewer: "ai",
+  annotator: "outline",
+  viewer: "success",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -30,9 +29,9 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, "success" | "warning" | "outline"> = {
-  在线: "success",
-  忙碌: "warning",
-  离线: "outline",
+  "在线": "success",
+  "忙碌": "warning",
+  "离线": "outline",
 };
 
 function formatDate(iso: string) {
@@ -95,7 +94,7 @@ export function UsersPage() {
                 style={{ padding: "5px 8px", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", fontSize: 12.5, background: "var(--color-bg-elev)" }}
               >
                 <option>全部</option>
-                {roles.map((r) => <option key={r.key}>{r.key}</option>)}
+                {roles.map((r) => <option key={r.key} value={r.key}>{ROLE_LABELS[r.key as UserRole] ?? r.key}</option>)}
               </select>
               <SearchInput placeholder="搜索姓名或邮箱..." value={query} onChange={setQuery} width={240} />
             </div>
@@ -139,7 +138,7 @@ export function UsersPage() {
                       </div>
                     </td>
                     <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-                      <Badge variant={ROLE_COLORS[u.role] || "outline"}>{u.role}</Badge>
+                      <Badge variant={ROLE_COLORS[u.role] || "outline"}>{ROLE_LABELS[u.role as UserRole] ?? u.role}</Badge>
                     </td>
                     <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle", fontSize: 12.5 }}>
                       {u.group_name ?? "—"}
@@ -173,7 +172,7 @@ export function UsersPage() {
               <div key={r.key} style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-lg)", padding: 14, background: "var(--color-bg-elev)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Badge variant={ROLE_COLORS[r.key] || "outline"} style={{ fontSize: 12, padding: "3px 10px" }}>{r.key}</Badge>
+                    <Badge variant={ROLE_COLORS[r.key] || "outline"} style={{ fontSize: 12, padding: "3px 10px" }}>{ROLE_LABELS[r.key as UserRole] ?? r.key}</Badge>
                     <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
                       {allUsers.filter((u: UserResponse) => u.role === r.key).length} 人
                     </span>

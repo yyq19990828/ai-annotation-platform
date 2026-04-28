@@ -6,6 +6,81 @@
 
 ---
 
+## [0.4.1] - 2026-04-28
+
+### 新增
+
+#### 数据集与项目解耦（核心架构升级）
+- 新增 `datasets` 表，数据集作为独立实体，与项目多对多关联
+- 新增 `dataset_items` 表，文件元数据独立存储（file_name、file_path、file_type、file_size、metadata JSONB）
+- 新增 `project_datasets` 关联表，支持一个数据集被多个项目复用、一个项目关联多个数据集
+- `tasks` 表新增 `dataset_item_id` 外键，Task 通过 DatasetItem 引用文件，与标注工作逻辑分离
+- 保留 Task 上的 `file_name`/`file_path` 冗余字段，向后兼容现有标注流程
+- Alembic 迁移 `0003_datasets`：建表 + 自动将现有项目数据迁移为独立数据集（每个 Project 生成同名 Dataset + DatasetItems + ProjectDataset 关联）
+
+#### 数据集 CRUD API（12 个端点）
+- `GET /api/v1/datasets` — 数据集列表（分页 + 搜索 + 数据类型过滤）
+- `POST /api/v1/datasets` — 创建数据集（需 project_admin 以上角色）
+- `GET /api/v1/datasets/{id}` — 数据集详情（含关联项目计数）
+- `PUT /api/v1/datasets/{id}` — 更新数据集名称/描述
+- `DELETE /api/v1/datasets/{id}` — 删除数据集（CASCADE 删除关联文件）
+- `GET /api/v1/datasets/{id}/items` — 数据集文件列表（分页，含 presigned URL）
+- `POST /api/v1/datasets/{id}/items/upload-init` — 文件上传初始化（presigned PUT URL）
+- `POST /api/v1/datasets/{id}/items/upload-complete/{item_id}` — 上传完成确认（自动获取文件大小）
+- `DELETE /api/v1/datasets/{id}/items/{item_id}` — 删除文件
+- `POST /api/v1/datasets/{id}/link` — 关联数据集到项目（自动为每个文件创建 Task，更新 project.total_tasks）
+- `DELETE /api/v1/datasets/{id}/link/{project_id}` — 取消关联
+- `GET /api/v1/datasets/{id}/projects` — 查看关联的项目列表
+
+#### 存储健康检查端点
+- `GET /api/v1/storage/health` — MinIO 连接状态检查，返回 `{ status, bucket }`
+
+#### 后端服务层
+- 新增 `DatasetService`：数据集 CRUD + 文件管理 + 项目关联（含自动 Task 生成逻辑）
+- 新增 `DatasetDataType` 枚举：image / video / point_cloud / multimodal / other
+
+#### 数据集管理页面（DatasetsPage）
+- 页头统计行：数据集总数、文件总量、已关联项目数、存储后端
+- 主表格：数据集列表，支持按数据类型（图像/视频/3D/多模态）筛选和关键词搜索
+- 内联详情面板：点击数据集行展开，显示文件列表（分页）+ 关联项目列表
+- 文件列表：文件名、类型 Badge、大小、上传时间
+- 项目关联管理：下拉选择关联项目、取消关联按钮
+- 新建数据集表单：名称、描述、数据类型选择
+- 前端 API 模块 `api/datasets.ts` + 9 个 React Query hooks（useDatasets / useDatasetItems / useCreateDataset / useLinkProject 等）
+
+#### 存储管理页面（StoragePage）
+- 页头统计行：存储后端、存储桶名称、数据集数量
+- 存储后端状态卡片：MinIO 连接信息 + 实时健康检查（Badge 显示已连接/连接失败）
+- 数据集存储概览表格：按数据集展示文件数和关联项目数
+- 刷新状态按钮：重新检查 MinIO 连接
+- 前端 API 模块 `api/storage.ts` + `useStorageHealth` hook
+
+### 修复
+
+#### Mock 数据枚举迁移
+- `mock.ts` User.role 从中文改为英文枚举（`"标注员"` → `"annotator"` 等）
+- `mock.ts` User.status 从中文改为英文（`"在线"` → `"online"` 等）
+- `mock.ts` Project.status 从中文改为英文（`"进行中"` → `"in_progress"` 等）
+- `mock.ts` roles[] key 从中文改为英文枚举，对齐 `UserRole` 类型
+- `DashboardPage` 状态比较和 API 查询参数改为英文枚举，通过 `FILTER_STATUS_MAP` 映射
+- `UsersPage` 角色显示通过 `ROLE_LABELS` 映射回中文，STATUS_COLORS 键保持中文（匹配已翻译的 statusLabel）
+- 修复构建失败：`mock.ts` 中 17 个 TypeScript 类型错误全部消除
+
+### 变更
+- 数据库从 12 张表扩展到 15 张表（+datasets、+dataset_items、+project_datasets）
+- 文件存储路径格式新增 `datasets/{dataset_id}/{item_id}/{filename}`（原有 `{project_id}/{task_id}/{filename}` 路径保持兼容）
+- `App.tsx` 中 datasets 和 storage 页面从占位替换为实际组件
+
+### 待实现
+- 拖拽批量上传 UI
+- 文件预览/缩略图
+- 数据集版本管理
+- 多存储后端管理（OSS / S3）
+- 文件去重检测
+- 跨数据集搜索
+
+---
+
 ## [0.4.0] - 2026-04-28
 
 ### 新增

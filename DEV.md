@@ -71,7 +71,7 @@ cd apps/api
 uv venv
 source .venv/bin/activate
 uv pip install fastapi "uvicorn[standard]" pydantic-settings sqlalchemy asyncpg python-jose passlib python-multipart httpx
-uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 API 文档：http://localhost:8000/docs
