@@ -131,7 +131,7 @@ async def upload_init(
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     item_id = uuid.uuid4()
-    storage_key = f"datasets/{dataset_id}/{item_id}/{data.file_name}"
+    storage_key = f"{ds.name}/{data.file_name}"
     file_type = _infer_file_type(data.content_type)
 
     item = await svc.add_item(
@@ -142,7 +142,9 @@ async def upload_init(
     )
     await db.commit()
 
-    upload_url = storage_service.generate_upload_url(storage_key, data.content_type)
+    upload_url = storage_service.generate_upload_url(
+        storage_key, data.content_type, bucket=storage_service.datasets_bucket,
+    )
     return DatasetUploadInitResponse(item_id=item.id, upload_url=upload_url, expires_in=900)
 
 
@@ -158,7 +160,7 @@ async def upload_complete(
     if not item or item.dataset_id != dataset_id:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    meta = storage_service.verify_upload(item.file_path)
+    meta = storage_service.verify_upload(item.file_path, bucket=storage_service.datasets_bucket)
     if not meta:
         raise HTTPException(status_code=400, detail="File not found in storage")
 
@@ -168,6 +170,21 @@ async def upload_complete(
 
     await db.commit()
     return {"status": "ok", "item_id": str(item_id)}
+
+
+@router.post("/{dataset_id}/items/scan")
+async def scan_items(
+    dataset_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    svc = DatasetService(db)
+    ds = await svc.get(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    created = await svc.scan_and_import(dataset_id)
+    await db.commit()
+    return {"status": "ok", "new_items": created}
 
 
 @router.delete("/{dataset_id}/items/{item_id}", status_code=204)

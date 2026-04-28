@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
     minio_bucket: str = "annotations"
+    minio_datasets_bucket: str = "datasets"
     minio_use_ssl: bool = False
 
     ml_predict_timeout: int = 100

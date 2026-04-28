@@ -1,6 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { PageKey } from "@/types";
 import type { IconName } from "@/components/ui/Icon";
 
@@ -48,6 +49,16 @@ const sections: { label: string; items: NavItem[] }[] = [
 ];
 
 export function Sidebar({ page, setPage, reviewCount }: SidebarProps) {
+  const { canAccessPage, hasAnyPermission } = usePermissions();
+  const showAiQuota = hasAnyPermission("ai.trigger", "ml-backend.manage");
+
+  const visibleSections = sections
+    .map((sec) => ({
+      ...sec,
+      items: sec.items.filter((item) => !item.key || canAccessPage(item.key as PageKey)),
+    }))
+    .filter((sec) => sec.items.length > 0);
+
   return (
     <aside
       style={{
@@ -60,7 +71,7 @@ export function Sidebar({ page, setPage, reviewCount }: SidebarProps) {
         gap: 2,
       }}
     >
-      {sections.map((sec) => (
+      {visibleSections.map((sec) => (
         <div key={sec.label}>
           <div
             style={{
@@ -135,24 +146,26 @@ export function Sidebar({ page, setPage, reviewCount }: SidebarProps) {
 
       <div style={{ flex: 1 }} />
 
-      <div
-        style={{
-          margin: "12px 4px 4px",
-          padding: 12,
-          background: "linear-gradient(135deg, var(--color-ai-soft), var(--color-accent-soft))",
-          borderRadius: "var(--radius-lg)",
-          border: "1px solid oklch(0.92 0.04 270)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-          <Icon name="sparkles" size={13} style={{ color: "var(--color-ai)" }} />
-          <span style={{ fontSize: 12, fontWeight: 600 }}>AI 配额</span>
+      {showAiQuota && (
+        <div
+          style={{
+            margin: "12px 4px 4px",
+            padding: 12,
+            background: "linear-gradient(135deg, var(--color-ai-soft), var(--color-accent-soft))",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid oklch(0.92 0.04 270)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <Icon name="sparkles" size={13} style={{ color: "var(--color-ai)" }} />
+            <span style={{ fontSize: 12, fontWeight: 600 }}>AI 配额</span>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 8 }}>
+            本月已用 6,842 / 20,000 次
+          </div>
+          <ProgressBar value={34} color="var(--color-ai)" />
         </div>
-        <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 8 }}>
-          本月已用 6,842 / 20,000 次
-        </div>
-        <ProgressBar value={34} color="var(--color-ai)" />
-      </div>
+      )}
     </aside>
   );
 }

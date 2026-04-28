@@ -24,44 +24,51 @@ Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False
 
 USERS = [
     {
-        "email": "admin@example.com",
+        "email": "admin@test.com",
         "name": "超级管理员",
-        "password": "Admin@123456",
+        "password": "123456",
         "role": "super_admin",
         "group_name": None,
     },
     {
-        "email": "pm@example.com",
+        "email": "pm@test.com",
         "name": "张明轩",
-        "password": "Test@123456",
+        "password": "123456",
         "role": "project_admin",
         "group_name": "管理组",
     },
     {
-        "email": "qa@example.com",
+        "email": "qa@test.com",
         "name": "李晓华",
-        "password": "Test@123456",
+        "password": "123456",
         "role": "reviewer",
         "group_name": "质检组",
     },
     {
-        "email": "anno1@example.com",
+        "email": "anno@test.com",
         "name": "王芳",
-        "password": "Test@123456",
+        "password": "123456",
         "role": "annotator",
         "group_name": "标注组A",
     },
     {
-        "email": "anno2@example.com",
+        "email": "viewer@test.com",
+        "name": "赵观察",
+        "password": "123456",
+        "role": "viewer",
+        "group_name": None,
+    },
+    {
+        "email": "anno2@test.com",
         "name": "刘洋",
-        "password": "Test@123456",
+        "password": "123456",
         "role": "annotator",
         "group_name": "标注组A",
     },
     {
-        "email": "anno3@example.com",
+        "email": "anno3@test.com",
         "name": "陈思远",
-        "password": "Test@123456",
+        "password": "123456",
         "role": "annotator",
         "group_name": "标注组B",
     },
@@ -131,7 +138,12 @@ async def seed() -> None:
             created_users[data["email"]] = user
             print(f"  add   {data['email']}  [{data['role']}]")
 
-        owner = created_users["pm@example.com"]
+        owner = created_users.get("pm@test.com") or created_users.get("pm@example.com")
+        if not owner:
+            print("  WARN: pm 用户未找到，跳过项目创建")
+            await db.commit()
+            await engine.dispose()
+            return
 
         for pdata in make_projects(owner.id):
             existing = await db.scalar(
@@ -154,13 +166,14 @@ async def main() -> None:
     print("\n=== seed start ===")
     await seed()
     print("=== seed done  ===\n")
-    print("账号一览:")
-    print("  admin@example.com   Admin@123456   超级管理员")
-    print("  pm@example.com      Test@123456    项目管理员")
-    print("  qa@example.com      Test@123456    质检员")
-    print("  anno1@example.com   Test@123456    标注员 (标注组A)")
-    print("  anno2@example.com   Test@123456    标注员 (标注组A)")
-    print("  anno3@example.com   Test@123456    标注员 (标注组B)")
+    print("测试账号一览 (密码统一: 123456):")
+    print("  admin@test.com     超级管理员   → AdminDashboard")
+    print("  pm@test.com        项目管理员   → 项目总览")
+    print("  qa@test.com        质检员       → ReviewerDashboard")
+    print("  anno@test.com      标注员       → AnnotatorDashboard")
+    print("  viewer@test.com    观察者       → ViewerDashboard")
+    print("  anno2@test.com     标注员 (标注组A)")
+    print("  anno3@test.com     标注员 (标注组B)")
 
 
 if __name__ == "__main__":

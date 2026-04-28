@@ -1,10 +1,20 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.v1.router import api_router
 from app.api.v1.ws import router as ws_router
+from app.services.storage import storage_service
 
-app = FastAPI(title=settings.app_name, version="0.2.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    storage_service.ensure_all_buckets()
+    yield
+
+
+app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

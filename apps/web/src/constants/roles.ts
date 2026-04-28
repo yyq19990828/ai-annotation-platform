@@ -5,7 +5,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   project_admin: "项目管理员",
   reviewer: "质检员",
   annotator: "标注员",
-  viewer: "��察者",
+  viewer: "观察者",
 };
 
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {

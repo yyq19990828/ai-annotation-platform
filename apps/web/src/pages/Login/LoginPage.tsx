@@ -189,9 +189,12 @@ export function LoginPage() {
           </form>
 
           <div style={{ marginTop: 20, padding: "12px 14px", background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)", fontSize: 12, color: "var(--color-fg-subtle)" }}>
-            <div style={{ fontWeight: 500, marginBottom: 4, color: "var(--color-fg-muted)" }}>测试账号</div>
-            <div>超级管理员：<span className="mono">admin@example.com</span> / <span className="mono">Admin@123456</span></div>
-            <div style={{ marginTop: 2 }}>项目管理员：<span className="mono">pm@example.com</span> / <span className="mono">Test@123456</span></div>
+            <div style={{ fontWeight: 500, marginBottom: 6, color: "var(--color-fg-muted)" }}>测试账号 (密码统一: 123456)</div>
+            <div>超级管理员：<span className="mono">admin@test.com</span></div>
+            <div style={{ marginTop: 2 }}>项目管理员：<span className="mono">pm@test.com</span></div>
+            <div style={{ marginTop: 2 }}>质检员：<span className="mono">qa@test.com</span></div>
+            <div style={{ marginTop: 2 }}>标注员：<span className="mono">anno@test.com</span></div>
+            <div style={{ marginTop: 2 }}>观察者：<span className="mono">viewer@test.com</span></div>
           </div>
         </div>
       </div>

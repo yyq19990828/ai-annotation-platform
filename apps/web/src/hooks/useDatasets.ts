@@ -55,6 +55,17 @@ export function useDatasetItems(datasetId: string | undefined, params?: { limit?
   });
 }
 
+export function useScanDatasetItems(datasetId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => datasetsApi.scanItems(datasetId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["datasets"] });
+      qc.invalidateQueries({ queryKey: ["dataset-items", datasetId] });
+    },
+  });
+}
+
 export function useLinkProject(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({

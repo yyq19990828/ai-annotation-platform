@@ -6,6 +6,83 @@
 
 ---
 
+## [0.4.2] - 2026-04-28
+
+### 新增
+
+#### 前端 RBAC 权限体系
+- 新增 `constants/permissions.ts`：页面访问矩阵（`ROLE_PAGE_ACCESS`）+ 细粒度操作权限矩阵（`ROLE_PERMISSIONS`），20 种权限类型
+- 新增 `hooks/usePermissions.ts`：权限 Hook，提供 `canAccessPage()` / `hasPermission()` / `hasAnyPermission()` 接口
+- 新增 `components/guards/Can.tsx`：声明式权限守卫组件，包裹 UI 元素按角色显隐
+- 新增 `pages/Unauthorized/UnauthorizedPage.tsx`：403 未授权页面，显示当前角色 + 返回首页按钮
+
+#### 侧边栏角色过滤 & 路由守卫
+- `Sidebar.tsx` 按当前用户角色过滤导航菜单项，空 section 自动隐藏
+- AI 配额卡片仅 super_admin / project_admin 可见
+- `App.tsx` 新增路由守卫：无权限页面渲染 UnauthorizedPage，dashboard 页面按角色分发到对应看板组件
+
+#### 角色差异化看板（借鉴 Label Studio / CVAT / Scale AI 等平台经验）
+- 新增 `AdminDashboard.tsx`（super_admin）：平台概览 — 用户总数/活跃数、项目状态分布（进度条）、用户角色分布、ML 后端在线状态、任务/标注总量
+- 新增 `ReviewerDashboard.tsx`（reviewer）：质检工作台 — 待审核/今日已审/通过率/累计审核统计卡片 + **跨项目待审任务列表**（含文件名、所属项目、标注数），支持直接通过/退回操作
+- 新增 `AnnotatorDashboard.tsx`（annotator）：个人工作台 — 待标任务数/今日完成/本周完成/准确率统计 + 近 7 天标注趋势 Sparkline + 周目标环形进度图 + "开始标注" CTA
+- 新增 `ViewerDashboard.tsx`（viewer）：只读项目概览 — 精简项目表格（无新建/导出/打开按钮），只读统计卡片
+- `DashboardPage.tsx`（project_admin）：保持原有项目总览，"新建项目"/"导入数据集"按钮用 `<Can>` 包裹按权限显隐
+
+#### 后端 Dashboard 统计端点（3 个新端点）
+- `GET /api/v1/dashboard/admin`（super_admin）：用户统计、项目状态分布、ML 后端状态、角色分布
+- `GET /api/v1/dashboard/reviewer`（reviewer+）：待审核数、今日已审、通过率、**跨项目待审任务列表**（JOIN tasks + projects，返回文件名/项目名/标注数）
+- `GET /api/v1/dashboard/annotator`（annotator+）：个人待标任务、今日/本周/累计完成、准确率、近 7 天每日标注计数
+- 新增 `schemas/dashboard.py`：AdminDashboardStats / ReviewerDashboardStats / ReviewTaskItem / AnnotatorDashboardStats
+- `router.py` 注册 `/dashboard` 路由组
+
+#### 前端 Dashboard API 对接
+- 新增 `api/dashboard.ts`：AdminDashboardStats / ReviewerDashboardStats / AnnotatorDashboardStats 类型定义 + API 调用
+- 新增 `hooks/useDashboard.ts`：`useAdminStats()` / `useReviewerStats()` / `useAnnotatorStats()` React Query hooks
+
+### 修复
+
+#### Users API 端点实现
+- `GET /api/v1/users` 从空壳（返回 `[]`）改为真实数据库查询，支持按 role 过滤，返回 `list[UserOut]`
+- UsersPage 成员列表现在展示真实用户数据
+
+#### 用户去重
+- 停用 6 个旧 `@example.com` 测试用户（`is_active=False`），消除用户列表中同一人重复出现的问题
+- 新增 `viewer@test.com`（观察者）测试账号，补全五种角色覆盖
+
+#### 前端显示修复
+- 修复 `roles.ts` 中 `viewer` 角色标签的 Unicode 损坏（`��察者` → `观察者`）
+
+### 变更
+
+#### 权限矩阵
+
+| 角色 | 看板 | 可访问页面 |
+|------|------|-----------|
+| super_admin | 平台概览 | 全部 11 项 |
+| project_admin | 项目总览 | 除审计日志外全部 |
+| reviewer | 质检工作台 | 首页 / 质检审核 / 数据集 |
+| annotator | 个人工作台 | 首页 / 标注工作台 |
+| viewer | 只读概览 | 首页 / 数据集 |
+
+#### 测试账号（密码统一: `123456`）
+
+| 邮箱 | 角色 |
+|------|------|
+| `admin@test.com` | 超级管理员 |
+| `pm@test.com` | 项目管理员 |
+| `qa@test.com` | 质检员 |
+| `anno@test.com` | 标注员 |
+| `viewer@test.com` | 观察者 |
+
+### 待实现
+- 自定义角色创建（UsersPage 角色管理 Tab 的"新建角色"按钮）
+- 用户邀请流程（当前 `/invite` 仍为 stub）
+- 审计日志页面（审计日志 Tab 占位 → 真实数据）
+- 项目级权限（当前为全局角色，不支持"仅限某项目的管理员"）
+- 组织/工作区切换（多租户）
+
+---
+
 ## [0.4.1] - 2026-04-28
 
 ### 新增

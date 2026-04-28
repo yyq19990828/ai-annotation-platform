@@ -9,6 +9,7 @@ import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
+import { Can } from "@/components/guards/Can";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import { projectsApi, type ExportFormat, type ProjectResponse } from "@/api/projects";
 
@@ -141,12 +142,16 @@ export function DashboardPage({ onOpenProject }: { onOpenProject: (p: ProjectRes
           <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>管理你的标注项目,跟踪进度与 AI 辅助效率</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Button onClick={() => pushToast({ msg: "导入数据集面板已打开", sub: "支持 OSS / 本地 / 数据库" })}>
-            <Icon name="upload" size={13} />导入数据集
-          </Button>
-          <Button variant="primary" onClick={() => pushToast({ msg: "新建项目向导", sub: "选择数据类型 → 配置类别 → 接入模型" })}>
-            <Icon name="plus" size={13} />新建项目
-          </Button>
+          <Can permission="dataset.create">
+            <Button onClick={() => pushToast({ msg: "导入数据集面板已打开", sub: "支持 OSS / 本地 / 数据库" })}>
+              <Icon name="upload" size={13} />导入数据集
+            </Button>
+          </Can>
+          <Can permission="project.create">
+            <Button variant="primary" onClick={() => pushToast({ msg: "新建项目向导", sub: "选择数据类型 → 配置类别 → 接入模型" })}>
+              <Icon name="plus" size={13} />新建项目
+            </Button>
+          </Can>
         </div>
       </div>
 

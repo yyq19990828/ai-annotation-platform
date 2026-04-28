@@ -90,6 +90,9 @@ export const datasetsApi = {
       `/datasets/${id}/items/upload-complete/${itemId}`,
     ),
 
+  scanItems: (id: string) =>
+    apiClient.post<{ status: string; new_items: number }>(`/datasets/${id}/items/scan`),
+
   deleteItem: (id: string, itemId: string) =>
     apiClient.delete<void>(`/datasets/${id}/items/${itemId}`),
 

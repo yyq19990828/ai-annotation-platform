@@ -71,6 +71,8 @@ class DatasetService:
         )
         self.db.add(ds)
         await self.db.flush()
+        storage_service.ensure_bucket(storage_service.datasets_bucket)
+        storage_service.create_folder(name, bucket=storage_service.datasets_bucket)
         return ds
 
     async def update(self, dataset_id: uuid.UUID, name: str | None, description: str | None) -> Dataset | None:
@@ -117,7 +119,9 @@ class DatasetService:
         for item in items:
             d = _item_dict(item)
             try:
-                d["file_url"] = storage_service.generate_download_url(item.file_path)
+                d["file_url"] = storage_service.generate_download_url(
+                    item.file_path, bucket=storage_service.datasets_bucket,
+                )
             except Exception:
                 d["file_url"] = None
             out.append(d)
@@ -157,6 +161,48 @@ class DatasetService:
         await self.db.delete(item)
         await self.db.flush()
         return True
+
+    # ── Scan & import from bucket ─────────────────────────────────────────
+
+    async def scan_and_import(self, dataset_id: uuid.UUID) -> int:
+        ds = await self.db.get(Dataset, dataset_id)
+        if not ds:
+            return 0
+
+        existing = await self.db.execute(
+            select(DatasetItem.file_path).where(DatasetItem.dataset_id == dataset_id)
+        )
+        existing_paths: set[str] = {row[0] for row in existing}
+
+        prefix = f"{ds.name}/"
+        objects = storage_service.list_objects(prefix, bucket=storage_service.datasets_bucket)
+
+        created = 0
+        for obj in objects:
+            key: str = obj["key"]
+            if key.endswith("/"):
+                continue
+            if key in existing_paths:
+                continue
+
+            file_name = key.rsplit("/", 1)[-1]
+            ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+            file_type = _infer_file_type_from_ext(ext)
+
+            item = DatasetItem(
+                dataset_id=dataset_id,
+                file_name=file_name,
+                file_path=key,
+                file_type=file_type,
+                file_size=obj.get("size"),
+            )
+            self.db.add(item)
+            created += 1
+
+        if created and ds:
+            ds.file_count = (ds.file_count or 0) + created
+        await self.db.flush()
+        return created
 
     # ── Project linking ─────────────────────────────────────────────────────
 
@@ -215,6 +261,18 @@ class DatasetService:
             .where(ProjectDataset.dataset_id == dataset_id)
         )
         return list(result.scalars().all())
+
+
+_IMAGE_EXTS = {"jpg", "jpeg", "png", "bmp", "webp", "tiff", "tif", "gif", "svg"}
+_VIDEO_EXTS = {"mp4", "avi", "mov", "mkv", "wmv", "flv", "webm"}
+
+
+def _infer_file_type_from_ext(ext: str) -> str:
+    if ext in _IMAGE_EXTS:
+        return "image"
+    if ext in _VIDEO_EXTS:
+        return "video"
+    return "other"
 
 
 def _dataset_dict(ds: Dataset) -> dict:

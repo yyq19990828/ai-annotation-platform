@@ -7,7 +7,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
-import { useDatasets, useDatasetItems, useCreateDataset, useDatasetProjects, useUnlinkProject, useLinkProject } from "@/hooks/useDatasets";
+import { useDatasets, useDatasetItems, useCreateDataset, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems } from "@/hooks/useDatasets";
 import { useProjects } from "@/hooks/useProjects";
 import type { DatasetResponse } from "@/api/datasets";
 import type { IconName } from "@/components/ui/Icon";
@@ -99,6 +99,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
   const { data: allProjects } = useProjects();
   const unlinkMutation = useUnlinkProject(ds.id);
   const linkMutation = useLinkProject(ds.id);
+  const scanMutation = useScanDatasetItems(ds.id);
   const pushToast = useToastStore((s) => s.push);
 
   const items = itemsData?.items ?? [];
@@ -119,9 +120,28 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                 <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
                   文件列表 <span style={{ fontWeight: 400, color: "var(--color-fg-muted)" }}>({totalItems})</span>
                 </h4>
-                <Button size="sm" onClick={() => pushToast({ msg: "上传功能", sub: "请使用 API 或命令行上传文件到此数据集" })}>
-                  <Icon name="upload" size={12} /> 上传
-                </Button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      scanMutation.mutate(undefined, {
+                        onSuccess: (res) => {
+                          pushToast({
+                            msg: res.new_items > 0
+                              ? `扫描完成，新增 ${res.new_items} 个文件`
+                              : "扫描完成，无新文件",
+                          });
+                        },
+                      });
+                    }}
+                    disabled={scanMutation.isPending}
+                  >
+                    <Icon name="refresh" size={12} /> {scanMutation.isPending ? "扫描中..." : "扫描导入"}
+                  </Button>
+                  <Button size="sm" onClick={() => pushToast({ msg: "上传功能", sub: "请使用 API 或命令行上传文件到此数据集" })}>
+                    <Icon name="upload" size={12} /> 上传
+                  </Button>
+                </div>
               </div>
               <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 12.5 }}>
                 <thead>
