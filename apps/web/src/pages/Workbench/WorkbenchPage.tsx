@@ -223,6 +223,8 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
   const [drawing, setDrawing] = useState<{ x: number; y: number; w: number; h: number; sx: number; sy: number } | null>(null);
   const [confThreshold, setConfThreshold] = useState(0.5);
   const [zoom, setZoom] = useState(1);
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const task: TaskResponse | undefined = useMemo(
@@ -419,80 +421,101 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
     );
   }
 
+  const panelStripStyle: React.CSSProperties = {
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    height: "100%", gap: 8, cursor: "pointer", userSelect: "none",
+    background: "var(--color-bg-elev)", border: "none", width: "100%", padding: 0,
+    color: "var(--color-fg-muted)",
+  };
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "260px 1fr 280px", height: "100%", overflow: "hidden", background: "var(--color-bg-sunken)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: `${leftOpen ? "260px" : "32px"} 1fr ${rightOpen ? "280px" : "32px"}`, height: "100%", overflow: "hidden", background: "var(--color-bg-sunken)" }}>
       {/* Left: Task Queue */}
-      <div style={{ background: "var(--color-bg-elev)", borderRight: "1px solid var(--color-border)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--color-border)" }}>
-          <Button variant="ghost" size="sm" onClick={onBack} style={{ padding: "2px 6px", marginBottom: 6 }}>
-            <Icon name="chevLeft" size={11} />返回总览
-          </Button>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{projectName}</div>
-          <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
-            <span className="mono">{projectDisplayId}</span> · {classes.length} 个类别
+      {!leftOpen ? (
+        <div style={{ borderRight: "1px solid var(--color-border)", overflow: "hidden" }}>
+          <button onClick={() => setLeftOpen(true)} title="展开任务列表" style={panelStripStyle}>
+            <Icon name="chevRight" size={13} />
+            <span style={{ fontSize: 10, writingMode: "vertical-rl", letterSpacing: 1, opacity: 0.6 }}>任务列表</span>
+          </button>
+        </div>
+      ) : (
+        <div style={{ background: "var(--color-bg-elev)", borderRight: "1px solid var(--color-border)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--color-border)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <Button variant="ghost" size="sm" onClick={onBack} style={{ padding: "2px 6px" }}>
+                <Icon name="chevLeft" size={11} />返回总览
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setLeftOpen(false)} title="收起任务列表" style={{ padding: "2px 6px" }}>
+                <Icon name="chevLeft" size={11} />
+              </Button>
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{projectName}</div>
+            <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+              <span className="mono">{projectDisplayId}</span> · {classes.length} 个类别
+            </div>
           </div>
-        </div>
 
-        <div style={{ padding: "10px 14px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 12, fontWeight: 600 }}>任务队列</div>
-          <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{taskIdx + 1} / {tasks.length}</span>
-        </div>
+          <div style={{ padding: "10px 14px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 12, fontWeight: 600 }}>任务队列</div>
+            <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{taskIdx + 1} / {tasks.length}</span>
+          </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 10px" }}>
-          {tasks.map((t) => {
-            const isActive = t.id === taskId;
-            const statusLabel = t.status === "completed" ? "已完成" : t.status === "review" ? "待审核" : t.total_annotations > 0 ? "进行中" : t.total_predictions > 0 ? "AI 已预标" : "未开始";
-            return (
+          <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 10px" }}>
+            {tasks.map((t) => {
+              const isActive = t.id === taskId;
+              const statusLabel = t.status === "completed" ? "已完成" : t.status === "review" ? "待审核" : t.total_annotations > 0 ? "进行中" : t.total_predictions > 0 ? "AI 已预标" : "未开始";
+              return (
+                <div
+                  key={t.id}
+                  onClick={() => { setCurrentTaskId(t.id); setSelectedId(null); }}
+                  style={{
+                    padding: "8px 10px", margin: "2px 0",
+                    borderRadius: "var(--radius-md)",
+                    background: isActive ? "var(--color-accent-soft)" : "transparent",
+                    border: "1px solid " + (isActive ? "oklch(0.85 0.06 252)" : "transparent"),
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span className="mono" style={{ fontSize: 11.5, fontWeight: 500 }}>{t.display_id}</span>
+                    {t.total_annotations > 0 && <Badge variant="accent" style={{ fontSize: 10, padding: "1px 6px" }}>{t.total_annotations}</Badge>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.file_name}</div>
+                  <div style={{ fontSize: 10.5, color: isActive ? "var(--color-accent-fg)" : "var(--color-fg-subtle)", marginTop: 2 }}>{statusLabel}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px" }}>
+            <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>类别 (按数字键切换)</div>
+            {classes.map((c, i) => (
               <div
-                key={t.id}
-                onClick={() => { setCurrentTaskId(t.id); setSelectedId(null); }}
+                key={c}
+                onClick={() => setActiveClass(c)}
                 style={{
-                  padding: "8px 10px", margin: "2px 0",
-                  borderRadius: "var(--radius-md)",
-                  background: isActive ? "var(--color-accent-soft)" : "transparent",
-                  border: "1px solid " + (isActive ? "oklch(0.85 0.06 252)" : "transparent"),
-                  cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "5px 8px", borderRadius: "var(--radius-sm)", cursor: "pointer",
+                  background: activeClass === c ? "var(--color-bg-sunken)" : "transparent",
+                  fontSize: 12.5,
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="mono" style={{ fontSize: 11.5, fontWeight: 500 }}>{t.display_id}</span>
-                  {t.total_annotations > 0 && <Badge variant="accent" style={{ fontSize: 10, padding: "1px 6px" }}>{t.total_annotations}</Badge>}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.file_name}</div>
-                <div style={{ fontSize: 10.5, color: isActive ? "var(--color-accent-fg)" : "var(--color-fg-subtle)", marginTop: 2 }}>{statusLabel}</div>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: CLASS_COLORS[c] || "var(--color-accent)" }} />
+                <span style={{ flex: 1 }}>{c}</span>
+                <span style={{
+                  display: "inline-block", padding: "1px 5px",
+                  background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)",
+                  borderBottomWidth: 2, borderRadius: 3,
+                  fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--color-fg-muted)", lineHeight: 1,
+                }}>{i + 1}</span>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
-
-        <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px" }}>
-          <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>类别 (按数字键切换)</div>
-          {classes.map((c, i) => (
-            <div
-              key={c}
-              onClick={() => setActiveClass(c)}
-              style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "5px 8px", borderRadius: "var(--radius-sm)", cursor: "pointer",
-                background: activeClass === c ? "var(--color-bg-sunken)" : "transparent",
-                fontSize: 12.5,
-              }}
-            >
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: CLASS_COLORS[c] || "var(--color-accent)" }} />
-              <span style={{ flex: 1 }}>{c}</span>
-              <span style={{
-                display: "inline-block", padding: "1px 5px",
-                background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)",
-                borderBottomWidth: 2, borderRadius: 3,
-                fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--color-fg-muted)", lineHeight: 1,
-              }}>{i + 1}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Center: Canvas */}
-      <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+      <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {lockError && (
           <div style={{ padding: "6px 14px", background: "oklch(0.95 0.05 25)", borderBottom: "1px solid oklch(0.85 0.10 25)", fontSize: 12, color: "oklch(0.45 0.15 25)", display: "flex", alignItems: "center", gap: 6 }}>
             <Icon name="warning" size={13} />
@@ -595,6 +618,14 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Right: AI Panel */}
+      {!rightOpen ? (
+        <div style={{ borderLeft: "1px solid var(--color-border)", overflow: "hidden" }}>
+          <button onClick={() => setRightOpen(true)} title="展开 AI 助手" style={panelStripStyle}>
+            <Icon name="chevLeft" size={13} />
+            <span style={{ fontSize: 10, writingMode: "vertical-rl", letterSpacing: 1, opacity: 0.6 }}>AI 助手</span>
+          </button>
+        </div>
+      ) : (
       <div style={{ background: "var(--color-bg-elev)", borderLeft: "1px solid var(--color-border)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--color-border)", background: "linear-gradient(180deg, var(--color-ai-soft), transparent)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
@@ -602,7 +633,12 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
               <Icon name="sparkles" size={14} style={{ color: "var(--color-ai)" }} />
               <b style={{ fontSize: 13 }}>AI 助手</b>
             </div>
-            <Badge variant="ai" dot style={{ fontSize: 10 }}>{aiRunning ? "推理中" : "在线"}</Badge>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Badge variant="ai" dot style={{ fontSize: 10 }}>{aiRunning ? "推理中" : "在线"}</Badge>
+              <Button variant="ghost" size="sm" onClick={() => setRightOpen(false)} title="收起 AI 助手" style={{ padding: "2px 6px" }}>
+                <Icon name="chevRight" size={11} />
+              </Button>
+            </div>
           </div>
           <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginBottom: 8 }}>
             模型: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{aiModel}</span>
@@ -666,6 +702,7 @@ export function WorkbenchPage({ onBack }: { onBack: () => void }) {
           <ProgressBar value={aiTakeoverRate} color="var(--color-ai)" />
         </div>
       </div>
+      )}
     </div>
   );
 }

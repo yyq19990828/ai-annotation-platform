@@ -47,13 +47,21 @@ export function App() {
     }
   };
 
+  if (page === "annotate") {
+    return (
+      <div style={{ height: "100vh", overflow: "hidden" }}>
+        <WorkbenchPage onBack={() => setPage("dashboard")} />
+        <ToastRack />
+      </div>
+    );
+  }
+
   const renderPage = () => {
     if (page !== "dashboard" && !canAccessPage(page)) {
       return <UnauthorizedPage />;
     }
     switch (page) {
       case "dashboard": return <DashboardRouter onOpenProject={onOpenProject} />;
-      case "annotate": return <WorkbenchPage onBack={() => setPage("dashboard")} />;
       case "users": return <UsersPage />;
       case "review": return <ReviewPage />;
       case "datasets": return <DatasetsPage />;
