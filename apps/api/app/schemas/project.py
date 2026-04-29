@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 
@@ -13,6 +14,20 @@ class ProjectCreate(BaseModel):
     due_date: date | None = None
 
 
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    type_label: str | None = None
+    type_key: str | None = None
+    status: str | None = None
+    classes: list[str] | None = None
+    ai_enabled: bool | None = None
+    ai_model: str | None = None
+    due_date: date | None = None
+    sampling: str | None = None
+    maximum_annotations: int | None = None
+    show_overlap_first: bool | None = None
+
+
 class ProjectOut(BaseModel):
     id: UUID
     organization_id: UUID | None = None
@@ -20,6 +35,9 @@ class ProjectOut(BaseModel):
     name: str
     type_label: str
     type_key: str
+    owner_id: UUID
+    owner_name: str | None = None
+    member_count: int = 0
     status: str
     ai_enabled: bool
     ai_model: str | None
@@ -48,3 +66,24 @@ class ProjectStats(BaseModel):
     pending_review: int
     total_annotations: int = 0
     ai_derived_annotations: int = 0
+
+
+class ProjectMemberOut(BaseModel):
+    id: UUID
+    user_id: UUID
+    user_name: str
+    user_email: str
+    role: str
+    assigned_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectMemberCreate(BaseModel):
+    user_id: UUID
+    role: Literal["annotator", "reviewer"]
+
+
+class ProjectTransferRequest(BaseModel):
+    new_owner_id: UUID

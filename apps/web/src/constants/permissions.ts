@@ -12,6 +12,7 @@ export type Permission =
   | "project.create"
   | "project.edit"
   | "project.delete"
+  | "project.transfer"
   | "project.export"
   | "task.assign"
   | "task.annotate"
@@ -31,7 +32,7 @@ export type Permission =
   | "ml-backend.manage";
 
 const ALL_PERMISSIONS: Permission[] = [
-  "project.create", "project.edit", "project.delete", "project.export",
+  "project.create", "project.edit", "project.delete", "project.transfer", "project.export",
   "task.assign", "task.annotate", "task.review", "task.approve", "task.reject",
   "user.list", "user.invite", "user.edit-role",
   "dataset.create", "dataset.delete", "dataset.link",

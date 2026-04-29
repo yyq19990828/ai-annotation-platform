@@ -18,7 +18,6 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "baseUrl": ".",
     "ignoreDeprecations": "5.0"
   },
   "include": ["src"]

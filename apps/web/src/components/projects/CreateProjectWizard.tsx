@@ -163,6 +163,10 @@ export function CreateProjectWizard({ open, onClose }: Props) {
             onClose();
             navigate(`/projects/${created.id}/annotate`);
           }}
+          onOpenSettings={() => {
+            onClose();
+            navigate(`/projects/${created.id}/settings`);
+          }}
           onDone={onClose}
         />
       )}
@@ -550,11 +554,13 @@ function SuccessStep({
   project,
   onLinkDataset,
   onOpenProject,
+  onOpenSettings,
   onDone,
 }: {
   project: ProjectResponse;
   onLinkDataset: () => void;
   onOpenProject: () => void;
+  onOpenSettings: () => void;
   onDone: () => void;
 }) {
   const canOpen = project.type_key === "image-det";
@@ -585,6 +591,9 @@ function SuccessStep({
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
         <Button variant="primary" onClick={onLinkDataset}>
           <Icon name="link" size={12} />关联数据集
+        </Button>
+        <Button onClick={onOpenSettings}>
+          <Icon name="settings" size={12} />项目设置
         </Button>
         {canOpen && (
           <Button onClick={onOpenProject}>

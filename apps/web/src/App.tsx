@@ -14,6 +14,7 @@ import { LoginPage } from "@/pages/Login/LoginPage";
 import { DatasetsPage } from "@/pages/Datasets/DatasetsPage";
 import { StoragePage } from "@/pages/Storage/StoragePage";
 import { UnauthorizedPage } from "@/pages/Unauthorized/UnauthorizedPage";
+import { ProjectSettingsPage } from "@/pages/Projects/ProjectSettingsPage";
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -175,6 +176,7 @@ export function App() {
             </RequirePagePermission>
           }
         />
+        <Route path="/projects/:id/settings" element={<ProjectSettingsPage />} />
         <Route path="/unauthorized" element={<UnauthorizedPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>

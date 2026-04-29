@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, get_current_user, require_roles
+from app.deps import get_db, get_current_user, require_roles, assert_project_visible
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
@@ -31,8 +31,9 @@ async def list_tasks(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
+    await assert_project_visible(project_id, db, user)
     q = select(Task).where(Task.project_id == project_id)
     count_q = select(func.count()).select_from(Task).where(Task.project_id == project_id)
     if status:
@@ -58,6 +59,7 @@ async def next_task(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
+    await assert_project_visible(project_id, db, current_user)
     task = await get_next_task(current_user.id, project_id, db)
     if not task:
         return None

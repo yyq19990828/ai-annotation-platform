@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { projectsApi, type ProjectCreatePayload } from "../api/projects";
+import {
+  projectsApi,
+  type ProjectCreatePayload,
+  type ProjectUpdatePayload,
+} from "../api/projects";
 
 export function useProjects(params?: { status?: string; search?: string }) {
   return useQuery({
@@ -30,6 +34,74 @@ export function useCreateProject() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["project-stats"] });
+    },
+  });
+}
+
+export function useUpdateProject(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ProjectUpdatePayload) => projectsApi.update(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project", id] });
+      qc.invalidateQueries({ queryKey: ["project-stats"] });
+    },
+  });
+}
+
+export function useDeleteProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => projectsApi.remove(id),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project", id] });
+      qc.invalidateQueries({ queryKey: ["project-stats"] });
+    },
+  });
+}
+
+export function useTransferProject(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (new_owner_id: string) => projectsApi.transfer(id, new_owner_id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project", id] });
+    },
+  });
+}
+
+export function useProjectMembers(id: string) {
+  return useQuery({
+    queryKey: ["project-members", id],
+    queryFn: () => projectsApi.listMembers(id),
+    enabled: !!id,
+  });
+}
+
+export function useAddProjectMember(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { user_id: string; role: "annotator" | "reviewer" }) =>
+      projectsApi.addMember(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["project-members", id] });
+      qc.invalidateQueries({ queryKey: ["project", id] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+}
+
+export function useRemoveProjectMember(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (memberId: string) => projectsApi.removeMember(id, memberId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["project-members", id] });
+      qc.invalidateQueries({ queryKey: ["project", id] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
     },
   });
 }

@@ -7,6 +7,9 @@ export interface ProjectResponse {
   name: string;
   type_label: string;
   type_key: string;
+  owner_id: string;
+  owner_name: string | null;
+  member_count: number;
   status: string;
   ai_enabled: boolean;
   ai_model: string | null;
@@ -36,6 +39,29 @@ export interface ProjectCreatePayload {
   due_date?: string | null;
 }
 
+export interface ProjectUpdatePayload {
+  name?: string;
+  type_label?: string;
+  type_key?: string;
+  status?: string;
+  classes?: string[];
+  ai_enabled?: boolean;
+  ai_model?: string | null;
+  due_date?: string | null;
+  sampling?: string;
+  maximum_annotations?: number;
+  show_overlap_first?: boolean;
+}
+
+export interface ProjectMemberResponse {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  role: "annotator" | "reviewer";
+  assigned_at: string;
+}
+
 export type ExportFormat = "coco" | "voc" | "yolo";
 
 export const projectsApi = {
@@ -54,6 +80,23 @@ export const projectsApi = {
 
   create: (payload: ProjectCreatePayload) =>
     apiClient.post<ProjectResponse>("/projects", payload),
+
+  update: (id: string, payload: ProjectUpdatePayload) =>
+    apiClient.patch<ProjectResponse>(`/projects/${id}`, payload),
+
+  remove: (id: string) => apiClient.delete<void>(`/projects/${id}`),
+
+  transfer: (id: string, new_owner_id: string) =>
+    apiClient.post<ProjectResponse>(`/projects/${id}/transfer`, { new_owner_id }),
+
+  listMembers: (id: string) =>
+    apiClient.get<ProjectMemberResponse[]>(`/projects/${id}/members`),
+
+  addMember: (id: string, payload: { user_id: string; role: "annotator" | "reviewer" }) =>
+    apiClient.post<ProjectMemberResponse>(`/projects/${id}/members`, payload),
+
+  removeMember: (id: string, memberId: string) =>
+    apiClient.delete<void>(`/projects/${id}/members/${memberId}`),
 
   exportProject: async (id: string, format: ExportFormat) => {
     const token = localStorage.getItem("token");

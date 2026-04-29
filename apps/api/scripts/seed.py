@@ -150,7 +150,11 @@ async def seed() -> None:
                 select(Project).where(Project.display_id == pdata["display_id"])
             )
             if existing:
-                print(f"  skip  project {pdata['display_id']} (已存在)")
+                if existing.owner_id != owner.id:
+                    existing.owner_id = owner.id
+                    print(f"  fix   project {pdata['display_id']} owner -> pm")
+                else:
+                    print(f"  skip  project {pdata['display_id']} (已存在)")
                 continue
 
             project = Project(id=uuid.uuid4(), **pdata)

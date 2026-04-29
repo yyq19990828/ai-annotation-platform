@@ -11,7 +11,6 @@
 > 仅记录代码中明确观察到的未兑现 / 占位项，按模块归类。已实现的功能见下方各版本条目。
 
 ### 项目模块
-- **项目编辑 / 设置页**：后端 `apps/api/app/api/v1/projects.py` 缺 `PATCH /projects/:id` 与 `DELETE /projects/:id`；前端 `api/projects.ts` 无 `update`；无 `/projects/:id/settings` 页面。新建项目向导步骤 2 文案「后续可在项目设置中调整」目前无兑现路径。
 - **非 image-det 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / video-track / mm 共 6 类点击「打开」仅显示 toast `类型 X 的标注界面尚未实现`（`DashboardPage.tsx:139`、`ViewerDashboard.tsx:31`）。
 
 ### 数据 & 存储
@@ -26,7 +25,16 @@
 ### 平台 / 治理
 - **审计日志**：路由 `/audit` 占位；Dashboard「近期活动」卡片注明「审计日志功能将在后续版本上线」（`DashboardPage.tsx:260`）。
 - **设置页**：路由 `/settings` 占位。
-- **用户邀请**：UsersPage「邀请」按钮（`UsersPage.tsx:65`）的 toast `邀请链接已复制` 为虚假提示，无真实邀请链接生成。
+- **真实用户注册（邀请制）**：当前仅 `seed.py` 生成测试账号，无真实注册路径；UsersPage「邀请」按钮（`UsersPage.tsx:65`）的 toast `邀请链接已复制` 为虚假提示。已确定走 **B 邀请制** 方案（非公开注册、非 SSO）。具体设计：
+  - 后端新表 `user_invitations`：`id / email / role / group_name / token(32B 随机) / expires_at / invited_by / accepted_at / accepted_user_id`，token 单次使用、≤ 7 天过期
+  - 后端三接口：
+    - `POST /users/invite`（super_admin / project_admin）：写表 + 暂时返回链接，后续接 SMTP / SES 发邮件
+    - `GET /auth/invitations/{token}`（公开）：校验 token，返回邮箱+角色给注册页预填
+    - `POST /auth/register`（公开）：凭 token + 姓名 + 密码完成注册，建 users 行；email 不可由受邀人改写、role 由邀请方决定
+  - 前端：UsersPage 邀请按钮换成弹窗（邮箱 / 角色 / 分组）→ 显示一次性邀请链接；新增脱离 AppShell 的 `/register?token=xxx` 全屏页，提交后自动登录跳 dashboard
+  - 配套治理：邀请/接受/角色变更全部写入 `audit_logs`（与「审计日志」TODO 合并落地）
+  - 部署安全栏：`seed.py` 顶部加 `if settings.environment == "production": raise SystemExit(...)`；首个 super_admin 用一次性脚本 `bootstrap_admin.py`（读 env 邮箱/密码）建立，与测试种子物理隔离
+  - 远期：留出 SSO / LDAP 接入点（C 方案），首次 SSO 登录自动建账户、role 默认 viewer 由管理员升级
 - **个人任务面板**：AnnotatorDashboard「开始标注」按钮（`AnnotatorDashboard.tsx:13`）目前 toast 提示「项目列表面板将在后续版本上线」。
 
 ### TopBar / Dashboard 控件
@@ -38,6 +46,50 @@
 ### 一致性 / 体验
 - **Modal 内的非自定义 confirm/alert 替换**：当前若有删除类破坏性操作仍可能用浏览器原生 confirm（待审视各页面），需改为 Modal 二次确认。
 - **路由守卫粒度**：`RequirePagePermission` 当前按页判定；项目级权限（如「仅自己项目」）仍依赖后端校验，前端尚未在 `/projects/:id/annotate` 做同等检查。
+
+---
+
+## [0.4.5] - 2026-04-29
+
+### 新增
+
+#### 项目权限隔离与负责人体系
+- 新增 `ProjectMember` 模型 + alembic 迁移 `0004_project_members.py`：项目内 annotator/reviewer 指派关系（UniqueConstraint(project_id, user_id)，CASCADE 项目）
+- `apps/api/app/deps.py` 增加 `assert_project_visible` / `require_project_visible` / `require_project_owner` 三个工厂：可见性 = super_admin 全量；project_admin 仅 `owner_id == self`；annotator/reviewer/viewer 仅经 ProjectMember 关联
+- `GET /projects` / `GET /projects/stats` / `GET /projects/{id}` 全部按可见性过滤；`GET /tasks` 与 `/tasks/next` 也加同样校验
+
+#### 项目设置接口（兑现 0.4.4 占位）
+- `PATCH /projects/{id}`：通用字段更新，权限 `require_project_owner`
+- `DELETE /projects/{id}`：硬删 + cascade，权限 `require_project_owner`
+- `POST /projects/{id}/transfer`：负责人转移，**仅 super_admin** 可调用，目标必须是 `project_admin` 角色
+- `GET / POST / DELETE /projects/{id}/members`：成员 CRUD；`POST` 校验目标 user.role 与指派 role 一致（annotator → ANNOTATOR；reviewer → REVIEWER）
+
+#### `ProjectOut` 字段扩充
+- 新增 `owner_id` / `owner_name` / `member_count` 字段，前端 Dashboard「负责人」列与设置页直接消费
+
+#### 前端项目设置页
+- 新建 `/projects/:id/settings` 路由（`pages/Projects/ProjectSettingsPage.tsx`）：左侧 4 个 section 切换
+  - **基本信息**（`GeneralSection`）：名称 / 状态 / 截止 / 类别 chip / AI 开关与模型，调用 `PATCH`
+  - **成员管理**（`MembersSection` + `AssignMemberModal`）：列表 + 「指派标注员」「指派审核员」按钮，按角色过滤候选，去重；移除走二次确认 Modal
+  - **负责人**（`OwnerSection`）：仅 super_admin 可见；下拉选 project_admin → 「确认转移」
+  - **危险操作**（`DangerSection`）：删除项目，输入项目名二次确认
+- 守卫：非 owner 且非 super_admin 直接 `<Navigate to="/unauthorized">`
+
+#### Dashboard / 向导接入
+- `DashboardPage.tsx` 项目列「负责人」列改为真数据 `p.owner_name`、`p.member_count`
+- 列尾对 owner / super_admin 显示齿轮按钮 → 设置页
+- `CreateProjectWizard.tsx` 成功页新增「项目设置」CTA，兑现步骤 2 文案「后续可在项目设置中调整」
+
+#### Hooks / API / Permissions
+- `api/projects.ts`：`update / remove / transfer / listMembers / addMember / removeMember`
+- `hooks/useProjects.ts`：`useUpdateProject / useDeleteProject / useTransferProject / useProjectMembers / useAddProjectMember / useRemoveProjectMember`
+- `hooks/useIsProjectOwner.ts`：`super_admin || owner_id === self` 工具 hook
+- `constants/permissions.ts`：新增 `project.transfer`（仅 super_admin）
+- `api/client.ts`：新增 `apiClient.patch`
+
+### 变更
+
+- `apps/web/tsconfig.json` 移除已弃用的 `baseUrl`（`paths` 在 bundler 模式下使用相对路径，`vite/tsconfig` 解析依旧）
 
 ---
 

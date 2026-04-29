@@ -14,6 +14,7 @@ import { Can } from "@/components/guards/Can";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import { projectsApi, type ExportFormat, type ProjectResponse } from "@/api/projects";
 import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
+import { useAuthStore } from "@/stores/authStore";
 
 const TYPE_ICONS: Record<string, string> = {
   "image-det": "rect",
@@ -25,12 +26,23 @@ const TYPE_ICONS: Record<string, string> = {
   mm: "mm",
 };
 
-function ProjectRow({ p, onOpen }: { p: ProjectResponse; onOpen: (p: ProjectResponse) => void }) {
+function ProjectRow({
+  p,
+  onOpen,
+  canManage,
+  onSettings,
+}: {
+  p: ProjectResponse;
+  onOpen: (p: ProjectResponse) => void;
+  canManage: boolean;
+  onSettings: (p: ProjectResponse) => void;
+}) {
   const total = p.total_tasks || 1;
   const pct = Math.round((p.completed_tasks / total) * 100);
   const aiPct = p.ai_enabled ? Math.round(pct * 0.6) : 0;
   const due = p.due_date ?? "—";
   const updated = p.updated_at ? new Date(p.updated_at).toLocaleDateString("zh-CN") : "—";
+  const ownerInitial = p.owner_name?.slice(0, 1) ?? "?";
 
   return (
     <tr onClick={() => onOpen(p)} style={{ cursor: "pointer" }}>
@@ -56,10 +68,12 @@ function ProjectRow({ p, onOpen }: { p: ProjectResponse; onOpen: (p: ProjectResp
       </td>
       <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Avatar initial="?" size="sm" />
+          <Avatar initial={ownerInitial} size="sm" />
           <div>
-            <div style={{ fontSize: 12.5 }}>负责人</div>
-            <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>—</div>
+            <div style={{ fontSize: 12.5 }}>{p.owner_name ?? "—"}</div>
+            <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+              {p.member_count > 0 ? `${p.member_count} 名成员` : "暂无成员"}
+            </div>
           </div>
         </div>
       </td>
@@ -109,6 +123,18 @@ function ProjectRow({ p, onOpen }: { p: ProjectResponse; onOpen: (p: ProjectResp
             <option value="voc">VOC</option>
             <option value="yolo">YOLO</option>
           </select>
+          {canManage && (
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSettings(p);
+              }}
+              title="项目设置 — 修改信息 / 指派成员 / 转移负责人"
+            >
+              <Icon name="settings" size={13} />设置
+            </Button>
+          )}
           <Button size="sm">打开 <Icon name="chevRight" size={11} /></Button>
         </div>
       </td>
@@ -131,6 +157,15 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const wizardOpen = searchParams.get("new") === "1";
+  const currentUser = useAuthStore((s) => s.user);
+
+  const canManageProject = (p: ProjectResponse): boolean => {
+    if (!currentUser) return false;
+    if (currentUser.role === "super_admin") return true;
+    return p.owner_id === currentUser.id;
+  };
+
+  const onSettings = (p: ProjectResponse) => navigate(`/projects/${p.id}/settings`);
 
   const onOpenProject = (p: ProjectResponse) => {
     if (p.type_key === "image-det") {
@@ -225,7 +260,13 @@ export function DashboardPage() {
               </tr>
             )}
             {!isLoading && projects.map((p) => (
-              <ProjectRow key={p.id} p={p} onOpen={onOpenProject} />
+              <ProjectRow
+                key={p.id}
+                p={p}
+                onOpen={onOpenProject}
+                canManage={canManageProject(p)}
+                onSettings={onSettings}
+              />
             ))}
             {!isLoading && projects.length === 0 && (
               <tr>
