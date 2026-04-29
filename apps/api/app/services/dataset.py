@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,12 +38,34 @@ class DatasetService:
         )
         datasets = result.scalars().all()
 
+        ds_ids = [ds.id for ds in datasets]
+
+        # 批量聚合 project_count 与 total_size，避免 N+1
+        if ds_ids:
+            pc_rows = await self.db.execute(
+                select(ProjectDataset.dataset_id, func.count())
+                .where(ProjectDataset.dataset_id.in_(ds_ids))
+                .group_by(ProjectDataset.dataset_id)
+            )
+            pc_map = {r[0]: r[1] for r in pc_rows.all()}
+
+            sz_rows = await self.db.execute(
+                select(DatasetItem.dataset_id, func.coalesce(func.sum(DatasetItem.file_size), 0))
+                .where(DatasetItem.dataset_id.in_(ds_ids))
+                .group_by(DatasetItem.dataset_id)
+            )
+            sz_map = {r[0]: int(r[1]) for r in sz_rows.all()}
+        else:
+            pc_map: dict = {}
+            sz_map: dict = {}
+
         items = []
         for ds in datasets:
-            pc = (await self.db.execute(
-                select(func.count()).select_from(ProjectDataset).where(ProjectDataset.dataset_id == ds.id)
-            )).scalar() or 0
-            items.append({**_dataset_dict(ds), "project_count": pc})
+            items.append({
+                **_dataset_dict(ds),
+                "project_count": pc_map.get(ds.id, 0),
+                "total_size": sz_map.get(ds.id, 0),
+            })
 
         return items, total
 
@@ -56,7 +79,11 @@ class DatasetService:
         pc = (await self.db.execute(
             select(func.count()).select_from(ProjectDataset).where(ProjectDataset.dataset_id == ds.id)
         )).scalar() or 0
-        return {**_dataset_dict(ds), "project_count": pc}
+        total_size = (await self.db.execute(
+            select(func.coalesce(func.sum(DatasetItem.file_size), 0))
+            .where(DatasetItem.dataset_id == ds.id)
+        )).scalar() or 0
+        return {**_dataset_dict(ds), "project_count": pc, "total_size": int(total_size)}
 
     async def create(self, name: str, description: str, data_type: str, user_id: uuid.UUID) -> Dataset:
         ds_id = uuid.uuid4()
@@ -127,6 +154,15 @@ class DatasetService:
             out.append(d)
         return out, total
 
+    async def find_by_hash(self, dataset_id: uuid.UUID, content_hash: str) -> DatasetItem | None:
+        result = await self.db.execute(
+            select(DatasetItem).where(
+                DatasetItem.dataset_id == dataset_id,
+                DatasetItem.content_hash == content_hash,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def add_item(
         self,
         dataset_id: uuid.UUID,
@@ -134,6 +170,7 @@ class DatasetService:
         file_path: str,
         file_type: str,
         file_size: int | None = None,
+        content_hash: str | None = None,
     ) -> DatasetItem:
         item = DatasetItem(
             dataset_id=dataset_id,
@@ -141,6 +178,7 @@ class DatasetService:
             file_path=file_path,
             file_type=file_type,
             file_size=file_size,
+            content_hash=content_hash,
         )
         self.db.add(item)
 
@@ -177,6 +215,13 @@ class DatasetService:
         prefix = f"{ds.name}/"
         objects = storage_service.list_objects(prefix, bucket=storage_service.datasets_bucket)
 
+        # 同时收集已存在的 hash，防止 scan 时内容重复
+        existing_hashes_res = await self.db.execute(
+            select(DatasetItem.content_hash)
+            .where(DatasetItem.dataset_id == dataset_id, DatasetItem.content_hash.isnot(None))
+        )
+        existing_hashes: set[str] = {r[0] for r in existing_hashes_res.all()}
+
         created = 0
         for obj in objects:
             key: str = obj["key"]
@@ -184,6 +229,14 @@ class DatasetService:
                 continue
             if key in existing_paths:
                 continue
+
+            # ETag from MinIO 单 PUT = md5（不含引号）
+            etag = obj.get("etag") or ""
+            content_hash = etag if len(etag) == 32 else None
+            if content_hash and content_hash in existing_hashes:
+                continue
+            if content_hash:
+                existing_hashes.add(content_hash)
 
             file_name = key.rsplit("/", 1)[-1]
             ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
@@ -195,6 +248,7 @@ class DatasetService:
                 file_path=key,
                 file_type=file_type,
                 file_size=obj.get("size"),
+                content_hash=content_hash,
             )
             self.db.add(item)
             created += 1
@@ -283,6 +337,7 @@ def _dataset_dict(ds: Dataset) -> dict:
         "description": ds.description,
         "data_type": ds.data_type,
         "file_count": ds.file_count,
+        "total_size": 0,  # 调用方会覆盖
         "created_by": ds.created_by,
         "created_at": ds.created_at,
         "updated_at": ds.updated_at,
@@ -297,6 +352,7 @@ def _item_dict(item: DatasetItem) -> dict:
         "file_path": item.file_path,
         "file_type": item.file_type,
         "file_size": item.file_size,
+        "content_hash": item.content_hash,
         "metadata": item.metadata_,
         "created_at": item.created_at,
     }

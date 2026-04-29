@@ -58,3 +58,58 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   annotator: ["task.annotate"],
   viewer: [],
 };
+
+export const PERMISSION_LABELS: Record<Permission, string> = {
+  "project.create": "创建项目",
+  "project.edit": "编辑项目",
+  "project.delete": "删除项目",
+  "project.transfer": "转让项目",
+  "project.export": "导出项目",
+  "task.assign": "分配任务",
+  "task.annotate": "执行标注",
+  "task.review": "审核任务",
+  "task.approve": "通过任务",
+  "task.reject": "驳回任务",
+  "user.list": "查看用户",
+  "user.invite": "邀请用户",
+  "user.edit-role": "修改角色",
+  "user.export": "导出用户",
+  "group.manage": "管理数据组",
+  "invitation.manage": "管理邀请",
+  "dataset.create": "创建数据集",
+  "dataset.delete": "删除数据集",
+  "dataset.link": "关联项目",
+  "storage.manage": "管理存储",
+  "audit.view": "查看审计",
+  "settings.edit": "系统设置",
+  "ai.trigger": "触发 AI",
+  "ml-backend.manage": "管理 ML 模型",
+};
+
+export const PERMISSION_GROUPS: Array<{ key: string; title: string; perms: Permission[] }> = [
+  {
+    key: "project",
+    title: "项目",
+    perms: ["project.create", "project.edit", "project.delete", "project.transfer", "project.export"],
+  },
+  {
+    key: "task",
+    title: "任务",
+    perms: ["task.assign", "task.annotate", "task.review", "task.approve", "task.reject"],
+  },
+  {
+    key: "user",
+    title: "用户 / 数据组",
+    perms: ["user.list", "user.invite", "user.edit-role", "user.export", "group.manage", "invitation.manage"],
+  },
+  {
+    key: "dataset",
+    title: "数据集 / 存储",
+    perms: ["dataset.create", "dataset.delete", "dataset.link", "storage.manage"],
+  },
+  {
+    key: "ai",
+    title: "AI / 审计 / 设置",
+    perms: ["ai.trigger", "ml-backend.manage", "audit.view", "settings.edit"],
+  },
+];

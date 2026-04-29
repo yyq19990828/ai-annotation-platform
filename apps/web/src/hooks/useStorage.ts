@@ -8,3 +8,11 @@ export function useStorageHealth() {
     retry: false,
   });
 }
+
+export function useStorageBuckets() {
+  return useQuery({
+    queryKey: ["storage-buckets"],
+    queryFn: storageApi.buckets,
+    retry: false,
+  });
+}

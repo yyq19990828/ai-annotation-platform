@@ -1,7 +1,9 @@
+import base64
 import uuid
+from datetime import timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, get_current_user, require_roles, assert_project_visible
@@ -23,6 +25,19 @@ _ANNOTATORS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER, 
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
 
 
+def _encode_task_cursor(created_at, task_id: uuid.UUID) -> str:
+    ts = created_at.astimezone(timezone.utc).isoformat() if created_at.tzinfo else created_at.isoformat()
+    return base64.urlsafe_b64encode(f"{ts}|{task_id.hex}".encode()).decode()
+
+
+def _decode_task_cursor(cursor: str):
+    raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+    ts_str, id_hex = raw.split("|", 1)
+    from datetime import datetime
+    ts = datetime.fromisoformat(ts_str)
+    return ts, uuid.UUID(id_hex)
+
+
 @router.get("", response_model=TaskListResponse)
 async def list_tasks(
     project_id: uuid.UUID = Query(...),
@@ -30,6 +45,7 @@ async def list_tasks(
     assignee_id: uuid.UUID | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    cursor: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -42,6 +58,24 @@ async def list_tasks(
     if assignee_id:
         q = q.where(Task.assignee_id == assignee_id)
         count_q = count_q.where(Task.assignee_id == assignee_id)
+
+    if cursor:
+        last_ts, last_id = _decode_task_cursor(cursor)
+        q = q.where(
+            or_(
+                Task.created_at > last_ts,
+                and_(Task.created_at == last_ts, Task.id > last_id),
+            )
+        ).order_by(Task.created_at, Task.id).limit(limit)
+        tasks = (await db.execute(q)).scalars().all()
+        total = (await db.execute(count_q)).scalar() or 0
+        next_cursor = (
+            _encode_task_cursor(tasks[-1].created_at, tasks[-1].id)
+            if len(tasks) == limit
+            else None
+        )
+        return TaskListResponse(items=[_task_with_url(t) for t in tasks], total=total, limit=limit, offset=0, next_cursor=next_cursor)
+
     total = (await db.execute(count_q)).scalar() or 0
     result = await db.execute(q.order_by(Task.sequence_order, Task.created_at).limit(limit).offset(offset))
     tasks = result.scalars().all()

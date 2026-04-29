@@ -21,6 +21,7 @@ export interface AuditLogList {
   total: number;
   page: number;
   page_size: number;
+  next_cursor?: string | null;
 }
 
 export interface AuditQuery {
@@ -44,4 +45,23 @@ function toQuery(params?: AuditQuery): string {
 export const auditApi = {
   list: (params?: AuditQuery) =>
     apiClient.get<AuditLogList>(`/audit-logs${toQuery(params)}`),
+
+  export: async (params?: AuditQuery, format: "csv" | "json" = "csv"): Promise<void> => {
+    const token = localStorage.getItem("token");
+    const q = toQuery({ ...params, format } as AuditQuery & { format: string });
+    const res = await fetch(`/api/v1/audit-logs/export${q}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.detail ?? `导出失败 (HTTP ${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `audit_logs.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };

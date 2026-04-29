@@ -7,6 +7,42 @@
 ---
 
 
+## [0.4.8] - 2026-04-29
+
+### 新增
+
+#### 数据 & 存储
+- **多桶展示**：`GET /api/v1/storage/buckets` 返回 `annotations` + `datasets` 两桶的 name / status / object_count / total_size_bytes；StoragePage 按桶分卡显示，TopStats 展示总容量
+- **文件大小统计**：`DatasetOut` 增加 `total_size` 字段（聚合 `SUM(file_size)`，批量 GROUP BY 避免 N+1）；StoragePage 数据集表新增「容量」列，去除「后续版本支持」占位文案
+- **文件 md5 去重**：`dataset_items` 增加 `content_hash(md5)` 列（nullable，带索引）；ZIP 上传计算 md5 跳过同 dataset 内重复文件（新增返回字段 `deduped`）；`upload-complete` 通过 S3 ETag 检测重复 → 409 + `duplicate_of`；`scan_and_import` 同样跳过重复 hash
+
+#### 用户与权限
+- **角色 tab 真权限矩阵**：`UsersPage`「角色」tab 不再读 `mock.ts`；从 `ROLE_PERMISSIONS` 枚举所有角色，按 `PERMISSION_GROUPS`（项目/任务/用户数据组/数据集存储/AI审计设置）5 组分块展示，命中权限绿色 ✓ 徽章，未命中灰色占位，viewer 角色零权限仍有完整信息密度
+- 新增 `ROLE_DESC`（`constants/roles.ts`）、`PERMISSION_LABELS` + `PERMISSION_GROUPS`（`constants/permissions.ts`）
+
+#### TopBar
+- **刷新按钮**：绑定 `queryClient.invalidateQueries()` 全局刷新；正在 fetching 时图标旋转动画
+- **通知中心**：铃铛点击弹 `NotificationsPopover`（右侧浮层，点击外部关闭）；后端 `GET /api/v1/auth/me/notifications` 过滤与当前用户相关的审计事件（被邀请/改角色/项目变更），30s 轮询；已读状态存 localStorage；unread_count > 0 时铃铛显示红点；点「全部已读」写 last_read_at
+
+#### 治理 / 合规
+- **审计导出**：`GET /api/v1/audit-logs/export?format=csv|json`（max 50000 行，超出 413）支持与 list 相同的所有过滤参数；导出操作自身写 `audit.export` 行；AuditPage 新增「CSV」「JSON」导出按钮
+- **自动刷新**：AuditPage 「30s 自动刷新」checkbox，开启时 refetchInterval=30000
+
+#### 可观测性
+- **健康检查拆分**：新建 `app/api/health.py`；`/health` 返回 `{status, version, checks: {db, redis, minio}}`；子路由 `/health/db` `/health/redis` `/health/minio` 各返回 `{status, latency_ms}`；k8s readiness 可单独 probe；旧 `@app.get("/health")` 移除
+- **X-Request-ID 传播**：新建 `RequestIDMiddleware`（`middleware/request_id.py`）；每个请求自动生成/透传 `X-Request-ID`，写入 `ContextVar`；`AuditMiddleware` 中间件行与 `AuditService` 业务行均在 `detail_json.request_id` 注入，实现跨表完整追溯
+- **结构化 JSON 日志**：`app/core/logging.py` 接入 structlog；所有日志输出 JSON（timestamp / level / logger / event / request_id）；`uvicorn.access` 静默不重复输出；适配 Loki / ELK 聚合
+- **Prometheus 指标**：`GET /metrics` 端点（不在 `/api/v1` 前缀下，不经过 AuditMiddleware）；`anno_http_requests_total`（method/path/status）、`anno_http_request_duration_seconds`（method/path）由 `RequestIDMiddleware` 在每次 `/api/` 请求后记录
+- 版本号升至 0.4.8
+
+#### 性能 / 扩展
+- **审计日志 keyset 分页**：`GET /api/v1/audit-logs` 新增可选 `cursor` 参数（base64 `created_at|id`）；返回 `next_cursor` 供下一页 URL 传递；兼容保留 `page/page_size` 参数
+- **任务列表 keyset 分页**：`GET /api/v1/tasks` 同样新增可选 `cursor` 参数（base64 `created_at|task_id`）；返回 `next_cursor`；无 `cursor` 时保持原有 `offset` 分页不变
+- **N+1 修复**：`list_audit_logs` 改为单 `OUTERJOIN User` 批量回填 `actor_email`，消除每行单次 `db.get(User, actor_id)` 的 N 次查询
+- **数据库连接池调优**：`create_async_engine` 显式设置 `pool_size=10, max_overflow=20, pool_recycle=3600`，避免高并发下连接耗尽与连接泄露
+
+---
+
 ## [0.4.7] - 2026-04-29
 
 ### 新增

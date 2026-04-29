@@ -11,6 +11,7 @@ from starlette.types import ASGIApp
 from app.core.security import decode_access_token
 from app.db.base import async_session
 from app.db.models.audit_log import AuditLog
+from app.middleware.request_id import request_id_var
 from app.services.audit import extract_client_ip
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ async def _persist_audit(request: Request, status_code: int) -> None:
         except JWTError:
             actor_id = None
 
+    rid = request_id_var.get()
     entry = AuditLog(
         actor_id=actor_id,
         actor_email=None,
@@ -83,7 +85,7 @@ async def _persist_audit(request: Request, status_code: int) -> None:
         path=path_short(request.url.path),
         status_code=status_code,
         ip=extract_client_ip(request),
-        detail_json=None,
+        detail_json={"request_id": rid} if rid else None,
     )
 
     async with async_session() as session:

@@ -17,4 +17,6 @@ dependencies = [
     "boto3>=1.35.0",
     "celery>=5.4.0",
     "httpx>=0.28.0",
+    "structlog>=25.5.0",
+    "prometheus-client>=0.25.0",
 ]

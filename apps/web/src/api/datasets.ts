@@ -7,6 +7,7 @@ export interface DatasetResponse {
   description: string;
   data_type: string;
   file_count: number;
+  total_size: number;
   created_by: string;
   project_count: number;
   created_at: string;
@@ -20,6 +21,7 @@ export interface DatasetItemResponse {
   file_path: string;
   file_type: string;
   file_size: number | null;
+  content_hash: string | null;
   metadata: Record<string, unknown>;
   file_url: string | null;
   created_at: string;

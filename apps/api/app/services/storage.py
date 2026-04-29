@@ -66,12 +66,34 @@ class StorageService:
                     "key": obj["Key"],
                     "size": obj["Size"],
                     "last_modified": obj["LastModified"],
+                    "etag": (obj.get("ETag") or "").strip('"'),
                 })
             if resp.get("IsTruncated"):
                 continuation_token = resp["NextContinuationToken"]
             else:
                 break
         return result
+
+    def head_object_etag(self, key: str, bucket: str | None = None) -> str | None:
+        meta = self.verify_upload(key, bucket=bucket)
+        if not meta:
+            return None
+        etag = meta.get("ETag") or ""
+        return etag.strip('"') or None
+
+    def summarize_bucket(self, bucket: str | None = None) -> dict:
+        """统计桶内对象数量与总字节数；状态字段独立返回 (ok|error)。"""
+        b = bucket or self.bucket
+        try:
+            objs = self.list_objects("", bucket=b)
+        except ClientError as e:
+            return {"name": b, "status": "error", "object_count": 0, "total_size_bytes": 0, "error": str(e)}
+        total = sum(o["size"] for o in objs if not o["key"].endswith("/"))
+        count = sum(1 for o in objs if not o["key"].endswith("/"))
+        return {"name": b, "status": "ok", "object_count": count, "total_size_bytes": int(total)}
+
+    def list_all_buckets(self) -> list[str]:
+        return [self.bucket, self.datasets_bucket]
 
     def create_folder(self, folder_name: str, bucket: str | None = None) -> None:
         b = bucket or self.bucket

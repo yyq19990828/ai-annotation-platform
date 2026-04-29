@@ -10,8 +10,8 @@ import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUsers } from "@/hooks/useUsers";
 import { useGroups } from "@/hooks/useGroups";
-import { roles } from "@/data/mock";
-import { ROLE_LABELS } from "@/constants/roles";
+import { ROLE_LABELS, ROLE_DESC } from "@/constants/roles";
+import { ROLE_PERMISSIONS, PERMISSION_LABELS, PERMISSION_GROUPS, type Permission } from "@/constants/permissions";
 import { Can } from "@/components/guards/Can";
 import { InviteUserModal } from "@/components/users/InviteUserModal";
 import { EditUserModal } from "@/components/users/EditUserModal";
@@ -80,9 +80,11 @@ export function UsersPage() {
     }
   };
 
+  const roleKeys = Object.keys(ROLE_PERMISSIONS) as Array<keyof typeof ROLE_PERMISSIONS>;
+
   const tabLabels: Array<["members" | "roles" | "groups" | "invitations", string]> = [
     ["members", `成员 (${allUsers.length})`],
-    ["roles", `角色 (${roles.length})`],
+    ["roles", `角色 (${roleKeys.length})`],
     ["groups", `数据组 (${groupsData.length})`],
     ["invitations", "邀请记录"],
   ];
@@ -112,7 +114,7 @@ export function UsersPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
         <StatCard icon="users" label="团队成员" value={allUsers.length} hint="活跃" sparkValues={[8, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 12]} sparkColor="var(--color-accent)" />
-        <StatCard icon="shield" label="角色组" value={roles.length} hint="自定义" />
+        <StatCard icon="shield" label="角色组" value={roleKeys.length} hint="自定义" />
         <StatCard icon="folder" label="数据组" value={groupsData.length} hint="可分配" />
         <StatCard icon="activity" label="本周活跃" value={allUsers.filter((u: UserResponse) => u.status === "online").length} hint="在线" sparkValues={[6, 7, 8, 7, 9, 10, 11, 9]} sparkColor="var(--color-ai)" />
       </div>
@@ -135,7 +137,7 @@ export function UsersPage() {
                 style={{ padding: "5px 8px", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", fontSize: 12.5, background: "var(--color-bg-elev)" }}
               >
                 <option>全部</option>
-                {roles.map((r) => <option key={r.key} value={r.key}>{ROLE_LABELS[r.key as UserRole] ?? r.key}</option>)}
+                {roleKeys.map((r) => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
               </select>
               <SearchInput placeholder="搜索姓名或邮箱..." value={query} onChange={setQuery} width={240} />
             </div>
@@ -217,27 +219,48 @@ export function UsersPage() {
 
         {tab === "roles" && (
           <div style={{ padding: 16, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
-            {roles.map((r) => (
-              <div key={r.key} style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-lg)", padding: 14, background: "var(--color-bg-elev)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Badge variant={ROLE_COLORS[r.key] || "outline"} style={{ fontSize: 12, padding: "3px 10px" }}>{ROLE_LABELS[r.key as UserRole] ?? r.key}</Badge>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
-                      {allUsers.filter((u: UserResponse) => u.role === r.key).length} 人
-                    </span>
+            {roleKeys.map((rk) => {
+              const perms = ROLE_PERMISSIONS[rk];
+              const permsSet = new Set<Permission>(perms);
+              const memberCount = allUsers.filter((u: UserResponse) => u.role === rk).length;
+              return (
+                <div key={rk} style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-lg)", padding: 14, background: "var(--color-bg-elev)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <Badge variant={ROLE_COLORS[rk] || "outline"} style={{ fontSize: 12, padding: "3px 10px" }}>
+                      {ROLE_LABELS[rk] ?? rk}
+                    </Badge>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{memberCount} 人</span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)", marginBottom: 10 }}>{ROLE_DESC[rk]}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {PERMISSION_GROUPS.map((group) => {
+                      const granted = group.perms.filter((p) => permsSet.has(p));
+                      const denied = group.perms.filter((p) => !permsSet.has(p));
+                      if (granted.length === 0 && denied.length === 0) return null;
+                      return (
+                        <div key={group.key}>
+                          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-fg-subtle)", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 4 }}>
+                            {group.title}
+                          </div>
+                          <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                            {granted.map((p) => (
+                              <Badge key={p} variant="success" style={{ fontSize: 10 }}>
+                                <Icon name="check" size={9} />{PERMISSION_LABELS[p]}
+                              </Badge>
+                            ))}
+                            {denied.map((p) => (
+                              <Badge key={p} variant="outline" style={{ fontSize: 10, opacity: 0.4 }}>
+                                {PERMISSION_LABELS[p]}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-                <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)", marginBottom: 10 }}>{r.desc}</div>
-                <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginBottom: 6, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>权限</div>
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  {r.perms.map((p) => (
-                    <Badge key={p} variant="outline" style={{ fontSize: 11 }}>
-                      <Icon name="check" size={10} style={{ color: "var(--color-success)" }} />{p}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

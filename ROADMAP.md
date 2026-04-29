@@ -12,9 +12,9 @@
 - **项目模板**：当前每次新建项目都从 0 配置类别 / AI 模型；无「从已有项目复制」或「保存为模板」入口。
 
 #### 数据 & 存储
-- **存储文件大小统计**：`StoragePage.tsx:163` 明示「文件大小统计将在后续版本中支持」。
+- ~~**存储文件大小统计**：`StoragePage.tsx:163` 明示「文件大小统计将在后续版本中支持」。~~ ✅ v0.4.8 已完成
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
-- **文件去重 / hash**：`dataset_items` 没有 `content_hash` 列，相同文件多次上传会产生多份对象存储副本。
+- ~~**文件去重 / hash**：`dataset_items` 没有 `content_hash` 列，相同文件多次上传会产生多份对象存储副本。~~ ✅ v0.4.8 已完成
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 
 #### AI / 模型
@@ -27,7 +27,7 @@
 
 #### 用户与权限页（UsersPage）
 - **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。
-- **「角色」tab 卡片**：仍读取 `data/mock.ts` 的 `roles` 与硬编码 `perms`；应映射到 `constants/permissions.ts` 的真实 `ROLE_PERMISSIONS` 矩阵。
+- ~~**「角色」tab 卡片**：仍读取 `data/mock.ts` 的 `roles` 与硬编码 `perms`；应映射到 `constants/permissions.ts` 的真实 `ROLE_PERMISSIONS` 矩阵。~~ ✅ v0.4.8 已完成
 - **「存储与模型集成」面板**：`UsersPage.tsx:246-269` 全部 mock 数据，应对接 `/storage/health` 与 `/projects/{pid}/ml-backends`。
 
 #### 设置页（SettingsPage）
@@ -36,14 +36,14 @@
 - **系统设置可编辑**：本期 `GET /settings/system` 是只读 .env mirror，缺 PATCH。需要 `system_settings` 表 + 启动时 env 优先加载、表项作为 override。
 
 #### 审计日志页（AuditPage）
-- **导出 CSV / JSON**：合规场景需要离线归档。
-- **自动刷新 / 实时流**：当前需手动点刷新；可加 30s 轮询或 SSE。
+- ~~**导出 CSV / JSON**：合规场景需要离线归档。~~ ✅ v0.4.8 已完成
+- ~~**自动刷新 / 实时流**：当前需手动点刷新；可加 30s 轮询或 SSE。~~ ✅ v0.4.8 30s 轮询已完成
 - **detail_json 字段级筛选**：现在只能按 `action / target_type / actor_id / 时间`，不能按「角色变更：role: super_admin」这种字段值过滤（需 PG GIN 索引）。
 - **正向反向追溯视图**：点用户 / 项目 → 跳转该对象的完整审计时间线。
 
 #### TopBar / Dashboard 控件
 - **全局搜索**：TopBar 的 `<SearchInput placeholder="搜索项目、任务、数据集、成员..." kbd="⌘K">` 无 `value` / `onChange` / 提交 handler；后端无 `/search` 端点。
-- **通知 / 刷新按钮**：TopBar 两个 icon button 无 onClick；通知中心可基于 audit_logs（`actor_id == self` 或 `target_id 关联到自己的项目/任务`）实时弹卡。
+- ~~**通知 / 刷新按钮**：TopBar 两个 icon button 无 onClick；通知中心可基于 audit_logs（`actor_id == self` 或 `target_id 关联到自己的项目/任务`）实时弹卡。~~ ✅ v0.4.8 已完成
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast「切换工作区面板已展开」；Organization 表已存在但前端无切换 UI。
 - **Dashboard 高级筛选 / 网格视图**：`DashboardPage.tsx:198-199` 两个 Button 无 onClick。
 
@@ -71,25 +71,25 @@
 #### 治理 / 合规
 - **审计日志归档**：按月 PARTITION + 冷数据 S3 归档；后台 cron job 触发。
 - **审计日志全文索引**：`detail_json` 加 GIN 索引以支持快速查询；超大数据量考虑 ES / OpenSearch 镜像。
-- **审计中间件双行去重**：当前 metadata 行 + 业务 detail 行各写一行；可加 `request_id`（来自请求头或自动生成）做关联，UI 提供合并视图。
+- ~~**审计中间件双行去重**：当前 metadata 行 + 业务 detail 行各写一行；可加 `request_id`（来自请求头或自动生成）做关联，UI 提供合并视图。~~ ✅ v0.4.8 `request_id` 注入两行均已完成；UI 合并视图待后续
 - **数据导出审计**：`GET /projects/{id}/export` 等批量数据导出应触发审计 + 下载者签名水印。
 - **GDPR / 个人信息删除**：被删用户的 audit 行需要做 actor_email 脱敏（保留 actor_id 关联，原始邮箱另存或抹除）。
-- **通知中心 / 事件总线**：基于 audit_logs 派生面向用户的通知（被邀请、审核通过、AI 完成等），前端 TopBar 通知按钮承接；后端可用 Redis Pub/Sub 实时推送。
+- ~~**通知中心 / 事件总线**：基于 audit_logs 派生面向用户的通知（被邀请、审核通过、AI 完成等），前端 TopBar 通知按钮承接；后端可用 Redis Pub/Sub 实时推送。~~ ✅ v0.4.8 轮询方案已完成；Redis Pub/Sub 实时推送待后续
 - **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
 
 #### 可观测性
-- **结构化日志**：当前使用 `logger.warning` 普通字符串；引入 `structlog` 或 `loguru` + JSON 输出便于聚合（Loki / ELK）。
-- **request_id / trace_id**：中间件注入并写入 audit_logs 的 detail，便于跨表追溯。
-- **Prometheus metrics**：暴露 `/metrics`（FastAPI 请求时延、Celery 队列长度、数据库连接池、ML Backend 健康）。
+- ~~**结构化日志**：当前使用 `logger.warning` 普通字符串；引入 `structlog` 或 `loguru` + JSON 输出便于聚合（Loki / ELK）。~~ ✅ v0.4.8 已完成
+- ~~**request_id / trace_id**：中间件注入并写入 audit_logs 的 detail，便于跨表追溯。~~ ✅ v0.4.8 已完成
+- ~~**Prometheus metrics**：暴露 `/metrics`（FastAPI 请求时延、Celery 队列长度、数据库连接池、ML Backend 健康）。~~ ✅ v0.4.8 HTTP metrics 已完成（Celery/ML Backend 指标待后续）
 - **Sentry**：前后端 error tracking。
-- **健康检查拆分**：现在 `/health` 只返回 `{status: "ok"}`；拆为 `/health/db`、`/health/redis`、`/health/minio`、`/health/celery` 便于编排（k8s readiness）。
+- ~~**健康检查拆分**：现在 `/health` 只返回 `{status: "ok"}`；拆为 `/health/db`、`/health/redis`、`/health/minio`、`/health/celery` 便于编排（k8s readiness）。~~ ✅ v0.4.8 已完成（celery 待后续）
 
 #### 性能 / 扩展
 - **AuditMiddleware 写入异步队列**：当前每写请求一次 INSERT，写流量上来后改 Redis Stream / Kafka 异步消费，主请求 < 1ms 旁路。
-- **Audit / Task / Annotation 列表 keyset 分页**：当前 OFFSET 在大表上慢；改为 `(created_at, id) > (?, ?)` 游标分页。
+- ~~**Audit / Task / Annotation 列表 keyset 分页**：当前 OFFSET 在大表上慢；改为 `(created_at, id) > (?, ?)` 游标分页。~~ ✅ v0.4.8 audit_logs + tasks 已完成（Annotation 列表待后续）
 - **Predictions 表分区**：按 `project_id` 或 `created_at` PARTITION，单项目预测量大时查询性能下降。
-- **N+1 / 关联预加载**：`GET /audit-logs` 当前对每行额外 `db.get(User, actor_id)` 回填 actor_email；改为单 JOIN 批量取。
-- **数据库连接池调优 + 监控**：当前 `create_async_engine` 默认池，无 `pool_size / max_overflow / pool_recycle`。
+- ~~**N+1 / 关联预加载**：`GET /audit-logs` 当前对每行额外 `db.get(User, actor_id)` 回填 actor_email；改为单 JOIN 批量取。~~ ✅ v0.4.8 已完成
+- ~~**数据库连接池调优 + 监控**：当前 `create_async_engine` 默认池，无 `pool_size / max_overflow / pool_recycle`。~~ ✅ v0.4.8 已完成
 - **WebSocket 多副本**：Redis Pub/Sub 已就位，但生产横向扩 uvicorn 副本时需测试 sticky session 与 broadcast。
 - **CDN / 图片缩略图**：`dataset_items` 缺缩略图字段；标注页加载大图慢。
 
@@ -167,6 +167,25 @@
 - **会话级标注辅助**：① 框过小（< 0.005 × 0.005）已过滤，需提示「框太小未保存」；② 框越界自动 clamp 到 [0,1]；③ 重叠完全相同框（IoU > 0.95）拒绝并提示「疑似重复」。
 - **任务跳过与原因**：标注员可「跳过本题」并选原因（图像损坏 / 无目标 / 不清晰），后端记 `Task.skip_reason` 并自动转 reviewer 复核。
 - **Workbench 子组件拆分**：`WorkbenchPage.tsx` 720 行单文件，6 个 sub-component 内联（`ImageBackdrop` / `BoxOverlay` / `BoxListItem` / 三栏布局）。拆为 `<TaskQueuePanel>` / `<CanvasStage>` / `<AIInspectorPanel>` 三组件，并把状态收敛到 `useWorkbenchState(taskId)` hook —— 否则上述每一项改动都会让单文件继续膨胀到 1500+ 行。
+
+#### C.4 工作台架构分层（多任务类型如何复用同一外壳）
+
+> 决策：**单工作台外壳 + 按维度切分的画布渲染器 + 工具可插拔**，不是「一类型一工作台」也不是「单文件 if/else 全塞」。当前只支持矩形框（`tool: "box" | "hand"`，`WorkbenchPage.tsx:224`、`annotation_type: "bbox"` 硬编码 `WorkbenchPage.tsx:380`），但数据模型 `annotation_type: String(30)` + `geometry: JSONB` 已为多类型留好口子（`apps/api/app/db/models/annotation.py:17`）—— 未来扩多类型时不需要改外壳与数据层，只新增画布层 / 工具层。
+
+- **Layer 1 · 工作台外壳（`<WorkbenchShell>`，单一份）**：路由 `/projects/:id/annotate`、左侧任务队列、顶栏（项目元信息 / 提交 / 切换上下题）、右侧 AI 助手、任务锁、撤销重做栈、快捷键基座、状态栏、`useTaskLock` / `useAnnotationHistory` / `usePreannotationProgress`。这一层跟「在标什么」无关，跨所有类型共用 ~80%。
+- **Layer 2 · 画布渲染器（按维度切，3 个）**：
+  - `<ImageStage>`：image-det / image-seg / image-kp / mm（图像类）共用，渲染器 = 「图 + 矢量叠层」
+  - `<VideoStage>`：video-mm / video-track，多了**时间轴 + 关键帧插值**控件，硬塞 ImageStage 会扭
+  - `<LidarStage>`：lidar 单独，Three.js / WebGL viewport，与 2D 不是一个世界
+  - 三个画布通过 `<WorkbenchShell>` 的 slot 接入；外壳通过 `project.type` 选择渲染哪一个
+- **Layer 3 · 工具（画布内插件，按需注册）**：每个工具实现统一接口 `{ id, hotkey, icon, onMouseDown, onMouseMove, onMouseUp, render }`。当前 `<ImageStage>` 仅注册 `BboxTool`；后续加 polygon / keypoint / polyline 是注册新工具，**不修改画布**。
+- **不要做的两条反路径**：
+  - ❌ 单工作台 + 全动态：表面省事，半年后会变成「我是视频吗？我是 3D 吗？」的分支地狱
+  - ❌ 一类型一工作台（`WorkbenchImageDet` / `WorkbenchImageSeg` / `WorkbenchLidar`...）：`useTaskLock` / 提交流 / AI 面板要复制 7 份，改一个 bug 改 7 个文件
+- **落地路径（分两步，单矩形框期就先做第一步）**：
+  - **Step 1（现在做，不引入新类型）**：把 720 行 `WorkbenchPage.tsx` 拆成 `<WorkbenchShell>` + `<ImageStage>`（仅 `BboxTool`）。这一步纯结构重构，行为不变，但下面所有 C.1 / C.2 / C.3 项都需要这层骨架先就位。
+  - **Step 2（未来扩类型时）**：新增 polygon → 在 `<ImageStage>` 注册 `PolygonTool`；新增视频 → 新建 `<VideoStage>` 复用同一 `<WorkbenchShell>`。Shell 层、任务锁、提交流、撤销重做栈零改动。
+- **审核页同源复用**：`<ReviewPage>` 应该复用 `<ImageStage>` 的只读模式（`readOnly` prop 关闭工具层 + 隐藏 resize 锚点），而不是另写一套预览组件。这同时解决 C.2 「审核页零画布」的硬伤。
 
 ---
 

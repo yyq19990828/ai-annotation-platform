@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.audit_log import AuditLog
 from app.db.models.user import User
+from app.middleware.request_id import request_id_var
 
 
 class AuditAction(str, Enum):
@@ -56,6 +57,8 @@ class AuditService:
         detail: dict[str, Any] | None = None,
     ) -> AuditLog:
         action_str = action.value if isinstance(action, AuditAction) else str(action)
+        rid = request_id_var.get()
+        merged_detail = {"request_id": rid, **(detail or {})} if rid else detail
         entry = AuditLog(
             actor_id=getattr(actor, "id", None),
             actor_email=getattr(actor, "email", None),
@@ -67,7 +70,7 @@ class AuditService:
             path=str(request.url.path) if request is not None else None,
             status_code=status_code,
             ip=extract_client_ip(request),
-            detail_json=detail,
+            detail_json=merged_detail,
         )
         db.add(entry)
         await db.flush()

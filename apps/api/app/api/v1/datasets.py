@@ -1,3 +1,4 @@
+import hashlib
 import io
 import mimetypes
 import os
@@ -167,11 +168,34 @@ async def upload_complete(
 
     meta = storage_service.verify_upload(item.file_path, bucket=storage_service.datasets_bucket)
     if not meta:
+        # 上传未完成 — 清理占位 DatasetItem
+        svc = DatasetService(db)
+        await svc.delete_item(item_id)
+        await db.commit()
         raise HTTPException(status_code=400, detail="File not found in storage")
 
     content_length = meta.get("ContentLength")
     if content_length:
         item.file_size = content_length
+
+    # ETag（MinIO 单 PUT = md5）用于去重
+    etag = (meta.get("ETag") or "").strip('"')
+    if len(etag) == 32:
+        svc = DatasetService(db)
+        existing = await svc.find_by_hash(dataset_id, etag)
+        if existing and existing.id != item_id:
+            # 删除刚上传的对象与占位记录，返回 409 告知前端
+            try:
+                storage_service.delete_object(item.file_path, bucket=storage_service.datasets_bucket)
+            except Exception:
+                pass
+            await svc.delete_item(item_id)
+            await db.commit()
+            raise HTTPException(
+                status_code=409,
+                detail={"msg": "文件已存在（内容重复）", "duplicate_of": str(existing.id)},
+            )
+        item.content_hash = etag
 
     await db.commit()
     return {"status": "ok", "item_id": str(item_id)}
@@ -215,6 +239,7 @@ async def upload_zip(
         )
 
     added = 0
+    deduped = 0
     skipped: list[str] = []
     errors: list[dict] = []
 
@@ -228,6 +253,13 @@ async def upload_zip(
     for (n,) in rows.all():
         if n:
             existing_names.add(n)
+
+    # 收集已有 hash，用于内容去重
+    hash_rows = await db.execute(
+        sa_select(DatasetItem.content_hash)
+        .where(DatasetItem.dataset_id == dataset_id, DatasetItem.content_hash.isnot(None))
+    )
+    existing_hashes: set[str] = {r[0] for r in hash_rows.all()}
 
     for info in infos:
         name = info.filename
@@ -246,7 +278,13 @@ async def upload_zip(
             errors.append({"name": name, "error": f"解压失败: {e}"})
             continue
 
-        # 去重：同名追加 -1 / -2 后缀（保留扩展名）
+        content_hash = hashlib.md5(data).hexdigest()
+        if content_hash in existing_hashes:
+            deduped += 1
+            continue
+        existing_hashes.add(content_hash)
+
+        # 名称冲突：同名追加 -1 / -2 后缀（保留扩展名）
         final_name = base
         if final_name in existing_names:
             stem, ext = os.path.splitext(base)
@@ -277,6 +315,7 @@ async def upload_zip(
             file_path=storage_key,
             file_type=file_type,
             file_size=len(data),
+            content_hash=content_hash,
         )
         added += 1
         _ = item  # 显式忽略
@@ -284,6 +323,7 @@ async def upload_zip(
     await db.commit()
     return {
         "added": added,
+        "deduped": deduped,
         "skipped": len(skipped),
         "errors": errors,
         "total_in_zip": len(infos),

@@ -21,6 +21,7 @@ class DatasetOut(BaseModel):
     description: str
     data_type: str
     file_count: int
+    total_size: int = 0
     created_by: UUID
     project_count: int = 0
     created_at: datetime
@@ -37,6 +38,7 @@ class DatasetItemOut(BaseModel):
     file_path: str
     file_type: str
     file_size: int | None = None
+    content_hash: str | None = None
     metadata: dict = {}
     file_url: str | None = None
     created_at: datetime

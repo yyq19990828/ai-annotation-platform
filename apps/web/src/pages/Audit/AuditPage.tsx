@@ -4,8 +4,10 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
+import { useToastStore } from "@/components/ui/Toast";
 import { useAuditLogs } from "@/hooks/useAudit";
 import { useUsers } from "@/hooks/useUsers";
+import { auditApi } from "@/api/audit";
 import {
   AUDIT_BUSINESS_ACTIONS,
   AUDIT_TARGET_TYPES,
@@ -24,6 +26,9 @@ export function AuditPage() {
   const [actorId, setActorId] = useState("");
   const [scope, setScope] = useState<"business" | "all">("business");
   const [detail, setDetail] = useState<AuditLogResponse | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const pushToast = useToastStore((s) => s.push);
 
   const { data: usersData = [] } = useUsers();
   const params = useMemo(
@@ -36,7 +41,22 @@ export function AuditPage() {
     }),
     [page, actionFilter, targetType, actorId],
   );
-  const { data, isLoading, refetch, isFetching } = useAuditLogs(params);
+  const { data, isLoading, refetch, isFetching } = useAuditLogs(params, {
+    refetchInterval: autoRefresh ? 30_000 : false,
+  });
+
+  const handleExport = async (format: "csv" | "json") => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await auditApi.export(params, format);
+      pushToast({ msg: `已导出审计日志 ${format.toUpperCase()}`, kind: "success" });
+    } catch (err) {
+      pushToast({ msg: "导出失败", sub: err instanceof Error ? err.message : String(err), kind: "error" });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const items = useMemo(() => {
     const all = data?.items ?? [];
@@ -55,9 +75,26 @@ export function AuditPage() {
             所有写操作（POST/PATCH/PUT/DELETE）由中间件捕获；关键业务事件携带结构化 detail。
           </p>
         </div>
-        <Button onClick={() => refetch()}>
-          <Icon name="refresh" size={12} />刷新
-        </Button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--color-fg-muted)", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              style={{ cursor: "pointer" }}
+            />
+            30s 自动刷新
+          </label>
+          <Button onClick={() => handleExport("csv")} disabled={exporting}>
+            <Icon name="download" size={12} />CSV
+          </Button>
+          <Button onClick={() => handleExport("json")} disabled={exporting}>
+            <Icon name="download" size={12} />JSON
+          </Button>
+          <Button onClick={() => refetch()}>
+            <Icon name="refresh" size={12} />刷新
+          </Button>
+        </div>
       </header>
 
       <Card>

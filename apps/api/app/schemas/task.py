@@ -45,6 +45,7 @@ class TaskListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+    next_cursor: str | None = None
 
 
 class UploadInitRequest(BaseModel):
