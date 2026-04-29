@@ -61,6 +61,8 @@ export interface TaskResponse {
   total_annotations: number;
   total_predictions: number;
   sequence_order: number | null;
+  image_width: number | null;
+  image_height: number | null;
   created_at: string;
   updated_at: string | null;
 }

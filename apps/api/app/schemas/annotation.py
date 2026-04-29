@@ -12,6 +12,12 @@ class AnnotationCreate(BaseModel):
     lead_time: float | None = None
 
 
+class AnnotationUpdate(BaseModel):
+    geometry: dict | None = None
+    class_name: str | None = None
+    confidence: float | None = None
+
+
 class AnnotationOut(BaseModel):
     id: UUID
     task_id: UUID

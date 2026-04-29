@@ -28,6 +28,12 @@ export interface AnnotationPayload {
   lead_time?: number;
 }
 
+export interface AnnotationUpdatePayload {
+  geometry?: { x: number; y: number; w: number; h: number };
+  class_name?: string;
+  confidence?: number;
+}
+
 export interface SubmitResponse {
   status: string;
   task_id: string;
@@ -53,6 +59,9 @@ export const tasksApi = {
 
   createAnnotation: (id: string, payload: AnnotationPayload) =>
     apiClient.post<AnnotationResponse>(`/tasks/${id}/annotations`, payload),
+
+  updateAnnotation: (taskId: string, annotationId: string, payload: AnnotationUpdatePayload) =>
+    apiClient.patch<AnnotationResponse>(`/tasks/${taskId}/annotations/${annotationId}`, payload),
 
   deleteAnnotation: (taskId: string, annotationId: string) =>
     apiClient.delete<void>(`/tasks/${taskId}/annotations/${annotationId}`),

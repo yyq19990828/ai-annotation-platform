@@ -171,6 +171,8 @@ class DatasetService:
         file_type: str,
         file_size: int | None = None,
         content_hash: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
     ) -> DatasetItem:
         item = DatasetItem(
             dataset_id=dataset_id,
@@ -179,6 +181,8 @@ class DatasetService:
             file_type=file_type,
             file_size=file_size,
             content_hash=content_hash,
+            width=width,
+            height=height,
         )
         self.db.add(item)
 
@@ -242,6 +246,13 @@ class DatasetService:
             ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
             file_type = _infer_file_type_from_ext(ext)
 
+            width: int | None = None
+            height: int | None = None
+            if file_type == "image":
+                dims = storage_service.read_image_dimensions(key, bucket=storage_service.datasets_bucket)
+                if dims:
+                    width, height = dims
+
             item = DatasetItem(
                 dataset_id=dataset_id,
                 file_name=file_name,
@@ -249,6 +260,8 @@ class DatasetService:
                 file_type=file_type,
                 file_size=obj.get("size"),
                 content_hash=content_hash,
+                width=width,
+                height=height,
             )
             self.db.add(item)
             created += 1

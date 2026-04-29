@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { tasksApi, type AnnotationPayload, type TaskListParams } from "../api/tasks";
+import { tasksApi, type AnnotationPayload, type AnnotationUpdatePayload, type TaskListParams } from "../api/tasks";
 
 export function useTaskList(projectId: string | undefined, params?: TaskListParams) {
   return useQuery({
@@ -58,6 +58,19 @@ export function useDeleteAnnotation(taskId: string | undefined) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["annotations", taskId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+export function useUpdateAnnotation(taskId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ annotationId, payload }: { annotationId: string; payload: AnnotationUpdatePayload }) => {
+      if (!taskId) throw new Error("No task selected");
+      return tasksApi.updateAnnotation(taskId, annotationId, payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["annotations", taskId] });
     },
   });
 }

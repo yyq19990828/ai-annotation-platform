@@ -18,6 +18,8 @@ class TaskOut(BaseModel):
     total_annotations: int = 0
     total_predictions: int = 0
     sequence_order: int | None = None
+    image_width: int | None = None
+    image_height: int | None = None
     created_at: datetime
     updated_at: datetime | None = None
 

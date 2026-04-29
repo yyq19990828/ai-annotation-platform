@@ -121,34 +121,34 @@
 
 #### C.1 渲染性能 / 大图大量框
 
-- **画布引擎切换**：当前每个 box 是 `<BoxOverlay>` div（`WorkbenchPage.tsx:114-159`），DOM 节点数 = 框数 × ~5；超过 200 框肉眼掉帧，超过 500 框开始卡顿。引入 **Konva**（推荐，与 React 友好，配合 `react-konva`）或 PixiJS（极致性能但门槛高）；保留 DOM 浮层只承接选中框的操作菜单（accept/reject/resize）。
+- **画布引擎切换**：当前每个 box 是 `<BoxOverlay>` div（`stage/BoxRenderer.tsx`），DOM 节点数 = 框数 × ~5；超过 200 框肉眼掉帧，超过 500 框开始卡顿。引入 **Konva**（推荐，与 React 友好，配合 `react-konva`）或 PixiJS（极致性能但门槛高）；保留 DOM 浮层只承接选中框的操作菜单（accept/reject/resize）。
   - 验收：1000 框 + 4K 图，pan/zoom @ 60fps；首帧 < 80ms。
-- **图像加载流水线**：`<img src={file_url}>` 朴素加载（`WorkbenchPage.tsx:57-62`），切下一题白屏可见。补：① `dataset_items` 增 `thumbnail_url` + `blurhash`，前端先显示低清占位，再用 `<img loading="eager" decoding="async">` 切换；② `useTasks` 队列里**预取下一题**的 image / annotations / predictions（`queryClient.prefetchQuery`）；③ 大图（> 4096 px 边长 / RS 卫星 / 病理切片）走 OpenSeadragon / DeepZoom 瓦片金字塔。
-- **真正的视口缩放与平移**：当前缩放只是改容器宽高（`WorkbenchPage.tsx:580`），不是 viewport transform。改为 `transform: translate(tx,ty) scale(s)`，支持：以**光标为中心缩放**、Space + 拖动平移、双击适应、`Ctrl + 0` 重置、`Ctrl + 滚轮` 缩放；并在右下角加 **Minimap**（CVAT 同款），高变焦时全局定位。
-- **绘制 / 拖拽节流**：`onCanvasMouseMove` 每像素 setState（`WorkbenchPage.tsx:364-374`），高分辨屏 240Hz 时炸 React。用 `requestAnimationFrame` 合并 + ref 写入避免 setState 抖动。
-- **任务列表虚拟化**：`useTaskList` 一次拉全（默认 limit=100，但真实项目 5k+ 任务时左侧 `tasks.map` 直接卡死，`WorkbenchPage.tsx:476-499`）。改为 `react-virtualized` / `@tanstack/react-virtual` + 后端游标分页（与 B.「Audit / Task / Annotation 列表 keyset 分页」共用）。
-- **标注列表虚拟化**：右侧 `aiBoxes.map` + `userBoxes.map`（`WorkbenchPage.tsx:693-705`）同样需要虚拟化。
-- **置信度阈值服务端化**：当前 `aiBoxes.filter(b => b.conf >= confThreshold)` 仅前端过滤（`WorkbenchPage.tsx:262-265`），全量预测仍走网络。`GET /tasks/{id}/predictions?min_confidence=0.5` 查询参数下推；阈值变更带防抖。
+- **图像加载流水线**：`<img src={file_url}>` 朴素加载（`stage/ImageBackdrop.tsx`），切下一题白屏可见。补：① `dataset_items` 增 `thumbnail_url` + `blurhash`，前端先显示低清占位，再用 `<img loading="eager" decoding="async">` 切换；② `useTasks` 队列里**预取下一题**的 image / annotations / predictions（`queryClient.prefetchQuery`）；③ 大图（> 4096 px 边长 / RS 卫星 / 病理切片）走 OpenSeadragon / DeepZoom 瓦片金字塔。
+- ~~**真正的视口缩放与平移**~~ ✅ v0.4.9：`stage/ImageStage.tsx` 已用 `transform: translate(tx,ty) scale(s)`；`Ctrl + wheel` 光标锚点缩放、`Space + drag` 平移、双击 fit、`Ctrl+0` 重置全部就位；`useViewportTransform` hook 收敛 vp 状态。**Minimap 待后续。**
+- **绘制 / 拖拽节流**：`onCanvasMouseMove` 每像素 setState（`stage/ImageStage.tsx`），高分辨屏 240Hz 时炸 React。用 `requestAnimationFrame` 合并 + ref 写入避免 setState 抖动。
+- **任务列表虚拟化**：`useTaskList` 一次拉全（默认 limit=100，但真实项目 5k+ 任务时左侧 `tasks.map` 直接卡死，`shell/TaskQueuePanel.tsx`）。改为 `react-virtualized` / `@tanstack/react-virtual` + 后端游标分页（与 B.「Audit / Task / Annotation 列表 keyset 分页」共用）。
+- **标注列表虚拟化**：右侧 `aiBoxes.map` + `userBoxes.map`（`shell/AIInspectorPanel.tsx`）同样需要虚拟化。
+- **置信度阈值服务端化**：当前 `aiBoxes.filter(b => b.conf >= confThreshold)` 仅前端过滤（`shell/WorkbenchShell.tsx`），全量预测仍走网络。`GET /tasks/{id}/predictions?min_confidence=0.5` 查询参数下推；阈值变更带防抖。
 - **按需加载预测**：当前任务一打开就拉全部 prediction；可改成「默认只拉 conf ≥ 0.5 的 top N，滚动右侧 AI 列表时再加载更低分」。
 - **WebSocket 重连 + 心跳**：与 A 的「WebSocket 重连」合并，但要在 Workbench 状态栏暴露连接指示（断开时变灰提示「实时进度暂停」）。
 
 #### C.2 界面优化（信息架构 / 可见性 / 一致性）
 
-- **审核页零画布的硬伤**：`ReviewPage.tsx` 完全没有图片，reviewer 必须跳转 Workbench 才能下结论 → 极度低效。补做「**只读 Workbench**」组件：复用同一 Canvas 渲染器，禁用绘制 / 编辑，把通过 / 退回按钮叠到顶栏；支持 **diff 视图**（AI 原始预测 vs 标注员最终结果，色相区分）。
-- **审核批量操作**：`ReviewPage` 当前一行一按钮；加 checkbox 多选 + 批量通过 / 批量退回（带预设退回原因模板：「类别错误」「漏标」「位置不准」「框过大 / 过小」）。
-- **快捷键速查面板**：按 `?` 弹出全键位 cheat-sheet（参考 Linear / Figma），覆盖：V/B/1-9 类别、Ctrl+Z/Y、Tab/Shift+Tab 切框、J/K 上下框、A/D 采纳/驳回 AI、E 提交、N 下一题、`[` `]` 调置信度阈值、`+` `-` 缩放。
-- **状态栏真实化**：`WorkbenchPage.tsx:622` 硬编码「1920×1280」，应从 `dataset_items` 的 `width / height` 读取（先确认表里有这两列，没有就建 migration），同时显示当前光标在原图坐标系中的 `(x, y)`（CVAT 同款）。
-- **类别面板增强**：现在硬编码 5 个色（`CLASS_COLORS` map，`WorkbenchPage.tsx:15-21`）。改为：① 颜色随项目类别**自动从 OKLCH 色环分配**并存到 `Project.classes_palette`；② 类别 > 9 个时支持搜索 + 数字 0-9 + 字母键映射；③ 拖动重排顺序；④ 「最近使用」置顶。
+- ~~**审核页零画布的硬伤**~~ ✅ v0.4.9：`ReviewPage.tsx` 行点击 → 70vw Drawer 滑入 `<ReviewWorkbench>` 复用 `<ImageStage readOnly />`；diff 三态「仅最终 / 仅 AI 原始 / 叠加 diff」；URL `?taskId=` 同步浏览器前进后退；ESC 关闭、左右切上下题。
+- ~~**审核批量操作**~~ ✅ v0.4.9：每行 checkbox + 顶部浮条「批量通过 (N)」「批量退回 (N)」；退回弹 `<RejectReasonModal>` 选预设原因（类别错误 / 漏标 / 位置不准 / 框过大或过小 / 自定义）；进度聚合 toast。
+- ~~**快捷键速查面板**~~ ✅ v0.4.9：`?` 弹 `<HotkeyCheatSheet>`，所有快捷键定义集中在 `state/hotkeys.ts` 一份 SoT；当前覆盖：V/B/1-9 类别、Ctrl+Z/Y/Shift+Z 撤销重做、A/D 采纳驳回、E 提交、Ctrl+→/← 切题、Ctrl+0 fit、Ctrl+wheel 缩放、Space+drag 平移。**Tab/Shift+Tab 切框、J/K 上下框、`[` `]` 调阈值待后续。**
+- ~~**状态栏真实化**~~ ✅ v0.4.9：`dataset_items.width / height` 列已加（migration 0008）；`TaskOut.image_width / image_height` 透出；`StatusBar` 真实尺寸 + 光标坐标；`BoxListItem` 像素值同样基于真实尺寸。**存量数据需调 `POST /datasets/{id}/backfill-dimensions` 回填。**
+- **类别面板增强**：① 颜色已支持 `> 5` 类自动从 OKLCH 色环按 hash 派生（v0.4.9，`stage/colors.ts`），仍未上后端 `Project.classes_palette` 持久化；② 类别 > 9 个时支持搜索 + 字母键映射；③ 拖动重排顺序；④ 「最近使用」置顶 — 待后续。
 - **响应式 / 可折叠**：当前 `gridTemplateColumns` 在 < 1280px 下两侧面板会挤压画布。补：① < 1024px 自动收起一侧；② 把工具栏分组为「视图 / 绘制 / AI / 导航」并溢出折叠到「⋯」菜单；③ 移动端只读模式（标注员现场用 iPad 看图）。
-- **空状态 / 加载骨架**：`isProjectLoading` 时只是文字「加载项目中...」（`WorkbenchPage.tsx:410`），换成画布 + 任务列表的 skeleton；图像加载阶段叠 blurhash 而不是白屏。
-- **Toast 抑流**：`handleAcceptAll` 每次 mutate 一发一条 toast（`WorkbenchPage.tsx:330-343`），20 个 AI 框就刷屏 → 改为单条「采纳 17 / 20，3 项失败」聚合 toast。
+- **空状态 / 加载骨架**：`isProjectLoading` 时只是文字「加载项目中...」（`shell/WorkbenchShell.tsx`），换成画布 + 任务列表的 skeleton；图像加载阶段叠 blurhash 而不是白屏。
+- ~~**Toast 抑流**~~ ✅ v0.4.9：`handleAcceptAll` 与批量审核都改为终态聚合一条 `已采纳 17/20，3 项失败`。
 - **暗色模式优先**：标注员长时间盯屏，眼疲劳是真问题。把工作台当成 dark-first 面（图像周围背景已是棋盘格，再叠暗色 chrome），与 B 的「主题切换」共建 CSS 变量。
 - **进度心理预期**：底部状态栏已有 AI 接管率，但缺**预计剩余时间 ETA**（基于本会话平均每题耗时 × 剩余题数）；reviewer 端缺「本日已审 / 待审 / 通过率」实时卡片。
 
 #### C.3 标注体验（核心生产力杠杆）
 
-- **撤销 / 重做**：当前完全没有。建 `useAnnotationHistory(taskId)`：维护命令栈（CreateBox / DeleteBox / EditBox / AcceptPrediction / RejectPrediction），Ctrl+Z / Ctrl+Shift+Z 触发；切任务清空。**这是标注员投诉率最高的缺失项。**
-- **框的移动 / resize**：当前画完框只能删除重画（`WorkbenchPage.tsx:114-159`）。最小补：① 选中框后渲染 8 个 resize 锚点（4 角 + 4 边中点）；② 框体内拖动整体平移；③ Shift 拖动锁定纵横比；④ Alt 拖动从中心缩放。配合后端 `PATCH /annotations/{id}` 增量更新。
+- ~~**撤销 / 重做**~~ ✅ v0.4.9：`state/useAnnotationHistory.ts` 命令栈支持 create / delete / update / acceptPrediction；`Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y`；切任务清栈；mutation pending 期间禁用 undo。
+- ~~**框的移动 / resize**~~ ✅ v0.4.9：8 个 resize 锚点（4 角 + 4 边中点）+ 框体拖动整体平移；本地 state 显示拖动过程，松手才落 `PATCH /annotations/{id}`；几何 clamp 到 [0,1]，过小框拒收。**Shift 锁定纵横比、Alt 从中心缩放待后续。**
 - **多选与批量编辑**：Shift + 点击叠加选中、框选 marquee、Ctrl+A 全选当前帧；批量改 class、批量删除、批量平移（方向键 1px / Shift+方向键 10px）。
 - **复制粘贴 / 重复**：Ctrl+C / Ctrl+V 在同一任务或跨任务复制框（典型场景：连续 30 张货架照同一商品的相似框）；Ctrl+D 当前位置原地重复。
 - **SAM 交互式标注（点 / 框生成多边形 / 蒙版）**：研究报告 `06-ai-patterns.md` 的「模式 B」明确推荐 P1。最小切片：
@@ -166,7 +166,7 @@
 - **Magic Box / Snap**：粗略画一个大框 → AI 收紧到对象边缘（SAM 推 mask → 取 mask bbox）；同时支持「贴边吸附」（5px 内自动吸附到图像边缘）。
 - **会话级标注辅助**：① 框过小（< 0.005 × 0.005）已过滤，需提示「框太小未保存」；② 框越界自动 clamp 到 [0,1]；③ 重叠完全相同框（IoU > 0.95）拒绝并提示「疑似重复」。
 - **任务跳过与原因**：标注员可「跳过本题」并选原因（图像损坏 / 无目标 / 不清晰），后端记 `Task.skip_reason` 并自动转 reviewer 复核。
-- **Workbench 子组件拆分**：`WorkbenchPage.tsx` 720 行单文件，6 个 sub-component 内联（`ImageBackdrop` / `BoxOverlay` / `BoxListItem` / 三栏布局）。拆为 `<TaskQueuePanel>` / `<CanvasStage>` / `<AIInspectorPanel>` 三组件，并把状态收敛到 `useWorkbenchState(taskId)` hook —— 否则上述每一项改动都会让单文件继续膨胀到 1500+ 行。
+- ~~**Workbench 子组件拆分**~~ ✅ v0.4.9：720 行单文件已拆为 `WorkbenchPage`(5 行入口) + `shell/`(`WorkbenchShell` / `Topbar` / `TaskQueuePanel` / `AIInspectorPanel` / `StatusBar` / `HotkeyCheatSheet`) + `stage/`(`ImageStage` / `ImageBackdrop` / `BoxRenderer` / `BoxListItem` / `DrawingPreview` / `ResizeHandles` / `colors`) + `state/`(`useWorkbenchState` / `useViewportTransform` / `useAnnotationHistory` / `transforms` / `hotkeys`)。审核页 `<ReviewWorkbench>` 复用 `<ImageStage readOnly />`，画布逻辑单一来源。
 
 #### C.4 工作台架构分层（多任务类型如何复用同一外壳）
 
@@ -182,10 +182,10 @@
 - **不要做的两条反路径**：
   - ❌ 单工作台 + 全动态：表面省事，半年后会变成「我是视频吗？我是 3D 吗？」的分支地狱
   - ❌ 一类型一工作台（`WorkbenchImageDet` / `WorkbenchImageSeg` / `WorkbenchLidar`...）：`useTaskLock` / 提交流 / AI 面板要复制 7 份，改一个 bug 改 7 个文件
-- **落地路径（分两步，单矩形框期就先做第一步）**：
-  - **Step 1（现在做，不引入新类型）**：把 720 行 `WorkbenchPage.tsx` 拆成 `<WorkbenchShell>` + `<ImageStage>`（仅 `BboxTool`）。这一步纯结构重构，行为不变，但下面所有 C.1 / C.2 / C.3 项都需要这层骨架先就位。
+- **落地路径（分两步）**：
+  - ~~**Step 1**：拆成 `<WorkbenchShell>` + `<ImageStage>`（仅 BboxTool）~~ ✅ v0.4.9 已完成。骨架就位，C.1 / C.2 / C.3 P0 全部叠加完毕。
   - **Step 2（未来扩类型时）**：新增 polygon → 在 `<ImageStage>` 注册 `PolygonTool`；新增视频 → 新建 `<VideoStage>` 复用同一 `<WorkbenchShell>`。Shell 层、任务锁、提交流、撤销重做栈零改动。
-- **审核页同源复用**：`<ReviewPage>` 应该复用 `<ImageStage>` 的只读模式（`readOnly` prop 关闭工具层 + 隐藏 resize 锚点），而不是另写一套预览组件。这同时解决 C.2 「审核页零画布」的硬伤。
+- ~~**审核页同源复用**~~ ✅ v0.4.9：`<ReviewWorkbench>` 复用 `<ImageStage readOnly />`；readOnly 关闭工具层、隐藏 resize 锚点与 accept-reject 浮按钮，单一画布组件支撑两个页面。
 
 ---
 

@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import io
+import logging
+
 import boto3
 from botocore.exceptions import ClientError
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class StorageService:
@@ -98,6 +103,48 @@ class StorageService:
     def create_folder(self, folder_name: str, bucket: str | None = None) -> None:
         b = bucket or self.bucket
         self.client.put_object(Bucket=b, Key=f"{folder_name}/", Body=b"")
+
+    @staticmethod
+    def read_image_dimensions_from_bytes(data: bytes) -> tuple[int, int] | None:
+        """从已下载字节直接解析图像尺寸（zip 内文件已在内存）。"""
+        try:
+            from PIL import Image  # noqa: PLC0415
+        except ImportError:
+            return None
+        try:
+            with Image.open(io.BytesIO(data)) as img:
+                return int(img.width), int(img.height)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def read_image_dimensions(
+        self, key: str, bucket: str | None = None, head_bytes: int = 256 * 1024,
+    ) -> tuple[int, int] | None:
+        """读取对象前若干字节交给 Pillow 解析尺寸。无法解析返回 None；不抛。
+
+        Pillow 大多格式（JPEG / PNG / WEBP / GIF）只需读到文件头即可拿到 size，
+        故只 Range-fetch 头部 head_bytes（默认 256KB）来避开整张大图的下载与内存。
+        """
+        try:
+            from PIL import Image  # noqa: PLC0415 - 延迟导入，未安装时仅尺寸功能失效
+        except ImportError:
+            logger.warning("Pillow 未安装，跳过尺寸读取 key=%s", key)
+            return None
+
+        b = bucket or self.bucket
+        try:
+            resp = self.client.get_object(Bucket=b, Key=key, Range=f"bytes=0-{head_bytes - 1}")
+            data = resp["Body"].read()
+        except ClientError as exc:
+            logger.warning("读取对象 head 失败 key=%s err=%s", key, exc)
+            return None
+
+        try:
+            with Image.open(io.BytesIO(data)) as img:
+                return int(img.width), int(img.height)
+        except Exception as exc:  # noqa: BLE001 - 任意 PIL / 损坏文件错误
+            logger.info("Pillow 解析失败 key=%s err=%s", key, exc)
+            return None
 
 
 storage_service = StorageService()

@@ -30,6 +30,8 @@ class DatasetItem(Base):
     file_type: Mapped[str] = mapped_column(String(20), default="image")
     file_size: Mapped[int | None] = mapped_column(BigInteger)
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

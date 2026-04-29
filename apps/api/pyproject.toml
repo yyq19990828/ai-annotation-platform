@@ -19,4 +19,5 @@ dependencies = [
     "httpx>=0.28.0",
     "structlog>=25.5.0",
     "prometheus-client>=0.25.0",
+    "Pillow>=10.0.0",
 ]

@@ -88,6 +88,26 @@ class AnnotationService:
         await self._update_task_stats(annotation.task_id)
         return True
 
+    async def update(
+        self,
+        annotation_id: uuid.UUID,
+        geometry: dict | None = None,
+        class_name: str | None = None,
+        confidence: float | None = None,
+    ) -> Annotation | None:
+        """Surgical update of mutable fields. Refuses to touch task_id / source / parent_prediction_id."""
+        annotation = await self.db.get(Annotation, annotation_id)
+        if not annotation or not annotation.is_active:
+            return None
+        if geometry is not None:
+            annotation.geometry = geometry
+        if class_name is not None:
+            annotation.class_name = class_name
+        if confidence is not None:
+            annotation.confidence = confidence
+        await self.db.flush()
+        return annotation
+
     async def save_draft(self, task_id: uuid.UUID, user_id: uuid.UUID, result: dict) -> AnnotationDraft:
         existing = await self.db.execute(
             select(AnnotationDraft).where(

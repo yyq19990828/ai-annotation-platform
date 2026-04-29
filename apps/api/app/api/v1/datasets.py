@@ -197,6 +197,13 @@ async def upload_complete(
             )
         item.content_hash = etag
 
+    if item.file_type == "image" and (item.width is None or item.height is None):
+        dims = storage_service.read_image_dimensions(
+            item.file_path, bucket=storage_service.datasets_bucket,
+        )
+        if dims:
+            item.width, item.height = dims
+
     await db.commit()
     return {"status": "ok", "item_id": str(item_id)}
 
@@ -309,6 +316,13 @@ async def upload_zip(
             errors.append({"name": name, "error": f"对象存储写入失败: {e}"})
             continue
 
+        width: int | None = None
+        height: int | None = None
+        if file_type == "image":
+            dims = storage_service.read_image_dimensions_from_bytes(data)
+            if dims:
+                width, height = dims
+
         item = await svc.add_item(
             dataset_id=dataset_id,
             file_name=final_name,
@@ -316,6 +330,8 @@ async def upload_zip(
             file_type=file_type,
             file_size=len(data),
             content_hash=content_hash,
+            width=width,
+            height=height,
         )
         added += 1
         _ = item  # 显式忽略
@@ -343,6 +359,43 @@ async def scan_items(
     created = await svc.scan_and_import(dataset_id)
     await db.commit()
     return {"status": "ok", "new_items": created}
+
+
+@router.post("/{dataset_id}/backfill-dimensions")
+async def backfill_dimensions(
+    dataset_id: uuid.UUID,
+    batch: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """为存量 image 类型 dataset_items 回填 width/height。
+
+    一次最多处理 batch 条（默认 50），多次调用直到 processed == 0 视为完成。
+    """
+    from sqlalchemy import select as sa_select
+    from app.db.models.dataset import DatasetItem
+
+    rows = await db.execute(
+        sa_select(DatasetItem).where(
+            DatasetItem.dataset_id == dataset_id,
+            DatasetItem.file_type == "image",
+            DatasetItem.width.is_(None),
+        ).limit(batch)
+    )
+    items = list(rows.scalars().all())
+    processed = 0
+    failed = 0
+    for item in items:
+        dims = storage_service.read_image_dimensions(
+            item.file_path, bucket=storage_service.datasets_bucket,
+        )
+        if dims:
+            item.width, item.height = dims
+            processed += 1
+        else:
+            failed += 1
+    await db.commit()
+    return {"processed": processed, "failed": failed, "remaining_hint": len(items) == batch}
 
 
 @router.delete("/{dataset_id}/items/{item_id}", status_code=204)

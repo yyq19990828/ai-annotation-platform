@@ -7,6 +7,49 @@
 ---
 
 
+## [0.4.9] - 2026-04-29
+
+### 新增
+
+#### 标注工作台 — 结构骨架（行为等价基线）
+- **三层拆分**：`apps/web/src/pages/Workbench/WorkbenchPage.tsx` 由 720 行单文件拆为 `WorkbenchPage`(5 行入口) + `shell/`(`WorkbenchShell` / `Topbar` / `TaskQueuePanel` / `AIInspectorPanel` / `StatusBar` / `HotkeyCheatSheet`) + `stage/`(`ImageStage` / `ImageBackdrop` / `BoxRenderer` / `BoxListItem` / `DrawingPreview` / `ResizeHandles` / `colors`) + `state/`(`useWorkbenchState` / `useViewportTransform` / `useAnnotationHistory` / `transforms` / `hotkeys`)；按 ROADMAP §C.4 「单工作台外壳 + 维度切分画布 + 工具可插拔」三层架构落地，后续扩 polygon / video / lidar 仅注册新 Stage 与新 Tool，不动外壳
+- **空图状态**：删除 `ImageBackdrop` 的 SVG 货架占位，改为「图像不可用 + 重试」按钮（清理研发期 mock 残留）
+
+#### 标注工作台 — P0 体验
+- **撤销 / 重做**：`useAnnotationHistory` 命令栈支持 create / delete / update / acceptPrediction 四类命令；`Ctrl+Z` undo、`Ctrl+Shift+Z` / `Ctrl+Y` redo；切任务清栈；mutation pending 期间禁用 undo 按钮
+- **框 Move / Resize**：选中用户框后渲染 8 个 resize 锚点（4 角 + 4 边中点）+ 框体拖动整体平移；本地 state 显示拖动过程，松手才落 PATCH（节流落库）；几何全程 clamp 到 [0,1]，过小框（< 0.5%）拒收并 toast 提示
+- **真视口 transform**：`<canvas>` 用 `transform: translate(tx,ty) scale(s)` 替代原 `width:900*zoom × height:600*zoom` 伪缩放；`Ctrl + wheel` 以光标为锚点缩放（公式 `tx' = cx - (cx - tx)·(s'/s)`）；`Space + drag` 平移；双击空白 fit-to-viewport；`Ctrl+0` 触发 fit
+- **状态栏真实化**：`分辨率` 字段从 `task.image_width × task.image_height` 读（dataset_items 新增字段）；新增「光标 (x, y)」字段实时显示图像系坐标；`BoxListItem` 像素坐标也从硬编码 1920×1280 改为读真实尺寸
+- **快捷键速查面板**：`?` 弹 `<HotkeyCheatSheet>`；所有快捷键定义集中在 `state/hotkeys.ts` 一份 SoT，cheat sheet 与 keydown 注册都从这里读
+- **类别色板自动分配**：> 5 个类别时按 hash(class_name) → OKLCH 色环确定性派生，跨会话稳定；< 5 仍用预设 5 色
+- **Toast 抑流**：`handleAcceptAll` 与批量审核都改为终态聚合一条 `已采纳 17/20，3 项失败`，避免每框一刷屏
+
+#### 标注 API
+- **`PATCH /api/v1/tasks/{task_id}/annotations/{annotation_id}`**：新增；支持部分更新 `geometry / class_name / confidence`；拒绝改 `task_id / source / parent_prediction_id`（防越权）；写 `audit.action=annotation.update`
+- **任务锁心跳续锁**：`create / update / delete annotation` 与 `accept prediction` 四个 mutation 端点在 commit 前自动调 `TaskLockService.heartbeat`，避免长时间画框 lock 过期误报
+- **前端 hook**：`useUpdateAnnotation(taskId)` / `tasksApi.updateAnnotation` / `AnnotationUpdatePayload`
+
+#### 数据 & 存储
+- **`dataset_items.width / height`**：alembic migration 0008；上传完成（`upload-complete` 与 `upload-zip`）与 `scan_and_import` 自动用 Pillow 解析图像头部（256KB Range fetch，避开整张大图下载）回填尺寸；新增 `Pillow>=10` 依赖
+- **`POST /api/v1/datasets/{id}/backfill-dimensions?batch=N`**：管理员补量端点，分批处理存量 image 类型 items（默认 50/批），返回 `processed / failed / remaining_hint`
+- **`TaskOut.image_width / image_height`**：列表端点批量 JOIN dataset_items（避 N+1），单端点直接 get，前端状态栏与 BoxListItem 全部用真实尺寸
+
+#### 审核页接画布
+- **`<ReviewWorkbench>`**：复用 `<ImageStage readOnly />`，readOnly 时禁用绘制 / move / resize / accept-reject 浮按钮，仅保留 pan / 选中 / wheel-zoom；与标注页共用同一个画布组件
+- **diff 三态切换**：「仅最终 / 仅 AI 原始 / 叠加 diff」；diff 模式下已被采纳的 prediction 自动淡化（`opacity: 0.35`）避免与对应 annotation 堆叠；ImageStage 接受 `fadedAiIds` 集合
+- **ReviewPage 列表 + Drawer**：行点击不再跳转 Workbench，改为右侧 70vw Drawer 滑入（URL `?taskId=` 同步，浏览器前进后退保留状态，ESC 关闭，左右切上下题）
+- **批量操作**：每行 checkbox + 顶部浮条「批量通过 (N)」「批量退回 (N)」；退回弹 `<RejectReasonModal>` 选预设原因（类别错误 / 漏标 / 位置不准 / 框过大或过小 / 其他自定义）；批量 fire 后聚合 toast `已退回 18/20，2 项失败`
+
+### 升级备注
+
+- **alembic upgrade head**：执行 0008 加 `dataset_items.width / height` 两列（nullable，无数据迁移开销）
+- **Python 依赖**：`uv sync` 拉 Pillow；alpine 基础镜像需在 Dockerfile 加 `apk add jpeg-dev zlib-dev`，slim 镜像无须改动
+- **存量数据**：上线后管理员调用 `POST /datasets/{id}/backfill-dimensions` 给已有 dataset 补尺寸（不调用也能跑，状态栏显示「分辨率 —」直到回填完成）
+- 版本号升至 0.4.9
+
+---
+
+
 ## [0.4.8] - 2026-04-29
 
 ### 新增

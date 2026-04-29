@@ -39,6 +39,8 @@ class DatasetItemOut(BaseModel):
     file_type: str
     file_size: int | None = None
     content_hash: str | None = None
+    width: int | None = None
+    height: int | None = None
     metadata: dict = {}
     file_url: str | None = None
     created_at: datetime
