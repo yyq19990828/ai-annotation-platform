@@ -43,6 +43,8 @@ class DatasetItemOut(BaseModel):
     height: int | None = None
     metadata: dict = {}
     file_url: str | None = None
+    thumbnail_url: str | None = None
+    blurhash: str | None = None
     created_at: datetime
 
     class Config:

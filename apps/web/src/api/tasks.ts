@@ -10,6 +10,7 @@ export interface TaskListResponse {
   total: number;
   limit: number;
   offset: number;
+  next_cursor?: string | null;
 }
 
 export interface TaskListParams {
@@ -17,6 +18,7 @@ export interface TaskListParams {
   assignee_id?: string;
   limit?: number;
   offset?: number;
+  cursor?: string;
 }
 
 export interface AnnotationPayload {
@@ -46,6 +48,7 @@ export const tasksApi = {
     if (params?.assignee_id) q.set("assignee_id", params.assignee_id);
     if (params?.limit) q.set("limit", String(params.limit));
     if (params?.offset) q.set("offset", String(params.offset));
+    if (params?.cursor) q.set("cursor", params.cursor);
     return apiClient.get<TaskListResponse>(`/tasks?${q}`);
   },
 

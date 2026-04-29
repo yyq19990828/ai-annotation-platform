@@ -34,19 +34,28 @@ class StorageService:
         self.ensure_bucket(self.bucket)
         self.ensure_bucket(self.datasets_bucket)
 
+    def _public_url(self, url: str) -> str:
+        if settings.minio_public_url:
+            scheme = "https" if settings.minio_use_ssl else "http"
+            internal = f"{scheme}://{settings.minio_endpoint}"
+            url = url.replace(internal, settings.minio_public_url.rstrip("/"), 1)
+        return url
+
     def generate_upload_url(self, key: str, content_type: str = "application/octet-stream", expires_in: int = 900, bucket: str | None = None) -> str:
-        return self.client.generate_presigned_url(
+        url = self.client.generate_presigned_url(
             "put_object",
             Params={"Bucket": bucket or self.bucket, "Key": key, "ContentType": content_type},
             ExpiresIn=expires_in,
         )
+        return self._public_url(url)
 
     def generate_download_url(self, key: str, expires_in: int = 3600, bucket: str | None = None) -> str:
-        return self.client.generate_presigned_url(
+        url = self.client.generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket or self.bucket, "Key": key},
             ExpiresIn=expires_in,
         )
+        return self._public_url(url)
 
     def verify_upload(self, key: str, bucket: str | None = None) -> dict | None:
         try:

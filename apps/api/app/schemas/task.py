@@ -20,6 +20,8 @@ class TaskOut(BaseModel):
     sequence_order: int | None = None
     image_width: int | None = None
     image_height: int | None = None
+    thumbnail_url: str | None = None
+    blurhash: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
 

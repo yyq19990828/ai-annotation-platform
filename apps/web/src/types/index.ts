@@ -63,6 +63,8 @@ export interface TaskResponse {
   sequence_order: number | null;
   image_width: number | null;
   image_height: number | null;
+  thumbnail_url: string | null;
+  blurhash: string | null;
   created_at: string;
   updated_at: string | null;
 }

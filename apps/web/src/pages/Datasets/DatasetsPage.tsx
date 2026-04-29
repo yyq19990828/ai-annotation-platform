@@ -1,6 +1,7 @@
 import { useState, Fragment } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
+import { Thumbnail } from "@/components/Thumbnail";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
@@ -172,9 +173,9 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                   {!itemsLoading && items.map((item) => (
                     <tr key={item.id}>
                       <td style={{ padding: "8px", borderBottom: "1px solid var(--color-border)" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <Icon name={item.file_type === "video" ? "video" : "image"} size={12} style={{ color: "var(--color-fg-muted)" }} />
-                          <span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.file_name}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <Thumbnail src={item.thumbnail_url} blurhash={item.blurhash} width={32} height={32} />
+                          <span style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.file_name}</span>
                         </div>
                       </td>
                       <td style={{ padding: "8px", borderBottom: "1px solid var(--color-border)" }}>

@@ -151,6 +151,13 @@ class DatasetService:
                 )
             except Exception:
                 d["file_url"] = None
+            if item.thumbnail_path:
+                try:
+                    d["thumbnail_url"] = storage_service.generate_download_url(
+                        item.thumbnail_path, bucket=storage_service.datasets_bucket,
+                    )
+                except Exception:
+                    d["thumbnail_url"] = None
             out.append(d)
         return out, total
 
@@ -206,7 +213,7 @@ class DatasetService:
 
     # ── Scan & import from bucket ─────────────────────────────────────────
 
-    async def scan_and_import(self, dataset_id: uuid.UUID) -> int:
+    async def scan_and_import(self, dataset_id: uuid.UUID) -> list[uuid.UUID]:
         ds = await self.db.get(Dataset, dataset_id)
         if not ds:
             return 0
@@ -227,6 +234,7 @@ class DatasetService:
         existing_hashes: set[str] = {r[0] for r in existing_hashes_res.all()}
 
         created = 0
+        new_items: list[DatasetItem] = []
         for obj in objects:
             key: str = obj["key"]
             if key.endswith("/"):
@@ -264,12 +272,13 @@ class DatasetService:
                 height=height,
             )
             self.db.add(item)
+            new_items.append(item)
             created += 1
 
         if created and ds:
             ds.file_count = (ds.file_count or 0) + created
         await self.db.flush()
-        return created
+        return [item.id for item in new_items]
 
     # ── Project linking ─────────────────────────────────────────────────────
 
@@ -366,6 +375,9 @@ def _item_dict(item: DatasetItem) -> dict:
         "file_type": item.file_type,
         "file_size": item.file_size,
         "content_hash": item.content_hash,
+        "width": item.width,
+        "height": item.height,
+        "blurhash": item.blurhash,
         "metadata": item.metadata_,
         "created_at": item.created_at,
     }

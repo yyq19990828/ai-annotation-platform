@@ -11,11 +11,16 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.60.0",
+    "@tanstack/react-virtual": "^3.13.24",
+    "blurhash": "^2.0.5",
     "clsx": "^2.1.1",
     "fabric": "^6.5.0",
+    "konva": "^10.2.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-konva": "^18.2.14",
     "react-router-dom": "^6.28.0",
+    "use-image": "^1.1.4",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

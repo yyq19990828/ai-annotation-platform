@@ -32,6 +32,8 @@ class DatasetItem(Base):
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thumbnail_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    blurhash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     minio_bucket: str = "annotations"
     minio_datasets_bucket: str = "datasets"
     minio_use_ssl: bool = False
+    minio_public_url: str = ""  # if set, replaces the endpoint host in presigned URLs
 
     ml_predict_timeout: int = 100
     ml_health_timeout: int = 10

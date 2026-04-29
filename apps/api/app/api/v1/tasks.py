@@ -77,7 +77,7 @@ async def list_tasks(
             else None
         )
         return TaskListResponse(
-            items=[_task_with_url(t, *dims.get(t.id, (None, None))) for t in tasks],
+            items=[_task_with_url(t, *dims.get(t.id, (None, None, None, None))) for t in tasks],
             total=total, limit=limit, offset=0, next_cursor=next_cursor,
         )
 
@@ -86,7 +86,7 @@ async def list_tasks(
     tasks = list(result.scalars().all())
     dims = await _attach_dimensions_batch(db, tasks)
     return TaskListResponse(
-        items=[_task_with_url(t, *dims.get(t.id, (None, None))) for t in tasks],
+        items=[_task_with_url(t, *dims.get(t.id, (None, None, None, None))) for t in tasks],
         total=total,
         limit=limit,
         offset=offset,
@@ -104,8 +104,8 @@ async def next_task(
     if not task:
         return None
     await db.commit()
-    w, h = await _attach_dimensions(db, task)
-    return _task_with_url(task, w, h)
+    w, h, thumb, bh = await _attach_dimensions(db, task)
+    return _task_with_url(task, w, h, thumb, bh)
 
 
 @router.get("/{task_id}", response_model=TaskOut)
@@ -117,8 +117,8 @@ async def get_task(
     task = await db.get(Task, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    w, h = await _attach_dimensions(db, task)
-    return _task_with_url(task, w, h)
+    w, h, thumb, bh = await _attach_dimensions(db, task)
+    return _task_with_url(task, w, h, thumb, bh)
 
 
 @router.get("/{task_id}/annotations", response_model=list[AnnotationOut])
@@ -193,11 +193,22 @@ async def update_annotation(
 async def get_predictions(
     task_id: uuid.UUID,
     model_version: str | None = None,
+    min_confidence: float | None = Query(None, ge=0.0, le=1.0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     svc = PredictionService(db)
-    return await svc.list_by_task(task_id, model_version=model_version)
+    predictions = await svc.list_by_task(task_id, model_version=model_version)
+    if min_confidence is None:
+        return predictions
+    filtered = []
+    for p in predictions:
+        shapes = [s for s in (p.result or []) if s.get("confidence", 0.0) >= min_confidence]
+        if shapes:
+            out = PredictionOut.model_validate(p)
+            out.result = shapes
+            filtered.append(out)
+    return filtered
 
 
 @router.post("/{task_id}/predictions/{prediction_id}/accept", response_model=list[AnnotationOut])
@@ -341,12 +352,31 @@ async def release_lock(
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _task_with_url(task: Task, width: int | None = None, height: int | None = None) -> dict:
+def _task_with_url(
+    task: Task,
+    width: int | None = None,
+    height: int | None = None,
+    thumbnail_path: str | None = None,
+    blurhash: str | None = None,
+) -> dict:
     bucket = storage_service.datasets_bucket if task.dataset_item_id else storage_service.bucket
     try:
         file_url = storage_service.generate_download_url(task.file_path, bucket=bucket)
     except Exception:
         file_url = None
+
+    thumbnail_url: str | None = None
+    if thumbnail_path:
+        try:
+            thumb_bucket = (
+                storage_service.datasets_bucket if task.dataset_item_id
+                else storage_service.bucket
+            )
+            thumbnail_url = storage_service.generate_download_url(
+                thumbnail_path, bucket=thumb_bucket
+            )
+        except Exception:
+            pass
 
     return {
         "id": task.id,
@@ -365,35 +395,43 @@ def _task_with_url(task: Task, width: int | None = None, height: int | None = No
         "sequence_order": task.sequence_order,
         "image_width": width,
         "image_height": height,
+        "thumbnail_url": thumbnail_url,
+        "blurhash": blurhash,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
 
 
-async def _attach_dimensions(db: AsyncSession, task: Task) -> tuple[int | None, int | None]:
-    """Single-task helper：直接 get DatasetItem 取尺寸。"""
-    if not task.dataset_item_id:
-        return None, None
-    from app.db.models.dataset import DatasetItem
-    item = await db.get(DatasetItem, task.dataset_item_id)
-    if not item:
-        return None, None
-    return item.width, item.height
+async def _attach_dimensions(
+    db: AsyncSession, task: Task,
+) -> tuple[int | None, int | None, str | None, str | None]:
+    if task.dataset_item_id:
+        from app.db.models.dataset import DatasetItem
+        item = await db.get(DatasetItem, task.dataset_item_id)
+        if item:
+            return item.width, item.height, item.thumbnail_path, item.blurhash
+    return None, None, task.thumbnail_path, task.blurhash
 
 
 async def _attach_dimensions_batch(
     db: AsyncSession, tasks: list[Task],
-) -> dict[uuid.UUID, tuple[int | None, int | None]]:
-    """List helper：批量读 dataset_items，返回 task_id → (w, h)。"""
+) -> dict[uuid.UUID, tuple[int | None, int | None, str | None, str | None]]:
+    result: dict[uuid.UUID, tuple[int | None, int | None, str | None, str | None]] = {}
+
     item_ids = [t.dataset_item_id for t in tasks if t.dataset_item_id]
-    if not item_ids:
-        return {}
-    from app.db.models.dataset import DatasetItem
-    rows = await db.execute(
-        select(DatasetItem.id, DatasetItem.width, DatasetItem.height).where(DatasetItem.id.in_(item_ids))
-    )
-    item_dims = {row[0]: (row[1], row[2]) for row in rows}
-    return {
-        t.id: item_dims.get(t.dataset_item_id, (None, None))
-        for t in tasks if t.dataset_item_id
-    }
+    if item_ids:
+        from app.db.models.dataset import DatasetItem
+        rows = await db.execute(
+            select(DatasetItem.id, DatasetItem.width, DatasetItem.height, DatasetItem.thumbnail_path, DatasetItem.blurhash)
+            .where(DatasetItem.id.in_(item_ids))
+        )
+        item_data = {row[0]: (row[1], row[2], row[3], row[4]) for row in rows}
+        for t in tasks:
+            if t.dataset_item_id:
+                result[t.id] = item_data.get(t.dataset_item_id, (None, None, None, None))
+
+    for t in tasks:
+        if t.id not in result:
+            result[t.id] = (None, None, t.thumbnail_path, t.blurhash)
+
+    return result

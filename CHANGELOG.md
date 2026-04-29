@@ -7,6 +7,66 @@
 ---
 
 
+## [0.5.0] - 2026-04-29
+
+### 新增
+
+#### 画布引擎 — Konva 切换
+- **`ImageStage` 全面切 Konva**：底层从 DOM `<div>` 矩形切换为 `react-konva@18` Stage/Layer/Rect，解除 200+ 框掉帧的硬天花板；`KonvaImage` 配合 `use-image` hook 加载原图，`stage.scaleX/Y/x/y` 接管视口变换
+- **SelectionOverlay HTML 浮层**：采纳 / 驳回 / 删除浮动按钮移出 Stage，以绝对定位 React div 叠在 Stage 外层，按 bbox 右下角 `(box.x+w)*imgW*scale+tx` 投影到容器坐标；支持 Tab 聚焦 + 键盘可达
+- **BboxTool / HandTool 抽象**：`stage/tools/index.ts` 定义 `CanvasTool` 接口（id / hotkey / onMouseDown / onMouseMove / onMouseUp）；v0.5.1 增 polygon / keypoint 只需添加 Tool 模块，不动 ImageStage
+- **颜色兼容**：`classColorForCanvas()` 通过 Canvas 2D `fillStyle` 把 oklch 转为 Konva 可用的 hex；resize 锚点按 `HANDLE_SCREEN_PX / vp.scale` 保持屏幕像素恒定大小
+- **ReviewWorkbench 复用**：`<ImageStage readOnly />` 入参形状不变，审核页无需改动即获 Konva 性能收益
+
+#### 任务列表 — keyset 分页 + 虚拟化
+- **修复 5k 任务截断**：`useTaskList` 改为 `useInfiniteQuery` + 后端已有 `_encode_task_cursor / next_cursor`，前 50 之后的任务现在可见
+- **`@tanstack/react-virtual` 虚拟化**：`TaskQueuePanel` 固定高度虚拟列表（estimateSize=84px），滚到末尾前 10 条自动 `fetchNextPage`
+- **`navigateTask` 跨页预取**：切到倒数第 10 条时触发 `fetchNextPage`；`ReviewPage` 同一 hook，零改动
+
+#### 预取 + 体感优化
+- **相邻任务预取**：切题时对前后各一条 task 的 `annotations`、`predictions` 调 `queryClient.prefetchQuery`，并插入 `new Image().src` 预热图像字节；连续翻题第 2 题起无白屏
+- **服务端置信度过滤**：`GET /tasks/{id}/predictions?min_confidence=0.7` 服务端裁剪载荷；前端 `confThreshold` 变更 300ms debounce 再发请求；减少大预测集的 JSON 体积
+- **WS 连接灯**：StatusBar 新增 6px 圆点状态指示（绿/橙/灰）+ 文案「实时同步 / 重连中 / 实时进度暂停」
+
+#### 缩略图基础设施
+- **alembic 0009**：`dataset_items` 新增 `thumbnail_path(VARCHAR 512)` + `blurhash(VARCHAR 64)`；顺带修复 v0.4.8 alembic 漂移（`content_hash` 列用 `IF NOT EXISTS` 补迁移）
+- **alembic 0010**：`tasks` 新增 `thumbnail_path(VARCHAR 512)` + `blurhash(VARCHAR 64)`，支持直传（非数据集）任务的缩略图
+- **Celery `media` 队列**：新建 `workers/media.py`；`generate_thumbnail` 任务处理数据集条目缩略图；`generate_task_thumbnail` 任务处理直传任务（从 `annotations` bucket 拉图，写回 `tasks` 表）；失败写 `metadata_['thumbnail_error']`，重试 3 次
+- **自动触发**：`dataset` 路径（upload-complete / upload-zip / scan-import）写库后各自 `generate_thumbnail.delay(item_id)`；`files.py` upload-complete 写库后派发 `generate_task_thumbnail.delay(task_id)`
+- **`POST /datasets/{id}/backfill-media`**：触发 `backfill_media` Celery 任务，对存量无缩略图 dataset image 补生成
+- **`POST /files/projects/{project_id}/backfill-thumbnails`**：触发 `backfill_tasks` Celery 任务，对存量直传无缩略图任务补生成
+- **`_attach_dimensions` / `_attach_dimensions_batch` 双路回落**：有 `dataset_item_id` 时走 DatasetItem 取宽高 + 缩略图；`dataset_item_id = NULL` 时回落到 `tasks.thumbnail_path / blurhash` 字段，两条路径统一透出
+- **前端 `Thumbnail` 组件**：blurhash canvas 占位 → `<img loading=lazy decoding=async>` 淡入替换；`TaskQueuePanel` 左侧 40×40 缩略图，`DatasetsPage` 文件列表 32×32 缩略图
+- **`TaskOut` / `DatasetItemOut` schema**：新增 `thumbnail_url` + `blurhash` 字段透出到前端
+
+#### 基础设施
+- **Docker Compose 完整化**：新增 `api`（alembic upgrade + uvicorn，Python healthcheck）、`web`（Nginx SPA）服务；`celery-worker` 升级为监听 `default,ml,media` 三队列
+- **`MINIO_PUBLIC_URL` 配置**：`config.py` 新增 `minio_public_url` 字段；`StorageService._public_url()` 在生成 presigned URL 后将内部 endpoint 替换为外部可访问地址；docker-compose 注入 `http://localhost:9000`，浏览器可直接访问缩略图与原图
+
+#### UI 改进
+- **Button 圆角优化**：sm 尺寸改为 `--radius-pill`（胶囊形），md 尺寸改为 `--radius-lg`；增加 primary/danger/ghost 各自的 box-shadow 与 border-color 差异化；加 `transition: opacity 0.1s` 悬停反馈
+
+### 修复
+- **删除标注框闪烁**：`useDeleteAnnotation` 加 `onMutate` 乐观更新，立即从 React Query 缓存中过滤掉目标 annotation，`onError` 回滚快照；消除 API round-trip 期间的「框消失 → 重现」闪烁
+- **移动标注框回弹**：`useUpdateAnnotation` 同理加 `onMutate` 乐观更新，mutation 发出前立即更新缓存中的 geometry；消除「框跳回原位再移到新位置」的视觉抖动
+- **默认缩放 125% 问题**：`ImageStage` 初次 fit 加 `imageLoaded = !!image?.naturalWidth` 守卫，确保在真实图像尺寸加载完成后才执行 `fitNow()`；防止以 900×600 fallback 计算出错误的初始 scale
+
+### 依赖
+- 前端新增：`blurhash^2.0.5`、`react-konva`、`use-image`（Konva 画布切换）、`@tanstack/react-virtual`（任务列表虚拟化）
+- 后端新增：`blurhash-python>=1.2.0`（pyproject.toml）
+
+### 升级备注
+- **alembic upgrade head**：执行 0009（dataset_items thumbnail + content_hash 漂移）+ 0010（tasks thumbnail_path + blurhash）
+- **Python 依赖**：`uv sync` 拉 `blurhash-python`
+- **Celery**：启动 media worker：`celery -A app.workers.celery_app worker -Q media -c 4 --loglevel=info`
+- **存量 dataset 数据**：调 `POST /datasets/{id}/backfill-media` 补全历史 dataset_items 缩略图
+- **存量直传任务**：调 `POST /files/projects/{project_id}/backfill-thumbnails` 补全直传任务缩略图
+- **Docker 部署**：`MINIO_PUBLIC_URL` 设为浏览器可访问的 MinIO 地址（本地开发 `http://localhost:9000`）
+- 版本号升至 0.5.0
+
+---
+
+
 ## [0.4.9] - 2026-04-29
 
 ### 新增

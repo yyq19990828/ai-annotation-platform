@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { predictionsApi } from "@/api/predictions";
 
-export function usePredictions(taskId: string | undefined, modelVersion?: string) {
+export function usePredictions(taskId: string | undefined, modelVersion?: string, minConfidence?: number) {
   return useQuery({
-    queryKey: ["predictions", taskId, modelVersion],
-    queryFn: () => predictionsApi.listByTask(taskId!, modelVersion),
+    queryKey: ["predictions", taskId, modelVersion, minConfidence],
+    queryFn: () => predictionsApi.listByTask(taskId!, modelVersion, minConfidence),
     enabled: !!taskId,
   });
 }

@@ -1,5 +1,6 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, get_current_user
@@ -54,6 +55,11 @@ async def upload_complete(
 
     task.status = "pending"
     await db.commit()
+
+    if task.file_type == "image":
+        from app.workers.media import generate_task_thumbnail
+        generate_task_thumbnail.delay(str(task_id))
+
     return {"status": "ok", "task_id": str(task_id)}
 
 
@@ -69,6 +75,17 @@ async def get_file_url(
 
     url = storage_service.generate_download_url(task.file_path)
     return TaskFileUrlResponse(url=url, expires_in=3600)
+
+
+@router.post("/projects/{project_id}/backfill-thumbnails")
+async def backfill_project_thumbnails(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.workers.media import backfill_tasks
+    task = backfill_tasks.delay(str(project_id))
+    return {"status": "queued", "celery_task_id": task.id}
 
 
 def _infer_file_type(content_type: str) -> str:

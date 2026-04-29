@@ -91,7 +91,7 @@
 - ~~**N+1 / 关联预加载**：`GET /audit-logs` 当前对每行额外 `db.get(User, actor_id)` 回填 actor_email；改为单 JOIN 批量取。~~ ✅ v0.4.8 已完成
 - ~~**数据库连接池调优 + 监控**：当前 `create_async_engine` 默认池，无 `pool_size / max_overflow / pool_recycle`。~~ ✅ v0.4.8 已完成
 - **WebSocket 多副本**：Redis Pub/Sub 已就位，但生产横向扩 uvicorn 副本时需测试 sticky session 与 broadcast。
-- **CDN / 图片缩略图**：`dataset_items` 缺缩略图字段；标注页加载大图慢。
+- ~~**CDN / 图片缩略图**：`dataset_items` 缺缩略图字段；标注页加载大图慢。~~ ✅ v0.5.0 已完成（dataset_items + tasks 双路缩略图，blurhash 占位，Celery 异步生成，MINIO_PUBLIC_URL 修正浏览器访问）
 
 #### 测试 / 开发体验
 - **后端单元测试 / 集成测试**：`apps/api/tests/` 目前空缺；至少为 InvitationService、AuditMiddleware、权限工厂建测试 fixture（pytest + pytest-asyncio + httpx ASGI transport，本次冒烟脚本可改造为基础套件）。
@@ -121,16 +121,16 @@
 
 #### C.1 渲染性能 / 大图大量框
 
-- **画布引擎切换**：当前每个 box 是 `<BoxOverlay>` div（`stage/BoxRenderer.tsx`），DOM 节点数 = 框数 × ~5；超过 200 框肉眼掉帧，超过 500 框开始卡顿。引入 **Konva**（推荐，与 React 友好，配合 `react-konva`）或 PixiJS（极致性能但门槛高）；保留 DOM 浮层只承接选中框的操作菜单（accept/reject/resize）。
-  - 验收：1000 框 + 4K 图，pan/zoom @ 60fps；首帧 < 80ms。
+- ~~**画布引擎切换**：当前每个 box 是 `<BoxOverlay>` div（`stage/BoxRenderer.tsx`），DOM 节点数 = 框数 × ~5；超过 200 框肉眼掉帧，超过 500 框开始卡顿。引入 **Konva**（推荐，与 React 友好，配合 `react-konva`）或 PixiJS（极致性能但门槛高）；保留 DOM 浮层只承接选中框的操作菜单（accept/reject/resize）。
+  - 验收：1000 框 + 4K 图，pan/zoom @ 60fps；首帧 < 80ms。~~ ✅ v0.5.0 已完成（react-konva@18 Stage/Layer/Rect；SelectionOverlay HTML 浮层；BboxTool/HandTool 接口抽象；classColorForCanvas oklch→hex 兼容）
 - **图像加载流水线**：`<img src={file_url}>` 朴素加载（`stage/ImageBackdrop.tsx`），切下一题白屏可见。补：① `dataset_items` 增 `thumbnail_url` + `blurhash`，前端先显示低清占位，再用 `<img loading="eager" decoding="async">` 切换；② `useTasks` 队列里**预取下一题**的 image / annotations / predictions（`queryClient.prefetchQuery`）；③ 大图（> 4096 px 边长 / RS 卫星 / 病理切片）走 OpenSeadragon / DeepZoom 瓦片金字塔。
 - ~~**真正的视口缩放与平移**~~ ✅ v0.4.9：`stage/ImageStage.tsx` 已用 `transform: translate(tx,ty) scale(s)`；`Ctrl + wheel` 光标锚点缩放、`Space + drag` 平移、双击 fit、`Ctrl+0` 重置全部就位；`useViewportTransform` hook 收敛 vp 状态。**Minimap 待后续。**
 - **绘制 / 拖拽节流**：`onCanvasMouseMove` 每像素 setState（`stage/ImageStage.tsx`），高分辨屏 240Hz 时炸 React。用 `requestAnimationFrame` 合并 + ref 写入避免 setState 抖动。
-- **任务列表虚拟化**：`useTaskList` 一次拉全（默认 limit=100，但真实项目 5k+ 任务时左侧 `tasks.map` 直接卡死，`shell/TaskQueuePanel.tsx`）。改为 `react-virtualized` / `@tanstack/react-virtual` + 后端游标分页（与 B.「Audit / Task / Annotation 列表 keyset 分页」共用）。
+- ~~**任务列表虚拟化**：`useTaskList` 一次拉全（默认 limit=100，但真实项目 5k+ 任务时左侧 `tasks.map` 直接卡死，`shell/TaskQueuePanel.tsx`）。改为 `react-virtualized` / `@tanstack/react-virtual` + 后端游标分页（与 B.「Audit / Task / Annotation 列表 keyset 分页」共用）。~~ ✅ v0.5.0 已完成（useInfiniteQuery + @tanstack/react-virtual 固定高度虚拟列表，5k 任务顺滑滚动）
 - **标注列表虚拟化**：右侧 `aiBoxes.map` + `userBoxes.map`（`shell/AIInspectorPanel.tsx`）同样需要虚拟化。
-- **置信度阈值服务端化**：当前 `aiBoxes.filter(b => b.conf >= confThreshold)` 仅前端过滤（`shell/WorkbenchShell.tsx`），全量预测仍走网络。`GET /tasks/{id}/predictions?min_confidence=0.5` 查询参数下推；阈值变更带防抖。
+- ~~**置信度阈值服务端化**：当前 `aiBoxes.filter(b => b.conf >= confThreshold)` 仅前端过滤（`shell/WorkbenchShell.tsx`），全量预测仍走网络。`GET /tasks/{id}/predictions?min_confidence=0.5` 查询参数下推；阈值变更带防抖。~~ ✅ v0.5.0 已完成（`min_confidence` query 参数下推后端过滤，前端 debounce 300ms 重查询）
 - **按需加载预测**：当前任务一打开就拉全部 prediction；可改成「默认只拉 conf ≥ 0.5 的 top N，滚动右侧 AI 列表时再加载更低分」。
-- **WebSocket 重连 + 心跳**：与 A 的「WebSocket 重连」合并，但要在 Workbench 状态栏暴露连接指示（断开时变灰提示「实时进度暂停」）。
+- ~~**WebSocket 重连 + 心跳**：与 A 的「WebSocket 重连」合并，但要在 Workbench 状态栏暴露连接指示（断开时变灰提示「实时进度暂停」）。~~ ✅ v0.5.0 已完成（StatusBar WS 连接灯绿/橙/灰 + 「实时同步 / 重连中 / 实时进度暂停」文案）
 
 #### C.2 界面优化（信息架构 / 可见性 / 一致性）
 
@@ -196,10 +196,10 @@
 | **P0** | 后端测试套件、JWT secret 生产硬校验、登录限流、密码重置流程 | 安全 / 质量基线，缺它们生产风险高 |
 | **P0** | C.3 撤销/重做、框移动+resize、审核页画布预览 | 标注员/审核员日常硬伤，用户投诉率最高 |
 | **P1** | TopBar 通知中心、UsersPage「角色」tab 接通真权限矩阵、「存储与模型集成」对接、API 密钥 | 用户每天面对，残缺感最强 |
-| **P1** | C.1 真视口缩放/平移 + 图像预取 + 任务列表虚拟化、C.3 SAM 交互式（点/框→mask）、Workbench 组件拆分 | 上量后必撞墙；SAM 是核心差异化 |
-| **P1** | C.2 快捷键速查面板、多选+批量编辑、置信度服务端化、Toast 抑流 | 提效 quick win，工时少 |
+| ~~**P1**~~ ✅ | ~~C.1 真视口缩放/平移 + 图像预取 + 任务列表虚拟化~~（v0.4.9 / v0.5.0）、C.3 SAM 交互式（点/框→mask）、~~Workbench 组件拆分~~（v0.4.9）| 上量后必撞墙；SAM 是核心差异化 |
+| ~~**P1**~~ ✅ | ~~C.2 快捷键速查面板~~（v0.4.9）、多选+批量编辑、~~置信度服务端化~~（v0.5.0）、~~Toast 抑流~~（v0.4.9）| 提效 quick win，工时少 |
 | **P2** | 非 image-det 工作台、AI 预标注独立页、模型市场 | 体量大，按业务优先级排队 |
-| **P2** | C.1 Konva 画布引擎切换、瓦片金字塔大图、Minimap | 千框/4K 大图场景才必要 |
+| ~~**P2**~~ ✅ | ~~C.1 Konva 画布引擎切换~~（v0.5.0）、瓦片金字塔大图、Minimap | 千框/4K 大图场景才必要 |
 | **P2** | C.3 关键帧插值、类别属性 schema、自动保存离线队列、智能下一题（Active Learning） | 业务复杂度起来后必需 |
 | **P2** | 审计日志归档 / 全文索引、AuditMiddleware 队列化 | 当前数据量未到瓶颈，监控触发再做 |
 | **P3** | i18n、主题切换（含暗色优先工作台）、SSO、2FA | 客户具体需求驱动 |

@@ -56,16 +56,18 @@ export function StatusBar({
             预标注 {preannotationProgress.current}/{preannotationProgress.total}
           </span>
         )}
-        {preannotationConn === "reconnecting" && (
-          <span style={{ color: "var(--color-warning, #b45309)" }}>
-            AI 通道重连中… ({preannotationRetries})
-          </span>
-        )}
-        {preannotationConn === "failed" && (
-          <span style={{ color: "var(--color-danger, #b91c1c)" }}>
-            AI 通道断开
-          </span>
-        )}
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{
+            width: 6, height: 6, borderRadius: "50%",
+            background: preannotationConn === "open" ? "oklch(0.65 0.18 142)"
+              : preannotationConn === "reconnecting" ? "oklch(0.75 0.18 75)"
+              : "oklch(0.65 0.05 0)",
+            flexShrink: 0,
+          }} />
+          {preannotationConn === "open" && "实时同步"}
+          {preannotationConn === "reconnecting" && `重连中… (${preannotationRetries})`}
+          {preannotationConn === "failed" && "实时进度暂停"}
+        </span>
       </div>
     </div>
   );

@@ -205,6 +205,11 @@ async def upload_complete(
             item.width, item.height = dims
 
     await db.commit()
+
+    if item.file_type == "image":
+        from app.workers.media import generate_thumbnail
+        generate_thumbnail.delay(str(item_id))
+
     return {"status": "ok", "item_id": str(item_id)}
 
 
@@ -249,6 +254,7 @@ async def upload_zip(
     deduped = 0
     skipped: list[str] = []
     errors: list[dict] = []
+    new_image_item_ids: list[uuid.UUID] = []
 
     from sqlalchemy import select as sa_select
     from app.db.models.dataset import DatasetItem
@@ -334,9 +340,16 @@ async def upload_zip(
             height=height,
         )
         added += 1
-        _ = item  # 显式忽略
+        if file_type == "image":
+            new_image_item_ids.append(item.id)
 
     await db.commit()
+
+    if new_image_item_ids:
+        from app.workers.media import generate_thumbnail
+        for iid in new_image_item_ids:
+            generate_thumbnail.delay(str(iid))
+
     return {
         "added": added,
         "deduped": deduped,
@@ -356,9 +369,15 @@ async def scan_items(
     ds = await svc.get(dataset_id)
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    created = await svc.scan_and_import(dataset_id)
+    new_ids = await svc.scan_and_import(dataset_id)
     await db.commit()
-    return {"status": "ok", "new_items": created}
+
+    if new_ids:
+        from app.workers.media import generate_thumbnail
+        for iid in new_ids:
+            generate_thumbnail.delay(str(iid))
+
+    return {"status": "ok", "new_items": len(new_ids)}
 
 
 @router.post("/{dataset_id}/backfill-dimensions")
@@ -396,6 +415,25 @@ async def backfill_dimensions(
             failed += 1
     await db.commit()
     return {"processed": processed, "failed": failed, "remaining_hint": len(items) == batch}
+
+
+@router.post("/{dataset_id}/backfill-media")
+async def backfill_media_endpoint(
+    dataset_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """异步触发存量图像的缩略图 + blurhash 回填。"""
+    from app.db.models.dataset import DatasetItem
+    from sqlalchemy import select as sa_select
+    svc = DatasetService(db)
+    ds = await svc.get(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    from app.workers.media import backfill_media
+    backfill_media.delay(str(dataset_id))
+    return {"status": "queued", "dataset_id": str(dataset_id)}
 
 
 @router.delete("/{dataset_id}/items/{item_id}", status_code=204)

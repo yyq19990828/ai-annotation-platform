@@ -6,6 +6,36 @@ export const CLASS_COLORS: Record<string, string> = {
   促销贴: "oklch(0.60 0.20 295)",
 };
 
+// Canvas(Konva) 用的颜色：通过浏览器 CSS 引擎把 oklch 转换成 hex，并缓存结果。
+const _canvasCache = new Map<string, string>();
+function oklchToHex(cssColor: string): string {
+  if (_canvasCache.has(cssColor)) return _canvasCache.get(cssColor)!;
+  try {
+    const cvs = document.createElement("canvas");
+    cvs.width = cvs.height = 1;
+    const ctx = cvs.getContext("2d")!;
+    ctx.fillStyle = cssColor;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    const hex = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+    _canvasCache.set(cssColor, hex);
+    return hex;
+  } catch {
+    return "#888888";
+  }
+}
+
+export function classColorForCanvas(name: string): string {
+  return oklchToHex(classColor(name));
+}
+
+export function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 // FNV-1a 32-bit；输入相同输出固定，跨会话一致。
 function hashString(s: string): number {
   let h = 2166136261;

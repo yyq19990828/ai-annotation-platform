@@ -20,4 +20,5 @@ dependencies = [
     "structlog>=25.5.0",
     "prometheus-client>=0.25.0",
     "Pillow>=10.0.0",
+    "blurhash-python>=1.2.0",
 ]

@@ -22,8 +22,12 @@ export interface DatasetItemResponse {
   file_type: string;
   file_size: number | null;
   content_hash: string | null;
+  width: number | null;
+  height: number | null;
   metadata: Record<string, unknown>;
   file_url: string | null;
+  thumbnail_url: string | null;
+  blurhash: string | null;
   created_at: string;
 }
 

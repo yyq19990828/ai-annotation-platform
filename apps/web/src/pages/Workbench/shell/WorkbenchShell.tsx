@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
@@ -11,6 +12,8 @@ import {
 import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
+import { tasksApi } from "@/api/tasks";
+import { predictionsApi } from "@/api/predictions";
 import type { TaskResponse, AnnotationResponse } from "@/types";
 
 import { useWorkbenchState } from "../state/useWorkbenchState";
@@ -39,8 +42,8 @@ export function WorkbenchShell() {
   const projectDisplayId = currentProject?.display_id ?? "—";
   const aiModel = currentProject?.ai_model ?? "GroundingDINO + SAM";
 
-  const { data: taskListData } = useTaskList(projectId);
-  const tasks = taskListData?.items ?? [];
+  const { data: taskListData, hasNextPage, isFetchingNextPage, fetchNextPage } = useTaskList(projectId);
+  const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
 
   const s = useWorkbenchState();
   const { vp, setVp } = useViewportTransform();
@@ -48,6 +51,13 @@ export function WorkbenchShell() {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [spacePan, setSpacePan] = useState(false);
   const [showHotkeys, setShowHotkeys] = useState(false);
+
+  // 阈值防抖：滑动时前端即时过滤，300ms 后触发服务端查询
+  const [debouncedConf, setDebouncedConf] = useState(s.confThreshold);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedConf(s.confThreshold), 300);
+    return () => clearTimeout(t);
+  }, [s.confThreshold]);
 
   const task: TaskResponse | undefined = useMemo(
     () => tasks.find((t) => t.id === s.currentTaskId) ?? tasks[0],
@@ -72,7 +82,7 @@ export function WorkbenchShell() {
   const { data: annotationsData } = useAnnotations(taskId);
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
-  const { data: predictionsData } = usePredictions(taskId);
+  const { data: predictionsData } = usePredictions(taskId, undefined, debouncedConf);
 
   const userBoxes = useMemo(
     () => (annotationsData ?? []).map(annotationToBox),
@@ -103,6 +113,24 @@ export function WorkbenchShell() {
     usePreannotationProgress(projectId);
   const { lockError } = useTaskLock(taskId);
 
+  const queryClient = useQueryClient();
+
+  // 预取相邻题的 annotations / predictions / 图像
+  useEffect(() => {
+    const idx = tasks.findIndex((t) => t.id === taskId);
+    const prefetch = (t: TaskResponse | undefined) => {
+      if (!t) return;
+      queryClient.prefetchQuery({ queryKey: ["annotations", t.id], queryFn: () => tasksApi.getAnnotations(t.id) });
+      queryClient.prefetchQuery({ queryKey: ["predictions", t.id, undefined, debouncedConf], queryFn: () => predictionsApi.listByTask(t.id, undefined, debouncedConf) });
+      if (t.file_url) {
+        const img = new Image();
+        img.src = t.file_url;
+      }
+    };
+    prefetch(tasks[idx + 1]);
+    prefetch(tasks[idx - 1]);
+  }, [taskId, tasks, queryClient, debouncedConf]);
+
   const aiRunning = preannotationProgress?.status === "running" || triggerPreannotation.isPending;
 
   const history = useAnnotationHistory(taskId, {
@@ -118,9 +146,13 @@ export function WorkbenchShell() {
     const newIdx = direction === "next"
       ? Math.min(idx + 1, tasks.length - 1)
       : Math.max(0, idx - 1);
+    // 距末页 10 条时预加载下一页
+    if (direction === "next" && newIdx >= tasks.length - 10 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
     s.setCurrentTaskId(tasks[newIdx].id);
     s.setSelectedId(null);
-  }, [tasks, taskId, s]);
+  }, [tasks, taskId, s, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const handleDeleteBox = useCallback((id: string) => {
     const target = annotationsRef.current.find((a) => a.id === id);
@@ -358,6 +390,9 @@ export function WorkbenchShell() {
         tasks={tasks}
         taskId={taskId}
         taskIdx={taskIdx}
+        hasNextPage={hasNextPage}
+        isFetchingNextPage={isFetchingNextPage}
+        onFetchNextPage={fetchNextPage}
         onBack={onBack}
         onToggle={() => s.setLeftOpen(!s.leftOpen)}
         onSetActiveClass={s.setActiveClass}

@@ -83,7 +83,7 @@ export function ReviewPage() {
 
   const projectId = selectedProjectId || projects?.[0]?.id;
   const { data: taskListData, isLoading } = useTaskList(projectId, { status: "review" });
-  const tasks = taskListData?.items ?? [];
+  const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
 
   const approveMut = useApproveTask();
   const rejectMut = useRejectTask();
