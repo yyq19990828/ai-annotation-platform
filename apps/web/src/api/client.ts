@@ -10,8 +10,8 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = localStorage.getItem("token");
+async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?: boolean }): Promise<T> {
+  const token = opts?.anonymous ? null : localStorage.getItem("token");
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
@@ -23,7 +23,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    if (res.status === 401) {
+    if (res.status === 401 && !opts?.anonymous) {
       const { useAuthStore } = await import("../stores/authStore");
       useAuthStore.getState().logout();
     }
@@ -44,6 +44,14 @@ export const apiClient = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  /** 公开请求：不携带 Authorization；401 不触发全局 logout（用于 /auth/register 等公开端点）。 */
+  publicGet: <T>(path: string) => request<T>(path, undefined, { anonymous: true }),
+  publicPost: <T>(path: string, body?: unknown) =>
+    request<T>(
+      path,
+      { method: "POST", body: JSON.stringify(body ?? {}) },
+      { anonymous: true },
+    ),
 };
 
 export { ApiError };

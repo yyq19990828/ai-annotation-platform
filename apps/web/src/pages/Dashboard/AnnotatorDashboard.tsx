@@ -1,16 +1,44 @@
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
 import { Sparkline } from "@/components/ui/Sparkline";
-import { useAnnotatorStats } from "@/hooks/useDashboard";
 import { useToastStore } from "@/components/ui/Toast";
+import { useAnnotatorStats } from "@/hooks/useDashboard";
+import { useProjects } from "@/hooks/useProjects";
+import { SelectProjectModal } from "@/components/dashboard/SelectProjectModal";
 
 export function AnnotatorDashboard() {
   const { data: stats, isLoading } = useAnnotatorStats();
+  const { data: myProjects = [] } = useProjects();
+  const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
-  const startAnnotating = () =>
-    pushToast({ msg: "请从分配给你的项目中选择一个开始", sub: "项目列表面板将在后续版本上线" });
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const startAnnotating = () => {
+    if (myProjects.length === 0) {
+      pushToast({ msg: "暂无分配项目，请联系管理员" });
+      return;
+    }
+    if (myProjects.length === 1) {
+      navigate(`/projects/${myProjects[0].id}/annotate`);
+      return;
+    }
+    setPickerOpen(true);
+  };
+
+  const sortedProjects = useMemo(
+    () =>
+      [...myProjects].sort((a, b) => {
+        const ra = Math.max(0, (a.total_tasks ?? 0) - (a.completed_tasks ?? 0));
+        const rb = Math.max(0, (b.total_tasks ?? 0) - (b.completed_tasks ?? 0));
+        return rb - ra;
+      }),
+    [myProjects],
+  );
 
   if (isLoading || !stats) {
     return (
@@ -22,6 +50,7 @@ export function AnnotatorDashboard() {
 
   const weeklyTarget = 200;
   const weeklyPct = Math.min(Math.round((stats.weekly_completed / weeklyTarget) * 100), 100);
+  const noProjects = myProjects.length === 0;
 
   return (
     <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
@@ -30,7 +59,7 @@ export function AnnotatorDashboard() {
           <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>我的工作台</h1>
           <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>查看任务进度，高效完成标注工作</p>
         </div>
-        <Button variant="primary" onClick={startAnnotating}>
+        <Button variant="primary" onClick={startAnnotating} disabled={noProjects} title={noProjects ? "暂无分配项目" : undefined}>
           <Icon name="target" size={13} />开始标注
         </Button>
       </div>
@@ -85,7 +114,7 @@ export function AnnotatorDashboard() {
               {stats.weekly_completed} / {weeklyTarget} 个标注
             </div>
             <div style={{ marginTop: 16 }}>
-              <Button onClick={startAnnotating}>
+              <Button onClick={startAnnotating} disabled={noProjects}>
                 <Icon name="target" size={12} />继续标注
               </Button>
             </div>
@@ -94,24 +123,80 @@ export function AnnotatorDashboard() {
       </div>
 
       <Card style={{ marginTop: 12 }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>个人统计</h3>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>我的项目</h3>
+          <span style={{ fontSize: 12, color: "var(--color-fg-subtle)" }}>共 {sortedProjects.length} 个</span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 0 }}>
-          <StatItem label="累计完成" value={stats.total_completed.toLocaleString()} />
-          <StatItem label="今日完成" value={String(stats.today_completed)} />
-          <StatItem label="准确率" value={`${stats.personal_accuracy}%`} color="var(--color-success)" />
-        </div>
+        {noProjects ? (
+          <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+            <Icon name="folder" size={28} style={{ opacity: 0.25, marginBottom: 8 }} />
+            <div>暂无分配项目</div>
+            <div style={{ fontSize: 11.5, marginTop: 4 }}>请联系项目管理员将你加入项目成员</div>
+          </div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+            <thead>
+              <tr>
+                {["项目", "类型", "进度", "待标", ""].map((h, i) => (
+                  <th key={i} style={{
+                    textAlign: "left", fontWeight: 500, fontSize: 12,
+                    color: "var(--color-fg-muted)", padding: "10px 12px",
+                    borderBottom: "1px solid var(--color-border)",
+                    background: "var(--color-bg-sunken)",
+                    ...(i === 0 ? { paddingLeft: 16 } : {}),
+                    ...(i === 4 ? { paddingRight: 16 } : {}),
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedProjects.map((p) => {
+                const remaining = Math.max(0, (p.total_tasks ?? 0) - (p.completed_tasks ?? 0));
+                const pct = p.total_tasks ? Math.round(((p.completed_tasks ?? 0) / p.total_tasks) * 100) : 0;
+                return (
+                  <tr
+                    key={p.id}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => navigate(`/projects/${p.id}/annotate`)}
+                  >
+                    <td style={{ padding: "10px 12px 10px 16px", borderBottom: "1px solid var(--color-border)" }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{p.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                        <span className="mono">{p.display_id}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", color: "var(--color-fg-muted)", fontSize: 12 }}>
+                      {p.type_label}
+                    </td>
+                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", fontSize: 12, color: "var(--color-fg-muted)" }}>
+                      {p.completed_tasks ?? 0} / {p.total_tasks ?? 0} <span className="mono">({pct}%)</span>
+                    </td>
+                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)" }}>
+                      <Badge variant={remaining > 0 ? "accent" : "outline"} style={{ fontSize: 11 }}>{remaining}</Badge>
+                    </td>
+                    <td style={{ padding: "10px 16px 10px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right" }}>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/projects/${p.id}/annotate`); }}
+                      >
+                        <Icon name="target" size={11} />打开
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </Card>
-    </div>
-  );
-}
 
-function StatItem({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{ padding: "16px 20px", borderRight: "1px solid var(--color-border)" }}>
-      <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginBottom: 4 }}>{label}</div>
-      <div className="mono" style={{ fontSize: 18, fontWeight: 600, color: color ?? "var(--color-fg)" }}>{value}</div>
+      <SelectProjectModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        projects={sortedProjects}
+        onPick={(id) => navigate(`/projects/${id}/annotate`)}
+      />
     </div>
   );
 }

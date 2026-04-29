@@ -7,10 +7,11 @@ import { Avatar } from "@/components/ui/Avatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
-import { useToastStore } from "@/components/ui/Toast";
 import { useUsers } from "@/hooks/useUsers";
 import { roles } from "@/data/mock";
 import { ROLE_LABELS } from "@/constants/roles";
+import { Can } from "@/components/guards/Can";
+import { InviteUserModal } from "@/components/users/InviteUserModal";
 import type { UserResponse } from "@/api/users";
 import type { UserRole } from "@/types";
 
@@ -42,7 +43,7 @@ export function UsersPage() {
   const [tab, setTab] = useState("members");
   const [selectedRole, setSelectedRole] = useState("全部");
   const [query, setQuery] = useState("");
-  const pushToast = useToastStore((s) => s.push);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const { data: allUsers = [], isLoading } = useUsers();
 
@@ -62,9 +63,11 @@ export function UsersPage() {
         <div style={{ display: "flex", gap: 8 }}>
           <Button><Icon name="key" size={13} />API 密钥</Button>
           <Button><Icon name="download" size={13} />导出名单</Button>
-          <Button variant="primary" onClick={() => pushToast({ msg: "邀请链接已复制", sub: "7 天内有效", kind: "success" })}>
-            <Icon name="plus" size={13} />邀请成员
-          </Button>
+          <Can permission="user.invite">
+            <Button variant="primary" onClick={() => setInviteOpen(true)}>
+              <Icon name="plus" size={13} />邀请成员
+            </Button>
+          </Can>
         </div>
       </div>
 
@@ -268,6 +271,8 @@ export function UsersPage() {
           ))}
         </div>
       </Card>
+
+      <InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </div>
   );
 }

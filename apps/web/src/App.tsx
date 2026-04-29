@@ -15,6 +15,9 @@ import { DatasetsPage } from "@/pages/Datasets/DatasetsPage";
 import { StoragePage } from "@/pages/Storage/StoragePage";
 import { UnauthorizedPage } from "@/pages/Unauthorized/UnauthorizedPage";
 import { ProjectSettingsPage } from "@/pages/Projects/ProjectSettingsPage";
+import { RegisterPage } from "@/pages/Register/RegisterPage";
+import { AuditPage } from "@/pages/Audit/AuditPage";
+import { SettingsPage } from "@/pages/Settings/SettingsPage";
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -85,6 +88,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
       <Route
         path="/projects/:id/annotate"
@@ -164,7 +168,7 @@ export function App() {
           path="/audit"
           element={
             <RequirePagePermission pageKey="audit">
-              <PlaceholderPage title="审计日志" />
+              <AuditPage />
             </RequirePagePermission>
           }
         />
@@ -172,7 +176,7 @@ export function App() {
           path="/settings"
           element={
             <RequirePagePermission pageKey="settings">
-              <PlaceholderPage title="设置" />
+              <SettingsPage />
             </RequirePagePermission>
           }
         />

@@ -7,6 +7,8 @@ from app.db.models.task_lock import TaskLock, AnnotationDraft
 from app.db.models.annotation import Annotation
 from app.db.models.ml_backend import MLBackend
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
+from app.db.models.audit_log import AuditLog
+from app.db.models.user_invitation import UserInvitation
 
 __all__ = [
     "User",
@@ -16,4 +18,6 @@ __all__ = [
     "Annotation",
     "MLBackend",
     "Prediction", "PredictionMeta", "FailedPrediction",
+    "AuditLog",
+    "UserInvitation",
 ]

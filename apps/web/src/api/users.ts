@@ -13,9 +13,14 @@ export interface UserResponse {
 
 export interface InvitePayload {
   email: string;
-  name: string;
   role: string;
   group_name?: string;
+}
+
+export interface InvitationCreated {
+  invite_url: string;
+  token: string;
+  expires_at: string;
 }
 
 export const usersApi = {
@@ -29,5 +34,11 @@ export const usersApi = {
   },
 
   invite: (payload: InvitePayload) =>
-    apiClient.post<{ status: string }>("/users/invite", payload),
+    apiClient.post<InvitationCreated>("/users/invite", payload),
+
+  changeRole: (userId: string, role: string) =>
+    apiClient.patch<UserResponse>(`/users/${userId}/role`, { role }),
+
+  deactivate: (userId: string) =>
+    apiClient.post<UserResponse>(`/users/${userId}/deactivate`, {}),
 };

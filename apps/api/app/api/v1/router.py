@@ -1,8 +1,24 @@
 from fastapi import APIRouter
-from app.api.v1 import auth, projects, tasks, users, ml_backends, files, datasets, storage, dashboard
+from app.api.v1 import (
+    auth,
+    audit_logs,
+    dashboard,
+    datasets,
+    files,
+    invitations,
+    me,
+    ml_backends,
+    projects,
+    storage,
+    system_settings,
+    tasks,
+    users,
+)
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(invitations.router, prefix="/auth", tags=["auth"])
+api_router.include_router(me.router, prefix="/auth/me", tags=["me"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
@@ -11,3 +27,5 @@ api_router.include_router(ml_backends.router, prefix="/projects/{project_id}/ml-
 api_router.include_router(files.router, prefix="/files", tags=["files"])
 api_router.include_router(datasets.router, prefix="/datasets", tags=["datasets"])
 api_router.include_router(storage.router, prefix="/storage", tags=["storage"])
+api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit"])
+api_router.include_router(system_settings.router, prefix="/settings", tags=["settings"])

@@ -8,44 +8,206 @@
 
 ## 待实现 (Roadmap)
 
-> 仅记录代码中明确观察到的未兑现 / 占位项，按模块归类。已实现的功能见下方各版本条目。
+> 两类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）。
 
-### 项目模块
+---
+
+### A · 代码观察到的硬占位 / 残留 mock
+
+#### 项目模块
 - **非 image-det 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / video-track / mm 共 6 类点击「打开」仅显示 toast `类型 X 的标注界面尚未实现`（`DashboardPage.tsx:139`、`ViewerDashboard.tsx:31`）。
+- **类别管理**：项目创建后类别（classes）只在 `CreateProjectWizard` 步骤 2 录入，后续无批量编辑 / 导入 / 导出 UI；`PATCH /projects/{id}` 已支持但前端未暴露。
+- **项目模板**：当前每次新建项目都从 0 配置类别 / AI 模型；无「从已有项目复制」或「保存为模板」入口。
 
-### 数据 & 存储
+#### 数据 & 存储
 - **数据集导入面板**：Dashboard 顶部「导入数据集」按钮（`DashboardPage.tsx:170`）与 DatasetsPage 上传按钮（`DatasetsPage.tsx:141`）均为 toast 占位，未实现 OSS / 本地 / 数据库三种声明的来源。
 - **存储文件大小统计**：`StoragePage.tsx:163` 明示「文件大小统计将在后续版本中支持」。
+- **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
+- **文件去重 / hash**：`dataset_items` 没有 `content_hash` 列，相同文件多次上传会产生多份对象存储副本。
+- **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 
-### AI / 模型
-- **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态。
+#### AI / 模型
+- **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态（`AdminDashboard.tsx:107-119`、`DashboardPage.tsx:287-291`）。
 - **模型市场**：路由 `/model-market` 占位；项目级 ML Backend 真实选择 / 挂接 UI 缺失（向导步骤 3 仅录入模型名称字符串）。
 - **训练队列**：路由 `/training` 占位。
+- **预测成本统计**：后端 `prediction_metas` 表已记录 token / 耗时 / 成本，但前端无任何可视化（应进入 AdminDashboard 的成本卡片）。
+- **失败预测重试**：`failed_predictions` 表记录但无 UI 触发重试。
+- **ML Backend 健康检查**：`MLBackendService` 只在管理员手动点击时探活，无后台周期任务。
 
-### 平台 / 治理
-- **审计日志**：路由 `/audit` 占位；Dashboard「近期活动」卡片注明「审计日志功能将在后续版本上线」（`DashboardPage.tsx:260`）。
-- **设置页**：路由 `/settings` 占位。
-- **真实用户注册（邀请制）**：当前仅 `seed.py` 生成测试账号，无真实注册路径；UsersPage「邀请」按钮（`UsersPage.tsx:65`）的 toast `邀请链接已复制` 为虚假提示。已确定走 **B 邀请制** 方案（非公开注册、非 SSO）。具体设计：
-  - 后端新表 `user_invitations`：`id / email / role / group_name / token(32B 随机) / expires_at / invited_by / accepted_at / accepted_user_id`，token 单次使用、≤ 7 天过期
-  - 后端三接口：
-    - `POST /users/invite`（super_admin / project_admin）：写表 + 暂时返回链接，后续接 SMTP / SES 发邮件
-    - `GET /auth/invitations/{token}`（公开）：校验 token，返回邮箱+角色给注册页预填
-    - `POST /auth/register`（公开）：凭 token + 姓名 + 密码完成注册，建 users 行；email 不可由受邀人改写、role 由邀请方决定
-  - 前端：UsersPage 邀请按钮换成弹窗（邮箱 / 角色 / 分组）→ 显示一次性邀请链接；新增脱离 AppShell 的 `/register?token=xxx` 全屏页，提交后自动登录跳 dashboard
-  - 配套治理：邀请/接受/角色变更全部写入 `audit_logs`（与「审计日志」TODO 合并落地）
-  - 部署安全栏：`seed.py` 顶部加 `if settings.environment == "production": raise SystemExit(...)`；首个 super_admin 用一次性脚本 `bootstrap_admin.py`（读 env 邮箱/密码）建立，与测试种子物理隔离
-  - 远期：留出 SSO / LDAP 接入点（C 方案），首次 SSO 登录自动建账户、role 默认 viewer 由管理员升级
-- **个人任务面板**：AnnotatorDashboard「开始标注」按钮（`AnnotatorDashboard.tsx:13`）目前 toast 提示「项目列表面板将在后续版本上线」。
+#### 用户与权限页（UsersPage）
+- **行末「编辑 / 设置」按钮**：`UsersPage.tsx:159-160` 两个 icon button 无 onClick。后端 `PATCH /users/{id}/role` 与 `POST /users/{id}/deactivate` 已就绪，仅缺前端 modal。
+- **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。
+- **「导出名单」按钮**：`UsersPage.tsx:64` 无实现。
+- **「角色」tab 卡片**：仍读取 `data/mock.ts` 的 `roles` 与硬编码 `perms`；应映射到 `constants/permissions.ts` 的真实 `ROLE_PERMISSIONS` 矩阵。
+- **「数据组」tab**：硬编码 7 个组名（`UsersPage.tsx:208`），无新建 / 重命名 / 删除；group 仍是 User 表的字符串字段，未升级为关系。
+- **「存储与模型集成」面板**：`UsersPage.tsx:246-269` 全部 mock 数据，应对接 `/storage/health` 与 `/projects/{pid}/ml-backends`。
+- **邀请管理**：当前邀请发出后只返回一次性链接，缺少「我邀请过的人」列表 / 手动撤销 pending 邀请 / 重发邀请等运营功能（`user_invitations` 表已建好）。
 
-### TopBar / Dashboard 控件
-- **全局搜索**：TopBar 的 `<SearchInput placeholder="搜索项目、任务、数据集、成员..." kbd="⌘K">` 无 `value` / `onChange` / 提交 handler。
-- **通知 / 刷新按钮**：TopBar 两个 icon button 无 onClick。
-- **工作区切换**：TopBar `onWorkspaceChange` 仅 toast「切换工作区面板已展开」。
+#### 设置页（SettingsPage）
+- **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
+- **个人偏好**：语言 / 主题 / 时区 / 通知偏好均无（依赖 i18n / 主题基础设施先建立）。
+- **系统设置可编辑**：本期 `GET /settings/system` 是只读 .env mirror，缺 PATCH。需要 `system_settings` 表 + 启动时 env 优先加载、表项作为 override。
+
+#### 审计日志页（AuditPage）
+- **导出 CSV / JSON**：合规场景需要离线归档。
+- **自动刷新 / 实时流**：当前需手动点刷新；可加 30s 轮询或 SSE。
+- **detail_json 字段级筛选**：现在只能按 `action / target_type / actor_id / 时间`，不能按「角色变更：role: super_admin」这种字段值过滤（需 PG GIN 索引）。
+- **正向反向追溯视图**：点用户 / 项目 → 跳转该对象的完整审计时间线。
+
+#### TopBar / Dashboard 控件
+- **全局搜索**：TopBar 的 `<SearchInput placeholder="搜索项目、任务、数据集、成员..." kbd="⌘K">` 无 `value` / `onChange` / 提交 handler；后端无 `/search` 端点。
+- **通知 / 刷新按钮**：TopBar 两个 icon button 无 onClick；通知中心可基于 audit_logs（`actor_id == self` 或 `target_id 关联到自己的项目/任务`）实时弹卡。
+- **工作区切换**：TopBar `onWorkspaceChange` 仅 toast「切换工作区面板已展开」；Organization 表已存在但前端无切换 UI。
 - **Dashboard 高级筛选 / 网格视图**：`DashboardPage.tsx:198-199` 两个 Button 无 onClick。
 
-### 一致性 / 体验
-- **Modal 内的非自定义 confirm/alert 替换**：当前若有删除类破坏性操作仍可能用浏览器原生 confirm（待审视各页面），需改为 Modal 二次确认。
-- **路由守卫粒度**：`RequirePagePermission` 当前按页判定；项目级权限（如「仅自己项目」）仍依赖后端校验，前端尚未在 `/projects/:id/annotate` 做同等检查。
+#### Annotator / Reviewer 工作台
+- **AnnotatorDashboard `weeklyTarget = 200` 硬编码**（`AnnotatorDashboard.tsx`）：应来自项目级 / 用户级偏好。
+- **ReviewerDashboard 无个人最近审核记录** —— 当前只有跨项目待审列表，无历史回看。
+
+#### 一致性 / 体验
+- **路由守卫粒度**：`RequirePagePermission` 当前按页判定；项目级权限（如「仅自己项目」）仍依赖后端校验，前端尚未在 `/projects/:id/annotate` 做同等检查 → 进入工作台后才被后端 403，体验差。
+- **破坏性操作 confirm**：所有删除流程已用 Modal 二次确认，但仍需审视一遍 `confirm(...)` 是否漏网。
+- **错误边界**：`App.tsx` 顶层无 React `<ErrorBoundary>`，任意子组件抛错白屏。
+- **WebSocket 重连**：`usePreannotationProgress` 断线后无自动重连。
+
+---
+
+### B · 架构 & 治理向前演进
+
+#### 安全
+- **JWT secret 生产硬校验**：启动时若 `environment=production` 且 `secret_key=="dev-secret-change-in-production"` 应直接拒绝启动。
+- **登录限流**：`/auth/login` 当前无 N 次失败锁定 / IP 限速，存在暴力破解面。建议接 `slowapi` 或 Redis 计数。
+- **邀请频率限流**：单 actor 单日邀请上限，避免 spam。
+- **密码策略升级**：当前仅长度 ≥ 6；建议 8 位 + 复杂度 + breached-password 校验（haveibeenpwned k-anonymity API）。
+- **密码重置流程**：当前无「忘记密码」入口；可复用 `user_invitations` 基础设施增 `password_reset_tokens` 表。
+- **2FA / TOTP**：super_admin 必选、其它角色可选。
+- **API 密钥**：UsersPage 已有按钮，需 `api_keys` 表 + scope + revoke + 最后使用时间。
+- **会话管理**：当前 token 过期前不可撤销；需 token blacklist 或 jti + Redis。「在所有设备登出」功能。
+- **审计日志不可变**：当前 super_admin 仍可 `DELETE FROM audit_logs`；建议 PG row-level security 或 trigger 拒绝 DELETE/UPDATE。
+- **CORS 收紧**：当前 `allow_origin_regex=r"http://localhost:\d+"`，production 需替换为白名单。
+- **HTTPS 强制 / HSTS / CSP**：production 中间件层补齐。
+
+#### 治理 / 合规
+- **审计日志归档**：按月 PARTITION + 冷数据 S3 归档；后台 cron job 触发。
+- **审计日志全文索引**：`detail_json` 加 GIN 索引以支持快速查询；超大数据量考虑 ES / OpenSearch 镜像。
+- **审计中间件双行去重**：当前 metadata 行 + 业务 detail 行各写一行；可加 `request_id`（来自请求头或自动生成）做关联，UI 提供合并视图。
+- **数据导出审计**：`GET /projects/{id}/export` 等批量数据导出应触发审计 + 下载者签名水印。
+- **GDPR / 个人信息删除**：被删用户的 audit 行需要做 actor_email 脱敏（保留 actor_id 关联，原始邮箱另存或抹除）。
+- **通知中心 / 事件总线**：基于 audit_logs 派生面向用户的通知（被邀请、审核通过、AI 完成等），前端 TopBar 通知按钮承接；后端可用 Redis Pub/Sub 实时推送。
+- **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
+
+#### 可观测性
+- **结构化日志**：当前使用 `logger.warning` 普通字符串；引入 `structlog` 或 `loguru` + JSON 输出便于聚合（Loki / ELK）。
+- **request_id / trace_id**：中间件注入并写入 audit_logs 的 detail，便于跨表追溯。
+- **Prometheus metrics**：暴露 `/metrics`（FastAPI 请求时延、Celery 队列长度、数据库连接池、ML Backend 健康）。
+- **Sentry**：前后端 error tracking。
+- **健康检查拆分**：现在 `/health` 只返回 `{status: "ok"}`；拆为 `/health/db`、`/health/redis`、`/health/minio`、`/health/celery` 便于编排（k8s readiness）。
+
+#### 性能 / 扩展
+- **AuditMiddleware 写入异步队列**：当前每写请求一次 INSERT，写流量上来后改 Redis Stream / Kafka 异步消费，主请求 < 1ms 旁路。
+- **Audit / Task / Annotation 列表 keyset 分页**：当前 OFFSET 在大表上慢；改为 `(created_at, id) > (?, ?)` 游标分页。
+- **Predictions 表分区**：按 `project_id` 或 `created_at` PARTITION，单项目预测量大时查询性能下降。
+- **N+1 / 关联预加载**：`GET /audit-logs` 当前对每行额外 `db.get(User, actor_id)` 回填 actor_email；改为单 JOIN 批量取。
+- **数据库连接池调优 + 监控**：当前 `create_async_engine` 默认池，无 `pool_size / max_overflow / pool_recycle`。
+- **WebSocket 多副本**：Redis Pub/Sub 已就位，但生产横向扩 uvicorn 副本时需测试 sticky session 与 broadcast。
+- **CDN / 图片缩略图**：`dataset_items` 缺缩略图字段；标注页加载大图慢。
+
+#### 测试 / 开发体验
+- **后端单元测试 / 集成测试**：`apps/api/tests/` 目前空缺；至少为 InvitationService、AuditMiddleware、权限工厂建测试 fixture（pytest + pytest-asyncio + httpx ASGI transport，本次冒烟脚本可改造为基础套件）。
+- **前端单元测试**：vitest + React Testing Library 覆盖 hooks 与关键组件（Modal、InviteUserModal 状态机、RegisterPage 三态）。
+- **E2E 测试**：Playwright 录制邀请→注册→标注→审核→审计核心 5 条用户流程。
+- **OpenAPI → TS 类型生成**：当前前后端 schema 手动同步（`apps/web/src/api/*.ts` vs `apps/api/app/schemas/*.py`），易漂移；接 `openapi-typescript` 或 `@hey-api/openapi-ts`。
+- **CI/CD pipeline**：`.github/workflows/` 缺；至少 lint + tsc + pytest + 镜像构建。
+- **预提交钩子**：husky + lint-staged + ruff + tsc。
+
+#### i18n / 主题 / 无障碍
+- **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
+- **主题切换**：CSS 变量已就绪，但 TopBar 无 toggle；增加日间 / 夜间 / 跟随系统三档。
+- **无障碍**：ARIA 属性极少（仅 Modal `role=dialog` 和 `aria-label="关闭"`）；Lighthouse Accessibility 分数应作为 PR gate。
+- **响应式**：`gridTemplateColumns: "220px 1fr"` 等硬编码栅格在 < 1024px 下错位；Sidebar 缺折叠态。
+
+#### 文档
+- **部署文档**：缺 production 部署清单（环境变量、TLS、备份、初次 bootstrap_admin 步骤）。
+- **安全模型文档**：RBAC 矩阵、审计字段释义、邀请流程时序图。
+- **API 使用指南**：FastAPI 自动 `/docs` 已有，但缺示例与最佳实践（特别是 ML Backend 协议、WebSocket 订阅）。
+
+---
+
+### 优先级建议（参考）
+
+| 优先级 | 候选项 | 理由 |
+|---|---|---|
+| **P0** | 后端测试套件、JWT secret 生产硬校验、登录限流、密码重置流程 | 安全 / 质量基线，缺它们生产风险高 |
+| **P1** | 数据集导入面板、TopBar 通知中心、UsersPage 残留 mock 接通、API 密钥 | 用户每天面对，残缺感最强 |
+| **P1** | 路由守卫粒度（项目级前端校验）、错误边界、WebSocket 重连 | 体验 / 可靠性 quick win |
+| **P2** | 非 image-det 工作台、AI 预标注独立页、模型市场 | 体量大，按业务优先级排队 |
+| **P2** | 审计日志归档 / 全文索引、AuditMiddleware 队列化 | 当前数据量未到瓶颈，监控触发再做 |
+| **P3** | i18n、主题切换、SSO、2FA | 客户具体需求驱动 |
+
+---
+
+## [0.4.6] - 2026-04-29
+
+### 新增
+
+#### 平台 / 治理基座（一次性兑现 4 项硬占位）
+
+##### 审计日志（`/audit`）
+- 新增 `audit_logs` 表（actor_id / actor_email / actor_role / action / target_type / target_id / method / path / status_code / ip / detail_json / created_at）+ 4 条索引；alembic 迁移 `0005_governance.py`
+- 新增 `AuditService.log()` 业务显式打点 + `AuditAction` 枚举（17 种业务动作）
+- 新增 `AuditMiddleware`（`apps/api/app/middleware/audit.py`）：异步、错误隔离、独立 session，自动捕获所有 `POST/PATCH/PUT/DELETE` 写请求 metadata；`/auth/login`、`/auth/register`、`/auth/me/password` 因含密码 body 跳过中间件，由路由内显式 audit
+- 新增 `GET /api/v1/audit-logs`（super_admin only，分页 + 按 action / target_type / actor_id / 时间区间过滤）
+- 新增 `/audit` 页（`AuditPage.tsx`）：FilterBar（仅业务 / 全部 / 按动作 / 按对象 / 按操作人）+ 表格（时间 / 操作人+role badge / 动作 / 对象 / IP / 状态码彩色 badge / 详情 Modal 显示 detail JSON）
+- AdminDashboard 新增「近期审计活动」卡片：取最近 8 条业务事件，点击「查看全部」跳 `/audit`
+- 新增 `apps/web/src/utils/auditLabels.ts`：action → 中文映射
+
+##### 邀请制注册（B 方案，落地 CHANGELOG 既定设计）
+- 新增 `user_invitations` 表（id / email / role / group_name / token UNIQUE / expires_at / invited_by / accepted_at / accepted_user_id）+ 部分索引 `WHERE accepted_at IS NULL`
+- 新增 `InvitationService`（`create / resolve / accept`）：
+  - `create`：`secrets.token_urlsafe(32)` 生成 token，`expires_at = now() + invitation_ttl_days`；同 email 旧 pending 自动作废（避免一邮箱多链接歧义）
+  - `resolve`：404 / 410（accepted / expired）
+  - `accept`：复用 `hash_password` 创建 User + invitation 标记 accepted
+- `POST /users/invite` 替换 stub：`super_admin / project_admin` 可调，已激活同 email 用户返回 409；写 audit `user.invite`（detail 含 role / group_name）；返回 `{invite_url, token, expires_at}`
+- 新增 `GET /auth/invitations/{token}`（公开）+ `POST /auth/register`（公开）：register 成功直接颁发 access_token + 写 audit `user.register`（actor 即新建用户自身）
+- 新增 `PATCH /users/{id}/role` + `POST /users/{id}/deactivate`（super_admin only），均显式写 audit
+- 新增 `InviteUserModal.tsx`：两态（form / result）—— form 按 actor 角色过滤可邀请角色（super_admin 可邀全部 / project_admin 仅 reviewer/annotator/viewer），result 显示一次性 invite_url + 复制按钮 + 7 天有效提示
+- 新增 `RegisterPage.tsx`（`/register?token=xxx`，脱离 AppShell + RequireAuth）：三态 loading / error（无效 / 过期 / 已使用，全屏 Card 提示「请联系管理员重新发送邀请」）/ form；提交后 `setAuth(token, user)` → `navigate('/dashboard')`
+- UsersPage 邀请按钮去掉 toast 占位，挂 `<InviteUserModal />` + `<Can permission="user.invite">` 守卫
+- `client.ts` 增加 `publicGet / publicPost`：跳过 Authorization 注入、401 不触发全局 logout（用于公开端点）
+- authStore 增加 `setAuth(token, user)` 一次性入口，便于 RegisterPage 与 SettingsPage 复用
+
+##### 设置页（`/settings`）
+- 新增 `PATCH /auth/me`（改 name，含 audit `user.profile_update`）
+- 新增 `POST /auth/me/password`（旧密码校验，写 audit `user.password_change`，本路径跳过中间件捕获）
+- 新增 `GET /settings/system`（super_admin only）：返回 environment / invitation_ttl_days / frontend_base_url / SMTP 配置态（password 永不出口）
+- 新增 `SettingsPage.tsx`，左 nav + 右 panel：
+  - **个人资料**（所有角色）：邮箱 / 角色 / 数据组只读，姓名可改 + 修改密码块
+  - **系统设置**（仅 super_admin）：只读卡片展示当前环境（badge 配色 production 红 / staging 黄 / development 灰）+ 邀请有效期 + 前端地址 + SMTP 主机/端口/账号/发件人状态；底部小字「如需修改，请编辑后端 .env 并重启服务」
+- `permissions.ts` 把 `settings` 加入所有角色可访问页（不同角色看到的 section 不同）；`audit` 仍仅 super_admin
+
+##### annotator 个人任务面板
+- AnnotatorDashboard「开始标注」按钮智能行为：
+  - 0 项目：`disabled` + tooltip「暂无分配项目，请联系管理员」
+  - 1 项目：直接 `navigate('/projects/${id}/annotate')`
+  - 多项目：弹出 `SelectProjectModal`（按待标任务数排序）
+- 新增「我的项目」卡片：表格（项目名 / 类型 / 进度 / 待标 / 打开按钮），数据复用 0.4.5 已加 ProjectMember 过滤的 `GET /projects`，无需新端点
+- 新增 `apps/web/src/components/dashboard/SelectProjectModal.tsx`
+
+#### 配置 / 运维
+- `app/config.py` 扩展：`environment: Literal["development","staging","production"]`、`frontend_base_url`、`invitation_ttl_days`、`smtp_host/port/user/password/from`、`smtp_configured` property
+- 新增 `scripts/bootstrap_admin.py`：从 env (`ADMIN_EMAIL/ADMIN_PASSWORD/ADMIN_NAME`) 创建首个 super_admin（幂等，已存在则跳过 + 写 audit `system.bootstrap_admin`）；可在 production 安全运行
+- `scripts/seed.py` 顶部加生产保护：`environment=production` 时立即非 0 退出
+- `app/main.py` 注册 AuditMiddleware（CORS 之后）；版本号 0.2.0 → 0.4.6
+
+### 变更
+- `users.invite` 端点契约变更：从 `{status: "invited"}` stub → `{invite_url, token, expires_at}`，前端 `usersApi.invite` 返回类型同步更新
+- `permissions.ts`：`settings` 页对 reviewer / annotator / viewer 开放（仅展示「个人资料」section）
+- `apiClient` 新增 `publicGet / publicPost` 方法供公开端点使用，原 `apiClient.get/post/...` 行为不变
+
+### 修复
+- `POST /api/v1/users/invite` 不再返回 stub `{"status": "invited"}`
+- UsersPage「邀请成员」按钮不再显示虚假 toast「邀请链接已复制」
+- AnnotatorDashboard「开始标注」按钮不再仅 toast 占位
 
 ---
 

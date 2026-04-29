@@ -9,17 +9,22 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAdminStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
+import { useAuditLogs } from "@/hooks/useAudit";
 import { ROLE_LABELS } from "@/constants/roles";
 import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
+import { auditActionLabel } from "@/utils/auditLabels";
 import type { UserRole } from "@/types";
 
 export function AdminDashboard() {
   const { data: stats, isLoading } = useAdminStats();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
+  const { data: audit } = useAuditLogs({ page: 1, page_size: 8 });
   const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
   const [searchParams, setSearchParams] = useSearchParams();
   const wizardOpen = searchParams.get("new") === "1";
+
+  const recentActivity = (audit?.items ?? []).filter((it) => !it.action.startsWith("http.")).slice(0, 8);
 
   const openWizard = () => {
     const next = new URLSearchParams(searchParams);
@@ -121,6 +126,58 @@ export function AdminDashboard() {
 
       <Card style={{ marginTop: 16 }}>
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>近期审计活动</h3>
+          <Button size="sm" variant="ghost" onClick={() => navigate("/audit")}>
+            查看全部<Icon name="chevRight" size={11} />
+          </Button>
+        </div>
+        {recentActivity.length === 0 ? (
+          <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+            <Icon name="activity" size={26} style={{ opacity: 0.25, marginBottom: 8 }} />
+            <div>暂无业务事件</div>
+          </div>
+        ) : (
+          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {recentActivity.map((it) => (
+              <li
+                key={it.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 16px",
+                  borderBottom: "1px solid var(--color-border)",
+                  fontSize: 12.5,
+                }}
+              >
+                <Avatar initial={(it.actor_email ?? "?").slice(0, 1).toUpperCase()} size="sm" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontWeight: 500 }}>{it.actor_email ?? "匿名"}</span>
+                    <Badge variant="accent" style={{ fontSize: 10 }}>{auditActionLabel(it.action)}</Badge>
+                    {it.target_type && (
+                      <span style={{ color: "var(--color-fg-muted)", fontSize: 11 }}>
+                        {it.target_type}
+                        {it.target_id && (
+                          <span className="mono" style={{ marginLeft: 4 }}>
+                            {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span style={{ fontSize: 11, color: "var(--color-fg-subtle)", whiteSpace: "nowrap" }}>
+                  {relativeTime(it.created_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card style={{ marginTop: 16 }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>全平台项目</h3>
           <span style={{ fontSize: 12, color: "var(--color-fg-subtle)" }}>共 {projects.length} 个</span>
         </div>
@@ -185,6 +242,18 @@ export function AdminDashboard() {
       </Card>
     </div>
   );
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.round(diff / 60000);
+  if (m < 1) return "刚刚";
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `${d} 天前`;
+  return new Date(iso).toLocaleDateString("zh-CN");
 }
 
 function StatusBar({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {

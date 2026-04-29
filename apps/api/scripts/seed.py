@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import sys
 import uuid
 from datetime import date
 
@@ -16,6 +17,11 @@ from app.config import settings
 from app.core.security import hash_password
 from app.db.models.user import User
 from app.db.models.project import Project
+
+# 生产保护栏：seed.py 仅用于 dev / staging
+if settings.environment == "production":
+    print("[seed] refusing to run with environment=production", file=sys.stderr)
+    raise SystemExit(2)
 
 engine = create_async_engine(settings.database_url, echo=False)
 Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

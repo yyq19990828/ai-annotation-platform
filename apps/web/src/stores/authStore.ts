@@ -7,6 +7,7 @@ interface AuthStore {
   user: MeResponse | null;
   setToken: (token: string) => void;
   setUser: (user: MeResponse) => void;
+  setAuth: (token: string, user: MeResponse) => void;
   logout: () => void;
 }
 
@@ -20,6 +21,10 @@ export const useAuthStore = create<AuthStore>()(
         set({ token });
       },
       setUser: (user) => set({ user }),
+      setAuth: (token, user) => {
+        localStorage.setItem("token", token);
+        set({ token, user });
+      },
       logout: () => {
         localStorage.removeItem("token");
         set({ token: null, user: null });
