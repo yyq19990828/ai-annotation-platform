@@ -6,145 +6,60 @@
 
 ---
 
-## 待实现 (Roadmap)
 
-> 两类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）。
+## [0.4.7] - 2026-04-29
 
----
+### 新增
 
-### A · 代码观察到的硬占位 / 残留 mock
+#### 数据集导入面板（M1）
+- 新增 `ImportDatasetWizard.tsx`：三步向导（基本信息 → 选择文件 → 上传完成），支持拖拽 + 多文件选择
+- 新增 `utils/uploadQueue.ts`：promise pool 并发控制（默认 3）+ `putWithProgress` 基于 XHR 的可上报进度的 PUT
+- 复用现有后端 `POST /datasets/{id}/items/upload-init` + `upload-complete`（presigned URL → MinIO 直传）
+- DashboardPage「导入数据集」按钮接通向导（替换 toast 占位）；DatasetsPage 详情面板「上传」按钮支持向已有数据集追加文件
+- 上传过程实时显示每文件进度条 + 总进度；失败可见错误，关闭后状态清零
 
-#### 项目模块
-- **非 image-det 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / video-track / mm 共 6 类点击「打开」仅显示 toast `类型 X 的标注界面尚未实现`（`DashboardPage.tsx:139`、`ViewerDashboard.tsx:31`）。
-- **类别管理**：项目创建后类别（classes）只在 `CreateProjectWizard` 步骤 2 录入，后续无批量编辑 / 导入 / 导出 UI；`PATCH /projects/{id}` 已支持但前端未暴露。
-- **项目模板**：当前每次新建项目都从 0 配置类别 / AI 模型；无「从已有项目复制」或「保存为模板」入口。
+#### 用户与权限页（M2）
+**Group 实体（独立表）**
+- 新增 `groups` 表（id / name unique / description / created_at）+ `users.group_id` 外键（ON DELETE SET NULL）；alembic 迁移 `0006_groups.py` 包含从现有 `users.group_name` 字符串 seed Group 行 + 回填 group_id
+- 新增 `GET / POST / PATCH / DELETE /api/v1/groups`（super_admin / project_admin），含成员计数聚合 + 审计日志
+- 新增 `PATCH /users/{id}/group`：分配/解绑数据组，同步刷新 `users.group_name` 冗余字段，写 audit `user.group_change`
 
-#### 数据 & 存储
-- **数据集导入面板**：Dashboard 顶部「导入数据集」按钮（`DashboardPage.tsx:170`）与 DatasetsPage 上传按钮（`DatasetsPage.tsx:141`）均为 toast 占位，未实现 OSS / 本地 / 数据库三种声明的来源。
-- **存储文件大小统计**：`StoragePage.tsx:163` 明示「文件大小统计将在后续版本中支持」。
-- **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
-- **文件去重 / hash**：`dataset_items` 没有 `content_hash` 列，相同文件多次上传会产生多份对象存储副本。
-- **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
+**邀请管理（admin 端）**
+- 在 `user_invitations` 加 `revoked_at` 列；alembic 迁移 `0007_invitation_revoked_at.py`
+- `UserInvitation` 模型新增 `status` 派生属性（pending / accepted / expired / revoked）
+- 新增 `GET /api/v1/invitations?status=&scope=me|all`：列出邀请记录（scope=all 仅 super_admin）
+- 新增 `DELETE /invitations/{id}` 撤销 pending；`POST /invitations/{id}/resend` 重置 token + 过期时间，返回新 invite_url；均写 audit
+- 新增 `InvitationListPanel.tsx`：状态过滤 + 撤销 / 重发（自动复制新链接）
 
-#### AI / 模型
-- **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态（`AdminDashboard.tsx:107-119`、`DashboardPage.tsx:287-291`）。
-- **模型市场**：路由 `/model-market` 占位；项目级 ML Backend 真实选择 / 挂接 UI 缺失（向导步骤 3 仅录入模型名称字符串）。
-- **训练队列**：路由 `/training` 占位。
-- **预测成本统计**：后端 `prediction_metas` 表已记录 token / 耗时 / 成本，但前端无任何可视化（应进入 AdminDashboard 的成本卡片）。
-- **失败预测重试**：`failed_predictions` 表记录但无 UI 触发重试。
-- **ML Backend 健康检查**：`MLBackendService` 只在管理员手动点击时探活，无后台周期任务。
+**用户导出**
+- 新增 `GET /api/v1/users/export?format=csv|json`（StreamingResponse）：CSV 含 BOM 兼容 Excel；写 audit `user.export`
+- 前端 `usersApi.exportUsers()` 直接触发浏览器下载
 
-#### 用户与权限页（UsersPage）
-- **行末「编辑 / 设置」按钮**：`UsersPage.tsx:159-160` 两个 icon button 无 onClick。后端 `PATCH /users/{id}/role` 与 `POST /users/{id}/deactivate` 已就绪，仅缺前端 modal。
-- **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。
-- **「导出名单」按钮**：`UsersPage.tsx:64` 无实现。
-- **「角色」tab 卡片**：仍读取 `data/mock.ts` 的 `roles` 与硬编码 `perms`；应映射到 `constants/permissions.ts` 的真实 `ROLE_PERMISSIONS` 矩阵。
-- **「数据组」tab**：硬编码 7 个组名（`UsersPage.tsx:208`），无新建 / 重命名 / 删除；group 仍是 User 表的字符串字段，未升级为关系。
-- **「存储与模型集成」面板**：`UsersPage.tsx:246-269` 全部 mock 数据，应对接 `/storage/health` 与 `/projects/{pid}/ml-backends`。
-- **邀请管理**：当前邀请发出后只返回一次性链接，缺少「我邀请过的人」列表 / 手动撤销 pending 邀请 / 重发邀请等运营功能（`user_invitations` 表已建好）。
+**EditUserModal + GroupManageModal**
+- 新增 `EditUserModal.tsx`：改角色（仅 super_admin）+ 改数据组 + 内联停用账号二次确认
+- 新增 `GroupManageModal.tsx`：组的新建 / 重命名 / 删除（行内编辑 + 二次确认）
 
-#### 设置页（SettingsPage）
-- **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
-- **个人偏好**：语言 / 主题 / 时区 / 通知偏好均无（依赖 i18n / 主题基础设施先建立）。
-- **系统设置可编辑**：本期 `GET /settings/system` 是只读 .env mirror，缺 PATCH。需要 `system_settings` 表 + 启动时 env 优先加载、表项作为 override。
+**UsersPage 接通 + tab 重构**
+- 行末「编辑/设置」按钮接通 EditUserModal（替换原死按钮）
+- 顶部「导出名单」按钮接通后端 export，加 `Can permission="user.export"` 守卫
+- 「数据组」tab 由硬编码 7 个改为 `useGroups()` 实数据 + 顶部「管理数据组」按钮
+- 新增「邀请记录」tab，挂 InvitationListPanel
+- `permissions.ts` 新增 `user.export` / `group.manage` / `invitation.manage` 三个 PermissionKey 并写入 ROLE_PERMISSIONS
 
-#### 审计日志页（AuditPage）
-- **导出 CSV / JSON**：合规场景需要离线归档。
-- **自动刷新 / 实时流**：当前需手动点刷新；可加 30s 轮询或 SSE。
-- **detail_json 字段级筛选**：现在只能按 `action / target_type / actor_id / 时间`，不能按「角色变更：role: super_admin」这种字段值过滤（需 PG GIN 索引）。
-- **正向反向追溯视图**：点用户 / 项目 → 跳转该对象的完整审计时间线。
+#### 一致性 / 体验（M3）
+- **顶层 ErrorBoundary**：`apps/web/src/components/ErrorBoundary.tsx` 包裹整个 RouterProvider，抛错降级到刷新 / 回到首页 / 折叠堆栈面板，预留 Sentry 钩子注释
+- **API 客户端 403 / 5xx 拦截**：`api/client.ts` 在抛 ApiError 前对 403 触发 `toast.warning`、对 5xx 触发 `toast.error`，401 既有逻辑保留；公共端点（`anonymous: true`）跳过
+- **Toast 扩展**：`Toast.tsx` 支持 `kind: warning | error`（不同色板与 ttl）
+- **项目级路由守卫**：新增 `RequireProjectMember` 包裹 `/projects/:id/annotate`，进入工作台前先 `useProject(id)` 校验权限，403/404 弹回 `/dashboard` + warning toast
+- **WebSocket 自动重连**：新增通用 `useReconnectingWebSocket` hook（指数退避 1s→30s，最多 8 次），重构 `usePreannotation` 使用；`WorkbenchPage` 状态栏显示「AI 通道重连中… (n)」/「AI 通道断开」
 
-#### TopBar / Dashboard 控件
-- **全局搜索**：TopBar 的 `<SearchInput placeholder="搜索项目、任务、数据集、成员..." kbd="⌘K">` 无 `value` / `onChange` / 提交 handler；后端无 `/search` 端点。
-- **通知 / 刷新按钮**：TopBar 两个 icon button 无 onClick；通知中心可基于 audit_logs（`actor_id == self` 或 `target_id 关联到自己的项目/任务`）实时弹卡。
-- **工作区切换**：TopBar `onWorkspaceChange` 仅 toast「切换工作区面板已展开」；Organization 表已存在但前端无切换 UI。
-- **Dashboard 高级筛选 / 网格视图**：`DashboardPage.tsx:198-199` 两个 Button 无 onClick。
+### 端到端验证
 
-#### Annotator / Reviewer 工作台
-- **AnnotatorDashboard `weeklyTarget = 200` 硬编码**（`AnnotatorDashboard.tsx`）：应来自项目级 / 用户级偏好。
-- **ReviewerDashboard 无个人最近审核记录** —— 当前只有跨项目待审列表，无历史回看。
-
-#### 一致性 / 体验
-- **路由守卫粒度**：`RequirePagePermission` 当前按页判定；项目级权限（如「仅自己项目」）仍依赖后端校验，前端尚未在 `/projects/:id/annotate` 做同等检查 → 进入工作台后才被后端 403，体验差。
-- **破坏性操作 confirm**：所有删除流程已用 Modal 二次确认，但仍需审视一遍 `confirm(...)` 是否漏网。
-- **错误边界**：`App.tsx` 顶层无 React `<ErrorBoundary>`，任意子组件抛错白屏。
-- **WebSocket 重连**：`usePreannotationProgress` 断线后无自动重连。
+- 后端：`alembic upgrade head` → groups + revoked_at 迁移成功；`/api/v1/groups`、`/invitations`、`/users/export`、邀请重发/撤销 全部冒烟通过
+- 前端：`tsc --noEmit` 0 错误；新增组件：ImportDatasetWizard / EditUserModal / GroupManageModal / InvitationListPanel / ErrorBoundary / RequireProjectMember / useReconnectingWebSocket
 
 ---
 
-### B · 架构 & 治理向前演进
-
-#### 安全
-- **JWT secret 生产硬校验**：启动时若 `environment=production` 且 `secret_key=="dev-secret-change-in-production"` 应直接拒绝启动。
-- **登录限流**：`/auth/login` 当前无 N 次失败锁定 / IP 限速，存在暴力破解面。建议接 `slowapi` 或 Redis 计数。
-- **邀请频率限流**：单 actor 单日邀请上限，避免 spam。
-- **密码策略升级**：当前仅长度 ≥ 6；建议 8 位 + 复杂度 + breached-password 校验（haveibeenpwned k-anonymity API）。
-- **密码重置流程**：当前无「忘记密码」入口；可复用 `user_invitations` 基础设施增 `password_reset_tokens` 表。
-- **2FA / TOTP**：super_admin 必选、其它角色可选。
-- **API 密钥**：UsersPage 已有按钮，需 `api_keys` 表 + scope + revoke + 最后使用时间。
-- **会话管理**：当前 token 过期前不可撤销；需 token blacklist 或 jti + Redis。「在所有设备登出」功能。
-- **审计日志不可变**：当前 super_admin 仍可 `DELETE FROM audit_logs`；建议 PG row-level security 或 trigger 拒绝 DELETE/UPDATE。
-- **CORS 收紧**：当前 `allow_origin_regex=r"http://localhost:\d+"`，production 需替换为白名单。
-- **HTTPS 强制 / HSTS / CSP**：production 中间件层补齐。
-
-#### 治理 / 合规
-- **审计日志归档**：按月 PARTITION + 冷数据 S3 归档；后台 cron job 触发。
-- **审计日志全文索引**：`detail_json` 加 GIN 索引以支持快速查询；超大数据量考虑 ES / OpenSearch 镜像。
-- **审计中间件双行去重**：当前 metadata 行 + 业务 detail 行各写一行；可加 `request_id`（来自请求头或自动生成）做关联，UI 提供合并视图。
-- **数据导出审计**：`GET /projects/{id}/export` 等批量数据导出应触发审计 + 下载者签名水印。
-- **GDPR / 个人信息删除**：被删用户的 audit 行需要做 actor_email 脱敏（保留 actor_id 关联，原始邮箱另存或抹除）。
-- **通知中心 / 事件总线**：基于 audit_logs 派生面向用户的通知（被邀请、审核通过、AI 完成等），前端 TopBar 通知按钮承接；后端可用 Redis Pub/Sub 实时推送。
-- **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
-
-#### 可观测性
-- **结构化日志**：当前使用 `logger.warning` 普通字符串；引入 `structlog` 或 `loguru` + JSON 输出便于聚合（Loki / ELK）。
-- **request_id / trace_id**：中间件注入并写入 audit_logs 的 detail，便于跨表追溯。
-- **Prometheus metrics**：暴露 `/metrics`（FastAPI 请求时延、Celery 队列长度、数据库连接池、ML Backend 健康）。
-- **Sentry**：前后端 error tracking。
-- **健康检查拆分**：现在 `/health` 只返回 `{status: "ok"}`；拆为 `/health/db`、`/health/redis`、`/health/minio`、`/health/celery` 便于编排（k8s readiness）。
-
-#### 性能 / 扩展
-- **AuditMiddleware 写入异步队列**：当前每写请求一次 INSERT，写流量上来后改 Redis Stream / Kafka 异步消费，主请求 < 1ms 旁路。
-- **Audit / Task / Annotation 列表 keyset 分页**：当前 OFFSET 在大表上慢；改为 `(created_at, id) > (?, ?)` 游标分页。
-- **Predictions 表分区**：按 `project_id` 或 `created_at` PARTITION，单项目预测量大时查询性能下降。
-- **N+1 / 关联预加载**：`GET /audit-logs` 当前对每行额外 `db.get(User, actor_id)` 回填 actor_email；改为单 JOIN 批量取。
-- **数据库连接池调优 + 监控**：当前 `create_async_engine` 默认池，无 `pool_size / max_overflow / pool_recycle`。
-- **WebSocket 多副本**：Redis Pub/Sub 已就位，但生产横向扩 uvicorn 副本时需测试 sticky session 与 broadcast。
-- **CDN / 图片缩略图**：`dataset_items` 缺缩略图字段；标注页加载大图慢。
-
-#### 测试 / 开发体验
-- **后端单元测试 / 集成测试**：`apps/api/tests/` 目前空缺；至少为 InvitationService、AuditMiddleware、权限工厂建测试 fixture（pytest + pytest-asyncio + httpx ASGI transport，本次冒烟脚本可改造为基础套件）。
-- **前端单元测试**：vitest + React Testing Library 覆盖 hooks 与关键组件（Modal、InviteUserModal 状态机、RegisterPage 三态）。
-- **E2E 测试**：Playwright 录制邀请→注册→标注→审核→审计核心 5 条用户流程。
-- **OpenAPI → TS 类型生成**：当前前后端 schema 手动同步（`apps/web/src/api/*.ts` vs `apps/api/app/schemas/*.py`），易漂移；接 `openapi-typescript` 或 `@hey-api/openapi-ts`。
-- **CI/CD pipeline**：`.github/workflows/` 缺；至少 lint + tsc + pytest + 镜像构建。
-- **预提交钩子**：husky + lint-staged + ruff + tsc。
-
-#### i18n / 主题 / 无障碍
-- **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
-- **主题切换**：CSS 变量已就绪，但 TopBar 无 toggle；增加日间 / 夜间 / 跟随系统三档。
-- **无障碍**：ARIA 属性极少（仅 Modal `role=dialog` 和 `aria-label="关闭"`）；Lighthouse Accessibility 分数应作为 PR gate。
-- **响应式**：`gridTemplateColumns: "220px 1fr"` 等硬编码栅格在 < 1024px 下错位；Sidebar 缺折叠态。
-
-#### 文档
-- **部署文档**：缺 production 部署清单（环境变量、TLS、备份、初次 bootstrap_admin 步骤）。
-- **安全模型文档**：RBAC 矩阵、审计字段释义、邀请流程时序图。
-- **API 使用指南**：FastAPI 自动 `/docs` 已有，但缺示例与最佳实践（特别是 ML Backend 协议、WebSocket 订阅）。
-
----
-
-### 优先级建议（参考）
-
-| 优先级 | 候选项 | 理由 |
-|---|---|---|
-| **P0** | 后端测试套件、JWT secret 生产硬校验、登录限流、密码重置流程 | 安全 / 质量基线，缺它们生产风险高 |
-| **P1** | 数据集导入面板、TopBar 通知中心、UsersPage 残留 mock 接通、API 密钥 | 用户每天面对，残缺感最强 |
-| **P1** | 路由守卫粒度（项目级前端校验）、错误边界、WebSocket 重连 | 体验 / 可靠性 quick win |
-| **P2** | 非 image-det 工作台、AI 预标注独立页、模型市场 | 体量大，按业务优先级排队 |
-| **P2** | 审计日志归档 / 全文索引、AuditMiddleware 队列化 | 当前数据量未到瓶颈，监控触发再做 |
-| **P3** | i18n、主题切换、SSO、2FA | 客户具体需求驱动 |
-
----
 
 ## [0.4.6] - 2026-04-29
 

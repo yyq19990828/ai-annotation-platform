@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import { Icon } from "./Icon";
 
+type ToastKind = "success" | "warning" | "error" | "";
+
 interface ToastData {
   id: number;
   msg: string;
   sub?: string;
-  kind?: "success" | "";
+  kind?: ToastKind;
 }
 
 interface ToastStore {
@@ -17,8 +19,9 @@ export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
   push: (toast) => {
     const id = Date.now() + Math.random();
+    const ttl = toast.kind === "error" ? 6000 : toast.kind === "warning" ? 4500 : 3500;
     set((s) => ({ toasts: [...s.toasts, { ...toast, id }] }));
-    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 3500);
+    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), ttl);
   },
 }));
 
@@ -45,7 +48,9 @@ export function ToastRack() {
           pointerEvents: "none",
         }}
       >
-        {toasts.map((t) => (
+        {toasts.map((t) => {
+          const palette = paletteOf(t.kind);
+          return (
           <div
             key={t.id}
             style={{
@@ -53,7 +58,7 @@ export function ToastRack() {
               minWidth: 280,
               padding: "10px 14px",
               background: "var(--color-bg-elev)",
-              border: "1px solid var(--color-border)",
+              border: `1px solid ${palette.border}`,
               borderRadius: "var(--radius-lg)",
               boxShadow: "var(--shadow-lg)",
               fontSize: 13,
@@ -72,19 +77,53 @@ export function ToastRack() {
                 alignItems: "center",
                 justifyContent: "center",
                 borderRadius: "50%",
-                background: t.kind === "success" ? "var(--color-success-soft)" : "var(--color-ai-soft)",
-                color: t.kind === "success" ? "var(--color-success)" : "var(--color-ai)",
+                background: palette.bg,
+                color: palette.fg,
               }}
             >
-              <Icon name={t.kind === "success" ? "check" : "sparkles"} size={11} />
+              <Icon name={palette.icon} size={11} />
             </div>
             <div>
               <div style={{ flex: 1, lineHeight: 1.4 }}>{t.msg}</div>
               {t.sub && <div style={{ color: "var(--color-fg-muted)", fontSize: 12, marginTop: 2 }}>{t.sub}</div>}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );
+}
+
+function paletteOf(kind: ToastKind | undefined) {
+  switch (kind) {
+    case "success":
+      return {
+        bg: "var(--color-success-soft)",
+        fg: "var(--color-success)",
+        border: "var(--color-border)",
+        icon: "check" as const,
+      };
+    case "warning":
+      return {
+        bg: "var(--color-warning-soft, #fef3c7)",
+        fg: "var(--color-warning, #b45309)",
+        border: "var(--color-warning, #b45309)",
+        icon: "warning" as const,
+      };
+    case "error":
+      return {
+        bg: "var(--color-danger-soft, #fee2e2)",
+        fg: "var(--color-danger, #b91c1c)",
+        border: "var(--color-danger, #b91c1c)",
+        icon: "warning" as const,
+      };
+    default:
+      return {
+        bg: "var(--color-ai-soft)",
+        fg: "var(--color-ai)",
+        border: "var(--color-border)",
+        icon: "sparkles" as const,
+      };
+  }
 }

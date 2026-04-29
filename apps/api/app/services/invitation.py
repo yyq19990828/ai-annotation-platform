@@ -77,6 +77,34 @@ class InvitationService:
         return inv
 
     @staticmethod
+    async def revoke(db: AsyncSession, invitation_id: uuid.UUID) -> UserInvitation:
+        inv = await db.get(UserInvitation, invitation_id)
+        if inv is None:
+            raise HTTPException(status_code=404, detail="邀请不存在")
+        if inv.accepted_at is not None:
+            raise HTTPException(status_code=400, detail="该邀请已被接受，无法撤销")
+        if inv.revoked_at is not None:
+            return inv
+        inv.revoked_at = datetime.now(timezone.utc)
+        await db.flush()
+        return inv
+
+    @staticmethod
+    async def resend(db: AsyncSession, invitation_id: uuid.UUID) -> UserInvitation:
+        inv = await db.get(UserInvitation, invitation_id)
+        if inv is None:
+            raise HTTPException(status_code=404, detail="邀请不存在")
+        if inv.accepted_at is not None:
+            raise HTTPException(status_code=400, detail="该邀请已被接受，无法重发")
+        inv.token = secrets.token_urlsafe(32)
+        inv.expires_at = datetime.now(timezone.utc) + timedelta(
+            days=settings.invitation_ttl_days
+        )
+        inv.revoked_at = None
+        await db.flush()
+        return inv
+
+    @staticmethod
     async def accept(
         db: AsyncSession,
         *,

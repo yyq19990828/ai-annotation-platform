@@ -5,7 +5,9 @@ from app.api.v1 import (
     dashboard,
     datasets,
     files,
+    groups,
     invitations,
+    invitations_admin,
     me,
     ml_backends,
     projects,
@@ -18,10 +20,12 @@ from app.api.v1 import (
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(invitations.router, prefix="/auth", tags=["auth"])
+api_router.include_router(invitations_admin.router, prefix="/invitations", tags=["invitations"])
 api_router.include_router(me.router, prefix="/auth/me", tags=["me"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(groups.router, prefix="/groups", tags=["groups"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 api_router.include_router(ml_backends.router, prefix="/projects/{project_id}/ml-backends", tags=["ml-backends"])
 api_router.include_router(files.router, prefix="/files", tags=["files"])

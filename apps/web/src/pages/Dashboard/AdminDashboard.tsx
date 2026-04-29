@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
@@ -6,12 +7,12 @@ import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { useToastStore } from "@/components/ui/Toast";
 import { useAdminStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
 import { useAuditLogs } from "@/hooks/useAudit";
 import { ROLE_LABELS } from "@/constants/roles";
 import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
+import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { auditActionLabel } from "@/utils/auditLabels";
 import type { UserRole } from "@/types";
 
@@ -20,9 +21,9 @@ export function AdminDashboard() {
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const { data: audit } = useAuditLogs({ page: 1, page_size: 8 });
   const navigate = useNavigate();
-  const pushToast = useToastStore((s) => s.push);
   const [searchParams, setSearchParams] = useSearchParams();
   const wizardOpen = searchParams.get("new") === "1";
+  const [importOpen, setImportOpen] = useState(false);
 
   const recentActivity = (audit?.items ?? []).filter((it) => !it.action.startsWith("http.")).slice(0, 8);
 
@@ -55,9 +56,14 @@ export function AdminDashboard() {
           <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>全局平台运行状态与资源分布</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Button onClick={() => pushToast({ msg: "导入数据集面板已打开", sub: "支持 OSS / 本地 / 数据库" })}>
+          <Button onClick={() => setImportOpen(true)}>
             <Icon name="upload" size={13} />导入数据集
           </Button>
+          <ImportDatasetWizard
+            open={importOpen}
+            onClose={() => setImportOpen(false)}
+            onUploaded={() => navigate("/datasets")}
+          />
           <Button variant="primary" onClick={openWizard}>
             <Icon name="plus" size={13} />新建项目
           </Button>

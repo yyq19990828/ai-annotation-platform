@@ -20,6 +20,7 @@ import { AuditPage } from "@/pages/Audit/AuditPage";
 import { SettingsPage } from "@/pages/Settings/SettingsPage";
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
+import { RequireProjectMember } from "@/components/routing/RequireProjectMember";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAppStore } from "@/stores/appStore";
 
@@ -94,7 +95,9 @@ export function App() {
         path="/projects/:id/annotate"
         element={
           <RequireAuth>
-            <FullScreenWorkbench />
+            <RequireProjectMember>
+              <FullScreenWorkbench />
+            </RequireProjectMember>
           </RequireAuth>
         }
       />

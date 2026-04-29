@@ -15,7 +15,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, version="0.4.6", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.4.7", lifespan=lifespan)
 
 # 中间件注册顺序：先注册 → 后执行（dispatch 包装）。
 # AuditMiddleware 在 CORS 之后注册，保证 CORS preflight 不被审计。
@@ -35,4 +35,4 @@ app.include_router(ws_router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "0.4.6"}
+    return {"status": "ok", "version": "0.4.7"}

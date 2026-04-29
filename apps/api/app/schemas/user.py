@@ -16,6 +16,7 @@ class UserOut(BaseModel):
     name: str
     role: str
     group_name: str | None
+    group_id: UUID | None = None
     status: str
     created_at: datetime
 

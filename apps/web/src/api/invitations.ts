@@ -21,9 +21,41 @@ export interface RegisterResponse {
   user: MeResponse;
 }
 
+export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";
+
+export interface InvitationResponse {
+  id: string;
+  email: string;
+  role: string;
+  group_name: string | null;
+  status: InvitationStatus;
+  expires_at: string;
+  invited_by: string;
+  invited_by_name: string | null;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface InvitationResendResponse {
+  invite_url: string;
+  token: string;
+  expires_at: string;
+}
+
 export const invitationsApi = {
   resolve: (token: string) =>
     apiClient.publicGet<InvitationResolved>(`/auth/invitations/${encodeURIComponent(token)}`),
   register: (payload: RegisterPayload) =>
     apiClient.publicPost<RegisterResponse>("/auth/register", payload),
+
+  list: (params?: { status?: InvitationStatus | "all"; scope?: "me" | "all" }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.set("status", params.status);
+    if (params?.scope) q.set("scope", params.scope);
+    const qs = q.toString();
+    return apiClient.get<InvitationResponse[]>(`/invitations${qs ? `?${qs}` : ""}`);
+  },
+  revoke: (id: string) => apiClient.delete<void>(`/invitations/${id}`),
+  resend: (id: string) => apiClient.post<InvitationResendResponse>(`/invitations/${id}/resend`),
 };

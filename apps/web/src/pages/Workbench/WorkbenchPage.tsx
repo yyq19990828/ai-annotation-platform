@@ -275,7 +275,8 @@ export function WorkbenchPage() {
   const submitTaskMut = useSubmitTask();
   const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
   const triggerPreannotation = useTriggerPreannotation(projectId);
-  const preannotationProgress = usePreannotationProgress(projectId);
+  const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
+    usePreannotationProgress(projectId);
   const { lockError } = useTaskLock(taskId);
 
   const aiRunning = preannotationProgress?.status === "running" || triggerPreannotation.isPending;
@@ -623,6 +624,16 @@ export function WorkbenchPage() {
             {preannotationProgress && (
               <span style={{ color: "var(--color-ai)" }}>
                 预标注 {preannotationProgress.current}/{preannotationProgress.total}
+              </span>
+            )}
+            {preannotationConn === "reconnecting" && (
+              <span style={{ color: "var(--color-warning, #b45309)" }}>
+                AI 通道重连中… ({preannotationRetries})
+              </span>
+            )}
+            {preannotationConn === "failed" && (
+              <span style={{ color: "var(--color-danger, #b91c1c)" }}>
+                AI 通道断开
               </span>
             )}
           </div>

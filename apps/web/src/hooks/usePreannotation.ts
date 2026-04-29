@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiClient } from "@/api/client";
+import { useReconnectingWebSocket, type ReconnectState } from "@/hooks/useReconnectingWebSocket";
 
 interface PreannotationProgress {
   current: number;
@@ -9,32 +10,28 @@ interface PreannotationProgress {
   error: string | null;
 }
 
-export function usePreannotationProgress(projectId: string | undefined) {
+export function usePreannotationProgress(projectId: string | undefined): {
+  progress: PreannotationProgress | null;
+  connection: ReconnectState;
+  retries: number;
+} {
   const [progress, setProgress] = useState<PreannotationProgress | null>(null);
 
-  useEffect(() => {
-    if (!projectId) return;
+  const url = projectId
+    ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws/projects/${projectId}/preannotate`
+    : null;
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/projects/${projectId}/preannotate`);
+  const onMessage = useCallback((e: MessageEvent) => {
+    try {
+      setProgress(JSON.parse(e.data));
+    } catch {
+      // ignore parse errors
+    }
+  }, []);
 
-    ws.onmessage = (e) => {
-      try {
-        setProgress(JSON.parse(e.data));
-      } catch {
-        // ignore parse errors
-      }
-    };
+  const { state, retries } = useReconnectingWebSocket(url, { onMessage, enabled: !!projectId });
 
-    ws.onclose = () => setProgress(null);
-    ws.onerror = () => setProgress(null);
-
-    return () => {
-      ws.close();
-    };
-  }, [projectId]);
-
-  return progress;
+  return { progress, connection: state, retries };
 }
 
 export function useTriggerPreannotation(projectId: string | undefined) {

@@ -23,11 +23,27 @@ async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?:
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    const detail: string | undefined = typeof body?.detail === "string" ? body.detail : undefined;
+
     if (res.status === 401 && !opts?.anonymous) {
       const { useAuthStore } = await import("../stores/authStore");
       useAuthStore.getState().logout();
+    } else if (!opts?.anonymous && (res.status === 403 || res.status >= 500)) {
+      const { useToastStore } = await import("../components/ui/Toast");
+      if (res.status === 403) {
+        useToastStore.getState().push({
+          msg: detail || "没有权限执行该操作",
+          kind: "warning",
+        });
+      } else {
+        useToastStore.getState().push({
+          msg: detail || "服务器错误，请稍后重试",
+          sub: `HTTP ${res.status}`,
+          kind: "error",
+        });
+      }
     }
-    throw new ApiError(res.status, body.detail ?? res.statusText);
+    throw new ApiError(res.status, detail ?? res.statusText);
   }
 
   // 204 No Content

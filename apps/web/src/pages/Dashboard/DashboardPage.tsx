@@ -14,6 +14,7 @@ import { Can } from "@/components/guards/Can";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import { projectsApi, type ExportFormat, type ProjectResponse } from "@/api/projects";
 import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
+import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useAuthStore } from "@/stores/authStore";
 
 const TYPE_ICONS: Record<string, string> = {
@@ -157,6 +158,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const wizardOpen = searchParams.get("new") === "1";
+  const [importOpen, setImportOpen] = useState(false);
   const currentUser = useAuthStore((s) => s.user);
 
   const canManageProject = (p: ProjectResponse): boolean => {
@@ -202,9 +204,14 @@ export function DashboardPage() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <Can permission="dataset.create">
-            <Button onClick={() => pushToast({ msg: "导入数据集面板已打开", sub: "支持 OSS / 本地 / 数据库" })}>
+            <Button onClick={() => setImportOpen(true)}>
               <Icon name="upload" size={13} />导入数据集
             </Button>
+            <ImportDatasetWizard
+              open={importOpen}
+              onClose={() => setImportOpen(false)}
+              onUploaded={() => navigate("/datasets")}
+            />
           </Can>
           <Can permission="project.create">
             <Button variant="primary" onClick={openWizard}>

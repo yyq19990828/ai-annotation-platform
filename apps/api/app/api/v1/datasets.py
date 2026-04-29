@@ -1,5 +1,10 @@
+import io
+import mimetypes
+import os
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query
+import zipfile
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, get_current_user, require_roles
@@ -170,6 +175,119 @@ async def upload_complete(
 
     await db.commit()
     return {"status": "ok", "item_id": str(item_id)}
+
+
+_ZIP_MAX_BYTES = 200 * 1024 * 1024  # 200 MB
+_ZIP_MAX_ENTRIES = 5000              # 防 zip bomb：限制条目数
+_PER_FILE_MAX_BYTES = 100 * 1024 * 1024  # 单文件 100MB 上限
+
+
+@router.post("/{dataset_id}/items/upload-zip")
+async def upload_zip(
+    dataset_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """前端 multipart 上传单个 ZIP 包，由后端解压并把每个文件入库 + 上传到 MinIO。
+
+    限制：≤ 200MB 整包、≤ 5000 文件、单文件 ≤ 100MB；自动跳过 macOS 元数据（__MACOSX/）
+    与隐藏文件（.DS_Store 等）；同名文件以路径 hash 后缀去重。
+    """
+    svc = DatasetService(db)
+    ds = await svc.get(dataset_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    raw = await file.read()
+    if len(raw) > _ZIP_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"ZIP 包超过 {_ZIP_MAX_BYTES // 1024 // 1024}MB 限制")
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="不是有效的 ZIP 文件")
+
+    infos = [i for i in zf.infolist() if not i.is_dir()]
+    if len(infos) > _ZIP_MAX_ENTRIES:
+        raise HTTPException(
+            status_code=413, detail=f"ZIP 包文件数超过 {_ZIP_MAX_ENTRIES} 限制"
+        )
+
+    added = 0
+    skipped: list[str] = []
+    errors: list[dict] = []
+
+    from sqlalchemy import select as sa_select
+    from app.db.models.dataset import DatasetItem
+
+    existing_names: set[str] = set()
+    rows = await db.execute(
+        sa_select(DatasetItem.file_name).where(DatasetItem.dataset_id == dataset_id)
+    )
+    for (n,) in rows.all():
+        if n:
+            existing_names.add(n)
+
+    for info in infos:
+        name = info.filename
+        base = os.path.basename(name)
+        # macOS 元 + 隐藏文件
+        if name.startswith("__MACOSX/") or base.startswith(".") or not base:
+            skipped.append(name)
+            continue
+        if info.file_size > _PER_FILE_MAX_BYTES:
+            errors.append({"name": name, "error": f"超过单文件 {_PER_FILE_MAX_BYTES // 1024 // 1024}MB 上限"})
+            continue
+
+        try:
+            data = zf.read(info)
+        except Exception as e:  # noqa: BLE001
+            errors.append({"name": name, "error": f"解压失败: {e}"})
+            continue
+
+        # 去重：同名追加 -1 / -2 后缀（保留扩展名）
+        final_name = base
+        if final_name in existing_names:
+            stem, ext = os.path.splitext(base)
+            i = 1
+            while f"{stem}-{i}{ext}" in existing_names:
+                i += 1
+            final_name = f"{stem}-{i}{ext}"
+        existing_names.add(final_name)
+
+        content_type = mimetypes.guess_type(final_name)[0] or "application/octet-stream"
+        file_type = _infer_file_type(content_type)
+        storage_key = f"{ds.name}/{final_name}"
+
+        try:
+            storage_service.client.put_object(
+                Bucket=storage_service.datasets_bucket,
+                Key=storage_key,
+                Body=data,
+                ContentType=content_type,
+            )
+        except Exception as e:  # noqa: BLE001
+            errors.append({"name": name, "error": f"对象存储写入失败: {e}"})
+            continue
+
+        item = await svc.add_item(
+            dataset_id=dataset_id,
+            file_name=final_name,
+            file_path=storage_key,
+            file_type=file_type,
+            file_size=len(data),
+        )
+        added += 1
+        _ = item  # 显式忽略
+
+    await db.commit()
+    return {
+        "added": added,
+        "skipped": len(skipped),
+        "errors": errors,
+        "total_in_zip": len(infos),
+    }
 
 
 @router.post("/{dataset_id}/items/scan")

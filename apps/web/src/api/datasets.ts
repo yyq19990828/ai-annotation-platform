@@ -90,6 +90,48 @@ export const datasetsApi = {
       `/datasets/${id}/items/upload-complete/${itemId}`,
     ),
 
+  /**
+   * 上传 ZIP 包到后端，由服务端解压并入库；最大 200MB。
+   * 返回 { added, skipped, errors, total_in_zip }。
+   */
+  uploadZip: (
+    id: string,
+    file: File,
+    onProgress?: (pct: number) => void,
+  ): Promise<{ added: number; skipped: number; errors: Array<{ name: string; error: string }>; total_in_zip: number }> => {
+    return new Promise((resolve, reject) => {
+      const token = localStorage.getItem("token");
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/v1/datasets/${id}/items/upload-zip`);
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress((e.loaded / e.total) * 100);
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch (e) {
+            reject(new Error("响应解析失败"));
+          }
+        } else {
+          let detail = `上传失败 (HTTP ${xhr.status})`;
+          try {
+            const body = JSON.parse(xhr.responseText);
+            if (body.detail) detail = body.detail;
+          } catch {
+            // ignore
+          }
+          reject(new Error(detail));
+        }
+      };
+      xhr.onerror = () => reject(new Error("网络错误"));
+      const fd = new FormData();
+      fd.append("file", file);
+      xhr.send(fd);
+    });
+  },
+
   scanItems: (id: string) =>
     apiClient.post<{ status: string; new_items: number }>(`/datasets/${id}/items/scan`),
 

@@ -8,6 +8,7 @@ import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
 import { useDatasets, useDatasetItems, useCreateDataset, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems } from "@/hooks/useDatasets";
+import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useProjects } from "@/hooks/useProjects";
 import type { DatasetResponse } from "@/api/datasets";
 import type { IconName } from "@/components/ui/Icon";
@@ -94,6 +95,7 @@ function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpan
 
 function DatasetDetail({ ds }: { ds: DatasetResponse }) {
   const [itemPage, setItemPage] = useState(0);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const { data: itemsData, isLoading: itemsLoading } = useDatasetItems(ds.id, { limit: 10, offset: itemPage * 10 });
   const { data: linkedProjects = [] } = useDatasetProjects(ds.id);
   const { data: allProjects } = useProjects();
@@ -138,9 +140,16 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                   >
                     <Icon name="refresh" size={12} /> {scanMutation.isPending ? "扫描中..." : "扫描导入"}
                   </Button>
-                  <Button size="sm" onClick={() => pushToast({ msg: "上传功能", sub: "请使用 API 或命令行上传文件到此数据集" })}>
+                  <Button size="sm" onClick={() => setUploadOpen(true)}>
                     <Icon name="upload" size={12} /> 上传
                   </Button>
+                  <ImportDatasetWizard
+                    open={uploadOpen}
+                    onClose={() => setUploadOpen(false)}
+                    datasetId={ds.id}
+                    datasetName={ds.name}
+                  />
+
                 </div>
               </div>
               <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 12.5 }}>

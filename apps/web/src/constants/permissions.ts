@@ -22,6 +22,9 @@ export type Permission =
   | "user.list"
   | "user.invite"
   | "user.edit-role"
+  | "user.export"
+  | "group.manage"
+  | "invitation.manage"
   | "dataset.create"
   | "dataset.delete"
   | "dataset.link"
@@ -34,7 +37,8 @@ export type Permission =
 const ALL_PERMISSIONS: Permission[] = [
   "project.create", "project.edit", "project.delete", "project.transfer", "project.export",
   "task.assign", "task.annotate", "task.review", "task.approve", "task.reject",
-  "user.list", "user.invite", "user.edit-role",
+  "user.list", "user.invite", "user.edit-role", "user.export",
+  "group.manage", "invitation.manage",
   "dataset.create", "dataset.delete", "dataset.link",
   "storage.manage", "audit.view", "settings.edit",
   "ai.trigger", "ml-backend.manage",
@@ -45,7 +49,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   project_admin: [
     "project.create", "project.edit", "project.export",
     "task.assign", "task.annotate", "task.review", "task.approve", "task.reject",
-    "user.list", "user.invite",
+    "user.list", "user.invite", "user.export",
+    "group.manage", "invitation.manage",
     "dataset.create", "dataset.delete", "dataset.link",
     "ai.trigger", "ml-backend.manage",
   ],

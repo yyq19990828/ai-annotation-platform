@@ -6,6 +6,7 @@ export interface UserResponse {
   name: string;
   role: string;
   group_name: string | null;
+  group_id: string | null;
   status: string;
   is_active: boolean;
   created_at: string;
@@ -22,6 +23,8 @@ export interface InvitationCreated {
   token: string;
   expires_at: string;
 }
+
+export type UserExportFormat = "csv" | "json";
 
 export const usersApi = {
   list: (params?: { role?: string }) => {
@@ -41,4 +44,30 @@ export const usersApi = {
 
   deactivate: (userId: string) =>
     apiClient.post<UserResponse>(`/users/${userId}/deactivate`, {}),
+
+  assignGroup: (userId: string, groupId: string | null) =>
+    apiClient.patch<UserResponse>(`/users/${userId}/group`, { group_id: groupId }),
+
+  exportUsers: async (format: UserExportFormat = "csv"): Promise<void> => {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`/api/v1/users/export?format=${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { detail?: string }).detail || `导出失败 (HTTP ${res.status})`);
+    }
+    const blob = await res.blob();
+    const dispo = res.headers.get("Content-Disposition") || "";
+    const match = /filename="?([^"]+)"?/.exec(dispo);
+    const filename = match ? match[1] : `users.${format}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
 };

@@ -48,3 +48,23 @@ class RegisterResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class InvitationOut(BaseModel):
+    id: UUID
+    email: str
+    role: str
+    group_name: str | None
+    status: str  # pending | accepted | expired | revoked
+    expires_at: datetime
+    invited_by: UUID
+    invited_by_name: str | None = None
+    accepted_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime
+
+
+class InvitationResendResponse(BaseModel):
+    invite_url: str
+    token: str
+    expires_at: datetime

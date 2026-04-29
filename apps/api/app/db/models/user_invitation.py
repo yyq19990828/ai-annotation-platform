@@ -24,6 +24,7 @@ class UserInvitation(Base):
     accepted_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -32,4 +33,16 @@ class UserInvitation(Base):
     def is_pending(self) -> bool:
         if self.accepted_at is not None:
             return False
+        if self.revoked_at is not None:
+            return False
         return self.expires_at > datetime.now(timezone.utc)
+
+    @property
+    def status(self) -> str:
+        if self.accepted_at is not None:
+            return "accepted"
+        if self.revoked_at is not None:
+            return "revoked"
+        if self.expires_at <= datetime.now(timezone.utc):
+            return "expired"
+        return "pending"
