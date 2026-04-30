@@ -24,6 +24,8 @@ interface ImageStageProps {
   tool: Tool;
   activeClass: string;
   selectedId: string | null;
+  /** primary 之外的全部选中（含 primary）。仅 user 框可多选；AI 框单选。 */
+  selectedIds?: string[];
   userBoxes: Annotation[];
   aiBoxes: AiBox[];
   spacePan: boolean;
@@ -34,7 +36,12 @@ interface ImageStageProps {
   fadedAiIds?: Set<string>;
   /** 待确认绘制框：画完框后等待用户在 popover 里选类别。 */
   pendingDrawing?: { geom: Geom } | null;
-  onSelectBox: (id: string | null) => void;
+  /** 临时几何 override（方向键 nudge 期间用于显示）。优先级：drag > nudgeMap > b。 */
+  nudgeMap?: Map<string, Geom>;
+  /** 多选批量浮条按钮（selectedIds.length > 1 时由 Shell 处理）。 */
+  onBatchDelete?: () => void;
+  onBatchChangeClass?: () => void;
+  onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onAcceptPrediction?: (b: AiBox) => void;
   onDeleteUserBox?: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
@@ -77,7 +84,7 @@ function KonvaBox({
   imgW: number;
   imgH: number;
   scale: number;
-  onClick: () => void;
+  onClick: (e?: Konva.KonvaEventObject<MouseEvent>) => void;
   onMoveStart: ((e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
   onResizeStart: ((dir: ResizeDirection, e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
 }) {
@@ -106,7 +113,7 @@ function KonvaBox({
         shadowColor={color}
         shadowBlur={8 / scale}
         shadowOpacity={0.4}
-        onClick={(e) => { e.cancelBubble = true; onClick(); }}
+        onClick={(e) => { e.cancelBubble = true; onClick(e); }}
         onMouseDown={(e) => {
           if (!isUserSelected || e.evt.button !== 0 || !onMoveStart) return;
           e.cancelBubble = true;
@@ -165,12 +172,17 @@ function KonvaBox({
 // ── main component ──────────────────────────────────────────────────────────
 export function ImageStage({
   fileUrl, blurhash, tool, activeClass,
-  selectedId, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
-  readOnly = false, fadedAiIds, pendingDrawing,
+  selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
+  readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
+  onBatchDelete, onBatchChangeClass,
   onSelectBox, onAcceptPrediction, onDeleteUserBox, onChangeUserBoxClass,
   onCommitDrawing, onCommitMove, onCommitResize, onCursorMove,
   onStageGeometry, overlay,
 }: ImageStageProps) {
+  const selSet = useMemo(
+    () => new Set(selectedIds && selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : []),
+    [selectedIds, selectedId],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const vpRef = useRef(vp);
@@ -349,7 +361,8 @@ export function ImageStage({
     }
     if (tool === "box") {
       setDrag({ kind: "draw", sx: pt.x, sy: pt.y, cx: pt.x, cy: pt.y });
-      onSelectBox(null);
+      // Shift+点空白：保留多选；普通点空白：清空选择
+      if (!e.evt.shiftKey) onSelectBox(null);
     }
   };
 
@@ -370,8 +383,8 @@ export function ImageStage({
     : null;
 
   const overrideGeom = (id: string): Geom | null => {
-    if (!drag) return null;
-    if ((drag.kind === "move" || drag.kind === "resize") && drag.id === id) return drag.cur;
+    if (drag && (drag.kind === "move" || drag.kind === "resize") && drag.id === id) return drag.cur;
+    if (nudgeMap?.has(id)) return nudgeMap.get(id) ?? null;
     return null;
   };
 
@@ -434,11 +447,11 @@ export function ImageStage({
               key={b.id}
               b={b}
               isAi
-              selected={selectedId === b.id}
+              selected={selSet.has(b.id)}
               faded={fadedAiIds?.has(b.id) ?? false}
               editable={!readOnly}
               imgW={imgW} imgH={imgH} scale={vp.scale}
-              onClick={() => onSelectBox(b.id)}
+              onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
               onMoveStart={null}
               onResizeStart={null}
             />
@@ -447,23 +460,24 @@ export function ImageStage({
           {userBoxes.map((b) => {
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;
-            const isUserSelected = selectedId === b.id && !readOnly;
+            // 单体选中时（且只有一个选中）才允许 move/resize；多选时禁用以避免冲突
+            const isPrimarySingleSelect = selectedId === b.id && selSet.size === 1 && !readOnly;
             return (
               <KonvaBox
                 key={b.id}
                 b={display}
                 isAi={false}
-                selected={selectedId === b.id}
+                selected={selSet.has(b.id)}
                 faded={false}
                 editable={!readOnly}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
-                onClick={() => onSelectBox(b.id)}
-                onMoveStart={isUserSelected ? (e) => {
+                onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                onMoveStart={isPrimarySingleSelect ? (e) => {
                   const pt = toImg(e.evt.clientX, e.evt.clientY);
                   if (!pt) return;
                   setDrag({ kind: "move", id: b.id, start: { x: b.x, y: b.y, w: b.w, h: b.h }, sx: pt.x, sy: pt.y, cur: { x: b.x, y: b.y, w: b.w, h: b.h } });
                 } : null}
-                onResizeStart={isUserSelected ? (dir, e) => {
+                onResizeStart={isPrimarySingleSelect ? (dir, e) => {
                   const pt = toImg(e.evt.clientX, e.evt.clientY);
                   if (!pt) return;
                   setDrag({ kind: "resize", id: b.id, start: { x: b.x, y: b.y, w: b.w, h: b.h }, sx: pt.x, sy: pt.y, dir, cur: { x: b.x, y: b.y, w: b.w, h: b.h } });
@@ -527,6 +541,7 @@ export function ImageStage({
         <SelectionOverlay
           box={selectedBox}
           isAi={isSelectedAi}
+          batchCount={selSet.size > 1 ? selSet.size : undefined}
           imgW={imgW}
           imgH={imgH}
           vp={vp}
@@ -534,12 +549,15 @@ export function ImageStage({
             ? () => onAcceptPrediction(selectedBox as AiBox)
             : undefined}
           onReject={isSelectedAi ? () => onSelectBox(null) : undefined}
-          onDelete={!isSelectedAi && onDeleteUserBox
+          onDelete={!isSelectedAi && onDeleteUserBox && selSet.size === 1
             ? () => onDeleteUserBox(selectedBox.id)
             : undefined}
-          onChangeClass={!isSelectedAi && onChangeUserBoxClass
+          onChangeClass={!isSelectedAi && onChangeUserBoxClass && selSet.size === 1
             ? () => onChangeUserBoxClass(selectedBox.id)
             : undefined}
+          onBatchDelete={selSet.size > 1 ? onBatchDelete : undefined}
+          onBatchChangeClass={selSet.size > 1 ? onBatchChangeClass : undefined}
+          onClearSelection={selSet.size > 1 ? () => onSelectBox(null) : undefined}
         />
       )}
 

@@ -10,7 +10,9 @@ export type Command =
   | { kind: "create"; annotationId: string; payload: AnnotationPayload }
   | { kind: "delete"; annotation: AnnotationResponse }
   | { kind: "update"; annotationId: string; before: AnnotationUpdatePayload; after: AnnotationUpdatePayload }
-  | { kind: "acceptPrediction"; predictionId: string; createdAnnotationIds: string[] };
+  | { kind: "acceptPrediction"; predictionId: string; createdAnnotationIds: string[] }
+  /** 批量命令：undo 时反序应用、redo 时正序应用。子命令必须不含 batch（一层）。 */
+  | { kind: "batch"; commands: Exclude<Command, { kind: "batch" }>[] };
 
 export interface HistoryHandlers {
   createAnnotation: (payload: AnnotationPayload) => Promise<AnnotationResponse>;
@@ -38,7 +40,23 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
 
   const apply = useCallback(async (cmd: Command, direction: "undo" | "redo") => {
     const h = handlersRef.current;
-    // undo / redo 的对偶：每条命令把自己反着执行一遍
+    if (cmd.kind === "batch") {
+      // batch 的子命令在 undo 时倒序、redo 时正序执行
+      const ordered = direction === "undo" ? [...cmd.commands].reverse() : cmd.commands;
+      for (const sub of ordered) {
+        try { await applyLeaf(sub, direction, h); } catch { /* 单条失败不阻塞 */ }
+      }
+      return;
+    }
+    await applyLeaf(cmd, direction, h);
+  }, []);
+
+  // 内部：单条非 batch 命令的实际执行
+  async function applyLeaf(
+    cmd: Exclude<Command, { kind: "batch" }>,
+    direction: "undo" | "redo",
+    h: HistoryHandlers,
+  ) {
     if (cmd.kind === "create") {
       if (direction === "undo") await h.deleteAnnotation(cmd.annotationId);
       else {
@@ -73,6 +91,16 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
       }
       // redo 不再触发后端 accept（对方端点是幂等的但 id 不复用），仅消费 redo 栈无副作用
     }
+  }
+
+  const pushBatch = useCallback((commands: Exclude<Command, { kind: "batch" }>[]) => {
+    if (commands.length === 0) return;
+    if (commands.length === 1) {
+      setUndoStack((s) => [...s, commands[0]]);
+    } else {
+      setUndoStack((s) => [...s, { kind: "batch", commands }]);
+    }
+    setRedoStack([]);
   }, []);
 
   const undo = useCallback(async () => {
@@ -105,6 +133,7 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
 
   return {
     push,
+    pushBatch,
     undo,
     redo,
     canUndo: undoStack.length > 0 && !busy,

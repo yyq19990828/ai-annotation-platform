@@ -5,13 +5,16 @@ interface ClassPaletteProps {
   classes: string[];
   recent?: string[];
   activeClass?: string | null;
-  onPick: (cls: string) => void;
+  /** readOnly 时点击无效，仅作为图例 + 快捷键速查（左侧常驻面板用）。 */
+  onPick?: (cls: string) => void;
   /** 是否启用搜索框（默认：类别 > 9 时自动启用） */
   enableSearch?: boolean;
   /** 高亮第 N 个（用于键盘导航；undefined = 跟随 activeClass） */
   highlightIndex?: number;
   /** 紧凑模式（popover 内使用） */
   dense?: boolean;
+  /** 纯预览模式：行不响应点击；hover 不变色；鼠标 default。 */
+  readOnly?: boolean;
 }
 
 const SHORTCUT_LETTERS = "abcdefghijklmnopqrstuvwxyz";
@@ -26,8 +29,12 @@ export function shortcutForIndex(idx: number): string {
 
 export function ClassPalette({
   classes, recent = [], activeClass, onPick,
-  enableSearch, highlightIndex, dense = false,
+  enableSearch, highlightIndex, dense = false, readOnly = false,
 }: ClassPaletteProps) {
+  const handlePick = (c: string) => {
+    if (readOnly) return;
+    onPick?.(c);
+  };
   const [query, setQuery] = useState("");
   const showSearch = enableSearch ?? classes.length > 9;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,7 +85,9 @@ export function ClassPalette({
             {visibleRecent.map((c) => (
               <button
                 key={`recent-${c}`}
-                onClick={() => onPick(c)}
+                type="button"
+                onClick={readOnly ? undefined : () => handlePick(c)}
+                disabled={readOnly}
                 style={{
                   display: "flex", alignItems: "center", gap: 4,
                   padding: "3px 7px",
@@ -86,7 +95,8 @@ export function ClassPalette({
                   border: "1px solid var(--color-border)",
                   background: "var(--color-bg)",
                   borderRadius: 12,
-                  cursor: "pointer",
+                  cursor: readOnly ? "default" : "pointer",
+                  color: "var(--color-fg)",
                 }}
               >
                 <span style={{ width: 8, height: 8, borderRadius: 2, background: classColor(c) }} />
@@ -106,15 +116,17 @@ export function ClassPalette({
           return (
             <div
               key={c}
-              onClick={() => onPick(c)}
+              onClick={readOnly ? undefined : () => handlePick(c)}
               style={{
                 display: "flex", alignItems: "center", gap,
-                padding: rowPad, borderRadius: "var(--radius-sm)", cursor: "pointer",
+                padding: rowPad, borderRadius: "var(--radius-sm)",
+                cursor: readOnly ? "default" : "pointer",
                 background: isHighlighted
                   ? "var(--color-accent-soft)"
-                  : isActive ? "var(--color-bg-sunken)" : "transparent",
+                  : !readOnly && isActive ? "var(--color-bg-sunken)" : "transparent",
                 fontSize: 12.5,
                 border: "1px solid " + (isHighlighted ? "oklch(0.85 0.06 252)" : "transparent"),
+                opacity: readOnly ? 0.92 : 1,
               }}
             >
               <span style={{ width: 10, height: 10, borderRadius: 2, background: classColor(c) }} />

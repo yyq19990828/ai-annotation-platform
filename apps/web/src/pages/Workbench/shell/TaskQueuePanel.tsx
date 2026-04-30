@@ -22,7 +22,6 @@ interface TaskQueuePanelProps {
   onFetchNextPage: () => void;
   onBack: () => void;
   onToggle: () => void;
-  onSetActiveClass: (c: string) => void;
   onSelectTask: (id: string) => void;
 }
 
@@ -84,7 +83,7 @@ export function TaskQueuePanel({
   open, projectName, projectDisplayId, classes, activeClass, recentClasses,
   tasks, taskId, taskIdx,
   hasNextPage, isFetchingNextPage, onFetchNextPage,
-  onBack, onToggle, onSetActiveClass, onSelectTask,
+  onBack, onToggle, onSelectTask,
 }: TaskQueuePanelProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -193,14 +192,14 @@ export function TaskQueuePanel({
 
       <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px", maxHeight: 320, overflowY: "auto" }}>
         <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>
-          默认类别 <span style={{ color: "var(--color-fg-subtle)" }}>(数字/字母键切换)</span>
+          类别图例 <span style={{ color: "var(--color-fg-subtle)" }}>(数字/字母键直接落框时使用)</span>
         </div>
         <ClassPalette
           classes={classes}
           recent={recentClasses}
           activeClass={activeClass}
-          onPick={onSetActiveClass}
           enableSearch={classes.length > 9}
+          readOnly
         />
       </div>
     </div>

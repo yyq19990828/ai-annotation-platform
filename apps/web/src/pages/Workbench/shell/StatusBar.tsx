@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import type { ReconnectState } from "@/hooks/useReconnectingWebSocket";
+import { formatDuration } from "../state/useSessionStats";
 
 interface PreannotationProgress {
   current: number;
@@ -17,17 +18,25 @@ interface StatusBarProps {
   preannotationProgress: PreannotationProgress | null;
   preannotationConn: ReconnectState;
   preannotationRetries: number;
+  /** 本会话每题平均耗时（毫秒）。null = 样本 < 10。 */
+  avgLeadMs?: number | null;
+  /** 剩余题数（用于 ETA 计算）。 */
+  remainingTaskCount?: number;
 }
 
 export function StatusBar({
   userBoxesCount, aiBoxesCount, activeClass,
   imageWidth, imageHeight, cursor,
   preannotationProgress, preannotationConn, preannotationRetries,
+  avgLeadMs, remainingTaskCount,
 }: StatusBarProps) {
   const dimText = imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : "—";
   const cursorText = cursor && imageWidth && imageHeight
     ? `(${Math.round(cursor.x * imageWidth)}, ${Math.round(cursor.y * imageHeight)})`
     : null;
+  const etaText = avgLeadMs && remainingTaskCount && remainingTaskCount > 0
+    ? `${formatDuration(avgLeadMs)}/题 · 剩 ${remainingTaskCount} · 约 ${formatDuration(avgLeadMs * remainingTaskCount)}`
+    : avgLeadMs ? `${formatDuration(avgLeadMs)}/题` : "—";
 
   return (
     <div
@@ -47,6 +56,9 @@ export function StatusBar({
         <span>当前类别: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{activeClass}</span></span>
       </div>
       <div style={{ display: "flex", gap: 16 }}>
+        <span title="本会话单题平均耗时与剩余 ETA（&lt; 10 题样本时显示 —）">
+          ETA <span className="mono">{etaText}</span>
+        </span>
         <span>分辨率 <span className="mono">{dimText}</span></span>
         {cursorText && (
           <span>光标 <span className="mono">{cursorText}</span></span>

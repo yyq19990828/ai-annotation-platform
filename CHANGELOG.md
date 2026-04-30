@@ -7,6 +7,51 @@
 ---
 
 
+## [0.5.2] - 2026-04-30
+
+### 新增
+
+#### C.3 多选 / 批量编辑 / 复制粘贴
+- **多选状态层**：`useWorkbenchState` 的 `selectedId: string | null` 之外新增 `selectedIds: string[]`；`selectedId` 作为 primary（驱动 SelectionOverlay 浮按钮锚点 / 单体快捷键），`selectedIds` 包含 primary 在内的全部选中。新增 `toggleSelected(id)` / `replaceSelected(ids[])` / `setSelectedId(id)`（后者会同步收敛 selectedIds 到 [id] 或 []）。AI 框始终单选。
+- **Shift+点击叠加多选**：画布与 AIInspectorPanel 列表都支持；`onSelectBox(id, { shift })` 统一 API 由 Shell 层判断走 toggle 还是 replace。Shift+点空白不清空选择；普通点空白清空。
+- **`Ctrl+A` 全选当前帧 user 框**；`Esc` 清空。
+- **批量删除（Delete）**：`handleBatchDelete` 并发 `deleteAnnotation`，全部 settled 后聚合 1 条 `kind: "batch"` 命令进 history 栈，单次 Ctrl+Z 一键还原；toast 报告 `已删除 N/M 个标注`。
+- **批量改类（C 键 / SelectionOverlay "批量改类" 浮按钮）**：复用 `<ClassPickerPopover>`（标题切换为「批量改类别 (N 个)」），锚定到第一个选中框；commit 时并发 PATCH 每个选中框 class_name，settled 后聚合 batch update 命令。
+- **方向键平移**：选中 ≥ 1 个 user 框时，方向键 1px / Shift+方向键 10px 平移；keydown 期间维护 `nudgeMap: Map<id, Geom>` 作为画布临时 override（与 drag 共享 overrideGeom 通道，`drag > nudgeMap > 原值` 优先级），keyup 时一次性把所有 nudge 落库为单条 batch update 命令。
+- **复制 / 粘贴 / 复制副本（Ctrl+C / Ctrl+V / Ctrl+D）**：`useClipboard` hook 维护本会话内存剪贴板（不跨任务，避免跨项目类别污染）；粘贴 / 复制副本均走 (+10px, +10px) 偏移、clamp 到 [0,1] 边界；落库后批量进 history 栈，新副本自动成为多选。
+
+#### C.3 / C.2 智能切题 + AI 框 IoU 视觉去重 + 撤销栈批量化
+- **`N` / `U` 智能切题**：Topbar 「智能切题」下拉（同时绑 `N`/`U` 单字母键）。
+  - `N`（下一未标注）：在已加载列表里找 `idx > current && total_annotations === 0 && status !== "completed"`；列表末尾时自动 fetchNextPage。
+  - `U`（下一最不确定）：启发式 = 已加载列表中 `total_predictions > 0 && total_annotations === 0`，按 `total_predictions desc` 排第一名；后端精排（list_tasks `?order=conf_asc`）作为 P2 待办留在 ROADMAP。
+- **AI 框 IoU 视觉去重**：与已确认 user 框 IoU > 0.7 且同类的 AI 框 → 画布层 stroke opacity 0.35（复用现有 `fadedAiIds` 通道）+ AIInspectorPanel 列表项整行 opacity 0.55 + 「已被覆盖」灰 tag。**不删除**，保留用户反悔空间。`stage/iou.ts` 纯函数 + 6 例 vitest 单测。
+- **`useAnnotationHistory` batch 命令**：新增 `kind: "batch"`（包裹一组非 batch 子命令），undo 时反序应用、redo 时正序应用；新增 `pushBatch(commands[])`：长度 1 时退化为 push 单条，> 1 时进 batch 命令。所有批量操作（删除、改类、复制粘贴、Ctrl+D、方向键平移）共享同一栈条目。
+
+#### C.2 类别面板纯预览 + 快捷键补齐 + ETA + 阈值反馈
+- **`<ClassPalette>` 加 `readOnly` prop**：`TaskQueuePanel` 左侧常驻类别面板改为 `readOnly` —— 鼠标 cursor: default，悬浮无 hover 着色，行点击与最近使用 chip 点击均无效；语义退化为「图例 + 快捷键速查」。`<ClassPickerPopover>` 内部仍保持交互态（popover 本身就是选类场景）。`activeClass` 写入权交给数字/字母键、popover、最近使用 record。
+- **快捷键补齐**（11 条新增 + HotkeyCheatSheet 同步）：`Tab`/`Shift+Tab`（user 框间循环）、`J`/`K`（不循环到边界停）、`[`/`]`（阈值 ±0.05，clamp 0~1）、`Ctrl+A`/`Ctrl+C`/`Ctrl+V`/`Ctrl+D`、`N`/`U`、方向键。`hotkeys.ts` 是 SoT，速查面板自动渲染。
+- **`useSessionStats` ETA**：每次切题记录与上次的间隔，ring buffer size 20，过滤 < 1.5s 误触和 > 30min 离座；< 10 题样本显示 `—`，达到后 StatusBar 输出 `avg/题 · 剩 N · 约 mm:ss`。`formatDuration` 工具函数支持小时降级。
+- **Topbar 阈值数值浮出反馈**：`[`/`]` 键调整阈值时右上角浮出 `阈值 55%`（1.5s 自动消失），便于盲调。Topbar 也接 `confThreshold` prop。
+
+### 测试基座
+- **vitest 引入**：`pnpm --filter web add -D vitest@^2.1.0`，第一组单测 `stage/iou.test.ts`（identical / disjoint / touching / half overlap / contained / zero-area 六例全过）。后续 hooks（`useAnnotationHistory` batch、`useClipboard` 偏移、`useSessionStats` ring buffer）单测扩展归 ROADMAP。
+
+### 改动文件
+- 新建：`apps/web/src/pages/Workbench/state/{useSessionStats,useClipboard}.ts`、`apps/web/src/pages/Workbench/stage/{iou,iou.test}.ts`
+- 重构：`apps/web/src/pages/Workbench/state/{useWorkbenchState,useAnnotationHistory,hotkeys}.ts`、`apps/web/src/pages/Workbench/shell/{WorkbenchShell,Topbar,StatusBar,AIInspectorPanel,TaskQueuePanel,ClassPalette}.tsx`、`apps/web/src/pages/Workbench/stage/{ImageStage,SelectionOverlay,BoxListItem}.tsx`
+- 文档：`ROADMAP.md` 删除 v0.5.1 / 当前迭代已完成的小项；新增 § A 协作并发（任务锁续约 + 编辑冲突 ETag）作为 P0；增补 ML Backend 协议契约文档 / Annotation 列表分页 / Konva 分层 hit / HotkeyCheatSheet 升级 / History sessionStorage 持久化 / IoU 阈值项目级可配等若干新发现项；优先级表整体翻新
+
+### 兼容性
+- `<ImageStage>` 新增 `selectedIds?: string[]` / `nudgeMap?: Map<string, Geom>` / `onBatchDelete?` / `onBatchChangeClass?` 均为可选，`onSelectBox` 第二参数 `opts?: { shift?: boolean }` 也可选；`<ReviewWorkbench>` 走只读路径，零改动即可继续工作（多选在 readOnly 时被收敛到单选）。
+- `<ClassPalette>` 的 `onPick` 现在是可选 prop（readOnly 时不需要）；`<TaskQueuePanel>` 移除了 `onSetActiveClass` prop，对应外部调用同步迁移。
+
+### 升级备注
+- 前端：`pnpm install`（拉 vitest）；运行测试 `pnpm --filter web exec vitest run iou.test.ts`。
+- 无后端 / DB / Docker 改动；版本号升至 0.5.2。
+
+---
+
+
 ## [0.5.1] - 2026-04-30
 
 ### 新增

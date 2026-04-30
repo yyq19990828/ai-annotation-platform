@@ -13,7 +13,17 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw" },
   { keys: ["V"], desc: "平移工具", group: "draw" },
   { keys: ["1 — 9"], desc: "切换类别", group: "draw" },
-  { keys: ["Delete"], desc: "删除选中框", group: "draw" },
+  { keys: ["Delete"], desc: "删除选中框（多选时批量）", group: "draw" },
+  { keys: ["Tab"], desc: "下一个 user 框（循环）", group: "draw" },
+  { keys: ["Shift", "Tab"], desc: "上一个 user 框（循环）", group: "draw" },
+  { keys: ["J"], desc: "下一个 user 框（不循环）", group: "draw" },
+  { keys: ["K"], desc: "上一个 user 框（不循环）", group: "draw" },
+  { keys: ["↑ ↓ ← →"], desc: "选中框 1px 平移（Shift = 10px）", group: "draw" },
+  { keys: ["Shift", "click"], desc: "叠加多选 user 框", group: "draw" },
+  { keys: ["Ctrl", "A"], desc: "全选当前帧 user 框", group: "draw" },
+  { keys: ["Ctrl", "C"], desc: "复制选中框", group: "draw" },
+  { keys: ["Ctrl", "V"], desc: "粘贴（偏移 +10px）", group: "draw" },
+  { keys: ["Ctrl", "D"], desc: "原地复制（偏移 +10px）", group: "draw" },
 
   { keys: ["Ctrl", "Z"], desc: "撤销", group: "draw" },
   { keys: ["Ctrl", "Shift", "Z"], desc: "重做", group: "draw" },
@@ -26,9 +36,13 @@ export const HOTKEYS: HotkeyDef[] = [
 
   { keys: ["A"], desc: "采纳选中 AI 框", group: "ai" },
   { keys: ["D"], desc: "驳回选中 AI 框", group: "ai" },
+  { keys: ["["], desc: "降低置信度阈值 (-0.05)", group: "ai" },
+  { keys: ["]"], desc: "提高置信度阈值 (+0.05)", group: "ai" },
 
   { keys: ["Ctrl", "→"], desc: "下一题", group: "nav" },
   { keys: ["Ctrl", "←"], desc: "上一题", group: "nav" },
+  { keys: ["N"], desc: "智能切题：下一未标注", group: "nav" },
+  { keys: ["U"], desc: "智能切题：下一最不确定", group: "nav" },
   { keys: ["E"], desc: "提交质检", group: "nav" },
 
   { keys: ["?"], desc: "打开本面板", group: "system" },

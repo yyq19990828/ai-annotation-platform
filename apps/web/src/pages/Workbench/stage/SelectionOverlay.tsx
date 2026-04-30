@@ -6,6 +6,8 @@ import { classColor } from "./colors";
 interface OverlayProps {
   box: { id: string; x: number; y: number; w: number; h: number; cls: string };
   isAi: boolean;
+  /** > 1 时进入批量浮条态。 */
+  batchCount?: number;
   imgW: number;
   imgH: number;
   vp: Viewport;
@@ -13,11 +15,20 @@ interface OverlayProps {
   onReject?: () => void;
   onDelete?: () => void;
   onChangeClass?: () => void;
+  onBatchDelete?: () => void;
+  onBatchChangeClass?: () => void;
+  onClearSelection?: () => void;
 }
 
-export function SelectionOverlay({ box, isAi, imgW, imgH, vp, onAccept, onReject, onDelete, onChangeClass }: OverlayProps) {
+export function SelectionOverlay({
+  box, isAi, batchCount,
+  imgW, imgH, vp,
+  onAccept, onReject, onDelete, onChangeClass,
+  onBatchDelete, onBatchChangeClass, onClearSelection,
+}: OverlayProps) {
   const right = (box.x + box.w) * imgW * vp.scale + vp.tx;
   const bottom = (box.y + box.h) * imgH * vp.scale + vp.ty;
+  const isBatch = !!batchCount && batchCount > 1;
 
   return (
     <div
@@ -37,38 +48,69 @@ export function SelectionOverlay({ box, isAi, imgW, imgH, vp, onAccept, onReject
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {isAi && onAccept && (
-        <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); onAccept(); }}>
-          <Icon name="check" size={10} />采纳
-        </Button>
-      )}
-      {isAi && onReject && (
-        <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onReject(); }}>
-          <Icon name="x" size={10} />驳回
-        </Button>
-      )}
-      {!isAi && onChangeClass && (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onChangeClass(); }}
-          title="改类别 (C)"
-          style={{
-            display: "flex", alignItems: "center", gap: 5,
-            padding: "3px 8px", fontSize: 11.5,
-            background: "var(--color-bg-elev, #fff)",
-            border: "1px solid var(--color-border)",
-            borderRadius: 3, cursor: "pointer",
-          }}
-        >
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: classColor(box.cls) }} />
-          {box.cls}
-          <span style={{ color: "var(--color-fg-subtle)", fontSize: 10 }}>改类</span>
-        </button>
-      )}
-      {!isAi && onDelete && (
-        <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-          <Icon name="trash" size={10} />删除
-        </Button>
+      {isBatch ? (
+        <>
+          <span
+            style={{
+              display: "flex", alignItems: "center", padding: "0 8px",
+              fontSize: 11, color: "var(--color-fg-muted)",
+              borderRight: "1px solid var(--color-border)",
+            }}
+          >
+            已选 <b style={{ margin: "0 3px", color: "var(--color-fg)" }}>{batchCount}</b> 个
+          </span>
+          {onBatchChangeClass && (
+            <Button size="sm" onClick={(e) => { e.stopPropagation(); onBatchChangeClass(); }}>
+              <Icon name="rect" size={10} />批量改类
+            </Button>
+          )}
+          {onBatchDelete && (
+            <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onBatchDelete(); }}>
+              <Icon name="trash" size={10} />批量删除
+            </Button>
+          )}
+          {onClearSelection && (
+            <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onClearSelection(); }}>
+              取消
+            </Button>
+          )}
+        </>
+      ) : (
+        <>
+          {isAi && onAccept && (
+            <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); onAccept(); }}>
+              <Icon name="check" size={10} />采纳
+            </Button>
+          )}
+          {isAi && onReject && (
+            <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onReject(); }}>
+              <Icon name="x" size={10} />驳回
+            </Button>
+          )}
+          {!isAi && onChangeClass && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onChangeClass(); }}
+              title="改类别 (C)"
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                padding: "3px 8px", fontSize: 11.5,
+                background: "var(--color-bg-elev, #fff)",
+                border: "1px solid var(--color-border)",
+                borderRadius: 3, cursor: "pointer",
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: classColor(box.cls) }} />
+              {box.cls}
+              <span style={{ color: "var(--color-fg-subtle)", fontSize: 10 }}>改类</span>
+            </button>
+          )}
+          {!isAi && onDelete && (
+            <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+              <Icon name="trash" size={10} />删除
+            </Button>
+          )}
+        </>
       )}
     </div>
   );

@@ -15,6 +15,9 @@ interface AIInspectorPanelProps {
   aiBoxes: AiBox[];
   userBoxes: Annotation[];
   selectedId: string | null;
+  selectedIds?: string[];
+  /** 与 user 框 IoU > 0.7 的同类 AI 框 id（视觉淡化）。 */
+  dimmedAiIds?: Set<string>;
   confThreshold: number;
   aiTakeoverRate: number;
   imageWidth: number | null;
@@ -26,7 +29,8 @@ interface AIInspectorPanelProps {
   onRunAi: () => void;
   onAcceptAll: () => void;
   onSetConfThreshold: (v: number) => void;
-  onSelect: (id: string) => void;
+  /** Shift+click 进入多选；普通 click 单选。 */
+  onSelect: (id: string, opts?: { shift?: boolean }) => void;
   onAcceptPrediction: (b: AiBox) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
@@ -41,12 +45,17 @@ const stripStyle: React.CSSProperties = {
 };
 
 export function AIInspectorPanel({
-  open, aiModel, aiRunning, aiBoxes, userBoxes, selectedId, confThreshold, aiTakeoverRate,
+  open, aiModel, aiRunning, aiBoxes, userBoxes, selectedId, selectedIds, dimmedAiIds,
+  confThreshold, aiTakeoverRate,
   imageWidth, imageHeight,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   onToggle, onRunAi, onAcceptAll, onSetConfThreshold,
   onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
 }: AIInspectorPanelProps) {
+  const selSet = selectedIds && selectedIds.length > 0
+    ? new Set(selectedIds)
+    : selectedId ? new Set([selectedId]) : new Set<string>();
+  const multiCount = selSet.size > 1 ? selSet.size : 0;
   if (!open) {
     return (
       <div style={{ borderLeft: "1px solid var(--color-border)", overflow: "hidden" }}>
@@ -115,10 +124,33 @@ export function AIInspectorPanel({
         )}
       </div>
 
+      {multiCount > 0 && (
+        <div
+          style={{
+            padding: "6px 14px",
+            background: "var(--color-accent-soft)",
+            borderBottom: "1px solid var(--color-border)",
+            fontSize: 11.5, color: "var(--color-accent-fg)",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}
+        >
+          <span>已选 <b>{multiCount}</b> 个 user 框</span>
+          <button
+            onClick={onClearSelection}
+            style={{
+              fontSize: 10.5, padding: "1px 6px", borderRadius: 3,
+              background: "transparent", border: "1px solid var(--color-border)",
+              color: "var(--color-fg-muted)", cursor: "pointer",
+            }}
+          >清除</button>
+        </div>
+      )}
+
       <BoxesList
         aiBoxes={aiBoxes}
         userBoxes={userBoxes}
-        selectedId={selectedId}
+        selSet={selSet}
+        dimmedAiIds={dimmedAiIds}
         imageWidth={imageWidth}
         imageHeight={imageHeight}
         hasMore={hasMorePredictions}
@@ -152,13 +184,14 @@ type Row =
 interface BoxesListProps {
   aiBoxes: AiBox[];
   userBoxes: Annotation[];
-  selectedId: string | null;
+  selSet: Set<string>;
+  dimmedAiIds?: Set<string>;
   imageWidth: number | null;
   imageHeight: number | null;
   hasMore?: boolean;
   isFetchingMore?: boolean;
   onFetchMore?: () => void;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, opts?: { shift?: boolean }) => void;
   onAcceptPrediction: (b: AiBox) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
@@ -166,7 +199,7 @@ interface BoxesListProps {
 }
 
 function BoxesList({
-  aiBoxes, userBoxes, selectedId, imageWidth, imageHeight,
+  aiBoxes, userBoxes, selSet, dimmedAiIds, imageWidth, imageHeight,
   hasMore, isFetchingMore, onFetchMore,
   onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
 }: BoxesListProps) {
@@ -216,9 +249,10 @@ function BoxesList({
               {r.kind === "ai" && (
                 <BoxListItem
                   b={r.box} isAi
-                  selected={selectedId === r.box.id}
+                  selected={selSet.has(r.box.id)}
+                  dimmed={dimmedAiIds?.has(r.box.id) ?? false}
                   imageWidth={imageWidth} imageHeight={imageHeight}
-                  onSelect={() => onSelect(r.box.id)}
+                  onSelect={(e) => onSelect(r.box.id, { shift: !!e?.shiftKey })}
                   onAccept={() => onAcceptPrediction(r.box)}
                   onReject={onClearSelection}
                 />
@@ -231,9 +265,9 @@ function BoxesList({
               {r.kind === "user" && (
                 <BoxListItem
                   b={r.box}
-                  selected={selectedId === r.box.id}
+                  selected={selSet.has(r.box.id)}
                   imageWidth={imageWidth} imageHeight={imageHeight}
-                  onSelect={() => onSelect(r.box.id)}
+                  onSelect={(e) => onSelect(r.box.id, { shift: !!e?.shiftKey })}
                   onDelete={() => onDeleteUserBox(r.box.id)}
                   onChangeClass={onChangeUserBoxClass ? () => onChangeUserBoxClass(r.box.id) : undefined}
                 />
