@@ -12,8 +12,10 @@ const iconPaths: Record<string, string> = {
   search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM16 16l4 4",
   plus: "M12 5v14M5 12h14",
   chevDown: "M6 9l6 6 6-6",
+  chevUp: "M18 15l-6-6-6 6",
   chevRight: "M9 6l6 6-6 6",
   chevLeft: "M15 6l-6 6 6 6",
+  tag: "M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L4 14V4h10l6.59 6.59a2 2 0 0 1 0 2.82zM7 7h.01",
   sparkles:
     "M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6zM18 14l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8z",
   bot: "M7 10h10a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2zM12 6v4M9 14h.01M15 14h.01",

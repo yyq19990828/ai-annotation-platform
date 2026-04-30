@@ -94,7 +94,12 @@ export function useUpdateAnnotation(taskId: string | undefined) {
         ["annotations", taskId],
         (old) => (old ?? []).map((a) =>
           a.id === annotationId
-            ? { ...a, ...(payload.geometry ? { geometry: payload.geometry } : {}), ...(payload.class_name ? { class_name: payload.class_name } : {}) }
+            ? {
+                ...a,
+                ...(payload.geometry ? { geometry: payload.geometry } : {}),
+                ...(payload.class_name ? { class_name: payload.class_name } : {}),
+                ...(payload.attributes !== undefined ? { attributes: payload.attributes } : {}),
+              }
             : a,
         ),
       );

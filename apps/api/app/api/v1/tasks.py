@@ -148,6 +148,7 @@ async def create_annotation(
         confidence=data.confidence,
         parent_prediction_id=data.parent_prediction_id,
         lead_time=data.lead_time,
+        attributes=data.attributes,
     )
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     await db.commit()

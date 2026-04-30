@@ -14,6 +14,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "project.member_remove": "移除成员",
   "dataset.create": "创建数据集",
   "dataset.delete": "删除数据集",
+  "annotation.update": "编辑标注",
+  "annotation.comment": "评论标注",
   "system.bootstrap_admin": "引导管理员",
   "system.settings_update": "更新系统设置",
   "http.post": "HTTP·写",
@@ -30,4 +32,4 @@ export const AUDIT_BUSINESS_ACTIONS: string[] = Object.keys(AUDIT_ACTION_LABELS)
   (k) => !k.startsWith("http."),
 );
 
-export const AUDIT_TARGET_TYPES = ["user", "project", "task", "dataset", "system"];
+export const AUDIT_TARGET_TYPES = ["user", "project", "task", "dataset", "annotation", "system"];

@@ -15,6 +15,20 @@
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **维度回填 UI**：`POST /datasets/{id}/backfill-dimensions` 已实现（用于回填 v0.4.9 之前没有 width/height 的存量 `dataset_items`），但 DatasetsPage 无触发入口；当前需要管理员直接 curl，操作门槛高。
+- **大数据集分包 / 批次工作流（task_batch）**：当前 0 处出现 batch / job / partition 概念，单 dataset 关联到 project 时 `DatasetService.link_project()` 一次循环把全部 items 建成 task（[apps/api/app/services/dataset.py:285-322](apps/api/app/services/dataset.py)），1 万+ 量级时项目经理无法做「按交付批次跟踪 / 按批指派 50 个标注员 / 整批退回 / 按批导出」，审核员只能从一个超长队列里挑题，ML 团队拿不到「先标完 batch 1 → 起跑训练 → 用 v1 预标 batch 2」的迭代节奏。详见调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
+  - **数据模型**：新建 `task_batches` 表 → `id / project_id / dataset_id (nullable, 支持跨 dataset 混合批) / display_id / name / description / status / priority(0-100) / deadline / assigned_user_ids JSONB / total_tasks / completed_tasks / review_tasks / approved_tasks / rejected_tasks / created_by / created_at / updated_at`；`tasks` 加 `batch_id UUID FK nullable index`；alembic migration 给现存 project 各建一个「默认批次」把老 task 全部回填，避免 nullable 字段让前端到处判空。
+  - **状态机**：`draft`（PM 配置中）→ `active`（已启用，可领题）→ `annotating`（首次有 task in_progress 自动进入）→ `reviewing`（所有 task 完成自动进入）→ `approved` / `rejected`（终态）→ `archived`（归档）。状态转移规则单独成文档，避免跟 task.status 语义冲突。
+  - **创建 / 切批 UI**：项目设置加「批次管理」section（与 General / Members 平级），创建批次时支持三种范围切分策略：① 按 metadata 切（如 `region=华东`）；② 按 item id 列表 / 范围；③ 随机均分到 N 个批次（每批 size 自动算）；批次创建后可设 deadline / priority / assigned_user_ids。
+  - **调度联动**：`scheduler.get_next_task()` 增加 `batch_id` 入参；标注员工作台任务队列上方加批次 dropdown；调度器候选池按 `tasks.batch_id IN (active 批次集合) AND user_id IN assigned_user_ids` 过滤；`priority desc` 决定多批次并发时谁先发。
+  - **审核流转**：批次进入 `reviewing` 后整批移交审核；ReviewPage 按批次分组，支持「整批通过 / 整批退回」一键操作；退回的批次 status → `rejected`，对应 task 全部回炉重做（status 重置 + 标注员收通知）。
+  - **进度可见性**：`ProgressService` 重写聚合：每个批次独立进度条 + 项目总数自动累加；Dashboard 项目卡片把单一「85%」拆成「批次1 100% · 批次2 73% · 批次3 0%」三段。
+  - **按批次导出**：`POST /batches/{id}/export` 端点，按批次范围生成 zip / COCO / YOLO；不影响整 dataset 导出（保留 `POST /projects/{id}/export`）；导出走 MinIO **只读**，不复制对象。
+  - **存储边界（重要）**：批次是纯 DB 层 / 业务流转层概念，**不动 MinIO**——`DatasetItem` 仍是 MinIO 对象唯一所有者，`Task` 与 `Batch` 都只是引用层；删批次 / 退回批次只动 DB 行，绝不级联删 MinIO 对象（`DatasetItem.file_path` 可能被其它项目 / 其它批次共享）。
+  - **审计**：批次创建 / 状态变更 / 整批退回 / 整批删除全部进 audit_logs（`batch_created` / `batch_status_changed` / `batch_rejected` / `batch_deleted`，记 actor / batch_id / before / after / 影响 task 数）。
+  - **AI / ML 联动（轻挂钩，重逻辑留给后续）**：批次 `approved` 时埋一个 hook 点（`on_batch_approved(batch_id)`），当前实现为空 / 仅记日志；后续接入「自动触发训练 → 模型反哺下批预标注」的主动学习闭环（参见调研报告 § 5.4 重量方案 C）。
+  - **依赖工程伤口（与本条独立但常被混淆）**：① `link_project` 用 `bulk_insert_mappings` 替代循环 `db.add`，1 万 task 从 ~30s 降到 ~1s；② dataset items 列表分页 + 缩略图懒加载；③ task 列表前端虚拟滚动（react-window）。这三件事**不要**跟批次打包做，是分页 / 异步任务的标准工程问题。
+  - **不在本条范围**：① 智能切批（按难度 / 类别 / 不确定度自动切）；② 批次级 IAA / 共识合并算法（字段有了，算法单独写）；③ 不可变训练快照 + 主动学习闭环（C 方案，留给 v1.0+）。
+  - **验收**：PM 在项目设置里能创建批次（三种范围策略至少 ① ③ 两种）→ 标注员队列按批次过滤 → 批次完成自动进入审核 → 审核员可整批通过 / 退回 → 退回的批次 task 回炉 → 项目进度按批次分段展示 → 按批导出生成 zip → MinIO 桶对象数量在所有以上操作前后保持不变。
 
 #### AI / 模型
 - **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态（`AdminDashboard.tsx:107-119`、`DashboardPage.tsx:287-291`）。
@@ -28,6 +42,13 @@
 #### 用户与权限页（UsersPage）
 - **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。
 - **「存储与模型集成」面板**：`UsersPage.tsx:246-269` 全部 mock 数据，应对接 `/storage/health` 与 `/projects/{pid}/ml-backends`。
+- **分级权限管理（变更角色 / 删除账号）**：当前 super_admin 之外的角色对其它用户基本无管控能力，缺「按层级管」的中间地带。需要把「能管谁」做成显式矩阵：
+  - **super_admin**：可变更除自身以外所有用户的角色（含降级其它 super_admin、晋升 / 降级 project_admin / annotator / reviewer）；可删除除自身以外任意用户账号；最后一名 super_admin 不可被降级 / 删除（兜底防自锁）。
+  - **project_admin**：在其管理的项目范围内，可变更比自己低级用户（annotator / reviewer）的角色（仅在 annotator ↔ reviewer 之间切换，不可晋升为 project_admin / super_admin）；可删除其项目内仅参与该项目的 annotator / reviewer 账号（跨项目用户需 super_admin 处理）。
+  - **annotator / reviewer**：无任何用户管理权限。
+  - **后端**：`PATCH /users/{uid}/role` 与 `DELETE /users/{uid}` 加 `requires_role_at_least(actor, target)` 守卫；project_admin 路径需校验「target 是否仅在 actor 管理的项目里」+ 「target.role < actor.role」。所有变更进 audit_logs（`role_changed` / `user_deleted`，记 actor / target / before / after）。
+  - **前端**：UsersPage 行级操作菜单按 `currentUser.role` × `targetUser.role` 动态显隐「修改角色」「删除」按钮；project_admin 视角的用户列表自动按其管理项目过滤。
+  - **边界**：① 不能改自己的角色 / 删自己；② 不能跨级晋升（project_admin 不能造 super_admin）；③ 删除带未完成任务的用户需要先确认或转交，避免孤儿任务。
 
 #### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -104,6 +125,12 @@
 - **主题切换**：CSS 变量已就绪，但 TopBar 无 toggle；增加日间 / 夜间 / 跟随系统三档。
 - **无障碍**：ARIA 属性极少（仅 Modal `role=dialog` 和 `aria-label="关闭"`）；Lighthouse Accessibility 分数应作为 PR gate。
 - **响应式**：`gridTemplateColumns: "220px 1fr"` 等硬编码栅格在 < 1024px 下错位；Sidebar 缺折叠态。
+- **图标体系迁移到 Lucide React（替换手搓 SVG）**：当前 `apps/web/src/components/ui/Icon.tsx` 集中定义 ~60 个手写 SVG path（24x24 stroke 风格），全站 171 处 `<Icon name="..." />` 调用。手搓维护成本随 icon 数量平方级增长（视觉一致性、像素对齐、圆角、对称都要自己保），且 ROADMAP 后续工作（批次管理 / 暗色切换 / SAM 工具 / 属性 schema 编辑器 / 多边形 / 关键帧）会持续要求新图标。Lucide React 与现有手搓风格 1:1 兼容（同为 Feather 系 stroke 24x24），1500+ 现成 icon，按需 tree-shake，MIT 协议。
+  - **迁移策略（不动 171 处调用）**：保留 `<Icon name="...">` 这层 API，把 `Icon.tsx` 内部从「手写 path 字符串」改成「name → Lucide 组件映射表」（约 60 行 import + 60 行映射，删 60 行 path 字符串）。
+  - **新代码约定**：新增图标直接 `import { Layers, Moon, Wand } from "lucide-react"`，不过中间层 `Icon.tsx`——后者仅作存量兼容，避免每加一个 icon 都要去映射表里登记。
+  - **体积影响**：tree-shake 后 60 个 icon 约 6-8 KB（gzipped），相比当前手搓 ~3 KB 多 ~3-5 KB，相对 Konva + React 主包 ~300 KB 可忽略。
+  - **验收**：① 全站 171 处调用不改，视觉过 dev review 看是否接受；② `pnpm build` 后 vendor chunk 增量 < 10 KB；③ 新写的 batch 管理 / 主题切换 / SAM 工具相关 UI 直接用 Lucide，不再回写 path 字符串。
+  - **工时**：~0.5 天（含视觉对比 + 60 个 name 映射 + 至少 1 个新页面验证新约定）。
 
 #### 文档
 - **部署文档**：缺 production 部署清单（环境变量、TLS、备份、初次 bootstrap_admin 步骤）。
@@ -124,20 +151,21 @@
 - **Annotation 列表后端分页**：与 B「Annotation keyset 分页」共建。当前 `useAnnotations` 全量拉，单任务 1000+ 框阻塞渲染。
 - **IoU 去重几何加速**：v0.5.2 用 useMemo + 嵌套循环 O(N×M)，100+ AI × 50+ user 约 5000 次/帧；阈值边界附近变更会触发频繁重算。如果掉帧，上空间索引 rbush（仅同类内分片）。
 - ~~**Konva 分层 hit-detection**~~：✅ v0.5.3 已落（`bg / ai / user / overlay` 四 Layer 拆分）。
+- ~~**polygon 精确 IoU**~~：✅ v0.5.4 已落（`polygon-clipping@0.15.7`，`iouShape()` 走 intersection；`WorkbenchShell` 视觉去重切换）。
 
 #### C.2 界面优化（信息架构 / 可见性 / 一致性）
 
 - ~~**Topbar 重新设计（信息架构重构）**~~：✅ v0.5.3 已落（左侧 ToolDock + 画布右下 FloatingDock + 顶部三段 Topbar + ⋯ 溢出菜单）。新增工具直接注册到 `tools/`，外壳无需改动。
 - **响应式终态**：v0.5.1 已加 `useMediaQuery` 自动收 sidebar，Topbar flexWrap 兜底；剩余「⋯ 溢出菜单」（窄屏把次要按钮收进抽屉）+ 移动端只读模式（< 768px 强制 `readOnly` + 提示用桌面版）。
 - ~~**暗色模式优先**~~：✅ v0.5.3 已落（`tokens.css [data-theme="dark"]` + `useTheme` hook + Topbar 溢出菜单切换 + 启动应用初始主题，棋盘格画布走 token 变量）。
-- **类别面板拖动重排 + 后端持久化**：当前 `project.classes: string[]` 只能创建时设置；需要改为 `{ name, color?, order }[]` + migration + PATCH /projects/{id}/classes 排序端点。前端用 dnd-kit 实现拖排。
+- ~~**类别面板拖动重排 + 后端持久化**~~：✅ v0.5.4 已落（共存策略：保留 `project.classes: string[]` + 新增 `classes_config JSONB { name: {color, order} }`；项目设置页「类别管理」tab 拖排 + color picker + PATCH 整包；前端 `setActiveClassesConfig()` 模块级注入避免逐层 prop）。
 - **HotkeyCheatSheet 分组与搜索**：v0.5.2 后定义已涨到 30+ 条；目前仅按 `group` 分块，缺搜索框 + 「按使用频率排」。
 - **阈值控件统一**：Topbar 已有数值浮出反馈（`[`/`]`键），AIInspectorPanel 仍是 slider 主入口；可考虑统一为 Topbar 主控 + AI 面板小数值显示。
 - **Reviewer 端实时仪表卡**：与 A 中「Reviewer 端实时仪表卡」并跟进，画布外的右侧栏空间可承接。
 
 #### C.3 标注体验（核心生产力杠杆）
 
-- ~~**多边形工具（polygon）MVP**~~：✅ v0.5.3 已落（geometry discriminated union + alembic 0011 migration + `PolygonTool` 创建/渲染/删除/改类/撤销重做 + 复用 history/clipboard/IoU 包围盒近似/提交质检流程）。**剩余 v0.5.4+**：① 顶点拖动；② Alt+点击边新增顶点；③ Shift+点击顶点删除；④ 自相交校验（segment-intersect）；⑤ polygon 精确 IoU（接 polygon-clipping）；⑥ SAM mask → polygon 化（marching squares / simplify-js）。
+- ~~**多边形工具（polygon）MVP + 顶点编辑**~~：✅ v0.5.3 落 MVP（创建/渲染/删除/改类/撤销重做）；✅ v0.5.4 落顶点编辑闭环（顶点拖动 + Alt+边新增 + Shift+顶点删除 + 自相交校验 + 精确 IoU）。**仅剩 SAM mask → polygon 化（marching squares / simplify-js）** 与 SAM 接入一起做。
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90% 多选场景（v0.5.2）；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式），按住拖选所有相交框。
 - **Shift 锁定纵横比 / Alt 从中心 resize**：v0.4.9 留下的 TODO；resize handle 8 锚点已就位，加修饰键判断即可。
 - **SAM 交互式标注（点 / 框 → mask）**：研究报告 `06-ai-patterns.md`「模式 B」P1。最小切片：
@@ -145,19 +173,9 @@
   - 前端：新工具 `S`（SAM 模式），鼠标点击 = positive point、Alt+点击 = negative point、拖框 = bbox prompt；返回多边形以「待确认紫虚线」叠加，Enter 接受 / Esc 取消。
   - 与现有 GroundingDINO 配合：「文本框 → 全图批量同类」 vs 「点 / 框 → 单实例精修」两条路并存。
 - **关键帧插值（视频/序列）**：CVAT 同款；标注员只标 1 / 30 / 60 帧，中间线性插值（前端实现，提交时落库为关键帧 + 插值标志）。需配合 `Task.dimension` 字段。
-- **项目级可配置属性 schema（自定义标注属性）**：当前 `Annotation` 只存 `class_name + geometry + annotation_type`（`apps/api/app/db/models/annotation.py:17-19`），单标注的语义信息只有「类别」一维——业务上车辆要标「车型 / 朝向 / 是否遮挡 / 车牌号」、商品要标「品牌 / SKU / 残损度」、人体要标「年龄段 / 性别 / 行为」，全部缺失。需要把"属性"从硬编码升级为**项目级可配置 schema + 标注级 JSONB 存储**：
-  - **数据模型**：`Annotation` 加 `attributes: JSONB DEFAULT '{}'` 列（轻量、无需 migration 风险）；`Project` 加 `attribute_schema: JSONB`（或独立 `project_attribute_schemas` 表，便于历史版本回溯）。
-  - **Schema DSL**：项目级声明属性列表，每条形如 `{ key, label, type, required, default, options?, min?, max?, regex?, applies_to?: ["class_a", "class_b"] | "*", visible_if?: { other_key: value } }`；`type` 支持 `text / number / boolean / select / multiselect / range / date / color / tags`；`applies_to` 控制「全局属性」vs 「仅某类别属性」；`visible_if` 实现条件级联（如「车型=轿车时才显示车门数」）。
-  - **Schema 编辑 UI**：项目设置页加「属性 schema」tab，可视化增删改字段、拖动排序、实时预览；导出 / 导入 JSON 便于跨项目复用；也提供 4 套预置模板（CV 通用：occluded/truncated/difficult/group_id；商品：品牌/SKU/残损度；人体：年龄段/性别/行为；自定义空白）。
-  - **工作台渲染**：右侧栏选中标注时，根据当前 `class_name` × `attribute_schema` 动态渲染表单（react-hook-form / valibot 校验），改完即时 PATCH 落 `attributes` JSONB；多选时合并表单，不同值显示「— 多个 —」占位。
-  - **快捷键加成**：常用 boolean / select 属性可绑定数字键（1-9），如「2 = occluded toggle」，避免离开画布点表单；属性绑定在 schema 里声明 `hotkey: "2"`。
-  - **导出 / 训练管线**：COCO / YOLO 导出器读 `attributes` 写到 `extra_attributes` 字段；CVAT-XML 走 `<attribute name=...>` 标签；前端导出向导可勾选哪些属性纳入。
-  - **审核 & 必填校验**：required 字段未填时「提交质检」按钮禁用 + 红框高亮缺失属性的标注；reviewer 端可在筛选器按属性值过滤（与 B「detail_json 字段级筛选」同思路）。
-  - **AI 预标兼容**：ML backend 返回 predictions 可携带 `attributes`（如 GroundingDINO 文本 query → class_name + 描述短语 → 落 `attributes.description`）；接受预标时一并继承。
-  - **审计**：属性变更进 audit_logs（diff 旧值 → 新值），便于复盘错标。
-  - **验收**：项目方在 UI 里 0 代码声明任意属性 → 标注员看到对应表单 → 数据导出包含属性 → 审核可按属性过滤 → 无需任何后端 schema migration。
-- **逐框评论 / 标记问题**：`annotation_comments` 表（`annotation_id, author_id, body`）；reviewer 退回任务时可直接在某个框上留批注，标注员收到通知（与 B 的通知中心串）。
-- **自动保存 + 离线队列**：当前每次 mutation 都直发 → 网络抖动期间用户白干。`createAnnotation` / `deleteAnnotation` 落 IndexedDB 队列，连不上时显示「离线 · 3 操作待同步」徽章。
+- ~~**项目级可配置属性 schema（自定义标注属性）**~~：✅ v0.5.4 已落（migration 0012 + `Annotation.attributes JSONB` + `Project.attribute_schema JSONB` + `AttributeForm` 工作台动态表单 + `AttributesSection` schema 编辑器 + 提交必填校验）。**剩余 v0.5.5+**：① schema `hotkey` 字段实际绑定（避免与 1-9 类别快捷键冲突）；② COCO/YOLO 导出器读 attributes → extra_attributes；③ AI 预标自动携带 `attributes.description` 字段；④ 属性变更接 audit_logs。
+- ~~**逐框评论 / 标记问题**~~：✅ v0.5.4 已落（migration 0013 + `annotation_comments` 表 + CRUD API + `CommentsPanel` 工作台右侧栏 + audit_log `annotation.comment` 复用通知中心）。**剩余 v0.5.5+**：`@` 提及、附件、画布层手绘批注。
+- ~~**自动保存 + 离线队列**~~：✅ v0.5.4 已落（`idb-keyval` + `state/offlineQueue.ts` + `useOnlineStatus` + StatusBar 离线徽章 + 恢复在线自动 flush）。**剩余 v0.5.5+**：多 tab 同步、queue 详情抽屉、history undo 链 tmp_id 替换。
 - **类别确认 hint**：刚画完一个框时，AI 后台跑一次单框分类（轻量分类头，非 GroundingDINO），右上角弹「建议：标识牌（92%）」+ 一键采纳。
 - **Magic Box / Snap**：粗略画一个大框 → AI 收紧到对象边缘（SAM 推 mask → 取 mask bbox）；同时支持「贴边吸附」（5px 内自动吸附到图像边缘）。
 - **会话级标注辅助**：① 框过小（< 0.005 × 0.005）已过滤，需提示「框太小未保存」；② 框越界自动 clamp 到 [0,1]；③ 重叠完全相同框（IoU > 0.95）拒绝并提示「疑似重复」。
@@ -192,6 +210,7 @@
 | **P1** | C.2 Topbar 重新设计（ToolDock + FloatingDock 分区） | 多工具加入的前置；当前单行已挤爆，多边形 / SAM / 选择工具落地前必须先重构 |
 | **P1** | C.3 多边形工具（polygon） | 不规则物体覆盖率刚需，且为 SAM mask → polygon 闭环铺路；几何模型已留口子，工时中 |
 | **P1** | C.3 项目级可配置属性 schema（自定义标注属性） | 把标注从「单标签」升级为「结构化数据」的基础——业务方现在只能标类别，无法记录品牌/朝向/遮挡等业务属性，几乎所有真实项目都卡在这里 |
+| **P1** | A § 数据：大数据集分包 / 批次工作流（`task_batch` 中量方案） | 1 万+ 量级数据集是绕不开的真实场景，PM 按批指派 / 审核员整批退回 / ML 按批迭代训练全无依托；详见 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md) |
 | **P1** | 后端单元/集成测试、前端 hook + keyboard 单测扩展 | v0.5.2 工作台逻辑膨胀，无测试就是定时炸弹 |
 | **P1** | OpenAPI → TS 类型生成 | 前后端 schema 手动同步在 v0.5.x 已开始漂移 |
 | **P2** | 非 image-det 工作台（image-seg → polygon → 复用 Step 1 架构） | 体量大，按业务优先级排队 |

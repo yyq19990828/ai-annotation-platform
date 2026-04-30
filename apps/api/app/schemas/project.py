@@ -1,7 +1,64 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
+import re
+
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+_ATTR_TYPES = {"text", "number", "boolean", "select", "multiselect", "range"}
+
+
+def _validate_attribute_schema(v: dict | None) -> dict | None:
+    if v is None:
+        return v
+    if not isinstance(v, dict):
+        raise ValueError("attribute_schema 必须是对象")
+    fields = v.get("fields")
+    if fields is None:
+        return {"fields": []}
+    if not isinstance(fields, list):
+        raise ValueError("attribute_schema.fields 必须是数组")
+    seen_keys: set[str] = set()
+    for i, f in enumerate(fields):
+        if not isinstance(f, dict):
+            raise ValueError(f"fields[{i}] 必须是对象")
+        key = f.get("key")
+        if not isinstance(key, str) or not key:
+            raise ValueError(f"fields[{i}].key 必填且为字符串")
+        if key in seen_keys:
+            raise ValueError(f"fields[{i}].key 重复: {key!r}")
+        seen_keys.add(key)
+        ftype = f.get("type")
+        if ftype not in _ATTR_TYPES:
+            raise ValueError(f"fields[{i}].type 必须是 {_ATTR_TYPES}")
+        if ftype in {"select", "multiselect"}:
+            opts = f.get("options")
+            if not isinstance(opts, list) or not opts:
+                raise ValueError(f"fields[{i}].options 必填且非空（{ftype} 类型）")
+    return v
+
+
+def _validate_classes_config(v: dict | None) -> dict | None:
+    if v is None:
+        return v
+    if not isinstance(v, dict):
+        raise ValueError("classes_config 必须是对象")
+    seen_orders: set[int] = set()
+    for k, meta in v.items():
+        if not isinstance(meta, dict):
+            raise ValueError(f"classes_config[{k!r}] 必须是对象")
+        color = meta.get("color")
+        if color is not None and not _HEX_COLOR_RE.match(color):
+            raise ValueError(f"classes_config[{k!r}].color 必须是 #RRGGBB")
+        order = meta.get("order")
+        if order is not None:
+            if not isinstance(order, int) or order < 0:
+                raise ValueError(f"classes_config[{k!r}].order 必须是非负整数")
+            if order in seen_orders:
+                raise ValueError(f"classes_config order 重复: {order}")
+            seen_orders.add(order)
+    return v
 
 
 class ProjectCreate(BaseModel):
@@ -20,12 +77,24 @@ class ProjectUpdate(BaseModel):
     type_key: str | None = None
     status: str | None = None
     classes: list[str] | None = None
+    classes_config: dict | None = None
+    attribute_schema: dict | None = None
     ai_enabled: bool | None = None
     ai_model: str | None = None
     due_date: date | None = None
     sampling: str | None = None
     maximum_annotations: int | None = None
     show_overlap_first: bool | None = None
+
+    @field_validator("attribute_schema")
+    @classmethod
+    def _check_schema(cls, v: dict | None) -> dict | None:
+        return _validate_attribute_schema(v)
+
+    @field_validator("classes_config")
+    @classmethod
+    def _check_classes_config(cls, v: dict | None) -> dict | None:
+        return _validate_classes_config(v)
 
 
 class ProjectOut(BaseModel):
@@ -42,6 +111,8 @@ class ProjectOut(BaseModel):
     ai_enabled: bool
     ai_model: str | None
     classes: list
+    classes_config: dict = {}
+    attribute_schema: dict = {"fields": []}
     label_config: dict = {}
     sampling: str = "sequence"
     maximum_annotations: int = 1

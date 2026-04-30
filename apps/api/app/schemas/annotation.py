@@ -45,6 +45,7 @@ class AnnotationCreate(BaseModel):
     confidence: float | None = None
     parent_prediction_id: UUID | None = None
     lead_time: float | None = None
+    attributes: dict | None = None
 
     @field_validator("geometry")
     @classmethod
@@ -56,6 +57,7 @@ class AnnotationUpdate(BaseModel):
     geometry: dict | None = None
     class_name: str | None = None
     confidence: float | None = None
+    attributes: dict | None = None
 
     @field_validator("geometry")
     @classmethod
@@ -78,6 +80,7 @@ class AnnotationOut(BaseModel):
     lead_time: float | None = None
     is_active: bool
     ground_truth: bool = False
+    attributes: dict = {}
     created_at: datetime
     updated_at: datetime | None = None
 

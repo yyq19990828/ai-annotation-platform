@@ -1,5 +1,43 @@
 import { apiClient } from "./client";
 
+// ── attribute schema DSL ───────────────────────────────────────────────────
+
+export type AttributeFieldType = "text" | "number" | "boolean" | "select" | "multiselect" | "range";
+
+export interface AttributeFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface AttributeField {
+  key: string;
+  label: string;
+  type: AttributeFieldType;
+  required?: boolean;
+  default?: unknown;
+  options?: AttributeFieldOption[];
+  min?: number;
+  max?: number;
+  regex?: string;
+  /** "*" = 全局；string[] = 仅这些 class 显示。 */
+  applies_to?: "*" | string[];
+  /** 简单条件级联：当 other_key 等于该值时才显示。 */
+  visible_if?: { key: string; equals: unknown };
+  /** 占位（v0.5.4 不实际绑定，预留 v0.5.5）。 */
+  hotkey?: string;
+}
+
+export interface AttributeSchema {
+  fields: AttributeField[];
+}
+
+export interface ClassConfigEntry {
+  color?: string;
+  order?: number;
+}
+
+export type ClassesConfig = Record<string, ClassConfigEntry>;
+
 /** 与后端 ProjectOut schema 对应（snake_case） */
 export interface ProjectResponse {
   id: string;
@@ -14,6 +52,8 @@ export interface ProjectResponse {
   ai_enabled: boolean;
   ai_model: string | null;
   classes: string[];
+  classes_config: ClassesConfig;
+  attribute_schema: AttributeSchema;
   total_tasks: number;
   completed_tasks: number;
   review_tasks: number;
@@ -45,6 +85,8 @@ export interface ProjectUpdatePayload {
   type_key?: string;
   status?: string;
   classes?: string[];
+  classes_config?: ClassesConfig;
+  attribute_schema?: AttributeSchema;
   ai_enabled?: boolean;
   ai_model?: string | null;
   due_date?: string | null;

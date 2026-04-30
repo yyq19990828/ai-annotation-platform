@@ -12,12 +12,14 @@ import { SelectionOverlay } from "./SelectionOverlay";
 import { TOOL_REGISTRY, type PolygonDraftHandle } from "./tools";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { Icon } from "@/components/ui/Icon";
+import { isSelfIntersecting, moveVertex, type Pt } from "./polygonGeom";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type Drag =
   | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
   | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom }
   | { kind: "resize"; id: string; start: Geom; sx: number; sy: number; dir: ResizeDirection; cur: Geom }
+  | { kind: "polyVertex"; id: string; vidx: number; start: Pt[]; cur: Pt[] }
   | { kind: "pan"; sx: number; sy: number };
 
 interface ImageStageProps {
@@ -50,6 +52,8 @@ interface ImageStageProps {
   onCommitDrawing?: (geo: Geom) => void;
   onCommitMove?: (id: string, before: Geom, after: Geom) => void;
   onCommitResize?: (id: string, before: Geom, after: Geom) => void;
+  /** polygon 顶点几何变更（拖动 / Alt 新增 / Shift 删除）；before/after 为完整 points 列表。 */
+  onCommitPolygonGeometry?: (id: string, before: Pt[], after: Pt[]) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   /** 画布几何信息上抛，供父级渲染 Minimap / popover。 */
   onStageGeometry?: (g: { imgW: number; imgH: number; vpSize: { w: number; h: number } }) => void;
@@ -173,9 +177,14 @@ function KonvaBox({
   );
 }
 
-// ── KonvaPolygon: 渲染已落库的 polygon 标注 ────────────────────────────────
+// ── KonvaPolygon: 渲染已落库的 polygon 标注 + 选中态顶点 / 边编辑 ─────────
 function KonvaPolygon({
   b, isAi, selected, faded, imgW, imgH, scale, onClick,
+  points,
+  selfIntersect,
+  editable,
+  onVertexMouseDown,
+  onEdgeMouseDown,
 }: {
   b: Annotation;
   isAi: boolean;
@@ -185,28 +194,34 @@ function KonvaPolygon({
   imgH: number;
   scale: number;
   onClick: (e?: Konva.KonvaEventObject<MouseEvent>) => void;
+  /** 实际渲染顶点（drag 期间走 override）。空时回落到 b.polygon。 */
+  points?: Pt[];
+  selfIntersect?: boolean;
+  editable?: boolean;
+  onVertexMouseDown?: (vidx: number, e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onEdgeMouseDown?: (edgeIdx: number, e: Konva.KonvaEventObject<MouseEvent>) => void;
 }) {
   const color = classColorForCanvas(b.cls);
   const sw = (selected ? 2 : 1.5) / scale;
   const labelFontSize = 10.5 / scale;
   const labelPad = 4 / scale;
   const labelText = `${isAi ? "✦ " : ""}${b.cls} ${(b.conf * 100).toFixed(0)}`;
+  const ps: Pt[] = points && points.length >= 3 ? points : (b.polygon ?? []);
   const flat: number[] = [];
-  for (const [px, py] of b.polygon ?? []) {
-    flat.push(px * imgW, py * imgH);
-  }
+  for (const [px, py] of ps) flat.push(px * imgW, py * imgH);
+  const strokeColor = selfIntersect ? "oklch(0.55 0.22 25)" : color;
   return (
     <Group>
       <Line
         points={flat}
         closed
-        stroke={color}
+        stroke={strokeColor}
         strokeWidth={sw}
-        dash={isAi ? [4 / scale, 3 / scale] : undefined}
+        dash={isAi || selfIntersect ? [4 / scale, 3 / scale] : undefined}
         fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
         opacity={faded ? 0.35 : 1}
         shadowEnabled={selected && !faded}
-        shadowColor={color}
+        shadowColor={selfIntersect ? "oklch(0.55 0.22 25)" : color}
         shadowBlur={8 / scale}
         shadowOpacity={0.4}
         onClick={(e) => { e.cancelBubble = true; onClick(e); }}
@@ -214,9 +229,9 @@ function KonvaPolygon({
       {/* 标签锚定到第一个点 */}
       {flat.length >= 2 && (
         <Label x={flat[0]} y={flat[1] - 22 / scale} listening={false}>
-          <Tag fill={color} cornerRadius={3 / scale} />
+          <Tag fill={strokeColor} cornerRadius={3 / scale} />
           <Text
-            text={labelText}
+            text={labelText + (selfIntersect ? " ⚠" : "")}
             fill="white"
             fontSize={labelFontSize}
             padding={labelPad}
@@ -224,6 +239,60 @@ function KonvaPolygon({
           />
         </Label>
       )}
+
+      {/* 编辑态：边的 hit-area（透明粗线，用于 Alt+点击新增顶点） */}
+      {editable && onEdgeMouseDown && ps.map((_, i) => {
+        const a = ps[i];
+        const c = ps[(i + 1) % ps.length];
+        return (
+          <Line
+            key={`edge-${i}`}
+            points={[a[0] * imgW, a[1] * imgH, c[0] * imgW, c[1] * imgH]}
+            stroke="rgba(0,0,0,0)"
+            strokeWidth={10 / scale}
+            hitStrokeWidth={10 / scale}
+            onMouseDown={(e) => {
+              if (!e.evt.altKey) return; // 仅 Alt+左键 → 新增顶点；普通点走选中冒泡
+              e.cancelBubble = true;
+              onEdgeMouseDown(i, e);
+            }}
+            onMouseEnter={(e) => {
+              if (!e.evt.altKey) return;
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = "copy";
+            }}
+            onMouseLeave={(e) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = "";
+            }}
+          />
+        );
+      })}
+
+      {/* 编辑态：顶点圆点（拖动 / Shift+点击删除） */}
+      {editable && onVertexMouseDown && ps.map(([px, py], i) => (
+        <Circle
+          key={`v-${i}`}
+          x={px * imgW}
+          y={py * imgH}
+          radius={5 / scale}
+          fill="white"
+          stroke={color}
+          strokeWidth={1.5 / scale}
+          onMouseDown={(e) => {
+            e.cancelBubble = true;
+            onVertexMouseDown(i, e);
+          }}
+          onMouseEnter={(e) => {
+            const stage = e.target.getStage();
+            if (stage) stage.container().style.cursor = e.evt.shiftKey ? "not-allowed" : "grab";
+          }}
+          onMouseLeave={(e) => {
+            const stage = e.target.getStage();
+            if (stage) stage.container().style.cursor = "";
+          }}
+        />
+      ))}
     </Group>
   );
 }
@@ -235,7 +304,7 @@ export function ImageStage({
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
   onBatchDelete, onBatchChangeClass,
   onSelectBox, onAcceptPrediction, onDeleteUserBox, onChangeUserBoxClass,
-  onCommitDrawing, onCommitMove, onCommitResize, onCursorMove,
+  onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft,
 }: ImageStageProps) {
   const selSet = useMemo(
@@ -373,6 +442,11 @@ export function ImageStage({
           );
           return { ...d, cur };
         }));
+      } else if (drag.kind === "polyVertex") {
+        schedule(() => setDrag((d) => {
+          if (!d || d.kind !== "polyVertex") return d;
+          return { ...d, cur: moveVertex(d.cur, d.vidx, [pt.x, pt.y]) };
+        }));
       }
     };
     const onUp = () => {
@@ -392,6 +466,12 @@ export function ImageStage({
              drag.cur.w !== drag.start.w || drag.cur.h !== drag.start.h)) {
           onCommitResize?.(drag.id, drag.start, drag.cur);
         }
+      } else if (drag.kind === "polyVertex") {
+        const before = drag.start;
+        const after = drag.cur;
+        const changed = before.length !== after.length ||
+          before.some((p, i) => p[0] !== after[i][0] || p[1] !== after[i][1]);
+        if (changed) onCommitPolygonGeometry?.(drag.id, before, after);
       }
       setDrag(null);
     };
@@ -402,7 +482,7 @@ export function ImageStage({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [drag, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize]);
+  }, [drag, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -462,6 +542,12 @@ export function ImageStage({
   const overrideGeom = (id: string): Geom | null => {
     if (drag && (drag.kind === "move" || drag.kind === "resize") && drag.id === id) return drag.cur;
     if (nudgeMap?.has(id)) return nudgeMap.get(id) ?? null;
+    return null;
+  };
+
+  /** polygon 顶点 drag 期间的实时 override；返回当前应渲染的 points 列表（或 null 表示无 override）。 */
+  const polyOverridePoints = (id: string): Pt[] | null => {
+    if (drag && drag.kind === "polyVertex" && drag.id === id) return drag.cur;
     return null;
   };
 
@@ -557,8 +643,12 @@ export function ImageStage({
           {userBoxes.map((b) => {
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;
-            // polygon 走多边形渲染（v0.5.3 不支持顶点拖动 / 整体 move-resize）
+            // polygon 走多边形渲染（v0.5.4 加顶点编辑 / Alt 新增 / Shift 删除）
             if (display.polygon && display.polygon.length >= 3) {
+              const polyOv = polyOverridePoints(b.id);
+              const livePoints = polyOv ?? (display.polygon as Pt[]);
+              const isOnlySelected = selectedId === b.id && selSet.size === 1 && !readOnly;
+              const intersects = isOnlySelected && !isSelfIntersecting(livePoints).ok;
               return (
                 <KonvaPolygon
                   key={b.id}
@@ -567,7 +657,31 @@ export function ImageStage({
                   selected={selSet.has(b.id)}
                   faded={false}
                   imgW={imgW} imgH={imgH} scale={vp.scale}
+                  points={livePoints}
+                  selfIntersect={intersects}
+                  editable={isOnlySelected}
                   onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onVertexMouseDown={(vidx, e) => {
+                    const cur = (polyOverridePoints(b.id) ?? (b.polygon as Pt[])).slice();
+                    if (e.evt.shiftKey) {
+                      // Shift+点击 → 删除顶点（≤3 顶点拒绝）
+                      if (cur.length <= 3) return;
+                      const next = cur.slice();
+                      next.splice(vidx, 1);
+                      onCommitPolygonGeometry?.(b.id, cur, next);
+                      return;
+                    }
+                    setDrag({ kind: "polyVertex", id: b.id, vidx, start: cur, cur });
+                  }}
+                  onEdgeMouseDown={(edgeIdx, e) => {
+                    if (!e.evt.altKey) return;
+                    const pt = toImg(e.evt.clientX, e.evt.clientY);
+                    if (!pt) return;
+                    const cur = (polyOverridePoints(b.id) ?? (b.polygon as Pt[])).slice();
+                    const next = cur.slice();
+                    next.splice(edgeIdx + 1, 0, [pt.x, pt.y]);
+                    onCommitPolygonGeometry?.(b.id, cur, next);
+                  }}
                 />
               );
             }

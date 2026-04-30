@@ -10,11 +10,15 @@ import { GeneralSection } from "./sections/GeneralSection";
 import { MembersSection } from "./sections/MembersSection";
 import { OwnerSection } from "./sections/OwnerSection";
 import { DangerSection } from "./sections/DangerSection";
+import { AttributesSection } from "./sections/AttributesSection";
+import { ClassesSection } from "./sections/ClassesSection";
 
-type SectionKey = "general" | "members" | "owner" | "danger";
+type SectionKey = "general" | "classes" | "attributes" | "members" | "owner" | "danger";
 
-const SECTIONS: { key: SectionKey; label: string; icon: "settings" | "users" | "user" | "trash" }[] = [
+const SECTIONS: { key: SectionKey; label: string; icon: "settings" | "users" | "user" | "trash" | "tag" | "rect" }[] = [
   { key: "general", label: "基本信息", icon: "settings" },
+  { key: "classes", label: "类别管理", icon: "rect" },
+  { key: "attributes", label: "属性 schema", icon: "tag" },
   { key: "members", label: "成员管理", icon: "users" },
   { key: "owner", label: "负责人", icon: "user" },
   { key: "danger", label: "危险操作", icon: "trash" },
@@ -137,6 +141,8 @@ export function ProjectSettingsPage() {
 
         <div>
           {section === "general" && <GeneralSection project={project} />}
+          {section === "classes" && <ClassesSection project={project} />}
+          {section === "attributes" && <AttributesSection project={project} />}
           {section === "members" && <MembersSection project={project} />}
           {section === "owner" && role === "super_admin" && <OwnerSection project={project} />}
           {section === "danger" && <DangerSection project={project} />}

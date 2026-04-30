@@ -110,6 +110,7 @@ export interface AnnotationResponse {
   lead_time: number | null;
   is_active: boolean;
   ground_truth: boolean;
+  attributes?: Record<string, unknown>;
   created_at: string;
   updated_at: string | null;
 }

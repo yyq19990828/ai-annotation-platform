@@ -22,6 +22,10 @@ interface StatusBarProps {
   avgLeadMs?: number | null;
   /** 剩余题数（用于 ETA 计算）。 */
   remainingTaskCount?: number;
+  /** 离线队列：> 0 时右侧显示"离线 · N 操作待同步"徽章。 */
+  offlineQueueCount?: number;
+  online?: boolean;
+  onFlushOffline?: () => void;
 }
 
 export function StatusBar({
@@ -29,6 +33,7 @@ export function StatusBar({
   imageWidth, imageHeight, cursor,
   preannotationProgress, preannotationConn, preannotationRetries,
   avgLeadMs, remainingTaskCount,
+  offlineQueueCount, online, onFlushOffline,
 }: StatusBarProps) {
   const dimText = imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : "—";
   const cursorText = cursor && imageWidth && imageHeight
@@ -56,6 +61,24 @@ export function StatusBar({
         <span>当前类别: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{activeClass}</span></span>
       </div>
       <div style={{ display: "flex", gap: 16 }}>
+        {(offlineQueueCount && offlineQueueCount > 0) || online === false ? (
+          <button
+            type="button"
+            onClick={onFlushOffline}
+            title={online === false ? "当前离线，恢复连接后将自动同步" : "立即重试同步"}
+            style={{
+              fontSize: 11, padding: "1px 8px", borderRadius: 3,
+              background: online === false ? "oklch(0.85 0.10 25 / 0.4)" : "oklch(0.85 0.10 75 / 0.4)",
+              border: "1px solid oklch(0.75 0.10 50)",
+              color: "var(--color-fg)", cursor: onFlushOffline ? "pointer" : "default",
+              fontFamily: "inherit",
+              display: "inline-flex", alignItems: "center", gap: 4,
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>{online === false ? "离线" : "暂存"}</span>
+            <span className="mono">· {offlineQueueCount ?? 0} 操作待同步</span>
+          </button>
+        ) : null}
         <span title="本会话单题平均耗时与剩余 ETA（&lt; 10 题样本时显示 —）">
           ETA <span className="mono">{etaText}</span>
         </span>

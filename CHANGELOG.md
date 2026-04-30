@@ -7,6 +7,75 @@
 ---
 
 
+## [0.5.4] - 2026-04-30
+
+### 新增
+
+#### A · Polygon 顶点编辑（v0.5.3 polygon MVP 收尾）
+- **顶点拖动**：选中已落库 polygon 后，圆点 handle 显式可拖；`<ImageStage>` Drag 联合类型新增 `{ kind:"polyVertex", id, vidx, start, cur }`，与 move/resize 通道并列；commit 走 `useAnnotationHistory.push({kind:"update"})` 单条命令，Ctrl+Z 一键还原。
+- **Alt+点击边新增顶点**：边上挂 10px 透明 hit-stroke，alt 时 cursor 切 copy；点中即在最近边后插入鼠标投影点。
+- **Shift+点击顶点删除**：≤3 顶点时 toast 拒绝。
+- **自相交校验**：`stage/polygonGeom.ts` 提供 `isSelfIntersecting()`（O(n²) segment-pair 暴力，n 通常 < 50）；commit 路径统一调用，违规时 stroke 切红 + 标签加 ⚠ + toast「polygon 自相交，已撤销」+ 几何回退。
+- **精确 IoU**：引入 `polygon-clipping@0.15.7`；`stage/iou.ts` 的 `iouShape()` 走 `intersection()` 求精确交并，polygon-vs-bbox 把 bbox 转 4 顶点同分支，bbox-vs-bbox 仍走原 `iou()`。`WorkbenchShell` 视觉去重处把 `iou()` 调用换成 `iouShape()`。`iou.test.ts` 新增 4 例 polygon 用例（identical / disjoint / 半重叠 / triangle vs bbox = 0.5）。
+- **HotkeyCheatSheet**：补三行说明（拖动顶点 / Alt+click 边 / Shift+click 顶点）。
+
+#### B · 项目级属性 schema + Annotation.attributes（P1）
+- **数据模型**：alembic 0012 一次性加 `annotations.attributes JSONB DEFAULT '{}'` + `projects.attribute_schema JSONB DEFAULT '{"fields":[]}'` + `projects.classes_config JSONB DEFAULT '{}'`（B + E 共一份 migration）。存量 0 影响。
+- **Schema DSL**：项目级声明属性列表 `{ key, label, type, required?, options?, min?, max?, applies_to?: "*"|string[], visible_if?, hotkey? }`；`type` 支持 text / number / boolean / select / multiselect / range；后端 pydantic `_validate_attribute_schema` 校验 key 唯一、type 枚举、select-必有 options。
+- **后端 API**：`PATCH /projects/{id}` 接 `attribute_schema`；`PATCH /tasks/{id}/annotations/{aid}` 接 `attributes` 直接覆盖。`AnnotationOut` 新增 `attributes` 字段。
+- **AttributeForm 组件**：`shell/AttributeForm.tsx` 根据 `schema × class_name × annotation.attributes` 动态渲染表单（react-hook 风格，无新 deps）；`visible_if` 单层条件级联；改完防抖 400ms 上抛 PATCH。
+- **AIInspectorPanel 接驳**：选中态下方挂 `<AttributeForm>` + 缺失必填提示。
+- **AttributesSection（项目设置页 tab）**：可视化增删改字段、上下移、导入 / 导出 JSON；保存时整包 `PATCH /projects/{id}` 带 `attribute_schema`。
+- **必填校验**：`getMissingRequired()` 工具函数；`<Topbar>` 提交质检按钮在任意 annotation 缺必填时 toast「存在必填属性未填，无法提交」+ 阻塞提交。
+
+#### C · 逐框评论 annotation_comments
+- **数据模型**：alembic 0013 建表（id, annotation_id, project_id, author_id, body, is_resolved, is_active, ts）+ 复合索引 `(annotation_id, created_at desc)`。
+- **后端 API**：`api/v1/annotation_comments.py` 注册到 router，提供 `GET/POST /annotations/{aid}/comments`、`PATCH/DELETE /comments/{id}`。create 时写 audit_log `action="annotation.comment"` + `target_type="annotation"`，自动经现有通知中心 30s 轮询可见。权限：作者或管理员可编辑/软删。
+- **CommentsPanel 组件**：`shell/CommentsPanel.tsx` 渲染输入区 + 历史列表（作者名、时间、已解决徽章），「✓」切解决态、「🗑」作者可删。
+- **AIInspectorPanel 接驳**：选中态属性表单下方再挂评论区。
+- **通知中心映射**：`utils/auditLabels.ts` 加 `annotation.comment: "评论标注"` + `annotation.update: "编辑标注"`，`AUDIT_TARGET_TYPES` 加 `annotation`。
+
+#### D · 自动保存 / 离线队列（P2）
+- **idb-keyval@6 引入**：仅 ~2KB；`state/offlineQueue.ts` 提供 `enqueue / count / drain / subscribe / isOfflineCandidate` 纯函数 API；持久化到 idb key `anno.offline-queue.v1`，incognito quota 失败时 try/catch 静默降级。
+- **`useOnlineStatus` hook**：监听 `navigator.online/offline` + 队列长度变更，输出 `{ online, queueCount }`。
+- **WorkbenchShell mutation 包裹**：`handlePickPendingClass` / `handleCommitMove` / `handleCommitResize` / `handleCommitPolygonGeometry` / `handleDeleteBox` 的 onError 走 `enqueueOnError`：`isOfflineCandidate(err)` （TypeError 网络断 / 5xx）时 enqueue + toast「已暂存到离线队列」；普通错误按原路径报错。
+- **`flushOffline` 自动触发**：`online` 事件由 useEffect 监听，online 切回时自动 drain 队列；逐条 replay create/update/delete API；ok > 0 时 invalidate annotations / tasks query 并 toast「已同步 N 条离线操作」。
+- **StatusBar 徽章**：右侧加「离线 · N 操作待同步」/「暂存 · N」按钮（offline 红色 / online 黄色），点击立即重试。
+
+#### E · Classes 升级（color + order + 拖排）
+- **数据模型**：alembic 0012 加 `projects.classes_config JSONB DEFAULT '{}'`，存量 `classes` 仍是 `string[]` 零变动；`{name: {color, order}}` 形式存元信息。
+- **后端校验**：pydantic `_validate_classes_config` 校验 color 是 `#RRGGBB`、order 非负唯一。
+- **前端调色板**：`stage/colors.ts` 重构：`classColor(name, config?)` / `classColorForCanvas(name, config?)` 优先级 `传入 config > 模块级 _activeConfig（项目当前） > 内置预设 > FNV-1a hash 派生`；新增 `setActiveClassesConfig()` 模块级 setter，避免 ImageStage / SelectionOverlay / KonvaBox 等 10+ 处逐层透传 prop。
+- **WorkbenchShell**：项目加载时 `useEffect(() => setActiveClassesConfig(currentProject?.classes_config), ...)`；`classes` 数组在工作台维度按 `sortClassesByConfig()` 重排。
+- **ClassPalette**：新增可选 `classesConfig` prop，左侧常驻图例颜色块走真实 hex。
+- **ClassesSection（项目设置页新 tab）**：每个类别一行 `[#] [色块] [名称] [color picker] [↑↓🗑]`；拖排（上下移）+ HTML5 `<input type="color">`；新增 / 删除；保存时 `PATCH /projects/{id}` 同时带 `classes` + `classes_config`。
+
+### 测试 / 工程
+
+- **vitest 37 例全绿**（v0.5.3 = 33；v0.5.4 = +4 polygon IoU）。
+- **`tsc -b` 全绿**。
+- **alembic upgrade/downgrade 双向通过**：0010 ↔ 0011 ↔ 0012 ↔ 0013 全部往返成功。
+- **新依赖**：`polygon-clipping@^0.15.7`、`idb-keyval@^6.2.1`（前端各 ~2-3KB gzip）。
+
+### 调整 / 重构
+
+- `KonvaPolygon` 加 4 个新 props：`points` / `selfIntersect` / `editable` / `onVertexMouseDown` / `onEdgeMouseDown`；选中态自动渲染 vertex circle + 透明 edge hit-area。
+- `<ImageStage>` 新增 prop `onCommitPolygonGeometry?: (id, before, after) => void`。
+- `useTasks.useUpdateAnnotation` 的乐观 onMutate 把 `attributes` 字段也合并到缓存，避免表单回显抖动。
+- `auditLabels.ts` 行业新增 `annotation.update / annotation.comment`，`AUDIT_TARGET_TYPES` 加 `annotation`。
+- `Icon.tsx` 新增 `chevUp` / `tag` 两个 SVG 路径。
+
+### 已知限制 / 待 v0.5.5
+
+- 属性 schema 的 `hotkey` 字段当前仅声明，不绑定（与 1-9 类别快捷键冲突协调归 v0.5.5）。
+- 离线队列：多 tab 同步、queue 详情抽屉 UI、history undo 链与 tmp_id 替换归 v0.5.5。
+- 评论：`@` 提及、附件、画布层手绘批注归 v0.5.5。
+- classes 升级：导出器（COCO / YOLO）暂未读 attributes，schema 导出迁移归 v0.5.5。
+- polygon 精确 IoU 的项目级阈值（`project.iou_dedup_threshold`）仍硬编码 0.7。
+
+---
+
+
 ## [0.5.3] - 2026-04-30
 
 ### 新增

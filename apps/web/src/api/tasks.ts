@@ -29,12 +29,14 @@ export interface AnnotationPayload {
   confidence?: number;
   parent_prediction_id?: string;
   lead_time?: number;
+  attributes?: Record<string, unknown>;
 }
 
 export interface AnnotationUpdatePayload {
   geometry?: Geometry;
   class_name?: string;
   confidence?: number;
+  attributes?: Record<string, unknown>;
 }
 
 export interface SubmitResponse {

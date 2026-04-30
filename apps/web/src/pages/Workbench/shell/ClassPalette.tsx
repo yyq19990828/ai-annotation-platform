@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ClassesConfig } from "@/api/projects";
 import { classColor } from "../stage/colors";
 
 interface ClassPaletteProps {
   classes: string[];
   recent?: string[];
   activeClass?: string | null;
+  /** v0.5.4：项目级 classes_config，决定每个类别的颜色覆盖。空时回落 hash。 */
+  classesConfig?: ClassesConfig;
   /** readOnly 时点击无效，仅作为图例 + 快捷键速查（左侧常驻面板用）。 */
   onPick?: (cls: string) => void;
   /** 是否启用搜索框（默认：类别 > 9 时自动启用） */
@@ -28,7 +31,7 @@ export function shortcutForIndex(idx: number): string {
 }
 
 export function ClassPalette({
-  classes, recent = [], activeClass, onPick,
+  classes, recent = [], activeClass, classesConfig, onPick,
   enableSearch, highlightIndex, dense = false, readOnly = false,
 }: ClassPaletteProps) {
   const handlePick = (c: string) => {
@@ -99,7 +102,7 @@ export function ClassPalette({
                   color: "var(--color-fg)",
                 }}
               >
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: classColor(c) }} />
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: classColor(c, classesConfig) }} />
                 {c}
               </button>
             ))}
@@ -129,7 +132,7 @@ export function ClassPalette({
                 opacity: readOnly ? 0.92 : 1,
               }}
             >
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: classColor(c) }} />
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: classColor(c, classesConfig) }} />
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c}</span>
               {sk && (
                 <span style={{

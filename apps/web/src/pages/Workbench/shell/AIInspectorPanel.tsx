@@ -4,9 +4,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import type { Annotation } from "@/types";
+import type { Annotation, AnnotationResponse } from "@/types";
+import type { AttributeSchema } from "@/api/projects";
 import type { AiBox } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
+import { AttributeForm } from "./AttributeForm";
+import { CommentsPanel } from "./CommentsPanel";
 
 interface AIInspectorPanelProps {
   open: boolean;
@@ -22,6 +25,14 @@ interface AIInspectorPanelProps {
   aiTakeoverRate: number;
   imageWidth: number | null;
   imageHeight: number | null;
+  /** 项目级属性 schema（v0.5.4）。空时不渲染表单。 */
+  attributeSchema?: AttributeSchema;
+  /** 选中的 AnnotationResponse（含 attributes / class_name），用于属性表单数据源。 */
+  selectedAnnotation?: AnnotationResponse | null;
+  /** 属性表单提交回调（防抖后触发）。 */
+  onUpdateAttributes?: (annotationId: string, next: Record<string, unknown>) => void;
+  /** 当前用户 id（驱动评论作者操作权限）。 */
+  currentUserId?: string;
   hasMorePredictions?: boolean;
   isFetchingMorePredictions?: boolean;
   onFetchMorePredictions?: () => void;
@@ -48,6 +59,7 @@ export function AIInspectorPanel({
   open, aiModel, aiRunning, aiBoxes, userBoxes, selectedId, selectedIds, dimmedAiIds,
   confThreshold, aiTakeoverRate,
   imageWidth, imageHeight,
+  attributeSchema, selectedAnnotation, onUpdateAttributes, currentUserId,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   onToggle, onRunAi, onAcceptAll, onSetConfThreshold,
   onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
@@ -144,6 +156,22 @@ export function AIInspectorPanel({
             }}
           >清除</button>
         </div>
+      )}
+
+      {selectedAnnotation && attributeSchema && onUpdateAttributes && (
+        <AttributeForm
+          schema={attributeSchema}
+          className={selectedAnnotation.class_name}
+          attributes={selectedAnnotation.attributes ?? {}}
+          onChange={(next) => onUpdateAttributes(selectedAnnotation.id, next)}
+        />
+      )}
+
+      {selectedAnnotation && (
+        <CommentsPanel
+          annotationId={selectedAnnotation.id}
+          currentUserId={currentUserId}
+        />
       )}
 
       <BoxesList

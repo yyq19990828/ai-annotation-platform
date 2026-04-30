@@ -24,6 +24,7 @@ class AnnotationService:
         confidence: float | None = None,
         parent_prediction_id: uuid.UUID | None = None,
         lead_time: float | None = None,
+        attributes: dict | None = None,
     ) -> Annotation:
         task = await self.db.get(Task, task_id)
         source = "prediction_based" if parent_prediction_id else "manual"
@@ -40,6 +41,7 @@ class AnnotationService:
             confidence=confidence,
             parent_prediction_id=parent_prediction_id,
             lead_time=lead_time,
+            attributes=attributes or {},
         )
         self.db.add(annotation)
         await self.db.flush()
@@ -94,6 +96,7 @@ class AnnotationService:
         geometry: dict | None = None,
         class_name: str | None = None,
         confidence: float | None = None,
+        attributes: dict | None = None,
     ) -> Annotation | None:
         """Surgical update of mutable fields. Refuses to touch task_id / source / parent_prediction_id."""
         annotation = await self.db.get(Annotation, annotation_id)
@@ -105,6 +108,8 @@ class AnnotationService:
             annotation.class_name = class_name
         if confidence is not None:
             annotation.confidence = confidence
+        if attributes is not None:
+            annotation.attributes = attributes
         await self.db.flush()
         return annotation
 

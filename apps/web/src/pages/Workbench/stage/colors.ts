@@ -1,3 +1,15 @@
+import type { ClassesConfig } from "@/api/projects";
+
+/**
+ * 当前项目的 classes_config（颜色覆盖 + 排序）。WorkbenchShell 初始化项目时调用
+ * setActiveClassesConfig；切项目时清空。所有 classColor() 默认查阅这里，
+ * 避免每个调用点都向下传 config prop。
+ */
+let _activeConfig: ClassesConfig | undefined;
+export function setActiveClassesConfig(c: ClassesConfig | undefined): void {
+  _activeConfig = c;
+}
+
 export const CLASS_COLORS: Record<string, string> = {
   商品: "oklch(0.62 0.18 252)",
   价签: "oklch(0.65 0.18 152)",
@@ -8,7 +20,7 @@ export const CLASS_COLORS: Record<string, string> = {
 
 // Canvas(Konva) 用的颜色：通过浏览器 CSS 引擎把 oklch 转换成 hex，并缓存结果。
 const _canvasCache = new Map<string, string>();
-function oklchToHex(cssColor: string): string {
+function colorToHex(cssColor: string): string {
   if (_canvasCache.has(cssColor)) return _canvasCache.get(cssColor)!;
   try {
     const cvs = document.createElement("canvas");
@@ -25,8 +37,8 @@ function oklchToHex(cssColor: string): string {
   }
 }
 
-export function classColorForCanvas(name: string): string {
-  return oklchToHex(classColor(name));
+export function classColorForCanvas(name: string, config?: ClassesConfig): string {
+  return colorToHex(classColor(name, config));
 }
 
 export function hexToRgba(hex: string, alpha: number): string {
@@ -46,9 +58,22 @@ function hashString(s: string): number {
   return h;
 }
 
-export function classColor(name: string): string {
+export function classColor(name: string, config?: ClassesConfig): string {
+  // 优先级：显式传入 config > 模块级 _activeConfig（项目当前） > 内置预设 > hash 派生
+  const cfg = (config ?? _activeConfig)?.[name];
+  if (cfg?.color) return cfg.color;
   if (CLASS_COLORS[name]) return CLASS_COLORS[name];
-  // 项目类别 > 5 时按名称 hash 落到 OKLCH 色环；同名跨会话稳定。
   const hue = hashString(name) % 360;
   return `oklch(0.62 0.18 ${hue})`;
+}
+
+/** 按 classes_config.order 升序排序类别名（无 order 的排末尾）。 */
+export function sortClassesByConfig(classes: string[], config?: ClassesConfig): string[] {
+  if (!config) return classes;
+  return classes.slice().sort((a, b) => {
+    const oa = config[a]?.order ?? Number.POSITIVE_INFINITY;
+    const ob = config[b]?.order ?? Number.POSITIVE_INFINITY;
+    if (oa !== ob) return oa - ob;
+    return classes.indexOf(a) - classes.indexOf(b); // 同 order 时保留输入顺序
+  });
 }

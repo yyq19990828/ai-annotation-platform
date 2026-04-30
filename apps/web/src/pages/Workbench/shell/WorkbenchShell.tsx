@@ -23,10 +23,13 @@ import { useRecentClasses } from "../state/useRecentClasses";
 import { useSessionStats } from "../state/useSessionStats";
 import { useClipboard } from "../state/useClipboard";
 import { dispatchKey, ARROW_KEY_SET } from "../state/hotkeys";
-import { annotationToBox, bboxGeom, predictionsToBoxes, type AiBox } from "../state/transforms";
+import { annotationToBox, bboxGeom, polygonGeom, predictionsToBoxes, type AiBox } from "../state/transforms";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { AnnotationPayload } from "@/api/tasks";
-import { iou } from "../stage/iou";
+import { iouShape } from "../stage/iou";
+import { isSelfIntersecting, type Pt } from "../stage/polygonGeom";
+import { setActiveClassesConfig, sortClassesByConfig } from "../stage/colors";
+import { getMissingRequired } from "./AttributeForm";
 import { ImageStage } from "../stage/ImageStage";
 import { Topbar } from "./Topbar";
 import { ToolDock } from "./ToolDock";
@@ -39,6 +42,9 @@ import { HotkeyCheatSheet } from "./HotkeyCheatSheet";
 import { ClassPickerPopover } from "./ClassPickerPopover";
 import { Minimap } from "../stage/Minimap";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useAuthStore } from "@/stores/authStore";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { drain, enqueue, isOfflineCandidate } from "../state/offlineQueue";
 import { WorkbenchSkeleton } from "./WorkbenchSkeleton";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -51,7 +57,19 @@ export function WorkbenchShell() {
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const projectId = currentProject?.id;
-  const classes: string[] = currentProject?.classes ?? [];
+  const rawClasses: string[] = currentProject?.classes ?? [];
+  const classesConfig = currentProject?.classes_config;
+  const classes: string[] = useMemo(
+    () => sortClassesByConfig(rawClasses, classesConfig),
+    [rawClasses, classesConfig],
+  );
+
+  // 设置全局色板覆盖（让 ImageStage / SelectionOverlay 等无需逐层接 prop）
+  useEffect(() => {
+    setActiveClassesConfig(classesConfig);
+    return () => setActiveClassesConfig(undefined);
+  }, [classesConfig]);
+
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
   const aiModel = currentProject?.ai_model ?? "GroundingDINO + SAM";
@@ -68,6 +86,7 @@ export function WorkbenchShell() {
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(routeId);
+  const meUserId = useAuthStore((s) => s.user?.id);
 
   // 阈值防抖：滑动时前端即时过滤，300ms 后触发服务端查询
   const [debouncedConf, setDebouncedConf] = useState(s.confThreshold);
@@ -196,7 +215,7 @@ export function WorkbenchShell() {
     if (userBoxes.length === 0 || aiBoxes.length === 0) return out;
     for (const a of aiBoxes) {
       const sameClass = userBoxes.filter((u) => u.cls === a.cls);
-      if (sameClass.some((u) => iou(u, a) > 0.7)) out.add(a.id);
+      if (sameClass.some((u) => iouShape(u, a) > 0.7)) out.add(a.id);
     }
     return out;
   }, [userBoxes, aiBoxes]);
@@ -295,6 +314,44 @@ export function WorkbenchShell() {
     nudgeOrigRef.current = new Map();
   }, [nudgeMap, updateAnnotationMut, history]);
 
+  // ── 离线队列：网络抖动 / 5xx 时把 mutation 暂存到 IndexedDB；恢复在线后 flush ─
+  const { online, queueCount } = useOnlineStatus();
+
+  const enqueueOnError = useCallback((err: unknown, fallback: () => void) => {
+    if (isOfflineCandidate(err)) {
+      fallback();
+      pushToast({ msg: "已暂存到离线队列", sub: "恢复连接后将自动同步", kind: "warning" });
+    } else {
+      pushToast({ msg: "操作失败", sub: String(err), kind: "error" });
+    }
+  }, [pushToast]);
+
+  const flushOffline = useCallback(async () => {
+    const result = await drain(async (op) => {
+      if (op.kind === "create") {
+        await tasksApi.createAnnotation(op.taskId, op.payload as Parameters<typeof tasksApi.createAnnotation>[1]);
+      } else if (op.kind === "update") {
+        await tasksApi.updateAnnotation(op.taskId, op.annotationId, op.payload as Parameters<typeof tasksApi.updateAnnotation>[2]);
+      } else {
+        await tasksApi.deleteAnnotation(op.taskId, op.annotationId);
+      }
+    });
+    if (result.ok > 0) {
+      queryClient.invalidateQueries({ queryKey: ["annotations"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      pushToast({ msg: `已同步 ${result.ok} 条离线操作`, kind: "success" });
+    }
+    if (result.failed > 0) {
+      pushToast({ msg: "部分操作仍未能同步", sub: "请检查网络后重试", kind: "warning" });
+    }
+  }, [queryClient, pushToast]);
+
+  // online 事件触发自动 flush
+  useEffect(() => {
+    if (online && queueCount > 0) flushOffline();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online]);
+
   const navigateTask = useCallback((direction: "next" | "prev") => {
     if (tasks.length === 0) return;
     const idx = tasks.findIndex((t) => t.id === taskId);
@@ -348,16 +405,19 @@ export function WorkbenchShell() {
 
   const handleDeleteBox = useCallback((id: string) => {
     const target = annotationsRef.current.find((a) => a.id === id);
-    if (target) {
+    if (target && taskId) {
       deleteAnnotationMut.mutate(id, {
         onSuccess: () => {
           history.push({ kind: "delete", annotation: target });
           pushToast({ msg: "已删除标注", kind: "success" });
         },
+        onError: (err) => enqueueOnError(err, () => {
+          enqueue({ kind: "delete", id: crypto.randomUUID(), taskId, annotationId: id, ts: Date.now() });
+        }),
       });
     }
     s.setSelectedId(null);
-  }, [deleteAnnotationMut, history, pushToast, s]);
+  }, [deleteAnnotationMut, history, pushToast, s, taskId, enqueueOnError]);
 
   /** 批量删除当前选中的所有 user 框：成功后聚合 1 条 batch 命令进 history。 */
   const handleBatchDelete = useCallback(() => {
@@ -511,8 +571,11 @@ export function WorkbenchShell() {
         s.setSelectedId(newAnnotation.id);
         history.push({ kind: "create", annotationId: newAnnotation.id, payload });
       },
+      onError: (err) => enqueueOnError(err, () => {
+        if (taskId) enqueue({ kind: "create", id: crypto.randomUUID(), taskId, payload, ts: Date.now() });
+      }),
     });
-  }, [s, createAnnotation, history, recordRecentClass]);
+  }, [s, createAnnotation, history, recordRecentClass, taskId, enqueueOnError]);
 
   const handleCancelPending = useCallback(() => {
     s.setPendingDrawing(null);
@@ -559,37 +622,107 @@ export function WorkbenchShell() {
   }, [s]);
 
   const handleCommitMove = useCallback((id: string, before: Geom, after: Geom) => {
+    if (!taskId) return;
     const beforeG = bboxGeom(before);
     const afterG = bboxGeom(after);
-    updateAnnotationMut.mutate({ annotationId: id, payload: { geometry: afterG } }, {
+    const payload = { geometry: afterG };
+    updateAnnotationMut.mutate({ annotationId: id, payload }, {
       onSuccess: () => {
         history.push({
           kind: "update", annotationId: id,
           before: { geometry: beforeG }, after: { geometry: afterG },
         });
       },
+      onError: (err) => enqueueOnError(err, () => {
+        enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
+      }),
     });
-  }, [updateAnnotationMut, history]);
+  }, [updateAnnotationMut, history, taskId, enqueueOnError]);
+
+  const handleCommitPolygonGeometry = useCallback((id: string, before: Pt[], after: Pt[]) => {
+    if (after.length < 3) {
+      pushToast({ msg: "多边形至少需要 3 顶点", kind: "error" });
+      return;
+    }
+    if (!isSelfIntersecting(after).ok) {
+      pushToast({ msg: "多边形自相交，已撤销", kind: "error" });
+      return;
+    }
+    if (!taskId) return;
+    const beforeG = polygonGeom(before);
+    const afterG = polygonGeom(after);
+    const payload = { geometry: afterG };
+    updateAnnotationMut.mutate({ annotationId: id, payload }, {
+      onSuccess: () => {
+        history.push({
+          kind: "update", annotationId: id,
+          before: { geometry: beforeG }, after: { geometry: afterG },
+        });
+      },
+      onError: (err) => enqueueOnError(err, () => {
+        enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
+      }),
+    });
+  }, [updateAnnotationMut, history, pushToast, taskId, enqueueOnError]);
 
   const handleCommitResize = useCallback((id: string, before: Geom, after: Geom) => {
     if (after.w < 0.005 || after.h < 0.005) {
       pushToast({ msg: "框太小未保存", sub: "拖动到至少 0.5% × 0.5%", kind: "error" });
       return;
     }
+    if (!taskId) return;
     const beforeG = bboxGeom(before);
     const afterG = bboxGeom(after);
-    updateAnnotationMut.mutate({ annotationId: id, payload: { geometry: afterG } }, {
+    const payload = { geometry: afterG };
+    updateAnnotationMut.mutate({ annotationId: id, payload }, {
       onSuccess: () => {
         history.push({
           kind: "update", annotationId: id,
           before: { geometry: beforeG }, after: { geometry: afterG },
         });
       },
+      onError: (err) => enqueueOnError(err, () => {
+        enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
+      }),
     });
-  }, [updateAnnotationMut, history, pushToast]);
+  }, [updateAnnotationMut, history, pushToast, taskId, enqueueOnError]);
+
+  /** 选中态的 AnnotationResponse（驱动右侧栏属性表单）。仅单选 user 框时返回。 */
+  const selectedAnnotationForPanel = useMemo<AnnotationResponse | null>(() => {
+    if (!s.selectedId || s.selectedIds.length > 1) return null;
+    return (annotationsData ?? []).find((a) => a.id === s.selectedId) ?? null;
+  }, [s.selectedId, s.selectedIds.length, annotationsData]);
+
+  const handleUpdateAttributes = useCallback((annotationId: string, next: Record<string, unknown>) => {
+    const ann = annotationsRef.current.find((a) => a.id === annotationId);
+    if (!ann) return;
+    const before = { attributes: ann.attributes ?? {} };
+    const after = { attributes: next };
+    updateAnnotationMut.mutate({ annotationId, payload: after }, {
+      onSuccess: () => {
+        history.push({ kind: "update", annotationId, before, after });
+      },
+    });
+  }, [updateAnnotationMut, history]);
+
+  /** 计算所有 annotation 中是否有 required 属性未填（驱动提交按钮 disabled）。 */
+  const hasMissingRequired = useMemo(() => {
+    const schema = currentProject?.attribute_schema;
+    if (!schema || !schema.fields || schema.fields.length === 0) return false;
+    for (const a of annotationsRef.current) {
+      if (getMissingRequired(schema, a.class_name, a.attributes ?? {}).length > 0) return true;
+    }
+    return false;
+    // 当 annotations 列表变化时重算
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [annotationsData, currentProject?.attribute_schema]);
 
   const handleSubmitTask = useCallback(() => {
     if (!taskId) return;
+    if (hasMissingRequired) {
+      pushToast({ msg: "存在必填属性未填，无法提交", sub: "请检查右侧标注属性表单", kind: "error" });
+      return;
+    }
     submitTaskMut.mutate(taskId, {
       onSuccess: () => {
         pushToast({
@@ -600,7 +733,7 @@ export function WorkbenchShell() {
         navigateTask("next");
       },
     });
-  }, [taskId, submitTaskMut, pushToast, task?.display_id, userBoxes.length, navigateTask]);
+  }, [taskId, submitTaskMut, pushToast, task?.display_id, userBoxes.length, navigateTask, hasMissingRequired]);
 
   // ── 键盘快捷键 ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -824,6 +957,7 @@ export function WorkbenchShell() {
         projectName={projectName}
         projectDisplayId={projectDisplayId}
         classes={classes}
+        classesConfig={currentProject?.classes_config}
         activeClass={s.activeClass}
         recentClasses={recentClasses}
         tasks={tasks}
@@ -894,6 +1028,7 @@ export function WorkbenchShell() {
           onCommitDrawing={handleCommitDrawing}
           onCommitMove={handleCommitMove}
           onCommitResize={handleCommitResize}
+          onCommitPolygonGeometry={handleCommitPolygonGeometry}
           onCursorMove={setCursor}
           onChangeUserBoxClass={handleStartChangeClass}
           onBatchDelete={handleBatchDelete}
@@ -985,6 +1120,9 @@ export function WorkbenchShell() {
           preannotationRetries={preannotationRetries}
           avgLeadMs={avgMs}
           remainingTaskCount={remainingTaskCount}
+          offlineQueueCount={queueCount}
+          online={online}
+          onFlushOffline={flushOffline}
         />
       </div>
 
@@ -1013,6 +1151,10 @@ export function WorkbenchShell() {
         onClearSelection={() => s.setSelectedId(null)}
         onDeleteUserBox={handleDeleteBox}
         onChangeUserBoxClass={handleStartChangeClass}
+        attributeSchema={currentProject?.attribute_schema}
+        selectedAnnotation={selectedAnnotationForPanel}
+        onUpdateAttributes={handleUpdateAttributes}
+        currentUserId={meUserId}
       />
 
       <HotkeyCheatSheet open={showHotkeys} onClose={() => setShowHotkeys(false)} />

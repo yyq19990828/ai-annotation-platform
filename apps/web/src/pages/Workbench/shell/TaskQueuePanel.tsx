@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Thumbnail } from "@/components/Thumbnail";
 import type { TaskResponse } from "@/types";
+import type { ClassesConfig } from "@/api/projects";
 import { ClassPalette } from "./ClassPalette";
 
 interface TaskQueuePanelProps {
@@ -12,6 +13,7 @@ interface TaskQueuePanelProps {
   projectName: string;
   projectDisplayId: string;
   classes: string[];
+  classesConfig?: ClassesConfig;
   activeClass: string;
   recentClasses?: string[];
   tasks: TaskResponse[];
@@ -80,7 +82,7 @@ function TaskItem({
 }
 
 export function TaskQueuePanel({
-  open, projectName, projectDisplayId, classes, activeClass, recentClasses,
+  open, projectName, projectDisplayId, classes, classesConfig, activeClass, recentClasses,
   tasks, taskId, taskIdx,
   hasNextPage, isFetchingNextPage, onFetchNextPage,
   onBack, onToggle, onSelectTask,
@@ -196,6 +198,7 @@ export function TaskQueuePanel({
         </div>
         <ClassPalette
           classes={classes}
+          classesConfig={classesConfig}
           recent={recentClasses}
           activeClass={activeClass}
           enableSearch={classes.length > 9}

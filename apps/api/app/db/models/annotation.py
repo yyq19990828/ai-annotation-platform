@@ -24,5 +24,6 @@ class Annotation(Base):
     was_cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
     ground_truth: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    attributes: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}", default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
