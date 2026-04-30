@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Stage, Layer, Image as KonvaImage, Rect, Group, Label, Tag, Text } from "react-konva";
+import { Stage, Layer, Image as KonvaImage, Rect, Line, Circle, Group, Label, Tag, Text } from "react-konva";
 import type Konva from "konva";
 import useImage from "use-image";
 import type { Annotation } from "@/types";
@@ -9,6 +9,8 @@ import { useElementSize, type Viewport } from "../state/useViewportTransform";
 import { applyResize, type ResizeDirection } from "./ResizeHandles";
 import { classColorForCanvas, hexToRgba } from "./colors";
 import { SelectionOverlay } from "./SelectionOverlay";
+import { TOOL_REGISTRY, type PolygonDraftHandle } from "./tools";
+import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { Icon } from "@/components/ui/Icon";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -53,6 +55,8 @@ interface ImageStageProps {
   onStageGeometry?: (g: { imgW: number; imgH: number; vpSize: { w: number; h: number } }) => void;
   /** 渲染在画布层之上的覆盖物（与 SelectionOverlay 同坐标系，container 内绝对定位）。 */
   overlay?: React.ReactNode;
+  /** polygon 工具草稿（v0.5.3）。仅 tool === "polygon" 时使用。 */
+  polygonDraft?: PolygonDraftHandle;
 }
 
 // ── resize handle directions ────────────────────────────────────────────────
@@ -169,6 +173,61 @@ function KonvaBox({
   );
 }
 
+// ── KonvaPolygon: 渲染已落库的 polygon 标注 ────────────────────────────────
+function KonvaPolygon({
+  b, isAi, selected, faded, imgW, imgH, scale, onClick,
+}: {
+  b: Annotation;
+  isAi: boolean;
+  selected: boolean;
+  faded: boolean;
+  imgW: number;
+  imgH: number;
+  scale: number;
+  onClick: (e?: Konva.KonvaEventObject<MouseEvent>) => void;
+}) {
+  const color = classColorForCanvas(b.cls);
+  const sw = (selected ? 2 : 1.5) / scale;
+  const labelFontSize = 10.5 / scale;
+  const labelPad = 4 / scale;
+  const labelText = `${isAi ? "✦ " : ""}${b.cls} ${(b.conf * 100).toFixed(0)}`;
+  const flat: number[] = [];
+  for (const [px, py] of b.polygon ?? []) {
+    flat.push(px * imgW, py * imgH);
+  }
+  return (
+    <Group>
+      <Line
+        points={flat}
+        closed
+        stroke={color}
+        strokeWidth={sw}
+        dash={isAi ? [4 / scale, 3 / scale] : undefined}
+        fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
+        opacity={faded ? 0.35 : 1}
+        shadowEnabled={selected && !faded}
+        shadowColor={color}
+        shadowBlur={8 / scale}
+        shadowOpacity={0.4}
+        onClick={(e) => { e.cancelBubble = true; onClick(e); }}
+      />
+      {/* 标签锚定到第一个点 */}
+      {flat.length >= 2 && (
+        <Label x={flat[0]} y={flat[1] - 22 / scale} listening={false}>
+          <Tag fill={color} cornerRadius={3 / scale} />
+          <Text
+            text={labelText}
+            fill="white"
+            fontSize={labelFontSize}
+            padding={labelPad}
+            fontFamily="var(--font-sans, sans-serif)"
+          />
+        </Label>
+      )}
+    </Group>
+  );
+}
+
 // ── main component ──────────────────────────────────────────────────────────
 export function ImageStage({
   fileUrl, blurhash, tool, activeClass,
@@ -177,7 +236,7 @@ export function ImageStage({
   onBatchDelete, onBatchChangeClass,
   onSelectBox, onAcceptPrediction, onDeleteUserBox, onChangeUserBoxClass,
   onCommitDrawing, onCommitMove, onCommitResize, onCursorMove,
-  onStageGeometry, overlay,
+  onStageGeometry, overlay, polygonDraft,
 }: ImageStageProps) {
   const selSet = useMemo(
     () => new Set(selectedIds && selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : []),
@@ -350,32 +409,50 @@ export function ImageStage({
     if (e.target !== (stageRef.current as unknown)) {
       return;
     }
-    // 有 pendingDrawing 时不开新框，让 popover 自己处理点外部
-    if (pendingDrawing) return;
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
-    if (tool === "hand" || spacePan || readOnly) {
-      setDrag({ kind: "pan", sx: pt.x, sy: pt.y });
-      if (readOnly) onSelectBox(null);
-      return;
-    }
-    if (tool === "box") {
-      setDrag({ kind: "draw", sx: pt.x, sy: pt.y, cx: pt.x, cy: pt.y });
-      // Shift+点空白：保留多选；普通点空白：清空选择
-      if (!e.evt.shiftKey) onSelectBox(null);
-    }
+    // spacePan 模式下强制走 hand 工具的 pan 行为，无视当前 tool
+    const effective = spacePan ? TOOL_REGISTRY.hand : TOOL_REGISTRY[tool];
+    const init = effective.onPointerDown?.({
+      pt,
+      evt: e.evt,
+      vp,
+      activeClass,
+      imgW, imgH,
+      spacePan,
+      readOnly,
+      pendingDrawing: !!pendingDrawing,
+      onClearSelection: () => onSelectBox(null),
+      polygonDraft,
+    });
+    if (init) setDrag(init);
   };
 
-  const handleStageDblClick = () => fitNow();
+  const handleStageDblClick = () => {
+    // polygon 模式下双击 → 闭合（≥ 3 点）；否则适应视口
+    if (tool === "polygon" && polygonDraft && polygonDraft.points.length >= 3) {
+      polygonDraft.close();
+      return;
+    }
+    fitNow();
+  };
 
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     onCursorMove(pt && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1 ? pt : null);
+    if (tool === "polygon" && polygonDraft && polygonDraft.points.length > 0) {
+      setPolygonCursor(pt);
+    } else if (polygonCursor) {
+      setPolygonCursor(null);
+    }
   };
 
   const containerCursor = (tool === "hand" || spacePan)
     ? (drag?.kind === "pan" ? "grabbing" : "grab")
     : pendingDrawing ? "default" : "crosshair";
+
+  // polygon 草稿当前光标位置（用于动态预览线段）
+  const [polygonCursor, setPolygonCursor] = useState<{ x: number; y: number } | null>(null);
 
   const drawingPreview = drag?.kind === "draw"
     ? { x: Math.min(drag.sx, drag.cx), y: Math.min(drag.sy, drag.cy),
@@ -403,7 +480,7 @@ export function ImageStage({
       ref={containerRef}
       style={{
         flex: 1, position: "relative", overflow: "hidden",
-        background: "repeating-conic-gradient(#e9e9ec 0% 25%, #f3f3f5 0% 50%) 0 0/16px 16px",
+        background: "repeating-conic-gradient(var(--color-canvas-checker-a) 0% 25%, var(--color-canvas-checker-b) 0% 50%) 0 0/16px 16px",
         cursor: containerCursor,
       }}
       onMouseLeave={() => onCursorMove(null)}
@@ -437,29 +514,63 @@ export function ImageStage({
         onDblClick={handleStageDblClick}
         style={{ position: "absolute", top: 0, left: 0, display: "block" }}
       >
-        <Layer>
+        {/* bg 层：图像本体；不响应 hit-test，独立缓存 */}
+        <Layer name="bg" listening={false}>
           {image && (
             <KonvaImage image={image} x={0} y={0} width={imgW} height={imgH} listening={false} />
           )}
+        </Layer>
 
+        {/* ai 层：AI 预测框（虚线 + 浅填充）。listening 保持开以支持点击采纳；
+            但与 user 层分离后，user 框的 move/resize 重绘不再连带触发 AI 层重绘。 */}
+        <Layer name="ai">
           {aiBoxes.map((b) => (
-            <KonvaBox
-              key={b.id}
-              b={b}
-              isAi
-              selected={selSet.has(b.id)}
-              faded={fadedAiIds?.has(b.id) ?? false}
-              editable={!readOnly}
-              imgW={imgW} imgH={imgH} scale={vp.scale}
-              onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
-              onMoveStart={null}
-              onResizeStart={null}
-            />
+            b.polygon && b.polygon.length >= 3 ? (
+              <KonvaPolygon
+                key={b.id}
+                b={b}
+                isAi
+                selected={selSet.has(b.id)}
+                faded={fadedAiIds?.has(b.id) ?? false}
+                imgW={imgW} imgH={imgH} scale={vp.scale}
+                onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+              />
+            ) : (
+              <KonvaBox
+                key={b.id}
+                b={b}
+                isAi
+                selected={selSet.has(b.id)}
+                faded={fadedAiIds?.has(b.id) ?? false}
+                editable={!readOnly}
+                imgW={imgW} imgH={imgH} scale={vp.scale}
+                onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                onMoveStart={null}
+                onResizeStart={null}
+              />
+            )
           ))}
+        </Layer>
 
+        {/* user 层：人工框 + 选中态 + resize handle */}
+        <Layer name="user">
           {userBoxes.map((b) => {
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;
+            // polygon 走多边形渲染（v0.5.3 不支持顶点拖动 / 整体 move-resize）
+            if (display.polygon && display.polygon.length >= 3) {
+              return (
+                <KonvaPolygon
+                  key={b.id}
+                  b={display}
+                  isAi={false}
+                  selected={selSet.has(b.id)}
+                  faded={false}
+                  imgW={imgW} imgH={imgH} scale={vp.scale}
+                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                />
+              );
+            }
             // 单体选中时（且只有一个选中）才允许 move/resize；多选时禁用以避免冲突
             const isPrimarySingleSelect = selectedId === b.id && selSet.size === 1 && !readOnly;
             return (
@@ -485,8 +596,45 @@ export function ImageStage({
               />
             );
           })}
+        </Layer>
 
-          {/* 绘制中预览 */}
+        {/* overlay 层：绘制预览 + pending 框 + polygon 草稿；不参与 hit-test */}
+        <Layer name="overlay" listening={false}>
+          {/* polygon 草稿：已落点 + 跟随光标的预览线段 + 顶点圆点 + 首点高亮（提示可闭合） */}
+          {polygonDraft && polygonDraft.points.length > 0 && (() => {
+            const ps = polygonDraft.points;
+            const flat: number[] = [];
+            for (const [px, py] of ps) flat.push(px * imgW, py * imgH);
+            // 加上指向当前光标的预览段
+            if (polygonCursor) flat.push(polygonCursor.x * imgW, polygonCursor.y * imgH);
+            const draftColor = classColorForCanvas(activeClass || "polygon");
+            // 首点是否处于"可闭合"距离
+            const canClose = ps.length >= 3 && polygonCursor &&
+              Math.hypot(polygonCursor.x - ps[0][0], polygonCursor.y - ps[0][1]) <= CLOSE_DISTANCE;
+            return (
+              <>
+                <Line
+                  points={flat}
+                  closed={false}
+                  stroke={draftColor}
+                  strokeWidth={1.5 / vp.scale}
+                  dash={[4 / vp.scale, 3 / vp.scale]}
+                  fill={hexToRgba(draftColor, 0.10)}
+                />
+                {ps.map(([px, py], i) => (
+                  <Circle
+                    key={i}
+                    x={px * imgW}
+                    y={py * imgH}
+                    radius={(i === 0 ? 4.5 : 3) / vp.scale}
+                    fill={i === 0 && canClose ? draftColor : "white"}
+                    stroke={draftColor}
+                    strokeWidth={1.5 / vp.scale}
+                  />
+                ))}
+              </>
+            );
+          })()}
           {drawingPreview && drawingPreview.w > 0 && (
             <Rect
               x={drawingPreview.x * imgW}
@@ -501,7 +649,6 @@ export function ImageStage({
             />
           )}
 
-          {/* 待确认的 pending 框（已落框，等待 popover 选类别） */}
           {pendingDrawing && (
             <>
               <Rect

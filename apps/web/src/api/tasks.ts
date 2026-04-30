@@ -3,6 +3,7 @@ import type {
   TaskResponse,
   AnnotationResponse,
   TaskLockResponse,
+  Geometry,
 } from "@/types";
 
 export interface TaskListResponse {
@@ -24,14 +25,14 @@ export interface TaskListParams {
 export interface AnnotationPayload {
   annotation_type?: string;
   class_name: string;
-  geometry: { x: number; y: number; w: number; h: number };
+  geometry: Geometry;
   confidence?: number;
   parent_prediction_id?: string;
   lead_time?: number;
 }
 
 export interface AnnotationUpdatePayload {
-  geometry?: { x: number; y: number; w: number; h: number };
+  geometry?: Geometry;
   class_name?: string;
   confidence?: number;
 }

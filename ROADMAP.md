@@ -123,12 +123,13 @@
 - **OpenSeadragon 瓦片金字塔**：当前直接加载完整图像，> 50MP（如卫星/医疗影像）会卡。需要后端切瓦片 + 前端 OpenSeadragon viewport，与 Konva overlay 共生（OSD 当背景，Konva 浮层画矢量）。极大图场景才必要。
 - **Annotation 列表后端分页**：与 B「Annotation keyset 分页」共建。当前 `useAnnotations` 全量拉，单任务 1000+ 框阻塞渲染。
 - **IoU 去重几何加速**：v0.5.2 用 useMemo + 嵌套循环 O(N×M)，100+ AI × 50+ user 约 5000 次/帧；阈值边界附近变更会触发频繁重算。如果掉帧，上空间索引 rbush（仅同类内分片）。
-- **Konva 分层 hit-detection**：当前 user/AI 框混在单 Layer，框越多 hit detection 越慢；按 user / AI / overlay 拆三层（`listening: false` for AI 层时禁用拾取）能进一步降负担。
+- ~~**Konva 分层 hit-detection**~~：✅ v0.5.3 已落（`bg / ai / user / overlay` 四 Layer 拆分）。
 
 #### C.2 界面优化（信息架构 / 可见性 / 一致性）
 
+- ~~**Topbar 重新设计（信息架构重构）**~~：✅ v0.5.3 已落（左侧 ToolDock + 画布右下 FloatingDock + 顶部三段 Topbar + ⋯ 溢出菜单）。新增工具直接注册到 `tools/`，外壳无需改动。
 - **响应式终态**：v0.5.1 已加 `useMediaQuery` 自动收 sidebar，Topbar flexWrap 兜底；剩余「⋯ 溢出菜单」（窄屏把次要按钮收进抽屉）+ 移动端只读模式（< 768px 强制 `readOnly` + 提示用桌面版）。
-- **暗色模式优先**：标注员长时间盯屏，眼疲劳是真问题。把工作台当成 dark-first 面（图像周围背景已是棋盘格，再叠暗色 chrome）；与 B 的「主题切换」共建 CSS 变量 token。
+- ~~**暗色模式优先**~~：✅ v0.5.3 已落（`tokens.css [data-theme="dark"]` + `useTheme` hook + Topbar 溢出菜单切换 + 启动应用初始主题，棋盘格画布走 token 变量）。
 - **类别面板拖动重排 + 后端持久化**：当前 `project.classes: string[]` 只能创建时设置；需要改为 `{ name, color?, order }[]` + migration + PATCH /projects/{id}/classes 排序端点。前端用 dnd-kit 实现拖排。
 - **HotkeyCheatSheet 分组与搜索**：v0.5.2 后定义已涨到 30+ 条；目前仅按 `group` 分块，缺搜索框 + 「按使用频率排」。
 - **阈值控件统一**：Topbar 已有数值浮出反馈（`[`/`]`键），AIInspectorPanel 仍是 slider 主入口；可考虑统一为 Topbar 主控 + AI 面板小数值显示。
@@ -136,6 +137,7 @@
 
 #### C.3 标注体验（核心生产力杠杆）
 
+- ~~**多边形工具（polygon）MVP**~~：✅ v0.5.3 已落（geometry discriminated union + alembic 0011 migration + `PolygonTool` 创建/渲染/删除/改类/撤销重做 + 复用 history/clipboard/IoU 包围盒近似/提交质检流程）。**剩余 v0.5.4+**：① 顶点拖动；② Alt+点击边新增顶点；③ Shift+点击顶点删除；④ 自相交校验（segment-intersect）；⑤ polygon 精确 IoU（接 polygon-clipping）；⑥ SAM mask → polygon 化（marching squares / simplify-js）。
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90% 多选场景（v0.5.2）；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式），按住拖选所有相交框。
 - **Shift 锁定纵横比 / Alt 从中心 resize**：v0.4.9 留下的 TODO；resize handle 8 锚点已就位，加修饰键判断即可。
 - **SAM 交互式标注（点 / 框 → mask）**：研究报告 `06-ai-patterns.md`「模式 B」P1。最小切片：
@@ -143,7 +145,17 @@
   - 前端：新工具 `S`（SAM 模式），鼠标点击 = positive point、Alt+点击 = negative point、拖框 = bbox prompt；返回多边形以「待确认紫虚线」叠加，Enter 接受 / Esc 取消。
   - 与现有 GroundingDINO 配合：「文本框 → 全图批量同类」 vs 「点 / 框 → 单实例精修」两条路并存。
 - **关键帧插值（视频/序列）**：CVAT 同款；标注员只标 1 / 30 / 60 帧，中间线性插值（前端实现，提交时落库为关键帧 + 插值标志）。需配合 `Task.dimension` 字段。
-- **类别属性 / 子属性**：当前 `Annotation` 只存 `class_name`，缺 `occluded` / `truncated` / `difficult` / `group_id`。建 `annotation_attributes` JSONB 列 + 项目级 schema（每类可声明哪些属性必填 / 枚举），右侧选中框时下沿展开属性面板。
+- **项目级可配置属性 schema（自定义标注属性）**：当前 `Annotation` 只存 `class_name + geometry + annotation_type`（`apps/api/app/db/models/annotation.py:17-19`），单标注的语义信息只有「类别」一维——业务上车辆要标「车型 / 朝向 / 是否遮挡 / 车牌号」、商品要标「品牌 / SKU / 残损度」、人体要标「年龄段 / 性别 / 行为」，全部缺失。需要把"属性"从硬编码升级为**项目级可配置 schema + 标注级 JSONB 存储**：
+  - **数据模型**：`Annotation` 加 `attributes: JSONB DEFAULT '{}'` 列（轻量、无需 migration 风险）；`Project` 加 `attribute_schema: JSONB`（或独立 `project_attribute_schemas` 表，便于历史版本回溯）。
+  - **Schema DSL**：项目级声明属性列表，每条形如 `{ key, label, type, required, default, options?, min?, max?, regex?, applies_to?: ["class_a", "class_b"] | "*", visible_if?: { other_key: value } }`；`type` 支持 `text / number / boolean / select / multiselect / range / date / color / tags`；`applies_to` 控制「全局属性」vs 「仅某类别属性」；`visible_if` 实现条件级联（如「车型=轿车时才显示车门数」）。
+  - **Schema 编辑 UI**：项目设置页加「属性 schema」tab，可视化增删改字段、拖动排序、实时预览；导出 / 导入 JSON 便于跨项目复用；也提供 4 套预置模板（CV 通用：occluded/truncated/difficult/group_id；商品：品牌/SKU/残损度；人体：年龄段/性别/行为；自定义空白）。
+  - **工作台渲染**：右侧栏选中标注时，根据当前 `class_name` × `attribute_schema` 动态渲染表单（react-hook-form / valibot 校验），改完即时 PATCH 落 `attributes` JSONB；多选时合并表单，不同值显示「— 多个 —」占位。
+  - **快捷键加成**：常用 boolean / select 属性可绑定数字键（1-9），如「2 = occluded toggle」，避免离开画布点表单；属性绑定在 schema 里声明 `hotkey: "2"`。
+  - **导出 / 训练管线**：COCO / YOLO 导出器读 `attributes` 写到 `extra_attributes` 字段；CVAT-XML 走 `<attribute name=...>` 标签；前端导出向导可勾选哪些属性纳入。
+  - **审核 & 必填校验**：required 字段未填时「提交质检」按钮禁用 + 红框高亮缺失属性的标注；reviewer 端可在筛选器按属性值过滤（与 B「detail_json 字段级筛选」同思路）。
+  - **AI 预标兼容**：ML backend 返回 predictions 可携带 `attributes`（如 GroundingDINO 文本 query → class_name + 描述短语 → 落 `attributes.description`）；接受预标时一并继承。
+  - **审计**：属性变更进 audit_logs（diff 旧值 → 新值），便于复盘错标。
+  - **验收**：项目方在 UI 里 0 代码声明任意属性 → 标注员看到对应表单 → 数据导出包含属性 → 审核可按属性过滤 → 无需任何后端 schema migration。
 - **逐框评论 / 标记问题**：`annotation_comments` 表（`annotation_id, author_id, body`）；reviewer 退回任务时可直接在某个框上留批注，标注员收到通知（与 B 的通知中心串）。
 - **自动保存 + 离线队列**：当前每次 mutation 都直发 → 网络抖动期间用户白干。`createAnnotation` / `deleteAnnotation` 落 IndexedDB 队列，连不上时显示「离线 · 3 操作待同步」徽章。
 - **类别确认 hint**：刚画完一个框时，AI 后台跑一次单框分类（轻量分类头，非 GroundingDINO），右上角弹「建议：标识牌（92%）」+ 一键采纳。
@@ -177,11 +189,14 @@
 | **P0** | A § 协作并发：任务锁主动续约 + 编辑冲突 ETag | 多人协作场景一旦撞上就丢数据；当前 0 防护 |
 | **P1** | TopBar 通知中心、UsersPage「角色」tab 接通真权限矩阵、「存储与模型集成」对接、API 密钥 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask） | 核心差异化，研究报告明确 P1 |
+| **P1** | C.2 Topbar 重新设计（ToolDock + FloatingDock 分区） | 多工具加入的前置；当前单行已挤爆，多边形 / SAM / 选择工具落地前必须先重构 |
+| **P1** | C.3 多边形工具（polygon） | 不规则物体覆盖率刚需，且为 SAM mask → polygon 闭环铺路；几何模型已留口子，工时中 |
+| **P1** | C.3 项目级可配置属性 schema（自定义标注属性） | 把标注从「单标签」升级为「结构化数据」的基础——业务方现在只能标类别，无法记录品牌/朝向/遮挡等业务属性，几乎所有真实项目都卡在这里 |
 | **P1** | 后端单元/集成测试、前端 hook + keyboard 单测扩展 | v0.5.2 工作台逻辑膨胀，无测试就是定时炸弹 |
 | **P1** | OpenAPI → TS 类型生成 | 前后端 schema 手动同步在 v0.5.x 已开始漂移 |
 | **P2** | 非 image-det 工作台（image-seg → polygon → 复用 Step 1 架构） | 体量大，按业务优先级排队 |
 | **P2** | C.2 暗色模式 / 类别面板拖排持久化、HotkeyCheatSheet 升级 | 上量后必撞 |
-| **P2** | C.3 marquee / 关键帧 / 类别属性 schema / 自动保存离线队列 / 任务跳过 | 业务复杂度起来后必需 |
+| **P2** | C.3 marquee / 关键帧 / 自动保存离线队列 / 任务跳过 | 业务复杂度起来后必需 |
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、Konva 分层 hit | 千框/4K 大图场景才必要 |
 | **P2** | C.3 history 持久化、IoU 阈值可配、reviewer 实时仪表卡 | quick win，工时少 |
 | **P2** | 审计日志归档 / 全文索引、AuditMiddleware 队列化、useInfiniteQuery 缓存 GC | 当前数据量未到瓶颈，监控触发再做 |

@@ -22,10 +22,16 @@ import { useAnnotationHistory } from "../state/useAnnotationHistory";
 import { useRecentClasses } from "../state/useRecentClasses";
 import { useSessionStats } from "../state/useSessionStats";
 import { useClipboard } from "../state/useClipboard";
-import { annotationToBox, predictionsToBoxes, type AiBox } from "../state/transforms";
+import { dispatchKey, ARROW_KEY_SET } from "../state/hotkeys";
+import { annotationToBox, bboxGeom, predictionsToBoxes, type AiBox } from "../state/transforms";
+import type { PolygonDraftHandle } from "../stage/tools";
+import type { AnnotationPayload } from "@/api/tasks";
 import { iou } from "../stage/iou";
 import { ImageStage } from "../stage/ImageStage";
 import { Topbar } from "./Topbar";
+import { ToolDock } from "./ToolDock";
+import { FloatingDock } from "./FloatingDock";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 import { TaskQueuePanel } from "./TaskQueuePanel";
 import { AIInspectorPanel } from "./AIInspectorPanel";
 import { StatusBar } from "./StatusBar";
@@ -204,16 +210,85 @@ export function WorkbenchShell() {
   // 批量改类 popover：anchor 到 selectedIds 第一个 user 框的 geom
   const [batchChanging, setBatchChanging] = useState(false);
 
+  // ── polygon 工具草稿（v0.5.3） ────────────────────────────────────────────
+  const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
+  // 切到非 polygon 工具或切题清空草稿
+  useEffect(() => { if (s.tool !== "polygon") setPolygonDraftPoints([]); }, [s.tool]);
+  useEffect(() => { setPolygonDraftPoints([]); }, [taskId]);
+
+  const submitPolygon = useCallback((points: [number, number][]) => {
+    const cls = s.activeClass;
+    if (points.length < 3) {
+      pushToast({ msg: "多边形需至少 3 个顶点", kind: "warning" });
+      return;
+    }
+    if (!cls) {
+      pushToast({ msg: "请先选择类别", kind: "warning" });
+      return;
+    }
+    const payload: AnnotationPayload = {
+      annotation_type: "polygon",
+      class_name: cls,
+      geometry: { type: "polygon", points },
+      confidence: 1,
+    };
+    setPolygonDraftPoints([]);
+    createAnnotation.mutate(payload, {
+      onSuccess: (created) => {
+        history.push({ kind: "create", annotationId: created.id, payload });
+        s.setSelectedId(created.id);
+        recordRecentClass(cls);
+        pushToast({ msg: "已创建多边形", sub: `${points.length} 顶点 · ${cls}`, kind: "success" });
+      },
+    });
+  }, [s, createAnnotation, history, recordRecentClass, pushToast]);
+
+  const polygonHandle = useMemo<PolygonDraftHandle>(() => ({
+    points: polygonDraftPoints,
+    addPoint: (pt) => setPolygonDraftPoints((p) => [...p, pt]),
+    close: () => submitPolygon(polygonDraftPoints),
+    cancel: () => setPolygonDraftPoints([]),
+  }), [polygonDraftPoints, submitPolygon]);
+
+  // polygon 专用键（Enter / Esc / Backspace）。capture 阶段拦截，避免主分发再处理。
+  useEffect(() => {
+    if (s.tool !== "polygon") return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (polygonDraftPoints.length === 0) return;
+      if (e.key === "Enter" && polygonDraftPoints.length >= 3) {
+        e.preventDefault(); e.stopPropagation();
+        submitPolygon(polygonDraftPoints);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault(); e.stopPropagation();
+        setPolygonDraftPoints([]);
+        return;
+      }
+      if (e.key === "Backspace") {
+        e.preventDefault(); e.stopPropagation();
+        setPolygonDraftPoints((p) => p.slice(0, -1));
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [s.tool, polygonDraftPoints, submitPolygon]);
+
   const flushNudges = useCallback(() => {
     if (nudgeMap.size === 0) return;
-    const cmds: { kind: "update"; annotationId: string; before: { geometry: Geom }; after: { geometry: Geom } }[] = [];
+    const cmds: { kind: "update"; annotationId: string; before: { geometry: ReturnType<typeof bboxGeom> }; after: { geometry: ReturnType<typeof bboxGeom> } }[] = [];
     nudgeMap.forEach((after, id) => {
       const before = nudgeOrigRef.current.get(id);
       if (!before) return;
       // 真有变化才 commit
       if (before.x === after.x && before.y === after.y && before.w === after.w && before.h === after.h) return;
-      updateAnnotationMut.mutate({ annotationId: id, payload: { geometry: after } });
-      cmds.push({ kind: "update", annotationId: id, before: { geometry: before }, after: { geometry: after } });
+      const beforeG = bboxGeom(before);
+      const afterG = bboxGeom(after);
+      updateAnnotationMut.mutate({ annotationId: id, payload: { geometry: afterG } });
+      cmds.push({ kind: "update", annotationId: id, before: { geometry: beforeG }, after: { geometry: afterG } });
     });
     if (cmds.length > 0) history.pushBatch(cmds);
     setNudgeMap(new Map());
@@ -425,7 +500,7 @@ export function WorkbenchShell() {
     const payload = {
       annotation_type: "bbox",
       class_name: cls,
-      geometry: pending.geom,
+      geometry: bboxGeom(pending.geom),
       confidence: 1,
     };
     s.setPendingDrawing(null);
@@ -484,11 +559,13 @@ export function WorkbenchShell() {
   }, [s]);
 
   const handleCommitMove = useCallback((id: string, before: Geom, after: Geom) => {
-    updateAnnotationMut.mutate({ annotationId: id, payload: { geometry: after } }, {
+    const beforeG = bboxGeom(before);
+    const afterG = bboxGeom(after);
+    updateAnnotationMut.mutate({ annotationId: id, payload: { geometry: afterG } }, {
       onSuccess: () => {
         history.push({
           kind: "update", annotationId: id,
-          before: { geometry: before }, after: { geometry: after },
+          before: { geometry: beforeG }, after: { geometry: afterG },
         });
       },
     });
@@ -499,11 +576,13 @@ export function WorkbenchShell() {
       pushToast({ msg: "框太小未保存", sub: "拖动到至少 0.5% × 0.5%", kind: "error" });
       return;
     }
-    updateAnnotationMut.mutate({ annotationId: id, payload: { geometry: after } }, {
+    const beforeG = bboxGeom(before);
+    const afterG = bboxGeom(after);
+    updateAnnotationMut.mutate({ annotationId: id, payload: { geometry: afterG } }, {
       onSuccess: () => {
         history.push({
           kind: "update", annotationId: id,
-          before: { geometry: before }, after: { geometry: after },
+          before: { geometry: beforeG }, after: { geometry: afterG },
         });
       },
     });
@@ -525,18 +604,14 @@ export function WorkbenchShell() {
 
   // ── 键盘快捷键 ──────────────────────────────────────────────────────────
   useEffect(() => {
-    const isInput = (el: EventTarget | null) =>
+    const isInputFocused = (el: EventTarget | null) =>
       el instanceof HTMLElement && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 
-    const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
-
     const applyArrowNudge = (dx: number, dy: number) => {
-      if (s.selectedIds.length === 0) return;
       const userTargets = s.selectedIds
         .map((id) => annotationsRef.current.find((a) => a.id === id))
         .filter(Boolean) as AnnotationResponse[];
       if (userTargets.length === 0) return;
-      // 1px / 10px → 归一化
       const w = stageGeom.imgW || 1;
       const h = stageGeom.imgH || 1;
       const ndx = dx / w;
@@ -558,33 +633,33 @@ export function WorkbenchShell() {
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (isInput(e.target)) return;
+      const action = dispatchKey(e, {
+        isInputFocused: isInputFocused(e.target),
+        hasSelection: !!s.selectedId || s.selectedIds.length > 0,
+        pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging,
+      });
+      if (!action) return;
 
-      // 系统级（带修饰）
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === "z" || e.key === "Z") {
-          e.preventDefault();
-          if (e.shiftKey) history.redo(); else history.undo();
-          return;
-        }
-        if (e.key === "y" || e.key === "Y") { e.preventDefault(); history.redo(); return; }
-        if (e.key === "0") { e.preventDefault(); setFitTick((n) => n + 1); return; }
-        if (e.key === "ArrowRight") { e.preventDefault(); navigateTask("next"); return; }
-        if (e.key === "ArrowLeft") { e.preventDefault(); navigateTask("prev"); return; }
-        if (e.key === "a" || e.key === "A") {
+      switch (action.type) {
+        case "undo": e.preventDefault(); history.undo(); return;
+        case "redo": e.preventDefault(); history.redo(); return;
+        case "fitReset": e.preventDefault(); setFitTick((n) => n + 1); return;
+        case "navigateTask": e.preventDefault(); navigateTask(action.dir); return;
+
+        case "selectAllUser":
           e.preventDefault();
           if (annotationsRef.current.length > 0) {
             s.replaceSelected(annotationsRef.current.map((a) => a.id));
           }
           return;
-        }
-        if (e.key === "c" || e.key === "C") {
+
+        case "copy": {
           e.preventDefault();
           const n = clipboard.copySelection();
           if (n > 0) pushToast({ msg: `已复制 ${n} 个标注`, kind: "success" });
           return;
         }
-        if (e.key === "v" || e.key === "V") {
+        case "paste":
           e.preventDefault();
           if (clipboard.hasClipboard) {
             clipboard.paste().then((ids) => {
@@ -592,8 +667,7 @@ export function WorkbenchShell() {
             });
           }
           return;
-        }
-        if (e.key === "d" || e.key === "D") {
+        case "duplicate":
           e.preventDefault();
           if (s.selectedIds.length > 0) {
             clipboard.duplicateSelection().then((ids) => {
@@ -601,124 +675,100 @@ export function WorkbenchShell() {
             });
           }
           return;
-        }
-        return;
-      }
 
-      // 方向键 nudge（无 Ctrl）
-      if (ARROW_KEYS.has(e.key) && s.selectedIds.length > 0) {
-        // 只对 user 框 nudge
-        const hasUser = s.selectedIds.some((id) =>
-          annotationsRef.current.some((a) => a.id === id),
-        );
-        if (hasUser) {
+        case "arrowNudge": {
+          // 仅当选中里有 user 框才消费方向键
+          const hasUser = s.selectedIds.some((id) =>
+            annotationsRef.current.some((a) => a.id === id),
+          );
+          if (!hasUser) return;
           e.preventDefault();
-          const step = e.shiftKey ? 10 : 1;
-          const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
-          const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
-          applyArrowNudge(dx, dy);
+          applyArrowNudge(action.dx, action.dy);
           return;
         }
-      }
 
-      // 单键
-      if (e.key === " ") { e.preventDefault(); setSpacePan(true); return; }
-      if (e.key === "?") { setShowHotkeys(true); return; }
-      if (e.key === "Escape") {
-        if (showHotkeys) { setShowHotkeys(false); return; }
-        if (batchChanging) { setBatchChanging(false); return; }
-        if (s.pendingDrawing) { s.setPendingDrawing(null); return; }
-        if (s.editingClass) { s.setEditingClass(null); return; }
-        s.setSelectedId(null);
-        return;
-      }
-      // pendingDrawing / editingClass / batchChanging 时类别按键由 popover 自己消费，不再切换 default
-      if (s.pendingDrawing || s.editingClass || batchChanging) return;
+        case "spacePanOn": e.preventDefault(); setSpacePan(true); return;
+        case "showHotkeys": setShowHotkeys(true); return;
+        case "cancel":
+          if (showHotkeys) { setShowHotkeys(false); return; }
+          if (batchChanging) { setBatchChanging(false); return; }
+          if (s.pendingDrawing) { s.setPendingDrawing(null); return; }
+          if (s.editingClass) { s.setEditingClass(null); return; }
+          s.setSelectedId(null);
+          return;
 
-      // [ / ] 调阈值（clamp 到 [0, 1]，step 0.05）
-      if (e.key === "[") {
-        e.preventDefault();
-        s.setConfThreshold(Math.max(0, +(s.confThreshold - 0.05).toFixed(2)));
-        return;
-      }
-      if (e.key === "]") {
-        e.preventDefault();
-        s.setConfThreshold(Math.min(1, +(s.confThreshold + 0.05).toFixed(2)));
-        return;
-      }
+        case "thresholdAdjust":
+          e.preventDefault();
+          s.setConfThreshold(Math.max(0, Math.min(1, +(s.confThreshold + action.delta).toFixed(2))));
+          return;
 
-      // Tab / Shift+Tab / J / K：在 user 框间循环
-      if (e.key === "Tab" || e.key === "j" || e.key === "J" || e.key === "k" || e.key === "K") {
-        const list = annotationsRef.current;
-        if (list.length === 0) return;
-        e.preventDefault();
-        const dir = (e.key === "Tab" && !e.shiftKey) || e.key === "j" || e.key === "J" ? 1 : -1;
-        const idxNow = s.selectedId ? list.findIndex((a) => a.id === s.selectedId) : -1;
-        let next: number;
-        if (e.key === "Tab") {
-          next = (idxNow + dir + list.length) % list.length;
-        } else {
-          // J / K 不循环，到边界停住
-          next = Math.max(0, Math.min(list.length - 1, idxNow < 0 ? 0 : idxNow + dir));
+        case "cycleUser": {
+          const list = annotationsRef.current;
+          if (list.length === 0) return;
+          e.preventDefault();
+          const idxNow = s.selectedId ? list.findIndex((a) => a.id === s.selectedId) : -1;
+          let next: number;
+          if (action.loop) {
+            next = (idxNow + action.dir + list.length) % list.length;
+          } else {
+            next = Math.max(0, Math.min(list.length - 1, idxNow < 0 ? 0 : idxNow + action.dir));
+          }
+          s.setSelectedId(list[next].id);
+          return;
         }
-        s.setSelectedId(list[next].id);
-        return;
-      }
 
-      // N / U 智能切题
-      if (e.key === "n" || e.key === "N") { smartNext("open"); return; }
-      if (e.key === "u" || e.key === "U") { smartNext("uncertain"); return; }
+        case "smartNext": smartNext(action.mode); return;
 
-      // C 键：选中 user 框时 → 改类别（单选时单改，多选时批量改）
-      if ((e.key === "c" || e.key === "C") && s.selectedIds.length > 0) {
-        const userIds = s.selectedIds.filter((id) =>
-          annotationsRef.current.some((a) => a.id === id),
-        );
-        if (userIds.length > 1) { handleStartBatchChangeClass(); return; }
-        if (userIds.length === 1) { handleStartChangeClass(userIds[0]); return; }
-      }
-      if (e.key === "v" || e.key === "V") { s.setTool("hand"); return; }
-      if (e.key === "b" || e.key === "B") { s.setTool("box"); return; }
-      if (e.key >= "1" && e.key <= "9") {
-        const idx = parseInt(e.key) - 1;
-        if (classes[idx]) { s.setActiveClass(classes[idx]); recordRecentClass(classes[idx]); }
-        return;
-      }
-      // 字母 a-z 切换默认类别（第 10 类起，跳过已绑定的 v/b/a/d/e/n/u/j/k/c）
-      if (/^[a-z]$/i.test(e.key) &&
-          !["v", "V", "b", "B", "a", "A", "d", "D", "e", "E", "n", "N", "u", "U", "j", "J", "k", "K", "c", "C"].includes(e.key)) {
-        const letterIdx = e.key.toLowerCase().charCodeAt(0) - "a".charCodeAt(0);
-        const idx = 9 + letterIdx;
-        if (classes[idx]) { s.setActiveClass(classes[idx]); recordRecentClass(classes[idx]); return; }
-      }
-      if (e.key === "Delete" || e.key === "Backspace") {
-        const userIds = s.selectedIds.filter((id) =>
-          annotationsRef.current.some((a) => a.id === id),
-        );
-        if (userIds.length > 1) handleBatchDelete();
-        else if (userIds.length === 1) handleDeleteBox(userIds[0]);
-        return;
-      }
-      if (e.key === "e" || e.key === "E") { handleSubmitTask(); return; }
+        case "changeClass": {
+          const userIds = s.selectedIds.filter((id) =>
+            annotationsRef.current.some((a) => a.id === id),
+          );
+          if (userIds.length > 1) handleStartBatchChangeClass();
+          else if (userIds.length === 1) handleStartChangeClass(userIds[0]);
+          return;
+        }
 
-      // 选中 AI 框时的 a/d
-      if ((e.key === "a" || e.key === "A") && s.selectedId) {
-        const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
-        if (aiBox) handleAcceptPrediction(aiBox);
-        return;
-      }
-      if ((e.key === "d" || e.key === "D") && s.selectedId) {
-        const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
-        if (aiBox) s.setSelectedId(null);
-        return;
+        case "setTool": s.setTool(action.tool); return;
+
+        case "setClassByDigit":
+          if (classes[action.idx]) { s.setActiveClass(classes[action.idx]); recordRecentClass(classes[action.idx]); }
+          return;
+
+        case "setClassByLetter": {
+          const letterIdx = action.letter.charCodeAt(0) - "a".charCodeAt(0);
+          const idx = 9 + letterIdx;
+          if (classes[idx]) { s.setActiveClass(classes[idx]); recordRecentClass(classes[idx]); }
+          return;
+        }
+
+        case "deleteSelected": {
+          const userIds = s.selectedIds.filter((id) =>
+            annotationsRef.current.some((a) => a.id === id),
+          );
+          if (userIds.length > 1) handleBatchDelete();
+          else if (userIds.length === 1) handleDeleteBox(userIds[0]);
+          return;
+        }
+
+        case "submit": handleSubmitTask(); return;
+
+        case "acceptAi": {
+          if (!s.selectedId) return;
+          const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
+          if (aiBox) handleAcceptPrediction(aiBox);
+          return;
+        }
+        case "rejectAi": {
+          if (!s.selectedId) return;
+          const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
+          if (aiBox) s.setSelectedId(null);
+          return;
+        }
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === " ") setSpacePan(false);
-      if (ARROW_KEYS.has(e.key)) {
-        // 松开方向键 → 一次性 commit 全部 nudge
-        flushNudges();
-      }
+      if (ARROW_KEY_SET.has(e.key)) flushNudges();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKeyUp);
@@ -765,7 +815,7 @@ export function WorkbenchShell() {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: `${leftOpen ? "260px" : "32px"} 1fr ${rightOpen ? "280px" : "32px"}`,
+        gridTemplateColumns: `${leftOpen ? "260px" : "32px"} 48px 1fr ${rightOpen ? "280px" : "32px"}`,
         height: "100%", overflow: "hidden", background: "var(--color-bg-sunken)",
       }}
     >
@@ -787,6 +837,8 @@ export function WorkbenchShell() {
         onSelectTask={(id) => { s.setCurrentTaskId(id); s.setSelectedId(null); }}
       />
 
+      <ToolDock tool={s.tool} onSetTool={s.setTool} />
+
       <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {lockError && (
           <div
@@ -805,19 +857,11 @@ export function WorkbenchShell() {
 
         <Topbar
           task={task}
-          tool={s.tool}
-          scale={vp.scale}
+          taskIdx={taskIdx}
+          taskTotal={tasks.length}
           aiRunning={aiRunning}
           isSubmitting={submitTaskMut.isPending}
-          canUndo={history.canUndo}
-          canRedo={history.canRedo}
           confThreshold={s.confThreshold}
-          onSetTool={s.setTool}
-          onZoomOut={() => setVp((cur) => ({ ...cur, scale: Math.max(0.2, cur.scale / 1.2) }))}
-          onZoomIn={() => setVp((cur) => ({ ...cur, scale: Math.min(8, cur.scale * 1.2) }))}
-          onFit={() => setFitTick((n) => n + 1)}
-          onUndo={history.undo}
-          onRedo={history.redo}
           onShowHotkeys={() => setShowHotkeys(true)}
           onRunAi={handleRunAi}
           onPrev={() => navigateTask("prev")}
@@ -825,6 +869,7 @@ export function WorkbenchShell() {
           onSubmit={handleSubmitTask}
           onSmartNextOpen={() => smartNext("open")}
           onSmartNextUncertain={() => smartNext("uncertain")}
+          overflowSlot={<ThemeSwitcher />}
         />
 
         <ImageStage
@@ -854,8 +899,19 @@ export function WorkbenchShell() {
           onBatchDelete={handleBatchDelete}
           onBatchChangeClass={handleStartBatchChangeClass}
           onStageGeometry={setStageGeom}
+          polygonDraft={s.tool === "polygon" ? polygonHandle : undefined}
           overlay={
             <>
+              <FloatingDock
+                scale={vp.scale}
+                canUndo={history.canUndo}
+                canRedo={history.canRedo}
+                onUndo={history.undo}
+                onRedo={history.redo}
+                onZoomIn={() => setVp((cur) => ({ ...cur, scale: Math.min(8, cur.scale * 1.2) }))}
+                onZoomOut={() => setVp((cur) => ({ ...cur, scale: Math.max(0.2, cur.scale / 1.2) }))}
+                onFit={() => setFitTick((n) => n + 1)}
+              />
               {s.pendingDrawing && stageGeom.imgW > 0 && (
                 <ClassPickerPopover
                   geom={s.pendingDrawing.geom}

@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { Annotation, AnnotationResponse } from "@/types";
+import type { Annotation, AnnotationResponse, Geometry } from "@/types";
 import type { AnnotationPayload } from "@/api/tasks";
 
 interface UseClipboardArgs {
@@ -37,15 +37,30 @@ export function useClipboard({
     const cmds: { kind: "create"; annotationId: string; payload: AnnotationPayload }[] = [];
     const newIds: string[] = [];
     for (const b of sources) {
-      const payload: AnnotationPayload = {
-        annotation_type: "bbox",
-        class_name: b.cls,
-        geometry: {
+      let geometry: Geometry;
+      let annotationType: string;
+      if (b.polygon && b.polygon.length >= 3) {
+        // polygon：所有顶点整体平移；clamp 到 [0,1]
+        const translated: [number, number][] = b.polygon.map(([px, py]) => [
+          Math.max(0, Math.min(1, px + offX)),
+          Math.max(0, Math.min(1, py + offY)),
+        ]);
+        geometry = { type: "polygon", points: translated };
+        annotationType = "polygon";
+      } else {
+        geometry = {
+          type: "bbox",
           x: Math.max(0, Math.min(1 - b.w, b.x + offX)),
           y: Math.max(0, Math.min(1 - b.h, b.y + offY)),
           w: b.w,
           h: b.h,
-        },
+        };
+        annotationType = "bbox";
+      }
+      const payload: AnnotationPayload = {
+        annotation_type: annotationType,
+        class_name: b.cls,
+        geometry,
         confidence: 1,
       };
       try {

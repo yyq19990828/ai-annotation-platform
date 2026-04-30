@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import type { Annotation } from "@/types";
 
-export type Tool = "box" | "hand";
+export type Tool = "box" | "hand" | "polygon";
 
 export type Geom = { x: number; y: number; w: number; h: number };
 

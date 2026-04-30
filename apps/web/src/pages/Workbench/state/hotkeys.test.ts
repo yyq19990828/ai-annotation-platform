@@ -1,0 +1,132 @@
+import { describe, expect, it } from "vitest";
+import { dispatchKey, type DispatchCtx, type HotkeyAction } from "./hotkeys";
+
+const baseCtx: DispatchCtx = {
+  isInputFocused: false,
+  hasSelection: false,
+  pendingActive: false,
+};
+
+// 鸭子类型：dispatchKey 只读 key / *Key 修饰键，构造一个兼容 shape 即可，
+// 避免依赖 jsdom 等 DOM 环境。
+type FakeEvent = Pick<KeyboardEventInit, "ctrlKey" | "metaKey" | "shiftKey" | "altKey"> & { key: string };
+
+function dispatch(e: FakeEvent, ctx: Partial<DispatchCtx> = {}): HotkeyAction | null {
+  return dispatchKey(e as unknown as KeyboardEvent, { ...baseCtx, ...ctx });
+}
+
+describe("dispatchKey · 修饰键", () => {
+  it("Ctrl+Z → undo", () => {
+    expect(dispatch({ key: "z", ctrlKey: true })).toEqual({ type: "undo" });
+  });
+  it("Ctrl+Shift+Z → redo", () => {
+    expect(dispatch({ key: "z", ctrlKey: true, shiftKey: true })).toEqual({ type: "redo" });
+  });
+  it("Ctrl+Y → redo (备用)", () => {
+    expect(dispatch({ key: "y", ctrlKey: true })).toEqual({ type: "redo" });
+  });
+  it("Ctrl+0 → fitReset", () => {
+    expect(dispatch({ key: "0", ctrlKey: true })).toEqual({ type: "fitReset" });
+  });
+  it("Ctrl+ArrowRight → next task", () => {
+    expect(dispatch({ key: "ArrowRight", ctrlKey: true })).toEqual({ type: "navigateTask", dir: "next" });
+  });
+  it("Ctrl+A → selectAllUser", () => {
+    expect(dispatch({ key: "a", ctrlKey: true })).toEqual({ type: "selectAllUser" });
+  });
+  it("Ctrl+C / V / D → 剪贴板", () => {
+    expect(dispatch({ key: "c", ctrlKey: true })).toEqual({ type: "copy" });
+    expect(dispatch({ key: "v", ctrlKey: true })).toEqual({ type: "paste" });
+    expect(dispatch({ key: "d", ctrlKey: true })).toEqual({ type: "duplicate" });
+  });
+  it("Meta key 等价于 Ctrl（Mac）", () => {
+    expect(dispatch({ key: "z", metaKey: true })).toEqual({ type: "undo" });
+  });
+});
+
+describe("dispatchKey · 单键", () => {
+  it("B / V / P → setTool", () => {
+    expect(dispatch({ key: "b" })).toEqual({ type: "setTool", tool: "box" });
+    expect(dispatch({ key: "v" })).toEqual({ type: "setTool", tool: "hand" });
+    expect(dispatch({ key: "p" })).toEqual({ type: "setTool", tool: "polygon" });
+  });
+  it("数字键 1-9 → setClassByDigit", () => {
+    expect(dispatch({ key: "3" })).toEqual({ type: "setClassByDigit", idx: 2 });
+    expect(dispatch({ key: "9" })).toEqual({ type: "setClassByDigit", idx: 8 });
+  });
+  it("字母键（非保留）→ setClassByLetter", () => {
+    expect(dispatch({ key: "f" })).toEqual({ type: "setClassByLetter", letter: "f" });
+    expect(dispatch({ key: "z" })).toEqual({ type: "setClassByLetter", letter: "z" });
+  });
+  it("保留字母（v/b/a/d/e/n/u/j/k/c）走专用 action 而非 letter", () => {
+    expect(dispatch({ key: "n" })).toEqual({ type: "smartNext", mode: "open" });
+    expect(dispatch({ key: "u" })).toEqual({ type: "smartNext", mode: "uncertain" });
+    expect(dispatch({ key: "e" })).toEqual({ type: "submit" });
+  });
+  it("Tab / Shift+Tab → cycleUser loop", () => {
+    expect(dispatch({ key: "Tab" })).toEqual({ type: "cycleUser", dir: 1, loop: true });
+    expect(dispatch({ key: "Tab", shiftKey: true })).toEqual({ type: "cycleUser", dir: -1, loop: true });
+  });
+  it("J / K → cycleUser 不循环", () => {
+    expect(dispatch({ key: "j" })).toEqual({ type: "cycleUser", dir: 1, loop: false });
+    expect(dispatch({ key: "k" })).toEqual({ type: "cycleUser", dir: -1, loop: false });
+  });
+  it("[ / ] → 阈值微调", () => {
+    expect(dispatch({ key: "[" })).toEqual({ type: "thresholdAdjust", delta: -0.05 });
+    expect(dispatch({ key: "]" })).toEqual({ type: "thresholdAdjust", delta: 0.05 });
+  });
+  it("Delete / Backspace → deleteSelected", () => {
+    expect(dispatch({ key: "Delete" })).toEqual({ type: "deleteSelected" });
+    expect(dispatch({ key: "Backspace" })).toEqual({ type: "deleteSelected" });
+  });
+  it("Space → spacePanOn", () => {
+    expect(dispatch({ key: " " })).toEqual({ type: "spacePanOn" });
+  });
+  it("? → showHotkeys", () => {
+    expect(dispatch({ key: "?" })).toEqual({ type: "showHotkeys" });
+  });
+  it("Esc → cancel", () => {
+    expect(dispatch({ key: "Escape" })).toEqual({ type: "cancel" });
+  });
+});
+
+describe("dispatchKey · 上下文相关", () => {
+  it("input 聚焦时禁用所有 hotkey", () => {
+    expect(dispatch({ key: "b" }, { isInputFocused: true })).toBeNull();
+    expect(dispatch({ key: "z", ctrlKey: true }, { isInputFocused: true })).toBeNull();
+  });
+
+  it("popover 活跃时类别字母不消费", () => {
+    expect(dispatch({ key: "f" }, { pendingActive: true })).toBeNull();
+    // 但 Ctrl+Z 等系统级仍消费
+    expect(dispatch({ key: "z", ctrlKey: true }, { pendingActive: true })).toEqual({ type: "undo" });
+    // Esc 也仍消费
+    expect(dispatch({ key: "Escape" }, { pendingActive: true })).toEqual({ type: "cancel" });
+  });
+
+  it("无选中时 a/d 不映射为 acceptAi/rejectAi", () => {
+    expect(dispatch({ key: "a" }, { hasSelection: false })).toBeNull();
+    expect(dispatch({ key: "d" }, { hasSelection: false })).toBeNull();
+  });
+  it("有选中时 a/d → acceptAi/rejectAi", () => {
+    expect(dispatch({ key: "a" }, { hasSelection: true })).toEqual({ type: "acceptAi" });
+    expect(dispatch({ key: "d" }, { hasSelection: true })).toEqual({ type: "rejectAi" });
+  });
+
+  it("有选中时 c → changeClass", () => {
+    expect(dispatch({ key: "c" }, { hasSelection: true })).toEqual({ type: "changeClass" });
+  });
+  it("无选中时 c 不消费", () => {
+    expect(dispatch({ key: "c" })).toBeNull();
+  });
+
+  it("方向键 nudge 仅在有选中时映射", () => {
+    expect(dispatch({ key: "ArrowUp" })).toBeNull();
+    expect(dispatch({ key: "ArrowUp" }, { hasSelection: true })).toEqual({ type: "arrowNudge", dx: 0, dy: -1 });
+    expect(dispatch({ key: "ArrowRight" }, { hasSelection: true })).toEqual({ type: "arrowNudge", dx: 1, dy: 0 });
+  });
+  it("Shift + 方向键 → 10x 步长", () => {
+    expect(dispatch({ key: "ArrowDown", shiftKey: true }, { hasSelection: true }))
+      .toEqual({ type: "arrowNudge", dx: 0, dy: 10 });
+  });
+});

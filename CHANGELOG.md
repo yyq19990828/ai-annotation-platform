@@ -7,6 +7,61 @@
 ---
 
 
+## [0.5.3] - 2026-04-30
+
+### 新增
+
+#### C.2 工作台 UI 信息架构重构（ToolDock + FloatingDock + 三段 Topbar）
+- **左侧 ToolDock（垂直工具栏）**：新建 `apps/web/src/pages/Workbench/shell/ToolDock.tsx`，从 `tools/registry` 自动渲染按钮（icon + hotkey tooltip + active 高亮）。新增工具仅需在 `tools/` 注册并加入 `ALL_TOOLS`，外壳无需改动。
+- **画布右下 FloatingDock（悬浮工具岛）**：新建 `apps/web/src/pages/Workbench/shell/FloatingDock.tsx`，承载撤销 / 重做 / 缩放 / 缩放百分比 / 适应。锚定到画布容器左下角（避开右下 Minimap），与 Konva viewport 贴合。
+- **Topbar 三段重构**：原单行 9+ 控件挤爆 → grid `1fr auto 1fr` 三段：左 = 标题 + index 徽章 (`n / total`)；中 = 上一 / 提交质检 / 下一 / ⌄ 智能切题；右 = AI 一键预标 + ⋯ 溢出菜单（快捷键 + 主题切换）。1280px 单行不换行；行内元素 ≤ 8。
+- **WorkbenchShell 主 grid 调整**：`260/32 → 48 → 1fr → 280/32` 四列，ToolDock 始终 48px 不随侧栏折叠。
+
+#### C.2 暗色模式（与 B「主题切换」打底一并落地）
+- **`tokens.css [data-theme="dark"]` 块**：暗色覆盖 `--color-bg / -elev / -sunken / -hover / -panel`、`--color-fg / -muted / -subtle / -faint`、`--color-border / -strong`、accent / success / warning / danger / ai 系列（保持色相、提亮 lightness、降饱和度）、shadow（加深 alpha）、画布棋盘格新增 `--color-canvas-checker-a/b` 双 token。
+- **`useTheme` hook**：`light | dark | system` 三档，写 `<html data-theme>`，持久化到 `localStorage["anno.theme"]`，`system` 模式监听 `prefers-color-scheme` 自动切换。
+- **启动注入 `initThemeFromStorage()`**：`main.tsx` 在 `createRoot` 前应用初始主题，避免 first-paint 闪白。
+- **Topbar 溢出菜单 `<ThemeSwitcher>`**：三选一按钮组，亮色 / 暗色 / 跟随系统。
+
+#### C.1 Konva 分层 hit-detection
+- **`<ImageStage>` 拆 4 个 Layer**：`bg`（图像，`listening:false` 独立缓存）+ `ai`（AI 预测框）+ `user`（人工框 + 选中态）+ `overlay`（绘制预览 / pending 框 / polygon 草稿，`listening:false`）。user 框 move/resize 重绘不再连带触发 AI 层。
+
+#### C.3 多边形工具（polygon）
+- **数据模型升级 → discriminated union geometry**：`Annotation.geometry` / `PredictionShape.geometry` / `AnnotationPayload.geometry` 改为 `{type:'bbox',x,y,w,h} | {type:'polygon',points:[[x,y],...]}`。前端 `Annotation` 类型仍保留 `x/y/w/h`（包围盒）+ 新增可选 `polygon: [number, number][]`，对存量读 `.x/.y/.w/.h` 的代码路径完全兼容；polygon 包围盒由 `transforms.polygonBounds()` 自动派生。
+- **alembic 0011 migration**：一次性给存量 `annotations.geometry` 与 `predictions.result[*].geometry` 补 `type:"bbox"` 字段；downgrade 反向移除。
+- **后端 pydantic geometry validator**：`AnnotationCreate` / `AnnotationUpdate` 加 `field_validator`，校验 bbox 必有 x/y/w/h、polygon 必有 ≥ 3 个 `[x,y]` 顶点；兼容旧客户端无 type 时按 bbox 处理。
+- **`PolygonTool`（hotkey `P`）**：实现 `CanvasTool` 接口；左键逐点落点 / 距首点 < 0.008 自动闭合 / 双击或 Enter 闭合 / Esc 取消 / Backspace 撤销最后一点。`onPointerDown` 通过 `ToolPointerContext.polygonDraft` 句柄 mutate Shell 维护的草稿状态，不走 setDrag 路径。
+- **画布渲染**：新增 `KonvaPolygon` 组件（Konva `Line closed=true` + 半透明填充 + 标签锚到第一个顶点）；ImageStage user/AI 层按 `b.polygon` 存在条件分流到 KonvaBox 或 KonvaPolygon。overlay 层渲染 polygon 草稿：已落点 + 跟随光标的预览段 + 顶点圆点 + 首点高亮（提示可闭合）。
+- **复用流程**：`useClipboard` 解耦硬编码 `annotation_type:"bbox"`，按 source 是否含 polygon 分流：polygon 整体平移所有点；history `useAnnotationHistory` 命令模式已抽象 `AnnotationPayload`，无需改动；`iou.ts` 新增 `iouShape()` 形状无关入口（polygon 暂走包围盒近似，TODO 后续接 polygon-clipping）。
+- **限定**：v0.5.3 polygon MVP = 创建 / 渲染 / 删除 / 改类别 / 撤销重做。**顶点拖动 / Alt+点击边新增顶点 / Shift+点击删除顶点 / 自相交校验 / polygon-vs-bbox/polygon 精确 IoU** 留 v0.5.4+。
+
+#### Phase 1 · 工具层抽离（多工具基础设施）
+- **`tools/index.ts` 接口激活**：`CanvasTool` 接口扩展 `label / icon / cursor` + `onPointerDown(ctx) → DragInit | null`；`TOOL_REGISTRY` 与 `ALL_TOOLS` 导出。新增 `BboxTool.ts` / `HandTool.ts` / `PolygonTool.ts` 独立模块。
+- **`ImageStage.handleStageMouseDown` 改为委派**：从 if-else 工具分支 → `TOOL_REGISTRY[tool].onPointerDown(ctx)`，spacePan 时强制走 hand 工具。Drag init 类型 `{kind:'draw'|'pan'}`。
+- **`hotkeys.ts` 加 `dispatchKey()` 纯函数**：把键盘事件 + 简单 ctx 映射为 `HotkeyAction` 离散指令；WorkbenchShell 大 useEffect 改为 `switch (action.type)`。新增 `apps/web/src/pages/Workbench/state/hotkeys.test.ts`（27 例），覆盖修饰键 / 单键 / 上下文相关三组分支。
+- **快捷键补齐**：`P` = 多边形工具；`Enter` 闭合 polygon；`Backspace` 在 polygon 草稿态删最后一点（其余态删除选中框）。HotkeyCheatSheet 同步。
+
+### 测试 / 工程
+
+- **vitest 33 例全绿**（v0.5.2 = 6 例 IoU；v0.5.3 = +27 例 hotkey dispatch）。
+- **`tsc -b` 全绿**：geometry discriminated union 升级未泄漏到任何调用点（通过 `bboxGeom() / polygonGeom()` 包装 helper 局部化）。
+
+### 调整 / 重构
+
+- `Topbar.tsx` props 大幅精简：移除 `tool / scale / canUndo / canRedo / onSetTool / onZoom* / onUndo / onRedo`（已迁出到 ToolDock + FloatingDock）；新增 `taskIdx / taskTotal / overflowSlot`。
+- `useWorkbenchState` 的 `Tool` 联合类型扩展：`"box" | "hand"` → `"box" | "hand" | "polygon"`。
+- `transforms.ts` 新增 `bboxGeom() / polygonGeom() / polygonBounds() / geometryToShape()` 工具函数；`annotationToBox / predictionsToBoxes` 内部统一走 `geometryToShape` 派生包围盒。
+- `useClipboard.ts:41` 删除硬编码 `annotation_type:"bbox"`；payload 形状按 source 形状自适应。
+
+### 已知限制
+
+- **polygon 顶点拖动 / 编辑 / 自相交校验** 留 v0.5.4。
+- **polygon 精确 IoU** 暂用包围盒近似（视觉去重场景精度足够；TODO 接入 polygon-clipping 库）。
+- **AI 模型当前不输出 polygon predictions**（GroundingDINO 只 bbox）；polygon 主要服务手工标。后续 SAM 接入会自然填补。
+
+---
+
+
 ## [0.5.2] - 2026-04-30
 
 ### 新增

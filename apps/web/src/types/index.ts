@@ -71,14 +71,22 @@ export interface TaskResponse {
 
 // ── Annotation ──────────────────────────────────────────────────────────────
 
+/** Discriminated union: 形状自描述。v0.5.3 起新增 polygon。后续可扩展 keypoint / mask / cuboid。 */
+export type BboxGeometry = { type: "bbox"; x: number; y: number; w: number; h: number };
+export type PolygonGeometry = { type: "polygon"; points: [number, number][] };
+export type Geometry = BboxGeometry | PolygonGeometry;
+
 export interface AIBox {
   id: string;
+  /** bounding rect — 对所有形状都填，方便列表/Minimap/IoU 近似/选中浮条锚点。 */
   x: number;
   y: number;
   w: number;
   h: number;
   cls: string;
   conf: number;
+  /** polygon 形状时填具体顶点（归一化坐标）。bbox 时为 undefined。 */
+  polygon?: [number, number][];
 }
 
 export interface Annotation extends AIBox {
@@ -95,7 +103,7 @@ export interface AnnotationResponse {
   source: string;
   annotation_type: string;
   class_name: string;
-  geometry: { x: number; y: number; w: number; h: number };
+  geometry: Geometry;
   confidence: number | null;
   parent_prediction_id: string | null;
   parent_annotation_id: string | null;
@@ -111,7 +119,7 @@ export interface AnnotationResponse {
 export interface PredictionShape {
   type: string;
   class_name: string;
-  geometry: { x: number; y: number; w: number; h: number };
+  geometry: Geometry;
   confidence: number;
 }
 
