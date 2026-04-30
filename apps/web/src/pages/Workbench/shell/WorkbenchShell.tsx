@@ -19,6 +19,7 @@ import type { TaskResponse, AnnotationResponse } from "@/types";
 import { useWorkbenchState } from "../state/useWorkbenchState";
 import { useViewportTransform } from "../state/useViewportTransform";
 import { useAnnotationHistory } from "../state/useAnnotationHistory";
+import { useRecentClasses } from "../state/useRecentClasses";
 import { annotationToBox, predictionsToBoxes, type AiBox } from "../state/transforms";
 import { ImageStage } from "../stage/ImageStage";
 import { Topbar } from "./Topbar";
@@ -26,6 +27,10 @@ import { TaskQueuePanel } from "./TaskQueuePanel";
 import { AIInspectorPanel } from "./AIInspectorPanel";
 import { StatusBar } from "./StatusBar";
 import { HotkeyCheatSheet } from "./HotkeyCheatSheet";
+import { ClassPickerPopover } from "./ClassPickerPopover";
+import { Minimap } from "../stage/Minimap";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { WorkbenchSkeleton } from "./WorkbenchSkeleton";
 
 type Geom = { x: number; y: number; w: number; h: number };
 
@@ -51,6 +56,9 @@ export function WorkbenchShell() {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [spacePan, setSpacePan] = useState(false);
   const [showHotkeys, setShowHotkeys] = useState(false);
+  const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
+  const isNarrow = useMediaQuery("(max-width: 1024px)");
+  const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(routeId);
 
   // 阈值防抖：滑动时前端即时过滤，300ms 后触发服务端查询
   const [debouncedConf, setDebouncedConf] = useState(s.confThreshold);
@@ -75,21 +83,30 @@ export function WorkbenchShell() {
   }, [tasks, s.currentTaskId]);
 
   useEffect(() => {
-    if (classes.length > 0) s.setActiveClass(classes[0]);
+    // 默认选最近使用过的类（如果该项目存在），否则取首个
+    if (classes.length > 0) {
+      const fallback = recentClasses.find((c) => classes.includes(c)) ?? classes[0];
+      s.setActiveClass(fallback);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const { data: annotationsData } = useAnnotations(taskId);
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
-  const { data: predictionsData } = usePredictions(taskId, undefined, debouncedConf);
+  const predictionsInfinite = usePredictions(taskId, undefined, debouncedConf);
+  const predictionsPages = predictionsInfinite.data?.pages ?? [];
+  const predictionsData = useMemo(
+    () => predictionsPages.flatMap((p) => p),
+    [predictionsPages],
+  );
 
   const userBoxes = useMemo(
     () => (annotationsData ?? []).map(annotationToBox),
     [annotationsData],
   );
   const allAiBoxes = useMemo(
-    () => predictionsToBoxes(predictionsData ?? []),
+    () => predictionsToBoxes(predictionsData),
     [predictionsData],
   );
   const aiBoxes = useMemo(
@@ -115,13 +132,17 @@ export function WorkbenchShell() {
 
   const queryClient = useQueryClient();
 
-  // 预取相邻题的 annotations / predictions / 图像
+  // 预取相邻题的 annotations / 第一页 predictions / 图像
   useEffect(() => {
     const idx = tasks.findIndex((t) => t.id === taskId);
     const prefetch = (t: TaskResponse | undefined) => {
       if (!t) return;
       queryClient.prefetchQuery({ queryKey: ["annotations", t.id], queryFn: () => tasksApi.getAnnotations(t.id) });
-      queryClient.prefetchQuery({ queryKey: ["predictions", t.id, undefined, debouncedConf], queryFn: () => predictionsApi.listByTask(t.id, undefined, debouncedConf) });
+      queryClient.prefetchInfiniteQuery({
+        queryKey: ["predictions", t.id, undefined, debouncedConf, 100],
+        initialPageParam: 0,
+        queryFn: () => predictionsApi.listByTask(t.id, undefined, debouncedConf, 100, 0),
+      });
       if (t.file_url) {
         const img = new Image();
         img.src = t.file_url;
@@ -221,20 +242,74 @@ export function WorkbenchShell() {
     );
   }, [projectId, aiModel, taskId, triggerPreannotation, pushToast]);
 
+  // 画完框 → 进入待选类别 pending 态。class 由 ClassPickerPopover 选定后才落库。
   const handleCommitDrawing = useCallback((geo: Geom) => {
+    s.setPendingDrawing({ geom: geo });
+  }, [s]);
+
+  const handlePickPendingClass = useCallback((cls: string) => {
+    const pending = s.pendingDrawing;
+    if (!pending || !cls) return;
     const payload = {
       annotation_type: "bbox",
-      class_name: s.activeClass,
-      geometry: geo,
+      class_name: cls,
+      geometry: pending.geom,
       confidence: 1,
     };
+    s.setPendingDrawing(null);
+    s.setActiveClass(cls);
+    recordRecentClass(cls);
     createAnnotation.mutate(payload, {
       onSuccess: (newAnnotation) => {
         s.setSelectedId(newAnnotation.id);
         history.push({ kind: "create", annotationId: newAnnotation.id, payload });
       },
     });
-  }, [createAnnotation, history, s]);
+  }, [s, createAnnotation, history, recordRecentClass]);
+
+  const handleCancelPending = useCallback(() => {
+    s.setPendingDrawing(null);
+  }, [s]);
+
+  // 已落库 user 框 → 改类别
+  const handleStartChangeClass = useCallback((annotationId: string) => {
+    const ann = annotationsRef.current.find((a) => a.id === annotationId);
+    if (!ann) return;
+    s.setEditingClass({
+      annotationId,
+      geom: ann.geometry as Geom,
+      currentClass: ann.class_name,
+    });
+  }, [s]);
+
+  const handleCommitChangeClass = useCallback((cls: string) => {
+    const editing = s.editingClass;
+    if (!editing || !cls || cls === editing.currentClass) {
+      s.setEditingClass(null);
+      return;
+    }
+    const before = { class_name: editing.currentClass };
+    const after = { class_name: cls };
+    s.setEditingClass(null);
+    s.setActiveClass(cls);
+    recordRecentClass(cls);
+    updateAnnotationMut.mutate(
+      { annotationId: editing.annotationId, payload: after },
+      {
+        onSuccess: () => {
+          history.push({
+            kind: "update", annotationId: editing.annotationId,
+            before, after,
+          });
+          pushToast({ msg: `已改为 ${cls}`, kind: "success" });
+        },
+      },
+    );
+  }, [s, updateAnnotationMut, history, pushToast, recordRecentClass]);
+
+  const handleCancelChangeClass = useCallback(() => {
+    s.setEditingClass(null);
+  }, [s]);
 
   const handleCommitMove = useCallback((id: string, before: Geom, after: Geom) => {
     updateAnnotationMut.mutate({ annotationId: id, payload: { geometry: after } }, {
@@ -303,15 +378,30 @@ export function WorkbenchShell() {
       if (e.key === "?") { setShowHotkeys(true); return; }
       if (e.key === "Escape") {
         if (showHotkeys) { setShowHotkeys(false); return; }
+        if (s.pendingDrawing) { s.setPendingDrawing(null); return; }
+        if (s.editingClass) { s.setEditingClass(null); return; }
         s.setSelectedId(null);
         return;
+      }
+      // pendingDrawing / editingClass 时类别按键由 popover 自己消费，不再切换 default
+      if (s.pendingDrawing || s.editingClass) return;
+      // C 键：选中 user 框时 → 改类别
+      if ((e.key === "c" || e.key === "C") && s.selectedId) {
+        const ann = annotationsRef.current.find((a) => a.id === s.selectedId);
+        if (ann) { handleStartChangeClass(s.selectedId); return; }
       }
       if (e.key === "v" || e.key === "V") { s.setTool("hand"); return; }
       if (e.key === "b" || e.key === "B") { s.setTool("box"); return; }
       if (e.key >= "1" && e.key <= "9") {
         const idx = parseInt(e.key) - 1;
-        if (classes[idx]) s.setActiveClass(classes[idx]);
+        if (classes[idx]) { s.setActiveClass(classes[idx]); recordRecentClass(classes[idx]); }
         return;
+      }
+      // 字母 a-z 切换默认类别（第 10 类起）
+      if (/^[a-z]$/i.test(e.key) && !["v", "V", "b", "B", "a", "A", "d", "D", "e", "E"].includes(e.key)) {
+        const letterIdx = e.key.toLowerCase().charCodeAt(0) - "a".charCodeAt(0);
+        const idx = 9 + letterIdx;
+        if (classes[idx]) { s.setActiveClass(classes[idx]); recordRecentClass(classes[idx]); return; }
       }
       if (e.key === "Delete" || e.key === "Backspace") {
         if (s.selectedId) handleDeleteBox(s.selectedId);
@@ -342,15 +432,11 @@ export function WorkbenchShell() {
     };
   }, [
     classes, s, history, navigateTask, handleDeleteBox, handleSubmitTask,
-    handleAcceptPrediction, aiBoxes, showHotkeys,
+    handleAcceptPrediction, aiBoxes, showHotkeys, recordRecentClass, handleStartChangeClass,
   ]);
 
   if (isProjectLoading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--color-fg-muted)", fontSize: 14 }}>
-        加载项目中...
-      </div>
-    );
+    return <WorkbenchSkeleton />;
   }
 
   if (!currentProject) {
@@ -373,20 +459,25 @@ export function WorkbenchShell() {
     );
   }
 
+  // 窄屏强制收两侧
+  const leftOpen = isNarrow ? false : s.leftOpen;
+  const rightOpen = isNarrow ? false : s.rightOpen;
+
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: `${s.leftOpen ? "260px" : "32px"} 1fr ${s.rightOpen ? "280px" : "32px"}`,
+        gridTemplateColumns: `${leftOpen ? "260px" : "32px"} 1fr ${rightOpen ? "280px" : "32px"}`,
         height: "100%", overflow: "hidden", background: "var(--color-bg-sunken)",
       }}
     >
       <TaskQueuePanel
-        open={s.leftOpen}
+        open={leftOpen}
         projectName={projectName}
         projectDisplayId={projectDisplayId}
         classes={classes}
         activeClass={s.activeClass}
+        recentClasses={recentClasses}
         tasks={tasks}
         taskId={taskId}
         taskIdx={taskIdx}
@@ -395,7 +486,7 @@ export function WorkbenchShell() {
         onFetchNextPage={fetchNextPage}
         onBack={onBack}
         onToggle={() => s.setLeftOpen(!s.leftOpen)}
-        onSetActiveClass={s.setActiveClass}
+        onSetActiveClass={(c) => { s.setActiveClass(c); recordRecentClass(c); }}
         onSelectTask={(id) => { s.setCurrentTaskId(id); s.setSelectedId(null); }}
       />
 
@@ -438,6 +529,7 @@ export function WorkbenchShell() {
 
         <ImageStage
           fileUrl={task?.file_url ?? null}
+          blurhash={task?.blurhash ?? null}
           tool={s.tool}
           activeClass={s.activeClass}
           selectedId={s.selectedId}
@@ -447,6 +539,7 @@ export function WorkbenchShell() {
           vp={vp}
           setVp={setVp}
           fitTick={fitTick}
+          pendingDrawing={s.pendingDrawing}
           onSelectBox={s.setSelectedId}
           onAcceptPrediction={handleAcceptPrediction}
           onDeleteUserBox={handleDeleteBox}
@@ -454,6 +547,50 @@ export function WorkbenchShell() {
           onCommitMove={handleCommitMove}
           onCommitResize={handleCommitResize}
           onCursorMove={setCursor}
+          onChangeUserBoxClass={handleStartChangeClass}
+          onStageGeometry={setStageGeom}
+          overlay={
+            <>
+              {s.pendingDrawing && stageGeom.imgW > 0 && (
+                <ClassPickerPopover
+                  geom={s.pendingDrawing.geom}
+                  imgW={stageGeom.imgW}
+                  imgH={stageGeom.imgH}
+                  vp={vp}
+                  classes={classes}
+                  recent={recentClasses}
+                  defaultClass={s.activeClass}
+                  onPick={handlePickPendingClass}
+                  onCancel={handleCancelPending}
+                />
+              )}
+              {s.editingClass && stageGeom.imgW > 0 && !s.pendingDrawing && (
+                <ClassPickerPopover
+                  geom={s.editingClass.geom}
+                  imgW={stageGeom.imgW}
+                  imgH={stageGeom.imgH}
+                  vp={vp}
+                  classes={classes}
+                  recent={recentClasses}
+                  defaultClass={s.editingClass.currentClass}
+                  title={`改类别 (当前: ${s.editingClass.currentClass})`}
+                  onPick={handleCommitChangeClass}
+                  onCancel={handleCancelChangeClass}
+                />
+              )}
+              {stageGeom.imgW > 0 && stageGeom.vpSize.w > 0 && (
+                <Minimap
+                  imgW={stageGeom.imgW}
+                  imgH={stageGeom.imgH}
+                  vpSize={stageGeom.vpSize}
+                  vp={vp}
+                  setVp={setVp}
+                  thumbnailUrl={task?.thumbnail_url ?? null}
+                  fileUrl={task?.file_url ?? null}
+                />
+              )}
+            </>
+          }
         />
 
         <StatusBar
@@ -470,7 +607,7 @@ export function WorkbenchShell() {
       </div>
 
       <AIInspectorPanel
-        open={s.rightOpen}
+        open={rightOpen}
         aiModel={aiModel}
         aiRunning={aiRunning}
         aiBoxes={aiBoxes}
@@ -480,6 +617,9 @@ export function WorkbenchShell() {
         aiTakeoverRate={aiTakeoverRate}
         imageWidth={imageWidth}
         imageHeight={imageHeight}
+        hasMorePredictions={!!predictionsInfinite.hasNextPage}
+        isFetchingMorePredictions={predictionsInfinite.isFetchingNextPage}
+        onFetchMorePredictions={() => predictionsInfinite.fetchNextPage()}
         onToggle={() => s.setRightOpen(!s.rightOpen)}
         onRunAi={handleRunAi}
         onAcceptAll={handleAcceptAll}
@@ -488,6 +628,7 @@ export function WorkbenchShell() {
         onAcceptPrediction={handleAcceptPrediction}
         onClearSelection={() => s.setSelectedId(null)}
         onDeleteUserBox={handleDeleteBox}
+        onChangeUserBoxClass={handleStartChangeClass}
       />
 
       <HotkeyCheatSheet open={showHotkeys} onClose={() => setShowHotkeys(false)} />

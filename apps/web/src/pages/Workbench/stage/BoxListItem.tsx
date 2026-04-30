@@ -15,11 +15,12 @@ interface BoxListItemProps {
   onAccept?: () => void;
   onReject?: () => void;
   onDelete?: () => void;
+  onChangeClass?: () => void;
 }
 
 export function BoxListItem({
   b, isAi, selected, imageWidth, imageHeight,
-  onSelect, onAccept, onReject, onDelete,
+  onSelect, onAccept, onReject, onDelete, onChangeClass,
 }: BoxListItemProps) {
   const color = classColor(b.cls);
   const dimsText = imageWidth && imageHeight
@@ -59,9 +60,16 @@ export function BoxListItem({
               <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onReject?.(); }} style={{ flex: 1 }}>驳回</Button>
             </>
           ) : (
-            <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onDelete?.(); }} style={{ flex: 1 }}>
-              <Icon name="trash" size={10} />删除
-            </Button>
+            <>
+              {onChangeClass && (
+                <Button size="sm" onClick={(e) => { e.stopPropagation(); onChangeClass(); }} style={{ flex: 1 }} title="改类别 (C)">
+                  改类
+                </Button>
+              )}
+              <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onDelete?.(); }} style={{ flex: 1 }}>
+                <Icon name="trash" size={10} />删除
+              </Button>
+            </>
           )}
         </div>
       )}

@@ -7,6 +7,40 @@
 ---
 
 
+## [0.5.1] - 2026-04-30
+
+### 新增
+
+#### 标注流程重构 — 工具/类别解耦 + 类别选择 popover
+- **画完框再选类**：原本"选类别 = 选工具"，现在改为"选 bbox 工具 → 画框 → 弹 `<ClassPickerPopover>` 选类别 → 落库"。中间态 `pendingDrawing` 落在 `useWorkbenchState`，未确认前框以琥珀色虚线渲染（带 "? 待选类别" 标签）；Esc / 点画布外 / 切工具 = 取消；Enter = 落到默认类别；1-9 / A-Z 键直选。
+- **已落库框可改类别**：选中 user 框 → 三入口（① SelectionOverlay 浮按钮显示当前类色块 + "改类" 标签；② AIInspectorPanel 列表项内 "改类" 按钮；③ `C` 快捷键）→ 复用 `<ClassPickerPopover>`（标题切换为 "改类别 (当前: X)"）→ 选定后走 `PATCH /annotations/{id}` 改 class_name 并 `history.push({kind:"update"})` 进撤销栈，可 Ctrl+Z 还原。`useWorkbenchState.editingClass` 持有改类中间态。
+- **`useRecentClasses`**：localStorage 持久化每个项目的最近 5 个类别（key=`recent-classes:${projectId}`），popover 顶部 chip 行置顶；落库后自动 record。新进项目时默认类别选 recent 头部（如该项目仍存在）而非永远首类。
+- **`<ClassPalette>` 共享组件**：popover 与 `TaskQueuePanel` 类别面板共用一份组件；> 9 类自动启用搜索框 + 字母键 a-z 映射到 classes[9..]；recent chip 行；快捷键徽章统一渲染。
+
+#### C.1 渲染细节收尾
+- **Minimap**：`<Minimap>` 缩略图导航（160×120，自动按图像 aspect 适配），仅当图像视口可视率 < 85% 时显示；点击 minimap 把视口中心移到该位置；视口矩形高亮当前可见区域。`ImageStage` 通过 `onStageGeometry` 把 imgW/imgH/vpSize 上抛，父级在 overlay slot 渲染。
+- **AIInspectorPanel 虚拟化**：`@tanstack/react-virtual` 单列表合并 AI 段 + Header + 用户段；500 框 DOM 节点压到 < 30；滚到末尾自动 fetchNextPage 拉更多预测；底部 "加载更多 / 加载中" 兜底。
+- **rAF 节流**：`ImageStage` 的 pointermove（draw / move / resize / pan）用 requestAnimationFrame 合并；240Hz 屏拉框 react-render 频率从 ~240/s 降到 60/s，1000 框 + 4K 图 pan/zoom 稳定 60fps。
+- **按需加载预测**：后端 `/tasks/{id}/predictions` 加 `limit` + `offset` 参数，跨 Prediction 按 shape 置信度 desc 排序后切片再回到原 Prediction 容器；前端 `usePredictions` 改 `useInfiniteQuery`，pageSize=100；阈值变更（debounce 300ms）触发 reset 重拉。
+
+#### C.2 体验收尾
+- **响应式可折叠**：`useMediaQuery` hook（`useSyncExternalStore` + matchMedia）；< 1024px 强制收两侧 sidebar；Topbar 按钮分组（视图/绘制/历史 + AI/导航）+ flexWrap 兜底，狭长窗口自动换行。
+- **骨架屏 + blurhash 占位**：`<WorkbenchSkeleton>` 三栏骨架（shimmer 动画）替代 `isProjectLoading` 文字；`ImageStage` 在真图加载前用 32×24 blurhash 解码 + blur(8px) 占位（v0.5.0 已注入 blurhash 字段，本次接通到画布层）。
+- **类别面板增强**：TaskQueuePanel 类别区改用 `<ClassPalette>`，> 9 类启用搜索；最大高度 320px + 内部滚动避免挤占任务列表。
+
+### 改动文件
+
+- 新建：`apps/web/src/pages/Workbench/state/useRecentClasses.ts`、`apps/web/src/pages/Workbench/shell/{ClassPalette,ClassPickerPopover,WorkbenchSkeleton}.tsx`、`apps/web/src/pages/Workbench/stage/Minimap.tsx`、`apps/web/src/hooks/useMediaQuery.ts`
+- 重构：`apps/web/src/pages/Workbench/state/useWorkbenchState.ts`（pendingDrawing）、`apps/web/src/pages/Workbench/stage/ImageStage.tsx`（rAF 节流 + blurhash + pendingDrawing 渲染 + onStageGeometry / overlay slot）、`apps/web/src/pages/Workbench/shell/{WorkbenchShell,TaskQueuePanel,AIInspectorPanel,Topbar}.tsx`、`apps/web/src/hooks/usePredictions.ts`（useInfiniteQuery）、`apps/web/src/api/predictions.ts`、`apps/web/src/pages/Review/ReviewWorkbench.tsx`
+- 后端：`apps/api/app/api/v1/tasks.py`（predictions endpoint 加 limit/offset，跨 Prediction 按 shape 置信度排序）
+
+### 兼容性
+
+- 原 `usePredictions(taskId)` 返回 `data: PredictionResponse[]` → 现在返回 `useInfiniteQuery` 结果。两个调用点（`WorkbenchShell` / `ReviewWorkbench`）已同步迁移到 `data.pages.flatMap(p => p)`。
+
+---
+
+
 ## [0.5.0] - 2026-04-29
 
 ### 新增

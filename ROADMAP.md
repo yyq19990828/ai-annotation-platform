@@ -123,13 +123,13 @@
 
 - ~~**画布引擎切换**：当前每个 box 是 `<BoxOverlay>` div（`stage/BoxRenderer.tsx`），DOM 节点数 = 框数 × ~5；超过 200 框肉眼掉帧，超过 500 框开始卡顿。引入 **Konva**（推荐，与 React 友好，配合 `react-konva`）或 PixiJS（极致性能但门槛高）；保留 DOM 浮层只承接选中框的操作菜单（accept/reject/resize）。
   - 验收：1000 框 + 4K 图，pan/zoom @ 60fps；首帧 < 80ms。~~ ✅ v0.5.0 已完成（react-konva@18 Stage/Layer/Rect；SelectionOverlay HTML 浮层；BboxTool/HandTool 接口抽象；classColorForCanvas oklch→hex 兼容）
-- **图像加载流水线**：`<img src={file_url}>` 朴素加载（`stage/ImageBackdrop.tsx`），切下一题白屏可见。补：① `dataset_items` 增 `thumbnail_url` + `blurhash`，前端先显示低清占位，再用 `<img loading="eager" decoding="async">` 切换；② `useTasks` 队列里**预取下一题**的 image / annotations / predictions（`queryClient.prefetchQuery`）；③ 大图（> 4096 px 边长 / RS 卫星 / 病理切片）走 OpenSeadragon / DeepZoom 瓦片金字塔。
-- ~~**真正的视口缩放与平移**~~ ✅ v0.4.9：`stage/ImageStage.tsx` 已用 `transform: translate(tx,ty) scale(s)`；`Ctrl + wheel` 光标锚点缩放、`Space + drag` 平移、双击 fit、`Ctrl+0` 重置全部就位；`useViewportTransform` hook 收敛 vp 状态。**Minimap 待后续。**
-- **绘制 / 拖拽节流**：`onCanvasMouseMove` 每像素 setState（`stage/ImageStage.tsx`），高分辨屏 240Hz 时炸 React。用 `requestAnimationFrame` 合并 + ref 写入避免 setState 抖动。
+- ~~**图像加载流水线**：`<img src={file_url}>` 朴素加载，切下一题白屏可见。~~ ✅ v0.5.0 / v0.5.1：`dataset_items` thumbnail_url + blurhash 字段已落（v0.5.0），切题预取下一题 annotations / predictions / 图像（`WorkbenchShell.tsx` prefetchQuery，v0.5.0），ImageStage 在真图加载前以 blurhash 32×24 解码 + blur(8px) 占位（v0.5.1 BlurhashLayer）。**OpenSeadragon 瓦片金字塔仍待后续**（极大图场景才必要）。
+- ~~**真正的视口缩放与平移**~~ ✅ v0.4.9 / v0.5.1：`stage/ImageStage.tsx` 已用 Konva scale/translate；`Ctrl + wheel` 光标锚点缩放、`Space + drag` 平移、双击 fit、`Ctrl+0` 重置；`useViewportTransform` hook 收敛 vp 状态。✅ v0.5.1 **Minimap 已落**（`stage/Minimap.tsx`，160×120 缩略图导航，仅当图像可视率 < 85% 时显示）。
+- ~~**绘制 / 拖拽节流**：`onCanvasMouseMove` 每像素 setState，高分辨屏 240Hz 时炸 React。~~ ✅ v0.5.1：`ImageStage` 的 pointermove（draw / move / resize / pan）用 `requestAnimationFrame` 合并；240Hz 屏 react-render 从 ~240/s 降到 60/s。
 - ~~**任务列表虚拟化**：`useTaskList` 一次拉全（默认 limit=100，但真实项目 5k+ 任务时左侧 `tasks.map` 直接卡死，`shell/TaskQueuePanel.tsx`）。改为 `react-virtualized` / `@tanstack/react-virtual` + 后端游标分页（与 B.「Audit / Task / Annotation 列表 keyset 分页」共用）。~~ ✅ v0.5.0 已完成（useInfiniteQuery + @tanstack/react-virtual 固定高度虚拟列表，5k 任务顺滑滚动）
-- **标注列表虚拟化**：右侧 `aiBoxes.map` + `userBoxes.map`（`shell/AIInspectorPanel.tsx`）同样需要虚拟化。
+- ~~**标注列表虚拟化**：右侧 `aiBoxes.map` + `userBoxes.map` 同样需要虚拟化。~~ ✅ v0.5.1：`AIInspectorPanel` 单 virtualizer 合并 AI 段 + Header + 用户段；500 框 DOM 节点 < 30；滚到末尾自动 fetchNextPage。
 - ~~**置信度阈值服务端化**：当前 `aiBoxes.filter(b => b.conf >= confThreshold)` 仅前端过滤（`shell/WorkbenchShell.tsx`），全量预测仍走网络。`GET /tasks/{id}/predictions?min_confidence=0.5` 查询参数下推；阈值变更带防抖。~~ ✅ v0.5.0 已完成（`min_confidence` query 参数下推后端过滤，前端 debounce 300ms 重查询）
-- **按需加载预测**：当前任务一打开就拉全部 prediction；可改成「默认只拉 conf ≥ 0.5 的 top N，滚动右侧 AI 列表时再加载更低分」。
+- ~~**按需加载预测**：默认只拉 conf ≥ 0.5 的 top N，滚动右侧 AI 列表时再加载更低分。~~ ✅ v0.5.1：后端 `/tasks/{id}/predictions` 加 limit/offset，跨 Prediction 按 shape conf desc 切片；前端 `useInfiniteQuery` pageSize=100；阈值变更触发 reset 重拉。
 - ~~**WebSocket 重连 + 心跳**：与 A 的「WebSocket 重连」合并，但要在 Workbench 状态栏暴露连接指示（断开时变灰提示「实时进度暂停」）。~~ ✅ v0.5.0 已完成（StatusBar WS 连接灯绿/橙/灰 + 「实时同步 / 重连中 / 实时进度暂停」文案）
 
 #### C.2 界面优化（信息架构 / 可见性 / 一致性）
@@ -138,15 +138,17 @@
 - ~~**审核批量操作**~~ ✅ v0.4.9：每行 checkbox + 顶部浮条「批量通过 (N)」「批量退回 (N)」；退回弹 `<RejectReasonModal>` 选预设原因（类别错误 / 漏标 / 位置不准 / 框过大或过小 / 自定义）；进度聚合 toast。
 - ~~**快捷键速查面板**~~ ✅ v0.4.9：`?` 弹 `<HotkeyCheatSheet>`，所有快捷键定义集中在 `state/hotkeys.ts` 一份 SoT；当前覆盖：V/B/1-9 类别、Ctrl+Z/Y/Shift+Z 撤销重做、A/D 采纳驳回、E 提交、Ctrl+→/← 切题、Ctrl+0 fit、Ctrl+wheel 缩放、Space+drag 平移。**Tab/Shift+Tab 切框、J/K 上下框、`[` `]` 调阈值待后续。**
 - ~~**状态栏真实化**~~ ✅ v0.4.9：`dataset_items.width / height` 列已加（migration 0008）；`TaskOut.image_width / image_height` 透出；`StatusBar` 真实尺寸 + 光标坐标；`BoxListItem` 像素值同样基于真实尺寸。**存量数据需调 `POST /datasets/{id}/backfill-dimensions` 回填。**
-- **类别面板增强**：① 颜色已支持 `> 5` 类自动从 OKLCH 色环按 hash 派生（v0.4.9，`stage/colors.ts`），仍未上后端 `Project.classes_palette` 持久化；② 类别 > 9 个时支持搜索 + 字母键映射；③ 拖动重排顺序；④ 「最近使用」置顶 — 待后续。
-- **响应式 / 可折叠**：当前 `gridTemplateColumns` 在 < 1280px 下两侧面板会挤压画布。补：① < 1024px 自动收起一侧；② 把工具栏分组为「视图 / 绘制 / AI / 导航」并溢出折叠到「⋯」菜单；③ 移动端只读模式（标注员现场用 iPad 看图）。
-- **空状态 / 加载骨架**：`isProjectLoading` 时只是文字「加载项目中...」（`shell/WorkbenchShell.tsx`），换成画布 + 任务列表的 skeleton；图像加载阶段叠 blurhash 而不是白屏。
+- **类别面板增强**：① 颜色已支持 `> 5` 类自动从 OKLCH 色环按 hash 派生（v0.4.9，`stage/colors.ts`）；② ✅ v0.5.1 类别 > 9 时启用搜索框 + a-z 字母键映射到 classes[9..]（`shell/ClassPalette.tsx`）；④ ✅ v0.5.1 「最近使用」置顶（`state/useRecentClasses.ts`，localStorage 持久化每项目最近 5 个 + 落框后自动 record）；③ 拖动重排顺序、palette 后端持久化 — 仍待后续。
+- ~~**响应式 / 可折叠**~~ ✅ v0.5.1 部分：`useMediaQuery` hook + `< 1024px` 自动收两侧 sidebar；Topbar 按钮分组（视图/绘制/历史 + AI/导航）+ flexWrap 兜底，狭长窗口自动换行。**「⋯」溢出菜单 + 移动端只读模式仍待后续。**
+- ~~**空状态 / 加载骨架**：`isProjectLoading` 时只是文字「加载项目中...」，换成画布 + 任务列表的 skeleton；图像加载阶段叠 blurhash 而不是白屏。~~ ✅ v0.5.1：`<WorkbenchSkeleton>` 三栏 shimmer 骨架替代文字；`ImageStage` 在真图加载前以 32×24 blurhash 解码 + blur(8px) 占位（`BlurhashLayer`）。
 - ~~**Toast 抑流**~~ ✅ v0.4.9：`handleAcceptAll` 与批量审核都改为终态聚合一条 `已采纳 17/20，3 项失败`。
 - **暗色模式优先**：标注员长时间盯屏，眼疲劳是真问题。把工作台当成 dark-first 面（图像周围背景已是棋盘格，再叠暗色 chrome），与 B 的「主题切换」共建 CSS 变量。
 - **进度心理预期**：底部状态栏已有 AI 接管率，但缺**预计剩余时间 ETA**（基于本会话平均每题耗时 × 剩余题数）；reviewer 端缺「本日已审 / 待审 / 通过率」实时卡片。
 
 #### C.3 标注体验（核心生产力杠杆）
 
+- ~~**标注流程：先工具后类别**~~ ✅ v0.5.1：原本"选类别 = 选工具"，现在改为"选 bbox 工具 → 画框 → 弹 `<ClassPickerPopover>` 选类别 → 落库"。中间态 `pendingDrawing` 由 `useWorkbenchState` 持有，未确认前框以琥珀色虚线 + "? 待选类别" 标签渲染；Esc / 点画布外 = 取消；Enter = 落到默认类别；1-9 / A-Z 直选；落库后该类别自动 record 到 `useRecentClasses` 顶部。
+- ~~**已落库框改类别**~~ ✅ v0.5.1：选中 user 框三入口（SelectionOverlay 浮按钮 / AIInspectorPanel 列表 "改类" 按钮 / `C` 快捷键）触发 `editingClass` 态，复用同一 ClassPickerPopover；commit 走 `updateAnnotation` PATCH + `history.update` 进撤销栈；`useAnnotationHistory.update` 命令的 `before/after` 已支持 `class_name` 字段（schema 已含），Ctrl+Z 可还原。
 - ~~**撤销 / 重做**~~ ✅ v0.4.9：`state/useAnnotationHistory.ts` 命令栈支持 create / delete / update / acceptPrediction；`Ctrl+Z` / `Ctrl+Shift+Z` / `Ctrl+Y`；切任务清栈；mutation pending 期间禁用 undo。
 - ~~**框的移动 / resize**~~ ✅ v0.4.9：8 个 resize 锚点（4 角 + 4 边中点）+ 框体拖动整体平移；本地 state 显示拖动过程，松手才落 `PATCH /annotations/{id}`；几何 clamp 到 [0,1]，过小框拒收。**Shift 锁定纵横比、Alt 从中心缩放待后续。**
 - **多选与批量编辑**：Shift + 点击叠加选中、框选 marquee、Ctrl+A 全选当前帧；批量改 class、批量删除、批量平移（方向键 1px / Shift+方向键 10px）。
@@ -196,10 +198,10 @@
 | **P0** | 后端测试套件、JWT secret 生产硬校验、登录限流、密码重置流程 | 安全 / 质量基线，缺它们生产风险高 |
 | **P0** | C.3 撤销/重做、框移动+resize、审核页画布预览 | 标注员/审核员日常硬伤，用户投诉率最高 |
 | **P1** | TopBar 通知中心、UsersPage「角色」tab 接通真权限矩阵、「存储与模型集成」对接、API 密钥 | 用户每天面对，残缺感最强 |
-| ~~**P1**~~ ✅ | ~~C.1 真视口缩放/平移 + 图像预取 + 任务列表虚拟化~~（v0.4.9 / v0.5.0）、C.3 SAM 交互式（点/框→mask）、~~Workbench 组件拆分~~（v0.4.9）| 上量后必撞墙；SAM 是核心差异化 |
-| ~~**P1**~~ ✅ | ~~C.2 快捷键速查面板~~（v0.4.9）、多选+批量编辑、~~置信度服务端化~~（v0.5.0）、~~Toast 抑流~~（v0.4.9）| 提效 quick win，工时少 |
+| ~~**P1**~~ ✅ | ~~C.1 真视口缩放/平移 + 图像预取 + 任务列表虚拟化~~（v0.4.9 / v0.5.0）、~~C.1 Minimap + AIInspectorPanel 虚拟化 + rAF 节流 + 按需加载预测~~（v0.5.1）、C.3 SAM 交互式（点/框→mask）、~~Workbench 组件拆分~~（v0.4.9）| 上量后必撞墙；SAM 是核心差异化 |
+| ~~**P1**~~ ✅ | ~~C.2 快捷键速查面板~~（v0.4.9）、~~标注流程重构（先工具后类别 popover）+ 类别面板 >9 类搜索 + 最近使用 + 响应式 + 骨架屏~~（v0.5.1）、多选+批量编辑、~~置信度服务端化~~（v0.5.0）、~~Toast 抑流~~（v0.4.9）| 提效 quick win，工时少 |
 | **P2** | 非 image-det 工作台、AI 预标注独立页、模型市场 | 体量大，按业务优先级排队 |
-| ~~**P2**~~ ✅ | ~~C.1 Konva 画布引擎切换~~（v0.5.0）、瓦片金字塔大图、Minimap | 千框/4K 大图场景才必要 |
+| ~~**P2**~~ ✅ | ~~C.1 Konva 画布引擎切换~~（v0.5.0）、~~Minimap~~（v0.5.1）、瓦片金字塔大图 | 千框/4K 大图场景才必要 |
 | **P2** | C.3 关键帧插值、类别属性 schema、自动保存离线队列、智能下一题（Active Learning） | 业务复杂度起来后必需 |
 | **P2** | 审计日志归档 / 全文索引、AuditMiddleware 队列化 | 当前数据量未到瓶颈，监控触发再做 |
 | **P3** | i18n、主题切换（含暗色优先工作台）、SSO、2FA | 客户具体需求驱动 |

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Thumbnail } from "@/components/Thumbnail";
 import type { TaskResponse } from "@/types";
-import { classColor } from "../stage/colors";
+import { ClassPalette } from "./ClassPalette";
 
 interface TaskQueuePanelProps {
   open: boolean;
@@ -13,6 +13,7 @@ interface TaskQueuePanelProps {
   projectDisplayId: string;
   classes: string[];
   activeClass: string;
+  recentClasses?: string[];
   tasks: TaskResponse[];
   taskId: string | undefined;
   taskIdx: number;
@@ -80,7 +81,7 @@ function TaskItem({
 }
 
 export function TaskQueuePanel({
-  open, projectName, projectDisplayId, classes, activeClass,
+  open, projectName, projectDisplayId, classes, activeClass, recentClasses,
   tasks, taskId, taskIdx,
   hasNextPage, isFetchingNextPage, onFetchNextPage,
   onBack, onToggle, onSetActiveClass, onSelectTask,
@@ -190,29 +191,17 @@ export function TaskQueuePanel({
         </div>
       </div>
 
-      <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px" }}>
-        <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>类别 (按数字键切换)</div>
-        {classes.map((c, i) => (
-          <div
-            key={c}
-            onClick={() => onSetActiveClass(c)}
-            style={{
-              display: "flex", alignItems: "center", gap: 8,
-              padding: "5px 8px", borderRadius: "var(--radius-sm)", cursor: "pointer",
-              background: activeClass === c ? "var(--color-bg-sunken)" : "transparent",
-              fontSize: 12.5,
-            }}
-          >
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: classColor(c) }} />
-            <span style={{ flex: 1 }}>{c}</span>
-            <span style={{
-              display: "inline-block", padding: "1px 5px",
-              background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)",
-              borderBottomWidth: 2, borderRadius: 3,
-              fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--color-fg-muted)", lineHeight: 1,
-            }}>{i + 1}</span>
-          </div>
-        ))}
+      <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px", maxHeight: 320, overflowY: "auto" }}>
+        <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>
+          默认类别 <span style={{ color: "var(--color-fg-subtle)" }}>(数字/字母键切换)</span>
+        </div>
+        <ClassPalette
+          classes={classes}
+          recent={recentClasses}
+          activeClass={activeClass}
+          onPick={onSetActiveClass}
+          enableSearch={classes.length > 9}
+        />
       </div>
     </div>
   );

@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -17,6 +19,9 @@ interface AIInspectorPanelProps {
   aiTakeoverRate: number;
   imageWidth: number | null;
   imageHeight: number | null;
+  hasMorePredictions?: boolean;
+  isFetchingMorePredictions?: boolean;
+  onFetchMorePredictions?: () => void;
   onToggle: () => void;
   onRunAi: () => void;
   onAcceptAll: () => void;
@@ -25,6 +30,7 @@ interface AIInspectorPanelProps {
   onAcceptPrediction: (b: AiBox) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
+  onChangeUserBoxClass?: (id: string) => void;
 }
 
 const stripStyle: React.CSSProperties = {
@@ -37,8 +43,9 @@ const stripStyle: React.CSSProperties = {
 export function AIInspectorPanel({
   open, aiModel, aiRunning, aiBoxes, userBoxes, selectedId, confThreshold, aiTakeoverRate,
   imageWidth, imageHeight,
+  hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   onToggle, onRunAi, onAcceptAll, onSetConfThreshold,
-  onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox,
+  onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
 }: AIInspectorPanelProps) {
   if (!open) {
     return (
@@ -108,32 +115,21 @@ export function AIInspectorPanel({
         )}
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "4px 8px" }}>
-        {aiBoxes.map((b) => (
-          <BoxListItem
-            key={b.id} b={b} isAi
-            selected={selectedId === b.id}
-            imageWidth={imageWidth} imageHeight={imageHeight}
-            onSelect={() => onSelect(b.id)}
-            onAccept={() => onAcceptPrediction(b)}
-            onReject={onClearSelection}
-          />
-        ))}
-        {userBoxes.length > 0 && (
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-fg-muted)", padding: "10px 6px 4px", textTransform: "uppercase", letterSpacing: 0.5 }}>
-            已确认 ({userBoxes.length})
-          </div>
-        )}
-        {userBoxes.map((b) => (
-          <BoxListItem
-            key={b.id} b={b}
-            selected={selectedId === b.id}
-            imageWidth={imageWidth} imageHeight={imageHeight}
-            onSelect={() => onSelect(b.id)}
-            onDelete={() => onDeleteUserBox(b.id)}
-          />
-        ))}
-      </div>
+      <BoxesList
+        aiBoxes={aiBoxes}
+        userBoxes={userBoxes}
+        selectedId={selectedId}
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        hasMore={hasMorePredictions}
+        isFetchingMore={isFetchingMorePredictions}
+        onFetchMore={onFetchMorePredictions}
+        onSelect={onSelect}
+        onAcceptPrediction={onAcceptPrediction}
+        onClearSelection={onClearSelection}
+        onDeleteUserBox={onDeleteUserBox}
+        onChangeUserBoxClass={onChangeUserBoxClass}
+      />
 
       <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px", background: "var(--color-bg-sunken)" }}>
         <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>本次效率</div>
@@ -143,6 +139,123 @@ export function AIInspectorPanel({
         </div>
         <ProgressBar value={aiTakeoverRate} color="var(--color-ai)" />
       </div>
+    </div>
+  );
+}
+
+// ── 虚拟化合并列表 ─────────────────────────────────────────────────────────
+type Row =
+  | { kind: "ai"; box: AiBox; key: string }
+  | { kind: "header"; count: number; key: string }
+  | { kind: "user"; box: Annotation; key: string };
+
+interface BoxesListProps {
+  aiBoxes: AiBox[];
+  userBoxes: Annotation[];
+  selectedId: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+  hasMore?: boolean;
+  isFetchingMore?: boolean;
+  onFetchMore?: () => void;
+  onSelect: (id: string) => void;
+  onAcceptPrediction: (b: AiBox) => void;
+  onClearSelection: () => void;
+  onDeleteUserBox: (id: string) => void;
+  onChangeUserBoxClass?: (id: string) => void;
+}
+
+function BoxesList({
+  aiBoxes, userBoxes, selectedId, imageWidth, imageHeight,
+  hasMore, isFetchingMore, onFetchMore,
+  onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+}: BoxesListProps) {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const rows = useMemo<Row[]>(() => {
+    const out: Row[] = [];
+    aiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
+    if (userBoxes.length > 0) out.push({ kind: "header", count: userBoxes.length, key: "user-header" });
+    userBoxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
+    return out;
+  }, [aiBoxes, userBoxes]);
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: (i) => (rows[i]?.kind === "header" ? 28 : 56),
+    overscan: 8,
+  });
+
+  // 滚到接近末尾时自动加载下一页（仅 AI 段尚有未加载）
+  const items = virtualizer.getVirtualItems();
+  useEffect(() => {
+    if (!items.length || !hasMore || isFetchingMore || !onFetchMore) return;
+    const last = items[items.length - 1];
+    // last 在 AI 区段（aiBoxes 区间）内，且距末尾 5 行内
+    if (last.index >= aiBoxes.length - 5) onFetchMore();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, hasMore, isFetchingMore, aiBoxes.length]);
+
+  return (
+    <div ref={parentRef} style={{ flex: 1, overflowY: "auto", padding: "4px 8px" }}>
+      <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        {items.map((vItem) => {
+          const r = rows[vItem.index];
+          if (!r) return null;
+          return (
+            <div
+              key={r.key}
+              data-index={vItem.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: "absolute", top: 0, left: 0, width: "100%",
+                transform: `translateY(${vItem.start}px)`,
+              }}
+            >
+              {r.kind === "ai" && (
+                <BoxListItem
+                  b={r.box} isAi
+                  selected={selectedId === r.box.id}
+                  imageWidth={imageWidth} imageHeight={imageHeight}
+                  onSelect={() => onSelect(r.box.id)}
+                  onAccept={() => onAcceptPrediction(r.box)}
+                  onReject={onClearSelection}
+                />
+              )}
+              {r.kind === "header" && (
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-fg-muted)", padding: "10px 6px 4px", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  已确认 ({r.count})
+                </div>
+              )}
+              {r.kind === "user" && (
+                <BoxListItem
+                  b={r.box}
+                  selected={selectedId === r.box.id}
+                  imageWidth={imageWidth} imageHeight={imageHeight}
+                  onSelect={() => onSelect(r.box.id)}
+                  onDelete={() => onDeleteUserBox(r.box.id)}
+                  onChangeClass={onChangeUserBoxClass ? () => onChangeUserBoxClass(r.box.id) : undefined}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {(hasMore || isFetchingMore) && (
+        <div style={{ padding: "6px 8px", fontSize: 11, color: "var(--color-fg-subtle)", textAlign: "center" }}>
+          {isFetchingMore ? "加载更多预测..." : (
+            <button
+              onClick={onFetchMore}
+              style={{
+                background: "transparent", border: "1px solid var(--color-border)",
+                borderRadius: 4, padding: "4px 12px", fontSize: 11,
+                color: "var(--color-fg-muted)", cursor: "pointer",
+              }}
+            >加载更多</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

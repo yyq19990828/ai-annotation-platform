@@ -22,7 +22,11 @@ interface ReviewWorkbenchProps {
 export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }: ReviewWorkbenchProps) {
   const { data: task } = useTask(taskId);
   const { data: annotationsData } = useAnnotations(taskId);
-  const { data: predictionsData } = usePredictions(taskId);
+  const predictionsInfinite = usePredictions(taskId);
+  const predictionsData = useMemo(
+    () => (predictionsInfinite.data?.pages ?? []).flatMap((p) => p),
+    [predictionsInfinite.data],
+  );
 
   const [mode, setMode] = useState<DiffMode>("diff");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -30,7 +34,7 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
   const [fitTick, setFitTick] = useState(0);
 
   const userBoxes = useMemo(() => (annotationsData ?? []).map(annotationToBox), [annotationsData]);
-  const allAi = useMemo(() => predictionsToBoxes(predictionsData ?? []), [predictionsData]);
+  const allAi = useMemo(() => predictionsToBoxes(predictionsData), [predictionsData]);
 
   // 已被采纳的 prediction id 集合
   const acceptedPredIds = useMemo(() => {

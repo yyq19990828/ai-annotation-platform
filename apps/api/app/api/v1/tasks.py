@@ -194,21 +194,51 @@ async def get_predictions(
     task_id: uuid.UUID,
     model_version: str | None = None,
     min_confidence: float | None = Query(None, ge=0.0, le=1.0),
+    limit: int | None = Query(None, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    返回该任务的预测。每个 Prediction.result 内含多个 shape；当 limit 设定时，
+    按 shape 置信度 desc 跨 Prediction 排序、截取 [offset, offset+limit]，再回到原 Prediction 容器。
+    """
     svc = PredictionService(db)
     predictions = await svc.list_by_task(task_id, model_version=model_version)
-    if min_confidence is None:
-        return predictions
-    filtered = []
+
+    # 第一步：min_confidence 过滤
+    base: list[tuple[PredictionOut, list[dict]]] = []
     for p in predictions:
-        shapes = [s for s in (p.result or []) if s.get("confidence", 0.0) >= min_confidence]
+        shapes = list(p.result or [])
+        if min_confidence is not None:
+            shapes = [s for s in shapes if s.get("confidence", 0.0) >= min_confidence]
         if shapes:
             out = PredictionOut.model_validate(p)
+            base.append((out, shapes))
+
+    if limit is None and offset == 0:
+        for out, shapes in base:
             out.result = shapes
-            filtered.append(out)
-    return filtered
+        return [out for out, _ in base]
+
+    # 第二步：跨 Prediction 按置信度排序 + offset/limit 截取
+    flat: list[tuple[int, dict]] = []
+    for idx, (_, shapes) in enumerate(base):
+        for s in shapes:
+            flat.append((idx, s))
+    flat.sort(key=lambda x: x[1].get("confidence", 0.0), reverse=True)
+    sliced = flat[offset : (offset + limit) if limit else None]
+
+    # 第三步：按原 Prediction 顺序重组
+    grouped: dict[int, list[dict]] = {}
+    for idx, s in sliced:
+        grouped.setdefault(idx, []).append(s)
+    result: list[PredictionOut] = []
+    for idx, (out, _) in enumerate(base):
+        if idx in grouped:
+            out.result = grouped[idx]
+            result.append(out)
+    return result
 
 
 @router.post("/{task_id}/predictions/{prediction_id}/accept", response_model=list[AnnotationOut])

@@ -20,6 +20,7 @@ type Drag =
 
 interface ImageStageProps {
   fileUrl: string | null;
+  blurhash?: string | null;
   tool: Tool;
   activeClass: string;
   selectedId: string | null;
@@ -31,13 +32,20 @@ interface ImageStageProps {
   fitTick: number;
   readOnly?: boolean;
   fadedAiIds?: Set<string>;
+  /** 待确认绘制框：画完框后等待用户在 popover 里选类别。 */
+  pendingDrawing?: { geom: Geom } | null;
   onSelectBox: (id: string | null) => void;
   onAcceptPrediction?: (b: AiBox) => void;
   onDeleteUserBox?: (id: string) => void;
+  onChangeUserBoxClass?: (id: string) => void;
   onCommitDrawing?: (geo: Geom) => void;
   onCommitMove?: (id: string, before: Geom, after: Geom) => void;
   onCommitResize?: (id: string, before: Geom, after: Geom) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
+  /** 画布几何信息上抛，供父级渲染 Minimap / popover。 */
+  onStageGeometry?: (g: { imgW: number; imgH: number; vpSize: { w: number; h: number } }) => void;
+  /** 渲染在画布层之上的覆盖物（与 SelectionOverlay 同坐标系，container 内绝对定位）。 */
+  overlay?: React.ReactNode;
 }
 
 // ── resize handle directions ────────────────────────────────────────────────
@@ -84,7 +92,6 @@ function KonvaBox({
 
   return (
     <Group>
-      {/* box body */}
       <Rect
         x={b.x * imgW}
         y={b.y * imgH}
@@ -115,7 +122,6 @@ function KonvaBox({
         }}
       />
 
-      {/* class label above box */}
       <Label x={b.x * imgW} y={b.y * imgH - 22 / scale} listening={false}>
         <Tag fill={color} cornerRadius={3 / scale} />
         <Text
@@ -127,7 +133,6 @@ function KonvaBox({
         />
       </Label>
 
-      {/* resize handles (only for selected, non-AI, editable) */}
       {isUserSelected && onResizeStart && HANDLE_DIRECTIONS.map(({ dir, cx, cy, cursor }) => (
         <Rect
           key={dir}
@@ -159,11 +164,12 @@ function KonvaBox({
 
 // ── main component ──────────────────────────────────────────────────────────
 export function ImageStage({
-  fileUrl, tool, activeClass,
+  fileUrl, blurhash, tool, activeClass,
   selectedId, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
-  readOnly = false, fadedAiIds,
-  onSelectBox, onAcceptPrediction, onDeleteUserBox,
+  readOnly = false, fadedAiIds, pendingDrawing,
+  onSelectBox, onAcceptPrediction, onDeleteUserBox, onChangeUserBoxClass,
   onCommitDrawing, onCommitMove, onCommitResize, onCursorMove,
+  onStageGeometry, overlay,
 }: ImageStageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -172,11 +178,14 @@ export function ImageStage({
   const vpSize = useElementSize(containerRef);
 
   const [image] = useImage(fileUrl ?? "");
-  // 渲染用尺寸：image 未加载时用 900×600 占位，避免 Stage 坍塌
   const imgW = image?.naturalWidth || 900;
   const imgH = image?.naturalHeight || 600;
-  // 只有拿到真实尺寸后才允许触发 fit，避免用占位尺寸算出错误的初始缩放
   const imageLoaded = !!image?.naturalWidth;
+
+  // 把几何信息上抛给父级（Minimap / popover 锚点用）
+  useEffect(() => {
+    onStageGeometry?.({ imgW, imgH, vpSize });
+  }, [imgW, imgH, vpSize, onStageGeometry]);
 
   const [drag, setDrag] = useState<Drag | null>(null);
 
@@ -198,7 +207,6 @@ export function ImageStage({
     setVp({ scale: s, tx: (vpSize.w - imgW * s) / 2, ty: (vpSize.h - imgH * s) / 2 });
   }, [vpSize.w, vpSize.h, imgW, imgH, setVp]);
 
-  // initial fit — 等真实图像尺寸就绪后才计算，避免用 900×600 占位尺寸算出错误缩放
   const fittedRef = useRef(false);
   useEffect(() => {
     if (!fittedRef.current && vpSize.w && vpSize.h && imageLoaded) {
@@ -207,7 +215,6 @@ export function ImageStage({
     }
   }, [vpSize.w, vpSize.h, imageLoaded, fitNow]);
 
-  // re-fit when task changes
   const prevFileUrl = useRef(fileUrl);
   useEffect(() => {
     if (fileUrl !== prevFileUrl.current) {
@@ -216,7 +223,6 @@ export function ImageStage({
     }
   }, [fileUrl]);
 
-  // parent-triggered fit
   const lastFitTickRef = useRef(fitTick);
   useEffect(() => {
     if (fitTick !== lastFitTickRef.current) {
@@ -245,35 +251,57 @@ export function ImageStage({
     return () => el.removeEventListener("wheel", onWheel);
   }, [setVp]);
 
-  // ── window-level drag events ─────────────────────────────────────────────
+  // ── window-level drag events (rAF-throttled) ─────────────────────────────
   useEffect(() => {
     if (!drag) return;
+    let rafId: number | null = null;
+    const pending = { current: null as null | (() => void) };
+
+    const schedule = (apply: () => void) => {
+      pending.current = apply;
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const fn = pending.current;
+        pending.current = null;
+        if (fn) fn();
+      });
+    };
+
     const onMove = (e: PointerEvent) => {
       if (drag.kind === "pan") {
-        setVp((cur) => ({ ...cur, tx: cur.tx + e.movementX, ty: cur.ty + e.movementY }));
+        const dx = e.movementX;
+        const dy = e.movementY;
+        schedule(() => setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy })));
         return;
       }
       const pt = toImg(e.clientX, e.clientY);
       if (!pt) return;
       if (drag.kind === "draw") {
-        setDrag({ ...drag, cx: pt.x, cy: pt.y });
+        schedule(() => setDrag((d) => (d && d.kind === "draw" ? { ...d, cx: pt.x, cy: pt.y } : d)));
       } else if (drag.kind === "move") {
-        const dx = pt.x - drag.sx;
-        const dy = pt.y - drag.sy;
-        setDrag({
-          ...drag,
-          cur: {
-            ...drag.start,
-            x: Math.max(0, Math.min(1 - drag.start.w, drag.start.x + dx)),
-            y: Math.max(0, Math.min(1 - drag.start.h, drag.start.y + dy)),
-          },
-        });
+        schedule(() => setDrag((d) => {
+          if (!d || d.kind !== "move") return d;
+          const dx = pt.x - d.sx;
+          const dy = pt.y - d.sy;
+          return {
+            ...d,
+            cur: {
+              ...d.start,
+              x: Math.max(0, Math.min(1 - d.start.w, d.start.x + dx)),
+              y: Math.max(0, Math.min(1 - d.start.h, d.start.y + dy)),
+            },
+          };
+        }));
       } else if (drag.kind === "resize") {
-        const cur = applyResize(
-          { ...drag.start, id: "", cls: "", conf: 1, source: "manual" } as Annotation,
-          { x: drag.sx, y: drag.sy }, pt, drag.dir,
-        );
-        setDrag({ ...drag, cur });
+        schedule(() => setDrag((d) => {
+          if (!d || d.kind !== "resize") return d;
+          const cur = applyResize(
+            { ...d.start, id: "", cls: "", conf: 1, source: "manual" } as Annotation,
+            { x: d.sx, y: d.sy }, pt, d.dir,
+          );
+          return { ...d, cur };
+        }));
       }
     };
     const onUp = () => {
@@ -299,6 +327,7 @@ export function ImageStage({
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -306,10 +335,11 @@ export function ImageStage({
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    // if pointer is on a box/handle node, let the node handler handle it
     if (e.target !== (stageRef.current as unknown)) {
       return;
     }
+    // 有 pendingDrawing 时不开新框，让 popover 自己处理点外部
+    if (pendingDrawing) return;
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
     if (tool === "hand" || spacePan || readOnly) {
@@ -330,12 +360,10 @@ export function ImageStage({
     onCursorMove(pt && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1 ? pt : null);
   };
 
-  // ── cursor style on container ────────────────────────────────────────────
   const containerCursor = (tool === "hand" || spacePan)
     ? (drag?.kind === "pan" ? "grabbing" : "grab")
-    : "crosshair";
+    : pendingDrawing ? "default" : "crosshair";
 
-  // ── drawing preview ───────────────────────────────────────────────────────
   const drawingPreview = drag?.kind === "draw"
     ? { x: Math.min(drag.sx, drag.cx), y: Math.min(drag.sy, drag.cy),
         w: Math.abs(drag.cx - drag.sx), h: Math.abs(drag.cy - drag.sy) }
@@ -347,13 +375,15 @@ export function ImageStage({
     return null;
   };
 
-  // ── selected box for overlay ─────────────────────────────────────────────
   const selectedBox = useMemo(() => {
     if (!selectedId) return null;
     return (userBoxes as (Annotation | AiBox)[]).concat(aiBoxes).find((b) => b.id === selectedId) ?? null;
   }, [selectedId, userBoxes, aiBoxes]);
 
   const isSelectedAi = selectedBox ? "predictionId" in selectedBox : false;
+
+  // pending color = activeClass (default class for visual preview)
+  const pendingColor = classColorForCanvas(activeClass || "pending");
 
   return (
     <div
@@ -365,6 +395,11 @@ export function ImageStage({
       }}
       onMouseLeave={() => onCursorMove(null)}
     >
+      {/* blurhash 占位（图像加载前） */}
+      {!imageLoaded && fileUrl && blurhash && (
+        <BlurhashLayer hash={blurhash} />
+      )}
+
       {!fileUrl && (
         <div style={{
           position: "absolute", inset: 0, display: "flex", flexDirection: "column",
@@ -394,7 +429,6 @@ export function ImageStage({
             <KonvaImage image={image} x={0} y={0} width={imgW} height={imgH} listening={false} />
           )}
 
-          {/* AI boxes */}
           {aiBoxes.map((b) => (
             <KonvaBox
               key={b.id}
@@ -410,7 +444,6 @@ export function ImageStage({
             />
           ))}
 
-          {/* User boxes */}
           {userBoxes.map((b) => {
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;
@@ -439,25 +472,58 @@ export function ImageStage({
             );
           })}
 
-          {/* Drawing preview */}
+          {/* 绘制中预览 */}
           {drawingPreview && drawingPreview.w > 0 && (
             <Rect
               x={drawingPreview.x * imgW}
               y={drawingPreview.y * imgH}
               width={drawingPreview.w * imgW}
               height={drawingPreview.h * imgH}
-              stroke={classColorForCanvas(activeClass)}
+              stroke={pendingColor}
               strokeWidth={1.5 / vp.scale}
               dash={[4 / vp.scale, 3 / vp.scale]}
-              fill={hexToRgba(classColorForCanvas(activeClass), 0.12)}
+              fill={hexToRgba(pendingColor, 0.12)}
               listening={false}
             />
+          )}
+
+          {/* 待确认的 pending 框（已落框，等待 popover 选类别） */}
+          {pendingDrawing && (
+            <>
+              <Rect
+                x={pendingDrawing.geom.x * imgW}
+                y={pendingDrawing.geom.y * imgH}
+                width={pendingDrawing.geom.w * imgW}
+                height={pendingDrawing.geom.h * imgH}
+                stroke="oklch(0.65 0.18 75)"
+                strokeWidth={2 / vp.scale}
+                dash={[5 / vp.scale, 3 / vp.scale]}
+                fill={hexToRgba("#f59e0b", 0.10)}
+                shadowColor="oklch(0.65 0.18 75)"
+                shadowBlur={6 / vp.scale}
+                shadowOpacity={0.5}
+                listening={false}
+              />
+              <Label
+                x={pendingDrawing.geom.x * imgW}
+                y={pendingDrawing.geom.y * imgH - 22 / vp.scale}
+                listening={false}
+              >
+                <Tag fill="oklch(0.65 0.18 75)" cornerRadius={3 / vp.scale} />
+                <Text
+                  text="? 待选类别"
+                  fill="white"
+                  fontSize={10.5 / vp.scale}
+                  padding={4 / vp.scale}
+                  fontFamily="var(--font-sans, sans-serif)"
+                />
+              </Label>
+            </>
           )}
         </Layer>
       </Stage>
 
-      {/* HTML overlay: floating action buttons for selected box */}
-      {selectedBox && !readOnly && (
+      {selectedBox && !readOnly && !pendingDrawing && (
         <SelectionOverlay
           box={selectedBox}
           isAi={isSelectedAi}
@@ -471,8 +537,47 @@ export function ImageStage({
           onDelete={!isSelectedAi && onDeleteUserBox
             ? () => onDeleteUserBox(selectedBox.id)
             : undefined}
+          onChangeClass={!isSelectedAi && onChangeUserBoxClass
+            ? () => onChangeUserBoxClass(selectedBox.id)
+            : undefined}
         />
       )}
+
+      {overlay}
     </div>
+  );
+}
+
+// ── blurhash placeholder layer ─────────────────────────────────────────────
+function BlurhashLayer({ hash }: { hash: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    let cancelled = false;
+    import("blurhash").then(({ decode }) => {
+      if (cancelled || !canvasRef.current) return;
+      const W = 32, H = 24;
+      const pixels = decode(hash, W, H);
+      const canvas = canvasRef.current;
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const imageData = ctx.createImageData(W, H);
+      imageData.data.set(pixels);
+      ctx.putImageData(imageData, 0, 0);
+    }).catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+  }, [hash]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "absolute", inset: 0, width: "100%", height: "100%",
+        objectFit: "contain", filter: "blur(8px)", opacity: 0.7,
+        pointerEvents: "none",
+      }}
+    />
   );
 }
