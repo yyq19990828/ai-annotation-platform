@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { useLogin } from "@/hooks/useAuth";
 import { useAuthStore } from "@/stores/authStore";
 import { Icon } from "@/components/ui/Icon";
@@ -193,6 +193,15 @@ export function LoginPage() {
             >
               {login.isPending ? "登录中..." : "登录"}
             </button>
+
+            <div style={{ marginTop: 10, textAlign: "right" }}>
+              <Link
+                to="/forgot-password"
+                style={{ fontSize: 12, color: "var(--color-accent)", textDecoration: "none" }}
+              >
+                忘记密码？
+              </Link>
+            </div>
           </form>
 
           <div style={{ marginTop: 20, padding: "12px 14px", background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)", fontSize: 12, color: "var(--color-fg-subtle)" }}>

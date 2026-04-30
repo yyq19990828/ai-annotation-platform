@@ -21,6 +21,7 @@ dependencies = [
     "prometheus-client>=0.25.0",
     "Pillow>=10.0.0",
     "blurhash-python>=1.2.0",
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]

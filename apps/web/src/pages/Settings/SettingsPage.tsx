@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
@@ -8,17 +8,19 @@ import { useAuthStore } from "@/stores/authStore";
 import { useChangePassword, useUpdateProfile } from "@/hooks/useMe";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { ROLE_LABELS } from "@/constants/roles";
+import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
 import type { UserRole } from "@/types";
 
-type SectionKey = "profile" | "system";
+type SectionKey = "profile" | "feedback" | "system";
 
 export function SettingsPage() {
   const { role } = usePermissions();
   const isAdmin = role === "super_admin";
   const [section, setSection] = useState<SectionKey>("profile");
 
-  const sections: { key: SectionKey; label: string; icon: "user" | "settings" }[] = [
+  const sections: { key: SectionKey; label: string; icon: "user" | "flag" | "settings" }[] = [
     { key: "profile", label: "个人资料", icon: "user" },
+    { key: "feedback", label: "我的反馈", icon: "flag" },
     ...(isAdmin ? [{ key: "system" as SectionKey, label: "系统设置", icon: "settings" as const }] : []),
   ];
 
@@ -67,6 +69,7 @@ export function SettingsPage() {
 
         <div>
           {section === "profile" && <ProfileSection />}
+          {section === "feedback" && <MyFeedbackSection />}
           {section === "system" && isAdmin && <SystemSection />}
         </div>
       </div>
@@ -156,7 +159,7 @@ function ProfileSection() {
               style={inputStyle}
             />
           </Field>
-          <Field label="新密码（至少 6 位）">
+          <Field label="新密码（至少 8 位，需含大小写字母和数字）">
             <input
               required
               type="password"
@@ -245,6 +248,82 @@ function SystemSection() {
           </div>
         )}
       </div>
+    </Card>
+  );
+}
+
+function MyFeedbackSection() {
+  const [reports, setReports] = useState<BugReportResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await bugReportsApi.listMine(20);
+        setReports(data.items);
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const statusLabel: Record<string, string> = {
+    new: "新提交", triaged: "已确认", in_progress: "处理中",
+    fixed: "已修复", wont_fix: "不修复", duplicate: "重复",
+  };
+  const severityColor: Record<string, string> = {
+    low: "oklch(0.55 0.08 200)", medium: "oklch(0.65 0.18 75)",
+    high: "oklch(0.65 0.18 45)", critical: "oklch(0.60 0.22 25)",
+  };
+
+  if (loading) {
+    return <Card><div style={{ padding: 20, fontSize: 13, color: "var(--color-fg-muted)" }}>加载中...</div></Card>;
+  }
+
+  if (reports.length === 0) {
+    return (
+      <Card>
+        <div style={{ padding: 20, fontSize: 13, color: "var(--color-fg-muted)", textAlign: "center" }}>
+          暂无反馈记录。遇到问题？点击右下角的反馈按钮提交。
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+            <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>ID</th>
+            <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>标题</th>
+            <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>严重度</th>
+            <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>状态</th>
+            <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reports.map((r) => (
+            <tr key={r.id} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+              <td style={{ padding: "8px 12px", fontFamily: "monospace", fontSize: 11 }}>{r.display_id}</td>
+              <td style={{ padding: "8px 12px", color: "var(--color-fg)" }}>{r.title}</td>
+              <td style={{ padding: "8px 12px" }}>
+                <span style={{ color: severityColor[r.severity] ?? "var(--color-fg-muted)", fontWeight: 500 }}>{r.severity}</span>
+              </td>
+              <td style={{ padding: "8px 12px" }}>
+                <span style={{ padding: "1px 6px", borderRadius: 3, fontSize: 11, background: "var(--color-bg-sunken)" }}>
+                  {statusLabel[r.status] ?? r.status}
+                </span>
+              </td>
+              <td style={{ padding: "8px 12px", fontSize: 11, color: "var(--color-fg-muted)" }}>
+                {new Date(r.created_at).toLocaleDateString("zh-CN")}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </Card>
   );
 }

@@ -66,8 +66,12 @@ export const tasksApi = {
   createAnnotation: (id: string, payload: AnnotationPayload) =>
     apiClient.post<AnnotationResponse>(`/tasks/${id}/annotations`, payload),
 
-  updateAnnotation: (taskId: string, annotationId: string, payload: AnnotationUpdatePayload) =>
-    apiClient.patch<AnnotationResponse>(`/tasks/${taskId}/annotations/${annotationId}`, payload),
+  updateAnnotation: (taskId: string, annotationId: string, payload: AnnotationUpdatePayload, etag?: string) =>
+    apiClient.patch<AnnotationResponse>(
+      `/tasks/${taskId}/annotations/${annotationId}`,
+      payload,
+      etag ? { headers: { "If-Match": etag } } : undefined,
+    ),
 
   deleteAnnotation: (taskId: string, annotationId: string) =>
     apiClient.delete<void>(`/tasks/${taskId}/annotations/${annotationId}`),

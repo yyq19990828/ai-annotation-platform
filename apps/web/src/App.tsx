@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -13,12 +13,15 @@ import { WorkbenchPage } from "@/pages/Workbench/WorkbenchPage";
 import { UsersPage } from "@/pages/Users/UsersPage";
 import { ReviewPage } from "@/pages/Review/ReviewPage";
 import { LoginPage } from "@/pages/Login/LoginPage";
+import { ForgotPasswordPage } from "@/pages/Login/ForgotPasswordPage";
+import { ResetPasswordPage } from "@/pages/Login/ResetPasswordPage";
 import { DatasetsPage } from "@/pages/Datasets/DatasetsPage";
 import { StoragePage } from "@/pages/Storage/StoragePage";
 import { UnauthorizedPage } from "@/pages/Unauthorized/UnauthorizedPage";
 import { ProjectSettingsPage } from "@/pages/Projects/ProjectSettingsPage";
 import { RegisterPage } from "@/pages/Register/RegisterPage";
 import { AuditPage } from "@/pages/Audit/AuditPage";
+import { BugsPage } from "@/pages/Bugs/BugsPage";
 import { SettingsPage } from "@/pages/Settings/SettingsPage";
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
@@ -26,6 +29,9 @@ import { RequireProjectMember } from "@/components/routing/RequireProjectMember"
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAppStore } from "@/stores/appStore";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { BugReportFAB } from "@/components/bugreport/BugReportFAB";
+import { BugReportDrawer } from "@/components/bugreport/BugReportDrawer";
+import { initBugReportCapture, patchFetchForBugCapture } from "@/utils/bugReportCapture";
 
 function DashboardRouter() {
   const { role } = usePermissions();
@@ -50,6 +56,13 @@ function AppShell() {
   const pushToast = useToastStore((s) => s.push);
   const compact = useMediaQuery("(max-width: 1023px)");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [bugDrawerOpen, setBugDrawerOpen] = useState(false);
+
+  // 初始化 bug 反馈自动捕获
+  useEffect(() => {
+    patchFetchForBugCapture();
+    initBugReportCapture();
+  }, []);
 
   return (
     <div
@@ -81,6 +94,8 @@ function AppShell() {
         <Outlet />
       </main>
       <ToastRack />
+      <BugReportFAB onClick={() => setBugDrawerOpen(true)} />
+      <BugReportDrawer open={bugDrawerOpen} onClose={() => setBugDrawerOpen(false)} />
     </div>
   );
 }
@@ -141,6 +156,8 @@ export function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route
         path="/projects/:id/annotate"
@@ -223,6 +240,14 @@ export function App() {
           element={
             <RequirePagePermission pageKey="audit">
               <AuditPage />
+            </RequirePagePermission>
+          }
+        />
+        <Route
+          path="/bugs"
+          element={
+            <RequirePagePermission pageKey="bugs">
+              <BugsPage />
             </RequirePagePermission>
           }
         />

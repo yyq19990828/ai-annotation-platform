@@ -2,12 +2,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { tasksApi } from "@/api/tasks";
 import type { TaskLockResponse } from "@/types";
 
-const HEARTBEAT_INTERVAL_MS = 120_000;
+const HEARTBEAT_INTERVAL_MS = 60_000;
 
 export function useTaskLock(taskId: string | undefined) {
   const [lock, setLock] = useState<TaskLockResponse | null>(null);
   const [lockError, setLockError] = useState<string | null>(null);
+  const [remainingMs, setRemainingMs] = useState<number>(0);
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const timerRef = useRef<ReturnType<typeof setInterval>>();
   const currentTaskRef = useRef<string>();
 
   const release = useCallback(async (tid: string) => {
@@ -22,6 +24,7 @@ export function useTaskLock(taskId: string | undefined) {
     if (!taskId) {
       setLock(null);
       setLockError(null);
+      setRemainingMs(0);
       return;
     }
 
@@ -55,20 +58,40 @@ export function useTaskLock(taskId: string | undefined) {
       try {
         await tasksApi.heartbeatLock(taskId);
       } catch {
-        // lock lost
-        if (!cancelled) {
-          setLock(null);
-          setLockError("Lock expired");
+        // lock lost — try to re-acquire once
+        try {
+          const newLock = await tasksApi.acquireLock(taskId);
+          if (!cancelled) {
+            setLock(newLock);
+            setLockError(null);
+          }
+        } catch {
+          if (!cancelled) {
+            setLock(null);
+            setLockError("Lock expired");
+          }
         }
       }
     }, HEARTBEAT_INTERVAL_MS);
 
+    // countdown timer: update remainingMs every second
+    timerRef.current = setInterval(() => {
+      if (cancelled) return;
+      setLock((prev) => {
+        if (!prev?.expire_at) return prev;
+        const ms = new Date(prev.expire_at).getTime() - Date.now();
+        setRemainingMs(Math.max(0, ms));
+        return prev;
+      });
+    }, 1000);
+
     return () => {
       cancelled = true;
       clearInterval(intervalRef.current);
+      clearInterval(timerRef.current);
       release(taskId);
     };
   }, [taskId, release]);
 
-  return { lock, lockError, isLocked: !!lock };
+  return { lock, lockError, remainingMs, isLocked: !!lock };
 }

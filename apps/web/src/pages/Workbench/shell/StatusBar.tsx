@@ -26,6 +26,16 @@ interface StatusBarProps {
   offlineQueueCount?: number;
   online?: boolean;
   onFlushOffline?: () => void;
+  /** 锁剩余时间（毫秒）。0 = 未持有锁。 */
+  lockRemainingMs?: number;
+  /** 锁错误消息。非空时优先展示错误。 */
+  lockError?: string | null;
+}
+
+function formatLockTime(ms: number): string {
+  const m = Math.floor(ms / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export function StatusBar({
@@ -34,6 +44,7 @@ export function StatusBar({
   preannotationProgress, preannotationConn, preannotationRetries,
   avgLeadMs, remainingTaskCount,
   offlineQueueCount, online, onFlushOffline,
+  lockRemainingMs, lockError,
 }: StatusBarProps) {
   const dimText = imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : "—";
   const cursorText = cursor && imageWidth && imageHeight
@@ -53,6 +64,16 @@ export function StatusBar({
       }}
     >
       <div style={{ display: "flex", gap: 16 }}>
+        {lockRemainingMs !== undefined && lockRemainingMs > 0 && !lockError && (
+          <span style={{ color: lockRemainingMs < 60_000 ? "oklch(0.60 0.18 35)" : undefined }}>
+            <Icon name="lock" size={11} style={{ verticalAlign: "-1px" }} /> 锁剩余 {formatLockTime(lockRemainingMs)}
+          </span>
+        )}
+        {lockError && (
+          <span style={{ color: "oklch(0.60 0.18 35)" }}>
+            <Icon name="warning" size={11} /> {lockError === "Lock expired" ? "锁已过期" : "他人正在编辑"}
+          </span>
+        )}
         <span><span className="mono">{userBoxesCount}</span> 已确认</span>
         <span>
           <Icon name="sparkles" size={11} style={{ color: "var(--color-ai)", verticalAlign: "-2px" }} />

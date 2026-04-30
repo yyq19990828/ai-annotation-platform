@@ -1,0 +1,198 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import select, func, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.bug_report import BugReport, BugComment
+
+
+class BugReportService:
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def create(self, reporter_id: uuid.UUID, user_role: str, **fields) -> BugReport:
+        display_id = await self._next_display_id()
+        report = BugReport(
+            id=uuid.uuid4(),
+            display_id=display_id,
+            reporter_id=reporter_id,
+            user_role=user_role,
+            **fields,
+        )
+        self.db.add(report)
+        await self.db.flush()
+        return report
+
+    async def update(self, report_id: uuid.UUID, **fields) -> BugReport | None:
+        report = await self.db.get(BugReport, report_id)
+        if not report:
+            return None
+
+        status = fields.pop("status", None)
+        if status and status != report.status:
+            report.status = status
+            if status == "triaged":
+                report.triaged_at = datetime.now(timezone.utc)
+            elif status == "fixed":
+                report.fixed_at = datetime.now(timezone.utc)
+
+        for key, value in fields.items():
+            if value is not None and hasattr(report, key):
+                setattr(report, key, value)
+
+        await self.db.flush()
+        return report
+
+    async def list(
+        self,
+        *,
+        status: str | None = None,
+        severity: str | None = None,
+        route: str | None = None,
+        reporter_id: uuid.UUID | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[BugReport], int]:
+        q = select(BugReport)
+        count_q = select(func.count(BugReport.id))
+        filters = []
+        if status:
+            filters.append(BugReport.status == status)
+        if severity:
+            filters.append(BugReport.severity == severity)
+        if route:
+            filters.append(BugReport.route.ilike(f"%{route}%"))
+        if reporter_id:
+            filters.append(BugReport.reporter_id == reporter_id)
+        if filters:
+            q = q.where(*filters)
+            count_q = count_q.where(*filters)
+        q = q.order_by(BugReport.created_at.desc()).offset(offset).limit(limit)
+        result = await self.db.execute(q)
+        items = list(result.scalars().all())
+        total_result = await self.db.execute(count_q)
+        total = total_result.scalar() or 0
+        return items, total
+
+    async def get_with_comments(self, report_id: uuid.UUID) -> tuple[BugReport | None, list[BugComment]]:
+        report = await self.db.get(BugReport, report_id)
+        if not report:
+            return None, []
+        result = await self.db.execute(
+            select(BugComment).where(BugComment.bug_report_id == report_id).order_by(BugComment.created_at)
+        )
+        return report, list(result.scalars().all())
+
+    async def add_comment(self, report_id: uuid.UUID, author_id: uuid.UUID, body: str) -> BugComment | None:
+        report = await self.db.get(BugReport, report_id)
+        if not report:
+            return None
+        comment = BugComment(
+            id=uuid.uuid4(),
+            bug_report_id=report_id,
+            author_id=author_id,
+            body=body,
+        )
+        self.db.add(comment)
+        await self.db.flush()
+        return comment
+
+    async def cluster_similar(self, report_id: uuid.UUID) -> list[uuid.UUID]:
+        """Find other open bugs on the same route with similar titles."""
+        report = await self.db.get(BugReport, report_id)
+        if not report:
+            return []
+        result = await self.db.execute(
+            select(BugReport).where(
+                BugReport.id != report_id,
+                BugReport.route == report.route,
+                BugReport.status.in_(["new", "triaged", "in_progress"]),
+            )
+        )
+        candidates = result.scalars().all()
+        similar: list[uuid.UUID] = []
+        for c in candidates:
+            if self._title_similarity(report.title, c.title):
+                similar.append(c.id)
+        return similar
+
+    async def get_markdown(self, report_id: uuid.UUID) -> str | None:
+        report, comments = await self.get_with_comments(report_id)
+        if not report:
+            return None
+        return self._format_markdown(report, comments)
+
+    async def list_markdown(self, status: str = "new") -> str:
+        items, _ = await self.list(status=status, limit=50)
+        parts: list[str] = []
+        for item in items:
+            result = await self.db.execute(
+                select(BugComment).where(BugComment.bug_report_id == item.id).order_by(BugComment.created_at)
+            )
+            comments = list(result.scalars().all())
+            parts.append(self._format_markdown(item, comments))
+            parts.append("\n---\n")
+        return "\n".join(parts)
+
+    @staticmethod
+    def _format_markdown(report: BugReport, comments: list[BugComment]) -> str:
+        lines = [
+            f"## {report.display_id}: {report.title}",
+            f"",
+            f"- **Severity**: {report.severity}",
+            f"- **Status**: {report.status}",
+            f"- **Route**: `{report.route}`",
+            f"- **Role**: {report.user_role}",
+            f"- **Created**: {report.created_at.isoformat() if report.created_at else 'N/A'}",
+        ]
+        if report.browser_ua:
+            lines.append(f"- **Browser**: {report.browser_ua[:120]}")
+        if report.viewport:
+            lines.append(f"- **Viewport**: {report.viewport}")
+        if report.project_id:
+            lines.append(f"- **Project**: {report.project_id}")
+        if report.task_id:
+            lines.append(f"- **Task**: {report.task_id}")
+        if report.screenshot_url:
+            lines.append(f"- **Screenshot**: {report.screenshot_url}")
+        if report.recent_api_calls:
+            lines.append(f"")
+            lines.append(f"### Recent API Calls")
+            for call in report.recent_api_calls[:10]:
+                lines.append(f"- `{call.get('method', '?')} {call.get('url', '?')}` → {call.get('status', '?')} ({call.get('ms', '?')}ms)")
+        if report.recent_console_errors:
+            lines.append(f"")
+            lines.append(f"### Console Errors")
+            for err in report.recent_console_errors[:5]:
+                lines.append(f"- {err.get('msg', '?')}")
+        lines.append(f"")
+        lines.append(f"### Description")
+        lines.append(report.description)
+        if comments:
+            lines.append(f"")
+            lines.append(f"### Comments ({len(comments)})")
+            for c in comments:
+                lines.append(f"- [{c.author_id}] {c.body}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _title_similarity(a: str, b: str) -> bool:
+        """Simple word overlap heuristic for dedup."""
+        words_a = set(a.lower().split())
+        words_b = set(b.lower().split())
+        if not words_a or not words_b:
+            return False
+        overlap = len(words_a & words_b)
+        return overlap / min(len(words_a), len(words_b)) > 0.5
+
+    async def _next_display_id(self) -> str:
+        result = await self.db.execute(select(func.max(BugReport.display_id)))
+        max_id = result.scalar() or "B-0"
+        try:
+            num = int(max_id.removeprefix("B-")) + 1
+        except ValueError:
+            num = 1
+        return f"B-{num}"

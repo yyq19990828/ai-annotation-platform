@@ -111,6 +111,7 @@ export interface AnnotationResponse {
   is_active: boolean;
   ground_truth: boolean;
   attributes?: Record<string, unknown>;
+  version?: number;
   created_at: string;
   updated_at: string | null;
 }
@@ -198,4 +199,5 @@ export type PageKey =
   | "model-market"
   | "training"
   | "audit"
+  | "bugs"
   | "settings";

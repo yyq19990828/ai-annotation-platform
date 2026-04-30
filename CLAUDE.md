@@ -66,6 +66,25 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ---
 
+## BUG 反馈查询
+
+用户通过前端 BugReportDrawer 提交的 BUG 反馈存储在 PostgreSQL 的 `bug_reports` 表中。
+由于本地 API 没有现成的认证 token，直接通过 Docker 内的 psql 查询：
+
+```bash
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT display_id, title, severity, status, created_at FROM bug_reports ORDER BY created_at DESC LIMIT 20;"
+```
+
+如需查看完整详情（含描述、API 调用记录、console 错误等）：
+
+```bash
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT display_id, title, description, severity, status, route, browser_ua, recent_api_calls, recent_console_errors FROM bug_reports WHERE display_id = 'B-1';"
+```
+
+---
+
 ## 项目文档索引
 
 开发前务必阅读以下文档，了解项目全貌。

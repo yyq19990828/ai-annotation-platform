@@ -1,6 +1,8 @@
 ## 待实现 (Roadmap)
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
+>
+> **v0.6.0 (2026-04-30)**：3 个 P0 项全部落地 —— 协作并发（version 列 + ETag/If-Match + 锁续约 + 倒计时）、安全 & 测试基建（JWT 护栏 + 登录限流 + 密码策略/重置 + DB 测试套件）、Bug 反馈系统（FAB + 抽屉 + BugsPage + Markdown AI 消费端点）。详见 [CHANGELOG.md](../CHANGELOG.md#060---2026-04-30)。
 
 ---
 
@@ -63,7 +65,9 @@
 
 #### 协作并发
 - **任务锁主动续约**：`useTaskLock` 监听 lockError 弹错；但用户 idle 5 分钟后 lock TTL 到期，**前端无心跳续约 + 无倒计时可视化**。当前依赖刷新发现，体验差。建议：每 60s 心跳 PATCH lock；状态栏显示「锁剩余 4:23」。
+  - **✅ v0.6.0 已实现**：心跳间隔 120s → 60s；StatusBar 锁倒计时显示（< 60s 变红）；心跳失败自动重试 `acquireLock`。
 - **编辑冲突 ETag**：两人同 task 编辑（lock TTL 缝隙、网络抖动期间），后提交覆盖前者，无 `If-Match`/`version` 字段。建议 Annotation / Task 表加 `version` 列；前端 PATCH 带版本号，409 时浮出「他人已修改 → 重载 / 强制覆盖」二选一。
+  - **✅ v0.6.0 已实现**：Annotation/Task 加 `version INTEGER DEFAULT 1`；`PATCH /annotations/{id}` 支持 `If-Match` 头 → 409 + `{reason:"version_mismatch"}`；前端 `ConflictModal` 三选项。
 
 #### v0.5.5 phase 2 部分落地的延续
 - **OfflineQueueDrawer 抽屉 UI + tmpId 端到端接入**：phase 2 已落 `BroadcastChannel("anno.offline-queue.v1")` 多 tab 同步 + `useAnnotationHistory.replaceAnnotationId(tmpId, realId)` 命令栈整体替换；剩余 ① `OfflineQueueDrawer` 抽屉组件（队列详情列表 + 单条重试 / 删除 / 全部清空）；② `WorkbenchShell.handleCreateAnnotation` onError 入队时分配 `tmp_${uuid}`；③ `flushOffline` 成功 create 时拿后端真实 id → 调 `replaceAnnotationId` + `queryClient.setQueryData` 替换 cache；④ `StatusBar` 离线徽章点击改为 `setDrawerOpen(true)`。
@@ -103,6 +107,8 @@
 - **Celery / ML Backend 指标**：v0.4.8 已加 HTTP metrics + DB pool + `/health/{db,redis,minio}`；缺 Celery 队列长度、Worker 心跳、ML Backend 平均延迟 / 失败率。
 - **`/health/celery`**：v0.4.8 留下的待办；做成 broker ping + active worker count。
 - **用户内嵌式 Bug 反馈系统（AI-friendly）**：当前用户遇到 bug 只能口头反馈或外部 IM，反馈内容碎、缺上下文、AI 无法批量消费修复。需要把反馈做成**结构化产物**——不是「让用户填表」，而是「自动捕获上下文 + 用户少量补述 + 直接给 Claude Code 消费」的全链路。
+  - **✅ v0.6.0 已实现**：`bug_reports` + `bug_comments` 表、7 个 API 端点（含 `?format=markdown` 直接输出 Claude Code 可读 Markdown）、FAB 悬浮按钮 + 抽屉提交（自动捕获 route / UA / viewport / API calls / console errors）、`BugsPage` 管理页（过滤 + 详情 + 状态变更 + 评论）、Settings「我的反馈」tab、10/hour 限流。
+  - **保留 TODO**：截图（html2canvas）+ 涂抹脱敏 + MinIO 上传；LLM 聚类去重；邮件通知反馈者状态变更。
   - **数据模型**：`bug_reports` 表 → `id / display_id / reporter_id / route / user_role / project_id (nullable) / task_id (nullable) / title / description / severity (low/medium/high/critical) / status (new/triaged/in_progress/fixed/wont_fix/duplicate) / duplicate_of_id (nullable) / browser_ua / viewport / recent_api_calls JSONB (最近 10 次 method+url+status+ms) / recent_console_errors JSONB (最近 5 条 error msg+stack) / screenshot_url (MinIO key, nullable) / created_at / triaged_at / fixed_at / fixed_in_version`；附 `bug_comments` 表（评论 / 排查记录）。
   - **入口**：右下角浮动 FAB「反馈」按钮（每页常驻，z-index 高于 Modal 但低于 Toast）；点击弹出抽屉而非全屏 Modal，避免打断用户操作。
   - **自动上下文捕获（核心）**：提交时前端无感采集 → 当前 `location.pathname + search` / `useAuth()` 角色 / `navigator.userAgent` / `window.innerWidth × innerHeight` / `axios` 拦截器维护的最近 10 次请求 ring buffer / `window.onerror` + `unhandledrejection` 维护的最近 5 条错误 ring buffer / 当前路由对应的 project_id / task_id（从 URL 或 React Query cache 读）。**用户只需填「描述 + 是否截图」两项**。
@@ -191,9 +197,9 @@
 
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
-| **P0** | B § 可观测性：用户内嵌式 Bug 反馈系统（AI-friendly） | 反馈数据结构化 + 自动捕获上下文 + Markdown 端点直接喂 Claude Code 批量修；越早上线，bug → fix 闭环越快，每个迭代周期都受益 |
-| **P0** | 后端 DB-backed 测试套件、JWT secret 生产硬校验、登录限流、密码重置流程 | 安全 / 质量基线，缺它们生产风险高 |
-| **P0** | A § 协作并发：任务锁主动续约 + 编辑冲突 ETag | 多人协作场景一旦撞上就丢数据；当前 0 防护 |
+| **P0** ✅ | B § 可观测性：用户内嵌式 Bug 反馈系统（AI-friendly） | **v0.6.0 已落地**：`bug_reports` + `bug_comments` 表、7 个 API 端点（含 `?format=markdown` AI 消费）、FAB 悬浮按钮 + 抽屉提交 + BugsPage 管理 |
+| **P0** ✅ | 后端 DB-backed 测试套件、JWT secret 生产硬校验、登录限流、密码重置流程 | **v0.6.0 已落地**：DB SAVEPOINT test fixture + 3 测试文件、JWT 生产硬校验、slowapi 5/min 限流、密码 ≥8 位复杂度、忘记/重置密码全流程 |
+| **P0** ✅ | A § 协作并发：任务锁主动续约 + 编辑冲突 ETag | **v0.6.0 已落地**：Annotation/Task version 列 + If-Match/ETag + 409 冲突弹窗 + 锁 60s 心跳 + 倒计时可视化 + 自动重试获取 |
 | **P1** | TopBar 通知中心、UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
 | **P1** | A § 数据：大数据集分包 / 批次工作流（`task_batch` 中量方案） | 1 万+ 量级数据集是绕不开的真实场景，PM 按批指派 / 审核员整批退回 / ML 按批迭代训练全无依托；详见 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md) |

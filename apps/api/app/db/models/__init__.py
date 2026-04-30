@@ -10,6 +10,8 @@ from app.db.models.ml_backend import MLBackend
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
+from app.db.models.bug_report import BugReport, BugComment
+from app.db.models.password_reset_token import PasswordResetToken
 
 __all__ = [
     "User",
@@ -21,4 +23,6 @@ __all__ = [
     "Prediction", "PredictionMeta", "FailedPrediction",
     "AuditLog",
     "UserInvitation",
+    "BugReport", "BugComment",
+    "PasswordResetToken",
 ]

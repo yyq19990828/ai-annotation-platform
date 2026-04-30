@@ -38,6 +38,7 @@ import { ThemeSwitcher } from "./ThemeSwitcher";
 import { TaskQueuePanel } from "./TaskQueuePanel";
 import { AIInspectorPanel } from "./AIInspectorPanel";
 import { StatusBar } from "./StatusBar";
+import { ConflictModal } from "@/components/workbench/ConflictModal";
 import { HotkeyCheatSheet } from "./HotkeyCheatSheet";
 import { ClassPickerPopover } from "./ClassPickerPopover";
 import { Minimap } from "../stage/Minimap";
@@ -150,15 +151,37 @@ export function WorkbenchShell() {
 
   const createAnnotation = useCreateAnnotation(taskId);
   const deleteAnnotationMut = useDeleteAnnotation(taskId);
-  const updateAnnotationMut = useUpdateAnnotation(taskId);
+  const conflictCbRef = useRef<(annotationId: string, version: number) => void>(() => {});
+  const updateAnnotationMut = useUpdateAnnotation(taskId, (...args) => conflictCbRef.current(...args));
   const submitTaskMut = useSubmitTask();
   const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
     usePreannotationProgress(projectId);
-  const { lockError } = useTaskLock(taskId);
+  const { lockError, remainingMs } = useTaskLock(taskId);
 
   const queryClient = useQueryClient();
+
+  // 编辑冲突状态
+  const conflictIdRef = useRef<string>("");
+  const [conflictOpen, setConflictOpen] = useState(false);
+  const handleConflict = useCallback((annotationId: string, _currentVersion: number) => {
+    conflictIdRef.current = annotationId;
+    setConflictOpen(true);
+  }, []);
+  // 同步 ref + 供 useUpdateAnnotation 通过 conflictCbRef 回调
+  useEffect(() => {
+    conflictCbRef.current = handleConflict;
+  }, [handleConflict]);
+
+  const handleConflictReload = useCallback(() => {
+    setConflictOpen(false);
+    queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+  }, [queryClient, taskId]);
+
+  const handleConflictOverwrite = useCallback(() => {
+    setConflictOpen(false);
+  }, []);
 
   // 预取相邻题的 annotations / 第一页 predictions / 图像
   useEffect(() => {
@@ -1161,6 +1184,8 @@ export function WorkbenchShell() {
           offlineQueueCount={queueCount}
           online={online}
           onFlushOffline={flushOffline}
+          lockRemainingMs={remainingMs}
+          lockError={lockError}
         />
       </div>
 
@@ -1196,6 +1221,12 @@ export function WorkbenchShell() {
       />
 
       <HotkeyCheatSheet open={showHotkeys} onClose={() => setShowHotkeys(false)} />
+      <ConflictModal
+        open={conflictOpen}
+        onReload={handleConflictReload}
+        onOverwrite={handleConflictOverwrite}
+        onClose={() => setConflictOpen(false)}
+      />
     </div>
   );
 }

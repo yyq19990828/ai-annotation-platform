@@ -29,6 +29,9 @@ class AuditAction(str, Enum):
     DATASET_CREATE = "dataset.create"
     DATASET_DELETE = "dataset.delete"
     SYSTEM_BOOTSTRAP_ADMIN = "system.bootstrap_admin"
+    BUG_REPORT_CREATED = "bug_report.created"
+    BUG_REPORT_STATUS_CHANGED = "bug_report.status_changed"
+    BUG_COMMENT_CREATED = "bug_comment.created"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

@@ -95,7 +95,7 @@ export function RegisterPage() {
             />
           </Field>
 
-          <Field label="密码（至少 6 位）">
+          <Field label="密码（至少 8 位，需含大小写字母和数字）">
             <div style={{ position: "relative" }}>
               <input
                 required

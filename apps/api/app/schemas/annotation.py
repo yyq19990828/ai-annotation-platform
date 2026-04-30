@@ -81,6 +81,7 @@ class AnnotationOut(BaseModel):
     is_active: bool
     ground_truth: bool = False
     attributes: dict = {}
+    version: int = 1
     created_at: datetime
     updated_at: datetime | None = None
 

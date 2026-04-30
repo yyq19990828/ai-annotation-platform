@@ -42,44 +42,45 @@ services:
       timeout: 5s
       retries: 5
 
-  api:
-    build:
-      context: .
-      dockerfile: infra/docker/Dockerfile.api
-    ports:
-      - "8080:8000"
-    environment:
-      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
-      REDIS_URL: redis://redis:6379/0
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      MINIO_PUBLIC_URL: http://localhost:9000
-      SECRET_KEY: dev-secret-change-in-production
-    command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # api 和 web 在本地运行，不走 Docker
+  # api:
+  #   build:
+  #     context: .
+  #     dockerfile: infra/docker/Dockerfile.api
+  #   ports:
+  #     - "8080:8000"
+  #   environment:
+  #     DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+  #     REDIS_URL: redis://redis:6379/0
+  #     MINIO_ENDPOINT: minio:9000
+  #     MINIO_ACCESS_KEY: minioadmin
+  #     MINIO_SECRET_KEY: minioadmin
+  #     MINIO_PUBLIC_URL: http://localhost:9000
+  #     SECRET_KEY: dev-secret-change-in-production
+  #   command: >
+  #     sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #     minio:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
 
-  web:
-    build:
-      context: .
-      dockerfile: infra/docker/Dockerfile.web
-    ports:
-      - "3001:80"
-    depends_on:
-      api:
-        condition: service_healthy
+  # web:
+  #   build:
+  #     context: .
+  #     dockerfile: infra/docker/Dockerfile.web
+  #   ports:
+  #     - "3001:80"
+  #   depends_on:
+  #     api:
+  #       condition: service_healthy
 
   celery-worker:
     build:

@@ -98,7 +98,7 @@ class AnnotationService:
         confidence: float | None = None,
         attributes: dict | None = None,
     ) -> Annotation | None:
-        """Surgical update of mutable fields. Refuses to touch task_id / source / parent_prediction_id."""
+        """Surgical update of mutable fields. Increments version for optimistic concurrency."""
         annotation = await self.db.get(Annotation, annotation_id)
         if not annotation or not annotation.is_active:
             return None
@@ -110,6 +110,7 @@ class AnnotationService:
             annotation.confidence = confidence
         if attributes is not None:
             annotation.attributes = attributes
+        annotation.version += 1
         await self.db.flush()
         return annotation
 

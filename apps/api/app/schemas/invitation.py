@@ -41,7 +41,17 @@ class InvitationResolve(BaseModel):
 class RegisterRequest(BaseModel):
     token: str
     name: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def _password_strength(cls, v: str) -> str:
+        from app.core.password import validate_password_strength
+
+        errors = validate_password_strength(v)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return v
 
 
 class RegisterResponse(BaseModel):

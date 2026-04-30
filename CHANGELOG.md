@@ -7,6 +7,89 @@
 ---
 
 
+## [0.6.0] - 2026-04-30
+
+> v0.6.0 聚焦 ROADMAP 中 3 个 P0 项：**协作并发数据保护**（锁续约 + ETag 冲突检测）、**安全 & 测试基建**（JWT 生产护栏 + 登录限流 + 密码策略 + 密码重置 + DB 测试套件）、**用户内嵌式 Bug 反馈系统**（AI-friendly，结构化反馈 → Markdown 端点直接喂 Claude Code）。
+
+### 协作并发 — 任务锁主动续约 + 编辑冲突 ETag
+
+#### 后端
+- Annotation / Task 模型新增 `version INTEGER DEFAULT 1` 列（alembic 0016），乐观并发控制基础。
+- `PATCH /tasks/{task_id}/annotations/{annotation_id}` 支持 `If-Match` 头校验：版本不匹配 → 409 `{reason:"version_mismatch", current_version:N}`；成功 → `ETag: W/"<version>"`。
+- `AnnotationOut` schema 新增 `version: int` 字段。
+- `AnnotationService.update()` 每次更新自动 `version += 1`。
+
+#### 前端
+- `apiClient.patch()` 支持可选的 `extra?: RequestInit` 参数。
+- `tasksApi.updateAnnotation()` 接受 `etag` 参数，拼 `If-Match` 头。
+- 新建 `ConflictModal` 组件：编辑冲突时弹窗，提供「重载（放弃本地）」/「强制覆盖」/「取消」三选项。
+- `useUpdateAnnotation` 检测 409 状态 → 触发 `onConflict` 回调。
+- `useTaskLock`：心跳间隔 120s → 60s；新增 `remainingMs` 倒计时（每秒更新）；心跳失败自动重试 `acquireLock`。
+- `StatusBar` 左侧新增锁倒计时显示（`< 60s` 变红）+ 锁错误提示。
+
+### 安全 & 测试基建
+
+#### JWT 生产硬校验
+- `main.py` lifespan 启动检查：`environment=production` 且 `secret_key=="dev-secret-change-in-production"` → 拒绝启动。
+
+#### 登录限流
+- 新增 `slowapi>=0.1.9` 依赖 + `app/core/ratelimit.py`。
+- `main.py` 注册 `SlowAPIMiddleware` + `RateLimitExceeded` handler。
+- `POST /auth/login` 加 `@limiter.limit("5/minute")`。
+
+#### 密码策略升级
+- 新建 `app/core/password.py`：`validate_password_strength()`（≥8 位 + 大写 + 小写 + 数字）。
+- `PasswordChange.new_password` / `RegisterRequest.password` 的 `min_length` 6→8，加 `@field_validator` 强度校验。
+- 前端密码标签更新："至少 6 位" → "至少 8 位，需含大小写字母和数字"。
+
+#### 密码重置流程
+- 新建 `password_reset_tokens` 表（alembic 0018）+ 模型 + `PasswordResetService`（`create_token` / `consume_token`，1h 过期）。
+- `POST /auth/forgot-password`（公开，限流 3/min）：生成 token，SMTP 未配置时打日志；防邮箱枚举，始终返回 202。
+- `POST /auth/reset-password`（公开）：验证 token + 强度校验 + 更新密码 + 写 audit log。
+- 前端新建 `ForgotPasswordPage` / `ResetPasswordPage`；`LoginPage` 加 "忘记密码？" 链接；`App.tsx` 加公开路由。
+
+#### DB-backed 测试套件
+- 重写 `tests/conftest.py`：`test_db_url`（`TEST_DATABASE_URL` 环境变量）+ `apply_migrations`（session 级 alembic upgrade head）+ `db_session`（per-test SAVEPOINT 隔离）+ `super_admin` / `project_admin` / `annotator` / `reviewer` 三角色 fixture（含 JWT token）+ `httpx_client`（挂真实 DB）。
+- 新建 `test_audit_logs.py`：过滤 / 分页 / 登录自动产生审计日志。
+- 新建 `test_users_role_matrix.py`：12 个角色修改守卫用例。
+- 新建 `test_users_delete_transfer.py`：删除权限 / 自己不可删 / 审计日志验证。
+
+### 用户内嵌式 Bug 反馈系统（AI-friendly）
+
+#### 后端
+- 新建 `bug_reports` + `bug_comments` 表（alembic 0017）。
+- 新建 `BugReportService`（CRUD + `list_markdown()` Markdown 端点 + `cluster_similar()` 去重建议）。
+- 7 个 API 端点：`POST /bug_reports`（10/hour 限流）/ `GET /bug_reports`（admin，`?format=markdown` 输出可直接喂 Claude Code）/ `GET /bug_reports/mine` / `GET /bug_reports/{id}`（含评论）/ `PATCH /bug_reports/{id}` / `POST /bug_reports/{id}/comments` / `POST /bug_reports/cluster`。
+- `AuditAction` 新增 `BUG_REPORT_CREATED` / `BUG_REPORT_STATUS_CHANGED` / `BUG_COMMENT_CREATED`。
+
+#### 前端
+- 新建 `bug-reports.ts` API 模块 + `bugReportCapture.ts` 自动捕获工具（fetch 拦截 ring buffer + console 错误 ring buffer + 脱敏）。
+- 新建 `BugReportFAB`：右下角悬浮反馈按钮（z-index: 100），全局常驻。
+- 新建 `BugReportDrawer`：右侧 400px 抽屉，三态（我的反馈列表 / 创建表单 / 详情+评论）。自动捕获 route / UA / viewport / API 调用 / console 错误。
+- 新建 `BugsPage`（`/bugs`，admin only）：表格 + 状态/严重度过滤 + 详情面板（含状态变更 + 评论）。
+- `SettingsPage` 新增「我的反馈」tab，调用 `GET /bug_reports/mine`。
+- `App.tsx` 注册 `/bugs` 路由 + FAB/Drawer + 初始化 fetch 拦截。
+- `PageKey` / `ROLE_PAGE_ACCESS` 加 `"bugs"`；`Icon` 加 `Bug`；`auditLabels` 加 bug 相关标签。
+
+### 验证
+
+- 后端模块导入全绿（`uv run python -c "from ..."`）。
+- alembic 5 条迁移链 0014→0015→0016（version 列）→0017（bug 反馈）→0018（密码重置）全部成功应用。
+- 前端 `tsc -b` 零错误（`apps/web/`）。
+- `slowapi` 安装成功，`Limiter` / `SlowAPIMiddleware` 导入正常。
+
+### 不在本期范围（明确 defer 到 v0.6.1+）
+
+- Bug 反馈截图（html2canvas 抓视口 + MinIO 上传 + 涂抹脱敏）—— FAB/Drawer 已留截图位，html2canvas 依赖按需引入。
+- Bug 聚类去重的 LLM 调用（`POST /bug_reports/cluster` 当前仅返回启发式相似结果）。
+- 邮件实际发送（SMTP placeholder，token 打日志兜底）。
+- 前端 vitest 扩展（`useAnnotationHistory` batch / `useClipboard` 偏移 / `useSessionStats` ring buffer）。
+- Playwright E2E 测试 / CI/CD pipeline / husky pre-commit hooks。
+- i18n / 无障碍 / SSO / 2FA。
+
+---
+
+
 ## [0.5.5 phase 2] - 2026-04-30 — Floating Noodle
 
 > 一次性收口 phase 1（治理 / 基建）与 v0.5.4（工作台 polish）累计的 12 项遗留。**不引入新功能**，每一行改动都对应一条已立项的尾巴。9 项一次落到位，3 项核心动作落地、UI 抽屉 / 评论富文本等大件留作 v0.5.6。

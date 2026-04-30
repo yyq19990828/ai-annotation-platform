@@ -1,7 +1,7 @@
 import base64
 import uuid
 from datetime import timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from app.deps import get_db, get_current_user, require_roles, assert_project_vis
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
+from app.db.models.annotation import Annotation
 from app.schemas.task import TaskOut, TaskListResponse, TaskLockResponse
 from app.schemas.annotation import AnnotationCreate, AnnotationOut, AnnotationUpdate
 from app.schemas.prediction import PredictionOut
@@ -162,6 +163,7 @@ async def update_annotation(
     annotation_id: uuid.UUID,
     data: AnnotationUpdate,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
@@ -169,6 +171,24 @@ async def update_annotation(
     fields = data.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    # 乐观并发控制：If-Match 头校验
+    if_match = request.headers.get("If-Match", "").strip()
+    if if_match:
+        existing = await db.get(Annotation, annotation_id)
+        if existing is None or not existing.is_active:
+            raise HTTPException(status_code=404, detail="Annotation not found")
+        expected_version = if_match.removeprefix('W/"').removesuffix('"')
+        try:
+            expected_v = int(expected_version)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid If-Match format")
+        if existing.version != expected_v:
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "version_mismatch", "current_version": existing.version},
+            )
+
     annotation = await svc.update(annotation_id, **fields)
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
@@ -187,6 +207,7 @@ async def update_annotation(
     )
     await db.commit()
     await db.refresh(annotation)
+    response.headers["ETag"] = f'W/"{annotation.version}"'
     return annotation
 
 

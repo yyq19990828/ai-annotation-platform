@@ -1,8 +1,19 @@
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tasksApi, type AnnotationPayload, type AnnotationUpdatePayload, type TaskListParams } from "../api/tasks";
 import type { AnnotationResponse } from "@/types";
+import { ApiError } from "../api/client";
 
 const TASK_PAGE_SIZE = 100;
+
+export class ConflictError extends Error {
+  constructor(
+    message: string,
+    public currentVersion: number,
+  ) {
+    super(message);
+    this.name = "ConflictError";
+  }
+}
 
 export function useTaskList(projectId: string | undefined, params?: TaskListParams) {
   return useInfiniteQuery({
@@ -80,12 +91,19 @@ export function useDeleteAnnotation(taskId: string | undefined) {
   });
 }
 
-export function useUpdateAnnotation(taskId: string | undefined) {
+export function useUpdateAnnotation(
+  taskId: string | undefined,
+  onConflict?: (annotationId: string, currentVersion: number) => void,
+) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ annotationId, payload }: { annotationId: string; payload: AnnotationUpdatePayload }) => {
+    mutationFn: ({ annotationId, payload, etag }: {
+      annotationId: string;
+      payload: AnnotationUpdatePayload;
+      etag?: string;
+    }) => {
       if (!taskId) throw new Error("No task selected");
-      return tasksApi.updateAnnotation(taskId, annotationId, payload);
+      return tasksApi.updateAnnotation(taskId, annotationId, payload, etag);
     },
     onMutate: async ({ annotationId, payload }) => {
       await qc.cancelQueries({ queryKey: ["annotations", taskId] });
@@ -105,7 +123,15 @@ export function useUpdateAnnotation(taskId: string | undefined) {
       );
       return { prev };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
+      if (err instanceof ApiError && err.status === 409) {
+        const detail = (err.detailRaw as { current_version?: number } | undefined);
+        const annotationId = (_vars as { annotationId?: string } | undefined)?.annotationId ?? "";
+        if (detail?.current_version && onConflict) {
+          onConflict(annotationId, detail.current_version);
+          return; // don't rollback — let user decide
+        }
+      }
       if (ctx?.prev !== undefined) qc.setQueryData(["annotations", taskId], ctx.prev);
     },
     onSettled: () => {
