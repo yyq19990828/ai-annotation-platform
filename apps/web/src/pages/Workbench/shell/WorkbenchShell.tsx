@@ -209,16 +209,17 @@ export function WorkbenchShell() {
     imgH: stageGeom.imgH,
   });
 
-  // IoU 视觉去重：与已确认 user 框 IoU > 0.7 且 class 相同的 AI 框 → 淡化
+  // IoU 视觉去重：与已确认 user 框 IoU > 项目级阈值（默认 0.7）且 class 相同的 AI 框 → 淡化
+  const iouDedupThreshold = currentProject?.iou_dedup_threshold ?? 0.7;
   const dimmedAiIds = useMemo(() => {
     const out = new Set<string>();
     if (userBoxes.length === 0 || aiBoxes.length === 0) return out;
     for (const a of aiBoxes) {
       const sameClass = userBoxes.filter((u) => u.cls === a.cls);
-      if (sameClass.some((u) => iouShape(u, a) > 0.7)) out.add(a.id);
+      if (sameClass.some((u) => iouShape(u, a) > iouDedupThreshold)) out.add(a.id);
     }
     return out;
-  }, [userBoxes, aiBoxes]);
+  }, [userBoxes, aiBoxes, iouDedupThreshold]);
 
   // 方向键 nudge：临时几何 override，松开方向键时一次性 batch 提交
   const [nudgeMap, setNudgeMap] = useState<Map<string, Geom>>(new Map());
@@ -766,10 +767,35 @@ export function WorkbenchShell() {
     };
 
     const onKey = (e: KeyboardEvent) => {
+      // D.1：属性 hotkey 查找 —— 仅当单选 user 框时启用
+      const attributeHotkey = (digit: string) => {
+        const sel = s.selectedId;
+        if (!sel) return null;
+        const ann = annotationsRef.current.find((a) => a.id === sel);
+        if (!ann) return null;
+        const fields = currentProject?.attribute_schema?.fields ?? [];
+        for (const f of fields) {
+          if (f.hotkey !== digit) continue;
+          if (f.type !== "boolean" && f.type !== "select") continue;
+          // applies_to 过滤
+          const applies = f.applies_to;
+          if (Array.isArray(applies) && !applies.includes(ann.class_name)) continue;
+          const cur = (ann.attributes ?? {})[f.key];
+          if (f.type === "boolean") {
+            return { key: f.key, type: "boolean" as const, currentValue: cur };
+          }
+          // select
+          const opts = (f.options ?? []).map((o) => o.value);
+          return { key: f.key, type: "select" as const, options: opts, currentValue: cur };
+        }
+        return null;
+      };
+
       const action = dispatchKey(e, {
         isInputFocused: isInputFocused(e.target),
         hasSelection: !!s.selectedId || s.selectedIds.length > 0,
         pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging,
+        attributeHotkey,
       });
       if (!action) return;
 
@@ -867,6 +893,17 @@ export function WorkbenchShell() {
           if (classes[action.idx]) { s.setActiveClass(classes[action.idx]); recordRecentClass(classes[action.idx]); }
           return;
 
+        case "setAttribute": {
+          // D.1：选中态下 1-9 命中属性 hotkey → 直接覆盖单字段
+          e.preventDefault();
+          if (!s.selectedId) return;
+          const ann = annotationsRef.current.find((a) => a.id === s.selectedId);
+          if (!ann) return;
+          const next = { ...(ann.attributes ?? {}), [action.key]: action.value };
+          handleUpdateAttributes(ann.id, next);
+          return;
+        }
+
         case "setClassByLetter": {
           const letterIdx = action.letter.charCodeAt(0) - "a".charCodeAt(0);
           const idx = 9 + letterIdx;
@@ -914,6 +951,7 @@ export function WorkbenchShell() {
     handleAcceptPrediction, aiBoxes, showHotkeys, recordRecentClass, handleStartChangeClass,
     smartNext, clipboard, pushToast, batchChanging, flushNudges,
     handleBatchDelete, handleStartBatchChangeClass, stageGeom.imgW, stageGeom.imgH,
+    currentProject?.attribute_schema, handleUpdateAttributes,
   ]);
 
   if (isProjectLoading) {

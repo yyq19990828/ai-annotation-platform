@@ -6,7 +6,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import {
   useAssignUserGroup,
   useChangeUserRole,
-  useDeactivateUser,
+  useDeleteUser,
 } from "@/hooks/useUsers";
 import { useGroups } from "@/hooks/useGroups";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -20,9 +20,20 @@ interface Props {
   onClose: () => void;
 }
 
+// 矩阵：actor.role × target.role → 允许 actor 把 target 改成的角色集
+// project_admin 仅可在 annotator ↔ reviewer 之间切换；super_admin 可任意改（除自己）
 const ASSIGNABLE_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
   super_admin: ["super_admin", "project_admin", "reviewer", "annotator", "viewer"],
-  project_admin: ["reviewer", "annotator", "viewer"],
+  project_admin: ["reviewer", "annotator"],
+  reviewer: [],
+  annotator: [],
+  viewer: [],
+};
+
+// 哪些 target.role 允许 actor 删除（不含 actor 自己 / 最后一名 super_admin）
+const DELETABLE_TARGET_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
+  super_admin: ["super_admin", "project_admin", "reviewer", "annotator", "viewer"],
+  project_admin: ["reviewer", "annotator"],
   reviewer: [],
   annotator: [],
   viewer: [],
@@ -31,32 +42,39 @@ const ASSIGNABLE_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
 export function EditUserModal({ open, user, onClose }: Props) {
   const { role: actorRole } = usePermissions();
   const allowedRoles = ASSIGNABLE_ROLES_BY_ACTOR[actorRole] ?? [];
-  const canEditRole = actorRole === "super_admin";
-  const canDeactivate = actorRole === "super_admin";
+  const deletableRoles = DELETABLE_TARGET_ROLES_BY_ACTOR[actorRole] ?? [];
 
   const { data: groups = [] } = useGroups(open);
   const changeRole = useChangeUserRole();
   const assignGroup = useAssignUserGroup();
-  const deactivate = useDeactivateUser();
+  const deleteUser = useDeleteUser();
   const pushToast = useToastStore((s) => s.push);
 
   const [roleVal, setRoleVal] = useState<UserRole>("annotator");
   const [groupId, setGroupId] = useState<string>("");
-  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (open && user) {
       setRoleVal(user.role as UserRole);
       setGroupId(user.group_id ?? "");
-      setConfirmDeactivate(false);
+      setConfirmDelete(false);
       changeRole.reset();
       assignGroup.reset();
-      deactivate.reset();
+      deleteUser.reset();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, user?.id]);
 
   if (!user) return null;
+
+  // 不能改/删自己
+  const isSelf = false; // EditUserModal 入口已经隐藏自己；保留位以避免 UI 错配
+  const targetRole = user.role as UserRole;
+
+  const canEditRole =
+    !isSelf && allowedRoles.includes(targetRole); // 当前角色必须在 actor 可改的集合内才能允许改
+  const canDelete = !isSelf && deletableRoles.includes(targetRole);
 
   const dirtyRole = canEditRole && roleVal !== user.role;
   const dirtyGroup = (groupId || null) !== (user.group_id ?? null);
@@ -86,21 +104,33 @@ export function EditUserModal({ open, user, onClose }: Props) {
     }
   };
 
-  const handleDeactivate = async () => {
+  const handleDelete = async () => {
     try {
-      await deactivate.mutateAsync(user.id);
-      pushToast({ msg: `已停用 ${user.name}`, kind: "success" });
+      await deleteUser.mutateAsync(user.id);
+      pushToast({ msg: `已删除账号 ${user.name}`, kind: "success" });
       onClose();
     } catch (err) {
       pushToast({
-        msg: "停用失败",
+        msg: "删除失败",
         sub: err instanceof Error ? err.message : String(err),
         kind: "error",
       });
     }
   };
 
-  const error = changeRole.error || assignGroup.error || deactivate.error;
+  const error = changeRole.error || assignGroup.error || deleteUser.error;
+
+  // 角色下拉里允许出现的选项 = 当前角色 + actor 可指派集合（去重）
+  const roleOptions: UserRole[] = Array.from(
+    new Set<UserRole>([targetRole, ...allowedRoles]),
+  );
+
+  const editRoleHint =
+    actorRole === "project_admin"
+      ? "项目管理员仅能在审核员 / 标注员 之间切换"
+      : !canEditRole
+      ? "你无权修改该用户的角色"
+      : "";
 
   return (
     <Modal open={open} onClose={onClose} title={`编辑成员 · ${user.name}`} width={520}>
@@ -109,19 +139,16 @@ export function EditUserModal({ open, user, onClose }: Props) {
           <input value={user.email} readOnly style={{ ...inputStyle, color: "var(--color-fg-muted)" }} />
         </Field>
 
-        <Field label={canEditRole ? "角色" : "角色（仅超级管理员可改）"}>
+        <Field label={`角色${editRoleHint ? `（${editRoleHint}）` : ""}`}>
           <select
             value={roleVal}
             onChange={(e) => setRoleVal(e.target.value as UserRole)}
             disabled={!canEditRole}
             style={{ ...inputStyle, opacity: canEditRole ? 1 : 0.7 }}
           >
-            {allowedRoles.length === 0 || !allowedRoles.includes(roleVal) ? (
-              <option value={roleVal}>{ROLE_LABELS[roleVal] ?? roleVal}</option>
-            ) : null}
-            {allowedRoles.map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABELS[r]}
+            {roleOptions.map((r) => (
+              <option key={r} value={r} disabled={!canEditRole && r !== targetRole}>
+                {ROLE_LABELS[r] ?? r}
               </option>
             ))}
           </select>
@@ -150,18 +177,18 @@ export function EditUserModal({ open, user, onClose }: Props) {
 
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
           <div>
-            {canDeactivate && user.is_active && !confirmDeactivate && (
-              <Button type="button" variant="danger" onClick={() => setConfirmDeactivate(true)}>
-                <Icon name="logout" size={12} /> 停用账号
+            {canDelete && user.is_active && !confirmDelete && (
+              <Button type="button" variant="danger" onClick={() => setConfirmDelete(true)}>
+                <Icon name="trash" size={12} /> 删除账号
               </Button>
             )}
-            {canDeactivate && confirmDeactivate && (
+            {canDelete && confirmDelete && (
               <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5 }}>
-                <span style={{ color: "var(--color-danger)" }}>确认停用？</span>
-                <Button type="button" variant="danger" onClick={handleDeactivate} disabled={deactivate.isPending}>
-                  {deactivate.isPending ? "停用中…" : "确认停用"}
+                <span style={{ color: "var(--color-danger)" }}>确认删除？该用户将无法登录</span>
+                <Button type="button" variant="danger" onClick={handleDelete} disabled={deleteUser.isPending}>
+                  {deleteUser.isPending ? "删除中…" : "确认删除"}
                 </Button>
-                <Button type="button" onClick={() => setConfirmDeactivate(false)}>
+                <Button type="button" onClick={() => setConfirmDelete(false)}>
                   取消
                 </Button>
               </div>

@@ -3,25 +3,32 @@ import { useQueryClient, useIsFetching } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Avatar } from "@/components/ui/Avatar";
+import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { useAuthStore } from "@/stores/authStore";
 import { useNotifications, getLastRead } from "@/hooks/useNotifications";
+import { useTheme, type ThemePref } from "@/hooks/useTheme";
+import type { IconName } from "@/components/ui/Icon";
 import { NotificationsPopover } from "./NotificationsPopover";
 
 interface TopBarProps {
   workspace: string;
   onWorkspaceChange?: () => void;
+  /** 窄屏时显示 hamburger 按钮，点击打开 SidebarDrawer。 */
+  showHamburger?: boolean;
+  onOpenDrawer?: () => void;
 }
 
 const spinStyle = `
 @keyframes __topbar_spin { to { transform: rotate(360deg); } }
 `;
 
-export function TopBar({ workspace, onWorkspaceChange }: TopBarProps) {
+export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, onOpenDrawer }: TopBarProps) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const qc = useQueryClient();
   const isFetching = useIsFetching();
   const [notifOpen, setNotifOpen] = useState(false);
+  const { theme, resolved, setTheme } = useTheme();
 
   const { data: notifData } = useNotifications();
   const unreadCount = useMemo(() => {
@@ -34,6 +41,28 @@ export function TopBar({ workspace, onWorkspaceChange }: TopBarProps) {
   const handleRefresh = () => {
     qc.invalidateQueries();
   };
+
+  const themeIcon: IconName = theme === "system" ? "monitor" : theme === "dark" ? "moon" : "sun";
+  const themeTitle =
+    theme === "system"
+      ? `主题：跟随系统（当前 ${resolved === "dark" ? "夜间" : "日间"}）`
+      : theme === "dark"
+      ? "主题：夜间"
+      : "主题：日间";
+
+  const themeItems: DropdownItem[] = (
+    [
+      { key: "light", label: "日间", icon: "sun" as IconName },
+      { key: "dark", label: "夜间", icon: "moon" as IconName },
+      { key: "system", label: "跟随系统", icon: "monitor" as IconName },
+    ] as Array<{ key: ThemePref; label: string; icon: IconName }>
+  ).map((opt) => ({
+    id: opt.key,
+    label: opt.label,
+    icon: opt.icon,
+    active: theme === opt.key,
+    onSelect: () => setTheme(opt.key),
+  }));
 
   return (
     <>
@@ -51,6 +80,28 @@ export function TopBar({ workspace, onWorkspaceChange }: TopBarProps) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+          {showHamburger && (
+            <button
+              type="button"
+              title="打开导航菜单"
+              aria-label="打开导航菜单"
+              onClick={onOpenDrawer}
+              style={{
+                width: 30,
+                height: 30,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "transparent",
+                border: "1px solid transparent",
+                borderRadius: "var(--radius-md)",
+                color: "var(--color-fg-muted)",
+                cursor: "pointer",
+              }}
+            >
+              <Icon name="menu" size={16} />
+            </button>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 13, letterSpacing: "0.01em" }}>
             <div
               style={{
@@ -135,6 +186,48 @@ export function TopBar({ workspace, onWorkspaceChange }: TopBarProps) {
               style={isFetching > 0 ? { animation: "__topbar_spin 0.8s linear infinite" } : undefined}
             />
           </button>
+
+          {/* 主题切换 */}
+          <DropdownMenu
+            minWidth={160}
+            items={themeItems}
+            footer={
+              theme === "system" ? (
+                <div style={{
+                  padding: "6px 10px 4px",
+                  fontSize: 11,
+                  color: "var(--color-fg-subtle)",
+                  borderTop: "1px solid var(--color-border)",
+                  marginTop: 4,
+                }}>
+                  当前 {resolved === "dark" ? "夜间" : "日间"}（跟随系统）
+                </div>
+              ) : null
+            }
+            trigger={({ open, toggle, ref }) => (
+              <button
+                ref={ref}
+                title={themeTitle}
+                onClick={toggle}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                style={{
+                  width: 30,
+                  height: 30,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: open ? "var(--color-bg-sunken)" : "transparent",
+                  border: "1px solid transparent",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-fg-muted)",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon name={themeIcon} size={15} />
+              </button>
+            )}
+          />
 
           {/* 通知按钮 */}
           <div style={{ position: "relative" }}>

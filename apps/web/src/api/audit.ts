@@ -29,9 +29,13 @@ export interface AuditQuery {
   page_size?: number;
   action?: string;
   target_type?: string;
+  target_id?: string;
   actor_id?: string;
   from?: string;
   to?: string;
+  /** A.3：detail_json 字段级 GIN 过滤——键名 + 键值（仅 super_admin）。 */
+  detail_key?: string;
+  detail_value?: string;
 }
 
 function toQuery(params?: AuditQuery): string {

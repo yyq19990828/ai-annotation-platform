@@ -18,6 +18,7 @@ class UserOut(BaseModel):
     group_name: str | None
     group_id: UUID | None = None
     status: str
+    is_active: bool = True
     created_at: datetime
 
     class Config:

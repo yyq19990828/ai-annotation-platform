@@ -103,6 +103,27 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
     setRedoStack([]);
   }, []);
 
+  /** v0.5.5 phase 2 D.2：离线 create 的 tmp_id 在 drain 后被替换为后端真实 id；
+   *  扫栈把 undo + redo 两边命令里的 annotationId（含嵌套 batch）整体替换，
+   *  保证 Ctrl+Z / Ctrl+Y 不再尝试操作不存在的 tmp_id。 */
+  const replaceAnnotationId = useCallback((tmpId: string, realId: string) => {
+    const swapLeaf = (c: Exclude<Command, { kind: "batch" }>): Exclude<Command, { kind: "batch" }> => {
+      if (c.kind === "create" && c.annotationId === tmpId) return { ...c, annotationId: realId };
+      if (c.kind === "update" && c.annotationId === tmpId) return { ...c, annotationId: realId };
+      if (c.kind === "delete" && c.annotation.id === tmpId)
+        return { ...c, annotation: { ...c.annotation, id: realId } };
+      if (c.kind === "acceptPrediction" && c.createdAnnotationIds.includes(tmpId))
+        return { ...c, createdAnnotationIds: c.createdAnnotationIds.map((id) => (id === tmpId ? realId : id)) };
+      return c;
+    };
+    const swap = (c: Command): Command => {
+      if (c.kind === "batch") return { ...c, commands: c.commands.map(swapLeaf) };
+      return swapLeaf(c);
+    };
+    setUndoStack((s) => s.map(swap));
+    setRedoStack((s) => s.map(swap));
+  }, []);
+
   const undo = useCallback(async () => {
     if (busy) return;
     setUndoStack((stack) => {
@@ -136,6 +157,7 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
     pushBatch,
     undo,
     redo,
+    replaceAnnotationId,
     canUndo: undoStack.length > 0 && !busy,
     canRedo: redoStack.length > 0 && !busy,
     busy,

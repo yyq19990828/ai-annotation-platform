@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -20,10 +21,14 @@ import type { UserRole } from "@/types";
 const PAGE_SIZE = 20;
 
 export function AuditPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [page, setPage] = useState(1);
-  const [actionFilter, setActionFilter] = useState("");
-  const [targetType, setTargetType] = useState("");
-  const [actorId, setActorId] = useState("");
+  const [actionFilter, setActionFilter] = useState(searchParams.get("action") ?? "");
+  const [targetType, setTargetType] = useState(searchParams.get("target_type") ?? "");
+  const [targetId, setTargetId] = useState(searchParams.get("target_id") ?? "");
+  const [actorId, setActorId] = useState(searchParams.get("actor_id") ?? "");
+  const [detailKey, setDetailKey] = useState(searchParams.get("detail_key") ?? "");
+  const [detailValue, setDetailValue] = useState(searchParams.get("detail_value") ?? "");
   const [scope, setScope] = useState<"business" | "all">("business");
   const [detail, setDetail] = useState<AuditLogResponse | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -31,15 +36,48 @@ export function AuditPage() {
   const pushToast = useToastStore((s) => s.push);
 
   const { data: usersData = [] } = useUsers();
+
+  // URL 参数变化（如从 UsersPage 跳过来）→ 更新筛选并回到第 1 页
+  useEffect(() => {
+    setActionFilter(searchParams.get("action") ?? "");
+    setTargetType(searchParams.get("target_type") ?? "");
+    setTargetId(searchParams.get("target_id") ?? "");
+    setActorId(searchParams.get("actor_id") ?? "");
+    setDetailKey(searchParams.get("detail_key") ?? "");
+    setDetailValue(searchParams.get("detail_value") ?? "");
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.toString()]);
+
+  const focused =
+    !!actorId || !!targetId || !!targetType || !!actionFilter || !!detailKey;
+  const focusedActor = actorId
+    ? usersData.find((u) => u.id === actorId)
+    : null;
+
+  const clearFocus = () => {
+    setSearchParams({}, { replace: true });
+    setActionFilter("");
+    setTargetType("");
+    setTargetId("");
+    setActorId("");
+    setDetailKey("");
+    setDetailValue("");
+    setPage(1);
+  };
+
   const params = useMemo(
     () => ({
       page,
       page_size: PAGE_SIZE,
       action: actionFilter || undefined,
       target_type: targetType || undefined,
+      target_id: targetId || undefined,
       actor_id: actorId || undefined,
+      detail_key: detailKey || undefined,
+      detail_value: detailKey ? detailValue : undefined,
     }),
-    [page, actionFilter, targetType, actorId],
+    [page, actionFilter, targetType, targetId, actorId, detailKey, detailValue],
   );
   const { data, isLoading, refetch, isFetching } = useAuditLogs(params, {
     refetchInterval: autoRefresh ? 30_000 : false,
@@ -121,10 +159,64 @@ export function AuditPage() {
               <option key={u.id} value={u.id}>{u.name} · {u.email}</option>
             ))}
           </select>
+          <input
+            value={targetId}
+            placeholder="对象 ID（精确匹配）"
+            onChange={(e) => { setTargetId(e.target.value); setPage(1); }}
+            style={{ ...selectStyle, width: 220, fontFamily: "var(--font-mono, monospace)" }}
+          />
+          <input
+            value={detailKey}
+            placeholder="detail 键名（如 role）"
+            title="A.3：detail_json 字段级 GIN 过滤——键名"
+            onChange={(e) => { setDetailKey(e.target.value); setPage(1); }}
+            style={{ ...selectStyle, width: 160, fontFamily: "var(--font-mono, monospace)" }}
+          />
+          <input
+            value={detailValue}
+            placeholder="detail 键值（如 super_admin）"
+            title="A.3：detail_json 字段级 GIN 过滤——键值（与键名共同生效）"
+            onChange={(e) => { setDetailValue(e.target.value); setPage(1); }}
+            disabled={!detailKey}
+            style={{ ...selectStyle, width: 200, fontFamily: "var(--font-mono, monospace)", opacity: detailKey ? 1 : 0.5 }}
+          />
           <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--color-fg-muted)" }}>
             共 {total} 条 · 第 {page} / {pageCount} 页
           </span>
         </div>
+
+        {focused && (
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "8px 16px", borderBottom: "1px solid var(--color-border)",
+            background: "rgba(99, 102, 241, 0.08)",
+            fontSize: 12.5,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Icon name="target" size={13} style={{ color: "var(--color-accent)" }} />
+              <span style={{ color: "var(--color-fg-muted)" }}>追溯模式：</span>
+              {focusedActor && (
+                <Badge variant="accent" style={{ fontSize: 11 }}>
+                  操作人 {focusedActor.name} · {focusedActor.email}
+                </Badge>
+              )}
+              {!focusedActor && actorId && (
+                <Badge variant="accent" style={{ fontSize: 11 }}>actor_id = <span className="mono">{actorId.slice(0, 8)}…</span></Badge>
+              )}
+              {targetType && <Badge variant="accent" style={{ fontSize: 11 }}>对象类型 {targetType}</Badge>}
+              {targetId && <Badge variant="accent" style={{ fontSize: 11 }}>对象 ID <span className="mono">{targetId.length > 24 ? targetId.slice(0, 8) + "…" : targetId}</span></Badge>}
+              {actionFilter && <Badge variant="accent" style={{ fontSize: 11 }}>动作 {actionFilter}</Badge>}
+              {detailKey && (
+                <Badge variant="accent" style={{ fontSize: 11 }}>
+                  detail.{detailKey}{detailValue ? ` = ${detailValue}` : ""}
+                </Badge>
+              )}
+            </div>
+            <Button size="sm" variant="ghost" onClick={clearFocus}>
+              <Icon name="x" size={11} />清除追溯
+            </Button>
+          </div>
+        )}
 
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
           <thead>
@@ -149,7 +241,18 @@ export function AuditPage() {
                 <td style={tdStyle}>
                   {it.actor_email ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 12.5 }}>{it.actor_email}</span>
+                      {it.actor_id ? (
+                        <button
+                          type="button"
+                          onClick={() => { setActorId(it.actor_id!); setPage(1); }}
+                          title="按操作人追溯"
+                          style={focusBtnStyle}
+                        >
+                          {it.actor_email}
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 12.5 }}>{it.actor_email}</span>
+                      )}
                       {it.actor_role && (
                         <Badge variant="outline" style={{ fontSize: 10 }}>
                           {ROLE_LABELS[it.actor_role as UserRole] ?? it.actor_role}
@@ -166,11 +269,26 @@ export function AuditPage() {
                   </Badge>
                 </td>
                 <td style={{ ...tdStyle, fontSize: 12, color: "var(--color-fg-muted)" }}>
-                  {it.target_type ? `${it.target_type}` : "—"}
-                  {it.target_id && (
-                    <span className="mono" style={{ marginLeft: 4, fontSize: 11, color: "var(--color-fg-subtle)" }}>
-                      {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
-                    </span>
+                  {it.target_type && it.target_id ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTargetType(it.target_type!);
+                        setTargetId(it.target_id!);
+                        setPage(1);
+                      }}
+                      title={`按对象 ${it.target_type}/${it.target_id} 追溯`}
+                      style={focusBtnStyle}
+                    >
+                      {it.target_type}
+                      <span className="mono" style={{ marginLeft: 4, fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                        {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
+                      </span>
+                    </button>
+                  ) : it.target_type ? (
+                    <span>{it.target_type}</span>
+                  ) : (
+                    "—"
                   )}
                 </td>
                 <td style={{ ...tdStyle, fontSize: 11.5, color: "var(--color-fg-muted)", fontFamily: "var(--font-mono, monospace)" }}>
@@ -198,6 +316,40 @@ export function AuditPage() {
       <Modal open={!!detail} onClose={() => setDetail(null)} title="审计日志详情" width={620}>
         {detail && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12.5 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+              {detail.actor_id && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setActorId(detail.actor_id!);
+                    setTargetType("");
+                    setTargetId("");
+                    setActionFilter("");
+                    setPage(1);
+                    setDetail(null);
+                  }}
+                >
+                  <Icon name="activity" size={11} /> 该操作人完整时间线
+                </Button>
+              )}
+              {detail.target_type && detail.target_id && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setTargetType(detail.target_type!);
+                    setTargetId(detail.target_id!);
+                    setActorId("");
+                    setActionFilter("");
+                    setPage(1);
+                    setDetail(null);
+                  }}
+                >
+                  <Icon name="activity" size={11} /> 该对象完整时间线
+                </Button>
+              )}
+            </div>
             <KV label="时间" value={new Date(detail.created_at).toLocaleString("zh-CN")} />
             <KV label="操作人" value={detail.actor_email ?? "匿名"} mono />
             <KV label="动作" value={`${auditActionLabel(detail.action)} (${detail.action})`} />
@@ -262,4 +414,16 @@ const tdStyle: React.CSSProperties = {
   padding: "10px 12px",
   borderBottom: "1px solid var(--color-border)",
   verticalAlign: "middle",
+};
+
+const focusBtnStyle: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  padding: 0,
+  margin: 0,
+  cursor: "pointer",
+  color: "var(--color-accent)",
+  fontSize: 12.5,
+  textAlign: "left",
+  textDecoration: "none",
 };

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import type { TaskResponse } from "@/types";
 
 interface TopbarProps {
@@ -48,31 +49,15 @@ export function Topbar({
     return () => clearTimeout(t);
   }, [confThreshold]);
 
-  // 智能切题菜单
-  const [smartOpen, setSmartOpen] = useState(false);
-  const smartRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!smartOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (smartRef.current && !smartRef.current.contains(e.target as Node)) setSmartOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [smartOpen]);
-
-  // 溢出菜单
-  const [overflowOpen, setOverflowOpen] = useState(false);
-  const overflowRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!overflowOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) setOverflowOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [overflowOpen]);
-
   const indexLabel = taskTotal > 0 && taskIdx >= 0 ? `${taskIdx + 1} / ${taskTotal}` : "";
+
+  const smartItems: DropdownItem[] = [];
+  if (onSmartNextOpen) smartItems.push({ id: "next-open", label: "下一未标注", kbd: "N", onSelect: onSmartNextOpen });
+  if (onSmartNextUncertain) smartItems.push({ id: "next-uncertain", label: "下一最不确定", kbd: "U", onSelect: onSmartNextUncertain });
+
+  const overflowItems: DropdownItem[] = [
+    { id: "hotkeys", label: "快捷键", kbd: "?", onSelect: onShowHotkeys },
+  ];
 
   return (
     <div
@@ -122,43 +107,21 @@ export function Topbar({
         </Button>
         <Button size="sm" onClick={onNext}>下一<Icon name="chevRight" size={13} /></Button>
 
-        {(onSmartNextOpen || onSmartNextUncertain) && (
-          <div ref={smartRef} style={{ position: "relative" }}>
-            <Button
-              size="sm"
-              onClick={() => setSmartOpen((v) => !v)}
-              title="智能切题 (N / U)"
-              style={{ padding: "0 6px" }}
-            >
-              <Icon name="sparkles" size={11} />
-            </Button>
-            {smartOpen && (
-              <div
-                style={{
-                  position: "absolute", right: 0, top: "100%", marginTop: 4,
-                  minWidth: 180, padding: 4,
-                  background: "var(--color-bg-elev)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-sm)",
-                  boxShadow: "var(--shadow-md)",
-                  zIndex: 30,
-                }}
+        {smartItems.length > 0 && (
+          <DropdownMenu
+            items={smartItems}
+            trigger={({ toggle, ref, open }) => (
+              <Button
+                ref={ref}
+                size="sm"
+                onClick={toggle}
+                title="智能切题 (N / U)"
+                style={{ padding: "0 6px", background: open ? "var(--color-bg-sunken)" : undefined }}
               >
-                {onSmartNextOpen && (
-                  <button type="button" onClick={() => { setSmartOpen(false); onSmartNextOpen(); }} style={menuItemStyle}>
-                    <span>下一未标注</span>
-                    <span className="mono" style={kbdStyle}>N</span>
-                  </button>
-                )}
-                {onSmartNextUncertain && (
-                  <button type="button" onClick={() => { setSmartOpen(false); onSmartNextUncertain(); }} style={menuItemStyle}>
-                    <span>下一最不确定</span>
-                    <span className="mono" style={kbdStyle}>U</span>
-                  </button>
-                )}
-              </div>
+                <Icon name="sparkles" size={11} />
+              </Button>
             )}
-          </div>
+          />
         )}
       </div>
 
@@ -184,57 +147,24 @@ export function Topbar({
           <Icon name="sparkles" size={13} />{aiRunning ? "AI 推理中..." : "AI 一键预标"}
         </Button>
 
-        <div ref={overflowRef} style={{ position: "relative" }}>
-          <Button
-            size="sm"
-            onClick={() => setOverflowOpen((v) => !v)}
-            title="更多"
-            style={{ padding: "0 6px" }}
-          >
-            <Icon name="settings" size={12} />
-          </Button>
-          {overflowOpen && (
-            <div
-              style={{
-                position: "absolute", right: 0, top: "100%", marginTop: 4,
-                minWidth: 200, padding: 4,
-                background: "var(--color-bg-elev)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-sm)",
-                boxShadow: "var(--shadow-md)",
-                zIndex: 30,
-              }}
+        <DropdownMenu
+          minWidth={200}
+          items={overflowItems}
+          footer={overflowSlot ? <div style={{ padding: "4px 0 0" }}>{overflowSlot}</div> : null}
+          trigger={({ toggle, ref, open }) => (
+            <Button
+              ref={ref}
+              size="sm"
+              onClick={toggle}
+              title="更多"
+              style={{ padding: "0 6px", background: open ? "var(--color-bg-sunken)" : undefined }}
             >
-              <button
-                type="button"
-                onClick={() => { setOverflowOpen(false); onShowHotkeys(); }}
-                style={menuItemStyle}
-              >
-                <span>快捷键</span>
-                <span className="mono" style={kbdStyle}>?</span>
-              </button>
-              {overflowSlot}
-            </div>
+              <Icon name="settings" size={12} />
+            </Button>
           )}
-        </div>
+        />
       </div>
     </div>
   );
 }
 
-const menuItemStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", justifyContent: "space-between",
-  width: "100%", padding: "6px 10px", fontSize: 12,
-  background: "transparent", border: "none", borderRadius: 3,
-  cursor: "pointer", color: "var(--color-fg)",
-};
-
-const kbdStyle: React.CSSProperties = {
-  padding: "1px 5px",
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderBottomWidth: 2,
-  borderRadius: 3,
-  fontSize: 10.5,
-  color: "var(--color-fg-muted)",
-};

@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
 import { Sidebar } from "@/components/shell/Sidebar";
+import { SidebarDrawer } from "@/components/shell/SidebarDrawer";
 import { ToastRack, useToastStore } from "@/components/ui/Toast";
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
@@ -23,6 +25,7 @@ import { RequirePagePermission } from "@/components/routing/RequirePagePermissio
 import { RequireProjectMember } from "@/components/routing/RequireProjectMember";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAppStore } from "@/stores/appStore";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 function DashboardRouter() {
   const { role } = usePermissions();
@@ -45,19 +48,35 @@ function DashboardRouter() {
 function AppShell() {
   const workspace = useAppStore((s) => s.workspace);
   const pushToast = useToastStore((s) => s.push);
+  const compact = useMediaQuery("(max-width: 1023px)");
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "220px 1fr",
+        gridTemplateColumns: compact ? "0 1fr" : "220px 1fr",
         gridTemplateRows: "48px 1fr",
         height: "100vh",
         overflow: "hidden",
       }}
     >
-      <TopBar workspace={workspace} onWorkspaceChange={() => pushToast({ msg: "切换工作区面板已展开" })} />
-      <Sidebar reviewCount={0} />
+      <TopBar
+        workspace={workspace}
+        onWorkspaceChange={() => pushToast({ msg: "切换工作区面板已展开" })}
+        showHamburger={compact}
+        onOpenDrawer={() => setDrawerOpen(true)}
+      />
+      {compact ? (
+        <>
+          <aside style={{ width: 0, overflow: "hidden" }} aria-hidden="true" />
+          <SidebarDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>
+            <Sidebar reviewCount={0} />
+          </SidebarDrawer>
+        </>
+      ) : (
+        <Sidebar reviewCount={0} />
+      )}
       <main style={{ overflow: "auto", background: "var(--color-bg)" }}>
         <Outlet />
       </main>
@@ -77,10 +96,42 @@ function PlaceholderPage({ title }: { title: string }) {
 }
 
 function FullScreenWorkbench() {
+  const tooNarrow = useMediaQuery("(max-width: 767px)");
   return (
-    <div style={{ height: "100vh", overflow: "hidden" }}>
+    <div style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
       <WorkbenchPage />
       <ToastRack />
+      {tooNarrow && <MobileWorkbenchBlock />}
+    </div>
+  );
+}
+
+function MobileWorkbenchBlock() {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 18, 25, 0.92)",
+        zIndex: 1000,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        textAlign: "center",
+        color: "#f5f7fb",
+        backdropFilter: "blur(6px)",
+      }}
+    >
+      <div style={{ fontSize: 38, marginBottom: 12 }}>🖥️</div>
+      <h2 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 6px" }}>请切换到桌面端</h2>
+      <p style={{ fontSize: 13, color: "#c8cdd6", margin: "0 0 14px", maxWidth: 360, lineHeight: 1.55 }}>
+        标注工作台依赖快捷键、画布鼠标交互和大屏侧栏。当前屏幕小于 768px，仅以只读方式展示，避免误操作。
+      </p>
+      <div style={{ fontSize: 12, color: "#8c93a3" }}>建议宽度 ≥ 1024px</div>
     </div>
   );
 }

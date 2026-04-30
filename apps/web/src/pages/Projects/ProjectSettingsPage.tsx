@@ -88,11 +88,21 @@ export function ProjectSettingsPage() {
               </Badge>
             </div>
           </div>
-          {project.type_key === "image-det" && (
-            <Button onClick={() => navigate(`/projects/${project.id}/annotate`)}>
-              <Icon name="target" size={12} />打开工作台
-            </Button>
-          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            {role === "super_admin" && (
+              <Button
+                onClick={() => navigate(`/audit?target_type=project&target_id=${project.id}`)}
+                title="查看该项目的完整审计时间线"
+              >
+                <Icon name="activity" size={12} />审计追溯
+              </Button>
+            )}
+            {project.type_key === "image-det" && (
+              <Button onClick={() => navigate(`/projects/${project.id}/annotate`)}>
+                <Icon name="target" size={12} />打开工作台
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

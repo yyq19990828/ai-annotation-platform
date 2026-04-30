@@ -93,9 +93,27 @@ export function AttributeForm({ schema, className, attributes, onChange, readOnl
         };
         return (
           <label key={f.key} style={fieldStyle}>
-            <span style={{ fontSize: 11.5, color: "var(--color-fg)" }}>
+            <span style={{ fontSize: 11.5, color: "var(--color-fg)", display: "inline-flex", alignItems: "center", gap: 6 }}>
               {f.label}
               {f.required && <span style={{ color: "var(--color-danger)", marginLeft: 4 }}>*</span>}
+              {f.hotkey && (f.type === "boolean" || f.type === "select") && (
+                <span
+                  className="mono"
+                  title={`选中标注后按 ${f.hotkey} 切换该属性`}
+                  style={{
+                    padding: "0 5px",
+                    background: "var(--color-bg-sunken)",
+                    border: "1px solid var(--color-border)",
+                    borderBottomWidth: 2,
+                    borderRadius: 3,
+                    fontSize: 10,
+                    color: "var(--color-fg-muted)",
+                    fontWeight: 500,
+                  }}
+                >
+                  {f.hotkey}
+                </span>
+              )}
             </span>
             {f.type === "text" && (
               <input

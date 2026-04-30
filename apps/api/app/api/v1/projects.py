@@ -299,6 +299,7 @@ async def remove_member(
 @router.get("/{project_id}/export")
 async def export_project(
     format: str = Query("coco", pattern="^(coco|voc|yolo)$"),
+    include_attributes: bool = Query(True, description="是否在导出包中携带 annotation.attributes 与 project.attribute_schema"),
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
 ):
@@ -307,7 +308,7 @@ async def export_project(
     svc = ExportService(db)
 
     if format == "coco":
-        content = await svc.export_coco(project.id)
+        content = await svc.export_coco(project.id, include_attributes=include_attributes)
         return Response(
             content=content,
             media_type="application/json",
@@ -315,14 +316,14 @@ async def export_project(
         )
 
     if format == "yolo":
-        data = await svc.export_yolo(project.id)
+        data = await svc.export_yolo(project.id, include_attributes=include_attributes)
         return Response(
             content=data,
             media_type="application/zip",
             headers={"Content-Disposition": f"attachment; filename={project.display_id}_yolo.zip"},
         )
 
-    data = await svc.export_voc(project.id)
+    data = await svc.export_voc(project.id, include_attributes=include_attributes)
     return Response(
         content=data,
         media_type="application/zip",

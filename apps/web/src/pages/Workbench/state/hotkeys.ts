@@ -87,10 +87,24 @@ export type HotkeyAction =
   | { type: "setTool"; tool: "box" | "hand" | "polygon" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
+  | { type: "setAttribute"; key: string; value: unknown }
   | { type: "deleteSelected" }
   | { type: "submit" }
   | { type: "acceptAi" }
   | { type: "rejectAi" };
+
+/** 属性 hotkey 解析结果（D.1）：
+ * 由 WorkbenchShell 根据当前 selected box 的 class_name + project.attribute_schema 计算
+ * 当某个数字键命中某个 boolean / select 字段时，dispatcher 决策接下来的下一个值。
+ */
+export interface AttributeHotkeyHit {
+  key: string;
+  type: "boolean" | "select";
+  /** select 类型必填；boolean 忽略。 */
+  options?: string[];
+  /** 当前值（用于 select 计算 next；boolean 用于反转）。 */
+  currentValue?: unknown;
+}
 
 export interface DispatchCtx {
   /** 焦点在 input/textarea/contenteditable 上时，禁用 hotkey。 */
@@ -99,6 +113,10 @@ export interface DispatchCtx {
   hasSelection: boolean;
   /** pendingDrawing | editingClass | batchChanging 中任一活跃 → 类别按键归 popover 消费。 */
   pendingActive: boolean;
+  /** D.1：选中标注且当前数字键命中某个属性 hotkey 时，返回属性元数据；否则返回 null。
+   *  实现由 WorkbenchShell 层注入（绑了项目 schema 与当前 annotation.attributes）。
+   */
+  attributeHotkey?: (digit: string) => AttributeHotkeyHit | null;
 }
 
 const RESERVED_LETTERS = new Set(["v","V","b","B","p","P","a","A","d","D","e","E","n","N","u","U","j","J","k","K","c","C"]);
@@ -158,7 +176,24 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   if (e.key === "b" || e.key === "B") return { type: "setTool", tool: "box" };
   if (e.key === "p" || e.key === "P") return { type: "setTool", tool: "polygon" };
 
-  if (e.key >= "1" && e.key <= "9") return { type: "setClassByDigit", idx: parseInt(e.key, 10) - 1 };
+  if (e.key >= "1" && e.key <= "9") {
+    // D.1：选中态下，如属性 schema 在该数字键有命中，优先走属性切换；否则保留类别 fallback
+    if (ctx.hasSelection && ctx.attributeHotkey) {
+      const hit = ctx.attributeHotkey(e.key);
+      if (hit) {
+        if (hit.type === "boolean") {
+          return { type: "setAttribute", key: hit.key, value: !hit.currentValue };
+        }
+        if (hit.type === "select" && hit.options && hit.options.length > 0) {
+          const cur = hit.currentValue == null ? "" : String(hit.currentValue);
+          const idx = hit.options.indexOf(cur);
+          const next = hit.options[(idx + 1) % hit.options.length];
+          return { type: "setAttribute", key: hit.key, value: next };
+        }
+      }
+    }
+    return { type: "setClassByDigit", idx: parseInt(e.key, 10) - 1 };
+  }
 
   if (/^[a-z]$/i.test(e.key) && !RESERVED_LETTERS.has(e.key)) {
     return { type: "setClassByLetter", letter: e.key.toLowerCase() };

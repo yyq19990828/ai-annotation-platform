@@ -1,6 +1,6 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 import re
 
@@ -20,6 +20,7 @@ def _validate_attribute_schema(v: dict | None) -> dict | None:
     if not isinstance(fields, list):
         raise ValueError("attribute_schema.fields 必须是数组")
     seen_keys: set[str] = set()
+    seen_hotkeys: set[str] = set()
     for i, f in enumerate(fields):
         if not isinstance(f, dict):
             raise ValueError(f"fields[{i}] 必须是对象")
@@ -36,6 +37,16 @@ def _validate_attribute_schema(v: dict | None) -> dict | None:
             opts = f.get("options")
             if not isinstance(opts, list) or not opts:
                 raise ValueError(f"fields[{i}].options 必填且非空（{ftype} 类型）")
+        # D.1：hotkey 字段 —— 仅支持 1-9 字符串，且全 schema 内唯一
+        hk = f.get("hotkey")
+        if hk is not None:
+            if not isinstance(hk, str) or len(hk) != 1 or not ("1" <= hk <= "9"):
+                raise ValueError(f"fields[{i}].hotkey 必须是单个数字字符 1-9")
+            if ftype not in {"boolean", "select"}:
+                raise ValueError(f"fields[{i}].hotkey 仅支持 boolean / select 字段")
+            if hk in seen_hotkeys:
+                raise ValueError(f"fields[{i}].hotkey 重复: {hk!r}")
+            seen_hotkeys.add(hk)
     return v
 
 
@@ -85,6 +96,7 @@ class ProjectUpdate(BaseModel):
     sampling: str | None = None
     maximum_annotations: int | None = None
     show_overlap_first: bool | None = None
+    iou_dedup_threshold: Annotated[float, Field(ge=0.3, le=0.95)] | None = None
 
     @field_validator("attribute_schema")
     @classmethod
@@ -117,6 +129,7 @@ class ProjectOut(BaseModel):
     sampling: str = "sequence"
     maximum_annotations: int = 1
     show_overlap_first: bool = False
+    iou_dedup_threshold: float = 0.7
     model_version: str | None = None
     task_lock_ttl_seconds: int = 300
     total_tasks: int

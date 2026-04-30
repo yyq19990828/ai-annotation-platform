@@ -1,12 +1,17 @@
 const BASE = "/api/v1";
 
 class ApiError extends Error {
+  /** 后端 detail 原文：可能是 string 或结构化对象（如 409 + {reason, pending_task_count, ...}）。 */
+  detailRaw?: unknown;
+
   constructor(
     public status: number,
     message: string,
+    detailRaw?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
+    this.detailRaw = detailRaw;
   }
 }
 
@@ -23,7 +28,13 @@ async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?:
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const detail: string | undefined = typeof body?.detail === "string" ? body.detail : undefined;
+    const rawDetail: unknown = (body as { detail?: unknown })?.detail;
+    const detail: string | undefined =
+      typeof rawDetail === "string"
+        ? rawDetail
+        : rawDetail && typeof rawDetail === "object" && "message" in rawDetail
+        ? String((rawDetail as { message?: unknown }).message ?? "")
+        : undefined;
 
     if (res.status === 401 && !opts?.anonymous) {
       const { useAuthStore } = await import("../stores/authStore");
@@ -43,7 +54,7 @@ async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?:
         });
       }
     }
-    throw new ApiError(res.status, detail ?? res.statusText);
+    throw new ApiError(res.status, detail ?? res.statusText, rawDetail);
   }
 
   // 204 No Content
@@ -59,7 +70,10 @@ export const apiClient = {
     request<T>(path, { method: "PUT", body: JSON.stringify(body ?? {}) }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
-  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  delete: <T>(path: string, body?: unknown) =>
+    request<T>(path, body !== undefined
+      ? { method: "DELETE", body: JSON.stringify(body) }
+      : { method: "DELETE" }),
   /** 公开请求：不携带 Authorization；401 不触发全局 logout（用于 /auth/register 等公开端点）。 */
   publicGet: <T>(path: string) => request<T>(path, undefined, { anonymous: true }),
   publicPost: <T>(path: string, body?: unknown) =>

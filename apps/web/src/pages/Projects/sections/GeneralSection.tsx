@@ -56,6 +56,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
   const [aiCustom, setAiCustom] = useState(
     project.ai_model && !PRESET_AI_MODELS.includes(project.ai_model) ? project.ai_model : "",
   );
+  const [iouThreshold, setIouThreshold] = useState(project.iou_dedup_threshold ?? 0.7);
 
   useEffect(() => {
     setName(project.name);
@@ -65,6 +66,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     setAiEnabled(project.ai_enabled);
     setAiChoice(initialAiChoice);
     setAiCustom(project.ai_model && !PRESET_AI_MODELS.includes(project.ai_model) ? project.ai_model : "");
+    setIouThreshold(project.iou_dedup_threshold ?? 0.7);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
@@ -85,7 +87,8 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     (dueDate || null) !== (project.due_date ?? null) ||
     JSON.stringify(classes) !== JSON.stringify(project.classes ?? []) ||
     aiEnabled !== project.ai_enabled ||
-    (aiEnabled ? resolvedAiModel : null) !== (project.ai_model ?? null);
+    (aiEnabled ? resolvedAiModel : null) !== (project.ai_model ?? null) ||
+    Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001;
 
   const onSave = () => {
     if (!name.trim()) {
@@ -104,6 +107,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
         classes,
         ai_enabled: aiEnabled,
         ai_model: aiEnabled ? resolvedAiModel : null,
+        iou_dedup_threshold: iouThreshold,
       },
       {
         onSuccess: () => pushToast({ msg: "项目已更新", kind: "success" }),
@@ -256,6 +260,33 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
               )}
             </div>
           )}
+        </div>
+        <div>
+          <label style={labelStyle}>
+            AI 框去重阈值 <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>（与已确认人工框 IoU 高于此值的同类 AI 框将淡化）</span>
+          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <input
+              type="range"
+              min={0.3}
+              max={0.95}
+              step={0.05}
+              value={iouThreshold}
+              onChange={(e) => setIouThreshold(Number(e.target.value))}
+              style={{ flex: 1, accentColor: "var(--color-ai)" }}
+            />
+            <span
+              className="mono"
+              style={{
+                minWidth: 48,
+                textAlign: "right",
+                fontSize: 13,
+                color: "var(--color-fg)",
+              }}
+            >
+              {iouThreshold.toFixed(2)}
+            </span>
+          </div>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Button variant="primary" disabled={!dirty || update.isPending} onClick={onSave}>

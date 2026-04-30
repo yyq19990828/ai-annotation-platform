@@ -7,6 +7,175 @@
 ---
 
 
+## [0.5.5 phase 2] - 2026-04-30 — Floating Noodle
+
+> 一次性收口 phase 1（治理 / 基建）与 v0.5.4（工作台 polish）累计的 12 项遗留。**不引入新功能**，每一行改动都对应一条已立项的尾巴。9 项一次落到位，3 项核心动作落地、UI 抽屉 / 评论富文本等大件留作 v0.5.6。
+
+### 治理 / 基建
+
+#### A.1 OpenAPI → TypeScript codegen 基建
+- 新增 `@hey-api/openapi-ts@^0.55.0` 开发依赖 + `apps/web/openapi-ts.config.ts`（默认 `OPENAPI_URL=http://localhost:8000/openapi.json`，输出 `src/api/generated/`）。
+- `package.json` 加脚本 `codegen` / `codegen:watch`；`apps/web/.gitignore` 屏蔽生成产物；不强加 prebuild gate（避免 CI 与 dev 启动循环依赖）。
+- 触发场景就是 phase 1 漏暴露 `UserOut.is_active` 的事故。手写 type → generated 的逐字段迁移走渐进路径，本期仅落基建。
+
+#### A.2 后端 pytest 脚手架（轻量）
+- `apps/api/pyproject.toml` 加 `[project.optional-dependencies] test`（pytest + pytest-asyncio + pytest-mock）+ `[tool.pytest.ini_options]`（asyncio_mode=auto）。
+- `apps/api/tests/{__init__,conftest,test_smoke}.py`：`app_module` / `httpx_client` fixture + 5 例 sanity（router 注册、attribute_schema hotkey 校验、iou 阈值范围、_build_base_query detail_filter、_PENDING_TASK_STATUSES 与 TaskStatus 同源）。
+- DB SAVEPOINT fixture / 真 PG client 留下一期（需独立 TEST_DATABASE_URL + alembic upgrade 配置）。
+
+#### A.3 audit `detail_json` GIN 索引 + 字段级过滤
+- alembic `0015_audit_detail_gin_index`：PG 创建 `ix_audit_logs_detail_json_gin USING GIN`；其它方言 noop。
+- `_build_base_query()` 加 `detail_key + detail_value` 入参（JSONB `@>` 子集匹配，走 GIN）。`/audit-logs` 与 `/audit-logs/export` 端点暴露同名 query 参数；export self-audit 行 detail 加 `target_id_filter / actor_id_filter / detail_key_filter / detail_value_filter` 字段。
+- `AuditPage`：筛选区加两个 `detail 键名 / 键值` 输入框（仅 super_admin），追溯 banner 显示 `detail.role = super_admin` 徽章。
+- 双行 UI（按 `request_id` 合并 metadata + business detail）留作 v0.5.6（实现成本中等，UI 风险大）。
+
+#### A.4 IoU 去重阈值项目级可配
+- alembic `0014_project_iou_dedup_threshold`：`projects` 加 `iou_dedup_threshold FLOAT DEFAULT 0.7 NOT NULL`。
+- `Project` model + `ProjectOut/ProjectUpdate` 加字段（pydantic `Field(ge=0.3, le=0.95)` 范围守卫）。
+- `WorkbenchShell.tsx:218` 硬编码 `0.7` → `currentProject?.iou_dedup_threshold ?? 0.7`。
+- `GeneralSection`（项目设置）加滑块 `0.30 ~ 0.95`（步长 0.05）+ 实时数值显示。
+
+### 用户 / 权限完整化
+
+#### B.1 project_admin 视角 UsersPage 按管理项目过滤
+- `list_users()` 后端按 actor 角色分流：super_admin 默认全量（可选 `project_id` 过滤）；**project_admin 强制限定到 `Project.owner_id == actor.id` 项目内 ProjectMember 集合 ∪ 自身**。
+- 前端 `usersApi.list({ project_id })` 接受新参数；`useUsers` 类型同步。
+
+#### B.2 删除带未完成任务用户先转交（409 二阶段）
+- `DELETE /users/{id}` 软删前查询 `Task.assignee_id == target_id AND status in (pending, in_progress, review)` 的 count + 5 个示例 id + `TaskLock.user_id == target_id` count；任一非零且未传 `transfer_to_user_id` → **409** + `{reason:"has_pending_tasks", pending_task_count, locked_task_count, sample_task_ids, message}`。
+- 接受 `body.transfer_to_user_id`：校验 receiver active + 角色合法 + project_admin 时只能转给同管理项目内成员；UPDATE 全部 pending tasks `assignee_id` → 转交目标，DELETE 原 user 的 task_locks，再走原软删；audit_log `user.delete` detail 加 `transferred_to / transferred_count / released_locks`。
+- `apps/web/src/api/client.ts`：`ApiError.detailRaw` 暴露后端结构化 detail（之前 dict 类型 detail 被吞），`apiClient.delete` 支持可选 body。
+- `apps/web/src/api/users.ts`：`usersApi.remove(id, opts?: { transfer_to_user_id })`；`useDeleteUser` 接受 `{ userId, transferToUserId }` 形态。
+- `UsersPage` 删除 Modal 二阶段：检测到 `ApiError.status === 409 && reason === "has_pending_tasks"` → 切到"先转交"视图，显示 pending/locked 数 + 示例 ID + UserPicker 选接收者 + 二次提交。
+
+### 响应式与组件抽取
+
+#### C.1 窄屏 hamburger drawer
+- 新建 `apps/web/src/components/shell/SidebarDrawer.tsx`：Portal + 左滑动画（220ms ease-out）+ 遮罩点击 / Esc / 路由变化自动关闭 + body 滚动锁。
+- `App.tsx`：窄屏 `< 1024px` 时同时渲染占位 aside（保持 grid 完整）+ SidebarDrawer，复用同一 `<Sidebar>` 组件。
+- `TopBar` 加 `showHamburger / onOpenDrawer` props；窄屏时显示左侧 menu 按钮。
+- `Icon.tsx` 加 `menu → Menu`（lucide）。
+
+#### C.2 通用 DropdownMenu 组件
+- 新建 `apps/web/src/components/ui/DropdownMenu.tsx`：trigger render-prop + items 数组 + outside-mousedown / Esc 关闭 + ↑↓ Home End 键盘导航 + role="menu" / "menuitem" + active 项 check 标记 + 支持 footer slot。
+- `TopBar` 主题切换 dropdown：60+ 行内联实现 → `<DropdownMenu>` 三选一 + 系统模式 footer hint。
+- 工作台 `Topbar.tsx` 智能切题 + 溢出菜单：双 `useState/useRef/useEffect` outside-close 重复实现 → 两个 `<DropdownMenu>`；老 `menuItemStyle / kbdStyle` 两个游离常量删除。
+- `Button` 组件改为 `forwardRef`（DropdownMenu trigger 需要 ref）。
+
+### 工作台 polish
+
+#### D.1 属性 schema `hotkey` 实际绑定
+- `dispatchKey()` ctx 加 `attributeHotkey?: (digit) => AttributeHotkeyHit | null`；数字键分支：选中态下 hotkey 命中且 type ∈ {boolean, select} → 返回 `{ type: "setAttribute", key, value }`（boolean 取反 / select cycle 下一项），否则保留 `setClassByDigit` fallback。
+- `WorkbenchShell` 注入 lookup（合并 `applies_to` 过滤 + 取选中 annotation 的当前值）+ 处理 `setAttribute` action（走 `handleUpdateAttributes` 与现有表单 PATCH 路径同源）。
+- `AttributeForm` 字段 label 旁加 `<KeyBadge>{f.hotkey}</KeyBadge>`（仅 boolean / select 显示）。
+- 后端 `_validate_attribute_schema` 加 hotkey 守卫：必须单字符 1-9 + 仅 boolean / select 类型 + 全 schema 唯一。
+- `hotkeys.test.ts` 加 5 例（无选中 fallback / boolean toggle / select cycle / cycle 末尾绕回 / hotkey 不命中）。**vitest 42 全过**（27 hotkey + 10 iou + 5 新增）。
+
+#### D.2 离线队列：多 tab 同步 + history tmp_id 替换
+- `offlineQueue.ts` 加 `BroadcastChannel("anno.offline-queue.v1")`：persist 后 broadcast；监听其它 tab message → 重读 idb + 触发本 tab 订阅者；`OfflineOp.create` 加可选 `tmpId` 字段。
+- `useAnnotationHistory` 加 `replaceAnnotationId(tmpId, realId)`：扫 undo + redo 双栈，把 create / update / delete / acceptPrediction / batch 内嵌的 annotation id 整体替换，drain 后 history 不再误指 tmp_id。
+- **完整接入**（WorkbenchShell create 路径分配 tmpId + drain 后调用 replaceAnnotationId + queue 详情抽屉 UI）留 v0.5.6；本期落核心管线，下期组装 UI。
+
+### 导出器扩展
+
+#### E.1 COCO / YOLO / VOC 导出读 attributes
+- `ExportService.export_coco`：每条 annotation 输出加 `"attributes": ann.attributes or {}`，顶层 `info.attribute_schema` 写项目 schema。
+- `ExportService.export_yolo`：YOLO 文本不可扩展 → 伴生 `<image_basename>.attrs.json` per-image（行索引与 .txt 行号对齐）+ zip 根目录 `attribute_schema.json`。
+- `ExportService.export_voc`：`<object>` 下插 `<extra>` 节点。
+- `GET /projects/{id}/export?include_attributes=bool`（默认 true）入参；`include_attributes=false` 输出原版兼容格式（无属性扩展字段）。
+- 前端 `projectsApi.exportProject(id, format, { includeAttributes })`：默认携带；UI 复选框待 ExportSection 抽出后再加。
+
+### 验证
+
+- `apps/web/`：`pnpm tsc -b` ✅ 0 errors；`pnpm vitest run` ✅ **42/42**（hotkey 32 + iou 10）。
+- `apps/api/`：`from app.main import app` ✅；`pyproject.toml [project.optional-dependencies] test` 解析正常；新增 5 例 pytest 用例语法正确（运行需先 `pip install -e '.[test]'`）。
+- alembic：新增 0014 / 0015 两条 migration，按链 0013→0014→0015 接续；GIN 索引在 SQLite 测试库走 noop。
+- migration 与 model 字段一致：Project model + ProjectOut + ProjectUpdate 三处 iou_dedup_threshold 同步。
+
+### 不在本期范围（明确 defer 到 v0.5.6+）
+
+- A.1：手写 type → `generated/*` 的逐字段迁移；prebuild gate；
+- A.2：DB-backed pytest fixture（SAVEPOINT 嵌入事务、alembic upgrade head per-session）+ 完整 audit_logs / 角色矩阵 / 删除转交端到端测试；
+- A.3：双行 UI 合并视图（按 `request_id` 把 metadata 行 + business detail 行折叠为单行 + 详情双栏）；
+- C.1：通用 `⋯` 溢出菜单组件全站第 3 个使用方（如 ProjectsPage 卡片菜单）；
+- D.2：OfflineQueueDrawer 抽屉 UI + WorkbenchShell create 路径接入 tmpId + drain 完成后调 replaceAnnotationId 与 queryClient.setQueryData；
+- D.3：评论 polish 整组（@ 提及 popover + 图片附件 presigned 上传 + alembic 0016 加 mentions / attachments / canvas_drawing 占位 + CommentInput contenteditable）；
+- E.1：导出 UI「包含属性数据」复选框（待 ExportSection 抽出）。
+
+---
+
+
+## [0.5.5] - 2026-04-30
+
+> v0.5.5 phase 1：把治理与底盘一次性补齐 —— 分级权限管理、审计正反向追溯、主题三档、响应式收尾、图标体系迁 Lucide。**用户与权限页 / 审计日志页 / TopBar / 工作台 / 全站图标**全部受影响，171 处 `<Icon>` 调用零改动平滑迁移。
+
+### 新增
+
+#### A · 分级权限管理（变更角色 / 删除账号）
+- **后端守卫矩阵**（`apps/api/app/api/v1/users.py`）：
+  - `PATCH /users/{id}/role` 入口从 `SUPER_ADMIN` 放宽到 `_MANAGERS`（super_admin + project_admin），内部按 `actor.role × target.role` 显式守卫：
+    - **super_admin**：可改任意 target 为任意角色（自己 / 最后一名超管除外）。
+    - **project_admin**：仅允许在 `annotator ↔ reviewer` 之间切换；target 必须出现在 actor 管理（`Project.owner_id == actor.id`）的项目里；不可造 project_admin / super_admin。
+  - 新增 `DELETE /users/{id}` 软删除端点（`is_active = False`）：同矩阵守卫；project_admin 还要求 target 仅在其管理项目里出现（跨项目用户 403 提示由 super_admin 处理）；最后一名 active super_admin 不可被删 / 降级（兜底防自锁）。
+  - `POST /{id}/deactivate` 入口同步放宽并复用同一组守卫，与 `delete` 行为对齐。
+  - `AuditAction.USER_DELETE = "user.delete"`；role_change / delete / deactivate 均记 actor / target / old / new 进 audit_logs。
+  - 新增三个内部辅助：`_count_active_super_admins()` / `_project_admin_manages_target()` / `_target_only_in_actor_projects()`。
+- **前端 EditUserModal 重写**（`apps/web/src/components/users/EditUserModal.tsx`）：
+  - `ASSIGNABLE_ROLES_BY_ACTOR` + `DELETABLE_TARGET_ROLES_BY_ACTOR` 双矩阵驱动 UI；下拉里允许出现的选项 = 当前角色 ∪ actor 可指派集合；project_admin 视角下显示「项目管理员仅能在审核员 / 标注员 之间切换」hint。
+  - 「停用」按钮替换为「删除账号」（变体保持 `danger` + 二次确认 inline）。
+  - 错误回显走 `changeRole.error || assignGroup.error || deleteUser.error`，复用 ApiClient 全局 toast。
+- **UsersPage 行级操作**（`apps/web/src/pages/Users/UsersPage.tsx`）：
+  - 每行右侧三个按钮：📊 审计追溯（跳 `/audit?actor_id=X`） / ✏️ 编辑（仅 actor × target 命中矩阵时启用） / 🗑️ **删除账号**（红色，独立 Modal 二次确认）；自己那行不显示删除。
+  - 独立删除 Modal：头像 / 邮箱 / 角色徽章 + 后端错误回显（不重弹 toast，避免双通知）。
+  - 新增 `useDeleteUser` hook + `usersApi.remove`。
+- **UserOut schema 暴露 `is_active`**（`apps/api/app/schemas/user.py`）：之前未透传导致前端 `u.is_active === undefined`、删除按钮短路；现 `is_active: bool = True` 一并返回。
+
+#### B · 审计正向反向追溯视图
+- **后端**（`apps/api/app/api/v1/audit_logs.py`）：`GET /audit-logs` 与 `/audit-logs/export` 新增 `target_id` 精确过滤；`_build_base_query()` 形参改为 `(action, target_type, target_id, actor_id, from_, to)`。
+- **AuditPage 入口与高亮**（`apps/web/src/pages/Audit/AuditPage.tsx`）：
+  - 启动读 URL `?action / ?target_type / ?target_id / ?actor_id` 并初始化筛选；URL 变化（如 UsersPage 跳过来）触发 `useEffect` 重置筛选 + 回到第 1 页。
+  - 顶部追溯模式 banner：紫色高亮带 `Icon target` + 当前过滤项徽章（操作人 / 对象类型 / 对象 ID / 动作）+ 「清除追溯」按钮。
+  - 筛选区加 `target_id` 等宽输入框（精确匹配）。
+- **行内点击即追溯**：表格 actor_email 列点击 → 用该 `actor_id` 进入追溯模式；target_type / target_id 列点击 → 联合追溯该对象。
+- **详情 Modal 双向跳转**：「该操作人完整时间线」 + 「该对象完整时间线」按钮，关闭 Modal 同时切换筛选。
+- **入口辐射**：UsersPage 行级 + ProjectSettingsPage 头部「审计追溯」按钮（仅 super_admin 可见，跳 `/audit?target_type=project&target_id=X`）。
+- **api/audit.ts**：`AuditQuery` 加 `target_id?: string`。
+
+#### C · 主题切换三档（日间 / 夜间 / 跟随系统）
+- **TopBar 主题入口**（`apps/web/src/components/shell/TopBar.tsx`）：通知按钮前新增主题切换按钮 + dropdown，显式列出三档 + 当前态 check 标记；`system` 模式下底部 hint 显示当前 resolved 主题。
+- **图标随 pref 切换**：sun（日间）/ moon（夜间）/ monitor（跟随系统），点击外部自动关闭。
+- 复用 v0.5.3 已落的 `useTheme` hook（`light` / `dark` / `system` 三档 + localStorage 持久化 + `prefers-color-scheme` 监听 + `initThemeFromStorage()` 防首屏闪烁）。
+
+#### D · 响应式收尾
+- **AppShell 折叠**（`apps/web/src/App.tsx`）：`< 1024px` 时 sidebar grid 列宽折为 0（保留布局完整性），用 `useMediaQuery("(max-width: 1023px)")` 切换。
+- **工作台移动端阻挡**：`FullScreenWorkbench` 在 `< 768px` 时叠加全屏遮罩 `<MobileWorkbenchBlock>`：「请切换到桌面端 · 标注工作台依赖快捷键、画布鼠标交互和大屏侧栏」 + 建议宽度 ≥ 1024px。底层工作台仍渲染（保留只读视图），但所有交互被遮挡防误操作。
+
+#### E · 图标体系迁移到 Lucide React
+- **`Icon.tsx` 内部重写**（`apps/web/src/components/ui/Icon.tsx`）：删除 ~70 行手写 SVG path 字符串，改为 60 项 `name → Lucide 组件` 映射表；对外 `<Icon name="..." size stroke style className />` API 完全保留 → **177 处调用零改动**。
+- **`forwardRef` 兼容**：保留 ref 透传给 SVG 元素，不破坏现有 ref 用法。
+- **新增 icons**：sun / moon / monitor / inbox（主题切换 + 追溯 banner 等新 UI 用）；polygon → `Hexagon`、cube → `Box`、warning → `AlertTriangle`、edit → `Pencil` 等 Lucide 标准映射。
+- **新代码约定**：写新功能直接 `import { Layers, Sparkles, ... } from "lucide-react"`，不必走中间层；`Icon.tsx` 仅作存量兼容。
+- **依赖与体积**：`pnpm --filter @anno/web add lucide-react`；`pnpm build` 后 gzip 主 chunk **261.92 KB**（迁移前 ~256 KB），增量 ~6 KB，符合 ROADMAP `< 10 KB` 验收。
+
+### 验证
+
+- `tsc --noEmit`（apps/web）✅ 0 errors
+- `vitest run` ✅ 37/37 passed（hotkeys 27 + iou 10）
+- `pnpm vite build` ✅ 2022 modules, 1.79s
+- 后端 `from app.main import app` ✅
+- 后端冒烟（router / schema / depends 导入）✅
+
+### 不在本期范围
+
+- 前后端 schema 自动同步（OpenAPI → TS 类型生成）—— 本次 `UserOut.is_active` 漏暴露暴露的就是这个隐患的实例，留给 v0.5.x 续期。
+- project_admin 视角下 UsersPage 列表按管理项目自动过滤；删除带未完成任务的用户先转交 / 跨项目用户的精确显示。
+- 窄屏 hamburger drawer 触发完整 sidebar；通用 `⋯` 溢出菜单组件抽取（多页面共享）。
+- detail_json 字段级 PG GIN 索引筛选；审计中间件双行 UI 合并视图。
+- 后端 `audit.export` 端点 `target_id` 入参的端到端单测（手工验证已通过）。
+
+---
+
+
 ## [0.5.4] - 2026-04-30
 
 ### 新增

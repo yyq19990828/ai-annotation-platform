@@ -1,15 +1,19 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
-import { useUsers } from "@/hooks/useUsers";
+import { useUsers, useDeleteUser } from "@/hooks/useUsers";
 import { useGroups } from "@/hooks/useGroups";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useAuthStore } from "@/stores/authStore";
 import { ROLE_LABELS, ROLE_DESC } from "@/constants/roles";
 import { ROLE_PERMISSIONS, PERMISSION_LABELS, PERMISSION_GROUPS, type Permission } from "@/constants/permissions";
 import { Can } from "@/components/guards/Can";
@@ -18,7 +22,17 @@ import { EditUserModal } from "@/components/users/EditUserModal";
 import { GroupManageModal } from "@/components/users/GroupManageModal";
 import { InvitationListPanel } from "@/components/users/InvitationListPanel";
 import { usersApi, type UserResponse } from "@/api/users";
+import { ApiError } from "@/api/client";
 import type { UserRole } from "@/types";
+
+// actor.role × target.role → 可点"编辑"（即可改角色或可删）
+const EDITABLE_TARGET_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
+  super_admin: ["super_admin", "project_admin", "reviewer", "annotator", "viewer"],
+  project_admin: ["reviewer", "annotator"],
+  reviewer: [],
+  annotator: [],
+  viewer: [],
+};
 
 const ROLE_COLORS: Record<string, "accent" | "ai" | "warning" | "success" | "outline" | "danger"> = {
   super_admin: "danger",
@@ -50,9 +64,23 @@ export function UsersPage() {
   const [query, setQuery] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editing, setEditing] = useState<UserResponse | null>(null);
+  const [deleting, setDeleting] = useState<UserResponse | null>(null);
+  /** 后端 409 返回的待转交任务详情（pending_task_count / locked_task_count / sample_task_ids）。 */
+  const [transferStage, setTransferStage] = useState<{
+    pending: number;
+    locked: number;
+    sample: string[];
+  } | null>(null);
+  const [transferToId, setTransferToId] = useState<string>("");
   const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const pushToast = useToastStore((s) => s.push);
+  const deleteUser = useDeleteUser();
+  const navigate = useNavigate();
+  const { role: actorRole, hasPermission } = usePermissions();
+  const me = useAuthStore((s) => s.user);
+  const editableTargets = EDITABLE_TARGET_ROLES_BY_ACTOR[actorRole] ?? [];
+  const canViewAudit = hasPermission("audit.view");
 
   const { data: allUsers = [], isLoading } = useUsers();
   const { data: groupsData = [] } = useGroups();
@@ -206,9 +234,39 @@ export function UsersPage() {
                       {formatDate(u.created_at)}
                     </td>
                     <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", textAlign: "right", verticalAlign: "middle" }}>
-                      <Button variant="ghost" size="sm" onClick={() => setEditing(u)} title="编辑成员">
-                        <Icon name="edit" size={11} />
-                      </Button>
+                      <div style={{ display: "inline-flex", gap: 2 }}>
+                        {canViewAudit && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/audit?actor_id=${u.id}`)}
+                            title={`查看 ${u.name} 的审计追溯`}
+                          >
+                            <Icon name="activity" size={11} />
+                          </Button>
+                        )}
+                        {me?.id !== u.id && editableTargets.includes(u.role as UserRole) ? (
+                          <>
+                            <Button variant="ghost" size="sm" onClick={() => setEditing(u)} title="编辑成员">
+                              <Icon name="edit" size={11} />
+                            </Button>
+                            {u.is_active && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDeleting(u)}
+                                title="删除账号"
+                              >
+                                <Icon name="trash" size={11} style={{ color: "var(--color-danger)" }} />
+                              </Button>
+                            )}
+                          </>
+                        ) : (
+                          <Button variant="ghost" size="sm" disabled title={me?.id === u.id ? "不能修改自己" : "无权修改该用户"}>
+                            <Icon name="edit" size={11} style={{ opacity: 0.4 }} />
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -306,6 +364,176 @@ export function UsersPage() {
       <InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <EditUserModal open={!!editing} user={editing} onClose={() => setEditing(null)} />
       <GroupManageModal open={manageGroupsOpen} onClose={() => setManageGroupsOpen(false)} />
+
+      <Modal
+        open={!!deleting}
+        onClose={() => {
+          if (deleteUser.isPending) return;
+          setDeleting(null);
+          setTransferStage(null);
+          setTransferToId("");
+          deleteUser.reset();
+        }}
+        title={transferStage ? "先转交未完成任务" : "删除账号确认"}
+        width={520}
+      >
+        {deleting && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
+            <div style={{ color: "var(--color-fg-muted)" }}>
+              {transferStage
+                ? "该用户当前持有未完成任务或锁定任务；删除前请选择一名接收者，所有任务将被转交。"
+                : "确认删除以下账号？该用户将无法登录，但历史标注与审计记录仍会保留。"}
+            </div>
+            <div style={{
+              padding: "10px 12px",
+              background: "var(--color-bg-sunken)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <Avatar initial={deleting.name[0]} size="md" />
+              <div>
+                <div style={{ fontWeight: 500 }}>{deleting.name}</div>
+                <div className="mono" style={{ fontSize: 11.5, color: "var(--color-fg-subtle)" }}>{deleting.email}</div>
+              </div>
+              <Badge variant={ROLE_COLORS[deleting.role] || "outline"} style={{ marginLeft: "auto" }}>
+                {ROLE_LABELS[deleting.role as UserRole] ?? deleting.role}
+              </Badge>
+            </div>
+
+            {transferStage && (
+              <>
+                <div style={{
+                  padding: "10px 12px",
+                  background: "rgba(245,158,11,0.08)",
+                  border: "1px solid var(--color-warning)",
+                  borderRadius: "var(--radius-md)",
+                  fontSize: 12.5,
+                  display: "flex", flexDirection: "column", gap: 4,
+                }}>
+                  <div>
+                    <Icon name="warning" size={12} /> 未完成任务 <strong>{transferStage.pending}</strong> 个
+                    {transferStage.locked > 0 && <> · 锁定任务 <strong>{transferStage.locked}</strong> 个</>}
+                  </div>
+                  {transferStage.sample.length > 0 && (
+                    <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                      示例：{transferStage.sample.slice(0, 3).join(", ")}
+                      {transferStage.sample.length > 3 && " ..."}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label style={{
+                    display: "block", fontSize: 12, fontWeight: 500,
+                    color: "var(--color-fg-muted)", marginBottom: 6,
+                  }}>
+                    转交给（同项目活跃用户）
+                  </label>
+                  <select
+                    value={transferToId}
+                    onChange={(e) => setTransferToId(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 11px",
+                      fontSize: 13,
+                      background: "var(--color-bg-elev)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-md)",
+                      color: "var(--color-fg)",
+                      outline: "none",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <option value="">— 选择接收用户 —</option>
+                    {allUsers
+                      .filter((u: UserResponse) =>
+                        u.id !== deleting.id &&
+                        u.is_active &&
+                        (u.role === "annotator" || u.role === "reviewer" || u.role === "project_admin"))
+                      .map((u: UserResponse) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({ROLE_LABELS[u.role as UserRole] ?? u.role}) · {u.email}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {deleteUser.error && (
+              <div style={{
+                padding: "8px 12px",
+                background: "rgba(239,68,68,0.08)",
+                border: "1px solid #ef4444",
+                borderRadius: "var(--radius-md)",
+                color: "#ef4444",
+                fontSize: 12.5,
+              }}>
+                <Icon name="warning" size={12} /> {(deleteUser.error as Error)?.message ?? "删除失败"}
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button
+                onClick={() => {
+                  setDeleting(null);
+                  setTransferStage(null);
+                  setTransferToId("");
+                  deleteUser.reset();
+                }}
+                disabled={deleteUser.isPending}
+              >
+                取消
+              </Button>
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  try {
+                    await deleteUser.mutateAsync({
+                      userId: deleting.id,
+                      transferToUserId: transferStage ? transferToId || undefined : undefined,
+                    });
+                    pushToast({
+                      msg: transferStage
+                        ? `已删除 ${deleting.name}，任务已转交`
+                        : `已删除账号 ${deleting.name}`,
+                      kind: "success",
+                    });
+                    setDeleting(null);
+                    setTransferStage(null);
+                    setTransferToId("");
+                  } catch (err) {
+                    // 检测 409 + has_pending_tasks → 切到二阶段
+                    if (err instanceof ApiError && err.status === 409) {
+                      const raw = err.detailRaw as
+                        | { reason?: string; pending_task_count?: number; locked_task_count?: number; sample_task_ids?: string[] }
+                        | undefined;
+                      if (raw?.reason === "has_pending_tasks") {
+                        setTransferStage({
+                          pending: raw.pending_task_count ?? 0,
+                          locked: raw.locked_task_count ?? 0,
+                          sample: raw.sample_task_ids ?? [],
+                        });
+                        deleteUser.reset();
+                        return;
+                      }
+                    }
+                    void err;
+                  }
+                }}
+                disabled={deleteUser.isPending || (transferStage !== null && !transferToId)}
+              >
+                <Icon name="trash" size={12} />
+                {deleteUser.isPending
+                  ? (transferStage ? "转交并删除中…" : "删除中…")
+                  : transferStage
+                  ? "转交并删除"
+                  : "确认删除"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

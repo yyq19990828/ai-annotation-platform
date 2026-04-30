@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "default" | "primary" | "ghost" | "ai" | "danger";
@@ -7,9 +7,13 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
 }
 
-export function Button({ variant = "default", size = "md", className, children, ...props }: ButtonProps) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { variant = "default", size = "md", className, children, ...props },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       className={clsx("btn", variant !== "default" && variant, size === "sm" && "sm", className)}
       style={{
         display: "inline-flex",
@@ -46,4 +50,4 @@ export function Button({ variant = "default", size = "md", className, children, 
       {children}
     </button>
   );
-}
+});

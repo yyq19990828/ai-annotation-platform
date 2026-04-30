@@ -130,3 +130,46 @@ describe("dispatchKey · 上下文相关", () => {
       .toEqual({ type: "arrowNudge", dx: 0, dy: 10 });
   });
 });
+
+describe("dispatchKey · 属性 hotkey 绑定 (D.1)", () => {
+  it("无选中按 1 → setClassByDigit (保留原行为)", () => {
+    expect(dispatch({ key: "1" }, { hasSelection: false }))
+      .toEqual({ type: "setClassByDigit", idx: 0 });
+  });
+
+  it("选中态 + boolean hotkey 命中 → setAttribute toggle", () => {
+    const lookup = (digit: string) =>
+      digit === "2" ? { key: "occluded", type: "boolean" as const, currentValue: false } : null;
+    expect(dispatch({ key: "2" }, { hasSelection: true, attributeHotkey: lookup }))
+      .toEqual({ type: "setAttribute", key: "occluded", value: true });
+    // current=true 时 toggle 为 false
+    const lookupTrue = (digit: string) =>
+      digit === "2" ? { key: "occluded", type: "boolean" as const, currentValue: true } : null;
+    expect(dispatch({ key: "2" }, { hasSelection: true, attributeHotkey: lookupTrue }))
+      .toEqual({ type: "setAttribute", key: "occluded", value: false });
+  });
+
+  it("选中态 + select hotkey 命中 → setAttribute cycle", () => {
+    const lookup = (digit: string) =>
+      digit === "3"
+        ? { key: "orientation", type: "select" as const, options: ["north", "south", "east", "west"], currentValue: "north" }
+        : null;
+    expect(dispatch({ key: "3" }, { hasSelection: true, attributeHotkey: lookup }))
+      .toEqual({ type: "setAttribute", key: "orientation", value: "south" });
+  });
+
+  it("select cycle 至末尾绕回首项", () => {
+    const lookup = (digit: string) =>
+      digit === "3"
+        ? { key: "orientation", type: "select" as const, options: ["a", "b", "c"], currentValue: "c" }
+        : null;
+    expect(dispatch({ key: "3" }, { hasSelection: true, attributeHotkey: lookup }))
+      .toEqual({ type: "setAttribute", key: "orientation", value: "a" });
+  });
+
+  it("选中态但 hotkey 未命中 → fallback 到 setClassByDigit", () => {
+    const lookup = () => null;
+    expect(dispatch({ key: "1" }, { hasSelection: true, attributeHotkey: lookup }))
+      .toEqual({ type: "setClassByDigit", idx: 0 });
+  });
+});

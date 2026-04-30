@@ -26,6 +26,7 @@ class Project(Base):
     sampling: Mapped[str] = mapped_column(String(30), default="sequence")
     maximum_annotations: Mapped[int] = mapped_column(Integer, default=1)
     show_overlap_first: Mapped[bool] = mapped_column(Boolean, default=False)
+    iou_dedup_threshold: Mapped[float] = mapped_column(Float, nullable=False, server_default="0.7", default=0.7)
     model_version: Mapped[str | None] = mapped_column(String(100))
     task_lock_ttl_seconds: Mapped[int] = mapped_column(Integer, default=300)
     total_tasks: Mapped[int] = mapped_column(Integer, default=0)

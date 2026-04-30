@@ -1,18 +1,40 @@
-// 标注工作台离线队列（v0.5.4 Phase 1）。
+// 标注工作台离线队列（v0.5.4 Phase 1，v0.5.5 phase 2 加多 tab 同步）。
 // idb-keyval 持久化；网络抖动 / 后端 5xx 时由 WorkbenchShell 调用 enqueue。
 // 恢复在线后由 useOnlineStatus 触发 drain。
 
 import { get, set } from "idb-keyval";
 
 const KEY = "anno.offline-queue.v1";
+const CHANNEL = "anno.offline-queue.v1";
 
 export type OfflineOp =
-  | { kind: "create"; id: string; taskId: string; payload: unknown; ts: number }
+  | { kind: "create"; id: string; taskId: string; tmpId?: string; payload: unknown; ts: number }
   | { kind: "update"; id: string; taskId: string; annotationId: string; payload: unknown; ts: number }
   | { kind: "delete"; id: string; taskId: string; annotationId: string; ts: number };
 
 let memCache: OfflineOp[] | null = null;
 const subs = new Set<(count: number) => void>();
+
+// 多 tab 同步：BroadcastChannel 广播队列变更事件
+let bc: BroadcastChannel | null = null;
+try {
+  bc = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(CHANNEL) : null;
+} catch {
+  bc = null;
+}
+if (bc) {
+  bc.onmessage = (ev) => {
+    if (ev.data?.type === "changed") {
+      // 其它 tab 改了 idb；重读，再通知本 tab 订阅者
+      memCache = null;
+      load().then(() => notify());
+    }
+  };
+}
+
+function broadcast() {
+  try { bc?.postMessage({ type: "changed", ts: Date.now() }); } catch { /* ignore */ }
+}
 
 async function load(): Promise<OfflineOp[]> {
   if (memCache) return memCache;
@@ -28,6 +50,7 @@ async function load(): Promise<OfflineOp[]> {
 async function persist(): Promise<void> {
   try { await set(KEY, memCache ?? []); } catch { /* incognito / quota → swallow */ }
   notify();
+  broadcast();
 }
 
 function notify() {

@@ -22,3 +22,19 @@ dependencies = [
     "Pillow>=10.0.0",
     "blurhash-python>=1.2.0",
 ]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-mock>=3.14.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-q --tb=short"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+

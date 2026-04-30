@@ -27,7 +27,7 @@ export interface InvitationCreated {
 export type UserExportFormat = "csv" | "json";
 
 export const usersApi = {
-  list: (params?: { role?: string }) => {
+  list: (params?: { role?: string; project_id?: string }) => {
     const q = new URLSearchParams(
       Object.fromEntries(
         Object.entries(params ?? {}).filter(([, v]) => v !== undefined),
@@ -44,6 +44,12 @@ export const usersApi = {
 
   deactivate: (userId: string) =>
     apiClient.post<UserResponse>(`/users/${userId}/deactivate`, {}),
+
+  remove: (userId: string, opts?: { transfer_to_user_id?: string }) =>
+    apiClient.delete<UserResponse>(
+      `/users/${userId}`,
+      opts?.transfer_to_user_id ? { transfer_to_user_id: opts.transfer_to_user_id } : undefined,
+    ),
 
   assignGroup: (userId: string, groupId: string | null) =>
     apiClient.patch<UserResponse>(`/users/${userId}/group`, { group_id: groupId }),

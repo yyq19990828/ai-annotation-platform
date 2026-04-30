@@ -22,11 +22,18 @@ router = APIRouter()
 def _build_base_query(
     action: str | None,
     target_type: str | None,
+    target_id: str | None,
     actor_id: str | None,
     from_: datetime | None,
     to: datetime | None,
+    detail_key: str | None = None,
+    detail_value: str | None = None,
 ):
-    """返回带 actor_email JOIN 的基础 select，避免 N+1。"""
+    """返回带 actor_email JOIN 的基础 select，避免 N+1。
+
+    detail_key + detail_value（A.3）：走 PG GIN 索引 + JSONB `@>` 子集匹配，
+    例如 `?detail_key=role&detail_value=super_admin` 等价 `WHERE detail_json @> '{"role":"super_admin"}'`。
+    """
     j = outerjoin(AuditLog, User, AuditLog.actor_id == User.id)
     base = (
         select(AuditLog, User.email.label("_u_email"))
@@ -40,6 +47,9 @@ def _build_base_query(
     if target_type:
         base = base.where(AuditLog.target_type == target_type)
         count_base = count_base.where(AuditLog.target_type == target_type)
+    if target_id:
+        base = base.where(AuditLog.target_id == target_id)
+        count_base = count_base.where(AuditLog.target_id == target_id)
     if actor_id:
         base = base.where(AuditLog.actor_id == actor_id)
         count_base = count_base.where(AuditLog.actor_id == actor_id)
@@ -49,6 +59,11 @@ def _build_base_query(
     if to:
         base = base.where(AuditLog.created_at <= to)
         count_base = count_base.where(AuditLog.created_at <= to)
+    if detail_key and detail_value is not None:
+        # JSONB 子集匹配 —— 走 GIN 索引（仅 PG）；测试态 SQLite 走通用 contains
+        match = {detail_key: detail_value}
+        base = base.where(AuditLog.detail_json.contains(match))
+        count_base = count_base.where(AuditLog.detail_json.contains(match))
 
     return base, count_base
 
@@ -79,13 +94,16 @@ async def list_audit_logs(
     cursor: str | None = None,
     action: str | None = None,
     target_type: str | None = None,
+    target_id: str | None = None,
     actor_id: str | None = None,
     from_: datetime | None = Query(None, alias="from"),
     to: datetime | None = None,
+    detail_key: str | None = Query(None, description="A.3：detail_json 字段级过滤——键名"),
+    detail_value: str | None = Query(None, description="A.3：detail_json 字段级过滤——键值"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
-    base, count_q = _build_base_query(action, target_type, actor_id, from_, to)
+    base, count_q = _build_base_query(action, target_type, target_id, actor_id, from_, to, detail_key, detail_value)
 
     total = (await db.execute(count_q)).scalar_one()
 
@@ -119,14 +137,17 @@ async def export_audit_logs(
     format: Literal["csv", "json"] = "csv",
     action: str | None = None,
     target_type: str | None = None,
+    target_id: str | None = None,
     actor_id: str | None = None,
     from_: datetime | None = Query(None, alias="from"),
     to: datetime | None = None,
+    detail_key: str | None = Query(None),
+    detail_value: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
     _MAX_ROWS = 50_000
-    base, count_q = _build_base_query(action, target_type, actor_id, from_, to)
+    base, count_q = _build_base_query(action, target_type, target_id, actor_id, from_, to, detail_key, detail_value)
 
     total = (await db.execute(count_q)).scalar_one()
     if total > _MAX_ROWS:
@@ -148,7 +169,16 @@ async def export_audit_logs(
         action="audit.export",
         target_type="audit_logs",
         status_code=200,
-        detail={"format": format, "rows": len(items), "action_filter": action, "target_type_filter": target_type},
+        detail={
+            "format": format,
+            "rows": len(items),
+            "action_filter": action,
+            "target_type_filter": target_type,
+            "target_id_filter": target_id,
+            "actor_id_filter": actor_id,
+            "detail_key_filter": detail_key,
+            "detail_value_filter": detail_value,
+        },
     )
     await db.commit()
 

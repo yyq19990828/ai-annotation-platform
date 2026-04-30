@@ -54,6 +54,7 @@ export interface ProjectResponse {
   classes: string[];
   classes_config: ClassesConfig;
   attribute_schema: AttributeSchema;
+  iou_dedup_threshold: number;
   total_tasks: number;
   completed_tasks: number;
   review_tasks: number;
@@ -93,6 +94,7 @@ export interface ProjectUpdatePayload {
   sampling?: string;
   maximum_annotations?: number;
   show_overlap_first?: boolean;
+  iou_dedup_threshold?: number;
 }
 
 export interface ProjectMemberResponse {
@@ -140,9 +142,11 @@ export const projectsApi = {
   removeMember: (id: string, memberId: string) =>
     apiClient.delete<void>(`/projects/${id}/members/${memberId}`),
 
-  exportProject: async (id: string, format: ExportFormat) => {
+  exportProject: async (id: string, format: ExportFormat, opts?: { includeAttributes?: boolean }) => {
     const token = localStorage.getItem("token");
-    const res = await fetch(`/api/v1/projects/${id}/export?format=${format}`, {
+    const includeAttr = opts?.includeAttributes !== false; // 默认携带
+    const params = new URLSearchParams({ format, include_attributes: String(includeAttr) });
+    const res = await fetch(`/api/v1/projects/${id}/export?${params.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!res.ok) throw new Error("Export failed");
