@@ -3,6 +3,7 @@
 export type UserRole = "super_admin" | "project_admin" | "reviewer" | "annotator" | "viewer";
 export type ProjectStatus = "in_progress" | "completed" | "pending_review" | "archived";
 export type TaskStatus = "uploading" | "pending" | "in_progress" | "completed" | "review";
+export type BatchStatus = "draft" | "active" | "annotating" | "reviewing" | "approved" | "rejected" | "archived";
 
 // ── Project ─────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,7 @@ export interface TaskResponse {
   overlap: number;
   total_annotations: number;
   total_predictions: number;
+  batch_id: string | null;
   sequence_order: number | null;
   image_width: number | null;
   image_height: number | null;

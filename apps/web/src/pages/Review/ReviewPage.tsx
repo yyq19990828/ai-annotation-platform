@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProjects } from "@/hooks/useProjects";
 import { useTaskList, useAnnotations, useApproveTask, useRejectTask } from "@/hooks/useTasks";
+import { useBatches, useRejectBatch } from "@/hooks/useBatches";
 import type { TaskResponse } from "@/types";
 import { ReviewWorkbench } from "./ReviewWorkbench";
 import { RejectReasonModal } from "./RejectReasonModal";
@@ -81,8 +82,21 @@ export function ReviewPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const [selectedBatchId, setSelectedBatchId] = useState<string>("");
+
   const projectId = selectedProjectId || projects?.[0]?.id;
-  const { data: taskListData, isLoading } = useTaskList(projectId, { status: "review" });
+  const { data: batchList } = useBatches(projectId ?? "", undefined);
+  const reviewBatches = useMemo(
+    () => (batchList ?? []).filter((b) => ["reviewing", "active", "annotating"].includes(b.status)),
+    [batchList],
+  );
+  const rejectBatchMut = useRejectBatch(projectId ?? "");
+
+  const taskListParams = useMemo(
+    () => ({ status: "review" as const, ...(selectedBatchId ? { batch_id: selectedBatchId } : {}) }),
+    [selectedBatchId],
+  );
+  const { data: taskListData, isLoading } = useTaskList(projectId, taskListParams);
   const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
 
   const approveMut = useApproveTask();
@@ -214,6 +228,41 @@ export function ReviewPage() {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+          {reviewBatches.length > 0 && (
+            <>
+              <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>批次:</span>
+              <select
+                value={selectedBatchId}
+                onChange={(e) => setSelectedBatchId(e.target.value)}
+                style={{
+                  padding: "5px 10px", borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border)", fontSize: 12,
+                  background: "var(--color-bg-elev)",
+                }}
+              >
+                <option value="">全部批次</option>
+                {reviewBatches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name} ({b.review_tasks})</option>
+                ))}
+              </select>
+            </>
+          )}
+          {selectedBatchId && (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => {
+                if (confirm("确定整批退回？所有任务将重置为待标注状态。")) {
+                  rejectBatchMut.mutate(selectedBatchId, {
+                    onSuccess: () => pushToast({ msg: "整批已退回", kind: "success" }),
+                    onError: (e) => pushToast({ msg: "退回失败", sub: (e as Error).message }),
+                  });
+                }
+              }}
+            >
+              <Icon name="x" size={11} />整批退回
+            </Button>
+          )}
         </div>
       </div>
 

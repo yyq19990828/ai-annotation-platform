@@ -17,6 +17,7 @@ class TaskOut(BaseModel):
     overlap: int = 1
     total_annotations: int = 0
     total_predictions: int = 0
+    batch_id: UUID | None = None
     sequence_order: int | None = None
     image_width: int | None = None
     image_height: int | None = None

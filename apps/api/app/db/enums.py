@@ -24,6 +24,16 @@ class TaskStatus(str, Enum):
     REVIEW = "review"
 
 
+class BatchStatus(str, Enum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ANNOTATING = "annotating"
+    REVIEWING = "reviewing"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    ARCHIVED = "archived"
+
+
 class AnnotationSource(str, Enum):
     MANUAL = "manual"
     PREDICTION_BASED = "prediction_based"

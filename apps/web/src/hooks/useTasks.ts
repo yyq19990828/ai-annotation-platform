@@ -26,11 +26,11 @@ export function useTaskList(projectId: string | undefined, params?: TaskListPara
   });
 }
 
-export function useNextTask(projectId: string | undefined) {
+export function useNextTask(projectId: string | undefined, batchId?: string) {
   return useMutation({
     mutationFn: () => {
       if (!projectId) throw new Error("No project selected");
-      return tasksApi.getNext(projectId);
+      return tasksApi.getNext(projectId, batchId || undefined);
     },
   });
 }

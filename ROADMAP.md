@@ -3,6 +3,8 @@
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
 > **v0.6.0 (2026-04-30)**：3 个 P0 项全部落地 —— 协作并发（version 列 + ETag/If-Match + 锁续约 + 倒计时）、安全 & 测试基建（JWT 护栏 + 登录限流 + 密码策略/重置 + DB 测试套件）、Bug 反馈系统（FAB + 抽屉 + BugsPage + Markdown AI 消费端点）。详见 [CHANGELOG.md](../CHANGELOG.md#060---2026-04-30)。
+>
+> **v0.6.1 (2026-04-30)**：P1 大数据集分包 / 批次工作流落地 —— `task_batches` 表 + 7 态状态机 + 3 种切分策略 + 批次感知调度 + 整批审核退回 + 按批导出 + 前端批次管理/过滤/审核 UI。AI 预标注联动留 hook 空位。详见 [CHANGELOG.md](../CHANGELOG.md#061---2026-04-30)。
 
 ---
 
@@ -17,7 +19,8 @@
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **维度回填 UI**：`POST /datasets/{id}/backfill-dimensions` 已实现（用于回填 v0.4.9 之前没有 width/height 的存量 `dataset_items`），但 DatasetsPage 无触发入口；当前需要管理员直接 curl，操作门槛高。
-- **大数据集分包 / 批次工作流（task_batch）**：当前 0 处出现 batch / job / partition 概念，单 dataset 关联到 project 时 `DatasetService.link_project()` 一次循环把全部 items 建成 task（[apps/api/app/services/dataset.py:285-322](apps/api/app/services/dataset.py)），1 万+ 量级时项目经理无法做「按交付批次跟踪 / 按批指派 50 个标注员 / 整批退回 / 按批导出」，审核员只能从一个超长队列里挑题，ML 团队拿不到「先标完 batch 1 → 起跑训练 → 用 v1 预标 batch 2」的迭代节奏。详见调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
+- ~~**大数据集分包 / 批次工作流（task_batch）**~~：当前 0 处出现 batch / job / partition 概念，单 dataset 关联到 project 时 `DatasetService.link_project()` 一次循环把全部 items 建成 task（[apps/api/app/services/dataset.py:285-322](apps/api/app/services/dataset.py)），1 万+ 量级时项目经理无法做「按交付批次跟踪 / 按批指派 50 个标注员 / 整批退回 / 按批导出」，审核员只能从一个超长队列里挑题，ML 团队拿不到「先标完 batch 1 → 起跑训练 → 用 v1 预标 batch 2」的迭代节奏。详见调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
+  - **✅ v0.6.1 已实现**：`task_batches` 表（alembic 0019）+ 7 态状态机（draft→active→annotating→reviewing→approved/rejected→archived）+ 3 种切分策略（random/metadata/id_range）+ 批次感知调度（priority 排序 + assigned_user_ids JSONB 过滤）+ 整批退回（tasks 全部重置）+ 按批导出 + 前端 BatchesSection + 工作台/审核页批次过滤 + `on_batch_approved` 空 hook。
   - **数据模型**：新建 `task_batches` 表 → `id / project_id / dataset_id (nullable, 支持跨 dataset 混合批) / display_id / name / description / status / priority(0-100) / deadline / assigned_user_ids JSONB / total_tasks / completed_tasks / review_tasks / approved_tasks / rejected_tasks / created_by / created_at / updated_at`；`tasks` 加 `batch_id UUID FK nullable index`；alembic migration 给现存 project 各建一个「默认批次」把老 task 全部回填，避免 nullable 字段让前端到处判空。
   - **状态机**：`draft`（PM 配置中）→ `active`（已启用，可领题）→ `annotating`（首次有 task in_progress 自动进入）→ `reviewing`（所有 task 完成自动进入）→ `approved` / `rejected`（终态）→ `archived`（归档）。状态转移规则单独成文档，避免跟 task.status 语义冲突。
   - **创建 / 切批 UI**：项目设置加「批次管理」section（与 General / Members 平级），创建批次时支持三种范围切分策略：① 按 metadata 切（如 `region=华东`）；② 按 item id 列表 / 范围；③ 随机均分到 N 个批次（每批 size 自动算）；批次创建后可设 deadline / priority / assigned_user_ids。
@@ -64,9 +67,9 @@
 - **Reviewer 实时仪表卡（与标注端 ETA 对称）**：v0.5.2 已为 annotator StatusBar 加 ETA；reviewer 端缺「本日已审 / 待审队列长度 / 通过率（24h 滚动）」三项实时卡片。
 
 #### 协作并发
-- **任务锁主动续约**：`useTaskLock` 监听 lockError 弹错；但用户 idle 5 分钟后 lock TTL 到期，**前端无心跳续约 + 无倒计时可视化**。当前依赖刷新发现，体验差。建议：每 60s 心跳 PATCH lock；状态栏显示「锁剩余 4:23」。
+- ~~**任务锁主动续约**：`useTaskLock` 监听 lockError 弹错；但用户 idle 5 分钟后 lock TTL 到期，**前端无心跳续约 + 无倒计时可视化**。当前依赖刷新发现，体验差。建议：每 60s 心跳 PATCH lock；状态栏显示「锁剩余 4:23」。~~
   - **✅ v0.6.0 已实现**：心跳间隔 120s → 60s；StatusBar 锁倒计时显示（< 60s 变红）；心跳失败自动重试 `acquireLock`。
-- **编辑冲突 ETag**：两人同 task 编辑（lock TTL 缝隙、网络抖动期间），后提交覆盖前者，无 `If-Match`/`version` 字段。建议 Annotation / Task 表加 `version` 列；前端 PATCH 带版本号，409 时浮出「他人已修改 → 重载 / 强制覆盖」二选一。
+- ~~**编辑冲突 ETag**：两人同 task 编辑（lock TTL 缝隙、网络抖动期间），后提交覆盖前者，无 `If-Match`/`version` 字段。建议 Annotation / Task 表加 `version` 列；前端 PATCH 带版本号，409 时浮出「他人已修改 → 重载 / 强制覆盖」二选一。~~
   - **✅ v0.6.0 已实现**：Annotation/Task 加 `version INTEGER DEFAULT 1`；`PATCH /annotations/{id}` 支持 `If-Match` 头 → 409 + `{reason:"version_mismatch"}`；前端 `ConflictModal` 三选项。
 
 #### v0.5.5 phase 2 部分落地的延续
@@ -107,7 +110,7 @@
 - **Celery / ML Backend 指标**：v0.4.8 已加 HTTP metrics + DB pool + `/health/{db,redis,minio}`；缺 Celery 队列长度、Worker 心跳、ML Backend 平均延迟 / 失败率。
 - **`/health/celery`**：v0.4.8 留下的待办；做成 broker ping + active worker count。
 - **用户内嵌式 Bug 反馈系统（AI-friendly）**：当前用户遇到 bug 只能口头反馈或外部 IM，反馈内容碎、缺上下文、AI 无法批量消费修复。需要把反馈做成**结构化产物**——不是「让用户填表」，而是「自动捕获上下文 + 用户少量补述 + 直接给 Claude Code 消费」的全链路。
-  - **✅ v0.6.0 已实现**：`bug_reports` + `bug_comments` 表、7 个 API 端点（含 `?format=markdown` 直接输出 Claude Code 可读 Markdown）、FAB 悬浮按钮 + 抽屉提交（自动捕获 route / UA / viewport / API calls / console errors）、`BugsPage` 管理页（过滤 + 详情 + 状态变更 + 评论）、Settings「我的反馈」tab、10/hour 限流。
+  - **✅ v0.6.0 已实现**：~~`bug_reports` + `bug_comments` 表、7 个 API 端点（含 `?format=markdown` 直接输出 Claude Code 可读 Markdown）、FAB 悬浮按钮 + 抽屉提交（自动捕获 route / UA / viewport / API calls / console errors）、`BugsPage` 管理页（过滤 + 详情 + 状态变更 + 评论）、Settings「我的反馈」tab、10/hour 限流。~~
   - **保留 TODO**：截图（html2canvas）+ 涂抹脱敏 + MinIO 上传；LLM 聚类去重；邮件通知反馈者状态变更。
   - **数据模型**：`bug_reports` 表 → `id / display_id / reporter_id / route / user_role / project_id (nullable) / task_id (nullable) / title / description / severity (low/medium/high/critical) / status (new/triaged/in_progress/fixed/wont_fix/duplicate) / duplicate_of_id (nullable) / browser_ua / viewport / recent_api_calls JSONB (最近 10 次 method+url+status+ms) / recent_console_errors JSONB (最近 5 条 error msg+stack) / screenshot_url (MinIO key, nullable) / created_at / triaged_at / fixed_at / fixed_in_version`；附 `bug_comments` 表（评论 / 排查记录）。
   - **入口**：右下角浮动 FAB「反馈」按钮（每页常驻，z-index 高于 Modal 但低于 Toast）；点击弹出抽屉而非全屏 Modal，避免打断用户操作。
@@ -202,7 +205,7 @@
 | **P0** ✅ | A § 协作并发：任务锁主动续约 + 编辑冲突 ETag | **v0.6.0 已落地**：Annotation/Task version 列 + If-Match/ETag + 409 冲突弹窗 + 锁 60s 心跳 + 倒计时可视化 + 自动重试获取 |
 | **P1** | TopBar 通知中心、UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
-| **P1** | A § 数据：大数据集分包 / 批次工作流（`task_batch` 中量方案） | 1 万+ 量级数据集是绕不开的真实场景，PM 按批指派 / 审核员整批退回 / ML 按批迭代训练全无依托；详见 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md) |
+| **P1** ✅ | A § 数据：大数据集分包 / 批次工作流（`task_batch` 中量方案） | **v0.6.1 已落地**：`task_batches` 表 + 7 态状态机 + 3 种切分策略 + 批次感知调度 + 整批退回 + 按批导出 + 前端批次管理/过滤/审核 UI |
 | **P1** | OpenAPI codegen 完整迁移 + prebuild gate | phase 2 已落基建，把 5 个高频 type 切到 generated 后启用 gate，根治 schema 漂移 |
 | **P1** | OfflineQueueDrawer 抽屉 UI + WorkbenchShell tmpId 端到端接入 | phase 2 已落多 tab 同步 + history.replaceAnnotationId，差最后一公里 UI |
 | **P1** | 评论 polish：@ 提及 + 附件 + 画布批注层 | reviewer ↔ annotator 沟通刚需，phase 2 已 defer |

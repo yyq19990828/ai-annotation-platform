@@ -5,6 +5,48 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ---
+## [Unreleased]
+
+---
+
+
+## [0.6.1] - 2026-04-30
+
+> v0.6.1 聚焦 ROADMAP P1 项：**大数据集分包 / 批次工作流（task_batch）**。PM 可按策略切分批次 → 标注员按批领题 → 审核员整批通过/退回 → 按批导出。AI 预标注相关留白（仅 `on_batch_approved` 空 hook）。
+
+### 大数据集分包 / 批次工作流
+
+#### 数据模型
+- 新建 `task_batches` 表（alembic 0019）：`id / project_id / dataset_id / display_id / name / description / status / priority(0-100) / deadline / assigned_user_ids JSONB / total_tasks / completed_tasks / review_tasks / approved_tasks / rejected_tasks / created_by / created_at / updated_at`。
+- `tasks` 表新增 `batch_id UUID FK` 列（`ON DELETE SET NULL`，indexed）。
+- 数据回填：为每个现存 project 创建默认批次 `B-DEFAULT`（status=active），所有老 task 关联。
+
+#### 状态机
+- `BatchStatus` 枚举 7 态：`draft → active → annotating → reviewing → approved / rejected → archived`。
+- `active → annotating`：首个 task 进入 in_progress 时自动转移。
+- `annotating → reviewing`：所有 task 完成（无 pending/in_progress）时自动转移。
+- 自动转移在 `submit_task` / `approve_task` / `reject_task` 端点触发。
+
+#### 后端
+- `BatchService`（`app/services/batch.py`）：状态机校验 + 3 种切分策略（random / metadata / id_range）+ 计数器同步 + 整批退回（tasks 全部重置为 pending）+ `on_batch_approved()` 空 hook。
+- 9 个 API 端点（`/projects/{project_id}/batches`）：LIST / GET / POST / PATCH / DELETE / transition / split / reject / export。
+- `AuditAction` 新增 4 个事件：`batch.created` / `batch.status_changed` / `batch.rejected` / `batch.deleted`。
+- Scheduler `get_next_task()` 改造：JOIN `task_batches` 过滤 active/annotating 批次 + `assigned_user_ids` JSONB `@>` 检查 + `priority DESC` 排序。
+- `ExportService._load_data()` 新增可选 `batch_id` 参数，三种导出格式透传。
+- `TaskOut` schema + `_task_with_url` 返回 `batch_id` 字段。
+- `list_tasks` 端点新增 `batch_id` 查询参数过滤。
+
+#### 前端
+- 新建 `api/batches.ts`：`batchesApi` 对象（list / get / create / update / remove / transition / split / reject / exportBatch）。
+- 新建 `hooks/useBatches.ts`：8 个 React Query hooks（query key `["batches", projectId]`）。
+- `types/index.ts`：新增 `BatchStatus` 类型 + `TaskResponse.batch_id`。
+- `ProjectSettingsPage`：新增「批次管理」Tab（`layers` 图标），`BatchesSection` 组件支持创建单个批次 / 随机切分 N 批 / 状态转移 / 删除。
+- `TaskQueuePanel`：批次下拉过滤（仅显示 active/annotating 批次）。
+- `WorkbenchShell`：`selectedBatchId` state + `useTaskList` 传入 `batch_id` 过滤。
+- `ReviewPage`：批次下拉过滤 + 「整批退回」按钮。
+- `tasks.ts`：`TaskListParams` + `getNext` 支持 `batch_id` 参数。
+
+---
 
 
 ## [0.6.0] - 2026-04-30

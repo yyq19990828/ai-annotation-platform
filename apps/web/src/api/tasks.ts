@@ -17,6 +17,7 @@ export interface TaskListResponse {
 export interface TaskListParams {
   status?: string;
   assignee_id?: string;
+  batch_id?: string;
   limit?: number;
   offset?: number;
   cursor?: string;
@@ -49,14 +50,18 @@ export const tasksApi = {
     const q = new URLSearchParams({ project_id: projectId });
     if (params?.status) q.set("status", params.status);
     if (params?.assignee_id) q.set("assignee_id", params.assignee_id);
+    if (params?.batch_id) q.set("batch_id", params.batch_id);
     if (params?.limit) q.set("limit", String(params.limit));
     if (params?.offset) q.set("offset", String(params.offset));
     if (params?.cursor) q.set("cursor", params.cursor);
     return apiClient.get<TaskListResponse>(`/tasks?${q}`);
   },
 
-  getNext: (projectId: string) =>
-    apiClient.get<TaskResponse | null>(`/tasks/next?project_id=${projectId}`),
+  getNext: (projectId: string, batchId?: string) => {
+    const q = new URLSearchParams({ project_id: projectId });
+    if (batchId) q.set("batch_id", batchId);
+    return apiClient.get<TaskResponse | null>(`/tasks/next?${q}`);
+  },
 
   get: (id: string) => apiClient.get<TaskResponse>(`/tasks/${id}`),
 

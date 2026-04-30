@@ -21,29 +21,37 @@ class ExportService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def _load_data(self, project_id: uuid.UUID):
+    async def _load_data(self, project_id: uuid.UUID, batch_id: uuid.UUID | None = None):
         project = await self.db.get(Project, project_id)
         if not project:
             return None, [], []
 
-        tasks_result = await self.db.execute(
-            select(Task).where(Task.project_id == project_id).order_by(Task.sequence_order, Task.created_at)
-        )
+        task_q = select(Task).where(Task.project_id == project_id)
+        if batch_id:
+            task_q = task_q.where(Task.batch_id == batch_id)
+        task_q = task_q.order_by(Task.sequence_order, Task.created_at)
+        tasks_result = await self.db.execute(task_q)
         tasks = list(tasks_result.scalars().all())
 
-        annotations_result = await self.db.execute(
-            select(Annotation).where(
-                Annotation.project_id == project_id,
-                Annotation.is_active.is_(True),
-                Annotation.was_cancelled.is_(False),
-            ).order_by(Annotation.created_at)
+        task_ids = [t.id for t in tasks]
+        if not task_ids:
+            return project, [], []
+
+        ann_q = select(Annotation).where(
+            Annotation.project_id == project_id,
+            Annotation.is_active.is_(True),
+            Annotation.was_cancelled.is_(False),
         )
+        if batch_id:
+            ann_q = ann_q.where(Annotation.task_id.in_(task_ids))
+        ann_q = ann_q.order_by(Annotation.created_at)
+        annotations_result = await self.db.execute(ann_q)
         annotations = list(annotations_result.scalars().all())
 
         return project, tasks, annotations
 
-    async def export_coco(self, project_id: uuid.UUID, *, include_attributes: bool = True) -> str:
-        project, tasks, annotations = await self._load_data(project_id)
+    async def export_coco(self, project_id: uuid.UUID, *, batch_id: uuid.UUID | None = None, include_attributes: bool = True) -> str:
+        project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return json.dumps({})
 
@@ -98,8 +106,8 @@ class ExportService:
         }
         return json.dumps(coco, ensure_ascii=False, indent=2)
 
-    async def export_yolo(self, project_id: uuid.UUID, *, include_attributes: bool = True) -> bytes:
-        project, tasks, annotations = await self._load_data(project_id)
+    async def export_yolo(self, project_id: uuid.UUID, *, batch_id: uuid.UUID | None = None, include_attributes: bool = True) -> bytes:
+        project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return b""
 
@@ -143,8 +151,8 @@ class ExportService:
 
         return buf.getvalue()
 
-    async def export_voc(self, project_id: uuid.UUID, *, include_attributes: bool = True) -> bytes:
-        project, tasks, annotations = await self._load_data(project_id)
+    async def export_voc(self, project_id: uuid.UUID, *, batch_id: uuid.UUID | None = None, include_attributes: bool = True) -> bytes:
+        project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return b""
 

@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Thumbnail } from "@/components/Thumbnail";
 import type { TaskResponse } from "@/types";
 import type { ClassesConfig } from "@/api/projects";
+import type { BatchResponse } from "@/api/batches";
 import { ClassPalette } from "./ClassPalette";
 
 interface TaskQueuePanelProps {
@@ -25,6 +26,9 @@ interface TaskQueuePanelProps {
   onBack: () => void;
   onToggle: () => void;
   onSelectTask: (id: string) => void;
+  batches?: BatchResponse[];
+  selectedBatchId: string | null;
+  onSelectBatch?: (batchId: string | null) => void;
 }
 
 const stripStyle: React.CSSProperties = {
@@ -86,6 +90,7 @@ export function TaskQueuePanel({
   tasks, taskId, taskIdx,
   hasNextPage, isFetchingNextPage, onFetchNextPage,
   onBack, onToggle, onSelectTask,
+  batches, selectedBatchId, onSelectBatch,
 }: TaskQueuePanelProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -139,6 +144,32 @@ export function TaskQueuePanel({
           <span className="mono">{projectDisplayId}</span> · {classes.length} 个类别
         </div>
       </div>
+
+      {batches && batches.length > 0 && onSelectBatch && (
+        <div style={{ padding: "6px 14px 0" }}>
+          <select
+            value={selectedBatchId ?? ""}
+            onChange={(e) => onSelectBatch(e.target.value || null)}
+            style={{
+              width: "100%",
+              padding: "4px 8px",
+              fontSize: 12,
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--color-bg)",
+              color: "var(--color-fg)",
+              fontFamily: "inherit",
+            }}
+          >
+            <option value="">全部批次</option>
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name} ({b.completed_tasks}/{b.total_tasks})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div style={{ padding: "10px 14px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 12, fontWeight: 600 }}>任务队列</div>

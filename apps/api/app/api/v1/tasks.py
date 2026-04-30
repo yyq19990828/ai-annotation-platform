@@ -45,6 +45,7 @@ async def list_tasks(
     project_id: uuid.UUID = Query(...),
     status: str | None = None,
     assignee_id: uuid.UUID | None = None,
+    batch_id: uuid.UUID | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     cursor: str | None = None,
@@ -60,6 +61,9 @@ async def list_tasks(
     if assignee_id:
         q = q.where(Task.assignee_id == assignee_id)
         count_q = count_q.where(Task.assignee_id == assignee_id)
+    if batch_id:
+        q = q.where(Task.batch_id == batch_id)
+        count_q = count_q.where(Task.batch_id == batch_id)
 
     if cursor:
         last_ts, last_id = _decode_task_cursor(cursor)
@@ -97,11 +101,12 @@ async def list_tasks(
 @router.get("/next", response_model=TaskOut | None)
 async def next_task(
     project_id: uuid.UUID = Query(...),
+    batch_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     await assert_project_visible(project_id, db, current_user)
-    task = await get_next_task(current_user.id, project_id, db)
+    task = await get_next_task(current_user.id, project_id, db, batch_id=batch_id)
     if not task:
         return None
     await db.commit()
@@ -305,6 +310,12 @@ async def submit_task(
     task.status = "review"
     lock_svc = TaskLockService(db)
     await lock_svc.release(task_id, current_user.id)
+
+    from app.services.batch import BatchService
+    batch_svc = BatchService(db)
+    await batch_svc.check_auto_transitions(task.batch_id)
+    await batch_svc.recalculate_counters(task.batch_id) if task.batch_id else None
+
     await db.commit()
     return {"status": "submitted", "task_id": str(task_id)}
 
@@ -334,6 +345,13 @@ async def approve_task(
     if project:
         project.completed_tasks = (project.completed_tasks or 0) + 1
         project.review_tasks = max((project.review_tasks or 0) - 1, 0)
+
+    from app.services.batch import BatchService
+    batch_svc = BatchService(db)
+    await batch_svc.check_auto_transitions(task.batch_id)
+    if task.batch_id:
+        await batch_svc.recalculate_counters(task.batch_id)
+
     await db.commit()
     return {"status": "approved", "task_id": str(task_id)}
 
@@ -357,6 +375,13 @@ async def reject_task(
     project = await db.get(Project, task.project_id)
     if project:
         project.review_tasks = max((project.review_tasks or 0) - 1, 0)
+
+    from app.services.batch import BatchService
+    batch_svc = BatchService(db)
+    await batch_svc.check_auto_transitions(task.batch_id)
+    if task.batch_id:
+        await batch_svc.recalculate_counters(task.batch_id)
+
     await db.commit()
     return {"status": "rejected", "task_id": str(task_id), "reason": body.reason if body else None}
 
@@ -444,6 +469,7 @@ def _task_with_url(
         "overlap": task.overlap,
         "total_annotations": task.total_annotations,
         "total_predictions": task.total_predictions,
+        "batch_id": task.batch_id,
         "sequence_order": task.sequence_order,
         "image_width": width,
         "image_height": height,

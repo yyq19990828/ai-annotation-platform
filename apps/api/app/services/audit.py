@@ -32,6 +32,10 @@ class AuditAction(str, Enum):
     BUG_REPORT_CREATED = "bug_report.created"
     BUG_REPORT_STATUS_CHANGED = "bug_report.status_changed"
     BUG_COMMENT_CREATED = "bug_comment.created"
+    BATCH_CREATED = "batch.created"
+    BATCH_STATUS_CHANGED = "batch.status_changed"
+    BATCH_REJECTED = "batch.rejected"
+    BATCH_DELETED = "batch.deleted"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

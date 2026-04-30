@@ -13,6 +13,7 @@ import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
+import { useBatches } from "@/hooks/useBatches";
 import { predictionsApi } from "@/api/predictions";
 import type { TaskResponse, AnnotationResponse } from "@/types";
 
@@ -75,7 +76,18 @@ export function WorkbenchShell() {
   const projectDisplayId = currentProject?.display_id ?? "—";
   const aiModel = currentProject?.ai_model ?? "GroundingDINO + SAM";
 
-  const { data: taskListData, hasNextPage, isFetchingNextPage, fetchNextPage } = useTaskList(projectId);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const { data: batchList } = useBatches(projectId ?? "", undefined);
+  const activeBatches = useMemo(
+    () => (batchList ?? []).filter((b) => ["active", "annotating"].includes(b.status)),
+    [batchList],
+  );
+
+  const taskListParams = useMemo(
+    () => (selectedBatchId ? { batch_id: selectedBatchId } : undefined),
+    [selectedBatchId],
+  );
+  const { data: taskListData, hasNextPage, isFetchingNextPage, fetchNextPage } = useTaskList(projectId, taskListParams);
   const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
 
   const s = useWorkbenchState();
@@ -1030,6 +1042,9 @@ export function WorkbenchShell() {
         onBack={onBack}
         onToggle={() => s.setLeftOpen(!s.leftOpen)}
         onSelectTask={(id) => { s.setCurrentTaskId(id); s.setSelectedId(null); }}
+        batches={activeBatches}
+        selectedBatchId={selectedBatchId}
+        onSelectBatch={setSelectedBatchId}
       />
 
       <ToolDock tool={s.tool} onSetTool={s.setTool} />
