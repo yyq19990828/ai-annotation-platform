@@ -112,10 +112,19 @@ function PlaceholderPage({ title }: { title: string }) {
 
 function FullScreenWorkbench() {
   const tooNarrow = useMediaQuery("(max-width: 767px)");
+  const [bugDrawerOpen, setBugDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    patchFetchForBugCapture();
+    initBugReportCapture();
+  }, []);
+
   return (
     <div style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
       <WorkbenchPage />
       <ToastRack />
+      <BugReportFAB onClick={() => setBugDrawerOpen(true)} />
+      <BugReportDrawer open={bugDrawerOpen} onClose={() => setBugDrawerOpen(false)} />
       {tooNarrow && <MobileWorkbenchBlock />}
     </div>
   );

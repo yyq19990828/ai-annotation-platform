@@ -77,6 +77,20 @@ class BugReportService:
         total = total_result.scalar() or 0
         return items, total
 
+    async def get(self, report_id: uuid.UUID) -> BugReport | None:
+        return await self.db.get(BugReport, report_id)
+
+    async def delete(self, report_id: uuid.UUID) -> None:
+        report = await self.db.get(BugReport, report_id)
+        if report:
+            await self.db.execute(
+                select(BugComment).where(BugComment.bug_report_id == report_id)
+            )
+            from sqlalchemy import delete as sa_delete
+            await self.db.execute(sa_delete(BugComment).where(BugComment.bug_report_id == report_id))
+            await self.db.delete(report)
+            await self.db.flush()
+
     async def get_with_comments(self, report_id: uuid.UUID) -> tuple[BugReport | None, list[BugComment]]:
         report = await self.db.get(BugReport, report_id)
         if not report:

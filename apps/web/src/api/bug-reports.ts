@@ -91,6 +91,9 @@ export const bugReportsApi = {
   update: (id: string, payload: BugReportUpdatePayload) =>
     apiClient.patch<BugReportResponse>(`/bug_reports/${id}`, payload),
 
+  delete: (id: string) =>
+    apiClient.delete<void>(`/bug_reports/${id}`),
+
   addComment: (id: string, body: string) =>
     apiClient.post<BugCommentResponse>(`/bug_reports/${id}/comments`, { body }),
 };

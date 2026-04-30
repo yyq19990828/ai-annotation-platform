@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from app.deps import (
     get_db,
     get_current_user,
@@ -184,6 +184,50 @@ async def delete_project(
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
 ):
+    pid = str(project.id)
+    p = {"pid": pid}
+
+    await db.execute(text(
+        "DELETE FROM annotation_comments WHERE project_id = :pid"
+    ), p)
+    await db.execute(text(
+        "DELETE FROM annotation_drafts WHERE task_id IN "
+        "(SELECT id FROM tasks WHERE project_id = :pid)"
+    ), p)
+    await db.execute(text(
+        "DELETE FROM prediction_metas WHERE prediction_id IN "
+        "(SELECT id FROM predictions WHERE project_id = :pid) "
+        "OR failed_prediction_id IN "
+        "(SELECT id FROM failed_predictions WHERE project_id = :pid)"
+    ), p)
+    await db.execute(text(
+        "UPDATE annotations SET parent_prediction_id = NULL, "
+        "parent_annotation_id = NULL WHERE project_id = :pid"
+    ), p)
+    await db.execute(text(
+        "DELETE FROM annotations WHERE project_id = :pid"
+    ), p)
+    await db.execute(text(
+        "DELETE FROM predictions WHERE project_id = :pid"
+    ), p)
+    await db.execute(text(
+        "DELETE FROM failed_predictions WHERE project_id = :pid"
+    ), p)
+    await db.execute(text(
+        "DELETE FROM task_locks WHERE task_id IN "
+        "(SELECT id FROM tasks WHERE project_id = :pid)"
+    ), p)
+    await db.execute(text(
+        "DELETE FROM ml_backends WHERE project_id = :pid"
+    ), p)
+    await db.execute(text(
+        "UPDATE bug_reports SET project_id = NULL, task_id = NULL "
+        "WHERE project_id = :pid"
+    ), p)
+    await db.execute(text(
+        "DELETE FROM tasks WHERE project_id = :pid"
+    ), p)
+
     await db.delete(project)
     await db.commit()
     return Response(status_code=204)

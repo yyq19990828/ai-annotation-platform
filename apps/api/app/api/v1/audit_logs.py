@@ -101,7 +101,7 @@ async def list_audit_logs(
     detail_key: str | None = Query(None, description="A.3：detail_json 字段级过滤——键名"),
     detail_value: str | None = Query(None, description="A.3：detail_json 字段级过滤——键值"),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+    _: User = Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)),
 ):
     base, count_q = _build_base_query(action, target_type, target_id, actor_id, from_, to, detail_key, detail_value)
 

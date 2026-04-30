@@ -9,7 +9,7 @@ interface Props {
   onClose: () => void;
 }
 
-type ViewState = "list" | "create" | "detail";
+type ViewState = "list" | "create" | "detail" | "edit";
 
 export function BugReportDrawer({ open, onClose }: Props) {
   const [view, setView] = useState<ViewState>("list");
@@ -17,11 +17,12 @@ export function BugReportDrawer({ open, onClose }: Props) {
   const [detail, setDetail] = useState<BugReportDetail | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // create form
+  // create/edit form
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [severity, setSeverity] = useState<string>("medium");
   const [submitting, setSubmitting] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
 
   const pushToast = useToastStore((s) => s.push);
 
@@ -82,6 +83,48 @@ export function BugReportDrawer({ open, onClose }: Props) {
     }
   };
 
+  const startEdit = (r: BugReportDetail) => {
+    setEditId(r.id);
+    setTitle(r.title);
+    setDesc(r.description);
+    setSeverity(r.severity);
+    setView("edit");
+  };
+
+  const handleUpdate = async () => {
+    if (!editId || !title.trim() || !desc.trim()) return;
+    setSubmitting(true);
+    try {
+      await bugReportsApi.update(editId, {
+        title: title.trim(),
+        description: desc.trim(),
+        severity,
+      });
+      pushToast({ msg: "反馈已更新", kind: "success" });
+      setTitle("");
+      setDesc("");
+      setSeverity("medium");
+      setEditId(null);
+      setView("list");
+    } catch {
+      pushToast({ msg: "更新失败", kind: "error" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("确定删除此反馈？")) return;
+    try {
+      await bugReportsApi.delete(id);
+      pushToast({ msg: "反馈已删除", kind: "success" });
+      setDetail(null);
+      setView("list");
+    } catch {
+      pushToast({ msg: "删除失败", kind: "error" });
+    }
+  };
+
   const statusLabel: Record<string, string> = {
     new: "新提交",
     triaged: "已确认",
@@ -137,7 +180,7 @@ export function BugReportDrawer({ open, onClose }: Props) {
           }}
         >
           <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-fg)" }}>
-            {view === "list" ? "我的反馈" : view === "create" ? "提交反馈" : detail?.display_id ?? "详情"}
+            {view === "list" ? "我的反馈" : view === "create" ? "提交反馈" : view === "edit" ? "编辑反馈" : detail?.display_id ?? "详情"}
           </span>
           <div style={{ display: "flex", gap: 8 }}>
             {view !== "list" && (
@@ -326,10 +369,132 @@ export function BugReportDrawer({ open, onClose }: Props) {
             </form>
           )}
 
+          {view === "edit" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleUpdate();
+              }}
+            >
+              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>
+                标题 *
+              </label>
+              <input
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                maxLength={500}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: "7px 10px",
+                  fontSize: 13,
+                  background: "var(--color-bg-sunken)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-fg)",
+                  marginBottom: 10,
+                }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>
+                描述 *
+              </label>
+              <textarea
+                required
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                rows={4}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: "7px 10px",
+                  fontSize: 13,
+                  background: "var(--color-bg-sunken)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-fg)",
+                  resize: "vertical",
+                  marginBottom: 10,
+                  fontFamily: "inherit",
+                }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>
+                严重程度
+              </label>
+              <select
+                value={severity}
+                onChange={(e) => setSeverity(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "7px 10px",
+                  fontSize: 13,
+                  background: "var(--color-bg-sunken)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-fg)",
+                  marginBottom: 10,
+                }}
+              >
+                <option value="low">低 - 小建议</option>
+                <option value="medium">中 - 影响体验</option>
+                <option value="high">高 - 影响功能</option>
+                <option value="critical">严重 - 系统不可用</option>
+              </select>
+              <button
+                type="submit"
+                disabled={submitting || !title.trim() || !desc.trim()}
+                style={{
+                  width: "100%",
+                  padding: "8px 0",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  background: submitting ? "var(--color-accent-muted)" : "var(--color-accent)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "var(--radius-md)",
+                  cursor: submitting ? "not-allowed" : "pointer",
+                  marginTop: 4,
+                }}
+              >
+                {submitting ? "保存中..." : "保存修改"}
+              </button>
+            </form>
+          )}
+
           {view === "detail" && detail && (
             <div style={{ fontSize: 12.5 }}>
-              <div style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                 <span style={{ fontWeight: 600, color: "var(--color-fg)" }}>{detail.title}</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    onClick={() => startEdit(detail)}
+                    style={{
+                      padding: "3px 8px",
+                      fontSize: 11,
+                      background: "none",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-sm)",
+                      color: "var(--color-fg-muted)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    编辑
+                  </button>
+                  <button
+                    onClick={() => handleDelete(detail.id)}
+                    style={{
+                      padding: "3px 8px",
+                      fontSize: 11,
+                      background: "none",
+                      border: "1px solid oklch(0.65 0.2 25)",
+                      borderRadius: "var(--radius-sm)",
+                      color: "oklch(0.65 0.2 25)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    删除
+                  </button>
+                </div>
               </div>
               <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
                 <span style={{ color: severityColor[detail.severity] ?? "var(--color-fg-muted)", fontWeight: 500 }}>

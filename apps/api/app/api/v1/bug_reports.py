@@ -109,12 +109,16 @@ async def update_bug_report(
     data: BugReportUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)),
+    current_user: User = Depends(get_current_user),
 ):
     svc = BugReportService(db)
-    report = await svc.update(report_id, **data.model_dump(exclude_unset=True))
+    report = await svc.get(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Bug report not found")
+    is_admin = current_user.role in (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+    if not is_admin and report.reporter_id != current_user.id:
+        raise HTTPException(status_code=403, detail="只能编辑自己提交的反馈")
+    report = await svc.update(report_id, **data.model_dump(exclude_unset=True))
     await AuditService.log(
         db,
         actor=current_user,
@@ -128,6 +132,36 @@ async def update_bug_report(
     await db.commit()
     await db.refresh(report)
     return report
+
+
+@router.delete("/bug_reports/{report_id}", status_code=204)
+async def delete_bug_report(
+    report_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    svc = BugReportService(db)
+    report = await svc.get(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Bug report not found")
+    is_admin = current_user.role in (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+    if not is_admin and report.reporter_id != current_user.id:
+        raise HTTPException(status_code=403, detail="只能删除自己提交的反馈")
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="bug_report.deleted",
+        target_type="bug_report",
+        target_id=str(report.id),
+        request=request,
+        status_code=204,
+        detail={"display_id": report.display_id},
+    )
+    await svc.delete(report_id)
+    await db.commit()
+    from fastapi.responses import Response
+    return Response(status_code=204)
 
 
 @router.post("/bug_reports/{report_id}/comments", response_model=BugCommentOut, status_code=201)
