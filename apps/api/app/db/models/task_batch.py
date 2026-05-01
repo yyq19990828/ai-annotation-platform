@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, datetime
-from sqlalchemy import String, Integer, Date, DateTime, Text, ForeignKey, func
+from sqlalchemy import String, Integer, Date, DateTime, Text, ForeignKey, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
@@ -8,6 +8,9 @@ from app.db.base import Base
 
 class TaskBatch(Base):
     __tablename__ = "task_batches"
+    __table_args__ = (
+        UniqueConstraint("project_id", "display_id", name="uq_task_batches_project_display"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)

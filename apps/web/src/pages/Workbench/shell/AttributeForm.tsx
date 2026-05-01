@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { AttributeField, AttributeSchema } from "@/api/projects";
 
 export interface AttributeFormProps {
@@ -31,7 +33,7 @@ export function getMissingRequired(
   if (!schema) return [];
   const values = attributes ?? {};
   const missing: string[] = [];
-  for (const f of schema.fields) {
+  for (const f of schema.fields ?? []) {
     if (!f.required) continue;
     if (!isVisible(f, className, values)) continue;
     const v = values[f.key];
@@ -96,28 +98,7 @@ export function AttributeForm({ schema, className, attributes, onChange, readOnl
             <span style={{ fontSize: 11.5, color: "var(--color-fg)", display: "inline-flex", alignItems: "center", gap: 6 }}>
               {f.label}
               {f.required && <span style={{ color: "var(--color-danger)", marginLeft: 4 }}>*</span>}
-              {f.description && (
-                <span
-                  title={f.description}
-                  aria-label={f.description}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 14,
-                    height: 14,
-                    borderRadius: "50%",
-                    border: "1px solid var(--color-border)",
-                    background: "var(--color-bg-sunken)",
-                    color: "var(--color-fg-muted)",
-                    fontSize: 9,
-                    fontWeight: 600,
-                    cursor: "help",
-                  }}
-                >
-                  i
-                </span>
-              )}
+              {f.description && <DescriptionPopover description={f.description} />}
               {f.hotkey && (f.type === "boolean" || f.type === "select") && (
                 <span
                   className="mono"
@@ -150,8 +131,8 @@ export function AttributeForm({ schema, className, attributes, onChange, readOnl
               <input
                 type="number"
                 value={(v as number | string | undefined) ?? ""}
-                min={f.min}
-                max={f.max}
+                min={f.min ?? undefined}
+                max={f.max ?? undefined}
                 disabled={readOnly}
                 onChange={(e) => {
                   const n = e.target.value === "" ? undefined : Number(e.target.value);
@@ -223,3 +204,97 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 3,
   color: "var(--color-fg)",
 };
+
+/** v0.6.4：description 支持 markdown（链接 / 加粗 / 列表 / 换行）。
+ *  hover 或 focus 时弹出 popover，点击外部关闭。链接强制 target=_blank。
+ *  GFM 启用，但禁 raw HTML（react-markdown 默认不开 rehype-raw，避免 XSS）。
+ */
+function DescriptionPopover({ description }: { description: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement | null>(null);
+
+  // 点击外部关闭
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <span
+      ref={ref}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      style={{ position: "relative", display: "inline-flex" }}
+    >
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        aria-label={`查看说明：${description.slice(0, 50)}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 14,
+          height: 14,
+          borderRadius: "50%",
+          border: "1px solid var(--color-border)",
+          background: "var(--color-bg-sunken)",
+          color: "var(--color-fg-muted)",
+          fontSize: 9,
+          fontWeight: 600,
+          cursor: "help",
+          padding: 0,
+        }}
+      >
+        i
+      </button>
+      {open && (
+        <div
+          role="tooltip"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            zIndex: 1000,
+            maxWidth: 280,
+            minWidth: 180,
+            padding: "8px 10px",
+            background: "var(--color-bg-elev)",
+            border: "1px solid var(--color-border)",
+            borderRadius: 4,
+            boxShadow: "0 4px 16px oklch(0 0 0 / 0.18)",
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: "var(--color-fg)",
+            pointerEvents: "auto",
+          }}
+        >
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              a: ({ href, children }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-primary)" }}>
+                  {children}
+                </a>
+              ),
+              p: ({ children }) => <p style={{ margin: "0 0 6px" }}>{children}</p>,
+              ul: ({ children }) => <ul style={{ margin: "0 0 6px", paddingLeft: 16 }}>{children}</ul>,
+              ol: ({ children }) => <ol style={{ margin: "0 0 6px", paddingLeft: 16 }}>{children}</ol>,
+              code: ({ children }) => (
+                <code style={{ background: "var(--color-bg-sunken)", padding: "0 3px", borderRadius: 2, fontSize: 11 }}>
+                  {children}
+                </code>
+              ),
+            }}
+          >
+            {description}
+          </ReactMarkdown>
+        </div>
+      )}
+    </span>
+  );
+}

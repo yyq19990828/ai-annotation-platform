@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
@@ -13,6 +13,8 @@ import {
 interface OfflineQueueDrawerProps {
   open: boolean;
   onClose: () => void;
+  /** 当前题（v0.6.4：用于「当前题」筛选 + 默认展开当前题分组）。*/
+  currentTaskId?: string;
   /** 单条同步：执行远端请求；抛错 = 不弹出，调用方 toast 错误。成功后 drawer 自己 removeById。 */
   onFlushOne: (op: OfflineOp) => Promise<void>;
   /** 全部同步：drain 整个队列，调用方负责 invalidate cache + 提示。 */
@@ -37,13 +39,26 @@ function kindColor(kind: OfflineOp["kind"]): string {
   return "oklch(0.60 0.18 25)";
 }
 
-export function OfflineQueueDrawer({ open, onClose, onFlushOne, onFlushAll }: OfflineQueueDrawerProps) {
+/** v0.6.4：retry_count 颜色阈值。0 灰，1-2 黄（已有失败但不严重），≥3 红。*/
+function retryBadgeColor(rc: number): { bg: string; fg: string } {
+  if (rc >= 3) return { bg: "oklch(0.96 0.05 25 / 0.5)", fg: "oklch(0.45 0.18 25)" };
+  if (rc >= 1) return { bg: "oklch(0.96 0.06 80 / 0.5)", fg: "oklch(0.55 0.15 75)" };
+  return { bg: "var(--color-bg-sunken)", fg: "var(--color-fg-muted)" };
+}
+
+type TaskFilter = "all" | "current";
+type RetryFilter = "all" | "failed";
+
+export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, onFlushAll }: OfflineQueueDrawerProps) {
   const [items, setItems] = useState<OfflineOp[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [flushAllBusy, setFlushAllBusy] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
+  const [retryFilter, setRetryFilter] = useState<RetryFilter>("all");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const pushToast = useToastStore((s) => s.push);
 
-  // 实时订阅队列变化（多 tab 也会触发）
+  // 实时订阅队列变化
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -64,6 +79,36 @@ export function OfflineQueueDrawer({ open, onClose, onFlushOne, onFlushAll }: Of
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // 应用筛选
+  const filtered = useMemo(() => {
+    return items.filter((op) => {
+      if (taskFilter === "current" && currentTaskId && op.taskId !== currentTaskId) return false;
+      if (retryFilter === "failed" && (op.retry_count ?? 0) < 3) return false;
+      return true;
+    });
+  }, [items, taskFilter, retryFilter, currentTaskId]);
+
+  // 按 taskId 分组（保持时间顺序）
+  const grouped = useMemo(() => {
+    const order: string[] = [];
+    const buckets: Record<string, OfflineOp[]> = {};
+    for (const op of filtered) {
+      if (!buckets[op.taskId]) {
+        buckets[op.taskId] = [];
+        order.push(op.taskId);
+      }
+      buckets[op.taskId].push(op);
+    }
+    return { order, buckets };
+  }, [filtered]);
+
+  // 跨题统计
+  const taskCount = grouped.order.length;
+  const currentTaskItemCount = useMemo(() => {
+    if (!currentTaskId) return 0;
+    return items.filter((op) => op.taskId === currentTaskId).length;
+  }, [items, currentTaskId]);
 
   const handleRetry = useCallback(async (op: OfflineOp) => {
     setBusyId(op.id);
@@ -128,7 +173,7 @@ export function OfflineQueueDrawer({ open, onClose, onFlushOne, onFlushAll }: Of
           right: 0,
           top: 0,
           bottom: 0,
-          width: 380,
+          width: 420,
           maxWidth: "100vw",
           background: "var(--color-bg-elev)",
           borderLeft: "1px solid var(--color-border)",
@@ -151,7 +196,9 @@ export function OfflineQueueDrawer({ open, onClose, onFlushOne, onFlushAll }: Of
             <Icon name="inbox" size={14} />
             <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-fg)" }}>离线队列</div>
             <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
-              {items.length === 0 ? "暂无操作" : `${items.length} 条待同步`}
+              {items.length === 0
+                ? "暂无操作"
+                : `${items.length} 条 · 跨 ${taskCount} 题${currentTaskId ? ` · 当前题 ${currentTaskItemCount}` : ""}`}
             </div>
           </div>
           <button
@@ -173,8 +220,39 @@ export function OfflineQueueDrawer({ open, onClose, onFlushOne, onFlushAll }: Of
           </button>
         </header>
 
+        {/* v0.6.4：筛选 chip */}
+        {items.length > 0 && (
+          <div
+            style={{
+              padding: "8px 16px",
+              borderBottom: "1px solid var(--color-border)",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              fontSize: 11,
+              color: "var(--color-fg-muted)",
+            }}
+          >
+            <span style={{ marginRight: 4 }}>范围：</span>
+            <FilterChip label="全部" active={taskFilter === "all"} onClick={() => setTaskFilter("all")} />
+            <FilterChip
+              label="当前题"
+              active={taskFilter === "current"}
+              disabled={!currentTaskId}
+              onClick={() => setTaskFilter("current")}
+            />
+            <span style={{ marginLeft: 8, marginRight: 4 }}>状态：</span>
+            <FilterChip label="全部" active={retryFilter === "all"} onClick={() => setRetryFilter("all")} />
+            <FilterChip
+              label="失败 ≥ 3"
+              active={retryFilter === "failed"}
+              onClick={() => setRetryFilter("failed")}
+            />
+          </div>
+        )}
+
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
-          {items.length === 0 ? (
+          {filtered.length === 0 ? (
             <div
               style={{
                 padding: "32px 16px",
@@ -185,88 +263,143 @@ export function OfflineQueueDrawer({ open, onClose, onFlushOne, onFlushAll }: Of
               }}
             >
               <Icon name="check" size={18} style={{ color: "oklch(0.65 0.15 145)", marginBottom: 8 }} />
-              <div>暂无离线操作</div>
-              <div style={{ marginTop: 4, fontSize: 11 }}>所有标注操作已同步至服务器。</div>
+              <div>{items.length === 0 ? "暂无离线操作" : "当前筛选无匹配项"}</div>
+              <div style={{ marginTop: 4, fontSize: 11 }}>
+                {items.length === 0 ? "所有标注操作已同步至服务器。" : "调整上方筛选 chip 查看其他项。"}
+              </div>
             </div>
           ) : (
-            items.map((op) => {
-              const isBusy = busyId === op.id;
+            grouped.order.map((tid) => {
+              const opsInTask = grouped.buckets[tid];
+              const isCurrent = tid === currentTaskId;
+              const isCollapsed = collapsed[tid] ?? !isCurrent; // 默认展开当前题，其余折叠
               return (
-                <div
-                  key={op.id}
-                  style={{
-                    padding: "10px 16px",
-                    borderBottom: "1px solid var(--color-border)",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                    opacity: isBusy ? 0.5 : 1,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: kindColor(op.kind),
-                        background: "var(--color-bg-sunken)",
-                        padding: "1px 6px",
-                        borderRadius: 3,
-                      }}
-                    >
-                      {KIND_LABEL[op.kind]}
+                <div key={tid} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                  <button
+                    type="button"
+                    onClick={() => setCollapsed((c) => ({ ...c, [tid]: !isCollapsed }))}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "8px 16px",
+                      background: isCurrent ? "var(--color-bg-sunken)" : "transparent",
+                      border: "none",
+                      borderBottom: "1px solid var(--color-border)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      cursor: "pointer",
+                      fontSize: 11.5,
+                      color: "var(--color-fg)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <Icon name={isCollapsed ? "chevRight" : "chevDown"} size={11} />
+                    <span className="mono">任务 {tid.slice(0, 8)}…</span>
+                    {isCurrent && <span style={{ color: "var(--color-primary)", fontSize: 10 }}>当前</span>}
+                    <span style={{ marginLeft: "auto", color: "var(--color-fg-muted)", fontWeight: 400 }}>
+                      {opsInTask.length} 条
                     </span>
-                    <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }} className="mono">
-                      {formatTs(op.ts)}
-                    </span>
-                    {op.kind === "create" && op.tmpId && (
-                      <span
-                        style={{ fontSize: 10, color: "var(--color-fg-muted)" }}
-                        className="mono"
-                        title={op.tmpId}
+                  </button>
+                  {!isCollapsed && opsInTask.map((op) => {
+                    const isBusy = busyId === op.id;
+                    const rc = op.retry_count ?? 0;
+                    const rcColor = retryBadgeColor(rc);
+                    return (
+                      <div
+                        key={op.id}
+                        style={{
+                          padding: "10px 16px 10px 32px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
+                          opacity: isBusy ? 0.5 : 1,
+                          background: rc >= 3 ? "oklch(0.96 0.04 25 / 0.18)" : "transparent",
+                        }}
                       >
-                        {op.tmpId.slice(0, 12)}…
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }} className="mono">
-                    任务 {op.taskId.slice(0, 8)}…
-                    {op.kind !== "create" && ` · 标注 ${op.annotationId.slice(0, 8)}…`}
-                  </div>
-                  <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => handleRetry(op)}
-                      style={{
-                        fontSize: 11,
-                        padding: "3px 10px",
-                        border: "1px solid var(--color-border)",
-                        background: "var(--color-bg-elev)",
-                        borderRadius: "var(--radius-sm)",
-                        cursor: isBusy ? "wait" : "pointer",
-                        color: "var(--color-fg)",
-                      }}
-                    >
-                      重试
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => handleDelete(op)}
-                      style={{
-                        fontSize: 11,
-                        padding: "3px 10px",
-                        border: "1px solid var(--color-border)",
-                        background: "transparent",
-                        borderRadius: "var(--radius-sm)",
-                        cursor: isBusy ? "wait" : "pointer",
-                        color: "oklch(0.60 0.18 25)",
-                      }}
-                    >
-                      丢弃
-                    </button>
-                  </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: kindColor(op.kind),
+                              background: "var(--color-bg-sunken)",
+                              padding: "1px 6px",
+                              borderRadius: 3,
+                            }}
+                          >
+                            {KIND_LABEL[op.kind]}
+                          </span>
+                          <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }} className="mono">
+                            {formatTs(op.ts)}
+                          </span>
+                          {rc > 0 && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                background: rcColor.bg,
+                                color: rcColor.fg,
+                                padding: "1px 5px",
+                                borderRadius: 3,
+                              }}
+                              title={`累计同步失败 ${rc} 次`}
+                            >
+                              失败 ×{rc}
+                            </span>
+                          )}
+                          {op.kind === "create" && op.tmpId && (
+                            <span
+                              style={{ fontSize: 10, color: "var(--color-fg-muted)" }}
+                              className="mono"
+                              title={op.tmpId}
+                            >
+                              {op.tmpId.slice(0, 12)}…
+                            </span>
+                          )}
+                        </div>
+                        {op.kind !== "create" && (
+                          <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }} className="mono">
+                            标注 {op.annotationId.slice(0, 8)}…
+                          </div>
+                        )}
+                        <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleRetry(op)}
+                            style={{
+                              fontSize: 11,
+                              padding: "3px 10px",
+                              border: "1px solid var(--color-border)",
+                              background: "var(--color-bg-elev)",
+                              borderRadius: "var(--radius-sm)",
+                              cursor: isBusy ? "wait" : "pointer",
+                              color: "var(--color-fg)",
+                            }}
+                          >
+                            重试
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleDelete(op)}
+                            style={{
+                              fontSize: 11,
+                              padding: "3px 10px",
+                              border: "1px solid var(--color-border)",
+                              background: "transparent",
+                              borderRadius: "var(--radius-sm)",
+                              cursor: isBusy ? "wait" : "pointer",
+                              color: "oklch(0.60 0.18 25)",
+                            }}
+                          >
+                            丢弃
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })
@@ -321,5 +454,34 @@ export function OfflineQueueDrawer({ open, onClose, onFlushOne, onFlushAll }: Of
       </aside>
     </>,
     document.body,
+  );
+}
+
+function FilterChip({
+  label, active, disabled, onClick,
+}: {
+  label: string;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        fontSize: 11,
+        padding: "2px 8px",
+        border: `1px solid ${active ? "var(--color-primary)" : "var(--color-border)"}`,
+        background: active ? "var(--color-primary)" : "transparent",
+        color: active ? "white" : disabled ? "var(--color-fg-subtle)" : "var(--color-fg)",
+        borderRadius: 12,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      {label}
+    </button>
   );
 }

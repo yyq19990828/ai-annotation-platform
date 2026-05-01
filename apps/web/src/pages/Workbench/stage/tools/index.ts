@@ -2,8 +2,9 @@ import type { Viewport } from "../../state/useViewportTransform";
 import { BboxTool } from "./BboxTool";
 import { HandTool } from "./HandTool";
 import { PolygonTool } from "./PolygonTool";
+import { CanvasTool } from "./CanvasTool";
 
-export type ToolId = "box" | "hand" | "polygon";
+export type ToolId = "box" | "hand" | "polygon" | "canvas";
 
 export interface ToolMeta {
   id: ToolId;
@@ -13,10 +14,11 @@ export interface ToolMeta {
   cursor: "crosshair" | "grab" | "default";
 }
 
-/** Drag 初始化负载：仅 stage 空白处按下能产生的两种。move / resize 由 KonvaBox 内部派生。 */
+/** Drag 初始化负载：仅 stage 空白处按下能产生的几种。move / resize 由 KonvaBox 内部派生。 */
 export type DragInit =
   | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
-  | { kind: "pan"; sx: number; sy: number };
+  | { kind: "pan"; sx: number; sy: number }
+  | { kind: "canvasStroke"; points: number[] };
 
 export interface PolygonDraftHandle {
   /** 当前草稿点（首次落点前为空数组）。 */
@@ -56,8 +58,9 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
   box: BboxTool,
   hand: HandTool,
   polygon: PolygonTool,
+  canvas: CanvasTool,
 };
 
-export const ALL_TOOLS: CanvasTool[] = [BboxTool, PolygonTool, HandTool];
+export const ALL_TOOLS: CanvasTool[] = [BboxTool, PolygonTool, HandTool, CanvasTool];
 
-export { BboxTool, HandTool, PolygonTool };
+export { BboxTool, HandTool, PolygonTool, CanvasTool };

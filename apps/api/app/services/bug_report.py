@@ -7,6 +7,7 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.bug_report import BugReport, BugComment
+from app.services.display_id import next_display_id
 
 
 class BugReportService:
@@ -14,7 +15,7 @@ class BugReportService:
         self.db = db
 
     async def create(self, reporter_id: uuid.UUID, user_role: str, **fields) -> BugReport:
-        display_id = await self._next_display_id()
+        display_id = await next_display_id(self.db, "bug_reports")
         report = BugReport(
             id=uuid.uuid4(),
             display_id=display_id,
@@ -202,11 +203,3 @@ class BugReportService:
         overlap = len(words_a & words_b)
         return overlap / min(len(words_a), len(words_b)) > 0.5
 
-    async def _next_display_id(self) -> str:
-        result = await self.db.execute(select(func.max(BugReport.display_id)))
-        max_id = result.scalar() or "B-0"
-        try:
-            num = int(max_id.removeprefix("B-")) + 1
-        except ValueError:
-            num = 1
-        return f"B-{num}"

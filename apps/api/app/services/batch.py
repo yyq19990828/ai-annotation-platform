@@ -15,6 +15,7 @@ from app.db.models.task_batch import TaskBatch
 from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
 from app.schemas.batch import BatchCreate, BatchUpdate, BatchSplitRequest
+from app.services.display_id import next_display_id
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class BatchService:
         batch = TaskBatch(
             project_id=project_id,
             dataset_id=data.dataset_id,
-            display_id=f"B-{str(uuid.uuid4())[:6].upper()}",
+            display_id=await next_display_id(self.db, "batches"),
             name=data.name,
             description=data.description,
             status=BatchStatus.DRAFT,
@@ -184,7 +185,7 @@ class BatchService:
 
             batch = TaskBatch(
                 project_id=project_id,
-                display_id=f"B-{str(uuid.uuid4())[:6].upper()}",
+                display_id=await next_display_id(self.db, "batches"),
                 name=f"{data.name_prefix} {i + 1}",
                 status=BatchStatus.DRAFT,
                 priority=data.priority,
@@ -226,7 +227,7 @@ class BatchService:
 
         batch = TaskBatch(
             project_id=project_id,
-            display_id=f"B-{str(uuid.uuid4())[:6].upper()}",
+            display_id=await next_display_id(self.db, "batches"),
             name=f"{data.name_prefix} ({data.metadata_key}={data.metadata_value})",
             status=BatchStatus.DRAFT,
             priority=data.priority,
@@ -264,7 +265,7 @@ class BatchService:
 
         batch = TaskBatch(
             project_id=project_id,
-            display_id=f"B-{str(uuid.uuid4())[:6].upper()}",
+            display_id=await next_display_id(self.db, "batches"),
             name=data.name_prefix,
             status=BatchStatus.DRAFT,
             priority=data.priority,

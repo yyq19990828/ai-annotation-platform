@@ -11,6 +11,8 @@ import { classColorForCanvas, hexToRgba } from "./colors";
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TOOL_REGISTRY, type PolygonDraftHandle } from "./tools";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
+import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
+import type { CommentCanvasDrawing } from "@/api/comments";
 import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, moveVertex, type Pt } from "./polygonGeom";
 
@@ -20,7 +22,8 @@ type Drag =
   | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom }
   | { kind: "resize"; id: string; start: Geom; sx: number; sy: number; dir: ResizeDirection; cur: Geom }
   | { kind: "polyVertex"; id: string; vidx: number; start: Pt[]; cur: Pt[] }
-  | { kind: "pan"; sx: number; sy: number };
+  | { kind: "pan"; sx: number; sy: number }
+  | { kind: "canvasStroke"; points: number[] };
 
 interface ImageStageProps {
   fileUrl: string | null;
@@ -61,6 +64,14 @@ interface ImageStageProps {
   overlay?: React.ReactNode;
   /** polygon 工具草稿（v0.5.3）。仅 tool === "polygon" 时使用。 */
   polygonDraft?: PolygonDraftHandle;
+  /** v0.6.4：画布批注 shapes（已落地的笔触）。read-only 渲染。 */
+  canvasShapes?: NonNullable<CommentCanvasDrawing["shapes"]>;
+  /** canvas 工具激活：监听 + 渲染 draft，新笔触通过 onCanvasStrokeCommit 上报。 */
+  canvasEditable?: boolean;
+  /** 当前 stroke 颜色（draft 用，commit 时也带上）。*/
+  canvasStroke?: string;
+  /** 一段笔触落定时回调，points 是归一化 [x1,y1,x2,y2,...]。*/
+  onCanvasStrokeCommit?: (points: number[], stroke: string) => void;
 }
 
 // ── resize handle directions ────────────────────────────────────────────────
@@ -306,6 +317,7 @@ export function ImageStage({
   onSelectBox, onAcceptPrediction, onDeleteUserBox, onChangeUserBoxClass,
   onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft,
+  canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
 }: ImageStageProps) {
   const selSet = useMemo(
     () => new Set(selectedIds && selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : []),
@@ -447,6 +459,11 @@ export function ImageStage({
           if (!d || d.kind !== "polyVertex") return d;
           return { ...d, cur: moveVertex(d.cur, d.vidx, [pt.x, pt.y]) };
         }));
+      } else if (drag.kind === "canvasStroke") {
+        schedule(() => setDrag((d) => {
+          if (!d || d.kind !== "canvasStroke") return d;
+          return { ...d, points: [...d.points, pt.x, pt.y] };
+        }));
       }
     };
     const onUp = () => {
@@ -472,6 +489,9 @@ export function ImageStage({
         const changed = before.length !== after.length ||
           before.some((p, i) => p[0] !== after[i][0] || p[1] !== after[i][1]);
         if (changed) onCommitPolygonGeometry?.(drag.id, before, after);
+      } else if (drag.kind === "canvasStroke") {
+        // 至少 2 个点（4 个数字）才算一笔；点击没有移动会被丢弃
+        if (drag.points.length >= 4) onCanvasStrokeCommit?.(drag.points, canvasStroke);
       }
       setDrag(null);
     };
@@ -482,7 +502,7 @@ export function ImageStage({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [drag, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry]);
+  }, [drag, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCanvasStrokeCommit, canvasStroke]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -529,6 +549,7 @@ export function ImageStage({
 
   const containerCursor = (tool === "hand" || spacePan)
     ? (drag?.kind === "pan" ? "grabbing" : "grab")
+    : tool === "canvas" ? "crosshair"
     : pendingDrawing ? "default" : "crosshair";
 
   // polygon 草稿当前光标位置（用于动态预览线段）
@@ -712,6 +733,18 @@ export function ImageStage({
           })}
         </Layer>
 
+        {/* v0.6.4 · 画布批注层：reviewer/annotator 在原图上画的红圈/箭头，
+            坐标系归一化 [0,1] → 与 ImageStage vp 共享，缩放 / 平移自动跟随。 */}
+        <CanvasDrawingLayer
+          shapes={canvasShapes ?? []}
+          draftStroke={drag?.kind === "canvasStroke" ? drag.points : null}
+          draftColor={canvasStroke}
+          imgW={imgW}
+          imgH={imgH}
+          scale={vp.scale}
+          editable={canvasEditable && tool === "canvas"}
+        />
+
         {/* overlay 层：绘制预览 + pending 框 + polygon 草稿；不参与 hit-test */}
         <Layer name="overlay" listening={false}>
           {/* polygon 草稿：已落点 + 跟随光标的预览线段 + 顶点圆点 + 首点高亮（提示可闭合） */}
@@ -798,7 +831,7 @@ export function ImageStage({
         </Layer>
       </Stage>
 
-      {selectedBox && !readOnly && !pendingDrawing && (
+      {selectedBox && !readOnly && !pendingDrawing && tool !== "canvas" && (
         <SelectionOverlay
           box={selectedBox}
           isAi={isSelectedAi}

@@ -1,8 +1,9 @@
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator
+
+from app.schemas._jsonb_types import AuditDetail
 
 
 class AuditLogOut(BaseModel):
@@ -17,7 +18,7 @@ class AuditLogOut(BaseModel):
     path: str | None
     status_code: int | None
     ip: str | None
-    detail_json: dict[str, Any] | None
+    detail_json: AuditDetail | None
     created_at: datetime
 
     @field_validator("ip", mode="before")

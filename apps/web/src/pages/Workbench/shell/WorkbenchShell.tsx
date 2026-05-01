@@ -23,15 +23,14 @@ import { useAnnotationHistory } from "../state/useAnnotationHistory";
 import { useRecentClasses } from "../state/useRecentClasses";
 import { useSessionStats } from "../state/useSessionStats";
 import { useClipboard } from "../state/useClipboard";
-import { dispatchKey, ARROW_KEY_SET } from "../state/hotkeys";
-import { annotationToBox, bboxGeom, polygonGeom, predictionsToBoxes, type AiBox } from "../state/transforms";
-import type { PolygonDraftHandle } from "../stage/tools";
-import type { AnnotationPayload } from "@/api/tasks";
+import { useWorkbenchAnnotationActions } from "../state/useWorkbenchAnnotationActions";
+import { useWorkbenchHotkeys } from "../state/useWorkbenchHotkeys";
+import { annotationToBox, predictionsToBoxes, type AiBox } from "../state/transforms";
 import { iouShape } from "../stage/iou";
-import { isSelfIntersecting, type Pt } from "../stage/polygonGeom";
 import { setActiveClassesConfig, sortClassesByConfig } from "../stage/colors";
 import { getMissingRequired } from "./AttributeForm";
 import { ImageStage } from "../stage/ImageStage";
+import { CanvasToolbar } from "../stage/CanvasToolbar";
 import { Topbar } from "./Topbar";
 import { ToolDock } from "./ToolDock";
 import { FloatingDock } from "./FloatingDock";
@@ -46,7 +45,6 @@ import { Minimap } from "../stage/Minimap";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
 import {
-  enqueue,
   getAll as offlineQueueGetAll,
   removeById as offlineQueueRemoveById,
 } from "../state/offlineQueue";
@@ -99,7 +97,6 @@ export function WorkbenchShell() {
   const { vp, setVp } = useViewportTransform();
   const [fitTick, setFitTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
-  const [spacePan, setSpacePan] = useState(false);
   const [showHotkeys, setShowHotkeys] = useState(false);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
@@ -272,12 +269,6 @@ export function WorkbenchShell() {
     return out;
   }, [userBoxes, aiBoxes, iouDedupThreshold]);
 
-  // 方向键 nudge：临时几何 override，松开方向键时一次性 batch 提交
-  const [nudgeMap, setNudgeMap] = useState<Map<string, Geom>>(new Map());
-  const nudgeOrigRef = useRef<Map<string, Geom>>(new Map());
-  // 切题清空 nudge
-  useEffect(() => { setNudgeMap(new Map()); nudgeOrigRef.current = new Map(); }, [taskId]);
-
   // 批量改类 popover：anchor 到 selectedIds 第一个 user 框的 geom
   const [batchChanging, setBatchChanging] = useState(false);
 
@@ -286,125 +277,31 @@ export function WorkbenchShell() {
   const { online, queueCount, enqueueOnError, flushOne: executeOp, flushAll: flushOffline,
     drawerOpen: offlineDrawerOpen, openDrawer: openOfflineDrawer, closeDrawer: closeOfflineDrawer } = offlineQ;
 
-  /** v0.6.3 P0：create 失败兜底（共用 bbox / polygon）。
-   *  分配 tmpId → 写入 react-query cache 让画布立即出现 → 命令栈以 tmpId 入栈 → 入离线队列。 */
-  const optimisticEnqueueCreate = useCallback((payload: AnnotationPayload) => {
-    if (!taskId) return;
-    const tmpId = `tmp_${crypto.randomUUID()}`;
-    const optimistic: AnnotationResponse = {
-      id: tmpId,
-      task_id: taskId,
-      project_id: projectId ?? null,
-      user_id: meUserId ?? null,
-      source: "manual",
-      annotation_type: payload.annotation_type ?? "bbox",
-      class_name: payload.class_name,
-      geometry: payload.geometry,
-      confidence: payload.confidence ?? 1,
-      parent_prediction_id: null,
-      parent_annotation_id: null,
-      lead_time: null,
-      is_active: true,
-      ground_truth: false,
-      attributes: payload.attributes ?? {},
-      created_at: new Date().toISOString(),
-      updated_at: null,
-    };
-    queryClient.setQueryData<AnnotationResponse[]>(
-      ["annotations", taskId],
-      (prev) => [...(prev ?? []), optimistic],
-    );
-    s.setSelectedId(tmpId);
-    history.push({ kind: "create", annotationId: tmpId, payload });
-    enqueue({ kind: "create", id: crypto.randomUUID(), tmpId, taskId, payload, ts: Date.now() });
-  }, [taskId, projectId, meUserId, queryClient, s, history]);
+  // ── 标注 mutation 接线（v0.6.4 P1 抽 hook） ──
+  const annotationActions = useWorkbenchAnnotationActions({
+    taskId, projectId, meUserId,
+    queryClient, history, s, pushToast, recordRecentClass,
+    annotationsRef,
+    enqueueOnError,
+    mutations: {
+      create: createAnnotation,
+      update: { mutate: (vars, opts) => updateAnnotationMut.mutate(vars, opts) },
+      delete: { mutate: (id, opts) => deleteAnnotationMut.mutate(id, opts) },
+    },
+  });
+  const {
+    optimisticEnqueueCreate,
+    handlePickPendingClass,
+    submitPolygon,
+    handleDeleteBox,
+    handleCommitMove,
+    handleCommitResize,
+    handleCommitPolygonGeometry,
+    polygonDraftPoints,
+    setPolygonDraftPoints,
+    polygonHandle,
+  } = annotationActions;
 
-  // ── polygon 工具草稿（v0.5.3） ────────────────────────────────────────────
-  const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
-  // 切到非 polygon 工具或切题清空草稿
-  useEffect(() => { if (s.tool !== "polygon") setPolygonDraftPoints([]); }, [s.tool]);
-  useEffect(() => { setPolygonDraftPoints([]); }, [taskId]);
-
-  const submitPolygon = useCallback((points: [number, number][]) => {
-    const cls = s.activeClass;
-    if (points.length < 3) {
-      pushToast({ msg: "多边形需至少 3 个顶点", kind: "warning" });
-      return;
-    }
-    if (!cls) {
-      pushToast({ msg: "请先选择类别", kind: "warning" });
-      return;
-    }
-    const payload: AnnotationPayload = {
-      annotation_type: "polygon",
-      class_name: cls,
-      geometry: { type: "polygon", points },
-      confidence: 1,
-    };
-    setPolygonDraftPoints([]);
-    createAnnotation.mutate(payload, {
-      onSuccess: (created) => {
-        history.push({ kind: "create", annotationId: created.id, payload });
-        s.setSelectedId(created.id);
-        recordRecentClass(cls);
-        pushToast({ msg: "已创建多边形", sub: `${points.length} 顶点 · ${cls}`, kind: "success" });
-      },
-      // v0.6.3 P0：断网或 5xx → 走 tmpId 乐观插入（与 bbox 等价）
-      onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
-    });
-  }, [s, createAnnotation, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate]);
-
-  const polygonHandle = useMemo<PolygonDraftHandle>(() => ({
-    points: polygonDraftPoints,
-    addPoint: (pt) => setPolygonDraftPoints((p) => [...p, pt]),
-    close: () => submitPolygon(polygonDraftPoints),
-    cancel: () => setPolygonDraftPoints([]),
-  }), [polygonDraftPoints, submitPolygon]);
-
-  // polygon 专用键（Enter / Esc / Backspace）。capture 阶段拦截，避免主分发再处理。
-  useEffect(() => {
-    if (s.tool !== "polygon") return;
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target;
-      if (t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      if (polygonDraftPoints.length === 0) return;
-      if (e.key === "Enter" && polygonDraftPoints.length >= 3) {
-        e.preventDefault(); e.stopPropagation();
-        submitPolygon(polygonDraftPoints);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault(); e.stopPropagation();
-        setPolygonDraftPoints([]);
-        return;
-      }
-      if (e.key === "Backspace") {
-        e.preventDefault(); e.stopPropagation();
-        setPolygonDraftPoints((p) => p.slice(0, -1));
-        return;
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [s.tool, polygonDraftPoints, submitPolygon]);
-
-  const flushNudges = useCallback(() => {
-    if (nudgeMap.size === 0) return;
-    const cmds: { kind: "update"; annotationId: string; before: { geometry: ReturnType<typeof bboxGeom> }; after: { geometry: ReturnType<typeof bboxGeom> } }[] = [];
-    nudgeMap.forEach((after, id) => {
-      const before = nudgeOrigRef.current.get(id);
-      if (!before) return;
-      // 真有变化才 commit
-      if (before.x === after.x && before.y === after.y && before.w === after.w && before.h === after.h) return;
-      const beforeG = bboxGeom(before);
-      const afterG = bboxGeom(after);
-      updateAnnotationMut.mutate({ annotationId: id, payload: { geometry: afterG } });
-      cmds.push({ kind: "update", annotationId: id, before: { geometry: beforeG }, after: { geometry: afterG } });
-    });
-    if (cmds.length > 0) history.pushBatch(cmds);
-    setNudgeMap(new Map());
-    nudgeOrigRef.current = new Map();
-  }, [nudgeMap, updateAnnotationMut, history]);
 
   const navigateTask = useCallback((direction: "next" | "prev") => {
     if (tasks.length === 0) return;
@@ -456,28 +353,6 @@ export function WorkbenchShell() {
     s.setCurrentTaskId(target.id);
     s.setSelectedId(null);
   }, [tasks, taskId, hasNextPage, isFetchingNextPage, fetchNextPage, s, pushToast]);
-
-  const handleDeleteBox = useCallback((id: string) => {
-    const target = annotationsRef.current.find((a) => a.id === id);
-    if (target && taskId) {
-      deleteAnnotationMut.mutate(id, {
-        onSuccess: () => {
-          history.push({ kind: "delete", annotation: target });
-          pushToast({ msg: "已删除标注", kind: "success" });
-        },
-        onError: (err) => enqueueOnError(err, () => {
-          // v0.6.3 P0：先乐观从 cache 删，再 enqueue；离线时也要立即视觉消失
-          queryClient.setQueryData<AnnotationResponse[]>(
-            ["annotations", taskId],
-            (prev) => (prev ?? []).filter((a) => a.id !== id),
-          );
-          history.push({ kind: "delete", annotation: target });
-          enqueue({ kind: "delete", id: crypto.randomUUID(), taskId, annotationId: id, ts: Date.now() });
-        }),
-      });
-    }
-    s.setSelectedId(null);
-  }, [deleteAnnotationMut, history, pushToast, s, taskId, enqueueOnError, queryClient]);
 
   /** 批量删除当前选中的所有 user 框：成功后聚合 1 条 batch 命令进 history。 */
   const handleBatchDelete = useCallback(() => {
@@ -614,27 +489,6 @@ export function WorkbenchShell() {
     s.setPendingDrawing({ geom: geo });
   }, [s]);
 
-  const handlePickPendingClass = useCallback((cls: string) => {
-    const pending = s.pendingDrawing;
-    if (!pending || !cls) return;
-    const payload: AnnotationPayload = {
-      annotation_type: "bbox",
-      class_name: cls,
-      geometry: bboxGeom(pending.geom),
-      confidence: 1,
-    };
-    s.setPendingDrawing(null);
-    s.setActiveClass(cls);
-    recordRecentClass(cls);
-    createAnnotation.mutate(payload, {
-      onSuccess: (newAnnotation) => {
-        s.setSelectedId(newAnnotation.id);
-        history.push({ kind: "create", annotationId: newAnnotation.id, payload });
-      },
-      onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
-    });
-  }, [s, createAnnotation, history, recordRecentClass, enqueueOnError, optimisticEnqueueCreate]);
-
   const handleCancelPending = useCallback(() => {
     s.setPendingDrawing(null);
   }, [s]);
@@ -678,97 +532,6 @@ export function WorkbenchShell() {
   const handleCancelChangeClass = useCallback(() => {
     s.setEditingClass(null);
   }, [s]);
-
-  const handleCommitMove = useCallback((id: string, before: Geom, after: Geom) => {
-    if (!taskId) return;
-    const beforeG = bboxGeom(before);
-    const afterG = bboxGeom(after);
-    const payload = { geometry: afterG };
-    updateAnnotationMut.mutate({ annotationId: id, payload }, {
-      onSuccess: () => {
-        history.push({
-          kind: "update", annotationId: id,
-          before: { geometry: beforeG }, after: { geometry: afterG },
-        });
-      },
-      onError: (err) => enqueueOnError(err, () => {
-        // v0.6.3 P0：先乐观写 cache（画布立即跟上新位置），再 enqueue
-        queryClient.setQueryData<AnnotationResponse[]>(
-          ["annotations", taskId],
-          (prev) => (prev ?? []).map((a) => (a.id === id ? { ...a, geometry: afterG } : a)),
-        );
-        history.push({
-          kind: "update", annotationId: id,
-          before: { geometry: beforeG }, after: { geometry: afterG },
-        });
-        enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
-      }),
-    });
-  }, [updateAnnotationMut, history, taskId, enqueueOnError, queryClient]);
-
-  const handleCommitPolygonGeometry = useCallback((id: string, before: Pt[], after: Pt[]) => {
-    if (after.length < 3) {
-      pushToast({ msg: "多边形至少需要 3 顶点", kind: "error" });
-      return;
-    }
-    if (!isSelfIntersecting(after).ok) {
-      pushToast({ msg: "多边形自相交，已撤销", kind: "error" });
-      return;
-    }
-    if (!taskId) return;
-    const beforeG = polygonGeom(before);
-    const afterG = polygonGeom(after);
-    const payload = { geometry: afterG };
-    updateAnnotationMut.mutate({ annotationId: id, payload }, {
-      onSuccess: () => {
-        history.push({
-          kind: "update", annotationId: id,
-          before: { geometry: beforeG }, after: { geometry: afterG },
-        });
-      },
-      onError: (err) => enqueueOnError(err, () => {
-        queryClient.setQueryData<AnnotationResponse[]>(
-          ["annotations", taskId],
-          (prev) => (prev ?? []).map((a) => (a.id === id ? { ...a, geometry: afterG } : a)),
-        );
-        history.push({
-          kind: "update", annotationId: id,
-          before: { geometry: beforeG }, after: { geometry: afterG },
-        });
-        enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
-      }),
-    });
-  }, [updateAnnotationMut, history, pushToast, taskId, enqueueOnError, queryClient]);
-
-  const handleCommitResize = useCallback((id: string, before: Geom, after: Geom) => {
-    if (after.w < 0.005 || after.h < 0.005) {
-      pushToast({ msg: "框太小未保存", sub: "拖动到至少 0.5% × 0.5%", kind: "error" });
-      return;
-    }
-    if (!taskId) return;
-    const beforeG = bboxGeom(before);
-    const afterG = bboxGeom(after);
-    const payload = { geometry: afterG };
-    updateAnnotationMut.mutate({ annotationId: id, payload }, {
-      onSuccess: () => {
-        history.push({
-          kind: "update", annotationId: id,
-          before: { geometry: beforeG }, after: { geometry: afterG },
-        });
-      },
-      onError: (err) => enqueueOnError(err, () => {
-        queryClient.setQueryData<AnnotationResponse[]>(
-          ["annotations", taskId],
-          (prev) => (prev ?? []).map((a) => (a.id === id ? { ...a, geometry: afterG } : a)),
-        );
-        history.push({
-          kind: "update", annotationId: id,
-          before: { geometry: beforeG }, after: { geometry: afterG },
-        });
-        enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
-      }),
-    });
-  }, [updateAnnotationMut, history, pushToast, taskId, enqueueOnError, queryClient]);
 
   /** 选中态的 AnnotationResponse（驱动右侧栏属性表单）。仅单选 user 框时返回。 */
   const selectedAnnotationForPanel = useMemo<AnnotationResponse | null>(() => {
@@ -818,224 +581,19 @@ export function WorkbenchShell() {
     });
   }, [taskId, submitTaskMut, pushToast, task?.display_id, userBoxes.length, navigateTask, hasMissingRequired]);
 
-  // ── 键盘快捷键 ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    const isInputFocused = (el: EventTarget | null) =>
-      el instanceof HTMLElement && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
-
-    const applyArrowNudge = (dx: number, dy: number) => {
-      const userTargets = s.selectedIds
-        .map((id) => annotationsRef.current.find((a) => a.id === id))
-        .filter(Boolean) as AnnotationResponse[];
-      if (userTargets.length === 0) return;
-      const w = stageGeom.imgW || 1;
-      const h = stageGeom.imgH || 1;
-      const ndx = dx / w;
-      const ndy = dy / h;
-      setNudgeMap((prev) => {
-        const next = new Map(prev);
-        for (const ann of userTargets) {
-          const orig = nudgeOrigRef.current.get(ann.id) ?? (ann.geometry as Geom);
-          if (!nudgeOrigRef.current.has(ann.id)) nudgeOrigRef.current.set(ann.id, orig);
-          const cur = next.get(ann.id) ?? orig;
-          next.set(ann.id, {
-            x: Math.max(0, Math.min(1 - cur.w, cur.x + ndx)),
-            y: Math.max(0, Math.min(1 - cur.h, cur.y + ndy)),
-            w: cur.w, h: cur.h,
-          });
-        }
-        return next;
-      });
-    };
-
-    const onKey = (e: KeyboardEvent) => {
-      // D.1：属性 hotkey 查找 —— 仅当单选 user 框时启用
-      const attributeHotkey = (digit: string) => {
-        const sel = s.selectedId;
-        if (!sel) return null;
-        const ann = annotationsRef.current.find((a) => a.id === sel);
-        if (!ann) return null;
-        const fields = currentProject?.attribute_schema?.fields ?? [];
-        for (const f of fields) {
-          if (f.hotkey !== digit) continue;
-          if (f.type !== "boolean" && f.type !== "select") continue;
-          // applies_to 过滤
-          const applies = f.applies_to;
-          if (Array.isArray(applies) && !applies.includes(ann.class_name)) continue;
-          const cur = (ann.attributes ?? {})[f.key];
-          if (f.type === "boolean") {
-            return { key: f.key, type: "boolean" as const, currentValue: cur };
-          }
-          // select
-          const opts = (f.options ?? []).map((o) => o.value);
-          return { key: f.key, type: "select" as const, options: opts, currentValue: cur };
-        }
-        return null;
-      };
-
-      const action = dispatchKey(e, {
-        isInputFocused: isInputFocused(e.target),
-        hasSelection: !!s.selectedId || s.selectedIds.length > 0,
-        pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging,
-        attributeHotkey,
-      });
-      if (!action) return;
-
-      switch (action.type) {
-        case "undo": e.preventDefault(); history.undo(); return;
-        case "redo": e.preventDefault(); history.redo(); return;
-        case "fitReset": e.preventDefault(); setFitTick((n) => n + 1); return;
-        case "navigateTask": e.preventDefault(); navigateTask(action.dir); return;
-
-        case "selectAllUser":
-          e.preventDefault();
-          if (annotationsRef.current.length > 0) {
-            s.replaceSelected(annotationsRef.current.map((a) => a.id));
-          }
-          return;
-
-        case "copy": {
-          e.preventDefault();
-          const n = clipboard.copySelection();
-          if (n > 0) pushToast({ msg: `已复制 ${n} 个标注`, kind: "success" });
-          return;
-        }
-        case "paste":
-          e.preventDefault();
-          if (clipboard.hasClipboard) {
-            clipboard.paste().then((ids) => {
-              if (ids.length > 0) pushToast({ msg: `已粘贴 ${ids.length} 个标注`, kind: "success" });
-            });
-          }
-          return;
-        case "duplicate":
-          e.preventDefault();
-          if (s.selectedIds.length > 0) {
-            clipboard.duplicateSelection().then((ids) => {
-              if (ids.length > 0) pushToast({ msg: `已复制 ${ids.length} 个标注`, kind: "success" });
-            });
-          }
-          return;
-
-        case "arrowNudge": {
-          // 仅当选中里有 user 框才消费方向键
-          const hasUser = s.selectedIds.some((id) =>
-            annotationsRef.current.some((a) => a.id === id),
-          );
-          if (!hasUser) return;
-          e.preventDefault();
-          applyArrowNudge(action.dx, action.dy);
-          return;
-        }
-
-        case "spacePanOn": e.preventDefault(); setSpacePan(true); return;
-        case "showHotkeys": setShowHotkeys(true); return;
-        case "cancel":
-          if (showHotkeys) { setShowHotkeys(false); return; }
-          if (batchChanging) { setBatchChanging(false); return; }
-          if (s.pendingDrawing) { s.setPendingDrawing(null); return; }
-          if (s.editingClass) { s.setEditingClass(null); return; }
-          s.setSelectedId(null);
-          return;
-
-        case "thresholdAdjust":
-          e.preventDefault();
-          s.setConfThreshold(Math.max(0, Math.min(1, +(s.confThreshold + action.delta).toFixed(2))));
-          return;
-
-        case "cycleUser": {
-          const list = annotationsRef.current;
-          if (list.length === 0) return;
-          e.preventDefault();
-          const idxNow = s.selectedId ? list.findIndex((a) => a.id === s.selectedId) : -1;
-          let next: number;
-          if (action.loop) {
-            next = (idxNow + action.dir + list.length) % list.length;
-          } else {
-            next = Math.max(0, Math.min(list.length - 1, idxNow < 0 ? 0 : idxNow + action.dir));
-          }
-          s.setSelectedId(list[next].id);
-          return;
-        }
-
-        case "smartNext": smartNext(action.mode); return;
-
-        case "changeClass": {
-          const userIds = s.selectedIds.filter((id) =>
-            annotationsRef.current.some((a) => a.id === id),
-          );
-          if (userIds.length > 1) handleStartBatchChangeClass();
-          else if (userIds.length === 1) handleStartChangeClass(userIds[0]);
-          return;
-        }
-
-        case "setTool": s.setTool(action.tool); return;
-
-        case "setClassByDigit":
-          if (classes[action.idx]) { s.setActiveClass(classes[action.idx]); recordRecentClass(classes[action.idx]); }
-          return;
-
-        case "setAttribute": {
-          // D.1：选中态下 1-9 命中属性 hotkey → 直接覆盖单字段
-          e.preventDefault();
-          if (!s.selectedId) return;
-          const ann = annotationsRef.current.find((a) => a.id === s.selectedId);
-          if (!ann) return;
-          const next = { ...(ann.attributes ?? {}), [action.key]: action.value };
-          handleUpdateAttributes(ann.id, next);
-          return;
-        }
-
-        case "setClassByLetter": {
-          const letterIdx = action.letter.charCodeAt(0) - "a".charCodeAt(0);
-          const idx = 9 + letterIdx;
-          if (classes[idx]) { s.setActiveClass(classes[idx]); recordRecentClass(classes[idx]); }
-          return;
-        }
-
-        case "deleteSelected": {
-          const userIds = s.selectedIds.filter((id) =>
-            annotationsRef.current.some((a) => a.id === id),
-          );
-          if (userIds.length > 1) handleBatchDelete();
-          else if (userIds.length === 1) handleDeleteBox(userIds[0]);
-          return;
-        }
-
-        case "submit": handleSubmitTask(); return;
-
-        case "acceptAi": {
-          if (!s.selectedId) return;
-          const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
-          if (aiBox) handleAcceptPrediction(aiBox);
-          return;
-        }
-        case "rejectAi": {
-          if (!s.selectedId) return;
-          const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
-          if (aiBox) s.setSelectedId(null);
-          return;
-        }
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === " ") setSpacePan(false);
-      if (ARROW_KEY_SET.has(e.key)) flushNudges();
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [
-    classes, s, history, navigateTask, handleDeleteBox, handleSubmitTask,
-    handleAcceptPrediction, aiBoxes, showHotkeys, recordRecentClass, handleStartChangeClass,
-    smartNext, clipboard, pushToast, batchChanging, flushNudges,
-    handleBatchDelete, handleStartBatchChangeClass, stageGeom.imgW, stageGeom.imgH,
-    currentProject?.attribute_schema, handleUpdateAttributes,
-  ]);
-
+  // ── 键盘快捷键（v0.6.4 P1 抽 hook） ───────────────────────────────────
+  const { spacePan, nudgeMap } = useWorkbenchHotkeys({
+    s, history, classes, currentProject, annotationsRef,
+    batchChanging, setBatchChanging, showHotkeys,
+    navigateTask, smartNext, setFitTick,
+    recordRecentClass, handleDeleteBox, handleBatchDelete,
+    handleStartChangeClass, handleStartBatchChangeClass,
+    handleSubmitTask, handleAcceptPrediction, handleUpdateAttributes,
+    aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
+    polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
+    updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
+    taskId,
+  });
   if (isProjectLoading) {
     return <WorkbenchSkeleton />;
   }
@@ -1158,6 +716,12 @@ export function WorkbenchShell() {
           onBatchChangeClass={handleStartBatchChangeClass}
           onStageGeometry={setStageGeom}
           polygonDraft={s.tool === "polygon" ? polygonHandle : undefined}
+          canvasShapes={s.canvasDraft.shapes}
+          canvasEditable={s.canvasDraft.active}
+          canvasStroke={s.canvasDraft.stroke}
+          onCanvasStrokeCommit={(points, stroke) =>
+            s.appendCanvasShape({ type: "line", points, stroke })
+          }
           overlay={
             <>
               <FloatingDock
@@ -1170,6 +734,17 @@ export function WorkbenchShell() {
                 onZoomOut={() => setVp((cur) => ({ ...cur, scale: Math.max(0.2, cur.scale / 1.2) }))}
                 onFit={() => setFitTick((n) => n + 1)}
               />
+              {s.canvasDraft.active && (
+                <CanvasToolbar
+                  stroke={s.canvasDraft.stroke}
+                  onSetStroke={s.setCanvasStroke}
+                  shapeCount={s.canvasDraft.shapes.length}
+                  onUndo={s.undoCanvasShape}
+                  onClear={s.clearCanvasShapes}
+                  onCancel={s.cancelCanvasDraft}
+                  onDone={s.endCanvasDraft}
+                />
+              )}
               {s.pendingDrawing && stageGeom.imgW > 0 && (
                 <ClassPickerPopover
                   geom={s.pendingDrawing.geom}
@@ -1281,6 +856,12 @@ export function WorkbenchShell() {
         onUpdateAttributes={handleUpdateAttributes}
         currentUserId={meUserId}
         taskFileUrl={task?.file_url}
+        liveCommentCanvas={{
+          active: s.canvasDraft.active,
+          result: s.canvasDraft.pendingResult,
+          onStart: (initial) => s.beginCanvasDraft(selectedAnnotationForPanel?.id ?? null, initial),
+          onConsume: s.consumeCanvasResult,
+        }}
       />
 
       <HotkeyCheatSheet
@@ -1291,6 +872,7 @@ export function WorkbenchShell() {
       <OfflineQueueDrawer
         open={offlineDrawerOpen}
         onClose={closeOfflineDrawer}
+        currentTaskId={taskId}
         onFlushOne={executeOp}
         onFlushAll={flushOffline}
       />

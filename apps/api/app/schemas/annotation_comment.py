@@ -1,45 +1,34 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import Any
+from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
 
-
-# 附件 storageKey 必须以此前缀开头，防止任意 key 注入读其它桶资源
-ATTACHMENT_KEY_PREFIX = "comment-attachments/"
-
-
-class Mention(BaseModel):
-    user_id: UUID = Field(alias="userId")
-    display_name: str = Field(alias="displayName", min_length=1, max_length=120)
-    offset: int = Field(ge=0)
-    length: int = Field(ge=1)
-
-    class Config:
-        populate_by_name = True
+from app.schemas._jsonb_types import (
+    ATTACHMENT_KEY_PREFIX,
+    Attachment,
+    CanvasDrawing,
+    Mention,
+)
 
 
-class Attachment(BaseModel):
-    storage_key: str = Field(alias="storageKey", min_length=1, max_length=512)
-    file_name: str = Field(alias="fileName", min_length=1, max_length=255)
-    mime_type: str = Field(alias="mimeType", min_length=1, max_length=128)
-    size: int = Field(ge=0)
-
-    class Config:
-        populate_by_name = True
-
-    @field_validator("storage_key")
-    @classmethod
-    def _validate_prefix(cls, v: str) -> str:
-        if not v.startswith(ATTACHMENT_KEY_PREFIX):
-            raise ValueError(f"attachments[].storageKey 必须以 {ATTACHMENT_KEY_PREFIX!r} 开头")
-        return v
+# 兼容旧导入路径
+__all__ = [
+    "ATTACHMENT_KEY_PREFIX",
+    "Mention",
+    "Attachment",
+    "CanvasDrawing",
+    "AnnotationCommentCreate",
+    "AnnotationCommentUpdate",
+    "AnnotationCommentOut",
+    "CommentAttachmentUploadInitRequest",
+    "CommentAttachmentUploadInitResponse",
+]
 
 
 class AnnotationCommentCreate(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
     mentions: list[Mention] = Field(default_factory=list)
     attachments: list[Attachment] = Field(default_factory=list)
-    canvas_drawing: dict[str, Any] | None = None
+    canvas_drawing: CanvasDrawing | None = None
 
 
 class AnnotationCommentUpdate(BaseModel):
@@ -56,9 +45,9 @@ class AnnotationCommentOut(BaseModel):
     body: str
     is_resolved: bool
     is_active: bool
-    mentions: list[dict[str, Any]] = []
-    attachments: list[dict[str, Any]] = []
-    canvas_drawing: dict[str, Any] | None = None
+    mentions: list[Mention] = []
+    attachments: list[Attachment] = []
+    canvas_drawing: CanvasDrawing | None = None
     created_at: datetime
     updated_at: datetime | None = None
 

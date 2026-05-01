@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.services.display_id import next_display_id
 from app.services.storage import storage_service
 
 
@@ -87,7 +88,7 @@ class DatasetService:
 
     async def create(self, name: str, description: str, data_type: str, user_id: uuid.UUID) -> Dataset:
         ds_id = uuid.uuid4()
-        display_id = f"DS-{str(ds_id)[:6].upper()}"
+        display_id = await next_display_id(self.db, "datasets")
         ds = Dataset(
             id=ds_id,
             display_id=display_id,
@@ -306,7 +307,7 @@ class DatasetService:
             task = Task(
                 project_id=project_id,
                 dataset_item_id=item.id,
-                display_id=f"T-{str(uuid.uuid4())[:6].upper()}",
+                display_id=await next_display_id(self.db, "tasks"),
                 file_name=item.file_name,
                 file_path=item.file_path,
                 file_type=item.file_type,

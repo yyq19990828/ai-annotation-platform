@@ -19,11 +19,21 @@ interface Props {
   currentUserId?: string;
   /** Reviewer 端：传入题图 URL；启用画布批注按钮，渲染画布预览时也用作背景。 */
   backgroundUrl?: string | null;
+  /** v0.6.4：图像真实尺寸；CanvasDrawingEditor / Preview 都按真实比例渲染。*/
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   /** 是否启用画布批注入口（默认 false，仅 reviewer 端开启）。 */
   enableCanvasDrawing?: boolean;
+  /** v0.6.4：在题图上直接绘制的桥接，由 WorkbenchShell 通过 useWorkbenchState 提供。*/
+  liveCanvas?: {
+    active: boolean;
+    result: CommentCanvasDrawing | null;
+    onStart: (initial?: CommentCanvasDrawing | null) => void;
+    onConsume: () => void;
+  };
 }
 
-export function CommentsPanel({ annotationId, projectId, currentUserId, backgroundUrl, enableCanvasDrawing }: Props) {
+export function CommentsPanel({ annotationId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas }: Props) {
   const navigate = useNavigate();
   const { data: comments } = useAnnotationComments(annotationId);
   const { data: members } = useProjectMembers(projectId ?? "");
@@ -67,7 +77,10 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
         members={memberOptions}
         busy={createMut.isPending}
         backgroundUrl={backgroundUrl}
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
         enableCanvasDrawing={enableCanvasDrawing}
+        liveCanvas={liveCanvas}
         onSubmit={handleSubmit}
       />
 
@@ -124,6 +137,8 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
                     drawing={c.canvas_drawing}
                     width={220}
                     backgroundUrl={backgroundUrl}
+                    imageWidth={imageWidth}
+                    imageHeight={imageHeight}
                   />
                 </div>
               )}

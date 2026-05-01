@@ -35,8 +35,16 @@ interface AIInspectorPanelProps {
   currentUserId?: string;
   /** 当前题图 URL：作为评论画布批注的预览背景。 */
   taskFileUrl?: string | null;
-  /** 是否启用画布批注按钮（默认仅 reviewer 端开启；annotator 仅查看）。 */
+  /** v0.6.4：默认 true，annotator + reviewer 双向都能画布批注（之前仅 reviewer）。
+   *  设 false 仅在确实只读的场景（例如审计预览页）才需要。*/
   enableCommentCanvasDrawing?: boolean;
+  /** v0.6.4：在题图上直接绘制的桥接（CommentInput → ImageStage CanvasDrawingLayer）。*/
+  liveCommentCanvas?: {
+    active: boolean;
+    result: import("@/api/comments").CommentCanvasDrawing | null;
+    onStart: (initial?: import("@/api/comments").CommentCanvasDrawing | null) => void;
+    onConsume: () => void;
+  };
   hasMorePredictions?: boolean;
   isFetchingMorePredictions?: boolean;
   onFetchMorePredictions?: () => void;
@@ -64,7 +72,7 @@ export function AIInspectorPanel({
   confThreshold, aiTakeoverRate,
   imageWidth, imageHeight,
   attributeSchema, selectedAnnotation, onUpdateAttributes, currentUserId,
-  taskFileUrl, enableCommentCanvasDrawing,
+  taskFileUrl, enableCommentCanvasDrawing = true, liveCommentCanvas,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   onToggle, onRunAi, onAcceptAll, onSetConfThreshold,
   onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
@@ -178,7 +186,10 @@ export function AIInspectorPanel({
           projectId={selectedAnnotation.project_id}
           currentUserId={currentUserId}
           backgroundUrl={taskFileUrl}
+          imageWidth={imageWidth}
+          imageHeight={imageHeight}
           enableCanvasDrawing={enableCommentCanvasDrawing}
+          liveCanvas={liveCommentCanvas}
         />
       )}
 

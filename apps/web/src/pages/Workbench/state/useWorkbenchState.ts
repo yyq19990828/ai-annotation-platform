@@ -1,7 +1,24 @@
 import { useCallback, useState } from "react";
 import type { Annotation } from "@/types";
+import type { CommentCanvasDrawing } from "@/api/comments";
 
-export type Tool = "box" | "hand" | "polygon";
+export type Tool = "box" | "hand" | "polygon" | "canvas";
+
+/** v0.6.4：canvas 工具激活时的草稿状态。
+ *  CommentInput 点「在题图上绘制」→ beginCanvasDraft；ImageStage 在 canvas tool 下
+ *  读取 active + shapes 渲染 + 写入新笔触；用户点 Done → endCanvasDraft 把结果
+ *  挂到 pendingResult，CommentInput 监听后回写并清空。 */
+export type CanvasDraft = {
+  active: boolean;
+  /** 关联的评论上下文（可选；用于多 Annotation 上下文时区分）。 */
+  annotationId: string | null;
+  shapes: NonNullable<CommentCanvasDrawing["shapes"]>;
+  stroke: string;
+  /** 提交后由 hook 写入；CommentInput effect 消费后清空。 */
+  pendingResult: CommentCanvasDrawing | null;
+};
+
+const DEFAULT_CANVAS_STROKE = "#ef4444";
 
 export type Geom = { x: number; y: number; w: number; h: number };
 
@@ -37,6 +54,66 @@ export function useWorkbenchState() {
   const [rightOpen, setRightOpen] = useState(true);
   /** 同任务内剪贴板（仅本会话内存）。 */
   const [clipboard, setClipboard] = useState<Annotation[]>([]);
+  /** v0.6.4：canvas 批注草稿。reviewer / annotator 在题图上画红圈时使用。*/
+  const [canvasDraft, setCanvasDraft] = useState<CanvasDraft>({
+    active: false,
+    annotationId: null,
+    shapes: [],
+    stroke: DEFAULT_CANVAS_STROKE,
+    pendingResult: null,
+  });
+
+  const beginCanvasDraft = useCallback((annotationId: string | null, initial?: CommentCanvasDrawing | null) => {
+    setCanvasDraft({
+      active: true,
+      annotationId,
+      shapes: initial?.shapes ?? [],
+      stroke: DEFAULT_CANVAS_STROKE,
+      pendingResult: null,
+    });
+    setTool("canvas");
+  }, []);
+
+  const appendCanvasShape = useCallback((shape: CanvasDraft["shapes"][number]) => {
+    setCanvasDraft((d) => ({ ...d, shapes: [...d.shapes, shape] }));
+  }, []);
+
+  const undoCanvasShape = useCallback(() => {
+    setCanvasDraft((d) => ({ ...d, shapes: d.shapes.slice(0, -1) }));
+  }, []);
+
+  const clearCanvasShapes = useCallback(() => {
+    setCanvasDraft((d) => ({ ...d, shapes: [] }));
+  }, []);
+
+  const setCanvasStroke = useCallback((stroke: string) => {
+    setCanvasDraft((d) => ({ ...d, stroke }));
+  }, []);
+
+  /** 提交：把当前 shapes 打包到 pendingResult，CommentInput 消费后清空。 */
+  const endCanvasDraft = useCallback(() => {
+    setCanvasDraft((d) => ({
+      ...d,
+      active: false,
+      pendingResult: d.shapes.length > 0 ? { shapes: d.shapes } : { shapes: [] },
+    }));
+    setTool("box");
+  }, []);
+
+  const cancelCanvasDraft = useCallback(() => {
+    setCanvasDraft({
+      active: false,
+      annotationId: null,
+      shapes: [],
+      stroke: DEFAULT_CANVAS_STROKE,
+      pendingResult: null,
+    });
+    setTool("box");
+  }, []);
+
+  const consumeCanvasResult = useCallback(() => {
+    setCanvasDraft((d) => ({ ...d, pendingResult: null, annotationId: null }));
+  }, []);
 
   /** 设置 primary，同时把 selectedIds 收敛到 [id] 或 []。 */
   const setSelectedId = useCallback((id: string | null) => {
@@ -76,6 +153,10 @@ export function useWorkbenchState() {
     leftOpen, setLeftOpen,
     rightOpen, setRightOpen,
     clipboard, setClipboard,
+    canvasDraft,
+    beginCanvasDraft, endCanvasDraft, cancelCanvasDraft,
+    appendCanvasShape, undoCanvasShape, clearCanvasShapes,
+    setCanvasStroke, consumeCanvasResult,
   };
 }
 

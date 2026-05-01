@@ -11,6 +11,11 @@ interface Props {
   initial?: CommentCanvasDrawing | null;
   /** 背景图（可选）：reviewer 在原图缩略上绘制更直观；未提供则白底。 */
   backgroundUrl?: string | null;
+  /** v0.6.4：图像真实尺寸（像素）。给定后画布外层比例按 imageWidth:imageHeight 渲染，
+   *  避免在 16:9 / 4:3 / 1:1 图上画的批注与 reviewer 看到的比例不一致。
+   *  未给定时回退到 600×400 默认比例（兼容旧调用）。*/
+  imageWidth?: number | null;
+  imageHeight?: number | null;
 }
 
 const STROKE_COLORS = [
@@ -20,13 +25,22 @@ const STROKE_COLORS = [
   { value: "#3b82f6", label: "蓝" },
 ];
 
-const CANVAS_W = 600;
-const CANVAS_H = 400;
+// 默认画布比例（旧版固定 600×400，仍保留作为 fallback）
+const DEFAULT_W = 600;
+const DEFAULT_H = 400;
+
+function aspectRatioPercent(w: number | null | undefined, h: number | null | undefined): number {
+  const aw = w && w > 0 ? w : DEFAULT_W;
+  const ah = h && h > 0 ? h : DEFAULT_H;
+  return (ah / aw) * 100;
+}
 
 /** Reviewer 用：在固定尺寸 SVG 上画自由曲线，序列化为 normalized [0,1] 坐标的 polyline 列表。
  *  Annotator 端用 CanvasDrawingPreview 只读渲染。 */
-export function CanvasDrawingEditor({ open, onClose, onSave, initial, backgroundUrl }: Props) {
-  const [shapes, setShapes] = useState<CommentCanvasDrawing["shapes"]>(initial?.shapes ?? []);
+type Shape = NonNullable<CommentCanvasDrawing["shapes"]>[number];
+
+export function CanvasDrawingEditor({ open, onClose, onSave, initial, backgroundUrl, imageWidth, imageHeight }: Props) {
+  const [shapes, setShapes] = useState<Shape[]>(initial?.shapes ?? []);
   const [stroke, setStroke] = useState<string>("#ef4444");
   const [drawing, setDrawing] = useState<number[] | null>(null); // 当前正在画的折线点 [x1, y1, x2, y2, ...]
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -108,7 +122,7 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
           style={{
             position: "relative",
             width: "100%",
-            paddingBottom: `${(CANVAS_H / CANVAS_W) * 100}%`,
+            paddingBottom: `${aspectRatioPercent(imageWidth, imageHeight)}%`,
             background: backgroundUrl ? `center/contain no-repeat url(${backgroundUrl})` : "var(--color-bg-sunken)",
             border: "1px solid var(--color-border)",
             borderRadius: 4,
@@ -179,11 +193,16 @@ interface PreviewProps {
   drawing: CommentCanvasDrawing;
   width?: number;
   backgroundUrl?: string | null;
+  /** v0.6.4：图像真实尺寸；给定后高度按真实比例缩放。fallback 600×400。*/
+  imageWidth?: number | null;
+  imageHeight?: number | null;
 }
 
 /** 只读小缩略：annotator 端在评论卡片里展示 reviewer 的画布批注。 */
-export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl }: PreviewProps) {
-  const height = (CANVAS_H / CANVAS_W) * width;
+export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl, imageWidth, imageHeight }: PreviewProps) {
+  const aw = imageWidth && imageWidth > 0 ? imageWidth : DEFAULT_W;
+  const ah = imageHeight && imageHeight > 0 ? imageHeight : DEFAULT_H;
+  const height = (ah / aw) * width;
   return (
     <div
       style={{
@@ -201,7 +220,7 @@ export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl }: Pr
         preserveAspectRatio="none"
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       >
-        {drawing.shapes.map((s, i) => (
+        {(drawing.shapes ?? []).map((s, i) => (
           <polyline
             key={i}
             points={pointsToString(s.points)}

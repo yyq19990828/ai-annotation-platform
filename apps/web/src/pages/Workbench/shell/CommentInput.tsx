@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
@@ -13,8 +13,20 @@ interface CommentInputProps {
   busy?: boolean;
   /** Reviewer 端：传入当前题图 URL，画布批注弹窗以此为背景。 */
   backgroundUrl?: string | null;
+  /** v0.6.4：图像真实尺寸；画布批注按真实比例，避免 16:9 / 4:3 上批注被拉成 600×400 比例。*/
+  imageWidth?: number | null;
+  imageHeight?: number | null;
   /** 是否显示「画布批注」入口（仅 reviewer 端默认开启）。 */
   enableCanvasDrawing?: boolean;
+  /** v0.6.4：在题图上直接画批注的桥接（与 ImageStage CanvasDrawingLayer 共享坐标系）。
+   *  active=true 时，本组件不渲染入口按钮（toolbar 移到 ImageStage 上方）；
+   *  result 非空表示一段绘制完成，本组件应消费并写回 canvasDrawing 后调 onConsume。*/
+  liveCanvas?: {
+    active: boolean;
+    result: CommentCanvasDrawing | null;
+    onStart: (initial?: CommentCanvasDrawing | null) => void;
+    onConsume: () => void;
+  };
   onSubmit: (payload: {
     body: string;
     mentions: CommentMention[];
@@ -110,7 +122,7 @@ function insertMentionChip(triggerRange: { node: Node; offset: number }, opt: Us
   sel.addRange(newRange);
 }
 
-export function CommentInput({ annotationId, members, busy, backgroundUrl, enableCanvasDrawing, onSubmit }: CommentInputProps) {
+export function CommentInput({ annotationId, members, busy, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, onSubmit }: CommentInputProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [picker, setPicker] = useState<PickerState>({ open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null });
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
@@ -118,6 +130,14 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, enabl
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const pushToast = useToastStore((s) => s.push);
+
+  // v0.6.4：消费来自 ImageStage 的 live canvas 结果
+  useEffect(() => {
+    if (liveCanvas?.result) {
+      setCanvasDrawing(liveCanvas.result.shapes && liveCanvas.result.shapes.length > 0 ? liveCanvas.result : null);
+      liveCanvas.onConsume();
+    }
+  }, [liveCanvas]);
 
   const reset = useCallback(() => {
     if (editorRef.current) editorRef.current.innerHTML = "";
@@ -329,10 +349,31 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, enabl
                 gap: 4,
                 fontWeight: canvasDrawing ? 600 : 400,
               }}
-              title="在题图上画批注（红圈 / 箭头）"
+              title="弹窗内绘制（与原图比例对齐）"
             >
               <Icon name="edit" size={12} />
-              {canvasDrawing ? `画布批注 · ${canvasDrawing.shapes.length} 条` : "画布批注"}
+              {canvasDrawing ? `批注 · ${(canvasDrawing.shapes ?? []).length} 条` : "弹窗批注"}
+            </button>
+          )}
+          {liveCanvas && (
+            <button
+              type="button"
+              onClick={() => liveCanvas.onStart(canvasDrawing)}
+              disabled={liveCanvas.active}
+              style={{
+                fontSize: 11,
+                color: liveCanvas.active ? "var(--color-fg-subtle)" : "oklch(0.55 0.18 250)",
+                background: "transparent",
+                border: "none",
+                cursor: liveCanvas.active ? "default" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+              title="直接在题图上绘制 — 缩放/平移自动跟随"
+            >
+              <Icon name="target" size={12} />
+              {liveCanvas.active ? "正在绘制…" : "在题图上绘制"}
             </button>
           )}
         </div>
@@ -352,6 +393,8 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, enabl
           onSave={setCanvasDrawing}
           initial={canvasDrawing}
           backgroundUrl={backgroundUrl}
+          imageWidth={imageWidth}
+          imageHeight={imageHeight}
         />
       )}
       {picker.open && (

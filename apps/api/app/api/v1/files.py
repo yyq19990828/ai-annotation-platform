@@ -7,6 +7,7 @@ from app.deps import get_db, get_current_user
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.schemas.task import UploadInitRequest, UploadInitResponse, TaskFileUrlResponse
+from app.services.display_id import next_display_id
 from app.services.storage import storage_service
 
 router = APIRouter()
@@ -24,7 +25,7 @@ async def upload_init(
     task = Task(
         id=task_id,
         project_id=data.project_id,
-        display_id=f"T-{str(task_id)[:6].upper()}",
+        display_id=await next_display_id(db, "tasks"),
         file_name=data.file_name,
         file_path=storage_key,
         file_type=_infer_file_type(data.content_type),

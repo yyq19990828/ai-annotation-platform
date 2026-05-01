@@ -9,6 +9,123 @@
 
 ---
 
+## [0.6.4] - 2026-05-02
+
+> v0.6.4 一次性收口 ROADMAP「v0.6.2 落地后发现的尾巴 · 应修」全部 8 项。后端：display_id 全表统一为「字母前缀 + 顺序号」、JSONB 字段强类型化、OpenAPI dump 脚本。前端：WorkbenchShell 第二次拆 hook（annotation actions + hotkeys）、CanvasDrawing 入 ImageStage 第 5 Konva Layer 共享坐标系、AttributeField 描述支持 markdown、OfflineQueueDrawer 按 task 分组 + retry_count 视觉、annotator 端开放画布批注。
+>
+> ⚠️ Breaking：`task_batches.display_id` 前缀从 `B-{hex6}` 改为 `BT-{N}`（避免与 `bug_reports.B-{N}` 冲突）。`tasks.display_id` 从 `T-{hex6}` 改为 `T-{N}`、`datasets` 从 `DS-{hex6}` 改为 `D-{N}`、`projects` 从 `P-{hex4}` 改为 `P-{N}`。alembic 迁移 0021 自动回填存量数据；URL 路由不依赖 display_id（仅作为展示 + 文件名），因此用户感知是仅仅 ID 变短。如有任何脚本字面量比对 `T-XXXXXX` 形态需调整。
+
+### 项 8 · display_id 风格统一 + 序列化生成器
+
+#### 后端
+- 新增 `apps/api/app/services/display_id.py`：`next_display_id(db, entity)` 走 Postgres `SEQUENCE` 取号（lock-free，比 `MAX+1` 安全得多），`ENTITY_TO_PREFIX` 映射 `bug_reports → B / tasks → T / datasets → D / projects → P / batches → BT`。
+- 新增 alembic `0021_unify_display_id.py`：① 建 5 个 sequence ② `ROW_NUMBER OVER (ORDER BY created_at, id)` 回填 projects/datasets/task_batches/tasks（保留 `B-DEFAULT` 哨兵不动）③ `setval` 同步序列至 MAX(N) ④ tasks/projects 加全局 unique 约束、task_batches 加 `(project_id, display_id)` 复合 unique（每 project 都有 `B-DEFAULT`）⑤ 完整性自检（`COUNT != COUNT DISTINCT` 时 RAISE）。
+- 6 处 call site 改用 `next_display_id`：`bug_report.py:205-212`（删 buggy `MAX+1`）、`dataset.py:90/309`、`batch.py:70/187/229/267`、`projects.py:151`、`files.py:27`。`B-DEFAULT` 字符串字面量在 `batch.py:54,122` 保留作为默认批次哨兵。
+- model 同步 unique：`project.py:14`、`task.py:15`、`task_batch.py` 加 `__table_args__ = (UniqueConstraint("project_id", "display_id"),)`。
+
+#### 测试
+- 新增 `tests/test_display_id.py`（5 例）：序列号生成、并发 50 个 asyncio.gather 唯一性、未知 entity 拒绝、prefix 映射完整。
+
+### 项 2 · Pydantic JSONB 全字段强类型 + codegen 联动
+
+#### 后端
+- 新增 `app/schemas/_jsonb_types.py`：`AttributeFieldOption` / `AttributeField` / `AttributeSchema` / `VisibleIfRule` / `ClassConfigEntry` / `BboxGeometry` / `PolygonGeometry` / `Geometry`（discriminator on `type`）/ `AnnotationAttributes`（值类型受限）/ `Mention` / `Attachment` / `CanvasShape` / `CanvasDrawing` / `AuditDetail`（known fields + extra=allow）。
+- `project.py` `ProjectOut.classes_config: ClassesConfig`、`attribute_schema: AttributeSchema`；`ProjectUpdate` 同步收紧。原 `_validate_*` 函数删除（结构 + AttributeSchema 内部 model_validator 替代）。
+- `annotation.py` `AnnotationOut/Create/Update.geometry: Geometry`、`attributes: AnnotationAttributes`；`field_validator(mode="before")` 兼容历史无 type 的 bbox。
+- `annotation_comment.py` `mentions: list[Mention]`、`attachments: list[Attachment]`、`canvas_drawing: CanvasDrawing | None`（之前 OUT 端用 `dict[str, Any]` 丢类型）。
+- `audit.py` `detail_json: AuditDetail | None`，AuditDetail 是带已知字段（request_id / task_id / field_key / before / after / old_name / new_name）+ `extra=allow` 的 BaseModel。
+- 新增 `apps/api/scripts/dump-openapi.py`：`PYTHONPATH=. python3 scripts/dump-openapi.py /tmp/openapi.json`，给 CI 离线 codegen 用，无需运行后端。
+
+#### 前端
+- 删 `apps/web/src/api/projects.ts:44-54` 的 `Omit + 富类型` workaround；`ProjectResponse` / `AttributeField` / `AttributeSchema` / `ClassesConfig` 等全部从 `generated/types.gen.ts` 直接 re-export。
+- 删 `apps/web/src/api/comments.ts:3-24` 本地 `CommentMention/CommentAttachment/CommentCanvasDrawing` 接口；改为 `Mention/Attachment/CanvasDrawing` 的 type alias 再导出（向后兼容旧名）。
+- `pnpm codegen` 后 generated 类型直接出 `geometry: BboxGeometry | PolygonGeometry`、`shapes: Array<CanvasShape>`、`mentions: Array<Mention>` 等 sum/struct types。
+- 修 13 个 codegen 联动后的 TS 错（CanvasDrawingEditor 内部 state 改用 `NonNullable<...["shapes"]>`、AttributeForm 用 `?? []` / `?? undefined` 容错可选字段）。
+
+#### 测试
+- 新增 `tests/test_jsonb_strong_types.py`（13 例）：bbox/polygon 校验、AttributeSchema unique key + hotkey 约束、Mention alias、Attachment prefix 守卫、CanvasShape extra=forbid、AuditDetail extra=allow、AnnotationOut 历史 bbox auto-normalize、AnnotationAttributes 值类型受限。
+
+### 项 1 · 拆 useWorkbenchAnnotationActions + useWorkbenchHotkeys
+
+> WorkbenchShell.tsx 从 1305 行降到 862 行（-443 行，-34%）。下一次再拆候选：`useWorkbenchAI`（preannotation / 接受预测）、批量改类 popover handler。
+
+- 新增 `state/useWorkbenchAnnotationActions.ts`（348 行）：打包 7 个 handler — `optimisticEnqueueCreate` + `handlePickPendingClass` (bbox create) + `submitPolygon` (polygon create) + `handleDeleteBox` + `handleCommitMove` / `handleCommitResize` / `handleCommitPolygonGeometry`，加 polygon 草稿 state + `polygonHandle` memo。内部抽 `optimisticUpdateGeom(id, afterG)` / `optimisticDelete(id)` 双 helper 消重 4 处乐观 cache 模板。签名：`{ taskId, projectId, meUserId, queryClient, history, s, pushToast, recordRecentClass, mutations: { create, update, delete }, enqueueOnError, annotationsRef }`。
+- 新增 `state/useWorkbenchHotkeys.ts`（386 行）：收编 polygon Enter/Esc/Backspace useEffect、主 keydown useEffect（dispatchKey + 16 个 action）、keyup useEffect（spacePan / nudge flush）、`spacePan` state、`nudgeMap` state + ref + `flushNudges`、`applyArrowNudge` 内部 helper。返回 `{ spacePan, nudgeMap, flushNudges }`。
+- 新增 `useWorkbenchAnnotationActions.test.ts` + `useWorkbenchHotkeys.test.ts`（smoke 形态：项目目前不依赖 `@testing-library/react`，完整 renderHook 单测 P2 落，先确保模块 export 不被 stale）。
+- WorkbenchShell 的 ~520 行 inline 实现切换为两条 hook 调用 + 透传新返回值；`AnnotationPayload` / `bboxGeom` / `polygonGeom` / `dispatchKey` / `ARROW_KEY_SET` / `PolygonDraftHandle` / `Pt` / `enqueue` / `isSelfIntersecting` 等导入随之迁移。
+
+### 项 3 · CanvasDrawing 入 ImageStage（5th Konva Layer）
+
+> ROADMAP 标为「单独立项」的高危项，本版本一次性落地核心路径；保持向后兼容（旧弹窗 SVG 编辑器 + SVG preview 都仍在）。
+
+- 新增 `stage/CanvasDrawingLayer.tsx`：作为 Konva Stage 第 5 个 Layer 挂载，shapes 归一化 [0,1] → 渲染时乘 `imgW/imgH`，`strokeWidth = 2/scale` 屏幕粗细恒定；与 ImageStage `vp.tx/ty/scale` 共享坐标系，缩放 / 平移自动跟随。`listening` 仅在 `editable` 时打开（避免占据非 canvas 模式的 hit-test）。
+- 新增 `stage/tools/CanvasTool.ts`：`{ id: "canvas", hotkey: "C", icon: "edit", onPointerDown }`，启动 `{ kind: "canvasStroke", points: [pt.x, pt.y] }` DragInit。`ToolId` / `Tool` / `DragInit` / `Drag` 全部扩展 `canvasStroke` 分支。
+- 新增 `stage/CanvasToolbar.tsx`：浮在 ImageStage container 右上角的小工具条（颜色 swatch ×4 + 撤销 / 清空 / 取消 / 完成），仅当 `canvasDraft.active` 时渲染。
+- `useWorkbenchState.ts` 加 `canvasDraft` slice + 8 个 actions（`beginCanvasDraft / endCanvasDraft / cancelCanvasDraft / appendCanvasShape / undoCanvasShape / clearCanvasShapes / setCanvasStroke / consumeCanvasResult`）。`Tool` 类型扩展 `"canvas"`。
+- `ImageStage.tsx` 新增 4 个 prop：`canvasShapes / canvasEditable / canvasStroke / onCanvasStrokeCommit`；onMove / onUp 增 `canvasStroke` 分支累加点 + commit 一笔；`SelectionOverlay` 加 `tool !== "canvas"` 守卫；container cursor 在 canvas 模式强制 crosshair。
+- `CommentInput.tsx` 加 `liveCanvas` prop（`{ active, result, onStart, onConsume }`）+ 「在题图上绘制」入口按钮（与原「弹窗批注」按钮并存）；effect 监听 `liveCanvas.result` 写回 `canvasDrawing` 后调 `onConsume`。
+- 链路：CommentInput → CommentsPanel → AIInspectorPanel → WorkbenchShell（透传 `s.beginCanvasDraft / s.canvasDraft.pendingResult / s.consumeCanvasResult`）。
+
+### 项 4 · CanvasDrawingEditor / Preview 接 imageWidth/imageHeight
+
+- `components/CanvasDrawingEditor.tsx` 编辑器 + Preview 都接 `imageWidth?` / `imageHeight?`，padding-bottom / height 按真实比例计算（fallback 600×400）；viewBox 仍是 `0 0 1 1`（normalized 不变）。
+- `CommentInput / CommentsPanel / AIInspectorPanel` 全链路透传 imageWidth/imageHeight；reviewer 在 16:9 / 4:3 / 1:1 图上画的批注不再被拉成 600×400 比例。
+
+### 项 5 · annotator 端开放画布批注
+
+- `AIInspectorPanel.tsx` 把 `enableCommentCanvasDrawing` 默认值改为 `true`（之前 reviewer 才有，annotator 看不到入口，无法对反馈做画图回应）。
+
+### 项 6 · AttributeField.description 引入 react-markdown
+
+- `pnpm add react-markdown remark-gfm`（+ ~25KB gz）。`AttributeForm.tsx` 把 description 从 `title=` plain string 改为 hover/click `<DescriptionPopover>`（react-markdown + remark-gfm，禁 raw HTML / 不开 rehype-raw → 无 XSS 风险）。链接强制 `target="_blank" rel="noopener noreferrer"`。支持段落 / 列表 / 链接 / 加粗 / inline code。
+- 「i」按钮保持，hover 弹 popover；点击外部 / 鼠标移开自动关。
+
+### 项 7 · OfflineQueueDrawer 分组 + 筛选 + retry_count 视觉
+
+- `OfflineQueueDrawer.tsx` 重写：① 按 `op.taskId` 分组（Disclosure 折叠，默认展开当前题）② 筛选 chip：「范围 全部 / 当前题」+「状态 全部 / 失败 ≥ 3」③ retry_count 颜色徽章（≥3 红 / ≥1 黄 / 0 灰），失败 ≥3 时整行浅红背景 ④ header 统计「N 条 · 跨 K 题 · 当前题 M」。
+- `WorkbenchShell.tsx` 透传 `currentTaskId={taskId}` 给 drawer。
+
+### 文件变更摘要
+
+后端：
+- `apps/api/app/services/display_id.py` (新, 31 行)
+- `apps/api/alembic/versions/0021_unify_display_id.py` (新, 90 行)
+- `apps/api/app/schemas/_jsonb_types.py` (新, 178 行)
+- `apps/api/app/schemas/{project,annotation,annotation_comment,audit}.py` (改写)
+- `apps/api/scripts/dump-openapi.py` (新, 35 行)
+- `apps/api/app/services/{bug_report,dataset,batch}.py`、`app/api/v1/{projects,files}.py`（call site swap）
+- `apps/api/app/db/models/{project,task,task_batch}.py`（unique 约束）
+- `apps/api/tests/test_display_id.py`、`test_jsonb_strong_types.py`（新, 共 18 例）
+
+前端：
+- `apps/web/src/pages/Workbench/state/useWorkbenchAnnotationActions.ts` (新, 348 行)
+- `apps/web/src/pages/Workbench/state/useWorkbenchHotkeys.ts` (新, 386 行)
+- `apps/web/src/pages/Workbench/state/useWorkbenchState.ts`（+ canvasDraft slice + Tool 加 "canvas"）
+- `apps/web/src/pages/Workbench/stage/CanvasDrawingLayer.tsx` (新, 60 行)
+- `apps/web/src/pages/Workbench/stage/CanvasToolbar.tsx` (新, 60 行)
+- `apps/web/src/pages/Workbench/stage/tools/CanvasTool.ts` (新, 18 行)
+- `apps/web/src/pages/Workbench/stage/tools/index.ts`（注册 + ToolId/DragInit 扩展）
+- `apps/web/src/pages/Workbench/stage/ImageStage.tsx`（+ 5th Layer + canvasStroke drag 分支 + 守卫）
+- `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` (1305 → 862 行，-443)
+- `apps/web/src/pages/Workbench/shell/{AIInspectorPanel,CommentsPanel,CommentInput,AttributeForm,OfflineQueueDrawer}.tsx`
+- `apps/web/src/components/CanvasDrawingEditor.tsx`（接 imageWidth/imageHeight）
+- `apps/web/src/api/{projects,comments}.ts`（删 workaround / 删本地类型，全部 re-export from generated）
+- 新增 vitest smoke：`useWorkbenchAnnotationActions.test.ts` / `useWorkbenchHotkeys.test.ts`
+
+依赖：
+- `react-markdown` ^10.x、`remark-gfm` ^4.x（前端，+~25KB gz）
+
+### 验证
+
+- `pnpm tsc --noEmit`：0 错。
+- `pnpm vitest run`：55 / 55 通过（v0.6.3 的 53 + 本版 smoke ×2）。
+- `OPENAPI_URL=/tmp/openapi.json pnpm build`：vite 打包成功，无 TS 错。
+- 后端：`PYTHONPATH=. python3 -c "from app.main import app"`、`scripts/dump-openapi.py` 生成 272KB OpenAPI；新加的 `BboxGeometry / PolygonGeometry / Geometry / AttributeSchema / CanvasDrawing / Mention / Attachment / AuditDetail` 全部出现在 spec。
+- alembic 迁移文件 / display_id 服务 / pydantic schema 模块独立 syntax check 通过。
+- Docker / pytest 验证留 production deploy 阶段（本机 docker container 已停，未启）。
+
+---
+
 
 ## [0.6.3] - 2026-05-01
 

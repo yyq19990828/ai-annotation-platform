@@ -24,6 +24,7 @@ from app.schemas.project import (
     ProjectMemberCreate,
     ProjectTransferRequest,
 )
+from app.services.display_id import next_display_id
 
 router = APIRouter()
 
@@ -148,7 +149,7 @@ async def create_project(
 ):
     project = Project(
         id=uuid.uuid4(),
-        display_id=f"P-{str(uuid.uuid4())[:4].upper()}",
+        display_id=await next_display_id(db, "projects"),
         owner_id=current_user.id,
         **data.model_dump(),
     )
