@@ -45,8 +45,12 @@ import { ClassPickerPopover } from "./ClassPickerPopover";
 import { Minimap } from "../stage/Minimap";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
-import { useOnlineStatus } from "@/hooks/useOnlineStatus";
-import { drain, enqueue, isOfflineCandidate, type OfflineOp } from "../state/offlineQueue";
+import {
+  enqueue,
+  getAll as offlineQueueGetAll,
+  removeById as offlineQueueRemoveById,
+} from "../state/offlineQueue";
+import { useWorkbenchOfflineQueue } from "../state/useWorkbenchOfflineQueue";
 import { OfflineQueueDrawer } from "./OfflineQueueDrawer";
 import { WorkbenchSkeleton } from "./WorkbenchSkeleton";
 
@@ -97,7 +101,6 @@ export function WorkbenchShell() {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [spacePan, setSpacePan] = useState(false);
   const [showHotkeys, setShowHotkeys] = useState(false);
-  const [offlineDrawerOpen, setOfflineDrawerOpen] = useState(false);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(routeId);
@@ -224,6 +227,17 @@ export function WorkbenchShell() {
     deleteAnnotation: (id) => deleteAnnotationMut.mutateAsync(id),
     updateAnnotation: (id, payload) =>
       updateAnnotationMut.mutateAsync({ annotationId: id, payload }),
+    // v0.6.3 P0：tmpId 上的 create undo 不走远端，仅清 cache + 抹离线队列对应 create op
+    removeLocalCreate: async (id: string) => {
+      if (!taskId) return;
+      queryClient.setQueryData<AnnotationResponse[]>(
+        ["annotations", taskId],
+        (prev) => (prev ?? []).filter((a) => a.id !== id),
+      );
+      const all = await offlineQueueGetAll();
+      const target = all.find((op) => op.kind === "create" && op.tmpId === id);
+      if (target) await offlineQueueRemoveById(target.id);
+    },
   });
 
   // 会话级 ETA：基于切题间隔
@@ -267,6 +281,44 @@ export function WorkbenchShell() {
   // 批量改类 popover：anchor 到 selectedIds 第一个 user 框的 geom
   const [batchChanging, setBatchChanging] = useState(false);
 
+  // ── 离线队列接线（v0.6.3 P1 抽 hook）：online / executeOp / flushAll / drawer ──
+  const offlineQ = useWorkbenchOfflineQueue({ history, queryClient, pushToast });
+  const { online, queueCount, enqueueOnError, flushOne: executeOp, flushAll: flushOffline,
+    drawerOpen: offlineDrawerOpen, openDrawer: openOfflineDrawer, closeDrawer: closeOfflineDrawer } = offlineQ;
+
+  /** v0.6.3 P0：create 失败兜底（共用 bbox / polygon）。
+   *  分配 tmpId → 写入 react-query cache 让画布立即出现 → 命令栈以 tmpId 入栈 → 入离线队列。 */
+  const optimisticEnqueueCreate = useCallback((payload: AnnotationPayload) => {
+    if (!taskId) return;
+    const tmpId = `tmp_${crypto.randomUUID()}`;
+    const optimistic: AnnotationResponse = {
+      id: tmpId,
+      task_id: taskId,
+      project_id: projectId ?? null,
+      user_id: meUserId ?? null,
+      source: "manual",
+      annotation_type: payload.annotation_type ?? "bbox",
+      class_name: payload.class_name,
+      geometry: payload.geometry,
+      confidence: payload.confidence ?? 1,
+      parent_prediction_id: null,
+      parent_annotation_id: null,
+      lead_time: null,
+      is_active: true,
+      ground_truth: false,
+      attributes: payload.attributes ?? {},
+      created_at: new Date().toISOString(),
+      updated_at: null,
+    };
+    queryClient.setQueryData<AnnotationResponse[]>(
+      ["annotations", taskId],
+      (prev) => [...(prev ?? []), optimistic],
+    );
+    s.setSelectedId(tmpId);
+    history.push({ kind: "create", annotationId: tmpId, payload });
+    enqueue({ kind: "create", id: crypto.randomUUID(), tmpId, taskId, payload, ts: Date.now() });
+  }, [taskId, projectId, meUserId, queryClient, s, history]);
+
   // ── polygon 工具草稿（v0.5.3） ────────────────────────────────────────────
   const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
   // 切到非 polygon 工具或切题清空草稿
@@ -297,8 +349,10 @@ export function WorkbenchShell() {
         recordRecentClass(cls);
         pushToast({ msg: "已创建多边形", sub: `${points.length} 顶点 · ${cls}`, kind: "success" });
       },
+      // v0.6.3 P0：断网或 5xx → 走 tmpId 乐观插入（与 bbox 等价）
+      onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
     });
-  }, [s, createAnnotation, history, recordRecentClass, pushToast]);
+  }, [s, createAnnotation, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate]);
 
   const polygonHandle = useMemo<PolygonDraftHandle>(() => ({
     points: polygonDraftPoints,
@@ -351,64 +405,6 @@ export function WorkbenchShell() {
     setNudgeMap(new Map());
     nudgeOrigRef.current = new Map();
   }, [nudgeMap, updateAnnotationMut, history]);
-
-  // ── 离线队列：网络抖动 / 5xx 时把 mutation 暂存到 IndexedDB；恢复在线后 flush ─
-  const { online, queueCount } = useOnlineStatus();
-
-  const enqueueOnError = useCallback((err: unknown, fallback: () => void) => {
-    if (isOfflineCandidate(err)) {
-      fallback();
-      pushToast({ msg: "已暂存到离线队列", sub: "恢复连接后将自动同步", kind: "warning" });
-    } else {
-      pushToast({ msg: "操作失败", sub: String(err), kind: "error" });
-    }
-  }, [pushToast]);
-
-  /** 单条 op 的远端执行；create 成功时调 replaceAnnotationId + 替换 cache 条目（tmpId → realId）。
-   *  create 出错时由调用方决定是否保留在队列里（单条重试 / drain 链路有不同处理）。 */
-  const executeOp = useCallback(async (op: OfflineOp) => {
-    if (op.kind === "create") {
-      const real = await tasksApi.createAnnotation(
-        op.taskId,
-        op.payload as Parameters<typeof tasksApi.createAnnotation>[1],
-      );
-      if (op.tmpId) {
-        history.replaceAnnotationId(op.tmpId, real.id);
-        queryClient.setQueryData<AnnotationResponse[]>(
-          ["annotations", op.taskId],
-          (prev) => (prev ?? []).map((a) => (a.id === op.tmpId ? real : a)),
-        );
-      } else {
-        queryClient.invalidateQueries({ queryKey: ["annotations", op.taskId] });
-      }
-    } else if (op.kind === "update") {
-      await tasksApi.updateAnnotation(
-        op.taskId,
-        op.annotationId,
-        op.payload as Parameters<typeof tasksApi.updateAnnotation>[2],
-      );
-    } else {
-      await tasksApi.deleteAnnotation(op.taskId, op.annotationId);
-    }
-  }, [history, queryClient]);
-
-  const flushOffline = useCallback(async () => {
-    const result = await drain(executeOp);
-    if (result.ok > 0) {
-      queryClient.invalidateQueries({ queryKey: ["annotations"] });
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      pushToast({ msg: `已同步 ${result.ok} 条离线操作`, kind: "success" });
-    }
-    if (result.failed > 0) {
-      pushToast({ msg: "部分操作仍未能同步", sub: "请检查网络后重试", kind: "warning" });
-    }
-  }, [executeOp, queryClient, pushToast]);
-
-  // online 事件触发自动 flush
-  useEffect(() => {
-    if (online && queueCount > 0) flushOffline();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [online]);
 
   const navigateTask = useCallback((direction: "next" | "prev") => {
     if (tasks.length === 0) return;
@@ -470,12 +466,18 @@ export function WorkbenchShell() {
           pushToast({ msg: "已删除标注", kind: "success" });
         },
         onError: (err) => enqueueOnError(err, () => {
+          // v0.6.3 P0：先乐观从 cache 删，再 enqueue；离线时也要立即视觉消失
+          queryClient.setQueryData<AnnotationResponse[]>(
+            ["annotations", taskId],
+            (prev) => (prev ?? []).filter((a) => a.id !== id),
+          );
+          history.push({ kind: "delete", annotation: target });
           enqueue({ kind: "delete", id: crypto.randomUUID(), taskId, annotationId: id, ts: Date.now() });
         }),
       });
     }
     s.setSelectedId(null);
-  }, [deleteAnnotationMut, history, pushToast, s, taskId, enqueueOnError]);
+  }, [deleteAnnotationMut, history, pushToast, s, taskId, enqueueOnError, queryClient]);
 
   /** 批量删除当前选中的所有 user 框：成功后聚合 1 条 batch 命令进 history。 */
   const handleBatchDelete = useCallback(() => {
@@ -629,40 +631,9 @@ export function WorkbenchShell() {
         s.setSelectedId(newAnnotation.id);
         history.push({ kind: "create", annotationId: newAnnotation.id, payload });
       },
-      onError: (err) => enqueueOnError(err, () => {
-        if (!taskId) return;
-        // 离线乐观插入：分配 tmp_id，写入 react-query cache，让画布立即出现该框；
-        // 命令栈也以 tmp_id 入栈，drain 成功后由 replaceAnnotationId 替换为真实 id。
-        const tmpId = `tmp_${crypto.randomUUID()}`;
-        const optimistic: AnnotationResponse = {
-          id: tmpId,
-          task_id: taskId,
-          project_id: projectId ?? null,
-          user_id: meUserId ?? null,
-          source: "manual",
-          annotation_type: payload.annotation_type ?? "bbox",
-          class_name: payload.class_name,
-          geometry: payload.geometry,
-          confidence: payload.confidence ?? 1,
-          parent_prediction_id: null,
-          parent_annotation_id: null,
-          lead_time: null,
-          is_active: true,
-          ground_truth: false,
-          attributes: payload.attributes ?? {},
-          created_at: new Date().toISOString(),
-          updated_at: null,
-        };
-        queryClient.setQueryData<AnnotationResponse[]>(
-          ["annotations", taskId],
-          (prev) => [...(prev ?? []), optimistic],
-        );
-        s.setSelectedId(tmpId);
-        history.push({ kind: "create", annotationId: tmpId, payload });
-        enqueue({ kind: "create", id: crypto.randomUUID(), tmpId, taskId, payload, ts: Date.now() });
-      }),
+      onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
     });
-  }, [s, createAnnotation, history, recordRecentClass, taskId, projectId, meUserId, queryClient, enqueueOnError]);
+  }, [s, createAnnotation, history, recordRecentClass, enqueueOnError, optimisticEnqueueCreate]);
 
   const handleCancelPending = useCallback(() => {
     s.setPendingDrawing(null);
@@ -721,10 +692,19 @@ export function WorkbenchShell() {
         });
       },
       onError: (err) => enqueueOnError(err, () => {
+        // v0.6.3 P0：先乐观写 cache（画布立即跟上新位置），再 enqueue
+        queryClient.setQueryData<AnnotationResponse[]>(
+          ["annotations", taskId],
+          (prev) => (prev ?? []).map((a) => (a.id === id ? { ...a, geometry: afterG } : a)),
+        );
+        history.push({
+          kind: "update", annotationId: id,
+          before: { geometry: beforeG }, after: { geometry: afterG },
+        });
         enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
       }),
     });
-  }, [updateAnnotationMut, history, taskId, enqueueOnError]);
+  }, [updateAnnotationMut, history, taskId, enqueueOnError, queryClient]);
 
   const handleCommitPolygonGeometry = useCallback((id: string, before: Pt[], after: Pt[]) => {
     if (after.length < 3) {
@@ -747,10 +727,18 @@ export function WorkbenchShell() {
         });
       },
       onError: (err) => enqueueOnError(err, () => {
+        queryClient.setQueryData<AnnotationResponse[]>(
+          ["annotations", taskId],
+          (prev) => (prev ?? []).map((a) => (a.id === id ? { ...a, geometry: afterG } : a)),
+        );
+        history.push({
+          kind: "update", annotationId: id,
+          before: { geometry: beforeG }, after: { geometry: afterG },
+        });
         enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
       }),
     });
-  }, [updateAnnotationMut, history, pushToast, taskId, enqueueOnError]);
+  }, [updateAnnotationMut, history, pushToast, taskId, enqueueOnError, queryClient]);
 
   const handleCommitResize = useCallback((id: string, before: Geom, after: Geom) => {
     if (after.w < 0.005 || after.h < 0.005) {
@@ -769,10 +757,18 @@ export function WorkbenchShell() {
         });
       },
       onError: (err) => enqueueOnError(err, () => {
+        queryClient.setQueryData<AnnotationResponse[]>(
+          ["annotations", taskId],
+          (prev) => (prev ?? []).map((a) => (a.id === id ? { ...a, geometry: afterG } : a)),
+        );
+        history.push({
+          kind: "update", annotationId: id,
+          before: { geometry: beforeG }, after: { geometry: afterG },
+        });
         enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
       }),
     });
-  }, [updateAnnotationMut, history, pushToast, taskId, enqueueOnError]);
+  }, [updateAnnotationMut, history, pushToast, taskId, enqueueOnError, queryClient]);
 
   /** 选中态的 AnnotationResponse（驱动右侧栏属性表单）。仅单选 user 框时返回。 */
   const selectedAnnotationForPanel = useMemo<AnnotationResponse | null>(() => {
@@ -1249,7 +1245,7 @@ export function WorkbenchShell() {
           remainingTaskCount={remainingTaskCount}
           offlineQueueCount={queueCount}
           online={online}
-          onShowQueueDrawer={() => setOfflineDrawerOpen(true)}
+          onShowQueueDrawer={openOfflineDrawer}
           lockRemainingMs={remainingMs}
           lockError={lockError}
         />
@@ -1294,7 +1290,7 @@ export function WorkbenchShell() {
       />
       <OfflineQueueDrawer
         open={offlineDrawerOpen}
-        onClose={() => setOfflineDrawerOpen(false)}
+        onClose={closeOfflineDrawer}
         onFlushOne={executeOp}
         onFlushAll={flushOffline}
       />

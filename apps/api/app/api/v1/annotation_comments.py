@@ -9,10 +9,11 @@
 """
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, require_roles
+from app.deps import assert_project_visible, get_db, require_roles
 from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_comment import AnnotationComment
@@ -212,3 +213,23 @@ async def comment_attachment_upload_init(
         upload_url=upload_url,
         expires_in=900,
     )
+
+
+@router.get("/annotations/{annotation_id}/comment-attachments/download")
+async def comment_attachment_download(
+    annotation_id: uuid.UUID,
+    key: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
+):
+    """v0.6.3 P0：评论附件下载。校验 key 前缀防越权 + 项目可见性，302 跳转预签名 URL。"""
+    expected_prefix = f"{ATTACHMENT_KEY_PREFIX}{annotation_id}/"
+    if not key.startswith(expected_prefix):
+        raise HTTPException(status_code=400, detail="invalid attachment key")
+    ann = await db.get(Annotation, annotation_id)
+    if not ann or not ann.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if ann.project_id is not None:
+        await assert_project_visible(ann.project_id, db, current_user)
+    url = storage_service.generate_download_url(key, expires_in=300)
+    return RedirectResponse(url, status_code=302)

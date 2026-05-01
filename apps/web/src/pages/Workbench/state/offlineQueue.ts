@@ -8,9 +8,9 @@ const KEY = "anno.offline-queue.v1";
 const CHANNEL = "anno.offline-queue.v1";
 
 export type OfflineOp =
-  | { kind: "create"; id: string; taskId: string; tmpId?: string; payload: unknown; ts: number }
-  | { kind: "update"; id: string; taskId: string; annotationId: string; payload: unknown; ts: number }
-  | { kind: "delete"; id: string; taskId: string; annotationId: string; ts: number };
+  | { kind: "create"; id: string; taskId: string; tmpId?: string; payload: unknown; ts: number; retry_count?: number }
+  | { kind: "update"; id: string; taskId: string; annotationId: string; payload: unknown; ts: number; retry_count?: number }
+  | { kind: "delete"; id: string; taskId: string; annotationId: string; ts: number; retry_count?: number };
 
 let memCache: OfflineOp[] | null = null;
 const subs = new Set<(count: number) => void>();
@@ -85,6 +85,20 @@ export async function removeById(id: string): Promise<void> {
   }
 }
 
+/** v0.6.3 P0：离线 create 成功拿到 realId 后，把队列中后续 update/delete op 的 annotationId 同步替换。
+ *  否则那些 op 仍带 tmpId 上送，server 必 404。调用方：WorkbenchShell.executeOp 的 create 分支。 */
+export async function replaceAnnotationId(oldId: string, newId: string): Promise<void> {
+  const q = await load();
+  let changed = false;
+  for (const op of q) {
+    if ((op.kind === "update" || op.kind === "delete") && op.annotationId === oldId) {
+      op.annotationId = newId;
+      changed = true;
+    }
+  }
+  if (changed) await persist();
+}
+
 /**
  * 顺序消费队列。handler 抛错时停止 drain（保留剩余项），返回成功条数。
  */
@@ -98,11 +112,14 @@ export async function drain(handler: (op: OfflineOp) => Promise<void>): Promise<
       await handler(op);
       q.shift();
       ok++;
+      await persist();
     } catch {
       failed++;
+      // v0.6.3 Q-1：失败累计 retry_count，便于未来 drawer 区分「网络抖动」vs「永久脏数据」
+      op.retry_count = (op.retry_count ?? 0) + 1;
+      await persist();
       break; // 链式停止，保留后续
     }
-    await persist();
   }
   return { ok, failed };
 }

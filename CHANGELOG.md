@@ -10,6 +10,78 @@
 ---
 
 
+## [0.6.3] - 2026-05-01
+
+> v0.6.3 收口 v0.6.2 「必修硬伤」5 项 + 同区域 quick win 2 项：评论附件下载端点补齐、离线 tmpId 端到端三件套（undo / 跨 op 替换 / polygon + update/delete 乐观 cache）、alembic 容器化自动应用、attribute_change 审计批量 flush、离线队列 retry_count 字段。同版顺手开始 P1：抽 `useWorkbenchOfflineQueue` hook + 离线相关单测落地。
+
+### 评论附件下载端点（P0-A）
+
+#### 后端
+- `annotation_comments.py` 新增 `GET /annotations/{aid}/comment-attachments/download?key=...`：① 强制 key 以 `comment-attachments/{aid}/` 前缀开头（防越权读其它附件）② `assert_project_visible` 校验 caller 是该 annotation 项目成员 ③ 302 RedirectResponse 跳预签名 URL（5 分钟过期，比上传更短）。
+
+#### 前端
+- `CommentsPanel.tsx:135` 附件 href 从不存在的 `/api/v1/files/download?key=...` 改为新端点 `/api/v1/annotations/{aid}/comment-attachments/download?key=...`。点附件链接不再 404。
+
+### 离线 tmpId 三件套（P0-B）
+
+#### 离线队列 API
+- `offlineQueue.ts` 新增 `replaceAnnotationId(oldId, newId)`：扫队列把后续 update/delete op 的 `annotationId` 同步替换。
+- `OfflineOp` 联合类型每个分支加可选 `retry_count?: number`；`drain` 失败时累计 `+1` 后再 `persist` + break，便于未来 drawer 区分「网络抖动」vs「永久脏数据」。
+
+#### useAnnotationHistory undo 修复
+- `HistoryHandlers` 新增可选 `removeLocalCreate?(id)` 钩子。
+- `applyLeaf` create undo 检测 `cmd.annotationId.startsWith("tmp_")` 时走纯本地分支：从 react-query cache 删 tmpId 条目 + 抹离线队列对应 create op；不再对未入库 id 调 DELETE → 不再 404，撤销视觉真实生效。
+
+#### WorkbenchShell 离线 + 乐观 cache
+- 抽出公共 helper `optimisticEnqueueCreate(payload)`：分配 tmpId → 写 react-query cache → push history → enqueue；`handlePickPendingClass`（bbox）与 `submitPolygon`（polygon）共用，原 ~30 行重复代码合并。
+- `submitPolygon` 增加 `onError → enqueueOnError(err, () => optimisticEnqueueCreate(payload))`，断网不再吞错。
+- `executeOp` create 成功后追加 `await offlineQueueReplaceAnnotationId(op.tmpId, real.id)`：跨 op 同步替换队列里后续 update/delete 的 tmpId，避免 server 404。
+- `useAnnotationHistory` 实例化时注入 `removeLocalCreate`：闭包内调 `queryClient.setQueryData` 删 cache + `offlineQueueGetAll/RemoveById` 删队列对应 op。
+- `handleDeleteBox` / `handleCommitMove` / `handleCommitPolygonGeometry` / `handleCommitResize` 离线分支：在 enqueue 前先 `setQueryData` 写入乐观 cache（update map / delete filter）+ `history.push`，断网时画布立即跟上变更。
+
+### alembic 容器化自动应用（P0-C）
+
+- 新增 `apps/api/scripts/entrypoint.sh`：`set -e && alembic upgrade head && exec "$@"`。
+- `infra/docker/Dockerfile.api` 加 `ENTRYPOINT ["/app/scripts/entrypoint.sh"]` + `chmod +x`，原 `CMD` 不变；容器启动自动跑 migration，避免「列不存在」。
+- 本地开发不受影响（docker-compose 中 api service 整段被注释，本地 venv 启动需手动 `alembic upgrade head`）。
+
+### 后端 attribute_change 审计批量 flush（Q-2）
+
+- `app/services/audit.py` 新增 `AuditService.log_many(*, actor, action, target_type, request, status_code, items)`：共享 actor/request/status_code，仅 target_id + detail 逐条不同；一次 `db.add_all(entries)` + 一次 `db.flush()`。
+- `tasks.py PATCH /annotations/{id}` 字段级审计循环改为先收集 `change_items: list[dict]`，循环结束一次 `log_many`。N 个属性同时改：原本 N 次 flush → 一次 flush。
+
+### WorkbenchShell 拆 hook · `useWorkbenchOfflineQueue`（P1 起步）
+
+- 新增 `apps/web/src/pages/Workbench/state/useWorkbenchOfflineQueue.ts`：把 v0.6.3 P0 工作之后膨胀到 80+ 行的离线接线统一封装 —— `useOnlineStatus` 订阅、`flushOne(op)`（即原 `executeOp`）、`flushAll`（即原 `flushOffline`）、`enqueueOnError` 错误归类（网络抖动入队 / 业务错 toast）、抽屉 `drawerOpen / openDrawer / closeDrawer` 状态、online 事件自动 flush 副作用。
+- `WorkbenchShell.tsx` 顶部一行调用 `useWorkbenchOfflineQueue({ history, queryClient, pushToast })` 解构出全部能力；删掉原 `useOnlineStatus` 直接 import + `executeOp` / `flushOffline` 两段 useCallback + auto-flush useEffect + `offlineDrawerOpen` useState。文件从 ~1370 行降到 1305 行。
+- `OfflineQueueDrawer` `onClose / onFlushOne / onFlushAll` 与 `StatusBar onShowQueueDrawer` 改用 hook 返回的具名函数，不再持有内联 lambda。
+- 不在 hook 里管的：`optimisticEnqueueCreate`（依赖 `taskId / projectId / meUserId / s.setSelectedId / history` 多项 shell 上下文，仍由 shell 持有）；history 的 `push` 行为本身。
+
+### 单元测试 — `applyLeaf` tmpId 分支 + `offlineQueue` 队列语义（P1）
+
+- `apps/web/src/pages/Workbench/state/useAnnotationHistory.ts`：把内部 `applyLeaf` 提为顶层 `export async function applyLeaf(cmd, direction, h)`，行为不变；hook 的 `apply` 通过引用调用即可。
+- 新增 `useAnnotationHistory.test.ts`（6 例）：覆盖 v0.6.3 P0 tmpId undo 三种场景（tmpId + removeLocalCreate / 真实 id / tmpId 但无 removeLocalCreate 兼容）+ create redo / update undo·redo 不受影响。
+- 新增 `offlineQueue.test.ts`（5 例，`vi.mock("idb-keyval")` 注入内存 Map）：覆盖 `replaceAnnotationId`（替换 update/delete annotationId、不动 create.tmpId、无匹配不写盘）+ `drain` 失败累计 `retry_count`（单次 / 多次累加 / 半路失败保留剩余）。
+- `pnpm vitest run` 全量 53 个用例通过（原有 42 + 新增 11）。
+
+### 文件变更摘要
+
+- `apps/api/app/api/v1/annotation_comments.py` (+24 / 评论附件下载端点)
+- `apps/api/app/api/v1/tasks.py` (~25 / attribute_change 批量收集)
+- `apps/api/app/services/audit.py` (+44 / `log_many`)
+- `apps/api/scripts/entrypoint.sh` (新增)
+- `infra/docker/Dockerfile.api` (+2)
+- `apps/web/src/pages/Workbench/state/offlineQueue.ts` (+18 / `replaceAnnotationId` + `retry_count`)
+- `apps/web/src/pages/Workbench/state/useAnnotationHistory.ts` (+~50 net / `applyLeaf` 顶层 export + tmpId 本地分支)
+- `apps/web/src/pages/Workbench/state/useWorkbenchOfflineQueue.ts` (新增 / 128 行)
+- `apps/web/src/pages/Workbench/state/offlineQueue.test.ts` (新增 / 5 例)
+- `apps/web/src/pages/Workbench/state/useAnnotationHistory.test.ts` (新增 / 6 例)
+- `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` (~−65 / helper + 4 个 commit handler 乐观 cache + 删除 80 行迁出 hook 的代码)
+- `apps/web/src/pages/Workbench/shell/CommentsPanel.tsx` (+1 / href 改写)
+
+---
+
+
 ## [0.6.2] - 2026-05-01
 
 > v0.6.2 一次性收口 ROADMAP「v0.5.5 phase 2 部分落地的延续」段落 6 大欠账：离线队列抽屉 + tmpId 端到端、导出复选框、HotkeyCheatSheet 动态属性分组、属性 schema description + 字段级审计、OpenAPI codegen 完整迁移 + prebuild gate、评论 polish 三层（@ 提及 / 附件 / 画布批注）。

@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0（协作并发 + 安全基建 + Bug 反馈）、v0.6.1（批次工作流）、v0.6.2（phase 2 收口：离线抽屉 / 评论 polish / codegen / 字段级审计）。
+> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0（协作并发 + 安全基建 + Bug 反馈）、v0.6.1（批次工作流）、v0.6.2（phase 2 收口：离线抽屉 / 评论 polish / codegen / 字段级审计）、v0.6.3（v0.6.2 必修硬伤 5 项 + 同区域 quick win 2 项）。
 
 ---
 
@@ -57,15 +57,14 @@
 
 ##### 必修（实际硬伤）
 
-- **评论附件下载端点缺失**：`CommentsPanel.tsx` 渲染附件链接用 `/api/v1/files/download?key=...`，但**该端点并不存在**。后端有 `storage_service.generate_download_url(key)` 但没暴露 GET 路由。需要新增 `GET /annotations/{aid}/comment-attachments/download?key=...`：① 校验 key 以 `comment-attachments/{aid}/` 前缀开头（防越权）② 校验 caller 是该 annotation 所在项目成员 ③ 302 redirect 到预签名下载 URL。当前点附件链接会 404。
-- **离线 undo / redo 在 tmpId 上必然失败**：`useAnnotationHistory.applyLeaf` 的 create 命令 undo 直接调 `h.deleteAnnotation(cmd.annotationId)`；annotationId 是 `tmp_xxx` 时必然 404。当前 `apply` 用 `.catch(() => {})` 吞错，但 cache 中的 tmp 项**没被移除** —— 视觉上"撤销了一个看起来真实的标注，结果撤了寂寞"。修法：检测 `cmd.annotationId.startsWith("tmp_")` 走纯本地分支（直接 setQueryData 删 cache + offlineQueue.removeById），不发 API。需要把 queryClient + offlineQueue 注入 `useAnnotationHistory`。
-- **离线创建后跨题/同题的后续 update 也用 tmpId**：用户离线时先 create（tmpId）→ 又 update。当前 update enqueue 的 `annotationId = tmpId`；create 成功拿到 realId 后只替换了 history 与 cache，队列里后续 update/delete op 的 `annotationId` 仍是 tmpId → server 404。需要 `executeOp` 在 create 成功时遍历队列剩余项同步替换。
-- **submitPolygon / handleCommitMove / handleCommitResize / handleDeleteBox 仍走旧 enqueue**：v0.6.2 仅在 `handlePickPendingClass`（bbox 创建）接入了 tmpId 乐观插入。polygon 创建路径 `submitPolygon` 没有 onError 兜底（断网直接吞），其它 update / delete 路径有 enqueue 但没乐观 cache 更新。需要：① polygon 创建走相同 tmpId 模板；② update 路径在断网时也立即写 cache。
-- **`alembic 0020` 未自动应用**：v0.6.2 只生成了迁移文件，没跑 `alembic upgrade head`。CI / 部署不自动 upgrade 就会"列不存在"。部署 runbook 加一行；docker-compose `api.command` 已注释，恢复时记得加 `alembic upgrade head &&` 前缀。
+> ✅ v0.6.3 已全部修复：评论附件下载端点、tmpId undo 本地分支、跨 op 队列替换、polygon onError + update/delete 乐观 cache、Dockerfile entrypoint 自动 `alembic upgrade head`。详见 [CHANGELOG v0.6.3](../CHANGELOG.md#063---2026-05-01)。
 
 ##### 应修（架构性短板）
 
-- **`WorkbenchShell.tsx` 已 1300+ 行**：offline drawer 状态、`executeOp` / `flushOffline` / 乐观插入逻辑全混在主 component 里。建议抽 `useWorkbenchOfflineQueue(taskId, history, queryClient)` hook：返回 `{ enqueueOnError, flushOne, flushAll, drawerOpen, openDrawer, closeDrawer }`。`useWorkbenchHotkeys` / `useWorkbenchAnnotationActions` 也是天然切分点。
+- **`WorkbenchShell.tsx` 拆 hook（part 1 已落，仍可继续）**：v0.6.3 已抽出 `useWorkbenchOfflineQueue({ history, queryClient, pushToast })` → 返回 `{ enqueueOnError, flushOne, flushAll, drawerOpen, openDrawer, closeDrawer, online, queueCount }`，shell 从 ~1370 行降到 1305 行。下一刀候选：
+  - **`useWorkbenchAnnotationActions`（最值得做，预计可砍 200+ 行）**：把 `optimisticEnqueueCreate` + `handlePickPendingClass`（bbox 创建）+ `submitPolygon`（polygon 创建）+ `handleDeleteBox` + `handleCommitMove` / `handleCommitResize` / `handleCommitPolygonGeometry`（4 个 commit handler）打包。它们共享同一三件套语义：`mutation.mutate({ onSuccess: history.push, onError: enqueueOnError(() => 乐观 cache + enqueue) })`。建议签名 `useWorkbenchAnnotationActions({ taskId, projectId, meUserId, queryClient, history, s, pushToast, recordRecentClass, mutations: { create, update, delete }, offlineQ })` → 返回 `{ optimisticEnqueueCreate, handlePickPendingClass, submitPolygon, handleDeleteBox, handleCommitMove, handleCommitResize, handleCommitPolygonGeometry }`。新写时把 4 个 commit handler 的乐观 cache 模板（`setQueryData map / filter`）抽成内部 helper `optimisticUpdateGeom(id, afterG)` / `optimisticDelete(id)`，进一步消重复。
+  - **`useWorkbenchHotkeys`**：`dispatchKey` 已是纯函数，但 shell 里的 `useEffect(window.addEventListener("keydown"), ...)`、`useEffect` 内的 `polygon 专用键`、`spacePan` 状态、`nudgeMap` flush 时机仍散落。可统一为 `useWorkbenchHotkeys({ s, history, polygonHandle, actions, ... })` 单一注册点。
+  - 不推荐做：`useWorkbenchAI`（preannotation / AI 推理）耦合面过宽，收益不大。
 - **OpenAPI generated 类型对 JSONB 字段是 `{ [key: string]: unknown }`**：`ProjectOut.classes_config / attribute_schema`、`AnnotationOut.geometry / attributes`、`AnnotationCommentOut.mentions / attachments / canvas_drawing`、`AuditLogOut.detail_json` 全部丢失结构。前端 `projects.ts` 用 `Omit + 富类型` 兜了一层，comments / annotations / audit 没兜。根治法：后端 Pydantic 把 `dict` 字段换成具体的 `AttributeSchema` / `Geometry` / `Mention` 等 model，`pnpm codegen` 自动出强类型，workaround 可删。
 - **CanvasDrawingEditor 600×400 固定比例与真实图像比例脱节**：reviewer 在 3:2 画布上画的箭头，annotator 端按 [0,1] 坐标在同 600×400 预览中渲染，与原图（16:9 / 4:3 / 1:1）比例不一致。修法：编辑器 + Preview 都接 `imageWidth/imageHeight`，viewBox 用真实比例。
 - **画布批注与 ImageStage Konva 坐标系对齐**：v0.6.2 是独立 SVG 弹窗，与 ImageStage vp（缩放/平移）解耦。原 roadmap 期望「reviewer 在原图上直接画 → annotator 端 zoom/pan 时批注跟随」。要做需把 `CanvasDrawingLayer` 作为新 Konva Layer 挂进 ImageStage 内部 Stage（已有 4 Layer），shapes 以归一化 [0,1] 存储。改 ImageStage 是高风险动作（800+ 行），单独立项。
@@ -80,14 +79,13 @@
 - **AttributeForm 数字键 hint 不够强**：选中态时 ToolDock / Topbar 角落显示徽章「⌨ 数字键 = 属性快捷键」+ 属性面板里 hotkey badge 高亮。
 - **HotkeyCheatSheet 加搜索框 / 按使用频率排**：v0.6.2 后定义已 30+ 静态 + N 个动态属性键。顶部搜索框（按 desc 模糊匹配）+ localStorage 记录触发次数 + 「按使用频率排」开关。
 - **CommentInput.serialize 边界情况**：mention chip 紧邻 chip / chip 在 block 元素首尾 / 键盘剪切粘贴 chip，offset/length 计算可能错位。需要 vitest 单测覆盖。chip 旁按 Backspace 应整体删 chip。
-- **离线队列 op 加 `retry_count` 字段**：当前 drain 失败就跳出，无法区分"网络抖动一次 retry 即可"和"payload 永远不会成功的脏数据"。+1 累计，达阈值后标黄/红、单独筛 tab 让用户决定。
-- **后端 attribute_change 审计行可批量插**：`tasks.py PATCH` 当前对每个变化的 field key 单独 `await AuditService.log()` → 单独 `db.flush()`。N 个属性同时改 → N 次 flush。改成 `db.add_all(entries)` + 一次 flush。
+- **离线队列 retry_count 视觉呈现**：v0.6.3 已在 `OfflineOp` 落字段、`drain` 失败累计；OfflineQueueDrawer 尚未读取该字段做颜色标记 / 阈值筛选 tab。
 - **`useCurrentProjectMembers` context**：CommentsPanel 拉一次成员，多个面板未来可能也要拉。提一个顶层 context，避免重复 query 与不一致。
 - **`usePopover()` hook 统一 popover 模式**：本次 ExportSection 自己写了 popover，TopBar 主题切换、智能切题菜单各自实现 click-outside / esc-close / 锚点定位。抽公共 hook。
 
 ##### 测试 / 工程化
 
-- **v0.6.2 没有自带测试**：建议补：① pytest `test_attribute_audit.py`（PATCH 改 attributes → 断言 audit_logs 多 N 行 attribute_change）② pytest `test_comment_polish.py`（mentions 非项目成员 → 422 / attachments storageKey 错前缀 → 422 / upload-init 返回正确前缀）③ vitest `OfflineQueue.test.ts`（getAll/removeById/drain 链路）④ vitest `CommentInput.test.tsx`（serialize 往返：插入 chip → mentions[] 含正确 offset/length）⑤ vitest `ExportSection.test.tsx`（勾掉 → URL 含 false）。
+- **v0.6.2 / v0.6.3 自带测试现状**：v0.6.3 已落 ③ vitest `offlineQueue.test.ts`（5 例：`replaceAnnotationId` + `drain` 失败累计 `retry_count`）+ `useAnnotationHistory.test.ts`（6 例：`applyLeaf` create undo tmpId 本地分支）。仍欠：① pytest `test_attribute_audit.py`（PATCH 改 attributes → 断言 audit_logs 多 N 行 attribute_change，且 v0.6.3 后 round-trip 从 N 降到 1）② pytest `test_comment_polish.py`（mentions 非项目成员 → 422 / attachments storageKey 错前缀 → 422 / upload-init 返回正确前缀 / v0.6.3 新增的 download key 前缀防越权 → 400）③ pytest 评论附件 download：项目非成员 → 404 ④ vitest `CommentInput.test.tsx`（serialize 往返：插入 chip → mentions[] 含正确 offset/length）⑤ vitest `ExportSection.test.tsx`（勾掉 → URL 含 false）。
 - **prebuild gate 在 CI 上需要后端 openapi.json**：`pnpm build` 现依赖 `pnpm codegen` → 默认拉 `http://localhost:8000/openapi.json`。CI 上没运行的后端会失败。加 `apps/api/scripts/dump-openapi.py` + CI workflow `OPENAPI_URL=/tmp/openapi.json pnpm build`。
 - **alembic migration 与 model 字段一致性自动化**：靠目测保持一致很危险。pytest fixture 在 CI 跑 `alembic upgrade head` 后 reflect 实际表结构与 SQLAlchemy 模型对比，drift 时报错。
 
@@ -191,11 +189,11 @@
 
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
-| **P0** | v0.6.2 必修硬伤（评论附件下载端点、tmpId undo / 跨 op 替换、polygon onError、alembic 0020 自动应用） | v0.6.2 留下的会"看起来正常但实际坏"的 5 个点 |
+| ~~**P0**~~ | ~~v0.6.2 必修硬伤（评论附件下载端点、tmpId undo / 跨 op 替换、polygon onError、alembic 0020 自动应用）~~ | ✅ v0.6.3 完成 |
 | **P1** | TopBar 通知中心、UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
-| **P1** | 前端 hook + 关键组件单测扩展（含 v0.6.2 新增 5 套） | 逻辑膨胀，无测试就是定时炸弹 |
-| **P1** | `WorkbenchShell.tsx` 拆 hook（`useWorkbenchOfflineQueue` 等） | 1300+ 行已超人脑承载，每加功能都更糟 |
+| **P1** | 前端 hook + 关键组件单测扩展（v0.6.3 已落 11 例：offlineQueue / applyLeaf tmpId；剩 CommentInput / ExportSection / pytest comment 端点） | 逻辑膨胀，无测试就是定时炸弹 |
+| ~~**P1**~~ | ~~`WorkbenchShell.tsx` 拆 hook（`useWorkbenchOfflineQueue` 等）~~ | 🟡 v0.6.3 起步：`useWorkbenchOfflineQueue` 已抽，shell 1305 行；下一刀 `useWorkbenchAnnotationActions` |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
 | **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框/4K 大图场景才必要 |

@@ -17,6 +17,7 @@ const PAGE_PATH: Record<PageKey, string> = {
   "model-market": "/model-market",
   training: "/training",
   audit: "/audit",
+  bugs: "/bugs",
   settings: "/settings",
 };
 

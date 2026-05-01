@@ -132,7 +132,7 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
                   {(c.attachments ?? []).map((a) => (
                     <a
                       key={a.storageKey}
-                      href={`/api/v1/files/download?key=${encodeURIComponent(a.storageKey)}`}
+                      href={`/api/v1/annotations/${annotationId}/comment-attachments/download?key=${encodeURIComponent(a.storageKey)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{

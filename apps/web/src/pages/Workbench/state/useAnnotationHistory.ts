@@ -14,10 +14,62 @@ export type Command =
   /** 批量命令：undo 时反序应用、redo 时正序应用。子命令必须不含 batch（一层）。 */
   | { kind: "batch"; commands: Exclude<Command, { kind: "batch" }>[] };
 
+/** v0.6.3 P1：单条非 batch 命令的实际执行。导出为纯函数便于单测。
+ *  注意 cmd 在 redo / delete-undo 路径会被就地 mutate（annotationId / annotation.id），与 hook 内栈引用相同。 */
+export async function applyLeaf(
+  cmd: Exclude<Command, { kind: "batch" }>,
+  direction: "undo" | "redo",
+  h: HistoryHandlers,
+) {
+  if (cmd.kind === "create") {
+    if (direction === "undo") {
+      // v0.6.3 P0：tmpId 走纯本地分支，避免对未入库的 id 调 DELETE → 404
+      if (cmd.annotationId.startsWith("tmp_") && h.removeLocalCreate) {
+        await h.removeLocalCreate(cmd.annotationId);
+      } else {
+        await h.deleteAnnotation(cmd.annotationId);
+      }
+    } else {
+      const fresh = await h.createAnnotation(cmd.payload);
+      // redo 重新创建会拿到新 id；后续 undo 还得知道这个 id
+      cmd.annotationId = fresh.id;
+    }
+  } else if (cmd.kind === "delete") {
+    if (direction === "undo") {
+      const restored = await h.createAnnotation({
+        annotation_type: cmd.annotation.annotation_type,
+        class_name: cmd.annotation.class_name,
+        geometry: cmd.annotation.geometry,
+        confidence: cmd.annotation.confidence ?? undefined,
+        parent_prediction_id: cmd.annotation.parent_prediction_id ?? undefined,
+        lead_time: cmd.annotation.lead_time ?? undefined,
+      });
+      // 反向时新 id；后续 redo 删除以新 id 执行
+      cmd.annotation = { ...cmd.annotation, id: restored.id };
+    } else {
+      await h.deleteAnnotation(cmd.annotation.id);
+    }
+  } else if (cmd.kind === "update") {
+    const target = direction === "undo" ? cmd.before : cmd.after;
+    await h.updateAnnotation(cmd.annotationId, target);
+  } else if (cmd.kind === "acceptPrediction") {
+    // accept 的 undo：删掉那一批由 prediction 派生的 annotation；redo 走批量删除策略不实现，避免重复采纳引发 ID 漂移。
+    if (direction === "undo") {
+      for (const id of cmd.createdAnnotationIds) {
+        try { await h.deleteAnnotation(id); } catch { /* ignore */ }
+      }
+    }
+    // redo 不再触发后端 accept（对方端点是幂等的但 id 不复用），仅消费 redo 栈无副作用
+  }
+}
+
 export interface HistoryHandlers {
   createAnnotation: (payload: AnnotationPayload) => Promise<AnnotationResponse>;
   deleteAnnotation: (annotationId: string) => Promise<unknown>;
   updateAnnotation: (annotationId: string, payload: AnnotationUpdatePayload) => Promise<unknown>;
+  /** v0.6.3 P0：tmpId 上的 create undo 不能走远端（必 404）。
+   *  调用方在工作台闭包内提供：从 react-query cache 删 tmpId + 从离线队列删对应 create op。 */
+  removeLocalCreate?: (annotationId: string) => Promise<void> | void;
 }
 
 export function useAnnotationHistory(taskId: string | undefined, handlers: HistoryHandlers) {
@@ -50,48 +102,6 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
     }
     await applyLeaf(cmd, direction, h);
   }, []);
-
-  // 内部：单条非 batch 命令的实际执行
-  async function applyLeaf(
-    cmd: Exclude<Command, { kind: "batch" }>,
-    direction: "undo" | "redo",
-    h: HistoryHandlers,
-  ) {
-    if (cmd.kind === "create") {
-      if (direction === "undo") await h.deleteAnnotation(cmd.annotationId);
-      else {
-        const fresh = await h.createAnnotation(cmd.payload);
-        // redo 重新创建会拿到新 id；后续 undo 还得知道这个 id
-        cmd.annotationId = fresh.id;
-      }
-    } else if (cmd.kind === "delete") {
-      if (direction === "undo") {
-        const restored = await h.createAnnotation({
-          annotation_type: cmd.annotation.annotation_type,
-          class_name: cmd.annotation.class_name,
-          geometry: cmd.annotation.geometry,
-          confidence: cmd.annotation.confidence ?? undefined,
-          parent_prediction_id: cmd.annotation.parent_prediction_id ?? undefined,
-          lead_time: cmd.annotation.lead_time ?? undefined,
-        });
-        // 反向时新 id；后续 redo 删除以新 id 执行
-        cmd.annotation = { ...cmd.annotation, id: restored.id };
-      } else {
-        await h.deleteAnnotation(cmd.annotation.id);
-      }
-    } else if (cmd.kind === "update") {
-      const target = direction === "undo" ? cmd.before : cmd.after;
-      await h.updateAnnotation(cmd.annotationId, target);
-    } else if (cmd.kind === "acceptPrediction") {
-      // accept 的 undo：删掉那一批由 prediction 派生的 annotation；redo 走批量删除策略不实现，避免重复采纳引发 ID 漂移。
-      if (direction === "undo") {
-        for (const id of cmd.createdAnnotationIds) {
-          try { await h.deleteAnnotation(id); } catch { /* ignore */ }
-        }
-      }
-      // redo 不再触发后端 accept（对方端点是幂等的但 id 不复用），仅消费 redo 栈无副作用
-    }
-  }
 
   const pushBatch = useCallback((commands: Exclude<Command, { kind: "batch" }>[]) => {
     if (commands.length === 0) return;

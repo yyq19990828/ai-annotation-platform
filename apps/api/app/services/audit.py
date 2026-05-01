@@ -84,3 +84,47 @@ class AuditService:
         db.add(entry)
         await db.flush()
         return entry
+
+    @staticmethod
+    async def log_many(
+        db: AsyncSession,
+        *,
+        actor: User | None,
+        action: str | AuditAction,
+        target_type: str | None = None,
+        request: Request | None = None,
+        status_code: int | None = None,
+        items: list[dict[str, Any]],
+    ) -> list[AuditLog]:
+        """v0.6.3 Q-2：一次 PATCH 写 N 条同 action 的审计行（如 attribute_change），
+        共享 actor/request/status_code，仅 target_id + detail 逐条不同；一次 add_all + 一次 flush。"""
+        if not items:
+            return []
+        action_str = action.value if isinstance(action, AuditAction) else str(action)
+        rid = request_id_var.get()
+        method = getattr(request, "method", None)
+        path = str(request.url.path) if request is not None else None
+        ip = extract_client_ip(request)
+        actor_id = getattr(actor, "id", None)
+        actor_email = getattr(actor, "email", None)
+        actor_role = getattr(actor, "role", None)
+        entries: list[AuditLog] = []
+        for it in items:
+            detail = it.get("detail")
+            merged_detail = {"request_id": rid, **(detail or {})} if rid else detail
+            entries.append(AuditLog(
+                actor_id=actor_id,
+                actor_email=actor_email,
+                actor_role=actor_role,
+                action=action_str,
+                target_type=target_type,
+                target_id=str(it["target_id"]) if it.get("target_id") is not None else None,
+                method=method,
+                path=path,
+                status_code=status_code,
+                ip=ip,
+                detail_json=merged_detail,
+            ))
+        db.add_all(entries)
+        await db.flush()
+        return entries

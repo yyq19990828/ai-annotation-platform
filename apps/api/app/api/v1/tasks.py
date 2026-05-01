@@ -217,28 +217,34 @@ async def update_annotation(
         detail={"task_id": str(task_id), "fields": list(fields.keys())},
     )
     # 字段级审计：每个变更的 attribute key 单独记一行，便于 GIN 索引按 field_key 过滤
+    # v0.6.3 Q-2：N 个属性变更 → 一次 add_all + 一次 flush（原本 N 次 flush）
     if before_attributes is not None:
         after_attributes = dict(annotation.attributes or {})
         all_keys = set(before_attributes.keys()) | set(after_attributes.keys())
+        change_items: list[dict] = []
         for key in sorted(all_keys):
             before_v = before_attributes.get(key)
             after_v = after_attributes.get(key)
             if before_v == after_v:
                 continue
-            await AuditService.log(
-                db,
-                actor=current_user,
-                action=AuditAction.ANNOTATION_ATTRIBUTE_CHANGE,
-                target_type="annotation",
-                target_id=str(annotation.id),
-                request=request,
-                status_code=200,
-                detail={
+            change_items.append({
+                "target_id": str(annotation.id),
+                "detail": {
                     "task_id": str(task_id),
                     "field_key": key,
                     "before": before_v,
                     "after": after_v,
                 },
+            })
+        if change_items:
+            await AuditService.log_many(
+                db,
+                actor=current_user,
+                action=AuditAction.ANNOTATION_ATTRIBUTE_CHANGE,
+                target_type="annotation",
+                request=request,
+                status_code=200,
+                items=change_items,
             )
     await db.commit()
     await db.refresh(annotation)
