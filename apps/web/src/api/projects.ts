@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import type { ProjectOut } from "./generated/types.gen";
 
 // ── attribute schema DSL ───────────────────────────────────────────────────
 
@@ -23,8 +24,10 @@ export interface AttributeField {
   applies_to?: "*" | string[];
   /** 简单条件级联：当 other_key 等于该值时才显示。 */
   visible_if?: { key: string; equals: unknown };
-  /** 占位（v0.5.4 不实际绑定，预留 v0.5.5）。 */
+  /** 数字键 1-9，仅 boolean / select 字段。选中标注后按下切换该属性。 */
   hotkey?: string;
+  /** 字段说明 / 标注规范提示。AttributeForm 在 label 旁渲染 info 图标，hover 弹出。 */
+  description?: string;
 }
 
 export interface AttributeSchema {
@@ -38,30 +41,17 @@ export interface ClassConfigEntry {
 
 export type ClassesConfig = Record<string, ClassConfigEntry>;
 
-/** 与后端 ProjectOut schema 对应（snake_case） */
-export interface ProjectResponse {
-  id: string;
-  display_id: string;
-  name: string;
-  type_label: string;
-  type_key: string;
-  owner_id: string;
-  owner_name: string | null;
-  member_count: number;
-  status: string;
-  ai_enabled: boolean;
-  ai_model: string | null;
+/** 与后端 ProjectOut schema 对应（snake_case）。
+ *  基于 generated `ProjectOut`，把弱类型字段（classes / classes_config / attribute_schema）
+ *  收紧为前端 DSL 的强类型；其余字段自动跟随后端 schema 演进。 */
+export type ProjectResponse = Omit<
+  ProjectOut,
+  "classes" | "classes_config" | "attribute_schema"
+> & {
   classes: string[];
   classes_config: ClassesConfig;
   attribute_schema: AttributeSchema;
-  iou_dedup_threshold: number;
-  total_tasks: number;
-  completed_tasks: number;
-  review_tasks: number;
-  due_date: string | null;
-  created_at: string;
-  updated_at: string;
-}
+};
 
 export interface ProjectStatsResponse {
   total_data: number;

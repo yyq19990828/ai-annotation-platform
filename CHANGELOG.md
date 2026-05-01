@@ -10,6 +10,86 @@
 ---
 
 
+## [0.6.2] - 2026-05-01
+
+> v0.6.2 一次性收口 ROADMAP「v0.5.5 phase 2 部分落地的延续」段落 6 大欠账：离线队列抽屉 + tmpId 端到端、导出复选框、HotkeyCheatSheet 动态属性分组、属性 schema description + 字段级审计、OpenAPI codegen 完整迁移 + prebuild gate、评论 polish 三层（@ 提及 / 附件 / 画布批注）。
+
+### 离线队列 — OfflineQueueDrawer + tmpId 端到端
+
+#### 前端
+- 新增 `OfflineQueueDrawer.tsx`：右侧抽屉 UI，订阅 `offlineQueue` 实时刷新；按操作类型（创建 / 更新 / 删除）+ 时间戳列出；单条「重试」/「丢弃」+ 底部「全部丢弃」/「立即同步全部」。多 tab BroadcastChannel 同步生效。
+- `offlineQueue.ts` 新增 `getAll()` / `removeById(opId)` 公开 API 供抽屉操作。
+- `WorkbenchShell.handlePickPendingClass` onError：分配 `tmp_${crypto.randomUUID()}` → 乐观插入完整 `AnnotationResponse` 到 `queryClient.setQueryData(["annotations", taskId])` → push history 命令栈 → enqueue 携带 `tmpId`。
+- 抽离 `executeOp(op)` 共享逻辑：drain 与单条重试都走它；create 成功时拿后端 `real.id` → `history.replaceAnnotationId(tmpId, realId)` + cache swap，统一替换。
+- `StatusBar` 离线徽章 onClick 从 `onFlushOffline` 改为 `onShowQueueDrawer`，背后 `setOfflineDrawerOpen(true)`。
+
+### 导出 — ExportSection + include_attributes 复选框
+
+- 新增 `apps/web/src/pages/Dashboard/ExportSection.tsx`：项目行「导出 ▾」popover，含格式选择（COCO/VOC/YOLO）+「包含属性数据」复选框（默认勾选，对齐后端 `?include_attributes=` default true）+ 文案提示。取消勾选 → URL 显式 `?include_attributes=false` → 输出 v0.4.9 之前兼容格式。
+- `DashboardPage.tsx` 行内 `<select>` 替换为 `<ExportSection projectId={p.id} />`，移除 `projectsApi` / `ExportFormat` 直接 import。
+
+### 标注属性 — schema description + 字段级审计
+
+#### 后端
+- `AuditAction.ANNOTATION_ATTRIBUTE_CHANGE = "annotation.attribute_change"` 新增枚举常量。
+- `tasks.py PATCH /annotations/{annotation_id}`：早 load existing 一次（兼顾 If-Match 与 attributes diff），在原 `annotation.update` 审计行外，按 field key 逐字段 diff before/after，每个变化的 key 单独写一条 `annotation.attribute_change` 行；detail 含 `{field_key, before, after, task_id}`，配合 v0.5.5 phase 2 GIN 索引可按字段过滤历史。
+- `_validate_attribute_schema` 显式校验 `fields[i].description` 必须是字符串（已存在的字段透传）。
+
+#### 前端
+- `AttributeField.description?: string` 字段加入 TS 类型；`AttributeForm` 在 label 旁渲染圆形 ⓘ info 徽章，hover 显示 description（cursor: help）。
+
+### 快捷键 — HotkeyCheatSheet 动态注入属性快捷键分组
+
+- `HotkeyCheatSheet` 新增 `attributeSchema` prop；在静态 5 组（draw / view / ai / nav / system）末尾追加「属性快捷键」分组，自动从 `attributeSchema.fields.filter(f => f.hotkey && (f.type === "boolean" || f.type === "select"))` 渲染；文案"切换 / 循环 {label}"，副标题"选中标注后按下数字键切换 / 循环属性值"；schema 无 hotkey 字段时整组不渲染。
+- `WorkbenchShell` 透传 `currentProject?.attribute_schema` 给 cheatsheet。
+
+### OpenAPI codegen — 完整迁移 + prebuild gate
+
+- 修复 `openapi-ts.config.ts` 插件名 `"@hey-api/typescript"` → `"@hey-api/types"`（v0.55+ 命名变更）。
+- 跑 `pnpm codegen` 生成 `src/api/generated/{index.ts, types.gen.ts}`（约 2000 行 TS 类型）。
+- `users.ts` / `audit.ts` / `datasets.ts` 顶部手写 `interface XxxResponse { ... }` 替换为 `export type XxxResponse = XxxOut`（基于 generated）；`projects.ts` 用 `Omit<ProjectOut, "classes" | "classes_config" | "attribute_schema"> & { ... }` 把 generated 弱类型字段（`Array<unknown>` / `{ [key: string]: unknown }`）收紧为前端 DSL 强类型，其余字段自动跟随后端演进。
+- `package.json` 加 `"prebuild": "pnpm codegen"` —— `pnpm build` 自动先跑 codegen，根治前后端 schema 漂移。
+- 后端 schema 收紧两处误差：`DashboardPage.tsx:79` `p.member_count > 0` → `(p.member_count ?? 0) > 0`；`DatasetsPage.tsx:341` 同模式修复 `project_count`。
+
+### 评论 polish — @ 提及 + 附件 + 画布批注
+
+#### 数据模型 / 后端
+- alembic `0020_comment_polish`：`annotation_comments` 表加 `mentions JSONB DEFAULT '[]' NOT NULL` + `attachments JSONB DEFAULT '[]' NOT NULL` + `canvas_drawing JSONB NULL`。Model 同步加三列 + `JSONB` 映射。
+- Pydantic 新增 `Mention` / `Attachment` schema：
+  - `Mention`: `userId / displayName / offset / length`；alias by camelCase。
+  - `Attachment`: `storageKey / fileName / mimeType / size`；自定义 validator 强制 `storageKey.startswith("comment-attachments/")` —— 防止任意 key 注入读其它桶资源。
+- `AnnotationCommentCreate` 接受 `mentions: list[Mention]` / `attachments: list[Attachment]` / `canvas_drawing: dict | None`，默认空。
+- `AnnotationCommentOut` 透出三列。
+- 路由 `POST /annotations/{aid}/comments` 增加项目成员校验：`_validate_project_members(db, ann.project_id, [m.user_id for m in data.mentions])` 检查 `project_members` 表（含 super_admin / project_admin 兜底），不在则返回 422 `mentions_invalid` + `non_member_user_ids`。审计 detail 多记 `mention_count` / `attachment_count` / `has_canvas_drawing`。
+- 新增端点 `POST /annotations/{aid}/comment-attachments/upload-init`：返回 `{storage_key, upload_url, expires_in}`；storage_key 形如 `comment-attachments/{aid}/{uuid}-{filename}`（filename 中的 `/` 被替换为 `_` 防止穿透）。镜像 `files.py /upload-init` 模式。
+
+#### 前端
+- 新增 `apps/web/src/components/UserPicker.tsx`：受控 popup（createPortal），列表 + ↑↓ Home End 键盘导航 + Enter/Tab 选中 + Esc 关闭；hover 高亮、`mousedown.preventDefault` 避免编辑器失焦；按 query 实时过滤 name / email。
+- 新增 `apps/web/src/pages/Workbench/shell/CommentInput.tsx`：
+  - contenteditable `<div>`（不是 textarea，需富格式）。
+  - 输入 `@` 触发：反向找最近 `@`（要求前方是空白 / 文首），用 caret Range 计算屏幕坐标作为 UserPicker anchor，实时把 `@` 后的 query 传给 picker 过滤。
+  - 选中 → 在 trigger Range 处 `deleteContents` + 插入 `<span data-mention-uid="..." contenteditable="false" class="mention-chip">@displayName</span>` chip + 紧跟空格 + 把光标放到 chip 之后。
+  - 提交时 DOM 遍历 root：text node 累计为 body，chip 还原为 `@displayName` 文本并记录 `{userId, displayName, offset, length}` 到 mentions[]；`<br>` / 块元素之间补换行。
+  - 附件：`<input type="file" multiple>`，每个文件先调 `commentsApi.attachmentUploadInit` 获取预签名 URL → 直接 PUT 上传 → 收集 `storageKey/fileName/mimeType/size` 到 attachments[]；20MB 单文件上限，超出 toast 跳过。
+  - 画布批注：`enableCanvasDrawing` 开关 + 弹出 `CanvasDrawingEditor`。
+  - Enter 提交（Shift+Enter 换行；picker 打开时 Enter 走 picker 选中）。
+  - 导出 `renderCommentBody(body, mentions, onMentionClick)`：把 mentions 按 offset 还原为可点击 chip，CommentsPanel 用它渲染历史评论的 mention chip → 点击跳 `/audit?actor={userId}` 用户审计追溯。
+- 新增 `apps/web/src/components/CanvasDrawingEditor.tsx`：
+  - 600×400 SVG 自由曲线编辑器（Modal 弹窗），4 色画笔（红 / 黄 / 绿 / 蓝），按住鼠标拖动绘制 polyline；归一化 [0,1] 坐标存储；撤销 / 清空 / 保存按钮。
+  - 配套 `CanvasDrawingPreview` 只读小缩略（默认 220px 宽，按比例高），CommentsPanel 在历史评论卡片中渲染 reviewer 留下的画布批注；可选 `backgroundUrl` 作为编辑 / 预览背景（reviewer 在原图缩略上画更直观）。
+- `CommentsPanel.tsx`：textarea 替换为 `<CommentInput>`；新增 `projectId` prop（拉 `useProjectMembers` 喂 picker）+ `backgroundUrl` + `enableCanvasDrawing` prop；历史评论渲染加 mentions chip / attachment 链接 / canvas drawing preview 三块。
+- `useAnnotationComments.useCreateComment` 改签名：`mutationFn` 接 `string | CreateCommentPayload`，向后兼容老调用。
+- `commentsApi`：新增 `CommentMention` / `CommentAttachment` / `CommentCanvasDrawing` 类型 + `CreateCommentPayload` + `attachmentUploadInit` 方法。
+- `AIInspectorPanel`：透传 `taskFileUrl` + `enableCommentCanvasDrawing` 给 CommentsPanel；annotator 端 `enableCommentCanvasDrawing` 默认 undefined → 仅查看 reviewer 画的批注，不能反向画。
+- `WorkbenchShell` 把 `task?.file_url` 作为 `taskFileUrl` 传给 inspector。
+- `ReviewWorkbench`：右侧条件可见侧栏（width 320）渲染 CommentsPanel，工具栏加「💬 评论」开关按钮；`enableCanvasDrawing` 默认开启，reviewer 可在 modal 中绘制并连同评论提交。
+
+### 修复
+- `WorkbenchShell.handlePickPendingClass` 内 payload 显式标注 `AnnotationPayload` 类型，让 `payload.attributes ?? {}` 通过 strict 检查。
+
+---
+
+
 ## [0.6.1] - 2026-04-30
 
 > v0.6.1 聚焦 ROADMAP P1 项：**大数据集分包 / 批次工作流（task_batch）**。PM 可按策略切分批次 → 标注员按批领题 → 审核员整批通过/退回 → 按批导出。AI 预标注相关留白（仅 `on_batch_approved` 空 hook）。

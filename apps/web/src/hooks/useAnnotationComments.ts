@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commentsApi } from "@/api/comments";
+import { commentsApi, type CreateCommentPayload } from "@/api/comments";
 
 export function useAnnotationComments(annotationId: string | null | undefined) {
   return useQuery({
@@ -12,8 +12,9 @@ export function useAnnotationComments(annotationId: string | null | undefined) {
 export function useCreateComment(annotationId: string | null | undefined) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: string) => {
+    mutationFn: (payload: string | CreateCommentPayload) => {
       if (!annotationId) throw new Error("No annotation selected");
+      const body = typeof payload === "string" ? { body: payload } : payload;
       return commentsApi.create(annotationId, body);
     },
     onSuccess: () => {

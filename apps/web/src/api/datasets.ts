@@ -1,18 +1,7 @@
 import { apiClient } from "./client";
+import type { DatasetOut } from "./generated/types.gen";
 
-export interface DatasetResponse {
-  id: string;
-  display_id: string;
-  name: string;
-  description: string;
-  data_type: string;
-  file_count: number;
-  total_size: number;
-  created_by: string;
-  project_count: number;
-  created_at: string;
-  updated_at: string;
-}
+export type DatasetResponse = DatasetOut;
 
 export interface DatasetItemResponse {
   id: string;

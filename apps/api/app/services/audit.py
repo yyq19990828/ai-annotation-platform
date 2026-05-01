@@ -36,6 +36,7 @@ class AuditAction(str, Enum):
     BATCH_STATUS_CHANGED = "batch.status_changed"
     BATCH_REJECTED = "batch.rejected"
     BATCH_DELETED = "batch.deleted"
+    ANNOTATION_ATTRIBUTE_CHANGE = "annotation.attribute_change"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

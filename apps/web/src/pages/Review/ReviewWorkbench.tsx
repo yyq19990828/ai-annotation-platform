@@ -8,6 +8,8 @@ import {
   annotationToBox, predictionsToBoxes,
 } from "@/pages/Workbench/state/transforms";
 import { useViewportTransform } from "@/pages/Workbench/state/useViewportTransform";
+import { CommentsPanel } from "@/pages/Workbench/shell/CommentsPanel";
+import { useAuthStore } from "@/stores/authStore";
 
 type DiffMode = "final" | "raw" | "diff";
 
@@ -30,8 +32,15 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
 
   const [mode, setMode] = useState<DiffMode>("diff");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const { vp, setVp } = useViewportTransform();
   const [fitTick, setFitTick] = useState(0);
+  const meUserId = useAuthStore((s) => s.user?.id);
+
+  const selectedAnnotation = useMemo(
+    () => (annotationsData ?? []).find((a) => a.id === selectedId) ?? null,
+    [annotationsData, selectedId],
+  );
 
   const userBoxes = useMemo(() => (annotationsData ?? []).map(annotationToBox), [annotationsData]);
   const allAi = useMemo(() => predictionsToBoxes(predictionsData), [predictionsData]);
@@ -55,7 +64,8 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
   const renderAi = mode !== "final";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
       <div
         style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -80,6 +90,15 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <Button size="sm" onClick={() => setFitTick((n) => n + 1)} style={{ fontSize: 11 }}>适应</Button>
+          <Button
+            size="sm"
+            variant={commentsOpen ? "primary" : "ghost"}
+            onClick={() => setCommentsOpen((v) => !v)}
+            disabled={!selectedAnnotation}
+            title={selectedAnnotation ? "查看 / 留下批注（含画布批注）" : "先选中一个标注"}
+          >
+            <Icon name="bell" size={12} />评论
+          </Button>
           {onPrev && <Button size="sm" onClick={onPrev}><Icon name="chevLeft" size={12} />上一</Button>}
           {onNext && <Button size="sm" onClick={onNext}>下一<Icon name="chevRight" size={12} /></Button>}
           <Button variant="primary" size="sm" onClick={onApprove}>
@@ -129,6 +148,25 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
             : "—"}
         </div>
       </div>
+    </div>
+    {commentsOpen && selectedAnnotation && (
+      <aside
+        style={{
+          width: 320,
+          borderLeft: "1px solid var(--color-border)",
+          background: "var(--color-bg-elev)",
+          overflowY: "auto",
+        }}
+      >
+        <CommentsPanel
+          annotationId={selectedAnnotation.id}
+          projectId={selectedAnnotation.project_id}
+          currentUserId={meUserId}
+          backgroundUrl={task?.file_url ?? null}
+          enableCanvasDrawing
+        />
+      </aside>
+    )}
     </div>
   );
 }

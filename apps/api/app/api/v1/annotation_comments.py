@@ -5,6 +5,7 @@
 - POST   /annotations/{aid}/comments
 - PATCH  /comments/{id}
 - DELETE /comments/{id}（软删）
+- POST   /annotations/{aid}/comment-attachments/upload-init  (v0.6.2)
 """
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -15,13 +16,18 @@ from app.deps import get_db, require_roles
 from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_comment import AnnotationComment
+from app.db.models.project_member import ProjectMember
 from app.db.models.user import User
 from app.schemas.annotation_comment import (
+    ATTACHMENT_KEY_PREFIX,
     AnnotationCommentCreate,
     AnnotationCommentOut,
     AnnotationCommentUpdate,
+    CommentAttachmentUploadInitRequest,
+    CommentAttachmentUploadInitResponse,
 )
 from app.services.audit import AuditService
+from app.services.storage import storage_service
 
 router = APIRouter()
 
@@ -38,9 +44,44 @@ def _to_out(c: AnnotationComment, author_name: str | None = None) -> AnnotationC
         body=c.body,
         is_resolved=c.is_resolved,
         is_active=c.is_active,
+        mentions=c.mentions or [],
+        attachments=c.attachments or [],
+        canvas_drawing=c.canvas_drawing,
         created_at=c.created_at,
         updated_at=c.updated_at,
     )
+
+
+async def _validate_project_members(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    user_ids: list[uuid.UUID],
+) -> None:
+    """mentions[].userId 必须是该项目的成员（含 owner / project_admin / super_admin 不强制走 project_members 表）。
+    出于简化，仅校验 user 存在且是该项目 project_members 表成员；超管不在表里时也允许。"""
+    if not user_ids:
+        return
+    rows = (await db.execute(
+        select(ProjectMember.user_id).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id.in_(user_ids),
+        )
+    )).all()
+    found = {r[0] for r in rows}
+    # 超管 / 项目所有者 也允许（不一定在 project_members 表中）
+    super_rows = (await db.execute(
+        select(User.id).where(
+            User.id.in_(user_ids),
+            User.role.in_([UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value]),
+        )
+    )).all()
+    found |= {r[0] for r in super_rows}
+    missing = [str(uid) for uid in user_ids if uid not in found]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "mentions_invalid", "non_member_user_ids": missing},
+        )
 
 
 @router.get("/annotations/{annotation_id}/comments", response_model=list[AnnotationCommentOut])
@@ -69,12 +110,20 @@ async def create_comment(
     ann = await db.get(Annotation, annotation_id)
     if not ann or not ann.is_active:
         raise HTTPException(status_code=404, detail="Annotation not found")
+
+    # mentions 必须是项目成员
+    if data.mentions and ann.project_id is not None:
+        await _validate_project_members(db, ann.project_id, [m.user_id for m in data.mentions])
+
     comment = AnnotationComment(
         id=uuid.uuid4(),
         annotation_id=annotation_id,
         project_id=ann.project_id,
         author_id=current_user.id,
         body=data.body,
+        mentions=[m.model_dump(by_alias=True, mode="json") for m in data.mentions],
+        attachments=[a.model_dump(by_alias=True, mode="json") for a in data.attachments],
+        canvas_drawing=data.canvas_drawing,
     )
     db.add(comment)
     await db.flush()
@@ -90,6 +139,9 @@ async def create_comment(
             "project_id": str(ann.project_id) if ann.project_id else None,
             "comment_id": str(comment.id),
             "preview": data.body[:120],
+            "mention_count": len(data.mentions),
+            "attachment_count": len(data.attachments),
+            "has_canvas_drawing": data.canvas_drawing is not None,
         },
     )
     await db.commit()
@@ -133,3 +185,30 @@ async def delete_comment(
     c.is_active = False
     await db.commit()
     return
+
+
+@router.post(
+    "/annotations/{annotation_id}/comment-attachments/upload-init",
+    response_model=CommentAttachmentUploadInitResponse,
+)
+async def comment_attachment_upload_init(
+    annotation_id: uuid.UUID,
+    data: CommentAttachmentUploadInitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
+):
+    """v0.6.2：评论附件签发预签名 PUT URL。
+
+    storage_key 形如 `comment-attachments/{aid}/{uuid}-{filename}`，固定前缀使得后端可
+    校验 attachments[].storageKey；同时让 MinIO 桶层级清晰。"""
+    ann = await db.get(Annotation, annotation_id)
+    if not ann or not ann.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    safe_name = data.file_name.replace("/", "_").replace("\\", "_")
+    storage_key = f"{ATTACHMENT_KEY_PREFIX}{annotation_id}/{uuid.uuid4()}-{safe_name}"
+    upload_url = storage_service.generate_upload_url(storage_key, data.content_type)
+    return CommentAttachmentUploadInitResponse(
+        storage_key=storage_key,
+        upload_url=upload_url,
+        expires_in=900,
+    )

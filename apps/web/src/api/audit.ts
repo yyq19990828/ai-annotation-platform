@@ -1,28 +1,8 @@
 import { apiClient } from "./client";
+import type { AuditLogOut, AuditLogList as AuditLogListGen } from "./generated/types.gen";
 
-export interface AuditLogResponse {
-  id: number;
-  actor_id: string | null;
-  actor_email: string | null;
-  actor_role: string | null;
-  action: string;
-  target_type: string | null;
-  target_id: string | null;
-  method: string | null;
-  path: string | null;
-  status_code: number | null;
-  ip: string | null;
-  detail_json: Record<string, unknown> | null;
-  created_at: string;
-}
-
-export interface AuditLogList {
-  items: AuditLogResponse[];
-  total: number;
-  page: number;
-  page_size: number;
-  next_cursor?: string | null;
-}
+export type AuditLogResponse = AuditLogOut;
+export type AuditLogList = AuditLogListGen;
 
 export interface AuditQuery {
   page?: number;

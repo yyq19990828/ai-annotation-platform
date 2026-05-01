@@ -1,16 +1,7 @@
 import { apiClient } from "./client";
+import type { UserOut } from "./generated/types.gen";
 
-export interface UserResponse {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-  group_name: string | null;
-  group_id: string | null;
-  status: string;
-  is_active: boolean;
-  created_at: string;
-}
+export type UserResponse = UserOut;
 
 export interface InvitePayload {
   email: string;

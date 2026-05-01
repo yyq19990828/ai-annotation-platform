@@ -46,7 +46,8 @@ import { Minimap } from "../stage/Minimap";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
-import { drain, enqueue, isOfflineCandidate } from "../state/offlineQueue";
+import { drain, enqueue, isOfflineCandidate, type OfflineOp } from "../state/offlineQueue";
+import { OfflineQueueDrawer } from "./OfflineQueueDrawer";
 import { WorkbenchSkeleton } from "./WorkbenchSkeleton";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -96,6 +97,7 @@ export function WorkbenchShell() {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [spacePan, setSpacePan] = useState(false);
   const [showHotkeys, setShowHotkeys] = useState(false);
+  const [offlineDrawerOpen, setOfflineDrawerOpen] = useState(false);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(routeId);
@@ -362,16 +364,36 @@ export function WorkbenchShell() {
     }
   }, [pushToast]);
 
-  const flushOffline = useCallback(async () => {
-    const result = await drain(async (op) => {
-      if (op.kind === "create") {
-        await tasksApi.createAnnotation(op.taskId, op.payload as Parameters<typeof tasksApi.createAnnotation>[1]);
-      } else if (op.kind === "update") {
-        await tasksApi.updateAnnotation(op.taskId, op.annotationId, op.payload as Parameters<typeof tasksApi.updateAnnotation>[2]);
+  /** 单条 op 的远端执行；create 成功时调 replaceAnnotationId + 替换 cache 条目（tmpId → realId）。
+   *  create 出错时由调用方决定是否保留在队列里（单条重试 / drain 链路有不同处理）。 */
+  const executeOp = useCallback(async (op: OfflineOp) => {
+    if (op.kind === "create") {
+      const real = await tasksApi.createAnnotation(
+        op.taskId,
+        op.payload as Parameters<typeof tasksApi.createAnnotation>[1],
+      );
+      if (op.tmpId) {
+        history.replaceAnnotationId(op.tmpId, real.id);
+        queryClient.setQueryData<AnnotationResponse[]>(
+          ["annotations", op.taskId],
+          (prev) => (prev ?? []).map((a) => (a.id === op.tmpId ? real : a)),
+        );
       } else {
-        await tasksApi.deleteAnnotation(op.taskId, op.annotationId);
+        queryClient.invalidateQueries({ queryKey: ["annotations", op.taskId] });
       }
-    });
+    } else if (op.kind === "update") {
+      await tasksApi.updateAnnotation(
+        op.taskId,
+        op.annotationId,
+        op.payload as Parameters<typeof tasksApi.updateAnnotation>[2],
+      );
+    } else {
+      await tasksApi.deleteAnnotation(op.taskId, op.annotationId);
+    }
+  }, [history, queryClient]);
+
+  const flushOffline = useCallback(async () => {
+    const result = await drain(executeOp);
     if (result.ok > 0) {
       queryClient.invalidateQueries({ queryKey: ["annotations"] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -380,7 +402,7 @@ export function WorkbenchShell() {
     if (result.failed > 0) {
       pushToast({ msg: "部分操作仍未能同步", sub: "请检查网络后重试", kind: "warning" });
     }
-  }, [queryClient, pushToast]);
+  }, [executeOp, queryClient, pushToast]);
 
   // online 事件触发自动 flush
   useEffect(() => {
@@ -593,7 +615,7 @@ export function WorkbenchShell() {
   const handlePickPendingClass = useCallback((cls: string) => {
     const pending = s.pendingDrawing;
     if (!pending || !cls) return;
-    const payload = {
+    const payload: AnnotationPayload = {
       annotation_type: "bbox",
       class_name: cls,
       geometry: bboxGeom(pending.geom),
@@ -608,10 +630,39 @@ export function WorkbenchShell() {
         history.push({ kind: "create", annotationId: newAnnotation.id, payload });
       },
       onError: (err) => enqueueOnError(err, () => {
-        if (taskId) enqueue({ kind: "create", id: crypto.randomUUID(), taskId, payload, ts: Date.now() });
+        if (!taskId) return;
+        // 离线乐观插入：分配 tmp_id，写入 react-query cache，让画布立即出现该框；
+        // 命令栈也以 tmp_id 入栈，drain 成功后由 replaceAnnotationId 替换为真实 id。
+        const tmpId = `tmp_${crypto.randomUUID()}`;
+        const optimistic: AnnotationResponse = {
+          id: tmpId,
+          task_id: taskId,
+          project_id: projectId ?? null,
+          user_id: meUserId ?? null,
+          source: "manual",
+          annotation_type: payload.annotation_type ?? "bbox",
+          class_name: payload.class_name,
+          geometry: payload.geometry,
+          confidence: payload.confidence ?? 1,
+          parent_prediction_id: null,
+          parent_annotation_id: null,
+          lead_time: null,
+          is_active: true,
+          ground_truth: false,
+          attributes: payload.attributes ?? {},
+          created_at: new Date().toISOString(),
+          updated_at: null,
+        };
+        queryClient.setQueryData<AnnotationResponse[]>(
+          ["annotations", taskId],
+          (prev) => [...(prev ?? []), optimistic],
+        );
+        s.setSelectedId(tmpId);
+        history.push({ kind: "create", annotationId: tmpId, payload });
+        enqueue({ kind: "create", id: crypto.randomUUID(), tmpId, taskId, payload, ts: Date.now() });
       }),
     });
-  }, [s, createAnnotation, history, recordRecentClass, taskId, enqueueOnError]);
+  }, [s, createAnnotation, history, recordRecentClass, taskId, projectId, meUserId, queryClient, enqueueOnError]);
 
   const handleCancelPending = useCallback(() => {
     s.setPendingDrawing(null);
@@ -1198,7 +1249,7 @@ export function WorkbenchShell() {
           remainingTaskCount={remainingTaskCount}
           offlineQueueCount={queueCount}
           online={online}
-          onFlushOffline={flushOffline}
+          onShowQueueDrawer={() => setOfflineDrawerOpen(true)}
           lockRemainingMs={remainingMs}
           lockError={lockError}
         />
@@ -1233,9 +1284,20 @@ export function WorkbenchShell() {
         selectedAnnotation={selectedAnnotationForPanel}
         onUpdateAttributes={handleUpdateAttributes}
         currentUserId={meUserId}
+        taskFileUrl={task?.file_url}
       />
 
-      <HotkeyCheatSheet open={showHotkeys} onClose={() => setShowHotkeys(false)} />
+      <HotkeyCheatSheet
+        open={showHotkeys}
+        onClose={() => setShowHotkeys(false)}
+        attributeSchema={currentProject?.attribute_schema}
+      />
+      <OfflineQueueDrawer
+        open={offlineDrawerOpen}
+        onClose={() => setOfflineDrawerOpen(false)}
+        onFlushOne={executeOp}
+        onFlushAll={flushOffline}
+      />
       <ConflictModal
         open={conflictOpen}
         onReload={handleConflictReload}

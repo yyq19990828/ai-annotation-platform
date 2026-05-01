@@ -69,6 +69,22 @@ export async function count(): Promise<number> {
   return q.length;
 }
 
+/** 返回当前队列快照（拷贝，外部修改不会反向影响）。供 OfflineQueueDrawer 渲染。 */
+export async function getAll(): Promise<OfflineOp[]> {
+  const q = await load();
+  return q.slice();
+}
+
+/** 按 op.id 删除单条；用于 OfflineQueueDrawer 的「重试单条成功后弹出 / 删除单条」。 */
+export async function removeById(id: string): Promise<void> {
+  const q = await load();
+  const idx = q.findIndex((o) => o.id === id);
+  if (idx >= 0) {
+    q.splice(idx, 1);
+    await persist();
+  }
+}
+
 /**
  * 顺序消费队列。handler 抛错时停止 drain（保留剩余项），返回成功条数。
  */

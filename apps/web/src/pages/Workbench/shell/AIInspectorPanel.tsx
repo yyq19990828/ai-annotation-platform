@@ -33,6 +33,10 @@ interface AIInspectorPanelProps {
   onUpdateAttributes?: (annotationId: string, next: Record<string, unknown>) => void;
   /** 当前用户 id（驱动评论作者操作权限）。 */
   currentUserId?: string;
+  /** 当前题图 URL：作为评论画布批注的预览背景。 */
+  taskFileUrl?: string | null;
+  /** 是否启用画布批注按钮（默认仅 reviewer 端开启；annotator 仅查看）。 */
+  enableCommentCanvasDrawing?: boolean;
   hasMorePredictions?: boolean;
   isFetchingMorePredictions?: boolean;
   onFetchMorePredictions?: () => void;
@@ -60,6 +64,7 @@ export function AIInspectorPanel({
   confThreshold, aiTakeoverRate,
   imageWidth, imageHeight,
   attributeSchema, selectedAnnotation, onUpdateAttributes, currentUserId,
+  taskFileUrl, enableCommentCanvasDrawing,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   onToggle, onRunAi, onAcceptAll, onSetConfThreshold,
   onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
@@ -170,7 +175,10 @@ export function AIInspectorPanel({
       {selectedAnnotation && (
         <CommentsPanel
           annotationId={selectedAnnotation.id}
+          projectId={selectedAnnotation.project_id}
           currentUserId={currentUserId}
+          backgroundUrl={taskFileUrl}
+          enableCanvasDrawing={enableCommentCanvasDrawing}
         />
       )}
 

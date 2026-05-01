@@ -24,6 +24,6 @@ export default defineConfig({
     lint: "eslint",
   },
   plugins: [
-    "@hey-api/typescript",
+    "@hey-api/types",
   ],
 });

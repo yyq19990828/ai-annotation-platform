@@ -25,7 +25,7 @@ interface StatusBarProps {
   /** 离线队列：> 0 时右侧显示"离线 · N 操作待同步"徽章。 */
   offlineQueueCount?: number;
   online?: boolean;
-  onFlushOffline?: () => void;
+  onShowQueueDrawer?: () => void;
   /** 锁剩余时间（毫秒）。0 = 未持有锁。 */
   lockRemainingMs?: number;
   /** 锁错误消息。非空时优先展示错误。 */
@@ -43,7 +43,7 @@ export function StatusBar({
   imageWidth, imageHeight, cursor,
   preannotationProgress, preannotationConn, preannotationRetries,
   avgLeadMs, remainingTaskCount,
-  offlineQueueCount, online, onFlushOffline,
+  offlineQueueCount, online, onShowQueueDrawer,
   lockRemainingMs, lockError,
 }: StatusBarProps) {
   const dimText = imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : "—";
@@ -85,13 +85,13 @@ export function StatusBar({
         {(offlineQueueCount && offlineQueueCount > 0) || online === false ? (
           <button
             type="button"
-            onClick={onFlushOffline}
-            title={online === false ? "当前离线，恢复连接后将自动同步" : "立即重试同步"}
+            onClick={onShowQueueDrawer}
+            title={online === false ? "当前离线 · 点击查看离线队列详情" : "点击查看离线队列详情"}
             style={{
               fontSize: 11, padding: "1px 8px", borderRadius: 3,
               background: online === false ? "oklch(0.85 0.10 25 / 0.4)" : "oklch(0.85 0.10 75 / 0.4)",
               border: "1px solid oklch(0.75 0.10 50)",
-              color: "var(--color-fg)", cursor: onFlushOffline ? "pointer" : "default",
+              color: "var(--color-fg)", cursor: onShowQueueDrawer ? "pointer" : "default",
               fontFamily: "inherit",
               display: "inline-flex", alignItems: "center", gap: 4,
             }}

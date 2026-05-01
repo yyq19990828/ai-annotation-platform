@@ -96,6 +96,28 @@ export function AttributeForm({ schema, className, attributes, onChange, readOnl
             <span style={{ fontSize: 11.5, color: "var(--color-fg)", display: "inline-flex", alignItems: "center", gap: 6 }}>
               {f.label}
               {f.required && <span style={{ color: "var(--color-danger)", marginLeft: 4 }}>*</span>}
+              {f.description && (
+                <span
+                  title={f.description}
+                  aria-label={f.description}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 14,
+                    height: 14,
+                    borderRadius: "50%",
+                    border: "1px solid var(--color-border)",
+                    background: "var(--color-bg-sunken)",
+                    color: "var(--color-fg-muted)",
+                    fontSize: 9,
+                    fontWeight: 600,
+                    cursor: "help",
+                  }}
+                >
+                  i
+                </span>
+              )}
               {f.hotkey && (f.type === "boolean" || f.type === "select") && (
                 <span
                   className="mono"

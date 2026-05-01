@@ -338,7 +338,7 @@ export function DatasetsPage() {
   const datasets = datasetsData?.items ?? [];
   const total = datasetsData?.total ?? 0;
   const totalFiles = datasets.reduce((sum, ds) => sum + ds.file_count, 0);
-  const linkedCount = datasets.filter((ds) => ds.project_count > 0).length;
+  const linkedCount = datasets.filter((ds) => (ds.project_count ?? 0) > 0).length;
 
   const handleCreate = (data: { name: string; description: string; data_type: string }) => {
     createMutation.mutate(data, {

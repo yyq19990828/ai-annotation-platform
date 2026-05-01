@@ -12,7 +12,8 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { Can } from "@/components/guards/Can";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
-import { projectsApi, type ExportFormat, type ProjectResponse } from "@/api/projects";
+import { type ProjectResponse } from "@/api/projects";
+import { ExportSection } from "./ExportSection";
 import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useAuthStore } from "@/stores/authStore";
@@ -75,7 +76,7 @@ function ProjectRow({
           <div>
             <div style={{ fontSize: 12.5 }}>{p.owner_name ?? "—"}</div>
             <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
-              {p.member_count > 0 ? `${p.member_count} 名成员` : "暂无成员"}
+              {(p.member_count ?? 0) > 0 ? `${p.member_count} 名成员` : "暂无成员"}
             </div>
           </div>
         </div>
@@ -105,27 +106,7 @@ function ProjectRow({
       </td>
       <td style={{ padding: "12px 16px 12px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right", verticalAlign: "middle" }}>
         <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
-          <select
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => {
-              const fmt = e.target.value as ExportFormat;
-              if (fmt) {
-                projectsApi.exportProject(p.id, fmt);
-                e.target.value = "";
-              }
-            }}
-            defaultValue=""
-            style={{
-              padding: "4px 6px", fontSize: 11, borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--color-border)", background: "var(--color-bg-elev)",
-              cursor: "pointer", color: "var(--color-fg-muted)",
-            }}
-          >
-            <option value="" disabled>导出</option>
-            <option value="coco">COCO</option>
-            <option value="voc">VOC</option>
-            <option value="yolo">YOLO</option>
-          </select>
+          <ExportSection projectId={p.id} />
           {canManage && (
             <Button
               size="sm"

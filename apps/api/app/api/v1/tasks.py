@@ -15,7 +15,7 @@ from app.schemas.task import TaskOut, TaskListResponse, TaskLockResponse
 from app.schemas.annotation import AnnotationCreate, AnnotationOut, AnnotationUpdate
 from app.schemas.prediction import PredictionOut
 from app.services.annotation import AnnotationService
-from app.services.audit import AuditService
+from app.services.audit import AuditAction, AuditService
 from app.services.prediction import PredictionService
 from app.services.task_lock import TaskLockService
 from app.services.scheduler import get_next_task
@@ -177,12 +177,18 @@ async def update_annotation(
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
 
+    # 早 load 一次：用于 If-Match 校验 + 字段级审计 diff（attributes 变更）
+    existing = await db.get(Annotation, annotation_id)
+    if existing is None or not existing.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+
+    before_attributes: dict | None = None
+    if "attributes" in fields:
+        before_attributes = dict(existing.attributes or {})
+
     # 乐观并发控制：If-Match 头校验
     if_match = request.headers.get("If-Match", "").strip()
     if if_match:
-        existing = await db.get(Annotation, annotation_id)
-        if existing is None or not existing.is_active:
-            raise HTTPException(status_code=404, detail="Annotation not found")
         expected_version = if_match.removeprefix('W/"').removesuffix('"')
         try:
             expected_v = int(expected_version)
@@ -210,6 +216,30 @@ async def update_annotation(
         status_code=200,
         detail={"task_id": str(task_id), "fields": list(fields.keys())},
     )
+    # 字段级审计：每个变更的 attribute key 单独记一行，便于 GIN 索引按 field_key 过滤
+    if before_attributes is not None:
+        after_attributes = dict(annotation.attributes or {})
+        all_keys = set(before_attributes.keys()) | set(after_attributes.keys())
+        for key in sorted(all_keys):
+            before_v = before_attributes.get(key)
+            after_v = after_attributes.get(key)
+            if before_v == after_v:
+                continue
+            await AuditService.log(
+                db,
+                actor=current_user,
+                action=AuditAction.ANNOTATION_ATTRIBUTE_CHANGE,
+                target_type="annotation",
+                target_id=str(annotation.id),
+                request=request,
+                status_code=200,
+                detail={
+                    "task_id": str(task_id),
+                    "field_key": key,
+                    "before": before_v,
+                    "after": after_v,
+                },
+            )
     await db.commit()
     await db.refresh(annotation)
     response.headers["ETag"] = f'W/"{annotation.version}"'

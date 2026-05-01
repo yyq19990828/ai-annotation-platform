@@ -47,6 +47,10 @@ def _validate_attribute_schema(v: dict | None) -> dict | None:
             if hk in seen_hotkeys:
                 raise ValueError(f"fields[{i}].hotkey 重复: {hk!r}")
             seen_hotkeys.add(hk)
+        # description 用于 AttributeForm hover tooltip；存在时必须为字符串
+        desc = f.get("description")
+        if desc is not None and not isinstance(desc, str):
+            raise ValueError(f"fields[{i}].description 必须是字符串")
     return v
 
 

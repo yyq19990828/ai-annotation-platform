@@ -1,34 +1,57 @@
-import { useState } from "react";
-import { Button } from "@/components/ui/Button";
+import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
+import { useProjectMembers } from "@/hooks/useProjects";
+import { CanvasDrawingPreview } from "@/components/CanvasDrawingEditor";
 import {
   useAnnotationComments,
   useCreateComment,
   usePatchComment,
   useDeleteComment,
 } from "@/hooks/useAnnotationComments";
+import { CommentInput, renderCommentBody } from "./CommentInput";
+import type { CommentAttachment, CommentCanvasDrawing, CommentMention } from "@/api/comments";
 
 interface Props {
   annotationId: string | null;
+  /** 项目 id：用于拉取成员供 @ 提及 picker 选择。 */
+  projectId?: string | null;
   /** 当前用户 id（用于判断"作者操作权"）。 */
   currentUserId?: string;
+  /** Reviewer 端：传入题图 URL；启用画布批注按钮，渲染画布预览时也用作背景。 */
+  backgroundUrl?: string | null;
+  /** 是否启用画布批注入口（默认 false，仅 reviewer 端开启）。 */
+  enableCanvasDrawing?: boolean;
 }
 
-export function CommentsPanel({ annotationId, currentUserId }: Props) {
+export function CommentsPanel({ annotationId, projectId, currentUserId, backgroundUrl, enableCanvasDrawing }: Props) {
+  const navigate = useNavigate();
   const { data: comments } = useAnnotationComments(annotationId);
+  const { data: members } = useProjectMembers(projectId ?? "");
   const createMut = useCreateComment(annotationId);
   const patchMut = usePatchComment(annotationId);
   const deleteMut = useDeleteComment(annotationId);
-  const [draft, setDraft] = useState("");
 
   if (!annotationId) return null;
 
-  const onSubmit = () => {
-    const body = draft.trim();
-    if (!body) return;
-    createMut.mutate(body, {
-      onSuccess: () => setDraft(""),
-    });
+  const memberOptions = (members ?? []).map((m) => ({
+    id: m.user_id,
+    name: m.user_name,
+    email: m.user_email,
+  }));
+
+  const handleSubmit = ({
+    body,
+    mentions,
+    attachments,
+    canvas_drawing,
+  }: {
+    body: string;
+    mentions: CommentMention[];
+    attachments: CommentAttachment[];
+    canvas_drawing: CommentCanvasDrawing | null;
+  }) => {
+    if (!body && attachments.length === 0 && !canvas_drawing) return;
+    createMut.mutate({ body, mentions, attachments, canvas_drawing });
   };
 
   return (
@@ -39,33 +62,15 @@ export function CommentsPanel({ annotationId, currentUserId }: Props) {
         </div>
       </div>
 
-      {/* 输入区 */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="留言（如 reviewer 退回原因）..."
-          rows={2}
-          style={{
-            fontSize: 12, padding: "6px 8px",
-            background: "var(--color-bg-elev)",
-            border: "1px solid var(--color-border)",
-            borderRadius: 4, color: "var(--color-fg)",
-            fontFamily: "inherit", resize: "vertical",
-          }}
-        />
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={!draft.trim() || createMut.isPending}
-          onClick={onSubmit}
-          style={{ alignSelf: "flex-end" }}
-        >
-          {createMut.isPending ? "发送中..." : "发送"}
-        </Button>
-      </div>
+      <CommentInput
+        annotationId={annotationId}
+        members={memberOptions}
+        busy={createMut.isPending}
+        backgroundUrl={backgroundUrl}
+        enableCanvasDrawing={enableCanvasDrawing}
+        onSubmit={handleSubmit}
+      />
 
-      {/* 历史 */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto" }}>
         {(comments ?? []).length === 0 && (
           <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)" }}>暂无评论</div>
@@ -110,7 +115,48 @@ export function CommentsPanel({ annotationId, currentUserId }: Props) {
                   )}
                 </div>
               </div>
-              <div style={{ fontSize: 12, color: "var(--color-fg)", whiteSpace: "pre-wrap" }}>{c.body}</div>
+              <div style={{ fontSize: 12, color: "var(--color-fg)", whiteSpace: "pre-wrap" }}>
+                {renderCommentBody(c.body, c.mentions ?? [], (uid) => navigate(`/audit?actor=${uid}`))}
+              </div>
+              {c.canvas_drawing && c.canvas_drawing.shapes && c.canvas_drawing.shapes.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <CanvasDrawingPreview
+                    drawing={c.canvas_drawing}
+                    width={220}
+                    backgroundUrl={backgroundUrl}
+                  />
+                </div>
+              )}
+              {(c.attachments ?? []).length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                  {(c.attachments ?? []).map((a) => (
+                    <a
+                      key={a.storageKey}
+                      href={`/api/v1/files/download?key=${encodeURIComponent(a.storageKey)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontSize: 11,
+                        padding: "2px 6px",
+                        background: "var(--color-bg-sunken)",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: 3,
+                        color: "var(--color-fg)",
+                        textDecoration: "none",
+                      }}
+                      title={`${(a.size / 1024).toFixed(1)} KB`}
+                    >
+                      <Icon name="folder" size={11} />
+                      <span style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {a.fileName}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              )}
               <div style={{ fontSize: 10, color: "var(--color-fg-subtle)", marginTop: 4 }}>
                 {new Date(c.created_at).toLocaleString()}
               </div>
