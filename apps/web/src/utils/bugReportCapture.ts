@@ -67,7 +67,11 @@ export function sanitizeApiCalls(calls: ApiCallEntry[]): ApiCallEntry[] {
  * 或把 drawer 设为 ignore）。这里使用 ignoreElements 排除带 data-bug-drawer 的节点。
  */
 export async function captureScreenshot(): Promise<Blob> {
-  const { default: html2canvas } = await import("html2canvas");
+  // 用 html2canvas-pro 替代 html2canvas：原版 1.4.1 不支持 oklch()，
+  // 而本项目设计 token 全是 oklch，会直接抛 "Attempting to parse an unsupported
+  // color function 'oklch'" → 截图失败。html2canvas-pro 是 drop-in fork，
+  // 支持 oklch / oklab / lab / color() 等新色彩函数。
+  const { default: html2canvas } = await import("html2canvas-pro");
   const canvas = await html2canvas(document.body, {
     backgroundColor: "#ffffff",
     scale: Math.min(window.devicePixelRatio || 1, 2),

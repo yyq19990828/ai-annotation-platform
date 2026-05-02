@@ -220,7 +220,7 @@ export function ReviewPage() {
             style={{
               padding: "5px 10px", borderRadius: "var(--radius-md)",
               border: "1px solid var(--color-border)", fontSize: 12,
-              background: "var(--color-bg-elev)",
+              background: "var(--color-bg-elev)", color: "var(--color-fg)",
             }}
           >
             <option value="">全部项目</option>
@@ -237,7 +237,7 @@ export function ReviewPage() {
                 style={{
                   padding: "5px 10px", borderRadius: "var(--radius-md)",
                   border: "1px solid var(--color-border)", fontSize: 12,
-                  background: "var(--color-bg-elev)",
+                  background: "var(--color-bg-elev)", color: "var(--color-fg)",
                 }}
               >
                 <option value="">全部批次</option>

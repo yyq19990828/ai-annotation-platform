@@ -23,12 +23,15 @@ async def get_next_task(
     lock_svc = TaskLockService(db)
 
     # 1. Check if user already has a locked task in this project
+    # B-6 修复：用户在同一项目下可能因切换任务残留多把锁，scalar_one_or_none() 会抛 500。
+    # 改用 .first() 取最新一把作为"当前任务"。
     locked_result = await db.execute(
         select(TaskLock)
         .join(Task, Task.id == TaskLock.task_id)
         .where(TaskLock.user_id == user_id, Task.project_id == project_id)
+        .order_by(TaskLock.expire_at.desc())
     )
-    existing_lock = locked_result.scalar_one_or_none()
+    existing_lock = locked_result.scalars().first()
     if existing_lock:
         task = await db.get(Task, existing_lock.task_id)
         if task and not task.is_labeled:

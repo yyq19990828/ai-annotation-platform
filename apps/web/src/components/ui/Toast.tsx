@@ -37,6 +37,7 @@ export function ToastRack() {
         }
       `}</style>
       <div
+        data-toast-rack
         style={{
           position: "fixed",
           top: 60,

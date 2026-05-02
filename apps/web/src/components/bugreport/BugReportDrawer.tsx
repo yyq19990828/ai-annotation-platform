@@ -185,6 +185,7 @@ export function BugReportDrawer({ open, onClose }: Props) {
   return (
     <>
       <div
+        data-bug-drawer
         style={{
           position: "fixed",
           inset: 0,
@@ -194,6 +195,7 @@ export function BugReportDrawer({ open, onClose }: Props) {
         onClick={onClose}
       />
       <div
+        data-bug-drawer
         style={{
           position: "fixed",
           top: 0,
