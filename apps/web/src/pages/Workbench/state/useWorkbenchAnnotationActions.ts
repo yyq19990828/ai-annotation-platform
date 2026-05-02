@@ -49,6 +49,8 @@ export interface UseWorkbenchAnnotationActionsArgs {
   enqueueOnError: (err: unknown, fallback: () => void) => void;
   /** 由 shell 维护的当前 annotations ref（避免 stale closure）。*/
   annotationsRef: { current: AnnotationResponse[] };
+  /** v0.6.5：任务已锁定（review/completed），所有写动作直接 short-circuit + toast。 */
+  isLocked?: boolean;
 }
 
 export interface UseWorkbenchAnnotationActionsReturn {
@@ -79,8 +81,18 @@ export function useWorkbenchAnnotationActions({
   mutations,
   enqueueOnError,
   annotationsRef,
+  isLocked = false,
 }: UseWorkbenchAnnotationActionsArgs): UseWorkbenchAnnotationActionsReturn {
   const setQ = queryClient.setQueryData.bind(queryClient);
+
+  /** v0.6.5：锁定时 short-circuit；返回 true 表示已被拦截。 */
+  const blockIfLocked = useCallback((): boolean => {
+    if (isLocked) {
+      pushToast({ msg: "任务已锁定", sub: "撤回提交或继续编辑后再操作", kind: "warning" });
+      return true;
+    }
+    return false;
+  }, [isLocked, pushToast]);
 
   /** 共用：写入 annotations cache 中的某条 geometry（bbox 移动 / resize / polygon 编辑都用）。 */
   const optimisticUpdateGeom = useCallback(
@@ -144,6 +156,7 @@ export function useWorkbenchAnnotationActions({
 
   const submitPolygon = useCallback(
     (points: [number, number][]) => {
+      if (blockIfLocked()) return;
       const cls = s.activeClass;
       if (points.length < 3) {
         pushToast({ msg: "多边形需至少 3 个顶点", kind: "warning" });
@@ -170,7 +183,7 @@ export function useWorkbenchAnnotationActions({
         onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
       });
     },
-    [s, mutations, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate],
+    [blockIfLocked, s, mutations, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate],
   );
 
   const polygonHandle = useMemo<PolygonDraftHandle>(
@@ -187,6 +200,7 @@ export function useWorkbenchAnnotationActions({
 
   const handlePickPendingClass = useCallback(
     (cls: string) => {
+      if (blockIfLocked()) { s.setPendingDrawing(null); return; }
       const pending = s.pendingDrawing;
       if (!pending || !cls) return;
       const payload: AnnotationPayload = {
@@ -206,11 +220,12 @@ export function useWorkbenchAnnotationActions({
         onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
       });
     },
-    [s, mutations, history, recordRecentClass, enqueueOnError, optimisticEnqueueCreate],
+    [blockIfLocked, s, mutations, history, recordRecentClass, enqueueOnError, optimisticEnqueueCreate],
   );
 
   const handleDeleteBox = useCallback(
     (id: string) => {
+      if (blockIfLocked()) return;
       const target = annotationsRef.current.find((a) => a.id === id);
       if (target && taskId) {
         mutations.delete.mutate(id, {
@@ -228,11 +243,12 @@ export function useWorkbenchAnnotationActions({
       }
       s.setSelectedId(null);
     },
-    [mutations, history, pushToast, s, taskId, enqueueOnError, optimisticDelete, annotationsRef],
+    [blockIfLocked, mutations, history, pushToast, s, taskId, enqueueOnError, optimisticDelete, annotationsRef],
   );
 
   const handleCommitMove = useCallback(
     (id: string, before: Geom, after: Geom) => {
+      if (blockIfLocked()) return;
       if (!taskId) return;
       const beforeG = bboxGeom(before);
       const afterG = bboxGeom(after);
@@ -258,11 +274,12 @@ export function useWorkbenchAnnotationActions({
         },
       );
     },
-    [mutations, history, taskId, enqueueOnError, optimisticUpdateGeom],
+    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom],
   );
 
   const handleCommitResize = useCallback(
     (id: string, before: Geom, after: Geom) => {
+      if (blockIfLocked()) return;
       if (after.w < 0.005 || after.h < 0.005) {
         pushToast({ msg: "框太小未保存", sub: "拖动到至少 0.5% × 0.5%", kind: "error" });
         return;
@@ -292,11 +309,12 @@ export function useWorkbenchAnnotationActions({
         },
       );
     },
-    [mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom],
+    [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom],
   );
 
   const handleCommitPolygonGeometry = useCallback(
     (id: string, before: Pt[], after: Pt[]) => {
+      if (blockIfLocked()) return;
       if (after.length < 3) {
         pushToast({ msg: "多边形至少需要 3 顶点", kind: "error" });
         return;
@@ -330,7 +348,7 @@ export function useWorkbenchAnnotationActions({
         },
       );
     },
-    [mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom],
+    [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom],
   );
 
   return {

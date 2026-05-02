@@ -166,11 +166,44 @@ export function useApproveTask() {
 export function useRejectTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, reason }: { taskId: string; reason?: string }) =>
+    mutationFn: ({ taskId, reason }: { taskId: string; reason: string }) =>
       tasksApi.reject(taskId, reason),
     onSuccess: (_, { taskId }) => {
       qc.invalidateQueries({ queryKey: ["task", taskId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+export function useWithdrawTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => tasksApi.withdraw(taskId),
+    onSuccess: (_, taskId) => {
+      qc.invalidateQueries({ queryKey: ["task", taskId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+export function useReopenTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => tasksApi.reopen(taskId),
+    onSuccess: (_, taskId) => {
+      qc.invalidateQueries({ queryKey: ["task", taskId] });
+      qc.invalidateQueries({ queryKey: ["annotations", taskId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+export function useReviewClaim() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => tasksApi.reviewClaim(taskId),
+    onSuccess: (_, taskId) => {
+      qc.invalidateQueries({ queryKey: ["task", taskId] });
     },
   });
 }

@@ -58,6 +58,8 @@ interface AIInspectorPanelProps {
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
+  /** v0.6.5 · 任务已锁定（review/completed），属性表单只读。 */
+  readOnly?: boolean;
 }
 
 const stripStyle: React.CSSProperties = {
@@ -76,6 +78,7 @@ export function AIInspectorPanel({
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   onToggle, onRunAi, onAcceptAll, onSetConfThreshold,
   onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  readOnly = false,
 }: AIInspectorPanelProps) {
   const selSet = selectedIds && selectedIds.length > 0
     ? new Set(selectedIds)
@@ -177,6 +180,7 @@ export function AIInspectorPanel({
           className={selectedAnnotation.class_name}
           attributes={selectedAnnotation.attributes ?? {}}
           onChange={(next) => onUpdateAttributes(selectedAnnotation.id, next)}
+          readOnly={readOnly}
         />
       )}
 

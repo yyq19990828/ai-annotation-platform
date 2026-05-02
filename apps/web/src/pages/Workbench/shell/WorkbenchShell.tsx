@@ -7,12 +7,13 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProject } from "@/hooks/useProjects";
 import {
   useTaskList, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
-  useUpdateAnnotation, useSubmitTask,
+  useUpdateAnnotation, useSubmitTask, useWithdrawTask, useReopenTask,
 } from "@/hooks/useTasks";
 import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
+import { ApiError } from "@/api/client";
 import { useBatches } from "@/hooks/useBatches";
 import { predictionsApi } from "@/api/predictions";
 import type { TaskResponse, AnnotationResponse } from "@/types";
@@ -25,6 +26,7 @@ import { useSessionStats } from "../state/useSessionStats";
 import { useClipboard } from "../state/useClipboard";
 import { useWorkbenchAnnotationActions } from "../state/useWorkbenchAnnotationActions";
 import { useWorkbenchHotkeys } from "../state/useWorkbenchHotkeys";
+import { useCanvasDraftPersistence } from "../state/useCanvasDraftPersistence";
 import { annotationToBox, predictionsToBoxes, type AiBox } from "../state/transforms";
 import { iouShape } from "../stage/iou";
 import { setActiveClassesConfig, sortClassesByConfig } from "../stage/colors";
@@ -168,6 +170,8 @@ export function WorkbenchShell() {
   const conflictCbRef = useRef<(annotationId: string, version: number) => void>(() => {});
   const updateAnnotationMut = useUpdateAnnotation(taskId, (...args) => conflictCbRef.current(...args));
   const submitTaskMut = useSubmitTask();
+  const withdrawTaskMut = useWithdrawTask();
+  const reopenTaskMut = useReopenTask();
   const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
@@ -277,12 +281,14 @@ export function WorkbenchShell() {
   const { online, queueCount, enqueueOnError, flushOne: executeOp, flushAll: flushOffline,
     drawerOpen: offlineDrawerOpen, openDrawer: openOfflineDrawer, closeDrawer: closeOfflineDrawer } = offlineQ;
 
-  // ── 标注 mutation 接线（v0.6.4 P1 抽 hook） ──
+  // ── 标注 mutation 接线（v0.6.4 P1 抽 hook；v0.6.5 加 isLocked 守卫） ──
+  const isLockedForActions = task?.status === "review" || task?.status === "completed";
   const annotationActions = useWorkbenchAnnotationActions({
     taskId, projectId, meUserId,
     queryClient, history, s, pushToast, recordRecentClass,
     annotationsRef,
     enqueueOnError,
+    isLocked: isLockedForActions,
     mutations: {
       create: createAnnotation,
       update: { mutate: (vars, opts) => updateAnnotationMut.mutate(vars, opts) },
@@ -581,6 +587,40 @@ export function WorkbenchShell() {
     });
   }, [taskId, submitTaskMut, pushToast, task?.display_id, userBoxes.length, navigateTask, hasMissingRequired]);
 
+  // v0.6.5 · 任务锁定（提交质检后 / 审核通过后） + 撤回 / 重开
+  const isLocked = task?.status === "review" || task?.status === "completed";
+  const canWithdraw = task?.status === "review" && !task?.reviewer_claimed_at;
+  const canReopen = task?.status === "completed";
+
+  const handleWithdrawTask = useCallback(() => {
+    if (!taskId || !canWithdraw) return;
+    withdrawTaskMut.mutate(taskId, {
+      onSuccess: () => pushToast({ msg: "已撤回提交，可继续编辑", kind: "success" }),
+      onError: (err) => {
+        const reason = err instanceof ApiError ? (err.detailRaw as { reason?: string } | undefined)?.reason : undefined;
+        const msg = reason === "task_already_claimed"
+          ? "审核员已介入，无法撤回"
+          : "撤回失败，请刷新后重试";
+        pushToast({ msg, kind: "error" });
+      },
+    });
+  }, [taskId, canWithdraw, withdrawTaskMut, pushToast]);
+
+  // v0.6.5: canvas 草稿持久化（sessionStorage 5min TTL + beforeunload guard）
+  useCanvasDraftPersistence({
+    taskId,
+    canvasDraft: s.canvasDraft,
+    beginCanvasDraft: s.beginCanvasDraft,
+  });
+
+  const handleReopenTask = useCallback(() => {
+    if (!taskId || !canReopen) return;
+    reopenTaskMut.mutate(taskId, {
+      onSuccess: () => pushToast({ msg: "已重开任务，可继续编辑", sub: "改完记得重新提交质检", kind: "success" }),
+      onError: () => pushToast({ msg: "重开失败，请刷新后重试", kind: "error" }),
+    });
+  }, [taskId, canReopen, reopenTaskMut, pushToast]);
+
   // ── 键盘快捷键（v0.6.4 P1 抽 hook） ───────────────────────────────────
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
@@ -670,6 +710,75 @@ export function WorkbenchShell() {
           </div>
         )}
 
+        {/* v0.6.5 · 任务状态锁定横幅 */}
+        {task?.status === "review" && (
+          <div
+            style={{
+              padding: "8px 14px",
+              background: "oklch(0.95 0.04 240)",
+              borderBottom: "1px solid oklch(0.85 0.08 240)",
+              fontSize: 12, color: "oklch(0.40 0.12 240)",
+              display: "flex", alignItems: "center", gap: 10,
+            }}
+          >
+            <Icon name="check" size={13} />
+            <span style={{ flex: 1 }}>
+              已提交质检 · 等待审核
+              {task.reviewer_claimed_at && <span style={{ marginLeft: 8, opacity: 0.7 }}>· 审核员已介入</span>}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!canWithdraw || withdrawTaskMut.isPending}
+              onClick={handleWithdrawTask}
+              title={canWithdraw ? "撤回提交，回到编辑态" : "审核员已介入，无法撤回"}
+            >
+              撤回提交
+            </Button>
+          </div>
+        )}
+        {task?.status === "completed" && (
+          <div
+            style={{
+              padding: "8px 14px",
+              background: "oklch(0.95 0.05 145)",
+              borderBottom: "1px solid oklch(0.85 0.10 145)",
+              fontSize: 12, color: "oklch(0.35 0.12 145)",
+              display: "flex", alignItems: "center", gap: 10,
+            }}
+          >
+            <Icon name="check" size={13} />
+            <span style={{ flex: 1 }}>
+              已通过审核 · 任务已锁定
+              {task.reopened_count > 0 && (
+                <span style={{ marginLeft: 8, opacity: 0.7 }}>· 历史重开 {task.reopened_count} 次</span>
+              )}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={reopenTaskMut.isPending}
+              onClick={handleReopenTask}
+            >
+              继续编辑
+            </Button>
+          </div>
+        )}
+        {task?.status === "in_progress" && task.reject_reason && (
+          <div
+            style={{
+              padding: "8px 14px",
+              background: "oklch(0.95 0.05 25)",
+              borderBottom: "1px solid oklch(0.85 0.10 25)",
+              fontSize: 12, color: "oklch(0.40 0.15 25)",
+              display: "flex", alignItems: "flex-start", gap: 8,
+            }}
+          >
+            <Icon name="warning" size={13} />
+            <span><b>审核员退回：</b>{task.reject_reason}</span>
+          </div>
+        )}
+
         <Topbar
           task={task}
           taskIdx={taskIdx}
@@ -688,6 +797,7 @@ export function WorkbenchShell() {
         />
 
         <ImageStage
+          readOnly={isLocked}
           fileUrl={task?.file_url ?? null}
           blurhash={task?.blurhash ?? null}
           tool={s.tool}
@@ -828,6 +938,7 @@ export function WorkbenchShell() {
 
       <AIInspectorPanel
         open={rightOpen}
+        readOnly={isLocked}
         aiModel={aiModel}
         aiRunning={aiRunning}
         aiBoxes={aiBoxes}

@@ -47,6 +47,7 @@ function TaskItem({
   isActive: boolean;
   onSelect: () => void;
 }) {
+  const isLocked = task.status === "review" || task.status === "completed";
   const statusLabel =
     task.status === "completed" ? "已完成"
     : task.status === "review" ? "待审核"
@@ -68,11 +69,21 @@ function TaskItem({
     >
       <Thumbnail src={task.thumbnail_url} blurhash={task.blurhash} width={40} height={40} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
           <span className="mono" style={{ fontSize: 11.5, fontWeight: 500 }}>{task.display_id}</span>
-          {task.total_annotations > 0 && (
-            <Badge variant="accent" style={{ fontSize: 10, padding: "1px 6px" }}>{task.total_annotations}</Badge>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            {isLocked && (
+              <span
+                title={task.status === "review" ? "已提交质检 · 已锁定" : "已通过审核 · 已锁定"}
+                style={{ display: "inline-flex", color: "var(--color-fg-subtle)" }}
+              >
+                <Icon name="lock" size={11} />
+              </span>
+            )}
+            {task.total_annotations > 0 && (
+              <Badge variant="accent" style={{ fontSize: 10, padding: "1px 6px" }}>{task.total_annotations}</Badge>
+            )}
+          </div>
         </div>
         <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {task.file_name}

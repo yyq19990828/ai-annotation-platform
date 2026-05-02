@@ -28,7 +28,9 @@ export function ReviewerDashboard() {
   };
 
   const handleReject = (taskId: string) => {
-    rejectMut.mutate({ taskId }, {
+    const reason = window.prompt("退回原因（必填）");
+    if (!reason || !reason.trim()) return;
+    rejectMut.mutate({ taskId, reason: reason.trim() }, {
       onSuccess: () => {
         pushToast({ msg: "任务已退回标注员", kind: "success" });
         qc.invalidateQueries({ queryKey: ["dashboard", "reviewer"] });

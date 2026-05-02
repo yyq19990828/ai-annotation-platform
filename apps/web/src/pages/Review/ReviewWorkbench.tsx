@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { useTask, useAnnotations } from "@/hooks/useTasks";
+import { useTask, useAnnotations, useReviewClaim } from "@/hooks/useTasks";
 import { usePredictions } from "@/hooks/usePredictions";
 import { ImageStage } from "@/pages/Workbench/stage/ImageStage";
 import {
@@ -10,6 +10,7 @@ import {
 import { useViewportTransform } from "@/pages/Workbench/state/useViewportTransform";
 import { CommentsPanel } from "@/pages/Workbench/shell/CommentsPanel";
 import { useAuthStore } from "@/stores/authStore";
+import type { ReviewClaimResponse } from "@/types";
 
 type DiffMode = "final" | "raw" | "diff";
 
@@ -36,6 +37,20 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
   const { vp, setVp } = useViewportTransform();
   const [fitTick, setFitTick] = useState(0);
   const meUserId = useAuthStore((s) => s.user?.id);
+
+  // v0.6.5: 进入审核页时调 claim（幂等），冻结标注员的 withdraw 入口；
+  // 仅在 status=review 时调用，避免对 completed/rejected 任务多余请求。
+  const claimMut = useReviewClaim();
+  const [claimInfo, setClaimInfo] = useState<ReviewClaimResponse | null>(null);
+  useEffect(() => {
+    if (!taskId || task?.status !== "review") return;
+    claimMut.mutate(taskId, {
+      onSuccess: (data) => setClaimInfo(data),
+      onError: () => {},
+    });
+    // claimMut intentionally omitted to keep effect single-fire per task
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId, task?.status]);
 
   const selectedAnnotation = useMemo(
     () => (annotationsData ?? []).find((a) => a.id === selectedId) ?? null,
@@ -66,6 +81,20 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
   return (
     <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden" }}>
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+      {claimInfo && !claimInfo.is_self && (
+        <div
+          style={{
+            padding: "6px 14px",
+            background: "oklch(0.95 0.05 70)",
+            borderBottom: "1px solid oklch(0.85 0.10 70)",
+            fontSize: 12, color: "oklch(0.40 0.15 70)",
+            display: "flex", alignItems: "center", gap: 6,
+          }}
+        >
+          <Icon name="warning" size={13} />
+          已被其他审核员认领（{new Date(claimInfo.reviewer_claimed_at).toLocaleString("zh-CN")}），仍可接力处理
+        </div>
+      )}
       <div
         style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",

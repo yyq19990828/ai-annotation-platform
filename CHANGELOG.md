@@ -9,7 +9,66 @@
 
 ---
 
-## [0.6.4] - 2026-05-02
+## [0.6.5] - 2026-05-02
+
+> v0.6.5 收两件事：① **标注 / 审核流程任务锁定**（用户主诉求）—— 让本就存在但形同虚设的 `review/completed` 状态机真正生效，加「撤回」与「重开」两条逆向路径，前后端编辑全链路防护、审计 / 通知打点齐全；② **v0.6.4 后续观察 4 项 quick win**：vite manualChunks 拆 vendor chunk、CanvasDrawing sessionStorage 持久化、HotkeyCheatSheet 搜索 + 按使用频率排、react-markdown 暗色对比度修复。
+>
+> 行为变更（非 breaking 但需注意）：
+> - **任务进入 `review` / `completed` 后，所有 annotation 写端点（POST/PATCH/DELETE/accept_prediction）一律 409 `task_locked`**。前端 `WorkbenchShell` 自动 readOnly + toast 拦截，未走 UI 直接 curl 的脚本会撞墙 —— 先 `POST /tasks/{id}/withdraw` 或 `/reopen` 解锁。
+> - **`reject` 现在 `reason` 必填**（之前接收但丢弃），且 task 落到 `in_progress` 而非 `pending`（语义更准）。`ReviewerDashboard` 退回按钮加了 `window.prompt` 让标注员能看到原因。
+> - **bundle 拆分**：`vendor-konva.js` / `vendor-markdown.js` 独立 chunk。CDN 缓存 / HTTP/2 多路复用收益直接给到。
+
+### 项 1 · 任务状态机锁定与撤回 / 重开（用户主诉求）
+
+#### 后端
+
+- **Task 模型 +7 字段**（`apps/api/app/db/models/task.py:30-37`）：`submitted_at` / `reviewer_id` (FK users, ON DELETE SET NULL) / `reviewer_claimed_at` / `reviewed_at` / `reject_reason` (String 2000) / `reopened_count` / `last_reopened_at`。alembic `0022_task_lock_fields.py` 加 7 列 + FK + `ix_tasks_reviewer_id`，无数据回填。
+- **`AuditAction` +6 项**（`services/audit.py:39-46`）：`task.submit / task.withdraw / task.review_claim / task.approve / task.reject / task.reopen`。每个状态变更都通过 `AuditService.log` 写一行，含 `target_type="task"` + `target_id=task.id` + `request_id`，让 `me.py:get_notifications` 直接看到。
+- **`api/v1/tasks.py` 端点全改造**：
+  - 新 helper `_assert_task_editable(task)`：`status ∈ {review, completed}` 抛 `409 {reason: "task_locked", status: ...}`。挂到 `create_annotation` (`:142`)、`update_annotation` (`:170`)、`accept_prediction` (`:316`)、`delete_annotation` (`:330`)。
+  - **`POST /submit`** 改造（`:357`）：状态守卫（必须 `pending`/`in_progress`，否则 409 `task_not_submittable`）；写 `submitted_at`；清空上一轮 reviewer 痕迹（reopen → 再次 submit 场景）；写 audit。
+  - **`POST /withdraw` 新增**（`:402`）：标注员撤回质检。前提三选一同时满足 —— `status=review` AND `assignee_id == 当前用户` (admin 兜底) AND `reviewer_claimed_at IS NULL`。任一不满足返回 409/403。改回 `in_progress` + 清 `submitted_at` + 写 audit。
+  - **`POST /review/claim` 新增**（`:469`）：reviewer 进入审核页时调用（幂等）。第一个调用者写 `reviewer_id` + `reviewer_claimed_at`；后续调用者读取已存在的认领信息（不覆盖）。一旦 claim，标注员 withdraw 入口冻结。返回 `ReviewClaimResponse { task_id, reviewer_id, reviewer_claimed_at, is_self }`。
+  - **`POST /review/approve`** 改造（`:507`）：写 `reviewer_id`（若未 claim 则用当前 user）+ `reviewed_at`；写 audit；项目 `completed_tasks++` / `review_tasks--` 保留原逻辑。
+  - **`POST /review/reject`** 改造（`:556`）：`reason` **必填且非空**（之前 body 带不带都行，现在 400 `reject reason is required`）；持久化 `reject_reason` 到 task；改回 `in_progress`（之前是 `pending`）；写 audit detail.reason。
+  - **`POST /reopen` 新增**（`:613`）：标注员对 `completed` 任务单方面重开。前提：`status=completed` AND `assignee_id == 当前用户` (admin 兜底)。`reopened_count++`、`last_reopened_at = now`、清 reviewer_*、`completed_tasks--`；audit detail 留 `original_reviewer_id`，让 `me.py:get_notifications` 把通知推给原 reviewer。
+- **`me.py:get_notifications` 通知扩展**（`api/v1/me.py:46-100`）：filters 多两条 —— ① `target_type="task" AND target_id IN (我作为 assignee 的 task ids)` 把 approve/reject 通知拉给标注员；② `target_type="task" AND action="task.reopen" AND detail.original_reviewer_id == self` 把重开通知推给原审核员。复用现有 30s 轮询通道，零新增端点。
+- **schema 暴露**：`TaskOut` (`schemas/task.py:25-31`) 新增 7 字段；新 `ReviewClaimResponse`。
+
+#### 前端
+
+- **`hooks/useTasks.ts`** 新增 3 hook：`useWithdrawTask` / `useReopenTask` / `useReviewClaim`，全部走 `tasksApi.*` + invalidate 三 query (`task` / `annotations` / `tasks`)。`useRejectTask` 的 `reason` 类型从 `string?` 改成 `string` 必填，type 层提醒所有 caller。
+- **`api/tasks.ts`** 新方法 `withdraw` / `reopen` / `reviewClaim`；`types/index.ts` `TaskResponse` 同步加 7 字段 + 新 `ReviewClaimResponse`。
+- **`WorkbenchShell.tsx`** 状态机锁定 UI：
+  - 计算 `isLocked = task?.status in ["review", "completed"]`，传给 `<ImageStage readOnly>` (`:725`) 与 `<AIInspectorPanel readOnly>` (`:881`)。
+  - 三色横幅（lockError 横幅之下）：① `status=review` 蓝色「已提交质检 · 等待审核」+ `[撤回提交]` 按钮（仅 `reviewer_claimed_at == null` 可点，否则灰显示「审核员已介入」）；② `status=completed` 绿色「已通过审核 · 已锁定」+ `[继续编辑]` + reopen 计数显示；③ `status=in_progress && reject_reason` 红色显示「审核员退回：<reason>」。
+  - 错误处理：withdraw 失败如果 detail.reason==`task_already_claimed`，toast 提示「审核员已介入，无法撤回」。
+- **`useWorkbenchAnnotationActions.ts`** 入口加 `isLocked` 参数 + `blockIfLocked()` short-circuit：`handleDeleteBox` / `handleCommitMove` / `handleCommitResize` / `handleCommitPolygonGeometry` / `submitPolygon` / `handlePickPendingClass` 6 处入口先 toast「任务已锁定 · 撤回提交或继续编辑后再操作」再 return。
+- **`AIInspectorPanel.tsx`** 接受 `readOnly?` prop，转发给 `<AttributeForm readOnly>`。`AttributeForm` 的 `readOnly` v0.6.0 就有，本期复用。
+- **`TaskQueuePanel.tsx`** Lock icon：`status ∈ {review, completed}` 时在 task item 数量徽章左侧显示锁图标 + tooltip。
+- **`ReviewWorkbench.tsx`** 进入审核页 useEffect on mount 调 `tasksApi.reviewClaim(taskId)`（仅 `status=review` 时）。响应 `is_self=false` 顶部黄色横幅「已被其他审核员认领（时间），仍可接力处理」。
+- **`ReviewerDashboard.tsx`** reject 按钮加 `window.prompt("退回原因（必填）")`，配合后端的强校验。
+
+#### 测试
+
+- **`apps/api/tests/test_task_lock.py`** 新增 5 例（全绿）：① 完整状态机 round-trip：assign → submit (`review`) → withdraw → submit → claim → withdraw 被拒 (`409 task_already_claimed`) → approve → reopen (`reopened_count=1`)；② 编辑端点拦截：review 态下 PATCH/DELETE/POST annotation 全部 `409 task_locked`；③ 非 assignee 调 withdraw → 403；④ reject 缺 reason / 空白 reason → 400，合法 reason → 持久化；⑤ 6 个状态变更各产 1 条 `audit_logs`，顺序 `task.submit → task.withdraw → task.submit → task.review_claim → task.approve → task.reopen`，reopen 的 detail 含 `original_reviewer_id`。
+- **测试基座修补**：本文件内 override `test_engine` / `db_session` 为 function 作用域，绕过 conftest 的 session-scoped engine 与 pytest-asyncio function-scoped event loop 冲突（这是先前测试套件无法跑的根因）。后续可把这套修补回写到 conftest.py。
+
+---
+
+### 项 2 · v0.6.4 后续观察 4 项 quick win
+
+- **vite manualChunks 拆 vendor chunk**（`apps/web/vite.config.ts`）：`{ "vendor-konva": ["konva", "react-konva"], "vendor-markdown": ["react-markdown"] }` + `chunkSizeWarningLimit: 600`。build 实测：v0.6.4 是 `index 1.15MB / 330KB gz` 单 chunk → v0.6.5 拆成 `index 740KB / 205KB` + `vendor-konva 290KB / 89KB` + `vendor-markdown 126KB / 39KB`，主入口缩 37%、Konva 与 markdown 走并行下载 + CDN 长缓存。
+- **CanvasDrawing sessionStorage 持久化**（`pages/Workbench/state/useCanvasDraftPersistence.ts` 新增）：闭环 v0.6.4 留下的「画完一笔忘发评论 / 刷新 → 全丢」bug。① 切到新 taskId 时检查 `sessionStorage["canvas_draft:" + taskId]`（5 分钟 TTL），若有就调 `beginCanvasDraft(annotationId, { shapes })` 恢复；② `canvasDraft.active && shapes.length > 0` 期间任何变化都立即写回；③ 退出 canvas 模式（commit / cancel）即清键；④ active + shapes>0 时挂 `beforeunload` 触发浏览器原生确认。`useRef` 防同任务重复恢复。`WorkbenchShell` 单行接入。
+- **HotkeyCheatSheet 搜索 + 按使用频率排**（`shell/HotkeyCheatSheet.tsx` + `state/hotkeyUsage.ts` 新增 + `state/hotkeys.ts` 增字段）：
+  - 顶部搜索框：模糊匹配 `desc` 或 `keys.join(" ")`，分组实时过滤。
+  - `[ ] 按使用频率排` 复选框：开启后所有命中 HotkeyDef 平铺、按 `usage[actionType]` 倒序、`×N` 计数徽章贴在 desc 旁；关闭恢复原分组视图。
+  - 计数实现：`HotkeyDef` 加可选 `actionType` 字段，`useWorkbenchHotkeys.ts:227` 在 `dispatchKey` 返回 action 后立即 `recordHotkeyUsage(action.type)` 写 localStorage（`hotkey_usage_v1`，单 bucket cap 10000 防膨胀）。同 `actionType` 多 key 合并计数（如 `setTool` 涵盖 B/V/P）—— 是合理近似。
+- **react-markdown 暗色主题对比度修复**（`styles/tokens.css` + `shell/AttributeForm.tsx`）：root case：`bg-elev` 在亮色是白 `#fff`、暗色是 `#1a1a1d`；inline-code 之前用 `bg-sunken`（暗色 `#0a0a0c`）反而比 popover 还黑，看不清。新增 `--color-code-bg` (light `#ececef` / dark `#2e2e33`) + `--color-code-fg` token；`DescriptionPopover` 的 `code` 组件改用新 token + 1px border 提升对比；顺手补 `strong` / `em` / `li` 语义化样式。
+
+---
+
+
 
 > v0.6.4 一次性收口 ROADMAP「v0.6.2 落地后发现的尾巴 · 应修」全部 8 项。后端：display_id 全表统一为「字母前缀 + 顺序号」、JSONB 字段强类型化、OpenAPI dump 脚本。前端：WorkbenchShell 第二次拆 hook（annotation actions + hotkeys）、CanvasDrawing 入 ImageStage 第 5 Konva Layer 共享坐标系、AttributeField 描述支持 markdown、OfflineQueueDrawer 按 task 分组 + retry_count 视觉、annotator 端开放画布批注。
 >

@@ -3,6 +3,7 @@ import type {
   TaskResponse,
   AnnotationResponse,
   TaskLockResponse,
+  ReviewClaimResponse,
   Geometry,
 } from "@/types";
 
@@ -83,6 +84,15 @@ export const tasksApi = {
 
   submit: (id: string) =>
     apiClient.post<SubmitResponse>(`/tasks/${id}/submit`),
+
+  withdraw: (id: string) =>
+    apiClient.post<SubmitResponse>(`/tasks/${id}/withdraw`),
+
+  reopen: (id: string) =>
+    apiClient.post<SubmitResponse & { reopened_count: number }>(`/tasks/${id}/reopen`),
+
+  reviewClaim: (id: string) =>
+    apiClient.post<ReviewClaimResponse>(`/tasks/${id}/review/claim`),
 
   approve: (id: string) =>
     apiClient.post<{ status: string; task_id: string }>(`/tasks/${id}/review/approve`),

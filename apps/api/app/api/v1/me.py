@@ -7,6 +7,7 @@ from app.deps import get_current_user, get_db
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from app.db.models.task import Task
 from app.db.models.user import User
 from app.schemas.me import PasswordChange, ProfileUpdate
 from app.schemas.user import UserOut
@@ -54,6 +55,8 @@ async def get_notifications(
     相关规则：
     - target_type=user, target_id=self → 被邀请 / 被改角色 / 被改组等
     - target_type=project, target_id 属于自己负责的项目
+    - target_type=task, target_id ∈ assignee 是自己的任务 → approve/reject 通知
+    - target_type=task, action=task.reopen, detail.original_reviewer_id == self → 标注员重开通知原审核员
     - 排除自己触发的操作（actor_id == self）
     """
     my_id_str = str(user.id)
@@ -71,6 +74,12 @@ async def get_notifications(
     member_ids = [str(r[0]) for r in member_rows.all()]
     project_ids = list(set(owned_ids + member_ids))
 
+    # v0.6.5 · 通知扩展：自己作为 assignee 的任务 + 自己作为原 reviewer 的 reopen 事件
+    my_task_rows = await db.execute(
+        select(Task.id).where(Task.assignee_id == user.id)
+    )
+    my_task_ids = [str(r[0]) for r in my_task_rows.all()]
+
     filters = [
         (AuditLog.target_type == "user") & (AuditLog.target_id == my_id_str),
     ]
@@ -78,6 +87,16 @@ async def get_notifications(
         filters.append(
             (AuditLog.target_type == "project") & (AuditLog.target_id.in_(project_ids))
         )
+    if my_task_ids:
+        filters.append(
+            (AuditLog.target_type == "task") & (AuditLog.target_id.in_(my_task_ids))
+        )
+    # 标注员重开 → 通知原 reviewer
+    filters.append(
+        (AuditLog.target_type == "task")
+        & (AuditLog.action == "task.reopen")
+        & (AuditLog.detail_json["original_reviewer_id"].astext == my_id_str)
+    )
 
     rows = (
         await db.execute(

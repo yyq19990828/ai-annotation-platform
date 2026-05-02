@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { dispatchKey, ARROW_KEY_SET } from "./hotkeys";
+import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
 import type { useWorkbenchState } from "./useWorkbenchState";
 import type { useAnnotationHistory } from "./useAnnotationHistory";
@@ -224,6 +225,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         attributeHotkey,
       });
       if (!action) return;
+      recordHotkeyUsage(action.type);
 
       switch (action.type) {
         case "undo": e.preventDefault(); history.undo(); return;

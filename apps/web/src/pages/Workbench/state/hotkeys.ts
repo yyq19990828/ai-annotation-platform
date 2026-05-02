@@ -7,52 +7,56 @@ export interface HotkeyDef {
   keys: string[];        // display labels e.g. ["Ctrl", "Z"]
   desc: string;
   group: HotkeyGroup;
+  /** v0.6.5：与 dispatch 出的 action.type 关联，用于「按使用频率排」。
+   *  同 action.type 多 HotkeyDef 时共享同一计数（如 setTool 三键合并）。
+   *  无明确 action 的演示类（如「拖动顶点」）留空，频率排时排到最后。 */
+  actionType?: string;
 }
 
 export const HOTKEYS: HotkeyDef[] = [
-  { keys: ["B"], desc: "矩形框工具", group: "draw" },
-  { keys: ["P"], desc: "多边形工具", group: "draw" },
-  { keys: ["V"], desc: "平移工具", group: "draw" },
+  { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
+  { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
+  { keys: ["V"], desc: "平移工具", group: "draw", actionType: "setTool" },
   { keys: ["Enter"], desc: "闭合多边形（≥3 顶点）", group: "draw" },
-  { keys: ["Backspace"], desc: "删除多边形最后一点 / 删除选中框", group: "draw" },
+  { keys: ["Backspace"], desc: "删除多边形最后一点 / 删除选中框", group: "draw", actionType: "deleteSelected" },
   { keys: ["拖动顶点"], desc: "多边形顶点拖动（选中时）", group: "draw" },
   { keys: ["Alt", "click 边"], desc: "多边形边上插入新顶点", group: "draw" },
   { keys: ["Shift", "click 顶点"], desc: "多边形删除该顶点（≤3 拒绝）", group: "draw" },
-  { keys: ["1 — 9"], desc: "切换类别", group: "draw" },
-  { keys: ["Delete"], desc: "删除选中框（多选时批量）", group: "draw" },
-  { keys: ["Tab"], desc: "下一个 user 框（循环）", group: "draw" },
-  { keys: ["Shift", "Tab"], desc: "上一个 user 框（循环）", group: "draw" },
-  { keys: ["J"], desc: "下一个 user 框（不循环）", group: "draw" },
-  { keys: ["K"], desc: "上一个 user 框（不循环）", group: "draw" },
-  { keys: ["↑ ↓ ← →"], desc: "选中框 1px 平移（Shift = 10px）", group: "draw" },
+  { keys: ["1 — 9"], desc: "切换类别", group: "draw", actionType: "setClassByDigit" },
+  { keys: ["Delete"], desc: "删除选中框（多选时批量）", group: "draw", actionType: "deleteSelected" },
+  { keys: ["Tab"], desc: "下一个 user 框（循环）", group: "draw", actionType: "cycleUser" },
+  { keys: ["Shift", "Tab"], desc: "上一个 user 框（循环）", group: "draw", actionType: "cycleUser" },
+  { keys: ["J"], desc: "下一个 user 框（不循环）", group: "draw", actionType: "cycleUser" },
+  { keys: ["K"], desc: "上一个 user 框（不循环）", group: "draw", actionType: "cycleUser" },
+  { keys: ["↑ ↓ ← →"], desc: "选中框 1px 平移（Shift = 10px）", group: "draw", actionType: "arrowNudge" },
   { keys: ["Shift", "click"], desc: "叠加多选 user 框", group: "draw" },
-  { keys: ["Ctrl", "A"], desc: "全选当前帧 user 框", group: "draw" },
-  { keys: ["Ctrl", "C"], desc: "复制选中框", group: "draw" },
-  { keys: ["Ctrl", "V"], desc: "粘贴（偏移 +10px）", group: "draw" },
-  { keys: ["Ctrl", "D"], desc: "原地复制（偏移 +10px）", group: "draw" },
+  { keys: ["Ctrl", "A"], desc: "全选当前帧 user 框", group: "draw", actionType: "selectAllUser" },
+  { keys: ["Ctrl", "C"], desc: "复制选中框", group: "draw", actionType: "copy" },
+  { keys: ["Ctrl", "V"], desc: "粘贴（偏移 +10px）", group: "draw", actionType: "paste" },
+  { keys: ["Ctrl", "D"], desc: "原地复制（偏移 +10px）", group: "draw", actionType: "duplicate" },
 
-  { keys: ["Ctrl", "Z"], desc: "撤销", group: "draw" },
-  { keys: ["Ctrl", "Shift", "Z"], desc: "重做", group: "draw" },
-  { keys: ["Ctrl", "Y"], desc: "重做（备用）", group: "draw" },
+  { keys: ["Ctrl", "Z"], desc: "撤销", group: "draw", actionType: "undo" },
+  { keys: ["Ctrl", "Shift", "Z"], desc: "重做", group: "draw", actionType: "redo" },
+  { keys: ["Ctrl", "Y"], desc: "重做（备用）", group: "draw", actionType: "redo" },
 
   { keys: ["Ctrl", "+ wheel"], desc: "以光标为锚点缩放", group: "view" },
-  { keys: ["Ctrl", "0"], desc: "重置缩放与平移", group: "view" },
-  { keys: ["Space", "+ drag"], desc: "平移画布", group: "view" },
+  { keys: ["Ctrl", "0"], desc: "重置缩放与平移", group: "view", actionType: "fitReset" },
+  { keys: ["Space", "+ drag"], desc: "平移画布", group: "view", actionType: "spacePanOn" },
   { keys: ["双击空白"], desc: "适应视口", group: "view" },
 
-  { keys: ["A"], desc: "采纳选中 AI 框", group: "ai" },
-  { keys: ["D"], desc: "驳回选中 AI 框", group: "ai" },
-  { keys: ["["], desc: "降低置信度阈值 (-0.05)", group: "ai" },
-  { keys: ["]"], desc: "提高置信度阈值 (+0.05)", group: "ai" },
+  { keys: ["A"], desc: "采纳选中 AI 框", group: "ai", actionType: "acceptAi" },
+  { keys: ["D"], desc: "驳回选中 AI 框", group: "ai", actionType: "rejectAi" },
+  { keys: ["["], desc: "降低置信度阈值 (-0.05)", group: "ai", actionType: "thresholdAdjust" },
+  { keys: ["]"], desc: "提高置信度阈值 (+0.05)", group: "ai", actionType: "thresholdAdjust" },
 
-  { keys: ["Ctrl", "→"], desc: "下一题", group: "nav" },
-  { keys: ["Ctrl", "←"], desc: "上一题", group: "nav" },
-  { keys: ["N"], desc: "智能切题：下一未标注", group: "nav" },
-  { keys: ["U"], desc: "智能切题：下一最不确定", group: "nav" },
-  { keys: ["E"], desc: "提交质检", group: "nav" },
+  { keys: ["Ctrl", "→"], desc: "下一题", group: "nav", actionType: "navigateTask" },
+  { keys: ["Ctrl", "←"], desc: "上一题", group: "nav", actionType: "navigateTask" },
+  { keys: ["N"], desc: "智能切题：下一未标注", group: "nav", actionType: "smartNext" },
+  { keys: ["U"], desc: "智能切题：下一最不确定", group: "nav", actionType: "smartNext" },
+  { keys: ["E"], desc: "提交质检", group: "nav", actionType: "submit" },
 
-  { keys: ["?"], desc: "打开本面板", group: "system" },
-  { keys: ["Esc"], desc: "取消选择 / 关闭弹窗", group: "system" },
+  { keys: ["?"], desc: "打开本面板", group: "system", actionType: "showHotkeys" },
+  { keys: ["Esc"], desc: "取消选择 / 关闭弹窗", group: "system", actionType: "cancel" },
 ];
 
 export const GROUP_LABEL: Record<HotkeyGroup, string> = {

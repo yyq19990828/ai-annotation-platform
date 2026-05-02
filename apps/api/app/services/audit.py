@@ -37,6 +37,13 @@ class AuditAction(str, Enum):
     BATCH_REJECTED = "batch.rejected"
     BATCH_DELETED = "batch.deleted"
     ANNOTATION_ATTRIBUTE_CHANGE = "annotation.attribute_change"
+    # v0.6.5 · 任务状态机锁定
+    TASK_SUBMIT = "task.submit"
+    TASK_WITHDRAW = "task.withdraw"
+    TASK_REVIEW_CLAIM = "task.review_claim"
+    TASK_APPROVE = "task.approve"
+    TASK_REJECT = "task.reject"
+    TASK_REOPEN = "task.reopen"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

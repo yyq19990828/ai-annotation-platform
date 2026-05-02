@@ -1,6 +1,6 @@
 import base64
 import uuid
-from datetime import timezone
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select, func, or_, and_
@@ -11,7 +11,7 @@ from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.annotation import Annotation
-from app.schemas.task import TaskOut, TaskListResponse, TaskLockResponse
+from app.schemas.task import TaskOut, TaskListResponse, TaskLockResponse, ReviewClaimResponse
 from app.schemas.annotation import AnnotationCreate, AnnotationOut, AnnotationUpdate
 from app.schemas.prediction import PredictionOut
 from app.services.annotation import AnnotationService
@@ -25,6 +25,24 @@ router = APIRouter()
 
 _ANNOTATORS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER, UserRole.ANNOTATOR)
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
+_LOCKED_STATUSES = {"review", "completed"}
+
+
+def _assert_task_editable(task: Task) -> None:
+    """v0.6.5: 已提交质检 / 已通过审核的任务对所有 annotation 写动作锁死。
+    标注员要继续编辑必须先 withdraw（review 态）或 reopen（completed 态）。"""
+    if task.status in _LOCKED_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "task_locked", "status": task.status},
+        )
+
+
+async def _load_task_or_404(db: AsyncSession, task_id: uuid.UUID) -> Task:
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 
 def _encode_task_cursor(created_at, task_id: uuid.UUID) -> str:
@@ -144,6 +162,7 @@ async def create_annotation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
+    _assert_task_editable(await _load_task_or_404(db, task_id))
     svc = AnnotationService(db)
     annotation = await svc.create(
         task_id=task_id,
@@ -172,6 +191,7 @@ async def update_annotation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
+    _assert_task_editable(await _load_task_or_404(db, task_id))
     svc = AnnotationService(db)
     fields = data.model_dump(exclude_unset=True)
     if not fields:
@@ -311,6 +331,7 @@ async def accept_prediction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
+    _assert_task_editable(await _load_task_or_404(db, task_id))
     svc = AnnotationService(db)
     await svc.accept_prediction(prediction_id, current_user.id)
     await TaskLockService(db).heartbeat(task_id, current_user.id)
@@ -325,6 +346,7 @@ async def delete_annotation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
+    _assert_task_editable(await _load_task_or_404(db, task_id))
     svc = AnnotationService(db)
     ok = await svc.delete(annotation_id)
     if not ok:
@@ -336,24 +358,108 @@ async def delete_annotation(
 @router.post("/{task_id}/submit")
 async def submit_task(
     task_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    task = await db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = await _load_task_or_404(db, task_id)
+    if task.status not in ("pending", "in_progress"):
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "task_not_submittable", "status": task.status},
+        )
 
     task.status = "review"
+    task.submitted_at = datetime.now(timezone.utc)
+    # 清空上一轮 review 痕迹（reopen → 再次 submit 场景）
+    task.reviewer_id = None
+    task.reviewer_claimed_at = None
+    task.reviewed_at = None
+    task.reject_reason = None
+
     lock_svc = TaskLockService(db)
     await lock_svc.release(task_id, current_user.id)
 
     from app.services.batch import BatchService
     batch_svc = BatchService(db)
     await batch_svc.check_auto_transitions(task.batch_id)
-    await batch_svc.recalculate_counters(task.batch_id) if task.batch_id else None
+    if task.batch_id:
+        await batch_svc.recalculate_counters(task.batch_id)
+
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.TASK_SUBMIT,
+        target_type="task",
+        target_id=str(task_id),
+        request=request,
+        status_code=200,
+        detail={
+            "project_id": str(task.project_id),
+            "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+        },
+    )
 
     await db.commit()
     return {"status": "submitted", "task_id": str(task_id)}
+
+
+@router.post("/{task_id}/withdraw")
+async def withdraw_task(
+    task_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.6.5: 标注员撤回质检提交。
+    前提：status=review、assignee == 当前用户、reviewer_claimed_at IS NULL。
+    审核员一旦 claim 就锁死撤回入口，避免与审核动作打架。"""
+    task = await _load_task_or_404(db, task_id)
+    if task.status != "review":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "task_not_in_review", "status": task.status},
+        )
+    if task.assignee_id != current_user.id and current_user.role not in (
+        UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value,
+    ):
+        raise HTTPException(status_code=403, detail="only assignee can withdraw")
+    if task.reviewer_claimed_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "task_already_claimed",
+                "reviewer_id": str(task.reviewer_id) if task.reviewer_id else None,
+            },
+        )
+
+    task.status = "in_progress"
+    task.submitted_at = None
+
+    from app.db.models.project import Project
+    project = await db.get(Project, task.project_id)
+    if project:
+        project.review_tasks = max((project.review_tasks or 0) - 1, 0)
+
+    from app.services.batch import BatchService
+    batch_svc = BatchService(db)
+    await batch_svc.check_auto_transitions(task.batch_id)
+    if task.batch_id:
+        await batch_svc.recalculate_counters(task.batch_id)
+
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.TASK_WITHDRAW,
+        target_type="task",
+        target_id=str(task_id),
+        request=request,
+        status_code=200,
+        detail={"project_id": str(task.project_id)},
+    )
+
+    await db.commit()
+    return {"status": "withdrawn", "task_id": str(task_id)}
 
 
 # ── Review endpoints ───────────────────���────────────────────────────────────
@@ -362,19 +468,65 @@ class ReviewAction(BaseModel):
     reason: str | None = None
 
 
-@router.post("/{task_id}/review/approve")
-async def approve_task(
+@router.post("/{task_id}/review/claim", response_model=ReviewClaimResponse)
+async def claim_review(
     task_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_REVIEWERS)),
 ):
-    task = await db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    """v0.6.5: 审核员进入审核页时调用（幂等）。
+    第一个调用者写 reviewer_id + reviewer_claimed_at；
+    后续调用者读取已存在的认领信息（不覆盖）。
+    `reviewer_claimed_at` 一经设置即冻结标注员的 withdraw 入口。"""
+    task = await _load_task_or_404(db, task_id)
+    if task.status != "review":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "task_not_in_review", "status": task.status},
+        )
+
+    if task.reviewer_claimed_at is None:
+        task.reviewer_id = current_user.id
+        task.reviewer_claimed_at = datetime.now(timezone.utc)
+        await AuditService.log(
+            db,
+            actor=current_user,
+            action=AuditAction.TASK_REVIEW_CLAIM,
+            target_type="task",
+            target_id=str(task_id),
+            request=request,
+            status_code=200,
+            detail={"project_id": str(task.project_id)},
+        )
+        await db.commit()
+
+    return ReviewClaimResponse(
+        task_id=task.id,
+        reviewer_id=task.reviewer_id,
+        reviewer_claimed_at=task.reviewer_claimed_at,
+        is_self=(task.reviewer_id == current_user.id),
+    )
+
+
+@router.post("/{task_id}/review/approve")
+async def approve_task(
+    task_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    task = await _load_task_or_404(db, task_id)
     if task.status != "review":
         raise HTTPException(status_code=400, detail="Task is not in review status")
 
     task.status = "completed"
+    now = datetime.now(timezone.utc)
+    task.reviewed_at = now
+    if task.reviewer_id is None:
+        task.reviewer_id = current_user.id
+    if task.reviewer_claimed_at is None:
+        task.reviewer_claimed_at = now
 
     from app.db.models.project import Project
     project = await db.get(Project, task.project_id)
@@ -388,6 +540,20 @@ async def approve_task(
     if task.batch_id:
         await batch_svc.recalculate_counters(task.batch_id)
 
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.TASK_APPROVE,
+        target_type="task",
+        target_id=str(task_id),
+        request=request,
+        status_code=200,
+        detail={
+            "project_id": str(task.project_id),
+            "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+        },
+    )
+
     await db.commit()
     return {"status": "approved", "task_id": str(task_id)}
 
@@ -395,17 +561,27 @@ async def approve_task(
 @router.post("/{task_id}/review/reject")
 async def reject_task(
     task_id: uuid.UUID,
+    request: Request,
     body: ReviewAction | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_REVIEWERS)),
 ):
-    task = await db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = await _load_task_or_404(db, task_id)
     if task.status != "review":
         raise HTTPException(status_code=400, detail="Task is not in review status")
 
-    task.status = "pending"
+    reason = (body.reason if body else None) or None
+    if not reason or not reason.strip():
+        raise HTTPException(status_code=400, detail="reject reason is required")
+
+    task.status = "in_progress"
+    now = datetime.now(timezone.utc)
+    task.reviewed_at = now
+    task.reject_reason = reason.strip()
+    if task.reviewer_id is None:
+        task.reviewer_id = current_user.id
+    if task.reviewer_claimed_at is None:
+        task.reviewer_claimed_at = now
 
     from app.db.models.project import Project
     project = await db.get(Project, task.project_id)
@@ -418,8 +594,85 @@ async def reject_task(
     if task.batch_id:
         await batch_svc.recalculate_counters(task.batch_id)
 
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.TASK_REJECT,
+        target_type="task",
+        target_id=str(task_id),
+        request=request,
+        status_code=200,
+        detail={
+            "project_id": str(task.project_id),
+            "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+            "reason": task.reject_reason,
+        },
+    )
+
     await db.commit()
-    return {"status": "rejected", "task_id": str(task_id), "reason": body.reason if body else None}
+    return {"status": "rejected", "task_id": str(task_id), "reason": task.reject_reason}
+
+
+@router.post("/{task_id}/reopen")
+async def reopen_task(
+    task_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.6.5: 标注员对已通过任务单方面重开编辑。
+    前提：status=completed 且 assignee == 当前用户（admin 兜底）。
+    清空 reviewer_* 但 detail 留 original_reviewer_id 用于通知；
+    annotations 原地保留可继续改，依赖 audit_logs 回溯历史。"""
+    task = await _load_task_or_404(db, task_id)
+    if task.status != "completed":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "task_not_completed", "status": task.status},
+        )
+    if task.assignee_id != current_user.id and current_user.role not in (
+        UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value,
+    ):
+        raise HTTPException(status_code=403, detail="only assignee can reopen")
+
+    original_reviewer_id = task.reviewer_id
+    task.status = "in_progress"
+    task.reopened_count = (task.reopened_count or 0) + 1
+    task.last_reopened_at = datetime.now(timezone.utc)
+    task.reviewer_id = None
+    task.reviewer_claimed_at = None
+    task.reviewed_at = None
+    task.reject_reason = None
+    task.submitted_at = None
+
+    from app.db.models.project import Project
+    project = await db.get(Project, task.project_id)
+    if project:
+        project.completed_tasks = max((project.completed_tasks or 0) - 1, 0)
+
+    from app.services.batch import BatchService
+    batch_svc = BatchService(db)
+    await batch_svc.check_auto_transitions(task.batch_id)
+    if task.batch_id:
+        await batch_svc.recalculate_counters(task.batch_id)
+
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.TASK_REOPEN,
+        target_type="task",
+        target_id=str(task_id),
+        request=request,
+        status_code=200,
+        detail={
+            "project_id": str(task.project_id),
+            "original_reviewer_id": str(original_reviewer_id) if original_reviewer_id else None,
+            "reopened_count": task.reopened_count,
+        },
+    )
+
+    await db.commit()
+    return {"status": "reopened", "task_id": str(task_id), "reopened_count": task.reopened_count}
 
 
 # ── Task Lock endpoints ─────────────────────────────────────────────────────
@@ -511,6 +764,13 @@ def _task_with_url(
         "image_height": height,
         "thumbnail_url": thumbnail_url,
         "blurhash": blurhash,
+        "submitted_at": task.submitted_at,
+        "reviewer_id": task.reviewer_id,
+        "reviewer_claimed_at": task.reviewer_claimed_at,
+        "reviewed_at": task.reviewed_at,
+        "reject_reason": task.reject_reason,
+        "reopened_count": task.reopened_count,
+        "last_reopened_at": task.last_reopened_at,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }

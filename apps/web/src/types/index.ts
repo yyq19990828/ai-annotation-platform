@@ -67,8 +67,23 @@ export interface TaskResponse {
   image_height: number | null;
   thumbnail_url: string | null;
   blurhash: string | null;
+  // v0.6.5 · 状态机锁定相关
+  submitted_at: string | null;
+  reviewer_id: string | null;
+  reviewer_claimed_at: string | null;
+  reviewed_at: string | null;
+  reject_reason: string | null;
+  reopened_count: number;
+  last_reopened_at: string | null;
   created_at: string;
   updated_at: string | null;
+}
+
+export interface ReviewClaimResponse {
+  task_id: string;
+  reviewer_id: string;
+  reviewer_claimed_at: string;
+  is_self: boolean;
 }
 
 // ── Annotation ──────────────────────────────────────────────────────────────

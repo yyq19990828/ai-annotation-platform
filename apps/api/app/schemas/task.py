@@ -23,11 +23,26 @@ class TaskOut(BaseModel):
     image_height: int | None = None
     thumbnail_url: str | None = None
     blurhash: str | None = None
+    # v0.6.5 · 状态机锁定相关
+    submitted_at: datetime | None = None
+    reviewer_id: UUID | None = None
+    reviewer_claimed_at: datetime | None = None
+    reviewed_at: datetime | None = None
+    reject_reason: str | None = None
+    reopened_count: int = 0
+    last_reopened_at: datetime | None = None
     created_at: datetime
     updated_at: datetime | None = None
 
     class Config:
         from_attributes = True
+
+
+class ReviewClaimResponse(BaseModel):
+    task_id: UUID
+    reviewer_id: UUID
+    reviewer_claimed_at: datetime
+    is_self: bool
 
 
 class TaskFileUrlResponse(BaseModel):

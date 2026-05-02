@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0（协作并发 + 安全基建 + Bug 反馈）、v0.6.1（批次工作流）、v0.6.2（phase 2 收口：离线抽屉 / 评论 polish / codegen / 字段级审计）、v0.6.3（v0.6.2 必修硬伤 5 项 + 同区域 quick win 2 项）、v0.6.4（v0.6.2 应修 8 项全收：display_id 统一 + JSONB 强类型 + WorkbenchShell 拆 hook 第二刀 + CanvasDrawing 入 ImageStage）。
+> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0（协作并发 + 安全基建 + Bug 反馈）、v0.6.1（批次工作流）、v0.6.2（phase 2 收口：离线抽屉 / 评论 polish / codegen / 字段级审计）、v0.6.3（v0.6.2 必修硬伤 5 项 + 同区域 quick win 2 项）、v0.6.4（v0.6.2 应修 8 项全收：display_id 统一 + JSONB 强类型 + WorkbenchShell 拆 hook 第二刀 + CanvasDrawing 入 ImageStage）、v0.6.5（任务状态机锁定与撤回 / 重开 + v0.6.4 后续观察 4 项 quick win：vite 拆 chunk / canvas 草稿持久化 / cheat sheet 搜索 + 频率 / markdown 暗色对比度）。
 
 ---
 
@@ -51,32 +51,33 @@
 - **ReviewerDashboard 无个人最近审核记录** —— 当前只有跨项目待审列表，无历史回看。
 - **Reviewer 实时仪表卡（与标注端 ETA 对称）**：v0.5.2 已为 annotator StatusBar 加 ETA；reviewer 端缺「本日已审 / 待审队列长度 / 通过率（24h 滚动）」三项实时卡片。
 
-#### v0.6.4 后续观察 / 可改进点
+#### v0.6.5 后续观察 / 可改进点
 
-> v0.6.3 5 项必修 + v0.6.4 8 项应修已收口（详见 CHANGELOG）。本节只留：① 写 v0.6.4 时观察到的新硬伤；② 仍未做的 quick win；③ 测试 / 工程化欠账。
+> v0.6.4 留下的「写时观察」7 项中，4 项 quick win 已在 v0.6.5 收口（详见 CHANGELOG）；剩余 3 项 + v0.6.4 留下的另 5 项 quick win 中的 5 项 + v0.6.5 写时新点 1 项，重列如下。
 
-##### 写 v0.6.4 时观察到的新点
+##### 仍存在的 v0.6.4 新点（未做）
 
-- **CanvasDrawing 持久化路径不闭环**：v0.6.4 加了 ImageStage 5th Konva Layer 实时绘制，但「画完一笔 → 必须发评论才进 DB」。如果用户画完忘记发评论或刷新，painting 丢失。建议 ① canvasDraft 序列化到 sessionStorage(taskId) 保 5 分钟 ② 切题 / 关闭工作台时若 shapes.length > 0 弹确认。
 - **CanvasDrawing 历史回看缺**：comment 卡片只渲染 `CanvasDrawingPreview` 小缩略，没有「在题图上叠加显示某条评论的红圈」。需给 ImageStage 加 `historicalShapes` prop（来自鼠标 hover 的某条 comment.canvas_drawing），半透明叠加 → 让 canvas 真正变成"有效沟通"。
-- **vite bundle 已 1.15MB / gzip 330KB 单 chunk**：build 警告 chunk > 500KB。Konva (~150KB) / react-markdown (~25KB) / @tanstack/react-query / react-konva 都该 manualChunks 拆。最少先拆 `vendor-konva` 与 `vendor-markdown`。
-- **WorkbenchShell 第三刀候选已变**：v0.6.4 拆完 actions + hotkeys 后 shell 仍 862 行。原计划的 `useWorkbenchAI` 评估收益小（~40 行），不做。新候选：`useWorkbenchTaskFlow`（打包 navigateTask + smartNext + handleSubmitTask + hasMissingRequired + 切题 effect），约 80 行。优先级 P3。
-- **react-markdown 暗色主题样式未适配**：`<DescriptionPopover>` 内联 style 简单覆写 a/p/ul/ol/code，未做暗色变体；选 dark 主题时 inline-code 背景对比度偏低。后续加 CSS variables 即可。
-- **OpenAPI dump 脚本未接入 CI**：`apps/api/scripts/dump-openapi.py` 已建（v0.6.4），但 `.github/workflows/` 整体仍缺。等到 CI 落地一起接：① `python scripts/dump-openapi.py /tmp/openapi.json` ② `OPENAPI_URL=/tmp/openapi.json pnpm build`。
-- **vitest hook 测试基座仍欠 `@testing-library/react`**：v0.6.4 想给 `useWorkbenchAnnotationActions` 写完整 renderHook 单测被卡，回退 smoke。下次单测扩展时一并 `pnpm add -D @testing-library/react @testing-library/dom`。
+- **WorkbenchShell 第三刀候选已变**：v0.6.4 拆完 actions + hotkeys 后 shell 仍 862 行；v0.6.5 加锁定 UI 后又胖了一点。新候选：`useWorkbenchTaskFlow`（打包 navigateTask + smartNext + handleSubmitTask + hasMissingRequired + 切题 effect），约 80 行。优先级 P3。
+- **OpenAPI dump 脚本未接入 CI**：`apps/api/scripts/dump-openapi.py` 已建（v0.6.4），v0.6.5 build 已实测可用（`OPENAPI_URL=/tmp/openapi.json pnpm build`），但 `.github/workflows/` 整体仍缺。等到 CI 落地一起接。
+- **vitest hook 测试基座仍欠 `@testing-library/react`**：v0.6.4 / v0.6.5 想给 hook 写完整 renderHook 单测都被卡，回退 smoke。下次单测扩展时一并 `pnpm add -D @testing-library/react @testing-library/dom`。
 
-##### 仍未做的 quick win（按工时低 → 高）
+##### v0.6.5 写时新点
+
+- **conftest.py 测试基座仍是病的**：`test_engine` session-scoped vs pytest-asyncio function-scoped event loop 冲突 → 大半旧 httpx 集成测全 ERROR；`get_db` 没 `dependency_overrides` → fixture 写的 user 对 API 不可见全 401。v0.6.5 在 `test_task_lock.py` 内部 override 了 engine + 加了 `httpx_client_bound` 走通 5 例。下一步把这套修补回写到 conftest（function-scoped engine + session-scoped option + dependency_overrides[get_db]），让 v0.5.5 / v0.6.0 / v0.6.3 留下的旧测试套全部解锁。
+- **`vite index chunk 仍 740KB / gzip 205KB`**：v0.6.5 已拆 vendor-konva / vendor-markdown，主入口 vendor 部分被分离；但 index 自身仍超 chunkSizeWarningLimit。下一步候选：① 路由级 lazy-load（`React.lazy(() => import('./pages/Workbench/...'))`）—— 让登录 / 仪表盘用户不下载 Workbench；② `@tanstack/react-query` / `react-router-dom` / `lucide-react` 各拆独立 vendor。
+
+##### 仍未做的 v0.6.4 quick win
 
 - **MinIO 评论附件桶生命周期**：`comment-attachments/` 前缀对象无 TTL，评论软删时附件不清理。MinIO bucket lifecycle 90 天过期 + celery 定时扫 `is_active=false` 评论清 storage key。
 - **AttributeForm 数字键 hint 不够强**：选中态时 ToolDock / Topbar 角落显示徽章「⌨ 数字键 = 属性快捷键」+ 属性面板里 hotkey badge 高亮。
-- **HotkeyCheatSheet 加搜索框 / 按使用频率排**：定义已 30+ 静态 + N 个动态属性键 + v0.6.4 新增 C（canvas）。顶部搜索框（按 desc 模糊匹配）+ localStorage 记录触发次数 + 「按使用频率排」开关。
 - **CommentInput.serialize 边界情况**：mention chip 紧邻 chip / chip 在 block 元素首尾 / 键盘剪切粘贴 chip，offset/length 计算可能错位。chip 旁按 Backspace 应整体删 chip。需要 vitest 单测覆盖。
 - **`useCurrentProjectMembers` context**：CommentsPanel 拉一次成员，多个面板未来可能也要拉。提一个顶层 context，避免重复 query 与不一致。
-- **`usePopover()` hook 统一 popover 模式**：ExportSection / TopBar 主题切换 / 智能切题菜单 / v0.6.4 新增的 AttributeForm DescriptionPopover / CanvasToolbar 各自实现 click-outside / esc-close / 锚点定位。抽公共 hook。
+- **`usePopover()` hook 统一 popover 模式**：ExportSection / TopBar 主题切换 / 智能切题菜单 / AttributeForm DescriptionPopover / CanvasToolbar 各自实现 click-outside / esc-close / 锚点定位。抽公共 hook。
 
 ##### 测试 / 工程化欠账
 
-- **后端 pytest 仍欠 3 例**：① `test_attribute_audit.py`（PATCH 改 attributes → 断言 audit_logs 多 N 行 attribute_change，v0.6.3 `log_many` 后 round-trip 从 N 降到 1）② `test_comment_polish.py`（mentions 非项目成员 → 422 / attachments storageKey 错前缀 → 422 / download key 前缀防越权 → 400）③ 评论附件 download：项目非成员 → 404。
+- **后端 pytest 仍欠 3 例**：① `test_attribute_audit.py`（PATCH 改 attributes → 断言 audit_logs 多 N 行 attribute_change，v0.6.3 `log_many` 后 round-trip 从 N 降到 1）② `test_comment_polish.py`（mentions 非项目成员 → 422 / attachments storageKey 错前缀 → 422 / download key 前缀防越权 → 400）③ 评论附件 download：项目非成员 → 404。v0.6.5 之后还应加 ④ 任务锁定与通知联动（reopen 后原 reviewer 是否真的能在 `/me/notifications` 看到事件）。
 - **前端 vitest 仍欠 2 例**：① `CommentInput.test.tsx`（serialize 往返：插入 chip → mentions[] 含正确 offset/length）② `ExportSection.test.tsx`（勾掉 include_attributes → URL 含 false）。需配合 `@testing-library/react` 安装。
 - **CI/CD pipeline 整体缺位**：`.github/workflows/` 不存在。最小集合：lint（ruff + eslint）+ tsc + pytest + vitest + alembic upgrade-then-downgrade + `OPENAPI_URL=/tmp/openapi.json pnpm build`。预提交钩子：husky + lint-staged + ruff + tsc + vitest --changed。
 - **alembic migration 与 model 字段一致性自动化**：v0.6.4 出现过 task_batches model 加 unique=True 与迁移规划不一致的情况（最后改成复合 unique 解决）。pytest fixture 在 CI 跑 `alembic upgrade head` 后用 SQLAlchemy reflect 与模型对比，drift 时报错。
@@ -190,13 +191,14 @@
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
 | **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要 |
-| **P2** | C.3 history 持久化、reviewer 实时仪表卡、HotkeyCheatSheet 升级 | quick win，工时少 |
+| **P2** | C.3 history 持久化、reviewer 实时仪表卡 | quick win，工时少（HotkeyCheatSheet 升级 v0.6.5 已收） |
 | **P2** | audit 双行 UI 合并视图（按 request_id 折叠） | 后端 GIN + 字段过滤已就位；UI 折叠是收尾 |
-| **P2** | CanvasDrawing 持久化（sessionStorage 暂存）+ 历史回看叠加层 | v0.6.4 后续观察项；让 canvas 真正变成"有效沟通"的关键一步 |
-| **P2** | vite manualChunks（vendor-konva / vendor-markdown）、bundle 拆分 | v0.6.4 build 已 1.15MB / 330KB gzip 单 chunk |
+| **P2** | CanvasDrawing 历史回看叠加层（hover comment → 红圈 overlay） | v0.6.5 已收持久化；剩历史回看，让 canvas 真正变成"有效沟通"的关键一步 |
+| **P2** | conftest.py 测试基座修补（function-scoped engine + dependency_overrides[get_db]） | v0.6.5 在 test_task_lock.py 内部 override 走通 5 例；回写到 conftest 解锁旧 httpx 测试套 |
+| **P2** | index chunk 路由级 lazy-load（React.lazy 按页码切） | v0.6.5 manualChunks 后 index 仍 740KB；登录 / 仪表盘用户不该下载 Workbench |
 | **P2** | 审计日志归档（PARTITION）、AuditMiddleware 队列化、useInfiniteQuery 缓存 GC | 当前数据量未到瓶颈，监控触发再做 |
 | **P2** | `<DropdownMenu>` 全站第 3+ 个使用方收编 | phase 2 已抽组件，扫尾即可 |
-| **P3** | WorkbenchShell 第三刀（`useWorkbenchTaskFlow` ~80 行） | v0.6.4 后 shell 仍 862 行；收益中等 |
+| **P3** | WorkbenchShell 第三刀（`useWorkbenchTaskFlow` ~80 行） | v0.6.4 后 shell 仍 862 行；v0.6.5 加锁定 UI 又胖一点；收益中等 |
 | **P3** | i18n、SSO、2FA | 客户具体需求驱动 |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 + 通知中心 |
 

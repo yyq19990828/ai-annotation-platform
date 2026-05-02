@@ -285,10 +285,27 @@ function DescriptionPopover({ description }: { description: string }) {
               ul: ({ children }) => <ul style={{ margin: "0 0 6px", paddingLeft: 16 }}>{children}</ul>,
               ol: ({ children }) => <ol style={{ margin: "0 0 6px", paddingLeft: 16 }}>{children}</ol>,
               code: ({ children }) => (
-                <code style={{ background: "var(--color-bg-sunken)", padding: "0 3px", borderRadius: 2, fontSize: 11 }}>
+                <code
+                  style={{
+                    background: "var(--color-code-bg)",
+                    color: "var(--color-code-fg)",
+                    padding: "1px 4px",
+                    borderRadius: 3,
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                    border: "1px solid var(--color-border)",
+                  }}
+                >
                   {children}
                 </code>
               ),
+              strong: ({ children }) => (
+                <strong style={{ color: "var(--color-fg)", fontWeight: 600 }}>{children}</strong>
+              ),
+              em: ({ children }) => (
+                <em style={{ color: "var(--color-fg-muted)" }}>{children}</em>
+              ),
+              li: ({ children }) => <li style={{ marginBottom: 2 }}>{children}</li>,
             }}
           >
             {description}

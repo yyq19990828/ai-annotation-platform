@@ -29,5 +29,13 @@ class Task(Base):
     blurhash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("task_batches.id", ondelete="SET NULL"), nullable=True, index=True)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # v0.6.5 · 状态机锁定相关
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    reviewer_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reject_reason: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    reopened_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_reopened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
