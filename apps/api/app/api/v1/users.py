@@ -86,7 +86,9 @@ async def list_users(
 ):
     """用户列表。
     - super_admin：默认全量；可选 `project_id` 过滤到该项目成员。
-    - project_admin：自动限定到 `Project.owner_id == actor.id` 的项目成员（actor 自身始终可见）。
+    - project_admin：
+      * `role=annotator|reviewer`：放开限制返回全量候选（用于指派 modal 选人）。
+      * 其他场景：限定到 `Project.owner_id == actor.id` 的项目成员（actor 自身始终可见）。
     """
     from app.db.models.project import Project
     from app.db.models.project_member import ProjectMember
@@ -96,13 +98,16 @@ async def list_users(
         q = q.where(User.role == role)
 
     if actor.role == UserRole.PROJECT_ADMIN.value:
-        # 子查询：actor 管理项目内全部 member.user_id
-        members_subq = (
-            select(ProjectMember.user_id)
-            .join(Project, Project.id == ProjectMember.project_id)
-            .where(Project.owner_id == actor.id)
-        )
-        q = q.where(or_(User.id.in_(members_subq), User.id == actor.id))
+        if role in _PA_ASSIGNABLE_ROLES:
+            # 指派候选人场景：必须看到全量 annotator / reviewer，否则永远没有可指派对象
+            pass
+        else:
+            members_subq = (
+                select(ProjectMember.user_id)
+                .join(Project, Project.id == ProjectMember.project_id)
+                .where(Project.owner_id == actor.id)
+            )
+            q = q.where(or_(User.id.in_(members_subq), User.id == actor.id))
     elif project_id is not None:
         # super_admin 显式按项目过滤
         members_subq = select(ProjectMember.user_id).where(ProjectMember.project_id == project_id)

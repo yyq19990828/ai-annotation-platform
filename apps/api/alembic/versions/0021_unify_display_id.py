@@ -59,18 +59,28 @@ def upgrade() -> None:
 
     # 3. setval 同步序列
     #    bug_reports 单独算（已是 B-N，不在 _BACKFILL_PLAN）
+    #    空表时用 setval(seq, 1, false) → 下次 nextval=1；
+    #    有数据时用 setval(seq, MAX, true) → 下次 nextval=MAX+1。
     op.execute("""
-        SELECT setval('display_seq_bug_reports',
+        SELECT setval(
+            'display_seq_bug_reports',
             COALESCE((SELECT MAX(CAST(SUBSTRING(display_id FROM 3) AS BIGINT))
-                      FROM bug_reports), 0))
+                      FROM bug_reports), 1),
+            EXISTS (SELECT 1 FROM bug_reports)
+        )
     """)
     for table, prefix, entity, _where in _BACKFILL_PLAN:
         op.execute(f"""
-            SELECT setval('display_seq_{entity}',
+            SELECT setval(
+                'display_seq_{entity}',
                 COALESCE((SELECT MAX(CAST(SPLIT_PART(display_id, '-', 2) AS BIGINT))
                           FROM {table}
                           WHERE display_id LIKE '{prefix}-%'
-                            AND display_id != 'B-DEFAULT'), 0))
+                            AND display_id != 'B-DEFAULT'), 1),
+                EXISTS (SELECT 1 FROM {table}
+                         WHERE display_id LIKE '{prefix}-%'
+                           AND display_id != 'B-DEFAULT')
+            )
         """)
 
     # 4. UNIQUE 约束

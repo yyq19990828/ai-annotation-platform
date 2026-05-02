@@ -340,6 +340,10 @@ export function ImageStage({
   }, [imgW, imgH, vpSize, onStageGeometry]);
 
   const [drag, setDrag] = useState<Drag | null>(null);
+  // mousemove 监听走 ref 读取 kind/坐标，避免每次 setDrag 都让 useEffect 重挂监听 →
+  // 解决 v0.6.4 BUG B-2「画框时框体不实时 / 拖动卡」。
+  const dragRef = useRef<Drag | null>(null);
+  useEffect(() => { dragRef.current = drag; }, [drag]);
 
   // ── coordinate: client → normalized image [0,1] ──────────────────────────
   const toImg = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
@@ -404,8 +408,11 @@ export function ImageStage({
   }, [setVp]);
 
   // ── window-level drag events (rAF-throttled) ─────────────────────────────
+  // 依赖数组用 `!!drag` 而非 `drag` 本身：mousemove 期间 setDrag 频繁触发 React
+  // re-render，但不会让监听重挂；只在 drag 进 / 出 null 时切换。
+  const dragging = !!drag;
   useEffect(() => {
-    if (!drag) return;
+    if (!dragging) return;
     let rafId: number | null = null;
     const pending = { current: null as null | (() => void) };
 
@@ -421,7 +428,9 @@ export function ImageStage({
     };
 
     const onMove = (e: PointerEvent) => {
-      if (drag.kind === "pan") {
+      const d = dragRef.current;
+      if (!d) return;
+      if (d.kind === "pan") {
         const dx = e.movementX;
         const dy = e.movementY;
         schedule(() => setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy })));
@@ -429,69 +438,72 @@ export function ImageStage({
       }
       const pt = toImg(e.clientX, e.clientY);
       if (!pt) return;
-      if (drag.kind === "draw") {
-        schedule(() => setDrag((d) => (d && d.kind === "draw" ? { ...d, cx: pt.x, cy: pt.y } : d)));
-      } else if (drag.kind === "move") {
-        schedule(() => setDrag((d) => {
-          if (!d || d.kind !== "move") return d;
-          const dx = pt.x - d.sx;
-          const dy = pt.y - d.sy;
+      if (d.kind === "draw") {
+        schedule(() => setDrag((cur) => (cur && cur.kind === "draw" ? { ...cur, cx: pt.x, cy: pt.y } : cur)));
+      } else if (d.kind === "move") {
+        schedule(() => setDrag((cur) => {
+          if (!cur || cur.kind !== "move") return cur;
+          const dx = pt.x - cur.sx;
+          const dy = pt.y - cur.sy;
           return {
-            ...d,
+            ...cur,
             cur: {
-              ...d.start,
-              x: Math.max(0, Math.min(1 - d.start.w, d.start.x + dx)),
-              y: Math.max(0, Math.min(1 - d.start.h, d.start.y + dy)),
+              ...cur.start,
+              x: Math.max(0, Math.min(1 - cur.start.w, cur.start.x + dx)),
+              y: Math.max(0, Math.min(1 - cur.start.h, cur.start.y + dy)),
             },
           };
         }));
-      } else if (drag.kind === "resize") {
-        schedule(() => setDrag((d) => {
-          if (!d || d.kind !== "resize") return d;
-          const cur = applyResize(
-            { ...d.start, id: "", cls: "", conf: 1, source: "manual" } as Annotation,
-            { x: d.sx, y: d.sy }, pt, d.dir,
+      } else if (d.kind === "resize") {
+        schedule(() => setDrag((cur) => {
+          if (!cur || cur.kind !== "resize") return cur;
+          const next = applyResize(
+            { ...cur.start, id: "", cls: "", conf: 1, source: "manual" } as Annotation,
+            { x: cur.sx, y: cur.sy }, pt, cur.dir,
           );
-          return { ...d, cur };
+          return { ...cur, cur: next };
         }));
-      } else if (drag.kind === "polyVertex") {
-        schedule(() => setDrag((d) => {
-          if (!d || d.kind !== "polyVertex") return d;
-          return { ...d, cur: moveVertex(d.cur, d.vidx, [pt.x, pt.y]) };
+      } else if (d.kind === "polyVertex") {
+        schedule(() => setDrag((cur) => {
+          if (!cur || cur.kind !== "polyVertex") return cur;
+          return { ...cur, cur: moveVertex(cur.cur, cur.vidx, [pt.x, pt.y]) };
         }));
-      } else if (drag.kind === "canvasStroke") {
-        schedule(() => setDrag((d) => {
-          if (!d || d.kind !== "canvasStroke") return d;
-          return { ...d, points: [...d.points, pt.x, pt.y] };
+      } else if (d.kind === "canvasStroke") {
+        schedule(() => setDrag((cur) => {
+          if (!cur || cur.kind !== "canvasStroke") return cur;
+          return { ...cur, points: [...cur.points, pt.x, pt.y] };
         }));
       }
     };
     const onUp = () => {
-      if (drag.kind === "draw") {
-        const x = Math.min(drag.sx, drag.cx);
-        const y = Math.min(drag.sy, drag.cy);
-        const w = Math.abs(drag.cx - drag.sx);
-        const h = Math.abs(drag.cy - drag.sy);
-        if (w > 0.005 && h > 0.005) onCommitDrawing?.({ x, y, w, h });
-      } else if (drag.kind === "move") {
-        if (drag.cur.x !== drag.start.x || drag.cur.y !== drag.start.y) {
-          onCommitMove?.(drag.id, drag.start, drag.cur);
+      const d = dragRef.current;
+      if (d) {
+        if (d.kind === "draw") {
+          const x = Math.min(d.sx, d.cx);
+          const y = Math.min(d.sy, d.cy);
+          const w = Math.abs(d.cx - d.sx);
+          const h = Math.abs(d.cy - d.sy);
+          if (w > 0.005 && h > 0.005) onCommitDrawing?.({ x, y, w, h });
+        } else if (d.kind === "move") {
+          if (d.cur.x !== d.start.x || d.cur.y !== d.start.y) {
+            onCommitMove?.(d.id, d.start, d.cur);
+          }
+        } else if (d.kind === "resize") {
+          if (d.cur.w > 0.005 && d.cur.h > 0.005 &&
+              (d.cur.x !== d.start.x || d.cur.y !== d.start.y ||
+               d.cur.w !== d.start.w || d.cur.h !== d.start.h)) {
+            onCommitResize?.(d.id, d.start, d.cur);
+          }
+        } else if (d.kind === "polyVertex") {
+          const before = d.start;
+          const after = d.cur;
+          const changed = before.length !== after.length ||
+            before.some((p, i) => p[0] !== after[i][0] || p[1] !== after[i][1]);
+          if (changed) onCommitPolygonGeometry?.(d.id, before, after);
+        } else if (d.kind === "canvasStroke") {
+          // 至少 2 个点（4 个数字）才算一笔；点击没有移动会被丢弃
+          if (d.points.length >= 4) onCanvasStrokeCommit?.(d.points, canvasStroke);
         }
-      } else if (drag.kind === "resize") {
-        if (drag.cur.w > 0.005 && drag.cur.h > 0.005 &&
-            (drag.cur.x !== drag.start.x || drag.cur.y !== drag.start.y ||
-             drag.cur.w !== drag.start.w || drag.cur.h !== drag.start.h)) {
-          onCommitResize?.(drag.id, drag.start, drag.cur);
-        }
-      } else if (drag.kind === "polyVertex") {
-        const before = drag.start;
-        const after = drag.cur;
-        const changed = before.length !== after.length ||
-          before.some((p, i) => p[0] !== after[i][0] || p[1] !== after[i][1]);
-        if (changed) onCommitPolygonGeometry?.(drag.id, before, after);
-      } else if (drag.kind === "canvasStroke") {
-        // 至少 2 个点（4 个数字）才算一笔；点击没有移动会被丢弃
-        if (drag.points.length >= 4) onCanvasStrokeCommit?.(drag.points, canvasStroke);
       }
       setDrag(null);
     };
@@ -502,7 +514,7 @@ export function ImageStage({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [drag, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCanvasStrokeCommit, canvasStroke]);
+  }, [dragging, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCanvasStrokeCommit, canvasStroke]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {

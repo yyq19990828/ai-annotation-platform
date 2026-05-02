@@ -150,7 +150,7 @@ async def create_annotation(
         user_id=current_user.id,
         annotation_type=data.annotation_type,
         class_name=data.class_name,
-        geometry=data.geometry,
+        geometry=data.geometry.model_dump(),
         confidence=data.confidence,
         parent_prediction_id=data.parent_prediction_id,
         lead_time=data.lead_time,
