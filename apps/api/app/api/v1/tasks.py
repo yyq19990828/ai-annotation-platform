@@ -369,6 +369,11 @@ async def submit_task(
             detail={"reason": "task_not_submittable", "status": task.status},
         )
 
+    # v0.6.6: 提交者即 assignee。任务初始 assignee_id 为 NULL（创建时未指派），
+    # 否则后续 withdraw/reopen 会因 assignee 校验失败而拒绝（"only assignee can withdraw"）。
+    if task.assignee_id is None:
+        task.assignee_id = current_user.id
+
     task.status = "review"
     task.submitted_at = datetime.now(timezone.utc)
     # 清空上一轮 review 痕迹（reopen → 再次 submit 场景）

@@ -597,10 +597,11 @@ export function WorkbenchShell() {
     withdrawTaskMut.mutate(taskId, {
       onSuccess: () => pushToast({ msg: "已撤回提交，可继续编辑", kind: "success" }),
       onError: (err) => {
-        const reason = err instanceof ApiError ? (err.detailRaw as { reason?: string } | undefined)?.reason : undefined;
-        const msg = reason === "task_already_claimed"
-          ? "审核员已介入，无法撤回"
-          : "撤回失败，请刷新后重试";
+        const isApi = err instanceof ApiError;
+        const reason = isApi ? (err.detailRaw as { reason?: string } | undefined)?.reason : undefined;
+        let msg = "撤回失败，请刷新后重试";
+        if (reason === "task_already_claimed") msg = "审核员已介入，无法撤回";
+        else if (isApi && err.status === 403) msg = "只有任务的指派人可撤回（请联系管理员重新指派）";
         pushToast({ msg, kind: "error" });
       },
     });
@@ -699,9 +700,9 @@ export function WorkbenchShell() {
           <div
             style={{
               padding: "6px 14px",
-              background: "oklch(0.95 0.05 25)",
-              borderBottom: "1px solid oklch(0.85 0.10 25)",
-              fontSize: 12, color: "oklch(0.45 0.15 25)",
+              background: "var(--color-danger-soft)",
+              borderBottom: "1px solid var(--color-border)",
+              fontSize: 12, color: "var(--color-danger)",
               display: "flex", alignItems: "center", gap: 6,
             }}
           >
@@ -710,14 +711,14 @@ export function WorkbenchShell() {
           </div>
         )}
 
-        {/* v0.6.5 · 任务状态锁定横幅 */}
+        {/* v0.6.5 · 任务状态锁定横幅（用 token 化颜色，避免暗色下白字白底） */}
         {task?.status === "review" && (
           <div
             style={{
               padding: "8px 14px",
-              background: "oklch(0.95 0.04 240)",
-              borderBottom: "1px solid oklch(0.85 0.08 240)",
-              fontSize: 12, color: "oklch(0.40 0.12 240)",
+              background: "var(--color-accent-soft)",
+              borderBottom: "1px solid var(--color-border)",
+              fontSize: 12, color: "var(--color-accent-fg)",
               display: "flex", alignItems: "center", gap: 10,
             }}
           >
@@ -728,7 +729,6 @@ export function WorkbenchShell() {
             </span>
             <Button
               size="sm"
-              variant="ghost"
               disabled={!canWithdraw || withdrawTaskMut.isPending}
               onClick={handleWithdrawTask}
               title={canWithdraw ? "撤回提交，回到编辑态" : "审核员已介入，无法撤回"}
@@ -741,9 +741,9 @@ export function WorkbenchShell() {
           <div
             style={{
               padding: "8px 14px",
-              background: "oklch(0.95 0.05 145)",
-              borderBottom: "1px solid oklch(0.85 0.10 145)",
-              fontSize: 12, color: "oklch(0.35 0.12 145)",
+              background: "var(--color-success-soft)",
+              borderBottom: "1px solid var(--color-border)",
+              fontSize: 12, color: "var(--color-success)",
               display: "flex", alignItems: "center", gap: 10,
             }}
           >
@@ -756,7 +756,6 @@ export function WorkbenchShell() {
             </span>
             <Button
               size="sm"
-              variant="ghost"
               disabled={reopenTaskMut.isPending}
               onClick={handleReopenTask}
             >
@@ -768,9 +767,9 @@ export function WorkbenchShell() {
           <div
             style={{
               padding: "8px 14px",
-              background: "oklch(0.95 0.05 25)",
-              borderBottom: "1px solid oklch(0.85 0.10 25)",
-              fontSize: 12, color: "oklch(0.40 0.15 25)",
+              background: "var(--color-danger-soft)",
+              borderBottom: "1px solid var(--color-border)",
+              fontSize: 12, color: "var(--color-danger)",
               display: "flex", alignItems: "flex-start", gap: 8,
             }}
           >
@@ -794,6 +793,12 @@ export function WorkbenchShell() {
           onSmartNextOpen={() => smartNext("open")}
           onSmartNextUncertain={() => smartNext("uncertain")}
           overflowSlot={<ThemeSwitcher />}
+          canWithdraw={canWithdraw}
+          canReopen={canReopen}
+          isWithdrawing={withdrawTaskMut.isPending}
+          isReopening={reopenTaskMut.isPending}
+          onWithdraw={handleWithdrawTask}
+          onReopen={handleReopenTask}
         />
 
         <ImageStage

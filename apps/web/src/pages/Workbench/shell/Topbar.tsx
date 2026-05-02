@@ -21,6 +21,13 @@ interface TopbarProps {
   onSmartNextUncertain?: () => void;
   /** 溢出菜单内嵌槽位（Phase 3 用于主题切换）。 */
   overflowSlot?: React.ReactNode;
+  /** v0.6.5 状态机：审核中可撤回 / 已通过可重开。 */
+  canWithdraw?: boolean;
+  canReopen?: boolean;
+  isWithdrawing?: boolean;
+  isReopening?: boolean;
+  onWithdraw?: () => void;
+  onReopen?: () => void;
 }
 
 /**
@@ -35,7 +42,12 @@ export function Topbar({
   task, taskIdx, taskTotal, aiRunning, isSubmitting, confThreshold,
   onShowHotkeys, onRunAi, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
   overflowSlot,
+  canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
+  onWithdraw, onReopen,
 }: TopbarProps) {
+  const status = task?.status;
+  const isReview = status === "review";
+  const isCompleted = status === "completed";
   // 阈值变化时浮出 1.5s 数值反馈（[ ] 键盲调反馈）
   const [showThr, setShowThr] = useState(false);
   const lastThrRef = useRef<number | undefined>(confThreshold);
@@ -99,12 +111,34 @@ export function Topbar({
         )}
       </div>
 
-      {/* 中：任务导航 + 提交 */}
+      {/* 中：任务导航 + 状态相关主操作 */}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <Button size="sm" onClick={onPrev}><Icon name="chevLeft" size={13} />上一</Button>
-        <Button variant="primary" size="sm" onClick={onSubmit} disabled={isSubmitting}>
-          <Icon name="check" size={13} />提交质检
-        </Button>
+        {isReview ? (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onWithdraw}
+            disabled={!canWithdraw || isWithdrawing || !onWithdraw}
+            title={canWithdraw ? "撤回提交，回到编辑态" : "审核员已介入，无法撤回"}
+          >
+            <Icon name="chevLeft" size={13} />撤回提交
+          </Button>
+        ) : isCompleted ? (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onReopen}
+            disabled={!canReopen || isReopening || !onReopen}
+            title="重开任务，回到编辑态"
+          >
+            <Icon name="edit" size={13} />继续编辑
+          </Button>
+        ) : (
+          <Button variant="primary" size="sm" onClick={onSubmit} disabled={isSubmitting}>
+            <Icon name="check" size={13} />提交质检
+          </Button>
+        )}
         <Button size="sm" onClick={onNext}>下一<Icon name="chevRight" size={13} /></Button>
 
         {smartItems.length > 0 && (

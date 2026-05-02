@@ -22,8 +22,22 @@ type Drag =
   | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom }
   | { kind: "resize"; id: string; start: Geom; sx: number; sy: number; dir: ResizeDirection; cur: Geom }
   | { kind: "polyVertex"; id: string; vidx: number; start: Pt[]; cur: Pt[] }
+  | { kind: "polyMove"; id: string; start: Pt[]; sx: number; sy: number; cur: Pt[] }
   | { kind: "pan"; sx: number; sy: number }
   | { kind: "canvasStroke"; points: number[] };
+
+function translatePolygon(points: Pt[], dx: number, dy: number): Pt[] {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [x, y] of points) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const cdx = Math.max(-minX, Math.min(1 - maxX, dx));
+  const cdy = Math.max(-minY, Math.min(1 - maxY, dy));
+  return points.map(([x, y]) => [x + cdx, y + cdy] as Pt);
+}
 
 interface ImageStageProps {
   fileUrl: string | null;
@@ -196,6 +210,7 @@ function KonvaPolygon({
   editable,
   onVertexMouseDown,
   onEdgeMouseDown,
+  onBodyMouseDown,
 }: {
   b: Annotation;
   isAi: boolean;
@@ -211,6 +226,8 @@ function KonvaPolygon({
   editable?: boolean;
   onVertexMouseDown?: (vidx: number, e: Konva.KonvaEventObject<MouseEvent>) => void;
   onEdgeMouseDown?: (edgeIdx: number, e: Konva.KonvaEventObject<MouseEvent>) => void;
+  /** 选中态下在多边形 body 上按下左键 → 整体平移。 */
+  onBodyMouseDown?: ((e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
 }) {
   const color = classColorForCanvas(b.cls);
   const sw = (selected ? 2 : 1.5) / scale;
@@ -236,6 +253,19 @@ function KonvaPolygon({
         shadowBlur={8 / scale}
         shadowOpacity={0.4}
         onClick={(e) => { e.cancelBubble = true; onClick(e); }}
+        onMouseDown={(e) => {
+          if (!editable || !onBodyMouseDown || e.evt.button !== 0) return;
+          e.cancelBubble = true;
+          onBodyMouseDown(e);
+        }}
+        onMouseEnter={(e) => {
+          const stage = e.target.getStage();
+          if (stage && editable && onBodyMouseDown) stage.container().style.cursor = "move";
+        }}
+        onMouseLeave={(e) => {
+          const stage = e.target.getStage();
+          if (stage) stage.container().style.cursor = "";
+        }}
       />
       {/* 标签锚定到第一个点 */}
       {flat.length >= 2 && (
@@ -468,6 +498,11 @@ export function ImageStage({
           if (!cur || cur.kind !== "polyVertex") return cur;
           return { ...cur, cur: moveVertex(cur.cur, cur.vidx, [pt.x, pt.y]) };
         }));
+      } else if (d.kind === "polyMove") {
+        schedule(() => setDrag((cur) => {
+          if (!cur || cur.kind !== "polyMove") return cur;
+          return { ...cur, cur: translatePolygon(cur.start, pt.x - cur.sx, pt.y - cur.sy) };
+        }));
       } else if (d.kind === "canvasStroke") {
         schedule(() => setDrag((cur) => {
           if (!cur || cur.kind !== "canvasStroke") return cur;
@@ -494,7 +529,7 @@ export function ImageStage({
                d.cur.w !== d.start.w || d.cur.h !== d.start.h)) {
             onCommitResize?.(d.id, d.start, d.cur);
           }
-        } else if (d.kind === "polyVertex") {
+        } else if (d.kind === "polyVertex" || d.kind === "polyMove") {
           const before = d.start;
           const after = d.cur;
           const changed = before.length !== after.length ||
@@ -578,9 +613,9 @@ export function ImageStage({
     return null;
   };
 
-  /** polygon 顶点 drag 期间的实时 override；返回当前应渲染的 points 列表（或 null 表示无 override）。 */
+  /** polygon 顶点 / 整体平移 drag 期间的实时 override；返回当前应渲染的 points 列表（或 null 表示无 override）。 */
   const polyOverridePoints = (id: string): Pt[] | null => {
-    if (drag && drag.kind === "polyVertex" && drag.id === id) return drag.cur;
+    if (drag && (drag.kind === "polyVertex" || drag.kind === "polyMove") && drag.id === id) return drag.cur;
     return null;
   };
 
@@ -715,6 +750,12 @@ export function ImageStage({
                     next.splice(edgeIdx + 1, 0, [pt.x, pt.y]);
                     onCommitPolygonGeometry?.(b.id, cur, next);
                   }}
+                  onBodyMouseDown={isOnlySelected ? (e) => {
+                    const pt = toImg(e.evt.clientX, e.evt.clientY);
+                    if (!pt) return;
+                    const cur = (polyOverridePoints(b.id) ?? (b.polygon as Pt[])).slice();
+                    setDrag({ kind: "polyMove", id: b.id, start: cur, sx: pt.x, sy: pt.y, cur });
+                  } : null}
                 />
               );
             }
