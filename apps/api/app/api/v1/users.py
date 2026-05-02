@@ -441,6 +441,31 @@ async def delete_user(
             "released_locks": lock_count if transfer_to else 0,
         },
     )
+
+    # v0.6.6 · GDPR：被删用户在 audit_logs 历史行中的 actor_email / actor_role 脱敏
+    # 保留 actor_id（FK 仍指向软删后的用户行；用户行真正 DELETE 时 ON DELETE SET NULL 兜底）
+    from app.db.models.audit_log import AuditLog
+    redact_result = await db.execute(
+        update(AuditLog)
+        .where(AuditLog.actor_id == user.id)
+        .values(actor_email=None, actor_role=None)
+    )
+    redacted_rows = redact_result.rowcount or 0
+    # 把脱敏行数追加到刚才的 USER_DELETE detail 里，方便审计
+    if redacted_rows:
+        last_audit = (await db.execute(
+            select(AuditLog)
+            .where(AuditLog.actor_id == actor.id)
+            .where(AuditLog.action == AuditAction.USER_DELETE.value)
+            .where(AuditLog.target_id == str(user.id))
+            .order_by(AuditLog.id.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+        if last_audit is not None:
+            detail = dict(last_audit.detail_json or {})
+            detail["redacted_audit_rows"] = redacted_rows
+            last_audit.detail_json = detail
+
     await db.commit()
     await db.refresh(user)
     return user

@@ -9,6 +9,70 @@
 
 ---
 
+## [0.6.6] - 2026-05-02
+
+> v0.6.6 是 v0.6.x 系列存量观察清单清扫版：把 v0.6.2 phase 2 / v0.6.4 / v0.6.5 写时观察的 14 项 quick win 一次收口，并补齐 GDPR 脱敏 / Sentry / Bug 反馈截图 / CI/CD pipeline 等治理项，让 v0.6.7+ 能腾出干净画布做 SAM / 多任务类型工作台。pytest 50→60 例（+10），vitest 55→64 例（+9），index chunk 740KB→500KB。
+
+### 测试基座（解锁旧测套）
+- **`apps/api/tests/conftest.py` 重写**：`test_engine` 改 function-scoped（与 pytest-asyncio function-scope event loop 兼容）；`httpx_client` 默认绑定 `dependency_overrides[get_db] = db_session` —— v0.5.5 / v0.6.0 / v0.6.3 留下的 22 例旧 httpx 集成测无需改代码即解锁。
+- **`apps/api/app/db/models/__init__.py`**：补全 `Group` / `Dataset` / `DatasetItem` / `ProjectDataset` 注册（之前 FK 解析在某些用例下失败）。
+- **`apps/web` vitest 基座**：装 `@testing-library/react` + `jsdom` + `@testing-library/jest-dom`，`vite.config.ts` 加 `test` 配置 + `vitest.setup.ts`。
+
+### 测试欠账（10 例补齐）
+- **后端 +6 例**：`test_dataset_link.py` (3) / `test_attribute_audit.py` (1) / `test_comment_polish.py` (4) / `test_user_delete_gdpr.py` (1) / `test_task_reopen_notification.py` (1) / `test_alembic_drift.py` (1，model ↔ migration drift sanity 检测)。
+- **前端 +9 例**：`CommentInput.test.tsx` (6) / `ExportSection.test.tsx` (3)。
+
+### 数据 & 存储
+- **维度回填 UI**：DatasetDetail 加「回填维度」按钮，调 `POST /datasets/{id}/backfill-dimensions`，toast 显示 processed/failed/remaining_hint。
+- **`link_project` bulk_insert**：`SELECT nextval(seq) FROM generate_series(1, N)` 一次预分配 + 单次 `insert(Task)`，1000 items ~2s → < 200ms。
+
+### 审计日志双行 UI 合并（全链路）
+- **后端**：`audit_logs.request_id` 字段持久化（migration 0023，B-tree 索引）；AuditMiddleware + AuditService.log/log_many 都写顶层 `request_id` 列（不再混在 detail_json）；`AuditLogOut` schema 暴露字段。
+- **前端**：AuditPage 按 `request_id` group → 折叠为单行 + ▸ 展开（同请求 metadata + N 条业务 detail），同时 useVirtualizer 化整张表（5000+ 行 60FPS）。
+
+### Reviewer 仪表板升级
+- **后端**：`GET /dashboard/me/recent-reviews` 新端点，从 Task.reviewer_id + reviewed_at 反查；`ReviewerDashboardStats` 增 `approval_rate_24h`（基于 audit_logs 过去 24h `task.approve` / `task.reject` 计数）。
+- **前端**：5 张统计卡（待审队列 / 今日已审 / 24h 通过率 / 历史通过率 / 累计审核）+ 「我的最近审核记录」list。
+
+### WorkbenchShell 第三刀
+- **`useWorkbenchTaskFlow.ts` 新建**：从 shell 拆出 `navigateTask` / `smartNext` / `hasMissingRequired` / `handleSubmitTask`（~80 行）。WorkbenchShell.tsx 1003 → 924 行。
+
+### CanvasDrawing 历史回看
+- **`useHoveredCommentStore` (zustand)** + **ImageStage `historicalShapes` prop**：CommentsPanel 评论卡片 onMouseEnter → 把 `c.canvas_drawing.shapes` 写进 store，ImageStage 半透明虚线叠加只读层（opacity 0.5 + dash）。canvas 真正变成「有效沟通」工具。
+
+### 体验 quick win
+- **`usePopover` 通用 hook**：抽 click-outside + ESC-close + 锚点定位；ExportSection 已迁移作示范，其余 4 处保留留作渐进迁移。
+- **AttributeForm 数字键 hint 强化**：hotkey badge 改用 accent 色 + ⌨ 图标 + 加粗，强提示「数字键 = 属性快捷键」。
+- **CommentInput.serialize 边界覆盖**：单测覆盖 chip 紧邻 chip / 块元素首尾 / BR 换行 / 缺 displayName 等边界情况。
+
+### GDPR / 合规
+- **用户软删后 audit_logs 脱敏**：`DELETE /users/{id}` 在 AuditService.log 后 `UPDATE audit_logs SET actor_email=NULL, actor_role=NULL WHERE actor_id=user_id`，保留 actor_id（FK 仍指向软删行；用户行真正 DELETE 时 ON DELETE SET NULL 兜底）。脱敏行数追加到 `user.delete` audit detail。
+
+### 可观测性
+- **Sentry 前后端**：后端 `sentry-sdk[fastapi]` + lifespan 早期 init（DSN 留空则不启用，dev 默认关闭）；before_send 钩子剔除 Authorization 头。前端 `@sentry/react` + `Sentry.captureException` 接到现有 ErrorBoundary。新增 `SENTRY_DSN` / `VITE_SENTRY_DSN` env。
+- **MinIO bucket lifecycle**：`comment-attachments/` 90 天 + `bug-screenshots/` 180 天自动过期，避免无限增长（celery beat 未启用，靠 lifecycle 兜底）。
+
+### Bug 反馈系统延伸（截图 + 涂抹 + MinIO）
+- **`POST /bug_reports/screenshot/upload-init`**：签发 `bug-screenshots/{user_id}/{uuid}.png` PUT 预签名 URL。
+- **前端 `captureScreenshot()`**：动态 import html2canvas，`ignoreElements` 排除 drawer/FAB/toast 自身；`ScreenshotEditor.tsx` 拖拽黑色矩形遮挡敏感区，确认后 toBlob 回写。
+- **BugReportDrawer**：「截取当前画面」按钮 + 涂抹 → 提交时调 `uploadBugScreenshot()` 拿 storage_key 写入 `screenshot_url`。
+
+### 性能
+- **vite 路由级 lazy-load**：WorkbenchPage / DatasetsPage / AuditPage / UsersPage / ReviewPage / StoragePage / SettingsPage / BugsPage / ProjectSettingsPage 全部 React.lazy + Suspense；登录页 / Dashboard 保持同步加载。**index chunk 740KB → 500KB（gzip 205→147KB）**，WorkbenchPage 独立 186KB chunk + vendor-konva 290KB chunk，登录用户不再下载 konva。
+
+### CI / 工程化
+- **`.github/workflows/ci.yml`**：3 jobs — pytest（含 alembic up→down→up round-trip）+ vitest + lint。postgres service container 启 alembic + pytest。
+- **`test_alembic_drift.py`**：用 `MetaData.reflect()` 对比真实库 schema 与 `Base.metadata`，列名 / 表名集合不一致则 fail（防 v0.6.4 那种 model 加 unique=True 但 migration 漏写的 silent drift）。
+
+### 推迟到 v0.6.7+ 的项
+- Bug 反馈延伸的 **LLM 聚类去重 + 邮件通知**（需要新引 LLM SDK + SMTP 实现，与截图链路无强耦合）
+- celery beat **定时清理 `is_active=false` 评论**（lifecycle 已兜底 90 天）
+- husky / lint-staged **预提交钩子**（CI 已落地，本地拦截可后续加）
+- `useCurrentProjectMembers` **顶层 context**（React Query 已按 queryKey 去重，收益不足以引入新抽象）
+- `usePopover` **剩余 4 处迁移**（hook 已可用，留作渐进迁移）
+
+---
+
 ## [0.6.5] - 2026-05-02
 
 > v0.6.5 收两件事：① **标注 / 审核流程任务锁定**（用户主诉求）—— 让本就存在但形同虚设的 `review/completed` 状态机真正生效，加「撤回」与「重开」两条逆向路径，前后端编辑全链路防护、审计 / 通知打点齐全；② **v0.6.4 后续观察 4 项 quick win**：vite manualChunks 拆 vendor chunk、CanvasDrawing sessionStorage 持久化、HotkeyCheatSheet 搜索 + 按使用频率排、react-markdown 暗色对比度修复。

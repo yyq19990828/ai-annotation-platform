@@ -8,7 +8,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
-import { useDatasets, useDatasetItems, useCreateDataset, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems } from "@/hooks/useDatasets";
+import { useDatasets, useDatasetItems, useCreateDataset, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions } from "@/hooks/useDatasets";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useProjects } from "@/hooks/useProjects";
 import type { DatasetResponse } from "@/api/datasets";
@@ -103,6 +103,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
   const unlinkMutation = useUnlinkProject(ds.id);
   const linkMutation = useLinkProject(ds.id);
   const scanMutation = useScanDatasetItems(ds.id);
+  const backfillMutation = useBackfillDimensions(ds.id);
   const pushToast = useToastStore((s) => s.push);
 
   const items = itemsData?.items ?? [];
@@ -140,6 +141,26 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                     disabled={scanMutation.isPending}
                   >
                     <Icon name="refresh" size={12} /> {scanMutation.isPending ? "扫描中..." : "扫描导入"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      backfillMutation.mutate(undefined, {
+                        onSuccess: (res) => {
+                          pushToast({
+                            msg: `回填完成 · 处理 ${res.processed} / 失败 ${res.failed}` +
+                              (res.remaining_hint ? "，仍有未处理项，可再次点击" : ""),
+                          });
+                        },
+                        onError: (err: any) => {
+                          pushToast({ msg: `回填失败: ${err?.message ?? "未知错误"}`, kind: "error" });
+                        },
+                      });
+                    }}
+                    disabled={backfillMutation.isPending}
+                    title="对缺失 width/height 的图片执行维度回填"
+                  >
+                    <Icon name="refresh" size={12} /> {backfillMutation.isPending ? "回填中..." : "回填维度"}
                   </Button>
                   <Button size="sm" onClick={() => setUploadOpen(true)}>
                     <Icon name="upload" size={12} /> 上传

@@ -30,8 +30,19 @@ export interface ReviewerDashboardStats {
   pending_review_count: number;
   today_reviewed: number;
   approval_rate: number;
+  approval_rate_24h: number;
   total_reviewed: number;
   pending_tasks: ReviewTaskItem[];
+}
+
+export interface RecentReviewItem {
+  task_id: string;
+  task_display_id: string;
+  file_name: string;
+  project_id: string;
+  project_name: string;
+  status: string;
+  reviewed_at: string | null;
 }
 
 export interface AnnotatorDashboardStats {
@@ -47,4 +58,6 @@ export const dashboardApi = {
   getAdminStats: () => apiClient.get<AdminDashboardStats>("/dashboard/admin"),
   getReviewerStats: () => apiClient.get<ReviewerDashboardStats>("/dashboard/reviewer"),
   getAnnotatorStats: () => apiClient.get<AnnotatorDashboardStats>("/dashboard/annotator"),
+  getMyRecentReviews: (limit = 20) =>
+    apiClient.get<RecentReviewItem[]>(`/dashboard/me/recent-reviews?limit=${limit}`),
 };

@@ -5,13 +5,14 @@ import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
 import { useNavigate } from "react-router-dom";
 import { useToastStore } from "@/components/ui/Toast";
-import { useReviewerStats } from "@/hooks/useDashboard";
+import { useReviewerStats, useMyRecentReviews } from "@/hooks/useDashboard";
 import { useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ReviewTaskItem } from "@/api/dashboard";
+import type { ReviewTaskItem, RecentReviewItem } from "@/api/dashboard";
 
 export function ReviewerDashboard() {
   const { data: stats, isLoading } = useReviewerStats();
+  const { data: recentReviews = [] } = useMyRecentReviews(20);
   const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
   const qc = useQueryClient();
@@ -58,10 +59,11 @@ export function ReviewerDashboard() {
         </Button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-        <StatCard icon="flag" label="待审核" value={stats.pending_review_count} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
+        <StatCard icon="flag" label="待审队列" value={stats.pending_review_count} />
         <StatCard icon="check" label="今日已审" value={stats.today_reviewed} />
-        <StatCard icon="activity" label="通过率" value={`${stats.approval_rate}%`} />
+        <StatCard icon="activity" label="24h 通过率" value={`${stats.approval_rate_24h}%`} />
+        <StatCard icon="activity" label="历史通过率" value={`${stats.approval_rate}%`} />
         <StatCard icon="layers" label="累计审核" value={stats.total_reviewed} />
       </div>
 
@@ -94,6 +96,67 @@ export function ReviewerDashboard() {
           </div>
         )}
       </Card>
+
+      <Card style={{ marginTop: 16 }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+            我的最近审核记录
+            {recentReviews.length > 0 && (
+              <Badge variant="outline" style={{ marginLeft: 8, fontSize: 11 }}>{recentReviews.length}</Badge>
+            )}
+          </h3>
+        </div>
+        {recentReviews.length === 0 ? (
+          <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+            暂无审核记录
+          </div>
+        ) : (
+          <div>
+            {recentReviews.map((r) => (
+              <RecentReviewRow key={r.task_id} item={r} onClick={() => navigate(`/projects/${r.project_id}/annotate?task=${r.task_id}`)} />
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function RecentReviewRow({ item, onClick }: { item: RecentReviewItem; onClick: () => void }) {
+  const reviewedAt = item.reviewed_at ? new Date(item.reviewed_at).toLocaleString("zh-CN") : "—";
+  const statusBadge =
+    item.status === "completed" ? <Badge variant="success" dot>已通过</Badge> :
+    item.status === "review" ? <Badge variant="warning" dot>重审中</Badge> :
+    <Badge variant="outline">{item.status}</Badge>;
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 200px 100px 160px",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 16px",
+        borderBottom: "1px solid var(--color-border)",
+        cursor: "pointer",
+      }}
+    >
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--color-accent)" }}>
+            {item.task_display_id}
+          </span>
+          <span style={{ fontSize: 12.5 }}>{item.file_name}</span>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+          <Badge variant="outline" style={{ fontSize: 10, padding: "0 5px" }}>{item.project_name}</Badge>
+        </div>
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>审于 {reviewedAt}</div>
+      <div>{statusBadge}</div>
+      <div style={{ textAlign: "right" }}>
+        <Icon name="chevRight" size={12} />
+      </div>
     </div>
   );
 }

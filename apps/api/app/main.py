@@ -19,6 +19,32 @@ from app.services.storage import storage_service
 setup_logging(level="DEBUG" if settings.debug else "INFO")
 
 
+# v0.6.6 · Sentry 初始化（DSN 留空则完全不启用）
+if settings.sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+    def _sentry_before_send(event, hint):
+        # 移除请求头中的 Authorization，避免 token 上报
+        req = (event or {}).get("request") or {}
+        headers = req.get("headers") or {}
+        if isinstance(headers, dict):
+            for k in list(headers.keys()):
+                if k.lower() == "authorization":
+                    headers[k] = "[REDACTED]"
+        return event
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.sentry_environment,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+        before_send=_sentry_before_send,
+        send_default_pii=False,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.environment == "production" and settings.secret_key == "dev-secret-change-in-production":

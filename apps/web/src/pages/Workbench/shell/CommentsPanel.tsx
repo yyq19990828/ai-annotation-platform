@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useProjectMembers } from "@/hooks/useProjects";
 import { CanvasDrawingPreview } from "@/components/CanvasDrawingEditor";
+import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
 import {
   useAnnotationComments,
   useCreateComment,
@@ -40,6 +41,7 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
   const createMut = useCreateComment(annotationId);
   const patchMut = usePatchComment(annotationId);
   const deleteMut = useDeleteComment(annotationId);
+  const setHoveredShapes = useHoveredCommentStore((s) => s.setShapes);
 
   if (!annotationId) return null;
 
@@ -90,14 +92,19 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
         )}
         {(comments ?? []).map((c) => {
           const isMine = !!currentUserId && currentUserId === c.author_id;
+          const hoverShapes = c.canvas_drawing?.shapes && c.canvas_drawing.shapes.length > 0
+            ? c.canvas_drawing.shapes : null;
           return (
             <div
               key={c.id}
+              onMouseEnter={() => { if (hoverShapes) setHoveredShapes(hoverShapes); }}
+              onMouseLeave={() => { if (hoverShapes) setHoveredShapes(null); }}
               style={{
                 padding: 8, borderRadius: 4,
                 background: c.is_resolved ? "var(--color-bg-sunken)" : "var(--color-bg-elev)",
                 border: "1px solid var(--color-border)",
                 opacity: c.is_resolved ? 0.7 : 1,
+                cursor: hoverShapes ? "crosshair" : undefined,
               }}
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>

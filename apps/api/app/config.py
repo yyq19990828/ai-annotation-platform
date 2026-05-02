@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from: str | None = None
 
+    # Sentry（v0.6.6 接入；DSN 留空则完全不初始化，dev 默认关闭）
+    sentry_dsn: str | None = None
+    sentry_environment: str = "development"
+    sentry_traces_sample_rate: float = 0.1
+
     @property
     def effective_celery_broker(self) -> str:
         return self.celery_broker_url or self.redis_url

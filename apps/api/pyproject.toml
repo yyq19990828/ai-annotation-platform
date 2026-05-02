@@ -22,6 +22,7 @@ dependencies = [
     "Pillow>=10.0.0",
     "blurhash-python>=1.2.0",
     "slowapi>=0.1.9",
+    "sentry-sdk[fastapi]>=2.18.0",
 ]
 
 [project.optional-dependencies]

@@ -8,66 +8,21 @@
 5. reject 持久化：reject_reason 必填、写入 DB
 6. audit：每个状态变更各产 1 条 audit_log
 
-实现说明：现有 conftest.db_session 用 SAVEPOINT 隔离，但 FastAPI app
-的 get_db 依赖会拿到独立连接、看不到测试 fixture 写的数据。这里通过
-`app.dependency_overrides[get_db]` 把 API session 与测试 session 强行
-绑定到同一连接，以让 httpx 测试看到 fixture 数据。
+v0.6.6 起：本文件内的 test_engine / db_session / httpx_client_bound 已回写到 conftest.py
+（function-scoped engine + dependency_overrides[get_db]），不再需要 file-local override。
 """
 from __future__ import annotations
 
 import uuid
 
-import httpx
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
 from app.db.models.task import Task
-from app.deps import get_db
-
-
-# 覆盖 conftest 的 session-scoped test_engine：避免「got Future attached to a
-# different loop」（pytest-asyncio 默认 function-scope loop 与 session-scope
-# engine 冲突）。本文件内每个测试拿独立 engine。
-@pytest.fixture
-async def test_engine(test_db_url):
-    eng = create_async_engine(test_db_url, echo=False)
-    try:
-        yield eng
-    finally:
-        await eng.dispose()
-
-
-@pytest.fixture
-async def db_session(test_engine):
-    conn = await test_engine.connect()
-    trans = await conn.begin()
-    maker = async_sessionmaker(conn, class_=AsyncSession, expire_on_commit=False)
-    session = maker()
-    await conn.begin_nested()
-    try:
-        yield session
-    finally:
-        await session.close()
-        await trans.rollback()
-        await conn.close()
-
-
-@pytest.fixture
-async def httpx_client_bound(app_module, db_session: AsyncSession):
-    """覆盖 get_db 让 API 端点用 fixture 同一 session（同一事务内可见）。"""
-    async def _override():
-        yield db_session
-    app_module.dependency_overrides[get_db] = _override
-    transport = httpx.ASGITransport(app=app_module)
-    try:
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            yield client
-    finally:
-        app_module.dependency_overrides.pop(get_db, None)
 
 
 async def _seed_project_and_task(db: AsyncSession, owner_id: uuid.UUID, assignee_id: uuid.UUID) -> tuple[Project, Task]:

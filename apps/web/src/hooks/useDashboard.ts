@@ -21,3 +21,10 @@ export function useAnnotatorStats() {
     queryFn: dashboardApi.getAnnotatorStats,
   });
 }
+
+export function useMyRecentReviews(limit = 20) {
+  return useQuery({
+    queryKey: ["dashboard", "me-recent-reviews", limit],
+    queryFn: () => dashboardApi.getMyRecentReviews(limit),
+  });
+}

@@ -19,6 +19,7 @@ class AuditLogOut(BaseModel):
     status_code: int | None
     ip: str | None
     detail_json: AuditDetail | None
+    request_id: str | None = None
     created_at: datetime
 
     @field_validator("ip", mode="before")

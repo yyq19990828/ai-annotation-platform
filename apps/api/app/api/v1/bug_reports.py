@@ -18,8 +18,43 @@ from app.schemas.bug_report import (
 )
 from app.services.bug_report import BugReportService
 from app.services.audit import AuditService
+from app.services.storage import storage_service
+from pydantic import BaseModel, Field
 
 router = APIRouter()
+
+
+class ScreenshotInitRequest(BaseModel):
+    file_name: str = Field(default="screenshot.png", min_length=1, max_length=200)
+    content_type: str = Field(default="image/png", min_length=1, max_length=100)
+
+
+class ScreenshotInitResponse(BaseModel):
+    storage_key: str
+    upload_url: str
+    expires_in: int = 900
+
+
+@router.post("/bug_reports/screenshot/upload-init", response_model=ScreenshotInitResponse)
+async def init_bug_screenshot_upload(
+    data: ScreenshotInitRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """v0.6.6 · 给 BugReportDrawer 截图签发 PUT 预签名 URL。
+
+    storage_key 形如 `bug-screenshots/{user_id}/{uuid}.png`；MinIO bucket lifecycle
+    180 天过期（见 storage_service._ensure_lifecycle）。
+    """
+    safe_name = data.file_name.replace("/", "_").replace("\\", "_")
+    if not safe_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+        safe_name += ".png"
+    storage_key = f"bug-screenshots/{current_user.id}/{uuid.uuid4()}-{safe_name}"
+    upload_url = storage_service.generate_upload_url(storage_key, data.content_type)
+    return ScreenshotInitResponse(
+        storage_key=storage_key,
+        upload_url=upload_url,
+        expires_in=900,
+    )
 
 
 @router.post("/bug_reports", response_model=BugReportOut, status_code=201)

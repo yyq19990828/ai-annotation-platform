@@ -27,6 +27,8 @@ import { useClipboard } from "../state/useClipboard";
 import { useWorkbenchAnnotationActions } from "../state/useWorkbenchAnnotationActions";
 import { useWorkbenchHotkeys } from "../state/useWorkbenchHotkeys";
 import { useCanvasDraftPersistence } from "../state/useCanvasDraftPersistence";
+import { useWorkbenchTaskFlow } from "../state/useWorkbenchTaskFlow";
+import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
 import { annotationToBox, predictionsToBoxes, type AiBox } from "../state/transforms";
 import { iouShape } from "../stage/iou";
 import { setActiveClassesConfig, sortClassesByConfig } from "../stage/colors";
@@ -309,20 +311,6 @@ export function WorkbenchShell() {
   } = annotationActions;
 
 
-  const navigateTask = useCallback((direction: "next" | "prev") => {
-    if (tasks.length === 0) return;
-    const idx = tasks.findIndex((t) => t.id === taskId);
-    const newIdx = direction === "next"
-      ? Math.min(idx + 1, tasks.length - 1)
-      : Math.max(0, idx - 1);
-    // 距末页 10 条时预加载下一页
-    if (direction === "next" && newIdx >= tasks.length - 10 && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-    s.setCurrentTaskId(tasks[newIdx].id);
-    s.setSelectedId(null);
-  }, [tasks, taskId, s, hasNextPage, isFetchingNextPage, fetchNextPage]);
-
   /** Shift+click 多选；普通 click 单选；点 AI 框始终单选。 */
   const handleSelectBox = useCallback((id: string | null, opts?: { shift?: boolean }) => {
     if (!id) { s.setSelectedId(null); return; }
@@ -333,32 +321,6 @@ export function WorkbenchShell() {
       s.setSelectedId(id);
     }
   }, [s]);
-
-  /** N（下一未标注）/ U（下一最不确定，total_predictions desc）。 */
-  const smartNext = useCallback((mode: "open" | "uncertain") => {
-    if (tasks.length === 0) return;
-    const idx = tasks.findIndex((t) => t.id === taskId);
-    const after = tasks.slice(idx + 1);
-    const target = mode === "open"
-      ? after.find((t) => t.status !== "completed" && t.total_annotations === 0)
-      : [...after]
-          .filter((t) => t.total_predictions > 0 && t.total_annotations === 0)
-          .sort((a, b) => b.total_predictions - a.total_predictions)[0];
-    if (!target) {
-      if (hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-        pushToast({ msg: "正在加载下一页任务…", kind: "warning" });
-      } else {
-        pushToast({
-          msg: mode === "open" ? "前方已无未标注题目" : "前方已无不确定题目",
-          kind: "warning",
-        });
-      }
-      return;
-    }
-    s.setCurrentTaskId(target.id);
-    s.setSelectedId(null);
-  }, [tasks, taskId, hasNextPage, isFetchingNextPage, fetchNextPage, s, pushToast]);
 
   /** 批量删除当前选中的所有 user 框：成功后聚合 1 条 batch 命令进 history。 */
   const handleBatchDelete = useCallback(() => {
@@ -557,35 +519,22 @@ export function WorkbenchShell() {
     });
   }, [updateAnnotationMut, history]);
 
-  /** 计算所有 annotation 中是否有 required 属性未填（驱动提交按钮 disabled）。 */
-  const hasMissingRequired = useMemo(() => {
-    const schema = currentProject?.attribute_schema;
-    if (!schema || !schema.fields || schema.fields.length === 0) return false;
-    for (const a of annotationsRef.current) {
-      if (getMissingRequired(schema, a.class_name, a.attributes ?? {}).length > 0) return true;
-    }
-    return false;
-    // 当 annotations 列表变化时重算
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [annotationsData, currentProject?.attribute_schema]);
+  // v0.6.6 · 评论 hover → 历史画布批注叠加
+  const hoveredCommentShapes = useHoveredCommentStore((s) => s.shapes);
 
-  const handleSubmitTask = useCallback(() => {
-    if (!taskId) return;
-    if (hasMissingRequired) {
-      pushToast({ msg: "存在必填属性未填，无法提交", sub: "请检查右侧标注属性表单", kind: "error" });
-      return;
-    }
-    submitTaskMut.mutate(taskId, {
-      onSuccess: () => {
-        pushToast({
-          msg: `已提交 ${task?.display_id} 至质检`,
-          sub: `共 ${userBoxes.length} 个标注`,
-          kind: "success",
-        });
-        navigateTask("next");
-      },
-    });
-  }, [taskId, submitTaskMut, pushToast, task?.display_id, userBoxes.length, navigateTask, hasMissingRequired]);
+  // v0.6.6 · 切题 + 提交流程拆到 hook（navigateTask / smartNext / hasMissingRequired / handleSubmitTask）
+  const { navigateTask, smartNext, hasMissingRequired, handleSubmitTask } = useWorkbenchTaskFlow({
+    taskId, task, tasks,
+    hasNextPage, isFetchingNextPage, fetchNextPage,
+    annotationsRef,
+    annotationsData,
+    currentProject,
+    userBoxesCount: userBoxes.length,
+    setCurrentTaskId: s.setCurrentTaskId,
+    setSelectedId: s.setSelectedId,
+    pushToast,
+    submitTaskMut,
+  });
 
   // v0.6.5 · 任务锁定（提交质检后 / 审核通过后） + 撤回 / 重开
   const isLocked = task?.status === "review" || task?.status === "completed";
@@ -837,6 +786,7 @@ export function WorkbenchShell() {
           onCanvasStrokeCommit={(points, stroke) =>
             s.appendCanvasShape({ type: "line", points, stroke })
           }
+          historicalShapes={hoveredCommentShapes ?? undefined}
           overlay={
             <>
               <FloatingDock

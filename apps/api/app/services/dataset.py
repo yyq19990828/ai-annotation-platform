@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, insert, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
@@ -297,24 +297,37 @@ class DatasetService:
         self.db.add(link)
 
         items_result = await self.db.execute(
-            select(DatasetItem).where(DatasetItem.dataset_id == dataset_id)
+            select(DatasetItem.id, DatasetItem.file_name, DatasetItem.file_path, DatasetItem.file_type)
+            .where(DatasetItem.dataset_id == dataset_id)
         )
-        items = items_result.scalars().all()
+        items = items_result.all()
 
         project = await self.db.get(Project, project_id)
-        created_count = 0
-        for item in items:
-            task = Task(
-                project_id=project_id,
-                dataset_item_id=item.id,
-                display_id=await next_display_id(self.db, "tasks"),
-                file_name=item.file_name,
-                file_path=item.file_path,
-                file_type=item.file_type,
-                status="pending",
+        created_count = len(items)
+
+        if items:
+            # v0.6.6: 一次性预分配 N 个 display_id 序列号 + 单次 INSERT，
+            # 替代 v0.6.5 之前逐条 db.add + 逐条 nextval 的循环（1000 条 ~2s → < 200ms）。
+            seq_result = await self.db.execute(
+                text("SELECT nextval('display_seq_tasks') FROM generate_series(1, :n)"),
+                {"n": created_count},
             )
-            self.db.add(task)
-            created_count += 1
+            display_nums = [row[0] for row in seq_result.all()]
+
+            rows = [
+                {
+                    "id": uuid.uuid4(),
+                    "project_id": project_id,
+                    "dataset_item_id": item.id,
+                    "display_id": f"T-{display_nums[i]}",
+                    "file_name": item.file_name,
+                    "file_path": item.file_path,
+                    "file_type": item.file_type,
+                    "status": "pending",
+                }
+                for i, item in enumerate(items)
+            ]
+            await self.db.execute(insert(Task), rows)
 
         if project:
             project.total_tasks = (project.total_tasks or 0) + created_count

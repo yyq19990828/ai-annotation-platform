@@ -1,28 +1,49 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { SidebarDrawer } from "@/components/shell/SidebarDrawer";
 import { ToastRack, useToastStore } from "@/components/ui/Toast";
+// 仪表盘 / 登录 类首屏关键路径：保持同步加载（避免 Suspense 闪烁）
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
 import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
 import { AnnotatorDashboard } from "@/pages/Dashboard/AnnotatorDashboard";
 import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
-import { WorkbenchPage } from "@/pages/Workbench/WorkbenchPage";
-import { UsersPage } from "@/pages/Users/UsersPage";
-import { ReviewPage } from "@/pages/Review/ReviewPage";
 import { LoginPage } from "@/pages/Login/LoginPage";
 import { ForgotPasswordPage } from "@/pages/Login/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/Login/ResetPasswordPage";
-import { DatasetsPage } from "@/pages/Datasets/DatasetsPage";
-import { StoragePage } from "@/pages/Storage/StoragePage";
-import { UnauthorizedPage } from "@/pages/Unauthorized/UnauthorizedPage";
-import { ProjectSettingsPage } from "@/pages/Projects/ProjectSettingsPage";
 import { RegisterPage } from "@/pages/Register/RegisterPage";
-import { AuditPage } from "@/pages/Audit/AuditPage";
-import { BugsPage } from "@/pages/Bugs/BugsPage";
-import { SettingsPage } from "@/pages/Settings/SettingsPage";
+import { UnauthorizedPage } from "@/pages/Unauthorized/UnauthorizedPage";
+
+// v0.6.6 · 重型 / 非首屏页面 lazy-load，让登录 / 仪表盘不下载 konva / fabric 等
+const WorkbenchPage = lazy(() =>
+  import("@/pages/Workbench/WorkbenchPage").then((m) => ({ default: m.WorkbenchPage }))
+);
+const UsersPage = lazy(() =>
+  import("@/pages/Users/UsersPage").then((m) => ({ default: m.UsersPage }))
+);
+const ReviewPage = lazy(() =>
+  import("@/pages/Review/ReviewPage").then((m) => ({ default: m.ReviewPage }))
+);
+const DatasetsPage = lazy(() =>
+  import("@/pages/Datasets/DatasetsPage").then((m) => ({ default: m.DatasetsPage }))
+);
+const StoragePage = lazy(() =>
+  import("@/pages/Storage/StoragePage").then((m) => ({ default: m.StoragePage }))
+);
+const ProjectSettingsPage = lazy(() =>
+  import("@/pages/Projects/ProjectSettingsPage").then((m) => ({ default: m.ProjectSettingsPage }))
+);
+const AuditPage = lazy(() =>
+  import("@/pages/Audit/AuditPage").then((m) => ({ default: m.AuditPage }))
+);
+const BugsPage = lazy(() =>
+  import("@/pages/Bugs/BugsPage").then((m) => ({ default: m.BugsPage }))
+);
+const SettingsPage = lazy(() =>
+  import("@/pages/Settings/SettingsPage").then((m) => ({ default: m.SettingsPage }))
+);
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
 import { RequireProjectMember } from "@/components/routing/RequireProjectMember";
@@ -32,6 +53,7 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { BugReportFAB } from "@/components/bugreport/BugReportFAB";
 import { BugReportDrawer } from "@/components/bugreport/BugReportDrawer";
 import { initBugReportCapture, patchFetchForBugCapture } from "@/utils/bugReportCapture";
+import { PageLoader } from "@/components/PageLoader";
 
 function DashboardRouter() {
   const { role } = usePermissions();
@@ -91,7 +113,9 @@ function AppShell() {
         <Sidebar reviewCount={0} />
       )}
       <main style={{ overflow: "auto", background: "var(--color-bg)" }}>
-        <Outlet />
+        <Suspense fallback={<PageLoader />}>
+          <Outlet />
+        </Suspense>
       </main>
       <ToastRack />
       <BugReportFAB onClick={() => setBugDrawerOpen(true)} />
@@ -121,7 +145,9 @@ function FullScreenWorkbench() {
 
   return (
     <div style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
-      <WorkbenchPage />
+      <Suspense fallback={<PageLoader />}>
+        <WorkbenchPage />
+      </Suspense>
       <ToastRack />
       <BugReportFAB onClick={() => setBugDrawerOpen(true)} />
       <BugReportDrawer open={bugDrawerOpen} onClose={() => setBugDrawerOpen(false)} />

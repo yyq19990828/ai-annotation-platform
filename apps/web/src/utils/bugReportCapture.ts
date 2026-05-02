@@ -61,6 +61,33 @@ export function sanitizeApiCalls(calls: ApiCallEntry[]): ApiCallEntry[] {
 }
 
 /**
+ * v0.6.6 · 用 html2canvas 截当前可视区。返回 PNG Blob。
+ *
+ * 注意：被 BugReportDrawer 自身遮挡的部分不会被截到（截图前应先关闭 drawer
+ * 或把 drawer 设为 ignore）。这里使用 ignoreElements 排除带 data-bug-drawer 的节点。
+ */
+export async function captureScreenshot(): Promise<Blob> {
+  const { default: html2canvas } = await import("html2canvas");
+  const canvas = await html2canvas(document.body, {
+    backgroundColor: "#ffffff",
+    scale: Math.min(window.devicePixelRatio || 1, 2),
+    useCORS: true,
+    logging: false,
+    ignoreElements: (el) => {
+      return Boolean(
+        el.closest?.("[data-bug-drawer]") ||
+        el.closest?.("[data-bug-fab]") ||
+        el.closest?.("[data-toast-rack]"),
+      );
+    },
+  });
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
+  });
+}
+
+
+/**
  * Hook into the app's fetch to record API calls. Call once at app init.
  */
 export function patchFetchForBugCapture() {

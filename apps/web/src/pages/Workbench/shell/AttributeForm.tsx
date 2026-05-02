@@ -104,17 +104,18 @@ export function AttributeForm({ schema, className, attributes, onChange, readOnl
                   className="mono"
                   title={`选中标注后按 ${f.hotkey} 切换该属性`}
                   style={{
-                    padding: "0 5px",
-                    background: "var(--color-bg-sunken)",
-                    border: "1px solid var(--color-border)",
+                    // v0.6.6 · 选中态下强化 hotkey badge：改用 accent 色 + 加粗，提示用户「数字键 = 属性快捷键」
+                    padding: "1px 6px",
+                    background: "color-mix(in oklch, var(--color-accent) 12%, var(--color-bg-elev))",
+                    border: "1px solid color-mix(in oklch, var(--color-accent) 30%, var(--color-border))",
                     borderBottomWidth: 2,
                     borderRadius: 3,
-                    fontSize: 10,
-                    color: "var(--color-fg-muted)",
-                    fontWeight: 500,
+                    fontSize: 10.5,
+                    color: "var(--color-accent)",
+                    fontWeight: 600,
                   }}
                 >
-                  {f.hotkey}
+                  ⌨ {f.hotkey}
                 </span>
               )}
             </span>

@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import { bugReportsApi, type BugReportResponse, type BugReportDetail } from "@/api/bug-reports";
-import { getRecentApiCalls, getRecentConsoleErrors, sanitizeApiCalls } from "@/utils/bugReportCapture";
+import { bugReportsApi, uploadBugScreenshot, type BugReportResponse, type BugReportDetail } from "@/api/bug-reports";
+import { getRecentApiCalls, getRecentConsoleErrors, sanitizeApiCalls, captureScreenshot } from "@/utils/bugReportCapture";
+import { ScreenshotEditor } from "./ScreenshotEditor";
 
 interface Props {
   open: boolean;
@@ -23,6 +24,11 @@ export function BugReportDrawer({ open, onClose }: Props) {
   const [severity, setSeverity] = useState<string>("medium");
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+
+  // v0.6.6 · 截图状态
+  const [screenshotBlob, setScreenshotBlob] = useState<Blob | null>(null);
+  const [screenshotEditing, setScreenshotEditing] = useState(false);
+  const [screenshotKey, setScreenshotKey] = useState<string | null>(null);
 
   const pushToast = useToastStore((s) => s.push);
 
@@ -61,6 +67,19 @@ export function BugReportDrawer({ open, onClose }: Props) {
     if (!title.trim() || !desc.trim()) return;
     setSubmitting(true);
     try {
+      // 若有未上传的截图 blob → 先上传拿 storage_key
+      let finalKey = screenshotKey;
+      if (screenshotBlob && !finalKey) {
+        try {
+          finalKey = await uploadBugScreenshot(screenshotBlob);
+        } catch (e) {
+          pushToast({
+            msg: "截图上传失败，已回退提交无截图",
+            sub: e instanceof Error ? e.message : String(e),
+            kind: "warning",
+          });
+        }
+      }
       await bugReportsApi.create({
         title: title.trim(),
         description: desc.trim(),
@@ -70,16 +89,36 @@ export function BugReportDrawer({ open, onClose }: Props) {
         viewport: `${window.innerWidth}x${window.innerHeight}`,
         recent_api_calls: sanitizeApiCalls(getRecentApiCalls()),
         recent_console_errors: getRecentConsoleErrors().map((e) => ({ msg: e.msg, stack: e.stack || "" })),
+        screenshot_url: finalKey,
       });
       pushToast({ msg: "反馈已提交", kind: "success" });
       setTitle("");
       setDesc("");
       setSeverity("medium");
+      setScreenshotBlob(null);
+      setScreenshotKey(null);
       setView("list");
     } catch {
       pushToast({ msg: "提交失败，请稍后重试", kind: "error" });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCaptureScreenshot = async () => {
+    pushToast({ msg: "正在截图…" });
+    try {
+      // 关闭 drawer 短暂时间让 html2canvas 截到完整页面（可选简化：用 ignoreElements）
+      const blob = await captureScreenshot();
+      setScreenshotBlob(blob);
+      setScreenshotEditing(true);
+      setScreenshotKey(null);
+    } catch (e) {
+      pushToast({
+        msg: "截图失败",
+        sub: e instanceof Error ? e.message : String(e),
+        kind: "error",
+      });
     }
   };
 
@@ -347,6 +386,72 @@ export function BugReportDrawer({ open, onClose }: Props) {
                 <option value="high">高 - 影响功能</option>
                 <option value="critical">严重 - 系统不可用</option>
               </select>
+
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 5 }}>
+                  截图（可选）
+                </label>
+                {screenshotEditing && screenshotBlob ? (
+                  <ScreenshotEditor
+                    imageBlob={screenshotBlob}
+                    onConfirm={(blob) => {
+                      setScreenshotBlob(blob);
+                      setScreenshotEditing(false);
+                    }}
+                    onCancel={() => {
+                      setScreenshotBlob(null);
+                      setScreenshotEditing(false);
+                    }}
+                  />
+                ) : screenshotBlob ? (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+                      已附加截图（{Math.round(screenshotBlob.size / 1024)} KB）
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setScreenshotEditing(true)}
+                      style={{
+                        padding: "4px 8px", fontSize: 11,
+                        border: "1px solid var(--color-border)",
+                        borderRadius: "var(--radius-sm)",
+                        background: "var(--color-bg-elev)",
+                        cursor: "pointer", color: "var(--color-fg)",
+                      }}
+                    >
+                      重新涂抹
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setScreenshotBlob(null); setScreenshotKey(null); }}
+                      style={{
+                        padding: "4px 8px", fontSize: 11,
+                        border: "1px solid var(--color-border)",
+                        borderRadius: "var(--radius-sm)",
+                        background: "transparent",
+                        cursor: "pointer", color: "var(--color-fg-muted)",
+                      }}
+                    >
+                      移除
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCaptureScreenshot}
+                    style={{
+                      padding: "6px 10px", fontSize: 12,
+                      border: "1px dashed var(--color-border)",
+                      borderRadius: "var(--radius-sm)",
+                      background: "transparent",
+                      cursor: "pointer", color: "var(--color-fg-muted)",
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                    }}
+                  >
+                    <Icon name="image" size={12} /> 截取当前画面
+                  </button>
+                )}
+              </div>
 
               <button
                 type="submit"

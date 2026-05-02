@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { projectsApi, type ExportFormat } from "@/api/projects";
+import { usePopover } from "@/hooks/usePopover";
 
 interface ExportSectionProps {
   projectId: string;
@@ -15,34 +16,16 @@ const FORMATS: { value: ExportFormat; label: string }[] = [
  *  浮层包含格式选择 + 「包含属性数据」复选框（默认勾选 = 后端 default true）。
  *  取消勾选时附加 ?include_attributes=false，输出 v0.4.9 之前的兼容格式。 */
 export function ExportSection({ projectId }: ExportSectionProps) {
-  const [open, setOpen] = useState(false);
+  const pop = usePopover();
   const [format, setFormat] = useState<ExportFormat>("coco");
   const [includeAttributes, setIncludeAttributes] = useState(true);
   const [busy, setBusy] = useState(false);
-  const popRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (popRef.current?.contains(e.target as Node)) return;
-      if (triggerRef.current?.contains(e.target as Node)) return;
-      setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
 
   const handleExport = async () => {
     setBusy(true);
     try {
       await projectsApi.exportProject(projectId, format, { includeAttributes });
-      setOpen(false);
+      pop.close();
     } finally {
       setBusy(false);
     }
@@ -54,9 +37,9 @@ export function ExportSection({ projectId }: ExportSectionProps) {
       onClick={(e) => e.stopPropagation()}
     >
       <button
-        ref={triggerRef}
+        ref={(el) => { pop.anchorRef.current = el; }}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={pop.toggle}
         title="导出标注数据"
         style={{
           padding: "4px 8px",
@@ -73,9 +56,9 @@ export function ExportSection({ projectId }: ExportSectionProps) {
       >
         导出 ▾
       </button>
-      {open && (
+      {pop.open && (
         <div
-          ref={popRef}
+          ref={(el) => { pop.popoverRef.current = el; }}
           role="dialog"
           aria-label="导出选项"
           style={{

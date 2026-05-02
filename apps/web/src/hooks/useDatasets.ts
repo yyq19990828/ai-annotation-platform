@@ -66,6 +66,16 @@ export function useScanDatasetItems(datasetId: string) {
   });
 }
 
+export function useBackfillDimensions(datasetId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (batch?: number) => datasetsApi.backfillDimensions(datasetId, batch ?? 50),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dataset-items", datasetId] });
+    },
+  });
+}
+
 export function useLinkProject(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({

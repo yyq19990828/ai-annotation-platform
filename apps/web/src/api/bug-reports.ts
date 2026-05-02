@@ -96,4 +96,23 @@ export const bugReportsApi = {
 
   addComment: (id: string, body: string) =>
     apiClient.post<BugCommentResponse>(`/bug_reports/${id}/comments`, { body }),
+
+  // v0.6.6 · 截图上传 init：签发 PUT URL，前端再调 PUT 真正上传
+  initScreenshotUpload: (file_name = "screenshot.png", content_type = "image/png") =>
+    apiClient.post<{ storage_key: string; upload_url: string; expires_in: number }>(
+      "/bug_reports/screenshot/upload-init",
+      { file_name, content_type },
+    ),
 };
+
+/** 高阶：先 init 拿 PUT URL，再前端 fetch PUT 上传，返回 storage_key */
+export async function uploadBugScreenshot(blob: Blob): Promise<string> {
+  const init = await bugReportsApi.initScreenshotUpload();
+  const res = await fetch(init.upload_url, {
+    method: "PUT",
+    headers: { "Content-Type": "image/png" },
+    body: blob,
+  });
+  if (!res.ok) throw new Error(`上传失败 (${res.status})`);
+  return init.storage_key;
+}

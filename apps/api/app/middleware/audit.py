@@ -85,7 +85,8 @@ async def _persist_audit(request: Request, status_code: int) -> None:
         path=path_short(request.url.path),
         status_code=status_code,
         ip=extract_client_ip(request),
-        detail_json={"request_id": rid} if rid else None,
+        detail_json=None,
+        request_id=rid or None,
     )
 
     async with async_session() as session:

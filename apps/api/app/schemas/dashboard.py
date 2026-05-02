@@ -34,8 +34,23 @@ class ReviewerDashboardStats(BaseModel):
     pending_review_count: int
     today_reviewed: int
     approval_rate: float
+    # v0.6.6 · 24h 滚动通过率：完成 / (完成 + 退回)，仅看过去 24 小时
+    approval_rate_24h: float
     total_reviewed: int
     pending_tasks: list[ReviewTaskItem]
+
+
+class RecentReviewItem(BaseModel):
+    task_id: str
+    task_display_id: str
+    file_name: str
+    project_id: str
+    project_name: str
+    status: str
+    reviewed_at: str | None
+
+    class Config:
+        from_attributes = True
 
 
 class AnnotatorDashboardStats(BaseModel):

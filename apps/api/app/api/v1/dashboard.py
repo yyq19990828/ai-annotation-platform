@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, case
 from app.deps import get_db, get_current_user, require_roles
@@ -7,9 +7,15 @@ from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.annotation import Annotation
+from app.db.models.audit_log import AuditLog
 from app.db.enums import UserRole, TaskStatus
-from app.db.models.project import Project
-from app.schemas.dashboard import AdminDashboardStats, ReviewerDashboardStats, ReviewTaskItem, AnnotatorDashboardStats
+from app.schemas.dashboard import (
+    AdminDashboardStats,
+    ReviewerDashboardStats,
+    ReviewTaskItem,
+    AnnotatorDashboardStats,
+    RecentReviewItem,
+)
 
 router = APIRouter()
 
@@ -102,6 +108,20 @@ async def reviewer_dashboard(
     total_all_reviewed = total_completed + pending_review_count
     approval_rate = (total_completed / total_all_reviewed * 100) if total_all_reviewed > 0 else 0.0
 
+    # v0.6.6 · 24h 滚动通过率：基于 audit_logs 中过去 24h 的 task.approve / task.reject 计数
+    cutoff_24h = now - timedelta(hours=24)
+    rate_24h_result = await db.execute(
+        select(
+            func.count().filter(AuditLog.action == "task.approve").label("approve_n"),
+            func.count().filter(AuditLog.action == "task.reject").label("reject_n"),
+        ).where(AuditLog.created_at >= cutoff_24h)
+    )
+    row = rate_24h_result.one()
+    approve_n = row.approve_n or 0
+    reject_n = row.reject_n or 0
+    denom_24h = approve_n + reject_n
+    approval_rate_24h = (approve_n / denom_24h * 100) if denom_24h > 0 else 0.0
+
     pending_tasks_result = await db.execute(
         select(Task, Project.name)
         .join(Project, Task.project_id == Project.id)
@@ -127,9 +147,44 @@ async def reviewer_dashboard(
         pending_review_count=pending_review_count,
         today_reviewed=today_reviewed,
         approval_rate=round(approval_rate, 1),
+        approval_rate_24h=round(approval_rate_24h, 1),
         total_reviewed=total_completed,
         pending_tasks=pending_tasks,
     )
+
+
+@router.get("/me/recent-reviews", response_model=list[RecentReviewItem])
+async def my_recent_reviews(
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(
+        UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER
+    )),
+):
+    """v0.6.6 · 当前 reviewer 最近审核过的任务（已 approve / reject 落定的）。
+
+    依据 Task.reviewer_id + Task.reviewed_at（v0.6.5 状态机字段）。
+    """
+    result = await db.execute(
+        select(Task, Project.name)
+        .join(Project, Task.project_id == Project.id)
+        .where(Task.reviewer_id == current_user.id)
+        .where(Task.reviewed_at.isnot(None))
+        .order_by(Task.reviewed_at.desc())
+        .limit(limit)
+    )
+    return [
+        RecentReviewItem(
+            task_id=str(t.id),
+            task_display_id=t.display_id,
+            file_name=t.file_name,
+            project_id=str(t.project_id),
+            project_name=pname,
+            status=t.status,
+            reviewed_at=t.reviewed_at.isoformat() if t.reviewed_at else None,
+        )
+        for t, pname in result.all()
+    ]
 
 
 @router.get("/annotator", response_model=AnnotatorDashboardStats)

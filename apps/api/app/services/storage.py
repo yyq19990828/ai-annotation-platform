@@ -33,6 +33,36 @@ class StorageService:
     def ensure_all_buckets(self) -> None:
         self.ensure_bucket(self.bucket)
         self.ensure_bucket(self.datasets_bucket)
+        self._ensure_lifecycle()
+
+    def _ensure_lifecycle(self) -> None:
+        """v0.6.6 · 评论附件 90 天过期 + bug 截图 180 天过期。
+
+        软删评论的附件目前无显式清理（celery beat 未启用），靠 bucket lifecycle
+        保证最长 90 天后自动 GC，避免 MinIO 无限增长。bug 截图同理。
+        若 MinIO 不支持（旧版本）静默忽略。
+        """
+        rules = [
+            {
+                "ID": "comment-attachments-90d",
+                "Status": "Enabled",
+                "Filter": {"Prefix": "comment-attachments/"},
+                "Expiration": {"Days": 90},
+            },
+            {
+                "ID": "bug-screenshots-180d",
+                "Status": "Enabled",
+                "Filter": {"Prefix": "bug-screenshots/"},
+                "Expiration": {"Days": 180},
+            },
+        ]
+        try:
+            self.client.put_bucket_lifecycle_configuration(
+                Bucket=self.bucket,
+                LifecycleConfiguration={"Rules": rules},
+            )
+        except ClientError as exc:
+            logger.warning("Failed to set bucket lifecycle on %s: %s", self.bucket, exc)
 
     def _public_url(self, url: str) -> str:
         if settings.minio_public_url:

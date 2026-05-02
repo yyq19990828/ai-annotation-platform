@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -103,6 +104,61 @@ export function AuditPage() {
 
   const total = data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // v0.6.6 · 按 request_id 分组：同一 HTTP 请求的 metadata 行 + 业务 detail 行折叠为单行 + ▸ 展开
+  const [expandedReqIds, setExpandedReqIds] = useState<Set<string>>(new Set());
+  type Group = { id: string; leader: AuditLogResponse; children: AuditLogResponse[] };
+  const groups: Group[] = useMemo(() => {
+    const buckets = new Map<string, AuditLogResponse[]>();
+    const ordered: string[] = [];
+    items.forEach((it) => {
+      const key = it.request_id || `__solo_${it.id}`;
+      if (!buckets.has(key)) {
+        buckets.set(key, []);
+        ordered.push(key);
+      }
+      buckets.get(key)!.push(it);
+    });
+    return ordered.map((key) => {
+      const rows = buckets.get(key)!;
+      // 选 leader：优先非 http.* 的业务行；否则用 http.* 元数据行
+      const business = rows.find((r) => !r.action.startsWith("http."));
+      const leader = business ?? rows[0];
+      const children = rows.filter((r) => r.id !== leader.id);
+      return { id: key, leader, children };
+    });
+  }, [items]);
+
+  // 平铺成 virtualizable rows：[group-leader, ...expanded-children]*
+  type FlatRow =
+    | { kind: "leader"; group: Group }
+    | { kind: "child"; group: Group; row: AuditLogResponse };
+  const flatRows: FlatRow[] = useMemo(() => {
+    const out: FlatRow[] = [];
+    groups.forEach((g) => {
+      out.push({ kind: "leader", group: g });
+      if (expandedReqIds.has(g.id)) {
+        g.children.forEach((row) => out.push({ kind: "child", group: g, row }));
+      }
+    });
+    return out;
+  }, [groups, expandedReqIds]);
+
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: flatRows.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 44,
+    overscan: 8,
+  });
+
+  const toggleGroup = (id: string) => {
+    setExpandedReqIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
@@ -218,90 +274,139 @@ export function AuditPage() {
           </div>
         )}
 
-        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
-          <thead>
-            <tr>
-              {["时间", "操作人", "动作", "对象", "IP", "状态", ""].map((h, i) => (
-                <th key={i} style={thStyle}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {(isLoading || isFetching) && items.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)" }}>加载中...</td></tr>
-            )}
-            {!isLoading && items.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)" }}>暂无记录</td></tr>
-            )}
-            {items.map((it) => (
-              <tr key={it.id}>
-                <td style={{ ...tdStyle, color: "var(--color-fg-muted)", fontSize: 12, whiteSpace: "nowrap" }}>
-                  {new Date(it.created_at).toLocaleString("zh-CN", { hour12: false })}
-                </td>
-                <td style={tdStyle}>
-                  {it.actor_email ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {it.actor_id ? (
-                        <button
-                          type="button"
-                          onClick={() => { setActorId(it.actor_id!); setPage(1); }}
-                          title="按操作人追溯"
-                          style={focusBtnStyle}
-                        >
-                          {it.actor_email}
-                        </button>
-                      ) : (
-                        <span style={{ fontSize: 12.5 }}>{it.actor_email}</span>
-                      )}
-                      {it.actor_role && (
-                        <Badge variant="outline" style={{ fontSize: 10 }}>
-                          {ROLE_LABELS[it.actor_role as UserRole] ?? it.actor_role}
-                        </Badge>
-                      )}
-                    </div>
-                  ) : (
-                    <span style={{ color: "var(--color-fg-subtle)", fontStyle: "italic", fontSize: 12 }}>匿名</span>
-                  )}
-                </td>
-                <td style={tdStyle}>
-                  <Badge variant={it.action.startsWith("http.") ? "outline" : "accent"} style={{ fontSize: 11 }}>
-                    {auditActionLabel(it.action)}
-                  </Badge>
-                </td>
-                <td style={{ ...tdStyle, fontSize: 12, color: "var(--color-fg-muted)" }}>
-                  {it.target_type && it.target_id ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTargetType(it.target_type!);
-                        setTargetId(it.target_id!);
-                        setPage(1);
-                      }}
-                      title={`按对象 ${it.target_type}/${it.target_id} 追溯`}
-                      style={focusBtnStyle}
-                    >
-                      {it.target_type}
-                      <span className="mono" style={{ marginLeft: 4, fontSize: 11, color: "var(--color-fg-subtle)" }}>
-                        {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
-                      </span>
-                    </button>
-                  ) : it.target_type ? (
-                    <span>{it.target_type}</span>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td style={{ ...tdStyle, fontSize: 11.5, color: "var(--color-fg-muted)", fontFamily: "var(--font-mono, monospace)" }}>
-                  {it.ip ?? "—"}
-                </td>
-                <td style={tdStyle}>{statusBadge(it.status_code)}</td>
-                <td style={{ ...tdStyle, textAlign: "right" }}>
-                  <Button size="sm" variant="ghost" onClick={() => setDetail(it)}>详情</Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* v0.6.6 · 按 request_id 折叠为单行 + ▸ 展开；virtualized 容器 */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: HEADER_COLS,
+            fontSize: 12,
+            fontWeight: 500,
+            color: "var(--color-fg-muted)",
+            background: "var(--color-bg-sunken)",
+            borderBottom: "1px solid var(--color-border)",
+          }}
+        >
+          {["", "时间", "操作人", "动作", "对象", "IP", "状态", ""].map((h, i) => (
+            <div key={i} style={{ padding: "10px 12px" }}>{h}</div>
+          ))}
+        </div>
+
+        <div
+          ref={tableContainerRef}
+          style={{ height: 560, overflow: "auto", position: "relative" }}
+        >
+          {(isLoading || isFetching) && flatRows.length === 0 && (
+            <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)" }}>加载中...</div>
+          )}
+          {!isLoading && flatRows.length === 0 && (
+            <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)" }}>暂无记录</div>
+          )}
+          <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+            {virtualizer.getVirtualItems().map((virt) => {
+              const row = flatRows[virt.index];
+              const expanded = row.kind === "leader" && expandedReqIds.has(row.group.id);
+              const it = row.kind === "leader" ? row.group.leader : row.row;
+              const isLeader = row.kind === "leader";
+              const hasChildren = isLeader && row.group.children.length > 0;
+              return (
+                <div
+                  key={virt.key}
+                  data-index={virt.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    transform: `translateY(${virt.start}px)`,
+                    display: "grid",
+                    gridTemplateColumns: HEADER_COLS,
+                    borderBottom: "1px solid var(--color-border)",
+                    background: row.kind === "child" ? "var(--color-bg-sunken)" : undefined,
+                    paddingLeft: row.kind === "child" ? 24 : 0,
+                  }}
+                >
+                  <div style={{ padding: "10px 8px", display: "flex", alignItems: "center" }}>
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(row.group.id)}
+                        title={expanded ? "折叠" : `展开同请求 ${row.group.children.length + 1} 条`}
+                        style={focusBtnStyle}
+                      >
+                        <Icon name={expanded ? "chevDown" : "chevRight"} size={12} />
+                        <span style={{ marginLeft: 4, fontSize: 11 }}>{row.group.children.length + 1}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                  <div style={{ padding: "10px 12px", color: "var(--color-fg-muted)", fontSize: 12, whiteSpace: "nowrap" }}>
+                    {new Date(it.created_at).toLocaleString("zh-CN", { hour12: false })}
+                  </div>
+                  <div style={{ padding: "10px 12px" }}>
+                    {it.actor_email ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {it.actor_id ? (
+                          <button
+                            type="button"
+                            onClick={() => { setActorId(it.actor_id!); setPage(1); }}
+                            title="按操作人追溯"
+                            style={focusBtnStyle}
+                          >
+                            {it.actor_email}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 12.5 }}>{it.actor_email}</span>
+                        )}
+                        {it.actor_role && (
+                          <Badge variant="outline" style={{ fontSize: 10 }}>
+                            {ROLE_LABELS[it.actor_role as UserRole] ?? it.actor_role}
+                          </Badge>
+                        )}
+                      </div>
+                    ) : (
+                      <span style={{ color: "var(--color-fg-subtle)", fontStyle: "italic", fontSize: 12 }}>匿名</span>
+                    )}
+                  </div>
+                  <div style={{ padding: "10px 12px" }}>
+                    <Badge variant={it.action.startsWith("http.") ? "outline" : "accent"} style={{ fontSize: 11 }}>
+                      {auditActionLabel(it.action)}
+                    </Badge>
+                  </div>
+                  <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--color-fg-muted)" }}>
+                    {it.target_type && it.target_id ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTargetType(it.target_type!);
+                          setTargetId(it.target_id!);
+                          setPage(1);
+                        }}
+                        title={`按对象 ${it.target_type}/${it.target_id} 追溯`}
+                        style={focusBtnStyle}
+                      >
+                        {it.target_type}
+                        <span className="mono" style={{ marginLeft: 4, fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                          {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
+                        </span>
+                      </button>
+                    ) : it.target_type ? (
+                      <span>{it.target_type}</span>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+                  <div style={{ padding: "10px 12px", fontSize: 11.5, color: "var(--color-fg-muted)", fontFamily: "var(--font-mono, monospace)" }}>
+                    {it.ip ?? "—"}
+                  </div>
+                  <div style={{ padding: "10px 12px" }}>{statusBadge(it.status_code)}</div>
+                  <div style={{ padding: "10px 12px", textAlign: "right" }}>
+                    <Button size="sm" variant="ghost" onClick={() => setDetail(it)}>详情</Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, padding: 12, borderTop: "1px solid var(--color-border)" }}>
           <Button size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
@@ -426,4 +531,9 @@ const focusBtnStyle: React.CSSProperties = {
   fontSize: 12.5,
   textAlign: "left",
   textDecoration: "none",
+  display: "inline-flex",
+  alignItems: "center",
 };
+
+// v0.6.6 折叠表 grid 列模板：[▸] 时间 操作人 动作 对象 IP 状态 [详情]
+const HEADER_COLS = "44px 160px 1.4fr 1fr 1.6fr 120px 80px 80px";

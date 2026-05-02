@@ -86,6 +86,9 @@ interface ImageStageProps {
   canvasStroke?: string;
   /** 一段笔触落定时回调，points 是归一化 [x1,y1,x2,y2,...]。*/
   onCanvasStrokeCommit?: (points: number[], stroke: string) => void;
+  /** v0.6.6：历史画布批注（来自 hover 的某条 comment.canvas_drawing），半透明叠加只读。
+   *  与 canvasShapes 并存：上层主笔触不变，下方覆盖一层 0.5 opacity 的「历史回看」。*/
+  historicalShapes?: NonNullable<CommentCanvasDrawing["shapes"]>;
 }
 
 // ── resize handle directions ────────────────────────────────────────────────
@@ -348,6 +351,7 @@ export function ImageStage({
   onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
+  historicalShapes,
 }: ImageStageProps) {
   const selSet = useMemo(
     () => new Set(selectedIds && selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : []),
@@ -785,6 +789,30 @@ export function ImageStage({
             );
           })}
         </Layer>
+
+        {/* v0.6.6 · 历史画布批注（hover 评论触发）：半透明只读叠加，比主层 z 高一点点 */}
+        {historicalShapes && historicalShapes.length > 0 && (
+          <Layer name="historical-canvas" listening={false} opacity={0.5}>
+            {historicalShapes.map((shape, idx) => {
+              const flat: number[] = [];
+              for (let i = 0; i < shape.points.length; i += 2) {
+                flat.push(shape.points[i] * imgW, shape.points[i + 1] * imgH);
+              }
+              return (
+                <Line
+                  key={`hist-${idx}`}
+                  points={flat}
+                  stroke={shape.stroke ?? "#ef4444"}
+                  strokeWidth={3 / vp.scale}
+                  lineCap="round"
+                  lineJoin="round"
+                  tension={0.3}
+                  dash={[6 / vp.scale, 4 / vp.scale]}
+                />
+              );
+            })}
+          </Layer>
+        )}
 
         {/* v0.6.4 · 画布批注层：reviewer/annotator 在原图上画的红圈/箭头，
             坐标系归一化 [0,1] → 与 ImageStage vp 共享，缩放 / 平移自动跟随。 */}

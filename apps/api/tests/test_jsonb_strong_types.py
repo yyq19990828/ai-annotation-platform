@@ -167,6 +167,6 @@ def test_annotation_out_normalizes_legacy_bbox():
 def test_annotation_attributes_value_types():
     from pydantic import TypeAdapter
     AA = TypeAdapter(AnnotationAttributes)
-    AA.validate_python({"k1": "str", "k2": 1, "k3": True, "k4": [1.0], "k5": None})
+    AA.validate_python({"k1": "str", "k2": 1, "k3": True, "k4": ["a"], "k5": None})
     # multiselect 列表必须 str
     AA.validate_python({"k": ["a", "b"]})

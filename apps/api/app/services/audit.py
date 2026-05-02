@@ -74,7 +74,6 @@ class AuditService:
     ) -> AuditLog:
         action_str = action.value if isinstance(action, AuditAction) else str(action)
         rid = request_id_var.get()
-        merged_detail = {"request_id": rid, **(detail or {})} if rid else detail
         entry = AuditLog(
             actor_id=getattr(actor, "id", None),
             actor_email=getattr(actor, "email", None),
@@ -86,7 +85,8 @@ class AuditService:
             path=str(request.url.path) if request is not None else None,
             status_code=status_code,
             ip=extract_client_ip(request),
-            detail_json=merged_detail,
+            detail_json=detail,
+            request_id=rid or None,
         )
         db.add(entry)
         await db.flush()
@@ -117,8 +117,6 @@ class AuditService:
         actor_role = getattr(actor, "role", None)
         entries: list[AuditLog] = []
         for it in items:
-            detail = it.get("detail")
-            merged_detail = {"request_id": rid, **(detail or {})} if rid else detail
             entries.append(AuditLog(
                 actor_id=actor_id,
                 actor_email=actor_email,
@@ -130,7 +128,8 @@ class AuditService:
                 path=path,
                 status_code=status_code,
                 ip=ip,
-                detail_json=merged_detail,
+                detail_json=it.get("detail"),
+                request_id=rid or None,
             ))
         db.add_all(entries)
         await db.flush()

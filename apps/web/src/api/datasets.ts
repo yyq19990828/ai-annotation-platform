@@ -130,6 +130,11 @@ export const datasetsApi = {
   scanItems: (id: string) =>
     apiClient.post<{ status: string; new_items: number }>(`/datasets/${id}/items/scan`),
 
+  backfillDimensions: (id: string, batch = 50) =>
+    apiClient.post<{ processed: number; failed: number; remaining_hint: boolean }>(
+      `/datasets/${id}/backfill-dimensions?batch=${batch}`,
+    ),
+
   deleteItem: (id: string, itemId: string) =>
     apiClient.delete<void>(`/datasets/${id}/items/${itemId}`),
 

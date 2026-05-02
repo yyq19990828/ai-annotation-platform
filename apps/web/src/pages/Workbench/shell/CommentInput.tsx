@@ -46,8 +46,9 @@ interface PickerState {
 
 const MAX_ATTACH_BYTES = 20 * 1024 * 1024; // 20MB / file
 
-/** Serialize contenteditable 内容：扁平化文本 + 抽取 mention chip 的 (offset, length, userId, displayName)。 */
-function serialize(root: HTMLElement): { body: string; mentions: CommentMention[] } {
+/** Serialize contenteditable 内容：扁平化文本 + 抽取 mention chip 的 (offset, length, userId, displayName)。
+ *  v0.6.6 起 export 给单测。 */
+export function serialize(root: HTMLElement): { body: string; mentions: CommentMention[] } {
   let body = "";
   const mentions: CommentMention[] = [];
 
