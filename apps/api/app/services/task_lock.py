@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.task_lock import TaskLock
@@ -37,18 +38,40 @@ class TaskLockService:
             return my_lock
 
         if locks:
-            return None
+            # v0.6.7 B-13：他人锁存在但若全部「即将过期」（last heartbeat > TTL/2 前）→ 视为悬挂残留自动接管。
+            # 真活会话每 60s 心跳一次，expire_at - now ∈ [240, 300]；阈值 TTL/2 = 150s 给两次心跳容错窗。
+            now = datetime.now(timezone.utc)
+            stale_threshold = now + timedelta(seconds=self.DEFAULT_TTL // 2)
+            if all(l.expire_at < stale_threshold for l in locks):
+                for l in locks:
+                    await self.db.delete(l)
+                await self.db.flush()
+            else:
+                return None
 
-        lock = TaskLock(
-            id=uuid.uuid4(),
-            task_id=task_id,
-            user_id=user_id,
-            expire_at=new_expire,
-            unique_id=uuid.uuid4(),
+        # v0.6.7 二修 B-13：用 INSERT ... ON CONFLICT 而非裸 INSERT，避免快速重进时
+        # 两个并发请求都看到「empty + my_lock=None」→ 都尝试 INSERT → 第二个撞
+        # unique(task_id, user_id) 抛 IntegrityError → 500 → 前端误显「他人占用」横幅。
+        stmt = (
+            pg_insert(TaskLock)
+            .values(
+                id=uuid.uuid4(),
+                task_id=task_id,
+                user_id=user_id,
+                expire_at=new_expire,
+                unique_id=uuid.uuid4(),
+            )
+            .on_conflict_do_update(
+                index_elements=["task_id", "user_id"],
+                set_={"expire_at": new_expire},
+            )
+            .returning(TaskLock.id)
         )
-        self.db.add(lock)
+        result = await self.db.execute(stmt)
+        lock_id = result.scalar_one()
         await self.db.flush()
-        return lock
+        # 重新读出实际行（id 可能是新建的或既有的）
+        return await self.db.get(TaskLock, lock_id)
 
     async def release(self, task_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         result = await self.db.execute(

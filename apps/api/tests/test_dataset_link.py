@@ -116,3 +116,79 @@ async def test_link_project_empty_dataset(db_session: AsyncSession, super_admin)
         select(func.count()).select_from(Task).where(Task.project_id == project.id)
     )).scalar()
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_link_project_auto_creates_named_batch(db_session: AsyncSession, super_admin):
+    """v0.6.7 B-12-①：link_project 应为本次新接入的数据集自动建一个 batch，写入 task.batch_id。"""
+    from app.db.models.task_batch import TaskBatch
+
+    user, _ = super_admin
+    ds = await _seed_dataset(db_session, user.id, n_items=8)
+    ds.name = "MyImageSet"
+    await db_session.flush()
+    project = await _seed_project(db_session, user.id)
+
+    svc = DatasetService(db_session)
+    await svc.link_project(ds.id, project.id)
+
+    # 这次 link 应该新建一个 batch 命名为「{ds.name} 默认包」
+    batches = (await db_session.execute(
+        select(TaskBatch).where(TaskBatch.project_id == project.id)
+    )).scalars().all()
+    new_batches = [b for b in batches if b.dataset_id == ds.id]
+    assert len(new_batches) == 1
+    assert "MyImageSet" in new_batches[0].name
+    assert new_batches[0].total_tasks == 8
+
+    # 所有由该 dataset 创建的 task 必须挂到此 batch
+    tasks_in_batch = (await db_session.execute(
+        select(func.count()).select_from(Task)
+        .where(Task.project_id == project.id, Task.batch_id == new_batches[0].id)
+    )).scalar()
+    assert tasks_in_batch == 8
+
+
+@pytest.mark.asyncio
+async def test_unlink_project_hard_deletes_tasks(db_session: AsyncSession, super_admin):
+    """v0.6.7 二修 B-10：unlink 应级联删除该 dataset 在该 project 下的 task，project.total_tasks 归零。"""
+    user, _ = super_admin
+    ds = await _seed_dataset(db_session, user.id, n_items=10)
+    project = await _seed_project(db_session, user.id)
+
+    svc = DatasetService(db_session)
+    await svc.link_project(ds.id, project.id)
+    await db_session.refresh(project)
+    assert project.total_tasks == 10
+
+    info = await svc.unlink_project(ds.id, project.id)
+    assert info is not None
+    assert info["deleted_tasks"] == 10
+    assert info["soft"] is False
+
+    await db_session.refresh(project)
+    real_total = (await db_session.execute(
+        select(func.count()).select_from(Task).where(Task.project_id == project.id)
+    )).scalar()
+    assert real_total == 0, "hard-unlink 后该 dataset 创建的 task 应清光"
+    assert project.total_tasks == 0
+
+
+@pytest.mark.asyncio
+async def test_link_unlink_relink_no_double_count(db_session: AsyncSession, super_admin):
+    """v0.6.7 B-10：link → unlink → re-link 不出现 double-count。hard-unlink 下 task 真删 + 重 link 重新创建。"""
+    user, _ = super_admin
+    ds = await _seed_dataset(db_session, user.id, n_items=4)
+    project = await _seed_project(db_session, user.id)
+
+    svc = DatasetService(db_session)
+    await svc.link_project(ds.id, project.id)
+    await svc.unlink_project(ds.id, project.id)
+    await svc.link_project(ds.id, project.id)
+
+    await db_session.refresh(project)
+    real_total = (await db_session.execute(
+        select(func.count()).select_from(Task).where(Task.project_id == project.id)
+    )).scalar()
+    assert project.total_tasks == real_total
+    assert real_total == 4, "重 link 应重新创建 4 个 task"

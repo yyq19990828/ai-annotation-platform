@@ -9,6 +9,156 @@
 
 ---
 
+## [0.6.7-hotfix] - 2026-05-03
+
+> v0.6.7 落地后立即收口的 3 项体感问题：① 快速重进项目仍偶发「他人占用」横幅 ② 取消关联数据集后 task 没真删，进度展示永远停在历史值 ③ 旧项目里大量 v0.6.0~v0.6.6 期间留下的孤儿 task 无清理路径。
+
+### 问题 1：TaskLock 并发自重入
+
+- **`apps/api/app/services/task_lock.py acquire()`** 改用 `INSERT ... ON CONFLICT (task_id, user_id) DO UPDATE SET expire_at = ...`：v0.6.7 第一版只处理了「他人锁悬挂」，但同用户两个并发 acquire 都看到 empty → 都裸 INSERT → 第二个撞 unique 约束 → 500 → 前端把任何 lock error 都当「他人占用」显示。upsert 让并发请求都成功（同 (task_id, user_id) 行 expire_at 续期）。
+- **`tests/test_task_lock_dedup.py`** +1 例：同用户对同 task 连续 acquire → 只产生一行 + 都返回 lock。5→6 例。
+
+### 问题 2 + 3：unlink 改 hard-delete + 孤儿任务清理
+
+#### 后端
+
+- **`apps/api/app/services/dataset.py unlink_project()`** 从 soft-unlink 改 hard-delete：级联删除 `tasks / annotations / annotation_comments / task_locks`（按 child→parent 顺序），重算 `project.{total,completed,review}_tasks` + 该项目所有 `TaskBatch` 计数器。返回 `{deleted_tasks, deleted_annotations, soft: false}`。
+- **`apps/api/app/api/v1/datasets.py preview-unlink`** 返回字段改 `will_delete_tasks` / `will_delete_annotations`（明确「将删除」语义，不再是「保留为孤儿」）。
+- **`apps/api/app/api/v1/projects.py`** 新增两个端点：
+  - `GET /projects/{id}/orphan-tasks/preview` → `{orphan_tasks, orphan_annotations}`
+  - `POST /projects/{id}/orphan-tasks/cleanup` → 删除「无源 task」（dataset_item_id 指向已 unlink 的数据集，或为空），重算 counters + audit
+- **`apps/api/app/api/v1/projects.py _serialize_project()`** 补 `in_progress_tasks` 字段（即时 COUNT 查询，不依赖 stored counter，因 Project model 未存这一项）。
+- **`apps/api/app/schemas/project.py ProjectOut`** 加 `in_progress_tasks: int = 0`。
+
+#### 前端
+
+- **`apps/web/src/components/ui/ProgressBar.tsx`** 新增 `inProgressValue?` prop，渲染最底层「已动工」副条（`var(--color-accent-soft)` 淡色），让 0 完成但有任务在标注的项目进度条不再永远空白。
+- **`apps/web/src/pages/Dashboard/DashboardPage.tsx ProjectRow`**：① 计算 `startedPct = (in_progress + review + completed) / total`，传给 ProgressBar ② 数字下方加细分文案 "X 进行中 · Y 待审"。
+- **`apps/web/src/pages/Datasets/DatasetsPage.tsx UnlinkConfirmModal`** 文案改：「将一并删除 N 个任务（含 K 个已标注），此操作不可恢复」 + 按钮 "确认删除并取消关联"。
+- **`apps/web/src/pages/Projects/sections/DangerSection.tsx`** 新增「清理孤儿任务」面板：显示当前孤儿数量 → 点击弹二次确认 modal → 调 `cleanupOrphanTasks` → 显示删除结果 + invalidate 全部 project 相关 query。
+- **`apps/web/src/api/projects.ts`** + `apps/web/src/api/datasets.ts`：新增 `previewOrphanTasks` / `cleanupOrphanTasks` / 调整 `previewUnlink` / `unlinkProject` 返回类型。
+
+#### 测试 / 验证
+
+- `pytest`：69 例全绿（68 → 69，新增 1 例「unlink hard-delete」+ 调整原 2 例语义）。
+- API 实测：
+  - `GET /projects/{P-3}/orphan-tasks/preview` → `{"orphan_tasks":1206,"orphan_annotations":0}`
+  - `POST /projects/{P-3}/orphan-tasks/cleanup` → `{"deleted_tasks":1206,"deleted_annotations":0}`
+  - 项目从虚高 1214 task 收敛到真实 8 task（B-DEFAULT 同步显示 8/8）
+- 前端 dashboard：P-3 进度行从 "0/1,214 0%" → "0 / 8 · 1 进行中 · 2 待审 · 0%" + 已动工副条可见。
+
+#### 不可逆 schema 变更
+
+- 无新 alembic（cleanup 是 runtime 操作，不是 schema migration）。
+
+---
+
+## [0.6.7] - 2026-05-03
+
+> v0.6.7 收口项目管理员的 4 项反馈（B-10 / B-11 / B-12 / B-13），核心是把 v0.6.x 一直藏在数据/分包/分派后台的工作流暴露到 UI 上，并修掉退出重进任务时的 lock 残留 bug。pytest 60→68 例（+8）。
+>
+> 行为变更：
+> - **关联数据集后自动建独立批次**（`{ds.name} 默认包`），不再倾倒进 `B-DEFAULT`；存量 `B-DEFAULT` 不动。
+> - **取消关联数据集**改为 soft-unlink + 二次确认 + 计数器重算；不再裸删 task（保留标注），孤儿 task 留待「危险操作」清理（v0.6.7+）。
+> - **批次状态 draft → active** 现在要求 `assigned_user_ids` 非空（前端按钮 disabled + tooltip）。
+> - **标注员/审核员的 batch 下拉**现在按 `assigned_user_ids` 过滤（owner / super_admin 仍看全部）。
+
+### B-13 · TaskLock 自重入鲁棒性
+
+- **`apps/api/app/services/task_lock.py:17-51 acquire()`**：`my_lock` 不存在 + 他人锁全部 `expire_at < now + TTL/2` 时视为「悬挂残留」自动接管（活会话每 60s 心跳，`expire_at - now ∈ [240, 300]`，TTL/2 = 150s 给两次心跳容错）。`_cleanup_expired` 仅清严格过期行的旧逻辑兜底。
+- **`apps/web/src/api/tasks.ts`** 新增 `releaseLockKeepalive`：用 fetch `keepalive: true` 保证 unmount / 页面跳转时 DELETE 仍能送达，避免残留 lock 把用户挡在自己刚释放的任务外。
+- **`apps/web/src/hooks/useTaskLock.ts`** cleanup 改用 keepalive 版本（去掉 async/await 回退）。
+- **`apps/api/tests/test_task_lock_dedup.py`** +2 例：他人 stale 锁（expire_at = now+60s）→ 接管；他人活锁（expire_at = now+280s）→ 仍 409。3→5 例全绿。
+
+### B-11 · CreateProjectWizard 扩展为 5 步
+
+- **`apps/web/src/components/projects/CreateProjectWizard.tsx`** 整体重写：原 3 步（类型/类别/AI）→ 5 步 + 完成页：
+  1. **类型**：name + type + due_date（不变）
+  2. **类别**：简单字符串列表（不变；后续可在设置页升级到 classes_config）
+  3. **AI**：on/off + 模型（不变）
+  4. **数据**（新）：从 `useDatasets()` 多选数据集；可选「随机切分为 N 个批次」（默认保留每个数据集一个独立包）。提交时顺序 `linkProject(...)` 每个数据集 + 可选 `useSplitBatches`，单个失败不阻断。
+  5. **成员**（新）：从 `useUsers()` 过滤 annotator / reviewer 多选，循环 `useAddProjectMember`，单个失败不阻断。
+  6. **完成**：显示「已关联 N 个数据集 · 已添加 K 位成员」+ 「项目设置 / 工作台 / 完成」按钮。
+- **localStorage 草稿**：`create_project_draft_v0_6_7` key 持久化 1-3 步表单（关闭模态丢弃，提交成功清除），刷新不丢。
+- 步骤 4-5 可跳过，避免逼迫用户在没有数据/成员时硬填。
+
+### B-12 · 数据分包 / 分派可见性
+
+#### B-12-① · link_project 自动建命名 batch
+
+- **`apps/api/app/services/dataset.py link_project()`**：N items 不再裸落 `B-DEFAULT`，而是新建一个 `TaskBatch{ name: "{ds.name} 默认包", display_id: BT-{N}, dataset_id, total_tasks: N }`，把所有新建任务的 `batch_id` 写到此 batch。`B-DEFAULT` 保留作为「未归类」哨兵但新接入数据集不再倾倒进去。
+- **`apps/web/src/hooks/useDatasets.ts useLinkProject`** invalidate 增 `["projects", projectId]` / `["project-stats"]` / `["batches", projectId]`，让 BatchesSection / Dashboard 即时刷新。
+- **`apps/api/tests/test_dataset_link.py`** 新增 1 例：link 后 `TaskBatch` 表新增一行命名匹配 + tasks 全部挂到此 batch（8/8）。
+
+#### B-12-② · BatchesSection 分派 UI
+
+- **`apps/web/src/components/projects/BatchAssignmentModal.tsx`**（新建，182 行）：从 `useProjectMembers(projectId)` 拉成员，按 `role ∈ {annotator, reviewer}` 分两栏多选，提交走 `useUpdateBatch.mutate({ batchId, payload: { assigned_user_ids } })`。
+- **`apps/web/src/pages/Projects/sections/BatchesSection.tsx`** 表格增「分派」列：未分派显示橙色「未分派」chip，已分派显示前 3 个头像 + 计数；点击打开 modal。`draft → active` 转移按钮在 `assigned_user_ids.length === 0` 时 disabled + tooltip「请先分派成员」。
+
+#### B-12-③ · Workbench 按 batch 过滤
+
+- **`apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx`**：`activeBatches` 计算增 owner/super_admin 判断 —— 非项目 owner 时只看 `assigned_user_ids.includes(meUserId)` 的活跃批次。下拉 dropdown 复用 v0.6.0 已存在的 `TaskQueuePanel` UI。
+
+#### B-12-④ · 项目卡批次概览 + Settings 深链
+
+- **`apps/web/src/pages/Projects/ProjectSettingsPage.tsx`**：新增 `?section=` query 解析（`general | classes | attributes | members | batches | owner | danger`），允许从 dashboard 或 toast 直跳到目标 section。
+- **`apps/web/src/pages/Dashboard/DashboardPage.tsx ProjectRow`**：进度列下方加「→ 查看批次分派」小链接（仅 canManage 可见），点击跳 `/projects/{id}/settings?section=batches`，`onSettings` 签名扩 `(p, section?)`。
+
+### B-10 · 取消关联数据集二次确认 + 计数同步
+
+#### 后端
+
+- **`apps/api/app/services/dataset.py unlink_project()`** 改造：返回类型从 `bool` 改为 `dict | None`，`None` = 链接不存在；否则统计 `orphan_tasks` 数后只删 `ProjectDataset` 行（保留 task / annotation / 子表数据），重算 `project.{total_tasks, completed_tasks, review_tasks}` 用 `func.count + filter` 等价 `BatchService._sync_project_counters` 的逻辑（避免循环 import）。
+- **`apps/api/app/api/v1/datasets.py`**：① `POST /datasets/{id}/link` 增 `AuditAction.DATASET_LINK` 审计；② 新增 `GET /datasets/{ds_id}/link/{project_id}/preview-unlink` 返回 `{ orphan_tasks }`，前端确认弹窗用；③ `DELETE /datasets/{id}/link/{project_id}` 状态码 204→200，body 返回 `{ orphan_tasks }`，写 `AuditAction.DATASET_UNLINK` 审计 + `detail.soft=true`。
+- **`apps/api/app/services/audit.py AuditAction`** 增 `DATASET_LINK` / `DATASET_UNLINK`。
+
+#### 前端
+
+- **`apps/web/src/api/datasets.ts`**：`unlinkProject` 返回类型改 `{ orphan_tasks: number }`；新增 `previewUnlink`。
+- **`apps/web/src/hooks/useDatasets.ts useUnlinkProject`** invalidate 增 `["projects"]` / `["project", projectId]` / `["project-stats"]` / `["batches", projectId]`，进度条立即重算。
+- **`apps/web/src/pages/Datasets/DatasetsPage.tsx`** 取消关联按钮改弹 `UnlinkConfirmModal`：先 `previewUnlink` 拿孤儿数 → 显示「项目「{name}」中由该数据集创建的 N 个任务将保留为孤儿（不再计入项目进度，可在『项目设置 → 危险操作』中清理）」；确认后 unlink。
+- **`apps/api/tests/test_dataset_link.py`** 新增 2 例：① link → unlink → `total_tasks` 等于真实 task 数 ② link → unlink → re-link 不出现 double-count（修复前 4+4=8 的硬伤）。3→5 例全绿。
+
+### 文件变更摘要
+
+后端：
+- `apps/api/app/services/task_lock.py`（acquire 增 stale 接管分支）
+- `apps/api/app/services/dataset.py`（link 自动建 batch，unlink soft + 计数重算）
+- `apps/api/app/api/v1/datasets.py`（link 端点加 audit + 新增 preview-unlink + unlink 返回 orphan_tasks）
+- `apps/api/app/services/audit.py`（+2 AuditAction）
+- `apps/api/tests/test_task_lock_dedup.py`（+2 例 → 5/5）
+- `apps/api/tests/test_dataset_link.py`（+3 例 → 6/6）
+- `apps/api/app/main.py`（version 0.6.0 → 0.6.7）
+
+前端：
+- `apps/web/src/components/projects/CreateProjectWizard.tsx`（重写 6 步）
+- `apps/web/src/components/projects/BatchAssignmentModal.tsx`（新增）
+- `apps/web/src/pages/Projects/sections/BatchesSection.tsx`（分派列 + transition guard）
+- `apps/web/src/pages/Projects/ProjectSettingsPage.tsx`（?section= 解析）
+- `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx`（activeBatches owner-aware）
+- `apps/web/src/pages/Dashboard/DashboardPage.tsx`（ProjectRow 加深链）
+- `apps/web/src/pages/Datasets/DatasetsPage.tsx`（UnlinkConfirmModal）
+- `apps/web/src/hooks/useDatasets.ts`（link/unlink invalidate 扩展）
+- `apps/web/src/hooks/useTaskLock.ts` + `apps/web/src/api/tasks.ts`（keepalive release）
+- `apps/web/src/api/datasets.ts`（previewUnlink + unlinkProject 返回类型）
+- `apps/web/package.json`（version 0.1.0 → 0.6.7）
+
+### 验证
+
+- `pytest`：68/68 通过（v0.6.6 60 + v0.6.7 +8）
+- `pnpm vitest`：64/64 通过（无新增 smoke，仅回归）
+- `tsc --noEmit`：0 错
+
+### 推迟到 v0.6.8+
+
+- Wizard 步骤 2 升级到 ClassesSection 完整 `classes_config` 编辑（颜色 / 别名 / 父子结构）
+- Wizard 新增「属性 schema」步骤（attribute_schema 全功能编辑器）
+- 「项目设置 → 危险操作」加「清理无源任务」按钮（清理 unlink 后的孤儿）
+- 批次级 reviewer dashboard
+- B-12-④ 进一步：在项目卡上嵌「N 个批次 · K 已分派」概览（需后端补 ProjectStats 字段）
+
+---
+
 ## [0.6.6] - 2026-05-02
 
 > v0.6.6 是 v0.6.x 系列存量观察清单清扫版：把 v0.6.2 phase 2 / v0.6.4 / v0.6.5 写时观察的 14 项 quick win 一次收口，并补齐 GDPR 脱敏 / Sentry / Bug 反馈截图 / CI/CD pipeline 等治理项，让 v0.6.7+ 能腾出干净画布做 SAM / 多任务类型工作台。pytest 50→60 例（+10），vitest 55→64 例（+9），index chunk 740KB→500KB。

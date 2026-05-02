@@ -39,11 +39,15 @@ function ProjectRow({
   p: ProjectResponse;
   onOpen: (p: ProjectResponse) => void;
   canManage: boolean;
-  onSettings: (p: ProjectResponse) => void;
+  onSettings: (p: ProjectResponse, section?: string) => void;
 }) {
   const total = p.total_tasks || 1;
   const pct = Math.round((p.completed_tasks / total) * 100);
   const aiPct = p.ai_enabled ? Math.round(pct * 0.6) : 0;
+  // v0.6.7：「已动工」副条 = (in_progress + review + completed) / total，让 0 完成但有进度的项目可见
+  const startedPct = Math.round(
+    ((p.in_progress_tasks ?? 0) + p.review_tasks + p.completed_tasks) / total * 100,
+  );
   const due = p.due_date ?? "—";
   const updated = p.updated_at ? new Date(p.updated_at).toLocaleDateString("zh-CN") : "—";
   const ownerInitial = p.owner_name?.slice(0, 1) ?? "?";
@@ -82,11 +86,43 @@ function ProjectRow({
         </div>
       </td>
       <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle", minWidth: 220 }}>
-        <ProgressBar value={pct} aiValue={aiPct} />
+        <ProgressBar value={pct} aiValue={aiPct} inProgressValue={startedPct} />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "var(--color-fg-muted)" }}>
-          <span className="mono">{p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}</span>
+          <span className="mono">
+            {p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}
+            {(p.in_progress_tasks ?? 0) + p.review_tasks > 0 && (
+              <span style={{ color: "var(--color-fg-subtle)" }}>
+                {" · "}
+                {(p.in_progress_tasks ?? 0) > 0 && <>{p.in_progress_tasks} 进行中</>}
+                {(p.in_progress_tasks ?? 0) > 0 && p.review_tasks > 0 && " · "}
+                {p.review_tasks > 0 && <>{p.review_tasks} 待审</>}
+              </span>
+            )}
+          </span>
           <span style={{ fontWeight: 500, color: "var(--color-fg)" }}>{pct}%</span>
         </div>
+        {canManage && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onSettings(p, "batches"); }}
+            style={{
+              marginTop: 4,
+              padding: 0,
+              border: "none",
+              background: "transparent",
+              color: "var(--color-fg-subtle)",
+              fontSize: 11,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              textDecoration: "underline",
+              textDecorationStyle: "dotted",
+              textUnderlineOffset: 2,
+            }}
+            title="跳转到项目设置 → 批次管理"
+          >
+            <Icon name="layers" size={10} /> 查看批次分派
+          </button>
+        )}
       </td>
       <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
         {p.ai_enabled ? (
@@ -150,7 +186,8 @@ export function DashboardPage() {
     return p.owner_id === currentUser.id;
   };
 
-  const onSettings = (p: ProjectResponse) => navigate(`/projects/${p.id}/settings`);
+  const onSettings = (p: ProjectResponse, section?: string) =>
+    navigate(`/projects/${p.id}/settings${section ? `?section=${section}` : ""}`);
 
   const onOpenProject = (p: ProjectResponse) => {
     if (p.type_key === "image-det") {

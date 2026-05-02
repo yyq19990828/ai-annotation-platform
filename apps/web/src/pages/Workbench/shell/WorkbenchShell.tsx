@@ -15,6 +15,7 @@ import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
 import { ApiError } from "@/api/client";
 import { useBatches } from "@/hooks/useBatches";
+import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
 import type { TaskResponse, AnnotationResponse } from "@/types";
 
@@ -83,12 +84,17 @@ export function WorkbenchShell() {
   const projectDisplayId = currentProject?.display_id ?? "—";
   const aiModel = currentProject?.ai_model ?? "GroundingDINO + SAM";
 
+  const meUserId = useAuthStore((s) => s.user?.id);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const { data: batchList } = useBatches(projectId ?? "", undefined);
-  const activeBatches = useMemo(
-    () => (batchList ?? []).filter((b) => ["active", "annotating"].includes(b.status)),
-    [batchList],
-  );
+  const isOwner = useIsProjectOwner(currentProject ?? null);
+  const activeBatches = useMemo(() => {
+    const active = (batchList ?? []).filter((b) => ["active", "annotating"].includes(b.status));
+    // v0.6.7 B-12-③：非项目 owner / super_admin 只能看到自己被分派的批次（assigned_user_ids 包含自己）。
+    // 未分派任何成员的「draft」批次不会进入 active 列表，所以不必特判。
+    if (isOwner || !meUserId) return active;
+    return active.filter((b) => (b.assigned_user_ids ?? []).includes(meUserId));
+  }, [batchList, isOwner, meUserId]);
 
   const taskListParams = useMemo(
     () => (selectedBatchId ? { batch_id: selectedBatchId } : undefined),
@@ -105,7 +111,6 @@ export function WorkbenchShell() {
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(routeId);
-  const meUserId = useAuthStore((s) => s.user?.id);
 
   // 阈值防抖：滑动时前端即时过滤，300ms 后触发服务端查询
   const [debouncedConf, setDebouncedConf] = useState(s.confThreshold);

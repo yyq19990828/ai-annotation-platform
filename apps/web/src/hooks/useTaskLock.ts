@@ -12,12 +12,10 @@ export function useTaskLock(taskId: string | undefined) {
   const timerRef = useRef<ReturnType<typeof setInterval>>();
   const currentTaskRef = useRef<string>();
 
-  const release = useCallback(async (tid: string) => {
-    try {
-      await tasksApi.releaseLock(tid);
-    } catch {
-      // ignore release errors
-    }
+  const release = useCallback((tid: string) => {
+    // v0.6.7 B-13：用 keepalive 保证 DELETE 在 unmount / 页面跳转时仍能送达，
+    // 否则浏览器会取消请求 → 残留 lock 行 → 用户重进时被自己的旧锁挡住。
+    void tasksApi.releaseLockKeepalive(tid);
   }, []);
 
   useEffect(() => {

@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0 ~ v0.6.5 同前；**v0.6.6（v0.6.x 系列存量观察清单清扫版：测试基座修补 + 测试欠账 10 例 + 维度回填 UI + link_project bulk_insert + 审计日志双行 UI 全链路 + Reviewer 仪表板升级 + WorkbenchShell 第三刀 + CanvasDrawing 历史回看 + GDPR 脱敏 + Sentry + Bug 反馈截图链路 + MinIO lifecycle + vite 路由 lazy-load + CI/CD pipeline + alembic drift 检测）**。
+> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0 ~ v0.6.6 同前；**v0.6.7（项目管理员 4 项 BUG 收口：B-13 TaskLock 自重入鲁棒性 + B-11 CreateProjectWizard 扩 5 步含数据集/成员引导 + B-12 分包/分派可见性全链路含 link 自动建命名 batch / BatchesSection 分派 UI / Workbench batch 过滤 / Dashboard 深链 + B-10 unlink 二次确认 + alembic 0024 回填孤儿 batch_id）**；**v0.6.7-hotfix（task_lock upsert 防并发 unique 冲突 + unlink 改 hard-delete + 「清理孤儿任务」按钮 + 进度条「已动工」副条 + ProjectOut.in_progress_tasks 字段）**。
 
 ---
 
@@ -10,13 +10,17 @@
 
 #### 项目模块
 - **非 image-det 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / video-track / mm 共 6 类点击「打开」仅显示 toast `类型 X 的标注界面尚未实现`（`DashboardPage.tsx:139`、`ViewerDashboard.tsx:31`）。
-- **类别管理**：项目创建后类别（classes）只在 `CreateProjectWizard` 步骤 2 录入，后续无批量编辑 / 导入 / 导出 UI；`PATCH /projects/{id}` 已支持但前端未暴露。
-- **项目模板**：当前每次新建项目都从 0 配置类别 / AI 模型；无「从已有项目复制」或「保存为模板」入口。
+- **`CreateProjectWizard` step 2/3 升级到 settings 完整组件**：v0.6.7 已扩为 5 步（+数据集 + 成员），但「类别」步骤仍是简单字符串列表 vs `ClassesSection.tsx` 的颜色 / 别名 / 父子结构编辑器；缺「属性 schema」步骤（`AttributesSection` 完整能力）。从 sections 抽 `ClassEditor` / `AttributeSchemaEditor` 子组件给向导复用即可。
+- **`Project.in_progress_tasks` 改 stored counter**：v0.6.7-hotfix 把 `in_progress_tasks` 字段加到 `ProjectOut`，但实现是 `_serialize_project` 内即时 COUNT 查询 —— `GET /projects` 列 N 个项目就 N 次额外 SQL，hot path 上代价不可忽视。建议：① Project 表加 `in_progress_tasks` 列 ② 状态机变迁时（pending↔in_progress↔review↔completed）维护 ③ alembic 一次性回填。
+- **项目模板**：当前每次新建项目都从 0 配置类别 / AI 模型；无「从已有项目复制」或「保存为模板」入口（v0.6.7 wizard 扩了 dataset + members 步骤，模板复用更有意义了）。
 
 #### 数据 & 存储
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **批次相关延伸**：① 智能切批（按难度/类别/不确定度）；② 批次级 IAA / 共识合并算法；③ 不可变训练快照 + 主动学习闭环。调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
+- **link_project 自动 batch 命名去重**：v0.6.7 创建「{ds.name} 默认包」，但同一项目 unlink → re-link 同数据集会产生同名 batch；建议加序号或时间戳（如「{name} 默认包 #2」）。
+- **批次级 reviewer 视图**：v0.6.7 推迟到 v0.6.8。Reviewer dashboard 当前是项目级 pending_review_count，未按 `assigned_user_ids` 包含 self 的 batch 筛选；workbench 已实现，dashboard 待对齐。
+- **批次级智能分派**：BatchAssignmentModal 当前是手动多选；可加「按当前成员数量均匀分派」「按角色批量勾选」等批量动作。
 
 #### AI / 模型
 - **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态（`AdminDashboard.tsx:107-119`、`DashboardPage.tsx:287-291`）。
@@ -48,23 +52,35 @@
 - **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好。
 - ✅ v0.6.6 已收：ReviewerDashboard 个人最近审核记录 + 5 张实时仪表卡（含 24h 通过率）。
 
-#### v0.6.6 后续观察 / v0.6.7 候选
+#### v0.6.7 后续观察 / v0.6.8 候选
 
-> v0.6.6 在 v0.6.x 系列存量观察清单中清扫了 14 项；剩余 5 项延后到 v0.6.7+，按依赖与价值排列：
+> v0.6.7 + hotfix 收口了项目管理员 4 项 BUG（B-10~B-13）；剩余推迟项与新发现：
 
-##### 推迟自 v0.6.6 计划
+##### 推迟自 v0.6.7 计划
+
+- **Wizard step 2 升级到 ClassesSection 完整 `classes_config` 编辑**：颜色 / 别名 / 父子结构。从 `pages/Projects/sections/ClassesSection.tsx` 抽 `ClassEditor` 给向导复用。
+- **Wizard 新增「属性 schema」步骤**：从 `AttributesSection.tsx` 抽 `AttributeSchemaEditor`，字段类型 / 必填 / hotkey / visible_if 一次配齐。
+- **批次级 reviewer dashboard**：当前 reviewer dashboard 项目级聚合；workbench 已按 `assigned_user_ids` 过滤 batch，dashboard 待对齐。
+- **B-12-④ 项目卡批次概览**：当前 dashboard 进度列只加了「→ 查看批次分派」深链；进一步可显示「N 个批次 · K 已分派」概览（需后端 ProjectStats 增字段，避免 N+1 查询）。
+
+##### 推迟自 v0.6.6 计划（仍未落）
 
 - **Bug 反馈延伸 LLM 聚类去重 + 邮件通知**：需要新引 LLM SDK（openai / anthropic / embedding-only）+ 实现 SMTP 发件链路。与 v0.6.6 已落地的「截图 + 涂抹 + MinIO 上传」无强耦合，单独成版本更合理。`bug_reports` 表加 `cluster_id` / `llm_distance` 字段；`POST /bug_reports/cluster` 已有占位实现可挂。
 - **celery beat 定时清理软删评论附件**：v0.6.6 已用 MinIO bucket lifecycle 90 天兜底，但活跃评论的附件也会被 GC（接受），更精准的清理需要 celery beat + 定时扫 `is_active=false` AnnotationComment → 删 MinIO 对象。当前 celery 仅用作 broker，beat 未启用。
-- **预提交钩子**：v0.6.6 已落 `.github/workflows/ci.yml`（lint + tsc + pytest + vitest + alembic round-trip）。本地 husky + lint-staged 是 nice-to-have，CI 已能拦回归。
-- **`useCurrentProjectMembers` 顶层 context**：React Query 已按 queryKey 去重，CommentsPanel + MembersSection 同时拉成员不会重复发请求；引入 context 收益有限，遇到性能瓶颈再做。
-- **`usePopover` 剩余 4 处迁移**：v0.6.6 hook 已上架，ExportSection 已迁移；TopBar 主题切换 / 智能切题菜单 / AttributeForm DescriptionPopover / CanvasToolbar 留作渐进迁移。
+- **预提交钩子**：v0.6.6 已落 `.github/workflows/ci.yml`。本地 husky + lint-staged 是 nice-to-have。
+- **`useCurrentProjectMembers` 顶层 context**：React Query 已按 queryKey 去重，引入 context 收益有限。
+- **`usePopover` 剩余 4 处迁移**：TopBar 主题切换 / 智能切题菜单 / AttributeForm DescriptionPopover / CanvasToolbar 留作渐进迁移。
 
-##### v0.6.6 写时新点
+##### v0.6.7 写时新点
 
-- **WorkbenchShell.tsx 仍 924 行**：第三刀（`useWorkbenchTaskFlow`）后剩余主要是 useEffect 副作用 + 大片 JSX 渲染。下一步候选：拆 `<WorkbenchTopbar />` 子组件（含 ETA / 进度条 / 提交按钮），约 100 行 JSX。优先级 P3。
-- **AuditPage 折叠 UI 缺持久化**：当前 `expandedReqIds` 仅 in-memory，刷新页面状态丢；可加 sessionStorage 持久化最近展开的 request_id（30 分钟 TTL）。优先级 P3。
-- **`uploadBugScreenshot` 失败回退体验**：v0.6.6 截图上传失败时降级为「无截图提交」并 toast warning，但用户感知弱；可加 retry 按钮 / 显式错误 UI。优先级 P3。
+- **`Project.in_progress_tasks` 改 stored 列**：v0.6.7-hotfix 用即时 COUNT 实现，列项目时每行一次额外查询；改成持久化列 + 状态机维护。优先级 P2。
+- **`ProgressBar` aiPct 启发式不真实**：dashboard `aiPct = Math.round(pct * 0.6)` 是装饰，不反映真实 AI 完成率。应基于 `predictions` / `annotations.parent_prediction_id` 真实数据计算。优先级 P2。
+- **`UnlinkConfirmModal` 文案与按钮强度对齐**：v0.6.7-hotfix 已加「将一并删除 N 个任务（含 K 个已标注）」与红色按钮，但仍是单击直删；考虑改为输入数据集名称二次确认（与 DangerSection 删项目的强度一致）。优先级 P3。
+- **WorkbenchShell.tsx 仍 924+ 行**：v0.6.7 增 `isOwner` / `useIsProjectOwner` 几行；下一刀候选 `<WorkbenchTopbar />` 子组件（含 ETA / 进度条 / 提交按钮 / batch 下拉），约 100 行 JSX。优先级 P3。
+- **AuditPage 折叠 UI 缺持久化**：`expandedReqIds` 仅 in-memory；可加 sessionStorage 持久化最近展开的 request_id（30 分钟 TTL）。优先级 P3。
+- **`uploadBugScreenshot` 失败回退体验**：v0.6.6 截图上传失败时降级为「无截图提交」并 toast warning；可加 retry 按钮 / 显式错误 UI。优先级 P3。
+- **link_project 同名 batch 去重**：unlink → re-link 同 dataset 时新 batch 与历史 B-DEFAULT 同样可能撞名；建议带 dataset display_id 后缀或时间戳。优先级 P3。
+- **`POST /orphan-tasks/cleanup` 大批量优化**：当前对 `orphan_ids` 用 `ANY(:ids)` 单次发；P-3 实测 1206 条 ~ 即时返回，但 10万级孤儿（理论上限）会走 array overflow。建议改 `WHERE id IN (subquery)` 直接联查。优先级 P3。
 
 ---
 
@@ -171,14 +187,22 @@
 | **P1** | TopBar 通知中心、UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
 | **P1** | Bug 反馈延伸 LLM 聚类去重 + 邮件通知 | v0.6.6 截图链路已落，剩 LLM + SMTP；管理员 triage 体感 |
+| **P1** | Wizard step 2/3 升级到完整 ClassesSection / AttributesSection 编辑器 | v0.6.7 推迟，向导仍存「半残」感 |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
 | **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要 |
 | **P2** | C.3 history 持久化（undo/redo 栈 sessionStorage） | quick win，工时少 |
+| **P2** | `Project.in_progress_tasks` 改 stored 列 | v0.6.7-hotfix 即时 COUNT 列项目时 N 次查询 |
+| **P2** | `ProgressBar` aiPct 启发式 → 真实 AI 完成率 | dashboard 现 `pct * 0.6` 是装饰 |
+| **P2** | 批次级 reviewer dashboard | workbench 已按 batch 过滤，dashboard 待对齐 |
 | **P2** | 审计日志归档（PARTITION）、AuditMiddleware 队列化、useInfiniteQuery 缓存 GC | 当前数据量未到瓶颈，监控触发再做 |
 | **P2** | `<DropdownMenu>` 全站第 3+ 个使用方收编 + `usePopover` 剩余 4 处迁移 | v0.6.6 hook 已上架，扫尾即可 |
-| **P3** | WorkbenchShell 第四刀（拆 `<WorkbenchTopbar />` 子组件，~100 行 JSX） | v0.6.6 第三刀后 shell 仍 924 行；收益中等 |
+| **P3** | WorkbenchShell 第四刀（拆 `<WorkbenchTopbar />` 子组件，~100 行 JSX） | v0.6.6 第三刀后 shell 仍 924+ 行；收益中等 |
+| **P3** | UnlinkConfirmModal 升级到「输入数据集名称」二次确认 | 与 DangerSection 删项目强度对齐 |
+| **P3** | link_project 同名 batch 去重命名 | unlink → re-link 同 dataset 会撞名 |
+| **P3** | 项目卡批次概览（N 个批次 · K 已分派） | 需后端 ProjectStats 加字段避免 N+1 |
 | **P3** | husky + lint-staged 预提交钩子 | v0.6.6 CI 已能拦回归，本地拦截是 nice-to-have |
+| **P3** | AuditPage 折叠 UI sessionStorage 持久化、bug 截图失败 retry UI | v0.6.6/0.6.7 写时观察项 |
 | **P3** | i18n、SSO、2FA | 客户具体需求驱动 |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 + 通知中心 |
 

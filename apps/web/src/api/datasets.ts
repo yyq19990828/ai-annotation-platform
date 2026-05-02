@@ -145,7 +145,14 @@ export const datasetsApi = {
     ),
 
   unlinkProject: (id: string, projectId: string) =>
-    apiClient.delete<void>(`/datasets/${id}/link/${projectId}`),
+    apiClient.delete<{ deleted_tasks: number; deleted_annotations: number; soft: boolean }>(
+      `/datasets/${id}/link/${projectId}`,
+    ),
+
+  previewUnlink: (id: string, projectId: string) =>
+    apiClient.get<{ will_delete_tasks: number; will_delete_annotations: number }>(
+      `/datasets/${id}/link/${projectId}/preview-unlink`,
+    ),
 
   getLinkedProjects: (id: string) =>
     apiClient.get<import("./projects").ProjectResponse[]>(`/datasets/${id}/projects`),

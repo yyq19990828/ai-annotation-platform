@@ -80,11 +80,15 @@ export function useLinkProject(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (projectId: string) => datasetsApi.linkProject(datasetId, projectId),
-    onSuccess: () => {
+    onSuccess: (_data, projectId) => {
       qc.invalidateQueries({ queryKey: ["datasets"] });
       qc.invalidateQueries({ queryKey: ["dataset", datasetId] });
       qc.invalidateQueries({ queryKey: ["dataset-projects", datasetId] });
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project", projectId] });
+      qc.invalidateQueries({ queryKey: ["project-stats"] });
+      // v0.6.7 B-12：link 自动建命名 batch，必须刷新批次列表
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
     },
   });
 }
@@ -93,10 +97,15 @@ export function useUnlinkProject(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (projectId: string) => datasetsApi.unlinkProject(datasetId, projectId),
-    onSuccess: () => {
+    onSuccess: (_data, projectId) => {
       qc.invalidateQueries({ queryKey: ["datasets"] });
       qc.invalidateQueries({ queryKey: ["dataset", datasetId] });
       qc.invalidateQueries({ queryKey: ["dataset-projects", datasetId] });
+      // v0.6.7 B-10：unlink 后 project counter 重算 → 必须刷新所有 project 视图
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project", projectId] });
+      qc.invalidateQueries({ queryKey: ["project-stats"] });
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
     },
   });
 }

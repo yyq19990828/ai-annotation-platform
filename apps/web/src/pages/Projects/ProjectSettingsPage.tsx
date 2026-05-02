@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -26,13 +26,21 @@ const SECTIONS: { key: SectionKey; label: string; icon: "settings" | "users" | "
   { key: "danger", label: "危险操作", icon: "trash" },
 ];
 
+const VALID_SECTIONS: SectionKey[] = ["general", "classes", "attributes", "members", "batches", "owner", "danger"];
+
 export function ProjectSettingsPage() {
   const { id = "" } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { role } = usePermissions();
   const { data: project, isLoading, error } = useProject(id);
   const isOwner = useIsProjectOwner(project ?? null);
-  const [section, setSection] = useState<SectionKey>("general");
+  // v0.6.7 B-12-④：解析 ?section=batches 等深链参数。
+  const initialSection = (() => {
+    const q = searchParams.get("section");
+    return q && (VALID_SECTIONS as string[]).includes(q) ? (q as SectionKey) : "general";
+  })();
+  const [section, setSection] = useState<SectionKey>(initialSection);
 
   if (isLoading) {
     return (

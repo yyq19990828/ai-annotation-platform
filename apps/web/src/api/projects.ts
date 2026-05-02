@@ -67,6 +67,12 @@ export const projectsApi = {
   removeMember: (id: string, memberId: string) =>
     apiClient.delete<void>(`/projects/${id}/members/${memberId}`),
 
+  // v0.6.7 二修 B-10：清理无源 task（v0.6.0~v0.6.6 期间 link 留下的孤儿）
+  previewOrphanTasks: (id: string) =>
+    apiClient.get<{ orphan_tasks: number; orphan_annotations: number }>(`/projects/${id}/orphan-tasks/preview`),
+  cleanupOrphanTasks: (id: string) =>
+    apiClient.post<{ deleted_tasks: number; deleted_annotations: number }>(`/projects/${id}/orphan-tasks/cleanup`),
+
   exportProject: async (id: string, format: ExportFormat, opts?: { includeAttributes?: boolean }) => {
     const token = localStorage.getItem("token");
     const includeAttr = opts?.includeAttributes !== false;

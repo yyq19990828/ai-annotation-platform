@@ -5,7 +5,7 @@ import os
 import uuid
 import zipfile
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, get_current_user, require_roles
@@ -23,6 +23,7 @@ from app.schemas.dataset import (
     DatasetUploadInitResponse,
 )
 from app.schemas.project import ProjectOut
+from app.services.audit import AuditAction, AuditService
 from app.services.dataset import DatasetService
 from app.services.storage import storage_service
 
@@ -456,6 +457,7 @@ async def delete_item(
 async def link_project(
     dataset_id: uuid.UUID,
     data: DatasetLinkRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
@@ -464,22 +466,76 @@ async def link_project(
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
     link = await svc.link_project(dataset_id, data.project_id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.DATASET_LINK,
+        target_type="dataset",
+        target_id=str(dataset_id),
+        request=request,
+        status_code=200,
+        detail={"project_id": str(data.project_id)},
+    )
     await db.commit()
     return {"status": "linked", "dataset_id": str(dataset_id), "project_id": str(data.project_id)}
 
 
-@router.delete("/{dataset_id}/link/{project_id}", status_code=204)
-async def unlink_project(
+@router.get("/{dataset_id}/link/{project_id}/preview-unlink")
+async def preview_unlink_project(
     dataset_id: uuid.UUID,
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
+    """v0.6.7 B-10 v2：取消关联前的预览数字（will be deleted）。前端拿来做二次确认文案。"""
+    from sqlalchemy import select, func
+    from app.db.models.dataset import DatasetItem
+    from app.db.models.task import Task
+    from app.db.models.annotation import Annotation
+
+    task_ids = (await db.execute(
+        select(Task.id)
+        .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+        .where(Task.project_id == project_id, DatasetItem.dataset_id == dataset_id)
+    )).scalars().all()
+    task_count = len(task_ids)
+    ann_count = 0
+    if task_ids:
+        ann_count = (await db.execute(
+            select(func.count(Annotation.id)).where(Annotation.task_id.in_(list(task_ids)))
+        )).scalar() or 0
+    return {"will_delete_tasks": int(task_count), "will_delete_annotations": int(ann_count)}
+
+
+@router.delete("/{dataset_id}/link/{project_id}", status_code=200)
+async def unlink_project(
+    dataset_id: uuid.UUID,
+    project_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
     svc = DatasetService(db)
-    ok = await svc.unlink_project(dataset_id, project_id)
-    if not ok:
+    info = await svc.unlink_project(dataset_id, project_id)
+    if info is None:
         raise HTTPException(status_code=404, detail="Link not found")
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.DATASET_UNLINK,
+        target_type="dataset",
+        target_id=str(dataset_id),
+        request=request,
+        status_code=200,
+        detail={
+            "project_id": str(project_id),
+            "deleted_tasks": info["deleted_tasks"],
+            "deleted_annotations": info["deleted_annotations"],
+            "soft": False,
+        },
+    )
     await db.commit()
+    return info
 
 
 @router.get("/{dataset_id}/projects", response_model=list[ProjectOut])

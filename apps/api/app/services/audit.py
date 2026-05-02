@@ -28,6 +28,8 @@ class AuditAction(str, Enum):
     PROJECT_MEMBER_REMOVE = "project.member_remove"
     DATASET_CREATE = "dataset.create"
     DATASET_DELETE = "dataset.delete"
+    DATASET_LINK = "dataset.link"
+    DATASET_UNLINK = "dataset.unlink"
     SYSTEM_BOOTSTRAP_ADMIN = "system.bootstrap_admin"
     BUG_REPORT_CREATED = "bug_report.created"
     BUG_REPORT_STATUS_CHANGED = "bug_report.status_changed"

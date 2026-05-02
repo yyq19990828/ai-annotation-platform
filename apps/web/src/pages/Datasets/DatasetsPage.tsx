@@ -1,6 +1,7 @@
-import { useState, Fragment } from "react";
+import { useState, Fragment, useEffect } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { Thumbnail } from "@/components/Thumbnail";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -9,9 +10,11 @@ import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
 import { useDatasets, useDatasetItems, useCreateDataset, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions } from "@/hooks/useDatasets";
+import { datasetsApi } from "@/api/datasets";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useProjects } from "@/hooks/useProjects";
 import type { DatasetResponse } from "@/api/datasets";
+import type { ProjectResponse } from "@/api/projects";
 import type { IconName } from "@/components/ui/Icon";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -97,6 +100,7 @@ function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpan
 function DatasetDetail({ ds }: { ds: DatasetResponse }) {
   const [itemPage, setItemPage] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [confirmUnlink, setConfirmUnlink] = useState<ProjectResponse | null>(null);
   const { data: itemsData, isLoading: itemsLoading } = useDatasetItems(ds.id, { limit: 10, offset: itemPage * 10 });
   const { data: linkedProjects = [] } = useDatasetProjects(ds.id);
   const { data: allProjects } = useProjects();
@@ -246,7 +250,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                     <div style={{ fontSize: 12.5, fontWeight: 500 }}>{p.name}</div>
                     <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{p.display_id} · {p.type_label}</div>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => unlinkMutation.mutate(p.id)}>
+                  <Button size="sm" variant="ghost" onClick={() => setConfirmUnlink(p)} title="取消关联">
                     <Icon name="x" size={11} />
                   </Button>
                 </div>
@@ -277,9 +281,89 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
               )}
             </div>
           </div>
+
+          {confirmUnlink && (
+            <UnlinkConfirmModal
+              datasetId={ds.id}
+              datasetName={ds.name}
+              project={confirmUnlink}
+              onClose={() => setConfirmUnlink(null)}
+              onConfirm={() => {
+                unlinkMutation.mutate(confirmUnlink.id, {
+                  onSuccess: (res) => {
+                    pushToast({
+                      msg: "已取消关联",
+                      sub: res?.deleted_tasks
+                        ? `已删除 ${res.deleted_tasks} 个任务${res.deleted_annotations ? ` · ${res.deleted_annotations} 个标注` : ""}`
+                        : undefined,
+                    });
+                    setConfirmUnlink(null);
+                  },
+                  onError: (err: Error) => pushToast({ msg: "取消关联失败", sub: err.message, kind: "error" }),
+                });
+              }}
+            />
+          )}
         </div>
       </td>
     </tr>
+  );
+}
+
+function UnlinkConfirmModal({
+  datasetId,
+  datasetName,
+  project,
+  onClose,
+  onConfirm,
+}: {
+  datasetId: string;
+  datasetName: string;
+  project: ProjectResponse;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const [preview, setPreview] = useState<{ tasks: number; annotations: number } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    datasetsApi.previewUnlink(datasetId, project.id)
+      .then((r) => { if (!cancelled) setPreview({ tasks: r.will_delete_tasks, annotations: r.will_delete_annotations }); })
+      .catch(() => { if (!cancelled) setPreview({ tasks: 0, annotations: 0 }); });
+    return () => { cancelled = true; };
+  }, [datasetId, project.id]);
+
+  return (
+    <Modal open onClose={onClose} title="确认取消关联">
+      <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+        <p style={{ margin: "0 0 8px" }}>
+          确认取消数据集 <strong>{datasetName}</strong> 与项目 <strong>{project.name}</strong> 的关联？
+        </p>
+        <div style={{ margin: "0 0 8px", color: "var(--color-fg-muted)" }}>
+          {preview === null ? (
+            "正在统计影响范围…"
+          ) : preview.tasks === 0 ? (
+            "项目中没有由该数据集创建的任务，可放心取消。"
+          ) : (
+            <>
+              <strong style={{ color: "var(--color-danger)" }}>将一并删除</strong>项目中由该数据集创建的 <strong>{preview.tasks}</strong> 个任务
+              {preview.annotations > 0 && (
+                <>（含 <strong style={{ color: "var(--color-danger)" }}>{preview.annotations}</strong> 个已有标注）</>
+              )}
+              。<br />此操作不可恢复。
+            </>
+          )}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+          <Button onClick={onClose}>取消</Button>
+          <Button
+            onClick={onConfirm}
+            style={{ background: "var(--color-danger)", color: "#fff" }}
+          >
+            确认删除并取消关联
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

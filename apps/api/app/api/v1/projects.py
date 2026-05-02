@@ -1,5 +1,5 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +44,9 @@ def _visible_project_filter(user: User):
 
 
 async def _serialize_project(db: AsyncSession, project: Project) -> dict:
-    """补齐 owner_name + member_count，转 dict 以喂给 ProjectOut。"""
+    """补齐 owner_name + member_count + in_progress_tasks，转 dict 以喂给 ProjectOut。"""
+    from app.db.models.task import Task
+
     owner_name = None
     if project.owner_id:
         owner_row = await db.execute(
@@ -57,11 +59,20 @@ async def _serialize_project(db: AsyncSession, project: Project) -> dict:
         )
     )
     member_count = count_row.scalar() or 0
+    # v0.6.7：补 in_progress 计数器（store 里没存这一项，dashboard 用以渲染「已动工」副条）
+    in_progress_row = await db.execute(
+        select(func.count()).select_from(Task).where(
+            Task.project_id == project.id,
+            Task.status == "in_progress",
+        )
+    )
+    in_progress_tasks = in_progress_row.scalar() or 0
     data = {
         c.name: getattr(project, c.name) for c in project.__table__.columns
     }
     data["owner_name"] = owner_name
     data["member_count"] = member_count
+    data["in_progress_tasks"] = in_progress_tasks
     return data
 
 
@@ -401,3 +412,136 @@ async def trigger_preannotation(
         [str(tid) for tid in body.task_ids] if body.task_ids else None,
     )
     return {"job_id": job.id, "status": "queued"}
+
+
+@router.get("/{project_id}/orphan-tasks/preview")
+async def preview_orphan_tasks(
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+):
+    """v0.6.7 二修 B-10：预览本项目中「无源 task」（dataset_item_id 为空 / 指向已 unlink 的数据集 / 指向已删除 dataset_item）。"""
+    from sqlalchemy import select, func
+    from app.db.models.task import Task
+    from app.db.models.dataset import DatasetItem
+    from app.db.models.annotation import Annotation
+    from app.db.models.dataset import ProjectDataset
+
+    # 孤儿条件：tasks 不存在仍 link 着的 (dataset_item → dataset → project_datasets)
+    orphan_task_ids = (await db.execute(
+        select(Task.id).where(
+            Task.project_id == project.id,
+            ~Task.id.in_(
+                select(Task.id)
+                .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+                .join(ProjectDataset, (ProjectDataset.dataset_id == DatasetItem.dataset_id) & (ProjectDataset.project_id == project.id))
+                .where(Task.project_id == project.id)
+            )
+        )
+    )).scalars().all()
+    task_count = len(orphan_task_ids)
+    ann_count = 0
+    if orphan_task_ids:
+        ann_count = (await db.execute(
+            select(func.count(Annotation.id)).where(Annotation.task_id.in_(list(orphan_task_ids)))
+        )).scalar() or 0
+    return {"orphan_tasks": task_count, "orphan_annotations": int(ann_count)}
+
+
+@router.post("/{project_id}/orphan-tasks/cleanup")
+async def cleanup_orphan_tasks(
+    request: Request,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.6.7 二修 B-10：删除本项目所有「无源 task」（含 annotations / locks / comments），重算 counters。
+
+    适用场景：v0.6.0~v0.6.6 期间 link_project 写 dataset_item_id 但未持久化 batch 关系，
+    后续数据集被 unlink / 删除留下的孤儿 task。
+    """
+    pid = str(project.id)
+    # 用项目 delete 同款 raw SQL 但只针对孤儿 task ids
+    orphan_q = """
+        SELECT id FROM tasks WHERE project_id = :pid AND id NOT IN (
+            SELECT t.id FROM tasks t
+            JOIN dataset_items di ON di.id = t.dataset_item_id
+            JOIN project_datasets pd ON pd.dataset_id = di.dataset_id AND pd.project_id = t.project_id
+            WHERE t.project_id = :pid
+        )
+    """
+    rows = (await db.execute(text(orphan_q), {"pid": pid})).all()
+    orphan_ids = [str(r[0]) for r in rows]
+    if not orphan_ids:
+        return {"deleted_tasks": 0, "deleted_annotations": 0}
+
+    # 接 ANY(:ids) 形式批量
+    p = {"pid": pid, "ids": orphan_ids}
+    ann_count = (await db.execute(text(
+        "SELECT COUNT(*) FROM annotations WHERE task_id = ANY(:ids)"
+    ), {"ids": orphan_ids})).scalar() or 0
+
+    await db.execute(text(
+        "DELETE FROM annotation_comments WHERE annotation_id IN ("
+        "  SELECT id FROM annotations WHERE task_id = ANY(:ids))"
+    ), {"ids": orphan_ids})
+    await db.execute(text(
+        "DELETE FROM annotation_drafts WHERE task_id = ANY(:ids)"
+    ), {"ids": orphan_ids})
+    await db.execute(text(
+        "UPDATE annotations SET parent_prediction_id = NULL, parent_annotation_id = NULL "
+        "WHERE task_id = ANY(:ids)"
+    ), {"ids": orphan_ids})
+    await db.execute(text(
+        "DELETE FROM annotations WHERE task_id = ANY(:ids)"
+    ), {"ids": orphan_ids})
+    await db.execute(text(
+        "DELETE FROM task_locks WHERE task_id = ANY(:ids)"
+    ), {"ids": orphan_ids})
+    await db.execute(text(
+        "UPDATE bug_reports SET task_id = NULL WHERE task_id = ANY(:ids)"
+    ), {"ids": orphan_ids})
+    await db.execute(text(
+        "DELETE FROM tasks WHERE id = ANY(:ids)"
+    ), {"ids": orphan_ids})
+
+    # 重算 project + batch counters
+    from sqlalchemy import select, func
+    from app.db.models.task import Task
+    from app.db.models.task_batch import TaskBatch
+    row = (await db.execute(
+        select(
+            func.count().label("total"),
+            func.count().filter(Task.status == "completed").label("completed"),
+            func.count().filter(Task.status == "review").label("review"),
+        ).where(Task.project_id == project.id)
+    )).one()
+    project.total_tasks = row.total
+    project.completed_tasks = row.completed
+    project.review_tasks = row.review
+
+    batches = (await db.execute(select(TaskBatch).where(TaskBatch.project_id == project.id))).scalars().all()
+    for b in batches:
+        r = (await db.execute(
+            select(
+                func.count().label("total"),
+                func.count().filter(Task.status == "completed").label("completed"),
+                func.count().filter(Task.status == "review").label("review"),
+            ).where(Task.batch_id == b.id)
+        )).one()
+        b.total_tasks = r.total
+        b.completed_tasks = r.completed
+        b.review_tasks = r.review
+
+    from app.services.audit import AuditAction, AuditService
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="project.cleanup_orphans",
+        target_type="project",
+        target_id=str(project.id),
+        request=request,
+        status_code=200,
+        detail={"deleted_tasks": len(orphan_ids), "deleted_annotations": int(ann_count)},
+    )
+    await db.commit()
+    return {"deleted_tasks": len(orphan_ids), "deleted_annotations": int(ann_count)}

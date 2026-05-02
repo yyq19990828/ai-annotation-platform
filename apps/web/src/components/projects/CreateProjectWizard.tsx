@@ -4,16 +4,21 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
+import { Avatar } from "@/components/ui/Avatar";
 import { useToastStore } from "@/components/ui/Toast";
-import { useCreateProject } from "@/hooks/useProjects";
+import { useCreateProject, useAddProjectMember } from "@/hooks/useProjects";
+import { useDatasets, useLinkProject } from "@/hooks/useDatasets";
+import { useUsers } from "@/hooks/useUsers";
+import { useSplitBatches } from "@/hooks/useBatches";
 import {
   PROJECT_TYPES,
   PRESET_AI_MODELS,
   CUSTOM_MODEL_KEY,
 } from "@/constants/projectTypes";
 import type { ProjectResponse } from "@/api/projects";
+import type { DatasetResponse } from "@/api/datasets";
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
 interface Props {
   open: boolean;
@@ -28,6 +33,10 @@ interface FormState {
   aiEnabled: boolean;
   aiModelChoice: string;
   aiModelCustom: string;
+  // v0.6.7 B-11
+  datasetIds: string[];
+  splitNBatches: number; // 0 = 不切分（保留默认包），>=2 = 切分
+  members: { userId: string; role: "annotator" | "reviewer" }[];
 }
 
 const INITIAL: FormState = {
@@ -38,13 +47,20 @@ const INITIAL: FormState = {
   aiEnabled: false,
   aiModelChoice: PRESET_AI_MODELS[0],
   aiModelCustom: "",
+  datasetIds: [],
+  splitNBatches: 0,
+  members: [],
 };
 
-const STEP_LABELS: Record<1 | 2 | 3, string> = {
+const STEP_LABELS: Record<1 | 2 | 3 | 4 | 5, string> = {
   1: "类型",
   2: "类别",
   3: "AI 接入",
+  4: "数据",
+  5: "成员",
 };
+
+const DRAFT_KEY = "create_project_draft_v0_6_7";
 
 export function CreateProjectWizard({ open, onClose }: Props) {
   const navigate = useNavigate();
@@ -56,7 +72,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
   const [classInput, setClassInput] = useState("");
   const [created, setCreated] = useState<ProjectResponse | null>(null);
 
-  // 模态关闭时重置（短延时让动画可拓展）
+  // 草稿恢复 / 持久化
   useEffect(() => {
     if (!open) {
       setStep(1);
@@ -64,9 +80,22 @@ export function CreateProjectWizard({ open, onClose }: Props) {
       setClassInput("");
       setCreated(null);
       createProject.reset();
+      return;
+    }
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) setForm({ ...INITIAL, ...JSON.parse(saved) });
+    } catch {
+      // ignore
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    if (open && !created) {
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify(form)); } catch {/* */}
+    }
+  }, [form, open, created]);
 
   const selectedType = useMemo(
     () => PROJECT_TYPES.find((t) => t.key === form.typeKey) ?? PROJECT_TYPES[0],
@@ -110,10 +139,11 @@ export function CreateProjectWizard({ open, onClose }: Props) {
         due_date: form.dueDate || null,
       },
       {
-        onSuccess: (p) => {
+        onSuccess: async (p) => {
           setCreated(p);
-          setStep(4);
           pushToast({ msg: "项目创建成功", sub: p.display_id, kind: "success" });
+          // 后续 step 4 / 5 顺序调用其他端点，每步独立失败不阻断
+          setStep(4);
         },
         onError: (err) => {
           pushToast({
@@ -125,9 +155,17 @@ export function CreateProjectWizard({ open, onClose }: Props) {
     );
   };
 
+  // step 4 / 5 完成后的最终落地
+  const finishWizard = (linkedDatasets: number, addedMembers: number) => {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {/* */}
+    setStep(6);
+  };
+
+  const stepperCurrent = (step >= 1 && step <= 5 ? step : 5) as 1 | 2 | 3 | 4 | 5;
+
   return (
-    <Modal open={open} onClose={onClose} title={step === 4 ? "创建成功" : "新建项目"} width={580}>
-      {step !== 4 && <Stepper current={step} />}
+    <Modal open={open} onClose={onClose} title={step === 6 ? "创建完成" : "新建项目"} width={620}>
+      {step !== 6 && <Stepper current={stepperCurrent} />}
 
       {step === 1 && (
         <Step1
@@ -153,11 +191,36 @@ export function CreateProjectWizard({ open, onClose }: Props) {
       )}
 
       {step === 4 && created && (
+        <Step4Datasets
+          project={created}
+          form={form}
+          setForm={setForm}
+          onNext={(linked) => {
+            // 把已选 datasetIds + splitNBatches 应用完成后下一步
+            // 实际 link/split 由 Step4Datasets 内部完成 mutation 后调 onNext
+            void linked;
+            setStep(5);
+          }}
+        />
+      )}
+
+      {step === 5 && created && (
+        <Step5Members
+          project={created}
+          form={form}
+          setForm={setForm}
+          onNext={(added) => {
+            finishWizard(form.datasetIds.length, added);
+          }}
+        />
+      )}
+
+      {step === 6 && created && (
         <SuccessStep
           project={created}
-          onLinkDataset={() => {
-            onClose();
-            navigate("/datasets");
+          summary={{
+            datasets: form.datasetIds.length,
+            members: form.members.length,
           }}
           onOpenProject={() => {
             onClose();
@@ -171,7 +234,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
         />
       )}
 
-      {step !== 4 && (
+      {(step === 1 || step === 2 || step === 3) && (
         <Footer
           step={step}
           canNext={
@@ -193,23 +256,23 @@ export function CreateProjectWizard({ open, onClose }: Props) {
   );
 }
 
-function Stepper({ current }: { current: 1 | 2 | 3 }) {
+function Stepper({ current }: { current: 1 | 2 | 3 | 4 | 5 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}>
-      {[1, 2, 3].map((n, i) => {
+      {[1, 2, 3, 4, 5].map((n, i) => {
         const active = n === current;
         const done = n < current;
         const color = done || active ? "var(--color-accent)" : "var(--color-fg-subtle)";
         return (
-          <div key={n} style={{ display: "flex", alignItems: "center", flex: i < 2 ? 1 : "0 0 auto" }}>
+          <div key={n} style={{ display: "flex", alignItems: "center", flex: i < 4 ? 1 : "0 0 auto" }}>
             <div
               style={{
-                width: 24,
-                height: 24,
+                width: 22,
+                height: 22,
                 borderRadius: "50%",
                 background: done || active ? "var(--color-accent)" : "var(--color-bg-sunken)",
                 color: done || active ? "#fff" : "var(--color-fg-muted)",
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: 600,
                 display: "inline-flex",
                 alignItems: "center",
@@ -218,17 +281,17 @@ function Stepper({ current }: { current: 1 | 2 | 3 }) {
                 flexShrink: 0,
               }}
             >
-              {done ? <Icon name="check" size={12} /> : n}
+              {done ? <Icon name="check" size={11} /> : n}
             </div>
-            <span style={{ marginLeft: 8, fontSize: 12, color, fontWeight: active ? 600 : 500 }}>
-              {STEP_LABELS[n as 1 | 2 | 3]}
+            <span style={{ marginLeft: 6, fontSize: 11.5, color, fontWeight: active ? 600 : 500 }}>
+              {STEP_LABELS[n as 1 | 2 | 3 | 4 | 5]}
             </span>
-            {i < 2 && (
+            {i < 4 && (
               <div
                 style={{
                   flex: 1,
                   height: 1,
-                  margin: "0 12px",
+                  margin: "0 8px",
                   background: n < current ? "var(--color-accent)" : "var(--color-border)",
                 }}
               />
@@ -381,7 +444,7 @@ function Step2({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)" }}>
-        添加该项目的标注类别（可空，后续可在项目设置中调整）。回车快速添加。
+        添加该项目的标注类别（可空，后续可在项目设置中调整颜色 / 别名 / 父子结构）。回车快速添加。
       </div>
 
       <div style={{ display: "flex", gap: 6 }}>
@@ -550,15 +613,312 @@ function Step3({
   );
 }
 
+function Step4Datasets({
+  project,
+  form,
+  setForm,
+  onNext,
+}: {
+  project: ProjectResponse;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  onNext: (linked: number) => void;
+}) {
+  const pushToast = useToastStore((s) => s.push);
+  const { data: datasetsRes, isLoading } = useDatasets();
+  const splitMutation = useSplitBatches(project.id);
+  // useLinkProject 需要 datasetId 维度的实例，链路上每个 ds 的 mutation 都建一个会失控；
+  // 这里走原始 api 直接调（hooks 仅用于 invalidate；step 完成后整体 invalidate 一次足够）。
+  const datasets: DatasetResponse[] = datasetsRes?.items ?? [];
+  const [linking, setLinking] = useState(false);
+
+  const toggle = (id: string) => {
+    setForm((s) => ({
+      ...s,
+      datasetIds: s.datasetIds.includes(id)
+        ? s.datasetIds.filter((x) => x !== id)
+        : [...s.datasetIds, id],
+    }));
+  };
+
+  const onContinue = async () => {
+    if (form.datasetIds.length === 0) {
+      onNext(0);
+      return;
+    }
+    setLinking(true);
+    try {
+      const { datasetsApi } = await import("@/api/datasets");
+      // 依次 link（保证审计一行一项），失败不阻断
+      let linkedOK = 0;
+      for (const dsId of form.datasetIds) {
+        try {
+          await datasetsApi.linkProject(dsId, project.id);
+          linkedOK++;
+        } catch (e) {
+          pushToast({ msg: "数据集关联失败", sub: (e as Error).message, kind: "error" });
+        }
+      }
+      // 切分（仅当用户选了 >=2）
+      if (form.splitNBatches >= 2) {
+        try {
+          await splitMutation.mutateAsync({
+            strategy: "random",
+            n_batches: form.splitNBatches,
+            name_prefix: "Batch",
+            priority: 50,
+          });
+        } catch (e) {
+          pushToast({ msg: "批次切分失败（可在设置页重试）", sub: (e as Error).message });
+        }
+      }
+      pushToast({ msg: `已关联 ${linkedOK} 个数据集`, kind: "success" });
+      onNext(linkedOK);
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)" }}>
+        选择要关联到本项目的数据集（可空 / 多选）。关联后会自动为每个数据集建一个独立批次。
+      </div>
+
+      {isLoading && <div style={{ padding: 12, fontSize: 12, color: "var(--color-fg-subtle)" }}>加载数据集…</div>}
+
+      {!isLoading && datasets.length === 0 && (
+        <div style={{
+          padding: 16, fontSize: 12.5, color: "var(--color-fg-muted)",
+          background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)", textAlign: "center",
+        }}>
+          暂无可用数据集，可跳过此步骤稍后在「数据集」页关联。
+        </div>
+      )}
+
+      {!isLoading && datasets.length > 0 && (
+        <div style={{
+          maxHeight: 220, overflowY: "auto",
+          border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
+          background: "var(--color-bg-sunken)", padding: 6,
+        }}>
+          {datasets.map((d) => {
+            const checked = form.datasetIds.includes(d.id);
+            return (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => toggle(d.id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, width: "100%",
+                  padding: "6px 10px",
+                  borderRadius: "var(--radius-sm)",
+                  background: checked ? "var(--color-accent-soft)" : "transparent",
+                  border: `1px solid ${checked ? "var(--color-accent)" : "transparent"}`,
+                  cursor: "pointer", textAlign: "left", marginBottom: 2,
+                  fontFamily: "inherit", color: "var(--color-fg)",
+                }}
+              >
+                <span style={{
+                  width: 14, height: 14, borderRadius: 3,
+                  border: "1px solid var(--color-border)",
+                  background: checked ? "var(--color-accent)" : "var(--color-bg)",
+                  color: "#fff",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  {checked && <Icon name="check" size={10} />}
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 500 }}>{d.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                    <span className="mono">{d.display_id}</span> · {d.file_count} 个文件 · {d.data_type}
+                  </div>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {form.datasetIds.length > 0 && (
+        <div style={{
+          padding: 10, border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius-md)", background: "var(--color-bg-sunken)",
+        }}>
+          <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 8 }}>
+            关联后的初始分包
+          </div>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", fontSize: 12 }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+              <input
+                type="radio"
+                checked={form.splitNBatches === 0}
+                onChange={() => setForm((s) => ({ ...s, splitNBatches: 0 }))}
+              />
+              保留默认包（每个数据集一个包）
+            </label>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+              <input
+                type="radio"
+                checked={form.splitNBatches >= 2}
+                onChange={() => setForm((s) => ({ ...s, splitNBatches: Math.max(2, s.splitNBatches) }))}
+              />
+              随机切分为
+              <input
+                type="number" min={2} max={20}
+                value={form.splitNBatches >= 2 ? form.splitNBatches : 3}
+                disabled={form.splitNBatches < 2}
+                onChange={(e) => setForm((s) => ({ ...s, splitNBatches: Math.max(2, Math.min(20, Number(e.target.value))) }))}
+                style={{ ...inputStyle, width: 56, padding: "4px 8px", fontSize: 12 }}
+              />
+              个批次
+            </label>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--color-border)" }}>
+        <Button variant="ghost" onClick={() => onNext(0)} disabled={linking}>跳过</Button>
+        <Button variant="primary" onClick={onContinue} disabled={linking}>
+          {linking ? "关联中…" : form.datasetIds.length === 0 ? "下一步" : `关联 ${form.datasetIds.length} 个并继续`}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Step5Members({
+  project,
+  form,
+  setForm,
+  onNext,
+}: {
+  project: ProjectResponse;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  onNext: (added: number) => void;
+}) {
+  const pushToast = useToastStore((s) => s.push);
+  const addMember = useAddProjectMember(project.id);
+  const { data: users = [], isLoading } = useUsers();
+  const [adding, setAdding] = useState(false);
+
+  // 仅展示 annotator / reviewer 角色用户（项目成员只能这两个角色）
+  const eligible = users.filter((u) => u.role === "annotator" || u.role === "reviewer");
+
+  const toggle = (userId: string, role: "annotator" | "reviewer") => {
+    setForm((s) => {
+      const exists = s.members.find((m) => m.userId === userId);
+      if (exists) return { ...s, members: s.members.filter((m) => m.userId !== userId) };
+      return { ...s, members: [...s.members, { userId, role }] };
+    });
+  };
+
+  const onContinue = async () => {
+    if (form.members.length === 0) {
+      onNext(0);
+      return;
+    }
+    setAdding(true);
+    let ok = 0;
+    for (const m of form.members) {
+      try {
+        await addMember.mutateAsync({ user_id: m.userId, role: m.role });
+        ok++;
+      } catch (e) {
+        pushToast({ msg: "添加成员失败", sub: (e as Error).message, kind: "error" });
+      }
+    }
+    setAdding(false);
+    pushToast({ msg: `已添加 ${ok} 位成员`, kind: "success" });
+    onNext(ok);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)" }}>
+        选择标注员 / 审核员（可空）。每位成员的角色由其账户角色决定。
+      </div>
+
+      {isLoading && <div style={{ padding: 12, fontSize: 12, color: "var(--color-fg-subtle)" }}>加载用户…</div>}
+
+      {!isLoading && eligible.length === 0 && (
+        <div style={{
+          padding: 16, fontSize: 12.5, color: "var(--color-fg-muted)",
+          background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)", textAlign: "center",
+        }}>
+          暂无 annotator / reviewer 角色的用户，可跳过此步骤。
+        </div>
+      )}
+
+      {!isLoading && eligible.length > 0 && (
+        <div style={{
+          maxHeight: 240, overflowY: "auto",
+          border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
+          background: "var(--color-bg-sunken)", padding: 6,
+        }}>
+          {eligible.map((u) => {
+            const checked = form.members.some((m) => m.userId === u.id);
+            const role = (u.role === "reviewer" ? "reviewer" : "annotator") as "annotator" | "reviewer";
+            return (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => toggle(u.id, role)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, width: "100%",
+                  padding: "6px 10px",
+                  borderRadius: "var(--radius-sm)",
+                  background: checked ? "var(--color-accent-soft)" : "transparent",
+                  border: `1px solid ${checked ? "var(--color-accent)" : "transparent"}`,
+                  cursor: "pointer", textAlign: "left", marginBottom: 2,
+                  fontFamily: "inherit", color: "var(--color-fg)",
+                }}
+              >
+                <span style={{
+                  width: 14, height: 14, borderRadius: 3,
+                  border: "1px solid var(--color-border)",
+                  background: checked ? "var(--color-accent)" : "var(--color-bg)",
+                  color: "#fff",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0,
+                }}>
+                  {checked && <Icon name="check" size={10} />}
+                </span>
+                <Avatar initial={(u.name || u.email).slice(0, 1).toUpperCase()} size="sm" />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 500 }}>{u.name || u.email}</div>
+                  <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{u.email}</div>
+                </span>
+                <Badge variant={role === "reviewer" ? "warning" : "accent"}>
+                  {role === "reviewer" ? "审核员" : "标注员"}
+                </Badge>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--color-border)" }}>
+        <Button variant="ghost" onClick={() => onNext(0)} disabled={adding}>跳过</Button>
+        <Button variant="primary" onClick={onContinue} disabled={adding}>
+          {adding ? "添加中…" : form.members.length === 0 ? "完成" : `添加 ${form.members.length} 位并完成`}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function SuccessStep({
   project,
-  onLinkDataset,
+  summary,
   onOpenProject,
   onOpenSettings,
   onDone,
 }: {
   project: ProjectResponse;
-  onLinkDataset: () => void;
+  summary: { datasets: number; members: number };
   onOpenProject: () => void;
   onOpenSettings: () => void;
   onDone: () => void;
@@ -585,19 +945,21 @@ function SuccessStep({
       <div style={{ fontSize: 12, color: "var(--color-fg-muted)", marginBottom: 4 }}>
         <span className="mono">{project.display_id}</span> · {project.type_label}
       </div>
-      <div style={{ fontSize: 12, color: "var(--color-fg-subtle)", marginBottom: 22, textAlign: "center", maxWidth: 380 }}>
-        项目已创建。下一步推荐去关联数据集，或直接进入标注工作台。
+      <div style={{ fontSize: 12, color: "var(--color-fg-subtle)", marginBottom: 18, textAlign: "center", maxWidth: 400 }}>
+        已关联 {summary.datasets} 个数据集 · 已添加 {summary.members} 位成员
+        {summary.datasets === 0 && (
+          <div style={{ marginTop: 4, color: "var(--color-warning)" }}>
+            尚未关联数据集，可去设置页继续配置
+          </div>
+        )}
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-        <Button variant="primary" onClick={onLinkDataset}>
-          <Icon name="link" size={12} />关联数据集
-        </Button>
-        <Button onClick={onOpenSettings}>
+        <Button variant="primary" onClick={onOpenSettings}>
           <Icon name="settings" size={12} />项目设置
         </Button>
         {canOpen && (
           <Button onClick={onOpenProject}>
-            <Icon name="target" size={12} />打开项目
+            <Icon name="target" size={12} />打开工作台
           </Button>
         )}
         <Button variant="ghost" onClick={onDone}>完成</Button>

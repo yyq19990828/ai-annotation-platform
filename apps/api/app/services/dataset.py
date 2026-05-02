@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
 from app.services.display_id import next_display_id
 from app.services.storage import storage_service
 
@@ -305,6 +306,28 @@ class DatasetService:
         project = await self.db.get(Project, project_id)
         created_count = len(items)
 
+        # v0.6.7 B-12：自动为本次 link 创建一个独立批次（命名「{ds.name} 默认包」），
+        # 把所有新建任务的 batch_id 写到这个 batch，让管理员立刻在 BatchesSection 看到分包。
+        # 老项目里的 B-DEFAULT 仍保留作为「未归类」哨兵，新接入数据集不再倾倒进 B-DEFAULT。
+        batch_id: uuid.UUID | None = None
+        if items:
+            ds = await self.db.get(Dataset, dataset_id)
+            batch_display = await next_display_id(self.db, "batches")
+            batch = TaskBatch(
+                id=uuid.uuid4(),
+                project_id=project_id,
+                dataset_id=dataset_id,
+                display_id=batch_display,
+                name=f"{ds.name if ds else '数据集'} 默认包",
+                status="draft",
+                priority=50,
+                assigned_user_ids=[],
+                total_tasks=created_count,
+            )
+            self.db.add(batch)
+            await self.db.flush()
+            batch_id = batch.id
+
         if items:
             # v0.6.6: 一次性预分配 N 个 display_id 序列号 + 单次 INSERT，
             # 替代 v0.6.5 之前逐条 db.add + 逐条 nextval 的循环（1000 条 ~2s → < 200ms）。
@@ -319,6 +342,7 @@ class DatasetService:
                     "id": uuid.uuid4(),
                     "project_id": project_id,
                     "dataset_item_id": item.id,
+                    "batch_id": batch_id,
                     "display_id": f"T-{display_nums[i]}",
                     "file_name": item.file_name,
                     "file_path": item.file_path,
@@ -335,14 +359,98 @@ class DatasetService:
         await self.db.flush()
         return link
 
-    async def unlink_project(self, dataset_id: uuid.UUID, project_id: uuid.UUID) -> bool:
+    async def unlink_project(self, dataset_id: uuid.UUID, project_id: uuid.UUID) -> dict | None:
+        """v0.6.7 二修 B-10：hard-unlink ——级联删除该 dataset 在该 project 下的所有 task
+        (含 annotations / comments / locks)，不再保留为孤儿。
+
+        理由：用户期望「取消关联 = 撤销 link 的全部副作用」，soft-unlink 留下进度永远停在历史值。
+        相关数据丢失（annotations / 子项）通过前端二次确认 + 数字提示让用户知情。
+
+        返回：None 表示 link 不存在；否则 {"deleted_tasks": N, "deleted_annotations": M, "soft": false}。
+        """
+        from app.db.models.annotation import Annotation
+        from app.db.models.annotation_comment import AnnotationComment
+        from app.db.models.task_lock import TaskLock
+
+        # 1. 找出本次要删的 task ids
+        target_tasks = (await self.db.execute(
+            select(Task.id)
+            .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+            .where(
+                Task.project_id == project_id,
+                DatasetItem.dataset_id == dataset_id,
+            )
+        )).scalars().all()
+        target_task_ids = list(target_tasks)
+
+        # 2. 找出对应 annotation ids（用于 annotation_comments 级联）
+        ann_ids: list[uuid.UUID] = []
+        ann_count = 0
+        if target_task_ids:
+            ann_ids = list((await self.db.execute(
+                select(Annotation.id).where(Annotation.task_id.in_(target_task_ids))
+            )).scalars().all())
+            ann_count = len(ann_ids)
+
+        # 3. 级联删除（顺序关键：先 child 后 parent）
+        if ann_ids:
+            await self.db.execute(
+                delete(AnnotationComment).where(AnnotationComment.annotation_id.in_(ann_ids))
+            )
+        if target_task_ids:
+            await self.db.execute(
+                delete(Annotation).where(Annotation.task_id.in_(target_task_ids))
+            )
+            await self.db.execute(
+                delete(TaskLock).where(TaskLock.task_id.in_(target_task_ids))
+            )
+            await self.db.execute(
+                delete(Task).where(Task.id.in_(target_task_ids))
+            )
+
+        # 4. 删 ProjectDataset link
         result = await self.db.execute(
             delete(ProjectDataset).where(
                 ProjectDataset.dataset_id == dataset_id,
                 ProjectDataset.project_id == project_id,
             )
         )
-        return result.rowcount > 0
+        if result.rowcount == 0:
+            return None
+
+        # 5. 重算 project & 受影响 batch 的计数器
+        project = await self.db.get(Project, project_id)
+        if project:
+            row = (await self.db.execute(
+                select(
+                    func.count().label("total"),
+                    func.count().filter(Task.status == "completed").label("completed"),
+                    func.count().filter(Task.status == "review").label("review"),
+                ).where(Task.project_id == project_id)
+            )).one()
+            project.total_tasks = row.total
+            project.completed_tasks = row.completed
+            project.review_tasks = row.review
+
+        # 6. 重算所有该 project 的 batch 计数器（被删 task 之前可能在某个 batch 里）
+        from app.db.models.task_batch import TaskBatch
+        batches = (await self.db.execute(
+            select(TaskBatch).where(TaskBatch.project_id == project_id)
+        )).scalars().all()
+        for b in batches:
+            r = (await self.db.execute(
+                select(
+                    func.count().label("total"),
+                    func.count().filter(Task.status == "completed").label("completed"),
+                    func.count().filter(Task.status == "review").label("review"),
+                ).where(Task.batch_id == b.id)
+            )).one()
+            b.total_tasks = r.total
+            b.completed_tasks = r.completed
+            b.review_tasks = r.review
+
+        await self.db.flush()
+        return {"deleted_tasks": len(target_task_ids), "deleted_annotations": ann_count, "soft": False}
 
     async def get_linked_projects(self, dataset_id: uuid.UUID) -> list[Project]:
         result = await self.db.execute(

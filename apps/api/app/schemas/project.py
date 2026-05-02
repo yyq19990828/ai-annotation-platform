@@ -59,6 +59,7 @@ class ProjectOut(BaseModel):
     total_tasks: int
     completed_tasks: int
     review_tasks: int
+    in_progress_tasks: int = 0
     due_date: date | None
     created_at: datetime
     updated_at: datetime

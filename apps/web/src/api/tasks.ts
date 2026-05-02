@@ -111,4 +111,21 @@ export const tasksApi = {
 
   releaseLock: (taskId: string) =>
     apiClient.delete<void>(`/tasks/${taskId}/lock`),
+
+  /**
+   * v0.6.7 B-13：unmount / 页面跳转期间 release 必须在请求被取消前送达。
+   * 用 fetch keepalive 而非常规 client（client 走 fetch 但未开 keepalive，浏览器会在 unload 时取消）。
+   * sendBeacon 不支持 Bearer header，所以走 keepalive。
+   */
+  releaseLockKeepalive: (taskId: string) => {
+    const token = localStorage.getItem("token");
+    return fetch(`/api/v1/tasks/${taskId}/lock`, {
+      method: "DELETE",
+      keepalive: true,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    }).catch(() => {});
+  },
 };
