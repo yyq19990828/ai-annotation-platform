@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
+import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { useNavigate } from "react-router-dom";
 import { useToastStore } from "@/components/ui/Toast";
 import { useReviewerStats, useMyRecentReviews } from "@/hooks/useDashboard";
@@ -142,6 +143,11 @@ export function ReviewerDashboard() {
                       {b.review_tasks > 0 && <span> · {b.review_tasks} 待审</span>}
                       {remaining > 0 && <span> · {remaining} 未交</span>}
                     </div>
+                    {b.annotator && (
+                      <div style={{ marginTop: 6 }}>
+                        <AssigneeAvatarStack users={[b.annotator]} label="标注员" max={1} />
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
                     <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }} className="mono">

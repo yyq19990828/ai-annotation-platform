@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient, useIsFetching } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { SearchInput } from "@/components/ui/SearchInput";
@@ -9,6 +9,7 @@ import { useUnreadCount } from "@/hooks/useNotifications";
 import { useTheme, type ThemePref } from "@/hooks/useTheme";
 import type { IconName } from "@/components/ui/Icon";
 import { NotificationsPopover } from "./NotificationsPopover";
+import { CommandPalette } from "@/components/CommandPalette";
 
 interface TopBarProps {
   workspace: string;
@@ -28,7 +29,23 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
   const qc = useQueryClient();
   const isFetching = useIsFetching();
   const [notifOpen, setNotifOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const { theme, resolved, setTheme } = useTheme();
+
+  // v0.7.2 · 全局 ⌘K / Ctrl+K 触发命令搜索
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
+        // 在 input/textarea/contenteditable 内不拦截系统快捷键
+        if (tag === "input" || tag === "textarea") return;
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const { data: unreadData } = useUnreadCount();
   const unreadCount = unreadData?.unread ?? 0;
@@ -154,6 +171,8 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
             placeholder="搜索项目、任务、数据集、成员..."
             width={360}
             kbd="⌘K"
+            onClick={() => setPaletteOpen(true)}
+            readOnly
           />
         </div>
 
@@ -298,6 +317,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           </button>
         </div>
       </header>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </>
   );
 }

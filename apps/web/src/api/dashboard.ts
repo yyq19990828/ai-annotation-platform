@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import type { UserBrief } from "@/types";
 
 export interface AdminDashboardStats {
   total_users: number;
@@ -35,6 +36,8 @@ export interface ReviewingBatchItem {
   total_tasks: number;
   review_tasks: number;
   completed_tasks: number;
+  /** v0.7.2 · 这批的标注员（单值；让 reviewer 知道是谁标的） */
+  annotator: UserBrief | null;
 }
 
 export interface ReviewerDashboardStats {
@@ -81,6 +84,8 @@ export interface MyBatchItem {
   progress_pct: number;
   review_feedback: string | null;
   reviewed_at: string | null;
+  /** v0.7.2 · 这批的审核员（单值；让标注员知道谁会审） */
+  reviewer: UserBrief | null;
 }
 
 export const dashboardApi = {

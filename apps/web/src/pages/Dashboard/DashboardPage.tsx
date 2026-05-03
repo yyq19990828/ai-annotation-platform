@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -19,6 +19,8 @@ import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useAuthStore } from "@/stores/authStore";
 import { useAuditLogs } from "@/hooks/useAudit";
 import { auditActionLabel } from "@/utils/auditLabels";
+import { FilterDrawer, EMPTY_FILTERS, type DashboardFilters } from "./FilterDrawer";
+import { ProjectGrid } from "./ProjectGrid";
 
 const TYPE_ICONS: Record<string, string> = {
   "image-det": "rect",
@@ -189,10 +191,20 @@ const FILTER_STATUS_MAP: Record<string, string | undefined> = {
 export function DashboardPage() {
   const [filter, setFilter] = useState<string>("全部");
   const [query, setQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  // v0.7.2 · 高级筛选状态（不写 URL，避免 search 参数过长；TabRow 状态切换仍同步到此处）
+  const [advanced, setAdvanced] = useState<DashboardFilters>(EMPTY_FILTERS);
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const wizardOpen = searchParams.get("new") === "1";
+  const viewMode: "list" | "grid" = searchParams.get("view") === "grid" ? "grid" : "list";
+  const setViewMode = (mode: "list" | "grid") => {
+    const next = new URLSearchParams(searchParams);
+    if (mode === "grid") next.set("view", "grid");
+    else next.delete("view");
+    setSearchParams(next, { replace: true });
+  };
   const [importOpen, setImportOpen] = useState(false);
   const currentUser = useAuthStore((s) => s.user);
 
@@ -224,10 +236,25 @@ export function DashboardPage() {
     setSearchParams(next, { replace: true });
   };
 
+  // 合并 TabRow 状态（filter）+ FilterDrawer 状态（advanced）；TabRow 优先（advanced.status 仅在 drawer 内调整时取代 TabRow）
+  const effectiveStatus = advanced.status ?? FILTER_STATUS_MAP[filter];
   const { data: projects = [], isLoading } = useProjects({
-    status: FILTER_STATUS_MAP[filter],
+    status: effectiveStatus,
     search: query || undefined,
+    type_key: advanced.type_key.length > 0 ? advanced.type_key : undefined,
+    member_id: advanced.member_id,
+    created_from: advanced.created_from,
+    created_to: advanced.created_to,
   });
+
+  const advancedActiveCount = useMemo(() => {
+    let n = 0;
+    if (advanced.type_key.length) n += 1;
+    if (advanced.member_id) n += 1;
+    if (advanced.created_from || advanced.created_to) n += 1;
+    if (advanced.status && advanced.status !== FILTER_STATUS_MAP[filter]) n += 1;
+    return n;
+  }, [advanced, filter]);
 
   const { data: stats } = useProjectStats();
   const { data: audit } = useAuditLogs({ page: 1, page_size: 8 });
@@ -275,10 +302,35 @@ export function DashboardPage() {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <SearchInput placeholder="搜索项目..." value={query} onChange={setQuery} width={220} />
-            <Button><Icon name="filter" size={13} />筛选</Button>
-            <Button><Icon name="grid" size={13} /></Button>
+            <Button onClick={() => setFilterOpen(true)}>
+              <Icon name="filter" size={13} />筛选
+              {advancedActiveCount > 0 && (
+                <Badge variant="accent" style={{ marginLeft: 4, fontSize: 10 }}>{advancedActiveCount}</Badge>
+              )}
+            </Button>
+            <Button
+              onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+              title={viewMode === "grid" ? "切换到列表视图" : "切换到网格视图"}
+              style={viewMode === "grid" ? { background: "var(--color-bg-sunken)" } : undefined}
+            >
+              <Icon name={viewMode === "grid" ? "list" : "grid"} size={13} />
+            </Button>
           </div>
         </div>
+        {viewMode === "grid" ? (
+          isLoading ? (
+            <div style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>
+              加载中...
+            </div>
+          ) : (
+            <ProjectGrid
+              projects={projects}
+              onOpen={onOpenProject}
+              canManage={canManageProject}
+              onSettings={onSettings}
+            />
+          )
+        ) : (
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
           <thead>
             <tr>
@@ -322,7 +374,15 @@ export function DashboardPage() {
             )}
           </tbody>
         </table>
+        )}
       </Card>
+
+      <FilterDrawer
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        initial={advanced}
+        onApply={setAdvanced}
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginTop: 16 }}>
         <Card>

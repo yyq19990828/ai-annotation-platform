@@ -34,7 +34,7 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
 # v0.7.0：transition 鉴权矩阵 — (from, to) 元组 → 允许角色集合 / 特殊判定
 # 'owner' = super_admin 或项目 owner（require_project_owner 等价）
 # 'reviewer' = super_admin / project_admin(owner) / reviewer
-# 'annotator_assigned' = 标注员且 user_id 在 batch.assigned_user_ids 中
+# 'annotator_assigned' = 标注员且 user_id == batch.annotator_id（v0.7.2 单值语义）
 def _is_owner(user: User, project: Project) -> bool:
     return user.role == UserRole.SUPER_ADMIN or project.owner_id == user.id
 
@@ -44,10 +44,10 @@ def _is_reviewer(user: User, project: Project) -> bool:
 
 
 def _is_annotator_assigned(user: User, batch: TaskBatch) -> bool:
+    """v0.7.2：单值语义 — batch.annotator_id == user.id。"""
     if user.role != UserRole.ANNOTATOR:
         return False
-    assigned = batch.assigned_user_ids or []
-    return str(user.id) in [str(x) for x in assigned]
+    return batch.annotator_id is not None and batch.annotator_id == user.id
 
 
 def assert_can_transition(
@@ -153,9 +153,11 @@ class BatchService:
             status=BatchStatus.DRAFT,
             priority=data.priority,
             deadline=data.deadline,
-            assigned_user_ids=[str(uid) for uid in data.assigned_user_ids],
+            annotator_id=data.annotator_id,
+            reviewer_id=data.reviewer_id,
             created_by=created_by,
         )
+        self._sync_assigned_user_ids(batch)
         self.db.add(batch)
         await self.db.flush()
         return batch
@@ -165,12 +167,51 @@ class BatchService:
         if not batch:
             raise HTTPException(status_code=404, detail="Batch not found")
         fields = data.model_dump(exclude_unset=True)
-        if "assigned_user_ids" in fields and fields["assigned_user_ids"] is not None:
-            fields["assigned_user_ids"] = [str(uid) for uid in fields["assigned_user_ids"]]
         for k, v in fields.items():
             setattr(batch, k, v)
+
+        # v0.7.2：annotator_id / reviewer_id 变更时，自动派生 assigned_user_ids
+        # （前端旧路径仍读这个 list；同时回填 task 级 assignee_id / reviewer_id）
+        annotator_changed = "annotator_id" in fields
+        reviewer_changed = "reviewer_id" in fields
+        if annotator_changed or reviewer_changed:
+            self._sync_assigned_user_ids(batch)
+
         await self.db.flush()
+
+        if annotator_changed:
+            await self._cascade_task_assignee(batch.id, batch.annotator_id)
+        if reviewer_changed:
+            await self._cascade_task_reviewer(batch.id, batch.reviewer_id)
         return batch
+
+    @staticmethod
+    def _sync_assigned_user_ids(batch: TaskBatch) -> None:
+        """v0.7.2：派生 assigned_user_ids = [annotator_id, reviewer_id] filter None。
+        旧的 multi-select 数据由 alembic 0030 已迁移到单值列；此处保持双向写。
+        """
+        ids: list[str] = []
+        if batch.annotator_id:
+            ids.append(str(batch.annotator_id))
+        if batch.reviewer_id:
+            ids.append(str(batch.reviewer_id))
+        batch.assigned_user_ids = ids
+
+    async def _cascade_task_assignee(
+        self, batch_id: uuid.UUID, user_id: uuid.UUID | None,
+    ) -> None:
+        """v0.7.2：batch 改 annotator → 该 batch 下所有 task.assignee_id 跟随。"""
+        await self.db.execute(
+            update(Task).where(Task.batch_id == batch_id).values(assignee_id=user_id)
+        )
+
+    async def _cascade_task_reviewer(
+        self, batch_id: uuid.UUID, user_id: uuid.UUID | None,
+    ) -> None:
+        """v0.7.2：batch 改 reviewer → 该 batch 下所有 task.reviewer_id 跟随。"""
+        await self.db.execute(
+            update(Task).where(Task.batch_id == batch_id).values(reviewer_id=user_id)
+        )
 
     async def transition(
         self, batch_id: uuid.UUID, target_status: str, actor_id: uuid.UUID | None = None,
@@ -278,9 +319,11 @@ class BatchService:
                 status=BatchStatus.DRAFT,
                 priority=data.priority,
                 deadline=data.deadline,
-                assigned_user_ids=[str(uid) for uid in data.assigned_user_ids],
+                annotator_id=data.annotator_id,
+                reviewer_id=data.reviewer_id,
                 created_by=created_by,
             )
+            self._sync_assigned_user_ids(batch)
             self.db.add(batch)
             await self.db.flush()
 
@@ -323,9 +366,11 @@ class BatchService:
             status=BatchStatus.DRAFT,
             priority=data.priority,
             deadline=data.deadline,
-            assigned_user_ids=[str(uid) for uid in data.assigned_user_ids],
+            annotator_id=data.annotator_id,
+            reviewer_id=data.reviewer_id,
             created_by=created_by,
         )
+        self._sync_assigned_user_ids(batch)
         self.db.add(batch)
         await self.db.flush()
 
@@ -364,9 +409,11 @@ class BatchService:
             status=BatchStatus.DRAFT,
             priority=data.priority,
             deadline=data.deadline,
-            assigned_user_ids=[str(uid) for uid in data.assigned_user_ids],
+            annotator_id=data.annotator_id,
+            reviewer_id=data.reviewer_id,
             created_by=created_by,
         )
+        self._sync_assigned_user_ids(batch)
         self.db.add(batch)
         await self.db.flush()
 
@@ -390,6 +437,74 @@ class BatchService:
         count = await self._assign_tasks(batch_id, task_ids)
         await self.recalculate_counters(batch_id)
         return count
+
+    async def distribute_batches_in_project(
+        self,
+        project_id: uuid.UUID,
+        *,
+        annotator_ids: list[uuid.UUID],
+        reviewer_ids: list[uuid.UUID],
+        only_unassigned: bool = True,
+    ) -> dict[str, Any]:
+        """v0.7.2：把项目下的 batch 圆周分派给所选 annotator / reviewer。
+        - 一 batch = 一标注员 + 一审核员
+        - only_unassigned=True：仅 annotator_id IS NULL 的 batch 写 annotator；reviewer 同理
+        - 不会处理 archived 状态的 batch
+        - 同时回填 batch 下所有 task 的 assignee_id / reviewer_id
+        """
+        if not annotator_ids and not reviewer_ids:
+            raise HTTPException(status_code=400, detail="annotator_ids or reviewer_ids required")
+
+        # 取项目下非 archived 的 batch
+        batches = (await self.db.execute(
+            select(TaskBatch)
+            .where(TaskBatch.project_id == project_id)
+            .where(TaskBatch.status != BatchStatus.ARCHIVED)
+            .order_by(TaskBatch.priority.desc(), TaskBatch.created_at)
+        )).scalars().all()
+        if not batches:
+            raise HTTPException(status_code=400, detail="No batches to distribute")
+
+        annotator_per_batch: dict[str, str | None] = {}
+        reviewer_per_batch: dict[str, str | None] = {}
+        affected = 0
+        a_idx = 0
+        r_idx = 0
+        for b in batches:
+            changed = False
+            if annotator_ids and (not only_unassigned or b.annotator_id is None):
+                pick = annotator_ids[a_idx % len(annotator_ids)]
+                a_idx += 1
+                if b.annotator_id != pick:
+                    b.annotator_id = pick
+                    await self._cascade_task_assignee(b.id, pick)
+                    changed = True
+                annotator_per_batch[str(b.id)] = str(pick)
+            else:
+                annotator_per_batch[str(b.id)] = str(b.annotator_id) if b.annotator_id else None
+
+            if reviewer_ids and (not only_unassigned or b.reviewer_id is None):
+                pick = reviewer_ids[r_idx % len(reviewer_ids)]
+                r_idx += 1
+                if b.reviewer_id != pick:
+                    b.reviewer_id = pick
+                    await self._cascade_task_reviewer(b.id, pick)
+                    changed = True
+                reviewer_per_batch[str(b.id)] = str(pick)
+            else:
+                reviewer_per_batch[str(b.id)] = str(b.reviewer_id) if b.reviewer_id else None
+
+            if changed:
+                self._sync_assigned_user_ids(b)
+                affected += 1
+
+        await self.db.flush()
+
+        return {
+            "distributed_batches": affected,
+            "annotator_per_batch": annotator_per_batch,
+            "reviewer_per_batch": reviewer_per_batch,
+        }
 
     # ── Counters ───────────────────────────────────────────────────────────
 

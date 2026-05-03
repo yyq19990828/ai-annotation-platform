@@ -9,22 +9,43 @@ from app.db.models.user import User
 from app.db.models.project import Project
 from app.schemas.batch import (
     BatchCreate, BatchUpdate, BatchOut, BatchTransition, BatchReject, BatchSplitRequest,
+    ProjectDistributeBatches, BatchDistributeResult,
 )
 from app.services.batch import BatchService, assert_can_transition
 from app.services.audit import AuditService, AuditAction
 from app.services.notification import NotificationService
+from app.services.user_brief import resolve_briefs_with_project_role
 
 router = APIRouter()
 
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
 
 
-def _batch_to_out(batch) -> BatchOut:
+def _batch_to_out(batch, briefs: dict | None = None) -> BatchOut:
     total = batch.total_tasks or 1
     pct = round((batch.completed_tasks / total) * 100, 1) if batch.total_tasks else 0.0
     out = BatchOut.model_validate(batch)
     out.progress_pct = pct
+    if briefs is not None:
+        # v0.7.2：单值语义 — 直接按 annotator_id / reviewer_id 拿 brief
+        if batch.annotator_id is not None:
+            out.annotator = briefs.get(str(batch.annotator_id))
+        if batch.reviewer_id is not None:
+            out.reviewer = briefs.get(str(batch.reviewer_id))
     return out
+
+
+async def _briefs_for_batches(db, project_id, batches) -> dict:
+    """v0.7.2：一次 IN 查询解析所有批次的 annotator_id + reviewer_id → UserBrief。"""
+    all_ids = set()
+    for b in batches:
+        if b.annotator_id is not None:
+            all_ids.add(str(b.annotator_id))
+        if b.reviewer_id is not None:
+            all_ids.add(str(b.reviewer_id))
+    if not all_ids:
+        return {}
+    return await resolve_briefs_with_project_role(db, project_id, all_ids)
 
 
 @router.get("")
@@ -36,7 +57,8 @@ async def list_batches(
 ):
     svc = BatchService(db)
     batches = await svc.list_by_project(project_id, status)
-    return [_batch_to_out(b) for b in batches]
+    briefs = await _briefs_for_batches(db, project_id, batches)
+    return [_batch_to_out(b, briefs) for b in batches]
 
 
 @router.get("/{batch_id}")
@@ -50,7 +72,8 @@ async def get_batch(
     batch = await svc.get(batch_id)
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
-    return _batch_to_out(batch)
+    briefs = await _briefs_for_batches(db, project_id, [batch])
+    return _batch_to_out(batch, briefs)
 
 
 @router.post("", status_code=201)
@@ -76,7 +99,8 @@ async def create_batch(
     )
     await db.commit()
     await db.refresh(batch)
-    return _batch_to_out(batch)
+    briefs = await _briefs_for_batches(db, project_id, [batch])
+    return _batch_to_out(batch, briefs)
 
 
 @router.patch("/{batch_id}")
@@ -94,7 +118,8 @@ async def update_batch(
     batch = await svc.update(batch_id, data)
     await db.commit()
     await db.refresh(batch)
-    return _batch_to_out(batch)
+    briefs = await _briefs_for_batches(db, project_id, [batch])
+    return _batch_to_out(batch, briefs)
 
 
 @router.delete("/{batch_id}", status_code=204)
@@ -157,7 +182,8 @@ async def transition_batch(
     )
     await db.commit()
     await db.refresh(batch)
-    return _batch_to_out(batch)
+    briefs = await _briefs_for_batches(db, project_id, [batch])
+    return _batch_to_out(batch, briefs)
 
 
 @router.post("/split")
@@ -185,7 +211,47 @@ async def split_batches(
     await db.commit()
     for b in batches:
         await db.refresh(b)
-    return [_batch_to_out(b) for b in batches]
+    briefs = await _briefs_for_batches(db, project_id, batches)
+    return [_batch_to_out(b, briefs) for b in batches]
+
+
+@router.post("/distribute-batches", response_model=BatchDistributeResult)
+async def distribute_batches_in_project(
+    project_id: uuid.UUID,
+    data: ProjectDistributeBatches,
+    request: Request,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.7.2：项目级 batch 分派 — 把项目下未分派/全部 batch 圆周分配给所选 annotator/reviewer。
+    每 batch 落到 1 个 annotator + 1 个 reviewer；同步回填该 batch 下所有 task 的 assignee_id/reviewer_id。
+    """
+    svc = BatchService(db)
+    summary = await svc.distribute_batches_in_project(
+        project_id,
+        annotator_ids=data.annotator_ids,
+        reviewer_ids=data.reviewer_ids,
+        only_unassigned=data.only_unassigned,
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.BATCH_DISTRIBUTE_EVEN,
+        target_type="project",
+        target_id=str(project_id),
+        request=request,
+        status_code=200,
+        detail={
+            "scope": "project_batches",
+            "distributed_batches": summary["distributed_batches"],
+            "annotator_count": len(data.annotator_ids),
+            "reviewer_count": len(data.reviewer_ids),
+            "only_unassigned": data.only_unassigned,
+        },
+    )
+    await db.commit()
+    return summary
 
 
 @router.post("/{batch_id}/reject")
@@ -220,12 +286,11 @@ async def reject_batch(
         detail={"affected_tasks": affected, "feedback": data.feedback},
     )
 
-    # 通知所有被分派的标注员（v0.7.0：rejected 通知 fan-out）
-    assigned = batch.assigned_user_ids or []
-    if assigned:
+    # v0.7.2 · 单值语义：只通知该批次的标注员（reviewer 是 actor 本人无需通知）
+    if batch.annotator_id is not None:
         notif_svc = NotificationService(db)
         await notif_svc.notify_many(
-            user_ids=[uuid.UUID(str(uid)) for uid in assigned],
+            user_ids=[batch.annotator_id],
             type="batch.rejected",
             target_type="batch",
             target_id=batch.id,
@@ -240,7 +305,8 @@ async def reject_batch(
 
     await db.commit()
     await db.refresh(batch)
-    return _batch_to_out(batch)
+    briefs = await _briefs_for_batches(db, project_id, [batch])
+    return _batch_to_out(batch, briefs)
 
 
 @router.get("/{batch_id}/export")

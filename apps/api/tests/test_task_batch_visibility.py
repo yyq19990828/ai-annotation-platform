@@ -37,7 +37,20 @@ async def _seed_project_with_two_batches(db, owner_id: uuid.UUID, annotator_id: 
         project_id=pid, user_id=annotator_id, role="annotator", assigned_by=owner_id,
     ))
 
-    other_id = uuid.uuid4()  # 假装的别的标注员
+    # 创建一个真实的"别人"作为 b_other 的 annotator（FK 约束需要 user 存在）
+    from app.db.models.user import User
+    from app.core.security import hash_password
+    other_user = User(
+        id=uuid.uuid4(),
+        email=f"other-{uuid.uuid4().hex[:6]}@test.local",
+        name="OtherAnnotator",
+        password_hash=hash_password("Test1234"),
+        role="annotator",
+        is_active=True,
+    )
+    db.add(other_user)
+    await db.flush()
+    other_id = other_user.id
 
     b_mine = TaskBatch(
         id=uuid.uuid4(),
@@ -45,6 +58,7 @@ async def _seed_project_with_two_batches(db, owner_id: uuid.UUID, annotator_id: 
         display_id="B-MINE",
         name="my batch",
         status="active",
+        annotator_id=annotator_id,
         assigned_user_ids=[str(annotator_id)],
     )
     b_other = TaskBatch(
@@ -53,6 +67,7 @@ async def _seed_project_with_two_batches(db, owner_id: uuid.UUID, annotator_id: 
         display_id="B-OTHER",
         name="other batch",
         status="active",
+        annotator_id=other_id,
         assigned_user_ids=[str(other_id)],
     )
     db.add(b_mine)

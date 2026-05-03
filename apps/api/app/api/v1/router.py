@@ -3,6 +3,7 @@ from app.api.v1 import (
     auth,
     audit_logs,
     annotation_comments,
+    annotation_history,
     batches,
     bug_reports,
     dashboard,
@@ -15,6 +16,7 @@ from app.api.v1 import (
     ml_backends,
     notifications,
     projects,
+    search,
     storage,
     system_settings,
     tasks,
@@ -39,5 +41,7 @@ api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit"
 api_router.include_router(system_settings.router, prefix="/settings", tags=["settings"])
 api_router.include_router(batches.router, prefix="/projects/{project_id}/batches", tags=["batches"])
 api_router.include_router(annotation_comments.router, tags=["annotation-comments"])
+api_router.include_router(annotation_history.router, tags=["annotation-history"])
+api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(bug_reports.router, tags=["bug-reports"])
 api_router.include_router(notifications.router, tags=["notifications"])

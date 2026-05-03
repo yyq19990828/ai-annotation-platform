@@ -1,0 +1,139 @@
+import { Card } from "@/components/ui/Card";
+import { Icon } from "@/components/ui/Icon";
+import { Badge } from "@/components/ui/Badge";
+import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
+import { ProgressBar } from "@/components/ui/ProgressBar";
+import type { ProjectResponse } from "@/api/projects";
+
+const TYPE_ICONS: Record<string, string> = {
+  "image-det": "rect",
+  "image-seg": "polygon",
+  "image-kp": "point",
+  lidar: "cube",
+  "video-mm": "video",
+  "video-track": "video",
+  mm: "mm",
+};
+
+interface Props {
+  projects: ProjectResponse[];
+  onOpen: (p: ProjectResponse) => void;
+  canManage: (p: ProjectResponse) => boolean;
+  onSettings: (p: ProjectResponse, section?: string) => void;
+}
+
+/** v0.7.2 · 项目网格视图 — DashboardPage 用作 list 视图的可切换姿态。 */
+export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) {
+  if (projects.length === 0) {
+    return (
+      <div style={{ padding: "40px 16px", textAlign: "center", color: "var(--color-fg-subtle)" }}>
+        没有匹配的项目
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+        gap: 12,
+        padding: 16,
+      }}
+    >
+      {projects.map((p) => {
+        const total = p.total_tasks || 1;
+        const pct = Math.round((p.completed_tasks / total) * 100);
+        const aiPct = p.ai_enabled
+          ? Math.round(((p.ai_completed_tasks ?? 0) / total) * 100)
+          : 0;
+        const startedPct = Math.round(
+          ((p.in_progress_tasks ?? 0) + p.review_tasks + p.completed_tasks) / total * 100,
+        );
+        const ownerInitial = p.owner_name?.slice(0, 1) ?? "?";
+        const due = p.due_date ?? "—";
+
+        return (
+          <Card
+            key={p.id}
+            onClick={() => onOpen(p)}
+            style={{
+              padding: 14,
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <div
+                style={{
+                  width: 32, height: 32, borderRadius: 6,
+                  background: "var(--color-bg-sunken)",
+                  border: "1px solid var(--color-border)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "var(--color-fg-muted)",
+                  flex: "0 0 32px",
+                }}
+              >
+                <Icon name={(TYPE_ICONS[p.type_key] || "image") as any} size={15} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.name}
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2 }}>
+                  <span className="mono" style={{ fontSize: 10.5, color: "var(--color-fg-subtle)" }}>
+                    {p.display_id}
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>{p.type_label}</span>
+                </div>
+              </div>
+              {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
+              {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
+              {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
+            </div>
+
+            <div>
+              <ProgressBar value={pct} aiValue={aiPct} inProgressValue={startedPct} />
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "var(--color-fg-muted)" }}>
+                <span className="mono">
+                  {p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}
+                </span>
+                <span style={{ fontWeight: 500, color: "var(--color-fg)" }}>{pct}%</span>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                <Avatar size="sm" initial={ownerInitial} />
+                <span style={{ fontSize: 11.5, color: "var(--color-fg-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.owner_name ?? "—"}
+                </span>
+                <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                  · {p.member_count ?? 0} 成员
+                </span>
+              </div>
+              <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>截止 {due}</span>
+            </div>
+
+            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: "auto" }}>
+              {canManage(p) && (
+                <Button
+                  size="sm"
+                  onClick={(e) => { e.stopPropagation(); onSettings(p); }}
+                >
+                  <Icon name="settings" size={11} />设置
+                </Button>
+              )}
+              <Button size="sm" variant="primary">
+                打开<Icon name="chevRight" size={11} />
+              </Button>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}

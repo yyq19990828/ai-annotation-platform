@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import select, func, or_, and_, cast
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
@@ -34,33 +33,26 @@ WORKBENCH_VISIBLE_BATCH_STATUSES = ["active", "annotating"]
 def batch_visibility_clause(user: User):
     """返回应用到 TaskBatch 的可见性 WHERE 子句，按角色分支：
 
-    - reviewer：active / annotating / reviewing，**不**受 assigned_user_ids 约束
-    - annotator（默认）：active / annotating（assigned_user_ids 中或未分派）
-      + rejected 特例（仅当自己在 assigned_user_ids 中）
+    - reviewer：active / annotating / reviewing，**不**受 annotator 约束
+    - annotator（默认）：active / annotating（annotator_id == self 或 annotator_id IS NULL）
+      + rejected 特例（仅当 annotator_id == self）
 
     super_admin / 项目 owner 走 is_privileged_for_project 越权放行，不调本 helper。
 
+    v0.7.2：从 list 语义切换为单值（batch.annotator_id）。
     调用方需自行 JOIN TaskBatch。
     """
-    user_id_str = str(user.id)
-
     if user.role == UserRole.REVIEWER:
         return TaskBatch.status.in_(REVIEWER_VISIBLE_BATCH_STATUSES)
 
-    assigned_clause = or_(
-        TaskBatch.assigned_user_ids == cast([], JSONB),
-        TaskBatch.assigned_user_ids.contains(cast([user_id_str], JSONB)),
-    )
+    is_self = TaskBatch.annotator_id == user.id
     return or_(
         and_(
             TaskBatch.status.in_(["active", "annotating"]),
-            assigned_clause,
+            or_(TaskBatch.annotator_id.is_(None), is_self),
         ),
         # rejected 对**被分派**的标注员可见（看 reviewer 留言 + 重做）
-        and_(
-            TaskBatch.status == "rejected",
-            TaskBatch.assigned_user_ids.contains(cast([user_id_str], JSONB)),
-        ),
+        and_(TaskBatch.status == "rejected", is_self),
     )
 
 

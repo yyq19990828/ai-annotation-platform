@@ -1,0 +1,30 @@
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { searchApi, type SearchResponse } from "@/api/search";
+
+const EMPTY: SearchResponse = { projects: [], tasks: [], datasets: [], members: [] };
+
+/**
+ * v0.7.2 · ⌘K 全局搜索：客户端 200ms debounce + 5 min staleTime。
+ */
+export function useGlobalSearch(input: string, limit = 5) {
+  const [debounced, setDebounced] = useState(input);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(input.trim()), 200);
+    return () => clearTimeout(t);
+  }, [input]);
+
+  const query = useQuery({
+    queryKey: ["global-search", debounced, limit],
+    queryFn: () => searchApi.query(debounced, limit),
+    enabled: debounced.length > 0,
+    staleTime: 30 * 1000,
+  });
+
+  return {
+    data: query.data ?? EMPTY,
+    isLoading: query.isFetching && debounced.length > 0,
+    debounced,
+  };
+}

@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；**v0.7.0（批次状态机重设计 epic + v0.6.x 后续观察集中收口：transition 鉴权矩阵 + reviewer 可见性 + 批次级 review UI + RejectBatchModal + reject_batch 软重置（alembic 0027）+ 0-task 拦截 + Project.in_progress_tasks stored 列（alembic 0028）+ 通知偏好基础静音（alembic 0029）+ WS ConnectionPool + 心跳 + bug_reports reopen 单独限流 + Wizard ClassEditor 抽取 + ProgressBar aiPct 真实化 + reviewer dashboard 按批次分组 + 项目卡批次概览 + UnlinkConfirmModal 输入名称 + AuditPage sessionStorage + 截图重试 UI + celery beat 软删附件清理 + test_batch_lifecycle.py 16 例覆盖）**。
+> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航：批次单值分派 alembic 0030 加 annotator_id/reviewer_id + `POST /batches/distribute-batches` 项目级圆周分派一 batch 一人 + BatchAssignmentModal 单选化 + AssigneeAvatarStack 通用组件接入 4 处 + 标注框完整 audit 链 `annotation.create/update/delete/comment_*` + `GET /annotations/{id}/history` 时间线 + Workbench CommentsPanel 加 History tab + ⌘K CommandPalette + `GET /search` 跨实体聚合 + Dashboard FilterDrawer 4 维度 + ProjectGrid 网格视图 + url ?view=grid + 5 个 v0.7.2 用例 + 全后端测试 109 PASS）**。
 
 ---
 
@@ -18,7 +18,7 @@
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **批次相关延伸**：① 智能切批（按难度/类别/不确定度）；② 批次级 IAA / 共识合并算法；③ 不可变训练快照 + 主动学习闭环。调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
-- **批次级智能分派**：BatchAssignmentModal 当前是手动多选；可加「按当前成员数量均匀分派」「按角色批量勾选」等批量动作。
+- ~~**批次级智能分派**：BatchAssignmentModal 当前是手动多选；可加「按当前成员数量均匀分派」「按角色批量勾选」等批量动作。~~ ✅ v0.7.2 — 重构为「一 batch 一人」单值语义 + 项目级 distribute-batches 圆周分派
 
 #### AI / 模型
 - **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态（`AdminDashboard.tsx:107-119`、`DashboardPage.tsx:287-291`）。
@@ -39,9 +39,9 @@
 - **系统设置可编辑**：本期 `GET /settings/system` 是只读 .env mirror，缺 PATCH。需要 `system_settings` 表 + 启动时 env 优先加载、表项作为 override。
 
 #### TopBar / Dashboard 控件
-- **全局搜索**：TopBar 的 `<SearchInput placeholder="搜索项目、任务、数据集、成员..." kbd="⌘K">` 无 `value` / `onChange` / 提交 handler；后端无 `/search` 端点。
+- ~~**全局搜索**：TopBar 的 `<SearchInput placeholder="搜索项目、任务、数据集、成员..." kbd="⌘K">` 无 `value` / `onChange` / 提交 handler；后端无 `/search` 端点。~~ ✅ v0.7.2 — 后端 `/search` + 前端 `<CommandPalette>`
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
-- **Dashboard 高级筛选 / 网格视图**：`DashboardPage.tsx:198-199` 两个 Button 无 onClick。
+- ~~**Dashboard 高级筛选 / 网格视图**：`DashboardPage.tsx:198-199` 两个 Button 无 onClick。~~ ✅ v0.7.2 — `<FilterDrawer>` 4 维度 + `<ProjectGrid>` + url ?view=grid
 
 #### Annotator / Reviewer 工作台
 - **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好。

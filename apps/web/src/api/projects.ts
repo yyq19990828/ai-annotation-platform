@@ -33,14 +33,29 @@ export type ProjectUpdatePayload = ProjectUpdate;
 
 export type ExportFormat = "coco" | "voc" | "yolo";
 
+export interface ProjectListParams {
+  status?: string;
+  search?: string;
+  /** v0.7.2 · 高级筛选 */
+  type_key?: string[];
+  member_id?: string;
+  created_from?: string;
+  created_to?: string;
+}
+
 export const projectsApi = {
-  list: (params?: { status?: string; search?: string }) => {
-    const q = new URLSearchParams(
-      Object.fromEntries(
-        Object.entries(params ?? {}).filter(([, v]) => v !== undefined),
-      ) as Record<string, string>,
-    ).toString();
-    return apiClient.get<ProjectResponse[]>(`/projects${q ? `?${q}` : ""}`);
+  list: (params?: ProjectListParams) => {
+    const q = new URLSearchParams();
+    Object.entries(params ?? {}).forEach(([k, v]) => {
+      if (v === undefined || v === null) return;
+      if (Array.isArray(v)) {
+        v.forEach((vi) => q.append(k, String(vi)));
+      } else {
+        q.append(k, String(v));
+      }
+    });
+    const qs = q.toString();
+    return apiClient.get<ProjectResponse[]>(`/projects${qs ? `?${qs}` : ""}`);
   },
 
   stats: () => apiClient.get<ProjectStatsResponse>("/projects/stats"),

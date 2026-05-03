@@ -9,6 +9,97 @@
 
 ---
 
+## [0.7.2] - 2026-05-03
+
+> 治理可视化 + 全局导航。一次性收口 5 项 ROADMAP open 项：**批次单值分派 + 项目级圆周分派、责任人头像组、标注框历史可追溯、⌘K 全局搜索、Dashboard 高级筛选 + 网格视图**。一次 alembic 迁移（0030）把批次分派从「list 多人」语义切换到「一 batch = 1 标注员 + 1 审核员」单值语义。
+
+### 治理可视化
+
+#### 批次分派单值语义 + 项目级圆周分派（A · 批次相关延伸）
+
+**理念变更**：每个 batch 是一个明确的工作单元，由 **1 名标注员** 负责标注 + **1 名审核员** 负责审核。先前 v0.6.7 的 `assigned_user_ids: list` 多选语义被收紧。
+
+数据模型（**alembic 0030**）：
+- `task_batches` 加 `annotator_id` / `reviewer_id` 单值列（FK users，ON DELETE SET NULL，加索引）
+- 数据迁移：JOIN `project_members` 把现有 `assigned_user_ids` 拆分到两列（按 role 取「第一个」），多人分派的批次只保留首位
+- `assigned_user_ids` 列保留为派生兼容（`BatchService._sync_assigned_user_ids` 维护 `[annotator_id, reviewer_id] filter None`）
+
+后端 API：
+- 删除 `POST /batches/{id}/distribute-evenly`（task 级圆周打散与单值理念冲突）
+- 新增 `POST /projects/{id}/batches/distribute-batches`：把项目下未分派 / 全部 batch 在所选 annotator / reviewer 间圆周分派，**每 batch 落到 1 个 annotator + 1 个 reviewer**；同步级联更新 `Task.assignee_id` / `Task.reviewer_id`
+- `BatchUpdate` / `BatchCreate` / `BatchSplitRequest` 字段从 `assigned_user_ids: list` 改为 `annotator_id` + `reviewer_id` 单值
+- `BatchOut` 增加 `annotator` / `reviewer` UserBrief 字段（`apps/api/app/schemas/batch.py`）
+- `_is_annotator_assigned`、`batch_visibility_clause`、`/dashboard/annotator/batches` 等可见性路径全部从 `assigned_user_ids.contains(...)` 改为 `annotator_id == user.id`
+
+前端：
+- `BatchAssignmentModal` 改为单选 radio（标注员段 + 审核员段），写 `annotator_id` / `reviewer_id`
+- 新建 `ProjectDistributeBatchesModal`：勾选参与的 annotator / reviewer + 选「仅未分派 / 覆盖全部」+ 一键圆周分派
+- `BatchesSection` 顶部新增「按项目分派批次」按钮触发上述 Modal
+
+#### 责任人可视化（A · Annotator/Reviewer 工作台 + Dashboard）
+
+新建通用组件 `apps/web/src/components/ui/AssigneeAvatarStack.tsx`（最多 N 个头像 + 计数 + 角色 label），抽自 `BatchesSection` 行内实现，接入 4 处：
+- **`BatchesSection`**：分派列直接渲染 `[b.annotator, b.reviewer]` 头像
+- **`MyBatchesCard`**（标注员 dashboard）：行内显示「审核员」头像
+- **`ReviewerDashboard`**（审核员 dashboard）：审核中批次行内显示标注员头像
+- **`Workbench Topbar`**：当前 task 顶部加「标注 @张三 · 审核 @李四」胶囊
+
+后端：
+- `TaskOut` 增加 `assignee` / `reviewer` UserBrief 字段（`apps/api/app/schemas/task.py`）
+- `MyBatchItem` / `ReviewingBatchItem` 加单值 `reviewer` / `annotator`（`apps/api/app/schemas/dashboard.py`）
+- 新建 `apps/api/app/services/user_brief.py` 提供 `resolve_briefs` / `resolve_briefs_with_project_role` 一次 IN 解析，避免 N+1。
+
+#### 标注框编辑历史 / 审核历史可追溯（A · v0.7.x 后续观察）
+
+后端把 annotation 完整生命周期落到 `audit_logs`：
+- `AnnotationService.create / update / delete`（在 `apps/api/app/api/v1/tasks.py` route 层调 `AuditService.log()`，target_type=`annotation`）
+- 评论 add / delete 升级为 `ANNOTATION_COMMENT_ADD` / `ANNOTATION_COMMENT_DELETE`（替代旧 `annotation.comment` 字符串）
+- 新增枚举 `AuditAction.ANNOTATION_CREATE / UPDATE / DELETE / COMMENT_ADD / COMMENT_DELETE`
+
+新增端点 `GET /annotations/{id}/history`（`apps/api/app/api/v1/annotation_history.py`），合并三类事件按时间升序：
+- 该 annotation 的 audit_logs（target_type='annotation'）
+- 关联 task 的 6 个关键 action（`task.submit/withdraw/review_claim/approve/reject/reopen`）
+- 该 annotation 的所有 comments（含软删的，前端区分显示）
+
+前端工作台 `CommentsPanel` 加 Tabs（评论 / 历史），切到「历史」tab 渲染新组件 `AnnotationHistoryTimeline`：纵向时间线 + 头像 + 角色 label + diff 缩略 + 相对时间。命名上避开 `useAnnotationHistory`（本地 undo/redo 栈），新 hook 叫 `useAnnotationAuditHistory`。
+
+### 全局导航
+
+#### ⌘K Command Palette（A · TopBar / Dashboard 控件）
+
+新增 `GET /search?q=...&limit=5` 跨实体聚合搜索端点（`apps/api/app/api/v1/search.py`），按当前用户可见性返回 4 类分组：projects / tasks / datasets / members：
+- 项目：复用 `_visible_project_filter`
+- 任务：约束在可见项目下，按 display_id / file_name `ilike`
+- 数据集：登录可见
+- 成员：super_admin 全局；其他角色仅返回与自己同项目的成员
+
+前端 `apps/web/src/components/CommandPalette.tsx` Modal palette：⌘K / Ctrl+K 全局触发（TopBar 注册 keydown，input/textarea 内不拦截），TopBar `<SearchInput>` 改为点击触发。键盘 ↑↓ 切换 / ↵ 跳转 / Esc 关闭。debounce 200ms（`useGlobalSearch`）。
+
+#### Dashboard 高级筛选 + 网格视图（A · TopBar / Dashboard 控件）
+
+`GET /projects` 扩展 4 个 query 参数（`apps/api/app/api/v1/projects.py`）：
+- `type_key`（多值）：按 `Project.type_key` 过滤
+- `member_id`：JOIN `project_members` 找该用户参与的项目
+- `created_from` / `created_to`：`Project.created_at` 区间
+
+前端 `pages/Dashboard/FilterDrawer.tsx` 4 个 section（状态 / 类型 / 成员 / 创建时间）：状态 / 类型用 chip 多选；成员段提供「我参与的」快捷 + 全部成员列表；时间段用原生 `<input type="date">`。Apply / Clear / Cancel 三键。`pages/Dashboard/ProjectGrid.tsx` 响应式 3 列项目卡，与 list 视图共享同一份 useProjects hook；视图切换状态写入 URL `?view=grid`，刷新保持。`Card` 组件加 `onClick` prop。
+
+### 测试
+
+新增 `apps/api/tests/test_v0_7_2.py`：
+- `TestProjectDistributeBatches`：7 batch / 3 annotator / 2 reviewer 圆周 [3, 2, 2] 计数 + 每 batch 一人 + task 联动；only_unassigned 跳过已分派
+- `TestAnnotationAuditTrail`：create/update/delete 各产出 1 条 audit
+- `TestGlobalSearch`：super_admin 通过 name 搜到项目
+- `TestAnnotationHistoryEndpoint`：合并 audit + comment 时间线
+
+`tests/test_batch_lifecycle.py`、`tests/test_task_batch_visibility.py` 同步迁移到单值语义（seed 时同时写 `annotator_id`）。
+
+### 兼容性
+
+数据库迁移（**alembic 0030**）一次性把现有 `assigned_user_ids` 列拆到 `annotator_id` / `reviewer_id` 单值列。多人分派的批次仅保留首位。`assigned_user_ids` 列继续存在做向后兼容（service 层维护派生写入）。
+
+---
+
 ## [0.7.0] - 2026-05-03
 
 > 两阶段集中收口：① **批次状态机重设计 epic**（v0.6.10 调研立项的 P1）—— transition 鉴权矩阵、reviewer 可见性、批次级 review UI、reject_batch 软重置、空批次拦截、状态语义 + 通知接入、`test_batch_lifecycle.py` 16 例覆盖；② **v0.6.x 后续观察 / 下版候选**章节全部收尾（涉及 LLM 的留白）。共 3 个 alembic 迁移（0027/0028/0029），16 项功能 + 修复 + polish。

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
-import { Avatar } from "@/components/ui/Avatar";
+import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import {
@@ -14,8 +14,8 @@ import {
   useTransitionBatch,
   useSplitBatches,
 } from "@/hooks/useBatches";
-import { useProjectMembers } from "@/hooks/useProjects";
 import { BatchAssignmentModal } from "@/components/projects/BatchAssignmentModal";
+import { ProjectDistributeBatchesModal } from "@/components/projects/ProjectDistributeBatchesModal";
 import { RejectBatchModal } from "./RejectBatchModal";
 import type { ProjectResponse } from "@/api/projects";
 import type { BatchResponse } from "@/api/batches";
@@ -45,7 +45,6 @@ type CreateMode = "single" | "split";
 export function BatchesSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
   const { data: batches = [], isLoading } = useBatches(project.id);
-  const { data: members = [] } = useProjectMembers(project.id);
   const createBatch = useCreateBatch(project.id);
   const deleteBatch = useDeleteBatch(project.id);
   const transitionBatch = useTransitionBatch(project.id);
@@ -60,8 +59,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const [confirmDelete, setConfirmDelete] = useState<BatchResponse | null>(null);
   const [assignTarget, setAssignTarget] = useState<BatchResponse | null>(null);
   const [rejectTarget, setRejectTarget] = useState<BatchResponse | null>(null);
-
-  const memberById = new Map(members.map((m) => [m.user_id, m]));
+  const [distributeOpen, setDistributeOpen] = useState(false);
 
   const handleCreate = () => {
     if (createMode === "single") {
@@ -123,9 +121,18 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           }}
         >
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>批次管理</h3>
-          <Button onClick={() => setShowCreate(true)}>
-            <Icon name="plus" size={12} />创建批次
-          </Button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button
+              onClick={() => setDistributeOpen(true)}
+              disabled={batches.length === 0}
+              title="把项目下所有批次圆周分派给所选成员（一 batch 一标注员 + 一审核员）"
+            >
+              <Icon name="users" size={12} />按项目分派批次
+            </Button>
+            <Button onClick={() => setShowCreate(true)}>
+              <Icon name="plus" size={12} />创建批次
+            </Button>
+          </div>
         </div>
 
         {isLoading && (
@@ -175,52 +182,38 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     </Badge>
                   </td>
                   <td style={{ padding: "10px 12px" }}>
-                    <button
-                      type="button"
-                      onClick={() => setAssignTarget(b)}
-                      title={b.assigned_user_ids.length === 0 ? "未分派 · 点击设置" : "点击修改分派"}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 4,
-                        padding: "2px 6px",
-                        background: "transparent",
-                        border: `1px dashed ${b.assigned_user_ids.length === 0 ? "var(--color-warning)" : "var(--color-border)"}`,
-                        borderRadius: 100,
-                        cursor: "pointer",
-                        fontSize: 11,
-                        color: b.assigned_user_ids.length === 0 ? "var(--color-warning)" : "var(--color-fg-muted)",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      {b.assigned_user_ids.length === 0 ? (
-                        <>
-                          <Icon name="users" size={11} />未分派
-                        </>
-                      ) : (
-                        <>
-                          <span style={{ display: "inline-flex", marginLeft: -4 }}>
-                            {b.assigned_user_ids.slice(0, 3).map((uid, i) => {
-                              const m = memberById.get(uid);
-                              return (
-                                <span
-                                  key={uid}
-                                  style={{
-                                    marginLeft: i === 0 ? 4 : -6,
-                                    border: "1.5px solid var(--color-bg-elev)",
-                                    borderRadius: "50%",
-                                    background: "var(--color-bg-elev)",
-                                  }}
-                                >
-                                  <Avatar initial={(m?.user_name ?? "?").slice(0, 1).toUpperCase()} size="sm" />
-                                </span>
-                              );
-                            })}
-                          </span>
-                          <span style={{ marginLeft: 4 }}>{b.assigned_user_ids.length}</span>
-                        </>
-                      )}
-                    </button>
+                    {(() => {
+                      const unassigned = !b.annotator_id && !b.reviewer_id;
+                      const assignees = [b.annotator, b.reviewer].filter(Boolean) as NonNullable<typeof b.annotator>[];
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setAssignTarget(b)}
+                          title={unassigned ? "未分派 · 点击设置" : "点击修改分派"}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            padding: "2px 6px",
+                            background: "transparent",
+                            border: `1px dashed ${unassigned ? "var(--color-warning)" : "var(--color-border)"}`,
+                            borderRadius: 100,
+                            cursor: "pointer",
+                            fontSize: 11,
+                            color: unassigned ? "var(--color-warning)" : "var(--color-fg-muted)",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          {unassigned ? (
+                            <>
+                              <Icon name="users" size={11} />未分派
+                            </>
+                          ) : (
+                            <AssigneeAvatarStack users={assignees} max={2} />
+                          )}
+                        </button>
+                      );
+                    })()}
                   </td>
                   <td style={{ padding: "10px 12px" }}>{b.priority}</td>
                   <td style={{ padding: "10px 12px", color: "var(--color-fg-muted)" }}>
@@ -239,10 +232,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                       {b.status === "draft" && (
                         <Button
                           onClick={() => handleTransition(b, "active")}
-                          disabled={b.assigned_user_ids.length === 0 || b.total_tasks === 0}
+                          disabled={!b.annotator_id || b.total_tasks === 0}
                           title={
-                            b.assigned_user_ids.length === 0
-                              ? "请先分派成员"
+                            !b.annotator_id
+                              ? "请先分派标注员"
                               : b.total_tasks === 0
                                 ? "批次内无任务，无法激活"
                                 : "激活"
@@ -463,6 +456,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           projectId={project.id}
           batch={rejectTarget}
           onClose={() => setRejectTarget(null)}
+        />
+      )}
+
+      {/* v0.7.2：项目级 batch 分派 Modal */}
+      {distributeOpen && (
+        <ProjectDistributeBatchesModal
+          projectId={project.id}
+          onClose={() => setDistributeOpen(false)}
         />
       )}
     </>

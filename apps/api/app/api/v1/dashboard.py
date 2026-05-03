@@ -1,8 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, case, or_, cast
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import select, func, case, or_
 from app.deps import get_db, get_current_user, require_roles
 from app.db.models.user import User
 from app.db.models.project import Project
@@ -20,6 +19,7 @@ from app.schemas.dashboard import (
     MyBatchItem,
     RecentReviewItem,
 )
+from app.services.user_brief import resolve_briefs_with_project_role
 
 router = APIRouter()
 
@@ -161,8 +161,20 @@ async def reviewer_dashboard(
         .order_by(Project.name, TaskBatch.updated_at.desc())
         .limit(100)
     )).all()
-    reviewing_batches = [
-        ReviewingBatchItem(
+    # v0.7.2 · 单值语义 — 一 batch 一标注员，直接 IN 查询 user
+    project_user_map: dict = {}
+    for b, _ in batch_rows:
+        if b.annotator_id is not None:
+            project_user_map.setdefault(b.project_id, set()).add(b.annotator_id)
+    briefs_by_project: dict = {}
+    for pid, uids in project_user_map.items():
+        briefs_by_project[pid] = await resolve_briefs_with_project_role(db, pid, uids)
+
+    reviewing_batches = []
+    for b, pname in batch_rows:
+        per_proj = briefs_by_project.get(b.project_id, {})
+        annotator = per_proj.get(str(b.annotator_id)) if b.annotator_id else None
+        reviewing_batches.append(ReviewingBatchItem(
             batch_id=str(b.id),
             batch_display_id=b.display_id,
             batch_name=b.name,
@@ -171,9 +183,8 @@ async def reviewer_dashboard(
             total_tasks=b.total_tasks,
             review_tasks=b.review_tasks,
             completed_tasks=b.completed_tasks,
-        )
-        for b, pname in batch_rows
-    ]
+            annotator=annotator,
+        ))
 
     return ReviewerDashboardStats(
         pending_review_count=pending_review_count,
@@ -310,8 +321,7 @@ async def my_batches(
     active / annotating / rejected / reviewing 的批次。让标注员从 dashboard
     一眼看到自己手里的批次进度，并直接「提交质检」/ 查看 reviewer 留言。
 
-    super_admin 看到所有同状态批次（便于演示 / 调试）；其他角色按 assigned_user_ids 过滤。"""
-    user_id_str = str(current_user.id)
+    super_admin 看到所有同状态批次（便于演示 / 调试）；其他角色按 annotator_id 过滤（v0.7.2 单值）。"""
     visible_statuses = ["active", "annotating", "rejected", "reviewing"]
 
     q = (
@@ -320,12 +330,25 @@ async def my_batches(
         .where(TaskBatch.status.in_(visible_statuses))
     )
     if current_user.role != UserRole.SUPER_ADMIN:
-        q = q.where(TaskBatch.assigned_user_ids.contains(cast([user_id_str], JSONB)))
+        q = q.where(TaskBatch.annotator_id == current_user.id)
     q = q.order_by(Project.name, TaskBatch.created_at.desc()).limit(100)
 
     rows = (await db.execute(q)).all()
-    return [
-        MyBatchItem(
+
+    # v0.7.2 · 单值语义 — 一 batch 一审核员
+    project_user_map: dict = {}
+    for b, _, _ in rows:
+        if b.reviewer_id is not None:
+            project_user_map.setdefault(b.project_id, set()).add(b.reviewer_id)
+    briefs_by_project: dict = {}
+    for pid, uids in project_user_map.items():
+        briefs_by_project[pid] = await resolve_briefs_with_project_role(db, pid, uids)
+
+    items = []
+    for b, pname, pid in rows:
+        per_proj = briefs_by_project.get(b.project_id, {})
+        reviewer = per_proj.get(str(b.reviewer_id)) if b.reviewer_id else None
+        items.append(MyBatchItem(
             batch_id=str(b.id),
             batch_display_id=b.display_id,
             batch_name=b.name,
@@ -343,6 +366,6 @@ async def my_batches(
             ),
             review_feedback=b.review_feedback,
             reviewed_at=b.reviewed_at.isoformat() if b.reviewed_at else None,
-        )
-        for b, pname, pid in rows
-    ]
+            reviewer=reviewer,
+        ))
+    return items

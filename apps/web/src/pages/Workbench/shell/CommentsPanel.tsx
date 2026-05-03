@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useProjectMembers } from "@/hooks/useProjects";
@@ -9,8 +10,12 @@ import {
   usePatchComment,
   useDeleteComment,
 } from "@/hooks/useAnnotationComments";
+import { useAnnotationAuditHistory } from "@/hooks/useAnnotationAuditHistory";
+import { AnnotationHistoryTimeline } from "@/components/AnnotationHistoryTimeline";
 import { CommentInput, renderCommentBody } from "./CommentInput";
 import type { CommentAttachment, CommentCanvasDrawing, CommentMention } from "@/api/comments";
+
+type Tab = "comments" | "history";
 
 interface Props {
   annotationId: string | null;
@@ -36,12 +41,17 @@ interface Props {
 
 export function CommentsPanel({ annotationId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas }: Props) {
   const navigate = useNavigate();
+  const [tab, setTab] = useState<Tab>("comments");
   const { data: comments } = useAnnotationComments(annotationId);
   const { data: members } = useProjectMembers(projectId ?? "");
   const createMut = useCreateComment(annotationId);
   const patchMut = usePatchComment(annotationId);
   const deleteMut = useDeleteComment(annotationId);
   const setHoveredShapes = useHoveredCommentStore((s) => s.setShapes);
+  // v0.7.2 · 历史 tab — 仅切到 history 时拉取
+  const { data: history, isLoading: historyLoading } = useAnnotationAuditHistory(
+    tab === "history" ? annotationId : null,
+  );
 
   if (!annotationId) return null;
 
@@ -68,12 +78,30 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 12px", borderTop: "1px solid var(--color-border)" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--color-fg-muted)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
+        <button
+          type="button"
+          onClick={() => setTab("comments")}
+          style={tabBtnStyle(tab === "comments")}
+        >
           评论 {comments && comments.length > 0 && `(${comments.length})`}
-        </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("history")}
+          style={tabBtnStyle(tab === "history")}
+        >
+          历史 {history && history.entries.length > 0 && `(${history.entries.length})`}
+        </button>
       </div>
 
+      {tab === "history" ? (
+        <AnnotationHistoryTimeline
+          entries={history?.entries ?? []}
+          loading={historyLoading}
+        />
+      ) : (
+      <>
       <CommentInput
         annotationId={annotationId}
         members={memberOptions}
@@ -186,8 +214,26 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
           );
         })}
       </div>
+      </>
+      )}
     </div>
   );
+}
+
+function tabBtnStyle(active: boolean): React.CSSProperties {
+  return {
+    background: "transparent",
+    border: "none",
+    padding: "4px 8px",
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    color: active ? "var(--color-fg)" : "var(--color-fg-muted)",
+    borderBottom: active ? "2px solid var(--color-accent)" : "2px solid transparent",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  };
 }
 
 const iconBtnStyle: React.CSSProperties = {

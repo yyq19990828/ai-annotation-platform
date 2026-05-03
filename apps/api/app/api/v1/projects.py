@@ -89,7 +89,7 @@ async def _serialize_project(
             select(
                 func.count().label("total"),
                 func.count().filter(
-                    func.jsonb_array_length(TaskBatch.assigned_user_ids) > 0
+                    TaskBatch.annotator_id.is_not(None)
                 ).label("assigned"),
                 func.count().filter(TaskBatch.status == "reviewing").label("in_review"),
             ).where(TaskBatch.project_id == project.id)
@@ -114,6 +114,11 @@ async def _serialize_project(
 async def list_projects(
     status: str | None = None,
     search: str | None = None,
+    # v0.7.2 · 高级筛选维度（FilterDrawer 对接）
+    type_key: list[str] | None = Query(None),
+    member_id: uuid.UUID | None = None,
+    created_from: str | None = None,  # ISO date "2026-01-01"
+    created_to: str | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -125,6 +130,18 @@ async def list_projects(
         q = q.where(Project.status == status)
     if search:
         q = q.where(Project.name.ilike(f"%{search}%"))
+    if type_key:
+        q = q.where(Project.type_key.in_(type_key))
+    if member_id is not None:
+        q = q.where(
+            Project.id.in_(
+                select(ProjectMember.project_id).where(ProjectMember.user_id == member_id)
+            )
+        )
+    if created_from:
+        q = q.where(Project.created_at >= created_from)
+    if created_to:
+        q = q.where(Project.created_at <= created_to)
     result = await db.execute(q.order_by(Project.created_at.desc()))
     projects = result.scalars().all()
 
@@ -155,7 +172,7 @@ async def list_projects(
                 TaskBatch.project_id,
                 func.count().label("total"),
                 func.count().filter(
-                    func.jsonb_array_length(TaskBatch.assigned_user_ids) > 0
+                    TaskBatch.annotator_id.is_not(None)
                 ).label("assigned"),
                 func.count().filter(TaskBatch.status == "reviewing").label("in_review"),
             )

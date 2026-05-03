@@ -6,11 +6,24 @@ interface SearchInputProps {
   onChange?: (value: string) => void;
   width?: number;
   kbd?: string;
+  /** v0.7.2 · TopBar 用作 ⌘K palette 触发；点击外壳即调用 onClick。 */
+  onClick?: () => void;
+  /** v0.7.2 · 与 onClick 配合：只读，避免 input 拿到焦点抢键盘事件。 */
+  readOnly?: boolean;
 }
 
-export function SearchInput({ placeholder = "搜索...", value, onChange, width = 240, kbd }: SearchInputProps) {
+export function SearchInput({
+  placeholder = "搜索...",
+  value,
+  onChange,
+  width = 240,
+  kbd,
+  onClick,
+  readOnly,
+}: SearchInputProps) {
   return (
     <div
+      onClick={onClick}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -20,6 +33,7 @@ export function SearchInput({ placeholder = "搜索...", value, onChange, width 
         border: "1px solid var(--color-border)",
         borderRadius: "var(--radius-md)",
         width,
+        cursor: onClick ? "pointer" : undefined,
       }}
     >
       <Icon name="search" size={13} style={{ color: "var(--color-fg-subtle)" }} />
@@ -27,6 +41,7 @@ export function SearchInput({ placeholder = "搜索...", value, onChange, width 
         placeholder={placeholder}
         value={value}
         onChange={e => onChange?.(e.target.value)}
+        readOnly={readOnly}
         style={{
           flex: 1,
           border: 0,
@@ -36,6 +51,7 @@ export function SearchInput({ placeholder = "搜索...", value, onChange, width 
           color: "inherit",
           minWidth: 0,
           fontFamily: "inherit",
+          cursor: onClick ? "pointer" : undefined,
         }}
       />
       {kbd && (

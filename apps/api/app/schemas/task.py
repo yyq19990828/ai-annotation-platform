@@ -2,6 +2,8 @@ from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
 
+from app.schemas.user import UserBrief
+
 
 class TaskOut(BaseModel):
     id: UUID
@@ -13,6 +15,9 @@ class TaskOut(BaseModel):
     tags: list = []
     status: str
     assignee_id: UUID | None = None
+    # v0.7.2 · 责任人可视化
+    assignee: UserBrief | None = None
+    reviewer: UserBrief | None = None
     is_labeled: bool = False
     overlap: int = 1
     total_annotations: int = 0

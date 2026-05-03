@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
@@ -16,35 +16,34 @@ interface Props {
 }
 
 /**
- * v0.6.7 B-12-②：把 batch 分派给标注员 / 审核员。
- * 多选；按 role 分两栏；提交后 PATCH /batches/{id} 写 assigned_user_ids。
+ * v0.7.2 · 一 batch = 一标注员 + 一审核员（单选语义）。
+ * 提交后 PATCH /batches/{id}（写 annotator_id / reviewer_id）。
  */
 export function BatchAssignmentModal({ projectId, batch, onClose }: Props) {
   const pushToast = useToastStore((s) => s.push);
   const { data: members = [], isLoading } = useProjectMembers(projectId);
   const update = useUpdateBatch(projectId);
 
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [annotatorId, setAnnotatorId] = useState<string | null>(batch.annotator_id);
+  const [reviewerId, setReviewerId] = useState<string | null>(batch.reviewer_id);
 
   useEffect(() => {
-    setSelected(new Set(batch.assigned_user_ids ?? []));
-  }, [batch.id, batch.assigned_user_ids]);
+    setAnnotatorId(batch.annotator_id);
+    setReviewerId(batch.reviewer_id);
+  }, [batch.id, batch.annotator_id, batch.reviewer_id]);
 
   const annotators = useMemo(() => members.filter((m) => m.role === "annotator"), [members]);
   const reviewers = useMemo(() => members.filter((m) => m.role === "reviewer"), [members]);
 
-  const toggle = (userId: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
-      return next;
-    });
-  };
-
   const onSave = () => {
     update.mutate(
-      { batchId: batch.id, payload: { assigned_user_ids: Array.from(selected) } },
+      {
+        batchId: batch.id,
+        payload: {
+          annotator_id: annotatorId,
+          reviewer_id: reviewerId,
+        },
+      },
       {
         onSuccess: () => {
           pushToast({ msg: "已更新分派", kind: "success" });
@@ -55,10 +54,13 @@ export function BatchAssignmentModal({ projectId, batch, onClose }: Props) {
     );
   };
 
+  const dirty = annotatorId !== batch.annotator_id || reviewerId !== batch.reviewer_id;
+
   return (
     <Modal open onClose={onClose} title={`分派批次 · ${batch.name}`} width={520}>
       <div style={{ fontSize: 13, color: "var(--color-fg-muted)", marginBottom: 12 }}>
-        从项目成员中选择该批次可见的标注员 / 审核员。未分派的批次仍可激活，但前端列表会提示「请先分派」。
+        每个批次由 <strong>1 名标注员</strong> 负责标注、<strong>1 名审核员</strong> 负责审核。
+        若需要批量分派项目下多个批次，请用「批次列表 → 按项目分派批次」。
       </div>
 
       {isLoading && (
@@ -72,15 +74,15 @@ export function BatchAssignmentModal({ projectId, batch, onClose }: Props) {
           <Column
             title="标注员"
             members={annotators}
-            selected={selected}
-            onToggle={toggle}
+            selectedId={annotatorId}
+            onSelect={setAnnotatorId}
             roleColor="accent"
           />
           <Column
             title="审核员"
             members={reviewers}
-            selected={selected}
-            onToggle={toggle}
+            selectedId={reviewerId}
+            onSelect={setReviewerId}
             roleColor="warning"
           />
         </div>
@@ -88,13 +90,15 @@ export function BatchAssignmentModal({ projectId, batch, onClose }: Props) {
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
         <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
-          已选 <strong style={{ color: "var(--color-fg)" }}>{selected.size}</strong> 人
+          {annotatorId ? "已选标注员" : "未选标注员"}
+          {" · "}
+          {reviewerId ? "已选审核员" : "未选审核员"}
         </span>
         <div style={{ display: "flex", gap: 8 }}>
           <Button onClick={onClose}>取消</Button>
           <Button
             onClick={onSave}
-            disabled={update.isPending}
+            disabled={update.isPending || !dirty}
             style={{ background: "var(--color-accent)", color: "#fff" }}
           >
             {update.isPending ? "保存中…" : "保存"}
@@ -108,14 +112,14 @@ export function BatchAssignmentModal({ projectId, batch, onClose }: Props) {
 function Column({
   title,
   members,
-  selected,
-  onToggle,
+  selectedId,
+  onSelect,
   roleColor,
 }: {
   title: string;
   members: { id: string; user_id: string; user_name: string; user_email: string; role: string }[];
-  selected: Set<string>;
-  onToggle: (userId: string) => void;
+  selectedId: string | null;
+  onSelect: (userId: string | null) => void;
   roleColor: "accent" | "warning";
 }) {
   return (
@@ -129,10 +133,25 @@ function Column({
         overflowY: "auto",
       }}
     >
-      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-fg-muted)", padding: "4px 6px 8px" }}>
-        <Badge variant={roleColor} dot>
-          {title}
-        </Badge>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 6px 8px" }}>
+        <Badge variant={roleColor} dot>{title}</Badge>
+        {selectedId && (
+          <button
+            type="button"
+            onClick={() => onSelect(null)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--color-fg-subtle)",
+              fontSize: 11,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+            title="清除选择"
+          >
+            <Icon name="x" size={11} /> 清除
+          </button>
+        )}
       </div>
       {members.length === 0 && (
         <div style={{ fontSize: 12, color: "var(--color-fg-subtle)", padding: 16, textAlign: "center" }}>
@@ -140,12 +159,12 @@ function Column({
         </div>
       )}
       {members.map((m) => {
-        const checked = selected.has(m.user_id);
+        const checked = selectedId === m.user_id;
         return (
           <button
             key={m.id}
             type="button"
-            onClick={() => onToggle(m.user_id)}
+            onClick={() => onSelect(checked ? null : m.user_id)}
             style={{
               display: "flex",
               alignItems: "center",
@@ -166,17 +185,23 @@ function Column({
               style={{
                 width: 14,
                 height: 14,
-                borderRadius: 3,
+                borderRadius: "50%",
                 border: "1px solid var(--color-border)",
                 background: checked ? "var(--color-accent)" : "var(--color-bg)",
-                color: "#fff",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
                 flexShrink: 0,
+                position: "relative",
               }}
             >
-              {checked && <Icon name="check" size={10} />}
+              {checked && (
+                <span
+                  style={{
+                    position: "absolute",
+                    inset: 3,
+                    borderRadius: "50%",
+                    background: "#fff",
+                  }}
+                />
+              )}
             </span>
             <Avatar initial={(m.user_name || "?").slice(0, 1).toUpperCase()} size="sm" />
             <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

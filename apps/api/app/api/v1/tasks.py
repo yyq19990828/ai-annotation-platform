@@ -25,6 +25,7 @@ from app.services.scheduler import (
     visible_batch_statuses_for,
 )
 from app.services.storage import storage_service
+from app.services.user_brief import resolve_briefs
 from app.db.models.task_batch import TaskBatch
 
 router = APIRouter()
@@ -73,17 +74,16 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
     if batch.status not in visible_statuses:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # reviewer 不受 assigned_user_ids 约束（跨批次审核）
+    # reviewer 不受 annotator 约束（跨批次审核）
     if user.role == UserRole.REVIEWER:
         return
 
-    # annotator 路径：assigned 校验
-    assigned = batch.assigned_user_ids or []
-    is_assigned = str(user.id) in [str(x) for x in assigned]
+    # v0.7.2：annotator 路径 — 一 batch 一标注员，按 batch.annotator_id 单值校验
+    is_assigned = batch.annotator_id is not None and batch.annotator_id == user.id
     # rejected 状态特例：仅对被分派的标注员放行
     if batch.status == "rejected" and not is_assigned:
         raise HTTPException(status_code=404, detail="Task not found")
-    if assigned and not is_assigned:
+    if batch.annotator_id is not None and not is_assigned:
         raise HTTPException(status_code=404, detail="Task not found")
 
 
@@ -149,13 +149,16 @@ async def list_tasks(
     tasks = list((await db.execute(q)).scalars().all())
     total = (await db.execute(count_q)).scalar() or 0
     dims = await _attach_dimensions_batch(db, tasks)
+    # v0.7.2 · 一次 IN 查询解析所有 assignee_id / reviewer_id → UserBrief
+    user_ids = {t.assignee_id for t in tasks if t.assignee_id} | {t.reviewer_id for t in tasks if t.reviewer_id}
+    briefs = await resolve_briefs(db, user_ids) if user_ids else {}
     next_cursor = (
         _encode_task_cursor(tasks[-1].created_at, tasks[-1].id)
         if len(tasks) == limit
         else None
     )
     return TaskListResponse(
-        items=[_task_with_url(t, *dims.get(t.id, (None, None, None, None))) for t in tasks],
+        items=[_task_with_url(t, *dims.get(t.id, (None, None, None, None)), briefs=briefs) for t in tasks],
         total=total, limit=limit, offset=0 if cursor else offset, next_cursor=next_cursor,
     )
 
@@ -173,7 +176,8 @@ async def next_task(
         return None
     await db.commit()
     w, h, thumb, bh = await _attach_dimensions(db, task)
-    return _task_with_url(task, w, h, thumb, bh)
+    briefs = await resolve_briefs(db, [task.assignee_id, task.reviewer_id])
+    return _task_with_url(task, w, h, thumb, bh, briefs=briefs)
 
 
 @router.get("/{task_id}", response_model=TaskOut)
@@ -185,7 +189,8 @@ async def get_task(
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
     w, h, thumb, bh = await _attach_dimensions(db, task)
-    return _task_with_url(task, w, h, thumb, bh)
+    briefs = await resolve_briefs(db, [task.assignee_id, task.reviewer_id])
+    return _task_with_url(task, w, h, thumb, bh, briefs=briefs)
 
 
 @router.get("/{task_id}/annotations", response_model=list[AnnotationOut])
@@ -204,6 +209,7 @@ async def get_annotations(
 async def create_annotation(
     task_id: uuid.UUID,
     data: AnnotationCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
@@ -221,6 +227,22 @@ async def create_annotation(
         attributes=data.attributes,
     )
     await TaskLockService(db).heartbeat(task_id, current_user.id)
+    # v0.7.2 · annotation 编辑历史可追溯
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_CREATE,
+        target_type="annotation",
+        target_id=str(annotation.id),
+        request=request,
+        status_code=201,
+        detail={
+            "task_id": str(task_id),
+            "class_name": annotation.class_name,
+            "annotation_type": annotation.annotation_type,
+            "source": annotation.source,
+        },
+    )
     await db.commit()
     await db.refresh(annotation)
     return annotation
@@ -274,7 +296,7 @@ async def update_annotation(
     await AuditService.log(
         db,
         actor=current_user,
-        action="annotation.update",
+        action=AuditAction.ANNOTATION_UPDATE,
         target_type="annotation",
         target_id=str(annotation.id),
         request=request,
@@ -390,15 +412,30 @@ async def accept_prediction(
 async def delete_annotation(
     task_id: uuid.UUID,
     annotation_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     _assert_task_editable(await _load_task_or_404(db, task_id))
+    # 先取一份 detail 供 audit 用（soft delete 之后字段仍能读，但安全起见提前）
+    pre = await db.get(Annotation, annotation_id)
+    pre_class = pre.class_name if pre else None
     svc = AnnotationService(db)
     ok = await svc.delete(annotation_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Annotation not found")
     await TaskLockService(db).heartbeat(task_id, current_user.id)
+    # v0.7.2 · annotation 编辑历史可追溯
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_DELETE,
+        target_type="annotation",
+        target_id=str(annotation_id),
+        request=request,
+        status_code=204,
+        detail={"task_id": str(task_id), "soft": True, "class_name": pre_class},
+    )
     await db.commit()
 
 
@@ -776,6 +813,7 @@ def _task_with_url(
     height: int | None = None,
     thumbnail_path: str | None = None,
     blurhash: str | None = None,
+    briefs: dict | None = None,
 ) -> dict:
     bucket = storage_service.datasets_bucket if task.dataset_item_id else storage_service.bucket
     try:
@@ -796,6 +834,14 @@ def _task_with_url(
         except Exception:
             pass
 
+    assignee_brief = None
+    reviewer_brief = None
+    if briefs is not None:
+        if task.assignee_id is not None:
+            assignee_brief = briefs.get(str(task.assignee_id))
+        if task.reviewer_id is not None:
+            reviewer_brief = briefs.get(str(task.reviewer_id))
+
     return {
         "id": task.id,
         "project_id": task.project_id,
@@ -806,6 +852,8 @@ def _task_with_url(
         "tags": task.tags,
         "status": task.status,
         "assignee_id": task.assignee_id,
+        "assignee": assignee_brief,
+        "reviewer": reviewer_brief,
         "is_labeled": task.is_labeled,
         "overlap": task.overlap,
         "total_annotations": task.total_annotations,

@@ -25,6 +25,18 @@ class UserOut(BaseModel):
         from_attributes = True
 
 
+class UserBrief(BaseModel):
+    """v0.7.2 · 责任人可视化用：列表 / 卡片侧 inline 渲染头像 + 名字 + 角色。"""
+    id: UUID
+    name: str
+    email: str
+    role: str | None = None
+    avatar_initial: str
+
+    class Config:
+        from_attributes = True
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"

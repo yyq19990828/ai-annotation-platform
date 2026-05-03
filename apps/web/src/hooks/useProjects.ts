@@ -3,9 +3,10 @@ import {
   projectsApi,
   type ProjectCreatePayload,
   type ProjectUpdatePayload,
+  type ProjectListParams,
 } from "../api/projects";
 
-export function useProjects(params?: { status?: string; search?: string }) {
+export function useProjects(params?: ProjectListParams) {
   return useQuery({
     queryKey: ["projects", params],
     queryFn: () => projectsApi.list(params),

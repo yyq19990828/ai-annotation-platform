@@ -1,5 +1,6 @@
 import { apiClient } from "./client";
 import type { ExportFormat } from "./projects";
+import type { UserBrief } from "@/types";
 
 export interface BatchResponse {
   id: string;
@@ -11,7 +12,14 @@ export interface BatchResponse {
   status: string;
   priority: number;
   deadline: string | null;
+  /** v0.7.2 派生字段（= [annotator_id, reviewer_id] filter null）；保留为兼容旧路径，新代码优先用 annotator/reviewer。 */
   assigned_user_ids: string[];
+  /** v0.7.2 · 单值分派 */
+  annotator_id: string | null;
+  reviewer_id: string | null;
+  /** 责任人 brief（avatar / name / role） */
+  annotator: UserBrief | null;
+  reviewer: UserBrief | null;
   total_tasks: number;
   completed_tasks: number;
   review_tasks: number;
@@ -32,7 +40,8 @@ export interface BatchCreatePayload {
   dataset_id?: string;
   priority?: number;
   deadline?: string;
-  assigned_user_ids?: string[];
+  annotator_id?: string | null;
+  reviewer_id?: string | null;
 }
 
 export interface BatchUpdatePayload {
@@ -40,7 +49,8 @@ export interface BatchUpdatePayload {
   description?: string;
   priority?: number;
   deadline?: string;
-  assigned_user_ids?: string[];
+  annotator_id?: string | null;
+  reviewer_id?: string | null;
 }
 
 export interface BatchSplitPayload {
@@ -52,7 +62,20 @@ export interface BatchSplitPayload {
   name_prefix?: string;
   priority?: number;
   deadline?: string;
-  assigned_user_ids?: string[];
+  annotator_id?: string | null;
+  reviewer_id?: string | null;
+}
+
+export interface ProjectDistributeBatchesPayload {
+  annotator_ids?: string[];
+  reviewer_ids?: string[];
+  only_unassigned?: boolean;
+}
+
+export interface BatchDistributeResultResponse {
+  distributed_batches: number;
+  annotator_per_batch: Record<string, string | null>;
+  reviewer_per_batch: Record<string, string | null>;
 }
 
 export const batchesApi = {
@@ -96,6 +119,15 @@ export const batchesApi = {
     apiClient.post<BatchResponse>(
       `/projects/${projectId}/batches/${batchId}/reject`,
       { feedback },
+    ),
+
+  distributeBatches: (
+    projectId: string,
+    payload: ProjectDistributeBatchesPayload,
+  ) =>
+    apiClient.post<BatchDistributeResultResponse>(
+      `/projects/${projectId}/batches/distribute-batches`,
+      payload,
     ),
 
   exportBatch: async (projectId: string, batchId: string, format: ExportFormat) => {

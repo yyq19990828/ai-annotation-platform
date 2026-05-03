@@ -38,7 +38,14 @@ class AuditAction(str, Enum):
     BATCH_STATUS_CHANGED = "batch.status_changed"
     BATCH_REJECTED = "batch.rejected"
     BATCH_DELETED = "batch.deleted"
+    BATCH_DISTRIBUTE_EVEN = "batch.distribute_even"
     ANNOTATION_ATTRIBUTE_CHANGE = "annotation.attribute_change"
+    # v0.7.2 · annotation 编辑历史可追溯
+    ANNOTATION_CREATE = "annotation.create"
+    ANNOTATION_UPDATE = "annotation.update"
+    ANNOTATION_DELETE = "annotation.delete"
+    ANNOTATION_COMMENT_ADD = "annotation.comment_add"
+    ANNOTATION_COMMENT_DELETE = "annotation.comment_delete"
     # v0.6.5 · 任务状态机锁定
     TASK_SUBMIT = "task.submit"
     TASK_WITHDRAW = "task.withdraw"

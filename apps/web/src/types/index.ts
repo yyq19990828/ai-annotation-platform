@@ -47,6 +47,14 @@ export interface TaskImage {
   aiBoxes: AIBox[];
 }
 
+export interface UserBrief {
+  id: string;
+  name: string;
+  email: string;
+  role: string | null;
+  avatar_initial: string;
+}
+
 export interface TaskResponse {
   id: string;
   project_id: string;
@@ -57,6 +65,9 @@ export interface TaskResponse {
   tags: string[];
   status: TaskStatus;
   assignee_id: string | null;
+  /** v0.7.2 · 责任人可视化（list/get/next 端点 populate） */
+  assignee: UserBrief | null;
+  reviewer: UserBrief | null;
   is_labeled: boolean;
   overlap: number;
   total_annotations: number;

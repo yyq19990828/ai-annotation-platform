@@ -102,7 +102,7 @@ export function WorkbenchShell() {
     }
     return (batchList ?? [])
       .filter((b) => memberStatuses.includes(b.status))
-      .filter((b) => (b.assigned_user_ids ?? []).includes(meUserId));
+      .filter((b) => b.annotator_id === meUserId);
   }, [batchList, isOwner, meUserId]);
 
   const taskListParams = useMemo(

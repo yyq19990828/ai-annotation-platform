@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
+import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { useMyBatches } from "@/hooks/useDashboard";
 import { batchesApi, type BatchResponse } from "@/api/batches";
 import type { MyBatchItem } from "@/api/dashboard";
@@ -118,6 +119,15 @@ export function MyBatchesCard() {
                   {remaining > 0 && <span> · 待标 {remaining}</span>}
                   {b.review_tasks > 0 && <span> · 送审 {b.review_tasks}</span>}
                 </div>
+                {b.reviewer && (
+                  <div style={{ marginTop: 6 }}>
+                    <AssigneeAvatarStack
+                      users={[b.reviewer]}
+                      label="审核员"
+                      max={1}
+                    />
+                  </div>
+                )}
                 {b.status === "rejected" && b.review_feedback && (
                   <div
                     style={{

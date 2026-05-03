@@ -60,6 +60,8 @@ async def _seed(
         display_id=await next_display_id(db, "batches"),
         name="b1",
         status=batch_status,
+        # v0.7.2 单值语义：annotator_id 单值；assigned_user_ids 派生
+        annotator_id=annotator_id,
         assigned_user_ids=[str(annotator_id)],
     )
     db.add(batch)
@@ -138,7 +140,8 @@ class TestTransitionAuth:
         p, batch, _ = await _seed(
             db_session, owner.id, user.id, batch_status="annotating",
         )
-        # 清空分派
+        # v0.7.2：清空 annotator_id（单值语义）
+        batch.annotator_id = None
         batch.assigned_user_ids = []
         await db_session.commit()
 
@@ -484,7 +487,8 @@ class TestReviewerVisibility:
         p, batch, tasks = await _seed(
             db_session, owner.id, user.id, batch_status="rejected",
         )
-        # 清空 assigned，annotator 仍是 ProjectMember 但不在批次分派中
+        # v0.7.2：清空 annotator_id（单值语义）
+        batch.annotator_id = None
         batch.assigned_user_ids = []
         await db_session.commit()
 

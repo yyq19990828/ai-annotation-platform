@@ -27,7 +27,7 @@ from app.schemas.annotation_comment import (
     CommentAttachmentUploadInitRequest,
     CommentAttachmentUploadInitResponse,
 )
-from app.services.audit import AuditService
+from app.services.audit import AuditAction, AuditService
 from app.services.storage import storage_service
 
 router = APIRouter()
@@ -131,7 +131,7 @@ async def create_comment(
     await AuditService.log(
         db,
         actor=current_user,
-        action="annotation.comment",
+        action=AuditAction.ANNOTATION_COMMENT_ADD,
         target_type="annotation",
         target_id=str(annotation_id),
         request=request,
@@ -175,6 +175,7 @@ async def patch_comment(
 @router.delete("/comments/{comment_id}", status_code=204)
 async def delete_comment(
     comment_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
 ):
@@ -184,6 +185,17 @@ async def delete_comment(
     if c.author_id != current_user.id and current_user.role not in {UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN}:
         raise HTTPException(status_code=403, detail="Only the author can delete this comment")
     c.is_active = False
+    # v0.7.2 · annotation 编辑历史可追溯
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_COMMENT_DELETE,
+        target_type="annotation",
+        target_id=str(c.annotation_id),
+        request=request,
+        status_code=204,
+        detail={"comment_id": str(comment_id), "preview": (c.body or "")[:120]},
+    )
     await db.commit()
     return
 

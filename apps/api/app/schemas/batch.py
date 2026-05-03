@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.user import UserBrief
+
 
 class BatchCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -13,7 +15,9 @@ class BatchCreate(BaseModel):
     dataset_id: UUID | None = None
     priority: int = Field(50, ge=0, le=100)
     deadline: date | None = None
-    assigned_user_ids: list[UUID] = []
+    # v0.7.2 · 单值分派
+    annotator_id: UUID | None = None
+    reviewer_id: UUID | None = None
 
 
 class BatchUpdate(BaseModel):
@@ -21,7 +25,9 @@ class BatchUpdate(BaseModel):
     description: str | None = None
     priority: int | None = Field(None, ge=0, le=100)
     deadline: date | None = None
-    assigned_user_ids: list[UUID] | None = None
+    # v0.7.2 · 单值分派
+    annotator_id: UUID | None = None
+    reviewer_id: UUID | None = None
 
 
 class BatchOut(BaseModel):
@@ -35,6 +41,12 @@ class BatchOut(BaseModel):
     priority: int = 50
     deadline: date | None = None
     assigned_user_ids: list[UUID] = []
+    # v0.7.2 · 单值分派字段（一 batch 一标注员 + 一审核员）
+    annotator_id: UUID | None = None
+    reviewer_id: UUID | None = None
+    # v0.7.2 · 责任人可视化 brief（avatar / name / role）
+    annotator: UserBrief | None = None
+    reviewer: UserBrief | None = None
     total_tasks: int = 0
     completed_tasks: int = 0
     review_tasks: int = 0
@@ -60,6 +72,23 @@ class BatchReject(BaseModel):
     feedback: str = Field(..., min_length=1, max_length=500)
 
 
+class ProjectDistributeBatches(BaseModel):
+    """v0.7.2 · 项目级 batch 分派：在所选 annotator / reviewer 间圆周分派 batch。
+    每个 batch 落到 1 个 annotator + 1 个 reviewer。
+    """
+    annotator_ids: list[UUID] = []
+    reviewer_ids: list[UUID] = []
+    # only_unassigned=True：只分派 annotator_id IS NULL（或 reviewer 为空）的 batch；
+    # False：覆盖所有 batch
+    only_unassigned: bool = True
+
+
+class BatchDistributeResult(BaseModel):
+    distributed_batches: int
+    annotator_per_batch: dict[str, str | None] = {}
+    reviewer_per_batch: dict[str, str | None] = {}
+
+
 class BatchSplitRequest(BaseModel):
     strategy: Literal["metadata", "id_range", "random"]
     # metadata 策略
@@ -73,4 +102,6 @@ class BatchSplitRequest(BaseModel):
     name_prefix: str = "Batch"
     priority: int = Field(50, ge=0, le=100)
     deadline: date | None = None
-    assigned_user_ids: list[UUID] = []
+    # v0.7.2 · 切批默认分派（每个新切的 batch 都落到同一对人；后续可用项目级 distribute 重新分派）
+    annotator_id: UUID | None = None
+    reviewer_id: UUID | None = None

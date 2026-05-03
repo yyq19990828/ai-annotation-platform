@@ -87,6 +87,31 @@ export function useSplitBatches(projectId: string) {
   });
 }
 
+export function useDistributeBatches(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      annotatorIds,
+      reviewerIds,
+      onlyUnassigned = true,
+    }: {
+      annotatorIds: string[];
+      reviewerIds: string[];
+      onlyUnassigned?: boolean;
+    }) =>
+      batchesApi.distributeBatches(projectId, {
+        annotator_ids: annotatorIds,
+        reviewer_ids: reviewerIds,
+        only_unassigned: onlyUnassigned,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
 export function useRejectBatch(projectId: string) {
   const qc = useQueryClient();
   return useMutation({

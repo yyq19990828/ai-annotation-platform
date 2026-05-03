@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
+import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import type { TaskResponse } from "@/types";
 
 interface TopbarProps {
@@ -108,6 +109,13 @@ export function Topbar({
           >
             {indexLabel}
           </span>
+        )}
+        {/* v0.7.2 · 责任人胶囊：标注员 / 审核员（list_tasks/get_task 已 populate） */}
+        {task?.assignee && (
+          <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />
+        )}
+        {task?.reviewer && (
+          <AssigneeAvatarStack users={[task.reviewer]} label="审核" max={1} />
         )}
       </div>
 
