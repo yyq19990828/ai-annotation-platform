@@ -124,7 +124,7 @@ async def next_task(
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     await assert_project_visible(project_id, db, current_user)
-    task = await get_next_task(current_user.id, project_id, db, batch_id=batch_id)
+    task = await get_next_task(current_user, project_id, db, batch_id=batch_id)
     if not task:
         return None
     await db.commit()

@@ -5,21 +5,24 @@ from sqlalchemy import select, func, or_, cast
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.enums import UserRole
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_lock import TaskLock
 from app.db.models.annotation import Annotation
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
+from app.db.models.user import User
 from app.services.task_lock import TaskLockService
 
 
 async def get_next_task(
-    user_id: uuid.UUID,
+    user: User,
     project_id: uuid.UUID,
     db: AsyncSession,
     batch_id: uuid.UUID | None = None,
 ) -> Task | None:
+    user_id = user.id
     lock_svc = TaskLockService(db)
 
     # 1. Check if user already has a locked task in this project
@@ -63,8 +66,11 @@ async def get_next_task(
     # Batch filtering
     if batch_id:
         candidates = candidates.where(Task.batch_id == batch_id)
-    else:
-        # Only show tasks from batches the user is assigned to (or unassigned batches)
+
+    # Assignment filtering: super_admin / 项目 owner 越权放行（可代标注员补刀），
+    # 其他角色无论是否显式指定 batch_id，都必须命中 assigned_user_ids（或批次未分派）。
+    is_privileged = user.role == UserRole.SUPER_ADMIN or project.owner_id == user_id
+    if not is_privileged:
         user_id_str = str(user_id)
         candidates = candidates.where(
             or_(
