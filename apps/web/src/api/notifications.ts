@@ -1,22 +1,41 @@
 import { apiClient } from "./client";
 
 export interface NotificationItem {
-  id: number;
-  action: string;
-  actor_email: string | null;
-  actor_role: string | null;
-  target_type: string | null;
-  target_id: string | null;
-  detail_json: Record<string, unknown> | null;
+  id: string;
+  type: string;
+  target_type: string;
+  target_id: string;
+  payload: Record<string, unknown>;
+  read_at: string | null;
   created_at: string;
 }
 
 export interface NotificationsResponse {
   items: NotificationItem[];
   total: number;
+  unread: number;
+}
+
+export interface UnreadCountResponse {
+  unread: number;
 }
 
 export const notificationsApi = {
-  list: (limit = 30) =>
-    apiClient.get<NotificationsResponse>(`/auth/me/notifications?limit=${limit}`),
+  list: (params?: { limit?: number; offset?: number; unreadOnly?: boolean }) => {
+    const q = new URLSearchParams();
+    if (params?.limit) q.set("limit", String(params.limit));
+    if (params?.offset) q.set("offset", String(params.offset));
+    if (params?.unreadOnly) q.set("unread_only", "true");
+    const qs = q.toString();
+    return apiClient.get<NotificationsResponse>(`/notifications${qs ? `?${qs}` : ""}`);
+  },
+
+  unreadCount: () =>
+    apiClient.get<UnreadCountResponse>("/notifications/unread-count"),
+
+  markRead: (id: string) =>
+    apiClient.post<{ ok: boolean }>(`/notifications/${id}/read`, {}),
+
+  markAllRead: () =>
+    apiClient.post<{ updated: number }>("/notifications/mark-all-read", {}),
 };

@@ -32,6 +32,8 @@ class BugReport(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     triaged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     fixed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reopen_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_reopened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class BugComment(Base):

@@ -13,6 +13,7 @@ from app.api.v1 import (
     invitations_admin,
     me,
     ml_backends,
+    notifications,
     projects,
     storage,
     system_settings,
@@ -39,3 +40,4 @@ api_router.include_router(system_settings.router, prefix="/settings", tags=["set
 api_router.include_router(batches.router, prefix="/projects/{project_id}/batches", tags=["batches"])
 api_router.include_router(annotation_comments.router, tags=["annotation-comments"])
 api_router.include_router(bug_reports.router, tags=["bug-reports"])
+api_router.include_router(notifications.router, tags=["notifications"])

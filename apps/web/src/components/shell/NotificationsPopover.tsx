@@ -1,7 +1,11 @@
 import { useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
-import { useNotifications, markAllRead } from "@/hooks/useNotifications";
-import { auditActionLabel } from "@/utils/auditLabels";
+import {
+  useNotifications,
+  useMarkAllRead,
+  useMarkRead,
+} from "@/hooks/useNotifications";
 import type { NotificationItem } from "@/api/notifications";
 
 function relativeTime(iso: string): string {
@@ -12,28 +16,97 @@ function relativeTime(iso: string): string {
   return `${Math.floor(diff / 86400)} 天前`;
 }
 
-function NotifRow({ item, isNew }: { item: NotificationItem; isNew: boolean }) {
+const TYPE_LABEL: Record<string, string> = {
+  "bug_report.commented": "评论了反馈",
+  "bug_report.status_changed": "更新了反馈状态",
+  "bug_report.reopened": "重新打开了反馈",
+};
+
+interface NotifRowProps {
+  item: NotificationItem;
+  onClick: () => void;
+}
+
+function NotifRow({ item, onClick }: NotifRowProps) {
+  const isUnread = item.read_at === null;
+  const payload = item.payload || {};
+  const actorName = (payload as { actor_name?: string }).actor_name || "系统";
+  const displayId = (payload as { display_id?: string }).display_id || "";
+  const title = (payload as { title?: string }).title || "";
+  const snippet = (payload as { snippet?: string }).snippet || "";
+  const fromStatus = (payload as { from_status?: string }).from_status;
+  const toStatus = (payload as { to_status?: string }).to_status;
+  const reopen = Boolean((payload as { reopen?: boolean }).reopen);
+
+  const verb = reopen
+    ? "重新打开了反馈"
+    : item.type === "bug_report.status_changed"
+    ? `状态 ${fromStatus ?? ""} → ${toStatus ?? ""}`
+    : TYPE_LABEL[item.type] || item.type;
+
   return (
-    <div style={{
-      padding: "10px 14px",
-      borderBottom: "1px solid var(--color-border)",
-      display: "flex", gap: 10, alignItems: "flex-start",
-      background: isNew ? "oklch(0.97 0.01 252)" : undefined,
-    }}>
-      <div style={{
-        width: 6, height: 6, borderRadius: "50%", marginTop: 6, flexShrink: 0,
-        background: isNew ? "var(--color-accent)" : "transparent",
-        border: isNew ? undefined : "1px solid var(--color-border)",
-      }} />
+    <div
+      onClick={onClick}
+      style={{
+        padding: "10px 14px",
+        borderBottom: "1px solid var(--color-border)",
+        display: "flex",
+        gap: 10,
+        alignItems: "flex-start",
+        background: isUnread ? "oklch(0.97 0.01 252)" : undefined,
+        cursor: "pointer",
+      }}
+    >
+      <div
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          marginTop: 6,
+          flexShrink: 0,
+          background: isUnread ? "var(--color-accent)" : "transparent",
+          border: isUnread ? undefined : "1px solid var(--color-border)",
+        }}
+      />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12.5 }}>
-          <span style={{ fontWeight: 500 }}>{item.actor_email ?? "系统"}</span>
-          {" "}
-          <span style={{ color: "var(--color-fg-muted)" }}>{auditActionLabel(item.action)}</span>
-          {item.target_type && (
-            <span style={{ color: "var(--color-fg-muted)" }}> · {item.target_type}</span>
+          <span style={{ fontWeight: 500 }}>{actorName}</span>{" "}
+          <span style={{ color: "var(--color-fg-muted)" }}>{verb}</span>
+          {displayId && (
+            <>
+              {" "}
+              <span style={{ color: "var(--color-fg-muted)" }}>· {displayId}</span>
+            </>
           )}
         </div>
+        {title && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--color-fg)",
+              marginTop: 2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {title}
+          </div>
+        )}
+        {snippet && (
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--color-fg-muted)",
+              marginTop: 2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            “{snippet}”
+          </div>
+        )}
         <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
           {relativeTime(item.created_at)}
         </div>
@@ -48,11 +121,10 @@ interface Props {
 
 export function NotificationsPopover({ onClose }: Props) {
   const { data } = useNotifications();
+  const markAllRead = useMarkAllRead();
+  const markRead = useMarkRead();
+  const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
-  const lastRead = (() => {
-    const v = localStorage.getItem("notifications_last_read");
-    return v ? parseInt(v, 10) : 0;
-  })();
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -65,6 +137,18 @@ export function NotificationsPopover({ onClose }: Props) {
   }, [onClose]);
 
   const items = data?.items ?? [];
+  const unread = data?.unread ?? 0;
+
+  function handleRowClick(item: NotificationItem) {
+    if (item.read_at === null) {
+      markRead.mutate(item.id);
+    }
+    if (item.target_type === "bug_report") {
+      // 简单策略：跳到管理员 BugsPage（提交者会被路由守卫拦回 /me 反馈抽屉触发）
+      navigate("/bugs");
+    }
+    onClose();
+  }
 
   return (
     <div
@@ -73,7 +157,7 @@ export function NotificationsPopover({ onClose }: Props) {
         position: "absolute",
         top: "calc(100% + 8px)",
         right: 0,
-        width: 340,
+        width: 360,
         background: "var(--color-bg-elev)",
         border: "1px solid var(--color-border)",
         borderRadius: "var(--radius-lg)",
@@ -82,18 +166,29 @@ export function NotificationsPopover({ onClose }: Props) {
         overflow: "hidden",
       }}
     >
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "12px 14px 10px",
-        borderBottom: "1px solid var(--color-border)",
-      }}>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>通知</span>
-        {items.length > 0 && (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 14px 10px",
+          borderBottom: "1px solid var(--color-border)",
+        }}
+      >
+        <span style={{ fontWeight: 600, fontSize: 13 }}>
+          通知{unread > 0 ? ` · ${unread} 未读` : ""}
+        </span>
+        {unread > 0 && (
           <button
-            onClick={() => { markAllRead(); onClose(); }}
+            onClick={() => markAllRead.mutate()}
+            disabled={markAllRead.isPending}
             style={{
-              fontSize: 11, color: "var(--color-accent)", background: "none",
-              border: "none", cursor: "pointer", padding: 0,
+              fontSize: 11,
+              color: "var(--color-accent)",
+              background: "none",
+              border: "none",
+              cursor: markAllRead.isPending ? "not-allowed" : "pointer",
+              padding: 0,
             }}
           >
             全部已读
@@ -103,17 +198,20 @@ export function NotificationsPopover({ onClose }: Props) {
 
       <div style={{ maxHeight: 380, overflowY: "auto" }}>
         {items.length === 0 ? (
-          <div style={{ padding: "24px 14px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+          <div
+            style={{
+              padding: "24px 14px",
+              textAlign: "center",
+              color: "var(--color-fg-subtle)",
+              fontSize: 13,
+            }}
+          >
             <Icon name="bell" size={22} style={{ opacity: 0.25, marginBottom: 6 }} />
             <div>暂无通知</div>
           </div>
         ) : (
           items.map((item) => (
-            <NotifRow
-              key={item.id}
-              item={item}
-              isNew={new Date(item.created_at).getTime() > lastRead}
-            />
+            <NotifRow key={item.id} item={item} onClick={() => handleRowClick(item)} />
           ))
         )}
       </div>

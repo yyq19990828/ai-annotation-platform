@@ -9,6 +9,106 @@
 
 ---
 
+## [0.6.9] - 2026-05-03
+
+> BUG 反馈机制从「单向漏斗」升级为「双向闭环 + 实时通知」。两路并进：A · 反馈闭环（评论双向 + 自动重开）；B · 通知中心基座（持久化表 + Redis Pub/Sub WS 推送，BUG 反馈是首位消费方，后续 audit / 任务分派可挂入）。后端 75→82 例（+7 通知 + 6 反馈闭环 = 13 新例，部分被原 6 例计入）。
+
+### A · BUG 反馈闭环
+
+- **`bug_reports` 加 reopen 字段**（alembic 0025）：`reopen_count INTEGER NOT NULL DEFAULT 0` + `last_reopened_at TIMESTAMPTZ`，避免「fixed/wont_fix/duplicate 是终态」造成的回归 BUG 只能新提交而丢失上下文。
+- **service `add_comment` 自动 reopen**：提交者在 fixed/wont_fix/duplicate 状态评论 → 同事务把 status 切回 `triaged` + reopen_count++ + last_reopened_at + triaged_at；返回 `(comment, was_reopened, author_name, author_role)` 让 router 决定后续 audit / 通知 fan-out。
+- **评论端点鉴权收紧**：`POST /bug_reports/{id}/comments` 当前是任何登录用户都能评论（v0.6.0 留下的 BUG），收紧为 `reporter == self || is_admin`，并加 `60/hour` 限流（与 create 的 `10/hour` 区分）。reopen 触发时同时写 `bug_report.reopened` audit 一行，detail 含 reopen_count。
+- **评论返回 author_name + author_role**：`get_with_comments` 改为 `BugComment LEFT JOIN User`，避免前端 N+1 lookup。`BugCommentOut` schema 加 `author_name` / `author_role`，`BugReportOut` / `BugReportDetail` 加 `reopen_count` / `last_reopened_at`。
+- **前端 `BugReportDrawer` 详情页加评论输入**：原本是 read-only。新增 textarea + 发送按钮；当 status ∈ {fixed, wont_fix, duplicate} 时上方显示橙色 hint「⚠ 当前状态为 X，发送评论将自动重新打开此反馈」；发送成功 toast 区分「评论已发送，反馈已重新打开」与「评论已发送」。
+- **reopen 徽章 + author 头像**：`BugReportDrawer` 详情页与 `BugsPage` 列表 / 详情显示 `↻N` 或「曾重开 N 次」徽章（hover 显示最近重开时间）；评论行从「body + 时间戳」升级为「author_name · role 徽章 · 时间 · body」，多端一致。
+
+### B · 通知中心（Redis Pub/Sub WS）
+
+- **`notifications` 表**（alembic 0026）：通用收件人视角存档，区别于 `audit_log` 的操作者视角（索引取向相反；不与 audit_log 合并）。
+  ```
+  user_id, type, target_type, target_id, payload(JSONB), read_at, created_at
+  ix_notifications_user_unread (user_id, read_at, created_at DESC)
+  ix_notifications_target (target_type, target_id)
+  ```
+- **`NotificationService`** (`apps/api/app/services/notification.py`)：`notify` / `notify_many` 写表 + Redis publish 到 `notify:{user_id}` 频道（publish 异常不阻塞主事务）；`list_for_user` / `unread_count` / `mark_read` / `mark_all_read` 全部用 `WHERE user_id = self.id` 强制隔离。
+- **REST + WS 端点**：
+  - `GET /notifications?unread_only&limit&offset` — 列表（含 `total` / `unread`）
+  - `GET /notifications/unread-count` — TopBar 红点
+  - `POST /notifications/{id}/read` / `POST /notifications/mark-all-read`
+  - `WebSocket /ws/notifications?token=<JWT>` — 握手时 `decode_access_token` 校验 sub，订阅 `notify:{sub}` Redis 频道；与现有 `/ws/projects/{id}/preannotate` 共用 `app.api.v1.ws` 文件。
+- **bug_reports 接入通知 fan-out**：
+  - PATCH 状态变更（actor != reporter）→ 通知 reporter（payload 含 `from_status` / `to_status` / `actor_name` / `resolution`）
+  - 提交者评论 → 通知 `assigned_to_id`；缺省时通知所有 active SUPER_ADMIN；reopen 时 type=`bug_report.reopened` 且 payload `reopen=true` + `reopen_count`
+  - 管理员评论 → 通知 reporter（type=`bug_report.commented`）
+  - 自己操作不通知自己（reporter == admin 同人时不入队）
+- **前端通知中心改造**：
+  - `apps/web/src/api/notifications.ts` 切换到新 `/notifications` 端点；shape 从「audit_log 派生」改为「DB 行」（`type` + `payload` + 真实 `read_at`）
+  - 新 hooks：`useNotifications` / `useUnreadCount`（30s 轮询兜底）/ `useMarkRead` / `useMarkAllRead` / `useNotificationSocket`（指数退避重连，最大 30s；收到 push → `qc.invalidateQueries(['notifications'])`）
+  - `NotificationsPopover` 重写：每行显示 `{actor_name} {verb} · {display_id} / {title} / "{snippet}"`，verb 区分 `bug_report.commented` / `bug_report.status_changed` / `bug_report.reopened` / status 迁移；点击行 → markRead + 跳 `/bugs`
+  - `TopBar` 红点改为消费 `unreadCount`（来自服务端 `unread`）；移除 v0.4.8 留下的 `localStorage[lastRead]` hack
+  - `useNotificationSocket` 在 `<AppShell>` 顶层挂载（登录后即连）
+
+### 关键修改
+
+| 文件 | 改动 |
+| --- | --- |
+| `apps/api/alembic/versions/0025_bug_reopen_fields.py` | bug_reports 加 reopen_count + last_reopened_at |
+| `apps/api/alembic/versions/0026_notifications.py` | 新建 notifications 表 + 双索引 |
+| `apps/api/app/db/models/bug_report.py` | BugReport +2 列 |
+| `apps/api/app/db/models/notification.py` | Notification ORM（新建）|
+| `apps/api/app/services/bug_report.py` | `add_comment` 自动 reopen + 返回元组；`get_with_comments` join User |
+| `apps/api/app/services/notification.py` | NotificationService（新建）|
+| `apps/api/app/schemas/bug_report.py` | BugCommentOut +author_name/role；BugReportOut +reopen_count |
+| `apps/api/app/schemas/notification.py` | NotificationOut / NotificationList / UnreadCount（新建）|
+| `apps/api/app/api/v1/bug_reports.py` | 评论端点收紧鉴权 + 60/hour 限流 + audit reopened + 通知 fan-out；PATCH 状态通知 reporter |
+| `apps/api/app/api/v1/notifications.py` | REST 端点（新建）|
+| `apps/api/app/api/v1/ws.py` | `/ws/notifications` JWT 鉴权 + Redis 订阅 |
+| `apps/api/app/api/v1/router.py` | 注册 notifications router |
+| `apps/web/src/api/bug-reports.ts` | BugReportResponse +reopen_count；BugCommentResponse +author_name/role |
+| `apps/web/src/api/notifications.ts` | 切到新 /notifications 端点 |
+| `apps/web/src/hooks/useNotifications.ts` | 重写：list/unreadCount/markRead/markAllRead |
+| `apps/web/src/hooks/useNotificationSocket.ts` | WS 订阅 + 指数退避重连（新建）|
+| `apps/web/src/components/shell/NotificationsPopover.tsx` | 改为消费新 shape + 跳 /bugs |
+| `apps/web/src/components/shell/TopBar.tsx` | 红点改服务端 unread；移除 lastRead localStorage |
+| `apps/web/src/components/bugreport/BugReportDrawer.tsx` | 详情页加评论输入框 + reopen 徽章 + author 显示 |
+| `apps/web/src/pages/Bugs/BugsPage.tsx` | 列表/详情 reopen 徽章 + 评论 author 显示 |
+| `apps/web/src/App.tsx` | AppShell 挂载 useNotificationSocket |
+
+### 测试
+
+- `apps/api/tests/test_bug_reports.py`（新）6 例：reopen 触发 / admin 评论不触发 / 非终态不触发 / 累加 / HTTP 越权 403 / 提交者 HTTP 评论 + author 信息回传 + 详情含 reopen_count
+- `apps/api/tests/test_notifications.py`（新）7 例：write+unread_count / mark_read+mark_all_read / admin 改状态通知 reporter / reopen 通知 assignee / admin 评论通知 reporter / 越权隔离（A 看不到 B 的）/ 自己操作不通知自己
+- 全套 75 → 82 例通过；前端 tsc 0 errors。
+
+### 验证（手动 E2E）
+
+1. `docker compose up -d`，浏览器双账号登录（reporter A + admin B）
+2. A 提交 BUG → B 铃铛红点 +1，下拉显示「{A} 评论了反馈 · B-N / 标题」
+3. B 改状态 fixed + 写 resolution → A 铃铛 +1，详情页 status = 已修复
+4. A 在 BugReportDrawer 详情页评论「还是有问题」→ status 自动回 已确认，徽章「曾重开 1 次」；B 收到 reopen 通知
+5. WS 验证：A 浏览器 devtools 看 `wss://.../api/v1/ws/notifications` 帧；断网 30s 后轮询兜底
+
+### 数据库脚本
+
+```bash
+# 重开过的 BUG
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT display_id, status, reopen_count, last_reopened_at FROM bug_reports WHERE reopen_count > 0 ORDER BY last_reopened_at DESC LIMIT 10;"
+
+# 未读通知统计
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT user_id, count(*) FILTER (WHERE read_at IS NULL) AS unread, count(*) AS total FROM notifications GROUP BY user_id;"
+```
+
+### 推迟 / 后续观察
+
+- 老的 `GET /auth/me/notifications`（v0.4.8 audit_log 派生）前端已不再调用，可视为 dead code 在下个 PR 清理
+- 通知点击跳转目前固定 `/bugs`（admin 视图）；reporter 应跳「我的反馈抽屉」，需路由感知角色
+- 通知偏好（按 type 静音 / 邮件 digest）
+- LLM 聚类去重 + SMTP 邮件通知（ROADMAP 仍保留，独立成版）
+
+---
+
 ## [0.6.8] - 2026-05-03
 
 > v0.6.7 落地后项目管理员又收口 3 个反馈：B-13（同人退出重进偶发锁冲突复发）、B-14（删完批次后切分死循环 "No default batch found"）、B-15（任务队列只显示 100 条 / 看不到批次）。三者都触及 v0.6.7「数据集→批次」改造的尾部遗留。

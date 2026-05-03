@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
+import { useNotificationSocket } from "@/hooks/useNotificationSocket";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { SidebarDrawer } from "@/components/shell/SidebarDrawer";
 import { ToastRack, useToastStore } from "@/components/ui/Toast";
@@ -85,6 +86,8 @@ function AppShell() {
     patchFetchForBugCapture();
     initBugReportCapture();
   }, []);
+
+  useNotificationSocket();
 
   return (
     <div

@@ -38,6 +38,8 @@ export interface BugReportResponse {
   created_at: string;
   triaged_at: string | null;
   fixed_at: string | null;
+  reopen_count: number;
+  last_reopened_at: string | null;
 }
 
 export interface BugReportDetail extends BugReportResponse {
@@ -48,6 +50,8 @@ export interface BugCommentResponse {
   id: string;
   bug_report_id: string;
   author_id: string;
+  author_name: string;
+  author_role: string;
   body: string;
   created_at: string;
 }

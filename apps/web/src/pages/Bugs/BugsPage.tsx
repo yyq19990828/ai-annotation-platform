@@ -144,7 +144,25 @@ export function BugsPage() {
                   <td style={{ padding: "8px 6px" }}>
                     <span style={{ color: severityColor[item.severity] ?? "var(--color-fg-muted)", fontWeight: 500 }}>{item.severity}</span>
                   </td>
-                  <td style={{ padding: "8px 6px" }}>{statusLabel[item.status] ?? item.status}</td>
+                  <td style={{ padding: "8px 6px" }}>
+                    {statusLabel[item.status] ?? item.status}
+                    {item.reopen_count > 0 && (
+                      <span
+                        title={item.last_reopened_at ? `最近重开：${new Date(item.last_reopened_at).toLocaleString("zh-CN")}` : undefined}
+                        style={{
+                          marginLeft: 6,
+                          padding: "0 5px",
+                          fontSize: 10,
+                          color: "oklch(0.55 0.18 45)",
+                          background: "oklch(0.95 0.04 45)",
+                          border: "1px solid oklch(0.85 0.10 45)",
+                          borderRadius: 3,
+                        }}
+                      >
+                        ↻{item.reopen_count}
+                      </span>
+                    )}
+                  </td>
                   <td style={{ padding: "8px 6px", fontSize: 11, color: "var(--color-fg-muted)" }}>
                     {new Date(item.created_at).toLocaleDateString("zh-CN")}
                   </td>
@@ -176,10 +194,25 @@ export function BugsPage() {
               </button>
             </div>
 
-            <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ color: "var(--color-fg-muted)" }}>路由：<code style={{ fontSize: 11 }}>{detail.route}</code></span>
               <span style={{ color: "var(--color-fg-muted)" }}>角色：{detail.user_role}</span>
               {detail.viewport && <span style={{ color: "var(--color-fg-muted)" }}>{detail.viewport}</span>}
+              {detail.reopen_count > 0 && (
+                <span
+                  title={detail.last_reopened_at ? `最近重开：${new Date(detail.last_reopened_at).toLocaleString("zh-CN")}` : undefined}
+                  style={{
+                    padding: "1px 6px",
+                    fontSize: 11,
+                    color: "oklch(0.55 0.18 45)",
+                    background: "oklch(0.95 0.04 45)",
+                    border: "1px solid oklch(0.85 0.10 45)",
+                    borderRadius: 3,
+                  }}
+                >
+                  曾重开 {detail.reopen_count} 次
+                </span>
+              )}
             </div>
             <p style={{ margin: "0 0 14px", lineHeight: 1.55, color: "var(--color-fg)", whiteSpace: "pre-wrap" }}>{detail.description}</p>
 
@@ -218,10 +251,18 @@ export function BugsPage() {
               </div>
               {detail.comments?.map((c) => (
                 <div key={c.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--color-border-subtle)" }}>
-                  <span style={{ color: "var(--color-fg)" }}>{c.body}</span>
-                  <div style={{ fontSize: 10.5, color: "var(--color-fg-subtle)", marginTop: 2 }}>
-                    {new Date(c.created_at).toLocaleString("zh-CN")}
+                  <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 2 }}>
+                    <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{c.author_name || "未知"}</span>
+                    {c.author_role && (
+                      <span style={{ marginLeft: 6, padding: "0 5px", fontSize: 10, borderRadius: 3, background: "var(--color-bg-elev)" }}>
+                        {c.author_role}
+                      </span>
+                    )}
+                    <span style={{ marginLeft: 6, color: "var(--color-fg-subtle)" }}>
+                      {new Date(c.created_at).toLocaleString("zh-CN")}
+                    </span>
                   </div>
+                  <span style={{ color: "var(--color-fg)", whiteSpace: "pre-wrap" }}>{c.body}</span>
                 </div>
               ))}
             </div>

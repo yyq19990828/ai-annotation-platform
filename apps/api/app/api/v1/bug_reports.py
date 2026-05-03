@@ -18,7 +18,9 @@ from app.schemas.bug_report import (
 )
 from app.services.bug_report import BugReportService
 from app.services.audit import AuditService
+from app.services.notification import NotificationService
 from app.services.storage import storage_service
+from sqlalchemy import select
 from pydantic import BaseModel, Field
 
 router = APIRouter()
@@ -129,13 +131,25 @@ async def get_bug_report(
     current_user: User = Depends(get_current_user),
 ):
     svc = BugReportService(db)
-    report, comments = await svc.get_with_comments(report_id)
+    report, comment_rows = await svc.get_with_comments(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Bug report not found")
     is_admin = current_user.role in (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
     if not is_admin and report.reporter_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    return BugReportDetail(**{**report.__dict__, "comments": comments})
+    comments_out = [
+        BugCommentOut(
+            id=c.id,
+            bug_report_id=c.bug_report_id,
+            author_id=c.author_id,
+            author_name=name,
+            author_role=role,
+            body=c.body,
+            created_at=c.created_at,
+        )
+        for (c, name, role) in comment_rows
+    ]
+    return BugReportDetail(**{**report.__dict__, "comments": comments_out})
 
 
 @router.patch("/bug_reports/{report_id}", response_model=BugReportOut)
@@ -153,7 +167,10 @@ async def update_bug_report(
     is_admin = current_user.role in (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
     if not is_admin and report.reporter_id != current_user.id:
         raise HTTPException(status_code=403, detail="只能编辑自己提交的反馈")
-    report = await svc.update(report_id, **data.model_dump(exclude_unset=True))
+    old_status = report.status
+    update_fields = data.model_dump(exclude_unset=True)
+    new_status = update_fields.get("status")
+    report = await svc.update(report_id, **update_fields)
     await AuditService.log(
         db,
         actor=current_user,
@@ -164,6 +181,21 @@ async def update_bug_report(
         status_code=200,
         detail={"display_id": report.display_id, "new_status": report.status},
     )
+    if new_status and new_status != old_status and current_user.id != report.reporter_id:
+        await NotificationService(db).notify(
+            user_id=report.reporter_id,
+            type="bug_report.status_changed",
+            target_type="bug_report",
+            target_id=report.id,
+            payload={
+                "display_id": report.display_id,
+                "title": report.title,
+                "from_status": old_status,
+                "to_status": new_status,
+                "actor_name": current_user.name,
+                "resolution": report.resolution,
+            },
+        )
     await db.commit()
     await db.refresh(report)
     return report
@@ -200,6 +232,7 @@ async def delete_bug_report(
 
 
 @router.post("/bug_reports/{report_id}/comments", response_model=BugCommentOut, status_code=201)
+@limiter.limit("60/hour")
 async def add_bug_comment(
     report_id: uuid.UUID,
     data: BugCommentCreate,
@@ -208,9 +241,18 @@ async def add_bug_comment(
     current_user: User = Depends(get_current_user),
 ):
     svc = BugReportService(db)
-    comment = await svc.add_comment(report_id, current_user.id, data.body)
-    if not comment:
+    report = await svc.get(report_id)
+    if not report:
         raise HTTPException(status_code=404, detail="Bug report not found")
+    is_admin = current_user.role in (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+    if not is_admin and report.reporter_id != current_user.id:
+        raise HTTPException(status_code=403, detail="只有反馈提交者或管理员可以评论")
+
+    result = await svc.add_comment(report_id, current_user.id, data.body)
+    if not result:
+        raise HTTPException(status_code=404, detail="Bug report not found")
+    comment, was_reopened, author_name, author_role = result
+
     await AuditService.log(
         db,
         actor=current_user,
@@ -219,10 +261,84 @@ async def add_bug_comment(
         target_id=str(report_id),
         request=request,
         status_code=201,
+        detail={"display_id": report.display_id},
     )
+    if was_reopened:
+        await AuditService.log(
+            db,
+            actor=current_user,
+            action="bug_report.reopened",
+            target_type="bug_report",
+            target_id=str(report_id),
+            request=request,
+            status_code=201,
+            detail={
+                "display_id": report.display_id,
+                "reopen_count": report.reopen_count,
+                "from_status": "fixed/wont_fix/duplicate",
+                "to_status": "triaged",
+            },
+        )
+
+    # Notification fan-out
+    notif_svc = NotificationService(db)
+    snippet = data.body[:120]
+    if current_user.id == report.reporter_id:
+        # 提交者评论 → 通知 assignee；若没有则通知所有 SUPER_ADMIN
+        recipient_ids: list[uuid.UUID] = []
+        if report.assigned_to_id:
+            recipient_ids = [report.assigned_to_id]
+        else:
+            admin_rows = await db.execute(
+                select(User.id).where(User.role == UserRole.SUPER_ADMIN.value, User.is_active.is_(True))
+            )
+            recipient_ids = [r[0] for r in admin_rows.all()]
+        recipient_ids = [uid for uid in recipient_ids if uid != current_user.id]
+        if recipient_ids:
+            await notif_svc.notify_many(
+                user_ids=recipient_ids,
+                type="bug_report.reopened" if was_reopened else "bug_report.commented",
+                target_type="bug_report",
+                target_id=report.id,
+                payload={
+                    "display_id": report.display_id,
+                    "title": report.title,
+                    "actor_name": current_user.name,
+                    "actor_role": current_user.role,
+                    "snippet": snippet,
+                    "reopen": was_reopened,
+                    "reopen_count": report.reopen_count if was_reopened else None,
+                },
+            )
+    else:
+        # 管理员评论 → 通知 reporter
+        if report.reporter_id != current_user.id:
+            await notif_svc.notify(
+                user_id=report.reporter_id,
+                type="bug_report.commented",
+                target_type="bug_report",
+                target_id=report.id,
+                payload={
+                    "display_id": report.display_id,
+                    "title": report.title,
+                    "actor_name": current_user.name,
+                    "actor_role": current_user.role,
+                    "snippet": snippet,
+                    "reopen": False,
+                },
+            )
+
     await db.commit()
     await db.refresh(comment)
-    return comment
+    return BugCommentOut(
+        id=comment.id,
+        bug_report_id=comment.bug_report_id,
+        author_id=comment.author_id,
+        author_name=author_name,
+        author_role=author_role,
+        body=comment.body,
+        created_at=comment.created_at,
+    )
 
 
 @router.post("/bug_reports/cluster")

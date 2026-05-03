@@ -25,6 +25,10 @@ export function BugReportDrawer({ open, onClose }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
 
+  // detail-view comment composer
+  const [commentBody, setCommentBody] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
+
   // v0.6.6 · 截图状态
   const [screenshotBlob, setScreenshotBlob] = useState<Blob | null>(null);
   const [screenshotEditing, setScreenshotEditing] = useState(false);
@@ -149,6 +153,27 @@ export function BugReportDrawer({ open, onClose }: Props) {
       pushToast({ msg: "更新失败", kind: "error" });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handlePostComment = async () => {
+    if (!detail || !commentBody.trim() || postingComment) return;
+    const body = commentBody.trim();
+    const willReopen = ["fixed", "wont_fix", "duplicate"].includes(detail.status);
+    setPostingComment(true);
+    try {
+      await bugReportsApi.addComment(detail.id, body);
+      setCommentBody("");
+      pushToast({
+        msg: willReopen ? "评论已发送，反馈已重新打开" : "评论已发送",
+        kind: "success",
+      });
+      const fresh = await bugReportsApi.get(detail.id);
+      setDetail(fresh);
+    } catch {
+      pushToast({ msg: "评论发送失败", kind: "error" });
+    } finally {
+      setPostingComment(false);
     }
   };
 
@@ -603,13 +628,28 @@ export function BugReportDrawer({ open, onClose }: Props) {
                   </button>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
                 <span style={{ color: severityColor[detail.severity] ?? "var(--color-fg-muted)", fontWeight: 500 }}>
                   {detail.severity}
                 </span>
                 <span style={{ padding: "1px 6px", borderRadius: 3, fontSize: 11, background: "var(--color-bg-sunken)" }}>
                   {statusLabel[detail.status] ?? detail.status}
                 </span>
+                {detail.reopen_count > 0 && (
+                  <span
+                    title={detail.last_reopened_at ? `最近重开：${new Date(detail.last_reopened_at).toLocaleString("zh-CN")}` : undefined}
+                    style={{
+                      padding: "1px 6px",
+                      borderRadius: 3,
+                      fontSize: 11,
+                      color: "oklch(0.55 0.18 45)",
+                      background: "oklch(0.95 0.04 45)",
+                      border: "1px solid oklch(0.85 0.10 45)",
+                    }}
+                  >
+                    曾重开 {detail.reopen_count} 次
+                  </span>
+                )}
                 <span style={{ color: "var(--color-fg-muted)" }}>
                   {new Date(detail.created_at).toLocaleString("zh-CN")}
                 </span>
@@ -625,19 +665,81 @@ export function BugReportDrawer({ open, onClose }: Props) {
                   <span style={{ fontWeight: 500 }}>处理结果：</span>{detail.resolution}
                 </div>
               )}
-              {detail.comments.length > 0 && (
-                <div>
-                  <div style={{ fontWeight: 500, marginBottom: 6, fontSize: 12 }}>评论 ({detail.comments.length})</div>
-                  {detail.comments.map((c) => (
-                    <div key={c.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--color-border-subtle)" }}>
-                      <span style={{ color: "var(--color-fg)" }}>{c.body}</span>
-                      <div style={{ fontSize: 10.5, color: "var(--color-fg-subtle)", marginTop: 2 }}>
-                        {new Date(c.created_at).toLocaleString("zh-CN")}
-                      </div>
-                    </div>
-                  ))}
+              <div style={{ marginTop: 6 }}>
+                <div style={{ fontWeight: 500, marginBottom: 6, fontSize: 12 }}>
+                  评论 ({detail.comments.length})
                 </div>
-              )}
+                {detail.comments.map((c) => (
+                  <div key={c.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--color-border-subtle)" }}>
+                    <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 2 }}>
+                      <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{c.author_name || "未知"}</span>
+                      {c.author_role && (
+                        <span style={{ marginLeft: 6, padding: "0 5px", fontSize: 10, borderRadius: 3, background: "var(--color-bg-sunken)" }}>
+                          {c.author_role}
+                        </span>
+                      )}
+                      <span style={{ marginLeft: 6, color: "var(--color-fg-subtle)" }}>
+                        {new Date(c.created_at).toLocaleString("zh-CN")}
+                      </span>
+                    </div>
+                    <span style={{ color: "var(--color-fg)", whiteSpace: "pre-wrap" }}>{c.body}</span>
+                  </div>
+                ))}
+                {detail.comments.length === 0 && (
+                  <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", padding: "4px 0 8px" }}>暂无评论</div>
+                )}
+
+                {/* 评论输入框 */}
+                <div style={{ marginTop: 10 }}>
+                  {["fixed", "wont_fix", "duplicate"].includes(detail.status) && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "oklch(0.55 0.18 45)",
+                        marginBottom: 4,
+                      }}
+                    >
+                      ⚠ 当前状态为「{statusLabel[detail.status] ?? detail.status}」，发送评论将自动重新打开此反馈
+                    </div>
+                  )}
+                  <textarea
+                    value={commentBody}
+                    onChange={(e) => setCommentBody(e.target.value)}
+                    placeholder="写下你的回复 / 补充信息..."
+                    rows={3}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      padding: "7px 10px",
+                      fontSize: 12.5,
+                      background: "var(--color-bg-sunken)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-md)",
+                      color: "var(--color-fg)",
+                      resize: "vertical",
+                      fontFamily: "inherit",
+                      marginBottom: 6,
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePostComment}
+                    disabled={postingComment || !commentBody.trim()}
+                    style={{
+                      padding: "6px 14px",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      background: postingComment || !commentBody.trim() ? "var(--color-accent-muted)" : "var(--color-accent)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "var(--radius-md)",
+                      cursor: postingComment || !commentBody.trim() ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {postingComment ? "发送中..." : "发送"}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

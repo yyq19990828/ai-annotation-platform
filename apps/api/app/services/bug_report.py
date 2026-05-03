@@ -7,7 +7,11 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.bug_report import BugReport, BugComment
+from app.db.models.user import User
 from app.services.display_id import next_display_id
+
+
+TERMINAL_STATUSES = {"fixed", "wont_fix", "duplicate"}
 
 
 class BugReportService:
@@ -92,19 +96,42 @@ class BugReportService:
             await self.db.delete(report)
             await self.db.flush()
 
-    async def get_with_comments(self, report_id: uuid.UUID) -> tuple[BugReport | None, list[BugComment]]:
+    async def get_with_comments(
+        self, report_id: uuid.UUID
+    ) -> tuple[BugReport | None, list[tuple[BugComment, str, str]]]:
+        """Returns report + list of (comment, author_name, author_role) tuples."""
         report = await self.db.get(BugReport, report_id)
         if not report:
             return None, []
         result = await self.db.execute(
-            select(BugComment).where(BugComment.bug_report_id == report_id).order_by(BugComment.created_at)
+            select(BugComment, User.name, User.role)
+            .join(User, User.id == BugComment.author_id)
+            .where(BugComment.bug_report_id == report_id)
+            .order_by(BugComment.created_at)
         )
-        return report, list(result.scalars().all())
+        rows = [(row[0], row[1] or "", row[2] or "") for row in result.all()]
+        return report, rows
 
-    async def add_comment(self, report_id: uuid.UUID, author_id: uuid.UUID, body: str) -> BugComment | None:
+    async def add_comment(
+        self, report_id: uuid.UUID, author_id: uuid.UUID, body: str
+    ) -> tuple[BugComment, bool, str, str] | None:
+        """Add a comment. If author is the reporter and status is terminal,
+        auto-reopen by switching status back to 'triaged' and bumping reopen_count.
+
+        Returns (comment, was_reopened, author_name, author_role) or None.
+        """
         report = await self.db.get(BugReport, report_id)
         if not report:
             return None
+
+        was_reopened = False
+        if author_id == report.reporter_id and report.status in TERMINAL_STATUSES:
+            report.status = "triaged"
+            report.reopen_count = (report.reopen_count or 0) + 1
+            report.last_reopened_at = datetime.now(timezone.utc)
+            report.triaged_at = datetime.now(timezone.utc)
+            was_reopened = True
+
         comment = BugComment(
             id=uuid.uuid4(),
             bug_report_id=report_id,
@@ -113,7 +140,11 @@ class BugReportService:
         )
         self.db.add(comment)
         await self.db.flush()
-        return comment
+
+        author = await self.db.get(User, author_id)
+        author_name = (author.name if author else "") or ""
+        author_role = (author.role if author else "") or ""
+        return comment, was_reopened, author_name, author_role
 
     async def cluster_similar(self, report_id: uuid.UUID) -> list[uuid.UUID]:
         """Find other open bugs on the same route with similar titles."""

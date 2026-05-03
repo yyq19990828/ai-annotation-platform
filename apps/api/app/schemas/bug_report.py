@@ -39,6 +39,8 @@ class BugCommentOut(BaseModel):
     id: UUID
     bug_report_id: UUID
     author_id: UUID
+    author_name: str = ""
+    author_role: str = ""
     body: str
     created_at: datetime
 
@@ -70,6 +72,8 @@ class BugReportOut(BaseModel):
     created_at: datetime
     triaged_at: datetime | None = None
     fixed_at: datetime | None = None
+    reopen_count: int = 0
+    last_reopened_at: datetime | None = None
 
     class Config:
         from_attributes = True

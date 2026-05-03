@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0 ~ v0.6.6 同前；**v0.6.7（项目管理员 4 项 BUG 收口：B-13 TaskLock 自重入鲁棒性 + B-11 CreateProjectWizard 扩 5 步含数据集/成员引导 + B-12 分包/分派可见性全链路含 link 自动建命名 batch / BatchesSection 分派 UI / Workbench batch 过滤 / Dashboard 深链 + B-10 unlink 二次确认 + alembic 0024 回填孤儿 batch_id）**；**v0.6.7-hotfix（task_lock upsert 防并发 unique 冲突 + unlink 改 hard-delete + 「清理孤儿任务」按钮 + 进度条「已动工」副条 + ProjectOut.in_progress_tasks 字段）**。
+> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0 ~ v0.6.6 同前；**v0.6.7（项目管理员 4 项 BUG 收口：B-13 TaskLock 自重入鲁棒性 + B-11 CreateProjectWizard 扩 5 步含数据集/成员引导 + B-12 分包/分派可见性全链路含 link 自动建命名 batch / BatchesSection 分派 UI / Workbench batch 过滤 / Dashboard 深链 + B-10 unlink 二次确认 + alembic 0024 回填孤儿 batch_id）**；**v0.6.7-hotfix（task_lock upsert 防并发 unique 冲突 + unlink 改 hard-delete + 「清理孤儿任务」按钮 + 进度条「已动工」副条 + ProjectOut.in_progress_tasks 字段）**；**v0.6.8（B-13/B-14/B-15：split 解耦 B-DEFAULT 哨兵 + 任务队列首屏 next_cursor + activeBatches 纳入 draft + task_lock acquire 同人多行 dedup）**；**v0.6.9（A · BUG 反馈闭环：alembic 0025 + 评论自动 reopen + 提交者评论入口 + reopen 徽章 + 评论 author 显示；B · 通知中心：alembic 0026 notifications 表 + Redis Pub/Sub WS 推送 + 30s 轮询兜底 + REST CRUD + bug_reports 状态变更/评论 fan-out）**。
 
 ---
 
@@ -18,8 +18,6 @@
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **批次相关延伸**：① 智能切批（按难度/类别/不确定度）；② 批次级 IAA / 共识合并算法；③ 不可变训练快照 + 主动学习闭环。调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
-- **link_project 自动 batch 命名去重**：v0.6.7 创建「{ds.name} 默认包」，但同一项目 unlink → re-link 同数据集会产生同名 batch；建议加序号或时间戳（如「{name} 默认包 #2」）。
-- **批次级 reviewer 视图**：v0.6.7 推迟到 v0.6.8。Reviewer dashboard 当前是项目级 pending_review_count，未按 `assigned_user_ids` 包含 self 的 batch 筛选；workbench 已实现，dashboard 待对齐。
 - **批次级智能分派**：BatchAssignmentModal 当前是手动多选；可加「按当前成员数量均匀分派」「按角色批量勾选」等批量动作。
 
 #### AI / 模型
@@ -40,9 +38,6 @@
 - **个人偏好**：语言 / 主题 / 时区 / 通知偏好均无（依赖 i18n / 主题基础设施先建立）。
 - **系统设置可编辑**：本期 `GET /settings/system` 是只读 .env mirror，缺 PATCH。需要 `system_settings` 表 + 启动时 env 优先加载、表项作为 override。
 
-#### 审计日志页（AuditPage）
-- ✅ v0.6.6 已收：双行 UI 合并视图（`request_id` 持久化 + 前端 group + ▸ 折叠 + virtualizer）。
-
 #### TopBar / Dashboard 控件
 - **全局搜索**：TopBar 的 `<SearchInput placeholder="搜索项目、任务、数据集、成员..." kbd="⌘K">` 无 `value` / `onChange` / 提交 handler；后端无 `/search` 端点。
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
@@ -50,11 +45,10 @@
 
 #### Annotator / Reviewer 工作台
 - **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好。
-- ✅ v0.6.6 已收：ReviewerDashboard 个人最近审核记录 + 5 张实时仪表卡（含 24h 通过率）。
 
-#### v0.6.7 后续观察 / v0.6.8 候选
+#### v0.6.x 后续观察 / 下版候选
 
-> v0.6.7 + hotfix 收口了项目管理员 4 项 BUG（B-10~B-13）；剩余推迟项与新发现：
+> v0.6.7 + hotfix 收口了项目管理员 4 项 BUG（B-10~B-13）；v0.6.8（B-13/B-14/B-15）；v0.6.9（A · BUG 反馈闭环 + B · 通知中心基座）。剩余推迟项与写时新点：
 
 ##### 推迟自 v0.6.7 计划
 
@@ -65,10 +59,7 @@
 
 ##### 推迟自 v0.6.6 计划（仍未落）
 
-- **Bug 反馈延伸 LLM 聚类去重 + 邮件通知**：需要新引 LLM SDK（openai / anthropic / embedding-only）+ 实现 SMTP 发件链路。与 v0.6.6 已落地的「截图 + 涂抹 + MinIO 上传」无强耦合，单独成版本更合理。`bug_reports` 表加 `cluster_id` / `llm_distance` 字段；`POST /bug_reports/cluster` 已有占位实现可挂。
-- **celery beat 定时清理软删评论附件**：v0.6.6 已用 MinIO bucket lifecycle 90 天兜底，但活跃评论的附件也会被 GC（接受），更精准的清理需要 celery beat + 定时扫 `is_active=false` AnnotationComment → 删 MinIO 对象。当前 celery 仅用作 broker，beat 未启用。
-- **预提交钩子**：v0.6.6 已落 `.github/workflows/ci.yml`。本地 husky + lint-staged 是 nice-to-have。
-- **`useCurrentProjectMembers` 顶层 context**：React Query 已按 queryKey 去重，引入 context 收益有限。
+- **celery beat 定时清理软删评论附件**：MinIO bucket lifecycle 90 天兜底已落，但活跃评论附件也会被 GC（接受），更精准需 celery beat + 定时扫 `is_active=false` AnnotationComment → 删对象。当前 celery 仅用作 broker，beat 未启用。
 - **`usePopover` 剩余 4 处迁移**：TopBar 主题切换 / 智能切题菜单 / AttributeForm DescriptionPopover / CanvasToolbar 留作渐进迁移。
 
 ##### v0.6.7 写时新点
@@ -81,6 +72,15 @@
 - **`uploadBugScreenshot` 失败回退体验**：v0.6.6 截图上传失败时降级为「无截图提交」并 toast warning；可加 retry 按钮 / 显式错误 UI。优先级 P3。
 - **link_project 同名 batch 去重**：unlink → re-link 同 dataset 时新 batch 与历史 B-DEFAULT 同样可能撞名；建议带 dataset display_id 后缀或时间戳。优先级 P3。
 - **`POST /orphan-tasks/cleanup` 大批量优化**：当前对 `orphan_ids` 用 `ANY(:ids)` 单次发；P-3 实测 1206 条 ~ 即时返回，但 10万级孤儿（理论上限）会走 array overflow。建议改 `WHERE id IN (subquery)` 直接联查。优先级 P3。
+
+##### v0.6.9 写时新点
+
+- **dead code：`GET /auth/me/notifications`**（v0.4.8 audit_log 派生端点）：前端已切到新 `/notifications`，老端点无前端消费方。下一刀直接删 `apps/api/app/api/v1/me.py:47-130` + 对应路由注册，并清理 audit-derived 派生逻辑。优先级 P2。
+- **通知点击跳转固定 `/bugs`**：`NotificationsPopover.handleRowClick` 当前所有 `target_type=bug_report` 的通知一律跳 `/bugs`（admin 视图），但 reporter 应触发「我的反馈抽屉」打开 + 定位到该条。需路由感知角色（`useAuthStore().user.role`）+ drawer 控制器；优先级 P2。
+- **通知偏好（按 type 静音 / 邮件 digest）**：`notifications` 表已就位，但消费方写死「全部入队」。建议加 `notification_preferences` 表（user_id, type, channels JSONB）+ 设置页 UI；与 LLM 邮件 digest 协同。优先级 P2。
+- **WS 多副本 sticky session**：`/ws/notifications` 走 Redis Pub/Sub 已天然横向扩，但 ws.py 每连接 `aioredis.from_url` + 独立 pubsub 客户端，副本数 ↑ 时 Redis 连接数 = WS 连接数。建议接入 `redis.asyncio.ConnectionPool` + 共享单 pubsub（多 channel.subscribe）。优先级 P3，等 prod 实测瓶颈再做。
+- **WS 心跳 / idle 断连**：当前依赖客户端断网检测；服务端无 ping 发包，云端 LB / nginx idle timeout（默认 60s）会主动断。建议每 30s 服务端 send `{"type":"ping"}`。优先级 P3。
+- **`bug_reports` 评论 60/hour 与 create 10/hour 差额**：评论限流松一档（60/h）让 reopen 抗风暴；但极端情况下提交者可在 fixed 状态评论 60 次刷 reopen 计数。建议 reopen 路径单独限流（如 5/day/user/report）。优先级 P3。
 
 ---
 
@@ -98,21 +98,17 @@
 #### 治理 / 合规
 - **审计日志归档**：按月 PARTITION + 冷数据 S3 归档；后台 cron job 触发。
 - **数据导出审计**：`GET /projects/{id}/export` 等批量导出应触发审计 + 下载者签名水印。
-- ✅ v0.6.6 已收：GDPR 用户软删后 audit_logs.actor_email/actor_role 脱敏。
-- **通知中心实时推送**：v0.4.8 30s 轮询已落；待升级为 Redis Pub/Sub WS 推送。
 - **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
 
 #### 可观测性
-- ✅ v0.6.6 已收：Sentry 前后端接入（DSN 留空则不启用）。
 - **Celery / ML Backend 指标**：v0.4.8 已加 HTTP metrics + DB pool + `/health/{db,redis,minio}`；缺 Celery 队列长度、Worker 心跳、ML Backend 平均延迟 / 失败率。
 - **`/health/celery`**：v0.4.8 留下的待办；做成 broker ping + active worker count。
-- **Bug 反馈系统延伸**：✅ v0.6.6 已收截图（html2canvas）+ 涂抹脱敏 + MinIO 上传；剩 LLM 聚类去重 + 邮件通知反馈者状态变更（v0.6.7 候选，见上）。
+- **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
 
 #### 性能 / 扩展
 - **AuditMiddleware 写入异步队列**：当前每写请求一次 INSERT，写流量上来后改 Redis Stream / Kafka 异步消费，主请求 < 1ms 旁路。
 - **Annotation 列表 keyset 分页**：v0.4.8 已对 audit_logs / tasks 改造；annotations 仍单次拉全（`useAnnotations` task 内全量），单任务 1000+ 框时阻塞渲染。
 - **Predictions 表分区**：按 `project_id` 或 `created_at` PARTITION，单项目预测量大时查询性能下降。
-- **WebSocket 多副本**：Redis Pub/Sub 已就位，但生产横向扩 uvicorn 副本时需测试 sticky session 与 broadcast 不重复。
 - **useInfiniteQuery 缓存 GC**：工作台调置信度阈值会创建新 query key；旧 key 默认 5min GC，长时间调阈值会内存增长。建议 `cacheTime: 30s` for predictions / 切题时手动 `removeQueries`。
 
 #### 测试 / 开发体验
@@ -184,10 +180,10 @@
 
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
-| **P1** | TopBar 通知中心、UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
+| **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
-| **P1** | Bug 反馈延伸 LLM 聚类去重 + 邮件通知 | v0.6.6 截图链路已落，剩 LLM + SMTP；管理员 triage 体感 |
 | **P1** | Wizard step 2/3 升级到完整 ClassesSection / AttributesSection 编辑器 | v0.6.7 推迟，向导仍存「半残」感 |
+| **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.6.9 闭环 + 通知已落，剩 LLM + 邮件；与通知偏好（按 type 静音）协同 |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
 | **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要 |
@@ -204,6 +200,6 @@
 | **P3** | husky + lint-staged 预提交钩子 | v0.6.6 CI 已能拦回归，本地拦截是 nice-to-have |
 | **P3** | AuditPage 折叠 UI sessionStorage 持久化、bug 截图失败 retry UI | v0.6.6/0.6.7 写时观察项 |
 | **P3** | i18n、SSO、2FA | 客户具体需求驱动 |
-| **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 + 通知中心 |
+| **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 |
 
 ---

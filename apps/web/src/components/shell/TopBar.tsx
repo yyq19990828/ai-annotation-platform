@@ -1,11 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQueryClient, useIsFetching } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Avatar } from "@/components/ui/Avatar";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { useAuthStore } from "@/stores/authStore";
-import { useNotifications, getLastRead } from "@/hooks/useNotifications";
+import { useUnreadCount } from "@/hooks/useNotifications";
 import { useTheme, type ThemePref } from "@/hooks/useTheme";
 import type { IconName } from "@/components/ui/Icon";
 import { NotificationsPopover } from "./NotificationsPopover";
@@ -30,13 +30,8 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
   const [notifOpen, setNotifOpen] = useState(false);
   const { theme, resolved, setTheme } = useTheme();
 
-  const { data: notifData } = useNotifications();
-  const unreadCount = useMemo(() => {
-    const lastRead = getLastRead();
-    return (notifData?.items ?? []).filter(
-      (n) => new Date(n.created_at).getTime() > lastRead,
-    ).length;
-  }, [notifData]);
+  const { data: unreadData } = useUnreadCount();
+  const unreadCount = unreadData?.unread ?? 0;
 
   const handleRefresh = () => {
     qc.invalidateQueries();
