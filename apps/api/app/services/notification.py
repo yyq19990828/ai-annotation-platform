@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models.notification import Notification
+from app.db.models.notification_preference import NotificationPreference
 
 
 log = logging.getLogger(__name__)
@@ -30,6 +31,20 @@ class NotificationService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def _is_in_app_muted(self, user_id: uuid.UUID, type: str) -> bool:
+        """v0.7.0：查 notification_preferences；channels.in_app=False 表示用户已静音此 type。
+        无记录默认 in_app=True（现网用户向后兼容）。"""
+        row = (await self.db.execute(
+            select(NotificationPreference.channels).where(
+                NotificationPreference.user_id == user_id,
+                NotificationPreference.type == type,
+            )
+        )).scalar_one_or_none()
+        if row is None:
+            return False
+        in_app = row.get("in_app", True) if isinstance(row, dict) else True
+        return not bool(in_app)
+
     async def notify(
         self,
         *,
@@ -38,7 +53,11 @@ class NotificationService:
         target_type: str,
         target_id: uuid.UUID,
         payload: dict | None = None,
-    ) -> Notification:
+    ) -> Notification | None:
+        """v0.7.0：偏好静音的 type 直接跳过（不写表、不发 pubsub）。"""
+        if await self._is_in_app_muted(user_id, type):
+            return None
+
         row = Notification(
             id=uuid.uuid4(),
             user_id=user_id,
@@ -89,7 +108,8 @@ class NotificationService:
                 target_id=target_id,
                 payload=payload,
             )
-            out.append(row)
+            if row is not None:
+                out.append(row)
         return out
 
     async def list_for_user(

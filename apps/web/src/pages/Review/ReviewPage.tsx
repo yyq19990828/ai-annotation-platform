@@ -79,10 +79,13 @@ function TaskRow({
 export function ReviewPage() {
   const pushToast = useToastStore((s) => s.push);
   const { data: projects } = useProjects();
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [searchParams, setSearchParams] = useSearchParams();
-
-  const [selectedBatchId, setSelectedBatchId] = useState<string>("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(
+    () => searchParams.get("project") ?? "",
+  );
+  const [selectedBatchId, setSelectedBatchId] = useState<string>(
+    () => searchParams.get("batch") ?? "",
+  );
 
   const projectId = selectedProjectId || projects?.[0]?.id;
   const { data: batchList } = useBatches(projectId ?? "", undefined);
@@ -252,12 +255,16 @@ export function ReviewPage() {
               size="sm"
               variant="danger"
               onClick={() => {
-                if (confirm("确定整批退回？所有任务将重置为待标注状态。")) {
-                  rejectBatchMut.mutate(selectedBatchId, {
-                    onSuccess: () => pushToast({ msg: "整批已退回", kind: "success" }),
+                const feedback = window.prompt("整批退回原因（必填，最大 500 字）：");
+                if (!feedback || !feedback.trim()) return;
+                rejectBatchMut.mutate(
+                  { batchId: selectedBatchId, feedback: feedback.trim() },
+                  {
+                    onSuccess: () =>
+                      pushToast({ msg: "整批已退回，已通知被分派标注员", kind: "success" }),
                     onError: (e) => pushToast({ msg: "退回失败", sub: (e as Error).message }),
-                  });
-                }
+                  },
+                );
               }}
             >
               <Icon name="x" size={11} />整批退回

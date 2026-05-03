@@ -43,7 +43,10 @@ function ProjectRow({
 }) {
   const total = p.total_tasks || 1;
   const pct = Math.round((p.completed_tasks / total) * 100);
-  const aiPct = p.ai_enabled ? Math.round(pct * 0.6) : 0;
+  // v0.7.0：aiPct = AI 派生标注覆盖的任务数 / 总任务数（替换 v0.6.x 的启发式 pct * 0.6）
+  const aiPct = p.ai_enabled
+    ? Math.round(((p.ai_completed_tasks ?? 0) / total) * 100)
+    : 0;
   // v0.6.7：「已动工」副条 = (in_progress + review + completed) / total，让 0 完成但有进度的项目可见
   const startedPct = Math.round(
     ((p.in_progress_tasks ?? 0) + p.review_tasks + p.completed_tasks) / total * 100,
@@ -102,26 +105,39 @@ function ProjectRow({
           <span style={{ fontWeight: 500, color: "var(--color-fg)" }}>{pct}%</span>
         </div>
         {canManage && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onSettings(p, "batches"); }}
-            style={{
-              marginTop: 4,
-              padding: 0,
-              border: "none",
-              background: "transparent",
-              color: "var(--color-fg-subtle)",
-              fontSize: 11,
-              cursor: "pointer",
-              fontFamily: "inherit",
-              textDecoration: "underline",
-              textDecorationStyle: "dotted",
-              textUnderlineOffset: 2,
-            }}
-            title="跳转到项目设置 → 批次管理"
-          >
-            <Icon name="layers" size={10} /> 查看批次分派
-          </button>
+          <>
+            {(p.batch_summary?.total ?? 0) > 0 && (
+              <div style={{ marginTop: 3, fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                {p.batch_summary?.total} 个批次
+                {(p.batch_summary?.assigned ?? 0) > 0 && (
+                  <> · {p.batch_summary?.assigned} 已分派</>
+                )}
+                {(p.batch_summary?.in_review ?? 0) > 0 && (
+                  <> · <span style={{ color: "var(--color-warning)" }}>{p.batch_summary?.in_review} 审核中</span></>
+                )}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onSettings(p, "batches"); }}
+              style={{
+                marginTop: 4,
+                padding: 0,
+                border: "none",
+                background: "transparent",
+                color: "var(--color-fg-subtle)",
+                fontSize: 11,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                textDecoration: "underline",
+                textDecorationStyle: "dotted",
+                textUnderlineOffset: 2,
+              }}
+              title="跳转到项目设置 → 批次管理"
+            >
+              <Icon name="layers" size={10} /> 查看批次分派
+            </button>
+          </>
         )}
       </td>
       <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>

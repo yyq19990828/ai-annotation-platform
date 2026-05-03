@@ -11,6 +11,7 @@ class ProjectCreate(BaseModel):
     type_label: str
     type_key: str
     classes: list[str] = []
+    classes_config: ClassesConfig | None = None
     ai_enabled: bool = False
     ai_model: str | None = None
     due_date: date | None = None
@@ -60,6 +61,8 @@ class ProjectOut(BaseModel):
     completed_tasks: int
     review_tasks: int
     in_progress_tasks: int = 0
+    ai_completed_tasks: int = 0
+    batch_summary: dict = {}
     due_date: date | None
     created_at: datetime
     updated_at: datetime

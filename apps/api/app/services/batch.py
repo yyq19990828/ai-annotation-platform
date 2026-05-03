@@ -3,17 +3,19 @@ from __future__ import annotations
 import logging
 import random
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import select, func, update, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import BatchStatus
+from app.db.enums import BatchStatus, UserRole
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
+from app.db.models.user import User
 from app.schemas.batch import BatchCreate, BatchUpdate, BatchSplitRequest
 from app.services.display_id import next_display_id
 
@@ -27,6 +29,70 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     BatchStatus.APPROVED: {BatchStatus.ARCHIVED},
     BatchStatus.REJECTED: {BatchStatus.ACTIVE, BatchStatus.ARCHIVED},
 }
+
+
+# v0.7.0：transition 鉴权矩阵 — (from, to) 元组 → 允许角色集合 / 特殊判定
+# 'owner' = super_admin 或项目 owner（require_project_owner 等价）
+# 'reviewer' = super_admin / project_admin(owner) / reviewer
+# 'annotator_assigned' = 标注员且 user_id 在 batch.assigned_user_ids 中
+def _is_owner(user: User, project: Project) -> bool:
+    return user.role == UserRole.SUPER_ADMIN or project.owner_id == user.id
+
+
+def _is_reviewer(user: User, project: Project) -> bool:
+    return _is_owner(user, project) or user.role == UserRole.REVIEWER
+
+
+def _is_annotator_assigned(user: User, batch: TaskBatch) -> bool:
+    if user.role != UserRole.ANNOTATOR:
+        return False
+    assigned = batch.assigned_user_ids or []
+    return str(user.id) in [str(x) for x in assigned]
+
+
+def assert_can_transition(
+    user: User, project: Project, batch: TaskBatch, target_status: str,
+) -> None:
+    """v0.7.0：按 (from, to) 校验角色权限，403 携带可读 detail。
+    语法层（VALID_TRANSITIONS）由 transition() 内部检查；本函数只做角色门禁。
+    """
+    src = batch.status
+    dst = target_status
+
+    # owner / super_admin 始终放行（包含 archived 出口、rejected 重激活）
+    if _is_owner(user, project):
+        return
+
+    # draft → active：仅 owner（已被上面拦截）；其他角色拒绝
+    if (src, dst) == (BatchStatus.DRAFT, BatchStatus.ACTIVE):
+        raise HTTPException(status_code=403, detail=f"{user.role} cannot transition draft -> active")
+
+    # active → annotating：仅 check_auto_transitions 内部驱动；REST 一律拒绝
+    if (src, dst) == (BatchStatus.ACTIVE, BatchStatus.ANNOTATING):
+        raise HTTPException(status_code=403, detail="active -> annotating is auto-driven only")
+
+    # annotating → reviewing：标注员（被分派）可主动整批提交质检
+    if (src, dst) == (BatchStatus.ANNOTATING, BatchStatus.REVIEWING):
+        if _is_annotator_assigned(user, batch):
+            return
+        raise HTTPException(status_code=403, detail=f"{user.role} cannot transition annotating -> reviewing")
+
+    # reviewing → approved / rejected：reviewer
+    if src == BatchStatus.REVIEWING and dst in (BatchStatus.APPROVED, BatchStatus.REJECTED):
+        if _is_reviewer(user, project):
+            return
+        raise HTTPException(status_code=403, detail=f"{user.role} cannot transition reviewing -> {dst}")
+
+    # rejected → active：仅 owner（已被上面拦截）
+    if (src, dst) == (BatchStatus.REJECTED, BatchStatus.ACTIVE):
+        raise HTTPException(status_code=403, detail=f"{user.role} cannot reactivate rejected batch")
+
+    # 任意 → archived：仅 owner（已被上面拦截）
+    if dst == BatchStatus.ARCHIVED:
+        raise HTTPException(status_code=403, detail=f"{user.role} cannot archive batch")
+
+    # approved → 其他：仅 archived 合法（VALID_TRANSITIONS 已限），owner 已放行；其他拒
+    raise HTTPException(status_code=403, detail=f"{user.role} cannot transition {src} -> {dst}")
 
 
 class BatchService:
@@ -120,7 +186,14 @@ class BatchService:
                 detail=f"Cannot transition from '{batch.status}' to '{target_status}'",
             )
 
-        old_status = batch.status
+        # v0.7.0：draft → active 必须有任务（拒绝空批次激活）
+        if batch.status == BatchStatus.DRAFT and target_status == BatchStatus.ACTIVE:
+            count = (await self.db.execute(
+                select(func.count()).select_from(Task).where(Task.batch_id == batch_id)
+            )).scalar() or 0
+            if count == 0:
+                raise HTTPException(status_code=400, detail="cannot activate empty batch")
+
         batch.status = target_status
         await self.db.flush()
 
@@ -350,12 +423,14 @@ class BatchService:
                 func.count().label("total"),
                 func.count().filter(Task.status == "completed").label("completed"),
                 func.count().filter(Task.status == "review").label("review"),
+                func.count().filter(Task.status == "in_progress").label("in_progress"),
             ).where(Task.project_id == project_id)
         )
         row = result.one()
         project.total_tasks = row.total
         project.completed_tasks = row.completed
         project.review_tasks = row.review
+        project.in_progress_tasks = row.in_progress
         await self.db.flush()
 
     # ── Auto-transitions ───────────────────────────────────────────────────
@@ -391,7 +466,18 @@ class BatchService:
 
     # ── Batch rejection ────────────────────────────────────────────────────
 
-    async def reject_batch(self, batch_id: uuid.UUID) -> tuple[TaskBatch, int]:
+    async def reject_batch(
+        self,
+        batch_id: uuid.UUID,
+        *,
+        feedback: str,
+        reviewer_id: uuid.UUID,
+    ) -> tuple[TaskBatch, int]:
+        """v0.7.0 方案 A · 软重置语义：
+        - 仅把 review/completed 任务回退到 pending（让标注员可继续动它们）
+        - **不**改 is_labeled，**不**清 annotations.is_active（保留历史标注）
+        - 批次写入 review_feedback / reviewed_at / reviewed_by
+        """
         batch = await self.db.get(TaskBatch, batch_id)
         if not batch:
             raise HTTPException(status_code=404, detail="Batch not found")
@@ -405,12 +491,18 @@ class BatchService:
 
         result = await self.db.execute(
             update(Task)
-            .where(Task.batch_id == batch_id)
-            .values(status="pending", is_labeled=False)
+            .where(
+                Task.batch_id == batch_id,
+                Task.status.in_(["review", "completed"]),
+            )
+            .values(status="pending")
         )
         affected = result.rowcount
 
         batch.status = BatchStatus.REJECTED
+        batch.review_feedback = feedback
+        batch.reviewed_at = datetime.now(timezone.utc)
+        batch.reviewed_by = reviewer_id
         await self.db.flush()
         await self.recalculate_counters(batch_id)
         return batch, affected
@@ -418,4 +510,6 @@ class BatchService:
     # ── AI/ML hook ─────────────────────────────────────────────────────────
 
     async def on_batch_approved(self, batch_id: uuid.UUID) -> None:
+        # TODO(v0.7.x+)：active learning 闭环 — 把已通过批次推回 ML backend 训练队列。
+        # 依赖 ML backend / 训练队列基座（ROADMAP A · AI/模型 区）落地后再实现。
         logger.info("on_batch_approved hook: batch_id=%s — no-op (reserved for active learning)", batch_id)

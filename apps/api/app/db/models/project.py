@@ -32,6 +32,7 @@ class Project(Base):
     total_tasks: Mapped[int] = mapped_column(Integer, default=0)
     completed_tasks: Mapped[int] = mapped_column(Integer, default=0)
     review_tasks: Mapped[int] = mapped_column(Integer, default=0)
+    in_progress_tasks: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
     due_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

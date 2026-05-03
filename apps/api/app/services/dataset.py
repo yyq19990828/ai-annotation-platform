@@ -308,17 +308,26 @@ class DatasetService:
 
         # v0.6.7 B-12：自动为本次 link 创建一个独立批次（命名「{ds.name} 默认包」），
         # 把所有新建任务的 batch_id 写到这个 batch，让管理员立刻在 BatchesSection 看到分包。
-        # 老项目里的 B-DEFAULT 仍保留作为「未归类」哨兵，新接入数据集不再倾倒进 B-DEFAULT。
+        # v0.7.0：unlink → re-link 同 dataset 时新批次会与历史批次重名 —— 查现有同名数 N，
+        #         有冲突时附加 #N+1 后缀。
         batch_id: uuid.UUID | None = None
         if items:
             ds = await self.db.get(Dataset, dataset_id)
+            base_name = f"{ds.name if ds else '数据集'} 默认包"
+            existing_count = (await self.db.execute(
+                select(func.count()).select_from(TaskBatch).where(
+                    TaskBatch.project_id == project_id,
+                    TaskBatch.name.like(f"{base_name}%"),
+                )
+            )).scalar() or 0
+            batch_name = base_name if existing_count == 0 else f"{base_name} #{existing_count + 1}"
             batch_display = await next_display_id(self.db, "batches")
             batch = TaskBatch(
                 id=uuid.uuid4(),
                 project_id=project_id,
                 dataset_id=dataset_id,
                 display_id=batch_display,
-                name=f"{ds.name if ds else '数据集'} 默认包",
+                name=batch_name,
                 status="draft",
                 priority=50,
                 assigned_user_ids=[],

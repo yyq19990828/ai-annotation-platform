@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0 ~ v0.6.6 同前；**v0.6.7（项目管理员 4 项 BUG 收口：B-13 TaskLock 自重入鲁棒性 + B-11 CreateProjectWizard 扩 5 步含数据集/成员引导 + B-12 分包/分派可见性全链路含 link 自动建命名 batch / BatchesSection 分派 UI / Workbench batch 过滤 / Dashboard 深链 + B-10 unlink 二次确认 + alembic 0024 回填孤儿 batch_id）**；**v0.6.7-hotfix（task_lock upsert 防并发 unique 冲突 + unlink 改 hard-delete + 「清理孤儿任务」按钮 + 进度条「已动工」副条 + ProjectOut.in_progress_tasks 字段）**；**v0.6.8（B-13/B-14/B-15：split 解耦 B-DEFAULT 哨兵 + 任务队列首屏 next_cursor + activeBatches 纳入 draft + task_lock acquire 同人多行 dedup）**；**v0.6.9（A · BUG 反馈闭环：alembic 0025 + 评论自动 reopen + 提交者评论入口 + reopen 徽章 + 评论 author 显示；B · 通知中心：alembic 0026 notifications 表 + Redis Pub/Sub WS 推送 + 30s 轮询兜底 + REST CRUD + bug_reports 状态变更/评论 fan-out）**。
+> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；**v0.7.0（批次状态机重设计 epic + v0.6.x 后续观察集中收口：transition 鉴权矩阵 + reviewer 可见性 + 批次级 review UI + RejectBatchModal + reject_batch 软重置（alembic 0027）+ 0-task 拦截 + Project.in_progress_tasks stored 列（alembic 0028）+ 通知偏好基础静音（alembic 0029）+ WS ConnectionPool + 心跳 + bug_reports reopen 单独限流 + Wizard ClassEditor 抽取 + ProgressBar aiPct 真实化 + reviewer dashboard 按批次分组 + 项目卡批次概览 + UnlinkConfirmModal 输入名称 + AuditPage sessionStorage + 截图重试 UI + celery beat 软删附件清理 + test_batch_lifecycle.py 16 例覆盖）**。
 
 ---
 
@@ -46,94 +46,16 @@
 #### Annotator / Reviewer 工作台
 - **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好。
 
-#### 批次状态机重设计（v0.6.10 调研，待立项）
+#### v0.7.x 后续观察 / 下版候选
 
-> v0.6.10 修 B-16 时摸到的整片体感：批次状态机语法到位（`apps/api/app/services/batch.py:22-29 VALID_TRANSITIONS`），但**鉴权不严、UI 不全、reviewer 视角断层、reject 误伤数据**。建议作为独立 epic 立项（v0.6.x 末或 v0.7.0），分项见下。
+> v0.7.0 集中收口了批次状态机 epic + v0.6.x 写时观察 18 项；下面列写时新观察项：
 
-- **`PATCH /batches/{id}/transition` 鉴权缺失**（`apps/api/app/api/v1/batches.py:125`）：当前仅 `require_project_visible`，**任何项目成员都能任意推动状态**（被 `VALID_TRANSITIONS` 语法限制不能跳态，但仍可让标注员手工把 annotating → reviewing 或 reviewing → approved）。建议按转换分别鉴权：
-  - draft → active：项目 owner / super_admin
-  - annotating → reviewing：标注员（仅自己被分派的批次）+ owner（"整批提交质检"）
-  - reviewing → approved / rejected：reviewer + owner（"批次通过 / 驳回"）
-  - any → archived：owner / super_admin
-  - active → annotating 仍由 `check_auto_transitions` 自动驱动
-  优先级 **P1**（安全 + 体感）。
-
-- **reviewer 视角断层**（`apps/api/app/services/scheduler.py:26 WORKBENCH_VISIBLE_BATCH_STATUSES = ['active','annotating']`）：v0.6.10 服务端可见性 helper 把 reviewer 也挡在 reviewing 批次外 —— 标注员把批次提交后，reviewer 在 workbench `/projects/:id/annotate` 路径上看到任务凭空消失。当前依赖 reviewer 走独立 `/review` 路径绕开。修复：
-  ① 拆 `REVIEWER_VISIBLE_BATCH_STATUSES = ['active','annotating','reviewing']`，在 `batch_visibility_clause` 内按 role 分支
-  ② review 路由复用同一可见性 helper 但用 reviewer 集合（避免一致性漂移）
-  ③ rejected 状态对**被分派的标注员**也应可见（特例放行）—— 让标注员看到 reviewer 留言并配合「重新激活」流程
-  优先级 **P1**（reviewer 工作流断点）。
-
-- **批次级 review UI 全缺**（`apps/web/src/pages/Projects/sections/BatchesSection.tsx:237-261`）：当前只有 ▶ 激活 / ↻ 重激活 / 🗄 归档 / 🗑 删除四个按钮。缺：
-  - **「整批提交质检」**（annotating → reviewing 手动入口）：当前只能等 auto-transition 全部完成才推进，标注员主动想交也没按钮
-  - **「批次通过」**（reviewing → approved）：当前必须直调 API
-  - **「批次驳回」**（reviewing → rejected）：`POST /batches/{id}/reject` 端点存在但无 UI 入口
-  - **批次状态看板**：把 7 态画成卡片墙列，所有批次拖拽流转。比表格直观，与「通知 / 评论」一起作为 owner 治理界面
-  优先级 **P1**（核心工作流断层）。
-
-- **`reject_batch` 误伤标注成果**（`apps/api/app/services/batch.py:407-410`）：当前实现把批次内所有 task 重置 `status=pending` + `is_labeled=false`，但**未清除 annotations 表数据**。后果：标注员重进任务会看到自己之前画的框（is_labeled 标记被重置但 annotations 记录还在），UI 与 DB 状态不一致。两条路线：
-  - **方案 A · 软重置（推荐）**：只 `task.status = pending`，不动 `is_labeled` 与 annotations，仅给批次贴 `rejected` 标签 + 写 `review_feedback`；标注员重进任务看到 reviewer 留言后自决改不改
-  - **方案 B · 硬重置 + 数据清理**：保留 `is_labeled = false`，同时 `UPDATE annotations SET is_active = false WHERE task_id IN ...`，并在 audit_log 留 review_feedback 给标注员看
-  当前生产几乎没人触发 reject_batch（API 无 UI 入口），数据风险尚未暴露；**reject 入 UI 前必须先拍板方案**，否则上线即灾难。优先级 **P1**（先决条件）。
-
-- **0 task 批次死锁**（`apps/api/app/services/batch.py:370-390`）：`check_auto_transitions` 没处理空批次。owner 创建批次但未导任务时状态永远停在 active，批次列表越积越多。建议：① 入口先 query `total_tasks`；② 空批次直接 → reviewing（无需审核 → approved）或 draft 不允许激活（前端已 `disabled if assigned_user_ids.length === 0`，但未检 task 数）。优先级 **P3**（罕见）。
-
-- **`on_batch_approved` hook 占位**（`apps/api/app/services/batch.py:420-421`）：当前 `logger.info(...)` no-op，注释预留 active learning。落地：调度回 ML backend 训练队列，把已通过批次作为新 round 的 ground truth。需要先把 ML backend / 训练队列基座建好（A · AI/模型 区已列）。优先级 **P3**（依赖前置）。
-
-- **状态语义在前端展示**（`BatchesSection.tsx` + `WorkbenchShell.tsx` + 各 dashboard）：reviewing / approved / rejected / archived 对非特权用户都看不到但语义不同。建议：
-  ① owner 批次表行用颜色 / 图标区分 7 态（当前几乎只有文案）
-  ② 标注员 dashboard 加「我的批次」分组显示 active / 已交质检（reviewing） / 已通过 / 被驳回（rejected → 反馈 + 重做提示）
-  ③ rejected 批次的反馈通过 v0.6.9 通知中心推给被分派标注员（接入点）
-  优先级 **P2**（rejected 反馈给标注员是体感核心）。
-
-- **测试覆盖洞**（`apps/api/tests/`）：当前仅 `test_task_batch_visibility.py` 6 例覆盖列任务路径。新建 `test_batch_lifecycle.py` 覆盖：
-  ① 各角色调 `/transition` 端点的 401/403 矩阵（核心：标注员不能直推 approved）
-  ② `reject_batch` 后 annotations 状态的真实表现（暴露「方案 A vs B」分歧）
-  ③ 0-task 批次 auto_transitions 行为
-  ④ 标注员 withdraw 触发 reviewing → annotating 反推（已有正确实现，需固化）
-  ⑤ reviewer 在 reviewing 批次的可见性
-  优先级 **P2**。
-
-> **三大头号坑**（按对真实生产体感的影响排序）：
-> 1. 批次级 review UI 全缺 + transition 鉴权全缺 —— 核心工作流断层 + 安全洞同时
-> 2. reviewer 在 reviewing 批次彻底看不到任务 —— 中断 review 工作流
-> 3. reject_batch 数据语义未决 —— 引 UI 之前必须先决断方案
-
-#### v0.6.x 后续观察 / 下版候选
-
-> v0.6.7 + hotfix 收口了项目管理员 4 项 BUG（B-10~B-13）；v0.6.8（B-13/B-14/B-15）；v0.6.9（A · BUG 反馈闭环 + B · 通知中心基座）。剩余推迟项与写时新点：
-
-##### 推迟自 v0.6.7 计划
-
-- **Wizard step 2 升级到 ClassesSection 完整 `classes_config` 编辑**：颜色 / 别名 / 父子结构。从 `pages/Projects/sections/ClassesSection.tsx` 抽 `ClassEditor` 给向导复用。
-- **Wizard 新增「属性 schema」步骤**：从 `AttributesSection.tsx` 抽 `AttributeSchemaEditor`，字段类型 / 必填 / hotkey / visible_if 一次配齐。
-- **批次级 reviewer dashboard**：当前 reviewer dashboard 项目级聚合；workbench 已按 `assigned_user_ids` 过滤 batch，dashboard 待对齐。
-- **B-12-④ 项目卡批次概览**：当前 dashboard 进度列只加了「→ 查看批次分派」深链；进一步可显示「N 个批次 · K 已分派」概览（需后端 ProjectStats 增字段，避免 N+1 查询）。
-
-##### 推迟自 v0.6.6 计划（仍未落）
-
-- **celery beat 定时清理软删评论附件**：MinIO bucket lifecycle 90 天兜底已落，但活跃评论附件也会被 GC（接受），更精准需 celery beat + 定时扫 `is_active=false` AnnotationComment → 删对象。当前 celery 仅用作 broker，beat 未启用。
-- **`usePopover` 剩余 4 处迁移**：TopBar 主题切换 / 智能切题菜单 / AttributeForm DescriptionPopover / CanvasToolbar 留作渐进迁移。
-
-##### v0.6.7 写时新点
-
-- **`Project.in_progress_tasks` 改 stored 列**：v0.6.7-hotfix 用即时 COUNT 实现，列项目时每行一次额外查询；改成持久化列 + 状态机维护。优先级 P2。
-- **`ProgressBar` aiPct 启发式不真实**：dashboard `aiPct = Math.round(pct * 0.6)` 是装饰，不反映真实 AI 完成率。应基于 `predictions` / `annotations.parent_prediction_id` 真实数据计算。优先级 P2。
-- **`UnlinkConfirmModal` 文案与按钮强度对齐**：v0.6.7-hotfix 已加「将一并删除 N 个任务（含 K 个已标注）」与红色按钮，但仍是单击直删；考虑改为输入数据集名称二次确认（与 DangerSection 删项目的强度一致）。优先级 P3。
-- **WorkbenchShell.tsx 仍 924+ 行**：v0.6.7 增 `isOwner` / `useIsProjectOwner` 几行；下一刀候选 `<WorkbenchTopbar />` 子组件（含 ETA / 进度条 / 提交按钮 / batch 下拉），约 100 行 JSX。优先级 P3。
-- **AuditPage 折叠 UI 缺持久化**：`expandedReqIds` 仅 in-memory；可加 sessionStorage 持久化最近展开的 request_id（30 分钟 TTL）。优先级 P3。
-- **`uploadBugScreenshot` 失败回退体验**：v0.6.6 截图上传失败时降级为「无截图提交」并 toast warning；可加 retry 按钮 / 显式错误 UI。优先级 P3。
-- **link_project 同名 batch 去重**：unlink → re-link 同 dataset 时新 batch 与历史 B-DEFAULT 同样可能撞名；建议带 dataset display_id 后缀或时间戳。优先级 P3。
-- **`POST /orphan-tasks/cleanup` 大批量优化**：当前对 `orphan_ids` 用 `ANY(:ids)` 单次发；P-3 实测 1206 条 ~ 即时返回，但 10万级孤儿（理论上限）会走 array overflow。建议改 `WHERE id IN (subquery)` 直接联查。优先级 P3。
-
-##### v0.6.9 写时新点
-
-- **dead code：`GET /auth/me/notifications`**（v0.4.8 audit_log 派生端点）：前端已切到新 `/notifications`，老端点无前端消费方。下一刀直接删 `apps/api/app/api/v1/me.py:47-130` + 对应路由注册，并清理 audit-derived 派生逻辑。优先级 P2。
-- **通知点击跳转固定 `/bugs`**：`NotificationsPopover.handleRowClick` 当前所有 `target_type=bug_report` 的通知一律跳 `/bugs`（admin 视图），但 reporter 应触发「我的反馈抽屉」打开 + 定位到该条。需路由感知角色（`useAuthStore().user.role`）+ drawer 控制器；优先级 P2。
-- **通知偏好（按 type 静音 / 邮件 digest）**：`notifications` 表已就位，但消费方写死「全部入队」。建议加 `notification_preferences` 表（user_id, type, channels JSONB）+ 设置页 UI；与 LLM 邮件 digest 协同。优先级 P2。
-- **WS 多副本 sticky session**：`/ws/notifications` 走 Redis Pub/Sub 已天然横向扩，但 ws.py 每连接 `aioredis.from_url` + 独立 pubsub 客户端，副本数 ↑ 时 Redis 连接数 = WS 连接数。建议接入 `redis.asyncio.ConnectionPool` + 共享单 pubsub（多 channel.subscribe）。优先级 P3，等 prod 实测瓶颈再做。
-- **WS 心跳 / idle 断连**：当前依赖客户端断网检测；服务端无 ping 发包，云端 LB / nginx idle timeout（默认 60s）会主动断。建议每 30s 服务端 send `{"type":"ping"}`。优先级 P3。
-- **`bug_reports` 评论 60/hour 与 create 10/hour 差额**：评论限流松一档（60/h）让 reopen 抗风暴；但极端情况下提交者可在 fixed 状态评论 60 次刷 reopen 计数。建议 reopen 路径单独限流（如 5/day/user/report）。优先级 P3。
+- **Wizard 新增「属性 schema」步骤**：v0.7.0 已抽 `<ClassEditor>` 升级类别步骤；属性 schema 步骤需抽 `<AttributeSchemaEditor>`（字段类型 / 必填 / hotkey / visible_if 一次配齐）+ Wizard 扩为 6 步。Wizard 已 1009 行，抽取链较深，推迟。优先级 P2。
+- **NotificationsPopover usePopover 迁移**：父级以 `open / onClose` 控制流，迁移到 `usePopover` 需重构 TopBar 集成模式。优先级 P3。
+- **ProjectsPage 卡片操作菜单收编 DropdownMenu**：3 按钮（导出 / 设置 / 打开）合并到 `⋮` 触发的 DropdownMenu。优先级 P3。
+- **`task.reopen` 通知 fan-out**：v0.7.0 删了 `/auth/me/notifications` 后，`test_task_reopen_notification` 暂跳过；将来 reopen 端点应 fan-out `task.reopened` type 到 NotificationService（已为通知偏好基础静音留好接口），把「通知原 reviewer」的语义从 audit-derived 迁到通知中心持久化。优先级 P2。
+- **批次状态看板（kanban 视图）**：v0.7.0 BatchesSection 加了 4 个新按钮（提交质检 / 通过 / 驳回），但 7 态卡片墙 + 批次拖拽流转 owner 治理界面未做（与 transition 鉴权冲突需谨慎）。优先级 P3。
+- **standalone batch_summary stored 列**：v0.7.0 项目卡批次概览用 GROUP BY 单查询返回 `{total, assigned, in_review}`，每次 list_projects 都触发；如需更冷优化，可加 stored 列由 batch 状态机变迁维护。优先级 P3，监控触发再做。
 
 ---
 
@@ -233,26 +155,19 @@
 
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
-| **P1** | 批次状态机重设计（transition 鉴权 + reviewer 可见 + 批次 review UI + reject 数据方案） | v0.6.10 调研定位 4 个相互关联的坑，单独成 epic |
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
-| **P1** | Wizard step 2/3 升级到完整 ClassesSection / AttributesSection 编辑器 | v0.6.7 推迟，向导仍存「半残」感 |
-| **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.6.9 闭环 + 通知已落，剩 LLM + 邮件；与通知偏好（按 type 静音）协同 |
+| **P1** | Wizard 新增「属性 schema」步骤（抽 `<AttributeSchemaEditor>`） | v0.7.0 已升级类别步骤；属性 schema 步骤推迟 |
+| **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好（基础静音）已落，邮件 channel 字段已就位但 UI 未启；与 LLM 聚类协同 |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
 | **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要 |
 | **P2** | C.3 history 持久化（undo/redo 栈 sessionStorage） | quick win，工时少 |
-| **P2** | `Project.in_progress_tasks` 改 stored 列 | v0.6.7-hotfix 即时 COUNT 列项目时 N 次查询 |
-| **P2** | `ProgressBar` aiPct 启发式 → 真实 AI 完成率 | dashboard 现 `pct * 0.6` 是装饰 |
-| **P2** | 批次级 reviewer dashboard | workbench 已按 batch 过滤，dashboard 待对齐 |
+| **P2** | `task.reopen` 通知 fan-out 到通知中心 | v0.7.0 删 audit-derived 后 reopen 通知留作下版 |
 | **P2** | 审计日志归档（PARTITION）、AuditMiddleware 队列化、useInfiniteQuery 缓存 GC | 当前数据量未到瓶颈，监控触发再做 |
-| **P2** | `<DropdownMenu>` 全站第 3+ 个使用方收编 + `usePopover` 剩余 4 处迁移 | v0.6.6 hook 已上架，扫尾即可 |
-| **P3** | WorkbenchShell 第四刀（拆 `<WorkbenchTopbar />` 子组件，~100 行 JSX） | v0.6.6 第三刀后 shell 仍 924+ 行；收益中等 |
-| **P3** | UnlinkConfirmModal 升级到「输入数据集名称」二次确认 | 与 DangerSection 删项目强度对齐 |
-| **P3** | link_project 同名 batch 去重命名 | unlink → re-link 同 dataset 会撞名 |
-| **P3** | 项目卡批次概览（N 个批次 · K 已分派） | 需后端 ProjectStats 加字段避免 N+1 |
+| **P3** | NotificationsPopover usePopover 迁移 + ProjectsPage 卡片操作菜单收编 DropdownMenu | v0.7.0 写时观察 |
+| **P3** | 批次状态看板（kanban 视图） | 7 态卡片墙 + owner 治理界面，与 transition 鉴权冲突需谨慎 |
 | **P3** | husky + lint-staged 预提交钩子 | v0.6.6 CI 已能拦回归，本地拦截是 nice-to-have |
-| **P3** | AuditPage 折叠 UI sessionStorage 持久化、bug 截图失败 retry UI | v0.6.6/0.6.7 写时观察项 |
 | **P3** | i18n、SSO、2FA | 客户具体需求驱动 |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 |
 

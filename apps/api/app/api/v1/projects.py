@@ -43,10 +43,18 @@ def _visible_project_filter(user: User):
     )
 
 
-async def _serialize_project(db: AsyncSession, project: Project) -> dict:
-    """补齐 owner_name + member_count + in_progress_tasks，转 dict 以喂给 ProjectOut。"""
-    from app.db.models.task import Task
+async def _serialize_project(
+    db: AsyncSession,
+    project: Project,
+    *,
+    ai_completed_lookup: dict[uuid.UUID, int] | None = None,
+    batch_summary_lookup: dict[uuid.UUID, dict] | None = None,
+) -> dict:
+    """补齐 owner_name + member_count + ai_completed_tasks，转 dict 以喂给 ProjectOut。
 
+    v0.7.0：in_progress_tasks 已是持久化列（alembic 0028）；ai_completed_tasks 由调用方
+    通过 ai_completed_lookup 批量提供（list_projects 路径）或 fallback 单独查询。
+    """
     owner_name = None
     if project.owner_id:
         owner_row = await db.execute(
@@ -59,20 +67,46 @@ async def _serialize_project(db: AsyncSession, project: Project) -> dict:
         )
     )
     member_count = count_row.scalar() or 0
-    # v0.6.7：补 in_progress 计数器（store 里没存这一项，dashboard 用以渲染「已动工」副条）
-    in_progress_row = await db.execute(
-        select(func.count()).select_from(Task).where(
-            Task.project_id == project.id,
-            Task.status == "in_progress",
+
+    if ai_completed_lookup is not None:
+        ai_completed = int(ai_completed_lookup.get(project.id, 0))
+    else:
+        from app.db.models.annotation import Annotation
+        ai_row = await db.execute(
+            select(func.count(func.distinct(Annotation.task_id))).where(
+                Annotation.project_id == project.id,
+                Annotation.parent_prediction_id.is_not(None),
+                Annotation.is_active.is_(True),
+            )
         )
-    )
-    in_progress_tasks = in_progress_row.scalar() or 0
+        ai_completed = int(ai_row.scalar() or 0)
+
+    if batch_summary_lookup is not None:
+        batch_summary = batch_summary_lookup.get(project.id, {"total": 0, "assigned": 0, "in_review": 0})
+    else:
+        from app.db.models.task_batch import TaskBatch
+        bs_row = (await db.execute(
+            select(
+                func.count().label("total"),
+                func.count().filter(
+                    func.jsonb_array_length(TaskBatch.assigned_user_ids) > 0
+                ).label("assigned"),
+                func.count().filter(TaskBatch.status == "reviewing").label("in_review"),
+            ).where(TaskBatch.project_id == project.id)
+        )).one()
+        batch_summary = {
+            "total": int(bs_row.total),
+            "assigned": int(bs_row.assigned),
+            "in_review": int(bs_row.in_review),
+        }
+
     data = {
         c.name: getattr(project, c.name) for c in project.__table__.columns
     }
     data["owner_name"] = owner_name
     data["member_count"] = member_count
-    data["in_progress_tasks"] = in_progress_tasks
+    data["ai_completed_tasks"] = ai_completed
+    data["batch_summary"] = batch_summary
     return data
 
 
@@ -93,7 +127,52 @@ async def list_projects(
         q = q.where(Project.name.ilike(f"%{search}%"))
     result = await db.execute(q.order_by(Project.created_at.desc()))
     projects = result.scalars().all()
-    return [await _serialize_project(db, p) for p in projects]
+
+    # v0.7.0：批量预查 ai_completed_tasks 避免 N+1 — 单 GROUP BY 查询
+    from app.db.models.annotation import Annotation
+    from app.db.models.task_batch import TaskBatch
+    project_ids = [p.id for p in projects]
+    ai_lookup: dict[uuid.UUID, int] = {}
+    bs_lookup: dict[uuid.UUID, dict] = {}
+    if project_ids:
+        ai_rows = (await db.execute(
+            select(
+                Annotation.project_id,
+                func.count(func.distinct(Annotation.task_id)).label("cnt"),
+            )
+            .where(
+                Annotation.project_id.in_(project_ids),
+                Annotation.parent_prediction_id.is_not(None),
+                Annotation.is_active.is_(True),
+            )
+            .group_by(Annotation.project_id)
+        )).all()
+        ai_lookup = {row[0]: int(row[1]) for row in ai_rows}
+
+        # batch_summary：每项目一行，{total, assigned, in_review}
+        bs_rows = (await db.execute(
+            select(
+                TaskBatch.project_id,
+                func.count().label("total"),
+                func.count().filter(
+                    func.jsonb_array_length(TaskBatch.assigned_user_ids) > 0
+                ).label("assigned"),
+                func.count().filter(TaskBatch.status == "reviewing").label("in_review"),
+            )
+            .where(TaskBatch.project_id.in_(project_ids))
+            .group_by(TaskBatch.project_id)
+        )).all()
+        bs_lookup = {
+            row[0]: {"total": int(row[1]), "assigned": int(row[2]), "in_review": int(row[3])}
+            for row in bs_rows
+        }
+
+    return [
+        await _serialize_project(
+            db, p, ai_completed_lookup=ai_lookup, batch_summary_lookup=bs_lookup,
+        )
+        for p in projects
+    ]
 
 
 @router.get("/stats", response_model=ProjectStats)
@@ -162,7 +241,7 @@ async def create_project(
         id=uuid.uuid4(),
         display_id=await next_display_id(db, "projects"),
         owner_id=current_user.id,
-        **data.model_dump(),
+        **data.model_dump(exclude_none=True),
     )
     db.add(project)
     await db.commit()
@@ -470,41 +549,50 @@ async def cleanup_orphan_tasks(
         )
     """
     rows = (await db.execute(text(orphan_q), {"pid": pid})).all()
-    orphan_ids = [str(r[0]) for r in rows]
-    if not orphan_ids:
+    if not rows:
         return {"deleted_tasks": 0, "deleted_annotations": 0}
+    orphan_count = len(rows)
 
-    # 接 ANY(:ids) 形式批量
-    p = {"pid": pid, "ids": orphan_ids}
-    ann_count = (await db.execute(text(
-        "SELECT COUNT(*) FROM annotations WHERE task_id = ANY(:ids)"
-    ), {"ids": orphan_ids})).scalar() or 0
+    # v0.7.0：把 ANY(:ids) 序列化数组改为子查询联查，避免 10 万级孤儿场景下的 array overflow。
+    # 所有 DELETE / UPDATE 共用同一 orphan-id 子查询。
+    orphan_subq = (
+        "SELECT id FROM tasks WHERE project_id = :pid AND id NOT IN ("
+        "  SELECT t.id FROM tasks t"
+        "  JOIN dataset_items di ON di.id = t.dataset_item_id"
+        "  JOIN project_datasets pd ON pd.dataset_id = di.dataset_id AND pd.project_id = t.project_id"
+        "  WHERE t.project_id = :pid"
+        ")"
+    )
+    ann_count = (await db.execute(
+        text(f"SELECT COUNT(*) FROM annotations WHERE task_id IN ({orphan_subq})"),
+        {"pid": pid},
+    )).scalar() or 0
 
     await db.execute(text(
-        "DELETE FROM annotation_comments WHERE annotation_id IN ("
-        "  SELECT id FROM annotations WHERE task_id = ANY(:ids))"
-    ), {"ids": orphan_ids})
+        f"DELETE FROM annotation_comments WHERE annotation_id IN ("
+        f"  SELECT id FROM annotations WHERE task_id IN ({orphan_subq}))"
+    ), {"pid": pid})
     await db.execute(text(
-        "DELETE FROM annotation_drafts WHERE task_id = ANY(:ids)"
-    ), {"ids": orphan_ids})
+        f"DELETE FROM annotation_drafts WHERE task_id IN ({orphan_subq})"
+    ), {"pid": pid})
     await db.execute(text(
-        "UPDATE annotations SET parent_prediction_id = NULL, parent_annotation_id = NULL "
-        "WHERE task_id = ANY(:ids)"
-    ), {"ids": orphan_ids})
+        f"UPDATE annotations SET parent_prediction_id = NULL, parent_annotation_id = NULL "
+        f"WHERE task_id IN ({orphan_subq})"
+    ), {"pid": pid})
     await db.execute(text(
-        "DELETE FROM annotations WHERE task_id = ANY(:ids)"
-    ), {"ids": orphan_ids})
+        f"DELETE FROM annotations WHERE task_id IN ({orphan_subq})"
+    ), {"pid": pid})
     await db.execute(text(
-        "DELETE FROM task_locks WHERE task_id = ANY(:ids)"
-    ), {"ids": orphan_ids})
+        f"DELETE FROM task_locks WHERE task_id IN ({orphan_subq})"
+    ), {"pid": pid})
     await db.execute(text(
-        "UPDATE bug_reports SET task_id = NULL WHERE task_id = ANY(:ids)"
-    ), {"ids": orphan_ids})
+        f"UPDATE bug_reports SET task_id = NULL WHERE task_id IN ({orphan_subq})"
+    ), {"pid": pid})
     await db.execute(text(
-        "DELETE FROM tasks WHERE id = ANY(:ids)"
-    ), {"ids": orphan_ids})
+        f"DELETE FROM tasks WHERE id IN ({orphan_subq})"
+    ), {"pid": pid})
 
-    # 重算 project + batch counters
+    # 重算 project + batch counters（v0.7.0：含 in_progress_tasks）
     from sqlalchemy import select, func
     from app.db.models.task import Task
     from app.db.models.task_batch import TaskBatch
@@ -513,11 +601,13 @@ async def cleanup_orphan_tasks(
             func.count().label("total"),
             func.count().filter(Task.status == "completed").label("completed"),
             func.count().filter(Task.status == "review").label("review"),
+            func.count().filter(Task.status == "in_progress").label("in_progress"),
         ).where(Task.project_id == project.id)
     )).one()
     project.total_tasks = row.total
     project.completed_tasks = row.completed
     project.review_tasks = row.review
+    project.in_progress_tasks = row.in_progress
 
     batches = (await db.execute(select(TaskBatch).where(TaskBatch.project_id == project.id))).scalars().all()
     for b in batches:
@@ -541,7 +631,7 @@ async def cleanup_orphan_tasks(
         target_id=str(project.id),
         request=request,
         status_code=200,
-        detail={"deleted_tasks": len(orphan_ids), "deleted_annotations": int(ann_count)},
+        detail={"deleted_tasks": orphan_count, "deleted_annotations": int(ann_count)},
     )
     await db.commit()
-    return {"deleted_tasks": len(orphan_ids), "deleted_annotations": int(ann_count)}
+    return {"deleted_tasks": orphan_count, "deleted_annotations": int(ann_count)}

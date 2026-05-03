@@ -22,7 +22,7 @@ from app.services.scheduler import (
     get_next_task,
     is_privileged_for_project,
     batch_visibility_clause,
-    WORKBENCH_VISIBLE_BATCH_STATUSES,
+    visible_batch_statuses_for,
 )
 from app.services.storage import storage_service
 from app.db.models.task_batch import TaskBatch
@@ -52,8 +52,9 @@ async def _load_task_or_404(db: AsyncSession, task_id: uuid.UUID) -> Task:
 
 
 async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None:
-    """B-16: 服务端强制 batch 可见性。super_admin / 项目 owner 越权放行；
-    其他角色必须 task 所在 batch 在 assigned_user_ids 中（或批次未分派）。
+    """B-16 + v0.7.0：服务端强制 batch 可见性，按角色分支。
+    super_admin / 项目 owner 越权放行；reviewer 见 active/annotating/reviewing；
+    annotator 见 active/annotating（assigned）+ rejected（assigned 特例）。
     无 batch 的孤儿任务对非特权用户不可见。
     """
     from app.db.models.project import Project
@@ -67,10 +68,22 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
     batch = await db.get(TaskBatch, task.batch_id)
     if batch is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    if batch.status not in WORKBENCH_VISIBLE_BATCH_STATUSES:
+
+    visible_statuses = visible_batch_statuses_for(user)
+    if batch.status not in visible_statuses:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # reviewer 不受 assigned_user_ids 约束（跨批次审核）
+    if user.role == UserRole.REVIEWER:
+        return
+
+    # annotator 路径：assigned 校验
     assigned = batch.assigned_user_ids or []
-    if assigned and str(user.id) not in [str(x) for x in assigned]:
+    is_assigned = str(user.id) in [str(x) for x in assigned]
+    # rejected 状态特例：仅对被分派的标注员放行
+    if batch.status == "rejected" and not is_assigned:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if assigned and not is_assigned:
         raise HTTPException(status_code=404, detail="Task not found")
 
 

@@ -15,6 +15,8 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
 from app.db.models.bug_report import BugReport, BugComment
 from app.db.models.password_reset_token import PasswordResetToken
+from app.db.models.notification import Notification
+from app.db.models.notification_preference import NotificationPreference
 
 __all__ = [
     "User", "Group",
@@ -29,4 +31,5 @@ __all__ = [
     "UserInvitation",
     "BugReport", "BugComment",
     "PasswordResetToken",
+    "Notification", "NotificationPreference",
 ]

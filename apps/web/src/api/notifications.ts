@@ -20,6 +20,16 @@ export interface UnreadCountResponse {
   unread: number;
 }
 
+export interface NotificationPreferenceItem {
+  type: string;
+  in_app: boolean;
+  email: boolean;
+}
+
+export interface NotificationPreferencesResponse {
+  items: NotificationPreferenceItem[];
+}
+
 export const notificationsApi = {
   list: (params?: { limit?: number; offset?: number; unreadOnly?: boolean }) => {
     const q = new URLSearchParams();
@@ -38,4 +48,10 @@ export const notificationsApi = {
 
   markAllRead: () =>
     apiClient.post<{ updated: number }>("/notifications/mark-all-read", {}),
+
+  getPreferences: () =>
+    apiClient.get<NotificationPreferencesResponse>("/notification-preferences"),
+
+  updatePreference: (type: string, in_app: boolean) =>
+    apiClient.put<{ ok: boolean }>("/notification-preferences", { type, in_app }),
 };

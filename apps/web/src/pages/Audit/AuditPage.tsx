@@ -106,7 +106,33 @@ export function AuditPage() {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // v0.6.6 · 按 request_id 分组：同一 HTTP 请求的 metadata 行 + 业务 detail 行折叠为单行 + ▸ 展开
-  const [expandedReqIds, setExpandedReqIds] = useState<Set<string>>(new Set());
+  // v0.7.0：折叠状态 sessionStorage 持久化（30min TTL），刷新页面后自动恢复最近展开的 request_id。
+  const [expandedReqIds, setExpandedReqIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = sessionStorage.getItem("audit:expanded");
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw) as { ts: number; ids: string[] };
+      if (Date.now() - parsed.ts > 30 * 60 * 1000) {
+        sessionStorage.removeItem("audit:expanded");
+        return new Set();
+      }
+      return new Set(parsed.ids);
+    } catch {
+      return new Set();
+    }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        "audit:expanded",
+        JSON.stringify({ ts: Date.now(), ids: Array.from(expandedReqIds) }),
+      );
+    } catch {
+      // ignore quota
+    }
+  }, [expandedReqIds]);
   type Group = { id: string; leader: AuditLogResponse; children: AuditLogResponse[] };
   const groups: Group[] = useMemo(() => {
     const buckets = new Map<string, AuditLogResponse[]>();

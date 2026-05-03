@@ -26,6 +26,17 @@ export interface ReviewTaskItem {
   updated_at: string | null;
 }
 
+export interface ReviewingBatchItem {
+  batch_id: string;
+  batch_display_id: string;
+  batch_name: string;
+  project_id: string;
+  project_name: string;
+  total_tasks: number;
+  review_tasks: number;
+  completed_tasks: number;
+}
+
 export interface ReviewerDashboardStats {
   pending_review_count: number;
   today_reviewed: number;
@@ -33,6 +44,7 @@ export interface ReviewerDashboardStats {
   approval_rate_24h: number;
   total_reviewed: number;
   pending_tasks: ReviewTaskItem[];
+  reviewing_batches?: ReviewingBatchItem[];
 }
 
 export interface RecentReviewItem {

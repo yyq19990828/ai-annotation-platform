@@ -30,6 +30,20 @@ class ReviewTaskItem(BaseModel):
         from_attributes = True
 
 
+class ReviewingBatchItem(BaseModel):
+    batch_id: str
+    batch_display_id: str
+    batch_name: str
+    project_id: str
+    project_name: str
+    total_tasks: int
+    review_tasks: int
+    completed_tasks: int
+
+    class Config:
+        from_attributes = True
+
+
 class ReviewerDashboardStats(BaseModel):
     pending_review_count: int
     today_reviewed: int
@@ -38,6 +52,8 @@ class ReviewerDashboardStats(BaseModel):
     approval_rate_24h: float
     total_reviewed: int
     pending_tasks: list[ReviewTaskItem]
+    # v0.7.0 · 批次级聚合：当前 reviewing 状态的批次列表
+    reviewing_batches: list[ReviewingBatchItem] = []
 
 
 class RecentReviewItem(BaseModel):

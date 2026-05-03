@@ -21,28 +21,57 @@ def is_privileged_for_project(user: User, project: Project) -> bool:
     return user.role == UserRole.SUPER_ADMIN or project.owner_id == user.id
 
 
-# 非特权用户只能看到「已发布到工作台」的 batch（draft / archived 等不可见）。
-# 与 scheduler.candidates 的 TaskBatch.status.in_(...) 一致。
+# v0.7.0：按角色分拆可见性集合。
+# 标注员能看到 active / annotating（自己分派的批次）+ rejected（特例：让他们看到 reviewer 留言并重做）。
+# Reviewer 能看到 active / annotating / reviewing（跨批次审核），不受 assigned_user_ids 约束。
+ANNOTATOR_VISIBLE_BATCH_STATUSES = ["active", "annotating", "rejected"]
+REVIEWER_VISIBLE_BATCH_STATUSES = ["active", "annotating", "reviewing"]
+
+# 兼容别名（保留 B-16 时引入的常量名；指向 annotator 集合的核心三态）。
 WORKBENCH_VISIBLE_BATCH_STATUSES = ["active", "annotating"]
 
 
 def batch_visibility_clause(user: User):
-    """返回应用到 TaskBatch 的可见性 WHERE 子句：batch 处于工作台可见状态
-    且（批次未分派 或 当前用户在 assigned_user_ids 中）。
+    """返回应用到 TaskBatch 的可见性 WHERE 子句，按角色分支：
+
+    - reviewer：active / annotating / reviewing，**不**受 assigned_user_ids 约束
+    - annotator（默认）：active / annotating（assigned_user_ids 中或未分派）
+      + rejected 特例（仅当自己在 assigned_user_ids 中）
+
+    super_admin / 项目 owner 走 is_privileged_for_project 越权放行，不调本 helper。
 
     调用方需自行 JOIN TaskBatch。
     """
     user_id_str = str(user.id)
-    return and_(
-        TaskBatch.status.in_(WORKBENCH_VISIBLE_BATCH_STATUSES),
-        or_(
-            TaskBatch.assigned_user_ids == cast([], JSONB),
+
+    if user.role == UserRole.REVIEWER:
+        return TaskBatch.status.in_(REVIEWER_VISIBLE_BATCH_STATUSES)
+
+    assigned_clause = or_(
+        TaskBatch.assigned_user_ids == cast([], JSONB),
+        TaskBatch.assigned_user_ids.contains(cast([user_id_str], JSONB)),
+    )
+    return or_(
+        and_(
+            TaskBatch.status.in_(["active", "annotating"]),
+            assigned_clause,
+        ),
+        # rejected 对**被分派**的标注员可见（看 reviewer 留言 + 重做）
+        and_(
+            TaskBatch.status == "rejected",
             TaskBatch.assigned_user_ids.contains(cast([user_id_str], JSONB)),
         ),
     )
 
 
-# 兼容别名（v0.6.10 改名）。如外部调用方未更新可继续工作。
+def visible_batch_statuses_for(user: User) -> list[str]:
+    """非 SQL 路径用：给定角色返回扁平的 status 白名单（用于点查 _assert_task_visible）。"""
+    if user.role == UserRole.REVIEWER:
+        return list(REVIEWER_VISIBLE_BATCH_STATUSES)
+    return list(ANNOTATOR_VISIBLE_BATCH_STATUSES)
+
+
+# 兼容别名
 assigned_user_ids_clause = batch_visibility_clause
 
 

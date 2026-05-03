@@ -90,11 +90,13 @@ export function useSplitBatches(projectId: string) {
 export function useRejectBatch(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (batchId: string) => batchesApi.reject(projectId, batchId),
+    mutationFn: ({ batchId, feedback }: { batchId: string; feedback: string }) =>
+      batchesApi.reject(projectId, batchId, feedback),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
 }

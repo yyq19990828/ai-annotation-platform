@@ -143,6 +143,30 @@ async def reviewer_dashboard(
         for t, pname in pending_tasks_result.all()
     ]
 
+    # v0.7.0：批次级聚合 — 列出处于 reviewing 状态的批次（reviewer 跨批次审核）。
+    from app.db.models.task_batch import TaskBatch
+    from app.schemas.dashboard import ReviewingBatchItem  # 新 schema 见下
+    batch_rows = (await db.execute(
+        select(TaskBatch, Project.name)
+        .join(Project, TaskBatch.project_id == Project.id)
+        .where(TaskBatch.status == "reviewing")
+        .order_by(TaskBatch.updated_at.desc())
+        .limit(20)
+    )).all()
+    reviewing_batches = [
+        ReviewingBatchItem(
+            batch_id=str(b.id),
+            batch_display_id=b.display_id,
+            batch_name=b.name,
+            project_id=str(b.project_id),
+            project_name=pname,
+            total_tasks=b.total_tasks,
+            review_tasks=b.review_tasks,
+            completed_tasks=b.completed_tasks,
+        )
+        for b, pname in batch_rows
+    ]
+
     return ReviewerDashboardStats(
         pending_review_count=pending_review_count,
         today_reviewed=today_reviewed,
@@ -150,6 +174,7 @@ async def reviewer_dashboard(
         approval_rate_24h=round(approval_rate_24h, 1),
         total_reviewed=total_completed,
         pending_tasks=pending_tasks,
+        reviewing_batches=reviewing_batches,
     )
 
 

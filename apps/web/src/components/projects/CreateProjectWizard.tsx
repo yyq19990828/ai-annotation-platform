@@ -15,8 +15,9 @@ import {
   PRESET_AI_MODELS,
   CUSTOM_MODEL_KEY,
 } from "@/constants/projectTypes";
-import type { ProjectResponse } from "@/api/projects";
+import type { ProjectResponse, ClassesConfig } from "@/api/projects";
 import type { DatasetResponse } from "@/api/datasets";
+import { ClassEditor, defaultColorFor, type ClassRow } from "@/pages/Projects/sections/ClassEditor";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -29,7 +30,8 @@ interface FormState {
   name: string;
   typeKey: string;
   dueDate: string;
-  classes: string[];
+  // v0.7.0：升级为 ClassRow[]（含颜色），提交时序列化为 classes + classes_config
+  classRows: ClassRow[];
   aiEnabled: boolean;
   aiModelChoice: string;
   aiModelCustom: string;
@@ -43,7 +45,7 @@ const INITIAL: FormState = {
   name: "",
   typeKey: "image-det",
   dueDate: "",
-  classes: [],
+  classRows: [],
   aiEnabled: false,
   aiModelChoice: PRESET_AI_MODELS[0],
   aiModelCustom: "",
@@ -69,7 +71,6 @@ export function CreateProjectWizard({ open, onClose }: Props) {
 
   const [step, setStep] = useState<Step>(1);
   const [form, setForm] = useState<FormState>(INITIAL);
-  const [classInput, setClassInput] = useState("");
   const [created, setCreated] = useState<ProjectResponse | null>(null);
 
   // 草稿恢复 / 持久化
@@ -77,7 +78,6 @@ export function CreateProjectWizard({ open, onClose }: Props) {
     if (!open) {
       setStep(1);
       setForm(INITIAL);
-      setClassInput("");
       setCreated(null);
       createProject.reset();
       return;
@@ -112,28 +112,20 @@ export function CreateProjectWizard({ open, onClose }: Props) {
     : form.aiModelChoice;
   const step3Valid = !form.aiEnabled || resolvedAiModel.length > 0;
 
-  const addClass = () => {
-    const v = classInput.trim();
-    if (!v || v.length > 30) return;
-    if (form.classes.includes(v)) {
-      setClassInput("");
-      return;
-    }
-    setForm((s) => ({ ...s, classes: [...s.classes, v] }));
-    setClassInput("");
-  };
-
-  const removeClass = (c: string) =>
-    setForm((s) => ({ ...s, classes: s.classes.filter((x) => x !== c) }));
-
   const submit = () => {
     if (!step3Valid) return;
+    const classes = form.classRows.map((r) => r.name);
+    const classes_config: ClassesConfig = {};
+    form.classRows.forEach((r, i) => {
+      classes_config[r.name] = { color: r.color, order: i };
+    });
     createProject.mutate(
       {
         name: trimmedName,
         type_key: selectedType.key,
         type_label: selectedType.label,
-        classes: form.classes,
+        classes,
+        classes_config,
         ai_enabled: form.aiEnabled,
         ai_model: form.aiEnabled ? resolvedAiModel : null,
         due_date: form.dueDate || null,
@@ -178,11 +170,8 @@ export function CreateProjectWizard({ open, onClose }: Props) {
 
       {step === 2 && (
         <Step2
-          classes={form.classes}
-          input={classInput}
-          setInput={setClassInput}
-          addClass={addClass}
-          removeClass={removeClass}
+          rows={form.classRows}
+          onChange={(rows) => setForm((s) => ({ ...s, classRows: rows }))}
         />
       )}
 
@@ -429,97 +418,18 @@ function Step1({
 }
 
 function Step2({
-  classes,
-  input,
-  setInput,
-  addClass,
-  removeClass,
+  rows,
+  onChange,
 }: {
-  classes: string[];
-  input: string;
-  setInput: (v: string) => void;
-  addClass: () => void;
-  removeClass: (c: string) => void;
+  rows: ClassRow[];
+  onChange: (next: ClassRow[]) => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)" }}>
-        添加该项目的标注类别（可空，后续可在项目设置中调整颜色 / 别名 / 父子结构）。回车快速添加。
+        添加该项目的标注类别（可空，后续可在项目设置中继续编辑）。每个类别可独立配置颜色和顺序；顺序影响数字键 1-9 / a-z 映射。
       </div>
-
-      <div style={{ display: "flex", gap: 6 }}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              addClass();
-            }
-          }}
-          placeholder="如:商品 / 价签"
-          maxLength={30}
-          style={{ ...inputStyle, flex: 1 }}
-        />
-        <Button onClick={addClass} disabled={!input.trim()}>
-          <Icon name="plus" size={12} />添加
-        </Button>
-      </div>
-
-      <div
-        style={{
-          minHeight: 80,
-          padding: 10,
-          border: "1px dashed var(--color-border)",
-          borderRadius: "var(--radius-md)",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 6,
-          alignContent: "flex-start",
-          background: "var(--color-bg-sunken)",
-        }}
-      >
-        {classes.length === 0 && (
-          <span style={{ fontSize: 12, color: "var(--color-fg-subtle)" }}>暂无类别</span>
-        )}
-        {classes.map((c) => (
-          <span
-            key={c}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              padding: "3px 4px 3px 10px",
-              background: "var(--color-bg-elev)",
-              border: "1px solid var(--color-border)",
-              borderRadius: 100,
-              fontSize: 12,
-              color: "var(--color-fg)",
-            }}
-          >
-            {c}
-            <button
-              type="button"
-              onClick={() => removeClass(c)}
-              aria-label={`删除 ${c}`}
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                color: "var(--color-fg-muted)",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Icon name="x" size={10} />
-            </button>
-          </span>
-        ))}
-      </div>
+      <ClassEditor value={rows} onChange={onChange} max={50} emptyHint="暂无类别（后续可在项目设置中添加）" />
     </div>
   );
 }

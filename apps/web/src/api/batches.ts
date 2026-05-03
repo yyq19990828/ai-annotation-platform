@@ -21,6 +21,9 @@ export interface BatchResponse {
   created_by: string | null;
   created_at: string;
   updated_at: string | null;
+  review_feedback: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
 }
 
 export interface BatchCreatePayload {
@@ -89,9 +92,10 @@ export const batchesApi = {
       payload,
     ),
 
-  reject: (projectId: string, batchId: string) =>
+  reject: (projectId: string, batchId: string, feedback: string) =>
     apiClient.post<BatchResponse>(
       `/projects/${projectId}/batches/${batchId}/reject`,
+      { feedback },
     ),
 
   exportBatch: async (projectId: string, batchId: string, format: ExportFormat) => {

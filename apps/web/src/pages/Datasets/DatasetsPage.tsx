@@ -324,6 +324,11 @@ function UnlinkConfirmModal({
   onConfirm: () => void;
 }) {
   const [preview, setPreview] = useState<{ tasks: number; annotations: number } | null>(null);
+  // v0.7.0：删除强度对齐 DangerSection — 必须输入数据集名称才能确认
+  const [confirmText, setConfirmText] = useState("");
+  const dangerous = (preview?.tasks ?? 0) > 0;
+  const canSubmit = dangerous ? confirmText.trim() === datasetName : true;
+
   useEffect(() => {
     let cancelled = false;
     datasetsApi.previewUnlink(datasetId, project.id)
@@ -353,11 +358,40 @@ function UnlinkConfirmModal({
             </>
           )}
         </div>
+        {dangerous && (
+          <div style={{ margin: "10px 0" }}>
+            <label style={{ display: "block", fontSize: 12, color: "var(--color-fg-muted)", marginBottom: 4 }}>
+              请输入数据集名称 <strong>{datasetName}</strong> 以确认：
+            </label>
+            <input
+              type="text"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={datasetName}
+              autoFocus
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "7px 10px",
+                fontSize: 13,
+                background: "var(--color-bg-sunken)",
+                border: `1px solid ${canSubmit ? "var(--color-success)" : "var(--color-border)"}`,
+                borderRadius: "var(--radius-md)",
+                color: "var(--color-fg)",
+                fontFamily: "inherit",
+              }}
+            />
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
           <Button onClick={onClose}>取消</Button>
           <Button
             onClick={onConfirm}
-            style={{ background: "var(--color-danger)", color: "#fff" }}
+            disabled={!canSubmit}
+            style={{
+              background: canSubmit ? "var(--color-danger)" : undefined,
+              color: canSubmit ? "#fff" : undefined,
+            }}
           >
             确认删除并取消关联
           </Button>

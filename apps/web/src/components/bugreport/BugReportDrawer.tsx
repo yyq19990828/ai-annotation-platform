@@ -8,11 +8,12 @@ import { ScreenshotEditor } from "./ScreenshotEditor";
 interface Props {
   open: boolean;
   onClose: () => void;
+  focusBugId?: string | null;
 }
 
 type ViewState = "list" | "create" | "detail" | "edit";
 
-export function BugReportDrawer({ open, onClose }: Props) {
+export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
   const [view, setView] = useState<ViewState>("list");
   const [reports, setReports] = useState<BugReportResponse[]>([]);
   const [detail, setDetail] = useState<BugReportDetail | null>(null);
@@ -33,6 +34,8 @@ export function BugReportDrawer({ open, onClose }: Props) {
   const [screenshotBlob, setScreenshotBlob] = useState<Blob | null>(null);
   const [screenshotEditing, setScreenshotEditing] = useState(false);
   const [screenshotKey, setScreenshotKey] = useState<string | null>(null);
+  // v0.7.0：上传失败 retry 状态
+  const [screenshotUploadFail, setScreenshotUploadFail] = useState<string | null>(null);
 
   const pushToast = useToastStore((s) => s.push);
 
@@ -41,6 +44,14 @@ export function BugReportDrawer({ open, onClose }: Props) {
       loadMine();
     }
   }, [open, view]);
+
+  // v0.7.0：从通知中心点击「我的反馈」类通知跳转时，自动定位到该条详情
+  useEffect(() => {
+    if (open && focusBugId) {
+      loadDetail(focusBugId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, focusBugId]);
 
   const loadMine = async () => {
     setLoading(true);
@@ -67,21 +78,21 @@ export function BugReportDrawer({ open, onClose }: Props) {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (skipScreenshot = false) => {
     if (!title.trim() || !desc.trim()) return;
     setSubmitting(true);
     try {
       // 若有未上传的截图 blob → 先上传拿 storage_key
       let finalKey = screenshotKey;
-      if (screenshotBlob && !finalKey) {
+      if (!skipScreenshot && screenshotBlob && !finalKey) {
         try {
           finalKey = await uploadBugScreenshot(screenshotBlob);
+          setScreenshotUploadFail(null);
         } catch (e) {
-          pushToast({
-            msg: "截图上传失败，已回退提交无截图",
-            sub: e instanceof Error ? e.message : String(e),
-            kind: "warning",
-          });
+          // v0.7.0：失败不再静默降级，停在表单让用户选 retry / skip / cancel
+          setScreenshotUploadFail(e instanceof Error ? e.message : String(e));
+          setSubmitting(false);
+          return;
         }
       }
       await bugReportsApi.create({
@@ -479,6 +490,48 @@ export function BugReportDrawer({ open, onClose }: Props) {
                   </button>
                 )}
               </div>
+
+              {screenshotUploadFail && (
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    marginBottom: 10,
+                    background: "oklch(0.95 0.04 25)",
+                    border: "1px solid oklch(0.85 0.10 25)",
+                    borderRadius: "var(--radius-sm)",
+                    fontSize: 12,
+                    color: "oklch(0.50 0.20 25)",
+                  }}
+                >
+                  <div style={{ marginBottom: 6 }}>
+                    截图上传失败：{screenshotUploadFail}
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => { setScreenshotUploadFail(null); handleSubmit(false); }}
+                      style={{
+                        padding: "4px 10px", fontSize: 11,
+                        background: "var(--color-accent)", color: "#fff",
+                        border: "none", borderRadius: 3, cursor: "pointer",
+                      }}
+                    >
+                      重试上传
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setScreenshotUploadFail(null); handleSubmit(true); }}
+                      style={{
+                        padding: "4px 10px", fontSize: 11,
+                        background: "transparent", color: "var(--color-fg)",
+                        border: "1px solid var(--color-border)", borderRadius: 3, cursor: "pointer",
+                      }}
+                    >
+                      跳过截图提交
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <button
                 type="submit"

@@ -55,6 +55,7 @@ import { BugReportFAB } from "@/components/bugreport/BugReportFAB";
 import { BugReportDrawer } from "@/components/bugreport/BugReportDrawer";
 import { initBugReportCapture, patchFetchForBugCapture } from "@/utils/bugReportCapture";
 import { PageLoader } from "@/components/PageLoader";
+import { useBugDrawerStore } from "@/stores/bugDrawerStore";
 
 function DashboardRouter() {
   const { role } = usePermissions();
@@ -79,7 +80,10 @@ function AppShell() {
   const pushToast = useToastStore((s) => s.push);
   const compact = useMediaQuery("(max-width: 1023px)");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [bugDrawerOpen, setBugDrawerOpen] = useState(false);
+  const bugDrawerOpen = useBugDrawerStore((s) => s.open);
+  const bugDrawerFocusId = useBugDrawerStore((s) => s.focusBugId);
+  const openBugDrawer = useBugDrawerStore((s) => s.openDrawer);
+  const closeBugDrawer = useBugDrawerStore((s) => s.close);
 
   // 初始化 bug 反馈自动捕获
   useEffect(() => {
@@ -121,8 +125,8 @@ function AppShell() {
         </Suspense>
       </main>
       <ToastRack />
-      <BugReportFAB onClick={() => setBugDrawerOpen(true)} />
-      <BugReportDrawer open={bugDrawerOpen} onClose={() => setBugDrawerOpen(false)} />
+      <BugReportFAB onClick={() => openBugDrawer()} />
+      <BugReportDrawer open={bugDrawerOpen} focusBugId={bugDrawerFocusId} onClose={closeBugDrawer} />
     </div>
   );
 }
@@ -139,7 +143,10 @@ function PlaceholderPage({ title }: { title: string }) {
 
 function FullScreenWorkbench() {
   const tooNarrow = useMediaQuery("(max-width: 767px)");
-  const [bugDrawerOpen, setBugDrawerOpen] = useState(false);
+  const bugDrawerOpen = useBugDrawerStore((s) => s.open);
+  const bugDrawerFocusId = useBugDrawerStore((s) => s.focusBugId);
+  const openBugDrawer = useBugDrawerStore((s) => s.openDrawer);
+  const closeBugDrawer = useBugDrawerStore((s) => s.close);
 
   useEffect(() => {
     patchFetchForBugCapture();
@@ -152,8 +159,8 @@ function FullScreenWorkbench() {
         <WorkbenchPage />
       </Suspense>
       <ToastRack />
-      <BugReportFAB onClick={() => setBugDrawerOpen(true)} />
-      <BugReportDrawer open={bugDrawerOpen} onClose={() => setBugDrawerOpen(false)} />
+      <BugReportFAB onClick={() => openBugDrawer()} />
+      <BugReportDrawer open={bugDrawerOpen} focusBugId={bugDrawerFocusId} onClose={closeBugDrawer} />
       {tooNarrow && <MobileWorkbenchBlock />}
     </div>
   );

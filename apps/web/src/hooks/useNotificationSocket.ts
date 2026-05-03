@@ -32,8 +32,14 @@ export function useNotificationSocket() {
       ws.onopen = () => {
         backoff = 1000;
       };
-      ws.onmessage = () => {
-        // 简单策略：任何消息都让 list / unread-count 重新拉
+      ws.onmessage = (e) => {
+        // v0.7.0：服务端 30s 心跳 ping 帧不应触发 invalidate
+        try {
+          const parsed = JSON.parse(e.data as string);
+          if (parsed && parsed.type === "ping") return;
+        } catch {
+          // 非 JSON（理论不会出现），忽略
+        }
         qc.invalidateQueries({ queryKey: ["notifications"] });
       };
       ws.onclose = () => {

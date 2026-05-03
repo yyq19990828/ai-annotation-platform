@@ -97,6 +97,65 @@ export function ReviewerDashboard() {
         )}
       </Card>
 
+      {(stats.reviewing_batches?.length ?? 0) > 0 && (
+        <Card style={{ marginTop: 16 }}>
+          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+              审核中批次
+              <Badge variant="warning" style={{ marginLeft: 8, fontSize: 11 }}>
+                {stats.reviewing_batches!.length}
+              </Badge>
+            </h3>
+          </div>
+          <div style={{ padding: "8px 0" }}>
+            {stats.reviewing_batches!.map((b) => {
+              const remaining = Math.max(0, b.total_tasks - b.completed_tasks - b.review_tasks);
+              const reviewPct = b.total_tasks
+                ? Math.round((b.completed_tasks / b.total_tasks) * 100)
+                : 0;
+              return (
+                <button
+                  key={b.batch_id}
+                  type="button"
+                  onClick={() => navigate(`/review?project=${b.project_id}&batch=${b.batch_id}`)}
+                  style={{
+                    display: "flex",
+                    width: "100%",
+                    padding: "10px 16px",
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontFamily: "inherit",
+                    borderTop: "1px solid var(--color-border-subtle)",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{b.batch_name}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+                      <span className="mono">{b.batch_display_id}</span>
+                      <span> · {b.project_name}</span>
+                      <span> · 共 {b.total_tasks} 任务</span>
+                      {b.review_tasks > 0 && <span> · {b.review_tasks} 待审</span>}
+                      {remaining > 0 && <span> · {remaining} 未交</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
+                    <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }} className="mono">
+                      {reviewPct}%
+                    </span>
+                    <Icon name="chevron-right" size={14} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
       <Card style={{ marginTop: 16 }}>
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>

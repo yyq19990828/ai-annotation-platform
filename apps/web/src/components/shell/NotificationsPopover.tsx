@@ -7,6 +7,8 @@ import {
   useMarkRead,
 } from "@/hooks/useNotifications";
 import type { NotificationItem } from "@/api/notifications";
+import { useAuthStore } from "@/stores/authStore";
+import { useBugDrawerStore } from "@/stores/bugDrawerStore";
 
 function relativeTime(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -20,6 +22,7 @@ const TYPE_LABEL: Record<string, string> = {
   "bug_report.commented": "评论了反馈",
   "bug_report.status_changed": "更新了反馈状态",
   "bug_report.reopened": "重新打开了反馈",
+  "batch.rejected": "驳回了批次",
 };
 
 interface NotifRowProps {
@@ -31,12 +34,21 @@ function NotifRow({ item, onClick }: NotifRowProps) {
   const isUnread = item.read_at === null;
   const payload = item.payload || {};
   const actorName = (payload as { actor_name?: string }).actor_name || "系统";
-  const displayId = (payload as { display_id?: string }).display_id || "";
-  const title = (payload as { title?: string }).title || "";
-  const snippet = (payload as { snippet?: string }).snippet || "";
   const fromStatus = (payload as { from_status?: string }).from_status;
   const toStatus = (payload as { to_status?: string }).to_status;
   const reopen = Boolean((payload as { reopen?: boolean }).reopen);
+
+  // v0.7.0：batch.rejected 复用同一行渲染，但 payload 字段不同
+  const isBatchRejected = item.type === "batch.rejected";
+  const displayId = isBatchRejected
+    ? (payload as { batch_display_id?: string }).batch_display_id || ""
+    : (payload as { display_id?: string }).display_id || "";
+  const title = isBatchRejected
+    ? (payload as { batch_name?: string }).batch_name || ""
+    : (payload as { title?: string }).title || "";
+  const snippet = isBatchRejected
+    ? (payload as { feedback?: string }).feedback || ""
+    : (payload as { snippet?: string }).snippet || "";
 
   const verb = reopen
     ? "重新打开了反馈"
@@ -125,6 +137,8 @@ export function NotificationsPopover({ onClose }: Props) {
   const markRead = useMarkRead();
   const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
+  const role = useAuthStore((s) => s.user?.role);
+  const openBugDrawer = useBugDrawerStore((s) => s.openDrawer);
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -144,8 +158,19 @@ export function NotificationsPopover({ onClose }: Props) {
       markRead.mutate(item.id);
     }
     if (item.target_type === "bug_report") {
-      // 简单策略：跳到管理员 BugsPage（提交者会被路由守卫拦回 /me 反馈抽屉触发）
-      navigate("/bugs");
+      // v0.7.0：按角色路由 — admin/super_admin 跳 /bugs 总览；提交者打开「我的反馈」抽屉并定位到该条
+      if (role === "super_admin" || role === "project_admin") {
+        navigate("/bugs");
+      } else {
+        openBugDrawer(item.target_id);
+      }
+    } else if (item.target_type === "batch") {
+      // v0.7.0：批次相关通知（如 batch.rejected）跳工作台并预选该批次
+      const payload = (item.payload || {}) as { project_id?: string };
+      const projectId = payload.project_id;
+      if (projectId) {
+        navigate(`/projects/${projectId}/annotate?batch=${item.target_id}`);
+      }
     }
     onClose();
   }

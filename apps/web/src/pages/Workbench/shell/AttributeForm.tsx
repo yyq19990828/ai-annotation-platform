@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AttributeField, AttributeSchema } from "@/api/projects";
+import { usePopover } from "@/hooks/usePopover";
 
 export interface AttributeFormProps {
   schema: AttributeSchema | undefined;
@@ -211,29 +212,23 @@ const inputStyle: React.CSSProperties = {
  *  GFM 启用，但禁 raw HTML（react-markdown 默认不开 rehype-raw，避免 XSS）。
  */
 function DescriptionPopover({ description }: { description: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement | null>(null);
-
-  // 点击外部关闭
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  // v0.7.0：迁移到 usePopover（统一 click-outside + ESC 行为）
+  const pop = usePopover();
+  const containerRef = useRef<HTMLSpanElement | null>(null);
 
   return (
     <span
-      ref={ref}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      ref={(node) => {
+        containerRef.current = node;
+        pop.anchorRef.current = node;
+      }}
+      onMouseEnter={() => pop.setOpen(true)}
+      onMouseLeave={() => pop.close()}
       style={{ position: "relative", display: "inline-flex" }}
     >
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        onClick={(e) => { e.stopPropagation(); pop.toggle(); }}
         aria-label={`查看说明：${description.slice(0, 50)}`}
         style={{
           display: "inline-flex",
@@ -253,8 +248,9 @@ function DescriptionPopover({ description }: { description: string }) {
       >
         i
       </button>
-      {open && (
+      {pop.open && (
         <div
+          ref={pop.popoverRef as React.MutableRefObject<HTMLDivElement | null>}
           role="tooltip"
           style={{
             position: "absolute",

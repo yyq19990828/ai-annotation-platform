@@ -9,18 +9,20 @@ import { useChangePassword, useUpdateProfile } from "@/hooks/useMe";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { ROLE_LABELS } from "@/constants/roles";
 import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
+import { notificationsApi, type NotificationPreferenceItem } from "@/api/notifications";
 import type { UserRole } from "@/types";
 
-type SectionKey = "profile" | "feedback" | "system";
+type SectionKey = "profile" | "feedback" | "notifications" | "system";
 
 export function SettingsPage() {
   const { role } = usePermissions();
   const isAdmin = role === "super_admin";
   const [section, setSection] = useState<SectionKey>("profile");
 
-  const sections: { key: SectionKey; label: string; icon: "user" | "flag" | "settings" }[] = [
+  const sections: { key: SectionKey; label: string; icon: "user" | "flag" | "bell" | "settings" }[] = [
     { key: "profile", label: "个人资料", icon: "user" },
     { key: "feedback", label: "我的反馈", icon: "flag" },
+    { key: "notifications", label: "通知偏好", icon: "bell" },
     ...(isAdmin ? [{ key: "system" as SectionKey, label: "系统设置", icon: "settings" as const }] : []),
   ];
 
@@ -70,6 +72,7 @@ export function SettingsPage() {
         <div>
           {section === "profile" && <ProfileSection />}
           {section === "feedback" && <MyFeedbackSection />}
+          {section === "notifications" && <NotificationPreferencesSection />}
           {section === "system" && isAdmin && <SystemSection />}
         </div>
       </div>
@@ -428,3 +431,95 @@ const primaryBtn = (pending: boolean): React.CSSProperties => ({
   borderRadius: "var(--radius-md)",
   cursor: pending ? "not-allowed" : "pointer",
 });
+
+const NOTIF_TYPE_LABELS: Record<string, string> = {
+  "bug_report.commented": "BUG 反馈：有新评论",
+  "bug_report.reopened": "BUG 反馈：被重新打开",
+  "bug_report.status_changed": "BUG 反馈：状态变更",
+  "batch.rejected": "批次被驳回",
+};
+
+function NotificationPreferencesSection() {
+  const pushToast = useToastStore((s) => s.push);
+  const [items, setItems] = useState<NotificationPreferenceItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingType, setSavingType] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    notificationsApi
+      .getPreferences()
+      .then((r) => {
+        if (mounted) setItems(r.items);
+      })
+      .catch(() => {
+        if (mounted) pushToast({ msg: "加载偏好失败", kind: "warning" });
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [pushToast]);
+
+  const toggle = async (type: string, next: boolean) => {
+    setSavingType(type);
+    setItems((prev) => prev.map((it) => (it.type === type ? { ...it, in_app: next } : it)));
+    try {
+      await notificationsApi.updatePreference(type, next);
+    } catch (e) {
+      // 回滚 UI
+      setItems((prev) => prev.map((it) => (it.type === type ? { ...it, in_app: !next } : it)));
+      pushToast({ msg: "保存失败", sub: (e as Error).message, kind: "warning" });
+    } finally {
+      setSavingType(null);
+    }
+  };
+
+  return (
+    <Card>
+      <SectionHeader title="通知偏好" />
+      <div style={{ padding: "12px 18px 18px" }}>
+        <p style={{ fontSize: 12, color: "var(--color-fg-muted)", margin: "0 0 10px" }}>
+          关闭某类通知后，新事件不会进入站内通知中心；已存档通知不受影响。邮件 digest 暂未开启。
+        </p>
+        {loading && (
+          <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>加载中…</div>
+        )}
+        {!loading &&
+          items.map((it) => (
+            <div
+              key={it.type}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "10px 0",
+                borderBottom: "1px solid var(--color-border-subtle)",
+                fontSize: 13,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 500 }}>{NOTIF_TYPE_LABELS[it.type] ?? it.type}</div>
+                <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                  {it.type}
+                </div>
+              </div>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={it.in_app}
+                  disabled={savingType === it.type}
+                  onChange={(e) => toggle(it.type, e.target.checked)}
+                />
+                <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+                  站内通知 {it.in_app ? "已开启" : "已静音"}
+                </span>
+              </label>
+            </div>
+          ))}
+      </div>
+    </Card>
+  );
+}

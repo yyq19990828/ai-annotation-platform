@@ -248,6 +248,30 @@ async def add_bug_comment(
     if not is_admin and report.reporter_id != current_user.id:
         raise HTTPException(status_code=403, detail="只有反馈提交者或管理员可以评论")
 
+    # v0.7.0：reopen 单独限流 5/day/user/report，避免提交者刷 reopen 计数。
+    # 60/h 整体限流仍生效；本检查只针对会触发 reopen 的评论（reporter 自己 + 已 closed 状态）。
+    will_reopen = (
+        current_user.id == report.reporter_id
+        and report.status in ("fixed", "wont_fix", "duplicate")
+    )
+    if will_reopen:
+        import redis.asyncio as aioredis
+        from app.config import settings
+
+        rkey = f"bug:reopen:{current_user.id}:{report_id}:day"
+        r = aioredis.from_url(settings.redis_url)
+        try:
+            count = await r.incr(rkey)
+            if count == 1:
+                await r.expire(rkey, 86400)
+            if count > 5:
+                raise HTTPException(
+                    status_code=429,
+                    detail="reopen 次数超出每日上限（5 次/日）",
+                )
+        finally:
+            await r.close()
+
     result = await svc.add_comment(report_id, current_user.id, data.body)
     if not result:
         raise HTTPException(status_code=404, detail="Bug report not found")

@@ -16,6 +16,7 @@ import {
 } from "@/hooks/useBatches";
 import { useProjectMembers } from "@/hooks/useProjects";
 import { BatchAssignmentModal } from "@/components/projects/BatchAssignmentModal";
+import { RejectBatchModal } from "./RejectBatchModal";
 import type { ProjectResponse } from "@/api/projects";
 import type { BatchResponse } from "@/api/batches";
 
@@ -58,6 +59,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const [namePrefix, setNamePrefix] = useState("Batch");
   const [confirmDelete, setConfirmDelete] = useState<BatchResponse | null>(null);
   const [assignTarget, setAssignTarget] = useState<BatchResponse | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<BatchResponse | null>(null);
 
   const memberById = new Map(members.map((m) => [m.user_id, m]));
 
@@ -233,15 +235,47 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     </div>
                   </td>
                   <td style={{ padding: "10px 12px" }}>
-                    <div style={{ display: "flex", gap: 4 }}>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {b.status === "draft" && (
                         <Button
                           onClick={() => handleTransition(b, "active")}
-                          disabled={b.assigned_user_ids.length === 0}
-                          title={b.assigned_user_ids.length === 0 ? "请先分派成员" : "激活"}
+                          disabled={b.assigned_user_ids.length === 0 || b.total_tasks === 0}
+                          title={
+                            b.assigned_user_ids.length === 0
+                              ? "请先分派成员"
+                              : b.total_tasks === 0
+                                ? "批次内无任务，无法激活"
+                                : "激活"
+                          }
                         >
                           <Icon name="play" size={12} />
                         </Button>
+                      )}
+                      {b.status === "annotating" && (
+                        <Button
+                          onClick={() => handleTransition(b, "reviewing")}
+                          title="整批提交质检（owner / 被分派标注员）"
+                        >
+                          <Icon name="check" size={12} /> 提交质检
+                        </Button>
+                      )}
+                      {b.status === "reviewing" && (
+                        <>
+                          <Button
+                            onClick={() => handleTransition(b, "approved")}
+                            title="批次通过审核（reviewer / owner）"
+                            style={{ background: "var(--color-success)", color: "#fff" }}
+                          >
+                            <Icon name="check" size={12} /> 通过
+                          </Button>
+                          <Button
+                            onClick={() => setRejectTarget(b)}
+                            title="批次驳回（reviewer / owner）"
+                            style={{ background: "var(--color-danger)", color: "#fff" }}
+                          >
+                            <Icon name="x" size={12} /> 驳回
+                          </Button>
+                        </>
                       )}
                       {b.status === "rejected" && (
                         <Button onClick={() => handleTransition(b, "active")} title="重新激活">
@@ -259,6 +293,25 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                         </Button>
                       )}
                     </div>
+                    {b.status === "rejected" && b.review_feedback && (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          padding: "6px 8px",
+                          background: "color-mix(in oklab, var(--color-danger) 8%, transparent)",
+                          borderLeft: "2px solid var(--color-danger)",
+                          fontSize: 11,
+                          color: "var(--color-fg-muted)",
+                          maxWidth: 300,
+                        }}
+                        title={b.review_feedback}
+                      >
+                        <strong style={{ color: "var(--color-danger)" }}>驳回原因：</strong>
+                        {b.review_feedback.length > 80
+                          ? b.review_feedback.slice(0, 80) + "…"
+                          : b.review_feedback}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -401,6 +454,15 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           projectId={project.id}
           batch={assignTarget}
           onClose={() => setAssignTarget(null)}
+        />
+      )}
+
+      {/* v0.7.0：批次驳回 Modal */}
+      {rejectTarget && (
+        <RejectBatchModal
+          projectId={project.id}
+          batch={rejectTarget}
+          onClose={() => setRejectTarget(null)}
         />
       )}
     </>

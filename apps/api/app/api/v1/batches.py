@@ -7,9 +7,12 @@ from app.deps import get_db, get_current_user, require_roles, require_project_vi
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.project import Project
-from app.schemas.batch import BatchCreate, BatchUpdate, BatchOut, BatchTransition, BatchSplitRequest
-from app.services.batch import BatchService
+from app.schemas.batch import (
+    BatchCreate, BatchUpdate, BatchOut, BatchTransition, BatchReject, BatchSplitRequest,
+)
+from app.services.batch import BatchService, assert_can_transition
 from app.services.audit import AuditService, AuditAction
+from app.services.notification import NotificationService
 
 router = APIRouter()
 
@@ -137,6 +140,9 @@ async def transition_batch(
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
 
+    # v0.7.0：按 (from, to) 校验角色（403 携带可读 detail）
+    assert_can_transition(current_user, project, batch, data.target_status)
+
     old_status = batch.status
     batch = await svc.transition(batch_id, data.target_status, current_user.id)
     await AuditService.log(
@@ -186,6 +192,7 @@ async def split_batches(
 async def reject_batch(
     project_id: uuid.UUID,
     batch_id: uuid.UUID,
+    data: BatchReject,
     request: Request,
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
@@ -196,7 +203,12 @@ async def reject_batch(
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
 
-    batch, affected = await svc.reject_batch(batch_id)
+    # v0.7.0：复用 transition 鉴权矩阵（reviewing → rejected 的角色门）
+    assert_can_transition(current_user, project, batch, "rejected")
+
+    batch, affected = await svc.reject_batch(
+        batch_id, feedback=data.feedback, reviewer_id=current_user.id,
+    )
     await AuditService.log(
         db,
         actor=current_user,
@@ -205,8 +217,27 @@ async def reject_batch(
         target_id=str(batch_id),
         request=request,
         status_code=200,
-        detail={"affected_tasks": affected},
+        detail={"affected_tasks": affected, "feedback": data.feedback},
     )
+
+    # 通知所有被分派的标注员（v0.7.0：rejected 通知 fan-out）
+    assigned = batch.assigned_user_ids or []
+    if assigned:
+        notif_svc = NotificationService(db)
+        await notif_svc.notify_many(
+            user_ids=[uuid.UUID(str(uid)) for uid in assigned],
+            type="batch.rejected",
+            target_type="batch",
+            target_id=batch.id,
+            payload={
+                "batch_display_id": batch.display_id,
+                "batch_name": batch.name,
+                "project_id": str(project_id),
+                "feedback": data.feedback,
+                "affected_tasks": affected,
+            },
+        )
+
     await db.commit()
     await db.refresh(batch)
     return _batch_to_out(batch)

@@ -44,6 +44,9 @@ class BatchOut(BaseModel):
     created_at: datetime
     updated_at: datetime | None = None
     progress_pct: float = 0.0
+    review_feedback: str | None = None
+    reviewed_at: datetime | None = None
+    reviewed_by: UUID | None = None
 
     class Config:
         from_attributes = True
@@ -51,6 +54,10 @@ class BatchOut(BaseModel):
 
 class BatchTransition(BaseModel):
     target_status: str
+
+
+class BatchReject(BaseModel):
+    feedback: str = Field(..., min_length=1, max_length=500)
 
 
 class BatchSplitRequest(BaseModel):

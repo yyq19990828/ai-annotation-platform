@@ -91,8 +91,9 @@ export function WorkbenchShell() {
   const activeBatches = useMemo(() => {
     // v0.6.8 B-15：owner 视角额外纳入 draft（数据集导入自动建的「{ds} 默认包」），
     // 让管理员一进 /annotate 就能看到批次结构、不至于以为「没批次」。
-    const ownerStatuses = ["draft", "active", "annotating"];
-    const memberStatuses = ["active", "annotating"];
+    // v0.7.0：成员视角额外纳入 rejected（被分派标注员可看到 reviewer 留言并继续重做）。
+    const ownerStatuses = ["draft", "active", "annotating", "rejected"];
+    const memberStatuses = ["active", "annotating", "rejected"];
     if (isOwner || !meUserId) {
       return (batchList ?? []).filter((b) => ownerStatuses.includes(b.status));
     }
