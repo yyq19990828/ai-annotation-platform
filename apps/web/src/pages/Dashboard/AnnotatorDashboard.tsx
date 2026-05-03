@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -6,29 +6,14 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
 import { Sparkline } from "@/components/ui/Sparkline";
-import { useToastStore } from "@/components/ui/Toast";
 import { useAnnotatorStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
-import { SelectProjectModal } from "@/components/dashboard/SelectProjectModal";
+import { MyBatchesCard } from "./MyBatchesCard";
 
 export function AnnotatorDashboard() {
   const { data: stats, isLoading } = useAnnotatorStats();
   const { data: myProjects = [] } = useProjects();
   const navigate = useNavigate();
-  const pushToast = useToastStore((s) => s.push);
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  const startAnnotating = () => {
-    if (myProjects.length === 0) {
-      pushToast({ msg: "暂无分配项目，请联系管理员" });
-      return;
-    }
-    if (myProjects.length === 1) {
-      navigate(`/projects/${myProjects[0].id}/annotate`);
-      return;
-    }
-    setPickerOpen(true);
-  };
 
   const sortedProjects = useMemo(
     () =>
@@ -56,22 +41,25 @@ export function AnnotatorDashboard() {
     <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 20 }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>我的工作台</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>标注工作台</h1>
           <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>查看任务进度，高效完成标注工作</p>
         </div>
-        <Button variant="primary" onClick={startAnnotating} disabled={noProjects} title={noProjects ? "暂无分配项目" : undefined}>
-          <Icon name="target" size={13} />开始标注
+        <Button variant="primary" onClick={() => navigate("/annotate")}>
+          <Icon name="target" size={13} />进入标注页面
         </Button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
         <StatCard icon="flag" label="待标任务" value={stats.assigned_tasks} />
         <StatCard icon="check" label="今日完成" value={stats.today_completed} />
         <StatCard icon="activity" label="本周完成" value={stats.weekly_completed} hint={`目标 ${weeklyTarget}`} />
-        <StatCard icon="sparkles" label="准确率" value={`${stats.personal_accuracy}%`} />
+        <StatCard icon="layers" label="累计标注" value={stats.total_completed} />
+        <StatCard icon="sparkles" label="原创比例" value={`${stats.personal_accuracy}%`} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12 }}>
+      <MyBatchesCard />
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginTop: 16 }}>
         <Card>
           <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>近 7 天标注趋势</h3>
@@ -113,16 +101,11 @@ export function AnnotatorDashboard() {
             <div style={{ fontSize: 13, color: "var(--color-fg-muted)" }}>
               {stats.weekly_completed} / {weeklyTarget} 个标注
             </div>
-            <div style={{ marginTop: 16 }}>
-              <Button onClick={startAnnotating} disabled={noProjects}>
-                <Icon name="target" size={12} />继续标注
-              </Button>
-            </div>
           </div>
         </Card>
       </div>
 
-      <Card style={{ marginTop: 12 }}>
+      <Card style={{ marginTop: 16 }}>
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>我的项目</h3>
           <span style={{ fontSize: 12, color: "var(--color-fg-subtle)" }}>共 {sortedProjects.length} 个</span>
@@ -191,12 +174,6 @@ export function AnnotatorDashboard() {
         )}
       </Card>
 
-      <SelectProjectModal
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        projects={sortedProjects}
-        onPick={(id) => navigate(`/projects/${id}/annotate`)}
-      />
     </div>
   );
 }

@@ -1,19 +1,23 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, case
+from sqlalchemy import select, func, case, or_, cast
+from sqlalchemy.dialects.postgresql import JSONB
 from app.deps import get_db, get_current_user, require_roles
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
+from app.db.models.task_batch import TaskBatch
 from app.db.enums import UserRole, TaskStatus
 from app.schemas.dashboard import (
     AdminDashboardStats,
     ReviewerDashboardStats,
     ReviewTaskItem,
+    ReviewingBatchItem,
     AnnotatorDashboardStats,
+    MyBatchItem,
     RecentReviewItem,
 )
 
@@ -144,14 +148,18 @@ async def reviewer_dashboard(
     ]
 
     # v0.7.0：批次级聚合 — 列出处于 reviewing 状态的批次（reviewer 跨批次审核）。
-    from app.db.models.task_batch import TaskBatch
-    from app.schemas.dashboard import ReviewingBatchItem  # 新 schema 见下
+    # v0.7.1 B-18：扩展为「reviewing 批次 ∪ 任意 review_tasks > 0 的批次」，让单任务级提交质检
+    # 也能在 ReviewPage 的批次树里看到，避免 reviewer 找不到入口。
     batch_rows = (await db.execute(
         select(TaskBatch, Project.name)
         .join(Project, TaskBatch.project_id == Project.id)
-        .where(TaskBatch.status == "reviewing")
-        .order_by(TaskBatch.updated_at.desc())
-        .limit(20)
+        .where(or_(
+            TaskBatch.status == "reviewing",
+            TaskBatch.review_tasks > 0,
+        ))
+        .where(TaskBatch.status.in_(["active", "annotating", "reviewing"]))
+        .order_by(Project.name, TaskBatch.updated_at.desc())
+        .limit(100)
     )).all()
     reviewing_batches = [
         ReviewingBatchItem(
@@ -289,3 +297,52 @@ async def annotator_dashboard(
         personal_accuracy=round(personal_accuracy, 1),
         daily_counts=daily_counts,
     )
+
+
+@router.get("/annotator/batches", response_model=list[MyBatchItem])
+async def my_batches(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(
+        UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER, UserRole.ANNOTATOR
+    )),
+):
+    """v0.7.1 B-17 · 标注员视角的「我的批次」：仅返回当前用户被分派、且处于
+    active / annotating / rejected / reviewing 的批次。让标注员从 dashboard
+    一眼看到自己手里的批次进度，并直接「提交质检」/ 查看 reviewer 留言。
+
+    super_admin 看到所有同状态批次（便于演示 / 调试）；其他角色按 assigned_user_ids 过滤。"""
+    user_id_str = str(current_user.id)
+    visible_statuses = ["active", "annotating", "rejected", "reviewing"]
+
+    q = (
+        select(TaskBatch, Project.name, Project.id)
+        .join(Project, TaskBatch.project_id == Project.id)
+        .where(TaskBatch.status.in_(visible_statuses))
+    )
+    if current_user.role != UserRole.SUPER_ADMIN:
+        q = q.where(TaskBatch.assigned_user_ids.contains(cast([user_id_str], JSONB)))
+    q = q.order_by(Project.name, TaskBatch.created_at.desc()).limit(100)
+
+    rows = (await db.execute(q)).all()
+    return [
+        MyBatchItem(
+            batch_id=str(b.id),
+            batch_display_id=b.display_id,
+            batch_name=b.name,
+            project_id=str(pid),
+            project_name=pname,
+            status=b.status,
+            total_tasks=b.total_tasks,
+            completed_tasks=b.completed_tasks,
+            review_tasks=b.review_tasks,
+            approved_tasks=b.approved_tasks,
+            rejected_tasks=b.rejected_tasks,
+            progress_pct=round(
+                (b.completed_tasks / b.total_tasks * 100) if b.total_tasks else 0.0,
+                1,
+            ),
+            review_feedback=b.review_feedback,
+            reviewed_at=b.reviewed_at.isoformat() if b.reviewed_at else None,
+        )
+        for b, pname, pid in rows
+    ]

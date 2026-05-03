@@ -4,12 +4,14 @@ import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
-import { useProjects } from "@/hooks/useProjects";
 import { useTaskList, useAnnotations, useApproveTask, useRejectTask } from "@/hooks/useTasks";
-import { useBatches, useRejectBatch } from "@/hooks/useBatches";
+import { useRejectBatch } from "@/hooks/useBatches";
+import { useReviewerStats } from "@/hooks/useDashboard";
 import type { TaskResponse } from "@/types";
+import type { ReviewingBatchItem } from "@/api/dashboard";
 import { ReviewWorkbench } from "./ReviewWorkbench";
 import { RejectReasonModal } from "./RejectReasonModal";
+import { ReviewSidebar } from "./ReviewSidebar";
 
 function AnnotationPreview({ taskId }: { taskId: string }) {
   const { data: annotations } = useAnnotations(taskId);
@@ -78,7 +80,6 @@ function TaskRow({
 
 export function ReviewPage() {
   const pushToast = useToastStore((s) => s.push);
-  const { data: projects } = useProjects();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProjectId, setSelectedProjectId] = useState<string>(
     () => searchParams.get("project") ?? "",
@@ -87,12 +88,16 @@ export function ReviewPage() {
     () => searchParams.get("batch") ?? "",
   );
 
-  const projectId = selectedProjectId || projects?.[0]?.id;
-  const { data: batchList } = useBatches(projectId ?? "", undefined);
-  const reviewBatches = useMemo(
-    () => (batchList ?? []).filter((b) => ["reviewing", "active", "annotating"].includes(b.status)),
-    [batchList],
+  // v0.7.1 B-18：批次树数据来自 reviewer dashboard 聚合（已扩展为「reviewing 或 review_tasks>0」）。
+  const { data: reviewerStats } = useReviewerStats();
+  const sidebarBatches: ReviewingBatchItem[] = reviewerStats?.reviewing_batches ?? [];
+
+  const selectedBatch = useMemo(
+    () => sidebarBatches.find((b) => b.batch_id === selectedBatchId) ?? null,
+    [sidebarBatches, selectedBatchId],
   );
+  // 选中批次后 projectId 跟随；未选中走 selectedProjectId 兜底（用于「全部待审」筛选）。
+  const projectId = selectedBatch?.project_id || selectedProjectId || undefined;
   const rejectBatchMut = useRejectBatch(projectId ?? "");
 
   const taskListParams = useMemo(
@@ -107,6 +112,19 @@ export function ReviewPage() {
 
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [rejectingIds, setRejectingIds] = useState<string[] | null>(null);
+
+  const handleSelectBatch = (b: ReviewingBatchItem | null) => {
+    if (!b) {
+      setSelectedBatchId("");
+      setSelectedProjectId("");
+      setSearchParams({});
+    } else {
+      setSelectedBatchId(b.batch_id);
+      setSelectedProjectId(b.project_id);
+      setSearchParams({ project: b.project_id, batch: b.batch_id });
+    }
+    setCheckedIds(new Set());
+  };
 
   const openTaskId = searchParams.get("taskId");
   const openTaskIdx = useMemo(
@@ -207,49 +225,58 @@ export function ReviewPage() {
   };
 
   return (
-    <div style={{ padding: "24px 28px", maxWidth: 1100 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>质检审核</h1>
-          <p style={{ fontSize: 13, color: "var(--color-fg-muted)", margin: "4px 0 0" }}>
-            点击行可在右侧画布预览；多选可批量通过 / 退回
-          </p>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "300px 1fr",
+        gap: 16,
+        padding: "20px 24px",
+        maxWidth: 1480,
+        height: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      <aside
+        style={{
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius-md)",
+          background: "var(--color-bg-elev)",
+          overflow: "auto",
+          alignSelf: "stretch",
+          maxHeight: "calc(100vh - 80px)",
+        }}
+      >
+        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--color-border)" }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>项目 · 批次</div>
+          <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+            按项目分组的待审核批次
+          </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>项目:</span>
-          <select
-            value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-            style={{
-              padding: "5px 10px", borderRadius: "var(--radius-md)",
-              border: "1px solid var(--color-border)", fontSize: 12,
-              background: "var(--color-bg-elev)", color: "var(--color-fg)",
-            }}
-          >
-            <option value="">全部项目</option>
-            {(projects ?? []).map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          {reviewBatches.length > 0 && (
-            <>
-              <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>批次:</span>
-              <select
-                value={selectedBatchId}
-                onChange={(e) => setSelectedBatchId(e.target.value)}
-                style={{
-                  padding: "5px 10px", borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--color-border)", fontSize: 12,
-                  background: "var(--color-bg-elev)", color: "var(--color-fg)",
-                }}
-              >
-                <option value="">全部批次</option>
-                {reviewBatches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name} ({b.review_tasks})</option>
-                ))}
-              </select>
-            </>
-          )}
+        <ReviewSidebar
+          batches={sidebarBatches}
+          selectedBatchId={selectedBatchId}
+          onSelect={handleSelectBatch}
+        />
+      </aside>
+
+      <section style={{ minWidth: 0, overflow: "auto", maxHeight: "calc(100vh - 80px)" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16, gap: 16 }}>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>
+              {selectedBatch ? selectedBatch.batch_name : "质检审核"}
+            </h1>
+            <p style={{ fontSize: 13, color: "var(--color-fg-muted)", margin: "4px 0 0" }}>
+              {selectedBatch ? (
+                <>
+                  <span className="mono" style={{ color: "var(--color-accent)" }}>{selectedBatch.batch_display_id}</span>
+                  <span> · {selectedBatch.project_name}</span>
+                  <span> · 共 {selectedBatch.total_tasks} 任务 · {selectedBatch.review_tasks} 待审 · {selectedBatch.completed_tasks} 已通过</span>
+                </>
+              ) : (
+                <>左侧选择批次开始审核；点击行可在右侧画布预览，多选支持批量通过 / 退回</>
+              )}
+            </p>
+          </div>
           {selectedBatchId && (
             <Button
               size="sm"
@@ -271,58 +298,60 @@ export function ReviewPage() {
             </Button>
           )}
         </div>
-      </div>
 
-      {isLoading ? (
-        <div style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>加载中...</div>
-      ) : tasks.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 60, color: "var(--color-fg-subtle)" }}>
-          <Icon name="check" size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
-          <div style={{ fontSize: 14 }}>暂无待审核任务</div>
-        </div>
-      ) : (
-        <>
-          <div
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              fontSize: 12, color: "var(--color-fg-muted)", marginBottom: 12,
-              padding: "8px 12px",
-              background: checkedIds.size > 0 ? "var(--color-accent-soft)" : "var(--color-bg-elev)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-            }}
-          >
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={checkedIds.size > 0 && checkedIds.size === tasks.length}
-                onChange={toggleAll}
-                style={{ accentColor: "var(--color-accent)" }}
-              />
-              <span>{checkedIds.size > 0 ? `已选 ${checkedIds.size}/${tasks.length}` : `共 ${tasks.length} 个待审核任务`}</span>
-            </label>
-            {checkedIds.size > 0 && (
-              <div style={{ display: "flex", gap: 6 }}>
-                <Button variant="primary" size="sm" onClick={runBatchApprove}>
-                  <Icon name="check" size={11} />批量通过 ({checkedIds.size})
-                </Button>
-                <Button variant="danger" size="sm" onClick={() => setRejectingIds([...checkedIds])}>
-                  <Icon name="x" size={11} />批量退回 ({checkedIds.size})
-                </Button>
-              </div>
-            )}
+        {isLoading ? (
+          <div style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>加载中...</div>
+        ) : tasks.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 60, color: "var(--color-fg-subtle)" }}>
+            <Icon name="check" size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
+            <div style={{ fontSize: 14 }}>
+              {selectedBatchId ? "该批次暂无待审核任务" : "暂无待审核任务"}
+            </div>
           </div>
-          {tasks.map((t) => (
-            <TaskRow
-              key={t.id}
-              task={t}
-              checked={checkedIds.has(t.id)}
-              onToggle={() => toggleChecked(t.id)}
-              onOpen={() => openTask(t.id)}
-            />
-          ))}
-        </>
-      )}
+        ) : (
+          <>
+            <div
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                fontSize: 12, color: "var(--color-fg-muted)", marginBottom: 12,
+                padding: "8px 12px",
+                background: checkedIds.size > 0 ? "var(--color-accent-soft)" : "var(--color-bg-elev)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+              }}
+            >
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={checkedIds.size > 0 && checkedIds.size === tasks.length}
+                  onChange={toggleAll}
+                  style={{ accentColor: "var(--color-accent)" }}
+                />
+                <span>{checkedIds.size > 0 ? `已选 ${checkedIds.size}/${tasks.length}` : `共 ${tasks.length} 个待审核任务`}</span>
+              </label>
+              {checkedIds.size > 0 && (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <Button variant="primary" size="sm" onClick={runBatchApprove}>
+                    <Icon name="check" size={11} />批量通过 ({checkedIds.size})
+                  </Button>
+                  <Button variant="danger" size="sm" onClick={() => setRejectingIds([...checkedIds])}>
+                    <Icon name="x" size={11} />批量退回 ({checkedIds.size})
+                  </Button>
+                </div>
+              )}
+            </div>
+            {tasks.map((t) => (
+              <TaskRow
+                key={t.id}
+                task={t}
+                checked={checkedIds.has(t.id)}
+                onToggle={() => toggleChecked(t.id)}
+                onOpen={() => openTask(t.id)}
+              />
+            ))}
+          </>
+        )}
+      </section>
 
       {openTaskId && (
         <>

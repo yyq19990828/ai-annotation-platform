@@ -76,3 +76,25 @@ class AnnotatorDashboardStats(BaseModel):
     total_completed: int
     personal_accuracy: float
     daily_counts: list[int]
+
+
+class MyBatchItem(BaseModel):
+    """v0.7.1 B-17 · 标注员视角的批次卡片：自己被分派的、状态为
+    active / annotating / rejected / reviewing 的批次。"""
+    batch_id: str
+    batch_display_id: str
+    batch_name: str
+    project_id: str
+    project_name: str
+    status: str
+    total_tasks: int
+    completed_tasks: int
+    review_tasks: int
+    approved_tasks: int
+    rejected_tasks: int
+    progress_pct: float
+    review_feedback: str | None = None
+    reviewed_at: str | None = None
+
+    class Config:
+        from_attributes = True

@@ -66,10 +66,28 @@ export interface AnnotatorDashboardStats {
   daily_counts: number[];
 }
 
+export interface MyBatchItem {
+  batch_id: string;
+  batch_display_id: string;
+  batch_name: string;
+  project_id: string;
+  project_name: string;
+  status: string;
+  total_tasks: number;
+  completed_tasks: number;
+  review_tasks: number;
+  approved_tasks: number;
+  rejected_tasks: number;
+  progress_pct: number;
+  review_feedback: string | null;
+  reviewed_at: string | null;
+}
+
 export const dashboardApi = {
   getAdminStats: () => apiClient.get<AdminDashboardStats>("/dashboard/admin"),
   getReviewerStats: () => apiClient.get<ReviewerDashboardStats>("/dashboard/reviewer"),
   getAnnotatorStats: () => apiClient.get<AnnotatorDashboardStats>("/dashboard/annotator"),
+  getMyBatches: () => apiClient.get<MyBatchItem[]>("/dashboard/annotator/batches"),
   getMyRecentReviews: (limit = 20) =>
     apiClient.get<RecentReviewItem[]>(`/dashboard/me/recent-reviews?limit=${limit}`),
 };

@@ -22,6 +22,13 @@ export function useAnnotatorStats() {
   });
 }
 
+export function useMyBatches() {
+  return useQuery({
+    queryKey: ["dashboard", "annotator", "batches"],
+    queryFn: dashboardApi.getMyBatches,
+  });
+}
+
 export function useMyRecentReviews(limit = 20) {
   return useQuery({
     queryKey: ["dashboard", "me-recent-reviews", limit],

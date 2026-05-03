@@ -176,12 +176,20 @@ export function TaskQueuePanel({
               fontFamily: "inherit",
             }}
           >
-            <option value="">全部批次</option>
-            {batches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name} ({b.completed_tasks}/{b.total_tasks})
-              </option>
-            ))}
+            <option value="">全部批次（{batches.length}）</option>
+            {batches.map((b) => {
+              const statusTag =
+                b.status === "annotating" ? "标注中"
+                : b.status === "active" ? "未开始"
+                : b.status === "rejected" ? "已驳回"
+                : b.status === "draft" ? "草稿"
+                : b.status;
+              return (
+                <option key={b.id} value={b.id}>
+                  {b.name} · {statusTag} ({b.completed_tasks}/{b.total_tasks})
+                </option>
+              );
+            })}
           </select>
         </div>
       )}
@@ -207,10 +215,45 @@ export function TaskQueuePanel({
         </div>
       )}
 
+      {/* v0.7.1 B-15：非 owner 视角且未分到批次 → 显式提示，避免误以为「列表无尽，但只看见 100」 */}
+      {!isOwner && (!batches || batches.length === 0) && (
+        <div
+          style={{
+            margin: "6px 14px 0",
+            padding: "8px 10px",
+            border: "1px dashed var(--color-border)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--color-bg)",
+            fontSize: 11,
+            color: "var(--color-fg-muted)",
+          }}
+        >
+          暂未被分派到批次 · 联系项目管理员分配
+        </div>
+      )}
+
       <div style={{ padding: "10px 14px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontSize: 12, fontWeight: 600 }}>任务队列</div>
-        <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
-          {taskIdx + 1} / {totalCount ?? tasks.length}
+        <div style={{ fontSize: 12, fontWeight: 600 }}>
+          任务队列
+          {selectedBatchId && batches && (
+            <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-fg-subtle)", marginLeft: 6 }}>
+              · 当前批次
+            </span>
+          )}
+        </div>
+        <span
+          className="mono"
+          style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}
+          title={
+            hasNextPage
+              ? `已加载 ${tasks.length} / 共 ${totalCount ?? tasks.length}（滚动加载更多）`
+              : `共 ${totalCount ?? tasks.length}`
+          }
+        >
+          {taskIdx + 1} / {tasks.length}
+          {totalCount != null && totalCount > tasks.length && (
+            <span style={{ opacity: 0.7 }}> · 共 {totalCount}</span>
+          )}
         </span>
       </div>
 

@@ -27,6 +27,9 @@ const UsersPage = lazy(() =>
 const ReviewPage = lazy(() =>
   import("@/pages/Review/ReviewPage").then((m) => ({ default: m.ReviewPage }))
 );
+const AnnotatePage = lazy(() =>
+  import("@/pages/Annotate/AnnotatePage").then((m) => ({ default: m.AnnotatePage }))
+);
 const DatasetsPage = lazy(() =>
   import("@/pages/Datasets/DatasetsPage").then((m) => ({ default: m.DatasetsPage }))
 );
@@ -229,6 +232,14 @@ export function App() {
           element={
             <RequirePagePermission pageKey="review">
               <ReviewPage />
+            </RequirePagePermission>
+          }
+        />
+        <Route
+          path="/annotate"
+          element={
+            <RequirePagePermission pageKey="annotate">
+              <AnnotatePage />
             </RequirePagePermission>
           }
         />

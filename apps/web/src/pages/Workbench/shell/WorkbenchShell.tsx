@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -85,7 +85,10 @@ export function WorkbenchShell() {
   const aiModel = currentProject?.ai_model ?? "GroundingDINO + SAM";
 
   const meUserId = useAuthStore((s) => s.user?.id);
-  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  // v0.7.1 B-17：支持 /annotate?batch=<id> 深链（从 dashboard「我的批次」跳过来）
+  const [searchParams] = useSearchParams();
+  const initialBatchId = searchParams.get("batch");
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(initialBatchId);
   const { data: batchList } = useBatches(projectId ?? "", undefined);
   const isOwner = useIsProjectOwner(currentProject ?? null);
   const activeBatches = useMemo(() => {
@@ -135,11 +138,16 @@ export function WorkbenchShell() {
   const imageWidth = task?.image_width ?? null;
   const imageHeight = task?.image_height ?? null;
 
+  // v0.7.1 · 支持 /annotate 深链 ?batch=&task= 自动选中任务
+  const initialTaskId = searchParams.get("task");
   useEffect(() => {
-    if (tasks.length > 0 && !s.currentTaskId) {
+    if (tasks.length === 0 || s.currentTaskId) return;
+    if (initialTaskId && tasks.some((t) => t.id === initialTaskId)) {
+      s.setCurrentTaskId(initialTaskId);
+    } else {
       s.setCurrentTaskId(tasks[0].id);
     }
-  }, [tasks, s.currentTaskId]);
+  }, [tasks, s.currentTaskId, initialTaskId]);
 
   useEffect(() => {
     // 默认选最近使用过的类（如果该项目存在），否则取首个
