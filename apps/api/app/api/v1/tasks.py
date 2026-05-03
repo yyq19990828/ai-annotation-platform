@@ -18,8 +18,14 @@ from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
 from app.services.prediction import PredictionService
 from app.services.task_lock import TaskLockService
-from app.services.scheduler import get_next_task
+from app.services.scheduler import (
+    get_next_task,
+    is_privileged_for_project,
+    batch_visibility_clause,
+    WORKBENCH_VISIBLE_BATCH_STATUSES,
+)
 from app.services.storage import storage_service
+from app.db.models.task_batch import TaskBatch
 
 router = APIRouter()
 
@@ -43,6 +49,29 @@ async def _load_task_or_404(db: AsyncSession, task_id: uuid.UUID) -> Task:
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None:
+    """B-16: 服务端强制 batch 可见性。super_admin / 项目 owner 越权放行；
+    其他角色必须 task 所在 batch 在 assigned_user_ids 中（或批次未分派）。
+    无 batch 的孤儿任务对非特权用户不可见。
+    """
+    from app.db.models.project import Project
+    project = await db.get(Project, task.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if is_privileged_for_project(user, project):
+        return
+    if task.batch_id is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    batch = await db.get(TaskBatch, task.batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if batch.status not in WORKBENCH_VISIBLE_BATCH_STATUSES:
+        raise HTTPException(status_code=404, detail="Task not found")
+    assigned = batch.assigned_user_ids or []
+    if assigned and str(user.id) not in [str(x) for x in assigned]:
+        raise HTTPException(status_code=404, detail="Task not found")
 
 
 def _encode_task_cursor(created_at, task_id: uuid.UUID) -> str:
@@ -70,9 +99,16 @@ async def list_tasks(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    await assert_project_visible(project_id, db, user)
+    project = await assert_project_visible(project_id, db, user)
     q = select(Task).where(Task.project_id == project_id)
     count_q = select(func.count()).select_from(Task).where(Task.project_id == project_id)
+
+    # B-16: 非特权用户在工作台列出任务时只能看见 batch 处于 active / annotating
+    # 且自己在 assigned_user_ids 中（或批次未分派）。无 batch 的孤儿对非特权不可见。
+    if not is_privileged_for_project(user, project):
+        q = q.join(TaskBatch, Task.batch_id == TaskBatch.id).where(batch_visibility_clause(user))
+        count_q = count_q.join(TaskBatch, Task.batch_id == TaskBatch.id).where(batch_visibility_clause(user))
+
     if status:
         q = q.where(Task.status == status)
         count_q = count_q.where(Task.status == status)
@@ -133,9 +169,8 @@ async def get_task(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    task = await db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
     w, h, thumb, bh = await _attach_dimensions(db, task)
     return _task_with_url(task, w, h, thumb, bh)
 
@@ -146,6 +181,8 @@ async def get_annotations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
     svc = AnnotationService(db)
     return await svc.list_by_task(task_id)
 
@@ -281,6 +318,8 @@ async def get_predictions(
     返回该任务的预测。每个 Prediction.result 内含多个 shape；当 limit 设定时，
     按 shape 置信度 desc 跨 Prediction 排序、截取 [offset, offset+limit]，再回到原 Prediction 容器。
     """
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
     svc = PredictionService(db)
     predictions = await svc.list_by_task(task_id, model_version=model_version)
 

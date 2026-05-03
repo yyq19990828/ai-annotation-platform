@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import select, func, or_, cast
+from sqlalchemy import select, func, or_, and_, cast
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,36 @@ from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.user import User
 from app.services.task_lock import TaskLockService
+
+
+def is_privileged_for_project(user: User, project: Project) -> bool:
+    """super_admin 或项目 owner 可越权看所有 batch；其他角色受 batch 可见性约束。"""
+    return user.role == UserRole.SUPER_ADMIN or project.owner_id == user.id
+
+
+# 非特权用户只能看到「已发布到工作台」的 batch（draft / archived 等不可见）。
+# 与 scheduler.candidates 的 TaskBatch.status.in_(...) 一致。
+WORKBENCH_VISIBLE_BATCH_STATUSES = ["active", "annotating"]
+
+
+def batch_visibility_clause(user: User):
+    """返回应用到 TaskBatch 的可见性 WHERE 子句：batch 处于工作台可见状态
+    且（批次未分派 或 当前用户在 assigned_user_ids 中）。
+
+    调用方需自行 JOIN TaskBatch。
+    """
+    user_id_str = str(user.id)
+    return and_(
+        TaskBatch.status.in_(WORKBENCH_VISIBLE_BATCH_STATUSES),
+        or_(
+            TaskBatch.assigned_user_ids == cast([], JSONB),
+            TaskBatch.assigned_user_ids.contains(cast([user_id_str], JSONB)),
+        ),
+    )
+
+
+# 兼容别名（v0.6.10 改名）。如外部调用方未更新可继续工作。
+assigned_user_ids_clause = batch_visibility_clause
 
 
 async def get_next_task(
@@ -69,15 +99,8 @@ async def get_next_task(
 
     # Assignment filtering: super_admin / 项目 owner 越权放行（可代标注员补刀），
     # 其他角色无论是否显式指定 batch_id，都必须命中 assigned_user_ids（或批次未分派）。
-    is_privileged = user.role == UserRole.SUPER_ADMIN or project.owner_id == user_id
-    if not is_privileged:
-        user_id_str = str(user_id)
-        candidates = candidates.where(
-            or_(
-                TaskBatch.assigned_user_ids == cast([], JSONB),
-                TaskBatch.assigned_user_ids.contains(cast([user_id_str], JSONB)),
-            )
-        )
+    if not is_privileged_for_project(user, project):
+        candidates = candidates.where(assigned_user_ids_clause(user))
 
     # 4. Multi-annotator overlap
     if project.maximum_annotations > 1:

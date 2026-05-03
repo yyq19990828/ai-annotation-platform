@@ -9,6 +9,65 @@
 
 ---
 
+## [0.6.10-hotfix] - 2026-05-03
+
+> 标注员反馈 B-16「分派批次的 BUG —— 给当前标注员安排了批次，但他仍然能看见全量数据」。根因是工作台任务可见性只在前端过滤，后端只看 `project_id`，标注员选「全部批次」或直接知道任务 id 就能绕过。同时调研定位「批次状态机重设计」epic（详见 ROADMAP）。
+
+### B-16 修复 · 服务端强制 batch 可见性
+
+**症状**：P-4 项目 10 个批次（1 个 active 分派给标注员，9 个 draft 未分派），标注员工作台显示 1206 任务（全量），应为 120（仅自己 active 批次内）。
+
+**根因**：
+1. `GET /tasks?project_id=...`、`GET /tasks/{id}`、`/annotations`、`/predictions` 都只看 `project_id`，**没有 batch 可见性检查**。前端 `WorkbenchShell.activeBatches` 过滤只决定下拉显示哪些 batch，但 API 返回的是项目全量。
+2. `next_task` 调度器（`scheduler.py:62, 71-80`）有正确的 batch 过滤（`status IN ('active','annotating')` + `assigned_user_ids` 包含自己或为空），是唯一服务端强制的端点。
+
+**修复**（`v0.6.10-hotfix` 第一版）：把 scheduler 的逻辑抽成两个 helper：
+- `is_privileged_for_project(user, project)` — super_admin 或项目 owner 越权放行
+- `assigned_user_ids_clause(user)` — 仅 `assigned_user_ids` 检查
+
+并在 `list_tasks` JOIN TaskBatch 强制；`_assert_task_visible` 在 `get_task` / `get_annotations` / `get_predictions` 4 个读路径执行。
+
+**第二版修复**：第一版抄 scheduler 时漏了 `TaskBatch.status IN ('active','annotating')` 限制，导致 draft 批次（`status=draft + assigned_user_ids=[]`）仍被当成「开放标注池」可见 → P-4 仍暴露 1206 任务。把可见性合并成单一子句：
+```python
+batch_visibility_clause = TaskBatch.status IN ('active','annotating')
+                          AND (assigned_user_ids = [] OR contains [self])
+```
+重命名 `assigned_user_ids_clause` → `batch_visibility_clause`（保留兼容别名）。
+
+**生产 DB 实测**：标注员对 P-4 的可见任务 1206 → 120（仅 BT-13 active+assigned），符合预期。
+
+### 关键修改
+
+| 文件 | 改动 |
+| --- | --- |
+| `apps/api/app/services/scheduler.py` | 抽 `is_privileged_for_project` + `batch_visibility_clause` + `WORKBENCH_VISIBLE_BATCH_STATUSES = ['active','annotating']`；scheduler 自身改用 helper |
+| `apps/api/app/api/v1/tasks.py` | `list_tasks` 加 JOIN TaskBatch + 可见性 WHERE；`_assert_task_visible` helper 应用到 `get_task` / `get_annotations` / `get_predictions`；非特权用户 + 孤儿任务（batch_id IS NULL）一律 404 隐藏 |
+| `apps/api/tests/test_task_batch_visibility.py` | 新建 6 例：列任务过滤 / 跨批次 GET 404 / 自己批次 200 / super_admin 全见 / 未分派 active 批次成员可见 / draft 批次对标注员不可见（P-4 复现） |
+
+### ROADMAP 新增 · 批次状态机重设计 epic
+
+调研发现的 8 项相关坑写入 ROADMAP「批次状态机重设计（v0.6.10 调研，待立项）」专题章节。**3 大头号**（按生产体感影响排序）：
+
+1. **批次级 review UI + transition 鉴权全缺**：`PATCH /batches/{id}/transition` 无鉴权（任何项目成员能任意推态）；BatchesSection 缺「整批提交质检 / 批次通过 / 批次驳回」按钮，标注员 / reviewer 没有批次级操作入口
+2. **reviewer 在 reviewing 批次彻底看不到任务**：`WORKBENCH_VISIBLE_BATCH_STATUSES` 把 reviewer 也挡住，标注员提交后 reviewer 任务凭空消失，UX 断层
+3. **`reject_batch` 数据语义未决**：当前 `task.status=pending + is_labeled=false` 但**未清 annotations 表**，UI/DB 状态不一致；UI 入场前必须先决断软重置 vs 硬重置方案
+
+详见 ROADMAP `#### 批次状态机重设计` 节。
+
+### 测试
+
+- `tests/test_task_batch_visibility.py` 6 例
+- 全套 82 → 88 例通过；前端 tsc 0 errors
+
+### B-16 数据库标记
+
+```bash
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "UPDATE bug_reports SET status='fixed', fixed_in_version='v0.6.10' WHERE display_id='B-16';"
+```
+
+---
+
 ## [0.6.9] - 2026-05-03
 
 > BUG 反馈机制从「单向漏斗」升级为「双向闭环 + 实时通知」。两路并进：A · 反馈闭环（评论双向 + 自动重开）；B · 通知中心基座（持久化表 + Redis Pub/Sub WS 推送，BUG 反馈是首位消费方，后续 audit / 任务分派可挂入）。后端 75→82 例（+7 通知 + 6 反馈闭环 = 13 新例，部分被原 6 例计入）。

@@ -46,6 +46,59 @@
 #### Annotator / Reviewer 工作台
 - **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好。
 
+#### 批次状态机重设计（v0.6.10 调研，待立项）
+
+> v0.6.10 修 B-16 时摸到的整片体感：批次状态机语法到位（`apps/api/app/services/batch.py:22-29 VALID_TRANSITIONS`），但**鉴权不严、UI 不全、reviewer 视角断层、reject 误伤数据**。建议作为独立 epic 立项（v0.6.x 末或 v0.7.0），分项见下。
+
+- **`PATCH /batches/{id}/transition` 鉴权缺失**（`apps/api/app/api/v1/batches.py:125`）：当前仅 `require_project_visible`，**任何项目成员都能任意推动状态**（被 `VALID_TRANSITIONS` 语法限制不能跳态，但仍可让标注员手工把 annotating → reviewing 或 reviewing → approved）。建议按转换分别鉴权：
+  - draft → active：项目 owner / super_admin
+  - annotating → reviewing：标注员（仅自己被分派的批次）+ owner（"整批提交质检"）
+  - reviewing → approved / rejected：reviewer + owner（"批次通过 / 驳回"）
+  - any → archived：owner / super_admin
+  - active → annotating 仍由 `check_auto_transitions` 自动驱动
+  优先级 **P1**（安全 + 体感）。
+
+- **reviewer 视角断层**（`apps/api/app/services/scheduler.py:26 WORKBENCH_VISIBLE_BATCH_STATUSES = ['active','annotating']`）：v0.6.10 服务端可见性 helper 把 reviewer 也挡在 reviewing 批次外 —— 标注员把批次提交后，reviewer 在 workbench `/projects/:id/annotate` 路径上看到任务凭空消失。当前依赖 reviewer 走独立 `/review` 路径绕开。修复：
+  ① 拆 `REVIEWER_VISIBLE_BATCH_STATUSES = ['active','annotating','reviewing']`，在 `batch_visibility_clause` 内按 role 分支
+  ② review 路由复用同一可见性 helper 但用 reviewer 集合（避免一致性漂移）
+  ③ rejected 状态对**被分派的标注员**也应可见（特例放行）—— 让标注员看到 reviewer 留言并配合「重新激活」流程
+  优先级 **P1**（reviewer 工作流断点）。
+
+- **批次级 review UI 全缺**（`apps/web/src/pages/Projects/sections/BatchesSection.tsx:237-261`）：当前只有 ▶ 激活 / ↻ 重激活 / 🗄 归档 / 🗑 删除四个按钮。缺：
+  - **「整批提交质检」**（annotating → reviewing 手动入口）：当前只能等 auto-transition 全部完成才推进，标注员主动想交也没按钮
+  - **「批次通过」**（reviewing → approved）：当前必须直调 API
+  - **「批次驳回」**（reviewing → rejected）：`POST /batches/{id}/reject` 端点存在但无 UI 入口
+  - **批次状态看板**：把 7 态画成卡片墙列，所有批次拖拽流转。比表格直观，与「通知 / 评论」一起作为 owner 治理界面
+  优先级 **P1**（核心工作流断层）。
+
+- **`reject_batch` 误伤标注成果**（`apps/api/app/services/batch.py:407-410`）：当前实现把批次内所有 task 重置 `status=pending` + `is_labeled=false`，但**未清除 annotations 表数据**。后果：标注员重进任务会看到自己之前画的框（is_labeled 标记被重置但 annotations 记录还在），UI 与 DB 状态不一致。两条路线：
+  - **方案 A · 软重置（推荐）**：只 `task.status = pending`，不动 `is_labeled` 与 annotations，仅给批次贴 `rejected` 标签 + 写 `review_feedback`；标注员重进任务看到 reviewer 留言后自决改不改
+  - **方案 B · 硬重置 + 数据清理**：保留 `is_labeled = false`，同时 `UPDATE annotations SET is_active = false WHERE task_id IN ...`，并在 audit_log 留 review_feedback 给标注员看
+  当前生产几乎没人触发 reject_batch（API 无 UI 入口），数据风险尚未暴露；**reject 入 UI 前必须先拍板方案**，否则上线即灾难。优先级 **P1**（先决条件）。
+
+- **0 task 批次死锁**（`apps/api/app/services/batch.py:370-390`）：`check_auto_transitions` 没处理空批次。owner 创建批次但未导任务时状态永远停在 active，批次列表越积越多。建议：① 入口先 query `total_tasks`；② 空批次直接 → reviewing（无需审核 → approved）或 draft 不允许激活（前端已 `disabled if assigned_user_ids.length === 0`，但未检 task 数）。优先级 **P3**（罕见）。
+
+- **`on_batch_approved` hook 占位**（`apps/api/app/services/batch.py:420-421`）：当前 `logger.info(...)` no-op，注释预留 active learning。落地：调度回 ML backend 训练队列，把已通过批次作为新 round 的 ground truth。需要先把 ML backend / 训练队列基座建好（A · AI/模型 区已列）。优先级 **P3**（依赖前置）。
+
+- **状态语义在前端展示**（`BatchesSection.tsx` + `WorkbenchShell.tsx` + 各 dashboard）：reviewing / approved / rejected / archived 对非特权用户都看不到但语义不同。建议：
+  ① owner 批次表行用颜色 / 图标区分 7 态（当前几乎只有文案）
+  ② 标注员 dashboard 加「我的批次」分组显示 active / 已交质检（reviewing） / 已通过 / 被驳回（rejected → 反馈 + 重做提示）
+  ③ rejected 批次的反馈通过 v0.6.9 通知中心推给被分派标注员（接入点）
+  优先级 **P2**（rejected 反馈给标注员是体感核心）。
+
+- **测试覆盖洞**（`apps/api/tests/`）：当前仅 `test_task_batch_visibility.py` 6 例覆盖列任务路径。新建 `test_batch_lifecycle.py` 覆盖：
+  ① 各角色调 `/transition` 端点的 401/403 矩阵（核心：标注员不能直推 approved）
+  ② `reject_batch` 后 annotations 状态的真实表现（暴露「方案 A vs B」分歧）
+  ③ 0-task 批次 auto_transitions 行为
+  ④ 标注员 withdraw 触发 reviewing → annotating 反推（已有正确实现，需固化）
+  ⑤ reviewer 在 reviewing 批次的可见性
+  优先级 **P2**。
+
+> **三大头号坑**（按对真实生产体感的影响排序）：
+> 1. 批次级 review UI 全缺 + transition 鉴权全缺 —— 核心工作流断层 + 安全洞同时
+> 2. reviewer 在 reviewing 批次彻底看不到任务 —— 中断 review 工作流
+> 3. reject_batch 数据语义未决 —— 引 UI 之前必须先决断方案
+
 #### v0.6.x 后续观察 / 下版候选
 
 > v0.6.7 + hotfix 收口了项目管理员 4 项 BUG（B-10~B-13）；v0.6.8（B-13/B-14/B-15）；v0.6.9（A · BUG 反馈闭环 + B · 通知中心基座）。剩余推迟项与写时新点：
@@ -180,6 +233,7 @@
 
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
+| **P1** | 批次状态机重设计（transition 鉴权 + reviewer 可见 + 批次 review UI + reject 数据方案） | v0.6.10 调研定位 4 个相互关联的坑，单独成 epic |
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
 | **P1** | Wizard step 2/3 升级到完整 ClassesSection / AttributesSection 编辑器 | v0.6.7 推迟，向导仍存「半残」感 |
