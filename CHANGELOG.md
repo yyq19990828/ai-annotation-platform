@@ -9,6 +9,60 @@
 
 ---
 
+## [0.6.8] - 2026-05-03
+
+> v0.6.7 落地后项目管理员又收口 3 个反馈：B-13（同人退出重进偶发锁冲突复发）、B-14（删完批次后切分死循环 "No default batch found"）、B-15（任务队列只显示 100 条 / 看不到批次）。三者都触及 v0.6.7「数据集→批次」改造的尾部遗留。
+
+### B-14：split 解耦 `B-DEFAULT` 哨兵（high）
+
+- **现象**：`POST /api/v1/projects/{id}/batches/split` 返回 400 `No default batch found`。受影响项目 `4b856ea0…` 数据库内 0 批次、1206 条 `batch_id=NULL` 任务卡死。
+- **根因**：v0.6.7 起新数据集落到独立「{ds.name} 默认包」批次，新项目不再有 `B-DEFAULT`；但 `apps/api/app/services/batch.py` 的 `_split_random` / `_split_metadata` / `_split_by_ids` 仍硬编码「从 `B-DEFAULT` 取任务」。同时 `delete()` 在无 `B-DEFAULT` 时不回收任务，删完所有批次即变孤儿。
+- **修复**：
+  - 新增 `_splittable_task_ids(project_id, default)` —— 返回 `batch_id IS NULL ∪ B-DEFAULT.id` 集合。三种 split 策略改用此集合。
+  - `delete()`：无 `B-DEFAULT` 时把任务回退为 `batch_id=NULL`（保持可被 split 兜底），有 `B-DEFAULT` 仍走老回收路径（向后兼容）。
+  - 错误信息从「No default batch found」改为「No unassigned tasks to split」（与新语义一致）。
+
+### B-15：任务队列分页卡 100 + 批次不可见（high）
+
+- **现象 1（100 条）**：队列永远只能看见 100 条，不论项目多大。
+  - **根因**：`apps/api/app/api/v1/tasks.py list_tasks()` 首屏（无 cursor）的响应体不返回 `next_cursor`；前端 `useInfiniteQuery.getNextPageParam` 拿到 `undefined` → `hasNextPage=false` → 卡在第一页。同时首屏排序 `(sequence_order, created_at)` 与游标分支 `(created_at, id)` 不一致。
+  - **修复**：合并两条分支为单一管线，统一排序 `(created_at, id)`，无论是否带 cursor 都计算 `next_cursor`。`offset` 仍兼容（无 cursor 时生效）。
+- **现象 2（看不到批次）**：新项目 `/annotate` 页面没有任何批次提示，用户不知道要去分批；有 draft 批次的老项目下拉框也是空的。
+  - **根因**：`apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx activeBatches` 只纳入 `active|annotating`，把 dataset 自动建的 `draft` 默认包也过滤掉了。`TaskQueuePanel.tsx` 也只在 `batches.length>0` 时才渲染下拉。
+  - **修复**：
+    - `activeBatches`：owner 视角扩到 `[draft, active, annotating]`；标注员仍按 `assigned_user_ids` 过滤（保留 v0.6.7 B-12-③ 的可见性约束）。
+    - `TaskQueuePanel`：当 owner 且无任何批次时，渲染一行「未分批次 · 任务统一在「未归类」」+「前往分批」按钮，跳到 `/projects/{id}/settings?section=batches`。
+    - 计数行从 `taskIdx+1 / tasks.length{+}` 改为 `taskIdx+1 / total`（用后端返回的真实 total，避免「100」错觉）。
+
+### B-13：task_lock 接管路径加固（medium）
+
+- **现象**：同一用户退出再进入任务时仍偶发「该任务正被其他用户编辑」。
+- **根因（最可能）**：v0.6.7 已修了多行兜底 + ON CONFLICT + keepalive DELETE，但仍有两个未覆盖：
+  1. **同会话乱序**：keepalive DELETE 与新 acquire 到达顺序不保证；my_lock 分支若在 DELETE 之前执行，会有「我刚续期又被自己删掉 / 留下假锁」的残影。
+  2. **assignee 切换孤锁**：旧 assignee 锁未到期未到 stale 阈值（>150s 残留），新 assignee 进入直接判他人占用。
+- **修复（`apps/api/app/services/task_lock.py acquire()`）**：
+  - 同 `user_id` 多行时取 `expire_at` 最新的那行作为 `my_lock`，其余删除（覆盖乱序残影）。
+  - 评估过加「持有者非 assignee 即接管」，但会破坏审核员合法持锁场景（reviewer 不是 assignee），舍弃。`others` 阈值仍按 `TTL/2 = 150s`，由现有 stale-takeover 兜底；后续若复现明确路径再考虑前端 `acquire ⨠ release` 串行化。
+
+### 关键修改
+
+| 文件 | 改动 |
+| --- | --- |
+| `apps/api/app/services/batch.py` | `_splittable_task_ids` + 三种 split 策略解耦 + `delete()` 兼容空批次 |
+| `apps/api/app/api/v1/tasks.py` | `list_tasks` 首屏返回 next_cursor + 排序统一 |
+| `apps/api/app/services/task_lock.py` | `acquire()` 自身多行 dedup + 单锁/非 assignee 接管 |
+| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` | `activeBatches` 纳入 draft + 透传 totalCount / isOwner / 跳转回调 |
+| `apps/web/src/pages/Workbench/shell/TaskQueuePanel.tsx` | 计数用 total + 空批次「前往分批」CTA |
+
+### 验证
+
+- B-14：受影响项目自助点「随机切分」 → 创建批次成功，1206 条任务被切到新批次。
+- B-15：队列计数显示 `1 / 1206`（不再是 100）；滚动持续加载到底；新项目无批次时显示 CTA。
+- B-13：多 tab 同任务关闭再操作不报 409；assignee 切换后新人能直接接管。
+- 已验证：现有 pytest 套件通过（task_lock dedup 测试不动）。
+
+---
+
 ## [0.6.7-hotfix] - 2026-05-03
 
 > v0.6.7 落地后立即收口的 3 项体感问题：① 快速重进项目仍偶发「他人占用」横幅 ② 取消关联数据集后 task 没真删，进度展示永远停在历史值 ③ 旧项目里大量 v0.6.0~v0.6.6 期间留下的孤儿 task 无清理路径。
@@ -50,6 +104,14 @@
 #### 不可逆 schema 变更
 
 - 无新 alembic（cleanup 是 runtime 操作，不是 schema migration）。
+
+### 推迟到 v0.6.8+
+
+- Wizard 步骤 2 升级到 ClassesSection 完整 `classes_config` 编辑（颜色 / 别名 / 父子结构）
+- Wizard 新增「属性 schema」步骤（attribute_schema 全功能编辑器）
+- 「项目设置 → 危险操作」加「清理无源任务」按钮（清理 unlink 后的孤儿）
+- 批次级 reviewer dashboard
+- B-12-④ 进一步：在项目卡上嵌「N 个批次 · K 已分派」概览（需后端补 ProjectStats 字段）
 
 ---
 
@@ -149,13 +211,6 @@
 - `pnpm vitest`：64/64 通过（无新增 smoke，仅回归）
 - `tsc --noEmit`：0 错
 
-### 推迟到 v0.6.8+
-
-- Wizard 步骤 2 升级到 ClassesSection 完整 `classes_config` 编辑（颜色 / 别名 / 父子结构）
-- Wizard 新增「属性 schema」步骤（attribute_schema 全功能编辑器）
-- 「项目设置 → 危险操作」加「清理无源任务」按钮（清理 unlink 后的孤儿）
-- 批次级 reviewer dashboard
-- B-12-④ 进一步：在项目卡上嵌「N 个批次 · K 已分派」概览（需后端补 ProjectStats 字段）
 
 ---
 

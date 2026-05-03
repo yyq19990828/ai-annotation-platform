@@ -89,11 +89,16 @@ export function WorkbenchShell() {
   const { data: batchList } = useBatches(projectId ?? "", undefined);
   const isOwner = useIsProjectOwner(currentProject ?? null);
   const activeBatches = useMemo(() => {
-    const active = (batchList ?? []).filter((b) => ["active", "annotating"].includes(b.status));
-    // v0.6.7 B-12-③：非项目 owner / super_admin 只能看到自己被分派的批次（assigned_user_ids 包含自己）。
-    // 未分派任何成员的「draft」批次不会进入 active 列表，所以不必特判。
-    if (isOwner || !meUserId) return active;
-    return active.filter((b) => (b.assigned_user_ids ?? []).includes(meUserId));
+    // v0.6.8 B-15：owner 视角额外纳入 draft（数据集导入自动建的「{ds} 默认包」），
+    // 让管理员一进 /annotate 就能看到批次结构、不至于以为「没批次」。
+    const ownerStatuses = ["draft", "active", "annotating"];
+    const memberStatuses = ["active", "annotating"];
+    if (isOwner || !meUserId) {
+      return (batchList ?? []).filter((b) => ownerStatuses.includes(b.status));
+    }
+    return (batchList ?? [])
+      .filter((b) => memberStatuses.includes(b.status))
+      .filter((b) => (b.assigned_user_ids ?? []).includes(meUserId));
   }, [batchList, isOwner, meUserId]);
 
   const taskListParams = useMemo(
@@ -102,6 +107,7 @@ export function WorkbenchShell() {
   );
   const { data: taskListData, hasNextPage, isFetchingNextPage, fetchNextPage } = useTaskList(projectId, taskListParams);
   const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
+  const tasksTotal = taskListData?.pages[0]?.total ?? tasks.length;
 
   const s = useWorkbenchState();
   const { vp, setVp } = useViewportTransform();
@@ -645,6 +651,11 @@ export function WorkbenchShell() {
         batches={activeBatches}
         selectedBatchId={selectedBatchId}
         onSelectBatch={setSelectedBatchId}
+        totalCount={tasksTotal}
+        isOwner={isOwner}
+        onGoToBatchSettings={() => {
+          if (projectId) navigate(`/projects/${projectId}/settings?section=batches`);
+        }}
       />
 
       <ToolDock tool={s.tool} onSetTool={s.setTool} />

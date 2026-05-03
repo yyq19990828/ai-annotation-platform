@@ -6,7 +6,7 @@ import uuid
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import select, func, update, delete
+from sqlalchemy import select, func, update, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import BatchStatus
@@ -56,6 +56,19 @@ class BatchService:
             )
         )
         return result.scalar_one_or_none()
+
+    async def _splittable_task_ids(
+        self, project_id: uuid.UUID, default: TaskBatch | None,
+    ) -> list[uuid.UUID]:
+        # v0.6.8 B-14：可被 split 的「未归类任务」= batch_id IS NULL ∪ 老项目残留 B-DEFAULT 中的任务。
+        # v0.6.7 后新项目不再有 B-DEFAULT；删完批次后任务回退为 batch_id=NULL，仍能被 split。
+        conds = [Task.batch_id.is_(None)]
+        if default is not None:
+            conds.append(Task.batch_id == default.id)
+        result = await self.db.execute(
+            select(Task.id).where(Task.project_id == project_id).where(or_(*conds))
+        )
+        return [row[0] for row in result.fetchall()]
 
     # ── Mutations ──────────────────────────────────────────────────────────
 
@@ -123,6 +136,8 @@ class BatchService:
         if batch.display_id == "B-DEFAULT":
             raise HTTPException(status_code=400, detail="Cannot delete the default batch")
 
+        # v0.6.8 B-14：老项目仍走「回收到 B-DEFAULT」路径；新项目无 B-DEFAULT 时把任务回退为
+        # batch_id=NULL（成为「未归类任务」），由 split 流程兜底，避免删完所有批次后死锁。
         default = await self.get_default_batch(batch.project_id)
         if default:
             await self.db.execute(
@@ -131,6 +146,12 @@ class BatchService:
                 .values(batch_id=default.id)
             )
             await self.recalculate_counters(default.id)
+        else:
+            await self.db.execute(
+                update(Task)
+                .where(Task.batch_id == batch_id)
+                .values(batch_id=None)
+            )
 
         await self.db.execute(delete(TaskBatch).where(TaskBatch.id == batch_id))
         await self.db.flush()
@@ -162,15 +183,9 @@ class BatchService:
             raise HTTPException(status_code=400, detail="n_batches is required for random strategy")
 
         default = await self.get_default_batch(project_id)
-        if not default:
-            raise HTTPException(status_code=400, detail="No default batch found")
-
-        result = await self.db.execute(
-            select(Task.id).where(Task.batch_id == default.id)
-        )
-        task_ids = [row[0] for row in result.fetchall()]
+        task_ids = await self._splittable_task_ids(project_id, default)
         if not task_ids:
-            raise HTTPException(status_code=400, detail="No tasks in default batch to split")
+            raise HTTPException(status_code=400, detail="No unassigned tasks to split")
 
         random.shuffle(task_ids)
         chunk_size = len(task_ids) // n
@@ -200,7 +215,8 @@ class BatchService:
             await self.recalculate_counters(batch.id)
             batches.append(batch)
 
-        await self.recalculate_counters(default.id)
+        if default is not None:
+            await self.recalculate_counters(default.id)
         return batches
 
     async def _split_metadata(
@@ -210,14 +226,16 @@ class BatchService:
             raise HTTPException(status_code=400, detail="metadata_key and metadata_value are required")
 
         default = await self.get_default_batch(project_id)
-        if not default:
-            raise HTTPException(status_code=400, detail="No default batch found")
-
+        # v0.6.8 B-14：metadata 过滤同样作用于「未归类 ∪ B-DEFAULT」任务集合
+        conds = [Task.batch_id.is_(None)]
+        if default is not None:
+            conds.append(Task.batch_id == default.id)
         result = await self.db.execute(
             select(Task.id)
             .join(DatasetItem, Task.dataset_item_id == DatasetItem.id)
             .where(
-                Task.batch_id == default.id,
+                Task.project_id == project_id,
+                or_(*conds),
                 DatasetItem.metadata_[data.metadata_key].astext == data.metadata_value,
             )
         )
@@ -240,7 +258,8 @@ class BatchService:
 
         await self._assign_tasks(batch.id, task_ids)
         await self.recalculate_counters(batch.id)
-        await self.recalculate_counters(default.id)
+        if default is not None:
+            await self.recalculate_counters(default.id)
         return batch
 
     async def _split_by_ids(
@@ -250,12 +269,14 @@ class BatchService:
             raise HTTPException(status_code=400, detail="item_ids is required for id_range strategy")
 
         default = await self.get_default_batch(project_id)
-        if not default:
-            raise HTTPException(status_code=400, detail="No default batch found")
-
+        # v0.6.8 B-14：id_range 同样作用于「未归类 ∪ B-DEFAULT」任务集合
+        conds = [Task.batch_id.is_(None)]
+        if default is not None:
+            conds.append(Task.batch_id == default.id)
         result = await self.db.execute(
             select(Task.id).where(
-                Task.batch_id == default.id,
+                Task.project_id == project_id,
+                or_(*conds),
                 Task.dataset_item_id.in_(data.item_ids),
             )
         )
@@ -278,7 +299,8 @@ class BatchService:
 
         await self._assign_tasks(batch.id, task_ids)
         await self.recalculate_counters(batch.id)
-        await self.recalculate_counters(default.id)
+        if default is not None:
+            await self.recalculate_counters(default.id)
         return batch
 
     # ── Task assignment ────────────────────────────────────────────────────

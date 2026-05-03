@@ -26,7 +26,11 @@ class TaskLockService:
         )
         locks = list(result.scalars().all())
 
-        my_lock = next((l for l in locks if l.user_id == user_id), None)
+        # v0.6.8 B-13：同一 user_id 下多行兜底 —— 取 expire_at 最新的那行作为 my_lock，
+        # 其余删除（应对 keepalive DELETE / acquire 乱序到达留下的残影）。
+        mine = [l for l in locks if l.user_id == user_id]
+        my_lock = max(mine, key=lambda l: l.expire_at) if mine else None
+        others = [l for l in locks if l.user_id != user_id]
         new_expire = datetime.now(timezone.utc) + timedelta(seconds=ttl or self.DEFAULT_TTL)
 
         if my_lock:
@@ -37,13 +41,18 @@ class TaskLockService:
             await self.db.flush()
             return my_lock
 
-        if locks:
+        if others:
             # v0.6.7 B-13：他人锁存在但若全部「即将过期」（last heartbeat > TTL/2 前）→ 视为悬挂残留自动接管。
             # 真活会话每 60s 心跳一次，expire_at - now ∈ [240, 300]；阈值 TTL/2 = 150s 给两次心跳容错窗。
+            #
+            # 注：v0.6.8 评估过加「持有者非任务 assignee 即接管」，但会破坏审核员合法持锁
+            # （reviewer 不是 assignee 仍要锁审核中的任务），舍弃，只保留单锁场景的更宽阈值。
             now = datetime.now(timezone.utc)
             stale_threshold = now + timedelta(seconds=self.DEFAULT_TTL // 2)
-            if all(l.expire_at < stale_threshold for l in locks):
-                for l in locks:
+
+            takeover = all(l.expire_at < stale_threshold for l in others)
+            if takeover:
+                for l in others:
                     await self.db.delete(l)
                 await self.db.flush()
             else:

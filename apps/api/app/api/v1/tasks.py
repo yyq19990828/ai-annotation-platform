@@ -83,6 +83,8 @@ async def list_tasks(
         q = q.where(Task.batch_id == batch_id)
         count_q = count_q.where(Task.batch_id == batch_id)
 
+    # v0.6.8 B-15：首屏与游标分支统一排序为 (created_at, id)，并都产出 next_cursor，
+    # 修前端 useInfiniteQuery 因首屏拿不到 next_cursor 而判定 hasNextPage=false 卡在 100 条的 BUG。
     if cursor:
         last_ts, last_id = _decode_task_cursor(cursor)
         q = q.where(
@@ -90,29 +92,22 @@ async def list_tasks(
                 Task.created_at > last_ts,
                 and_(Task.created_at == last_ts, Task.id > last_id),
             )
-        ).order_by(Task.created_at, Task.id).limit(limit)
-        tasks = list((await db.execute(q)).scalars().all())
-        total = (await db.execute(count_q)).scalar() or 0
-        dims = await _attach_dimensions_batch(db, tasks)
-        next_cursor = (
-            _encode_task_cursor(tasks[-1].created_at, tasks[-1].id)
-            if len(tasks) == limit
-            else None
-        )
-        return TaskListResponse(
-            items=[_task_with_url(t, *dims.get(t.id, (None, None, None, None))) for t in tasks],
-            total=total, limit=limit, offset=0, next_cursor=next_cursor,
         )
 
+    q = q.order_by(Task.created_at, Task.id).limit(limit)
+    if not cursor and offset:
+        q = q.offset(offset)
+    tasks = list((await db.execute(q)).scalars().all())
     total = (await db.execute(count_q)).scalar() or 0
-    result = await db.execute(q.order_by(Task.sequence_order, Task.created_at).limit(limit).offset(offset))
-    tasks = list(result.scalars().all())
     dims = await _attach_dimensions_batch(db, tasks)
+    next_cursor = (
+        _encode_task_cursor(tasks[-1].created_at, tasks[-1].id)
+        if len(tasks) == limit
+        else None
+    )
     return TaskListResponse(
         items=[_task_with_url(t, *dims.get(t.id, (None, None, None, None))) for t in tasks],
-        total=total,
-        limit=limit,
-        offset=offset,
+        total=total, limit=limit, offset=0 if cursor else offset, next_cursor=next_cursor,
     )
 
 

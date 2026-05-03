@@ -29,6 +29,9 @@ interface TaskQueuePanelProps {
   batches?: BatchResponse[];
   selectedBatchId: string | null;
   onSelectBatch?: (batchId: string | null) => void;
+  totalCount?: number;
+  isOwner?: boolean;
+  onGoToBatchSettings?: () => void;
 }
 
 const stripStyle: React.CSSProperties = {
@@ -102,6 +105,7 @@ export function TaskQueuePanel({
   hasNextPage, isFetchingNextPage, onFetchNextPage,
   onBack, onToggle, onSelectTask,
   batches, selectedBatchId, onSelectBatch,
+  totalCount, isOwner, onGoToBatchSettings,
 }: TaskQueuePanelProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -182,10 +186,31 @@ export function TaskQueuePanel({
         </div>
       )}
 
+      {/* v0.6.8 B-15：owner 视角且无任何批次时给出明确入口，避免误以为「100 条就是全部」 */}
+      {isOwner && (!batches || batches.length === 0) && onGoToBatchSettings && (
+        <div
+          style={{
+            margin: "6px 14px 0",
+            padding: "8px 10px",
+            border: "1px dashed var(--color-border)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--color-bg)",
+            fontSize: 11,
+            color: "var(--color-fg-muted)",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+          }}
+        >
+          <span>未分批次 · 任务统一在「未归类」</span>
+          <Button variant="ghost" size="sm" onClick={onGoToBatchSettings} style={{ padding: "2px 6px", fontSize: 11 }}>
+            前往分批
+          </Button>
+        </div>
+      )}
+
       <div style={{ padding: "10px 14px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 12, fontWeight: 600 }}>任务队列</div>
         <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
-          {taskIdx + 1} / {tasks.length}{hasNextPage ? "+" : ""}
+          {taskIdx + 1} / {totalCount ?? tasks.length}
         </span>
       </div>
 
