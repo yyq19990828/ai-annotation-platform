@@ -24,10 +24,20 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
     env:
       DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_test
       TEST_DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_test
       SECRET_KEY: ci-test-secret
+      REDIS_URL: redis://localhost:6379/0
       MINIO_ENDPOINT: localhost:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
@@ -63,8 +73,6 @@ jobs:
         with:
           node-version: "20"
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - name: pnpm install
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
@@ -97,8 +105,6 @@ jobs:
         with:
           node-version: "20"
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - name: pnpm install
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
