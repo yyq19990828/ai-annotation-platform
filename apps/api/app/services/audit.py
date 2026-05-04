@@ -39,6 +39,11 @@ class AuditAction(str, Enum):
     BATCH_REJECTED = "batch.rejected"
     BATCH_DELETED = "batch.deleted"
     BATCH_DISTRIBUTE_EVEN = "batch.distribute_even"
+    # v0.7.3 · 多选批量操作
+    BULK_BATCH_ARCHIVE = "batch.bulk_archive"
+    BULK_BATCH_DELETE = "batch.bulk_delete"
+    BULK_BATCH_REASSIGN = "batch.bulk_reassign"
+    BULK_BATCH_ACTIVATE = "batch.bulk_activate"
     ANNOTATION_ATTRIBUTE_CHANGE = "annotation.attribute_change"
     # v0.7.2 · annotation 编辑历史可追溯
     ANNOTATION_CREATE = "annotation.create"

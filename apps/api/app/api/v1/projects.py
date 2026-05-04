@@ -652,3 +652,57 @@ async def cleanup_orphan_tasks(
     )
     await db.commit()
     return {"deleted_tasks": orphan_count, "deleted_annotations": int(ann_count)}
+
+
+# ── v0.7.3 · 项目侧关联数据集 ────────────────────────────────────────────
+
+
+@router.get("/{project_id}/datasets")
+async def list_project_datasets(
+    project_id: uuid.UUID,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+):
+    """列出本项目已关联的所有数据集（含基础元数据 + task 数）。"""
+    from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
+    from app.db.models.task import Task
+
+    rows = (await db.execute(
+        select(Dataset, ProjectDataset.created_at.label("linked_at"))
+        .join(ProjectDataset, ProjectDataset.dataset_id == Dataset.id)
+        .where(ProjectDataset.project_id == project_id)
+        .order_by(ProjectDataset.created_at.desc())
+    )).all()
+
+    if not rows:
+        return []
+
+    ds_ids = [r[0].id for r in rows]
+    item_counts = dict(
+        (await db.execute(
+            select(DatasetItem.dataset_id, func.count())
+            .where(DatasetItem.dataset_id.in_(ds_ids))
+            .group_by(DatasetItem.dataset_id)
+        )).all()
+    )
+    task_counts = dict(
+        (await db.execute(
+            select(DatasetItem.dataset_id, func.count())
+            .join(Task, Task.dataset_item_id == DatasetItem.id)
+            .where(Task.project_id == project_id, DatasetItem.dataset_id.in_(ds_ids))
+            .group_by(DatasetItem.dataset_id)
+        )).all()
+    )
+
+    return [
+        {
+            "id": str(d.id),
+            "display_id": d.display_id,
+            "name": d.name,
+            "data_type": d.data_type,
+            "linked_at": linked_at.isoformat() if linked_at else None,
+            "items_count": int(item_counts.get(d.id, 0)),
+            "tasks_in_project": int(task_counts.get(d.id, 0)),
+        }
+        for d, linked_at in rows
+    ]

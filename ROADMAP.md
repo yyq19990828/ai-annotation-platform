@@ -19,6 +19,10 @@
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **批次相关延伸**：① 智能切批（按难度/类别/不确定度）；② 批次级 IAA / 共识合并算法；③ 不可变训练快照 + 主动学习闭环。调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
 - ~~**批次级智能分派**：BatchAssignmentModal 当前是手动多选；可加「按当前成员数量均匀分派」「按角色批量勾选」等批量动作。~~ ✅ v0.7.2 — 重构为「一 batch 一人」单值语义 + 项目级 distribute-batches 圆周分派
+- **批次状态机增补 · 二阶段**（v0.7.3 已收 3 条 owner 逆向迁移 + 4 项多选批量；以下为延后项）：
+  - `* → draft` 终极重置：把任意状态批次回退到草稿，task 全部回 pending（保留 annotation）。需要二次确认 + 强制 reason。**风险点**：approved / archived 已下游消费（导出 / 训练队列）回退后语义模糊，需要先想清「是否撤销下游引用」。
+  - `annotating → active` 暂停：项目临时叫停。**难点**：调度器（`scheduler.check_auto_transitions`）一旦看到 `in_progress` task 就会立刻把 batch 推回 `annotating`，需要同时把 in_progress task 复位到 pending（释放标注员锁）+ 引入 batch 级「admin-locked」标志阻断调度器，否则迁移做了等于没做。
+  - 批量状态迁移类（bulk-approve / bulk-reject）：v0.7.3 故意未做。reject 反馈是逐批次语义、approve 跳过逐批次审视有质检失职风险。落地前先讨论 UX。
 
 #### AI / 模型
 - **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态（`AdminDashboard.tsx:107-119`、`DashboardPage.tsx:287-291`）。

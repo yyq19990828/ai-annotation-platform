@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -13,12 +13,21 @@ import {
   useDeleteBatch,
   useTransitionBatch,
   useSplitBatches,
+  useBulkArchiveBatches,
+  useBulkDeleteBatches,
+  useBulkReassignBatches,
+  useBulkActivateBatches,
+  useUnclassifiedTaskCount,
 } from "@/hooks/useBatches";
+import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { BatchAssignmentModal } from "@/components/projects/BatchAssignmentModal";
 import { ProjectDistributeBatchesModal } from "@/components/projects/ProjectDistributeBatchesModal";
 import { RejectBatchModal } from "./RejectBatchModal";
+import { BulkReassignModal } from "./BulkReassignModal";
+import { ReverseTransitionModal, type ReverseKind } from "./ReverseTransitionModal";
+import { BatchAuditLogDrawer } from "./BatchAuditLogDrawer";
 import type { ProjectResponse } from "@/api/projects";
-import type { BatchResponse } from "@/api/batches";
+import type { BatchResponse, BulkBatchActionResponse } from "@/api/batches";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "草稿",
@@ -42,6 +51,15 @@ const STATUS_VARIANTS: Record<string, "default" | "accent" | "success" | "warnin
 
 type CreateMode = "single" | "split";
 
+type BulkActionKind = "archive" | "delete" | "reassign" | "activate";
+
+const BULK_LABEL: Record<BulkActionKind, string> = {
+  archive: "归档",
+  delete: "删除",
+  reassign: "改派",
+  activate: "激活",
+};
+
 export function BatchesSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
   const { data: batches = [], isLoading } = useBatches(project.id);
@@ -49,6 +67,13 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const deleteBatch = useDeleteBatch(project.id);
   const transitionBatch = useTransitionBatch(project.id);
   const splitBatches = useSplitBatches(project.id);
+  const bulkArchive = useBulkArchiveBatches(project.id);
+  const bulkDelete = useBulkDeleteBatches(project.id);
+  const bulkReassign = useBulkReassignBatches(project.id);
+  const bulkActivate = useBulkActivateBatches(project.id);
+  const isOwner = useIsProjectOwner(project);
+  const { data: unclassified } = useUnclassifiedTaskCount(project.id);
+  const unclassifiedCount = unclassified?.count ?? 0;
 
   const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<CreateMode>("single");
@@ -60,6 +85,122 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const [assignTarget, setAssignTarget] = useState<BatchResponse | null>(null);
   const [rejectTarget, setRejectTarget] = useState<BatchResponse | null>(null);
   const [distributeOpen, setDistributeOpen] = useState(false);
+
+  // v0.7.3 · 多选批量操作
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmBulk, setConfirmBulk] = useState<BulkActionKind | null>(null);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ kind: BulkActionKind; data: BulkBatchActionResponse } | null>(null);
+  const [resultExpanded, setResultExpanded] = useState(false);
+
+  // v0.7.3 · 逆向迁移 + 操作历史
+  const [reverseTarget, setReverseTarget] = useState<{ batch: BatchResponse; kind: ReverseKind } | null>(null);
+  const [auditTarget, setAuditTarget] = useState<BatchResponse | null>(null);
+
+  const selectableBatches = useMemo(
+    () => batches.filter((b) => b.display_id !== "B-DEFAULT"),
+    [batches],
+  );
+  const selectedCount = selectedIds.size;
+  const allSelected = selectableBatches.length > 0 && selectableBatches.every((b) => selectedIds.has(b.id));
+
+  const toggleOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(selectableBatches.map((b) => b.id)));
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkResult = (kind: BulkActionKind, data: BulkBatchActionResponse) => {
+    setBulkResult({ kind, data });
+    setResultExpanded(false);
+    clearSelection();
+    const sN = data.succeeded.length;
+    const skN = data.skipped.length;
+    const fN = data.failed.length;
+    if (fN === 0 && skN === 0) {
+      pushToast({ msg: `批量${BULK_LABEL[kind]}成功 ${sN} 个`, kind: "success" });
+    } else {
+      pushToast({
+        msg: `批量${BULK_LABEL[kind]}：成功 ${sN} / 跳过 ${skN} / 失败 ${fN}`,
+        kind: fN > 0 ? "warning" : "success",
+      });
+    }
+  };
+
+  const runBulkArchive = () => {
+    bulkArchive.mutate([...selectedIds], {
+      onSuccess: (data) => {
+        handleBulkResult("archive", data);
+        setConfirmBulk(null);
+      },
+      onError: (e) => pushToast({ msg: "批量归档失败", sub: (e as Error).message }),
+    });
+  };
+
+  const runBulkDelete = () => {
+    bulkDelete.mutate([...selectedIds], {
+      onSuccess: (data) => {
+        handleBulkResult("delete", data);
+        setConfirmBulk(null);
+      },
+      onError: (e) => pushToast({ msg: "批量删除失败", sub: (e as Error).message }),
+    });
+  };
+
+  const runBulkActivate = () => {
+    bulkActivate.mutate([...selectedIds], {
+      onSuccess: (data) => {
+        handleBulkResult("activate", data);
+        setConfirmBulk(null);
+      },
+      onError: (e) => pushToast({ msg: "批量激活失败", sub: (e as Error).message }),
+    });
+  };
+
+  const runBulkReassign = async (payload: { annotator_id?: string | null; reviewer_id?: string | null }) => {
+    return new Promise<void>((resolve) => {
+      bulkReassign.mutate(
+        { batch_ids: [...selectedIds], ...payload },
+        {
+          onSuccess: (data) => {
+            handleBulkResult("reassign", data);
+            setReassignOpen(false);
+            resolve();
+          },
+          onError: (e) => {
+            pushToast({ msg: "批量改派失败", sub: (e as Error).message });
+            resolve();
+          },
+        },
+      );
+    });
+  };
+
+  const idToBatch = useMemo(() => {
+    const m = new Map<string, BatchResponse>();
+    for (const b of batches) m.set(b.id, b);
+    return m;
+  }, [batches]);
+
+  const renderBulkResultRow = (item: { batch_id: string; reason: string }) => {
+    const b = idToBatch.get(item.batch_id);
+    return (
+      <li key={item.batch_id} style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+        <span className="mono">{b?.display_id ?? item.batch_id.slice(0, 8)}</span>
+        {b ? <span style={{ marginLeft: 6 }}>· {b.name}</span> : null}
+        <span style={{ marginLeft: 6, color: "var(--color-fg-subtle)" }}>— {item.reason}</span>
+      </li>
+    );
+  };
 
   const handleCreate = () => {
     if (createMode === "single") {
@@ -147,10 +288,157 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           </div>
         )}
 
+        {/* v0.7.3 · 未归类任务横带（关联数据集后但还没切分到 batch 的 task） */}
+        {unclassifiedCount > 0 && (
+          <div
+            style={{
+              padding: "8px 16px",
+              background: "color-mix(in oklab, var(--color-warning) 8%, transparent)",
+              borderBottom: "1px solid var(--color-border)",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              fontSize: 13,
+            }}
+          >
+            <Icon name="info" size={14} />
+            <span>
+              本项目有 <strong>{unclassifiedCount}</strong> 个 <strong>未归类任务</strong>（数据集已关联但尚未划分到批次）。
+            </span>
+            {isOwner && (
+              <Button
+                onClick={() => {
+                  setCreateMode("split");
+                  setShowCreate(true);
+                }}
+                style={{ marginLeft: "auto" }}
+                title="按随机切分把未归类任务拆成 N 个批次"
+              >
+                <Icon name="layers" size={12} /> 去分包
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* v0.7.3 · 多选浮层操作条（仅 owner 可见） */}
+        {isOwner && selectedCount > 0 && (
+          <div
+            style={{
+              padding: "8px 16px",
+              background: "var(--color-accent-soft)",
+              borderBottom: "1px solid var(--color-border)",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              fontSize: 13,
+            }}
+          >
+            <span>已选 <strong>{selectedCount}</strong> 个批次</span>
+            <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+              <Button onClick={() => setConfirmBulk("activate")} title="对选中的 draft 批次批量激活">
+                <Icon name="play" size={12} /> 激活
+              </Button>
+              <Button onClick={() => setReassignOpen(true)} title="批量改派 annotator / reviewer">
+                <Icon name="users" size={12} /> 改派
+              </Button>
+              <Button onClick={() => setConfirmBulk("archive")} title="批量归档">
+                <Icon name="inbox" size={12} /> 归档
+              </Button>
+              <Button
+                onClick={() => setConfirmBulk("delete")}
+                style={{ background: "var(--color-danger)", color: "#fff" }}
+                title="批量删除"
+              >
+                <Icon name="trash" size={12} /> 删除
+              </Button>
+              <Button onClick={clearSelection} title="取消选择">
+                取消
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* v0.7.3 · 上次批量操作结果（partial-success） */}
+        {bulkResult && (
+          <div
+            style={{
+              padding: "8px 16px",
+              background: "var(--color-bg-sunken)",
+              borderBottom: "1px solid var(--color-border)",
+              fontSize: 12,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span>
+                上次批量{BULK_LABEL[bulkResult.kind]}：
+                <strong style={{ color: "var(--color-success)" }}> 成功 {bulkResult.data.succeeded.length}</strong>
+                {bulkResult.data.skipped.length > 0 && (
+                  <strong style={{ color: "var(--color-warning)", marginLeft: 8 }}>
+                    跳过 {bulkResult.data.skipped.length}
+                  </strong>
+                )}
+                {bulkResult.data.failed.length > 0 && (
+                  <strong style={{ color: "var(--color-danger)", marginLeft: 8 }}>
+                    失败 {bulkResult.data.failed.length}
+                  </strong>
+                )}
+              </span>
+              {(bulkResult.data.skipped.length > 0 || bulkResult.data.failed.length > 0) && (
+                <button
+                  type="button"
+                  onClick={() => setResultExpanded((v) => !v)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--color-accent)",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {resultExpanded ? "收起" : "查看详情"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setBulkResult(null)}
+                style={{
+                  marginLeft: "auto",
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--color-fg-subtle)",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+                title="关闭"
+              >
+                <Icon name="x" size={12} />
+              </button>
+            </div>
+            {resultExpanded && (
+              <ul style={{ margin: "8px 0 0 16px", padding: 0, listStyle: "disc" }}>
+                {bulkResult.data.skipped.map(renderBulkResultRow)}
+                {bulkResult.data.failed.map(renderBulkResultRow)}
+              </ul>
+            )}
+          </div>
+        )}
+
         {!isLoading && batches.length > 0 && (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+                {isOwner && (
+                  <th style={{ padding: "8px 0 8px 12px", width: 28 }}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      title={allSelected ? "取消全选" : "全选"}
+                      style={{ cursor: "pointer" }}
+                    />
+                  </th>
+                )}
                 {["批次", "状态", "分派", "优先级", "截止日期", "进度", "操作"].map((h) => (
                   <th
                     key={h}
@@ -170,6 +458,18 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
             <tbody>
               {batches.map((b) => (
                 <tr key={b.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                  {isOwner && (
+                    <td style={{ padding: "10px 0 10px 12px", width: 28 }}>
+                      {b.display_id !== "B-DEFAULT" ? (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(b.id)}
+                          onChange={() => toggleOne(b.id)}
+                          style={{ cursor: "pointer" }}
+                        />
+                      ) : null}
+                    </td>
+                  )}
                   <td style={{ padding: "10px 12px" }}>
                     <div style={{ fontWeight: 500 }}>{b.name}</div>
                     <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
@@ -275,6 +575,31 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <Icon name="refresh" size={12} />
                         </Button>
                       )}
+                      {/* v0.7.3 · owner 专属逆向迁移按钮 */}
+                      {isOwner && b.status === "rejected" && (
+                        <Button
+                          onClick={() => setReverseTarget({ batch: b, kind: "reopen_from_rejected" })}
+                          title="跳过重标，直接复审"
+                        >
+                          <Icon name="refresh" size={12} /> 直接复审
+                        </Button>
+                      )}
+                      {isOwner && b.status === "approved" && (
+                        <Button
+                          onClick={() => setReverseTarget({ batch: b, kind: "reopen_from_approved" })}
+                          title="重开审核"
+                        >
+                          <Icon name="refresh" size={12} /> 重开审核
+                        </Button>
+                      )}
+                      {isOwner && b.status === "archived" && (
+                        <Button
+                          onClick={() => setReverseTarget({ batch: b, kind: "unarchive" })}
+                          title="撤销归档"
+                        >
+                          <Icon name="refresh" size={12} /> 撤销归档
+                        </Button>
+                      )}
                       {!["archived", "approved"].includes(b.status) && (
                         <Button onClick={() => handleTransition(b, "archived")} title="归档">
                           <Icon name="inbox" size={12} />
@@ -285,6 +610,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <Icon name="trash" size={12} />
                         </Button>
                       )}
+                      {/* v0.7.3 · 操作历史抽屉 */}
+                      <Button onClick={() => setAuditTarget(b)} title="操作历史">
+                        <Icon name="clock" size={12} />
+                      </Button>
                     </div>
                     {b.status === "rejected" && b.review_feedback && (
                       <div
@@ -464,6 +793,75 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         <ProjectDistributeBatchesModal
           projectId={project.id}
           onClose={() => setDistributeOpen(false)}
+        />
+      )}
+
+      {/* v0.7.3：批量操作二次确认 Modal */}
+      <Modal
+        open={confirmBulk === "archive" || confirmBulk === "delete" || confirmBulk === "activate"}
+        title={`批量${confirmBulk ? BULK_LABEL[confirmBulk] : ""}`}
+        onClose={() => setConfirmBulk(null)}
+      >
+        <div style={{ fontSize: 13 }}>
+          {confirmBulk === "archive" && (
+            <p>将把已选 <strong>{selectedCount}</strong> 个批次归档。归档后批次进入终态，可由 owner 通过「撤销归档」恢复。</p>
+          )}
+          {confirmBulk === "delete" && (
+            <p style={{ color: "var(--color-danger)" }}>
+              将永久删除已选 <strong>{selectedCount}</strong> 个批次。批次内的任务会回归默认批次（无默认批次时变为未归类）。此操作不可撤销。
+            </p>
+          )}
+          {confirmBulk === "activate" && (
+            <p>将激活已选 <strong>{selectedCount}</strong> 个 draft 批次。前置条件不满足（未指派标注员或任务为空）的批次会失败但不影响其他。</p>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+            <Button onClick={() => setConfirmBulk(null)}>取消</Button>
+            <Button
+              onClick={() => {
+                if (confirmBulk === "archive") runBulkArchive();
+                else if (confirmBulk === "delete") runBulkDelete();
+                else if (confirmBulk === "activate") runBulkActivate();
+              }}
+              disabled={bulkArchive.isPending || bulkDelete.isPending || bulkActivate.isPending}
+              style={{
+                background:
+                  confirmBulk === "delete" ? "var(--color-danger)" : "var(--color-accent)",
+                color: "#fff",
+              }}
+            >
+              确认{confirmBulk ? BULK_LABEL[confirmBulk] : ""}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* v0.7.3：批量改派 Modal */}
+      {reassignOpen && (
+        <BulkReassignModal
+          projectId={project.id}
+          count={selectedCount}
+          onClose={() => setReassignOpen(false)}
+          onSubmit={runBulkReassign}
+          pending={bulkReassign.isPending}
+        />
+      )}
+
+      {/* v0.7.3：逆向迁移 Modal */}
+      {reverseTarget && (
+        <ReverseTransitionModal
+          projectId={project.id}
+          batch={reverseTarget.batch}
+          kind={reverseTarget.kind}
+          onClose={() => setReverseTarget(null)}
+        />
+      )}
+
+      {/* v0.7.3：操作历史抽屉 */}
+      {auditTarget && (
+        <BatchAuditLogDrawer
+          projectId={project.id}
+          batch={auditTarget}
+          onClose={() => setAuditTarget(null)}
         />
       )}
     </>

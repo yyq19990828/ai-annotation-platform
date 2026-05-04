@@ -145,15 +145,33 @@ export const datasetsApi = {
     ),
 
   unlinkProject: (id: string, projectId: string) =>
-    apiClient.delete<{ deleted_tasks: number; deleted_annotations: number; soft: boolean }>(
-      `/datasets/${id}/link/${projectId}`,
-    ),
+    apiClient.delete<{
+      deleted_tasks: number;
+      deleted_annotations: number;
+      deleted_batches: number;
+      deleted_batch_ids: string[];
+      soft: boolean;
+    }>(`/datasets/${id}/link/${projectId}`),
 
   previewUnlink: (id: string, projectId: string) =>
-    apiClient.get<{ will_delete_tasks: number; will_delete_annotations: number }>(
-      `/datasets/${id}/link/${projectId}/preview-unlink`,
-    ),
+    apiClient.get<{
+      will_delete_tasks: number;
+      will_delete_annotations: number;
+      will_delete_batches: number;
+    }>(`/datasets/${id}/link/${projectId}/preview-unlink`),
 
   getLinkedProjects: (id: string) =>
     apiClient.get<import("./projects").ProjectResponse[]>(`/datasets/${id}/projects`),
+
+  // v0.7.3 · 项目侧反查：列出本项目已关联的所有数据集
+  listForProject: (projectId: string) =>
+    apiClient.get<{
+      id: string;
+      display_id: string;
+      name: string;
+      data_type: string;
+      linked_at: string | null;
+      items_count: number;
+      tasks_in_project: number;
+    }[]>(`/projects/${projectId}/datasets`),
 };

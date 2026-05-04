@@ -4,6 +4,7 @@ import {
   type BatchCreatePayload,
   type BatchUpdatePayload,
   type BatchSplitPayload,
+  type BulkBatchReassignPayload,
 } from "../api/batches";
 
 export function useBatches(projectId: string, status?: string) {
@@ -55,6 +56,7 @@ export function useDeleteBatch(projectId: string) {
     mutationFn: (batchId: string) => batchesApi.remove(projectId, batchId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["unclassified-count", projectId] });
     },
   });
 }
@@ -65,14 +67,84 @@ export function useTransitionBatch(projectId: string) {
     mutationFn: ({
       batchId,
       targetStatus,
+      reason,
     }: {
       batchId: string;
       targetStatus: string;
-    }) => batchesApi.transition(projectId, batchId, targetStatus),
+      reason?: string;
+    }) => batchesApi.transition(projectId, batchId, targetStatus, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["batch-audit-logs", projectId] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+// v0.7.3 · 多选批量操作
+export function useBulkArchiveBatches(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (batchIds: string[]) => batchesApi.bulkArchive(projectId, batchIds),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
       qc.invalidateQueries({ queryKey: ["projects"] });
     },
+  });
+}
+
+export function useBulkDeleteBatches(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (batchIds: string[]) => batchesApi.bulkDelete(projectId, batchIds),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["unclassified-count", projectId] });
+    },
+  });
+}
+
+export function useBulkReassignBatches(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: BulkBatchReassignPayload) =>
+      batchesApi.bulkReassign(projectId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+export function useBulkActivateBatches(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (batchIds: string[]) => batchesApi.bulkActivate(projectId, batchIds),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+}
+
+// v0.7.3 · 批次操作历史
+export function useBatchAuditLogs(projectId: string, batchId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ["batch-audit-logs", projectId, batchId],
+    queryFn: () => batchesApi.auditLogs(projectId, batchId!),
+    enabled: enabled && !!projectId && !!batchId,
+  });
+}
+
+// v0.7.3 · 未归类任务数
+export function useUnclassifiedTaskCount(projectId: string) {
+  return useQuery({
+    queryKey: ["unclassified-count", projectId],
+    queryFn: () => batchesApi.unclassifiedCount(projectId),
+    enabled: !!projectId,
   });
 }
 
@@ -83,6 +155,7 @@ export function useSplitBatches(projectId: string) {
       batchesApi.split(projectId, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["unclassified-count", projectId] });
     },
   });
 }

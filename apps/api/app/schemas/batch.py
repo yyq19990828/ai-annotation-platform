@@ -66,6 +66,8 @@ class BatchOut(BaseModel):
 
 class BatchTransition(BaseModel):
     target_status: str
+    # v0.7.3：逆向迁移（archived→active / approved→reviewing / rejected→reviewing）必填，1-500 字
+    reason: str | None = Field(None, min_length=1, max_length=500)
 
 
 class BatchReject(BaseModel):
@@ -87,6 +89,29 @@ class BatchDistributeResult(BaseModel):
     distributed_batches: int
     annotator_per_batch: dict[str, str | None] = {}
     reviewer_per_batch: dict[str, str | None] = {}
+
+
+# v0.7.3 · 多选批量操作
+class BulkBatchIds(BaseModel):
+    batch_ids: list[UUID] = Field(..., min_length=1, max_length=200)
+
+
+class BulkBatchReassign(BaseModel):
+    batch_ids: list[UUID] = Field(..., min_length=1, max_length=200)
+    # 任一可省（None = 不改）；至少传一个
+    annotator_id: UUID | None = None
+    reviewer_id: UUID | None = None
+
+
+class BulkBatchActionItem(BaseModel):
+    batch_id: UUID
+    reason: str
+
+
+class BulkBatchActionResponse(BaseModel):
+    succeeded: list[UUID] = []
+    skipped: list[BulkBatchActionItem] = []
+    failed: list[BulkBatchActionItem] = []
 
 
 class BatchSplitRequest(BaseModel):

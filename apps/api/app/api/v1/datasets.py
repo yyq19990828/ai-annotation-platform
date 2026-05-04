@@ -487,24 +487,52 @@ async def preview_unlink_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
-    """v0.6.7 B-10 v2：取消关联前的预览数字（will be deleted）。前端拿来做二次确认文案。"""
+    """v0.6.7 B-10 v2：取消关联前的预览数字（will be deleted）。前端拿来做二次确认文案。
+    v0.7.3：补 will_delete_batches —— 与 service 层一致：失去 task 后变空壳的 batch（B-DEFAULT 除外）。
+    """
     from sqlalchemy import select, func
     from app.db.models.dataset import DatasetItem
     from app.db.models.task import Task
     from app.db.models.annotation import Annotation
+    from app.db.models.task_batch import TaskBatch
 
-    task_ids = (await db.execute(
-        select(Task.id)
+    target_rows = (await db.execute(
+        select(Task.id, Task.batch_id)
         .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
         .where(Task.project_id == project_id, DatasetItem.dataset_id == dataset_id)
-    )).scalars().all()
+    )).all()
+    task_ids = [r[0] for r in target_rows]
+    affected_batch_ids = {r[1] for r in target_rows if r[1] is not None}
     task_count = len(task_ids)
     ann_count = 0
     if task_ids:
         ann_count = (await db.execute(
             select(func.count(Annotation.id)).where(Annotation.task_id.in_(list(task_ids)))
         )).scalar() or 0
-    return {"will_delete_tasks": int(task_count), "will_delete_annotations": int(ann_count)}
+
+    # 哪些受影响 batch 在删完 task 后会变空壳 → 与 unlink 真实行为一致
+    will_delete_batches = 0
+    if affected_batch_ids:
+        loss_per_batch = dict(
+            (await db.execute(
+                select(Task.batch_id, func.count())
+                .where(Task.id.in_(task_ids))
+                .group_by(Task.batch_id)
+            )).all()
+        )
+        for b in (await db.execute(
+            select(TaskBatch).where(TaskBatch.id.in_(affected_batch_ids))
+        )).scalars().all():
+            if b.display_id == "B-DEFAULT":
+                continue
+            if (b.total_tasks or 0) - loss_per_batch.get(b.id, 0) <= 0:
+                will_delete_batches += 1
+
+    return {
+        "will_delete_tasks": int(task_count),
+        "will_delete_annotations": int(ann_count),
+        "will_delete_batches": int(will_delete_batches),
+    }
 
 
 @router.delete("/{dataset_id}/link/{project_id}", status_code=200)
@@ -531,6 +559,8 @@ async def unlink_project(
             "project_id": str(project_id),
             "deleted_tasks": info["deleted_tasks"],
             "deleted_annotations": info["deleted_annotations"],
+            "deleted_batches": info.get("deleted_batches", 0),
+            "deleted_batch_ids": info.get("deleted_batch_ids", []),
             "soft": False,
         },
     )

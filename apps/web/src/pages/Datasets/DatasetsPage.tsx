@@ -291,11 +291,13 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
               onConfirm={() => {
                 unlinkMutation.mutate(confirmUnlink.id, {
                   onSuccess: (res) => {
+                    const parts: string[] = [];
+                    if (res?.deleted_tasks) parts.push(`${res.deleted_tasks} 个任务`);
+                    if (res?.deleted_annotations) parts.push(`${res.deleted_annotations} 个标注`);
+                    if (res?.deleted_batches) parts.push(`${res.deleted_batches} 个空批次`);
                     pushToast({
                       msg: "已取消关联",
-                      sub: res?.deleted_tasks
-                        ? `已删除 ${res.deleted_tasks} 个任务${res.deleted_annotations ? ` · ${res.deleted_annotations} 个标注` : ""}`
-                        : undefined,
+                      sub: parts.length ? `已清理 ${parts.join(" · ")}` : undefined,
                     });
                     setConfirmUnlink(null);
                   },
@@ -323,7 +325,7 @@ function UnlinkConfirmModal({
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  const [preview, setPreview] = useState<{ tasks: number; annotations: number } | null>(null);
+  const [preview, setPreview] = useState<{ tasks: number; annotations: number; batches: number } | null>(null);
   // v0.7.0：删除强度对齐 DangerSection — 必须输入数据集名称才能确认
   const [confirmText, setConfirmText] = useState("");
   const dangerous = (preview?.tasks ?? 0) > 0;
@@ -332,8 +334,14 @@ function UnlinkConfirmModal({
   useEffect(() => {
     let cancelled = false;
     datasetsApi.previewUnlink(datasetId, project.id)
-      .then((r) => { if (!cancelled) setPreview({ tasks: r.will_delete_tasks, annotations: r.will_delete_annotations }); })
-      .catch(() => { if (!cancelled) setPreview({ tasks: 0, annotations: 0 }); });
+      .then((r) => {
+        if (!cancelled) setPreview({
+          tasks: r.will_delete_tasks,
+          annotations: r.will_delete_annotations,
+          batches: r.will_delete_batches,
+        });
+      })
+      .catch(() => { if (!cancelled) setPreview({ tasks: 0, annotations: 0, batches: 0 }); });
     return () => { cancelled = true; };
   }, [datasetId, project.id]);
 
@@ -353,6 +361,9 @@ function UnlinkConfirmModal({
               <strong style={{ color: "var(--color-danger)" }}>将一并删除</strong>项目中由该数据集创建的 <strong>{preview.tasks}</strong> 个任务
               {preview.annotations > 0 && (
                 <>（含 <strong style={{ color: "var(--color-danger)" }}>{preview.annotations}</strong> 个已有标注）</>
+              )}
+              {preview.batches > 0 && (
+                <>，并清理 <strong style={{ color: "var(--color-danger)" }}>{preview.batches}</strong> 个失去全部任务的空批次</>
               )}
               。<br />此操作不可恢复。
             </>

@@ -26,8 +26,19 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     BatchStatus.ACTIVE: {BatchStatus.ANNOTATING, BatchStatus.ARCHIVED},
     BatchStatus.ANNOTATING: {BatchStatus.REVIEWING, BatchStatus.ARCHIVED},
     BatchStatus.REVIEWING: {BatchStatus.APPROVED, BatchStatus.REJECTED},
-    BatchStatus.APPROVED: {BatchStatus.ARCHIVED},
-    BatchStatus.REJECTED: {BatchStatus.ACTIVE, BatchStatus.ARCHIVED},
+    # v0.7.3：approved → reviewing 重开审核（owner 兜底，需 reason）
+    BatchStatus.APPROVED: {BatchStatus.ARCHIVED, BatchStatus.REVIEWING},
+    # v0.7.3：rejected → reviewing 跳过重标直接复审（owner 兜底，需 reason）
+    BatchStatus.REJECTED: {BatchStatus.ACTIVE, BatchStatus.ARCHIVED, BatchStatus.REVIEWING},
+    # v0.7.3：archived → active 撤销归档（owner 兜底，需 reason）；后续由 scheduler 自动推进到正确阶段
+    BatchStatus.ARCHIVED: {BatchStatus.ACTIVE},
+}
+
+# v0.7.3：owner-only 逆向迁移白名单。命中时必须传 reason（1-500 字），写入 audit_log.detail_json.reason。
+REVERSE_TRANSITIONS: set[tuple[str, str]] = {
+    (BatchStatus.ARCHIVED, BatchStatus.ACTIVE),
+    (BatchStatus.APPROVED, BatchStatus.REVIEWING),
+    (BatchStatus.REJECTED, BatchStatus.REVIEWING),
 }
 
 
@@ -58,6 +69,12 @@ def assert_can_transition(
     """
     src = batch.status
     dst = target_status
+
+    # v0.7.3：逆向迁移（撤销归档 / 重开审核 / 跳标复审）owner-only，非 owner 直接拒
+    if (src, dst) in REVERSE_TRANSITIONS:
+        if not _is_owner(user, project):
+            raise HTTPException(status_code=403, detail=f"{user.role} cannot reverse-transition {src} -> {dst}")
+        return
 
     # owner / super_admin 始终放行（包含 archived 出口、rejected 重激活）
     if _is_owner(user, project):
@@ -234,6 +251,14 @@ class BatchService:
             )).scalar() or 0
             if count == 0:
                 raise HTTPException(status_code=400, detail="cannot activate empty batch")
+
+        # v0.7.3：approved → reviewing 重开审核 — 清空原审核元数据（reviewed_at / reviewed_by / review_feedback）
+        # rejected → reviewing 不清反馈：复审时 reviewer 需要看到上次原因
+        from_status = batch.status
+        if (from_status, target_status) == (BatchStatus.APPROVED, BatchStatus.REVIEWING):
+            batch.review_feedback = None
+            batch.reviewed_at = None
+            batch.reviewed_by = None
 
         batch.status = target_status
         await self.db.flush()
@@ -621,6 +646,144 @@ class BatchService:
         await self.db.flush()
         await self.recalculate_counters(batch_id)
         return batch, affected
+
+    # ── Bulk operations (v0.7.3) ───────────────────────────────────────────
+
+    async def _list_batches_in_project(
+        self, project_id: uuid.UUID, batch_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, TaskBatch]:
+        if not batch_ids:
+            return {}
+        result = await self.db.execute(
+            select(TaskBatch).where(
+                TaskBatch.project_id == project_id,
+                TaskBatch.id.in_(batch_ids),
+            )
+        )
+        return {b.id: b for b in result.scalars().all()}
+
+    async def bulk_archive(
+        self, project_id: uuid.UUID, batch_ids: list[uuid.UUID],
+    ) -> dict[str, list[dict]]:
+        """逐个 transition → archived。已 archived 算 skipped。
+        语法层不允许的迁移（如 draft → archived）目前 VALID_TRANSITIONS 不收，会回 failed。"""
+        loaded = await self._list_batches_in_project(project_id, batch_ids)
+        succeeded: list[uuid.UUID] = []
+        skipped: list[dict] = []
+        failed: list[dict] = []
+        for bid in batch_ids:
+            batch = loaded.get(bid)
+            if batch is None:
+                failed.append({"batch_id": bid, "reason": "not found"})
+                continue
+            if batch.status == BatchStatus.ARCHIVED:
+                skipped.append({"batch_id": bid, "reason": "already archived"})
+                continue
+            allowed = VALID_TRANSITIONS.get(batch.status, set())
+            if BatchStatus.ARCHIVED not in allowed:
+                failed.append({"batch_id": bid, "reason": f"cannot archive from '{batch.status}'"})
+                continue
+            batch.status = BatchStatus.ARCHIVED
+            succeeded.append(bid)
+        await self.db.flush()
+        return {"succeeded": succeeded, "skipped": skipped, "failed": failed}
+
+    async def bulk_delete(
+        self, project_id: uuid.UUID, batch_ids: list[uuid.UUID],
+    ) -> dict[str, list[dict]]:
+        loaded = await self._list_batches_in_project(project_id, batch_ids)
+        succeeded: list[uuid.UUID] = []
+        skipped: list[dict] = []
+        failed: list[dict] = []
+        default = await self.get_default_batch(project_id)
+        for bid in batch_ids:
+            batch = loaded.get(bid)
+            if batch is None:
+                failed.append({"batch_id": bid, "reason": "not found"})
+                continue
+            if batch.display_id == "B-DEFAULT":
+                skipped.append({"batch_id": bid, "reason": "B-DEFAULT cannot be deleted"})
+                continue
+            # 复用单个删除路径里的 task 接管逻辑（按 default 是否存在二选一）
+            if default is not None:
+                await self.db.execute(
+                    update(Task).where(Task.batch_id == bid).values(batch_id=default.id)
+                )
+            else:
+                await self.db.execute(
+                    update(Task).where(Task.batch_id == bid).values(batch_id=None)
+                )
+            await self.db.execute(delete(TaskBatch).where(TaskBatch.id == bid))
+            succeeded.append(bid)
+        await self.db.flush()
+        if default is not None and succeeded:
+            await self.recalculate_counters(default.id)
+        return {"succeeded": succeeded, "skipped": skipped, "failed": failed}
+
+    async def bulk_reassign(
+        self,
+        project_id: uuid.UUID,
+        batch_ids: list[uuid.UUID],
+        *,
+        annotator_id: uuid.UUID | None,
+        reviewer_id: uuid.UUID | None,
+        annotator_set: bool,
+        reviewer_set: bool,
+    ) -> dict[str, list[dict]]:
+        """单事务原子改派。annotator_set/reviewer_set 为 True 时表示该字段需要更新（值可以是 None 表示清空）。"""
+        if not annotator_set and not reviewer_set:
+            raise HTTPException(status_code=400, detail="annotator_id or reviewer_id required")
+        loaded = await self._list_batches_in_project(project_id, batch_ids)
+        succeeded: list[uuid.UUID] = []
+        failed: list[dict] = []
+        for bid in batch_ids:
+            batch = loaded.get(bid)
+            if batch is None:
+                failed.append({"batch_id": bid, "reason": "not found"})
+                continue
+            if annotator_set:
+                batch.annotator_id = annotator_id
+                await self._cascade_task_assignee(bid, annotator_id)
+            if reviewer_set:
+                batch.reviewer_id = reviewer_id
+                await self._cascade_task_reviewer(bid, reviewer_id)
+            self._sync_assigned_user_ids(batch)
+            succeeded.append(bid)
+        await self.db.flush()
+        return {"succeeded": succeeded, "skipped": [], "failed": failed}
+
+    async def bulk_activate(
+        self, project_id: uuid.UUID, batch_ids: list[uuid.UUID],
+    ) -> dict[str, list[dict]]:
+        """逐个 draft → active。前置不满足（无 annotator / 0 task）→ failed。"""
+        loaded = await self._list_batches_in_project(project_id, batch_ids)
+        succeeded: list[uuid.UUID] = []
+        skipped: list[dict] = []
+        failed: list[dict] = []
+        for bid in batch_ids:
+            batch = loaded.get(bid)
+            if batch is None:
+                failed.append({"batch_id": bid, "reason": "not found"})
+                continue
+            if batch.status == BatchStatus.ACTIVE:
+                skipped.append({"batch_id": bid, "reason": "already active"})
+                continue
+            if batch.status != BatchStatus.DRAFT:
+                failed.append({"batch_id": bid, "reason": f"cannot activate from '{batch.status}'"})
+                continue
+            if batch.annotator_id is None:
+                failed.append({"batch_id": bid, "reason": "no annotator assigned"})
+                continue
+            count = (await self.db.execute(
+                select(func.count()).select_from(Task).where(Task.batch_id == bid)
+            )).scalar() or 0
+            if count == 0:
+                failed.append({"batch_id": bid, "reason": "batch has no tasks"})
+                continue
+            batch.status = BatchStatus.ACTIVE
+            succeeded.append(bid)
+        await self.db.flush()
+        return {"succeeded": succeeded, "skipped": skipped, "failed": failed}
 
     # ── AI/ML hook ─────────────────────────────────────────────────────────
 

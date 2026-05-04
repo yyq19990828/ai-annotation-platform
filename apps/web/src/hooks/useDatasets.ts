@@ -87,8 +87,9 @@ export function useLinkProject(datasetId: string) {
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["project", projectId] });
       qc.invalidateQueries({ queryKey: ["project-stats"] });
-      // v0.6.7 B-12：link 自动建命名 batch，必须刷新批次列表
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["project-datasets", projectId] });
+      qc.invalidateQueries({ queryKey: ["unclassified-count", projectId] });
     },
   });
 }
@@ -101,11 +102,12 @@ export function useUnlinkProject(datasetId: string) {
       qc.invalidateQueries({ queryKey: ["datasets"] });
       qc.invalidateQueries({ queryKey: ["dataset", datasetId] });
       qc.invalidateQueries({ queryKey: ["dataset-projects", datasetId] });
-      // v0.6.7 B-10：unlink 后 project counter 重算 → 必须刷新所有 project 视图
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["project", projectId] });
       qc.invalidateQueries({ queryKey: ["project-stats"] });
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["project-datasets", projectId] });
+      qc.invalidateQueries({ queryKey: ["unclassified-count", projectId] });
     },
   });
 }
@@ -115,5 +117,14 @@ export function useDatasetProjects(datasetId: string | undefined) {
     queryKey: ["dataset-projects", datasetId],
     queryFn: () => datasetsApi.getLinkedProjects(datasetId!),
     enabled: !!datasetId,
+  });
+}
+
+// v0.7.3 · 项目侧反查：本项目关联的所有数据集
+export function useProjectDatasets(projectId: string) {
+  return useQuery({
+    queryKey: ["project-datasets", projectId],
+    queryFn: () => datasetsApi.listForProject(projectId),
+    enabled: !!projectId,
   });
 }

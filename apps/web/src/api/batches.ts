@@ -78,6 +78,37 @@ export interface BatchDistributeResultResponse {
   reviewer_per_batch: Record<string, string | null>;
 }
 
+// v0.7.3 · 多选批量操作
+export interface BulkBatchActionItem {
+  batch_id: string;
+  reason: string;
+}
+
+export interface BulkBatchActionResponse {
+  succeeded: string[];
+  skipped: BulkBatchActionItem[];
+  failed: BulkBatchActionItem[];
+}
+
+export interface BulkBatchReassignPayload {
+  batch_ids: string[];
+  annotator_id?: string | null;
+  reviewer_id?: string | null;
+}
+
+// v0.7.3 · 批次操作历史抽屉
+export interface BatchAuditLogEntry {
+  id: number;
+  created_at: string | null;
+  actor_id: string | null;
+  actor_email: string | null;
+  actor_role: string | null;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  detail: Record<string, unknown> | null;
+}
+
 export const batchesApi = {
   list: (projectId: string, status?: string) => {
     const q = new URLSearchParams();
@@ -103,10 +134,15 @@ export const batchesApi = {
   remove: (projectId: string, batchId: string) =>
     apiClient.delete<void>(`/projects/${projectId}/batches/${batchId}`),
 
-  transition: (projectId: string, batchId: string, targetStatus: string) =>
+  transition: (
+    projectId: string,
+    batchId: string,
+    targetStatus: string,
+    reason?: string,
+  ) =>
     apiClient.post<BatchResponse>(
       `/projects/${projectId}/batches/${batchId}/transition`,
-      { target_status: targetStatus },
+      reason ? { target_status: targetStatus, reason } : { target_status: targetStatus },
     ),
 
   split: (projectId: string, payload: BatchSplitPayload) =>
@@ -128,6 +164,43 @@ export const batchesApi = {
     apiClient.post<BatchDistributeResultResponse>(
       `/projects/${projectId}/batches/distribute-batches`,
       payload,
+    ),
+
+  // v0.7.3 · 批量操作
+  bulkArchive: (projectId: string, batchIds: string[]) =>
+    apiClient.post<BulkBatchActionResponse>(
+      `/projects/${projectId}/batches/bulk-archive`,
+      { batch_ids: batchIds },
+    ),
+
+  bulkDelete: (projectId: string, batchIds: string[]) =>
+    apiClient.post<BulkBatchActionResponse>(
+      `/projects/${projectId}/batches/bulk-delete`,
+      { batch_ids: batchIds },
+    ),
+
+  bulkReassign: (projectId: string, payload: BulkBatchReassignPayload) =>
+    apiClient.post<BulkBatchActionResponse>(
+      `/projects/${projectId}/batches/bulk-reassign`,
+      payload,
+    ),
+
+  bulkActivate: (projectId: string, batchIds: string[]) =>
+    apiClient.post<BulkBatchActionResponse>(
+      `/projects/${projectId}/batches/bulk-activate`,
+      { batch_ids: batchIds },
+    ),
+
+  // v0.7.3 · 批次操作历史
+  auditLogs: (projectId: string, batchId: string, limit = 50) =>
+    apiClient.get<BatchAuditLogEntry[]>(
+      `/projects/${projectId}/batches/${batchId}/audit-logs?limit=${limit}`,
+    ),
+
+  // v0.7.3 · 未归类任务计数（batch_id IS NULL）— 顶部横带提示用
+  unclassifiedCount: (projectId: string) =>
+    apiClient.get<{ count: number }>(
+      `/projects/${projectId}/batches/unclassified-count`,
     ),
 
   exportBatch: async (projectId: string, batchId: string, format: ExportFormat) => {

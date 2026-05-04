@@ -306,37 +306,9 @@ class DatasetService:
         project = await self.db.get(Project, project_id)
         created_count = len(items)
 
-        # v0.6.7 B-12：自动为本次 link 创建一个独立批次（命名「{ds.name} 默认包」），
-        # 把所有新建任务的 batch_id 写到这个 batch，让管理员立刻在 BatchesSection 看到分包。
-        # v0.7.0：unlink → re-link 同 dataset 时新批次会与历史批次重名 —— 查现有同名数 N，
-        #         有冲突时附加 #N+1 后缀。
-        batch_id: uuid.UUID | None = None
-        if items:
-            ds = await self.db.get(Dataset, dataset_id)
-            base_name = f"{ds.name if ds else '数据集'} 默认包"
-            existing_count = (await self.db.execute(
-                select(func.count()).select_from(TaskBatch).where(
-                    TaskBatch.project_id == project_id,
-                    TaskBatch.name.like(f"{base_name}%"),
-                )
-            )).scalar() or 0
-            batch_name = base_name if existing_count == 0 else f"{base_name} #{existing_count + 1}"
-            batch_display = await next_display_id(self.db, "batches")
-            batch = TaskBatch(
-                id=uuid.uuid4(),
-                project_id=project_id,
-                dataset_id=dataset_id,
-                display_id=batch_display,
-                name=batch_name,
-                status="draft",
-                priority=50,
-                assigned_user_ids=[],
-                total_tasks=created_count,
-            )
-            self.db.add(batch)
-            await self.db.flush()
-            batch_id = batch.id
-
+        # v0.7.3：不再为新接入的 dataset 自建「默认包」batch。task 直接 batch_id=NULL，
+        # 走「未归类任务」语义；BatchesSection 顶部横带提示，用户主动 split 才入 batch。
+        # 历史已存在的默认包不动（向后兼容）。
         if items:
             # v0.6.6: 一次性预分配 N 个 display_id 序列号 + 单次 INSERT，
             # 替代 v0.6.5 之前逐条 db.add + 逐条 nextval 的循环（1000 条 ~2s → < 200ms）。
@@ -351,7 +323,7 @@ class DatasetService:
                     "id": uuid.uuid4(),
                     "project_id": project_id,
                     "dataset_item_id": item.id,
-                    "batch_id": batch_id,
+                    "batch_id": None,
                     "display_id": f"T-{display_nums[i]}",
                     "file_name": item.file_name,
                     "file_path": item.file_path,
@@ -375,22 +347,30 @@ class DatasetService:
         理由：用户期望「取消关联 = 撤销 link 的全部副作用」，soft-unlink 留下进度永远停在历史值。
         相关数据丢失（annotations / 子项）通过前端二次确认 + 数字提示让用户知情。
 
-        返回：None 表示 link 不存在；否则 {"deleted_tasks": N, "deleted_annotations": M, "soft": false}。
+        v0.7.3 fix：原实现只重算 batch 计数器，导致 link 自建的「默认包」/ 用户从该 dataset
+        task 切出去的 batch 在 task 全删后变成空壳挂在列表里。现在：删 task 前记下「即将失去 task 的
+        batch 集合」，重算后把 total_tasks==0 且非 B-DEFAULT 的批次也删掉。
+
+        返回：None 表示 link 不存在；否则
+            {"deleted_tasks": N, "deleted_annotations": M, "deleted_batches": K,
+             "deleted_batch_ids": [...], "soft": false}
         """
         from app.db.models.annotation import Annotation
         from app.db.models.annotation_comment import AnnotationComment
         from app.db.models.task_lock import TaskLock
+        from app.db.models.task_batch import TaskBatch
 
-        # 1. 找出本次要删的 task ids
-        target_tasks = (await self.db.execute(
-            select(Task.id)
+        # 1. 找出本次要删的 task ids 与所属 batch ids
+        target_rows = (await self.db.execute(
+            select(Task.id, Task.batch_id)
             .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
             .where(
                 Task.project_id == project_id,
                 DatasetItem.dataset_id == dataset_id,
             )
-        )).scalars().all()
-        target_task_ids = list(target_tasks)
+        )).all()
+        target_task_ids: list[uuid.UUID] = [r[0] for r in target_rows]
+        affected_batch_ids: set[uuid.UUID] = {r[1] for r in target_rows if r[1] is not None}
 
         # 2. 找出对应 annotation ids（用于 annotation_comments 级联）
         ann_ids: list[uuid.UUID] = []
@@ -427,7 +407,7 @@ class DatasetService:
         if result.rowcount == 0:
             return None
 
-        # 5. 重算 project & 受影响 batch 的计数器
+        # 5. 重算 project 计数器
         project = await self.db.get(Project, project_id)
         if project:
             row = (await self.db.execute(
@@ -442,7 +422,6 @@ class DatasetService:
             project.review_tasks = row.review
 
         # 6. 重算所有该 project 的 batch 计数器（被删 task 之前可能在某个 batch 里）
-        from app.db.models.task_batch import TaskBatch
         batches = (await self.db.execute(
             select(TaskBatch).where(TaskBatch.project_id == project_id)
         )).scalars().all()
@@ -458,8 +437,26 @@ class DatasetService:
             b.completed_tasks = r.completed
             b.review_tasks = r.review
 
+        # 7. 级联清理：失去 task 后变空壳的 batch 删除（B-DEFAULT 永远保留）
+        deleted_batch_ids: list[uuid.UUID] = []
+        if affected_batch_ids:
+            for b in batches:
+                if (
+                    b.id in affected_batch_ids
+                    and b.total_tasks == 0
+                    and b.display_id != "B-DEFAULT"
+                ):
+                    await self.db.execute(delete(TaskBatch).where(TaskBatch.id == b.id))
+                    deleted_batch_ids.append(b.id)
+
         await self.db.flush()
-        return {"deleted_tasks": len(target_task_ids), "deleted_annotations": ann_count, "soft": False}
+        return {
+            "deleted_tasks": len(target_task_ids),
+            "deleted_annotations": ann_count,
+            "deleted_batches": len(deleted_batch_ids),
+            "deleted_batch_ids": [str(bid) for bid in deleted_batch_ids],
+            "soft": False,
+        }
 
     async def get_linked_projects(self, dataset_id: uuid.UUID) -> list[Project]:
         result = await self.db.execute(

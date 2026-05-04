@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
+from app.db.models.audit_log import AuditLog
 from app.db.models.notification import Notification
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
@@ -499,3 +500,321 @@ class TestReviewerVisibility:
         assert resp.status_code == 200
         ids = {item["id"] for item in resp.json()["items"]}
         assert str(tasks[0].id) not in ids
+
+
+# ── 6. v0.7.3 · 管理员逆向迁移 ─────────────────────────────────────────
+
+
+class TestReverseTransitions:
+    @pytest.mark.asyncio
+    async def test_owner_can_unarchive(
+        self, httpx_client_bound, db_session, super_admin, annotator,
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="archived",
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
+            json={"target_status": "active", "reason": "误归档恢复"},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "active"
+
+        # audit_log 应记录 reverse=True + reason
+        audit = (await db_session.execute(
+            select(AuditLog)
+            .where(AuditLog.target_type == "batch", AuditLog.target_id == str(batch.id))
+            .order_by(AuditLog.id.desc())
+        )).scalars().first()
+        assert audit is not None
+        assert audit.detail_json.get("reverse") is True
+        assert audit.detail_json.get("reason") == "误归档恢复"
+
+    @pytest.mark.asyncio
+    async def test_reverse_requires_reason(
+        self, httpx_client_bound, db_session, super_admin, annotator,
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="archived",
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
+            json={"target_status": "active"},  # 缺 reason
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 400
+        assert "reason" in resp.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_owner_can_reopen_approved_clears_metadata(
+        self, httpx_client_bound, db_session, super_admin, annotator,
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="approved",
+        )
+        # 模拟之前已经审核过：写入元数据
+        from datetime import datetime, timezone
+        batch.review_feedback = "之前的反馈"
+        batch.reviewed_at = datetime.now(timezone.utc)
+        batch.reviewed_by = owner.id
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
+            json={"target_status": "reviewing", "reason": "漏审重开"},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "reviewing"
+        assert body["review_feedback"] is None
+        assert body["reviewed_at"] is None
+        assert body["reviewed_by"] is None
+
+    @pytest.mark.asyncio
+    async def test_owner_can_reopen_rejected_keeps_feedback(
+        self, httpx_client_bound, db_session, super_admin, annotator,
+    ):
+        """rejected → reviewing 不清反馈（reviewer 复审需要看上次原因）。"""
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="rejected",
+        )
+        from datetime import datetime, timezone
+        batch.review_feedback = "上次驳回原因"
+        batch.reviewed_at = datetime.now(timezone.utc)
+        batch.reviewed_by = owner.id
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
+            json={"target_status": "reviewing", "reason": "标注员申诉，直接复审"},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "reviewing"
+        # 反馈保留
+        assert body["review_feedback"] == "上次驳回原因"
+
+    @pytest.mark.asyncio
+    async def test_non_owner_cannot_reverse(
+        self, httpx_client_bound, db_session, super_admin, annotator,
+    ):
+        owner, _ = super_admin
+        user, token = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="archived",
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
+            json={"target_status": "active", "reason": "test"},
+            headers=_bearer(token),
+        )
+        assert resp.status_code == 403
+
+
+# ── 7. v0.7.3 · 多选批量操作 ─────────────────────────────────────────
+
+
+async def _seed_multi(
+    db, owner_id: uuid.UUID, annotator_id: uuid.UUID,
+    *, statuses: list[str], n_tasks_each: int = 1,
+):
+    """创建一个项目 + 多个不同状态的 batch（每个 batch n_tasks_each 个 task）。"""
+    pid = uuid.uuid4()
+    p = Project(
+        id=pid,
+        display_id=await next_display_id(db, "projects"),
+        name="bulk test",
+        type_label="图像-检测",
+        type_key="image-det",
+        owner_id=owner_id,
+        classes=["car"],
+    )
+    db.add(p)
+    await db.flush()
+    db.add(ProjectMember(
+        project_id=pid, user_id=annotator_id, role="annotator", assigned_by=owner_id,
+    ))
+
+    batches = []
+    for idx, st in enumerate(statuses):
+        b = TaskBatch(
+            id=uuid.uuid4(),
+            project_id=pid,
+            display_id=await next_display_id(db, "batches"),
+            name=f"b{idx}",
+            status=st,
+            annotator_id=annotator_id,
+            assigned_user_ids=[str(annotator_id)],
+        )
+        db.add(b)
+        await db.flush()
+        for j in range(n_tasks_each):
+            db.add(Task(
+                id=uuid.uuid4(), project_id=pid, batch_id=b.id,
+                display_id=f"T-{idx}-{j}", file_name=f"f.jpg", file_path="/tmp/f.jpg",
+                file_type="image", status="pending",
+            ))
+        await db.flush()
+        batches.append(b)
+    return p, batches
+
+
+class TestBulkOperations:
+    @pytest.mark.asyncio
+    async def test_bulk_archive_succeeds(
+        self, httpx_client_bound, db_session, super_admin, annotator,
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id, statuses=["active", "annotating", "archived"],
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-archive",
+            json={"batch_ids": [str(b.id) for b in batches]},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["succeeded"]) == 2  # active, annotating
+        assert len(body["skipped"]) == 1    # archived
+        assert body["skipped"][0]["batch_id"] == str(batches[2].id)
+
+    @pytest.mark.asyncio
+    async def test_bulk_activate_partial_success(
+        self, httpx_client_bound, db_session, super_admin, annotator,
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        # 三个 draft：第一个有 annotator 有 task，第二个没 annotator，第三个有 annotator 但 0 task
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id, statuses=["draft", "draft", "draft"], n_tasks_each=1,
+        )
+        # 改造：batch[1] 无 annotator；batch[2] 删空 task
+        batches[1].annotator_id = None
+        batches[1].assigned_user_ids = []
+        from sqlalchemy import delete
+        await db_session.execute(delete(Task).where(Task.batch_id == batches[2].id))
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-activate",
+            json={"batch_ids": [str(b.id) for b in batches]},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["succeeded"]) == 1
+        assert body["succeeded"][0] == str(batches[0].id)
+        assert len(body["failed"]) == 2
+        reasons = {item["batch_id"]: item["reason"] for item in body["failed"]}
+        assert "annotator" in reasons[str(batches[1].id)].lower()
+        assert "task" in reasons[str(batches[2].id)].lower()
+
+    @pytest.mark.asyncio
+    async def test_bulk_reassign_atomic(
+        self, httpx_client_bound, db_session, super_admin, annotator, reviewer,
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        rev, _ = reviewer
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id, statuses=["active", "annotating"],
+        )
+        await db_session.commit()
+
+        # 把 reviewer_id 改派为 rev（annotator_id 不变）
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-reassign",
+            json={"batch_ids": [str(b.id) for b in batches], "reviewer_id": str(rev.id)},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["succeeded"]) == 2
+
+        for b in batches:
+            await db_session.refresh(b)
+            assert b.reviewer_id == rev.id
+            # task 也应同步
+            ts = (await db_session.execute(
+                select(Task).where(Task.batch_id == b.id)
+            )).scalars().all()
+            for t in ts:
+                assert t.reviewer_id == rev.id
+
+    @pytest.mark.asyncio
+    async def test_non_owner_cannot_bulk(
+        self, httpx_client_bound, db_session, super_admin, annotator,
+    ):
+        owner, _ = super_admin
+        user, token = annotator
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id, statuses=["active"],
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-archive",
+            json={"batch_ids": [str(batches[0].id)]},
+            headers=_bearer(token),
+        )
+        assert resp.status_code == 403
+
+
+# ── 8. v0.7.3 · 批次操作历史端点 ────────────────────────────────────
+
+
+class TestBatchAuditLogs:
+    @pytest.mark.asyncio
+    async def test_returns_direct_and_bulk_events(
+        self, httpx_client_bound, db_session, super_admin, annotator,
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id, statuses=["active", "active"],
+        )
+        await db_session.commit()
+
+        # 先做一次 bulk-archive（含 batches[0] 和 batches[1]）
+        await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-archive",
+            json={"batch_ids": [str(b.id) for b in batches]},
+            headers=_bearer(owner_token),
+        )
+        # 再单独 unarchive batches[0] 走逆向迁移
+        await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batches[0].id}/transition",
+            json={"target_status": "active", "reason": "撤回"},
+            headers=_bearer(owner_token),
+        )
+
+        resp = await httpx_client_bound.get(
+            f"/api/v1/projects/{p.id}/batches/{batches[0].id}/audit-logs",
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        logs = resp.json()
+        actions = [e["action"] for e in logs]
+        assert "batch.status_changed" in actions  # 直接 transition
+        assert "batch.bulk_archive" in actions     # bulk 也会进来

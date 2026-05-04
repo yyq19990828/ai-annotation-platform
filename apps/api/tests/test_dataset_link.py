@@ -119,8 +119,9 @@ async def test_link_project_empty_dataset(db_session: AsyncSession, super_admin)
 
 
 @pytest.mark.asyncio
-async def test_link_project_auto_creates_named_batch(db_session: AsyncSession, super_admin):
-    """v0.6.7 B-12-①：link_project 应为本次新接入的数据集自动建一个 batch，写入 task.batch_id。"""
+async def test_link_project_no_default_batch(db_session: AsyncSession, super_admin):
+    """v0.7.3：link_project 不再创建「{数据集} 默认包」batch；新建 task 全部 batch_id=NULL，
+    走「未归类任务」语义，由用户主动 split 归到 batch。"""
     from app.db.models.task_batch import TaskBatch
 
     user, _ = super_admin
@@ -132,21 +133,18 @@ async def test_link_project_auto_creates_named_batch(db_session: AsyncSession, s
     svc = DatasetService(db_session)
     await svc.link_project(ds.id, project.id)
 
-    # 这次 link 应该新建一个 batch 命名为「{ds.name} 默认包」
+    # 不应有任何 batch 自动生成
     batches = (await db_session.execute(
-        select(TaskBatch).where(TaskBatch.project_id == project.id)
+        select(TaskBatch).where(TaskBatch.project_id == project.id, TaskBatch.dataset_id == ds.id)
     )).scalars().all()
-    new_batches = [b for b in batches if b.dataset_id == ds.id]
-    assert len(new_batches) == 1
-    assert "MyImageSet" in new_batches[0].name
-    assert new_batches[0].total_tasks == 8
+    assert len(batches) == 0
 
-    # 所有由该 dataset 创建的 task 必须挂到此 batch
-    tasks_in_batch = (await db_session.execute(
+    # task 全部 batch_id=NULL（未归类）
+    unclassified = (await db_session.execute(
         select(func.count()).select_from(Task)
-        .where(Task.project_id == project.id, Task.batch_id == new_batches[0].id)
+        .where(Task.project_id == project.id, Task.batch_id.is_(None))
     )).scalar()
-    assert tasks_in_batch == 8
+    assert unclassified == 8
 
 
 @pytest.mark.asyncio
@@ -172,6 +170,137 @@ async def test_unlink_project_hard_deletes_tasks(db_session: AsyncSession, super
     )).scalar()
     assert real_total == 0, "hard-unlink 后该 dataset 创建的 task 应清光"
     assert project.total_tasks == 0
+
+
+@pytest.mark.asyncio
+async def test_unlink_cascades_user_split_batches(db_session: AsyncSession, super_admin):
+    """v0.7.3 fix：用户把 dataset 任务 split 到 2 个 batch 后取消关联，2 个 batch 都应被清理。
+    管理员手工建的与该 dataset task 无关的空草稿不受影响；B-DEFAULT 永远保留。"""
+    from app.db.models.task_batch import TaskBatch
+    from app.services.display_id import next_display_id
+
+    user, _ = super_admin
+    ds = await _seed_dataset(db_session, user.id, n_items=6)
+    project = await _seed_project(db_session, user.id)
+
+    svc = DatasetService(db_session)
+    await svc.link_project(ds.id, project.id)
+    # v0.7.3：link 不再自建 batch，task 全部 batch_id=NULL；用户随后调 split
+
+    tasks = (await db_session.execute(
+        select(Task).where(Task.project_id == project.id)
+    )).scalars().all()
+    sub_a = TaskBatch(
+        id=uuid.uuid4(), project_id=project.id,
+        display_id=await next_display_id(db_session, "batches"),
+        name="sub A", status="draft", assigned_user_ids=[],
+    )
+    sub_b = TaskBatch(
+        id=uuid.uuid4(), project_id=project.id,
+        display_id=await next_display_id(db_session, "batches"),
+        name="sub B", status="draft", assigned_user_ids=[],
+    )
+    db_session.add_all([sub_a, sub_b])
+    await db_session.flush()
+    for i, t in enumerate(tasks):
+        t.batch_id = sub_a.id if i % 2 == 0 else sub_b.id
+
+    # 同时再加一个空草稿（与 dataset 无关），不应被误删
+    manual_empty = TaskBatch(
+        id=uuid.uuid4(), project_id=project.id,
+        display_id=await next_display_id(db_session, "batches"),
+        name="manual draft", status="draft", assigned_user_ids=[],
+    )
+    db_session.add(manual_empty)
+    await db_session.flush()
+
+    info = await svc.unlink_project(ds.id, project.id)
+    assert info is not None
+    deleted_ids = set(info["deleted_batch_ids"])
+    assert str(sub_a.id) in deleted_ids
+    assert str(sub_b.id) in deleted_ids
+    assert info["deleted_batches"] == 2
+
+    remaining = (await db_session.execute(
+        select(TaskBatch).where(TaskBatch.project_id == project.id)
+    )).scalars().all()
+    names = {b.name for b in remaining}
+    assert "manual draft" in names, "手工建的空 batch 不应被误删"
+
+
+@pytest.mark.asyncio
+async def test_unlink_cascades_legacy_default_batch(db_session: AsyncSession, super_admin):
+    """v0.7.3：历史数据兼容 —— 老库里残留的「{数据集} 默认包」batch 在 unlink 时同样应清掉。
+    模拟方法：link 之后手工补一个挂 dataset_id 的 batch 持有所有 task。"""
+    from app.db.models.task_batch import TaskBatch
+    from app.services.display_id import next_display_id
+
+    user, _ = super_admin
+    ds = await _seed_dataset(db_session, user.id, n_items=4)
+    ds.name = "Legacy"
+    await db_session.flush()
+    project = await _seed_project(db_session, user.id)
+
+    svc = DatasetService(db_session)
+    await svc.link_project(ds.id, project.id)
+
+    legacy_default = TaskBatch(
+        id=uuid.uuid4(), project_id=project.id, dataset_id=ds.id,
+        display_id=await next_display_id(db_session, "batches"),
+        name="Legacy 默认包", status="draft", assigned_user_ids=[],
+    )
+    db_session.add(legacy_default)
+    await db_session.flush()
+    await db_session.execute(
+        Task.__table__.update().where(Task.project_id == project.id).values(batch_id=legacy_default.id)
+    )
+    await db_session.flush()
+
+    info = await svc.unlink_project(ds.id, project.id)
+    assert info is not None
+    assert str(legacy_default.id) in info["deleted_batch_ids"]
+
+
+@pytest.mark.asyncio
+async def test_unclassified_count_endpoint(httpx_client_bound, db_session, super_admin):
+    """v0.7.3：未归类任务计数端点 — 给 BatchesSection 顶部横带用。"""
+    user, token = super_admin
+    ds = await _seed_dataset(db_session, user.id, n_items=5)
+    project = await _seed_project(db_session, user.id)
+    svc = DatasetService(db_session)
+    await svc.link_project(ds.id, project.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{project.id}/batches/unclassified-count",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["count"] == 5
+
+
+@pytest.mark.asyncio
+async def test_project_datasets_endpoint(httpx_client_bound, db_session, super_admin):
+    """v0.7.3：项目侧 GET /projects/{id}/datasets — 列出已关联 dataset，含 task 数。"""
+    user, token = super_admin
+    ds = await _seed_dataset(db_session, user.id, n_items=3)
+    ds.name = "DS-A"
+    await db_session.flush()
+    project = await _seed_project(db_session, user.id)
+    svc = DatasetService(db_session)
+    await svc.link_project(ds.id, project.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{project.id}/datasets",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()
+    assert len(rows) == 1
+    assert rows[0]["name"] == "DS-A"
+    assert rows[0]["items_count"] == 3
+    assert rows[0]["tasks_in_project"] == 3
 
 
 @pytest.mark.asyncio

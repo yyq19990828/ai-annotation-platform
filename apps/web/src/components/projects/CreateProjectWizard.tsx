@@ -592,7 +592,7 @@ function Step4Datasets({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)" }}>
-        选择要关联到本项目的数据集（可空 / 多选）。关联后会自动为每个数据集建一个独立批次。
+        选择要关联到本项目的数据集（可空 / 多选）。关联后任务会作为「未归类」加入项目；选择下面的「随机切分」可以一并把任务切分到 N 个批次。
       </div>
 
       {isLoading && <div style={{ padding: 12, fontSize: 12, color: "var(--color-fg-subtle)" }}>加载数据集…</div>}

@@ -7,6 +7,103 @@
 ---
 ## [Unreleased]
 
+### v0.7.3 草案 — 批次状态机扩展 + 多选批量操作 + 操作历史
+
+**问题：** 当前批次状态机是严格单向流转（仅 `rejected → active` 一条逆向边）。Owner / 超管误操作（错归档、漏审、误判）只能改库兜底，运维成本高且无审计；批次列表只支持单批次操作，项目尾期清理 / 跨批次调岗体验差。
+
+#### 后端 — 管理员逆向迁移（owner-only）
+
+新增 3 条逆向迁移到 `VALID_TRANSITIONS`（`apps/api/app/services/batch.py`），全部强制 reason（1-500 字，写入 `audit_log.detail_json.reason`）：
+
+| From → To | 副作用 | 通知 |
+|-----------|--------|------|
+| `archived → active` | 不动 task；调度器在下一次 task 操作时自动推进到正确阶段 | annotator + reviewer 收 `batch.unarchived` |
+| `approved → reviewing` | 清空 `reviewed_at` / `reviewed_by` / `review_feedback` | reviewer 收 `batch.review_reopened` |
+| `rejected → reviewing` | 不清反馈（reviewer 复审需看上次原因） | reviewer 收 `batch.review_reopened` |
+
+`assert_can_transition` 增加 `REVERSE_TRANSITIONS` 集合 + owner-only 早返回；非 owner 直接 403。`/transition` 端点：当 (from, to) 命中逆向集合且 reason 缺失，400 拒绝；audit detail 加 `reverse=true, reason=...` 字段。
+
+#### 后端 — 多选批量操作
+
+`BatchService` 新增 4 个 bulk 服务函数 + 4 个 `POST /projects/{id}/batches/bulk-*` 端点（owner-only）：
+
+- `bulk-archive` — 已 archived 的算 skipped，语法不允许的迁移算 failed
+- `bulk-delete` — B-DEFAULT 必跳过；task 接管复用单个删除路径的逻辑
+- `bulk-reassign` — 单事务原子；annotator_id / reviewer_id 任一可省（不传 = 不改），传 `null` = 清空；同步 cascade `Task.assignee_id` / `Task.reviewer_id`
+- `bulk-activate` — 逐个 `draft → active`；前置不满足（无 annotator / 0 task）→ failed，不影响其他
+
+统一返回 `BulkBatchActionResponse{succeeded, skipped, failed}`；每个端点写一条聚合 audit（`AuditAction.BULK_BATCH_*`，新增 4 个），detail 含 batch_ids + 三组结果。
+
+#### 后端 — 批次操作历史端点
+
+`GET /projects/{id}/batches/{batch_id}/audit-logs?limit=50` —— 返回该批次相关的所有 audit_log，倒序，包含两类：
+1. 直接 `target_type='batch' AND target_id={id}` 的事件（创建 / 状态迁移 / 驳回 / 删除）
+2. bulk 类操作中提及到该批次的项目级事件（`detail_json @> {"batch_ids": [{id}]}`，PG JSONB 子集匹配）
+
+依赖 `require_project_visible`，所有项目可见者皆可查看历史。
+
+#### 前端 — 多选 + 批量操作 UI
+
+`BatchesSection.tsx`：
+- 表头第一列加全选 Checkbox，每行加多选 Checkbox（B-DEFAULT 不可选，仅 owner 可见）
+- 选中后表格上方出现浮层操作条：`已选 N 条 | 激活 | 改派 | 归档 | 删除 | 取消`
+- 归档 / 删除 / 激活：现有风格的二次确认 Modal
+- 改派：新建 `BulkReassignModal`，标注员 / 审核员各一栏，「保留不变 / 清空指派 / 选某成员」三种语义
+- 操作完成后展示「成功 N / 跳过 M / 失败 K」，失败 / 跳过原因走 inline 折叠面板（不刷屏 toast）
+
+#### 前端 — 逆向按钮 + 操作历史抽屉
+
+- `BatchesSection.tsx` 行操作区为 owner 增加：archived 行「↩ 撤销归档」、approved 行「↩ 重开审核」、rejected 行「↩ 直接复审」（与现有「重新激活」并列）
+- 新建 `ReverseTransitionModal`：reason 输入（1-500 字，必填），与 `RejectBatchModal` 同款样式
+- 行操作区增加「📜」按钮（所有角色可见）→ 打开新建 `BatchAuditLogDrawer`：时间 / 操作人（含角色徽章）/ 动作（i18n 映射）/ 详情（JSON 折叠）；逆向迁移用 `reason` 醒目展示
+- `Icon.tsx` 新增 `clock` 图标
+
+#### 测试
+
+`apps/api/tests/test_batch_lifecycle.py` 新增 8 个用例（共 26 个，全过）：
+
+- `TestReverseTransitions` — owner 撤销归档 / 缺 reason 拒绝 / approved → reviewing 字段清理 / rejected → reviewing 反馈保留 / 非 owner 拒绝
+- `TestBulkOperations` — bulk archive 部分跳过 / bulk activate partial-success / bulk reassign 原子 + task 同步 / 非 owner 拒绝
+- `TestBatchAuditLogs` — 直接 + bulk 事件都能在抽屉端点中返回
+
+延后到 v0.7.x+：`* → draft` 终极重置、`annotating → active` 暂停（需 task 联动复位 + 调度器锁机制设计）。
+
+#### Fix · 数据集取消关联后空壳 batch 残留
+
+**症状：** link 自建的「{数据集} 默认包」batch（或用户从该 dataset 任务切出去的子 batch），在 unlink 后 task 被清空但 batch 自身保留为 `total_tasks=0` 的空壳挂在批次列表里。
+
+**修复：** `DatasetService.unlink_project`（`apps/api/app/services/dataset.py`）在删 task 前记下「即将失去 task 的 batch 集合」（`affected_batch_ids`），重算计数器后把其中 `total_tasks==0 且 display_id != 'B-DEFAULT'` 的批次也删掉。返回值新增 `deleted_batches` / `deleted_batch_ids`，写入 audit `dataset.unlink` 的 detail。
+
+`preview-unlink` 端点同步预测 `will_delete_batches` 数（与真实 unlink 行为对齐）；前端 `UnlinkConfirmModal` 文案补「并清理 N 个失去全部任务的空批次」，toast 也带上数量。
+
+新增 2 个测试（`test_dataset_link.py`）：
+- `test_unlink_cascades_user_split_batches` — 用户把默认 task 池切成 2 个 batch 后 unlink，2 个 batch 都被清；管理员手工建的空草稿不被误删
+- `test_unlink_cascades_legacy_default_batch` — 历史遗留的「默认包」batch 也能被新逻辑清理
+
+#### 改 · 关联数据集不再自建「默认包」+ 项目侧关联面板
+
+**问题：**
+1. 每次关联数据集都自动建一个「{数据集} 默认包」batch，对不需要立刻分包的项目是噪音。
+2. 新建项目向导里「选了批次分包」实际不生效 —— 向导先 link（task 全进默认包），再调 split（split 只看 `batch_id IS NULL` 或 B-DEFAULT），找不到任何 task → split 失败但被 try/catch 吞掉，结果只剩默认包。
+3. 项目设置里没有反向关联数据集的入口，要去数据集页找。
+
+**修改：**
+
+- 后端：`DatasetService.link_project`（`apps/api/app/services/dataset.py`）不再自动创建「默认包」batch，新建 task 全部 `batch_id=NULL`，走「未归类任务」语义。历史已存在的默认包不动（向后兼容；`unlink` 走 v0.7.3 级联清理时同样能清掉）。
+- 后端：新增 `GET /projects/{id}/batches/unclassified-count` —— 返回项目下 `batch_id IS NULL` 的任务数，给 BatchesSection 顶部横带用。
+- 后端：新增 `GET /projects/{id}/datasets` —— 列出本项目已关联的所有数据集（含 `items_count` / `tasks_in_project` / `linked_at`）。
+- 前端：`BatchesSection` 顶部加「未归类 N 条 · 去分包」横带，点击「去分包」直接打开「创建批次 → 随机切分」流，用户选 N 一键完成。
+- 前端：`ProjectSettingsPage` 增加「关联数据集」section（`DatasetsSection.tsx`），列出已关联 dataset + 关联新 dataset + 取消关联（复用 v0.7.3 unlink 级联 + 二次确认）。
+- 前端：`CreateProjectWizard` 文案从「自动为每个数据集建一个独立批次」改为「任务作为未归类加入，可一并选择随机切分」。
+
+**副作用：** 向导问题（#2）由此自然修复 —— link 不再占用 batch_id，split 找得到 task 了。
+
+新增 4 个测试：
+- `test_link_project_no_default_batch` — link 不再自建 batch，task 全部 batch_id=NULL
+- `test_unclassified_count_endpoint` — 未归类计数端点正确
+- `test_project_datasets_endpoint` — 项目侧 dataset 列表端点（含 task 数）
+- 旧 `test_link_project_auto_creates_named_batch` 改为反向断言，作为 `test_link_project_no_default_batch`
+
 ---
 
 ## [0.7.2] - 2026-05-03
