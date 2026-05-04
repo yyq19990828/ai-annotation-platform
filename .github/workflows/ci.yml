@@ -73,18 +73,27 @@ jobs:
         with:
           node-version: "20"
       - uses: pnpm/action-setup@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: pip install uv
+      - name: Sync API deps (for openapi dump)
+        working-directory: apps/api
+        run: uv sync
+      - name: Dump openapi.json from FastAPI app
+        working-directory: apps/api
+        run: |
+          uv run python -c "import json; from app.main import app; \
+            open('${{ github.workspace }}/openapi.json','w').write(json.dumps(app.openapi()))"
       - name: pnpm install
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
       - name: tsc + build
         working-directory: apps/web
         env:
-          # codegen 不依赖后端跑：CI 提供 stub openapi
-          OPENAPI_URL: ${{ github.workspace }}/openapi-stub.json
-        run: |
-          # 用最小 stub 让 codegen 跑通；真实变更的 schema 在 pytest job 里另外 dump
-          echo '{"openapi":"3.1.0","info":{"title":"stub","version":"0"},"paths":{}}' > "$OPENAPI_URL"
-          pnpm build
+          OPENAPI_URL: ${{ github.workspace }}/openapi.json
+        run: pnpm build
       - name: vitest
         working-directory: apps/web
         run: pnpm test
