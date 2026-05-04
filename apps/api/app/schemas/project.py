@@ -34,6 +34,12 @@ class ProjectUpdate(BaseModel):
     iou_dedup_threshold: Annotated[float, Field(ge=0.3, le=0.95)] | None = None
 
 
+class ProjectBatchSummary(BaseModel):
+    total: int = 0
+    assigned: int = 0
+    in_review: int = 0
+
+
 class ProjectOut(BaseModel):
     id: UUID
     organization_id: UUID | None = None
@@ -62,7 +68,7 @@ class ProjectOut(BaseModel):
     review_tasks: int
     in_progress_tasks: int = 0
     ai_completed_tasks: int = 0
-    batch_summary: dict = {}
+    batch_summary: ProjectBatchSummary = ProjectBatchSummary()
     due_date: date | None
     created_at: datetime
     updated_at: datetime
