@@ -636,7 +636,7 @@ export function WorkbenchShell() {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: `${leftOpen ? "260px" : "32px"} 48px 1fr ${rightOpen ? "280px" : "32px"}`,
+        gridTemplateColumns: `${leftOpen ? `${s.leftWidth}px` : "32px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "32px"}`,
         height: "100%", overflow: "hidden", background: "var(--color-bg-sunken)",
       }}
     >
@@ -665,6 +665,8 @@ export function WorkbenchShell() {
         onGoToBatchSettings={() => {
           if (projectId) navigate(`/projects/${projectId}/settings?section=batches`);
         }}
+        width={s.leftWidth}
+        onResize={s.setLeftWidth}
       />
 
       <ToolDock tool={s.tool} onSetTool={s.setTool} />
@@ -918,6 +920,8 @@ export function WorkbenchShell() {
 
       <AIInspectorPanel
         open={rightOpen}
+        width={s.rightWidth}
+        onResize={s.setRightWidth}
         readOnly={isLocked}
         aiModel={aiModel}
         aiRunning={aiRunning}

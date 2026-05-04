@@ -79,38 +79,52 @@ export function Topbar({
         gridTemplateColumns: "1fr auto 1fr",
         alignItems: "center",
         gap: 12,
-        padding: "8px 14px",
+        padding: "10px 16px",
         background: "var(--color-bg-elev)", borderBottom: "1px solid var(--color-border)",
         position: "relative",
       }}
     >
-      {/* 左：标题段 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+      {/* 左：标题段 — display_id 主、文件名次、索引徽章右贴 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
         <span
           className="mono"
           style={{
-            fontSize: 12, color: "var(--color-fg-muted)",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            fontSize: 13, fontWeight: 600, color: "var(--color-fg)",
+            flexShrink: 0,
           }}
         >
-          {task?.display_id ?? "—"} · {task?.file_name ?? "—"}
+          {task?.display_id ?? "—"}
+        </span>
+        <span
+          style={{
+            fontSize: 12.5, color: "var(--color-fg-muted)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            minWidth: 0,
+          }}
+          title={task?.file_name ?? undefined}
+        >
+          {task?.file_name ?? "—"}
         </span>
         {indexLabel && (
           <span
             className="mono"
             style={{
-              fontSize: 11, color: "var(--color-fg-subtle)",
-              padding: "1px 6px",
+              fontSize: 11, fontWeight: 500, color: "var(--color-fg-muted)",
+              padding: "2px 8px",
               background: "var(--color-bg-sunken)",
               border: "1px solid var(--color-border)",
-              borderRadius: 3,
+              borderRadius: "var(--radius-pill)",
               flexShrink: 0,
+              letterSpacing: 0.2,
             }}
           >
             {indexLabel}
           </span>
         )}
         {/* v0.7.2 · 责任人胶囊：标注员 / 审核员（list_tasks/get_task 已 populate） */}
+        {(task?.assignee || task?.reviewer) && (
+          <span style={{ width: 1, height: 16, background: "var(--color-border)", flexShrink: 0 }} />
+        )}
         {task?.assignee && (
           <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />
         )}
@@ -155,12 +169,17 @@ export function Topbar({
             trigger={({ toggle, ref, open }) => (
               <Button
                 ref={ref}
+                variant="ghost"
                 size="sm"
                 onClick={toggle}
                 title="智能切题 (N / U)"
-                style={{ padding: "0 6px", background: open ? "var(--color-bg-sunken)" : undefined }}
+                style={{
+                  padding: "4px 6px", marginLeft: 2,
+                  background: open ? "var(--color-bg-hover)" : undefined,
+                  color: "var(--color-fg-muted)",
+                }}
               >
-                <Icon name="sparkles" size={11} />
+                <Icon name="sparkles" size={13} />
               </Button>
             )}
           />
@@ -168,20 +187,24 @@ export function Topbar({
       </div>
 
       {/* 右：AI 主操作 + 溢出菜单 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end", position: "relative" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end", position: "relative" }}>
         {showThr && confThreshold !== undefined && (
           <span
             className="mono"
             style={{
-              position: "absolute", right: 50, top: -28,
-              padding: "2px 8px", fontSize: 11,
-              background: "var(--color-bg-elev)",
-              border: "1px solid var(--color-border)",
-              borderRadius: 3, color: "var(--color-fg-muted)",
-              boxShadow: "var(--shadow-sm)",
+              position: "absolute", right: 0, top: "calc(100% + 6px)",
+              padding: "4px 10px", fontSize: 11.5, fontWeight: 500,
+              background: "var(--color-ai-soft)",
+              border: "1px solid color-mix(in oklab, var(--color-ai) 35%, transparent)",
+              borderRadius: "var(--radius-pill)",
+              color: "var(--color-ai)",
+              boxShadow: "var(--shadow-md)",
               pointerEvents: "none",
+              zIndex: 20,
+              display: "inline-flex", alignItems: "center", gap: 6,
             }}
           >
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-ai)" }} />
             阈值 {(confThreshold * 100).toFixed(0)}%
           </span>
         )}
@@ -196,12 +219,17 @@ export function Topbar({
           trigger={({ toggle, ref, open }) => (
             <Button
               ref={ref}
+              variant="ghost"
               size="sm"
               onClick={toggle}
               title="更多"
-              style={{ padding: "0 6px", background: open ? "var(--color-bg-sunken)" : undefined }}
+              style={{
+                padding: "4px 6px",
+                background: open ? "var(--color-bg-hover)" : undefined,
+                color: "var(--color-fg-muted)",
+              }}
             >
-              <Icon name="settings" size={12} />
+              <Icon name="settings" size={14} />
             </Button>
           )}
         />

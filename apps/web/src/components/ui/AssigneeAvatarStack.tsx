@@ -53,10 +53,10 @@ export function AssigneeAvatarStack({
   return (
     <span
       title={tooltip}
-      style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}
     >
       {label && (
-        <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+        <span style={{ fontSize: 11, color: "var(--color-fg-muted)", whiteSpace: "nowrap" }}>
           {label}
         </span>
       )}

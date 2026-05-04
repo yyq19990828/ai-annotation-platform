@@ -52,6 +52,28 @@ export function useWorkbenchState() {
   const [confThreshold, setConfThreshold] = useState(0.5);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  const [leftWidth, setLeftWidthRaw] = useState<number>(() => {
+    try {
+      const v = parseInt(localStorage.getItem("workbench.leftWidth") ?? "");
+      return Number.isFinite(v) && v >= 200 && v <= 560 ? v : 260;
+    } catch { return 260; }
+  });
+  const [rightWidth, setRightWidthRaw] = useState<number>(() => {
+    try {
+      const v = parseInt(localStorage.getItem("workbench.rightWidth") ?? "");
+      return Number.isFinite(v) && v >= 220 && v <= 600 ? v : 280;
+    } catch { return 280; }
+  });
+  const setLeftWidth = useCallback((w: number) => {
+    const clamped = Math.max(200, Math.min(560, Math.round(w)));
+    setLeftWidthRaw(clamped);
+    try { localStorage.setItem("workbench.leftWidth", String(clamped)); } catch { /* noop */ }
+  }, []);
+  const setRightWidth = useCallback((w: number) => {
+    const clamped = Math.max(220, Math.min(600, Math.round(w)));
+    setRightWidthRaw(clamped);
+    try { localStorage.setItem("workbench.rightWidth", String(clamped)); } catch { /* noop */ }
+  }, []);
   /** 同任务内剪贴板（仅本会话内存）。 */
   const [clipboard, setClipboard] = useState<Annotation[]>([]);
   /** v0.6.4：canvas 批注草稿。reviewer / annotator 在题图上画红圈时使用。*/
@@ -152,6 +174,8 @@ export function useWorkbenchState() {
     confThreshold, setConfThreshold,
     leftOpen, setLeftOpen,
     rightOpen, setRightOpen,
+    leftWidth, setLeftWidth,
+    rightWidth, setRightWidth,
     clipboard, setClipboard,
     canvasDraft,
     beginCanvasDraft, endCanvasDraft, cancelCanvasDraft,

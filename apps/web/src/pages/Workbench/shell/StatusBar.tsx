@@ -54,34 +54,62 @@ export function StatusBar({
     ? `${formatDuration(avgLeadMs)}/题 · 剩 ${remainingTaskCount} · 约 ${formatDuration(avgLeadMs * remainingTaskCount)}`
     : avgLeadMs ? `${formatDuration(avgLeadMs)}/题` : "—";
 
+  const Sep = () => (
+    <span
+      aria-hidden
+      style={{
+        width: 1, height: 12, background: "var(--color-border)",
+        alignSelf: "center", flexShrink: 0,
+      }}
+    />
+  );
   return (
     <div
       style={{
-        padding: "6px 14px",
+        padding: "7px 16px",
         background: "var(--color-bg-elev)", borderTop: "1px solid var(--color-border)",
         display: "flex", justifyContent: "space-between",
         fontSize: 11.5, color: "var(--color-fg-muted)",
       }}
     >
-      <div style={{ display: "flex", gap: 16 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         {lockRemainingMs !== undefined && lockRemainingMs > 0 && !lockError && (
-          <span style={{ color: lockRemainingMs < 60_000 ? "oklch(0.60 0.18 35)" : undefined }}>
-            <Icon name="lock" size={11} style={{ verticalAlign: "-1px" }} /> 锁剩余 {formatLockTime(lockRemainingMs)}
-          </span>
+          <>
+            <span style={{ color: lockRemainingMs < 60_000 ? "var(--color-warning)" : undefined, display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <Icon name="lock" size={11} /> 锁剩余 <span className="mono" style={{ fontWeight: 500 }}>{formatLockTime(lockRemainingMs)}</span>
+            </span>
+            <Sep />
+          </>
         )}
         {lockError && (
-          <span style={{ color: "oklch(0.60 0.18 35)" }}>
-            <Icon name="warning" size={11} /> {lockError === "Lock expired" ? "锁已过期" : "他人正在编辑"}
-          </span>
+          <>
+            <span style={{ color: "var(--color-danger)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <Icon name="warning" size={11} /> {lockError === "Lock expired" ? "锁已过期" : "他人正在编辑"}
+            </span>
+            <Sep />
+          </>
         )}
-        <span><span className="mono">{userBoxesCount}</span> 已确认</span>
-        <span>
-          <Icon name="sparkles" size={11} style={{ color: "var(--color-ai)", verticalAlign: "-2px" }} />
-          {" "}<span className="mono">{aiBoxesCount}</span> AI 待审
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-fg)" }}>{userBoxesCount}</span>
+          <span>已确认</span>
         </span>
-        <span>当前类别: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{activeClass}</span></span>
+        <Sep />
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <Icon name="sparkles" size={11} style={{ color: "var(--color-ai)" }} />
+          <span className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: aiBoxesCount > 0 ? "var(--color-ai)" : "var(--color-fg)" }}>{aiBoxesCount}</span>
+          <span>AI 待审</span>
+        </span>
+        <Sep />
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          当前类别
+          <span style={{
+            color: "var(--color-fg)", fontWeight: 600,
+            padding: "0 6px", borderRadius: "var(--radius-sm)",
+            background: "var(--color-bg-sunken)",
+          }}>{activeClass}</span>
+        </span>
       </div>
-      <div style={{ display: "flex", gap: 16 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         {(offlineQueueCount && offlineQueueCount > 0) || online === false ? (
           <button
             type="button"
@@ -101,17 +129,25 @@ export function StatusBar({
           </button>
         ) : null}
         <span title="本会话单题平均耗时与剩余 ETA（&lt; 10 题样本时显示 —）">
-          ETA <span className="mono">{etaText}</span>
+          ETA <span className="mono" style={{ color: "var(--color-fg)", fontWeight: 500 }}>{etaText}</span>
         </span>
-        <span>分辨率 <span className="mono">{dimText}</span></span>
+        <Sep />
+        <span>分辨率 <span className="mono" style={{ color: "var(--color-fg)" }}>{dimText}</span></span>
         {cursorText && (
-          <span>光标 <span className="mono">{cursorText}</span></span>
+          <>
+            <Sep />
+            <span>光标 <span className="mono" style={{ color: "var(--color-fg)" }}>{cursorText}</span></span>
+          </>
         )}
         {preannotationProgress && (
-          <span style={{ color: "var(--color-ai)" }}>
-            预标注 {preannotationProgress.current}/{preannotationProgress.total}
-          </span>
+          <>
+            <Sep />
+            <span style={{ color: "var(--color-ai)", fontWeight: 500 }}>
+              预标注 <span className="mono">{preannotationProgress.current}/{preannotationProgress.total}</span>
+            </span>
+          </>
         )}
+        <Sep />
         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <span style={{
             width: 6, height: 6, borderRadius: "50%",

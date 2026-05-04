@@ -10,9 +10,13 @@ import type { AiBox } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
 import { AttributeForm } from "./AttributeForm";
 import { CommentsPanel } from "./CommentsPanel";
+import { ResizeHandle } from "./ResizeHandle";
 
 interface AIInspectorPanelProps {
   open: boolean;
+  /** 受控宽度（仅 open=true 生效）。 */
+  width: number;
+  onResize: (w: number) => void;
   aiModel: string;
   aiRunning: boolean;
   aiBoxes: AiBox[];
@@ -70,7 +74,8 @@ const stripStyle: React.CSSProperties = {
 };
 
 export function AIInspectorPanel({
-  open, aiModel, aiRunning, aiBoxes, userBoxes, selectedId, selectedIds, dimmedAiIds,
+  open, width, onResize,
+  aiModel, aiRunning, aiBoxes, userBoxes, selectedId, selectedIds, dimmedAiIds,
   confThreshold, aiTakeoverRate,
   imageWidth, imageHeight,
   attributeSchema, selectedAnnotation, onUpdateAttributes, currentUserId,
@@ -88,7 +93,7 @@ export function AIInspectorPanel({
     return (
       <div style={{ borderLeft: "1px solid var(--color-border)", overflow: "hidden" }}>
         <button onClick={onToggle} title="展开 AI 助手" style={stripStyle}>
-          <Icon name="chevLeft" size={13} />
+          <Icon name="panelRight" size={16} />
           <span style={{ fontSize: 10, writingMode: "vertical-rl", letterSpacing: 1, opacity: 0.6 }}>AI 助手</span>
         </button>
       </div>
@@ -98,20 +103,38 @@ export function AIInspectorPanel({
   return (
     <div
       style={{
+        position: "relative",
         background: "var(--color-bg-elev)", borderLeft: "1px solid var(--color-border)",
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}
     >
-      <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--color-border)", background: "linear-gradient(180deg, var(--color-ai-soft), transparent)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="sparkles" size={14} style={{ color: "var(--color-ai)" }} />
+      <ResizeHandle side="left" width={width} onResize={onResize} min={220} max={600} />
+      <div
+        style={{
+          padding: "12px 14px",
+          borderBottom: "1px solid var(--color-border)",
+          background: "linear-gradient(180deg, color-mix(in oklab, var(--color-ai-soft) 60%, transparent), transparent 80%)",
+          borderLeft: "2px solid color-mix(in oklab, var(--color-ai) 35%, transparent)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                width: 24, height: 24, borderRadius: "var(--radius-sm)",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                background: "color-mix(in oklab, var(--color-ai) 18%, transparent)",
+                color: "var(--color-ai)",
+              }}
+            >
+              <Icon name="sparkles" size={14} />
+            </span>
             <b style={{ fontSize: 13 }}>AI 助手</b>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Badge variant="ai" dot style={{ fontSize: 10 }}>{aiRunning ? "推理中" : "在线"}</Badge>
             <Button variant="ghost" size="sm" onClick={onToggle} title="收起 AI 助手" style={{ padding: "2px 6px" }}>
-              <Icon name="chevRight" size={11} />
+              <Icon name="panelRight" size={14} />
             </Button>
           </div>
         </div>
@@ -127,16 +150,36 @@ export function AIInspectorPanel({
           </Button>
         </div>
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 11, marginBottom: 4 }}>
             <span style={{ color: "var(--color-fg-muted)" }}>置信度阈值</span>
-            <span className="mono" style={{ fontWeight: 500 }}>{(confThreshold * 100).toFixed(0)}%</span>
+            <span
+              className="mono"
+              style={{
+                fontWeight: 600, fontSize: 12,
+                color: "var(--color-ai)",
+                padding: "0 6px", borderRadius: "var(--radius-sm)",
+                background: "color-mix(in oklab, var(--color-ai) 12%, transparent)",
+              }}
+            >{(confThreshold * 100).toFixed(0)}%</span>
           </div>
           <input
             type="range" min="0" max="1" step="0.05" value={confThreshold}
             onChange={(e) => onSetConfThreshold(+e.target.value)}
-            style={{ width: "100%", accentColor: "var(--color-ai)" }}
+            style={{ width: "100%", accentColor: "var(--color-ai)", height: 4 }}
           />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-fg-subtle)", marginTop: -2 }}>
+          <div
+            style={{
+              display: "flex", justifyContent: "space-between", fontSize: 10,
+              color: "var(--color-fg-subtle)", marginTop: 2,
+            }}
+          >
+            <span>0%</span>
+            <span style={{ opacity: 0.6 }}>·</span>
+            <span>50%</span>
+            <span style={{ opacity: 0.6 }}>·</span>
+            <span>100%</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-fg-subtle)", marginTop: 2 }}>
             <span>显示更多</span><span>更精准</span>
           </div>
         </div>

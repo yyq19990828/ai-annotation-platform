@@ -15,7 +15,7 @@ export function ToolDock({ tool, onSetTool }: ToolDockProps) {
     <div
       style={{
         display: "flex", flexDirection: "column", alignItems: "center",
-        padding: "8px 4px", gap: 4,
+        padding: "10px 4px", gap: 6,
         background: "var(--color-bg-elev)",
         borderRight: "1px solid var(--color-border)",
       }}
@@ -31,23 +31,31 @@ export function ToolDock({ tool, onSetTool }: ToolDockProps) {
             aria-label={t.label}
             aria-pressed={active}
             style={{
-              width: 36, height: 36,
+              position: "relative",
+              width: 38, height: 38,
               display: "flex", alignItems: "center", justifyContent: "center",
-              background: active ? "var(--color-accent-soft)" : "transparent",
-              color: active ? "var(--color-accent-fg)" : "var(--color-fg-muted)",
-              border: active ? "1px solid var(--color-accent)" : "1px solid transparent",
-              borderRadius: "var(--radius-sm)",
+              background: active ? "var(--color-accent)" : "transparent",
+              color: active ? "white" : "var(--color-fg-muted)",
+              border: "1px solid " + (active ? "var(--color-accent)" : "transparent"),
+              borderRadius: "var(--radius-md)",
               cursor: "pointer",
-              transition: "background 0.12s, color 0.12s",
+              transition: "background 0.12s, color 0.12s, transform 0.08s",
+              boxShadow: active ? "0 2px 6px color-mix(in oklab, var(--color-accent) 45%, transparent)" : "none",
             }}
             onMouseEnter={(e) => {
-              if (!active) e.currentTarget.style.background = "var(--color-bg-hover)";
+              if (!active) {
+                e.currentTarget.style.background = "var(--color-bg-hover)";
+                e.currentTarget.style.color = "var(--color-fg)";
+              }
             }}
             onMouseLeave={(e) => {
-              if (!active) e.currentTarget.style.background = "transparent";
+              if (!active) {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.color = "var(--color-fg-muted)";
+              }
             }}
           >
-            <Icon name={t.icon as IconName} size={16} />
+            <Icon name={t.icon as IconName} size={17} />
           </button>
         );
       })}

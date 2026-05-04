@@ -86,8 +86,8 @@
   --color-ai: oklch(0.70 0.20 295);
   --color-ai-soft: oklch(0.28 0.10 295);
 
-  --color-canvas-checker-a: #18181b;
-  --color-canvas-checker-b: #232326;
+  --color-canvas-checker-a: #1e1e23;
+  --color-canvas-checker-b: #2a2a30;
 
   /* 暗色：bg-elev 是 #1a1a1d，code 背景需要更亮才明显 */
   --color-code-bg: #2e2e33;
@@ -114,5 +114,14 @@ body {
 #root { min-height: 100vh; }
 button { font-family: inherit; cursor: pointer; }
 input, select, textarea { font-family: inherit; }
+
+/* ghost 按钮：hover 时显示淡底色作为反馈，平时完全扁平无框。 */
+button.btn.ghost:hover:not(:disabled) {
+  background: var(--color-bg-hover) !important;
+}
+button.btn.ghost:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
 
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }

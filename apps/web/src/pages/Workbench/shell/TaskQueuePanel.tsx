@@ -8,6 +8,7 @@ import type { TaskResponse } from "@/types";
 import type { ClassesConfig } from "@/api/projects";
 import type { BatchResponse } from "@/api/batches";
 import { ClassPalette } from "./ClassPalette";
+import { ResizeHandle } from "./ResizeHandle";
 
 interface TaskQueuePanelProps {
   open: boolean;
@@ -32,6 +33,9 @@ interface TaskQueuePanelProps {
   totalCount?: number;
   isOwner?: boolean;
   onGoToBatchSettings?: () => void;
+  /** 受控宽度（仅 open=true 生效）。 */
+  width: number;
+  onResize: (w: number) => void;
 }
 
 const stripStyle: React.CSSProperties = {
@@ -57,23 +61,52 @@ function TaskItem({
     : task.total_annotations > 0 ? "进行中"
     : task.total_predictions > 0 ? "AI 已预标"
     : "未开始";
+  const statusColor =
+    task.status === "completed" ? "var(--color-success)"
+    : task.status === "review" ? "var(--color-warning)"
+    : task.total_annotations > 0 ? "var(--color-accent)"
+    : task.total_predictions > 0 ? "var(--color-ai)"
+    : "var(--color-fg-subtle)";
 
   return (
     <div
       onClick={onSelect}
       style={{
-        display: "flex", alignItems: "center", gap: 8,
-        padding: "8px 10px", margin: "2px 0",
+        position: "relative",
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "9px 10px 9px 12px", margin: "3px 0",
         borderRadius: "var(--radius-md)",
         background: isActive ? "var(--color-accent-soft)" : "transparent",
-        border: "1px solid " + (isActive ? "oklch(0.85 0.06 252)" : "transparent"),
+        border: "1px solid " + (isActive ? "color-mix(in oklab, var(--color-accent) 30%, transparent)" : "transparent"),
         cursor: "pointer",
+        transition: "background 0.12s, border-color 0.12s",
+      }}
+      onMouseEnter={(e) => {
+        if (!isActive) e.currentTarget.style.background = "var(--color-bg-hover)";
+      }}
+      onMouseLeave={(e) => {
+        if (!isActive) e.currentTarget.style.background = "transparent";
       }}
     >
+      {isActive && (
+        <span
+          aria-hidden
+          style={{
+            position: "absolute", left: 2, top: 8, bottom: 8, width: 3,
+            background: "var(--color-accent)", borderRadius: 2,
+          }}
+        />
+      )}
       <Thumbnail src={task.thumbnail_url} blurhash={task.blurhash} width={40} height={40} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
-          <span className="mono" style={{ fontSize: 11.5, fontWeight: 500 }}>{task.display_id}</span>
+          <span
+            className="mono"
+            style={{
+              fontSize: 12, fontWeight: 600,
+              color: isActive ? "var(--color-accent-fg)" : "var(--color-fg)",
+            }}
+          >{task.display_id}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             {isLocked && (
               <span
@@ -91,7 +124,14 @@ function TaskItem({
         <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {task.file_name}
         </div>
-        <div style={{ fontSize: 10.5, color: isActive ? "var(--color-accent-fg)" : "var(--color-fg-subtle)", marginTop: 2 }}>
+        <div
+          style={{
+            fontSize: 10.5, marginTop: 3,
+            display: "inline-flex", alignItems: "center", gap: 4,
+            color: statusColor, fontWeight: 500,
+          }}
+        >
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: statusColor }} />
           {statusLabel}
         </div>
       </div>
@@ -106,13 +146,14 @@ export function TaskQueuePanel({
   onBack, onToggle, onSelectTask,
   batches, selectedBatchId, onSelectBatch,
   totalCount, isOwner, onGoToBatchSettings,
+  width, onResize,
 }: TaskQueuePanelProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
     count: tasks.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 84,
+    estimateSize: () => 88,
     overscan: 5,
   });
 
@@ -131,7 +172,7 @@ export function TaskQueuePanel({
     return (
       <div style={{ borderRight: "1px solid var(--color-border)", overflow: "hidden" }}>
         <button onClick={onToggle} title="展开任务列表" style={stripStyle}>
-          <Icon name="chevRight" size={13} />
+          <Icon name="panelLeft" size={16} />
           <span style={{ fontSize: 10, writingMode: "vertical-rl", letterSpacing: 1, opacity: 0.6 }}>任务列表</span>
         </button>
       </div>
@@ -141,6 +182,7 @@ export function TaskQueuePanel({
   return (
     <div
       style={{
+        position: "relative",
         background: "var(--color-bg-elev)", borderRight: "1px solid var(--color-border)",
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}
@@ -151,7 +193,7 @@ export function TaskQueuePanel({
             <Icon name="chevLeft" size={11} />返回总览
           </Button>
           <Button variant="ghost" size="sm" onClick={onToggle} title="收起任务列表" style={{ padding: "2px 6px" }}>
-            <Icon name="chevLeft" size={11} />
+            <Icon name="panelLeft" size={14} />
           </Button>
         </div>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{projectName}</div>
@@ -315,6 +357,8 @@ export function TaskQueuePanel({
           readOnly
         />
       </div>
+
+      <ResizeHandle side="right" width={width} onResize={onResize} min={200} max={560} />
     </div>
   );
 }
