@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](../CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航：批次单值分派 alembic 0030 加 annotator_id/reviewer_id + `POST /batches/distribute-batches` 项目级圆周分派一 batch 一人 + BatchAssignmentModal 单选化 + AssigneeAvatarStack 通用组件接入 4 处 + 标注框完整 audit 链 `annotation.create/update/delete/comment_*` + `GET /annotations/{id}/history` 时间线 + Workbench CommentsPanel 加 History tab + ⌘K CommandPalette + `GET /search` 跨实体聚合 + Dashboard FilterDrawer 4 维度 + ProjectGrid 网格视图 + url ?view=grid + 5 个 v0.7.2 用例 + 全后端测试 109 PASS）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航：批次单值分派 alembic 0030 加 annotator_id/reviewer_id + `POST /batches/distribute-batches` 项目级圆周分派一 batch 一人 + BatchAssignmentModal 单选化 + AssigneeAvatarStack 通用组件接入 4 处 + 标注框完整 audit 链 `annotation.create/update/delete/comment_*` + `GET /annotations/{id}/history` 时间线 + Workbench CommentsPanel 加 History tab + ⌘K CommandPalette + `GET /search` 跨实体聚合 + Dashboard FilterDrawer 4 维度 + ProjectGrid 网格视图 + url ?view=grid + 5 个 v0.7.2 用例 + 全后端测试 109 PASS）**；**v0.7.4 草案（测试与文档体系一次性建齐：pytest-cov + codecov / MSW / Playwright 骨架 / ESLint flat / pre-commit / OpenAPI snapshot 契约 / VitePress 文档站 + Scalar API / GitHub Pages 自动部署 / docs/adr/）**。
 
 ---
 
@@ -18,7 +18,6 @@
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **批次相关延伸**：① 智能切批（按难度/类别/不确定度）；② 批次级 IAA / 共识合并算法；③ 不可变训练快照 + 主动学习闭环。调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
-- ~~**批次级智能分派**：BatchAssignmentModal 当前是手动多选；可加「按当前成员数量均匀分派」「按角色批量勾选」等批量动作。~~ ✅ v0.7.2 — 重构为「一 batch 一人」单值语义 + 项目级 distribute-batches 圆周分派
 - **批次状态机增补 · 二阶段**（v0.7.3 已收 3 条 owner 逆向迁移 + 4 项多选批量；以下为延后项）：
   - `* → draft` 终极重置：把任意状态批次回退到草稿，task 全部回 pending（保留 annotation）。需要二次确认 + 强制 reason。**风险点**：approved / archived 已下游消费（导出 / 训练队列）回退后语义模糊，需要先想清「是否撤销下游引用」。
   - `annotating → active` 暂停：项目临时叫停。**难点**：调度器（`scheduler.check_auto_transitions`）一旦看到 `in_progress` task 就会立刻把 batch 推回 `annotating`，需要同时把 in_progress task 复位到 pending（释放标注员锁）+ 引入 batch 级「admin-locked」标志阻断调度器，否则迁移做了等于没做。
@@ -43,9 +42,7 @@
 - **系统设置可编辑**：本期 `GET /settings/system` 是只读 .env mirror，缺 PATCH。需要 `system_settings` 表 + 启动时 env 优先加载、表项作为 override。
 
 #### TopBar / Dashboard 控件
-- ~~**全局搜索**：TopBar 的 `<SearchInput placeholder="搜索项目、任务、数据集、成员..." kbd="⌘K">` 无 `value` / `onChange` / 提交 handler；后端无 `/search` 端点。~~ ✅ v0.7.2 — 后端 `/search` + 前端 `<CommandPalette>`
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
-- ~~**Dashboard 高级筛选 / 网格视图**：`DashboardPage.tsx:198-199` 两个 Button 无 onClick。~~ ✅ v0.7.2 — `<FilterDrawer>` 4 维度 + `<ProjectGrid>` + url ?view=grid
 
 #### Annotator / Reviewer 工作台
 - **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好。
@@ -91,20 +88,25 @@
 - **useInfiniteQuery 缓存 GC**：工作台调置信度阈值会创建新 query key；旧 key 默认 5min GC，长时间调阈值会内存增长。建议 `cacheTime: 30s` for predictions / 切题时手动 `removeQueries`。
 
 #### 测试 / 开发体验
-- **前端单元测试**：v0.5.2 已落 vitest 基座，phase 2 累计 42 例（hotkey 32 + iou 10）；需扩展覆盖 hooks（`useAnnotationHistory` batch 命令、`useClipboard` 偏移粘贴、`useSessionStats` ring buffer、`replaceAnnotationId`）与关键组件（Modal、InviteUserModal 状态机、RegisterPage 三态、`<DropdownMenu>` 键盘导航）。
-- **E2E 测试**：Playwright 录制邀请→注册→标注→审核→审计核心 5 条用户流程。
-- **CI/CD pipeline**：`.github/workflows/` 缺；至少 lint + tsc + pytest + 镜像构建 + vitest + `pnpm codegen` 校验前后端 schema 同步。
-- **预提交钩子**：husky + lint-staged + ruff + tsc + vitest run --changed。
+- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座已就位（v0.7.4），但当前 64 测试集中在 Workbench state 与少量组件，页面级几乎无覆盖。需补 hooks（`useAnnotationHistory` batch 命令、`useClipboard` 偏移粘贴、`useSessionStats` ring buffer、`replaceAnnotationId`）与关键组件（Modal、InviteUserModal 状态机、RegisterPage 三态、`<DropdownMenu>` 键盘导航），以及 Dashboard / ProjectList / WorkbenchShell 三个页面级单测，目标前端 codecov ≥ 30%。
+- **E2E spec 写实**：v0.7.4 已搭好 Playwright 骨架，三个 spec（auth / annotation / batch-flow）全 `.skip` 占位且 e2e job `continue-on-error: true`。需先把 `auth.spec.ts` 写实（登录页 → dashboard、错密码、JWT 过期），加 `e2e/fixtures/seed.ts` 调后端造种子数据，跑通后去掉 `continue-on-error`。然后第二轮 annotation bbox 完整链路。
+- **覆盖率门槛软启用**：`.codecov.yml` 当前完全 informational；待累计 1-2 周数据后把 `project.default.target` 从 `auto` 改为后端 60% / 前端 30%，仍 informational 观察 2 周再切硬阻断。
+- **OpenAPI codegen 加速**：当前 `apps/web/package.json` 的 `prebuild: pnpm codegen` 每次 build 都跑；snapshot 落盘后契约由 `test_openapi_contract.py` 兜底，可把 `prebuild` 移到 dev-only 或加 `if-changed` 跳过条件。同时把 `pnpm typecheck` 加到 CI lint job（snapshot 已落盘，无运行时依赖）。
+- **ruff-format 移出 pre-commit**：v0.7.4 激活 ruff-format pre-commit hook 一次性产生 121 文件 churn；考虑把 ruff-format 从 pre-commit 移到 CI 单独 job，让本地 commit 速度更快。
 
 #### i18n / 主题 / 无障碍
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
 - **无障碍**：ARIA 属性极少；Lighthouse Accessibility 分数应作为 PR gate。
 
-#### 文档
-- **部署文档**：缺 production 部署清单（环境变量、TLS、备份、初次 bootstrap_admin 步骤）。
-- **安全模型文档**：RBAC 矩阵、审计字段释义、邀请流程时序图。
-- **API 使用指南**：FastAPI 自动 `/docs` 已有，但缺示例与最佳实践（特别是 ML Backend 协议、WebSocket 订阅）。
-- **快捷键文档**：v0.6.2 后工作台快捷键 30+ 静态 + 动态属性键，HotkeyCheatSheet 是 SoT 但缺独立 Markdown 用户文档（QA / 运营培训用）。
+#### 文档（v0.7.4 已搭 VitePress 文档站三栏骨架，以下为内容填实工作）
+
+- **用户手册关键页填实**：`docs-site/user-guide/` 11 篇骨架已就位但多为大纲。`getting-started.md` 缺端到端 GIF（登录 → 标第一个任务 → 提交）；`workbench/{bbox,polygon,keypoint}.md` 每篇缺 2-3 张界面截图；`projects/` `review/` `export/` 关键步骤需配截图。
+- **开发文档深化**：`docs-site/dev/architecture/data-flow.md` 4 个 mermaid 序列图改为对应代码文件路径标注（点 GitHub 跳具体函数）；`how-to/add-api-endpoint.md` 把 widgets 占位例改为 v0.7.x 真实新增端点。
+- **ADR 0002-0005 回填**：v0.7.4 落了 ADR-0001 元决策，ADR-0001 已规划 4 篇待写：FastAPI/SQLAlchemy/Alembic 选型、`@hey-api/openapi-ts` vs orval/swagger-typescript-api、Konva vs Fabric vs 原生 Canvas、任务锁 5min TTL + 审核流转角色矩阵。每篇 80-150 行。
+- **部署文档**：缺 production 部署清单（环境变量、TLS、备份、初次 bootstrap_admin 步骤），写在 `docs-site/dev/deploy.md`（待新建）。
+- **安全模型文档**：RBAC 矩阵、审计字段释义、邀请流程时序图，写在 `docs-site/dev/security.md`（待新建）。
+- **API 使用指南补充**：v0.7.4 docs-site/api 已用 Scalar 渲染 OpenAPI；缺 ML Backend 协议契约（健康端点 / 预测请求 / 错误格式 / 流式 vs 同步 / `is_interactive` 协商）和 WebSocket 订阅指南，分别写在 `docs-site/dev/ml-backend-protocol.md` 与 `docs-site/dev/ws-protocol.md`（待新建）。
+- **快捷键文档 SoT 化**：v0.6.2 后工作台快捷键 30+ 静态 + 动态属性键，HotkeyCheatSheet 是代码 SoT，但 `docs-site/user-guide/workbench/index.md` 当前手抄了一份。考虑构建期从 `apps/web/src/pages/Workbench/state/hotkeys.ts` 自动导出 Markdown 表，避免双源漂移。
 
 ---
 
@@ -169,9 +171,14 @@
 | **P2** | C.3 history 持久化（undo/redo 栈 sessionStorage） | quick win，工时少 |
 | **P2** | `task.reopen` 通知 fan-out 到通知中心 | v0.7.0 删 audit-derived 后 reopen 通知留作下版 |
 | **P2** | 审计日志归档（PARTITION）、AuditMiddleware 队列化、useInfiniteQuery 缓存 GC | 当前数据量未到瓶颈，监控触发再做 |
+| **P2** | E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error` | v0.7.4 骨架已落，spec 全 .skip 占位；写实是 PR 红线收紧前置 |
+| **P2** | 前端页面级单测补 + 覆盖率拉到 30% | v0.7.4 MSW 已就位但 coverage <10%；Dashboard / ProjectList / WorkbenchShell 三页先补 |
+| **P2** | 用户手册关键页填实（GIF + 截图）+ ADR 0002-0005 回填 | v0.7.4 docs-site 骨架已落但多为大纲，新人 onboarding 价值低 |
 | **P3** | NotificationsPopover usePopover 迁移 + ProjectsPage 卡片操作菜单收编 DropdownMenu | v0.7.0 写时观察 |
 | **P3** | 批次状态看板（kanban 视图） | 7 态卡片墙 + owner 治理界面，与 transition 鉴权冲突需谨慎 |
-| **P3** | husky + lint-staged 预提交钩子 | v0.6.6 CI 已能拦回归，本地拦截是 nice-to-have |
+| **P3** | 部署 / 安全模型 / ML Backend 协议 / WebSocket 文档 | docs-site 框架已就位，按业务需求触发 |
+| **P3** | 快捷键文档自动从 `hotkeys.ts` SoT 生成 | 双源漂移风险低（代码改时连带改文档），现状能用 |
+| **P3** | ruff-format 从 pre-commit 移到 CI | 本地 commit 速度优化，仅在 hook 拖慢明显时做 |
 | **P3** | i18n、SSO、2FA | 客户具体需求驱动 |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 |
 
