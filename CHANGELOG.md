@@ -106,6 +106,67 @@
 
 ---
 
+### v0.7.4 草案 — 测试与文档体系深化（接续 2026-05-05 infra 建齐）
+
+**前置：** commit `2e31614 feat(infra)` 已搭好骨架（pytest-cov / MSW / Playwright / VitePress / OpenAPI snapshot 契约 / Codecov / GitHub Pages 部署）。本版本不再动地基，只往里填内容、把几个「先放过」的红线收紧。
+
+#### 测试 — 把 E2E 真正跑起来
+
+- 写实 `apps/web/e2e/tests/auth.spec.ts`：登录页选择器固定后，覆盖「登录 → 跳转 dashboard」+「错密码报错」+「JWT 过期自动登出」3 条
+- E2E fixture 准备：`e2e/fixtures/seed.ts` 调后端 `/api/v1/...` 创建测试用户 + 项目 + 任务，spec 内引用，避免硬编码种子
+- 跑通后从 `.github/workflows/ci.yml` 的 `e2e` job 去掉 `continue-on-error: true`（让失败真正阻断 PR）
+- 第二轮：`annotation.spec.ts` 覆盖一条 bbox 完整链路（开任务 → 拖框 → 选类别 → 提交）
+
+#### 测试 — 前端覆盖率拉起
+
+当前前端 64 测试集中在 Workbench state 与几个组件，页面级几乎没覆盖。补：
+
+- `pages/Dashboard/__tests__/DashboardPage.test.tsx` — 项目卡渲染 + 空态 + stats 加载
+- `pages/Projects/__tests__/ProjectList.test.tsx` — 列表 + 筛选 + 分页交互
+- `pages/Workbench/__tests__/WorkbenchShell.test.tsx` — 任务流转 + 快捷键调度（state 已有，shell 层补）
+
+每个用 `server.use(http.get(...))` 临时 mock，不依赖默认 handlers。验收：codecov 显示前端覆盖率 ≥ 30%（当前 < 10%）。
+
+#### 测试 — 后端覆盖率门槛
+
+当前后端覆盖率 35%（部分跑），全跑预计 50-60%。本版加 codecov status check 软门槛：
+
+- `.codecov.yml` 把 `project.default.target` 从 `auto` 改为 `60%`，`threshold: 1%`，先 informational 观察 2 周
+- 观察期满后改 `informational: false`，让 PR 拉低覆盖率即标黄（不阻断 merge，仅提醒）
+
+#### 文档 — 关键页填实
+
+骨架里有 11 篇 user-guide + 11 篇 dev 都是大纲。本轮补这几篇的实际内容：
+
+- `user-guide/getting-started.md`：录一段端到端 GIF（登录 → 标第一个任务 → 提交），插到 hero
+- `user-guide/workbench/{bbox,polygon,keypoint}.md`：每篇加 2-3 张实际界面截图
+- `dev/architecture/data-flow.md`：4 个 mermaid 序列图改为对应代码文件路径标注（点 GitHub 跳到具体函数）
+- `dev/how-to/add-api-endpoint.md`：把 widgets 占位例改为 v0.7.x 真实新增的某个端点（提交时再选）
+
+#### 文档 — ADR 回填
+
+按 ADR-0001 规划的 4 条决策回填实际内容，每篇控制在 80-150 行：
+
+- `0002-fastapi-sqlalchemy-alembic.md` — 为什么不选 Django/Flask/Starlette
+- `0003-openapi-typescript-codegen.md` — 选 `@hey-api/openapi-ts` 而非 `orval` / `swagger-typescript-api` 的对比
+- `0004-konva-as-canvas-engine.md` — Konva vs Fabric vs 原生 Canvas
+- `0005-task-lock-and-review-state-machine.md` — 任务锁的 5 分钟 TTL + 审核流转角色矩阵
+
+#### CI / 工具链
+
+- `prebuild` 行为：`apps/web/package.json` 当前 `"prebuild": "pnpm codegen"` 会拖慢 build。CI 已有 snapshot 校验（`test_openapi_contract.py`），考虑把 prebuild 移到 dev-only 或加跳过条件
+- `apps/web` 加 `pnpm typecheck` 到 lint job（snapshot 落盘后已无运行时依赖）
+- 探索把 ruff-format 从 pre-commit 移到 CI 单独 job，让 commit 速度更快
+
+#### 验收
+
+- [ ] E2E `auth.spec.ts` CI 中真跑通，`continue-on-error` 去掉
+- [ ] codecov dashboard 显示前后端两个 flag 都有数据，前端覆盖率 ≥ 30%
+- [ ] docs-site 首页 GIF / workbench 截图都到位（不是 `> 待补` 占位）
+- [ ] `docs/adr/` 下至少 4 篇有实际内容（不是只有标题）
+
+---
+
 ## [0.7.2] - 2026-05-03
 
 > 治理可视化 + 全局导航。一次性收口 5 项 ROADMAP open 项：**批次单值分派 + 项目级圆周分派、责任人头像组、标注框历史可追溯、⌘K 全局搜索、Dashboard 高级筛选 + 网格视图**。一次 alembic 迁移（0030）把批次分派从「list 多人」语义切换到「一 batch = 1 标注员 + 1 审核员」单值语义。
