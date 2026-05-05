@@ -384,6 +384,34 @@
         "title": "AnnotationHistoryResponse",
         "type": "object"
       },
+      "AnnotationListPage": {
+        "description": "v0.7.6 · keyset cursor 分页响应。next_cursor=None 表示已是末页。",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AnnotationListPage",
+        "type": "object"
+      },
       "AnnotationOut": {
         "properties": {
           "annotation_type": {
@@ -1315,6 +1343,223 @@
         "title": "BatchDistributeResult",
         "type": "object"
       },
+      "BatchOut": {
+        "properties": {
+          "annotator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotator Id"
+          },
+          "approved_tasks": {
+            "default": 0,
+            "title": "Approved Tasks",
+            "type": "integer"
+          },
+          "assigned_user_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Assigned User Ids",
+            "type": "array"
+          },
+          "completed_tasks": {
+            "default": 0,
+            "title": "Completed Tasks",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "dataset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "display_id": {
+            "title": "Display Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "priority": {
+            "default": 50,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "progress_pct": {
+            "default": 0.0,
+            "title": "Progress Pct",
+            "type": "number"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "rejected_tasks": {
+            "default": 0,
+            "title": "Rejected Tasks",
+            "type": "integer"
+          },
+          "review_feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Feedback"
+          },
+          "review_tasks": {
+            "default": 0,
+            "title": "Review Tasks",
+            "type": "integer"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "total_tasks": {
+            "default": 0,
+            "title": "Total Tasks",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "display_id",
+          "name",
+          "status",
+          "created_at"
+        ],
+        "title": "BatchOut",
+        "type": "object"
+      },
       "BatchReject": {
         "properties": {
           "feedback": {
@@ -1328,6 +1573,22 @@
           "feedback"
         ],
         "title": "BatchReject",
+        "type": "object"
+      },
+      "BatchReset": {
+        "description": "v0.7.6 · 终极重置到 draft。reason 至少 10 字以避免误操作；写入 audit.detail.reason。",
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "BatchReset",
         "type": "object"
       },
       "BatchSplitRequest": {
@@ -4253,6 +4514,16 @@
             ],
             "title": "Ai Model"
           },
+          "attribute_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttributeSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "classes": {
             "default": [],
             "items": {
@@ -5934,7 +6205,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.7.5"
+    "version": "0.7.6"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -10622,6 +10893,75 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/reset": {
+      "post": {
+        "description": "v0.7.6 · owner 兜底：把任意状态批次回退到 draft。\n\n- task 全部回 pending（保留 annotation 记录与 is_active）\n- 删除 task_locks 释放标注员锁\n- 清 review_feedback / reviewed_at / reviewed_by\n- 强制 reason ≥ 10 字（schema 层校验），写入 audit.detail.reason",
+        "operationId": "reset_batch_to_draft_api_v1_projects__project_id__batches__batch_id__reset_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset Batch To Draft",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/batches/{batch_id}/transition": {
       "post": {
         "operationId": "transition_batch_api_v1_projects__project_id__batches__batch_id__transition_post",
@@ -12148,6 +12488,81 @@
           }
         ],
         "summary": "Create Annotation",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotations/page": {
+      "get": {
+        "description": "v0.7.6 · keyset 分页变体。单 task 1000+ 框场景下避免一次性大列表阻塞。\n\ncursor 编码：base64(`{ts_isoformat}|{annotation_id}`)，与 audit_logs 端点一致。",
+        "operationId": "get_annotations_paged_api_v1_tasks__task_id__annotations_page_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationListPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Annotations Paged",
         "tags": [
           "tasks"
         ]

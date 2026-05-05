@@ -5,7 +5,6 @@ import { SearchInput } from "@/components/ui/SearchInput";
 import { Avatar } from "@/components/ui/Avatar";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { useAuthStore } from "@/stores/authStore";
-import { useUnreadCount } from "@/hooks/useNotifications";
 import { useTheme, type ThemePref } from "@/hooks/useTheme";
 import type { IconName } from "@/components/ui/Icon";
 import { NotificationsPopover } from "./NotificationsPopover";
@@ -28,7 +27,6 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
   const logout = useAuthStore((s) => s.logout);
   const qc = useQueryClient();
   const isFetching = useIsFetching();
-  const [notifOpen, setNotifOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { theme, resolved, setTheme } = useTheme();
 
@@ -46,9 +44,6 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  const { data: unreadData } = useUnreadCount();
-  const unreadCount = unreadData?.unread ?? 0;
 
   const handleRefresh = () => {
     qc.invalidateQueries();
@@ -243,43 +238,8 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
             )}
           />
 
-          {/* 通知按钮 */}
-          <div style={{ position: "relative" }}>
-            <button
-              title="通知"
-              onClick={() => setNotifOpen((v) => !v)}
-              style={{
-                width: 30,
-                height: 30,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: notifOpen ? "var(--color-bg-sunken)" : "transparent",
-                border: "1px solid transparent",
-                borderRadius: "var(--radius-md)",
-                color: "var(--color-fg-muted)",
-                cursor: "pointer",
-                position: "relative",
-              }}
-            >
-              <Icon name="bell" size={15} />
-              {unreadCount > 0 && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 5,
-                    right: 5,
-                    width: 7,
-                    height: 7,
-                    background: "var(--color-danger)",
-                    borderRadius: "50%",
-                    border: "1.5px solid var(--color-bg-elev)",
-                  }}
-                />
-              )}
-            </button>
-            {notifOpen && <NotificationsPopover onClose={() => setNotifOpen(false)} />}
-          </div>
+          {/* 通知按钮（v0.7.6：组件自包含 trigger + popover，TopBar 不再管 open state） */}
+          <NotificationsPopover />
 
           <div
             style={{

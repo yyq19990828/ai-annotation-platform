@@ -36,6 +36,13 @@ class AnnotationUpdate(BaseModel):
         return normalize_legacy_geometry(v) if v is not None else v
 
 
+class AnnotationListPage(BaseModel):
+    """v0.7.6 · keyset cursor 分页响应。next_cursor=None 表示已是末页。"""
+
+    items: list["AnnotationOut"]
+    next_cursor: str | None = None
+
+
 class AnnotationOut(BaseModel):
     id: UUID
     task_id: UUID
@@ -63,3 +70,6 @@ class AnnotationOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+AnnotationListPage.model_rebuild()

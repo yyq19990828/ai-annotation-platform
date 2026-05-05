@@ -6,7 +6,12 @@ celery_app = Celery(
     "annotation_worker",
     broker=settings.effective_celery_broker,
     backend=settings.effective_celery_broker,
-    include=["app.workers.tasks", "app.workers.media", "app.workers.cleanup"],
+    include=[
+        "app.workers.tasks",
+        "app.workers.media",
+        "app.workers.cleanup",
+        "app.workers.audit",
+    ],
 )
 
 celery_app.conf.update(
@@ -23,6 +28,8 @@ celery_app.conf.update(
         "app.workers.media.backfill_media": {"queue": "media"},
         "app.workers.media.backfill_tasks": {"queue": "media"},
         "app.workers.cleanup.purge_soft_deleted_attachments": {"queue": "cleanup"},
+        # v0.7.6 · audit 异步 INSERT 走独立队列，不与 ml/media 抢资源
+        "app.workers.audit.persist_audit_entry": {"queue": "audit"},
     },
     # v0.7.0：beat schedule。运维侧需 deploy `celery -A app.workers.celery_app beat` 进程
     # （或 worker --beat 单进程模式）才会触发。

@@ -15,11 +15,12 @@ import {
   PRESET_AI_MODELS,
   CUSTOM_MODEL_KEY,
 } from "@/constants/projectTypes";
-import type { ProjectResponse, ClassesConfig } from "@/api/projects";
+import type { ProjectResponse, ClassesConfig, AttributeField, AttributeSchema } from "@/api/projects";
 import type { DatasetResponse } from "@/api/datasets";
-import { ClassEditor, defaultColorFor, type ClassRow } from "@/pages/Projects/sections/ClassEditor";
+import { ClassEditor, type ClassRow } from "@/pages/Projects/sections/ClassEditor";
+import { AttributeSchemaEditor, validateAttributeFields } from "@/pages/Projects/sections/AttributeSchemaEditor";
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6;
+type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 interface Props {
   open: boolean;
@@ -32,6 +33,8 @@ interface FormState {
   dueDate: string;
   // v0.7.0：升级为 ClassRow[]（含颜色），提交时序列化为 classes + classes_config
   classRows: ClassRow[];
+  // v0.7.6：属性 schema 步骤；提交时序列化为 attribute_schema = { fields }
+  attributeFields: AttributeField[];
   aiEnabled: boolean;
   aiModelChoice: string;
   aiModelCustom: string;
@@ -46,6 +49,7 @@ const INITIAL: FormState = {
   typeKey: "image-det",
   dueDate: "",
   classRows: [],
+  attributeFields: [],
   aiEnabled: false,
   aiModelChoice: PRESET_AI_MODELS[0],
   aiModelCustom: "",
@@ -54,15 +58,19 @@ const INITIAL: FormState = {
   members: [],
 };
 
-const STEP_LABELS: Record<1 | 2 | 3 | 4 | 5, string> = {
+type StepperStep = 1 | 2 | 3 | 4 | 5 | 6;
+
+const STEP_LABELS: Record<StepperStep, string> = {
   1: "类型",
   2: "类别",
-  3: "AI 接入",
-  4: "数据",
-  5: "成员",
+  3: "属性",
+  4: "AI 接入",
+  5: "数据",
+  6: "成员",
 };
 
-const DRAFT_KEY = "create_project_draft_v0_6_7";
+// v0.7.6：扩为 6 步（+属性 schema），bump 草稿 key 防止旧 5 步草稿污染。
+const DRAFT_KEY = "create_project_draft_v0_7_6";
 
 export function CreateProjectWizard({ open, onClose }: Props) {
   const navigate = useNavigate();
@@ -110,15 +118,26 @@ export function CreateProjectWizard({ open, onClose }: Props) {
   const resolvedAiModel = form.aiModelChoice === CUSTOM_MODEL_KEY
     ? form.aiModelCustom.trim()
     : form.aiModelChoice;
-  const step3Valid = !form.aiEnabled || resolvedAiModel.length > 0;
+  const step4Valid = !form.aiEnabled || resolvedAiModel.length > 0;
+  // step 3 属性 schema：用 AttributeSchemaEditor 自带校验复用；空数组合法（可跳过）
+  const step3AttrError = form.attributeFields.length === 0
+    ? null
+    : validateAttributeFields(form.attributeFields);
+  const step3Valid = step3AttrError === null;
 
   const submit = () => {
-    if (!step3Valid) return;
+    if (!step4Valid) return;
+    if (step3AttrError) {
+      pushToast({ msg: step3AttrError, kind: "error" });
+      return;
+    }
     const classes = form.classRows.map((r) => r.name);
     const classes_config: ClassesConfig = {};
     form.classRows.forEach((r, i) => {
       classes_config[r.name] = { color: r.color, order: i };
     });
+    const attribute_schema: AttributeSchema | undefined =
+      form.attributeFields.length > 0 ? { fields: form.attributeFields } : undefined;
     createProject.mutate(
       {
         name: trimmedName,
@@ -126,6 +145,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
         type_label: selectedType.label,
         classes,
         classes_config,
+        attribute_schema,
         ai_enabled: form.aiEnabled,
         ai_model: form.aiEnabled ? resolvedAiModel : null,
         due_date: form.dueDate || null,
@@ -134,8 +154,8 @@ export function CreateProjectWizard({ open, onClose }: Props) {
         onSuccess: async (p) => {
           setCreated(p);
           pushToast({ msg: "项目创建成功", sub: p.display_id, kind: "success" });
-          // 后续 step 4 / 5 顺序调用其他端点，每步独立失败不阻断
-          setStep(4);
+          // 后续 step 5 / 6 顺序调用其他端点，每步独立失败不阻断
+          setStep(5);
         },
         onError: (err) => {
           pushToast({
@@ -147,17 +167,17 @@ export function CreateProjectWizard({ open, onClose }: Props) {
     );
   };
 
-  // step 4 / 5 完成后的最终落地
-  const finishWizard = (linkedDatasets: number, addedMembers: number) => {
+  // step 5 / 6 完成后的最终落地
+  const finishWizard = (_linkedDatasets: number, _addedMembers: number) => {
     try { localStorage.removeItem(DRAFT_KEY); } catch {/* */}
-    setStep(6);
+    setStep(7);
   };
 
-  const stepperCurrent = (step >= 1 && step <= 5 ? step : 5) as 1 | 2 | 3 | 4 | 5;
+  const stepperCurrent = (step >= 1 && step <= 6 ? step : 6) as StepperStep;
 
   return (
-    <Modal open={open} onClose={onClose} title={step === 6 ? "创建完成" : "新建项目"} width={620}>
-      {step !== 6 && <Stepper current={stepperCurrent} />}
+    <Modal open={open} onClose={onClose} title={step === 7 ? "创建完成" : "新建项目"} width={620}>
+      {step !== 7 && <Stepper current={stepperCurrent} />}
 
       {step === 1 && (
         <Step1
@@ -169,32 +189,38 @@ export function CreateProjectWizard({ open, onClose }: Props) {
       )}
 
       {step === 2 && (
-        <Step2
+        <Step2Classes
           rows={form.classRows}
           onChange={(rows) => setForm((s) => ({ ...s, classRows: rows }))}
         />
       )}
 
       {step === 3 && (
-        <Step3 form={form} setForm={setForm} resolvedAiModel={resolvedAiModel} />
+        <Step3Attributes
+          fields={form.attributeFields}
+          onChange={(fields) => setForm((s) => ({ ...s, attributeFields: fields }))}
+          error={step3AttrError}
+        />
       )}
 
-      {step === 4 && created && (
-        <Step4Datasets
+      {step === 4 && (
+        <Step4Ai form={form} setForm={setForm} resolvedAiModel={resolvedAiModel} />
+      )}
+
+      {step === 5 && created && (
+        <Step5Datasets
           project={created}
           form={form}
           setForm={setForm}
           onNext={(linked) => {
-            // 把已选 datasetIds + splitNBatches 应用完成后下一步
-            // 实际 link/split 由 Step4Datasets 内部完成 mutation 后调 onNext
             void linked;
-            setStep(5);
+            setStep(6);
           }}
         />
       )}
 
-      {step === 5 && created && (
-        <Step5Members
+      {step === 6 && created && (
+        <Step6Members
           project={created}
           form={form}
           setForm={setForm}
@@ -204,7 +230,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
         />
       )}
 
-      {step === 6 && created && (
+      {step === 7 && created && (
         <SuccessStep
           project={created}
           summary={{
@@ -223,13 +249,14 @@ export function CreateProjectWizard({ open, onClose }: Props) {
         />
       )}
 
-      {(step === 1 || step === 2 || step === 3) && (
+      {(step === 1 || step === 2 || step === 3 || step === 4) && (
         <Footer
           step={step}
           canNext={
             (step === 1 && step1Valid) ||
             step === 2 ||
-            (step === 3 && step3Valid)
+            (step === 3 && step3Valid) ||
+            (step === 4 && step4Valid)
           }
           loading={createProject.isPending}
           onCancel={onClose}
@@ -237,6 +264,7 @@ export function CreateProjectWizard({ open, onClose }: Props) {
           onNext={() => {
             if (step === 1) setStep(2);
             else if (step === 2) setStep(3);
+            else if (step === 3) setStep(4);
             else submit();
           }}
         />
@@ -245,15 +273,17 @@ export function CreateProjectWizard({ open, onClose }: Props) {
   );
 }
 
-function Stepper({ current }: { current: 1 | 2 | 3 | 4 | 5 }) {
+function Stepper({ current }: { current: StepperStep }) {
+  const steps: StepperStep[] = [1, 2, 3, 4, 5, 6];
+  const lastIdx = steps.length - 1;
   return (
     <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}>
-      {[1, 2, 3, 4, 5].map((n, i) => {
+      {steps.map((n, i) => {
         const active = n === current;
         const done = n < current;
         const color = done || active ? "var(--color-accent)" : "var(--color-fg-subtle)";
         return (
-          <div key={n} style={{ display: "flex", alignItems: "center", flex: i < 4 ? 1 : "0 0 auto" }}>
+          <div key={n} style={{ display: "flex", alignItems: "center", flex: i < lastIdx ? 1 : "0 0 auto" }}>
             <div
               style={{
                 width: 22,
@@ -273,9 +303,9 @@ function Stepper({ current }: { current: 1 | 2 | 3 | 4 | 5 }) {
               {done ? <Icon name="check" size={11} /> : n}
             </div>
             <span style={{ marginLeft: 6, fontSize: 11.5, color, fontWeight: active ? 600 : 500 }}>
-              {STEP_LABELS[n as 1 | 2 | 3 | 4 | 5]}
+              {STEP_LABELS[n]}
             </span>
-            {i < 4 && (
+            {i < lastIdx && (
               <div
                 style={{
                   flex: 1,
@@ -417,7 +447,7 @@ function Step1({
   );
 }
 
-function Step2({
+function Step2Classes({
   rows,
   onChange,
 }: {
@@ -434,7 +464,33 @@ function Step2({
   );
 }
 
-function Step3({
+function Step3Attributes({
+  fields,
+  onChange,
+  error,
+}: {
+  fields: AttributeField[];
+  onChange: (next: AttributeField[]) => void;
+  error: string | null;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)", lineHeight: 1.6 }}>
+        为本项目配置标注级业务属性（车型 / 朝向 / 是否遮挡等，可空）。标注员选中标注后，右侧栏将根据 schema 渲染表单；可在项目设置中随时编辑。
+      </div>
+      <AttributeSchemaEditor
+        value={fields}
+        onChange={onChange}
+        emptyHint="暂无属性（可跳过，后续在项目设置中添加）"
+      />
+      {error && (
+        <div style={{ fontSize: 11.5, color: "var(--color-danger)" }}>{error}</div>
+      )}
+    </div>
+  );
+}
+
+function Step4Ai({
   form,
   setForm,
   resolvedAiModel,
@@ -523,7 +579,7 @@ function Step3({
   );
 }
 
-function Step4Datasets({
+function Step5Datasets({
   project,
   form,
   setForm,
@@ -698,7 +754,7 @@ function Step4Datasets({
   );
 }
 
-function Step5Members({
+function Step6Members({
   project,
   form,
   setForm,
@@ -886,13 +942,14 @@ function Footer({
   onPrev,
   onNext,
 }: {
-  step: 1 | 2 | 3;
+  step: 1 | 2 | 3 | 4;
   canNext: boolean;
   loading: boolean;
   onCancel: () => void;
   onPrev: () => void;
   onNext: () => void;
 }) {
+  const isFinalEditStep = step === 4;
   return (
     <div
       style={{
@@ -911,8 +968,8 @@ function Footer({
         </Button>
       )}
       <Button variant="primary" onClick={onNext} disabled={!canNext || loading}>
-        {step === 3 ? (loading ? "创建中..." : "创建") : "下一步"}
-        {step < 3 && <Icon name="chevRight" size={12} />}
+        {isFinalEditStep ? (loading ? "创建中..." : "创建") : "下一步"}
+        {!isFinalEditStep && <Icon name="chevRight" size={12} />}
       </Button>
     </div>
   );

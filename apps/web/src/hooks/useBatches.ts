@@ -198,3 +198,18 @@ export function useRejectBatch(projectId: string) {
     },
   });
 }
+
+// v0.7.6 · 终极重置到 draft
+export function useResetBatch(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ batchId, reason }: { batchId: string; reason: string }) =>
+      batchesApi.reset(projectId, batchId, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["batch-audit-logs", projectId] });
+    },
+  });
+}

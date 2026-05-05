@@ -4,7 +4,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import type { ProjectResponse } from "@/api/projects";
+import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
+import { useToastStore } from "@/components/ui/Toast";
+import { projectsApi, type ProjectResponse, type ExportFormat } from "@/api/projects";
 
 const TYPE_ICONS: Record<string, string> = {
   "image-det": "rect",
@@ -23,8 +25,20 @@ interface Props {
   onSettings: (p: ProjectResponse, section?: string) => void;
 }
 
-/** v0.7.2 · 项目网格视图 — DashboardPage 用作 list 视图的可切换姿态。 */
+/** v0.7.2 · 项目网格视图 — DashboardPage 用作 list 视图的可切换姿态。
+ *  v0.7.6 · 卡片右下角次级动作（导出 / 设置）收编到 ⋮ DropdownMenu，主操作"打开"独立。
+ */
 export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) {
+  const pushToast = useToastStore((s) => s.push);
+
+  const exportProject = async (p: ProjectResponse, format: ExportFormat) => {
+    try {
+      await projectsApi.exportProject(p.id, format);
+    } catch (e) {
+      pushToast({ msg: "导出失败", sub: (e as Error).message, kind: "error" });
+    }
+  };
+
   if (projects.length === 0) {
     return (
       <div style={{ padding: "40px 16px", textAlign: "center", color: "var(--color-fg-subtle)" }}>
@@ -118,16 +132,18 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
               <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>截止 {due}</span>
             </div>
 
-            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: "auto" }}>
-              {canManage(p) && (
-                <Button
-                  size="sm"
-                  onClick={(e) => { e.stopPropagation(); onSettings(p); }}
-                >
-                  <Icon name="settings" size={11} />设置
-                </Button>
-              )}
-              <Button size="sm" variant="primary">
+            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: "auto" }} onClick={(e) => e.stopPropagation()}>
+              <ProjectMoreMenu
+                project={p}
+                canManage={canManage(p)}
+                onSettings={onSettings}
+                onExport={exportProject}
+              />
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={(e) => { e.stopPropagation(); onOpen(p); }}
+              >
                 打开<Icon name="chevRight" size={11} />
               </Button>
             </div>
@@ -135,5 +151,51 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
         );
       })}
     </div>
+  );
+}
+
+function ProjectMoreMenu({
+  project,
+  canManage,
+  onSettings,
+  onExport,
+}: {
+  project: ProjectResponse;
+  canManage: boolean;
+  onSettings: (p: ProjectResponse, section?: string) => void;
+  onExport: (p: ProjectResponse, format: ExportFormat) => void;
+}) {
+  const items: DropdownItem[] = [];
+  if (canManage) {
+    items.push({
+      id: "settings",
+      label: "项目设置",
+      icon: "settings",
+      onSelect: () => onSettings(project),
+    });
+    items.push({ id: "div-1", divider: true, label: "" });
+  }
+  items.push(
+    { id: "exp-coco", label: "导出 COCO JSON", icon: "download", onSelect: () => onExport(project, "coco") },
+    { id: "exp-voc", label: "导出 Pascal VOC", icon: "download", onSelect: () => onExport(project, "voc") },
+    { id: "exp-yolo", label: "导出 YOLO", icon: "download", onSelect: () => onExport(project, "yolo") },
+  );
+  return (
+    <DropdownMenu
+      minWidth={180}
+      items={items}
+      trigger={({ open, toggle, ref }) => (
+        <Button
+          ref={ref as React.Ref<HTMLButtonElement>}
+          size="sm"
+          onClick={(e) => { e.stopPropagation(); toggle(); }}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          title="更多操作"
+        >
+          <Icon name="more" size={11} />
+        </Button>
+      )}
+    />
   );
 }

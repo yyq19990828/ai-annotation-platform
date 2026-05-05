@@ -12,6 +12,7 @@ class ProjectCreate(BaseModel):
     type_key: str
     classes: list[str] = []
     classes_config: ClassesConfig | None = None
+    attribute_schema: AttributeSchema | None = None
     ai_enabled: bool = False
     ai_model: str | None = None
     due_date: date | None = None

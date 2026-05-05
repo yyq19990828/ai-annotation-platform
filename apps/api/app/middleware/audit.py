@@ -8,6 +8,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
+from app.config import settings
 from app.core.security import decode_access_token
 from app.db.base import async_session
 from app.db.models.audit_log import AuditLog
@@ -31,7 +32,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
     全自动写请求审计：
       - 仅匹配 /api/v1 + 写方法（POST/PATCH/PUT/DELETE）
       - 在 call_next 之后写入，绝不阻塞主响应
-      - 独立 session（避免污染请求作用域 session）
+      - v0.7.6：默认走 Celery 异步（settings.audit_async=True），broker 不可用时回退同步
       - 任何异常被吞掉，仅 logger.warning，永不影响响应
       - actor 仅从 Authorization JWT 解析，不查 DB（detail_json 留空，业务层会另写带 detail 的行）
     """
@@ -53,14 +54,20 @@ class AuditMiddleware(BaseHTTPMiddleware):
             return response
 
         try:
-            await _persist_audit(request, response.status_code)
+            payload = _build_payload(request, response.status_code)
+            if settings.audit_async:
+                # 走 Celery 异步队列；broker 不可用时回退同步路径
+                if not _enqueue_audit(payload):
+                    await _persist_audit_sync(payload)
+            else:
+                await _persist_audit_sync(payload)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("AuditMiddleware persist failed: %s", exc)
 
         return response
 
 
-async def _persist_audit(request: Request, status_code: int) -> None:
+def _build_payload(request: Request, status_code: int) -> dict:
     actor_id = None
     actor_role = None
     auth = request.headers.get("authorization")
@@ -74,19 +81,54 @@ async def _persist_audit(request: Request, status_code: int) -> None:
             actor_id = None
 
     rid = request_id_var.get()
+    return {
+        "actor_id": str(actor_id) if actor_id else None,
+        "actor_role": actor_role,
+        "action": f"http.{request.method.lower()}",
+        "method": request.method,
+        "path": path_short(request.url.path),
+        "status_code": status_code,
+        "ip": extract_client_ip(request),
+        "request_id": rid or None,
+    }
+
+
+def _enqueue_audit(payload: dict) -> bool:
+    """v0.7.6 · 投递到 Celery audit 队列。broker 不可用时返回 False 让上层 fallback。"""
+    try:
+        from app.workers.audit import persist_audit_entry
+
+        persist_audit_entry.delay(payload)
+        return True
+    except Exception as exc:
+        logger.warning("audit task enqueue failed, falling back to sync: %s", exc)
+        return False
+
+
+async def _persist_audit_sync(payload: dict) -> None:
+    from uuid import UUID
+
+    actor_id_raw = payload.get("actor_id")
+    actor_id: UUID | None = None
+    if actor_id_raw:
+        try:
+            actor_id = UUID(actor_id_raw)
+        except (ValueError, TypeError):
+            actor_id = None
+
     entry = AuditLog(
         actor_id=actor_id,
         actor_email=None,
-        actor_role=actor_role,
-        action=f"http.{request.method.lower()}",
+        actor_role=payload.get("actor_role"),
+        action=payload["action"],
         target_type=None,
         target_id=None,
-        method=request.method,
-        path=path_short(request.url.path),
-        status_code=status_code,
-        ip=extract_client_ip(request),
+        method=payload["method"],
+        path=payload["path"],
+        status_code=payload["status_code"],
+        ip=payload.get("ip"),
         detail_json=None,
-        request_id=rid or None,
+        request_id=payload.get("request_id"),
     )
 
     async with async_session() as session:

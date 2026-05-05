@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -25,6 +26,8 @@ import { ProjectDistributeBatchesModal } from "@/components/projects/ProjectDist
 import { RejectBatchModal } from "./RejectBatchModal";
 import { BulkReassignModal } from "./BulkReassignModal";
 import { ReverseTransitionModal, type ReverseKind } from "./ReverseTransitionModal";
+import { ResetBatchModal } from "./ResetBatchModal";
+import { BatchesKanbanView } from "./BatchesKanbanView";
 import { BatchAuditLogDrawer } from "./BatchAuditLogDrawer";
 import type { ProjectResponse } from "@/api/projects";
 import type { BatchResponse, BulkBatchActionResponse } from "@/api/batches";
@@ -96,6 +99,18 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   // v0.7.3 · 逆向迁移 + 操作历史
   const [reverseTarget, setReverseTarget] = useState<{ batch: BatchResponse; kind: ReverseKind } | null>(null);
   const [auditTarget, setAuditTarget] = useState<BatchResponse | null>(null);
+  // v0.7.6 · 终极重置到 draft
+  const [resetTarget, setResetTarget] = useState<BatchResponse | null>(null);
+
+  // v0.7.6 · view toggle [list | kanban] + URL ?batch_view=kanban 持久化
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = (searchParams.get("batch_view") === "kanban" ? "kanban" : "list") as "list" | "kanban";
+  const setView = (next: "list" | "kanban") => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "kanban") params.set("batch_view", "kanban");
+    else params.delete("batch_view");
+    setSearchParams(params, { replace: true });
+  };
 
   const selectableBatches = useMemo(
     () => batches.filter((b) => b.display_id !== "B-DEFAULT"),
@@ -262,7 +277,45 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           }}
         >
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>批次管理</h3>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {/* v0.7.6 · view toggle */}
+            <div
+              role="tablist"
+              aria-label="批次视图"
+              style={{
+                display: "inline-flex",
+                background: "var(--color-bg-sunken)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                overflow: "hidden",
+              }}
+            >
+              {(["list", "kanban"] as const).map((v) => (
+                <button
+                  key={v}
+                  role="tab"
+                  aria-selected={view === v}
+                  onClick={() => setView(v)}
+                  style={{
+                    padding: "4px 10px",
+                    fontSize: 12,
+                    background: view === v ? "var(--color-bg-elev)" : "transparent",
+                    color: view === v ? "var(--color-fg)" : "var(--color-fg-muted)",
+                    border: "none",
+                    borderRight: v === "list" ? "1px solid var(--color-border)" : undefined,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                  title={v === "list" ? "列表视图" : "看板视图（按状态分列）"}
+                >
+                  <Icon name={v === "list" ? "list" : "grid"} size={11} />
+                  {v === "list" ? "列表" : "看板"}
+                </button>
+              ))}
+            </div>
             <Button
               onClick={() => setDistributeOpen(true)}
               disabled={batches.length === 0}
@@ -424,7 +477,15 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           </div>
         )}
 
-        {!isLoading && batches.length > 0 && (
+        {!isLoading && batches.length > 0 && view === "kanban" && (
+          <BatchesKanbanView
+            batches={batches}
+            isOwner={isOwner}
+            onTransition={handleTransition}
+          />
+        )}
+
+        {!isLoading && batches.length > 0 && view === "list" && (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
@@ -598,6 +659,15 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           title="撤销归档"
                         >
                           <Icon name="refresh" size={12} /> 撤销归档
+                        </Button>
+                      )}
+                      {/* v0.7.6 · owner 终极重置到 draft（任意非 draft 状态） */}
+                      {isOwner && b.status !== "draft" && (
+                        <Button
+                          onClick={() => setResetTarget(b)}
+                          title="重置到草稿（owner 兜底）"
+                        >
+                          <Icon name="refresh" size={12} /> 重置
                         </Button>
                       )}
                       {!["archived", "approved"].includes(b.status) && (
@@ -862,6 +932,15 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           projectId={project.id}
           batch={auditTarget}
           onClose={() => setAuditTarget(null)}
+        />
+      )}
+
+      {/* v0.7.6：终极重置到 draft */}
+      {resetTarget && (
+        <ResetBatchModal
+          projectId={project.id}
+          batch={resetTarget}
+          onClose={() => setResetTarget(null)}
         />
       )}
     </>

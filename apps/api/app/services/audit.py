@@ -37,6 +37,7 @@ class AuditAction(str, Enum):
     BATCH_CREATED = "batch.created"
     BATCH_STATUS_CHANGED = "batch.status_changed"
     BATCH_REJECTED = "batch.rejected"
+    BATCH_RESET_TO_DRAFT = "batch.reset_to_draft"
     BATCH_DELETED = "batch.deleted"
     BATCH_DISTRIBUTE_EVEN = "batch.distribute_even"
     # v0.7.3 · 多选批量操作

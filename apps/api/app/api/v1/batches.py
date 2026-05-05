@@ -19,6 +19,7 @@ from app.schemas.batch import (
     BatchOut,
     BatchTransition,
     BatchReject,
+    BatchReset,
     BatchSplitRequest,
     ProjectDistributeBatches,
     BatchDistributeResult,
@@ -395,6 +396,55 @@ async def reject_batch(
                 "affected_tasks": affected,
             },
         )
+
+    await db.commit()
+    await db.refresh(batch)
+    briefs = await _briefs_for_batches(db, project_id, [batch])
+    return _batch_to_out(batch, briefs)
+
+
+# ── v0.7.6 · Reset → draft 终极重置 ───────────────────────────────────────
+
+
+@router.post("/{batch_id}/reset", response_model=BatchOut)
+async def reset_batch_to_draft(
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    data: BatchReset,
+    request: Request,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.7.6 · owner 兜底：把任意状态批次回退到 draft。
+
+    - task 全部回 pending（保留 annotation 记录与 is_active）
+    - 删除 task_locks 释放标注员锁
+    - 清 review_feedback / reviewed_at / reviewed_by
+    - 强制 reason ≥ 10 字（schema 层校验），写入 audit.detail.reason
+    """
+    svc = BatchService(db)
+    batch = await svc.get(batch_id)
+    if not batch or batch.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    from_status = batch.status
+    batch, affected = await svc.reset_to_draft(batch_id)
+
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.BATCH_RESET_TO_DRAFT,
+        target_type="batch",
+        target_id=str(batch_id),
+        request=request,
+        status_code=200,
+        detail={
+            "from_status": from_status,
+            "reason": data.reason,
+            "affected_tasks": affected,
+        },
+    )
 
     await db.commit()
     await db.refresh(batch)

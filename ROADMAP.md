@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航：批次单值分派 alembic 0030 加 annotator_id/reviewer_id + `POST /batches/distribute-batches` 项目级圆周分派一 batch 一人 + BatchAssignmentModal 单选化 + AssigneeAvatarStack 通用组件接入 4 处 + 标注框完整 audit 链 `annotation.create/update/delete/comment_*` + `GET /annotations/{id}/history` 时间线 + Workbench CommentsPanel 加 History tab + ⌘K CommandPalette + `GET /search` 跨实体聚合 + Dashboard FilterDrawer 4 维度 + ProjectGrid 网格视图 + url ?view=grid + 5 个 v0.7.2 用例 + 全后端测试 109 PASS）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史 + 数据集关联简化：3 条 owner 逆向迁移 archived→active / approved→reviewing / rejected→reviewing 强制 reason + 4 个 bulk 端点 archive/delete/reassign/activate + `GET /batches/{id}/audit-logs` 操作历史 + 8 个 lifecycle 用例 + dataset link 不再自建默认包 + unlink 级联清理空壳 batch）**；**v0.7.4（测试与文档体系一次性建齐：pytest-cov + codecov / MSW / Playwright 骨架 / ESLint flat / pre-commit / OpenAPI snapshot 契约 / VitePress 文档站 + Scalar API / GitHub Pages 自动部署 / docs/adr/）**；**v0.7.5（性能 & DX 收尾：CORS 配置化 + production 白名单守卫 / `/health/celery` 端点 broker ping + active worker count / `usePredictions` `gcTime: 30s` 阈值调节内存防溢 / codecov per-flag target 后端 60% 前端 30% informational / CI lint job 加 `ruff format --check` + 独立 `pnpm typecheck` / `prebuild` 改 mtime if-changed / ruff-format 从 pre-commit 移到 CI）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化：CreateProjectWizard 扩 6 步含「属性 schema」步骤 + 抽 `<AttributeSchemaEditor>` 给 wizard / settings 复用 + `ProjectCreate` schema 接受 attribute_schema / 批次 reset → draft 终极重置 owner 兜底 service + `POST /batches/{id}/reset` 强制 reason ≥ 10 字 + `ResetBatchModal` 二次确认 / NotificationsPopover 自包含 usePopover 迁移 + ProjectGrid 卡片 DropdownMenu 收编（导出 COCO/VOC/YOLO）/ `task.reopen` → `NotificationService.notify_many(type='task.reopened')` fan-out / 批次 Kanban 看板视图 7 列 + HTML5 拖拽迁移 dryrun + `?batch_view=kanban` URL 持久化 / AuditMiddleware Celery 异步 audit 队列 + AUDIT_ASYNC 开关 + sync fallback / `GET /tasks/{id}/annotations/page` keyset cursor 分页 + alembic 0031 复合索引 / predictions.created_at 索引 Stage 1 + ADR-0006 partition Stage 2 设计 / codecov.yml 落地 backend 60% frontend 8% informational target / 后端 146 PASS + 前端 93 PASS）**。
 
 ---
 
@@ -10,15 +10,13 @@
 
 #### 项目模块
 - **非 image-det 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / video-track / mm 共 6 类点击「打开」仅显示 toast `类型 X 的标注界面尚未实现`（`DashboardPage.tsx:139`、`ViewerDashboard.tsx:31`）。
-- **`CreateProjectWizard` step 2/3 升级到 settings 完整组件**：v0.6.7 已扩为 5 步（+数据集 + 成员），但「类别」步骤仍是简单字符串列表 vs `ClassesSection.tsx` 的颜色 / 别名 / 父子结构编辑器；缺「属性 schema」步骤（`AttributesSection` 完整能力）。从 sections 抽 `ClassEditor` / `AttributeSchemaEditor` 子组件给向导复用即可。
-- **项目模板**：当前每次新建项目都从 0 配置类别 / AI 模型；无「从已有项目复制」或「保存为模板」入口（v0.6.7 wizard 扩了 dataset + members 步骤，模板复用更有意义了）。
+- **项目模板**：当前每次新建项目都从 0 配置类别 / AI 模型；无「从已有项目复制」或「保存为模板」入口（v0.7.6 wizard 已扩为 6 步含属性 schema，模板复用更有意义了）。
 
 #### 数据 & 存储
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **批次相关延伸**：① 智能切批（按难度/类别/不确定度）；② 批次级 IAA / 共识合并算法；③ 不可变训练快照 + 主动学习闭环。调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
-- **批次状态机增补 · 二阶段**（v0.7.3 已收 3 条 owner 逆向迁移 + 4 项多选批量；以下为延后项）：
-  - `* → draft` 终极重置：把任意状态批次回退到草稿，task 全部回 pending（保留 annotation）。需要二次确认 + 强制 reason。**风险点**：approved / archived 已下游消费（导出 / 训练队列）回退后语义模糊，需要先想清「是否撤销下游引用」。
+- **批次状态机增补 · 二阶段**（v0.7.3 已收 3 条 owner 逆向迁移 + 4 项多选批量；v0.7.6 已收 reset → draft 终极重置；以下为延后项）：
   - `annotating → active` 暂停：项目临时叫停。**难点**：调度器（`scheduler.check_auto_transitions`）一旦看到 `in_progress` task 就会立刻把 batch 推回 `annotating`，需要同时把 in_progress task 复位到 pending（释放标注员锁）+ 引入 batch 级「admin-locked」标志阻断调度器，否则迁移做了等于没做。
   - 批量状态迁移类（bulk-approve / bulk-reject）：v0.7.3 故意未做。reject 反馈是逐批次语义、approve 跳过逐批次审视有质检失职风险。落地前先讨论 UX。
 
@@ -48,14 +46,9 @@
 
 #### v0.7.x 后续观察 / 下版候选
 
-> v0.7.0 集中收口了批次状态机 epic + v0.6.x 写时观察 18 项；下面列写时新观察项：
+> v0.7.0 集中收口了批次状态机 epic + v0.6.x 写时观察 18 项；v0.7.6 一次清了 4 项（属性 schema 步骤 / NotificationsPopover usePopover 迁移 / ProjectsPage 卡片 DropdownMenu / task.reopen fan-out / Kanban 看板）；下面列剩余观察项：
 
-- **Wizard 新增「属性 schema」步骤**：v0.7.0 已抽 `<ClassEditor>` 升级类别步骤；属性 schema 步骤需抽 `<AttributeSchemaEditor>`（字段类型 / 必填 / hotkey / visible_if 一次配齐）+ Wizard 扩为 6 步。Wizard 已 1009 行，抽取链较深，推迟。优先级 P2。
-- **NotificationsPopover usePopover 迁移**：父级以 `open / onClose` 控制流，迁移到 `usePopover` 需重构 TopBar 集成模式。优先级 P3。
-- **ProjectsPage 卡片操作菜单收编 DropdownMenu**：3 按钮（导出 / 设置 / 打开）合并到 `⋮` 触发的 DropdownMenu。优先级 P3。
-- **`task.reopen` 通知 fan-out**：v0.7.0 删了 `/auth/me/notifications` 后，`test_task_reopen_notification` 暂跳过；将来 reopen 端点应 fan-out `task.reopened` type 到 NotificationService（已为通知偏好基础静音留好接口），把「通知原 reviewer」的语义从 audit-derived 迁到通知中心持久化。优先级 P2。
-- **批次状态看板（kanban 视图）**：v0.7.0 BatchesSection 加了 4 个新按钮（提交质检 / 通过 / 驳回），但 7 态卡片墙 + 批次拖拽流转 owner 治理界面未做（与 transition 鉴权冲突需谨慎）。优先级 P3。
-- **standalone batch_summary stored 列**：v0.7.0 项目卡批次概览用 GROUP BY 单查询返回 `{total, assigned, in_review}`，每次 list_projects 都触发；如需更冷优化，可加 stored 列由 batch 状态机变迁维护。优先级 P3，监控触发再做。
+- **standalone batch_summary stored 列**：v0.7.0 项目卡批次概览用 GROUP BY 单查询返回 `{total, assigned, in_review}`，每次 list_projects 都触发；如需更冷优化，可加 stored 列由 batch 状态机变迁维护。**v0.7.6 评估后推迟**：触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈。优先级 P3，监控触发再做。
 
 ---
 
@@ -80,14 +73,14 @@
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
 
 #### 性能 / 扩展
-- **AuditMiddleware 写入异步队列**：当前每写请求一次 INSERT，写流量上来后改 Redis Stream / Kafka 异步消费，主请求 < 1ms 旁路。
-- **Annotation 列表 keyset 分页**：v0.4.8 已对 audit_logs / tasks 改造；annotations 仍单次拉全（`useAnnotations` task 内全量），单任务 1000+ 框时阻塞渲染。
-- **Predictions 表分区**：按 `project_id` 或 `created_at` PARTITION，单项目预测量大时查询性能下降。
+- **AuditMiddleware 写入异步队列**：~~当前每写请求一次 INSERT~~ → v0.7.6 已落 Celery 异步 + AUDIT_ASYNC 开关 + sync fallback。如需 Redis Stream / Kafka 替代 Celery 路径再开新 issue。
+- **Annotation 列表 keyset 分页**：~~annotations 仍单次拉全~~ → v0.7.6 已落新端点 `GET /tasks/{id}/annotations/page?limit&cursor` + 复合索引；前端 `useAnnotations` 仍用旧数组端点（cap=2000 为防性能场景），改 useInfiniteQuery 推迟到 1000+ 框监控触发。
+- **Predictions 表分区**：v0.7.6 已落 Stage 1（`ix_predictions_created_at` 索引）+ ADR-0006 设计 Stage 2 完整 RANGE(created_at) 月分区。Stage 2 触发条件：单月 INSERT > 100k 或 总行数 > 1M（FK 复合化代价 + annotations 表迁移成本）。
 
 #### 测试 / 开发体验
-- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座已就位（v0.7.4），但当前 64 测试集中在 Workbench state 与少量组件，页面级几乎无覆盖。需补 hooks（`useAnnotationHistory` batch 命令、`useClipboard` 偏移粘贴、`useSessionStats` ring buffer、`replaceAnnotationId`）与关键组件（Modal、InviteUserModal 状态机、RegisterPage 三态、`<DropdownMenu>` 键盘导航），以及 Dashboard / ProjectList / WorkbenchShell 三个页面级单测，目标前端 codecov ≥ 30%。
-- **E2E spec 写实**：v0.7.4 已搭好 Playwright 骨架，三个 spec（auth / annotation / batch-flow）全 `.skip` 占位且 e2e job `continue-on-error: true`。需先把 `auth.spec.ts` 写实（登录页 → dashboard、错密码、JWT 过期），加 `e2e/fixtures/seed.ts` 调后端造种子数据，跑通后去掉 `continue-on-error`。然后第二轮 annotation bbox 完整链路。
-- **覆盖率门槛硬阻断**：v0.7.5 已把 codecov target 设为后端 60% / 前端 30%（仍 informational）；累计 2 周数据稳定后切硬阻断（去 informational）。
+- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座已就位（v0.7.4）；v0.7.6 已把 baseline 从 4.27% 推到 8.68%（新增 29 个测试覆盖 AttributeSchemaEditor / Modal / DropdownMenu / BatchesKanbanView / useClipboard）。剩余目标 ≥ 25% 持续提升：补 hooks（`useSessionStats` ring buffer / `replaceAnnotationId`）+ 关键组件（InviteUserModal 状态机、RegisterPage 三态）+ Dashboard / ProjectList / WorkbenchShell 三个页面级单测。
+- **E2E spec 写实**：v0.7.4 已搭好 Playwright 骨架，三个 spec（auth / annotation / batch-flow）全 `.skip` 占位且 e2e job `continue-on-error: true`。需先把 `auth.spec.ts` 写实（登录页 → dashboard、错密码、JWT 过期），加 `e2e/fixtures/seed.ts` 调后端造种子数据（`apps/api/tests/factory.py` + 仅 ENV=test 挂载的 `_test_seed.py` 路由），跑通后去掉 `continue-on-error`。然后第二轮 annotation bbox 完整链路。**v0.7.6 评估后推迟**：1-2 天深度活，本期窗口不足。
+- **覆盖率门槛硬阻断**：v0.7.6 已落 `codecov.yml` 显式 backend 60% / frontend 8% target（基线值），全部 informational 不阻断。frontend 持续 ≥ 25% 后切硬阻断。
 
 #### i18n / 主题 / 无障碍
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
@@ -158,19 +151,18 @@
 |---|---|---|
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
-| **P1** | Wizard 新增「属性 schema」步骤（抽 `<AttributeSchemaEditor>`） | v0.7.0 已升级类别步骤；属性 schema 步骤推迟 |
+| **P1** | E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error` | v0.7.6 推迟（1-2 天深活）；factory + seed.ts + 三 spec 写实是 PR 红线收紧前置 |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好（基础静音）已落，邮件 channel 字段已就位但 UI 未启；与 LLM 聚类协同 |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
 | **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要 |
 | **P2** | C.3 history 持久化（undo/redo 栈 sessionStorage） | quick win，工时少 |
-| **P2** | `task.reopen` 通知 fan-out 到通知中心 | v0.7.0 删 audit-derived 后 reopen 通知留作下版 |
-| **P2** | 审计日志归档（PARTITION）、AuditMiddleware 队列化 | 当前数据量未到瓶颈，监控触发再做 |
-| **P2** | E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error` | v0.7.4 骨架已落，spec 全 .skip 占位；写实是 PR 红线收紧前置 |
-| **P2** | 前端页面级单测补 + 覆盖率拉到 30% | v0.7.4 MSW 已就位但 coverage <10%；Dashboard / ProjectList / WorkbenchShell 三页先补 |
+| **P2** | 审计日志归档（PARTITION）；AuditMiddleware 队列化 v0.7.6 已落 Celery | 当前数据量未到瓶颈，监控触发再做 |
+| **P2** | 前端单测持续提升到 ≥ 25% + 切覆盖率硬阻断 | v0.7.6 baseline 8.68%（+29 测试 from 4.27%）；目标 25% 后切去 informational |
+| **P2** | 批次状态机二阶段剩余：`annotating → active` 暂停 + bulk-approve / bulk-reject | v0.7.6 已落 reset → draft；暂停因 scheduler 死锁需新建 admin-locked 字段；bulk approve/reject UX 待定 |
 | **P2** | 用户手册关键页填实（GIF + 截图）+ ADR 0002-0005 回填 | v0.7.4 docs-site 骨架已落但多为大纲，新人 onboarding 价值低 |
-| **P3** | NotificationsPopover usePopover 迁移 + ProjectsPage 卡片操作菜单收编 DropdownMenu | v0.7.0 写时观察 |
-| **P3** | 批次状态看板（kanban 视图） | 7 态卡片墙 + owner 治理界面，与 transition 鉴权冲突需谨慎 |
+| **P3** | predictions 月分区 Stage 2 完整迁移 | v0.7.6 已落 Stage 1 索引 + ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M |
+| **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 |
 | **P3** | 部署 / 安全模型 / ML Backend 协议 / WebSocket 文档 | docs-site 框架已就位，按业务需求触发 |
 | **P3** | 快捷键文档自动从 `hotkeys.ts` SoT 生成 | 双源漂移风险低（代码改时连带改文档），现状能用 |
 | **P3** | i18n、SSO、2FA | 客户具体需求驱动 |

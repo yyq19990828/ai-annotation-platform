@@ -74,6 +74,12 @@ class BatchReject(BaseModel):
     feedback: str = Field(..., min_length=1, max_length=500)
 
 
+class BatchReset(BaseModel):
+    """v0.7.6 · 终极重置到 draft。reason 至少 10 字以避免误操作；写入 audit.detail.reason。"""
+
+    reason: str = Field(..., min_length=10, max_length=500)
+
+
 class ProjectDistributeBatches(BaseModel):
     """v0.7.2 · 项目级 batch 分派：在所选 annotator / reviewer 间圆周分派 batch。
     每个 batch 落到 1 个 annotator + 1 个 reviewer。

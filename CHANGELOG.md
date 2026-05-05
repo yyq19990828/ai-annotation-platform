@@ -11,6 +11,40 @@ _当前无草案条目。_
 
 ---
 
+## [0.7.6] - 2026-05-06
+
+> **功能补缺 + 治理深化。** v0.7.4/0.7.5 把测试与文档基建收尾后，本期回到 ROADMAP 三大主轴：A 节项目模块（Wizard 升级到 settings 完整组件 + 属性 schema 步骤）、批次状态机二阶段（reset → draft 终极重置）、v0.7.x 写时观察一次清（NotificationsPopover usePopover 迁移 / ProjectsPage 卡片 DropdownMenu 收编 / `task.reopen` 通知 fan-out / 批次 Kanban 看板视图）；B 节性能 / 治理（AuditMiddleware Celery 异步 + AUDIT_ASYNC 开关 + sync fallback / `GET /tasks/{id}/annotations/page` keyset cursor 分页 + 复合索引 / predictions.created_at 索引 + ADR-0006 partition 迁移设计）。规划与决策记录见 [docs/plans/roadmap-md-0-7-6-a-logical-bubble.md](docs/plans/roadmap-md-0-7-6-a-logical-bubble.md) 与 [docs/adr/0006-predictions-partition-by-month.md](docs/adr/0006-predictions-partition-by-month.md)。
+
+### 项目模块（A 节）
+
+- **CreateProjectWizard 扩为 6 步**：在原 5 步（类型 / 类别 / AI / 数据 / 成员）之间新增「属性 schema」步骤；从 `AttributesSection` 抽出纯受控组件 `<AttributeSchemaEditor>`（含 type / required / options / min-max / applies_to 完整能力 + `validateAttributeFields` 共享校验）供 wizard 与 settings 复用，避免 onboarding 流程断裂。后端 `ProjectCreate` schema 新增 `attribute_schema: AttributeSchema | None` 字段，`POST /projects` 创建时一并落库。
+- **批次 reset → draft 终极重置**：`apps/api/app/services/batch.py` 新增 `BatchService.reset_to_draft(batch_id)`，复用 `reject_batch` 的「task 全回 pending、保留 annotation 与 is_active」语义，同时删除 task_locks 释放标注员锁、清 `review_feedback / reviewed_at / reviewed_by`，绕过 `VALID_TRANSITIONS` 字典。新增 `POST /projects/{pid}/batches/{bid}/reset` 端点（owner-only，`BatchReset.reason` ≥ 10 字强制）+ 新 `AuditAction.BATCH_RESET_TO_DRAFT`。前端 `ResetBatchModal` 二次确认 + 显示影响 task 数 + 大字号警告。
+
+### v0.7.x 写时观察一次清
+
+- **NotificationsPopover 自包含 usePopover 迁移**：组件从父级 `open / onClose` 受控模式重构为自带 trigger button 的自包含组件（含 unread badge），TopBar 简化为 `<NotificationsPopover />` 单元素调用，不再管 `notifOpen` state。`useNotifications(enabled)` 接受布尔参数，关闭时停 30s polling。
+- **ProjectGrid 卡片 DropdownMenu**：项目卡片右下角次级动作「项目设置 / 导出 COCO/VOC/YOLO」从 inline 按钮收编到 `⋮` DropdownMenu（复用 v0.5.5 通用组件），主操作「打开」保留独立。Icon 体系新增 `more`（`MoreVertical from lucide-react`）。
+- **`task.reopen` 通知 fan-out**：`POST /tasks/{id}/reopen` 端点在 audit 写入后调 `NotificationService.notify_many(type='task.reopened', user_ids=[原 reviewer_id])`，payload 含 actor name + task display_id + reopened_count。`test_task_reopen_notification` 解 v0.7.0 的 skip 重新启用（验证 `GET /api/v1/notifications` 命中）。
+- **批次 Kanban 看板视图**：新建 `BatchesKanbanView`，按 7 个 BatchStatus 分列展示批次 mini-card（含 display_id / progress / annotator+reviewer stack），owner 视角支持 HTML5 drag-and-drop 拖拽迁移（前端镜像后端 `VALID_TRANSITIONS` 字典做 dryrun，非法目标列 drop 显示 toast，最终鉴权由后端）。BatchesSection 顶栏加 `[列表 \| 看板]` toggle，URL `?batch_view=kanban` 持久化。
+
+### 性能 / 扩展（B 节）
+
+- **AuditMiddleware Celery 异步化**：`apps/api/app/middleware/audit.py` 把 dispatch 同步 INSERT 改为 `persist_audit_entry.delay(payload)` 投递到 Celery `audit` 队列；新建 `apps/api/app/workers/audit.py` task body。`Settings.audit_async: bool = True` 开关；broker 不可用或 enqueue 异常时自动 fallback 到原同步路径，主请求路径耗时 < 0.1ms（vs. 旧 1-3ms）。
+- **Annotation keyset 分页**：`GET /tasks/{id}/annotations/page?limit=200&cursor=` 新端点返回 `{ items, next_cursor }`，cursor 编码 base64(`{ts}|{id}`)，排序 `created_at DESC, id DESC`，移植自 audit_logs 端点（`apps/api/app/api/v1/audit_logs.py:76-143`）。原 `GET /tasks/{id}/annotations` 数组返回保持兼容。alembic 0031 加 `ix_annotations_task_created_id (task_id, created_at, id)` 复合索引覆盖排序键。
+- **predictions.created_at 索引（Stage 1）+ ADR-0006**：alembic 0031 同时加 `ix_predictions_created_at` 单列索引解决 80% 时间过滤痛点。完整 RANGE(created_at) 月分区迁移因 `annotations.parent_prediction_id` / `prediction_metas.prediction_id` 复合 FK 化代价高，落到 [ADR-0006](docs/adr/0006-predictions-partition-by-month.md) Stage 2 设计文档，触发条件：单月 INSERT > 100k 或 总行数 > 1M。
+
+### 测试与基建
+
+- **前端单测 +29 / 后端单测 +14**：前端覆盖率 4.27% → 8.68%（新增 AttributeSchemaEditor / Modal / DropdownMenu / BatchesKanbanView / useClipboard 的 29 个测试，覆盖核心新组件 + 关键 hook）。后端新增 `tests/test_v0_7_6.py` 覆盖 attribute_schema 创建 / reset → draft 6 起始状态矩阵 / reset 鉴权与 reason 校验 / annotation keyset 分页三页 + invalid cursor / audit task body 等 14 条用例；`test_task_reopen_notification` 重启用。后端总数 109 → 146 PASS。
+- **codecov.yml 落地**：仓库根新增 `codecov.yml` 显式化 backend 60% / frontend 8% target（基线值反映现状）+ patch backend 70% / frontend 50%，全部 informational 不阻断 PR；硬阻断切换到 v0.7.7（前端持续 ≥ 25% 后）。`flag_management` 配置 backend / frontend 两 flag 路径映射，ignore 列表覆盖 alembic / generated / e2e / *.test.*。
+
+### 文档
+
+- **ADR-0006** [predictions 表按月 RANGE 分区](docs/adr/0006-predictions-partition-by-month.md)：记录两阶段实施（Stage 1 索引 + Stage 2 partition by RANGE）、为什么本期不直接做 Stage 2（FK 复合化代价 + 行数未到瓶颈）、监控触发条件。
+- **plan 文件** [v0.7.6 实施计划](docs/plans/roadmap-md-0-7-6-a-logical-bubble.md)：完整实施步骤 + 工程取舍记录（S3.5 / S8 推迟到 v0.7.7、S7 实际 8.68% < 30% 原目标 / S9 informational 而非硬阻断）。
+
+---
+
 ## [0.7.5] - 2026-05-05
 
 > **性能 & DX 收尾。** v0.7.4 把测试与文档体系一次性建齐后留下若干"半成品 / 待激活"项（codecov 完全 informational、ruff-format 进 pre-commit 引发 121 文件 churn、CI 缺独立 typecheck、`prebuild` 每次跑 codegen）+ v0.6/v0.7 累积的几条小型治理 / 性能项（`/health/celery` 缺、CORS 硬编码、predictions cache 5min GC）。本版本 6 项一次性收尾，让 v0.7.4 那波"封顶"，不引入新主题。规划全文见 [docs/plans/2-ticklish-flask.md](docs/plans/2-ticklish-flask.md)。

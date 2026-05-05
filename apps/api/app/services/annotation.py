@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,6 +87,38 @@ class AnnotationService:
         q = q.order_by(Annotation.created_at)
         result = await self.db.execute(q)
         return list(result.scalars().all())
+
+    async def list_by_task_keyset(
+        self,
+        task_id: uuid.UUID,
+        *,
+        limit: int = 200,
+        cursor: tuple[datetime, uuid.UUID] | None = None,
+        include_cancelled: bool = False,
+    ) -> tuple[list[Annotation], tuple[datetime, uuid.UUID] | None]:
+        """v0.7.6 · keyset 分页：created_at DESC, id DESC。next_cursor=None 时已末页。
+
+        cursor 元组语义：取「严格小于」该 (ts, id) 的下一页。
+        排序键参考 alembic 0031 的 ix_annotations_task_created_id 复合索引。
+        """
+        q = select(Annotation).where(
+            Annotation.task_id == task_id, Annotation.is_active.is_(True)
+        )
+        if not include_cancelled:
+            q = q.where(Annotation.was_cancelled.is_(False))
+        if cursor is not None:
+            cur_ts, cur_id = cursor
+            q = q.where(
+                (Annotation.created_at < cur_ts)
+                | ((Annotation.created_at == cur_ts) & (Annotation.id < cur_id))
+            )
+        q = q.order_by(Annotation.created_at.desc(), Annotation.id.desc()).limit(limit)
+        rows = list((await self.db.execute(q)).scalars().all())
+        next_cursor: tuple[datetime, uuid.UUID] | None = None
+        if len(rows) == limit and rows:
+            tail = rows[-1]
+            next_cursor = (tail.created_at, tail.id)
+        return rows, next_cursor
 
     async def delete(self, annotation_id: uuid.UUID) -> bool:
         annotation = await self.db.get(Annotation, annotation_id)

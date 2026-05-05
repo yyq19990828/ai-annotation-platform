@@ -157,6 +157,13 @@ export const batchesApi = {
       { feedback },
     ),
 
+  // v0.7.6 · 终极重置：任意状态 → draft（owner-only，reason ≥ 10 字）
+  reset: (projectId: string, batchId: string, reason: string) =>
+    apiClient.post<BatchResponse>(
+      `/projects/${projectId}/batches/${batchId}/reset`,
+      { reason },
+    ),
+
   distributeBatches: (
     projectId: string,
     payload: ProjectDistributeBatchesPayload,

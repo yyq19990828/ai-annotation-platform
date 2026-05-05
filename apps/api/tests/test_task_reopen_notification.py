@@ -1,13 +1,11 @@
-"""v0.6.6 · reopen 后通知联动。
+"""v0.7.6 · reopen → 通知中心 fan-out 联动。
 
 reviewer approve / reject 后，标注员可单方面 reopen。reopen 应给原 reviewer
-留一条「task.reopen」审计行（detail.original_reviewer_id == reviewer.id），
-原 reviewer 调 GET /me/notifications 应能在结果中看到。
+往通知中心 (NotificationService) 写一条 type='task.reopened' 的记录。
+原 reviewer 调 GET /api/v1/notifications 应能在结果中看到该 entry。
 
-v0.7.0：`GET /auth/me/notifications` 已删除（dead code，前端切到新 /notifications）。
-本测试依赖 audit-derived 通知端点；新 `/notifications` 表暂不消费 task.reopen 事件，
-将来如需复活，应改写为：reopen 端点 fan-out `task.reopened` 到 NotificationService，
-并在此处校验通知中心 GET /notifications 命中。当前先跳过保留测试结构。
+历史：v0.6.6 用 audit-derived /me/notifications；v0.7.0 删了该端点改用持久化通知中心，
+本测试在 v0.7.0 时 skip；v0.7.6 reopen 接 NotificationService.fan_out 后恢复。
 """
 
 from __future__ import annotations
@@ -15,14 +13,10 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
-pytestmark = pytest.mark.skip(
-    reason="v0.7.0: deprecated endpoint removed; await task.reopened notification fan-out"
-)
-from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
-
-from app.db.models.project import Project  # noqa: E402
-from app.db.models.task import Task  # noqa: E402
+from app.db.models.project import Project
+from app.db.models.task import Task
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -62,7 +56,7 @@ async def _seed_project_and_task(
 
 @pytest.mark.asyncio
 async def test_reopen_notifies_original_reviewer(
-    httpx_client, db_session, annotator, reviewer
+    httpx_client_bound, db_session, annotator, reviewer
 ):
     ann_user, ann_token = annotator
     rev_user, rev_token = reviewer
@@ -70,39 +64,38 @@ async def test_reopen_notifies_original_reviewer(
         db_session, owner_id=ann_user.id, assignee_id=ann_user.id
     )
     tid = str(task.id)
+    await db_session.commit()
 
     # submit → claim → approve → reopen
-    r = await httpx_client.post(
+    r = await httpx_client_bound.post(
         f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token)
     )
     assert r.status_code == 200, r.text
-    r = await httpx_client.post(
+    r = await httpx_client_bound.post(
         f"/api/v1/tasks/{tid}/review/claim", headers=_bearer(rev_token)
     )
-    assert r.status_code == 200
-    r = await httpx_client.post(
+    assert r.status_code == 200, r.text
+    r = await httpx_client_bound.post(
         f"/api/v1/tasks/{tid}/review/approve", headers=_bearer(rev_token)
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
 
-    r = await httpx_client.post(
+    r = await httpx_client_bound.post(
         f"/api/v1/tasks/{tid}/reopen", headers=_bearer(ann_token)
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
 
-    # reviewer 调 /me/notifications，应见到 task.reopen 事件
-    r = await httpx_client.get(
-        "/api/v1/auth/me/notifications?limit=50", headers=_bearer(rev_token)
+    # reviewer 查通知中心，应能看到 task.reopened
+    r = await httpx_client_bound.get(
+        "/api/v1/notifications?limit=50", headers=_bearer(rev_token)
     )
     assert r.status_code == 200, r.text
     items = r.json()["items"]
-    reopen_items = [
-        it for it in items if it["action"] == "task.reopen" and it["target_id"] == tid
+    reopen = [
+        it for it in items if it["type"] == "task.reopened" and it["target_id"] == tid
     ]
-    assert (
-        len(reopen_items) >= 1
-    ), f"reviewer 应能在通知中看到 task.reopen，实际：{[it['action'] for it in items]}"
-    notification = reopen_items[0]
-    assert notification["detail_json"]["original_reviewer_id"] == str(rev_user.id)
-    # actor 应是 annotator（reopen 操作发起人）
-    assert notification["actor_email"] == ann_user.email
+    assert len(reopen) == 1, [it["type"] for it in items]
+    payload = reopen[0]["payload"]
+    assert payload["actor_id"] == str(ann_user.id)
+    assert payload["task_display_id"] == task.display_id
+    assert payload["reopened_count"] == 1

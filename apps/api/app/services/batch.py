@@ -734,6 +734,52 @@ class BatchService:
         await self.recalculate_counters(batch_id)
         return batch, affected
 
+    # ── Reset to draft (v0.7.6) ────────────────────────────────────────────
+
+    async def reset_to_draft(self, batch_id: uuid.UUID) -> tuple[TaskBatch, int]:
+        """v0.7.6 · 终极重置：任意状态 → draft。
+
+        - task 全部回 pending（不论 review / completed / in_progress）
+        - 保留 annotation 记录与 is_active（参考 reject_batch 模式）
+        - 删除该批次下所有 task_locks（释放标注员锁）
+        - 清空 review_feedback / reviewed_at / reviewed_by
+        - 不调用 VALID_TRANSITIONS — 这是绕过状态机的 owner 兜底操作
+
+        调用方负责：鉴权（owner-only）、reason 校验（schema 层 min_length=10）、audit 打点。
+        """
+        from app.db.models.task_lock import TaskLock
+
+        batch = await self.db.get(TaskBatch, batch_id)
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+
+        result = await self.db.execute(
+            update(Task)
+            .where(
+                Task.batch_id == batch_id,
+                Task.status != "pending",
+            )
+            .values(status="pending")
+        )
+        affected = result.rowcount
+
+        await self.db.execute(
+            delete(TaskLock).where(
+                TaskLock.task_id.in_(
+                    select(Task.id).where(Task.batch_id == batch_id)
+                )
+            )
+        )
+
+        batch.status = BatchStatus.DRAFT
+        batch.review_feedback = None
+        batch.reviewed_at = None
+        batch.reviewed_by = None
+
+        await self.db.flush()
+        await self.recalculate_counters(batch_id)
+        return batch, affected
+
     # ── Bulk operations (v0.7.3) ───────────────────────────────────────────
 
     async def _list_batches_in_project(

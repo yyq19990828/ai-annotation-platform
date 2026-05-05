@@ -17,7 +17,12 @@ from app.schemas.task import (
     TaskLockResponse,
     ReviewClaimResponse,
 )
-from app.schemas.annotation import AnnotationCreate, AnnotationOut, AnnotationUpdate
+from app.schemas.annotation import (
+    AnnotationCreate,
+    AnnotationListPage,
+    AnnotationOut,
+    AnnotationUpdate,
+)
 from app.schemas.prediction import PredictionOut
 from app.services.annotation import AnnotationService
 from app.services.audit import AuditAction, AuditService
@@ -233,6 +238,51 @@ async def get_annotations(
     await _assert_task_visible(db, task, current_user)
     svc = AnnotationService(db)
     return await svc.list_by_task(task_id)
+
+
+@router.get("/{task_id}/annotations/page", response_model=AnnotationListPage)
+async def get_annotations_paged(
+    task_id: uuid.UUID,
+    limit: int = 200,
+    cursor: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """v0.7.6 · keyset 分页变体。单 task 1000+ 框场景下避免一次性大列表阻塞。
+
+    cursor 编码：base64(`{ts_isoformat}|{annotation_id}`)，与 audit_logs 端点一致。
+    """
+    import base64
+    from uuid import UUID as _UUID
+
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit must be in [1, 1000]")
+
+    decoded: tuple[datetime, uuid.UUID] | None = None
+    if cursor:
+        try:
+            payload = base64.urlsafe_b64decode(cursor.encode()).decode()
+            ts_str, id_str = payload.rsplit("|", 1)
+            decoded = (datetime.fromisoformat(ts_str), _UUID(id_str))
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid cursor")
+
+    svc = AnnotationService(db)
+    items, next_cursor_tuple = await svc.list_by_task_keyset(
+        task_id, limit=limit, cursor=decoded
+    )
+    next_cursor: str | None = None
+    if next_cursor_tuple is not None:
+        ts, aid = next_cursor_tuple
+        next_cursor = base64.urlsafe_b64encode(
+            f"{ts.isoformat()}|{aid}".encode()
+        ).decode()
+    return AnnotationListPage(
+        items=[AnnotationOut.model_validate(a) for a in items],
+        next_cursor=next_cursor,
+    )
 
 
 @router.post("/{task_id}/annotations", response_model=AnnotationOut, status_code=201)
@@ -812,6 +862,25 @@ async def reopen_task(
             "reopened_count": task.reopened_count,
         },
     )
+
+    # v0.7.6 · 通知中心 fan-out：原 reviewer 收到 task.reopened
+    if original_reviewer_id is not None:
+        from app.services.notification import NotificationService
+
+        notif_svc = NotificationService(db)
+        await notif_svc.notify_many(
+            user_ids=[original_reviewer_id],
+            type="task.reopened",
+            target_type="task",
+            target_id=task.id,
+            payload={
+                "task_display_id": task.display_id,
+                "project_id": str(task.project_id),
+                "actor_id": str(current_user.id),
+                "actor_name": current_user.name,
+                "reopened_count": task.reopened_count,
+            },
+        )
 
     await db.commit()
     return {

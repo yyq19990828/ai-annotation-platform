@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     ml_health_timeout: int = 10
     celery_broker_url: str = ""
 
+    # v0.7.6 · AuditMiddleware 异步化开关。true = 通过 Celery 旁路写 audit_logs；
+    # false 或 broker 不可用时，自动 fallback 到原同步路径。
+    audit_async: bool = True
+
     # Governance / invitations
     frontend_base_url: str = "http://localhost:5173"
     invitation_ttl_days: int = 7

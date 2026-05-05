@@ -1,14 +1,15 @@
-import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import {
   useNotifications,
   useMarkAllRead,
   useMarkRead,
+  useUnreadCount,
 } from "@/hooks/useNotifications";
 import type { NotificationItem } from "@/api/notifications";
 import { useAuthStore } from "@/stores/authStore";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
+import { usePopover } from "@/hooks/usePopover";
 
 function relativeTime(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -127,31 +128,23 @@ function NotifRow({ item, onClick }: NotifRowProps) {
   );
 }
 
-interface Props {
-  onClose: () => void;
-}
-
-export function NotificationsPopover({ onClose }: Props) {
-  const { data } = useNotifications();
-  const markAllRead = useMarkAllRead();
-  const markRead = useMarkRead();
+/**
+ * v0.7.6 · 自包含 trigger + popover；内部用 usePopover 接管 outside-click / Escape。
+ * TopBar 不再管 notifOpen state，直接 `<NotificationsPopover />` 即可。
+ */
+export function NotificationsPopover() {
   const navigate = useNavigate();
-  const ref = useRef<HTMLDivElement>(null);
   const role = useAuthStore((s) => s.user?.role);
   const openBugDrawer = useBugDrawerStore((s) => s.openDrawer);
+  const { open, toggle, close, anchorRef, popoverRef } = usePopover();
 
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose();
-      }
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
+  const { data } = useNotifications(open); // 仅打开时才拉数据
+  const { data: unreadData } = useUnreadCount();
+  const markAllRead = useMarkAllRead();
+  const markRead = useMarkRead();
 
   const items = data?.items ?? [];
-  const unread = data?.unread ?? 0;
+  const unread = data?.unread ?? unreadData?.unread ?? 0;
 
   function handleRowClick(item: NotificationItem) {
     if (item.read_at === null) {
@@ -172,74 +165,114 @@ export function NotificationsPopover({ onClose }: Props) {
         navigate(`/projects/${projectId}/annotate?batch=${item.target_id}`);
       }
     }
-    onClose();
+    close();
   }
 
   return (
-    <div
-      ref={ref}
-      style={{
-        position: "absolute",
-        top: "calc(100% + 8px)",
-        right: 0,
-        width: 360,
-        background: "var(--color-bg-elev)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-lg)",
-        boxShadow: "var(--shadow-lg, 0 8px 24px rgba(0,0,0,.12))",
-        zIndex: 200,
-        overflow: "hidden",
-      }}
-    >
-      <div
+    <div style={{ position: "relative" }}>
+      <button
+        ref={anchorRef as React.RefObject<HTMLButtonElement>}
+        title="通知"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={toggle}
         style={{
-          display: "flex",
+          width: 30,
+          height: 30,
+          display: "inline-flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          padding: "12px 14px 10px",
-          borderBottom: "1px solid var(--color-border)",
+          justifyContent: "center",
+          background: open ? "var(--color-bg-sunken)" : "transparent",
+          border: "1px solid transparent",
+          borderRadius: "var(--radius-md)",
+          color: "var(--color-fg-muted)",
+          cursor: "pointer",
+          position: "relative",
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: 13 }}>
-          通知{unread > 0 ? ` · ${unread} 未读` : ""}
-        </span>
+        <Icon name="bell" size={15} />
         {unread > 0 && (
-          <button
-            onClick={() => markAllRead.mutate()}
-            disabled={markAllRead.isPending}
+          <span
             style={{
-              fontSize: 11,
-              color: "var(--color-accent)",
-              background: "none",
-              border: "none",
-              cursor: markAllRead.isPending ? "not-allowed" : "pointer",
-              padding: 0,
+              position: "absolute",
+              top: 5,
+              right: 5,
+              width: 7,
+              height: 7,
+              background: "var(--color-danger)",
+              borderRadius: "50%",
+              border: "1.5px solid var(--color-bg-elev)",
             }}
-          >
-            全部已读
-          </button>
+          />
         )}
-      </div>
-
-      <div style={{ maxHeight: 380, overflowY: "auto" }}>
-        {items.length === 0 ? (
+      </button>
+      {open && (
+        <div
+          ref={popoverRef as React.RefObject<HTMLDivElement>}
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            right: 0,
+            width: 360,
+            background: "var(--color-bg-elev)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-lg)",
+            boxShadow: "var(--shadow-lg, 0 8px 24px rgba(0,0,0,.12))",
+            zIndex: 200,
+            overflow: "hidden",
+          }}
+        >
           <div
             style={{
-              padding: "24px 14px",
-              textAlign: "center",
-              color: "var(--color-fg-subtle)",
-              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "12px 14px 10px",
+              borderBottom: "1px solid var(--color-border)",
             }}
           >
-            <Icon name="bell" size={22} style={{ opacity: 0.25, marginBottom: 6 }} />
-            <div>暂无通知</div>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>
+              通知{unread > 0 ? ` · ${unread} 未读` : ""}
+            </span>
+            {unread > 0 && (
+              <button
+                onClick={() => markAllRead.mutate()}
+                disabled={markAllRead.isPending}
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-accent)",
+                  background: "none",
+                  border: "none",
+                  cursor: markAllRead.isPending ? "not-allowed" : "pointer",
+                  padding: 0,
+                }}
+              >
+                全部已读
+              </button>
+            )}
           </div>
-        ) : (
-          items.map((item) => (
-            <NotifRow key={item.id} item={item} onClick={() => handleRowClick(item)} />
-          ))
-        )}
-      </div>
+
+          <div style={{ maxHeight: 380, overflowY: "auto" }}>
+            {items.length === 0 ? (
+              <div
+                style={{
+                  padding: "24px 14px",
+                  textAlign: "center",
+                  color: "var(--color-fg-subtle)",
+                  fontSize: 13,
+                }}
+              >
+                <Icon name="bell" size={22} style={{ opacity: 0.25, marginBottom: 6 }} />
+                <div>暂无通知</div>
+              </div>
+            ) : (
+              items.map((item) => (
+                <NotifRow key={item.id} item={item} onClick={() => handleRowClick(item)} />
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
