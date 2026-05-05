@@ -26,6 +26,8 @@ export function usePredictions(
       return allPages.reduce((sum, page) => sum + page.reduce((s, p) => s + (p.result?.length ?? 0), 0), 0);
     },
     enabled: !!taskId,
+    // 阈值 / 模型版本变化会产生新 query key；旧 key 用默认 5min GC 会在长时间调阈值场景下堆积内存。
+    gcTime: 30_000,
   });
 }
 

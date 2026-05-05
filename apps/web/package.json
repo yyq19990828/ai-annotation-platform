@@ -1,11 +1,11 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.7.4",
+  "version": "0.7.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "pnpm codegen",
+    "prebuild": "node scripts/codegen-if-changed.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",

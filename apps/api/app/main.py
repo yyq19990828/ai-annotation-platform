@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, version="0.6.7", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.7.5", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -68,14 +68,15 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(AuditMiddleware)
 app.add_middleware(RequestIDMiddleware)
+if settings.environment == "production" and not settings.cors_allow_origins:
+    raise RuntimeError(
+        "production 环境必须显式设置 CORS_ALLOW_ORIGINS（JSON 列表或逗号分隔）"
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:5173",
-    ],
-    allow_origin_regex=r"http://localhost:\d+",
+    allow_origins=settings.cors_allow_origins,
+    allow_origin_regex=settings.effective_cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

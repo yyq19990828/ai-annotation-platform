@@ -1,11 +1,17 @@
-# Codecov 配置：上报但不阻断 PR。
-# 仅用 informational 模式，让 PR 评论显示 diff coverage 与趋势。
+# Codecov 配置：v0.7.5 软启用 per-flag target，仍 informational 观察 1-2 周。
+# 后端目标 60% / 前端 30%；累计数据稳定后切硬阻断（去 informational）。
 coverage:
   status:
     project:
-      default:
-        target: auto
-        threshold: 5%
+      backend:
+        target: 60%
+        threshold: 2%
+        flags: [backend]
+        informational: true
+      frontend:
+        target: 30%
+        threshold: 2%
+        flags: [frontend]
         informational: true
     patch:
       default:

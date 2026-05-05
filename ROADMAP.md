@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航：批次单值分派 alembic 0030 加 annotator_id/reviewer_id + `POST /batches/distribute-batches` 项目级圆周分派一 batch 一人 + BatchAssignmentModal 单选化 + AssigneeAvatarStack 通用组件接入 4 处 + 标注框完整 audit 链 `annotation.create/update/delete/comment_*` + `GET /annotations/{id}/history` 时间线 + Workbench CommentsPanel 加 History tab + ⌘K CommandPalette + `GET /search` 跨实体聚合 + Dashboard FilterDrawer 4 维度 + ProjectGrid 网格视图 + url ?view=grid + 5 个 v0.7.2 用例 + 全后端测试 109 PASS）**；**v0.7.4 草案（测试与文档体系一次性建齐：pytest-cov + codecov / MSW / Playwright 骨架 / ESLint flat / pre-commit / OpenAPI snapshot 契约 / VitePress 文档站 + Scalar API / GitHub Pages 自动部署 / docs/adr/）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航：批次单值分派 alembic 0030 加 annotator_id/reviewer_id + `POST /batches/distribute-batches` 项目级圆周分派一 batch 一人 + BatchAssignmentModal 单选化 + AssigneeAvatarStack 通用组件接入 4 处 + 标注框完整 audit 链 `annotation.create/update/delete/comment_*` + `GET /annotations/{id}/history` 时间线 + Workbench CommentsPanel 加 History tab + ⌘K CommandPalette + `GET /search` 跨实体聚合 + Dashboard FilterDrawer 4 维度 + ProjectGrid 网格视图 + url ?view=grid + 5 个 v0.7.2 用例 + 全后端测试 109 PASS）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史 + 数据集关联简化：3 条 owner 逆向迁移 archived→active / approved→reviewing / rejected→reviewing 强制 reason + 4 个 bulk 端点 archive/delete/reassign/activate + `GET /batches/{id}/audit-logs` 操作历史 + 8 个 lifecycle 用例 + dataset link 不再自建默认包 + unlink 级联清理空壳 batch）**；**v0.7.4（测试与文档体系一次性建齐：pytest-cov + codecov / MSW / Playwright 骨架 / ESLint flat / pre-commit / OpenAPI snapshot 契约 / VitePress 文档站 + Scalar API / GitHub Pages 自动部署 / docs/adr/）**；**v0.7.5（性能 & DX 收尾：CORS 配置化 + production 白名单守卫 / `/health/celery` 端点 broker ping + active worker count / `usePredictions` `gcTime: 30s` 阈值调节内存防溢 / codecov per-flag target 后端 60% 前端 30% informational / CI lint job 加 `ruff format --check` + 独立 `pnpm typecheck` / `prebuild` 改 mtime if-changed / ruff-format 从 pre-commit 移到 CI）**。
 
 ---
 
@@ -11,7 +11,6 @@
 #### 项目模块
 - **非 image-det 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / video-track / mm 共 6 类点击「打开」仅显示 toast `类型 X 的标注界面尚未实现`（`DashboardPage.tsx:139`、`ViewerDashboard.tsx:31`）。
 - **`CreateProjectWizard` step 2/3 升级到 settings 完整组件**：v0.6.7 已扩为 5 步（+数据集 + 成员），但「类别」步骤仍是简单字符串列表 vs `ClassesSection.tsx` 的颜色 / 别名 / 父子结构编辑器；缺「属性 schema」步骤（`AttributesSection` 完整能力）。从 sections 抽 `ClassEditor` / `AttributeSchemaEditor` 子组件给向导复用即可。
-- **`Project.in_progress_tasks` 改 stored counter**：v0.6.7-hotfix 把 `in_progress_tasks` 字段加到 `ProjectOut`，但实现是 `_serialize_project` 内即时 COUNT 查询 —— `GET /projects` 列 N 个项目就 N 次额外 SQL，hot path 上代价不可忽视。建议：① Project 表加 `in_progress_tasks` 列 ② 状态机变迁时（pending↔in_progress↔review↔completed）维护 ③ alembic 一次性回填。
 - **项目模板**：当前每次新建项目都从 0 配置类别 / AI 模型；无「从已有项目复制」或「保存为模板」入口（v0.6.7 wizard 扩了 dataset + members 步骤，模板复用更有意义了）。
 
 #### 数据 & 存储
@@ -77,22 +76,18 @@
 - **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
 
 #### 可观测性
-- **Celery / ML Backend 指标**：v0.4.8 已加 HTTP metrics + DB pool + `/health/{db,redis,minio}`；缺 Celery 队列长度、Worker 心跳、ML Backend 平均延迟 / 失败率。
-- **`/health/celery`**：v0.4.8 留下的待办；做成 broker ping + active worker count。
+- **Celery / ML Backend 指标**：v0.4.8 已加 HTTP metrics + DB pool + `/health/{db,redis,minio,celery}`（v0.7.5 补齐 celery）；缺 Celery 队列长度、Worker 心跳、ML Backend 平均延迟 / 失败率。
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
 
 #### 性能 / 扩展
 - **AuditMiddleware 写入异步队列**：当前每写请求一次 INSERT，写流量上来后改 Redis Stream / Kafka 异步消费，主请求 < 1ms 旁路。
 - **Annotation 列表 keyset 分页**：v0.4.8 已对 audit_logs / tasks 改造；annotations 仍单次拉全（`useAnnotations` task 内全量），单任务 1000+ 框时阻塞渲染。
 - **Predictions 表分区**：按 `project_id` 或 `created_at` PARTITION，单项目预测量大时查询性能下降。
-- **useInfiniteQuery 缓存 GC**：工作台调置信度阈值会创建新 query key；旧 key 默认 5min GC，长时间调阈值会内存增长。建议 `cacheTime: 30s` for predictions / 切题时手动 `removeQueries`。
 
 #### 测试 / 开发体验
 - **前端单元测试 — 页面级覆盖**：vitest + MSW 基座已就位（v0.7.4），但当前 64 测试集中在 Workbench state 与少量组件，页面级几乎无覆盖。需补 hooks（`useAnnotationHistory` batch 命令、`useClipboard` 偏移粘贴、`useSessionStats` ring buffer、`replaceAnnotationId`）与关键组件（Modal、InviteUserModal 状态机、RegisterPage 三态、`<DropdownMenu>` 键盘导航），以及 Dashboard / ProjectList / WorkbenchShell 三个页面级单测，目标前端 codecov ≥ 30%。
 - **E2E spec 写实**：v0.7.4 已搭好 Playwright 骨架，三个 spec（auth / annotation / batch-flow）全 `.skip` 占位且 e2e job `continue-on-error: true`。需先把 `auth.spec.ts` 写实（登录页 → dashboard、错密码、JWT 过期），加 `e2e/fixtures/seed.ts` 调后端造种子数据，跑通后去掉 `continue-on-error`。然后第二轮 annotation bbox 完整链路。
-- **覆盖率门槛软启用**：`.codecov.yml` 当前完全 informational；待累计 1-2 周数据后把 `project.default.target` 从 `auto` 改为后端 60% / 前端 30%，仍 informational 观察 2 周再切硬阻断。
-- **OpenAPI codegen 加速**：当前 `apps/web/package.json` 的 `prebuild: pnpm codegen` 每次 build 都跑；snapshot 落盘后契约由 `test_openapi_contract.py` 兜底，可把 `prebuild` 移到 dev-only 或加 `if-changed` 跳过条件。同时把 `pnpm typecheck` 加到 CI lint job（snapshot 已落盘，无运行时依赖）。
-- **ruff-format 移出 pre-commit**：v0.7.4 激活 ruff-format pre-commit hook 一次性产生 121 文件 churn；考虑把 ruff-format 从 pre-commit 移到 CI 单独 job，让本地 commit 速度更快。
+- **覆盖率门槛硬阻断**：v0.7.5 已把 codecov target 设为后端 60% / 前端 30%（仍 informational）；累计 2 周数据稳定后切硬阻断（去 informational）。
 
 #### i18n / 主题 / 无障碍
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
@@ -170,7 +165,7 @@
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要 |
 | **P2** | C.3 history 持久化（undo/redo 栈 sessionStorage） | quick win，工时少 |
 | **P2** | `task.reopen` 通知 fan-out 到通知中心 | v0.7.0 删 audit-derived 后 reopen 通知留作下版 |
-| **P2** | 审计日志归档（PARTITION）、AuditMiddleware 队列化、useInfiniteQuery 缓存 GC | 当前数据量未到瓶颈，监控触发再做 |
+| **P2** | 审计日志归档（PARTITION）、AuditMiddleware 队列化 | 当前数据量未到瓶颈，监控触发再做 |
 | **P2** | E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error` | v0.7.4 骨架已落，spec 全 .skip 占位；写实是 PR 红线收紧前置 |
 | **P2** | 前端页面级单测补 + 覆盖率拉到 30% | v0.7.4 MSW 已就位但 coverage <10%；Dashboard / ProjectList / WorkbenchShell 三页先补 |
 | **P2** | 用户手册关键页填实（GIF + 截图）+ ADR 0002-0005 回填 | v0.7.4 docs-site 骨架已落但多为大纲，新人 onboarding 价值低 |
@@ -178,7 +173,6 @@
 | **P3** | 批次状态看板（kanban 视图） | 7 态卡片墙 + owner 治理界面，与 transition 鉴权冲突需谨慎 |
 | **P3** | 部署 / 安全模型 / ML Backend 协议 / WebSocket 文档 | docs-site 框架已就位，按业务需求触发 |
 | **P3** | 快捷键文档自动从 `hotkeys.ts` SoT 生成 | 双源漂移风险低（代码改时连带改文档），现状能用 |
-| **P3** | ruff-format 从 pre-commit 移到 CI | 本地 commit 速度优化，仅在 hook 拖慢明显时做 |
 | **P3** | i18n、SSO、2FA | 客户具体需求驱动 |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 |
 

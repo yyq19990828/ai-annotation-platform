@@ -111,6 +111,8 @@ jobs:
         run: pip install ruff
       - name: ruff check apps/api
         run: ruff check apps/api/app apps/api/tests
+      - name: ruff format --check apps/api
+        run: ruff format --check apps/api/app apps/api/tests
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -118,11 +120,17 @@ jobs:
       - name: pnpm install
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
+      - name: codegen (read snapshot for typecheck)
+        working-directory: apps/web
+        env:
+          OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
+        run: pnpm codegen
+      - name: tsc --noEmit
+        working-directory: apps/web
+        run: pnpm typecheck
       - name: eslint
         working-directory: apps/web
         run: pnpm lint
-      # typecheck 由 vitest job 的 `pnpm build`（含 tsc -b）兜底；
-      # 等 openapi snapshot 落盘后可在此独立加 `pnpm typecheck`。
 
   e2e:
     name: E2E (Playwright)

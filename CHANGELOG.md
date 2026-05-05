@@ -7,9 +7,151 @@
 ---
 ## [Unreleased]
 
-### v0.7.3 草案 — 批次状态机扩展 + 多选批量操作 + 操作历史
+_当前无草案条目。_
 
-**问题：** 当前批次状态机是严格单向流转（仅 `rejected → active` 一条逆向边）。Owner / 超管误操作（错归档、漏审、误判）只能改库兜底，运维成本高且无审计；批次列表只支持单批次操作，项目尾期清理 / 跨批次调岗体验差。
+---
+
+## [0.7.5] - 2026-05-05
+
+> **性能 & DX 收尾。** v0.7.4 把测试与文档体系一次性建齐后留下若干"半成品 / 待激活"项（codecov 完全 informational、ruff-format 进 pre-commit 引发 121 文件 churn、CI 缺独立 typecheck、`prebuild` 每次跑 codegen）+ v0.6/v0.7 累积的几条小型治理 / 性能项（`/health/celery` 缺、CORS 硬编码、predictions cache 5min GC）。本版本 6 项一次性收尾，让 v0.7.4 那波"封顶"，不引入新主题。规划全文见 [docs/plans/2-ticklish-flask.md](docs/plans/2-ticklish-flask.md)。
+
+### 安全 / 运维
+
+- **CORS 配置化**：`apps/api/app/main.py` 三个 localhost origin 硬编码 + 全本机端口 regex 放行 → 走 `Settings.cors_allow_origins` + `cors_allow_origin_regex`，env 支持 JSON list 或逗号分隔字符串（`@field_validator` 兼容两种格式）。`environment="production"` 时 regex 被强制 `None`（`effective_cors_origin_regex`），且 `cors_allow_origins` 为空时启动期 raise，避免误把 dev 正则带上线。`.env.example` 加示例段。
+- **`/health/celery` 端点**：`apps/api/app/api/health.py` 加 `_check_celery()`：`celery_app.control.inspect(timeout=2).ping()` 拿活 worker 列表，返回 `{status, latency_ms, active_count, workers}`；ping 返回 `None`（无 worker 响应）→ status="error"。同时进 `/health` 聚合（version 字段从 `0.6.0` 修到 `0.7.5`，`apps/api/app/main.py` 的 FastAPI version 从 `0.6.7` 一并修到 `0.7.5`）。
+
+### 性能
+
+- **`usePredictions` `gcTime: 30_000`**：`apps/web/src/hooks/usePredictions.ts` query key 含 `minConfidence`，工作台连续调阈值产生新 key，旧 key 默认 5min GC 会堆积内存。改 30s GC（react-query v5 字段名 `gcTime`）。`useAcceptPrediction` 的 `invalidateQueries` 不动；`WorkbenchShell.tsx` 相邻题 prefetch 不动（同 key 命中 GC 自动延期）。
+
+### 开发体验 / CI
+
+- **codecov per-flag target 软启用**：`.codecov.yml` 拆分 `project.default` → `project.{backend,frontend}`，target 后端 60% / 前端 30%，threshold 5% → 2%；保持 `informational: true` 观察 1-2 周后切硬阻断。`patch.default` 仍 auto。
+- **CI lint job 加 `ruff format --check` + 独立 `pnpm typecheck`**：`.github/workflows/ci.yml` lint job 在 `ruff check` 之后追加 `ruff format --check apps/api/app apps/api/tests`（兜底 ruff-format 移出 pre-commit）；同步把注释里的 "等 snapshot 落盘后加 typecheck" 落地——lint job 跑 `pnpm codegen`（吃 snapshot）+ `pnpm typecheck` 独立 step，不再依赖 vitest job 的 `pnpm build` 兜底。
+- **`prebuild` mtime if-changed**：新建 `apps/web/scripts/codegen-if-changed.mjs`（54 行）比较 `apps/api/openapi.snapshot.json` 与 `src/api/generated/types.gen.ts` mtime；前者新或后者缺即跑 `pnpm codegen`，否则 skip 并打印 "snapshot unchanged, skipping codegen"。`OPENAPI_URL` 环境变量被显式设置时仍强制重新生成（CI 场景）。`package.json` `prebuild` 改用此脚本。
+- **`ruff-format` 移出 pre-commit**：`.pre-commit-config.yaml` 移除 `ruff-format` hook 条目（保留 `ruff` lint --fix）。本地 commit 速度提升、与编辑器 format on save 不冲突；CI 上述新增 `ruff format --check` 兜底。
+
+### 文档
+
+- **ROADMAP.md 同步**：删除 A 节「`Project.in_progress_tasks` 改 stored counter」（v0.7.0 alembic 0028 + `_sync_project_counters()` 早已落，描述过时）；删除 B 节「`/health/celery`」「OpenAPI codegen 加速」「ruff-format 移出 pre-commit」「覆盖率门槛软启用」「useInfiniteQuery 缓存 GC」（本期落地）；优先级表移除对应 P3 / P2 行；新增「覆盖率门槛硬阻断」作为 v0.7.5 后续观察项。
+- **`apps/web/package.json` version**：`0.7.4` → `0.7.5`。
+
+### 文件清单
+
+```
+apps/api/app/api/health.py             # +/celery 路由 + 进 health_all + version 0.7.5
+apps/api/app/config.py                  # +cors_allow_origins / cors_allow_origin_regex + validator
+apps/api/app/main.py                    # CORS 改读 settings + prod 守卫 + FastAPI version 0.7.5
+apps/api/tests/test_health.py           # 新建：7 用例（路由注册 + celery mock×2 + CORS×4）
+apps/web/package.json                   # prebuild 改 if-changed 脚本 + version 0.7.5
+apps/web/scripts/codegen-if-changed.mjs # 新建（54 行）
+apps/web/src/hooks/usePredictions.ts    # +gcTime: 30_000
+.env.example                            # +CORS_ALLOW_ORIGINS / CORS_ALLOW_ORIGIN_REGEX / ENVIRONMENT
+.pre-commit-config.yaml                 # 移除 ruff-format hook
+.github/workflows/ci.yml                # lint 加 ruff format --check + codegen + typecheck
+.codecov.yml                            # target 60%/30% per-flag
+ROADMAP.md / CHANGELOG.md               # 同步
+apps/api/openapi.snapshot.json          # 刷新（含 /health/celery + version 0.7.5）
+docs-site/api/openapi.json              # 刷新
+```
+
+### 验证
+
+- 后端：`uv run pytest tests/test_health.py` → 7 PASS（路由注册 + celery mock + CORS 4 用例）；全测试套未跑回归（与本期改动正交，仅依赖 settings 默认值不变）
+- 前端：`pnpm typecheck` PASS；`node scripts/codegen-if-changed.mjs` 首次重生成 / 二次 skip 行为符合预期
+- pre-commit：本地 `pre-commit run ruff-format --all-files` 仍 PASS（v0.7.4 存量已格式化），后续 commit 不再触发 format hook
+
+---
+
+## [0.7.4] - 2026-05-05
+
+> **测试与文档体系一次性建齐。** v0.7+ 阶段（CHANGELOG 2300+ 行、77 后端测试、216 前端文件）质量与知识传递的基础设施一直滞后于代码增长，本版本一次性把 4 块（测试 / 用户文档 / 开发文档 / API 文档）的骨架与红线都立起来，后续日常开发只填内容、不再补地基。规划全文见 [docs/plans/api-tender-moore.md](docs/plans/api-tender-moore.md)。
+
+### 测试
+
+#### 后端
+
+- 接 `pytest-cov` + `coverage[branch]`：`apps/api/pyproject.toml` 加 `[tool.coverage.run/report]`；`addopts -q --cov=app --cov-report=xml`；CI 上传 codecov（`backend` flag）
+- 新增 `apps/api/tests/test_openapi_contract.py` 契约测试 + `apps/api/openapi.snapshot.json`（326KB，13340 行）作为前后端契约真值源；运行时与 snapshot 不一致即 fail
+- 新增 `scripts/export_openapi.py`：`uv run python ../../scripts/export_openapi.py [--check]` 用于刷 / 校验 snapshot
+
+#### 前端
+
+- 接 MSW（`apps/web/src/mocks/{server,handlers}.ts`）+ `vitest.setup.ts` 自动 listen / resetHandlers / close；vite.config.ts 加 v8 coverage（lcov / text / html）；CI 上传 codecov（`frontend` flag）
+- Playwright E2E 骨架：`apps/web/playwright.config.ts` + `e2e/tests/{auth,annotation,batch-flow}.spec.ts`（spec 全 `.skip` 占位 + `e2e/README.md` 详述工作流）
+- ESLint flat config（`apps/web/eslint.config.js`）+ devDeps（eslint 9 / typescript-eslint / react-hooks / react-refresh / globals）；新增 `pnpm typecheck` / `pnpm test:coverage` / `pnpm test:e2e` 脚本
+- vitest exclude e2e（避免 Playwright spec 被当单测跑）；codegen 默认输入改为本地 `apps/api/openapi.snapshot.json`（CI 不再依赖运行时 API）
+
+### CI / 工具链
+
+- `.github/workflows/ci.yml` 重构：lint job 去掉 `|| true`（ruff / eslint 真正阻断）；vitest job 用 snapshot 替代运行时 dump；新增 `e2e` job（Postgres + Redis service + 启 uvicorn + Playwright，`continue-on-error: true` 待 spec 写实后摘）；pytest / vitest 都接 codecov
+- `.github/workflows/docs.yml`（新建）：push 到 main 自动构建并发到 GitHub Pages（用 `actions/configure-pages@v5` 的 `enablement: true` 自动激活 Pages）
+- `.pre-commit-config.yaml`（新建）：trailing-whitespace / EOF / yaml / large-files / merge-conflict / ruff / ruff-format / eslint / tsc 全套
+- `.codecov.yml`（新建）：informational 模式（不阻断 PR），按 backend / frontend flag 分组上报
+- 顶层 `package.json` 加 `docs:dev` / `docs:build` / `docs:preview` / `openapi:export` / `openapi:check` / `typecheck` / `test:e2e` 等脚本
+
+### 文档
+
+#### VitePress 文档站（新建 `docs-site/`）
+
+三栏导航：用户手册 / 开发文档 / API 文档。`pnpm docs:dev` 本地预览，自动同步 OpenAPI snapshot；CI 自动发到 [GitHub Pages](https://yyq19990828.github.io/ai-annotation-platform/)
+
+- `user-guide/`（11 篇骨架）：getting-started / workbench{bbox,polygon,keypoint,index} / projects{index,batch} / review / export / faq
+- `dev/`（11 篇骨架）：local-dev / testing / conventions / release / architecture{overview,backend-layers,frontend-layers,data-flow} / how-to{add-api-endpoint,add-page,add-migration,debug-celery}
+- `api/`：iframe 嵌 [Scalar](https://github.com/scalar/scalar) 渲染 OpenAPI（standalone HTML in `public/api-reference.html`）；构建期 `predev` / `prebuild` 自动从 `apps/api/openapi.snapshot.json` 同步到 `public/openapi.json`
+
+#### 架构决策记录（新建 `docs/adr/`）
+
+- `README.md` 写明 ADR 协议（Michael Nygard 模板、命名、何时写 / 何时不写）
+- `0001-record-architecture-decisions.md` 元决策落地，规划 0002-0005 待回填（FastAPI 选型 / OpenAPI codegen 工具 / Konva canvas / 任务锁状态机）
+
+#### 顶层文档
+
+- 新建 `README.md`（仓库入口，含技术栈表 / 快速开始 / 测试命令 / 目录结构）
+- `DEV.md` 加 pre-commit setup 章节，索引指向 docs-site
+- `CLAUDE.md` 文档索引扩到 README + docs-site + ADR
+
+### 修真 bug（验证过程中顺手）
+
+- `apps/web/src/components/CommandPalette.tsx:273` — 隐藏的 `\u3000` 全角空格（eslint `no-irregular-whitespace`）
+- `apps/web/src/pages/Workbench/shell/CommentInput.tsx:167,170` — 正则字符类内的 NBSP（`/\s| /` 改 `/[\s\u00A0]/` 保留语义）
+- `apps/api/app/services/task_lock.py` — 6 处 E741 模糊变量名 `l` → `lock`
+- `apps/api/app/api/v1/datasets.py` — 2 处 F841 未用变量
+- `apps/api/tests/test_notifications.py` — 1 处 F841 未用变量
+- `apps/api/app/main.py` — E402 noqa 位置错（多行 import 的 noqa 应在首行）
+- `apps/api/tests/test_task_reopen_notification.py` — 3 处 E402（pytestmark.skip 后的 import 加 noqa）
+
+### Migration / Deploy 注意事项
+
+- **无 alembic 迁移**：本版纯基础设施 / 文档变更
+- **新增 GitHub Actions secret**：`CODECOV_TOKEN`（去 codecov.io 取，加到 repo Settings → Secrets and variables → Actions）；不加 CI 不阻断，仅 codecov 没数据
+- **GitHub Pages**：repo 必须 public 才能用免费 Pages；Settings → Pages → Source 选 GitHub Actions（v0.7.4 通过 `enablement: true` 自动激活）
+- **首次 clone**：`pnpm install` + `pre-commit install`（启用 git hooks）+ `pnpm exec playwright install chromium`（首次跑 E2E 前装浏览器）
+- **存量代码 ruff-format churn**：激活 ruff-format pre-commit hook 后存量代码首次走完整规范化，本版伴随一个 `style: ruff-format 存量代码统一格式` 提交（121 文件 +8536 / -1395，纯格式无业务逻辑变化）
+
+### 验证
+
+```bash
+pnpm openapi:check         # snapshot 与运行时一致
+pnpm test                  # 8 文件 / 64 测试
+pnpm typecheck             # tsc 0 错
+pnpm exec eslint . --quiet # 0 错（35 warnings）
+cd apps/api && uv run pytest tests/test_openapi_contract.py  # 契约 2 通过
+pnpm docs:build            # VitePress 构建通过
+pnpm exec playwright test --list  # 配置有效（spec 全 .skip）
+```
+
+CI 全绿（pytest / vitest / lint / e2e / openapi-contract），docs deploy 成功，文档站 [yyq19990828.github.io/ai-annotation-platform](https://yyq19990828.github.io/ai-annotation-platform/) 可访问。
+
+### 后续 follow-ups
+
+接续工作（E2E spec 写实、前端覆盖率拉到 30%、ADR 0002-0005 回填、用户手册关键页填实）已转移至 [ROADMAP.md](ROADMAP.md) 的 P2 / P3 段。
+
+---
+
+## [0.7.3] - 2026-05-05
+
+> **批次状态机扩展 + 多选批量操作 + 操作历史 + 数据集关联简化。** 当前批次状态机是严格单向流转（仅 `rejected → active` 一条逆向边）。Owner / 超管误操作（错归档、漏审、误判）只能改库兜底，运维成本高且无审计；批次列表只支持单批次操作，项目尾期清理 / 跨批次调岗体验差。本版本一次性补齐 owner 逆向迁移 + 多选批量 + 批次操作历史 + 数据集 link/unlink 简化。
 
 #### 后端 — 管理员逆向迁移（owner-only）
 
@@ -103,92 +245,6 @@
 - `test_unclassified_count_endpoint` — 未归类计数端点正确
 - `test_project_datasets_endpoint` — 项目侧 dataset 列表端点（含 task 数）
 - 旧 `test_link_project_auto_creates_named_batch` 改为反向断言，作为 `test_link_project_no_default_batch`
-
----
-
-## [0.7.4] - 2026-05-05
-
-> **测试与文档体系一次性建齐。** v0.7+ 阶段（CHANGELOG 2300+ 行、77 后端测试、216 前端文件）质量与知识传递的基础设施一直滞后于代码增长，本版本一次性把 4 块（测试 / 用户文档 / 开发文档 / API 文档）的骨架与红线都立起来，后续日常开发只填内容、不再补地基。规划全文见 [docs/plans/api-tender-moore.md](docs/plans/api-tender-moore.md)。
-
-### 测试
-
-#### 后端
-
-- 接 `pytest-cov` + `coverage[branch]`：`apps/api/pyproject.toml` 加 `[tool.coverage.run/report]`；`addopts -q --cov=app --cov-report=xml`；CI 上传 codecov（`backend` flag）
-- 新增 `apps/api/tests/test_openapi_contract.py` 契约测试 + `apps/api/openapi.snapshot.json`（326KB，13340 行）作为前后端契约真值源；运行时与 snapshot 不一致即 fail
-- 新增 `scripts/export_openapi.py`：`uv run python ../../scripts/export_openapi.py [--check]` 用于刷 / 校验 snapshot
-
-#### 前端
-
-- 接 MSW（`apps/web/src/mocks/{server,handlers}.ts`）+ `vitest.setup.ts` 自动 listen / resetHandlers / close；vite.config.ts 加 v8 coverage（lcov / text / html）；CI 上传 codecov（`frontend` flag）
-- Playwright E2E 骨架：`apps/web/playwright.config.ts` + `e2e/tests/{auth,annotation,batch-flow}.spec.ts`（spec 全 `.skip` 占位 + `e2e/README.md` 详述工作流）
-- ESLint flat config（`apps/web/eslint.config.js`）+ devDeps（eslint 9 / typescript-eslint / react-hooks / react-refresh / globals）；新增 `pnpm typecheck` / `pnpm test:coverage` / `pnpm test:e2e` 脚本
-- vitest exclude e2e（避免 Playwright spec 被当单测跑）；codegen 默认输入改为本地 `apps/api/openapi.snapshot.json`（CI 不再依赖运行时 API）
-
-### CI / 工具链
-
-- `.github/workflows/ci.yml` 重构：lint job 去掉 `|| true`（ruff / eslint 真正阻断）；vitest job 用 snapshot 替代运行时 dump；新增 `e2e` job（Postgres + Redis service + 启 uvicorn + Playwright，`continue-on-error: true` 待 spec 写实后摘）；pytest / vitest 都接 codecov
-- `.github/workflows/docs.yml`（新建）：push 到 main 自动构建并发到 GitHub Pages（用 `actions/configure-pages@v5` 的 `enablement: true` 自动激活 Pages）
-- `.pre-commit-config.yaml`（新建）：trailing-whitespace / EOF / yaml / large-files / merge-conflict / ruff / ruff-format / eslint / tsc 全套
-- `.codecov.yml`（新建）：informational 模式（不阻断 PR），按 backend / frontend flag 分组上报
-- 顶层 `package.json` 加 `docs:dev` / `docs:build` / `docs:preview` / `openapi:export` / `openapi:check` / `typecheck` / `test:e2e` 等脚本
-
-### 文档
-
-#### VitePress 文档站（新建 `docs-site/`）
-
-三栏导航：用户手册 / 开发文档 / API 文档。`pnpm docs:dev` 本地预览，自动同步 OpenAPI snapshot；CI 自动发到 [GitHub Pages](https://yyq19990828.github.io/ai-annotation-platform/)
-
-- `user-guide/`（11 篇骨架）：getting-started / workbench{bbox,polygon,keypoint,index} / projects{index,batch} / review / export / faq
-- `dev/`（11 篇骨架）：local-dev / testing / conventions / release / architecture{overview,backend-layers,frontend-layers,data-flow} / how-to{add-api-endpoint,add-page,add-migration,debug-celery}
-- `api/`：iframe 嵌 [Scalar](https://github.com/scalar/scalar) 渲染 OpenAPI（standalone HTML in `public/api-reference.html`）；构建期 `predev` / `prebuild` 自动从 `apps/api/openapi.snapshot.json` 同步到 `public/openapi.json`
-
-#### 架构决策记录（新建 `docs/adr/`）
-
-- `README.md` 写明 ADR 协议（Michael Nygard 模板、命名、何时写 / 何时不写）
-- `0001-record-architecture-decisions.md` 元决策落地，规划 0002-0005 待回填（FastAPI 选型 / OpenAPI codegen 工具 / Konva canvas / 任务锁状态机）
-
-#### 顶层文档
-
-- 新建 `README.md`（仓库入口，含技术栈表 / 快速开始 / 测试命令 / 目录结构）
-- `DEV.md` 加 pre-commit setup 章节，索引指向 docs-site
-- `CLAUDE.md` 文档索引扩到 README + docs-site + ADR
-
-### 修真 bug（验证过程中顺手）
-
-- `apps/web/src/components/CommandPalette.tsx:273` — 隐藏的 `\u3000` 全角空格（eslint `no-irregular-whitespace`）
-- `apps/web/src/pages/Workbench/shell/CommentInput.tsx:167,170` — 正则字符类内的 NBSP（`/\s| /` 改 `/[\s\u00A0]/` 保留语义）
-- `apps/api/app/services/task_lock.py` — 6 处 E741 模糊变量名 `l` → `lock`
-- `apps/api/app/api/v1/datasets.py` — 2 处 F841 未用变量
-- `apps/api/tests/test_notifications.py` — 1 处 F841 未用变量
-- `apps/api/app/main.py` — E402 noqa 位置错（多行 import 的 noqa 应在首行）
-- `apps/api/tests/test_task_reopen_notification.py` — 3 处 E402（pytestmark.skip 后的 import 加 noqa）
-
-### Migration / Deploy 注意事项
-
-- **无 alembic 迁移**：本版纯基础设施 / 文档变更
-- **新增 GitHub Actions secret**：`CODECOV_TOKEN`（去 codecov.io 取，加到 repo Settings → Secrets and variables → Actions）；不加 CI 不阻断，仅 codecov 没数据
-- **GitHub Pages**：repo 必须 public 才能用免费 Pages；Settings → Pages → Source 选 GitHub Actions（v0.7.4 通过 `enablement: true` 自动激活）
-- **首次 clone**：`pnpm install` + `pre-commit install`（启用 git hooks）+ `pnpm exec playwright install chromium`（首次跑 E2E 前装浏览器）
-- **存量代码 ruff-format churn**：激活 ruff-format pre-commit hook 后存量代码首次走完整规范化，本版伴随一个 `style: ruff-format 存量代码统一格式` 提交（121 文件 +8536 / -1395，纯格式无业务逻辑变化）
-
-### 验证
-
-```bash
-pnpm openapi:check         # snapshot 与运行时一致
-pnpm test                  # 8 文件 / 64 测试
-pnpm typecheck             # tsc 0 错
-pnpm exec eslint . --quiet # 0 错（35 warnings）
-cd apps/api && uv run pytest tests/test_openapi_contract.py  # 契约 2 通过
-pnpm docs:build            # VitePress 构建通过
-pnpm exec playwright test --list  # 配置有效（spec 全 .skip）
-```
-
-CI 全绿（pytest / vitest / lint / e2e / openapi-contract），docs deploy 成功，文档站 [yyq19990828.github.io/ai-annotation-platform](https://yyq19990828.github.io/ai-annotation-platform/) 可访问。
-
-### 后续 follow-ups
-
-接续工作（E2E spec 写实、前端覆盖率拉到 30%、ADR 0002-0005 回填、用户手册关键页填实）已转移至 [ROADMAP.md](ROADMAP.md) 的 P2 / P3 段。
 
 ---
 

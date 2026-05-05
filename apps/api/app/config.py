@@ -1,5 +1,7 @@
+import json
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -10,6 +12,33 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://user:pass@localhost:5432/annotation"
     redis_url: str = "redis://localhost:6379/0"
+
+    # CORS — dev 默认允许三个常见前端端口 + localhost regex；
+    # production 必须在 env 显式设置 cors_allow_origins，regex 自动失效。
+    cors_allow_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:5173",
+    ]
+    cors_allow_origin_regex: str | None = r"http://localhost:\d+"
+
+    @field_validator("cors_allow_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v):
+        """允许 env 用 JSON list 或逗号分隔字符串。"""
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                return json.loads(v)
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
+
+    @property
+    def effective_cors_origin_regex(self) -> str | None:
+        """production 强制不放 regex，避免误用本机正则上线。"""
+        if self.environment == "production":
+            return None
+        return self.cors_allow_origin_regex
 
     secret_key: str = "dev-secret-change-in-production"
     access_token_expire_minutes: int = 60 * 24

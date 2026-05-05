@@ -9,6 +9,7 @@ from sqlalchemy import text
 from app.config import settings
 from app.db.base import AsyncSessionLocal
 from app.services.storage import storage_service
+from app.workers.celery_app import celery_app
 
 router = APIRouter()
 
@@ -54,6 +55,36 @@ def _check_minio() -> dict:
         return {"status": "error", "latency_ms": None, "detail": str(e)}
 
 
+def _check_celery() -> dict:
+    start = time.monotonic()
+    try:
+        ping = celery_app.control.inspect(timeout=2).ping()
+        latency_ms = round((time.monotonic() - start) * 1000, 1)
+        if not ping:
+            return {
+                "status": "error",
+                "latency_ms": latency_ms,
+                "active_count": 0,
+                "workers": [],
+                "detail": "no workers responded",
+            }
+        workers = sorted(ping.keys())
+        return {
+            "status": "ok",
+            "latency_ms": latency_ms,
+            "active_count": len(workers),
+            "workers": workers,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "latency_ms": None,
+            "active_count": 0,
+            "workers": [],
+            "detail": str(e),
+        }
+
+
 @router.get("/db")
 async def health_db():
     result = await _check_db()
@@ -75,14 +106,22 @@ async def health_minio():
     return JSONResponse(status_code=code, content=result)
 
 
+@router.get("/celery")
+async def health_celery():
+    result = _check_celery()
+    code = 200 if result["status"] == "ok" else 503
+    return JSONResponse(status_code=code, content=result)
+
+
 @router.get("")
 async def health_all():
     db_r, redis_r = await _check_db(), await _check_redis()
     minio_r = _check_minio()
-    checks = {"db": db_r, "redis": redis_r, "minio": minio_r}
+    celery_r = _check_celery()
+    checks = {"db": db_r, "redis": redis_r, "minio": minio_r, "celery": celery_r}
     overall = "ok" if all(v["status"] == "ok" for v in checks.values()) else "degraded"
     code = 200 if overall == "ok" else 503
     return JSONResponse(
         status_code=code,
-        content={"status": overall, "version": "0.6.0", "checks": checks},
+        content={"status": overall, "version": "0.7.5", "checks": checks},
     )
