@@ -1,6 +1,7 @@
 """B-16 · 标注员仅能在 GET /tasks / /tasks/{id} / /annotations / /predictions 上看到
 被分派批次内的任务。super_admin / project owner 越权放行。
 """
+
 from __future__ import annotations
 
 import uuid
@@ -18,7 +19,9 @@ def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _seed_project_with_two_batches(db, owner_id: uuid.UUID, annotator_id: uuid.UUID):
+async def _seed_project_with_two_batches(
+    db, owner_id: uuid.UUID, annotator_id: uuid.UUID
+):
     """建一个项目 + 两个批次：B-MINE 分派给 annotator，B-OTHER 分派给别人。各 1 个任务。"""
     pid = uuid.uuid4()
     p = Project(
@@ -33,13 +36,19 @@ async def _seed_project_with_two_batches(db, owner_id: uuid.UUID, annotator_id: 
     db.add(p)
     await db.flush()
 
-    db.add(ProjectMember(
-        project_id=pid, user_id=annotator_id, role="annotator", assigned_by=owner_id,
-    ))
+    db.add(
+        ProjectMember(
+            project_id=pid,
+            user_id=annotator_id,
+            role="annotator",
+            assigned_by=owner_id,
+        )
+    )
 
     # 创建一个真实的"别人"作为 b_other 的 annotator（FK 约束需要 user 存在）
     from app.db.models.user import User
     from app.core.security import hash_password
+
     other_user = User(
         id=uuid.uuid4(),
         email=f"other-{uuid.uuid4().hex[:6]}@test.local",
@@ -101,11 +110,15 @@ async def _seed_project_with_two_batches(db, owner_id: uuid.UUID, annotator_id: 
 
 
 @pytest.mark.asyncio
-async def test_annotator_list_only_sees_assigned_batch(httpx_client_bound, db_session, super_admin, annotator):
+async def test_annotator_list_only_sees_assigned_batch(
+    httpx_client_bound, db_session, super_admin, annotator
+):
     owner, _ = super_admin
     user, token = annotator
     p, b_mine, b_other, t_mine, t_other = await _seed_project_with_two_batches(
-        db_session, owner.id, user.id,
+        db_session,
+        owner.id,
+        user.id,
     )
     await db_session.commit()
 
@@ -122,11 +135,15 @@ async def test_annotator_list_only_sees_assigned_batch(httpx_client_bound, db_se
 
 
 @pytest.mark.asyncio
-async def test_annotator_get_other_batch_task_404(httpx_client_bound, db_session, super_admin, annotator):
+async def test_annotator_get_other_batch_task_404(
+    httpx_client_bound, db_session, super_admin, annotator
+):
     owner, _ = super_admin
     user, token = annotator
     _, _, _, _, t_other = await _seed_project_with_two_batches(
-        db_session, owner.id, user.id,
+        db_session,
+        owner.id,
+        user.id,
     )
     await db_session.commit()
 
@@ -150,11 +167,15 @@ async def test_annotator_get_other_batch_task_404(httpx_client_bound, db_session
 
 
 @pytest.mark.asyncio
-async def test_annotator_can_get_assigned_batch_task(httpx_client_bound, db_session, super_admin, annotator):
+async def test_annotator_can_get_assigned_batch_task(
+    httpx_client_bound, db_session, super_admin, annotator
+):
     owner, _ = super_admin
     user, token = annotator
     _, _, _, t_mine, _ = await _seed_project_with_two_batches(
-        db_session, owner.id, user.id,
+        db_session,
+        owner.id,
+        user.id,
     )
     await db_session.commit()
 
@@ -167,12 +188,16 @@ async def test_annotator_can_get_assigned_batch_task(httpx_client_bound, db_sess
 
 
 @pytest.mark.asyncio
-async def test_super_admin_sees_all_batches(httpx_client_bound, db_session, super_admin, annotator):
+async def test_super_admin_sees_all_batches(
+    httpx_client_bound, db_session, super_admin, annotator
+):
     """B-16 修复后 super_admin 仍能越权看全部任务（owner / 监管视角）。"""
     owner, owner_token = super_admin
     user, _ = annotator
     p, _, _, t_mine, t_other = await _seed_project_with_two_batches(
-        db_session, owner.id, user.id,
+        db_session,
+        owner.id,
+        user.id,
     )
     await db_session.commit()
 
@@ -188,7 +213,9 @@ async def test_super_admin_sees_all_batches(httpx_client_bound, db_session, supe
 
 
 @pytest.mark.asyncio
-async def test_draft_batch_hidden_from_annotator_even_if_unassigned(httpx_client_bound, db_session, super_admin, annotator):
+async def test_draft_batch_hidden_from_annotator_even_if_unassigned(
+    httpx_client_bound, db_session, super_admin, annotator
+):
     """B-16 P-4 复现：draft 批次 + assigned_user_ids=[] 不应对标注员可见。
     历史 BUG：unassigned 规则未限制 batch.status，导致草稿批次也被当成开放批次。"""
     owner, _ = super_admin
@@ -206,9 +233,14 @@ async def test_draft_batch_hidden_from_annotator_even_if_unassigned(httpx_client
     )
     db_session.add(p)
     await db_session.flush()
-    db_session.add(ProjectMember(
-        project_id=pid, user_id=user.id, role="annotator", assigned_by=owner.id,
-    ))
+    db_session.add(
+        ProjectMember(
+            project_id=pid,
+            user_id=user.id,
+            role="annotator",
+            assigned_by=owner.id,
+        )
+    )
 
     b_active_mine = TaskBatch(
         id=uuid.uuid4(),
@@ -235,14 +267,20 @@ async def test_draft_batch_hidden_from_annotator_even_if_unassigned(httpx_client
         project_id=pid,
         batch_id=b_active_mine.id,
         display_id="T-A",
-        file_name="m.jpg", file_path="/tmp/m.jpg", file_type="image", status="pending",
+        file_name="m.jpg",
+        file_path="/tmp/m.jpg",
+        file_type="image",
+        status="pending",
     )
     t_draft = Task(
         id=uuid.uuid4(),
         project_id=pid,
         batch_id=b_draft_open.id,
         display_id="T-D",
-        file_name="d.jpg", file_path="/tmp/d.jpg", file_type="image", status="pending",
+        file_name="d.jpg",
+        file_path="/tmp/d.jpg",
+        file_type="image",
+        status="pending",
     )
     db_session.add(t_mine)
     db_session.add(t_draft)
@@ -269,7 +307,9 @@ async def test_draft_batch_hidden_from_annotator_even_if_unassigned(httpx_client
 
 
 @pytest.mark.asyncio
-async def test_unassigned_batch_visible_to_all_members(httpx_client_bound, db_session, super_admin, annotator):
+async def test_unassigned_batch_visible_to_all_members(
+    httpx_client_bound, db_session, super_admin, annotator
+):
     """assigned_user_ids = [] 且 status=active 的批次对所有成员可见（开放标注池）。"""
     owner, _ = super_admin
     user, token = annotator
@@ -286,9 +326,14 @@ async def test_unassigned_batch_visible_to_all_members(httpx_client_bound, db_se
     )
     db_session.add(p)
     await db_session.flush()
-    db_session.add(ProjectMember(
-        project_id=pid, user_id=user.id, role="annotator", assigned_by=owner.id,
-    ))
+    db_session.add(
+        ProjectMember(
+            project_id=pid,
+            user_id=user.id,
+            role="annotator",
+            assigned_by=owner.id,
+        )
+    )
 
     b_open = TaskBatch(
         id=uuid.uuid4(),

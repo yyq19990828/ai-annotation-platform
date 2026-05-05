@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import uuid
 from sqlalchemy import select, func, delete, insert, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,7 +51,10 @@ class DatasetService:
             pc_map = {r[0]: r[1] for r in pc_rows.all()}
 
             sz_rows = await self.db.execute(
-                select(DatasetItem.dataset_id, func.coalesce(func.sum(DatasetItem.file_size), 0))
+                select(
+                    DatasetItem.dataset_id,
+                    func.coalesce(func.sum(DatasetItem.file_size), 0),
+                )
                 .where(DatasetItem.dataset_id.in_(ds_ids))
                 .group_by(DatasetItem.dataset_id)
             )
@@ -63,11 +65,13 @@ class DatasetService:
 
         items = []
         for ds in datasets:
-            items.append({
-                **_dataset_dict(ds),
-                "project_count": pc_map.get(ds.id, 0),
-                "total_size": sz_map.get(ds.id, 0),
-            })
+            items.append(
+                {
+                    **_dataset_dict(ds),
+                    "project_count": pc_map.get(ds.id, 0),
+                    "total_size": sz_map.get(ds.id, 0),
+                }
+            )
 
         return items, total
 
@@ -78,16 +82,25 @@ class DatasetService:
         ds = await self.db.get(Dataset, dataset_id)
         if not ds:
             return None
-        pc = (await self.db.execute(
-            select(func.count()).select_from(ProjectDataset).where(ProjectDataset.dataset_id == ds.id)
-        )).scalar() or 0
-        total_size = (await self.db.execute(
-            select(func.coalesce(func.sum(DatasetItem.file_size), 0))
-            .where(DatasetItem.dataset_id == ds.id)
-        )).scalar() or 0
+        pc = (
+            await self.db.execute(
+                select(func.count())
+                .select_from(ProjectDataset)
+                .where(ProjectDataset.dataset_id == ds.id)
+            )
+        ).scalar() or 0
+        total_size = (
+            await self.db.execute(
+                select(func.coalesce(func.sum(DatasetItem.file_size), 0)).where(
+                    DatasetItem.dataset_id == ds.id
+                )
+            )
+        ).scalar() or 0
         return {**_dataset_dict(ds), "project_count": pc, "total_size": int(total_size)}
 
-    async def create(self, name: str, description: str, data_type: str, user_id: uuid.UUID) -> Dataset:
+    async def create(
+        self, name: str, description: str, data_type: str, user_id: uuid.UUID
+    ) -> Dataset:
         ds_id = uuid.uuid4()
         display_id = await next_display_id(self.db, "datasets")
         ds = Dataset(
@@ -104,7 +117,9 @@ class DatasetService:
         storage_service.create_folder(name, bucket=storage_service.datasets_bucket)
         return ds
 
-    async def update(self, dataset_id: uuid.UUID, name: str | None, description: str | None) -> Dataset | None:
+    async def update(
+        self, dataset_id: uuid.UUID, name: str | None, description: str | None
+    ) -> Dataset | None:
         ds = await self.db.get(Dataset, dataset_id)
         if not ds:
             return None
@@ -131,7 +146,11 @@ class DatasetService:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
-        count_q = select(func.count()).select_from(DatasetItem).where(DatasetItem.dataset_id == dataset_id)
+        count_q = (
+            select(func.count())
+            .select_from(DatasetItem)
+            .where(DatasetItem.dataset_id == dataset_id)
+        )
         total = (await self.db.execute(count_q)).scalar() or 0
 
         q = (
@@ -149,21 +168,25 @@ class DatasetService:
             d = _item_dict(item)
             try:
                 d["file_url"] = storage_service.generate_download_url(
-                    item.file_path, bucket=storage_service.datasets_bucket,
+                    item.file_path,
+                    bucket=storage_service.datasets_bucket,
                 )
             except Exception:
                 d["file_url"] = None
             if item.thumbnail_path:
                 try:
                     d["thumbnail_url"] = storage_service.generate_download_url(
-                        item.thumbnail_path, bucket=storage_service.datasets_bucket,
+                        item.thumbnail_path,
+                        bucket=storage_service.datasets_bucket,
                     )
                 except Exception:
                     d["thumbnail_url"] = None
             out.append(d)
         return out, total
 
-    async def find_by_hash(self, dataset_id: uuid.UUID, content_hash: str) -> DatasetItem | None:
+    async def find_by_hash(
+        self, dataset_id: uuid.UUID, content_hash: str
+    ) -> DatasetItem | None:
         result = await self.db.execute(
             select(DatasetItem).where(
                 DatasetItem.dataset_id == dataset_id,
@@ -226,12 +249,16 @@ class DatasetService:
         existing_paths: set[str] = {row[0] for row in existing}
 
         prefix = f"{ds.name}/"
-        objects = storage_service.list_objects(prefix, bucket=storage_service.datasets_bucket)
+        objects = storage_service.list_objects(
+            prefix, bucket=storage_service.datasets_bucket
+        )
 
         # 同时收集已存在的 hash，防止 scan 时内容重复
         existing_hashes_res = await self.db.execute(
-            select(DatasetItem.content_hash)
-            .where(DatasetItem.dataset_id == dataset_id, DatasetItem.content_hash.isnot(None))
+            select(DatasetItem.content_hash).where(
+                DatasetItem.dataset_id == dataset_id,
+                DatasetItem.content_hash.isnot(None),
+            )
         )
         existing_hashes: set[str] = {r[0] for r in existing_hashes_res.all()}
 
@@ -259,7 +286,9 @@ class DatasetService:
             width: int | None = None
             height: int | None = None
             if file_type == "image":
-                dims = storage_service.read_image_dimensions(key, bucket=storage_service.datasets_bucket)
+                dims = storage_service.read_image_dimensions(
+                    key, bucket=storage_service.datasets_bucket
+                )
                 if dims:
                     width, height = dims
 
@@ -284,13 +313,17 @@ class DatasetService:
 
     # ── Project linking ─────────────────────────────────────────────────────
 
-    async def link_project(self, dataset_id: uuid.UUID, project_id: uuid.UUID) -> ProjectDataset:
-        existing = (await self.db.execute(
-            select(ProjectDataset).where(
-                ProjectDataset.dataset_id == dataset_id,
-                ProjectDataset.project_id == project_id,
+    async def link_project(
+        self, dataset_id: uuid.UUID, project_id: uuid.UUID
+    ) -> ProjectDataset:
+        existing = (
+            await self.db.execute(
+                select(ProjectDataset).where(
+                    ProjectDataset.dataset_id == dataset_id,
+                    ProjectDataset.project_id == project_id,
+                )
             )
-        )).scalar_one_or_none()
+        ).scalar_one_or_none()
         if existing:
             return existing
 
@@ -298,8 +331,12 @@ class DatasetService:
         self.db.add(link)
 
         items_result = await self.db.execute(
-            select(DatasetItem.id, DatasetItem.file_name, DatasetItem.file_path, DatasetItem.file_type)
-            .where(DatasetItem.dataset_id == dataset_id)
+            select(
+                DatasetItem.id,
+                DatasetItem.file_name,
+                DatasetItem.file_path,
+                DatasetItem.file_type,
+            ).where(DatasetItem.dataset_id == dataset_id)
         )
         items = items_result.all()
 
@@ -340,7 +377,9 @@ class DatasetService:
         await self.db.flush()
         return link
 
-    async def unlink_project(self, dataset_id: uuid.UUID, project_id: uuid.UUID) -> dict | None:
+    async def unlink_project(
+        self, dataset_id: uuid.UUID, project_id: uuid.UUID
+    ) -> dict | None:
         """v0.6.7 二修 B-10：hard-unlink ——级联删除该 dataset 在该 project 下的所有 task
         (含 annotations / comments / locks)，不再保留为孤儿。
 
@@ -358,33 +397,46 @@ class DatasetService:
         from app.db.models.annotation import Annotation
         from app.db.models.annotation_comment import AnnotationComment
         from app.db.models.task_lock import TaskLock
-        from app.db.models.task_batch import TaskBatch
 
         # 1. 找出本次要删的 task ids 与所属 batch ids
-        target_rows = (await self.db.execute(
-            select(Task.id, Task.batch_id)
-            .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
-            .where(
-                Task.project_id == project_id,
-                DatasetItem.dataset_id == dataset_id,
+        target_rows = (
+            await self.db.execute(
+                select(Task.id, Task.batch_id)
+                .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+                .where(
+                    Task.project_id == project_id,
+                    DatasetItem.dataset_id == dataset_id,
+                )
             )
-        )).all()
+        ).all()
         target_task_ids: list[uuid.UUID] = [r[0] for r in target_rows]
-        affected_batch_ids: set[uuid.UUID] = {r[1] for r in target_rows if r[1] is not None}
+        affected_batch_ids: set[uuid.UUID] = {
+            r[1] for r in target_rows if r[1] is not None
+        }
 
         # 2. 找出对应 annotation ids（用于 annotation_comments 级联）
         ann_ids: list[uuid.UUID] = []
         ann_count = 0
         if target_task_ids:
-            ann_ids = list((await self.db.execute(
-                select(Annotation.id).where(Annotation.task_id.in_(target_task_ids))
-            )).scalars().all())
+            ann_ids = list(
+                (
+                    await self.db.execute(
+                        select(Annotation.id).where(
+                            Annotation.task_id.in_(target_task_ids)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
             ann_count = len(ann_ids)
 
         # 3. 级联删除（顺序关键：先 child 后 parent）
         if ann_ids:
             await self.db.execute(
-                delete(AnnotationComment).where(AnnotationComment.annotation_id.in_(ann_ids))
+                delete(AnnotationComment).where(
+                    AnnotationComment.annotation_id.in_(ann_ids)
+                )
             )
         if target_task_ids:
             await self.db.execute(
@@ -393,9 +445,7 @@ class DatasetService:
             await self.db.execute(
                 delete(TaskLock).where(TaskLock.task_id.in_(target_task_ids))
             )
-            await self.db.execute(
-                delete(Task).where(Task.id.in_(target_task_ids))
-            )
+            await self.db.execute(delete(Task).where(Task.id.in_(target_task_ids)))
 
         # 4. 删 ProjectDataset link
         result = await self.db.execute(
@@ -410,29 +460,43 @@ class DatasetService:
         # 5. 重算 project 计数器
         project = await self.db.get(Project, project_id)
         if project:
-            row = (await self.db.execute(
-                select(
-                    func.count().label("total"),
-                    func.count().filter(Task.status == "completed").label("completed"),
-                    func.count().filter(Task.status == "review").label("review"),
-                ).where(Task.project_id == project_id)
-            )).one()
+            row = (
+                await self.db.execute(
+                    select(
+                        func.count().label("total"),
+                        func.count()
+                        .filter(Task.status == "completed")
+                        .label("completed"),
+                        func.count().filter(Task.status == "review").label("review"),
+                    ).where(Task.project_id == project_id)
+                )
+            ).one()
             project.total_tasks = row.total
             project.completed_tasks = row.completed
             project.review_tasks = row.review
 
         # 6. 重算所有该 project 的 batch 计数器（被删 task 之前可能在某个 batch 里）
-        batches = (await self.db.execute(
-            select(TaskBatch).where(TaskBatch.project_id == project_id)
-        )).scalars().all()
+        batches = (
+            (
+                await self.db.execute(
+                    select(TaskBatch).where(TaskBatch.project_id == project_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         for b in batches:
-            r = (await self.db.execute(
-                select(
-                    func.count().label("total"),
-                    func.count().filter(Task.status == "completed").label("completed"),
-                    func.count().filter(Task.status == "review").label("review"),
-                ).where(Task.batch_id == b.id)
-            )).one()
+            r = (
+                await self.db.execute(
+                    select(
+                        func.count().label("total"),
+                        func.count()
+                        .filter(Task.status == "completed")
+                        .label("completed"),
+                        func.count().filter(Task.status == "review").label("review"),
+                    ).where(Task.batch_id == b.id)
+                )
+            ).one()
             b.total_tasks = r.total
             b.completed_tasks = r.completed
             b.review_tasks = r.review

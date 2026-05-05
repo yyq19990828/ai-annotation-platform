@@ -11,7 +11,12 @@ from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.annotation import Annotation
-from app.schemas.task import TaskOut, TaskListResponse, TaskLockResponse, ReviewClaimResponse
+from app.schemas.task import (
+    TaskOut,
+    TaskListResponse,
+    TaskLockResponse,
+    ReviewClaimResponse,
+)
 from app.schemas.annotation import AnnotationCreate, AnnotationOut, AnnotationUpdate
 from app.schemas.prediction import PredictionOut
 from app.services.annotation import AnnotationService
@@ -30,7 +35,12 @@ from app.db.models.task_batch import TaskBatch
 
 router = APIRouter()
 
-_ANNOTATORS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER, UserRole.ANNOTATOR)
+_ANNOTATORS = (
+    UserRole.SUPER_ADMIN,
+    UserRole.PROJECT_ADMIN,
+    UserRole.REVIEWER,
+    UserRole.ANNOTATOR,
+)
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
 _LOCKED_STATUSES = {"review", "completed"}
 
@@ -59,6 +69,7 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
     无 batch 的孤儿任务对非特权用户不可见。
     """
     from app.db.models.project import Project
+
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -88,7 +99,11 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
 
 
 def _encode_task_cursor(created_at, task_id: uuid.UUID) -> str:
-    ts = created_at.astimezone(timezone.utc).isoformat() if created_at.tzinfo else created_at.isoformat()
+    ts = (
+        created_at.astimezone(timezone.utc).isoformat()
+        if created_at.tzinfo
+        else created_at.isoformat()
+    )
     return base64.urlsafe_b64encode(f"{ts}|{task_id.hex}".encode()).decode()
 
 
@@ -96,6 +111,7 @@ def _decode_task_cursor(cursor: str):
     raw = base64.urlsafe_b64decode(cursor.encode()).decode()
     ts_str, id_hex = raw.split("|", 1)
     from datetime import datetime
+
     ts = datetime.fromisoformat(ts_str)
     return ts, uuid.UUID(id_hex)
 
@@ -114,13 +130,19 @@ async def list_tasks(
 ):
     project = await assert_project_visible(project_id, db, user)
     q = select(Task).where(Task.project_id == project_id)
-    count_q = select(func.count()).select_from(Task).where(Task.project_id == project_id)
+    count_q = (
+        select(func.count()).select_from(Task).where(Task.project_id == project_id)
+    )
 
     # B-16: 非特权用户在工作台列出任务时只能看见 batch 处于 active / annotating
     # 且自己在 assigned_user_ids 中（或批次未分派）。无 batch 的孤儿对非特权不可见。
     if not is_privileged_for_project(user, project):
-        q = q.join(TaskBatch, Task.batch_id == TaskBatch.id).where(batch_visibility_clause(user))
-        count_q = count_q.join(TaskBatch, Task.batch_id == TaskBatch.id).where(batch_visibility_clause(user))
+        q = q.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
+            batch_visibility_clause(user)
+        )
+        count_q = count_q.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
+            batch_visibility_clause(user)
+        )
 
     if status:
         q = q.where(Task.status == status)
@@ -150,7 +172,9 @@ async def list_tasks(
     total = (await db.execute(count_q)).scalar() or 0
     dims = await _attach_dimensions_batch(db, tasks)
     # v0.7.2 · 一次 IN 查询解析所有 assignee_id / reviewer_id → UserBrief
-    user_ids = {t.assignee_id for t in tasks if t.assignee_id} | {t.reviewer_id for t in tasks if t.reviewer_id}
+    user_ids = {t.assignee_id for t in tasks if t.assignee_id} | {
+        t.reviewer_id for t in tasks if t.reviewer_id
+    }
     briefs = await resolve_briefs(db, user_ids) if user_ids else {}
     next_cursor = (
         _encode_task_cursor(tasks[-1].created_at, tasks[-1].id)
@@ -158,8 +182,14 @@ async def list_tasks(
         else None
     )
     return TaskListResponse(
-        items=[_task_with_url(t, *dims.get(t.id, (None, None, None, None)), briefs=briefs) for t in tasks],
-        total=total, limit=limit, offset=0 if cursor else offset, next_cursor=next_cursor,
+        items=[
+            _task_with_url(t, *dims.get(t.id, (None, None, None, None)), briefs=briefs)
+            for t in tasks
+        ],
+        total=total,
+        limit=limit,
+        offset=0 if cursor else offset,
+        next_cursor=next_cursor,
     )
 
 
@@ -284,14 +314,19 @@ async def update_annotation(
         if existing.version != expected_v:
             raise HTTPException(
                 status_code=409,
-                detail={"reason": "version_mismatch", "current_version": existing.version},
+                detail={
+                    "reason": "version_mismatch",
+                    "current_version": existing.version,
+                },
             )
 
     annotation = await svc.update(annotation_id, **fields)
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
     if annotation.task_id != task_id:
-        raise HTTPException(status_code=400, detail="Annotation does not belong to this task")
+        raise HTTPException(
+            status_code=400, detail="Annotation does not belong to this task"
+        )
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     await AuditService.log(
         db,
@@ -314,15 +349,17 @@ async def update_annotation(
             after_v = after_attributes.get(key)
             if before_v == after_v:
                 continue
-            change_items.append({
-                "target_id": str(annotation.id),
-                "detail": {
-                    "task_id": str(task_id),
-                    "field_key": key,
-                    "before": before_v,
-                    "after": after_v,
-                },
-            })
+            change_items.append(
+                {
+                    "target_id": str(annotation.id),
+                    "detail": {
+                        "task_id": str(task_id),
+                        "field_key": key,
+                        "before": before_v,
+                        "after": after_v,
+                    },
+                }
+            )
         if change_items:
             await AuditService.log_many(
                 db,
@@ -393,7 +430,9 @@ async def get_predictions(
     return result
 
 
-@router.post("/{task_id}/predictions/{prediction_id}/accept", response_model=list[AnnotationOut])
+@router.post(
+    "/{task_id}/predictions/{prediction_id}/accept", response_model=list[AnnotationOut]
+)
 async def accept_prediction(
     task_id: uuid.UUID,
     prediction_id: uuid.UUID,
@@ -470,6 +509,7 @@ async def submit_task(
     await lock_svc.release(task_id, current_user.id)
 
     from app.services.batch import BatchService
+
     batch_svc = BatchService(db)
     await batch_svc.check_auto_transitions(task.batch_id)
     if task.batch_id:
@@ -510,7 +550,8 @@ async def withdraw_task(
             detail={"reason": "task_not_in_review", "status": task.status},
         )
     if task.assignee_id != current_user.id and current_user.role not in (
-        UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value,
+        UserRole.SUPER_ADMIN.value,
+        UserRole.PROJECT_ADMIN.value,
     ):
         raise HTTPException(status_code=403, detail="only assignee can withdraw")
     if task.reviewer_claimed_at is not None:
@@ -526,11 +567,13 @@ async def withdraw_task(
     task.submitted_at = None
 
     from app.db.models.project import Project
+
     project = await db.get(Project, task.project_id)
     if project:
         project.review_tasks = max((project.review_tasks or 0) - 1, 0)
 
     from app.services.batch import BatchService
+
     batch_svc = BatchService(db)
     await batch_svc.check_auto_transitions(task.batch_id)
     if task.batch_id:
@@ -552,6 +595,7 @@ async def withdraw_task(
 
 
 # ── Review endpoints ───────────────────���────────────────────────────────────
+
 
 class ReviewAction(BaseModel):
     reason: str | None = None
@@ -618,12 +662,14 @@ async def approve_task(
         task.reviewer_claimed_at = now
 
     from app.db.models.project import Project
+
     project = await db.get(Project, task.project_id)
     if project:
         project.completed_tasks = (project.completed_tasks or 0) + 1
         project.review_tasks = max((project.review_tasks or 0) - 1, 0)
 
     from app.services.batch import BatchService
+
     batch_svc = BatchService(db)
     await batch_svc.check_auto_transitions(task.batch_id)
     if task.batch_id:
@@ -673,11 +719,13 @@ async def reject_task(
         task.reviewer_claimed_at = now
 
     from app.db.models.project import Project
+
     project = await db.get(Project, task.project_id)
     if project:
         project.review_tasks = max((project.review_tasks or 0) - 1, 0)
 
     from app.services.batch import BatchService
+
     batch_svc = BatchService(db)
     await batch_svc.check_auto_transitions(task.batch_id)
     if task.batch_id:
@@ -720,7 +768,8 @@ async def reopen_task(
             detail={"reason": "task_not_completed", "status": task.status},
         )
     if task.assignee_id != current_user.id and current_user.role not in (
-        UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value,
+        UserRole.SUPER_ADMIN.value,
+        UserRole.PROJECT_ADMIN.value,
     ):
         raise HTTPException(status_code=403, detail="only assignee can reopen")
 
@@ -735,11 +784,13 @@ async def reopen_task(
     task.submitted_at = None
 
     from app.db.models.project import Project
+
     project = await db.get(Project, task.project_id)
     if project:
         project.completed_tasks = max((project.completed_tasks or 0) - 1, 0)
 
     from app.services.batch import BatchService
+
     batch_svc = BatchService(db)
     await batch_svc.check_auto_transitions(task.batch_id)
     if task.batch_id:
@@ -755,16 +806,23 @@ async def reopen_task(
         status_code=200,
         detail={
             "project_id": str(task.project_id),
-            "original_reviewer_id": str(original_reviewer_id) if original_reviewer_id else None,
+            "original_reviewer_id": str(original_reviewer_id)
+            if original_reviewer_id
+            else None,
             "reopened_count": task.reopened_count,
         },
     )
 
     await db.commit()
-    return {"status": "reopened", "task_id": str(task_id), "reopened_count": task.reopened_count}
+    return {
+        "status": "reopened",
+        "task_id": str(task_id),
+        "reopened_count": task.reopened_count,
+    }
 
 
 # ── Task Lock endpoints ─────────────────────────────────────────────────────
+
 
 @router.post("/{task_id}/lock", response_model=TaskLockResponse)
 async def acquire_lock(
@@ -807,6 +865,7 @@ async def release_lock(
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _task_with_url(
     task: Task,
     width: int | None = None,
@@ -815,7 +874,11 @@ def _task_with_url(
     blurhash: str | None = None,
     briefs: dict | None = None,
 ) -> dict:
-    bucket = storage_service.datasets_bucket if task.dataset_item_id else storage_service.bucket
+    bucket = (
+        storage_service.datasets_bucket
+        if task.dataset_item_id
+        else storage_service.bucket
+    )
     try:
         file_url = storage_service.generate_download_url(task.file_path, bucket=bucket)
     except Exception:
@@ -825,7 +888,8 @@ def _task_with_url(
     if thumbnail_path:
         try:
             thumb_bucket = (
-                storage_service.datasets_bucket if task.dataset_item_id
+                storage_service.datasets_bucket
+                if task.dataset_item_id
                 else storage_service.bucket
             )
             thumbnail_url = storage_service.generate_download_url(
@@ -877,10 +941,12 @@ def _task_with_url(
 
 
 async def _attach_dimensions(
-    db: AsyncSession, task: Task,
+    db: AsyncSession,
+    task: Task,
 ) -> tuple[int | None, int | None, str | None, str | None]:
     if task.dataset_item_id:
         from app.db.models.dataset import DatasetItem
+
         item = await db.get(DatasetItem, task.dataset_item_id)
         if item:
             return item.width, item.height, item.thumbnail_path, item.blurhash
@@ -888,21 +954,30 @@ async def _attach_dimensions(
 
 
 async def _attach_dimensions_batch(
-    db: AsyncSession, tasks: list[Task],
+    db: AsyncSession,
+    tasks: list[Task],
 ) -> dict[uuid.UUID, tuple[int | None, int | None, str | None, str | None]]:
     result: dict[uuid.UUID, tuple[int | None, int | None, str | None, str | None]] = {}
 
     item_ids = [t.dataset_item_id for t in tasks if t.dataset_item_id]
     if item_ids:
         from app.db.models.dataset import DatasetItem
+
         rows = await db.execute(
-            select(DatasetItem.id, DatasetItem.width, DatasetItem.height, DatasetItem.thumbnail_path, DatasetItem.blurhash)
-            .where(DatasetItem.id.in_(item_ids))
+            select(
+                DatasetItem.id,
+                DatasetItem.width,
+                DatasetItem.height,
+                DatasetItem.thumbnail_path,
+                DatasetItem.blurhash,
+            ).where(DatasetItem.id.in_(item_ids))
         )
         item_data = {row[0]: (row[1], row[2], row[3], row[4]) for row in rows}
         for t in tasks:
             if t.dataset_item_id:
-                result[t.id] = item_data.get(t.dataset_item_id, (None, None, None, None))
+                result[t.id] = item_data.get(
+                    t.dataset_item_id, (None, None, None, None)
+                )
 
     for t in tasks:
         if t.id not in result:

@@ -21,6 +21,7 @@
   v0.6.0 引入；v0.6.5 在 test_task_lock.py 内部 override 走通 5 例；
   v0.6.6 把 override 回写到 conftest，解锁 v0.5.5/v0.6.0/v0.6.3 旧 httpx 集成测套。
 """
+
 from __future__ import annotations
 
 import os
@@ -86,6 +87,7 @@ async def db_session(test_engine):
 @pytest.fixture(scope="session")
 def app_module():
     from app.main import app
+
     return app
 
 
@@ -104,7 +106,9 @@ async def httpx_client(app_module, db_session: AsyncSession):
     app_module.dependency_overrides[get_db] = _override
     transport = httpx.ASGITransport(app=app_module)
     try:
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
             yield client
     finally:
         app_module.dependency_overrides.pop(get_db, None)
@@ -116,8 +120,10 @@ httpx_client_bound = httpx_client
 
 # ── 用户 Fixtures ────────────────────────────────────────────────────
 
+
 def _make_user(role: str, email: str, name: str) -> dict:
     from app.core.security import hash_password
+
     return {
         "id": uuid.uuid4(),
         "email": email,
@@ -137,6 +143,7 @@ async def _create_user(db: AsyncSession, role: str, email: str, name: str):
     await db.flush()
 
     from app.core.security import create_access_token
+
     token = create_access_token(subject=str(user.id), role=role)
     return user, token
 

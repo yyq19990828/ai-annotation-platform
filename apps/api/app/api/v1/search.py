@@ -4,6 +4,7 @@
 （项目按 _visible_project_filter；任务跟项目可见性绑定；数据集是公开资源）。
 单次返回 limit×4 条，前端渲染 group + 键盘导航 + 跳转。
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -39,8 +40,10 @@ async def global_search(
     if cond is not None:
         proj_q = proj_q.where(cond)
     projects = (
-        await db.execute(proj_q.order_by(Project.updated_at.desc()).limit(limit))
-    ).scalars().all()
+        (await db.execute(proj_q.order_by(Project.updated_at.desc()).limit(limit)))
+        .scalars()
+        .all()
+    )
     project_items = [
         {
             "id": str(p.id),

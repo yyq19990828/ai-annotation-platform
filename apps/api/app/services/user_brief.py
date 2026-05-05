@@ -3,6 +3,7 @@
 用于 list_tasks / list_batches 等 hot path：避免前端为了渲染头像组而单独
 请求 /users 或 /projects/{id}/members。一次 IN 查询补全名 / 邮箱 / 角色。
 """
+
 from __future__ import annotations
 
 import uuid
@@ -66,8 +67,10 @@ async def resolve_briefs_with_project_role(
     missing_ids = [i for i in ids if str(i) not in by_id]
     if missing_ids:
         extra = (
-            await db.execute(select(User).where(User.id.in_(missing_ids)))
-        ).scalars().all()
+            (await db.execute(select(User).where(User.id.in_(missing_ids))))
+            .scalars()
+            .all()
+        )
         for u in extra:
             by_id[str(u.id)] = _to_brief(u)
     return by_id

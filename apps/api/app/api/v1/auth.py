@@ -78,7 +78,9 @@ async def login(
             detail={"email": user.email, "result": "deactivated"},
         )
         await db.commit()
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账户已被停用")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="账户已被停用"
+        )
 
     token = create_access_token(subject=str(user.id), role=user.role)
     await AuditService.log(
@@ -115,7 +117,11 @@ async def forgot_password(
         reset_url = f"{settings.frontend_base_url}/reset-password?token={token}"
         logger.info("Password reset token for %s: %s", data.email, reset_url)
     elif token:
-        logger.info("Password reset token for %s (SMTP not configured): token=%s", data.email, token)
+        logger.info(
+            "Password reset token for %s (SMTP not configured): token=%s",
+            data.email,
+            token,
+        )
 
     # 无论成功与否都返回 202，防邮箱枚举
     return {"message": "如果该邮箱已注册，您将收到一封包含重置链接的邮件"}

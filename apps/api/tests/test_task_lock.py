@@ -11,11 +11,11 @@
 v0.6.6 起：本文件内的 test_engine / db_session / httpx_client_bound 已回写到 conftest.py
 （function-scoped engine + dependency_overrides[get_db]），不再需要 file-local override。
 """
+
 from __future__ import annotations
 
 import uuid
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +25,9 @@ from app.db.models.project import Project
 from app.db.models.task import Task
 
 
-async def _seed_project_and_task(db: AsyncSession, owner_id: uuid.UUID, assignee_id: uuid.UUID) -> tuple[Project, Task]:
+async def _seed_project_and_task(
+    db: AsyncSession, owner_id: uuid.UUID, assignee_id: uuid.UUID
+) -> tuple[Project, Task]:
     suffix = uuid.uuid4().hex[:8]
     project = Project(
         id=uuid.uuid4(),
@@ -57,7 +59,9 @@ async def _seed_project_and_task(db: AsyncSession, owner_id: uuid.UUID, assignee
     return project, task
 
 
-async def _create_annotation(db: AsyncSession, task: Task, user_id: uuid.UUID) -> Annotation:
+async def _create_annotation(
+    db: AsyncSession, task: Task, user_id: uuid.UUID
+) -> Annotation:
     ann = Annotation(
         id=uuid.uuid4(),
         task_id=task.id,
@@ -80,14 +84,20 @@ def _bearer(token: str) -> dict[str, str]:
 
 
 class TestTaskLockFlow:
-    async def test_full_state_machine_roundtrip(self, httpx_client_bound, db_session, annotator, reviewer):
+    async def test_full_state_machine_roundtrip(
+        self, httpx_client_bound, db_session, annotator, reviewer
+    ):
         ann_user, ann_token = annotator
         rev_user, rev_token = reviewer
-        _, task = await _seed_project_and_task(db_session, owner_id=ann_user.id, assignee_id=ann_user.id)
+        _, task = await _seed_project_and_task(
+            db_session, owner_id=ann_user.id, assignee_id=ann_user.id
+        )
         tid = str(task.id)
 
         # 1) submit
-        r = await httpx_client_bound.post(f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token))
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token)
+        )
         assert r.status_code == 200, r.text
         await db_session.refresh(task)
         assert task.status == "review"
@@ -95,18 +105,24 @@ class TestTaskLockFlow:
         assert task.reviewer_claimed_at is None
 
         # 2) withdraw（reviewer 未 claim）
-        r = await httpx_client_bound.post(f"/api/v1/tasks/{tid}/withdraw", headers=_bearer(ann_token))
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/withdraw", headers=_bearer(ann_token)
+        )
         assert r.status_code == 200, r.text
         await db_session.refresh(task)
         assert task.status == "in_progress"
         assert task.submitted_at is None
 
         # 3) submit 又一次
-        r = await httpx_client_bound.post(f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token))
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token)
+        )
         assert r.status_code == 200
 
         # 4) reviewer claim
-        r = await httpx_client_bound.post(f"/api/v1/tasks/{tid}/review/claim", headers=_bearer(rev_token))
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/review/claim", headers=_bearer(rev_token)
+        )
         assert r.status_code == 200
         body = r.json()
         assert body["is_self"] is True
@@ -115,12 +131,16 @@ class TestTaskLockFlow:
         assert task.reviewer_claimed_at is not None
 
         # 5) withdraw 已被 claim → 409 task_already_claimed
-        r = await httpx_client_bound.post(f"/api/v1/tasks/{tid}/withdraw", headers=_bearer(ann_token))
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/withdraw", headers=_bearer(ann_token)
+        )
         assert r.status_code == 409
         assert r.json()["detail"]["reason"] == "task_already_claimed"
 
         # 6) approve
-        r = await httpx_client_bound.post(f"/api/v1/tasks/{tid}/review/approve", headers=_bearer(rev_token))
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/review/approve", headers=_bearer(rev_token)
+        )
         assert r.status_code == 200
         await db_session.refresh(task)
         assert task.status == "completed"
@@ -128,7 +148,9 @@ class TestTaskLockFlow:
         assert task.reviewer_id == rev_user.id
 
         # 7) reopen 由 assignee 单方面发起
-        r = await httpx_client_bound.post(f"/api/v1/tasks/{tid}/reopen", headers=_bearer(ann_token))
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/reopen", headers=_bearer(ann_token)
+        )
         assert r.status_code == 200
         await db_session.refresh(task)
         assert task.status == "in_progress"
@@ -136,14 +158,20 @@ class TestTaskLockFlow:
         assert task.reviewer_id is None
         assert task.reviewer_claimed_at is None
 
-    async def test_edit_endpoints_locked_in_review(self, httpx_client_bound, db_session, annotator):
+    async def test_edit_endpoints_locked_in_review(
+        self, httpx_client_bound, db_session, annotator
+    ):
         ann_user, ann_token = annotator
-        _, task = await _seed_project_and_task(db_session, owner_id=ann_user.id, assignee_id=ann_user.id)
+        _, task = await _seed_project_and_task(
+            db_session, owner_id=ann_user.id, assignee_id=ann_user.id
+        )
         ann = await _create_annotation(db_session, task, ann_user.id)
         tid, aid = str(task.id), str(ann.id)
 
         # 进入 review
-        r = await httpx_client_bound.post(f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token))
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token)
+        )
         assert r.status_code == 200
 
         # PATCH annotation 应被拦截
@@ -157,7 +185,8 @@ class TestTaskLockFlow:
 
         # DELETE 也被拦截
         r = await httpx_client_bound.delete(
-            f"/api/v1/tasks/{tid}/annotations/{aid}", headers=_bearer(ann_token),
+            f"/api/v1/tasks/{tid}/annotations/{aid}",
+            headers=_bearer(ann_token),
         )
         assert r.status_code == 409
         assert r.json()["detail"]["reason"] == "task_locked"
@@ -174,28 +203,44 @@ class TestTaskLockFlow:
         )
         assert r.status_code == 409
 
-    async def test_withdraw_requires_assignee(self, httpx_client_bound, db_session, annotator, reviewer):
+    async def test_withdraw_requires_assignee(
+        self, httpx_client_bound, db_session, annotator, reviewer
+    ):
         ann_user, ann_token = annotator
         _, rev_token = reviewer
-        _, task = await _seed_project_and_task(db_session, owner_id=ann_user.id, assignee_id=ann_user.id)
+        _, task = await _seed_project_and_task(
+            db_session, owner_id=ann_user.id, assignee_id=ann_user.id
+        )
         tid = str(task.id)
 
-        await httpx_client_bound.post(f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token))
+        await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token)
+        )
 
         # reviewer 不是 assignee + 不是 admin → 403
-        r = await httpx_client_bound.post(f"/api/v1/tasks/{tid}/withdraw", headers=_bearer(rev_token))
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/withdraw", headers=_bearer(rev_token)
+        )
         assert r.status_code == 403
 
-    async def test_reject_requires_reason_and_persists(self, httpx_client_bound, db_session, annotator, reviewer):
+    async def test_reject_requires_reason_and_persists(
+        self, httpx_client_bound, db_session, annotator, reviewer
+    ):
         ann_user, ann_token = annotator
         _, rev_token = reviewer
-        _, task = await _seed_project_and_task(db_session, owner_id=ann_user.id, assignee_id=ann_user.id)
+        _, task = await _seed_project_and_task(
+            db_session, owner_id=ann_user.id, assignee_id=ann_user.id
+        )
         tid = str(task.id)
 
-        await httpx_client_bound.post(f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token))
+        await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token)
+        )
 
         # 缺 reason → 400
-        r = await httpx_client_bound.post(f"/api/v1/tasks/{tid}/review/reject", headers=_bearer(rev_token))
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/review/reject", headers=_bearer(rev_token)
+        )
         assert r.status_code == 400
         # 空白 reason → 400
         r = await httpx_client_bound.post(
@@ -216,26 +261,46 @@ class TestTaskLockFlow:
         assert task.status == "in_progress"
         assert task.reject_reason == "框漏了 3 处行人"
 
-    async def test_state_transitions_emit_audit_logs(self, httpx_client_bound, db_session, annotator, reviewer):
+    async def test_state_transitions_emit_audit_logs(
+        self, httpx_client_bound, db_session, annotator, reviewer
+    ):
         ann_user, ann_token = annotator
         _, rev_token = reviewer
-        _, task = await _seed_project_and_task(db_session, owner_id=ann_user.id, assignee_id=ann_user.id)
+        _, task = await _seed_project_and_task(
+            db_session, owner_id=ann_user.id, assignee_id=ann_user.id
+        )
         tid = str(task.id)
 
-        await httpx_client_bound.post(f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token))
-        await httpx_client_bound.post(f"/api/v1/tasks/{tid}/withdraw", headers=_bearer(ann_token))
-        await httpx_client_bound.post(f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token))
-        await httpx_client_bound.post(f"/api/v1/tasks/{tid}/review/claim", headers=_bearer(rev_token))
-        await httpx_client_bound.post(f"/api/v1/tasks/{tid}/review/approve", headers=_bearer(rev_token))
-        await httpx_client_bound.post(f"/api/v1/tasks/{tid}/reopen", headers=_bearer(ann_token))
+        await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token)
+        )
+        await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/withdraw", headers=_bearer(ann_token)
+        )
+        await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token)
+        )
+        await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/review/claim", headers=_bearer(rev_token)
+        )
+        await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/review/approve", headers=_bearer(rev_token)
+        )
+        await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/reopen", headers=_bearer(ann_token)
+        )
 
         rows = (
-            await db_session.execute(
-                select(AuditLog)
-                .where(AuditLog.target_type == "task", AuditLog.target_id == tid)
-                .order_by(AuditLog.created_at, AuditLog.id)
+            (
+                await db_session.execute(
+                    select(AuditLog)
+                    .where(AuditLog.target_type == "task", AuditLog.target_id == tid)
+                    .order_by(AuditLog.created_at, AuditLog.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         actions = [r.action for r in rows]
         assert actions == [
             "task.submit",

@@ -8,6 +8,7 @@ Revision ID: 0020
 Revises: 0019
 Create Date: 2026-05-01
 """
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB

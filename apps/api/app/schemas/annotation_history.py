@@ -1,4 +1,5 @@
 """v0.7.2 · 标注框编辑/审核历史时间线 schema。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -16,6 +17,7 @@ class HistoryEntry(BaseModel):
     kind ∈ { audit, comment }；audit 含 action + detail；comment 含 body + comment_id。
     所有事件按 timestamp 升序合并。
     """
+
     kind: str
     timestamp: datetime
     actor: UserBrief | None = None

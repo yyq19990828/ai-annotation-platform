@@ -7,6 +7,7 @@
 - DELETE /comments/{id}（软删）
 - POST   /annotations/{aid}/comment-attachments/upload-init  (v0.6.2)
 """
+
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -32,10 +33,17 @@ from app.services.storage import storage_service
 
 router = APIRouter()
 
-_ALL_ANNOTATORS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER, UserRole.ANNOTATOR)
+_ALL_ANNOTATORS = (
+    UserRole.SUPER_ADMIN,
+    UserRole.PROJECT_ADMIN,
+    UserRole.REVIEWER,
+    UserRole.ANNOTATOR,
+)
 
 
-def _to_out(c: AnnotationComment, author_name: str | None = None) -> AnnotationCommentOut:
+def _to_out(
+    c: AnnotationComment, author_name: str | None = None
+) -> AnnotationCommentOut:
     return AnnotationCommentOut(
         id=c.id,
         annotation_id=c.annotation_id,
@@ -62,20 +70,26 @@ async def _validate_project_members(
     出于简化，仅校验 user 存在且是该项目 project_members 表成员；超管不在表里时也允许。"""
     if not user_ids:
         return
-    rows = (await db.execute(
-        select(ProjectMember.user_id).where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.user_id.in_(user_ids),
+    rows = (
+        await db.execute(
+            select(ProjectMember.user_id).where(
+                ProjectMember.project_id == project_id,
+                ProjectMember.user_id.in_(user_ids),
+            )
         )
-    )).all()
+    ).all()
     found = {r[0] for r in rows}
     # 超管 / 项目所有者 也允许（不一定在 project_members 表中）
-    super_rows = (await db.execute(
-        select(User.id).where(
-            User.id.in_(user_ids),
-            User.role.in_([UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value]),
+    super_rows = (
+        await db.execute(
+            select(User.id).where(
+                User.id.in_(user_ids),
+                User.role.in_(
+                    [UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value]
+                ),
+            )
         )
-    )).all()
+    ).all()
     found |= {r[0] for r in super_rows}
     missing = [str(uid) for uid in user_ids if uid not in found]
     if missing:
@@ -85,22 +99,33 @@ async def _validate_project_members(
         )
 
 
-@router.get("/annotations/{annotation_id}/comments", response_model=list[AnnotationCommentOut])
+@router.get(
+    "/annotations/{annotation_id}/comments", response_model=list[AnnotationCommentOut]
+)
 async def list_comments(
     annotation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
 ):
-    rows = (await db.execute(
-        select(AnnotationComment, User.name)
-        .join(User, User.id == AnnotationComment.author_id)
-        .where(AnnotationComment.annotation_id == annotation_id, AnnotationComment.is_active.is_(True))
-        .order_by(AnnotationComment.created_at.desc())
-    )).all()
+    rows = (
+        await db.execute(
+            select(AnnotationComment, User.name)
+            .join(User, User.id == AnnotationComment.author_id)
+            .where(
+                AnnotationComment.annotation_id == annotation_id,
+                AnnotationComment.is_active.is_(True),
+            )
+            .order_by(AnnotationComment.created_at.desc())
+        )
+    ).all()
     return [_to_out(c, name) for c, name in rows]
 
 
-@router.post("/annotations/{annotation_id}/comments", response_model=AnnotationCommentOut, status_code=201)
+@router.post(
+    "/annotations/{annotation_id}/comments",
+    response_model=AnnotationCommentOut,
+    status_code=201,
+)
 async def create_comment(
     annotation_id: uuid.UUID,
     data: AnnotationCommentCreate,
@@ -114,7 +139,9 @@ async def create_comment(
 
     # mentions 必须是项目成员
     if data.mentions and ann.project_id is not None:
-        await _validate_project_members(db, ann.project_id, [m.user_id for m in data.mentions])
+        await _validate_project_members(
+            db, ann.project_id, [m.user_id for m in data.mentions]
+        )
 
     comment = AnnotationComment(
         id=uuid.uuid4(),
@@ -123,7 +150,9 @@ async def create_comment(
         author_id=current_user.id,
         body=data.body,
         mentions=[m.model_dump(by_alias=True, mode="json") for m in data.mentions],
-        attachments=[a.model_dump(by_alias=True, mode="json") for a in data.attachments],
+        attachments=[
+            a.model_dump(by_alias=True, mode="json") for a in data.attachments
+        ],
         canvas_drawing=data.canvas_drawing,
     )
     db.add(comment)
@@ -161,8 +190,13 @@ async def patch_comment(
     if not c or not c.is_active:
         raise HTTPException(status_code=404, detail="Comment not found")
     # 仅作者或管理员可改
-    if c.author_id != current_user.id and current_user.role not in {UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN}:
-        raise HTTPException(status_code=403, detail="Only the author can edit this comment")
+    if c.author_id != current_user.id and current_user.role not in {
+        UserRole.SUPER_ADMIN,
+        UserRole.PROJECT_ADMIN,
+    }:
+        raise HTTPException(
+            status_code=403, detail="Only the author can edit this comment"
+        )
     if data.body is not None:
         c.body = data.body
     if data.is_resolved is not None:
@@ -182,8 +216,13 @@ async def delete_comment(
     c = await db.get(AnnotationComment, comment_id)
     if not c or not c.is_active:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if c.author_id != current_user.id and current_user.role not in {UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN}:
-        raise HTTPException(status_code=403, detail="Only the author can delete this comment")
+    if c.author_id != current_user.id and current_user.role not in {
+        UserRole.SUPER_ADMIN,
+        UserRole.PROJECT_ADMIN,
+    }:
+        raise HTTPException(
+            status_code=403, detail="Only the author can delete this comment"
+        )
     c.is_active = False
     # v0.7.2 · annotation 编辑历史可追溯
     await AuditService.log(

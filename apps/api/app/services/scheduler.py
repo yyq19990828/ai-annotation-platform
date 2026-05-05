@@ -125,15 +125,15 @@ async def get_next_task(
 
     # 4. Multi-annotator overlap
     if project.maximum_annotations > 1:
-        candidates = candidates.where(Task.total_annotations < project.maximum_annotations)
+        candidates = candidates.where(
+            Task.total_annotations < project.maximum_annotations
+        )
 
     # 5. Apply sampling strategy (batch priority as primary sort)
     if project.sampling == "uncertainty":
-        candidates = (
-            candidates
-            .outerjoin(Prediction, Prediction.task_id == Task.id)
-            .order_by(TaskBatch.priority.desc(), Prediction.score.asc().nullslast())
-        )
+        candidates = candidates.outerjoin(
+            Prediction, Prediction.task_id == Task.id
+        ).order_by(TaskBatch.priority.desc(), Prediction.score.asc().nullslast())
     elif project.sampling == "uniform":
         candidates = candidates.order_by(TaskBatch.priority.desc(), func.random())
     else:

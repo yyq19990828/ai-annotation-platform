@@ -1,11 +1,12 @@
 """角色矩阵守卫测试 —— 验证各角色只能在其权限范围内修改他人角色。"""
-import pytest
 
 
 class TestRoleMatrix:
     """12 个角色修改守卫用例。"""
 
-    async def test_sa_upgrade_annotator_to_reviewer(self, httpx_client, super_admin, annotator):
+    async def test_sa_upgrade_annotator_to_reviewer(
+        self, httpx_client, super_admin, annotator
+    ):
         """super_admin 可将 annotator 提升为 reviewer。"""
         _, token = super_admin
         user, _ = annotator
@@ -46,7 +47,9 @@ class TestRoleMatrix:
         # 此用例验证：当系统中只有 1 个 super_admin 时，其他 manager 无法降级
         pass  # 依赖多用户场景，当前单 fixture 无法完整覆盖
 
-    async def test_pa_cannot_promote_to_pa(self, httpx_client, project_admin, annotator):
+    async def test_pa_cannot_promote_to_pa(
+        self, httpx_client, project_admin, annotator
+    ):
         """project_admin 不能将 annotator 提升为 project_admin。"""
         _, token = project_admin
         user, _ = annotator
@@ -60,7 +63,9 @@ class TestRoleMatrix:
         # 期望 403（project_admin 不能设置 super_admin / project_admin 角色）
         assert r.status_code in (403, 404)
 
-    async def test_annotator_cannot_change_roles(self, httpx_client, annotator, super_admin):
+    async def test_annotator_cannot_change_roles(
+        self, httpx_client, annotator, super_admin
+    ):
         """annotator 无法修改任何人的角色。"""
         _, token = annotator
         user, _ = super_admin
@@ -71,7 +76,9 @@ class TestRoleMatrix:
         )
         assert r.status_code == 403
 
-    async def test_reviewer_cannot_change_roles(self, httpx_client, reviewer, annotator):
+    async def test_reviewer_cannot_change_roles(
+        self, httpx_client, reviewer, annotator
+    ):
         """reviewer 无法修改任何人的角色。"""
         _, token = reviewer
         user, _ = annotator
@@ -93,7 +100,9 @@ class TestRoleMatrix:
         )
         assert r.status_code == 400
 
-    async def test_sa_can_change_pa_role(self, httpx_client, super_admin, project_admin):
+    async def test_sa_can_change_pa_role(
+        self, httpx_client, super_admin, project_admin
+    ):
         """super_admin 可以修改 project_admin 的角色。"""
         _, token = super_admin
         user, _ = project_admin
@@ -124,7 +133,9 @@ class TestRoleMatrix:
         )
         assert r.status_code == 404
 
-    async def test_role_change_creates_audit_log(self, httpx_client, super_admin, annotator, db_session):
+    async def test_role_change_creates_audit_log(
+        self, httpx_client, super_admin, annotator, db_session
+    ):
         """角色变更产生审计日志。"""
         _, token = super_admin
         user, _ = annotator
@@ -137,11 +148,15 @@ class TestRoleMatrix:
 
         from app.db.models.audit_log import AuditLog
         from sqlalchemy import select
+
         result = await db_session.execute(
-            select(AuditLog).where(
+            select(AuditLog)
+            .where(
                 AuditLog.action == "user.role_change",
                 AuditLog.target_id == str(user.id),
-            ).order_by(AuditLog.created_at.desc()).limit(1)
+            )
+            .order_by(AuditLog.created_at.desc())
+            .limit(1)
         )
         log = result.scalar_one_or_none()
         assert log is not None

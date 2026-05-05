@@ -3,6 +3,7 @@
 软删评论附件 7 天 grace 期后从 MinIO 删除。MinIO bucket lifecycle 已配
 180 天硬兜底，本任务作为更精确的近期清理路径。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -70,6 +71,7 @@ async def _purge_async() -> dict:
 
     log.info(
         "purge_soft_deleted_attachments done: comments=%d objects=%d",
-        processed_comments, deleted_objects,
+        processed_comments,
+        deleted_objects,
     )
     return {"comments": processed_comments, "objects": deleted_objects}

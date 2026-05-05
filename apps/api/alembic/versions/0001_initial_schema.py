@@ -4,6 +4,7 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-04-27
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -43,7 +44,9 @@ def upgrade() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("type_label", sa.String(50), nullable=False),
         sa.Column("type_key", sa.String(30), nullable=False),
-        sa.Column("owner_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "owner_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("status", sa.String(30), nullable=False, server_default="进行中"),
         sa.Column("ai_enabled", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("ai_model", sa.String(255)),
@@ -104,7 +107,9 @@ def upgrade() -> None:
         ),
         sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id")),
         sa.Column("source", sa.String(20), nullable=False),
-        sa.Column("annotation_type", sa.String(30), nullable=False, server_default="bbox"),
+        sa.Column(
+            "annotation_type", sa.String(30), nullable=False, server_default="bbox"
+        ),
         sa.Column("class_name", sa.String(100), nullable=False),
         sa.Column("geometry", JSONB(), nullable=False),
         sa.Column("confidence", sa.Float()),

@@ -16,15 +16,19 @@ class NotificationPreference(Base):
     __tablename__ = "notification_preferences"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True,
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     type: Mapped[str] = mapped_column(String(60), primary_key=True)
     channels: Mapped[dict] = mapped_column(
         JSONB,
         nullable=False,
-        server_default=text("'{\"in_app\": true, \"email\": false}'::jsonb"),
+        server_default=text('\'{"in_app": true, "email": false}\'::jsonb'),
         default=lambda: {"in_app": True, "email": False},
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
     )

@@ -85,6 +85,7 @@ class AnnotatorDashboardStats(BaseModel):
 class MyBatchItem(BaseModel):
     """v0.7.1 B-17 · 标注员视角的批次卡片：自己被分派的、状态为
     active / annotating / rejected / reviewing 的批次。"""
+
     batch_id: str
     batch_display_id: str
     batch_name: str

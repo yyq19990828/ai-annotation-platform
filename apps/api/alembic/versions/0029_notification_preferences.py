@@ -7,6 +7,7 @@ Revision ID: 0029
 Revises: 0028
 Create Date: 2026-05-03
 """
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -32,9 +33,14 @@ def upgrade() -> None:
             "channels",
             JSONB,
             nullable=False,
-            server_default=sa.text("'{\"in_app\": true, \"email\": false}'::jsonb"),
+            server_default=sa.text('\'{"in_app": true, "email": false}\'::jsonb'),
         ),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
 
 

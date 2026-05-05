@@ -113,7 +113,9 @@ async def update_group(
             from sqlalchemy import update as sa_update
 
             await db.execute(
-                sa_update(User).where(User.group_id == grp.id).values(group_name=new_name)
+                sa_update(User)
+                .where(User.group_id == grp.id)
+                .values(group_name=new_name)
             )
     if payload.description is not None:
         grp.description = payload.description or None
@@ -171,7 +173,9 @@ async def delete_group(
     from sqlalchemy import update as sa_update
 
     await db.execute(
-        sa_update(User).where(User.group_id == grp.id).values(group_id=None, group_name=None)
+        sa_update(User)
+        .where(User.group_id == grp.id)
+        .values(group_id=None, group_name=None)
     )
     await db.delete(grp)
 

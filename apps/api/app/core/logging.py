@@ -2,6 +2,7 @@
 配置 structlog — JSON 输出，便于 Loki / ELK 聚合。
 在 main.py 入口调用 `setup_logging()` 一次即可。
 """
+
 from __future__ import annotations
 
 import logging

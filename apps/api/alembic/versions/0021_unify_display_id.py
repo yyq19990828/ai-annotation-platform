@@ -23,6 +23,7 @@ Revision ID: 0021
 Revises: 0020
 Create Date: 2026-05-01
 """
+
 from alembic import op
 
 
@@ -90,7 +91,9 @@ def upgrade() -> None:
     op.create_unique_constraint("uq_tasks_display_id", "tasks", ["display_id"])
     op.create_unique_constraint("uq_projects_display_id", "projects", ["display_id"])
     op.create_unique_constraint(
-        "uq_task_batches_project_display", "task_batches", ["project_id", "display_id"],
+        "uq_task_batches_project_display",
+        "task_batches",
+        ["project_id", "display_id"],
     )
 
     # 5. 完整性自检
@@ -119,7 +122,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_constraint("uq_projects_display_id", "projects", type_="unique")
-    op.drop_constraint("uq_task_batches_project_display", "task_batches", type_="unique")
+    op.drop_constraint(
+        "uq_task_batches_project_display", "task_batches", type_="unique"
+    )
     op.drop_constraint("uq_tasks_display_id", "tasks", type_="unique")
     for e in _ENTITIES:
         op.execute(f"DROP SEQUENCE IF EXISTS display_seq_{e}")

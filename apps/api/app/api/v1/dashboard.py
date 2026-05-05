@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, case, or_
-from app.deps import get_db, get_current_user, require_roles
+from sqlalchemy import select, func, or_
+from app.deps import get_db, require_roles
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -50,7 +50,9 @@ async def admin_dashboard(
     total_tasks = total_tasks_result.scalar() or 0
 
     total_annotations_result = await db.execute(
-        select(func.count()).select_from(Annotation).where(Annotation.is_active.is_(True))
+        select(func.count())
+        .select_from(Annotation)
+        .where(Annotation.is_active.is_(True))
     )
     total_annotations = total_annotations_result.scalar() or 0
 
@@ -58,6 +60,7 @@ async def admin_dashboard(
     ml_connected = 0
     try:
         from app.db.models.ml_backend import MLBackend
+
         ml_result = await db.execute(select(MLBackend))
         ml_backends = ml_result.scalars().all()
         ml_total = len(ml_backends)
@@ -84,9 +87,9 @@ async def admin_dashboard(
 @router.get("/reviewer", response_model=ReviewerDashboardStats)
 async def reviewer_dashboard(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(
-        UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER
-    )),
+    current_user: User = Depends(
+        require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
+    ),
 ):
     pending_result = await db.execute(
         select(func.count()).select_from(Task).where(Task.status == TaskStatus.REVIEW)
@@ -97,7 +100,9 @@ async def reviewer_dashboard(
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     today_reviewed_result = await db.execute(
-        select(func.count()).select_from(Task).where(
+        select(func.count())
+        .select_from(Task)
+        .where(
             Task.status == TaskStatus.COMPLETED,
             Task.updated_at >= today_start,
         )
@@ -105,12 +110,16 @@ async def reviewer_dashboard(
     today_reviewed = today_reviewed_result.scalar() or 0
 
     total_completed_result = await db.execute(
-        select(func.count()).select_from(Task).where(Task.status == TaskStatus.COMPLETED)
+        select(func.count())
+        .select_from(Task)
+        .where(Task.status == TaskStatus.COMPLETED)
     )
     total_completed = total_completed_result.scalar() or 0
 
     total_all_reviewed = total_completed + pending_review_count
-    approval_rate = (total_completed / total_all_reviewed * 100) if total_all_reviewed > 0 else 0.0
+    approval_rate = (
+        (total_completed / total_all_reviewed * 100) if total_all_reviewed > 0 else 0.0
+    )
 
     # v0.6.6 · 24h 滚动通过率：基于 audit_logs 中过去 24h 的 task.approve / task.reject 计数
     cutoff_24h = now - timedelta(hours=24)
@@ -150,17 +159,21 @@ async def reviewer_dashboard(
     # v0.7.0：批次级聚合 — 列出处于 reviewing 状态的批次（reviewer 跨批次审核）。
     # v0.7.1 B-18：扩展为「reviewing 批次 ∪ 任意 review_tasks > 0 的批次」，让单任务级提交质检
     # 也能在 ReviewPage 的批次树里看到，避免 reviewer 找不到入口。
-    batch_rows = (await db.execute(
-        select(TaskBatch, Project.name)
-        .join(Project, TaskBatch.project_id == Project.id)
-        .where(or_(
-            TaskBatch.status == "reviewing",
-            TaskBatch.review_tasks > 0,
-        ))
-        .where(TaskBatch.status.in_(["active", "annotating", "reviewing"]))
-        .order_by(Project.name, TaskBatch.updated_at.desc())
-        .limit(100)
-    )).all()
+    batch_rows = (
+        await db.execute(
+            select(TaskBatch, Project.name)
+            .join(Project, TaskBatch.project_id == Project.id)
+            .where(
+                or_(
+                    TaskBatch.status == "reviewing",
+                    TaskBatch.review_tasks > 0,
+                )
+            )
+            .where(TaskBatch.status.in_(["active", "annotating", "reviewing"]))
+            .order_by(Project.name, TaskBatch.updated_at.desc())
+            .limit(100)
+        )
+    ).all()
     # v0.7.2 · 单值语义 — 一 batch 一标注员，直接 IN 查询 user
     project_user_map: dict = {}
     for b, _ in batch_rows:
@@ -174,17 +187,19 @@ async def reviewer_dashboard(
     for b, pname in batch_rows:
         per_proj = briefs_by_project.get(b.project_id, {})
         annotator = per_proj.get(str(b.annotator_id)) if b.annotator_id else None
-        reviewing_batches.append(ReviewingBatchItem(
-            batch_id=str(b.id),
-            batch_display_id=b.display_id,
-            batch_name=b.name,
-            project_id=str(b.project_id),
-            project_name=pname,
-            total_tasks=b.total_tasks,
-            review_tasks=b.review_tasks,
-            completed_tasks=b.completed_tasks,
-            annotator=annotator,
-        ))
+        reviewing_batches.append(
+            ReviewingBatchItem(
+                batch_id=str(b.id),
+                batch_display_id=b.display_id,
+                batch_name=b.name,
+                project_id=str(b.project_id),
+                project_name=pname,
+                total_tasks=b.total_tasks,
+                review_tasks=b.review_tasks,
+                completed_tasks=b.completed_tasks,
+                annotator=annotator,
+            )
+        )
 
     return ReviewerDashboardStats(
         pending_review_count=pending_review_count,
@@ -201,9 +216,9 @@ async def reviewer_dashboard(
 async def my_recent_reviews(
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(
-        UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER
-    )),
+    current_user: User = Depends(
+        require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
+    ),
 ):
     """v0.6.6 · 当前 reviewer 最近审核过的任务（已 approve / reject 落定的）。
 
@@ -234,12 +249,19 @@ async def my_recent_reviews(
 @router.get("/annotator", response_model=AnnotatorDashboardStats)
 async def annotator_dashboard(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(
-        UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER, UserRole.ANNOTATOR
-    )),
+    current_user: User = Depends(
+        require_roles(
+            UserRole.SUPER_ADMIN,
+            UserRole.PROJECT_ADMIN,
+            UserRole.REVIEWER,
+            UserRole.ANNOTATOR,
+        )
+    ),
 ):
     assigned_result = await db.execute(
-        select(func.count()).select_from(Task).where(
+        select(func.count())
+        .select_from(Task)
+        .where(
             Task.assignee_id == current_user.id,
             Task.status.in_([TaskStatus.PENDING, TaskStatus.IN_PROGRESS]),
         )
@@ -251,7 +273,9 @@ async def annotator_dashboard(
     week_start = today_start - timedelta(days=today_start.weekday())
 
     today_completed_result = await db.execute(
-        select(func.count()).select_from(Annotation).where(
+        select(func.count())
+        .select_from(Annotation)
+        .where(
             Annotation.user_id == current_user.id,
             Annotation.is_active.is_(True),
             Annotation.created_at >= today_start,
@@ -260,7 +284,9 @@ async def annotator_dashboard(
     today_completed = today_completed_result.scalar() or 0
 
     weekly_completed_result = await db.execute(
-        select(func.count()).select_from(Annotation).where(
+        select(func.count())
+        .select_from(Annotation)
+        .where(
             Annotation.user_id == current_user.id,
             Annotation.is_active.is_(True),
             Annotation.created_at >= week_start,
@@ -269,7 +295,9 @@ async def annotator_dashboard(
     weekly_completed = weekly_completed_result.scalar() or 0
 
     total_completed_result = await db.execute(
-        select(func.count()).select_from(Annotation).where(
+        select(func.count())
+        .select_from(Annotation)
+        .where(
             Annotation.user_id == current_user.id,
             Annotation.is_active.is_(True),
         )
@@ -277,21 +305,29 @@ async def annotator_dashboard(
     total_completed = total_completed_result.scalar() or 0
 
     ai_derived_result = await db.execute(
-        select(func.count()).select_from(Annotation).where(
+        select(func.count())
+        .select_from(Annotation)
+        .where(
             Annotation.user_id == current_user.id,
             Annotation.is_active.is_(True),
             Annotation.parent_prediction_id.isnot(None),
         )
     )
     ai_derived = ai_derived_result.scalar() or 0
-    personal_accuracy = ((total_completed - ai_derived) / total_completed * 100) if total_completed > 0 else 100.0
+    personal_accuracy = (
+        ((total_completed - ai_derived) / total_completed * 100)
+        if total_completed > 0
+        else 100.0
+    )
 
     daily_counts = []
     for i in range(6, -1, -1):
         day_start = today_start - timedelta(days=i)
         day_end = day_start + timedelta(days=1)
         day_result = await db.execute(
-            select(func.count()).select_from(Annotation).where(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
                 Annotation.user_id == current_user.id,
                 Annotation.is_active.is_(True),
                 Annotation.created_at >= day_start,
@@ -313,9 +349,14 @@ async def annotator_dashboard(
 @router.get("/annotator/batches", response_model=list[MyBatchItem])
 async def my_batches(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(
-        UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER, UserRole.ANNOTATOR
-    )),
+    current_user: User = Depends(
+        require_roles(
+            UserRole.SUPER_ADMIN,
+            UserRole.PROJECT_ADMIN,
+            UserRole.REVIEWER,
+            UserRole.ANNOTATOR,
+        )
+    ),
 ):
     """v0.7.1 B-17 · 标注员视角的「我的批次」：仅返回当前用户被分派、且处于
     active / annotating / rejected / reviewing 的批次。让标注员从 dashboard
@@ -348,24 +389,26 @@ async def my_batches(
     for b, pname, pid in rows:
         per_proj = briefs_by_project.get(b.project_id, {})
         reviewer = per_proj.get(str(b.reviewer_id)) if b.reviewer_id else None
-        items.append(MyBatchItem(
-            batch_id=str(b.id),
-            batch_display_id=b.display_id,
-            batch_name=b.name,
-            project_id=str(pid),
-            project_name=pname,
-            status=b.status,
-            total_tasks=b.total_tasks,
-            completed_tasks=b.completed_tasks,
-            review_tasks=b.review_tasks,
-            approved_tasks=b.approved_tasks,
-            rejected_tasks=b.rejected_tasks,
-            progress_pct=round(
-                (b.completed_tasks / b.total_tasks * 100) if b.total_tasks else 0.0,
-                1,
-            ),
-            review_feedback=b.review_feedback,
-            reviewed_at=b.reviewed_at.isoformat() if b.reviewed_at else None,
-            reviewer=reviewer,
-        ))
+        items.append(
+            MyBatchItem(
+                batch_id=str(b.id),
+                batch_display_id=b.display_id,
+                batch_name=b.name,
+                project_id=str(pid),
+                project_name=pname,
+                status=b.status,
+                total_tasks=b.total_tasks,
+                completed_tasks=b.completed_tasks,
+                review_tasks=b.review_tasks,
+                approved_tasks=b.approved_tasks,
+                rejected_tasks=b.rejected_tasks,
+                progress_pct=round(
+                    (b.completed_tasks / b.total_tasks * 100) if b.total_tasks else 0.0,
+                    1,
+                ),
+                review_feedback=b.review_feedback,
+                reviewed_at=b.reviewed_at.isoformat() if b.reviewed_at else None,
+                reviewer=reviewer,
+            )
+        )
     return items

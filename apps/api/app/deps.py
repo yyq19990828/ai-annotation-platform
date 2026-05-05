@@ -46,6 +46,7 @@ async def get_current_user(
 
 def require_roles(*roles: str) -> Callable:
     """工厂函数：返回一个依赖，要求当前用户持有指定角色之一。"""
+
     async def checker(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in roles:
             raise HTTPException(
@@ -53,6 +54,7 @@ def require_roles(*roles: str) -> Callable:
                 detail=f"需要角色权限: {'或'.join(roles)}",
             )
         return current_user
+
     return checker
 
 

@@ -2,6 +2,7 @@
 
 保留 actor_id（FK 仍指向软删用户；用户行硬删时 ON DELETE SET NULL 兜底）。
 """
+
 from __future__ import annotations
 
 import uuid
@@ -31,14 +32,16 @@ async def test_delete_user_redacts_audit_email(httpx_client, super_admin, db_ses
 
     # 预先植入 3 条 audit_logs，由该用户作为 actor 发起
     for i in range(3):
-        db_session.add(AuditLog(
-            actor_id=uid,
-            actor_email="gdpr-target@test.local",
-            actor_role="annotator",
-            action=f"test.dummy.{i}",
-            target_type="task",
-            target_id=str(uuid.uuid4()),
-        ))
+        db_session.add(
+            AuditLog(
+                actor_id=uid,
+                actor_email="gdpr-target@test.local",
+                actor_role="annotator",
+                action=f"test.dummy.{i}",
+                target_type="task",
+                target_id=str(uuid.uuid4()),
+            )
+        )
     await db_session.flush()
 
     # 执行删除
@@ -51,9 +54,17 @@ async def test_delete_user_redacts_audit_email(httpx_client, super_admin, db_ses
         pytest.skip("用户有其他依赖，跳过；本用例只验证脱敏路径")
 
     # 历史 audit_logs 行 actor_email / actor_role 应已抹除
-    rows = (await db_session.execute(
-        select(AuditLog).where(AuditLog.actor_id == uid).where(AuditLog.action.like("test.dummy.%"))
-    )).scalars().all()
+    rows = (
+        (
+            await db_session.execute(
+                select(AuditLog)
+                .where(AuditLog.actor_id == uid)
+                .where(AuditLog.action.like("test.dummy.%"))
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert len(rows) == 3
     for row in rows:
         assert row.actor_email is None, "脱敏后 actor_email 应为 NULL"
@@ -61,10 +72,12 @@ async def test_delete_user_redacts_audit_email(httpx_client, super_admin, db_ses
         assert row.actor_id == uid, "actor_id 必须保留以维持关联"
 
     # USER_DELETE 那一行的 detail 应含 redacted_audit_rows >= 3
-    delete_audit = (await db_session.execute(
-        select(AuditLog)
-        .where(AuditLog.action == "user.delete")
-        .where(AuditLog.target_id == str(uid))
-    )).scalar_one_or_none()
+    delete_audit = (
+        await db_session.execute(
+            select(AuditLog)
+            .where(AuditLog.action == "user.delete")
+            .where(AuditLog.target_id == str(uid))
+        )
+    ).scalar_one_or_none()
     assert delete_audit is not None
     assert (delete_audit.detail_json or {}).get("redacted_audit_rows", 0) >= 3

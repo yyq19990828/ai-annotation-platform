@@ -7,6 +7,7 @@ Revision ID: 0011
 Revises: 0010
 Create Date: 2026-04-30
 """
+
 from alembic import op
 
 

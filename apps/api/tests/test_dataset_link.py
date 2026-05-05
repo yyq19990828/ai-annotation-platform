@@ -7,6 +7,7 @@
 3. project.total_tasks 正确累加
 4. 重复 link 同一对返回已存在 link，不创建新 task
 """
+
 from __future__ import annotations
 
 import uuid
@@ -34,13 +35,15 @@ async def _seed_dataset(db: AsyncSession, owner_id: uuid.UUID, n_items: int) -> 
     await db.flush()
 
     for i in range(n_items):
-        db.add(DatasetItem(
-            id=uuid.uuid4(),
-            dataset_id=ds.id,
-            file_name=f"img-{i:04d}.jpg",
-            file_path=f"/tmp/img-{i:04d}.jpg",
-            file_type="image",
-        ))
+        db.add(
+            DatasetItem(
+                id=uuid.uuid4(),
+                dataset_id=ds.id,
+                file_name=f"img-{i:04d}.jpg",
+                file_path=f"/tmp/img-{i:04d}.jpg",
+                file_type="image",
+            )
+        )
     await db.flush()
     return ds
 
@@ -62,7 +65,9 @@ async def _seed_project(db: AsyncSession, owner_id: uuid.UUID) -> Project:
 
 
 @pytest.mark.asyncio
-async def test_link_project_creates_tasks_in_bulk(db_session: AsyncSession, super_admin):
+async def test_link_project_creates_tasks_in_bulk(
+    db_session: AsyncSession, super_admin
+):
     user, _ = super_admin
     ds = await _seed_dataset(db_session, user.id, n_items=25)
     project = await _seed_project(db_session, user.id)
@@ -70,14 +75,18 @@ async def test_link_project_creates_tasks_in_bulk(db_session: AsyncSession, supe
     svc = DatasetService(db_session)
     await svc.link_project(ds.id, project.id)
 
-    count = (await db_session.execute(
-        select(func.count()).select_from(Task).where(Task.project_id == project.id)
-    )).scalar()
+    count = (
+        await db_session.execute(
+            select(func.count()).select_from(Task).where(Task.project_id == project.id)
+        )
+    ).scalar()
     assert count == 25
 
-    rows = (await db_session.execute(
-        select(Task.display_id).where(Task.project_id == project.id)
-    )).all()
+    rows = (
+        await db_session.execute(
+            select(Task.display_id).where(Task.project_id == project.id)
+        )
+    ).all()
     display_ids = [r[0] for r in rows]
     assert len(set(display_ids)) == 25, "display_id 必须唯一"
     assert all(d.startswith("T-") for d in display_ids), "display_id 必须 T- 前缀"
@@ -97,9 +106,11 @@ async def test_link_project_idempotent(db_session: AsyncSession, super_admin):
     link2 = await svc.link_project(ds.id, project.id)
     assert link1.id == link2.id, "重复 link 应返回同一行"
 
-    count = (await db_session.execute(
-        select(func.count()).select_from(Task).where(Task.project_id == project.id)
-    )).scalar()
+    count = (
+        await db_session.execute(
+            select(func.count()).select_from(Task).where(Task.project_id == project.id)
+        )
+    ).scalar()
     assert count == 5, "第二次 link 不应再创建 task"
 
 
@@ -112,9 +123,11 @@ async def test_link_project_empty_dataset(db_session: AsyncSession, super_admin)
     svc = DatasetService(db_session)
     await svc.link_project(ds.id, project.id)
 
-    count = (await db_session.execute(
-        select(func.count()).select_from(Task).where(Task.project_id == project.id)
-    )).scalar()
+    count = (
+        await db_session.execute(
+            select(func.count()).select_from(Task).where(Task.project_id == project.id)
+        )
+    ).scalar()
     assert count == 0
 
 
@@ -134,16 +147,27 @@ async def test_link_project_no_default_batch(db_session: AsyncSession, super_adm
     await svc.link_project(ds.id, project.id)
 
     # 不应有任何 batch 自动生成
-    batches = (await db_session.execute(
-        select(TaskBatch).where(TaskBatch.project_id == project.id, TaskBatch.dataset_id == ds.id)
-    )).scalars().all()
+    batches = (
+        (
+            await db_session.execute(
+                select(TaskBatch).where(
+                    TaskBatch.project_id == project.id, TaskBatch.dataset_id == ds.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert len(batches) == 0
 
     # task 全部 batch_id=NULL（未归类）
-    unclassified = (await db_session.execute(
-        select(func.count()).select_from(Task)
-        .where(Task.project_id == project.id, Task.batch_id.is_(None))
-    )).scalar()
+    unclassified = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(Task)
+            .where(Task.project_id == project.id, Task.batch_id.is_(None))
+        )
+    ).scalar()
     assert unclassified == 8
 
 
@@ -165,15 +189,19 @@ async def test_unlink_project_hard_deletes_tasks(db_session: AsyncSession, super
     assert info["soft"] is False
 
     await db_session.refresh(project)
-    real_total = (await db_session.execute(
-        select(func.count()).select_from(Task).where(Task.project_id == project.id)
-    )).scalar()
+    real_total = (
+        await db_session.execute(
+            select(func.count()).select_from(Task).where(Task.project_id == project.id)
+        )
+    ).scalar()
     assert real_total == 0, "hard-unlink 后该 dataset 创建的 task 应清光"
     assert project.total_tasks == 0
 
 
 @pytest.mark.asyncio
-async def test_unlink_cascades_user_split_batches(db_session: AsyncSession, super_admin):
+async def test_unlink_cascades_user_split_batches(
+    db_session: AsyncSession, super_admin
+):
     """v0.7.3 fix：用户把 dataset 任务 split 到 2 个 batch 后取消关联，2 个 batch 都应被清理。
     管理员手工建的与该 dataset task 无关的空草稿不受影响；B-DEFAULT 永远保留。"""
     from app.db.models.task_batch import TaskBatch
@@ -187,18 +215,26 @@ async def test_unlink_cascades_user_split_batches(db_session: AsyncSession, supe
     await svc.link_project(ds.id, project.id)
     # v0.7.3：link 不再自建 batch，task 全部 batch_id=NULL；用户随后调 split
 
-    tasks = (await db_session.execute(
-        select(Task).where(Task.project_id == project.id)
-    )).scalars().all()
+    tasks = (
+        (await db_session.execute(select(Task).where(Task.project_id == project.id)))
+        .scalars()
+        .all()
+    )
     sub_a = TaskBatch(
-        id=uuid.uuid4(), project_id=project.id,
+        id=uuid.uuid4(),
+        project_id=project.id,
         display_id=await next_display_id(db_session, "batches"),
-        name="sub A", status="draft", assigned_user_ids=[],
+        name="sub A",
+        status="draft",
+        assigned_user_ids=[],
     )
     sub_b = TaskBatch(
-        id=uuid.uuid4(), project_id=project.id,
+        id=uuid.uuid4(),
+        project_id=project.id,
         display_id=await next_display_id(db_session, "batches"),
-        name="sub B", status="draft", assigned_user_ids=[],
+        name="sub B",
+        status="draft",
+        assigned_user_ids=[],
     )
     db_session.add_all([sub_a, sub_b])
     await db_session.flush()
@@ -207,9 +243,12 @@ async def test_unlink_cascades_user_split_batches(db_session: AsyncSession, supe
 
     # 同时再加一个空草稿（与 dataset 无关），不应被误删
     manual_empty = TaskBatch(
-        id=uuid.uuid4(), project_id=project.id,
+        id=uuid.uuid4(),
+        project_id=project.id,
         display_id=await next_display_id(db_session, "batches"),
-        name="manual draft", status="draft", assigned_user_ids=[],
+        name="manual draft",
+        status="draft",
+        assigned_user_ids=[],
     )
     db_session.add(manual_empty)
     await db_session.flush()
@@ -221,15 +260,23 @@ async def test_unlink_cascades_user_split_batches(db_session: AsyncSession, supe
     assert str(sub_b.id) in deleted_ids
     assert info["deleted_batches"] == 2
 
-    remaining = (await db_session.execute(
-        select(TaskBatch).where(TaskBatch.project_id == project.id)
-    )).scalars().all()
+    remaining = (
+        (
+            await db_session.execute(
+                select(TaskBatch).where(TaskBatch.project_id == project.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     names = {b.name for b in remaining}
     assert "manual draft" in names, "手工建的空 batch 不应被误删"
 
 
 @pytest.mark.asyncio
-async def test_unlink_cascades_legacy_default_batch(db_session: AsyncSession, super_admin):
+async def test_unlink_cascades_legacy_default_batch(
+    db_session: AsyncSession, super_admin
+):
     """v0.7.3：历史数据兼容 —— 老库里残留的「{数据集} 默认包」batch 在 unlink 时同样应清掉。
     模拟方法：link 之后手工补一个挂 dataset_id 的 batch 持有所有 task。"""
     from app.db.models.task_batch import TaskBatch
@@ -245,14 +292,20 @@ async def test_unlink_cascades_legacy_default_batch(db_session: AsyncSession, su
     await svc.link_project(ds.id, project.id)
 
     legacy_default = TaskBatch(
-        id=uuid.uuid4(), project_id=project.id, dataset_id=ds.id,
+        id=uuid.uuid4(),
+        project_id=project.id,
+        dataset_id=ds.id,
         display_id=await next_display_id(db_session, "batches"),
-        name="Legacy 默认包", status="draft", assigned_user_ids=[],
+        name="Legacy 默认包",
+        status="draft",
+        assigned_user_ids=[],
     )
     db_session.add(legacy_default)
     await db_session.flush()
     await db_session.execute(
-        Task.__table__.update().where(Task.project_id == project.id).values(batch_id=legacy_default.id)
+        Task.__table__.update()
+        .where(Task.project_id == project.id)
+        .values(batch_id=legacy_default.id)
     )
     await db_session.flush()
 
@@ -304,7 +357,9 @@ async def test_project_datasets_endpoint(httpx_client_bound, db_session, super_a
 
 
 @pytest.mark.asyncio
-async def test_link_unlink_relink_no_double_count(db_session: AsyncSession, super_admin):
+async def test_link_unlink_relink_no_double_count(
+    db_session: AsyncSession, super_admin
+):
     """v0.6.7 B-10：link → unlink → re-link 不出现 double-count。hard-unlink 下 task 真删 + 重 link 重新创建。"""
     user, _ = super_admin
     ds = await _seed_dataset(db_session, user.id, n_items=4)
@@ -316,8 +371,10 @@ async def test_link_unlink_relink_no_double_count(db_session: AsyncSession, supe
     await svc.link_project(ds.id, project.id)
 
     await db_session.refresh(project)
-    real_total = (await db_session.execute(
-        select(func.count()).select_from(Task).where(Task.project_id == project.id)
-    )).scalar()
+    real_total = (
+        await db_session.execute(
+            select(func.count()).select_from(Task).where(Task.project_id == project.id)
+        )
+    ).scalar()
     assert project.total_tasks == real_total
     assert real_total == 4, "重 link 应重新创建 4 个 task"

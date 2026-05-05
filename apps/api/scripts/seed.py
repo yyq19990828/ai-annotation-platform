@@ -82,6 +82,7 @@ USERS = [
 
 # ── 示例项目（owner 取 pm@example.com 的 id，在运行时填入）─────────────────
 
+
 def make_projects(owner_id: uuid.UUID) -> list[dict]:
     return [
         {
@@ -118,6 +119,7 @@ def make_projects(owner_id: uuid.UUID) -> list[dict]:
 
 
 # ── 主逻辑 ────────────────────────────────────────────────────────────────────
+
 
 async def seed() -> None:
     async with Session() as db:

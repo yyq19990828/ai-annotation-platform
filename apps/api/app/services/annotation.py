@@ -49,7 +49,9 @@ class AnnotationService:
         await self._update_task_stats(task_id)
         return annotation
 
-    async def accept_prediction(self, prediction_id: uuid.UUID, user_id: uuid.UUID) -> Annotation | None:
+    async def accept_prediction(
+        self, prediction_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Annotation | None:
         prediction = await self.db.get(Prediction, prediction_id)
         if not prediction:
             return None
@@ -73,8 +75,12 @@ class AnnotationService:
         await self._update_task_stats(prediction.task_id)
         return annotation
 
-    async def list_by_task(self, task_id: uuid.UUID, include_cancelled: bool = False) -> list[Annotation]:
-        q = select(Annotation).where(Annotation.task_id == task_id, Annotation.is_active.is_(True))
+    async def list_by_task(
+        self, task_id: uuid.UUID, include_cancelled: bool = False
+    ) -> list[Annotation]:
+        q = select(Annotation).where(
+            Annotation.task_id == task_id, Annotation.is_active.is_(True)
+        )
         if not include_cancelled:
             q = q.where(Annotation.was_cancelled.is_(False))
         q = q.order_by(Annotation.created_at)
@@ -114,7 +120,9 @@ class AnnotationService:
         await self.db.flush()
         return annotation
 
-    async def save_draft(self, task_id: uuid.UUID, user_id: uuid.UUID, result: dict) -> AnnotationDraft:
+    async def save_draft(
+        self, task_id: uuid.UUID, user_id: uuid.UUID, result: dict
+    ) -> AnnotationDraft:
         existing = await self.db.execute(
             select(AnnotationDraft).where(
                 AnnotationDraft.task_id == task_id,
@@ -135,7 +143,9 @@ class AnnotationService:
         await self.db.flush()
         return draft
 
-    async def get_draft(self, task_id: uuid.UUID, user_id: uuid.UUID) -> AnnotationDraft | None:
+    async def get_draft(
+        self, task_id: uuid.UUID, user_id: uuid.UUID
+    ) -> AnnotationDraft | None:
         result = await self.db.execute(
             select(AnnotationDraft).where(
                 AnnotationDraft.task_id == task_id,

@@ -14,6 +14,7 @@
 Pydantic v2 的 discriminator 会让 codegen 在前端生成 sum type，删除全部
 workaround。
 """
+
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
@@ -24,7 +25,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 # ── 项目级 attribute schema / classes config ────────────────────────
 
-AttributeFieldType = Literal["text", "number", "boolean", "select", "multiselect", "range"]
+AttributeFieldType = Literal[
+    "text", "number", "boolean", "select", "multiselect", "range"
+]
 
 
 class AttributeFieldOption(BaseModel):
@@ -85,12 +88,16 @@ class AttributeSchema(BaseModel):
             seen_keys.add(f.key)
             if f.hotkey:
                 if f.hotkey in seen_hotkeys:
-                    raise ValueError(f"attribute_schema.fields[].hotkey 重复: {f.hotkey!r}")
+                    raise ValueError(
+                        f"attribute_schema.fields[].hotkey 重复: {f.hotkey!r}"
+                    )
                 seen_hotkeys.add(f.hotkey)
                 if f.type not in {"boolean", "select"}:
                     raise ValueError(f"hotkey 仅支持 boolean / select 字段：{f.key}")
             if f.type in {"select", "multiselect"} and not f.options:
-                raise ValueError(f"fields[{f.key!r}].options 必填且非空（{f.type} 类型）")
+                raise ValueError(
+                    f"fields[{f.key!r}].options 必填且非空（{f.type} 类型）"
+                )
         return self
 
 
@@ -145,7 +152,11 @@ def normalize_legacy_geometry(g: Any) -> Any:
     在 from-DB 路径（AnnotationOut）和 from-API 路径（AnnotationCreate）的
     `field_validator(mode="before")` 都用一遍。
     """
-    if isinstance(g, dict) and g.get("type") is None and {"x", "y", "w", "h"}.issubset(g.keys()):
+    if (
+        isinstance(g, dict)
+        and g.get("type") is None
+        and {"x", "y", "w", "h"}.issubset(g.keys())
+    ):
         return {**g, "type": "bbox"}
     return g
 
@@ -183,7 +194,9 @@ class Attachment(BaseModel):
     @classmethod
     def _validate_prefix(cls, v: str) -> str:
         if not v.startswith(ATTACHMENT_KEY_PREFIX):
-            raise ValueError(f"attachments[].storageKey 必须以 {ATTACHMENT_KEY_PREFIX!r} 开头")
+            raise ValueError(
+                f"attachments[].storageKey 必须以 {ATTACHMENT_KEY_PREFIX!r} 开头"
+            )
         return v
 
 

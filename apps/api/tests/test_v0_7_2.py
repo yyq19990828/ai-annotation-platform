@@ -6,6 +6,7 @@
 3. TestGlobalSearch — /search 跨实体可见性 + 模糊匹配
 4. TestAnnotationHistoryEndpoint — GET /annotations/{id}/history 合并 audit + comments
 """
+
 from __future__ import annotations
 
 import uuid
@@ -13,8 +14,6 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.db.models.annotation import Annotation
-from app.db.models.annotation_comment import AnnotationComment
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
@@ -79,13 +78,23 @@ async def _seed_project(
         reviewer_ids.append(u.id)
     await db.flush()
     for uid in annotator_ids:
-        db.add(ProjectMember(
-            project_id=pid, user_id=uid, role="annotator", assigned_by=owner_id,
-        ))
+        db.add(
+            ProjectMember(
+                project_id=pid,
+                user_id=uid,
+                role="annotator",
+                assigned_by=owner_id,
+            )
+        )
     for uid in reviewer_ids:
-        db.add(ProjectMember(
-            project_id=pid, user_id=uid, role="reviewer", assigned_by=owner_id,
-        ))
+        db.add(
+            ProjectMember(
+                project_id=pid,
+                user_id=uid,
+                role="reviewer",
+                assigned_by=owner_id,
+            )
+        )
     await db.flush()
 
     batches: list[TaskBatch] = []
@@ -121,15 +130,23 @@ async def _seed_project(
 
 # ── 1. 项目级 batch 分派（一 batch 一人） ─────────────────────────────
 
+
 class TestProjectDistributeBatches:
     @pytest.mark.asyncio
     async def test_round_robin_assigns_one_per_batch(
-        self, db_session, super_admin, httpx_client,
+        self,
+        db_session,
+        super_admin,
+        httpx_client,
     ):
         owner, token = super_admin
         p, batches, tasks, annotator_ids, reviewer_ids = await _seed_project(
-            db_session, owner.id, n_annotators=3, n_reviewers=2,
-            n_batches=7, tasks_per_batch=2,
+            db_session,
+            owner.id,
+            n_annotators=3,
+            n_reviewers=2,
+            n_batches=7,
+            tasks_per_batch=2,
         )
 
         resp = await httpx_client.post(
@@ -151,12 +168,17 @@ class TestProjectDistributeBatches:
             assert b.annotator_id is not None
             assert b.reviewer_id is not None
             # assigned_user_ids 派生为 [annotator_id, reviewer_id]
-            assert set(map(str, b.assigned_user_ids)) == {str(b.annotator_id), str(b.reviewer_id)}
+            assert set(map(str, b.assigned_user_ids)) == {
+                str(b.annotator_id),
+                str(b.reviewer_id),
+            }
 
         # 圆周：7 batch / 3 annotator → 计数 [3, 2, 2]
         annotator_counts: dict[str, int] = {}
         for b in batches:
-            annotator_counts[str(b.annotator_id)] = annotator_counts.get(str(b.annotator_id), 0) + 1
+            annotator_counts[str(b.annotator_id)] = (
+                annotator_counts.get(str(b.annotator_id), 0) + 1
+            )
         assert sorted(annotator_counts.values(), reverse=True) == [3, 2, 2]
 
         # task 联动：所有 task.assignee_id 必须等于其 batch.annotator_id
@@ -167,23 +189,36 @@ class TestProjectDistributeBatches:
             assert t.reviewer_id == owner_batch.reviewer_id
 
         # audit_logs 中应有项目级 batch.distribute_even 一条
-        audits = (await db_session.execute(
-            select(AuditLog).where(
-                AuditLog.action == "batch.distribute_even",
-                AuditLog.target_type == "project",
-                AuditLog.target_id == str(p.id),
+        audits = (
+            (
+                await db_session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action == "batch.distribute_even",
+                        AuditLog.target_type == "project",
+                        AuditLog.target_id == str(p.id),
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(audits) == 1
         assert audits[0].detail_json["distributed_batches"] == 7
 
     @pytest.mark.asyncio
     async def test_only_unassigned_skips_already_assigned_batches(
-        self, db_session, super_admin, httpx_client,
+        self,
+        db_session,
+        super_admin,
+        httpx_client,
     ):
         owner, token = super_admin
         p, batches, _, annotator_ids, _ = await _seed_project(
-            db_session, owner.id, n_annotators=2, n_batches=4, tasks_per_batch=1,
+            db_session,
+            owner.id,
+            n_annotators=2,
+            n_batches=4,
+            tasks_per_batch=1,
         )
         # 预设 batch[0] 已分派给 annotator[0]
         batches[0].annotator_id = annotator_ids[0]
@@ -209,14 +244,22 @@ class TestProjectDistributeBatches:
 
 # ── 2. annotation audit ───────────────────────────────────────────────
 
+
 class TestAnnotationAuditTrail:
     @pytest.mark.asyncio
     async def test_create_update_delete_each_emits_audit(
-        self, db_session, super_admin, httpx_client,
+        self,
+        db_session,
+        super_admin,
+        httpx_client,
     ):
         owner, token = super_admin
         p, batches, tasks, _, _ = await _seed_project(
-            db_session, owner.id, n_annotators=1, n_batches=1, tasks_per_batch=1,
+            db_session,
+            owner.id,
+            n_annotators=1,
+            n_batches=1,
+            tasks_per_batch=1,
         )
         task = tasks[0]
 
@@ -249,12 +292,20 @@ class TestAnnotationAuditTrail:
         assert resp.status_code == 204
 
         # 检查 audit_logs
-        audits = (await db_session.execute(
-            select(AuditLog).where(
-                AuditLog.target_type == "annotation",
-                AuditLog.target_id == str(ann_id),
-            ).order_by(AuditLog.created_at)
-        )).scalars().all()
+        audits = (
+            (
+                await db_session.execute(
+                    select(AuditLog)
+                    .where(
+                        AuditLog.target_type == "annotation",
+                        AuditLog.target_id == str(ann_id),
+                    )
+                    .order_by(AuditLog.created_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
         actions = [a.action for a in audits]
         assert "annotation.create" in actions
         assert "annotation.update" in actions
@@ -263,13 +314,19 @@ class TestAnnotationAuditTrail:
 
 # ── 3. /search ─────────────────────────────────────────────────────────
 
+
 class TestGlobalSearch:
     @pytest.mark.asyncio
     async def test_super_admin_finds_project_by_name(
-        self, db_session, super_admin, httpx_client,
+        self,
+        db_session,
+        super_admin,
+        httpx_client,
     ):
         owner, token = super_admin
-        await _seed_project(db_session, owner.id, n_annotators=1, n_batches=1, tasks_per_batch=1)
+        await _seed_project(
+            db_session, owner.id, n_annotators=1, n_batches=1, tasks_per_batch=1
+        )
 
         resp = await httpx_client.get(
             "/api/v1/search?q=governance&limit=5",
@@ -282,14 +339,22 @@ class TestGlobalSearch:
 
 # ── 4. annotation history ─────────────────────────────────────────────
 
+
 class TestAnnotationHistoryEndpoint:
     @pytest.mark.asyncio
     async def test_history_merges_audits_and_comments(
-        self, db_session, super_admin, httpx_client,
+        self,
+        db_session,
+        super_admin,
+        httpx_client,
     ):
         owner, token = super_admin
         p, batches, tasks, _, _ = await _seed_project(
-            db_session, owner.id, n_annotators=1, n_batches=1, tasks_per_batch=1,
+            db_session,
+            owner.id,
+            n_annotators=1,
+            n_batches=1,
+            tasks_per_batch=1,
         )
 
         resp = await httpx_client.post(

@@ -31,7 +31,9 @@ class MLBackendClient:
     async def health(self) -> bool:
         try:
             async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
-                resp = await client.get(f"{self.base_url}/health", headers=self._headers())
+                resp = await client.get(
+                    f"{self.base_url}/health", headers=self._headers()
+                )
                 return resp.status_code == 200
         except (httpx.RequestError, httpx.TimeoutException):
             return False
@@ -48,16 +50,20 @@ class MLBackendClient:
 
         results = []
         for item in data.get("results", []):
-            results.append(PredictionResult(
-                task_id=item.get("task"),
-                result=item.get("result", []),
-                score=item.get("score"),
-                model_version=item.get("model_version"),
-                inference_time_ms=item.get("inference_time_ms"),
-            ))
+            results.append(
+                PredictionResult(
+                    task_id=item.get("task"),
+                    result=item.get("result", []),
+                    score=item.get("score"),
+                    model_version=item.get("model_version"),
+                    inference_time_ms=item.get("inference_time_ms"),
+                )
+            )
         return results
 
-    async def predict_interactive(self, task_data: dict, context: dict) -> PredictionResult:
+    async def predict_interactive(
+        self, task_data: dict, context: dict
+    ) -> PredictionResult:
         async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
             resp = await client.post(
                 f"{self.base_url}/predict",
@@ -83,6 +89,8 @@ class MLBackendClient:
 
     async def get_versions(self) -> list[str]:
         async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
-            resp = await client.get(f"{self.base_url}/versions", headers=self._headers())
+            resp = await client.get(
+                f"{self.base_url}/versions", headers=self._headers()
+            )
             resp.raise_for_status()
             return resp.json().get("versions", [])

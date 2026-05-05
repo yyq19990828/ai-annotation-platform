@@ -29,7 +29,8 @@ class PasswordResetService:
             id=uuid.uuid4(),
             user_id=user.id,
             token=token,
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=self.TOKEN_EXPIRY_HOURS),
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(hours=self.TOKEN_EXPIRY_HOURS),
         )
         self.db.add(entry)
         await self.db.flush()

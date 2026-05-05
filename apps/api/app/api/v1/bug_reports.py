@@ -37,7 +37,9 @@ class ScreenshotInitResponse(BaseModel):
     expires_in: int = 900
 
 
-@router.post("/bug_reports/screenshot/upload-init", response_model=ScreenshotInitResponse)
+@router.post(
+    "/bug_reports/screenshot/upload-init", response_model=ScreenshotInitResponse
+)
 async def init_bug_screenshot_upload(
     data: ScreenshotInitRequest,
     current_user: User = Depends(get_current_user),
@@ -100,15 +102,20 @@ async def list_bug_reports(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)),
+    current_user: User = Depends(
+        require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+    ),
 ):
     svc = BugReportService(db)
     if format == "markdown":
         from fastapi.responses import PlainTextResponse
+
         md = await svc.list_markdown(status=status or "new")
         return PlainTextResponse(content=md, media_type="text/markdown; charset=utf-8")
 
-    items, total = await svc.list(status=status, severity=severity, route=route, limit=limit, offset=offset)
+    items, total = await svc.list(
+        status=status, severity=severity, route=route, limit=limit, offset=offset
+    )
     return BugReportList(items=items, total=total)
 
 
@@ -120,7 +127,9 @@ async def list_my_bug_reports(
     current_user: User = Depends(get_current_user),
 ):
     svc = BugReportService(db)
-    items, total = await svc.list(reporter_id=current_user.id, limit=limit, offset=offset)
+    items, total = await svc.list(
+        reporter_id=current_user.id, limit=limit, offset=offset
+    )
     return BugReportList(items=items, total=total)
 
 
@@ -181,7 +190,11 @@ async def update_bug_report(
         status_code=200,
         detail={"display_id": report.display_id, "new_status": report.status},
     )
-    if new_status and new_status != old_status and current_user.id != report.reporter_id:
+    if (
+        new_status
+        and new_status != old_status
+        and current_user.id != report.reporter_id
+    ):
         await NotificationService(db).notify(
             user_id=report.reporter_id,
             type="bug_report.status_changed",
@@ -228,10 +241,13 @@ async def delete_bug_report(
     await svc.delete(report_id)
     await db.commit()
     from fastapi.responses import Response
+
     return Response(status_code=204)
 
 
-@router.post("/bug_reports/{report_id}/comments", response_model=BugCommentOut, status_code=201)
+@router.post(
+    "/bug_reports/{report_id}/comments", response_model=BugCommentOut, status_code=201
+)
 @limiter.limit("60/hour")
 async def add_bug_comment(
     report_id: uuid.UUID,
@@ -250,9 +266,10 @@ async def add_bug_comment(
 
     # v0.7.0：reopen 单独限流 5/day/user/report，避免提交者刷 reopen 计数。
     # 60/h 整体限流仍生效；本检查只针对会触发 reopen 的评论（reporter 自己 + 已 closed 状态）。
-    will_reopen = (
-        current_user.id == report.reporter_id
-        and report.status in ("fixed", "wont_fix", "duplicate")
+    will_reopen = current_user.id == report.reporter_id and report.status in (
+        "fixed",
+        "wont_fix",
+        "duplicate",
     )
     if will_reopen:
         import redis.asyncio as aioredis
@@ -314,7 +331,9 @@ async def add_bug_comment(
             recipient_ids = [report.assigned_to_id]
         else:
             admin_rows = await db.execute(
-                select(User.id).where(User.role == UserRole.SUPER_ADMIN.value, User.is_active.is_(True))
+                select(User.id).where(
+                    User.role == UserRole.SUPER_ADMIN.value, User.is_active.is_(True)
+                )
             )
             recipient_ids = [r[0] for r in admin_rows.all()]
         recipient_ids = [uid for uid in recipient_ids if uid != current_user.id]
@@ -368,7 +387,9 @@ async def add_bug_comment(
 @router.post("/bug_reports/cluster")
 async def cluster_bug_reports(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)),
+    current_user: User = Depends(
+        require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+    ),
 ):
     svc = BugReportService(db)
     items, _ = await svc.list(status="new", limit=50)
@@ -376,5 +397,7 @@ async def cluster_bug_reports(
     for item in items:
         similar = await svc.cluster_similar(item.id)
         if similar:
-            merged.append({"report_id": str(item.id), "similar_ids": [str(s) for s in similar]})
+            merged.append(
+                {"report_id": str(item.id), "similar_ids": [str(s) for s in similar]}
+            )
     return {"clusters": merged}

@@ -4,6 +4,7 @@ Revision ID: 0005
 Revises: 0004
 Create Date: 2026-04-29
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -93,7 +94,9 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_user_invitations_email", "user_invitations", ["email"])
-    op.create_index("ix_user_invitations_invited_by", "user_invitations", ["invited_by"])
+    op.create_index(
+        "ix_user_invitations_invited_by", "user_invitations", ["invited_by"]
+    )
     op.create_index(
         "ix_user_invitations_token",
         "user_invitations",

@@ -13,6 +13,7 @@ Revision ID: 0012
 Revises: 0011
 Create Date: 2026-04-30
 """
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
@@ -27,15 +28,27 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "annotations",
-        sa.Column("attributes", JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column(
+            "attributes", JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")
+        ),
     )
     op.add_column(
         "projects",
-        sa.Column("attribute_schema", JSONB(), nullable=False, server_default=sa.text("'{\"fields\": []}'::jsonb")),
+        sa.Column(
+            "attribute_schema",
+            JSONB(),
+            nullable=False,
+            server_default=sa.text("'{\"fields\": []}'::jsonb"),
+        ),
     )
     op.add_column(
         "projects",
-        sa.Column("classes_config", JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column(
+            "classes_config",
+            JSONB(),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
     )
 
 

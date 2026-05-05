@@ -35,10 +35,7 @@ def _build_base_query(
     例如 `?detail_key=role&detail_value=super_admin` 等价 `WHERE detail_json @> '{"role":"super_admin"}'`。
     """
     j = outerjoin(AuditLog, User, AuditLog.actor_id == User.id)
-    base = (
-        select(AuditLog, User.email.label("_u_email"))
-        .select_from(j)
-    )
+    base = select(AuditLog, User.email.label("_u_email")).select_from(j)
     count_base = select(func.count()).select_from(AuditLog)
 
     if action:
@@ -98,12 +95,18 @@ async def list_audit_logs(
     actor_id: str | None = None,
     from_: datetime | None = Query(None, alias="from"),
     to: datetime | None = None,
-    detail_key: str | None = Query(None, description="A.3：detail_json 字段级过滤——键名"),
-    detail_value: str | None = Query(None, description="A.3：detail_json 字段级过滤——键值"),
+    detail_key: str | None = Query(
+        None, description="A.3：detail_json 字段级过滤——键名"
+    ),
+    detail_value: str | None = Query(
+        None, description="A.3：detail_json 字段级过滤——键值"
+    ),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)),
 ):
-    base, count_q = _build_base_query(action, target_type, target_id, actor_id, from_, to, detail_key, detail_value)
+    base, count_q = _build_base_query(
+        action, target_type, target_id, actor_id, from_, to, detail_key, detail_value
+    )
 
     total = (await db.execute(count_q)).scalar_one()
 
@@ -118,7 +121,9 @@ async def list_audit_logs(
 
     rows = (
         await db.execute(
-            paged.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(page_size)
+            paged.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(
+                page_size
+            )
         )
     ).all()
 
@@ -129,7 +134,13 @@ async def list_audit_logs(
         last = items[-1]
         next_cursor = _encode_cursor(last.created_at, last.id)
 
-    return AuditLogList(items=items, total=total, page=page, page_size=page_size, next_cursor=next_cursor)
+    return AuditLogList(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        next_cursor=next_cursor,
+    )
 
 
 @router.get("/export")
@@ -147,22 +158,30 @@ async def export_audit_logs(
     current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
     _MAX_ROWS = 50_000
-    base, count_q = _build_base_query(action, target_type, target_id, actor_id, from_, to, detail_key, detail_value)
+    base, count_q = _build_base_query(
+        action, target_type, target_id, actor_id, from_, to, detail_key, detail_value
+    )
 
     total = (await db.execute(count_q)).scalar_one()
     if total > _MAX_ROWS:
         from fastapi import HTTPException
-        raise HTTPException(status_code=413, detail=f"导出条数超过 {_MAX_ROWS}，请缩小筛选范围")
+
+        raise HTTPException(
+            status_code=413, detail=f"导出条数超过 {_MAX_ROWS}，请缩小筛选范围"
+        )
 
     rows = (
         await db.execute(
-            base.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(_MAX_ROWS)
+            base.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(
+                _MAX_ROWS
+            )
         )
     ).all()
     items = [_row_to_out(r) for r in rows]
 
     # 记录自身的导出操作
     from app.services.audit import AuditService
+
     await AuditService.log(
         db,
         actor=current_user,
@@ -183,8 +202,11 @@ async def export_audit_logs(
     await db.commit()
 
     if format == "json":
+
         def _gen_json():
-            yield json.dumps([i.model_dump(mode="json") for i in items], ensure_ascii=False, indent=2)
+            yield json.dumps(
+                [i.model_dump(mode="json") for i in items], ensure_ascii=False, indent=2
+            )
 
         return StreamingResponse(
             _gen_json(),
@@ -193,8 +215,20 @@ async def export_audit_logs(
         )
 
     # CSV
-    _COLS = ["id", "created_at", "actor_email", "actor_role", "action",
-             "target_type", "target_id", "method", "path", "status_code", "ip", "detail_json"]
+    _COLS = [
+        "id",
+        "created_at",
+        "actor_email",
+        "actor_role",
+        "action",
+        "target_type",
+        "target_id",
+        "method",
+        "path",
+        "status_code",
+        "ip",
+        "detail_json",
+    ]
 
     def _gen_csv():
         buf = io.StringIO()

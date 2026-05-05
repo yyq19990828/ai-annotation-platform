@@ -7,12 +7,18 @@ from app.config import settings
 
 
 async def _generate_thumbnail(item_id: str) -> None:
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.ext.asyncio import (
+        create_async_engine,
+        async_sessionmaker,
+        AsyncSession,
+    )
     from app.db.models.dataset import DatasetItem
     from app.services.storage import StorageService
 
     engine = create_async_engine(settings.database_url, echo=False)
-    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
     async with SessionLocal() as db:
         item = await db.get(DatasetItem, uuid.UUID(item_id))
@@ -34,13 +40,17 @@ async def _generate_thumbnail(item_id: str) -> None:
 
         try:
             from PIL import Image
+
             img = Image.open(io.BytesIO(raw)).convert("RGB")
             max_side = 256
             w, h = img.size
             scale = min(max_side / w, max_side / h)
-            thumb = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+            thumb = img.resize(
+                (max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS
+            )
 
             import blurhash as bh
+
             small = img.resize((32, 32), Image.LANCZOS)
             hash_str = bh.encode(small, x_components=4, y_components=3)
 
@@ -78,12 +88,18 @@ async def _generate_thumbnail(item_id: str) -> None:
 
 
 async def _backfill_media(dataset_id: str) -> None:
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.ext.asyncio import (
+        create_async_engine,
+        async_sessionmaker,
+        AsyncSession,
+    )
     from sqlalchemy import select
     from app.db.models.dataset import DatasetItem
 
     engine = create_async_engine(settings.database_url, echo=False)
-    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
     async with SessionLocal() as db:
         rows = await db.execute(
@@ -102,13 +118,19 @@ async def _backfill_media(dataset_id: str) -> None:
 
 
 async def _generate_task_thumbnail(task_id: str) -> None:
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.ext.asyncio import (
+        create_async_engine,
+        async_sessionmaker,
+        AsyncSession,
+    )
     from app.db.models.task import Task
     from app.db.models.dataset import DatasetItem  # noqa: F401 — needed for FK resolution
     from app.services.storage import StorageService
 
     engine = create_async_engine(settings.database_url, echo=False)
-    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
     async with SessionLocal() as db:
         task = await db.get(Task, uuid.UUID(task_id))
@@ -124,13 +146,17 @@ async def _generate_task_thumbnail(task_id: str) -> None:
 
         try:
             from PIL import Image
+
             img = Image.open(io.BytesIO(raw)).convert("RGB")
             max_side = 256
             w, h = img.size
             scale = min(max_side / w, max_side / h)
-            thumb = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+            thumb = img.resize(
+                (max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS
+            )
 
             import blurhash as bh
+
             small = img.resize((32, 32), Image.LANCZOS)
             hash_str = bh.encode(small, x_components=4, y_components=3)
 
@@ -160,13 +186,19 @@ async def _generate_task_thumbnail(task_id: str) -> None:
 
 
 async def _backfill_tasks(project_id: str) -> None:
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.ext.asyncio import (
+        create_async_engine,
+        async_sessionmaker,
+        AsyncSession,
+    )
     from sqlalchemy import select
     from app.db.models.task import Task
     from app.db.models.dataset import DatasetItem  # noqa: F401 — needed for FK resolution
 
     engine = create_async_engine(settings.database_url, echo=False)
-    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
     async with SessionLocal() as db:
         rows = await db.execute(

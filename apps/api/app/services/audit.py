@@ -131,20 +131,24 @@ class AuditService:
         actor_role = getattr(actor, "role", None)
         entries: list[AuditLog] = []
         for it in items:
-            entries.append(AuditLog(
-                actor_id=actor_id,
-                actor_email=actor_email,
-                actor_role=actor_role,
-                action=action_str,
-                target_type=target_type,
-                target_id=str(it["target_id"]) if it.get("target_id") is not None else None,
-                method=method,
-                path=path,
-                status_code=status_code,
-                ip=ip,
-                detail_json=it.get("detail"),
-                request_id=rid or None,
-            ))
+            entries.append(
+                AuditLog(
+                    actor_id=actor_id,
+                    actor_email=actor_email,
+                    actor_role=actor_role,
+                    action=action_str,
+                    target_type=target_type,
+                    target_id=str(it["target_id"])
+                    if it.get("target_id") is not None
+                    else None,
+                    method=method,
+                    path=path,
+                    status_code=status_code,
+                    ip=ip,
+                    detail_json=it.get("detail"),
+                    request_id=rid or None,
+                )
+            )
         db.add_all(entries)
         await db.flush()
         return entries

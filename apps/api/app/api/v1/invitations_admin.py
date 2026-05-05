@@ -60,7 +60,9 @@ async def list_invitations(
     if scope == "me":
         q = q.where(UserInvitation.invited_by == actor.id)
 
-    rows = (await db.execute(q.order_by(UserInvitation.created_at.desc()))).scalars().all()
+    rows = (
+        (await db.execute(q.order_by(UserInvitation.created_at.desc()))).scalars().all()
+    )
 
     if status_filter != "all":
         rows = [r for r in rows if r.status == status_filter]
@@ -69,8 +71,10 @@ async def list_invitations(
     inviters: dict[uuid.UUID, User] = {}
     if inviter_ids:
         u_rows = (
-            await db.execute(select(User).where(User.id.in_(inviter_ids)))
-        ).scalars().all()
+            (await db.execute(select(User).where(User.id.in_(inviter_ids))))
+            .scalars()
+            .all()
+        )
         inviters = {u.id: u for u in u_rows}
 
     return [_to_out(r, inviters.get(r.invited_by)) for r in rows]

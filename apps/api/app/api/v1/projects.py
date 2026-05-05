@@ -62,9 +62,9 @@ async def _serialize_project(
         )
         owner_name = owner_row.scalar_one_or_none()
     count_row = await db.execute(
-        select(func.count()).select_from(ProjectMember).where(
-            ProjectMember.project_id == project.id
-        )
+        select(func.count())
+        .select_from(ProjectMember)
+        .where(ProjectMember.project_id == project.id)
     )
     member_count = count_row.scalar() or 0
 
@@ -72,6 +72,7 @@ async def _serialize_project(
         ai_completed = int(ai_completed_lookup.get(project.id, 0))
     else:
         from app.db.models.annotation import Annotation
+
         ai_row = await db.execute(
             select(func.count(func.distinct(Annotation.task_id))).where(
                 Annotation.project_id == project.id,
@@ -82,27 +83,32 @@ async def _serialize_project(
         ai_completed = int(ai_row.scalar() or 0)
 
     if batch_summary_lookup is not None:
-        batch_summary = batch_summary_lookup.get(project.id, {"total": 0, "assigned": 0, "in_review": 0})
+        batch_summary = batch_summary_lookup.get(
+            project.id, {"total": 0, "assigned": 0, "in_review": 0}
+        )
     else:
         from app.db.models.task_batch import TaskBatch
-        bs_row = (await db.execute(
-            select(
-                func.count().label("total"),
-                func.count().filter(
-                    TaskBatch.annotator_id.is_not(None)
-                ).label("assigned"),
-                func.count().filter(TaskBatch.status == "reviewing").label("in_review"),
-            ).where(TaskBatch.project_id == project.id)
-        )).one()
+
+        bs_row = (
+            await db.execute(
+                select(
+                    func.count().label("total"),
+                    func.count()
+                    .filter(TaskBatch.annotator_id.is_not(None))
+                    .label("assigned"),
+                    func.count()
+                    .filter(TaskBatch.status == "reviewing")
+                    .label("in_review"),
+                ).where(TaskBatch.project_id == project.id)
+            )
+        ).one()
         batch_summary = {
             "total": int(bs_row.total),
             "assigned": int(bs_row.assigned),
             "in_review": int(bs_row.in_review),
         }
 
-    data = {
-        c.name: getattr(project, c.name) for c in project.__table__.columns
-    }
+    data = {c.name: getattr(project, c.name) for c in project.__table__.columns}
     data["owner_name"] = owner_name
     data["member_count"] = member_count
     data["ai_completed_tasks"] = ai_completed
@@ -135,7 +141,9 @@ async def list_projects(
     if member_id is not None:
         q = q.where(
             Project.id.in_(
-                select(ProjectMember.project_id).where(ProjectMember.user_id == member_id)
+                select(ProjectMember.project_id).where(
+                    ProjectMember.user_id == member_id
+                )
             )
         )
     if created_from:
@@ -148,45 +156,59 @@ async def list_projects(
     # v0.7.0：批量预查 ai_completed_tasks 避免 N+1 — 单 GROUP BY 查询
     from app.db.models.annotation import Annotation
     from app.db.models.task_batch import TaskBatch
+
     project_ids = [p.id for p in projects]
     ai_lookup: dict[uuid.UUID, int] = {}
     bs_lookup: dict[uuid.UUID, dict] = {}
     if project_ids:
-        ai_rows = (await db.execute(
-            select(
-                Annotation.project_id,
-                func.count(func.distinct(Annotation.task_id)).label("cnt"),
+        ai_rows = (
+            await db.execute(
+                select(
+                    Annotation.project_id,
+                    func.count(func.distinct(Annotation.task_id)).label("cnt"),
+                )
+                .where(
+                    Annotation.project_id.in_(project_ids),
+                    Annotation.parent_prediction_id.is_not(None),
+                    Annotation.is_active.is_(True),
+                )
+                .group_by(Annotation.project_id)
             )
-            .where(
-                Annotation.project_id.in_(project_ids),
-                Annotation.parent_prediction_id.is_not(None),
-                Annotation.is_active.is_(True),
-            )
-            .group_by(Annotation.project_id)
-        )).all()
+        ).all()
         ai_lookup = {row[0]: int(row[1]) for row in ai_rows}
 
         # batch_summary：每项目一行，{total, assigned, in_review}
-        bs_rows = (await db.execute(
-            select(
-                TaskBatch.project_id,
-                func.count().label("total"),
-                func.count().filter(
-                    TaskBatch.annotator_id.is_not(None)
-                ).label("assigned"),
-                func.count().filter(TaskBatch.status == "reviewing").label("in_review"),
+        bs_rows = (
+            await db.execute(
+                select(
+                    TaskBatch.project_id,
+                    func.count().label("total"),
+                    func.count()
+                    .filter(TaskBatch.annotator_id.is_not(None))
+                    .label("assigned"),
+                    func.count()
+                    .filter(TaskBatch.status == "reviewing")
+                    .label("in_review"),
+                )
+                .where(TaskBatch.project_id.in_(project_ids))
+                .group_by(TaskBatch.project_id)
             )
-            .where(TaskBatch.project_id.in_(project_ids))
-            .group_by(TaskBatch.project_id)
-        )).all()
+        ).all()
         bs_lookup = {
-            row[0]: {"total": int(row[1]), "assigned": int(row[2]), "in_review": int(row[3])}
+            row[0]: {
+                "total": int(row[1]),
+                "assigned": int(row[2]),
+                "in_review": int(row[3]),
+            }
             for row in bs_rows
         }
 
     return [
         await _serialize_project(
-            db, p, ai_completed_lookup=ai_lookup, batch_summary_lookup=bs_lookup,
+            db,
+            p,
+            ai_completed_lookup=ai_lookup,
+            batch_summary_lookup=bs_lookup,
         )
         for p in projects
     ]
@@ -213,12 +235,18 @@ async def get_stats(
 
     if not visible_ids:
         return ProjectStats(
-            total_data=0, completed=0, ai_rate=0.0, pending_review=0,
-            total_annotations=0, ai_derived_annotations=0,
+            total_data=0,
+            completed=0,
+            ai_rate=0.0,
+            pending_review=0,
+            total_annotations=0,
+            ai_derived_annotations=0,
         )
 
     total_ann_result = await db.execute(
-        select(func.count()).select_from(Annotation).where(
+        select(func.count())
+        .select_from(Annotation)
+        .where(
             Annotation.is_active.is_(True),
             Annotation.was_cancelled.is_(False),
             Annotation.project_id.in_(visible_ids),
@@ -227,7 +255,9 @@ async def get_stats(
     total_annotations = total_ann_result.scalar() or 0
 
     ai_ann_result = await db.execute(
-        select(func.count()).select_from(Annotation).where(
+        select(func.count())
+        .select_from(Annotation)
+        .where(
             Annotation.is_active.is_(True),
             Annotation.was_cancelled.is_(False),
             Annotation.parent_prediction_id.isnot(None),
@@ -236,7 +266,11 @@ async def get_stats(
     )
     ai_derived_annotations = ai_ann_result.scalar() or 0
 
-    ai_rate = round(ai_derived_annotations / total_annotations * 100, 1) if total_annotations else 0.0
+    ai_rate = (
+        round(ai_derived_annotations / total_annotations * 100, 1)
+        if total_annotations
+        else 0.0
+    )
 
     return ProjectStats(
         total_data=total,
@@ -295,46 +329,49 @@ async def delete_project(
     pid = str(project.id)
     p = {"pid": pid}
 
-    await db.execute(text(
-        "DELETE FROM annotation_comments WHERE project_id = :pid"
-    ), p)
-    await db.execute(text(
-        "DELETE FROM annotation_drafts WHERE task_id IN "
-        "(SELECT id FROM tasks WHERE project_id = :pid)"
-    ), p)
-    await db.execute(text(
-        "DELETE FROM prediction_metas WHERE prediction_id IN "
-        "(SELECT id FROM predictions WHERE project_id = :pid) "
-        "OR failed_prediction_id IN "
-        "(SELECT id FROM failed_predictions WHERE project_id = :pid)"
-    ), p)
-    await db.execute(text(
-        "UPDATE annotations SET parent_prediction_id = NULL, "
-        "parent_annotation_id = NULL WHERE project_id = :pid"
-    ), p)
-    await db.execute(text(
-        "DELETE FROM annotations WHERE project_id = :pid"
-    ), p)
-    await db.execute(text(
-        "DELETE FROM predictions WHERE project_id = :pid"
-    ), p)
-    await db.execute(text(
-        "DELETE FROM failed_predictions WHERE project_id = :pid"
-    ), p)
-    await db.execute(text(
-        "DELETE FROM task_locks WHERE task_id IN "
-        "(SELECT id FROM tasks WHERE project_id = :pid)"
-    ), p)
-    await db.execute(text(
-        "DELETE FROM ml_backends WHERE project_id = :pid"
-    ), p)
-    await db.execute(text(
-        "UPDATE bug_reports SET project_id = NULL, task_id = NULL "
-        "WHERE project_id = :pid"
-    ), p)
-    await db.execute(text(
-        "DELETE FROM tasks WHERE project_id = :pid"
-    ), p)
+    await db.execute(text("DELETE FROM annotation_comments WHERE project_id = :pid"), p)
+    await db.execute(
+        text(
+            "DELETE FROM annotation_drafts WHERE task_id IN "
+            "(SELECT id FROM tasks WHERE project_id = :pid)"
+        ),
+        p,
+    )
+    await db.execute(
+        text(
+            "DELETE FROM prediction_metas WHERE prediction_id IN "
+            "(SELECT id FROM predictions WHERE project_id = :pid) "
+            "OR failed_prediction_id IN "
+            "(SELECT id FROM failed_predictions WHERE project_id = :pid)"
+        ),
+        p,
+    )
+    await db.execute(
+        text(
+            "UPDATE annotations SET parent_prediction_id = NULL, "
+            "parent_annotation_id = NULL WHERE project_id = :pid"
+        ),
+        p,
+    )
+    await db.execute(text("DELETE FROM annotations WHERE project_id = :pid"), p)
+    await db.execute(text("DELETE FROM predictions WHERE project_id = :pid"), p)
+    await db.execute(text("DELETE FROM failed_predictions WHERE project_id = :pid"), p)
+    await db.execute(
+        text(
+            "DELETE FROM task_locks WHERE task_id IN "
+            "(SELECT id FROM tasks WHERE project_id = :pid)"
+        ),
+        p,
+    )
+    await db.execute(text("DELETE FROM ml_backends WHERE project_id = :pid"), p)
+    await db.execute(
+        text(
+            "UPDATE bug_reports SET project_id = NULL, task_id = NULL "
+            "WHERE project_id = :pid"
+        ),
+        p,
+    )
+    await db.execute(text("DELETE FROM tasks WHERE project_id = :pid"), p)
 
     await db.delete(project)
     await db.commit()
@@ -451,7 +488,10 @@ async def remove_member(
 @router.get("/{project_id}/export")
 async def export_project(
     format: str = Query("coco", pattern="^(coco|voc|yolo)$"),
-    include_attributes: bool = Query(True, description="是否在导出包中携带 annotation.attributes 与 project.attribute_schema"),
+    include_attributes: bool = Query(
+        True,
+        description="是否在导出包中携带 annotation.attributes 与 project.attribute_schema",
+    ),
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
 ):
@@ -460,11 +500,15 @@ async def export_project(
     svc = ExportService(db)
 
     if format == "coco":
-        content = await svc.export_coco(project.id, include_attributes=include_attributes)
+        content = await svc.export_coco(
+            project.id, include_attributes=include_attributes
+        )
         return Response(
             content=content,
             media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename={project.display_id}_coco.json"},
+            headers={
+                "Content-Disposition": f"attachment; filename={project.display_id}_coco.json"
+            },
         )
 
     if format == "yolo":
@@ -472,14 +516,18 @@ async def export_project(
         return Response(
             content=data,
             media_type="application/zip",
-            headers={"Content-Disposition": f"attachment; filename={project.display_id}_yolo.zip"},
+            headers={
+                "Content-Disposition": f"attachment; filename={project.display_id}_yolo.zip"
+            },
         )
 
     data = await svc.export_voc(project.id, include_attributes=include_attributes)
     return Response(
         content=data,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={project.display_id}_voc.zip"},
+        headers={
+            "Content-Disposition": f"attachment; filename={project.display_id}_voc.zip"
+        },
     )
 
 
@@ -502,6 +550,7 @@ async def trigger_preannotation(
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
     from app.workers.tasks import batch_predict
+
     job = batch_predict.delay(
         str(project.id),
         str(body.ml_backend_id),
@@ -523,23 +572,37 @@ async def preview_orphan_tasks(
     from app.db.models.dataset import ProjectDataset
 
     # 孤儿条件：tasks 不存在仍 link 着的 (dataset_item → dataset → project_datasets)
-    orphan_task_ids = (await db.execute(
-        select(Task.id).where(
-            Task.project_id == project.id,
-            ~Task.id.in_(
-                select(Task.id)
-                .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
-                .join(ProjectDataset, (ProjectDataset.dataset_id == DatasetItem.dataset_id) & (ProjectDataset.project_id == project.id))
-                .where(Task.project_id == project.id)
+    orphan_task_ids = (
+        (
+            await db.execute(
+                select(Task.id).where(
+                    Task.project_id == project.id,
+                    ~Task.id.in_(
+                        select(Task.id)
+                        .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+                        .join(
+                            ProjectDataset,
+                            (ProjectDataset.dataset_id == DatasetItem.dataset_id)
+                            & (ProjectDataset.project_id == project.id),
+                        )
+                        .where(Task.project_id == project.id)
+                    ),
+                )
             )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
     task_count = len(orphan_task_ids)
     ann_count = 0
     if orphan_task_ids:
-        ann_count = (await db.execute(
-            select(func.count(Annotation.id)).where(Annotation.task_id.in_(list(orphan_task_ids)))
-        )).scalar() or 0
+        ann_count = (
+            await db.execute(
+                select(func.count(Annotation.id)).where(
+                    Annotation.task_id.in_(list(orphan_task_ids))
+                )
+            )
+        ).scalar() or 0
     return {"orphan_tasks": task_count, "orphan_annotations": int(ann_count)}
 
 
@@ -580,66 +643,86 @@ async def cleanup_orphan_tasks(
         "  WHERE t.project_id = :pid"
         ")"
     )
-    ann_count = (await db.execute(
-        text(f"SELECT COUNT(*) FROM annotations WHERE task_id IN ({orphan_subq})"),
-        {"pid": pid},
-    )).scalar() or 0
+    ann_count = (
+        await db.execute(
+            text(f"SELECT COUNT(*) FROM annotations WHERE task_id IN ({orphan_subq})"),
+            {"pid": pid},
+        )
+    ).scalar() or 0
 
-    await db.execute(text(
-        f"DELETE FROM annotation_comments WHERE annotation_id IN ("
-        f"  SELECT id FROM annotations WHERE task_id IN ({orphan_subq}))"
-    ), {"pid": pid})
-    await db.execute(text(
-        f"DELETE FROM annotation_drafts WHERE task_id IN ({orphan_subq})"
-    ), {"pid": pid})
-    await db.execute(text(
-        f"UPDATE annotations SET parent_prediction_id = NULL, parent_annotation_id = NULL "
-        f"WHERE task_id IN ({orphan_subq})"
-    ), {"pid": pid})
-    await db.execute(text(
-        f"DELETE FROM annotations WHERE task_id IN ({orphan_subq})"
-    ), {"pid": pid})
-    await db.execute(text(
-        f"DELETE FROM task_locks WHERE task_id IN ({orphan_subq})"
-    ), {"pid": pid})
-    await db.execute(text(
-        f"UPDATE bug_reports SET task_id = NULL WHERE task_id IN ({orphan_subq})"
-    ), {"pid": pid})
-    await db.execute(text(
-        f"DELETE FROM tasks WHERE id IN ({orphan_subq})"
-    ), {"pid": pid})
+    await db.execute(
+        text(
+            f"DELETE FROM annotation_comments WHERE annotation_id IN ("
+            f"  SELECT id FROM annotations WHERE task_id IN ({orphan_subq}))"
+        ),
+        {"pid": pid},
+    )
+    await db.execute(
+        text(f"DELETE FROM annotation_drafts WHERE task_id IN ({orphan_subq})"),
+        {"pid": pid},
+    )
+    await db.execute(
+        text(
+            f"UPDATE annotations SET parent_prediction_id = NULL, parent_annotation_id = NULL "
+            f"WHERE task_id IN ({orphan_subq})"
+        ),
+        {"pid": pid},
+    )
+    await db.execute(
+        text(f"DELETE FROM annotations WHERE task_id IN ({orphan_subq})"), {"pid": pid}
+    )
+    await db.execute(
+        text(f"DELETE FROM task_locks WHERE task_id IN ({orphan_subq})"), {"pid": pid}
+    )
+    await db.execute(
+        text(f"UPDATE bug_reports SET task_id = NULL WHERE task_id IN ({orphan_subq})"),
+        {"pid": pid},
+    )
+    await db.execute(
+        text(f"DELETE FROM tasks WHERE id IN ({orphan_subq})"), {"pid": pid}
+    )
 
     # 重算 project + batch counters（v0.7.0：含 in_progress_tasks）
     from sqlalchemy import select, func
     from app.db.models.task import Task
     from app.db.models.task_batch import TaskBatch
-    row = (await db.execute(
-        select(
-            func.count().label("total"),
-            func.count().filter(Task.status == "completed").label("completed"),
-            func.count().filter(Task.status == "review").label("review"),
-            func.count().filter(Task.status == "in_progress").label("in_progress"),
-        ).where(Task.project_id == project.id)
-    )).one()
+
+    row = (
+        await db.execute(
+            select(
+                func.count().label("total"),
+                func.count().filter(Task.status == "completed").label("completed"),
+                func.count().filter(Task.status == "review").label("review"),
+                func.count().filter(Task.status == "in_progress").label("in_progress"),
+            ).where(Task.project_id == project.id)
+        )
+    ).one()
     project.total_tasks = row.total
     project.completed_tasks = row.completed
     project.review_tasks = row.review
     project.in_progress_tasks = row.in_progress
 
-    batches = (await db.execute(select(TaskBatch).where(TaskBatch.project_id == project.id))).scalars().all()
+    batches = (
+        (await db.execute(select(TaskBatch).where(TaskBatch.project_id == project.id)))
+        .scalars()
+        .all()
+    )
     for b in batches:
-        r = (await db.execute(
-            select(
-                func.count().label("total"),
-                func.count().filter(Task.status == "completed").label("completed"),
-                func.count().filter(Task.status == "review").label("review"),
-            ).where(Task.batch_id == b.id)
-        )).one()
+        r = (
+            await db.execute(
+                select(
+                    func.count().label("total"),
+                    func.count().filter(Task.status == "completed").label("completed"),
+                    func.count().filter(Task.status == "review").label("review"),
+                ).where(Task.batch_id == b.id)
+            )
+        ).one()
         b.total_tasks = r.total
         b.completed_tasks = r.completed
         b.review_tasks = r.review
 
-    from app.services.audit import AuditAction, AuditService
+    from app.services.audit import AuditService
+
     await AuditService.log(
         db,
         actor=current_user,
@@ -667,31 +750,39 @@ async def list_project_datasets(
     from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
     from app.db.models.task import Task
 
-    rows = (await db.execute(
-        select(Dataset, ProjectDataset.created_at.label("linked_at"))
-        .join(ProjectDataset, ProjectDataset.dataset_id == Dataset.id)
-        .where(ProjectDataset.project_id == project_id)
-        .order_by(ProjectDataset.created_at.desc())
-    )).all()
+    rows = (
+        await db.execute(
+            select(Dataset, ProjectDataset.created_at.label("linked_at"))
+            .join(ProjectDataset, ProjectDataset.dataset_id == Dataset.id)
+            .where(ProjectDataset.project_id == project_id)
+            .order_by(ProjectDataset.created_at.desc())
+        )
+    ).all()
 
     if not rows:
         return []
 
     ds_ids = [r[0].id for r in rows]
     item_counts = dict(
-        (await db.execute(
-            select(DatasetItem.dataset_id, func.count())
-            .where(DatasetItem.dataset_id.in_(ds_ids))
-            .group_by(DatasetItem.dataset_id)
-        )).all()
+        (
+            await db.execute(
+                select(DatasetItem.dataset_id, func.count())
+                .where(DatasetItem.dataset_id.in_(ds_ids))
+                .group_by(DatasetItem.dataset_id)
+            )
+        ).all()
     )
     task_counts = dict(
-        (await db.execute(
-            select(DatasetItem.dataset_id, func.count())
-            .join(Task, Task.dataset_item_id == DatasetItem.id)
-            .where(Task.project_id == project_id, DatasetItem.dataset_id.in_(ds_ids))
-            .group_by(DatasetItem.dataset_id)
-        )).all()
+        (
+            await db.execute(
+                select(DatasetItem.dataset_id, func.count())
+                .join(Task, Task.dataset_item_id == DatasetItem.id)
+                .where(
+                    Task.project_id == project_id, DatasetItem.dataset_id.in_(ds_ids)
+                )
+                .group_by(DatasetItem.dataset_id)
+            )
+        ).all()
     )
 
     return [

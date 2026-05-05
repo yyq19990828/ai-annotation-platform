@@ -11,6 +11,7 @@ Revision ID: 0023
 Revises: 0022
 Create Date: 2026-05-02
 """
+
 from alembic import op
 import sqlalchemy as sa
 

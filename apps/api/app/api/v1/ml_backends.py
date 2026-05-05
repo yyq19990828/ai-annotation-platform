@@ -1,12 +1,18 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, require_roles
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
-from app.schemas.ml_backend import MLBackendCreate, MLBackendUpdate, MLBackendOut, MLBackendHealthResponse, InteractiveRequest
+from app.schemas.ml_backend import (
+    MLBackendCreate,
+    MLBackendUpdate,
+    MLBackendOut,
+    MLBackendHealthResponse,
+    InteractiveRequest,
+)
 from app.services.ml_backend import MLBackendService
 from app.services.ml_client import MLBackendClient
 
@@ -41,7 +47,9 @@ async def create_ml_backend(
 async def list_ml_backends(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)),
+    current_user: User = Depends(
+        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
+    ),
 ):
     svc = MLBackendService(db)
     return await svc.list_by_project(project_id)
@@ -52,7 +60,9 @@ async def get_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)),
+    current_user: User = Depends(
+        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
+    ),
 ):
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
@@ -132,7 +142,12 @@ async def predict_test(
 
     client = MLBackendClient(backend)
     results = await client.predict([{"id": str(task.id), "file_path": task.file_path}])
-    return {"results": [{"task_id": r.task_id, "result": r.result, "score": r.score} for r in results]}
+    return {
+        "results": [
+            {"task_id": r.task_id, "result": r.result, "score": r.score}
+            for r in results
+        ]
+    }
 
 
 @router.post("/{backend_id}/interactive-annotating")
@@ -141,14 +156,19 @@ async def interactive_annotating(
     backend_id: uuid.UUID,
     body: InteractiveRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)),
+    current_user: User = Depends(
+        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
+    ),
 ):
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
     if not backend:
         raise HTTPException(status_code=404, detail="ML Backend not found")
     if not backend.is_interactive:
-        raise HTTPException(status_code=400, detail="This backend does not support interactive annotation")
+        raise HTTPException(
+            status_code=400,
+            detail="This backend does not support interactive annotation",
+        )
 
     task = await db.get(Task, body.task_id)
     if not task:
@@ -159,4 +179,8 @@ async def interactive_annotating(
         task_data={"id": str(task.id), "file_path": task.file_path},
         context=body.context,
     )
-    return {"result": result.result, "score": result.score, "inference_time_ms": result.inference_time_ms}
+    return {
+        "result": result.result,
+        "score": result.score,
+        "inference_time_ms": result.inference_time_ms,
+    }

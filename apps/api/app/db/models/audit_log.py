@@ -14,7 +14,10 @@ class AuditLog(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     actor_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     actor_email: Mapped[str | None] = mapped_column(String(255))
     actor_role: Mapped[str | None] = mapped_column(String(32))
@@ -28,7 +31,9 @@ class AuditLog(Base):
     detail_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     # v0.6.6 · 一次 HTTP 请求触发的所有 audit 行共享同一 request_id（中间件 + 业务层）
     # 前端按此字段折叠为「双行 UI 合并视图」（metadata 行 + N 条 business detail 行）
-    request_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(
+        String(36), index=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

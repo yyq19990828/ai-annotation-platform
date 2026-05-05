@@ -59,7 +59,9 @@ def infer_file_type(suffix: str) -> str:
     return "other"
 
 
-async def import_to_dataset(image_dir: str, dataset_name: str | None, folder_name: str | None, limit: int | None) -> None:
+async def import_to_dataset(
+    image_dir: str, dataset_name: str | None, folder_name: str | None, limit: int | None
+) -> None:
     folder = Path(image_dir)
     if not folder.is_dir():
         print(f"错误: {image_dir} 不是有效的文件夹")
@@ -69,8 +71,7 @@ async def import_to_dataset(image_dir: str, dataset_name: str | None, folder_nam
     bucket_folder = folder_name or name
 
     images = sorted(
-        p for p in folder.iterdir()
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTS
+        p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTS
     )
     if not images:
         print(f"错误: {image_dir} 中未找到图片文件")
@@ -126,7 +127,9 @@ async def import_to_dataset(image_dir: str, dataset_name: str | None, folder_nam
             )
             db.add(item)
             imported += 1
-            print(f"  [{imported:>3}/{len(images)}] {img_path.name} → {bucket}/{storage_key}")
+            print(
+                f"  [{imported:>3}/{len(images)}] {img_path.name} → {bucket}/{storage_key}"
+            )
 
         ds.file_count = imported
         await db.commit()
@@ -141,7 +144,9 @@ def main():
     parser = argparse.ArgumentParser(description="批量导入本地图片到数据集")
     parser.add_argument("image_dir", help="本地图片文件夹路径")
     parser.add_argument("--name", default=None, help="数据集名称（默认使用文件夹名）")
-    parser.add_argument("--folder", default=None, help="datasets 桶内文件夹名（默认同 --name）")
+    parser.add_argument(
+        "--folder", default=None, help="datasets 桶内文件夹名（默认同 --name）"
+    )
     parser.add_argument("--limit", type=int, default=None, help="最多导入几张")
     args = parser.parse_args()
     asyncio.run(import_to_dataset(args.image_dir, args.name, args.folder, args.limit))

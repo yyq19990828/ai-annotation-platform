@@ -12,7 +12,7 @@ from sqlalchemy import select, func, or_, update, delete
 from pydantic import BaseModel
 
 from app.config import settings
-from app.deps import get_db, require_roles, get_current_user
+from app.deps import get_db, require_roles
 from app.db.models.user import User
 from app.db.enums import UserRole
 from app.schemas.user import UserOut
@@ -80,7 +80,9 @@ async def _target_only_in_actor_projects(
 @router.get("", response_model=list[UserOut])
 async def list_users(
     role: str | None = None,
-    project_id: UUID | None = Query(None, description="可选项目过滤；project_admin 入参被忽略，强制限定到其管理项目"),
+    project_id: UUID | None = Query(
+        None, description="可选项目过滤；project_admin 入参被忽略，强制限定到其管理项目"
+    ),
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_roles(*_MANAGERS)),
 ):
@@ -110,7 +112,9 @@ async def list_users(
             q = q.where(or_(User.id.in_(members_subq), User.id == actor.id))
     elif project_id is not None:
         # super_admin 显式按项目过滤
-        members_subq = select(ProjectMember.user_id).where(ProjectMember.project_id == project_id)
+        members_subq = select(ProjectMember.user_id).where(
+            ProjectMember.project_id == project_id
+        )
         q = q.where(User.id.in_(members_subq))
 
     result = await db.execute(q.order_by(User.created_at.desc()))
@@ -128,10 +132,16 @@ async def export_users(
     actor: User = Depends(require_roles(*_MANAGERS)),
 ):
     rows = (
-        await db.execute(
-            select(User).where(User.is_active.is_(True)).order_by(User.created_at.desc())
+        (
+            await db.execute(
+                select(User)
+                .where(User.is_active.is_(True))
+                .order_by(User.created_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
@@ -172,18 +182,31 @@ async def export_users(
     # Excel UTF-8 BOM 兼容
     buf.write("﻿")
     writer = csv.writer(buf)
-    writer.writerow(["id", "email", "name", "role", "group_name", "group_id", "status", "created_at"])
+    writer.writerow(
+        [
+            "id",
+            "email",
+            "name",
+            "role",
+            "group_name",
+            "group_id",
+            "status",
+            "created_at",
+        ]
+    )
     for u in rows:
-        writer.writerow([
-            str(u.id),
-            u.email,
-            u.name,
-            u.role,
-            u.group_name or "",
-            str(u.group_id) if u.group_id else "",
-            u.status,
-            u.created_at.isoformat(),
-        ])
+        writer.writerow(
+            [
+                str(u.id),
+                u.email,
+                u.name,
+                u.role,
+                u.group_name or "",
+                str(u.group_id) if u.group_id else "",
+                u.status,
+                u.created_at.isoformat(),
+            ]
+        )
     body = buf.getvalue()
 
     await AuditService.log(
@@ -279,7 +302,10 @@ async def change_user_role(
             raise HTTPException(status_code=403, detail="该用户不在你管理的项目内")
 
     # —— super_admin 兜底：最后一名 super_admin 不可被降级 ——
-    if old_role == UserRole.SUPER_ADMIN.value and new_role != UserRole.SUPER_ADMIN.value:
+    if (
+        old_role == UserRole.SUPER_ADMIN.value
+        and new_role != UserRole.SUPER_ADMIN.value
+    ):
         if await _count_active_super_admins(db) <= 1:
             raise HTTPException(status_code=400, detail="不能降级最后一名超级管理员")
 
@@ -301,6 +327,7 @@ async def change_user_role(
 
 class DeleteUserPayload(BaseModel):
     """可选转交目标 —— 当 target 仍持有未完成任务时必填。"""
+
     transfer_to_user_id: UUID | None = None
 
 
@@ -311,7 +338,9 @@ _PENDING_TASK_STATUSES = (
 )
 
 
-async def _count_pending_tasks(db: AsyncSession, *, target_id: UUID) -> tuple[int, list[str]]:
+async def _count_pending_tasks(
+    db: AsyncSession, *, target_id: UUID
+) -> tuple[int, list[str]]:
     """返回 (pending_count, sample_task_ids[5])。"""
     from app.db.models.task import Task
 
@@ -369,7 +398,9 @@ async def delete_user(
 
     if actor.role == UserRole.PROJECT_ADMIN.value:
         if user.role not in _PA_ASSIGNABLE_ROLES:
-            raise HTTPException(status_code=403, detail="项目管理员仅能删除其项目内的标注员/审核员")
+            raise HTTPException(
+                status_code=403, detail="项目管理员仅能删除其项目内的标注员/审核员"
+            )
         if not await _project_admin_manages_target(db, actor=actor, target=user):
             raise HTTPException(status_code=403, detail="该用户不在你管理的项目内")
         if not await _target_only_in_actor_projects(db, actor=actor, target=user):
@@ -406,12 +437,19 @@ async def delete_user(
             raise HTTPException(status_code=400, detail="转交目标用户不存在或已禁用")
         if receiver.id == user.id:
             raise HTTPException(status_code=400, detail="转交目标不能与被删用户相同")
-        if receiver.role not in _PA_ASSIGNABLE_ROLES and receiver.role != UserRole.PROJECT_ADMIN.value:
+        if (
+            receiver.role not in _PA_ASSIGNABLE_ROLES
+            and receiver.role != UserRole.PROJECT_ADMIN.value
+        ):
             raise HTTPException(status_code=400, detail="转交目标角色不合法")
         if actor.role == UserRole.PROJECT_ADMIN.value:
             # project_admin 只能在自己项目内转交
-            if not await _project_admin_manages_target(db, actor=actor, target=receiver):
-                raise HTTPException(status_code=403, detail="转交目标不在你管理的项目内")
+            if not await _project_admin_manages_target(
+                db, actor=actor, target=receiver
+            ):
+                raise HTTPException(
+                    status_code=403, detail="转交目标不在你管理的项目内"
+                )
 
         # 转交未完成任务
         result = await db.execute(
@@ -445,6 +483,7 @@ async def delete_user(
     # v0.6.6 · GDPR：被删用户在 audit_logs 历史行中的 actor_email / actor_role 脱敏
     # 保留 actor_id（FK 仍指向软删后的用户行；用户行真正 DELETE 时 ON DELETE SET NULL 兜底）
     from app.db.models.audit_log import AuditLog
+
     redact_result = await db.execute(
         update(AuditLog)
         .where(AuditLog.actor_id == user.id)
@@ -453,14 +492,16 @@ async def delete_user(
     redacted_rows = redact_result.rowcount or 0
     # 把脱敏行数追加到刚才的 USER_DELETE detail 里，方便审计
     if redacted_rows:
-        last_audit = (await db.execute(
-            select(AuditLog)
-            .where(AuditLog.actor_id == actor.id)
-            .where(AuditLog.action == AuditAction.USER_DELETE.value)
-            .where(AuditLog.target_id == str(user.id))
-            .order_by(AuditLog.id.desc())
-            .limit(1)
-        )).scalar_one_or_none()
+        last_audit = (
+            await db.execute(
+                select(AuditLog)
+                .where(AuditLog.actor_id == actor.id)
+                .where(AuditLog.action == AuditAction.USER_DELETE.value)
+                .where(AuditLog.target_id == str(user.id))
+                .order_by(AuditLog.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
         if last_audit is not None:
             detail = dict(last_audit.detail_json or {})
             detail["redacted_audit_rows"] = redacted_rows
@@ -488,11 +529,15 @@ async def deactivate_user(
 
     if actor.role == UserRole.PROJECT_ADMIN.value:
         if user.role not in _PA_ASSIGNABLE_ROLES:
-            raise HTTPException(status_code=403, detail="项目管理员仅能停用其项目内的标注员/审核员")
+            raise HTTPException(
+                status_code=403, detail="项目管理员仅能停用其项目内的标注员/审核员"
+            )
         if not await _project_admin_manages_target(db, actor=actor, target=user):
             raise HTTPException(status_code=403, detail="该用户不在你管理的项目内")
         if not await _target_only_in_actor_projects(db, actor=actor, target=user):
-            raise HTTPException(status_code=403, detail="该用户跨多个项目，须由超级管理员处理")
+            raise HTTPException(
+                status_code=403, detail="该用户跨多个项目，须由超级管理员处理"
+            )
 
     if user.role == UserRole.SUPER_ADMIN.value:
         if await _count_active_super_admins(db) <= 1:

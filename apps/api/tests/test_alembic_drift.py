@@ -8,6 +8,7 @@
 （PG 类型与 SA 类型映射 / server_default 字符串差异）。仅校验列存在性 + PK，
 够用作 sanity check。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -25,7 +26,9 @@ async def test_models_match_database(test_engine, apply_migrations):
     drift: list[str] = []
     for tbl_name, model_tbl in Base.metadata.tables.items():
         if tbl_name not in reflected.tables:
-            drift.append(f"表 `{tbl_name}` 在模型中存在，但数据库无（migration 漏写？）")
+            drift.append(
+                f"表 `{tbl_name}` 在模型中存在，但数据库无（migration 漏写？）"
+            )
             continue
         db_tbl = reflected.tables[tbl_name]
         model_cols = {c.name for c in model_tbl.columns}
@@ -38,8 +41,14 @@ async def test_models_match_database(test_engine, apply_migrations):
             drift.append(f"`{tbl_name}`：库有但模型没的列 {sorted(missing_in_model)}")
 
     # 反向：库中表多于模型（可能是 alembic_version / 历史遗留 / 未注册到 __init__.py 的模型）
-    db_only_tables = set(reflected.tables.keys()) - set(Base.metadata.tables.keys()) - {"alembic_version"}
+    db_only_tables = (
+        set(reflected.tables.keys())
+        - set(Base.metadata.tables.keys())
+        - {"alembic_version"}
+    )
     if db_only_tables:
-        drift.append(f"库有但 Base.metadata 没的表 {sorted(db_only_tables)}（可能 model 未在 __init__.py 注册）")
+        drift.append(
+            f"库有但 Base.metadata 没的表 {sorted(db_only_tables)}（可能 model 未在 __init__.py 注册）"
+        )
 
     assert not drift, "检测到 model ↔ migration drift:\n  - " + "\n  - ".join(drift)

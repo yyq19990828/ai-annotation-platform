@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
@@ -49,9 +49,7 @@ class PredictionService:
         )
         self.db.add(meta)
 
-        await self.db.execute(
-            select(Task).where(Task.id == task_id).with_for_update()
-        )
+        await self.db.execute(select(Task).where(Task.id == task_id).with_for_update())
         task = await self.db.get(Task, task_id)
         if task:
             task.total_predictions = (task.total_predictions or 0) + 1
@@ -81,7 +79,9 @@ class PredictionService:
         await self.db.flush()
         return failed
 
-    async def list_by_task(self, task_id: uuid.UUID, model_version: str | None = None) -> list[Prediction]:
+    async def list_by_task(
+        self, task_id: uuid.UUID, model_version: str | None = None
+    ) -> list[Prediction]:
         q = select(Prediction).where(Prediction.task_id == task_id)
         if model_version:
             q = q.where(Prediction.model_version == model_version)

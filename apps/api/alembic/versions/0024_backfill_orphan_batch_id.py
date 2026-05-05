@@ -11,6 +11,7 @@ Revision ID: 0024
 Revises: 0023
 Create Date: 2026-05-03
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -24,8 +25,9 @@ def upgrade() -> None:
 
     # 1. 确保每个 project 都有 B-DEFAULT；没有就建一个（极少数情况：v0.6.0 之前创建的项目走 0019 应已建过，
     #    但保险起见兼容）
-    projects_without_default = conn.execute(sa.text(
-        """
+    projects_without_default = conn.execute(
+        sa.text(
+            """
         SELECT p.id, p.owner_id
         FROM projects p
         WHERE NOT EXISTS (
@@ -33,18 +35,23 @@ def upgrade() -> None:
             WHERE b.project_id = p.id AND b.display_id = 'B-DEFAULT'
         )
         """
-    )).fetchall()
+        )
+    ).fetchall()
 
     for pid, owner_id in projects_without_default:
-        conn.execute(sa.text(
-            "INSERT INTO task_batches "
-            "(project_id, display_id, name, status, total_tasks, completed_tasks, review_tasks, created_by) "
-            "VALUES (:pid, 'B-DEFAULT', '默认批次', 'active', 0, 0, 0, :owner)"
-        ), {"pid": pid, "owner": owner_id})
+        conn.execute(
+            sa.text(
+                "INSERT INTO task_batches "
+                "(project_id, display_id, name, status, total_tasks, completed_tasks, review_tasks, created_by) "
+                "VALUES (:pid, 'B-DEFAULT', '默认批次', 'active', 0, 0, 0, :owner)"
+            ),
+            {"pid": pid, "owner": owner_id},
+        )
 
     # 2. 把孤儿 task 挂到对应 project 的 B-DEFAULT
-    conn.execute(sa.text(
-        """
+    conn.execute(
+        sa.text(
+            """
         UPDATE tasks
         SET batch_id = b.id
         FROM task_batches b
@@ -52,11 +59,13 @@ def upgrade() -> None:
           AND b.project_id = tasks.project_id
           AND b.display_id = 'B-DEFAULT'
         """
-    ))
+        )
+    )
 
     # 3. 重算每个 batch 的计数器（不止 B-DEFAULT；顺手把所有 batch 一起对齐，便于切割）
-    conn.execute(sa.text(
-        """
+    conn.execute(
+        sa.text(
+            """
         UPDATE task_batches b SET
             total_tasks = sub.total,
             completed_tasks = sub.completed,
@@ -76,17 +85,20 @@ def upgrade() -> None:
         ) sub
         WHERE b.id = sub.batch_id
         """
-    ))
+        )
+    )
 
     # 4. 兜底：没有任何 task 的 batch（如全空的 B-DEFAULT）计数器置零
-    conn.execute(sa.text(
-        """
+    conn.execute(
+        sa.text(
+            """
         UPDATE task_batches SET
             total_tasks = 0, completed_tasks = 0, review_tasks = 0,
             approved_tasks = 0, rejected_tasks = 0
         WHERE id NOT IN (SELECT DISTINCT batch_id FROM tasks WHERE batch_id IS NOT NULL)
         """
-    ))
+        )
+    )
 
 
 def downgrade() -> None:

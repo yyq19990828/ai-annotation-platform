@@ -12,19 +12,27 @@ class MLBackendService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def create(self, project_id: uuid.UUID, name: str, url: str, **kwargs) -> MLBackend:
-        backend = MLBackend(id=uuid.uuid4(), project_id=project_id, name=name, url=url, **kwargs)
+    async def create(
+        self, project_id: uuid.UUID, name: str, url: str, **kwargs
+    ) -> MLBackend:
+        backend = MLBackend(
+            id=uuid.uuid4(), project_id=project_id, name=name, url=url, **kwargs
+        )
         self.db.add(backend)
         await self.db.flush()
         return backend
 
     async def get(self, backend_id: uuid.UUID) -> MLBackend | None:
-        result = await self.db.execute(select(MLBackend).where(MLBackend.id == backend_id))
+        result = await self.db.execute(
+            select(MLBackend).where(MLBackend.id == backend_id)
+        )
         return result.scalar_one_or_none()
 
     async def list_by_project(self, project_id: uuid.UUID) -> list[MLBackend]:
         result = await self.db.execute(
-            select(MLBackend).where(MLBackend.project_id == project_id).order_by(MLBackend.created_at.desc())
+            select(MLBackend)
+            .where(MLBackend.project_id == project_id)
+            .order_by(MLBackend.created_at.desc())
         )
         return list(result.scalars().all())
 

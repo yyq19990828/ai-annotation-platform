@@ -7,6 +7,7 @@
 迁移见 `alembic/versions/0021_unify_display_id.py`：建 5 个序列、回填存量、
 unique 约束、setval 同步。
 """
+
 from __future__ import annotations
 
 from sqlalchemy import text

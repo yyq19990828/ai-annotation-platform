@@ -21,7 +21,9 @@ class BugReportCreate(BaseModel):
 
 
 class BugReportUpdate(BaseModel):
-    status: str | None = Field(default=None, pattern="^(new|triaged|in_progress|fixed|wont_fix|duplicate)$")
+    status: str | None = Field(
+        default=None, pattern="^(new|triaged|in_progress|fixed|wont_fix|duplicate)$"
+    )
     severity: str | None = Field(default=None, pattern="^(low|medium|high|critical)$")
     title: str | None = Field(default=None, min_length=1, max_length=500)
     description: str | None = None

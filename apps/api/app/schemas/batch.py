@@ -78,6 +78,7 @@ class ProjectDistributeBatches(BaseModel):
     """v0.7.2 · 项目级 batch 分派：在所选 annotator / reviewer 间圆周分派 batch。
     每个 batch 落到 1 个 annotator + 1 个 reviewer。
     """
+
     annotator_ids: list[UUID] = []
     reviewer_ids: list[UUID] = []
     # only_unassigned=True：只分派 annotator_id IS NULL（或 reviewer 为空）的 batch；

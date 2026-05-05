@@ -18,19 +18,26 @@ async def _check_db() -> dict:
     try:
         async with AsyncSessionLocal() as db:
             await db.execute(text("SELECT 1"))
-        return {"status": "ok", "latency_ms": round((time.monotonic() - start) * 1000, 1)}
+        return {
+            "status": "ok",
+            "latency_ms": round((time.monotonic() - start) * 1000, 1),
+        }
     except Exception as e:
         return {"status": "error", "latency_ms": None, "detail": str(e)}
 
 
 async def _check_redis() -> dict:
     import redis.asyncio as aioredis  # noqa: PLC0415
+
     start = time.monotonic()
     try:
         r = aioredis.from_url(settings.redis_url, socket_connect_timeout=3)
         await r.ping()
         await r.aclose()
-        return {"status": "ok", "latency_ms": round((time.monotonic() - start) * 1000, 1)}
+        return {
+            "status": "ok",
+            "latency_ms": round((time.monotonic() - start) * 1000, 1),
+        }
     except Exception as e:
         return {"status": "error", "latency_ms": None, "detail": str(e)}
 
@@ -39,7 +46,10 @@ def _check_minio() -> dict:
     start = time.monotonic()
     try:
         storage_service.client.head_bucket(Bucket=storage_service.bucket)
-        return {"status": "ok", "latency_ms": round((time.monotonic() - start) * 1000, 1)}
+        return {
+            "status": "ok",
+            "latency_ms": round((time.monotonic() - start) * 1000, 1),
+        }
     except Exception as e:
         return {"status": "error", "latency_ms": None, "detail": str(e)}
 

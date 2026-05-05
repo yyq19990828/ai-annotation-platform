@@ -3,14 +3,28 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, get_current_user, require_roles, require_project_visible, require_project_owner
+from app.deps import (
+    get_db,
+    get_current_user,
+    require_roles,
+    require_project_visible,
+    require_project_owner,
+)
 from app.db.enums import UserRole, BatchStatus
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.schemas.batch import (
-    BatchCreate, BatchUpdate, BatchOut, BatchTransition, BatchReject, BatchSplitRequest,
-    ProjectDistributeBatches, BatchDistributeResult,
-    BulkBatchIds, BulkBatchReassign, BulkBatchActionResponse,
+    BatchCreate,
+    BatchUpdate,
+    BatchOut,
+    BatchTransition,
+    BatchReject,
+    BatchSplitRequest,
+    ProjectDistributeBatches,
+    BatchDistributeResult,
+    BulkBatchIds,
+    BulkBatchReassign,
+    BulkBatchActionResponse,
 )
 from app.services.batch import BatchService, assert_can_transition, REVERSE_TRANSITIONS
 from app.services.audit import AuditService, AuditAction
@@ -76,12 +90,16 @@ async def get_unclassified_task_count(
     from sqlalchemy import select as sa_sel, func as sa_func
     from app.db.models.task import Task
 
-    n = (await db.execute(
-        sa_sel(sa_func.count()).select_from(Task).where(
-            Task.project_id == project_id,
-            Task.batch_id.is_(None),
+    n = (
+        await db.execute(
+            sa_sel(sa_func.count())
+            .select_from(Task)
+            .where(
+                Task.project_id == project_id,
+                Task.batch_id.is_(None),
+            )
         )
-    )).scalar() or 0
+    ).scalar() or 0
     return {"count": int(n)}
 
 
@@ -195,7 +213,9 @@ async def transition_batch(
     # v0.7.3：逆向迁移强制 reason（schema 层面 reason 是可选，这里按方向决定是否必填）
     is_reverse = (batch.status, data.target_status) in REVERSE_TRANSITIONS
     if is_reverse and not data.reason:
-        raise HTTPException(status_code=400, detail="reason is required for reverse transition")
+        raise HTTPException(
+            status_code=400, detail="reason is required for reverse transition"
+        )
 
     old_status = batch.status
     batch = await svc.transition(batch_id, data.target_status, current_user.id)
@@ -273,7 +293,11 @@ async def split_batches(
             target_id=str(b.id),
             request=request,
             status_code=200,
-            detail={"name": b.name, "strategy": data.strategy, "total_tasks": b.total_tasks},
+            detail={
+                "name": b.name,
+                "strategy": data.strategy,
+                "total_tasks": b.total_tasks,
+            },
         )
     await db.commit()
     for b in batches:
@@ -340,7 +364,9 @@ async def reject_batch(
     assert_can_transition(current_user, project, batch, "rejected")
 
     batch, affected = await svc.reject_batch(
-        batch_id, feedback=data.feedback, reviewer_id=current_user.id,
+        batch_id,
+        feedback=data.feedback,
+        reviewer_id=current_user.id,
     )
     await AuditService.log(
         db,
@@ -383,8 +409,14 @@ def _bulk_audit_detail(payload: dict, summary: dict) -> dict:
     return {
         "batch_ids": [str(x) for x in payload.get("batch_ids", [])],
         "succeeded": [str(x) for x in summary["succeeded"]],
-        "skipped": [{"batch_id": str(x["batch_id"]), "reason": x["reason"]} for x in summary["skipped"]],
-        "failed": [{"batch_id": str(x["batch_id"]), "reason": x["reason"]} for x in summary["failed"]],
+        "skipped": [
+            {"batch_id": str(x["batch_id"]), "reason": x["reason"]}
+            for x in summary["skipped"]
+        ],
+        "failed": [
+            {"batch_id": str(x["batch_id"]), "reason": x["reason"]}
+            for x in summary["failed"]
+        ],
     }
 
 
@@ -461,9 +493,13 @@ async def bulk_reassign_batches(
     )
     audit_detail = _bulk_audit_detail({"batch_ids": data.batch_ids}, summary)
     if annotator_set:
-        audit_detail["annotator_id"] = str(data.annotator_id) if data.annotator_id else None
+        audit_detail["annotator_id"] = (
+            str(data.annotator_id) if data.annotator_id else None
+        )
     if reviewer_set:
-        audit_detail["reviewer_id"] = str(data.reviewer_id) if data.reviewer_id else None
+        audit_detail["reviewer_id"] = (
+            str(data.reviewer_id) if data.reviewer_id else None
+        )
     await AuditService.log(
         db,
         actor=current_user,
@@ -531,12 +567,18 @@ async def list_batch_audit_logs(
         & (AuditLog.action.in_(bulk_actions))
         & (AuditLog.detail_json.contains({"batch_ids": [str(batch_id)]}))
     )
-    rows = (await db.execute(
-        sa_select(AuditLog)
-        .where(or_(direct, bulk_match))
-        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
-        .limit(limit)
-    )).scalars().all()
+    rows = (
+        (
+            await db.execute(
+                sa_select(AuditLog)
+                .where(or_(direct, bulk_match))
+                .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     return [
         {
@@ -574,7 +616,9 @@ async def export_batch(
     fname = f"{project.display_id}_{batch.display_id}"
 
     if format == "coco":
-        content = await svc.export_coco(project_id, batch_id=batch_id, include_attributes=include_attributes)
+        content = await svc.export_coco(
+            project_id, batch_id=batch_id, include_attributes=include_attributes
+        )
         return Response(
             content=content,
             media_type="application/json",
@@ -582,14 +626,18 @@ async def export_batch(
         )
 
     if format == "yolo":
-        data = await svc.export_yolo(project_id, batch_id=batch_id, include_attributes=include_attributes)
+        data = await svc.export_yolo(
+            project_id, batch_id=batch_id, include_attributes=include_attributes
+        )
         return Response(
             content=data,
             media_type="application/zip",
             headers={"Content-Disposition": f"attachment; filename={fname}_yolo.zip"},
         )
 
-    data = await svc.export_voc(project_id, batch_id=batch_id, include_attributes=include_attributes)
+    data = await svc.export_voc(
+        project_id, batch_id=batch_id, include_attributes=include_attributes
+    )
     return Response(
         content=data,
         media_type="application/zip",

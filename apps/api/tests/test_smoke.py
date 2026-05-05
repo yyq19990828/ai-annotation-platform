@@ -3,6 +3,7 @@
 目的：守住「app 能启动 + 关键 schema 能校验通过」这条最低基线。
 后续在此基础上扩展：audit export filter / 用户角色矩阵 / 权限守卫等。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -24,46 +25,65 @@ def test_project_schema_validates_attribute_hotkey():
     from pydantic import ValidationError
 
     # ✅ valid：boolean + 数字 hotkey
-    ok = ProjectUpdate.model_validate({
-        "attribute_schema": {
-            "fields": [
-                {"key": "occluded", "label": "遮挡", "type": "boolean", "hotkey": "1"},
-                {"key": "ori", "label": "朝向", "type": "select", "options": [{"value": "n", "label": "北"}], "hotkey": "2"},
-            ],
-        },
-    })
+    ok = ProjectUpdate.model_validate(
+        {
+            "attribute_schema": {
+                "fields": [
+                    {
+                        "key": "occluded",
+                        "label": "遮挡",
+                        "type": "boolean",
+                        "hotkey": "1",
+                    },
+                    {
+                        "key": "ori",
+                        "label": "朝向",
+                        "type": "select",
+                        "options": [{"value": "n", "label": "北"}],
+                        "hotkey": "2",
+                    },
+                ],
+            },
+        }
+    )
     assert ok.attribute_schema is not None
 
     # ❌ hotkey 重复
     with pytest.raises(ValidationError):
-        ProjectUpdate.model_validate({
-            "attribute_schema": {
-                "fields": [
-                    {"key": "a", "label": "A", "type": "boolean", "hotkey": "1"},
-                    {"key": "b", "label": "B", "type": "boolean", "hotkey": "1"},
-                ],
-            },
-        })
+        ProjectUpdate.model_validate(
+            {
+                "attribute_schema": {
+                    "fields": [
+                        {"key": "a", "label": "A", "type": "boolean", "hotkey": "1"},
+                        {"key": "b", "label": "B", "type": "boolean", "hotkey": "1"},
+                    ],
+                },
+            }
+        )
 
     # ❌ hotkey 不是 1-9
     with pytest.raises(ValidationError):
-        ProjectUpdate.model_validate({
-            "attribute_schema": {
-                "fields": [
-                    {"key": "a", "label": "A", "type": "boolean", "hotkey": "0"},
-                ],
-            },
-        })
+        ProjectUpdate.model_validate(
+            {
+                "attribute_schema": {
+                    "fields": [
+                        {"key": "a", "label": "A", "type": "boolean", "hotkey": "0"},
+                    ],
+                },
+            }
+        )
 
     # ❌ hotkey 用在 text 字段上（不支持）
     with pytest.raises(ValidationError):
-        ProjectUpdate.model_validate({
-            "attribute_schema": {
-                "fields": [
-                    {"key": "note", "label": "备注", "type": "text", "hotkey": "1"},
-                ],
-            },
-        })
+        ProjectUpdate.model_validate(
+            {
+                "attribute_schema": {
+                    "fields": [
+                        {"key": "note", "label": "备注", "type": "text", "hotkey": "1"},
+                    ],
+                },
+            }
+        )
 
 
 def test_project_iou_threshold_range():
@@ -71,8 +91,14 @@ def test_project_iou_threshold_range():
     from app.schemas.project import ProjectUpdate
     from pydantic import ValidationError
 
-    assert ProjectUpdate.model_validate({"iou_dedup_threshold": 0.7}).iou_dedup_threshold == 0.7
-    assert ProjectUpdate.model_validate({"iou_dedup_threshold": 0.3}).iou_dedup_threshold == 0.3
+    assert (
+        ProjectUpdate.model_validate({"iou_dedup_threshold": 0.7}).iou_dedup_threshold
+        == 0.7
+    )
+    assert (
+        ProjectUpdate.model_validate({"iou_dedup_threshold": 0.3}).iou_dedup_threshold
+        == 0.3
+    )
 
     with pytest.raises(ValidationError):
         ProjectUpdate.model_validate({"iou_dedup_threshold": 0.2})
@@ -85,9 +111,14 @@ def test_audit_query_supports_detail_filter():
     from app.api.v1.audit_logs import _build_base_query
 
     base, count = _build_base_query(
-        action=None, target_type=None, target_id=None,
-        actor_id=None, from_=None, to=None,
-        detail_key="role", detail_value="super_admin",
+        action=None,
+        target_type=None,
+        target_id=None,
+        actor_id=None,
+        from_=None,
+        to=None,
+        detail_key="role",
+        detail_value="super_admin",
     )
     assert base is not None
     assert count is not None

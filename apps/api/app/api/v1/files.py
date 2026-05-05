@@ -1,6 +1,5 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, get_current_user
@@ -59,6 +58,7 @@ async def upload_complete(
 
     if task.file_type == "image":
         from app.workers.media import generate_task_thumbnail
+
         generate_task_thumbnail.delay(str(task_id))
 
     return {"status": "ok", "task_id": str(task_id)}
@@ -85,6 +85,7 @@ async def backfill_project_thumbnails(
     current_user: User = Depends(get_current_user),
 ):
     from app.workers.media import backfill_tasks
+
     task = backfill_tasks.delay(str(project_id))
     return {"status": "queued", "celery_task_id": task.id}
 

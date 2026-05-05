@@ -1,6 +1,7 @@
 """v0.6.6 · PATCH /tasks/{tid}/annotations/{aid} 改 attributes 时
 audit_logs 写入字段级 attribute_change 行（v0.6.3 log_many 后 round-trip 1 行）。
 """
+
 from __future__ import annotations
 
 import uuid
@@ -72,11 +73,17 @@ async def test_attribute_change_writes_one_audit_per_changed_key(
     )
     assert r.status_code == 200, r.text
 
-    rows = (await db_session.execute(
-        select(AuditLog)
-        .where(AuditLog.action == "annotation.attribute_change")
-        .where(AuditLog.target_id == str(ann.id))
-    )).scalars().all()
+    rows = (
+        (
+            await db_session.execute(
+                select(AuditLog)
+                .where(AuditLog.action == "annotation.attribute_change")
+                .where(AuditLog.target_id == str(ann.id))
+            )
+        )
+        .scalars()
+        .all()
+    )
     # 3 个 key 变化 → 3 条审计行
     assert len(rows) == 3
     field_keys = {r.detail_json["field_key"] for r in rows}

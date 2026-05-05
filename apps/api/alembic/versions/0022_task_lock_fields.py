@@ -17,6 +17,7 @@ Revision ID: 0022
 Revises: 0021
 Create Date: 2026-05-02
 """
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
@@ -27,16 +28,26 @@ down_revision = "0021"
 
 
 def upgrade() -> None:
-    op.add_column("tasks", sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "tasks", sa.Column("submitted_at", sa.DateTime(timezone=True), nullable=True)
+    )
     op.add_column("tasks", sa.Column("reviewer_id", UUID(as_uuid=True), nullable=True))
-    op.add_column("tasks", sa.Column("reviewer_claimed_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("tasks", sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "tasks",
+        sa.Column("reviewer_claimed_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.add_column(
+        "tasks", sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True)
+    )
     op.add_column("tasks", sa.Column("reject_reason", sa.String(2000), nullable=True))
     op.add_column(
         "tasks",
         sa.Column("reopened_count", sa.Integer(), nullable=False, server_default="0"),
     )
-    op.add_column("tasks", sa.Column("last_reopened_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "tasks",
+        sa.Column("last_reopened_at", sa.DateTime(timezone=True), nullable=True),
+    )
 
     op.create_foreign_key(
         "fk_tasks_reviewer_id_users",

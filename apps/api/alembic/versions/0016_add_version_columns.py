@@ -6,6 +6,7 @@ Revision ID: 0016
 Revises: 0015
 Create Date: 2026-04-30
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -17,8 +18,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("annotations", sa.Column("version", sa.Integer(), server_default="1", nullable=False))
-    op.add_column("tasks", sa.Column("version", sa.Integer(), server_default="1", nullable=False))
+    op.add_column(
+        "annotations",
+        sa.Column("version", sa.Integer(), server_default="1", nullable=False),
+    )
+    op.add_column(
+        "tasks", sa.Column("version", sa.Integer(), server_default="1", nullable=False)
+    )
 
 
 def downgrade() -> None:

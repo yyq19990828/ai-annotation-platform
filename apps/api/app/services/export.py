@@ -21,7 +21,9 @@ class ExportService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def _load_data(self, project_id: uuid.UUID, batch_id: uuid.UUID | None = None):
+    async def _load_data(
+        self, project_id: uuid.UUID, batch_id: uuid.UUID | None = None
+    ):
         project = await self.db.get(Project, project_id)
         if not project:
             return None, [], []
@@ -50,7 +52,13 @@ class ExportService:
 
         return project, tasks, annotations
 
-    async def export_coco(self, project_id: uuid.UUID, *, batch_id: uuid.UUID | None = None, include_attributes: bool = True) -> str:
+    async def export_coco(
+        self,
+        project_id: uuid.UUID,
+        *,
+        batch_id: uuid.UUID | None = None,
+        include_attributes: bool = True,
+    ) -> str:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return json.dumps({})
@@ -60,12 +68,14 @@ class ExportService:
 
         images = []
         for i, t in enumerate(tasks):
-            images.append({
-                "id": i,
-                "file_name": t.file_name,
-                "width": IMG_W,
-                "height": IMG_H,
-            })
+            images.append(
+                {
+                    "id": i,
+                    "file_name": t.file_name,
+                    "width": IMG_W,
+                    "height": IMG_H,
+                }
+            )
         task_id_to_img_id = {t.id: i for i, t in enumerate(tasks)}
 
         coco_annotations = []
@@ -82,7 +92,12 @@ class ExportService:
                 "id": len(coco_annotations),
                 "image_id": img_id,
                 "category_id": cat_map.get(ann.class_name, 0),
-                "bbox": [round(x_px, 2), round(y_px, 2), round(w_px, 2), round(h_px, 2)],
+                "bbox": [
+                    round(x_px, 2),
+                    round(y_px, 2),
+                    round(w_px, 2),
+                    round(h_px, 2),
+                ],
                 "area": round(w_px * h_px, 2),
                 "iscrowd": 0,
             }
@@ -106,7 +121,13 @@ class ExportService:
         }
         return json.dumps(coco, ensure_ascii=False, indent=2)
 
-    async def export_yolo(self, project_id: uuid.UUID, *, batch_id: uuid.UUID | None = None, include_attributes: bool = True) -> bytes:
+    async def export_yolo(
+        self,
+        project_id: uuid.UUID,
+        *,
+        batch_id: uuid.UUID | None = None,
+        include_attributes: bool = True,
+    ) -> bytes:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return b""
@@ -125,7 +146,11 @@ class ExportService:
                 # 包内根目录写一份属性 schema，下游训练 ingest 可解析
                 zf.writestr(
                     "attribute_schema.json",
-                    json.dumps(project.attribute_schema or {"fields": []}, ensure_ascii=False, indent=2),
+                    json.dumps(
+                        project.attribute_schema or {"fields": []},
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
                 )
 
             for t in tasks:
@@ -151,7 +176,13 @@ class ExportService:
 
         return buf.getvalue()
 
-    async def export_voc(self, project_id: uuid.UUID, *, batch_id: uuid.UUID | None = None, include_attributes: bool = True) -> bytes:
+    async def export_voc(
+        self,
+        project_id: uuid.UUID,
+        *,
+        batch_id: uuid.UUID | None = None,
+        include_attributes: bool = True,
+    ) -> bytes:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return b""
@@ -178,14 +209,22 @@ class ExportService:
                     bndbox = SubElement(obj, "bndbox")
                     SubElement(bndbox, "xmin").text = str(round(g["x"] * IMG_W))
                     SubElement(bndbox, "ymin").text = str(round(g["y"] * IMG_H))
-                    SubElement(bndbox, "xmax").text = str(round((g["x"] + g["w"]) * IMG_W))
-                    SubElement(bndbox, "ymax").text = str(round((g["y"] + g["h"]) * IMG_H))
+                    SubElement(bndbox, "xmax").text = str(
+                        round((g["x"] + g["w"]) * IMG_W)
+                    )
+                    SubElement(bndbox, "ymax").text = str(
+                        round((g["y"] + g["h"]) * IMG_H)
+                    )
                     if include_attributes and ann.attributes:
                         extra = SubElement(obj, "extra")
                         for k, v in ann.attributes.items():
-                            SubElement(extra, str(k)).text = str(v) if v is not None else ""
+                            SubElement(extra, str(k)).text = (
+                                str(v) if v is not None else ""
+                            )
 
                 xml_name = t.file_name.rsplit(".", 1)[0] + ".xml"
-                zf.writestr(f"Annotations/{xml_name}", tostring(root, encoding="unicode"))
+                zf.writestr(
+                    f"Annotations/{xml_name}", tostring(root, encoding="unicode")
+                )
 
         return buf.getvalue()

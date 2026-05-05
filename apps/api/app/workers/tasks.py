@@ -7,17 +7,29 @@ from app.workers.celery_app import celery_app
 from app.config import settings
 
 
-def _publish_progress(project_id: str, current: int, total: int, status: str = "running", error: str | None = None):
+def _publish_progress(
+    project_id: str,
+    current: int,
+    total: int,
+    status: str = "running",
+    error: str | None = None,
+):
     r = redis.from_url(settings.redis_url)
     r.publish(
         f"project:{project_id}:preannotate",
-        json.dumps({"current": current, "total": total, "status": status, "error": error}),
+        json.dumps(
+            {"current": current, "total": total, "status": status, "error": error}
+        ),
     )
     r.close()
 
 
 async def _run_batch(project_id: str, ml_backend_id: str, task_ids: list[str] | None):
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.ext.asyncio import (
+        create_async_engine,
+        async_sessionmaker,
+        AsyncSession,
+    )
     from sqlalchemy import select
     from app.db.models.task import Task
     from app.db.models.ml_backend import MLBackend
@@ -25,12 +37,16 @@ async def _run_batch(project_id: str, ml_backend_id: str, task_ids: list[str] | 
     from app.services.prediction import PredictionService
 
     engine = create_async_engine(settings.database_url, echo=False)
-    SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
     async with SessionLocal() as db:
         backend = await db.get(MLBackend, uuid.UUID(ml_backend_id))
         if not backend:
-            _publish_progress(project_id, 0, 0, status="error", error="ML Backend not found")
+            _publish_progress(
+                project_id, 0, 0, status="error", error="ML Backend not found"
+            )
             return
 
         if task_ids:
@@ -38,7 +54,9 @@ async def _run_batch(project_id: str, ml_backend_id: str, task_ids: list[str] | 
             result = await db.execute(select(Task).where(Task.id.in_(uuids)))
         else:
             result = await db.execute(
-                select(Task).where(Task.project_id == uuid.UUID(project_id), Task.status == "pending")
+                select(Task).where(
+                    Task.project_id == uuid.UUID(project_id), Task.status == "pending"
+                )
             )
         tasks = list(result.scalars().all())
         total = len(tasks)
@@ -52,7 +70,9 @@ async def _run_batch(project_id: str, ml_backend_id: str, task_ids: list[str] | 
 
         for i, task in enumerate(tasks):
             try:
-                results = await client.predict([{"id": str(task.id), "file_path": task.file_path}])
+                results = await client.predict(
+                    [{"id": str(task.id), "file_path": task.file_path}]
+                )
                 for pred_result in results:
                     await pred_svc.create_from_ml_result(
                         task_id=task.id,
@@ -82,5 +102,7 @@ async def _run_batch(project_id: str, ml_backend_id: str, task_ids: list[str] | 
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=30)
-def batch_predict(self, project_id: str, ml_backend_id: str, task_ids: list[str] | None = None):
+def batch_predict(
+    self, project_id: str, ml_backend_id: str, task_ids: list[str] | None = None
+):
     asyncio.run(_run_batch(project_id, ml_backend_id, task_ids))

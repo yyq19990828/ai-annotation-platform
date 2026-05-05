@@ -2,6 +2,7 @@
 
 覆盖 add_comment 自动 reopen + 评论端点鉴权。
 """
+
 from __future__ import annotations
 
 import uuid
@@ -9,7 +10,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.bug_report import BugReport, BugComment
+from app.db.models.bug_report import BugReport
 from app.services.bug_report import BugReportService
 from app.services.display_id import next_display_id
 
@@ -18,7 +19,9 @@ def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _seed_bug(db: AsyncSession, reporter_id: uuid.UUID, status: str = "fixed") -> BugReport:
+async def _seed_bug(
+    db: AsyncSession, reporter_id: uuid.UUID, status: str = "fixed"
+) -> BugReport:
     display_id = await next_display_id(db, "bug_reports")
     report = BugReport(
         id=uuid.uuid4(),
@@ -60,7 +63,9 @@ async def test_reporter_comment_on_fixed_triggers_reopen(db_session, annotator):
 
 
 @pytest.mark.asyncio
-async def test_admin_comment_on_fixed_does_not_reopen(db_session, annotator, super_admin):
+async def test_admin_comment_on_fixed_does_not_reopen(
+    db_session, annotator, super_admin
+):
     """管理员评论不触发 reopen，状态保持 fixed。"""
     reporter, _ = annotator
     admin, _ = super_admin
@@ -120,7 +125,9 @@ async def test_reopen_increments_on_repeated_cycles(db_session, annotator, super
 
 
 @pytest.mark.asyncio
-async def test_third_party_cannot_comment(httpx_client_bound, db_session, annotator, reviewer):
+async def test_third_party_cannot_comment(
+    httpx_client_bound, db_session, annotator, reviewer
+):
     """非提交者非管理员调评论端点 → 403。"""
     reporter, _ = annotator
     other, other_token = reviewer  # reviewer 不是项目管理员

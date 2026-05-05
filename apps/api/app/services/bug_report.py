@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.bug_report import BugReport, BugComment
@@ -18,7 +18,9 @@ class BugReportService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def create(self, reporter_id: uuid.UUID, user_role: str, **fields) -> BugReport:
+    async def create(
+        self, reporter_id: uuid.UUID, user_role: str, **fields
+    ) -> BugReport:
         display_id = await next_display_id(self.db, "bug_reports")
         report = BugReport(
             id=uuid.uuid4(),
@@ -92,7 +94,10 @@ class BugReportService:
                 select(BugComment).where(BugComment.bug_report_id == report_id)
             )
             from sqlalchemy import delete as sa_delete
-            await self.db.execute(sa_delete(BugComment).where(BugComment.bug_report_id == report_id))
+
+            await self.db.execute(
+                sa_delete(BugComment).where(BugComment.bug_report_id == report_id)
+            )
             await self.db.delete(report)
             await self.db.flush()
 
@@ -176,7 +181,9 @@ class BugReportService:
         parts: list[str] = []
         for item in items:
             result = await self.db.execute(
-                select(BugComment).where(BugComment.bug_report_id == item.id).order_by(BugComment.created_at)
+                select(BugComment)
+                .where(BugComment.bug_report_id == item.id)
+                .order_by(BugComment.created_at)
             )
             comments = list(result.scalars().all())
             parts.append(self._format_markdown(item, comments))
@@ -187,7 +194,7 @@ class BugReportService:
     def _format_markdown(report: BugReport, comments: list[BugComment]) -> str:
         lines = [
             f"## {report.display_id}: {report.title}",
-            f"",
+            "",
             f"- **Severity**: {report.severity}",
             f"- **Status**: {report.status}",
             f"- **Route**: `{report.route}`",
@@ -205,20 +212,22 @@ class BugReportService:
         if report.screenshot_url:
             lines.append(f"- **Screenshot**: {report.screenshot_url}")
         if report.recent_api_calls:
-            lines.append(f"")
-            lines.append(f"### Recent API Calls")
+            lines.append("")
+            lines.append("### Recent API Calls")
             for call in report.recent_api_calls[:10]:
-                lines.append(f"- `{call.get('method', '?')} {call.get('url', '?')}` → {call.get('status', '?')} ({call.get('ms', '?')}ms)")
+                lines.append(
+                    f"- `{call.get('method', '?')} {call.get('url', '?')}` → {call.get('status', '?')} ({call.get('ms', '?')}ms)"
+                )
         if report.recent_console_errors:
-            lines.append(f"")
-            lines.append(f"### Console Errors")
+            lines.append("")
+            lines.append("### Console Errors")
             for err in report.recent_console_errors[:5]:
                 lines.append(f"- {err.get('msg', '?')}")
-        lines.append(f"")
-        lines.append(f"### Description")
+        lines.append("")
+        lines.append("### Description")
         lines.append(report.description)
         if comments:
-            lines.append(f"")
+            lines.append("")
             lines.append(f"### Comments ({len(comments)})")
             for c in comments:
                 lines.append(f"- [{c.author_id}] {c.body}")
@@ -233,4 +242,3 @@ class BugReportService:
             return False
         overlap = len(words_a & words_b)
         return overlap / min(len(words_a), len(words_b)) > 0.5
-

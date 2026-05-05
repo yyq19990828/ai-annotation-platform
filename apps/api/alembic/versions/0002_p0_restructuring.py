@@ -4,6 +4,7 @@ Revision ID: 0002
 Revises: 0001
 Create Date: 2026-04-28
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -48,23 +49,49 @@ def upgrade() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("slug", sa.String(100), nullable=False),
         sa.Column("contact_info", JSONB(), nullable=False, server_default="{}"),
-        sa.Column("created_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_by", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("ix_organizations_slug", "organizations", ["slug"], unique=True)
 
     op.create_table(
         "organization_members",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("organization_id", UUID(as_uuid=True), sa.ForeignKey("organizations.id"), nullable=False),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "organization_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("organizations.id"),
+            nullable=False,
+        ),
+        sa.Column(
+            "user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("role", sa.String(30), nullable=False, server_default="member"),
-        sa.Column("joined_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "joined_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.Column("deleted_at", sa.DateTime(timezone=True)),
         sa.UniqueConstraint("organization_id", "user_id", name="uq_org_member"),
     )
-    op.create_index("ix_org_members_org_id", "organization_members", ["organization_id"])
+    op.create_index(
+        "ix_org_members_org_id", "organization_members", ["organization_id"]
+    )
     op.create_index("ix_org_members_user_id", "organization_members", ["user_id"])
 
     # ── 3. ML Backends ───────────────────────────────────────────────────────
@@ -72,17 +99,36 @@ def upgrade() -> None:
     op.create_table(
         "ml_backends",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("project_id", UUID(as_uuid=True), sa.ForeignKey("projects.id"), nullable=False),
+        sa.Column(
+            "project_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("projects.id"),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("url", sa.String(1000), nullable=False),
-        sa.Column("state", sa.String(30), nullable=False, server_default="disconnected"),
-        sa.Column("is_interactive", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column(
+            "state", sa.String(30), nullable=False, server_default="disconnected"
+        ),
+        sa.Column(
+            "is_interactive", sa.Boolean(), nullable=False, server_default="false"
+        ),
         sa.Column("auth_method", sa.String(20), nullable=False, server_default="none"),
         sa.Column("auth_token", sa.String(500)),
         sa.Column("extra_params", JSONB(), nullable=False, server_default="{}"),
         sa.Column("error_message", sa.Text()),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("ix_ml_backends_project_id", "ml_backends", ["project_id"])
 
@@ -92,29 +138,53 @@ def upgrade() -> None:
         "failed_predictions",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("task_id", UUID(as_uuid=True), sa.ForeignKey("tasks.id")),
-        sa.Column("project_id", UUID(as_uuid=True), sa.ForeignKey("projects.id"), nullable=False),
+        sa.Column(
+            "project_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("projects.id"),
+            nullable=False,
+        ),
         sa.Column("ml_backend_id", UUID(as_uuid=True), sa.ForeignKey("ml_backends.id")),
         sa.Column("model_version", sa.String(100)),
         sa.Column("error_type", sa.String(100), nullable=False),
         sa.Column("message", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
-    op.create_index("ix_failed_predictions_project_id", "failed_predictions", ["project_id"])
+    op.create_index(
+        "ix_failed_predictions_project_id", "failed_predictions", ["project_id"]
+    )
 
     # ── 5. Predictions ─────────��───────────────────────────────��─────────────
 
     op.create_table(
         "predictions",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("task_id", UUID(as_uuid=True), sa.ForeignKey("tasks.id"), nullable=False),
-        sa.Column("project_id", UUID(as_uuid=True), sa.ForeignKey("projects.id"), nullable=False),
+        sa.Column(
+            "task_id", UUID(as_uuid=True), sa.ForeignKey("tasks.id"), nullable=False
+        ),
+        sa.Column(
+            "project_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("projects.id"),
+            nullable=False,
+        ),
         sa.Column("ml_backend_id", UUID(as_uuid=True), sa.ForeignKey("ml_backends.id")),
         sa.Column("model_version", sa.String(100)),
         sa.Column("score", sa.Float()),
         sa.Column("result", JSONB(), nullable=False),
         sa.Column("cluster", sa.Integer()),
         sa.Column("mislabeling", sa.Float()),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("ix_predictions_task_id", "predictions", ["task_id"])
     op.create_index("ix_predictions_project_id", "predictions", ["project_id"])
@@ -124,8 +194,17 @@ def upgrade() -> None:
     op.create_table(
         "prediction_metas",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("prediction_id", UUID(as_uuid=True), sa.ForeignKey("predictions.id"), unique=True),
-        sa.Column("failed_prediction_id", UUID(as_uuid=True), sa.ForeignKey("failed_predictions.id")),
+        sa.Column(
+            "prediction_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("predictions.id"),
+            unique=True,
+        ),
+        sa.Column(
+            "failed_prediction_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("failed_predictions.id"),
+        ),
         sa.Column("inference_time_ms", sa.Integer()),
         sa.Column("prompt_tokens", sa.Integer()),
         sa.Column("completion_tokens", sa.Integer()),
@@ -134,7 +213,12 @@ def upgrade() -> None:
         sa.Column("completion_cost", sa.Float()),
         sa.Column("total_cost", sa.Float()),
         sa.Column("extra", JSONB(), nullable=False, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
 
     # ── 7. Task Locks ────────��───────────────────────────────────────────────
@@ -142,11 +226,20 @@ def upgrade() -> None:
     op.create_table(
         "task_locks",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("task_id", UUID(as_uuid=True), sa.ForeignKey("tasks.id"), nullable=False),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "task_id", UUID(as_uuid=True), sa.ForeignKey("tasks.id"), nullable=False
+        ),
+        sa.Column(
+            "user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("expire_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("unique_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.UniqueConstraint("task_id", "user_id", name="uq_task_lock"),
     )
     op.create_index("ix_task_locks_task_id", "task_locks", ["task_id"])
@@ -157,46 +250,134 @@ def upgrade() -> None:
     op.create_table(
         "annotation_drafts",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("task_id", UUID(as_uuid=True), sa.ForeignKey("tasks.id"), nullable=False),
+        sa.Column(
+            "task_id", UUID(as_uuid=True), sa.ForeignKey("tasks.id"), nullable=False
+        ),
         sa.Column("annotation_id", UUID(as_uuid=True), sa.ForeignKey("annotations.id")),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("result", JSONB(), nullable=False),
-        sa.Column("was_postponed", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "was_postponed", sa.Boolean(), nullable=False, server_default="false"
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("ix_annotation_drafts_task_id", "annotation_drafts", ["task_id"])
     op.create_index("ix_annotation_drafts_user_id", "annotation_drafts", ["user_id"])
 
     # ── 9. Enrich projects ────────��───────────────────────────────���──────────
 
-    op.add_column("projects", sa.Column("organization_id", UUID(as_uuid=True), sa.ForeignKey("organizations.id")))
-    op.add_column("projects", sa.Column("label_config", JSONB(), nullable=False, server_default="{}"))
-    op.add_column("projects", sa.Column("sampling", sa.String(30), nullable=False, server_default="sequence"))
-    op.add_column("projects", sa.Column("maximum_annotations", sa.Integer(), nullable=False, server_default="1"))
-    op.add_column("projects", sa.Column("show_overlap_first", sa.Boolean(), nullable=False, server_default="false"))
+    op.add_column(
+        "projects",
+        sa.Column(
+            "organization_id", UUID(as_uuid=True), sa.ForeignKey("organizations.id")
+        ),
+    )
+    op.add_column(
+        "projects",
+        sa.Column("label_config", JSONB(), nullable=False, server_default="{}"),
+    )
+    op.add_column(
+        "projects",
+        sa.Column("sampling", sa.String(30), nullable=False, server_default="sequence"),
+    )
+    op.add_column(
+        "projects",
+        sa.Column(
+            "maximum_annotations", sa.Integer(), nullable=False, server_default="1"
+        ),
+    )
+    op.add_column(
+        "projects",
+        sa.Column(
+            "show_overlap_first", sa.Boolean(), nullable=False, server_default="false"
+        ),
+    )
     op.add_column("projects", sa.Column("model_version", sa.String(100)))
-    op.add_column("projects", sa.Column("task_lock_ttl_seconds", sa.Integer(), nullable=False, server_default="300"))
+    op.add_column(
+        "projects",
+        sa.Column(
+            "task_lock_ttl_seconds", sa.Integer(), nullable=False, server_default="300"
+        ),
+    )
 
     # ── 10. Enrich tasks ───────────────────────────────────────────────���─────
 
-    op.add_column("tasks", sa.Column("is_labeled", sa.Boolean(), nullable=False, server_default="false"))
-    op.add_column("tasks", sa.Column("overlap", sa.Integer(), nullable=False, server_default="1"))
-    op.add_column("tasks", sa.Column("total_annotations", sa.Integer(), nullable=False, server_default="0"))
-    op.add_column("tasks", sa.Column("total_predictions", sa.Integer(), nullable=False, server_default="0"))
+    op.add_column(
+        "tasks",
+        sa.Column("is_labeled", sa.Boolean(), nullable=False, server_default="false"),
+    )
+    op.add_column(
+        "tasks", sa.Column("overlap", sa.Integer(), nullable=False, server_default="1")
+    )
+    op.add_column(
+        "tasks",
+        sa.Column(
+            "total_annotations", sa.Integer(), nullable=False, server_default="0"
+        ),
+    )
+    op.add_column(
+        "tasks",
+        sa.Column(
+            "total_predictions", sa.Integer(), nullable=False, server_default="0"
+        ),
+    )
     op.add_column("tasks", sa.Column("precomputed_agreement", sa.Float()))
-    op.add_column("tasks", sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")))
+    op.add_column(
+        "tasks",
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")
+        ),
+    )
     op.create_index("ix_tasks_is_labeled", "tasks", ["is_labeled"])
 
     # ── 11. Enrich annotations ───��───────────────────────────────────────────
 
-    op.add_column("annotations", sa.Column("project_id", UUID(as_uuid=True), sa.ForeignKey("projects.id")))
-    op.add_column("annotations", sa.Column("parent_prediction_id", UUID(as_uuid=True), sa.ForeignKey("predictions.id")))
-    op.add_column("annotations", sa.Column("parent_annotation_id", UUID(as_uuid=True), sa.ForeignKey("annotations.id")))
+    op.add_column(
+        "annotations",
+        sa.Column("project_id", UUID(as_uuid=True), sa.ForeignKey("projects.id")),
+    )
+    op.add_column(
+        "annotations",
+        sa.Column(
+            "parent_prediction_id", UUID(as_uuid=True), sa.ForeignKey("predictions.id")
+        ),
+    )
+    op.add_column(
+        "annotations",
+        sa.Column(
+            "parent_annotation_id", UUID(as_uuid=True), sa.ForeignKey("annotations.id")
+        ),
+    )
     op.add_column("annotations", sa.Column("lead_time", sa.Float()))
-    op.add_column("annotations", sa.Column("was_cancelled", sa.Boolean(), nullable=False, server_default="false"))
-    op.add_column("annotations", sa.Column("ground_truth", sa.Boolean(), nullable=False, server_default="false"))
-    op.add_column("annotations", sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")))
+    op.add_column(
+        "annotations",
+        sa.Column(
+            "was_cancelled", sa.Boolean(), nullable=False, server_default="false"
+        ),
+    )
+    op.add_column(
+        "annotations",
+        sa.Column("ground_truth", sa.Boolean(), nullable=False, server_default="false"),
+    )
+    op.add_column(
+        "annotations",
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")
+        ),
+    )
 
     # Backfill project_id on existing annotations
     op.execute("""

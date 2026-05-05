@@ -6,6 +6,7 @@
 3. 关联 task 的关键 audit（task.approve / task.reject / task.reopen / task.review_claim
    / task.submit / task.withdraw）— 这些事件直接影响该 annotation 的最终命运
 """
+
 from __future__ import annotations
 
 import uuid
@@ -46,7 +47,9 @@ _RELEVANT_TASK_ACTIONS = (
 )
 
 
-@router.get("/annotations/{annotation_id}/history", response_model=AnnotationHistoryResponse)
+@router.get(
+    "/annotations/{annotation_id}/history", response_model=AnnotationHistoryResponse
+)
 async def get_annotation_history(
     annotation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -60,33 +63,45 @@ async def get_annotation_history(
 
     # 1. annotation 级 audit
     ann_audits = (
-        await db.execute(
-            select(AuditLog).where(
-                AuditLog.target_type == "annotation",
-                AuditLog.target_id == str(annotation_id),
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.target_type == "annotation",
+                    AuditLog.target_id == str(annotation_id),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     # 2. 关联 task 的关键 audit（按 task_id 取，仅 _RELEVANT_TASK_ACTIONS）
     task_audits = (
-        await db.execute(
-            select(AuditLog).where(
-                AuditLog.target_type == "task",
-                AuditLog.target_id == str(ann.task_id),
-                AuditLog.action.in_(_RELEVANT_TASK_ACTIONS),
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.target_type == "task",
+                    AuditLog.target_id == str(ann.task_id),
+                    AuditLog.action.in_(_RELEVANT_TASK_ACTIONS),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     # 3. 评论
     comments = (
-        await db.execute(
-            select(AnnotationComment).where(
-                AnnotationComment.annotation_id == annotation_id,
+        (
+            await db.execute(
+                select(AnnotationComment).where(
+                    AnnotationComment.annotation_id == annotation_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     # 解析 actor / author UserBrief（一次 IN 查询）
     user_ids: set = set()
@@ -103,32 +118,38 @@ async def get_annotation_history(
     entries: list[HistoryEntry] = []
 
     for a in ann_audits:
-        entries.append(HistoryEntry(
-            kind="audit",
-            timestamp=a.created_at,
-            actor=briefs.get(str(a.actor_id)) if a.actor_id else None,
-            action=a.action,
-            detail=a.detail_json,
-        ))
+        entries.append(
+            HistoryEntry(
+                kind="audit",
+                timestamp=a.created_at,
+                actor=briefs.get(str(a.actor_id)) if a.actor_id else None,
+                action=a.action,
+                detail=a.detail_json,
+            )
+        )
 
     for a in task_audits:
-        entries.append(HistoryEntry(
-            kind="audit",
-            timestamp=a.created_at,
-            actor=briefs.get(str(a.actor_id)) if a.actor_id else None,
-            action=a.action,
-            detail=a.detail_json,
-        ))
+        entries.append(
+            HistoryEntry(
+                kind="audit",
+                timestamp=a.created_at,
+                actor=briefs.get(str(a.actor_id)) if a.actor_id else None,
+                action=a.action,
+                detail=a.detail_json,
+            )
+        )
 
     for c in comments:
-        entries.append(HistoryEntry(
-            kind="comment",
-            timestamp=c.created_at,
-            actor=briefs.get(str(c.author_id)),
-            comment_id=c.id,
-            body=c.body,
-            detail={"is_active": c.is_active},
-        ))
+        entries.append(
+            HistoryEntry(
+                kind="comment",
+                timestamp=c.created_at,
+                actor=briefs.get(str(c.author_id)),
+                comment_id=c.id,
+                body=c.body,
+                detail={"is_active": c.is_active},
+            )
+        )
 
     entries.sort(key=lambda e: e.timestamp)
 

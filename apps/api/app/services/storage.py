@@ -71,15 +71,27 @@ class StorageService:
             url = url.replace(internal, settings.minio_public_url.rstrip("/"), 1)
         return url
 
-    def generate_upload_url(self, key: str, content_type: str = "application/octet-stream", expires_in: int = 900, bucket: str | None = None) -> str:
+    def generate_upload_url(
+        self,
+        key: str,
+        content_type: str = "application/octet-stream",
+        expires_in: int = 900,
+        bucket: str | None = None,
+    ) -> str:
         url = self.client.generate_presigned_url(
             "put_object",
-            Params={"Bucket": bucket or self.bucket, "Key": key, "ContentType": content_type},
+            Params={
+                "Bucket": bucket or self.bucket,
+                "Key": key,
+                "ContentType": content_type,
+            },
             ExpiresIn=expires_in,
         )
         return self._public_url(url)
 
-    def generate_download_url(self, key: str, expires_in: int = 3600, bucket: str | None = None) -> str:
+    def generate_download_url(
+        self, key: str, expires_in: int = 3600, bucket: str | None = None
+    ) -> str:
         url = self.client.generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket or self.bucket, "Key": key},
@@ -106,12 +118,14 @@ class StorageService:
                 kwargs["ContinuationToken"] = continuation_token
             resp = self.client.list_objects_v2(**kwargs)
             for obj in resp.get("Contents", []):
-                result.append({
-                    "key": obj["Key"],
-                    "size": obj["Size"],
-                    "last_modified": obj["LastModified"],
-                    "etag": (obj.get("ETag") or "").strip('"'),
-                })
+                result.append(
+                    {
+                        "key": obj["Key"],
+                        "size": obj["Size"],
+                        "last_modified": obj["LastModified"],
+                        "etag": (obj.get("ETag") or "").strip('"'),
+                    }
+                )
             if resp.get("IsTruncated"):
                 continuation_token = resp["NextContinuationToken"]
             else:
@@ -131,10 +145,21 @@ class StorageService:
         try:
             objs = self.list_objects("", bucket=b)
         except ClientError as e:
-            return {"name": b, "status": "error", "object_count": 0, "total_size_bytes": 0, "error": str(e)}
+            return {
+                "name": b,
+                "status": "error",
+                "object_count": 0,
+                "total_size_bytes": 0,
+                "error": str(e),
+            }
         total = sum(o["size"] for o in objs if not o["key"].endswith("/"))
         count = sum(1 for o in objs if not o["key"].endswith("/"))
-        return {"name": b, "status": "ok", "object_count": count, "total_size_bytes": int(total)}
+        return {
+            "name": b,
+            "status": "ok",
+            "object_count": count,
+            "total_size_bytes": int(total),
+        }
 
     def list_all_buckets(self) -> list[str]:
         return [self.bucket, self.datasets_bucket]
@@ -157,7 +182,10 @@ class StorageService:
             return None
 
     def read_image_dimensions(
-        self, key: str, bucket: str | None = None, head_bytes: int = 256 * 1024,
+        self,
+        key: str,
+        bucket: str | None = None,
+        head_bytes: int = 256 * 1024,
     ) -> tuple[int, int] | None:
         """读取对象前若干字节交给 Pillow 解析尺寸。无法解析返回 None；不抛。
 
@@ -172,7 +200,9 @@ class StorageService:
 
         b = bucket or self.bucket
         try:
-            resp = self.client.get_object(Bucket=b, Key=key, Range=f"bytes=0-{head_bytes - 1}")
+            resp = self.client.get_object(
+                Bucket=b, Key=key, Range=f"bytes=0-{head_bytes - 1}"
+            )
             data = resp["Body"].read()
         except ClientError as exc:
             logger.warning("读取对象 head 失败 key=%s err=%s", key, exc)

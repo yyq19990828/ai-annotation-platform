@@ -5,6 +5,7 @@
 - POST /notifications/{id}/read    标记单条
 - POST /notifications/mark-all-read 批量
 """
+
 from __future__ import annotations
 
 import uuid
@@ -86,7 +87,9 @@ async def mark_read(
     svc = NotificationService(db)
     ok = await svc.mark_read(user.id, notification_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="Notification not found or already read")
+        raise HTTPException(
+            status_code=404, detail="Notification not found or already read"
+        )
     await db.commit()
     return {"ok": True}
 
@@ -108,18 +111,28 @@ async def get_preferences(
     user: User = Depends(get_current_user),
 ):
     """v0.7.0：返回所有已知 type 的偏好；无记录默认 in_app=True / email=False。"""
-    rows = (await db.execute(
-        select(NotificationPreference).where(NotificationPreference.user_id == user.id)
-    )).scalars().all()
+    rows = (
+        (
+            await db.execute(
+                select(NotificationPreference).where(
+                    NotificationPreference.user_id == user.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     by_type = {r.type: (r.channels or {}) for r in rows}
     items = []
     for t in KNOWN_NOTIFICATION_TYPES:
         ch = by_type.get(t, {})
-        items.append(NotificationPreferenceItem(
-            type=t,
-            in_app=bool(ch.get("in_app", True)),
-            email=bool(ch.get("email", False)),
-        ))
+        items.append(
+            NotificationPreferenceItem(
+                type=t,
+                in_app=bool(ch.get("in_app", True)),
+                email=bool(ch.get("email", False)),
+            )
+        )
     return NotificationPreferencesOut(items=items)
 
 
@@ -131,17 +144,23 @@ async def update_preference(
 ):
     """v0.7.0：upsert 单条偏好。channels.email 字段保留但 v0.7.0 不消费。"""
     if data.type not in KNOWN_NOTIFICATION_TYPES:
-        raise HTTPException(status_code=400, detail=f"unknown notification type: {data.type}")
+        raise HTTPException(
+            status_code=400, detail=f"unknown notification type: {data.type}"
+        )
 
-    stmt = pg_insert(NotificationPreference).values(
-        user_id=user.id,
-        type=data.type,
-        channels={"in_app": data.in_app, "email": False},
-    ).on_conflict_do_update(
-        index_elements=["user_id", "type"],
-        set_={
-            "channels": {"in_app": data.in_app, "email": False},
-        },
+    stmt = (
+        pg_insert(NotificationPreference)
+        .values(
+            user_id=user.id,
+            type=data.type,
+            channels={"in_app": data.in_app, "email": False},
+        )
+        .on_conflict_do_update(
+            index_elements=["user_id", "type"],
+            set_={
+                "channels": {"in_app": data.in_app, "email": False},
+            },
+        )
     )
     await db.execute(stmt)
     await db.commit()

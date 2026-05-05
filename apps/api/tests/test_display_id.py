@@ -6,6 +6,7 @@
 - 前缀映射正确
 - B-DEFAULT 哨兵不碰撞迁移逻辑（间接：迁移不抛异常）
 """
+
 from __future__ import annotations
 
 import asyncio

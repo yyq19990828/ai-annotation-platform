@@ -4,6 +4,7 @@ Revision ID: 0009
 Revises: 0008
 Create Date: 2026-04-29
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -25,10 +26,16 @@ def upgrade() -> None:
         )
     )
     if result.fetchone() is None:
-        op.add_column("dataset_items", sa.Column("content_hash", sa.String(64), nullable=True))
-        op.create_index("ix_dataset_items_content_hash", "dataset_items", ["content_hash"])
+        op.add_column(
+            "dataset_items", sa.Column("content_hash", sa.String(64), nullable=True)
+        )
+        op.create_index(
+            "ix_dataset_items_content_hash", "dataset_items", ["content_hash"]
+        )
 
-    op.add_column("dataset_items", sa.Column("thumbnail_path", sa.String(512), nullable=True))
+    op.add_column(
+        "dataset_items", sa.Column("thumbnail_path", sa.String(512), nullable=True)
+    )
     op.add_column("dataset_items", sa.Column("blurhash", sa.String(64), nullable=True))
 
 

@@ -7,12 +7,12 @@
 
 本套校验：多行残留下，acquire / is_locked 不再 500，并按"我的锁优先 + 清理重复"的策略归一。
 """
+
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,10 +82,14 @@ class TestTaskLockMultiRowResilience:
         assert lock.user_id == ann_user.id
 
         rows = (
-            await db_session.execute(
-                select(TaskLock).where(TaskLock.task_id == task.id)
+            (
+                await db_session.execute(
+                    select(TaskLock).where(TaskLock.task_id == task.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].user_id == ann_user.id
 
@@ -123,10 +127,14 @@ class TestTaskLockMultiRowResilience:
         assert lock.user_id == ann_user.id
 
         rows = (
-            await db_session.execute(
-                select(TaskLock).where(TaskLock.task_id == task.id)
+            (
+                await db_session.execute(
+                    select(TaskLock).where(TaskLock.task_id == task.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].user_id == ann_user.id
 
@@ -165,10 +173,14 @@ class TestTaskLockMultiRowResilience:
         assert lock1 is not None
         assert lock2 is not None
         rows = (
-            await db_session.execute(
-                select(TaskLock).where(TaskLock.task_id == task.id)
+            (
+                await db_session.execute(
+                    select(TaskLock).where(TaskLock.task_id == task.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].user_id == ann_user.id
 

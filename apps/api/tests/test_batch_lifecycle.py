@@ -7,6 +7,7 @@
 4. TestWithdrawCascade — 标注员 withdraw 后 reviewing → annotating（v0.6.x 既有路径，本版固化）
 5. TestReviewerVisibility — reviewer 在 reviewing 批次的可见性 + annotator 在 rejected 批次的特例
 """
+
 from __future__ import annotations
 
 import uuid
@@ -51,9 +52,14 @@ async def _seed(
     db.add(p)
     await db.flush()
 
-    db.add(ProjectMember(
-        project_id=pid, user_id=annotator_id, role="annotator", assigned_by=owner_id,
-    ))
+    db.add(
+        ProjectMember(
+            project_id=pid,
+            user_id=annotator_id,
+            role="annotator",
+            assigned_by=owner_id,
+        )
+    )
 
     batch = TaskBatch(
         id=uuid.uuid4(),
@@ -93,12 +99,19 @@ async def _seed(
 class TestTransitionAuth:
     @pytest.mark.asyncio
     async def test_annotator_cannot_skip_to_approved(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, _ = super_admin
         user, token = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="reviewing",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="reviewing",
         )
         await db_session.commit()
 
@@ -112,13 +125,20 @@ class TestTransitionAuth:
 
     @pytest.mark.asyncio
     async def test_annotator_can_submit_for_review(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         """annotating → reviewing：被分派的标注员可主动提交质检。"""
         owner, _ = super_admin
         user, token = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="annotating",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
         )
         await db_session.commit()
 
@@ -132,14 +152,21 @@ class TestTransitionAuth:
 
     @pytest.mark.asyncio
     async def test_unassigned_annotator_cannot_submit(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         """未分派到批次的标注员无法把批次推到 reviewing。"""
         owner, _ = super_admin
         user, token = annotator
         # 让 annotator 是项目成员但不在 assigned_user_ids 中
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="annotating",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
         )
         # v0.7.2：清空 annotator_id（单值语义）
         batch.annotator_id = None
@@ -155,14 +182,21 @@ class TestTransitionAuth:
 
     @pytest.mark.asyncio
     async def test_reviewer_can_approve(
-        self, httpx_client_bound, db_session, super_admin, reviewer,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        reviewer,
     ):
         owner, _ = super_admin
         rev, rev_token = reviewer
         # _seed 会把 rev 作为 "annotator" 成员加进去；批次的 assigned_user_ids 包含 rev。
         # transition reviewing→approved 走 _is_reviewer 分支，靠 role==REVIEWER（与成员角色无关）。
         p, batch, _ = await _seed(
-            db_session, owner.id, rev.id, batch_status="reviewing",
+            db_session,
+            owner.id,
+            rev.id,
+            batch_status="reviewing",
         )
         await db_session.commit()
 
@@ -176,12 +210,19 @@ class TestTransitionAuth:
 
     @pytest.mark.asyncio
     async def test_owner_can_archive(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="active",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="active",
         )
         await db_session.commit()
 
@@ -195,12 +236,19 @@ class TestTransitionAuth:
 
     @pytest.mark.asyncio
     async def test_annotator_cannot_archive(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, _ = super_admin
         user, token = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="active",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="active",
         )
         await db_session.commit()
 
@@ -218,13 +266,19 @@ class TestTransitionAuth:
 class TestRejectBatchSoftReset:
     @pytest.mark.asyncio
     async def test_reject_resets_only_review_completed_to_pending(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         """方案 A 软重置：review/completed → pending；is_labeled / annotations 保持。"""
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             batch_status="reviewing",
             task_status="review",
             is_labeled=True,
@@ -232,16 +286,18 @@ class TestRejectBatchSoftReset:
         )
         # 给两个任务塞 annotation（模拟标注员已画了几个框）
         for t in tasks[:2]:
-            db_session.add(Annotation(
-                id=uuid.uuid4(),
-                task_id=t.id,
-                project_id=p.id,
-                user_id=user.id,
-                annotation_type="bbox",
-                class_name="car",
-                geometry={"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
-                is_active=True,
-            ))
+            db_session.add(
+                Annotation(
+                    id=uuid.uuid4(),
+                    task_id=t.id,
+                    project_id=p.id,
+                    user_id=user.id,
+                    annotation_type="bbox",
+                    class_name="car",
+                    geometry={"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+                    is_active=True,
+                )
+            )
         await db_session.commit()
 
         resp = await httpx_client_bound.post(
@@ -263,21 +319,36 @@ class TestRejectBatchSoftReset:
             # is_labeled 不应被重置（v0.6.x 老语义会清掉，v0.7.0 软重置保留）
             assert t.is_labeled is True
 
-        ann_rows = (await db_session.execute(
-            select(Annotation).where(Annotation.task_id.in_([t.id for t in tasks]))
-        )).scalars().all()
+        ann_rows = (
+            (
+                await db_session.execute(
+                    select(Annotation).where(
+                        Annotation.task_id.in_([t.id for t in tasks])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         # annotations 全部保持 is_active
         assert len(ann_rows) == 2
         assert all(a.is_active for a in ann_rows)
 
     @pytest.mark.asyncio
     async def test_reject_creates_notification_for_assigned(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="reviewing",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="reviewing",
         )
         await db_session.commit()
 
@@ -289,24 +360,37 @@ class TestRejectBatchSoftReset:
         assert resp.status_code == 200
 
         # annotator 应有 batch.rejected 通知
-        notif_rows = (await db_session.execute(
-            select(Notification).where(
-                Notification.user_id == user.id,
-                Notification.type == "batch.rejected",
+        notif_rows = (
+            (
+                await db_session.execute(
+                    select(Notification).where(
+                        Notification.user_id == user.id,
+                        Notification.type == "batch.rejected",
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(notif_rows) == 1
         assert notif_rows[0].payload.get("feedback") == "需要重做"
         assert notif_rows[0].payload.get("batch_display_id") == batch.display_id
 
     @pytest.mark.asyncio
     async def test_reject_requires_feedback(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="reviewing",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="reviewing",
         )
         await db_session.commit()
 
@@ -319,12 +403,19 @@ class TestRejectBatchSoftReset:
 
     @pytest.mark.asyncio
     async def test_annotator_cannot_reject(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, _ = super_admin
         user, token = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="reviewing",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="reviewing",
         )
         await db_session.commit()
 
@@ -343,12 +434,20 @@ class TestRejectBatchSoftReset:
 class TestEmptyBatchActivation:
     @pytest.mark.asyncio
     async def test_empty_batch_cannot_activate(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="draft", n_tasks=0,
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="draft",
+            n_tasks=0,
         )
         await db_session.commit()
 
@@ -362,12 +461,20 @@ class TestEmptyBatchActivation:
 
     @pytest.mark.asyncio
     async def test_non_empty_batch_can_activate(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="draft", n_tasks=1,
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="draft",
+            n_tasks=1,
         )
         await db_session.commit()
 
@@ -386,7 +493,11 @@ class TestEmptyBatchActivation:
 class TestWithdrawCascade:
     @pytest.mark.asyncio
     async def test_reviewing_drops_back_to_annotating_after_withdraw(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         """标注员 withdraw（review→pending）会让 check_auto_transitions 把
         batch 从 reviewing 退回 annotating（如果有非全空池）。
@@ -397,7 +508,9 @@ class TestWithdrawCascade:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             batch_status="annotating",
             task_status="review",
             is_labeled=True,
@@ -433,12 +546,18 @@ class TestWithdrawCascade:
 class TestReviewerVisibility:
     @pytest.mark.asyncio
     async def test_reviewer_sees_reviewing_batch_tasks(
-        self, httpx_client_bound, db_session, super_admin, reviewer,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        reviewer,
     ):
         owner, _ = super_admin
         rev, rev_token = reviewer
         p, batch, tasks = await _seed(
-            db_session, owner.id, rev.id,
+            db_session,
+            owner.id,
+            rev.id,
             batch_status="reviewing",
             task_status="review",
             is_labeled=True,
@@ -457,13 +576,19 @@ class TestReviewerVisibility:
 
     @pytest.mark.asyncio
     async def test_annotator_sees_rejected_batch_when_assigned(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         """rejected 状态特例：被分派的标注员可见（看 reviewer 留言 + 重做）。"""
         owner, _ = super_admin
         user, token = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             batch_status="rejected",
             task_status="pending",
             is_labeled=True,
@@ -480,13 +605,20 @@ class TestReviewerVisibility:
 
     @pytest.mark.asyncio
     async def test_unassigned_annotator_cannot_see_rejected(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         """rejected 特例仅对**被分派**标注员放行。"""
         owner, _ = super_admin
         user, token = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id, batch_status="rejected",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="rejected",
         )
         # v0.7.2：清空 annotator_id（单值语义）
         batch.annotator_id = None
@@ -508,12 +640,19 @@ class TestReviewerVisibility:
 class TestReverseTransitions:
     @pytest.mark.asyncio
     async def test_owner_can_unarchive(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="archived",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="archived",
         )
         await db_session.commit()
 
@@ -526,23 +665,39 @@ class TestReverseTransitions:
         assert resp.json()["status"] == "active"
 
         # audit_log 应记录 reverse=True + reason
-        audit = (await db_session.execute(
-            select(AuditLog)
-            .where(AuditLog.target_type == "batch", AuditLog.target_id == str(batch.id))
-            .order_by(AuditLog.id.desc())
-        )).scalars().first()
+        audit = (
+            (
+                await db_session.execute(
+                    select(AuditLog)
+                    .where(
+                        AuditLog.target_type == "batch",
+                        AuditLog.target_id == str(batch.id),
+                    )
+                    .order_by(AuditLog.id.desc())
+                )
+            )
+            .scalars()
+            .first()
+        )
         assert audit is not None
         assert audit.detail_json.get("reverse") is True
         assert audit.detail_json.get("reason") == "误归档恢复"
 
     @pytest.mark.asyncio
     async def test_reverse_requires_reason(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="archived",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="archived",
         )
         await db_session.commit()
 
@@ -556,15 +711,23 @@ class TestReverseTransitions:
 
     @pytest.mark.asyncio
     async def test_owner_can_reopen_approved_clears_metadata(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="approved",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="approved",
         )
         # 模拟之前已经审核过：写入元数据
         from datetime import datetime, timezone
+
         batch.review_feedback = "之前的反馈"
         batch.reviewed_at = datetime.now(timezone.utc)
         batch.reviewed_by = owner.id
@@ -584,15 +747,23 @@ class TestReverseTransitions:
 
     @pytest.mark.asyncio
     async def test_owner_can_reopen_rejected_keeps_feedback(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         """rejected → reviewing 不清反馈（reviewer 复审需要看上次原因）。"""
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="rejected",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="rejected",
         )
         from datetime import datetime, timezone
+
         batch.review_feedback = "上次驳回原因"
         batch.reviewed_at = datetime.now(timezone.utc)
         batch.reviewed_by = owner.id
@@ -611,12 +782,19 @@ class TestReverseTransitions:
 
     @pytest.mark.asyncio
     async def test_non_owner_cannot_reverse(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, _ = super_admin
         user, token = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="archived",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="archived",
         )
         await db_session.commit()
 
@@ -632,8 +810,12 @@ class TestReverseTransitions:
 
 
 async def _seed_multi(
-    db, owner_id: uuid.UUID, annotator_id: uuid.UUID,
-    *, statuses: list[str], n_tasks_each: int = 1,
+    db,
+    owner_id: uuid.UUID,
+    annotator_id: uuid.UUID,
+    *,
+    statuses: list[str],
+    n_tasks_each: int = 1,
 ):
     """创建一个项目 + 多个不同状态的 batch（每个 batch n_tasks_each 个 task）。"""
     pid = uuid.uuid4()
@@ -648,9 +830,14 @@ async def _seed_multi(
     )
     db.add(p)
     await db.flush()
-    db.add(ProjectMember(
-        project_id=pid, user_id=annotator_id, role="annotator", assigned_by=owner_id,
-    ))
+    db.add(
+        ProjectMember(
+            project_id=pid,
+            user_id=annotator_id,
+            role="annotator",
+            assigned_by=owner_id,
+        )
+    )
 
     batches = []
     for idx, st in enumerate(statuses):
@@ -666,11 +853,18 @@ async def _seed_multi(
         db.add(b)
         await db.flush()
         for j in range(n_tasks_each):
-            db.add(Task(
-                id=uuid.uuid4(), project_id=pid, batch_id=b.id,
-                display_id=f"T-{idx}-{j}", file_name=f"f.jpg", file_path="/tmp/f.jpg",
-                file_type="image", status="pending",
-            ))
+            db.add(
+                Task(
+                    id=uuid.uuid4(),
+                    project_id=pid,
+                    batch_id=b.id,
+                    display_id=f"T-{idx}-{j}",
+                    file_name="f.jpg",
+                    file_path="/tmp/f.jpg",
+                    file_type="image",
+                    status="pending",
+                )
+            )
         await db.flush()
         batches.append(b)
     return p, batches
@@ -679,12 +873,19 @@ async def _seed_multi(
 class TestBulkOperations:
     @pytest.mark.asyncio
     async def test_bulk_archive_succeeds(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id, statuses=["active", "annotating", "archived"],
+            db_session,
+            owner.id,
+            user.id,
+            statuses=["active", "annotating", "archived"],
         )
         await db_session.commit()
 
@@ -696,23 +897,32 @@ class TestBulkOperations:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert len(body["succeeded"]) == 2  # active, annotating
-        assert len(body["skipped"]) == 1    # archived
+        assert len(body["skipped"]) == 1  # archived
         assert body["skipped"][0]["batch_id"] == str(batches[2].id)
 
     @pytest.mark.asyncio
     async def test_bulk_activate_partial_success(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         # 三个 draft：第一个有 annotator 有 task，第二个没 annotator，第三个有 annotator 但 0 task
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id, statuses=["draft", "draft", "draft"], n_tasks_each=1,
+            db_session,
+            owner.id,
+            user.id,
+            statuses=["draft", "draft", "draft"],
+            n_tasks_each=1,
         )
         # 改造：batch[1] 无 annotator；batch[2] 删空 task
         batches[1].annotator_id = None
         batches[1].assigned_user_ids = []
         from sqlalchemy import delete
+
         await db_session.execute(delete(Task).where(Task.batch_id == batches[2].id))
         await db_session.commit()
 
@@ -732,20 +942,31 @@ class TestBulkOperations:
 
     @pytest.mark.asyncio
     async def test_bulk_reassign_atomic(
-        self, httpx_client_bound, db_session, super_admin, annotator, reviewer,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
+        reviewer,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         rev, _ = reviewer
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id, statuses=["active", "annotating"],
+            db_session,
+            owner.id,
+            user.id,
+            statuses=["active", "annotating"],
         )
         await db_session.commit()
 
         # 把 reviewer_id 改派为 rev（annotator_id 不变）
         resp = await httpx_client_bound.post(
             f"/api/v1/projects/{p.id}/batches/bulk-reassign",
-            json={"batch_ids": [str(b.id) for b in batches], "reviewer_id": str(rev.id)},
+            json={
+                "batch_ids": [str(b.id) for b in batches],
+                "reviewer_id": str(rev.id),
+            },
             headers=_bearer(owner_token),
         )
         assert resp.status_code == 200, resp.text
@@ -756,20 +977,29 @@ class TestBulkOperations:
             await db_session.refresh(b)
             assert b.reviewer_id == rev.id
             # task 也应同步
-            ts = (await db_session.execute(
-                select(Task).where(Task.batch_id == b.id)
-            )).scalars().all()
+            ts = (
+                (await db_session.execute(select(Task).where(Task.batch_id == b.id)))
+                .scalars()
+                .all()
+            )
             for t in ts:
                 assert t.reviewer_id == rev.id
 
     @pytest.mark.asyncio
     async def test_non_owner_cannot_bulk(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, _ = super_admin
         user, token = annotator
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id, statuses=["active"],
+            db_session,
+            owner.id,
+            user.id,
+            statuses=["active"],
         )
         await db_session.commit()
 
@@ -787,12 +1017,19 @@ class TestBulkOperations:
 class TestBatchAuditLogs:
     @pytest.mark.asyncio
     async def test_returns_direct_and_bulk_events(
-        self, httpx_client_bound, db_session, super_admin, annotator,
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id, statuses=["active", "active"],
+            db_session,
+            owner.id,
+            user.id,
+            statuses=["active", "active"],
         )
         await db_session.commit()
 
@@ -817,4 +1054,4 @@ class TestBatchAuditLogs:
         logs = resp.json()
         actions = [e["action"] for e in logs]
         assert "batch.status_changed" in actions  # 直接 transition
-        assert "batch.bulk_archive" in actions     # bulk 也会进来
+        assert "batch.bulk_archive" in actions  # bulk 也会进来

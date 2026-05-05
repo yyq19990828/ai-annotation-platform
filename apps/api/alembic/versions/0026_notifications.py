@@ -7,6 +7,7 @@ Revision ID: 0026
 Revises: 0025
 Create Date: 2026-05-03
 """
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -31,9 +32,16 @@ def upgrade() -> None:
         sa.Column("type", sa.String(60), nullable=False),
         sa.Column("target_type", sa.String(30), nullable=False),
         sa.Column("target_id", UUID(as_uuid=True), nullable=False),
-        sa.Column("payload", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column(
+            "payload", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
+        ),
         sa.Column("read_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
     op.create_index(
         "ix_notifications_user_unread",

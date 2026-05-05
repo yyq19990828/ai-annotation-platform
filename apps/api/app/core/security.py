@@ -14,7 +14,9 @@ def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
-def create_access_token(subject: str, role: str, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    subject: str, role: str, expires_delta: timedelta | None = None
+) -> str:
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )

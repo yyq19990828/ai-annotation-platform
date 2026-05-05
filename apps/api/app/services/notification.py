@@ -4,6 +4,7 @@
 WS 端订阅同名频道把消息直送到登录会话；同时表里有持久化记录，
 WS 断线 / 多端登录 / 离线场景都能从 GET /notifications 拉到。
 """
+
 from __future__ import annotations
 
 import json
@@ -34,12 +35,14 @@ class NotificationService:
     async def _is_in_app_muted(self, user_id: uuid.UUID, type: str) -> bool:
         """v0.7.0：查 notification_preferences；channels.in_app=False 表示用户已静音此 type。
         无记录默认 in_app=True（现网用户向后兼容）。"""
-        row = (await self.db.execute(
-            select(NotificationPreference.channels).where(
-                NotificationPreference.user_id == user_id,
-                NotificationPreference.type == type,
+        row = (
+            await self.db.execute(
+                select(NotificationPreference.channels).where(
+                    NotificationPreference.user_id == user_id,
+                    NotificationPreference.type == type,
+                )
             )
-        )).scalar_one_or_none()
+        ).scalar_one_or_none()
         if row is None:
             return False
         in_app = row.get("in_app", True) if isinstance(row, dict) else True
@@ -78,11 +81,15 @@ class NotificationService:
                     "target_type": row.target_type,
                     "target_id": str(row.target_id),
                     "payload": row.payload,
-                    "created_at": (row.created_at or datetime.now(timezone.utc)).isoformat(),
+                    "created_at": (
+                        row.created_at or datetime.now(timezone.utc)
+                    ).isoformat(),
                 },
             )
         except Exception as e:
-            log.warning("notification publish failed user=%s type=%s err=%s", user_id, type, e)
+            log.warning(
+                "notification publish failed user=%s type=%s err=%s", user_id, type, e
+            )
 
         return row
 
@@ -121,7 +128,9 @@ class NotificationService:
         offset: int = 0,
     ) -> tuple[list[Notification], int, int]:
         base = select(Notification).where(Notification.user_id == user_id)
-        count_q = select(func.count(Notification.id)).where(Notification.user_id == user_id)
+        count_q = select(func.count(Notification.id)).where(
+            Notification.user_id == user_id
+        )
         unread_q = select(func.count(Notification.id)).where(
             and_(Notification.user_id == user_id, Notification.read_at.is_(None))
         )

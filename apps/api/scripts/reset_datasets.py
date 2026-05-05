@@ -19,7 +19,9 @@ Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False
 
 async def reset() -> None:
     async with Session() as db:
-        rows = (await db.execute(text("SELECT id, display_id, name FROM datasets"))).fetchall()
+        rows = (
+            await db.execute(text("SELECT id, display_id, name FROM datasets"))
+        ).fetchall()
         if not rows:
             print("没有数据集需要清理")
             return
@@ -28,7 +30,11 @@ async def reset() -> None:
         for r in rows:
             print(f"  {r[1]}  {r[2]}")
 
-        await db.execute(text("UPDATE tasks SET dataset_item_id = NULL WHERE dataset_item_id IS NOT NULL"))
+        await db.execute(
+            text(
+                "UPDATE tasks SET dataset_item_id = NULL WHERE dataset_item_id IS NOT NULL"
+            )
+        )
         await db.execute(text("DELETE FROM project_datasets"))
         await db.execute(text("DELETE FROM dataset_items"))
         await db.execute(text("DELETE FROM datasets"))

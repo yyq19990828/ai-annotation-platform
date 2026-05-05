@@ -23,7 +23,9 @@ def _get_redis_pool() -> ConnectionPool:
     global _REDIS_POOL
     if _REDIS_POOL is None:
         _REDIS_POOL = ConnectionPool.from_url(
-            settings.redis_url, max_connections=200, decode_responses=False,
+            settings.redis_url,
+            max_connections=200,
+            decode_responses=False,
         )
     return _REDIS_POOL
 
@@ -53,7 +55,11 @@ async def preannotate_progress(websocket: WebSocket, project_id: uuid.UUID):
     try:
         async for message in pubsub.listen():
             if message["type"] == "message":
-                await websocket.send_text(message["data"].decode() if isinstance(message["data"], bytes) else message["data"])
+                await websocket.send_text(
+                    message["data"].decode()
+                    if isinstance(message["data"], bytes)
+                    else message["data"]
+                )
     except WebSocketDisconnect:
         pass
     finally:
@@ -92,7 +98,9 @@ async def notifications_socket(
         async for message in pubsub.listen():
             if message["type"] == "message":
                 data = message["data"]
-                await websocket.send_text(data.decode() if isinstance(data, bytes) else data)
+                await websocket.send_text(
+                    data.decode() if isinstance(data, bytes) else data
+                )
     except WebSocketDisconnect:
         pass
     except Exception as e:

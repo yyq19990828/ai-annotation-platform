@@ -1,6 +1,6 @@
 """用户删除 + 转交测试。"""
+
 import uuid
-import pytest
 
 
 class TestUserDelete:
@@ -23,7 +23,9 @@ class TestUserDelete:
         )
         assert r.status_code == 400
 
-    async def test_delete_without_pending_tasks(self, httpx_client, super_admin, db_session):
+    async def test_delete_without_pending_tasks(
+        self, httpx_client, super_admin, db_session
+    ):
         """无待处理任务的用户可以软删除。"""
         from app.db.models.user import User
 
@@ -48,7 +50,9 @@ class TestUserDelete:
         # 预期 200（软删除成功），或 409（如果该用户有其他依赖）
         assert r.status_code in (200, 409)
 
-    async def test_delete_creates_audit_log(self, httpx_client, super_admin, db_session):
+    async def test_delete_creates_audit_log(
+        self, httpx_client, super_admin, db_session
+    ):
         """删除操作产生审计日志。"""
         from app.db.models.user import User
 
@@ -74,6 +78,7 @@ class TestUserDelete:
         if r.status_code == 200:
             from app.db.models.audit_log import AuditLog
             from sqlalchemy import select
+
             result = await db_session.execute(
                 select(AuditLog).where(AuditLog.action == "user.delete")
             )

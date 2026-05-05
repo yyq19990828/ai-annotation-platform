@@ -8,6 +8,7 @@
 配合 `apps/web/openapi-ts.config.ts` 的 OPENAPI_URL 环境变量：
     OPENAPI_URL=/tmp/openapi.json pnpm codegen
 """
+
 from __future__ import annotations
 
 import json
