@@ -12,7 +12,7 @@
 
 ### 1.1 Alembic Migration — `0019_task_batches.py`
 
-**新文件**: `apps/api/alembic/versions/0019_task_batches.py`  
+**新文件**: `apps/api/alembic/versions/0019_task_batches.py`
 **前序**: `down_revision = "0018"`
 
 **DDL**:
