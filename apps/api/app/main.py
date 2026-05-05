@@ -47,7 +47,10 @@ if settings.sentry_dsn:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.environment == "production" and settings.secret_key == "dev-secret-change-in-production":
+    if (
+        settings.environment == "production"
+        and settings.secret_key == "dev-secret-change-in-production"
+    ):
         raise RuntimeError(
             "PRODUCTION ENVIRONMENT DETECTED WITH DEFAULT SECRET KEY. "
             "Set SECRET_KEY to a strong random value in your .env file."
@@ -67,7 +70,11 @@ app.add_middleware(AuditMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:5173",
+    ],
     allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
@@ -79,7 +86,12 @@ app.include_router(ws_router)
 app.include_router(health_router, prefix="/health", tags=["health"])
 
 # Prometheus metrics — 仅供内部 scrape，不经过 AuditMiddleware
-from prometheus_client import Counter, Histogram, make_asgi_app as _prom_app, CONTENT_TYPE_LATEST  # noqa: E402
+from prometheus_client import (  # noqa: E402
+    Counter,
+    Histogram,
+    make_asgi_app as _prom_app,
+    CONTENT_TYPE_LATEST,
+)
 from starlette.responses import Response as StarletteResponse  # noqa: E402
 
 _http_requests = Counter(
@@ -99,4 +111,5 @@ _prom_asgi = _prom_app()
 @app.get("/metrics", include_in_schema=False)
 async def metrics():
     from prometheus_client import generate_latest
+
     return StarletteResponse(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

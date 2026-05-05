@@ -1,0 +1,38 @@
+# Codecov 配置：上报但不阻断 PR。
+# 仅用 informational 模式，让 PR 评论显示 diff coverage 与趋势。
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 5%
+        informational: true
+    patch:
+      default:
+        target: auto
+        threshold: 5%
+        informational: true
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: false
+
+flags:
+  backend:
+    paths:
+      - apps/api/app
+    carryforward: true
+  frontend:
+    paths:
+      - apps/web/src
+    carryforward: true
+
+ignore:
+  - "apps/api/app/migrations"
+  - "apps/web/src/api/generated"
+  - "**/__tests__"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/e2e"

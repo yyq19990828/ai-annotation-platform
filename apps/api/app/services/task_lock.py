@@ -15,7 +15,9 @@ class TaskLockService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def acquire(self, task_id: uuid.UUID, user_id: uuid.UUID, ttl: int | None = None) -> TaskLock | None:
+    async def acquire(
+        self, task_id: uuid.UUID, user_id: uuid.UUID, ttl: int | None = None
+    ) -> TaskLock | None:
         # B-6 修复：表上 unique 约束是 (task_id, user_id)，并不阻止同一 task_id 出现多行（不同用户）。
         # 历史并发 / 残留可能留下重复行，原本 scalar_one_or_none() 会抛 MultipleResultsFound → 500。
         # 这里改为读取全部行：若我已持有则续期并清掉同 task 的他人重复锁；否则视为他人占用。
@@ -28,15 +30,17 @@ class TaskLockService:
 
         # v0.6.8 B-13：同一 user_id 下多行兜底 —— 取 expire_at 最新的那行作为 my_lock，
         # 其余删除（应对 keepalive DELETE / acquire 乱序到达留下的残影）。
-        mine = [l for l in locks if l.user_id == user_id]
-        my_lock = max(mine, key=lambda l: l.expire_at) if mine else None
-        others = [l for l in locks if l.user_id != user_id]
-        new_expire = datetime.now(timezone.utc) + timedelta(seconds=ttl or self.DEFAULT_TTL)
+        mine = [lock for lock in locks if lock.user_id == user_id]
+        my_lock = max(mine, key=lambda lock: lock.expire_at) if mine else None
+        others = [lock for lock in locks if lock.user_id != user_id]
+        new_expire = datetime.now(timezone.utc) + timedelta(
+            seconds=ttl or self.DEFAULT_TTL
+        )
 
         if my_lock:
-            for l in locks:
-                if l is not my_lock:
-                    await self.db.delete(l)
+            for lock in locks:
+                if lock is not my_lock:
+                    await self.db.delete(lock)
             my_lock.expire_at = new_expire
             await self.db.flush()
             return my_lock
@@ -50,10 +54,10 @@ class TaskLockService:
             now = datetime.now(timezone.utc)
             stale_threshold = now + timedelta(seconds=self.DEFAULT_TTL // 2)
 
-            takeover = all(l.expire_at < stale_threshold for l in others)
+            takeover = all(lock.expire_at < stale_threshold for lock in others)
             if takeover:
-                for l in others:
-                    await self.db.delete(l)
+                for lock in others:
+                    await self.db.delete(lock)
                 await self.db.flush()
             else:
                 return None
@@ -84,7 +88,9 @@ class TaskLockService:
 
     async def release(self, task_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         result = await self.db.execute(
-            select(TaskLock).where(TaskLock.task_id == task_id, TaskLock.user_id == user_id)
+            select(TaskLock).where(
+                TaskLock.task_id == task_id, TaskLock.user_id == user_id
+            )
         )
         lock = result.scalar_one_or_none()
         if not lock:
@@ -93,14 +99,20 @@ class TaskLockService:
         await self.db.flush()
         return True
 
-    async def heartbeat(self, task_id: uuid.UUID, user_id: uuid.UUID, ttl: int | None = None) -> bool:
+    async def heartbeat(
+        self, task_id: uuid.UUID, user_id: uuid.UUID, ttl: int | None = None
+    ) -> bool:
         result = await self.db.execute(
-            select(TaskLock).where(TaskLock.task_id == task_id, TaskLock.user_id == user_id)
+            select(TaskLock).where(
+                TaskLock.task_id == task_id, TaskLock.user_id == user_id
+            )
         )
         lock = result.scalar_one_or_none()
         if not lock:
             return False
-        lock.expire_at = datetime.now(timezone.utc) + timedelta(seconds=ttl or self.DEFAULT_TTL)
+        lock.expire_at = datetime.now(timezone.utc) + timedelta(
+            seconds=ttl or self.DEFAULT_TTL
+        )
         await self.db.flush()
         return True
 
@@ -117,7 +129,5 @@ class TaskLockService:
 
     async def _cleanup_expired(self) -> int:
         now = datetime.now(timezone.utc)
-        result = await self.db.execute(
-            delete(TaskLock).where(TaskLock.expire_at < now)
-        )
+        result = await self.db.execute(delete(TaskLock).where(TaskLock.expire_at < now))
         return result.rowcount

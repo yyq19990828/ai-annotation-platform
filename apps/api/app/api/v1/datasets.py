@@ -15,7 +15,6 @@ from app.schemas.dataset import (
     DatasetCreate,
     DatasetUpdate,
     DatasetOut,
-    DatasetItemOut,
     DatasetListResponse,
     DatasetItemListResponse,
     DatasetLinkRequest,
@@ -42,7 +41,9 @@ async def list_datasets(
     _: User = Depends(get_current_user),
 ):
     svc = DatasetService(db)
-    items, total = await svc.list(search=search, data_type=data_type, limit=limit, offset=offset)
+    items, total = await svc.list(
+        search=search, data_type=data_type, limit=limit, offset=offset
+    )
     return DatasetListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -109,6 +110,7 @@ async def delete_dataset(
 
 # ── Items ───────────────────────────────────────────────────────────────────
 
+
 @router.get("/{dataset_id}/items", response_model=DatasetItemListResponse)
 async def list_dataset_items(
     dataset_id: uuid.UUID,
@@ -125,7 +127,9 @@ async def list_dataset_items(
     return DatasetItemListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.post("/{dataset_id}/items/upload-init", response_model=DatasetUploadInitResponse)
+@router.post(
+    "/{dataset_id}/items/upload-init", response_model=DatasetUploadInitResponse
+)
 async def upload_init(
     dataset_id: uuid.UUID,
     data: DatasetUploadInitRequest,
@@ -137,7 +141,6 @@ async def upload_init(
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    item_id = uuid.uuid4()
     storage_key = f"{ds.name}/{data.file_name}"
     file_type = _infer_file_type(data.content_type)
 
@@ -150,9 +153,13 @@ async def upload_init(
     await db.commit()
 
     upload_url = storage_service.generate_upload_url(
-        storage_key, data.content_type, bucket=storage_service.datasets_bucket,
+        storage_key,
+        data.content_type,
+        bucket=storage_service.datasets_bucket,
     )
-    return DatasetUploadInitResponse(item_id=item.id, upload_url=upload_url, expires_in=900)
+    return DatasetUploadInitResponse(
+        item_id=item.id, upload_url=upload_url, expires_in=900
+    )
 
 
 @router.post("/{dataset_id}/items/upload-complete/{item_id}")
@@ -163,11 +170,14 @@ async def upload_complete(
     current_user: User = Depends(get_current_user),
 ):
     from app.db.models.dataset import DatasetItem
+
     item = await db.get(DatasetItem, item_id)
     if not item or item.dataset_id != dataset_id:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    meta = storage_service.verify_upload(item.file_path, bucket=storage_service.datasets_bucket)
+    meta = storage_service.verify_upload(
+        item.file_path, bucket=storage_service.datasets_bucket
+    )
     if not meta:
         # 上传未完成 — 清理占位 DatasetItem
         svc = DatasetService(db)
@@ -187,20 +197,26 @@ async def upload_complete(
         if existing and existing.id != item_id:
             # 删除刚上传的对象与占位记录，返回 409 告知前端
             try:
-                storage_service.delete_object(item.file_path, bucket=storage_service.datasets_bucket)
+                storage_service.delete_object(
+                    item.file_path, bucket=storage_service.datasets_bucket
+                )
             except Exception:
                 pass
             await svc.delete_item(item_id)
             await db.commit()
             raise HTTPException(
                 status_code=409,
-                detail={"msg": "文件已存在（内容重复）", "duplicate_of": str(existing.id)},
+                detail={
+                    "msg": "文件已存在（内容重复）",
+                    "duplicate_of": str(existing.id),
+                },
             )
         item.content_hash = etag
 
     if item.file_type == "image" and (item.width is None or item.height is None):
         dims = storage_service.read_image_dimensions(
-            item.file_path, bucket=storage_service.datasets_bucket,
+            item.file_path,
+            bucket=storage_service.datasets_bucket,
         )
         if dims:
             item.width, item.height = dims
@@ -209,13 +225,14 @@ async def upload_complete(
 
     if item.file_type == "image":
         from app.workers.media import generate_thumbnail
+
         generate_thumbnail.delay(str(item_id))
 
     return {"status": "ok", "item_id": str(item_id)}
 
 
 _ZIP_MAX_BYTES = 200 * 1024 * 1024  # 200 MB
-_ZIP_MAX_ENTRIES = 5000              # 防 zip bomb：限制条目数
+_ZIP_MAX_ENTRIES = 5000  # 防 zip bomb：限制条目数
 _PER_FILE_MAX_BYTES = 100 * 1024 * 1024  # 单文件 100MB 上限
 
 
@@ -238,7 +255,10 @@ async def upload_zip(
 
     raw = await file.read()
     if len(raw) > _ZIP_MAX_BYTES:
-        raise HTTPException(status_code=413, detail=f"ZIP 包超过 {_ZIP_MAX_BYTES // 1024 // 1024}MB 限制")
+        raise HTTPException(
+            status_code=413,
+            detail=f"ZIP 包超过 {_ZIP_MAX_BYTES // 1024 // 1024}MB 限制",
+        )
 
     try:
         zf = zipfile.ZipFile(io.BytesIO(raw))
@@ -270,8 +290,9 @@ async def upload_zip(
 
     # 收集已有 hash，用于内容去重
     hash_rows = await db.execute(
-        sa_select(DatasetItem.content_hash)
-        .where(DatasetItem.dataset_id == dataset_id, DatasetItem.content_hash.isnot(None))
+        sa_select(DatasetItem.content_hash).where(
+            DatasetItem.dataset_id == dataset_id, DatasetItem.content_hash.isnot(None)
+        )
     )
     existing_hashes: set[str] = {r[0] for r in hash_rows.all()}
 
@@ -283,7 +304,12 @@ async def upload_zip(
             skipped.append(name)
             continue
         if info.file_size > _PER_FILE_MAX_BYTES:
-            errors.append({"name": name, "error": f"超过单文件 {_PER_FILE_MAX_BYTES // 1024 // 1024}MB 上限"})
+            errors.append(
+                {
+                    "name": name,
+                    "error": f"超过单文件 {_PER_FILE_MAX_BYTES // 1024 // 1024}MB 上限",
+                }
+            )
             continue
 
         try:
@@ -348,6 +374,7 @@ async def upload_zip(
 
     if new_image_item_ids:
         from app.workers.media import generate_thumbnail
+
         for iid in new_image_item_ids:
             generate_thumbnail.delay(str(iid))
 
@@ -375,6 +402,7 @@ async def scan_items(
 
     if new_ids:
         from app.workers.media import generate_thumbnail
+
         for iid in new_ids:
             generate_thumbnail.delay(str(iid))
 
@@ -396,18 +424,21 @@ async def backfill_dimensions(
     from app.db.models.dataset import DatasetItem
 
     rows = await db.execute(
-        sa_select(DatasetItem).where(
+        sa_select(DatasetItem)
+        .where(
             DatasetItem.dataset_id == dataset_id,
             DatasetItem.file_type == "image",
             DatasetItem.width.is_(None),
-        ).limit(batch)
+        )
+        .limit(batch)
     )
     items = list(rows.scalars().all())
     processed = 0
     failed = 0
     for item in items:
         dims = storage_service.read_image_dimensions(
-            item.file_path, bucket=storage_service.datasets_bucket,
+            item.file_path,
+            bucket=storage_service.datasets_bucket,
         )
         if dims:
             item.width, item.height = dims
@@ -415,7 +446,11 @@ async def backfill_dimensions(
         else:
             failed += 1
     await db.commit()
-    return {"processed": processed, "failed": failed, "remaining_hint": len(items) == batch}
+    return {
+        "processed": processed,
+        "failed": failed,
+        "remaining_hint": len(items) == batch,
+    }
 
 
 @router.post("/{dataset_id}/backfill-media")
@@ -425,14 +460,13 @@ async def backfill_media_endpoint(
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     """异步触发存量图像的缩略图 + blurhash 回填。"""
-    from app.db.models.dataset import DatasetItem
-    from sqlalchemy import select as sa_select
     svc = DatasetService(db)
     ds = await svc.get(dataset_id)
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     from app.workers.media import backfill_media
+
     backfill_media.delay(str(dataset_id))
     return {"status": "queued", "dataset_id": str(dataset_id)}
 
@@ -453,6 +487,7 @@ async def delete_item(
 
 # ── Project linking ─────────────────────────────────────────────────────────
 
+
 @router.post("/{dataset_id}/link")
 async def link_project(
     dataset_id: uuid.UUID,
@@ -465,7 +500,7 @@ async def link_project(
     ds = await svc.get(dataset_id)
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    link = await svc.link_project(dataset_id, data.project_id)
+    await svc.link_project(dataset_id, data.project_id)
     await AuditService.log(
         db,
         actor=current_user,
@@ -477,7 +512,11 @@ async def link_project(
         detail={"project_id": str(data.project_id)},
     )
     await db.commit()
-    return {"status": "linked", "dataset_id": str(dataset_id), "project_id": str(data.project_id)}
+    return {
+        "status": "linked",
+        "dataset_id": str(dataset_id),
+        "project_id": str(data.project_id),
+    }
 
 
 @router.get("/{dataset_id}/link/{project_id}/preview-unlink")
@@ -496,33 +535,47 @@ async def preview_unlink_project(
     from app.db.models.annotation import Annotation
     from app.db.models.task_batch import TaskBatch
 
-    target_rows = (await db.execute(
-        select(Task.id, Task.batch_id)
-        .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
-        .where(Task.project_id == project_id, DatasetItem.dataset_id == dataset_id)
-    )).all()
+    target_rows = (
+        await db.execute(
+            select(Task.id, Task.batch_id)
+            .join(DatasetItem, DatasetItem.id == Task.dataset_item_id)
+            .where(Task.project_id == project_id, DatasetItem.dataset_id == dataset_id)
+        )
+    ).all()
     task_ids = [r[0] for r in target_rows]
     affected_batch_ids = {r[1] for r in target_rows if r[1] is not None}
     task_count = len(task_ids)
     ann_count = 0
     if task_ids:
-        ann_count = (await db.execute(
-            select(func.count(Annotation.id)).where(Annotation.task_id.in_(list(task_ids)))
-        )).scalar() or 0
+        ann_count = (
+            await db.execute(
+                select(func.count(Annotation.id)).where(
+                    Annotation.task_id.in_(list(task_ids))
+                )
+            )
+        ).scalar() or 0
 
     # 哪些受影响 batch 在删完 task 后会变空壳 → 与 unlink 真实行为一致
     will_delete_batches = 0
     if affected_batch_ids:
         loss_per_batch = dict(
-            (await db.execute(
-                select(Task.batch_id, func.count())
-                .where(Task.id.in_(task_ids))
-                .group_by(Task.batch_id)
-            )).all()
+            (
+                await db.execute(
+                    select(Task.batch_id, func.count())
+                    .where(Task.id.in_(task_ids))
+                    .group_by(Task.batch_id)
+                )
+            ).all()
         )
-        for b in (await db.execute(
-            select(TaskBatch).where(TaskBatch.id.in_(affected_batch_ids))
-        )).scalars().all():
+        for b in (
+            (
+                await db.execute(
+                    select(TaskBatch).where(TaskBatch.id.in_(affected_batch_ids))
+                )
+            )
+            .scalars()
+            .all()
+        ):
             if b.display_id == "B-DEFAULT":
                 continue
             if (b.total_tasks or 0) - loss_per_batch.get(b.id, 0) <= 0:

@@ -270,7 +270,7 @@ export function CommandPalette({ open, onClose }: Props) {
             color: "var(--color-fg-subtle)",
           }}
         >
-          <span>↑↓ 选择　↵ 跳转</span>
+          <span>↑↓ 选择 · ↵ 跳转</span>
           <span>Esc 关闭</span>
         </div>
       </div>

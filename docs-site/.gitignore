@@ -1,0 +1,5 @@
+.vitepress/cache
+.vitepress/dist
+node_modules
+# openapi.json 由 scripts/sync-openapi.mjs 在 dev/build 前自动复制
+public/openapi.json

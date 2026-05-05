@@ -1,5 +1,9 @@
 # 开发指南
 
+> 完整的开发文档（架构、How-to、测试、规范）在 VitePress 文档站：
+> 本地预览 `pnpm docs:dev`，部署版 [GitHub Pages](https://yyq19990828.github.io/ai-annotation-platform/dev/)。
+> 本文件仅保留快速参考。
+
 ## 项目结构
 
 ```
@@ -37,10 +41,19 @@ ai-annotation-platform/
 ## 前置要求
 
 - Node.js >= 20
-- pnpm >= 9
+- pnpm >= 10
 - Python >= 3.11
 - uv (Python 包管理)
 - Docker & Docker Compose
+- pre-commit（推荐，启用 git hooks）
+
+## 一次性 setup
+
+```bash
+pnpm install
+cd apps/api && uv sync --extra test && cd ../..
+pre-commit install         # 启用 ruff / eslint / tsc git hooks
+```
 
 ## 快速开始
 
@@ -179,15 +192,26 @@ docker build -f infra/docker/Dockerfile.web -t anno-web .
 docker build -f infra/docker/Dockerfile.api -t anno-api apps/api/
 ```
 
+## 测试与文档
+
+```bash
+# 测试
+pnpm test                        # 前端 vitest
+pnpm test:coverage               # 带覆盖率
+pnpm test:e2e                    # 前端 Playwright（需后端运行）
+cd apps/api && uv run pytest
+
+# OpenAPI 契约
+pnpm openapi:export              # 改了 API 后必须刷新 snapshot
+pnpm openapi:check               # CI 校验
+
+# 文档站
+pnpm docs:dev                    # http://localhost:5173
+pnpm docs:build
+```
+
+完整测试指南见 [docs-site/dev/testing.md](docs-site/dev/testing.md)。
+
 ## 下一步计划
 
-按优先级排列的待实现功能：
-
-1. **JWT 认证** — 实现登录/注册、Token 刷新、RBAC 权限中间件
-2. **Alembic 迁移** — 初始化迁移脚本，生成 DDL
-3. **前后端联调** — 替换 mock 数据为 API 调用 (TanStack Query)
-4. **文件上传** — MinIO Presigned URL 直传 + 缩略图生成
-5. **AI 推理管线** — Celery worker + GroundingDINO/SAM 模型集成
-6. **WebSocket** — 实时标注协同 + AI 任务进度推送
-7. **数据导出** — COCO JSON / Pascal VOC / YOLO 格式
-8. **审计日志** — 操作记录追踪
+详见 [CHANGELOG.md](CHANGELOG.md) 顶部的 roadmap 与 [docs/plans/](docs/plans/) 下的具体计划。

@@ -91,8 +91,22 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 
 ### 核心文档
 
-- [DEV.md](DEV.md) — 项目结构、技术栈、快速启动、开发指南
+- [README.md](README.md) — 仓库入口
+- [DEV.md](DEV.md) — 快速参考（完整开发文档已迁移到 docs-site）
 - [CHANGELOG.md](CHANGELOG.md) — 版本变更记录 + 待实现 Roadmap
+
+### VitePress 文档站（docs-site/）
+
+- [docs-site/user-guide/](docs-site/user-guide/) — 用户手册（标注员/管理员）
+- [docs-site/dev/](docs-site/dev/) — 开发文档（架构/How-to/测试/规范）
+- [docs-site/api/](docs-site/api/) — 后端 API 文档（基于 OpenAPI 自动渲染）
+
+本地预览：`pnpm docs:dev` → http://localhost:5173
+
+### 架构决策（docs/adr/）
+
+- [README.md](docs/adr/README.md) — 写 ADR 的指南
+- [0001-record-architecture-decisions.md](docs/adr/0001-record-architecture-decisions.md)
 
 ### 调研报告（docs/research/）
 

@@ -1,4 +1,5 @@
 """v0.6.9 · 通知中心 + BUG 反馈接入。"""
+
 from __future__ import annotations
 
 import uuid
@@ -7,7 +8,6 @@ import pytest
 
 from app.db.models.bug_report import BugReport
 from app.db.models.notification import Notification
-from app.services.bug_report import BugReportService
 from app.services.display_id import next_display_id
 from app.services.notification import NotificationService
 from sqlalchemy import select
@@ -17,7 +17,12 @@ def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _seed_bug(db, reporter_id: uuid.UUID, status: str = "new", assigned_to: uuid.UUID | None = None) -> BugReport:
+async def _seed_bug(
+    db,
+    reporter_id: uuid.UUID,
+    status: str = "new",
+    assigned_to: uuid.UUID | None = None,
+) -> BugReport:
     display_id = await next_display_id(db, "bug_reports")
     report = BugReport(
         id=uuid.uuid4(),
@@ -61,7 +66,7 @@ async def test_mark_read_and_mark_all(db_session, annotator):
     n1 = await svc.notify(
         user_id=user.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
     )
-    n2 = await svc.notify(
+    await svc.notify(
         user_id=user.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
     )
 
@@ -78,7 +83,9 @@ async def test_mark_read_and_mark_all(db_session, annotator):
 
 
 @pytest.mark.asyncio
-async def test_admin_status_change_notifies_reporter(httpx_client_bound, db_session, annotator, super_admin):
+async def test_admin_status_change_notifies_reporter(
+    httpx_client_bound, db_session, annotator, super_admin
+):
     reporter, _ = annotator
     admin, admin_token = super_admin
     report = await _seed_bug(db_session, reporter.id, status="new")
@@ -91,9 +98,15 @@ async def test_admin_status_change_notifies_reporter(httpx_client_bound, db_sess
     )
     assert resp.status_code == 200
 
-    rows = (await db_session.execute(
-        select(Notification).where(Notification.user_id == reporter.id)
-    )).scalars().all()
+    rows = (
+        (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == reporter.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     n = rows[0]
     assert n.type == "bug_report.status_changed"
@@ -103,10 +116,14 @@ async def test_admin_status_change_notifies_reporter(httpx_client_bound, db_sess
 
 
 @pytest.mark.asyncio
-async def test_reporter_reopen_notifies_assignee(httpx_client_bound, db_session, annotator, super_admin):
+async def test_reporter_reopen_notifies_assignee(
+    httpx_client_bound, db_session, annotator, super_admin
+):
     reporter, reporter_token = annotator
     admin, _ = super_admin
-    report = await _seed_bug(db_session, reporter.id, status="fixed", assigned_to=admin.id)
+    report = await _seed_bug(
+        db_session, reporter.id, status="fixed", assigned_to=admin.id
+    )
     await db_session.commit()
 
     resp = await httpx_client_bound.post(
@@ -116,9 +133,15 @@ async def test_reporter_reopen_notifies_assignee(httpx_client_bound, db_session,
     )
     assert resp.status_code == 201
 
-    rows = (await db_session.execute(
-        select(Notification).where(Notification.user_id == admin.id)
-    )).scalars().all()
+    rows = (
+        (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == admin.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     n = rows[0]
     assert n.type == "bug_report.reopened"
@@ -128,10 +151,14 @@ async def test_reporter_reopen_notifies_assignee(httpx_client_bound, db_session,
 
 
 @pytest.mark.asyncio
-async def test_admin_comment_notifies_reporter(httpx_client_bound, db_session, annotator, super_admin):
+async def test_admin_comment_notifies_reporter(
+    httpx_client_bound, db_session, annotator, super_admin
+):
     reporter, _ = annotator
     admin, admin_token = super_admin
-    report = await _seed_bug(db_session, reporter.id, status="triaged", assigned_to=admin.id)
+    report = await _seed_bug(
+        db_session, reporter.id, status="triaged", assigned_to=admin.id
+    )
     await db_session.commit()
 
     resp = await httpx_client_bound.post(
@@ -141,36 +168,54 @@ async def test_admin_comment_notifies_reporter(httpx_client_bound, db_session, a
     )
     assert resp.status_code == 201
 
-    rows = (await db_session.execute(
-        select(Notification).where(Notification.user_id == reporter.id)
-    )).scalars().all()
+    rows = (
+        (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == reporter.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert rows[0].type == "bug_report.commented"
     assert rows[0].payload["actor_role"] == "super_admin"
 
 
 @pytest.mark.asyncio
-async def test_notifications_endpoints_only_return_own(httpx_client_bound, db_session, annotator, reviewer):
+async def test_notifications_endpoints_only_return_own(
+    httpx_client_bound, db_session, annotator, reviewer
+):
     user_a, token_a = annotator
     user_b, _ = reviewer
     svc = NotificationService(db_session)
-    await svc.notify(user_id=user_a.id, type="t", target_type="bug_report", target_id=uuid.uuid4())
-    await svc.notify(user_id=user_b.id, type="t", target_type="bug_report", target_id=uuid.uuid4())
+    await svc.notify(
+        user_id=user_a.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
+    )
+    await svc.notify(
+        user_id=user_b.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
+    )
     await db_session.commit()
 
-    resp = await httpx_client_bound.get("/api/v1/notifications", headers=_bearer(token_a))
+    resp = await httpx_client_bound.get(
+        "/api/v1/notifications", headers=_bearer(token_a)
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] == 1
     assert data["unread"] == 1
 
-    cnt = await httpx_client_bound.get("/api/v1/notifications/unread-count", headers=_bearer(token_a))
+    cnt = await httpx_client_bound.get(
+        "/api/v1/notifications/unread-count", headers=_bearer(token_a)
+    )
     assert cnt.status_code == 200
     assert cnt.json() == {"unread": 1}
 
 
 @pytest.mark.asyncio
-async def test_self_action_does_not_notify_self(httpx_client_bound, db_session, super_admin):
+async def test_self_action_does_not_notify_self(
+    httpx_client_bound, db_session, super_admin
+):
     """super_admin 自己改自己的状态不应通知自己（reporter == admin 同一人）。"""
     admin, admin_token = super_admin
     report = await _seed_bug(db_session, admin.id, status="new")
@@ -183,7 +228,13 @@ async def test_self_action_does_not_notify_self(httpx_client_bound, db_session, 
     )
     assert resp.status_code == 200
 
-    rows = (await db_session.execute(
-        select(Notification).where(Notification.user_id == admin.id)
-    )).scalars().all()
+    rows = (
+        (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == admin.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert len(rows) == 0

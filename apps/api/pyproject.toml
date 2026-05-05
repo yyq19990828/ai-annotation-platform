@@ -30,6 +30,7 @@ test = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
     "pytest-mock>=3.14.0",
+    "pytest-cov>=6.0.0",
 ]
 
 [tool.pytest.ini_options]
@@ -40,3 +41,21 @@ filterwarnings = [
     "ignore::DeprecationWarning",
 ]
 
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+    "app/migrations/*",
+    "app/main.py",
+    "tests/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

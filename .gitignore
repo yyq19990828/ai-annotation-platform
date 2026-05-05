@@ -10,3 +10,13 @@ __pycache__/
 *.db
 .DS_Store
 *.tsbuildinfo
+
+# 测试与覆盖率产物
+.coverage
+coverage.xml
+htmlcov/
+coverage/
+playwright-report/
+test-results/
+.pytest_cache/
+.ruff_cache/

@@ -164,10 +164,10 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
     for (let i = offset - 1; i >= 0; i--) {
       const ch = text[i];
       if (ch === "@") {
-        if (i === 0 || /\s| /.test(text[i - 1])) at = i;
+        if (i === 0 || /[\s\u00A0]/.test(text[i - 1])) at = i;
         break;
       }
-      if (/\s| /.test(ch)) break;
+      if (/[\s\u00A0]/.test(ch)) break;
     }
     if (at < 0) {
       setPicker((p) => (p.open ? { ...p, open: false } : p));

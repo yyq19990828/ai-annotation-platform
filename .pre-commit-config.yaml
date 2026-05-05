@@ -1,0 +1,37 @@
+# Pre-commit hooks: Python 用 ruff，前端用本地 eslint + tsc。
+# 首次安装：pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        files: ^apps/api/
+        args: ["--fix"]
+      - id: ruff-format
+        files: ^apps/api/
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint (apps/web)
+        entry: pnpm --filter @anno/web lint
+        language: system
+        files: ^apps/web/.+\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+
+      - id: tsc-web
+        name: tsc --noEmit (apps/web)
+        entry: pnpm --filter @anno/web exec tsc -b --noEmit
+        language: system
+        files: ^apps/web/.+\.(ts|tsx)$
+        pass_filenames: false
