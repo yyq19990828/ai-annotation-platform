@@ -106,64 +106,89 @@
 
 ---
 
-### v0.7.4 草案 — 测试与文档体系深化（接续 2026-05-05 infra 建齐）
+## [0.7.4] - 2026-05-05
 
-**前置：** commit `2e31614 feat(infra)` 已搭好骨架（pytest-cov / MSW / Playwright / VitePress / OpenAPI snapshot 契约 / Codecov / GitHub Pages 部署）。本版本不再动地基，只往里填内容、把几个「先放过」的红线收紧。
+> **测试与文档体系一次性建齐。** v0.7+ 阶段（CHANGELOG 2300+ 行、77 后端测试、216 前端文件）质量与知识传递的基础设施一直滞后于代码增长，本版本一次性把 4 块（测试 / 用户文档 / 开发文档 / API 文档）的骨架与红线都立起来，后续日常开发只填内容、不再补地基。规划全文见 [docs/plans/api-tender-moore.md](docs/plans/api-tender-moore.md)。
 
-#### 测试 — 把 E2E 真正跑起来
+### 测试
 
-- 写实 `apps/web/e2e/tests/auth.spec.ts`：登录页选择器固定后，覆盖「登录 → 跳转 dashboard」+「错密码报错」+「JWT 过期自动登出」3 条
-- E2E fixture 准备：`e2e/fixtures/seed.ts` 调后端 `/api/v1/...` 创建测试用户 + 项目 + 任务，spec 内引用，避免硬编码种子
-- 跑通后从 `.github/workflows/ci.yml` 的 `e2e` job 去掉 `continue-on-error: true`（让失败真正阻断 PR）
-- 第二轮：`annotation.spec.ts` 覆盖一条 bbox 完整链路（开任务 → 拖框 → 选类别 → 提交）
+#### 后端
 
-#### 测试 — 前端覆盖率拉起
+- 接 `pytest-cov` + `coverage[branch]`：`apps/api/pyproject.toml` 加 `[tool.coverage.run/report]`；`addopts -q --cov=app --cov-report=xml`；CI 上传 codecov（`backend` flag）
+- 新增 `apps/api/tests/test_openapi_contract.py` 契约测试 + `apps/api/openapi.snapshot.json`（326KB，13340 行）作为前后端契约真值源；运行时与 snapshot 不一致即 fail
+- 新增 `scripts/export_openapi.py`：`uv run python ../../scripts/export_openapi.py [--check]` 用于刷 / 校验 snapshot
 
-当前前端 64 测试集中在 Workbench state 与几个组件，页面级几乎没覆盖。补：
+#### 前端
 
-- `pages/Dashboard/__tests__/DashboardPage.test.tsx` — 项目卡渲染 + 空态 + stats 加载
-- `pages/Projects/__tests__/ProjectList.test.tsx` — 列表 + 筛选 + 分页交互
-- `pages/Workbench/__tests__/WorkbenchShell.test.tsx` — 任务流转 + 快捷键调度（state 已有，shell 层补）
+- 接 MSW（`apps/web/src/mocks/{server,handlers}.ts`）+ `vitest.setup.ts` 自动 listen / resetHandlers / close；vite.config.ts 加 v8 coverage（lcov / text / html）；CI 上传 codecov（`frontend` flag）
+- Playwright E2E 骨架：`apps/web/playwright.config.ts` + `e2e/tests/{auth,annotation,batch-flow}.spec.ts`（spec 全 `.skip` 占位 + `e2e/README.md` 详述工作流）
+- ESLint flat config（`apps/web/eslint.config.js`）+ devDeps（eslint 9 / typescript-eslint / react-hooks / react-refresh / globals）；新增 `pnpm typecheck` / `pnpm test:coverage` / `pnpm test:e2e` 脚本
+- vitest exclude e2e（避免 Playwright spec 被当单测跑）；codegen 默认输入改为本地 `apps/api/openapi.snapshot.json`（CI 不再依赖运行时 API）
 
-每个用 `server.use(http.get(...))` 临时 mock，不依赖默认 handlers。验收：codecov 显示前端覆盖率 ≥ 30%（当前 < 10%）。
+### CI / 工具链
 
-#### 测试 — 后端覆盖率门槛
+- `.github/workflows/ci.yml` 重构：lint job 去掉 `|| true`（ruff / eslint 真正阻断）；vitest job 用 snapshot 替代运行时 dump；新增 `e2e` job（Postgres + Redis service + 启 uvicorn + Playwright，`continue-on-error: true` 待 spec 写实后摘）；pytest / vitest 都接 codecov
+- `.github/workflows/docs.yml`（新建）：push 到 main 自动构建并发到 GitHub Pages（用 `actions/configure-pages@v5` 的 `enablement: true` 自动激活 Pages）
+- `.pre-commit-config.yaml`（新建）：trailing-whitespace / EOF / yaml / large-files / merge-conflict / ruff / ruff-format / eslint / tsc 全套
+- `.codecov.yml`（新建）：informational 模式（不阻断 PR），按 backend / frontend flag 分组上报
+- 顶层 `package.json` 加 `docs:dev` / `docs:build` / `docs:preview` / `openapi:export` / `openapi:check` / `typecheck` / `test:e2e` 等脚本
 
-当前后端覆盖率 35%（部分跑），全跑预计 50-60%。本版加 codecov status check 软门槛：
+### 文档
 
-- `.codecov.yml` 把 `project.default.target` 从 `auto` 改为 `60%`，`threshold: 1%`，先 informational 观察 2 周
-- 观察期满后改 `informational: false`，让 PR 拉低覆盖率即标黄（不阻断 merge，仅提醒）
+#### VitePress 文档站（新建 `docs-site/`）
 
-#### 文档 — 关键页填实
+三栏导航：用户手册 / 开发文档 / API 文档。`pnpm docs:dev` 本地预览，自动同步 OpenAPI snapshot；CI 自动发到 [GitHub Pages](https://yyq19990828.github.io/ai-annotation-platform/)
 
-骨架里有 11 篇 user-guide + 11 篇 dev 都是大纲。本轮补这几篇的实际内容：
+- `user-guide/`（11 篇骨架）：getting-started / workbench{bbox,polygon,keypoint,index} / projects{index,batch} / review / export / faq
+- `dev/`（11 篇骨架）：local-dev / testing / conventions / release / architecture{overview,backend-layers,frontend-layers,data-flow} / how-to{add-api-endpoint,add-page,add-migration,debug-celery}
+- `api/`：iframe 嵌 [Scalar](https://github.com/scalar/scalar) 渲染 OpenAPI（standalone HTML in `public/api-reference.html`）；构建期 `predev` / `prebuild` 自动从 `apps/api/openapi.snapshot.json` 同步到 `public/openapi.json`
 
-- `user-guide/getting-started.md`：录一段端到端 GIF（登录 → 标第一个任务 → 提交），插到 hero
-- `user-guide/workbench/{bbox,polygon,keypoint}.md`：每篇加 2-3 张实际界面截图
-- `dev/architecture/data-flow.md`：4 个 mermaid 序列图改为对应代码文件路径标注（点 GitHub 跳到具体函数）
-- `dev/how-to/add-api-endpoint.md`：把 widgets 占位例改为 v0.7.x 真实新增的某个端点（提交时再选）
+#### 架构决策记录（新建 `docs/adr/`）
 
-#### 文档 — ADR 回填
+- `README.md` 写明 ADR 协议（Michael Nygard 模板、命名、何时写 / 何时不写）
+- `0001-record-architecture-decisions.md` 元决策落地，规划 0002-0005 待回填（FastAPI 选型 / OpenAPI codegen 工具 / Konva canvas / 任务锁状态机）
 
-按 ADR-0001 规划的 4 条决策回填实际内容，每篇控制在 80-150 行：
+#### 顶层文档
 
-- `0002-fastapi-sqlalchemy-alembic.md` — 为什么不选 Django/Flask/Starlette
-- `0003-openapi-typescript-codegen.md` — 选 `@hey-api/openapi-ts` 而非 `orval` / `swagger-typescript-api` 的对比
-- `0004-konva-as-canvas-engine.md` — Konva vs Fabric vs 原生 Canvas
-- `0005-task-lock-and-review-state-machine.md` — 任务锁的 5 分钟 TTL + 审核流转角色矩阵
+- 新建 `README.md`（仓库入口，含技术栈表 / 快速开始 / 测试命令 / 目录结构）
+- `DEV.md` 加 pre-commit setup 章节，索引指向 docs-site
+- `CLAUDE.md` 文档索引扩到 README + docs-site + ADR
 
-#### CI / 工具链
+### 修真 bug（验证过程中顺手）
 
-- `prebuild` 行为：`apps/web/package.json` 当前 `"prebuild": "pnpm codegen"` 会拖慢 build。CI 已有 snapshot 校验（`test_openapi_contract.py`），考虑把 prebuild 移到 dev-only 或加跳过条件
-- `apps/web` 加 `pnpm typecheck` 到 lint job（snapshot 落盘后已无运行时依赖）
-- 探索把 ruff-format 从 pre-commit 移到 CI 单独 job，让 commit 速度更快
+- `apps/web/src/components/CommandPalette.tsx:273` — 隐藏的 `\u3000` 全角空格（eslint `no-irregular-whitespace`）
+- `apps/web/src/pages/Workbench/shell/CommentInput.tsx:167,170` — 正则字符类内的 NBSP（`/\s| /` 改 `/[\s\u00A0]/` 保留语义）
+- `apps/api/app/services/task_lock.py` — 6 处 E741 模糊变量名 `l` → `lock`
+- `apps/api/app/api/v1/datasets.py` — 2 处 F841 未用变量
+- `apps/api/tests/test_notifications.py` — 1 处 F841 未用变量
+- `apps/api/app/main.py` — E402 noqa 位置错（多行 import 的 noqa 应在首行）
+- `apps/api/tests/test_task_reopen_notification.py` — 3 处 E402（pytestmark.skip 后的 import 加 noqa）
 
-#### 验收
+### Migration / Deploy 注意事项
 
-- [ ] E2E `auth.spec.ts` CI 中真跑通，`continue-on-error` 去掉
-- [ ] codecov dashboard 显示前后端两个 flag 都有数据，前端覆盖率 ≥ 30%
-- [ ] docs-site 首页 GIF / workbench 截图都到位（不是 `> 待补` 占位）
-- [ ] `docs/adr/` 下至少 4 篇有实际内容（不是只有标题）
+- **无 alembic 迁移**：本版纯基础设施 / 文档变更
+- **新增 GitHub Actions secret**：`CODECOV_TOKEN`（去 codecov.io 取，加到 repo Settings → Secrets and variables → Actions）；不加 CI 不阻断，仅 codecov 没数据
+- **GitHub Pages**：repo 必须 public 才能用免费 Pages；Settings → Pages → Source 选 GitHub Actions（v0.7.4 通过 `enablement: true` 自动激活）
+- **首次 clone**：`pnpm install` + `pre-commit install`（启用 git hooks）+ `pnpm exec playwright install chromium`（首次跑 E2E 前装浏览器）
+- **存量代码 ruff-format churn**：激活 ruff-format pre-commit hook 后存量代码首次走完整规范化，本版伴随一个 `style: ruff-format 存量代码统一格式` 提交（121 文件 +8536 / -1395，纯格式无业务逻辑变化）
+
+### 验证
+
+```bash
+pnpm openapi:check         # snapshot 与运行时一致
+pnpm test                  # 8 文件 / 64 测试
+pnpm typecheck             # tsc 0 错
+pnpm exec eslint . --quiet # 0 错（35 warnings）
+cd apps/api && uv run pytest tests/test_openapi_contract.py  # 契约 2 通过
+pnpm docs:build            # VitePress 构建通过
+pnpm exec playwright test --list  # 配置有效（spec 全 .skip）
+```
+
+CI 全绿（pytest / vitest / lint / e2e / openapi-contract），docs deploy 成功，文档站 [yyq19990828.github.io/ai-annotation-platform](https://yyq19990828.github.io/ai-annotation-platform/) 可访问。
+
+### 后续 follow-ups
+
+接续工作（E2E spec 写实、前端覆盖率拉到 30%、ADR 0002-0005 回填、用户手册关键页填实）已转移至 [ROADMAP.md](ROADMAP.md) 的 P2 / P3 段。
 
 ---
 

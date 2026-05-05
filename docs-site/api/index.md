@@ -1,9 +1,9 @@
 # API 文档
 
-完整可交互的 OpenAPI 文档：[**打开 API Reference →**](/api-reference.html){target="_blank"}
+完整可交互的 OpenAPI 文档：[**打开 API Reference →**](../api-reference.html){target="_blank"}
 
 <iframe
-  src="/api-reference.html"
+  src="../api-reference.html"
   style="width: 100%; height: 80vh; border: 1px solid var(--vp-c-divider); border-radius: 8px; margin-top: 1rem;"
   title="API Reference"
 ></iframe>
@@ -28,7 +28,7 @@ apps/api/openapi.snapshot.json
 
 每次后端路由 / Pydantic schema 变化都会刷新这份 snapshot；CI 校验运行时与 snapshot 一致，前端 `pnpm codegen` 也读它。
 
-下载：[/openapi.json](/openapi.json)
+下载：[openapi.json](../openapi.json)
 
 ## 本地实时文档
 
