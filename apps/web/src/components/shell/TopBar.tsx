@@ -86,7 +86,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           zIndex: 10,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 24, flexShrink: 0, minWidth: 0 }}>
           {showHamburger && (
             <button
               type="button"
@@ -109,7 +109,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
               <Icon name="menu" size={16} />
             </button>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 13, letterSpacing: "0.01em" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 13, letterSpacing: "0.01em", whiteSpace: "nowrap", flexShrink: 0 }}>
             <div
               style={{
                 width: 22,
@@ -137,7 +137,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           <div
             onClick={onWorkspaceChange}
             style={{
-              display: "flex",
+              display: showHamburger ? "none" : "flex",
               alignItems: "center",
               gap: 6,
               padding: "4px 10px 4px 8px",
@@ -146,6 +146,8 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
               fontSize: 12,
               color: "var(--color-fg-muted)",
               cursor: "pointer",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             }}
           >
             <span
@@ -161,7 +163,15 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           </div>
         </div>
 
-        <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+        <div
+          style={{
+            flex: 1,
+            display: showHamburger ? "none" : "flex",
+            justifyContent: "center",
+            minWidth: 0,
+            padding: "0 12px",
+          }}
+        >
           <SearchInput
             placeholder="搜索项目、任务、数据集、成员..."
             width={360}
@@ -171,7 +181,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           {/* 刷新按钮 */}
           <button
             title="刷新"
@@ -252,7 +262,15 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
             }}
           >
             <Avatar initial={user?.name?.[0] ?? "?"} size="sm" />
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.2 }}>
+            <div
+              style={{
+                display: showHamburger ? "none" : "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                lineHeight: 1.2,
+                whiteSpace: "nowrap",
+              }}
+            >
               <span style={{ fontSize: 12, fontWeight: 500 }}>{user?.name ?? "—"}</span>
               <span style={{ fontSize: 10.5, color: "var(--color-fg-muted)" }}>{user?.role ?? "—"}</span>
             </div>

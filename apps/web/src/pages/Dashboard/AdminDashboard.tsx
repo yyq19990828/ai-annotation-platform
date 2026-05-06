@@ -71,14 +71,14 @@ export function AdminDashboard() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
         <StatCard icon="users" label="用户总数" value={stats.total_users} hint={`${stats.active_users} 在线`} />
         <StatCard icon="layers" label="项目总数" value={stats.total_projects} hint={`${stats.projects_in_progress} 进行中`} />
         <StatCard icon="target" label="任务总量" value={stats.total_tasks.toLocaleString()} />
         <StatCard icon="check" label="标注总量" value={stats.total_annotations.toLocaleString()} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, marginBottom: 16 }}>
         <Card>
           <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>项目状态分布</h3>

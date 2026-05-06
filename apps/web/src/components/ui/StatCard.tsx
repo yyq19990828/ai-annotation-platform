@@ -29,12 +29,30 @@ export function StatCard({ icon, label, value, trend, sparkValues, sparkColor, h
           alignItems: "center",
           gap: 6,
           marginBottom: 8,
+          minWidth: 0,
         }}
       >
-        {icon && <Icon name={icon} size={13} />}
-        <span>{label}</span>
+        {icon && <Icon name={icon} size={13} style={{ flexShrink: 0 }} />}
+        <span
+          style={{
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            minWidth: 0,
+          }}
+        >
+          {label}
+        </span>
         {hint && (
-          <span style={{ marginLeft: "auto", color: "var(--color-fg-subtle)", fontSize: 11 }}>
+          <span
+            style={{
+              marginLeft: "auto",
+              color: "var(--color-fg-subtle)",
+              fontSize: 11,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
             {hint}
           </span>
         )}
