@@ -56,7 +56,11 @@ async def test_open_register_success(
 ):
     resp = await httpx_client.post(
         "/api/v1/auth/register-open",
-        json={"email": "newuser@example.com", "name": "NewUser", "password": "Abcd1234"},
+        json={
+            "email": "newuser@example.com",
+            "name": "NewUser",
+            "password": "Abcd1234",
+        },
     )
     assert resp.status_code == 201
     data = resp.json()

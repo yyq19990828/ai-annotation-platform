@@ -507,9 +507,14 @@ async def export_project(
             project.id, include_attributes=include_attributes
         )
         await AuditService.log(
-            db, actor=actor, action=AuditAction.PROJECT_EXPORT,
-            target_type="project", target_id=str(project.id), request=request,
-            status_code=200, detail={"format": format, "project_display_id": project.display_id},
+            db,
+            actor=actor,
+            action=AuditAction.PROJECT_EXPORT,
+            target_type="project",
+            target_id=str(project.id),
+            request=request,
+            status_code=200,
+            detail={"format": format, "project_display_id": project.display_id},
         )
         await db.commit()
         return Response(
@@ -523,9 +528,14 @@ async def export_project(
     if format == "yolo":
         data = await svc.export_yolo(project.id, include_attributes=include_attributes)
         await AuditService.log(
-            db, actor=actor, action=AuditAction.PROJECT_EXPORT,
-            target_type="project", target_id=str(project.id), request=request,
-            status_code=200, detail={"format": format, "project_display_id": project.display_id},
+            db,
+            actor=actor,
+            action=AuditAction.PROJECT_EXPORT,
+            target_type="project",
+            target_id=str(project.id),
+            request=request,
+            status_code=200,
+            detail={"format": format, "project_display_id": project.display_id},
         )
         await db.commit()
         return Response(
@@ -538,9 +548,14 @@ async def export_project(
 
     data = await svc.export_voc(project.id, include_attributes=include_attributes)
     await AuditService.log(
-        db, actor=actor, action=AuditAction.PROJECT_EXPORT,
-        target_type="project", target_id=str(project.id), request=request,
-        status_code=200, detail={"format": format, "project_display_id": project.display_id},
+        db,
+        actor=actor,
+        action=AuditAction.PROJECT_EXPORT,
+        target_type="project",
+        target_id=str(project.id),
+        request=request,
+        status_code=200,
+        detail={"format": format, "project_display_id": project.display_id},
     )
     await db.commit()
     return Response(

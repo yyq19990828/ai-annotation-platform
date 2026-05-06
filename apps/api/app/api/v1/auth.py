@@ -12,7 +12,12 @@ from app.db.models.user import User
 from app.db.enums import UserRole
 from app.schemas.user import Token, LoginRequest, UserOut
 from app.schemas.invitation import OpenRegisterRequest, RegisterResponse
-from app.core.security import verify_password, create_access_token, hash_password, decode_access_token
+from app.core.security import (
+    verify_password,
+    create_access_token,
+    hash_password,
+    decode_access_token,
+)
 from app.services.audit import AuditAction, AuditService
 from app.services.password_reset import PasswordResetService
 from app.config import settings
@@ -92,6 +97,7 @@ async def login(
 
     user.last_login_at = datetime.now(timezone.utc)
     from app.core.token_blacklist import get_user_generation
+
     gen = await get_user_generation(str(user.id))
     token = create_access_token(subject=str(user.id), role=user.role, gen=gen)
     await AuditService.log(
@@ -238,9 +244,13 @@ async def logout(
         await blacklist_token(jti, max(remaining, 0))
 
     await AuditService.log(
-        db, actor=current_user, action=AuditAction.AUTH_LOGOUT,
-        target_type="user", target_id=str(current_user.id),
-        request=request, status_code=204,
+        db,
+        actor=current_user,
+        action=AuditAction.AUTH_LOGOUT,
+        target_type="user",
+        target_id=str(current_user.id),
+        request=request,
+        status_code=204,
     )
     await db.commit()
 
@@ -256,9 +266,13 @@ async def logout_all(
     new_gen = await increment_user_generation(str(current_user.id))
 
     await AuditService.log(
-        db, actor=current_user, action=AuditAction.AUTH_LOGOUT_ALL,
-        target_type="user", target_id=str(current_user.id),
-        request=request, status_code=200,
+        db,
+        actor=current_user,
+        action=AuditAction.AUTH_LOGOUT_ALL,
+        target_type="user",
+        target_id=str(current_user.id),
+        request=request,
+        status_code=200,
         detail={"new_generation": new_gen},
     )
     await db.commit()

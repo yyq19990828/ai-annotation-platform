@@ -168,9 +168,7 @@ async def test_audit_log_delete_denied(
     await db_session.flush()
 
     with pytest.raises(Exception, match="immutable"):
-        await db_session.execute(
-            text(f"DELETE FROM audit_logs WHERE id = {entry.id}")
-        )
+        await db_session.execute(text(f"DELETE FROM audit_logs WHERE id = {entry.id}"))
         await db_session.flush()
 
 
@@ -191,9 +189,7 @@ async def test_audit_log_update_denied(
 
     with pytest.raises(Exception, match="immutable"):
         await db_session.execute(
-            text(
-                f"UPDATE audit_logs SET actor_email = 'hacked' WHERE id = {entry.id}"
-            )
+            text(f"UPDATE audit_logs SET actor_email = 'hacked' WHERE id = {entry.id}")
         )
         await db_session.flush()
 
@@ -215,9 +211,7 @@ async def test_gdpr_redaction_still_works(
 
     await db_session.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
     await db_session.execute(
-        text(
-            f"UPDATE audit_logs SET actor_email = NULL WHERE id = {entry.id}"
-        )
+        text(f"UPDATE audit_logs SET actor_email = NULL WHERE id = {entry.id}")
     )
     await db_session.flush()
 

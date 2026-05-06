@@ -23,7 +23,9 @@ class InvitationService:
     async def check_daily_limit(db: AsyncSession, actor_id: uuid.UUID) -> None:
         since = datetime.now(timezone.utc) - timedelta(hours=24)
         result = await db.execute(
-            select(func.count()).select_from(UserInvitation).where(
+            select(func.count())
+            .select_from(UserInvitation)
+            .where(
                 UserInvitation.invited_by == actor_id,
                 UserInvitation.created_at >= since,
             )

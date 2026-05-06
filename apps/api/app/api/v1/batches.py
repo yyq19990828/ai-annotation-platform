@@ -673,9 +673,18 @@ async def export_batch(
             project_id, batch_id=batch_id, include_attributes=include_attributes
         )
         await AuditService.log(
-            db, actor=actor, action=AuditAction.BATCH_EXPORT,
-            target_type="batch", target_id=str(batch_id), request=request,
-            status_code=200, detail={"format": format, "project_id": str(project_id), "batch_display_id": batch.display_id},
+            db,
+            actor=actor,
+            action=AuditAction.BATCH_EXPORT,
+            target_type="batch",
+            target_id=str(batch_id),
+            request=request,
+            status_code=200,
+            detail={
+                "format": format,
+                "project_id": str(project_id),
+                "batch_display_id": batch.display_id,
+            },
         )
         await db.commit()
         return Response(
@@ -689,9 +698,18 @@ async def export_batch(
             project_id, batch_id=batch_id, include_attributes=include_attributes
         )
         await AuditService.log(
-            db, actor=actor, action=AuditAction.BATCH_EXPORT,
-            target_type="batch", target_id=str(batch_id), request=request,
-            status_code=200, detail={"format": format, "project_id": str(project_id), "batch_display_id": batch.display_id},
+            db,
+            actor=actor,
+            action=AuditAction.BATCH_EXPORT,
+            target_type="batch",
+            target_id=str(batch_id),
+            request=request,
+            status_code=200,
+            detail={
+                "format": format,
+                "project_id": str(project_id),
+                "batch_display_id": batch.display_id,
+            },
         )
         await db.commit()
         return Response(
@@ -704,9 +722,18 @@ async def export_batch(
         project_id, batch_id=batch_id, include_attributes=include_attributes
     )
     await AuditService.log(
-        db, actor=actor, action=AuditAction.BATCH_EXPORT,
-        target_type="batch", target_id=str(batch_id), request=request,
-        status_code=200, detail={"format": format, "project_id": str(project_id), "batch_display_id": batch.display_id},
+        db,
+        actor=actor,
+        action=AuditAction.BATCH_EXPORT,
+        target_type="batch",
+        target_id=str(batch_id),
+        request=request,
+        status_code=200,
+        detail={
+            "format": format,
+            "project_id": str(project_id),
+            "batch_display_id": batch.display_id,
+        },
     )
     await db.commit()
     return Response(

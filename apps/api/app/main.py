@@ -78,8 +78,12 @@ app.add_middleware(
     allow_origins=settings.cors_allow_origins,
     allow_origin_regex=settings.effective_cors_origin_regex,
     allow_credentials=True,
-    allow_methods=["*"] if settings.environment != "production" else settings.cors_allow_methods,
-    allow_headers=["*"] if settings.environment != "production" else settings.cors_allow_headers,
+    allow_methods=["*"]
+    if settings.environment != "production"
+    else settings.cors_allow_methods,
+    allow_headers=["*"]
+    if settings.environment != "production"
+    else settings.cors_allow_headers,
 )
 
 app.include_router(api_router, prefix="/api/v1")
