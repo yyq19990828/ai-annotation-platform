@@ -20,6 +20,8 @@ class UserOut(BaseModel):
     status: str
     is_active: bool = True
     last_login_at: datetime | None = None
+    # v0.8.3 · 心跳机制：最近一次活跃时间（登录 / POST /me/heartbeat / 关键操作）
+    last_seen_at: datetime | None = None
     # v0.8.1 · 非空 = 管理员刚重置密码，前端登录后跳「强制改密」页
     password_admin_reset_at: datetime | None = None
     # v0.8.1 · 自助注销冷静期信息（已申请时返回 scheduled_at）；未申请均为 None

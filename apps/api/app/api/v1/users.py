@@ -87,6 +87,45 @@ async def _target_only_in_actor_projects(
     return foreign == 0
 
 
+class UsersStats(BaseModel):
+    total: int
+    online: int
+    weekly_active: int
+
+
+@router.get("/stats", response_model=UsersStats)
+async def users_stats(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles(*_MANAGERS)),
+):
+    """v0.8.3 · UsersPage 顶部 4 卡之「本周活跃」与状态聚合。
+
+    weekly_active 基于 last_seen_at >= now-7d，比旧的 status==online 更准确
+    （旧逻辑只反映瞬时在线状态）。
+    """
+    from datetime import timedelta
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    total = (
+        await db.execute(select(func.count(User.id)).where(User.is_active.is_(True)))
+    ).scalar_one()
+    online = (
+        await db.execute(
+            select(func.count(User.id)).where(
+                User.is_active.is_(True), User.status == "online"
+            )
+        )
+    ).scalar_one()
+    weekly_active = (
+        await db.execute(
+            select(func.count(User.id)).where(
+                User.is_active.is_(True), User.last_seen_at >= cutoff
+            )
+        )
+    ).scalar_one()
+    return UsersStats(total=total, online=online, weekly_active=weekly_active)
+
+
 @router.get("", response_model=list[UserOut])
 async def list_users(
     role: str | None = None,

@@ -6845,6 +6845,18 @@
             ],
             "title": "Last Login At"
           },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -6880,6 +6892,29 @@
           "created_at"
         ],
         "title": "UserOut",
+        "type": "object"
+      },
+      "UsersStats": {
+        "properties": {
+          "online": {
+            "title": "Online",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "weekly_active": {
+            "title": "Weekly Active",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "online",
+          "weekly_active"
+        ],
+        "title": "UsersStats",
         "type": "object"
       },
       "ValidationError": {
@@ -6957,7 +6992,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.8.1"
+    "version": "0.8.3"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -7927,6 +7962,26 @@
           }
         ],
         "summary": "Request Self Deactivation",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/auth/me/heartbeat": {
+      "post": {
+        "description": "v0.8.3 · 在线状态心跳。\n\n前端每 30s 调一次（document.visibilityState === 'visible' 时），刷新\nlast_seen_at 与 status='online'。Celery beat `mark_inactive_offline` 任务\n据 last_seen_at 把超 OFFLINE_THRESHOLD_MINUTES 的用户置 offline。",
+        "operationId": "heartbeat_api_v1_auth_me_heartbeat_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Heartbeat",
         "tags": [
           "me"
         ]
@@ -14673,6 +14728,33 @@
           }
         ],
         "summary": "Invite User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/stats": {
+      "get": {
+        "description": "v0.8.3 · UsersPage 顶部 4 卡之「本周活跃」与状态聚合。\n\nweekly_active 基于 last_seen_at >= now-7d，比旧的 status==online 更准确\n（旧逻辑只反映瞬时在线状态）。",
+        "operationId": "users_stats_api_v1_users_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsersStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Users Stats",
         "tags": [
           "users"
         ]

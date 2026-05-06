@@ -6,8 +6,8 @@ POST /me/task-events:batch；该端点经 Celery 异步路径写入此表。
 设计参考 ADR-0009：本期不分区，触发条件（行数 > 1M 或单月 INSERT > 100k）
 满足后执行 Stage 2 月分区迁移（参考 ADR-0006 predictions 月分区方案）。
 
-Revision ID: 0039
-Revises: 0038
+Revision ID: 0040
+Revises: 0039
 Create Date: 2026-05-06
 """
 
@@ -16,8 +16,8 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
 
-revision = "0039"
-down_revision = "0038"
+revision = "0040"
+down_revision = "0039"
 branch_labels = None
 depends_on = None
 

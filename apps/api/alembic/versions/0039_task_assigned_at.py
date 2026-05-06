@@ -6,8 +6,8 @@
 - 写入点：services/batch.py 中所有 cascade 写 assignee_id 处 + tasks.py:548
   （提交者即 assignee 兜底）+ users.py:587 注销改派路径
 
-Revision ID: 0038
-Revises: 0037
+Revision ID: 0039
+Revises: 0038
 Create Date: 2026-05-06
 """
 
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0038"
-down_revision = "0037"
+revision = "0039"
+down_revision = "0038"
 branch_labels = None
 depends_on = None
 

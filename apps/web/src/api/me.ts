@@ -41,4 +41,6 @@ export const meApi = {
   // v0.8.4
   submitTaskEvents: (events: TaskEventIn[]) =>
     apiClient.post<TaskEventBatchOut>("/auth/me/task-events:batch", { events }),
+  // v0.8.3 · 在线状态心跳：前端 30s 周期触发，刷新 last_seen_at + status='online'。
+  heartbeat: () => apiClient.post<void>("/auth/me/heartbeat"),
 };

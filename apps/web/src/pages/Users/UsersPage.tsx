@@ -10,7 +10,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
-import { useUsers, useDeleteUser } from "@/hooks/useUsers";
+import { useUsers, useDeleteUser, useUsersStats } from "@/hooks/useUsers";
 import { useGroups } from "@/hooks/useGroups";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
@@ -87,6 +87,7 @@ export function UsersPage() {
 
   const { data: allUsers = [], isLoading } = useUsers();
   const { data: groupsData = [] } = useGroups();
+  const { data: usersStats } = useUsersStats();
 
   const filtered = allUsers.filter((u: UserResponse) => {
     if (selectedRole !== "全部" && u.role !== selectedRole) return false;
@@ -147,7 +148,14 @@ export function UsersPage() {
         <StatCard icon="users" label="团队成员" value={allUsers.length} hint="活跃" sparkValues={[8, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 12]} sparkColor="var(--color-accent)" />
         <StatCard icon="shield" label="角色组" value={roleKeys.length} hint="自定义" />
         <StatCard icon="folder" label="数据组" value={groupsData.length} hint="可分配" />
-        <StatCard icon="activity" label="本周活跃" value={allUsers.filter((u: UserResponse) => u.status === "online").length} hint="在线" sparkValues={[6, 7, 8, 7, 9, 10, 11, 9]} sparkColor="var(--color-ai)" />
+        <StatCard
+          icon="activity"
+          label="本周活跃"
+          value={usersStats?.weekly_active ?? "—"}
+          hint={usersStats ? `在线 ${usersStats.online}` : "近 7 日"}
+          sparkValues={[6, 7, 8, 7, 9, 10, 11, 9]}
+          sparkColor="var(--color-ai)"
+        />
       </div>
 
       <Card>

@@ -14,6 +14,7 @@ celery_app = Celery(
         "app.workers.deactivation",
         "app.workers.audit_partition",
         "app.workers.task_events",
+        "app.workers.presence",
     ],
 )
 
@@ -64,6 +65,11 @@ celery_app.conf.update(
         "refresh-user-perf-mv": {
             "task": "app.workers.cleanup.refresh_user_perf_mv",
             "schedule": crontab(minute=5),
+        },
+        # v0.8.3 · 在线状态心跳：每 2 分钟扫描，把超 OFFLINE_THRESHOLD_MINUTES 未活跃的 online 用户置 offline
+        "mark-inactive-offline": {
+            "task": "app.workers.presence.mark_inactive_offline",
+            "schedule": crontab(minute="*/2"),
         },
     },
 )

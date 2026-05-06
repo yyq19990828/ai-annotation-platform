@@ -8,6 +8,15 @@ export function useUsers(params?: { role?: string; project_id?: string }) {
   });
 }
 
+// v0.8.3 · UsersPage「本周活跃」/「在线」聚合卡（基于 last_seen_at）
+export function useUsersStats() {
+  return useQuery({
+    queryKey: ["users", "stats"],
+    queryFn: () => usersApi.stats(),
+    refetchInterval: 60_000,
+  });
+}
+
 export function useInviteUser() {
   const qc = useQueryClient();
   return useMutation({

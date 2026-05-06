@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
 import { useNotificationSocket } from "@/hooks/useNotificationSocket";
+import { useHeartbeat } from "@/hooks/useHeartbeat";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { SidebarDrawer } from "@/components/shell/SidebarDrawer";
 import { ToastRack, useToastStore } from "@/components/ui/Toast";
@@ -96,6 +97,7 @@ function AppShell() {
   }, []);
 
   useNotificationSocket();
+  useHeartbeat();
 
   return (
     <div
@@ -156,6 +158,7 @@ function FullScreenWorkbench() {
     patchFetchForBugCapture();
     initBugReportCapture();
   }, []);
+  useHeartbeat();
 
   return (
     <div style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
