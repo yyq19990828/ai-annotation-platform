@@ -20,6 +20,32 @@
 
 ## 最新版本
 
+## [0.8.2] - 2026-05-06
+
+> **文档深度优化。** 把 v0.8.0 / v0.8.1 留下的四处文档机制缝隙以**自动化**方式补齐：ADR 不再孤悬 GitHub、`pnpm docs:build` 进 PR gate、how-to 与源码漂移即报错、ML Backend 协议有可跑样板。后续文档随代码自然漂移即被 CI 拦下，免人工巡检。
+
+### 新增
+
+- **`pnpm docs:build` 进 CI gate**：`.github/workflows/ci.yml` 新增 `docs-build` job，所有 PR 都跑（不带 `paths` 过滤），约 5s 成本；dead-link / hotkeys SoT 漂移 / snippet 不一致即时阻断。原 `docs.yml` 保留为 GitHub Pages 发布触发，无重复构建影响。
+- **`docs-site/scripts/check-doc-snippets.mjs`** + snippet 标记机制：扫 `.md` 中的 `<!-- snippet:PATH:START-END -->` ... `<!-- /snippet -->` 块，逐行比对源文件区间与代码块内容，不一致即打印 diff 并 exit 1。`docs-site/package.json` 的 `prebuild` 链中追加；`pnpm check:snippets` 顶层别名可直接调用。
+- **`add-api-endpoint.md` 加 snippet 标记**：logout 代码块绑定 `apps/api/app/api/v1/auth.py:239-266`；同时把 v0.8.0 写入时**已漂移**的内容（漏 `current_user.status = "offline"`、AuditService.log 压缩单行）对齐到当前真实源码。后续 logout 函数任一字符变化 prebuild 即报。
+- **`docs-site/scripts/mirror-adr.mjs`** + ADR 接入 sidebar：把 `docs/adr/*.md` 镜像到 `docs-site/dev/adr/` 让 VitePress 渲染，文件头注入"自动镜像"警告条；同时输出 `sidebar.generated.json`。`docs-site/.vitepress/config.ts` 顶部读取该 JSON，在 `/dev/` 侧边栏底部新增「ADR（架构决策）」可折叠组（默认 collapsed）。`.gitignore` 排除 `docs-site/dev/adr/`，避免 mirror 产物入库。
+- **`docs-site/dev/examples/echo-ml-backend/`** 可执行样板（5 文件）：`main.py`（协议 §1-3 四端点完整 FastAPI 实现）+ `requirements.txt` + `Dockerfile`（python:3.11-slim + uvicorn）+ `test.sh`（curl 三连击 health/setup/predict）+ `README.md`（uvicorn / docker 两种启动方式 + 接入平台步骤）。`ml-backend-protocol.md §8` 改为 `<!-- snippet -->` 引用 `main.py:1-63`，inline 示例与样板永远同步。
+- **ADR-0008（Proposed）批次 admin-locked 字段**：`docs/adr/0008-batch-admin-locked-status.md` 把 ROADMAP A §批次状态机二阶段「`annotating → active` 暂停」难点（scheduler 死锁）文字化。决定引入正交 `admin_locked: bool` 字段（独立于 7 态枚举），check_auto_transitions 起始处短路返回；包含表迁移 SQL、API 端点设计（lock/unlock）、状态机 mermaid 图、3 种被拒绝方案（PAUSED 枚举 / task 级锁 / 借 ARCHIVED）的取舍理由。**仅设计**，实现推迟到 v0.9 评估窗口。
+
+### 变更
+
+- **`docs-site/package.json` prebuild 链**：从 `sync-openapi && generate-hotkeys` 扩为 `sync-openapi && mirror-adr && generate-hotkeys && check-doc-snippets`；新增 `check:snippets` / `mirror:adr` 顶层 script。
+- **`.vitepress/config.ts`**：`/dev/` 侧边栏底部新增 `ADR（架构决策）` 折叠组，items 由 mirror-adr 输出的 sidebar.generated.json 注入；缺文件时降级为空数组让 VitePress 仍可启动。
+
+### 推迟（明确不在本期）
+
+- **截图自动化（Playwright + IMAGE_CHECKLIST 16 处）**：与 E2E spec 写实共建 fixture，1-2 天深活，本期窗口不足
+- **getting-started 3 张 GIF 录屏**：等截图自动化方案落地后批量产出
+- **fabric.js dead dep 清理**：非文档主题，留给下次依赖清理 PR
+
+---
+
 ## [0.8.1] - 2026-05-06
 
 > **治理 / 合规向收口 epic。** 一次性把 ROADMAP 中「系统设置可编辑、注册统计、自助注销、管理员重置密码、审计分区归档、数据导出审计」6 项硬残缺收齐。

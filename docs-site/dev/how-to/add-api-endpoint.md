@@ -35,8 +35,9 @@ src/pages/.../UserMenu.tsx                 # 调用方
 
 ## 1. 路由
 
-`POST /auth/logout` 把当前 token 的 jti 加到 Redis 黑名单，TTL = 该 token 剩余有效期。来源：`apps/api/app/api/v1/auth.py:224-245`：
+`POST /auth/logout` 把当前 token 的 jti 加到 Redis 黑名单，TTL = 该 token 剩余有效期。下面的代码块由 `check-doc-snippets.mjs` 锁定到源文件 `apps/api/app/api/v1/auth.py:239-266`，源码改一字 prebuild 即报错：
 
+<!-- snippet:apps/api/app/api/v1/auth.py:239-266 -->
 ```python
 @router.post("/logout", status_code=204)
 async def logout(
@@ -54,13 +55,20 @@ async def logout(
         remaining = int(exp - datetime.now(timezone.utc).timestamp())
         await blacklist_token(jti, max(remaining, 0))
 
+    current_user.status = "offline"
+
     await AuditService.log(
-        db, actor=current_user, action=AuditAction.AUTH_LOGOUT,
-        target_type="user", target_id=str(current_user.id),
-        request=request, status_code=204,
+        db,
+        actor=current_user,
+        action=AuditAction.AUTH_LOGOUT,
+        target_type="user",
+        target_id=str(current_user.id),
+        request=request,
+        status_code=204,
     )
     await db.commit()
 ```
+<!-- /snippet -->
 
 要点：
 

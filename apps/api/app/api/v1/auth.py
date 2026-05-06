@@ -97,6 +97,7 @@ async def login(
         )
 
     user.last_login_at = datetime.now(timezone.utc)
+    user.status = "online"
     from app.core.token_blacklist import get_user_generation
 
     gen = await get_user_generation(str(user.id))
@@ -251,6 +252,8 @@ async def logout(
         remaining = int(exp - datetime.now(timezone.utc).timestamp())
         await blacklist_token(jti, max(remaining, 0))
 
+    current_user.status = "offline"
+
     await AuditService.log(
         db,
         actor=current_user,
@@ -272,6 +275,7 @@ async def logout_all(
     from app.core.token_blacklist import increment_user_generation
 
     new_gen = await increment_user_generation(str(current_user.id))
+    current_user.status = "offline"
 
     await AuditService.log(
         db,

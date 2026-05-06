@@ -1,4 +1,18 @@
 import { defineConfig } from "vitepress";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// ADR 侧边栏由 docs-site/scripts/mirror-adr.mjs 在 prebuild/predev 阶段生成。
+// 若文件缺失（例如刚 clone 还未跑 prebuild），降级为空数组让 VitePress 仍能启动。
+const __here = dirname(fileURLToPath(import.meta.url));
+const __adrSidebarPath = resolve(__here, "../dev/adr/sidebar.generated.json");
+const adrSidebarItems = existsSync(__adrSidebarPath)
+  ? (JSON.parse(readFileSync(__adrSidebarPath, "utf8")) as Array<{
+      text: string;
+      link: string;
+    }>)
+  : [];
 
 export default defineConfig({
   title: "AI Annotation Platform",
@@ -94,6 +108,11 @@ export default defineConfig({
             { text: "Alembic 迁移", link: "/dev/how-to/add-migration" },
             { text: "调试 Celery", link: "/dev/how-to/debug-celery" },
           ],
+        },
+        {
+          text: "ADR（架构决策）",
+          collapsed: true,
+          items: adrSidebarItems,
         },
       ],
 

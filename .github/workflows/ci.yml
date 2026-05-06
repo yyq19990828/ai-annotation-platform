@@ -141,6 +141,24 @@ jobs:
           commit_message: "style: auto-fix (ruff check --fix + format)"
           file_pattern: "apps/api/**/*.py"
 
+  docs-build:
+    name: Docs build (VitePress)
+    # 任何 PR 都跑：让 dead-link / hotkeys SoT 漂移 / snippet 不一致即时暴露。
+    # 本地构建约 5s + prebuild 同步 openapi/hotkeys/snippet 约 2s。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: pnpm docs:build
+        env:
+          DOCS_BASE: /
+        run: pnpm docs:build
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest

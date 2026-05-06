@@ -20,3 +20,7 @@ playwright-report/
 test-results/
 .pytest_cache/
 .ruff_cache/
+
+# docs-site/dev/adr 由 mirror-adr.mjs 在 prebuild 时从 docs/adr/ 重建
+# （hotkeys.generated.md 与 openapi snapshot 历史上已 track，不在此处忽略以保持 surgical）
+docs-site/dev/adr/

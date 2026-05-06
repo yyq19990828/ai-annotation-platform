@@ -4,12 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/sync-openapi.mjs && node scripts/generate-hotkeys.mjs",
-    "prebuild": "node scripts/sync-openapi.mjs && node scripts/generate-hotkeys.mjs",
+    "predev": "node scripts/sync-openapi.mjs && node scripts/mirror-adr.mjs && node scripts/generate-hotkeys.mjs",
+    "prebuild": "node scripts/sync-openapi.mjs && node scripts/mirror-adr.mjs && node scripts/generate-hotkeys.mjs && node scripts/check-doc-snippets.mjs",
     "dev": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview",
-    "hotkeys": "node scripts/generate-hotkeys.mjs"
+    "hotkeys": "node scripts/generate-hotkeys.mjs",
+    "check:snippets": "node scripts/check-doc-snippets.mjs",
+    "mirror:adr": "node scripts/mirror-adr.mjs"
   },
   "devDependencies": {
     "@scalar/api-reference": "^1.25.0",
