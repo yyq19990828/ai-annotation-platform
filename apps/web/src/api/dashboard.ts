@@ -87,6 +87,8 @@ export interface AnnotatorDashboardStats {
   weekly_target?: number;
   active_minutes_today?: number | null;
   streak_days?: number | null;
+  // v0.8.5 · 当日 0-23 时分钟数
+  hour_buckets?: number[];
 }
 
 // v0.8.4 · 管理员人员看板

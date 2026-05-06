@@ -30,6 +30,7 @@ export function ToolDock({ tool, onSetTool }: ToolDockProps) {
             title={`${t.label} (${t.hotkey})`}
             aria-label={t.label}
             aria-pressed={active}
+            data-testid={`tool-btn-${t.id}`}
             style={{
               position: "relative",
               width: 38, height: 38,

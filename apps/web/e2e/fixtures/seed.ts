@@ -69,6 +69,34 @@ class SeedAPI {
     // 跳 dashboard
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 10_000 });
   }
+
+  /**
+   * v0.8.5 · E2E 辅助：直接置 task 状态，绕过 UI 链路。
+   * 多角色串联 spec 用此跳过画框 / 提交流程，专注验证下游交接。
+   */
+  async advanceTask(opts: {
+    taskId: string;
+    toStatus: "pending" | "annotating" | "submitted" | "review" | "completed" | "rejected";
+    annotatorEmail?: string;
+    reviewerEmail?: string;
+  }): Promise<void> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/advance_task`,
+      {
+        data: {
+          task_id: opts.taskId,
+          to_status: opts.toStatus,
+          annotator_email: opts.annotatorEmail,
+          reviewer_email: opts.reviewerEmail,
+        },
+      },
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `seed/advance_task failed: ${res.status()} ${await res.text()}`,
+      );
+    }
+  }
 }
 
 type Fixtures = {
@@ -78,6 +106,8 @@ type Fixtures = {
 export const test = base.extend<Fixtures>({
   seed: async ({ request }, use) => {
     const api = new SeedAPI(request);
+    // playwright fixture 的 use 不是 React Hook
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     await use(api);
   },
 });

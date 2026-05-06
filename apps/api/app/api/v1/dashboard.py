@@ -579,6 +579,24 @@ async def annotator_dashboard(
     ).first()
     active_minutes_today = int((active_ms_row.ms if active_ms_row else 0) // 60000)
 
+    # v0.8.5 · 24-bar 当日专注时段：按 EXTRACT(hour) 聚合 duration_ms → 分钟
+    hour_rows = (
+        await db.execute(
+            select(
+                func.extract("hour", TaskEvent.started_at).label("hour"),
+                func.coalesce(func.sum(TaskEvent.duration_ms), 0).label("ms"),
+            )
+            .where(
+                TaskEvent.user_id == current_user.id,
+                TaskEvent.started_at >= today_start,
+                TaskEvent.started_at < today_start + timedelta(days=1),
+            )
+            .group_by(func.extract("hour", TaskEvent.started_at))
+        )
+    ).all()
+    hour_map = {int(r.hour): int(r.ms // 60000) for r in hour_rows}
+    hour_buckets = [hour_map.get(h, 0) for h in range(24)]
+
     # streak_days: 从今天倒推 distinct UTC 日期连续计数（30 天上限）
     streak_cutoff = today_start - timedelta(days=29)
     day_expr = cast(func.timezone("UTC", TaskEvent.started_at), Date)
@@ -613,6 +631,7 @@ async def annotator_dashboard(
         weekly_target=weekly_target,
         active_minutes_today=active_minutes_today,
         streak_days=streak_days,
+        hour_buckets=hour_buckets,
     )
 
 

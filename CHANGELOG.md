@@ -20,6 +20,38 @@
 
 ## 最新版本
 
+## [0.8.5] - 2026-05-07
+
+> **fabric 清理 / 24-bar 专注时段直方图 / 单测 25% 硬阻断 / E2E 写实化。** 收口 v0.7.x ~ v0.8.4 三个尾巴：① 清掉 `fabric@^6.5.0` dead dep（`apps/web/src/` 全量零引用，仅 `App.tsx:22` 注释提到，ADR-0004 评估通过）；② v0.8.4 已造好的 `<Histogram>` 组件接到个人 dashboard，标注员可看到当日 0-23 时的标注分钟数节律；③ 前端单测覆盖率从 v0.8.3 的 10.88% 推到 25.28%，CI 阈值同步上调到 25 严格阻断回退；④ E2E annotation/batch-flow 从「最小 happy path」升级为带 bbox 拖框 + 多角色串联的写实场景，工作台引入 4 处 data-testid 提供稳定 selector，后端补 `_test_seed.advance_task` 辅助端点跳过 UI 链路串联多角色。
+
+### Added
+
+- **AnnotatorDashboard「今日专注时段分布」24-bar 直方图**：后端 `/dashboard/annotator` 新增 `hour_buckets: list[int]` 字段，按 `EXTRACT(hour, TaskEvent.started_at)` GROUP BY 聚合 `duration_ms / 60_000`；前端复用 v0.8.4 的 `<Histogram>` 组件，`xLabels=["00:00", "23:00"]`。
+- **工作台 data-testid（4 处）**：`tool-btn-{id}`（ToolDock 工具按钮，含 box / hand / polygon / canvas）、`workbench-stage`（ImageStage 容器）、`workbench-submit`（Topbar 提交质检按钮）、`settings-tab-{key}`（ProjectSettingsPage 8 个 section tab）。
+- **`POST /api/v1/__test/seed/advance_task` 测试辅助端点**：直接置 task 到目标状态（pending / annotating / submitted / review / completed / rejected），可同时绑定 annotator / reviewer，绕过 UI 链路。E2E batch-flow.spec 用此跳过画框 / 提交流程，专注验证多角色交接。
+- **9 个新前端测试文件**（277 case）：Histogram / AnnotatorDashboard / ReviewerDashboard / AdminDashboard / ViewerDashboard / LoginPage / RegisterPage / PasswordPages（Forgot + Reset）/ InviteUserModal / useDashboard。
+- **vitest setup localStorage / sessionStorage polyfill**：jsdom 在 about:blank（opaque origin）下不提供 storage，导致 zustand persist 在 setState 时炸 `storage.setItem is not a function`，统一注入内存 storage 兜底，`afterEach` 清理。
+
+### Changed
+
+- **`apps/web/vite.config.ts` coverage thresholds**：lines / statements `10 → 25`，functions / branches 维持。`pnpm test:coverage` 实测 lines=25.28%（277 case，0.28pp 容差）。
+- **E2E annotation.spec**：保留 smoke「路由可达」case；新增 bbox 拖框 case（getByTestId `tool-btn-box` → `boundingBox()` 计算坐标 → `mouse.move/down/up` 模拟拖框 → `seed.advanceTask(submitted)` 模拟提交结果 → 断言 URL 未崩溃）。
+- **E2E batch-flow.spec**：保留 smoke「项目设置页 200」case；新增三角色串联（annotator submit → reviewer 看到 /review → admin 切到 batches tab）。
+- **`apps/web/package.json`**：删 `fabric@^6.5.0`（lockfile 重生）；`apps/web/src/App.tsx:22` 注释里 `konva / fabric` → `konva`。
+
+### Fixed
+
+- **vitest jsdom 环境 zustand persist 崩溃**：v0.8.3 起 11 个 case（usePermissions / stores）依赖 zustand persist 写 `localStorage`，但 jsdom 默认 opaque origin 抛 `SecurityError: localStorage is not available`，导致 `storage.setItem is not a function`。setup 注入内存 storage polyfill 解除。
+- **`tests/factory.create_project` classes 字段类型不匹配**：写的是 `[{"name": c}]` 但 `ProjectOut.classes: list[str]`，导致 GET `/projects/:id` 在 ResponseValidationError 上 500。E2E 写实化暴露的预先存在 bug。修为 `list(classes or ["car", "person"])`。
+- **`_test_seed.seed_reset` 非特权用户工作台空任务**：seed 创建的 task 无 `batch_id`，非特权用户在 `list_tasks` 受 `batch_visibility_clause` 过滤后看不到孤儿任务，工作台显示「该项目暂无任务」。reset 现在创建 `status='annotating'` + `annotator_id/reviewer_id` 双绑定的 default batch，并把 5 个 task 全归入；同时补 ProjectMember 行（annotator + reviewer），否则 `RequireProjectMember` 在 `/projects/:id/annotate` 拦回 dashboard。
+- **playwright `fullyParallel` seed/reset 互相覆盖**：seed/reset 是数据库 TRUNCATE 全局操作，多 spec 并发会让 fixture 拿到对方的造数结果而 500。`playwright.config.ts` 改为 `fullyParallel: false, workers: 1`。
+
+### Removed
+
+- **`fabric@^6.5.0`**：v0.7.x ~ v0.8.0 ADR-0004 评估时已确认 `apps/web/src/` 全量零引用，本期清理。bundle 减少 ~150KB / 一项 supply-chain 风险面。
+
+---
+
 ## [0.8.4 hotfix] - 2026-05-06
 
 > **接通 v0.8.4 的活跃维度占位字段。** v0.8.4 与 v0.8.3 并行开发，落地时心跳基座尚未合并，因此 `active_minutes_today / streak_days / activity_score` 三处保持 `None / 50` 占位待下一版接通；v0.8.3 合并后即解除阻塞，本热修复直接基于 `task_events` 把三处真实化，前端组件不动（schema 字段类型不变）。

@@ -19,7 +19,7 @@ import { ResetPasswordPage } from "@/pages/Login/ResetPasswordPage";
 import { RegisterPage } from "@/pages/Register/RegisterPage";
 import { UnauthorizedPage } from "@/pages/Unauthorized/UnauthorizedPage";
 
-// v0.6.6 · 重型 / 非首屏页面 lazy-load，让登录 / 仪表盘不下载 konva / fabric 等
+// v0.6.6 · 重型 / 非首屏页面 lazy-load，让登录 / 仪表盘不下载 konva 等
 const WorkbenchPage = lazy(() =>
   import("@/pages/Workbench/WorkbenchPage").then((m) => ({ default: m.WorkbenchPage }))
 );

@@ -73,11 +73,13 @@ const config: Parameters<typeof defineConfig>[0] = {
       // v0.8.3 · 切硬阻断：低于 thresholds 时 vitest 退出非 0；codecov.yml frontend
       // informational=false 双重把关，避免覆盖率回退。
       //
-      // 当前实测 lines=10.88%（8 个新测试文件 + 167 case），保留 0.88pp 容差防止
-      // 抖动；下一版逐步推向 ROADMAP 25% 目标，target 同步上调。
+      // v0.8.5 · lines/statements 推到 25.28%（277 case，新增 9 个 page/component
+      // 测试文件覆盖 Dashboard 三页 + Login + Register + InviteUserModal +
+      // Histogram + ForgotPassword/ResetPassword + useDashboard hooks）。阈值上
+      // 调到 25 严格阻断回退；下一版目标 ≥ 40%。
       thresholds: {
-        lines: 10,
-        statements: 10,
+        lines: 25,
+        statements: 25,
         functions: 30,
         branches: 60,
       },

@@ -137,6 +137,7 @@ export function ProjectSettingsPage() {
               <button
                 key={s.key}
                 type="button"
+                data-testid={`settings-tab-${s.key}`}
                 onClick={() => setSection(s.key)}
                 style={{
                   display: "flex",

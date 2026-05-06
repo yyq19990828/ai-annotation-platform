@@ -1010,6 +1010,14 @@
             "title": "Daily Counts",
             "type": "array"
           },
+          "hour_buckets": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Hour Buckets",
+            "type": "array"
+          },
           "median_duration_ms": {
             "anyOf": [
               {

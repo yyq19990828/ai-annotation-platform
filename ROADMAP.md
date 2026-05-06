@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**；**v0.8.2（文档深度优化：docs:build 进 CI gate + snippet 漂移 lint + ADR sidebar mirror + echo-ml-backend 可执行样板 + ADR-0008 admin-locked 状态机草稿）**；**v0.8.3（治理 / 测试基建闭环：在线状态心跳 + 审计 trigger 测试覆盖 + 前端单测切硬阻断（10%）+ E2E 三 spec 写实摘 continue-on-error + `_test_seed` router 造数链路）**；**v0.8.4（效率看板 / 人员绩效 epic：Task.assigned_at + task_events + mv_user_perf_daily + Annotator/Reviewer 三段卡组 + AdminPeoplePage 卡片网格 + 抽屉下钻 + ADR-0009）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**；**v0.8.2（文档深度优化：docs:build 进 CI gate + snippet 漂移 lint + ADR sidebar mirror + echo-ml-backend 可执行样板 + ADR-0008 admin-locked 状态机草稿）**；**v0.8.3（治理 / 测试基建闭环：在线状态心跳 + 审计 trigger 测试覆盖 + 前端单测切硬阻断（10%）+ E2E 三 spec 写实摘 continue-on-error + `_test_seed` router 造数链路）**；**v0.8.4（效率看板 / 人员绩效 epic：Task.assigned_at + task_events + mv_user_perf_daily + Annotator/Reviewer 三段卡组 + AdminPeoplePage 卡片网格 + 抽屉下钻 + ADR-0009）**；**v0.8.5（fabric 清理 + AnnotatorDashboard 24-bar 专注时段直方图 + 前端单测推到 25.28%（CI 阈值 25%）+ E2E annotation/batch-flow 写实化（bbox 拖框 + 多角色串联 + 4 处 data-testid + `_test_seed.advance_task` 辅助端点））**。
 
 ---
 
@@ -31,7 +31,6 @@
 #### 用户与权限页（UsersPage）
 - **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。需 `api_keys` 表 + scope + revoke + 最后使用时间。
 - **「存储与模型集成」面板**：`UsersPage.tsx:246-269` 全部 mock 数据，应对接 `/storage/health` 与 `/projects/{pid}/ml-backends`。
-- ~~**在线状态心跳机制**：v0.8.3 已落（迁移 0038 + `last_seen_at` 列 + `POST /auth/me/heartbeat` + 前端 useHeartbeat 30s + Celery beat 每 2 分钟扫描 + UsersPage 周活跃改读 `/users/stats`）。~~
 
 #### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -39,10 +38,6 @@
 
 #### TopBar / Dashboard 控件
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
-
-#### Annotator / Reviewer 工作台
-- ~~**AnnotatorDashboard `weeklyTarget = 200` 硬编码**~~：v0.8.4 已落 `User.weekly_target_default` + `ProjectMember.weekly_target` + 端点 fallback 200。
-- ~~**Task 三时间戳未被消费**~~：v0.8.4 已落 `submitted_at - assigned_at` 中位值进 annotator 端点；`reviewed_at - reviewer_claimed_at` 中位值进 reviewer 端点；`useSessionStats` 同时缓冲 `task_events` 上报，物化视图 `mv_user_perf_daily` hourly refresh。
 
 #### 登录 / 注册 / 认证
 - **开放注册二阶段增强**（v0.7.7 落了基座，以下为可选延伸）：
@@ -55,7 +50,6 @@
 > v0.7.0 集中收口了批次状态机 epic + v0.6.x 写时观察 18 项；v0.7.6 一次清了 4 项（属性 schema 步骤 / NotificationsPopover usePopover 迁移 / ProjectsPage 卡片 DropdownMenu / task.reopen fan-out / Kanban 看板）；v0.7.7 落了开放注册基座；v0.8.0 一次性把开发文档分组与 ADR 0002-0005 补齐；v0.8.2 把文档体系四处机制缝隙（CI gate / snippet lint / ADR sidebar / echo 样板）以自动化方式收齐；下面列剩余观察项：
 
 - **standalone batch_summary stored 列**：v0.7.0 项目卡批次概览用 GROUP BY 单查询返回 `{total, assigned, in_review}`，每次 list_projects 都触发；如需更冷优化，可加 stored 列由 batch 状态机变迁维护。**v0.7.6 评估后推迟**：触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈。优先级 P3，监控触发再做。
-- **fabric.js dead dep 清理**：v0.8.0 写 ADR-0004 时确认 `apps/web/package.json:fabric@^6.5.0` 实际未在 `src/` 任何文件引用（仅 `App.tsx:20` 有一处注释提到）。下次依赖清理 PR 一并删除，省 ~150KB bundle / 一项 supply-chain 风险面。
 - **getting-started 与 SoT 漂移**：v0.8.0 已修过一次（W/R/Ctrl+Enter → B/V/E）。文档站文字硬编码的快捷键提示如再次漂移仍需手改，长期可考虑给所有 .md 中的 `` `<键>` `` 内联引用建一份从 hotkeys.ts 推导的 ESLint/markdownlint 规则；优先级低，等漂移再触发。
 
 ---
@@ -66,105 +60,13 @@
 - **2FA / TOTP**：super_admin 必选、其它角色可选。
 - **API 密钥**：UsersPage 已有按钮，需 `api_keys` 表 + scope + revoke + 最后使用时间。
 - **HTTPS 强制 / HSTS / CSP**：production 中间件层补齐。v0.8.0 `deploy.md` 已写 nginx 端 TLS 终结示例，但 FastAPI 侧没有 strict-transport-security / CSP middleware；建议加 `app/middleware/security_headers.py` + production-only 注册。
-- ~~**审计日志不可变 trigger 测试覆盖**：v0.8.3 已落（5 条 case：UPDATE / DELETE 阻断 + SET LOCAL 豁免 + 不跨 SAVEPOINT 泄漏 + COPY 旁路）。~~
 
 #### 治理 / 合规
 - **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
 
-#### 效率看板 / 人员绩效（新 · P1）
+#### 效率看板 / 人员绩效（v0.8.4 已落 L1+L2+L3，v0.8.5 已落 24-bar 专注时段尾巴）
 
-> **目标**：标注员/审核员能自查自己的产能、质量、投入；管理员能用一个卡片式人员看板看到全员效率，可筛选、可下钻、可对比。  
-> **现状**（v0.8.2，已在 A 段「Annotator/Reviewer 工作台」记下）：3 个 dashboard 都是 count 类指标，没有耗时、退回率、活跃时段、人均产出等任何"绩效"维度；管理员看板完全无人员视角。  
-> **横向参考**：CVAT analytics（annotation speed / objects per hour / time-per-object 直方图）、Label Studio Enterprise（per-annotator productivity report + IAA 热力图）、Encord（team performance heatmap，按周聚合）、Scale AI Rapid（taskers leaderboard + quality score）。
-
-**指标口径（先落 SoT 再画 UI）**：
-| 维度 | 指标 | 数据源 | 备注 |
-|---|---|---|---|
-| 产能 | 完成任务数 / 标注框数（今日/本周/累计） | `Task` + `Annotation` count | 已有 |
-| 产能 | 平均单题耗时（中位 / p95） | `submitted_at - assigned_at` | 需新增 `Task.assigned_at`（当前 `created_at` 是 task 创建非分派） |
-| 产能 | 平均单题审核耗时 | `reviewed_at - reviewer_claimed_at` | 字段已就位，端点未算 |
-| 质量 | 原创比例 | `parent_prediction_id IS NULL / total` | 已有（AnnotatorDashboard `personal_accuracy`） |
-| 质量 | 被退回率 | `Task.reopened_count > 0` 占 submitted 比 | 字段已就位 |
-| 质量 | 重审次数 | `Task.reopened_count` 均值 / max | 已就位 |
-| 质量 | 审核通过率（reviewer） | audit_logs `task.approve` / (`approve`+`reject`) | 已有 24h 滚动版（reviewer_dashboard） |
-| 质量 | 二次返修率（reviewer） | 自己 approve 的 task 后又被 reopen 比例 | reopen 历史可从 audit_logs 反查 |
-| 投入 | 今日活跃时长 | `last_seen_at` 心跳推算（依赖 A.UsersPage 心跳工作） | 与「在线状态心跳机制」共建 |
-| 投入 | 专注时段分布（24bar） | `task_events.started_at` 按小时直方图 | 需新增 `task_events` 表 |
-| 投入 | 连续标注天数 streak | `task_events` 按日 distinct | 同上 |
-
-**Layer 1 · 数据沉淀（无 UI，纯后端 + 工作台埋点）**：
-1. 新增字段 `Task.assigned_at`（assignment 写时设值；老数据 NULL → 个人指标 graceful degrade）。
-2. 新增表 `task_events(id, task_id, user_id, kind ENUM(annotate|review), started_at, ended_at, duration_ms, annotation_count, was_rejected, project_id)`：
-   - 工作台 `useSessionStats` 在 task 切换 / submit 时本地缓冲，每 N 条或 session 退出 flush 到 `POST /me/task-events:batch`，复用 v0.7.6 `AUDIT_ASYNC` Celery 通道避免高频 INSERT
-   - 索引 `(user_id, started_at DESC)` + `(project_id, started_at DESC)`；预留月分区接口（参考 ADR-0006 predictions 月分区方案）
-3. 物化视图 `mv_user_perf_daily(user_id, day, throughput, median_duration_sec, rejected_n, active_minutes)`：每小时 refresh，前端聚合查询走视图避免扫原表。
-
-**Layer 2 · 个人 Dashboard 强化（标注员/审核员自查）**：
-- AnnotatorDashboard 由 5 卡 → 9 卡，分组「产能 / 质量 / 投入」三段（可用现有 `<StatCard>` + 一个轻量 `<SectionDivider>`）：
-  - 产能：今日完成、本周完成（带断点）、平均单题耗时、累计完成
-  - 质量：原创比例、被退回率、重审次数（avg）
-  - 投入：今日活跃时长、连续标注 streak
-- 每卡统一带 「↑/↓ 周环比」+ 7 日 Sparkline 缩略；指标加 tooltip 解释口径（中位 vs 均值、原创定义等）。
-- 新增「专注时段分布」24-bar 小直方图（识别"我什么时候效率最高"）。
-- ReviewerDashboard 类比：产能（今日审核数 / 平均审核耗时 / 待审趋势）、质量（通过率 / 退回率分项 by 标注员 / 二次返修率）、投入（活跃时段）。
-- `weeklyTarget` 由 ProjectMembership / 用户偏好读取（默认 200，可项目级 + 个人级覆盖）；与 A「设置页 - 个人偏好」共建。
-
-**Layer 3 · 管理员人员看板（核心新增 / 用户主诉）**：
-- 新路由 `/admin/people` 或 AdminDashboard 增「成员绩效」Tab（建议独立路由，避免 AdminDashboard 过长）。
-- **顶部筛选栏**（sticky）：
-  - 角色 chip：annotator / reviewer / both（默认 both）
-  - 项目多选下拉（默认全部）
-  - 时间窗口：今日 / 本周 / 本月 / 自定义区间
-  - 在线状态：online / offline / all
-  - 排序：产能↓ / 质量分↓ / 活跃时长↓ / 周环比↓
-  - 搜索框（按姓名 / 邮箱）
-- **卡片网格**（响应式 4 列 → 6 列，每张卡固定高度便于 scan）：
-  ```
-  ┌────────────────────────────┐
-  │ [Avatar] 张三 ●online      │  ← 头像 + 角色徽章（蓝=标注/紫=审核）
-  │  annotator · 项目A,B,+2    │  
-  │                            │
-  │       128 ↑12%             │  ← 主指标大字 + 周环比
-  │       本周完成              │
-  │                            │
-  │  产能 ████████░░ 82        │  ← 三条 mini bar（团队分位 0-100）
-  │  质量 █████████░ 91        │
-  │  活跃 ██████░░░░ 64        │
-  │                            │
-  │  ╱╲╱╲__╱╲  7日趋势         │  ← Sparkline
-  │  ⚠ 被退回率 18% (>阈值)   │  ← 告警 chip（>15% / 周降>30%）
-  └────────────────────────────┘
-  ```
-- 卡片角色不同时 KPI 不同：标注员主卡=本周完成数；审核员主卡=本周审核数。
-- **点击卡片 → 右侧抽屉个人详情**（不离开列表，便于左右对比）：
-  - 顶部 4 个 hero KPI（产能 / 质量 / 活跃时长 / 综合分）+ 周环比
-  - 4 周趋势折线图（多指标可叠加 / 切换）
-  - 项目分布饼图（按项目的工作量占比）
-  - 任务耗时直方图 + p50/p95 标注线（识别长尾任务）
-  - 与团队中位数 diverging bar 对比图
-  - 最近 50 条 timeline（任务标注/被退回/审核/通过/退回，可点击跳任务页）
-  - 仅 super_admin 可见的「重置周目标」「移除项目权限」运营操作（复用 UsersPage 现有动作）
-- **后端端点**：
-  - `GET /dashboard/admin/people?role=&project=&period=7d&sort=throughput&q=` → 列表（每项含三个分位值 + sparkline 7 点）
-  - `GET /dashboard/admin/people/{user_id}?period=4w` → 详情（趋势点 / 直方图 buckets / timeline 分页）
-  - `GET /dashboard/admin/people/leaderboard?period=4w` → 队列形式（可选，作为 Tab 补充）
-- **视觉资产**：沿用现有 `<Card>` / `<StatCard>` / `<Sparkline>` / `<Badge>` / `<ProgressBar>` / `<Avatar>`；新增两个原子组件即可：
-  - `<RadialProgress size value max />`（卡片右上角综合分圆环）
-  - `<Histogram values bins />`（详情页耗时分布）
-- 参考 `apps/web/src/pages/Dashboard/AdminDashboard.tsx:282-346` 的 `RegistrationSourceCard` SVG bar 实现风格，无需引入图表库。
-
-**优先级 / 切片**：
-- P1.1（数据沉淀）：`Task.assigned_at` 迁移 + `task_events` 表 + 工作台埋点 + 物化视图。约 2-3 天。
-- P1.2（个人 Dashboard）：Annotator/Reviewer dashboard 拓展为 3 段卡组 + 周环比 + 专注时段直方图。约 1-2 天。
-- P1.3（管理员人员看板）：路由 + 筛选 + 卡片网格 + 抽屉详情。约 3-4 天。
-
-**风险与取舍**：
-- 老数据无 `assigned_at` / `task_events` → period 跨越 v0.9 实施前的区间需 graceful degrade，前端展示 "—" 而非 0。
-- "活跃时长" 依赖 `last_seen_at` 心跳，需 A 段「在线状态心跳机制」先落（30s 心跳 + Celery beat offline 扫描）。两块共建一次性收。
-- 物化视图 vs 实时聚合：单租户量级（< 50 标注员 / < 100k tasks/月）实时聚合 SQL 已够，物化视图作为下一步优化预留接口；不要先做。
-- 卡片网格响应式断点：< 1280px 4 列、≥ 1280px 5 列、≥ 1600px 6 列；卡片宽度参考 `RegistrationSourceCard` `peak` 计算思路定值。
-- 隐私 / 工会风险：标注员之间不展示彼此排名（只 admin 可见排序）；Layer 2 个人卡片只展示自己的与"团队中位数"，不展示具体排名值。
-
+> 当前阶段已无 open 项；后续如需扩展，参考调研报告 + ADR-0009。
 
 
 #### 可观测性
@@ -172,14 +74,12 @@
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
 
 #### 性能 / 扩展
-- **AuditMiddleware 写入异步队列**：~~当前每写请求一次 INSERT~~ → v0.7.6 已落 Celery 异步 + AUDIT_ASYNC 开关 + sync fallback。如需 Redis Stream / Kafka 替代 Celery 路径再开新 issue。
-- **Annotation 列表 keyset 分页**：~~annotations 仍单次拉全~~ → v0.7.6 已落新端点 `GET /tasks/{id}/annotations/page?limit&cursor` + 复合索引；前端 `useAnnotations` 仍用旧数组端点（cap=2000 为防性能场景），改 useInfiniteQuery 推迟到 1000+ 框监控触发。
+- **Annotation 列表前端切换 keyset 分页**：v0.7.6 已落后端新端点 `GET /tasks/{id}/annotations/page?limit&cursor` + 复合索引；前端 `useAnnotations` 仍用旧数组端点（cap=2000），改 useInfiniteQuery 推迟到 1000+ 框监控触发。
 - **Predictions 表分区**：v0.7.6 已落 Stage 1（`ix_predictions_created_at` 索引）+ ADR-0006 设计 Stage 2 完整 RANGE(created_at) 月分区。Stage 2 触发条件：单月 INSERT > 100k 或 总行数 > 1M（FK 复合化代价 + annotations 表迁移成本）。
 
 #### 测试 / 开发体验
-- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座已就位（v0.7.4）；v0.7.6 把 baseline 从 4.27% 推到 8.68%；**v0.8.3 推到 10.88%（+8 个测试文件覆盖 useSessionStats / useHeartbeat / usePermissions / iou / polygonGeom / transforms / useAnnotationHistory / stores），切硬阻断 10% 阈值**。剩余目标 ≥ 25%：补 InviteUserModal / RegisterPage / Dashboard / ProjectList / WorkbenchShell 等页面级单测，达标后上调阈值。
-- ~~**E2E spec 写实**：v0.8.3 已落（factory.py + `_test_seed.py` router + e2e/fixtures/seed.ts；三个 spec 全部写实并摘 `continue-on-error`）。~~ 后续延伸：annotation/batch-flow 仍是最小 happy path，bbox 拖框完整链路 + 多角色批次流转留给下一版。
-- ~~**覆盖率门槛硬阻断**：v0.8.3 已落（vite.config.ts thresholds=10%；codecov.yml backend/frontend 双切 informational=false）。~~ frontend 当前 10.88%，需继续推到 ROADMAP P2 列出的 25% 后再上调阈值。
+- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座已就位（v0.7.4）；v0.7.6 把 baseline 从 4.27% 推到 8.68%；v0.8.3 推到 10.88%（+8 个测试文件，切硬阻断 10%）；**v0.8.5 推到 25.28%（+9 个测试文件覆盖 Dashboard 三页 / Login / Register / Forgot+Reset / InviteUserModal / Histogram / useDashboard），切硬阻断 25% 阈值**。下一阶段目标 ≥ 40%：补 ProjectSettingsPage（842 行）/ AuditPage / WorkbenchShell 关键 hook 单测。
+- **E2E spec 深度写实续作**：v0.8.5 已升级 annotation 与 batch-flow（bbox 拖框 + 多角色串联，`_test_seed.advance_task` 辅助端点，4 处 data-testid）；后续可补「reviewer 通过/退回 → annotator 看到反馈」的真实 review 反馈环 + bbox 落库后的画布刷新断言（当前 spec 走 seed 通道跳过了入库验证）。
 
 #### i18n / 主题 / 无障碍
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
@@ -244,24 +144,20 @@
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
-| ~~**P1**~~ | ~~效率看板 / 人员绩效 Layer 1+2+3~~ | ✅ v0.8.4 已落（除心跳依赖三项 graceful degrade）|
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1；v0.8.0 ML Backend 协议契约文档已为接入侧扫清障碍 |
-| ~~**P1**~~ | ~~E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error`~~ | v0.8.3 已落（factory.py + `_test_seed.py` router + e2e/fixtures/seed.ts + 三 spec 写实并摘 continue-on-error）。后续延伸：annotation/batch-flow 完整 bbox / 多角色批次流转 |
 | **P1** | 截图自动化（Playwright + IMAGE_CHECKLIST 16 处）替代手工拍图 | v0.8.0 占位就位；与 E2E spec 共用 fixture，一次写完两件事 |
 | **P2** | 开放注册 CAPTCHA 防刷号 + 邮箱验证（角色提升前置） | v0.7.7 基座已落，production 放量前需加固 |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO 常见需求 |
 | **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 |
 | **P2** | HTTPS 强制 / HSTS / CSP middleware | v0.8.0 deploy.md 已写 nginx 端 TLS，FastAPI middleware 缺 strict-transport-security / CSP；production-only 注册 |
-| ~~**P2**~~ | ~~审计日志不可变 trigger 测试覆盖~~ | v0.8.3 已落（5 条 case：UPDATE / DELETE 阻断 + SET LOCAL 豁免 + 不跨 SAVEPOINT 泄漏 + COPY 旁路） |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好（基础静音）已落，邮件 channel 字段已就位但 UI 未启；与 LLM 聚类协同 |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
 | **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要 |
 | **P2** | C.3 history 持久化（undo/redo 栈 sessionStorage） | quick win，工时少 |
 | **P2** | 审计日志归档（PARTITION）；AuditMiddleware 队列化 v0.7.6 已落 Celery | 当前数据量未到瓶颈，监控触发再做 |
-| **P2** | 前端单测持续提升到 ≥ 25% | v0.8.3 推到 10.88% 并切硬阻断 10%（informational=false）；继续补 hooks/组件/页面单测 |
+| **P2** | 前端单测持续提升到 ≥ 40% | v0.8.5 已推到 25.28% 并切硬阻断 25%；继续补 ProjectSettingsPage / AuditPage / WorkbenchShell 关键 hook |
 | **P2** | 批次状态机二阶段剩余：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | v0.8.2 ADR-0008 已 Proposed（admin-locked 正交字段 + lock/unlock API + 表迁移 SQL）；v0.9 实施前需补 scheduler 测试覆盖；bulk approve/reject UX 待定 |
-| **P3** | fabric.js dead dep 清理 | v0.8.0 ADR-0004 确认未使用；下次 dep 清理 PR 顺手 |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | v0.7.6 已落 Stage 1 索引 + ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） |

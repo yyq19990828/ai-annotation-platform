@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
 import { Sparkline } from "@/components/ui/Sparkline";
+import { Histogram } from "@/components/ui/Histogram";
 import { SectionDivider } from "@/components/ui/SectionDivider";
 import { useAnnotatorStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
@@ -115,6 +116,23 @@ export function AnnotatorDashboard() {
         />
         <StatCard icon="layers" label="累计标注" value={stats.total_completed} />
       </div>
+
+      {/* v0.8.5 · 24-bar 当日专注时段分布 */}
+      <Card style={{ marginTop: 16 }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>今日专注时段分布</h3>
+          <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--color-fg-subtle)" }}>
+            按小时聚合的标注分钟数（0-23 时）
+          </p>
+        </div>
+        <div style={{ padding: "20px 16px" }}>
+          <Histogram
+            values={stats.hour_buckets ?? Array(24).fill(0)}
+            height={80}
+            xLabels={["00:00", ...Array(22).fill(""), "23:00"]}
+          />
+        </div>
+      </Card>
 
       <div style={{ height: 16 }} />
       <MyBatchesCard />

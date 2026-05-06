@@ -67,7 +67,7 @@ async def create_project(
         type_label=type_label,
         type_key=type_key,
         owner_id=owner_id,
-        classes=[{"name": c} for c in (classes or ["car", "person"])],
+        classes=list(classes or ["car", "person"]),
         ai_enabled=False,
     )
     db.add(project)

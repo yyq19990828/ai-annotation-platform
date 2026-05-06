@@ -15,10 +15,12 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: true,
+  // v0.8.5 · seed/reset 是数据库 TRUNCATE 全局操作，多 spec 并发会互相覆盖（auth /
+  // annotation / batch-flow 三 spec 共用同一个 fixture），本地与 CI 都用单 worker。
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   reporter: process.env.CI ? [["github"], ["html"]] : "html",
 
   use: {

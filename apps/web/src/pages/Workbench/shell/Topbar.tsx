@@ -157,7 +157,13 @@ export function Topbar({
             <Icon name="edit" size={13} />继续编辑
           </Button>
         ) : (
-          <Button variant="primary" size="sm" onClick={onSubmit} disabled={isSubmitting}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onSubmit}
+            disabled={isSubmitting}
+            data-testid="workbench-submit"
+          >
             <Icon name="check" size={13} />提交质检
           </Button>
         )}

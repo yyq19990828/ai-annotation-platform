@@ -23,7 +23,6 @@
     "@tanstack/react-virtual": "^3.13.24",
     "blurhash": "^2.0.5",
     "clsx": "^2.1.1",
-    "fabric": "^6.5.0",
     "html2canvas-pro": "^2.0.2",
     "idb-keyval": "^6.2.2",
     "konva": "^10.2.5",

@@ -104,6 +104,8 @@ class AnnotatorDashboardStats(BaseModel):
     # 心跳侧未落地 → 暂返 null，前端 graceful degrade
     active_minutes_today: int | None = None
     streak_days: int | None = None
+    # v0.8.5 · 当日 0-23 时分钟数（按 task_events.started_at hour 聚合）
+    hour_buckets: list[int] = []
 
 
 class ReviewerDashboardExtras(BaseModel):

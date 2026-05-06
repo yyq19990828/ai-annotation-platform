@@ -636,6 +636,7 @@ export function ImageStage({
   return (
     <div
       ref={containerRef}
+      data-testid="workbench-stage"
       style={{
         flex: 1, position: "relative", overflow: "hidden",
         background: "repeating-conic-gradient(var(--color-canvas-checker-a) 0% 25%, var(--color-canvas-checker-b) 0% 50%) 0 0/16px 16px",

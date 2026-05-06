@@ -316,3 +316,108 @@ async def test_admin_people_detail_ok(httpx_client, super_admin, annotator):
     assert "trend_throughput" in body
     assert len(body["trend_throughput"]) == 4
     assert "duration_histogram" in body
+
+
+@pytest.mark.asyncio
+async def test_annotator_dashboard_hour_buckets(httpx_client, annotator, db_session):
+    """v0.8.5 · 24-bar 当日专注时段：按 EXTRACT(hour) 聚合 duration_ms / 60000。"""
+    from app.db.models.project import Project
+    from app.db.models.task import Task
+    from app.db.models.task_event import TaskEvent
+
+    user, token = annotator
+    project = Project(
+        id=uuid.uuid4(),
+        display_id="P-HB",
+        name="hb-proj",
+        type_label="图像检测",
+        type_key="image-det",
+        owner_id=user.id,
+    )
+    db_session.add(project)
+    task = Task(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        display_id="T-HB",
+        file_name="x.jpg",
+        file_path="/x",
+    )
+    db_session.add(task)
+    await db_session.flush()
+
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # 当日 09:xx 三条共 5 分钟、14:xx 一条 2 分钟、昨日一条（不应入桶）
+    db_session.add_all(
+        [
+            TaskEvent(
+                id=uuid.uuid4(),
+                task_id=task.id,
+                user_id=user.id,
+                project_id=project.id,
+                kind="annotate",
+                started_at=today_start + timedelta(hours=9, minutes=10),
+                ended_at=today_start + timedelta(hours=9, minutes=12),
+                duration_ms=120_000,
+                annotation_count=1,
+                was_rejected=False,
+            ),
+            TaskEvent(
+                id=uuid.uuid4(),
+                task_id=task.id,
+                user_id=user.id,
+                project_id=project.id,
+                kind="annotate",
+                started_at=today_start + timedelta(hours=9, minutes=30),
+                ended_at=today_start + timedelta(hours=9, minutes=33),
+                duration_ms=180_000,
+                annotation_count=2,
+                was_rejected=False,
+            ),
+            TaskEvent(
+                id=uuid.uuid4(),
+                task_id=task.id,
+                user_id=user.id,
+                project_id=project.id,
+                kind="annotate",
+                started_at=today_start + timedelta(hours=14, minutes=5),
+                ended_at=today_start + timedelta(hours=14, minutes=7),
+                duration_ms=120_000,
+                annotation_count=1,
+                was_rejected=False,
+            ),
+            # 昨天 → 不进当日 buckets
+            TaskEvent(
+                id=uuid.uuid4(),
+                task_id=task.id,
+                user_id=user.id,
+                project_id=project.id,
+                kind="annotate",
+                started_at=today_start - timedelta(hours=10),
+                ended_at=today_start - timedelta(hours=10) + timedelta(minutes=10),
+                duration_ms=600_000,
+                annotation_count=3,
+                was_rejected=False,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    r = await httpx_client.get(
+        "/api/v1/dashboard/annotator",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    buckets = body["hour_buckets"]
+    assert isinstance(buckets, list)
+    assert len(buckets) == 24
+    # 9 时 = (120 + 180) / 60 = 5 分钟；14 时 = 120 / 60 = 2 分钟
+    assert buckets[9] == 5
+    assert buckets[14] == 2
+    # 其他位均为 0
+    assert sum(buckets) == 7
+    for h, v in enumerate(buckets):
+        if h not in (9, 14):
+            assert v == 0, f"bucket[{h}] should be 0, got {v}"

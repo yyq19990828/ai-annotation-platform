@@ -78,10 +78,51 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     annotator = await create_user(db, "annotator", "anno@e2e.test", "E2E Annotator")
     reviewer = await create_user(db, "reviewer", "rev@e2e.test", "E2E Reviewer")
     project = await create_project(db, owner_id=admin.id, name="E2E Demo Project")
+
+    # v0.8.5 · 把 annotator / reviewer 加为项目成员，否则 RequireProjectMember 会
+    # 在进入 /projects/:id/annotate 时 403 弹回，annotation/batch-flow spec 走不通。
+    from app.db.models.project_member import ProjectMember
+    from app.db.models.task_batch import TaskBatch
+
+    db.add_all(
+        [
+            ProjectMember(
+                project_id=project.id,
+                user_id=annotator.id,
+                role="annotator",
+                assigned_by=admin.id,
+            ),
+            ProjectMember(
+                project_id=project.id,
+                user_id=reviewer.id,
+                role="reviewer",
+                assigned_by=admin.id,
+            ),
+        ],
+    )
+    # v0.8.5 · 创建一个 annotating 状态的 batch + 单值分派 annotator/reviewer，
+    # 否则非特权用户在 list_tasks 中被 batch_visibility_clause 过滤为空（孤儿
+    # 任务不可见），工作台显示「该项目暂无任务」。
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id="B-E2E-1",
+        name="E2E Default Batch",
+        status="annotating",
+        annotator_id=annotator.id,
+        reviewer_id=reviewer.id,
+        assigned_user_ids=[str(annotator.id)],
+        created_by=admin.id,
+    )
+    db.add(batch)
+    await db.flush()
+
     tasks = []
     for _ in range(5):
         t = await create_task(db, project_id=project.id)
+        t.batch_id = batch.id
         tasks.append(t)
+    await db.flush()
+    batch.total_tasks = len(tasks)
     await db.commit()
 
     return SeedReset(
@@ -128,3 +169,73 @@ async def seed_login(
         access_token=token,
         user=UserOut.model_validate(user),
     )
+
+
+class AdvanceTaskRequest(BaseModel):
+    """v0.8.5 · E2E 辅助：直接把 task 推到目标状态，绕过 UI 链路。
+
+    主要服务于 batch-flow.spec 的多角色串联（避免每个 spec 都重复画 bbox）。
+    """
+
+    task_id: str
+    to_status: str  # pending | annotating | submitted | review | completed | rejected
+    annotator_email: str | None = None
+    reviewer_email: str | None = None
+
+
+class AdvanceTaskResponse(BaseModel):
+    task_id: str
+    status: str
+
+
+@router.post(
+    "/seed/advance_task",
+    response_model=AdvanceTaskResponse,
+    include_in_schema=False,
+)
+async def seed_advance_task(
+    payload: AdvanceTaskRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AdvanceTaskResponse:
+    """绕过状态机直接置 task 到目标状态。E2E 写实化用，不调审计。"""
+    _ensure_non_production()
+
+    from datetime import datetime, timezone
+    from uuid import UUID
+    from sqlalchemy import select
+    from app.db.models.task import Task
+    from app.db.models.user import User
+
+    res = await db.execute(select(Task).where(Task.id == UUID(payload.task_id)))
+    task = res.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail=f"task {payload.task_id} not found")
+
+    now = datetime.now(timezone.utc)
+    task.status = payload.to_status
+
+    if payload.annotator_email:
+        anno_res = await db.execute(
+            select(User).where(User.email == payload.annotator_email)
+        )
+        anno = anno_res.scalar_one_or_none()
+        if anno:
+            task.assignee_id = anno.id
+            task.assigned_at = task.assigned_at or now
+    if payload.reviewer_email:
+        rev_res = await db.execute(
+            select(User).where(User.email == payload.reviewer_email)
+        )
+        rev = rev_res.scalar_one_or_none()
+        if rev:
+            task.reviewer_id = rev.id
+            task.reviewer_claimed_at = task.reviewer_claimed_at or now
+
+    if payload.to_status == "submitted":
+        task.submitted_at = task.submitted_at or now
+        task.is_labeled = True
+    elif payload.to_status in ("completed", "rejected"):
+        task.reviewed_at = now
+
+    await db.commit()
+    return AdvanceTaskResponse(task_id=str(task.id), status=task.status)
