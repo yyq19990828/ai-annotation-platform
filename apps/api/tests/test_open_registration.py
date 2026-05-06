@@ -6,7 +6,6 @@ from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture

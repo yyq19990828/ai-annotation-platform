@@ -113,8 +113,8 @@ jobs:
           python-version: "3.11"
       - name: Install ruff
         run: pip install ruff
-      - name: ruff check apps/api
-        run: ruff check apps/api/app apps/api/tests
+      - name: ruff check --fix apps/api
+        run: ruff check --fix apps/api/app apps/api/tests
       - name: ruff format (auto-fix)
         run: ruff format apps/api/app apps/api/tests
       - uses: actions/setup-node@v4
@@ -135,10 +135,10 @@ jobs:
       - name: eslint
         working-directory: apps/web
         run: pnpm lint
-      - name: Auto-commit formatting fixes
+      - name: Auto-commit lint & format fixes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "style: auto-format (ruff)"
+          commit_message: "style: auto-fix (ruff check --fix + format)"
           file_pattern: "apps/api/**/*.py"
 
   e2e:

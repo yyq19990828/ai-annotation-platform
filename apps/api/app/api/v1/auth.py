@@ -251,7 +251,7 @@ async def logout_all(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.core.token_blacklist import increment_user_generation, get_user_generation
+    from app.core.token_blacklist import increment_user_generation
 
     new_gen = await increment_user_generation(str(current_user.id))
 
