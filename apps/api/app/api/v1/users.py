@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, update, delete
+from sqlalchemy import select, func, or_, update, delete, text
 from pydantic import BaseModel
 
 from app.config import settings
@@ -482,8 +482,10 @@ async def delete_user(
 
     # v0.6.6 · GDPR：被删用户在 audit_logs 历史行中的 actor_email / actor_role 脱敏
     # 保留 actor_id（FK 仍指向软删后的用户行；用户行真正 DELETE 时 ON DELETE SET NULL 兜底）
+    # v0.7.8: 审计不可�� trigger 豁免 — SET LOCAL 仅在当前事务内有效
     from app.db.models.audit_log import AuditLog
 
+    await db.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
     redact_result = await db.execute(
         update(AuditLog)
         .where(AuditLog.actor_id == user.id)

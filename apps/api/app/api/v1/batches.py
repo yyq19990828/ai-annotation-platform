@@ -648,14 +648,17 @@ async def list_batch_audit_logs(
 
 @router.get("/{batch_id}/export")
 async def export_batch(
+    request: Request,
     project_id: uuid.UUID,
     batch_id: uuid.UUID,
     format: str = Query("coco", pattern="^(coco|voc|yolo)$"),
     include_attributes: bool = Query(True),
     project: Project = Depends(require_project_visible),
+    actor: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.export import ExportService
+    from app.services.audit import AuditService, AuditAction
 
     svc_batch = BatchService(db)
     batch = await svc_batch.get(batch_id)
@@ -669,6 +672,12 @@ async def export_batch(
         content = await svc.export_coco(
             project_id, batch_id=batch_id, include_attributes=include_attributes
         )
+        await AuditService.log(
+            db, actor=actor, action=AuditAction.BATCH_EXPORT,
+            target_type="batch", target_id=str(batch_id), request=request,
+            status_code=200, detail={"format": format, "project_id": str(project_id), "batch_display_id": batch.display_id},
+        )
+        await db.commit()
         return Response(
             content=content,
             media_type="application/json",
@@ -679,6 +688,12 @@ async def export_batch(
         data = await svc.export_yolo(
             project_id, batch_id=batch_id, include_attributes=include_attributes
         )
+        await AuditService.log(
+            db, actor=actor, action=AuditAction.BATCH_EXPORT,
+            target_type="batch", target_id=str(batch_id), request=request,
+            status_code=200, detail={"format": format, "project_id": str(project_id), "batch_display_id": batch.display_id},
+        )
+        await db.commit()
         return Response(
             content=data,
             media_type="application/zip",
@@ -688,6 +703,12 @@ async def export_batch(
     data = await svc.export_voc(
         project_id, batch_id=batch_id, include_attributes=include_attributes
     )
+    await AuditService.log(
+        db, actor=actor, action=AuditAction.BATCH_EXPORT,
+        target_type="batch", target_id=str(batch_id), request=request,
+        status_code=200, detail={"format": format, "project_id": str(project_id), "batch_display_id": batch.display_id},
+    )
+    await db.commit()
     return Response(
         content=data,
         media_type="application/zip",

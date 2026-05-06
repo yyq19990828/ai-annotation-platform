@@ -212,6 +212,22 @@ pnpm docs:build
 
 完整测试指南见 [docs-site/dev/testing.md](docs-site/dev/testing.md)。
 
+## 测试账号
+
+> 仅 `development` / `staging` 环境可用（seed.py 拒绝在 production 执行）。
+
+| 账号 | 角色 | 密码 | 初始视图 |
+|------|------|------|---------|
+| `admin` | super_admin | 123456 | AdminDashboard |
+| `pm` | project_admin | 123456 | 项目总览 |
+| `qa` | reviewer | 123456 | ReviewerDashboard |
+| `anno` | annotator | 123456 | AnnotatorDashboard |
+| `viewer` | viewer | 123456 | ViewerDashboard |
+| `anno2` | annotator | 123456 | (标注组A) |
+| `anno3` | annotator | 123456 | (标注组B) |
+
+初始化：`cd apps/api && uv run python scripts/seed.py`
+
 ## 下一步计划
 
 详见 [CHANGELOG.md](CHANGELOG.md) 顶部的 roadmap 与 [docs/plans/](docs/plans/) 下的具体计划。

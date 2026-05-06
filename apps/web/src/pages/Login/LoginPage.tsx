@@ -100,12 +100,12 @@ export function LoginPage() {
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
               <label style={{ display: "block", fontSize: 12.5, fontWeight: 500, marginBottom: 6, color: "var(--color-fg-muted)" }}>
-                邮箱
+                账号
               </label>
               <input
-                type="email"
+                type="text"
                 autoComplete="username"
-                placeholder="your@company.com"
+                placeholder="输入账号或邮箱"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -214,14 +214,16 @@ export function LoginPage() {
             </div>
           </form>
 
-          <div style={{ marginTop: 20, padding: "12px 14px", background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)", fontSize: 12, color: "var(--color-fg-subtle)" }}>
-            <div style={{ fontWeight: 500, marginBottom: 6, color: "var(--color-fg-muted)" }}>测试账号 (密码统一: 123456)</div>
-            <div>超级管理员：<span className="mono">admin@test.com</span></div>
-            <div style={{ marginTop: 2 }}>项目管理员：<span className="mono">pm@test.com</span></div>
-            <div style={{ marginTop: 2 }}>质检员：<span className="mono">qa@test.com</span></div>
-            <div style={{ marginTop: 2 }}>标注员：<span className="mono">anno@test.com</span></div>
-            <div style={{ marginTop: 2 }}>观察者：<span className="mono">viewer@test.com</span></div>
-          </div>
+          {import.meta.env.MODE !== "production" && (
+            <div style={{ marginTop: 20, padding: "12px 14px", background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)", fontSize: 12, color: "var(--color-fg-subtle)" }}>
+              <div style={{ fontWeight: 500, marginBottom: 6, color: "var(--color-fg-muted)" }}>测试账号 (密码统一: 123456)</div>
+              <div>超级管理员：<span className="mono">admin</span></div>
+              <div style={{ marginTop: 2 }}>项目管理员：<span className="mono">pm</span></div>
+              <div style={{ marginTop: 2 }}>质检员：<span className="mono">qa</span></div>
+              <div style={{ marginTop: 2 }}>标注员：<span className="mono">anno</span></div>
+              <div style={{ marginTop: 2 }}>观察者：<span className="mono">viewer</span></div>
+            </div>
+          )}
         </div>
       </div>
     </div>

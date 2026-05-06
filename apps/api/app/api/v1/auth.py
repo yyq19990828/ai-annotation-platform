@@ -1,4 +1,7 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -9,7 +12,7 @@ from app.db.models.user import User
 from app.db.enums import UserRole
 from app.schemas.user import Token, LoginRequest, UserOut
 from app.schemas.invitation import OpenRegisterRequest, RegisterResponse
-from app.core.security import verify_password, create_access_token, hash_password
+from app.core.security import verify_password, create_access_token, hash_password, decode_access_token
 from app.services.audit import AuditAction, AuditService
 from app.services.password_reset import PasswordResetService
 from app.config import settings
@@ -51,7 +54,6 @@ async def login(
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
     if user is None or not verify_password(data.password, user.password_hash):
-        # 失败登录也写一条（actor=None，detail 含尝试 email）
         await AuditService.log(
             db,
             actor=None,
@@ -60,7 +62,11 @@ async def login(
             target_id=data.email,
             request=request,
             status_code=401,
-            detail={"email": data.email, "result": "invalid_credentials"},
+            detail={
+                "email": data.email,
+                "result": "invalid_credentials",
+                "user_agent": request.headers.get("user-agent", "")[:256],
+            },
         )
         await db.commit()
         raise HTTPException(
@@ -84,7 +90,10 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN, detail="账户已被停用"
         )
 
-    token = create_access_token(subject=str(user.id), role=user.role)
+    user.last_login_at = datetime.now(timezone.utc)
+    from app.core.token_blacklist import get_user_generation
+    gen = await get_user_generation(str(user.id))
+    token = create_access_token(subject=str(user.id), role=user.role, gen=gen)
     await AuditService.log(
         db,
         actor=user,
@@ -210,3 +219,51 @@ async def register_open(
         token_type="bearer",
         user=UserOut.model_validate(user),
     )
+
+
+@router.post("/logout", status_code=204)
+async def logout(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.core.token_blacklist import blacklist_token
+
+    payload = decode_access_token(credentials.credentials)
+    jti = payload.get("jti")
+    if jti:
+        exp = payload.get("exp", 0)
+        remaining = int(exp - datetime.now(timezone.utc).timestamp())
+        await blacklist_token(jti, max(remaining, 0))
+
+    await AuditService.log(
+        db, actor=current_user, action=AuditAction.AUTH_LOGOUT,
+        target_type="user", target_id=str(current_user.id),
+        request=request, status_code=204,
+    )
+    await db.commit()
+
+
+@router.post("/logout-all", response_model=Token)
+async def logout_all(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.core.token_blacklist import increment_user_generation, get_user_generation
+
+    new_gen = await increment_user_generation(str(current_user.id))
+
+    await AuditService.log(
+        db, actor=current_user, action=AuditAction.AUTH_LOGOUT_ALL,
+        target_type="user", target_id=str(current_user.id),
+        request=request, status_code=200,
+        detail={"new_generation": new_gen},
+    )
+    await db.commit()
+
+    new_token = create_access_token(
+        subject=str(current_user.id), role=current_user.role, gen=new_gen
+    )
+    return Token(access_token=new_token)

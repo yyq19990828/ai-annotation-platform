@@ -30,49 +30,49 @@ Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False
 
 USERS = [
     {
-        "email": "admin@test.com",
+        "email": "admin",
         "name": "超级管理员",
         "password": "123456",
         "role": "super_admin",
         "group_name": None,
     },
     {
-        "email": "pm@test.com",
+        "email": "pm",
         "name": "张明轩",
         "password": "123456",
         "role": "project_admin",
         "group_name": "管理组",
     },
     {
-        "email": "qa@test.com",
+        "email": "qa",
         "name": "李晓华",
         "password": "123456",
         "role": "reviewer",
         "group_name": "质检组",
     },
     {
-        "email": "anno@test.com",
+        "email": "anno",
         "name": "王芳",
         "password": "123456",
         "role": "annotator",
         "group_name": "标注组A",
     },
     {
-        "email": "viewer@test.com",
+        "email": "viewer",
         "name": "赵观察",
         "password": "123456",
         "role": "viewer",
         "group_name": None,
     },
     {
-        "email": "anno2@test.com",
+        "email": "anno2",
         "name": "刘洋",
         "password": "123456",
         "role": "annotator",
         "group_name": "标注组A",
     },
     {
-        "email": "anno3@test.com",
+        "email": "anno3",
         "name": "陈思远",
         "password": "123456",
         "role": "annotator",
@@ -146,7 +146,7 @@ async def seed() -> None:
             created_users[data["email"]] = user
             print(f"  add   {data['email']}  [{data['role']}]")
 
-        owner = created_users.get("pm@test.com") or created_users.get("pm@example.com")
+        owner = created_users.get("pm") or created_users.get("pm@test.com")
         if not owner:
             print("  WARN: pm 用户未找到，跳过项目创建")
             await db.commit()
@@ -179,13 +179,13 @@ async def main() -> None:
     await seed()
     print("=== seed done  ===\n")
     print("测试账号一览 (密码统一: 123456):")
-    print("  admin@test.com     超级管理员   → AdminDashboard")
-    print("  pm@test.com        项目管理员   → 项目总览")
-    print("  qa@test.com        质检员       → ReviewerDashboard")
-    print("  anno@test.com      标注员       → AnnotatorDashboard")
-    print("  viewer@test.com    观察者       → ViewerDashboard")
-    print("  anno2@test.com     标注员 (标注组A)")
-    print("  anno3@test.com     标注员 (标注组B)")
+    print("  admin    超级管理员   → AdminDashboard")
+    print("  pm       项目管理员   → 项目总览")
+    print("  qa       质检员       → ReviewerDashboard")
+    print("  anno     标注员       → AnnotatorDashboard")
+    print("  viewer   观察者       → ViewerDashboard")
+    print("  anno2    标注员 (标注组A)")
+    print("  anno3    标注员 (标注组B)")
 
 
 if __name__ == "__main__":

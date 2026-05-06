@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
@@ -339,7 +339,8 @@ async def test_persist_audit_entry_task_writes_row(db_session):
         assert row.path == "/api/v1/test/audit-async"
         assert row.status_code == 200
         assert row.actor_role == "annotator"
-        # cleanup
+        # cleanup — v0.7.8 audit_logs 不可变 trigger 需要豁免
+        await s.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
         await s.delete(row)
         await s.commit()
 

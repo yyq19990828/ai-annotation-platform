@@ -7,6 +7,29 @@ import { ROLE_LABELS } from "@/constants/roles";
 import type { UserRole } from "@/types";
 import type { ApiError } from "@/api/client";
 
+function isPasswordStrong(pwd: string): boolean {
+  return pwd.length >= 8 && /[A-Z]/.test(pwd) && /[a-z]/.test(pwd) && /\d/.test(pwd);
+}
+
+function PasswordStrengthIndicator({ pwd }: { pwd: string }) {
+  if (!pwd) return null;
+  const rules = [
+    { ok: pwd.length >= 8, label: "至少 8 位" },
+    { ok: /[A-Z]/.test(pwd), label: "含大写字母" },
+    { ok: /[a-z]/.test(pwd), label: "含小写字母" },
+    { ok: /\d/.test(pwd), label: "含数字" },
+  ];
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px", marginTop: 6, fontSize: 11 }}>
+      {rules.map((r) => (
+        <span key={r.label} style={{ color: r.ok ? "#22c55e" : "#ef4444" }}>
+          {r.ok ? "✓" : "✗"} {r.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function RegisterPage() {
   const [params] = useSearchParams();
   const token = params.get("token");
@@ -41,11 +64,11 @@ function OpenRegisterForm() {
   }
 
   const passwordsMatch = !pwd || !pwd2 || pwd === pwd2;
-  const passwordsValid = pwd.length >= 8;
+  const passwordsValid = isPasswordStrong(pwd);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !name.trim() || !pwd || pwd !== pwd2) return;
+    if (!email.trim() || !name.trim() || !passwordsValid || pwd !== pwd2) return;
     openRegister.mutate(
       { email: email.trim(), name: name.trim(), password: pwd },
       {
@@ -95,7 +118,7 @@ function OpenRegisterForm() {
             />
           </Field>
 
-          <Field label="密码（至少 8 位，需含大小写字母和数字）">
+          <Field label="密码（至少 8 位，需含大小写字母��数字）">
             <div style={{ position: "relative" }}>
               <input
                 required
@@ -114,6 +137,7 @@ function OpenRegisterForm() {
                 <Icon name={showPwd ? "eyeOff" : "eye"} size={14} />
               </button>
             </div>
+            <PasswordStrengthIndicator pwd={pwd} />
           </Field>
 
           <Field label="再次输入密码">
@@ -180,7 +204,7 @@ function InviteRegisterForm({ token }: { token: string }) {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !pwd || pwd.length < 6 || pwd !== pwd2) return;
+    if (!name.trim() || !isPasswordStrong(pwd) || pwd !== pwd2) return;
     register.mutate(
       { token, name: name.trim(), password: pwd },
       {
@@ -193,7 +217,7 @@ function InviteRegisterForm({ token }: { token: string }) {
   };
 
   const passwordsMatch = !pwd || !pwd2 || pwd === pwd2;
-  const passwordsValid = pwd.length >= 6;
+  const passwordsValid = isPasswordStrong(pwd);
 
   return (
     <CenteredCard>
@@ -235,7 +259,7 @@ function InviteRegisterForm({ token }: { token: string }) {
                 type={showPwd ? "text" : "password"}
                 value={pwd}
                 onChange={(e) => setPwd(e.target.value)}
-                minLength={6}
+                minLength={8}
                 style={{ ...inputStyle, paddingRight: 36 }}
               />
               <button
@@ -247,6 +271,7 @@ function InviteRegisterForm({ token }: { token: string }) {
                 <Icon name={showPwd ? "eyeOff" : "eye"} size={14} />
               </button>
             </div>
+            <PasswordStrengthIndicator pwd={pwd} />
           </Field>
 
           <Field label="再次输入密码">

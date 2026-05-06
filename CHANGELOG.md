@@ -5,6 +5,35 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ---
+## [0.7.8] - 2026-05-06
+
+> **登录注册改进 + 安全加固 + 治理合规。**
+
+### 修复
+
+- **InviteRegisterForm 密码校验对齐后端**：前端从 6 位放行修正为 8 位 + 大小写 + 数字，两个注册表单均添加实时密码强度指示器。
+- **LoginPage 测试账号 production 隐藏**：`import.meta.env.MODE !== 'production'` 条件渲染，production 构建中完全不含测试账号信息。
+- **测试账号简化**：seed.py 测试邮箱去掉 `@test.com` 域名，改用短标识符（`admin`、`pm`、`qa`、`anno`、`viewer`）；LoginPage input type 从 email 改为 text 以支持非邮箱格式登录。
+
+### 安全
+
+- **邀请频率限流**：`InvitationService.check_daily_limit` 24h 内同一 actor 上限 `MAX_INVITATIONS_PER_DAY`（默认 30），超限返回 429。
+- **会话管理**：JWT payload 新增 `jti`（唯一标识）+ `gen`（代际号）声明；新模块 `core/token_blacklist.py` 基于 Redis SETEX 实现；新端点 `POST /auth/logout`（黑名单当前 token）、`POST /auth/logout-all`（递增代际号使所有旧 token 失效并返回新 token）。
+- **CORS 收紧**：production 环境 `allow_methods` / `allow_headers` 从通配符改为显式白名单（`CORS_ALLOW_METHODS` / `CORS_ALLOW_HEADERS` 可配置）。
+- **审计日志不可变**：Alembic 0032 迁移添加 PostgreSQL BEFORE UPDATE/DELETE trigger 拒绝直接修改 `audit_logs`；GDPR 脱敏路径通过 `SET LOCAL "app.allow_audit_update" = 'true'` 豁免。
+
+### 治理
+
+- **数据导出审计**：项目导出 `GET /projects/{id}/export` 和批次导出现记录到 `audit_logs`（action: `project.export` / `batch.export`），含 format 和 display_id。
+- **最后登录追踪**：User 模型新增 `last_login_at` 字段（Alembic 0033），每次成功登录更新；`UserOut` schema 透出。
+- **失败登录详情增强**：审计日志 `detail_json` 新增 `user_agent` 字段（截取前 256 字符）。
+- **ADR-0007 审计日志月分区**：设计文档就位（`docs/adr/0007-audit-log-partitioning.md`），实际迁移推迟到数据量触发条件。
+
+### 文档
+
+- **DEV.md**：新增「测试账号」速查表。
+
+---
 ## [0.7.7] - 2026-05-06
 
 > **登录注册机制完善。** 新增开放注册路径，允许用户自助注册为 Viewer（最低权限角色），管理员后续可提升角色。

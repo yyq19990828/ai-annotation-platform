@@ -17,8 +17,21 @@ export function useLogin() {
 }
 
 export function useLogout() {
-  const logout = useAuthStore((s) => s.logout);
-  return logout;
+  const clearLocal = useAuthStore((s) => s.logout);
+  return () => {
+    authApi.logout().catch(() => {});
+    clearLocal();
+  };
+}
+
+export function useLogoutAll() {
+  const { setToken } = useAuthStore();
+  return useMutation({
+    mutationFn: async () => {
+      const { access_token } = await authApi.logoutAll();
+      setToken(access_token);
+    },
+  });
 }
 
 export function useCurrentUser() {

@@ -11,6 +11,7 @@ from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.core.security import decode_access_token
+from app.core.token_blacklist import is_blacklisted, get_user_generation
 
 bearer_scheme = HTTPBearer()
 
@@ -36,6 +37,27 @@ async def get_current_user(
             raise exc
     except JWTError:
         raise exc
+
+    jti: str | None = payload.get("jti")
+    token_gen: int = payload.get("gen", 0)
+
+    if jti:
+        try:
+            if await is_blacklisted(jti):
+                raise exc
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+        try:
+            current_gen = await get_user_generation(user_id)
+            if current_gen > token_gen:
+                raise exc
+        except HTTPException:
+            raise
+        except Exception:
+            pass
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()

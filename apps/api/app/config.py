@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:5173"
     invitation_ttl_days: int = 7
     allow_open_registration: bool = False
+    max_invitations_per_day: int = 30
+
+    # CORS — production 收紧 methods / headers
+    cors_allow_methods: list[str] = ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"]
+    cors_allow_headers: list[str] = ["Authorization", "Content-Type", "X-Request-ID"]
 
     # SMTP（本期占位，仅在 GET /settings/system 中以「已配置/未配置」呈现）
     smtp_host: str | None = None

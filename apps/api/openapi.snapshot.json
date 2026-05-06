@@ -4296,6 +4296,35 @@
         "title": "NotificationPreferencesOut",
         "type": "object"
       },
+      "OpenRegisterRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "name",
+          "password"
+        ],
+        "title": "OpenRegisterRequest",
+        "type": "object"
+      },
       "PasswordChange": {
         "properties": {
           "new_password": {
@@ -5554,6 +5583,10 @@
       },
       "SystemSettingsOut": {
         "properties": {
+          "allow_open_registration": {
+            "title": "Allow Open Registration",
+            "type": "boolean"
+          },
           "environment": {
             "title": "Environment",
             "type": "string"
@@ -5574,7 +5607,8 @@
           "environment",
           "invitation_ttl_days",
           "frontend_base_url",
-          "smtp"
+          "smtp",
+          "allow_open_registration"
         ],
         "title": "SystemSettingsOut",
         "type": "object"
@@ -6105,6 +6139,18 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -6205,7 +6251,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.7.6"
+    "version": "0.7.7"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -6993,6 +7039,51 @@
         ]
       }
     },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout-all": {
+      "post": {
+        "operationId": "logout_all_api_v1_auth_logout_all_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Logout All",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/me": {
       "get": {
         "operationId": "get_me_api_v1_auth_me_get",
@@ -7138,6 +7229,66 @@
           }
         },
         "summary": "Register Via Invitation",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/register-open": {
+      "post": {
+        "operationId": "register_open_api_v1_auth_register_open_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Open",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/registration-status": {
+      "get": {
+        "operationId": "registration_status_api_v1_auth_registration_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Registration Status",
         "tags": [
           "auth"
         ]

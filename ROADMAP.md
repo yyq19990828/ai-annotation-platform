@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善：`POST /auth/register-open` 开放注册端点 + 默认 viewer 角色 + `ALLOW_OPEN_REGISTRATION` env 开关 + `GET /auth/registration-status` 公开查询 + RegisterPage 双模式 invite/open + LoginPage 条件注册链接 + SettingsPage 开关状态只读展示 + 7 个后端测试）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规：密码前端校验对齐 + 测试账号 production 隐藏 + 邀请限流 + Token 黑名单会话管理 `POST /auth/logout` `POST /auth/logout-all` + CORS 收紧 + 审计日志不可变 trigger + 数据导出审计 + last_login_at + 失败登录 user_agent + ADR-0007 分区设计）**。
 
 ---
 
@@ -45,8 +45,8 @@
 - **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好。
 
 #### 登录 / 注册 / 认证
-- **邀请注册密码前端校验不一致**：`InviteRegisterForm` 中 `pwd.length < 6` 前端允许 6 位提交，但后端 `RegisterRequest.password` 要求 `min_length=8` 且 `validate_password_strength` 还需大小写+数字。前端应统一为 `pwd.length >= 8` + 实时强度提示。（`RegisterPage.tsx:50`）
-- **LoginPage 测试账号区块 production 泄露**：`LoginPage.tsx:207-214` 硬编码了 5 个测试账号（含密码 `123456`），`environment !== "production"` 条件守卫缺失。production 部署会直接暴露测试账号入口。应读取 `settings.environment` 或 `import.meta.env.MODE` 条件渲染。
+- ~~**邀请注册密码前端校验不一致**~~：v0.7.8 已修复（前端对齐后端 8+ 含大小写数字 + 实时强度指示器）。
+- ~~**LoginPage 测试账号区块 production 泄露**~~：v0.7.8 已修复（production 条件渲染 + 测试账号去域名简化）。
 - **开放注册二阶段增强**（v0.7.7 落了基座，以下为可选延伸）：
   - **邮箱验证**：当前 viewer 零权限可跳过；若未来开放注册默认角色调高，需 `POST /auth/verify-email` + `email_verified_at` 字段 + 验证前 `is_active=false`。
   - **CAPTCHA / 防机器人**：v0.7.7 的 3/min rate limit 对 production 够用但不防分布式刷号；接 hCaptcha / Turnstile，前端 `OpenRegisterForm` 加 CAPTCHA widget + 后端校验 token。
@@ -66,12 +66,12 @@
 ### B · 架构 & 治理向前演进
 
 #### 安全
-- **邀请频率限流**：单 actor 单日邀请上限，避免 spam。
+- ~~**邀请频率限流**~~：v0.7.8 已落（`InvitationService.check_daily_limit` + `MAX_INVITATIONS_PER_DAY` 配置）。
 - **2FA / TOTP**：super_admin 必选、其它角色可选。
 - **API 密钥**：UsersPage 已有按钮，需 `api_keys` 表 + scope + revoke + 最后使用时间。
-- **会话管理**：当前 token 过期前不可撤销；需 token blacklist 或 jti + Redis。「在所有设备登出」功能。
-- **审计日志不可变**：当前 super_admin 仍可 `DELETE FROM audit_logs`；建议 PG row-level security 或 trigger 拒绝 DELETE/UPDATE。
-- **CORS 收紧**：当前 `allow_origin_regex=r"http://localhost:\d+"`，production 需替换为白名单。
+- ~~**会话管理**~~：v0.7.8 已落（JWT jti + gen 声明 + Redis 黑名单 + `POST /auth/logout` / `POST /auth/logout-all`）。
+- ~~**审计日志不可变**~~：v0.7.8 已落（PG BEFORE UPDATE/DELETE trigger + GDPR SET LOCAL 豁免）。
+- ~~**CORS 收紧**~~：v0.7.8 已落（production allow_methods/allow_headers 显式白名单）。
 - **HTTPS 强制 / HSTS / CSP**：production 中间件层补齐。
 
 #### 治理 / 合规
@@ -160,7 +160,7 @@
 
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
-| **P1** | 邀请注册密码前端校验 6→8 对齐 + LoginPage 测试账号 production 隐藏 | 安全缺陷，5 分钟 quick fix |
+| ~~P1~~ | ~~邀请注册密码前端校验 6→8 对齐 + LoginPage 测试账号 production 隐藏~~ | v0.7.8 已完成 |
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
 | **P1** | E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error` | v0.7.6 推迟（1-2 天深活）；factory + seed.ts + 三 spec 写实是 PR 红线收紧前置 |

@@ -1,6 +1,9 @@
+import uuid
 from datetime import datetime, timedelta, timezone
-from jose import jwt
+
 import bcrypt
+from jose import jwt
+
 from app.config import settings
 
 ALGORITHM = "HS256"
@@ -15,15 +18,15 @@ def hash_password(plain: str) -> str:
 
 
 def create_access_token(
-    subject: str, role: str, expires_delta: timedelta | None = None
+    subject: str, role: str, expires_delta: timedelta | None = None, gen: int = 0
 ) -> str:
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )
-    payload = {"sub": subject, "role": role, "exp": expire}
+    jti = str(uuid.uuid4())
+    payload = {"sub": subject, "role": role, "exp": expire, "jti": jti, "gen": gen}
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict:
-    # raises JWTError on invalid/expired token — callers handle it
     return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])

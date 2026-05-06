@@ -24,4 +24,6 @@ export const authApi = {
   login: (payload: LoginPayload) =>
     apiClient.post<TokenResponse>("/auth/login", payload),
   me: () => apiClient.get<MeResponse>("/auth/me"),
+  logout: () => apiClient.post<void>("/auth/logout", {}),
+  logoutAll: () => apiClient.post<TokenResponse>("/auth/logout-all", {}),
 };

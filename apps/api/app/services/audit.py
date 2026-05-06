@@ -59,6 +59,11 @@ class AuditAction(str, Enum):
     TASK_APPROVE = "task.approve"
     TASK_REJECT = "task.reject"
     TASK_REOPEN = "task.reopen"
+    # v0.7.8 · 导出审计 + 会话管理
+    PROJECT_EXPORT = "project.export"
+    BATCH_EXPORT = "batch.export"
+    AUTH_LOGOUT = "auth.logout"
+    AUTH_LOGOUT_ALL = "auth.logout_all"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

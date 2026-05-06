@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -20,6 +20,22 @@ _ALLOWED_ROLES = {r.value for r in UserRole}
 
 class InvitationService:
     @staticmethod
+    async def check_daily_limit(db: AsyncSession, actor_id: uuid.UUID) -> None:
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
+        result = await db.execute(
+            select(func.count()).select_from(UserInvitation).where(
+                UserInvitation.invited_by == actor_id,
+                UserInvitation.created_at >= since,
+            )
+        )
+        count = result.scalar_one()
+        if count >= settings.max_invitations_per_day:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"每日邀请上限 {settings.max_invitations_per_day} 次，请明天再试",
+            )
+
+    @staticmethod
     async def create(
         db: AsyncSession,
         *,
@@ -28,6 +44,8 @@ class InvitationService:
         group_name: str | None,
         invited_by: uuid.UUID,
     ) -> UserInvitation:
+        await InvitationService.check_daily_limit(db, invited_by)
+
         if role not in _ALLOWED_ROLES:
             raise HTTPException(status_code=400, detail=f"非法角色: {role}")
 
