@@ -70,9 +70,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 架构变更 → 检查 `docs-site/dev/`，必要时新增 ADR（`docs/adr/`）
 - 环境变量变更 → 检查 `.env.example`、`DEV.md`
 
-## 6. Plan 文件命名规范
+## 6. /plan 模式下计划文件的命名规范
 
-**所有 plan 文件必须以 `yyyy-mm-dd-` 为前缀。**
+**所有 plan 文件必须以 `yyyy-mm-dd-` 为前缀。涉及版本的, 以 `yyyy-mm-dd-vx.y.z` 为前缀**
 
 示例：`2026-05-06-auth-refactor.md`、`2026-05-06-perf-optimization.md`
 
