@@ -49,7 +49,7 @@ async def test_immutability_trigger_blocks_update(db_session: AsyncSession):
 
 async def test_ensure_future_partitions_creates_missing(db_session: AsyncSession):
     """调用 ensure 应保证未来 N 月分区存在，已存在的不重复创建。"""
-    created = await AuditPartitionService.ensure_future_partitions(
+    await AuditPartitionService.ensure_future_partitions(
         db_session, months_ahead=6
     )
     # 多数月份已在 0037 迁移建好；但向 6 月（往后）会有新增
