@@ -40,7 +40,9 @@ class TaskEvent(Base):
     )
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    annotation_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    annotation_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     was_rejected: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )

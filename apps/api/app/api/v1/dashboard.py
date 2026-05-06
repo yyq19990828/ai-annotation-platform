@@ -495,9 +495,7 @@ async def annotator_dashboard(
                 func.percentile_cont(0.5)
                 .within_group(
                     (
-                        func.extract(
-                            "epoch", Task.submitted_at - Task.assigned_at
-                        )
+                        func.extract("epoch", Task.submitted_at - Task.assigned_at)
                         * 1000
                     ).asc()
                 )
@@ -511,7 +509,9 @@ async def annotator_dashboard(
         )
     ).first()
     median_duration_ms = (
-        int(duration_rows.median_ms) if duration_rows and duration_rows.median_ms else None
+        int(duration_rows.median_ms)
+        if duration_rows and duration_rows.median_ms
+        else None
     )
 
     # 退回率 / 重审次数：仅本人，submitted_at 不为空（已提交过的任务）
@@ -519,9 +519,7 @@ async def annotator_dashboard(
         await db.execute(
             select(
                 func.count().label("submitted_n"),
-                func.count()
-                .filter(Task.reopened_count > 0)
-                .label("reopened_n"),
+                func.count().filter(Task.reopened_count > 0).label("reopened_n"),
                 func.coalesce(func.avg(Task.reopened_count), 0.0).label("reopen_avg"),
             ).where(
                 Task.assignee_id == current_user.id,
@@ -557,16 +555,16 @@ async def annotator_dashboard(
     ).scalar() or 0
     weekly_compare_pct: float | None
     if last_week_n > 0:
-        weekly_compare_pct = round((weekly_completed - last_week_n) / last_week_n * 100, 1)
+        weekly_compare_pct = round(
+            (weekly_completed - last_week_n) / last_week_n * 100, 1
+        )
     elif weekly_completed > 0:
         weekly_compare_pct = 100.0  # 上周 0 → 本周有量 → +100%
     else:
         weekly_compare_pct = None
 
     # 周目标：ProjectMember.weekly_target → User.weekly_target_default → 200
-    weekly_target = (
-        getattr(current_user, "weekly_target_default", None) or 200
-    )
+    weekly_target = getattr(current_user, "weekly_target_default", None) or 200
 
     return AnnotatorDashboardStats(
         assigned_tasks=assigned_tasks,
@@ -853,7 +851,11 @@ async def admin_people_list(
     for idx, u in enumerate(users):
         is_reviewer = u.role in (UserRole.REVIEWER, UserRole.PROJECT_ADMIN)
         main_metric = throughputs[idx]
-        main_label = f"本周{period if period != '7d' else ''}审核数" if is_reviewer else f"本周{period if period != '7d' else ''}完成数"
+        main_label = (
+            f"本周{period if period != '7d' else ''}审核数"
+            if is_reviewer
+            else f"本周{period if period != '7d' else ''}完成数"
+        )
 
         sub_n, reop_n = reopen_map.get(u.id, (0, 0))
         rejected_rate: float | None = (
@@ -912,12 +914,16 @@ async def admin_people_list(
 
             pid = _u.UUID(project)
             allowed = (
-                await db.execute(
-                    select(ProjectMember.user_id).where(
-                        ProjectMember.project_id == pid
+                (
+                    await db.execute(
+                        select(ProjectMember.user_id).where(
+                            ProjectMember.project_id == pid
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             allowed_set = {str(x) for x in allowed}
             items = [it for it in items if it.user_id in allowed_set]
         except (ValueError, TypeError):
@@ -1031,14 +1037,18 @@ async def admin_person_detail(
     from app.db.models.task_event import TaskEvent
 
     duration_rows = (
-        await db.execute(
-            select(TaskEvent.duration_ms).where(
-                TaskEvent.user_id == uid,
-                TaskEvent.kind == "annotate",
-                TaskEvent.started_at >= start,
+        (
+            await db.execute(
+                select(TaskEvent.duration_ms).where(
+                    TaskEvent.user_id == uid,
+                    TaskEvent.kind == "annotate",
+                    TaskEvent.started_at >= start,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     durations = [int(d) for d in duration_rows if d is not None]
     duration_histogram: list[dict] = []
     p50: int | None = None
@@ -1063,24 +1073,28 @@ async def admin_person_detail(
 
     # timeline：最近 50 条 audit_logs
     timeline_rows = (
-        await db.execute(
-            select(AuditLog)
-            .where(AuditLog.actor_id == uid)
-            .where(
-                AuditLog.action.in_(
-                    [
-                        "task.submit",
-                        "task.approve",
-                        "task.reject",
-                        "task.reopen",
-                        "task.create_annotation",
-                    ]
+        (
+            await db.execute(
+                select(AuditLog)
+                .where(AuditLog.actor_id == uid)
+                .where(
+                    AuditLog.action.in_(
+                        [
+                            "task.submit",
+                            "task.approve",
+                            "task.reject",
+                            "task.reopen",
+                            "task.create_annotation",
+                        ]
+                    )
                 )
+                .order_by(AuditLog.created_at.desc())
+                .limit(50)
             )
-            .order_by(AuditLog.created_at.desc())
-            .limit(50)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     timeline = []
     for a in timeline_rows:
         target_id = (
@@ -1111,7 +1125,9 @@ async def admin_person_detail(
     ).scalar() or 0
 
     # 周环比
-    last_week_start = today_start - timedelta(days=today_start.weekday()) - timedelta(weeks=1)
+    last_week_start = (
+        today_start - timedelta(days=today_start.weekday()) - timedelta(weeks=1)
+    )
     week_start_dt = last_week_start + timedelta(weeks=1)
     last_n = (
         await db.execute(

@@ -231,9 +231,9 @@ export function App() {
         <Route
           path="/admin/people"
           element={
-            <RequireRole roles={["super_admin"]}>
+            <RequirePagePermission pageKey="admin-people">
               <AdminPeoplePage />
-            </RequireRole>
+            </RequirePagePermission>
           }
         />
         <Route

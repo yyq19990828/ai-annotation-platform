@@ -69,7 +69,9 @@ async def test_task_events_batch_sync_fallback(httpx_client, annotator, db_sessi
     # 行落库（同 SAVEPOINT 可见）
     n = (
         await db_session.execute(
-            select(func.count()).select_from(TaskEvent).where(TaskEvent.user_id == user.id)
+            select(func.count())
+            .select_from(TaskEvent)
+            .where(TaskEvent.user_id == user.id)
         )
     ).scalar()
     assert n == 1
