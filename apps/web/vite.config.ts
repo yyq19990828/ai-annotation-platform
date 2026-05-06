@@ -27,12 +27,14 @@ const config: Parameters<typeof defineConfig>[0] = {
   server: {
     port: process.env.PORT ? Number(process.env.PORT) : 3000,
     proxy: {
+      // 用 127.0.0.1 强制 IPv4：CI runner 上 Node 把 localhost 解析成 ::1，但
+      // 后端 uvicorn 只绑 IPv4，会触发 ECONNREFUSED ::1:8000。
       "/api": {
-        target: "http://localhost:8000",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
       },
       "/ws": {
-        target: "ws://localhost:8000",
+        target: "ws://127.0.0.1:8000",
         ws: true,
       },
     },

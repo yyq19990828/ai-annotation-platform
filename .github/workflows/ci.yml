@@ -198,7 +198,9 @@ jobs:
       # v0.8.3 · 非 production 环境暴露 _test_seed router；e2e/fixtures/seed.ts
       # 通过 POST /api/v1/__test/seed/reset / login 造数与跳登录
       ENVIRONMENT: development
-      PLAYWRIGHT_API_BASE: http://localhost:8000
+      # CI 上 Node 把 localhost 解析成 ::1，但 uvicorn --host 0.0.0.0 只听 IPv4，
+      # 用 127.0.0.1 强制 IPv4 避免 ECONNREFUSED ::1:8000。
+      PLAYWRIGHT_API_BASE: http://127.0.0.1:8000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -217,7 +219,7 @@ jobs:
         run: |
           uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 &
           for i in {1..30}; do
-            curl -s http://localhost:8000/health && break
+            curl -s http://127.0.0.1:8000/health && break
             sleep 1
           done
       - uses: actions/setup-node@v4
