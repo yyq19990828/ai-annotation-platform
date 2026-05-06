@@ -121,11 +121,38 @@ cd apps/web && pnpm test:e2e
 
 **何时不写 E2E**：单组件交互、纯逻辑校验。
 
+### `_test_seed` router + e2e fixture（v0.8.3）
+
+E2E spec 通过 `apps/web/e2e/fixtures/seed.ts` 调后端 `/api/v1/__test/seed/*` 端点造数：
+
+```ts
+// apps/web/e2e/tests/auth.spec.ts
+import { test, expect } from "../fixtures/seed";
+
+test("正确凭证 → 跳 dashboard", async ({ page, seed }) => {
+  const data = await seed.reset();                  // truncate + 重建固定 fixture
+  await seed.loginViaUI(page, data.admin_email, "Test1234");
+  await expect(page).toHaveURL(/\/dashboard/);
+});
+
+test("注入 token 跳 UI 登录", async ({ page, seed }) => {
+  const data = await seed.reset();
+  await seed.injectToken(page, data.annotator_email);  // 直接 localStorage 注入
+  await page.goto("/annotate");
+});
+```
+
+**安全约束**：`_test_seed` router **仅**当 `settings.environment != "production"` 时挂载（`apps/api/app/api/v1/router.py` 末尾条件 import），即使误挂端点入口也再做一次环境守卫。
+
+**fixture 用法**：`reset()` 返回固定结构（admin/annotator/reviewer 三个邮箱 + 项目 id + 5 个任务 id）；密码统一 `Test1234`。新增数据用 `apps/api/tests/factory.py` 的 `create_user / create_project / create_task / create_batch`。
+
 ## 覆盖率
 
 CI 上传到 [Codecov](https://codecov.io)，PR 评论显示 diff coverage。
 
-**当前不设硬门槛**——避免起步阻塞日常开发。等覆盖率自然爬到 70% 后再卡。
+**v0.8.3 切硬阻断**：`codecov.yml` backend `informational: false`（target 60%）+ frontend `informational: false`（target 10%，实测 10.88% 留 0.88pp 容差）。`apps/web/vite.config.ts` coverage thresholds 同步生效（lines/statements ≥ 10）；`pnpm test:coverage` 低于阈值非 0 退出。
+
+ROADMAP 列出的 ≥ 25% 目标继续推：补 InviteUserModal / RegisterPage / Dashboard / ProjectList / WorkbenchShell 等页面级单测，达标后上调阈值。
 
 ## Pre-commit
 

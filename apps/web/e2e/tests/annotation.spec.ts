@@ -1,15 +1,15 @@
-import { test } from "@playwright/test";
+/**
+ * v0.8.3 · annotation E2E（最小 happy path）：annotator 登录后 /annotate 路由可达。
+ * 详细 bbox 拖框流程依赖 Konva 画布事件，留给下一版（与 SAM 接入同期）。
+ */
+import { test, expect } from "../fixtures/seed";
 
 test.describe("annotation workbench", () => {
-  test.skip("打开任务 → bbox 标注 → 提交", async () => {
-    // 占位：待 fixture 准备好种子任务后启用
-    //   const taskId = await seedTaskWithImage();
-    //   await page.goto(`/workbench/${taskId}`);
-    //   ... 模拟拖拽画框 ...
-    //   await page.getByRole("button", { name: "提交" }).click();
-  });
-
-  test.skip("快捷键标注流：W / E / R 切换工具", async () => {
-    // 占位
+  test("annotator 登录 → /annotate 路由可达", async ({ page, seed }) => {
+    const data = await seed.reset();
+    await seed.injectToken(page, data.annotator_email);
+    await page.goto("/annotate");
+    await expect(page).toHaveURL(/\/annotate/);
+    await page.waitForLoadState("networkidle");
   });
 });

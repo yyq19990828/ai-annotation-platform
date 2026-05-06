@@ -13,6 +13,7 @@ celery_app = Celery(
         "app.workers.audit",
         "app.workers.deactivation",
         "app.workers.audit_partition",
+        "app.workers.presence",
     ],
 )
 
@@ -54,6 +55,11 @@ celery_app.conf.update(
         "archive-old-audit-partitions": {
             "task": "app.workers.audit_partition.archive_old_audit_partitions",
             "schedule": crontab(day_of_month=2, hour=3, minute=0),
+        },
+        # v0.8.3 · 在线状态心跳：每 2 分钟扫描，把超 OFFLINE_THRESHOLD_MINUTES 未活跃的 online 用户置 offline
+        "mark-inactive-offline": {
+            "task": "app.workers.presence.mark_inactive_offline",
+            "schedule": crontab(minute="*/2"),
         },
     },
 )

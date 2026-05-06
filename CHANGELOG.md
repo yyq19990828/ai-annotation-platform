@@ -20,6 +20,51 @@
 
 ## 最新版本
 
+## [0.8.3] - 2026-05-06
+
+> **治理 / 测试基建闭环。** 把 ROADMAP 中四块 P1/P2 一次性收齐：在线状态心跳机制（替代旧的 status==online 偏差）、审计不可变 trigger 测试覆盖（兜底 `security.md` 的可靠声明）、前端单测推到稳定 baseline 并切硬阻断（v0.7.6 8.68% → 10.88%）、E2E 三 spec 写实 + 摘 `continue-on-error`。后续效率看板 / SAM 接入等 P1 大件不再被基建空缺挡路。
+
+### 新增
+
+- **在线状态心跳机制（A · UsersPage）**：迁移 0038 给 `users` 表加 `last_seen_at` 列（带索引）；`POST /auth/me/heartbeat` 端点（前端 30s 周期触发，仅 visible tab 跑）；Celery beat 任务 `mark_inactive_offline`（每 2 分钟扫描，把超 `OFFLINE_THRESHOLD_MINUTES`=5min 未活跃的 online 用户置 offline）；`GET /users/stats` 返回 `{total, online, weekly_active}`，`weekly_active` 基于 `last_seen_at >= now-7d`。前端 `useHeartbeat` hook 挂在 AppShell + FullScreenWorkbench；UsersPage 顶部「本周活跃」改读后端聚合。**修复了「关浏览器永远在线」的偏差**，同时为下一版「效率看板 P1.投入 维度」打底。
+- **审计日志不可变 trigger 测试覆盖（B · 治理合规）**：`tests/test_audit_immutability.py` 5 条 case 覆盖 ① UPDATE 阻断 ② DELETE 阻断 ③ `SET LOCAL "app.allow_audit_update" = 'true'` 豁免后允许 ④ 豁免不跨 SAVEPOINT 泄漏 ⑤ COPY 路径（pg_restore 用）走 BEFORE ROW trigger 不触发。`security.md` 已声称可靠，本版补测试兜底，防止后续分区 / trigger 重写时回归。
+- **E2E 基础设施（B · 测试/DX）**：`apps/api/tests/factory.py`（`create_user` / `create_project` / `create_task` / `create_batch`，幂等可重入）+ `apps/api/app/api/v1/_test_seed.py`（仅 `environment != 'production'` 挂载，`POST /api/v1/__test/seed/reset` truncate + 重建 admin/annotator/reviewer + 1 项目 + 5 task；`POST /__test/seed/login` 跳密码发 JWT）+ `apps/web/e2e/fixtures/seed.ts`（Playwright fixture，提供 `seed.reset()` / `seed.injectToken(page, email)` / `seed.loginViaUI(page, email, pwd)`）。
+- **前端单测 8 个新测试文件 + 切硬阻断**：
+  - `useSessionStats.test.ts`（ring buffer 边界 + dt 过滤）
+  - `useHeartbeat.test.ts`（visible / hidden 切换 + 401 静默）
+  - `usePermissions.test.ts`（5 角色权限分支）
+  - `auditLabels.test.ts`（业务动作过滤 / 中文标签 fallback）
+  - `iou.test.ts` + `polygonGeom.test.ts`（几何工具）
+  - `transforms.test.ts`（bbox / polygon / prediction 映射）
+  - `useAnnotationHistory.hook.test.ts`（栈状态机 + 切任务清栈 + tmpId 替换）
+  - `stores.test.ts`（authStore / appStore / bugDrawerStore 三个 zustand store）
+
+### 变更
+
+- **`apps/api/app/api/v1/auth.py:99-104`**：`login` 成功时同步写 `user.last_seen_at = now`，与 `last_login_at` 同步。logout/logout_all 保持仅切 `status='offline'`（last_seen_at 不重置，登出仍是活跃）。
+- **`apps/api/app/api/v1/me.py`**：新增 `POST /heartbeat`（无 body，204 返回，刷新 last_seen_at + status='online'）。
+- **`apps/api/app/workers/celery_app.py`**：beat_schedule 新增 `mark-inactive-offline`（`crontab(minute="*/2")`）；`include` 加 `app.workers.presence`。
+- **`apps/api/app/config.py`**：新增 `offline_threshold_minutes: int = 5` 配置（30s 心跳 × 10 容差）。
+- **`apps/web/src/pages/Users/UsersPage.tsx:150`**：「本周活跃」从本地 `filter(status==="online")` 改读 `useUsersStats().weekly_active`。
+- **`apps/web/src/App.tsx`**：AppShell 与 FullScreenWorkbench 各调一次 `useHeartbeat()`，覆盖工作台与主壳两条路径。
+- **`apps/web/vite.config.ts`**：coverage 配置加 thresholds（lines/statements 10%、branches 60%、functions 30%）+ exclude（types / mock data / Konva 工具 / bugReportCapture 等不可单元测部分）。低于阈值时 vitest 退出非 0。
+- **`codecov.yml` 切硬阻断**：`backend.informational: false`（target 60%，已稳定）+ `frontend.informational: false`（target 10%，实测 10.88% 留 0.88pp 容差）。下一版逐步推 frontend 向 ROADMAP P2 列出的 25%。
+- **`.github/workflows/ci.yml` e2e job**：摘掉 `continue-on-error: true`；env 加 `ENVIRONMENT=development` 暴露 `_test_seed` router，加 `PLAYWRIGHT_API_BASE` 让 fixture 知道后端地址。
+- **`apps/web/e2e/tests/{auth,annotation,batch-flow}.spec.ts`** 三个 spec 全部写实：
+  - `auth.spec.ts`：登录 → dashboard / 错密码留页 + 错误条 / 未登录访问 /dashboard 跳 /login
+  - `annotation.spec.ts`：annotator 跳登录后 /annotate 路由可达
+  - `batch-flow.spec.ts`：admin 跳登录后项目设置页可达
+
+### 推迟（明确不在本期）
+
+- **效率看板 Layer 1/2/3**：依赖本版心跳但工作量独立（2-3 + 1-2 + 3-4 天），留给 v0.8.4+
+- **ADR-0008 admin-locked 实施**：v0.8.2 ADR 仍 Proposed，scheduler 测试覆盖未补
+- **OAuth / CAPTCHA / 邮箱验证**：开放注册基座已稳，加固延后
+- **fabric.js dead dep 清理**：非心跳 / 测试主题
+- **前端单测推到 25%**：8 个新测试 + 167 case 把 baseline 从 8.68% 推到 10.88%；25% 需再 6000 行覆盖，留给 v0.8.4+
+
+---
+
 ## [0.8.2] - 2026-05-06
 
 > **文档深度优化。** 把 v0.8.0 / v0.8.1 留下的四处文档机制缝隙以**自动化**方式补齐：ADR 不再孤悬 GitHub、`pnpm docs:build` 进 PR gate、how-to 与源码漂移即报错、ML Backend 协议有可跑样板。后续文档随代码自然漂移即被 CI 拦下，免人工巡检。

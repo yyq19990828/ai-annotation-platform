@@ -30,6 +30,11 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # v0.8.3 · 心跳机制：登录 / POST /me/heartbeat / 关键操作时刷新；
+    # Celery beat 据此把 status='online' 但超 OFFLINE_THRESHOLD_MINUTES 未活跃的用户置 offline
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     # v0.8.1 · 管理员重置密码后落时间戳，登录后强制跳改密；用户自助改密后清空。
     password_admin_reset_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

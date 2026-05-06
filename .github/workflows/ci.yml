@@ -162,9 +162,8 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
-    # 当下大部分 spec 是 .skip 占位，跑通是为了校验 wiring。
-    # 等真实 spec 写好后，把 continue-on-error 去掉。
-    continue-on-error: true
+    # v0.8.3 · 三 spec 已写实（auth / annotation / batch-flow），通过 _test_seed
+    # router + e2e/fixtures/seed.ts 造数 + 跳登录；continue-on-error 已摘掉。
     services:
       postgres:
         image: postgres:16
@@ -196,6 +195,10 @@ jobs:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: annotations
+      # v0.8.3 · 非 production 环境暴露 _test_seed router；e2e/fixtures/seed.ts
+      # 通过 POST /api/v1/__test/seed/reset / login 造数与跳登录
+      ENVIRONMENT: development
+      PLAYWRIGHT_API_BASE: http://localhost:8000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

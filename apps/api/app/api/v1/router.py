@@ -53,3 +53,13 @@ api_router.include_router(annotation_history.router, tags=["annotation-history"]
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(bug_reports.router, tags=["bug-reports"])
 api_router.include_router(notifications.router, tags=["notifications"])
+
+# v0.8.3 · _test_seed router：仅非 production 暴露，供 Playwright E2E 造数 + 跳登录
+from app.config import settings as _settings  # noqa: E402
+
+if _settings.environment != "production":
+    from app.api.v1 import _test_seed  # noqa: E402
+
+    api_router.include_router(
+        _test_seed.router, prefix="/__test", tags=["_test_seed"]
+    )

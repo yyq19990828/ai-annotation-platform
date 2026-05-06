@@ -23,6 +23,12 @@ export interface AdminResetPasswordResult {
   target_email: string;
 }
 
+export interface UsersStats {
+  total: number;
+  online: number;
+  weekly_active: number;
+}
+
 export const usersApi = {
   list: (params?: { role?: string; project_id?: string }) => {
     const q = new URLSearchParams(
@@ -32,6 +38,9 @@ export const usersApi = {
     ).toString();
     return apiClient.get<UserResponse[]>(`/users${q ? `?${q}` : ""}`);
   },
+
+  // v0.8.3 · UsersPage 顶部 4 卡之「本周活跃」聚合（last_seen_at >= now-7d）
+  stats: () => apiClient.get<UsersStats>("/users/stats"),
 
   invite: (payload: InvitePayload) =>
     apiClient.post<InvitationCreated>("/users/invite", payload),

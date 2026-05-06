@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     cors_allow_methods: list[str] = ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"]
     cors_allow_headers: list[str] = ["Authorization", "Content-Type", "X-Request-ID"]
 
+    # v0.8.3 · 在线状态心跳：超过该分钟数未刷新 last_seen_at 的 online 用户由
+    # Celery beat 任务 mark_inactive_offline 置 offline。前端 30s 心跳 × 10 容差。
+    offline_threshold_minutes: int = 5
+
     # SMTP（本期占位，仅在 GET /settings/system 中以「已配置/未配置」呈现）
     smtp_host: str | None = None
     smtp_port: int | None = None

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +13,24 @@ from app.services.audit import AuditAction, AuditService
 from app.services.deactivation_service import DeactivationService
 
 router = APIRouter()
+
+
+@router.post("/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
+async def heartbeat(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """v0.8.3 · 在线状态心跳。
+
+    前端每 30s 调一次（document.visibilityState === 'visible' 时），刷新
+    last_seen_at 与 status='online'。Celery beat `mark_inactive_offline` 任务
+    据 last_seen_at 把超 OFFLINE_THRESHOLD_MINUTES 的用户置 offline。
+    """
+    user.last_seen_at = datetime.now(timezone.utc)
+    if user.status != "online":
+        user.status = "online"
+    await db.commit()
+    return None
 
 
 class DeactivationRequest(BaseModel):

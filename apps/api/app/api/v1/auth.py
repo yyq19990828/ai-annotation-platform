@@ -96,7 +96,9 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN, detail="账户已被停用"
         )
 
-    user.last_login_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    user.last_login_at = now
+    user.last_seen_at = now
     user.status = "online"
     from app.core.token_blacklist import get_user_generation
 

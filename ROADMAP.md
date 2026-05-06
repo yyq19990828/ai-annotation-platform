@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**；**v0.8.2（文档深度优化：docs:build 进 CI gate + snippet 漂移 lint + ADR sidebar mirror + echo-ml-backend 可执行样板 + ADR-0008 admin-locked 状态机草稿）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**；**v0.8.2（文档深度优化：docs:build 进 CI gate + snippet 漂移 lint + ADR sidebar mirror + echo-ml-backend 可执行样板 + ADR-0008 admin-locked 状态机草稿）**；**v0.8.3（治理 / 测试基建闭环：在线状态心跳 + 审计 trigger 测试覆盖 + 前端单测切硬阻断（10%）+ E2E 三 spec 写实摘 continue-on-error + `_test_seed` router 造数链路）**。
 
 ---
 
@@ -31,7 +31,7 @@
 #### 用户与权限页（UsersPage）
 - **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。需 `api_keys` 表 + scope + revoke + 最后使用时间。
 - **「存储与模型集成」面板**：`UsersPage.tsx:246-269` 全部 mock 数据，应对接 `/storage/health` 与 `/projects/{pid}/ml-backends`。
-- **在线状态心跳机制**：2026-05-06 修复了登录不切 `online` 的 BUG（auth.py login/logout/logout-all 同步切 status），但仅靠登录/登出事件不准确——用户直接关浏览器、token 过期、网络断开都会停留在 `online`。需要 `last_seen_at` 列 + 前端定时（30s）打 `POST /me/heartbeat` + Celery beat 周期把 `last_seen_at < now-N min` 用户置 `offline`。同时把 `UsersPage.tsx:150` 的「本周活跃」改成基于 `last_seen_at` 而非 `status` 的 7 日窗口聚合。
+- ~~**在线状态心跳机制**：v0.8.3 已落（迁移 0038 + `last_seen_at` 列 + `POST /auth/me/heartbeat` + 前端 useHeartbeat 30s + Celery beat 每 2 分钟扫描 + UsersPage 周活跃改读 `/users/stats`）。~~
 
 #### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -66,7 +66,7 @@
 - **2FA / TOTP**：super_admin 必选、其它角色可选。
 - **API 密钥**：UsersPage 已有按钮，需 `api_keys` 表 + scope + revoke + 最后使用时间。
 - **HTTPS 强制 / HSTS / CSP**：production 中间件层补齐。v0.8.0 `deploy.md` 已写 nginx 端 TLS 终结示例，但 FastAPI 侧没有 strict-transport-security / CSP middleware；建议加 `app/middleware/security_headers.py` + production-only 注册。
-- **审计日志不可变 trigger 测试覆盖**：v0.7.8 落了 PG trigger + GDPR `SET LOCAL` 豁免，但缺测试。建议加 `tests/test_audit_immutability.py` 覆盖三条：① 普通 UPDATE/DELETE 抛 RAISE；② `SET LOCAL` 后允许；③ pg_restore 走 COPY 不被阻断。security.md 已声称该机制可靠，需要测试兜底。
+- ~~**审计日志不可变 trigger 测试覆盖**：v0.8.3 已落（5 条 case：UPDATE / DELETE 阻断 + SET LOCAL 豁免 + 不跨 SAVEPOINT 泄漏 + COPY 旁路）。~~
 
 #### 治理 / 合规
 - **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
@@ -177,9 +177,9 @@
 - **Predictions 表分区**：v0.7.6 已落 Stage 1（`ix_predictions_created_at` 索引）+ ADR-0006 设计 Stage 2 完整 RANGE(created_at) 月分区。Stage 2 触发条件：单月 INSERT > 100k 或 总行数 > 1M（FK 复合化代价 + annotations 表迁移成本）。
 
 #### 测试 / 开发体验
-- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座已就位（v0.7.4）；v0.7.6 已把 baseline 从 4.27% 推到 8.68%（新增 29 个测试覆盖 AttributeSchemaEditor / Modal / DropdownMenu / BatchesKanbanView / useClipboard）。剩余目标 ≥ 25% 持续提升：补 hooks（`useSessionStats` ring buffer / `replaceAnnotationId`）+ 关键组件（InviteUserModal 状态机、RegisterPage 三态）+ Dashboard / ProjectList / WorkbenchShell 三个页面级单测。
-- **E2E spec 写实**：v0.7.4 已搭好 Playwright 骨架，三个 spec（auth / annotation / batch-flow）全 `.skip` 占位且 e2e job `continue-on-error: true`。需先把 `auth.spec.ts` 写实（登录页 → dashboard、错密码、JWT 过期），加 `e2e/fixtures/seed.ts` 调后端造种子数据（`apps/api/tests/factory.py` + 仅 ENV=test 挂载的 `_test_seed.py` 路由），跑通后去掉 `continue-on-error`。然后第二轮 annotation bbox 完整链路。**v0.7.6 评估后推迟**：1-2 天深度活，本期窗口不足。
-- **覆盖率门槛硬阻断**：v0.7.6 已落 `codecov.yml` 显式 backend 60% / frontend 8% target（基线值），全部 informational 不阻断。frontend 持续 ≥ 25% 后切硬阻断。
+- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座已就位（v0.7.4）；v0.7.6 把 baseline 从 4.27% 推到 8.68%；**v0.8.3 推到 10.88%（+8 个测试文件覆盖 useSessionStats / useHeartbeat / usePermissions / iou / polygonGeom / transforms / useAnnotationHistory / stores），切硬阻断 10% 阈值**。剩余目标 ≥ 25%：补 InviteUserModal / RegisterPage / Dashboard / ProjectList / WorkbenchShell 等页面级单测，达标后上调阈值。
+- ~~**E2E spec 写实**：v0.8.3 已落（factory.py + `_test_seed.py` router + e2e/fixtures/seed.ts；三个 spec 全部写实并摘 `continue-on-error`）。~~ 后续延伸：annotation/batch-flow 仍是最小 happy path，bbox 拖框完整链路 + 多角色批次流转留给下一版。
+- ~~**覆盖率门槛硬阻断**：v0.8.3 已落（vite.config.ts thresholds=10%；codecov.yml backend/frontend 双切 informational=false）。~~ frontend 当前 10.88%，需继续推到 ROADMAP P2 列出的 25% 后再上调阈值。
 
 #### i18n / 主题 / 无障碍
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
@@ -246,20 +246,20 @@
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | 效率看板 / 人员绩效 Layer 1+2+3（数据沉淀 + 个人卡组 + 管理员卡片网格 + 抽屉下钻） | 用户主诉；当前 AdminDashboard 完全无人均维度，Task 三时间戳已落库未消费；与心跳工作 / 个人偏好 / weeklyTarget 共建 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1；v0.8.0 ML Backend 协议契约文档已为接入侧扫清障碍 |
-| **P1** | E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error` | v0.7.6 推迟（1-2 天深活）；factory + seed.ts + 三 spec 写实是 PR 红线收紧前置；与「截图自动化」共建 fixture |
+| ~~**P1**~~ | ~~E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error`~~ | v0.8.3 已落（factory.py + `_test_seed.py` router + e2e/fixtures/seed.ts + 三 spec 写实并摘 continue-on-error）。后续延伸：annotation/batch-flow 完整 bbox / 多角色批次流转 |
 | **P1** | 截图自动化（Playwright + IMAGE_CHECKLIST 16 处）替代手工拍图 | v0.8.0 占位就位；与 E2E spec 共用 fixture，一次写完两件事 |
 | **P2** | 开放注册 CAPTCHA 防刷号 + 邮箱验证（角色提升前置） | v0.7.7 基座已落，production 放量前需加固 |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO 常见需求 |
 | **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 |
 | **P2** | HTTPS 强制 / HSTS / CSP middleware | v0.8.0 deploy.md 已写 nginx 端 TLS，FastAPI middleware 缺 strict-transport-security / CSP；production-only 注册 |
-| **P2** | 审计日志不可变 trigger 测试覆盖 | v0.7.8 trigger 已落，security.md 已宣称可靠，需 `tests/test_audit_immutability.py` 兜底 |
+| ~~**P2**~~ | ~~审计日志不可变 trigger 测试覆盖~~ | v0.8.3 已落（5 条 case：UPDATE / DELETE 阻断 + SET LOCAL 豁免 + 不跨 SAVEPOINT 泄漏 + COPY 旁路） |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好（基础静音）已落，邮件 channel 字段已就位但 UI 未启；与 LLM 聚类协同 |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
 | **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要 |
 | **P2** | C.3 history 持久化（undo/redo 栈 sessionStorage） | quick win，工时少 |
 | **P2** | 审计日志归档（PARTITION）；AuditMiddleware 队列化 v0.7.6 已落 Celery | 当前数据量未到瓶颈，监控触发再做 |
-| **P2** | 前端单测持续提升到 ≥ 25% + 切覆盖率硬阻断 | v0.7.6 baseline 8.68%（+29 测试 from 4.27%）；目标 25% 后切去 informational |
+| **P2** | 前端单测持续提升到 ≥ 25% | v0.8.3 推到 10.88% 并切硬阻断 10%（informational=false）；继续补 hooks/组件/页面单测 |
 | **P2** | 批次状态机二阶段剩余：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | v0.8.2 ADR-0008 已 Proposed（admin-locked 正交字段 + lock/unlock API + 表迁移 SQL）；v0.9 实施前需补 scheduler 测试覆盖；bulk approve/reject UX 待定 |
 | **P3** | fabric.js dead dep 清理 | v0.8.0 ADR-0004 确认未使用；下次 dep 清理 PR 顺手 |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | v0.7.6 已落 Stage 1 索引 + ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M |
