@@ -2,6 +2,9 @@
 
 > 适用角色：项目管理员 / 超级管理员
 
+![创建项目入口](../images/projects/create-entry.png)
+<!-- TODO(0.8.1) IMAGE_CHECKLIST: ProjectsPage「新建项目」按钮高亮。 -->
+
 ## 步骤
 
 1. 顶部菜单 → 「项目管理」 → 「新建项目」
@@ -16,6 +19,9 @@
    - **单审**：1 名审核员通过即可
    - **双审**：2 名审核员一致才通过
    - **采样审核**：随机抽 N% 审核
+
+![向导步骤](../images/projects/wizard-steps.png)
+<!-- TODO(0.8.1) IMAGE_CHECKLIST: 6 步 wizard 各步关键截图（基本信息 / 类型 / 类别 schema / 属性 schema / AI 模型 / 审核策略），可拼成一张长图。 -->
 
 ## 任务生成
 

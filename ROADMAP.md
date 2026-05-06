@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规：密码前端校验对齐 + 测试账号 production 隐藏 + 邀请限流 + Token 黑名单会话管理 `POST /auth/logout` `POST /auth/logout-all` + CORS 收紧 + 审计日志不可变 trigger + 数据导出审计 + last_login_at + 失败登录 user_agent + ADR-0007 分区设计）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**。
 
 ---
 
@@ -26,8 +26,8 @@
 - **训练队列**：路由 `/training` 占位。
 - **预测成本统计**：后端 `prediction_metas` 表已记录 token / 耗时 / 成本，但前端无任何可视化（应进入 AdminDashboard 的成本卡片，并向工作台 AI 助手面板透传"本题花费 X 元 / Y tokens"）。
 - **失败预测重试**：`failed_predictions` 表记录但无 UI 触发重试。
-- **ML Backend 健康检查**：`MLBackendService` 只在管理员手动点击时探活，无后台周期任务。
-- **ML Backend 协议契约文档**：前后端 ML 接入点散落在 `MLBackendService` / 工作台 / 模型市场，缺统一协议描述（健康端点 / 预测请求 / 错误格式 / 流式 vs 同步 / `is_interactive` 模式协商等）。
+- **ML Backend 健康检查**：`MLBackendService` 只在管理员手动点击时探活，无后台周期任务。v0.8.0 协议文档已就位，可直接基于 `/health` 实现一个 Celery beat 周期任务。
+- **可执行 echo backend 样板**：v0.8.0 `ml-backend-protocol.md` 含 50 行 inline 示例；建议提到 `docs-site/dev/examples/echo-ml-backend/` 作为可跑样板（含 Dockerfile + README + curl 测试脚本），降低接入方的"先看再写"心理门槛。
 
 #### 用户与权限页（UsersPage）
 - **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。需 `api_keys` 表 + scope + revoke + 最后使用时间。
@@ -45,8 +45,6 @@
 - **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好。
 
 #### 登录 / 注册 / 认证
-- ~~**邀请注册密码前端校验不一致**~~：v0.7.8 已修复（前端对齐后端 8+ 含大小写数字 + 实时强度指示器）。
-- ~~**LoginPage 测试账号区块 production 泄露**~~：v0.7.8 已修复（production 条件渲染 + 测试账号去域名简化）。
 - **开放注册二阶段增强**（v0.7.7 落了基座，以下为可选延伸）：
   - **邮箱验证**：当前 viewer 零权限可跳过；若未来开放注册默认角色调高，需 `POST /auth/verify-email` + `email_verified_at` 字段 + 验证前 `is_active=false`。
   - **CAPTCHA / 防机器人**：v0.7.7 的 3/min rate limit 对 production 够用但不防分布式刷号；接 hCaptcha / Turnstile，前端 `OpenRegisterForm` 加 CAPTCHA widget + 后端校验 token。
@@ -55,24 +53,23 @@
   - **注册统计仪表卡**：AdminDashboard 增加注册来源分布卡片（邀请 vs 开放注册，按日/周统计），数据来自 `audit_logs WHERE action='user.register'` 的 `detail->>'method'` 字段。
   - **账号自助注销**：用户可在 SettingsPage 申请注销自己的账号；需 `POST /auth/deactivate-self` + 7 天冷静期 + 管理员通知。
 
-#### v0.7.x 后续观察 / 下版候选
+#### v0.7.x ~ v0.8.0 后续观察 / 下版候选
 
-> v0.7.0 集中收口了批次状态机 epic + v0.6.x 写时观察 18 项；v0.7.6 一次清了 4 项（属性 schema 步骤 / NotificationsPopover usePopover 迁移 / ProjectsPage 卡片 DropdownMenu / task.reopen fan-out / Kanban 看板）；v0.7.7 落了开放注册基座；下面列剩余观察项：
+> v0.7.0 集中收口了批次状态机 epic + v0.6.x 写时观察 18 项；v0.7.6 一次清了 4 项（属性 schema 步骤 / NotificationsPopover usePopover 迁移 / ProjectsPage 卡片 DropdownMenu / task.reopen fan-out / Kanban 看板）；v0.7.7 落了开放注册基座；v0.8.0 一次性把开发文档分组与 ADR 0002-0005 补齐；下面列剩余观察项：
 
 - **standalone batch_summary stored 列**：v0.7.0 项目卡批次概览用 GROUP BY 单查询返回 `{total, assigned, in_review}`，每次 list_projects 都触发；如需更冷优化，可加 stored 列由 batch 状态机变迁维护。**v0.7.6 评估后推迟**：触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈。优先级 P3，监控触发再做。
+- **fabric.js dead dep 清理**：v0.8.0 写 ADR-0004 时确认 `apps/web/package.json:fabric@^6.5.0` 实际未在 `src/` 任何文件引用（仅 `App.tsx:20` 有一处注释提到）。下次依赖清理 PR 一并删除，省 ~150KB bundle / 一项 supply-chain 风险面。
+- **getting-started 与 SoT 漂移**：v0.8.0 已修过一次（W/R/Ctrl+Enter → B/V/E）。文档站文字硬编码的快捷键提示如再次漂移仍需手改，长期可考虑给所有 .md 中的 `` `<键>` `` 内联引用建一份从 hotkeys.ts 推导的 ESLint/markdownlint 规则；优先级低，等漂移再触发。
 
 ---
 
 ### B · 架构 & 治理向前演进
 
 #### 安全
-- ~~**邀请频率限流**~~：v0.7.8 已落（`InvitationService.check_daily_limit` + `MAX_INVITATIONS_PER_DAY` 配置）。
 - **2FA / TOTP**：super_admin 必选、其它角色可选。
 - **API 密钥**：UsersPage 已有按钮，需 `api_keys` 表 + scope + revoke + 最后使用时间。
-- ~~**会话管理**~~：v0.7.8 已落（JWT jti + gen 声明 + Redis 黑名单 + `POST /auth/logout` / `POST /auth/logout-all`）。
-- ~~**审计日志不可变**~~：v0.7.8 已落（PG BEFORE UPDATE/DELETE trigger + GDPR SET LOCAL 豁免）。
-- ~~**CORS 收紧**~~：v0.7.8 已落（production allow_methods/allow_headers 显式白名单）。
-- **HTTPS 强制 / HSTS / CSP**：production 中间件层补齐。
+- **HTTPS 强制 / HSTS / CSP**：production 中间件层补齐。v0.8.0 `deploy.md` 已写 nginx 端 TLS 终结示例，但 FastAPI 侧没有 strict-transport-security / CSP middleware；建议加 `app/middleware/security_headers.py` + production-only 注册。
+- **审计日志不可变 trigger 测试覆盖**：v0.7.8 落了 PG trigger + GDPR `SET LOCAL` 豁免，但缺测试。建议加 `tests/test_audit_immutability.py` 覆盖三条：① 普通 UPDATE/DELETE 抛 RAISE；② `SET LOCAL` 后允许；③ pg_restore 走 COPY 不被阻断。security.md 已声称该机制可靠，需要测试兜底。
 
 #### 治理 / 合规
 - **审计日志归档**：按月 PARTITION + 冷数据 S3 归档；后台 cron job 触发。
@@ -97,15 +94,14 @@
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
 - **无障碍**：ARIA 属性极少；Lighthouse Accessibility 分数应作为 PR gate。
 
-#### 文档（v0.7.4 已搭 VitePress 文档站三栏骨架，以下为内容填实工作）
+#### 文档（v0.7.4 已搭 VitePress 文档站三栏骨架；v0.8.0 一次性把开发文档分组、ADR 0002-0005、协议契约、SoT 自动化补齐）
 
-- **用户手册关键页填实**：`docs-site/user-guide/` 11 篇骨架已就位但多为大纲。`getting-started.md` 缺端到端 GIF（登录 → 标第一个任务 → 提交）；`workbench/{bbox,polygon,keypoint}.md` 每篇缺 2-3 张界面截图；`projects/` `review/` `export/` 关键步骤需配截图。
-- **开发文档深化**：`docs-site/dev/architecture/data-flow.md` 4 个 mermaid 序列图改为对应代码文件路径标注（点 GitHub 跳具体函数）；`how-to/add-api-endpoint.md` 把 widgets 占位例改为 v0.7.x 真实新增端点。
-- **ADR 0002-0005 回填**：v0.7.4 落了 ADR-0001 元决策，ADR-0001 已规划 4 篇待写：FastAPI/SQLAlchemy/Alembic 选型、`@hey-api/openapi-ts` vs orval/swagger-typescript-api、Konva vs Fabric vs 原生 Canvas、任务锁 5min TTL + 审核流转角色矩阵。每篇 80-150 行。
-- **部署文档**：缺 production 部署清单（环境变量、TLS、备份、初次 bootstrap_admin 步骤），写在 `docs-site/dev/deploy.md`（待新建）。
-- **安全模型文档**：RBAC 矩阵、审计字段释义、邀请流程时序图，写在 `docs-site/dev/security.md`（待新建）。
-- **API 使用指南补充**：v0.7.4 docs-site/api 已用 Scalar 渲染 OpenAPI；缺 ML Backend 协议契约（健康端点 / 预测请求 / 错误格式 / 流式 vs 同步 / `is_interactive` 协商）和 WebSocket 订阅指南，分别写在 `docs-site/dev/ml-backend-protocol.md` 与 `docs-site/dev/ws-protocol.md`（待新建）。
-- **快捷键文档 SoT 化**：v0.6.2 后工作台快捷键 30+ 静态 + 动态属性键，HotkeyCheatSheet 是代码 SoT，但 `docs-site/user-guide/workbench/index.md` 当前手抄了一份。考虑构建期从 `apps/web/src/pages/Workbench/state/hotkeys.ts` 自动导出 Markdown 表，避免双源漂移。
+- **用户手册截图回填（IMAGE_CHECKLIST 16 处）**：v0.8.0 已在 `getting-started.md`、`workbench/{bbox,polygon,keypoint}.md`、`projects/`、`review/`、`export/` 共 16 处放好截图占位 + 拍摄要求注释，详见 [`docs-site/user-guide/IMAGE_CHECKLIST.md`](docs-site/user-guide/IMAGE_CHECKLIST.md)。本期未回填真实图（PNG 占位为 1×1 透明），0.8.1 候选。
+  - **截图自动化方案（替代手工拍图）**：可写 Playwright 脚本基于 `e2e/fixtures/seed.ts`（与 E2E spec 共建）跑一遍 16 个场景自动截图，输出到 `images/` 各子目录。优势：UI 改完 CI 自动重生成；红框 / 标注通过 `page.evaluate` 注入临时 CSS；时间敏感数据（日期 / 头像）可在 fixture 里定值。劣势：动画类（toast、过渡）截不准，仍需手工兜底。建议与「E2E spec 写实」P1 同期推进。
+- **VitePress 文档站 CI gate**：v0.8.0 `pnpm docs:build` 通过，但当前 CI 不强制跑（add-api-endpoint.md ADR 链接漂移 dead-link 是本期临 build 才发现的）。建议把 `pnpm docs:build` 加到 PR check，命中 dead-link / 缺图 / hotkeys.generated.md 与代码漂移立即 fail。
+- **侧边栏加 ADR 入口**：v0.8.0 写完 0001-0007 共 7 篇 ADR，但 `docs-site/.vitepress/config.ts` 的 sidebar 没有 ADR 分组。建议加 `/adr/` 路径或外链到 GitHub `docs/adr/` 目录，给读者一个全景入口（避免一篇 ADR 引用另一篇时只能用 GitHub 绝对链接）。
+- **ADR-0008 草稿（批次 admin-locked 状态机扩展）**：A §批次状态机二阶段「`annotating → active` 暂停」的难点已经文字化（scheduler 死锁 + admin-locked 字段），属于「曾经讨论过但延后」的典型 ADR 选题，落地前先写 ADR 比直接改代码值得。
+- **how-to/add-api-endpoint.md 与 logout 实现绑定的漂移风险**：本期把示例改成真实 `POST /auth/logout` 全链路，但若 logout 逻辑后续重构（如改成走 service 层），文档代码片段会过时。可以加一个 lint 脚本 `scripts/check-doc-snippets.mjs` 在 CI 跑：把 `add-api-endpoint.md` 的关键代码块对比 `apps/api/app/api/v1/auth.py` 的 logout 函数签名，不一致即提醒更新。优先级 P3，单文件漂移成本低于做这个 lint 的成本，等下次类似 how-to 增多再做。
 
 ---
 
@@ -160,13 +156,16 @@
 
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
-| ~~P1~~ | ~~邀请注册密码前端校验 6→8 对齐 + LoginPage 测试账号 production 隐藏~~ | v0.7.8 已完成 |
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
-| **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
-| **P1** | E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error` | v0.7.6 推迟（1-2 天深活）；factory + seed.ts + 三 spec 写实是 PR 红线收紧前置 |
+| **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1；v0.8.0 ML Backend 协议契约文档已为接入侧扫清障碍 |
+| **P1** | E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error` | v0.7.6 推迟（1-2 天深活）；factory + seed.ts + 三 spec 写实是 PR 红线收紧前置；与「截图自动化」共建 fixture |
+| **P1** | 截图自动化（Playwright + IMAGE_CHECKLIST 16 处）替代手工拍图 | v0.8.0 占位就位；与 E2E spec 共用 fixture，一次写完两件事 |
+| **P1** | VitePress `docs:build` 进 CI gate | v0.8.0 build 已通；防止文档 PR 漂移 / dead-link / hotkeys SoT 漂移；改 1 行 `.github/workflows` |
 | **P2** | 开放注册 CAPTCHA 防刷号 + 邮箱验证（角色提升前置） | v0.7.7 基座已落，production 放量前需加固 |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO 常见需求 |
 | **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 |
+| **P2** | HTTPS 强制 / HSTS / CSP middleware | v0.8.0 deploy.md 已写 nginx 端 TLS，FastAPI middleware 缺 strict-transport-security / CSP；production-only 注册 |
+| **P2** | 审计日志不可变 trigger 测试覆盖 | v0.7.8 trigger 已落，security.md 已宣称可靠，需 `tests/test_audit_immutability.py` 兜底 |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好（基础静音）已落，邮件 channel 字段已就位但 UI 未启；与 LLM 聚类协同 |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
 | **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
@@ -174,14 +173,14 @@
 | **P2** | C.3 history 持久化（undo/redo 栈 sessionStorage） | quick win，工时少 |
 | **P2** | 审计日志归档（PARTITION）；AuditMiddleware 队列化 v0.7.6 已落 Celery | 当前数据量未到瓶颈，监控触发再做 |
 | **P2** | 前端单测持续提升到 ≥ 25% + 切覆盖率硬阻断 | v0.7.6 baseline 8.68%（+29 测试 from 4.27%）；目标 25% 后切去 informational |
-| **P2** | 批次状态机二阶段剩余：`annotating → active` 暂停 + bulk-approve / bulk-reject | v0.7.6 已落 reset → draft；暂停因 scheduler 死锁需新建 admin-locked 字段；bulk approve/reject UX 待定 |
-| **P2** | 用户手册关键页填实（GIF + 截图）+ ADR 0002-0005 回填 | v0.7.4 docs-site 骨架已落但多为大纲，新人 onboarding 价值低 |
+| **P2** | 批次状态机二阶段剩余：`annotating → active` 暂停 + bulk-approve / bulk-reject | v0.7.6 已落 reset → draft；暂停因 scheduler 死锁需新建 admin-locked 字段（先写 ADR-0008）；bulk approve/reject UX 待定 |
+| **P2** | docs-site 侧边栏加 ADR 入口 | v0.8.0 已有 7 篇 ADR 但无侧边栏入口；quick win |
+| **P2** | echo ML backend 可执行样板（`docs-site/dev/examples/`） | v0.8.0 协议文档含 50 行 inline 示例，提到独立目录 + Dockerfile 后接入方零摩擦试跑 |
+| **P3** | fabric.js dead dep 清理 | v0.8.0 ADR-0004 确认未使用；下次 dep 清理 PR 顺手 |
 | **P3** | 注册统计仪表卡（邀请 vs 开放注册按日统计） | AdminDashboard 可视化空位，audit_logs 数据已就位 |
 | **P3** | 账号自助注销（7 天冷静期 + 管理员通知） | 合规向，GDPR 场景需要 |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | v0.7.6 已落 Stage 1 索引 + ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 |
-| **P3** | 部署 / 安全模型 / ML Backend 协议 / WebSocket 文档 | docs-site 框架已就位，按业务需求触发 |
-| **P3** | 快捷键文档自动从 `hotkeys.ts` SoT 生成 | 双源漂移风险低（代码改时连带改文档），现状能用 |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 |
 

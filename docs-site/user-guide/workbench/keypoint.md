@@ -21,4 +21,10 @@
 - 拖动单点修正位置
 - 右键单击点 → 设置可见性 / 删除
 
-> 待补：不同模板（人体姿态 / 手部 / 人脸）的截图。
+## 模板示例
+
+![人体姿态](../images/keypoint/human-pose.png)
+<!-- TODO(0.8.1) IMAGE_CHECKLIST: COCO 17 点人体姿态标注示例；点 + 骨架连线可见。 -->
+
+![手部关键点](../images/keypoint/hand.png)
+<!-- TODO(0.8.1) IMAGE_CHECKLIST: 21 点手部骨架标注示例。 -->

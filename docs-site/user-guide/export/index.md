@@ -1,6 +1,12 @@
 # 数据导出格式
 
+![导出格式选择](../images/export/format-select.png)
+<!-- TODO(0.8.1) IMAGE_CHECKLIST: 导出对话框，COCO / YOLO / VOC / Label Studio JSON 4 个选项 + 当前选中状态 + 导出范围（项目 / 批次）。 -->
+
 项目「导出」页面支持以下格式。所有导出会异步生成 zip，完成后 Dashboard 顶栏出现下载链接（保留 7 天）。
+
+![导出进度](../images/export/progress.png)
+<!-- TODO(0.8.1) IMAGE_CHECKLIST: 导出进行中的进度条 + 完成后的下载链接 toast。 -->
 
 ## COCO JSON
 

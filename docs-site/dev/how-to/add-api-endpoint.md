@@ -1,18 +1,22 @@
 # How-to：新增 API 端点
 
+> 本文以 **v0.7.8 真实落地的 `POST /auth/logout`** 为线索，走全链路一遍。完整代码可在 git log 中按 `auth.logout` 关键词检索。
+
+---
+
 ## 完整流程（标准版）
 
 ```bash
-# 1. 写路由 + 服务
-apps/api/app/api/v1/<feature>.py
-apps/api/app/services/<feature>_service.py
-apps/api/app/schemas/<feature>.py
+# 1. 后端：路由 + service + schema
+apps/api/app/api/v1/auth.py                # 路由
+apps/api/app/core/token_blacklist.py       # service
+apps/api/app/schemas/user.py               # 复用现有 Token schema
 
-# 2. 写测试
-apps/api/tests/test_<feature>.py
+# 2. 后端测试
+apps/api/tests/test_auth.py
 
 # 3. 跑测试
-cd apps/api && uv run pytest tests/test_<feature>.py -v
+cd apps/api && uv run pytest tests/test_auth.py -v -k logout
 
 # 4. 刷 OpenAPI snapshot
 uv run python ../../scripts/export_openapi.py
@@ -20,26 +24,55 @@ uv run python ../../scripts/export_openapi.py
 # 5. 前端生成类型
 cd ../web && pnpm codegen
 
-# 6. 前端写包装
-src/api/<feature>.ts
+# 6. 前端 wrapper + 状态变更
+src/api/auth.ts
+src/pages/.../UserMenu.tsx                 # 调用方
 
-# 7. 提 PR：包含路由代码 + 测试 + snapshot 更新
+# 7. 提 PR：路由 + 测试 + snapshot + 前端代码一并
 ```
+
+---
 
 ## 1. 路由
 
+`POST /auth/logout` 把当前 token 的 jti 加到 Redis 黑名单，TTL = 该 token 剩余有效期。来源：`apps/api/app/api/v1/auth.py:224-245`：
+
 ```python
-# apps/api/app/api/v1/widgets.py
-from fastapi import APIRouter, Depends
-from app.core.auth import current_user
-from app.schemas.widgets import WidgetIn, WidgetOut
-from app.services import widgets_service
+@router.post("/logout", status_code=204)
+async def logout(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.core.token_blacklist import blacklist_token
 
-router = APIRouter(prefix="/widgets", tags=["widgets"])
+    payload = decode_access_token(credentials.credentials)
+    jti = payload.get("jti")
+    if jti:
+        exp = payload.get("exp", 0)
+        remaining = int(exp - datetime.now(timezone.utc).timestamp())
+        await blacklist_token(jti, max(remaining, 0))
 
+    await AuditService.log(
+        db, actor=current_user, action=AuditAction.AUTH_LOGOUT,
+        target_type="user", target_id=str(current_user.id),
+        request=request, status_code=204,
+    )
+    await db.commit()
+```
 
+要点：
+
+- `status_code=204` 显式声明：FastAPI 默认会改 200 OK，无 body 端点应主动指定 204 让 OpenAPI 准确。
+- 三个 `Depends`：`HTTPBearer()` 拿原 token、`get_current_user` 校验签名+黑名单+gen、`get_db` 注入 session。三者顺序是 v0.7.8 评估后定的——`get_current_user` 内部已经 decode 一次 token，但因为这是 internal helper，路由里再 decode 一次取 jti 是可读性优先。
+- `AuditService.log` 在 commit 前写：保证审计与业务事务原子性，崩溃要么都生效要么都回滚。
+
+如果你的端点返回 body，模板换成：
+
+```python
 @router.post(
-    "",
+    "/widgets",
     response_model=WidgetOut,
     status_code=201,
     summary="创建 Widget",
@@ -51,57 +84,98 @@ router = APIRouter(prefix="/widgets", tags=["widgets"])
 async def create_widget(
     payload: WidgetIn,
     user=Depends(current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """创建一个新的 Widget。
+    """业务规则：同一个 owner 下名字唯一；触发权限校验。"""
+    return await widget_service.create(db, payload, owner_id=user.id)
+```
 
-    业务规则：同一个 owner 下名字唯一；触发权限校验。
-    """
-    return await widgets_service.create(payload, owner_id=user.id)
+`summary` 一句话；`description` 用 docstring；`responses={}` 显式列出非默认状态码 → OpenAPI 完整 → 前端类型完整。
+
+---
+
+## 2. Service / Core helper
+
+`logout` 端点把核心逻辑下放到 `apps/api/app/core/token_blacklist.py:21-29`：
+
+```python
+async def blacklist_token(jti: str, ttl_seconds: int) -> None:
+    if ttl_seconds <= 0:
+        return
+    r = _get_redis()
+    try:
+        await r.setex(f"{_KEY_PREFIX}{jti}", ttl_seconds, "1")
+    finally:
+        await r.aclose()
 ```
 
 要点：
-- `summary` 一句话；`description` 是 docstring
-- `responses={}` 显式声明非默认响应码 → OpenAPI 体现 → 前端类型完整
 
-## 2. 服务
+- 纯逻辑函数，不接 `Request` / `db`：可独立单测，也可被多个端点复用（实际 `logout-all` 的代际号增量逻辑也在同一文件）。
+- TTL ≤ 0 提前返回：token 已过期再加黑名单等于永久占 key。
+- Redis 客户端用 `try/finally` 关闭：v0.7.8 早期忘了 `aclose` 导致连接泄漏，pytest 跑全套 100+ 测试时 Redis 连接数撞顶——**新加 Redis 调用务必关连接**。
+
+如果你的端点逻辑复杂（PG 多表事务、多个 ML backend 调用、外发 SMTP），抽到 `app/services/<feature>.py` 的 service 类：
 
 ```python
-# apps/api/app/services/widgets_service.py
-async def create(payload: WidgetIn, *, owner_id: int) -> WidgetOut:
-    async with db.session() as session:
-        existing = await session.scalar(
+class WidgetService:
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def create(self, payload: WidgetIn, *, owner_id: int) -> Widget:
+        existing = await self.db.scalar(
             select(Widget).where(Widget.owner_id == owner_id, Widget.name == payload.name)
         )
         if existing:
             raise HTTPException(409, "name already exists")
         widget = Widget(owner_id=owner_id, **payload.model_dump())
-        session.add(widget)
-        await session.commit()
-        return WidgetOut.model_validate(widget)
+        self.db.add(widget)
+        await self.db.flush()
+        return widget
 ```
+
+约定：service 只 `flush`，不 `commit`——commit 由路由层负责，便于在路由内外完整事务（如审计 + 业务在同事务）。
+
+---
 
 ## 3. 测试
 
+`logout` 在 `apps/api/tests/test_auth.py` 里覆盖三条：
+
 ```python
-# apps/api/tests/test_widgets.py
-async def test_create_widget(httpx_client, project_admin):
-    headers = {"Authorization": f"Bearer {project_admin['token']}"}
-    res = await httpx_client.post(
-        "/api/v1/widgets",
-        json={"name": "demo", "color": "red"},
-        headers=headers,
+async def test_logout_blacklists_jti(client, user_factory):
+    user = await user_factory(email="t@x.com", password="Aa12345678")
+    r1 = await client.post("/api/v1/auth/login",
+                           json={"email": "t@x.com", "password": "Aa12345678"})
+    token = r1.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    r2 = await client.post("/api/v1/auth/logout", headers=headers)
+    assert r2.status_code == 204
+
+    # 再用同一 token 调 /auth/me 必须 401
+    r3 = await client.get("/api/v1/auth/me", headers=headers)
+    assert r3.status_code == 401
+
+
+async def test_logout_writes_audit_log(client, db, user_factory):
+    user = await user_factory(email="audit@x.com", password="Aa12345678")
+    # ... 登录 + logout ...
+    rows = await db.execute(
+        select(AuditLog).where(AuditLog.action == "auth.logout",
+                               AuditLog.actor_email == "audit@x.com")
     )
-    assert res.status_code == 201
-    assert res.json()["name"] == "demo"
+    assert rows.scalar_one_or_none() is not None
 
 
-async def test_create_widget_conflict(httpx_client, project_admin):
-    headers = {"Authorization": f"Bearer {project_admin['token']}"}
-    payload = {"name": "dup", "color": "red"}
-    await httpx_client.post("/api/v1/widgets", json=payload, headers=headers)
-    res2 = await httpx_client.post("/api/v1/widgets", json=payload, headers=headers)
-    assert res2.status_code == 409
+async def test_logout_idempotent_when_token_expired(...):
+    # token TTL ≤ 0 不应抛错
+    ...
 ```
+
+至少要有 1 条正常路径 + 1 条错误路径。能加上「副作用断言」（这里是审计行）更好——它能抓出业务变更后忘改副作用的常见 bug。
+
+---
 
 ## 4. snapshot 与前端类型
 
@@ -109,31 +183,57 @@ async def test_create_widget_conflict(httpx_client, project_admin):
 # 后端目录
 cd apps/api
 uv run python ../../scripts/export_openapi.py
-# 验证 openapi 契约
+# 验证契约
 uv run pytest tests/test_openapi_contract.py
 
 # 前端目录
 cd ../web
 pnpm codegen
-# generated/{types.gen.ts, sdk.gen.ts} 应包含新类型
+# 检查 generated/sdk.gen.ts 中已有新方法
+grep -A 5 "logout" src/api/generated/sdk.gen.ts | head
 ```
+
+CI 会跑 `pnpm openapi:check`，snapshot 与代码不一致时 fail——这是必填 commit。
+
+---
 
 ## 5. 前端 wrapper
 
-```ts
-// apps/web/src/api/widgets.ts
-import type { WidgetIn, WidgetOut } from "./generated/types.gen";
-import { apiClient } from "./client";
+来源：`apps/web/src/api/auth.ts`：
 
-export async function createWidget(payload: WidgetIn): Promise<WidgetOut> {
-  const { data } = await apiClient.post<WidgetOut>("/api/v1/widgets", payload);
-  return data;
+```ts
+import { authLogout } from "./generated/sdk.gen";
+
+export async function logout(): Promise<void> {
+  await authLogout();
+  // 清本地存储
+  localStorage.removeItem("anno_token");
+  // 跳登录页
+  window.location.assign("/login");
 }
 ```
 
-## 6. PR 检查
+调用方在 `UserMenu.tsx` 之类的组件：
+
+```tsx
+<DropdownMenuItem onClick={() => logout()}>
+  退出登录
+</DropdownMenuItem>
+```
+
+要点：
+
+- 不直接拼 URL 字符串，全部走 `generated/sdk.gen`——参见 [ADR-0003 / OpenAPI 客户端生成](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/adr/0003-openapi-client-codegen.md)。
+- 业务副作用（清 localStorage、跳页）放 wrapper 里；组件只负责调用。
+
+---
+
+## 6. PR 检查清单
 
 - [ ] `pnpm openapi:check` 通过（snapshot 与代码一致）
-- [ ] 后端测试覆盖正常路径 + 至少 1 个错误路径
+- [ ] 后端测试覆盖正常路径 + 至少 1 个错误路径 + 至少 1 个副作用断言
+- [ ] 端点声明了 `status_code` / `summary` / 非默认 `responses`
+- [ ] 关键业务变更写了 `AuditService.log`（如果端点有副作用）
 - [ ] OpenAPI 中能看到新的 `summary` / `responses`
 - [ ] 前端 generated 文件已提交
+- [ ] 前端 wrapper 不直接拼 URL，走 `generated/sdk.gen`

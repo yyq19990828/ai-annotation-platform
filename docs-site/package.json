@@ -4,11 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/sync-openapi.mjs",
-    "prebuild": "node scripts/sync-openapi.mjs",
+    "predev": "node scripts/sync-openapi.mjs && node scripts/generate-hotkeys.mjs",
+    "prebuild": "node scripts/sync-openapi.mjs && node scripts/generate-hotkeys.mjs",
     "dev": "vitepress dev",
     "build": "vitepress build",
-    "preview": "vitepress preview"
+    "preview": "vitepress preview",
+    "hotkeys": "node scripts/generate-hotkeys.mjs"
   },
   "devDependencies": {
     "@scalar/api-reference": "^1.25.0",

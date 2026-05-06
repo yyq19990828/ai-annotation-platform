@@ -78,6 +78,15 @@ export default defineConfig({
           ],
         },
         {
+          text: "部署与协议",
+          items: [
+            { text: "部署指南", link: "/dev/deploy" },
+            { text: "安全模型", link: "/dev/security" },
+            { text: "ML Backend 协议", link: "/dev/ml-backend-protocol" },
+            { text: "WebSocket 协议", link: "/dev/ws-protocol" },
+          ],
+        },
+        {
           text: "How-to",
           items: [
             { text: "新增 API 端点", link: "/dev/how-to/add-api-endpoint" },
