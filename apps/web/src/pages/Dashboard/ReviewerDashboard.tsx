@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
+import { SectionDivider } from "@/components/ui/SectionDivider";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { useNavigate } from "react-router-dom";
 import { useToastStore } from "@/components/ui/Toast";
@@ -60,13 +61,50 @@ export function ReviewerDashboard() {
         </Button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
+      {/* 产能 */}
+      <SectionDivider label="产能" hint="待审 / 今日 / 单题耗时" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         <StatCard icon="flag" label="待审队列" value={stats.pending_review_count} />
-        <StatCard icon="check" label="今日已审" value={stats.today_reviewed} />
-        <StatCard icon="activity" label="24h 通过率" value={`${stats.approval_rate_24h}%`} />
-        <StatCard icon="activity" label="历史通过率" value={`${stats.approval_rate}%`} />
+        <StatCard
+          icon="check"
+          label="今日已审"
+          value={stats.today_reviewed}
+          trend={stats.weekly_compare_pct ?? undefined}
+          sparkValues={stats.daily_review_counts}
+        />
+        <StatCard
+          icon="clock"
+          label="平均审核耗时"
+          value={
+            stats.median_review_duration_ms == null
+              ? "—"
+              : stats.median_review_duration_ms < 60000
+                ? `${(stats.median_review_duration_ms / 1000).toFixed(1)}s`
+                : `${Math.round(stats.median_review_duration_ms / 60000)}m`
+          }
+          hint="中位"
+        />
         <StatCard icon="layers" label="累计审核" value={stats.total_reviewed} />
       </div>
+
+      {/* 质量 */}
+      <SectionDivider label="质量" hint="通过率 / 二次返修率" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+        <StatCard icon="activity" label="24h 通过率" value={`${stats.approval_rate_24h}%`} />
+        <StatCard icon="activity" label="历史通过率" value={`${stats.approval_rate}%`} />
+        <StatCard
+          icon="rotate-ccw"
+          label="二次返修率"
+          value={
+            stats.reopen_after_approve_rate == null
+              ? "—"
+              : `${stats.reopen_after_approve_rate}%`
+          }
+          hint="approve 后被 reopen"
+        />
+      </div>
+
+      <div style={{ height: 16 }} />
 
       <Card>
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>

@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**；**v0.8.2（文档深度优化：docs:build 进 CI gate + snippet 漂移 lint + ADR sidebar mirror + echo-ml-backend 可执行样板 + ADR-0008 admin-locked 状态机草稿）**；**v0.8.3（治理 / 测试基建闭环：在线状态心跳 + 审计 trigger 测试覆盖 + 前端单测切硬阻断（10%）+ E2E 三 spec 写实摘 continue-on-error + `_test_seed` router 造数链路）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**；**v0.8.2（文档深度优化：docs:build 进 CI gate + snippet 漂移 lint + ADR sidebar mirror + echo-ml-backend 可执行样板 + ADR-0008 admin-locked 状态机草稿）**；**v0.8.3（治理 / 测试基建闭环：在线状态心跳 + 审计 trigger 测试覆盖 + 前端单测切硬阻断（10%）+ E2E 三 spec 写实摘 continue-on-error + `_test_seed` router 造数链路）**；**v0.8.4（效率看板 / 人员绩效 epic：Task.assigned_at + task_events + mv_user_perf_daily + Annotator/Reviewer 三段卡组 + AdminPeoplePage 卡片网格 + 抽屉下钻 + ADR-0009）**。
 
 ---
 
@@ -41,8 +41,8 @@
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
 
 #### Annotator / Reviewer 工作台
-- **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好（合并到下方「效率看板」Layer 2 一起做）。
-- **Task 三时间戳未被消费**：`submitted_at` / `reviewer_claimed_at` / `reviewed_at` 已落库（v0.6.5 状态机），但 `dashboard.py` 三个端点全部基于 count，从未计算过耗时；工作台 `useSessionStats.ts` 的 avgMs（20 样本环形 buffer）也仅本地展示。详见下方「效率看板」Layer 1。
+- ~~**AnnotatorDashboard `weeklyTarget = 200` 硬编码**~~：v0.8.4 已落 `User.weekly_target_default` + `ProjectMember.weekly_target` + 端点 fallback 200。
+- ~~**Task 三时间戳未被消费**~~：v0.8.4 已落 `submitted_at - assigned_at` 中位值进 annotator 端点；`reviewed_at - reviewer_claimed_at` 中位值进 reviewer 端点；`useSessionStats` 同时缓冲 `task_events` 上报，物化视图 `mv_user_perf_daily` hourly refresh。
 
 #### 登录 / 注册 / 认证
 - **开放注册二阶段增强**（v0.7.7 落了基座，以下为可选延伸）：
@@ -244,7 +244,7 @@
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
-| **P1** | 效率看板 / 人员绩效 Layer 1+2+3（数据沉淀 + 个人卡组 + 管理员卡片网格 + 抽屉下钻） | 用户主诉；当前 AdminDashboard 完全无人均维度，Task 三时间戳已落库未消费；与心跳工作 / 个人偏好 / weeklyTarget 共建 |
+| ~~**P1**~~ | ~~效率看板 / 人员绩效 Layer 1+2+3~~ | ✅ v0.8.4 已落（除心跳依赖三项 graceful degrade）|
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1；v0.8.0 ML Backend 协议契约文档已为接入侧扫清障碍 |
 | ~~**P1**~~ | ~~E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error`~~ | v0.8.3 已落（factory.py + `_test_seed.py` router + e2e/fixtures/seed.ts + 三 spec 写实并摘 continue-on-error）。后续延伸：annotation/batch-flow 完整 bbox / 多角色批次流转 |
 | **P1** | 截图自动化（Playwright + IMAGE_CHECKLIST 16 处）替代手工拍图 | v0.8.0 占位就位；与 E2E spec 共用 fixture，一次写完两件事 |

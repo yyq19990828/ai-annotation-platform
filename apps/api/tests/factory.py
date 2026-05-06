@@ -18,7 +18,9 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def make_user_dict(role: str, email: str, name: str, password: str = "Test1234") -> dict:
+def make_user_dict(
+    role: str, email: str, name: str, password: str = "Test1234"
+) -> dict:
     from app.core.security import hash_password
 
     return {

@@ -19,6 +19,7 @@ const PAGE_PATH: Record<PageKey, string> = {
   audit: "/audit",
   bugs: "/bugs",
   settings: "/settings",
+  "admin-people": "/admin/people",
 };
 
 export function UnauthorizedPage() {

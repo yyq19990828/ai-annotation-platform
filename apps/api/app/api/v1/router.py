@@ -60,6 +60,4 @@ from app.config import settings as _settings  # noqa: E402
 if _settings.environment != "production":
     from app.api.v1 import _test_seed  # noqa: E402
 
-    api_router.include_router(
-        _test_seed.router, prefix="/__test", tags=["_test_seed"]
-    )
+    api_router.include_router(_test_seed.router, prefix="/__test", tags=["_test_seed"])

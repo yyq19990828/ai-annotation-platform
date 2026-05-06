@@ -108,7 +108,9 @@ async def test_mark_inactive_offline_flips_stale_users(db_session: AsyncSession)
     assert already_offline.status == "offline"  # 本就是 offline
 
 
-async def test_users_stats_endpoint_weekly_active(httpx_client, super_admin, db_session: AsyncSession):
+async def test_users_stats_endpoint_weekly_active(
+    httpx_client, super_admin, db_session: AsyncSession
+):
     """GET /users/stats 返回 weekly_active：基于 last_seen_at >= now-7d。"""
     from app.core.security import hash_password
 

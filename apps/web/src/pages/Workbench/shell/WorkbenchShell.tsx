@@ -264,7 +264,7 @@ export function WorkbenchShell() {
   });
 
   // 会话级 ETA：基于切题间隔
-  const { avgMs } = useSessionStats(taskId ?? null);
+  const { avgMs } = useSessionStats(taskId ?? null, projectId ?? null, "annotate");
   const remainingTaskCount = useMemo(() => {
     if (!tasks.length) return 0;
     return tasks.filter((t) => t.status !== "completed" && t.id !== taskId).length;

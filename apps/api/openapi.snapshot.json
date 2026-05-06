@@ -80,6 +80,273 @@
         "title": "AdminDashboardStats",
         "type": "object"
       },
+      "AdminPeopleList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPersonItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "period"
+        ],
+        "title": "AdminPeopleList",
+        "type": "object"
+      },
+      "AdminPersonDetail": {
+        "properties": {
+          "active_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Minutes"
+          },
+          "composite_score": {
+            "title": "Composite Score",
+            "type": "integer"
+          },
+          "duration_histogram": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Duration Histogram",
+            "type": "array"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "p50_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Duration Ms"
+          },
+          "p95_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Duration Ms"
+          },
+          "project_count": {
+            "title": "Project Count",
+            "type": "integer"
+          },
+          "project_distribution": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Project Distribution",
+            "type": "array"
+          },
+          "quality_score": {
+            "title": "Quality Score",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "throughput": {
+            "title": "Throughput",
+            "type": "integer"
+          },
+          "timeline": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Timeline",
+            "type": "array"
+          },
+          "trend_quality": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Trend Quality",
+            "type": "array"
+          },
+          "trend_throughput": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Trend Throughput",
+            "type": "array"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "weekly_compare_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Compare Pct"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "email",
+          "role",
+          "project_count",
+          "throughput",
+          "quality_score",
+          "active_minutes",
+          "composite_score",
+          "weekly_compare_pct",
+          "trend_throughput",
+          "trend_quality",
+          "project_distribution",
+          "duration_histogram",
+          "p50_duration_ms",
+          "p95_duration_ms",
+          "timeline"
+        ],
+        "title": "AdminPersonDetail",
+        "type": "object"
+      },
+      "AdminPersonItem": {
+        "description": "v0.8.4 · AdminPeoplePage 卡片项。",
+        "properties": {
+          "activity_score": {
+            "title": "Activity Score",
+            "type": "integer"
+          },
+          "alerts": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "main_metric": {
+            "title": "Main Metric",
+            "type": "integer"
+          },
+          "main_metric_label": {
+            "title": "Main Metric Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_count": {
+            "title": "Project Count",
+            "type": "integer"
+          },
+          "quality_score": {
+            "title": "Quality Score",
+            "type": "integer"
+          },
+          "rejected_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected Rate"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sparkline_7d": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Sparkline 7D",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "throughput_score": {
+            "title": "Throughput Score",
+            "type": "integer"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "weekly_compare_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Compare Pct"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "email",
+          "role",
+          "status",
+          "project_count",
+          "main_metric",
+          "main_metric_label",
+          "throughput_score",
+          "quality_score",
+          "activity_score",
+          "sparkline_7d"
+        ],
+        "title": "AdminPersonItem",
+        "type": "object"
+      },
       "AdminResetPasswordResponse": {
         "properties": {
           "message": {
@@ -721,6 +988,17 @@
       },
       "AnnotatorDashboardStats": {
         "properties": {
+          "active_minutes_today": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Minutes Today"
+          },
           "assigned_tasks": {
             "title": "Assigned Tasks",
             "type": "integer"
@@ -732,9 +1010,53 @@
             "title": "Daily Counts",
             "type": "array"
           },
+          "median_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Duration Ms"
+          },
           "personal_accuracy": {
             "title": "Personal Accuracy",
             "type": "number"
+          },
+          "rejected_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected Rate"
+          },
+          "reopened_avg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reopened Avg"
+          },
+          "streak_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streak Days"
           },
           "today_completed": {
             "title": "Today Completed",
@@ -744,8 +1066,24 @@
             "title": "Total Completed",
             "type": "integer"
           },
+          "weekly_compare_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Compare Pct"
+          },
           "weekly_completed": {
             "title": "Weekly Completed",
+            "type": "integer"
+          },
+          "weekly_target": {
+            "default": 200,
+            "title": "Weekly Target",
             "type": "integer"
           }
         },
@@ -5441,6 +5779,25 @@
             "title": "Approval Rate 24H",
             "type": "number"
           },
+          "daily_review_counts": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Daily Review Counts",
+            "type": "array"
+          },
+          "median_review_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Review Duration Ms"
+          },
           "pending_review_count": {
             "title": "Pending Review Count",
             "type": "integer"
@@ -5451,6 +5808,17 @@
             },
             "title": "Pending Tasks",
             "type": "array"
+          },
+          "reopen_after_approve_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reopen After Approve Rate"
           },
           "reviewing_batches": {
             "default": [],
@@ -5467,6 +5835,17 @@
           "total_reviewed": {
             "title": "Total Reviewed",
             "type": "integer"
+          },
+          "weekly_compare_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekly Compare Pct"
           }
         },
         "required": [
@@ -5794,6 +6173,114 @@
           }
         },
         "title": "SystemSettingsUpdate",
+        "type": "object"
+      },
+      "TaskEventBatchIn": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TaskEventIn"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "TaskEventBatchIn",
+        "type": "object"
+      },
+      "TaskEventBatchOut": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "queued_async": {
+            "title": "Queued Async",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted",
+          "queued_async"
+        ],
+        "title": "TaskEventBatchOut",
+        "type": "object"
+      },
+      "TaskEventIn": {
+        "description": "单条事件 payload。client_id 可选；若未传，后端用 uuid4 生成。",
+        "properties": {
+          "annotation_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Annotation Count",
+            "type": "integer"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "duration_ms": {
+            "maximum": 14400000.0,
+            "minimum": 0.0,
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "title": "Ended At",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "annotate",
+              "review"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "was_rejected": {
+            "default": false,
+            "title": "Was Rejected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "task_id",
+          "project_id",
+          "kind",
+          "started_at",
+          "ended_at",
+          "duration_ms"
+        ],
+        "title": "TaskEventIn",
         "type": "object"
       },
       "TaskFileUrlResponse": {
@@ -7539,6 +8026,53 @@
         ]
       }
     },
+    "/api/v1/auth/me/task-events:batch": {
+      "post": {
+        "description": "v0.8.4 · 工作台 useSessionStats 每 N 条 flush 此端点。\nuser_id 强制设为当前登录用户（即使前端误传也覆盖）。",
+        "operationId": "submit_task_events_api_v1_auth_me_task_events_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskEventBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskEventBatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Task Events",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/auth/register": {
       "post": {
         "operationId": "register_via_invitation_api_v1_auth_register_post",
@@ -8299,6 +8833,171 @@
           }
         ],
         "summary": "Admin Dashboard",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/admin/people": {
+      "get": {
+        "description": "v0.8.4 · 全员效率卡片网格数据。\n\nrole 过滤：annotator / reviewer / both（默认 both）\nperiod: today / 7d / 4w / 1m\nsort: throughput / quality / activity / weekly_compare",
+        "operationId": "admin_people_list_api_v1_dashboard_admin_people_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "7d",
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "throughput",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPeopleList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin People List",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/admin/people/{user_id}": {
+      "get": {
+        "description": "v0.8.4 · 个人详情：4 周趋势、耗时直方图、项目分布、timeline。",
+        "operationId": "admin_person_detail_api_v1_dashboard_admin_people__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "4w",
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPersonDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Person Detail",
         "tags": [
           "dashboard"
         ]

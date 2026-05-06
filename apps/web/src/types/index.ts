@@ -228,4 +228,6 @@ export type PageKey =
   | "training"
   | "audit"
   | "bugs"
-  | "settings";
+  | "settings"
+  // v0.8.4 · 成员绩效（super_admin only）
+  | "admin-people";

@@ -123,3 +123,73 @@ async def cancel_self_deactivation(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+# v0.8.4 · 工作台 task_events 批量写入
+from app.config import settings  # noqa: E402
+from app.schemas.task_event import TaskEventBatchIn, TaskEventBatchOut  # noqa: E402
+
+
+def _enqueue_task_events(payload_list: list[dict]) -> bool:
+    """投递到 Celery；broker 不可用时返回 False 让上层 fallback。"""
+    try:
+        from app.workers.task_events import persist_task_events_batch
+
+        persist_task_events_batch.delay(payload_list)
+        return True
+    except Exception:  # pragma: no cover - defensive
+        return False
+
+
+@router.post("/task-events:batch", response_model=TaskEventBatchOut)
+async def submit_task_events(
+    payload: TaskEventBatchIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """v0.8.4 · 工作台 useSessionStats 每 N 条 flush 此端点。
+    user_id 强制设为当前登录用户（即使前端误传也覆盖）。"""
+    import uuid as _uuid
+
+    payload_list: list[dict] = []
+    for ev in payload.events:
+        payload_list.append(
+            {
+                "id": str(ev.client_id or _uuid.uuid4()),
+                "task_id": str(ev.task_id),
+                "user_id": str(user.id),
+                "project_id": str(ev.project_id),
+                "kind": ev.kind,
+                "started_at": ev.started_at.isoformat(),
+                "ended_at": ev.ended_at.isoformat(),
+                "duration_ms": ev.duration_ms,
+                "annotation_count": ev.annotation_count,
+                "was_rejected": ev.was_rejected,
+            }
+        )
+
+    queued = False
+    if settings.task_events_async:
+        queued = _enqueue_task_events(payload_list)
+
+    if not queued:
+        from app.db.models.task_event import TaskEvent
+
+        for ev in payload.events:
+            db.add(
+                TaskEvent(
+                    id=ev.client_id or _uuid.uuid4(),
+                    task_id=ev.task_id,
+                    user_id=user.id,
+                    project_id=ev.project_id,
+                    kind=ev.kind,
+                    started_at=ev.started_at,
+                    ended_at=ev.ended_at,
+                    duration_ms=ev.duration_ms,
+                    annotation_count=ev.annotation_count,
+                    was_rejected=ev.was_rejected,
+                )
+            )
+        await db.commit()
+
+    return TaskEventBatchOut(accepted=len(payload_list), queued_async=queued)

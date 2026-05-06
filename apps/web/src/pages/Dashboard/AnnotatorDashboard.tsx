@@ -6,9 +6,18 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
 import { Sparkline } from "@/components/ui/Sparkline";
+import { SectionDivider } from "@/components/ui/SectionDivider";
 import { useAnnotatorStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
 import { MyBatchesCard } from "./MyBatchesCard";
+
+function formatMs(ms: number | null | undefined): string {
+  if (ms == null) return "—";
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.round((ms % 60_000) / 1000);
+  return `${m}m${s.toString().padStart(2, "0")}s`;
+}
 
 export function AnnotatorDashboard() {
   const { data: stats, isLoading } = useAnnotatorStats();
@@ -17,7 +26,7 @@ export function AnnotatorDashboard() {
 
   const sortedProjects = useMemo(
     () =>
-      [...myProjects].sort((a, b) => {
+      [...myProjects].sort((a: any, b: any) => {
         const ra = Math.max(0, (a.total_tasks ?? 0) - (a.completed_tasks ?? 0));
         const rb = Math.max(0, (b.total_tasks ?? 0) - (b.completed_tasks ?? 0));
         return rb - ra;
@@ -33,13 +42,14 @@ export function AnnotatorDashboard() {
     );
   }
 
-  const weeklyTarget = 200;
+  const weeklyTarget = stats.weekly_target ?? 200;
   const weeklyPct = Math.min(Math.round((stats.weekly_completed / weeklyTarget) * 100), 100);
   const noProjects = myProjects.length === 0;
+  const trendPct = stats.weekly_compare_pct ?? undefined;
 
   return (
     <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 12 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>标注工作台</h1>
           <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>查看任务进度，高效完成标注工作</p>
@@ -49,14 +59,64 @@ export function AnnotatorDashboard() {
         </Button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
+      {/* 产能 */}
+      <SectionDivider label="产能" hint="完成数 / 单题耗时" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         <StatCard icon="flag" label="待标任务" value={stats.assigned_tasks} />
         <StatCard icon="check" label="今日完成" value={stats.today_completed} />
-        <StatCard icon="activity" label="本周完成" value={stats.weekly_completed} hint={`目标 ${weeklyTarget}`} />
-        <StatCard icon="layers" label="累计标注" value={stats.total_completed} />
-        <StatCard icon="sparkles" label="原创比例" value={`${stats.personal_accuracy}%`} />
+        <StatCard
+          icon="activity"
+          label="本周完成"
+          value={stats.weekly_completed}
+          trend={trendPct}
+          hint={`目标 ${weeklyTarget}`}
+          sparkValues={stats.daily_counts}
+        />
+        <StatCard
+          icon="clock"
+          label="平均单题耗时"
+          value={formatMs(stats.median_duration_ms)}
+          hint="中位 / 30 天"
+        />
       </div>
 
+      {/* 质量 */}
+      <SectionDivider label="质量" hint="原创比例 / 退回率 / 重审次数" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+        <StatCard icon="sparkles" label="原创比例" value={`${stats.personal_accuracy}%`} />
+        <StatCard
+          icon="alert-triangle"
+          label="被退回率"
+          value={stats.rejected_rate == null ? "—" : `${stats.rejected_rate}%`}
+          hint="所有提交"
+        />
+        <StatCard
+          icon="rotate-ccw"
+          label="重审次数 avg"
+          value={stats.reopened_avg == null ? "—" : stats.reopened_avg.toFixed(2)}
+          hint="人均"
+        />
+      </div>
+
+      {/* 投入（依赖心跳；本期占位） */}
+      <SectionDivider label="投入" hint="活跃时长 / 连续天数（待心跳上线）" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+        <StatCard
+          icon="clock"
+          label="今日活跃时长"
+          value={stats.active_minutes_today == null ? "—" : `${stats.active_minutes_today}m`}
+          hint="心跳依赖"
+        />
+        <StatCard
+          icon="flame"
+          label="连续标注天数"
+          value={stats.streak_days == null ? "—" : `${stats.streak_days}天`}
+          hint="心跳依赖"
+        />
+        <StatCard icon="layers" label="累计标注" value={stats.total_completed} />
+      </div>
+
+      <div style={{ height: 16 }} />
       <MyBatchesCard />
 
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginTop: 16 }}>
@@ -133,7 +193,7 @@ export function AnnotatorDashboard() {
               </tr>
             </thead>
             <tbody>
-              {sortedProjects.map((p) => {
+              {sortedProjects.map((p: any) => {
                 const remaining = Math.max(0, (p.total_tasks ?? 0) - (p.completed_tasks ?? 0));
                 const pct = p.total_tasks ? Math.round(((p.completed_tasks ?? 0) / p.total_tasks) * 100) : 0;
                 return (
@@ -161,7 +221,7 @@ export function AnnotatorDashboard() {
                       <Button
                         size="sm"
                         variant="primary"
-                        onClick={(e) => { e.stopPropagation(); navigate(`/projects/${p.id}/annotate`); }}
+                        onClick={(e: any) => { e.stopPropagation(); navigate(`/projects/${p.id}/annotate`); }}
                       >
                         <Icon name="target" size={11} />打开
                       </Button>

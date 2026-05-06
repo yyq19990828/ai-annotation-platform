@@ -69,13 +69,9 @@ async def test_set_local_exemption_allows_update_and_delete(
     rid = await _insert_row(db_session, action="test.exempt")
 
     # 在 SAVEPOINT 内开启豁免（SET LOCAL 仅作用于当前事务）
-    await db_session.execute(
-        text("SET LOCAL \"app.allow_audit_update\" = 'true'")
-    )
+    await db_session.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
     res = await db_session.execute(
-        text(
-            "UPDATE audit_logs SET action='test.exempt.modified' WHERE id=:id"
-        ),
+        text("UPDATE audit_logs SET action='test.exempt.modified' WHERE id=:id"),
         {"id": rid},
     )
     assert res.rowcount == 1
@@ -94,9 +90,7 @@ async def test_set_local_exemption_does_not_leak_across_savepoint(
 
     sp = await db_session.begin_nested()
     try:
-        await db_session.execute(
-            text("SET LOCAL \"app.allow_audit_update\" = 'true'")
-        )
+        await db_session.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
         await db_session.execute(
             text("UPDATE audit_logs SET action='test.leak.tmp' WHERE id=:id"),
             {"id": rid},

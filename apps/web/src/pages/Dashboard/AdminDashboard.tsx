@@ -71,12 +71,39 @@ export function AdminDashboard() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
         <StatCard icon="users" label="用户总数" value={stats.total_users} hint={`${stats.active_users} 在线`} />
         <StatCard icon="layers" label="项目总数" value={stats.total_projects} hint={`${stats.projects_in_progress} 进行中`} />
         <StatCard icon="target" label="任务总量" value={stats.total_tasks.toLocaleString()} />
         <StatCard icon="check" label="标注总量" value={stats.total_annotations.toLocaleString()} />
       </div>
+
+      {/* v0.8.4 · 成员绩效入口 */}
+      <Card
+        onClick={() => navigate("/admin/people")}
+        style={{
+          cursor: "pointer",
+          padding: "12px 16px",
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Icon name="users" size={16} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>成员绩效</div>
+            <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+              全员效率卡片网格 + 抽屉下钻
+            </div>
+          </div>
+        </div>
+        <span style={{ fontSize: 12, color: "var(--color-accent)" }}>
+          打开 <Icon name="chevron-right" size={11} />
+        </span>
+      </Card>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, marginBottom: 16 }}>
         <Card>
