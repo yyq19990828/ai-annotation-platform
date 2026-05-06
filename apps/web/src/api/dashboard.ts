@@ -55,6 +55,11 @@ export interface ReviewerDashboardStats {
   total_reviewed: number;
   pending_tasks: ReviewTaskItem[];
   reviewing_batches?: ReviewingBatchItem[];
+  // v0.8.4
+  median_review_duration_ms?: number | null;
+  reopen_after_approve_rate?: number | null;
+  weekly_compare_pct?: number | null;
+  daily_review_counts?: number[];
 }
 
 export interface RecentReviewItem {
@@ -74,6 +79,65 @@ export interface AnnotatorDashboardStats {
   total_completed: number;
   personal_accuracy: number;
   daily_counts: number[];
+  // v0.8.4
+  median_duration_ms?: number | null;
+  rejected_rate?: number | null;
+  reopened_avg?: number | null;
+  weekly_compare_pct?: number | null;
+  weekly_target?: number;
+  active_minutes_today?: number | null;
+  streak_days?: number | null;
+}
+
+// v0.8.4 · 管理员人员看板
+export interface AdminPersonItem {
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+  project_count: number;
+  main_metric: number;
+  main_metric_label: string;
+  weekly_compare_pct?: number | null;
+  throughput_score: number;
+  quality_score: number;
+  activity_score: number;
+  sparkline_7d: number[];
+  rejected_rate?: number | null;
+  alerts: string[];
+}
+
+export interface AdminPeopleList {
+  items: AdminPersonItem[];
+  total: number;
+  period: string;
+}
+
+export interface AdminPersonDetail {
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
+  project_count: number;
+  throughput: number;
+  quality_score: number;
+  active_minutes: number | null;
+  composite_score: number;
+  weekly_compare_pct: number | null;
+  trend_throughput: number[];
+  trend_quality: number[];
+  project_distribution: Array<{ project_id: string; project_name: string; count: number }>;
+  duration_histogram: Array<{ upper_ms: number; count: number }>;
+  p50_duration_ms: number | null;
+  p95_duration_ms: number | null;
+  timeline: Array<{
+    at: string;
+    action: string;
+    task_id?: string;
+    task_display_id?: string;
+    detail?: string;
+  }>;
 }
 
 export interface MyBatchItem {
@@ -102,4 +166,27 @@ export const dashboardApi = {
   getMyBatches: () => apiClient.get<MyBatchItem[]>("/dashboard/annotator/batches"),
   getMyRecentReviews: (limit = 20) =>
     apiClient.get<RecentReviewItem[]>(`/dashboard/me/recent-reviews?limit=${limit}`),
+  // v0.8.4 · 管理员人员看板
+  getAdminPeople: (params: {
+    role?: string;
+    project?: string;
+    period?: string;
+    sort?: string;
+    q?: string;
+  } = {}) => {
+    const sp = new URLSearchParams();
+    if (params.role) sp.set("role", params.role);
+    if (params.project) sp.set("project", params.project);
+    if (params.period) sp.set("period", params.period);
+    if (params.sort) sp.set("sort", params.sort);
+    if (params.q) sp.set("q", params.q);
+    const qs = sp.toString();
+    return apiClient.get<AdminPeopleList>(
+      `/dashboard/admin/people${qs ? `?${qs}` : ""}`,
+    );
+  },
+  getAdminPersonDetail: (userId: string, period: string = "4w") =>
+    apiClient.get<AdminPersonDetail>(
+      `/dashboard/admin/people/${userId}?period=${period}`,
+    ),
 };

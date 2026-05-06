@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # v0.8.1 · 审计日志冷数据保留月数：超期分区每月 2 日归档到 MinIO 后 DROP。
     audit_retention_months: int = 12
 
+    # v0.8.4 · task_events 异步写入开关。true = Celery 旁路写；false 或 broker 不可用 → 同步 fallback。
+    task_events_async: bool = True
+
     # Governance / invitations
     frontend_base_url: str = "http://localhost:5173"
     invitation_ttl_days: int = 7

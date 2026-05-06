@@ -20,6 +20,51 @@
 
 ## 最新版本
 
+## [0.8.4] - 2026-05-06
+
+> **效率看板 / 人员绩效 epic。** 一次性把 ROADMAP P1「Layer 1 数据沉淀 + Layer 2 个人 dashboard 强化 + Layer 3 管理员人员看板」三层落地：标注员/审核员能自查产能/质量/投入；管理员有 `/admin/people` 卡片网格 + 抽屉下钻看全员效率。
+
+> **数据沉淀**：`Task.assigned_at` 写入点全量改派（`_cascade_task_assignee` / `task.submit` 兜底 / 用户注销改派）；新表 `task_events`（工作台 `useSessionStats` 每 20 条 flush）；物化视图 `mv_user_perf_daily` 每小时 refresh。
+
+> **显式不做**（依赖另一 session）：心跳 `User.last_seen_at` + `POST /me/heartbeat` + Celery beat offline 扫描。「今日活跃时长」「连续标注天数」「专注时段直方图」三项指标本期 graceful degrade 显示 `—`。
+
+### 新增
+
+- **迁移 0038-0041**（4 个）：
+  - `0038_task_assigned_at`：`tasks.assigned_at TIMESTAMPTZ` + 部分索引 `(assignee_id, assigned_at DESC) WHERE assigned_at IS NOT NULL`。idempotent（`ADD COLUMN IF NOT EXISTS`）。
+  - `0039_task_events`：新表 `task_events(id PK, task_id, user_id, project_id, kind ENUM(annotate|review), started_at, ended_at, duration_ms, annotation_count, was_rejected)` + 三个时序索引 + CHECK 约束。
+  - `0040_mv_user_perf_daily`：物化视图 `(user_id, project_id, kind, day) → throughput / median_duration_ms / p95_duration_ms / rejected_n / active_minutes`，UNIQUE 索引支持 CONCURRENTLY refresh。
+  - `0041_user_weekly_target`：`users.weekly_target_default` + `project_members.weekly_target`，替换 AnnotatorDashboard.tsx `weeklyTarget = 200` 硬编码。
+- **后端端点**（4 个）：
+  - `POST /auth/me/task-events:batch`：单批 ≤ 200 条，user_id 强制覆盖为登录用户（防伪造）；走 Celery 异步队列 `app.workers.task_events.persist_task_events_batch`，broker 不可用 → sync fallback。
+  - `GET /dashboard/admin/people?role=&period=&sort=&q=`：super_admin only，返回每人 `{main_metric, throughput_score, quality_score, activity_score, sparkline_7d, alerts}`，告警 chip：被退回率 > 15% / 周环比降 > 30%。
+  - `GET /dashboard/admin/people/{user_id}?period=4w`：详情 — 4 周趋势 / 项目分布 / 耗时直方图（10 桶 + p50/p95）/ 最近 50 条 timeline。
+  - `GET /dashboard/annotator` / `/reviewer` 扩展：annotator 增加 `median_duration_ms / rejected_rate / reopened_avg / weekly_compare_pct / weekly_target`；reviewer 增加 `median_review_duration_ms / reopen_after_approve_rate / weekly_compare_pct / daily_review_counts`。
+- **Celery beat hourly refresh**：`refresh_user_perf_mv` crontab `minute=5`，`REFRESH MATERIALIZED VIEW CONCURRENTLY mv_user_perf_daily`；端点优先读视图，当日窗口直查 task_events 兜底。
+- **前端原子组件**：`<SectionDivider>` / `<RadialProgress>` / `<Histogram>`（仿 RegistrationSourceCard SVG bar 风格，不引图表库）。
+- **AnnotatorDashboard 5 卡 → 9 卡三段**：产能（待标 / 今日 / 本周 + 周环比 + sparkline / 单题中位耗时）+ 质量（原创比例 / 退回率 / 重审次数 avg）+ 投入（活跃时长 / streak / 累计），心跳依赖项暂显 `—`。
+- **ReviewerDashboard 5 卡 → 6 卡两段**：产能（待审 / 今日 + 周环比 + sparkline / 平均审核耗时 / 累计）+ 质量（24h 通过率 / 历史通过率 / 二次返修率）。
+- **AdminPeoplePage（`/admin/people`）**：sticky 筛选栏（角色 / 时间 / 排序 / 搜索 → URL search params 同步）+ 响应式卡片网格（auto-fill minmax 280px）+ 右侧抽屉个人详情（4 hero KPI + 4 周趋势双 sparkline + 耗时直方图 + 项目分布 + timeline）。super_admin RBAC 双重门（路由 + endpoint）。
+- **AdminDashboard 入口卡**：顶部 4 总量 StatCard 下方加「成员绩效 →」可点击 Card，跳 `/admin/people`。
+- **工作台埋点**：`useSessionStats(currentTaskId, projectId, kind)` 现支持 `pendingEvents` 缓冲，每 20 条或 unmount/pagehide 时 flush 到 `meApi.submitTaskEvents`。失败静默丢弃避免雪崩。
+- **ADR-0009**：`docs/adr/0009-task-events-table-and-partition.md` 记录 task_events 月分区两阶段方案：Stage 1（本期）普通表 + 时序索引；Stage 2（行数 > 1M 或单月 INSERT > 100k 触发）按 `started_at` RANGE 分区，参考 ADR-0006 / ADR-0008 模式。
+- **测试**：`tests/test_task_events_batch.py`（6 例）覆盖 sync fallback INSERT 落库、`ended_at < started_at` 422、`/admin/people` 403 / 200 / 404 / detail 200。
+
+### 变更
+
+- **alembic env.py**：`config.set_main_option("sqlalchemy.url", ...)` 改为只在调用方未注入 URL 时设置，否则 conftest 注入的 test DB URL 会被覆盖到 dev DB。
+- **`app/services/batch.py:_cascade_task_assignee`**：`user_id` 非空时 `assigned_at = func.now()`，否则置 NULL。
+- **`app/api/v1/tasks.py:548`** / **`app/api/v1/users.py:587`**：兜底分派 / 注销改派路径同步写 `assigned_at`。
+- **`app/api/v1/dashboard.py`**：annotator/reviewer 端点新增字段（详见上文）。
+- **OpenAPI snapshot 同步**：新增 7 个 schema（AdminPeopleList / AdminPersonItem / AdminPersonDetail / TaskEventIn / TaskEventBatchIn / TaskEventBatchOut + reviewer/annotator 字段）。
+
+### 推迟（依赖另一 session）
+
+- **心跳机制**：`User.last_seen_at` + `POST /me/heartbeat` + Celery beat 扫描。L2/L3 中「今日活跃时长 / streak / 专注时段直方图 / activity_score」graceful degrade，等心跳合并后无需改前端，仅后端 endpoint 切真实计算。
+- **L3 leaderboard Tab**：`GET /dashboard/admin/people/leaderboard` 端点占位未实现，UI 也未暴露。
+
+---
+
 ## [0.8.2] - 2026-05-06
 
 > **文档深度优化。** 把 v0.8.0 / v0.8.1 留下的四处文档机制缝隙以**自动化**方式补齐：ADR 不再孤悬 GitHub、`pnpm docs:build` 进 PR gate、how-to 与源码漂移即报错、ML Backend 协议有可跑样板。后续文档随代码自然漂移即被 CI 拦下，免人工巡检。

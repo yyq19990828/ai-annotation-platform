@@ -546,6 +546,8 @@ async def submit_task(
     # 否则后续 withdraw/reopen 会因 assignee 校验失败而拒绝（"only assignee can withdraw"）。
     if task.assignee_id is None:
         task.assignee_id = current_user.id
+        # v0.8.4：未预派任务由提交者兜底分派；assigned_at 同步写
+        task.assigned_at = datetime.now(timezone.utc)
 
     task.status = "review"
     task.submitted_at = datetime.now(timezone.utc)

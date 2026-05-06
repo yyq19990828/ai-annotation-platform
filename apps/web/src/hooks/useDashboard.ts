@@ -35,3 +35,25 @@ export function useMyRecentReviews(limit = 20) {
     queryFn: () => dashboardApi.getMyRecentReviews(limit),
   });
 }
+
+// v0.8.4 · 管理员人员看板
+export function useAdminPeople(params: {
+  role?: string;
+  project?: string;
+  period?: string;
+  sort?: string;
+  q?: string;
+}) {
+  return useQuery({
+    queryKey: ["dashboard", "admin", "people", params],
+    queryFn: () => dashboardApi.getAdminPeople(params),
+  });
+}
+
+export function useAdminPersonDetail(userId: string | null, period: string = "4w") {
+  return useQuery({
+    queryKey: ["dashboard", "admin", "people", "detail", userId, period],
+    queryFn: () => dashboardApi.getAdminPersonDetail(userId!, period),
+    enabled: Boolean(userId),
+  });
+}

@@ -19,7 +19,11 @@ from app.schemas.dashboard import (
     AnnotatorDashboardStats,
     MyBatchItem,
     RecentReviewItem,
+    AdminPeopleList,
+    AdminPersonItem,
+    AdminPersonDetail,
 )
+from app.db.models.project_member import ProjectMember
 from app.services.user_brief import resolve_briefs_with_project_role
 
 router = APIRouter()
@@ -238,6 +242,111 @@ async def reviewer_dashboard(
             )
         )
 
+    # v0.8.4 · 效率看板 L2 扩展
+    # 平均审核耗时（中位） = reviewed_at - reviewer_claimed_at（自己审过的任务）
+    review_duration_row = (
+        await db.execute(
+            select(
+                func.percentile_cont(0.5)
+                .within_group(
+                    (
+                        func.extract(
+                            "epoch", Task.reviewed_at - Task.reviewer_claimed_at
+                        )
+                        * 1000
+                    ).asc()
+                )
+                .label("median_ms")
+            ).where(
+                Task.reviewer_id == current_user.id,
+                Task.reviewer_claimed_at.isnot(None),
+                Task.reviewed_at.isnot(None),
+            )
+        )
+    ).first()
+    median_review_duration_ms = (
+        int(review_duration_row.median_ms)
+        if review_duration_row and review_duration_row.median_ms
+        else None
+    )
+
+    # 二次返修率：自己 approve 的 task（task.reviewer_id == me 且 status==completed）
+    # 后又被 reopen（reopened_count > 0）的比例
+    reopen_after_row = (
+        await db.execute(
+            select(
+                func.count()
+                .filter(Task.status == TaskStatus.COMPLETED)
+                .label("approved_n"),
+                func.count()
+                .filter(
+                    Task.status == TaskStatus.COMPLETED,
+                    Task.reopened_count > 0,
+                )
+                .label("reopened_n"),
+            ).where(Task.reviewer_id == current_user.id)
+        )
+    ).first()
+    approved_n = int(reopen_after_row.approved_n or 0) if reopen_after_row else 0
+    reopen_after_approve_rate = (
+        round((reopen_after_row.reopened_n or 0) / approved_n * 100, 1)
+        if approved_n > 0
+        else None
+    )
+
+    # 7 日审核数 sparkline
+    daily_review_counts: list[int] = []
+    for i in range(6, -1, -1):
+        ds = today_start - timedelta(days=i)
+        de = ds + timedelta(days=1)
+        n = (
+            await db.execute(
+                select(func.count())
+                .select_from(Task)
+                .where(
+                    Task.reviewer_id == current_user.id,
+                    Task.reviewed_at.isnot(None),
+                    Task.reviewed_at >= ds,
+                    Task.reviewed_at < de,
+                )
+            )
+        ).scalar() or 0
+        daily_review_counts.append(int(n))
+
+    # 周环比
+    week_start_r = today_start - timedelta(days=today_start.weekday())
+    last_week_start_r = week_start_r - timedelta(days=7)
+    this_week_n = (
+        await db.execute(
+            select(func.count())
+            .select_from(Task)
+            .where(
+                Task.reviewer_id == current_user.id,
+                Task.reviewed_at.isnot(None),
+                Task.reviewed_at >= week_start_r,
+            )
+        )
+    ).scalar() or 0
+    last_week_n = (
+        await db.execute(
+            select(func.count())
+            .select_from(Task)
+            .where(
+                Task.reviewer_id == current_user.id,
+                Task.reviewed_at.isnot(None),
+                Task.reviewed_at >= last_week_start_r,
+                Task.reviewed_at < week_start_r,
+            )
+        )
+    ).scalar() or 0
+    weekly_compare_pct_r: float | None
+    if last_week_n > 0:
+        weekly_compare_pct_r = round((this_week_n - last_week_n) / last_week_n * 100, 1)
+    elif this_week_n > 0:
+        weekly_compare_pct_r = 100.0
+    else:
+        weekly_compare_pct_r = None
+
     return ReviewerDashboardStats(
         pending_review_count=pending_review_count,
         today_reviewed=today_reviewed,
@@ -246,6 +355,10 @@ async def reviewer_dashboard(
         total_reviewed=total_completed,
         pending_tasks=pending_tasks,
         reviewing_batches=reviewing_batches,
+        median_review_duration_ms=median_review_duration_ms,
+        reopen_after_approve_rate=reopen_after_approve_rate,
+        weekly_compare_pct=weekly_compare_pct_r,
+        daily_review_counts=daily_review_counts,
     )
 
 
@@ -373,6 +486,88 @@ async def annotator_dashboard(
         )
         daily_counts.append(day_result.scalar() or 0)
 
+    # v0.8.4 · 效率看板 L2 字段：基于 Task.assigned_at / submitted_at / reopened_count
+    # 中位单题耗时（仅本人 + assigned_at IS NOT NULL + submitted_at 在过去 30d）
+    cutoff_30d = now - timedelta(days=30)
+    duration_rows = (
+        await db.execute(
+            select(
+                func.percentile_cont(0.5)
+                .within_group(
+                    (
+                        func.extract(
+                            "epoch", Task.submitted_at - Task.assigned_at
+                        )
+                        * 1000
+                    ).asc()
+                )
+                .label("median_ms")
+            ).where(
+                Task.assignee_id == current_user.id,
+                Task.assigned_at.isnot(None),
+                Task.submitted_at.isnot(None),
+                Task.submitted_at >= cutoff_30d,
+            )
+        )
+    ).first()
+    median_duration_ms = (
+        int(duration_rows.median_ms) if duration_rows and duration_rows.median_ms else None
+    )
+
+    # 退回率 / 重审次数：仅本人，submitted_at 不为空（已提交过的任务）
+    reopen_row = (
+        await db.execute(
+            select(
+                func.count().label("submitted_n"),
+                func.count()
+                .filter(Task.reopened_count > 0)
+                .label("reopened_n"),
+                func.coalesce(func.avg(Task.reopened_count), 0.0).label("reopen_avg"),
+            ).where(
+                Task.assignee_id == current_user.id,
+                Task.submitted_at.isnot(None),
+            )
+        )
+    ).first()
+    submitted_n = int(reopen_row.submitted_n or 0) if reopen_row else 0
+    rejected_rate = (
+        round((reopen_row.reopened_n or 0) / submitted_n * 100, 1)
+        if submitted_n > 0
+        else None
+    )
+    reopened_avg = (
+        round(float(reopen_row.reopen_avg), 2)
+        if reopen_row and reopen_row.reopen_avg is not None
+        else None
+    )
+
+    # 周环比：本周完成 vs 上周完成
+    last_week_start = week_start - timedelta(days=7)
+    last_week_n = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == current_user.id,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= last_week_start,
+                Annotation.created_at < week_start,
+            )
+        )
+    ).scalar() or 0
+    weekly_compare_pct: float | None
+    if last_week_n > 0:
+        weekly_compare_pct = round((weekly_completed - last_week_n) / last_week_n * 100, 1)
+    elif weekly_completed > 0:
+        weekly_compare_pct = 100.0  # 上周 0 → 本周有量 → +100%
+    else:
+        weekly_compare_pct = None
+
+    # 周目标：ProjectMember.weekly_target → User.weekly_target_default → 200
+    weekly_target = (
+        getattr(current_user, "weekly_target_default", None) or 200
+    )
+
     return AnnotatorDashboardStats(
         assigned_tasks=assigned_tasks,
         today_completed=today_completed,
@@ -380,6 +575,13 @@ async def annotator_dashboard(
         total_completed=total_completed,
         personal_accuracy=round(personal_accuracy, 1),
         daily_counts=daily_counts,
+        median_duration_ms=median_duration_ms,
+        rejected_rate=rejected_rate,
+        reopened_avg=reopened_avg,
+        weekly_compare_pct=weekly_compare_pct,
+        weekly_target=weekly_target,
+        active_minutes_today=None,  # 心跳依赖
+        streak_days=None,  # 心跳依赖
     )
 
 
@@ -449,3 +651,514 @@ async def my_batches(
             )
         )
     return items
+
+
+# ─── v0.8.4 · 管理员人员看板 ───────────────────────────────────────────────────
+
+
+def _percentile_rank(values: list[float], target: float) -> int:
+    """简易团队分位（0-100）：value 在排序后处于的百分位。"""
+    if not values:
+        return 50
+    below = sum(1 for v in values if v < target)
+    return int(round(below / len(values) * 100))
+
+
+def _period_window(period: str) -> tuple[datetime, datetime]:
+    now = datetime.now(timezone.utc)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if period == "today":
+        return today, now
+    if period == "1m":
+        return today - timedelta(days=30), now
+    if period == "4w":
+        return today - timedelta(days=28), now
+    # default: 7d / week
+    return today - timedelta(days=6), now
+
+
+@router.get("/admin/people", response_model=AdminPeopleList)
+async def admin_people_list(
+    role: str | None = Query(None),
+    project: str | None = Query(None),
+    period: str = Query("7d"),
+    sort: str = Query("throughput"),
+    q: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+):
+    """v0.8.4 · 全员效率卡片网格数据。
+
+    role 过滤：annotator / reviewer / both（默认 both）
+    period: today / 7d / 4w / 1m
+    sort: throughput / quality / activity / weekly_compare
+    """
+    start, _end = _period_window(period)
+    week_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    week_start = week_start - timedelta(days=week_start.weekday())
+    last_week_start = week_start - timedelta(days=7)
+
+    # 拉用户
+    user_q = select(User).where(User.is_active.is_(True))
+    if role == "annotator":
+        user_q = user_q.where(User.role.in_([UserRole.ANNOTATOR, UserRole.SUPER_ADMIN]))
+    elif role == "reviewer":
+        user_q = user_q.where(
+            User.role.in_(
+                [UserRole.REVIEWER, UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN]
+            )
+        )
+    if q:
+        like = f"%{q}%"
+        user_q = user_q.where(or_(User.name.ilike(like), User.email.ilike(like)))
+    users = (await db.execute(user_q)).scalars().all()
+
+    if not users:
+        return AdminPeopleList(items=[], total=0, period=period)
+
+    user_ids = [u.id for u in users]
+
+    # 项目隶属计数
+    pm_rows = (
+        await db.execute(
+            select(ProjectMember.user_id, func.count().label("n"))
+            .where(ProjectMember.user_id.in_(user_ids))
+            .group_by(ProjectMember.user_id)
+        )
+    ).all()
+    pm_count_map = {r.user_id: int(r.n) for r in pm_rows}
+
+    # 标注吞吐（period 内）
+    ann_rows = (
+        await db.execute(
+            select(Annotation.user_id, func.count().label("n"))
+            .where(
+                Annotation.user_id.in_(user_ids),
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= start,
+            )
+            .group_by(Annotation.user_id)
+        )
+    ).all()
+    ann_count_map = {r.user_id: int(r.n) for r in ann_rows}
+
+    # 审核吞吐（reviewer）
+    rev_rows = (
+        await db.execute(
+            select(Task.reviewer_id, func.count().label("n"))
+            .where(
+                Task.reviewer_id.in_(user_ids),
+                Task.reviewed_at.isnot(None),
+                Task.reviewed_at >= start,
+            )
+            .group_by(Task.reviewer_id)
+        )
+    ).all()
+    rev_count_map = {r.reviewer_id: int(r.n) for r in rev_rows}
+
+    # 上周对比（标注员）
+    last_week_rows = (
+        await db.execute(
+            select(Annotation.user_id, func.count().label("n"))
+            .where(
+                Annotation.user_id.in_(user_ids),
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= last_week_start,
+                Annotation.created_at < week_start,
+            )
+            .group_by(Annotation.user_id)
+        )
+    ).all()
+    last_week_map = {r.user_id: int(r.n) for r in last_week_rows}
+
+    this_week_rows = (
+        await db.execute(
+            select(Annotation.user_id, func.count().label("n"))
+            .where(
+                Annotation.user_id.in_(user_ids),
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= week_start,
+            )
+            .group_by(Annotation.user_id)
+        )
+    ).all()
+    this_week_map = {r.user_id: int(r.n) for r in this_week_rows}
+
+    # 退回率（标注员）
+    reopen_rows = (
+        await db.execute(
+            select(
+                Task.assignee_id,
+                func.count().label("submitted_n"),
+                func.count().filter(Task.reopened_count > 0).label("reopened_n"),
+            )
+            .where(
+                Task.assignee_id.in_(user_ids),
+                Task.submitted_at.isnot(None),
+            )
+            .group_by(Task.assignee_id)
+        )
+    ).all()
+    reopen_map = {
+        r.assignee_id: (int(r.submitted_n or 0), int(r.reopened_n or 0))
+        for r in reopen_rows
+    }
+
+    # 7 日 sparkline（统一按 annotation 创建数；reviewer 用 reviewed_at）
+    today_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    daily_buckets: dict = {}  # user_id → [7 ints]
+    for i in range(6, -1, -1):
+        ds = today_start - timedelta(days=i)
+        de = ds + timedelta(days=1)
+        rows = (
+            await db.execute(
+                select(Annotation.user_id, func.count().label("n"))
+                .where(
+                    Annotation.user_id.in_(user_ids),
+                    Annotation.is_active.is_(True),
+                    Annotation.created_at >= ds,
+                    Annotation.created_at < de,
+                )
+                .group_by(Annotation.user_id)
+            )
+        ).all()
+        per_user = {r.user_id: int(r.n) for r in rows}
+        for uid in user_ids:
+            daily_buckets.setdefault(uid, []).append(per_user.get(uid, 0))
+
+    # 计算分位
+    def _is_reviewer_role(u: User) -> bool:
+        return u.role in (
+            UserRole.REVIEWER,
+            UserRole.PROJECT_ADMIN,
+            UserRole.SUPER_ADMIN,
+        )
+
+    throughputs = []
+    quality_scores = []
+    for u in users:
+        if _is_reviewer_role(u) and u.role != UserRole.ANNOTATOR:
+            throughputs.append(rev_count_map.get(u.id, 0))
+        else:
+            throughputs.append(ann_count_map.get(u.id, 0))
+        sub_n, reop_n = reopen_map.get(u.id, (0, 0))
+        rejected_rate = (reop_n / sub_n * 100) if sub_n > 0 else 0.0
+        quality_scores.append(100.0 - min(100.0, rejected_rate))
+
+    items: list[AdminPersonItem] = []
+    for idx, u in enumerate(users):
+        is_reviewer = u.role in (UserRole.REVIEWER, UserRole.PROJECT_ADMIN)
+        main_metric = throughputs[idx]
+        main_label = f"本周{period if period != '7d' else ''}审核数" if is_reviewer else f"本周{period if period != '7d' else ''}完成数"
+
+        sub_n, reop_n = reopen_map.get(u.id, (0, 0))
+        rejected_rate: float | None = (
+            round((reop_n / sub_n * 100), 1) if sub_n > 0 else None
+        )
+
+        last_n = last_week_map.get(u.id, 0)
+        this_n = this_week_map.get(u.id, 0)
+        if last_n > 0:
+            wcp: float | None = round((this_n - last_n) / last_n * 100, 1)
+        elif this_n > 0:
+            wcp = 100.0
+        else:
+            wcp = None
+
+        alerts: list[str] = []
+        if rejected_rate is not None and rejected_rate > 15:
+            alerts.append("high_rejected")
+        if wcp is not None and wcp < -30:
+            alerts.append("drop_30")
+
+        items.append(
+            AdminPersonItem(
+                user_id=str(u.id),
+                name=u.name,
+                email=u.email,
+                role=u.role,
+                status=u.status,
+                project_count=pm_count_map.get(u.id, 0),
+                main_metric=main_metric,
+                main_metric_label=main_label,
+                weekly_compare_pct=wcp,
+                throughput_score=_percentile_rank(throughputs, throughputs[idx]),
+                quality_score=_percentile_rank(quality_scores, quality_scores[idx]),
+                activity_score=50,  # 心跳依赖；占位返 50（团队中位）
+                sparkline_7d=daily_buckets.get(u.id, [0] * 7),
+                rejected_rate=rejected_rate,
+                alerts=alerts,
+            )
+        )
+
+    # 排序
+    if sort == "quality":
+        items.sort(key=lambda it: it.quality_score, reverse=True)
+    elif sort == "activity":
+        items.sort(key=lambda it: it.activity_score, reverse=True)
+    elif sort == "weekly_compare":
+        items.sort(key=lambda it: it.weekly_compare_pct or -999, reverse=True)
+    else:
+        items.sort(key=lambda it: it.main_metric, reverse=True)
+
+    # 简易项目过滤：如指定 project，只返回 project_members 包含该项目的用户
+    if project:
+        try:
+            import uuid as _u
+
+            pid = _u.UUID(project)
+            allowed = (
+                await db.execute(
+                    select(ProjectMember.user_id).where(
+                        ProjectMember.project_id == pid
+                    )
+                )
+            ).scalars().all()
+            allowed_set = {str(x) for x in allowed}
+            items = [it for it in items if it.user_id in allowed_set]
+        except (ValueError, TypeError):
+            pass
+
+    return AdminPeopleList(items=items, total=len(items), period=period)
+
+
+@router.get("/admin/people/{user_id}", response_model=AdminPersonDetail)
+async def admin_person_detail(
+    user_id: str,
+    period: str = Query("4w"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+):
+    """v0.8.4 · 个人详情：4 周趋势、耗时直方图、项目分布、timeline。"""
+    import uuid as _u
+
+    try:
+        uid = _u.UUID(user_id)
+    except (ValueError, TypeError):
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail="invalid user_id")
+
+    user = await db.get(User, uid)
+    if not user or not user.is_active:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="user not found")
+
+    start, _end = _period_window(period)
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # 总产出
+    throughput = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= start,
+            )
+        )
+    ).scalar() or 0
+
+    # 4 周趋势（每周一点）
+    trend_throughput: list[int] = []
+    trend_quality: list[int] = []
+    for w in range(3, -1, -1):
+        ws = today_start - timedelta(days=today_start.weekday()) - timedelta(weeks=w)
+        we = ws + timedelta(weeks=1)
+        n = (
+            await db.execute(
+                select(func.count())
+                .select_from(Annotation)
+                .where(
+                    Annotation.user_id == uid,
+                    Annotation.is_active.is_(True),
+                    Annotation.created_at >= ws,
+                    Annotation.created_at < we,
+                )
+            )
+        ).scalar() or 0
+        trend_throughput.append(int(n))
+        # 质量：1 - 当周 reopen 率
+        reopen_row = (
+            await db.execute(
+                select(
+                    func.count().label("sn"),
+                    func.count().filter(Task.reopened_count > 0).label("rn"),
+                ).where(
+                    Task.assignee_id == uid,
+                    Task.submitted_at.isnot(None),
+                    Task.submitted_at >= ws,
+                    Task.submitted_at < we,
+                )
+            )
+        ).first()
+        sn = int(reopen_row.sn or 0) if reopen_row else 0
+        rn = int(reopen_row.rn or 0) if reopen_row else 0
+        q = 100 if sn == 0 else max(0, 100 - int(rn / sn * 100))
+        trend_quality.append(q)
+
+    # 项目分布
+    proj_rows = (
+        await db.execute(
+            select(
+                Annotation.project_id,
+                Project.name,
+                func.count().label("n"),
+            )
+            .join(Project, Annotation.project_id == Project.id)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= start,
+            )
+            .group_by(Annotation.project_id, Project.name)
+            .order_by(func.count().desc())
+        )
+    ).all()
+    project_distribution = [
+        {"project_id": str(r.project_id), "project_name": r.name, "count": int(r.n)}
+        for r in proj_rows
+    ]
+
+    # 耗时直方图：从 task_events 拉本人的 annotate kind
+    from app.db.models.task_event import TaskEvent
+
+    duration_rows = (
+        await db.execute(
+            select(TaskEvent.duration_ms).where(
+                TaskEvent.user_id == uid,
+                TaskEvent.kind == "annotate",
+                TaskEvent.started_at >= start,
+            )
+        )
+    ).scalars().all()
+    durations = [int(d) for d in duration_rows if d is not None]
+    duration_histogram: list[dict] = []
+    p50: int | None = None
+    p95: int | None = None
+    if durations:
+        durations_sorted = sorted(durations)
+        peak = durations_sorted[-1]
+        # 10 桶 [0..peak]
+        if peak > 0:
+            step = max(1, peak // 10)
+            buckets = [0] * 10
+            for d in durations:
+                idx = min(9, d // step)
+                buckets[idx] += 1
+            for i, c in enumerate(buckets):
+                duration_histogram.append(
+                    {"upper_ms": int((i + 1) * step), "count": int(c)}
+                )
+        p50 = int(durations_sorted[len(durations_sorted) // 2])
+        p95_idx = max(0, int(len(durations_sorted) * 0.95) - 1)
+        p95 = int(durations_sorted[p95_idx])
+
+    # timeline：最近 50 条 audit_logs
+    timeline_rows = (
+        await db.execute(
+            select(AuditLog)
+            .where(AuditLog.actor_id == uid)
+            .where(
+                AuditLog.action.in_(
+                    [
+                        "task.submit",
+                        "task.approve",
+                        "task.reject",
+                        "task.reopen",
+                        "task.create_annotation",
+                    ]
+                )
+            )
+            .order_by(AuditLog.created_at.desc())
+            .limit(50)
+        )
+    ).scalars().all()
+    timeline = []
+    for a in timeline_rows:
+        target_id = (
+            a.target_id
+            if a.target_id and a.target_type == "task"
+            else (a.detail_json or {}).get("task_id")
+        )
+        timeline.append(
+            {
+                "at": a.created_at.isoformat() if a.created_at else "",
+                "action": a.action,
+                "task_id": str(target_id) if target_id else None,
+                "task_display_id": (a.detail_json or {}).get("task_display_id"),
+                "detail": (a.detail_json or {}).get("reason"),
+            }
+        )
+
+    # 综合分（throughput + quality / 2，活跃暂用 50）
+    quality_score = trend_quality[-1] if trend_quality else 50
+    composite = int(round((min(100, throughput) + quality_score + 50) / 3))
+
+    proj_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(ProjectMember)
+            .where(ProjectMember.user_id == uid)
+        )
+    ).scalar() or 0
+
+    # 周环比
+    last_week_start = today_start - timedelta(days=today_start.weekday()) - timedelta(weeks=1)
+    week_start_dt = last_week_start + timedelta(weeks=1)
+    last_n = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= last_week_start,
+                Annotation.created_at < week_start_dt,
+            )
+        )
+    ).scalar() or 0
+    this_n = (
+        await db.execute(
+            select(func.count())
+            .select_from(Annotation)
+            .where(
+                Annotation.user_id == uid,
+                Annotation.is_active.is_(True),
+                Annotation.created_at >= week_start_dt,
+            )
+        )
+    ).scalar() or 0
+    if last_n > 0:
+        wcp = round((this_n - last_n) / last_n * 100, 1)
+    elif this_n > 0:
+        wcp = 100.0
+    else:
+        wcp = None
+
+    return AdminPersonDetail(
+        user_id=str(user.id),
+        name=user.name,
+        email=user.email,
+        role=user.role,
+        project_count=int(proj_count),
+        throughput=int(throughput),
+        quality_score=int(quality_score),
+        active_minutes=None,
+        composite_score=int(composite),
+        weekly_compare_pct=wcp,
+        trend_throughput=trend_throughput,
+        trend_quality=trend_quality,
+        project_distribution=project_distribution,
+        duration_histogram=duration_histogram,
+        p50_duration_ms=p50,
+        p95_duration_ms=p95,
+        timeline=timeline,
+    )

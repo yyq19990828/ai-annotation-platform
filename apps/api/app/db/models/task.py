@@ -27,6 +27,10 @@ class Task(Base):
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")
     )
+    # v0.8.4 · 分派时间戳（效率看板「平均单题耗时」分母 = submitted_at - assigned_at）
+    assigned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     is_labeled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     overlap: Mapped[int] = mapped_column(Integer, default=1)
     total_annotations: Mapped[int] = mapped_column(Integer, default=0)

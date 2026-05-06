@@ -249,9 +249,13 @@ class BatchService:
         batch_id: uuid.UUID,
         user_id: uuid.UUID | None,
     ) -> None:
-        """v0.7.2：batch 改 annotator → 该 batch 下所有 task.assignee_id 跟随。"""
+        """v0.7.2：batch 改 annotator → 该 batch 下所有 task.assignee_id 跟随。
+        v0.8.4：同步写 assigned_at = now()（user_id 非空时）/ 清空（user_id 为空时）。
+        """
+        values: dict[str, Any] = {"assignee_id": user_id}
+        values["assigned_at"] = func.now() if user_id is not None else None
         await self.db.execute(
-            update(Task).where(Task.batch_id == batch_id).values(assignee_id=user_id)
+            update(Task).where(Task.batch_id == batch_id).values(**values)
         )
 
     async def _cascade_task_reviewer(

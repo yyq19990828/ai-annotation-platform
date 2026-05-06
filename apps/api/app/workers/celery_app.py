@@ -13,6 +13,7 @@ celery_app = Celery(
         "app.workers.audit",
         "app.workers.deactivation",
         "app.workers.audit_partition",
+        "app.workers.task_events",
     ],
 )
 
@@ -32,6 +33,10 @@ celery_app.conf.update(
         "app.workers.cleanup.purge_soft_deleted_attachments": {"queue": "cleanup"},
         # v0.7.6 · audit 异步 INSERT 走独立队列，不与 ml/media 抢资源
         "app.workers.audit.persist_audit_entry": {"queue": "audit"},
+        # v0.8.4 · task_events 批量 INSERT 走独立队列
+        "app.workers.task_events.persist_task_events_batch": {"queue": "audit"},
+        # v0.8.4 · 物化视图 hourly refresh
+        "app.workers.cleanup.refresh_user_perf_mv": {"queue": "cleanup"},
     },
     # v0.7.0：beat schedule。运维侧需 deploy `celery -A app.workers.celery_app beat` 进程
     # （或 worker --beat 单进程模式）才会触发。
@@ -54,6 +59,11 @@ celery_app.conf.update(
         "archive-old-audit-partitions": {
             "task": "app.workers.audit_partition.archive_old_audit_partitions",
             "schedule": crontab(day_of_month=2, hour=3, minute=0),
+        },
+        # v0.8.4 · 效率看板物化视图：每小时第 5 分钟 REFRESH MATERIALIZED VIEW CONCURRENTLY
+        "refresh-user-perf-mv": {
+            "task": "app.workers.cleanup.refresh_user_perf_mv",
+            "schedule": crontab(minute=5),
         },
     },
 )

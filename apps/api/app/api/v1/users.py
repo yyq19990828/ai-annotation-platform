@@ -584,7 +584,7 @@ async def delete_user(
             update(Task)
             .where(Task.assignee_id == user.id)
             .where(Task.status.in_(_PENDING_TASK_STATUSES))
-            .values(assignee_id=receiver.id)
+            .values(assignee_id=receiver.id, assigned_at=func.now())
         )
         transferred_count = result.rowcount or 0
         # 清除原 user 持有的所有 task_lock（释放锁，不转给 receiver）

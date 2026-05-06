@@ -14,8 +14,11 @@ from app.config import settings
 
 config = context.config
 
-# 从 pydantic settings 注入真实 URL，覆盖 alembic.ini 中的空值
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# 从 pydantic settings 注入真实 URL，覆盖 alembic.ini 中的空值。
+# 但若调用方已通过 cfg.set_main_option(...) 显式设置（例如 conftest 注入 test_db_url），
+# 不要覆盖 — 否则测试 DB 上的迁移会跑到 dev DB 上。
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
