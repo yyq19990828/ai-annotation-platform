@@ -27,7 +27,6 @@
 - **预测成本统计**：后端 `prediction_metas` 表已记录 token / 耗时 / 成本，但前端无任何可视化（应进入 AdminDashboard 的成本卡片，并向工作台 AI 助手面板透传"本题花费 X 元 / Y tokens"）。
 - **失败预测重试**：`failed_predictions` 表记录但无 UI 触发重试。
 - **ML Backend 健康检查**：`MLBackendService` 只在管理员手动点击时探活，无后台周期任务。v0.8.0 协议文档已就位，可直接基于 `/health` 实现一个 Celery beat 周期任务。
-- ~~**可执行 echo backend 样板**~~ → v0.8.2 已落（`docs-site/dev/examples/echo-ml-backend/` 5 文件 main.py + requirements.txt + Dockerfile + test.sh + README.md；ml-backend-protocol §8 改 snippet 引用 main.py:1-63 自动同步）。
 
 #### 用户与权限页（UsersPage）
 - **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。需 `api_keys` 表 + scope + revoke + 最后使用时间。
@@ -37,7 +36,6 @@
 #### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
 - **个人偏好**：语言 / 主题 / 时区 / 通知偏好均无（依赖 i18n / 主题基础设施先建立）。
-- ~~**系统设置可编辑**~~ → v0.8.1 已落（`system_settings` 表 + PATCH + SettingsPage SystemSection 改可编辑 + SMTP 测试发送）
 
 #### TopBar / Dashboard 控件
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
@@ -50,9 +48,6 @@
   - **邮箱验证**：当前 viewer 零权限可跳过；若未来开放注册默认角色调高，需 `POST /auth/verify-email` + `email_verified_at` 字段 + 验证前 `is_active=false`。
   - **CAPTCHA / 防机器人**：v0.7.7 的 3/min rate limit 对 production 够用但不防分布式刷号；接 hCaptcha / Turnstile，前端 `OpenRegisterForm` 加 CAPTCHA widget + 后端校验 token。
   - **OAuth2 / 社交登录**：Google / GitHub SSO，python-social-auth 或 authlib；`User.oauth_provider` + `oauth_id` 字段；LoginPage / RegisterPage 加「使用 Google 登录」按钮。
-  - ~~**系统设置 admin UI 可编辑**~~ → v0.8.1 已落（与「设置页 §系统设置可编辑」共建，含 `allow_open_registration` toggle）。
-  - ~~**注册统计仪表卡**~~ → v0.8.1 已落（AdminDashboard「30 天注册来源」双柱条形图，按 `detail_json.method/invitation_id` 聚合）。
-  - ~~**账号自助注销**~~ → v0.8.1 已落（`POST/DELETE /auth/me/deactivation-request` + 7 天冷静期 + 通知 super_admin + Celery beat 自动生效）。
 
 #### v0.7.x ~ v0.8.0 后续观察 / 下版候选
 
@@ -73,8 +68,6 @@
 - **审计日志不可变 trigger 测试覆盖**：v0.7.8 落了 PG trigger + GDPR `SET LOCAL` 豁免，但缺测试。建议加 `tests/test_audit_immutability.py` 覆盖三条：① 普通 UPDATE/DELETE 抛 RAISE；② `SET LOCAL` 后允许；③ pg_restore 走 COPY 不被阻断。security.md 已声称该机制可靠，需要测试兜底。
 
 #### 治理 / 合规
-- ~~**审计日志归档**~~ → v0.8.1 已落（`audit_logs` PARTITION BY RANGE(created_at) 月分区 + Celery beat `archive_old_audit_partitions` 把 > `AUDIT_RETENTION_MONTHS` 的子分区 stream-gzip 上传 MinIO 后 DROP；详见 ADR-0007 实施记录）。
-- ~~**数据导出审计**~~ → v0.8.1 已落（4 个导出端点的 `AuditService.log` 走新 `export_detail()` helper，detail_json 含 actor_email/ip/request_id/filter_criteria；CSV 文件首部插入 `# Exported by` 注释、JSON 文件包装 `_export_meta` 顶层字段）。
 - **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
 
 #### 可观测性
@@ -99,10 +92,6 @@
 
 - **用户手册截图回填（IMAGE_CHECKLIST 16 处）**：v0.8.0 已在 `getting-started.md`、`workbench/{bbox,polygon,keypoint}.md`、`projects/`、`review/`、`export/` 共 16 处放好截图占位 + 拍摄要求注释，详见 [`docs-site/user-guide/IMAGE_CHECKLIST.md`](docs-site/user-guide/IMAGE_CHECKLIST.md)。本期未回填真实图（PNG 占位为 1×1 透明），0.8.1 候选。
   - **截图自动化方案（替代手工拍图）**：可写 Playwright 脚本基于 `e2e/fixtures/seed.ts`（与 E2E spec 共建）跑一遍 16 个场景自动截图，输出到 `images/` 各子目录。优势：UI 改完 CI 自动重生成；红框 / 标注通过 `page.evaluate` 注入临时 CSS；时间敏感数据（日期 / 头像）可在 fixture 里定值。劣势：动画类（toast、过渡）截不准，仍需手工兜底。建议与「E2E spec 写实」P1 同期推进。
-- ~~**VitePress 文档站 CI gate**~~ → v0.8.2 已落（`.github/workflows/ci.yml` 新增 `docs-build` job，所有 PR 都跑 `pnpm docs:build`，dead-link / hotkeys SoT 漂移 / snippet 不一致即时阻断）。
-- ~~**侧边栏加 ADR 入口**~~ → v0.8.2 已落（`docs-site/scripts/mirror-adr.mjs` 把 `docs/adr/*.md` 镜像到 `docs-site/dev/adr/`；`.vitepress/config.ts` 在 `/dev/` 侧边栏底加「ADR（架构决策）」折叠组，items 从 sidebar.generated.json 注入）。
-- ~~**ADR-0008 草稿（批次 admin-locked 状态机扩展）**~~ → v0.8.2 已落（`docs/adr/0008-batch-admin-locked-status.md` Proposed；含表迁移 SQL + lock/unlock API 设计 + 状态机 mermaid + 3 种 alternative 拒绝理由）。实现推迟到 v0.9。
-- ~~**how-to/add-api-endpoint.md 漂移风险**~~ → v0.8.2 已落（通用机制：`docs-site/scripts/check-doc-snippets.mjs` + `<!-- snippet:PATH:START-END -->` 标记，prebuild 阶段对比源文件与文档代码块不一致即报错。已应用到 add-api-endpoint.md logout 块 + ml-backend-protocol §8 echo 样板）。同时把 v0.8.0 写入时已漂移的 logout 代码块对齐到当前 `auth.py:239-266`。
 
 ---
 
@@ -175,8 +164,6 @@
 | **P2** | 前端单测持续提升到 ≥ 25% + 切覆盖率硬阻断 | v0.7.6 baseline 8.68%（+29 测试 from 4.27%）；目标 25% 后切去 informational |
 | **P2** | 批次状态机二阶段剩余：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | v0.8.2 ADR-0008 已 Proposed（admin-locked 正交字段 + lock/unlock API + 表迁移 SQL）；v0.9 实施前需补 scheduler 测试覆盖；bulk approve/reject UX 待定 |
 | **P3** | fabric.js dead dep 清理 | v0.8.0 ADR-0004 确认未使用；下次 dep 清理 PR 顺手 |
-| **P3** | 注册统计仪表卡（邀请 vs 开放注册按日统计） | AdminDashboard 可视化空位，audit_logs 数据已就位 |
-| **P3** | 账号自助注销（7 天冷静期 + 管理员通知） | 合规向，GDPR 场景需要 |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | v0.7.6 已落 Stage 1 索引 + ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） |
