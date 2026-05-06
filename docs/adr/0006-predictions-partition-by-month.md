@@ -3,6 +3,7 @@
 - **Status:** Accepted（设计完成 · 真正迁移延期到行数 > 1M）
 - **Date:** 2026-05-06
 - **Deciders:** core team
+- **Supersedes:** —
 
 ## Context
 

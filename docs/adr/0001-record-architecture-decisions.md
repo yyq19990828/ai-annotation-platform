@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-05-05
 - **Deciders:** core team
+- **Supersedes:** —
 
 ## Context
 

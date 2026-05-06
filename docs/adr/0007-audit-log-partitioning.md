@@ -1,14 +1,15 @@
-# ADR-0007: 审计日志月分区
+# 0007 — 审计日志月分区
 
-## 状态
+- **Status:** Accepted（已实施 · v0.8.1 / 迁移 0037）
+- **Date:** 2026-05-06（原计划「延期执行」，v0.8.1 提前推进，配合冷数据归档一次落地）
+- **Deciders:** core team
+- **Supersedes:** —
 
-**已实施（v0.8.1，迁移 0037）** ←— 原计划「延期执行」，v0.8.1 提前推进，配合冷数据归档一次落地。
-
-## 背景
+## Context
 
 `audit_logs` 表随业务增长将持续膨胀。v0.7.8 已通过 trigger 实现不可变性（0032 迁移），但未做分区。当前数据量 < 10 万行，查询性能未到瓶颈，但合规向（GDPR / 行业审计）要求超过保留期的数据自动归档。v0.8.1 与「数据导出审计强化」一起推进。
 
-## 决策
+## Decision
 
 采用 PostgreSQL RANGE(created_at) 按月分区，触发条件：
 - 单月 INSERT > 100k 行，或
@@ -51,23 +52,32 @@ Celery beat 月度任务 `ensure_next_partition()`：检查下月分区是否存
 
 超过 6 个月的分区可 DETACH → pg_dump → 上传 S3 → DROP（需 super_admin 手动触发或 cron job）。
 
-## 与 0032 trigger 的交互
+### 与 0032 trigger 的交互
 
 分区子表自动继承父表上定义的 trigger。新建分区后 trigger 自动生效，无需额外操作。
 
-## 替代方案
+## Consequences
 
-- **TimescaleDB 扩展**：自动分区 + 压缩，但增加运维依赖
-- **应用层 soft-delete + 定期 TRUNCATE**：审计日志语义不允许删除
-- **分库**：复杂度过高
-
-## 后果
+正向：
 
 - 查询 WHERE created_at 范围内可命中单个分区（partition pruning）
 - 归档操作为 O(1) DETACH 而非全表扫描
-- PK 变化需确认无代码硬依赖 `audit_logs.id` 做 FK
 
-## 实施记录（v0.8.1）
+负向：
+
+- PK 变化需确认无代码硬依赖 `audit_logs.id` 做 FK
+- 大表（> 1M 行）单事务 INSERT 会锁较久；本期数据量 < 100k 不构成问题，后续到 1M+ 时改用 `pg_partman` 或分批迁移脚本
+- 分区子表名进入 `pg_catalog.pg_class`，反射时会被 ORM 看到 → `tests/test_alembic_drift.py` 已豁免 `audit_logs_y*` 模式
+
+## Alternatives Considered（详）
+
+**TimescaleDB 扩展**：自动分区 + 压缩，但增加运维依赖（额外扩展、版本绑定、备份链路），当前规模收益不抵成本。
+
+**应用层 soft-delete + 定期 TRUNCATE**：审计日志语义不允许删除（合规向），TRUNCATE 等价于销毁证据；soft-delete 也无助于查询性能。
+
+**分库**：复杂度过高，目前单库读写完全在 PG 单实例承载内。
+
+## Notes
 
 ### 迁移落地（0037）
 
@@ -85,11 +95,6 @@ Celery beat 月度任务 `ensure_next_partition()`：检查下月分区是否存
 - `ensure_future_audit_partitions`（每月 25 日 03:00 UTC）：保证未来 3 个月分区存在。
 - `archive_old_audit_partitions`（每月 2 日 03:00 UTC）：扫保留期外子分区，stream-gzip 上传 MinIO `audit-archive/{year}/{month}.jsonl.gz`，成功后 `DROP TABLE <partition>`，并写 `audit.archive` 审计行。
 - 保留期由 `AUDIT_RETENTION_MONTHS`（默认 12）控制。
-
-### 已知限制
-
-- 大表（> 1M 行）单事务 INSERT 会锁较久；本期版本数据量 < 100k 不构成问题。后续如生产到达 1M+，评估改用 `pg_partman` 扩展或分批迁移脚本。
-- 分区子表名进入 `pg_catalog.pg_class`，反射时会被 ORM 看到 → `tests/test_alembic_drift.py` 已豁免 `audit_logs_y*` 模式。
 
 ### 驱动这个时机点的因素
 

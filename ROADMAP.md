@@ -41,7 +41,8 @@
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
 
 #### Annotator / Reviewer 工作台
-- **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好。
+- **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好（合并到下方「效率看板」Layer 2 一起做）。
+- **Task 三时间戳未被消费**：`submitted_at` / `reviewer_claimed_at` / `reviewed_at` 已落库（v0.6.5 状态机），但 `dashboard.py` 三个端点全部基于 count，从未计算过耗时；工作台 `useSessionStats.ts` 的 avgMs（20 样本环形 buffer）也仅本地展示。详见下方「效率看板」Layer 1。
 
 #### 登录 / 注册 / 认证
 - **开放注册二阶段增强**（v0.7.7 落了基座，以下为可选延伸）：
@@ -69,6 +70,102 @@
 
 #### 治理 / 合规
 - **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
+
+#### 效率看板 / 人员绩效（新 · P1）
+
+> **目标**：标注员/审核员能自查自己的产能、质量、投入；管理员能用一个卡片式人员看板看到全员效率，可筛选、可下钻、可对比。  
+> **现状**（v0.8.2，已在 A 段「Annotator/Reviewer 工作台」记下）：3 个 dashboard 都是 count 类指标，没有耗时、退回率、活跃时段、人均产出等任何"绩效"维度；管理员看板完全无人员视角。  
+> **横向参考**：CVAT analytics（annotation speed / objects per hour / time-per-object 直方图）、Label Studio Enterprise（per-annotator productivity report + IAA 热力图）、Encord（team performance heatmap，按周聚合）、Scale AI Rapid（taskers leaderboard + quality score）。
+
+**指标口径（先落 SoT 再画 UI）**：
+| 维度 | 指标 | 数据源 | 备注 |
+|---|---|---|---|
+| 产能 | 完成任务数 / 标注框数（今日/本周/累计） | `Task` + `Annotation` count | 已有 |
+| 产能 | 平均单题耗时（中位 / p95） | `submitted_at - assigned_at` | 需新增 `Task.assigned_at`（当前 `created_at` 是 task 创建非分派） |
+| 产能 | 平均单题审核耗时 | `reviewed_at - reviewer_claimed_at` | 字段已就位，端点未算 |
+| 质量 | 原创比例 | `parent_prediction_id IS NULL / total` | 已有（AnnotatorDashboard `personal_accuracy`） |
+| 质量 | 被退回率 | `Task.reopened_count > 0` 占 submitted 比 | 字段已就位 |
+| 质量 | 重审次数 | `Task.reopened_count` 均值 / max | 已就位 |
+| 质量 | 审核通过率（reviewer） | audit_logs `task.approve` / (`approve`+`reject`) | 已有 24h 滚动版（reviewer_dashboard） |
+| 质量 | 二次返修率（reviewer） | 自己 approve 的 task 后又被 reopen 比例 | reopen 历史可从 audit_logs 反查 |
+| 投入 | 今日活跃时长 | `last_seen_at` 心跳推算（依赖 A.UsersPage 心跳工作） | 与「在线状态心跳机制」共建 |
+| 投入 | 专注时段分布（24bar） | `task_events.started_at` 按小时直方图 | 需新增 `task_events` 表 |
+| 投入 | 连续标注天数 streak | `task_events` 按日 distinct | 同上 |
+
+**Layer 1 · 数据沉淀（无 UI，纯后端 + 工作台埋点）**：
+1. 新增字段 `Task.assigned_at`（assignment 写时设值；老数据 NULL → 个人指标 graceful degrade）。
+2. 新增表 `task_events(id, task_id, user_id, kind ENUM(annotate|review), started_at, ended_at, duration_ms, annotation_count, was_rejected, project_id)`：
+   - 工作台 `useSessionStats` 在 task 切换 / submit 时本地缓冲，每 N 条或 session 退出 flush 到 `POST /me/task-events:batch`，复用 v0.7.6 `AUDIT_ASYNC` Celery 通道避免高频 INSERT
+   - 索引 `(user_id, started_at DESC)` + `(project_id, started_at DESC)`；预留月分区接口（参考 ADR-0006 predictions 月分区方案）
+3. 物化视图 `mv_user_perf_daily(user_id, day, throughput, median_duration_sec, rejected_n, active_minutes)`：每小时 refresh，前端聚合查询走视图避免扫原表。
+
+**Layer 2 · 个人 Dashboard 强化（标注员/审核员自查）**：
+- AnnotatorDashboard 由 5 卡 → 9 卡，分组「产能 / 质量 / 投入」三段（可用现有 `<StatCard>` + 一个轻量 `<SectionDivider>`）：
+  - 产能：今日完成、本周完成（带断点）、平均单题耗时、累计完成
+  - 质量：原创比例、被退回率、重审次数（avg）
+  - 投入：今日活跃时长、连续标注 streak
+- 每卡统一带 「↑/↓ 周环比」+ 7 日 Sparkline 缩略；指标加 tooltip 解释口径（中位 vs 均值、原创定义等）。
+- 新增「专注时段分布」24-bar 小直方图（识别"我什么时候效率最高"）。
+- ReviewerDashboard 类比：产能（今日审核数 / 平均审核耗时 / 待审趋势）、质量（通过率 / 退回率分项 by 标注员 / 二次返修率）、投入（活跃时段）。
+- `weeklyTarget` 由 ProjectMembership / 用户偏好读取（默认 200，可项目级 + 个人级覆盖）；与 A「设置页 - 个人偏好」共建。
+
+**Layer 3 · 管理员人员看板（核心新增 / 用户主诉）**：
+- 新路由 `/admin/people` 或 AdminDashboard 增「成员绩效」Tab（建议独立路由，避免 AdminDashboard 过长）。
+- **顶部筛选栏**（sticky）：
+  - 角色 chip：annotator / reviewer / both（默认 both）
+  - 项目多选下拉（默认全部）
+  - 时间窗口：今日 / 本周 / 本月 / 自定义区间
+  - 在线状态：online / offline / all
+  - 排序：产能↓ / 质量分↓ / 活跃时长↓ / 周环比↓
+  - 搜索框（按姓名 / 邮箱）
+- **卡片网格**（响应式 4 列 → 6 列，每张卡固定高度便于 scan）：
+  ```
+  ┌────────────────────────────┐
+  │ [Avatar] 张三 ●online      │  ← 头像 + 角色徽章（蓝=标注/紫=审核）
+  │  annotator · 项目A,B,+2    │  
+  │                            │
+  │       128 ↑12%             │  ← 主指标大字 + 周环比
+  │       本周完成              │
+  │                            │
+  │  产能 ████████░░ 82        │  ← 三条 mini bar（团队分位 0-100）
+  │  质量 █████████░ 91        │
+  │  活跃 ██████░░░░ 64        │
+  │                            │
+  │  ╱╲╱╲__╱╲  7日趋势         │  ← Sparkline
+  │  ⚠ 被退回率 18% (>阈值)   │  ← 告警 chip（>15% / 周降>30%）
+  └────────────────────────────┘
+  ```
+- 卡片角色不同时 KPI 不同：标注员主卡=本周完成数；审核员主卡=本周审核数。
+- **点击卡片 → 右侧抽屉个人详情**（不离开列表，便于左右对比）：
+  - 顶部 4 个 hero KPI（产能 / 质量 / 活跃时长 / 综合分）+ 周环比
+  - 4 周趋势折线图（多指标可叠加 / 切换）
+  - 项目分布饼图（按项目的工作量占比）
+  - 任务耗时直方图 + p50/p95 标注线（识别长尾任务）
+  - 与团队中位数 diverging bar 对比图
+  - 最近 50 条 timeline（任务标注/被退回/审核/通过/退回，可点击跳任务页）
+  - 仅 super_admin 可见的「重置周目标」「移除项目权限」运营操作（复用 UsersPage 现有动作）
+- **后端端点**：
+  - `GET /dashboard/admin/people?role=&project=&period=7d&sort=throughput&q=` → 列表（每项含三个分位值 + sparkline 7 点）
+  - `GET /dashboard/admin/people/{user_id}?period=4w` → 详情（趋势点 / 直方图 buckets / timeline 分页）
+  - `GET /dashboard/admin/people/leaderboard?period=4w` → 队列形式（可选，作为 Tab 补充）
+- **视觉资产**：沿用现有 `<Card>` / `<StatCard>` / `<Sparkline>` / `<Badge>` / `<ProgressBar>` / `<Avatar>`；新增两个原子组件即可：
+  - `<RadialProgress size value max />`（卡片右上角综合分圆环）
+  - `<Histogram values bins />`（详情页耗时分布）
+- 参考 `apps/web/src/pages/Dashboard/AdminDashboard.tsx:282-346` 的 `RegistrationSourceCard` SVG bar 实现风格，无需引入图表库。
+
+**优先级 / 切片**：
+- P1.1（数据沉淀）：`Task.assigned_at` 迁移 + `task_events` 表 + 工作台埋点 + 物化视图。约 2-3 天。
+- P1.2（个人 Dashboard）：Annotator/Reviewer dashboard 拓展为 3 段卡组 + 周环比 + 专注时段直方图。约 1-2 天。
+- P1.3（管理员人员看板）：路由 + 筛选 + 卡片网格 + 抽屉详情。约 3-4 天。
+
+**风险与取舍**：
+- 老数据无 `assigned_at` / `task_events` → period 跨越 v0.9 实施前的区间需 graceful degrade，前端展示 "—" 而非 0。
+- "活跃时长" 依赖 `last_seen_at` 心跳，需 A 段「在线状态心跳机制」先落（30s 心跳 + Celery beat offline 扫描）。两块共建一次性收。
+- 物化视图 vs 实时聚合：单租户量级（< 50 标注员 / < 100k tasks/月）实时聚合 SQL 已够，物化视图作为下一步优化预留接口；不要先做。
+- 卡片网格响应式断点：< 1280px 4 列、≥ 1280px 5 列、≥ 1600px 6 列；卡片宽度参考 `RegistrationSourceCard` `peak` 计算思路定值。
+- 隐私 / 工会风险：标注员之间不展示彼此排名（只 admin 可见排序）；Layer 2 个人卡片只展示自己的与"团队中位数"，不展示具体排名值。
+
+
 
 #### 可观测性
 - **Celery / ML Backend 指标**：v0.4.8 已加 HTTP metrics + DB pool + `/health/{db,redis,minio,celery}`（v0.7.5 补齐 celery）；缺 Celery 队列长度、Worker 心跳、ML Backend 平均延迟 / 失败率。
@@ -147,6 +244,7 @@
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
+| **P1** | 效率看板 / 人员绩效 Layer 1+2+3（数据沉淀 + 个人卡组 + 管理员卡片网格 + 抽屉下钻） | 用户主诉；当前 AdminDashboard 完全无人均维度，Task 三时间戳已落库未消费；与心跳工作 / 个人偏好 / weeklyTarget 共建 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1；v0.8.0 ML Backend 协议契约文档已为接入侧扫清障碍 |
 | **P1** | E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error` | v0.7.6 推迟（1-2 天深活）；factory + seed.ts + 三 spec 写实是 PR 红线收紧前置；与「截图自动化」共建 fixture |
 | **P1** | 截图自动化（Playwright + IMAGE_CHECKLIST 16 处）替代手工拍图 | v0.8.0 占位就位；与 E2E spec 共用 fixture，一次写完两件事 |
