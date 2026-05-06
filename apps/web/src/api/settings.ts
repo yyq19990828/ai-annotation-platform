@@ -13,6 +13,7 @@ export interface SystemSettingsResponse {
   invitation_ttl_days: number;
   frontend_base_url: string;
   smtp: SmtpStatusResponse;
+  allow_open_registration: boolean;
 }
 
 export const settingsApi = {

@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化：CreateProjectWizard 扩 6 步含「属性 schema」步骤 + 抽 `<AttributeSchemaEditor>` 给 wizard / settings 复用 + `ProjectCreate` schema 接受 attribute_schema / 批次 reset → draft 终极重置 owner 兜底 service + `POST /batches/{id}/reset` 强制 reason ≥ 10 字 + `ResetBatchModal` 二次确认 / NotificationsPopover 自包含 usePopover 迁移 + ProjectGrid 卡片 DropdownMenu 收编（导出 COCO/VOC/YOLO）/ `task.reopen` → `NotificationService.notify_many(type='task.reopened')` fan-out / 批次 Kanban 看板视图 7 列 + HTML5 拖拽迁移 dryrun + `?batch_view=kanban` URL 持久化 / AuditMiddleware Celery 异步 audit 队列 + AUDIT_ASYNC 开关 + sync fallback / `GET /tasks/{id}/annotations/page` keyset cursor 分页 + alembic 0031 复合索引 / predictions.created_at 索引 Stage 1 + ADR-0006 partition Stage 2 设计 / codecov.yml 落地 backend 60% frontend 8% informational target / 后端 146 PASS + 前端 93 PASS）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善：`POST /auth/register-open` 开放注册端点 + 默认 viewer 角色 + `ALLOW_OPEN_REGISTRATION` env 开关 + `GET /auth/registration-status` 公开查询 + RegisterPage 双模式 invite/open + LoginPage 条件注册链接 + SettingsPage 开关状态只读展示 + 7 个后端测试）**。
 
 ---
 
@@ -44,9 +44,20 @@
 #### Annotator / Reviewer 工作台
 - **AnnotatorDashboard `weeklyTarget = 200` 硬编码**：应来自项目级 / 用户级偏好。
 
+#### 登录 / 注册 / 认证
+- **邀请注册密码前端校验不一致**：`InviteRegisterForm` 中 `pwd.length < 6` 前端允许 6 位提交，但后端 `RegisterRequest.password` 要求 `min_length=8` 且 `validate_password_strength` 还需大小写+数字。前端应统一为 `pwd.length >= 8` + 实时强度提示。（`RegisterPage.tsx:50`）
+- **LoginPage 测试账号区块 production 泄露**：`LoginPage.tsx:207-214` 硬编码了 5 个测试账号（含密码 `123456`），`environment !== "production"` 条件守卫缺失。production 部署会直接暴露测试账号入口。应读取 `settings.environment` 或 `import.meta.env.MODE` 条件渲染。
+- **开放注册二阶段增强**（v0.7.7 落了基座，以下为可选延伸）：
+  - **邮箱验证**：当前 viewer 零权限可跳过；若未来开放注册默认角色调高，需 `POST /auth/verify-email` + `email_verified_at` 字段 + 验证前 `is_active=false`。
+  - **CAPTCHA / 防机器人**：v0.7.7 的 3/min rate limit 对 production 够用但不防分布式刷号；接 hCaptcha / Turnstile，前端 `OpenRegisterForm` 加 CAPTCHA widget + 后端校验 token。
+  - **OAuth2 / 社交登录**：Google / GitHub SSO，python-social-auth 或 authlib；`User.oauth_provider` + `oauth_id` 字段；LoginPage / RegisterPage 加「使用 Google 登录」按钮。
+  - **系统设置 admin UI 可编辑**：v0.7.7 `ALLOW_OPEN_REGISTRATION` 仅 env 控制、SettingsPage 只读展示；升级需 `system_settings` 表 + `PATCH /settings/system` 端点 + SettingsPage toggle 开关（与 A「系统设置可编辑」共建）。
+  - **注册统计仪表卡**：AdminDashboard 增加注册来源分布卡片（邀请 vs 开放注册，按日/周统计），数据来自 `audit_logs WHERE action='user.register'` 的 `detail->>'method'` 字段。
+  - **账号自助注销**：用户可在 SettingsPage 申请注销自己的账号；需 `POST /auth/deactivate-self` + 7 天冷静期 + 管理员通知。
+
 #### v0.7.x 后续观察 / 下版候选
 
-> v0.7.0 集中收口了批次状态机 epic + v0.6.x 写时观察 18 项；v0.7.6 一次清了 4 项（属性 schema 步骤 / NotificationsPopover usePopover 迁移 / ProjectsPage 卡片 DropdownMenu / task.reopen fan-out / Kanban 看板）；下面列剩余观察项：
+> v0.7.0 集中收口了批次状态机 epic + v0.6.x 写时观察 18 项；v0.7.6 一次清了 4 项（属性 schema 步骤 / NotificationsPopover usePopover 迁移 / ProjectsPage 卡片 DropdownMenu / task.reopen fan-out / Kanban 看板）；v0.7.7 落了开放注册基座；下面列剩余观察项：
 
 - **standalone batch_summary stored 列**：v0.7.0 项目卡批次概览用 GROUP BY 单查询返回 `{total, assigned, in_review}`，每次 list_projects 都触发；如需更冷优化，可加 stored 列由 batch 状态机变迁维护。**v0.7.6 评估后推迟**：触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈。优先级 P3，监控触发再做。
 
@@ -149,9 +160,13 @@
 
 | 优先级 | 候选项 | 理由 |
 |---|---|---|
+| **P1** | 邀请注册密码前端校验 6→8 对齐 + LoginPage 测试账号 production 隐藏 | 安全缺陷，5 分钟 quick fix |
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1 |
 | **P1** | E2E spec 写实（auth → annotation → batch-flow）+ 去 `continue-on-error` | v0.7.6 推迟（1-2 天深活）；factory + seed.ts + 三 spec 写实是 PR 红线收紧前置 |
+| **P2** | 开放注册 CAPTCHA 防刷号 + 邮箱验证（角色提升前置） | v0.7.7 基座已落，production 放量前需加固 |
+| **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO 常见需求 |
+| **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好（基础静音）已落，邮件 channel 字段已就位但 UI 未启；与 LLM 聚类协同 |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
 | **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
@@ -161,11 +176,13 @@
 | **P2** | 前端单测持续提升到 ≥ 25% + 切覆盖率硬阻断 | v0.7.6 baseline 8.68%（+29 测试 from 4.27%）；目标 25% 后切去 informational |
 | **P2** | 批次状态机二阶段剩余：`annotating → active` 暂停 + bulk-approve / bulk-reject | v0.7.6 已落 reset → draft；暂停因 scheduler 死锁需新建 admin-locked 字段；bulk approve/reject UX 待定 |
 | **P2** | 用户手册关键页填实（GIF + 截图）+ ADR 0002-0005 回填 | v0.7.4 docs-site 骨架已落但多为大纲，新人 onboarding 价值低 |
+| **P3** | 注册统计仪表卡（邀请 vs 开放注册按日统计） | AdminDashboard 可视化空位，audit_logs 数据已就位 |
+| **P3** | 账号自助注销（7 天冷静期 + 管理员通知） | 合规向，GDPR 场景需要 |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | v0.7.6 已落 Stage 1 索引 + ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 |
 | **P3** | 部署 / 安全模型 / ML Backend 协议 / WebSocket 文档 | docs-site 框架已就位，按业务需求触发 |
 | **P3** | 快捷键文档自动从 `hotkeys.ts` SoT 生成 | 双源漂移风险低（代码改时连带改文档），现状能用 |
-| **P3** | i18n、SSO、2FA | 客户具体需求驱动 |
+| **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 |
 
 ---

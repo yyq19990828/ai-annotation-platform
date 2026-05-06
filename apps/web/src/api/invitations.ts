@@ -43,6 +43,12 @@ export interface InvitationResendResponse {
   expires_at: string;
 }
 
+export interface OpenRegisterPayload {
+  email: string;
+  name: string;
+  password: string;
+}
+
 export const invitationsApi = {
   resolve: (token: string) =>
     apiClient.publicGet<InvitationResolved>(`/auth/invitations/${encodeURIComponent(token)}`),
@@ -58,4 +64,9 @@ export const invitationsApi = {
   },
   revoke: (id: string) => apiClient.delete<void>(`/invitations/${id}`),
   resend: (id: string) => apiClient.post<InvitationResendResponse>(`/invitations/${id}/resend`),
+
+  registrationStatus: () =>
+    apiClient.publicGet<{ open_registration_enabled: boolean }>("/auth/registration-status"),
+  openRegister: (payload: OpenRegisterPayload) =>
+    apiClient.publicPost<RegisterResponse>("/auth/register-open", payload),
 };

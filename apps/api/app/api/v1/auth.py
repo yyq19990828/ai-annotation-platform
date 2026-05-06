@@ -6,7 +6,9 @@ from app.core.ratelimit import limiter
 from app.core.password import validate_password_strength
 from app.deps import get_db, get_current_user
 from app.db.models.user import User
+from app.db.enums import UserRole
 from app.schemas.user import Token, LoginRequest, UserOut
+from app.schemas.invitation import OpenRegisterRequest, RegisterResponse
 from app.core.security import verify_password, create_access_token, hash_password
 from app.services.audit import AuditAction, AuditService
 from app.services.password_reset import PasswordResetService
@@ -151,3 +153,60 @@ async def reset_password(
     )
     await db.commit()
     return {"message": "密码已重置，请使用新密码登录"}
+
+
+@router.get("/registration-status")
+async def registration_status():
+    return {"open_registration_enabled": settings.allow_open_registration}
+
+
+@router.post("/register-open", response_model=RegisterResponse, status_code=201)
+@limiter.limit("3/minute")
+async def register_open(
+    payload: OpenRegisterRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    if not settings.allow_open_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="开放注册未启用",
+        )
+
+    existing = await db.execute(select(User).where(User.email == payload.email))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该邮箱已被注册",
+        )
+
+    user = User(
+        email=payload.email,
+        name=payload.name,
+        password_hash=hash_password(payload.password),
+        role=UserRole.VIEWER.value,
+        status="online",
+        is_active=True,
+    )
+    db.add(user)
+    await db.flush()
+
+    await AuditService.log(
+        db,
+        actor=user,
+        action=AuditAction.USER_REGISTER,
+        target_type="user",
+        target_id=str(user.id),
+        request=request,
+        status_code=201,
+        detail={"email": user.email, "role": user.role, "method": "open_registration"},
+    )
+    await db.commit()
+    await db.refresh(user)
+
+    token = create_access_token(subject=str(user.id), role=user.role)
+    return RegisterResponse(
+        access_token=token,
+        token_type="bearer",
+        user=UserOut.model_validate(user),
+    )

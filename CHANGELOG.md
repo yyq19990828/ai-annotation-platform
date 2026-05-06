@@ -5,9 +5,18 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ---
-## [Unreleased]
+## [0.7.7] - 2026-05-06
 
-_当前无草案条目。_
+> **登录注册机制完善。** 新增开放注册路径，允许用户自助注册为 Viewer（最低权限角色），管理员后续可提升角色。
+
+### 新增
+
+- **开放注册端点 `POST /auth/register-open`**：rate-limit 3/min，注册后立即签发 JWT，默认角色 viewer（零写权限）。通过 `ALLOW_OPEN_REGISTRATION` env 开关控制（默认关闭）。
+- **注册状态查询 `GET /auth/registration-status`**：公开端点，前端用于判断是否显示自助注册入口。
+- **RegisterPage 双模式**：有 `?token=` 走邀请流程（原行为不变）；无 token 且开放注册已启用时显示自助注册表单（email + name + password）。
+- **LoginPage 注册链接**：当开放注册启用时，登录页显示"没有账号？立即注册"链接。
+- **SettingsPage 系统信息**：展示开放注册开关状态（只读）。
+- **后端测试 `test_open_registration.py`**：7 个用例覆盖开关关闭 403、成功注册 201、重复邮箱 409、弱密码 422 等场景。
 
 ---
 

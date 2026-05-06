@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     # Governance / invitations
     frontend_base_url: str = "http://localhost:5173"
     invitation_ttl_days: int = 7
+    allow_open_registration: bool = False
 
     # SMTP（本期占位，仅在 GET /settings/system 中以「已配置/未配置」呈现）
     smtp_host: str | None = None

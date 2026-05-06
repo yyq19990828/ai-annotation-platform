@@ -32,3 +32,4 @@ class SystemSettingsOut(BaseModel):
     invitation_ttl_days: int
     frontend_base_url: str
     smtp: SmtpStatus
+    allow_open_registration: bool

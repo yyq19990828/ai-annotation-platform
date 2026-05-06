@@ -24,4 +24,5 @@ async def get_system_settings(
             from_address=settings.smtp_from,
             configured=settings.smtp_configured,
         ),
+        allow_open_registration=settings.allow_open_registration,
     )

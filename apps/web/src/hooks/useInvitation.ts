@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   invitationsApi,
   type RegisterPayload,
+  type OpenRegisterPayload,
 } from "../api/invitations";
 import { usersApi, type InvitePayload } from "../api/users";
 
@@ -23,5 +24,19 @@ export function useResolveInvitation(token: string | null) {
 export function useRegister() {
   return useMutation({
     mutationFn: (payload: RegisterPayload) => invitationsApi.register(payload),
+  });
+}
+
+export function useRegistrationStatus() {
+  return useQuery({
+    queryKey: ["registration-status"],
+    queryFn: () => invitationsApi.registrationStatus(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useOpenRegister() {
+  return useMutation({
+    mutationFn: (payload: OpenRegisterPayload) => invitationsApi.openRegister(payload),
   });
 }

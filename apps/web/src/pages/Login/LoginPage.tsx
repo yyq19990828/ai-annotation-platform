@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { useLogin } from "@/hooks/useAuth";
+import { useRegistrationStatus } from "@/hooks/useInvitation";
 import { useAuthStore } from "@/stores/authStore";
 import { Icon } from "@/components/ui/Icon";
 
@@ -12,6 +13,7 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const login = useLogin();
+  const regStatus = useRegistrationStatus();
 
   if (token) return <Navigate to={from} replace />;
 
@@ -194,7 +196,15 @@ export function LoginPage() {
               {login.isPending ? "登录中..." : "登录"}
             </button>
 
-            <div style={{ marginTop: 10, textAlign: "right" }}>
+            <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              {regStatus.data?.open_registration_enabled ? (
+                <Link
+                  to="/register"
+                  style={{ fontSize: 12, color: "var(--color-accent)", textDecoration: "none" }}
+                >
+                  没有账号？立即注册
+                </Link>
+              ) : <span />}
               <Link
                 to="/forgot-password"
                 style={{ fontSize: 12, color: "var(--color-accent)", textDecoration: "none" }}

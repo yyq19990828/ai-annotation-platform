@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
-import { useResolveInvitation, useRegister } from "@/hooks/useInvitation";
+import { useResolveInvitation, useRegister, useRegistrationStatus, useOpenRegister } from "@/hooks/useInvitation";
 import { useAuthStore } from "@/stores/authStore";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { UserRole } from "@/types";
@@ -10,9 +10,149 @@ import type { ApiError } from "@/api/client";
 export function RegisterPage() {
   const [params] = useSearchParams();
   const token = params.get("token");
+  const existingToken = useAuthStore((s) => s.token);
+
+  if (existingToken) return <Navigate to="/dashboard" replace />;
+
+  if (token) {
+    return <InviteRegisterForm token={token} />;
+  }
+  return <OpenRegisterForm />;
+}
+
+function OpenRegisterForm() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
-  const existingToken = useAuthStore((s) => s.token);
+  const regStatus = useRegistrationStatus();
+  const openRegister = useOpenRegister();
+
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [pwd2, setPwd2] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+
+  if (regStatus.isLoading) {
+    return <CenteredCard><span style={{ color: "var(--color-fg-muted)" }}>加载中…</span></CenteredCard>;
+  }
+
+  if (!regStatus.data?.open_registration_enabled) {
+    return <ErrorPanel title="注册未开放" hint="当前不支持自助���册，请联系管理员获取邀请链接。" />;
+  }
+
+  const passwordsMatch = !pwd || !pwd2 || pwd === pwd2;
+  const passwordsValid = pwd.length >= 8;
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !name.trim() || !pwd || pwd !== pwd2) return;
+    openRegister.mutate(
+      { email: email.trim(), name: name.trim(), password: pwd },
+      {
+        onSuccess: (data) => {
+          setAuth(data.access_token, data.user);
+          navigate("/dashboard", { replace: true });
+        },
+      },
+    );
+  };
+
+  return (
+    <CenteredCard>
+      <Brand />
+      <div style={cardStyle}>
+        <h1 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 600 }}>注册账号</h1>
+        <p style={{ margin: "0 0 18px", fontSize: 12.5, color: "var(--color-fg-muted)" }}>
+          创建账号后默认为观察者角色，管理员可为你分配更高权限。
+        </p>
+
+        {openRegister.isError && (
+          <ErrorBanner msg={(openRegister.error as Error).message} />
+        )}
+
+        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <Field label="邮箱">
+            <input
+              required
+              autoFocus
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              maxLength={255}
+              placeholder="your@email.com"
+              style={inputStyle}
+            />
+          </Field>
+
+          <Field label="姓名">
+            <input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={100}
+              placeholder="如何在平台中称呼你"
+              style={inputStyle}
+            />
+          </Field>
+
+          <Field label="密码（至少 8 位，需含大小写字母和数字）">
+            <div style={{ position: "relative" }}>
+              <input
+                required
+                type={showPwd ? "text" : "password"}
+                value={pwd}
+                onChange={(e) => setPwd(e.target.value)}
+                minLength={8}
+                style={{ ...inputStyle, paddingRight: 36 }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPwd((v) => !v)}
+                style={eyeBtnStyle}
+                aria-label="切换密码可见性"
+              >
+                <Icon name={showPwd ? "eyeOff" : "eye"} size={14} />
+              </button>
+            </div>
+          </Field>
+
+          <Field label="再次输入密码">
+            <input
+              required
+              type={showPwd ? "text" : "password"}
+              value={pwd2}
+              onChange={(e) => setPwd2(e.target.value)}
+              style={{
+                ...inputStyle,
+                borderColor: !passwordsMatch ? "#ef4444" : "var(--color-border)",
+              }}
+            />
+            {!passwordsMatch && (
+              <div style={{ fontSize: 11.5, color: "#ef4444", marginTop: 4 }}>两次密码不一致</div>
+            )}
+          </Field>
+
+          <button
+            type="submit"
+            disabled={!email.trim() || !name.trim() || !passwordsValid || !passwordsMatch || openRegister.isPending}
+            style={primaryBtnStyle(openRegister.isPending)}
+          >
+            {openRegister.isPending ? "注册中..." : "注册"}
+          </button>
+        </form>
+
+        <div style={{ marginTop: 16, textAlign: "center", fontSize: 12.5 }}>
+          <span style={{ color: "var(--color-fg-muted)" }}>已有账号？</span>{" "}
+          <a href="/login" style={{ color: "var(--color-accent)", textDecoration: "none" }}>立即登录</a>
+        </div>
+      </div>
+    </CenteredCard>
+  );
+}
+
+function InviteRegisterForm({ token }: { token: string }) {
+  const navigate = useNavigate();
+  const setAuth = useAuthStore((s) => s.setAuth);
 
   const resolve = useResolveInvitation(token);
   const register = useRegister();
@@ -21,13 +161,6 @@ export function RegisterPage() {
   const [pwd, setPwd] = useState("");
   const [pwd2, setPwd2] = useState("");
   const [showPwd, setShowPwd] = useState(false);
-
-  if (!token) {
-    return <ErrorPanel title="缺少邀请令牌" hint="请通过完整的邀请链接打开此页面。" />;
-  }
-
-  // 已登录用户访问 /register 直接送回 dashboard，避免误操作
-  if (existingToken) return <Navigate to="/dashboard" replace />;
 
   if (resolve.isLoading) {
     return <CenteredCard><span style={{ color: "var(--color-fg-muted)" }}>正在校验邀请链接…</span></CenteredCard>;

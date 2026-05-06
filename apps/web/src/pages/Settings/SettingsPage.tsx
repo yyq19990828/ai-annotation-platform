@@ -232,6 +232,15 @@ function SystemSection() {
                 </Badge>
               }
             />
+            <ReadOnly
+              label="开放注册"
+              value={data.allow_open_registration ? "已启用" : "已关闭"}
+              hint={
+                <Badge variant={data.allow_open_registration ? "success" : "outline"} dot>
+                  {data.allow_open_registration ? "新用户自助注册为 Viewer" : "仅邀请注册"}
+                </Badge>
+              }
+            />
             <ReadOnly label="邀请有效期" value={`${data.invitation_ttl_days} 天`} />
             <ReadOnly label="前端基础地址" value={data.frontend_base_url} mono />
             <div>

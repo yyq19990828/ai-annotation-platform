@@ -78,3 +78,24 @@ class InvitationResendResponse(BaseModel):
     invite_url: str
     token: str
     expires_at: datetime
+
+
+class OpenRegisterRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    name: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return _normalize_email(v)
+
+    @field_validator("password")
+    @classmethod
+    def _password_strength(cls, v: str) -> str:
+        from app.core.password import validate_password_strength
+
+        errors = validate_password_strength(v)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return v
