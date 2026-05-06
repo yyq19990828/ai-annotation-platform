@@ -145,6 +145,154 @@ async def test_admin_people_list_returns_users(httpx_client, super_admin, annota
 
 
 @pytest.mark.asyncio
+async def test_annotator_dashboard_active_minutes_streak_from_task_events(
+    httpx_client, annotator, db_session
+):
+    """v0.8.4.1 hotfix · 接通 task_events 后，active_minutes_today / streak_days
+    应基于真实事件（不再是 None 占位）。"""
+    from app.db.models.project import Project
+    from app.db.models.task import Task
+    from app.db.models.task_event import TaskEvent
+
+    user, token = annotator
+    project = Project(
+        id=uuid.uuid4(),
+        display_id="P-AM",
+        name="am-proj",
+        type_label="图像检测",
+        type_key="image-det",
+        owner_id=user.id,
+    )
+    db_session.add(project)
+    task = Task(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        display_id="T-AM",
+        file_name="x.jpg",
+        file_path="/x",
+    )
+    db_session.add(task)
+    await db_session.flush()
+
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # 当日两条事件 → active_minutes_today = (60_000 + 120_000) / 60_000 = 3
+    db_session.add_all(
+        [
+            TaskEvent(
+                id=uuid.uuid4(),
+                task_id=task.id,
+                user_id=user.id,
+                project_id=project.id,
+                kind="annotate",
+                started_at=today_start + timedelta(hours=1),
+                ended_at=today_start + timedelta(hours=1, minutes=1),
+                duration_ms=60_000,
+                annotation_count=1,
+                was_rejected=False,
+            ),
+            TaskEvent(
+                id=uuid.uuid4(),
+                task_id=task.id,
+                user_id=user.id,
+                project_id=project.id,
+                kind="annotate",
+                started_at=today_start + timedelta(hours=2),
+                ended_at=today_start + timedelta(hours=2, minutes=2),
+                duration_ms=120_000,
+                annotation_count=2,
+                was_rejected=False,
+            ),
+            # 昨天也有事件 → streak_days = 2
+            TaskEvent(
+                id=uuid.uuid4(),
+                task_id=task.id,
+                user_id=user.id,
+                project_id=project.id,
+                kind="annotate",
+                started_at=today_start - timedelta(hours=10),
+                ended_at=today_start - timedelta(hours=10) + timedelta(minutes=1),
+                duration_ms=60_000,
+                annotation_count=1,
+                was_rejected=False,
+            ),
+            # 前天没事件 → streak 在第 3 天断开（总 streak = 2）
+        ]
+    )
+    await db_session.flush()
+
+    r = await httpx_client.get(
+        "/api/v1/dashboard/annotator",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["active_minutes_today"] == 3
+    assert body["streak_days"] == 2
+
+
+@pytest.mark.asyncio
+async def test_admin_people_activity_score_from_task_events(
+    httpx_client, super_admin, annotator, db_session
+):
+    """v0.8.4.1 hotfix · activity_score 接通 task_events 后，活跃用户应高于不活跃用户。"""
+    from app.db.models.project import Project
+    from app.db.models.task import Task
+    from app.db.models.task_event import TaskEvent
+
+    super_user, super_token = super_admin
+    anno_user, _ = annotator
+    project = Project(
+        id=uuid.uuid4(),
+        display_id="P-AS",
+        name="as-proj",
+        type_label="图像检测",
+        type_key="image-det",
+        owner_id=super_user.id,
+    )
+    db_session.add(project)
+    task = Task(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        display_id="T-AS",
+        file_name="x.jpg",
+        file_path="/x",
+    )
+    db_session.add(task)
+    await db_session.flush()
+
+    now = datetime.now(timezone.utc)
+    # annotator 7d 内 30 分钟活跃，super_admin 0 → annotator 分位 > super_admin
+    db_session.add(
+        TaskEvent(
+            id=uuid.uuid4(),
+            task_id=task.id,
+            user_id=anno_user.id,
+            project_id=project.id,
+            kind="annotate",
+            started_at=now - timedelta(hours=2),
+            ended_at=now - timedelta(hours=2) + timedelta(minutes=30),
+            duration_ms=30 * 60_000,
+            annotation_count=5,
+            was_rejected=False,
+        )
+    )
+    await db_session.flush()
+
+    r = await httpx_client.get(
+        "/api/v1/dashboard/admin/people?period=7d",
+        headers={"Authorization": f"Bearer {super_token}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    by_email = {it["email"]: it for it in body["items"]}
+    # 活跃用户 activity_score 严格 > 非活跃用户
+    assert by_email["anno@test.local"]["activity_score"] > by_email[
+        "admin@test.local"
+    ]["activity_score"]
+
+
+@pytest.mark.asyncio
 async def test_admin_people_detail_404(httpx_client, super_admin):
     _, super_token = super_admin
     r = await httpx_client.get(

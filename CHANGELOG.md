@@ -20,6 +20,25 @@
 
 ## 最新版本
 
+## [0.8.4 hotfix] - 2026-05-06
+
+> **接通 v0.8.4 的活跃维度占位字段。** v0.8.4 与 v0.8.3 并行开发，落地时心跳基座尚未合并，因此 `active_minutes_today / streak_days / activity_score` 三处保持 `None / 50` 占位待下一版接通；v0.8.3 合并后即解除阻塞，本热修复直接基于 `task_events` 把三处真实化，前端组件不动（schema 字段类型不变）。
+
+### 变更
+
+- **`GET /dashboard/annotator`**：
+  - `active_minutes_today` ← `SUM(task_events.duration_ms) / 60000` WHERE `started_at >= today UTC`。
+  - `streak_days` ← 从今天倒推 `(started_at AT TIME ZONE 'UTC')::date` distinct 连续天数（30 天上限），口径与 `mv_user_perf_daily.day` 一致。
+- **`GET /dashboard/admin/people`**：
+  - `activity_score` ← 7d 窗口 `SUM(task_events.duration_ms)` 按用户分组后的团队百分位（沿用 `_percentile_rank`），替换固定 50 占位。直查 task_events 而非 mv 视图，避免 1h 刷新 lag 让活跃用户被打回中位。
+- **测试**：`tests/test_task_events_batch.py` 新增 2 例（共 8 例）：annotator 接通后 `active_minutes_today / streak_days` 数值正确；admin/people 活跃用户 `activity_score` 严格 > 非活跃用户。
+
+### 修复
+
+- **`apps/api/alembic` 版本号漂移**：开发环境出现"`relation "task_events" already exists`"，因 0.8.3/0.8.4 并行 worktree 中已 apply 0039–0042 但主仓 `alembic_version` 停留在 0038。运行时无影响，需 `alembic stamp head` 同步（schema 已正确）。
+
+---
+
 ## [0.8.4] - 2026-05-06
 
 > **效率看板 / 人员绩效 epic。** 一次性把 ROADMAP P1「Layer 1 数据沉淀 + Layer 2 个人 dashboard 强化 + Layer 3 管理员人员看板」三层落地：标注员/审核员能自查产能/质量/投入；管理员有 `/admin/people` 卡片网格 + 抽屉下钻看全员效率。
@@ -60,7 +79,7 @@
 
 ### 推迟（下一版收口）
 
-- **接通活跃时长 / streak / activity_score**：v0.8.3 心跳基座已就位（`last_seen_at` + `POST /auth/me/heartbeat` + Celery `mark_inactive_offline`），下一版把 `dashboard.py` 中三处占位 `None / 50` 切到真实计算（per-user `last_seen_at` 距 today 起的累计 visible 时长 / 连续日 distinct）。
+- **接通活跃时长 / streak / activity_score**：~~占位 `None / 50`~~ → 已在 v0.8.4.1 hotfix 接通，口径切到 `task_events` 而非 `last_seen_at`（埋点累计耗时比心跳点位更贴合"投入维度"语义）。
 - **L3 leaderboard Tab**：`GET /dashboard/admin/people/leaderboard` 端点占位未实现，UI 也未暴露。
 
 ---

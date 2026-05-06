@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, cast, Date
 from app.deps import get_db, require_roles
 from app.db.models.user import User
 from app.db.models.project import Project
@@ -9,6 +9,7 @@ from app.db.models.task import Task
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.task_batch import TaskBatch
+from app.db.models.task_event import TaskEvent
 from app.db.enums import UserRole, TaskStatus
 from app.schemas.dashboard import (
     AdminDashboardStats,
@@ -566,6 +567,38 @@ async def annotator_dashboard(
     # 周目标：ProjectMember.weekly_target → User.weekly_target_default → 200
     weekly_target = getattr(current_user, "weekly_target_default", None) or 200
 
+    # v0.8.4.1 hotfix · 接通 task_events 真实数据（与 0.8.3 心跳基座并行开发遗留）
+    # active_minutes_today: 当日累计 duration_ms / 60000
+    active_ms_row = (
+        await db.execute(
+            select(func.coalesce(func.sum(TaskEvent.duration_ms), 0).label("ms")).where(
+                TaskEvent.user_id == current_user.id,
+                TaskEvent.started_at >= today_start,
+            )
+        )
+    ).first()
+    active_minutes_today = int((active_ms_row.ms if active_ms_row else 0) // 60000)
+
+    # streak_days: 从今天倒推 distinct UTC 日期连续计数（30 天上限）
+    streak_cutoff = today_start - timedelta(days=29)
+    day_expr = cast(func.timezone("UTC", TaskEvent.started_at), Date)
+    day_rows = (
+        await db.execute(
+            select(day_expr.label("d"))
+            .where(
+                TaskEvent.user_id == current_user.id,
+                TaskEvent.started_at >= streak_cutoff,
+            )
+            .distinct()
+        )
+    ).all()
+    day_set = {r.d for r in day_rows}
+    streak_days = 0
+    cursor = today_start.date()
+    while cursor in day_set:
+        streak_days += 1
+        cursor -= timedelta(days=1)
+
     return AnnotatorDashboardStats(
         assigned_tasks=assigned_tasks,
         today_completed=today_completed,
@@ -578,8 +611,8 @@ async def annotator_dashboard(
         reopened_avg=reopened_avg,
         weekly_compare_pct=weekly_compare_pct,
         weekly_target=weekly_target,
-        active_minutes_today=None,  # 心跳依赖
-        streak_days=None,  # 心跳依赖
+        active_minutes_today=active_minutes_today,
+        streak_days=streak_days,
     )
 
 
@@ -828,6 +861,23 @@ async def admin_people_list(
         for uid in user_ids:
             daily_buckets.setdefault(uid, []).append(per_user.get(uid, 0))
 
+    # v0.8.4.1 hotfix · 7d active_minutes 团队分位（替换 activity_score=50 占位）
+    seven_d_start = today_start - timedelta(days=6)
+    active_rows = (
+        await db.execute(
+            select(
+                TaskEvent.user_id,
+                func.coalesce(func.sum(TaskEvent.duration_ms), 0).label("ms"),
+            )
+            .where(
+                TaskEvent.user_id.in_(user_ids),
+                TaskEvent.started_at >= seven_d_start,
+            )
+            .group_by(TaskEvent.user_id)
+        )
+    ).all()
+    active_minutes_map = {r.user_id: int((r.ms or 0) // 60000) for r in active_rows}
+
     # 计算分位
     def _is_reviewer_role(u: User) -> bool:
         return u.role in (
@@ -838,6 +888,7 @@ async def admin_people_list(
 
     throughputs = []
     quality_scores = []
+    activity_minutes_list = []
     for u in users:
         if _is_reviewer_role(u) and u.role != UserRole.ANNOTATOR:
             throughputs.append(rev_count_map.get(u.id, 0))
@@ -846,6 +897,7 @@ async def admin_people_list(
         sub_n, reop_n = reopen_map.get(u.id, (0, 0))
         rejected_rate = (reop_n / sub_n * 100) if sub_n > 0 else 0.0
         quality_scores.append(100.0 - min(100.0, rejected_rate))
+        activity_minutes_list.append(active_minutes_map.get(u.id, 0))
 
     items: list[AdminPersonItem] = []
     for idx, u in enumerate(users):
@@ -890,7 +942,9 @@ async def admin_people_list(
                 weekly_compare_pct=wcp,
                 throughput_score=_percentile_rank(throughputs, throughputs[idx]),
                 quality_score=_percentile_rank(quality_scores, quality_scores[idx]),
-                activity_score=50,  # 心跳依赖；占位返 50（团队中位）
+                activity_score=_percentile_rank(
+                    activity_minutes_list, activity_minutes_list[idx]
+                ),
                 sparkline_7d=daily_buckets.get(u.id, [0] * 7),
                 rejected_rate=rejected_rate,
                 alerts=alerts,
