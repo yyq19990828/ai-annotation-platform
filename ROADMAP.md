@@ -6,6 +6,15 @@
 
 ---
 
+### 即将到来（按版本切片的详细计划）
+
+> 大颗粒 epic 拆到独立文档；下面 §A/§B/§C 仍维护单条颗粒度的待办。
+
+- **[v0.9.x — Grounded-SAM-2 接入（首版 AI 基座）](./ROADMAP/0.9.x.md)**：vendor `IDEA-Research/Grounded-SAM-2` 打包成 ML Backend，一期吃下点 / 框 / 文本三种 prompt，落 `/ai-pre` 文本批量预标 + 工作台 `S` 工具。预计 ~5 周。
+- **[v0.10.x — SAM 3 接入（与 Grounded-SAM-2 并存）](./ROADMAP/0.10.x.md)**：新增 sam3-backend 作为高精度选项，**不替换** v0.9.x grounded-sam2-backend；增加 exemplar prompt + 路由策略 UI + AB 对比工具。预计 ~3.5 周。
+
+---
+
 ### A · 代码观察到的硬占位 / 残留 mock
 
 #### 项目模块
