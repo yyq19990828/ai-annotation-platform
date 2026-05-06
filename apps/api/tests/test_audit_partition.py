@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import text
@@ -16,9 +15,7 @@ pytestmark = pytest.mark.asyncio
 
 async def test_audit_logs_is_partitioned(db_session: AsyncSession):
     res = await db_session.execute(
-        text(
-            "SELECT relkind FROM pg_class WHERE relname='audit_logs'"
-        )
+        text("SELECT relkind FROM pg_class WHERE relname='audit_logs'")
     )
     relkind = res.scalar_one_or_none()
     # 'p' = partitioned table; 'r' = ordinary table（asyncpg 返回 bytes "char"）
@@ -49,9 +46,7 @@ async def test_immutability_trigger_blocks_update(db_session: AsyncSession):
 
 async def test_ensure_future_partitions_creates_missing(db_session: AsyncSession):
     """调用 ensure 应保证未来 N 月分区存在，已存在的不重复创建。"""
-    await AuditPartitionService.ensure_future_partitions(
-        db_session, months_ahead=6
-    )
+    await AuditPartitionService.ensure_future_partitions(db_session, months_ahead=6)
     # 多数月份已在 0037 迁移建好；但向 6 月（往后）会有新增
     # 不强求 created 数量，只要不报错且后续再调用为空
     again = await AuditPartitionService.ensure_future_partitions(
@@ -73,8 +68,6 @@ async def test_export_detail_helper_includes_actor_and_request(
     httpx_client, super_admin
 ):
     """audit-logs 导出端点的 detail_json 包含 actor_email / ip / request_id / filter_criteria。"""
-    from sqlalchemy import select
-    from app.db.models.audit_log import AuditLog
 
     user, token = super_admin
     res = await httpx_client.get(

@@ -84,7 +84,9 @@ async def request_self_deactivation(
     user: User = Depends(get_current_user),
 ):
     """v0.8.1 · 自助注销申请。7 天冷静期，期间可撤销。"""
-    await DeactivationService.request(db, user=user, reason=payload.reason, request=request)
+    await DeactivationService.request(
+        db, user=user, reason=payload.reason, request=request
+    )
     await db.commit()
     await db.refresh(user)
     return user

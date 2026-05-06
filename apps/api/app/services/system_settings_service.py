@@ -88,9 +88,7 @@ class SystemSettingsService:
         hit, val = SystemSettingsService._cache_get(key)
         if hit:
             return val
-        row = await db.scalar(
-            select(SystemSetting).where(SystemSetting.key == key)
-        )
+        row = await db.scalar(select(SystemSetting).where(SystemSetting.key == key))
         if row is None or row.value_json is None:
             value = _env_default(key)
         else:

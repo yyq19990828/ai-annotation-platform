@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,13 +27,17 @@ COOLDOWN_DAYS = 7
 
 async def _list_super_admin_ids(db: AsyncSession) -> list[uuid.UUID]:
     rows = (
-        await db.execute(
-            select(User.id).where(
-                User.role == UserRole.SUPER_ADMIN.value,
-                User.is_active.is_(True),
+        (
+            await db.execute(
+                select(User.id).where(
+                    User.role == UserRole.SUPER_ADMIN.value,
+                    User.is_active.is_(True),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return list(rows)
 
 
@@ -133,14 +137,18 @@ class DeactivationService:
         返回处理条数。在事务中执行，调用方负责 commit。"""
         now = datetime.now(timezone.utc)
         rows = (
-            await db.execute(
-                select(User).where(
-                    User.is_active.is_(True),
-                    User.deactivation_scheduled_at.isnot(None),
-                    User.deactivation_scheduled_at <= now,
+            (
+                await db.execute(
+                    select(User).where(
+                        User.is_active.is_(True),
+                        User.deactivation_scheduled_at.isnot(None),
+                        User.deactivation_scheduled_at <= now,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if not rows:
             return 0
 

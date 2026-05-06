@@ -128,11 +128,7 @@ def export_metadata_header(
     if fmt == "json":
         # 调用方拿到字符串后自行包装；这里返回 dict 形式更通用
         return ""
-    return (
-        f"# Exported by: {actor_email}\n"
-        f"# Exported at: {ts}\n"
-        f"# Request ID: {rid}\n"
-    )
+    return f"# Exported by: {actor_email}\n# Exported at: {ts}\n# Request ID: {rid}\n"
 
 
 class AuditService:

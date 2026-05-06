@@ -154,13 +154,17 @@ async def test_audit_log_excludes_smtp_password_value(
     )
 
     rows = (
-        await db_session.execute(
-            select(AuditLog)
-            .where(AuditLog.action == "system.settings_update")
-            .order_by(AuditLog.id.desc())
-            .limit(1)
+        (
+            await db_session.execute(
+                select(AuditLog)
+                .where(AuditLog.action == "system.settings_update")
+                .order_by(AuditLog.id.desc())
+                .limit(1)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert rows, "expected at least one audit row"
     detail = rows[0].detail_json or {}
     assert "smtp_password" in detail

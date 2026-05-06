@@ -22,7 +22,12 @@ from app.db.enums import UserRole
 from app.schemas.user import UserOut
 from app.schemas.invitation import InvitationCreate, InvitationCreated
 from app.services.invitation import InvitationService
-from app.services.audit import AuditService, AuditAction, export_detail, export_metadata_header
+from app.services.audit import (
+    AuditService,
+    AuditAction,
+    export_detail,
+    export_metadata_header,
+)
 from app.services.system_settings_service import SystemSettingsService
 
 router = APIRouter()
@@ -415,9 +420,7 @@ async def admin_reset_password(
     target_lvl = _ROLE_LEVEL.get(target.role, 99)
     # 只能重置严格低等级（数值更大）的用户
     if target_lvl <= actor_lvl:
-        raise HTTPException(
-            status_code=403, detail="只能重置等级低于你的用户的密码"
-        )
+        raise HTTPException(status_code=403, detail="只能重置等级低于你的用户的密码")
 
     if actor.role == UserRole.PROJECT_ADMIN.value:
         # project_admin 仅可重置其管理项目内的 reviewer / annotator / viewer

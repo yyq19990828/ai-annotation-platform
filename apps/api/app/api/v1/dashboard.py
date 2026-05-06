@@ -70,10 +70,9 @@ async def admin_dashboard(
         pass
 
     # v0.8.1 · 过去 30 天注册来源（按日聚合 audit_logs.action='user.register'）
-    cutoff_30d = (
-        datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        - timedelta(days=29)
-    )
+    cutoff_30d = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) - timedelta(days=29)
     reg_rows = (
         await db.execute(
             select(

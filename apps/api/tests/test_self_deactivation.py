@@ -38,9 +38,7 @@ async def test_request_sets_scheduled_7d_out(
     assert timedelta(days=6, hours=12) < delta < timedelta(days=7, hours=12)
 
 
-async def test_double_request_returns_400(
-    httpx_client, annotator
-):
+async def test_double_request_returns_400(httpx_client, annotator):
     _, token = annotator
     headers = {"Authorization": f"Bearer {token}"}
     r1 = await httpx_client.post(
@@ -70,9 +68,7 @@ async def test_cancel_clears_fields(httpx_client, annotator, db_session: AsyncSe
     assert refreshed.deactivation_reason is None
 
 
-async def test_last_super_admin_cannot_self_deactivate(
-    httpx_client, super_admin
-):
+async def test_last_super_admin_cannot_self_deactivate(httpx_client, super_admin):
     _, token = super_admin
     res = await httpx_client.post(
         "/api/v1/auth/me/deactivation-request",
@@ -83,9 +79,7 @@ async def test_last_super_admin_cannot_self_deactivate(
     assert "继任者" in res.json()["detail"]
 
 
-async def test_execute_due_processes_overdue_users(
-    db_session: AsyncSession, annotator
-):
+async def test_execute_due_processes_overdue_users(db_session: AsyncSession, annotator):
     """模拟 cron 任务调用 execute_due — overdue 用户被 is_active=False。"""
     user, _ = annotator
     # 直接 SQL 把 scheduled_at 提前到过去
@@ -105,12 +99,16 @@ async def test_execute_due_processes_overdue_users(
 
     # audit 行已写
     rows = (
-        await db_session.execute(
-            select(AuditLog)
-            .where(AuditLog.action == "user.deactivation_approve")
-            .where(AuditLog.target_id == str(user.id))
+        (
+            await db_session.execute(
+                select(AuditLog)
+                .where(AuditLog.action == "user.deactivation_approve")
+                .where(AuditLog.target_id == str(user.id))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) >= 1
 
 

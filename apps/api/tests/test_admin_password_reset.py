@@ -73,13 +73,17 @@ async def test_audit_detail_excludes_password(
     temp = res.json()["temp_password"]
 
     rows = (
-        await db_session.execute(
-            select(AuditLog)
-            .where(AuditLog.action == "user.password_admin_reset")
-            .order_by(AuditLog.id.desc())
-            .limit(1)
+        (
+            await db_session.execute(
+                select(AuditLog)
+                .where(AuditLog.action == "user.password_admin_reset")
+                .order_by(AuditLog.id.desc())
+                .limit(1)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert rows
     detail = rows[0].detail_json or {}
     assert detail.get("target_email") == target_user.email
@@ -104,7 +108,9 @@ async def test_self_change_password_clears_admin_reset(
     # 2. 用户用临时密码登录拿 token，再自助改密
     from app.core.security import create_access_token
 
-    target_token = create_access_token(subject=str(target_user.id), role=target_user.role)
+    target_token = create_access_token(
+        subject=str(target_user.id), role=target_user.role
+    )
 
     res = await httpx_client.post(
         "/api/v1/auth/me/password",

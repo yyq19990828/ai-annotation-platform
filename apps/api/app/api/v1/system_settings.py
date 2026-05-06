@@ -22,8 +22,12 @@ async def _build_response(db: AsyncSession) -> SystemSettingsOut:
     )
     return SystemSettingsOut(
         environment=settings.environment,
-        invitation_ttl_days=int(cur.get("invitation_ttl_days") or settings.invitation_ttl_days),
-        frontend_base_url=str(cur.get("frontend_base_url") or settings.frontend_base_url),
+        invitation_ttl_days=int(
+            cur.get("invitation_ttl_days") or settings.invitation_ttl_days
+        ),
+        frontend_base_url=str(
+            cur.get("frontend_base_url") or settings.frontend_base_url
+        ),
         smtp=SmtpStatus(
             host=cur.get("smtp_host"),
             port=cur.get("smtp_port"),

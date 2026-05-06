@@ -132,12 +132,16 @@ class AuditPartitionService:
 
             # 1. 数据 dump 为 jsonl.gz
             rows = (
-                await db.execute(text(f"SELECT * FROM {name} ORDER BY id"))
-            ).mappings().all()
+                (await db.execute(text(f"SELECT * FROM {name} ORDER BY id")))
+                .mappings()
+                .all()
+            )
             row_count = len(rows)
 
             buf = gzip.compress(
-                ("\n".join(_serialize_row(dict(r)) for r in rows) + "\n").encode("utf-8")
+                ("\n".join(_serialize_row(dict(r)) for r in rows) + "\n").encode(
+                    "utf-8"
+                )
             )
 
             object_key = f"audit-archive/{from_dt.year}/{from_dt.month:02d}.jsonl.gz"
