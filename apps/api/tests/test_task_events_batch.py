@@ -287,9 +287,10 @@ async def test_admin_people_activity_score_from_task_events(
     body = r.json()
     by_email = {it["email"]: it for it in body["items"]}
     # 活跃用户 activity_score 严格 > 非活跃用户
-    assert by_email["anno@test.local"]["activity_score"] > by_email[
-        "admin@test.local"
-    ]["activity_score"]
+    assert (
+        by_email["anno@test.local"]["activity_score"]
+        > by_email["admin@test.local"]["activity_score"]
+    )
 
 
 @pytest.mark.asyncio
