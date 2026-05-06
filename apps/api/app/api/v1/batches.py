@@ -658,7 +658,7 @@ async def export_batch(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.export import ExportService
-    from app.services.audit import AuditService, AuditAction
+    from app.services.audit import AuditService, AuditAction, export_detail
 
     svc_batch = BatchService(db)
     batch = await svc_batch.get(batch_id)
@@ -680,11 +680,16 @@ async def export_batch(
             target_id=str(batch_id),
             request=request,
             status_code=200,
-            detail={
-                "format": format,
-                "project_id": str(project_id),
-                "batch_display_id": batch.display_id,
-            },
+            detail=export_detail(
+                actor=actor,
+                request=request,
+                base={
+                    "format": format,
+                    "project_id": str(project_id),
+                    "batch_display_id": batch.display_id,
+                },
+                filter_criteria={"include_attributes": include_attributes},
+            ),
         )
         await db.commit()
         return Response(
@@ -705,11 +710,16 @@ async def export_batch(
             target_id=str(batch_id),
             request=request,
             status_code=200,
-            detail={
-                "format": format,
-                "project_id": str(project_id),
-                "batch_display_id": batch.display_id,
-            },
+            detail=export_detail(
+                actor=actor,
+                request=request,
+                base={
+                    "format": format,
+                    "project_id": str(project_id),
+                    "batch_display_id": batch.display_id,
+                },
+                filter_criteria={"include_attributes": include_attributes},
+            ),
         )
         await db.commit()
         return Response(

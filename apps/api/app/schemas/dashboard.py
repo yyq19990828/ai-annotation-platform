@@ -3,6 +3,14 @@ from pydantic import BaseModel
 from app.schemas.user import UserBrief
 
 
+class RegistrationDayPoint(BaseModel):
+    """v0.8.1 · 注册来源按日聚合：邀请 vs 开放注册。"""
+
+    date: str  # YYYY-MM-DD
+    invite_count: int
+    open_count: int
+
+
 class AdminDashboardStats(BaseModel):
     total_users: int
     active_users: int
@@ -16,6 +24,8 @@ class AdminDashboardStats(BaseModel):
     ml_backends_total: int
     ml_backends_connected: int
     role_distribution: dict[str, int]
+    # v0.8.1 · 过去 30 天注册来源
+    registration_by_day: list[RegistrationDayPoint] = []
 
 
 class ReviewTaskItem(BaseModel):

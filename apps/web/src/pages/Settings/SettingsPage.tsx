@@ -5,8 +5,9 @@ import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
-import { useChangePassword, useUpdateProfile } from "@/hooks/useMe";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { useChangePassword, useUpdateProfile, useRequestDeactivation, useCancelDeactivation } from "@/hooks/useMe";
+import { useSystemSettings, useUpdateSystemSettings, useTestSmtp } from "@/hooks/useSystemSettings";
+import type { SystemSettingsPatch } from "@/api/settings";
 import { ROLE_LABELS } from "@/constants/roles";
 import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
 import { notificationsApi, type NotificationPreferenceItem } from "@/api/notifications";
@@ -198,68 +199,375 @@ function ProfileSection() {
           </div>
         </form>
       </Card>
+
+      <DangerZoneCard />
     </div>
+  );
+}
+
+function DangerZoneCard() {
+  const user = useAuthStore((s) => s.user);
+  const pushToast = useToastStore((s) => s.push);
+  const requestMut = useRequestDeactivation();
+  const cancelMut = useCancelDeactivation();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [acknowledged, setAcknowledged] = useState(false);
+
+  if (!user) return null;
+  const scheduledAt = user.deactivation_scheduled_at ?? null;
+  const requestedAt = user.deactivation_requested_at ?? null;
+  const isPending = !!scheduledAt;
+
+  const submit = () => {
+    requestMut.mutate(reason.trim(), {
+      onSuccess: () => {
+        pushToast({ msg: "注销申请已提交，7 天后自动生效", kind: "success" });
+        setConfirmOpen(false);
+        setReason("");
+        setAcknowledged(false);
+      },
+      onError: (e) =>
+        pushToast({ msg: "提交失败", sub: (e as Error).message, kind: "warning" }),
+    });
+  };
+  const cancel = () => {
+    cancelMut.mutate(undefined, {
+      onSuccess: () => pushToast({ msg: "已撤销注销申请", kind: "success" }),
+      onError: (e) =>
+        pushToast({ msg: "撤销失败", sub: (e as Error).message, kind: "warning" }),
+    });
+  };
+
+  return (
+    <Card style={{ borderColor: "#ef4444", borderWidth: 1 }}>
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid #ef4444", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#ef4444" }}>危险区</h3>
+        <Icon name="warning" size={14} style={{ color: "#ef4444" }} />
+      </div>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        {isPending ? (
+          <>
+            <div style={{ fontSize: 13, color: "var(--color-fg)" }}>
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>注销申请已提交</div>
+              <div style={{ color: "var(--color-fg-muted)" }}>
+                提交时间：{requestedAt ? new Date(requestedAt).toLocaleString("zh-CN") : "—"}
+              </div>
+              <div style={{ color: "var(--color-fg-muted)" }}>
+                生效时间：{new Date(scheduledAt!).toLocaleString("zh-CN")}（届时账号自动停用）
+              </div>
+            </div>
+            <div>
+              <button
+                type="button"
+                onClick={cancel}
+                disabled={cancelMut.isPending}
+                style={primaryBtn(cancelMut.isPending)}
+              >
+                {cancelMut.isPending ? "撤销中..." : "撤销注销申请"}
+              </button>
+            </div>
+          </>
+        ) : confirmOpen ? (
+          <>
+            <div style={{ fontSize: 13, color: "var(--color-fg)" }}>
+              注销账号后，您将无法再登录此系统；标注历史与审计记录会保留以满足合规要求。
+              <strong>提交后将进入 7 天冷静期，期间可随时撤销。</strong>
+            </div>
+            <Field label="注销原因（可选）">
+              <textarea
+                rows={3}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                maxLength={500}
+                placeholder="如：不再使用 / 切换账号 / 隐私顾虑..."
+                style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
+              />
+            </Field>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--color-fg-muted)", cursor: "pointer" }}>
+              <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
+              我已知晓 7 天冷静期 + 历史数据保留
+            </label>
+            {requestMut.isError && (
+              <ErrorBanner msg={(requestMut.error as Error).message} />
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => { setConfirmOpen(false); setAcknowledged(false); setReason(""); }}
+                style={{ ...inputStyle, width: "auto", padding: "7px 14px", cursor: "pointer" }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={!acknowledged || requestMut.isPending}
+                onClick={submit}
+                style={{
+                  padding: "7px 18px",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  background: !acknowledged ? "var(--color-bg-sunken)" : "#ef4444",
+                  color: !acknowledged ? "var(--color-fg-subtle)" : "#fff",
+                  border: "none",
+                  borderRadius: "var(--radius-md)",
+                  cursor: !acknowledged ? "not-allowed" : "pointer",
+                }}
+              >
+                {requestMut.isPending ? "提交中..." : "确认申请注销"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 13, color: "var(--color-fg-muted)" }}>
+              如不再需要本账号，可申请自助注销。提交后将进入 7 天冷静期，期间可撤销。
+            </div>
+            <div>
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(true)}
+                style={{
+                  padding: "7px 14px",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  background: "transparent",
+                  color: "#ef4444",
+                  border: "1px solid #ef4444",
+                  borderRadius: "var(--radius-md)",
+                  cursor: "pointer",
+                }}
+              >
+                申请注销账号
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Card>
   );
 }
 
 function SystemSection() {
   const { data, isLoading, error } = useSystemSettings();
+  const updateMut = useUpdateSystemSettings();
+  const testSmtpMut = useTestSmtp();
+  const pushToast = useToastStore((s) => s.push);
+
+  // 受控表单：仅在 data 加载后初始化一次
+  const [allowOpen, setAllowOpen] = useState<boolean | null>(null);
+  const [invTtl, setInvTtl] = useState<string>("");
+  const [frontUrl, setFrontUrl] = useState<string>("");
+  const [smtpHost, setSmtpHost] = useState<string>("");
+  const [smtpPort, setSmtpPort] = useState<string>("");
+  const [smtpUser, setSmtpUser] = useState<string>("");
+  const [smtpPwd, setSmtpPwd] = useState<string>("");
+  const [smtpFrom, setSmtpFrom] = useState<string>("");
+  const [pwdEditing, setPwdEditing] = useState(false);
+
+  useEffect(() => {
+    if (!data) return;
+    setAllowOpen(data.allow_open_registration);
+    setInvTtl(String(data.invitation_ttl_days));
+    setFrontUrl(data.frontend_base_url);
+    setSmtpHost(data.smtp.host ?? "");
+    setSmtpPort(data.smtp.port != null ? String(data.smtp.port) : "");
+    setSmtpUser(data.smtp.user ?? "");
+    setSmtpFrom(data.smtp.from_address ?? "");
+    setSmtpPwd("");
+    setPwdEditing(false);
+  }, [data?.allow_open_registration, data?.invitation_ttl_days, data?.frontend_base_url, data?.smtp.host, data?.smtp.port, data?.smtp.user, data?.smtp.from_address]);
+
+  if (isLoading || !data || allowOpen === null) {
+    return (
+      <Card>
+        <SectionHeader title="系统设置" />
+        <div style={{ padding: 16, color: "var(--color-fg-subtle)" }}>
+          {isLoading ? "加载中..." : null}
+          {error && <ErrorBanner msg={(error as Error).message} />}
+        </div>
+      </Card>
+    );
+  }
+
+  const dirty =
+    allowOpen !== data.allow_open_registration ||
+    invTtl !== String(data.invitation_ttl_days) ||
+    frontUrl !== data.frontend_base_url ||
+    smtpHost !== (data.smtp.host ?? "") ||
+    smtpPort !== (data.smtp.port != null ? String(data.smtp.port) : "") ||
+    smtpUser !== (data.smtp.user ?? "") ||
+    smtpFrom !== (data.smtp.from_address ?? "") ||
+    (pwdEditing && smtpPwd.length > 0);
+
+  const onSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    const patch: SystemSettingsPatch = {};
+    if (allowOpen !== data.allow_open_registration) patch.allow_open_registration = allowOpen;
+    if (invTtl !== String(data.invitation_ttl_days)) {
+      const n = parseInt(invTtl, 10);
+      if (!Number.isFinite(n) || n < 1 || n > 90) {
+        pushToast({ msg: "邀请有效期需在 1–90 天之间", kind: "warning" });
+        return;
+      }
+      patch.invitation_ttl_days = n;
+    }
+    if (frontUrl !== data.frontend_base_url) patch.frontend_base_url = frontUrl.trim();
+    if (smtpHost !== (data.smtp.host ?? "")) patch.smtp_host = smtpHost.trim();
+    if (smtpPort !== (data.smtp.port != null ? String(data.smtp.port) : "")) {
+      patch.smtp_port = smtpPort ? parseInt(smtpPort, 10) : null;
+    }
+    if (smtpUser !== (data.smtp.user ?? "")) patch.smtp_user = smtpUser.trim();
+    if (smtpFrom !== (data.smtp.from_address ?? "")) patch.smtp_from = smtpFrom.trim();
+    if (pwdEditing) patch.smtp_password = smtpPwd;
+
+    updateMut.mutate(patch, {
+      onSuccess: () => pushToast({ msg: "系统设置已更新", kind: "success" }),
+      onError: (e) => pushToast({ msg: "保存失败", sub: (e as Error).message, kind: "warning" }),
+    });
+  };
+
+  const onTestSmtp = () => {
+    testSmtpMut.mutate(undefined, {
+      onSuccess: (r) =>
+        pushToast({ msg: "测试邮件已发送", sub: `→ ${r.to}`, kind: "success" }),
+      onError: (e) =>
+        pushToast({ msg: "SMTP 测试失败", sub: (e as Error).message, kind: "warning" }),
+    });
+  };
 
   return (
     <Card>
-      <SectionHeader
-        title="系统设置"
-        right={
-          <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
-            如需修改，请编辑后端 .env 并重启服务
-          </span>
-        }
-      />
-      <div style={{ padding: 16 }}>
-        {isLoading && <div style={{ color: "var(--color-fg-subtle)" }}>加载中...</div>}
-        {error && <ErrorBanner msg={(error as Error).message} />}
-        {data && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <ReadOnly
-              label="环境"
-              value={data.environment}
-              hint={
-                <Badge
-                  variant={data.environment === "production" ? "danger" : data.environment === "staging" ? "warning" : "outline"}
-                  style={{ fontSize: 10 }}
-                >
-                  {data.environment}
-                </Badge>
-              }
+      <SectionHeader title="系统设置" />
+      <form onSubmit={onSave} style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+        <ReadOnly
+          label="环境"
+          value={data.environment}
+          hint={
+            <Badge
+              variant={data.environment === "production" ? "danger" : data.environment === "staging" ? "warning" : "outline"}
+              style={{ fontSize: 10 }}
+            >
+              {data.environment}
+            </Badge>
+          }
+        />
+
+        <Field label="开放注册（🟢 立即生效）">
+          <label style={{ display: "inline-flex", gap: 8, alignItems: "center", cursor: "pointer", fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={allowOpen}
+              onChange={(e) => setAllowOpen(e.target.checked)}
             />
-            <ReadOnly
-              label="开放注册"
-              value={data.allow_open_registration ? "已启用" : "已关闭"}
-              hint={
-                <Badge variant={data.allow_open_registration ? "success" : "outline"} dot>
-                  {data.allow_open_registration ? "新用户自助注册为 Viewer" : "仅邀请注册"}
-                </Badge>
-              }
-            />
-            <ReadOnly label="邀请有效期" value={`${data.invitation_ttl_days} 天`} />
-            <ReadOnly label="前端基础地址" value={data.frontend_base_url} mono />
-            <div>
-              <div style={labelStyle}>SMTP 邮件</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 6 }}>
-                <ReadOnly label="主机" value={data.smtp.host ?? "未配置"} mono />
-                <ReadOnly label="端口" value={data.smtp.port?.toString() ?? "—"} mono />
-                <ReadOnly label="账号" value={data.smtp.user ?? "—"} mono />
-                <ReadOnly label="发件人" value={data.smtp.from_address ?? "—"} mono />
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <Badge variant={data.smtp.configured ? "success" : "outline"} dot>
-                  {data.smtp.configured ? "已配置（本期未启用真实发送，仍返回一次性链接）" : "未配置"}
-                </Badge>
-              </div>
-            </div>
+            <span>{allowOpen ? "已启用 — 新用户自助注册为 Viewer" : "已关闭 — 仅邀请注册"}</span>
+          </label>
+        </Field>
+
+        <Field label="邀请有效期（天，🟢 仅影响新邀请）">
+          <input
+            type="number"
+            min={1}
+            max={90}
+            value={invTtl}
+            onChange={(e) => setInvTtl(e.target.value)}
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="前端基础地址（🟡 用于新邀请/重置链接）">
+          <input
+            value={frontUrl}
+            onChange={(e) => setFrontUrl(e.target.value)}
+            placeholder="https://your-domain.com"
+            style={inputStyle}
+          />
+        </Field>
+
+        <div>
+          <div style={{ ...labelStyle, marginBottom: 8 }}>
+            SMTP 邮件 ·{" "}
+            <Badge variant={data.smtp.configured ? "success" : "outline"} dot>
+              {data.smtp.configured ? "已配置" : "未配置"}
+            </Badge>
           </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Field label="主机">
+              <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} style={inputStyle} placeholder="smtp.example.com" />
+            </Field>
+            <Field label="端口">
+              <input
+                type="number"
+                value={smtpPort}
+                onChange={(e) => setSmtpPort(e.target.value)}
+                style={inputStyle}
+                placeholder="587 / 465"
+              />
+            </Field>
+            <Field label="账号">
+              <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label="发件人">
+              <input value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} style={inputStyle} placeholder="noreply@example.com" />
+            </Field>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <div style={labelStyle}>密码 {data.smtp.password_set && !pwdEditing ? "（已设置）" : ""}</div>
+            {pwdEditing ? (
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  type="password"
+                  value={smtpPwd}
+                  onChange={(e) => setSmtpPwd(e.target.value)}
+                  placeholder="留空保存视为清除"
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => { setPwdEditing(false); setSmtpPwd(""); }}
+                  style={{ ...inputStyle, width: "auto", padding: "8px 14px", cursor: "pointer" }}
+                >
+                  取消
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPwdEditing(true)}
+                style={{ ...inputStyle, width: "auto", padding: "8px 14px", cursor: "pointer" }}
+              >
+                {data.smtp.password_set ? "更换密码" : "设置密码"}
+              </button>
+            )}
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={onTestSmtp}
+              disabled={testSmtpMut.isPending || !data.smtp.configured}
+              style={{ ...inputStyle, width: "auto", padding: "8px 14px", cursor: testSmtpMut.isPending ? "not-allowed" : "pointer" }}
+            >
+              {testSmtpMut.isPending ? "发送中..." : "发送测试邮件到我"}
+            </button>
+            <span style={{ marginLeft: 10, fontSize: 11, color: "var(--color-fg-subtle)" }}>
+              收件人：当前账号邮箱
+            </span>
+          </div>
+        </div>
+
+        {updateMut.isError && (
+          <ErrorBanner msg={(updateMut.error as Error).message} />
         )}
-      </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="submit"
+            disabled={!dirty || updateMut.isPending}
+            style={primaryBtn(updateMut.isPending)}
+          >
+            {updateMut.isPending ? "保存中..." : "保存"}
+          </button>
+        </div>
+      </form>
     </Card>
   );
 }

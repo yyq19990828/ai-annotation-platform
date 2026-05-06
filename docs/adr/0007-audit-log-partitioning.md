@@ -2,11 +2,11 @@
 
 ## 状态
 
-已规划（延期执行）
+**已实施（v0.8.1，迁移 0037）** ←— 原计划「延期执行」，v0.8.1 提前推进，配合冷数据归档一次落地。
 
 ## 背景
 
-`audit_logs` 表随业务增长将持续膨胀。v0.7.8 已通过 trigger 实现不可变性（0032 迁移），但未做分区。当前数据量 < 10 万行，查询性能未到瓶颈。
+`audit_logs` 表随业务增长将持续膨胀。v0.7.8 已通过 trigger 实现不可变性（0032 迁移），但未做分区。当前数据量 < 10 万行，查询性能未到瓶颈，但合规向（GDPR / 行业审计）要求超过保留期的数据自动归档。v0.8.1 与「数据导出审计强化」一起推进。
 
 ## 决策
 
@@ -66,3 +66,32 @@ Celery beat 月度任务 `ensure_next_partition()`：检查下月分区是否存
 - 查询 WHERE created_at 范围内可命中单个分区（partition pruning）
 - 归档操作为 O(1) DETACH 而非全表扫描
 - PK 变化需确认无代码硬依赖 `audit_logs.id` 做 FK
+
+## 实施记录（v0.8.1）
+
+### 迁移落地（0037）
+
+实际迁移路径与原始设计一致，关键细节：
+
+1. 重命名旧表 `audit_logs → audit_logs_legacy`，并显式重命名所有冲突索引（PG 不会自动重命名 index/constraint，PK 名为 `audit_logs_pkey`）。
+2. 建新分区父表，PK = `(id, created_at)`，完整复制原 7 个索引（含 GIN on detail_json）。
+3. 子分区覆盖 `[min(legacy.created_at), current_month + 3]` 区间，按月切。
+4. 不可变 trigger 直接挂在分区父表上（PG13+ 自动级联到所有当前/未来子分区）。
+5. `INSERT INTO audit_logs SELECT * FROM audit_logs_legacy` 一次性批量迁移（< 100k 行，单事务可控）。
+6. `setval(pg_get_serial_sequence('audit_logs', 'id'), max_id)` 同步序列，避免 ID 回滚。
+
+### Celery 维护任务（v0.8.1 新增）
+
+- `ensure_future_audit_partitions`（每月 25 日 03:00 UTC）：保证未来 3 个月分区存在。
+- `archive_old_audit_partitions`（每月 2 日 03:00 UTC）：扫保留期外子分区，stream-gzip 上传 MinIO `audit-archive/{year}/{month}.jsonl.gz`，成功后 `DROP TABLE <partition>`，并写 `audit.archive` 审计行。
+- 保留期由 `AUDIT_RETENTION_MONTHS`（默认 12）控制。
+
+### 已知限制
+
+- 大表（> 1M 行）单事务 INSERT 会锁较久；本期版本数据量 < 100k 不构成问题。后续如生产到达 1M+，评估改用 `pg_partman` 扩展或分批迁移脚本。
+- 分区子表名进入 `pg_catalog.pg_class`，反射时会被 ORM 看到 → `tests/test_alembic_drift.py` 已豁免 `audit_logs_y*` 模式。
+
+### 驱动这个时机点的因素
+
+- 与 v0.8.1 「治理合规向」epic 协同：自助注销 GDPR、导出审计水印、分区归档同期落地，统一回收散点。
+- 从 P3 提前到本期是用户决策（plan AskUserQuestion 选择「按月分区表（重）」方案）。

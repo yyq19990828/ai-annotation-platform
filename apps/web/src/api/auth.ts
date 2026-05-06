@@ -18,6 +18,10 @@ export interface MeResponse {
   group_name: string | null;
   status: string;
   created_at: string;
+  // v0.8.1
+  password_admin_reset_at?: string | null;
+  deactivation_requested_at?: string | null;
+  deactivation_scheduled_at?: string | null;
 }
 
 export const authApi = {

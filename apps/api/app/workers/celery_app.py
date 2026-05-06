@@ -11,6 +11,8 @@ celery_app = Celery(
         "app.workers.media",
         "app.workers.cleanup",
         "app.workers.audit",
+        "app.workers.deactivation",
+        "app.workers.audit_partition",
     ],
 )
 
@@ -37,6 +39,21 @@ celery_app.conf.update(
         "purge-soft-deleted-attachments": {
             "task": "app.workers.cleanup.purge_soft_deleted_attachments",
             "schedule": crontab(hour=3, minute=0),  # 每日 03:00 UTC
+        },
+        # v0.8.1 · 自助注销冷静期到期处理（每日 04:00 UTC）
+        "process-deactivation-requests": {
+            "task": "app.workers.deactivation.process_deactivation_requests",
+            "schedule": crontab(hour=4, minute=0),
+        },
+        # v0.8.1 · 审计分区每月维护：25 日提前建未来分区
+        "ensure-future-audit-partitions": {
+            "task": "app.workers.audit_partition.ensure_future_audit_partitions",
+            "schedule": crontab(day_of_month=25, hour=3, minute=0),
+        },
+        # v0.8.1 · 审计冷数据归档：每月 2 日把保留期外分区归档至 MinIO 后 DROP
+        "archive-old-audit-partitions": {
+            "task": "app.workers.audit_partition.archive_old_audit_partitions",
+            "schedule": crontab(day_of_month=2, hour=3, minute=0),
         },
     },
 )

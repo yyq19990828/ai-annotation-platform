@@ -65,6 +65,9 @@ export function UsersPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editing, setEditing] = useState<UserResponse | null>(null);
   const [deleting, setDeleting] = useState<UserResponse | null>(null);
+  const [resettingPwd, setResettingPwd] = useState<UserResponse | null>(null);
+  const [tempPwdResult, setTempPwdResult] = useState<{ user: UserResponse; password: string } | null>(null);
+  const [pwdResetSubmitting, setPwdResetSubmitting] = useState(false);
   /** 后端 409 返回的待转交任务详情（pending_task_count / locked_task_count / sample_task_ids）。 */
   const [transferStage, setTransferStage] = useState<{
     pending: number;
@@ -254,6 +257,16 @@ export function UsersPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                onClick={() => setResettingPwd(u)}
+                                title="重置密码"
+                              >
+                                <Icon name="key" size={11} />
+                              </Button>
+                            )}
+                            {u.is_active && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => setDeleting(u)}
                                 title="删除账号"
                               >
@@ -364,6 +377,109 @@ export function UsersPage() {
       <InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <EditUserModal open={!!editing} user={editing} onClose={() => setEditing(null)} />
       <GroupManageModal open={manageGroupsOpen} onClose={() => setManageGroupsOpen(false)} />
+
+      <Modal
+        open={!!resettingPwd}
+        onClose={() => {
+          if (pwdResetSubmitting) return;
+          setResettingPwd(null);
+        }}
+        title="重置用户密码"
+        width={460}
+      >
+        {resettingPwd && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
+            <div style={{ color: "var(--color-fg-muted)" }}>
+              将为以下用户生成一次性临时密码。请通过安全渠道（IM / 当面）告知用户，
+              并提醒首次登录后立即修改密码。
+            </div>
+            <div style={{
+              padding: "10px 12px",
+              background: "var(--color-bg-sunken)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <Avatar initial={resettingPwd.name[0]} size="md" />
+              <div>
+                <div style={{ fontWeight: 500 }}>{resettingPwd.name}</div>
+                <div className="mono" style={{ fontSize: 11.5, color: "var(--color-fg-subtle)" }}>{resettingPwd.email}</div>
+              </div>
+              <Badge variant={ROLE_COLORS[resettingPwd.role] || "outline"} style={{ marginLeft: "auto" }}>
+                {ROLE_LABELS[resettingPwd.role as UserRole] ?? resettingPwd.role}
+              </Badge>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Button onClick={() => setResettingPwd(null)} disabled={pwdResetSubmitting}>取消</Button>
+              <Button
+                variant="primary"
+                disabled={pwdResetSubmitting}
+                onClick={async () => {
+                  if (!resettingPwd) return;
+                  setPwdResetSubmitting(true);
+                  try {
+                    const r = await usersApi.adminResetPassword(resettingPwd.id);
+                    setTempPwdResult({ user: resettingPwd, password: r.temp_password });
+                    setResettingPwd(null);
+                  } catch (e) {
+                    pushToast({ msg: "重置失败", sub: (e as Error).message, kind: "warning" });
+                  } finally {
+                    setPwdResetSubmitting(false);
+                  }
+                }}
+              >
+                {pwdResetSubmitting ? "生成中..." : "生成临时密码"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!tempPwdResult}
+        onClose={() => setTempPwdResult(null)}
+        title="临时密码已生成"
+        width={460}
+      >
+        {tempPwdResult && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
+            <div style={{ color: "var(--color-fg-muted)" }}>
+              请立即复制并通过安全渠道告知 <b>{tempPwdResult.user.email}</b>。
+              关闭此窗口后无法再次查看；用户首次登录后系统会强制要求修改密码。
+            </div>
+            <div style={{
+              padding: 12,
+              background: "var(--color-bg-sunken)",
+              border: "1px dashed var(--color-warning)",
+              borderRadius: "var(--radius-md)",
+              fontFamily: "var(--font-mono, monospace)",
+              fontSize: 14,
+              fontWeight: 500,
+              userSelect: "all",
+              wordBreak: "break-all",
+            }}>
+              {tempPwdResult.password}
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(tempPwdResult.password);
+                    pushToast({ msg: "已复制到剪贴板", kind: "success" });
+                  } catch {
+                    pushToast({ msg: "复制失败，请手动选择文本", kind: "warning" });
+                  }
+                }}
+              >
+                复制
+              </Button>
+              <Button variant="primary" onClick={() => setTempPwdResult(null)}>
+                我已记下，关闭
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={!!deleting}

@@ -498,7 +498,7 @@ async def export_project(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.export import ExportService
-    from app.services.audit import AuditService, AuditAction
+    from app.services.audit import AuditService, AuditAction, export_detail
 
     svc = ExportService(db)
 
@@ -514,7 +514,12 @@ async def export_project(
             target_id=str(project.id),
             request=request,
             status_code=200,
-            detail={"format": format, "project_display_id": project.display_id},
+            detail=export_detail(
+                actor=actor,
+                request=request,
+                base={"format": format, "project_display_id": project.display_id},
+                filter_criteria={"include_attributes": include_attributes},
+            ),
         )
         await db.commit()
         return Response(
@@ -535,7 +540,12 @@ async def export_project(
             target_id=str(project.id),
             request=request,
             status_code=200,
-            detail={"format": format, "project_display_id": project.display_id},
+            detail=export_detail(
+                actor=actor,
+                request=request,
+                base={"format": format, "project_display_id": project.display_id},
+                filter_criteria={"include_attributes": include_attributes},
+            ),
         )
         await db.commit()
         return Response(

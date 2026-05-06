@@ -31,6 +31,14 @@
             "title": "Projects Pending Review",
             "type": "integer"
           },
+          "registration_by_day": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RegistrationDayPoint"
+            },
+            "title": "Registration By Day",
+            "type": "array"
+          },
           "role_distribution": {
             "additionalProperties": {
               "type": "integer"
@@ -70,6 +78,29 @@
           "role_distribution"
         ],
         "title": "AdminDashboardStats",
+        "type": "object"
+      },
+      "AdminResetPasswordResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "target_email": {
+            "title": "Target Email",
+            "type": "string"
+          },
+          "temp_password": {
+            "title": "Temp Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "temp_password",
+          "message",
+          "target_email"
+        ],
+        "title": "AdminResetPasswordResponse",
         "type": "object"
       },
       "AnnotationCommentCreate": {
@@ -3313,6 +3344,25 @@
         "title": "DatasetUploadInitResponse",
         "type": "object"
       },
+      "DeactivationRequest": {
+        "description": "v0.8.1 · 自助注销申请：可附原因（≤500 字符）。",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "DeactivationRequest",
+        "type": "object"
+      },
       "DeleteUserPayload": {
         "description": "可选转交目标 —— 当 target 仍持有未完成任务时必填。",
         "properties": {
@@ -5233,6 +5283,30 @@
         "title": "RegisterResponse",
         "type": "object"
       },
+      "RegistrationDayPoint": {
+        "description": "v0.8.1 · 注册来源按日聚合：邀请 vs 开放注册。",
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "invite_count": {
+            "title": "Invite Count",
+            "type": "integer"
+          },
+          "open_count": {
+            "title": "Open Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "invite_count",
+          "open_count"
+        ],
+        "title": "RegistrationDayPoint",
+        "type": "object"
+      },
       "ResetPasswordRequest": {
         "properties": {
           "new_password": {
@@ -5548,6 +5622,11 @@
             ],
             "title": "Host"
           },
+          "password_set": {
+            "default": false,
+            "title": "Password Set",
+            "type": "boolean"
+          },
           "port": {
             "anyOf": [
               {
@@ -5611,6 +5690,110 @@
           "allow_open_registration"
         ],
         "title": "SystemSettingsOut",
+        "type": "object"
+      },
+      "SystemSettingsUpdate": {
+        "description": "v0.8.1 · admin UI PATCH 入参，全部 Optional：未提供字段不变更。\nsmtp_password 传空串视为清除；未提供则不动现有值。",
+        "properties": {
+          "allow_open_registration": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Open Registration"
+          },
+          "frontend_base_url": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frontend Base Url"
+          },
+          "invitation_ttl_days": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invitation Ttl Days"
+          },
+          "smtp_from": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp From"
+          },
+          "smtp_host": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp Host"
+          },
+          "smtp_password": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp Password"
+          },
+          "smtp_port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp Port"
+          },
+          "smtp_user": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smtp User"
+          }
+        },
+        "title": "SystemSettingsUpdate",
         "type": "object"
       },
       "TaskFileUrlResponse": {
@@ -6102,6 +6285,30 @@
             "title": "Created At",
             "type": "string"
           },
+          "deactivation_requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deactivation Requested At"
+          },
+          "deactivation_scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deactivation Scheduled At"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -6154,6 +6361,18 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "password_admin_reset_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password Admin Reset At"
           },
           "role": {
             "title": "Role",
@@ -6251,7 +6470,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.7.7"
+    "version": "0.8.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -7149,6 +7368,78 @@
           }
         ],
         "summary": "Update Profile",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/auth/me/deactivation-request": {
+      "delete": {
+        "description": "v0.8.1 · 冷静期内撤销自助注销申请。",
+        "operationId": "cancel_self_deactivation_api_v1_auth_me_deactivation_request_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Self Deactivation",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "description": "v0.8.1 · 自助注销申请。7 天冷静期，期间可撤销。",
+        "operationId": "request_self_deactivation_api_v1_auth_me_deactivation_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeactivationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Request Self Deactivation",
         "tags": [
           "me"
         ]
@@ -12226,6 +12517,75 @@
         "tags": [
           "settings"
         ]
+      },
+      "patch": {
+        "operationId": "update_system_settings_api_v1_settings_system_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update System Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/system/test-smtp": {
+      "post": {
+        "description": "用当前 DB override 的 SMTP 配置发一封测试邮件到 actor.email。",
+        "operationId": "test_smtp_api_v1_settings_system_test_smtp_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Smtp",
+        "tags": [
+          "settings"
+        ]
       }
     },
     "/api/v1/storage/buckets": {
@@ -13679,6 +14039,54 @@
           }
         ],
         "summary": "Delete User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/admin-reset-password": {
+      "post": {
+        "operationId": "admin_reset_password_api_v1_users__user_id__admin_reset_password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminResetPasswordResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Reset Password",
         "tags": [
           "users"
         ]

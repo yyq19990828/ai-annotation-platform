@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, outerjoin, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -145,6 +145,7 @@ async def list_audit_logs(
 
 @router.get("/export")
 async def export_audit_logs(
+    request: Request,
     format: Literal["csv", "json"] = "csv",
     action: str | None = None,
     target_type: str | None = None,
@@ -180,33 +181,53 @@ async def export_audit_logs(
     items = [_row_to_out(r) for r in rows]
 
     # 记录自身的导出操作
-    from app.services.audit import AuditService
+    from app.services.audit import AuditService, export_detail, export_metadata_header
+    from app.middleware.request_id import request_id_var
 
+    filter_criteria = {
+        k: v
+        for k, v in {
+            "action": action,
+            "target_type": target_type,
+            "target_id": target_id,
+            "actor_id": actor_id,
+            "from": from_.isoformat() if from_ else None,
+            "to": to.isoformat() if to else None,
+            "detail_key": detail_key,
+            "detail_value": detail_value,
+        }.items()
+        if v is not None
+    }
     await AuditService.log(
         db,
         actor=current_user,
         action="audit.export",
         target_type="audit_logs",
         status_code=200,
-        detail={
-            "format": format,
-            "rows": len(items),
-            "action_filter": action,
-            "target_type_filter": target_type,
-            "target_id_filter": target_id,
-            "actor_id_filter": actor_id,
-            "detail_key_filter": detail_key,
-            "detail_value_filter": detail_value,
-        },
+        request=request,
+        detail=export_detail(
+            actor=current_user,
+            request=request,
+            base={"format": format, "rows": len(items)},
+            filter_criteria=filter_criteria,
+        ),
     )
     await db.commit()
 
     if format == "json":
 
         def _gen_json():
-            yield json.dumps(
-                [i.model_dump(mode="json") for i in items], ensure_ascii=False, indent=2
-            )
+            wrapped = {
+                "_export_meta": {
+                    "exported_by": current_user.email,
+                    "exported_at": datetime.now().isoformat(),
+                    "request_id": request_id_var.get() or None,
+                    "rows": len(items),
+                    "filter_criteria": filter_criteria,
+                },
+                "items": [i.model_dump(mode="json") for i in items],
+            }
+            yield json.dumps(wrapped, ensure_ascii=False, indent=2)
 
         return StreamingResponse(
             _gen_json(),
@@ -232,6 +253,8 @@ async def export_audit_logs(
 
     def _gen_csv():
         buf = io.StringIO()
+        # v0.8.1 · 首部审计 metadata 注释行
+        buf.write(export_metadata_header(actor=current_user, fmt="csv", request=request))
         writer = csv.DictWriter(buf, fieldnames=_COLS, extrasaction="ignore")
         writer.writeheader()
         for item in items:

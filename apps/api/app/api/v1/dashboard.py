@@ -12,6 +12,7 @@ from app.db.models.task_batch import TaskBatch
 from app.db.enums import UserRole, TaskStatus
 from app.schemas.dashboard import (
     AdminDashboardStats,
+    RegistrationDayPoint,
     ReviewerDashboardStats,
     ReviewTaskItem,
     ReviewingBatchItem,
@@ -68,6 +69,42 @@ async def admin_dashboard(
     except Exception:
         pass
 
+    # v0.8.1 · 过去 30 天注册来源（按日聚合 audit_logs.action='user.register'）
+    cutoff_30d = (
+        datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        - timedelta(days=29)
+    )
+    reg_rows = (
+        await db.execute(
+            select(
+                func.date_trunc("day", AuditLog.created_at).label("day"),
+                func.count()
+                .filter(AuditLog.detail_json["method"].astext == "open_registration")
+                .label("open_count"),
+                func.count()
+                .filter(AuditLog.detail_json.has_key("invitation_id"))  # noqa: W601
+                .label("invite_count"),
+            )
+            .where(
+                AuditLog.action == "user.register",
+                AuditLog.created_at >= cutoff_30d,
+            )
+            .group_by("day")
+            .order_by("day")
+        )
+    ).all()
+    by_day_map = {
+        r.day.date().isoformat(): (int(r.open_count or 0), int(r.invite_count or 0))
+        for r in reg_rows
+    }
+    registration_by_day: list[RegistrationDayPoint] = []
+    for i in range(30):
+        d = (cutoff_30d + timedelta(days=i)).date().isoformat()
+        open_n, invite_n = by_day_map.get(d, (0, 0))
+        registration_by_day.append(
+            RegistrationDayPoint(date=d, open_count=open_n, invite_count=invite_n)
+        )
+
     return AdminDashboardStats(
         total_users=total_users,
         active_users=active_users,
@@ -81,6 +118,7 @@ async def admin_dashboard(
         ml_backends_total=ml_total,
         ml_backends_connected=ml_connected,
         role_distribution=role_distribution,
+        registration_by_day=registration_by_day,
     )
 
 

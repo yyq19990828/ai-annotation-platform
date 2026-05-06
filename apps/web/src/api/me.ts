@@ -15,4 +15,9 @@ export const meApi = {
     apiClient.patch<MeResponse>("/auth/me", payload),
   changePassword: (payload: PasswordChangePayload) =>
     apiClient.post<void>("/auth/me/password", payload),
+  // v0.8.1 · 自助注销冷静期
+  requestDeactivation: (reason: string) =>
+    apiClient.post<MeResponse>("/auth/me/deactivation-request", { reason }),
+  cancelDeactivation: () =>
+    apiClient.delete<MeResponse>("/auth/me/deactivation-request"),
 };

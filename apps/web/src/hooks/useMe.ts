@@ -20,3 +20,29 @@ export function useChangePassword() {
     mutationFn: (payload: PasswordChangePayload) => meApi.changePassword(payload),
   });
 }
+
+export function useRequestDeactivation() {
+  const qc = useQueryClient();
+  const setAuth = useAuthStore((s) => s.setAuth);
+  const token = useAuthStore((s) => s.token);
+  return useMutation({
+    mutationFn: (reason: string) => meApi.requestDeactivation(reason),
+    onSuccess: (user) => {
+      if (token) setAuth(token, user);
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}
+
+export function useCancelDeactivation() {
+  const qc = useQueryClient();
+  const setAuth = useAuthStore((s) => s.setAuth);
+  const token = useAuthStore((s) => s.token);
+  return useMutation({
+    mutationFn: () => meApi.cancelDeactivation(),
+    onSuccess: (user) => {
+      if (token) setAuth(token, user);
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+}

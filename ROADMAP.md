@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**。
 
 ---
 
@@ -36,7 +36,7 @@
 #### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
 - **个人偏好**：语言 / 主题 / 时区 / 通知偏好均无（依赖 i18n / 主题基础设施先建立）。
-- **系统设置可编辑**：本期 `GET /settings/system` 是只读 .env mirror，缺 PATCH。需要 `system_settings` 表 + 启动时 env 优先加载、表项作为 override。
+- ~~**系统设置可编辑**~~ → v0.8.1 已落（`system_settings` 表 + PATCH + SettingsPage SystemSection 改可编辑 + SMTP 测试发送）
 
 #### TopBar / Dashboard 控件
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
@@ -49,9 +49,9 @@
   - **邮箱验证**：当前 viewer 零权限可跳过；若未来开放注册默认角色调高，需 `POST /auth/verify-email` + `email_verified_at` 字段 + 验证前 `is_active=false`。
   - **CAPTCHA / 防机器人**：v0.7.7 的 3/min rate limit 对 production 够用但不防分布式刷号；接 hCaptcha / Turnstile，前端 `OpenRegisterForm` 加 CAPTCHA widget + 后端校验 token。
   - **OAuth2 / 社交登录**：Google / GitHub SSO，python-social-auth 或 authlib；`User.oauth_provider` + `oauth_id` 字段；LoginPage / RegisterPage 加「使用 Google 登录」按钮。
-  - **系统设置 admin UI 可编辑**：v0.7.7 `ALLOW_OPEN_REGISTRATION` 仅 env 控制、SettingsPage 只读展示；升级需 `system_settings` 表 + `PATCH /settings/system` 端点 + SettingsPage toggle 开关（与 A「系统设置可编辑」共建）。
-  - **注册统计仪表卡**：AdminDashboard 增加注册来源分布卡片（邀请 vs 开放注册，按日/周统计），数据来自 `audit_logs WHERE action='user.register'` 的 `detail->>'method'` 字段。
-  - **账号自助注销**：用户可在 SettingsPage 申请注销自己的账号；需 `POST /auth/deactivate-self` + 7 天冷静期 + 管理员通知。
+  - ~~**系统设置 admin UI 可编辑**~~ → v0.8.1 已落（与「设置页 §系统设置可编辑」共建，含 `allow_open_registration` toggle）。
+  - ~~**注册统计仪表卡**~~ → v0.8.1 已落（AdminDashboard「30 天注册来源」双柱条形图，按 `detail_json.method/invitation_id` 聚合）。
+  - ~~**账号自助注销**~~ → v0.8.1 已落（`POST/DELETE /auth/me/deactivation-request` + 7 天冷静期 + 通知 super_admin + Celery beat 自动生效）。
 
 #### v0.7.x ~ v0.8.0 后续观察 / 下版候选
 
@@ -72,8 +72,8 @@
 - **审计日志不可变 trigger 测试覆盖**：v0.7.8 落了 PG trigger + GDPR `SET LOCAL` 豁免，但缺测试。建议加 `tests/test_audit_immutability.py` 覆盖三条：① 普通 UPDATE/DELETE 抛 RAISE；② `SET LOCAL` 后允许；③ pg_restore 走 COPY 不被阻断。security.md 已声称该机制可靠，需要测试兜底。
 
 #### 治理 / 合规
-- **审计日志归档**：按月 PARTITION + 冷数据 S3 归档；后台 cron job 触发。
-- **数据导出审计**：`GET /projects/{id}/export` 等批量导出应触发审计 + 下载者签名水印。
+- ~~**审计日志归档**~~ → v0.8.1 已落（`audit_logs` PARTITION BY RANGE(created_at) 月分区 + Celery beat `archive_old_audit_partitions` 把 > `AUDIT_RETENTION_MONTHS` 的子分区 stream-gzip 上传 MinIO 后 DROP；详见 ADR-0007 实施记录）。
+- ~~**数据导出审计**~~ → v0.8.1 已落（4 个导出端点的 `AuditService.log` 走新 `export_detail()` helper，detail_json 含 actor_email/ip/request_id/filter_criteria；CSV 文件首部插入 `# Exported by` 注释、JSON 文件包装 `_export_meta` 顶层字段）。
 - **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
 
 #### 可观测性

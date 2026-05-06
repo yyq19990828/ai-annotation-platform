@@ -20,6 +20,11 @@ class UserOut(BaseModel):
     status: str
     is_active: bool = True
     last_login_at: datetime | None = None
+    # v0.8.1 · 非空 = 管理员刚重置密码，前端登录后跳「强制改密」页
+    password_admin_reset_at: datetime | None = None
+    # v0.8.1 · 自助注销冷静期信息（已申请时返回 scheduled_at）；未申请均为 None
+    deactivation_requested_at: datetime | None = None
+    deactivation_scheduled_at: datetime | None = None
     created_at: datetime
 
     class Config:

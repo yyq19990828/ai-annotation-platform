@@ -17,6 +17,12 @@ export interface InvitationCreated {
 
 export type UserExportFormat = "csv" | "json";
 
+export interface AdminResetPasswordResult {
+  temp_password: string;
+  message: string;
+  target_email: string;
+}
+
 export const usersApi = {
   list: (params?: { role?: string; project_id?: string }) => {
     const q = new URLSearchParams(
@@ -44,6 +50,12 @@ export const usersApi = {
 
   assignGroup: (userId: string, groupId: string | null) =>
     apiClient.patch<UserResponse>(`/users/${userId}/group`, { group_id: groupId }),
+
+  adminResetPassword: (userId: string) =>
+    apiClient.post<AdminResetPasswordResult>(
+      `/users/${userId}/admin-reset-password`,
+      {},
+    ),
 
   exportUsers: async (format: UserExportFormat = "csv"): Promise<void> => {
     const token = localStorage.getItem("token");

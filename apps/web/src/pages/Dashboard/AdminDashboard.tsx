@@ -108,6 +108,8 @@ export function AdminDashboard() {
         </Card>
       </div>
 
+      <RegistrationSourceCard series={stats.registration_by_day ?? []} />
+
       <Card>
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>ML 后端状态</h3>
@@ -272,5 +274,73 @@ function StatusBar({ label, count, total, color }: { label: string; count: numbe
       </div>
       <ProgressBar value={pct} color={color} />
     </div>
+  );
+}
+
+import type { RegistrationDayPoint } from "@/api/dashboard";
+
+function RegistrationSourceCard({ series }: { series: RegistrationDayPoint[] }) {
+  const totalInvite = series.reduce((s, d) => s + d.invite_count, 0);
+  const totalOpen = series.reduce((s, d) => s + d.open_count, 0);
+  const total = totalInvite + totalOpen;
+  const peak = Math.max(1, ...series.map((d) => d.invite_count + d.open_count));
+
+  return (
+    <Card style={{ marginTop: 16 }}>
+      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>30 天注册来源</h3>
+        <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+          共 {total} 人 · 邀请 {totalInvite} · 开放 {totalOpen}
+        </div>
+      </div>
+      <div style={{ padding: 16 }}>
+        {total === 0 ? (
+          <div style={{ textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13, padding: "20px 0" }}>
+            过去 30 天暂无注册记录
+          </div>
+        ) : (
+          <div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-end",
+                gap: 3,
+                height: 80,
+                marginBottom: 8,
+              }}
+            >
+              {series.map((d) => {
+                const inviteH = (d.invite_count / peak) * 80;
+                const openH = (d.open_count / peak) * 80;
+                return (
+                  <div
+                    key={d.date}
+                    title={`${d.date}\n邀请 ${d.invite_count} · 开放 ${d.open_count}`}
+                    style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 1 }}
+                  >
+                    <div style={{ height: openH, background: "var(--color-success)", borderRadius: "2px 2px 0 0", minHeight: d.open_count ? 2 : 0 }} />
+                    <div style={{ height: inviteH, background: "var(--color-accent)", borderRadius: openH ? 0 : "2px 2px 0 0", minHeight: d.invite_count ? 2 : 0 }} />
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-fg-subtle)" }}>
+              <span>{series[0]?.date}</span>
+              <span>{series[series.length - 1]?.date}</span>
+            </div>
+            <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 10, height: 10, background: "var(--color-accent)", borderRadius: 2 }} />
+                邀请注册
+              </span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 10, height: 10, background: "var(--color-success)", borderRadius: 2 }} />
+                开放注册
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

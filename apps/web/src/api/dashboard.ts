@@ -1,6 +1,12 @@
 import { apiClient } from "./client";
 import type { UserBrief } from "@/types";
 
+export interface RegistrationDayPoint {
+  date: string;
+  invite_count: number;
+  open_count: number;
+}
+
 export interface AdminDashboardStats {
   total_users: number;
   active_users: number;
@@ -14,6 +20,7 @@ export interface AdminDashboardStats {
   ml_backends_total: number;
   ml_backends_connected: number;
   role_distribution: Record<string, number>;
+  registration_by_day?: RegistrationDayPoint[];
 }
 
 export interface ReviewTaskItem {

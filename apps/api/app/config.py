@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # false 或 broker 不可用时，自动 fallback 到原同步路径。
     audit_async: bool = True
 
+    # v0.8.1 · 审计日志冷数据保留月数：超期分区每月 2 日归档到 MinIO 后 DROP。
+    audit_retention_months: int = 12
+
     # Governance / invitations
     frontend_base_url: str = "http://localhost:5173"
     invitation_ttl_days: int = 7

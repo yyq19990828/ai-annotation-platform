@@ -20,6 +20,7 @@ from app.core.security import (
 )
 from app.services.audit import AuditAction, AuditService
 from app.services.password_reset import PasswordResetService
+from app.services.system_settings_service import SystemSettingsService
 from app.config import settings
 import logging
 
@@ -130,15 +131,21 @@ async def forgot_password(
     token = await svc.create_token(data.email)
     await db.commit()
 
-    if token and settings.smtp_configured:
-        reset_url = f"{settings.frontend_base_url}/reset-password?token={token}"
-        logger.info("Password reset token for %s: %s", data.email, reset_url)
-    elif token:
-        logger.info(
-            "Password reset token for %s (SMTP not configured): token=%s",
-            data.email,
-            token,
+    if token:
+        base_url = (
+            await SystemSettingsService.get(db, "frontend_base_url")
+            or settings.frontend_base_url
         )
+        smtp_host = await SystemSettingsService.get(db, "smtp_host")
+        if smtp_host:
+            reset_url = f"{str(base_url).rstrip('/')}/reset-password?token={token}"
+            logger.info("Password reset token for %s: %s", data.email, reset_url)
+        else:
+            logger.info(
+                "Password reset token for %s (SMTP not configured): token=%s",
+                data.email,
+                token,
+            )
 
     # 无论成功与否都返回 202，防邮箱枚举
     return {"message": "如果该邮箱已注册，您将收到一封包含重置链接的邮件"}
@@ -171,8 +178,9 @@ async def reset_password(
 
 
 @router.get("/registration-status")
-async def registration_status():
-    return {"open_registration_enabled": settings.allow_open_registration}
+async def registration_status(db: AsyncSession = Depends(get_db)):
+    enabled = bool(await SystemSettingsService.get(db, "allow_open_registration"))
+    return {"open_registration_enabled": enabled}
 
 
 @router.post("/register-open", response_model=RegisterResponse, status_code=201)
@@ -182,7 +190,7 @@ async def register_open(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    if not settings.allow_open_registration:
+    if not await SystemSettingsService.get(db, "allow_open_registration"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="开放注册未启用",

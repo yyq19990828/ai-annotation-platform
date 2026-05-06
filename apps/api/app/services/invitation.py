@@ -13,6 +13,7 @@ from app.core.security import hash_password
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.user_invitation import UserInvitation
+from app.services.system_settings_service import SystemSettingsService
 
 
 _ALLOWED_ROLES = {r.value for r in UserRole}
@@ -70,12 +71,16 @@ class InvitationService:
         )
 
         token = secrets.token_urlsafe(32)
+        ttl_days = int(
+            await SystemSettingsService.get(db, "invitation_ttl_days")
+            or settings.invitation_ttl_days
+        )
         inv = UserInvitation(
             email=email,
             role=role,
             group_name=group_name,
             token=token,
-            expires_at=now + timedelta(days=settings.invitation_ttl_days),
+            expires_at=now + timedelta(days=ttl_days),
             invited_by=invited_by,
         )
         db.add(inv)
@@ -117,9 +122,11 @@ class InvitationService:
         if inv.accepted_at is not None:
             raise HTTPException(status_code=400, detail="该邀请已被接受，无法重发")
         inv.token = secrets.token_urlsafe(32)
-        inv.expires_at = datetime.now(timezone.utc) + timedelta(
-            days=settings.invitation_ttl_days
+        ttl_days = int(
+            await SystemSettingsService.get(db, "invitation_ttl_days")
+            or settings.invitation_ttl_days
         )
+        inv.expires_at = datetime.now(timezone.utc) + timedelta(days=ttl_days)
         inv.revoked_at = None
         await db.flush()
         return inv

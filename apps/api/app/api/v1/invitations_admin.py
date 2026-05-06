@@ -22,6 +22,7 @@ from app.deps import get_db, require_roles
 from app.schemas.invitation import InvitationOut, InvitationResendResponse
 from app.services.audit import AuditService
 from app.services.invitation import InvitationService
+from app.services.system_settings_service import SystemSettingsService
 
 router = APIRouter()
 
@@ -120,7 +121,11 @@ async def resend_invitation(
         detail={"email": inv.email, "role": inv.role},
     )
     await db.commit()
-    invite_url = f"{settings.frontend_base_url.rstrip('/')}/register?token={inv.token}"
+    base_url = (
+        await SystemSettingsService.get(db, "frontend_base_url")
+        or settings.frontend_base_url
+    )
+    invite_url = f"{str(base_url).rstrip('/')}/register?token={inv.token}"
     return InvitationResendResponse(
         invite_url=invite_url,
         token=inv.token,

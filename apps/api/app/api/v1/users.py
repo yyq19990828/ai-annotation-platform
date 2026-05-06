@@ -1,6 +1,8 @@
 import csv
 import io
 import json
+import secrets
+import string
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
@@ -12,13 +14,16 @@ from sqlalchemy import select, func, or_, update, delete, text
 from pydantic import BaseModel
 
 from app.config import settings
+from app.core.ratelimit import limiter
+from app.core.security import hash_password
 from app.deps import get_db, require_roles
 from app.db.models.user import User
 from app.db.enums import UserRole
 from app.schemas.user import UserOut
 from app.schemas.invitation import InvitationCreate, InvitationCreated
 from app.services.invitation import InvitationService
-from app.services.audit import AuditService, AuditAction
+from app.services.audit import AuditService, AuditAction, export_detail, export_metadata_header
+from app.services.system_settings_service import SystemSettingsService
 
 router = APIRouter()
 
@@ -146,7 +151,7 @@ async def export_users(
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     if format == "json":
-        payload = [
+        payload_rows = [
             {
                 "id": str(u.id),
                 "email": u.email,
@@ -159,7 +164,19 @@ async def export_users(
             }
             for u in rows
         ]
-        body = json.dumps(payload, ensure_ascii=False, indent=2)
+        # v0.8.1 · 文件首部 _export_meta 字段（审计可追溯）
+        from app.middleware.request_id import request_id_var
+
+        wrapped = {
+            "_export_meta": {
+                "exported_by": actor.email,
+                "exported_at": datetime.now(timezone.utc).isoformat(),
+                "request_id": request_id_var.get() or None,
+                "count": len(rows),
+            },
+            "users": payload_rows,
+        }
+        body = json.dumps(wrapped, ensure_ascii=False, indent=2)
         await AuditService.log(
             db,
             actor=actor,
@@ -168,7 +185,11 @@ async def export_users(
             target_id=None,
             request=request,
             status_code=200,
-            detail={"format": "json", "count": len(rows)},
+            detail=export_detail(
+                actor=actor,
+                request=request,
+                base={"format": "json", "count": len(rows)},
+            ),
         )
         await db.commit()
         return StreamingResponse(
@@ -181,6 +202,8 @@ async def export_users(
     buf = io.StringIO()
     # Excel UTF-8 BOM 兼容
     buf.write("﻿")
+    # v0.8.1 · 首部审计 metadata 注释行（pandas/Excel 可 comment='#' 跳过）
+    buf.write(export_metadata_header(actor=actor, fmt="csv", request=request))
     writer = csv.writer(buf)
     writer.writerow(
         [
@@ -217,7 +240,11 @@ async def export_users(
         target_id=None,
         request=request,
         status_code=200,
-        detail={"format": "csv", "count": len(rows)},
+        detail=export_detail(
+            actor=actor,
+            request=request,
+            base={"format": "csv", "count": len(rows)},
+        ),
     )
     await db.commit()
     return StreamingResponse(
@@ -257,7 +284,11 @@ async def invite_user(
     )
     await db.commit()
 
-    invite_url = f"{settings.frontend_base_url.rstrip('/')}/register?token={inv.token}"
+    base_url = (
+        await SystemSettingsService.get(db, "frontend_base_url")
+        or settings.frontend_base_url
+    )
+    invite_url = f"{str(base_url).rstrip('/')}/register?token={inv.token}"
     return InvitationCreated(
         invite_url=invite_url,
         token=inv.token,
@@ -323,6 +354,100 @@ async def change_user_role(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+# —— v0.8.1 · 管理员重置低等级用户密码 ——
+_ROLE_LEVEL = {
+    UserRole.SUPER_ADMIN.value: 0,
+    UserRole.PROJECT_ADMIN.value: 1,
+    UserRole.REVIEWER.value: 2,
+    UserRole.ANNOTATOR.value: 3,
+    UserRole.VIEWER.value: 4,
+}
+
+
+def _generate_temp_password(length: int = 16) -> str:
+    """生成 16 位强临时密码：≥1 大写 / 小写 / 数字 / 符号。"""
+    upper = string.ascii_uppercase
+    lower = string.ascii_lowercase
+    digits = string.digits
+    # 限制符号集合，避免 shell 转义麻烦：!@#$%^&*?
+    symbols = "!@#$%^&*?"
+    pool = upper + lower + digits + symbols
+    while True:
+        pwd = "".join(secrets.choice(pool) for _ in range(length))
+        if (
+            any(c in upper for c in pwd)
+            and any(c in lower for c in pwd)
+            and any(c in digits for c in pwd)
+            and any(c in symbols for c in pwd)
+        ):
+            return pwd
+
+
+class AdminResetPasswordResponse(BaseModel):
+    temp_password: str
+    message: str
+    target_email: str
+
+
+@router.post(
+    "/{user_id}/admin-reset-password",
+    response_model=AdminResetPasswordResponse,
+    status_code=200,
+)
+@limiter.limit("3/minute")
+async def admin_reset_password(
+    user_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(*_MANAGERS)),
+):
+    target = await db.get(User, user_id)
+    if target is None or not target.is_active:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if target.id == actor.id:
+        raise HTTPException(
+            status_code=400, detail="不能给自己重置密码（请用「修改密码」）"
+        )
+
+    actor_lvl = _ROLE_LEVEL.get(actor.role, 99)
+    target_lvl = _ROLE_LEVEL.get(target.role, 99)
+    # 只能重置严格低等级（数值更大）的用户
+    if target_lvl <= actor_lvl:
+        raise HTTPException(
+            status_code=403, detail="只能重置等级低于你的用户的密码"
+        )
+
+    if actor.role == UserRole.PROJECT_ADMIN.value:
+        # project_admin 仅可重置其管理项目内的 reviewer / annotator / viewer
+        if target.role == UserRole.PROJECT_ADMIN.value:
+            raise HTTPException(status_code=403, detail="项目管理员之间不可互重置")
+        if not await _project_admin_manages_target(db, actor=actor, target=target):
+            raise HTTPException(status_code=403, detail="该用户不在你管理的项目内")
+
+    temp_password = _generate_temp_password()
+    target.password_hash = hash_password(temp_password)
+    target.password_admin_reset_at = datetime.now(timezone.utc)
+
+    await AuditService.log(
+        db,
+        actor=actor,
+        action=AuditAction.USER_PASSWORD_ADMIN_RESET,
+        target_type="user",
+        target_id=str(target.id),
+        request=request,
+        status_code=200,
+        # 注意：detail 不记录密码本身
+        detail={"target_email": target.email, "target_role": target.role},
+    )
+    await db.commit()
+
+    return AdminResetPasswordResponse(
+        temp_password=temp_password,
+        message="请通过安全渠道告知用户首次登录后立即修改密码",
+        target_email=target.email,
+    )
 
 
 class DeleteUserPayload(BaseModel):

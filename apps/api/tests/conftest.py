@@ -82,6 +82,14 @@ async def db_session(test_engine):
         await session.close()
         await trans.rollback()
         await conn.close()
+        # v0.8.1 · 模块级进程缓存的服务（如 SystemSettingsService）需在每 test 清理，
+        # 否则上一个测试的 PATCH 值会泄漏到下一个测试（DB SAVEPOINT 已回滚但缓存未失效）。
+        try:
+            from app.services.system_settings_service import SystemSettingsService
+
+            SystemSettingsService.invalidate()
+        except Exception:
+            pass
 
 
 @pytest.fixture(scope="session")

@@ -64,6 +64,15 @@ class AuditAction(str, Enum):
     BATCH_EXPORT = "batch.export"
     AUTH_LOGOUT = "auth.logout"
     AUTH_LOGOUT_ALL = "auth.logout_all"
+    # v0.8.1 · 系统设置 / 改密 / 注销 / 审计归档
+    SYSTEM_SETTINGS_UPDATE = "system.settings_update"
+    USER_PASSWORD_ADMIN_RESET = "user.password_admin_reset"
+    USER_DEACTIVATION_REQUEST = "user.deactivation_request"
+    USER_DEACTIVATION_CANCEL = "user.deactivation_cancel"
+    USER_DEACTIVATION_APPROVE = "user.deactivation_approve"
+    AUDIT_ARCHIVE = "audit.archive"
+    USER_EXPORT = "user.export"
+    AUDIT_LOG_EXPORT = "audit.export"
 
 
 def extract_client_ip(request: Request | None) -> str | None:
@@ -75,6 +84,55 @@ def extract_client_ip(request: Request | None) -> str | None:
     if request.client:
         return request.client.host
     return None
+
+
+def export_detail(
+    *,
+    actor: User | None,
+    request: Request | None,
+    base: dict[str, Any] | None = None,
+    filter_criteria: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """v0.8.1 · 数据导出审计 detail 标准化扩展。
+
+    在已有 {format, count/rows} 之上叠加 actor_email / ip / request_id / filter_criteria。
+    actor_email / ip 与 audit_logs 的列冗余，但 detail_json 写入便于后续 JSONB 查询 +
+    归档 jsonl 离线检索（不依赖外键 join）。
+    """
+    out: dict[str, Any] = dict(base or {})
+    out.setdefault("actor_email", getattr(actor, "email", None))
+    out.setdefault("ip", extract_client_ip(request))
+    out.setdefault("request_id", request_id_var.get() or None)
+    if filter_criteria is not None:
+        out["filter_criteria"] = filter_criteria
+    return out
+
+
+def export_metadata_header(
+    *,
+    actor: User | None,
+    fmt: str,
+    request: Request | None = None,
+) -> str:
+    """v0.8.1 · CSV / JSON 导出文件首部注释行（不引入新依赖）。
+
+    用于在 CSV 第一行 / JSON 顶部插入审计可追溯信息：导出人 / 时间戳 / Request ID。
+    JSON 走 `_export_meta` 顶层字段；CSV 走 `# ...` 注释行（标准 CSV 解析器会忽略，
+    Excel / pandas read_csv(comment='#') 也支持）。
+    """
+    from datetime import datetime, timezone
+
+    actor_email = getattr(actor, "email", None) or "anonymous"
+    rid = request_id_var.get() or ""
+    ts = datetime.now(timezone.utc).isoformat()
+    if fmt == "json":
+        # 调用方拿到字符串后自行包装；这里返回 dict 形式更通用
+        return ""
+    return (
+        f"# Exported by: {actor_email}\n"
+        f"# Exported at: {ts}\n"
+        f"# Request ID: {rid}\n"
+    )
 
 
 class AuditService:

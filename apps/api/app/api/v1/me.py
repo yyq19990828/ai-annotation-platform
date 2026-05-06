@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password, verify_password
@@ -7,8 +8,15 @@ from app.db.models.user import User
 from app.schemas.me import PasswordChange, ProfileUpdate
 from app.schemas.user import UserOut
 from app.services.audit import AuditAction, AuditService
+from app.services.deactivation_service import DeactivationService
 
 router = APIRouter()
+
+
+class DeactivationRequest(BaseModel):
+    """v0.8.1 · 自助注销申请：可附原因（≤500 字符）。"""
+
+    reason: str | None = Field(default=None, max_length=500)
 
 
 @router.patch("", response_model=UserOut)
@@ -52,6 +60,8 @@ async def change_password(
         raise HTTPException(status_code=400, detail="新密码不能与原密码相同")
 
     user.password_hash = hash_password(payload.new_password)
+    # v0.8.1 · 管理员重置后用户自助改密 → 清空标志，恢复正常状态
+    user.password_admin_reset_at = None
     await AuditService.log(
         db,
         actor=user,
@@ -64,3 +74,30 @@ async def change_password(
     )
     await db.commit()
     return None
+
+
+@router.post("/deactivation-request", response_model=UserOut)
+async def request_self_deactivation(
+    payload: DeactivationRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """v0.8.1 · 自助注销申请。7 天冷静期，期间可撤销。"""
+    await DeactivationService.request(db, user=user, reason=payload.reason, request=request)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.delete("/deactivation-request", response_model=UserOut)
+async def cancel_self_deactivation(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """v0.8.1 · 冷静期内撤销自助注销申请。"""
+    await DeactivationService.cancel(db, user=user, request=request)
+    await db.commit()
+    await db.refresh(user)
+    return user
