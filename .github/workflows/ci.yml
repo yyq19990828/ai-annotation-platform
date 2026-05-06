@@ -102,8 +102,12 @@ jobs:
   lint:
     name: Lint (ruff + eslint)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -111,8 +115,8 @@ jobs:
         run: pip install ruff
       - name: ruff check apps/api
         run: ruff check apps/api/app apps/api/tests
-      - name: ruff format --check apps/api
-        run: ruff format --check apps/api/app apps/api/tests
+      - name: ruff format (auto-fix)
+        run: ruff format apps/api/app apps/api/tests
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -131,6 +135,11 @@ jobs:
       - name: eslint
         working-directory: apps/web
         run: pnpm lint
+      - name: Auto-commit formatting fixes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "style: auto-format (ruff)"
+          file_pattern: "apps/api/**/*.py"
 
   e2e:
     name: E2E (Playwright)

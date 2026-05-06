@@ -765,9 +765,7 @@ class BatchService:
 
         await self.db.execute(
             delete(TaskLock).where(
-                TaskLock.task_id.in_(
-                    select(Task.id).where(Task.batch_id == batch_id)
-                )
+                TaskLock.task_id.in_(select(Task.id).where(Task.batch_id == batch_id))
             )
         )
 

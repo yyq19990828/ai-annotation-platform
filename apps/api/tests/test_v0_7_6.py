@@ -107,9 +107,7 @@ async def _seed_batch_with_locked_tasks(
 
 
 @pytest.mark.asyncio
-async def test_create_project_with_attribute_schema(
-    httpx_client, super_admin
-):
+async def test_create_project_with_attribute_schema(httpx_client, super_admin):
     _, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -120,7 +118,12 @@ async def test_create_project_with_attribute_schema(
         "classes": ["car"],
         "attribute_schema": {
             "fields": [
-                {"key": "occluded", "label": "是否遮挡", "type": "boolean", "required": True},
+                {
+                    "key": "occluded",
+                    "label": "是否遮挡",
+                    "type": "boolean",
+                    "required": True,
+                },
                 {
                     "key": "color",
                     "label": "车身颜色",
@@ -150,9 +153,7 @@ async def test_create_project_with_attribute_schema(
 
 
 @pytest.mark.asyncio
-async def test_create_project_default_attribute_schema(
-    httpx_client, super_admin
-):
+async def test_create_project_default_attribute_schema(httpx_client, super_admin):
     _, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -194,7 +195,10 @@ async def test_create_project_rejects_invalid_attribute_schema(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("from_status", ["active", "annotating", "reviewing", "approved", "rejected", "archived"])
+@pytest.mark.parametrize(
+    "from_status",
+    ["active", "annotating", "reviewing", "approved", "rejected", "archived"],
+)
 async def test_reset_to_draft_from_any_status(
     httpx_client_bound, db_session, super_admin, annotator, from_status
 ):
@@ -202,7 +206,9 @@ async def test_reset_to_draft_from_any_status(
     owner, owner_token = super_admin
     user, _ = annotator
     p, batch = await _seed_batch_with_locked_tasks(
-        db_session, owner.id, user.id,
+        db_session,
+        owner.id,
+        user.id,
         batch_status=from_status,
         n_tasks=3,
         task_status="completed",
@@ -220,24 +226,36 @@ async def test_reset_to_draft_from_any_status(
     assert body["review_feedback"] is None
 
     # task 全部回 pending
-    tasks = (await db_session.execute(select(Task).where(Task.batch_id == batch.id))).scalars().all()
+    tasks = (
+        (await db_session.execute(select(Task).where(Task.batch_id == batch.id)))
+        .scalars()
+        .all()
+    )
     assert all(t.status == "pending" for t in tasks)
 
     # annotation 全部保留
     anns = (
-        await db_session.execute(
-            select(Annotation).where(Annotation.task_id.in_([t.id for t in tasks]))
+        (
+            await db_session.execute(
+                select(Annotation).where(Annotation.task_id.in_([t.id for t in tasks]))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(anns) == 3
     assert all(a.is_active for a in anns)
 
     # task_locks 清空
     locks = (
-        await db_session.execute(
-            select(TaskLock).where(TaskLock.task_id.in_([t.id for t in tasks]))
+        (
+            await db_session.execute(
+                select(TaskLock).where(TaskLock.task_id.in_([t.id for t in tasks]))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(locks) == 0
 
     # audit 写入 reason + from_status + affected_tasks
@@ -261,7 +279,12 @@ async def test_reset_to_draft_requires_reason(
     owner, owner_token = super_admin
     user, _ = annotator
     p, batch = await _seed_batch_with_locked_tasks(
-        db_session, owner.id, user.id, batch_status="active", n_tasks=1, task_status="pending",
+        db_session,
+        owner.id,
+        user.id,
+        batch_status="active",
+        n_tasks=1,
+        task_status="pending",
     )
     await db_session.commit()
 
@@ -291,7 +314,12 @@ async def test_reset_to_draft_owner_only(
     user, anno_token = annotator
     rev, rev_token = reviewer
     p, batch = await _seed_batch_with_locked_tasks(
-        db_session, owner.id, user.id, batch_status="active", n_tasks=1, task_status="pending",
+        db_session,
+        owner.id,
+        user.id,
+        batch_status="active",
+        n_tasks=1,
+        task_status="pending",
     )
     await db_session.commit()
 
@@ -361,21 +389,27 @@ async def test_annotations_keyset_pagination(
     owner, owner_token = super_admin
     user, _ = annotator
     p, batch = await _seed_batch_with_locked_tasks(
-        db_session, owner.id, user.id,
-        batch_status="active", n_tasks=1, task_status="pending",
+        db_session,
+        owner.id,
+        user.id,
+        batch_status="active",
+        n_tasks=1,
+        task_status="pending",
     )
     task = (
-        await db_session.execute(
-            select(Task).where(Task.batch_id == batch.id)
-        )
+        await db_session.execute(select(Task).where(Task.batch_id == batch.id))
     ).scalar_one()
 
     # 清空 seed 留下的隐式 annotation，独立测试 5 条节奏
     seed_anns = (
-        await db_session.execute(
-            select(Annotation).where(Annotation.task_id == task.id)
+        (
+            await db_session.execute(
+                select(Annotation).where(Annotation.task_id == task.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for a in seed_anns:
         await db_session.delete(a)
     await db_session.flush()
@@ -442,8 +476,12 @@ async def test_annotations_page_invalid_cursor(
     owner, owner_token = super_admin
     user, _ = annotator
     p, batch = await _seed_batch_with_locked_tasks(
-        db_session, owner.id, user.id,
-        batch_status="active", n_tasks=1, task_status="pending",
+        db_session,
+        owner.id,
+        user.id,
+        batch_status="active",
+        n_tasks=1,
+        task_status="pending",
     )
     task = (
         await db_session.execute(select(Task).where(Task.batch_id == batch.id))
