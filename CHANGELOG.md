@@ -22,6 +22,33 @@
 
 ## 最新版本
 
+## [0.9.3 phase 3] - 2026-05-07
+
+> **Happy Meadow — 前端接通 ML Backend 注册能力。** 后端 `POST /projects/{pid}/ml-backends` CRUD 五件套自 v0.8.6 起就位（权限 `SUPER_ADMIN | PROJECT_ADMIN`），但前端**没有任何创建 / 编辑 / 删除 UI**：`ProjectSettingsPage` 只有「选择已有 backend」下拉，`/model-market` 的 `RegisteredBackendsTab` 是只读总览。`GeneralSection.tsx:301` + `CreateProjectWizard.tsx:586` 的「先在『ML 模型』选项卡添加」提示文案指向**不存在**的选项卡（commit `e81eb3e` ROADMAP 标记的 bug）。本版同时在两个入口接通注册能力，让 PROJECT_ADMIN 自服务接入 ML、让 SUPER_ADMIN 跨项目运维直接编辑。
+
+### Added
+
+- **`apps/web/src/pages/Projects/sections/MlBackendsSection.tsx`**（新文件）：项目设置新增「ML 模型」选项卡（icon `bot`，位于「批次管理」之后、「负责人」之前）。承载本项目作用域 backend 的 list / create / edit / delete / health-check；空态卡片 + CTA；写操作按 `usePermissions().role` 门控（`viewer / annotator / reviewer` 进来后所有写按钮 disabled + tooltip 提示需 PROJECT_ADMIN）。
+- **`apps/web/src/components/projects/MlBackendFormModal.tsx`**（新文件）：注册 / 编辑共用 Modal。字段：`name` / `url`（http(s):// 前缀校验）/ `is_interactive` / `auth_method`（none / token）/ `auth_token`（仅 token 时可见，编辑模式留空表示保留原值，避免覆盖为空）/ `extra_params`（高级折叠区，JSON 解析错误阻断提交）。提交错误从 `error.response.data.detail` 取并 inline alert。
+- **`useUpdateMLBackend(projectId)` / `useDeleteMLBackend(projectId)` hooks**：补齐 `useMLBackends.ts` 缺的两个 mutation；`create / update / delete / health` 四个 mutation 的 `onSuccess` 统一走 `invalidateBackendQueries(qc, projectId)` 同时刷新 `["ml-backends", projectId]` + `["admin", "ml-integrations", "overview"]`，让两个入口写后视图同步。
+- **`MLBackendUpdatePayload` 类型**（`apps/web/src/api/ml-backends.ts`）：`Partial<MLBackendCreatePayload>`，替代原 `update()` 签名里的内联 `Partial<...>`。
+
+### Changed
+
+- **`/model-market` RegisteredBackendsTab 由只读 → 可写**：每个 ProjectGroup header 加「+ 注册」按钮（打开 `MlBackendFormModal`，projectId 取自 `group.project_id`）；每行追加「操作」列含「健康检查 / 编辑 / 删除」三个按钮，复用同一 Modal + 同一 hooks。「打开项目设置 →」链接现在带 `?section=ml-backends` 直达对应 tab。
+- **`ProjectSettingsPage`**：`SectionKey` 联合扩 `"ml-backends"`、`SECTIONS` 数组同插一项（icon literal type 同步加 `"bot"`）、`VALID_SECTIONS` 同步、条件渲染分支同插。
+- **`GeneralSection.tsx:301` + `CreateProjectWizard.tsx:586` 文案保留**：tab 落地后两处「先在『ML 模型』选项卡添加」/「项目设置 → ML 模型」提示从指向不存在的目标变为有效引导，无需改动。
+
+### Notes
+
+- **范围限定**：本版仅做项目作用域 CRUD。后端表 `ml_backends.project_id` 为 NOT NULL FK，**不存在全局 backend 概念**；SUPER_ADMIN 的「跨项目编辑」是通过在每个项目的 backend 上点编辑按钮实现，而非引入全局 scope。
+- **删除二次确认**：用浏览器原生 `window.confirm()`，与 `MembersSection` 移除成员一致；轻量。
+- **测试**：`pnpm --filter web typecheck` 0 errors；`pnpm --filter web test --run` 346 pass / 0 fail（覆盖率不变，本版不为新组件单独写 test —— form 行为是 `useState` 直绑、删除走 `confirm()`，关键路径 E2E 验证更合适，留作后续）。
+
+详细计划：[`docs/plans/2026-05-07-v0.9.3-phase3-ml-backend-registration.md`](./docs/plans/2026-05-07-v0.9.3-phase3-ml-backend-registration.md)。
+
+---
+
 ## [0.9.3 phase 2] - 2026-05-07
 
 > **Merged Market — 三页合二，激活模型市场占位。** Phase 1 刚把 `/admin/ml-integrations` 拆出来作为超管 ML 集成总览页时，与既有 `/storage` 的 Bucket / 对象 StatCard 实质上重复；同时 `/admin/failed-predictions` 自 v0.8.6 起就是个完整分页页面，但失败条目通常 < 10 条，单独路由超规格；侧边栏「智能 → 模型市场」自始是 `PlaceholderPage`。本版把这三块捏成一个 ModelMarketPage：删 `/admin/ml-integrations`（其 storage 部分早被 `/storage` 覆盖；其 ML Backend 部分搬到模型市场 Tab 1），删 `/admin/failed-predictions`（整体折成模型市场 Tab 2），保留所有原有交互（retry / dismiss / restore + 60s refetch）。`/storage` 完全未动。

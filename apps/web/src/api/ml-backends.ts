@@ -10,6 +10,8 @@ export interface MLBackendCreatePayload {
   extra_params?: Record<string, unknown>;
 }
 
+export type MLBackendUpdatePayload = Partial<MLBackendCreatePayload>;
+
 export interface InteractiveRequest {
   task_id: string;
   context: Record<string, unknown>;
@@ -25,7 +27,7 @@ export const mlBackendsApi = {
   get: (projectId: string, backendId: string) =>
     apiClient.get<MLBackendResponse>(`/projects/${projectId}/ml-backends/${backendId}`),
 
-  update: (projectId: string, backendId: string, payload: Partial<MLBackendCreatePayload>) =>
+  update: (projectId: string, backendId: string, payload: MLBackendUpdatePayload) =>
     apiClient.put<MLBackendResponse>(`/projects/${projectId}/ml-backends/${backendId}`, payload),
 
   delete: (projectId: string, backendId: string) =>
