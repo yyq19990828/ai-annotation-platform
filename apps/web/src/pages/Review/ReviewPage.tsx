@@ -385,6 +385,12 @@ export function ReviewPage() {
         onConfirm={(reason) => {
           if (rejectingIds) runBatchReject(rejectingIds, reason);
         }}
+        // v0.8.8 · 单任务退回且该任务被跳过时透传 skip_reason 到 modal
+        skipReasonHint={
+          rejectingIds?.length === 1
+            ? tasks.find((t) => t.id === rejectingIds[0])?.skip_reason ?? null
+            : null
+        }
       />
     </div>
   );

@@ -14,7 +14,12 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.core.ratelimit import limiter
 from app.middleware.audit import AuditMiddleware
 from app.middleware.request_id import RequestIDMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.services.storage import storage_service
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 setup_logging(level="DEBUG" if settings.debug else "INFO")
 
@@ -55,11 +60,18 @@ async def lifespan(app: FastAPI):
             "PRODUCTION ENVIRONMENT DETECTED WITH DEFAULT SECRET KEY. "
             "Set SECRET_KEY to a strong random value in your .env file."
         )
+    # v0.8.8 · production 环境未配置 SENTRY_DSN 时启动告警（不阻断启动，
+    # 避免运维忘记填导致线上错误失踪）。
+    if settings.environment == "production" and not settings.sentry_dsn:
+        logger.warning(
+            "Production environment has no SENTRY_DSN configured; "
+            "error tracking is disabled. Set SENTRY_DSN in .env to enable."
+        )
     storage_service.ensure_all_buckets()
     yield
 
 
-app = FastAPI(title=settings.app_name, version="0.8.3", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.8.8", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -72,6 +84,12 @@ if settings.environment == "production" and not settings.cors_allow_origins:
     raise RuntimeError(
         "production 环境必须显式设置 CORS_ALLOW_ORIGINS（JSON 列表或逗号分隔）"
     )
+
+# v0.8.8 · SecurityHeadersMiddleware production-only。
+# 注册顺序在 CORSMiddleware 之前 → dispatch 后执行 → 写 HSTS/CSP 时
+# CORS 头已就位，可以一并出站。
+if settings.environment == "production":
+    app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

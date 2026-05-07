@@ -15,6 +15,22 @@ import type { ReviewClaimResponse } from "@/types";
 
 type DiffMode = "final" | "raw" | "diff";
 
+// v0.8.8 · skip_reason 枚举到中文标签
+function skipReasonLabel(reason: string): string {
+  switch (reason) {
+    case "image_corrupt":
+      return "图片损坏";
+    case "no_target":
+      return "无标注目标";
+    case "unclear":
+      return "标注规则不清";
+    case "other":
+      return "其他";
+    default:
+      return reason;
+  }
+}
+
 interface ReviewWorkbenchProps {
   taskId: string;
   onApprove: () => void;
@@ -97,6 +113,27 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
           已被其他审核员认领（{new Date(claimInfo.reviewer_claimed_at).toLocaleString("zh-CN")}），仍可接力处理
         </div>
       )}
+      {task?.skip_reason && (
+        <div
+          style={{
+            padding: "6px 14px",
+            background: "oklch(0.94 0.06 300)",
+            borderBottom: "1px solid oklch(0.78 0.12 300)",
+            fontSize: 12,
+            color: "oklch(0.35 0.18 300)",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+          data-testid="reviewer-skip-banner"
+        >
+          <Icon name="warning" size={13} />
+          标注员跳过此题：<strong>{skipReasonLabel(task.skip_reason)}</strong>
+          <span style={{ marginLeft: 8, color: "oklch(0.45 0.10 300)" }}>
+            可通过（无目标即视为完成）或退回重派
+          </span>
+        </div>
+      )}
       <div
         style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -107,6 +144,24 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>{task?.display_id ?? "—"}</span>
           <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>{task?.file_name}</span>
+          {task?.skip_reason && (
+            <span
+              style={{
+                marginLeft: 4,
+                padding: "1px 6px",
+                fontSize: 10,
+                fontWeight: 600,
+                borderRadius: 3,
+                background: "oklch(0.45 0.18 300)",
+                color: "white",
+                textTransform: "uppercase",
+                letterSpacing: 0.4,
+              }}
+              data-testid="reviewer-skip-badge"
+            >
+              SKIP
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", gap: 4 }}>
           {(["final", "raw", "diff"] as const).map((m) => (

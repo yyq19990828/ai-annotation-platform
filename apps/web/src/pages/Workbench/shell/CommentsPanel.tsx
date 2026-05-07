@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useProjectMembers } from "@/hooks/useProjects";
 import { CanvasDrawingPreview } from "@/components/CanvasDrawingEditor";
 import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
 import {
-  useAnnotationComments,
+  useAnnotationCommentsInfinite,
   useCreateComment,
   usePatchComment,
   useDeleteComment,
@@ -42,7 +42,12 @@ interface Props {
 export function CommentsPanel({ annotationId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas }: Props) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("comments");
-  const { data: comments } = useAnnotationComments(annotationId);
+  // v0.8.8 · keyset 分页：单标注 100+ 评论时按需加载，初始首屏只拉最近 50 条。
+  const commentsQuery = useAnnotationCommentsInfinite(annotationId);
+  const comments = useMemo(
+    () => (commentsQuery.data?.pages ?? []).flatMap((p) => p.items),
+    [commentsQuery.data],
+  );
   const { data: members } = useProjectMembers(projectId ?? "");
   const createMut = useCreateComment(annotationId);
   const patchMut = usePatchComment(annotationId);
@@ -115,10 +120,10 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
       />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto" }}>
-        {(comments ?? []).length === 0 && (
+        {comments.length === 0 && (
           <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)" }}>暂无评论</div>
         )}
-        {(comments ?? []).map((c) => {
+        {comments.map((c) => {
           const isMine = !!currentUserId && currentUserId === c.author_id;
           const hoverShapes = c.canvas_drawing?.shapes && c.canvas_drawing.shapes.length > 0
             ? c.canvas_drawing.shapes : null;
@@ -213,6 +218,28 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
             </div>
           );
         })}
+        {/* v0.8.8 · keyset 分页 「加载更早评论」按钮 */}
+        {commentsQuery.hasNextPage && (
+          <button
+            type="button"
+            onClick={() => commentsQuery.fetchNextPage()}
+            disabled={commentsQuery.isFetchingNextPage}
+            data-testid="comments-load-more"
+            style={{
+              alignSelf: "center",
+              padding: "4px 10px",
+              fontSize: 11,
+              background: "transparent",
+              border: "1px solid var(--color-border)",
+              borderRadius: 3,
+              color: "var(--color-fg-muted)",
+              cursor: "pointer",
+              marginTop: 4,
+            }}
+          >
+            {commentsQuery.isFetchingNextPage ? "加载中…" : "加载更早评论"}
+          </button>
+        )}
       </div>
       </>
       )}

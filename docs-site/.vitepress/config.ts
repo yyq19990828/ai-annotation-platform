@@ -96,6 +96,7 @@ export default defineConfig({
           items: [
             { text: "部署指南", link: "/dev/deploy" },
             { text: "安全模型", link: "/dev/security" },
+            { text: "可观测性 / 监控", link: "/dev/monitoring" },
             { text: "ML Backend 协议", link: "/dev/ml-backend-protocol" },
             { text: "WebSocket 协议", link: "/dev/ws-protocol" },
           ],

@@ -215,9 +215,48 @@ CREATE TRIGGER trg_audit_log_no_delete BEFORE DELETE ON audit_logs ...
 
 ---
 
-## 6. CORS
+## 6. HTTP 响应头与 CORS
 
-由 `apps/api/app/main.py:71-83` 注册：
+### 6.1 Production 安全响应头（v0.8.8）
+
+`apps/api/app/middleware/security_headers.py` 在 `environment == "production"` 时由 `main.py` 注册（详见 [ADR-0010](./adr/0010-security-headers-middleware)）。dev / staging 不启用，避免本地热更新被 inline script 打挂。
+
+| Header | Value |
+|---|---|
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Content-Security-Policy` | 见下文 |
+
+**CSP 当前为「宽松基线版」**：
+
+```
+default-src 'self';
+img-src 'self' data: blob: https:;
+style-src 'self' 'unsafe-inline';
+script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com;
+frame-src https://challenges.cloudflare.com;
+connect-src 'self' https: wss: ws:;
+font-src 'self' data:;
+object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+```
+
+`'unsafe-inline'` 是为了兼容现有 inline style 与 vite shim；下一阶段切到 nonce-based。`https://challenges.cloudflare.com` 是 Turnstile widget 的固定来源（v0.8.7 引入 CAPTCHA 后所必需）。
+
+**新增第三方依赖时的 checklist**：
+
+- 加 Sentry CDN？追加 `script-src https://*.sentry-cdn.com`
+- 加 Google Fonts？追加 `font-src https://fonts.gstatic.com` + `style-src https://fonts.googleapis.com`
+- 加第三方 ML backend iframe？追加 `frame-src` 对应域
+
+部署前先用 `max-age=300`（5 min）灰度 24h 确认 https 稳定，再切换到默认 1 年值——deploy.md 有 SOP。
+
+`/metrics` 由独立 ASGI 子应用挂载，不经过 SecurityHeadersMiddleware，避免内网 scrape 被 HSTS 影响。
+
+### 6.2 CORS
+
+由 `apps/api/app/main.py` 注册：
 
 | 维度 | development / staging | production |
 |---|---|---|

@@ -79,6 +79,8 @@ class FailedPrediction(Base):
         Integer, nullable=False, server_default="0", default=0
     )
     last_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # v0.8.8 · admin "永久放弃"软上限超过 max=3 的死项；soft-delete 不物理删
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     extra: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )

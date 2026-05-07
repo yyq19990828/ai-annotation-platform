@@ -7,6 +7,9 @@ import { resolve } from "path";
 // `/// <reference types="vitest" />` 已注入运行时 schema。
 const config: Parameters<typeof defineConfig>[0] = {
   plugins: [react()],
+  // v0.8.8 · 仓库根 `.env` 是前后端共用 SoT。vite 默认从 `apps/web/.env`
+  // 读取会与后端 .env 漂移；显式指向仓库根确保 VITE_* 变量与后端 settings 同源。
+  envDir: resolve(__dirname, "../../"),
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),
@@ -71,6 +74,8 @@ const config: Parameters<typeof defineConfig>[0] = {
         "**/*.d.ts",
         "e2e/**",
         "dist/**",
+        // v0.8.8 · scripts/ 是 build-time 工具脚本（codegen / size-limit），不应进单测覆盖率分母
+        "scripts/**",
       ],
       // v0.8.3 · 切硬阻断：低于 thresholds 时 vitest 退出非 0；codecov.yml frontend
       // informational=false 双重把关，避免覆盖率回退。
@@ -82,12 +87,16 @@ const config: Parameters<typeof defineConfig>[0] = {
       // v0.8.7 · 阈值临时降到 22（实测 22.04%，296+ case）。原因：v0.8.7 引入
       // 8 个新组件 / hook（Captcha / SkipTaskModal / ReviewerMiniPanel /
       // turnstile.ts / useSkipTask / useReviewerTodayMini / observability/metrics
-      // / Topbar 跳过分支），分母增长大于新单测覆盖。下一版优先把
-      // ProjectSettingsPage / AuditPage / WorkbenchShell 关键 hook 单测补齐，
-      // 目标推回 ≥ 25 → 30。
+      // / Topbar 跳过分支），分母增长大于新单测覆盖。
+      //
+      // v0.8.8 · 推回 25%（实测 25.17%，335+ case）。新增 5 个 test 文件 ~35 case：
+      // turnstile / useCanvasDraftPersistence / RejectReasonModal /
+      // FailedPredictionsPage / useNotificationSocket（含 ws reauth 关键路径）/
+      // AnnotationHistoryTimeline；同时把 scripts/** build-time 工具脚本从
+      // coverage 分母里排除。
       thresholds: {
-        lines: 22,
-        statements: 22,
+        lines: 25,
+        statements: 25,
         functions: 30,
         branches: 60,
       },

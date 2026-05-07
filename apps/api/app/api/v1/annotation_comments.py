@@ -8,10 +8,12 @@
 - POST   /annotations/{aid}/comment-attachments/upload-init  (v0.6.2)
 """
 
+import base64
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Request
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import assert_project_visible, get_db, require_roles
@@ -23,6 +25,7 @@ from app.db.models.user import User
 from app.schemas.annotation_comment import (
     ATTACHMENT_KEY_PREFIX,
     AnnotationCommentCreate,
+    AnnotationCommentListPage,
     AnnotationCommentOut,
     AnnotationCommentUpdate,
     CommentAttachmentUploadInitRequest,
@@ -107,6 +110,7 @@ async def list_comments(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
 ):
+    """v0.8.8 · 旧端点保留作向后兼容；新调用方走 ``/comments/page`` keyset 分页。"""
     rows = (
         await db.execute(
             select(AnnotationComment, User.name)
@@ -119,6 +123,69 @@ async def list_comments(
         )
     ).all()
     return [_to_out(c, name) for c, name in rows]
+
+
+def _encode_comment_cursor(ts: datetime, cid: uuid.UUID) -> str:
+    """v0.8.8 · base64-urlsafe(<iso_ts>|<uuid_hex>)，与 task cursor 同款，避免 + / 在 URL 中的问题。"""
+    iso = ts.isoformat()
+    return base64.urlsafe_b64encode(f"{iso}|{cid.hex}".encode()).decode()
+
+
+def _decode_comment_cursor(raw: str) -> tuple[datetime, uuid.UUID]:
+    try:
+        decoded = base64.urlsafe_b64decode(raw.encode()).decode()
+        ts_part, id_hex = decoded.split("|", 1)
+        return datetime.fromisoformat(ts_part), uuid.UUID(id_hex)
+    except (ValueError, IndexError) as exc:
+        raise HTTPException(status_code=400, detail="invalid_cursor") from exc
+
+
+@router.get(
+    "/annotations/{annotation_id}/comments/page",
+    response_model=AnnotationCommentListPage,
+)
+async def list_comments_paged(
+    annotation_id: uuid.UUID,
+    limit: int = Query(50, ge=1, le=200),
+    cursor: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
+):
+    """v0.8.8 · keyset 分页：DESC(created_at, id)。
+
+    单条标注 100+ 评论时初始化卡顿明显（CommentsPanel 全量拉），改为「最新 50
+    + 加载更早」按需拉取。返回 ``next_cursor=None`` 即末尾。
+    """
+    q = (
+        select(AnnotationComment, User.name)
+        .join(User, User.id == AnnotationComment.author_id)
+        .where(
+            AnnotationComment.annotation_id == annotation_id,
+            AnnotationComment.is_active.is_(True),
+        )
+    )
+    if cursor:
+        last_ts, last_id = _decode_comment_cursor(cursor)
+        q = q.where(
+            or_(
+                AnnotationComment.created_at < last_ts,
+                and_(
+                    AnnotationComment.created_at == last_ts,
+                    AnnotationComment.id < last_id,
+                ),
+            )
+        )
+    q = q.order_by(
+        AnnotationComment.created_at.desc(), AnnotationComment.id.desc()
+    ).limit(limit)
+
+    rows = (await db.execute(q)).all()
+    items = [_to_out(c, name) for c, name in rows]
+    next_cursor: str | None = None
+    if len(rows) == limit and rows:
+        last = rows[-1][0]
+        next_cursor = _encode_comment_cursor(last.created_at, last.id)
+    return AnnotationCommentListPage(items=items, next_cursor=next_cursor)
 
 
 @router.post(

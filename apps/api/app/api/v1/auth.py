@@ -1,12 +1,14 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.ratelimit import limiter
 from app.core.password import validate_password_strength
+from app.core.security import ALGORITHM
 from app.deps import get_db, get_current_user
 from app.db.models.user import User
 from app.db.enums import UserRole
@@ -279,6 +281,100 @@ async def logout(
         status_code=204,
     )
     await db.commit()
+
+
+# v0.8.8 · 鉴权过期重连：WebSocket / 长会话标注员 token 到期时拿旧 token 换新 token，
+# 不需要用户重新输入密码。前端 useNotificationSocket onclose 1008/4001 时调用。
+#
+# Grace 期：旧 token 过期不超过 7 天即可 refresh；超出强制重新登录。
+# 安全闭环：jti 黑名单（logout 后旧 token 立即失效）+ user.gen 比对（logout-all
+# 后旧 token 全失效）+ user.is_active = True + 速率 5/min。
+_REFRESH_GRACE = timedelta(days=7)
+
+
+@router.post("/refresh", response_model=Token)
+@limiter.limit("5/minute")
+async def refresh_token(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: AsyncSession = Depends(get_db),
+):
+    """v0.8.8 · 用即将 / 已过期的 token 换新 token（grace 7 天）。
+
+    返回 401 时前端应跳转登录页（grace 已过、被 logout、被 deactivate）。
+    """
+    raw = credentials.credentials
+    try:
+        payload = jwt.decode(
+            raw,
+            settings.secret_key,
+            algorithms=[ALGORITHM],
+            options={"verify_exp": False},
+        )
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid_token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    sub = payload.get("sub")
+    jti = payload.get("jti")
+    exp_ts = int(payload.get("exp", 0))
+    if not sub or not jti or not exp_ts:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="malformed_token"
+        )
+
+    # Grace 检查：超过 7 天的过期 token 一律拒绝
+    now = datetime.now(timezone.utc)
+    expired_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc)
+    if now > expired_at + _REFRESH_GRACE:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="grace_expired"
+        )
+
+    # jti 黑名单（已被 /auth/logout）
+    from app.core.token_blacklist import is_blacklisted, get_user_generation
+
+    if await is_blacklisted(jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="token_revoked"
+        )
+
+    user = await db.get(User, sub)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="user_inactive"
+        )
+
+    # gen 必须与最新 generation 匹配（/auth/logout-all 后会变）
+    cur_gen = await get_user_generation(str(user.id))
+    if int(payload.get("gen", 0)) != cur_gen:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="generation_outdated"
+        )
+
+    new_token = create_access_token(
+        subject=str(user.id), role=user.role, gen=cur_gen
+    )
+
+    user.last_seen_at = now
+    await AuditService.log(
+        db,
+        actor=user,
+        action=AuditAction.AUTH_TOKEN_REFRESH,
+        target_type="user",
+        target_id=str(user.id),
+        request=request,
+        status_code=200,
+        detail={
+            "old_jti": jti,
+            "expired_seconds_ago": int((now - expired_at).total_seconds()),
+        },
+    )
+    await db.commit()
+    return Token(access_token=new_token)
 
 
 @router.post("/logout-all", response_model=Token)

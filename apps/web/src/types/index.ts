@@ -84,6 +84,9 @@ export interface TaskResponse {
   reviewer_claimed_at: string | null;
   reviewed_at: string | null;
   reject_reason: string | null;
+  // v0.8.7 F7 · 任务跳过
+  skip_reason: string | null;
+  skipped_at: string | null;
   reopened_count: number;
   last_reopened_at: string | null;
   created_at: string;

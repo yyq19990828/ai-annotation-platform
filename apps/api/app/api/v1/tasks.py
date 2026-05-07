@@ -1029,7 +1029,19 @@ def _task_with_url(
     thumbnail_path: str | None = None,
     blurhash: str | None = None,
     briefs: dict | None = None,
-) -> dict:
+) -> TaskOut:
+    """v0.8.8 · 由手写 dict 改为 ``TaskOut.model_validate`` + 动态字段注入。
+
+    Schema 漂移防护：DB 直读字段（如 v0.8.7 加的 ``skip_reason`` /
+    ``skipped_at``、未来新增列）通过 ``from_attributes`` 自动映射，无需在此手写。
+    本 helper 仅负责无法从 ORM 直读的部分：
+
+    * ``file_url`` / ``thumbnail_url`` — MinIO presigned 签发
+    * ``image_width`` / ``image_height`` / ``blurhash`` —— 来源可能是
+      task 自身或关联的 :class:`DatasetItem`
+    * ``assignee`` / ``reviewer`` (UserBrief) —— 调用方批量解析后传入
+      ``briefs={str(user_id): UserBrief}``
+    """
     bucket = (
         storage_service.datasets_bucket
         if task.dataset_item_id
@@ -1043,59 +1055,24 @@ def _task_with_url(
     thumbnail_url: str | None = None
     if thumbnail_path:
         try:
-            thumb_bucket = (
-                storage_service.datasets_bucket
-                if task.dataset_item_id
-                else storage_service.bucket
-            )
             thumbnail_url = storage_service.generate_download_url(
-                thumbnail_path, bucket=thumb_bucket
+                thumbnail_path, bucket=bucket
             )
         except Exception:
             pass
 
-    assignee_brief = None
-    reviewer_brief = None
+    out = TaskOut.model_validate(task, from_attributes=True)
+    out.file_url = file_url
+    out.thumbnail_url = thumbnail_url
+    out.image_width = width
+    out.image_height = height
+    out.blurhash = blurhash
     if briefs is not None:
         if task.assignee_id is not None:
-            assignee_brief = briefs.get(str(task.assignee_id))
+            out.assignee = briefs.get(str(task.assignee_id))
         if task.reviewer_id is not None:
-            reviewer_brief = briefs.get(str(task.reviewer_id))
-
-    return {
-        "id": task.id,
-        "project_id": task.project_id,
-        "display_id": task.display_id,
-        "file_name": task.file_name,
-        "file_url": file_url,
-        "file_type": task.file_type,
-        "tags": task.tags,
-        "status": task.status,
-        "assignee_id": task.assignee_id,
-        "assignee": assignee_brief,
-        "reviewer": reviewer_brief,
-        "is_labeled": task.is_labeled,
-        "overlap": task.overlap,
-        "total_annotations": task.total_annotations,
-        "total_predictions": task.total_predictions,
-        "batch_id": task.batch_id,
-        "sequence_order": task.sequence_order,
-        "image_width": width,
-        "image_height": height,
-        "thumbnail_url": thumbnail_url,
-        "blurhash": blurhash,
-        "submitted_at": task.submitted_at,
-        "reviewer_id": task.reviewer_id,
-        "reviewer_claimed_at": task.reviewer_claimed_at,
-        "reviewed_at": task.reviewed_at,
-        "reject_reason": task.reject_reason,
-        "skip_reason": task.skip_reason,
-        "skipped_at": task.skipped_at,
-        "reopened_count": task.reopened_count,
-        "last_reopened_at": task.last_reopened_at,
-        "created_at": task.created_at,
-        "updated_at": task.updated_at,
-    }
+            out.reviewer = briefs.get(str(task.reviewer_id))
+    return out
 
 
 async def _attach_dimensions(

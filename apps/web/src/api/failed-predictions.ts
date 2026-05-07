@@ -16,6 +16,8 @@ export interface FailedPredictionItem {
   message: string;
   retry_count: number;
   last_retry_at: string | null;
+  // v0.8.8 · 永久放弃时间戳；非空表示已被 admin dismiss
+  dismissed_at: string | null;
   created_at: string;
 }
 
@@ -31,12 +33,29 @@ export interface RetryResponse {
   failed_id: string;
 }
 
+export interface DismissResponse {
+  status: string;
+  failed_id: string;
+  dismissed_at: string | null;
+}
+
 export const failedPredictionsApi = {
-  list: (page = 1, pageSize = 50) =>
+  list: (page = 1, pageSize = 50, includeDismissed = false) =>
     apiClient.get<FailedPredictionList>(
-      `/admin/failed-predictions?page=${page}&page_size=${pageSize}`,
+      `/admin/failed-predictions?page=${page}&page_size=${pageSize}` +
+        (includeDismissed ? `&include_dismissed=true` : ``),
     ),
 
   retry: (failedId: string) =>
     apiClient.post<RetryResponse>(`/admin/failed-predictions/${failedId}/retry`),
+
+  dismiss: (failedId: string) =>
+    apiClient.post<DismissResponse>(
+      `/admin/failed-predictions/${failedId}/dismiss`,
+    ),
+
+  restore: (failedId: string) =>
+    apiClient.post<DismissResponse>(
+      `/admin/failed-predictions/${failedId}/restore`,
+    ),
 };

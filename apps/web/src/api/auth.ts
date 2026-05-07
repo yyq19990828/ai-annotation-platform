@@ -30,4 +30,7 @@ export const authApi = {
   me: () => apiClient.get<MeResponse>("/auth/me"),
   logout: () => apiClient.post<void>("/auth/logout", {}),
   logoutAll: () => apiClient.post<TokenResponse>("/auth/logout-all", {}),
+  // v0.8.8 · 用现有（即将 / 已过期）token 换新 token，7 天 grace 内有效。
+  // useNotificationSocket onclose 1008/4001 时触发，长会话标注员永不被踢。
+  refresh: () => apiClient.post<TokenResponse>("/auth/refresh", {}),
 };

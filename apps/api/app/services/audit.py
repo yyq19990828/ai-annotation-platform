@@ -75,6 +75,11 @@ class AuditAction(str, Enum):
     AUDIT_ARCHIVE = "audit.archive"
     USER_EXPORT = "user.export"
     AUDIT_LOG_EXPORT = "audit.export"
+    # v0.8.8 · 失败预测 soft-delete
+    FAILED_PREDICTION_DISMISSED = "failed_prediction.dismissed"
+    FAILED_PREDICTION_RESTORED = "failed_prediction.restored"
+    # v0.8.8 · WebSocket 鉴权过期重连：grace 期内换发新 token
+    AUTH_TOKEN_REFRESH = "auth.token_refresh"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

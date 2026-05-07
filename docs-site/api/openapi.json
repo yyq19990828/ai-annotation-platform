@@ -409,6 +409,34 @@
         "title": "AnnotationCommentCreate",
         "type": "object"
       },
+      "AnnotationCommentListPage": {
+        "description": "v0.8.8 · keyset 分页响应。\n\ncursor 编码 ``<created_at_iso>__<id>``；前端按返回的 ``next_cursor``\n继续拉「更早评论」。空数组 + ``next_cursor=None`` 即末尾。",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationCommentOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AnnotationCommentListPage",
+        "type": "object"
+      },
       "AnnotationCommentOut": {
         "properties": {
           "annotation_id": {
@@ -3783,6 +3811,37 @@
         "title": "DeleteUserPayload",
         "type": "object"
       },
+      "DismissResponse": {
+        "properties": {
+          "dismissed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissed At"
+          },
+          "failed_id": {
+            "format": "uuid",
+            "title": "Failed Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "failed_id"
+        ],
+        "title": "DismissResponse",
+        "type": "object"
+      },
       "FailedPredictionItem": {
         "properties": {
           "backend_name": {
@@ -3800,6 +3859,18 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "dismissed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissed At"
           },
           "error_type": {
             "title": "Error Type",
@@ -7471,7 +7542,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.8.3"
+    "version": "0.8.8"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -7500,6 +7571,18 @@
               "minimum": 1,
               "title": "Page Size",
               "type": "integer"
+            }
+          },
+          {
+            "description": "v0.8.8 · true 时同时返回已 dismiss 的失败预测；默认隐藏",
+            "in": "query",
+            "name": "include_dismissed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "v0.8.8 · true 时同时返回已 dismiss 的失败预测；默认隐藏",
+              "title": "Include Dismissed",
+              "type": "boolean"
             }
           }
         ],
@@ -7531,6 +7614,104 @@
           }
         ],
         "summary": "List Failed Predictions",
+        "tags": [
+          "predictions"
+        ]
+      }
+    },
+    "/api/v1/admin/failed-predictions/{failed_id}/dismiss": {
+      "post": {
+        "description": "v0.8.8 · 永久放弃失败预测（soft-delete）。\n\n审计：``failed_prediction.dismissed``。重复调用幂等——已 dismiss 的行\n不更新 dismissed_at。",
+        "operationId": "dismiss_failed_prediction_api_v1_admin_failed_predictions__failed_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "failed_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Failed Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dismiss Failed Prediction",
+        "tags": [
+          "predictions"
+        ]
+      }
+    },
+    "/api/v1/admin/failed-predictions/{failed_id}/restore": {
+      "post": {
+        "description": "v0.8.8 · 误操作恢复：清空 ``dismissed_at``，让该行重回默认列表。",
+        "operationId": "restore_failed_prediction_api_v1_admin_failed_predictions__failed_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "failed_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Failed Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Restore Failed Prediction",
         "tags": [
           "predictions"
         ]
@@ -7701,6 +7882,7 @@
     },
     "/api/v1/annotations/{annotation_id}/comments": {
       "get": {
+        "description": "v0.8.8 · 旧端点保留作向后兼容；新调用方走 ``/comments/page`` keyset 分页。",
         "operationId": "list_comments_api_v1_annotations__annotation_id__comments_get",
         "parameters": [
           {
@@ -7802,6 +7984,83 @@
           }
         ],
         "summary": "Create Comment",
+        "tags": [
+          "annotation-comments"
+        ]
+      }
+    },
+    "/api/v1/annotations/{annotation_id}/comments/page": {
+      "get": {
+        "description": "v0.8.8 · keyset 分页：DESC(created_at, id)。\n\n单条标注 100+ 评论时初始化卡顿明显（CommentsPanel 全量拉），改为「最新 50\n+ 加载更早」按需拉取。返回 ``next_cursor=None`` 即末尾。",
+        "operationId": "list_comments_paged_api_v1_annotations__annotation_id__comments_page_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationCommentListPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Comments Paged",
         "tags": [
           "annotation-comments"
         ]
@@ -8658,6 +8917,33 @@
         "summary": "Submit Task Events",
         "tags": [
           "me"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "v0.8.8 · 用即将 / 已过期的 token 换新 token（grace 7 天）。\n\n返回 401 时前端应跳转登录页（grace 已过、被 logout、被 deactivate）。",
+        "operationId": "refresh_token_api_v1_auth_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Refresh Token",
+        "tags": [
+          "auth"
         ]
       }
     },

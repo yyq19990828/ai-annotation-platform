@@ -313,13 +313,17 @@ function KonvaPolygon({
         );
       })}
 
-      {/* 编辑态：顶点圆点（拖动 / Shift+点击删除） */}
+      {/* 编辑态：顶点圆点（拖动 / Shift+点击删除）
+         v0.8.8 · 视觉 radius 6 / 命中 radius 9（hitStrokeWidth）— 顶点重合时
+         Konva 自然按 z-order 选顶点（数组末位绘制最晚，z-index 最高，
+         「最后落点的顶点优先」与 Polygon 工具落点顺序一致）。 */}
       {editable && onVertexMouseDown && ps.map(([px, py], i) => (
         <Circle
           key={`v-${i}`}
           x={px * imgW}
           y={py * imgH}
-          radius={5 / scale}
+          radius={6 / scale}
+          hitStrokeWidth={9 / scale}
           fill="white"
           stroke={color}
           strokeWidth={1.5 / scale}

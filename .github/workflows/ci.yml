@@ -88,6 +88,10 @@ jobs:
         env:
           OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
         run: pnpm build
+      # v0.8.8 · bundle size budget 守护：超过 .size-limit.json 阈值即阻断 PR。
+      - name: Bundle size check
+        working-directory: apps/web
+        run: pnpm size
       - name: vitest with coverage
         working-directory: apps/web
         run: pnpm test:coverage

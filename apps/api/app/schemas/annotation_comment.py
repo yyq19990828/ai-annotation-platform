@@ -19,6 +19,7 @@ __all__ = [
     "AnnotationCommentCreate",
     "AnnotationCommentUpdate",
     "AnnotationCommentOut",
+    "AnnotationCommentListPage",
     "CommentAttachmentUploadInitRequest",
     "CommentAttachmentUploadInitResponse",
 ]
@@ -53,6 +54,17 @@ class AnnotationCommentOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AnnotationCommentListPage(BaseModel):
+    """v0.8.8 · keyset 分页响应。
+
+    cursor 编码 ``<created_at_iso>__<id>``；前端按返回的 ``next_cursor``
+    继续拉「更早评论」。空数组 + ``next_cursor=None`` 即末尾。
+    """
+
+    items: list[AnnotationCommentOut]
+    next_cursor: str | None = None
 
 
 class CommentAttachmentUploadInitRequest(BaseModel):

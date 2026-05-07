@@ -1,7 +1,7 @@
 {
   "name": "@anno/web",
   "private": true,
-  "version": "0.7.6",
+  "version": "0.8.8",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "screenshots": "playwright test --config=playwright.screenshots.config.ts"
+    "screenshots": "playwright test --config=playwright.screenshots.config.ts",
+    "size": "node scripts/check-bundle-size.mjs"
   },
   "dependencies": {
     "@sentry/react": "^8.45.0",

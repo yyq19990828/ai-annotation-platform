@@ -101,6 +101,43 @@ services:
       minio:
         condition: service_healthy
 
+  # v0.8.8 · 可观测性 stack（默认 profile=monitoring 不启动，避免 dev 多吃 ~200MB）
+  # 启动方式：`docker compose --profile monitoring up -d prometheus grafana`
+  # 注意：prometheus scrape 的 host.docker.internal 仅在 Docker Desktop（Mac/Win）
+  # 与 Linux 4.20+ docker compose 自动解析；不通时把 prometheus.yml 中 target 改成
+  # 宿主机 LAN IP 即可。
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    profiles: ["monitoring"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=14d"
+    extra_hosts:
+      # Linux 上 host.docker.internal 默认未解析；显式映射到宿主机 gateway。
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    profiles: ["monitoring"]
+    ports:
+      - "3001:3000"  # 避开前端 dev 3000
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin  # dev-only；production 改 env
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata:
   miniodata:
+  prometheus_data:
+  grafana_data:

@@ -1,0 +1,26 @@
+# v0.8.8 · Prometheus scrape 配置（dev / staging）。
+# Production 部署用各自的 prometheus 实例，把这份文件作为参考即可。
+#
+# 启动：`docker compose --profile monitoring up -d prometheus grafana`
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: development
+
+scrape_configs:
+  # FastAPI 应用 metrics（apps/api 在 host 上跑）
+  - job_name: anno-api
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - host.docker.internal:8000
+        labels:
+          service: anno-api
+
+  # 自身（Prometheus 也暴露 /metrics）
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
