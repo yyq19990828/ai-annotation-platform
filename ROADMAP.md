@@ -32,11 +32,24 @@
 
 ### v0.9.x SAM 基座进行中（一并落地）
 - ~~C.3 SAM 交互式（点 / 框 → mask）~~ ✅ v0.9.2 落地（紫虚线候选 + Enter/Esc/Tab + AI 助手文本入口）
-- **mask → polygon 化抽到 `apps/_shared/mask_utils/`**（v0.9.3 / M3，与 v0.10.x sam3-backend 共享）
-- **AI 预标注独立页 `/ai-pre` 占位收口**（v0.9.4 文本批量预标 UI 同步）
+- ~~**后端把 task.file_path 解析成 SAM 可达 presigned URL**~~ ✅ v0.9.4 phase 1 落地（`_resolve_task_url` helper + `ML_BACKEND_STORAGE_HOST` 三平台支持 + repo root .env 绝对路径加载，commit `c5eaf94`）
+- **SAM 子工具栏拆分（点 / 框 / 文本明确划分）**（**P1**，§C.3，当前 `S` 工具点击 / 拖动隐式分流 prompt 类型，新人不可见；下个版本必做）
+- **mask → polygon 化抽到 `apps/_shared/mask_utils/`**（v0.9.4 phase 2 / M3，与 v0.10.x sam3-backend 共享）
+- **AI 预标注独立页 `/ai-pre` 占位收口**（v0.9.4 phase 3 文本批量预标 UI 同步）
 - **工作台 AI 助手「本题花费 X 元」单条透传**（依赖 SAM 工具，可顺势补）
 - **截图自动化 14 张实跑回填**（与 SAM UI 一起出图避免双拍）
-- **SAM E2E 完整路径**（v0.9.3 与 `/_test_seed` ML backend 工厂一并落）
+- **SAM E2E 完整路径**（v0.9.5 与 `/_test_seed` ML backend 工厂一并落）
+
+### v0.9.x SAM 接入暴露的真实问题（已落主链后才发现，分散在 §A AI/模型）
+
+> v0.9.4 phase 1 后第一次实跑 `S` 工具,暴露了一组前端 / 协议 / 部署交叉问题, 详见 §A AI/模型 各条:
+>
+> - GeneralSection AI 启用 + backend 绑定 UX 耦合(注册成功后还要回基本信息 tab 手选并保存)
+> - MlBackendFormModal 缺「测试连接」+ URL 默认值预填(每次手敲 `http://172.17.0.1:8001` 麻烦)
+> - CreateProjectWizard 启用 AI 时不强制绑定 backend(新建项目仍是「AI 启用 + 未绑定」状态)
+> - SAM `/setup` 自描述协议未消费(`is_interactive` / `params` 已就位但前端没用; 加 `supported_prompts` 字段后可驱动子工具栏)
+> - RegisteredBackendsTab 只显示 state / last_checked_at, 缺 GPU 显存 / cache hit rate / 模型版本(运维不直观)
+> - 生产部署的 ML backend storage endpoint 选择机制(dev `ML_BACKEND_STORAGE_HOST` 简单覆盖够用, 生产场景多变, 长期或加 ADR)
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **predictions 月分区 Stage 2**：单月 INSERT > 100k 或 总行数 > 1M（ADR-0006）
@@ -74,6 +87,13 @@
 - **训练队列**：路由 `/training` 占位。
 - **预测成本卡片透传到工作台**：v0.8.6 已落 admin 维度 `/admin/prediction-cost-stats`；剩工作台 AI 助手面板「本题花费 X 元」单条透传，与 v0.9.x SAM 工具一起做。
 - ~~**ML Backend 前端注册入口缺失**~~ ✅ v0.9.3 phase 3 落地（`MlBackendsSection` + `MlBackendFormModal` + `RegisteredBackendsTab` 由只读改可写；项目设置 tab + 模型市场 tab 共用同一组 hooks + Modal；`useUpdateMLBackend` / `useDeleteMLBackend` 补齐 + 四个写 mutation 双 invalidate；`GeneralSection.tsx:301` + `CreateProjectWizard.tsx:586` 文案变为有效引导无需改）。SUPER_ADMIN 跨项目编辑通过对每个项目的 backend 行点编辑实现；后端不存在全局 backend 概念，跨项目全局 scope 仍为未来 epic。
+- ~~**后端 task.file_path → SAM 可达 URL**~~ ✅ v0.9.4 phase 1 落地（`_resolve_task_url(task)` helper：`StorageService.generate_download_url()` + 按 `dataset_item_id` 自动选 bucket + 按 `ML_BACKEND_STORAGE_HOST` 重写 host；Linux/macOS/K8s 三场景注释 + `Settings.Config.env_file` 改 repo root 绝对路径修复 cwd 踩坑，commit `c5eaf94`）。
+- **GeneralSection AI 启用 + backend 绑定 UX 耦合**（**P2**，新发现）：v0.9.3 phase 3 后用户能在「ML 模型」tab 注册 backend，但工作台仍提示「项目未绑定 ML Backend」；根因是 `GeneralSection.tsx:125` 的 `ml_backend_id: aiEnabled ? mlBackendId : null` —— 注册成功不会自动反向更新 project.ml_backend_id，必须**回基本信息 tab → 在下拉手选 → 保存**才生效，不直观。**两个收口方向**（按价值排）：① MlBackendsSection 列表行加「绑定到本项目」按钮，直接 PATCH `project.ml_backend_id`，免回基本信息 tab；② 注册 Modal 提交成功后若 `project.ml_backend_id == null`，弹 toast「已注册 + 绑定」并 inline 完成绑定。同时考虑把 `aiEnabled` 与 `mlBackendId` 联动收紧：用户选了 backend 自动勾 `aiEnabled`、清 backend 自动取消，避免悄悄被 `ai_enabled ? : null` 清空。
+- **MlBackendFormModal「测试连接」+ URL 默认值预填**（**P3**，新发现）：当前要先创建保存 → 列表行点 health 才能验通，注册前先验失败的成本高（DB 留无效行需手删）。** 切片**：① Form 表单内右下加「测试连接」按钮，调一个**无 DB 副作用的** `POST /ml-backends/probe?url=&auth=` 端点（仅 httpx GET `/health`），把状态 inline 显示；② Settings 暴露 `default_ml_backend_url_hint`（dev 可由 `ML_BACKEND_DEFAULT_URL` env 设 `http://172.17.0.1:8001`），URL 输入框 placeholder 直接显示而非空白；③ 注册成功后若 health 仍 `disconnected`，提示用户检查网络，而不是默默存。
+- **CreateProjectWizard 启用 AI 时强制 backend 绑定校验**（**P3**，新发现）：v0.7.6 wizard step 4 启用 AI 但不要求绑定 backend，新建项目即「AI 启用 + 未绑定」，跟 GeneralSection 同坑。最小切片：启用 AI 后增加 sub-section 列出本项目作用域已注册的 backend（首次 0 项 → CTA「先到项目设置注册」并允许跳过 + 标黄；勾 backend 后 step 5 总览展示「将绑定到 X」）。
+- **SAM `/setup` 自描述协议消费 + `supported_prompts` 字段补充**（**P2**，新发现）：SAM backend `/setup` 已返回 `is_interactive`、`labels`、`params: {sam_variant, dino_variant, box_threshold, text_threshold}`，前端只读了 `is_interactive`。补 `supported_prompts: ["point", "bbox", "text"]` 字段后，前端能据此动态渲染**子工具栏**（与 §C.3 SAM 子工具栏 epic 联动）；同时 RegisteredBackendsTab 行内可展示模型变体 + 阈值，便于运维一眼看清「是 tiny+T 还是 large+B」。**协议变更**：SAM backend `schemas.py` 加新字段；老版本 backend 兼容（缺字段时前端走旧的"按动作分流"路径）。
+- **RegisteredBackendsTab 行内深度健康指标**（**P3**，新发现）：当前每行只 state / last_checked_at；可拉 SAM `/cache/stats` 的 `hit_rate` / `size` + `/health` 的 `gpu` / `model_version` 直接展示，运维更直观（"刚才那次卡几秒是首次冷推还是 cache miss"一眼看清）。**协议**：复用既有端点，平台 api 加聚合 helper `GET /admin/ml-integrations/overview` 拉每个 backend 的 cache_stats。预计 0.5 天。
+- **ML backend 调用的 storage endpoint 选择机制（生产化）**（**P3**，新发现）：v0.9.4 phase 1 用的 `ML_BACKEND_STORAGE_HOST` 简单 host 重写适合 dev；生产 K8s 同 namespace 时 SAM 直接走 service DNS 即可（留空），跨 namespace / 跨集群需要 internal vs external 双 endpoint 配置。**触发条件**：第一个生产部署遇到这条；当前 dev 单机已收口。可能需要 ADR 总结策略（"何时设、设啥值、何时留空"）。
 
 ### 用户与权限页（UsersPage）
 - ~~**「API 密钥」按钮**~~ ✅ v0.9.3 落地（`api_keys` 表 + `/me/api-keys` CRUD + bcrypt + `ak_` token + ApiKeysModal 含一次性明文展示 + revoke + last_used_at；scope 字段已就位但实际拦截留 follow-up）。
@@ -154,10 +174,14 @@
 ### C.3 标注体验（核心生产力杠杆）
 - **SAM mask → polygon 化（marching squares / simplify-js）**：与 SAM 接入一起做。
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90%；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式）。
-- **SAM 交互式标注（点 / 框 → mask）**：研究报告 `06-ai-patterns.md`「模式 B」P1。最小切片：
-  - 后端：`POST /projects/{pid}/ml-backends/interactive`，路由到 `is_interactive=True` 的 ML backend；常驻 GPU 容器 + image embedding LRU 缓存（首次 ~300ms，命中 < 50ms）。
-  - 前端：新工具 `S`（SAM 模式），点击 = positive point、Alt+点击 = negative point、拖框 = bbox prompt；返回多边形以「待确认紫虚线」叠加，Enter 接受 / Esc 取消。
-  - 与现有 GroundingDINO 配合：「文本框 → 全图批量同类」 vs 「点 / 框 → 单实例精修」两条路并存。
+- ~~**SAM 交互式标注（点 / 框 → mask）**~~ ✅ v0.9.2 落地，但 UX 需进一步切分（见下条）。
+- **SAM 子工具栏拆分（点 / 框 / 文本明确划分）**（**P1**，v0.9.4 phase 2 候选）：
+  - **现状痛点**：当前 `S` 工具是单一 Tool（`useWorkbenchState.ts:5` `Tool = "box" | "hand" | "polygon" | "canvas" | "sam"`），按 `S` 进入后通过**鼠标动作隐式分流** prompt 类型 —— 单击 = positive point、Alt+点击 = negative point、拖框 = bbox prompt（`SamTool.ts:24` 都返回同一种 `samProbe` DragInit，`ImageStage.tsx:546` 按拖动距离分流）；文本 prompt 走 AI 助手面板的输入框，跟画布工具栏完全脱节。**问题**：① 新人不会发现 Alt+click = negative point；② 不知道点击和拖动会触发不同后端调用；③ 三种 prompt（point / bbox / text）在 UI 上没有显式分组，运维成本（文档 / 培训）高。
+  - **设计方案**：S 激活后，画布顶部或左侧工具栏内浮出**子工具栏**：`[· 点 (Click)] [□ 框 (Box)] [T 文本]` 三按钮 + `[+ / −]` positive / negative 切换（仅点工具下显示）。当前激活的子工具决定接受的鼠标行为（点工具下拖框无效，框工具下单击无效），消除隐式分流；视觉 active state（紫色高亮）标明当前 prompt 类型。文本子工具点击后聚焦 AI 助手面板的文本输入框，把现有「分两块」的 UX 收回画布工具栏闭环。
+  - **数据模型改动**：`Tool` 联合类型扩 `"sam-point" | "sam-bbox" | "sam-text"` 三个具体值（或保留 `"sam"` 父态 + 新增 `samSubTool` 子态字段，避免 hotkey 冲突）；`SamTool.ts` 拆三个 `*Tool` export，分别只接受对应 PointerEvent；`ImageStage.tsx` 的 `samProbe` 分流逻辑下移到 tool 层。
+  - **协议联动**：依赖 §A AI/模型「SAM `/setup` 自描述协议消费」—— 后端补 `supported_prompts: ["point", "bbox", "text"]` 字段后，前端按 backend 实际能力动态渲染按钮（未来支持 sketch / scribble 等扩展时零改前端核心）。
+  - **快捷键**：S 进入 SAM 模式（保留），子工具按 `1 / 2 / 3` 数字键切换；`+ / -` 切 positive/negative；`Esc` 退出。
+  - **预计 1.5 天**：tool 拆分 + 子工具栏 UI + 数字键 hotkey + 截图自动化新增 1 张子工具栏特写。
 - **关键帧插值（视频/序列）**：CVAT 同款；标注员只标 1 / 30 / 60 帧，中间线性插值。需配合 `Task.dimension` 字段。
 - **类别确认 hint**：刚画完一个框时，AI 后台跑一次单框分类，右上角弹「建议：标识牌（92%）」+ 一键采纳。
 - **Magic Box / Snap**：粗略画一个大框 → AI 收紧到对象边缘（SAM 推 mask → 取 mask bbox）；同时支持「贴边吸附」。
@@ -185,7 +209,10 @@
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
 | ~~**P1** UsersPage API 密钥~~ | ✅ v0.9.3 落地（端到端 + ak_ token） | — | — |
-| **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1；**v0.9.x 主轴** | — |
+| ~~**P1** C.3 SAM 交互式（点/框→mask）~~ | ✅ v0.9.2 落地（紫虚线 + Enter/Esc/Tab）；mask → polygon 化抽公共模块仍 open（v0.9.4 phase 2） | — | — |
+| **P1** | **C.3 SAM 子工具栏拆分（点/框/文本明确划分）** | 接 SAM 后第一次实跑暴露 UX 问题：当前隐式分流（动作派生 prompt 类型）新人不可见；下版本必做 | — |
+| **P2** | GeneralSection AI 启用 + backend 绑定 UX 解耦 | v0.9.3 phase 3 后注册 backend 仍要回基本信息 tab 手选；MlBackendsSection 列表加「绑定到本项目」按钮即可消除往返 | — |
+| **P2** | SAM `/setup` 自描述协议消费 + `supported_prompts` 字段补充 | 与「SAM 子工具栏」P1 协同；老 backend 缺字段时前端走旧路径兼容 | — |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
 | ~~**P2** 登录页 progressive CAPTCHA~~ | ✅ v0.9.3 落地 | — | — |
@@ -204,6 +231,10 @@
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 | — |
+| **P3** | MlBackendFormModal 加测试连接 + URL 默认值预填 | v0.9.3 phase 3 后注册体验摩擦：每次手敲 `http://172.17.0.1:8001`；先存后测有 DB 留无效行成本 | — |
+| **P3** | CreateProjectWizard 启用 AI 时 backend 绑定校验 | 新建项目仍可处于「AI 启用 + 未绑定」状态，跟 GeneralSection 同坑 | — |
+| **P3** | RegisteredBackendsTab 行内深度健康指标（GPU 显存 / cache hit rate / 模型版本） | SAM `/cache/stats` + `/health` 已就位，仅前端聚合展示；运维直观 | — |
+| **P3** | ML backend 调用 storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev；生产场景多变，第一个生产部署遇到再做 ADR | — |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 
 ---
