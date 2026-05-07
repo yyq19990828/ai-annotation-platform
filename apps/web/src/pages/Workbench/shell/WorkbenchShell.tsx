@@ -29,8 +29,9 @@ import { useWorkbenchAnnotationActions } from "../state/useWorkbenchAnnotationAc
 import { useWorkbenchHotkeys } from "../state/useWorkbenchHotkeys";
 import { useCanvasDraftPersistence } from "../state/useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "../state/useWorkbenchTaskFlow";
+import { useInteractiveAI } from "../state/useInteractiveAI";
 import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
-import { annotationToBox, predictionsToBoxes, type AiBox } from "../state/transforms";
+import { annotationToBox, polygonBounds, predictionsToBoxes, type AiBox } from "../state/transforms";
 import { iouShape } from "../stage/iou";
 import { setActiveClassesConfig, sortClassesByConfig } from "../stage/colors";
 import { getMissingRequired } from "./AttributeForm";
@@ -202,6 +203,22 @@ export function WorkbenchShell() {
 
   const queryClient = useQueryClient();
 
+  // v0.9.2 · SAM 交互式标注
+  const sam = useInteractiveAI({
+    projectId,
+    taskId,
+    mlBackendId: currentProject?.ml_backend_id ?? null,
+  });
+  // 切题清候选；切工具离开 SAM 也清（避免用户切回 box 时仍残留紫虚线）
+  useEffect(() => {
+    sam.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]);
+  useEffect(() => {
+    if (s.tool !== "sam" && sam.candidates.length > 0) sam.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.tool]);
+
   // 编辑冲突状态
   const conflictIdRef = useRef<string>("");
   const [conflictOpen, setConflictOpen] = useState(false);
@@ -298,6 +315,9 @@ export function WorkbenchShell() {
   // 批量改类 popover：anchor 到 selectedIds 第一个 user 框的 geom
   const [batchChanging, setBatchChanging] = useState(false);
 
+  // v0.9.2 · SAM 候选接受：用户按 Enter → 锁定一个候选，弹 ClassPicker 选类后落库。
+  const [samPendingAccept, setSamPendingAccept] = useState<{ idx: number } | null>(null);
+
   // ── 离线队列接线（v0.6.3 P1 抽 hook）：online / executeOp / flushAll / drawer ──
   const offlineQ = useWorkbenchOfflineQueue({ history, queryClient, pushToast });
   const { online, queueCount, enqueueOnError, flushOne: executeOp, flushAll: flushOffline,
@@ -341,6 +361,33 @@ export function WorkbenchShell() {
       s.setSelectedId(id);
     }
   }, [s]);
+
+  /** 当前 SAM 候选 polygon → 用 AABB 当 ClassPicker 锚点。 */
+  const samPendingGeom = useMemo<Geom | null>(() => {
+    if (!samPendingAccept) return null;
+    const cand = sam.candidates[samPendingAccept.idx];
+    if (!cand) return null;
+    return polygonBounds(cand.points);
+  }, [samPendingAccept, sam.candidates]);
+
+  const handleSamCommitClass = useCallback(
+    (cls: string) => {
+      const pending = samPendingAccept;
+      if (!pending) return;
+      const cand = sam.candidates[pending.idx];
+      setSamPendingAccept(null);
+      if (!cand || !cls) return;
+      // 复用 submitPolygon：会经 activeClass 校验，先把 activeClass 临时设为 cls
+      s.setActiveClass(cls);
+      submitPolygon(cand.points);
+      sam.consume(pending.idx);
+    },
+    [samPendingAccept, sam, s, submitPolygon],
+  );
+
+  const handleSamCancelClass = useCallback(() => {
+    setSamPendingAccept(null);
+  }, []);
 
   /** 批量删除当前选中的所有 user 框：成功后聚合 1 条 batch 命令进 history。 */
   const handleBatchDelete = useCallback(() => {
@@ -622,6 +669,42 @@ export function WorkbenchShell() {
     [taskId, skipTaskMut, pushToast, navigateTask],
   );
 
+  // v0.9.2 · SAM 候选模式下拦截 Enter / Esc / Tab。
+  // 在 useWorkbenchHotkeys (主 keydown) 之前的 capture 阶段触发；
+  // 仅当 tool === "sam" 且有候选时介入，否则透传。
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (s.tool !== "sam") return;
+      if (sam.candidates.length === 0) return;
+      // 焦点在 input/textarea 时不接管（让用户在 AI 助手文本框输入时不被吞键）
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
+      // ClassPicker 打开时让它独占键盘（避免 Enter 二次触发）
+      if (samPendingAccept) return;
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        setSamPendingAccept({ idx: sam.activeIdx });
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        sam.cancel();
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        sam.cycle(e.shiftKey ? -1 : 1);
+        return;
+      }
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [s.tool, sam, samPendingAccept]);
+
   // ── 键盘快捷键（v0.6.4 P1 抽 hook） ───────────────────────────────────
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
@@ -831,6 +914,15 @@ export function WorkbenchShell() {
           onAcceptPrediction={handleAcceptPrediction}
           onDeleteUserBox={handleDeleteBox}
           onCommitDrawing={handleCommitDrawing}
+          onSamPrompt={(prompt) => {
+            if (prompt.kind === "point") {
+              sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
+            } else {
+              sam.runBbox(prompt.bbox);
+            }
+          }}
+          samCandidates={sam.candidates}
+          samActiveIdx={sam.activeIdx}
           onCommitMove={handleCommitMove}
           onCommitResize={handleCommitResize}
           onCommitPolygonGeometry={handleCommitPolygonGeometry}
@@ -895,6 +987,25 @@ export function WorkbenchShell() {
                   title={`改类别 (当前: ${s.editingClass.currentClass})`}
                   onPick={handleCommitChangeClass}
                   onCancel={handleCancelChangeClass}
+                />
+              )}
+              {samPendingGeom && stageGeom.imgW > 0 && !s.pendingDrawing && !s.editingClass && (
+                <ClassPickerPopover
+                  geom={samPendingGeom}
+                  imgW={stageGeom.imgW}
+                  imgH={stageGeom.imgH}
+                  vp={vp}
+                  classes={classes}
+                  recent={recentClasses}
+                  defaultClass={
+                    sam.candidates[samPendingAccept!.idx]?.label &&
+                    classes.includes(sam.candidates[samPendingAccept!.idx].label)
+                      ? sam.candidates[samPendingAccept!.idx].label
+                      : s.activeClass
+                  }
+                  title="接受 SAM 候选 → 选类别"
+                  onPick={handleSamCommitClass}
+                  onCancel={handleSamCancelClass}
                 />
               )}
               {batchChanging && stageGeom.imgW > 0 && !s.pendingDrawing && !s.editingClass && (() => {
@@ -984,6 +1095,10 @@ export function WorkbenchShell() {
         onUpdateAttributes={handleUpdateAttributes}
         currentUserId={meUserId}
         taskFileUrl={task?.file_url}
+        tool={s.tool}
+        onRunSamText={sam.runText}
+        samRunning={sam.isRunning}
+        samCandidateCount={sam.candidates.length}
         liveCommentCanvas={{
           active: s.canvasDraft.active,
           result: s.canvasDraft.pendingResult,

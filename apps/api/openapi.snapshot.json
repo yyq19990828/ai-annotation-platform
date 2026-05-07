@@ -5361,6 +5361,19 @@
               }
             ]
           },
+          "box_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Box Threshold"
+          },
           "classes": {
             "default": [],
             "items": {
@@ -5410,6 +5423,19 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "text_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Threshold"
           },
           "type_key": {
             "title": "Type Key",
@@ -5557,6 +5583,11 @@
               "in_review": 0,
               "total": 0
             }
+          },
+          "box_threshold": {
+            "default": 0.35,
+            "title": "Box Threshold",
+            "type": "number"
           },
           "classes": {
             "default": [],
@@ -5708,6 +5739,11 @@
             "title": "Task Lock Ttl Seconds",
             "type": "integer"
           },
+          "text_threshold": {
+            "default": 0.25,
+            "title": "Text Threshold",
+            "type": "number"
+          },
           "total_tasks": {
             "title": "Total Tasks",
             "type": "integer"
@@ -5832,6 +5868,19 @@
               }
             ]
           },
+          "box_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Box Threshold"
+          },
           "classes": {
             "anyOf": [
               {
@@ -5951,6 +6000,19 @@
               }
             ],
             "title": "Status"
+          },
+          "text_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Threshold"
           },
           "type_key": {
             "anyOf": [

@@ -180,6 +180,8 @@ class GroundedSAM2Predictor:
         text: str,
         *,
         cache_key: str | None = None,
+        box_threshold: float | None = None,
+        text_threshold: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         from groundingdino.util.inference import predict as dino_predict  # type: ignore[import-not-found]
 
@@ -190,12 +192,15 @@ class GroundedSAM2Predictor:
             caption = caption + "."
 
         image_tensor = self._dino_image_tensor(np_img)
+        # v0.9.2 · 项目级阈值 override；缺省回退到 instance 默认值（来自 backend env）
+        eff_box = self.box_threshold if box_threshold is None else float(box_threshold)
+        eff_text = self.text_threshold if text_threshold is None else float(text_threshold)
         boxes, logits, phrases = dino_predict(
             model=self._dino_model,
             image=image_tensor,
             caption=caption,
-            box_threshold=self.box_threshold,
-            text_threshold=self.text_threshold,
+            box_threshold=eff_box,
+            text_threshold=eff_text,
             device=self.device,
         )
         if boxes is None or len(boxes) == 0:

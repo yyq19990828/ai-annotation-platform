@@ -63,6 +63,9 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
   );
   const { data: mlBackends = [] } = useMLBackends(project.id);
   const [iouThreshold, setIouThreshold] = useState(project.iou_dedup_threshold ?? 0.7);
+  // v0.9.2 · GroundingDINO 阈值（仅 SAM 文本 prompt 路径生效；point/bbox 不参与）
+  const [boxThreshold, setBoxThreshold] = useState(project.box_threshold ?? 0.35);
+  const [textThreshold, setTextThreshold] = useState(project.text_threshold ?? 0.25);
 
   useEffect(() => {
     setName(project.name);
@@ -74,6 +77,8 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     setAiCustom(project.ai_model && !PRESET_AI_MODELS.includes(project.ai_model) ? project.ai_model : "");
     setMlBackendId(project.ml_backend_id ?? null);
     setIouThreshold(project.iou_dedup_threshold ?? 0.7);
+    setBoxThreshold(project.box_threshold ?? 0.35);
+    setTextThreshold(project.text_threshold ?? 0.25);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
@@ -96,7 +101,9 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     aiEnabled !== project.ai_enabled ||
     (aiEnabled ? resolvedAiModel : null) !== (project.ai_model ?? null) ||
     (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
-    Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001;
+    Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001 ||
+    Math.abs(boxThreshold - (project.box_threshold ?? 0.35)) > 0.001 ||
+    Math.abs(textThreshold - (project.text_threshold ?? 0.25)) > 0.001;
 
   const onSave = () => {
     if (!name.trim()) {
@@ -117,6 +124,8 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
         ai_model: aiEnabled ? resolvedAiModel : null,
         ml_backend_id: aiEnabled ? mlBackendId : null,
         iou_dedup_threshold: iouThreshold,
+        box_threshold: boxThreshold,
+        text_threshold: textThreshold,
       },
       {
         onSuccess: () => pushToast({ msg: "项目已更新", kind: "success" }),
@@ -321,6 +330,38 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
               }}
             >
               {iouThreshold.toFixed(2)}
+            </span>
+          </div>
+        </div>
+        <div>
+          <label style={labelStyle}>
+            DINO box 阈值 <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>（SAM 文本 prompt 时使用；车牌/商品等小物可降；噪声多可升）</span>
+          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <input
+              type="range" min={0} max={1} step={0.05}
+              value={boxThreshold}
+              onChange={(e) => setBoxThreshold(Number(e.target.value))}
+              style={{ flex: 1, accentColor: "var(--color-ai)" }}
+            />
+            <span className="mono" style={{ minWidth: 48, textAlign: "right", fontSize: 13, color: "var(--color-fg)" }}>
+              {boxThreshold.toFixed(2)}
+            </span>
+          </div>
+        </div>
+        <div>
+          <label style={labelStyle}>
+            DINO text 阈值 <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>（短语—区域匹配的语义最低分；越高越严格）</span>
+          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <input
+              type="range" min={0} max={1} step={0.05}
+              value={textThreshold}
+              onChange={(e) => setTextThreshold(Number(e.target.value))}
+              style={{ flex: 1, accentColor: "var(--color-ai)" }}
+            />
+            <span className="mono" style={{ minWidth: 48, textAlign: "right", fontSize: 13, color: "var(--color-fg)" }}>
+              {textThreshold.toFixed(2)}
             </span>
           </div>
         </div>

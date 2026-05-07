@@ -45,10 +45,12 @@ describe("dispatchKey · 修饰键", () => {
 });
 
 describe("dispatchKey · 单键", () => {
-  it("B / V / P → setTool", () => {
+  it("B / V / P / S → setTool", () => {
     expect(dispatch({ key: "b" })).toEqual({ type: "setTool", tool: "box" });
     expect(dispatch({ key: "v" })).toEqual({ type: "setTool", tool: "hand" });
     expect(dispatch({ key: "p" })).toEqual({ type: "setTool", tool: "polygon" });
+    expect(dispatch({ key: "s" })).toEqual({ type: "setTool", tool: "sam" });
+    expect(dispatch({ key: "S" })).toEqual({ type: "setTool", tool: "sam" });
   });
   it("数字键 1-9 → setClassByDigit", () => {
     expect(dispatch({ key: "3" })).toEqual({ type: "setClassByDigit", idx: 2 });

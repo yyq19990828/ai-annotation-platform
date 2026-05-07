@@ -46,6 +46,13 @@ class Project(Base):
     iou_dedup_threshold: Mapped[float] = mapped_column(
         Float, nullable=False, server_default="0.7", default=0.7
     )
+    # v0.9.2 · GroundingDINO 阈值项目级 override（默认对齐 backend env 0.35 / 0.25）
+    box_threshold: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default="0.35", default=0.35
+    )
+    text_threshold: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default="0.25", default=0.25
+    )
     model_version: Mapped[str | None] = mapped_column(String(100))
     task_lock_ttl_seconds: Mapped[int] = mapped_column(Integer, default=300)
     total_tasks: Mapped[int] = mapped_column(Integer, default=0)

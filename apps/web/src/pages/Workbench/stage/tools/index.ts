@@ -3,8 +3,9 @@ import { BboxTool } from "./BboxTool";
 import { HandTool } from "./HandTool";
 import { PolygonTool } from "./PolygonTool";
 import { CanvasTool } from "./CanvasTool";
+import { SamTool } from "./SamTool";
 
-export type ToolId = "box" | "hand" | "polygon" | "canvas";
+export type ToolId = "box" | "hand" | "polygon" | "canvas" | "sam";
 
 export interface ToolMeta {
   id: ToolId;
@@ -17,6 +18,8 @@ export interface ToolMeta {
 /** Drag 初始化负载：仅 stage 空白处按下能产生的几种。move / resize 由 KonvaBox 内部派生。 */
 export type DragInit =
   | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
+  /** v0.9.2 · SAM 工具：单击 / 拖框；alt=true 时 negative point。松手时 ImageStage 按几何尺寸分流到 point/bbox prompt。 */
+  | { kind: "samProbe"; sx: number; sy: number; cx: number; cy: number; alt: boolean }
   | { kind: "pan"; sx: number; sy: number }
   | { kind: "canvasStroke"; points: number[] };
 
@@ -59,8 +62,10 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
   hand: HandTool,
   polygon: PolygonTool,
   canvas: CanvasTool,
+  sam: SamTool,
 };
 
-export const ALL_TOOLS: CanvasTool[] = [BboxTool, PolygonTool, HandTool, CanvasTool];
+// SAM 工具排在矩形 / polygon 之间，强调它是 AI 加速的"高级矩形"。canvas 仅用于评论批注，不放入 ToolDock。
+export const ALL_TOOLS: CanvasTool[] = [BboxTool, SamTool, PolygonTool, HandTool];
 
-export { BboxTool, HandTool, PolygonTool, CanvasTool };
+export { BboxTool, HandTool, PolygonTool, CanvasTool, SamTool };

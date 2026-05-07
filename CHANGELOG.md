@@ -8,6 +8,7 @@
 
 | 版本组 | 文件 |
 |--------|------|
+| 0.9.x | [docs/changelogs/0.9.x.md](docs/changelogs/0.9.x.md) |
 | 0.8.x | [docs/changelogs/0.8.x.md](docs/changelogs/0.8.x.md) |
 | 0.7.x | [docs/changelogs/0.7.x.md](docs/changelogs/0.7.x.md) |
 | 0.6.x | [docs/changelogs/0.6.x.md](docs/changelogs/0.6.x.md) |
@@ -20,6 +21,39 @@
 ---
 
 ## 最新版本
+## [0.9.2] - 2026-05-07
+
+> **Grounded-SAM-2 接入 M2 — 工作台 `S` 工具 + 文本入口 + DINO 阈值项目级 override（Luminous Canvas）。** v0.9.0 / v0.9.1 把 backend 容器化 + embedding 缓存铺好后，标注员仍然没有任何入口能触发 SAM；本版把后端能力下沉到工作台：新工具 `S` 让标注员**点 / Alt+点 / 拖框** 都能 < 50ms（命中缓存）拿到 polygon 候选，AI 助手在 S 模式下露出**文本提示**输入框（"person" 这样的英文 prompt 一键全图召回）；候选以**紫虚线**叠加 Konva 画布，`Enter` 接受 / `Esc` 取消 / `Tab` 切候选。同窗口把 GroundingDINO 的 box / text 阈值做成 ProjectSettings 项目级旋钮（默认 0.35 / 0.25），不同业务图（车牌 / 商品 / 卫星）可独立调参。
+
+### Added
+
+- **`apps/web/src/pages/Workbench/state/useInteractiveAI.ts`**（新 hook）：所有 prompt 都走 `mlBackendsApi.interactiveAnnotate`；`runPoint` 80ms 防抖合并连续点击（最后一次为准），`runBbox` / `runText` 不防抖；`inflightRef` 单调计数让晚到的过期请求不会覆盖最新候选；mlBackendId 缺失守卫 + toast「项目未绑定 ML Backend」；返回 `candidates` / `activeIdx` / `cycle` / `consume` / `cancel` / `isRunning`。
+- **`apps/web/src/pages/Workbench/stage/tools/SamTool.ts`**（新工具）：`id="sam"` / `hotkey="S"` / `icon="sparkles"`；`onPointerDown` 返回新的 `samProbe` DragInit（保留 evt.altKey 给 negative point），与 BboxTool 完全隔离避免互相污染。
+- **`ImageStage` SAM 路径**：DragInit / Drag union 加 `samProbe`；松手时按几何尺寸分流 — `dx<0.005 && dy<0.005` 视为单击 → `onSamPrompt({kind:"point", pt, alt})`；否则 → `onSamPrompt({kind:"bbox", bbox})`；拖框过程中渲染**紫色虚线预览框**（与候选 polygon 视觉同源）。新增 `samCandidates` / `samActiveIdx` props，候选 polygon 以 `Konva.Line(closed, dash, fill α=0.18 当前 / 0.06 其它)` 叠加，当前候选 stroke 加粗 2.5x、其它 1.4x、opacity 0.55 半透。
+- **WorkbenchShell SAM 接受流**：捕获阶段（`window.addEventListener("keydown", ..., true)`）拦 `Enter` / `Esc` / `Tab` —— S 工具 + 候选非空时介入，否则透传给主 dispatcher；接受时锁定 `samPendingAccept = { idx }`，按候选 polygon AABB（`polygonBounds`）锚 `ClassPickerPopover`，DINO 短语恰好匹配项目类别时作为默认值；`handleSamCommitClass` 复用 `submitPolygon` 落库 + `sam.consume(idx)` 出队；切题（`taskId` 变化）和退出 SAM（`s.tool` 改非 sam）都自动 `sam.cancel()`，避免残留紫虚线。
+- **`AIInspectorPanel` SAM 文本入口**（`SamTextPanel` 子组件，仅 `tool === "sam"` 时渲染）：「SAM 文本提示」区段，输入框 + 「找全图」按钮 + 候选数 chip + 「英文 prompt 召回最佳」hint；输入框 Enter 直接触发 `onRunSamText(trimmed)`，推理中按钮置灰显「推理中…」。
+- **快捷键**：`hotkeys.ts` `setTool` union 加 `"sam"`；`HOTKEYS` 列表加 `S` 键（group "ai"）；`RESERVED_LETTERS` 加 `s/S` 防止落到 `setClassByLetter`；`HotkeyCheatSheet` 自动从 SoT 渲染。
+- **Project 阈值字段**：`Project.box_threshold` / `text_threshold` `REAL NOT NULL DEFAULT 0.35 / 0.25`，CHECK `0..1`；`ProjectCreate` / `ProjectUpdate` / `ProjectOut` 全部加字段；`GeneralSection.tsx` 新增两条 range 滑块（step 0.05），`dirty` 检测 + `onSave` payload 一并透传。
+- **`/ml-backends/{bid}/interactive-annotating` 阈值注入**：`type=text` 时读 project 字段写入 `context.box_threshold` / `text_threshold`；客户端如已显式给阈值则尊重客户端（`setdefault` 语义）；point / bbox 不注入（DINO 不参与，避免污染缓存键 / 协议噪声）。
+- **`apps/grounded-sam2-backend` 阈值 override**：`predictor.predict_text(box_threshold, text_threshold)` 关键字参数，None 回退到 instance 默认（来自 backend env）；`main.py::_run_prompt` 从 `ctx` 读取并透传。
+- **测试**：`useInteractiveAI.test.ts` 10 case（point / bbox / text 路由 + Alt 极性 + 防抖合并 + 守卫 + 失败 toast + 空结果提示 + cycle wrap + cancel）；`hotkeys.test.ts` 加 `S → setTool sam` 断言；`apps/api/tests/test_interactive_threshold_inject.py` 3 case（text 注入 / 客户端显式覆盖 / point 不注入）。
+- **Alembic `0048_project_dino_thresholds`**：DO 块幂等加 NOT NULL 列 + 0..1 CHECK 约束；downgrade 反向干净。
+
+### Changed
+
+- **OpenAPI snapshot 重生**：`apps/api/openapi.snapshot.json` + `docs-site/api/openapi.json` 一并刷新（`scripts/export_openapi.py`），前端 `apps/web/src/api/generated/types.gen.ts` 经 `pnpm codegen` 加入 `box_threshold` / `text_threshold`。
+- **ToolDock 顺序**：`ALL_TOOLS = [Bbox, Sam, Polygon, Hand]`，`SamTool` 排在矩形 / polygon 之间，强调它是 AI 加速的"高级矩形"；`canvas` 工具不入 ToolDock（仅评论批注用，从入口语义切走）。
+
+### Notes
+
+- **不做翻译**：v0.9.x §5 待决问题决策 1 — 后端尚无 LLM client，引入会挤压 6 天预算；改在文本框旁加 hint「英文 prompt 召回最佳」。后续如客户反馈强烈，单开 micro-feature 走平台 LLM 网关。
+- **E2E 推迟**：完整 SAM E2E 需要 `/_test_seed` 加 `seed_ml_backend` 工厂（属于 E2E 基础设施扩展），范围超出 M2；vitest（349 全过）+ pytest（277 全过）已守住核心链路。E2E 在 v0.9.3 / M3 收口前补。
+- **协议契约**：`ml-backend-protocol.md` 不动；`context` 仍是开放 dict，`box_threshold` / `text_threshold` 是 backend 可选感知字段（缺省走 backend env 全局值）。
+
+详细计划：[`docs/plans/2026-05-07-v0.9.2-luminous-canvas.md`](docs/plans/2026-05-07-v0.9.2-luminous-canvas.md)。
+
+---
+
 ## [0.9.1] - 2026-05-07
 
 > **Grounded-SAM-2 接入 M1 — SAM 2 image embedding LRU 缓存 + Prometheus 观测。** 工作台 `S` 工具的典型动作是同图反复点击/拖框；v0.9.0 每次都跑完整 `set_image()` ≈ 1.5 s（4060 / tiny），全是 image encoder 重复花费。本版给 `apps/grounded-sam2-backend/` 加 LRU 缓存、Prometheus `/metrics`、人类可读 `/cache/stats`，让同图 N+1 次 point/bbox 操作直降到 < 50 ms，为 v0.9.2 工作台 `S` 工具铺路。范围严格限定在 backend 容器内：协议契约不动、平台 API 不感知、ml-backend-protocol.md 不改。

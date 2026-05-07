@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -64,6 +64,12 @@ interface AIInspectorPanelProps {
   onChangeUserBoxClass?: (id: string) => void;
   /** v0.6.5 · 任务已锁定（review/completed），属性表单只读。 */
   readOnly?: boolean;
+  /** v0.9.2 · 当前工具（仅 sam 时显文本提示输入面板）。 */
+  tool?: "box" | "hand" | "polygon" | "canvas" | "sam";
+  /** v0.9.2 · SAM 文本 prompt 触发，仅 tool === "sam" 时启用。 */
+  onRunSamText?: (text: string) => void;
+  samRunning?: boolean;
+  samCandidateCount?: number;
 }
 
 const stripStyle: React.CSSProperties = {
@@ -84,6 +90,7 @@ export function AIInspectorPanel({
   onToggle, onRunAi, onAcceptAll, onSetConfThreshold,
   onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   readOnly = false,
+  tool, onRunSamText, samRunning = false, samCandidateCount = 0,
 }: AIInspectorPanelProps) {
   const selSet = selectedIds && selectedIds.length > 0
     ? new Set(selectedIds)
@@ -206,6 +213,14 @@ export function AIInspectorPanel({
         </div>
       </div>
 
+      {tool === "sam" && onRunSamText && (
+        <SamTextPanel
+          onRun={onRunSamText}
+          running={samRunning}
+          candidateCount={samCandidateCount}
+        />
+      )}
+
       <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--color-border)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <span style={{ fontSize: 12, fontWeight: 600 }}>AI 待审</span>
@@ -285,6 +300,75 @@ export function AIInspectorPanel({
           <span className="mono" style={{ fontWeight: 600, color: "var(--color-ai)" }}>{aiTakeoverRate}%</span>
         </div>
         <ProgressBar value={aiTakeoverRate} color="var(--color-ai)" />
+      </div>
+    </div>
+  );
+}
+
+// ── SAM 文本提示面板（v0.9.2，仅 tool === "sam" 时显） ─────────────────────────
+interface SamTextPanelProps {
+  onRun: (text: string) => void;
+  running: boolean;
+  candidateCount: number;
+}
+
+function SamTextPanel({ onRun, running, candidateCount }: SamTextPanelProps) {
+  const [text, setText] = useState("");
+  const trimmed = text.trim();
+  return (
+    <div
+      data-testid="sam-text-panel"
+      style={{
+        padding: "10px 14px",
+        borderBottom: "1px solid var(--color-border)",
+        background: "color-mix(in oklab, var(--color-ai) 6%, transparent)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+          <Icon name="sparkles" size={11} /> SAM 文本提示
+        </span>
+        {candidateCount > 0 && (
+          <Badge variant="ai" style={{ fontSize: 10 }}>
+            {candidateCount} 候选 · Tab 切换 · Enter 接受
+          </Badge>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+        <input
+          data-testid="sam-text-input"
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && trimmed && !running) {
+              e.preventDefault();
+              onRun(trimmed);
+            }
+          }}
+          placeholder="e.g. person / car / ripe apple"
+          disabled={running}
+          style={{
+            flex: 1,
+            fontSize: 12,
+            padding: "5px 8px",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--color-bg)",
+            color: "var(--color-fg)",
+          }}
+        />
+        <Button
+          variant="ai"
+          size="sm"
+          disabled={!trimmed || running}
+          onClick={() => onRun(trimmed)}
+        >
+          {running ? "推理中…" : "找全图"}
+        </Button>
+      </div>
+      <div style={{ fontSize: 10.5, color: "var(--color-fg-subtle)" }}>
+        英文 prompt 召回最佳；DINO 阈值由项目设置控制。
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import type { Annotation } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 
-export type Tool = "box" | "hand" | "polygon" | "canvas";
+export type Tool = "box" | "hand" | "polygon" | "canvas" | "sam";
 
 /** v0.6.4：canvas 工具激活时的草稿状态。
  *  CommentInput 点「在题图上绘制」→ beginCanvasDraft；ImageStage 在 canvas tool 下

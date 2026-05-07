@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.8.8 (Sparkling Tome)** 详情见 [`0.8.x.md`](docs/changelogs/0.8.x.md)。
+> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.2 (Luminous Canvas) — Grounded-SAM-2 接入 M2** 详情见 [`0.9.x.md`](docs/changelogs/0.9.x.md)。
 
 ---
 
@@ -21,7 +21,7 @@
 
 ### 现在可做（无前置依赖、有清晰交付物）
 
-> v0.9.x 主线进行中（M0 backend 容器化 `01f8d45` + M1 embedding 缓存 v0.9.1 已落），下列条目在 SAM 专注度之外作为 `chip:maintenance` 穿插推进，不抢主线优先级。
+> v0.9.x 主线进行中（M0 backend 容器化 `01f8d45` + M1 embedding 缓存 v0.9.1 + **M2 工作台 `S` 工具 + 文本入口 + DINO 阈值项目级 override v0.9.2** 已落），下列条目在 SAM 专注度之外作为 `chip:maintenance` 穿插推进，不抢主线优先级。
 
 - **UsersPage API 密钥 + 「存储与模型集成」对接**（P1，§A，`chip:maintenance`）
 - **登录页 progressive CAPTCHA**（P2，§A，slowapi 计数 + Redis 即可，`chip:maintenance`）
@@ -30,10 +30,12 @@
 - **i18n 框架接入**（P3，与 ProjectSettingsPage 重构合并节省破窗成本，`chip:maintenance`）
 
 ### v0.9.x SAM 基座进行中（一并落地）
-- **C.3 SAM 交互式（点 / 框 → mask）+ mask → polygon 化**（P1，**v0.9.x 主轴**）
+- ~~C.3 SAM 交互式（点 / 框 → mask）~~ ✅ v0.9.2 落地（紫虚线候选 + Enter/Esc/Tab + AI 助手文本入口）
+- **mask → polygon 化抽到 `apps/_shared/mask_utils/`**（v0.9.3 / M3，与 v0.10.x sam3-backend 共享）
 - **AI 预标注独立页 `/ai-pre` 占位收口**（v0.9.4 文本批量预标 UI 同步）
-- **工作台 AI 助手「本题花费 X 元」单条透传**（依赖 SAM 工具）
-- **截图自动化 14 张实跑回填**（与新 SAM UI 一起出图避免双拍）
+- **工作台 AI 助手「本题花费 X 元」单条透传**（依赖 SAM 工具，可顺势补）
+- **截图自动化 14 张实跑回填**（与 SAM UI 一起出图避免双拍）
+- **SAM E2E 完整路径**（v0.9.3 与 `/_test_seed` ML backend 工厂一并落）
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **predictions 月分区 Stage 2**：单月 INSERT > 100k 或 总行数 > 1M（ADR-0006）

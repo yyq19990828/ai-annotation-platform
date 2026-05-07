@@ -6,6 +6,7 @@ from app.deps import get_db, require_roles
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
+from app.db.models.project import Project
 from app.schemas.ml_backend import (
     MLBackendCreate,
     MLBackendUpdate,
@@ -174,10 +175,18 @@ async def interactive_annotating(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    # v0.9.2 · text prompt 时把项目级 DINO 阈值注入 context；客户端如已显式传值则尊重客户端。
+    context = dict(body.context or {})
+    if context.get("type") == "text":
+        project = await db.get(Project, project_id)
+        if project is not None:
+            context.setdefault("box_threshold", float(project.box_threshold))
+            context.setdefault("text_threshold", float(project.text_threshold))
+
     client = MLBackendClient(backend)
     result = await client.predict_interactive(
         task_data={"id": str(task.id), "file_path": task.file_path},
-        context=body.context,
+        context=context,
     )
     return {
         "result": result.result,

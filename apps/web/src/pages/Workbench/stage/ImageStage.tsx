@@ -19,6 +19,7 @@ import { isSelfIntersecting, moveVertex, type Pt } from "./polygonGeom";
 type Geom = { x: number; y: number; w: number; h: number };
 type Drag =
   | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
+  | { kind: "samProbe"; sx: number; sy: number; cx: number; cy: number; alt: boolean }
   | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom }
   | { kind: "resize"; id: string; start: Geom; sx: number; sy: number; dir: ResizeDirection; cur: Geom }
   | { kind: "polyVertex"; id: string; vidx: number; start: Pt[]; cur: Pt[] }
@@ -67,6 +68,14 @@ interface ImageStageProps {
   onDeleteUserBox?: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
   onCommitDrawing?: (geo: Geom) => void;
+  /** v0.9.2 · SAM 工具松手时派发 prompt（point / bbox 由 ImageStage 按几何尺寸分流）。 */
+  onSamPrompt?: (prompt:
+    | { kind: "point"; pt: [number, number]; alt: boolean }
+    | { kind: "bbox"; bbox: [number, number, number, number] }
+  ) => void;
+  /** v0.9.2 · SAM 候选 polygon（待确认紫虚线）。当前候选 stroke 加粗，其它半透。 */
+  samCandidates?: { id: string; points: [number, number][] }[];
+  samActiveIdx?: number;
   onCommitMove?: (id: string, before: Geom, after: Geom) => void;
   onCommitResize?: (id: string, before: Geom, after: Geom) => void;
   /** polygon 顶点几何变更（拖动 / Alt 新增 / Shift 删除）；before/after 为完整 points 列表。 */
@@ -352,7 +361,8 @@ export function ImageStage({
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
   onBatchDelete, onBatchChangeClass,
   onSelectBox, onAcceptPrediction, onDeleteUserBox, onChangeUserBoxClass,
-  onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
+  onCommitDrawing, onSamPrompt, samCandidates, samActiveIdx = 0,
+  onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
   historicalShapes,
@@ -478,6 +488,8 @@ export function ImageStage({
       if (!pt) return;
       if (d.kind === "draw") {
         schedule(() => setDrag((cur) => (cur && cur.kind === "draw" ? { ...cur, cx: pt.x, cy: pt.y } : cur)));
+      } else if (d.kind === "samProbe") {
+        schedule(() => setDrag((cur) => (cur && cur.kind === "samProbe" ? { ...cur, cx: pt.x, cy: pt.y } : cur)));
       } else if (d.kind === "move") {
         schedule(() => setDrag((cur) => {
           if (!cur || cur.kind !== "move") return cur;
@@ -531,6 +543,19 @@ export function ImageStage({
           const w = Math.abs(d.cx - d.sx);
           const h = Math.abs(d.cy - d.sy);
           if (w > 0.005 && h > 0.005) onCommitDrawing?.({ x, y, w, h });
+        } else if (d.kind === "samProbe") {
+          const x1 = Math.min(d.sx, d.cx);
+          const y1 = Math.min(d.sy, d.cy);
+          const x2 = Math.max(d.sx, d.cx);
+          const y2 = Math.max(d.sy, d.cy);
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          // 拖动距离 < 0.5% 图像短边 → 单击 → point prompt；否则 bbox prompt
+          if (dx < 0.005 && dy < 0.005) {
+            onSamPrompt?.({ kind: "point", pt: [d.sx, d.sy], alt: d.alt });
+          } else if (dx > 0.005 && dy > 0.005) {
+            onSamPrompt?.({ kind: "bbox", bbox: [x1, y1, x2, y2] });
+          }
         } else if (d.kind === "move") {
           if (d.cur.x !== d.start.x || d.cur.y !== d.start.y) {
             onCommitMove?.(d.id, d.start, d.cur);
@@ -561,7 +586,7 @@ export function ImageStage({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [dragging, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCanvasStrokeCommit, canvasStroke]);
+  }, [dragging, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -615,6 +640,12 @@ export function ImageStage({
   const [polygonCursor, setPolygonCursor] = useState<{ x: number; y: number } | null>(null);
 
   const drawingPreview = drag?.kind === "draw"
+    ? { x: Math.min(drag.sx, drag.cx), y: Math.min(drag.sy, drag.cy),
+        w: Math.abs(drag.cx - drag.sx), h: Math.abs(drag.cy - drag.sy) }
+    : null;
+
+  // SAM 拖框预览：与 drawingPreview 同形态，但样式为紫色虚线（与 PendingPolygonsOverlay 视觉对齐）
+  const samPreview = drag?.kind === "samProbe"
     ? { x: Math.min(drag.sx, drag.cx), y: Math.min(drag.sy, drag.cy),
         w: Math.abs(drag.cx - drag.sx), h: Math.abs(drag.cy - drag.sy) }
     : null;
@@ -885,6 +916,37 @@ export function ImageStage({
               listening={false}
             />
           )}
+          {samPreview && samPreview.w > 0 && (
+            <Rect
+              x={samPreview.x * imgW}
+              y={samPreview.y * imgH}
+              width={samPreview.w * imgW}
+              height={samPreview.h * imgH}
+              stroke="#a855f7"
+              strokeWidth={1.5 / vp.scale}
+              dash={[6 / vp.scale, 4 / vp.scale]}
+              fill={hexToRgba("#a855f7", 0.08)}
+              listening={false}
+            />
+          )}
+          {samCandidates && samCandidates.length > 0 && samCandidates.map((c, idx) => {
+            const isActive = idx === samActiveIdx;
+            const flat: number[] = [];
+            for (const [x, y] of c.points) flat.push(x * imgW, y * imgH);
+            return (
+              <Line
+                key={c.id}
+                points={flat}
+                closed
+                stroke="#a855f7"
+                strokeWidth={(isActive ? 2.5 : 1.4) / vp.scale}
+                dash={[6 / vp.scale, 4 / vp.scale]}
+                fill={hexToRgba("#a855f7", isActive ? 0.18 : 0.06)}
+                opacity={isActive ? 1 : 0.55}
+                listening={false}
+              />
+            );
+          })}
 
           {pendingDrawing && (
             <>

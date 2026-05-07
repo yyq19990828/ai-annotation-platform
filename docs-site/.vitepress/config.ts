@@ -48,6 +48,7 @@ export default defineConfig({
             { text: "Bbox 标注", link: "/user-guide/workbench/bbox" },
             { text: "Polygon 标注", link: "/user-guide/workbench/polygon" },
             { text: "关键点标注", link: "/user-guide/workbench/keypoint" },
+            { text: "SAM 智能工具", link: "/user-guide/workbench/sam-tool" },
           ],
         },
         {

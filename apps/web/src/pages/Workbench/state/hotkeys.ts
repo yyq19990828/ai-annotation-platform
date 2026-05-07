@@ -15,6 +15,7 @@ export interface HotkeyDef {
 
 export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
+  { keys: ["S"], desc: "SAM 智能工具（点 / 框 / 文本 → polygon）", group: "ai", actionType: "setTool" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
   { keys: ["V"], desc: "平移工具", group: "draw", actionType: "setTool" },
   { keys: ["Enter"], desc: "闭合多边形（≥3 顶点）", group: "draw" },
@@ -88,7 +89,7 @@ export type HotkeyAction =
   | { type: "cycleUser"; dir: 1 | -1; loop: boolean }
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
-  | { type: "setTool"; tool: "box" | "hand" | "polygon" }
+  | { type: "setTool"; tool: "box" | "hand" | "polygon" | "sam" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
   | { type: "setAttribute"; key: string; value: unknown }
@@ -123,7 +124,7 @@ export interface DispatchCtx {
   attributeHotkey?: (digit: string) => AttributeHotkeyHit | null;
 }
 
-const RESERVED_LETTERS = new Set(["v","V","b","B","p","P","a","A","d","D","e","E","n","N","u","U","j","J","k","K","c","C"]);
+const RESERVED_LETTERS = new Set(["v","V","b","B","p","P","s","S","a","A","d","D","e","E","n","N","u","U","j","J","k","K","c","C"]);
 
 /** 纯函数：解析 keydown 事件为 HotkeyAction。返回 null 表示不消费。 */
 export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | null {
@@ -178,6 +179,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
 
   if (e.key === "v" || e.key === "V") return { type: "setTool", tool: "hand" };
   if (e.key === "b" || e.key === "B") return { type: "setTool", tool: "box" };
+  if (e.key === "s" || e.key === "S") return { type: "setTool", tool: "sam" };
   if (e.key === "p" || e.key === "P") return { type: "setTool", tool: "polygon" };
 
   if (e.key >= "1" && e.key <= "9") {

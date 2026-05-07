@@ -18,6 +18,8 @@ class ProjectCreate(BaseModel):
     # v0.8.6 F3 · 真实绑定 MLBackend；为 None 表示未绑定（ai_model 仍可作为 display hint）
     ml_backend_id: UUID | None = None
     due_date: date | None = None
+    box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
+    text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -37,6 +39,9 @@ class ProjectUpdate(BaseModel):
     maximum_annotations: int | None = None
     show_overlap_first: bool | None = None
     iou_dedup_threshold: Annotated[float, Field(ge=0.3, le=0.95)] | None = None
+    # v0.9.2 · DINO 阈值项目级 override
+    box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
+    text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
 
 
 class ProjectBatchSummary(BaseModel):
@@ -67,6 +72,8 @@ class ProjectOut(BaseModel):
     maximum_annotations: int = 1
     show_overlap_first: bool = False
     iou_dedup_threshold: float = 0.7
+    box_threshold: float = 0.35
+    text_threshold: float = 0.25
     model_version: str | None = None
     task_lock_ttl_seconds: int = 300
     total_tasks: int

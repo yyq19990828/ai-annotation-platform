@@ -160,8 +160,17 @@ def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool]:
         if not text:
             raise HTTPException(status_code=422, detail="context.text required for type=text")
         # text 必须拿原图给 DINO; SAM 端仍走缓存
+        # v0.9.2 · ctx 上的项目级阈值 override (None 时回退到 backend env 默认值)
+        box_th = ctx.get("box_threshold")
+        text_th = ctx.get("text_threshold")
         image = _fetch_image(file_path)
-        return p.predict_text(image, text, cache_key=cache_key)
+        return p.predict_text(
+            image,
+            text,
+            cache_key=cache_key,
+            box_threshold=box_th,
+            text_threshold=text_th,
+        )
 
     raise HTTPException(status_code=422, detail=f"unsupported context.type: {ptype}")
 
