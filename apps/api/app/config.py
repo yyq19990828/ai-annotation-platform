@@ -100,6 +100,11 @@ class Settings(BaseSettings):
         "https://challenges.cloudflare.com/turnstile/v0/siteverify"
     )
 
+    # v0.9.3 · 登录页 progressive CAPTCHA：同 IP 失败 ≥ 阈值后下一次登录强制 Turnstile。
+    # 计数键 login_failed:{ip}，TTL = window_seconds，成功登录后 DEL。
+    login_captcha_threshold: int = 5
+    login_failed_window_seconds: int = 3600
+
     @property
     def effective_celery_broker(self) -> str:
         return self.celery_broker_url or self.redis_url

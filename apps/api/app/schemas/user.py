@@ -54,3 +54,6 @@ class Token(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+    # v0.9.3 · progressive CAPTCHA：同 IP 失败 ≥ 阈值后必填；前端从 401 响应头
+    # X-Login-Failed-Count 拿到当前 count，达阈值时渲染 <Captcha>。
+    captcha_token: str | None = None

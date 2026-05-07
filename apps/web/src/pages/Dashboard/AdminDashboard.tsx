@@ -391,6 +391,7 @@ function MLBackendsAndCostCard({
   backendsTotal: number;
   backendsConnected: number;
 }) {
+  const navigate = useNavigate();
   const [range, setRange] = useState<"7d" | "30d">("30d");
   const { data: cost, isLoading } = usePredictionCostStats(range);
 
@@ -419,7 +420,10 @@ function MLBackendsAndCostCard({
             {backendsConnected} / {backendsTotal} 在线
           </Badge>
         </div>
-        <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <Button size="sm" variant="ghost" onClick={() => navigate("/admin/ml-integrations")}>
+            集成总览<Icon name="chevRight" size={11} />
+          </Button>
           {(["7d", "30d"] as const).map((r) => (
             <Button
               key={r}

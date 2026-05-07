@@ -1,9 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { useLogin } from "@/hooks/useAuth";
 import { useRegistrationStatus } from "@/hooks/useInvitation";
 import { useAuthStore } from "@/stores/authStore";
 import { Icon } from "@/components/ui/Icon";
+import { Captcha } from "@/components/Captcha";
+import { ApiError } from "@/api/client";
+
+// v0.9.3 · 与后端 settings.login_captcha_threshold 同值；前端阈值仅做"何时渲染 Captcha"判断
+const CAPTCHA_THRESHOLD = 5;
 
 export function LoginPage() {
   const token = useAuthStore((s) => s.token);
@@ -12,15 +17,39 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
+  const [failedCount, setFailedCount] = useState(0);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const login = useLogin();
   const regStatus = useRegistrationStatus();
 
+  useEffect(() => {
+    if (login.isError) {
+      const err = login.error;
+      if (err instanceof ApiError) {
+        const h = err.headers?.["x-login-failed-count"];
+        const n = h ? parseInt(h, 10) : NaN;
+        if (Number.isFinite(n)) setFailedCount(n);
+      }
+    }
+  }, [login.isError, login.error]);
+
   if (token) return <Navigate to={from} replace />;
+
+  const captchaRequired = failedCount >= CAPTCHA_THRESHOLD;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
-    login.mutate({ email, password });
+    if (captchaRequired && !captchaToken) return;
+    login.mutate(
+      { email, password, captcha_token: captchaRequired ? captchaToken : undefined },
+      {
+        onSuccess: () => {
+          setFailedCount(0);
+          setCaptchaToken(null);
+        },
+      },
+    );
   };
 
   return (
@@ -175,9 +204,18 @@ export function LoginPage() {
               </div>
             </div>
 
+            {captchaRequired && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>
+                  连续失败已达 {failedCount} 次，请完成验证后重试
+                </div>
+                <Captcha onChange={setCaptchaToken} />
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={login.isPending}
+              disabled={login.isPending || (captchaRequired && !captchaToken)}
               style={{
                 marginTop: 6,
                 width: "100%",
@@ -191,6 +229,7 @@ export function LoginPage() {
                 cursor: login.isPending ? "not-allowed" : "pointer",
                 transition: "opacity 0.15s",
                 letterSpacing: "0.01em",
+                opacity: captchaRequired && !captchaToken ? 0.6 : 1,
               }}
             >
               {login.isPending ? "登录中..." : "登录"}

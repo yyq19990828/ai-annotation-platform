@@ -33,6 +33,7 @@ import { useInteractiveAI } from "../state/useInteractiveAI";
 import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
 import { annotationToBox, polygonBounds, predictionsToBoxes, type AiBox } from "../state/transforms";
 import { iouShape } from "../stage/iou";
+import { buildIoUIndex } from "../stage/iou-index";
 import { setActiveClassesConfig, sortClassesByConfig } from "../stage/colors";
 import { getMissingRequired } from "./AttributeForm";
 import { ImageStage } from "../stage/ImageStage";
@@ -301,16 +302,18 @@ export function WorkbenchShell() {
   });
 
   // IoU 视觉去重：与已确认 user 框 IoU > 项目级阈值（默认 0.7）且 class 相同的 AI 框 → 淡化
+  // v0.9.3 · 用 rbush 同类分桶预筛包围盒候选，候选过 iouShape 精确判定，some() 早退保留
   const iouDedupThreshold = currentProject?.iou_dedup_threshold ?? 0.7;
+  const userIoUIndex = useMemo(() => buildIoUIndex(userBoxes), [userBoxes]);
   const dimmedAiIds = useMemo(() => {
     const out = new Set<string>();
     if (userBoxes.length === 0 || aiBoxes.length === 0) return out;
     for (const a of aiBoxes) {
-      const sameClass = userBoxes.filter((u) => u.cls === a.cls);
-      if (sameClass.some((u) => iouShape(u, a) > iouDedupThreshold)) out.add(a.id);
+      const candidates = userIoUIndex.candidatesForBox(a);
+      if (candidates.some((u) => iouShape(u, a) > iouDedupThreshold)) out.add(a.id);
     }
     return out;
-  }, [userBoxes, aiBoxes, iouDedupThreshold]);
+  }, [userBoxes, aiBoxes, userIoUIndex, iouDedupThreshold]);
 
   // 批量改类 popover：anchor 到 selectedIds 第一个 user 框的 geom
   const [batchChanging, setBatchChanging] = useState(false);

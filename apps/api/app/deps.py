@@ -30,8 +30,21 @@ async def get_current_user(
         detail="无效的认证凭据",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    token = credentials.credentials
+
+    # v0.9.3 · ak_ 前缀走 api_key 路径；不走 JWT 解码（避免 jose 抛形错日志）
+    from app.services import api_key_service
+
+    if api_key_service.is_api_key_token(token):
+        resolved = await api_key_service.resolve_token(db, token)
+        if resolved is None:
+            raise exc
+        _key, user = resolved
+        await db.commit()  # 持久化 last_used_at
+        return user
+
     try:
-        payload = decode_access_token(credentials.credentials)
+        payload = decode_access_token(token)
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise exc

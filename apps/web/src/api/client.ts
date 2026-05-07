@@ -3,17 +3,24 @@ const BASE = "/api/v1";
 class ApiError extends Error {
   /** 后端 detail 原文：可能是 string 或结构化对象（如 409 + {reason, pending_task_count, ...}）。 */
   detailRaw?: unknown;
+  /** v0.9.3 · 选择性透传响应头（小写键），用于 LoginPage 读 X-Login-Failed-Count 等。 */
+  headers?: Record<string, string>;
 
   constructor(
     public status: number,
     message: string,
     detailRaw?: unknown,
+    headers?: Record<string, string>,
   ) {
     super(message);
     this.name = "ApiError";
     this.detailRaw = detailRaw;
+    this.headers = headers;
   }
 }
+
+/** v0.9.3 · 仅透传少数白名单响应头（避免序列化无关大头），按需扩展。 */
+const EXPOSED_HEADERS = ["x-login-failed-count"] as const;
 
 async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?: boolean }): Promise<T> {
   const token = opts?.anonymous ? null : localStorage.getItem("token");
@@ -54,7 +61,17 @@ async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?:
         });
       }
     }
-    throw new ApiError(res.status, detail ?? res.statusText, rawDetail);
+    const exposedHeaders: Record<string, string> = {};
+    for (const k of EXPOSED_HEADERS) {
+      const v = res.headers.get(k);
+      if (v != null) exposedHeaders[k] = v;
+    }
+    throw new ApiError(
+      res.status,
+      detail ?? res.statusText,
+      rawDetail,
+      Object.keys(exposedHeaders).length ? exposedHeaders : undefined,
+    );
   }
 
   // 204 No Content

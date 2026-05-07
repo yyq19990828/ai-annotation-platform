@@ -85,4 +85,48 @@ describe("<DropdownMenu />", () => {
     expect(screen.getByText("One")).toBeInTheDocument();
     expect(screen.getByText("Two")).toBeInTheDocument();
   });
+
+  // v0.9.3 · content 模式
+  it("content 模式：渲染自定义内容并支持 close 主动关闭", () => {
+    function ContentWrapper() {
+      return (
+        <DropdownMenu
+          trigger={({ toggle, ref }) => (
+            <button ref={ref} onClick={toggle}>
+              打开
+            </button>
+          )}
+          content={({ close }) => (
+            <div>
+              <span>自定义表单</span>
+              <button onClick={close}>关闭</button>
+            </div>
+          )}
+        />
+      );
+    }
+    render(<ContentWrapper />);
+    expect(screen.queryByText("自定义表单")).toBeNull();
+    fireEvent.click(screen.getByText("打开"));
+    expect(screen.getByText("自定义表单")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("关闭"));
+    expect(screen.queryByText("自定义表单")).toBeNull();
+  });
+
+  it("content 模式：Escape 关闭", () => {
+    render(
+      <DropdownMenu
+        trigger={({ toggle, ref }) => (
+          <button ref={ref} onClick={toggle}>
+            打开
+          </button>
+        )}
+        content={() => <span>自定义表单</span>}
+      />,
+    );
+    fireEvent.click(screen.getByText("打开"));
+    expect(screen.getByText("自定义表单")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText("自定义表单")).toBeNull();
+  });
 });

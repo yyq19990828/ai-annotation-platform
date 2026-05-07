@@ -69,10 +69,10 @@ describe("LoginPage", () => {
       target: { value: "secret" },
     });
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
-    expect(mockLogin.mutate).toHaveBeenCalledWith({
-      email: "admin",
-      password: "secret",
-    });
+    expect(mockLogin.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "admin", password: "secret" }),
+      expect.any(Object),
+    );
   });
 
   it("login.isPending → 按钮显示「登录中...」+ disabled", () => {

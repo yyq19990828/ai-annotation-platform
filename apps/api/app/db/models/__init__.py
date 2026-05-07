@@ -19,6 +19,7 @@ from app.db.models.password_reset_token import PasswordResetToken
 from app.db.models.notification import Notification
 from app.db.models.notification_preference import NotificationPreference
 from app.db.models.system_setting import SystemSetting
+from app.db.models.api_key import ApiKey
 
 __all__ = [
     "User",
@@ -49,4 +50,5 @@ __all__ = [
     "Notification",
     "NotificationPreference",
     "SystemSetting",
+    "ApiKey",
 ]

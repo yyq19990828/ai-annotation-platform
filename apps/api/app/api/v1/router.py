@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 from app.api.v1 import (
+    admin_ml_integrations,
+    api_keys,
     auth,
     audit_logs,
     annotation_comments,
@@ -31,6 +33,12 @@ api_router.include_router(
     invitations_admin.router, prefix="/invitations", tags=["invitations"]
 )
 api_router.include_router(me.router, prefix="/auth/me", tags=["me"])
+api_router.include_router(api_keys.router, prefix="/me/api-keys", tags=["api-keys"])
+api_router.include_router(
+    admin_ml_integrations.router,
+    prefix="/admin/ml-integrations",
+    tags=["admin-ml-integrations"],
+)
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])

@@ -22,6 +22,7 @@ from app.core.security import (
 )
 from app.services.audit import AuditAction, AuditService
 from app.services.captcha_service import verify_turnstile_token
+from app.services import login_failed_counter
 from app.services.password_reset import PasswordResetService
 from app.services.system_settings_service import SystemSettingsService
 from app.config import settings
@@ -62,9 +63,24 @@ async def login(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else ""
+    threshold = settings.login_captcha_threshold
+
+    # v0.9.3 · progressive CAPTCHA：失败 ≥ 阈值后必须带 Turnstile token
+    failed_before = await login_failed_counter.get_count(client_ip)
+    if failed_before >= threshold:
+        ok = await verify_turnstile_token(data.captcha_token, client_ip)
+        if not ok:
+            raise HTTPException(
+                status_code=400,
+                detail="captcha_required",
+                headers={"X-Login-Failed-Count": str(failed_before)},
+            )
+
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
     if user is None or not verify_password(data.password, user.password_hash):
+        new_count = await login_failed_counter.increment(client_ip)
         await AuditService.log(
             db,
             actor=None,
@@ -77,13 +93,17 @@ async def login(
                 "email": data.email,
                 "result": "invalid_credentials",
                 "user_agent": request.headers.get("user-agent", "")[:256],
+                "ip_failed_count": new_count,
             },
         )
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="邮箱或密码错误",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={
+                "WWW-Authenticate": "Bearer",
+                "X-Login-Failed-Count": str(new_count),
+            },
         )
     if not user.is_active:
         await AuditService.log(
@@ -100,6 +120,9 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="账户已被停用"
         )
+
+    # 凭据通过 → 清零失败计数
+    await login_failed_counter.reset(client_ip)
 
     now = datetime.now(timezone.utc)
     user.last_login_at = now

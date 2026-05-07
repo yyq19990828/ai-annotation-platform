@@ -11,6 +11,7 @@ import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
 import { AdminPeoplePage } from "@/pages/Admin/AdminPeoplePage";
 import { FailedPredictionsPage } from "@/pages/Admin/FailedPredictionsPage";
+import { MLIntegrationsPage } from "@/pages/Admin/MLIntegrationsPage";
 import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
 import { AnnotatorDashboard } from "@/pages/Dashboard/AnnotatorDashboard";
 import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
@@ -246,6 +247,15 @@ export function App() {
           element={
             <RequirePagePermission pageKey="admin-failed-predictions">
               <FailedPredictionsPage />
+            </RequirePagePermission>
+          }
+        />
+        {/* v0.9.3 · ML 集成总览（super_admin only） */}
+        <Route
+          path="/admin/ml-integrations"
+          element={
+            <RequirePagePermission pageKey="admin-ml-integrations">
+              <MLIntegrationsPage />
             </RequirePagePermission>
           }
         />

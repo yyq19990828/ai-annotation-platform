@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.2 (Luminous Canvas) — Grounded-SAM-2 接入 M2** 详情见 [`0.9.x.md`](docs/changelogs/0.9.x.md)。
+> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.3 (Refactored Lighthouse) — 前端杂项收口（API 密钥 + 超管 ML 总览 + progressive CAPTCHA + IoU rbush + DropdownMenu 收编）** 详情见 [`0.9.x.md`](docs/changelogs/0.9.x.md)。
 
 ---
 
@@ -21,12 +21,13 @@
 
 ### 现在可做（无前置依赖、有清晰交付物）
 
-> v0.9.x 主线进行中（M0 backend 容器化 `01f8d45` + M1 embedding 缓存 v0.9.1 + **M2 工作台 `S` 工具 + 文本入口 + DINO 阈值项目级 override v0.9.2** 已落），下列条目在 SAM 专注度之外作为 `chip:maintenance` 穿插推进，不抢主线优先级。
+> v0.9.x 主线进行中（M0 backend 容器化 `01f8d45` + M1 embedding 缓存 v0.9.1 + **M2 工作台 `S` 工具 + 文本入口 + DINO 阈值项目级 override v0.9.2** + **v0.9.3 前端杂项收口** 已落），下列条目在 SAM 专注度之外作为 `chip:maintenance` 穿插推进，不抢主线优先级。
 
-- **UsersPage API 密钥 + 「存储与模型集成」对接**（P1，§A，`chip:maintenance`）
-- **登录页 progressive CAPTCHA**（P2，§A，slowapi 计数 + Redis 即可，`chip:maintenance`）
+- ~~**UsersPage API 密钥**~~ ✅ v0.9.3 落地（`api_keys` 表 + `/me/api-keys` CRUD + `ak_` token + ApiKeysModal）；「存储与模型集成」面板已早期版本删除，超管 ML 集成改放独立 `/admin/ml-integrations` 页（v0.9.3 同步落地）
+- ~~**登录页 progressive CAPTCHA**~~ ✅ v0.9.3 落地（Redis IP 计数 + X-Login-Failed-Count header + Captcha 条件渲染）
 - **CSP nonce-based 收紧**（P2，与 vite plugin 同窗口做，`chip:maintenance`）
-- **OpenSeadragon 瓦片金字塔 / IoU rbush 加速**（P2，§C.1，纯前端，`chip:maintenance`）
+- ~~**IoU rbush 加速**~~ ✅ v0.9.3 落地（同类分桶 RBush + 候选裁剪）；OpenSeadragon 瓦片金字塔仍待
+- **OpenSeadragon 瓦片金字塔**（P2，§C.1，极大图 > 50MP 才必要，`chip:maintenance`）
 - **i18n 框架接入**（P3，与 ProjectSettingsPage 重构合并节省破窗成本，`chip:maintenance`）
 
 ### v0.9.x SAM 基座进行中（一并落地）
@@ -74,8 +75,8 @@
 - **预测成本卡片透传到工作台**：v0.8.6 已落 admin 维度 `/admin/prediction-cost-stats`；剩工作台 AI 助手面板「本题花费 X 元」单条透传，与 v0.9.x SAM 工具一起做。
 
 ### 用户与权限页（UsersPage）
-- **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。需 `api_keys` 表 + scope + revoke + 最后使用时间。
-- **「存储与模型集成」面板**：`UsersPage.tsx:246-269` 全部 mock 数据，应对接 `/storage/health` 与 `/projects/{pid}/ml-backends`。
+- ~~**「API 密钥」按钮**~~ ✅ v0.9.3 落地（`api_keys` 表 + `/me/api-keys` CRUD + bcrypt + `ak_` token + ApiKeysModal 含一次性明文展示 + revoke + last_used_at；scope 字段已就位但实际拦截留 follow-up）。
+- ~~**「存储与模型集成」面板**~~ 早期版本已删除，v0.9.3 改为新增超管独立页 `/admin/ml-integrations`（聚合 storage health + 跨项目 ml_backends 只读总览）。
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -85,7 +86,7 @@
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
 
 ### 登录 / 注册 / 认证
-- **登录页 progressive CAPTCHA**：v0.8.7 在注册 / 忘记密码两路加了 Turnstile，但登录页故意未加（每天高频，体验代价大）。production 字典攻击场景下，建议改为渐进式：同一 IP 失败 ≥ 5 次（slowapi 计数 + Redis）后下一次登录强制弹 widget；正常用户零打扰，攻击者被减速。前端：登录失败计数从 401 response header 读取，达到阈值时 LoginPage 渲染 `<Captcha>`。
+- ~~**登录页 progressive CAPTCHA**~~ ✅ v0.9.3 落地（`login_failed:{ip}` Redis INCR/EXPIRE + 阈值 5 次后强制 `verify_turnstile_token` + 401 加 `X-Login-Failed-Count` header；前端 `ApiClient` 白名单透传响应头，LoginPage 阈值后条件渲染 `<Captcha>`，dev `turnstile_enabled=False` short-circuit）。
 - **开放注册二阶段剩余**：
   - **邮箱验证**：当前 viewer 零权限可跳过；若未来开放注册默认角色调高，需 `POST /auth/verify-email` + `email_verified_at` 字段 + 验证前 `is_active=false`。
   - **OAuth2 / 社交登录**：Google / GitHub SSO，python-social-auth 或 authlib；`User.oauth_provider` + `oauth_id` 字段；LoginPage / RegisterPage 加「使用 Google 登录」按钮。
@@ -144,10 +145,10 @@
 ### C.1 渲染性能 / 大图大量框
 - **OpenSeadragon 瓦片金字塔**：当前直接加载完整图像，> 50MP 会卡。需要后端切瓦片 + 前端 OpenSeadragon viewport，与 Konva overlay 共生。极大图场景才必要。
 - **Annotation 列表后端分页**：与 B「Annotation keyset 分页」共建。`useAnnotations` 全量拉，单任务 1000+ 框阻塞渲染。
-- **IoU 去重几何加速**：v0.5.2 用 useMemo + 嵌套循环 O(N×M)。如果掉帧，上空间索引 rbush（仅同类内分片）。
+- ~~**IoU 去重几何加速**~~ ✅ v0.9.3 落地（`iou-index.ts` 同类分桶 RBush + `candidatesForBox`，WorkbenchShell `dimmedAiIds` 走候选裁剪 + iouShape 精确判定 + some() 早退保留；千框场景预热完成）。
 
 ### C.2 界面优化（信息架构 / 可见性 / 一致性）
-- **`<DropdownMenu>` 第 3+ 个使用方收编**：phase 2 已抽通用组件并接入 TopBar / Topbar；剩余 ProjectsPage 卡片操作菜单等若干散落 dropdown。
+- ~~**`<DropdownMenu>` 第 3+ 个使用方收编**~~ ✅ v0.9.3 落地（通用组件加 `content` 自定义槽 + `disablePanelPadding` / `panelStyle`；ExportSection / NotificationsPopover 两处自实现浮层删 `usePopover` 直接调用，全部改 `<DropdownMenu content={...}>`；`usePopover` 仅剩 AttributeForm 一处使用，保留）。
 
 ### C.3 标注体验（核心生产力杠杆）
 - **SAM mask → polygon 化（marching squares / simplify-js）**：与 SAM 接入一起做。
@@ -182,16 +183,16 @@
 
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
-| **P1** | UsersPage API 密钥 + 「存储与模型集成」对接 | 用户每天面对，残缺感最强；现在可做 | — |
+| ~~**P1** UsersPage API 密钥~~ | ✅ v0.9.3 落地（端到端 + ak_ token） | — | — |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1；**v0.9.x 主轴** | — |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
-| **P2** | 登录页 progressive CAPTCHA（5 次失败后启用） | v0.8.7 注册/忘记密码已上 Turnstile，登录字典攻击仍裸奔；现在可做 | — |
+| ~~**P2** 登录页 progressive CAPTCHA~~ | ✅ v0.9.3 落地 | — | — |
 | **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 | — |
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
-| **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要；现在可做 | [0004](docs/adr/0004-canvas-stack-konva.md) |
+| **P2** | C.1 OpenSeadragon 瓦片金字塔 | 极大图 > 50MP 才必要；纯前端 IoU rbush 已 v0.9.3 落地 | [0004](docs/adr/0004-canvas-stack-konva.md) |
 | **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
 | **P2** | CSP nonce-based 收紧（剔除 'unsafe-inline'） | v0.8.8 ADR-0010 是宽松基线；nonce-based 留作 v0.10.x 与 ProjectSettingsPage 重构同窗口做 | [0010](docs/adr/0010-security-headers-middleware.md) |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |

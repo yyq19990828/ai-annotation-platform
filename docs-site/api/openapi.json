@@ -1134,6 +1134,163 @@
         "title": "AnnotatorDashboardStats",
         "type": "object"
       },
+      "ApiKeyCreate": {
+        "properties": {
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ApiKeyCreate",
+        "type": "object"
+      },
+      "ApiKeyCreated": {
+        "description": "创建响应：附带一次性 plaintext token。关闭弹窗后无法再次查看。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "plaintext": {
+            "title": "Plaintext",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "scopes",
+          "last_used_at",
+          "revoked_at",
+          "created_at",
+          "plaintext"
+        ],
+        "title": "ApiKeyCreated",
+        "type": "object"
+      },
+      "ApiKeyOut": {
+        "description": "列表 / 详情用。永远不含 plaintext / hash。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "scopes",
+          "last_used_at",
+          "revoked_at",
+          "created_at"
+        ],
+        "title": "ApiKeyOut",
+        "type": "object"
+      },
       "Attachment": {
         "properties": {
           "fileName": {
@@ -4482,6 +4639,17 @@
       },
       "LoginRequest": {
         "properties": {
+          "captcha_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captcha Token"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -4725,6 +4893,36 @@
           }
         },
         "title": "MLBackendUpdate",
+        "type": "object"
+      },
+      "MLIntegrationsOverview": {
+        "properties": {
+          "connected_backends": {
+            "title": "Connected Backends",
+            "type": "integer"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectMLBackendsGroup"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/StorageOverview"
+          },
+          "total_backends": {
+            "title": "Total Backends",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "storage",
+          "projects",
+          "total_backends",
+          "connected_backends"
+        ],
+        "title": "MLIntegrationsOverview",
         "type": "object"
       },
       "Mention": {
@@ -5482,6 +5680,32 @@
           }
         },
         "title": "ProjectDistributeBatches",
+        "type": "object"
+      },
+      "ProjectMLBackendsGroup": {
+        "properties": {
+          "backends": {
+            "items": {
+              "$ref": "#/components/schemas/MLBackendOut"
+            },
+            "title": "Backends",
+            "type": "array"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "project_name",
+          "backends"
+        ],
+        "title": "ProjectMLBackendsGroup",
         "type": "object"
       },
       "ProjectMemberCreate": {
@@ -6626,6 +6850,32 @@
           "configured"
         ],
         "title": "SmtpStatus",
+        "type": "object"
+      },
+      "StorageOverview": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BucketSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total_object_count": {
+            "title": "Total Object Count",
+            "type": "integer"
+          },
+          "total_size_bytes": {
+            "title": "Total Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_object_count",
+          "total_size_bytes"
+        ],
+        "title": "StorageOverview",
         "type": "object"
       },
       "SystemSettingsOut": {
@@ -7824,6 +8074,32 @@
         "summary": "Retry Failed Prediction",
         "tags": [
           "predictions"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/overview": {
+      "get": {
+        "operationId": "get_overview_api_v1_admin_ml_integrations_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MLIntegrationsOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Overview",
+        "tags": [
+          "admin-ml-integrations"
         ]
       }
     },
@@ -11616,6 +11892,121 @@
         "summary": "Resend Invitation",
         "tags": [
           "invitations"
+        ]
+      }
+    },
+    "/api/v1/me/api-keys": {
+      "get": {
+        "operationId": "list_my_keys_api_v1_me_api_keys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyOut"
+                  },
+                  "title": "Response List My Keys Api V1 Me Api Keys Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List My Keys",
+        "tags": [
+          "api-keys"
+        ]
+      },
+      "post": {
+        "operationId": "create_my_key_api_v1_me_api_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create My Key",
+        "tags": [
+          "api-keys"
+        ]
+      }
+    },
+    "/api/v1/me/api-keys/{key_id}": {
+      "delete": {
+        "operationId": "revoke_my_key_api_v1_me_api_keys__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke My Key",
+        "tags": [
+          "api-keys"
         ]
       }
     },

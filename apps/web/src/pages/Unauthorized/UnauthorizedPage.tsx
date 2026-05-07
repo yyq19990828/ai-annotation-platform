@@ -21,6 +21,7 @@ const PAGE_PATH: Record<PageKey, string> = {
   settings: "/settings",
   "admin-people": "/admin/people",
   "admin-failed-predictions": "/admin/failed-predictions",
+  "admin-ml-integrations": "/admin/ml-integrations",
 };
 
 export function UnauthorizedPage() {

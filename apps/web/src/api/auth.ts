@@ -3,6 +3,8 @@ import { apiClient } from "./client";
 export interface LoginPayload {
   email: string;
   password: string;
+  // v0.9.3 · progressive CAPTCHA：达到失败阈值后必填
+  captcha_token?: string | null;
 }
 
 export interface TokenResponse {

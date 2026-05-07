@@ -9,7 +9,7 @@ import {
 import type { NotificationItem } from "@/api/notifications";
 import { useAuthStore } from "@/stores/authStore";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
-import { usePopover } from "@/hooks/usePopover";
+import { DropdownMenu } from "@/components/ui/DropdownMenu";
 
 function relativeTime(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -117,7 +117,7 @@ function NotifRow({ item, onClick }: NotifRowProps) {
               whiteSpace: "nowrap",
             }}
           >
-            “{snippet}”
+            "{snippet}"
           </div>
         )}
         <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
@@ -129,150 +129,159 @@ function NotifRow({ item, onClick }: NotifRowProps) {
 }
 
 /**
- * v0.7.6 · 自包含 trigger + popover；内部用 usePopover 接管 outside-click / Escape。
- * TopBar 不再管 notifOpen state，直接 `<NotificationsPopover />` 即可。
+ * v0.7.6 · 自包含 trigger + popover；v0.9.3 改用 DropdownMenu content 模式以统一外观与键盘行为。
+ * 触发按钮保留特殊视觉（铃铛 + 未读红点）；面板内容沿用原 header + 列表。
  */
 export function NotificationsPopover() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role);
   const openBugDrawer = useBugDrawerStore((s) => s.openDrawer);
-  const { open, toggle, close, anchorRef, popoverRef } = usePopover();
-
-  const { data } = useNotifications(open); // 仅打开时才拉数据
   const { data: unreadData } = useUnreadCount();
-  const markAllRead = useMarkAllRead();
-  const markRead = useMarkRead();
-
-  const items = data?.items ?? [];
-  const unread = data?.unread ?? unreadData?.unread ?? 0;
-
-  function handleRowClick(item: NotificationItem) {
-    if (item.read_at === null) {
-      markRead.mutate(item.id);
-    }
-    if (item.target_type === "bug_report") {
-      // v0.7.0：按角色路由 — admin/super_admin 跳 /bugs 总览；提交者打开「我的反馈」抽屉并定位到该条
-      if (role === "super_admin" || role === "project_admin") {
-        navigate("/bugs");
-      } else {
-        openBugDrawer(item.target_id);
-      }
-    } else if (item.target_type === "batch") {
-      // v0.7.0：批次相关通知（如 batch.rejected）跳工作台并预选该批次
-      const payload = (item.payload || {}) as { project_id?: string };
-      const projectId = payload.project_id;
-      if (projectId) {
-        navigate(`/projects/${projectId}/annotate?batch=${item.target_id}`);
-      }
-    }
-    close();
-  }
+  const unread = unreadData?.unread ?? 0;
 
   return (
-    <div style={{ position: "relative" }}>
-      <button
-        ref={anchorRef as React.RefObject<HTMLButtonElement>}
-        title="通知"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={toggle}
-        style={{
-          width: 30,
-          height: 30,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: open ? "var(--color-bg-sunken)" : "transparent",
-          border: "1px solid transparent",
-          borderRadius: "var(--radius-md)",
-          color: "var(--color-fg-muted)",
-          cursor: "pointer",
-          position: "relative",
-        }}
-      >
-        <Icon name="bell" size={15} />
-        {unread > 0 && (
-          <span
-            style={{
-              position: "absolute",
-              top: 5,
-              right: 5,
-              width: 7,
-              height: 7,
-              background: "var(--color-danger)",
-              borderRadius: "50%",
-              border: "1.5px solid var(--color-bg-elev)",
-            }}
-          />
-        )}
-      </button>
-      {open && (
-        <div
-          ref={popoverRef as React.RefObject<HTMLDivElement>}
+    <DropdownMenu
+      align="end"
+      minWidth={360}
+      zIndex={200}
+      disablePanelPadding
+      panelStyle={{
+        width: 360,
+        borderRadius: "var(--radius-lg)",
+        boxShadow: "var(--shadow-lg, 0 8px 24px rgba(0,0,0,.12))",
+        overflow: "hidden",
+      }}
+      trigger={({ open, toggle, ref }) => (
+        <button
+          ref={ref}
+          title="通知"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={toggle}
           style={{
-            position: "absolute",
-            top: "calc(100% + 8px)",
-            right: 0,
-            width: 360,
-            background: "var(--color-bg-elev)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-lg)",
-            boxShadow: "var(--shadow-lg, 0 8px 24px rgba(0,0,0,.12))",
-            zIndex: 200,
-            overflow: "hidden",
+            width: 30,
+            height: 30,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: open ? "var(--color-bg-sunken)" : "transparent",
+            border: "1px solid transparent",
+            borderRadius: "var(--radius-md)",
+            color: "var(--color-fg-muted)",
+            cursor: "pointer",
+            position: "relative",
           }}
         >
-          <div
+          <Icon name="bell" size={15} />
+          {unread > 0 && (
+            <span
+              style={{
+                position: "absolute",
+                top: 5,
+                right: 5,
+                width: 7,
+                height: 7,
+                background: "var(--color-danger)",
+                borderRadius: "50%",
+                border: "1.5px solid var(--color-bg-elev)",
+              }}
+            />
+          )}
+        </button>
+      )}
+      content={({ close }) => (
+        <NotificationsPanel
+          unread={unread}
+          onItemClick={(item) => {
+            if (item.target_type === "bug_report") {
+              if (role === "super_admin" || role === "project_admin") {
+                navigate("/bugs");
+              } else {
+                openBugDrawer(item.target_id);
+              }
+            } else if (item.target_type === "batch") {
+              const payload = (item.payload || {}) as { project_id?: string };
+              const projectId = payload.project_id;
+              if (projectId) {
+                navigate(`/projects/${projectId}/annotate?batch=${item.target_id}`);
+              }
+            }
+            close();
+          }}
+        />
+      )}
+    />
+  );
+}
+
+function NotificationsPanel({
+  unread,
+  onItemClick,
+}: {
+  unread: number;
+  onItemClick: (item: NotificationItem) => void;
+}) {
+  const { data } = useNotifications(true); // panel 已渲染 = popover 已打开
+  const markAllRead = useMarkAllRead();
+  const markRead = useMarkRead();
+  const items = data?.items ?? [];
+
+  const handleRowClick = (item: NotificationItem) => {
+    if (item.read_at === null) markRead.mutate(item.id);
+    onItemClick(item);
+  };
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 14px 10px",
+          borderBottom: "1px solid var(--color-border)",
+        }}
+      >
+        <span style={{ fontWeight: 600, fontSize: 13 }}>
+          通知{unread > 0 ? ` · ${unread} 未读` : ""}
+        </span>
+        {unread > 0 && (
+          <button
+            onClick={() => markAllRead.mutate()}
+            disabled={markAllRead.isPending}
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "12px 14px 10px",
-              borderBottom: "1px solid var(--color-border)",
+              fontSize: 11,
+              color: "var(--color-accent)",
+              background: "none",
+              border: "none",
+              cursor: markAllRead.isPending ? "not-allowed" : "pointer",
+              padding: 0,
             }}
           >
-            <span style={{ fontWeight: 600, fontSize: 13 }}>
-              通知{unread > 0 ? ` · ${unread} 未读` : ""}
-            </span>
-            {unread > 0 && (
-              <button
-                onClick={() => markAllRead.mutate()}
-                disabled={markAllRead.isPending}
-                style={{
-                  fontSize: 11,
-                  color: "var(--color-accent)",
-                  background: "none",
-                  border: "none",
-                  cursor: markAllRead.isPending ? "not-allowed" : "pointer",
-                  padding: 0,
-                }}
-              >
-                全部已读
-              </button>
-            )}
-          </div>
+            全部已读
+          </button>
+        )}
+      </div>
 
-          <div style={{ maxHeight: 380, overflowY: "auto" }}>
-            {items.length === 0 ? (
-              <div
-                style={{
-                  padding: "24px 14px",
-                  textAlign: "center",
-                  color: "var(--color-fg-subtle)",
-                  fontSize: 13,
-                }}
-              >
-                <Icon name="bell" size={22} style={{ opacity: 0.25, marginBottom: 6 }} />
-                <div>暂无通知</div>
-              </div>
-            ) : (
-              items.map((item) => (
-                <NotifRow key={item.id} item={item} onClick={() => handleRowClick(item)} />
-              ))
-            )}
+      <div style={{ maxHeight: 380, overflowY: "auto" }}>
+        {items.length === 0 ? (
+          <div
+            style={{
+              padding: "24px 14px",
+              textAlign: "center",
+              color: "var(--color-fg-subtle)",
+              fontSize: 13,
+            }}
+          >
+            <Icon name="bell" size={22} style={{ opacity: 0.25, marginBottom: 6 }} />
+            <div>暂无通知</div>
           </div>
-        </div>
-      )}
+        ) : (
+          items.map((item) => (
+            <NotifRow key={item.id} item={item} onClick={() => handleRowClick(item)} />
+          ))
+        )}
+      </div>
     </div>
   );
 }

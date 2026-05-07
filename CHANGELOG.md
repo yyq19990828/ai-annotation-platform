@@ -21,6 +21,40 @@
 ---
 
 ## 最新版本
+
+## [0.9.3] - 2026-05-07
+
+> **Refactored Lighthouse — 前端杂项收口（4 项）。** v0.9.x SAM 主线 M3 起需要 GPU backend 联调，趁手头是 Mac 的窗口，把 ROADMAP §A/§B/§C 里"现在可做 / 纯前端" 的 4 项一次清完：① UsersPage「API 密钥」从 disabled 占位到端到端可用（后端 `api_keys` 表 + ak_ token 走 `get_current_user`，前端 ApiKeysModal 含一次性明文显示 + revoke），② 超管侧加 `/admin/ml-integrations` 只读总览页（聚合 storage health + 跨项目 ml_backends），③ 登录页 progressive CAPTCHA（同 IP 失败 ≥ 5 次后下次登录强制 Turnstile，正常用户零打扰），④ IoU 计算引入 `rbush` 同类分桶空间索引（千框场景预热），⑤ DropdownMenu 加 `content` 自定义槽，把 ExportSection / NotificationsPopover 两处自实现浮层收编到通用骨架。
+
+### Added
+
+- **API 密钥（程序化访问）**：新增 `api_keys` 表（user_id FK / key_prefix / bcrypt(key_hash) / scopes JSONB / last_used_at / revoked_at），alembic `0049_api_keys`；token 形如 `ak_<32 url-safe>`，前 12 字符做 prefix 索引。`/me/api-keys` CRUD（list / create 一次性返 plaintext / revoke 软删）；`get_current_user` 识别 `ak_` 前缀走 `api_key_service.resolve_token` 走候选行 bcrypt verify，命中刷新 `last_used_at` 并 commit。`scopes` 字段先入库不强制拦截，后续版本启用 `require_scopes` 工厂。
+- **超管 ML 集成总览**：`GET /admin/ml-integrations/overview`（仅 super_admin）聚合 `storage.summarize_bucket(annotations / datasets)` + 跨项目 `ml_backends` 列表，按 project 分组返回 `{storage, projects[], total_backends, connected_backends}`；前端 `/admin/ml-integrations` 路由 + `MLIntegrationsPage`（StatCard × 3 + Bucket 表格 + ProjectGroup 卡片，60s refetchInterval）；`AdminDashboard` ML 卡片 header 加「集成总览」跳转按钮。
+- **登录页 progressive CAPTCHA**：`apps/api/app/services/login_failed_counter.py`（Redis `login_failed:{ip}` INCR + EXPIRE 3600s + 成功 DEL，broker 故障 fail-open）；`auth.login` 入口先取计数，≥ `login_captcha_threshold`（默认 5）时强制 `verify_turnstile_token`，401 响应加 `X-Login-Failed-Count` header；`LoginRequest` 加可选 `captcha_token` 字段。前端 `ApiError.headers` 白名单透传 `x-login-failed-count`，`LoginPage` 失败 5 次后渲染 `<Captcha>`，提交时透传 token + 成功后清零。dev 模式 `turnstile_enabled=False` 时 `verify_turnstile_token` short-circuit 返 True 完全无感。
+- **IoU 空间索引**：`apps/web/src/pages/Workbench/stage/iou-index.ts` `buildIoUIndex` 按 `cls` 分桶 RBush，`candidatesForBox` 仅返回同类 + 包围盒相交的候选；`WorkbenchShell` `dimmedAiIds` 改用候选裁剪 + iouShape 精确判定 + some() 早退保留。polygon 形状用顶点 bbox 入索引。`pnpm add rbush @types/rbush`。
+- **DropdownMenu content 槽**：通用组件加 `content?: ({close}) => ReactNode`（与 `items` 互斥），content 模式下跳过列表键盘导航但保留 outside-click + Esc；`disablePanelPadding` / `panelStyle` 让 NotificationsPopover 等需要更宽 / 自管 padding 的场景沿用同一骨架。trigger ctx 也增加 `close`，业务确认后能主动关。
+- **ExportSection / NotificationsPopover 收编**：两处自实现浮层删掉对 `usePopover` 的直接依赖，全部改用 `<DropdownMenu content={...}>`；视觉与改造前一致（导出弹窗格式选择 + 复选框 + 提交按钮；通知列表 header「全部已读」+ 行点击跳转 `/bugs` 或工作台批次）。`usePopover` 仅剩 `AttributeForm` 一处使用，保留。
+- **测试**：后端新增 `test_api_keys.py`（3 case：CRUD + ak_ token 鉴权 + 跨用户隔离 + 失效 ak_ 401）、`test_admin_ml_integrations.py`（2 case：super_admin 200 / annotator 403 + 多项目分组聚合）、`test_login_progressive_captcha.py`（4 case：失败头部回填 / 阈值后 captcha_required / 成功重置计数 / dev short-circuit）；前端新增 `iou-index.test.ts` 4 case + DropdownMenu content 模式 2 case。
+- **页权限**：`PageKey` 增 `admin-ml-integrations`，`ROLE_PAGE_ACCESS.super_admin` 加该项；`UnauthorizedPage` PAGE_PATH 也补齐。
+
+### Changed
+
+- `LoginRequest` 新增可选 `captcha_token`（向后兼容）。
+- `auth.login` 凭据校验失败时审计 detail 多记 `ip_failed_count`。
+- `ApiError` 加 `headers?: Record<string,string>`（白名单 `x-login-failed-count` 等），便于场景化读取。
+- `DropdownMenu` trigger ctx 加 `close` 字段；现有 4 处 `{open, toggle, ref}` 解构调用方零改动。
+
+### Roadmap 同步
+
+- §A "UsersPage API 密钥 + 存储与模型集成对接" → 拆为「API 密钥（已落 v0.9.3）」+「存储与模型集成」过期清理（面板早期版本已删除，超管视角改放独立 `/admin/ml-integrations` 页）。
+- §A "登录页 progressive CAPTCHA" → 已落。
+- §C.1 "IoU rbush 加速" → 已落（保留触发条件描述以备后续 worker 化优化）。
+- §C.2 "DropdownMenu 第 3+ 收编" → 全部完成（ExportSection + NotificationsPopover 共两处）。
+
+详细计划：[`docs/plans/2026-05-07-v0.9.3-phase1-refactored-lighthouse.md`](./docs/plans/2026-05-07-v0.9.3-phase1-refactored-lighthouse.md)。
+
+---
+
 ## [0.9.2] - 2026-05-07
 
 > **Grounded-SAM-2 接入 M2 — 工作台 `S` 工具 + 文本入口 + DINO 阈值项目级 override（Luminous Canvas）。** v0.9.0 / v0.9.1 把 backend 容器化 + embedding 缓存铺好后，标注员仍然没有任何入口能触发 SAM；本版把后端能力下沉到工作台：新工具 `S` 让标注员**点 / Alt+点 / 拖框** 都能 < 50ms（命中缓存）拿到 polygon 候选，AI 助手在 S 模式下露出**文本提示**输入框（"person" 这样的英文 prompt 一键全图召回）；候选以**紫虚线**叠加 Konva 画布，`Enter` 接受 / `Esc` 取消 / `Tab` 切候选。同窗口把 GroundingDINO 的 box / text 阈值做成 ProjectSettings 项目级旋钮（默认 0.35 / 0.25），不同业务图（车牌 / 商品 / 卫星）可独立调参。
