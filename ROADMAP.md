@@ -33,8 +33,8 @@
 ### v0.9.x SAM 基座进行中（一并落地）
 - ~~C.3 SAM 交互式（点 / 框 → mask）~~ ✅ v0.9.2 落地（紫虚线候选 + Enter/Esc/Tab + AI 助手文本入口）
 - ~~**后端把 task.file_path 解析成 SAM 可达 presigned URL**~~ ✅ v0.9.4 phase 1 落地（`_resolve_task_url` helper + `ML_BACKEND_STORAGE_HOST` 三平台支持 + repo root .env 绝对路径加载，commit `c5eaf94`）
-- **SAM 子工具栏拆分（点 / 框 / 文本明确划分）**（**P1**，§C.3，当前 `S` 工具点击 / 拖动隐式分流 prompt 类型，新人不可见；下个版本必做）
-- **SAM text 模式输出选择 box / mask / both**（**P1**，§C.3，与子工具栏同窗口落 — image-det 项目当前出 polygon 反而是负担，box 模式还能省 50-80% 推理时间）
+- ~~**SAM 子工具栏拆分（点 / 框 / 文本明确划分）**~~ ✅ v0.9.4 phase 2 落地（ToolDock 内嵌子工具栏 + S 循环切 + +/= polarity hotkey + samSubTool 子态; 详见 `ROADMAP/0.9.x.md` v0.9.4 phase 2 段）
+- ~~**SAM text 模式输出选择 box / mask / both**~~ ✅ v0.9.4 phase 2 落地（SamTextPanel TabRow 三选一 + 智能默认按 type_key + sessionStorage 跨切题保留 + 后端 predict_text 三分支 + Context.output 协议字段）
 - **mask → polygon 化抽到 `apps/_shared/mask_utils/`**（v0.9.4 phase 2 / M3，与 v0.10.x sam3-backend 共享）
 - **AI 预标注独立页 `/ai-pre` 占位收口**（v0.9.4 phase 3 文本批量预标 UI 同步）
 - **工作台 AI 助手「本题花费 X 元」单条透传**（依赖 SAM 工具，可顺势补）
@@ -176,14 +176,14 @@
 - **SAM mask → polygon 化（marching squares / simplify-js）**：与 SAM 接入一起做。
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90%；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式）。
 - ~~**SAM 交互式标注（点 / 框 → mask）**~~ ✅ v0.9.2 落地，但 UX 需进一步切分（见下条）。
-- **SAM 子工具栏拆分（点 / 框 / 文本明确划分）**（**P1**，v0.9.4 phase 2 候选）：
+- ~~**SAM 子工具栏拆分（点 / 框 / 文本明确划分）**~~ ✅ v0.9.4 phase 2 落地（2026-05-08, **Crystal Compass**）。下方设计细节保留作历史参考；实施细节见 [`ROADMAP/0.9.x.md`](./ROADMAP/0.9.x.md) v0.9.4 phase 2 段。最终选定方案：保留 `samSubTool` 子态字段（不扩 Tool 联合）+ ToolDock 内嵌子工具栏 + S 循环切；hotkey 用 `=/+` `-` 切 polarity（数字键 1-9 已被「切换类别」占用，原方案改）。
   - **现状痛点**：当前 `S` 工具是单一 Tool（`useWorkbenchState.ts:5` `Tool = "box" | "hand" | "polygon" | "canvas" | "sam"`），按 `S` 进入后通过**鼠标动作隐式分流** prompt 类型 —— 单击 = positive point、Alt+点击 = negative point、拖框 = bbox prompt（`SamTool.ts:24` 都返回同一种 `samProbe` DragInit，`ImageStage.tsx:546` 按拖动距离分流）；文本 prompt 走 AI 助手面板的输入框，跟画布工具栏完全脱节。**问题**：① 新人不会发现 Alt+click = negative point；② 不知道点击和拖动会触发不同后端调用；③ 三种 prompt（point / bbox / text）在 UI 上没有显式分组，运维成本（文档 / 培训）高。
   - **设计方案**：S 激活后，画布顶部或左侧工具栏内浮出**子工具栏**：`[· 点 (Click)] [□ 框 (Box)] [T 文本]` 三按钮 + `[+ / −]` positive / negative 切换（仅点工具下显示）。当前激活的子工具决定接受的鼠标行为（点工具下拖框无效，框工具下单击无效），消除隐式分流；视觉 active state（紫色高亮）标明当前 prompt 类型。文本子工具点击后聚焦 AI 助手面板的文本输入框，把现有「分两块」的 UX 收回画布工具栏闭环。
   - **数据模型改动**：`Tool` 联合类型扩 `"sam-point" | "sam-bbox" | "sam-text"` 三个具体值（或保留 `"sam"` 父态 + 新增 `samSubTool` 子态字段，避免 hotkey 冲突）；`SamTool.ts` 拆三个 `*Tool` export，分别只接受对应 PointerEvent；`ImageStage.tsx` 的 `samProbe` 分流逻辑下移到 tool 层。
   - **协议联动**：依赖 §A AI/模型「SAM `/setup` 自描述协议消费」—— 后端补 `supported_prompts: ["point", "bbox", "text"]` 字段后，前端按 backend 实际能力动态渲染按钮（未来支持 sketch / scribble 等扩展时零改前端核心）。
   - **快捷键**：S 进入 SAM 模式（保留），子工具按 `1 / 2 / 3` 数字键切换；`+ / -` 切 positive/negative；`Esc` 退出。
   - **预计 1.5 天**：tool 拆分 + 子工具栏 UI + 数字键 hotkey + 截图自动化新增 1 张子工具栏特写。
-- **SAM text 模式输出选择 box / mask / both**（**P1**，v0.9.4 phase 2 候选 — 强烈建议与子工具栏 epic 同窗口做，共用 T 文本子工具的 UI 改动）：
+- ~~**SAM text 模式输出选择 box / mask / both**~~ ✅ v0.9.4 phase 2 落地（与子工具栏同窗口做）。下方设计细节保留作历史参考。**实际选定**：智能默认 `image-det → box · 其它 → mask`（不引入 type_key→both 默认，仅 user opt-in）；项目级 default 字段（`projects.text_output_default`）推迟到 v0.9.5，sessionStorage 记忆已覆盖 80% 场景。
   - **现状痛点**：v0.9.2 SAM 文本 prompt 永远走 `DINO → boxes → SAM → mask → polygon` 全链路，固定输出 `polygonlabels`。但**对 image-det 项目反而是负担** —— 标注员要的是 bbox annotation，拿到 polygon 还得手动转矩形或交给前端"polygon → bbox"近似。同时 SAM mask 步骤 GPU 时间贵：text-box 单图仅 DINO ~50-100ms（4060/tiny），text-mask 全链路 200-500ms，box 模式跳过 `predictor.set_image()` + mask 推理 + cv2/shapely 简化能省 50-80% 推理时间。
   - **设计原则**：text 模式下让用户**显式选择输出形态**：① **box only**（DINO 出框直接当 detection annotation，速度最快、image-det 项目首选）；② **mask only**（当前行为，image-seg 项目首选）；③ **both**（同时出 box + polygon 配对，让用户在两个粒度间挑，mm 项目或人工对比时用）。
   - **协议变更（小）**：`apps/grounded-sam2-backend/schemas.py` `Context` 加字段 `output: Literal["box", "mask", "both"] = "mask"`（默认 mask 保持老前端兼容）；`AnnotationResult.type: "polygonlabels" | "rectanglelabels"` **已就位**，`AnnotationValue` schema 同时支持 box（x/y/width/height）+ polygon（points）字段，**返回结构零改动**。`both` 模式下 `result` 数组每个 instance 携带 `{type: "rectanglelabels", value: {x,y,w,h, ...}}` + `{type: "polygonlabels", value: {points, ...}}` 两条记录，前端按需消费。
@@ -229,8 +229,8 @@
 |---|---|---|---|
 | ~~**P1** UsersPage API 密钥~~ | ✅ v0.9.3 落地（端到端 + ak_ token） | — | — |
 | ~~**P1** C.3 SAM 交互式（点/框→mask）~~ | ✅ v0.9.2 落地（紫虚线 + Enter/Esc/Tab）；mask → polygon 化抽公共模块仍 open（v0.9.4 phase 2） | — | — |
-| **P1** | **C.3 SAM 子工具栏拆分（点/框/文本明确划分）** | 接 SAM 后第一次实跑暴露 UX 问题：当前隐式分流（动作派生 prompt 类型）新人不可见；下版本必做 | — |
-| **P1** | **C.3 SAM text 模式 box/mask/both 输出选择** | image-det 项目当前出 polygon 反而是负担；box 模式跳过 SAM 推理省 50-80% 时间；协议加一个 enum 字段，建议与子工具栏同窗口做 | — |
+| ~~**P1** C.3 SAM 子工具栏拆分~~ | ✅ v0.9.4 phase 2 落地（ToolDock 内嵌 + S 循环 + samSubTool 子态 + +/= polarity hotkey）| — | — |
+| ~~**P1** C.3 SAM text 模式 box/mask/both 输出选择~~ | ✅ v0.9.4 phase 2 落地（SamTextPanel TabRow + 智能默认按 type_key + 后端 predict_text 三分支 box 路径跳过 SAM 省 50-80%）| — | — |
 | **P2** | GeneralSection AI 启用 + backend 绑定 UX 解耦 | v0.9.3 phase 3 后注册 backend 仍要回基本信息 tab 手选；MlBackendsSection 列表加「绑定到本项目」按钮即可消除往返 | — |
 | **P2** | SAM `/setup` 自描述协议消费 + `supported_prompts` 字段补充 | 与「SAM 子工具栏」P1 协同；老 backend 缺字段时前端走旧路径兼容 | — |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |

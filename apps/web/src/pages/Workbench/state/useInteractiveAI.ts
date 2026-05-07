@@ -16,11 +16,23 @@ import { useToastStore } from "@/components/ui/Toast";
  *
  * 防抖：runPoint 80ms（轻击 / 多点同图场景）；runBbox / runText 不防抖（一次完整动作）。
  */
+/** v0.9.4 phase 2 · text 模式输出形态. point/bbox 模式恒为 "mask"(协议默认). */
+export type TextOutputMode = "box" | "mask" | "both";
+
 export interface PendingCandidate {
   /** 仅用于 React key / 选中态定位 */
   id: string;
-  /** 归一化顶点列表 [[0..1, 0..1]...] */
-  points: [number, number][];
+  /**
+   * v0.9.4 phase 2 · 候选几何类型 discriminator (与后端 AnnotationResult.type 同源).
+   * polygonlabels: SAM mask → polygon, 紫虚线多边形渲染.
+   * rectanglelabels: DINO 直出 box, 紫虚线矩形渲染.
+   * both 模式下同 instance 会出现一对 polygonlabels + rectanglelabels.
+   */
+  type: "polygonlabels" | "rectanglelabels";
+  /** 仅 type=polygonlabels 时有: 归一化顶点列表 [[0..1, 0..1]...] */
+  points?: [number, number][];
+  /** 仅 type=rectanglelabels 时有: 归一化矩形 (左上 + 宽高, 全部 [0,1]) */
+  bbox?: { x: number; y: number; width: number; height: number };
   /** backend 给的标签（DINO 短语 / SAM 默认 "object"） */
   label: string;
   score: number | null;
@@ -40,7 +52,7 @@ export interface UseInteractiveAIReturn {
   isRunning: boolean;
   runPoint: (pt: [number, number], polarity: 1 | 0) => void;
   runBbox: (bbox: [number, number, number, number]) => void;
-  runText: (text: string) => void;
+  runText: (text: string, outputMode?: TextOutputMode) => void;
   cycle: (dir: 1 | -1) => void;
   /** 接受一个候选；调用方拿到 candidate 后落库（创建 polygon annotation），随后调 consume(idx) 清除该条。 */
   consume: (idx: number) => void;
@@ -142,11 +154,12 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   );
 
   const runText = useCallback(
-    (text: string) => {
+    (text: string, outputMode: TextOutputMode = "mask") => {
       if (!guard()) return;
       const trimmed = text.trim();
       if (!trimmed) return;
-      dispatch({ type: "text", text: trimmed }, "text");
+      // v0.9.4 phase 2 · output 字段控制 box/mask/both; 老 backend 缺字段时仍走 mask 兼容.
+      dispatch({ type: "text", text: trimmed, output: outputMode }, "text");
     },
     [guard, dispatch],
   );
@@ -191,11 +204,18 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-interface BackendPolygonResult {
+interface BackendResult {
   type?: string;
   value?: {
+    // polygonlabels 字段
     points?: [number, number][];
     polygonlabels?: string[];
+    // rectanglelabels 字段 (v0.9.4 phase 2)
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    rectanglelabels?: string[];
   };
   score?: number;
 }
@@ -205,14 +225,40 @@ function normalizeResult(
   idx: number,
   source: PendingCandidate["source"],
 ): PendingCandidate | null {
-  const r = raw as BackendPolygonResult;
+  const r = raw as BackendResult;
+  const score = typeof r.score === "number" ? r.score : null;
+  const id = `sam-${Date.now()}-${idx}`;
+
+  if (r.type === "rectanglelabels") {
+    const v = r.value;
+    if (
+      !v ||
+      typeof v.x !== "number" ||
+      typeof v.y !== "number" ||
+      typeof v.width !== "number" ||
+      typeof v.height !== "number"
+    ) {
+      return null;
+    }
+    return {
+      id,
+      type: "rectanglelabels",
+      bbox: { x: v.x, y: v.y, width: v.width, height: v.height },
+      label: v.rectanglelabels?.[0] ?? "object",
+      score,
+      source,
+    };
+  }
+
+  // 默认 / 显式 polygonlabels
   const pts = r?.value?.points;
   if (!Array.isArray(pts) || pts.length < 3) return null;
   return {
-    id: `sam-${Date.now()}-${idx}`,
+    id,
+    type: "polygonlabels",
     points: pts.map(([x, y]) => [x, y]) as [number, number][],
     label: r.value?.polygonlabels?.[0] ?? "object",
-    score: typeof r.score === "number" ? r.score : null,
+    score,
     source,
   };
 }

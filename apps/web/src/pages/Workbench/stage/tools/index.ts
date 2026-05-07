@@ -1,4 +1,5 @@
 import type { Viewport } from "../../state/useViewportTransform";
+import type { SamPolarity, SamSubTool } from "../../state/useWorkbenchState";
 import { BboxTool } from "./BboxTool";
 import { HandTool } from "./HandTool";
 import { PolygonTool } from "./PolygonTool";
@@ -18,8 +19,21 @@ export interface ToolMeta {
 /** Drag 初始化负载：仅 stage 空白处按下能产生的几种。move / resize 由 KonvaBox 内部派生。 */
 export type DragInit =
   | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
-  /** v0.9.2 · SAM 工具：单击 / 拖框；alt=true 时 negative point。松手时 ImageStage 按几何尺寸分流到 point/bbox prompt。 */
-  | { kind: "samProbe"; sx: number; sy: number; cx: number; cy: number; alt: boolean }
+  /**
+   * v0.9.2 · SAM 工具拖动负载.
+   * v0.9.4 phase 2 · 加 mode 字段, 由子工具决定 (而非松手时按几何尺寸隐式分流).
+   * mode="point": 单击产生 positive (alt=false) / negative (alt=true) point prompt.
+   * mode="bbox":  拖框产生 bbox prompt (alt 无意义).
+   */
+  | {
+      kind: "samProbe";
+      mode: "point" | "bbox";
+      sx: number;
+      sy: number;
+      cx: number;
+      cy: number;
+      alt: boolean;
+    }
   | { kind: "pan"; sx: number; sy: number }
   | { kind: "canvasStroke"; points: number[] };
 
@@ -49,6 +63,10 @@ export interface ToolPointerContext {
   onClearSelection: () => void;
   /** 仅 PolygonTool 用：当前 polygon 绘制草稿。其它工具不消费此字段。 */
   polygonDraft?: PolygonDraftHandle;
+  /** v0.9.4 phase 2 · 仅 SamTool 消费; 决定子工具 (point/bbox/text) 行为. */
+  samSubTool?: SamSubTool;
+  /** v0.9.4 phase 2 · 仅 SamTool 在 sam-point 子工具下消费. */
+  samPolarity?: SamPolarity;
 }
 
 /** 画布工具接口。新增 polygon / keypoint 等类型时，实现此接口并注册到 TOOL_REGISTRY。 */

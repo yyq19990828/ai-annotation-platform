@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { TabRow } from "@/components/ui/TabRow";
 import type { Annotation, AnnotationResponse } from "@/types";
 import type { AttributeSchema } from "@/api/projects";
 import type { AiBox } from "../state/transforms";
@@ -11,6 +12,8 @@ import { BoxListItem } from "../stage/BoxListItem";
 import { AttributeForm } from "./AttributeForm";
 import { CommentsPanel } from "./CommentsPanel";
 import { ResizeHandle } from "./ResizeHandle";
+import type { TextOutputMode } from "../state/useInteractiveAI";
+import { resolveInitialOutputMode, writeStoredOutputMode } from "../state/samTextOutput";
 
 interface AIInspectorPanelProps {
   open: boolean;
@@ -66,10 +69,19 @@ interface AIInspectorPanelProps {
   readOnly?: boolean;
   /** v0.9.2 · 当前工具（仅 sam 时显文本提示输入面板）。 */
   tool?: "box" | "hand" | "polygon" | "canvas" | "sam";
-  /** v0.9.2 · SAM 文本 prompt 触发，仅 tool === "sam" 时启用。 */
-  onRunSamText?: (text: string) => void;
+  /**
+   * v0.9.2 · SAM 文本 prompt 触发，仅 tool === "sam" 时启用。
+   * v0.9.4 phase 2 · 加 outputMode 参数让面板内 segmented control 三选一传给后端.
+   */
+  onRunSamText?: (text: string, outputMode: TextOutputMode) => void;
   samRunning?: boolean;
   samCandidateCount?: number;
+  /** v0.9.4 phase 2 · 用于读 / 写 sessionStorage `wb:sam:textOutput:{projectId}` */
+  projectId?: string;
+  /** v0.9.4 phase 2 · 智能默认 outputMode (image-det → "box", 其它 → "mask") */
+  projectTypeKey?: string | null;
+  /** v0.9.4 phase 2 · 切到 sam-text 子工具时计数自增, useEffect 拿到后 input.focus(). */
+  samTextFocusKey?: number;
 }
 
 const stripStyle: React.CSSProperties = {
@@ -91,6 +103,7 @@ export function AIInspectorPanel({
   onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   readOnly = false,
   tool, onRunSamText, samRunning = false, samCandidateCount = 0,
+  projectId, projectTypeKey, samTextFocusKey,
 }: AIInspectorPanelProps) {
   const selSet = selectedIds && selectedIds.length > 0
     ? new Set(selectedIds)
@@ -218,6 +231,9 @@ export function AIInspectorPanel({
           onRun={onRunSamText}
           running={samRunning}
           candidateCount={samCandidateCount}
+          projectId={projectId}
+          projectTypeKey={projectTypeKey}
+          focusKey={samTextFocusKey}
         />
       )}
 
@@ -307,13 +323,58 @@ export function AIInspectorPanel({
 
 // ── SAM 文本提示面板（v0.9.2，仅 tool === "sam" 时显） ─────────────────────────
 interface SamTextPanelProps {
-  onRun: (text: string) => void;
+  /** v0.9.4 phase 2 · onRun 接 outputMode (box / mask / both) 参数 */
+  onRun: (text: string, outputMode: TextOutputMode) => void;
   running: boolean;
   candidateCount: number;
+  /** v0.9.4 phase 2 · sessionStorage 持久化 key + 智能默认按 type_key */
+  projectId?: string;
+  projectTypeKey?: string | null;
+  /** v0.9.4 phase 2 · 切到 sam-text 子工具时父级自增此值, panel 拿到后自动 focus input. */
+  focusKey?: number;
 }
 
-function SamTextPanel({ onRun, running, candidateCount }: SamTextPanelProps) {
+// v0.9.4 phase 2 · 中文标签 ↔ TextOutputMode 双向映射 (TabRow 直接显示标签字符串).
+const OUTPUT_MODE_LABELS: Record<TextOutputMode, string> = {
+  box: "□ 框",
+  mask: "○ 掩膜",
+  both: "⊕ 全部",
+};
+const OUTPUT_MODE_BY_LABEL: Record<string, TextOutputMode> = {
+  "□ 框": "box",
+  "○ 掩膜": "mask",
+  "⊕ 全部": "both",
+};
+const OUTPUT_MODE_TABS = Object.values(OUTPUT_MODE_LABELS);
+
+function SamTextPanel({
+  onRun,
+  running,
+  candidateCount,
+  projectId,
+  projectTypeKey,
+  focusKey,
+}: SamTextPanelProps) {
   const [text, setText] = useState("");
+  const [outputMode, setOutputMode] = useState<TextOutputMode>(() =>
+    resolveInitialOutputMode(projectId, projectTypeKey),
+  );
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  // 切项目重新计算默认 (跨 project 不串扰).
+  useEffect(() => {
+    setOutputMode(resolveInitialOutputMode(projectId, projectTypeKey));
+  }, [projectId, projectTypeKey]);
+  // v0.9.4 phase 2 · S 键循环到 sam-text 子工具时父级 bumpSamTextFocus → focusKey 变 → 抓焦.
+  useEffect(() => {
+    if (focusKey === undefined || focusKey === 0) return;
+    inputRef.current?.focus();
+  }, [focusKey]);
+  const handleModeChange = (label: string) => {
+    const mode = OUTPUT_MODE_BY_LABEL[label];
+    if (!mode) return;
+    setOutputMode(mode);
+    if (projectId) writeStoredOutputMode(projectId, mode);
+  };
   const trimmed = text.trim();
   return (
     <div
@@ -334,16 +395,25 @@ function SamTextPanel({ onRun, running, candidateCount }: SamTextPanelProps) {
           </Badge>
         )}
       </div>
+      {/* v0.9.4 phase 2 · 输出形态三选一 (智能默认按 type_key, 用户切换写 sessionStorage) */}
+      <div style={{ marginBottom: 6 }} data-testid="sam-text-output-mode">
+        <TabRow
+          tabs={OUTPUT_MODE_TABS}
+          active={OUTPUT_MODE_LABELS[outputMode]}
+          onChange={handleModeChange}
+        />
+      </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
         <input
           data-testid="sam-text-input"
+          ref={inputRef}
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && trimmed && !running) {
               e.preventDefault();
-              onRun(trimmed);
+              onRun(trimmed, outputMode);
             }
           }}
           placeholder="e.g. person / car / ripe apple"
@@ -362,13 +432,16 @@ function SamTextPanel({ onRun, running, candidateCount }: SamTextPanelProps) {
           variant="ai"
           size="sm"
           disabled={!trimmed || running}
-          onClick={() => onRun(trimmed)}
+          onClick={() => onRun(trimmed, outputMode)}
         >
           {running ? "推理中…" : "找全图"}
         </Button>
       </div>
       <div style={{ fontSize: 10.5, color: "var(--color-fg-subtle)" }}>
-        英文 prompt 召回最佳；DINO 阈值由项目设置控制。
+        {outputMode === "box" && "仅 DINO 出框,跳过 SAM mask, 速度最快; "}
+        {outputMode === "mask" && "DINO + SAM mask → polygon, 默认行为; "}
+        {outputMode === "both" && "同实例配对返回框 + 掩膜, Tab 切换活跃形态; "}
+        英文 prompt 召回最佳;DINO 阈值由项目设置控制。
       </div>
     </div>
   );

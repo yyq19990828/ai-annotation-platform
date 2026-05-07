@@ -179,10 +179,18 @@ class GroundedSAM2Predictor:
         image: Image.Image,
         text: str,
         *,
+        output: str = "mask",
         cache_key: str | None = None,
         box_threshold: float | None = None,
         text_threshold: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
+        """v0.9.4 phase 2 · output 三分支:
+        - "box":  仅 DINO, 跳过 SAM image embedding + mask + 简化, 返回 rectanglelabels
+        - "mask": 当前默认行为, DINO + SAM mask → polygon, 返回 polygonlabels
+        - "both": 同 instance 配对返回 [rectangle, polygon] 两条 (前端按需消费)
+
+        cache_hit 仅在 mask/both 路径有意义; box 路径恒为 False (不读不写 cache).
+        """
         from groundingdino.util.inference import predict as dino_predict  # type: ignore[import-not-found]
 
         np_img, w, h = self._to_numpy(image)
@@ -195,7 +203,7 @@ class GroundedSAM2Predictor:
         # v0.9.2 · 项目级阈值 override；缺省回退到 instance 默认值（来自 backend env）
         eff_box = self.box_threshold if box_threshold is None else float(box_threshold)
         eff_text = self.text_threshold if text_threshold is None else float(text_threshold)
-        boxes, logits, phrases = dino_predict(
+        boxes, _, phrases = dino_predict(
             model=self._dino_model,
             image=image_tensor,
             caption=caption,
@@ -209,8 +217,17 @@ class GroundedSAM2Predictor:
 
         # 归一化 cxcywh → 像素 xyxy
         boxes_xyxy = self._cxcywh_to_xyxy(boxes.cpu().numpy(), w, h)
+        default_label = caption.rstrip(".")
 
-        # SAM 端走 cache: 命中跳过 set_image, 未命中 set_image + put.
+        # box 模式: DINO 直出, 跳过 SAM 全部步骤, cache 不读不写
+        if output == "box":
+            results: list[dict[str, Any]] = []
+            for i, box_px in enumerate(boxes_xyxy):
+                label = phrases[i] if i < len(phrases) else default_label
+                results.append(self._box_to_rect_label(box_px, w, h, label, score=1.0))
+            return results, False
+
+        # mask / both 共享 SAM image embedding + mask 推理路径.
         # 注意 text 路径 image 永远不为 None(DINO 要原图), 这里不会触发 ValueError.
         hit = False
         if cache_key and self.embedding_cache is not None:
@@ -228,20 +245,56 @@ class GroundedSAM2Predictor:
         # masks shape: (N, 1, H, W) 或 (N, H, W); 统一展平
         if masks.ndim == 4:
             masks = masks[:, 0]
-        results: list[dict[str, Any]] = []
+
+        results = []
         for i, mask in enumerate(masks):
             score = float(scores[i] if i < len(scores) else 0.0)
-            label = phrases[i] if i < len(phrases) else caption.rstrip(".")
+            label = phrases[i] if i < len(phrases) else default_label
             poly = self._mask_to_polygon(mask, w, h)
-            if poly:
-                results.append(
-                    {
-                        "type": "polygonlabels",
-                        "value": {"points": poly, "polygonlabels": [label]},
-                        "score": score,
-                    }
-                )
+            if not poly:
+                continue
+            if output == "both":
+                # 配对返回: 同 instance 一对 rect + poly (前端按需选).
+                results.append(self._box_to_rect_label(boxes_xyxy[i], w, h, label, score))
+                results.append(self._poly_to_polygon_label(poly, label, score))
+            else:  # mask
+                results.append(self._poly_to_polygon_label(poly, label, score))
         return results, hit
+
+    @staticmethod
+    def _box_to_rect_label(
+        box_px: np.ndarray | list[float],
+        w: int,
+        h: int,
+        label: str,
+        score: float,
+    ) -> dict[str, Any]:
+        """像素 xyxy → 归一化 [0,1] 的 rectanglelabels 字典 (与 polygonlabels 协议同源).
+
+        x/y 是矩形左上, width/height 也都归一化; 与平台 BboxAnnotation 字段一致.
+        """
+        x1, y1, x2, y2 = float(box_px[0]), float(box_px[1]), float(box_px[2]), float(box_px[3])
+        return {
+            "type": "rectanglelabels",
+            "value": {
+                "x": max(0.0, min(1.0, x1 / w)),
+                "y": max(0.0, min(1.0, y1 / h)),
+                "width": max(0.0, min(1.0, (x2 - x1) / w)),
+                "height": max(0.0, min(1.0, (y2 - y1) / h)),
+                "rectanglelabels": [label],
+            },
+            "score": score,
+        }
+
+    @staticmethod
+    def _poly_to_polygon_label(
+        poly: list[list[float]], label: str, score: float
+    ) -> dict[str, Any]:
+        return {
+            "type": "polygonlabels",
+            "value": {"points": poly, "polygonlabels": [label]},
+            "score": score,
+        }
 
     # ---------- 内部工具 ----------
 

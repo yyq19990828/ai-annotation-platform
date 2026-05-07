@@ -86,6 +86,11 @@ def setup() -> dict:
         "name": "grounded-sam2",
         "labels": [],
         "is_interactive": True,
+        # v0.9.4 phase 2 · 自描述协议: 平台前端按此驱动子工具栏渲染.
+        # 老前端不消费此字段; 老 backend 缺此字段时前端走兜底 ["point","bbox","text"] 路径.
+        "supported_prompts": ["point", "bbox", "text"],
+        # v0.9.4 phase 2 · text 路径输出形态选择 (box=DINO 直出, mask=DINO+SAM, both=配对返回).
+        "supported_text_outputs": ["box", "mask", "both"],
         "params": {
             "box_threshold": BOX_THRESHOLD,
             "text_threshold": TEXT_THRESHOLD,
@@ -159,14 +164,22 @@ def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool]:
         text = (ctx.get("text") or "").strip()
         if not text:
             raise HTTPException(status_code=422, detail="context.text required for type=text")
-        # text 必须拿原图给 DINO; SAM 端仍走缓存
+        # text 必须拿原图给 DINO; SAM 端仍走缓存 (mask/both 路径)
         # v0.9.2 · ctx 上的项目级阈值 override (None 时回退到 backend env 默认值)
         box_th = ctx.get("box_threshold")
         text_th = ctx.get("text_threshold")
+        # v0.9.4 phase 2 · 输出形态; 默认 mask 兼容老前端.
+        output_mode = ctx.get("output", "mask")
+        if output_mode not in ("box", "mask", "both"):
+            raise HTTPException(
+                status_code=422,
+                detail=f"context.output must be one of box|mask|both, got {output_mode!r}",
+            )
         image = _fetch_image(file_path)
         return p.predict_text(
             image,
             text,
+            output=output_mode,
             cache_key=cache_key,
             box_threshold=box_th,
             text_threshold=text_th,

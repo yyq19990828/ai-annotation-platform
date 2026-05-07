@@ -64,6 +64,19 @@ describe("useInteractiveAI", () => {
     expect(interactiveAnnotateMock.mock.calls[0][2].context).toEqual({
       type: "text",
       text: "car",
+      output: "mask", // v0.9.4 phase 2 · 默认 mask 兼容老前端 / 老 backend
+    });
+  });
+
+  it("runText 透传 outputMode='box' 走 DINO 直出路径", async () => {
+    interactiveAnnotateMock.mockResolvedValue({ result: [], score: null });
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runText("person", "box"));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1));
+    expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
+      type: "text",
+      text: "person",
+      output: "box",
     });
   });
 

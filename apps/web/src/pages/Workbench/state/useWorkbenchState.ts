@@ -4,6 +4,24 @@ import type { CommentCanvasDrawing } from "@/api/comments";
 
 export type Tool = "box" | "hand" | "polygon" | "canvas" | "sam";
 
+/**
+ * v0.9.4 phase 2 · SAM 工具子模式 (`Tool === "sam"` 时生效).
+ * point: 单击产生 positive point prompt; Alt+点击 / polarity=negative 产生 negative point.
+ * bbox:  拖框产生 bbox prompt (单击不响应).
+ * text:  画布事件不响应; 焦点切到右栏 SamTextPanel 输入框.
+ */
+export type SamSubTool = "point" | "bbox" | "text";
+
+/** SAM-point 子工具下的 polarity, "+" / "-" 键切换; 仅 sam-point 时有意义. */
+export type SamPolarity = "positive" | "negative";
+
+const SAM_CYCLE: SamSubTool[] = ["point", "bbox", "text"];
+
+export function nextSamSubTool(current: SamSubTool): SamSubTool {
+  const i = SAM_CYCLE.indexOf(current);
+  return SAM_CYCLE[(i + 1) % SAM_CYCLE.length];
+}
+
 /** v0.6.4：canvas 工具激活时的草稿状态。
  *  CommentInput 点「在题图上绘制」→ beginCanvasDraft；ImageStage 在 canvas tool 下
  *  读取 active + shapes 渲染 + 写入新笔触；用户点 Done → endCanvasDraft 把结果
@@ -34,6 +52,11 @@ export type EditingClass = {
 export function useWorkbenchState() {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("box");
+  // v0.9.4 phase 2 · SAM 子工具 (point/bbox/text) + polarity (+/−) + 文本焦点 trigger.
+  const [samSubTool, setSamSubTool] = useState<SamSubTool>("point");
+  const [samPolarity, setSamPolarity] = useState<SamPolarity>("positive");
+  // text 子工具激活时让 SamTextPanel 抓焦点; 每次切到 text 自增, useEffect 依赖此值即可.
+  const [samTextFocusKey, setSamTextFocusKey] = useState(0);
   /**
    * activeClass 语义：默认/最近使用类别。仅作为绘制时浮框颜色预览 + popover 的默认选中。
    * 实际类别在画完框 → ClassPickerPopover 中确认。
@@ -166,6 +189,10 @@ export function useWorkbenchState() {
   return {
     currentTaskId, setCurrentTaskId,
     tool, setTool,
+    // v0.9.4 phase 2 · SAM 子工具栏
+    samSubTool, setSamSubTool,
+    samPolarity, setSamPolarity,
+    samTextFocusKey, bumpSamTextFocus: () => setSamTextFocusKey((k) => k + 1),
     activeClass, setActiveClass,
     pendingDrawing, setPendingDrawing,
     editingClass, setEditingClass,

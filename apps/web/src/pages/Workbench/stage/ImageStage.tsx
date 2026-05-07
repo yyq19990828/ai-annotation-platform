@@ -19,7 +19,15 @@ import { isSelfIntersecting, moveVertex, type Pt } from "./polygonGeom";
 type Geom = { x: number; y: number; w: number; h: number };
 type Drag =
   | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
-  | { kind: "samProbe"; sx: number; sy: number; cx: number; cy: number; alt: boolean }
+  | {
+      kind: "samProbe";
+      mode: "point" | "bbox";
+      sx: number;
+      sy: number;
+      cx: number;
+      cy: number;
+      alt: boolean;
+    }
   | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom }
   | { kind: "resize"; id: string; start: Geom; sx: number; sy: number; dir: ResizeDirection; cur: Geom }
   | { kind: "polyVertex"; id: string; vidx: number; start: Pt[]; cur: Pt[] }
@@ -73,8 +81,17 @@ interface ImageStageProps {
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
   ) => void;
-  /** v0.9.2 · SAM 候选 polygon（待确认紫虚线）。当前候选 stroke 加粗，其它半透。 */
-  samCandidates?: { id: string; points: [number, number][] }[];
+  /**
+   * v0.9.2 · SAM 候选 polygon（待确认紫虚线）。当前候选 stroke 加粗，其它半透。
+   * v0.9.4 phase 2 · 加 type discriminator 支持 box/mask/both 三模式; rectanglelabels
+   * 类型用 bbox 字段渲染矩形, polygonlabels 用 points 渲染多边形.
+   */
+  samCandidates?: {
+    id: string;
+    type: "polygonlabels" | "rectanglelabels";
+    points?: [number, number][];
+    bbox?: { x: number; y: number; width: number; height: number };
+  }[];
   samActiveIdx?: number;
   onCommitMove?: (id: string, before: Geom, after: Geom) => void;
   onCommitResize?: (id: string, before: Geom, after: Geom) => void;
@@ -87,6 +104,10 @@ interface ImageStageProps {
   overlay?: React.ReactNode;
   /** polygon 工具草稿（v0.5.3）。仅 tool === "polygon" 时使用。 */
   polygonDraft?: PolygonDraftHandle;
+  /** v0.9.4 phase 2 · 仅 tool === "sam" 时透传; 决定子工具行为 (point/bbox/text). */
+  samSubTool?: "point" | "bbox" | "text";
+  /** v0.9.4 phase 2 · 仅 sam-point 子工具下生效, "+/-" 切换 (与 Alt 修饰键合并). */
+  samPolarity?: "positive" | "negative";
   /** v0.6.4：画布批注 shapes（已落地的笔触）。read-only 渲染。 */
   canvasShapes?: NonNullable<CommentCanvasDrawing["shapes"]>;
   /** canvas 工具激活：监听 + 渲染 draft，新笔触通过 onCanvasStrokeCommit 上报。 */
@@ -363,7 +384,7 @@ export function ImageStage({
   onSelectBox, onAcceptPrediction, onDeleteUserBox, onChangeUserBoxClass,
   onCommitDrawing, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
-  onStageGeometry, overlay, polygonDraft,
+  onStageGeometry, overlay, polygonDraft, samSubTool, samPolarity,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
   historicalShapes,
 }: ImageStageProps) {
@@ -544,17 +565,18 @@ export function ImageStage({
           const h = Math.abs(d.cy - d.sy);
           if (w > 0.005 && h > 0.005) onCommitDrawing?.({ x, y, w, h });
         } else if (d.kind === "samProbe") {
-          const x1 = Math.min(d.sx, d.cx);
-          const y1 = Math.min(d.sy, d.cy);
-          const x2 = Math.max(d.sx, d.cx);
-          const y2 = Math.max(d.sy, d.cy);
-          const dx = x2 - x1;
-          const dy = y2 - y1;
-          // 拖动距离 < 0.5% 图像短边 → 单击 → point prompt；否则 bbox prompt
-          if (dx < 0.005 && dy < 0.005) {
+          // v0.9.4 phase 2 · 按子工具 mode 分发, 不再隐式按拖动距离猜.
+          if (d.mode === "point") {
             onSamPrompt?.({ kind: "point", pt: [d.sx, d.sy], alt: d.alt });
-          } else if (dx > 0.005 && dy > 0.005) {
-            onSamPrompt?.({ kind: "bbox", bbox: [x1, y1, x2, y2] });
+          } else {
+            // bbox: 仍然要拖出有效区域才发, 否则忽略 (避免极小框被 SAM 当全图).
+            const x1 = Math.min(d.sx, d.cx);
+            const y1 = Math.min(d.sy, d.cy);
+            const x2 = Math.max(d.sx, d.cx);
+            const y2 = Math.max(d.sy, d.cy);
+            if (x2 - x1 > 0.005 && y2 - y1 > 0.005) {
+              onSamPrompt?.({ kind: "bbox", bbox: [x1, y1, x2, y2] });
+            }
           }
         } else if (d.kind === "move") {
           if (d.cur.x !== d.start.x || d.cur.y !== d.start.y) {
@@ -608,6 +630,8 @@ export function ImageStage({
       pendingDrawing: !!pendingDrawing,
       onClearSelection: () => onSelectBox(null),
       polygonDraft,
+      samSubTool,
+      samPolarity,
     });
     if (init) setDrag(init);
   };
@@ -931,6 +955,30 @@ export function ImageStage({
           )}
           {samCandidates && samCandidates.length > 0 && samCandidates.map((c, idx) => {
             const isActive = idx === samActiveIdx;
+            const stroke = "#a855f7";
+            const strokeWidth = (isActive ? 2.5 : 1.4) / vp.scale;
+            const dashArr = [6 / vp.scale, 4 / vp.scale];
+            const fillRgba = hexToRgba(stroke, isActive ? 0.18 : 0.06);
+            const opacity = isActive ? 1 : 0.55;
+            // v0.9.4 phase 2 · 按 type 分发渲染: rectanglelabels → Rect; polygonlabels → Line.
+            if (c.type === "rectanglelabels" && c.bbox) {
+              return (
+                <Rect
+                  key={c.id}
+                  x={c.bbox.x * imgW}
+                  y={c.bbox.y * imgH}
+                  width={c.bbox.width * imgW}
+                  height={c.bbox.height * imgH}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  dash={dashArr}
+                  fill={fillRgba}
+                  opacity={opacity}
+                  listening={false}
+                />
+              );
+            }
+            if (!c.points || c.points.length < 3) return null;
             const flat: number[] = [];
             for (const [x, y] of c.points) flat.push(x * imgW, y * imgH);
             return (
@@ -938,11 +986,11 @@ export function ImageStage({
                 key={c.id}
                 points={flat}
                 closed
-                stroke="#a855f7"
-                strokeWidth={(isActive ? 2.5 : 1.4) / vp.scale}
-                dash={[6 / vp.scale, 4 / vp.scale]}
-                fill={hexToRgba("#a855f7", isActive ? 0.18 : 0.06)}
-                opacity={isActive ? 1 : 0.55}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                dash={dashArr}
+                fill={fillRgba}
+                opacity={opacity}
                 listening={false}
               />
             );

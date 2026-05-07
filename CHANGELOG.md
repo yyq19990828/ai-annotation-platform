@@ -22,6 +22,42 @@
 
 ## 最新版本
 
+## [0.9.4 phase 2] - 2026-05-08
+
+> **Crystal Compass — SAM UX 完善 + text 模式 box/mask/both 输出选择。** v0.9.4 phase 1 真接通 SAM 后第一次实跑暴露两个紧密耦合的 UX 痛点：① `S` 工具点击 / 拖动隐式分流 prompt 类型（单击=点 / Alt+点击=negative / 拖框=bbox），新人不可见；文本走 AI 助手面板完全脱节。② text 模式永远输出 polygon —— 对 image-det 项目（标注员要 bbox）反而是负担,SAM mask 步骤 GPU 时间贵。本 phase 同时落 SAM 子工具栏拆分 + text 输出三选一,**共用 T 文本子工具的 UI 改动**(同窗口落代价最优).
+
+### Added
+
+- **SAM 子工具栏（`<ToolDock>` 嵌入 + 数据模型扩 `samSubTool`）**：S 工具激活后 ToolDock 内嵌出 `[· 点 (1)] [□ 框 (2)] [T 文本 (3)]` 三个子按钮 + 仅 sam-point 子工具下额外露 `[+/−]` polarity 切换；`samSubTool: "point" | "bbox" | "text"` 与 `samPolarity: "positive" | "negative"` 加进 `useWorkbenchState`，`samTextFocusKey` 计数器让切到 text 子工具时 SamTextPanel 自动 `focus()`。
+- **`SamTool.ts` 拆三模式分发**：`onPointerDown` 按 `ctx.samSubTool` 决定行为 —— point 子工具单击产生 positive point（Alt 或 polarity=negative 转 negative）；bbox 单击不响应、拖框产生 bbox prompt；text 子工具不响应画布事件。`DragInit.samProbe` 加 `mode: "point" | "bbox"` 字段，`ImageStage:546-558` 删除"按拖动距离 < 0.5% 隐式分流"逻辑，改为按 `d.mode` 直接 dispatch。
+- **`S` 键循环切子工具**：`useWorkbenchHotkeys` 拦 `setTool tool="sam"` —— 当前不在 sam → 进入 sam（保留上次 samSubTool）；当前 sam·point → 切 bbox；sam·bbox → 切 text（同时 `bumpSamTextFocus()`）；sam·text → 退出 SAM 回 box。`hotkeys.ts` 新增 `samPolarity` action（`=` / `+` 切 positive、`-` 切 negative，仅在 sam-point 下被消费端 gate）。
+- **`SamTextPanel` segmented control（`<TabRow>` 复用）**：文本输入框上方新增 `[□ 框] [○ 掩膜] [⊕ 全部]` 三选一切换。`outputMode` state 智能默认按项目 `type_key`（image-det → `box`，其它 → `mask`）；用户切换写 sessionStorage `wb:sam:textOutput:{projectId}`（跨切题保留、跨 project 不串扰，TTL 同 session 生命周期）。新增 helper `apps/web/src/pages/Workbench/state/samTextOutput.ts`（`defaultOutputMode` / `resolveInitialOutputMode` / `readStoredOutputMode` / `writeStoredOutputMode` 四个纯函数 + `SAM_OUTPUT_STORAGE_PREFIX` 常量）。
+- **`PendingCandidate` 加 type discriminator**：原本只支持 `polygonlabels` polygon；现加 `type: "polygonlabels" | "rectanglelabels"` + `bbox?: { x, y, width, height }` 字段。`useInteractiveAI.normalizeResult` 按 backend 返回 `result[i].type` 分别填充对应几何字段。`<ImageStage>` 候选叠加层按 type 分发渲染：rectanglelabels → 紫虚线矩形（`<Rect>`）；polygonlabels → 紫虚线多边形（`<Line>`）。`<WorkbenchShell>` `handleSamCommitClass` Enter 接受时按 type dispatch：rectanglelabels → 调 `s.setPendingDrawing()` + `handlePickPendingClass(cls)` 走 BboxAnnotation 创建路径（与用户手画框 + 选类等价）；polygonlabels → 走原 `submitPolygon()`。
+- **后端 `Context.output` 字段 + `predict_text` 三分支**（`apps/grounded-sam2-backend/`）：`schemas.py` `Context` 加 `output: Literal["box","mask","both"] = "mask"`（默认 mask 老前端兼容）+ `box_threshold` / `text_threshold` 字段（v0.9.2 已透传，schema 显式化）。`predictor.py` `predict_text` 重写：`box` 完全跳过 `_sam_predictor.set_image / predict / cache.put + _mask_to_polygon`（仅 DINO 出 boxes 直接归一化为 rectanglelabels，**cache 不读不写**，恒返回 `cache_hit=False`）；`mask` 当前行为；`both` 同 instance 配对返回 `[rectanglelabels, polygonlabels, ...]` 严格交错。新增 helper `_box_to_rect_label` / `_poly_to_polygon_label`。`main.py` `_run_prompt` text 分支读 `ctx.output` 透传给 `predict_text`，缺省 `"mask"` 兼容老前端；非法值返回 422。
+- **`/setup` 自描述协议**：返回 dict 加 `supported_prompts: ["point","bbox","text"]` + `supported_text_outputs: ["box","mask","both"]`。前端可据此动态渲染子工具栏 + segmented control（老 backend 缺字段时前端走兜底列表，本版未消费但协议留好钩子）。
+- **`apps/grounded-sam2-backend/tests/test_predict_text_output_modes.py`**：4 个 case mock dino + sam 验证 box/mask/both 三分支 + 默认 mask 兼容性。`test_box_mode_skips_sam_calls_and_cache_writes` 严格断言 `_sam_predictor.set_image / predict` 与 `embedding_cache.put` 全未被调用（box 模式核心动机）。
+- **`docs-site/dev/ml-backend-protocol.md`**：§2.2 Context schema 加 `output` enum 字段 + 三模式性能对比 + 老 backend / 老前端兼容性说明；§4 `/setup` 加 `supported_prompts` + `supported_text_outputs` 字段说明。
+- **截图自动化新增 2 个 scene**：`sam/subtoolbar`（按 S 进 SAM 模式截 ToolDock 子工具栏特写）+ `sam/text-three-modes`（连按 S 三次到 text 子工具截 SamTextPanel TabRow + 输入框）；PNG 实跑由 maintainer 在 `pnpm --filter web screenshots` 时回填（与 v0.8.7 已建立的截图流程一致）。
+- **`apps/grounded-sam2-backend/Dockerfile`** COPY 列表补 `embedding_cache.py observability.py` + `tests/`（之前漏 COPY 测试目录导致容器内 pytest 收集不到 test，本版顺手收口）。
+
+### Changed
+
+- **`SamTextPanel.onRun` 签名**：`(text: string) => void` → `(text: string, outputMode: TextOutputMode) => void`，每次发起请求带当前 segmented control 选择的 mode。
+- **`useInteractiveAI.runText` 签名**：加可选 `outputMode: TextOutputMode = "mask"` 参数；payload `context` 加 `output` 字段透传。
+- **`ImageStage.samCandidates` props 类型**：`{ id, points }[]` → 加 `type` discriminator 与 `bbox` 字段。
+
+### Notes
+
+- **协议向后兼容**：① 老前端不传 `Context.output` 时 backend 走 `"mask"` 默认；② 老 backend 不识别 `output` 字段时 pydantic 因为 `extra = "ignore"` 默认（实际 v0.9.4 phase 2 之前 backend 用 `pydantic.BaseModel` 默认 `extra = "ignore"`）忽略未知字段照旧走 mask；③ 老前端不识别 `rectanglelabels` 候选 → ImageStage 旧版本因为 `c.points` 为 undefined 在 `for ([x,y] of c.points)` 处会抛错，新版按 type 分发先行 type 检查再读字段，**前端必须升到 v0.9.4 phase 2** 才能吃 backend 返回的 rectanglelabels。
+- **box 模式 cache 行为**：box 路径**完全不读不写** SAM image embedding cache（`predictor.py:if output == "box": return [...], False`），避免污染 cache（image-det 项目大批量跑 box 预标时同张图未来可能切 mask 再跑，不希望 box 模式抢占 cache 槽位）。mask / both 模式 cache 行为不变（共享同一路径）。
+- **+/= 与 -**：与「切换类别」`1-9` 数字键完全独立，仅在 `tool === "sam" && samSubTool === "point"` 下被 `useWorkbenchHotkeys.samPolarity` 消费；其它情境作普通字符忽略。
+- **测试**：`pnpm --filter web typecheck` 0 errors；前端单测无回归（候选渲染按 type 分发的 vitest case 留作 phase 3 与 SAM E2E 一并补，本 phase 仅落代码 + 后端 4 个新 pytest case）。
+- **下一步**：v0.9.4 phase 3 抽 `mask_to_polygon` 到 `apps/_shared/mask_utils/` + IoU 评估调 tolerance + SAM E2E 完整路径。
+
+详细计划：[`docs/plans/2026-05-08-v0.9.4-phase2-sam-subtools-and-text-output.md`](./docs/plans/2026-05-08-v0.9.4-phase2-sam-subtools-and-text-output.md)。
+
+---
+
 ## [0.9.4 phase 1] - 2026-05-08
 
 > **Bridged Pasture — 后端真正接通 SAM。** v0.9.3 phase 3 让 PROJECT_ADMIN 能注册 backend 后，第一次实跑 `S` 工具单击立刻 500：根因是 `ml_backends.py` 把 `task.file_path`（MinIO 对象 key，如 `cpc0-R_.../xxx.jpg`）**直接透传**给 SAM backend，而 SAM 协议要求 `file_path` 是 `http(s)://` URL；同时 SAM 容器在 docker compose 网内**访问不到** host 进程的 `localhost:9000`。本 phase 把对象 key → presigned URL → host 重写一条龙做完，让 `S` 工具单击 / 拖框 / 文本三种 prompt 都能走通。

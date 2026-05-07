@@ -18,6 +18,15 @@ class Context(BaseModel):
     labels: list[int] | None = None
     bbox: list[float] | None = None
     text: str | None = None
+    # v0.9.4 phase 2 · text 模式输出形态选择 (老前端不传时仍走 mask 兼容旧行为)
+    # box: 仅 DINO 出框, 跳过 SAM image embedding + mask 推理 + cv2/shapely 简化, 速度最快
+    # mask: DINO → SAM mask → polygon (当前默认行为)
+    # both: 同 instance 配对返回 rectanglelabels + polygonlabels
+    # point/bbox 类型下此字段无意义 (始终走 SAM mask → polygon 路径)
+    output: Literal["box", "mask", "both"] = "mask"
+    # v0.9.2 项目级 DINO 阈值注入 (text 路径生效)
+    box_threshold: float | None = None
+    text_threshold: float | None = None
 
 
 class InteractiveRequest(BaseModel):

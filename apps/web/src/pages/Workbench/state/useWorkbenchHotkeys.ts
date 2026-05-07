@@ -314,7 +314,37 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           return;
         }
 
-        case "setTool": s.setTool(action.tool); return;
+        case "setTool": {
+          // v0.9.4 phase 2 · S 键循环切 SAM 子工具:
+          //   tool !== sam      → 进入 sam (samSubTool 保留上次值)
+          //   tool === sam · point → 切 bbox
+          //   tool === sam · bbox  → 切 text
+          //   tool === sam · text  → 退出 SAM (回 box 默认)
+          if (action.tool === "sam" && s.tool === "sam") {
+            const cycle: Array<"point" | "bbox" | "text"> = ["point", "bbox", "text"];
+            const i = cycle.indexOf(s.samSubTool);
+            if (i === cycle.length - 1) {
+              s.setTool("box");
+            } else {
+              s.setSamSubTool(cycle[(i + 1) % cycle.length]);
+              if (cycle[(i + 1) % cycle.length] === "text") s.bumpSamTextFocus();
+            }
+          } else {
+            if (action.tool === "sam" && s.samSubTool === "text") {
+              s.bumpSamTextFocus();
+            }
+            s.setTool(action.tool);
+          }
+          return;
+        }
+
+        case "samPolarity": {
+          // 仅 SAM-point 子工具下消费; 其它情境 +/= / - 键不应该影响 polarity.
+          if (s.tool === "sam" && s.samSubTool === "point") {
+            s.setSamPolarity(action.polarity);
+          }
+          return;
+        }
 
         case "setClassByDigit":
           if (classes[action.idx]) { s.setActiveClass(classes[action.idx]); recordRecentClass(classes[action.idx]); }

@@ -371,12 +371,19 @@ export function WorkbenchShell() {
     }
   }, [s]);
 
-  /** 当前 SAM 候选 polygon → 用 AABB 当 ClassPicker 锚点。 */
+  /**
+   * 当前 SAM 候选几何 AABB → 用作 ClassPicker 锚点。
+   * v0.9.4 phase 2 · polygonlabels 走 polygonBounds; rectanglelabels 直接用 bbox.
+   */
   const samPendingGeom = useMemo<Geom | null>(() => {
     if (!samPendingAccept) return null;
     const cand = sam.candidates[samPendingAccept.idx];
     if (!cand) return null;
-    return polygonBounds(cand.points);
+    if (cand.type === "rectanglelabels" && cand.bbox) {
+      return { x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height };
+    }
+    if (cand.points && cand.points.length >= 3) return polygonBounds(cand.points);
+    return null;
   }, [samPendingAccept, sam.candidates]);
 
   const handleSamCommitClass = useCallback(
@@ -386,12 +393,19 @@ export function WorkbenchShell() {
       const cand = sam.candidates[pending.idx];
       setSamPendingAccept(null);
       if (!cand || !cls) return;
-      // 复用 submitPolygon：会经 activeClass 校验，先把 activeClass 临时设为 cls
       s.setActiveClass(cls);
-      submitPolygon(cand.points);
+      // v0.9.4 phase 2 · 按 type 分发: rectanglelabels 走 bbox 创建路径 (与用户手画框 + 选类等价).
+      if (cand.type === "rectanglelabels" && cand.bbox) {
+        s.setPendingDrawing({
+          geom: { x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height },
+        });
+        handlePickPendingClass(cls);
+      } else if (cand.points && cand.points.length >= 3) {
+        submitPolygon(cand.points);
+      }
       sam.consume(pending.idx);
     },
-    [samPendingAccept, sam, s, submitPolygon],
+    [samPendingAccept, sam, s, submitPolygon, handlePickPendingClass],
   );
 
   const handleSamCancelClass = useCallback(() => {
@@ -795,7 +809,14 @@ export function WorkbenchShell() {
         onResize={s.setLeftWidth}
       />
 
-      <ToolDock tool={s.tool} onSetTool={s.setTool} />
+      <ToolDock
+        tool={s.tool}
+        onSetTool={s.setTool}
+        samSubTool={s.samSubTool}
+        onSetSamSubTool={s.setSamSubTool}
+        samPolarity={s.samPolarity}
+        onSetSamPolarity={s.setSamPolarity}
+      />
 
       <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {lockError && (
@@ -935,6 +956,8 @@ export function WorkbenchShell() {
           }}
           samCandidates={sam.candidates}
           samActiveIdx={sam.activeIdx}
+          samSubTool={s.samSubTool}
+          samPolarity={s.samPolarity}
           onCommitMove={handleCommitMove}
           onCommitResize={handleCommitResize}
           onCommitPolygonGeometry={handleCommitPolygonGeometry}
@@ -1111,6 +1134,9 @@ export function WorkbenchShell() {
         onRunSamText={sam.runText}
         samRunning={sam.isRunning}
         samCandidateCount={sam.candidates.length}
+        projectId={projectId}
+        projectTypeKey={currentProject?.type_key ?? null}
+        samTextFocusKey={s.samTextFocusKey}
         liveCommentCanvas={{
           active: s.canvasDraft.active,
           result: s.canvasDraft.pendingResult,

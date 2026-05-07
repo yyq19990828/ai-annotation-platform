@@ -49,6 +49,7 @@ RUN pip install --upgrade "pip" "setuptools>=62.3.0,<75.9" "wheel" && \
         "pillow>=10.0" \
         "opencv-python-headless>=4.9" \
         "shapely>=2.0" \
+        "prometheus-client>=0.20" \
         "huggingface_hub>=0.23,<1.0" \
         "transformers>=4.40,<5" \
         "supervision>=0.21" \
@@ -69,7 +70,8 @@ RUN if [ ! -d "vendor/grounded-sam-2" ] || [ -z "$(ls -A vendor/grounded-sam-2 2
     pip install --no-build-isolation -e ./vendor/grounded-sam-2/grounding_dino
 
 COPY scripts/ ./scripts/
-COPY main.py predictor.py schemas.py ./
+COPY main.py predictor.py schemas.py embedding_cache.py observability.py ./
+COPY tests/ ./tests/
 RUN mkdir -p /app/checkpoints /app/.cache/huggingface
 
 EXPOSE 8001

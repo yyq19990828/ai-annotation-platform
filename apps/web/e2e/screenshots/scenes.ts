@@ -194,4 +194,34 @@ export const SCENES: ScreenshotScene[] = [
       // 真正进度条需服务端跑导出；自动化只截入口卡片，maintainer 后续覆盖。
     },
   },
+  // SAM 子工具栏 + text 三模式（v0.9.4 phase 2）─────────────────────
+  {
+    name: "sam/subtoolbar",
+    role: "annotator",
+    route: (d) => `/projects/${d.project_id}/annotate`,
+    target: "docs-site/user-guide/images/sam/subtoolbar.png",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      // 按 S 进 SAM 模式 → ToolDock 子工具栏 [点 / 框 / 文本] 浮出.
+      await page.keyboard.press("s");
+      await page.waitForTimeout(150);
+      // 等 sam-subtoolbar 元素出现; 截图聚焦左侧工具区.
+      await page.waitForSelector('[data-testid="sam-subtoolbar"]', { timeout: 2000 });
+    },
+  },
+  {
+    name: "sam/text-three-modes",
+    role: "annotator",
+    route: (d) => `/projects/${d.project_id}/annotate`,
+    target: "docs-site/user-guide/images/sam/text-three-modes.png",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      // 按 S 两次到 text 子工具 (point → bbox → text), 让 SamTextPanel 浮出.
+      await page.keyboard.press("s"); await page.waitForTimeout(80); // 进 sam·point
+      await page.keyboard.press("s"); await page.waitForTimeout(80); // 切 bbox
+      await page.keyboard.press("s"); await page.waitForTimeout(80); // 切 text
+      await page.waitForSelector('[data-testid="sam-text-output-mode"]', { timeout: 2000 });
+      // maintainer 实跑时可分别点 box/mask/both 各截一张拼成对比图; 此 scene 只截当前默认状态.
+    },
+  },
 ];

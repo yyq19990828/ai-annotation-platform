@@ -15,7 +15,9 @@ export interface HotkeyDef {
 
 export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
-  { keys: ["S"], desc: "SAM 智能工具（点 / 框 / 文本 → polygon）", group: "ai", actionType: "setTool" },
+  { keys: ["S"], desc: "SAM 智能工具（再按循环切子工具：点 → 框 → 文本 → 退出）", group: "ai", actionType: "setTool" },
+  { keys: ["= / +"], desc: "SAM 子工具栏：正向点 (sam-point 子工具下生效)", group: "ai", actionType: "samPolarity" },
+  { keys: ["-"], desc: "SAM 子工具栏：负向点 (sam-point 子工具下生效)", group: "ai", actionType: "samPolarity" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
   { keys: ["V"], desc: "平移工具", group: "draw", actionType: "setTool" },
   { keys: ["Enter"], desc: "闭合多边形（≥3 顶点）", group: "draw" },
@@ -96,7 +98,8 @@ export type HotkeyAction =
   | { type: "deleteSelected" }
   | { type: "submit" }
   | { type: "acceptAi" }
-  | { type: "rejectAi" };
+  | { type: "rejectAi" }
+  | { type: "samPolarity"; polarity: "positive" | "negative" };
 
 /** 属性 hotkey 解析结果（D.1）：
  * 由 WorkbenchShell 根据当前 selected box 的 class_name + project.attribute_schema 计算
@@ -166,6 +169,11 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
 
   if (e.key === "[")  return { type: "thresholdAdjust", delta: -0.05 };
   if (e.key === "]")  return { type: "thresholdAdjust", delta:  0.05 };
+
+  // v0.9.4 phase 2 · SAM 子工具栏 polarity (sam-point 下生效, 由消费端 gate by tool/samSubTool).
+  // "+" 需要 Shift+=, "=" 单按 = SAM positive; "-" 单按 = SAM negative.
+  if (e.key === "+" || e.key === "=") return { type: "samPolarity", polarity: "positive" };
+  if (e.key === "-") return { type: "samPolarity", polarity: "negative" };
 
   if (e.key === "Tab") return { type: "cycleUser", dir: e.shiftKey ? -1 : 1, loop: true };
   if (e.key === "j" || e.key === "J") return { type: "cycleUser", dir: 1, loop: false };
