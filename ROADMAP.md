@@ -73,6 +73,7 @@
 - **模型市场**：路由 `/model-market` 占位。
 - **训练队列**：路由 `/training` 占位。
 - **预测成本卡片透传到工作台**：v0.8.6 已落 admin 维度 `/admin/prediction-cost-stats`；剩工作台 AI 助手面板「本题花费 X 元」单条透传，与 v0.9.x SAM 工具一起做。
+- **ML Backend 前端注册入口缺失**：后端 `POST /projects/{id}/ml-backends` 端点已就位（`apps/api/app/api/v1/ml_backends.py:25-44`，权限 SUPER_ADMIN / PROJECT_ADMIN），但前端**没有任何创建 UI**——`ProjectSettingsPage` 的 SECTIONS（`ProjectSettingsPage.tsx:20-29`）没有「ML 模型」选项卡，`GeneralSection.tsx:283-305` 仅提供下拉**选择**已有 backend；`/model-market` 的 RegisteredBackendsTab 是超管**只读**总览。**附带 bug**：`GeneralSection.tsx:301` 与 CreateProjectWizard 的提示文案写「请先在「ML 模型」选项卡添加 backend」，但该选项卡不存在，是过时引导，会让 PROJECT_ADMIN 找不到入口。当前唯一注册路径是 curl / Swagger UI / DB seed。**收口方案**：在 `ProjectSettingsPage` 新增「ML 模型」选项卡（SUPER_ADMIN 可见全局编辑、PROJECT_ADMIN 可见项目作用域），调用已存在的 `POST /ml-backends` 端点，同步删除两处过时提示文案。与 v0.9.4 的 backend 注册 URL 默认值调整（`172.17.0.1:8001`）合并落地最自然。
 
 ### 用户与权限页（UsersPage）
 - ~~**「API 密钥」按钮**~~ ✅ v0.9.3 落地（`api_keys` 表 + `/me/api-keys` CRUD + bcrypt + `ak_` token + ApiKeysModal 含一次性明文展示 + revoke + last_used_at；scope 字段已就位但实际拦截留 follow-up）。
@@ -189,6 +190,7 @@
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
 | ~~**P2** 登录页 progressive CAPTCHA~~ | ✅ v0.9.3 落地 | — | — |
 | **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 | — |
+| **P2** | ProjectSettingsPage 新增「ML 模型」选项卡（注册 / 编辑 backend） | 后端 `POST /ml-backends` 已就位但前端无创建入口；`GeneralSection.tsx:301` 提示文案指向不存在的选项卡；建议与 v0.9.4 backend URL 默认值调整合并 | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 | — |
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
