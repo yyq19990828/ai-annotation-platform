@@ -612,7 +612,8 @@ async def skip_task(
     """
     if body.reason not in _VALID_SKIP_REASONS:
         raise HTTPException(
-            status_code=422, detail={"reason": "invalid_skip_reason", "value": body.reason}
+            status_code=422,
+            detail={"reason": "invalid_skip_reason", "value": body.reason},
         )
 
     task = await _load_task_or_404(db, task_id)

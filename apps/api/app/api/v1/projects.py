@@ -304,9 +304,7 @@ async def create_project(
     return await _serialize_project(db, project)
 
 
-async def _apply_backend_display_hint(
-    db: AsyncSession, payload: dict
-) -> dict:
+async def _apply_backend_display_hint(db: AsyncSession, payload: dict) -> dict:
     """v0.8.6 F3 helper：ml_backend_id 存在时，用 backend.name 覆盖 ai_model。"""
     from app.db.models.ml_backend import MLBackend as _MLB
 

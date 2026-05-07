@@ -45,9 +45,7 @@ async def _run_retry(failed_id: str, user_id: str) -> dict:
         await engine.dispose()
 
 
-async def _do_retry_with_factory(
-    session_factory, failed_id: str, user_id: str
-) -> dict:
+async def _do_retry_with_factory(session_factory, failed_id: str, user_id: str) -> dict:
     """实际 retry 逻辑；session_factory 暴露便于测试 mock。"""
     from app.db.models.ml_backend import MLBackend
     from app.db.models.prediction import FailedPrediction
@@ -96,7 +94,9 @@ async def _do_retry_with_factory(
     # 第二阶段：调 backend
     client = MLBackendClient(backend)
     try:
-        results = await client.predict([{"id": str(task.id), "file_path": task.file_path}])
+        results = await client.predict(
+            [{"id": str(task.id), "file_path": task.file_path}]
+        )
         if not results:
             raise RuntimeError("backend returned empty results")
         first = results[0]

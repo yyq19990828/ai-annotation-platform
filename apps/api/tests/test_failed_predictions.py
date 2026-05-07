@@ -11,7 +11,6 @@ from __future__ import annotations
 import uuid
 from unittest.mock import patch
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.ml_backend import MLBackend
@@ -202,7 +201,9 @@ async def test_retry_404_for_unknown_id(httpx_client_bound, super_admin):
     assert resp.status_code == 404
 
 
-async def test_retry_requires_manager(httpx_client_bound, annotator, db_session, super_admin):
+async def test_retry_requires_manager(
+    httpx_client_bound, annotator, db_session, super_admin
+):
     user, _ = super_admin
     proj = await _seed_project(db_session, user.id)
     task = await _seed_task(db_session, proj.id)

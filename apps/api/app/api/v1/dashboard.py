@@ -1395,9 +1395,7 @@ async def prediction_cost_stats(
         # 失败按 backend
         failed_by_backend_rows = (
             await db.execute(
-                select(
-                    FailedPrediction.ml_backend_id, func.count(FailedPrediction.id)
-                )
+                select(FailedPrediction.ml_backend_id, func.count(FailedPrediction.id))
                 .where(FailedPrediction.created_at >= cutoff)
                 .group_by(FailedPrediction.ml_backend_id)
             )

@@ -115,7 +115,9 @@ def _check_celery() -> dict:
                 {
                     "name": name,
                     "last_heartbeat_seconds_ago": 0,
-                    "pool_max": (stats.get(name, {}).get("pool", {}) or {}).get("max-concurrency"),
+                    "pool_max": (stats.get(name, {}).get("pool", {}) or {}).get(
+                        "max-concurrency"
+                    ),
                 }
             )
 

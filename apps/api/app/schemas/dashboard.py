@@ -232,4 +232,3 @@ class PredictionCostStats(BaseModel):
     total_cost: float = 0.0
     total_tokens: int = 0
     by_backend: list[BackendCostBreakdown] = []
-

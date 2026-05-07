@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import uuid
 
-import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,9 +18,7 @@ from app.db.models.project import Project
 from app.services.ml_backend import MLBackendService
 
 
-async def _seed_project(
-    db: AsyncSession, owner_id: uuid.UUID, **overrides
-) -> Project:
+async def _seed_project(db: AsyncSession, owner_id: uuid.UUID, **overrides) -> Project:
     suffix = uuid.uuid4().hex[:8]
     proj = Project(
         id=uuid.uuid4(),
@@ -70,9 +67,7 @@ async def test_create_project_with_ml_backend_id_auto_fills_ai_model(
         "ai_enabled": True,
         "ml_backend_id": str(backend.id),
     }
-    resp = await httpx_client_bound.post(
-        "/api/v1/projects", json=body, headers=headers
-    )
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["ml_backend_id"] == str(backend.id)
@@ -152,7 +147,9 @@ async def test_get_project_backend_falls_back_when_unbound(db_session, super_adm
     assert backend.id == interactive.id
 
 
-async def test_get_project_backend_returns_none_when_no_backend(db_session, super_admin):
+async def test_get_project_backend_returns_none_when_no_backend(
+    db_session, super_admin
+):
     user, _ = super_admin
     proj = await _seed_project(db_session, user.id)
     await db_session.flush()

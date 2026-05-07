@@ -119,8 +119,9 @@ async def test_open_register_captcha_required_when_enabled(
     httpx_client: AsyncClient, enable_open_registration, reset_rate_limiter
 ):
     """v0.8.7 · turnstile_enabled=True 且未带 token 时 400 captcha_failed。"""
-    with patch("app.services.captcha_service.settings.turnstile_enabled", True), patch(
-        "app.services.captcha_service.settings.turnstile_secret_key", "sk"
+    with (
+        patch("app.services.captcha_service.settings.turnstile_enabled", True),
+        patch("app.services.captcha_service.settings.turnstile_secret_key", "sk"),
     ):
         resp = await httpx_client.post(
             "/api/v1/auth/register-open",
@@ -140,11 +141,13 @@ async def test_open_register_captcha_token_valid_passes(
     httpx_client: AsyncClient, enable_open_registration, reset_rate_limiter
 ):
     """v0.8.7 · turnstile_enabled=True 且 token 通过校验时正常注册。"""
-    with patch("app.services.captcha_service.settings.turnstile_enabled", True), patch(
-        "app.services.captcha_service.settings.turnstile_secret_key", "sk"
-    ), patch(
-        "app.services.captcha_service.verify_turnstile_token",
-        return_value=True,
+    with (
+        patch("app.services.captcha_service.settings.turnstile_enabled", True),
+        patch("app.services.captcha_service.settings.turnstile_secret_key", "sk"),
+        patch(
+            "app.services.captcha_service.verify_turnstile_token",
+            return_value=True,
+        ),
     ):
         # 注：上面 patch verify_turnstile_token 是直接替换 service 函数，
         # 但 auth.py 是 from app.services.captcha_service import verify_turnstile_token，

@@ -20,7 +20,9 @@ def _patched_httpx(transport: httpx.MockTransport):
         kwargs["transport"] = transport
         return real(*args, **kwargs)
 
-    with patch("app.services.captcha_service.httpx.AsyncClient", side_effect=make_client):
+    with patch(
+        "app.services.captcha_service.httpx.AsyncClient", side_effect=make_client
+    ):
         yield
 
 
@@ -34,16 +36,18 @@ async def test_disabled_short_circuits_true():
 
 @pytest.mark.asyncio
 async def test_enabled_no_secret_returns_false():
-    with patch("app.services.captcha_service.settings.turnstile_enabled", True), patch(
-        "app.services.captcha_service.settings.turnstile_secret_key", None
+    with (
+        patch("app.services.captcha_service.settings.turnstile_enabled", True),
+        patch("app.services.captcha_service.settings.turnstile_secret_key", None),
     ):
         assert await verify_turnstile_token("token") is False
 
 
 @pytest.mark.asyncio
 async def test_enabled_empty_token_returns_false():
-    with patch("app.services.captcha_service.settings.turnstile_enabled", True), patch(
-        "app.services.captcha_service.settings.turnstile_secret_key", "sk"
+    with (
+        patch("app.services.captcha_service.settings.turnstile_enabled", True),
+        patch("app.services.captcha_service.settings.turnstile_secret_key", "sk"),
     ):
         assert await verify_turnstile_token("") is False
         assert await verify_turnstile_token(None) is False
@@ -54,9 +58,11 @@ async def test_enabled_success_response():
     transport = httpx.MockTransport(
         lambda request: httpx.Response(200, json={"success": True, "challenge_ts": "x"})
     )
-    with patch("app.services.captcha_service.settings.turnstile_enabled", True), patch(
-        "app.services.captcha_service.settings.turnstile_secret_key", "sk"
-    ), _patched_httpx(transport):
+    with (
+        patch("app.services.captcha_service.settings.turnstile_enabled", True),
+        patch("app.services.captcha_service.settings.turnstile_secret_key", "sk"),
+        _patched_httpx(transport),
+    ):
         assert await verify_turnstile_token("good-token", "1.2.3.4") is True
 
 
@@ -67,9 +73,11 @@ async def test_enabled_failed_response():
             200, json={"success": False, "error-codes": ["invalid-input-response"]}
         )
     )
-    with patch("app.services.captcha_service.settings.turnstile_enabled", True), patch(
-        "app.services.captcha_service.settings.turnstile_secret_key", "sk"
-    ), _patched_httpx(transport):
+    with (
+        patch("app.services.captcha_service.settings.turnstile_enabled", True),
+        patch("app.services.captcha_service.settings.turnstile_secret_key", "sk"),
+        _patched_httpx(transport),
+    ):
         assert await verify_turnstile_token("bad-token") is False
 
 
@@ -79,16 +87,22 @@ async def test_enabled_network_error_returns_false():
         raise httpx.ConnectError("boom")
 
     transport = httpx.MockTransport(boom)
-    with patch("app.services.captcha_service.settings.turnstile_enabled", True), patch(
-        "app.services.captcha_service.settings.turnstile_secret_key", "sk"
-    ), _patched_httpx(transport):
+    with (
+        patch("app.services.captcha_service.settings.turnstile_enabled", True),
+        patch("app.services.captcha_service.settings.turnstile_secret_key", "sk"),
+        _patched_httpx(transport),
+    ):
         assert await verify_turnstile_token("any") is False
 
 
 @pytest.mark.asyncio
 async def test_enabled_non_200_response_returns_false():
-    transport = httpx.MockTransport(lambda request: httpx.Response(503, text="upstream"))
-    with patch("app.services.captcha_service.settings.turnstile_enabled", True), patch(
-        "app.services.captcha_service.settings.turnstile_secret_key", "sk"
-    ), _patched_httpx(transport):
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(503, text="upstream")
+    )
+    with (
+        patch("app.services.captcha_service.settings.turnstile_enabled", True),
+        patch("app.services.captcha_service.settings.turnstile_secret_key", "sk"),
+        _patched_httpx(transport),
+    ):
         assert await verify_turnstile_token("any") is False

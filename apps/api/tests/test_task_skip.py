@@ -85,9 +85,7 @@ async def test_skip_task_invalid_reason_422(
 
 
 @pytest.mark.asyncio
-async def test_skip_task_status_review_409(
-    httpx_client_bound, db_session, super_admin
-):
+async def test_skip_task_status_review_409(httpx_client_bound, db_session, super_admin):
     user, token = super_admin
     _, task = await _seed_project_task(db_session, user.id, status="review")
     await db_session.commit()
@@ -101,9 +99,7 @@ async def test_skip_task_status_review_409(
 
 
 @pytest.mark.asyncio
-async def test_skip_task_audit_log_emitted(
-    httpx_client_bound, db_session, super_admin
-):
+async def test_skip_task_audit_log_emitted(httpx_client_bound, db_session, super_admin):
     user, token = super_admin
     _, task = await _seed_project_task(db_session, user.id)
     await db_session.commit()
@@ -116,13 +112,17 @@ async def test_skip_task_audit_log_emitted(
     assert resp.status_code == 200
 
     rows = (
-        await db_session.execute(
-            select(AuditLog).where(
-                AuditLog.action == "task.skip",
-                AuditLog.target_id == str(task.id),
+        (
+            await db_session.execute(
+                select(AuditLog).where(
+                    AuditLog.action == "task.skip",
+                    AuditLog.target_id == str(task.id),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert rows[0].detail_json["skip_reason"] == "unclear"
     assert rows[0].detail_json["note"] == "图像模糊"

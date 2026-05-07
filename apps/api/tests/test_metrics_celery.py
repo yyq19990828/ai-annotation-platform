@@ -41,9 +41,7 @@ async def test_health_celery_returns_queues_and_workers(
     inspect.reserved.return_value = fake_inspect_data["reserved"]
     inspect.stats.return_value = fake_inspect_data["stats"]
 
-    with patch(
-        "app.api.health.celery_app.control.inspect", return_value=inspect
-    ):
+    with patch("app.api.health.celery_app.control.inspect", return_value=inspect):
         resp = await httpx_client.get("/health/celery")
     assert resp.status_code == 200
     data = resp.json()
@@ -62,9 +60,7 @@ async def test_health_celery_returns_queues_and_workers(
 async def test_health_celery_no_workers_503(httpx_client: AsyncClient):
     inspect = MagicMock()
     inspect.ping.return_value = None
-    with patch(
-        "app.api.health.celery_app.control.inspect", return_value=inspect
-    ):
+    with patch("app.api.health.celery_app.control.inspect", return_value=inspect):
         resp = await httpx_client.get("/health/celery")
     assert resp.status_code == 503
     assert resp.json()["status"] == "error"
@@ -83,9 +79,7 @@ async def test_celery_queue_length_gauge_observed(fake_inspect_data):
     inspect.reserved.return_value = fake_inspect_data["reserved"]
     inspect.stats.return_value = fake_inspect_data["stats"]
 
-    with patch(
-        "app.api.health.celery_app.control.inspect", return_value=inspect
-    ):
+    with patch("app.api.health.celery_app.control.inspect", return_value=inspect):
         _check_celery()
 
     # 直接读 Gauge 内部 value

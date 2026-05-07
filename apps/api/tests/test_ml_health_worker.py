@@ -113,13 +113,8 @@ def test_worker_module_imports_and_registers_task():
     from app.workers.celery_app import celery_app
 
     assert hasattr(ml_health, "check_ml_backends_health")
-    assert (
-        "app.workers.ml_health.check_ml_backends_health"
-        in celery_app.tasks
-    )
-    assert (
-        "check-ml-backends-health" in celery_app.conf.beat_schedule
-    )
+    assert "app.workers.ml_health.check_ml_backends_health" in celery_app.tasks
+    assert "check-ml-backends-health" in celery_app.conf.beat_schedule
 
 
 @pytest.mark.parametrize("jitter", [0.0])

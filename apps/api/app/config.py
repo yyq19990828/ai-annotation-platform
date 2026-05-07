@@ -96,7 +96,9 @@ class Settings(BaseSettings):
     turnstile_enabled: bool = False
     turnstile_site_key: str | None = None
     turnstile_secret_key: str | None = None
-    turnstile_verify_url: str = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+    turnstile_verify_url: str = (
+        "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+    )
 
     @property
     def effective_celery_broker(self) -> str:

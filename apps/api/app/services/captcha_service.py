@@ -29,7 +29,9 @@ async def verify_turnstile_token(
         return True
 
     if not settings.turnstile_secret_key:
-        logger.warning("turnstile_enabled=True 但 turnstile_secret_key 未配置，拒绝放行")
+        logger.warning(
+            "turnstile_enabled=True 但 turnstile_secret_key 未配置，拒绝放行"
+        )
         return False
 
     if not token:
@@ -46,7 +48,9 @@ async def verify_turnstile_token(
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
             resp = await client.post(settings.turnstile_verify_url, data=payload)
         if resp.status_code != 200:
-            logger.warning("turnstile siteverify HTTP %s: %s", resp.status_code, resp.text[:200])
+            logger.warning(
+                "turnstile siteverify HTTP %s: %s", resp.status_code, resp.text[:200]
+            )
             return False
         body = resp.json()
         return bool(body.get("success"))
