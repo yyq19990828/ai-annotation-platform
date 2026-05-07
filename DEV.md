@@ -217,16 +217,21 @@ pnpm docs:build
 用户手册截图（`docs-site/user-guide/images/`）由 Playwright 脚本驱动重生成，
 不进 CI（避免 baseline drift / flaky），由 maintainer 手动触发。
 
+> **不破坏 dev 数据**：v0.8.7 起截图脚本走 `seed/peek` 只读窥探现有用户 / 项目 /
+> 任务，不再 TRUNCATE 整库。已积累的数据集 / 项目 / 标注会保留。E2E spec
+> （`pnpm test:e2e`）仍走 `seed/reset` 保证可重入，与截图独立。
+
 ### 前置条件
 
-跑截图前必须有完整启动栈（与 `pnpm test:e2e` 一致）：
-
 ```bash
-docker compose up -d                                 # postgres / redis / minio
-cd apps/api && uv run alembic upgrade head           # 必含 0046（skip_reason）
-cd apps/api && uv run uvicorn app.main:app --port 8000   # 另开窗口
-pnpm dev:web                                         # 另开窗口，:3000
-pnpm exec playwright install chromium                # 首次需下载浏览器
+docker compose up -d                                       # postgres / redis / minio
+cd apps/api && uv run alembic upgrade head                 # 必含 0046（skip_reason）
+cd apps/api && uv run uvicorn app.main:app --port 8000     # 另开窗口
+pnpm dev:web                                               # 另开窗口，:3000
+pnpm exec playwright install chromium                      # 首次需下载浏览器
+
+# 首次还需要至少一个 super_admin 账号 + 一个项目，否则截图脚本会报缺数据
+cd apps/api && PYTHONPATH=. uv run python scripts/seed.py  # 创建 admin/pm/qa/anno + 2 示例项目
 ```
 
 ### 触发
@@ -239,16 +244,21 @@ pnpm --filter web screenshots
 polygon / projects / review / export 六类）。`git diff docs-site/user-guide/images/`
 人眼审阅，满意即 commit。
 
+**E2E 跑过后想恢复 dev 账号**：`pnpm test:e2e` 内部仍会 TRUNCATE 重建 fixture（含
+`@e2e.test` 三个账号）。如果 dev 账号被清掉，重跑 seed.py 即可（与首次相同命令；
+peek 端点优先返回非 `@e2e.test` 邮箱的 super_admin）。
+
 ### 改场景
 
 - 14 个场景配置：`apps/web/e2e/screenshots/scenes.ts` —— 修 `route` / `prepare`
   钩子（高亮元素 / 切 tab / 打开 modal）后再跑。
-- 主入口：`apps/web/e2e/screenshots/screenshots.spec.ts` —— 改视口 / 注入 CSS。
+- 主入口：`apps/web/e2e/screenshots/screenshots.spec.ts` —— 改视口 / 注入 CSS；
+  `beforeAll` 调用 `/api/v1/__test/seed/peek` 拿首个 admin / project / task。
 - 独立 config：`apps/web/playwright.screenshots.config.ts` —— 与默认 `playwright.config.ts`
-  分离（默认配置 `testMatch: ["**/tests/**/*.spec.ts"]` 不收录 screenshots）。
+  分离（默认 `testMatch: ["**/tests/**/*.spec.ts"]` 不收录 screenshots）。
 - keypoint 两张（human-pose / hand）暂跳过 —— 等非 image-det 工作台落地。
 - 部分场景（`bbox/iou.png` 双框 / `bbox/bulk-edit.png` 多选 / `export/progress.png`
-  真实 50% 进度）需 maintainer 在 fixture / `prepare` 里造数据后再抓帧覆盖。
+  真实 50% 进度）需 maintainer 在 dev 数据库里造数据（手工标 + 半提交）后再跑覆盖。
 
 ### 已知坑
 

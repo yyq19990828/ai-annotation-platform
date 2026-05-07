@@ -171,6 +171,58 @@ async def seed_login(
     )
 
 
+class SeedPeekResponse(BaseModel):
+    """v0.8.7 F4 · 截图自动化只读窥探：返回首个 super_admin 用户 + 首个项目 + 首个任务。
+
+    与 `seed/reset` 不同，本端点**不修改任何数据**，仅查询 LIMIT 1 → 让
+    `pnpm screenshots` 在开发者本地真实数据上跑，不破坏现有数据集 / 项目。
+    任意字段可为 None（对应记录不存在时），调用方需自行处理缺失场景。
+    """
+
+    admin_email: str | None = None
+    project_id: str | None = None
+    task_id: str | None = None
+
+
+@router.get(
+    "/seed/peek",
+    response_model=SeedPeekResponse,
+    include_in_schema=False,
+)
+async def seed_peek(db: AsyncSession = Depends(get_db)) -> SeedPeekResponse:
+    """只读窥探现有数据，给截图自动化用（不破坏开发数据）。"""
+    _ensure_non_production()
+
+    from sqlalchemy import select
+    from app.db.models.project import Project
+    from app.db.models.task import Task
+    from app.db.models.user import User
+
+    # 优先选「不像 E2E fixture」的 admin（@e2e.test 邮箱排到末尾），让截图脚本
+    # 优先用开发者真实账号（如 seed.py 的 admin）。
+    admin = (
+        await db.execute(
+            select(User)
+            .where(User.role == "super_admin")
+            .order_by(User.email.like("%@e2e.test").asc(), User.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    # 项目 / 任务同样按 created_at desc，优先最新（开发者刚操作过的）。
+    project = (
+        await db.execute(select(Project).order_by(Project.created_at.desc()).limit(1))
+    ).scalar_one_or_none()
+    task = (
+        await db.execute(select(Task).order_by(Task.created_at.desc()).limit(1))
+    ).scalar_one_or_none()
+
+    return SeedPeekResponse(
+        admin_email=admin.email if admin else None,
+        project_id=str(project.id) if project else None,
+        task_id=str(task.id) if task else None,
+    )
+
+
 class AdvanceTaskRequest(BaseModel):
     """v0.8.5 · E2E 辅助：直接把 task 推到目标状态，绕过 UI 链路。
 

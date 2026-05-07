@@ -23,6 +23,14 @@ export interface SeedData {
   task_ids: string[];
 }
 
+/** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。
+ *  字段允许 null（对应数据不存在时），调用方自行兜底。 */
+export interface SeedPeekData {
+  admin_email: string | null;
+  project_id: string | null;
+  task_id: string | null;
+}
+
 const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
 
 class SeedAPI {
@@ -34,6 +42,15 @@ class SeedAPI {
       throw new Error(`seed/reset failed: ${res.status()} ${await res.text()}`);
     }
     return (await res.json()) as SeedData;
+  }
+
+  /** v0.8.7 F4 · 只读窥探现有数据；不破坏 dev 数据。 */
+  async peek(): Promise<SeedPeekData> {
+    const res = await this.request.get(`${API_BASE}/api/v1/__test/seed/peek`);
+    if (!res.ok()) {
+      throw new Error(`seed/peek failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedPeekData;
   }
 
   /** 直接拿 JWT 注入 localStorage（跳过 UI 登录，加快非 auth spec）。 */
