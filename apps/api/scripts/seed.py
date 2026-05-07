@@ -2,7 +2,7 @@
 初始化种子数据：管理员、测试用户、示例项目。
 用法：
     cd apps/api
-    uv run python scripts/seed.py
+    PYTHONPATH=. uv run python scripts/seed.py
 """
 
 import asyncio

@@ -34,7 +34,7 @@ import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
 import { annotationToBox, polygonBounds, predictionsToBoxes, type AiBox } from "../state/transforms";
 import { iouShape } from "../stage/iou";
 import { buildIoUIndex } from "../stage/iou-index";
-import { setActiveClassesConfig, sortClassesByConfig } from "../stage/colors";
+import { setActiveClassesConfig, sortClassesByConfig, UNKNOWN_CLASS } from "../stage/colors";
 import { getMissingRequired } from "./AttributeForm";
 import { ImageStage } from "../stage/ImageStage";
 import { CanvasToolbar } from "../stage/CanvasToolbar";
@@ -139,6 +139,12 @@ export function WorkbenchShell() {
   const taskIdx = tasks.findIndex((t) => t.id === taskId);
   const imageWidth = task?.image_width ?? null;
   const imageHeight = task?.image_height ?? null;
+  // B-19：file_url 是 MinIO presigned URL，每次任务列表 refetch 都会换签名。
+  // 直接当 prop 传给 ImageStage 会让 useImage 重载图片，并触发 fileUrl 变化分支
+  // 把 fittedRef 重置 → 视口跳回 fit。按 task.id 锁定，保证同一任务期间 URL 稳定。
+  const fileUrl = useMemo(() => task?.file_url ?? null, [task?.id]);
+  const blurhash = useMemo(() => task?.blurhash ?? null, [task?.id]);
+  const thumbnailUrl = useMemo(() => task?.thumbnail_url ?? null, [task?.id]);
 
   // v0.7.1 · 支持 /annotate 深链 ?batch=&task= 自动选中任务
   const initialTaskId = searchParams.get("task");
@@ -528,8 +534,11 @@ export function WorkbenchShell() {
   }, [s]);
 
   const handleCancelPending = useCallback(() => {
-    s.setPendingDrawing(null);
-  }, [s]);
+    // 画完框未选类别时（Esc / 点外部）不丢弃，按 __unknown 落库为灰色框；
+    // 用户后续可通过「改类别」补类。
+    if (s.pendingDrawing) handlePickPendingClass(UNKNOWN_CLASS);
+    else s.setPendingDrawing(null);
+  }, [s, handlePickPendingClass]);
 
   // 已落库 user 框 → 改类别
   const handleStartChangeClass = useCallback((annotationId: string) => {
@@ -898,8 +907,8 @@ export function WorkbenchShell() {
 
         <ImageStage
           readOnly={isLocked}
-          fileUrl={task?.file_url ?? null}
-          blurhash={task?.blurhash ?? null}
+          fileUrl={fileUrl}
+          blurhash={blurhash}
           tool={s.tool}
           activeClass={s.activeClass}
           selectedId={s.selectedId}
@@ -1037,8 +1046,8 @@ export function WorkbenchShell() {
                   vpSize={stageGeom.vpSize}
                   vp={vp}
                   setVp={setVp}
-                  thumbnailUrl={task?.thumbnail_url ?? null}
-                  fileUrl={task?.file_url ?? null}
+                  thumbnailUrl={thumbnailUrl}
+                  fileUrl={fileUrl}
                 />
               )}
             </>

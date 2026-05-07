@@ -18,6 +18,11 @@ export const CLASS_COLORS: Record<string, string> = {
   促销贴: "oklch(0.60 0.20 295)",
 };
 
+// 用户画完未指定类别时落库的 sentinel 类名，渲染为灰色框；后续可改类别。
+export const UNKNOWN_CLASS = "__unknown";
+export const UNKNOWN_CLASS_LABEL = "未分类";
+const UNKNOWN_COLOR = "oklch(0.65 0 0)";
+
 // Canvas(Konva) 用的颜色：通过浏览器 CSS 引擎把 oklch 转换成 hex，并缓存结果。
 const _canvasCache = new Map<string, string>();
 function colorToHex(cssColor: string): string {
@@ -59,6 +64,7 @@ function hashString(s: string): number {
 }
 
 export function classColor(name: string, config?: ClassesConfig): string {
+  if (name === UNKNOWN_CLASS) return UNKNOWN_COLOR;
   // 优先级：显式传入 config > 模块级 _activeConfig（项目当前） > 内置预设 > hash 派生
   const cfg = (config ?? _activeConfig)?.[name];
   if (cfg?.color) return cfg.color;

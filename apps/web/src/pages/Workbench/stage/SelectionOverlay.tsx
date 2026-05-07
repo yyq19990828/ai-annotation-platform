@@ -38,7 +38,8 @@ export function SelectionOverlay({
         top: bottom + 4,
         transform: "translateX(-100%)",
         display: "flex", gap: 4,
-        background: "white",
+        background: "var(--color-bg-elev)",
+        border: "1px solid var(--color-border)",
         borderRadius: 4,
         padding: 2,
         boxShadow: "var(--shadow-md)",
@@ -95,9 +96,11 @@ export function SelectionOverlay({
               style={{
                 display: "flex", alignItems: "center", gap: 5,
                 padding: "3px 8px", fontSize: 11.5,
-                background: "var(--color-bg-elev, #fff)",
+                background: "var(--color-bg-elev)",
                 border: "1px solid var(--color-border)",
                 borderRadius: 3, cursor: "pointer",
+                color: "var(--color-fg)",
+                fontFamily: "inherit",
               }}
             >
               <span style={{ width: 8, height: 8, borderRadius: 2, background: classColor(box.cls) }} />

@@ -113,7 +113,7 @@ body {
 
 #root { min-height: 100vh; }
 button { font-family: inherit; cursor: pointer; }
-input, select, textarea { font-family: inherit; }
+input, select, textarea { font-family: inherit; color: var(--color-fg); }
 
 /* ghost 按钮：hover 时显示淡底色作为反馈，平时完全扁平无框。 */
 button.btn.ghost:hover:not(:disabled) {

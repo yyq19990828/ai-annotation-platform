@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { isSelfIntersecting, type Pt } from "../stage/polygonGeom";
+import { UNKNOWN_CLASS } from "../stage/colors";
 import type { PolygonDraftHandle } from "../stage/tools";
 import { bboxGeom, polygonGeom } from "../state/transforms";
 import { enqueue } from "../state/offlineQueue";
@@ -203,6 +204,7 @@ export function useWorkbenchAnnotationActions({
       if (blockIfLocked()) { s.setPendingDrawing(null); return; }
       const pending = s.pendingDrawing;
       if (!pending || !cls) return;
+      const isUnknown = cls === UNKNOWN_CLASS;
       const payload: AnnotationPayload = {
         annotation_type: "bbox",
         class_name: cls,
@@ -210,8 +212,11 @@ export function useWorkbenchAnnotationActions({
         confidence: 1,
       };
       s.setPendingDrawing(null);
-      s.setActiveClass(cls);
-      recordRecentClass(cls);
+      // unknown 是「画完未选类」的兜底，不应污染 activeClass / 最近使用类。
+      if (!isUnknown) {
+        s.setActiveClass(cls);
+        recordRecentClass(cls);
+      }
       mutations.create.mutate(payload, {
         onSuccess: (newAnnotation) => {
           s.setSelectedId(newAnnotation.id);

@@ -237,7 +237,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
             {/* 关联项目 */}
             <div style={{ flex: 1, borderLeft: "1px solid var(--color-border)", paddingLeft: 16 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
+                <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--color-fg)" }}>
                   关联项目 <span style={{ fontWeight: 400, color: "var(--color-fg-muted)" }}>({linkedProjects.length})</span>
                 </h4>
               </div>
@@ -247,7 +247,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                   padding: "8px 0", borderBottom: "1px solid var(--color-border)",
                 }}>
                   <div>
-                    <div style={{ fontSize: 12.5, fontWeight: 500 }}>{p.name}</div>
+                    <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--color-fg)" }}>{p.name}</div>
                     <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{p.display_id} · {p.type_label}</div>
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => setConfirmUnlink(p)} title="取消关联">

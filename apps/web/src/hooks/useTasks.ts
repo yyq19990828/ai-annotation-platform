@@ -58,8 +58,48 @@ export function useCreateAnnotation(taskId: string | undefined) {
       if (!taskId) throw new Error("No task selected");
       return tasksApi.createAnnotation(taskId, payload);
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["annotations", taskId] });
+    // B-19：乐观写入 tmp 条目，避免 pendingDrawing 被清后到 refetch 返回前出现空白闪烁。
+    onMutate: async (payload) => {
+      if (!taskId) return { prev: undefined, tmpId: undefined };
+      await qc.cancelQueries({ queryKey: ["annotations", taskId] });
+      const prev = qc.getQueryData<AnnotationResponse[]>(["annotations", taskId]);
+      const tmpId = `tmp_${crypto.randomUUID()}`;
+      const optimistic: AnnotationResponse = {
+        id: tmpId,
+        task_id: taskId,
+        project_id: null,
+        user_id: null,
+        source: "manual",
+        annotation_type: payload.annotation_type ?? "bbox",
+        class_name: payload.class_name,
+        geometry: payload.geometry,
+        confidence: payload.confidence ?? 1,
+        parent_prediction_id: null,
+        parent_annotation_id: null,
+        lead_time: null,
+        is_active: true,
+        ground_truth: false,
+        attributes: payload.attributes ?? {},
+        created_at: new Date().toISOString(),
+        updated_at: null,
+      };
+      qc.setQueryData<AnnotationResponse[]>(
+        ["annotations", taskId],
+        (old) => [...(old ?? []), optimistic],
+      );
+      return { prev, tmpId };
+    },
+    onError: (_err, _payload, ctx) => {
+      // rollback；offline fallback（optimisticEnqueueCreate）会在同一同步流程内重新写入 tmp 条目，不会出现可见闪烁。
+      if (ctx?.prev !== undefined) qc.setQueryData(["annotations", taskId], ctx.prev);
+    },
+    onSuccess: (created, _payload, ctx) => {
+      if (ctx?.tmpId) {
+        qc.setQueryData<AnnotationResponse[]>(
+          ["annotations", taskId],
+          (old) => (old ?? []).map((a) => (a.id === ctx.tmpId ? created : a)),
+        );
+      }
       qc.invalidateQueries({ queryKey: ["tasks"] });
     },
   });

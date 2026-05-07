@@ -141,6 +141,7 @@ export function DangerSection({ project }: { project: ProjectResponse }) {
             background: "var(--color-bg-sunken)",
             border: "1px solid var(--color-border)",
             borderRadius: "var(--radius-md)",
+            color: "var(--color-fg)",
             outline: "none",
             fontFamily: "inherit",
             marginBottom: 16,
