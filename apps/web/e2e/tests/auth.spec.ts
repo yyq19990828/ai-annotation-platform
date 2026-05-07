@@ -5,8 +5,10 @@ import { test, expect } from "../fixtures/seed";
 
 test.describe("auth", () => {
   test("健康检查接口可用", async ({ request }) => {
+    // smoke：只验 API 启动 + 主存储通。/health 顶层会同时检查 celery，
+    // CI 没起 celery worker → 整体 degraded(503)，与本测试意图无关。
     const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://localhost:8000";
-    const res = await request.get(`${apiBase}/health`);
+    const res = await request.get(`${apiBase}/health/db`);
     expect(res.ok()).toBeTruthy();
   });
 

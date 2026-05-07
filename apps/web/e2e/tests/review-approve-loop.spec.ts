@@ -33,11 +33,11 @@ test.describe("review approve loop", () => {
       reviewerEmail: data.reviewer_email,
     });
 
-    // 2. reviewer 登录 → 进 /review?task={id}
+    // 2. reviewer 登录 → 进 /review?taskId={id}（ReviewPage 用 ?taskId= 触发 drawer）
     await seed.injectToken(page, data.reviewer_email);
     await page.goto("/review");
     await page.waitForLoadState("networkidle");
-    await page.goto(`/review?task=${data.task_ids[0]}`);
+    await page.goto(`/review?taskId=${data.task_ids[0]}`);
     await page.waitForLoadState("networkidle");
 
     // 3. 点通过按钮（v0.8.7 已就位 data-testid="review-approve"）

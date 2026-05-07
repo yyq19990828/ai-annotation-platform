@@ -37,8 +37,8 @@ test.describe("review feedback loop", () => {
     await page.goto("/review");
     await page.waitForLoadState("networkidle");
 
-    // 3. 直接进入该 task 的 review workbench：URL 形如 /review?task={id}
-    await page.goto(`/review?task=${data.task_ids[0]}`);
+    // 3. 直接进入该 task 的 review workbench：ReviewPage 用 ?taskId= 触发 drawer
+    await page.goto(`/review?taskId=${data.task_ids[0]}`);
     await page.waitForLoadState("networkidle");
 
     // 4. 点退回按钮 → 弹出 RejectReasonModal
