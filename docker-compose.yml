@@ -101,6 +101,40 @@ services:
       minio:
         condition: service_healthy
 
+  # v0.9.0+ Grounded-SAM-2 ML Backend (GroundingDINO + SAM 2.1).
+  # 默认 GPU profile, dev 无 GPU 笔记本不会被拉起; 启用方式:
+  #   docker compose --profile gpu up grounded-sam2-backend
+  # 首次启动会自动下载 checkpoints (~900MB), start_period 留足 120s.
+  grounded-sam2-backend:
+    build:
+      context: ./apps/grounded-sam2-backend
+    profiles: ["gpu"]
+    ports:
+      - "8001:8001"
+    environment:
+      SAM_VARIANT: ${SAM_VARIANT:-tiny}
+      DINO_VARIANT: ${DINO_VARIANT:-T}
+      BOX_THRESHOLD: ${BOX_THRESHOLD:-0.35}
+      TEXT_THRESHOLD: ${TEXT_THRESHOLD:-0.25}
+      HF_HOME: /app/.cache/huggingface
+      LOG_LEVEL: ${GSAM2_LOG_LEVEL:-INFO}
+    volumes:
+      - gsam2_checkpoints:/app/checkpoints
+      - gsam2_hf_cache:/app/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
   # v0.8.8 · 可观测性 stack（默认 profile=monitoring 不启动，避免 dev 多吃 ~200MB）
   # 启动方式：`docker compose --profile monitoring up -d prometheus grafana`
   # 注意：prometheus scrape 的 host.docker.internal 仅在 Docker Desktop（Mac/Win）
@@ -139,5 +173,7 @@ services:
 volumes:
   pgdata:
   miniodata:
+  gsam2_checkpoints:
+  gsam2_hf_cache:
   prometheus_data:
   grafana_data:

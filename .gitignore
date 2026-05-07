@@ -27,3 +27,5 @@ docs-site/dev/adr/
 
 # Claude Code 子代理 worktree 临时副本（subagent 隔离运行时落盘，与本仓库无关）
 .claude/worktrees/
+# Claude Code 运行时锁（ScheduleWakeup 维护；含 sessionId/pid/时间戳，因机器而异）
+.claude/scheduled_tasks.lock
