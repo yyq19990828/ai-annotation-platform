@@ -20,6 +20,43 @@
 
 ## 最新版本
 
+## [0.8.6] - 2026-05-07
+
+> **v0.9.x 准备版。** Grounded-SAM-2 主轴（v0.9.0 起 ~5 周）启动前，把不依赖 GPU 的 6 件事提前做完：① 协议 §2.2 `context.type` 扩 `text`（schema docstring + 文档同步，`exemplar` 留给 v0.10.x SAM 3）；② ML Backend 周期健康检查（Celery beat 每 60s，串行 + 0-3s 抖动错峰，新增 `ml_backends.last_checked_at`）；③ `Project.ml_backend_id` 真实绑定 + GeneralSection / CreateWizard 改造（`ai_model` 保留作 display hint，绑定 backend 时自动用 `backend.name` 覆盖；ON DELETE SET NULL）；④ AdminDashboard 预测成本卡片（`/admin/prediction-cost-stats?range=7d|30d` + 4 mini-stat：调用数 / 平均耗时 / 失败率 / 总成本，by_backend 维度）；⑤ `apps/_shared/mask_utils/` 共享 Python 包骨架（`mask_to_polygon` cv2.findContours + shapely.simplify + 顶点归一化 + 单测，v0.9.0 grounded-sam2-backend 与 v0.10.x sam3-backend 共用）；⑥ 失败预测重试管理页（Celery 异步 + WebSocket 推 `failed_prediction.retry.{started,succeeded,failed}` 进度，单条 max 3 次，超过返 409）。一次性收 ROADMAP §A 四条 + 提前完成 v0.9.5 M5 三件，让 v0.9.0 一开张直接做 GPU backend 容器化主线，不被外围杂事打断。
+
+### Added
+
+- **协议 §2.2 `context.type` 扩 `text`**（`docs-site/dev/ml-backend-protocol.md`）：v0.9.x Grounded-SAM-2 文本批量 prompt 入口；`InteractiveRequest.context` 仍为开放 dict 不锁死，docstring 列出 4 种 type 与示例。
+- **ML Backend 周期健康检查 Celery task**（`apps/api/app/workers/ml_health.py`）：`check_ml_backends_health` 每 60s 触发，串行扫所有 backend，每个调用前 `random.uniform(0, 3)` s 抖动错峰，避免同 GPU 节点 CUDA 上下文 contention。复用 `MLBackendService.check_health` 写 `state` + `last_checked_at`。`MLBackendOut.last_checked_at` 暴露给前端。
+- **`Project.ml_backend_id` 外键绑定**：Alembic `0044_project_ml_backend_id`（FK `ml_backends.id` ON DELETE SET NULL + 部分索引 WHERE NOT NULL）；`ProjectCreate/Update/Out` schema 同步；`MLBackendService.get_project_backend(project_id)` 优先返回显式绑定，否则 fallback 到 `is_interactive=True && state=connected` 任选；POST/PATCH `/projects` handler `_apply_backend_display_hint` 用 `backend.name` 覆盖 `ai_model`。
+- **GeneralSection MLBackend 下拉**（`apps/web/src/pages/Projects/sections/GeneralSection.tsx`）：开启 AI 后展示「实际 ML Backend」下拉，列出当前项目已注册 backends + 在线状态徽标 + 是否交互式；选「未绑定」也允许（仅显示 `ai_model` hint）。CreateProjectWizard 步骤 3 加引导文案「项目创建后到 ML 模型 tab 注册 backend 再回基本信息绑定」。
+- **AdminDashboard 预测成本卡片**：`GET /admin/prediction-cost-stats?range=7d|30d` 端点基于 `predictions × prediction_metas × failed_predictions × ml_backends` 聚合；前端 `MLBackendsAndCostCard` 替换原「ML 后端状态」单卡，4 mini-stat（调用数 / 平均耗时 / 失败率 / 总成本）+ Range toggle；异常时降级返回零值避免 Dashboard 黑屏。
+- **`apps/_shared/mask_utils/` Python 包**：`pyproject.toml` (anno-mask-utils@0.1.0, py>=3.10, numpy + opencv-python-headless + shapely)、`src/mask_utils/{polygon,normalize}.py`、`tests/test_polygon.py`（圆 / 方 / 空 mask × IoU≥0.95）。本期 `apps/api` 不依赖此包；为 v0.9.0 M0/M3 grounded-sam2-backend 与 v0.10.x sam3-backend 共用而提前就位。
+- **失败预测重试管理页** `/admin/failed-predictions`（`apps/web/src/pages/Admin/FailedPredictionsPage.tsx`）：表格列 项目 / 任务 / Backend / 错误类型 / 消息 / 重试 N/3 / 时间 / 重试按钮。后端新路由 `apps/api/app/api/v1/predictions.py`：`GET /admin/failed-predictions?page&page_size`（分页 + 关联 task / project / backend）+ `POST /admin/failed-predictions/{id}/retry`（202 投递 Celery task）。`PageKey` 加 `admin-failed-predictions`；super_admin / project_admin 可见。
+- **`retry_failed_prediction` Celery task**（`apps/api/app/workers/predictions_retry.py`，路由 `ml` 队列）：读 failed_prediction → 推 ws `failed_prediction.retry.started` → 调 backend.predict → 成功则插 predictions + 删 failed + 推 `succeeded`；失败则 `retry_count += 1` + `last_retry_at` + 推 `failed`。max=3 软上限由路由层判断（HTTP 409）。
+- **WebSocket retry 事件 invalidate**（`apps/web/src/hooks/useNotificationSocket.ts`）：消息 `type` 以 `failed_prediction.retry.` 起头时同时 invalidate `["admin", "failed-predictions"]` query，列表自动刷新无需轮询。
+- **AdminDashboard 失败预测入口卡**：跳转 `/admin/failed-predictions`。
+- **20 个新单测**：`test_ml_backend_schemas`（6）、`test_ml_health_worker`（6，含 worker 异常隔离）、`test_projects_ml_backend_binding`（6，含 ON DELETE SET NULL）、`test_prediction_cost_stats`（5）、`test_failed_predictions`（6，含 max 3 次返 409）、mask_utils 独立包 `test_polygon`（7）。
+
+### Changed
+
+- **`Project.ai_model` 语义重定义为 display hint**：保留字段不删除，绑定 backend 时自动用 `backend.name` 覆盖；未绑定时仍可手填作为 Badge 显示（5 处 Dashboard / ProjectGrid 渲染逻辑零改动）。
+- **`MLBackendService.check_health` 写 `last_checked_at`**：除原有的 state 更新外，每次调用都打上时间戳，便于 UI 显示心跳新鲜度。
+
+### Database
+
+- `0043_ml_backend_last_checked_at` — `ml_backends.last_checked_at TIMESTAMPTZ`（周期健康检查时间戳）
+- `0044_project_ml_backend_id` — `projects.ml_backend_id UUID FK ml_backends(id) ON DELETE SET NULL` + `ix_projects_ml_backend_id` 部分索引
+- `0045_failed_prediction_retry_count` — `failed_predictions.retry_count INT NOT NULL DEFAULT 0` + `last_retry_at TIMESTAMPTZ` + `extra JSONB`
+
+### Notes
+
+- v0.8.6 提前完成的 v0.9.5 M5 任务（`ROADMAP/0.9.x.md` 同步标记）：周期健康检查、失败预测重试 UI、预测成本卡片。M5 工时从 3d 降到 1.5d，仅剩 backend 显存监控 + ADR-0010/0011 + deploy 文档。
+- mask_utils 包 ~50MB cv2 依赖暂不进 `apps/api` 镜像；v0.9.x backend 镜像本就有 cv2 可复用。
+- 30d 内 `predictions` 数据量级 < 10K，`predictions.created_at` 暂不加 BRIN 索引；CHANGELOG 留 TODO「数据量上 10 万后再加」。
+
+---
+
 ## [0.8.5] - 2026-05-07
 
 > **fabric 清理 / 24-bar 专注时段直方图 / 单测 25% 硬阻断 / E2E 写实化。** 收口 v0.7.x ~ v0.8.4 三个尾巴：① 清掉 `fabric@^6.5.0` dead dep（`apps/web/src/` 全量零引用，仅 `App.tsx:22` 注释提到，ADR-0004 评估通过）；② v0.8.4 已造好的 `<Histogram>` 组件接到个人 dashboard，标注员可看到当日 0-23 时的标注分钟数节律；③ 前端单测覆盖率从 v0.8.3 的 10.88% 推到 25.28%，CI 阈值同步上调到 25 严格阻断回退；④ E2E annotation/batch-flow 从「最小 happy path」升级为带 bbox 拖框 + 多角色串联的写实场景，工作台引入 4 处 data-testid 提供稳定 selector，后端补 `_test_seed.advance_task` 辅助端点跳过 UI 链路串联多角色。

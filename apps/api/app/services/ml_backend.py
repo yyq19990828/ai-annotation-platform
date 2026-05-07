@@ -55,12 +55,15 @@ class MLBackendService:
         return True
 
     async def check_health(self, backend_id: uuid.UUID) -> bool:
+        from datetime import UTC, datetime
+
         backend = await self.get(backend_id)
         if not backend:
             return False
         client = MLBackendClient(backend)
         healthy = await client.health()
         backend.state = "connected" if healthy else "error"
+        backend.last_checked_at = datetime.now(UTC)
         await self.db.flush()
         return healthy
 
@@ -73,3 +76,14 @@ class MLBackendService:
             )
         )
         return result.scalar_one_or_none()
+
+    async def get_project_backend(self, project_id: uuid.UUID) -> MLBackend | None:
+        """v0.8.6 F3 · 优先返回 project.ml_backend_id 显式绑定，否则 fallback 到旧逻辑。"""
+        from app.db.models.project import Project
+
+        proj = await self.db.get(Project, project_id)
+        if proj is not None and proj.ml_backend_id is not None:
+            backend = await self.get(proj.ml_backend_id)
+            if backend is not None:
+                return backend
+        return await self.get_interactive_backend(project_id)

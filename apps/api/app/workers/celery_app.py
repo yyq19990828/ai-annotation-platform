@@ -15,6 +15,8 @@ celery_app = Celery(
         "app.workers.audit_partition",
         "app.workers.task_events",
         "app.workers.presence",
+        "app.workers.ml_health",
+        "app.workers.predictions_retry",
     ],
 )
 
@@ -27,6 +29,7 @@ celery_app.conf.update(
     worker_max_memory_per_child=512_000,
     task_routes={
         "app.workers.tasks.batch_predict": {"queue": "ml"},
+        "app.workers.predictions_retry.retry_failed_prediction": {"queue": "ml"},
         "app.workers.media.generate_thumbnail": {"queue": "media"},
         "app.workers.media.generate_task_thumbnail": {"queue": "media"},
         "app.workers.media.backfill_media": {"queue": "media"},
@@ -70,6 +73,11 @@ celery_app.conf.update(
         "mark-inactive-offline": {
             "task": "app.workers.presence.mark_inactive_offline",
             "schedule": crontab(minute="*/2"),
+        },
+        # v0.8.6 F2 · ML Backend 周期健康检查：每 60s 扫所有 backend 调 /health，串行 + 0-3s 抖动错峰
+        "check-ml-backends-health": {
+            "task": "app.workers.ml_health.check_ml_backends_health",
+            "schedule": crontab(minute="*"),
         },
     },
 )

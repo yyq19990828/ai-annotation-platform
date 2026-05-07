@@ -1602,6 +1602,61 @@
         "title": "AuditLogOut",
         "type": "object"
       },
+      "BackendCostBreakdown": {
+        "properties": {
+          "avg_inference_time_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Inference Time Ms"
+          },
+          "backend_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Id"
+          },
+          "backend_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Name"
+          },
+          "failures": {
+            "default": 0,
+            "title": "Failures",
+            "type": "integer"
+          },
+          "predictions": {
+            "default": 0,
+            "title": "Predictions",
+            "type": "integer"
+          },
+          "total_cost": {
+            "default": 0.0,
+            "title": "Total Cost",
+            "type": "number"
+          }
+        },
+        "title": "BackendCostBreakdown",
+        "type": "object"
+      },
       "BatchCreate": {
         "properties": {
           "annotator_id": {
@@ -3728,6 +3783,162 @@
         "title": "DeleteUserPayload",
         "type": "object"
       },
+      "FailedPredictionItem": {
+        "properties": {
+          "backend_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_type": {
+            "title": "Error Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_retry_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Retry At"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ml_backend_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend Id"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "retry_count": {
+            "title": "Retry Count",
+            "type": "integer"
+          },
+          "task_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Display Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "project_id",
+          "ml_backend_id",
+          "model_version",
+          "error_type",
+          "message",
+          "retry_count",
+          "last_retry_at",
+          "created_at"
+        ],
+        "title": "FailedPredictionItem",
+        "type": "object"
+      },
+      "FailedPredictionList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FailedPredictionItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "FailedPredictionList",
+        "type": "object"
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
@@ -3949,9 +4160,11 @@
         "type": "object"
       },
       "InteractiveRequest": {
+        "description": "工作台「AI 助手」单次推理请求。`context` 透传至 backend，平台不做 schema 校验。\n\n`context.type` 协商枚举（详见 `docs-site/dev/ml-backend-protocol.md` §2.2）：\n- ``point``：``{\"type\":\"point\",\"points\":[[x,y],...],\"labels\":[1,0,...]}``\n- ``bbox``：``{\"type\":\"bbox\",\"bbox\":[x1,y1,x2,y2]}``\n- ``polygon``：``{\"type\":\"polygon\",\"points\":[[x,y],...]}``\n- ``text``：``{\"type\":\"text\",\"text\":\"ripe apples\"}``（v0.9.x Grounded-SAM-2）\n- ``exemplar``：留给 v0.10.x SAM 3。",
         "properties": {
           "context": {
             "additionalProperties": true,
+            "description": "开放 dict；type 字段见 schema docstring 与协议文档 §2.2。",
             "title": "Context",
             "type": "object"
           },
@@ -3962,8 +4175,7 @@
           }
         },
         "required": [
-          "task_id",
-          "context"
+          "task_id"
         ],
         "title": "InteractiveRequest",
         "type": "object"
@@ -4308,6 +4520,18 @@
           "is_interactive": {
             "title": "Is Interactive",
             "type": "boolean"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
           },
           "name": {
             "title": "Name",
@@ -4799,6 +5023,68 @@
         "title": "PreannotateRequest",
         "type": "object"
       },
+      "PredictionCostStats": {
+        "description": "AdminDashboard 预测成本卡片数据结构。",
+        "properties": {
+          "avg_inference_time_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Inference Time Ms"
+          },
+          "by_backend": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BackendCostBreakdown"
+            },
+            "title": "By Backend",
+            "type": "array"
+          },
+          "failed_predictions": {
+            "default": 0,
+            "title": "Failed Predictions",
+            "type": "integer"
+          },
+          "failure_rate": {
+            "default": 0.0,
+            "title": "Failure Rate",
+            "type": "number"
+          },
+          "range": {
+            "enum": [
+              "7d",
+              "30d"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "total_cost": {
+            "default": 0.0,
+            "title": "Total Cost",
+            "type": "number"
+          },
+          "total_predictions": {
+            "default": 0,
+            "title": "Total Predictions",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "default": 0,
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "range"
+        ],
+        "title": "PredictionCostStats",
+        "type": "object"
+      },
       "PredictionOut": {
         "properties": {
           "cluster": {
@@ -4982,6 +5268,18 @@
               }
             ],
             "title": "Due Date"
+          },
+          "ml_backend_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend Id"
           },
           "name": {
             "title": "Name",
@@ -5205,6 +5503,18 @@
             "default": 0,
             "title": "Member Count",
             "type": "integer"
+          },
+          "ml_backend_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend Id"
           },
           "model_version": {
             "anyOf": [
@@ -5460,6 +5770,18 @@
             ],
             "title": "Maximum Annotations"
           },
+          "ml_backend_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend Id"
+          },
           "name": {
             "anyOf": [
               {
@@ -5672,6 +5994,25 @@
           "new_password"
         ],
         "title": "ResetPasswordRequest",
+        "type": "object"
+      },
+      "RetryResponse": {
+        "properties": {
+          "failed_id": {
+            "format": "uuid",
+            "title": "Failed Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "failed_id"
+        ],
+        "title": "RetryResponse",
         "type": "object"
       },
       "ReviewAction": {
@@ -7004,6 +7345,115 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/failed-predictions": {
+      "get": {
+        "operationId": "list_failed_predictions_api_v1_admin_failed_predictions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FailedPredictionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Failed Predictions",
+        "tags": [
+          "predictions"
+        ]
+      }
+    },
+    "/api/v1/admin/failed-predictions/{failed_id}/retry": {
+      "post": {
+        "operationId": "retry_failed_prediction_api_v1_admin_failed_predictions__failed_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "failed_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Failed Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Failed Prediction",
+        "tags": [
+          "predictions"
+        ]
+      }
+    },
     "/api/v1/annotations/{annotation_id}/comment-attachments/download": {
       "get": {
         "description": "v0.6.3 P0：评论附件下载。校验 key 前缀防越权 + 项目可见性，302 跳转预签名 URL。",
@@ -9006,6 +9456,56 @@
           }
         ],
         "summary": "Admin Person Detail",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/admin/prediction-cost-stats": {
+      "get": {
+        "description": "v0.8.6 F4 · 过去 N 天预测调用数 / 平均耗时 / 失败率 / 总成本。\n\n数据来源：predictions × prediction_metas × failed_predictions × ml_backends。\n异常时降级返回零，避免 Dashboard 因聚合失败黑屏。",
+        "operationId": "prediction_cost_stats_api_v1_dashboard_admin_prediction_cost_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "30d",
+              "pattern": "^(7d|30d)$",
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionCostStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Prediction Cost Stats",
         "tags": [
           "dashboard"
         ]

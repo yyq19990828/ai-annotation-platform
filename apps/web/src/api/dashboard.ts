@@ -161,10 +161,36 @@ export interface MyBatchItem {
   reviewer: UserBrief | null;
 }
 
+// v0.8.6 F4 · 预测成本卡片
+export interface BackendCostBreakdown {
+  backend_id: string | null;
+  backend_name: string | null;
+  predictions: number;
+  failures: number;
+  total_cost: number;
+  avg_inference_time_ms: number | null;
+}
+
+export interface PredictionCostStats {
+  range: "7d" | "30d";
+  total_predictions: number;
+  failed_predictions: number;
+  failure_rate: number;
+  avg_inference_time_ms: number | null;
+  total_cost: number;
+  total_tokens: number;
+  by_backend: BackendCostBreakdown[];
+}
+
 export const dashboardApi = {
   getAdminStats: () => apiClient.get<AdminDashboardStats>("/dashboard/admin"),
   getReviewerStats: () => apiClient.get<ReviewerDashboardStats>("/dashboard/reviewer"),
   getAnnotatorStats: () => apiClient.get<AnnotatorDashboardStats>("/dashboard/annotator"),
+  // v0.8.6 F4
+  getPredictionCostStats: (range: "7d" | "30d" = "30d") =>
+    apiClient.get<PredictionCostStats>(
+      `/dashboard/admin/prediction-cost-stats?range=${range}`,
+    ),
   getMyBatches: () => apiClient.get<MyBatchItem[]>("/dashboard/annotator/batches"),
   getMyRecentReviews: (limit = 20) =>
     apiClient.get<RecentReviewItem[]>(`/dashboard/me/recent-reviews?limit=${limit}`),

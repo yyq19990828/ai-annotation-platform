@@ -74,6 +74,14 @@ class FailedPrediction(Base):
     model_version: Mapped[str | None] = mapped_column(String(100))
     error_type: Mapped[str] = mapped_column(String(100), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
+    # v0.8.6 F6 · 重试机制
+    retry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
+    last_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    extra: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}", default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

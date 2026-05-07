@@ -1,3 +1,6 @@
+from typing import Literal
+from uuid import UUID
+
 from pydantic import BaseModel
 
 from app.schemas.user import UserBrief
@@ -192,3 +195,29 @@ class MyBatchItem(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── v0.8.6 F4 · 预测成本统计 ─────────────────────────────────────────
+
+
+class BackendCostBreakdown(BaseModel):
+    backend_id: UUID | None = None
+    backend_name: str | None = None
+    predictions: int = 0
+    failures: int = 0
+    total_cost: float = 0.0
+    avg_inference_time_ms: float | None = None
+
+
+class PredictionCostStats(BaseModel):
+    """AdminDashboard 预测成本卡片数据结构。"""
+
+    range: Literal["7d", "30d"]
+    total_predictions: int = 0
+    failed_predictions: int = 0
+    failure_rate: float = 0.0
+    avg_inference_time_ms: float | None = None
+    total_cost: float = 0.0
+    total_tokens: int = 0
+    by_backend: list[BackendCostBreakdown] = []
+

@@ -12,6 +12,8 @@ const mockUseAuditLogs = vi.fn();
 
 vi.mock("@/hooks/useDashboard", () => ({
   useAdminStats: () => mockUseAdminStats(),
+  // v0.8.6 F4 · 新加成本卡片 hook，单测下返回空态即可
+  usePredictionCostStats: () => ({ data: undefined, isLoading: false }),
 }));
 vi.mock("@/hooks/useProjects", () => ({
   useProjects: () => mockUseProjects(),
@@ -84,13 +86,15 @@ describe("AdminDashboard", () => {
     expect(screen.getByText("暂无已注册的 ML 后端")).toBeInTheDocument();
   });
 
-  it("ML backend > 0 → 显示 X / Y 在线汇总", () => {
+  it("ML backend > 0 → 显示 X / Y 在线汇总（v0.8.6 联合卡片标题区）", () => {
     const s = { ...baseStats, ml_backends_total: 3, ml_backends_connected: 2 };
     mockUseAdminStats.mockReturnValue({ data: s, isLoading: false });
     renderUI();
-    expect(
-      screen.getByText("已注册 3 个模型后端，2 个在线"),
-    ).toBeInTheDocument();
+    // v0.8.6 F4 · 「ML 后端 · 预测成本」联合卡片，Badge 文案为 X / Y 在线
+    expect(screen.getByText("2 / 3 在线")).toBeInTheDocument();
+    // 4 mini-stat 标题应渲染
+    expect(screen.getByText("本期调用数")).toBeInTheDocument();
+    expect(screen.getByText("总成本")).toBeInTheDocument();
   });
 
   it("注册来源 0 → 空态文案", () => {

@@ -24,7 +24,11 @@ class Project(Base):
     )
     status: Mapped[str] = mapped_column(String(30), default="in_progress")
     ai_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # v0.8.6 F3：保留 ai_model 为「display hint」，由 ml_backend_id 实际驱动行为
     ai_model: Mapped[str | None] = mapped_column(String(255))
+    ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ml_backends.id", ondelete="SET NULL")
+    )
     classes: Mapped[dict] = mapped_column(JSONB, default=list)
     classes_config: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict

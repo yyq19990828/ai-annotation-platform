@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
+import { useMLBackends } from "@/hooks/useMLBackends";
 import { PRESET_AI_MODELS, CUSTOM_MODEL_KEY } from "@/constants/projectTypes";
 import type { ProjectResponse } from "@/api/projects";
 
@@ -56,6 +57,11 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
   const [aiCustom, setAiCustom] = useState(
     project.ai_model && !PRESET_AI_MODELS.includes(project.ai_model) ? project.ai_model : "",
   );
+  // v0.8.6 F3 · MLBackend 真实绑定
+  const [mlBackendId, setMlBackendId] = useState<string | null>(
+    project.ml_backend_id ?? null,
+  );
+  const { data: mlBackends = [] } = useMLBackends(project.id);
   const [iouThreshold, setIouThreshold] = useState(project.iou_dedup_threshold ?? 0.7);
 
   useEffect(() => {
@@ -66,6 +72,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     setAiEnabled(project.ai_enabled);
     setAiChoice(initialAiChoice);
     setAiCustom(project.ai_model && !PRESET_AI_MODELS.includes(project.ai_model) ? project.ai_model : "");
+    setMlBackendId(project.ml_backend_id ?? null);
     setIouThreshold(project.iou_dedup_threshold ?? 0.7);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
@@ -88,6 +95,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     JSON.stringify(classes) !== JSON.stringify(project.classes ?? []) ||
     aiEnabled !== project.ai_enabled ||
     (aiEnabled ? resolvedAiModel : null) !== (project.ai_model ?? null) ||
+    (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
     Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001;
 
   const onSave = () => {
@@ -107,6 +115,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
         classes,
         ai_enabled: aiEnabled,
         ai_model: aiEnabled ? resolvedAiModel : null,
+        ml_backend_id: aiEnabled ? mlBackendId : null,
         iou_dedup_threshold: iouThreshold,
       },
       {
@@ -242,7 +251,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
             启用 AI 预标注
           </label>
           {aiEnabled && (
-            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
               <select value={aiChoice} onChange={(e) => setAiChoice(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
                 {PRESET_AI_MODELS.map((m) => (
                   <option key={m} value={m}>{m}</option>
@@ -258,6 +267,33 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
                   style={inputStyle}
                 />
               )}
+
+              {/* v0.8.6 F3 · 实际 ML Backend 绑定 */}
+              <div>
+                <label style={{ ...labelStyle, marginBottom: 4 }}>实际 ML Backend</label>
+                <select
+                  value={mlBackendId ?? ""}
+                  onChange={(e) => setMlBackendId(e.target.value || null)}
+                  style={{ ...inputStyle, cursor: "pointer" }}
+                >
+                  <option value="">未绑定（仅显示模型名 hint）</option>
+                  {mlBackends.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                      {b.state === "connected" ? " · 在线" : ` · ${b.state}`}
+                      {b.is_interactive ? " · 交互式" : ""}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 4, lineHeight: 1.5 }}>
+                  绑定后保存时将以 backend 名称覆盖「模型名」display hint。未绑定时项目可正常运行（标注员肉眼标注 / AI 待接入）。
+                  {mlBackends.length === 0 && (
+                    <span style={{ color: "var(--color-warning)", marginLeft: 4 }}>
+                      暂无可用 backend；先在「ML 模型」选项卡添加。
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>

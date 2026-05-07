@@ -57,3 +57,11 @@ export function useAdminPersonDetail(userId: string | null, period: string = "4w
     enabled: Boolean(userId),
   });
 }
+
+// v0.8.6 F4 · 预测成本卡片
+export function usePredictionCostStats(range: "7d" | "30d" = "30d") {
+  return useQuery({
+    queryKey: ["dashboard", "admin", "prediction-cost-stats", range],
+    queryFn: () => dashboardApi.getPredictionCostStats(range),
+  });
+}

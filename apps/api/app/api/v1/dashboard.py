@@ -23,8 +23,12 @@ from app.schemas.dashboard import (
     AdminPeopleList,
     AdminPersonItem,
     AdminPersonDetail,
+    PredictionCostStats,
+    BackendCostBreakdown,
 )
 from app.db.models.project_member import ProjectMember
+from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
+from app.db.models.ml_backend import MLBackend
 from app.services.user_brief import resolve_briefs_with_project_role
 
 router = APIRouter()
@@ -1251,3 +1255,119 @@ async def admin_person_detail(
         p95_duration_ms=p95,
         timeline=timeline,
     )
+
+
+# ── v0.8.6 F4 · 预测成本卡片 ─────────────────────────────────────────
+
+
+_RANGE_DAYS = {"7d": 7, "30d": 30}
+
+
+@router.get("/admin/prediction-cost-stats", response_model=PredictionCostStats)
+async def prediction_cost_stats(
+    range: str = Query("30d", pattern="^(7d|30d)$"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+):
+    """v0.8.6 F4 · 过去 N 天预测调用数 / 平均耗时 / 失败率 / 总成本。
+
+    数据来源：predictions × prediction_metas × failed_predictions × ml_backends。
+    异常时降级返回零，避免 Dashboard 因聚合失败黑屏。
+    """
+    days = _RANGE_DAYS.get(range, 30)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    try:
+        # 主聚合：调用数 / avg / total_cost / total_tokens
+        main = (
+            await db.execute(
+                select(
+                    func.count(Prediction.id).label("total"),
+                    func.avg(PredictionMeta.inference_time_ms).label("avg_ms"),
+                    func.coalesce(func.sum(PredictionMeta.total_cost), 0.0).label(
+                        "total_cost"
+                    ),
+                    func.coalesce(func.sum(PredictionMeta.total_tokens), 0).label(
+                        "total_tokens"
+                    ),
+                )
+                .select_from(Prediction)
+                .outerjoin(
+                    PredictionMeta, PredictionMeta.prediction_id == Prediction.id
+                )
+                .where(Prediction.created_at >= cutoff)
+            )
+        ).one()
+
+        # 失败数
+        failed_count = (
+            await db.execute(
+                select(func.count(FailedPrediction.id)).where(
+                    FailedPrediction.created_at >= cutoff
+                )
+            )
+        ).scalar() or 0
+
+        # by_backend
+        rows = (
+            await db.execute(
+                select(
+                    Prediction.ml_backend_id,
+                    MLBackend.name,
+                    func.count(Prediction.id),
+                    func.coalesce(func.sum(PredictionMeta.total_cost), 0.0),
+                    func.avg(PredictionMeta.inference_time_ms),
+                )
+                .select_from(Prediction)
+                .outerjoin(
+                    PredictionMeta, PredictionMeta.prediction_id == Prediction.id
+                )
+                .outerjoin(MLBackend, MLBackend.id == Prediction.ml_backend_id)
+                .where(Prediction.created_at >= cutoff)
+                .group_by(Prediction.ml_backend_id, MLBackend.name)
+            )
+        ).all()
+
+        # 失败按 backend
+        failed_by_backend_rows = (
+            await db.execute(
+                select(
+                    FailedPrediction.ml_backend_id, func.count(FailedPrediction.id)
+                )
+                .where(FailedPrediction.created_at >= cutoff)
+                .group_by(FailedPrediction.ml_backend_id)
+            )
+        ).all()
+        failed_by_backend = {bid: int(c) for bid, c in failed_by_backend_rows}
+
+        by_backend = [
+            BackendCostBreakdown(
+                backend_id=bid,
+                backend_name=name,
+                predictions=int(cnt),
+                failures=failed_by_backend.get(bid, 0),
+                total_cost=float(cost or 0.0),
+                avg_inference_time_ms=(float(avg_ms) if avg_ms is not None else None),
+            )
+            for bid, name, cnt, cost, avg_ms in rows
+        ]
+
+        total = int(main.total or 0)
+        denom = total + failed_count
+        failure_rate = (failed_count / denom) if denom else 0.0
+
+        return PredictionCostStats(
+            range=range,
+            total_predictions=total,
+            failed_predictions=failed_count,
+            failure_rate=round(failure_rate, 4),
+            avg_inference_time_ms=(
+                float(main.avg_ms) if main.avg_ms is not None else None
+            ),
+            total_cost=float(main.total_cost or 0.0),
+            total_tokens=int(main.total_tokens or 0),
+            by_backend=by_backend,
+        )
+    except Exception:
+        # 数据量异常或 schema 漂移时降级，避免 Dashboard 黑屏
+        return PredictionCostStats(range=range)

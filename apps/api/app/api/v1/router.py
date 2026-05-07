@@ -15,6 +15,7 @@ from app.api.v1 import (
     me,
     ml_backends,
     notifications,
+    predictions,
     projects,
     search,
     storage,
@@ -53,6 +54,8 @@ api_router.include_router(annotation_history.router, tags=["annotation-history"]
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(bug_reports.router, tags=["bug-reports"])
 api_router.include_router(notifications.router, tags=["notifications"])
+# v0.8.6 F6 · 失败预测管理 + 重试
+api_router.include_router(predictions.router, tags=["predictions"])
 
 # v0.8.3 · _test_seed router：仅非 production 暴露，供 Playwright E2E 造数 + 跳登录
 from app.config import settings as _settings  # noqa: E402

@@ -573,6 +573,18 @@ function Step4Ai({
               {resolvedAiModel || "—"}
             </Badge>
           </div>
+
+          {/* v0.8.6 F3 · backend 绑定提示（向导阶段不绑，项目创建后到设置页绑） */}
+          <div
+            style={{
+              padding: "8px 10px",
+              fontSize: 11,
+              color: "var(--color-fg-subtle)",
+              lineHeight: 1.6,
+            }}
+          >
+            模型名仅作 display hint。项目创建后到「项目设置 → ML 模型」选项卡注册 backend，再回基本信息绑定。
+          </div>
         </>
       )}
     </div>

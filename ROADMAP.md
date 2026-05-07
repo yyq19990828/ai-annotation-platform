@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**；**v0.8.2（文档深度优化：docs:build 进 CI gate + snippet 漂移 lint + ADR sidebar mirror + echo-ml-backend 可执行样板 + ADR-0008 admin-locked 状态机草稿）**；**v0.8.3（治理 / 测试基建闭环：在线状态心跳 + 审计 trigger 测试覆盖 + 前端单测切硬阻断（10%）+ E2E 三 spec 写实摘 continue-on-error + `_test_seed` router 造数链路）**；**v0.8.4（效率看板 / 人员绩效 epic：Task.assigned_at + task_events + mv_user_perf_daily + Annotator/Reviewer 三段卡组 + AdminPeoplePage 卡片网格 + 抽屉下钻 + ADR-0009）**；**v0.8.5（fabric 清理 + AnnotatorDashboard 24-bar 专注时段直方图 + 前端单测推到 25.28%（CI 阈值 25%）+ E2E annotation/batch-flow 写实化（bbox 拖框 + 多角色串联 + 4 处 data-testid + `_test_seed.advance_task` 辅助端点））**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**；**v0.8.2（文档深度优化：docs:build 进 CI gate + snippet 漂移 lint + ADR sidebar mirror + echo-ml-backend 可执行样板 + ADR-0008 admin-locked 状态机草稿）**；**v0.8.3（治理 / 测试基建闭环：在线状态心跳 + 审计 trigger 测试覆盖 + 前端单测切硬阻断（10%）+ E2E 三 spec 写实摘 continue-on-error + `_test_seed` router 造数链路）**；**v0.8.4（效率看板 / 人员绩效 epic：Task.assigned_at + task_events + mv_user_perf_daily + Annotator/Reviewer 三段卡组 + AdminPeoplePage 卡片网格 + 抽屉下钻 + ADR-0009）**；**v0.8.5（fabric 清理 + AnnotatorDashboard 24-bar 专注时段直方图 + 前端单测推到 25.28%（CI 阈值 25%）+ E2E annotation/batch-flow 写实化（bbox 拖框 + 多角色串联 + 4 处 data-testid + `_test_seed.advance_task` 辅助端点））**；**v0.8.6（v0.9.x 准备版：协议 `context.type` 扩 `text` + ML Backend 周期健康检查（Celery beat 60s + 抖动）+ Project↔MLBackend 真实绑定 + 预测成本卡片 + `apps/_shared/mask_utils/` 共享包骨架 + 失败预测重试 UI + ws 进度推送 + ADR-0010/0011 留作 v0.9.x M5）**。
 
 ---
 
@@ -30,12 +30,12 @@
   - 批量状态迁移类（bulk-approve / bulk-reject）：v0.7.3 故意未做。reject 反馈是逐批次语义、approve 跳过逐批次审视有质检失职风险。落地前先讨论 UX。
 
 #### AI / 模型
-- **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态（`AdminDashboard.tsx:107-119`、`DashboardPage.tsx:287-291`）。
-- **模型市场**：路由 `/model-market` 占位；项目级 ML Backend 真实选择 / 挂接 UI 缺失（向导步骤 3 仅录入模型名称字符串）。
+- **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态（`AdminDashboard.tsx:107-119`、`DashboardPage.tsx:287-291`）。**v0.9.4 接 grounded-sam2-backend 文本批量预标 UI 时收口**。
+- **模型市场**：路由 `/model-market` 占位。~~项目级 ML Backend 真实选择 / 挂接 UI 缺失~~ → **v0.8.6 已收**（`Project.ml_backend_id` 外键 + GeneralSection / Wizard 改造）。
 - **训练队列**：路由 `/training` 占位。
-- **预测成本统计**：后端 `prediction_metas` 表已记录 token / 耗时 / 成本，但前端无任何可视化（应进入 AdminDashboard 的成本卡片，并向工作台 AI 助手面板透传"本题花费 X 元 / Y tokens"）。
-- **失败预测重试**：`failed_predictions` 表记录但无 UI 触发重试。
-- **ML Backend 健康检查**：`MLBackendService` 只在管理员手动点击时探活，无后台周期任务。v0.8.0 协议文档已就位，可直接基于 `/health` 实现一个 Celery beat 周期任务。
+- ~~**预测成本统计**~~：**v0.8.6 已收** — `/admin/prediction-cost-stats?range=7d|30d` + AdminDashboard 4 mini-stat（调用数 / 平均耗时 / 失败率 / 总成本）+ `by_backend` 维度。工作台 AI 助手面板「本题花费 X 元」透传留作 v0.9.x SAM 工具一起做。
+- ~~**失败预测重试**~~：**v0.8.6 已收** — `/admin/failed-predictions` 列表 + Celery 异步重试（max 3 次）+ WebSocket `failed_prediction.retry.{started,succeeded,failed}` 进度推送。
+- ~~**ML Backend 健康检查**~~：**v0.8.6 已收** — Celery beat `check_ml_backends_health` 每 60s + 0-3s 抖动错峰；`ml_backends.last_checked_at` 字段；提前完成 v0.9.5 M5 一项。
 
 #### 用户与权限页（UsersPage）
 - **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。需 `api_keys` 表 + scope + revoke + 最后使用时间。

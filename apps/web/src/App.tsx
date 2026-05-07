@@ -10,6 +10,7 @@ import { ToastRack, useToastStore } from "@/components/ui/Toast";
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
 import { AdminPeoplePage } from "@/pages/Admin/AdminPeoplePage";
+import { FailedPredictionsPage } from "@/pages/Admin/FailedPredictionsPage";
 import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
 import { AnnotatorDashboard } from "@/pages/Dashboard/AnnotatorDashboard";
 import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
@@ -236,6 +237,15 @@ export function App() {
           element={
             <RequirePagePermission pageKey="admin-people">
               <AdminPeoplePage />
+            </RequirePagePermission>
+          }
+        />
+        {/* v0.8.6 F6 · 失败预测管理 */}
+        <Route
+          path="/admin/failed-predictions"
+          element={
+            <RequirePagePermission pageKey="admin-failed-predictions">
+              <FailedPredictionsPage />
             </RequirePagePermission>
           }
         />

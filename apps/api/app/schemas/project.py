@@ -15,6 +15,8 @@ class ProjectCreate(BaseModel):
     attribute_schema: AttributeSchema | None = None
     ai_enabled: bool = False
     ai_model: str | None = None
+    # v0.8.6 F3 · 真实绑定 MLBackend；为 None 表示未绑定（ai_model 仍可作为 display hint）
+    ml_backend_id: UUID | None = None
     due_date: date | None = None
 
 
@@ -28,6 +30,8 @@ class ProjectUpdate(BaseModel):
     attribute_schema: AttributeSchema | None = None
     ai_enabled: bool | None = None
     ai_model: str | None = None
+    # v0.8.6 F3 · 显式 None 表示解绑（与 ProjectOut 序列化对齐；handler 区分 unset vs None）
+    ml_backend_id: UUID | None = None
     due_date: date | None = None
     sampling: str | None = None
     maximum_annotations: int | None = None
@@ -54,6 +58,7 @@ class ProjectOut(BaseModel):
     status: str
     ai_enabled: bool
     ai_model: str | None
+    ml_backend_id: UUID | None = None
     classes: list[str] = []
     classes_config: ClassesConfig = {}
     attribute_schema: AttributeSchema = AttributeSchema()

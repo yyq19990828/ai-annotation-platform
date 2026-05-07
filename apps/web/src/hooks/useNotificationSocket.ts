@@ -34,11 +34,16 @@ export function useNotificationSocket() {
       };
       ws.onmessage = (e) => {
         // v0.7.0：服务端 30s 心跳 ping 帧不应触发 invalidate
+        let parsed: { type?: string } | null = null;
         try {
-          const parsed = JSON.parse(e.data as string);
+          parsed = JSON.parse(e.data as string);
           if (parsed && parsed.type === "ping") return;
         } catch {
           // 非 JSON（理论不会出现），忽略
+        }
+        // v0.8.6 F6 · retry.* 进度事件触发失败预测列表 invalidate
+        if (parsed?.type?.startsWith?.("failed_prediction.retry.")) {
+          qc.invalidateQueries({ queryKey: ["admin", "failed-predictions"] });
         }
         qc.invalidateQueries({ queryKey: ["notifications"] });
       };

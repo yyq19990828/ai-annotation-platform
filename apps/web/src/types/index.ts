@@ -179,6 +179,8 @@ export interface MLBackendResponse {
   auth_method: string;
   extra_params: Record<string, unknown>;
   error_message: string | null;
+  /** v0.8.6 F2 · 周期健康检查时间戳 */
+  last_checked_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -230,4 +232,6 @@ export type PageKey =
   | "bugs"
   | "settings"
   // v0.8.4 · 成员绩效（super_admin only）
-  | "admin-people";
+  | "admin-people"
+  // v0.8.6 F6 · 失败预测管理（super_admin / project_admin only）
+  | "admin-failed-predictions";

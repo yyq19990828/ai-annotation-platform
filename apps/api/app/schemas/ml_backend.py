@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
 
@@ -31,6 +31,7 @@ class MLBackendOut(BaseModel):
     auth_method: str
     extra_params: dict
     error_message: str | None
+    last_checked_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -45,5 +46,18 @@ class MLBackendHealthResponse(BaseModel):
 
 
 class InteractiveRequest(BaseModel):
+    """工作台「AI 助手」单次推理请求。`context` 透传至 backend，平台不做 schema 校验。
+
+    `context.type` 协商枚举（详见 `docs-site/dev/ml-backend-protocol.md` §2.2）：
+    - ``point``：``{"type":"point","points":[[x,y],...],"labels":[1,0,...]}``
+    - ``bbox``：``{"type":"bbox","bbox":[x1,y1,x2,y2]}``
+    - ``polygon``：``{"type":"polygon","points":[[x,y],...]}``
+    - ``text``：``{"type":"text","text":"ripe apples"}``（v0.9.x Grounded-SAM-2）
+    - ``exemplar``：留给 v0.10.x SAM 3。
+    """
+
     task_id: UUID
-    context: dict
+    context: dict = Field(
+        default_factory=dict,
+        description="开放 dict；type 字段见 schema docstring 与协议文档 §2.2。",
+    )

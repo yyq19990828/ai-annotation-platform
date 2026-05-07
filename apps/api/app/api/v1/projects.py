@@ -288,16 +288,32 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
+    payload = data.model_dump(exclude_none=True)
+    # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）
+    if payload.get("ml_backend_id"):
+        payload = await _apply_backend_display_hint(db, payload)
     project = Project(
         id=uuid.uuid4(),
         display_id=await next_display_id(db, "projects"),
         owner_id=current_user.id,
-        **data.model_dump(exclude_none=True),
+        **payload,
     )
     db.add(project)
     await db.commit()
     await db.refresh(project)
     return await _serialize_project(db, project)
+
+
+async def _apply_backend_display_hint(
+    db: AsyncSession, payload: dict
+) -> dict:
+    """v0.8.6 F3 helper：ml_backend_id 存在时，用 backend.name 覆盖 ai_model。"""
+    from app.db.models.ml_backend import MLBackend as _MLB
+
+    backend = await db.get(_MLB, payload["ml_backend_id"])
+    if backend is not None:
+        payload["ai_model"] = backend.name
+    return payload
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -314,7 +330,11 @@ async def update_project(
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
 ):
-    for k, v in data.model_dump(exclude_unset=True).items():
+    payload = data.model_dump(exclude_unset=True)
+    # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）
+    if payload.get("ml_backend_id"):
+        payload = await _apply_backend_display_hint(db, payload)
+    for k, v in payload.items():
         setattr(project, k, v)
     await db.commit()
     await db.refresh(project)

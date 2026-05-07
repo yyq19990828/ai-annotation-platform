@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { useAdminStats } from "@/hooks/useDashboard";
+import { useAdminStats, usePredictionCostStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
 import { useAuditLogs } from "@/hooks/useAudit";
 import { ROLE_LABELS } from "@/constants/roles";
@@ -101,7 +101,7 @@ export function AdminDashboard() {
           </div>
         </div>
         <span style={{ fontSize: 12, color: "var(--color-accent)" }}>
-          打开 <Icon name="chevron-right" size={11} />
+          打开 <Icon name="chevRight" size={11} />
         </span>
       </Card>
 
@@ -137,27 +137,38 @@ export function AdminDashboard() {
 
       <RegistrationSourceCard series={stats.registration_by_day ?? []} />
 
-      <Card>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>ML 后端状态</h3>
-          <Badge variant={stats.ml_backends_connected > 0 ? "success" : "outline"}>
-            {stats.ml_backends_connected} / {stats.ml_backends_total} 在线
-          </Badge>
-        </div>
-        <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
-          {stats.ml_backends_total === 0 ? (
-            <>
-              <Icon name="bot" size={28} style={{ opacity: 0.25, marginBottom: 8 }} />
-              <div>暂无已注册的 ML 后端</div>
-              <div style={{ fontSize: 11.5, marginTop: 4 }}>在项目设置中添加模型服务</div>
-            </>
-          ) : (
-            <div style={{ fontSize: 13 }}>
-              已注册 {stats.ml_backends_total} 个模型后端，{stats.ml_backends_connected} 个在线
+      <MLBackendsAndCostCard
+        backendsTotal={stats.ml_backends_total}
+        backendsConnected={stats.ml_backends_connected}
+      />
+
+      {/* v0.8.6 F6 · 失败预测入口（super_admin / project_admin 可见） */}
+      <Card
+        onClick={() => navigate("/admin/failed-predictions")}
+        style={{
+          cursor: "pointer",
+          padding: "12px 16px",
+          marginTop: 12,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Icon name="warning" size={16} style={{ color: "var(--color-warning)" }} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>失败预测管理</div>
+            <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+              查看 ML Backend 调用失败的预测，并按需重试 (单条最多 3 次)
             </div>
-          )}
+          </div>
         </div>
+        <span style={{ fontSize: 12, color: "var(--color-accent)" }}>
+          打开 <Icon name="chevRight" size={11} />
+        </span>
       </Card>
+
 
       <Card style={{ marginTop: 16 }}>
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -368,6 +379,110 @@ function RegistrationSourceCard({ series }: { series: RegistrationDayPoint[] }) 
           </div>
         )}
       </div>
+    </Card>
+  );
+}
+
+// v0.8.6 F4 · ML 后端状态 + 预测成本联合卡片
+function MLBackendsAndCostCard({
+  backendsTotal,
+  backendsConnected,
+}: {
+  backendsTotal: number;
+  backendsConnected: number;
+}) {
+  const [range, setRange] = useState<"7d" | "30d">("30d");
+  const { data: cost, isLoading } = usePredictionCostStats(range);
+
+  const failureRatePct = cost ? (cost.failure_rate * 100).toFixed(1) : "—";
+  const avgMs = cost?.avg_inference_time_ms ?? null;
+  const totalCost = cost?.total_cost ?? 0;
+  const totalCalls = cost?.total_predictions ?? 0;
+
+  return (
+    <Card>
+      <div
+        style={{
+          padding: "14px 16px",
+          borderBottom: "1px solid var(--color-border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>ML 后端 · 预测成本</h3>
+          <Badge variant={backendsConnected > 0 ? "success" : "outline"}>
+            {backendsConnected} / {backendsTotal} 在线
+          </Badge>
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          {(["7d", "30d"] as const).map((r) => (
+            <Button
+              key={r}
+              size="sm"
+              variant={range === r ? "primary" : "ghost"}
+              onClick={() => setRange(r)}
+            >
+              {r === "7d" ? "近 7 天" : "近 30 天"}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {backendsTotal === 0 ? (
+        <div
+          style={{
+            padding: "24px 16px",
+            textAlign: "center",
+            color: "var(--color-fg-subtle)",
+            fontSize: 13,
+          }}
+        >
+          <Icon name="bot" size={28} style={{ opacity: 0.25, marginBottom: 8 }} />
+          <div>暂无已注册的 ML 后端</div>
+          <div style={{ fontSize: 11.5, marginTop: 4 }}>在项目设置中添加模型服务</div>
+        </div>
+      ) : (
+        <div
+          style={{
+            padding: "16px",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+            gap: 12,
+          }}
+        >
+          <StatCard
+            icon="activity"
+            label="本期调用数"
+            value={isLoading ? "…" : totalCalls.toLocaleString()}
+          />
+          <StatCard
+            icon="clock"
+            label="平均耗时"
+            value={
+              isLoading
+                ? "…"
+                : avgMs !== null
+                  ? `${Math.round(avgMs)} ms`
+                  : "—"
+            }
+          />
+          <StatCard
+            icon="warning"
+            label="失败率"
+            value={isLoading ? "…" : `${failureRatePct}%`}
+            hint={cost ? `${cost.failed_predictions} 次失败` : undefined}
+          />
+          <StatCard
+            icon="sparkles"
+            label="总成本"
+            value={isLoading ? "…" : `$${totalCost.toFixed(4)}`}
+            hint={cost ? `${cost.total_tokens.toLocaleString()} tokens` : undefined}
+          />
+        </div>
+      )}
     </Card>
   );
 }
