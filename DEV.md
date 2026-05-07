@@ -197,8 +197,8 @@ docker build -f infra/docker/Dockerfile.api -t anno-api apps/api/
 ```bash
 # 测试
 pnpm test                        # 前端 vitest
-pnpm test:coverage               # 带覆盖率
-pnpm test:e2e                    # 前端 Playwright（需后端运行）
+pnpm test:coverage               # 带覆盖率（CI 阈值 22%，v0.8.7 临时档）
+pnpm test:e2e                    # 前端 Playwright e2e/tests/**（需后端运行）
 cd apps/api && uv run pytest
 
 # OpenAPI 契约
@@ -211,6 +211,51 @@ pnpm docs:build
 ```
 
 完整测试指南见 [docs-site/dev/testing.md](docs-site/dev/testing.md)。
+
+## 截图自动化（v0.8.7+）
+
+用户手册截图（`docs-site/user-guide/images/`）由 Playwright 脚本驱动重生成，
+不进 CI（避免 baseline drift / flaky），由 maintainer 手动触发。
+
+### 前置条件
+
+跑截图前必须有完整启动栈（与 `pnpm test:e2e` 一致）：
+
+```bash
+docker compose up -d                                 # postgres / redis / minio
+cd apps/api && uv run alembic upgrade head           # 必含 0046（skip_reason）
+cd apps/api && uv run uvicorn app.main:app --port 8000   # 另开窗口
+pnpm dev:web                                         # 另开窗口，:3000
+pnpm exec playwright install chromium                # 首次需下载浏览器
+```
+
+### 触发
+
+```bash
+pnpm --filter web screenshots
+```
+
+跑完会向 `docs-site/user-guide/images/` 写入 13 张 PNG（getting-started / bbox /
+polygon / projects / review / export 六类）。`git diff docs-site/user-guide/images/`
+人眼审阅，满意即 commit。
+
+### 改场景
+
+- 14 个场景配置：`apps/web/e2e/screenshots/scenes.ts` —— 修 `route` / `prepare`
+  钩子（高亮元素 / 切 tab / 打开 modal）后再跑。
+- 主入口：`apps/web/e2e/screenshots/screenshots.spec.ts` —— 改视口 / 注入 CSS。
+- 独立 config：`apps/web/playwright.screenshots.config.ts` —— 与默认 `playwright.config.ts`
+  分离（默认配置 `testMatch: ["**/tests/**/*.spec.ts"]` 不收录 screenshots）。
+- keypoint 两张（human-pose / hand）暂跳过 —— 等非 image-det 工作台落地。
+- 部分场景（`bbox/iou.png` 双框 / `bbox/bulk-edit.png` 多选 / `export/progress.png`
+  真实 50% 进度）需 maintainer 在 fixture / `prepare` 里造数据后再抓帧覆盖。
+
+### 已知坑
+
+- **中文路径**：仓库根含中文（`AI标注平台设计/`）时，`import.meta.url` 会 percent-encode；
+  `screenshots.spec.ts` 已 `decodeURIComponent` 兜底，写到正确位置而非 `AI%E6%A0%87...` 镜像目录。
+- **flaky 时间敏感 UI**：当前未注入 `page.clock`，dashboard 日期 / 头像随机色可能每次微变；
+  如需稳定 baseline 后续接 `playwright clock.install` + 固定 fixture。
 
 ## 测试账号
 

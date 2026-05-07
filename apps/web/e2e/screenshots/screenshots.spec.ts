@@ -16,8 +16,9 @@ import { test } from "../fixtures/seed";
 import { SCENES, type Role } from "./scenes";
 
 // 仓库根 = `apps/web/e2e/screenshots/` 上溯 4 级。
-// 用 import.meta.url 解析以避免依赖 node-only 的 `__dirname`。
-const HERE = new URL(".", import.meta.url).pathname; // .../apps/web/e2e/screenshots/
+// `import.meta.url` 是 file:// URL，对中文路径会 percent-encode；必须 decodeURIComponent
+// 才能写到本地正确位置（否则会落到 `AI%E6%A0%87%E6%B3%A8...` 镜像目录）。
+const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const REPO_ROOT = HERE.replace(/\/apps\/web\/e2e\/screenshots\/?$/, "");
 
 test.describe("screenshots automation", () => {
