@@ -20,6 +20,38 @@
 ---
 
 ## 最新版本
+## [0.9.1] - 2026-05-07
+
+> **Grounded-SAM-2 接入 M1 — SAM 2 image embedding LRU 缓存 + Prometheus 观测。** 工作台 `S` 工具的典型动作是同图反复点击/拖框；v0.9.0 每次都跑完整 `set_image()` ≈ 1.5 s（4060 / tiny），全是 image encoder 重复花费。本版给 `apps/grounded-sam2-backend/` 加 LRU 缓存、Prometheus `/metrics`、人类可读 `/cache/stats`，让同图 N+1 次 point/bbox 操作直降到 < 50 ms，为 v0.9.2 工作台 `S` 工具铺路。范围严格限定在 backend 容器内：协议契约不动、平台 API 不感知、ml-backend-protocol.md 不改。
+
+### Added
+
+- **`apps/grounded-sam2-backend/embedding_cache.py`**（新模块）：基于 `collections.OrderedDict` + `threading.Lock` 的线程安全 LRU；`compute_cache_key(file_path, sam_variant)` 用 `urllib.parse.urlsplit` 取 `scheme://netloc/path` 拼 variant 后做 sha1，**剥掉 query string** —— MinIO presigned URL 的 `X-Amz-Signature` / `X-Amz-Date` 跨 TTL 滚动不应让缓存失效（同一对象逻辑身份恒定）；`get` / `put` / `peek`（不计 hits/misses 的 main 层短路用）/ `clear` / `stats` / `size` 接口；默认 `capacity=16`（`EMBEDDING_CACHE_SIZE` env 可调，4060 16、3090 32、A100 64）。
+- **`apps/grounded-sam2-backend/observability.py`**（新模块）：`prometheus_client` 集中注册 4 个 metric — `embedding_cache_hits_total{prompt_type}` / `embedding_cache_misses_total{prompt_type}` / `embedding_cache_size` / `inference_latency_seconds{prompt_type,cache}`（bucket `[0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]`，专为 hit 毫秒尾巴 + miss 秒级长尾打的两段）；helper `record_cache(prompt_type, hit)` / `record_inference(prompt_type, cache_status, duration)` / `update_cache_size(size)` 风格对齐 `apps/api/app/observability/metrics.py`。
+- **`predictor.py` snapshot/restore SAM 内部状态**：新增 `_snapshot_sam(w,h)` / `_restore_sam(entry)` 读写 `SAM2ImagePredictor` 的 `_features` / `_orig_hw` / `_is_image_set` / `_is_batch`（vendor `IDEA-Research/Grounded-SAM-2` commit `b7a9c29` 的内部 API；sync_vendor.sh 升级时必须人肉跑 5-clicks 集成验收）。SAM 2 image encoder 输出的 GPU tensor 直接存引用、不 deepcopy，内存上限由 LRU 容量物理保证。
+- **三种 prompt 路径全部接缓存**（`predict_point` / `predict_bbox` / `predict_text` 加 `cache_key` 关键字参数；返回签名变成 `(results, cache_hit)`）：point/bbox 命中跳过 SAM `set_image()` + 跳过 main.py `_fetch_image()`（image=None 也允许）；text 命中跳过 SAM `set_image()`，但 DINO 仍需原图（caption 每次不同），所以 text 路径不省 fetch。
+- **`GET /metrics`**：`prometheus_client.generate_latest()` 原始 exposition；scrape 配置见 `docs-site/dev/architecture/ai-models.md` §4.3。`embedding_cache_size` Gauge 在每次 `/predict` 完成 + 每次 `/metrics` 抓取时同步当前 size（懒采样、避免 LRU 内 lock 持有过久）。
+- **`GET /cache/stats`**：人类可读 JSON `{size, capacity, hits, misses, hit_rate, variant}`，运维排错或快速验收用；不进 ml-backend-protocol（backend 内部端点）。
+- **`docs-site/dev/architecture/ai-models.md`**（新文档）：v0.9.x grounded-sam2 + v0.10.x sam3 并存的部署拓扑、三种 prompt 路由表、cache key 设计 + 命中/未命中收益矩阵、容量与显存预算表（`tiny`/`small`/`base_plus`/`large` 四档）、vendor 内部 API 升级风险提示、Prometheus 指标表 + scrape 配置 + 关键 PromQL 查询。
+- **`apps/grounded-sam2-backend/tests/test_embedding_cache.py`**（新单测文件，15 case）：`compute_cache_key` query string 剥离 / 路径区分 / variant 区分 / 本地路径覆盖；`EmbeddingCache` put/get 往返、miss 计数、hit 计数、LRU 淘汰顺序、容量上限、同 key 更新值且提到最近、`peek` 不动 LRU 不计数、`clear` 重置、非法 capacity、`hit_rate` 0.7 舍入、4 线程并发 200 次 put/get 锁安全。无需 GPU，纯逻辑；接 pyproject `[project.optional-dependencies] dev` + `[tool.pytest.ini_options]`。
+
+### Changed
+
+- **`apps/grounded-sam2-backend/main.py` `/predict` 流程重构**：取出 `file_path` 后先算 `cache_key`，对 point/bbox 走 `_cache.peek()`（不计 hits/misses 的纯存在性查询）决定要不要 `_fetch_image()`；text 始终拉图。完成后 `_observe(prompt_type, hit, started)` 一次性更新 `embedding_cache_hits|misses_total` + `inference_latency_seconds` + `embedding_cache_size`。批量分支同样按图记录 hit/miss，单图失败降级时记 miss。
+- **`apps/grounded-sam2-backend/pyproject.toml`**：版本 `0.9.0` → `0.9.1`；新增 `prometheus-client>=0.20`；新增 `[project.optional-dependencies] dev = ["pytest>=8"]` + `[tool.pytest.ini_options] testpaths=["tests"], pythonpath=["."]`；`py-modules` 加入 `embedding_cache` / `observability`。
+- **`apps/grounded-sam2-backend/main.py`** `FastAPI(version=...)` 同步 `0.9.1`；startup 日志多打 `cache_size`。
+- **`apps/grounded-sam2-backend/README.md`**：`v0.9.0 (M0)` → `v0.9.1 (M1)` 头部声明；目录结构补 `embedding_cache.py` / `observability.py` / `tests/`；端点速查表新增 `/metrics` + `/cache/stats`；环境变量表新增 `EMBEDDING_CACHE_SIZE`；性能参考段从「M0 不实现 LRU」改为命中策略说明 + 链回 `ai-models.md`；后续切片标 v0.9.1 ✅。
+
+### Notes
+
+- **何时升缓存容量**：observability 给 `embedding_cache_size` Gauge + 命中率 PromQL，长期看到命中率 < 30% 可能是 capacity 过小或工作台流量分散到太多图；< 30% 同时 size 长期顶到 capacity 的，把 `EMBEDDING_CACHE_SIZE` 调大。`large` 变体下不要超 16，否则单缓存就能 ~400 MB 起跳。
+- **vendor 升级清单**：`scripts/sync_vendor.sh` 后做两件事 —— ① 在 `predictor.py` 内 grep `_features` / `_orig_hw` / `_is_image_set` / `_is_batch`，确认上游属性名未改；② 跑 README §性能参考的 5-clicks 集成验收（同图连点 5 次，第 1 次 ≤ 500ms，第 2-5 次 ≤ 50ms）。
+- **协议契约 / 平台 API 零改动**：缓存对 `apps/api` 透明，`docs-site/dev/ml-backend-protocol.md` 完全不动；后续 v0.10.x sam3-backend 可复用同一缓存模块（M3 抽 `mask_utils` 到 `apps/_shared/` 时一并把 `embedding_cache` 也搬过去）。
+
+详细计划：[`docs/plans/2026-05-07-v0.9.1-declarative-feather.md`](docs/plans/2026-05-07-v0.9.1-declarative-feather.md)。
+
+---
+
 ## [0.9.0] - 2026-05-07
 
 > **Grounded-SAM-2 接入 M0 — backend 容器化。** v0.9.x AI 基座主轴启动；本版只做「把服务跑起来 + 协议 4 端点 + docker-compose 接入 + ProjectSettings 测试连接绿灯」，M1 embedding 缓存 / M2 工作台 `S` 工具 / M3 polygon 调参 / M4 `/ai-pre` UI / M5 运维收口都在 v0.9.1 ~ v0.9.5 单独切片。新服务 `apps/grounded-sam2-backend/` 是独立 GPU 容器（`docker compose --profile gpu` 启动，dev 笔记本无 GPU 默认不拉起），底层链路 GroundingDINO + SAM 2.1 → mask → polygon，三种 prompt（point / bbox / text）共用同一 `/predict` 端点按 body shape 自动分流。
@@ -71,9 +103,6 @@
 
 ---
 
-> 0.8.x 已封版，详见 [docs/changelogs/0.8.x.md](docs/changelogs/0.8.x.md)。最近一版 **v0.8.8 (Sparkling Tome)** 是 v0.9.x 前最后一个清债版。
->
-> 下一版主轴：**[v0.9.x — Grounded-SAM-2 接入](ROADMAP/0.9.x.md)**（首版 AI 基座，~5 周），与 v0.10.x SAM 3 并存方案见 [ROADMAP/0.10.x.md](ROADMAP/0.10.x.md)。
 
 <!-- v0.9.0 起的版本变更直接追加到本节；累积满整个 0.9.x 后再移到 docs/changelogs/0.9.x.md -->
 

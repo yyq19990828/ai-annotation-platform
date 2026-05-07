@@ -20,13 +20,16 @@
 > 优先级表（§ 末尾）按价值/成本排序；本节按**触发条件**重组，一眼看清"现在能做什么 / 等什么再做"。
 
 ### 现在可做（无前置依赖、有清晰交付物）
-- **UsersPage API 密钥 + 「存储与模型集成」对接**（P1，§A）
-- **登录页 progressive CAPTCHA**（P2，§A，slowapi 计数 + Redis 即可）
-- **CSP nonce-based 收紧**（P2，与 vite plugin 同窗口做）
-- **OpenSeadragon 瓦片金字塔 / IoU rbush 加速**（P2，§C.1，纯前端）
-- **i18n 框架接入**（P3，与 ProjectSettingsPage 重构合并节省破窗成本）
 
-### 等 v0.9.x SAM 基座（一并落地）
+> v0.9.x 主线进行中（M0 backend 容器化 `01f8d45` + M1 embedding 缓存 v0.9.1 已落），下列条目在 SAM 专注度之外作为 `chip:maintenance` 穿插推进，不抢主线优先级。
+
+- **UsersPage API 密钥 + 「存储与模型集成」对接**（P1，§A，`chip:maintenance`）
+- **登录页 progressive CAPTCHA**（P2，§A，slowapi 计数 + Redis 即可，`chip:maintenance`）
+- **CSP nonce-based 收紧**（P2，与 vite plugin 同窗口做，`chip:maintenance`）
+- **OpenSeadragon 瓦片金字塔 / IoU rbush 加速**（P2，§C.1，纯前端，`chip:maintenance`）
+- **i18n 框架接入**（P3，与 ProjectSettingsPage 重构合并节省破窗成本，`chip:maintenance`）
+
+### v0.9.x SAM 基座进行中（一并落地）
 - **C.3 SAM 交互式（点 / 框 → mask）+ mask → polygon 化**（P1，**v0.9.x 主轴**）
 - **AI 预标注独立页 `/ai-pre` 占位收口**（v0.9.4 文本批量预标 UI 同步）
 - **工作台 AI 助手「本题花费 X 元」单条透传**（依赖 SAM 工具）
@@ -175,28 +178,28 @@
 
 > 已完成的项不再列出，参考 [docs/changelogs/](docs/changelogs/)。下面只是当前 open 的优先级。
 
-| 优先级 | 候选项 | 触发 / 理由 |
-|---|---|---|
-| **P1** | UsersPage API 密钥 + 「存储与模型集成」对接 | 用户每天面对，残缺感最强；现在可做 |
-| **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1；**v0.9.x 主轴** |
-| **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 |
-| **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 |
-| **P2** | 登录页 progressive CAPTCHA（5 次失败后启用） | v0.8.7 注册/忘记密码已上 Turnstile，登录字典攻击仍裸奔；现在可做 |
-| **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 |
-| **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 |
-| **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
-| **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 |
-| **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要；现在可做 |
-| **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 |
-| **P2** | CSP nonce-based 收紧（剔除 'unsafe-inline'） | v0.8.8 ADR-0010 是宽松基线；nonce-based 留作 v0.10.x 与 ProjectSettingsPage 重构同窗口做 |
-| **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M |
-| **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 |
-| **P3** | 前端单测从 25% 推到 30% | v0.8.8 已推回 25.17%；下阶段补 ProjectSettingsPage / AuditPage / WorkbenchShell 关键 hook 单测 |
-| **P3** | 截图自动化 14 张实跑回填 | v0.8.7 落地脚本 + scenes 配置；推迟到 v0.9.x 与 SAM UI 一起做 |
-| **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 |
-| **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） |
-| **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 |
-| **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 |
+| 优先级 | 候选项 | 触发 / 理由 | Related ADR |
+|---|---|---|---|
+| **P1** | UsersPage API 密钥 + 「存储与模型集成」对接 | 用户每天面对，残缺感最强；现在可做 | — |
+| **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1；**v0.9.x 主轴** | — |
+| **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
+| **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
+| **P2** | 登录页 progressive CAPTCHA（5 次失败后启用） | v0.8.7 注册/忘记密码已上 Turnstile，登录字典攻击仍裸奔；现在可做 | — |
+| **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 | — |
+| **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
+| **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 | — |
+| **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
+| **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要；现在可做 | [0004](docs/adr/0004-canvas-stack-konva.md) |
+| **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
+| **P2** | CSP nonce-based 收紧（剔除 'unsafe-inline'） | v0.8.8 ADR-0010 是宽松基线；nonce-based 留作 v0.10.x 与 ProjectSettingsPage 重构同窗口做 | [0010](docs/adr/0010-security-headers-middleware.md) |
+| **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
+| **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |
+| **P3** | 前端单测从 25% 推到 30% | v0.8.8 已推回 25.17%；下阶段补 ProjectSettingsPage / AuditPage / WorkbenchShell 关键 hook 单测 | — |
+| **P3** | 截图自动化 14 张实跑回填 | v0.8.7 落地脚本 + scenes 配置；推迟到 v0.9.x 与 SAM UI 一起做 | — |
+| **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
+| **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
+| **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 | — |
+| **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 
 ---
 
@@ -204,7 +207,7 @@
 
 > v0.8.8 重写后这一节用于记录"对 ROADMAP 自身格式"的下次维护方向，避免文件无限膨胀。
 
-1. **「后续观察项」清单滚动归档**：当前 §A 末尾保留三条 v0.7.x ~ v0.8.8 残留观察；超过 5 条时拆出 `ROADMAP/observations.md`。
-2. **ADR ↔ ROADMAP 双向链接**：现在 ADR 文件知道自己实现了哪些 ROADMAP 条目（在 Status / Related 段引用），但 ROADMAP 反查 ADR 需要手翻。如「优先级表」单元数稳定后可加一列 `Related ADR`。
-3. **触发条件量化**：「监控触发」类条目（如 predictions Stage 2、batch_summary stored 列）目前是文字描述；条件成熟后可在 Grafana dashboard 加阈值 panel + 告警，跨过即生 ROADMAP 通知 issue。
-4. **v0.9.x M0 启动前重排**：v0.9.x 开张时把当前「现在可做」段重新洗牌——SAM 接入会消耗 5 周专注度，期间能做的小动作要单独标 `chip:maintenance`，不抢主线优先级。
+1. **「后续观察项」清单滚动归档**：当前 §A 末尾保留 3 条 v0.7.x ~ v0.8.8 残留观察（3/5）；超过 5 条时拆出 `ROADMAP/observations.md`。
+2. ~~**ADR ↔ ROADMAP 双向链接**~~：v0.9.0 已执行 — 优先级表已加 `Related ADR` 列，链回 0004 / 0006 / 0007 / 0008 / 0010。后续新 ADR 落地时同步补该列。
+3. **触发条件量化**：「监控触发」类条目（如 predictions Stage 2、batch_summary stored 列）目前是文字描述；条件成熟后可在 Grafana dashboard 加阈值 panel + 告警，跨过即生 ROADMAP 通知 issue。**仍未执行**（依赖 Grafana 工程化优先级）。
+4. ~~**v0.9.x M0 启动前重排**~~：v0.9.0 已执行 — 「现在可做」段已加 `chip:maintenance` 标记 + v0.9.x 进行中提示；后续每个 v0.9.x minor 收口时再视专注度回顾该段是否需要再洗牌。

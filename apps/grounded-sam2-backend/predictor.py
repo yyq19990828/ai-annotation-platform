@@ -30,6 +30,8 @@ import torch
 from PIL import Image
 from shapely.geometry import Polygon
 
+from embedding_cache import CacheEntry, EmbeddingCache
+
 logger = logging.getLogger(__name__)
 
 CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "/app/checkpoints")
@@ -56,12 +58,14 @@ class GroundedSAM2Predictor:
         dino_variant: str = "T",
         box_threshold: float = 0.35,
         text_threshold: float = 0.25,
+        embedding_cache: EmbeddingCache | None = None,
     ) -> None:
         self.sam_variant = sam_variant
         self.dino_variant = dino_variant
         self.box_threshold = box_threshold
         self.text_threshold = text_threshold
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.embedding_cache = embedding_cache
 
         self._sam_predictor = self._load_sam()
         self._dino_model = self._load_dino()
@@ -91,33 +95,92 @@ class GroundedSAM2Predictor:
         ckpt_path = os.path.join(CHECKPOINT_DIR, ckpt_name)
         return load_model(cfg_path, ckpt_path, device=self.device)
 
+    # ---------- SAM 内部状态 snapshot / restore ----------
+    #
+    # SAM2ImagePredictor.set_image() 把 image embedding 写到几个实例属性上;
+    # 缓存命中时把这些字段写回, 等价于 set_image() 但跳过编码器.
+    # 字段名跟随 vendor IDEA-Research/Grounded-SAM-2 (commit b7a9c29) 内的
+    # sam2/sam2_image_predictor.py; sync_vendor.sh 升级 commit 时务必跑 5-clicks 集成验收.
+
+    def _snapshot_sam(self, w: int, h: int) -> CacheEntry:
+        sp = self._sam_predictor
+        orig_hw = sp._orig_hw[0] if isinstance(sp._orig_hw, list) else sp._orig_hw
+        return CacheEntry(
+            features=sp._features,
+            orig_hw=tuple(orig_hw),  # type: ignore[arg-type]
+            is_batch=getattr(sp, "_is_batch", False),
+            wh=(w, h),
+        )
+
+    def _restore_sam(self, entry: CacheEntry) -> None:
+        sp = self._sam_predictor
+        sp._features = entry.features
+        sp._orig_hw = [tuple(entry.orig_hw)]
+        sp._is_image_set = True
+        if hasattr(sp, "_is_batch"):
+            sp._is_batch = entry.is_batch
+
     # ---------- 公开 prompt 接口 ----------
 
     def predict_point(
-        self, image: Image.Image, points: list[list[float]], labels: list[int]
-    ) -> list[dict[str, Any]]:
-        np_img, w, h = self._to_numpy(image)
-        self._sam_predictor.set_image(np_img)
-        # 入参 points 假定归一化 [0,1] → 像素
+        self,
+        image: Image.Image | None,
+        points: list[list[float]],
+        labels: list[int],
+        *,
+        cache_key: str | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """返回 (results, cache_hit). image=None 仅在 cache_key 命中时可省."""
+        w, h, hit = self._prime_sam(image, cache_key)
         px = np.array([[p[0] * w, p[1] * h] for p in points], dtype=np.float32)
         lab = np.array(labels, dtype=np.int32)
         masks, scores, _ = self._sam_predictor.predict(
             point_coords=px, point_labels=lab, multimask_output=False
         )
-        return self._masks_to_results(masks, scores, w, h)
+        return self._masks_to_results(masks, scores, w, h), hit
 
-    def predict_bbox(self, image: Image.Image, bbox: list[float]) -> list[dict[str, Any]]:
-        np_img, w, h = self._to_numpy(image)
-        self._sam_predictor.set_image(np_img)
-        # 入参 bbox=[x1,y1,x2,y2] 假定归一化 [0,1] → 像素
+    def predict_bbox(
+        self,
+        image: Image.Image | None,
+        bbox: list[float],
+        *,
+        cache_key: str | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        w, h, hit = self._prime_sam(image, cache_key)
         x1, y1, x2, y2 = bbox
         box_px = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
         masks, scores, _ = self._sam_predictor.predict(
             point_coords=None, point_labels=None, box=box_px[None, :], multimask_output=False
         )
-        return self._masks_to_results(masks, scores, w, h)
+        return self._masks_to_results(masks, scores, w, h), hit
 
-    def predict_text(self, image: Image.Image, text: str) -> list[dict[str, Any]]:
+    def _prime_sam(
+        self, image: Image.Image | None, cache_key: str | None
+    ) -> tuple[int, int, bool]:
+        """命中: restore state, 返回 (w, h, True). 未命中: set_image + put, 返回 (w, h, False).
+
+        cache_key=None 时绕过缓存(等价 v0.9.0 行为).
+        """
+        if cache_key and self.embedding_cache is not None:
+            entry = self.embedding_cache.get(cache_key)
+            if entry is not None:
+                self._restore_sam(entry)
+                return entry.wh[0], entry.wh[1], True
+        if image is None:
+            raise ValueError("image is required when cache miss")
+        np_img, w, h = self._to_numpy(image)
+        self._sam_predictor.set_image(np_img)
+        if cache_key and self.embedding_cache is not None:
+            self.embedding_cache.put(cache_key, self._snapshot_sam(w, h))
+        return w, h, False
+
+    def predict_text(
+        self,
+        image: Image.Image,
+        text: str,
+        *,
+        cache_key: str | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
         from groundingdino.util.inference import predict as dino_predict  # type: ignore[import-not-found]
 
         np_img, w, h = self._to_numpy(image)
@@ -125,11 +188,7 @@ class GroundedSAM2Predictor:
         caption = text.strip().lower()
         if not caption.endswith("."):
             caption = caption + "."
-        # vendor 内 inference.predict(model, image_tensor, caption, box_threshold, text_threshold)
-        # 返回 boxes(归一化 cxcywh)、logits、phrases.
-        from groundingdino.util.inference import load_image  # type: ignore[import-not-found]
 
-        # load_image 需要文件路径; 直接用 numpy → tensor 旁路:
         image_tensor = self._dino_image_tensor(np_img)
         boxes, logits, phrases = dino_predict(
             model=self._dino_model,
@@ -141,12 +200,23 @@ class GroundedSAM2Predictor:
         )
         if boxes is None or len(boxes) == 0:
             logger.info("DINO returned 0 boxes for caption=%r", caption)
-            return []
+            return [], False
 
         # 归一化 cxcywh → 像素 xyxy
         boxes_xyxy = self._cxcywh_to_xyxy(boxes.cpu().numpy(), w, h)
 
-        self._sam_predictor.set_image(np_img)
+        # SAM 端走 cache: 命中跳过 set_image, 未命中 set_image + put.
+        # 注意 text 路径 image 永远不为 None(DINO 要原图), 这里不会触发 ValueError.
+        hit = False
+        if cache_key and self.embedding_cache is not None:
+            entry = self.embedding_cache.get(cache_key)
+            if entry is not None:
+                self._restore_sam(entry)
+                hit = True
+        if not hit:
+            self._sam_predictor.set_image(np_img)
+            if cache_key and self.embedding_cache is not None:
+                self.embedding_cache.put(cache_key, self._snapshot_sam(w, h))
         masks, scores, _ = self._sam_predictor.predict(
             point_coords=None, point_labels=None, box=boxes_xyxy, multimask_output=False
         )
@@ -166,7 +236,7 @@ class GroundedSAM2Predictor:
                         "score": score,
                     }
                 )
-        return results
+        return results, hit
 
     # ---------- 内部工具 ----------
 

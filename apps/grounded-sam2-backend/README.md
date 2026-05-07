@@ -2,7 +2,7 @@
 
 > v0.9.x AI 基座的 ML Backend — 把 [`IDEA-Research/Grounded-SAM-2`](https://github.com/IDEA-Research/Grounded-SAM-2) 打包成独立 GPU 服务，遵循平台 [ML Backend 协议契约](../../docs-site/dev/ml-backend-protocol.md)。
 >
-> 当前版本：**v0.9.0 (M0 — backend 容器化)**。后续 v0.9.1 ~ v0.9.5 在 [`ROADMAP/0.9.x.md`](../../ROADMAP/0.9.x.md) 切片。
+> 当前版本：**v0.9.1 (M1 — embedding 缓存 + Prometheus)**。后续 v0.9.2 ~ v0.9.5 在 [`ROADMAP/0.9.x.md`](../../ROADMAP/0.9.x.md) 切片。
 
 ---
 
@@ -25,9 +25,12 @@ apps/grounded-sam2-backend/
 ├── pyproject.toml          Python 3.10 依赖锁 (不含 torch/torchvision, 由 base image 锁定)
 ├── Dockerfile              基于 pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel (与官仓对齐)
 ├── .dockerignore
-├── main.py                 FastAPI app + 4 端点
-├── predictor.py            三种 prompt 推理 + mask→polygon 内联
+├── main.py                 FastAPI app + 6 端点 (含 /metrics、/cache/stats)
+├── predictor.py            三种 prompt 推理 + mask→polygon 内联 + cache snapshot/restore
+├── embedding_cache.py      SAM 2 image embedding LRU 缓存 (v0.9.1)
+├── observability.py        Prometheus Counter/Histogram/Gauge (v0.9.1)
 ├── schemas.py              Pydantic schema (协议对齐)
+├── tests/                  pytest 单测 (无 GPU 即可跑)
 ├── checkpoints/            权重落盘点 (启动时下载, 挂 volume)
 ├── scripts/
 │   ├── download_checkpoints.py   幂等拉权重
@@ -93,8 +96,9 @@ curl -X POST http://localhost:8001/predict \
 | `DINO_VARIANT` | `T` | `T` / `B` | B 显存翻倍 |
 | `BOX_THRESHOLD` | `0.35` | 0.20 ~ 0.50 | 召回不足下调 |
 | `TEXT_THRESHOLD` | `0.25` | 0.20 ~ 0.40 | 短语 prompt 默认 0.25 |
+| `EMBEDDING_CACHE_SIZE` | `16` | 8 ~ 64 | tiny 单条 ≈ 4 MB；large ≈ 24 MB；按 GPU 显存调 |
 
-切换后**重启容器**生效（v0.9.x 不做运行时多变体共存）。
+切换后**重启容器**生效（v0.9.x 不做运行时多变体共存）。变体切换会自动让缓存失效（cache key 含 `sam_variant`）。
 
 ---
 
@@ -103,10 +107,12 @@ curl -X POST http://localhost:8001/predict \
 完整规范以 [`docs-site/dev/ml-backend-protocol.md`](../../docs-site/dev/ml-backend-protocol.md) 为准。本 backend 实现版本 `grounded-sam2-dino{T,B}-sam2.1{tiny,small,base_plus,large}`。
 
 ```
-GET  /health    → {"ok": true, "gpu": true, "model_version": "...", "loaded": true}
-GET  /setup     → {"name", "labels": [], "is_interactive": true, "params": {...}}
-GET  /versions  → {"versions": ["grounded-sam2-dinoT-sam2.1tiny"]}
-POST /predict   → 交互式 (task+context) 或 批量 (tasks[])
+GET  /health        → {"ok": true, "gpu": true, "model_version": "...", "loaded": true}
+GET  /setup         → {"name", "labels": [], "is_interactive": true, "params": {...}}
+GET  /versions      → {"versions": ["grounded-sam2-dinoT-sam2.1tiny"]}
+POST /predict       → 交互式 (task+context) 或 批量 (tasks[])
+GET  /metrics       → Prometheus exposition (text/plain; v0.9.1)
+GET  /cache/stats   → {"size": N, "capacity": 16, "hits": ..., "misses": ..., "hit_rate": 0.85, "variant": "tiny"} (v0.9.1)
 ```
 
 `POST /predict` 按 body shape 自动分流：
@@ -135,7 +141,7 @@ POST /predict   → 交互式 (task+context) 或 批量 (tasks[])
 | 3090 24GB | 100-200 ms | < 30 ms |
 | A100 40GB | 50-100 ms | < 20 ms |
 
-**M0 不实现 LRU embedding 缓存**（v0.9.1 M1 才上）。当前每次 `/predict` 走完整 `set_image()`，连续点同图 ≥ 2 次会重复编码 ~150ms。
+**v0.9.1 已落 LRU embedding 缓存**：cache key = `sha1(url_path|sam_variant)`（剥掉 MinIO presigned 的 query string，跨 TTL 滚动稳定）。同图二次 point/bbox 点击直接 restore SAM 内部 `_features`/`_orig_hw` 而不再 `set_image()`，并跳过 `_fetch_image()`；text 路径仍需 DINO 走原图，但 SAM 端同样命中。详见 [`docs-site/dev/architecture/ai-models.md`](../../docs-site/dev/architecture/ai-models.md)。
 
 ---
 
@@ -166,7 +172,7 @@ POST /predict   → 交互式 (task+context) 或 批量 (tasks[])
 
 ## 后续切片
 
-- v0.9.1 M1：embedding LRU 缓存 + `/cache/stats` 端点
+- v0.9.1 M1：embedding LRU 缓存 + Prometheus + `/cache/stats` ✅
 - v0.9.2 M2：工作台 `S` 工具 + 文本入口前端
 - v0.9.3 M3：mask→polygon tolerance 调参 + 抽到 `apps/_shared/mask_utils/`
 - v0.9.4 M4：`/ai-pre` 文本批量预标 UI
