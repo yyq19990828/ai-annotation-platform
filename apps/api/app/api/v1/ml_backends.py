@@ -1,7 +1,9 @@
+import re
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.deps import get_db, require_roles
 from app.db.enums import UserRole
 from app.db.models.user import User
@@ -16,10 +18,28 @@ from app.schemas.ml_backend import (
 )
 from app.services.ml_backend import MLBackendService
 from app.services.ml_client import MLBackendClient
+from app.services.storage import StorageService
 
 router = APIRouter()
 
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+
+
+def _resolve_task_url(task: Task) -> str:
+    """v0.9.4 · 把 task.file_path (MinIO 对象 key) 转成 ML backend 可访问的 presigned URL。
+
+    SAM backend 协议要求 file_path 是 http(s):// URL 或本地路径; tasks 表里存的是 key,
+    必须先签发 presigned URL。当平台 api 跑在 host 进程而 ML backend 在 docker 网内时,
+    再把 host 替换为 ``settings.ml_backend_storage_host`` (容器可达地址)。
+    """
+    storage = StorageService()
+    bucket = (
+        storage.datasets_bucket if task.dataset_item_id else storage.bucket
+    )
+    url = storage.generate_download_url(task.file_path, bucket=bucket)
+    if settings.ml_backend_storage_host:
+        url = re.sub(r"://[^/]+", f"://{settings.ml_backend_storage_host}", url, count=1)
+    return url
 
 
 @router.post("", response_model=MLBackendOut, status_code=201)
@@ -142,7 +162,7 @@ async def predict_test(
         raise HTTPException(status_code=404, detail="Task not found")
 
     client = MLBackendClient(backend)
-    results = await client.predict([{"id": str(task.id), "file_path": task.file_path}])
+    results = await client.predict([{"id": str(task.id), "file_path": _resolve_task_url(task)}])
     return {
         "results": [
             {"task_id": r.task_id, "result": r.result, "score": r.score}
@@ -185,7 +205,7 @@ async def interactive_annotating(
 
     client = MLBackendClient(backend)
     result = await client.predict_interactive(
-        task_data={"id": str(task.id), "file_path": task.file_path},
+        task_data={"id": str(task.id), "file_path": _resolve_task_url(task)},
         context=context,
     )
     return {

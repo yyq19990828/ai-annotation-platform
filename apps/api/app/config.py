@@ -1,8 +1,12 @@
 import json
+from pathlib import Path
 from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+# repo root .env (apps/api/app/config.py → ../../.. = repo root)
+_REPO_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
 
 
 class Settings(BaseSettings):
@@ -50,6 +54,12 @@ class Settings(BaseSettings):
     minio_datasets_bucket: str = "datasets"
     minio_use_ssl: bool = False
     minio_public_url: str = ""  # if set, replaces the endpoint host in presigned URLs
+
+    # v0.9.4 · 当 ML backend 在 docker compose 网内、平台 api 在 host 进程时,
+    # SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge gateway
+    # (Linux: 172.17.0.1:9000) 或 host.docker.internal:9000 (macOS/Win) 即可。
+    # 留空时 file URL 直接透传 (生产: api / sam / minio 同 K8s 网时不需要)。
+    ml_backend_storage_host: str = ""
 
     ml_predict_timeout: int = 100
     ml_health_timeout: int = 10
@@ -114,7 +124,8 @@ class Settings(BaseSettings):
         return bool(self.smtp_host and self.smtp_port and self.smtp_from)
 
     class Config:
-        env_file = ".env"
+        # 用绝对路径让从任何 cwd 起 uvicorn 都能读到 repo root .env
+        env_file = str(_REPO_ROOT_ENV)
         # `.env` 中包含若干 VITE_* 前端变量（VITE_API_URL / VITE_SENTRY_DSN /
         # VITE_TURNSTILE_SITE_KEY 等）；pydantic-settings 2.13 起 extra 默认
         # 为 "forbid"，会让本地 dev 启动失败。这里显式忽略，让前后端共用一份 .env。

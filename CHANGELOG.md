@@ -22,6 +22,30 @@
 
 ## 最新版本
 
+## [0.9.4 phase 1] - 2026-05-08
+
+> **Bridged Pasture — 后端真正接通 SAM。** v0.9.3 phase 3 让 PROJECT_ADMIN 能注册 backend 后，第一次实跑 `S` 工具单击立刻 500：根因是 `ml_backends.py` 把 `task.file_path`（MinIO 对象 key，如 `cpc0-R_.../xxx.jpg`）**直接透传**给 SAM backend，而 SAM 协议要求 `file_path` 是 `http(s)://` URL；同时 SAM 容器在 docker compose 网内**访问不到** host 进程的 `localhost:9000`。本 phase 把对象 key → presigned URL → host 重写一条龙做完，让 `S` 工具单击 / 拖框 / 文本三种 prompt 都能走通。
+
+### Added
+
+- **`apps/api/app/api/v1/ml_backends.py` `_resolve_task_url(task)` helper**：调用 `StorageService.generate_download_url()` 拿 presigned URL（按 `task.dataset_item_id` 自动选 `datasets` / `annotations` bucket）→ 若 `settings.ml_backend_storage_host` 非空，把 URL host 替换为 docker bridge gateway 地址。`predict-test` + `interactive-annotating` 两处 `file_path: task.file_path` 同步改为 `_resolve_task_url(task)`。
+- **`Settings.ml_backend_storage_host: str = ""`**（`apps/api/app/config.py`）：新增配置项，dev 默认 `172.17.0.1:9000`（Linux docker-bridge gateway）；macOS / Windows Docker Desktop 用 `host.docker.internal:9000`；生产（API / SAM / MinIO 同 K8s 网）留空透传。
+
+### Changed
+
+- **`Settings.Config.env_file` 改为 repo root .env 绝对路径**（`apps/api/app/config.py`）：原本 `env_file = ".env"` 是相对 cwd —— 当 uvicorn 从 `apps/api/` 起时，pydantic-settings 找不到 repo root `.env`，新增字段必须靠 shell env 注入才生效（极易踩坑）。改为 `Path(__file__).resolve().parents[3] / ".env"` 后，从任何 cwd 起 uvicorn 都能正确加载。
+- **`.env.example` 加 `ML_BACKEND_STORAGE_HOST=172.17.0.1:9000`** + 三平台注释说明（Linux / macOS / 生产）。
+- **`.env` 同步加上**（dev 默认值）。
+
+### Notes
+
+- **改动范围严格限定在 ML backend 调用路径**：浏览器加载图片仍走 `_public_url()`（受 `MINIO_PUBLIC_URL` 控制），与本 phase 互不干扰。
+- **生产侧**：当 API / SAM / MinIO 共网（同 docker-compose 或同 K8s namespace）时 `ML_BACKEND_STORAGE_HOST` 留空即可，`generate_download_url` 直接生成 internal endpoint URL，SAM 用 internal DNS 访问。
+- **协议契约不变**：SAM backend 端 `_fetch_image()` 始终接受 `http(s)://` URL（`apps/grounded-sam2-backend/main.py:114-122`）；本 phase 是**调用方**修复，不动协议。
+- **测试**：本 phase 是 dev 环境基础设施修复，本地端到端实跑通过（SAM 200 OK + 工作台紫虚线候选 polygon）；后端单测无对应 case 覆盖（`_resolve_task_url` 仅做路径拼接 + URL host 替换，单元价值低；E2E 留作后续 v0.9.5 SAM 测试 fixture 收口）。
+
+---
+
 ## [0.9.3 phase 3] - 2026-05-07
 
 > **Happy Meadow — 前端接通 ML Backend 注册能力。** 后端 `POST /projects/{pid}/ml-backends` CRUD 五件套自 v0.8.6 起就位（权限 `SUPER_ADMIN | PROJECT_ADMIN`），但前端**没有任何创建 / 编辑 / 删除 UI**：`ProjectSettingsPage` 只有「选择已有 backend」下拉，`/model-market` 的 `RegisteredBackendsTab` 是只读总览。`GeneralSection.tsx:301` + `CreateProjectWizard.tsx:586` 的「先在『ML 模型』选项卡添加」提示文案指向**不存在**的选项卡（commit `e81eb3e` ROADMAP 标记的 bug）。本版同时在两个入口接通注册能力，让 PROJECT_ADMIN 自服务接入 ML、让 SUPER_ADMIN 跨项目运维直接编辑。
