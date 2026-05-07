@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     sentry_environment: str = "development"
     sentry_traces_sample_rate: float = 0.1
 
+    # v0.8.7 · Cloudflare Turnstile CAPTCHA。dev 默认关闭，service 层 short-circuit 返 True；
+    # production 在 env 显式 enabled=true + 填两把 key。
+    turnstile_enabled: bool = False
+    turnstile_site_key: str | None = None
+    turnstile_secret_key: str | None = None
+    turnstile_verify_url: str = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+
     @property
     def effective_celery_broker(self) -> str:
         return self.celery_broker_url or self.redis_url
@@ -101,6 +108,10 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        # `.env` 中包含若干 VITE_* 前端变量（VITE_API_URL / VITE_SENTRY_DSN /
+        # VITE_TURNSTILE_SITE_KEY 等）；pydantic-settings 2.13 起 extra 默认
+        # 为 "forbid"，会让本地 dev 启动失败。这里显式忽略，让前后端共用一份 .env。
+        extra = "ignore"
 
 
 settings = Settings()

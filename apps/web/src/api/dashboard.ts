@@ -177,9 +177,20 @@ export interface PredictionCostStats {
   failed_predictions: number;
   failure_rate: number;
   avg_inference_time_ms: number | null;
+  // v0.8.7 F2 · 延迟分位数
+  p50_inference_time_ms: number | null;
+  p95_inference_time_ms: number | null;
+  p99_inference_time_ms: number | null;
   total_cost: number;
   total_tokens: number;
   by_backend: BackendCostBreakdown[];
+}
+
+// v0.8.7 F5.3 · Reviewer 实时 mini 仪表（在 ReviewWorkbench 右侧栏渲染）
+export interface ReviewerMiniStats {
+  approved_today: number;
+  rejected_today: number;
+  avg_review_seconds: number | null;
 }
 
 export const dashboardApi = {
@@ -194,6 +205,9 @@ export const dashboardApi = {
   getMyBatches: () => apiClient.get<MyBatchItem[]>("/dashboard/annotator/batches"),
   getMyRecentReviews: (limit = 20) =>
     apiClient.get<RecentReviewItem[]>(`/dashboard/me/recent-reviews?limit=${limit}`),
+  // v0.8.7 F5.3
+  getReviewerTodayMini: () =>
+    apiClient.get<ReviewerMiniStats>("/dashboard/reviewer/today-mini"),
   // v0.8.4 · 管理员人员看板
   getAdminPeople: (params: {
     role?: string;

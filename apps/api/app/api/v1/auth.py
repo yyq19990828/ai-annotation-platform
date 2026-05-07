@@ -19,6 +19,7 @@ from app.core.security import (
     decode_access_token,
 )
 from app.services.audit import AuditAction, AuditService
+from app.services.captcha_service import verify_turnstile_token
 from app.services.password_reset import PasswordResetService
 from app.services.system_settings_service import SystemSettingsService
 from app.config import settings
@@ -30,6 +31,8 @@ router = APIRouter()
 
 class ForgotPasswordRequest(BaseModel):
     email: str = Field(min_length=3, max_length=255)
+    # v0.8.7 · Cloudflare Turnstile token；TURNSTILE_ENABLED=False 时忽略。
+    captcha_token: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -130,6 +133,11 @@ async def forgot_password(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    if not await verify_turnstile_token(
+        data.captcha_token, request.client.host if request.client else None
+    ):
+        raise HTTPException(status_code=400, detail="captcha_failed")
+
     svc = PasswordResetService(db)
     token = await svc.create_token(data.email)
     await db.commit()
@@ -198,6 +206,11 @@ async def register_open(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="开放注册未启用",
         )
+
+    if not await verify_turnstile_token(
+        payload.captcha_token, request.client.host if request.client else None
+    ):
+        raise HTTPException(status_code=400, detail="captcha_failed")
 
     existing = await db.execute(select(User).where(User.email == payload.email))
     if existing.scalar_one_or_none() is not None:

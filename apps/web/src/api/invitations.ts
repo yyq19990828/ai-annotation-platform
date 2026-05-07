@@ -47,6 +47,7 @@ export interface OpenRegisterPayload {
   email: string;
   name: string;
   password: string;
+  captcha_token?: string | null;
 }
 
 export const invitationsApi = {

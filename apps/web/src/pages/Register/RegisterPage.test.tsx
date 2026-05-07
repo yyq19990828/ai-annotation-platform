@@ -122,8 +122,14 @@ describe("RegisterPage / OpenRegisterForm", () => {
     fireEvent.change(inputs[1], { target: { value: "Tom" } }); // name
     fillPwd("Abcdef12");
     fireEvent.click(screen.getByText("注册"));
+    // v0.8.7 F1 · payload 增加 captcha_token（VITE_TURNSTILE_SITE_KEY 缺省时为 null）
     expect(mockOpenRegister.mutate).toHaveBeenCalledWith(
-      { email: "x@y.com", name: "Tom", password: "Abcdef12" },
+      {
+        email: "x@y.com",
+        name: "Tom",
+        password: "Abcdef12",
+        captcha_token: null,
+      },
       expect.any(Object),
     );
   });

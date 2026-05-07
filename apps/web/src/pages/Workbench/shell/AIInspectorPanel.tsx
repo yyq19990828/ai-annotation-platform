@@ -162,15 +162,36 @@ export function AIInspectorPanel({
               }}
             >{(confThreshold * 100).toFixed(0)}%</span>
           </div>
-          <input
-            type="range" min="0" max="1" step="0.05" value={confThreshold}
-            onChange={(e) => onSetConfThreshold(+e.target.value)}
-            style={{ width: "100%", accentColor: "var(--color-ai)", height: 4 }}
-          />
+          {/* v0.8.7 F5.2 · slider 改为 read-only 数值；调整入口统一到 Topbar `[`/`]`，
+              避免双控件 state 漂移与单测覆盖混乱。 */}
+          <div
+            style={{
+              padding: "6px 8px",
+              fontSize: 11,
+              color: "var(--color-fg-muted)",
+              background: "var(--color-bg-sunken)",
+              border: "1px dashed var(--color-border)",
+              borderRadius: "var(--radius-sm)",
+              textAlign: "center",
+            }}
+            onWheel={(e) => {
+              // 鼠标滚轮调整阈值，给老用户一个 fallback；按住 Shift 可快速 ±0.1
+              e.preventDefault();
+              const step = e.shiftKey ? 0.1 : 0.05;
+              const next = Math.min(
+                1,
+                Math.max(0, confThreshold + (e.deltaY < 0 ? step : -step)),
+              );
+              onSetConfThreshold(Number(next.toFixed(2)));
+            }}
+            data-testid="ai-threshold-display"
+          >
+            在工具栏使用 <kbd>[</kbd> / <kbd>]</kbd> 调整
+          </div>
           <div
             style={{
               display: "flex", justifyContent: "space-between", fontSize: 10,
-              color: "var(--color-fg-subtle)", marginTop: 2,
+              color: "var(--color-fg-subtle)", marginTop: 4,
             }}
           >
             <span>0%</span>

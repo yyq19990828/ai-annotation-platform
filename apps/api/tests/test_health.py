@@ -33,7 +33,10 @@ def test_check_celery_no_workers(monkeypatch):
 
 
 def test_check_celery_with_workers(monkeypatch):
-    """celery_app.control.inspect().ping() 返回 worker dict 时 status='ok'。"""
+    """celery_app.control.inspect().ping() 返回 worker dict 时 status='ok'。
+
+    v0.8.7 F2 · workers 字段从 list[str] 升级为 list[{name, last_heartbeat_seconds_ago, pool_max}]，
+    queues 字段新增（无 active/reserved 桩时为空）。"""
     from app.api import health
 
     class _FakeInspect:
@@ -48,7 +51,8 @@ def test_check_celery_with_workers(monkeypatch):
     result = health._check_celery()
     assert result["status"] == "ok"
     assert result["active_count"] == 2
-    assert set(result["workers"]) == {"celery@host1", "celery@host2"}
+    assert {w["name"] for w in result["workers"]} == {"celery@host1", "celery@host2"}
+    assert "queues" in result
 
 
 def test_cors_settings_dev_default():

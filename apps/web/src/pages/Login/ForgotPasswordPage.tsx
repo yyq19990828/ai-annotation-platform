@@ -2,20 +2,30 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
+import { Captcha, isCaptchaRequired } from "@/components/Captcha";
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRequired = isCaptchaRequired();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
+    if (captchaRequired && !captchaToken) {
+      setError("请先完成人机验证");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      await apiClient.publicPost("/auth/forgot-password", { email });
+      await apiClient.publicPost("/auth/forgot-password", {
+        email,
+        captcha_token: captchaToken,
+      });
       setSent(true);
     } catch {
       setError("请求失败，请稍后重试");
@@ -91,9 +101,12 @@ export function ForgotPasswordPage() {
             {error && (
               <div style={{ fontSize: 11.5, color: "#ef4444", marginTop: 6 }}>{error}</div>
             )}
+            <div style={{ marginTop: 14 }}>
+              <Captcha onChange={setCaptchaToken} />
+            </div>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (captchaRequired && !captchaToken)}
               style={{
                 marginTop: 16,
                 width: "100%",

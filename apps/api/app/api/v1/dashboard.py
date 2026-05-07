@@ -25,6 +25,7 @@ from app.schemas.dashboard import (
     AdminPersonDetail,
     PredictionCostStats,
     BackendCostBreakdown,
+    ReviewerMiniStats,
 )
 from app.db.models.project_member import ProjectMember
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
@@ -364,6 +365,59 @@ async def reviewer_dashboard(
         reopen_after_approve_rate=reopen_after_approve_rate,
         weekly_compare_pct=weekly_compare_pct_r,
         daily_review_counts=daily_review_counts,
+    )
+
+
+@router.get("/reviewer/today-mini", response_model=ReviewerMiniStats)
+async def reviewer_today_mini(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
+    ),
+):
+    """v0.8.7 F5.3 · ReviewWorkbench 右侧栏 mini 仪表轻量端点。
+
+    - approved_today / rejected_today: 自己当日 approve/reject 的次数（基于 Task.reviewer_id）
+    - avg_review_seconds: 自己当日审过的任务（reviewer_claimed_at → reviewed_at）平均耗时秒数
+    20s 自动 refetch（前端 query staleTime）。
+    """
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # reject 流程：task.status 落回 in_progress，但 task.reject_reason 有值。
+    # approve 流程：task.status = completed。
+    # 当日审核耗时按 (reviewed_at - reviewer_claimed_at) 平均。
+    counts = (
+        await db.execute(
+            select(
+                func.count()
+                .filter(Task.status == TaskStatus.COMPLETED)
+                .label("approved"),
+                func.count()
+                .filter(
+                    Task.status == TaskStatus.IN_PROGRESS,
+                    Task.reject_reason.isnot(None),
+                )
+                .label("rejected"),
+                func.avg(
+                    func.extract("epoch", Task.reviewed_at - Task.reviewer_claimed_at)
+                ).label("avg_seconds"),
+            ).where(
+                Task.reviewer_id == current_user.id,
+                Task.reviewed_at.isnot(None),
+                Task.reviewed_at >= today_start,
+            )
+        )
+    ).first()
+
+    return ReviewerMiniStats(
+        approved_today=int(counts.approved or 0) if counts else 0,
+        rejected_today=int(counts.rejected or 0) if counts else 0,
+        avg_review_seconds=(
+            float(counts.avg_seconds)
+            if counts and counts.avg_seconds is not None
+            else None
+        ),
     )
 
 
@@ -1278,12 +1332,22 @@ async def prediction_cost_stats(
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     try:
-        # 主聚合：调用数 / avg / total_cost / total_tokens
+        # 主聚合：调用数 / avg / p50 / p95 / p99 / total_cost / total_tokens
+        # v0.8.7 F2 · 加 PERCENTILE_CONT(p50/p95/p99) WITHIN GROUP；postgres 原生支持。
         main = (
             await db.execute(
                 select(
                     func.count(Prediction.id).label("total"),
                     func.avg(PredictionMeta.inference_time_ms).label("avg_ms"),
+                    func.percentile_cont(0.5)
+                    .within_group(PredictionMeta.inference_time_ms.asc())
+                    .label("p50_ms"),
+                    func.percentile_cont(0.95)
+                    .within_group(PredictionMeta.inference_time_ms.asc())
+                    .label("p95_ms"),
+                    func.percentile_cont(0.99)
+                    .within_group(PredictionMeta.inference_time_ms.asc())
+                    .label("p99_ms"),
                     func.coalesce(func.sum(PredictionMeta.total_cost), 0.0).label(
                         "total_cost"
                     ),
@@ -1363,6 +1427,15 @@ async def prediction_cost_stats(
             failure_rate=round(failure_rate, 4),
             avg_inference_time_ms=(
                 float(main.avg_ms) if main.avg_ms is not None else None
+            ),
+            p50_inference_time_ms=(
+                float(main.p50_ms) if main.p50_ms is not None else None
+            ),
+            p95_inference_time_ms=(
+                float(main.p95_ms) if main.p95_ms is not None else None
+            ),
+            p99_inference_time_ms=(
+                float(main.p99_ms) if main.p99_ms is not None else None
             ),
             total_cost=float(main.total_cost or 0.0),
             total_tokens=int(main.total_tokens or 0),

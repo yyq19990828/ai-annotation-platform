@@ -59,6 +59,8 @@ class AuditAction(str, Enum):
     TASK_APPROVE = "task.approve"
     TASK_REJECT = "task.reject"
     TASK_REOPEN = "task.reopen"
+    # v0.8.7 F7 · 任务跳过
+    TASK_SKIP = "task.skip"
     # v0.7.8 · 导出审计 + 会话管理
     PROJECT_EXPORT = "project.export"
     BATCH_EXPORT = "batch.export"

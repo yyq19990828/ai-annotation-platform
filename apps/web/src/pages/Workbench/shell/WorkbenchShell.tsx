@@ -7,7 +7,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProject } from "@/hooks/useProjects";
 import {
   useTaskList, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
-  useUpdateAnnotation, useSubmitTask, useWithdrawTask, useReopenTask,
+  useUpdateAnnotation, useSubmitTask, useSkipTask, useWithdrawTask, useReopenTask,
 } from "@/hooks/useTasks";
 import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
@@ -591,6 +591,37 @@ export function WorkbenchShell() {
     });
   }, [taskId, canReopen, reopenTaskMut, pushToast]);
 
+  // v0.8.7 F7 · 跳过任务（图像损坏 / 无目标 / 不清晰）
+  const skipTaskMut = useSkipTask();
+  const handleSkipTask = useCallback(
+    (
+      reason: "image_corrupt" | "no_target" | "unclear" | "other",
+      note?: string,
+    ) => {
+      if (!taskId) return;
+      skipTaskMut.mutate(
+        { taskId, reason, note },
+        {
+          onSuccess: () => {
+            pushToast({ msg: "已跳过本题，等待审核员复核", kind: "success" });
+            navigateTask("next");
+          },
+          onError: (err) => {
+            const isApi = err instanceof ApiError;
+            const reason = isApi
+              ? (err.detailRaw as { reason?: string } | undefined)?.reason
+              : undefined;
+            let msg = "跳过失败，请刷新后重试";
+            if (reason === "task_not_skippable") msg = "当前状态无法跳过";
+            else if (reason === "invalid_skip_reason") msg = "原因无效";
+            pushToast({ msg, kind: "error" });
+          },
+        },
+      );
+    },
+    [taskId, skipTaskMut, pushToast, navigateTask],
+  );
+
   // ── 键盘快捷键（v0.6.4 P1 抽 hook） ───────────────────────────────────
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
@@ -775,6 +806,8 @@ export function WorkbenchShell() {
           isReopening={reopenTaskMut.isPending}
           onWithdraw={handleWithdrawTask}
           onReopen={handleReopenTask}
+          isSkipping={skipTaskMut.isPending}
+          onSkip={handleSkipTask}
         />
 
         <ImageStage

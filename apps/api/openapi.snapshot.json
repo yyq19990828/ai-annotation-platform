@@ -3941,6 +3941,17 @@
       },
       "ForgotPasswordRequest": {
         "properties": {
+          "captcha_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captcha Token"
+          },
           "email": {
             "maxLength": 255,
             "minLength": 3,
@@ -4918,6 +4929,17 @@
       },
       "OpenRegisterRequest": {
         "properties": {
+          "captcha_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captcha Token"
+          },
           "email": {
             "maxLength": 255,
             "minLength": 3,
@@ -5054,6 +5076,39 @@
             "default": 0.0,
             "title": "Failure Rate",
             "type": "number"
+          },
+          "p50_inference_time_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Inference Time Ms"
+          },
+          "p95_inference_time_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Inference Time Ms"
+          },
+          "p99_inference_time_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P99 Inference Time Ms"
           },
           "range": {
             "enum": [
@@ -6208,6 +6263,34 @@
         "title": "ReviewerDashboardStats",
         "type": "object"
       },
+      "ReviewerMiniStats": {
+        "description": "v0.8.7 F5.3 · ReviewWorkbench 右侧栏 mini 仪表（当日通过/退回/平均耗时）。",
+        "properties": {
+          "approved_today": {
+            "default": 0,
+            "title": "Approved Today",
+            "type": "integer"
+          },
+          "avg_review_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Review Seconds"
+          },
+          "rejected_today": {
+            "default": 0,
+            "title": "Rejected Today",
+            "type": "integer"
+          }
+        },
+        "title": "ReviewerMiniStats",
+        "type": "object"
+      },
       "ReviewingBatchItem": {
         "properties": {
           "annotator": {
@@ -6320,6 +6403,30 @@
           "upload_url"
         ],
         "title": "ScreenshotInitResponse",
+        "type": "object"
+      },
+      "SkipTaskRequest": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "SkipTaskRequest",
         "type": "object"
       },
       "SmtpStatus": {
@@ -6925,6 +7032,29 @@
               }
             ],
             "title": "Sequence Order"
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Reason"
+          },
+          "skipped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped At"
           },
           "status": {
             "title": "Status",
@@ -9644,6 +9774,33 @@
           }
         ],
         "summary": "Reviewer Dashboard",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/reviewer/today-mini": {
+      "get": {
+        "description": "v0.8.7 F5.3 · ReviewWorkbench 右侧栏 mini 仪表轻量端点。\n\n- approved_today / rejected_today: 自己当日 approve/reject 的次数（基于 Task.reviewer_id）\n- avg_review_seconds: 自己当日审过的任务（reviewer_claimed_at → reviewed_at）平均耗时秒数\n20s 自动 refetch（前端 query staleTime）。",
+        "operationId": "reviewer_today_mini_api_v1_dashboard_reviewer_today_mini_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewerMiniStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reviewer Today Mini",
         "tags": [
           "dashboard"
         ]
@@ -14969,6 +15126,63 @@
           }
         ],
         "summary": "Reject Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/skip": {
+      "post": {
+        "description": "v0.8.7 F7 · 标注员跳过任务并附原因，自动转 reviewer 复核。\n\n状态机：\n  - pending / in_progress → review（与 submit 行为一致，但不要求有标注）\n  - 其他状态 → 409\n业务约束：\n  - reason ∈ {image_corrupt, no_target, unclear, other}；其他 422\n  - reason=\"other\" 时建议带 note，但 note 可空（前端兜底）",
+        "operationId": "skip_task_api_v1_tasks__task_id__skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkipTaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Skip Task",
         "tags": [
           "tasks"
         ]

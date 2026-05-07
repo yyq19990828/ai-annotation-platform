@@ -279,3 +279,38 @@ async def test_prediction_cost_stats_requires_super_admin(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403
+
+
+async def test_prediction_cost_stats_p50_p95_p99(
+    httpx_client_bound, auth_headers, db_session, super_admin
+):
+    """v0.8.7 F2 · PERCENTILE_CONT 聚合 inference_time_ms。"""
+    user, _ = super_admin
+    proj = await _seed_project(db_session, user.id)
+    task = await _seed_task(db_session, proj.id)
+    backend = await _seed_backend(db_session, proj.id, "perc")
+
+    # 100 个预测，inference_ms 从 10 到 1000 step 10
+    for ms in range(10, 1010, 10):
+        await _seed_prediction(
+            db_session,
+            project_id=proj.id,
+            task_id=task.id,
+            ml_backend_id=backend.id,
+            cost=0.0,
+            tokens=0,
+            inference_ms=ms,
+        )
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        "/api/v1/dashboard/admin/prediction-cost-stats?range=30d",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["total_predictions"] == 100
+    # 100 个均匀样本：P50 ≈ 505，P95 ≈ 955，P99 ≈ 991（PERCENTILE_CONT 线性插值）
+    assert abs(data["p50_inference_time_ms"] - 505.0) <= 5.0
+    assert abs(data["p95_inference_time_ms"] - 955.0) <= 5.0
+    assert abs(data["p99_inference_time_ms"] - 991.0) <= 5.0

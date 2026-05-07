@@ -69,7 +69,14 @@ export function RejectReasonModal({ open, count, onClose, onConfirm }: RejectRea
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
           <Button onClick={onClose}>取消</Button>
-          <Button variant="danger" onClick={handleConfirm} disabled={!canConfirm}>确认退回</Button>
+          <Button
+            variant="danger"
+            onClick={handleConfirm}
+            disabled={!canConfirm}
+            data-testid="reject-confirm"
+          >
+            确认退回
+          </Button>
         </div>
       </div>
     </Modal>

@@ -9,6 +9,7 @@ import {
 } from "@/pages/Workbench/state/transforms";
 import { useViewportTransform } from "@/pages/Workbench/state/useViewportTransform";
 import { CommentsPanel } from "@/pages/Workbench/shell/CommentsPanel";
+import { ReviewerMiniPanel } from "./ReviewerMiniPanel";
 import { useAuthStore } from "@/stores/authStore";
 import type { ReviewClaimResponse } from "@/types";
 
@@ -81,6 +82,7 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
   return (
     <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden" }}>
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+      <ReviewerMiniPanel />
       {claimInfo && !claimInfo.is_self && (
         <div
           style={{
@@ -130,10 +132,20 @@ export function ReviewWorkbench({ taskId, onApprove, onReject, onPrev, onNext }:
           </Button>
           {onPrev && <Button size="sm" onClick={onPrev}><Icon name="chevLeft" size={12} />上一</Button>}
           {onNext && <Button size="sm" onClick={onNext}>下一<Icon name="chevRight" size={12} /></Button>}
-          <Button variant="primary" size="sm" onClick={onApprove}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onApprove}
+            data-testid="review-approve"
+          >
             <Icon name="check" size={12} />通过
           </Button>
-          <Button variant="danger" size="sm" onClick={onReject}>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={onReject}
+            data-testid="review-reject"
+          >
             <Icon name="x" size={12} />退回
           </Button>
         </div>

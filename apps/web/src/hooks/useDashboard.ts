@@ -65,3 +65,12 @@ export function usePredictionCostStats(range: "7d" | "30d" = "30d") {
     queryFn: () => dashboardApi.getPredictionCostStats(range),
   });
 }
+
+// v0.8.7 F5.3 · ReviewWorkbench mini 仪表（20s 自动 refetch）
+export function useReviewerTodayMini() {
+  return useQuery({
+    queryKey: ["dashboard", "reviewer", "today-mini"],
+    queryFn: dashboardApi.getReviewerTodayMini,
+    refetchInterval: 20_000,
+  });
+}

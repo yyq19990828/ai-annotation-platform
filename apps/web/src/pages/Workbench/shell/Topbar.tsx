@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
+import { SkipTaskModal, type SkipReason } from "./SkipTaskModal";
 import type { TaskResponse } from "@/types";
 
 interface TopbarProps {
@@ -29,6 +30,9 @@ interface TopbarProps {
   isReopening?: boolean;
   onWithdraw?: () => void;
   onReopen?: () => void;
+  // v0.8.7 F7 · 任务跳过；缺省时不渲染按钮
+  isSkipping?: boolean;
+  onSkip?: (reason: SkipReason, note?: string) => void;
 }
 
 /**
@@ -45,7 +49,10 @@ export function Topbar({
   overflowSlot,
   canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
   onWithdraw, onReopen,
+  isSkipping = false, onSkip,
 }: TopbarProps) {
+  // v0.8.7 F7 · 跳过任务 modal 状态
+  const [skipOpen, setSkipOpen] = useState(false);
   const status = task?.status;
   const isReview = status === "review";
   const isCompleted = status === "completed";
@@ -157,15 +164,28 @@ export function Topbar({
             <Icon name="edit" size={13} />继续编辑
           </Button>
         ) : (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={onSubmit}
-            disabled={isSubmitting}
-            data-testid="workbench-submit"
-          >
-            <Icon name="check" size={13} />提交质检
-          </Button>
+          <>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onSubmit}
+              disabled={isSubmitting}
+              data-testid="workbench-submit"
+            >
+              <Icon name="check" size={13} />提交质检
+            </Button>
+            {onSkip && (
+              <Button
+                size="sm"
+                onClick={() => setSkipOpen(true)}
+                disabled={isSkipping || isSubmitting}
+                title="图像损坏 / 无目标 / 不清晰时跳过本题"
+                data-testid="workbench-skip"
+              >
+                <Icon name="x" size={12} />跳过
+              </Button>
+            )}
+          </>
         )}
         <Button size="sm" onClick={onNext}>下一<Icon name="chevRight" size={13} /></Button>
 
@@ -240,6 +260,17 @@ export function Topbar({
           )}
         />
       </div>
+      {onSkip && (
+        <SkipTaskModal
+          open={skipOpen}
+          isSubmitting={isSkipping}
+          onClose={() => setSkipOpen(false)}
+          onConfirm={(reason, note) => {
+            setSkipOpen(false);
+            onSkip(reason, note);
+          }}
+        />
+      )}
     </div>
   );
 }

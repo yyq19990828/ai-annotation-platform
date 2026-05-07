@@ -52,8 +52,10 @@ describe("ForgotPasswordPage", () => {
     await waitFor(() =>
       screen.getByText(/如果该邮箱已注册，您将收到一封包含重置链接的邮件/),
     );
+    // v0.8.7 F1 · payload 增加 captcha_token（VITE_TURNSTILE_SITE_KEY 缺省时为 null）
     expect(mockPublicPost).toHaveBeenCalledWith("/auth/forgot-password", {
       email: "x@y.com",
+      captcha_token: null,
     });
   });
 

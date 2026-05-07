@@ -396,6 +396,7 @@ function MLBackendsAndCostCard({
 
   const failureRatePct = cost ? (cost.failure_rate * 100).toFixed(1) : "—";
   const avgMs = cost?.avg_inference_time_ms ?? null;
+  const p95Ms = cost?.p95_inference_time_ms ?? null;
   const totalCost = cost?.total_cost ?? 0;
   const totalCalls = cost?.total_predictions ?? 0;
 
@@ -467,6 +468,11 @@ function MLBackendsAndCostCard({
                 : avgMs !== null
                   ? `${Math.round(avgMs)} ms`
                   : "—"
+            }
+            hint={
+              p95Ms !== null && !isLoading
+                ? `P95 ${Math.round(p95Ms)} ms`
+                : undefined
             }
           />
           <StatCard

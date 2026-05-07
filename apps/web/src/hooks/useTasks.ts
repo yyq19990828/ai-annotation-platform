@@ -152,6 +152,26 @@ export function useSubmitTask() {
   });
 }
 
+// v0.8.7 F7 · 跳过任务（标注员遇图像损坏 / 无目标 / 不清晰）
+export function useSkipTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      reason,
+      note,
+    }: {
+      taskId: string;
+      reason: "image_corrupt" | "no_target" | "unclear" | "other";
+      note?: string;
+    }) => tasksApi.skip(taskId, { reason, note }),
+    onSuccess: (_, { taskId }) => {
+      qc.invalidateQueries({ queryKey: ["task", taskId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
 export function useApproveTask() {
   const qc = useQueryClient();
   return useMutation({

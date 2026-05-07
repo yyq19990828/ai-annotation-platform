@@ -84,6 +84,9 @@ class OpenRegisterRequest(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     name: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=8, max_length=128)
+    # v0.8.7 · Cloudflare Turnstile token；TURNSTILE_ENABLED=False 时忽略，
+    # production 启用后必填且必须通过 siteverify。
+    captcha_token: str | None = None
 
     @field_validator("email")
     @classmethod

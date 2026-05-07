@@ -85,6 +85,20 @@ export const tasksApi = {
   submit: (id: string) =>
     apiClient.post<SubmitResponse>(`/tasks/${id}/submit`),
 
+  // v0.8.7 F7 · 任务跳过
+  skip: (
+    id: string,
+    body: {
+      reason: "image_corrupt" | "no_target" | "unclear" | "other";
+      note?: string;
+    },
+  ) =>
+    apiClient.post<{
+      status: "skipped";
+      task_id: string;
+      skip_reason: string;
+    }>(`/tasks/${id}/skip`, body),
+
   withdraw: (id: string) =>
     apiClient.post<SubmitResponse>(`/tasks/${id}/withdraw`),
 

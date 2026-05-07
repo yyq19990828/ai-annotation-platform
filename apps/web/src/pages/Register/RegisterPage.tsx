@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
+import { Captcha, isCaptchaRequired } from "@/components/Captcha";
 import { useResolveInvitation, useRegister, useRegistrationStatus, useOpenRegister } from "@/hooks/useInvitation";
 import { useAuthStore } from "@/stores/authStore";
 import { ROLE_LABELS } from "@/constants/roles";
@@ -54,6 +55,8 @@ function OpenRegisterForm() {
   const [pwd, setPwd] = useState("");
   const [pwd2, setPwd2] = useState("");
   const [showPwd, setShowPwd] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRequired = isCaptchaRequired();
 
   if (regStatus.isLoading) {
     return <CenteredCard><span style={{ color: "var(--color-fg-muted)" }}>加载中…</span></CenteredCard>;
@@ -69,8 +72,14 @@ function OpenRegisterForm() {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !name.trim() || !passwordsValid || pwd !== pwd2) return;
+    if (captchaRequired && !captchaToken) return;
     openRegister.mutate(
-      { email: email.trim(), name: name.trim(), password: pwd },
+      {
+        email: email.trim(),
+        name: name.trim(),
+        password: pwd,
+        captcha_token: captchaToken,
+      },
       {
         onSuccess: (data) => {
           setAuth(data.access_token, data.user);
@@ -156,9 +165,18 @@ function OpenRegisterForm() {
             )}
           </Field>
 
+          <Captcha onChange={setCaptchaToken} />
+
           <button
             type="submit"
-            disabled={!email.trim() || !name.trim() || !passwordsValid || !passwordsMatch || openRegister.isPending}
+            disabled={
+              !email.trim() ||
+              !name.trim() ||
+              !passwordsValid ||
+              !passwordsMatch ||
+              openRegister.isPending ||
+              (captchaRequired && !captchaToken)
+            }
             style={primaryBtnStyle(openRegister.isPending)}
           >
             {openRegister.isPending ? "注册中..." : "注册"}

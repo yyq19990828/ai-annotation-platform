@@ -489,11 +489,15 @@ export function ImageStage({
           };
         }));
       } else if (d.kind === "resize") {
+        // v0.8.7 F6 · 透传 shift/alt 修饰键给 applyResize
+        const shiftKey = e.shiftKey;
+        const altKey = e.altKey;
         schedule(() => setDrag((cur) => {
           if (!cur || cur.kind !== "resize") return cur;
           const next = applyResize(
             { ...cur.start, id: "", cls: "", conf: 1, source: "manual" } as Annotation,
             { x: cur.sx, y: cur.sy }, pt, cur.dir,
+            { shiftKey, altKey },
           );
           return { ...cur, cur: next };
         }));

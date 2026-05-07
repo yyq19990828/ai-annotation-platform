@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**；**v0.8.2（文档深度优化：docs:build 进 CI gate + snippet 漂移 lint + ADR sidebar mirror + echo-ml-backend 可执行样板 + ADR-0008 admin-locked 状态机草稿）**；**v0.8.3（治理 / 测试基建闭环：在线状态心跳 + 审计 trigger 测试覆盖 + 前端单测切硬阻断（10%）+ E2E 三 spec 写实摘 continue-on-error + `_test_seed` router 造数链路）**；**v0.8.4（效率看板 / 人员绩效 epic：Task.assigned_at + task_events + mv_user_perf_daily + Annotator/Reviewer 三段卡组 + AdminPeoplePage 卡片网格 + 抽屉下钻 + ADR-0009）**；**v0.8.5（fabric 清理 + AnnotatorDashboard 24-bar 专注时段直方图 + 前端单测推到 25.28%（CI 阈值 25%）+ E2E annotation/batch-flow 写实化（bbox 拖框 + 多角色串联 + 4 处 data-testid + `_test_seed.advance_task` 辅助端点））**；**v0.8.6（v0.9.x 准备版：协议 `context.type` 扩 `text` + ML Backend 周期健康检查（Celery beat 60s + 抖动）+ Project↔MLBackend 真实绑定 + 预测成本卡片 + `apps/_shared/mask_utils/` 共享包骨架 + 失败预测重试 UI + ws 进度推送 + ADR-0010/0011 留作 v0.9.x M5）**。
+> 已完成版本详见 [CHANGELOG.md](./CHANGELOG.md)：v0.6.0 ~ v0.6.10-hotfix 同前；v0.7.0 批次状态机重设计 epic 同前；**v0.7.2（治理可视化 + 全局导航）**；**v0.7.3（批次状态机扩展 + 多选批量操作 + 操作历史）**；**v0.7.4（测试与文档体系一次性建齐）**；**v0.7.5（性能 & DX 收尾）**；**v0.7.6（功能补缺 + 治理深化）**；**v0.7.7（登录注册机制完善）**；**v0.7.8（登录注册改进 + 安全加固 + 治理合规）**；**v0.8.0（文档细化与补全：deploy/security/ml-backend-protocol/ws-protocol 4 篇新文档 + ADR 0002-0005 回填 + 快捷键 SoT 自动生成 + data-flow mermaid 代码路径标注 + add-api-endpoint 改 logout 真实例 + 16 处截图占位 + IMAGE_CHECKLIST）**；**v0.8.1（治理合规向收口 epic：系统设置可编辑 + SMTP 测试发送 + 注册来源统计卡 + 管理员重置低等级用户密码 + 账号自助注销 7 天冷静期 + audit_logs 按月分区 + 冷数据归档 + 4 个导出端点审计强化）**；**v0.8.2（文档深度优化：docs:build 进 CI gate + snippet 漂移 lint + ADR sidebar mirror + echo-ml-backend 可执行样板 + ADR-0008 admin-locked 状态机草稿）**；**v0.8.3（治理 / 测试基建闭环：在线状态心跳 + 审计 trigger 测试覆盖 + 前端单测切硬阻断（10%）+ E2E 三 spec 写实摘 continue-on-error + `_test_seed` router 造数链路）**；**v0.8.4（效率看板 / 人员绩效 epic：Task.assigned_at + task_events + mv_user_perf_daily + Annotator/Reviewer 三段卡组 + AdminPeoplePage 卡片网格 + 抽屉下钻 + ADR-0009）**；**v0.8.5（fabric 清理 + AnnotatorDashboard 24-bar 专注时段直方图 + 前端单测推到 25.28%（CI 阈值 25%）+ E2E annotation/batch-flow 写实化（bbox 拖框 + 多角色串联 + 4 处 data-testid + `_test_seed.advance_task` 辅助端点））**；**v0.8.6（v0.9.x 准备版：协议 `context.type` 扩 `text` + ML Backend 周期健康检查（Celery beat 60s + 抖动）+ Project↔MLBackend 真实绑定 + 预测成本卡片 + `apps/_shared/mask_utils/` 共享包骨架 + 失败预测重试 UI + ws 进度推送 + ADR-0010/0011 留作 v0.9.x M5）**；**v0.8.7（防机器人 / 指标深化 / E2E 续作 / 截图自动化 / 工作台 UX 收口：Cloudflare Turnstile CAPTCHA + Prometheus `ml_backend_request_duration_seconds` + `celery_queue_length/worker_heartbeat_seconds` + 预测延迟 P50/P95/P99 + ReviewerMiniPanel + Shift 锁纵横比 / Alt 中心 resize + Task.skip_reason 任务跳过 + History sessionStorage 5min TTL + Playwright 截图自动化 14 场景）**。
 
 ---
 
@@ -31,11 +31,10 @@
 
 #### AI / 模型
 - **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态（`AdminDashboard.tsx:107-119`、`DashboardPage.tsx:287-291`）。**v0.9.4 接 grounded-sam2-backend 文本批量预标 UI 时收口**。
-- **模型市场**：路由 `/model-market` 占位。~~项目级 ML Backend 真实选择 / 挂接 UI 缺失~~ → **v0.8.6 已收**（`Project.ml_backend_id` 外键 + GeneralSection / Wizard 改造）。
+- **模型市场**：路由 `/model-market` 占位。
 - **训练队列**：路由 `/training` 占位。
-- ~~**预测成本统计**~~：**v0.8.6 已收** — `/admin/prediction-cost-stats?range=7d|30d` + AdminDashboard 4 mini-stat（调用数 / 平均耗时 / 失败率 / 总成本）+ `by_backend` 维度。工作台 AI 助手面板「本题花费 X 元」透传留作 v0.9.x SAM 工具一起做。
-- ~~**失败预测重试**~~：**v0.8.6 已收** — `/admin/failed-predictions` 列表 + Celery 异步重试（max 3 次）+ WebSocket `failed_prediction.retry.{started,succeeded,failed}` 进度推送。
-- ~~**ML Backend 健康检查**~~：**v0.8.6 已收** — Celery beat `check_ml_backends_health` 每 60s + 0-3s 抖动错峰；`ml_backends.last_checked_at` 字段；提前完成 v0.9.5 M5 一项。
+- **失败预测「永久放弃」UI**：v0.8.6 落地 max=3 软上限重试，但超过 3 次后 admin 在 `/admin/failed-predictions` 没有「永久放弃 / 标记忽略」按钮，只能数据库手删；建议加 `failed_predictions.dismissed_at` + 列表 toggle 过滤已忽略。
+- **预测成本卡片透传到工作台**：v0.8.6 已落 admin 维度 `/admin/prediction-cost-stats`；剩工作台 AI 助手面板「本题花费 X 元」单条透传，与 v0.9.x SAM 工具一起做。
 
 #### 用户与权限页（UsersPage）
 - **「API 密钥」按钮**：`UsersPage.tsx:63` 无实现（API key 模型也未建表）。需 `api_keys` 表 + scope + revoke + 最后使用时间。
@@ -49,9 +48,9 @@
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
 
 #### 登录 / 注册 / 认证
-- **开放注册二阶段增强**（v0.7.7 落了基座，以下为可选延伸）：
+- **登录页 progressive CAPTCHA**：v0.8.7 在注册 / 忘记密码两路加了 Turnstile，但登录页故意未加（每天高频，体验代价大）。production 字典攻击场景下，建议改为渐进式：同一 IP 失败 ≥ 5 次（slowapi 计数 + Redis）后下一次登录强制弹 widget；正常用户零打扰，攻击者被减速。前端：登录失败计数从 401 response header 读取，达到阈值时 LoginPage 渲染 `<Captcha>`。
+- **开放注册二阶段剩余**：
   - **邮箱验证**：当前 viewer 零权限可跳过；若未来开放注册默认角色调高，需 `POST /auth/verify-email` + `email_verified_at` 字段 + 验证前 `is_active=false`。
-  - **CAPTCHA / 防机器人**：v0.7.7 的 3/min rate limit 对 production 够用但不防分布式刷号；接 hCaptcha / Turnstile，前端 `OpenRegisterForm` 加 CAPTCHA widget + 后端校验 token。
   - **OAuth2 / 社交登录**：Google / GitHub SSO，python-social-auth 或 authlib；`User.oauth_provider` + `oauth_id` 字段；LoginPage / RegisterPage 加「使用 Google 登录」按钮。
 
 #### v0.7.x ~ v0.8.0 后续观察 / 下版候选
@@ -60,6 +59,9 @@
 
 - **standalone batch_summary stored 列**：v0.7.0 项目卡批次概览用 GROUP BY 单查询返回 `{total, assigned, in_review}`，每次 list_projects 都触发；如需更冷优化，可加 stored 列由 batch 状态机变迁维护。**v0.7.6 评估后推迟**：触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈。优先级 P3，监控触发再做。
 - **getting-started 与 SoT 漂移**：v0.8.0 已修过一次（W/R/Ctrl+Enter → B/V/E）。文档站文字硬编码的快捷键提示如再次漂移仍需手改，长期可考虑给所有 .md 中的 `` `<键>` `` 内联引用建一份从 hotkeys.ts 推导的 ESLint/markdownlint 规则；优先级低，等漂移再触发。
+- **`_task_with_url` 与 `TaskOut` schema 漂移**：`apps/api/app/api/v1/tasks.py:1024-1095` 手写 dict 构造响应（不走 `TaskOut.model_validate`），v0.8.7 加 `skip_reason / skipped_at` 时漏一处就丢字段。下一版改造为 `TaskOut.model_validate(task, from_attributes=True)` + 单独 hook 注入 `file_url / thumbnail_url / assignee/reviewer briefs`，让 schema 变更自动生效。优先级 P3。
+- **`/health/celery` workers `last_heartbeat_seconds_ago` 仍是 0 占位**：v0.8.7 F2 接通了 queues 维度，但心跳 timestamp 用 round-trip 时刻近似为 0；要真实心跳秒数需 broker 侧报告（kombu / rabbitmq events）。当前 worker 「在线 / 不在线」二元已能满足告警，分钟级新鲜度待客户提需求再做。优先级 P3。
+- **前后端共用 `.env`**：v0.8.7 给 `apps/api/app/config.py` 加了 `extra="ignore"` 让 VITE_* 不再炸；但前端 vite 默认只读项目根 `.env`，`apps/web/.env.example` 同步占位但运行时不一定加载——建议仓库根 `.env` 收口为 SoT，移除 `apps/web/.env.example` 或在 vite.config.ts 显式 `envDir: '../../'`。优先级 P3，等开发者反馈混乱再做。
 
 ---
 
@@ -79,25 +81,29 @@
 
 
 #### 可观测性
-- **Celery / ML Backend 指标**：v0.4.8 已加 HTTP metrics + DB pool + `/health/{db,redis,minio,celery}`（v0.7.5 补齐 celery）；缺 Celery 队列长度、Worker 心跳、ML Backend 平均延迟 / 失败率。
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
+- **Sentry DSN production 部署校验**：v0.6.6 已搭基础设施，但 `.env.example` 中 `SENTRY_DSN=` 留空；production 部署易忘记填，错过线上错误。建议 `app/main.py` lifespan 在 `environment="production"` + DSN 缺失时 emit 一条 WARN 日志（不阻断启动），同时 deploy.md 加 checklist 项。优先级 P3。
+- **Grafana / Prometheus dashboard JSON 入仓**：v0.8.7 加了 4 个 metrics（http / ml_backend / celery_queue / celery_worker），但目前没有官方 dashboard 模板。建议 `infra/grafana/dashboards/anno-overview.json` + deploy.md 一段「import this JSON」说明，让 production 运维零成本上 panel。优先级 P2。
 
 #### 性能 / 扩展
 - **Annotation 列表前端切换 keyset 分页**：v0.7.6 已落后端新端点 `GET /tasks/{id}/annotations/page?limit&cursor` + 复合索引；前端 `useAnnotations` 仍用旧数组端点（cap=2000），改 useInfiniteQuery 推迟到 1000+ 框监控触发。
 - **Predictions 表分区**：v0.7.6 已落 Stage 1（`ix_predictions_created_at` 索引）+ ADR-0006 设计 Stage 2 完整 RANGE(created_at) 月分区。Stage 2 触发条件：单月 INSERT > 100k 或 总行数 > 1M（FK 复合化代价 + annotations 表迁移成本）。
 
 #### 测试 / 开发体验
-- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座已就位（v0.7.4）；v0.7.6 把 baseline 从 4.27% 推到 8.68%；v0.8.3 推到 10.88%（+8 个测试文件，切硬阻断 10%）；**v0.8.5 推到 25.28%（+9 个测试文件覆盖 Dashboard 三页 / Login / Register / Forgot+Reset / InviteUserModal / Histogram / useDashboard），切硬阻断 25% 阈值**。下一阶段目标 ≥ 40%：补 ProjectSettingsPage（842 行）/ AuditPage / WorkbenchShell 关键 hook 单测。
-- **E2E spec 深度写实续作**：v0.8.5 已升级 annotation 与 batch-flow（bbox 拖框 + 多角色串联，`_test_seed.advance_task` 辅助端点，4 处 data-testid）；后续可补「reviewer 通过/退回 → annotator 看到反馈」的真实 review 反馈环 + bbox 落库后的画布刷新断言（当前 spec 走 seed 通道跳过了入库验证）。
+- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座 v0.7.4；v0.8.5 推到 25.28% / 阈值 25；**v0.8.7 因引入 8 个新组件回退到 22.04% / 阈值临时降到 22**。下阶段目标推回 ≥ 25 → 30：补 `ProjectSettingsPage`（842 行）/ `AuditPage` / `WorkbenchShell` 关键 hook（`useCanvasDraftPersistence`、`useTaskNavigation`）/ `turnstile.ts`（当前 18% 覆盖）。
+- **E2E reject 反馈环已闭，approve 通知端到端断言留下版**：v0.8.7 已落 reviewer reject UI 全流程；剩 `reviewer 通过 → annotator 看到通知 + my-batches 计数变化`的双向闭环。当前 NotificationsPopover 与 `useNotificationSocket` 已就位，缺一条 spec 把它们串起来。
+- **OpenAPI snapshot 自动重生成 hook**：v0.8.7 修字段 schema 时 `test_openapi_contract.py` 失败，需手动 `uv run python scripts/export_openapi.py`。建议 `.pre-commit-config.yaml` 加一条「检测 schema/auth/* 路径变更时自动 regen + git add」hook，避免 CI 红灯。优先级 P3。
+- **前端 bundle size budget**：v0.6.5 已加 `manualChunks` 拆 vendor，v0.8.7 引入 `turnstile.ts`（动态 inject 不进 bundle）但 `Captcha.tsx` + `SkipTaskModal.tsx` 等 ~5 KB 累计未监控。建议 `vite-plugin-bundle-stats` + `package.json` 加 `size-limit` config（main < 500 KB、vendor-konva < 300 KB），CI 失败时阻断。优先级 P3。
+- **WebSocket 鉴权过期重连**：v0.6.6 落地 `useNotificationSocket` + v0.8.6 加 `failed_prediction.retry.*` 进度推送；token 过期（默认 24h）后 ws 会断且不会自动 reauth，长会话标注员需手动刷新页面。建议 hook 内监听 onclose 1008 / 4001 → 拉新 token → 重连；优先级 P2，受用户投诉触发。
 
 #### i18n / 主题 / 无障碍
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
 - **无障碍**：ARIA 属性极少；Lighthouse Accessibility 分数应作为 PR gate。
 
-#### 文档（v0.7.4 已搭 VitePress 文档站三栏骨架；v0.8.0 一次性把开发文档分组、ADR 0002-0005、协议契约、SoT 自动化补齐）
+#### 文档（v0.7.4 已搭 VitePress 文档站三栏骨架；v0.8.0 ADR / 协议契约 / SoT 自动化补齐；v0.8.7 截图自动化骨架）
 
-- **用户手册截图回填（IMAGE_CHECKLIST 16 处）**：v0.8.0 已在 `getting-started.md`、`workbench/{bbox,polygon,keypoint}.md`、`projects/`、`review/`、`export/` 共 16 处放好截图占位 + 拍摄要求注释，详见 [`docs-site/user-guide/IMAGE_CHECKLIST.md`](docs-site/user-guide/IMAGE_CHECKLIST.md)。本期未回填真实图（PNG 占位为 1×1 透明），0.8.1 候选。
-  - **截图自动化方案（替代手工拍图）**：可写 Playwright 脚本基于 `e2e/fixtures/seed.ts`（与 E2E spec 共建）跑一遍 16 个场景自动截图，输出到 `images/` 各子目录。优势：UI 改完 CI 自动重生成；红框 / 标注通过 `page.evaluate` 注入临时 CSS；时间敏感数据（日期 / 头像）可在 fixture 里定值。劣势：动画类（toast、过渡）截不准，仍需手工兜底。建议与「E2E spec 写实」P1 同期推进。
+- **截图自动化执行 + 14 张回填**：v0.8.7 落了 `apps/web/e2e/screenshots/` 脚本框架，但 PNG 文件需 maintainer 在完整启动栈下 `pnpm --filter web screenshots` 实际跑一遍并把结果 commit。部分场景（iou 双框 / bulk-edit 多选 / progress 50%）需先在 fixture 里造数据再 prepare 钩子触发。
+- **首次登录引导（onboarding）**：用户手册有文档但工作台无 UI walkthrough；新用户进 `/projects/:id/annotate` 时左下浮出一条「画框：拖鼠标；提交：E」级别的 3 步 tooltip + 右上 ✕ 关闭一次性写 localStorage `wb:onboarded:v1`。优先级 P3，等首次客户上线反馈触发。
 
 ---
 
@@ -113,13 +119,11 @@
 
 #### C.2 界面优化（信息架构 / 可见性 / 一致性）
 - **`<DropdownMenu>` 第 3+ 个使用方收编**：phase 2 已抽通用组件并接入 TopBar / Topbar；剩余 ProjectsPage 卡片操作菜单等若干散落 dropdown。
-- **阈值控件统一**：Topbar 已有数值浮出反馈（`[`/`]`键），AIInspectorPanel 仍是 slider 主入口；统一为 Topbar 主控 + AI 面板小数值显示。
-- **Reviewer 端实时仪表卡**：与 A 中并跟进，画布外右侧栏空间承接。
+- **跳过任务 reviewer 端可视化**：v0.8.7 落了 `Task.skip_reason` 写入但 reviewer 在 `/review` 工作台和列表上未显式区分「正常提交 vs 跳过」。建议 `ReviewerTaskCard` 加紫色 `skip` badge + reject modal 预填 `skip_reason` 提示「此题被标注员跳过」，reviewer 可决定 `mark done`（无目标也算 done）或 `reject 重派`。优先级 P2，与 v0.9.x 标注体验一起做。
 
 #### C.3 标注体验（核心生产力杠杆）
 - **SAM mask → polygon 化（marching squares / simplify-js）**：与 SAM 接入一起做。
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90%；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式）。
-- **Shift 锁定纵横比 / Alt 从中心 resize**：v0.4.9 留下的 TODO；resize handle 8 锚点已就位，加修饰键判断即可。
 - **SAM 交互式标注（点 / 框 → mask）**：研究报告 `06-ai-patterns.md`「模式 B」P1。最小切片：
   - 后端：`POST /projects/{pid}/ml-backends/interactive`，路由到 `is_interactive=True` 的 ML backend；常驻 GPU 容器 + image embedding LRU 缓存（首次 ~300ms，命中 < 50ms）。
   - 前端：新工具 `S`（SAM 模式），点击 = positive point、Alt+点击 = negative point、拖框 = bbox prompt；返回多边形以「待确认紫虚线」叠加，Enter 接受 / Esc 取消。
@@ -128,9 +132,9 @@
 - **类别确认 hint**：刚画完一个框时，AI 后台跑一次单框分类，右上角弹「建议：标识牌（92%）」+ 一键采纳。
 - **Magic Box / Snap**：粗略画一个大框 → AI 收紧到对象边缘（SAM 推 mask → 取 mask bbox）；同时支持「贴边吸附」。
 - **会话级标注辅助**：① 框过小（< 0.005 × 0.005）已过滤，需提示「框太小未保存」；② 框越界自动 clamp 到 [0,1]；③ 重叠完全相同框（IoU > 0.95）拒绝并提示「疑似重复」。
-- **任务跳过与原因**：标注员可「跳过本题」并选原因（图像损坏 / 无目标 / 不清晰），后端记 `Task.skip_reason` 并自动转 reviewer 复核。
-- **History 持久化（sessionStorage）**：刷新页面 history 清空；将 undo/redo 栈序列化到 sessionStorage（5 分钟 TTL）。需小心 redo 命令引用的 prediction id 可能已变；与 `replaceAnnotationId` 协同。
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。
+- **CommentsPanel keyset 分页**：v0.7.6 给 annotation list 落了后端 keyset 分页，但 `<CommentsPanel>` 仍全量拉一个标注的所有评论（含 @ 提及 + 附件 + 画布批注），单条标注 100+ 评论时初始化卡顿明显。建议复用 annotation 同款 cursor 分页 + 「加载更早评论」按钮。优先级 P3。
+- **Polygon 顶点贴近时的 hit-test 改进**：当前 polygon 编辑模式下两个相邻顶点距离 < 8px 时容易选错；建议 z-order 优先选最后绘制的顶点 + 选中态加大 handle 半径。优先级 P3，体感问题。
 
 #### C.4 工作台架构分层（多任务类型如何复用同一外壳）
 
@@ -154,22 +158,32 @@
 |---|---|---|
 | **P1** | UsersPage API 密钥、「存储与模型集成」对接 | 用户每天面对，残缺感最强 |
 | **P1** | C.3 SAM 交互式（点/框→mask）+ SAM mask → polygon 化 | 核心差异化，研究报告明确 P1；v0.8.0 ML Backend 协议契约文档已为接入侧扫清障碍 |
-| **P1** | 截图自动化（Playwright + IMAGE_CHECKLIST 16 处）替代手工拍图 | v0.8.0 占位就位；与 E2E spec 共用 fixture，一次写完两件事 |
-| **P2** | 开放注册 CAPTCHA 防刷号 + 邮箱验证（角色提升前置） | v0.7.7 基座已落，production 放量前需加固 |
+| **P1** | 前端单测从 22% 推回 ≥ 25 → 30 | v0.8.7 引入 8 个新组件回退到 22.04%；优先补 ProjectSettingsPage / AuditPage / WorkbenchShell hook / turnstile.ts |
+| **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO 常见需求 |
+| **P2** | 登录页 progressive CAPTCHA（5 次失败后启用） | v0.8.7 注册/忘记密码已上 Turnstile，登录字典攻击仍裸奔 |
 | **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 |
 | **P2** | HTTPS 强制 / HSTS / CSP middleware | v0.8.0 deploy.md 已写 nginx 端 TLS，FastAPI middleware 缺 strict-transport-security / CSP；production-only 注册 |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好（基础静音）已落，邮件 channel 字段已就位但 UI 未启；与 LLM 聚类协同 |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 |
-| **P2** | C.3 marquee / 关键帧 / 任务跳过 / 会话级标注辅助 | 业务复杂度起来后必需 |
+| **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 |
 | **P2** | C.1 OpenSeadragon 瓦片金字塔、IoU rbush 加速 | 千框 / 4K 大图场景才必要 |
-| **P2** | C.3 history 持久化（undo/redo 栈 sessionStorage） | quick win，工时少 |
-| **P2** | 审计日志归档（PARTITION）；AuditMiddleware 队列化 v0.7.6 已落 Celery | 当前数据量未到瓶颈，监控触发再做 |
-| **P2** | 前端单测持续提升到 ≥ 40% | v0.8.5 已推到 25.28% 并切硬阻断 25%；继续补 ProjectSettingsPage / AuditPage / WorkbenchShell 关键 hook |
-| **P2** | 批次状态机二阶段剩余：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | v0.8.2 ADR-0008 已 Proposed（admin-locked 正交字段 + lock/unlock API + 表迁移 SQL）；v0.9 实施前需补 scheduler 测试覆盖；bulk approve/reject UX 待定 |
+| **P2** | 批次状态机二阶段剩余：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | v0.8.2 ADR-0008 已 Proposed；v0.9 实施前需补 scheduler 测试覆盖；bulk approve/reject UX 待定 |
+| **P2** | WebSocket 鉴权过期重连 | v0.8.6 落地 ws 进度推送；token 过期后 ws 断开不自动 reauth，长会话标注员需手动刷页 |
+| **P2** | Grafana / Prometheus dashboard JSON 入仓 | v0.8.7 加了 4 个 metrics 但无官方 panel 模板；运维上手成本高 |
+| **P2** | reviewer 端跳过任务可视化 + reviewer approve → annotator 通知 E2E 闭环 | v0.8.7 reject 反馈环已落，approve 双向闭环 + reviewer 端 skip badge 留作下版 |
+| **P2** | 失败预测「永久放弃」UI | v0.8.6 max=3 软上限后 admin 没有 dismiss 按钮，只能数据库手删 |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | v0.7.6 已落 Stage 1 索引 + ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 |
+| **P3** | `_task_with_url` 改 `TaskOut.model_validate` 消除 schema 漂移 | v0.8.7 加 skip_reason 时漏一处就丢字段 |
+| **P3** | OpenAPI snapshot pre-commit 自动重生成 hook | 改 schema 后忘 export → CI 红灯 |
+| **P3** | 前端 bundle size budget（size-limit 进 CI） | v0.6.5 已分 vendor chunk，但单测/E2E/turnstile 加进后无监控 |
+| **P3** | Sentry DSN production 缺失时 startup WARN | 部署易忘配置错过线上错误 |
+| **P3** | CommentsPanel keyset 分页 + Polygon 顶点 hit-test 改进 | 单标注 100+ 评论卡顿；polygon 编辑误选体感问题 |
+| **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 |
+| **P3** | 前后端 .env 共用 SoT（vite envDir 统一根 .env） | 当前双份 .env.example 易漂移 |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） |
-| **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 |
+| **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint、CommentsPanel 分页、Polygon 顶点 hit-test | 依赖 SAM 基座或体感问题 |
+| **P3** | 审计日志归档（PARTITION）；AuditMiddleware 队列化 v0.7.6 已落 Celery | 当前数据量未到瓶颈，监控触发再做 |
 
 ---

@@ -72,18 +72,98 @@ export interface HistoryHandlers {
   removeLocalCreate?: (annotationId: string) => Promise<void> | void;
 }
 
+// v0.8.7 F8 · sessionStorage 持久化（5min TTL，避免误用过期 prediction id）
+const HIST_TTL_MS = 5 * 60 * 1000;
+const HIST_KEY_PREFIX = "wb:hist:";
+
+interface PersistedHistory {
+  undo: Command[];
+  redo: Command[];
+  ts: number;
+}
+
+function readSessionStorage(): Storage | null {
+  try {
+    return typeof window !== "undefined" ? window.sessionStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadHistoryFromSession(taskId: string | undefined): {
+  undo: Command[];
+  redo: Command[];
+} | null {
+  if (!taskId) return null;
+  const ss = readSessionStorage();
+  if (!ss) return null;
+  try {
+    const raw = ss.getItem(`${HIST_KEY_PREFIX}${taskId}`);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as PersistedHistory;
+    if (typeof data.ts !== "number") return null;
+    if (Date.now() - data.ts > HIST_TTL_MS) {
+      ss.removeItem(`${HIST_KEY_PREFIX}${taskId}`);
+      return null;
+    }
+    return { undo: data.undo ?? [], redo: data.redo ?? [] };
+  } catch {
+    return null;
+  }
+}
+
+export function saveHistoryToSession(
+  taskId: string | undefined,
+  undo: Command[],
+  redo: Command[],
+): void {
+  if (!taskId) return;
+  const ss = readSessionStorage();
+  if (!ss) return;
+  try {
+    if (undo.length === 0 && redo.length === 0) {
+      ss.removeItem(`${HIST_KEY_PREFIX}${taskId}`);
+      return;
+    }
+    const payload: PersistedHistory = { undo, redo, ts: Date.now() };
+    ss.setItem(`${HIST_KEY_PREFIX}${taskId}`, JSON.stringify(payload));
+  } catch {
+    // sessionStorage 写失败（quota / private mode）静默忽略；history 仍在内存可用。
+  }
+}
+
 export function useAnnotationHistory(taskId: string | undefined, handlers: HistoryHandlers) {
-  const [undoStack, setUndoStack] = useState<Command[]>([]);
-  const [redoStack, setRedoStack] = useState<Command[]>([]);
+  // 初始化时尝试 restore（同步，避免首屏空栈再 hydrate 闪烁）
+  const [undoStack, setUndoStack] = useState<Command[]>(() => {
+    const restored = loadHistoryFromSession(taskId);
+    return restored?.undo ?? [];
+  });
+  const [redoStack, setRedoStack] = useState<Command[]>(() => {
+    const restored = loadHistoryFromSession(taskId);
+    return restored?.redo ?? [];
+  });
   const [busy, setBusy] = useState(false);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
 
-  // 切任务清栈
+  // 切任务：优先 restore；缺省清栈
   useEffect(() => {
-    setUndoStack([]);
-    setRedoStack([]);
+    const restored = loadHistoryFromSession(taskId);
+    setUndoStack(restored?.undo ?? []);
+    setRedoStack(restored?.redo ?? []);
   }, [taskId]);
+
+  // 写时机：栈变化后 throttle 50ms 写 sessionStorage
+  const writeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (writeTimerRef.current) clearTimeout(writeTimerRef.current);
+    writeTimerRef.current = setTimeout(() => {
+      saveHistoryToSession(taskId, undoStack, redoStack);
+    }, 50);
+    return () => {
+      if (writeTimerRef.current) clearTimeout(writeTimerRef.current);
+    };
+  }, [taskId, undoStack, redoStack]);
 
   const push = useCallback((cmd: Command) => {
     setUndoStack((s) => [...s, cmd]);

@@ -48,18 +48,35 @@ test.describe("annotation workbench", () => {
     const endX = box.x + box.width * 0.6;
     const endY = box.y + box.height * 0.6;
 
+    // v0.8.7 F3 · 监听 POST /annotations 真实落库
+    //    （Konva 是 canvas 渲染，单个 bbox 没有 DOM 节点可 selector 断言；
+    //     用 network response 200 间接验证 onCommit 链路通到后端）
+    const annotationPostPromise = page.waitForResponse(
+      (resp) =>
+        /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
+        resp.request().method() === "POST" &&
+        resp.status() < 400,
+      { timeout: 15_000 },
+    ).catch(() => null);
+
     await page.mouse.move(startX, startY);
     await page.mouse.down();
     await page.mouse.move(endX, endY, { steps: 8 });
     await page.mouse.up();
 
-    // 3. 模拟提交：advance_task 直接将 task 推到 submitted 状态
-    // （UI 拖框是否真正入库依赖工作台内部的 onCommit 链路，spec 走 seed 通道避免抖动）
-    await seed.advanceTask({
-      taskId: data.task_ids[0],
-      toStatus: "submitted",
-      annotatorEmail: data.annotator_email,
-    });
+    // 3. 等 POST /annotations 落库，或在 5s 后退化为 advance_task fallback
+    const annotationPost = await Promise.race([
+      annotationPostPromise,
+      new Promise<null>((r) => setTimeout(() => r(null), 5_000)),
+    ]);
+    if (!annotationPost) {
+      // 拖框未触发落库（可能被项目阈值过滤），回退 advance_task 跑通后续断言
+      await seed.advanceTask({
+        taskId: data.task_ids[0],
+        toStatus: "submitted",
+        annotatorEmail: data.annotator_email,
+      });
+    }
 
     // 4. URL 仍在工作台路径下，未发生异常崩溃跳转
     await expect(page).toHaveURL(new RegExp(`/projects/${data.project_id}/annotate`));

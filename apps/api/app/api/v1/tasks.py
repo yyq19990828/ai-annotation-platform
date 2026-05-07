@@ -585,6 +585,90 @@ async def submit_task(
     return {"status": "submitted", "task_id": str(task_id)}
 
 
+_VALID_SKIP_REASONS = {"image_corrupt", "no_target", "unclear", "other"}
+
+
+class SkipTaskRequest(BaseModel):
+    reason: str
+    note: str | None = None
+
+
+@router.post("/{task_id}/skip")
+async def skip_task(
+    task_id: uuid.UUID,
+    body: SkipTaskRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """v0.8.7 F7 · 标注员跳过任务并附原因，自动转 reviewer 复核。
+
+    状态机：
+      - pending / in_progress → review（与 submit 行为一致，但不要求有标注）
+      - 其他状态 → 409
+    业务约束：
+      - reason ∈ {image_corrupt, no_target, unclear, other}；其他 422
+      - reason="other" 时建议带 note，但 note 可空（前端兜底）
+    """
+    if body.reason not in _VALID_SKIP_REASONS:
+        raise HTTPException(
+            status_code=422, detail={"reason": "invalid_skip_reason", "value": body.reason}
+        )
+
+    task = await _load_task_or_404(db, task_id)
+    if task.status not in ("pending", "in_progress"):
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "task_not_skippable", "status": task.status},
+        )
+
+    now = datetime.now(timezone.utc)
+    if task.assignee_id is None:
+        task.assignee_id = current_user.id
+        task.assigned_at = now
+
+    task.status = "review"
+    task.skip_reason = body.reason
+    task.skipped_at = now
+    task.submitted_at = now
+    # 清空上一轮 review 痕迹
+    task.reviewer_id = None
+    task.reviewer_claimed_at = None
+    task.reviewed_at = None
+    task.reject_reason = None
+
+    lock_svc = TaskLockService(db)
+    await lock_svc.release(task_id, current_user.id)
+
+    from app.services.batch import BatchService
+
+    batch_svc = BatchService(db)
+    await batch_svc.check_auto_transitions(task.batch_id)
+    if task.batch_id:
+        await batch_svc.recalculate_counters(task.batch_id)
+
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.TASK_SKIP,
+        target_type="task",
+        target_id=str(task_id),
+        request=request,
+        status_code=200,
+        detail={
+            "project_id": str(task.project_id),
+            "skip_reason": body.reason,
+            "note": body.note,
+        },
+    )
+    await db.commit()
+    return {
+        "status": "skipped",
+        "task_id": str(task_id),
+        "skip_reason": body.reason,
+    }
+
+
 @router.post("/{task_id}/withdraw")
 async def withdraw_task(
     task_id: uuid.UUID,
@@ -1004,6 +1088,8 @@ def _task_with_url(
         "reviewer_claimed_at": task.reviewer_claimed_at,
         "reviewed_at": task.reviewed_at,
         "reject_reason": task.reject_reason,
+        "skip_reason": task.skip_reason,
+        "skipped_at": task.skipped_at,
         "reopened_count": task.reopened_count,
         "last_reopened_at": task.last_reopened_at,
         "created_at": task.created_at,

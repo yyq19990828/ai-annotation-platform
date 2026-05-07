@@ -15,6 +15,9 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
+  // v0.8.7 F4 · 截图自动化 spec 默认不进 CI，避免 baseline drift / flaky；
+  // 通过 `pnpm screenshots`（独立命令）显式触发，输出 PNG 到 docs-site。
+  testIgnore: ["**/screenshots/**"],
   // v0.8.5 · seed/reset 是数据库 TRUNCATE 全局操作，多 spec 并发会互相覆盖（auth /
   // annotation / batch-flow 三 spec 共用同一个 fixture），本地与 CI 都用单 worker。
   fullyParallel: false,

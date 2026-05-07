@@ -34,6 +34,9 @@ class TaskOut(BaseModel):
     reviewer_claimed_at: datetime | None = None
     reviewed_at: datetime | None = None
     reject_reason: str | None = None
+    # v0.8.7 F7 · 任务跳过
+    skip_reason: str | None = None
+    skipped_at: datetime | None = None
     reopened_count: int = 0
     last_reopened_at: datetime | None = None
     created_at: datetime

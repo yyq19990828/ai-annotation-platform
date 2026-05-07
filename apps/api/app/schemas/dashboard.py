@@ -209,6 +209,14 @@ class BackendCostBreakdown(BaseModel):
     avg_inference_time_ms: float | None = None
 
 
+class ReviewerMiniStats(BaseModel):
+    """v0.8.7 F5.3 · ReviewWorkbench 右侧栏 mini 仪表（当日通过/退回/平均耗时）。"""
+
+    approved_today: int = 0
+    rejected_today: int = 0
+    avg_review_seconds: float | None = None
+
+
 class PredictionCostStats(BaseModel):
     """AdminDashboard 预测成本卡片数据结构。"""
 
@@ -217,6 +225,10 @@ class PredictionCostStats(BaseModel):
     failed_predictions: int = 0
     failure_rate: float = 0.0
     avg_inference_time_ms: float | None = None
+    # v0.8.7 F2 · 延迟分位数（PERCENTILE_CONT on prediction_metas.inference_time_ms）
+    p50_inference_time_ms: float | None = None
+    p95_inference_time_ms: float | None = None
+    p99_inference_time_ms: float | None = None
     total_cost: float = 0.0
     total_tokens: int = 0
     by_backend: list[BackendCostBreakdown] = []

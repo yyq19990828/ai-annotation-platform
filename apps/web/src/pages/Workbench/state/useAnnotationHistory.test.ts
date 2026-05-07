@@ -3,8 +3,14 @@
 // 思路：直接测从 hook 模块导出的纯函数 applyLeaf，构造 mock handlers，
 // 不需要 React 渲染环境。
 
-import { describe, expect, it, vi } from "vitest";
-import { applyLeaf, type HistoryHandlers } from "./useAnnotationHistory";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  applyLeaf,
+  loadHistoryFromSession,
+  saveHistoryToSession,
+  type Command,
+  type HistoryHandlers,
+} from "./useAnnotationHistory";
 
 function makeHandlers(over: Partial<HistoryHandlers> = {}): HistoryHandlers {
   return {
@@ -90,5 +96,65 @@ describe("applyLeaf · create redo / update / delete 不受 tmpId 分支影响",
       h,
     );
     expect(h.updateAnnotation).toHaveBeenCalledWith("id", { class_name: "B" });
+  });
+});
+
+
+// ── v0.8.7 F8 · sessionStorage 持久化 ────────────────────────────────
+
+describe("history sessionStorage 持久化", () => {
+  beforeEach(() => {
+    if (typeof window !== "undefined") window.sessionStorage.clear();
+  });
+
+  const sample: Command = {
+    kind: "create",
+    annotationId: "ann_1",
+    payload: {
+      annotation_type: "bbox",
+      class_name: "car",
+      geometry: {} as never,
+    },
+  };
+
+  it("save → load round-trip 同 taskId", () => {
+    saveHistoryToSession("task-A", [sample], []);
+    const back = loadHistoryFromSession("task-A");
+    expect(back?.undo).toHaveLength(1);
+    expect(back?.undo[0].kind).toBe("create");
+  });
+
+  it("空栈写时清除 key", () => {
+    saveHistoryToSession("task-A", [sample], []);
+    saveHistoryToSession("task-A", [], []);
+    expect(loadHistoryFromSession("task-A")).toBeNull();
+  });
+
+  it("TTL 过期不 restore 并自清", () => {
+    const expired = JSON.stringify({
+      undo: [sample],
+      redo: [],
+      ts: Date.now() - 6 * 60 * 1000, // 6min
+    });
+    window.sessionStorage.setItem("wb:hist:task-old", expired);
+    expect(loadHistoryFromSession("task-old")).toBeNull();
+    expect(window.sessionStorage.getItem("wb:hist:task-old")).toBeNull();
+  });
+
+  it("不同 taskId 互相隔离", () => {
+    saveHistoryToSession("task-A", [sample], []);
+    saveHistoryToSession("task-B", [], []);
+    expect(loadHistoryFromSession("task-A")?.undo).toHaveLength(1);
+    expect(loadHistoryFromSession("task-B")).toBeNull();
+  });
+
+  it("undefined taskId 不写不读", () => {
+    saveHistoryToSession(undefined, [sample], []);
+    expect(loadHistoryFromSession(undefined)).toBeNull();
+  });
+
+  it("损坏 JSON 静默忽略", () => {
+    window.sessionStorage.setItem("wb:hist:bad", "{not json");
+    expect(loadHistoryFromSession("bad")).toBeNull();
   });
 });

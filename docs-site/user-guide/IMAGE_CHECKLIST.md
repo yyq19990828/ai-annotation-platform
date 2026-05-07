@@ -1,8 +1,17 @@
-# 截图回填清单（0.8.1 候选）
+# 截图回填清单（0.8.1 候选 → v0.8.7 自动化）
 
 > 这张表汇总了 v0.8.0 用户手册中所有 `<!-- TODO(0.8.1) IMAGE_CHECKLIST: ... -->` 占位项。补图时勾选并删除对应注释。
 >
 > 这个文件**不上侧边栏**（VitePress sidebar 不引用），仅作为 maintainer 的工作清单。
+>
+> **v0.8.7 自动化**：14 张可由 `pnpm --filter web screenshots` 自动生成（脚本：`apps/web/e2e/screenshots/`），输出到下面对应路径。流程：
+>
+> 1. 启动 docker / api / dev 三件套（同 `pnpm test:e2e`）
+> 2. `pnpm --filter web screenshots`
+> 3. `git diff docs-site/user-guide/images/` 人眼审阅
+> 4. 满意即 commit；不满意可在 `apps/web/e2e/screenshots/scenes.ts` 调 `prepare` 钩子（高亮元素 / 切 tab / 打开 modal 等）后再跑
+>
+> keypoint 两张（human-pose / hand）暂跳过——非 image-det 工作台尚未实装，等后续版本接入时补。其他自动化产出仍可能因 UI 状态欠完整需 maintainer 手工覆盖（如 `bbox/iou.png` 需双框重叠、`export/progress.png` 需真实 50% 进度条），脚本只截基线。
 
 ## 拍摄约定
 

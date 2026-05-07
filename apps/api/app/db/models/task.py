@@ -63,6 +63,11 @@ class Task(Base):
         DateTime(timezone=True), nullable=True
     )
     reject_reason: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # v0.8.7 F7 · 任务跳过：标注员遇图像损坏/无目标/不清晰时直转 reviewer 复核
+    skip_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    skipped_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     reopened_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_reopened_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
