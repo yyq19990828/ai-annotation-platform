@@ -191,6 +191,22 @@ jobs:
           --health-retries 5
         ports:
           - 6379:6379
+      # bitnami/minio 默认 entrypoint 直接启 server，且支持 MINIO_DEFAULT_BUCKETS
+      # 自动建桶；GitHub Actions services 不接受 command 字段，所以不能用 minio/minio。
+      # 缺这个 service → FastAPI startup 调 HeadBucket 一直 retry → /health 撑不到 30s。
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_DEFAULT_BUCKETS: annotations
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -fsS http://localhost:9000/minio/health/live"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_test
       SECRET_KEY: ci-test-secret
