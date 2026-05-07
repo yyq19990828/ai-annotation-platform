@@ -50,28 +50,170 @@ class SeedReset(BaseModel):
     include_in_schema=False,
 )
 async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
-    """重置测试数据库为固定 E2E fixture（幂等）。"""
+    """重置测试数据库为固定 E2E fixture（幂等）。
+
+    v0.8.7+ · 不再 TRUNCATE 整库，改为定向 DELETE：只清除 `@e2e.test` 用户 +
+    name='E2E Demo Project' 项目（含其 task_batches/tasks/annotations/locks 等
+    FK 链条）。开发者本地的 admin/pm/qa/anno 等账号 + dev 项目 / 数据集 / 标注
+    完全保留。
+
+    注：audit_logs 不删（trigger 阻止 + 用户 FK SET NULL 已无害）。
+    """
     _ensure_non_production()
 
     from tests.factory import create_user, create_project, create_task
 
-    # 清表（按 FK 反向顺序）—— audit_logs 因 trigger 不可 DELETE，用豁免
+    import logging
+    log = logging.getLogger("anno-api.seed_reset")
+
+    # 0) 豁免 audit_logs immutability trigger：DELETE users 触发 audit_logs.actor_id
+    #    ON DELETE SET NULL（隐式 UPDATE）会被 trigger 拒绝（"audit_logs rows are
+    #    immutable: UPDATE operation denied"）。SET LOCAL 在外层事务中生效，所有
+    #    SAVEPOINT 自动继承。
     await db.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
-    for tbl in (
-        "annotations",
-        "tasks",
-        "task_batches",
-        "audit_logs",
-        "project_members",
-        "projects",
-        "groups",
-        "users",
-    ):
-        try:
-            await db.execute(text(f"TRUNCATE TABLE {tbl} RESTART IDENTITY CASCADE"))
-        except Exception:
-            # 表不存在 / 分区表 TRUNCATE 行为可能不同，吞掉以保证 reset 端点鲁棒
-            pass
+
+    # 1) 找 fixture 项目 / 用户的 id
+    fixture_proj_rows = (
+        await db.execute(
+            text(
+                "SELECT id FROM projects "
+                "WHERE name = 'E2E Demo Project' "
+                "OR display_id LIKE 'P-E2E-%'"
+            )
+        )
+    ).fetchall()
+    fixture_project_ids = [r[0] for r in fixture_proj_rows]
+    log.info("seed_reset · fixture project ids: %s", fixture_project_ids)
+
+    fixture_user_rows = (
+        await db.execute(
+            text("SELECT id FROM users WHERE email LIKE '%@e2e.test'")
+        )
+    ).fetchall()
+    fixture_user_ids = [r[0] for r in fixture_user_rows]
+    log.info("seed_reset · fixture user ids: %s", fixture_user_ids)
+
+    # 2) 按 FK 依赖顺序定向 DELETE。
+    #    用 SAVEPOINT 隔离每个 DELETE：单条失败（如表不存在 / 列名漂移）不让外层
+    #    事务进入 aborted 状态。asyncpg 的 InFailedSQLTransactionError 必须靠
+    #    SAVEPOINT 回滚，try/except 单纯吞异常不够。
+    async def _try_delete(sql: str, params: dict | None = None) -> None:
+        async with db.begin_nested() as sp:
+            try:
+                await db.execute(text(sql), params or {})
+            except Exception as exc:
+                log.warning("seed_reset skip · %s · %s", sql.split()[2], exc)
+                await sp.rollback()
+
+    if fixture_project_ids:
+        # 2a) 找 fixture 项目下所有 task/annotation 的 id（在 SAVEPOINT 里）
+        fixture_task_ids: list = []
+        fixture_annotation_ids: list = []
+        async with db.begin_nested() as sp:
+            try:
+                fixture_task_ids = [
+                    r[0]
+                    for r in (
+                        await db.execute(
+                            text("SELECT id FROM tasks WHERE project_id = ANY(:pids)"),
+                            {"pids": fixture_project_ids},
+                        )
+                    ).fetchall()
+                ]
+                fixture_annotation_ids = [
+                    r[0]
+                    for r in (
+                        await db.execute(
+                            text(
+                                "SELECT id FROM annotations WHERE project_id = ANY(:pids)"
+                            ),
+                            {"pids": fixture_project_ids},
+                        )
+                    ).fetchall()
+                ]
+            except Exception as exc:
+                log.warning("seed_reset · child id lookup failed: %s", exc)
+                await sp.rollback()
+
+        # 2b) 删 annotation_comments → annotations → predictions / failed_predictions
+        if fixture_annotation_ids:
+            await _try_delete(
+                "DELETE FROM annotation_comments WHERE annotation_id = ANY(:aids)",
+                {"aids": fixture_annotation_ids},
+            )
+        await _try_delete(
+            "DELETE FROM annotations WHERE project_id = ANY(:pids)",
+            {"pids": fixture_project_ids},
+        )
+        await _try_delete(
+            "DELETE FROM prediction_metas WHERE prediction_id IN "
+            "(SELECT id FROM predictions WHERE project_id = ANY(:pids))",
+            {"pids": fixture_project_ids},
+        )
+        await _try_delete(
+            "DELETE FROM predictions WHERE project_id = ANY(:pids)",
+            {"pids": fixture_project_ids},
+        )
+        await _try_delete(
+            "DELETE FROM failed_predictions WHERE project_id = ANY(:pids)",
+            {"pids": fixture_project_ids},
+        )
+
+        # 2c) 删 task_locks / annotation_drafts → tasks
+        if fixture_task_ids:
+            await _try_delete(
+                "DELETE FROM task_locks WHERE task_id = ANY(:tids)",
+                {"tids": fixture_task_ids},
+            )
+            await _try_delete(
+                "DELETE FROM annotation_drafts WHERE task_id = ANY(:tids)",
+                {"tids": fixture_task_ids},
+            )
+        await _try_delete(
+            "DELETE FROM tasks WHERE project_id = ANY(:pids)",
+            {"pids": fixture_project_ids},
+        )
+
+        # 2d) 删 ml_backends（FK 无 ondelete）
+        await _try_delete(
+            "DELETE FROM ml_backends WHERE project_id = ANY(:pids)",
+            {"pids": fixture_project_ids},
+        )
+
+        # 2e) 删 project（CASCADE 带走 task_batches / project_members /
+        #     task_events / datasets）
+        await _try_delete(
+            "DELETE FROM projects WHERE id = ANY(:pids)",
+            {"pids": fixture_project_ids},
+        )
+
+    if fixture_user_ids:
+        # 删用户的反向引用，再删用户。表名 / 列名见 v0.8.7+ DB schema：
+        # bug_reports.reporter_id（不是 submitter_id）；annotation_comments.author_id；
+        # bug_comments.author_id；annotation_drafts.user_id；task_locks.user_id；
+        # password_reset_tokens.user_id；user_invitations.invited_by；
+        # organization_members.user_id（CASCADE 不在，需手删）；
+        # notification_preferences / notifications 是 CASCADE，自动跟着删。
+        for tbl, col in [
+            ("password_reset_tokens", "user_id"),
+            ("bug_comments", "author_id"),
+            ("bug_reports", "reporter_id"),
+            ("bug_reports", "assigned_to_id"),
+            ("task_locks", "user_id"),
+            ("annotation_drafts", "user_id"),
+            ("annotation_comments", "author_id"),
+            ("annotations", "user_id"),
+            ("user_invitations", "invited_by"),
+            ("organization_members", "user_id"),
+        ]:
+            await _try_delete(
+                f"DELETE FROM {tbl} WHERE {col} = ANY(:uids)",
+                {"uids": fixture_user_ids},
+            )
+        # 用户最后删（前面所有反向引用清干净后，仅靠 ON DELETE SET NULL FK 的字段
+        # 会被 PG 自动置 NULL，无 ondelete 的字段需我们已手动删完）。
+        await _try_delete("DELETE FROM users WHERE email LIKE '%@e2e.test'")
+
     await db.flush()
 
     admin = await create_user(db, "super_admin", "admin@e2e.test", "E2E Admin")
