@@ -263,9 +263,7 @@ async def test_dismiss_marks_failed_prediction_and_audit_logged(
     assert by_id[str(fp.id)]["dismissed_at"] is not None
 
 
-async def test_dismiss_blocks_retry(
-    httpx_client_bound, super_admin, db_session
-):
+async def test_dismiss_blocks_retry(httpx_client_bound, super_admin, db_session):
     user, token = super_admin
     proj = await _seed_project(db_session, user.id)
     task = await _seed_task(db_session, proj.id)
@@ -287,9 +285,7 @@ async def test_dismiss_blocks_retry(
     assert "dismissed" in resp.text.lower()
 
 
-async def test_restore_clears_dismissed_at(
-    httpx_client_bound, super_admin, db_session
-):
+async def test_restore_clears_dismissed_at(httpx_client_bound, super_admin, db_session):
     user, token = super_admin
     proj = await _seed_project(db_session, user.id)
     task = await _seed_task(db_session, proj.id)
@@ -320,9 +316,7 @@ async def test_restore_clears_dismissed_at(
     assert any(i["id"] == str(fp.id) for i in items)
 
 
-async def test_dismiss_is_idempotent(
-    httpx_client_bound, super_admin, db_session
-):
+async def test_dismiss_is_idempotent(httpx_client_bound, super_admin, db_session):
     user, token = super_admin
     proj = await _seed_project(db_session, user.id)
     task = await _seed_task(db_session, proj.id)

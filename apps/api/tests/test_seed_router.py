@@ -96,8 +96,6 @@ async def test_seed_reset_preserves_dev_data(httpx_client_bound, db_session):
 
     # fixture 应存在
     e2e_admin = (
-        await db_session.execute(
-            select(User).where(User.email == "admin@e2e.test")
-        )
+        await db_session.execute(select(User).where(User.email == "admin@e2e.test"))
     ).scalar_one_or_none()
     assert e2e_admin is not None, "E2E fixture admin 应被重建"

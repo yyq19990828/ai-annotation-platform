@@ -64,6 +64,7 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     from tests.factory import create_user, create_project, create_task
 
     import logging
+
     log = logging.getLogger("anno-api.seed_reset")
 
     # 0) 豁免 audit_logs immutability trigger：DELETE users 触发 audit_logs.actor_id
@@ -86,9 +87,7 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     log.info("seed_reset · fixture project ids: %s", fixture_project_ids)
 
     fixture_user_rows = (
-        await db.execute(
-            text("SELECT id FROM users WHERE email LIKE '%@e2e.test'")
-        )
+        await db.execute(text("SELECT id FROM users WHERE email LIKE '%@e2e.test'"))
     ).fetchall()
     fixture_user_ids = [r[0] for r in fixture_user_rows]
     log.info("seed_reset · fixture user ids: %s", fixture_user_ids)

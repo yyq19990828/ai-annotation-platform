@@ -355,9 +355,7 @@ async def refresh_token(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="generation_outdated"
         )
 
-    new_token = create_access_token(
-        subject=str(user.id), role=user.role, gen=cur_gen
-    )
+    new_token = create_access_token(subject=str(user.id), role=user.role, gen=cur_gen)
 
     user.last_seen_at = now
     await AuditService.log(
