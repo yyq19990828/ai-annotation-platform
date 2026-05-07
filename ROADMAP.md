@@ -34,6 +34,7 @@
 - ~~C.3 SAM 交互式（点 / 框 → mask）~~ ✅ v0.9.2 落地（紫虚线候选 + Enter/Esc/Tab + AI 助手文本入口）
 - ~~**后端把 task.file_path 解析成 SAM 可达 presigned URL**~~ ✅ v0.9.4 phase 1 落地（`_resolve_task_url` helper + `ML_BACKEND_STORAGE_HOST` 三平台支持 + repo root .env 绝对路径加载，commit `c5eaf94`）
 - **SAM 子工具栏拆分（点 / 框 / 文本明确划分）**（**P1**，§C.3，当前 `S` 工具点击 / 拖动隐式分流 prompt 类型，新人不可见；下个版本必做）
+- **SAM text 模式输出选择 box / mask / both**（**P1**，§C.3，与子工具栏同窗口落 — image-det 项目当前出 polygon 反而是负担，box 模式还能省 50-80% 推理时间）
 - **mask → polygon 化抽到 `apps/_shared/mask_utils/`**（v0.9.4 phase 2 / M3，与 v0.10.x sam3-backend 共享）
 - **AI 预标注独立页 `/ai-pre` 占位收口**（v0.9.4 phase 3 文本批量预标 UI 同步）
 - **工作台 AI 助手「本题花费 X 元」单条透传**（依赖 SAM 工具，可顺势补）
@@ -182,6 +183,24 @@
   - **协议联动**：依赖 §A AI/模型「SAM `/setup` 自描述协议消费」—— 后端补 `supported_prompts: ["point", "bbox", "text"]` 字段后，前端按 backend 实际能力动态渲染按钮（未来支持 sketch / scribble 等扩展时零改前端核心）。
   - **快捷键**：S 进入 SAM 模式（保留），子工具按 `1 / 2 / 3` 数字键切换；`+ / -` 切 positive/negative；`Esc` 退出。
   - **预计 1.5 天**：tool 拆分 + 子工具栏 UI + 数字键 hotkey + 截图自动化新增 1 张子工具栏特写。
+- **SAM text 模式输出选择 box / mask / both**（**P1**，v0.9.4 phase 2 候选 — 强烈建议与子工具栏 epic 同窗口做，共用 T 文本子工具的 UI 改动）：
+  - **现状痛点**：v0.9.2 SAM 文本 prompt 永远走 `DINO → boxes → SAM → mask → polygon` 全链路，固定输出 `polygonlabels`。但**对 image-det 项目反而是负担** —— 标注员要的是 bbox annotation，拿到 polygon 还得手动转矩形或交给前端"polygon → bbox"近似。同时 SAM mask 步骤 GPU 时间贵：text-box 单图仅 DINO ~50-100ms（4060/tiny），text-mask 全链路 200-500ms，box 模式跳过 `predictor.set_image()` + mask 推理 + cv2/shapely 简化能省 50-80% 推理时间。
+  - **设计原则**：text 模式下让用户**显式选择输出形态**：① **box only**（DINO 出框直接当 detection annotation，速度最快、image-det 项目首选）；② **mask only**（当前行为，image-seg 项目首选）；③ **both**（同时出 box + polygon 配对，让用户在两个粒度间挑，mm 项目或人工对比时用）。
+  - **协议变更（小）**：`apps/grounded-sam2-backend/schemas.py` `Context` 加字段 `output: Literal["box", "mask", "both"] = "mask"`（默认 mask 保持老前端兼容）；`AnnotationResult.type: "polygonlabels" | "rectanglelabels"` **已就位**，`AnnotationValue` schema 同时支持 box（x/y/width/height）+ polygon（points）字段，**返回结构零改动**。`both` 模式下 `result` 数组每个 instance 携带 `{type: "rectanglelabels", value: {x,y,w,h, ...}}` + `{type: "polygonlabels", value: {points, ...}}` 两条记录，前端按需消费。
+  - **后端实现切片**（`predictor.py` 文本路径，约半天）：
+    - 当前 `_run_text_prompt()` 的链路是 DINO → SAM → polygon，按 `output` 拆三个分支
+    - `box`：DINO 出 boxes 后直接归一化为 rectanglelabels，**完全跳过** `predictor.set_image()` 与 SAM 推理；继续把 image embedding 写入 cache 反而浪费内存（box 模式下 cache 不写入）
+    - `mask`：当前行为不变（保留入 cache）
+    - `both`：DINO 出 boxes → SAM 拿 box prompt 出 masks → 同 instance 一对一配对，返回结构里 box + polygon 都给
+    - 返回元信息加 `output_mode` 便于前端兜底分支
+  - **前端实现切片**（约半天）：
+    - **三选一切换 UI**：AI 助手面板的文本输入框右侧加 segmented control `[□ 框] [○ 掩膜] [⊕ 全部]`（与子工具栏 P1 epic 落地后的 T 文本子工具共用）
+    - **智能默认（按项目 type_key）**：`image-det → box`，`image-seg → mask`，`mm / image-kp / 其它 → both`，让用户进项目就拿到合理默认；用户切换后写 sessionStorage 记忆（key: `wb:sam:textOutput:{projectId}`）
+    - **候选叠加层**：`box` 模式紫虚线矩形 + Enter 接受；`mask` 模式紫虚线 polygon（当前行为）；`both` 模式两者配对叠加，Tab 在 box / polygon 间切活跃候选，Enter 接受当前活跃形态
+    - **`useInteractiveAI` payload** 加 `context.output` 字段；ImageStage 候选渲染层按 `result[i].type` dispatch
+  - **项目级默认（中期，v0.9.5 候选）**：projects 表加 `text_output_default: String(10) NULL` 字段，GeneralSection AI 段下加下拉「文本预标注默认输出」，跟 `box_threshold` / `text_threshold` 同节奏。短期不做 —— sessionStorage 记忆 + type_key 智能默认已足够覆盖 80% 场景。
+  - **协议文档同步**：`docs-site/dev/ml-backend-protocol.md` §2 Context schema 加 `output` 字段说明；用户手册 SAM 文本 prompt 章节加三种模式截图 + 速度对比表。
+  - **预计 1 天**：协议字段 + 后端 predictor 三分支 + 前端 segmented control + 候选叠加层适配。
 - **关键帧插值（视频/序列）**：CVAT 同款；标注员只标 1 / 30 / 60 帧，中间线性插值。需配合 `Task.dimension` 字段。
 - **类别确认 hint**：刚画完一个框时，AI 后台跑一次单框分类，右上角弹「建议：标识牌（92%）」+ 一键采纳。
 - **Magic Box / Snap**：粗略画一个大框 → AI 收紧到对象边缘（SAM 推 mask → 取 mask bbox）；同时支持「贴边吸附」。
@@ -211,6 +230,7 @@
 | ~~**P1** UsersPage API 密钥~~ | ✅ v0.9.3 落地（端到端 + ak_ token） | — | — |
 | ~~**P1** C.3 SAM 交互式（点/框→mask）~~ | ✅ v0.9.2 落地（紫虚线 + Enter/Esc/Tab）；mask → polygon 化抽公共模块仍 open（v0.9.4 phase 2） | — | — |
 | **P1** | **C.3 SAM 子工具栏拆分（点/框/文本明确划分）** | 接 SAM 后第一次实跑暴露 UX 问题：当前隐式分流（动作派生 prompt 类型）新人不可见；下版本必做 | — |
+| **P1** | **C.3 SAM text 模式 box/mask/both 输出选择** | image-det 项目当前出 polygon 反而是负担；box 模式跳过 SAM 推理省 50-80% 时间；协议加一个 enum 字段，建议与子工具栏同窗口做 | — |
 | **P2** | GeneralSection AI 启用 + backend 绑定 UX 解耦 | v0.9.3 phase 3 后注册 backend 仍要回基本信息 tab 手选；MlBackendsSection 列表加「绑定到本项目」按钮即可消除往返 | — |
 | **P2** | SAM `/setup` 自描述协议消费 + `supported_prompts` 字段补充 | 与「SAM 子工具栏」P1 协同；老 backend 缺字段时前端走旧路径兼容 | — |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
