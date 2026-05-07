@@ -826,6 +826,24 @@ async def approve_task(
         },
     )
 
+    # 通知中心 fan-out：annotator 收到 task.approved（reviewer 自审场景跳过）
+    if task.assignee_id is not None and task.assignee_id != current_user.id:
+        from app.services.notification import NotificationService
+
+        notif_svc = NotificationService(db)
+        await notif_svc.notify_many(
+            user_ids=[task.assignee_id],
+            type="task.approved",
+            target_type="task",
+            target_id=task.id,
+            payload={
+                "task_display_id": task.display_id,
+                "project_id": str(task.project_id),
+                "actor_id": str(current_user.id),
+                "actor_name": current_user.name,
+            },
+        )
+
     await db.commit()
     return {"status": "approved", "task_id": str(task_id)}
 

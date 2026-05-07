@@ -71,7 +71,9 @@ test.describe("review feedback loop", () => {
       status: string;
       reject_reason: string | null;
     };
-    expect(task.status).toBe("rejected");
+    // reject 端点把任务退回给标注员（status=in_progress + reject_reason 持久化），
+    // 而不是终态 "rejected"——后者代表整批退回。
+    expect(task.status).toBe("in_progress");
     expect(task.reject_reason).toBe("类别错误");
   });
 });
