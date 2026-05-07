@@ -3,6 +3,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useFailedPredictions } from "@/hooks/useFailedPredictions";
 import type { PageKey } from "@/types";
 import type { IconName } from "@/components/ui/Icon";
 
@@ -33,7 +34,7 @@ const sections: { label: string; items: NavItem[] }[] = [
   {
     label: "智能",
     items: [
-      { key: "ai-pre", path: "/ai-pre", icon: "sparkles", label: "AI 预标注", badge: "3 运行中" },
+      { key: "ai-pre", path: "/ai-pre", icon: "sparkles", label: "AI 预标注" },
       { key: "model-market", path: "/model-market", icon: "bot", label: "模型市场" },
       { key: "training", path: "/training", icon: "activity", label: "训练队列" },
     ],
@@ -51,6 +52,9 @@ const sections: { label: string; items: NavItem[] }[] = [
 export function Sidebar({ reviewCount }: SidebarProps) {
   const { canAccessPage, hasAnyPermission } = usePermissions();
   const showAiQuota = hasAnyPermission("ai.trigger", "ml-backend.manage");
+  const canSeeFailed = hasAnyPermission("ml-backend.manage");
+  const failedQuery = useFailedPredictions(1, 1, false, canSeeFailed);
+  const failedTotal = failedQuery.data?.total ?? 0;
 
   const visibleSections = sections
     .map((sec) => ({
@@ -136,6 +140,19 @@ export function Sidebar({ reviewCount }: SidebarProps) {
                 <Badge variant="ai" style={{ marginLeft: "auto", padding: "0 6px", fontSize: 10 }}>
                   {item.badge}
                 </Badge>
+              )}
+              {item.key === "model-market" && failedTotal > 0 && (
+                <span
+                  title={`${failedTotal} 条失败预测待处理`}
+                  style={{ marginLeft: "auto", display: "inline-flex" }}
+                >
+                  <Badge
+                    variant="danger"
+                    style={{ padding: "0 6px", fontSize: 10 }}
+                  >
+                    {failedTotal > 99 ? "99+" : failedTotal} 失败
+                  </Badge>
+                </span>
               )}
             </NavLink>
           ))}

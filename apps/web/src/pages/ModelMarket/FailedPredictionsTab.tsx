@@ -13,7 +13,7 @@ import {
 
 const MAX_RETRY = 3;
 
-export function FailedPredictionsPage() {
+export function FailedPredictionsTab() {
   const [page, setPage] = useState(1);
   const [includeDismissed, setIncludeDismissed] = useState(false);
   const pageSize = 30;
@@ -69,29 +69,26 @@ export function FailedPredictionsPage() {
   };
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
+    <>
       <div
         style={{
-          marginBottom: 16,
+          marginBottom: 12,
           display: "flex",
-          alignItems: "flex-end",
+          alignItems: "center",
           justifyContent: "space-between",
           gap: 16,
           flexWrap: "wrap",
         }}
       >
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px" }}>失败预测</h1>
-          <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>
-            ML Backend 调用失败的预测记录；管理员可重试 (单条最多 {MAX_RETRY} 次) 或永久放弃。
-          </p>
-        </div>
+        <p style={{ color: "var(--color-fg-muted)", fontSize: 12.5, margin: 0 }}>
+          ML Backend 调用失败的预测记录；管理员可重试 (单条最多 {MAX_RETRY} 次) 或永久放弃。
+        </p>
         <label
           style={{
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
-            fontSize: 13,
+            fontSize: 12.5,
             color: "var(--color-fg-muted)",
             cursor: "pointer",
           }}
@@ -264,7 +261,7 @@ export function FailedPredictionsPage() {
           </div>
         )}
       </Card>
-    </div>
+    </>
   );
 }
 

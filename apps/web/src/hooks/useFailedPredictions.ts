@@ -12,10 +12,12 @@ export function useFailedPredictions(
   page = 1,
   pageSize = 50,
   includeDismissed = false,
+  enabled = true,
 ) {
   return useQuery({
     queryKey: ["admin", "failed-predictions", page, pageSize, includeDismissed],
     queryFn: () => failedPredictionsApi.list(page, pageSize, includeDismissed),
+    enabled,
   });
 }
 

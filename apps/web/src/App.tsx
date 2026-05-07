@@ -10,8 +10,6 @@ import { ToastRack, useToastStore } from "@/components/ui/Toast";
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
 import { AdminPeoplePage } from "@/pages/Admin/AdminPeoplePage";
-import { FailedPredictionsPage } from "@/pages/Admin/FailedPredictionsPage";
-import { MLIntegrationsPage } from "@/pages/Admin/MLIntegrationsPage";
 import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
 import { AnnotatorDashboard } from "@/pages/Dashboard/AnnotatorDashboard";
 import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
@@ -51,6 +49,9 @@ const BugsPage = lazy(() =>
 );
 const SettingsPage = lazy(() =>
   import("@/pages/Settings/SettingsPage").then((m) => ({ default: m.SettingsPage }))
+);
+const ModelMarketPage = lazy(() =>
+  import("@/pages/ModelMarket/ModelMarketPage").then((m) => ({ default: m.ModelMarketPage }))
 );
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
@@ -241,24 +242,7 @@ export function App() {
             </RequirePagePermission>
           }
         />
-        {/* v0.8.6 F6 · 失败预测管理 */}
-        <Route
-          path="/admin/failed-predictions"
-          element={
-            <RequirePagePermission pageKey="admin-failed-predictions">
-              <FailedPredictionsPage />
-            </RequirePagePermission>
-          }
-        />
-        {/* v0.9.3 · ML 集成总览（super_admin only） */}
-        <Route
-          path="/admin/ml-integrations"
-          element={
-            <RequirePagePermission pageKey="admin-ml-integrations">
-              <MLIntegrationsPage />
-            </RequirePagePermission>
-          }
-        />
+        {/* v0.9.3 phase 2 · /admin/failed-predictions 与 /admin/ml-integrations 已合并到 /model-market */}
         <Route
           path="/review"
           element={
@@ -311,7 +295,7 @@ export function App() {
           path="/model-market"
           element={
             <RequirePagePermission pageKey="model-market">
-              <PlaceholderPage title="模型市场" />
+              <ModelMarketPage />
             </RequirePagePermission>
           }
         />

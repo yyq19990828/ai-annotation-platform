@@ -235,8 +235,4 @@ export type PageKey =
   | "bugs"
   | "settings"
   // v0.8.4 · 成员绩效（super_admin only）
-  | "admin-people"
-  // v0.8.6 F6 · 失败预测管理（super_admin / project_admin only）
-  | "admin-failed-predictions"
-  // v0.9.3 · ML 集成总览（super_admin only）
-  | "admin-ml-integrations";
+  | "admin-people";

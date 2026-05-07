@@ -22,7 +22,41 @@
 
 ## 最新版本
 
-## [0.9.3] - 2026-05-07
+## [0.9.3 phase 2] - 2026-05-07
+
+> **Merged Market — 三页合二，激活模型市场占位。** Phase 1 刚把 `/admin/ml-integrations` 拆出来作为超管 ML 集成总览页时，与既有 `/storage` 的 Bucket / 对象 StatCard 实质上重复；同时 `/admin/failed-predictions` 自 v0.8.6 起就是个完整分页页面，但失败条目通常 < 10 条，单独路由超规格；侧边栏「智能 → 模型市场」自始是 `PlaceholderPage`。本版把这三块捏成一个 ModelMarketPage：删 `/admin/ml-integrations`（其 storage 部分早被 `/storage` 覆盖；其 ML Backend 部分搬到模型市场 Tab 1），删 `/admin/failed-predictions`（整体折成模型市场 Tab 2），保留所有原有交互（retry / dismiss / restore + 60s refetch）。`/storage` 完全未动。
+
+### Added
+
+- **`apps/web/src/pages/ModelMarket/ModelMarketPage.tsx`**（新页）：Tabs 容器，URL `?tab=backends|failed` 同步（`useSearchParams` + `replace: true` 不污染历史栈）；默认 tab 为 `backends`；Tab 标题处对失败预测条数 > 0 渲染红色 `danger` 数字徽章（`99+` 上限）。
+- **`RegisteredBackendsTab.tsx`**（搬迁自旧 `MLIntegrationsPage.tsx`）：保留 `adminMlIntegrationsApi.overview()` + 60s `refetchInterval` + `ProjectGroup` 项目分组卡片；StatCard 由原本的「对象总数 / 存储占用 / ML Backend」精简为「ML Backend / 使用项目」两张 — 存储 StatCard 与 `/storage` 同源已重复，去掉。Bucket 健康表整段删除（在 `/storage` 已有完整实现）。
+- **`FailedPredictionsTab.tsx`**（搬迁自旧 `FailedPredictionsPage.tsx`）：完整保留分页 / `includeDismissed` 切换 / 三种 mutation（retry / dismiss / restore）/ `data-testid` 套件；外层标题段去掉，改成简短 hint 行（避免 Tab 内嵌套二级标题）。
+- **Sidebar 模型市场动态徽章**：`useFailedPredictions(1, 1, false, hasAnyPermission("ml-backend.manage"))` 在侧边栏顶层调一次（`enabled` 由权限门控避免普通用户 401），> 0 时给 `model-market` 项渲染 `danger` 徽章「N 失败」+ tooltip；同步删掉 `ai-pre` 项硬编码的 mock 徽章「3 运行中」（v0.9.4 接 grounded-sam2-backend 文本批量后会接真数据）。
+
+### Changed
+
+- **AdminDashboard 跳转重定向**：失败预测卡片 onClick 由 `/admin/failed-predictions` → `/model-market?tab=failed`；ML 后端·预测成本卡片右上「集成总览」按钮由 `/admin/ml-integrations` → `/model-market`。
+- **`useFailedPredictions` 加 `enabled` 参数**（默认 `true`，向后兼容）：把 react-query 的 `enabled` 暴露出来，让 Sidebar 在权限不足时彻底不发请求。
+- **`App.tsx` `<PlaceholderPage title="模型市场" />`** 替换为 `<ModelMarketPage />`（lazy import）。
+
+### Removed
+
+- 路由 `/admin/ml-integrations` 与 `/admin/failed-predictions`。
+- `apps/web/src/pages/Admin/MLIntegrationsPage.tsx` / `FailedPredictionsPage.tsx` / `__tests__/FailedPredictionsPage.test.tsx`。
+- `PageKey` 联合中的 `admin-ml-integrations` 与 `admin-failed-predictions`；`ROLE_PAGE_ACCESS.super_admin` / `ROLE_PAGE_ACCESS.project_admin` 移除对应键；`UnauthorizedPage` 的 `PAGE_PATH` map 同步清理。
+- 后端 `adminMlIntegrationsApi.overview` / `failed-predictions` 系列 API 端点完全不动 —— 只是前端不再有独立路由门面。
+
+### Notes
+
+- **`/storage` 完全未动**：它的角色权限广（admin / annotator / viewer 都能看），不适合塞 ML Backend 这类管理视角内容；Bucket + 数据集分布是它已胜任的职责。
+- **未做 catalog tab**：v0.10.x sam3-backend 落地后再补「内置模型卡片 + 启用到项目」第 3 个 tab，本版只激活到能容纳现有两块内容的最小骨架。
+- **测试**：`pnpm exec tsc --noEmit` 0 errors；`pnpm exec vitest run` 346 pass / 0 fail。`FailedPredictionsPage.test.tsx` 整体删除（旧路由不存在）；列表交互与分页改造未触及 hook 层（`useFailedPredictions` / `useRetryFailedPrediction` / `useDismissFailedPrediction` / `useRestoreFailedPrediction` 全保留），既有 hook 与 ws 通知测试覆盖率不变。
+
+详细计划：[`docs/plans/2026-05-07-v0.9.3-phase2-merged-market.md`](./docs/plans/2026-05-07-v0.9.3-phase2-merged-market.md)。
+
+---
+
+## [0.9.3 phase 1] - 2026-05-07
 
 > **Refactored Lighthouse — 前端杂项收口（4 项）。** v0.9.x SAM 主线 M3 起需要 GPU backend 联调，趁手头是 Mac 的窗口，把 ROADMAP §A/§B/§C 里"现在可做 / 纯前端" 的 4 项一次清完：① UsersPage「API 密钥」从 disabled 占位到端到端可用（后端 `api_keys` 表 + ak_ token 走 `get_current_user`，前端 ApiKeysModal 含一次性明文显示 + revoke），② 超管侧加 `/admin/ml-integrations` 只读总览页（聚合 storage health + 跨项目 ml_backends），③ 登录页 progressive CAPTCHA（同 IP 失败 ≥ 5 次后下次登录强制 Turnstile，正常用户零打扰），④ IoU 计算引入 `rbush` 同类分桶空间索引（千框场景预热），⑤ DropdownMenu 加 `content` 自定义槽，把 ExportSection / NotificationsPopover 两处自实现浮层收编到通用骨架。
 

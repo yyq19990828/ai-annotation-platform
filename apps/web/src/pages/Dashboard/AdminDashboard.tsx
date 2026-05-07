@@ -144,7 +144,7 @@ export function AdminDashboard() {
 
       {/* v0.8.6 F6 · 失败预测入口（super_admin / project_admin 可见） */}
       <Card
-        onClick={() => navigate("/admin/failed-predictions")}
+        onClick={() => navigate("/model-market?tab=failed")}
         style={{
           cursor: "pointer",
           padding: "12px 16px",
@@ -421,7 +421,7 @@ function MLBackendsAndCostCard({
           </Badge>
         </div>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-          <Button size="sm" variant="ghost" onClick={() => navigate("/admin/ml-integrations")}>
+          <Button size="sm" variant="ghost" onClick={() => navigate("/model-market")}>
             集成总览<Icon name="chevRight" size={11} />
           </Button>
           {(["7d", "30d"] as const).map((r) => (
