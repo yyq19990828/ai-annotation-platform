@@ -75,9 +75,7 @@ async def get_overview(
     )
 
     res = await db.execute(
-        select(MLBackend).order_by(
-            MLBackend.project_id, MLBackend.created_at.desc()
-        )
+        select(MLBackend).order_by(MLBackend.project_id, MLBackend.created_at.desc())
     )
     backends = list(res.scalars().all())
     project_ids = {b.project_id for b in backends}

@@ -40,7 +40,9 @@ def is_api_key_token(token: str) -> bool:
 async def list_keys(db: AsyncSession, user_id) -> list[ApiKey]:
     """列出某用户的全部 keys（含已 revoked，按 created_at desc）。"""
     res = await db.execute(
-        select(ApiKey).where(ApiKey.user_id == user_id).order_by(ApiKey.created_at.desc())
+        select(ApiKey)
+        .where(ApiKey.user_id == user_id)
+        .order_by(ApiKey.created_at.desc())
     )
     return list(res.scalars().all())
 

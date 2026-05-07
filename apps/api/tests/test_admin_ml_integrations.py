@@ -20,9 +20,7 @@ async def test_overview_super_admin_only(httpx_client, super_admin, annotator):
         "object_count": 0,
         "total_size_bytes": 0,
     }
-    with patch(
-        "app.api.v1.admin_ml_integrations.storage_service"
-    ) as mock_storage:
+    with patch("app.api.v1.admin_ml_integrations.storage_service") as mock_storage:
         mock_storage.bucket = "annotations"
         mock_storage.datasets_bucket = "datasets"
         mock_storage.summarize_bucket.return_value = fake_summary
@@ -73,9 +71,7 @@ async def test_overview_groups_backends_by_project(
     )
     await db_session.flush()
 
-    with patch(
-        "app.api.v1.admin_ml_integrations.storage_service"
-    ) as mock_storage:
+    with patch("app.api.v1.admin_ml_integrations.storage_service") as mock_storage:
         mock_storage.bucket = "annotations"
         mock_storage.datasets_bucket = "datasets"
         mock_storage.summarize_bucket.return_value = {

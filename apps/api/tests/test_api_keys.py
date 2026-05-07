@@ -46,9 +46,7 @@ async def test_list_create_revoke_api_key(httpx_client, super_admin):
     assert res.json()["email"] == user.email
 
     # 吊销
-    res = await httpx_client.delete(
-        f"/api/v1/me/api-keys/{key_id}", headers=headers
-    )
+    res = await httpx_client.delete(f"/api/v1/me/api-keys/{key_id}", headers=headers)
     assert res.status_code == 204
 
     # 吊销后再用 ak_ 应 401
@@ -58,9 +56,7 @@ async def test_list_create_revoke_api_key(httpx_client, super_admin):
     assert res.status_code == 401
 
     # 重复吊销 404
-    res = await httpx_client.delete(
-        f"/api/v1/me/api-keys/{key_id}", headers=headers
-    )
+    res = await httpx_client.delete(f"/api/v1/me/api-keys/{key_id}", headers=headers)
     assert res.status_code == 404
 
 

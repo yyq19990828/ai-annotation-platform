@@ -32,9 +32,7 @@ def fake_counter(monkeypatch):
     monkeypatch.setattr(
         "app.api.v1.auth.login_failed_counter.increment", counter.increment
     )
-    monkeypatch.setattr(
-        "app.api.v1.auth.login_failed_counter.reset", counter.reset
-    )
+    monkeypatch.setattr("app.api.v1.auth.login_failed_counter.reset", counter.reset)
     return counter
 
 
@@ -50,7 +48,9 @@ async def test_failed_login_returns_count_header(httpx_client, fake_counter):
 
 
 @pytest.mark.asyncio
-async def test_captcha_required_after_threshold(httpx_client, fake_counter, monkeypatch):
+async def test_captcha_required_after_threshold(
+    httpx_client, fake_counter, monkeypatch
+):
     """达到阈值后无 captcha_token 应返 400 captcha_required（turnstile 启用时）。"""
 
     # mock verify_turnstile_token：模拟 production 启用，无 token → False
@@ -72,9 +72,7 @@ async def test_captcha_required_after_threshold(httpx_client, fake_counter, monk
 
 
 @pytest.mark.asyncio
-async def test_successful_login_resets_counter(
-    httpx_client, fake_counter, super_admin
-):
+async def test_successful_login_resets_counter(httpx_client, fake_counter, super_admin):
     user, _ = super_admin
     fake_counter.values["127.0.0.1"] = 3
 
