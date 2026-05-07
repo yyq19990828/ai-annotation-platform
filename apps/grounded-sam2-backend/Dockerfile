@@ -1,0 +1,77 @@
+# Base image / 编译工具链与官仓 IDEA-Research/Grounded-SAM-2/Dockerfile 对齐:
+#   - cuda12.1-cudnn8-devel (而非 runtime): GroundingDINO Deformable Attention 算子需 nvcc 现场编译
+#   - gcc-10 / g++-10: 官方显式锁定避开新版编译器与 CUDA 12.1 的不兼容
+# torch / torchvision 已由 base image 预装 (2.3.1 + 0.18.1), pyproject.toml 不重复锁.
+FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel
+
+ARG USE_CUDA=1
+# 默认覆盖 V100 (7.0) / T4 (7.5) / A100 (8.0) / RTX 30 (8.6) / RTX 40 / Ada (8.9) / H100 (9.0).
+# 编译期决定可用 GPU 架构, 主机驱动需 >= 525 (CUDA 12.1 minimum).
+ARG TORCH_ARCH="7.0;7.5;8.0;8.6;8.9;9.0"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HF_HOME=/app/.cache/huggingface \
+    AM_I_DOCKER=True \
+    BUILD_WITH_CUDA=${USE_CUDA} \
+    TORCH_CUDA_ARCH_LIST=${TORCH_ARCH} \
+    CUDA_HOME=/usr/local/cuda-12.1/ \
+    PATH=/usr/local/cuda-12.1/bin:${PATH} \
+    LD_LIBRARY_PATH=/usr/local/cuda-12.1/lib64:${LD_LIBRARY_PATH}
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        curl \
+        ca-certificates \
+        ninja-build \
+        gcc-10 \
+        g++-10 \
+        libgl1 \
+        libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CC=gcc-10 \
+    CXX=g++-10
+
+# 平台 backend 自身依赖 (不含 torch / torchvision; base image 已锁 2.3.1 / 0.18.1).
+RUN pip install --upgrade "pip" "setuptools>=62.3.0,<75.9" "wheel" && \
+    pip install \
+        "fastapi>=0.110" \
+        "uvicorn[standard]>=0.27" \
+        "pydantic>=2.5" \
+        "httpx>=0.27" \
+        "numpy>=1.24,<2.0" \
+        "pillow>=10.0" \
+        "opencv-python-headless>=4.9" \
+        "shapely>=2.0" \
+        "huggingface_hub>=0.23,<1.0" \
+        "transformers>=4.40,<5" \
+        "supervision>=0.21" \
+        "addict>=2.4" \
+        "pycocotools>=2.0" \
+        "timm>=0.9" \
+        "yapf"
+
+# vendor 含上游 IDEA-Research/Grounded-SAM-2 全树:
+#   - 仓库根 = SAM 2 (sam2 包) → pip install -e .
+#   - grounding_dino/ 子目录 = GroundingDINO (含 CUDA 算子) → pip install --no-build-isolation -e .
+COPY vendor/ ./vendor/
+RUN if [ ! -d "vendor/grounded-sam-2" ] || [ -z "$(ls -A vendor/grounded-sam-2 2>/dev/null)" ]; then \
+        echo "ERROR: vendor/grounded-sam-2 is empty. Run scripts/sync_vendor.sh <commit> on host before 'docker build'." >&2; \
+        exit 1; \
+    fi && \
+    pip install --no-build-isolation -e ./vendor/grounded-sam-2 && \
+    pip install --no-build-isolation -e ./vendor/grounded-sam-2/grounding_dino
+
+COPY scripts/ ./scripts/
+COPY main.py predictor.py schemas.py ./
+RUN mkdir -p /app/checkpoints /app/.cache/huggingface
+
+EXPOSE 8001
+
+ENTRYPOINT ["/bin/bash", "-c", "python /app/scripts/download_checkpoints.py && exec uvicorn main:app --host 0.0.0.0 --port 8001 --workers 1"]
