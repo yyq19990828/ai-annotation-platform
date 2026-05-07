@@ -51,6 +51,14 @@ for (const name of files) {
     );
   }
 
+  // ADR 源在 docs/adr/，互引 docs-site 站点页面写作 ../../docs-site/<x>.md，
+  // 在源位置能解析到仓库根；镜像到 docs-site/dev/adr/ 后相对路径错位（会拼出
+  // docs-site/docs-site/...），统一改写为 VitePress 站点绝对路径 /<x>。
+  body = body.replace(
+    /\]\((?:\.\/)?\.\.\/\.\.\/docs-site\/([^)#\s]+?)(\.md)?(#[^)\s]*)?\)/g,
+    (_m, rel, _md, hash = "") => `](/${rel}${hash})`,
+  );
+
   writeFileSync(resolve(DST, dstName), banner(srcRel) + body);
 
   if (!isReadme) {
