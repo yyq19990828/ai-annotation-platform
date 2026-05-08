@@ -21,6 +21,8 @@ export interface AdminDashboardStats {
   ml_backends_connected: number;
   role_distribution: Record<string, number>;
   registration_by_day?: RegistrationDayPoint[];
+  /** v0.9.5 · pre_annotated 批次数（Sidebar 徽章 + AdminDashboard 卡片共用） */
+  pre_annotated_batches?: number;
 }
 
 export interface ReviewTaskItem {

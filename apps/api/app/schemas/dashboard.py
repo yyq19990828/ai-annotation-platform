@@ -29,6 +29,8 @@ class AdminDashboardStats(BaseModel):
     role_distribution: dict[str, int]
     # v0.8.1 · 过去 30 天注册来源
     registration_by_day: list[RegistrationDayPoint] = []
+    # v0.9.5 · AI 文本批量预标已跑完、待人工接管的批次数（Sidebar/AdminDashboard 共用）
+    pre_annotated_batches: int = 0
 
 
 class ReviewTaskItem(BaseModel):

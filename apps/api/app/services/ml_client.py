@@ -41,14 +41,20 @@ class MLBackendClient:
         except (httpx.RequestError, httpx.TimeoutException):
             return False
 
-    async def predict(self, tasks: list[dict]) -> list[PredictionResult]:
+    async def predict(
+        self, tasks: list[dict], context: dict | None = None
+    ) -> list[PredictionResult]:
         start = time.monotonic()
         outcome = "success"
+        payload: dict = {"tasks": tasks}
+        if context:
+            # v0.9.5 · 批量预标透传 context（含 type=text + prompt + output 三模式 + DINO 阈值）。
+            payload["context"] = context
         try:
             async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
                 resp = await client.post(
                     f"{self.base_url}/predict",
-                    json={"tasks": tasks},
+                    json=payload,
                     headers=self._headers(),
                 )
                 resp.raise_for_status()

@@ -72,9 +72,29 @@ def _load_models() -> None:
 
 @app.get("/health")
 def health() -> dict:
+    """v0.9.5 · 加 GPU 显存 + cache 指标，便于运维实时观察。
+
+    旧前端字段保留：`gpu` 仍是 truthy（True/False），`model_version` / `loaded` 不变；
+    新增 `gpu_info` / `cache` 子对象，老前端忽略。
+    """
+    available = torch.cuda.is_available()
+    gpu_info: dict | None = None
+    if available:
+        try:
+            free_b, total_b = torch.cuda.mem_get_info()
+            gpu_info = {
+                "device_name": torch.cuda.get_device_name(0),
+                "memory_used_mb": int((total_b - free_b) / 1024**2),
+                "memory_total_mb": int(total_b / 1024**2),
+                "memory_free_mb": int(free_b / 1024**2),
+            }
+        except Exception:  # noqa: BLE001 — 显存查询失败不阻塞 /health
+            gpu_info = None
     return {
         "ok": True,
-        "gpu": torch.cuda.is_available(),
+        "gpu": available,
+        "gpu_info": gpu_info,
+        "cache": _cache.stats(),
         "model_version": MODEL_VERSION,
         "loaded": _predictor is not None,
     }

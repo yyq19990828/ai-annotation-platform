@@ -14,6 +14,7 @@ import { CommentsPanel } from "./CommentsPanel";
 import { ResizeHandle } from "./ResizeHandle";
 import type { TextOutputMode } from "../state/useInteractiveAI";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "../state/samTextOutput";
+import { useProject } from "@/hooks/useProjects";
 
 interface AIInspectorPanelProps {
   open: boolean;
@@ -82,6 +83,12 @@ interface AIInspectorPanelProps {
   projectTypeKey?: string | null;
   /** v0.9.4 phase 2 · 切到 sam-text 子工具时计数自增, useEffect 拿到后 input.focus(). */
   samTextFocusKey?: number;
+  /** v0.9.5 · 本题累计 AI 费用 (¥) — 「本次效率」段下方展示 */
+  taskAiCost?: number;
+  /** v0.9.5 · 本题平均推理时间 (ms) */
+  taskAiAvgMs?: number | null;
+  /** v0.9.5 · 本题预测条数 */
+  taskAiPredictionCount?: number;
 }
 
 const stripStyle: React.CSSProperties = {
@@ -104,6 +111,7 @@ export function AIInspectorPanel({
   readOnly = false,
   tool, onRunSamText, samRunning = false, samCandidateCount = 0,
   projectId, projectTypeKey, samTextFocusKey,
+  taskAiCost, taskAiAvgMs, taskAiPredictionCount,
 }: AIInspectorPanelProps) {
   const selSet = selectedIds && selectedIds.length > 0
     ? new Set(selectedIds)
@@ -147,7 +155,7 @@ export function AIInspectorPanel({
                 color: "var(--color-ai)",
               }}
             >
-              <Icon name="sparkles" size={14} />
+              <Icon name="bot" size={14} />
             </span>
             <b style={{ fontSize: 13 }}>AI 助手</b>
           </div>
@@ -163,7 +171,7 @@ export function AIInspectorPanel({
         </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
           <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} style={{ flex: 1 }}>
-            <Icon name="sparkles" size={11} />一键预标
+            <Icon name="wandSparkles" size={11} />一键预标
           </Button>
           <Button size="sm" onClick={onAcceptAll} disabled={aiBoxes.length === 0} style={{ flex: 1 }}>
             <Icon name="check" size={11} />全部采纳
@@ -316,6 +324,36 @@ export function AIInspectorPanel({
           <span className="mono" style={{ fontWeight: 600, color: "var(--color-ai)" }}>{aiTakeoverRate}%</span>
         </div>
         <ProgressBar value={aiTakeoverRate} color="var(--color-ai)" />
+        {/* v0.9.5 · 本题 AI 费用 / 推理时间单条透传 */}
+        {taskAiPredictionCount && taskAiPredictionCount > 0 && (
+          <div
+            data-testid="task-ai-cost"
+            style={{
+              marginTop: 6,
+              fontSize: 11,
+              color: "var(--color-fg-muted)",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <span>本题</span>
+            <span className="mono" style={{ color: "var(--color-fg)" }}>
+              {taskAiCost != null && taskAiCost > 0
+                ? `¥${taskAiCost.toFixed(4)}`
+                : "¥0"}
+              {taskAiAvgMs != null && (
+                <>
+                  <span style={{ color: "var(--color-fg-subtle)", margin: "0 4px" }}>·</span>
+                  {taskAiAvgMs}ms
+                </>
+              )}
+              <span style={{ color: "var(--color-fg-subtle)", marginLeft: 4 }}>
+                ({taskAiPredictionCount} 次)
+              </span>
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -357,13 +395,21 @@ function SamTextPanel({
 }: SamTextPanelProps) {
   const [text, setText] = useState("");
   const [outputMode, setOutputMode] = useState<TextOutputMode>(() =>
-    resolveInitialOutputMode(projectId, projectTypeKey),
+    resolveInitialOutputMode(projectId, projectTypeKey, projectQ.data?.text_output_default),
   );
   const inputRef = useRef<HTMLInputElement | null>(null);
-  // 切项目重新计算默认 (跨 project 不串扰).
+  // v0.9.5 · 类别 alias 快速填入
+  const projectQ = useProject(projectId ?? "");
+  const aliases = useMemo(() => {
+    const cfg = projectQ.data?.classes_config ?? {};
+    return Object.entries(cfg)
+      .map(([name, entry]) => ({ name, alias: entry?.alias ?? null }))
+      .filter((e): e is { name: string; alias: string } => !!e.alias);
+  }, [projectQ.data?.classes_config]);
+  // 切项目重新计算默认 (跨 project 不串扰); v0.9.5 项目级 default 拉到后再应用一次.
   useEffect(() => {
-    setOutputMode(resolveInitialOutputMode(projectId, projectTypeKey));
-  }, [projectId, projectTypeKey]);
+    setOutputMode(resolveInitialOutputMode(projectId, projectTypeKey, projectQ.data?.text_output_default));
+  }, [projectId, projectTypeKey, projectQ.data?.text_output_default]);
   // v0.9.4 phase 2 · S 键循环到 sam-text 子工具时父级 bumpSamTextFocus → focusKey 变 → 抓焦.
   useEffect(() => {
     if (focusKey === undefined || focusKey === 0) return;
@@ -387,7 +433,7 @@ function SamTextPanel({
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
         <span style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-          <Icon name="sparkles" size={11} /> SAM 文本提示
+          <Icon name="messageSquareText" size={11} /> SAM 文本提示
         </span>
         {candidateCount > 0 && (
           <Badge variant="ai" style={{ fontSize: 10 }}>
@@ -403,6 +449,33 @@ function SamTextPanel({
           onChange={handleModeChange}
         />
       </div>
+      {aliases.length > 0 && (
+        <div
+          data-testid="sam-text-aliases"
+          style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}
+        >
+          {aliases.map((a) => (
+            <button
+              key={a.name}
+              type="button"
+              onClick={() => setText(a.alias)}
+              title={`使用类别「${a.name}」alias`}
+              style={{
+                fontSize: 10,
+                padding: "1px 6px",
+                background: "var(--color-ai-soft)",
+                border: "1px solid var(--color-border)",
+                borderRadius: 999,
+                cursor: "pointer",
+                color: "var(--color-fg)",
+                fontFamily: "inherit",
+              }}
+            >
+              {a.alias}
+            </button>
+          ))}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
         <input
           data-testid="sam-text-input"

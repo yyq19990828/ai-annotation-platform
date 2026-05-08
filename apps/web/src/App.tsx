@@ -53,6 +53,9 @@ const SettingsPage = lazy(() =>
 const ModelMarketPage = lazy(() =>
   import("@/pages/ModelMarket/ModelMarketPage").then((m) => ({ default: m.ModelMarketPage }))
 );
+const AIPreAnnotatePage = lazy(() =>
+  import("@/pages/AIPreAnnotate/AIPreAnnotatePage").then((m) => ({ default: m.default }))
+);
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
 import { RequireProjectMember } from "@/components/routing/RequireProjectMember";
@@ -287,7 +290,7 @@ export function App() {
           path="/ai-pre"
           element={
             <RequirePagePermission pageKey="ai-pre">
-              <PlaceholderPage title="AI 预标注" />
+              <AIPreAnnotatePage />
             </RequirePagePermission>
           }
         />

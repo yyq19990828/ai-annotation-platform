@@ -9,6 +9,7 @@ import {
   useDeleteMLBackend,
   useMLBackendHealth,
 } from "@/hooks/useMLBackends";
+import { useUpdateProject } from "@/hooks/useProjects";
 import { usePermissions } from "@/hooks/usePermissions";
 import { MlBackendFormModal } from "@/components/projects/MlBackendFormModal";
 import type { ProjectResponse } from "@/api/projects";
@@ -33,6 +34,18 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
   const { data: backends = [], isLoading, isError, error } = useMLBackends(project.id);
   const del = useDeleteMLBackend(project.id);
   const health = useMLBackendHealth(project.id);
+  // v0.9.5 · 行内「绑定到本项目」快捷绑定，免回基本信息 tab 手选
+  const updateProject = useUpdateProject(project.id);
+  const onBind = (b: MLBackendResponse) => {
+    updateProject.mutate(
+      { ml_backend_id: b.id, ai_enabled: true } as Parameters<typeof updateProject.mutate>[0],
+      {
+        onSuccess: () =>
+          pushToast({ msg: `已绑定 backend「${b.name}」`, kind: "success" }),
+        onError: (e) => pushToast({ msg: "绑定失败", sub: (e as Error).message }),
+      },
+    );
+  };
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MLBackendResponse | null>(null);
@@ -170,6 +183,22 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                   </td>
                   <td style={cellStyle}>
                     <div style={{ display: "inline-flex", gap: 6 }}>
+                      {project.ml_backend_id !== b.id && (
+                        <Button
+                          size="sm"
+                          variant="ai"
+                          onClick={() => onBind(b)}
+                          disabled={!canManage || updateProject.isPending}
+                          title={canManage ? "绑定到本项目（同时启用 AI）" : "需要 PROJECT_ADMIN 权限"}
+                        >
+                          绑定到本项目
+                        </Button>
+                      )}
+                      {project.ml_backend_id === b.id && (
+                        <Badge variant="ai" style={{ alignSelf: "center" }}>
+                          已绑定
+                        </Badge>
+                      )}
                       <Button
                         size="sm"
                         onClick={() => onHealth(b)}

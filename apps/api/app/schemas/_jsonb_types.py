@@ -104,6 +104,13 @@ class AttributeSchema(BaseModel):
 class ClassConfigEntry(BaseModel):
     color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     order: int | None = Field(default=None, ge=0)
+    # v0.9.5 · 类别英文 alias，供 SAM 文本预标 prompt 下拉直填，避免运行时翻译。
+    # ASCII-only：DINO 接受英文 + 数字 + 空格 + 逗号 + 下划线 + 连字符。
+    alias: str | None = Field(
+        default=None,
+        max_length=50,
+        pattern=r"^[a-zA-Z0-9 ,_\-]+$",
+    )
 
     model_config = ConfigDict(extra="forbid")
 

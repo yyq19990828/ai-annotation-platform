@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -598,6 +599,10 @@ async def export_project(
 class PreannotateRequest(BaseModel):
     ml_backend_id: uuid.UUID
     task_ids: list[uuid.UUID] | None = None
+    # v0.9.5 · 文本批量预标可选参数
+    prompt: str | None = None
+    output_mode: Literal["box", "mask", "both"] = "mask"
+    batch_id: uuid.UUID | None = None
 
 
 @router.post("/{project_id}/preannotate")
@@ -613,14 +618,46 @@ async def trigger_preannotation(
     if not backend:
         raise HTTPException(status_code=404, detail="ML Backend not found")
 
+    # v0.9.5 · 指定 batch 时校验归属本项目 + 状态在 active
+    total_tasks_hint: int | None = None
+    if body.batch_id:
+        from app.db.models.task_batch import TaskBatch
+        from app.db.enums import BatchStatus
+        from sqlalchemy import select, func
+        from app.db.models.task import Task as TaskModel
+
+        batch = await db.get(TaskBatch, body.batch_id)
+        if not batch or batch.project_id != project.id:
+            raise HTTPException(status_code=404, detail="Batch not found")
+        if batch.status != BatchStatus.ACTIVE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"batch.status must be 'active' to preannotate, got {batch.status!r}",
+            )
+        count_q = await db.execute(
+            select(func.count(TaskModel.id)).where(
+                TaskModel.batch_id == body.batch_id,
+                TaskModel.status == "pending",
+            )
+        )
+        total_tasks_hint = int(count_q.scalar_one() or 0)
+
     from app.workers.tasks import batch_predict
 
     job = batch_predict.delay(
         str(project.id),
         str(body.ml_backend_id),
         [str(tid) for tid in body.task_ids] if body.task_ids else None,
+        prompt=body.prompt,
+        output_mode=body.output_mode,
+        batch_id=str(body.batch_id) if body.batch_id else None,
     )
-    return {"job_id": job.id, "status": "queued"}
+    return {
+        "job_id": job.id,
+        "status": "queued",
+        "total_tasks": total_tasks_hint,
+        "channel": f"project:{project.id}:preannotate",
+    }
 
 
 @router.get("/{project_id}/orphan-tasks/preview")

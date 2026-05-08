@@ -66,6 +66,10 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
   // v0.9.2 · GroundingDINO 阈值（仅 SAM 文本 prompt 路径生效；point/bbox 不参与）
   const [boxThreshold, setBoxThreshold] = useState(project.box_threshold ?? 0.35);
   const [textThreshold, setTextThreshold] = useState(project.text_threshold ?? 0.25);
+  // v0.9.5 · SAM 文本预标默认输出形态（"" = 自动按 type_key）
+  const [textOutputDefault, setTextOutputDefault] = useState<string>(
+    project.text_output_default ?? "",
+  );
 
   useEffect(() => {
     setName(project.name);
@@ -79,6 +83,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     setIouThreshold(project.iou_dedup_threshold ?? 0.7);
     setBoxThreshold(project.box_threshold ?? 0.35);
     setTextThreshold(project.text_threshold ?? 0.25);
+    setTextOutputDefault(project.text_output_default ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
@@ -103,7 +108,8 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
     Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001 ||
     Math.abs(boxThreshold - (project.box_threshold ?? 0.35)) > 0.001 ||
-    Math.abs(textThreshold - (project.text_threshold ?? 0.25)) > 0.001;
+    Math.abs(textThreshold - (project.text_threshold ?? 0.25)) > 0.001 ||
+    textOutputDefault !== (project.text_output_default ?? "");
 
   const onSave = () => {
     if (!name.trim()) {
@@ -126,6 +132,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
         iou_dedup_threshold: iouThreshold,
         box_threshold: boxThreshold,
         text_threshold: textThreshold,
+        text_output_default: (textOutputDefault || null) as "box" | "mask" | "both" | null,
       },
       {
         onSuccess: () => pushToast({ msg: "项目已更新", kind: "success" }),
@@ -364,6 +371,21 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
               {textThreshold.toFixed(2)}
             </span>
           </div>
+        </div>
+        <div>
+          <label style={labelStyle}>
+            SAM 文本预标默认输出 <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>（工作台「找全图」初始值，可在工作台临时切换）</span>
+          </label>
+          <select
+            value={textOutputDefault}
+            onChange={(e) => setTextOutputDefault(e.target.value)}
+            style={{ ...inputStyle, cursor: "pointer" }}
+          >
+            <option value="">自动按项目类型（image-det → 框 / 其它 → 掩膜）</option>
+            <option value="box">□ 框（仅 DINO，速度最快，image-det 项目首选）</option>
+            <option value="mask">○ 掩膜（DINO + SAM，image-seg 项目首选）</option>
+            <option value="both">⊕ 全部（同实例配对返回框 + 掩膜）</option>
+          </select>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Button variant="primary" disabled={!dirty || update.isPending} onClick={onSave}>

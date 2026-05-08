@@ -189,6 +189,26 @@ export function WorkbenchShell() {
     [allAiBoxes, s.confThreshold],
   );
 
+  // v0.9.5 · 本题累计 AI 费用 / 平均推理时间（PredictionMeta 已 join 进 PredictionResponse）
+  const taskAiMeta = useMemo(() => {
+    if (predictionsData.length === 0) return { totalCost: 0, avgMs: null as number | null, count: 0 };
+    let totalCost = 0;
+    let msSum = 0;
+    let msCount = 0;
+    for (const p of predictionsData) {
+      if (p.total_cost != null) totalCost += p.total_cost;
+      if (p.inference_time_ms != null) {
+        msSum += p.inference_time_ms;
+        msCount += 1;
+      }
+    }
+    return {
+      totalCost,
+      avgMs: msCount > 0 ? Math.round(msSum / msCount) : null,
+      count: predictionsData.length,
+    };
+  }, [predictionsData]);
+
   const aiTakeoverRate = useMemo(() => {
     if (!annotationsData || annotationsData.length === 0) return 0;
     const aiDerived = annotationsData.filter((a) => a.parent_prediction_id).length;
@@ -1137,6 +1157,9 @@ export function WorkbenchShell() {
         projectId={projectId}
         projectTypeKey={currentProject?.type_key ?? null}
         samTextFocusKey={s.samTextFocusKey}
+        taskAiCost={taskAiMeta.totalCost}
+        taskAiAvgMs={taskAiMeta.avgMs}
+        taskAiPredictionCount={taskAiMeta.count}
         liveCommentCanvas={{
           active: s.canvasDraft.active,
           result: s.canvasDraft.pendingResult,

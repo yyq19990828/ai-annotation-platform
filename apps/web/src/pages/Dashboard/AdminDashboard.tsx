@@ -135,6 +135,38 @@ export function AdminDashboard() {
         </Card>
       </div>
 
+      {/* v0.9.5 · AI 预标注队列卡片（仅在有 pre_annotated 批次时显示） */}
+      {(stats.pre_annotated_batches ?? 0) > 0 && (
+        <Card
+          onClick={() => navigate("/ai-pre")}
+          style={{
+            cursor: "pointer",
+            padding: 16,
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "var(--color-ai-soft)",
+            border: "1px solid var(--color-border)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Icon name="wandSparkles" size={18} style={{ color: "var(--color-ai)" }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>
+                AI 预标注队列 · {stats.pre_annotated_batches} 批待接管
+              </div>
+              <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+                文本批量预标已跑完，等待人工分派接管
+              </div>
+            </div>
+          </div>
+          <span style={{ fontSize: 12, color: "var(--color-ai)" }}>
+            进入 <Icon name="chevRight" size={11} />
+          </span>
+        </Card>
+      )}
+
       <RegistrationSourceCard series={stats.registration_by_day ?? []} />
 
       <MLBackendsAndCostCard

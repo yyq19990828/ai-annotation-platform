@@ -205,7 +205,7 @@ export function Topbar({
                   color: "var(--color-fg-muted)",
                 }}
               >
-                <Icon name="sparkles" size={13} />
+                <Icon name="wandSparkles" size={13} />
               </Button>
             )}
           />
@@ -235,7 +235,7 @@ export function Topbar({
           </span>
         )}
         <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning}>
-          <Icon name="sparkles" size={13} />{aiRunning ? "AI 推理中..." : "AI 一键预标"}
+          <Icon name="wandSparkles" size={13} />{aiRunning ? "AI 推理中..." : "AI 一键预标"}
         </Button>
 
         <DropdownMenu

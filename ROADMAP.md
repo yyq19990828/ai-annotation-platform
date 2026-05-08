@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.4 phase 3 (Polished Contour) — mask→polygon 共享化 + simplify tolerance 注入 + SAM E2E** 详情见 [`0.9.x.md`](docs/changelogs/0.9.x.md)。
+> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.5 (Async Oasis) — `/ai-pre` 文本批量 UI + 类别英文 alias + Batch pre_annotated + chip 包** 详情见 [`0.9.x.md`](docs/changelogs/0.9.x.md)。
 
 ---
 
@@ -10,8 +10,9 @@
 
 > 大颗粒 epic 拆到独立文档；下面 §A/§B/§C 仍维护单条颗粒度的待办。
 
-- **[v0.9.x — Grounded-SAM-2 接入（首版 AI 基座）](./ROADMAP/0.9.x.md)**：vendor `IDEA-Research/Grounded-SAM-2` 打包成 ML Backend，一期吃下点 / 框 / 文本三种 prompt，落 `/ai-pre` 文本批量预标 + 工作台 `S` 工具。预计 ~5 周。
-- **[v0.10.x — SAM 3 接入（与 Grounded-SAM-2 并存）](./ROADMAP/0.10.x.md)**：新增 sam3-backend 作为高精度选项，**不替换** v0.9.x grounded-sam2-backend；增加 exemplar prompt + 路由策略 UI + AB 对比工具。预计 ~3.5 周。
+- ~~**[v0.9.x — Grounded-SAM-2 接入（首版 AI 基座）](./ROADMAP/0.9.x.md)**~~ ✅ 已收尾（M0+M1+M2+M3+M4+M5 + chip 包，`/ai-pre` 文本批量预标 + 工作台 `S` 工具 + 类别英文 alias + Batch `pre_annotated` 状态机 + ADR-0012/0013 全落地）。
+- **[v0.10.x — SAM 3 接入（与 Grounded-SAM-2 并存）](./ROADMAP/0.10.x.md)**：新增 sam3-backend 作为高精度选项，**不替换** v0.9.x grounded-sam2-backend；增加 exemplar prompt + 路由策略 UI + AB 对比工具。共享 `apps/_shared/mask_utils/`。预计 ~3.5 周。
+- **v0.9.6 — 工作台工具栏 UX 完成 + 截图回填**（独立小版本）：v0.9.5 留下的 §C.2 P2-b 工具栏 UX（Tooltip 组件 + hotkey 角标 + 激活态强化 + 分组分隔 + 数字键 1-4 直跳工具 + SAM 子工具栏改右展开抽屉）+ 截图自动化 14 张实跑回填。预计 ~3 工作日；与 v0.10.x 同期或先于 v0.10.x 都可。
 
 ---
 
@@ -21,32 +22,38 @@
 
 ### 现在可做（无前置依赖、有清晰交付物）
 
-> v0.9.x 主线进行中（M0 backend 容器化 `01f8d45` + M1 embedding 缓存 v0.9.1 + **M2 工作台 `S` 工具 + 文本入口 + DINO 阈值项目级 override v0.9.2** + **v0.9.3 前端杂项收口** 已落），下列条目在 SAM 专注度之外作为 `chip:maintenance` 穿插推进，不抢主线优先级。
+> v0.9.x 已收尾（M0+M1+M2+M3+M4+M5 + chip 包全落地）。下列条目作为 `chip:maintenance` 穿插推进，不抢 v0.10.x 主线优先级。
 
 - **CSP nonce-based 收紧**（P2，与 vite plugin 同窗口做，`chip:maintenance`）
 - **OpenSeadragon 瓦片金字塔**（P2，§C.1，极大图 > 50MP 才必要，`chip:maintenance`）
 - **i18n 框架接入**（P3，与 ProjectSettingsPage 重构合并节省破窗成本，`chip:maintenance`）
-- **工作台工具栏 + 图标体系 UX 重构**（P2，§C.2，sparkles 拆分 + Tooltip / 角标 / 激活态 / 分组分隔，建议与 v0.9.5 截图自动化回填同窗口避免双拍）
+- **工作台工具栏 P2-b**（**P2**，§C.2，v0.9.6 主体）：Tooltip 组件 + hotkey 角标 + 激活态强化 + 分组分隔 + 数字键 1-4 直跳工具 + SAM 子工具栏改右展开抽屉。v0.9.5 phase 4 已落 P2-a（9 处 sparkles 重整 + `docs-site/dev/icon-conventions.md`），P2-b 独立避免与 v0.9.5 主线同窗口导致截图双拍。
+- **截图自动化 14 张实跑回填**（**P3**，与 v0.9.6 工具栏 P2-b 同窗口做避免双拍）：v0.8.7 落地脚本框架（`apps/web/e2e/screenshots/scenes.ts:1-227`），需 maintainer 在完整启动栈下 `pnpm --filter web screenshots` 实跑一次产出 PNG。部分场景（iou 双框 / bulk-edit 多选 / progress 50%）需先在 `apps/api/scripts/seed.py` prepare 钩子里造数据。
 
-### v0.9.x SAM 基座进行中（一并落地）
+### v0.9.x 收尾遗留（→ v0.10.x 与 sam3-backend 一并做）
 
-> v0.9.4 phase 1/2/3 已落（SAM URL 解析 + 子工具栏 + text 三模式 + mask_utils 共享 + simplify tolerance + E2E + 真实 mask 评测 90 张：tolerance=1.0 IoU mean 0.98、IoU≥0.95 92.2%、顶点中位 102），详见 [`ROADMAP/0.9.x.md`](./ROADMAP/0.9.x.md) 与 [docs/changelogs/](docs/changelogs/)。剩余如下：
+> v0.9.5 (Async Oasis) 主线已收尾。以下因体量 / 风险考量推迟：
 
-- **AI 预标注独立页 `/ai-pre` 占位收口**（**v0.9.5** 文本批量预标 UI 同步）
-- **工作台 AI 助手「本题花费 X 元」单条透传**（依赖 SAM 工具，可顺势补）
-- **截图自动化 14 张实跑回填**（与 SAM UI 一起出图避免双拍）
-- **mask→polygon 多连通域 / 空洞支持**（**P2，长尾 follow-up**，v0.9.5 候选 / v0.10.x 与 sam3-backend 一并做）：v0.9.4 phase 3 真实 SAM mask 评测的长尾分析（< 15% 样本 IoU 落 [0.5, 0.95)）暴露 `apps/_shared/mask_utils.mask_to_polygon` 的两个隐藏假设 —— ① 取面积最大连通域 → 多片段 mask 小碎块被丢弃；② `RETR_EXTERNAL` 丢内部空洞。修复方向：① `multi_polygon` 输出支持（返回 `list[list[list[float]]]` 而非单 polygon）；② `RETR_CCOMP` 切换 + 内外环编码（外环 + holes 数组，与 LabelMe / COCO 协议对齐）；③ polygon 化前先 morphological closing 抹平像素级噪声。**协议影响**：`AnnotationResult.value` schema 需支持 polygon-with-holes 或 multi-polygon，前端 `<ImageStage>` 候选叠加层渲染逻辑同步改。**触发条件**：客户首次抱怨 polygon 与 mask 形状差异、或长尾 IoU<0.95 占比 > 20% 时。当前大头（85%）IoU 已 ≥ 0.95，不阻塞工作台正常使用。
+- **mask→polygon 多连通域 / 空洞支持**（**P2，长尾 follow-up**）：v0.9.4 phase 3 真实 SAM mask 评测的长尾分析（< 15% 样本 IoU 落 [0.5, 0.95)）暴露 `apps/_shared/mask_utils.mask_to_polygon` 的两个隐藏假设 —— ① 取面积最大连通域 → 多片段 mask 小碎块被丢弃；② `RETR_EXTERNAL` 丢内部空洞。修复方向：① `multi_polygon` 输出支持（返回 `list[list[list[float]]]` 而非单 polygon）；② `RETR_CCOMP` 切换 + 内外环编码（外环 + holes 数组，与 LabelMe / COCO 协议对齐）；③ polygon 化前先 morphological closing 抹平像素级噪声。**协议影响**：`AnnotationResult.value` schema 需支持 polygon-with-holes 或 multi-polygon，前端 `<ImageStage>` 候选叠加层渲染逻辑同步改。**触发条件**：客户首次抱怨 polygon 与 mask 形状差异、或长尾 IoU<0.95 占比 > 20% 时；当前大头（85%）IoU 已 ≥ 0.95，不阻塞工作台正常使用。
 
-### v0.9.x SAM 接入暴露的真实问题（已落主链后才发现，分散在 §A AI/模型）
+### v0.9.5 落地后新发现的可优化项（v0.9.6 / 后续 chip）
 
-> v0.9.4 phase 1 后第一次实跑 `S` 工具,暴露了一组前端 / 协议 / 部署交叉问题, 详见 §A AI/模型 各条:
+> v0.9.5 (Async Oasis) 真用起来 `/ai-pre` 后暴露的 UX 闭环 / 一致性 / 验证缺口：
+
+- **AIPreAnnotatePage 二阶段功能**（**P3**，新发现）：v0.9.5 落基础流程（项目→batch→prompt→进度），但缺三块 UX 闭环：① 历史 job 列表（哪些 batch 跑过预标、当时 prompt / cost / 耗时 / 完成率）；② 失败重试入口（直接跳 `/model-market?tab=failed&batch_id=X`）；③ 跑完后批次接管 CTA（「打开标注工作台 →」一键跳转 `/projects/:id/annotate?batch_id=X`，让 admin 跑完即接管 review）。后端只需扩 `/admin/preannotate-queue` 端点（按 batch + 时间倒序聚合 + 关联 prediction count / failed count），前端 ~0.5 天。
+- **类别 alias 大小写与符号规范化**（**P3**，新发现）：v0.9.5 引入 `ClassConfigEntry.alias`，但用户输入 `"Person"` vs `"person"` 在 DINO 推理中召回不同（DINO 对 case-insensitive 但实际分布有偏差），且尾随空格 / 多重逗号未做归一化。建议保存时统一小写 + 折叠空格 + dedupe 多 `,`，**或**显式提示用户「DINO 推荐全小写英文」。`schemas/_jsonb_types.py:104` `ClassConfigEntry.alias` 加 `field_validator(alias, mode="before")` 做规范化；同步前端 `ClassEditor.tsx` 输入时 onBlur 自动 `.toLowerCase().trim()` + toast 提示。预计 ~0.3 天。
+- **CreateProjectWizard 第 4 步暴露 `text_output_default`**（**P3**，新发现，一致性 chip）：v0.9.5 GeneralSection 已加下拉，但 wizard 第 4 步「AI 接入」没暴露同字段；新建项目时只能进入设置页再调，反复来回。建议 wizard 启用 AI 后增加 inline 字段「文本预标注默认输出」（同 GeneralSection 4 项下拉），与 `box_threshold` / `text_threshold` 同节奏一并暴露。预计 ~0.3 天。
+- **batch.pre_annotated → AnnotateLayout 视觉提示**（**P3**，新发现）：v0.9.5 加了 `pre_annotated` 状态但工作台 / 任务列表暂未对其做特殊视觉处理（仍按 active 显示）。建议 `BatchStatusBadge` + 工作台 Topbar 「批次进度」行加紫色「AI 预标已就绪」徽章，让标注员一眼知道「这一批不是从 0 开始，先看 AI 候选」。预计 ~0.2 天。
+- **AIPreAnnotatePage 类别 alias chips 滚动**（**P3**，新发现）：项目 30+ 类别且全配 alias 时，chips 会大量铺开挤满整行；建议 chips 区限高 + 横向滚动 + 搜索框；或者按使用频率排序（需 `predictions` GROUP BY alias 聚合）。预计 ~0.2 天。
+
+### v0.9.x SAM 接入暴露的真实问题剩余（已落主链后才发现，分散在 §A AI/模型）
+
+> v0.9.5 已收尾 GeneralSection AI 绑定 UX 解耦 + SAM `/setup` `supported_prompts` 协议消费 + backend `/health` GPU 显存。剩余 4 条仍 open：
 >
-> - GeneralSection AI 启用 + backend 绑定 UX 耦合(注册成功后还要回基本信息 tab 手选并保存)
-> - MlBackendFormModal 缺「测试连接」+ URL 默认值预填(每次手敲 `http://172.17.0.1:8001` 麻烦)
-> - CreateProjectWizard 启用 AI 时不强制绑定 backend(新建项目仍是「AI 启用 + 未绑定」状态)
-> - SAM `/setup` 自描述协议未消费(`is_interactive` / `params` 已就位但前端没用; 加 `supported_prompts` 字段后可驱动子工具栏)
-> - RegisteredBackendsTab 只显示 state / last_checked_at, 缺 GPU 显存 / cache hit rate / 模型版本(运维不直观)
-> - 生产部署的 ML backend storage endpoint 选择机制(dev `ML_BACKEND_STORAGE_HOST` 简单覆盖够用, 生产场景多变, 长期或加 ADR)
+> - MlBackendFormModal 缺「测试连接」+ URL 默认值预填（每次手敲 `http://172.17.0.1:8001` 麻烦）
+> - CreateProjectWizard 启用 AI 时不强制绑定 backend（新建项目仍是「AI 启用 + 未绑定」状态）
+> - RegisteredBackendsTab 行内深度健康指标（GPU 显存 / cache hit rate / 模型版本 — backend `/health` v0.9.5 已就位，仅前端聚合展示未做）
+> - 生产部署的 ML backend storage endpoint 选择机制（dev `ML_BACKEND_STORAGE_HOST` 简单覆盖够用 + ADR-0012 已写决策框架，生产场景多变可能需 ADR 扩充策略表）
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **predictions 月分区 Stage 2**：单月 INSERT > 100k 或 总行数 > 1M（ADR-0006）
@@ -79,16 +86,13 @@
   - 批量状态迁移类（bulk-approve / bulk-reject）：v0.7.3 故意未做。reject 反馈是逐批次语义、approve 跳过逐批次审视有质检失职风险。落地前先讨论 UX。
 
 ### AI / 模型
-- **AI 预标注独立页**：路由 `/ai-pre` 为占位 PlaceholderPage。Dashboard「AI 预标注队列」卡片永久显示空状态（`AdminDashboard.tsx:107-119`、`DashboardPage.tsx:287-291`）。**v0.9.4 接 grounded-sam2-backend 文本批量预标 UI 时收口**。
-- **模型市场**：路由 `/model-market` 占位。
-- **训练队列**：路由 `/training` 占位。
-- **预测成本卡片透传到工作台**：v0.8.6 已落 admin 维度 `/admin/prediction-cost-stats`；剩工作台 AI 助手面板「本题花费 X 元」单条透传，与 v0.9.x SAM 工具一起做。
-- **GeneralSection AI 启用 + backend 绑定 UX 耦合**（**P2**，新发现）：v0.9.3 phase 3 后用户能在「ML 模型」tab 注册 backend，但工作台仍提示「项目未绑定 ML Backend」；根因是 `GeneralSection.tsx:125` 的 `ml_backend_id: aiEnabled ? mlBackendId : null` —— 注册成功不会自动反向更新 project.ml_backend_id，必须**回基本信息 tab → 在下拉手选 → 保存**才生效，不直观。**两个收口方向**（按价值排）：① MlBackendsSection 列表行加「绑定到本项目」按钮，直接 PATCH `project.ml_backend_id`，免回基本信息 tab；② 注册 Modal 提交成功后若 `project.ml_backend_id == null`，弹 toast「已注册 + 绑定」并 inline 完成绑定。同时考虑把 `aiEnabled` 与 `mlBackendId` 联动收紧：用户选了 backend 自动勾 `aiEnabled`、清 backend 自动取消，避免悄悄被 `ai_enabled ? : null` 清空。
-- **MlBackendFormModal「测试连接」+ URL 默认值预填**（**P3**，新发现）：当前要先创建保存 → 列表行点 health 才能验通，注册前先验失败的成本高（DB 留无效行需手删）。** 切片**：① Form 表单内右下加「测试连接」按钮，调一个**无 DB 副作用的** `POST /ml-backends/probe?url=&auth=` 端点（仅 httpx GET `/health`），把状态 inline 显示；② Settings 暴露 `default_ml_backend_url_hint`（dev 可由 `ML_BACKEND_DEFAULT_URL` env 设 `http://172.17.0.1:8001`），URL 输入框 placeholder 直接显示而非空白；③ 注册成功后若 health 仍 `disconnected`，提示用户检查网络，而不是默默存。
-- **CreateProjectWizard 启用 AI 时强制 backend 绑定校验**（**P3**，新发现）：v0.7.6 wizard step 4 启用 AI 但不要求绑定 backend，新建项目即「AI 启用 + 未绑定」，跟 GeneralSection 同坑。最小切片：启用 AI 后增加 sub-section 列出本项目作用域已注册的 backend（首次 0 项 → CTA「先到项目设置注册」并允许跳过 + 标黄；勾 backend 后 step 5 总览展示「将绑定到 X」）。
-- **SAM `/setup` 自描述协议消费 + `supported_prompts` 字段补充**（**P2**，新发现）：SAM backend `/setup` 已返回 `is_interactive`、`labels`、`params: {sam_variant, dino_variant, box_threshold, text_threshold}`，前端只读了 `is_interactive`。补 `supported_prompts: ["point", "bbox", "text"]` 字段后，前端能据此动态渲染**子工具栏**（与 §C.3 SAM 子工具栏 epic 联动）；同时 RegisteredBackendsTab 行内可展示模型变体 + 阈值，便于运维一眼看清「是 tiny+T 还是 large+B」。**协议变更**：SAM backend `schemas.py` 加新字段；老版本 backend 兼容（缺字段时前端走旧的"按动作分流"路径）。
-- **RegisteredBackendsTab 行内深度健康指标**（**P3**，新发现）：当前每行只 state / last_checked_at；可拉 SAM `/cache/stats` 的 `hit_rate` / `size` + `/health` 的 `gpu` / `model_version` 直接展示，运维更直观（"刚才那次卡几秒是首次冷推还是 cache miss"一眼看清）。**协议**：复用既有端点，平台 api 加聚合 helper `GET /admin/ml-integrations/overview` 拉每个 backend 的 cache_stats。预计 0.5 天。
-- **ML backend 调用的 storage endpoint 选择机制（生产化）**（**P3**，新发现）：v0.9.4 phase 1 用的 `ML_BACKEND_STORAGE_HOST` 简单 host 重写适合 dev；生产 K8s 同 namespace 时 SAM 直接走 service DNS 即可（留空），跨 namespace / 跨集群需要 internal vs external 双 endpoint 配置。**触发条件**：第一个生产部署遇到这条；当前 dev 单机已收口。可能需要 ADR 总结策略（"何时设、设啥值、何时留空"）。
+- **模型市场扩展**：v0.9.3 phase 2 已激活 `/model-market`（合并 backends + failed-predictions tab）；二期可加：① 模型版本对比 / AB 路由 UI（依赖 v0.10.x sam3-backend 双模型并存）；② 一键热更新模型权重（`/admin/ml-backends/{id}/reload`）。
+- **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
+- **MlBackendFormModal「测试连接」+ URL 默认值预填**（**P3**）：当前要先创建保存 → 列表行点 health 才能验通，注册前先验失败的成本高（DB 留无效行需手删）。**切片**：① Form 表单内右下加「测试连接」按钮，调一个**无 DB 副作用的** `POST /ml-backends/probe?url=&auth=` 端点（仅 httpx GET `/health`），把状态 inline 显示；② Settings 暴露 `default_ml_backend_url_hint`（dev 可由 `ML_BACKEND_DEFAULT_URL` env 设 `http://172.17.0.1:8001`），URL 输入框 placeholder 直接显示而非空白；③ 注册成功后若 health 仍 `disconnected`，提示用户检查网络，而不是默默存。
+- **CreateProjectWizard 启用 AI 时强制 backend 绑定校验**（**P3**）：v0.7.6 wizard step 4 启用 AI 但不要求绑定 backend，新建项目即「AI 启用 + 未绑定」（v0.9.5 GeneralSection 落地了「绑定到本项目」按钮但 wizard 仍未同步）。最小切片：启用 AI 后增加 sub-section 列出本项目作用域已注册的 backend（首次 0 项 → CTA「先到项目设置注册」并允许跳过 + 标黄；勾 backend 后 step 5 总览展示「将绑定到 X」）；同步把 `text_output_default` 字段也暴露在 wizard 里（与 GeneralSection 一致）。
+- **RegisteredBackendsTab 行内深度健康指标**（**P3**）：当前每行只 state / last_checked_at；v0.9.5 backend `/health` 已扩 `gpu_info` + `cache` 子对象，仅前端聚合展示未做。可加聚合 helper `GET /admin/ml-integrations/overview` 拉每个 backend 的最新 health 摘要（gpu memory_used_mb / cache hit_rate / model_version），让运维一眼看清「刚才那次卡几秒是首次冷推还是 cache miss」。预计 0.5 天。
+- **ML backend storage endpoint 选择机制（生产化）**（**P3**）：v0.9.4 phase 1 用的 `ML_BACKEND_STORAGE_HOST` 简单 host 重写适合 dev；ADR-0012 已写决策框架但仅 dev 场景。生产 K8s 同 namespace 时 SAM 直接走 service DNS 即可（留空），跨 namespace / 跨集群需要 internal vs external 双 endpoint 配置。**触发条件**：第一个生产部署遇到这条时按需扩 ADR-0012 策略表（"何时设、设啥值、何时留空"）；当前 dev 单机已收口。
+- **类别 alias 规范化 + DINO 召回友好提示**（**P3**，v0.9.5 落地后新发现）：`ClassConfigEntry.alias` 字段就位但未做大小写 / 符号规范化；用户输入 `"Person"` vs `"person"` 召回有偏差。`schemas/_jsonb_types.py:104` 加 `field_validator(alias, mode="before")` 自动 `.lower().strip()` + 折叠多重逗号 / 空格；前端 `ClassEditor.tsx` onBlur 也做一次。预计 ~0.3 天。
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -140,10 +144,11 @@
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
 - **无障碍**：ARIA 属性极少；Lighthouse Accessibility 分数应作为 PR gate。
 
-### 文档（v0.7.4 搭骨架；v0.8.0 ADR / 协议契约 / SoT 自动化补齐；v0.8.7 截图自动化骨架；v0.8.8 monitoring.md + ADR 0010/0011）
+### 文档（v0.7.4 搭骨架；v0.8.0 ADR / 协议契约 / SoT 自动化补齐；v0.8.7 截图自动化骨架；v0.8.8 monitoring.md + ADR 0010/0011；v0.9.5 ADR 0012/0013 + icon-conventions + deploy.md GPU 章节）
 
-- **截图自动化执行 + 14 张回填**：v0.8.7 落了 `apps/web/e2e/screenshots/` 脚本框架，但 PNG 文件需 maintainer 在完整启动栈下 `pnpm --filter web screenshots` 实际跑一遍并把结果 commit。部分场景（iou 双框 / bulk-edit 多选 / progress 50%）需先在 fixture 里造数据再 prepare 钩子触发。**推迟到 v0.9.x 与 SAM UI 一起做**，避免双拍。
+- **截图自动化执行 + 14 张回填**：v0.8.7 落了 `apps/web/e2e/screenshots/` 脚本框架，但 PNG 文件需 maintainer 在完整启动栈下 `pnpm --filter web screenshots` 实际跑一遍并把结果 commit。部分场景（iou 双框 / bulk-edit 多选 / progress 50%）需先在 fixture 里造数据再 prepare 钩子触发。**推迟到 v0.9.6 与工具栏 P2-b 同窗口做**避免双拍（v0.9.5 已落 sparkles 重整 + AIPreAnnotatePage 等新场景，scenes.ts 配置已就位但 PNG 仍 0 张）。
 - **首次登录引导（onboarding）**：用户手册有文档但工作台无 UI walkthrough；新用户进 `/projects/:id/annotate` 时左下浮出一条「画框：拖鼠标；提交：E」级别的 3 步 tooltip + 右上 ✕ 关闭一次性写 localStorage `wb:onboarded:v1`。优先级 P3，等首次客户上线反馈触发。
+- **scenes.ts 加 v0.9.5 新场景**：v0.9.5 引入 `/ai-pre` 页面 + AIInspectorPanel 「本题花费」+ 类别 alias chips + AdminDashboard pre_annotated 队列卡，建议在 v0.9.6 截图实跑前先扩 `apps/web/e2e/screenshots/scenes.ts` 加 4 张新场景（ai-pre / cost-display / alias-chips / preannotated-queue），让 14 张统一一次性出图。
 
 ---
 
@@ -157,26 +162,16 @@
 - **Annotation 列表后端分页**：与 B「Annotation keyset 分页」共建。`useAnnotations` 全量拉，单任务 1000+ 框阻塞渲染。
 
 ### C.2 界面优化（信息架构 / 可见性 / 一致性）
-- **工作台工具栏 + 图标体系 UX 重构**（**P2**，新发现）：v0.9.4 phase 2 落子工具栏后的实际使用反馈暴露两个相互交织的可用性槽点 —— ① `lucide-react` 的 `sparkles` 在工作台被同时挂在 9 个语义场景上，识别度归零；② 工具栏自身的 Tooltip / 快捷键可见性 / 激活态色差 / 分组层次都还是 v0.5.3 的轻量基线，子工具栏垂直挤在主按钮下方与主工具栏视觉混淆。
-  - **现状盘点（sparkles 共用面）**：`Topbar.tsx:208,238`（智能切题 + AI 一键预标）/ `ToolDock.tsx:19`（SAM 文本子工具）/ `AIInspectorPanel.tsx:150,166,390`（AI 助手标题 + 一键预标 + SAM 文本提示标题）/ `BoxListItem.tsx:57` + `BoxRenderer.tsx:60`（AI 框置信度标记）/ `StatusBar.tsx:98`（AI 待审计数）—— 9 处共用同一图标。
-  - **现状盘点（工具栏可用性）**：仅有原生 `title` attribute，无格式化 Tooltip 组件；快捷键完全藏在 title 文本里第一眼不可见；子工具栏激活态背景仅 10% accent 色差弱；主工具按钮无分组分隔（4 类挤在一列）；AI 推理中只 `disabled` 无 spinner 反馈；切 SAM 子工具靠 `S` 键循环（point→bbox→text→exit）多按一次就过头。
-  - **设计方案 — 图标语义重整（P2-a，~0.5 天）**：
-    - 让 `wand-sparkles` / `wand-2` 成为**「AI 一键操作」的唯一图标**（一键预标 + 智能切题统一），其它场景全部换成专属图标
-    - SAM 文本子工具 → `type` / `message-square-text`（"输入文本提示"语义，与 AI 魔法解耦）
-    - AI 助手面板 / 状态栏 → `bot` / `brain`（模块身份徽标）
-    - Box 列表 + 画布角标 → `sparkle` 单星（弱化为装饰性 AI-出品标记，尺寸保持 8-9px）
-    - AI 待审计数 → `circle-dot`（数字才是主体，图标只做色彩锚点）
-    - 配套写 `docs-site/dev/icon-conventions.md` 钉死语义规范，避免下次又被回退
-  - **设计方案 — 工具栏可用性（P2-b，~1 天）**：
-    - **格式化 Tooltip 组件**：右侧 Popover 三行（工具名 + 描述 + ⌘ 键徽样式 hotkey），替原生 `title`
-    - **按钮快捷键角标**：38×38 主工具按钮右下角嵌 8px 字母（`B/S/P/H`），不靠 hover 即可见
-    - **激活态强化**：主工具加 2px 左侧 accent 色边条 + 阴影；子工具激活背景从 10% 提到 20% accent
-    - **分组分隔线**：`[Box / Polygon] | [SAM] | [Hand]` 三组之间加 1px hairline；子工具栏 point/bbox/text 之间也加细分隔
-    - **数字快捷键直跳**：`1=Box / 2=SAM / 3=Polygon / 4=Hand`（**不冲突 1-9 切换类别** —— 类别切换仅在标注完一框后属性面板聚焦时生效，工具切换在画布聚焦时生效，可按 `target.tagName` 区分；冲突时仍以现有循环 `S` 兜底）
-    - **SAM 子工具栏改右展开抽屉**：当前垂直挤在 SAM 主按钮下方易与主工具栏混淆；改为 SAM 激活时向右弹独立子工具栏（类似 Photoshop fly-out），主工具栏视觉结构稳定
-    - **Loading 可视化**：AI 推理中按钮加旋转 spinner overlay，不再仅 `disabled` + 文本"AI 推理中..."
-  - **拆分建议**：P2-a 图标重整 + 规范文档 ~0.5 天，可作为 v0.9.5 起手 maintenance 任务；P2-b 工具栏 UX 重构 ~1 天，独立 plan `docs/plans/2026-??-??-toolbar-ux.md`，可在 v0.9.5 与 `/ai-pre` UI 同期做（重构期间共用 Tooltip / 角标组件）。
-  - **触发条件**：当前可做（v0.9.4 phase 2 SAM 子工具栏稳定后）；建议与 v0.9.5 截图自动化回填同窗口（避免双拍重做截图）。
+- ~~**工作台工具栏 P2-a · 图标语义重整**~~ ✅ v0.9.5 phase 4 落地（9 处 sparkles 重整 + Icon 组件扩 6 个新 name + `docs-site/dev/icon-conventions.md` 钉死规范）。
+- **工作台工具栏 P2-b · 可用性重构**（**P2**，v0.9.6 主体）：v0.9.5 phase 4 已收口图标语义；剩余可用性槽点留 v0.9.6 独立 epic 避免与 v0.9.5 主线同窗口截图双拍。
+  - **格式化 Tooltip 组件**：新建 `apps/web/src/components/ui/Tooltip.tsx` —— 右侧 Popover 三行（工具名 + 描述 + ⌘ 键徽样式 hotkey），替原生 `title`
+  - **按钮快捷键角标**：38×38 主工具按钮右下角嵌 8px 字母（`B/S/P/H`），不靠 hover 即可见
+  - **激活态强化**：主工具加 2px 左侧 accent 色边条 + 阴影；子工具激活背景从 10% 提到 20% accent
+  - **分组分隔线**：`[Box / Polygon] | [SAM] | [Hand]` 三组之间加 1px hairline；子工具栏 point/bbox/text 之间也加细分隔
+  - **数字快捷键直跳**：`1=Box / 2=SAM / 3=Polygon / 4=Hand`。**冲突调研**：当前 1-9 已被 `setClassByDigit` 占用（`useWorkbenchHotkeys.ts:349` + `hotkeys.test.ts` 4 case 覆盖），需按 `target.tagName` 区分（input/textarea 聚焦时切类别，画布聚焦时切工具）。改 `useWorkbenchHotkeys` dispatch 入口前置 `if (canvasFocused) → setTool` 分支 + 加单测 4 case（画布 / input 聚焦切换 + 1-4 / 5-9 边界）。
+  - **SAM 子工具栏改右展开抽屉**：当前垂直挤在 SAM 主按钮下方易与主工具栏混淆；改为 SAM 激活时向右弹独立子工具栏（类似 Photoshop fly-out），主工具栏视觉结构稳定
+  - **Loading 可视化**：AI 推理中按钮加旋转 spinner overlay（lucide `loader-2` + `animate-spin`），不再仅 `disabled` + 文本"AI 推理中..."
+  - **预计 ~1 天**：独立 plan `docs/plans/2026-??-??-toolbar-ux.md`；与截图自动化回填同窗口避免双拍。
 
 ### C.3 标注体验（核心生产力杠杆）
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90%；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式）。
@@ -202,7 +197,7 @@
     - **智能默认（按项目 type_key）**：`image-det → box`，`image-seg → mask`，`mm / image-kp / 其它 → both`，让用户进项目就拿到合理默认；用户切换后写 sessionStorage 记忆（key: `wb:sam:textOutput:{projectId}`）
     - **候选叠加层**：`box` 模式紫虚线矩形 + Enter 接受；`mask` 模式紫虚线 polygon（当前行为）；`both` 模式两者配对叠加，Tab 在 box / polygon 间切活跃候选，Enter 接受当前活跃形态
     - **`useInteractiveAI` payload** 加 `context.output` 字段；ImageStage 候选渲染层按 `result[i].type` dispatch
-  - **项目级默认（中期，v0.9.5 候选）**：projects 表加 `text_output_default: String(10) NULL` 字段，GeneralSection AI 段下加下拉「文本预标注默认输出」，跟 `box_threshold` / `text_threshold` 同节奏。短期不做 —— sessionStorage 记忆 + type_key 智能默认已足够覆盖 80% 场景。
+  - ~~**项目级默认（中期，v0.9.5 候选）**~~ ✅ v0.9.5 落地：`projects.text_output_default VARCHAR(10) NULL` + 迁移 0050 + GeneralSection 4 项下拉 + `resolveInitialOutputMode` 优先级「项目级 → sessionStorage → type_key」。CreateProjectWizard 同步留 v0.9.6 chip。
   - **协议文档同步**：`docs-site/dev/ml-backend-protocol.md` §2 Context schema 加 `output` 字段说明；用户手册 SAM 文本 prompt 章节加三种模式截图 + 速度对比表。
   - **预计 1 天**：协议字段 + 后端 predictor 三分支 + 前端 segmented control + 候选叠加层适配。
 - **关键帧插值（视频/序列）**：CVAT 同款；标注员只标 1 / 30 / 60 帧，中间线性插值。需配合 `Task.dimension` 字段。
@@ -231,9 +226,9 @@
 
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
-| **P2** | GeneralSection AI 启用 + backend 绑定 UX 解耦 | v0.9.3 phase 3 后注册 backend 仍要回基本信息 tab 手选；MlBackendsSection 列表加「绑定到本项目」按钮即可消除往返 | — |
-| **P2** | 工作台工具栏 + 图标体系 UX 重构（§C.2） | sparkles 9 处共用识别度归零 + 工具栏 Tooltip / 快捷键角标 / 激活态 / 分组分隔仍是 v0.5.3 基线；图标重整 ~0.5 天 + 工具栏 UX ~1 天，建议与 v0.9.5 截图自动化回填同窗口 | — |
-| **P2** | SAM `/setup` 自描述协议消费 + `supported_prompts` 字段补充 | 与「SAM 子工具栏」P1 协同；老 backend 缺字段时前端走旧路径兼容 | — |
+| **P2** | 工作台工具栏 P2-b · 可用性重构（§C.2） | Tooltip 组件 + hotkey 角标 + 激活态强化 + 分组分隔 + 数字键 1-4 直跳工具（需 `target.tagName` 区分 `setClassByDigit` 1-9 切类别） + SAM 子工具栏改抽屉。v0.9.6 主体 ~1 天 | — |
+| **P2** | 截图自动化 14 张实跑回填 | v0.8.7 落地脚本 + scenes 配置；与 v0.9.6 工具栏 P2-b 同窗口做避免双拍 | — |
+| **P2** | mask→polygon 多连通域 / 空洞支持 | v0.9.4 phase 3 长尾分析暴露：< 15% 样本 IoU 落 [0.5, 0.95)，根因 `RETR_EXTERNAL + max area` 假设。修复方向：multi_polygon 输出 + `RETR_CCOMP` 内外环编码 + morphological closing；触发：长尾 IoU<0.95 占比 > 20%、或客户抱怨 polygon 与 mask 形状差异 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
 | **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 | — |
@@ -243,25 +238,30 @@
 | **P2** | C.1 OpenSeadragon 瓦片金字塔 | 极大图 > 50MP 才必要；纯前端 IoU rbush 已 v0.9.3 落地 | [0004](docs/adr/0004-canvas-stack-konva.md) |
 | **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
 | **P2** | CSP nonce-based 收紧（剔除 'unsafe-inline'） | v0.8.8 ADR-0010 是宽松基线；nonce-based 留作 v0.10.x 与 ProjectSettingsPage 重构同窗口做 | [0010](docs/adr/0010-security-headers-middleware.md) |
+| **P3** | AIPreAnnotatePage 二阶段功能（历史 job 列表 + 失败重试入口 + 跑完接管 CTA） | v0.9.5 落地后 UX 反馈：基础流程已通但缺 admin 闭环；扩 `/admin/preannotate-queue` 端点 + 前端 ~0.5 天 | — |
+| **P3** | 类别 alias 大小写规范化 + DINO 召回友好提示 | v0.9.5 引入 alias 字段但未规范化；用户输 `Person` vs `person` 召回有偏差。`field_validator` 自动 lower/strip + 前端 onBlur ~0.3 天 | — |
+| **P3** | CreateProjectWizard 第 4 步暴露 `text_output_default` | v0.9.5 GeneralSection 已加但 wizard 未同步；新建项目要再回设置改一次 ~0.3 天 | — |
+| **P3** | batch.pre_annotated → 工作台/任务列表视觉提示 | v0.9.5 加了状态但 BatchStatusBadge / Topbar 未做特殊视觉处理；让标注员一眼知道「AI 预标已就绪」~0.2 天 | — |
+| **P3** | AIPreAnnotatePage 类别 alias chips 滚动 + 频率排序 | 项目 30+ 类别全配 alias 时 chips 铺满整行；限高 + 横向滚动 + 按 prediction count 排序 ~0.2 天 | — |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |
 | **P3** | 前端单测从 25% 推到 30% | v0.8.8 已推回 25.17%；下阶段补 ProjectSettingsPage / AuditPage / WorkbenchShell 关键 hook 单测 | — |
-| **P3** | 截图自动化 14 张实跑回填 | v0.8.7 落地脚本 + scenes 配置；推迟到 v0.9.x 与 SAM UI 一起做 | — |
-| **P2** | mask→polygon 多连通域 / 空洞支持 | v0.9.4 phase 3 长尾分析暴露：< 15% 样本 IoU 落 [0.5, 0.95)，根因 `RETR_EXTERNAL + max area` 假设。修复方向：multi_polygon 输出 + `RETR_CCOMP` 内外环编码 + morphological closing；触发：长尾 IoU<0.95 占比 > 20%、或客户抱怨 polygon 与 mask 形状差异 | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 | — |
-| **P3** | MlBackendFormModal 加测试连接 + URL 默认值预填 | v0.9.3 phase 3 后注册体验摩擦：每次手敲 `http://172.17.0.1:8001`；先存后测有 DB 留无效行成本 | — |
-| **P3** | CreateProjectWizard 启用 AI 时 backend 绑定校验 | 新建项目仍可处于「AI 启用 + 未绑定」状态，跟 GeneralSection 同坑 | — |
-| **P3** | RegisteredBackendsTab 行内深度健康指标（GPU 显存 / cache hit rate / 模型版本） | SAM `/cache/stats` + `/health` 已就位，仅前端聚合展示；运维直观 | — |
-| **P3** | ML backend 调用 storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev；生产场景多变，第一个生产部署遇到再做 ADR | — |
+| **P3** | MlBackendFormModal 加测试连接 + URL 默认值预填 | 注册体验摩擦：每次手敲 `http://172.17.0.1:8001`；先存后测有 DB 留无效行成本 | — |
+| **P3** | CreateProjectWizard 启用 AI 时 backend 绑定校验 | 新建项目仍可处于「AI 启用 + 未绑定」状态，跟 v0.9.5 GeneralSection 已落地的「绑定到本项目」按钮一致性差距 | — |
+| **P3** | RegisteredBackendsTab 行内深度健康指标 | v0.9.5 backend `/health` 已扩 `gpu_info` + `cache`，仅前端聚合 `GET /admin/ml-integrations/overview` 展示未做；运维直观 | — |
+| **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 
 ---
 
 ## 优化建议 / 文档维护备忘
 
-> v0.8.8 重写后这一节用于记录"对 ROADMAP 自身格式"的下次维护方向，避免文件无限膨胀。
+> v0.8.8 重写后这一节用于记录"对 ROADMAP 自身格式"的下次维护方向，避免文件无限膨胀。v0.9.5 已按此节工序做了一次精简（删除 9 条已落项 + 增补 5 条 v0.9.5 落地后新发现）。
 
 1. **「后续观察项」清单滚动归档**：当前 §A 末尾保留 3 条 v0.7.x ~ v0.8.8 残留观察（3/5）；超过 5 条时拆出 `ROADMAP/observations.md`。
 2. **触发条件量化**：「监控触发」类条目（如 predictions Stage 2、batch_summary stored 列）目前是文字描述；条件成熟后可在 Grafana dashboard 加阈值 panel + 告警，跨过即生 ROADMAP 通知 issue。**仍未执行**（依赖 Grafana 工程化优先级）。
+3. **版本切片 epic 完成时同步精简 §A/§C**：v0.9.5 实证：每个 epic 收尾时应配套删 §A / §C 已落项 + 在该 epic 后写 1 段「落地后新发现」补到优先级表，避免 ROADMAP 与 CHANGELOG 双源真相漂移。**已成为约定**。
+4. **ADR 引用列回填**：v0.9.5 加了 ADR-0012/0013，回填到优先级表 Related ADR 列；下次每次新增 ADR 时记得 grep 优先级表对应行加链接。

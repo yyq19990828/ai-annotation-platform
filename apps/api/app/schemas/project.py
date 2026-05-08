@@ -20,6 +20,7 @@ class ProjectCreate(BaseModel):
     due_date: date | None = None
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
+    text_output_default: Literal["box", "mask", "both"] | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -42,6 +43,8 @@ class ProjectUpdate(BaseModel):
     # v0.9.2 · DINO 阈值项目级 override
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
+    # v0.9.5 · 工作台 SamTextPanel 默认输出形态（None 走 type_key 智能默认）
+    text_output_default: Literal["box", "mask", "both"] | None = None
 
 
 class ProjectBatchSummary(BaseModel):
@@ -74,6 +77,7 @@ class ProjectOut(BaseModel):
     iou_dedup_threshold: float = 0.7
     box_threshold: float = 0.35
     text_threshold: float = 0.25
+    text_output_default: str | None = None
     model_version: str | None = None
     task_lock_ttl_seconds: int = 300
     total_tasks: int

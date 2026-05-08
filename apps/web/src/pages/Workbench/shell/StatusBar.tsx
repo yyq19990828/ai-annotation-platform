@@ -95,7 +95,7 @@ export function StatusBar({
         </span>
         <Sep />
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-          <Icon name="sparkles" size={11} style={{ color: "var(--color-ai)" }} />
+          <Icon name="circleDot" size={11} style={{ color: "var(--color-ai)" }} />
           <span className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: aiBoxesCount > 0 ? "var(--color-ai)" : "var(--color-fg)" }}>{aiBoxesCount}</span>
           <span>AI 待审</span>
         </span>

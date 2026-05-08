@@ -166,6 +166,9 @@ export interface PredictionResponse {
   result: PredictionShape[];
   cluster: number | null;
   created_at: string;
+  /** v0.9.5 · 单条费用 / 推理时间，AIInspectorPanel 「本题花费」直显 */
+  inference_time_ms?: number | null;
+  total_cost?: number | null;
 }
 
 // ── ML Backend ──────────────────────────────────────────────────────────────

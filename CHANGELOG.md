@@ -22,6 +22,52 @@
 
 ## 最新版本
 
+## [0.9.5] - 2026-05-08
+
+> **Async Oasis — `/ai-pre` 文本批量 UI + 类别英文 alias + Batch pre_annotated + chip 包.** v0.9.x 系列收尾绿洲，把 SAM 接通后暴露的零散问题一次性收齐，进入 v0.10.x SAM 3 之前不留尾巴。三块主轴：① `/ai-pre` 完整页面替 PlaceholderPage，文本批量预标 → batch 自动转 `pre_annotated` → AdminDashboard / Sidebar 接真数据；② 类别英文 alias 字段（不引入运行时 LLM 翻译，alias chips 直填 SAM prompt）；③ chip 包（cost 单条透传 / text_output_default 持久化 / GeneralSection 绑定 UX 解耦 / 9 处 sparkles 重整）+ M5 收口（backend `/health` 显存 + ADR-0012/0013 + deploy.md GPU 章节）。
+
+### Added
+
+- **`AIPreAnnotatePage` 文本批量预标完整页**：`apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx` 替 PlaceholderPage，项目下拉 → active batch → Prompt 输入（含 alias chips）→ outputMode segmented → WS 实时进度。
+- **Batch 状态机加 `pre_annotated`**：`BatchStatus.PRE_ANNOTATED` + `VALID_TRANSITIONS` `ACTIVE → PRE_ANNOTATED`（auto-driven）+ `PRE_ANNOTATED → ANNOTATING/ACTIVE/ARCHIVED`；`PRE_ANNOTATED → ACTIVE` 入 `REVERSE_TRANSITIONS`；`check_auto_transitions` 把 `PRE_ANNOTATED` 也推进到 ANNOTATING。零迁移（`status` 是 `String(30)` 非 enum）。`AdminDashboardStats.pre_annotated_batches` 字段 + Sidebar `ai-pre` ai 徽章 + AdminDashboard 「N 批待接管」点击卡。
+- **类别英文 alias**：`ClassConfigEntry.alias` 字段（ASCII-only `^[a-zA-Z0-9 ,_\-]+$` max=50，零 DB 迁移）；ClassEditor 表格 + CreateProjectWizard 第 2 步 + SamTextPanel + AIPreAnnotatePage 上方 alias chips（点击直填 prompt）。把双语映射推到数据层而非运行时 LLM 翻译。
+- **`/projects/{id}/preannotate` 端点扩参**：加 `prompt` / `output_mode` / `batch_id`；指定 batch 时校验归属 + `active` 状态，返回 `total_tasks` + `channel`。`batch_predict` Celery task 同步扩参，prompt 非空时透传 context；末尾自动 `active → pre_annotated`。
+- **AI 助手「本题花费」单条透传**：`PredictionOut.inference_time_ms` / `total_cost`；`/tasks/{id}/predictions` outerjoin `PredictionMeta` 一次性聚合；`WorkbenchShell` 算 `taskAiMeta` 传给 `AIInspectorPanel`，「本次效率」段下方加「本题：¥0.xxxx · XXXms (N 次)」一行。
+- **`text_output_default` 项目级字段**：`projects.text_output_default VARCHAR(10) NULL` + 迁移 `0050` + CHECK；`GeneralSection` 加下拉「自动按类型 / 框 / 掩膜 / 全部」；`samTextOutput.resolveInitialOutputMode` 优先级改为「项目级 → sessionStorage → type_key」，把 v0.9.4 phase 2 的 sessionStorage 兜底转持久化。
+- **GeneralSection AI 绑定 UX 解耦**：`MlBackendsSection` 列表行加「绑定到本项目」按钮 + 已绑定标记，免回基本信息 tab 手选。
+- **backend `/health` 加显存 + cache**：`apps/grounded-sam2-backend/main.py:73` 返回 `gpu_info: {device_name, memory_used_mb, memory_total_mb, memory_free_mb}` + `cache: {size, max_size, hits, misses}`，旧字段 backward-compat。
+- **ADR-0012 / ADR-0013**：`0012-sam-backend-as-independent-gpu-service.md`（独立 GPU 服务决策）+ `0013-mask-to-polygon-server-side.md`（mask→polygon 后端化）。
+- **`docs-site/dev/deploy.md` §8.5 GPU 节点部署**：`profiles: ["gpu"]` + `ML_BACKEND_STORAGE_HOST` + `/health` 字段示例 + ADR 链接。
+- **`docs-site/dev/icon-conventions.md`**：图标语义规范，钉死 9 类 AI 图标的语义（wandSparkles 操作 / bot 身份 / messageSquareText 文本输入 / sparkle 装饰 / circleDot 状态）。
+- **Icon 组件扩 6 个新 name**：`brain` / `circleDot` / `messageSquareText` / `sparkle` / `type` / `wandSparkles`。
+
+### Changed
+
+- **9 处 sparkles 按 icon-conventions 重整**：Topbar 智能切题 / Topbar 一键预标 / AIInspectorPanel 一键预标 / AIPreAnnotatePage 跑预标 / AdminDashboard 队列卡 → `wandSparkles`；AIInspectorPanel 标题 → `bot`；ToolDock SAM 文本子工具 / SamTextPanel 标题 → `messageSquareText`；BoxListItem / BoxRenderer AI 框装饰角标 → `sparkle`；StatusBar AI 待审 → `circleDot`。Sidebar 导航徽标保留 `sparkles`（装饰性 vs 操作性区分）。
+- **`MLBackendClient.predict()` 扩 context 参数**：`apps/api/app/services/ml_client.py:44` 批量端点支持可选 context dict 透传，与 backend `BatchPredictRequest.context` 对齐。
+- **`PredictionOut` schema 加字段**：`inference_time_ms` / `total_cost`，前端 generated types 同步刷新。
+- **`AdminDashboardStats` schema 加字段**：`pre_annotated_batches`，Sidebar / AdminDashboard 共用。
+
+### Migrations
+
+- **`0050_project_text_output_default.py`**：`projects.text_output_default VARCHAR(10) NULL` + CHECK in box/mask/both/NULL。
+
+### Tests
+
+- **后端 303/303 全绿**：新增 `test_jsonb_strong_types` 4 case（alias None/ASCII/中文拒绝/超长拒绝）+ `test_batch_pre_annotated` 8 case（状态机迁移合法性）+ `test_preannotate_text` 5 case（端点参数校验四主路径 + 422 拒绝）+ OpenAPI snapshot 重新生成。
+- **前端 vitest 347/347 + tsc 0 error**。
+
+### Known Gaps（留 v0.9.6）
+
+- 工具栏 Tooltip 组件 + hotkey 角标 + 激活态强化 + 分组分隔（独立 epic）
+- 数字键 1/2/3/4 直跳工具（与 `setClassByDigit` 1-9 切类别冲突，需 `target.tagName` 区分调研）
+- SAM 子工具栏改右展开抽屉
+- 截图自动化 14 张实跑回填（依赖 docker + uvicorn + seed 完整启动栈）
+
+详细计划：[`docs/plans/2026-05-08-v0.9.5-async-oasis.md`](docs/plans/2026-05-08-v0.9.5-async-oasis.md)。
+
+---
+
 ## [0.9.4 phase 3] - 2026-05-08
 
 > **Polished Contour — mask→polygon 共享化 + simplify tolerance 注入 + SAM E2E.** v0.9.x SAM 一期最后一刀 — 不引入用户可见新功能, 但是 v0.10.x sam3-backend 落地的硬前置 (共享 mask_utils 包) + 后续 SAM 体验调优的基础设施 (tolerance 可调 + E2E 守卫). 三件事: ① `apps/grounded-sam2-backend/predictor.py` 内嵌 `_mask_to_polygon` 删除, 改 import `apps/_shared/mask_utils` 共享包; docker-compose context 升到 `apps/`, Dockerfile 加 `COPY _shared/mask_utils + pip install -e`. ② `Context.simplify_tolerance` 字段 + `DEFAULT_SIMPLIFY_TOLERANCE = 1.0` 常量 + 顶点 > 200 `logger.warning`. ③ `_test_seed/reset` 加 ml_backend 工厂 (`E2E SAM Mock`) + annotation.spec.ts 新增 SAM 工具子工具栏 + `page.route` 拦截 `/interactive-annotating` 用例.

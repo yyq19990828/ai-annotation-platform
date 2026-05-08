@@ -445,6 +445,20 @@ async def get_predictions(
     svc = PredictionService(db)
     predictions = await svc.list_by_task(task_id, model_version=model_version)
 
+    # v0.9.5 · 一次性 join PredictionMeta 取 cost / inference_time_ms（单条费用透传）
+    pred_ids = [p.id for p in predictions]
+    meta_map: dict[uuid.UUID, tuple[int | None, float | None]] = {}
+    if pred_ids:
+        from app.db.models.prediction import PredictionMeta
+
+        meta_rows = await db.execute(
+            select(PredictionMeta.prediction_id, PredictionMeta.inference_time_ms, PredictionMeta.total_cost)
+            .where(PredictionMeta.prediction_id.in_(pred_ids))
+        )
+        for pred_id, ms, cost in meta_rows:
+            if pred_id is not None:
+                meta_map[pred_id] = (ms, cost)
+
     # 第一步：min_confidence 过滤
     base: list[tuple[PredictionOut, list[dict]]] = []
     for p in predictions:
@@ -453,6 +467,9 @@ async def get_predictions(
             shapes = [s for s in shapes if s.get("confidence", 0.0) >= min_confidence]
         if shapes:
             out = PredictionOut.model_validate(p)
+            ms, cost = meta_map.get(p.id, (None, None))
+            out.inference_time_ms = ms
+            out.total_cost = cost
             base.append((out, shapes))
 
     if limit is None and offset == 0:

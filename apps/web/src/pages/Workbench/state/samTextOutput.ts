@@ -47,12 +47,17 @@ export function writeStoredOutputMode(projectId: string, mode: TextOutputMode): 
 }
 
 /**
- * 计算初始 outputMode: sessionStorage 优先 (用户最近选择), 缺省回落到 type_key 智能默认.
+ * 计算初始 outputMode: 项目级 text_output_default 优先 (v0.9.5 持久化),
+ * 其次 sessionStorage (用户最近选择), 最后 type_key 智能默认.
  */
 export function resolveInitialOutputMode(
   projectId: string | undefined,
   typeKey: string | undefined | null,
+  projectDefault?: string | null | undefined,
 ): TextOutputMode {
+  if (projectDefault && VALID.has(projectDefault as TextOutputMode)) {
+    return projectDefault as TextOutputMode;
+  }
   if (projectId) {
     const stored = readStoredOutputMode(projectId);
     if (stored) return stored;

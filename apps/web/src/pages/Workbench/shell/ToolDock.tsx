@@ -16,7 +16,7 @@ interface ToolDockProps {
 const SAM_SUB_TOOLS: { id: SamSubTool; icon: IconName; label: string }[] = [
   { id: "point", icon: "target", label: "点 (Click)" },
   { id: "bbox", icon: "rect", label: "框 (Box)" },
-  { id: "text", icon: "sparkles", label: "文本 (Text)" },
+  { id: "text", icon: "messageSquareText", label: "文本 (Text)" },
 ];
 
 /**

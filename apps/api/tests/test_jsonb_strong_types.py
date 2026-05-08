@@ -20,6 +20,7 @@ from app.schemas._jsonb_types import (
     BboxGeometry,
     CanvasDrawing,
     CanvasShape,
+    ClassConfigEntry,
     Mention,
     PolygonGeometry,
 )
@@ -83,6 +84,31 @@ def test_attribute_schema_hotkey_constraints():
                 AttributeField(key="b", label="B", type="boolean", hotkey="1"),
             ]
         )
+
+
+# ── ClassConfigEntry alias（v0.9.5）────────────────────────────────
+
+
+def test_class_config_alias_optional_default_none():
+    e = ClassConfigEntry(color="#ff0000", order=0)
+    assert e.alias is None
+
+
+def test_class_config_alias_ascii_allowed():
+    e = ClassConfigEntry(alias="ripe apple")
+    assert e.alias == "ripe apple"
+    e2 = ClassConfigEntry(alias="cat,dog,bird")
+    assert e2.alias == "cat,dog,bird"
+
+
+def test_class_config_alias_rejects_chinese():
+    with pytest.raises(ValidationError):
+        ClassConfigEntry(alias="苹果")
+
+
+def test_class_config_alias_rejects_overlong():
+    with pytest.raises(ValidationError):
+        ClassConfigEntry(alias="x" * 51)
 
 
 def test_attribute_field_select_requires_options():

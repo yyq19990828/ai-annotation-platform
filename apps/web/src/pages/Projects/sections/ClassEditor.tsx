@@ -12,7 +12,11 @@ import { classColor } from "@/pages/Workbench/stage/colors";
 export interface ClassRow {
   name: string;
   color: string;
+  /** v0.9.5 · 英文 alias，供 SAM 文本预标 prompt 下拉直填。ASCII-only / max 50 字符。 */
+  alias?: string;
 }
+
+const ALIAS_PATTERN = /^[a-zA-Z0-9 ,_\-]*$/;
 
 const inputStyle: CSSProperties = {
   boxSizing: "border-box",
@@ -66,6 +70,11 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
 
   const setColor = (i: number, color: string) =>
     onChange(value.map((r, idx) => (idx === i ? { ...r, color } : r)));
+  const setAlias = (i: number, raw: string) => {
+    if (!ALIAS_PATTERN.test(raw)) return;
+    const alias = raw.trim() === "" ? undefined : raw;
+    onChange(value.map((r, idx) => (idx === i ? { ...r, alias } : r)));
+  };
   const remove = (i: number) => onChange(value.filter((_, idx) => idx !== i));
 
   const add = () => {
@@ -104,7 +113,7 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
           key={r.name}
           style={{
             display: "grid",
-            gridTemplateColumns: "auto 24px 1fr 70px auto",
+            gridTemplateColumns: "auto 24px minmax(0, 1.4fr) minmax(0, 1.2fr) 70px auto",
             gap: 8,
             alignItems: "center",
             padding: "6px 10px",
@@ -127,6 +136,14 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
             }}
           />
           <span style={{ fontSize: 13, color: "var(--color-fg)" }}>{r.name}</span>
+          <input
+            value={r.alias ?? ""}
+            onChange={(e) => setAlias(i, e.target.value)}
+            placeholder="英文 alias（SAM 提示用，可空）"
+            maxLength={50}
+            title="供 SAM 文本预标 prompt 下拉填入；ASCII 字母/数字/空格/逗号/下划线/连字符"
+            style={{ ...inputStyle, fontSize: 12 }}
+          />
           <input
             type="color"
             value={r.color}

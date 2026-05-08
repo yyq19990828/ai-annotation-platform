@@ -54,7 +54,7 @@ export function BoxListItem({
         )}
         {isAi ? (
           <Badge variant="ai" style={{ fontSize: 9.5, padding: "1px 5px", marginLeft: "auto" }}>
-            <Icon name="sparkles" size={8} />{(b.conf * 100).toFixed(0)}%
+            <Icon name="sparkle" size={8} />{(b.conf * 100).toFixed(0)}%
           </Badge>
         ) : (
           <Badge variant={b.source === "prediction_based" ? "default" : "accent"} style={{ fontSize: 9.5, padding: "1px 5px", marginLeft: "auto" }}>

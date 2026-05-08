@@ -134,7 +134,11 @@ export function CreateProjectWizard({ open, onClose }: Props) {
     const classes = form.classRows.map((r) => r.name);
     const classes_config: ClassesConfig = {};
     form.classRows.forEach((r, i) => {
-      classes_config[r.name] = { color: r.color, order: i };
+      classes_config[r.name] = {
+        color: r.color,
+        order: i,
+        ...(r.alias ? { alias: r.alias } : {}),
+      };
     });
     const attribute_schema: AttributeSchema | undefined =
       form.attributeFields.length > 0 ? { fields: form.attributeFields } : undefined;

@@ -15,6 +15,11 @@
             "title": "Ml Backends Total",
             "type": "integer"
           },
+          "pre_annotated_batches": {
+            "default": 0,
+            "title": "Pre Annotated Batches",
+            "type": "integer"
+          },
           "projects_archived": {
             "title": "Projects Archived",
             "type": "integer"
@@ -3497,6 +3502,19 @@
       "ClassConfigEntry": {
         "additionalProperties": false,
         "properties": {
+          "alias": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "pattern": "^[a-zA-Z0-9 ,_\\-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
           "color": {
             "anyOf": [
               {
@@ -5287,10 +5305,43 @@
       },
       "PreannotateRequest": {
         "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
           "ml_backend_id": {
             "format": "uuid",
             "title": "Ml Backend Id",
             "type": "string"
+          },
+          "output_mode": {
+            "default": "mask",
+            "enum": [
+              "box",
+              "mask",
+              "both"
+            ],
+            "title": "Output Mode",
+            "type": "string"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
           },
           "task_ids": {
             "anyOf": [
@@ -5432,6 +5483,17 @@
             "title": "Id",
             "type": "string"
           },
+          "inference_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Time Ms"
+          },
           "ml_backend_id": {
             "anyOf": [
               {
@@ -5483,6 +5545,17 @@
             "format": "uuid",
             "title": "Task Id",
             "type": "string"
+          },
+          "total_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Cost"
           }
         },
         "required": [
@@ -5621,6 +5694,22 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "text_output_default": {
+            "anyOf": [
+              {
+                "enum": [
+                  "box",
+                  "mask",
+                  "both"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Output Default"
           },
           "text_threshold": {
             "anyOf": [
@@ -5963,6 +6052,17 @@
             "title": "Task Lock Ttl Seconds",
             "type": "integer"
           },
+          "text_output_default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Output Default"
+          },
           "text_threshold": {
             "default": 0.25,
             "title": "Text Threshold",
@@ -6224,6 +6324,22 @@
               }
             ],
             "title": "Status"
+          },
+          "text_output_default": {
+            "anyOf": [
+              {
+                "enum": [
+                  "box",
+                  "mask",
+                  "both"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Output Default"
           },
           "text_threshold": {
             "anyOf": [

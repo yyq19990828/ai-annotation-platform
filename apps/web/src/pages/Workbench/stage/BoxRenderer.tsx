@@ -57,7 +57,7 @@ export function BoxRenderer({
         display: "flex", alignItems: "center", gap: 4,
         pointerEvents: "none",
       }}>
-        {isAi && <Icon name="sparkles" size={9} />}
+        {isAi && <Icon name="sparkle" size={9} />}
         {b.cls}
         {b.conf !== undefined && <span style={{ opacity: 0.85, fontFamily: "var(--font-mono)" }}>{(b.conf * 100).toFixed(0)}</span>}
       </div>

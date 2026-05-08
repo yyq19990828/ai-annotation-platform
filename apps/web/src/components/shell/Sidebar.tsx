@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useFailedPredictions } from "@/hooks/useFailedPredictions";
+import { useAdminStats } from "@/hooks/useDashboard";
 import type { PageKey } from "@/types";
 import type { IconName } from "@/components/ui/Icon";
 
@@ -55,6 +56,9 @@ export function Sidebar({ reviewCount }: SidebarProps) {
   const canSeeFailed = hasAnyPermission("ml-backend.manage");
   const failedQuery = useFailedPredictions(1, 1, false, canSeeFailed);
   const failedTotal = failedQuery.data?.total ?? 0;
+  // v0.9.5 · pre_annotated 批次徽章（仅 super_admin 能拉 /dashboard/admin）
+  const adminStatsQ = useAdminStats();
+  const preAnnotatedTotal = adminStatsQ.data?.pre_annotated_batches ?? 0;
 
   const visibleSections = sections
     .map((sec) => ({
@@ -140,6 +144,16 @@ export function Sidebar({ reviewCount }: SidebarProps) {
                 <Badge variant="ai" style={{ marginLeft: "auto", padding: "0 6px", fontSize: 10 }}>
                   {item.badge}
                 </Badge>
+              )}
+              {item.key === "ai-pre" && preAnnotatedTotal > 0 && (
+                <span
+                  title={`${preAnnotatedTotal} 批 AI 预标完成、待人工接管`}
+                  style={{ marginLeft: "auto", display: "inline-flex" }}
+                >
+                  <Badge variant="ai" style={{ padding: "0 6px", fontSize: 10 }}>
+                    {preAnnotatedTotal > 99 ? "99+" : preAnnotatedTotal} 待接管
+                  </Badge>
+                </span>
               )}
               {item.key === "model-market" && failedTotal > 0 && (
                 <span

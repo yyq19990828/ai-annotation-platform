@@ -13,6 +13,9 @@ class PredictionOut(BaseModel):
     result: list[dict]
     cluster: int | None = None
     created_at: datetime
+    # v0.9.5 · 工作台 AIInspectorPanel 单条费用 / 推理时间透传（PredictionMeta join）
+    inference_time_ms: int | None = None
+    total_cost: float | None = None
 
     class Config:
         from_attributes = True

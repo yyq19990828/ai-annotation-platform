@@ -79,6 +79,18 @@ async def admin_dashboard(
     except Exception:
         pass
 
+    # v0.9.5 · pre_annotated 批次计数（Sidebar 徽章 + AdminDashboard 卡片共用）
+    from app.db.models.task_batch import TaskBatch
+    from app.db.enums import BatchStatus
+
+    pre_annotated_batches = (
+        await db.execute(
+            select(func.count())
+            .select_from(TaskBatch)
+            .where(TaskBatch.status == BatchStatus.PRE_ANNOTATED)
+        )
+    ).scalar() or 0
+
     # v0.8.1 · 过去 30 天注册来源（按日聚合 audit_logs.action='user.register'）
     cutoff_30d = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
@@ -128,6 +140,7 @@ async def admin_dashboard(
         ml_backends_connected=ml_connected,
         role_distribution=role_distribution,
         registration_by_day=registration_by_day,
+        pre_annotated_batches=int(pre_annotated_batches),
     )
 
 

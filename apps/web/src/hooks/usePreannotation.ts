@@ -34,11 +34,29 @@ export function usePreannotationProgress(projectId: string | undefined): {
   return { progress, connection: state, retries };
 }
 
+export type TextOutputMode = "box" | "mask" | "both";
+
+export interface TriggerPreannotationPayload {
+  ml_backend_id: string;
+  task_ids?: string[];
+  /** v0.9.5 · 文本批量预标可选项 */
+  prompt?: string;
+  output_mode?: TextOutputMode;
+  batch_id?: string;
+}
+
+export interface TriggerPreannotationResponse {
+  job_id: string;
+  status: string;
+  total_tasks?: number | null;
+  channel?: string;
+}
+
 export function useTriggerPreannotation(projectId: string | undefined) {
   return useMutation({
-    mutationFn: (payload: { ml_backend_id: string; task_ids?: string[] }) => {
+    mutationFn: (payload: TriggerPreannotationPayload) => {
       if (!projectId) throw new Error("No project selected");
-      return apiClient.post<{ job_id: string; status: string }>(
+      return apiClient.post<TriggerPreannotationResponse>(
         `/projects/${projectId}/preannotate`,
         payload,
       );

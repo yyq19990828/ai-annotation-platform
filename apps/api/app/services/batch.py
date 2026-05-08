@@ -23,7 +23,19 @@ logger = logging.getLogger(__name__)
 
 VALID_TRANSITIONS: dict[str, set[str]] = {
     BatchStatus.DRAFT: {BatchStatus.ACTIVE},
-    BatchStatus.ACTIVE: {BatchStatus.ANNOTATING, BatchStatus.ARCHIVED},
+    # v0.9.5：active → pre_annotated 由 batch_predict task 末尾自动触发
+    BatchStatus.ACTIVE: {
+        BatchStatus.ANNOTATING,
+        BatchStatus.PRE_ANNOTATED,
+        BatchStatus.ARCHIVED,
+    },
+    # v0.9.5：pre_annotated → annotating 与 active 同语义（scheduler 自动驱动）；
+    # → active 是 owner 兜底重置（逆向，丢弃预标 predictions）；→ archived 任意 owner
+    BatchStatus.PRE_ANNOTATED: {
+        BatchStatus.ANNOTATING,
+        BatchStatus.ACTIVE,
+        BatchStatus.ARCHIVED,
+    },
     BatchStatus.ANNOTATING: {BatchStatus.REVIEWING, BatchStatus.ARCHIVED},
     BatchStatus.REVIEWING: {BatchStatus.APPROVED, BatchStatus.REJECTED},
     # v0.7.3：approved → reviewing 重开审核（owner 兜底，需 reason）
@@ -43,6 +55,8 @@ REVERSE_TRANSITIONS: set[tuple[str, str]] = {
     (BatchStatus.ARCHIVED, BatchStatus.ACTIVE),
     (BatchStatus.APPROVED, BatchStatus.REVIEWING),
     (BatchStatus.REJECTED, BatchStatus.REVIEWING),
+    # v0.9.5：丢弃 AI 预标 predictions 重置（owner 兜底，需 reason）
+    (BatchStatus.PRE_ANNOTATED, BatchStatus.ACTIVE),
 }
 
 
@@ -100,6 +114,18 @@ def assert_can_transition(
     if (src, dst) == (BatchStatus.ACTIVE, BatchStatus.ANNOTATING):
         raise HTTPException(
             status_code=403, detail="active -> annotating is auto-driven only"
+        )
+
+    # v0.9.5：active → pre_annotated 仅 batch_predict task 内部驱动；REST 一律拒绝
+    if (src, dst) == (BatchStatus.ACTIVE, BatchStatus.PRE_ANNOTATED):
+        raise HTTPException(
+            status_code=403, detail="active -> pre_annotated is auto-driven only"
+        )
+
+    # v0.9.5：pre_annotated → annotating 与 active 同语义，scheduler 内部驱动
+    if (src, dst) == (BatchStatus.PRE_ANNOTATED, BatchStatus.ANNOTATING):
+        raise HTTPException(
+            status_code=403, detail="pre_annotated -> annotating is auto-driven only"
         )
 
     # annotating → reviewing：标注员（被分派）可主动整批提交质检
@@ -669,7 +695,7 @@ class BatchService:
         if not batch:
             return
 
-        if batch.status == BatchStatus.ACTIVE:
+        if batch.status in (BatchStatus.ACTIVE, BatchStatus.PRE_ANNOTATED):
             has_in_progress = await self.db.execute(
                 select(Task.id)
                 .where(

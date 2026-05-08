@@ -16,6 +16,7 @@ function buildRows(project: ProjectResponse): ClassRow[] {
   return ordered.map((name) => ({
     name,
     color: cfg[name]?.color ?? defaultColorFor(name),
+    alias: cfg[name]?.alias ?? undefined,
   }));
 }
 
@@ -33,7 +34,11 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     const classes = rows.map((r) => r.name);
     const classes_config: ClassesConfig = {};
     rows.forEach((r, i) => {
-      classes_config[r.name] = { color: r.color, order: i };
+      classes_config[r.name] = {
+        color: r.color,
+        order: i,
+        ...(r.alias ? { alias: r.alias } : {}),
+      };
     });
     update.mutate(
       { classes, classes_config },

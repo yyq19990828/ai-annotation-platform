@@ -53,6 +53,8 @@ class Project(Base):
     text_threshold: Mapped[float] = mapped_column(
         Float, nullable=False, server_default="0.25", default=0.25
     )
+    # v0.9.5 · 工作台 SamTextPanel 默认输出形态 (None 走 type_key 智能默认)
+    text_output_default: Mapped[str | None] = mapped_column(String(10), nullable=True)
     model_version: Mapped[str | None] = mapped_column(String(100))
     task_lock_ttl_seconds: Mapped[int] = mapped_column(Integer, default=300)
     total_tasks: Mapped[int] = mapped_column(Integer, default=0)
