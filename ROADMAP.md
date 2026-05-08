@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.7 (Virtual Lynx) — AIPreAnnotatePage 信息架构重构（拆 6 子组件 + 顶部 stepper）+ 视觉精修 + 交互打磨（Ctrl+Enter / 草稿 / 历史表搜索分页 / 空 alias 引导）+ alias 频率排序后端 + Wizard step 4 backend 复用 dropdown** 详情见 [`0.9.x.md`](docs/changelogs/0.9.x.md)。
+> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.7 (Virtual Lynx) — AIPreAnnotatePage 信息架构重构（拆 6 子组件 + 顶部 stepper）+ 视觉精修 + 交互打磨（Ctrl+Enter / 草稿 / 历史表搜索分页 / 空 alias 引导）+ alias 频率排序后端 + Wizard step 4 backend 复用 dropdown + schema adapter / config.py 守卫 / 截图 19 张实跑回填** 详情见 [CHANGELOG.md](./CHANGELOG.md)。0.9.x 段暂存 root CHANGELOG，开 v0.10 时再迁回 `docs/changelogs/0.9.x.md`。
 
 ---
 
@@ -32,13 +32,12 @@
 
 ### 现在可做（无前置依赖、有清晰交付物）
 
-> v0.9.x 已收尾（M0+M1+M2+M3+M4+M5 + chip 包全落地）。下列条目作为 `chip:maintenance` 穿插推进，不抢 v0.10.x 主线优先级。
+> 下列条目作为 `chip:maintenance` 穿插推进，不抢 v0.9.8 / v0.10.x 主线优先级。
 
 - **CSP nonce-based 收紧**（P2，与 vite plugin 同窗口做，`chip:maintenance`）
 - **OpenSeadragon 瓦片金字塔**（P2，§C.1，极大图 > 50MP 才必要，`chip:maintenance`）
 - **i18n 框架接入**（P3，与 ProjectSettingsPage 重构合并节省破窗成本，`chip:maintenance`）
-- **工作台工具栏 P2-b**（**P2**，§C.2，v0.9.6 主体）：Tooltip 组件 + hotkey 角标 + 激活态强化 + 分组分隔 + 数字键 1-4 直跳工具 + SAM 子工具栏改右展开抽屉。v0.9.5 phase 4 已落 P2-a（9 处 sparkles 重整 + `docs-site/dev/icon-conventions.md`），P2-b 独立避免与 v0.9.5 主线同窗口导致截图双拍。
-- **截图自动化 14 张实跑回填**（**P3**，与 v0.9.6 工具栏 P2-b 同窗口做避免双拍）：v0.8.7 落地脚本框架（`apps/web/e2e/screenshots/scenes.ts:1-227`），需 maintainer 在完整启动栈下 `pnpm --filter web screenshots` 实跑一次产出 PNG。部分场景（iou 双框 / bulk-edit 多选 / progress 50%）需先在 `apps/api/scripts/seed.py` prepare 钩子里造数据。
+- **截图自动化 fixture 数据补齐重跑**（P3，v0.9.7 实跑后发现）：`adccb60` 已 commit 19 张 PNG，但 4 张因 fixture 数据空白渲染相同空状态（`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`）。需在 `apps/api/scripts/seed.py` 或 scene `prepare()` 钩子里造数据后重跑同一命令覆盖。
 
 ### v0.9.x 收尾遗留（→ v0.10.x 与 sam3-backend 一并做）
 
@@ -48,11 +47,9 @@
 
 ### v0.9.5 / v0.9.6 / v0.9.7 落地后剩余真实问题
 
-> v0.9.5 (Async Oasis) → v0.9.6 (Agile Kernighan) → v0.9.7 (Virtual Lynx) 三连击已把 `/ai-pre` UX 闭环 / 一致性 / 视觉成熟度收齐。剩余仅看长尾触发：
+> 三连击已把 `/ai-pre` UX 闭环 / 一致性 / 视觉成熟度收齐, 剩余条目均已并入 v0.9.8 主线（见上方版本切片）或 v0.10.x 触发条件。仅留这一条 dev/生产部署相关:
 
-- ~~**完整 prediction job 历史追踪**~~ → **已提前为 v0.9.8 主线**（2026-05-08 用户首次真实跑预标后规划，见上方版本切片）.
 - **生产部署 ML backend storage endpoint 选择机制**（**P3**）：dev `ML_BACKEND_STORAGE_HOST` 简单覆盖够用 + ADR-0012 已写决策框架，生产场景多变可能需 ADR 扩充策略表；首次生产部署遇到再扩.
-- **ML backend URL 容器/宿主机视角不一致守卫**（**P3**，2026-05-08 新发现）：dev 跑 API 在宿主机 + celery-worker 在容器, 用户在 UI 注册 backend URL 写 `http://localhost:8001` 时, 宿主机 API health check 通（localhost 是宿主机自己）但 **worker 容器内连不上**（localhost 是容器自身），跑预标 task 全 ConnectError. ML backend storage 同问题域. **修复方向**: ① `MLBackendCreate` schema validator 拒绝 host == `localhost`/`127.0.0.1` 的 URL, 提示用 `172.17.0.1`/service DNS（与 v0.9.6 已就位的 `ML_BACKEND_DEFAULT_URL` placeholder 配套）; ② 或注册端点静默重写 host. **触发条件**: dev 用户首次注册时漏看 placeholder 直接手敲 localhost. 体量 ~0.3 天 (validator + 1 单测).
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **predictions 月分区 Stage 2**：单月 INSERT > 100k 或 总行数 > 1M（ADR-0006）
@@ -87,10 +84,6 @@
 ### AI / 模型
 - **模型市场扩展**：v0.9.3 phase 2 已激活 `/model-market`（合并 backends + failed-predictions tab）；二期可加：① 模型版本对比 / AB 路由 UI（依赖 v0.10.x sam3-backend 双模型并存）；② 一键热更新模型权重（`/admin/ml-backends/{id}/reload`）。
 - **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
-- ~~**MlBackendFormModal「测试连接」+ URL 默认值预填**~~ ✅ v0.9.6 落地（probe 端点 + Modal「测试连接」按钮 + URL placeholder）。
-- ~~**CreateProjectWizard 启用 AI 时 backend 绑定**~~ ✅ v0.9.7 落地（Step4Ai BackendSourceSelect dropdown + `ml_backend_source_id` + 项目创建时复制 backend row）。
-- ~~**RegisteredBackendsTab 行内深度健康指标**~~ ✅ v0.9.6 落地（`ml_backends.health_meta JSONB` 列 + 行内 model_version/GPU/cache hit_rate 聚合显示）。
-- ~~**类别 alias 规范化**~~ ✅ v0.9.6 落地（`ClassConfigEntry.alias` field_validator + 前端 onBlur 规范化 + sessionStorage 防重复 toast）。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：v0.9.4 phase 1 用的 `ML_BACKEND_STORAGE_HOST` 简单 host 重写适合 dev；ADR-0012 已写决策框架但仅 dev 场景。**触发条件**：第一个生产部署遇到这条时按需扩 ADR-0012 策略表（"何时设、设啥值、何时留空"）；当前 dev 单机已收口。
 - **真实 SAM mask 50 张 simplify tolerance 验收**（**P3**，v0.9.4 phase 3 归档遗留）：`scripts/eval_simplify.py` 已就位，v0.9.4 phase 3 用 6 张合成 fixture 替代真实 SAM mask 出报告（100% IoU≥0.95 但缺真实长尾分布）；待 maintainer 在 GPU 环境采集 50 张真实 SAM mask 后重跑 `docs/research/13-simplify-tolerance-eval.md`，确认 `DEFAULT_SIMPLIFY_TOLERANCE = 1.0` 默认值在真实分布下仍最优；与 §C.3 mask→polygon 多连通域 follow-up 同窗口处理。
 
@@ -144,14 +137,9 @@
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
 - **无障碍**：ARIA 属性极少；Lighthouse Accessibility 分数应作为 PR gate。
 
-### 文档（v0.7.4 搭骨架；v0.8.0 ADR / 协议契约 / SoT 自动化补齐；v0.8.7 截图自动化骨架；v0.8.8 monitoring.md + ADR 0010/0011；v0.9.5 ADR 0012/0013 + icon-conventions + deploy.md GPU 章节）
+### 文档（v0.7.4 搭骨架；v0.8.0 ADR / 协议契约 / SoT 自动化补齐；v0.8.7 截图自动化骨架；v0.8.8 monitoring.md + ADR 0010/0011；v0.9.5 ADR 0012/0013 + icon-conventions + deploy.md GPU 章节；v0.9.6 sam-tool.md + ai-preannotate.md；v0.9.7 截图实跑 19 张 PNG 回填）
 
-- **截图自动化执行 + 14 张回填**：v0.8.7 落了 `apps/web/e2e/screenshots/` 脚本框架，但 PNG 文件需 maintainer 在完整启动栈下 `pnpm --filter web screenshots` 实际跑一遍并把结果 commit。部分场景（iou 双框 / bulk-edit 多选 / progress 50%）需先在 fixture 里造数据再 prepare 钩子触发。**推迟到 v0.9.6 与工具栏 P2-b 同窗口做**避免双拍（v0.9.5 已落 sparkles 重整 + AIPreAnnotatePage 等新场景，scenes.ts 配置已就位但 PNG 仍 0 张）。
 - **首次登录引导（onboarding）**：用户手册有文档但工作台无 UI walkthrough；新用户进 `/projects/:id/annotate` 时左下浮出一条「画框：拖鼠标；提交：E」级别的 3 步 tooltip + 右上 ✕ 关闭一次性写 localStorage `wb:onboarded:v1`。优先级 P3，等首次客户上线反馈触发。
-- **scenes.ts 加 v0.9.5 新场景**：v0.9.5 引入 `/ai-pre` 页面 + AIInspectorPanel 「本题花费」+ 类别 alias chips + AdminDashboard pre_annotated 队列卡，建议在 v0.9.6 截图实跑前先扩 `apps/web/e2e/screenshots/scenes.ts` 加 4 张新场景（ai-pre / cost-display / alias-chips / preannotated-queue），让 14 张统一一次性出图。
-- **`ml-backend-protocol.md` §2 协议字段补全**（**P3**，v0.9.4 phase 2 归档遗留）：v0.9.4 phase 2 落地了 `Context.output: "box"|"mask"|"both"` 与 `/setup` `supported_prompts` 字段但协议文档未同步；`docs-site/dev/ml-backend-protocol.md` §2.2 `Context` schema + §2.1 `/setup` 返回值需补这两个字段说明，避免新接入 backend 实现时再去翻代码。预计 ~0.2 天，可与 v0.10.x sam3-backend 文档同窗口做。
-- **`docs-site/user-guide/workbench/sam-tool.md`**（**P3**，标注员视角 SAM 教程，v0.9.x 归档遗留）：v0.9.4 phase 2 落地子工具栏 + text 三模式后未配套用户文档；建议涵盖：① S 进入 SAM + 1/2/3 切子工具 + +/− 切 polarity；② 三种 prompt 适用场景与速度对比；③ Tab 切候选 + Enter 接受。可与 v0.9.6 工具栏 P2-b 截图回填一同出图。
-- **`docs-site/user-guide/projects/ai-preannotate.md`**（**P3**，管理员视角文本批量预标教程，v0.9.5 归档遗留）：v0.9.5 `/ai-pre` UI 已落但管理员手册未补；涵盖项目下拉 → batch → prompt + alias chips → outputMode → WS 进度 → 跑完转 `pre_annotated` 状态全流程。可与 AIPreAnnotatePage 二阶段 UX（§A · 模型市场）同窗口写。
 - **`docs-site/dev/architecture/ai-models.md` 部署章节补全**（**P3**，v0.9.x 归档遗留，与 v0.10.x 共用）：v0.9.1 已写缓存策略 + 显存预算 + Prometheus 查询，但部署拓扑（独立 GPU service + docker-compose profile + nvidia 资源预留）章节缺；推迟到 v0.10.x sam3-backend 接入时一并写，复用同样的部署模板。
 
 ---
@@ -166,44 +154,11 @@
 - **Annotation 列表后端分页**：与 B「Annotation keyset 分页」共建。`useAnnotations` 全量拉，单任务 1000+ 框阻塞渲染。
 
 ### C.2 界面优化（信息架构 / 可见性 / 一致性）
-- ~~**工作台工具栏 P2-a · 图标语义重整**~~ ✅ v0.9.5 phase 4 落地（9 处 sparkles 重整 + Icon 组件扩 6 个新 name + `docs-site/dev/icon-conventions.md` 钉死规范）。
-- **工作台工具栏 P2-b · 可用性重构**（**P2**，v0.9.6 主体）：v0.9.5 phase 4 已收口图标语义；剩余可用性槽点留 v0.9.6 独立 epic 避免与 v0.9.5 主线同窗口截图双拍。
-  - **格式化 Tooltip 组件**：新建 `apps/web/src/components/ui/Tooltip.tsx` —— 右侧 Popover 三行（工具名 + 描述 + ⌘ 键徽样式 hotkey），替原生 `title`
-  - **按钮快捷键角标**：38×38 主工具按钮右下角嵌 8px 字母（`B/S/P/H`），不靠 hover 即可见
-  - **激活态强化**：主工具加 2px 左侧 accent 色边条 + 阴影；子工具激活背景从 10% 提到 20% accent
-  - **分组分隔线**：`[Box / Polygon] | [SAM] | [Hand]` 三组之间加 1px hairline；子工具栏 point/bbox/text 之间也加细分隔
-  - **数字快捷键直跳**：`1=Box / 2=SAM / 3=Polygon / 4=Hand`。**冲突调研**：当前 1-9 已被 `setClassByDigit` 占用（`useWorkbenchHotkeys.ts:349` + `hotkeys.test.ts` 4 case 覆盖），需按 `target.tagName` 区分（input/textarea 聚焦时切类别，画布聚焦时切工具）。改 `useWorkbenchHotkeys` dispatch 入口前置 `if (canvasFocused) → setTool` 分支 + 加单测 4 case（画布 / input 聚焦切换 + 1-4 / 5-9 边界）。
-  - **SAM 子工具栏改右展开抽屉**：当前垂直挤在 SAM 主按钮下方易与主工具栏混淆；改为 SAM 激活时向右弹独立子工具栏（类似 Photoshop fly-out），主工具栏视觉结构稳定
-  - **Loading 可视化**：AI 推理中按钮加旋转 spinner overlay（lucide `loader-2` + `animate-spin`），不再仅 `disabled` + 文本"AI 推理中..."
-  - **预计 ~1 天**：独立 plan `docs/plans/2026-??-??-toolbar-ux.md`；与截图自动化回填同窗口避免双拍。
+
+> ✅ 工具栏 P2-a (v0.9.5 phase 4) + P2-b (v0.9.6 Agile Kernighan) 已收尾, AIPreAnnotatePage 重构 + stepper (v0.9.7 Virtual Lynx) 已收尾。当前阶段无新 open 项, 后续 UI 信息架构改进按页面单独立项。
 
 ### C.3 标注体验（核心生产力杠杆）
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90%；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式）。
-- ~~**SAM 子工具栏拆分（点 / 框 / 文本明确划分）**~~ ✅ v0.9.4 phase 2 落地（2026-05-08, **Crystal Compass**）。下方设计细节保留作历史参考；实施细节见 `ROADMAP/0.9.x.md`（已归档）v0.9.4 phase 2 段。最终选定方案：保留 `samSubTool` 子态字段（不扩 Tool 联合）+ ToolDock 内嵌子工具栏 + S 循环切；hotkey 用 `=/+` `-` 切 polarity（数字键 1-9 已被「切换类别」占用，原方案改）。
-  - **现状痛点**：当前 `S` 工具是单一 Tool（`useWorkbenchState.ts:5` `Tool = "box" | "hand" | "polygon" | "canvas" | "sam"`），按 `S` 进入后通过**鼠标动作隐式分流** prompt 类型 —— 单击 = positive point、Alt+点击 = negative point、拖框 = bbox prompt（`SamTool.ts:24` 都返回同一种 `samProbe` DragInit，`ImageStage.tsx:546` 按拖动距离分流）；文本 prompt 走 AI 助手面板的输入框，跟画布工具栏完全脱节。**问题**：① 新人不会发现 Alt+click = negative point；② 不知道点击和拖动会触发不同后端调用；③ 三种 prompt（point / bbox / text）在 UI 上没有显式分组，运维成本（文档 / 培训）高。
-  - **设计方案**：S 激活后，画布顶部或左侧工具栏内浮出**子工具栏**：`[· 点 (Click)] [□ 框 (Box)] [T 文本]` 三按钮 + `[+ / −]` positive / negative 切换（仅点工具下显示）。当前激活的子工具决定接受的鼠标行为（点工具下拖框无效，框工具下单击无效），消除隐式分流；视觉 active state（紫色高亮）标明当前 prompt 类型。文本子工具点击后聚焦 AI 助手面板的文本输入框，把现有「分两块」的 UX 收回画布工具栏闭环。
-  - **数据模型改动**：`Tool` 联合类型扩 `"sam-point" | "sam-bbox" | "sam-text"` 三个具体值（或保留 `"sam"` 父态 + 新增 `samSubTool` 子态字段，避免 hotkey 冲突）；`SamTool.ts` 拆三个 `*Tool` export，分别只接受对应 PointerEvent；`ImageStage.tsx` 的 `samProbe` 分流逻辑下移到 tool 层。
-  - **协议联动**：依赖 §A AI/模型「SAM `/setup` 自描述协议消费」—— 后端补 `supported_prompts: ["point", "bbox", "text"]` 字段后，前端按 backend 实际能力动态渲染按钮（未来支持 sketch / scribble 等扩展时零改前端核心）。
-  - **快捷键**：S 进入 SAM 模式（保留），子工具按 `1 / 2 / 3` 数字键切换；`+ / -` 切 positive/negative；`Esc` 退出。
-  - **预计 1.5 天**：tool 拆分 + 子工具栏 UI + 数字键 hotkey + 截图自动化新增 1 张子工具栏特写。
-- ~~**SAM text 模式输出选择 box / mask / both**~~ ✅ v0.9.4 phase 2 落地（与子工具栏同窗口做）。下方设计细节保留作历史参考。**实际选定**：智能默认 `image-det → box · 其它 → mask`（不引入 type_key→both 默认，仅 user opt-in）；项目级 default 字段（`projects.text_output_default`）推迟到 v0.9.5，sessionStorage 记忆已覆盖 80% 场景。
-  - **现状痛点**：v0.9.2 SAM 文本 prompt 永远走 `DINO → boxes → SAM → mask → polygon` 全链路，固定输出 `polygonlabels`。但**对 image-det 项目反而是负担** —— 标注员要的是 bbox annotation，拿到 polygon 还得手动转矩形或交给前端"polygon → bbox"近似。同时 SAM mask 步骤 GPU 时间贵：text-box 单图仅 DINO ~50-100ms（4060/tiny），text-mask 全链路 200-500ms，box 模式跳过 `predictor.set_image()` + mask 推理 + cv2/shapely 简化能省 50-80% 推理时间。
-  - **设计原则**：text 模式下让用户**显式选择输出形态**：① **box only**（DINO 出框直接当 detection annotation，速度最快、image-det 项目首选）；② **mask only**（当前行为，image-seg 项目首选）；③ **both**（同时出 box + polygon 配对，让用户在两个粒度间挑，mm 项目或人工对比时用）。
-  - **协议变更（小）**：`apps/grounded-sam2-backend/schemas.py` `Context` 加字段 `output: Literal["box", "mask", "both"] = "mask"`（默认 mask 保持老前端兼容）；`AnnotationResult.type: "polygonlabels" | "rectanglelabels"` **已就位**，`AnnotationValue` schema 同时支持 box（x/y/width/height）+ polygon（points）字段，**返回结构零改动**。`both` 模式下 `result` 数组每个 instance 携带 `{type: "rectanglelabels", value: {x,y,w,h, ...}}` + `{type: "polygonlabels", value: {points, ...}}` 两条记录，前端按需消费。
-  - **后端实现切片**（`predictor.py` 文本路径，约半天）：
-    - 当前 `_run_text_prompt()` 的链路是 DINO → SAM → polygon，按 `output` 拆三个分支
-    - `box`：DINO 出 boxes 后直接归一化为 rectanglelabels，**完全跳过** `predictor.set_image()` 与 SAM 推理；继续把 image embedding 写入 cache 反而浪费内存（box 模式下 cache 不写入）
-    - `mask`：当前行为不变（保留入 cache）
-    - `both`：DINO 出 boxes → SAM 拿 box prompt 出 masks → 同 instance 一对一配对，返回结构里 box + polygon 都给
-    - 返回元信息加 `output_mode` 便于前端兜底分支
-  - **前端实现切片**（约半天）：
-    - **三选一切换 UI**：AI 助手面板的文本输入框右侧加 segmented control `[□ 框] [○ 掩膜] [⊕ 全部]`（与子工具栏 P1 epic 落地后的 T 文本子工具共用）
-    - **智能默认（按项目 type_key）**：`image-det → box`，`image-seg → mask`，`mm / image-kp / 其它 → both`，让用户进项目就拿到合理默认；用户切换后写 sessionStorage 记忆（key: `wb:sam:textOutput:{projectId}`）
-    - **候选叠加层**：`box` 模式紫虚线矩形 + Enter 接受；`mask` 模式紫虚线 polygon（当前行为）；`both` 模式两者配对叠加，Tab 在 box / polygon 间切活跃候选，Enter 接受当前活跃形态
-    - **`useInteractiveAI` payload** 加 `context.output` 字段；ImageStage 候选渲染层按 `result[i].type` dispatch
-  - ~~**项目级默认（中期，v0.9.5 候选）**~~ ✅ v0.9.5 落地：`projects.text_output_default VARCHAR(10) NULL` + 迁移 0050 + GeneralSection 4 项下拉 + `resolveInitialOutputMode` 优先级「项目级 → sessionStorage → type_key」。CreateProjectWizard 同步留 v0.9.6 chip。
-  - **协议文档同步**：`docs-site/dev/ml-backend-protocol.md` §2 Context schema 加 `output` 字段说明；用户手册 SAM 文本 prompt 章节加三种模式截图 + 速度对比表。
-  - **预计 1 天**：协议字段 + 后端 predictor 三分支 + 前端 segmented control + 候选叠加层适配。
 - **关键帧插值（视频/序列）**：CVAT 同款；标注员只标 1 / 30 / 60 帧，中间线性插值。需配合 `Task.dimension` 字段。
 - **类别确认 hint**：刚画完一个框时，AI 后台跑一次单框分类，右上角弹「建议：标识牌（92%）」+ 一键采纳。
 - **Magic Box / Snap**：粗略画一个大框 → AI 收紧到对象边缘（SAM 推 mask → 取 mask bbox）；同时支持「贴边吸附」。
@@ -230,8 +185,7 @@
 
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
-| **P2** | 工作台工具栏 P2-b · 可用性重构（§C.2） | Tooltip 组件 + hotkey 角标 + 激活态强化 + 分组分隔 + 数字键 1-4 直跳工具（需 `target.tagName` 区分 `setClassByDigit` 1-9 切类别） + SAM 子工具栏改抽屉。v0.9.6 主体 ~1 天 | — |
-| **P2** | 截图自动化 14 张实跑回填 | v0.8.7 落地脚本 + scenes 配置；与 v0.9.6 工具栏 P2-b 同窗口做避免双拍 | — |
+| **P1** | v0.9.8 主线: prediction_jobs + /ai-pre/jobs + URL validator + WS 多项目可见性 + schema codegen | 用户首次端到端跑预标后明确需求; 已写入版本切片, 估时 ~5 工作日 | — |
 | **P2** | mask→polygon 多连通域 / 空洞支持 | v0.9.4 phase 3 长尾分析暴露：< 15% 样本 IoU 落 [0.5, 0.95)，根因 `RETR_EXTERNAL + max area` 假设。修复方向：multi_polygon 输出 + `RETR_CCOMP` 内外环编码 + morphological closing；触发：长尾 IoU<0.95 占比 > 20%、或客户抱怨 polygon 与 mask 形状差异 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
@@ -242,22 +196,13 @@
 | **P2** | C.1 OpenSeadragon 瓦片金字塔 | 极大图 > 50MP 才必要；纯前端 IoU rbush 已 v0.9.3 落地 | [0004](docs/adr/0004-canvas-stack-konva.md) |
 | **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
 | **P2** | CSP nonce-based 收紧（剔除 'unsafe-inline'） | v0.8.8 ADR-0010 是宽松基线；nonce-based 留作 v0.10.x 与 ProjectSettingsPage 重构同窗口做 | [0010](docs/adr/0010-security-headers-middleware.md) |
-| ~~**P3** AIPreAnnotatePage 二阶段功能~~ | ✅ v0.9.6 落地（CTA + 历史表 + 重试链接）；v0.9.7 进一步加搜索/排序/分页/空状态 | — |
-| ~~**P3** 类别 alias 规范化~~ | ✅ v0.9.6 落地（field_validator + 前端 onBlur + 防重复 toast） | — |
-| ~~**P3** Wizard step 4 `text_output_default`~~ | ✅ v0.9.6 落地（共享 `TextOutputDefaultSelect`） | — |
-| ~~**P3** batch.pre_annotated 视觉提示~~ | ✅ v0.9.6 落地（BatchStatusBadge + Kanban 紫列 + Topbar 紫徽章） | — |
-| ~~**P3** alias chips 滚动 + 频率排序~~ | ✅ 滚动 v0.9.6 落 / 频率排序 v0.9.7 落（GET /admin/projects/:id/alias-frequency 端点 + chip ×N 角标） | — |
-| ~~**P3** 完整 prediction job 历史~~ | ⬆️ 提前为 **v0.9.8 主线**（2026-05-08 端到端跑通后规划） | — |
-| **P3** | 截图自动化 22 张实跑回填 | v0.9.7 scenes.ts 配置就位（18 + 4 v0.9.7 新场景），PNG 0 张；maintainer 完整启动栈下 `pnpm --filter web screenshots` 实跑 | — |
+| **P3** | 截图 fixture 数据补齐 + 重跑（v0.9.7 19 张已 commit, 4 张空白态需补 seed） | seed.py 加 prepare 钩子: 5+ pre_annotated 批次 / 类别无 alias 项目 / 同 task 双 prediction (IoU) / 30+ tasks (bulk-edit) | — |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |
 | **P3** | 前端单测从 25% 推到 30% | v0.8.8 已推回 25.17%；下阶段补 ProjectSettingsPage / AuditPage / WorkbenchShell 关键 hook 单测 | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 | — |
-| ~~**P3** MlBackendFormModal 测试连接 + URL 默认值~~ | ✅ v0.9.6 落地（probe 端点 + Modal「测试连接」按钮 + URL placeholder 预填） | — |
-| ~~**P3** Wizard 启用 AI 时 backend 绑定~~ | ✅ v0.9.7 落地（Step4Ai BackendSourceSelect + ml_backend_source_id + 创建时复制 backend row） | — |
-| ~~**P3** RegisteredBackendsTab 行内深度健康指标~~ | ✅ v0.9.6 落地（health_meta JSONB 列 + 行内 model_version/GPU/cache hit_rate） | — |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 
@@ -265,7 +210,7 @@
 
 ## 优化建议 / 文档维护备忘
 
-> v0.8.8 重写后这一节用于记录"对 ROADMAP 自身格式"的下次维护方向，避免文件无限膨胀。v0.9.5 已按此节工序做了一次精简（删除 9 条已落项 + 增补 5 条 v0.9.5 落地后新发现）。
+> v0.8.8 重写后这一节用于记录"对 ROADMAP 自身格式"的下次维护方向，避免文件无限膨胀。v0.9.5 / v0.9.7 各已按此节工序做了一次精简（v0.9.7: 删 9 条 ✅ + 整合 §C.2/§C.3 已落地的工具栏 / SAM 子工具栏 / text 模式 历史块 + v0.9.8 主线规划提前）。
 
 1. **「后续观察项」清单滚动归档**：当前 §A 末尾保留 3 条 v0.7.x ~ v0.8.8 残留观察（3/5）；超过 5 条时拆出 `ROADMAP/observations.md`。
 2. **触发条件量化**：「监控触发」类条目（如 predictions Stage 2、batch_summary stored 列）目前是文字描述；条件成熟后可在 Grafana dashboard 加阈值 panel + 告警，跨过即生 ROADMAP 通知 issue。**仍未执行**（依赖 Grafana 工程化优先级）。
