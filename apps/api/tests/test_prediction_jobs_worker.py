@@ -109,9 +109,7 @@ async def test_prediction_job_check_constraint_rejects_bad_status(
 
 
 @pytest.mark.asyncio
-async def test_celery_task_id_lookup_query(
-    db_session: AsyncSession, super_admin
-):
+async def test_celery_task_id_lookup_query(db_session: AsyncSession, super_admin):
     user, _ = super_admin
     proj, backend = await _seed_project_and_backend(db_session, user.id)
 
@@ -188,7 +186,9 @@ async def test_mark_job_failed_updates_running_row(
 
             return _Ctx()
 
-    monkeypatch.setattr(worker_tasks, "create_async_engine", _fake_engine, raising=False)
+    monkeypatch.setattr(
+        worker_tasks, "create_async_engine", _fake_engine, raising=False
+    )
     monkeypatch.setattr(
         worker_tasks,
         "async_sessionmaker",
@@ -281,9 +281,7 @@ def test_batch_predict_task_on_failure_dispatches_mark_helper(monkeypatch):
         captured["error_message"] = error_message
 
     monkeypatch.setattr(worker_tasks, "_mark_job_failed", _stub_mark)
-    monkeypatch.setattr(
-        worker_tasks, "_publish_progress", lambda *a, **kw: None
-    )
+    monkeypatch.setattr(worker_tasks, "_publish_progress", lambda *a, **kw: None)
 
     task = worker_tasks._BatchPredictTask()
     task.on_failure(

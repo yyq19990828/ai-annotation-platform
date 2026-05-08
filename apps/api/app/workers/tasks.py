@@ -28,9 +28,7 @@ def _publish_progress(
     }
     r = redis.from_url(settings.redis_url)
     try:
-        r.publish(
-            f"project:{project_id}:preannotate", json.dumps(payload)
-        )
+        r.publish(f"project:{project_id}:preannotate", json.dumps(payload))
         if job_meta is not None:
             global_payload = {**payload, "project_id": project_id, **job_meta}
             r.publish("global:prediction-jobs", json.dumps(global_payload))

@@ -155,8 +155,6 @@ async def list_preannotate_jobs(
             )
         )
 
-    next_cursor = (
-        _encode_cursor(rows[-1].started_at, rows[-1].id) if has_more else None
-    )
+    next_cursor = _encode_cursor(rows[-1].started_at, rows[-1].id) if has_more else None
 
     return PredictionJobsResponse(items=items, next_cursor=next_cursor)

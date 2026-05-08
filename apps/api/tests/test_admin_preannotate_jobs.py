@@ -220,9 +220,7 @@ async def test_preannotate_jobs_filter_by_date_range(
     await _seed_job(
         db_session, proj, backend, prompt="mid", started_at=base - timedelta(days=2)
     )
-    await _seed_job(
-        db_session, proj, backend, prompt="new", started_at=base
-    )
+    await _seed_job(db_session, proj, backend, prompt="new", started_at=base)
     await db_session.commit()
 
     from_ = (base - timedelta(days=3)).isoformat()
@@ -287,9 +285,7 @@ async def test_preannotate_jobs_cursor_pagination(
 
 
 @pytest.mark.asyncio
-async def test_preannotate_jobs_invalid_status_rejected(
-    httpx_client, super_admin
-):
+async def test_preannotate_jobs_invalid_status_rejected(httpx_client, super_admin):
     _, token = super_admin
     res = await httpx_client.get(
         "/api/v1/admin/preannotate-jobs?status=weird",
