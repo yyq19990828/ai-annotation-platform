@@ -90,6 +90,10 @@ export default defineConfig({
             { text: "后端分层", link: "/dev/architecture/backend-layers" },
             { text: "前端分层", link: "/dev/architecture/frontend-layers" },
             { text: "数据流", link: "/dev/architecture/data-flow" },
+            { text: "AI 模型集成", link: "/dev/architecture/ai-models" },
+            { text: "API Schema 边界", link: "/dev/architecture/api-schema-boundary" },
+            { text: "预标注流水线", link: "/dev/architecture/prediction-pipeline" },
+            { text: "部署拓扑", link: "/dev/architecture/deployment-topology" },
           ],
         },
         {
