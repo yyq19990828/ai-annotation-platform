@@ -31,6 +31,7 @@
 
 - **CSP nonce-based 收紧**（P2，与 vite plugin 同窗口做）
 - **OpenSeadragon 瓦片金字塔**（P2，§C.1，极大图 > 50MP 才必要）
+- **GPU / ML backend 实时监控浮窗**（**P2**，§B 可观测性，参考 ComfyUI Crystools 顶栏小条；后端基座已就位：`/health` 已返显存 + Prometheus 双端 + `health_meta` 缓存。补 `pynvml` GPU util/温度 + WS 推送即可；预标注卡顿排障必需）
 - **i18n 框架接入**（P3，与 ProjectSettingsPage 重构合并节省破窗成本）
 - **截图 fixture 数据补齐 + 重跑**（P3）：v0.9.7 19 张 PNG 已 commit，4 张空白态需在 `apps/api/scripts/seed.py` 或 scene `prepare()` 钩子造数据后重跑（`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`）。
 - **v0.9.8 落地后新发现**（v0.9.9 候选，~2-3d）：① 后端加 `PredictionShape` Pydantic 模型 wire 到 `PredictionOut.result`，前端切 codegen 派生（详见 `docs-site/dev/architecture/api-schema-boundary.md`）；② `prediction_jobs.total_cost` 接通 `PredictionMeta.total_cost` 累加 (字段就位 `Numeric(10, 4) NULL`)。
@@ -67,7 +68,37 @@
   - 批量状态迁移类（bulk-approve / bulk-reject）：v0.7.3 故意未做。reject 反馈是逐批次语义、approve 跳过逐批次审视有质检失职风险。落地前先讨论 UX。
 
 ### AI / 模型
-- **模型市场扩展**：v0.9.3 phase 2 已激活 `/model-market`（合并 backends + failed-predictions tab）；二期可加：① 模型版本对比 / AB 路由 UI（依赖 v0.10.x sam3-backend 双模型并存）；② 一键热更新模型权重（`/admin/ml-backends/{id}/reload`）。
+- **模型市场扩展**：v0.9.3 phase 2 已激活 `/model-market`（合并 backends + failed-predictions tab）；二期：① 模型版本对比 / AB 路由 UI（依赖 v0.10.x sam3-backend 双模型并存）；② 一键热更新模型权重（`/admin/ml-backends/{id}/reload`）；③ **注册 backend 时选模型变体**（详见下条，C → B 两阶段，与本条同窗口）。
+- **注册 backend 时选模型变体 · C → B 两阶段**（**P2**，与模型市场二期同窗口）：
+  - **现状钉死**：grounded-sam2-backend 的 `(SAM_VARIANT, DINO_VARIANT)` 组合在容器启动时由 env 锁死（`apps/grounded-sam2-backend/main.py:43-44` 读 env，`predictor.py:50-58` 选 checkpoint，`lifespan` 一次性 build 占住显存），运行期不可变；改变体 = 改 env + rebuild + 重启。注册端 `MLBackendCreate` 也只接 `name` / `url` / `extra_params`（`apps/api/app/schemas/ml_backend.py:28-34`），平台**不知道**某条 ml_backends 行对应哪个变体，只能从 `health_meta.model_version` 字符串反解。
+  - **目标**：把"变体"提升为注册时一等参数，让平台获得变体维度的认知（路由 / mismatch 校验 / AB 对比 UI 全靠这个），并为后续显存吃紧场景的 model pool 留好升级路径。
+  - ---
+  - **阶段 1 · C — 注册时声明 + 后端按声明常驻**（**~2-3d**，先做）
+    - **容器拓扑**：仍是「一变体一容器」（与现状一致），predictor / lifespan / Dockerfile **零改动**。
+    - **compose 改造**：`grounded-sam2-backend` 拆成按变体细分的 service（`gsam2-tiny` / `gsam2-large` / ...），各自带独立 profile（如 `gpu-tiny` / `gpu-large`）和端口。dev 默认不启，生产按显存预算 `--profile` opt-in。
+    - **schema 改造**：`MLBackendCreate.extra_params` 收口 `variant: {sam: tiny|small|base|large, dino: T|B}` 字段（用 Pydantic 子模型而非裸 dict，便于 codegen 派生前端类型）。`MLBackendOut` 同步暴露。
+    - **UI 改造**：`apps/web/src/pages/ModelMarket/RegisteredBackendsTab.tsx` 创建表单加 variant 下拉（按 backend 类型动态枚举：grounded-sam2 显示 SAM × DINO 组合，sam3 显示单档）；列表行加 variant chip。
+    - **mismatch 校验**：`services/ml_backend.check_health` 比对声明 variant 和 `/health.model_version` 子串，不一致时 `state=mismatch` + `error_message` 提示 ops 同步 ml_backends 行或 compose env。
+    - **运维侧**：`docs-site/dev/deploy.md` 加「按需启动 + 显存预算」章节（每变体 ~3-7GB 常驻 + embedding cache buffer，列预设组合表：4060 起 1 个 / 3090 起 2 个 / A100 全起）。
+    - **不做**：predictor 抽象 / model pool / 请求级 variant 切换 / ProjectSettings 路由 UI（路由 UI 跟 v0.10.x M1 sam3 路由共做，避免二次破窗）。
+    - **验收**：① ProjectSettings 注册 grounded-sam2-tiny + grounded-sam2-large 两条；② 健康检查 mismatch 用例（手动改 compose env 不改 ml_backends）能告警；③ `/model-market` 列表带 variant chip 渲染；④ AB 对比 UI（v0.10.2）能直接读 `extra_params.variant` 选 backend。
+  - ---
+  - **阶段 2 · B — 单容器 model pool（运行期热切换）**（**触发后再做，估 ~5-7d**）
+    - **触发条件**（任一）：① 客户硬件预算线上一台 GPU 想跑 ≥ 3 个变体且显存吃紧；② 集群场景出现"变体频繁切换"真实工况（运营反馈 / Prometheus 看 ml_backends 切换率）；③ v0.10.x sam3 + grounded-sam2 双 backend 跑稳后，发现"同 backend 内多变体并存"仍是高频需求。**触发前不动手**，避免过度工程。
+    - **实现要点**：
+      - predictor 抽象出 `ModelPool`（LRU cap 由 env 配置，按显存档位预设：3090 cap=1~2，A100 cap=2~4）。
+      - `/predict` 接受 `variant` 参数（header 优先，fallback 到 `extra_params.variant`），命中走原路径，miss 触发驱逐 + build（1-3s 冷启）。
+      - per-variant 异步锁，防并发请求同时触发同一 variant build；pool 满 + 多 variant 并发 miss → 排队 + 超时降级。
+      - `embedding_cache.py` 按 variant 分桶（不同模型的 embedding 不能跨）。
+      - `/health` 暴露 pool 状态（`loaded_variants` / `evict_count` / 每 variant LRU 时间戳），`/admin/ml-integrations/overview` 渲染。
+    - **C → B 平滑迁移**：阶段 1 的 `extra_params.variant` 字段语义保持兼容 —— C 时是「这条 ml_backends 行映射的容器装的变体」，B 时是「请求该 backend 时默认带的 variant 参数」。前端 / 协议无破坏性改动。多容器 → 单容器是 ops 决策（compose profile 切换 + 把多条 ml_backends 行的 URL 合并到同一端口），平台层不强制。
+    - **不做**：自动 pool sizing（按工作集自动调 cap）/ 跨容器 pool 共享（k8s sidecar 模式）—— 留 v0.11+。
+  - ---
+  - **触发与排序**：
+    - 阶段 1（C）跟「v0.10.x M0 sam3-backend 容器化」(`ROADMAP/0.10.x.md` v0.10.0) 同窗口起，理由：sam3-backend 落地时 ml_backends 的 variant 维度本来就要加（sam3 vs grounded-sam2 各自有变体枚举），合并改 schema 一次到位。
+    - 模型市场二期 ① AB 路由 UI（v0.10.2）依赖阶段 1 的 variant 字段，**强依赖**。
+    - 阶段 2（B）独立触发，与 v0.11+ 视频 / Active Learning 节奏解耦。
+  - **影响面**（阶段 1）：`apps/api/app/schemas/ml_backend.py`、`apps/api/app/services/ml_backend.py`（health 校验）、`apps/web/src/pages/ModelMarket/RegisteredBackendsTab.tsx`、`docker-compose.yml`、`docs-site/dev/ml-backend-protocol.md`、`docs-site/dev/deploy.md`。**不动**：predictor.py / main.py / lifespan / embedding_cache。
 - **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：dev `ML_BACKEND_STORAGE_HOST` + ADR-0012 框架已收口；生产场景多变, 第一个生产部署遇到再扩策略表（"何时设、设啥值、何时留空"）。
 - **真实 SAM mask 50 张 simplify tolerance 验收**（**P3**，v0.9.4 phase 3 归档）：`scripts/eval_simplify.py` 就位但用合成 fixture（IoU≥0.95 缺真实长尾），等 GPU 环境 50 张真实 mask 重跑 `docs/research/13-simplify-tolerance-eval.md`；与 mask→polygon 多连通域 follow-up 同窗口。
@@ -108,6 +139,17 @@
 
 ### 可观测性
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
+- **GPU / ML backend 实时监控浮窗（PerfHud）**（**P2**，参考 [ComfyUI-Crystools](https://github.com/crystian/ComfyUI-Crystools) 顶栏 progress bar / [Elegant-Resource-Monitor](https://github.com/ChrisColeTech/ComfyUI-Elegant-Resource-Monitor) floating panel）：预标注后端 `grounded-sam2-backend`（及 v0.10.x `sam3-backend`）吃 GPU，需要类似 ComfyUI 的实时面板做卡顿/OOM 排障。**架构同 Crystools**（Python 后端 nvml/psutil 推送 → 前端 chart），不是浏览器端读 GPU。
+  - **后端基座已就位**（无需重做）：① `apps/grounded-sam2-backend/main.py:80-90` 已通过 `torch.cuda.mem_get_info()` 在 `/health` 返显存 (`device_name / memory_used_mb / memory_total_mb / memory_free_mb`) + cache 命中率；② `apps/api/app/api/v1/admin_ml_integrations.py:133` 已聚合到 `ml_backends.health_meta.gpu_info` (30s 缓存)；③ 双端 `/metrics` Prometheus 端点已落 (`apps/api/app/main.py:134` / `apps/grounded-sam2-backend/main.py:128`)；④ 前端静态展示已有 (`RegisteredBackendsTab.tsx:294-298` 显示 `GPU 1234/8192 MB`)。
+  - **缺的四块**：
+    - **GPU util % / 温度 / 功耗**：`torch.cuda.mem_get_info` 只给显存，需加 `pynvml`（NVIDIA NVML 绑定，Crystools 同款）→ 在 `apps/grounded-sam2-backend/observability.py` 加 Gauge `gpu_utilization_percent` / `gpu_temperature_celsius` / `gpu_power_watts`，扩 `/health.gpu_info`。
+    - **容器 CPU/RAM**：加 `psutil` → `cpu_percent / virtual_memory().percent`（不是宿主机的，是容器 cgroup 视角）。
+    - **实时推送通道**：现状 30s 缓存 pull 不够实时。两条路 ——
+      - 路径 A（轻）：前端打开 PerfHud 时改成 1s 轮询 `/admin/ml-backends/{id}/health?force=true`（绕过缓存），关闭即停。
+      - 路径 B（推荐）：API 起 Celery beat 每 1s 抓全部 `is_active=true` backend → broadcast 到 WS room `ml-backend-stats:{backend_id}`（沿用 `useNotificationSocket` infra），订阅者退出即停轮询。多人观察不放大后端压力。
+    - **前端 PerfHud 组件**：`apps/web/src/components/PerfHud.tsx` + `useGpuStats(backendId)` hook + zustand store；右上 `280×180px` 小窗（4 个 progress bar：GPU util / VRAM / CPU / RAM）+ 可展开 60s line chart (recharts，efficiency dashboard 已在用)；底部小字显 `device_name / cache hit rate / model_version`；toggle 通过工作台 `Ctrl+Shift+P` 或 TopBar gear → "性能监控"；权限 `super_admin / admin` 可见（运维向，标注员不需要）。
+  - **顺便加的浏览器侧指标**（同一个 HUD 多一栏）：FPS（rAF 计帧，`ImageStage.tsx:499` 已有切入点）/ JS heap (`performance.memory`，仅 Chrome) / longtask (`PerformanceObserver`) / API p95 / WS 重连数 / 当前 task 框数。这部分用于 §C.1「Annotation 列表 keyset 分页」拐点判断。
+  - **触发与体量**：现在做（v0.10.x 接 sam3 双 backend 时正好用得上做 AB 显存对比）；体量 ~5-7 工作日（pynvml 扩 1d + Celery beat WS 2d + 前端 HUD 2-3d + 测试 1d）。
 
 ### 性能 / 扩展
 - **Annotation 列表前端切换 keyset 分页**：v0.7.6 已落后端新端点 `GET /tasks/{id}/annotations/page?limit&cursor` + 复合索引；前端 `useAnnotations` 仍用旧数组端点（cap=2000），改 useInfiniteQuery 推迟到 1000+ 框监控触发。
@@ -184,6 +226,7 @@
 | **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |
 | **P3** | 前端单测从 25% 推到 30% | v0.8.8 已推回 25.17%；下阶段补 ProjectSettingsPage / AuditPage / WorkbenchShell 关键 hook 单测 | — |
+| **P2** | GPU / ML backend 实时监控浮窗（PerfHud） | 参考 ComfyUI Crystools，**架构同款**（后端 nvml/psutil 推送 → 前端 chart）。基座已落 80%：`/health.gpu_info` 显存 + Prometheus 双端 + `health_meta` 缓存 + 静态 UI；补 `pynvml` (util/温度) + `psutil` (容器 CPU/RAM) + WS 推送 (Celery beat 1s) + 浮窗组件，~5-7d。预标注卡顿/OOM 排障必需，v0.10.x sam3 双 backend AB 也要 | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 | — |
