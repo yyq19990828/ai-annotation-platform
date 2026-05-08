@@ -4780,6 +4780,18 @@
             "title": "Extra Params",
             "type": "object"
           },
+          "health_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Meta"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -5303,6 +5315,100 @@
         "title": "PolygonGeometry",
         "type": "object"
       },
+      "PreannotateQueueItem": {
+        "properties": {
+          "batch_id": {
+            "format": "uuid",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "batch_name": {
+            "title": "Batch Name",
+            "type": "string"
+          },
+          "batch_status": {
+            "title": "Batch Status",
+            "type": "string"
+          },
+          "can_retry": {
+            "title": "Can Retry",
+            "type": "boolean"
+          },
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "prediction_count": {
+            "title": "Prediction Count",
+            "type": "integer"
+          },
+          "project_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Display Id"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "total_tasks": {
+            "title": "Total Tasks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "batch_name",
+          "batch_status",
+          "project_id",
+          "project_name",
+          "total_tasks",
+          "prediction_count",
+          "failed_count",
+          "can_retry"
+        ],
+        "title": "PreannotateQueueItem",
+        "type": "object"
+      },
+      "PreannotateQueueResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PreannotateQueueItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PreannotateQueueResponse",
+        "type": "object"
+      },
       "PreannotateRequest": {
         "properties": {
           "batch_id": {
@@ -5566,6 +5672,118 @@
           "created_at"
         ],
         "title": "PredictionOut",
+        "type": "object"
+      },
+      "ProbeRequest": {
+        "properties": {
+          "auth_method": {
+            "default": "none",
+            "enum": [
+              "none",
+              "token"
+            ],
+            "title": "Auth Method",
+            "type": "string"
+          },
+          "auth_token": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Token"
+          },
+          "url": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "ProbeRequest",
+        "type": "object"
+      },
+      "ProbeResponse": {
+        "description": "v0.9.6 · 无 DB 副作用的 health check.\n前端注册 modal 在保存前可调本端点验证连通性, 避免「先存再 health 失败 / DB 留无效行」摩擦.",
+        "properties": {
+          "cache": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "gpu_info": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Info"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          }
+        },
+        "required": [
+          "ok",
+          "latency_ms"
+        ],
+        "title": "ProbeResponse",
         "type": "object"
       },
       "ProfileUpdate": {
@@ -6833,6 +7051,24 @@
           "role"
         ],
         "title": "RoleChangePayload",
+        "type": "object"
+      },
+      "RuntimeHints": {
+        "description": "v0.9.6 · 前端 modal 启动时一次性查; 提供注册 form 的 placeholder hint.",
+        "properties": {
+          "ml_backend_default_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend Default Url"
+          }
+        },
+        "title": "RuntimeHints",
         "type": "object"
       },
       "ScreenshotInitRequest": {
@@ -8216,6 +8452,130 @@
         "summary": "Get Overview",
         "tags": [
           "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/probe": {
+      "post": {
+        "description": "探测一个 ML backend URL 的 /health 端点; 不写 DB.",
+        "operationId": "probe_backend_api_v1_admin_ml_integrations_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Probe Backend",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/runtime-hints": {
+      "get": {
+        "operationId": "runtime_hints_api_v1_admin_ml_integrations_runtime_hints_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeHints"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Runtime Hints",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/preannotate-queue": {
+      "get": {
+        "description": "列出已预标 (pre_annotated 状态) 的批次, 按最近一次预标时间倒序.\n\n含 prediction / failed 计数 + 项目元数据, 供 AIPreAnnotatePage 历史表渲染.",
+        "operationId": "list_preannotate_queue_api_v1_admin_preannotate_queue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreannotateQueueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Preannotate Queue",
+        "tags": [
+          "admin-preannotate"
         ]
       }
     },

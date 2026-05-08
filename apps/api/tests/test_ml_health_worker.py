@@ -57,11 +57,13 @@ async def test_check_health_updates_last_checked_at(
     proj = await _make_project(db_session, user.id)
     backend = await _make_backend(db_session, proj.id)
 
-    async def fake_health(self) -> bool:  # noqa: ARG001
-        return True
+    async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
+        return True, None
 
     monkeypatch.setattr(
-        "app.services.ml_client.MLBackendClient.health", fake_health, raising=True
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
     )
 
     svc = MLBackendService(db_session)
@@ -84,11 +86,13 @@ async def test_check_health_marks_error_on_failure(
     proj = await _make_project(db_session, user.id)
     backend = await _make_backend(db_session, proj.id)
 
-    async def fake_health(self) -> bool:  # noqa: ARG001
-        return False
+    async def fake_health_meta(self) -> tuple[bool, dict | None]:  # noqa: ARG001
+        return False, None
 
     monkeypatch.setattr(
-        "app.services.ml_client.MLBackendClient.health", fake_health, raising=True
+        "app.services.ml_client.MLBackendClient.health_meta",
+        fake_health_meta,
+        raising=True,
     )
 
     svc = MLBackendService(db_session)
