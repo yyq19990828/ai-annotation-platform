@@ -8,6 +8,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useTheme, type ThemePref } from "@/hooks/useTheme";
 import type { IconName } from "@/components/ui/Icon";
 import { NotificationsPopover } from "./NotificationsPopover";
+import { PreannotateJobsBadge } from "./PreannotateJobsBadge";
 import { CommandPalette } from "@/components/CommandPalette";
 
 interface TopBarProps {
@@ -247,6 +248,9 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
               </button>
             )}
           />
+
+          {/* v0.9.8 · 全局预标 job 徽章 (admin only, 0 个时隐身) */}
+          <PreannotateJobsBadge />
 
           {/* 通知按钮（v0.7.6：组件自包含 trigger + popover，TopBar 不再管 open state） */}
           <NotificationsPopover />

@@ -3,6 +3,7 @@ from app.api.v1 import (
     admin_alias_freq,
     admin_ml_integrations,
     admin_preannotate,
+    admin_preannotate_jobs,
     api_keys,
     auth,
     audit_logs,
@@ -52,6 +53,12 @@ api_router.include_router(
     admin_alias_freq.router,
     prefix="",
     tags=["admin-alias-freq"],
+)
+# v0.9.8 · /admin/preannotate-jobs (完整 prediction job 历史; 与 queue 区分)
+api_router.include_router(
+    admin_preannotate_jobs.router,
+    prefix="",
+    tags=["admin-preannotate-jobs"],
 )
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])

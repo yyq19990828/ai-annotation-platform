@@ -23,6 +23,7 @@ import {
   usePreannotationProgress,
   type TextOutputMode,
 } from "@/hooks/usePreannotation";
+import { useGlobalPreannotationJobs } from "@/hooks/useGlobalPreannotationJobs";
 import { aliasFrequencyApi } from "@/api/aliasFrequency";
 
 import { PreannotateStepper, type StepDef, type StepStatus } from "./components/PreannotateStepper";
@@ -132,6 +133,9 @@ export default function AIPreAnnotatePage() {
     [project],
   );
 
+  /* ── v0.9.8 · 全局预标 job 订阅 (切项目 toast 检测旧项目 in-flight job) ─ */
+  const { byProject: jobsByProject } = useGlobalPreannotationJobs();
+
   /* ── 草稿: 切项目时把旧 prompt 推 localStorage 不丢, 加载新项目草稿 ─── */
   const prevProjectIdRef = useRef<string>("");
   useEffect(() => {
@@ -143,6 +147,17 @@ export default function AIPreAnnotatePage() {
       const next = readDraft(projectId);
       setPrompt(next);
       if (prev) {
+        // v0.9.8 · 旧项目仍有 in-flight 预标 job 时优先弹警告 toast (单独一条)
+        const stillRunning = jobsByProject[prev];
+        if (stillRunning) {
+          const prevName =
+            allProjects.find((p) => p.id === prev)?.name ?? prev.slice(0, 8);
+          pushToast({
+            msg: `项目「${prevName}」仍在跑预标 (${stillRunning.current}/${stillRunning.total})`,
+            sub: "Topbar 紫色徽章可一键回跳查看进度",
+            kind: "warning",
+          });
+        }
         pushToast({
           msg: "已切换项目",
           sub: prev && prompt.trim() ? "旧 prompt 已存为草稿" : "草稿已恢复",

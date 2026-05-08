@@ -57,3 +57,53 @@ def test_interactive_request_accepts_unknown_type_no_strict_schema():
 def test_interactive_request_default_context_empty_dict():
     req = InteractiveRequest(task_id=uuid.uuid4())
     assert req.context == {}
+
+
+# ─── v0.9.8 · MLBackendCreate / MLBackendUpdate URL host blacklist ──────────
+
+
+import pytest  # noqa: E402
+
+from app.schemas.ml_backend import MLBackendCreate, MLBackendUpdate  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "http://localhost:8001",
+        "http://127.0.0.1:8001/predict",
+        "http://0.0.0.0/",
+        "https://[::1]:443/path",
+        "http://LOCALHOST:9000",  # 大小写不敏感
+    ],
+)
+def test_ml_backend_create_rejects_loopback_url(bad_url: str):
+    with pytest.raises(ValueError) as exc:
+        MLBackendCreate(name="b", url=bad_url)
+    assert "loopback" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "good_url",
+    [
+        "http://172.17.0.1:8001",
+        "http://sam-backend:8001",
+        "https://gpu.internal/predict",
+        "http://192.168.1.10:8001",
+    ],
+)
+def test_ml_backend_create_accepts_non_loopback(good_url: str):
+    m = MLBackendCreate(name="b", url=good_url)
+    assert m.url == good_url
+
+
+def test_ml_backend_update_rejects_loopback_when_url_provided():
+    with pytest.raises(ValueError) as exc:
+        MLBackendUpdate(url="http://localhost:8001")
+    assert "loopback" in str(exc.value)
+
+
+def test_ml_backend_update_allows_url_none():
+    m = MLBackendUpdate(name="rename")
+    assert m.url is None
+    assert m.name == "rename"

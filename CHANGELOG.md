@@ -32,6 +32,64 @@
 - **B-6** 项目设置未保存提示: 新增 `useUnsavedWarning` hook + 黄色 dirty 徽章 (General/Classes/Attributes 三个 section)
 - **B-7** AI 模型语义统一: GeneralSection 把"实际 ML Backend"提到主选项, PRESET 模型名 hint 折叠到 details (仅未绑定时使用); 保存时 ai_model 优先派生自 backend.name
 - **B-8** 工作台 AI 一键预标: 修掉 `ml_backend_id=""` 空字符串导致的 dispatch 报错, 未绑定时给出明确 toast 引导用户去项目设置
+## [0.9.8] - 2026-05-08
+
+> **Fluffy Cosmos — Prediction Job 历史 + v0.9.7 端到端跑通后暴露的隐性 bug 收口.** 主线 6 块: ① `prediction_jobs` 表 + worker 写入开始/结束/失败 3 时点 (含 success/failed 计数 + duration_ms + celery_task_id 反查); ② `GET /admin/preannotate-jobs` cursor 翻页端点 (与 `/preannotate-queue` 区分: 前者全量历史含已重置批次, 后者当前 pre_annotated 快照); ③ `/ai-pre/jobs` 子路由 + Layout (顶部 tab 切「执行 / 历史」), 新建 `AIPreAnnotateJobsPage` 列状态/时长/失败计数 + 状态/搜索过滤 + cursor 翻页; ④ 利用既有 `@hey-api/openapi-ts` codegen 把新 `PredictionJobOut` 派生自 `types.gen.ts` (枚举 status 收紧 union) + 加 `predictionsToBoxes` 5 黄金样本 vitest + 后端 `to_internal_shape` idempotent / 双 schema 共存边界 3 case + 新增 `docs-site/dev/architecture/api-schema-boundary.md` (3 层 schema 边界图 + adapter 责任 + 何时跑 codegen); ⑤ `MLBackendCreate.url` / `MLBackendUpdate.url` Pydantic field_validator 拒绝 loopback host (localhost / 127.0.0.1 / 0.0.0.0 / ::1), 错误信息提示用 docker bridge IP / service DNS, 配套 v0.9.6 placeholder; ⑥ WS 多项目可见性: `_publish_progress` 在 job 开始/结束/失败 3 时点同时发到全局 channel `global:prediction-jobs`, 新 `/ws/prediction-jobs` admin-only 鉴权 token + RBAC 过滤, 前端 `useGlobalPreannotationJobs` hook + Topbar 紫色 `PreannotateJobsBadge` (0 个 job 时隐身, 点击 popover 列项目名 + 进度条 + 跳转), `AIPreAnnotatePage` 切项目时若旧项目仍有 in-flight job 弹 warning toast 提示 Topbar 徽章可回跳.
+
+### Added
+
+- **`apps/api/alembic/versions/0052_prediction_jobs.py`**: `prediction_jobs` 表 (UUID PK / project_id × batch_id × ml_backend_id 三 FK / prompt TEXT / output_mode VARCHAR(30) / status running|completed|failed CHECK / total/success/failed counts / started_at default now / completed_at / duration_ms / total_cost NUMERIC(10,4) NULL (worker 暂未聚合 PredictionMeta.total_cost, v0.9.9+) / error_message / celery_task_id VARCHAR(64) — 用于 `_BatchPredictTask.on_failure` 反查行写错误). 3 个索引 (project+status+started_at desc / status+started_at desc 全局 in-progress 查询 / celery_task_id).
+- **`apps/api/app/db/models/prediction_job.py`**: SQLAlchemy `PredictionJob` 模型 + `PredictionJobStatus` enum. `db/models/__init__.py` 导出.
+- **`apps/api/app/api/v1/admin_preannotate_jobs.py`**: `GET /admin/preannotate-jobs?project_id=&status=&from=&to=&search=&cursor=&limit=` 端点. cursor 复合 `(started_at DESC, id DESC)` base64-json 编码, 复用 v0.9.7 alias-frequency 风格. PROJECT_ADMIN / SUPER_ADMIN gated. 8 个端到端测试 (空 / 403 / 基础列举 / project_id 过滤 / status 过滤 / search prompt ILIKE / from-to 范围 / 三页 cursor 翻页 / 非法 status 422).
+- **`apps/web/src/pages/AIPreAnnotate/AIPreAnnotateLayout.tsx`**: 顶部水平 tab nav「执行预标 / 完整历史」+ `<Outlet />`. App.tsx 路由 `/ai-pre` 改为嵌套 (index → AIPreAnnotatePage, jobs → AIPreAnnotateJobsPage).
+- **`AIPreAnnotateJobsPage.tsx`**: 拉 `/admin/preannotate-jobs` 渲染 10 列表 (项目 / 批次 hash / prompt 截断 50ch + tooltip / outputMode / 状态徽章 ai-running 紫 / success 绿 / danger 红 / 总数 / 失败 Badge / duration friendly format / started_at relative / 跳工作台). 状态 select 过滤 + prompt 搜索 + cursor 上/下翻页 (cursorStack 维护历史栈).
+- **`apps/web/src/api/adminPreannotateJobs.ts`**: `PredictionJobOut` 类型从 `generated/types.gen.ts` 派生 + status 收紧成 `"running" | "completed" | "failed"` union (后端 Literal codegen 折成 string). `adminPreannotateJobsApi.list(params)` 客户端.
+- **`apps/api/app/api/v1/ws.py:/ws/prediction-jobs`**: 全局 prediction job 进度通道. JWT token 校验 + role admin 守卫 (其他角色 1008). 订阅 redis `global:prediction-jobs` channel, 接续 message → WS forward, 30s 心跳保活.
+- **`apps/web/src/hooks/useGlobalPreannotationJobs.ts`**: 维护 `Map<job_id, JobProgress>` 全局 in-progress 状态. 用 `useReconnectingWebSocket` 退避重连. 完成 / 失败 1.5s 后从 Map 移除 (allow Topbar 短暂显示「刚完成」状态后退场). `byProject[project_id]` 索引最新 in-progress job 给切项目 toast 用.
+- **`PreannotateJobsBadge.tsx`** (`components/shell/`): Topbar 紫色徽章 + popover. 0 个 job 时不渲染 (隐身). 点击展开 popover, 列每个 job: 项目名 / `current/total · pct%` / 进度条 / 整行点击跳 `/ai-pre?project_id=X`. 4 vitest case (0 job 隐身 / 数字徽章 / popover 列出 + 排序 / 进度百分比).
+- **`docs-site/dev/architecture/api-schema-boundary.md`**: 新建 3 层 schema 边界文档 (DB JSONB → API Pydantic → 前端 codegen + 手写). adapter 责任 + idempotent 不变量 + codegen 何时跑 + 故障注入提示 (Sentry 空 box 比例告警 / 后端 unknown type counter).
+- **黄金样本测试**:
+  - `apps/web/src/pages/Workbench/state/transforms.test.ts` 增 5 case (空 result / 多 prediction 多 shape id 索引 / polygon bounds / confidence=0 不丢失 / class_name 空字符串).
+  - `apps/api/tests/test_prediction_schema_adapter.py` 增 3 case (idempotent 二次调用 / `geometry` + `value` 双存时 geometry 优先 / pass-through 不丢非标字段).
+  - `apps/api/tests/test_prediction_jobs_worker.py` (新, 6 case): ORM round-trip / CHECK constraint / celery_task_id 反查 / `_mark_job_failed` 写 error_message / 已 completed 行不被覆盖 / `_BatchPredictTask.on_failure` 调用 helper.
+  - `apps/api/tests/test_ml_backend_schemas.py` 增 11 case (5 loopback host 拒绝 + 4 非 loopback 接受 + Update 拒绝 loopback + Update url=None 允许).
+
+### Changed
+
+- **`apps/api/app/workers/tasks.py:_publish_progress`**: 加 `job_meta` 可选参数, 仅在开始/结束/失败 3 时点同时发到 `global:prediction-jobs` channel (不发中间高频帧, 避免塞爆全局通道). 单项目 channel `project:{id}:preannotate` 不变.
+- **`apps/api/app/workers/tasks.py:_run_batch`**: 加 `celery_task_id` 入参; 入口 INSERT `prediction_jobs (status='running', total_tasks, celery_task_id)` 取 `job.id`; task 主循环维护本地 `success_count` / `failed_count` 计数; 结束时 UPDATE `status='completed', completed_at, duration_ms, success_count, failed_count`; total=0 短路也写完整 row. 全局 channel meta 含 `job_id / project_name / batch_id / 计数 / duration_ms`.
+- **`apps/api/app/workers/tasks.py:_BatchPredictTask.on_failure`**: 除原推 WS 错误外, 新走 `_mark_job_failed` async helper (`asyncio.run` 包裹), 通过 `celery_task_id` 反查 `prediction_jobs` row → UPDATE `status='failed', error_message[:2000], completed_at, duration_ms` (仅当行 status='running' 时, 已 completed 的不覆盖).
+- **`apps/api/app/schemas/ml_backend.py`**: `MLBackendCreate.url` + `MLBackendUpdate.url` 加 `field_validator` 拒绝 loopback host. 共用 `_validate_ml_backend_url` 函数 + `_LOOPBACK_HOSTS` 常量集. Update 仅当 url 非 None 时校验.
+- **`apps/api/app/api/v1/router.py`**: 注册 `admin_preannotate_jobs.router` (与 `admin_preannotate.router` 区分).
+- **`apps/web/src/App.tsx`**: `/ai-pre` 路由从单页改为嵌套 layout + 子路由. 加 `AIPreAnnotateLayout` / `AIPreAnnotateJobsPage` lazy import.
+- **`AIPreAnnotatePage.tsx:133-155`**: 切项目 useEffect 加 `useGlobalPreannotationJobs.byProject[oldId]` 检测; 旧项目仍跑预标时弹 warning toast (`项目「X」仍在跑预标 (i/N)`) 与原 info toast 共存.
+- **`components/shell/TopBar.tsx`**: NotificationsPopover 左侧插入 `<PreannotateJobsBadge />`.
+
+### Fixed
+
+- **schema adapter 黄金样本不变量补全**: v0.9.7 临时塞进去的 `to_internal_shape` 在 v0.9.8 单测里固化 3 条隐性约定 (idempotent / geometry 优先于 value / 非标字段无损), 防 ML backend 输出格式漂移再次撞前端 dark drop. 同步在 dev 文档 §兼容旧 schema 的最小不变量节明示.
+
+### Internal
+
+- **OpenAPI snapshot 刷新** (`apps/api/openapi.snapshot.json` + `docs-site/api/openapi.json`): 新 `PredictionJobOut` / `PredictionJobsResponse` schema + `MLBackendCreate.url` validator 描述生成. `pnpm codegen` 已重跑 `src/api/generated/types.gen.ts`.
+
+### Tests
+
+- 后端: `pytest tests/test_prediction_jobs_worker.py tests/test_admin_preannotate_jobs.py tests/test_prediction_schema_adapter.py tests/test_ml_backend_schemas.py tests/test_preannotate_text.py tests/test_admin_preannotate.py tests/test_ml_health_worker.py` — 58 tests pass.
+- 前端: `pnpm test --run src/pages/Workbench/state/transforms.test.ts src/components/shell/__tests__/PreannotateJobsBadge.test.tsx` — 18 tests pass; `pnpm typecheck` 全过.
+
+### Migration / Rebuild 注意
+
+- DB: `alembic upgrade head` 跑 `0052_prediction_jobs`.
+- Celery worker: 改了 `app/workers/tasks.py`, **必须** `docker restart ai-annotation-platform-celery-worker-1` (CLAUDE.md §7 — celery 不会 `--reload`).
+- Frontend: `pnpm install` (新 hook + 组件无新依赖, openapi-ts 已存在); `pnpm codegen` (snapshot 已刷新); `pnpm dev` HMR 即可.
+- 已存在 `localhost` URL 的 ml_backends 不会被强制迁移 (validator 仅作用于新 Create/Update); 升级时建议手动检查 `SELECT id, url FROM ml_backends WHERE url ILIKE '%localhost%'`.
+
+### Known gaps / 留 v0.9.9 + v0.10.x
+
+- **`PredictionShape` 仍手写**: 后端 `Prediction.result` 是 JSONB, Pydantic schema 仅 `list[dict]`, codegen 拿不到内部字段. 留 v0.9.9 加 `app/schemas/prediction.py:PredictionShape` Pydantic 模型 + 前端切换 (api-schema-boundary.md §v0.9.8 codegen 迁移现状已注明).
+- **`prediction_jobs.total_cost` 未聚合**: worker 暂未把 `PredictionMeta.total_cost` 累加进 job 行. 留下版接通 (字段已就位, `Numeric(10, 4) NULL` 兼容).
+- **WS 跨多项目订阅**: 当前 RBAC 仅 admin 全收, 普通项目成员的「自家项目预标进度」可见性留 v0.10.x.
 
 ## [0.9.7] - 2026-05-08
 
