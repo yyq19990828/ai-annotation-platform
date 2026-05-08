@@ -67,6 +67,18 @@ export default defineConfig({
           items: [{ text: "数据导出格式", link: "/user-guide/export/" }],
         },
         {
+          text: "超级管理员",
+          collapsed: true,
+          items: [
+            { text: "概览", link: "/user-guide/superadmin/" },
+            { text: "ML Backend 注册", link: "/user-guide/superadmin/ml-backend-registry" },
+            { text: "模型市场", link: "/user-guide/superadmin/model-market" },
+            { text: "失败预测排查", link: "/user-guide/superadmin/failed-predictions" },
+            { text: "审计日志", link: "/user-guide/superadmin/audit-logs" },
+            { text: "系统监控", link: "/user-guide/superadmin/system-monitoring" },
+          ],
+        },
+        {
           text: "其他",
           items: [{ text: "FAQ", link: "/user-guide/faq" }],
         },
@@ -90,6 +102,10 @@ export default defineConfig({
             { text: "后端分层", link: "/dev/architecture/backend-layers" },
             { text: "前端分层", link: "/dev/architecture/frontend-layers" },
             { text: "数据流", link: "/dev/architecture/data-flow" },
+            { text: "AI 模型集成", link: "/dev/architecture/ai-models" },
+            { text: "API Schema 边界", link: "/dev/architecture/api-schema-boundary" },
+            { text: "预标注流水线", link: "/dev/architecture/prediction-pipeline" },
+            { text: "部署拓扑", link: "/dev/architecture/deployment-topology" },
           ],
         },
         {
@@ -112,6 +128,20 @@ export default defineConfig({
           ],
         },
         {
+          text: "故障排查 / 踩坑",
+          collapsed: true,
+          items: [
+            { text: "总览与速查表", link: "/dev/troubleshooting/" },
+            { text: "Docker rebuild vs restart", link: "/dev/troubleshooting/docker-rebuild-vs-restart" },
+            { text: "容器网络与 loopback", link: "/dev/troubleshooting/container-networking" },
+            { text: "Prediction Schema 适配器", link: "/dev/troubleshooting/schema-adapter-pitfalls" },
+            { text: "Dev 数据保护", link: "/dev/troubleshooting/dev-data-preservation" },
+            { text: "React useState TDZ", link: "/dev/troubleshooting/react-tdz-trap" },
+            { text: "环境变量与 config 路径", link: "/dev/troubleshooting/env-and-config-paths" },
+            { text: "CI 服务依赖踩坑", link: "/dev/troubleshooting/ci-flaky-services" },
+          ],
+        },
+        {
           text: "ADR（架构决策）",
           collapsed: true,
           items: adrSidebarItems,
@@ -120,6 +150,19 @@ export default defineConfig({
 
       "/api/": [
         { text: "API 总览", link: "/api/" },
+        {
+          text: "按资源域指南",
+          items: [
+            { text: "认证", link: "/api/guides/auth" },
+            { text: "项目", link: "/api/guides/projects" },
+            { text: "任务与标注", link: "/api/guides/tasks-and-annotations" },
+            { text: "Predictions / Jobs", link: "/api/guides/predictions" },
+            { text: "ML Backend", link: "/api/guides/ml-backend" },
+            { text: "WebSocket", link: "/api/guides/websocket" },
+            { text: "导出", link: "/api/guides/export" },
+            { text: "路由索引（自动生成）", link: "/api/guides/_routes.generated" },
+          ],
+        },
       ],
     },
 
