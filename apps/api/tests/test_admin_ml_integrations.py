@@ -181,7 +181,9 @@ async def test_probe_requires_admin(httpx_client, annotator):
 
 
 @pytest.mark.asyncio
-async def test_runtime_hints_returns_default_url(httpx_client, super_admin, monkeypatch):
+async def test_runtime_hints_returns_default_url(
+    httpx_client, super_admin, monkeypatch
+):
     _, token = super_admin
     from app.config import settings
 

@@ -27,7 +27,9 @@ def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _seed(db: AsyncSession, owner_id: uuid.UUID, *, batch_status: str = BatchStatus.ACTIVE):
+async def _seed(
+    db: AsyncSession, owner_id: uuid.UUID, *, batch_status: str = BatchStatus.ACTIVE
+):
     suffix = uuid.uuid4().hex[:8]
     proj = Project(
         id=uuid.uuid4(),
@@ -100,7 +102,9 @@ def _mock_celery(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_preannotate_backend_not_found(httpx_client_bound, super_admin, db_session, _mock_celery):
+async def test_preannotate_backend_not_found(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
     owner, token = super_admin
     proj, _, _ = await _seed(db_session, owner.id)
     resp = await httpx_client_bound.post(
@@ -113,7 +117,9 @@ async def test_preannotate_backend_not_found(httpx_client_bound, super_admin, db
 
 
 @pytest.mark.asyncio
-async def test_preannotate_batch_not_found(httpx_client_bound, super_admin, db_session, _mock_celery):
+async def test_preannotate_batch_not_found(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
     owner, token = super_admin
     proj, backend, _ = await _seed(db_session, owner.id)
     resp = await httpx_client_bound.post(
@@ -129,9 +135,13 @@ async def test_preannotate_batch_not_found(httpx_client_bound, super_admin, db_s
 
 
 @pytest.mark.asyncio
-async def test_preannotate_batch_wrong_status(httpx_client_bound, super_admin, db_session, _mock_celery):
+async def test_preannotate_batch_wrong_status(
+    httpx_client_bound, super_admin, db_session, _mock_celery
+):
     owner, token = super_admin
-    proj, backend, batch = await _seed(db_session, owner.id, batch_status=BatchStatus.DRAFT)
+    proj, backend, batch = await _seed(
+        db_session, owner.id, batch_status=BatchStatus.DRAFT
+    )
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),

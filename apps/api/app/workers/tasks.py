@@ -154,10 +154,7 @@ class _BatchPredictTask(celery_app.Task):
     避免前端停在「已排队」状态。args[0] 是 project_id。"""
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):  # noqa: ARG002
-        project_id = (
-            kwargs.get("project_id")
-            or (args[0] if args else None)
-        )
+        project_id = kwargs.get("project_id") or (args[0] if args else None)
         if project_id:
             try:
                 _publish_progress(
