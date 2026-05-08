@@ -185,9 +185,40 @@ export function WorkbenchShell() {
     () => predictionsToBoxes(predictionsData),
     [predictionsData],
   );
+
+  // B-11 · 已采纳 / 已驳回 (会话级) 的 shape 从画布隐去. 之前按 prediction 维度过滤
+  // 导致一个紫框被采纳后, 同 prediction 下其它紫框跟着消失 — 改成 shape 级 (predictionId+shapeIndex).
+  // 标记格式与 AiBox.id 一致: `pred-${predictionId}-${shapeIndex}`.
+  const acceptedShapeKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const ann of annotationsData ?? []) {
+      if (!ann.parent_prediction_id) continue;
+      // _shape_index 由后端 accept_prediction 写入 attributes; 旧数据可能缺失 → 退回 prediction 维度过滤
+      // (整条 prediction 一并采纳的"全部采纳"路径也会缺单 shape index, 用 -* 通配符).
+      const idx = (ann.attributes as { _shape_index?: number } | undefined)?._shape_index;
+      if (typeof idx === "number") {
+        set.add(`pred-${ann.parent_prediction_id}-${idx}`);
+      } else {
+        set.add(`pred-${ann.parent_prediction_id}-*`);
+      }
+    }
+    return set;
+  }, [annotationsData]);
+
+  const [dismissedShapeKeys, setDismissedShapeKeys] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setDismissedShapeKeys(new Set());
+  }, [taskId]);
+
   const aiBoxes = useMemo(
-    () => allAiBoxes.filter((b) => b.conf >= s.confThreshold),
-    [allAiBoxes, s.confThreshold],
+    () => allAiBoxes.filter((b) => {
+      if (b.conf < s.confThreshold) return false;
+      if (acceptedShapeKeys.has(b.id)) return false;
+      if (acceptedShapeKeys.has(`pred-${b.predictionId}-*`)) return false;
+      if (dismissedShapeKeys.has(b.id)) return false;
+      return true;
+    }),
+    [allAiBoxes, s.confThreshold, acceptedShapeKeys, dismissedShapeKeys],
   );
 
   // v0.9.5 · 本题累计 AI 费用 / 平均推理时间（PredictionMeta 已 join 进 PredictionResponse）
@@ -515,46 +546,63 @@ export function WorkbenchShell() {
 
   const handleCancelBatchChange = useCallback(() => setBatchChanging(false), []);
 
+  const handleRejectPrediction = useCallback((box: AiBox) => {
+    setDismissedShapeKeys((prev) => {
+      if (prev.has(box.id)) return prev;
+      const next = new Set(prev);
+      next.add(box.id);
+      return next;
+    });
+  }, []);
+
   const handleAcceptPrediction = useCallback((box: AiBox) => {
     if (!box.predictionId) return;
-    acceptPredictionMut.mutate(box.predictionId, {
-      onSuccess: (created) => {
-        const ids = created.map((a) => a.id);
-        history.push({ kind: "acceptPrediction", predictionId: box.predictionId, createdAnnotationIds: ids });
-        pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
+    // 单点采纳: 仅采纳当前 shape, 不波及同 prediction 下其它框.
+    acceptPredictionMut.mutate(
+      { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
+      {
+        onSuccess: (created) => {
+          const ids = created.map((a) => a.id);
+          history.push({ kind: "acceptPrediction", predictionId: box.predictionId, createdAnnotationIds: ids });
+          pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
+        },
       },
-    });
+    );
   }, [acceptPredictionMut, history, pushToast]);
 
   const handleAcceptAll = useCallback(() => {
-    const uniquePredictionIds = [...new Set(aiBoxes.map((b) => b.predictionId))];
-    if (uniquePredictionIds.length === 0) return;
+    // 只采纳画布上"还在显示"的 shape (已过 confThreshold + 未驳回);
+    // 之前按 prediction 整条采纳, 会把被阈值过滤的低置信框也吞进去, 与用户视觉认知不一致.
+    if (aiBoxes.length === 0) return;
+    const totalBoxes = aiBoxes.length;
     let succeeded = 0;
     let failed = 0;
-    let pending = uniquePredictionIds.length;
-    uniquePredictionIds.forEach((pid) => {
-      acceptPredictionMut.mutate(pid, {
-        onSuccess: (created) => {
-          succeeded++;
-          history.push({
-            kind: "acceptPrediction",
-            predictionId: pid,
-            createdAnnotationIds: created.map((a) => a.id),
-          });
-        },
-        onError: () => { failed++; },
-        onSettled: () => {
-          pending--;
-          if (pending === 0) {
-            const totalBoxes = aiBoxes.length;
-            pushToast({
-              msg: `采纳 ${succeeded}/${uniquePredictionIds.length} 项预测（共 ${totalBoxes} 框）`,
-              sub: failed ? `${failed} 项失败` : undefined,
-              kind: failed ? "error" : "success",
+    let pending = aiBoxes.length;
+    aiBoxes.forEach((box) => {
+      acceptPredictionMut.mutate(
+        { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
+        {
+          onSuccess: (created) => {
+            succeeded++;
+            history.push({
+              kind: "acceptPrediction",
+              predictionId: box.predictionId,
+              createdAnnotationIds: created.map((a) => a.id),
             });
-          }
+          },
+          onError: () => { failed++; },
+          onSettled: () => {
+            pending--;
+            if (pending === 0) {
+              pushToast({
+                msg: `采纳 ${succeeded}/${totalBoxes} 个 AI 框`,
+                sub: failed ? `${failed} 项失败` : undefined,
+                kind: failed ? "error" : "success",
+              });
+            }
+          },
         },
-      });
+      );
     });
   }, [aiBoxes, acceptPredictionMut, history, pushToast]);
 
@@ -570,9 +618,30 @@ export function WorkbenchShell() {
       });
       return;
     }
-    pushToast({ msg: "AI 正在分析图像...", sub: aiModel });
+    // B-12 · DINO 后端要求 prompt 非空 (无 prompt 直接 422); 用项目所有 alias
+    // 拼成默认 prompt, 让"一键预标注"自带"识别所有已配类别"的语义.
+    const aliases: string[] = [];
+    const cfg = currentProject?.classes_config ?? {};
+    for (const entry of Object.values(cfg)) {
+      const alias = (entry as { alias?: string | null } | undefined)?.alias;
+      if (typeof alias === "string" && alias.trim()) aliases.push(alias.trim());
+    }
+    if (aliases.length === 0) {
+      pushToast({
+        msg: "AI 一键预标暂不可用",
+        sub: "项目类别未配置英文 alias,请到「项目设置 → 类别管理」补全",
+        kind: "error",
+      });
+      return;
+    }
+    const prompt = aliases.join(", ");
+    pushToast({ msg: "AI 正在分析图像...", sub: `${aiModel} · ${aliases.length} 个类别` });
     triggerPreannotation.mutate(
-      { ml_backend_id: mlBackendId, task_ids: taskId ? [taskId] : undefined },
+      {
+        ml_backend_id: mlBackendId,
+        task_ids: taskId ? [taskId] : undefined,
+        prompt,
+      },
       {
         onError: (err) => pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
       },
@@ -775,7 +844,7 @@ export function WorkbenchShell() {
     navigateTask, smartNext, setFitTick,
     recordRecentClass, handleDeleteBox, handleBatchDelete,
     handleStartChangeClass, handleStartBatchChangeClass,
-    handleSubmitTask, handleAcceptPrediction, handleUpdateAttributes,
+    handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
@@ -983,6 +1052,7 @@ export function WorkbenchShell() {
           pendingDrawing={s.pendingDrawing}
           onSelectBox={handleSelectBox}
           onAcceptPrediction={handleAcceptPrediction}
+          onRejectPrediction={handleRejectPrediction}
           onDeleteUserBox={handleDeleteBox}
           onCommitDrawing={handleCommitDrawing}
           onSamPrompt={(prompt) => {
@@ -1160,6 +1230,7 @@ export function WorkbenchShell() {
         onSetConfThreshold={s.setConfThreshold}
         onSelect={handleSelectBox}
         onAcceptPrediction={handleAcceptPrediction}
+        onRejectPrediction={handleRejectPrediction}
         onClearSelection={() => s.setSelectedId(null)}
         onDeleteUserBox={handleDeleteBox}
         onChangeUserBoxClass={handleStartChangeClass}

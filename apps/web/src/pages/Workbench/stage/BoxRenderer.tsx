@@ -59,7 +59,11 @@ export function BoxRenderer({
       }}>
         {isAi && <Icon name="sparkle" size={9} />}
         {b.cls}
-        {b.conf !== undefined && <span style={{ opacity: 0.85, fontFamily: "var(--font-mono)" }}>{(b.conf * 100).toFixed(0)}</span>}
+        {isAi && b.conf !== undefined && (
+          <span style={{ opacity: 0.85, fontFamily: "var(--font-mono)" }}>
+            {(b.conf * 100).toFixed(0)}%
+          </span>
+        )}
       </div>
       {isAi && selected && editable && (
         <div onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: -28, right: 0, display: "flex", gap: 4, background: "white", borderRadius: 4, padding: 2, boxShadow: "var(--shadow-md)" }}>

@@ -72,6 +72,43 @@ export function PromptComposer({
     );
   }, [aliases, filter]);
 
+  // B-10 · 把 prompt 拆成 token, 用于判定 chip 选中态 + toggle add/remove.
+  const promptTokens = useMemo(
+    () =>
+      prompt
+        .split(",")
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean),
+    [prompt],
+  );
+  const promptTokenSet = useMemo(() => new Set(promptTokens), [promptTokens]);
+
+  const toggleAlias = (alias: string) => {
+    const a = alias.trim();
+    if (!a) return;
+    const aLower = a.toLowerCase();
+    if (promptTokenSet.has(aLower)) {
+      // 移除
+      const next = prompt
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t && t.toLowerCase() !== aLower)
+        .join(", ");
+      onPromptChange(next);
+    } else {
+      const trimmed = prompt.trim().replace(/,\s*$/, "");
+      onPromptChange(trimmed ? `${trimmed}, ${a}` : a);
+    }
+  };
+
+  const selectAll = () => {
+    onPromptChange(aliases.map((x) => x.alias).join(", "));
+  };
+
+  const clearAll = () => {
+    onPromptChange("");
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSubmit) {
       e.preventDefault();
@@ -92,8 +129,38 @@ export function PromptComposer({
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span style={{ fontSize: FS_XS, color: "var(--color-fg-subtle)" }}>
-                类别 alias 快速填入 ({aliases.length})·按预标频率排序：
+                类别 alias 切换添加 / 移除 ({promptTokenSet.size}/{aliases.length})·按预标频率排序：
               </span>
+              <button
+                type="button"
+                onClick={selectAll}
+                style={{
+                  padding: "1px 6px",
+                  fontSize: 10,
+                  background: "var(--color-bg-sunken)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--color-fg-muted)",
+                  cursor: "pointer",
+                }}
+              >
+                全选
+              </button>
+              <button
+                type="button"
+                onClick={clearAll}
+                style={{
+                  padding: "1px 6px",
+                  fontSize: 10,
+                  background: "var(--color-bg-sunken)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--color-fg-muted)",
+                  cursor: "pointer",
+                }}
+              >
+                清空
+              </button>
               {aliases.length > CHIPS_SHOW_SEARCH_THRESHOLD && (
                 <input
                   type="text"
@@ -125,16 +192,16 @@ export function PromptComposer({
               }}
             >
               {filteredAliases.map((a) => {
-                const isActive = prompt.trim() === a.alias;
+                const isActive = promptTokenSet.has(a.alias.toLowerCase());
                 return (
                   <button
                     key={a.name}
                     type="button"
-                    onClick={() => onPromptChange(a.alias)}
+                    onClick={() => toggleAlias(a.alias)}
                     style={isActive ? aliasChipActiveStyle : aliasChipStyle}
-                    title={`使用类别「${a.name}」的 alias${a.count > 0 ? ` · 历史预标 ${a.count} 次` : ""}`}
+                    title={`${isActive ? "移除" : "添加"} 类别「${a.name}」的 alias${a.count > 0 ? ` · 历史预标 ${a.count} 次` : ""}`}
                   >
-                    <span>{a.alias}</span>
+                    <span>{isActive ? "✓ " : ""}{a.alias}</span>
                     <span style={{ color: "var(--color-fg-subtle)", fontSize: 10 }}>
                       ({a.name})
                     </span>

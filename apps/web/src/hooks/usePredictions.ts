@@ -34,7 +34,11 @@ export function usePredictions(
 export function useAcceptPrediction(taskId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (predictionId: string) => predictionsApi.accept(taskId, predictionId),
+    mutationFn: (vars: { predictionId: string; shapeIndex?: number } | string) => {
+      // 兼容旧调用 (传 string predictionId 直接采纳整条).
+      if (typeof vars === "string") return predictionsApi.accept(taskId, vars);
+      return predictionsApi.accept(taskId, vars.predictionId, vars.shapeIndex);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["predictions", taskId] });
       qc.invalidateQueries({ queryKey: ["annotations", taskId] });

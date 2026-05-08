@@ -63,6 +63,7 @@ interface AIInspectorPanelProps {
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
   onAcceptPrediction: (b: AiBox) => void;
+  onRejectPrediction?: (b: AiBox) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
@@ -107,7 +108,7 @@ export function AIInspectorPanel({
   taskFileUrl, enableCommentCanvasDrawing = true, liveCommentCanvas,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   onToggle, onRunAi, onAcceptAll, onSetConfThreshold,
-  onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   readOnly = false,
   tool, onRunSamText, samRunning = false, samCandidateCount = 0,
   projectId, projectTypeKey, samTextFocusKey,
@@ -185,7 +186,12 @@ export function AIInspectorPanel({
         </div>
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 11, marginBottom: 4 }}>
-            <span style={{ color: "var(--color-fg-muted)" }}>置信度阈值</span>
+            <span
+              style={{ color: "var(--color-fg-muted)" }}
+              title="只显示置信度 ≥ 该阈值的 AI 框；低于阈值的框被隐藏，「全部采纳」也不会采纳它们。注意：这是前端展示过滤，不重新跑模型；要改 DINO 召回阈值请到「项目设置 → AI 配置 → box/text threshold」。"
+            >
+              置信度阈值（仅前端过滤显示，不重跑模型）
+            </span>
             <span
               className="mono"
               style={{
@@ -318,6 +324,7 @@ export function AIInspectorPanel({
         onFetchMore={onFetchMorePredictions}
         onSelect={onSelect}
         onAcceptPrediction={onAcceptPrediction}
+        onRejectPrediction={onRejectPrediction}
         onClearSelection={onClearSelection}
         onDeleteUserBox={onDeleteUserBox}
         onChangeUserBoxClass={onChangeUserBoxClass}
@@ -546,6 +553,7 @@ interface BoxesListProps {
   onFetchMore?: () => void;
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
   onAcceptPrediction: (b: AiBox) => void;
+  onRejectPrediction?: (b: AiBox) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
@@ -554,7 +562,7 @@ interface BoxesListProps {
 function BoxesList({
   aiBoxes, userBoxes, selSet, dimmedAiIds, imageWidth, imageHeight,
   hasMore, isFetchingMore, onFetchMore,
-  onSelect, onAcceptPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
 }: BoxesListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -607,7 +615,10 @@ function BoxesList({
                   imageWidth={imageWidth} imageHeight={imageHeight}
                   onSelect={(e) => onSelect(r.box.id, { shift: !!e?.shiftKey })}
                   onAccept={() => onAcceptPrediction(r.box)}
-                  onReject={onClearSelection}
+                  onReject={() => {
+                    onRejectPrediction?.(r.box);
+                    onClearSelection();
+                  }}
                 />
               )}
               {r.kind === "header" && (

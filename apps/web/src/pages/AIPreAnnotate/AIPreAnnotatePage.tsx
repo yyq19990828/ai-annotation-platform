@@ -144,6 +144,8 @@ export default function AIPreAnnotatePage() {
       writeDraft(prev, prompt);
     }
     if (projectId && projectId !== prev) {
+      // B-10 · 草稿空时默认勾选项目所有 alias (按当前 aliases 列表 join);
+      // aliases 来自异步 query, 此时可能还没就绪 → 用空串占位, 由下方 effect 兜底.
       const next = readDraft(projectId);
       setPrompt(next);
       if (prev) {
@@ -170,6 +172,20 @@ export default function AIPreAnnotatePage() {
   }, [projectId]);
 
   usePreannotateDraftAutosave(projectId || null, prompt);
+
+  /* ── B-10 · 草稿空时, 等 aliases 加载后默认勾选全部 (仅当 prompt 仍为空) ─ */
+  const defaultPromptAppliedRef = useRef<string>("");
+  useEffect(() => {
+    if (!projectId) return;
+    if (defaultPromptAppliedRef.current === projectId) return;
+    if (aliases.length === 0) return;
+    if (prompt.trim()) {
+      defaultPromptAppliedRef.current = projectId;
+      return;
+    }
+    setPrompt(aliases.map((a) => a.alias).join(", "));
+    defaultPromptAppliedRef.current = projectId;
+  }, [projectId, aliases, prompt]);
 
   /* ── 项目切换: 重置 batch / 智能默认 outputMode ─────────────── */
   useEffect(() => {

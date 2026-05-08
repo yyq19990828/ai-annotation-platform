@@ -216,7 +216,7 @@ class GroundedSAM2Predictor:
         # v0.9.2 · 项目级阈值 override；缺省回退到 instance 默认值（来自 backend env）
         eff_box = self.box_threshold if box_threshold is None else float(box_threshold)
         eff_text = self.text_threshold if text_threshold is None else float(text_threshold)
-        boxes, _, phrases = dino_predict(
+        boxes, dino_logits, phrases = dino_predict(
             model=self._dino_model,
             image=image_tensor,
             caption=caption,
@@ -231,13 +231,22 @@ class GroundedSAM2Predictor:
         # 归一化 cxcywh → 像素 xyxy
         boxes_xyxy = self._cxcywh_to_xyxy(boxes.cpu().numpy(), w, h)
         default_label = caption.rstrip(".")
+        # DINO 每框的 sigmoid 后置信度 (与 box_threshold 同源, 真正的检测置信).
+        # 之前丢弃 → box 模式硬编码 score=1.0, mask 模式用 SAM mask 质量分 (恒高).
+        # 用户层面表现为「明明 DINO 卡到 0.15 才出框, 显示却是 100%」, 此处统一回填.
+        dino_scores = (
+            dino_logits.cpu().numpy().tolist() if hasattr(dino_logits, "cpu") else list(dino_logits)
+        )
+
+        def _dino_score(i: int) -> float:
+            return float(dino_scores[i]) if i < len(dino_scores) else 0.0
 
         # box 模式: DINO 直出, 跳过 SAM 全部步骤, cache 不读不写
         if output == "box":
             results: list[dict[str, Any]] = []
             for i, box_px in enumerate(boxes_xyxy):
                 label = phrases[i] if i < len(phrases) else default_label
-                results.append(self._box_to_rect_label(box_px, w, h, label, score=1.0))
+                results.append(self._box_to_rect_label(box_px, w, h, label, _dino_score(i)))
             return results, False
 
         # mask / both 共享 SAM image embedding + mask 推理路径.
@@ -264,7 +273,9 @@ class GroundedSAM2Predictor:
             DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
         )
         for i, mask in enumerate(masks):
-            score = float(scores[i] if i < len(scores) else 0.0)
+            # 用 DINO 检测置信度 (用户语义上的"模型对该目标的把握"), 而非 SAM mask 质量分.
+            # SAM scores 仅反映"给定 box prompt 时 mask 切得有多好", 与 detection 强弱无关.
+            score = _dino_score(i)
             label = phrases[i] if i < len(phrases) else default_label
             poly = mask_to_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))
             if not poly:

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
-import { useUpdateProject } from "@/hooks/useProjects";
+import { useUpdateProject, useRenameClass } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import type { ProjectResponse, ClassesConfig } from "@/api/projects";
 import { ClassEditor, defaultColorFor, type ClassRow } from "./ClassEditor";
@@ -24,7 +24,28 @@ function buildRows(project: ProjectResponse): ClassRow[] {
 export function ClassesSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
   const update = useUpdateProject(project.id);
+  const rename = useRenameClass(project.id);
   const [rows, setRows] = useState<ClassRow[]>(() => buildRows(project));
+
+  const handleRename = (oldName: string, newName: string) => {
+    rename.mutate(
+      { old_name: oldName, new_name: newName },
+      {
+        onSuccess: () =>
+          pushToast({
+            msg: `已重命名「${oldName}」→「${newName}」`,
+            sub: "已同步迁移历史标注",
+            kind: "success",
+          }),
+        onError: (err) =>
+          pushToast({
+            msg: "重命名失败",
+            sub: (err as Error).message,
+            kind: "error",
+          }),
+      },
+    );
+  };
 
   useEffect(() => { setRows(buildRows(project)); }, [project]);
 
@@ -60,7 +81,12 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         <p style={{ fontSize: 12, color: "var(--color-fg-muted)", margin: 0, lineHeight: 1.5 }}>
           每个类别可独立配置颜色（标注框 stroke / 标签底色）。顺序影响数字键 1-9 / a-z 映射与左侧类别面板展示。
         </p>
-        <ClassEditor value={rows} onChange={setRows} />
+        <ClassEditor
+          value={rows}
+          onChange={setRows}
+          onRename={handleRename}
+          renaming={rename.isPending}
+        />
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
           {dirty && (
             <span

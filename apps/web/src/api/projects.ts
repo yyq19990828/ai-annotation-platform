@@ -78,6 +78,10 @@ export const projectsApi = {
   transfer: (id: string, new_owner_id: string) =>
     apiClient.post<ProjectResponse>(`/projects/${id}/transfer`, { new_owner_id }),
 
+  // B-13 · 重命名类别 (后端原子更新 classes / classes_config / annotations.class_name)
+  renameClass: (id: string, old_name: string, new_name: string) =>
+    apiClient.post<ProjectResponse>(`/projects/${id}/classes/rename`, { old_name, new_name }),
+
   listMembers: (id: string) =>
     apiClient.get<ProjectMemberResponse[]>(`/projects/${id}/members`),
 

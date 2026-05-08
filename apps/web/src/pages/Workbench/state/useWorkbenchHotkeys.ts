@@ -65,6 +65,7 @@ export interface UseWorkbenchHotkeysArgs {
   handleStartBatchChangeClass: () => void;
   handleSubmitTask: () => void;
   handleAcceptPrediction: (b: AiBox) => void;
+  handleRejectPrediction?: (b: AiBox) => void;
   handleUpdateAttributes: (id: string, attrs: Record<string, unknown>) => void;
 
   // ai
@@ -106,7 +107,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     navigateTask, smartNext, setFitTick,
     recordRecentClass, handleDeleteBox, handleBatchDelete,
     handleStartChangeClass, handleStartBatchChangeClass,
-    handleSubmitTask, handleAcceptPrediction, handleUpdateAttributes,
+    handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
     updateMutation, taskId,
@@ -387,7 +388,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "rejectAi": {
           if (!s.selectedId) return;
           const aiBox = aiBoxes.find((b) => b.id === s.selectedId);
-          if (aiBox) s.setSelectedId(null);
+          if (aiBox) {
+            handleRejectPrediction?.(aiBox);
+            s.setSelectedId(null);
+          }
           return;
         }
       }

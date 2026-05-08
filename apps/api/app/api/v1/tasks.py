@@ -510,12 +510,19 @@ async def get_predictions(
 async def accept_prediction(
     task_id: uuid.UUID,
     prediction_id: uuid.UUID,
+    shape_index: int | None = Query(
+        None,
+        ge=0,
+        description="可选: 仅采纳指定下标的 shape (一个 prediction 可含多个 shape).",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     _assert_task_editable(await _load_task_or_404(db, task_id))
     svc = AnnotationService(db)
-    await svc.accept_prediction(prediction_id, current_user.id)
+    await svc.accept_prediction(
+        prediction_id, current_user.id, shape_index=shape_index
+    )
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     await db.commit()
     return await svc.list_by_task(task_id)

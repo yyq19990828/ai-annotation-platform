@@ -46,7 +46,7 @@ export function annotationToBox(a: AnnotationResponse): Annotation {
   };
 }
 
-export type AiBox = Annotation & { predictionId: string };
+export type AiBox = Annotation & { predictionId: string; shapeIndex: number };
 
 export function predictionsToBoxes(predictions: PredictionResponse[]): AiBox[] {
   return predictions.flatMap((p) =>
@@ -55,6 +55,7 @@ export function predictionsToBoxes(predictions: PredictionResponse[]): AiBox[] {
       return {
         id: `pred-${p.id}-${i}`,
         predictionId: p.id,
+        shapeIndex: i,
         ...s,
         cls: shape.class_name,
         conf: shape.confidence,

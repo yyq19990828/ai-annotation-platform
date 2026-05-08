@@ -73,6 +73,8 @@ interface ImageStageProps {
   onBatchChangeClass?: () => void;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onAcceptPrediction?: (b: AiBox) => void;
+  /** B-11 · 驳回 AI 预测 (将 prediction 从画布隐去, 不调后端). */
+  onRejectPrediction?: (b: AiBox) => void;
   onDeleteUserBox?: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
   onCommitDrawing?: (geo: Geom) => void;
@@ -161,7 +163,10 @@ function KonvaBox({
   const labelPad = 4 / scale;
   const isUserSelected = selected && !isAi && editable;
 
-  const labelText = `${isAi ? "✦ " : ""}${b.cls} ${(b.conf * 100).toFixed(0)}`;
+  // 仅 AI 框带置信度 (DINO 给的 0~1 值); 手动框置信度恒为 1, 显示无意义.
+  const labelText = isAi
+    ? `✦ ${b.cls} ${(b.conf * 100).toFixed(0)}%`
+    : b.cls;
 
   return (
     <Group>
@@ -266,7 +271,10 @@ function KonvaPolygon({
   const sw = (selected ? 2 : 1.5) / scale;
   const labelFontSize = 10.5 / scale;
   const labelPad = 4 / scale;
-  const labelText = `${isAi ? "✦ " : ""}${b.cls} ${(b.conf * 100).toFixed(0)}`;
+  // 仅 AI 框带置信度 (DINO 给的 0~1 值); 手动框置信度恒为 1, 显示无意义.
+  const labelText = isAi
+    ? `✦ ${b.cls} ${(b.conf * 100).toFixed(0)}%`
+    : b.cls;
   const ps: Pt[] = points && points.length >= 3 ? points : (b.polygon ?? []);
   const flat: number[] = [];
   for (const [px, py] of ps) flat.push(px * imgW, py * imgH);
@@ -381,7 +389,7 @@ export function ImageStage({
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
   onBatchDelete, onBatchChangeClass,
-  onSelectBox, onAcceptPrediction, onDeleteUserBox, onChangeUserBoxClass,
+  onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass,
   onCommitDrawing, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft, samSubTool, samPolarity,
@@ -1042,7 +1050,12 @@ export function ImageStage({
           onAccept={isSelectedAi && onAcceptPrediction
             ? () => onAcceptPrediction(selectedBox as AiBox)
             : undefined}
-          onReject={isSelectedAi ? () => onSelectBox(null) : undefined}
+          onReject={isSelectedAi
+            ? () => {
+                if (onRejectPrediction) onRejectPrediction(selectedBox as AiBox);
+                onSelectBox(null);
+              }
+            : undefined}
           onDelete={!isSelectedAi && onDeleteUserBox && selSet.size === 1
             ? () => onDeleteUserBox(selectedBox.id)
             : undefined}

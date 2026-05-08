@@ -12,6 +12,15 @@ export const predictionsApi = {
     return apiClient.get<PredictionResponse[]>(`/tasks/${taskId}/predictions${qs}`);
   },
 
-  accept: (taskId: string, predictionId: string) =>
-    apiClient.post<AnnotationResponse[]>(`/tasks/${taskId}/predictions/${predictionId}/accept`),
+  /**
+   * 采纳预测.
+   * - shapeIndex 给定: 仅采纳指定 shape (画布单点采纳, 避免波及同 prediction 下其它框).
+   * - 不传:           采纳整条 prediction 的所有 shape ("全部采纳"按钮).
+   */
+  accept: (taskId: string, predictionId: string, shapeIndex?: number) => {
+    const qs = shapeIndex !== undefined ? `?shape_index=${shapeIndex}` : "";
+    return apiClient.post<AnnotationResponse[]>(
+      `/tasks/${taskId}/predictions/${predictionId}/accept${qs}`,
+    );
+  },
 };

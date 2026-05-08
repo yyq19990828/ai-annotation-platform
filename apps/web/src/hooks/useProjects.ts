@@ -74,6 +74,22 @@ export function useTransferProject(id: string) {
   });
 }
 
+// B-13 · 重命名项目类别 (后端原子改 classes_config + annotations.class_name)
+export function useRenameClass(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { old_name: string; new_name: string }) =>
+      projectsApi.renameClass(id, vars.old_name, vars.new_name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["project", id] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      // 重命名会迁移 annotations.class_name → 让工作台 / dashboard 数据失效重拉
+      qc.invalidateQueries({ queryKey: ["annotations"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
 export function useProjectMembers(id: string) {
   return useQuery({
     queryKey: ["project-members", id],

@@ -51,17 +51,50 @@ class AnnotationService:
         return annotation
 
     async def accept_prediction(
-        self, prediction_id: uuid.UUID, user_id: uuid.UUID
+        self,
+        prediction_id: uuid.UUID,
+        user_id: uuid.UUID,
+        shape_index: int | None = None,
     ) -> Annotation | None:
+        """采纳预测 → 转 annotation.
+
+        - shape_index=None: 采纳整条 prediction 的所有 shape (旧默认, 用于"全部采纳"按钮).
+        - shape_index=i:    仅采纳第 i 个 shape (用于画布单点"采纳"按钮, 避免一键采纳波及同 prediction 下其它框).
+          每条 annotation 在 attributes 里写入 _shape_index, 让前端能按 (predictionId, shapeIndex) 双键判定.
+        """
         prediction = await self.db.get(Prediction, prediction_id)
         if not prediction:
             return None
 
         # v0.9.7 fix · prediction.result 是 LabelStudio 标准, 转内部 schema 后入 annotation
         from app.services.prediction import to_internal_shape
+        from app.db.models.project import Project
 
-        for raw_shape in prediction.result:
+        # B-11 · DINO 写入的 class_name 是项目类别的英文 alias; 采纳时反查
+        # classes_config 把 alias 映射回原类别名 (中文 / 业务名).
+        project = await self.db.get(Project, prediction.project_id)
+        alias_to_name: dict[str, str] = {}
+        if project and isinstance(project.classes_config, dict):
+            for cls_name, entry in project.classes_config.items():
+                if not isinstance(entry, dict):
+                    continue
+                alias = entry.get("alias")
+                if isinstance(alias, str) and alias.strip():
+                    alias_to_name[alias.strip().lower()] = cls_name
+
+        raw_shapes = list(prediction.result or [])
+        if shape_index is not None:
+            if not (0 <= shape_index < len(raw_shapes)):
+                return None
+            indexed = [(shape_index, raw_shapes[shape_index])]
+        else:
+            indexed = list(enumerate(raw_shapes))
+
+        annotation: Annotation | None = None
+        for idx, raw_shape in indexed:
             shape = to_internal_shape(raw_shape)
+            raw_class = shape.get("class_name", "") or ""
+            mapped_class = alias_to_name.get(raw_class.strip().lower(), raw_class)
             annotation = Annotation(
                 id=uuid.uuid4(),
                 task_id=prediction.task_id,
@@ -69,10 +102,11 @@ class AnnotationService:
                 user_id=user_id,
                 source="prediction_based",
                 annotation_type=shape.get("type", "bbox"),
-                class_name=shape.get("class_name", ""),
+                class_name=mapped_class,
                 geometry=shape.get("geometry", {}),
                 confidence=shape.get("confidence"),
                 parent_prediction_id=prediction_id,
+                attributes={"_shape_index": idx},
             )
             self.db.add(annotation)
 

@@ -72,6 +72,9 @@ export function useWorkbenchState() {
    */
   const [selectedId, setSelectedIdRaw] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // confThreshold: AI 框前端展示阈值 (b.conf >= confThreshold 才进 aiBoxes).
+  // 注意: 这是前端过滤, 不重跑模型; "全部采纳"也只会采纳过滤后还显示的框.
+  // 改 DINO 召回阈值要去 项目设置 → AI 配置 → box_threshold / text_threshold.
   const [confThreshold, setConfThreshold] = useState(0.5);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);

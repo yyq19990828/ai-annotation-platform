@@ -454,6 +454,53 @@ async def delete_project(
     return Response(status_code=204)
 
 
+class ClassRenameRequest(BaseModel):
+    old_name: str
+    new_name: str
+
+
+@router.post("/{project_id}/classes/rename", response_model=ProjectOut)
+async def rename_class(
+    body: ClassRenameRequest,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+):
+    """B-13 · 原子地把类别 old_name 重命名为 new_name:
+    - 更新 classes 数组与 classes_config 字典 key (保留 color/order/alias)
+    - 同步更新所有 annotations.class_name (限本项目)
+    - 不动 predictions.result (alias 不变)
+    """
+    old = body.old_name.strip()
+    new = body.new_name.strip()
+    if not old or not new:
+        raise HTTPException(status_code=400, detail="名称不能为空")
+    if old == new:
+        return await _serialize_project(db, project)
+
+    classes = list(project.classes or [])
+    cfg = dict(project.classes_config or {})
+    if old not in classes:
+        raise HTTPException(status_code=404, detail=f"类别 '{old}' 不存在")
+    if new in classes:
+        raise HTTPException(status_code=409, detail=f"类别 '{new}' 已存在")
+
+    project.classes = [new if c == old else c for c in classes]
+    if old in cfg:
+        cfg[new] = cfg.pop(old)
+    project.classes_config = cfg
+
+    await db.execute(
+        text(
+            "UPDATE annotations SET class_name = :new "
+            "WHERE project_id = :pid AND class_name = :old"
+        ),
+        {"pid": str(project.id), "old": old, "new": new},
+    )
+    await db.commit()
+    await db.refresh(project)
+    return await _serialize_project(db, project)
+
+
 @router.post("/{project_id}/transfer", response_model=ProjectOut)
 async def transfer_owner(
     body: ProjectTransferRequest,
