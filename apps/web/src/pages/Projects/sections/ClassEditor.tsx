@@ -17,7 +17,7 @@ export interface ClassRow {
   alias?: string;
 }
 
-const ALIAS_PATTERN = /^[a-zA-Z0-9 ,_\-]*$/;
+const ALIAS_PATTERN = /^[a-zA-Z0-9 ,_-]*$/;
 
 /** v0.9.6 · 与后端 ClassConfigEntry._normalize_alias 等价的前端实现.
  * blur 时规范化, 让所见即所得 + DINO 召回更稳; 后端 field_validator 兜底.
