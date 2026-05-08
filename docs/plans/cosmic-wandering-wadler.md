@@ -248,3 +248,55 @@ pnpm --filter @anno/docs-site exec redocly lint apps/api/openapi.snapshot.json
 - [ ] 超管能仅看 `user-guide/superadmin/*` 完成 ML Backend 注册
 - [ ] 新人按 `dev/troubleshooting/` 自助排查 Celery 不更新问题
 - [ ] OpenAPI 修改后，CI 自动同步 `public/openapi.json` 且 API 指南页交叉引用未坏
+
+---
+
+## Outcome
+
+落地分支：`claude/add-project-documentation-jJ77h`（7 个 commit，依 Day 1–7 切片）。
+
+### 已落地
+
+**Day 1（机制）** commit `6626071`
+- `.github/PULL_REQUEST_TEMPLATE.md` — 文档影响清单
+- `docs/plans/README.md` — `## Outcome` 归档约定
+- `docs-site/scripts/check-{adr,plans-freshness,changelog-version}.mjs`
+- `.github/workflows/docs-validate.yml`（PR + push 触发）
+- `pnpm check:all` 一键跑全套
+
+**Day 2（故障排查）** commit `0104f49`
+- `docs-site/dev/troubleshooting/` 8 篇：index、docker-rebuild-vs-restart、container-networking、schema-adapter-pitfalls、dev-data-preservation、react-tdz-trap、env-and-config-paths、ci-flaky-services
+- 全部从 v0.9.x commit message 提取，附 commit hash 索引
+
+**Day 3（CHANGELOG + ADR）** commit `b3a6323`
+- CHANGELOG.md 补 v0.9.10 条目
+- ADR 0014 prediction_jobs 表 + ADR 0015 ML Backend URL 校验
+- 0.8.x/0.9.x 拆分：0.8.x.md 已存在；0.9.x 仍为当前版本，按约定保留主 CHANGELOG，待 v1.0 时拆出
+
+**Day 4（架构图）** commit `7b4ed47`
+- 新增 `dev/architecture/prediction-pipeline.md`（状态机 + 时序图 + 表边界）
+- 新增 `dev/architecture/deployment-topology.md`（三种部署形态 + Mermaid + 端口/卷）
+- 既有 overview / data-flow / ai-models 已含 Mermaid，按 surgical 原则未重写
+
+**Day 5–6（用户手册）** commit `b3d6f8c`
+- 新增 `user-guide/superadmin/` 6 篇：index、ml-backend-registry、model-market、failed-predictions、audit-logs、system-monitoring
+- admin/ 折叠：现有 `projects/` + `review/` + `export/` 已覆盖 project_admin 工作流，仅超管为真缺口
+
+**Day 7（API 指南）** commit `9198bb3`
+- 新增 `api/guides/` 7 篇：auth、projects、tasks-and-annotations、predictions、ml-backend、websocket、export
+- 新增 `docs-site/scripts/generate-api-index.mjs`，扫 `apps/api/app/api/v1/*.py` 生成 `_routes.generated.md`（151 路由 / 28 模块）
+- 接入 prebuild
+
+### 未尽事项（移交）
+
+- `extract-completed-plans.mjs` 脚本（plans 索引页）— 计划列出但未实施，价值不高（CI warning 已能提示陈旧 plan）；如需要再补
+- `generate-changelog-draft.mjs` 脚本 — 同上，发版时手写更可控
+- 用户手册 admin 角色专属页 — 现有结构已能服务，必要时再按需补
+- lychee 链接外链校验在 push 时跑（PR 不卡），如要严格化把 `if: github.event_name == 'push'` 去掉
+- redocly OpenAPI lint：未接入，可在 docs-validate.yml 加 step
+
+### 验证状态
+
+- `pnpm --filter @anno/docs-site build` ✅
+- `pnpm --filter @anno/docs-site check:all` ✅（snippets / ADR 15 / plans / changelog 全过）
+- 链接：VitePress dead-link 检查全过（仅 1 处指向仓库 root CLAUDE.md 的相对链改为 GitHub URL）
