@@ -22,6 +22,7 @@ class StorageService:
         )
         self.bucket = settings.minio_bucket
         self.datasets_bucket = settings.minio_datasets_bucket
+        self.bug_reports_bucket = settings.minio_bug_reports_bucket
 
     def ensure_bucket(self, bucket: str | None = None) -> None:
         b = bucket or self.bucket
@@ -33,36 +34,47 @@ class StorageService:
     def ensure_all_buckets(self) -> None:
         self.ensure_bucket(self.bucket)
         self.ensure_bucket(self.datasets_bucket)
+        self.ensure_bucket(self.bug_reports_bucket)
         self._ensure_lifecycle()
 
     def _ensure_lifecycle(self) -> None:
-        """v0.6.6 · 评论附件 90 天过期 + bug 截图 180 天过期。
-
-        软删评论的附件目前无显式清理（celery beat 未启用），靠 bucket lifecycle
-        保证最长 90 天后自动 GC，避免 MinIO 无限增长。bug 截图同理。
+        """v0.6.6 · 评论附件 90 天过期。
+        B-4 · bug 截图迁到独立桶 ``bug-reports``,在该桶上挂 180 天 lifecycle。
         若 MinIO 不支持（旧版本）静默忽略。
         """
-        rules = [
+        anno_rules = [
             {
                 "ID": "comment-attachments-90d",
                 "Status": "Enabled",
                 "Filter": {"Prefix": "comment-attachments/"},
                 "Expiration": {"Days": 90},
             },
+        ]
+        try:
+            self.client.put_bucket_lifecycle_configuration(
+                Bucket=self.bucket,
+                LifecycleConfiguration={"Rules": anno_rules},
+            )
+        except ClientError as exc:
+            logger.warning("Failed to set bucket lifecycle on %s: %s", self.bucket, exc)
+
+        bug_rules = [
             {
                 "ID": "bug-screenshots-180d",
                 "Status": "Enabled",
-                "Filter": {"Prefix": "bug-screenshots/"},
+                "Filter": {"Prefix": ""},
                 "Expiration": {"Days": 180},
             },
         ]
         try:
             self.client.put_bucket_lifecycle_configuration(
-                Bucket=self.bucket,
-                LifecycleConfiguration={"Rules": rules},
+                Bucket=self.bug_reports_bucket,
+                LifecycleConfiguration={"Rules": bug_rules},
             )
         except ClientError as exc:
-            logger.warning("Failed to set bucket lifecycle on %s: %s", self.bucket, exc)
+            logger.warning(
+                "Failed to set bucket lifecycle on %s: %s", self.bug_reports_bucket, exc
+            )
 
     def _public_url(self, url: str) -> str:
         if settings.minio_public_url:

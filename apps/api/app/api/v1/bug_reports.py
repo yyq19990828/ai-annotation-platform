@@ -52,8 +52,13 @@ async def init_bug_screenshot_upload(
     safe_name = data.file_name.replace("/", "_").replace("\\", "_")
     if not safe_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
         safe_name += ".png"
-    storage_key = f"bug-screenshots/{current_user.id}/{uuid.uuid4()}-{safe_name}"
-    upload_url = storage_service.generate_upload_url(storage_key, data.content_type)
+    # B-4 · bug 截图改投独立桶 (bug-reports),与 anno 桶解耦
+    storage_key = f"{current_user.id}/{uuid.uuid4()}-{safe_name}"
+    upload_url = storage_service.generate_upload_url(
+        storage_key,
+        data.content_type,
+        bucket=storage_service.bug_reports_bucket,
+    )
     return ScreenshotInitResponse(
         storage_key=storage_key,
         upload_url=upload_url,

@@ -560,14 +560,24 @@ export function WorkbenchShell() {
 
   const handleRunAi = useCallback(() => {
     if (!projectId) return;
+    // B-8: 工作台 AI 一键预标 — 单图触发要求项目已绑定 ML backend
+    const mlBackendId = currentProject?.ml_backend_id;
+    if (!mlBackendId) {
+      pushToast({
+        msg: "AI 一键预标暂不可用",
+        sub: "项目尚未绑定 ML 推理后端,请到「项目设置 → AI 配置」注册并选择",
+        kind: "error",
+      });
+      return;
+    }
     pushToast({ msg: "AI 正在分析图像...", sub: aiModel });
     triggerPreannotation.mutate(
-      { ml_backend_id: "", task_ids: taskId ? [taskId] : undefined },
+      { ml_backend_id: mlBackendId, task_ids: taskId ? [taskId] : undefined },
       {
-        onError: (err) => pushToast({ msg: "AI 预标注失败", sub: String(err) }),
+        onError: (err) => pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
       },
     );
-  }, [projectId, aiModel, taskId, triggerPreannotation, pushToast]);
+  }, [projectId, currentProject, aiModel, taskId, triggerPreannotation, pushToast]);
 
   // 画完框 → 进入待选类别 pending 态。class 由 ClassPickerPopover 选定后才落库。
   const handleCommitDrawing = useCallback((geo: Geom) => {

@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
+import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import type { ProjectResponse, AttributeField, AttributeSchema } from "@/api/projects";
 import { AttributeSchemaEditor, validateAttributeFields } from "./AttributeSchemaEditor";
 
@@ -18,6 +19,7 @@ export function AttributesSection({ project }: { project: ProjectResponse }) {
   }, [project.id, project.attribute_schema]);
 
   const dirty = JSON.stringify(fields) !== JSON.stringify(initial);
+  useUnsavedWarning(dirty);
 
   const onSave = () => {
     const err = validateAttributeFields(fields);
@@ -87,7 +89,16 @@ export function AttributesSection({ project }: { project: ProjectResponse }) {
 
         <AttributeSchemaEditor value={fields} onChange={setFields} />
 
-        <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 4 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, paddingTop: 4 }}>
+          {dirty && (
+            <span
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-warning)", fontWeight: 500 }}
+              data-testid="unsaved-indicator"
+            >
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-warning)" }} />
+              有未保存的修改
+            </span>
+          )}
           <Button variant="primary" disabled={!dirty || update.isPending} onClick={onSave}>
             {update.isPending ? "保存中..." : "保存"}
           </Button>

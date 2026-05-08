@@ -21,6 +21,18 @@
 
 ## 最新版本
 
+## [0.9.9] - 2026-05-08
+
+修复管理员反馈的一系列 BUG (B-2 ~ B-8):
+
+- **B-2** AI 工作流闭环: 失败预测 (FailedPredictionsTab) 从 `/model-market` 平移到 `/ai-pre`; HistoryTable 改成项目→批次两级折叠
+- **B-3** 超管入口语义: sidebar 上 super_admin 拆出"平台概览" + "项目总览"两条; `/dashboard?view=projects` 让超管也能看到与 project_admin 一致的项目列表
+- **B-4** bug 反馈截图迁到独立 MinIO 桶 `bug-reports` (180 天 lifecycle), 与标注桶 `annotations` 解耦
+- **B-5** AI 相关审计日志: 新增 `ai.preannotate.triggered` / `ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted`; 前端 auditLabels 同步翻译
+- **B-6** 项目设置未保存提示: 新增 `useUnsavedWarning` hook + 黄色 dirty 徽章 (General/Classes/Attributes 三个 section)
+- **B-7** AI 模型语义统一: GeneralSection 把"实际 ML Backend"提到主选项, PRESET 模型名 hint 折叠到 details (仅未绑定时使用); 保存时 ai_model 优先派生自 backend.name
+- **B-8** 工作台 AI 一键预标: 修掉 `ml_backend_id=""` 空字符串导致的 dispatch 报错, 未绑定时给出明确 toast 引导用户去项目设置
+
 ## [0.9.7] - 2026-05-08
 
 > **Virtual Lynx — AIPreAnnotatePage 信息架构重构 + 视觉精修 + 交互打磨; 同步清掉 v0.9.6 4 项遗留欠账.** 主线两块：① **AI 预标注页面深度优化** — 478 行单文件拆 6 子组件 (`PreannotateStepper / ProjectBatchPicker / PromptComposer / OutputModeSelector / RunPanel / HistoryTable`) + `styles.ts` 共享样式 token + `usePreannotateDraft` localStorage 草稿持久化 hook; 顶部水平 4 步 stepper 引导 + 卡片头 borderBottom 分隔 + chip hover/active/频率角标 + 进度卡大号百分数 + WS connection 徽章; 交互打磨: `⌘/Ctrl+Enter` 提交 + 切项目草稿保留 + 空 alias 引导卡 + 历史表搜索/列排序/客户端分页 (20 行/页) / 空状态居中提示. ② **v0.9.6 遗留 4 项**: alias 频率排序 (`GET /admin/projects/:id/alias-frequency` JSONB GROUP BY 端点 + 前端按 count desc 排) + Wizard step 4 backend 复用 dropdown (`GET /admin/ml-integrations/all` 全局去重列表 + 项目创建时复制 backend row) + 用户手册 v0.9.7 段同步 + scenes.ts 加 4 个 v0.9.7 截图场景 (实跑 PNG 留 maintainer).

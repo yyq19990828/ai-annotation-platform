@@ -663,10 +663,13 @@ class PreannotateRequest(BaseModel):
 @router.post("/{project_id}/preannotate")
 async def trigger_preannotation(
     body: PreannotateRequest,
+    request: Request,
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     from app.services.ml_backend import MLBackendService
+    from app.services.audit import AuditService
 
     svc = MLBackendService(db)
     backend = await svc.get(body.ml_backend_id)
@@ -707,6 +710,25 @@ async def trigger_preannotation(
         output_mode=body.output_mode,
         batch_id=str(body.batch_id) if body.batch_id else None,
     )
+    # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="ai.preannotate.triggered",
+        target_type="project",
+        target_id=str(project.id),
+        request=request,
+        status_code=200,
+        detail={
+            "job_id": job.id,
+            "ml_backend_id": str(body.ml_backend_id),
+            "batch_id": str(body.batch_id) if body.batch_id else None,
+            "task_count": len(body.task_ids) if body.task_ids else total_tasks_hint,
+            "prompt": (body.prompt or "")[:200],
+            "output_mode": body.output_mode,
+        },
+    )
+    await db.commit()
     return {
         "job_id": job.id,
         "status": "queued",

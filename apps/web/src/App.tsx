@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
-import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useSearchParams } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
 import { useNotificationSocket } from "@/hooks/useNotificationSocket";
 import { useHeartbeat } from "@/hooks/useHeartbeat";
@@ -70,9 +70,11 @@ import { useBugDrawerStore } from "@/stores/bugDrawerStore";
 
 function DashboardRouter() {
   const { role } = usePermissions();
+  const [params] = useSearchParams();
+  // B-3: super_admin 默认进入"平台概览"，?view=projects 切到与 project_admin 一致的"项目总览"
   switch (role) {
     case "super_admin":
-      return <AdminDashboard />;
+      return params.get("view") === "projects" ? <DashboardPage /> : <AdminDashboard />;
     case "project_admin":
       return <DashboardPage />;
     case "reviewer":

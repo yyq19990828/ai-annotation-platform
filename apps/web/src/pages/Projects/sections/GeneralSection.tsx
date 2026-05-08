@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
+import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import { useMLBackends } from "@/hooks/useMLBackends";
 import { PRESET_AI_MODELS, CUSTOM_MODEL_KEY } from "@/constants/projectTypes";
 import {
@@ -115,13 +116,19 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     Math.abs(textThreshold - (project.text_threshold ?? 0.25)) > 0.001 ||
     textOutputDefault !== (project.text_output_default ?? "");
 
+  useUnsavedWarning(dirty);
+
   const onSave = () => {
     if (!name.trim()) {
       pushToast({ msg: "项目名称不能为空" });
       return;
     }
-    if (aiEnabled && !resolvedAiModel) {
-      pushToast({ msg: "启用 AI 时需指定模型" });
+    // B-7 · 模型名优先取已绑定 backend.name,fallback 到手动 hint
+    const boundBackendName =
+      mlBackendId && mlBackends.find((b) => b.id === mlBackendId)?.name;
+    const effectiveAiModel = boundBackendName || resolvedAiModel;
+    if (aiEnabled && !effectiveAiModel) {
+      pushToast({ msg: "启用 AI 时需绑定 ML Backend 或在高级中指定模型名" });
       return;
     }
     update.mutate(
@@ -131,7 +138,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
         due_date: dueDate || null,
         classes,
         ai_enabled: aiEnabled,
-        ai_model: aiEnabled ? resolvedAiModel : null,
+        ai_model: aiEnabled ? effectiveAiModel : null,
         ml_backend_id: aiEnabled ? mlBackendId : null,
         iou_dedup_threshold: iouThreshold,
         box_threshold: boxThreshold,
@@ -272,23 +279,8 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
           </label>
           {aiEnabled && (
             <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
-              <select value={aiChoice} onChange={(e) => setAiChoice(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-                {PRESET_AI_MODELS.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-                <option value={CUSTOM_MODEL_KEY}>自定义...</option>
-              </select>
-              {aiChoice === CUSTOM_MODEL_KEY && (
-                <input
-                  value={aiCustom}
-                  onChange={(e) => setAiCustom(e.target.value)}
-                  placeholder="自定义模型名称"
-                  maxLength={120}
-                  style={inputStyle}
-                />
-              )}
-
-              {/* v0.8.6 F3 · 实际 ML Backend 绑定 */}
+              {/* B-7 · 实际 ML Backend 绑定 — 模型语义直接来自注册的 backend.name,
+                  不再用脱离实际部署的 PRESET 占位字符串 */}
               <div>
                 <label style={{ ...labelStyle, marginBottom: 4 }}>实际 ML Backend</label>
                 <select
@@ -296,7 +288,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
                   onChange={(e) => setMlBackendId(e.target.value || null)}
                   style={{ ...inputStyle, cursor: "pointer" }}
                 >
-                  <option value="">未绑定（仅显示模型名 hint）</option>
+                  <option value="">未绑定（项目按肉眼标注运行,AI 待接入）</option>
                   {mlBackends.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name}
@@ -306,14 +298,42 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
                   ))}
                 </select>
                 <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 4, lineHeight: 1.5 }}>
-                  绑定后保存时将以 backend 名称覆盖「模型名」display hint。未绑定时项目可正常运行（标注员肉眼标注 / AI 待接入）。
+                  绑定后,平台所有「模型名」展示均直接来自 backend.name,保证 UI 语义与实际推理后端一致。
                   {mlBackends.length === 0 && (
                     <span style={{ color: "var(--color-warning)", marginLeft: 4 }}>
-                      暂无可用 backend；先在「ML 模型」选项卡添加。
+                      暂无可用 backend;先在「ML 模型」选项卡添加。
                     </span>
                   )}
                 </div>
               </div>
+
+              {/* B-7 · 折叠 PRESET 占位入口为 advanced — 仅历史项目或离线场景需要手填模型名 */}
+              <details style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+                <summary style={{ cursor: "pointer" }}>
+                  高级:手动指定模型名 hint（仅当未绑定 backend 时生效）
+                </summary>
+                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <select
+                    value={aiChoice}
+                    onChange={(e) => setAiChoice(e.target.value)}
+                    style={{ ...inputStyle, cursor: "pointer" }}
+                  >
+                    {PRESET_AI_MODELS.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                    <option value={CUSTOM_MODEL_KEY}>自定义...</option>
+                  </select>
+                  {aiChoice === CUSTOM_MODEL_KEY && (
+                    <input
+                      value={aiCustom}
+                      onChange={(e) => setAiCustom(e.target.value)}
+                      placeholder="自定义模型名称"
+                      maxLength={120}
+                      style={inputStyle}
+                    />
+                  )}
+                </div>
+              </details>
             </div>
           )}
         </div>
@@ -386,7 +406,23 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
             style={inputStyle}
           />
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
+          {dirty && (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                color: "var(--color-warning)",
+                fontWeight: 500,
+              }}
+              data-testid="unsaved-indicator"
+            >
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-warning)" }} />
+              有未保存的修改
+            </span>
+          )}
           <Button variant="primary" disabled={!dirty || update.isPending} onClick={onSave}>
             {update.isPending ? "保存中..." : "保存修改"}
           </Button>
