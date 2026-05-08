@@ -76,6 +76,46 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 示例：`2026-05-06-auth-refactor.md`、`2026-05-06-perf-optimization.md`
 
+## 7. Docker: rebuild vs restart
+
+**Rule of thumb: if the change lives inside the image, rebuild. If it lives in a mounted volume, just restart (or do nothing).**
+
+### No rebuild needed (restart only, or hot-reload)
+
+| Change | Action |
+|---|---|
+| Python business code under `apps/api/app/**` (source is volume-mounted in dev) | API auto-reloads via `uvicorn --reload`. **Celery workers do NOT auto-reload — `docker restart <worker>` is required.** |
+| Frontend `apps/web/src/**` with vite dev server | HMR handles it |
+| Runtime env vars in `.env` | `docker compose up -d` (recreates container, does not rebuild image) |
+| DB schema changes via alembic | `docker exec ... alembic upgrade head` |
+
+### Rebuild required (`docker compose build` or `up --build`)
+
+| Change | Reason |
+|---|---|
+| `pyproject.toml` / `uv.lock` / `requirements.txt` | Dependencies are baked into image layers |
+| `package.json` / `pnpm-lock.yaml` | Same |
+| `Dockerfile`, `.dockerignore` | Build steps changed |
+| Base image version (`FROM python:3.x`) | Base layer changed |
+| `docker-compose.yml` `build:` block, build args, `COPY` paths | Build context changed |
+| Code is NOT volume-mounted (production-style image with `COPY` of source) | Image holds a frozen snapshot |
+
+### Quick reference
+
+```bash
+# Business code only (dev with volume mount)
+docker restart ai-annotation-platform-celery-worker-1
+
+# Dependency or Dockerfile change
+docker compose build celery-worker && docker compose up -d celery-worker
+
+# Verify the running container actually has the latest code
+docker exec ai-annotation-platform-celery-worker-1 \
+  python -c "import inspect, app.workers.tasks as t; print(inspect.signature(t.batch_predict))"
+```
+
+**Common pitfall:** Celery workers silently run stale code after editing a task signature, because Celery has no `--reload` equivalent. Symptom is dispatch-time `TypeError` on new kwargs while source on disk looks correct. Always restart the worker container after editing files under `apps/api/app/workers/`.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
