@@ -67,6 +67,18 @@ export default defineConfig({
           items: [{ text: "数据导出格式", link: "/user-guide/export/" }],
         },
         {
+          text: "超级管理员",
+          collapsed: true,
+          items: [
+            { text: "概览", link: "/user-guide/superadmin/" },
+            { text: "ML Backend 注册", link: "/user-guide/superadmin/ml-backend-registry" },
+            { text: "模型市场", link: "/user-guide/superadmin/model-market" },
+            { text: "失败预测排查", link: "/user-guide/superadmin/failed-predictions" },
+            { text: "审计日志", link: "/user-guide/superadmin/audit-logs" },
+            { text: "系统监控", link: "/user-guide/superadmin/system-monitoring" },
+          ],
+        },
+        {
           text: "其他",
           items: [{ text: "FAQ", link: "/user-guide/faq" }],
         },
