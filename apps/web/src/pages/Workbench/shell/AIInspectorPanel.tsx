@@ -394,12 +394,12 @@ function SamTextPanel({
   focusKey,
 }: SamTextPanelProps) {
   const [text, setText] = useState("");
+  // v0.9.5 · 类别 alias 快速填入; 必须先于使用其 data 的 useState 初始化器声明, 避免 TDZ.
+  const projectQ = useProject(projectId ?? "");
   const [outputMode, setOutputMode] = useState<TextOutputMode>(() =>
     resolveInitialOutputMode(projectId, projectTypeKey, projectQ.data?.text_output_default),
   );
   const inputRef = useRef<HTMLInputElement | null>(null);
-  // v0.9.5 · 类别 alias 快速填入
-  const projectQ = useProject(projectId ?? "");
   const aliases = useMemo(() => {
     const cfg = projectQ.data?.classes_config ?? {};
     return Object.entries(cfg)
