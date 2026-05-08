@@ -1,0 +1,59 @@
+name: Docs validate
+
+on:
+  pull_request:
+    paths:
+      - "docs-site/**"
+      - "docs/**"
+      - "apps/api/openapi.snapshot.json"
+      - "CHANGELOG.md"
+      - ".github/workflows/docs-validate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docs-site/**"
+      - "docs/**"
+      - "apps/api/openapi.snapshot.json"
+      - "CHANGELOG.md"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要 tag 用于 changelog 校验
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Snippet anchor consistency
+        run: pnpm --filter @anno/docs-site check:snippets
+
+      - name: ADR numbering & status
+        run: pnpm --filter @anno/docs-site check:adr
+
+      - name: Plans freshness (warning only)
+        run: pnpm --filter @anno/docs-site check:plans
+
+      - name: CHANGELOG vs git tag (warning only)
+        run: pnpm --filter @anno/docs-site check:changelog
+
+      - name: Build docs site (catches broken links via VitePress)
+        env:
+          DOCS_BASE: /ai-annotation-platform/
+        run: pnpm --filter @anno/docs-site build
+
+      # 链接外链校验：仅在 main 推送时跑（PR 不卡）
+      - name: Link check (lychee)
+        if: github.event_name == 'push'
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --no-progress --max-concurrency 4 --exclude-loopback 'docs-site/**/*.md' 'docs/**/*.md' 'README.md' 'DEV.md' 'CHANGELOG.md'
+          fail: false
