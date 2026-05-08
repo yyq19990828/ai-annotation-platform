@@ -21,6 +21,18 @@
 
 ## 最新版本
 
+## [0.9.10] - 2026-05-08
+
+管理员反馈第二轮 BUG 修复 (B-10 ~ B-13) + AI 置信度链路修复:
+
+- **B-10** `/ai-pre` 默认勾选所有 alias, chip 切换添加/移除 + 全选/清空
+- **B-11** 采纳/驳回后紫框消失 (按 prediction+shapeIndex 双键过滤); `accept_prediction` 反查 `classes_config` 把 alias 映射回原类别名
+- **B-12** 工作台"一键预标注"自动用项目所有 alias 拼 prompt, 避免 DINO 422
+- **B-13** 类别管理支持重命名 (新端点原子改 `classes_config` + 迁移 `annotations.class_name`)
+- **AI 置信度链路**: `predictor.py` 此前丢弃 DINO box logits（box 模式硬编码 `score=1.0`, mask 模式用 SAM mask 质量分），改为回填真实 DINO 检测置信度；画布 label 用户框不再显示 100%，AI 框追加 `%` 单位
+- **accept_prediction 拆 shape 级**: 避免一个 prediction 含多 shape 时采纳一个就把同 prediction 其它框全采纳；"全部采纳"与前端 `confThreshold` 同步
+- 置信度阈值 UI 加澄清: 仅前端过滤展示, 不重跑模型
+
 ## [0.9.9] - 2026-05-08
 
 修复管理员反馈的一系列 BUG (B-2 ~ B-8):
