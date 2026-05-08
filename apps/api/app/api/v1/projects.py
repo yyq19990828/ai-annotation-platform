@@ -300,7 +300,9 @@ async def create_project(
 
         source_backend = await db.get(_MLB, source_id)
         if source_backend is None:
-            raise HTTPException(status_code=400, detail="ml_backend_source_id not found")
+            raise HTTPException(
+                status_code=400, detail="ml_backend_source_id not found"
+            )
 
     if payload.get("ml_backend_id"):
         payload = await _apply_backend_display_hint(db, payload)

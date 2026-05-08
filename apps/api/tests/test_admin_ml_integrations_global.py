@@ -41,8 +41,12 @@ async def test_list_all_dedups_by_url(httpx_client, db_session, super_admin):
     user, token = super_admin
     p1 = await create_project(db_session, owner_id=user.id, name="P1")
     p2 = await create_project(db_session, owner_id=user.id, name="P2")
-    await _make_backend(db_session, project_id=p1.id, url="http://shared:8000", name="A")
-    await _make_backend(db_session, project_id=p2.id, url="http://shared:8000", name="B")
+    await _make_backend(
+        db_session, project_id=p1.id, url="http://shared:8000", name="A"
+    )
+    await _make_backend(
+        db_session, project_id=p2.id, url="http://shared:8000", name="B"
+    )
     await _make_backend(db_session, project_id=p1.id, url="http://other:8000", name="C")
     await db_session.commit()
 
@@ -102,9 +106,7 @@ async def test_create_project_with_backend_source_clones_row(
 
 
 @pytest.mark.asyncio
-async def test_create_project_invalid_backend_source_400(
-    httpx_client, super_admin
-):
+async def test_create_project_invalid_backend_source_400(httpx_client, super_admin):
     _, token = super_admin
     payload = {
         "name": "X",
