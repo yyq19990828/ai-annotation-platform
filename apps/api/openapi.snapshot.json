@@ -3576,6 +3576,24 @@
         "title": "ClassConfigEntry",
         "type": "object"
       },
+      "ClassRenameRequest": {
+        "properties": {
+          "new_name": {
+            "title": "New Name",
+            "type": "string"
+          },
+          "old_name": {
+            "title": "Old Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "old_name",
+          "new_name"
+        ],
+        "title": "ClassRenameRequest",
+        "type": "object"
+      },
       "CommentAttachmentUploadInitRequest": {
         "properties": {
           "content_type": {
@@ -14637,6 +14655,65 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/classes/rename": {
+      "post": {
+        "description": "B-13 · 原子地把类别 old_name 重命名为 new_name:\n- 更新 classes 数组与 classes_config 字典 key (保留 color/order/alias)\n- 同步更新所有 annotations.class_name (限本项目)\n- 不动 predictions.result (alias 不变)",
+        "operationId": "rename_class_api_v1_projects__project_id__classes_rename_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassRenameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename Class",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/datasets": {
       "get": {
         "description": "列出本项目已关联的所有数据集（含基础元数据 + task 数）。",
@@ -16634,6 +16711,25 @@
               "format": "uuid",
               "title": "Prediction Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "可选: 仅采纳指定下标的 shape (一个 prediction 可含多个 shape).",
+            "in": "query",
+            "name": "shape_index",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选: 仅采纳指定下标的 shape (一个 prediction 可含多个 shape).",
+              "title": "Shape Index"
             }
           }
         ],
