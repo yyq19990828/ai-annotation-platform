@@ -1,7 +1,7 @@
 # AI 模型集成（grounded-sam2-backend / 后续 sam3-backend）
 
 > 配套版本：v0.9.1（M1 — embedding 缓存）。后续 v0.10.x SAM 3 接入后本文继续扩展。
-> 协议契约见 [`ml-backend-protocol.md`](../ml-backend-protocol.md)；版本切片见 [`ROADMAP/0.9.x.md`](../../../ROADMAP/0.9.x.md)。
+> 协议契约见 [`ml-backend-protocol.md`](../ml-backend-protocol.md)；版本切片见 [`ROADMAP/0.9.x.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/ROADMAP/0.9.x.md)。
 
 ---
 

@@ -343,8 +343,8 @@ Prometheus scrape `/metrics` 提供时间序列；`/cache/stats` 单独提供更
 
 ### 进一步阅读
 
-- [ADR-0012](../../docs/adr/0012-sam-backend-as-independent-gpu-service.md) — 为什么 SAM backend 独立 GPU 服务化
-- [ADR-0013](../../docs/adr/0013-mask-to-polygon-server-side.md) — mask→polygon 后端化决策
+- [ADR-0012](/dev/adr/0012-sam-backend-as-independent-gpu-service) — 为什么 SAM backend 独立 GPU 服务化
+- [ADR-0013](/dev/adr/0013-mask-to-polygon-server-side) — mask→polygon 后端化决策
 
 ---
 
