@@ -62,9 +62,9 @@ ai-annotation-platform/
 ## 一次性 setup
 
 ```bash
-pnpm install
+pnpm install               # 自动跑 scripts/install-git-hooks.sh，已装 pre-commit 即启用 hooks
 cd apps/api && uv sync --extra test && cd ../..
-pre-commit install         # 启用 ruff / eslint / tsc git hooks
+# 若上面提示 "pre-commit 未安装"：pip install pre-commit && pre-commit install
 ```
 
 ## 快速开始
