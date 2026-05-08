@@ -149,7 +149,34 @@ async def _run_batch(
     await engine.dispose()
 
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=30)
+class _BatchPredictTask(celery_app.Task):
+    """B-1: dispatch 阶段（如 TypeError 关键字不识别）或 body 内未捕获异常都推到 WS,
+    避免前端停在「已排队」状态。args[0] 是 project_id。"""
+
+    def on_failure(self, exc, task_id, args, kwargs, einfo):  # noqa: ARG002
+        project_id = (
+            kwargs.get("project_id")
+            or (args[0] if args else None)
+        )
+        if project_id:
+            try:
+                _publish_progress(
+                    str(project_id),
+                    0,
+                    0,
+                    status="error",
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            except Exception:
+                pass
+
+
+@celery_app.task(
+    bind=True,
+    base=_BatchPredictTask,
+    max_retries=3,
+    default_retry_delay=30,
+)
 def batch_predict(
     self,
     project_id: str,
