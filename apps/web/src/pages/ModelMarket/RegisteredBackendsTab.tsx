@@ -275,6 +275,36 @@ function ProjectGroup({
                 <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
                   {b.state}
                 </Badge>
+                {/* v0.9.6 · 深度健康指标 (gpu_info / cache hit / model_version), 由 /health 缓存. */}
+                {b.health_meta && (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 10.5,
+                      color: "var(--color-fg-subtle)",
+                      lineHeight: 1.5,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {b.health_meta.model_version && (
+                      <div className="mono" title="model_version">
+                        {b.health_meta.model_version}
+                      </div>
+                    )}
+                    {b.health_meta.gpu_info?.memory_used_mb != null &&
+                      b.health_meta.gpu_info?.memory_total_mb != null && (
+                        <div title="GPU 显存 used / total">
+                          GPU {b.health_meta.gpu_info.memory_used_mb}/
+                          {b.health_meta.gpu_info.memory_total_mb} MB
+                        </div>
+                      )}
+                    {typeof b.health_meta.cache?.hit_rate === "number" && (
+                      <div title="cache hit rate">
+                        cache {(b.health_meta.cache.hit_rate * 100).toFixed(1)}%
+                      </div>
+                    )}
+                  </div>
+                )}
               </td>
               <td
                 style={{

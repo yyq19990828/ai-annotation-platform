@@ -30,6 +30,9 @@ class MLBackendOut(BaseModel):
     is_interactive: bool
     auth_method: str
     extra_params: dict
+    # v0.9.6 · 缓存的 backend `/health` 深度指标 (gpu_info / cache / model_version);
+    # 由 services/ml_backend.check_health 写入, /admin/ml-integrations/overview 直接消费.
+    health_meta: dict | None = None
     error_message: str | None
     last_checked_at: datetime | None = None
     created_at: datetime

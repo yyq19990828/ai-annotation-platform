@@ -28,7 +28,10 @@ export type ClassesConfig = Record<string, ClassConfigEntry>;
 export type ProjectResponse = ProjectOut;
 export type ProjectStatsResponse = ProjectStats;
 export type ProjectMemberResponse = ProjectMemberOut;
-export type ProjectCreatePayload = ProjectCreate;
+// v0.9.6 · codegen 旧版 ProjectCreate 缺 text_output_default; 手动扩到 codegen 重跑.
+export type ProjectCreatePayload = ProjectCreate & {
+  text_output_default?: "box" | "mask" | "both" | null;
+};
 export type ProjectUpdatePayload = ProjectUpdate;
 
 export type ExportFormat = "coco" | "voc" | "yolo";

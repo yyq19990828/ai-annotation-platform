@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.api.v1 import (
     admin_ml_integrations,
+    admin_preannotate,
     api_keys,
     auth,
     audit_logs,
@@ -38,6 +39,12 @@ api_router.include_router(
     admin_ml_integrations.router,
     prefix="/admin/ml-integrations",
     tags=["admin-ml-integrations"],
+)
+# v0.9.6 · /admin/preannotate-queue (注意: 端点路径已含 /admin/preannotate-queue, 这里 prefix 留空)
+api_router.include_router(
+    admin_preannotate.router,
+    prefix="",
+    tags=["admin-preannotate"],
 )
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])

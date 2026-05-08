@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -11,6 +12,10 @@ import type {
   MLBackendCreatePayload,
   MLBackendUpdatePayload,
 } from "@/api/ml-backends";
+import {
+  adminMlIntegrationsApi,
+  type ProbeResponse,
+} from "@/api/adminMlIntegrations";
 import type { MLBackendResponse } from "@/types";
 
 interface Props {
@@ -57,9 +62,55 @@ export function MlBackendFormModal({ open, projectId, backend, onClose }: Props)
   const [extraOpen, setExtraOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // v0.9.6 · /runtime-hints 启动时一次性查, 用作 URL placeholder
+  const hintsQ = useQuery({
+    queryKey: ["admin", "ml-integrations", "runtime-hints"],
+    queryFn: () => adminMlIntegrationsApi.runtimeHints(),
+    staleTime: Infinity,
+    enabled: open,
+  });
+  const urlPlaceholder =
+    hintsQ.data?.ml_backend_default_url ?? "http://172.17.0.1:8001";
+
+  // v0.9.6 · 测试连接状态 (无 DB 副作用 probe)
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState<ProbeResponse | null>(null);
+
+  const onProbe = async () => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      setProbeResult({ ok: false, latency_ms: 0, error: "请先填 URL" });
+      return;
+    }
+    if (!/^https?:\/\//i.test(trimmedUrl)) {
+      setProbeResult({ ok: false, latency_ms: 0, error: "URL 需 http(s):// 开头" });
+      return;
+    }
+    setProbing(true);
+    setProbeResult(null);
+    try {
+      const res = await adminMlIntegrationsApi.probe({
+        url: trimmedUrl,
+        auth_method: authMethod,
+        auth_token: authMethod === "token" && authToken.trim() ? authToken.trim() : null,
+      });
+      setProbeResult(res);
+    } catch (e) {
+      const err = e as { message?: string };
+      setProbeResult({
+        ok: false,
+        latency_ms: 0,
+        error: err.message ?? "请求失败",
+      });
+    } finally {
+      setProbing(false);
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
     setError(null);
+    setProbeResult(null);
     if (backend) {
       setName(backend.name);
       setUrl(backend.url);
@@ -170,12 +221,55 @@ export function MlBackendFormModal({ open, projectId, backend, onClose }: Props)
           <label style={labelStyle}>URL</label>
           <input
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="http://172.17.0.1:8001"
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setProbeResult(null);
+            }}
+            placeholder={urlPlaceholder}
             style={{ ...inputStyle, fontFamily: "var(--font-mono, monospace)", fontSize: 12.5 }}
           />
           <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 4 }}>
             后端容器内可达地址。Docker 同主机宿主网常用 <span className="mono">172.17.0.1</span>。
+          </div>
+          {/* v0.9.6 · 测试连接 (POST /admin/ml-integrations/probe, 无 DB 副作用) */}
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <Button size="sm" variant="ghost" onClick={onProbe} disabled={probing}>
+              {probing
+                ? <Icon name="loader2" size={11} className="spin" />
+                : <Icon name="activity" size={11} />}
+              {probing ? "探测中..." : "测试连接"}
+            </Button>
+            {probeResult && (
+              <span
+                style={{
+                  fontSize: 11.5,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  color: probeResult.ok
+                    ? "var(--color-success, #10b981)"
+                    : "var(--color-danger, #ef4444)",
+                }}
+              >
+                <Icon name={probeResult.ok ? "check" : "warning"} size={11} />
+                {probeResult.ok ? (
+                  <>
+                    已连接 ({probeResult.latency_ms}ms
+                    {probeResult.model_version ? `, ${probeResult.model_version}` : ""})
+                  </>
+                ) : (
+                  <>无法连接：{probeResult.error ?? "未知错误"}</>
+                )}
+              </span>
+            )}
           </div>
         </div>
         <div>

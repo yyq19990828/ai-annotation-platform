@@ -17,6 +17,7 @@ workaround。
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -106,6 +107,8 @@ class ClassConfigEntry(BaseModel):
     order: int | None = Field(default=None, ge=0)
     # v0.9.5 · 类别英文 alias，供 SAM 文本预标 prompt 下拉直填，避免运行时翻译。
     # ASCII-only：DINO 接受英文 + 数字 + 空格 + 逗号 + 下划线 + 连字符。
+    # v0.9.6 · field_validator 自动 lower + trim + 折叠多重空格 / 多重逗号；
+    # 用户输 "Person, , Worker" → "person ,worker"，DINO 召回更稳定。
     alias: str | None = Field(
         default=None,
         max_length=50,
@@ -113,6 +116,30 @@ class ClassConfigEntry(BaseModel):
     )
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("alias", mode="before")
+    @classmethod
+    def _normalize_alias(cls, v: Any) -> Any:
+        """v0.9.6 · 规范化:
+        - lower (DINO 对 case-insensitive 但分布偏差; 全小写更稳)
+        - strip 首尾空白
+        - 折叠多重空格为单空格
+        - 折叠多重逗号为单逗号
+        - 折叠 ", ," / " ,," 等空白逗号混合 → 单 ","
+        - 空字符串 / 仅空白 → None
+        """
+        if v is None or not isinstance(v, str):
+            return v
+        s = v.lower().strip()
+        if not s:
+            return None
+        # 折叠 [空白+逗号]+ 序列为单 ","; 例 "a, , b" → "a,b"; "a , , b" → "a,b"
+        s = re.sub(r"\s*,[\s,]*", ",", s)
+        # 折叠多重空格
+        s = re.sub(r"\s+", " ", s)
+        # 去掉首尾遗留逗号 (用户输 ",foo," 视为 "foo")
+        s = s.strip(",").strip()
+        return s or None
 
 
 # Pydantic dict-typed RootModel: codegen 出 Record<string, ClassConfigEntry>

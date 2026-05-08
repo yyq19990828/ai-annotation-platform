@@ -125,3 +125,10 @@ button.btn.ghost:disabled {
 }
 
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* v0.9.6 P2-b · 通用旋转动画 (Icon spinner / Loading 状态). */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.spin { animation: spin 0.9s linear infinite; }

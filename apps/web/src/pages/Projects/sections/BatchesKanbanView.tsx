@@ -15,9 +15,11 @@ import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { useToastStore } from "@/components/ui/Toast";
 import type { BatchResponse } from "@/api/batches";
 
-const COLUMNS: { id: string; label: string; variant: "default" | "accent" | "warning" | "success" | "danger" }[] = [
+const COLUMNS: { id: string; label: string; variant: "default" | "accent" | "warning" | "success" | "danger" | "ai" }[] = [
   { id: "draft", label: "草稿", variant: "default" },
   { id: "active", label: "激活", variant: "accent" },
+  // v0.9.6 · pre_annotated: 让 admin 跑完 /ai-pre 后能在 Kanban 看到「AI 预标已就绪」紫色列
+  { id: "pre_annotated", label: "AI 预标已就绪", variant: "ai" },
   { id: "annotating", label: "标注中", variant: "accent" },
   { id: "reviewing", label: "审核中", variant: "warning" },
   { id: "approved", label: "已通过", variant: "success" },
@@ -29,7 +31,9 @@ const COLUMNS: { id: string; label: string; variant: "default" | "accent" | "war
 // 仅做前端 dryrun，最终鉴权与状态机由后端 transition 端点把关。
 const VALID_TRANSITIONS: Record<string, Set<string>> = {
   draft: new Set(["active"]),
-  active: new Set(["annotating", "archived"]),
+  // v0.9.6 · active 可去 pre_annotated (跑完 AI 预标自动转); 也保留原 annotating / archived
+  active: new Set(["annotating", "pre_annotated", "archived"]),
+  pre_annotated: new Set(["annotating", "active", "archived"]),
   annotating: new Set(["reviewing", "archived"]),
   reviewing: new Set(["approved", "rejected"]),
   approved: new Set(["archived", "reviewing"]),

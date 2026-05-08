@@ -15,11 +15,15 @@ export interface HotkeyDef {
 
 export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
+  { keys: ["Alt", "1"], desc: "矩形框工具（备用，避免与切类别冲突）", group: "draw", actionType: "setTool" },
   { keys: ["S"], desc: "SAM 智能工具（再按循环切子工具：点 → 框 → 文本 → 退出）", group: "ai", actionType: "setTool" },
+  { keys: ["Alt", "2"], desc: "SAM 智能工具（备用）", group: "ai", actionType: "setTool" },
   { keys: ["= / +"], desc: "SAM 子工具栏：正向点 (sam-point 子工具下生效)", group: "ai", actionType: "samPolarity" },
   { keys: ["-"], desc: "SAM 子工具栏：负向点 (sam-point 子工具下生效)", group: "ai", actionType: "samPolarity" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
+  { keys: ["Alt", "3"], desc: "多边形工具（备用）", group: "draw", actionType: "setTool" },
   { keys: ["V"], desc: "平移工具", group: "draw", actionType: "setTool" },
+  { keys: ["Alt", "4"], desc: "平移工具（备用）", group: "draw", actionType: "setTool" },
   { keys: ["Enter"], desc: "闭合多边形（≥3 顶点）", group: "draw" },
   { keys: ["Backspace"], desc: "删除多边形最后一点 / 删除选中框", group: "draw", actionType: "deleteSelected" },
   { keys: ["拖动顶点"], desc: "多边形顶点拖动（选中时）", group: "draw" },
@@ -146,6 +150,15 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (k === "v") return { type: "paste" };
     if (k === "d") return { type: "duplicate" };
     return null;
+  }
+
+  // v0.9.6 P2-b · Alt+1/2/3/4 备用切工具 (避免单数字键 1-9 切类别冲突).
+  // 单按 1-9 仍切类别 (老用户肌肉记忆不变); Alt+digit 仅在画布无 input 聚焦时生效.
+  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+    if (e.key === "1") return { type: "setTool", tool: "box" };
+    if (e.key === "2") return { type: "setTool", tool: "sam" };
+    if (e.key === "3") return { type: "setTool", tool: "polygon" };
+    if (e.key === "4") return { type: "setTool", tool: "hand" };
   }
 
   // 方向键 nudge（仅在有选中时；上层进一步过滤是否含 user 框）

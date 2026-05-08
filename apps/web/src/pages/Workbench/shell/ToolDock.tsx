@@ -1,6 +1,9 @@
+import { Fragment } from "react";
 import { Icon, type IconName } from "@/components/ui/Icon";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { ALL_TOOLS, type ToolId } from "../stage/tools";
 import type { SamPolarity, SamSubTool } from "../state/useWorkbenchState";
+import { SamSubToolbar } from "./SamSubToolbar";
 
 interface ToolDockProps {
   tool: ToolId;
@@ -12,20 +15,29 @@ interface ToolDockProps {
   onSetSamPolarity?: (p: SamPolarity) => void;
 }
 
-/** v0.9.4 phase 2 · SAM 子工具配置 (与 SamTool.ts mode 一致). */
-const SAM_SUB_TOOLS: { id: SamSubTool; icon: IconName; label: string }[] = [
-  { id: "point", icon: "target", label: "点 (Click)" },
-  { id: "bbox", icon: "rect", label: "框 (Box)" },
-  { id: "text", icon: "messageSquareText", label: "文本 (Text)" },
-];
+interface ToolDescriptor {
+  desc: string;
+}
+
+/** v0.9.6 P2-b · 主工具栏 Tooltip 描述 + Alt+digit 副 hotkey (避免与数字切类别冲突). */
+const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor & { altDigit?: number }> = {
+  box: { desc: "拖鼠标画矩形框", altDigit: 1 },
+  sam: { desc: "AI 智能分割：点 / 框 / 文本", altDigit: 2 },
+  polygon: { desc: "逐点画多边形 (Enter 闭合)", altDigit: 3 },
+  hand: { desc: "拖拽平移画布", altDigit: 4 },
+  canvas: { desc: "评论批注 (内部, 不展示)" },
+};
 
 /**
  * 左侧垂直工具栏（v0.5.3）。
- * 从 ALL_TOOLS 自动渲染按钮；新增工具仅需在 tools/ 目录下注册并加入 ALL_TOOLS。
  *
- * v0.9.4 phase 2 · SAM 工具被选中时, 在 S 按钮下方嵌入子工具栏 [点 / 框 / 文本] +
- *   sam-point 子工具下额外露 [+/-] polarity 切换. 子工具消除 v0.9.2 的隐式分流
- *   (动作派生 prompt 类型, 新人不可见).
+ * v0.9.4 phase 2 · SAM 子工具栏拆分（点 / 框 / 文本）
+ * v0.9.6 P2-b · UX 重构:
+ *   - native title 替为 Tooltip 组件 (3 行: name + desc + hotkey 徽)
+ *   - 主按钮右下加 hotkey 角标 (8px 字母, 不靠 hover 即可见)
+ *   - 激活态加 inset 2px 左侧 accent 边条
+ *   - 在 Polygon 与 Hand 之间插入 1px 分组分隔线 (操作工具 vs 视图工具)
+ *   - SAM 子工具栏从主按钮下方迁出, 改为 SAM 主按钮右侧 absolute 抽屉 (SamSubToolbar.tsx)
  */
 export function ToolDock({
   tool,
@@ -38,125 +50,111 @@ export function ToolDock({
   return (
     <div
       style={{
+        position: "relative",
         display: "flex", flexDirection: "column", alignItems: "center",
         padding: "10px 4px", gap: 6,
         background: "var(--color-bg-elev)",
         borderRight: "1px solid var(--color-border)",
       }}
     >
-      {ALL_TOOLS.map((t) => {
+      {ALL_TOOLS.map((t, idx) => {
         const active = tool === t.id;
         const isSamActive = t.id === "sam" && active;
+        const descriptor = TOOL_DESCRIPTORS[t.id];
+        const desc = descriptor?.desc ?? "";
+        const altDigit = descriptor?.altDigit;
+        const tooltipDesc = altDigit ? `${desc} · 备用 Alt+${altDigit}` : desc;
+        // 在 Hand 之前 (即 Polygon 与 Hand 之间) 插入分组分隔
+        const showDivider = t.id === "hand" && idx > 0;
         return (
-          <div key={t.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-            <button
-              type="button"
-              onClick={() => onSetTool(t.id)}
-              title={`${t.label} (${t.hotkey})`}
-              aria-label={t.label}
-              aria-pressed={active}
-              data-testid={`tool-btn-${t.id}`}
-              style={{
-                position: "relative",
-                width: 38, height: 38,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: active ? "var(--color-accent)" : "transparent",
-                color: active ? "white" : "var(--color-fg-muted)",
-                border: "1px solid " + (active ? "var(--color-accent)" : "transparent"),
-                borderRadius: "var(--radius-md)",
-                cursor: "pointer",
-                transition: "background 0.12s, color 0.12s, transform 0.08s",
-                boxShadow: active ? "0 2px 6px color-mix(in oklab, var(--color-accent) 45%, transparent)" : "none",
-              }}
-              onMouseEnter={(e) => {
-                if (!active) {
-                  e.currentTarget.style.background = "var(--color-bg-hover)";
-                  e.currentTarget.style.color = "var(--color-fg)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!active) {
-                  e.currentTarget.style.background = "transparent";
-                  e.currentTarget.style.color = "var(--color-fg-muted)";
-                }
-              }}
-            >
-              <Icon name={t.icon as IconName} size={17} />
-            </button>
-            {isSamActive && onSetSamSubTool && (
+          <Fragment key={t.id}>
+            {showDivider && (
               <div
-                data-testid="sam-subtoolbar"
+                aria-hidden
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 3,
-                  padding: "4px 2px",
-                  background: "color-mix(in oklab, var(--color-accent) 10%, transparent)",
-                  borderRadius: "var(--radius-sm)",
+                  width: 24,
+                  height: 1,
+                  background: "var(--color-border-subtle, var(--color-border))",
+                  margin: "2px 0",
                 }}
-              >
-                {SAM_SUB_TOOLS.map((sub) => {
-                  const subActive = samSubTool === sub.id;
-                  return (
-                    <button
-                      key={sub.id}
-                      type="button"
-                      onClick={() => onSetSamSubTool(sub.id)}
-                      title={sub.label}
-                      aria-label={sub.label}
-                      aria-pressed={subActive}
-                      data-testid={`sam-sub-${sub.id}`}
-                      style={{
-                        width: 28, height: 28,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        background: subActive ? "var(--color-accent)" : "transparent",
-                        color: subActive ? "white" : "var(--color-fg-muted)",
-                        border: "1px solid " + (subActive ? "var(--color-accent)" : "transparent"),
-                        borderRadius: "var(--radius-sm)",
-                        cursor: "pointer",
-                        transition: "background 0.12s, color 0.12s",
-                      }}
-                    >
-                      <Icon name={sub.icon} size={13} />
-                    </button>
-                  );
-                })}
-                {samSubTool === "point" && onSetSamPolarity && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onSetSamPolarity(samPolarity === "positive" ? "negative" : "positive")
+              />
+            )}
+            <div style={{ position: "relative", display: "flex" }}>
+              <Tooltip name={t.label} desc={tooltipDesc} hotkey={t.hotkey} side="right" delay={250}>
+                <button
+                  type="button"
+                  onClick={() => onSetTool(t.id)}
+                  aria-label={t.label}
+                  aria-pressed={active}
+                  data-testid={`tool-btn-${t.id}`}
+                  style={{
+                    position: "relative",
+                    width: 38, height: 38,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: active ? "var(--color-accent)" : "transparent",
+                    color: active ? "white" : "var(--color-fg-muted)",
+                    border: "1px solid " + (active ? "var(--color-accent)" : "transparent"),
+                    borderRadius: "var(--radius-md)",
+                    cursor: "pointer",
+                    transition: "background 0.12s, color 0.12s, transform 0.08s, box-shadow 0.12s",
+                    boxShadow: active
+                      ? "inset 2px 0 0 color-mix(in oklab, var(--color-accent) 70%, white), 0 2px 6px color-mix(in oklab, var(--color-accent) 45%, transparent)"
+                      : "none",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.background = "var(--color-bg-hover)";
+                      e.currentTarget.style.color = "var(--color-fg)";
                     }
-                    title={
-                      samPolarity === "positive"
-                        ? "正向点 (+); 按 - 切负向"
-                        : "负向点 (-); 按 + 切正向"
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.color = "var(--color-fg-muted)";
                     }
-                    aria-label="polarity"
-                    data-testid="sam-polarity"
+                  }}
+                >
+                  <Icon name={t.icon as IconName} size={17} />
+                  <span
+                    aria-hidden
                     style={{
-                      width: 22, height: 22,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 12,
+                      position: "absolute",
+                      right: 3,
+                      bottom: 1,
+                      fontSize: 8,
                       fontWeight: 700,
-                      background:
-                        samPolarity === "positive"
-                          ? "var(--color-success, #10b981)"
-                          : "var(--color-warning, #f59e0b)",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "50%",
-                      cursor: "pointer",
                       lineHeight: 1,
+                      color: active
+                        ? "color-mix(in oklab, white 80%, transparent)"
+                        : "color-mix(in oklab, var(--color-fg-muted) 65%, transparent)",
+                      pointerEvents: "none",
+                      letterSpacing: 0,
                     }}
                   >
-                    {samPolarity === "positive" ? "+" : "−"}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+                    {t.hotkey.toUpperCase()}
+                  </span>
+                </button>
+              </Tooltip>
+              {isSamActive && onSetSamSubTool && onSetSamPolarity && (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: "100%",
+                    top: -6,
+                    marginLeft: 8,
+                    zIndex: 5,
+                  }}
+                >
+                  <SamSubToolbar
+                    samSubTool={samSubTool}
+                    onSetSamSubTool={onSetSamSubTool}
+                    samPolarity={samPolarity}
+                    onSetSamPolarity={onSetSamPolarity}
+                  />
+                </div>
+              )}
+            </div>
+          </Fragment>
         );
       })}
     </div>

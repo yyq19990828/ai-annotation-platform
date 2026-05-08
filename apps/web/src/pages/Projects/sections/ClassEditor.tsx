@@ -7,6 +7,7 @@
 import { useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { useToastStore } from "@/components/ui/Toast";
 import { classColor } from "@/pages/Workbench/stage/colors";
 
 export interface ClassRow {
@@ -17,6 +18,23 @@ export interface ClassRow {
 }
 
 const ALIAS_PATTERN = /^[a-zA-Z0-9 ,_\-]*$/;
+
+/** v0.9.6 · 与后端 ClassConfigEntry._normalize_alias 等价的前端实现.
+ * blur 时规范化, 让所见即所得 + DINO 召回更稳; 后端 field_validator 兜底.
+ */
+function normalizeAlias(raw: string): string {
+  let s = raw.toLowerCase().trim();
+  if (!s) return s;
+  // 折叠 [空白+逗号]+ 为单 ","; "a , , b" → "a,b"
+  s = s.replace(/\s*,[\s,]*/g, ",");
+  // 折叠多重空格
+  s = s.replace(/\s+/g, " ");
+  // 去掉首尾遗留逗号
+  s = s.replace(/^,+|,+$/g, "").trim();
+  return s;
+}
+
+const ALIAS_NORM_HINTED_KEY = "cfg:aliasNormHinted";
 
 const inputStyle: CSSProperties = {
   boxSizing: "border-box",
@@ -59,6 +77,7 @@ interface Props {
 
 export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配置任何类别" }: Props) {
   const [classInput, setClassInput] = useState("");
+  const pushToast = useToastStore((s) => s.push);
 
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir;
@@ -71,9 +90,45 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
   const setColor = (i: number, color: string) =>
     onChange(value.map((r, idx) => (idx === i ? { ...r, color } : r)));
   const setAlias = (i: number, raw: string) => {
-    if (!ALIAS_PATTERN.test(raw)) return;
+    // v0.9.6 · 输入时若含非 ASCII 提示一次 (沿用 pattern 拒绝, toast 友好提示).
+    if (!ALIAS_PATTERN.test(raw)) {
+      try {
+        if (!sessionStorage.getItem("cfg:aliasAsciiHinted")) {
+          sessionStorage.setItem("cfg:aliasAsciiHinted", "1");
+          pushToast({
+            msg: "alias 仅支持 ASCII",
+            sub: "DINO 文本召回仅认英文 / 数字 / 空格 / , _ -",
+            kind: "warning",
+          });
+        }
+      } catch {
+        // sessionStorage 不可用时静默
+      }
+      return;
+    }
     const alias = raw.trim() === "" ? undefined : raw;
     onChange(value.map((r, idx) => (idx === i ? { ...r, alias } : r)));
+  };
+
+  /** v0.9.6 · onBlur 触发规范化: lower / strip / 折叠空格逗号; 与后端 schema 保持一致. */
+  const normalizeAliasOnBlur = (i: number) => {
+    const cur = value[i]?.alias ?? "";
+    if (!cur) return;
+    const next = normalizeAlias(cur);
+    if (next === cur) return;
+    onChange(value.map((r, idx) => (idx === i ? { ...r, alias: next || undefined } : r)));
+    try {
+      if (!sessionStorage.getItem(ALIAS_NORM_HINTED_KEY)) {
+        sessionStorage.setItem(ALIAS_NORM_HINTED_KEY, "1");
+        pushToast({
+          msg: "alias 已自动规范化",
+          sub: "DINO 推荐全小写英文; 重复空格 / 逗号已折叠",
+          kind: "",
+        });
+      }
+    } catch {
+      // sessionStorage 不可用时静默
+    }
   };
   const remove = (i: number) => onChange(value.filter((_, idx) => idx !== i));
 
@@ -139,9 +194,10 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
           <input
             value={r.alias ?? ""}
             onChange={(e) => setAlias(i, e.target.value)}
+            onBlur={() => normalizeAliasOnBlur(i)}
             placeholder="英文 alias（SAM 提示用，可空）"
             maxLength={50}
-            title="供 SAM 文本预标 prompt 下拉填入；ASCII 字母/数字/空格/逗号/下划线/连字符"
+            title="供 SAM 文本预标 prompt 下拉填入；ASCII 字母/数字/空格/逗号/下划线/连字符；blur 自动规范化"
             style={{ ...inputStyle, fontSize: 12 }}
           />
           <input

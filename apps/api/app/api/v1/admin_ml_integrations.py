@@ -3,15 +3,22 @@
 聚合返回：
 - storage：复用 storage.summarize_bucket 的两个 bucket 概览（仅 super_admin 走该端点）
 - projects：跨所有项目的 ml_backends 列表，按 project 分组（保留 backend.url 但不返回 auth_token）
+
+v0.9.6 · 加 /probe (无 DB 副作用的 health check) + /runtime-hints (前端 modal placeholder).
 """
 
 from __future__ import annotations
 
+import time
+from typing import Literal
+
+import httpx
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.enums import UserRole
 from app.db.models.ml_backend import MLBackend
 from app.db.models.project import Project
@@ -102,4 +109,91 @@ async def get_overview(
         projects=list(grouped.values()),
         total_backends=len(backends),
         connected_backends=sum(1 for b in backends if b.state == "connected"),
+    )
+
+
+# ── v0.9.6 · /probe + /runtime-hints ──────────────────────────────────
+
+
+class ProbeRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=500)
+    auth_method: Literal["none", "token"] = "none"
+    auth_token: str | None = Field(default=None, max_length=500)
+
+
+class ProbeResponse(BaseModel):
+    """v0.9.6 · 无 DB 副作用的 health check.
+    前端注册 modal 在保存前可调本端点验证连通性, 避免「先存再 health 失败 / DB 留无效行」摩擦.
+    """
+
+    ok: bool
+    latency_ms: int
+    status_code: int | None = None
+    error: str | None = None
+    gpu_info: dict | None = None
+    cache: dict | None = None
+    model_version: str | None = None
+
+
+@router.post("/probe", response_model=ProbeResponse)
+async def probe_backend(
+    payload: ProbeRequest,
+    _admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """探测一个 ML backend URL 的 /health 端点; 不写 DB."""
+    headers = {"Content-Type": "application/json"}
+    if payload.auth_method == "token" and payload.auth_token:
+        headers["Authorization"] = f"Bearer {payload.auth_token}"
+    base = payload.url.rstrip("/")
+    start = time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
+            resp = await client.get(f"{base}/health", headers=headers)
+        latency_ms = int((time.monotonic() - start) * 1000)
+        if resp.status_code != 200:
+            return ProbeResponse(
+                ok=False,
+                latency_ms=latency_ms,
+                status_code=resp.status_code,
+                error=f"HTTP {resp.status_code}",
+            )
+        try:
+            data = resp.json()
+        except Exception:
+            return ProbeResponse(
+                ok=False,
+                latency_ms=latency_ms,
+                status_code=resp.status_code,
+                error="响应非 JSON",
+            )
+        # ML backend /health 返回示例: { ok, gpu, gpu_info, cache, model_version, loaded }
+        return ProbeResponse(
+            ok=bool(data.get("ok", True)),
+            latency_ms=latency_ms,
+            status_code=resp.status_code,
+            gpu_info=data.get("gpu_info"),
+            cache=data.get("cache"),
+            model_version=data.get("model_version"),
+        )
+    except (httpx.TimeoutException, httpx.RequestError) as e:
+        latency_ms = int((time.monotonic() - start) * 1000)
+        return ProbeResponse(
+            ok=False,
+            latency_ms=latency_ms,
+            error=str(e)[:200] or "连接失败",
+        )
+
+
+class RuntimeHints(BaseModel):
+    """v0.9.6 · 前端 modal 启动时一次性查; 提供注册 form 的 placeholder hint."""
+
+    ml_backend_default_url: str | None = None
+
+
+@router.get("/runtime-hints", response_model=RuntimeHints)
+async def runtime_hints(
+    _admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
+):
+    return RuntimeHints(
+        ml_backend_default_url=settings.ml_backend_default_url or None,
     )

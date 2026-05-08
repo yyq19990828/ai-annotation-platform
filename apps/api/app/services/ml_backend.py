@@ -61,9 +61,12 @@ class MLBackendService:
         if not backend:
             return False
         client = MLBackendClient(backend)
-        healthy = await client.health()
+        # v0.9.6 · 用 health_meta 一次性拉 ok + meta, 把深度指标缓存到表
+        healthy, meta = await client.health_meta()
         backend.state = "connected" if healthy else "error"
         backend.last_checked_at = datetime.now(UTC)
+        if meta is not None:
+            backend.health_meta = meta
         await self.db.flush()
         return healthy
 

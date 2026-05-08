@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.5 (Async Oasis) — `/ai-pre` 文本批量 UI + 类别英文 alias + Batch pre_annotated + chip 包** 详情见 [`0.9.x.md`](docs/changelogs/0.9.x.md)。
+> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.6 (Agile Kernighan) — 工具栏 P2-b 可用性重构 + v0.9.5 新发现 5 条 + ML backend 注册体验 + 健康聚合 UI + AIPreAnnotate 闭环** 详情见 [`0.9.x.md`](docs/changelogs/0.9.x.md)。
 
 ---
 
@@ -10,9 +10,9 @@
 
 > 大颗粒 epic 拆到独立文档；下面 §A/§B/§C 仍维护单条颗粒度的待办。
 
-- ~~**[v0.9.x — Grounded-SAM-2 接入（首版 AI 基座）](./ROADMAP/0.9.x.md)**~~ ✅ 已收尾（M0+M1+M2+M3+M4+M5 + chip 包，`/ai-pre` 文本批量预标 + 工作台 `S` 工具 + 类别英文 alias + Batch `pre_annotated` 状态机 + ADR-0012/0013 全落地）。
+- ~~**v0.9.x — Grounded-SAM-2 接入（首版 AI 基座）**~~ ✅ 已收尾（M0+M1+M2+M3+M4+M5 + chip 包，`/ai-pre` 文本批量预标 + 工作台 `S` 工具 + 类别英文 alias + Batch `pre_annotated` 状态机 + ADR-0012/0013 全落地）。详细切片归档于 `ROADMAP/0.9.x.md`（已归档），剩余文档同步 / 真实 SAM mask 验收已迁移到下方 §A/§B。
+- ~~**v0.9.6 — Agile Kernighan**~~ ✅ 已收尾（工具栏 P2-b Tooltip + hotkey 角标 + 激活态强化 + 分组分隔 + SAM 抽屉 + spinner overlay + Alt+1/2/3/4 备用切工具；alias schema 自动规范化 + 前端 onBlur + 双 toast；Wizard step 4 暴露 text_output_default + 共享组件；BatchStatusBadge 新建 + Kanban pre_annotated 列 + Topbar 紫徽章；AIPreAnnotate chips 滚动 + 搜索筛选；ML backend probe 端点 + URL 默认值预填 + 测试连接按钮；ml_backends.health_meta 列 + 行内深度指标；/admin/preannotate-queue 端点 + 跑完 CTA + 历史表 + 重试链接；用户手册 sam-tool / ai-preannotate）。详细切片：[`docs/plans/2026-05-08-v0.9.6-agile-kernighan.md`](docs/plans/2026-05-08-v0.9.6-agile-kernighan.md)。剩余 `Wizard backend 绑定 dropdown` / `截图实跑 18 张` / `预标 job 历史追踪` / `alias chips 频率排序` 已迁到 §A/§B 与下方优先级表（v0.9.7 chip）。
 - **[v0.10.x — SAM 3 接入（与 Grounded-SAM-2 并存）](./ROADMAP/0.10.x.md)**：新增 sam3-backend 作为高精度选项，**不替换** v0.9.x grounded-sam2-backend；增加 exemplar prompt + 路由策略 UI + AB 对比工具。共享 `apps/_shared/mask_utils/`。预计 ~3.5 周。
-- **v0.9.6 — 工作台工具栏 UX 完成 + 截图回填**（独立小版本）：v0.9.5 留下的 §C.2 P2-b 工具栏 UX（Tooltip 组件 + hotkey 角标 + 激活态强化 + 分组分隔 + 数字键 1-4 直跳工具 + SAM 子工具栏改右展开抽屉）+ 截图自动化 14 张实跑回填。预计 ~3 工作日；与 v0.10.x 同期或先于 v0.10.x 都可。
 
 ---
 
@@ -93,6 +93,7 @@
 - **RegisteredBackendsTab 行内深度健康指标**（**P3**）：当前每行只 state / last_checked_at；v0.9.5 backend `/health` 已扩 `gpu_info` + `cache` 子对象，仅前端聚合展示未做。可加聚合 helper `GET /admin/ml-integrations/overview` 拉每个 backend 的最新 health 摘要（gpu memory_used_mb / cache hit_rate / model_version），让运维一眼看清「刚才那次卡几秒是首次冷推还是 cache miss」。预计 0.5 天。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：v0.9.4 phase 1 用的 `ML_BACKEND_STORAGE_HOST` 简单 host 重写适合 dev；ADR-0012 已写决策框架但仅 dev 场景。生产 K8s 同 namespace 时 SAM 直接走 service DNS 即可（留空），跨 namespace / 跨集群需要 internal vs external 双 endpoint 配置。**触发条件**：第一个生产部署遇到这条时按需扩 ADR-0012 策略表（"何时设、设啥值、何时留空"）；当前 dev 单机已收口。
 - **类别 alias 规范化 + DINO 召回友好提示**（**P3**，v0.9.5 落地后新发现）：`ClassConfigEntry.alias` 字段就位但未做大小写 / 符号规范化；用户输入 `"Person"` vs `"person"` 召回有偏差。`schemas/_jsonb_types.py:104` 加 `field_validator(alias, mode="before")` 自动 `.lower().strip()` + 折叠多重逗号 / 空格；前端 `ClassEditor.tsx` onBlur 也做一次。预计 ~0.3 天。
+- **真实 SAM mask 50 张 simplify tolerance 验收**（**P3**，v0.9.4 phase 3 归档遗留）：`scripts/eval_simplify.py` 已就位，v0.9.4 phase 3 用 6 张合成 fixture 替代真实 SAM mask 出报告（100% IoU≥0.95 但缺真实长尾分布）；待 maintainer 在 GPU 环境采集 50 张真实 SAM mask 后重跑 `docs/research/13-simplify-tolerance-eval.md`，确认 `DEFAULT_SIMPLIFY_TOLERANCE = 1.0` 默认值在真实分布下仍最优；与 §C.3 mask→polygon 多连通域 follow-up 同窗口处理。
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -149,6 +150,10 @@
 - **截图自动化执行 + 14 张回填**：v0.8.7 落了 `apps/web/e2e/screenshots/` 脚本框架，但 PNG 文件需 maintainer 在完整启动栈下 `pnpm --filter web screenshots` 实际跑一遍并把结果 commit。部分场景（iou 双框 / bulk-edit 多选 / progress 50%）需先在 fixture 里造数据再 prepare 钩子触发。**推迟到 v0.9.6 与工具栏 P2-b 同窗口做**避免双拍（v0.9.5 已落 sparkles 重整 + AIPreAnnotatePage 等新场景，scenes.ts 配置已就位但 PNG 仍 0 张）。
 - **首次登录引导（onboarding）**：用户手册有文档但工作台无 UI walkthrough；新用户进 `/projects/:id/annotate` 时左下浮出一条「画框：拖鼠标；提交：E」级别的 3 步 tooltip + 右上 ✕ 关闭一次性写 localStorage `wb:onboarded:v1`。优先级 P3，等首次客户上线反馈触发。
 - **scenes.ts 加 v0.9.5 新场景**：v0.9.5 引入 `/ai-pre` 页面 + AIInspectorPanel 「本题花费」+ 类别 alias chips + AdminDashboard pre_annotated 队列卡，建议在 v0.9.6 截图实跑前先扩 `apps/web/e2e/screenshots/scenes.ts` 加 4 张新场景（ai-pre / cost-display / alias-chips / preannotated-queue），让 14 张统一一次性出图。
+- **`ml-backend-protocol.md` §2 协议字段补全**（**P3**，v0.9.4 phase 2 归档遗留）：v0.9.4 phase 2 落地了 `Context.output: "box"|"mask"|"both"` 与 `/setup` `supported_prompts` 字段但协议文档未同步；`docs-site/dev/ml-backend-protocol.md` §2.2 `Context` schema + §2.1 `/setup` 返回值需补这两个字段说明，避免新接入 backend 实现时再去翻代码。预计 ~0.2 天，可与 v0.10.x sam3-backend 文档同窗口做。
+- **`docs-site/user-guide/workbench/sam-tool.md`**（**P3**，标注员视角 SAM 教程，v0.9.x 归档遗留）：v0.9.4 phase 2 落地子工具栏 + text 三模式后未配套用户文档；建议涵盖：① S 进入 SAM + 1/2/3 切子工具 + +/− 切 polarity；② 三种 prompt 适用场景与速度对比；③ Tab 切候选 + Enter 接受。可与 v0.9.6 工具栏 P2-b 截图回填一同出图。
+- **`docs-site/user-guide/projects/ai-preannotate.md`**（**P3**，管理员视角文本批量预标教程，v0.9.5 归档遗留）：v0.9.5 `/ai-pre` UI 已落但管理员手册未补；涵盖项目下拉 → batch → prompt + alias chips → outputMode → WS 进度 → 跑完转 `pre_annotated` 状态全流程。可与 AIPreAnnotatePage 二阶段 UX（§A · 模型市场）同窗口写。
+- **`docs-site/dev/architecture/ai-models.md` 部署章节补全**（**P3**，v0.9.x 归档遗留，与 v0.10.x 共用）：v0.9.1 已写缓存策略 + 显存预算 + Prometheus 查询，但部署拓扑（独立 GPU service + docker-compose profile + nvidia 资源预留）章节缺；推迟到 v0.10.x sam3-backend 接入时一并写，复用同样的部署模板。
 
 ---
 
@@ -175,7 +180,7 @@
 
 ### C.3 标注体验（核心生产力杠杆）
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90%；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式）。
-- ~~**SAM 子工具栏拆分（点 / 框 / 文本明确划分）**~~ ✅ v0.9.4 phase 2 落地（2026-05-08, **Crystal Compass**）。下方设计细节保留作历史参考；实施细节见 [`ROADMAP/0.9.x.md`](./ROADMAP/0.9.x.md) v0.9.4 phase 2 段。最终选定方案：保留 `samSubTool` 子态字段（不扩 Tool 联合）+ ToolDock 内嵌子工具栏 + S 循环切；hotkey 用 `=/+` `-` 切 polarity（数字键 1-9 已被「切换类别」占用，原方案改）。
+- ~~**SAM 子工具栏拆分（点 / 框 / 文本明确划分）**~~ ✅ v0.9.4 phase 2 落地（2026-05-08, **Crystal Compass**）。下方设计细节保留作历史参考；实施细节见 `ROADMAP/0.9.x.md`（已归档）v0.9.4 phase 2 段。最终选定方案：保留 `samSubTool` 子态字段（不扩 Tool 联合）+ ToolDock 内嵌子工具栏 + S 循环切；hotkey 用 `=/+` `-` 切 polarity（数字键 1-9 已被「切换类别」占用，原方案改）。
   - **现状痛点**：当前 `S` 工具是单一 Tool（`useWorkbenchState.ts:5` `Tool = "box" | "hand" | "polygon" | "canvas" | "sam"`），按 `S` 进入后通过**鼠标动作隐式分流** prompt 类型 —— 单击 = positive point、Alt+点击 = negative point、拖框 = bbox prompt（`SamTool.ts:24` 都返回同一种 `samProbe` DragInit，`ImageStage.tsx:546` 按拖动距离分流）；文本 prompt 走 AI 助手面板的输入框，跟画布工具栏完全脱节。**问题**：① 新人不会发现 Alt+click = negative point；② 不知道点击和拖动会触发不同后端调用；③ 三种 prompt（point / bbox / text）在 UI 上没有显式分组，运维成本（文档 / 培训）高。
   - **设计方案**：S 激活后，画布顶部或左侧工具栏内浮出**子工具栏**：`[· 点 (Click)] [□ 框 (Box)] [T 文本]` 三按钮 + `[+ / −]` positive / negative 切换（仅点工具下显示）。当前激活的子工具决定接受的鼠标行为（点工具下拖框无效，框工具下单击无效），消除隐式分流；视觉 active state（紫色高亮）标明当前 prompt 类型。文本子工具点击后聚焦 AI 助手面板的文本输入框，把现有「分两块」的 UX 收回画布工具栏闭环。
   - **数据模型改动**：`Tool` 联合类型扩 `"sam-point" | "sam-bbox" | "sam-text"` 三个具体值（或保留 `"sam"` 父态 + 新增 `samSubTool` 子态字段，避免 hotkey 冲突）；`SamTool.ts` 拆三个 `*Tool` export，分别只接受对应 PointerEvent；`ImageStage.tsx` 的 `samProbe` 分流逻辑下移到 tool 层。

@@ -111,6 +111,49 @@ def test_class_config_alias_rejects_overlong():
         ClassConfigEntry(alias="x" * 51)
 
 
+# ── v0.9.6 · alias 规范化 ───────────────────────────────────────────
+
+
+def test_class_config_alias_lowercased():
+    """v0.9.6 · DINO 召回更稳, 前端用户输大小写都规范化为小写."""
+    e = ClassConfigEntry(alias="Person")
+    assert e.alias == "person"
+    e2 = ClassConfigEntry(alias="RIPE APPLE")
+    assert e2.alias == "ripe apple"
+
+
+def test_class_config_alias_strips_whitespace():
+    e = ClassConfigEntry(alias="  apple  ")
+    assert e.alias == "apple"
+
+
+def test_class_config_alias_collapses_whitespace_runs():
+    e = ClassConfigEntry(alias="ripe   apple")
+    assert e.alias == "ripe apple"
+
+
+def test_class_config_alias_collapses_multiple_commas():
+    """逗号 + 周边空白折叠为单 ','."""
+    e = ClassConfigEntry(alias="cat,,dog")
+    assert e.alias == "cat,dog"
+    e2 = ClassConfigEntry(alias="a, , b")
+    assert e2.alias == "a,b"
+    e3 = ClassConfigEntry(alias="a ,, b")
+    assert e3.alias == "a,b"
+
+
+def test_class_config_alias_strips_leading_trailing_commas():
+    e = ClassConfigEntry(alias=",foo,")
+    assert e.alias == "foo"
+
+
+def test_class_config_alias_empty_string_to_none():
+    e = ClassConfigEntry(alias="")
+    assert e.alias is None
+    e2 = ClassConfigEntry(alias="   ")
+    assert e2.alias is None
+
+
 def test_attribute_field_select_requires_options():
     with pytest.raises(ValidationError):
         AttributeSchema(

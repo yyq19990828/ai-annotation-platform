@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { SkipTaskModal, type SkipReason } from "./SkipTaskModal";
+import { BatchStatusBadge } from "@/components/badges/BatchStatusBadge";
 import type { TaskResponse } from "@/types";
 
 interface TopbarProps {
@@ -11,6 +12,8 @@ interface TopbarProps {
   taskIdx: number;
   taskTotal: number;
   aiRunning: boolean;
+  /** v0.9.6 · 当前任务所属批次状态;pre_annotated 时显示「AI 预标已就绪」紫徽章. */
+  batchStatus?: string;
   isSubmitting: boolean;
   /** 当前置信度阈值（0~1）；变化时短暂浮出反馈，给 [ ] 盲调用。 */
   confThreshold?: number;
@@ -44,7 +47,7 @@ interface TopbarProps {
  * 工具切换 → ToolDock（左侧垂直）；撤销/重做/缩放/适应 → FloatingDock（画布右下）。
  */
 export function Topbar({
-  task, taskIdx, taskTotal, aiRunning, isSubmitting, confThreshold,
+  task, taskIdx, taskTotal, aiRunning, batchStatus, isSubmitting, confThreshold,
   onShowHotkeys, onRunAi, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
   overflowSlot,
   canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
@@ -127,6 +130,10 @@ export function Topbar({
           >
             {indexLabel}
           </span>
+        )}
+        {/* v0.9.6 · 仅 pre_annotated 时显示徽章, 标注员一眼知道「先看 AI 候选」 */}
+        {batchStatus === "pre_annotated" && (
+          <BatchStatusBadge status="pre_annotated" />
         )}
         {/* v0.7.2 · 责任人胶囊：标注员 / 审核员（list_tasks/get_task 已 populate） */}
         {(task?.assignee || task?.reviewer) && (
@@ -235,7 +242,10 @@ export function Topbar({
           </span>
         )}
         <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning}>
-          <Icon name="wandSparkles" size={13} />{aiRunning ? "AI 推理中..." : "AI 一键预标"}
+          {aiRunning
+            ? <Icon name="loader2" size={13} className="spin" />
+            : <Icon name="wandSparkles" size={13} />}
+          {aiRunning ? "AI 推理中..." : "AI 一键预标"}
         </Button>
 
         <DropdownMenu

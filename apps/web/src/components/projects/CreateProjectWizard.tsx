@@ -18,6 +18,7 @@ import {
 import type { ProjectResponse, ClassesConfig, AttributeField, AttributeSchema } from "@/api/projects";
 import type { DatasetResponse } from "@/api/datasets";
 import { ClassEditor, type ClassRow } from "@/pages/Projects/sections/ClassEditor";
+import { TextOutputDefaultSelect } from "@/components/projects/shared/TextOutputDefaultSelect";
 import { AttributeSchemaEditor, validateAttributeFields } from "@/pages/Projects/sections/AttributeSchemaEditor";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -38,6 +39,8 @@ interface FormState {
   aiEnabled: boolean;
   aiModelChoice: string;
   aiModelCustom: string;
+  /** v0.9.6 · SAM 文本预标默认输出 ("" = 自动按 type_key, 与 GeneralSection 4 项一致). */
+  textOutputDefault: "" | "box" | "mask" | "both";
   // v0.6.7 B-11
   datasetIds: string[];
   splitNBatches: number; // 0 = 不切分（保留默认包），>=2 = 切分
@@ -53,6 +56,7 @@ const INITIAL: FormState = {
   aiEnabled: false,
   aiModelChoice: PRESET_AI_MODELS[0],
   aiModelCustom: "",
+  textOutputDefault: "",
   datasetIds: [],
   splitNBatches: 0,
   members: [],
@@ -152,6 +156,9 @@ export function CreateProjectWizard({ open, onClose }: Props) {
         attribute_schema,
         ai_enabled: form.aiEnabled,
         ai_model: form.aiEnabled ? resolvedAiModel : null,
+        // v0.9.6 · 仅启用 AI 时携带; "" = null (走智能默认)
+        text_output_default:
+          form.aiEnabled && form.textOutputDefault ? form.textOutputDefault : null,
         due_date: form.dueDate || null,
       },
       {
@@ -576,6 +583,21 @@ function Step4Ai({
               <Icon name="sparkles" size={10} />
               {resolvedAiModel || "—"}
             </Badge>
+          </div>
+
+          {/* v0.9.6 · SAM 文本预标默认输出 (与 GeneralSection 4 项一致, 复用共享组件) */}
+          <div>
+            <label style={labelStyle}>
+              SAM 文本预标默认输出{" "}
+              <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>
+                （工作台「找全图」初始值，可在工作台临时切换）
+              </span>
+            </label>
+            <TextOutputDefaultSelect
+              value={form.textOutputDefault}
+              onChange={(v) => setForm((s) => ({ ...s, textOutputDefault: v }))}
+              style={inputStyle}
+            />
           </div>
 
           {/* v0.8.6 F3 · backend 绑定提示（向导阶段不绑，项目创建后到设置页绑） */}

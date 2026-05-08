@@ -41,6 +41,32 @@ class MLBackendClient:
         except (httpx.RequestError, httpx.TimeoutException):
             return False
 
+    async def health_meta(self) -> tuple[bool, dict | None]:
+        """v0.9.6 · 拉 /health 完整响应; 上层 service 把 gpu_info/cache/model_version 缓存到 ml_backends.health_meta.
+
+        返回 (ok, meta?); meta 仅在 ok=True 且响应 JSON 时返回, 否则 None.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
+                resp = await client.get(
+                    f"{self.base_url}/health", headers=self._headers()
+                )
+                if resp.status_code != 200:
+                    return False, None
+                try:
+                    data = resp.json()
+                except Exception:
+                    return True, None
+                # 仅取深度指标三段, 减小 jsonb 体积
+                meta = {
+                    k: data[k]
+                    for k in ("gpu_info", "cache", "model_version")
+                    if k in data
+                }
+                return True, meta or None
+        except (httpx.RequestError, httpx.TimeoutException):
+            return False, None
+
     async def predict(
         self, tasks: list[dict], context: dict | None = None
     ) -> list[PredictionResult]:

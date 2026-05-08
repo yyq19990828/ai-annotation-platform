@@ -22,6 +22,9 @@ class MLBackend(Base):
     auth_method: Mapped[str] = mapped_column(String(20), default="none")
     auth_token: Mapped[str | None] = mapped_column(String(500))
     extra_params: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # v0.9.6 · 缓存 backend `/health` 的 gpu_info / cache / model_version 子对象,
+    # 让 /admin/ml-integrations/overview 一次性聚合渲染深度健康指标.
+    health_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text)
     last_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

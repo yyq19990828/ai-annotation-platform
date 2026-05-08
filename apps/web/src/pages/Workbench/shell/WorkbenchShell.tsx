@@ -97,8 +97,9 @@ export function WorkbenchShell() {
     // v0.6.8 B-15：owner 视角额外纳入 draft（数据集导入自动建的「{ds} 默认包」），
     // 让管理员一进 /annotate 就能看到批次结构、不至于以为「没批次」。
     // v0.7.0：成员视角额外纳入 rejected（被分派标注员可看到 reviewer 留言并继续重做）。
-    const ownerStatuses = ["draft", "active", "annotating", "rejected"];
-    const memberStatuses = ["active", "annotating", "rejected"];
+    // v0.9.6 · pre_annotated 加入两类视图: admin 跑完预标后能在工作台看到该批次, 标注员也能接管
+    const ownerStatuses = ["draft", "active", "pre_annotated", "annotating", "rejected"];
+    const memberStatuses = ["active", "pre_annotated", "annotating", "rejected"];
     if (isOwner || !meUserId) {
       return (batchList ?? []).filter((b) => ownerStatuses.includes(b.status));
     }
@@ -288,6 +289,12 @@ export function WorkbenchShell() {
   }, [taskId, tasks, queryClient, debouncedConf]);
 
   const aiRunning = preannotationProgress?.status === "running" || triggerPreannotation.isPending;
+
+  // v0.9.6 · 当前任务批次状态 (用于 Topbar pre_annotated 视觉提示)
+  const currentBatchStatus = useMemo<string | undefined>(() => {
+    if (!task?.batch_id || !batchList) return undefined;
+    return batchList.find((b) => b.id === task.batch_id)?.status;
+  }, [task?.batch_id, batchList]);
 
   const history = useAnnotationHistory(taskId, {
     createAnnotation: (payload) => createAnnotation.mutateAsync(payload),
@@ -926,6 +933,7 @@ export function WorkbenchShell() {
           taskIdx={taskIdx}
           taskTotal={tasks.length}
           aiRunning={aiRunning}
+          batchStatus={currentBatchStatus}
           isSubmitting={submitTaskMut.isPending}
           confThreshold={s.confThreshold}
           onShowHotkeys={() => setShowHotkeys(true)}

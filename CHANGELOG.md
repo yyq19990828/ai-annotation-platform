@@ -22,6 +22,60 @@
 
 ## 最新版本
 
+## [0.9.6] - 2026-05-08
+
+> **Agile Kernighan — v0.9.5 Async Oasis 落地后非长尾欠账一次性收口.** 主线三块：① **工具栏 P2-b 可用性重构** — 自定义 Tooltip 组件 + hotkey 角标 + 激活态 inset 边条 + 分组分隔线 + SAM 子工具栏改右抽屉 + AI 推理 spinner overlay + 备用 `Alt+1/2/3/4` 切工具 (避免与单数字键 1-9 切类别冲突); ② **v0.9.5 落地 5 条新发现** — 类别 alias schema 自动 lower/strip/折叠规范化 (前后端 + sessionStorage 防重复 toast) + Wizard step 4 暴露 `text_output_default` (共享 `TextOutputDefaultSelect` 组件) + `BatchStatusBadge` 新建 + Kanban COLUMNS 加 `pre_annotated` 紫色列 + 工作台 Topbar `pre_annotated` 紫徽章 + AIPreAnnotatePage chips 限高滚动 + 搜索筛选; ③ **ML backend 注册体验** — 后端 `POST /admin/ml-integrations/probe` 无 DB 副作用端点 + `ML_BACKEND_DEFAULT_URL` settings + `GET /admin/ml-integrations/runtime-hints` + Modal 表单内「测试连接」按钮 + URL placeholder 默认值预填; **健康聚合** — `ml_backends.health_meta JSONB` 列 + `check_health` 缓存 gpu_info/cache/model_version + RegisteredBackendsTab 行内副信息显示; **AIPreAnnotate 闭环** — `GET /admin/preannotate-queue` 端点 + 跑完 prominent CTA「打开标注工作台 →」+ 历史表 (项目/批次/总数/已预标/失败/操作 列, 失败行跳模型市场重试).
+
+### Added
+
+- **`Tooltip.tsx` 组件**：`apps/web/src/components/ui/Tooltip.tsx` portal 实现, hover 200ms 延迟 + focus 立即, blur/leave/Esc 关闭; 三行内容 (name 粗 + desc 灰 + hotkey kbd 徽); ToolDock 主工具栏与 SAM 子工具栏全用上.
+- **`SamSubToolbar.tsx`**：`apps/web/src/pages/Workbench/shell/SamSubToolbar.tsx` 从 ToolDock 拆出, 改 SAM 主按钮右侧 absolute 抽屉锚定 (左 100% + margin 8px), 子工具激活背景从 10% 提到 20% accent + inset 2px 左侧 accent 边条; polarity 圆形按钮也迁入抽屉.
+- **`BatchStatusBadge.tsx`**：`apps/web/src/components/badges/BatchStatusBadge.tsx` 统一 batch 状态徽章; pre_annotated 紫色 + sparkles icon + "AI 预标已就绪" label.
+- **`TextOutputDefaultSelect.tsx`**：`apps/web/src/components/projects/shared/TextOutputDefaultSelect.tsx` 抽出 4 项下拉为共享组件, GeneralSection + Wizard Step4 共用.
+- **后端 `POST /admin/ml-integrations/probe`**：`apps/api/app/api/v1/admin_ml_integrations.py` 无 DB 副作用 health 探测; payload `{url, auth_method, auth_token}` → 返回 `{ok, latency_ms, status_code, error, gpu_info, cache, model_version}`. 5 个新单测 (ok / timeout / 403 / runtime-hints set+null) 全过.
+- **后端 `GET /admin/ml-integrations/runtime-hints`**：暴露 `ml_backend_default_url` 给前端 modal 启动时一次性查 (cache forever).
+- **`settings.ml_backend_default_url`**：`apps/api/app/config.py` 加 env `ML_BACKEND_DEFAULT_URL`; `.env.example` + `DEV.md` 注释更新, dev 推荐 `http://172.17.0.1:8001`.
+- **`ml_backends.health_meta JSONB` 列**：迁移 `0051_ml_backends_health_meta.py`; `MLBackendService.check_health` 用新 `MLBackendClient.health_meta()` 拉 ok+meta, 把 `gpu_info / cache / model_version` 缓存到列; `MLBackendOut` schema 暴露字段.
+- **后端 `GET /admin/preannotate-queue`**：`apps/api/app/api/v1/admin_preannotate.py` 列出 `pre_annotated` 状态批次 + JOIN tasks 聚合 prediction_count / failed_count (排除 dismissed) + last_run_at; PROJECT_ADMIN/SUPER_ADMIN gated. 3 个端到端测试 (空 / 403 / 仅含 pre_annotated 不含 active).
+- **AIPreAnnotatePage 二阶段 UX**：跑完 prominent「打开标注工作台 →」CTA (`/projects/:id/annotate?batch=X`); 页面下方「AI 预标已就绪批次」表 (项目/批次/总数/已预标/失败/操作); 失败行加跳「模型市场失败列表」重试链接.
+- **AI 推理 spinner overlay**：`tokens.css` `@keyframes spin` + `.spin` 类; Icon 加 `loader2: Loader2`; Topbar / AIInspectorPanel / SamTextPanel 一键预标按钮 running 时换 loader2 + spin (取代 wandSparkles).
+- **数字键 `Alt+1/2/3/4` 副 hotkey 切工具**：`apps/web/src/pages/Workbench/state/hotkeys.ts` 加 Alt+digit 分支 (在 ctrl/meta 之后, 数字键 setClassByDigit 之前); 4 个 hotkeys.test.ts case (Alt+1-4 / Alt+5 仍切类别 / Alt+Ctrl+1 走 ctrl 分支). 解决 ROADMAP P2-b 数字键冲突.
+- **`docs-site/user-guide/projects/ai-preannotate.md`**：管理员视角全流程 (前置 / batch 选 / prompt+alias chips / outputMode / WS 进度 / 跑完 CTA / 历史表 / 常见问题).
+
+### Changed
+
+- **`ToolDock.tsx` UX 重整**：主工具按钮加 hotkey 右下角标 (8px 字母, 不靠 hover 即可见); 激活态加 inset 2px 左侧 accent 边条; native `title` 替为 `Tooltip` 组件; `Polygon` 与 `Hand` 之间加 1px 分组分隔; SAM 主按钮激活时 SAM 子工具栏改右侧 absolute 抽屉.
+- **`hotkeys.ts` HOTKEYS 数组**：4 行 Alt+digit 副 hotkey 提示并入 `?` 帮助面板; 与 v0.9.5 `S` 循环切子工具说明保持一致.
+- **`ClassConfigEntry.alias` schema**：加 `field_validator(alias, mode="before")` 自动 lower/strip + 折叠多重空格/逗号 + 去首尾逗号 + 空字符串到 None; 6 个新单测 case (Person→person / RIPE APPLE→ripe apple / 空白 trim / 多重空格折叠 / 多重逗号折叠 / 首尾逗号去除 / 空字符串到 None).
+- **`ClassEditor.tsx` 前端 alias 输入**：onBlur 自动规范化 (与后端等价的 `normalizeAlias` 函数); 首次规范化触发 sessionStorage 标记 `cfg:aliasNormHinted` 防重复 toast; 输入非 ASCII 时 `cfg:aliasAsciiHinted` toast 一次.
+- **`CreateProjectWizard` Step 4**：启用 AI 后增加 inline `text_output_default` 4 项下拉 (复用 `TextOutputDefaultSelect`); submit payload 携带 `text_output_default`; `ProjectCreatePayload` 类型扩展 (codegen 旧版未含).
+- **`BatchesKanbanView` COLUMNS**：加 `pre_annotated` 紫色列 (variant: ai); VALID_TRANSITIONS 镜像同步加 `active → pre_annotated` 与 `pre_annotated → annotating/active/archived`.
+- **`WorkbenchShell`**：ownerStatuses + memberStatuses 加 `pre_annotated`; 计算 `currentBatchStatus` 传入 Topbar; `pre_annotated` 状态时 Topbar 显示紫色「AI 预标已就绪」徽章.
+- **`AIPreAnnotatePage` chips 容器**：限高 96px + overflowY auto + 类别>6 时显示搜索框过滤 (substring match alias/name).
+- **`RegisteredBackendsTab` 行内深度指标**：状态 badge 下方追加 `model_version` / GPU `used_mb/total_mb` / cache hit_rate% (字段缺失灰显 "—"); `MLBackendItem` 接口扩 `health_meta`.
+- **`MlBackendFormModal`**：URL 输入 placeholder 走 `runtime-hints.ml_backend_default_url`; 加「测试连接」按钮 (调 `/probe`) + inline 状态显示 (✓ 已连接 / ✗ 无法连接); URL onChange 时清 probe 结果防 stale 显示.
+- **`MLBackendClient.health_meta()`**：`apps/api/app/services/ml_client.py` 新方法返 `(ok, meta?)`; service 层 `check_health` 改用它一次性写入 health_meta.
+
+### Migrations
+
+- **`0051_ml_backends_health_meta.py`**：`ml_backends.health_meta JSONB NULL` 列, ALTER TABLE ADD COLUMN IF NOT EXISTS, downgrade DROP COLUMN IF EXISTS.
+
+### Tests
+
+- **后端**：新增 `test_jsonb_strong_types` 6 case (alias 规范化) + `test_admin_ml_integrations` 5 case (probe ok/timeout/403, runtime-hints set+null) + `test_admin_preannotate` 3 case (empty/403/仅 pre_annotated) — 共 +14 case 全绿.
+- **前端**：新增 `hotkeys.test.ts` 4 case (Alt+1-4 切工具, Alt+5 fallback, Alt+Ctrl+1 走 ctrl) — 共 +4 case 全绿; tsc `--noEmit` 0 error.
+
+### Known Gaps（推迟到 v0.9.7）
+
+- **D.3 CreateProjectWizard backend 绑定 dropdown**：当前 ml_backends 表项目级, wizard 在创建项目前无法列「全局可选 backend」; 需新建全局聚合端点或重构表结构. 与 v0.8.6 F3 「项目创建后到设置页绑定」既定流程一致, 不阻塞使用.
+- **F.3 截图自动化 18 张实跑回填**：scenes.ts 4 个新场景 (`/ai-pre`, cost-display, alias-chips, preannotate-queue) 与 seed.py 6 个 prepare 钩子需 maintainer 在完整启动栈下 `pnpm --filter web screenshots` 实跑出图; 框架就绪.
+- **完整预标 job 历史追踪**：当前 `/admin/preannotate-queue` 仅返 `pre_annotated` 状态批次 + counts; 跑完后被 owner reset 回 active 的批次不在列表; 完整 job 历史需新建 `prediction_jobs` 表 + worker 写入.
+- **AIPreAnnotatePage 类别 alias chips 频率排序**：需后端 GROUP BY predictions 聚合, 推迟到 v0.9.7 chip.
+
+详细计划：[`docs/plans/2026-05-08-v0.9.6-agile-kernighan.md`](docs/plans/2026-05-08-v0.9.6-agile-kernighan.md)。
+
+---
+
 ## [0.9.5] - 2026-05-08
 
 > **Async Oasis — `/ai-pre` 文本批量 UI + 类别英文 alias + Batch pre_annotated + chip 包.** v0.9.x 系列收尾绿洲，把 SAM 接通后暴露的零散问题一次性收齐，进入 v0.10.x SAM 3 之前不留尾巴。三块主轴：① `/ai-pre` 完整页面替 PlaceholderPage，文本批量预标 → batch 自动转 `pre_annotated` → AdminDashboard / Sidebar 接真数据；② 类别英文 alias 字段（不引入运行时 LLM 翻译，alias chips 直填 SAM prompt）；③ chip 包（cost 单条透传 / text_output_default 持久化 / GeneralSection 绑定 UX 解耦 / 9 处 sparkles 重整）+ M5 收口（backend `/health` 显存 + ADR-0012/0013 + deploy.md GPU 章节）。

@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # 留空时 file URL 直接透传 (生产: api / sam / minio 同 K8s 网时不需要)。
     ml_backend_storage_host: str = ""
 
+    # v0.9.6 · ML Backend 注册表单 URL 默认值预填 hint (avoid 手敲 http://172.17.0.1:8001).
+    # dev 推荐 http://172.17.0.1:8001; 生产 K8s 同 namespace 时留空, 让运维直接输 service DNS.
+    ml_backend_default_url: str = ""
+
     ml_predict_timeout: int = 100
     ml_health_timeout: int = 10
     celery_broker_url: str = ""

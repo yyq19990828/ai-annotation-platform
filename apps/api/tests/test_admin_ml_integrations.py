@@ -92,3 +92,117 @@ async def test_overview_groups_backends_by_project(
         assert len(body["projects"]) == 1
         assert body["projects"][0]["project_name"] == "P1"
         assert len(body["projects"][0]["backends"]) == 2
+
+
+# ── v0.9.6 · /probe + /runtime-hints ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_probe_returns_ok_for_healthy_backend(httpx_client, super_admin):
+    _, token = super_admin
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {
+                "ok": True,
+                "gpu_info": {"device_name": "RTX 4060", "memory_used_mb": 1234},
+                "cache": {"hit_rate": 0.42},
+                "model_version": "grounded-sam2-tiny-large",
+            }
+
+    class FakeClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            return FakeResp()
+
+    with patch("app.api.v1.admin_ml_integrations.httpx.AsyncClient", FakeClient):
+        res = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/probe",
+            json={"url": "http://172.17.0.1:8001"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["ok"] is True
+        assert body["model_version"] == "grounded-sam2-tiny-large"
+        assert body["gpu_info"]["device_name"] == "RTX 4060"
+        assert body["cache"]["hit_rate"] == 0.42
+
+
+@pytest.mark.asyncio
+async def test_probe_returns_error_on_timeout(httpx_client, super_admin):
+    _, token = super_admin
+    import httpx as _httpx
+
+    class FakeClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            raise _httpx.TimeoutException("timed out")
+
+    with patch("app.api.v1.admin_ml_integrations.httpx.AsyncClient", FakeClient):
+        res = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/probe",
+            json={"url": "http://nope:9999"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["ok"] is False
+        assert "timed out" in (body["error"] or "")
+
+
+@pytest.mark.asyncio
+async def test_probe_requires_admin(httpx_client, annotator):
+    _, anno_token = annotator
+    res = await httpx_client.post(
+        "/api/v1/admin/ml-integrations/probe",
+        json={"url": "http://x:8001"},
+        headers={"Authorization": f"Bearer {anno_token}"},
+    )
+    assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_runtime_hints_returns_default_url(httpx_client, super_admin, monkeypatch):
+    _, token = super_admin
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ml_backend_default_url", "http://172.17.0.1:8001")
+    res = await httpx_client.get(
+        "/api/v1/admin/ml-integrations/runtime-hints",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200
+    assert res.json()["ml_backend_default_url"] == "http://172.17.0.1:8001"
+
+
+@pytest.mark.asyncio
+async def test_runtime_hints_null_when_not_set(httpx_client, super_admin, monkeypatch):
+    _, token = super_admin
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ml_backend_default_url", "")
+    res = await httpx_client.get(
+        "/api/v1/admin/ml-integrations/runtime-hints",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200
+    assert res.json()["ml_backend_default_url"] is None

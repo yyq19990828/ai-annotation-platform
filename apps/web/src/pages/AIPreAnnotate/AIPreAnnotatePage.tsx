@@ -12,6 +12,8 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -22,6 +24,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProjects, useProject } from "@/hooks/useProjects";
 import { useBatches } from "@/hooks/useBatches";
 import { useMLBackends } from "@/hooks/useMLBackends";
+import { adminPreannotateApi } from "@/api/adminPreannotate";
 import {
   useTriggerPreannotation,
   usePreannotationProgress,
@@ -48,11 +51,21 @@ function defaultOutputMode(typeKey: string | undefined | null): TextOutputMode {
 
 export default function AIPreAnnotatePage() {
   const pushToast = useToastStore((s) => s.push);
+  const navigate = useNavigate();
+
+  // v0.9.6 · 历史: pre_annotated 批次列表 (5 分钟 stale)
+  const queueQ = useQuery({
+    queryKey: ["admin", "preannotate-queue"],
+    queryFn: () => adminPreannotateApi.queue(50),
+    staleTime: 1000 * 60 * 5,
+  });
 
   const [projectId, setProjectId] = useState<string>("");
   const [batchId, setBatchId] = useState<string>("");
   const [prompt, setPrompt] = useState<string>("");
   const [outputMode, setOutputMode] = useState<TextOutputMode>("mask");
+  // v0.9.6 · alias chips 搜索过滤 (30+ 类别全配 alias 时避免铺满整行)
+  const [aliasFilter, setAliasFilter] = useState<string>("");
 
   // 拉数据
   const projectsQ = useProjects();
@@ -193,24 +206,63 @@ export default function AIPreAnnotatePage() {
             <div>
               <label style={labelStyle}>Prompt（英文召回最佳）</label>
               {aliases.length > 0 && (
-                <div style={{ marginBottom: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
-                    类别 alias 快速填入：
-                  </span>
-                  {aliases.map((a) => (
-                    <button
-                      key={a.name}
-                      type="button"
-                      onClick={() => setPrompt(a.alias)}
-                      style={aliasChipStyle}
-                      title={`使用类别「${a.name}」的 alias`}
-                    >
-                      {a.alias}
-                      <span style={{ color: "var(--color-fg-subtle)", marginLeft: 4 }}>
-                        ({a.name})
-                      </span>
-                    </button>
-                  ))}
+                <div style={{ marginBottom: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                      类别 alias 快速填入 ({aliases.length})：
+                    </span>
+                    {aliases.length > 6 && (
+                      <input
+                        type="text"
+                        value={aliasFilter}
+                        onChange={(e) => setAliasFilter(e.target.value)}
+                        placeholder="筛选 alias..."
+                        style={{
+                          flex: 1,
+                          maxWidth: 180,
+                          padding: "2px 8px",
+                          fontSize: 11,
+                          background: "var(--color-bg-sunken)",
+                          border: "1px solid var(--color-border)",
+                          borderRadius: "var(--radius-sm)",
+                          color: "var(--color-fg)",
+                          outline: "none",
+                        }}
+                      />
+                    )}
+                  </div>
+                  {/* v0.9.6 · 类别 30+ 全配 alias 时, chips 限高 + 横向滚动避免铺满整行. */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                      maxHeight: 96,
+                      overflowY: "auto",
+                      padding: "2px 0",
+                    }}
+                  >
+                    {aliases
+                      .filter((a) => {
+                        if (!aliasFilter.trim()) return true;
+                        const f = aliasFilter.toLowerCase();
+                        return a.alias.toLowerCase().includes(f) || a.name.toLowerCase().includes(f);
+                      })
+                      .map((a) => (
+                        <button
+                          key={a.name}
+                          type="button"
+                          onClick={() => setPrompt(a.alias)}
+                          style={aliasChipStyle}
+                          title={`使用类别「${a.name}」的 alias`}
+                        >
+                          {a.alias}
+                          <span style={{ color: "var(--color-fg-subtle)", marginLeft: 4 }}>
+                            ({a.name})
+                          </span>
+                        </button>
+                      ))}
+                  </div>
                 </div>
               )}
               <input
@@ -256,7 +308,101 @@ export default function AIPreAnnotatePage() {
         </Card>
       )}
 
-      {/* ── 3. 进度 ──────────────────────────────────────────────────── */}
+      {/* ── 3. 历史 (pre_annotated 批次列表) v0.9.6 ───────────────────── */}
+      {queueQ.data && queueQ.data.items.length > 0 && (
+        <Card>
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                AI 预标已就绪批次 ({queueQ.data.items.length})
+              </span>
+              <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                按最近预标时间排序
+              </span>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "var(--color-bg-sunken)" }}>
+                    {["项目", "批次", "总数", "已预标", "失败", "操作"].map((h) => (
+                      <th
+                        key={h}
+                        style={{
+                          padding: "6px 10px",
+                          textAlign: "left",
+                          fontWeight: 500,
+                          color: "var(--color-fg-muted)",
+                          borderBottom: "1px solid var(--color-border)",
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {queueQ.data.items.map((it) => (
+                    <tr key={it.batch_id}>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid var(--color-border)" }}>
+                        {it.project_name}
+                        {it.project_display_id && (
+                          <span style={{ marginLeft: 6, color: "var(--color-fg-subtle)" }}>
+                            ({it.project_display_id})
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid var(--color-border)" }}>
+                        {it.batch_name}
+                      </td>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid var(--color-border)" }}>
+                        {it.total_tasks}
+                      </td>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid var(--color-border)" }}>
+                        <Badge variant="ai">{it.prediction_count}</Badge>
+                      </td>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid var(--color-border)" }}>
+                        {it.failed_count > 0 ? (
+                          <Badge variant="danger">{it.failed_count}</Badge>
+                        ) : (
+                          <span style={{ color: "var(--color-fg-subtle)" }}>0</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "6px 10px", borderBottom: "1px solid var(--color-border)" }}>
+                        <div style={{ display: "inline-flex", gap: 6 }}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              navigate(`/projects/${it.project_id}/annotate?batch=${it.batch_id}`)
+                            }
+                            title="打开工作台接管 review"
+                          >
+                            <Icon name="chevRight" size={11} />
+                          </Button>
+                          {it.can_retry && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                navigate(`/model-market?tab=failed&batch_id=${it.batch_id}`)
+                              }
+                              title="去失败 prediction 列表重试"
+                            >
+                              <Icon name="refresh" size={11} />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* ── 4. 进度 ──────────────────────────────────────────────────── */}
       {progress && (
         <Card>
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -276,8 +422,20 @@ export default function AIPreAnnotatePage() {
               )}
             </div>
             {progress.status === "completed" && (
-              <div style={{ fontSize: 12, color: "var(--color-success)" }}>
-                ✓ 已跑完。批次状态已自动转为 pre_annotated，可在「项目 → 批次」页接管。
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, color: "var(--color-success)" }}>
+                  ✓ 已跑完。批次状态已自动转为 pre_annotated，可在工作台接管 review。
+                </span>
+                {/* v0.9.6 · prominent CTA 一键跳工作台接管 */}
+                <Button
+                  variant="ai"
+                  size="sm"
+                  onClick={() =>
+                    navigate(`/projects/${projectId}/annotate?batch=${batchId}`)
+                  }
+                >
+                  打开标注工作台 <Icon name="chevRight" size={11} />
+                </Button>
               </div>
             )}
           </div>

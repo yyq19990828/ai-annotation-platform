@@ -6,6 +6,10 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import { useMLBackends } from "@/hooks/useMLBackends";
 import { PRESET_AI_MODELS, CUSTOM_MODEL_KEY } from "@/constants/projectTypes";
+import {
+  TextOutputDefaultSelect,
+  type TextOutputDefault,
+} from "@/components/projects/shared/TextOutputDefaultSelect";
 import type { ProjectResponse } from "@/api/projects";
 
 const labelStyle: CSSProperties = {
@@ -376,16 +380,11 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
           <label style={labelStyle}>
             SAM 文本预标默认输出 <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>（工作台「找全图」初始值，可在工作台临时切换）</span>
           </label>
-          <select
-            value={textOutputDefault}
-            onChange={(e) => setTextOutputDefault(e.target.value)}
-            style={{ ...inputStyle, cursor: "pointer" }}
-          >
-            <option value="">自动按项目类型（image-det → 框 / 其它 → 掩膜）</option>
-            <option value="box">□ 框（仅 DINO，速度最快，image-det 项目首选）</option>
-            <option value="mask">○ 掩膜（DINO + SAM，image-seg 项目首选）</option>
-            <option value="both">⊕ 全部（同实例配对返回框 + 掩膜）</option>
-          </select>
+          <TextOutputDefaultSelect
+            value={textOutputDefault as TextOutputDefault}
+            onChange={(v) => setTextOutputDefault(v)}
+            style={inputStyle}
+          />
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Button variant="primary" disabled={!dirty || update.isPending} onClick={onSave}>

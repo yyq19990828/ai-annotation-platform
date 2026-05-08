@@ -160,7 +160,10 @@ export function AIInspectorPanel({
             <b style={{ fontSize: 13 }}>AI 助手</b>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Badge variant="ai" dot style={{ fontSize: 10 }}>{aiRunning ? "推理中" : "在线"}</Badge>
+            <Badge variant="ai" dot={!aiRunning} style={{ fontSize: 10, display: "inline-flex", alignItems: "center", gap: 4 }}>
+              {aiRunning && <Icon name="loader2" size={10} className="spin" />}
+              {aiRunning ? "推理中" : "在线"}
+            </Badge>
             <Button variant="ghost" size="sm" onClick={onToggle} title="收起 AI 助手" style={{ padding: "2px 6px" }}>
               <Icon name="panelRight" size={14} />
             </Button>
@@ -171,7 +174,10 @@ export function AIInspectorPanel({
         </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
           <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} style={{ flex: 1 }}>
-            <Icon name="wandSparkles" size={11} />一键预标
+            {aiRunning
+              ? <Icon name="loader2" size={11} className="spin" />
+              : <Icon name="wandSparkles" size={11} />}
+            {aiRunning ? "推理中..." : "一键预标"}
           </Button>
           <Button size="sm" onClick={onAcceptAll} disabled={aiBoxes.length === 0} style={{ flex: 1 }}>
             <Icon name="check" size={11} />全部采纳
@@ -506,7 +512,9 @@ function SamTextPanel({
           size="sm"
           disabled={!trimmed || running}
           onClick={() => onRun(trimmed, outputMode)}
+          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
         >
+          {running && <Icon name="loader2" size={11} className="spin" />}
           {running ? "推理中…" : "找全图"}
         </Button>
       </div>
