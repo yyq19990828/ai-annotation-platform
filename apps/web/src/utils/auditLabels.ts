@@ -21,6 +21,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "bug_report.created": "提交反馈",
   "bug_report.status_changed": "反馈状态更新",
   "bug_comment.created": "反馈评论",
+  // B-5 · AI 相关审计
+  "ai.preannotate.triggered": "触发 AI 预标注",
+  "ml_backend.created": "注册 ML 后端",
+  "ml_backend.updated": "更新 ML 后端",
+  "ml_backend.deleted": "删除 ML 后端",
   "http.post": "HTTP·写",
   "http.patch": "HTTP·改",
   "http.put": "HTTP·改",
@@ -35,4 +40,4 @@ export const AUDIT_BUSINESS_ACTIONS: string[] = Object.keys(AUDIT_ACTION_LABELS)
   (k) => !k.startsWith("http."),
 );
 
-export const AUDIT_TARGET_TYPES = ["user", "project", "task", "dataset", "annotation", "system"];
+export const AUDIT_TARGET_TYPES = ["user", "project", "task", "dataset", "annotation", "system", "ml_backend", "bug_report"];

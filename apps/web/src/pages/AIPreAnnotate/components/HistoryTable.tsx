@@ -2,7 +2,7 @@
  * v0.9.7 · pre_annotated 批次历史表 (含 client-side 搜索 / 排序 / 分页).
  */
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -62,6 +62,27 @@ export function HistoryTable({ items, isLoading }: Props) {
   const safePage = Math.min(page, totalPages - 1);
   const pageStart = safePage * HISTORY_PAGE_SIZE;
   const pageItems = sorted.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+
+  // B-2 · 项目→batch 分组,折叠展开;按当前页 pageItems 聚合
+  const grouped = useMemo(() => {
+    const m = new Map<string, { name: string; displayId: string | null; batches: PreannotateQueueItem[] }>();
+    for (const it of pageItems) {
+      const k = it.project_id;
+      const cur = m.get(k);
+      if (cur) cur.batches.push(it);
+      else m.set(k, { name: it.project_name, displayId: it.project_display_id ?? null, batches: [it] });
+    }
+    return Array.from(m.entries()).map(([id, g]) => ({ id, ...g }));
+  }, [pageItems]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleProject = (pid: string) => {
+    setCollapsed((s) => {
+      const n = new Set(s);
+      if (n.has(pid)) n.delete(pid);
+      else n.add(pid);
+      return n;
+    });
+  };
 
   const onSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -138,65 +159,93 @@ export function HistoryTable({ items, isLoading }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {pageItems.map((it) => (
-                    <tr key={it.batch_id}>
-                      <td style={tableBodyCellStyle}>
-                        {it.project_name}
-                        {it.project_display_id && (
-                          <span style={{ marginLeft: 6, color: "var(--color-fg-subtle)" }}>
-                            ({it.project_display_id})
-                          </span>
-                        )}
-                      </td>
-                      <td style={tableBodyCellStyle}>{it.batch_name}</td>
-                      <td style={{ ...tableBodyCellStyle, fontVariantNumeric: "tabular-nums" }}>
-                        {it.total_tasks}
-                      </td>
-                      <td style={tableBodyCellStyle}>
-                        <Badge variant="ai">{it.prediction_count}</Badge>
-                      </td>
-                      <td style={tableBodyCellStyle}>
-                        {it.failed_count > 0 ? (
-                          <Badge variant="danger">{it.failed_count}</Badge>
-                        ) : (
-                          <span style={{ color: "var(--color-fg-subtle)" }}>0</span>
-                        )}
-                      </td>
-                      <td style={{ ...tableBodyCellStyle, color: "var(--color-fg-muted)" }}>
-                        {formatRelative(it.last_run_at)}
-                      </td>
-                      <td style={tableBodyCellStyle}>
-                        <div style={{ display: "inline-flex", gap: 6 }}>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              navigate(
-                                `/projects/${it.project_id}/annotate?batch=${it.batch_id}`,
-                              )
-                            }
-                            title="打开工作台接管 review"
-                          >
-                            <Icon name="chevRight" size={11} />
-                          </Button>
-                          {it.can_retry && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() =>
-                                navigate(
-                                  `/model-market?tab=failed&batch_id=${it.batch_id}`,
-                                )
-                              }
-                              title="去失败 prediction 列表重试"
-                            >
-                              <Icon name="refresh" size={11} />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {grouped.map((g) => {
+                    const isCollapsed = collapsed.has(g.id);
+                    const totalBatches = g.batches.length;
+                    const totalFailed = g.batches.reduce((s, b) => s + b.failed_count, 0);
+                    const totalTasks = g.batches.reduce((s, b) => s + b.total_tasks, 0);
+                    return (
+                      <Fragment key={g.id}>
+                        <tr
+                          onClick={() => toggleProject(g.id)}
+                          style={{
+                            cursor: "pointer",
+                            background: "var(--color-bg-elev)",
+                            borderTop: "1px solid var(--color-border)",
+                          }}
+                        >
+                          <td colSpan={7} style={{ padding: "8px 12px", fontSize: FS_SM }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                              <Icon name={isCollapsed ? "chevRight" : "chevDown"} size={11} />
+                              <strong>{g.name}</strong>
+                              {g.displayId && (
+                                <span style={{ color: "var(--color-fg-subtle)" }}>({g.displayId})</span>
+                              )}
+                              <span style={{ color: "var(--color-fg-muted)" }}>
+                                · {totalBatches} 批 · {totalTasks} 任务
+                                {totalFailed > 0 && (
+                                  <span style={{ color: "var(--color-danger)", marginLeft: 6 }}>
+                                    · {totalFailed} 失败
+                                  </span>
+                                )}
+                              </span>
+                            </span>
+                          </td>
+                        </tr>
+                        {!isCollapsed &&
+                          g.batches.map((it) => (
+                            <tr key={it.batch_id}>
+                              <td style={{ ...tableBodyCellStyle, paddingLeft: 28, color: "var(--color-fg-subtle)" }}>↳</td>
+                              <td style={tableBodyCellStyle}>{it.batch_name}</td>
+                              <td style={{ ...tableBodyCellStyle, fontVariantNumeric: "tabular-nums" }}>{it.total_tasks}</td>
+                              <td style={tableBodyCellStyle}>
+                                <Badge variant="ai">{it.prediction_count}</Badge>
+                              </td>
+                              <td style={tableBodyCellStyle}>
+                                {it.failed_count > 0 ? (
+                                  <Badge variant="danger">{it.failed_count}</Badge>
+                                ) : (
+                                  <span style={{ color: "var(--color-fg-subtle)" }}>0</span>
+                                )}
+                              </td>
+                              <td style={{ ...tableBodyCellStyle, color: "var(--color-fg-muted)" }}>
+                                {formatRelative(it.last_run_at)}
+                              </td>
+                              <td style={tableBodyCellStyle}>
+                                <div style={{ display: "inline-flex", gap: 6 }}>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      navigate(
+                                        `/projects/${it.project_id}/annotate?batch=${it.batch_id}`,
+                                      )
+                                    }
+                                    title="打开工作台接管 review"
+                                  >
+                                    <Icon name="chevRight" size={11} />
+                                  </Button>
+                                  {it.can_retry && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() =>
+                                        navigate(
+                                          `/ai-pre?failed=1&batch_id=${it.batch_id}`,
+                                        )
+                                      }
+                                      title="到下方失败 prediction 列表重试"
+                                    >
+                                      <Icon name="refresh" size={11} />
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

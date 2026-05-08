@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
+import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import type { ProjectResponse, ClassesConfig } from "@/api/projects";
 import { ClassEditor, defaultColorFor, type ClassRow } from "./ClassEditor";
 
@@ -29,6 +30,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
 
   const initial = useMemo(() => buildRows(project), [project]);
   const dirty = JSON.stringify(rows) !== JSON.stringify(initial);
+  useUnsavedWarning(dirty);
 
   const onSave = () => {
     const classes = rows.map((r) => r.name);
@@ -59,7 +61,16 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
           每个类别可独立配置颜色（标注框 stroke / 标签底色）。顺序影响数字键 1-9 / a-z 映射与左侧类别面板展示。
         </p>
         <ClassEditor value={rows} onChange={setRows} />
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
+          {dirty && (
+            <span
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-warning)", fontWeight: 500 }}
+              data-testid="unsaved-indicator"
+            >
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-warning)" }} />
+              有未保存的修改
+            </span>
+          )}
           <Button variant="primary" disabled={!dirty || update.isPending} onClick={onSave}>
             {update.isPending ? "保存中..." : "保存"}
           </Button>

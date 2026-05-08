@@ -1,6 +1,6 @@
 import re
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -19,6 +19,7 @@ from app.schemas.ml_backend import (
 from app.services.ml_backend import MLBackendService
 from app.services.ml_client import MLBackendClient
 from app.services.storage import StorageService
+from app.services.audit import AuditService
 
 router = APIRouter()
 
@@ -46,6 +47,7 @@ def _resolve_task_url(task: Task) -> str:
 async def create_ml_backend(
     project_id: uuid.UUID,
     data: MLBackendCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
@@ -58,6 +60,22 @@ async def create_ml_backend(
         auth_method=data.auth_method,
         auth_token=data.auth_token,
         extra_params=data.extra_params,
+    )
+    # B-5 · AI 审计 — ML backend 注册
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="ml_backend.created",
+        target_type="ml_backend",
+        target_id=str(backend.id),
+        request=request,
+        status_code=201,
+        detail={
+            "project_id": str(project_id),
+            "name": data.name,
+            "url": data.url,
+            "is_interactive": data.is_interactive,
+        },
     )
     await db.commit()
     await db.refresh(backend)
@@ -97,6 +115,7 @@ async def update_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     data: MLBackendUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
@@ -105,6 +124,16 @@ async def update_ml_backend(
     backend = await svc.update(backend_id, **updates)
     if not backend:
         raise HTTPException(status_code=404, detail="ML Backend not found")
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="ml_backend.updated",
+        target_type="ml_backend",
+        target_id=str(backend_id),
+        request=request,
+        status_code=200,
+        detail={"project_id": str(project_id), "fields": list(updates.keys())},
+    )
     await db.commit()
     await db.refresh(backend)
     return backend
@@ -114,6 +143,7 @@ async def update_ml_backend(
 async def delete_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
@@ -121,6 +151,16 @@ async def delete_ml_backend(
     deleted = await svc.delete(backend_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="ML Backend not found")
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="ml_backend.deleted",
+        target_type="ml_backend",
+        target_id=str(backend_id),
+        request=request,
+        status_code=204,
+        detail={"project_id": str(project_id)},
+    )
     await db.commit()
 
 

@@ -21,6 +21,17 @@
 
 ## 最新版本
 
+## [0.9.9] - 2026-05-08
+
+修复管理员反馈的一系列 BUG (B-2 ~ B-8):
+
+- **B-2** AI 工作流闭环: 失败预测 (FailedPredictionsTab) 从 `/model-market` 平移到 `/ai-pre`; HistoryTable 改成项目→批次两级折叠
+- **B-3** 超管入口语义: sidebar 上 super_admin 拆出"平台概览" + "项目总览"两条; `/dashboard?view=projects` 让超管也能看到与 project_admin 一致的项目列表
+- **B-4** bug 反馈截图迁到独立 MinIO 桶 `bug-reports` (180 天 lifecycle), 与标注桶 `annotations` 解耦
+- **B-5** AI 相关审计日志: 新增 `ai.preannotate.triggered` / `ml_backend.created` / `ml_backend.updated` / `ml_backend.deleted`; 前端 auditLabels 同步翻译
+- **B-6** 项目设置未保存提示: 新增 `useUnsavedWarning` hook + 黄色 dirty 徽章 (General/Classes/Attributes 三个 section)
+- **B-7** AI 模型语义统一: GeneralSection 把"实际 ML Backend"提到主选项, PRESET 模型名 hint 折叠到 details (仅未绑定时使用); 保存时 ai_model 优先派生自 backend.name
+- **B-8** 工作台 AI 一键预标: 修掉 `ml_backend_id=""` 空字符串导致的 dispatch 报错, 未绑定时给出明确 toast 引导用户去项目设置
 ## [0.9.8] - 2026-05-08
 
 > **Fluffy Cosmos — Prediction Job 历史 + v0.9.7 端到端跑通后暴露的隐性 bug 收口.** 主线 6 块: ① `prediction_jobs` 表 + worker 写入开始/结束/失败 3 时点 (含 success/failed 计数 + duration_ms + celery_task_id 反查); ② `GET /admin/preannotate-jobs` cursor 翻页端点 (与 `/preannotate-queue` 区分: 前者全量历史含已重置批次, 后者当前 pre_annotated 快照); ③ `/ai-pre/jobs` 子路由 + Layout (顶部 tab 切「执行 / 历史」), 新建 `AIPreAnnotateJobsPage` 列状态/时长/失败计数 + 状态/搜索过滤 + cursor 翻页; ④ 利用既有 `@hey-api/openapi-ts` codegen 把新 `PredictionJobOut` 派生自 `types.gen.ts` (枚举 status 收紧 union) + 加 `predictionsToBoxes` 5 黄金样本 vitest + 后端 `to_internal_shape` idempotent / 双 schema 共存边界 3 case + 新增 `docs-site/dev/architecture/api-schema-boundary.md` (3 层 schema 边界图 + adapter 责任 + 何时跑 codegen); ⑤ `MLBackendCreate.url` / `MLBackendUpdate.url` Pydantic field_validator 拒绝 loopback host (localhost / 127.0.0.1 / 0.0.0.0 / ::1), 错误信息提示用 docker bridge IP / service DNS, 配套 v0.9.6 placeholder; ⑥ WS 多项目可见性: `_publish_progress` 在 job 开始/结束/失败 3 时点同时发到全局 channel `global:prediction-jobs`, 新 `/ws/prediction-jobs` admin-only 鉴权 token + RBAC 过滤, 前端 `useGlobalPreannotationJobs` hook + Topbar 紫色 `PreannotateJobsBadge` (0 个 job 时隐身, 点击 popover 列项目名 + 进度条 + 跳转), `AIPreAnnotatePage` 切项目时若旧项目仍有 in-flight job 弹 warning toast 提示 Topbar 徽章可回跳.

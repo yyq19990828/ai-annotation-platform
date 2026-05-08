@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     minio_secret_key: str = "minioadmin"
     minio_bucket: str = "annotations"
     minio_datasets_bucket: str = "datasets"
+    # B-4 · bug 反馈截图独立桶,与 anno/datasets 隔离,180 天 lifecycle
+    minio_bug_reports_bucket: str = "bug-reports"
     minio_use_ssl: bool = False
     minio_public_url: str = ""  # if set, replaces the endpoint host in presigned URLs
 

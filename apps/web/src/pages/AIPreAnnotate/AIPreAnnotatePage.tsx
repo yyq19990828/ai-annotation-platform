@@ -32,6 +32,8 @@ import { PromptComposer, type AliasEntry } from "./components/PromptComposer";
 import { OutputModeSelector } from "./components/OutputModeSelector";
 import { RunPanel } from "./components/RunPanel";
 import { HistoryTable } from "./components/HistoryTable";
+// B-2 · 失败预测从 model-market 平移到 AI 预标注界面 (ai 工作流闭环)
+import { FailedPredictionsTab } from "../ModelMarket/FailedPredictionsTab";
 import {
   PAGE_PADDING_X,
   PAGE_PADDING_Y,
@@ -321,6 +323,9 @@ export default function AIPreAnnotatePage() {
       )}
 
       <HistoryTable items={queueQ.data?.items ?? []} isLoading={queueQ.isLoading} />
+
+      {/* B-2 · 失败预测在 AI 预标注界面统一展示 */}
+      <FailedPredictionsTab />
 
       {!projectId && (
         <div style={{ fontSize: FS_XS, color: "var(--color-fg-subtle)", textAlign: "center", padding: 8 }}>

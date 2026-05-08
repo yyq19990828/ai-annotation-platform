@@ -21,11 +21,16 @@ interface NavItem {
   badge?: string;
 }
 
-const sections: { label: string; items: NavItem[] }[] = [
+const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem[] }[] => [
   {
     label: "工作区",
     items: [
-      { key: "dashboard", path: "/dashboard", icon: "dashboard", label: "项目总览" },
+      ...(isSuperAdmin
+        ? [
+            { key: "dashboard" as PageKey, path: "/dashboard", icon: "dashboard" as IconName, label: "平台概览" },
+            { key: "dashboard" as PageKey, path: "/dashboard?view=projects", icon: "layers" as IconName, label: "项目总览" },
+          ]
+        : [{ key: "dashboard" as PageKey, path: "/dashboard", icon: "dashboard" as IconName, label: "项目总览" }]),
       { key: "annotate", path: "/annotate", icon: "target", label: "标注工作" },
       { key: "review", path: "/review", icon: "check", label: "质检审核" },
       { key: "datasets", path: "/datasets", icon: "layers", label: "数据集", count: 42 },
@@ -51,7 +56,7 @@ const sections: { label: string; items: NavItem[] }[] = [
 ];
 
 export function Sidebar({ reviewCount }: SidebarProps) {
-  const { canAccessPage, hasAnyPermission } = usePermissions();
+  const { canAccessPage, hasAnyPermission, role } = usePermissions();
   const showAiQuota = hasAnyPermission("ai.trigger", "ml-backend.manage");
   const canSeeFailed = hasAnyPermission("ml-backend.manage");
   const failedQuery = useFailedPredictions(1, 1, false, canSeeFailed);
@@ -60,6 +65,7 @@ export function Sidebar({ reviewCount }: SidebarProps) {
   const adminStatsQ = useAdminStats();
   const preAnnotatedTotal = adminStatsQ.data?.pre_annotated_batches ?? 0;
 
+  const sections = sectionsForRole(role === "super_admin");
   const visibleSections = sections
     .map((sec) => ({
       ...sec,
