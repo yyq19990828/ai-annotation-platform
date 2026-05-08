@@ -11,6 +11,10 @@
     "preview": "vitepress preview",
     "hotkeys": "node scripts/generate-hotkeys.mjs",
     "check:snippets": "node scripts/check-doc-snippets.mjs",
+    "check:adr": "node scripts/check-adr.mjs",
+    "check:plans": "node scripts/check-plans-freshness.mjs",
+    "check:changelog": "node scripts/check-changelog-version.mjs",
+    "check:all": "node scripts/check-doc-snippets.mjs && node scripts/check-adr.mjs && node scripts/check-plans-freshness.mjs && node scripts/check-changelog-version.mjs",
     "mirror:adr": "node scripts/mirror-adr.mjs"
   },
   "devDependencies": {
