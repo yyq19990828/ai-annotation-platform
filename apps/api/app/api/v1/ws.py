@@ -67,6 +67,62 @@ async def preannotate_progress(websocket: WebSocket, project_id: uuid.UUID):
         await pubsub.close()
 
 
+@router.websocket("/ws/prediction-jobs")
+async def prediction_jobs_socket(
+    websocket: WebSocket,
+    token: str = Query(...),
+):
+    """v0.9.8 · 全局 prediction job 进度通道 (Topbar 徽章 / 切项目 toast).
+
+    与 `/ws/projects/{id}/preannotate` 的区别:
+    - 后者是单项目: 工作台跑预标时实时帧 (current/total)
+    - 本端点是全局: 仅在 job 开始 / 结束 / 失败 3 时点带 job_meta 推一条
+      (project_id / project_name / job_id / status), 让前端跨项目可见
+
+    鉴权: 仅 super_admin / project_admin (与 /ai-pre 主页一致), 其他角色直接 close.
+    Channel: redis pub/sub `global:prediction-jobs` (worker `_publish_progress`
+    带 job_meta 时同时发到此通道).
+    """
+    try:
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+        role = payload.get("role")
+        if not user_id:
+            raise ValueError("missing sub")
+        uuid.UUID(user_id)
+        if role not in ("super_admin", "project_admin"):
+            raise PermissionError("not admin")
+    except Exception:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    await websocket.accept()
+    r = aioredis.Redis(connection_pool=_get_redis_pool())
+    pubsub = r.pubsub()
+    channel = "global:prediction-jobs"
+    await pubsub.subscribe(channel)
+
+    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+    try:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                data = message["data"]
+                await websocket.send_text(
+                    data.decode() if isinstance(data, bytes) else data
+                )
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        log.warning("prediction-jobs WS error user=%s err=%s", user_id, e)
+    finally:
+        heartbeat_task.cancel()
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
+        except Exception:
+            pass
+
+
 @router.websocket("/ws/notifications")
 async def notifications_socket(
     websocket: WebSocket,

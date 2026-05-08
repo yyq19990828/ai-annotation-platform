@@ -1,8 +1,15 @@
-# AI 文本批量预标（v0.9.5 / v0.9.6 / v0.9.7）
+# AI 文本批量预标（v0.9.5 / v0.9.6 / v0.9.7 / v0.9.8）
 
 > 一次性给整批图跑 SAM 文本预标，标注员从 AI 候选起步而非从 0 画。
 
-**v0.9.7 起**页面经过信息架构重构 + 视觉精修：
+**v0.9.8 起** (Fluffy Cosmos)：
+
+- **`/ai-pre/jobs` 完整历史子页面**：顶部 tab 切「执行预标 / 完整历史」, 历史页列 prediction_jobs 全量 (含已结束 / 已重置批次 / 失败 job), 不再像旧 HistoryTable 只看到当前 pre_annotated 批次。支持状态过滤 (运行中 / 已完成 / 失败) + prompt 模糊搜索 + cursor 翻页, 列含跑时长 / 失败计数 / outputMode / 状态徽章.
+- **Topbar 紫色徽章**：admin 跑预标后切到别处 (做项目管理 / 看 dashboard) 也能在 Topbar 看到「N 个预标 job 进行中」。点击展开 popover 列每个 job 的项目名 + 进度条, 整行点击跳回 `/ai-pre?project_id=X` 看进度。
+- **切项目 toast**：旧项目仍有 in-flight job 时, 切到新项目会弹 warning toast「项目「X」仍在跑预标 (i/N), Topbar 紫色徽章可一键回跳」, 避免用户以为「项目切了 = job 没了」。
+- **ML backend URL loopback 守卫**：注册 ML backend 时不能再填 `localhost` / `127.0.0.1` / `0.0.0.0` / `::1` (容器内连不上宿主机, 跑预标会直接 connection refused), 校验失败 422 + 提示用 docker bridge IP (`172.17.0.1`) / service DNS。dev placeholder 已默认填 `172.17.0.1:8001`。
+
+**v0.9.7 起** 页面经过信息架构重构 + 视觉精修：
 
 - **顶部水平 stepper**：4 步进度引导（项目+批次 / Prompt / 输出形态 / 跑预标），点徽章直接滚到对应 section
 - **alias chips 频率排序**：chips 按项目历史 prediction count desc 排，常用类别浮上来；chip 末尾显示 `×N` 角标

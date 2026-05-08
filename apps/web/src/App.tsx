@@ -56,6 +56,12 @@ const ModelMarketPage = lazy(() =>
 const AIPreAnnotatePage = lazy(() =>
   import("@/pages/AIPreAnnotate/AIPreAnnotatePage").then((m) => ({ default: m.default }))
 );
+const AIPreAnnotateLayout = lazy(() =>
+  import("@/pages/AIPreAnnotate/AIPreAnnotateLayout").then((m) => ({ default: m.default }))
+);
+const AIPreAnnotateJobsPage = lazy(() =>
+  import("@/pages/AIPreAnnotate/AIPreAnnotateJobsPage").then((m) => ({ default: m.default }))
+);
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
 import { RequireProjectMember } from "@/components/routing/RequireProjectMember";
@@ -290,10 +296,13 @@ export function App() {
           path="/ai-pre"
           element={
             <RequirePagePermission pageKey="ai-pre">
-              <AIPreAnnotatePage />
+              <AIPreAnnotateLayout />
             </RequirePagePermission>
           }
-        />
+        >
+          <Route index element={<AIPreAnnotatePage />} />
+          <Route path="jobs" element={<AIPreAnnotateJobsPage />} />
+        </Route>
         <Route
           path="/model-market"
           element={

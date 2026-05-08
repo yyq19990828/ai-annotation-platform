@@ -1,6 +1,28 @@
-from pydantic import BaseModel, Field
-from uuid import UUID
 from datetime import datetime
+from urllib.parse import urlparse
+from uuid import UUID
+
+from pydantic import BaseModel, Field, field_validator
+
+
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+
+
+def _validate_ml_backend_url(v: str) -> str:
+    """v0.9.8 · 拒绝 loopback host. 容器内无法访问宿主机 localhost,
+    跑预标会直接 connection refused. 提示用 docker bridge IP / service DNS.
+
+    与 v0.9.6 前端 placeholder (runtime-hints.ml_backend_default_url) 配套.
+    """
+    parsed = urlparse(v)
+    host = (parsed.hostname or "").lower()
+    if host in _LOOPBACK_HOSTS:
+        raise ValueError(
+            "URL 不能用 loopback host (localhost / 127.0.0.1); "
+            "容器内访问宿主机请用 docker bridge IP (如 172.17.0.1) 或 service DNS. "
+            "默认值参考 GET /runtime-hints.ml_backend_default_url"
+        )
+    return v
 
 
 class MLBackendCreate(BaseModel):
@@ -11,6 +33,11 @@ class MLBackendCreate(BaseModel):
     auth_token: str | None = None
     extra_params: dict = {}
 
+    @field_validator("url")
+    @classmethod
+    def _no_loopback(cls, v: str) -> str:
+        return _validate_ml_backend_url(v)
+
 
 class MLBackendUpdate(BaseModel):
     name: str | None = None
@@ -19,6 +46,13 @@ class MLBackendUpdate(BaseModel):
     auth_method: str | None = None
     auth_token: str | None = None
     extra_params: dict | None = None
+
+    @field_validator("url")
+    @classmethod
+    def _no_loopback(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return _validate_ml_backend_url(v)
 
 
 class MLBackendOut(BaseModel):

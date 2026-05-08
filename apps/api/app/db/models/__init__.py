@@ -12,6 +12,7 @@ from app.db.models.annotation_comment import AnnotationComment
 from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
 from app.db.models.ml_backend import MLBackend
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
+from app.db.models.prediction_job import PredictionJob, PredictionJobStatus
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
 from app.db.models.bug_report import BugReport, BugComment
@@ -42,6 +43,8 @@ __all__ = [
     "Prediction",
     "PredictionMeta",
     "FailedPrediction",
+    "PredictionJob",
+    "PredictionJobStatus",
     "AuditLog",
     "UserInvitation",
     "BugReport",
