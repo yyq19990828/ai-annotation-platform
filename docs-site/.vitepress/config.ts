@@ -112,6 +112,20 @@ export default defineConfig({
           ],
         },
         {
+          text: "故障排查 / 踩坑",
+          collapsed: true,
+          items: [
+            { text: "总览与速查表", link: "/dev/troubleshooting/" },
+            { text: "Docker rebuild vs restart", link: "/dev/troubleshooting/docker-rebuild-vs-restart" },
+            { text: "容器网络与 loopback", link: "/dev/troubleshooting/container-networking" },
+            { text: "Prediction Schema 适配器", link: "/dev/troubleshooting/schema-adapter-pitfalls" },
+            { text: "Dev 数据保护", link: "/dev/troubleshooting/dev-data-preservation" },
+            { text: "React useState TDZ", link: "/dev/troubleshooting/react-tdz-trap" },
+            { text: "环境变量与 config 路径", link: "/dev/troubleshooting/env-and-config-paths" },
+            { text: "CI 服务依赖踩坑", link: "/dev/troubleshooting/ci-flaky-services" },
+          ],
+        },
+        {
           text: "ADR（架构决策）",
           collapsed: true,
           items: adrSidebarItems,
