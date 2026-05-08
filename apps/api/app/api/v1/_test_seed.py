@@ -41,6 +41,11 @@ class SeedReset(BaseModel):
     reviewer_email: str
     project_id: str
     task_ids: list[str]
+    # v0.9.4 phase 3: SAM E2E 走 page.route 拦截 /interactive-annotating, 但项目侧仍需
+    # 「AI 启用 + 有效 ml_backend_id 绑定」, 否则 GeneralSection / 工作台显示「未绑定」红字,
+    # SAM 工具按钮直接 disabled. 这个 backend 的 url 是 mock://e2e-sam (前端不会真的请求,
+    # 由 Playwright page.route 拦截). 字段返回让 spec 可声明依赖.
+    ml_backend_id: str
 
 
 @router.post(
@@ -264,6 +269,23 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         tasks.append(t)
     await db.flush()
     batch.total_tasks = len(tasks)
+
+    # v0.9.4 phase 3: SAM E2E 用 mock ml_backend (url 不会被真请求, page.route 拦截)
+    from app.db.models.ml_backend import MLBackend
+
+    mock_backend = MLBackend(
+        project_id=project.id,
+        name="E2E SAM Mock",
+        url="http://mock-sam.e2e:9999",
+        state="connected",
+        is_interactive=True,
+        auth_method="none",
+        extra_params={"e2e_mock": True},
+    )
+    db.add(mock_backend)
+    await db.flush()
+    project.ai_enabled = True
+    project.ml_backend_id = mock_backend.id
     await db.commit()
 
     return SeedReset(
@@ -272,6 +294,7 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         reviewer_email=reviewer.email,
         project_id=str(project.id),
         task_ids=[str(t.id) for t in tasks],
+        ml_backend_id=str(mock_backend.id),
     )
 
 

@@ -19,22 +19,34 @@ ai-annotation-platform/
 │   │   │   ├── data/            # Mock 数据
 │   │   │   ├── types/           # TypeScript 类型定义
 │   │   │   └── styles/          # CSS 变量 (设计 tokens)
+│   │   ├── e2e/                # Playwright E2E + screenshots 自动化
 │   │   ├── vite.config.ts
 │   │   └── tsconfig.json
 │   │
-│   └── api/                     # FastAPI 后端
-│       ├── app/
-│       │   ├── api/v1/          # 路由处理器
-│       │   ├── db/models/       # SQLAlchemy 模型
-│       │   ├── schemas/         # Pydantic schemas
-│       │   ├── services/        # 业务逻辑 (待实现)
-│       │   ├── workers/         # Celery 任务 (待实现)
-│       │   └── utils/           # 工具函数 (待实现)
-│       └── pyproject.toml
+│   ├── api/                     # FastAPI 后端
+│   │   ├── app/
+│   │   │   ├── api/v1/          # 路由处理器
+│   │   │   ├── db/models/       # SQLAlchemy 模型
+│   │   │   ├── schemas/         # Pydantic schemas
+│   │   │   ├── services/        # 业务逻辑
+│   │   │   ├── workers/         # Celery 任务
+│   │   │   └── utils/           # 工具函数
+│   │   └── pyproject.toml
+│   │
+│   ├── grounded-sam2-backend/   # v0.9.x · Grounded-SAM-2 ML Backend (GPU)
+│   │   ├── vendor/              # IDEA-Research/Grounded-SAM-2 镜像副本（sync_vendor.sh）
+│   │   ├── predictor.py         # 三种 prompt (point/bbox/text) 路由
+│   │   ├── main.py              # FastAPI 4 端点 + /metrics + /cache/stats
+│   │   └── Dockerfile           # build context 升到 apps/（v0.9.4 phase 3）
+│   │
+│   └── _shared/                 # 跨子应用共享 Python 包
+│       └── mask_utils/          # mask→polygon (sam2-backend / sam3-backend 共用)
 │
-├── infra/docker/                # Dockerfile + Nginx
-├── scripts/                     # 初始化脚本
-├── docker-compose.yml           # 本地基础服务
+├── infra/docker/                # Dockerfile + Nginx (web/api)
+├── scripts/                     # 工具脚本（seed.py / eval_simplify.py / sync_vendor.sh）
+├── docs-site/                   # VitePress 用户手册 + 开发文档 + API
+├── docs/                        # ADR / changelogs / plans / research
+├── docker-compose.yml           # 本地基础服务（postgres/redis/minio + GPU profile gsam2）
 └── .env.example                 # 环境变量模板
 ```
 
@@ -67,6 +79,12 @@ docker compose up -d
 - PostgreSQL 16 — `localhost:5432` (user/pass/annotation)
 - Redis 7 — `localhost:6379`
 - MinIO — `localhost:9000` (控制台 `localhost:9001`, minioadmin/minioadmin)
+
+> **GPU profile（可选，需要标注工作台 SAM 工具或 `/ai-pre` 文本批量预标）**：
+> ```bash
+> docker compose --profile gpu up -d grounded-sam2-backend
+> ```
+> 首次启动自动下载 ~900MB checkpoints（cache 在 `gsam2_checkpoints` volume）；启动 health 探活周期 120s，`curl http://localhost:8001/health` 应返回 `{"ok":true,"loaded":true}`。需 NVIDIA driver ≥ 525 + nvidia-container-toolkit。
 
 ### 2. 启动前端
 
@@ -171,6 +189,55 @@ GET  /api/v1/users                # 用户列表
 
 通过环境变量或 `.env` 文件配置，参考 `.env.example`。
 
+## Grounded-SAM-2 ML Backend（v0.9.x）
+
+`apps/grounded-sam2-backend/` 独立 GPU 服务，提供工作台 `S` 工具与 `/ai-pre` 文本批量预标的 SAM mask 推理。三种 prompt（point / bbox / text）路由到 SAM 2.1 + GroundingDINO；mask→polygon 简化用 `apps/_shared/mask_utils`（v0.9.4 phase 3 抽出共用，与 v0.10.x sam3-backend 共享）。
+
+### 起 / 停
+
+```bash
+docker compose --profile gpu up -d grounded-sam2-backend          # 起
+docker compose --profile gpu down                                  # 停（保留 checkpoints / hf_cache volumes）
+docker logs -f ai-annotation-platform-grounded-sam2-backend-1     # 看 "models loaded; device=cuda"
+curl -fsS http://localhost:8001/health                             # 探活
+curl -fsS http://localhost:8001/cache/stats                        # SAM 2 image embedding LRU 命中率（v0.9.1）
+```
+
+### Rebuild（改了 backend 代码 / Dockerfile / mask_utils 后必跑）
+
+build context **从 v0.9.4 phase 3 起升级到 `apps/`**（让 Dockerfile 能 COPY 兄弟目录 `_shared/mask_utils`）。**历史命令 `docker build apps/grounded-sam2-backend/` 已不可用**。
+
+```bash
+# 推荐：走 docker compose
+docker compose --profile gpu build grounded-sam2-backend
+docker compose --profile gpu up -d grounded-sam2-backend          # 重建后重起容器
+
+# 或直接 docker build（需手指定 Dockerfile 路径 + 父目录 context）
+docker build -f apps/grounded-sam2-backend/Dockerfile apps/
+```
+
+> **首次构建 ~10 min**（vendor Deformable Attention CUDA 算子要 nvcc 现场编译）；只改业务代码时只重做后两层 COPY ~3 min。改 vendor 才会触发完整重编。
+
+### 协议契约
+
+- **请求**：`POST /predict { task: { id, file_path }, context: { type, ... } }`
+- **`context.type`**：`point` / `bbox` / `text`
+- **v0.9.4 phase 2 字段**：`output: "box" | "mask" | "both"`（仅 type=text 生效，默认 mask 老前端兼容）
+- **v0.9.4 phase 3 字段**：`simplify_tolerance: float | null`（仅 mask/both 路径，默认 1.0；像素级；调高减顶点 / 调低保细节；顶点 > 200 后端 logger.warning）
+- 完整协议见 [docs-site/dev/ml-backend-protocol.md](docs-site/dev/ml-backend-protocol.md)
+
+### `mask_utils` 共享包
+
+```bash
+# 评测 mask→polygon simplify tolerance（fixtures 含 84 张真实 SAM mask + 6 张合成）
+uv run --project apps/_shared/mask_utils python scripts/eval_simplify.py \
+    --masks-dir apps/_shared/mask_utils/tests/fixtures/real_sam_masks \
+    --tolerances 0.5,1.0,2.0,3.0,5.0 \
+    --out docs/research/13-simplify-tolerance-eval.md
+```
+
+最新评测见 [docs/research/13-simplify-tolerance-eval.md](docs/research/13-simplify-tolerance-eval.md)。
+
 ## 部署
 
 ### 开发环境
@@ -195,11 +262,15 @@ docker build -f infra/docker/Dockerfile.api -t anno-api apps/api/
 ## 测试与文档
 
 ```bash
-# 测试
-pnpm test                        # 前端 vitest
-pnpm test:coverage               # 带覆盖率（CI 阈值 22%，v0.8.7 临时档）
-pnpm test:e2e                    # 前端 Playwright e2e/tests/**（需后端运行）
-cd apps/api && uv run pytest
+# 前端测试
+pnpm test                        # vitest 单测
+pnpm test:coverage               # 带覆盖率（v0.8.8 起 CI 阈值 25%）
+pnpm test:e2e                    # Playwright e2e/tests/**（需后端运行；v0.9.4 phase 3 加 SAM 工具用例 page.route mock）
+
+# 后端 / 共享包测试
+cd apps/api && uv run pytest                                            # FastAPI 平台后端
+cd apps/_shared/mask_utils && uv run --extra test pytest tests/         # mask→polygon 共享包（grounded-sam2-backend / sam3-backend 共用）
+cd apps/grounded-sam2-backend && uv run --extra dev pytest tests/       # SAM backend 单测（无 GPU 走 mock）
 
 # OpenAPI 契约
 pnpm openapi:export              # 改了 API 后必须刷新 snapshot

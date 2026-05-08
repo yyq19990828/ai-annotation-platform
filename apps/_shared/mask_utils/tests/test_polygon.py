@@ -67,3 +67,34 @@ def test_bool_mask_supported():
     mask = circle_mask(size=128, radius=32).astype(bool)
     poly = mask_to_polygon(mask, tolerance=0.5)
     assert len(poly) > 0
+
+
+def test_normalized_coords_rounded_to_6_decimals():
+    """v0.9.4 phase 3 — 归一化输出与 predictor.py 旧 inline 实现一致 6 位精度。"""
+    mask = circle_mask(size=300, radius=70)
+    poly = mask_to_polygon(mask, tolerance=1.0, normalize_to=(300, 300))
+
+    assert poly, "non-empty polygon expected"
+    for x, y in poly:
+        # round(x, 6) 后小数位 ≤ 6；用字符串 split 检查更直观（容许 0.5 这种短表示）。
+        for v in (x, y):
+            tail = f"{v}".split(".")[-1] if "." in f"{v}" else ""
+            assert len(tail) <= 6, f"coord {v} has more than 6 decimals"
+
+
+def test_self_intersecting_contour_falls_back_to_raw_coords():
+    """v0.9.4 phase 3 — shapely simplify 拓扑失败时降级到原始 contour, 不返回空。
+
+    构造一个 8 字形 mask: 两个相邻矩形通过单像素桥连接, findContours 沿外环走时形成
+    自相交细颈, shapely.is_valid → False, buffer(0) 可能切成 MultiPolygon, simplify
+    可能继续抛 TopologicalError. 兜底路径要保证非空返回。
+    """
+    mask = np.zeros((128, 128), dtype=np.uint8)
+    # 两个矩形 + 1px 桥
+    mask[20:50, 20:60] = 1
+    mask[20:50, 70:110] = 1
+    mask[34:36, 60:70] = 1  # 桥 (2px 高, 形成细颈)
+
+    poly = mask_to_polygon(mask, tolerance=2.0)
+    assert poly, "topology fallback should never return empty for non-empty mask"
+    assert len(poly) >= 4

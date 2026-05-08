@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.3 (Refactored Lighthouse) — 前端杂项收口（API 密钥 + 超管 ML 总览 + progressive CAPTCHA + IoU rbush + DropdownMenu 收编）** 详情见 [`0.9.x.md`](docs/changelogs/0.9.x.md)。
+> 已完成版本一律见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；**最近一版 v0.9.4 phase 3 (Polished Contour) — mask→polygon 共享化 + simplify tolerance 注入 + SAM E2E** 详情见 [`0.9.x.md`](docs/changelogs/0.9.x.md)。
 
 ---
 
@@ -23,23 +23,19 @@
 
 > v0.9.x 主线进行中（M0 backend 容器化 `01f8d45` + M1 embedding 缓存 v0.9.1 + **M2 工作台 `S` 工具 + 文本入口 + DINO 阈值项目级 override v0.9.2** + **v0.9.3 前端杂项收口** 已落），下列条目在 SAM 专注度之外作为 `chip:maintenance` 穿插推进，不抢主线优先级。
 
-- ~~**UsersPage API 密钥**~~ ✅ v0.9.3 落地（`api_keys` 表 + `/me/api-keys` CRUD + `ak_` token + ApiKeysModal）；「存储与模型集成」面板已早期版本删除，超管 ML 集成改放独立 `/admin/ml-integrations` 页（v0.9.3 同步落地）
-- ~~**登录页 progressive CAPTCHA**~~ ✅ v0.9.3 落地（Redis IP 计数 + X-Login-Failed-Count header + Captcha 条件渲染）
 - **CSP nonce-based 收紧**（P2，与 vite plugin 同窗口做，`chip:maintenance`）
-- ~~**IoU rbush 加速**~~ ✅ v0.9.3 落地（同类分桶 RBush + 候选裁剪）；OpenSeadragon 瓦片金字塔仍待
 - **OpenSeadragon 瓦片金字塔**（P2，§C.1，极大图 > 50MP 才必要，`chip:maintenance`）
 - **i18n 框架接入**（P3，与 ProjectSettingsPage 重构合并节省破窗成本，`chip:maintenance`）
+- **工作台工具栏 + 图标体系 UX 重构**（P2，§C.2，sparkles 拆分 + Tooltip / 角标 / 激活态 / 分组分隔，建议与 v0.9.5 截图自动化回填同窗口避免双拍）
 
 ### v0.9.x SAM 基座进行中（一并落地）
-- ~~C.3 SAM 交互式（点 / 框 → mask）~~ ✅ v0.9.2 落地（紫虚线候选 + Enter/Esc/Tab + AI 助手文本入口）
-- ~~**后端把 task.file_path 解析成 SAM 可达 presigned URL**~~ ✅ v0.9.4 phase 1 落地（`_resolve_task_url` helper + `ML_BACKEND_STORAGE_HOST` 三平台支持 + repo root .env 绝对路径加载，commit `c5eaf94`）
-- ~~**SAM 子工具栏拆分（点 / 框 / 文本明确划分）**~~ ✅ v0.9.4 phase 2 落地（ToolDock 内嵌子工具栏 + S 循环切 + +/= polarity hotkey + samSubTool 子态; 详见 `ROADMAP/0.9.x.md` v0.9.4 phase 2 段）
-- ~~**SAM text 模式输出选择 box / mask / both**~~ ✅ v0.9.4 phase 2 落地（SamTextPanel TabRow 三选一 + 智能默认按 type_key + sessionStorage 跨切题保留 + 后端 predict_text 三分支 + Context.output 协议字段）
-- **mask → polygon 化抽到 `apps/_shared/mask_utils/`**（v0.9.4 phase 2 / M3，与 v0.10.x sam3-backend 共享）
-- **AI 预标注独立页 `/ai-pre` 占位收口**（v0.9.4 phase 3 文本批量预标 UI 同步）
+
+> v0.9.4 phase 1/2/3 已落（SAM URL 解析 + 子工具栏 + text 三模式 + mask_utils 共享 + simplify tolerance + E2E + 真实 mask 评测 90 张：tolerance=1.0 IoU mean 0.98、IoU≥0.95 92.2%、顶点中位 102），详见 [`ROADMAP/0.9.x.md`](./ROADMAP/0.9.x.md) 与 [docs/changelogs/](docs/changelogs/)。剩余如下：
+
+- **AI 预标注独立页 `/ai-pre` 占位收口**（**v0.9.5** 文本批量预标 UI 同步）
 - **工作台 AI 助手「本题花费 X 元」单条透传**（依赖 SAM 工具，可顺势补）
 - **截图自动化 14 张实跑回填**（与 SAM UI 一起出图避免双拍）
-- **SAM E2E 完整路径**（v0.9.5 与 `/_test_seed` ML backend 工厂一并落）
+- **mask→polygon 多连通域 / 空洞支持**（**P2，长尾 follow-up**，v0.9.5 候选 / v0.10.x 与 sam3-backend 一并做）：v0.9.4 phase 3 真实 SAM mask 评测的长尾分析（< 15% 样本 IoU 落 [0.5, 0.95)）暴露 `apps/_shared/mask_utils.mask_to_polygon` 的两个隐藏假设 —— ① 取面积最大连通域 → 多片段 mask 小碎块被丢弃；② `RETR_EXTERNAL` 丢内部空洞。修复方向：① `multi_polygon` 输出支持（返回 `list[list[list[float]]]` 而非单 polygon）；② `RETR_CCOMP` 切换 + 内外环编码（外环 + holes 数组，与 LabelMe / COCO 协议对齐）；③ polygon 化前先 morphological closing 抹平像素级噪声。**协议影响**：`AnnotationResult.value` schema 需支持 polygon-with-holes 或 multi-polygon，前端 `<ImageStage>` 候选叠加层渲染逻辑同步改。**触发条件**：客户首次抱怨 polygon 与 mask 形状差异、或长尾 IoU<0.95 占比 > 20% 时。当前大头（85%）IoU 已 ≥ 0.95，不阻塞工作台正常使用。
 
 ### v0.9.x SAM 接入暴露的真实问题（已落主链后才发现，分散在 §A AI/模型）
 
@@ -87,18 +83,12 @@
 - **模型市场**：路由 `/model-market` 占位。
 - **训练队列**：路由 `/training` 占位。
 - **预测成本卡片透传到工作台**：v0.8.6 已落 admin 维度 `/admin/prediction-cost-stats`；剩工作台 AI 助手面板「本题花费 X 元」单条透传，与 v0.9.x SAM 工具一起做。
-- ~~**ML Backend 前端注册入口缺失**~~ ✅ v0.9.3 phase 3 落地（`MlBackendsSection` + `MlBackendFormModal` + `RegisteredBackendsTab` 由只读改可写；项目设置 tab + 模型市场 tab 共用同一组 hooks + Modal；`useUpdateMLBackend` / `useDeleteMLBackend` 补齐 + 四个写 mutation 双 invalidate；`GeneralSection.tsx:301` + `CreateProjectWizard.tsx:586` 文案变为有效引导无需改）。SUPER_ADMIN 跨项目编辑通过对每个项目的 backend 行点编辑实现；后端不存在全局 backend 概念，跨项目全局 scope 仍为未来 epic。
-- ~~**后端 task.file_path → SAM 可达 URL**~~ ✅ v0.9.4 phase 1 落地（`_resolve_task_url(task)` helper：`StorageService.generate_download_url()` + 按 `dataset_item_id` 自动选 bucket + 按 `ML_BACKEND_STORAGE_HOST` 重写 host；Linux/macOS/K8s 三场景注释 + `Settings.Config.env_file` 改 repo root 绝对路径修复 cwd 踩坑，commit `c5eaf94`）。
 - **GeneralSection AI 启用 + backend 绑定 UX 耦合**（**P2**，新发现）：v0.9.3 phase 3 后用户能在「ML 模型」tab 注册 backend，但工作台仍提示「项目未绑定 ML Backend」；根因是 `GeneralSection.tsx:125` 的 `ml_backend_id: aiEnabled ? mlBackendId : null` —— 注册成功不会自动反向更新 project.ml_backend_id，必须**回基本信息 tab → 在下拉手选 → 保存**才生效，不直观。**两个收口方向**（按价值排）：① MlBackendsSection 列表行加「绑定到本项目」按钮，直接 PATCH `project.ml_backend_id`，免回基本信息 tab；② 注册 Modal 提交成功后若 `project.ml_backend_id == null`，弹 toast「已注册 + 绑定」并 inline 完成绑定。同时考虑把 `aiEnabled` 与 `mlBackendId` 联动收紧：用户选了 backend 自动勾 `aiEnabled`、清 backend 自动取消，避免悄悄被 `ai_enabled ? : null` 清空。
 - **MlBackendFormModal「测试连接」+ URL 默认值预填**（**P3**，新发现）：当前要先创建保存 → 列表行点 health 才能验通，注册前先验失败的成本高（DB 留无效行需手删）。** 切片**：① Form 表单内右下加「测试连接」按钮，调一个**无 DB 副作用的** `POST /ml-backends/probe?url=&auth=` 端点（仅 httpx GET `/health`），把状态 inline 显示；② Settings 暴露 `default_ml_backend_url_hint`（dev 可由 `ML_BACKEND_DEFAULT_URL` env 设 `http://172.17.0.1:8001`），URL 输入框 placeholder 直接显示而非空白；③ 注册成功后若 health 仍 `disconnected`，提示用户检查网络，而不是默默存。
 - **CreateProjectWizard 启用 AI 时强制 backend 绑定校验**（**P3**，新发现）：v0.7.6 wizard step 4 启用 AI 但不要求绑定 backend，新建项目即「AI 启用 + 未绑定」，跟 GeneralSection 同坑。最小切片：启用 AI 后增加 sub-section 列出本项目作用域已注册的 backend（首次 0 项 → CTA「先到项目设置注册」并允许跳过 + 标黄；勾 backend 后 step 5 总览展示「将绑定到 X」）。
 - **SAM `/setup` 自描述协议消费 + `supported_prompts` 字段补充**（**P2**，新发现）：SAM backend `/setup` 已返回 `is_interactive`、`labels`、`params: {sam_variant, dino_variant, box_threshold, text_threshold}`，前端只读了 `is_interactive`。补 `supported_prompts: ["point", "bbox", "text"]` 字段后，前端能据此动态渲染**子工具栏**（与 §C.3 SAM 子工具栏 epic 联动）；同时 RegisteredBackendsTab 行内可展示模型变体 + 阈值，便于运维一眼看清「是 tiny+T 还是 large+B」。**协议变更**：SAM backend `schemas.py` 加新字段；老版本 backend 兼容（缺字段时前端走旧的"按动作分流"路径）。
 - **RegisteredBackendsTab 行内深度健康指标**（**P3**，新发现）：当前每行只 state / last_checked_at；可拉 SAM `/cache/stats` 的 `hit_rate` / `size` + `/health` 的 `gpu` / `model_version` 直接展示，运维更直观（"刚才那次卡几秒是首次冷推还是 cache miss"一眼看清）。**协议**：复用既有端点，平台 api 加聚合 helper `GET /admin/ml-integrations/overview` 拉每个 backend 的 cache_stats。预计 0.5 天。
 - **ML backend 调用的 storage endpoint 选择机制（生产化）**（**P3**，新发现）：v0.9.4 phase 1 用的 `ML_BACKEND_STORAGE_HOST` 简单 host 重写适合 dev；生产 K8s 同 namespace 时 SAM 直接走 service DNS 即可（留空），跨 namespace / 跨集群需要 internal vs external 双 endpoint 配置。**触发条件**：第一个生产部署遇到这条；当前 dev 单机已收口。可能需要 ADR 总结策略（"何时设、设啥值、何时留空"）。
-
-### 用户与权限页（UsersPage）
-- ~~**「API 密钥」按钮**~~ ✅ v0.9.3 落地（`api_keys` 表 + `/me/api-keys` CRUD + bcrypt + `ak_` token + ApiKeysModal 含一次性明文展示 + revoke + last_used_at；scope 字段已就位但实际拦截留 follow-up）。
-- ~~**「存储与模型集成」面板**~~ 早期版本已删除，v0.9.3 改为新增超管独立页 `/admin/ml-integrations`（聚合 storage health + 跨项目 ml_backends 只读总览）。
 
 ### 设置页（SettingsPage）
 - **头像上传**：当前仅 Avatar initial（`SettingsPage.tsx`），User 表无 `avatar_url` 字段。
@@ -108,7 +98,6 @@
 - **工作区切换**：TopBar `onWorkspaceChange` 仅 toast；Organization 表已存在但前端无切换 UI。
 
 ### 登录 / 注册 / 认证
-- ~~**登录页 progressive CAPTCHA**~~ ✅ v0.9.3 落地（`login_failed:{ip}` Redis INCR/EXPIRE + 阈值 5 次后强制 `verify_turnstile_token` + 401 加 `X-Login-Failed-Count` header；前端 `ApiClient` 白名单透传响应头，LoginPage 阈值后条件渲染 `<Captcha>`，dev `turnstile_enabled=False` short-circuit）。
 - **开放注册二阶段剩余**：
   - **邮箱验证**：当前 viewer 零权限可跳过；若未来开放注册默认角色调高，需 `POST /auth/verify-email` + `email_verified_at` 字段 + 验证前 `is_active=false`。
   - **OAuth2 / 社交登录**：Google / GitHub SSO，python-social-auth 或 authlib；`User.oauth_provider` + `oauth_id` 字段；LoginPage / RegisterPage 加「使用 Google 登录」按钮。
@@ -127,7 +116,6 @@
 
 ### 安全
 - **2FA / TOTP**：super_admin 必选、其它角色可选。
-- **API 密钥**：UsersPage 已有按钮，需 `api_keys` 表 + scope + revoke + 最后使用时间。
 - **CSP nonce-based 收紧（剔除 'unsafe-inline'）**：v0.8.8 ADR-0010 落地的是宽松基线（兼容 vite shim + emotion CSS-in-JS）；下一阶段配合 vite plugin 注入 build-time nonce，给 `script-src` / `style-src` 改 `'nonce-XXX'`。预计与 ProjectSettingsPage 重构同窗口做。
 
 ### 治理 / 合规
@@ -167,15 +155,31 @@
 ### C.1 渲染性能 / 大图大量框
 - **OpenSeadragon 瓦片金字塔**：当前直接加载完整图像，> 50MP 会卡。需要后端切瓦片 + 前端 OpenSeadragon viewport，与 Konva overlay 共生。极大图场景才必要。
 - **Annotation 列表后端分页**：与 B「Annotation keyset 分页」共建。`useAnnotations` 全量拉，单任务 1000+ 框阻塞渲染。
-- ~~**IoU 去重几何加速**~~ ✅ v0.9.3 落地（`iou-index.ts` 同类分桶 RBush + `candidatesForBox`，WorkbenchShell `dimmedAiIds` 走候选裁剪 + iouShape 精确判定 + some() 早退保留；千框场景预热完成）。
 
 ### C.2 界面优化（信息架构 / 可见性 / 一致性）
-- ~~**`<DropdownMenu>` 第 3+ 个使用方收编**~~ ✅ v0.9.3 落地（通用组件加 `content` 自定义槽 + `disablePanelPadding` / `panelStyle`；ExportSection / NotificationsPopover 两处自实现浮层删 `usePopover` 直接调用，全部改 `<DropdownMenu content={...}>`；`usePopover` 仅剩 AttributeForm 一处使用，保留）。
+- **工作台工具栏 + 图标体系 UX 重构**（**P2**，新发现）：v0.9.4 phase 2 落子工具栏后的实际使用反馈暴露两个相互交织的可用性槽点 —— ① `lucide-react` 的 `sparkles` 在工作台被同时挂在 9 个语义场景上，识别度归零；② 工具栏自身的 Tooltip / 快捷键可见性 / 激活态色差 / 分组层次都还是 v0.5.3 的轻量基线，子工具栏垂直挤在主按钮下方与主工具栏视觉混淆。
+  - **现状盘点（sparkles 共用面）**：`Topbar.tsx:208,238`（智能切题 + AI 一键预标）/ `ToolDock.tsx:19`（SAM 文本子工具）/ `AIInspectorPanel.tsx:150,166,390`（AI 助手标题 + 一键预标 + SAM 文本提示标题）/ `BoxListItem.tsx:57` + `BoxRenderer.tsx:60`（AI 框置信度标记）/ `StatusBar.tsx:98`（AI 待审计数）—— 9 处共用同一图标。
+  - **现状盘点（工具栏可用性）**：仅有原生 `title` attribute，无格式化 Tooltip 组件；快捷键完全藏在 title 文本里第一眼不可见；子工具栏激活态背景仅 10% accent 色差弱；主工具按钮无分组分隔（4 类挤在一列）；AI 推理中只 `disabled` 无 spinner 反馈；切 SAM 子工具靠 `S` 键循环（point→bbox→text→exit）多按一次就过头。
+  - **设计方案 — 图标语义重整（P2-a，~0.5 天）**：
+    - 让 `wand-sparkles` / `wand-2` 成为**「AI 一键操作」的唯一图标**（一键预标 + 智能切题统一），其它场景全部换成专属图标
+    - SAM 文本子工具 → `type` / `message-square-text`（"输入文本提示"语义，与 AI 魔法解耦）
+    - AI 助手面板 / 状态栏 → `bot` / `brain`（模块身份徽标）
+    - Box 列表 + 画布角标 → `sparkle` 单星（弱化为装饰性 AI-出品标记，尺寸保持 8-9px）
+    - AI 待审计数 → `circle-dot`（数字才是主体，图标只做色彩锚点）
+    - 配套写 `docs-site/dev/icon-conventions.md` 钉死语义规范，避免下次又被回退
+  - **设计方案 — 工具栏可用性（P2-b，~1 天）**：
+    - **格式化 Tooltip 组件**：右侧 Popover 三行（工具名 + 描述 + ⌘ 键徽样式 hotkey），替原生 `title`
+    - **按钮快捷键角标**：38×38 主工具按钮右下角嵌 8px 字母（`B/S/P/H`），不靠 hover 即可见
+    - **激活态强化**：主工具加 2px 左侧 accent 色边条 + 阴影；子工具激活背景从 10% 提到 20% accent
+    - **分组分隔线**：`[Box / Polygon] | [SAM] | [Hand]` 三组之间加 1px hairline；子工具栏 point/bbox/text 之间也加细分隔
+    - **数字快捷键直跳**：`1=Box / 2=SAM / 3=Polygon / 4=Hand`（**不冲突 1-9 切换类别** —— 类别切换仅在标注完一框后属性面板聚焦时生效，工具切换在画布聚焦时生效，可按 `target.tagName` 区分；冲突时仍以现有循环 `S` 兜底）
+    - **SAM 子工具栏改右展开抽屉**：当前垂直挤在 SAM 主按钮下方易与主工具栏混淆；改为 SAM 激活时向右弹独立子工具栏（类似 Photoshop fly-out），主工具栏视觉结构稳定
+    - **Loading 可视化**：AI 推理中按钮加旋转 spinner overlay，不再仅 `disabled` + 文本"AI 推理中..."
+  - **拆分建议**：P2-a 图标重整 + 规范文档 ~0.5 天，可作为 v0.9.5 起手 maintenance 任务；P2-b 工具栏 UX 重构 ~1 天，独立 plan `docs/plans/2026-??-??-toolbar-ux.md`，可在 v0.9.5 与 `/ai-pre` UI 同期做（重构期间共用 Tooltip / 角标组件）。
+  - **触发条件**：当前可做（v0.9.4 phase 2 SAM 子工具栏稳定后）；建议与 v0.9.5 截图自动化回填同窗口（避免双拍重做截图）。
 
 ### C.3 标注体验（核心生产力杠杆）
-- **SAM mask → polygon 化（marching squares / simplify-js）**：与 SAM 接入一起做。
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90%；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式）。
-- ~~**SAM 交互式标注（点 / 框 → mask）**~~ ✅ v0.9.2 落地，但 UX 需进一步切分（见下条）。
 - ~~**SAM 子工具栏拆分（点 / 框 / 文本明确划分）**~~ ✅ v0.9.4 phase 2 落地（2026-05-08, **Crystal Compass**）。下方设计细节保留作历史参考；实施细节见 [`ROADMAP/0.9.x.md`](./ROADMAP/0.9.x.md) v0.9.4 phase 2 段。最终选定方案：保留 `samSubTool` 子态字段（不扩 Tool 联合）+ ToolDock 内嵌子工具栏 + S 循环切；hotkey 用 `=/+` `-` 切 polarity（数字键 1-9 已被「切换类别」占用，原方案改）。
   - **现状痛点**：当前 `S` 工具是单一 Tool（`useWorkbenchState.ts:5` `Tool = "box" | "hand" | "polygon" | "canvas" | "sam"`），按 `S` 进入后通过**鼠标动作隐式分流** prompt 类型 —— 单击 = positive point、Alt+点击 = negative point、拖框 = bbox prompt（`SamTool.ts:24` 都返回同一种 `samProbe` DragInit，`ImageStage.tsx:546` 按拖动距离分流）；文本 prompt 走 AI 助手面板的输入框，跟画布工具栏完全脱节。**问题**：① 新人不会发现 Alt+click = negative point；② 不知道点击和拖动会触发不同后端调用；③ 三种 prompt（point / bbox / text）在 UI 上没有显式分组，运维成本（文档 / 培训）高。
   - **设计方案**：S 激活后，画布顶部或左侧工具栏内浮出**子工具栏**：`[· 点 (Click)] [□ 框 (Box)] [T 文本]` 三按钮 + `[+ / −]` positive / negative 切换（仅点工具下显示）。当前激活的子工具决定接受的鼠标行为（点工具下拖框无效，框工具下单击无效），消除隐式分流；视觉 active state（紫色高亮）标明当前 prompt 类型。文本子工具点击后聚焦 AI 助手面板的文本输入框，把现有「分两块」的 UX 收回画布工具栏闭环。
@@ -227,17 +231,12 @@
 
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
-| ~~**P1** UsersPage API 密钥~~ | ✅ v0.9.3 落地（端到端 + ak_ token） | — | — |
-| ~~**P1** C.3 SAM 交互式（点/框→mask）~~ | ✅ v0.9.2 落地（紫虚线 + Enter/Esc/Tab）；mask → polygon 化抽公共模块仍 open（v0.9.4 phase 2） | — | — |
-| ~~**P1** C.3 SAM 子工具栏拆分~~ | ✅ v0.9.4 phase 2 落地（ToolDock 内嵌 + S 循环 + samSubTool 子态 + +/= polarity hotkey）| — | — |
-| ~~**P1** C.3 SAM text 模式 box/mask/both 输出选择~~ | ✅ v0.9.4 phase 2 落地（SamTextPanel TabRow + 智能默认按 type_key + 后端 predict_text 三分支 box 路径跳过 SAM 省 50-80%）| — | — |
 | **P2** | GeneralSection AI 启用 + backend 绑定 UX 解耦 | v0.9.3 phase 3 后注册 backend 仍要回基本信息 tab 手选；MlBackendsSection 列表加「绑定到本项目」按钮即可消除往返 | — |
+| **P2** | 工作台工具栏 + 图标体系 UX 重构（§C.2） | sparkles 9 处共用识别度归零 + 工具栏 Tooltip / 快捷键角标 / 激活态 / 分组分隔仍是 v0.5.3 基线；图标重整 ~0.5 天 + 工具栏 UX ~1 天，建议与 v0.9.5 截图自动化回填同窗口 | — |
 | **P2** | SAM `/setup` 自描述协议消费 + `supported_prompts` 字段补充 | 与「SAM 子工具栏」P1 协同；老 backend 缺字段时前端走旧路径兼容 | — |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
-| ~~**P2** 登录页 progressive CAPTCHA~~ | ✅ v0.9.3 落地 | — | — |
 | **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 | — |
-| ~~**P2** ProjectSettingsPage 新增「ML 模型」选项卡~~ | ✅ v0.9.3 phase 3 落地（项目设置 tab + 模型市场 tab 双入口，复用同一 Modal + hooks） | — | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 | — |
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
@@ -248,6 +247,7 @@
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |
 | **P3** | 前端单测从 25% 推到 30% | v0.8.8 已推回 25.17%；下阶段补 ProjectSettingsPage / AuditPage / WorkbenchShell 关键 hook 单测 | — |
 | **P3** | 截图自动化 14 张实跑回填 | v0.8.7 落地脚本 + scenes 配置；推迟到 v0.9.x 与 SAM UI 一起做 | — |
+| **P2** | mask→polygon 多连通域 / 空洞支持 | v0.9.4 phase 3 长尾分析暴露：< 15% 样本 IoU 落 [0.5, 0.95)，根因 `RETR_EXTERNAL + max area` 假设。修复方向：multi_polygon 输出 + `RETR_CCOMP` 内外环编码 + morphological closing；触发：长尾 IoU<0.95 占比 > 20%、或客户抱怨 polygon 与 mask 形状差异 | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 | — |
@@ -264,6 +264,4 @@
 > v0.8.8 重写后这一节用于记录"对 ROADMAP 自身格式"的下次维护方向，避免文件无限膨胀。
 
 1. **「后续观察项」清单滚动归档**：当前 §A 末尾保留 3 条 v0.7.x ~ v0.8.8 残留观察（3/5）；超过 5 条时拆出 `ROADMAP/observations.md`。
-2. ~~**ADR ↔ ROADMAP 双向链接**~~：v0.9.0 已执行 — 优先级表已加 `Related ADR` 列，链回 0004 / 0006 / 0007 / 0008 / 0010。后续新 ADR 落地时同步补该列。
-3. **触发条件量化**：「监控触发」类条目（如 predictions Stage 2、batch_summary stored 列）目前是文字描述；条件成熟后可在 Grafana dashboard 加阈值 panel + 告警，跨过即生 ROADMAP 通知 issue。**仍未执行**（依赖 Grafana 工程化优先级）。
-4. ~~**v0.9.x M0 启动前重排**~~：v0.9.0 已执行 — 「现在可做」段已加 `chip:maintenance` 标记 + v0.9.x 进行中提示；后续每个 v0.9.x minor 收口时再视专注度回顾该段是否需要再洗牌。
+2. **触发条件量化**：「监控触发」类条目（如 predictions Stage 2、batch_summary stored 列）目前是文字描述；条件成熟后可在 Grafana dashboard 加阈值 panel + 告警，跨过即生 ROADMAP 通知 issue。**仍未执行**（依赖 Grafana 工程化优先级）。

@@ -58,10 +58,14 @@ RUN pip install --upgrade "pip" "setuptools>=62.3.0,<75.9" "wheel" && \
         "timm>=0.9" \
         "yapf"
 
+# v0.9.4 phase 3: build context 升级为 apps/ 以便 COPY 兄弟目录 _shared/mask_utils.
+# 所有 COPY 路径以 apps/ 为根; 历史命令 `docker build apps/grounded-sam2-backend/` 不再可用,
+# 必须走 `docker compose --profile gpu build grounded-sam2-backend` 或 `docker build -f apps/grounded-sam2-backend/Dockerfile apps/`.
+
 # vendor 含上游 IDEA-Research/Grounded-SAM-2 全树:
 #   - 仓库根 = SAM 2 (sam2 包) → pip install -e .
 #   - grounding_dino/ 子目录 = GroundingDINO (含 CUDA 算子) → pip install --no-build-isolation -e .
-COPY vendor/ ./vendor/
+COPY grounded-sam2-backend/vendor/ ./vendor/
 RUN if [ ! -d "vendor/grounded-sam-2" ] || [ -z "$(ls -A vendor/grounded-sam-2 2>/dev/null)" ]; then \
         echo "ERROR: vendor/grounded-sam-2 is empty. Run scripts/sync_vendor.sh <commit> on host before 'docker build'." >&2; \
         exit 1; \
@@ -69,9 +73,14 @@ RUN if [ ! -d "vendor/grounded-sam-2" ] || [ -z "$(ls -A vendor/grounded-sam-2 2
     pip install --no-build-isolation -e ./vendor/grounded-sam-2 && \
     pip install --no-build-isolation -e ./vendor/grounded-sam-2/grounding_dino
 
-COPY scripts/ ./scripts/
-COPY main.py predictor.py schemas.py embedding_cache.py observability.py ./
-COPY tests/ ./tests/
+# v0.9.4 phase 3: 共享 mask_utils 包 (apps/_shared/mask_utils) 在容器内安装为 editable;
+# 与 v0.10.x sam3-backend 共用, 单一来源避免重写 mask→polygon 简化逻辑.
+COPY _shared/mask_utils/ /app/mask_utils/
+RUN pip install --no-build-isolation -e /app/mask_utils
+
+COPY grounded-sam2-backend/scripts/ ./scripts/
+COPY grounded-sam2-backend/main.py grounded-sam2-backend/predictor.py grounded-sam2-backend/schemas.py grounded-sam2-backend/embedding_cache.py grounded-sam2-backend/observability.py ./
+COPY grounded-sam2-backend/tests/ ./tests/
 RUN mkdir -p /app/checkpoints /app/.cache/huggingface
 
 EXPOSE 8001

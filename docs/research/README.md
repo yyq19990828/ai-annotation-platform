@@ -77,3 +77,5 @@
 | 09 | [借鉴建议](./09-recommendations.md) | §6 具体借鉴建议 |
 | 10 | [路线图](./10-roadmap.md) | §7 路线图建议（v0.3-v0.6+） |
 | 11 | [参考资料](./11-references.md) | §8-§9 参考资料 + 总结 |
+| 12 | [大数据集分批策略](./12-large-dataset-batching.md) | 智能切批 / 不可变快照 / 主动学习闭环 |
+| 13 | [mask→polygon simplify tolerance 评测](./13-simplify-tolerance-eval.md) | v0.9.4 phase 3 默认 tolerance 选定依据 |

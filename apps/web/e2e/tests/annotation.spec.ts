@@ -81,4 +81,99 @@ test.describe("annotation workbench", () => {
     // 4. URL 仍在工作台路径下，未发生异常崩溃跳转
     await expect(page).toHaveURL(new RegExp(`/projects/${data.project_id}/annotate`));
   });
+
+  /**
+   * v0.9.4 phase 3 · SAM 工具子工具栏 + page.route 拦截 mock /interactive-annotating.
+   *
+   * 范围：
+   *   ① SAM 工具按钮可激活, 子工具栏 + 3 个子工具按钮 (point/bbox/text) 可见
+   *   ② 子工具切换 aria-pressed 互斥 (point → bbox → text)
+   *   ③ page.route 拦截 /interactive-annotating, 点击 stage 在 point 模式下触发 mock 命中
+   *
+   * 不验证：
+   *   - polygon 候选在 Konva canvas 上的实际渲染 (canvas 内部, DOM 不可断言)
+   *   - 真 SAM backend 链路 (docker-compose --profile gpu 默认不起, CI 跑不动)
+   *
+   * 真接通由 backend 单测 (`apps/grounded-sam2-backend/tests/`) + 协议契约文件覆盖.
+   */
+  test("SAM 工具 → 子工具栏 + page.route mock /interactive-annotating", async ({ page, seed }) => {
+    const data = await seed.reset();
+    await seed.advanceTask({
+      taskId: data.task_ids[0],
+      toStatus: "pending",
+      annotatorEmail: data.annotator_email,
+    });
+    await seed.injectToken(page, data.annotator_email);
+
+    // ① page.route 拦截 mock backend 路径; 预制单 polygon 候选回应.
+    let interactiveCalls = 0;
+    await page.route(
+      /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/interactive-annotating/,
+      async (route) => {
+        interactiveCalls += 1;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            result: [
+              {
+                type: "polygonlabels",
+                value: {
+                  points: [
+                    [0.3, 0.3],
+                    [0.6, 0.3],
+                    [0.6, 0.6],
+                    [0.3, 0.6],
+                  ],
+                  polygonlabels: ["object"],
+                },
+                score: 0.95,
+              },
+            ],
+            score: 0.95,
+            inference_time_ms: 42,
+          }),
+        });
+      },
+    );
+
+    await page.goto(`/projects/${data.project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+
+    // ② SAM 工具按钮 + 子工具栏可见
+    const samBtn = page.getByTestId("tool-btn-sam");
+    await expect(samBtn).toBeVisible({ timeout: 10_000 });
+    await samBtn.click();
+    await expect(samBtn).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("sam-subtoolbar")).toBeVisible();
+
+    const subPoint = page.getByTestId("sam-sub-point");
+    const subBbox = page.getByTestId("sam-sub-bbox");
+    const subText = page.getByTestId("sam-sub-text");
+    await expect(subPoint).toBeVisible();
+    await expect(subBbox).toBeVisible();
+    await expect(subText).toBeVisible();
+
+    // ③ 子工具切换 aria-pressed 互斥
+    await expect(subPoint).toHaveAttribute("aria-pressed", "true");
+    await subBbox.click();
+    await expect(subBbox).toHaveAttribute("aria-pressed", "true");
+    await expect(subPoint).toHaveAttribute("aria-pressed", "false");
+    await subPoint.click();
+    await expect(subPoint).toHaveAttribute("aria-pressed", "true");
+
+    // ④ point 模式 + 点击 stage → useInteractiveAI 80ms 防抖后 dispatch
+    //   page.route 命中即视为整链路通 (前端 → 平台 API → mock backend → resp 解析).
+    const stage = page.getByTestId("workbench-stage");
+    await expect(stage).toBeVisible();
+    const box = await stage.boundingBox();
+    if (!box) throw new Error("workbench-stage boundingBox 不可用");
+    await page.mouse.click(box.x + box.width * 0.4, box.y + box.height * 0.4);
+
+    // 等防抖窗口 (80ms) + RTT; 给 300ms 足够稳.
+    await page.waitForTimeout(300);
+
+    expect(interactiveCalls, "page.route 必须命中至少一次 /interactive-annotating").toBeGreaterThanOrEqual(1);
+    await expect(page).toHaveURL(new RegExp(`/projects/${data.project_id}/annotate`));
+  });
 });

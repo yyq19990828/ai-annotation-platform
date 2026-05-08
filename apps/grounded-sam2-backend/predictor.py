@@ -4,11 +4,13 @@ vendor 形态: vendor/grounded-sam-2/ 下放上游官方仓库副本 (固定 com
 本模块只对 vendor 内的 SAM 2.1 image_predictor + GroundingDINO inference utilities 做一层 prompt 适配,
 返回平台协议要求的 polygonlabels / rectanglelabels 字典数组.
 
-mask → polygon 简化策略 (M0 inline; M3 抽到 apps/_shared/mask_utils):
-    cv2.findContours(RETR_EXTERNAL, CHAIN_APPROX_SIMPLE)
+mask → polygon 简化策略 (v0.9.4 phase 3 起抽到 apps/_shared/mask_utils, 与 v0.10.x sam3-backend 共用):
+    cv2.findContours(RETR_EXTERNAL, CHAIN_APPROX_NONE)
     → 取面积最大的外环
-    → shapely.simplify(tolerance=1.0, preserve_topology=True)
-    → 像素坐标归一化到 [0,1]
+    → shapely.simplify(tolerance=DEFAULT_SIMPLIFY_TOLERANCE, preserve_topology=True)
+    → 像素坐标归一化到 [0,1] (6 位精度对齐协议)
+
+tolerance 默认值见 DEFAULT_SIMPLIFY_TOLERANCE; 单次请求可由 Context.simplify_tolerance 覆盖.
 """
 
 from __future__ import annotations
@@ -24,15 +26,23 @@ _VENDOR_ROOT = "/app/vendor/grounded-sam-2"
 if os.path.isdir(_VENDOR_ROOT) and _VENDOR_ROOT not in sys.path:
     sys.path.insert(0, _VENDOR_ROOT)
 
-import cv2
 import numpy as np
 import torch
 from PIL import Image
-from shapely.geometry import Polygon
 
 from embedding_cache import CacheEntry, EmbeddingCache
+from mask_utils import mask_to_polygon
 
 logger = logging.getLogger(__name__)
+
+# v0.9.4 phase 3 默认 tolerance (像素). docs/research/13-simplify-tolerance-eval.md
+# 跑出来的合理默认 — 50 张 SAM mask 样本 95% 满足 IoU≥0.95, 顶点数中位 ~70.
+# 单次请求可由 Context.simplify_tolerance 覆盖.
+DEFAULT_SIMPLIFY_TOLERANCE = 1.0
+
+# 顶点数 > 该阈值时 logger.warning, 提示 simplify 没收敛到合理形态 (异常长 contour /
+# tolerance 过低). 不影响返回正确性, 仅是运维信号.
+VERTEX_COUNT_WARN_THRESHOLD = 200
 
 CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "/app/checkpoints")
 # config 路径走 hydra `pkg://sam2` search path, 必须带 configs/sam2.1/ 前缀
@@ -129,6 +139,7 @@ class GroundedSAM2Predictor:
         labels: list[int],
         *,
         cache_key: str | None = None,
+        simplify_tolerance: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         """返回 (results, cache_hit). image=None 仅在 cache_key 命中时可省."""
         w, h, hit = self._prime_sam(image, cache_key)
@@ -137,7 +148,7 @@ class GroundedSAM2Predictor:
         masks, scores, _ = self._sam_predictor.predict(
             point_coords=px, point_labels=lab, multimask_output=False
         )
-        return self._masks_to_results(masks, scores, w, h), hit
+        return self._masks_to_results(masks, scores, w, h, simplify_tolerance), hit
 
     def predict_bbox(
         self,
@@ -145,6 +156,7 @@ class GroundedSAM2Predictor:
         bbox: list[float],
         *,
         cache_key: str | None = None,
+        simplify_tolerance: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         w, h, hit = self._prime_sam(image, cache_key)
         x1, y1, x2, y2 = bbox
@@ -152,7 +164,7 @@ class GroundedSAM2Predictor:
         masks, scores, _ = self._sam_predictor.predict(
             point_coords=None, point_labels=None, box=box_px[None, :], multimask_output=False
         )
-        return self._masks_to_results(masks, scores, w, h), hit
+        return self._masks_to_results(masks, scores, w, h, simplify_tolerance), hit
 
     def _prime_sam(
         self, image: Image.Image | None, cache_key: str | None
@@ -183,6 +195,7 @@ class GroundedSAM2Predictor:
         cache_key: str | None = None,
         box_threshold: float | None = None,
         text_threshold: float | None = None,
+        simplify_tolerance: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         """v0.9.4 phase 2 · output 三分支:
         - "box":  仅 DINO, 跳过 SAM image embedding + mask + 简化, 返回 rectanglelabels
@@ -247,12 +260,23 @@ class GroundedSAM2Predictor:
             masks = masks[:, 0]
 
         results = []
+        eff_tol = (
+            DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
+        )
         for i, mask in enumerate(masks):
             score = float(scores[i] if i < len(scores) else 0.0)
             label = phrases[i] if i < len(phrases) else default_label
-            poly = self._mask_to_polygon(mask, w, h)
+            poly = mask_to_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))
             if not poly:
                 continue
+            if len(poly) > VERTEX_COUNT_WARN_THRESHOLD:
+                logger.warning(
+                    "polygon vertex count %d > %d (tolerance=%.2f, mask area=%d, prompt=text)",
+                    len(poly),
+                    VERTEX_COUNT_WARN_THRESHOLD,
+                    eff_tol,
+                    int(mask.sum()),
+                )
             if output == "both":
                 # 配对返回: 同 instance 一对 rect + poly (前端按需选).
                 results.append(self._box_to_rect_label(boxes_xyxy[i], w, h, label, score))
@@ -330,15 +354,31 @@ class GroundedSAM2Predictor:
         return np.stack([x1, y1, x2, y2], axis=1).astype(np.float32)
 
     def _masks_to_results(
-        self, masks: np.ndarray, scores: np.ndarray | None, w: int, h: int
+        self,
+        masks: np.ndarray,
+        scores: np.ndarray | None,
+        w: int,
+        h: int,
+        simplify_tolerance: float | None = None,
     ) -> list[dict[str, Any]]:
         if masks.ndim == 4:
             masks = masks[:, 0]
         out: list[dict[str, Any]] = []
+        eff_tol = (
+            DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
+        )
         for i, mask in enumerate(masks):
-            poly = self._mask_to_polygon(mask, w, h)
+            poly = mask_to_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))
             if not poly:
                 continue
+            if len(poly) > VERTEX_COUNT_WARN_THRESHOLD:
+                logger.warning(
+                    "polygon vertex count %d > %d (tolerance=%.2f, mask area=%d, prompt=point/bbox)",
+                    len(poly),
+                    VERTEX_COUNT_WARN_THRESHOLD,
+                    eff_tol,
+                    int(mask.sum()),
+                )
             score = float(scores[i]) if scores is not None and i < len(scores) else None
             entry: dict[str, Any] = {
                 "type": "polygonlabels",
@@ -348,38 +388,3 @@ class GroundedSAM2Predictor:
                 entry["score"] = score
             out.append(entry)
         return out
-
-    @staticmethod
-    def _mask_to_polygon(
-        mask: np.ndarray, w: int, h: int, tolerance: float = 1.0
-    ) -> list[list[float]]:
-        """二值 mask → 归一化 polygon 顶点列表 (取面积最大的外环)."""
-        binary = (mask > 0).astype(np.uint8)
-        if binary.sum() == 0:
-            return []
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return []
-        contour = max(contours, key=cv2.contourArea)
-        if len(contour) < 3:
-            return []
-        coords = [(float(p[0][0]), float(p[0][1])) for p in contour]
-        try:
-            poly = Polygon(coords)
-            if not poly.is_valid:
-                poly = poly.buffer(0)
-            simplified = poly.simplify(tolerance=tolerance, preserve_topology=True)
-            if simplified.is_empty:
-                return []
-            ext = (
-                simplified.exterior
-                if simplified.geom_type == "Polygon"
-                else max(simplified.geoms, key=lambda g: g.area).exterior
-            )
-            verts = list(ext.coords)
-        except Exception:  # noqa: BLE001 — shapely 偶发拓扑错误降级到原始 contour
-            verts = coords
-        # 闭环去重 + 归一化
-        if verts and verts[0] == verts[-1]:
-            verts = verts[:-1]
-        return [[round(x / w, 6), round(y / h, 6)] for x, y in verts]

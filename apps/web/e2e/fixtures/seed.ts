@@ -21,6 +21,8 @@ export interface SeedData {
   reviewer_email: string;
   project_id: string;
   task_ids: string[];
+  /** v0.9.4 phase 3: SAM E2E 用 mock backend; url=http://mock-sam.e2e:9999, page.route 拦截 */
+  ml_backend_id: string;
 }
 
 /** v0.8.7 F4 · 截图脚本只读窥探：返回首个 super_admin / 首个项目 / 首个任务。

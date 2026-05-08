@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-from shapely.geometry import Polygon
+from shapely.geometry import MultiPolygon, Polygon
 
 from mask_utils.normalize import normalize_coords
 
@@ -40,17 +40,29 @@ def mask_to_polygon(
         return []
 
     points = biggest.reshape(-1, 2).astype(float)
-    poly = Polygon(points)
-    if not poly.is_valid:
-        poly = poly.buffer(0)
-        if poly.is_empty or poly.geom_type != "Polygon":
+    raw_coords = [[float(x), float(y)] for x, y in points]
+
+    # shapely simplify 偶发拓扑错误（self-intersecting / 极窄 spike contour）；
+    # 失败时降级到原始 contour 而非返回空，与 v0.9.4 phase 3 前 predictor.py inline
+    # 实现的鲁棒性对齐 — 宁要锯齿也别 silently drop。
+    try:
+        poly = Polygon(points)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        if poly.is_empty:
             return []
+        simplified = poly.simplify(tolerance, preserve_topology=True)
+        if simplified.is_empty:
+            return []
+        if isinstance(simplified, MultiPolygon):
+            simplified = max(simplified.geoms, key=lambda g: g.area)
+        if simplified.geom_type != "Polygon":
+            coords = raw_coords
+        else:
+            coords = [[float(x), float(y)] for x, y in simplified.exterior.coords]
+    except Exception:  # noqa: BLE001 — shapely 拓扑兜底
+        coords = raw_coords
 
-    simplified = poly.simplify(tolerance, preserve_topology=True)
-    if simplified.is_empty or simplified.geom_type != "Polygon":
-        return []
-
-    coords = [[float(x), float(y)] for x, y in simplified.exterior.coords]
     # shapely 闭合多边形首尾点重复，去掉末点
     if len(coords) > 1 and coords[0] == coords[-1]:
         coords = coords[:-1]

@@ -27,6 +27,9 @@ class Context(BaseModel):
     # v0.9.2 项目级 DINO 阈值注入 (text 路径生效)
     box_threshold: float | None = None
     text_threshold: float | None = None
+    # v0.9.4 phase 3: shapely.simplify tolerance 像素级覆盖 (None 走 predictor.DEFAULT_SIMPLIFY_TOLERANCE).
+    # 仅 mask/both 路径有意义 (box 路径不简化); 大物体可调高 (2-3) 减顶点, 精细物体调低 (0.3-0.5).
+    simplify_tolerance: float | None = None
 
 
 class InteractiveRequest(BaseModel):

@@ -139,6 +139,21 @@ def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool]:
     ptype = ctx.get("type")
     cache_key = compute_cache_key(file_path, SAM_VARIANT)
 
+    # v0.9.4 phase 3 · simplify_tolerance 单次请求级覆盖 (None 时 predictor 用 DEFAULT_SIMPLIFY_TOLERANCE)
+    simplify_tol = ctx.get("simplify_tolerance")
+    if simplify_tol is not None:
+        try:
+            simplify_tol = float(simplify_tol)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=422,
+                detail=f"context.simplify_tolerance must be float, got {simplify_tol!r}",
+            )
+        if simplify_tol < 0:
+            raise HTTPException(
+                status_code=422, detail="context.simplify_tolerance must be >= 0"
+            )
+
     if ptype == "point":
         points = ctx.get("points") or []
         labels = ctx.get("labels") or [1] * len(points)
@@ -147,9 +162,13 @@ def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool]:
         if not _cache.peek(cache_key):
             # miss: 拉图 + 让 predictor 内部 set_image + put
             image = _fetch_image(file_path)
-            return p.predict_point(image, points, labels, cache_key=cache_key)
+            return p.predict_point(
+                image, points, labels, cache_key=cache_key, simplify_tolerance=simplify_tol
+            )
         # hit: 不拉图; predictor 走 restore_sam 路径
-        return p.predict_point(None, points, labels, cache_key=cache_key)
+        return p.predict_point(
+            None, points, labels, cache_key=cache_key, simplify_tolerance=simplify_tol
+        )
 
     if ptype == "bbox":
         bbox = ctx.get("bbox")
@@ -157,8 +176,12 @@ def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool]:
             raise HTTPException(status_code=422, detail="context.bbox=[x1,y1,x2,y2] required")
         if not _cache.peek(cache_key):
             image = _fetch_image(file_path)
-            return p.predict_bbox(image, bbox, cache_key=cache_key)
-        return p.predict_bbox(None, bbox, cache_key=cache_key)
+            return p.predict_bbox(
+                image, bbox, cache_key=cache_key, simplify_tolerance=simplify_tol
+            )
+        return p.predict_bbox(
+            None, bbox, cache_key=cache_key, simplify_tolerance=simplify_tol
+        )
 
     if ptype == "text":
         text = (ctx.get("text") or "").strip()
@@ -183,6 +206,7 @@ def _run_prompt(file_path: str, ctx: dict) -> tuple[list[dict], bool]:
             cache_key=cache_key,
             box_threshold=box_th,
             text_threshold=text_th,
+            simplify_tolerance=simplify_tol,
         )
 
     raise HTTPException(status_code=422, detail=f"unsupported context.type: {ptype}")

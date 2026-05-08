@@ -22,6 +22,45 @@
 
 ## 最新版本
 
+## [0.9.4 phase 3] - 2026-05-08
+
+> **Polished Contour — mask→polygon 共享化 + simplify tolerance 注入 + SAM E2E.** v0.9.x SAM 一期最后一刀 — 不引入用户可见新功能, 但是 v0.10.x sam3-backend 落地的硬前置 (共享 mask_utils 包) + 后续 SAM 体验调优的基础设施 (tolerance 可调 + E2E 守卫). 三件事: ① `apps/grounded-sam2-backend/predictor.py` 内嵌 `_mask_to_polygon` 删除, 改 import `apps/_shared/mask_utils` 共享包; docker-compose context 升到 `apps/`, Dockerfile 加 `COPY _shared/mask_utils + pip install -e`. ② `Context.simplify_tolerance` 字段 + `DEFAULT_SIMPLIFY_TOLERANCE = 1.0` 常量 + 顶点 > 200 `logger.warning`. ③ `_test_seed/reset` 加 ml_backend 工厂 (`E2E SAM Mock`) + annotation.spec.ts 新增 SAM 工具子工具栏 + `page.route` 拦截 `/interactive-annotating` 用例.
+
+### Added
+
+- **`apps/_shared/mask_utils/` 接入 grounded-sam2-backend**：删 `predictor.py:352-385` 内嵌 `_mask_to_polygon` 静态方法，所有调用点（`_masks_to_results` for point/bbox + `predict_text` mask/both 分支）改 `from mask_utils import mask_to_polygon` + `mask_to_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))`。共享包 `polygon.py` 补 try/except 拓扑兜底（self-intersecting contour 时降级到原始 contour 而非返回空，与旧 inline 实现鲁棒性对齐）；`normalize.py` `normalize_coords` 输出 `round(x/w, 6)` 6 位精度（与平台 BboxAnnotation / PolygonAnnotation value 字段对齐，预防迁移后协议字段分辨率漂移）。新增 2 个 mask_utils 单测 case：`test_normalized_coords_rounded_to_6_decimals`、`test_self_intersecting_contour_falls_back_to_raw_coords`（共 9 case 全绿）。
+- **`Context.simplify_tolerance: float | None` + `DEFAULT_SIMPLIFY_TOLERANCE = 1.0`**：`schemas.py` Context 加字段（与 `output` / `box_threshold` 同位）；`predictor.py` 顶层定义 `DEFAULT_SIMPLIFY_TOLERANCE = 1.0` + `VERTEX_COUNT_WARN_THRESHOLD = 200` 常量；`predict_point` / `predict_bbox` / `predict_text` / `_masks_to_results` 全部加 `simplify_tolerance: float | None = None` 参数转发。`main.py` `_run_prompt` 读 `ctx.simplify_tolerance` 校验 float + ≥0 后透传；非法值返回 422。
+- **顶点 > 200 `logger.warning` 运维信号**：`_masks_to_results` 与 `predict_text` mask 分支拿到 polygon 后若 `len(poly) > 200` 记 `logger.warning("polygon vertex count %d > %d (tolerance=%.2f, mask area=%d, prompt=...)")`。非阻塞，仅运维信号 — 大物体 + 极低 tolerance 触发，提示调高 tolerance 或样本异常。
+- **`scripts/eval_simplify.py`**：mask png 目录 × 5 档 tolerance 跑 IoU + 顶点数表 → markdown 报告。argparse CLI（`--masks-dir / --tolerances / --out`），用 `mask_utils.mask_to_polygon` 把 mask 转 polygon，再 `cv2.fillPoly` 反栅格化算 IoU。报告含数据来源说明（合成占位 vs 真实 SAM mask）+ 汇总表（mean/median/p95 IoU + 顶点数 + IoU≥0.95%）+ 逐样本明细 + 复现命令。`apps/_shared/mask_utils/tests/fixtures/real_sam_masks/`（6 张合成占位 mask: 圆 / 椭圆 / 半月 / 三角 / organic blob，覆盖凸 / 凹 / 复杂边界）+ README 注释采集流程。
+- **`docs/research/13-simplify-tolerance-eval.md`**：评测报告（84 张真实 SAM mask + 6 张合成占位 = 90 张 × 5 档 tolerance）。**评测结论**：tolerance=1.0 在真实 SAM mask 上 **IoU mean 0.98、IoU≥0.95 占比 92.2%、顶点数中位 102** — 接近 95% 验收线但未达，但 IoU mean 已 ≥ 0.95，**默认值合理**。跨 tolerance 趋势健康（顶点数 273→27 大降，IoU mean 仅微降 0.032）。`scripts/eval_simplify.py` 渲染加"数据驱动结论"三档判定：① ≥95% 完全达标推荐档；② 85%~95% 且 IoU mean ≥ 0.95 → 近达标 + 长尾分析（保持默认 + follow-up 长尾结构性问题）；③ < 85% + IoU spread < 0.05 → 结构性根因不调 tolerance；④ 其它 → 推荐最优档。84 张真实 mask 通过 host MinIO `local/datasets/cpc0-R_000_root-02/` → docker SAM 容器 **DINO+SAM text 模式（"car" / "person" / "building" 三 prompts × 30 帧）**采集，每张图 1-3 个 mask（DINO 找不到时 skip），SAM scores 0.85-0.97。commit 进 `apps/_shared/mask_utils/tests/fixtures/real_sam_masks/`（516KB）。`docs/research/README.md` 索引加 12 / 13 两行。
+- **mask→polygon 多连通域 / 空洞支持 follow-up**（ROADMAP §A AI/模型 + 优先级表 P2，新建）：基于 13 评测的长尾分析（< 15% 样本 IoU 落 [0.5, 0.95) 区间），`apps/_shared/mask_utils.mask_to_polygon` 取最大连通域 + `RETR_EXTERNAL` 的两个隐藏假设需 follow-up（multi_polygon 输出 + `RETR_CCOMP` 内外环编码 + morphological closing）。**不阻塞 phase 3 收口**（大头 IoU≥0.95 + IoU mean 0.98 已可用），作为 v0.9.5 候选或 v0.10.x 与 sam3-backend 一并做。
+- **`apps/grounded-sam2-backend/tests/test_simplify_tolerance_injection.py`**：4 case mock 出 `_masks_to_results` 注入路径 + WARN 触发：① tolerance 高低顶点数差异（圆 mask 0.5 vs 2.0）；② 默认 tolerance（None → DEFAULT）不抛错；③ 圆 mask + tolerance=0.0 → ~564 顶点 → WARN；④ 同 mask + tolerance=2.0 → ~32 顶点 → 无 WARN。共 23 backend test 全绿。
+- **`_test_seed.seed_reset` 加 ml_backend 工厂**：fixture 项目创建后顺手造 `MLBackend(name="E2E SAM Mock", url="http://mock-sam.e2e:9999", state="connected", is_interactive=True, extra_params={"e2e_mock": True})` 绑到项目；同时把 `project.ai_enabled=True` + `project.ml_backend_id=mock_backend.id`。`SeedReset` 响应 + 前端 `SeedData` 类型加 `ml_backend_id: str` 字段。url 不会被真请求（page.route 拦截）。
+- **`annotation.spec.ts` SAM 工具用例**：`page.route(/\/interactive-annotating/)` 拦截返回固定单 polygon 候选（中心 0.4×0.4 → 0.6×0.6 矩形 polygon, score 0.95）。验证：① `tool-btn-sam` 可激活 + `sam-subtoolbar` 可见；② `sam-sub-point/bbox/text` 三按钮可见；③ 子工具切换 aria-pressed 互斥（point ↔ bbox）；④ point 模式点击 stage → useInteractiveAI 80ms 防抖后 dispatch → page.route 至少命中 1 次（验证整链路：前端 → 平台 API → mock backend → resp 解析）。E2E 不验证 polygon 在 Konva canvas 上的实际渲染（canvas 内部, DOM 不可断言），由 vitest + backend pytest 协同保证。
+
+### Changed
+
+- **`docker-compose.yml` grounded-sam2-backend build context 升级到 apps/**：原 `context: ./apps/grounded-sam2-backend` → `context: ./apps + dockerfile: grounded-sam2-backend/Dockerfile`，让 Dockerfile 能 COPY 兄弟目录 `_shared/mask_utils`。Dockerfile 内所有 COPY 路径加 `grounded-sam2-backend/` 前缀。**注意：历史 `docker build apps/grounded-sam2-backend/` 命令不再可用**，必须走 `docker compose --profile gpu build grounded-sam2-backend` 或 `docker build -f apps/grounded-sam2-backend/Dockerfile apps/`。
+- **`apps/grounded-sam2-backend/Dockerfile`**：COPY 列表加 `_shared/mask_utils/ /app/mask_utils/` + `RUN pip install --no-build-isolation -e /app/mask_utils`，让容器内 `mask_utils` 模块从共享包加载（与 v0.10.x sam3-backend 单一来源共用）。
+- **`apps/grounded-sam2-backend/pyproject.toml` `[tool.pytest.ini_options].pythonpath`**：`["."]` → `[".", "../_shared/mask_utils/src"]`。本地 `uv run --extra dev pytest` 通过 pythonpath 直接定位共享包 src/，避免开发时强制 pip install -e。
+- **`docs-site/dev/ml-backend-protocol.md` §2 Context schema**：加 `simplify_tolerance: number` 字段说明（仅 mask/both 路径生效；大物体调高 2-3 减顶点、精细物体调低 0.3-0.5 保细节；项目级常量化未实现，触发条件：客户提需求；后端顶点 > 200 时 logger.warning）。
+
+### Removed
+
+- **`apps/grounded-sam2-backend/predictor.py:352-385` `_mask_to_polygon` 静态方法**：内嵌的 cv2.findContours + shapely.simplify 实现迁到 `apps/_shared/mask_utils/src/mask_utils/polygon.py:mask_to_polygon`，行为差异：CHAIN_APPROX_NONE 替换 CHAIN_APPROX_SIMPLE（顶点更多但 simplify 后形状更精确）；`buffer(0)` 拓扑修复路径与 try/except 兜底保留。
+
+### Notes
+
+- **API 单测 16/16 通过**（test_seed_router + test_ml_backend_schemas + test_projects_ml_backend_binding）；mask_utils 9/9；grounded-sam2-backend 23/23（含 4 新 simplify_tolerance case）。
+- **不在范围内（明确推迟）**：① 前端 ProjectSettings 暴露 `simplify_tolerance` UI（YAGNI，运维 / dev 通过 ctx 注入足够）；② query string `?simplify_tolerance=` 兼容（schema body 字段已能表达）；③ sidecar fastapi mock backend（page.route 已覆盖 phase 3 验证目标）；④ 自动化 fixture 采集脚本（maintainer 一次性手工）。
+- **真实 SAM mask 采集已完成**：84 张真实 SAM mask（30 张 cpc0-R 1920×1080 沙盘视频帧 × 3 文本 prompts "car"/"person"/"building"）via MinIO `local/datasets/` → docker SAM 容器 **DINO+SAM text 模式**采集，DINO scores 0.85-0.97 高质量。fixture 516KB commit 进库（与早期 6 张合成占位共存到 90 张样本集）。**评测结论**：默认 tolerance=1.0 IoU mean **0.98**、IoU≥0.95 92.2%、顶点中位 102 — 接近 95% 验收线但未达，但 IoU mean ≥ 0.95，**默认值合理保持不动**。长尾 < 15% 样本 IoU 落 [0.5, 0.95) 区间，根因 multi-polygon / 空洞结构问题，已建 P2 follow-up（ROADMAP §A AI/模型）。
+- **采集策略复盘**：首次采用 "中心 60% bbox prompt" 是错的 — 1920×1080 中心 60% 覆盖了车 + 地面 + 建筑物混合，SAM 拿到杂乱混合物（IoU mean 仅 0.54、IoU≥0.95 16.7%、顶点中位 326）。换成 **DINO+SAM text 模式**（DINO 先找紧框 → SAM 段）后数据完全正常，与工作台 `S` 工具 text 模式真实使用对齐。未来 follow-up：本机 fixture 采集脚本（`scripts/dump_sam_masks.py`，承袭 `dump_text.py` + 加 CLI）以便 maintainer 一键回放。
+- **下一步**：v0.9.x SAM 一期收口完成，进入 v0.9.5（M4 + M5 合并）`/ai-pre` 文本批量预标 UI + 运维收口（ADR-0012/0013 + 部署文档 + backend 显存监控）。
+
+详细计划：[`docs/plans/2026-05-08-v0.9.4-phase3-polished-contour.md`](./docs/plans/2026-05-08-v0.9.4-phase3-polished-contour.md)。
+
+---
+
 ## [0.9.4 phase 2] - 2026-05-08
 
 > **Crystal Compass — SAM UX 完善 + text 模式 box/mask/both 输出选择。** v0.9.4 phase 1 真接通 SAM 后第一次实跑暴露两个紧密耦合的 UX 痛点：① `S` 工具点击 / 拖动隐式分流 prompt 类型（单击=点 / Alt+点击=negative / 拖框=bbox），新人不可见；文本走 AI 助手面板完全脱节。② text 模式永远输出 polygon —— 对 image-det 项目（标注员要 bbox）反而是负担,SAM mask 步骤 GPU 时间贵。本 phase 同时落 SAM 子工具栏拆分 + text 输出三选一,**共用 T 文本子工具的 UI 改动**(同窗口落代价最优).
