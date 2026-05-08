@@ -33,12 +33,12 @@ def _resolve_task_url(task: Task) -> str:
     再把 host 替换为 ``settings.ml_backend_storage_host`` (容器可达地址)。
     """
     storage = StorageService()
-    bucket = (
-        storage.datasets_bucket if task.dataset_item_id else storage.bucket
-    )
+    bucket = storage.datasets_bucket if task.dataset_item_id else storage.bucket
     url = storage.generate_download_url(task.file_path, bucket=bucket)
     if settings.ml_backend_storage_host:
-        url = re.sub(r"://[^/]+", f"://{settings.ml_backend_storage_host}", url, count=1)
+        url = re.sub(
+            r"://[^/]+", f"://{settings.ml_backend_storage_host}", url, count=1
+        )
     return url
 
 
@@ -162,7 +162,9 @@ async def predict_test(
         raise HTTPException(status_code=404, detail="Task not found")
 
     client = MLBackendClient(backend)
-    results = await client.predict([{"id": str(task.id), "file_path": _resolve_task_url(task)}])
+    results = await client.predict(
+        [{"id": str(task.id), "file_path": _resolve_task_url(task)}]
+    )
     return {
         "results": [
             {"task_id": r.task_id, "result": r.result, "score": r.score}

@@ -452,8 +452,11 @@ async def get_predictions(
         from app.db.models.prediction import PredictionMeta
 
         meta_rows = await db.execute(
-            select(PredictionMeta.prediction_id, PredictionMeta.inference_time_ms, PredictionMeta.total_cost)
-            .where(PredictionMeta.prediction_id.in_(pred_ids))
+            select(
+                PredictionMeta.prediction_id,
+                PredictionMeta.inference_time_ms,
+                PredictionMeta.total_cost,
+            ).where(PredictionMeta.prediction_id.in_(pred_ids))
         )
         for pred_id, ms, cost in meta_rows:
             if pred_id is not None:
