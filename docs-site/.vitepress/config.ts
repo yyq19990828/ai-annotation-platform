@@ -115,6 +115,7 @@ export default withMermaid(defineConfig({
           text: "架构",
           items: [
             { text: "系统全景", link: "/dev/architecture/overview" },
+            { text: "后端基础设施（容器）", link: "/dev/architecture/backend-infrastructure" },
             { text: "后端分层", link: "/dev/architecture/backend-layers" },
             { text: "前端分层", link: "/dev/architecture/frontend-layers" },
             { text: "数据流", link: "/dev/architecture/data-flow" },

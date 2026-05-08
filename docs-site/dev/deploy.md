@@ -28,40 +28,113 @@
 
 ## 2. 环境变量
 
-平台通过 pydantic-settings 加载，源文件：`apps/api/app/config.py`。下表区分 **必填** vs **推荐覆盖**：
+平台通过 pydantic-settings 加载，源文件：`apps/api/app/config.py`。本节按 [`.env.example`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/.env.example) 的分块结构介绍；标 **必填** 的在 `ENVIRONMENT=production` 启动时会触发断言失败。
 
-### 2.1 必填
+> 生产部署：基于 `.env.example` 复制 `.env.production`，逐项审过再启动。`config.py` 里有几个未列入 `.env.example` 的可选项，统一在 §2.10 兜底。
 
-| 变量 | 说明 | 示例 |
+### 2.1 数据库 (PostgreSQL)
+
+| 变量 | 默认 | 说明 |
 |---|---|---|
-| `ENVIRONMENT` | 环境标记，决定多个安全开关 | `production` |
-| `SECRET_KEY` | JWT 签名密钥；默认值在 `production` 启动时**会触发 RuntimeError**（`apps/api/app/main.py:50-57`） | 32+ 字节随机串 |
-| `DATABASE_URL` | PG asyncpg 连接串 | `postgresql+asyncpg://user:pass@host:5432/annotation` |
-| `REDIS_URL` | Redis 连接串 | `redis://redis:6379/0` |
-| `MINIO_ENDPOINT` `MINIO_ACCESS_KEY` `MINIO_SECRET_KEY` | 对象存储 | — |
-| `CORS_ALLOW_ORIGINS` | **production 必填**（main.py:71-74 启动断言） | `["https://app.example.com"]` 或逗号分隔 |
-| `FRONTEND_BASE_URL` | 邮件/链接里的回跳地址 | `https://app.example.com` |
+| `DATABASE_URL` **必填** | dev 连本机 | asyncpg 连接串，格式 `postgresql+asyncpg://用户名:密码@主机:端口/库`。生产环境用托管 RDS / Cloud SQL 优先，库名常用 `annotation`。 |
 
-### 2.2 推荐覆盖
+迁移在容器外手动跑：`uv run alembic upgrade head`。详见 §4.2。
+
+### 2.2 缓存 / 消息队列 (Redis)
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `REDIS_URL` **必填** | `redis://localhost:6379/0` | 同时承担：Celery broker、result backend、WebSocket pub/sub、限流计数、token 黑名单（v0.7.8 复用本连接，无需单独配置）。 |
+| `CELERY_BROKER_URL` | 空 → 复用 `REDIS_URL` | 想拆开 broker（如换 RabbitMQ）时单独设。 |
+
+> Redis 建议为生产挂 AOF volume——dev 容器**没**挂 volume，重启即清空所有队列与限流计数。详见 [后端基础设施](./architecture/backend-infrastructure)。
+
+### 2.3 对象存储 (MinIO / S3 兼容)
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `MINIO_ENDPOINT` **必填** | `localhost:9000` | host:port，**不含**协议前缀。S3 / OSS 走兼容协议时填它们的 endpoint。 |
+| `MINIO_ACCESS_KEY` **必填** | `minioadmin` | 等价 AWS Access Key ID。 |
+| `MINIO_SECRET_KEY` **必填** | `minioadmin` | 生产**必须**换。 |
+| `MINIO_BUCKET` | `annotations` | 主标注文件桶（图像 / 视频帧）。 |
+| `MINIO_DATASETS_BUCKET` | `datasets` | 上传 dataset 桶。 |
+| `MINIO_BUG_REPORTS_BUCKET` | `bug-reports` | bug 反馈附件桶。 |
+| `MINIO_PUBLIC_URL` | 空 | 客户端拿 presigned URL 时走的外网地址；与 `MINIO_ENDPOINT` 不同时必填（容器内/外网络两层视角）。 |
+| `MINIO_USE_SSL` | `false` | 生产建议 `true`（即便 LB 终结 TLS，到对象存储一段也建议加密）。 |
+| `ML_BACKEND_STORAGE_HOST` | 空 | dev 桥接：api 跑 host 进程时，docker 内的 ML backend 不能 hit `localhost:9000`。Linux `172.17.0.1:9000` / macOS `host.docker.internal:9000`；K8s 同 namespace 留空。 |
+| `ML_BACKEND_DEFAULT_URL` | 空 | ML Backend 注册表单 URL 预填值，避免运维手敲；K8s 设 service DNS 即可。 |
+
+### 2.4 认证 / 安全
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `SECRET_KEY` **必填** | `change-this-...` | JWT 签名密钥，≥ 32 字节随机串。`ENVIRONMENT=production` 仍是默认值时启动会 RuntimeError（`apps/api/app/main.py:50-57`）。生成：`python -c "import secrets; print(secrets.token_hex(32))"`。 |
+| `ALLOW_OPEN_REGISTRATION` | `false` | 自助注册开关。v0.8.1+ 可在 SettingsPage 热更新覆盖。 |
+| `TURNSTILE_ENABLED` | `false` | Cloudflare Turnstile CAPTCHA（v0.8.7+）。开启后 `/auth/register-open` `/auth/forgot-password` 必须带 `captcha_token`。 |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 空 | 启用 Turnstile 时配套；secret 绝不暴露给前端。 |
+| `AUDIT_RETENTION_MONTHS` | `12` | 冷数据保留月数。Celery beat 每月 2 日把超期 partition 归档为 `audit-archive/{YYYY}/{MM}.jsonl.gz` 上 MinIO 后 DROP（v0.8.1+）。 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440`（24h） | 未列入 `.env.example`；高敏环境调到 `480`（8h）。 |
+
+### 2.5 前端
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `VITE_API_URL` **构建时必填** | `http://localhost:8000` | Vite 编译时注入；部署改为 `https://app.example.com/api`（含路径前缀，匹配 §3 nginx）。 |
+| `VITE_TURNSTILE_SITE_KEY` | 空 | 与后端 `TURNSTILE_SITE_KEY` 一致；空则注册页不渲染 widget。 |
+| `VITE_SENTRY_DSN` | 空 | 前端 Sentry DSN；留空禁用前端错误上报。 |
+| `FRONTEND_BASE_URL` | `http://localhost:5173` | 后端在邮件 / 邀请链接里回跳到这个 origin；生产必改成实际域名。 |
+
+### 2.6 错误监控 (Sentry, v0.6.6+)
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `SENTRY_DSN` | 空 | 后端 DSN；留空完全不启用 SDK（不会偷偷上报）。 |
+| `SENTRY_ENVIRONMENT` | `development` | 环境标签 → Sentry 看板按 `development / staging / production` 分组。 |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | 性能追踪采样率（0–1）。流量大时按比例降。 |
+
+> production 启动若 `ENVIRONMENT=production` 但 `SENTRY_DSN` 为空，lifespan 会打 WARN（不阻断启动），便于 Sentry 失踪不悄悄发生。
+
+### 2.7 跨域 (CORS)
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `CORS_ALLOW_ORIGINS` **production 必填** | dev 默认放行 localhost 常用端口 | 支持 JSON 数组 `["https://app.example.com"]` 或逗号分隔。即便前后端同源也要显式列；`main.py:71-74` 启动断言。 |
+| `CORS_ALLOW_ORIGIN_REGEX` | dev `http://localhost:\d+` | 仅 `dev / staging` 生效，production 自动忽略以防误把本机正则上线。 |
+
+### 2.8 Grounded-SAM-2 ML Backend (v0.9.0+, GPU profile)
+
+仅当 `docker compose --profile gpu up grounded-sam2-backend` 时生效。详见 §8.5。
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `SAM_VARIANT` | `tiny` | 精度 / 显存递增：`tiny` → `small` → `base_plus` → `large`（4060 8G 选 tiny）。 |
+| `DINO_VARIANT` | `T` | `T`（Swin-T 默认）/ `B`（Swin-B 更准但显存翻倍）。 |
+| `BOX_THRESHOLD` | `0.35` | DINO 检测阈值；召回不足 → `0.25`，误检多 → `0.45`。 |
+| `TEXT_THRESHOLD` | `0.25` | DINO 文本-标签匹配阈值；短语 prompt 一般 0.25 即可。 |
+| `GSAM2_LOG_LEVEL` | `INFO` | `DEBUG / INFO / WARNING`。 |
+
+### 2.9 部署环境
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `ENVIRONMENT` **必填** | `development` | `development / staging / production`。决定多个安全开关：CORS 严格断言、SECRET_KEY 默认值检测、Sentry 缺失告警、CORS regex 是否生效等。 |
+
+### 2.10 未列入 `.env.example` 的可选项
+
+`config.py` 支持但 `.env.example` 没列出，按需在 `.env.production` 显式添加：
 
 | 变量 | 默认 | 何时改 |
 |---|---|---|
-| `ALLOW_OPEN_REGISTRATION` | `false` | 想开自助注册时 → `true`（v0.7.7+） |
 | `MAX_INVITATIONS_PER_DAY` | `30` | 邀请活动期临时调高（v0.7.8 限流） |
+| `INVITATION_TTL_DAYS` | `7` | 合规要求短链 → `1–3` |
 | `ML_PREDICT_TIMEOUT` | `100` 秒 | LLM 慢 backend 调到 ≥ 180 |
-| `ML_HEALTH_TIMEOUT` | `10` 秒 | 通常不需动 |
+| `ML_HEALTH_TIMEOUT` | `10` 秒 | 通常不需动；冷启动慢的 backend 适当上调 |
 | `AUDIT_ASYNC` | `true` | broker 故障时回退 `false`（强一致但慢） |
-| `INVITATION_TTL_DAYS` | `7` | 合规要求短链时 → `1-3` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440`（24h） | 高敏环境 → `480`（8h） |
-| `MINIO_PUBLIC_URL` | 空 | 客户端访问 presigned URL 走的外网地址（与 endpoint 不同时必填） |
-| `SENTRY_DSN` | 空 | 接入 Sentry 时填；空则完全不启用 |
-| `SMTP_HOST` `SMTP_PORT` `SMTP_FROM` `SMTP_USER` `SMTP_PASSWORD` | 空 | 启用密码重置邮件、bug digest 时填 |
-
-> v0.7.8 新增的 token 黑名单（`apps/api/app/core/token_blacklist.py`）直接复用 `REDIS_URL`，无需单独配置。
-
-### 2.3 完整模板
-
-参考 [`.env.example`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/.env.example)。生产部署应基于它复制一份 `.env.production` 后逐项审。
+| `TASK_EVENTS_ASYNC` | `true` | 同上，针对 task event 流 |
+| `OFFLINE_THRESHOLD_MINUTES` | `5` | 在线状态心跳判断窗口 |
+| `LOGIN_CAPTCHA_THRESHOLD` | `5` | 同 IP 登录失败几次后强制 Turnstile（v0.8.7+） |
+| `LOGIN_FAILED_WINDOW_SECONDS` | `3600` | 上面失败计数的窗口长度 |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `SMTP_FROM` | 空 | 启用密码重置邮件 / bug digest 时配齐 |
 
 ---
 
