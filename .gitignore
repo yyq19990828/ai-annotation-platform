@@ -25,6 +25,11 @@ test-results/
 # （hotkeys.generated.md 与 openapi snapshot 历史上已 track，不在此处忽略以保持 surgical）
 docs-site/dev/adr/
 
+# docs-site/changelog 与 docs-site/roadmap 由 mirror-changelog.mjs 从根 CHANGELOG.md /
+# ROADMAP.md 与 docs/changelogs/ / ROADMAP/ 重建
+docs-site/changelog/
+docs-site/roadmap/
+
 # Claude Code 子代理 worktree 临时副本（subagent 隔离运行时落盘，与本仓库无关）
 .claude/worktrees/
 # Claude Code 运行时锁（ScheduleWakeup 维护；含 sessionId/pid/时间戳，因机器而异）

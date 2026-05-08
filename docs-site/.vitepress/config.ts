@@ -1,4 +1,5 @@
 import { defineConfig } from "vitepress";
+import { withMermaid } from "vitepress-plugin-mermaid";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,15 +7,18 @@ import { fileURLToPath } from "node:url";
 // ADR 侧边栏由 docs-site/scripts/mirror-adr.mjs 在 prebuild/predev 阶段生成。
 // 若文件缺失（例如刚 clone 还未跑 prebuild），降级为空数组让 VitePress 仍能启动。
 const __here = dirname(fileURLToPath(import.meta.url));
-const __adrSidebarPath = resolve(__here, "../dev/adr/sidebar.generated.json");
-const adrSidebarItems = existsSync(__adrSidebarPath)
-  ? (JSON.parse(readFileSync(__adrSidebarPath, "utf8")) as Array<{
-      text: string;
-      link: string;
-    }>)
-  : [];
+type SidebarItem = { text: string; link: string };
 
-export default defineConfig({
+function loadSidebar(rel: string): SidebarItem[] {
+  const p = resolve(__here, rel);
+  return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as SidebarItem[]) : [];
+}
+
+const adrSidebarItems = loadSidebar("../dev/adr/sidebar.generated.json");
+const changelogSidebarItems = loadSidebar("../changelog/sidebar.generated.json");
+const roadmapSidebarItems = loadSidebar("../roadmap/sidebar.generated.json");
+
+export default withMermaid(defineConfig({
   title: "AI Annotation Platform",
   description: "标注平台文档（用户 / 开发 / API）",
   lang: "zh-CN",
@@ -24,12 +28,24 @@ export default defineConfig({
   // 允许指向本地开发服务器的链接，构建期不当 dead link
   ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?(\/|$)/],
 
+  // mermaid 11.x 的 chunk 直接 import `dayjs/dayjs.min.js`（UMD 文件），Vite 当 ESM
+  // 解析失败 → "does not provide an export named 'default'"。alias 指向 ESM 入口。
+  vite: {
+    resolve: {
+      alias: [{ find: /^dayjs\/dayjs\.min\.js$/, replacement: "dayjs/esm/index.js" }],
+    },
+    optimizeDeps: {
+      include: ["dayjs/esm/index.js", "@braintree/sanitize-url", "debug"],
+    },
+  },
+
   themeConfig: {
     nav: [
       { text: "用户手册", link: "/user-guide/" },
       { text: "开发文档", link: "/dev/" },
       { text: "API 文档", link: "/api/" },
-      { text: "CHANGELOG", link: "https://github.com/yyq19990828/ai-annotation-platform/blob/main/CHANGELOG.md" },
+      { text: "更新日志", link: "/changelog/" },
+      { text: "Roadmap", link: "/roadmap/" },
     ],
 
     sidebar: {
@@ -148,6 +164,9 @@ export default defineConfig({
         },
       ],
 
+      "/changelog/": changelogSidebarItems,
+      "/roadmap/": roadmapSidebarItems,
+
       "/api/": [
         { text: "API 总览", link: "/api/" },
         {
@@ -183,4 +202,4 @@ export default defineConfig({
       text: "在 GitHub 编辑此页",
     },
   },
-});
+}));

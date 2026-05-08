@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/sync-openapi.mjs && node scripts/mirror-adr.mjs && node scripts/generate-hotkeys.mjs && node scripts/generate-api-index.mjs",
-    "prebuild": "node scripts/sync-openapi.mjs && node scripts/mirror-adr.mjs && node scripts/generate-hotkeys.mjs && node scripts/generate-api-index.mjs && node scripts/check-doc-snippets.mjs",
+    "predev": "node scripts/sync-openapi.mjs && node scripts/mirror-adr.mjs && node scripts/mirror-changelog.mjs && node scripts/generate-hotkeys.mjs && node scripts/generate-api-index.mjs",
+    "prebuild": "node scripts/sync-openapi.mjs && node scripts/mirror-adr.mjs && node scripts/mirror-changelog.mjs && node scripts/generate-hotkeys.mjs && node scripts/generate-api-index.mjs && node scripts/check-doc-snippets.mjs",
     "dev": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview",
@@ -15,11 +15,19 @@
     "check:plans": "node scripts/check-plans-freshness.mjs",
     "check:changelog": "node scripts/check-changelog-version.mjs",
     "check:all": "node scripts/check-doc-snippets.mjs && node scripts/check-adr.mjs && node scripts/check-plans-freshness.mjs && node scripts/check-changelog-version.mjs",
-    "mirror:adr": "node scripts/mirror-adr.mjs"
+    "mirror:adr": "node scripts/mirror-adr.mjs",
+    "mirror:changelog": "node scripts/mirror-changelog.mjs"
   },
   "devDependencies": {
+    "@braintree/sanitize-url": "^7.1.2",
     "@scalar/api-reference": "^1.25.0",
+    "cytoscape": "^3.33.3",
+    "cytoscape-cose-bilkent": "^4.1.0",
+    "dayjs": "^1.11.20",
+    "debug": "^4.4.3",
+    "mermaid": "^11.14.0",
     "vitepress": "^1.5.0",
+    "vitepress-plugin-mermaid": "^2.0.17",
     "vue": "^3.5.0"
   }
 }
