@@ -17,6 +17,10 @@ class ProjectCreate(BaseModel):
     ai_model: str | None = None
     # v0.8.6 F3 · 真实绑定 MLBackend；为 None 表示未绑定（ai_model 仍可作为 display hint）
     ml_backend_id: UUID | None = None
+    # v0.9.7 · 从 wizard step 4 选一个全局已注册 backend, 后端复制 row 入新项目.
+    # 与 ml_backend_id 互斥: 直接给 ml_backend_id 表示已存在本项目下的 backend (罕见);
+    # 给 ml_backend_source_id 表示"从其它项目复用一份配置".
+    ml_backend_source_id: UUID | None = None
     due_date: date | None = None
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None

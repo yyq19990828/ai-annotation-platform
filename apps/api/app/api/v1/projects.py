@@ -290,19 +290,74 @@ async def create_project(
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     payload = data.model_dump(exclude_none=True)
-    # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）
+
+    # v0.9.7 · 取出 source_id (若给定), 校验存在性后再创建项目;
+    # 项目 INSERT 完成后再复制 backend (受 FK ml_backends.project_id 约束).
+    source_id = payload.pop("ml_backend_source_id", None)
+    source_backend = None
+    if source_id is not None:
+        from app.db.models.ml_backend import MLBackend as _MLB
+
+        source_backend = await db.get(_MLB, source_id)
+        if source_backend is None:
+            raise HTTPException(status_code=400, detail="ml_backend_source_id not found")
+
     if payload.get("ml_backend_id"):
         payload = await _apply_backend_display_hint(db, payload)
+
+    new_project_id = uuid.uuid4()
     project = Project(
-        id=uuid.uuid4(),
+        id=new_project_id,
         display_id=await next_display_id(db, "projects"),
         owner_id=current_user.id,
         **payload,
     )
     db.add(project)
+    await db.flush()  # 让 project row 入 DB, 满足 ml_backends FK
+
+    if source_backend is not None:
+        new_backend_id = await _clone_backend_to_new_project(
+            db, source=source_backend, new_project_id=new_project_id
+        )
+        project.ml_backend_id = new_backend_id
+        # 同步 ai_model display hint (复制后 backend 名一致, _apply_backend_display_hint
+        # 在此场景与直接读 source.name 等价).
+        project.ai_model = source_backend.name
+
     await db.commit()
     await db.refresh(project)
     return await _serialize_project(db, project)
+
+
+async def _clone_backend_to_new_project(
+    db: AsyncSession, *, source, new_project_id: uuid.UUID
+) -> uuid.UUID:
+    """v0.9.7 · 把 source backend 行复制一份给新项目.
+
+    保留 url/auth_method/auth_token/extra_params/is_interactive/name; 重置
+    state="disconnected" + 清空 health_meta + last_checked_at, 强制新项目自行
+    health-check 再绑定. 返回新 backend id.
+    """
+    from app.db.models.ml_backend import MLBackend as _MLB
+
+    new_id = uuid.uuid4()
+    cloned = _MLB(
+        id=new_id,
+        project_id=new_project_id,
+        name=source.name,
+        url=source.url,
+        state="disconnected",
+        is_interactive=source.is_interactive,
+        auth_method=source.auth_method,
+        auth_token=source.auth_token,
+        extra_params=dict(source.extra_params or {}),
+        health_meta=None,
+        error_message=None,
+        last_checked_at=None,
+    )
+    db.add(cloned)
+    await db.flush()
+    return new_id
 
 
 async def _apply_backend_display_hint(db: AsyncSession, payload: dict) -> dict:

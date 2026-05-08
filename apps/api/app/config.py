@@ -6,7 +6,10 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 # repo root .env (apps/api/app/config.py → ../../.. = repo root)
-_REPO_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
+# 容器布局是 /app/app/config.py 只有 3 层 parents, parents[3] 越界 IndexError;
+# 容器内 env vars 由 docker-compose `environment:` 直接注入, 找不到 .env 是正常的.
+_PARENTS = Path(__file__).resolve().parents
+_REPO_ROOT_ENV = _PARENTS[3] / ".env" if len(_PARENTS) > 3 else Path("/nonexistent/.env")
 
 
 class Settings(BaseSettings):

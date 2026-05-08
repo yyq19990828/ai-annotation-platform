@@ -8,7 +8,6 @@
 
 | 版本组 | 文件 |
 |--------|------|
-| 0.9.x | [docs/changelogs/0.9.x.md](docs/changelogs/0.9.x.md) |
 | 0.8.x | [docs/changelogs/0.8.x.md](docs/changelogs/0.8.x.md) |
 | 0.7.x | [docs/changelogs/0.7.x.md](docs/changelogs/0.7.x.md) |
 | 0.6.x | [docs/changelogs/0.6.x.md](docs/changelogs/0.6.x.md) |
@@ -21,6 +20,64 @@
 ---
 
 ## 最新版本
+
+## [0.9.7] - 2026-05-08
+
+> **Virtual Lynx — AIPreAnnotatePage 信息架构重构 + 视觉精修 + 交互打磨; 同步清掉 v0.9.6 4 项遗留欠账.** 主线两块：① **AI 预标注页面深度优化** — 478 行单文件拆 6 子组件 (`PreannotateStepper / ProjectBatchPicker / PromptComposer / OutputModeSelector / RunPanel / HistoryTable`) + `styles.ts` 共享样式 token + `usePreannotateDraft` localStorage 草稿持久化 hook; 顶部水平 4 步 stepper 引导 + 卡片头 borderBottom 分隔 + chip hover/active/频率角标 + 进度卡大号百分数 + WS connection 徽章; 交互打磨: `⌘/Ctrl+Enter` 提交 + 切项目草稿保留 + 空 alias 引导卡 + 历史表搜索/列排序/客户端分页 (20 行/页) / 空状态居中提示. ② **v0.9.6 遗留 4 项**: alias 频率排序 (`GET /admin/projects/:id/alias-frequency` JSONB GROUP BY 端点 + 前端按 count desc 排) + Wizard step 4 backend 复用 dropdown (`GET /admin/ml-integrations/all` 全局去重列表 + 项目创建时复制 backend row) + 用户手册 v0.9.7 段同步 + scenes.ts 加 4 个 v0.9.7 截图场景 (实跑 PNG 留 maintainer).
+
+### Added
+
+- **`apps/web/src/pages/AIPreAnnotate/` 子目录**：6 个组件 (`PreannotateStepper.tsx` / `ProjectBatchPicker.tsx` / `PromptComposer.tsx` / `OutputModeSelector.tsx` / `RunPanel.tsx` / `HistoryTable.tsx`) + `styles.ts` 共享 inline style + `hooks/usePreannotateDraft.ts` 草稿持久化. 旧 478 行单文件 `AIPreAnnotatePage.tsx` 重写为 ~250 行外壳 (状态编排 + stepper 状态推导).
+- **`PreannotateStepper.tsx`**：4 步水平 stepper, 圆形数字徽章 + 连接线 + 状态色 (pending 灰 / active accent / complete `Icon name="check"` 紫底白). 点徽章 `scrollIntoView({ behavior: "smooth" })` 滚到对应 anchor section, scroll-margin-top 80 避免 sticky topbar 遮挡.
+- **`HistoryTable.tsx`**：内置搜索框 (按 batch_name / project_name 子串过滤) + 列头点击排序 (total_tasks / prediction_count / failed_count / last_run_at) + 客户端分页 (20 行/页, 上一页/下一页) + 居中空状态 (sparkles + 文案); 时间戳用 `formatRelative` 渲染 N 秒/分/小时/天前.
+- **`usePreannotateDraft.ts`**：按 projectId 分桶 (`wb:ai-pre:draft:{projectId}`) localStorage 持久化, debounce 300ms 写入; `usePreannotateDraftAutosave` hook 监听 prompt 变更; `readDraft / writeDraft / clearDraft` 函数式 API. 切项目自动 read 新 + write 旧, 跑成功后清空.
+- **`Ctrl/Cmd + Enter` 提交快捷键**：`PromptComposer.tsx` 输入框 `onKeyDown`, meta/ctrl + Enter 触发 `onRun`. 卡片头小字提示 `⌘/Ctrl + Enter 跑预标`.
+- **空 alias 引导卡**：项目类别已配置但全无 alias 时, PromptComposer 渲染 inline 灰色卡 + Icon info + Link 跳 `/projects/:id/settings#class-config`.
+- **后端 `GET /admin/projects/:id/alias-frequency`**：`apps/api/app/api/v1/admin_alias_freq.py` 用 PG `jsonb_array_elements` 展开 `predictions.result` 数组, COALESCE `value.labels[0]` 与 `value.class` 双 fallback, GROUP BY label COUNT desc LIMIT 200; project_id FK 已索引无需 JOIN. PROJECT_ADMIN / SUPER_ADMIN gated. 7 个端到端测试 (403 / 404 / 空 / polygon labels 聚合 / rectangle class fallback / 混合类型 merge / 非数组 result 守卫).
+- **后端 `GET /admin/ml-integrations/all`**：`admin_ml_integrations.py` JOIN MLBackend × Project 列所有 backend, `seen_urls` 去重保留最新 health 一份, 返回 `GlobalBackendItem` 含 `source_project_id / source_project_name`. 4 个端到端测试 (403 / dedupe / project create with source clones row / invalid source 400).
+- **后端 `ProjectCreate.ml_backend_source_id`**：`schemas/project.py` 新字段; `projects.py` `create_project` 端点先校验 source 存在性 → INSERT project row + flush (满足 ml_backends FK) → `_clone_backend_to_new_project` 复制 row (保留 url/auth_method/auth_token/extra_params/is_interactive/name, 重置 state="disconnected" + 清空 health_meta + last_checked_at) → set `project.ml_backend_id` 到新 row + 同步 `ai_model = source.name`.
+- **`CreateProjectWizard` Step 4 backend dropdown**：新增内嵌 `BackendSourceSelect` 组件; 启用 AI 后拉 `adminMlIntegrationsApi.listAll()` 显示 dropdown (含来源项目名 + state); FormState 加 `mlBackendSourceId` 字段, submit 时携带 `ml_backend_source_id` 到 ProjectCreatePayload. dropdown 选中后底部 hint 显示「将复制 X 到新项目, 含 auth 配置, state 重置为 disconnected」.
+- **`apps/web/src/api/aliasFrequency.ts`**：新建 `aliasFrequencyApi.byProject(id)` 客户端; `AIPreAnnotatePage` useQuery 5 分钟 staleTime, 切项目自动重拉.
+- **`apps/web/src/api/adminMlIntegrations.ts` 扩展**：加 `GlobalBackendItem` / `GlobalBackendListResponse` 类型 + `listAll()` 方法.
+- **scenes.ts 加 4 个 v0.9.7 场景**：`ai-pre/stepper` / `ai-pre/history-search` / `ai-pre/empty-alias` / `wizard/step4-backend`. PNG 实跑留 maintainer 在完整启动栈下 `pnpm --filter web screenshots`.
+
+### Changed
+
+- **`AIPreAnnotatePage.tsx` 重写**：478 行 inline style 单文件 → ~250 行外壳, 子组件全部 props in / callback out 纯展示风格, 状态全部由外壳持有 (避免子组件间隐式耦合). aliases `useMemo` 改读 `freqQ.data.frequency` 计算 `count`, 排序条件 `b.count - a.count || a.alias.localeCompare(b.alias)`. 切项目 `useEffect` 加草稿读写 + toast 提示 (kind=`""` info 风格).
+- **进度卡视觉重构** (`RunPanel.tsx`)：顶部行 `批次进度 + 大号 24px 百分数 (accent / danger 色) + current/total 张数`; ProgressBar 视觉保留; 状态徽章移到卡片头 (`WS · {connection} · {status}`); 完成态 ✓ + Icon check + CTA 按钮 default 尺寸. 比旧版扁平 layout 信息层级更清晰.
+- **chip 视觉**: aliasChip 加 hover/active 态 (active 用 `aliasChipActiveStyle` 紫底 + inset accent 边条), 角标 `×N` (frequency > 0 时显示, 灰色 9px tabular-nums).
+- **`docs-site/user-guide/projects/ai-preannotate.md`**：加 v0.9.7 段说明 stepper / 频率排序 / Ctrl+Enter / 草稿 / 历史表搜索分页 / wizard backend 复用; 标题更新为 v0.9.5 / v0.9.6 / v0.9.7. job 历史追踪推迟备注从「v0.9.7」改为「v0.10.x」.
+
+### Tests
+
+- 后端：`tests/test_admin_alias_freq.py` (7 case) + `tests/test_admin_ml_integrations_global.py` (4 case) — 全过. `tests/test_projects_ml_backend_binding.py` 回归无破坏 (6 case 全过).
+- 前端：`pnpm tsc --noEmit` 无错; LSP 偶发显示 `Cannot find module '@/api/...'` 是缓存假警, 实跑 typecheck 全过.
+
+### Fixed (端到端跑通暴露的隐性 bug)
+
+> 同一会话用户首次端到端真实跑预标后暴露 3 条 v0.9.6 / v0.9.4 phase 1 引入但未暴露的隐性 bug, 一并修复纳入 v0.9.7.
+
+- **B-1 fix · 预标 worker 异常推 WS**（已先于本版本 commit `4bf5bf6`，本版本验证生效）：`_BatchPredictTask.on_failure` dispatch 阶段或 body 内未捕获异常都推到 `project:{id}:preannotate` channel, 前端进度卡 `progress.error` 分支可见, 解决「已排队后无响应」体感 bug. CLAUDE.md 第 7 节加 Docker rebuild vs restart 判定速查 (Celery worker 不会 `--reload` 这个具体陷阱).
+- **`apps/api/app/config.py` `parents[3]` 越界守卫**：v0.9.6 引入 `_REPO_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"` 假设宿主机布局, 容器内 `/app/app/config.py` 只 3 层 parents → `IndexError: 3` celery-worker rebuild 后 crash loop. 改为 `_PARENTS[3] / ".env" if len(_PARENTS) > 3 else Path("/nonexistent/.env")` —— 容器内 env vars 由 docker-compose `environment:` 直接注入, 找不到 `.env` 是正常的, pydantic-settings 接受不存在的 `env_file` 路径.
+- **`apps/api/app/services/prediction.py:to_internal_shape` schema adapter（核心 bug）**：v0.9.4 phase 1 后端真正接通 SAM/DINO 后, worker 把 LabelStudio 标准 `{type:"rectanglelabels", value:{x,y,width,height,rectanglelabels:[...]}, score}` 原样存入 `predictions.result`; 但前端 `predictionsToBoxes` (`apps/web/src/pages/Workbench/state/transforms.ts:51`) 期望内部 `{type, class_name, geometry:{type:"bbox",x,y,w,h}, confidence}` —— schema gap 一直未被发现 (前端工作台未真实跑过预标 → 渲染候选). 本会话端到端跑预标后暴露：32 条 prediction 落地 DB 但工作台一无所有.
+  - 新增 `to_internal_shape` adapter 在 read path: `tasks.py:get_predictions` 序列化时 + `annotation.py:accept_prediction` accept 落 annotation 前. DB 维持 LabelStudio 标准 (导出 / CVAT 兼容).
+  - LabelStudio 字段名 self-referential: `value.{type}[0]` 取 label (rectanglelabels → `value.rectanglelabels[0]`); 老格式 `value.labels[0]` / `value.class` 双 fallback. score / confidence 双向兼容.
+  - 10 个 adapter 单测覆盖 LabelStudio / 老 `value.labels` / 老 `value.class` / 已是内部 schema pass-through / score↔confidence fallback / 非法输入.
+- **`admin_alias_freq.py` SQL 修正**：v0.9.7 主线我写的 SQL 假设 `value.labels[0]`, 但 LabelStudio 标准是 `value.{type}[0]` (self-referential field name); 改为三层 COALESCE `value -> type ->> 0` / `value.labels[0]` / `value.class`. 7 个 alias-freq 测试全过, chip 角标 `×N` 准确.
+
+### Known gaps / 留 v0.9.8 主线
+
+> 提前自 v0.10.x — 用户首次真实跑预标后明确需求, ROADMAP 已加 v0.9.8 切片.
+
+- **完整 prediction job 历史**：`prediction_jobs` 表 + worker 写入 + `GET /admin/preannotate-jobs` 端点 (含已结束/重置批次的 prompt/cost/duration) + 前端 `/ai-pre/jobs` 子页面.
+- **`MLBackendCreate` URL validator**：拒绝 host == `localhost`/`127.0.0.1`, 提示用 `172.17.0.1` / docker bridge IP / service DNS, 与 v0.9.6 `ML_BACKEND_DEFAULT_URL` placeholder 配套. 本会话端到端跑预标时撞到 (worker 容器内连不上宿主机 `localhost:8001`), 临时手改 DB URL 到 `172.17.0.1:8001` 通了.
+- **WS 进度多项目订阅可见性**：`usePreannotationProgress(projectId)` 仅订阅当前项目, 跑完切项目就丢 progress; 候选 ① AdminDashboard / Topbar 全局 badge ② 切项目 toast 提示「项目 X 仍在跑预标 (i/N)」+ 一键回跳.
+- **预标 schema 端到端类型同步**：codegen `predict.result` 类型 + 前端 transforms.ts 单测 + 用户手册说明 DB schema vs 前端 schema 边界, 防下次 ML backend 改输出格式再撞.
+
+### Known gaps / 留 v0.10.x
+
+- **截图 22 张实跑**：scenes.ts 18 (v0.8.7) + 4 (v0.9.7) = 22 个场景配置就位, PNG 文件需 maintainer 在完整启动栈下 `pnpm --filter web screenshots` 实跑; 部分场景 (history-search / empty-alias) 需先在 `apps/api/scripts/seed.py` prepare 钩子里造 fixture 数据.
+- **mask→polygon 多连通域 / 空洞**：v0.9.4 phase 3 长尾分析项, 留 v0.10.x 与 sam3-backend 共做复用 mask_utils.
 
 ## [0.9.6] - 2026-05-08
 
@@ -432,6 +489,6 @@
 ---
 
 
-<!-- v0.9.0 起的版本变更直接追加到本节；累积满整个 0.9.x 后再移到 docs/changelogs/0.9.x.md -->
+<!-- v0.9.0 起的版本变更直接追加到本节；当开始开发0.10版本后再移到 docs/changelogs/0.9.x.md -->
 
 ---

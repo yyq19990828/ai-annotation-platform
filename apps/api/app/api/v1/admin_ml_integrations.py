@@ -197,3 +197,66 @@ async def runtime_hints(
     return RuntimeHints(
         ml_backend_default_url=settings.ml_backend_default_url or None,
     )
+
+
+# ─── v0.9.7 · 全局 backend 列表 ────────────────────────────────────────
+
+
+class GlobalBackendItem(BaseModel):
+    """v0.9.7 · CreateProjectWizard step 4 dropdown 用的 backend 概要项."""
+
+    id: str
+    name: str
+    url: str
+    state: str
+    is_interactive: bool
+    auth_method: str
+    health_meta: dict | None = None
+    source_project_id: str
+    source_project_name: str
+    last_checked_at: str | None = None
+
+
+class GlobalBackendListResponse(BaseModel):
+    items: list[GlobalBackendItem]
+
+
+@router.get("/all", response_model=GlobalBackendListResponse)
+async def list_all_backends(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
+) -> GlobalBackendListResponse:
+    """列系统内所有 ml_backends, 含 source project name 作为来源标签.
+
+    用于 CreateProjectWizard step 4 让用户选「复用一个已注册 backend」, 复用时
+    create_project 端点会复制 row 入新项目 (保留 url/auth/extra_params, 重置 state).
+    """
+    res = await db.execute(
+        select(MLBackend, Project.name)
+        .join(Project, Project.id == MLBackend.project_id)
+        .order_by(MLBackend.last_checked_at.desc().nullslast())
+    )
+    items: list[GlobalBackendItem] = []
+    seen_urls: set[str] = set()
+    for backend, project_name in res.all():
+        # 同 url 多项目共享时只保留最新 health 的一份, 避免 dropdown 出 N 行重复
+        if backend.url in seen_urls:
+            continue
+        seen_urls.add(backend.url)
+        items.append(
+            GlobalBackendItem(
+                id=str(backend.id),
+                name=backend.name,
+                url=backend.url,
+                state=backend.state,
+                is_interactive=backend.is_interactive,
+                auth_method=backend.auth_method,
+                health_meta=backend.health_meta,
+                source_project_id=str(backend.project_id),
+                source_project_name=project_name or "(未命名项目)",
+                last_checked_at=backend.last_checked_at.isoformat()
+                if backend.last_checked_at
+                else None,
+            )
+        )
+    return GlobalBackendListResponse(items=items)

@@ -83,6 +83,24 @@ export interface RuntimeHints {
   ml_backend_default_url: string | null;
 }
 
+// v0.9.7 · /all 全局 backend 列表 (Wizard step 4 复用 backend 配置).
+export interface GlobalBackendItem {
+  id: string;
+  name: string;
+  url: string;
+  state: string;
+  is_interactive: boolean;
+  auth_method: string;
+  health_meta: BackendHealthMeta | null;
+  source_project_id: string;
+  source_project_name: string;
+  last_checked_at: string | null;
+}
+
+export interface GlobalBackendListResponse {
+  items: GlobalBackendItem[];
+}
+
 export const adminMlIntegrationsApi = {
   overview: () =>
     apiClient.get<MLIntegrationsOverview>("/admin/ml-integrations/overview"),
@@ -90,4 +108,7 @@ export const adminMlIntegrationsApi = {
     apiClient.post<ProbeResponse>("/admin/ml-integrations/probe", payload),
   runtimeHints: () =>
     apiClient.get<RuntimeHints>("/admin/ml-integrations/runtime-hints"),
+  /** v0.9.7 · 全局 backend 去重列表, 用于 Wizard step 4 dropdown. */
+  listAll: () =>
+    apiClient.get<GlobalBackendListResponse>("/admin/ml-integrations/all"),
 };

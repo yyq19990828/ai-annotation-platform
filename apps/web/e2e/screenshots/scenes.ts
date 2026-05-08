@@ -224,4 +224,51 @@ export const SCENES: ScreenshotScene[] = [
       // maintainer 实跑时可分别点 box/mask/both 各截一张拼成对比图; 此 scene 只截当前默认状态.
     },
   },
+  // ── v0.9.7 · AIPreAnnotate 信息架构重构 + Wizard backend dropdown ──────
+  {
+    name: "ai-pre/stepper",
+    role: "admin",
+    route: () => "/ai-pre",
+    target: "docs-site/user-guide/images/projects/ai-pre-stepper.png",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      // 默认 stepper 4 步全 pending; 截入空状态展示信息架构. maintainer 实跑时可
+      // 选完项目+batch 让 step 1 变 complete 再截一张「进行中」状态.
+    },
+  },
+  {
+    name: "ai-pre/history-search",
+    role: "admin",
+    route: () => "/ai-pre",
+    target: "docs-site/user-guide/images/projects/ai-pre-history-search.png",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      // maintainer 需在 seed 中预置 5+ pre_annotated 批次 (apps/api/scripts/seed.py)
+      // 才能展示搜索框 + 列排序; 当前空 seed 仅截「无历史」空状态.
+    },
+  },
+  {
+    name: "ai-pre/empty-alias",
+    role: "admin",
+    route: () => "/ai-pre",
+    target: "docs-site/user-guide/images/projects/ai-pre-empty-alias.png",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      // maintainer 需 seed 一个项目 ai_enabled=true 但所有类别无 alias, 让
+      // PromptComposer 渲染「前往项目设置」引导卡.
+    },
+  },
+  {
+    name: "wizard/step4-backend",
+    role: "admin",
+    route: () => "/projects",
+    target: "docs-site/user-guide/images/projects/wizard-step4-backend.png",
+    prepare: async (page) => {
+      await page.waitForLoadState("networkidle");
+      // 点击「新建项目」按钮 → 走到 step 4. maintainer 实跑时:
+      // 1) seed 至少一个已注册 backend (RegisteredBackendsTab 注册过的)
+      // 2) 点击「新建项目」, 填 step 1-3, 进 step 4 勾启用 AI
+      // 3) 等 BackendSourceSelect dropdown 出现可选项.
+    },
+  },
 ];

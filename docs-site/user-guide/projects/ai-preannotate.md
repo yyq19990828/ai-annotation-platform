@@ -1,6 +1,15 @@
-# AI 文本批量预标（v0.9.5 / v0.9.6）
+# AI 文本批量预标（v0.9.5 / v0.9.6 / v0.9.7）
 
 > 一次性给整批图跑 SAM 文本预标，标注员从 AI 候选起步而非从 0 画。
+
+**v0.9.7 起**页面经过信息架构重构 + 视觉精修：
+
+- **顶部水平 stepper**：4 步进度引导（项目+批次 / Prompt / 输出形态 / 跑预标），点徽章直接滚到对应 section
+- **alias chips 频率排序**：chips 按项目历史 prediction count desc 排，常用类别浮上来；chip 末尾显示 `×N` 角标
+- **`⌘/Ctrl + Enter` 提交**：聚焦 prompt 输入框时按下直接跑
+- **prompt 草稿持久化**：按 projectId 分桶存 localStorage，切项目旧 prompt 不丢，跑成功后清空
+- **历史表升级**：搜索框 + 列头点击排序 + 客户端分页（20 行/页）+ 空状态提示
+- **空 alias 引导**：项目未配 alias 时显示 inline 提示卡，一键跳项目设置
 
 ## 路径
 
@@ -8,7 +17,7 @@
 
 ## 前置条件
 
-1. 项目启用 AI（项目设置 → 基本信息 → 「启用 AI 预标注」）
+1. 项目启用 AI（项目设置 → 基本信息 → 「启用 AI 预标注」；v0.9.7 起新建项目 wizard step 4 也可一键复用其它项目已注册的 backend，跳过单独注册步骤）
 2. 项目已绑定 ML Backend（项目设置 → ML 模型 → 注册一个 grounded-sam-2 类型 backend，再回基本信息绑定）
 3. 批次状态为 **active**（草稿批次需先点「激活」才能跑预标）
 
@@ -22,7 +31,9 @@
 
 英文 prompt 召回最佳。例：`person`、`ripe apple`、`car . truck . bicycle`（多类用 `.` 分隔）。
 
-**类别 alias chips**（v0.9.5 起）：项目类别配过英文 alias（项目设置 → 类别配置）会自动变成可点 chip，点击直填到 prompt 输入框。alias 在保存时自动规范化（lowercased + 折叠多重空格 / 逗号），不必担心大小写。30+ 类别项目的 chips 限高 96px + 横向滚动 + 搜索筛选（v0.9.6 起）。
+**类别 alias chips**（v0.9.5 起）：项目类别配过英文 alias（项目设置 → 类别配置）会自动变成可点 chip，点击直填到 prompt 输入框。alias 在保存时自动规范化（lowercased + 折叠多重空格 / 逗号），不必担心大小写。30+ 类别项目的 chips 限高 + 横向滚动 + 搜索筛选（v0.9.6 起）。
+
+**v0.9.7 起 chips 按预标频率排序**：高频常用类别（`×N` 角标显示历史 prediction count）排在最前；端点 `GET /admin/projects/:id/alias-frequency` 5 分钟 staleTime, 切项目自动重拉。
 
 **输出形态**：
 
@@ -60,7 +71,9 @@
 | 总数 / 已预标 / 失败 | 计数（已预标 = predictions 行；失败 = failed_predictions 未 dismiss） |
 | 操作 | `>` 跳工作台接管 / `↻` 跳模型市场失败列表重试（仅有失败时） |
 
-完整 job 历史追踪（含已结束 / 已重置批次的 prompt / cost / 耗时）需要 `prediction_jobs` 表落地（推迟到 v0.9.7）。
+**v0.9.7 起**：表头加搜索框（按批次名 / 项目名子串过滤）、列头点击排序（总数 / 已预标 / 失败 / 最近预标）、客户端分页（默认 20 行/页）、空状态居中提示。
+
+完整 job 历史追踪（含已结束 / 已重置批次的 prompt / cost / 耗时）需要 `prediction_jobs` 表落地（仍推迟到 v0.10.x，需要 worker 写入逻辑配套）。
 
 ## 常见问题
 

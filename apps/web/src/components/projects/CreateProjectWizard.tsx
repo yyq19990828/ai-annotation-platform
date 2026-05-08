@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { adminMlIntegrationsApi } from "@/api/adminMlIntegrations";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -41,6 +43,8 @@ interface FormState {
   aiModelCustom: string;
   /** v0.9.6 · SAM 文本预标默认输出 ("" = 自动按 type_key, 与 GeneralSection 4 项一致). */
   textOutputDefault: "" | "box" | "mask" | "both";
+  /** v0.9.7 · 复用现有 backend; "" = 暂不绑定 (项目创建后到设置页注册). */
+  mlBackendSourceId: string;
   // v0.6.7 B-11
   datasetIds: string[];
   splitNBatches: number; // 0 = 不切分（保留默认包），>=2 = 切分
@@ -57,6 +61,7 @@ const INITIAL: FormState = {
   aiModelChoice: PRESET_AI_MODELS[0],
   aiModelCustom: "",
   textOutputDefault: "",
+  mlBackendSourceId: "",
   datasetIds: [],
   splitNBatches: 0,
   members: [],
@@ -159,6 +164,9 @@ export function CreateProjectWizard({ open, onClose }: Props) {
         // v0.9.6 · 仅启用 AI 时携带; "" = null (走智能默认)
         text_output_default:
           form.aiEnabled && form.textOutputDefault ? form.textOutputDefault : null,
+        // v0.9.7 · 仅启用 AI 且选了 source backend 时携带; 后端会复制 row 入新项目
+        ml_backend_source_id:
+          form.aiEnabled && form.mlBackendSourceId ? form.mlBackendSourceId : null,
         due_date: form.dueDate || null,
       },
       {
@@ -600,7 +608,12 @@ function Step4Ai({
             />
           </div>
 
-          {/* v0.8.6 F3 · backend 绑定提示（向导阶段不绑，项目创建后到设置页绑） */}
+          {/* v0.9.7 · 复用现有 backend dropdown — 让新项目立即可用 AI */}
+          <BackendSourceSelect
+            value={form.mlBackendSourceId}
+            onChange={(v) => setForm((s) => ({ ...s, mlBackendSourceId: v }))}
+          />
+
           <div
             style={{
               padding: "8px 10px",
@@ -609,9 +622,71 @@ function Step4Ai({
               lineHeight: 1.6,
             }}
           >
-            模型名仅作 display hint。项目创建后到「项目设置 → ML 模型」选项卡注册 backend，再回基本信息绑定。
+            模型名仅作 display hint；选「复用 backend」后, 项目创建时会自动复制 backend 配置到新项目, 无需再回设置页注册.
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/** v0.9.7 · Wizard step 4 复用 backend 下拉. 拉 /admin/ml-integrations/all */
+function BackendSourceSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const q = useQuery({
+    queryKey: ["admin", "ml-integrations", "all"],
+    queryFn: () => adminMlIntegrationsApi.listAll(),
+    staleTime: 1000 * 60 * 5,
+  });
+  const items = q.data?.items ?? [];
+  const selected = items.find((b) => b.id === value);
+
+  return (
+    <div>
+      <label style={labelStyle}>
+        ML Backend{" "}
+        <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>
+          （可选, 复用其它项目已注册的 backend）
+        </span>
+      </label>
+      {q.isLoading ? (
+        <div style={{ ...inputStyle, color: "var(--color-fg-subtle)", fontSize: 12 }}>
+          加载中…
+        </div>
+      ) : items.length === 0 ? (
+        <div
+          style={{
+            ...inputStyle,
+            color: "var(--color-fg-subtle)",
+            fontSize: 12,
+            cursor: "default",
+          }}
+        >
+          系统内尚无已注册 backend; 项目创建后到设置页注册一个.
+        </div>
+      ) : (
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={{ ...inputStyle, cursor: "pointer" }}
+        >
+          <option value="">-- 暂不绑定 (创建后到设置页注册) --</option>
+          {items.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name} ({b.url}) · {b.state} · 来源: {b.source_project_name}
+            </option>
+          ))}
+        </select>
+      )}
+      {selected && (
+        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 4 }}>
+          将复制 {selected.name} ({selected.url}) 到新项目, 含 auth 配置, state 重置为 disconnected.
+        </div>
       )}
     </div>
   );

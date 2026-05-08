@@ -57,7 +57,11 @@ class AnnotationService:
         if not prediction:
             return None
 
-        for shape in prediction.result:
+        # v0.9.7 fix · prediction.result 是 LabelStudio 标准, 转内部 schema 后入 annotation
+        from app.services.prediction import to_internal_shape
+
+        for raw_shape in prediction.result:
+            shape = to_internal_shape(raw_shape)
             annotation = Annotation(
                 id=uuid.uuid4(),
                 task_id=prediction.task_id,

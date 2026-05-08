@@ -462,10 +462,14 @@ async def get_predictions(
             if pred_id is not None:
                 meta_map[pred_id] = (ms, cost)
 
-    # 第一步：min_confidence 过滤
+    # 第一步：LabelStudio → 内部 schema 适配 + min_confidence 过滤
+    # v0.9.7 fix · DB 存 LabelStudio 标准 {type, value, score}, 前端期望 {type, class_name,
+    # geometry, confidence}. 在 read 路径补 adapter, DB 不动 (保持导出兼容).
+    from app.services.prediction import to_internal_shape
+
     base: list[tuple[PredictionOut, list[dict]]] = []
     for p in predictions:
-        shapes = list(p.result or [])
+        shapes = [to_internal_shape(s) for s in (p.result or [])]
         if min_confidence is not None:
             shapes = [s for s in shapes if s.get("confidence", 0.0) >= min_confidence]
         if shapes:

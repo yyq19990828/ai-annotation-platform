@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.api.v1 import (
+    admin_alias_freq,
     admin_ml_integrations,
     admin_preannotate,
     api_keys,
@@ -45,6 +46,12 @@ api_router.include_router(
     admin_preannotate.router,
     prefix="",
     tags=["admin-preannotate"],
+)
+# v0.9.7 · /admin/projects/:id/alias-frequency
+api_router.include_router(
+    admin_alias_freq.router,
+    prefix="",
+    tags=["admin-alias-freq"],
 )
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
