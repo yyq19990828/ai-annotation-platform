@@ -150,6 +150,19 @@ export default defineConfig({
 
       "/api/": [
         { text: "API 总览", link: "/api/" },
+        {
+          text: "按资源域指南",
+          items: [
+            { text: "认证", link: "/api/guides/auth" },
+            { text: "项目", link: "/api/guides/projects" },
+            { text: "任务与标注", link: "/api/guides/tasks-and-annotations" },
+            { text: "Predictions / Jobs", link: "/api/guides/predictions" },
+            { text: "ML Backend", link: "/api/guides/ml-backend" },
+            { text: "WebSocket", link: "/api/guides/websocket" },
+            { text: "导出", link: "/api/guides/export" },
+            { text: "路由索引（自动生成）", link: "/api/guides/_routes.generated" },
+          ],
+        },
       ],
     },
 
