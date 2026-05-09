@@ -134,6 +134,36 @@ histogram_quantile(0.95,
 
 ---
 
+## 4.5 per-backend max_concurrency 限速 (v0.9.12)
+
+`ml_backends.extra_params.max_concurrency` (JSONB 字段, 默认 4) 控制平台到该 backend 的并发 `/predict` 上限. 实现:
+
+- `apps/api/app/services/ml_client.py` 模块级 `_semaphores: dict[backend_id, asyncio.Semaphore]` 缓存.
+- `MLBackendClient.__init__` 读 `extra_params.max_concurrency`, 通过 `_get_semaphore(backend_id, max_cc)` 拿到或创建信号量.
+- `predict()` / `predict_interactive()` 在 `async with await self._acquire():` 内调 httpx, 信号量 acquire/release 自动绕在请求 IO 外.
+- 多个 `MLBackendClient` 实例共享同 backend_id 的信号量 (按 backend_id 索引), 跨 task / 跨请求生效.
+
+**配置示例** (DB JSONB):
+
+```json
+// ml_backends 行
+{
+  "id": "abc-...",
+  "url": "http://172.17.0.1:8001/",
+  "extra_params": {
+    "max_concurrency": 2
+  }
+}
+```
+
+**调整后必须重启 worker**: 信号量按 backend_id 永久缓存, 改字段后须 `docker compose restart api celery-worker` 才能生效. 工时换简洁性的取舍 — 真要运行期热更新需要把 cache key 改 `(backend_id, max_cc)` 或加 invalidation 机制, 留 v0.10.x sam3 注册 + UI 配置同窗口.
+
+**前端可见性**: `/admin/preannotate-summary` 透传 `ml_backend_max_concurrency` 给 `ProjectCardGrid` 卡片 + `ProjectDetailPanel` 头部展示「最多 N 并发」, 多 batch 并行预标时给 admin 心理预期.
+
+**触发**: B-17 admin 反馈「多 batch 并行预标」需要并发护盾, 否则单 backend 被打爆 → grounded-sam2 GPU OOM 风险.
+
+---
+
 ## 5. 协议契约引用
 
 请求与响应字段以 [`ml-backend-protocol.md`](../ml-backend-protocol.md) §2 为准。`/cache/stats` / `/metrics` **不进协议契约**——它们是 backend 内部端点，平台 API 不会消费。

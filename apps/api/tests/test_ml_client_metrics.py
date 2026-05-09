@@ -1,7 +1,11 @@
-"""v0.8.7 F2 · MLBackendClient 计时 + Histogram observe + wall-clock fallback。"""
+"""v0.8.7 F2 · MLBackendClient 计时 + Histogram observe + wall-clock fallback。
+
+v0.9.12 · 加 max_concurrency Semaphore 限速测试 (B-17).
+"""
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import patch
 
 import httpx
@@ -11,12 +15,13 @@ from app.db.models.ml_backend import MLBackend
 from app.services.ml_client import MLBackendClient
 
 
-def _backend(url="http://fake:9090"):
+def _backend(url="http://fake:9090", *, backend_id="00000000-0000-0000-0000-000000000099", extra_params=None):
     b = MLBackend()
-    b.id = "00000000-0000-0000-0000-000000000099"
+    b.id = backend_id
     b.url = url
     b.auth_method = "none"
     b.auth_token = None
+    b.extra_params = extra_params or {}
     return b
 
 
@@ -127,3 +132,57 @@ async def test_predict_uses_backend_reported_time_when_present():
         results = await client.predict([{"id": "t1"}])
     # backend 自报值优先
     assert results[0].inference_time_ms == 42
+
+
+@pytest.mark.asyncio
+async def test_max_concurrency_semaphore_caps_in_flight_predictions():
+    """v0.9.12 B-17 · extra_params.max_concurrency=2 时 5 个并发 predict 同时 in-flight ≤ 2."""
+    in_flight = 0
+    peak = 0
+    lock = asyncio.Lock()
+
+    async def slow_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak
+        async with lock:
+            in_flight += 1
+            peak = max(peak, in_flight)
+        await asyncio.sleep(0.05)
+        async with lock:
+            in_flight -= 1
+        return httpx.Response(
+            200, json={"results": [{"task": "t", "result": [], "score": 0.5}]}
+        )
+
+    transport = httpx.MockTransport(slow_handler)
+    real = httpx.AsyncClient
+
+    def factory(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real(*args, **kwargs)
+
+    # 用唯一 backend_id 避免被前序测试缓存的 Semaphore 污染
+    from app.services.ml_client import _semaphores
+
+    bid = "11111111-2222-3333-4444-555555555555"
+    _semaphores.pop(bid, None)
+    backend = _backend(backend_id=bid, extra_params={"max_concurrency": 2})
+    client = MLBackendClient(backend)
+
+    with patch("app.services.ml_client.httpx.AsyncClient", side_effect=factory):
+        await asyncio.gather(*(client.predict([{"id": f"t{i}"}]) for i in range(5)))
+
+    assert peak <= 2, f"peak in-flight {peak} 超过 max_concurrency=2"
+    assert peak >= 1
+
+
+@pytest.mark.asyncio
+async def test_no_max_concurrency_defaults_to_4():
+    """无 extra_params.max_concurrency 时默认 cap=4."""
+    bid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    from app.services.ml_client import _semaphores
+
+    _semaphores.pop(bid, None)
+    backend = _backend(backend_id=bid)
+    client = MLBackendClient(backend)
+    assert client.max_concurrency == 4
+    assert client._semaphore is not None

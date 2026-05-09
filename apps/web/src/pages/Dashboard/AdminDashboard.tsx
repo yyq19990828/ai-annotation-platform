@@ -174,9 +174,9 @@ export function AdminDashboard() {
         backendsConnected={stats.ml_backends_connected}
       />
 
-      {/* v0.8.6 F6 · 失败预测入口（super_admin / project_admin 可见） */}
+      {/* v0.8.6 F6 · 失败预测入口（super_admin / project_admin 可见）; v0.9.12 改指向 /ai-pre/jobs */}
       <Card
-        onClick={() => navigate("/model-market?tab=failed")}
+        onClick={() => navigate("/ai-pre/jobs?status=failed")}
         style={{
           cursor: "pointer",
           padding: "12px 16px",

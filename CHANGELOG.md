@@ -21,6 +21,66 @@
 
 ## 最新版本
 
+## [0.9.12] - 2026-05-09
+
+> **Humming Roaming Oasis — `/ai-pre` 工作流再设计 + BUG B-14~B-17 收尾.** Admin 反馈簇 4 条一并落地: ① B-17 IA 重构 `/ai-pre` 主页从 stepper 改为「项目卡片网格 (`ProjectCardGrid`) → 项目详情面板 (`ProjectDetailPanel`)」两层信息架构, 主视图仅渲染接了 ml_backend 的项目, 进入项目后多选 batch + 串/并行预标 + 已就绪 HistoryTable; ② B-16 HistoryTable 加 checkbox 多选 + 浮窗批量「重激活 (predictions_only)」/「重置 draft (reset_to_draft)」, 复用 BatchesSection 同款 BulkActionResponse 模式; ③ B-15 `BatchService.reset_to_draft` 加 4 条级联清理 (NULL `annotations.parent_prediction_id` → DELETE `prediction_metas` → DELETE `predictions/failed_predictions` → DELETE `prediction_jobs`), `check_auto_transitions` 加 INFO 日志诊断「标注员开始标注后 batch 未转 annotating」第二症状; ④ B-14 删除 `/model-market?tab=failed` (失败预测已迁到 `/ai-pre/jobs`), 老书签 `?tab=failed` 自动 redirect 到 `/ai-pre/jobs?status=failed`. 同时收口: ① `ml_backends.extra_params.max_concurrency` 接通 per-backend `asyncio.Semaphore` 限速 (默认 4 兼容 worker concurrency); ② v0.9.11 修了 URL 但漏更新的 `useNotificationSocket.test.tsx` stale 测试同步修. → [plan](docs/plans/2026-05-09-v0.9.12-ai-pre-workflow-redesign.md).
+
+### Added
+
+- **`/ai-pre` 项目卡片网格 (B-17)**:
+  - `apps/web/src/pages/AIPreAnnotate/components/ProjectCardGrid.tsx` (新): grid 布局 (auto-fill minmax 280px), 卡片元素 = 项目名 + type chip + ml_backend 状态 chip (灰=disconnected/黄=mismatch/绿=ready) + 三个数字徽章 (待预标 / 已就绪 / 近期失败) + 最近 job 时间 + max_concurrency 标识. 空态提示「先在模式市场注册 backend」.
+  - `apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx` (新): 进入项目后的详情面板, 头部含「返回项目列表」按钮 + 项目名 + ml_backend chip + 历史 job 跳转链接 + max_concurrency 提示. 主体 = 待预标 batches 多选列表 + (≥1 选中时) Prompt textarea + 输出形态 TabRow + (≥2 选中时) 串/并行单选 + Run 按钮; 下方 `<HistoryTable items={projectQueue} />` 复用 Phase 4 多选基建.
+  - 串/并行调度: 串行 = `for...await trigger.mutateAsync({batch_id})`; 并行 = `Promise.all(ids.map(...))`. 后端由 v0.9.12 新增的 per-backend `asyncio.Semaphore` 实际护盾, 前端只发请求.
+- **后端 `/admin/preannotate-summary` 项目维度聚合**:
+  - `apps/api/app/api/v1/admin_preannotate.py:list_preannotate_project_summary`: 仅返回 `EXISTS (SELECT 1 FROM ml_backends WHERE project_id = projects.id)` 的项目, 含 ready_batches / active_batches / last_job_at / recent_failures (排除 dismissed) / ml_backend_max_concurrency. 同项目多 backend 时优先选 `Project.ml_backend_id` 指向的那条.
+  - `PreannotateProjectSummary` Pydantic 子模型 + `PreannotateProjectSummaryResponse`.
+- **后端 `/admin/preannotate-queue/bulk-clear` 多选批量端点 (B-16)**:
+  - `apps/api/app/api/v1/admin_preannotate.py:bulk_clear_preannotate`: body `{batch_ids: [uuid], mode: "predictions_only" | "reset_to_draft", reason}`, project_admin 越权进 `skipped[reason=forbidden]`, 不阻断其他成功项, 返回 `BulkClearResponse {succeeded, skipped, failed}`.
+  - `predictions_only` 模式: 仅清 prediction / failed_prediction / prediction_jobs / prediction_metas, 同时把 batch.status 从 `pre_annotated` 回 `active` (避免 "PRE_ANNOTATED 状态但 prediction 已空" 矛盾态).
+  - `reset_to_draft` 模式: 复用 `BatchService.reset_to_draft` (Phase 1 落地的级联清理).
+  - `AuditAction.PREANNOTATE_BULK_CLEAR` 新枚举 + audit detail 含 mode / reason / 各计数 / `cascade` 累计.
+- **`max_concurrency` per-backend 限速 (B-17)**:
+  - `apps/api/app/services/ml_client.py`: 模块级 `_semaphores: dict[backend_id, asyncio.Semaphore]` 缓存 + `MLBackendClient.__init__` 读 `extra_params.max_concurrency` (默认 4), `predict()` / `predict_interactive()` 在 `async with await self._acquire():` 信号量护盾内.
+  - 信号量按 backend_id 永久缓存 (改 max_concurrency 需 worker 重启), 工时 vs 简洁性的取舍.
+- **HistoryTable 多选 + 浮窗 + 批量操作 (B-16)**:
+  - `apps/web/src/pages/AIPreAnnotate/components/HistoryTable.tsx`: 加 `selectedIds: Set<string>` state + 表头全选 checkbox (当前页) + 每行 checkbox + 选中行高亮 + `<BulkActionBar>` 浮窗 (sticky bottom) 含「批量重激活」/「批量重置 draft」按钮 + Modal 确认表单 (≥10 字 reason 校验) + 部分失败时切到 `<BulkResultView>` 展开 failed/skipped 详情.
+  - 选中状态按 batch_id 索引, 跨折叠 / 翻页 / 项目分组保留.
+  - `apps/web/src/hooks/useBulkPreannotateActions.ts` (新): `useBulkPreannotateClear` mutation hook + `useAIPreProjectSummary` query hook, mutation 成功后 invalidate `preannotate-queue` / `preannotate-summary` / `batches` / `preannotate-jobs`.
+- **API client + types**:
+  - `apps/web/src/api/adminPreannotate.ts`: 加 `BulkClearMode` / `BulkClearRequest` / `BulkClearItem` / `BulkClearResponse` / `PreannotateProjectSummary` / `PreannotateProjectSummaryResponse` 类型 + `bulkClear` / `summary` API method.
+- **测试覆盖**:
+  - `apps/api/tests/test_v0_7_6.py`: 加 2 case (`test_reset_to_draft_cascades_predictions` / `test_check_auto_transitions_pre_annotated_to_annotating`).
+  - `apps/api/tests/test_admin_preannotate.py`: 加 3 case (bulk-clear 单 batch + 越权 / preannotate-summary 过滤无 ml_backend 项目).
+  - `apps/api/tests/test_ml_client_metrics.py`: 加 2 case (max_concurrency=2 实测 peak ≤ 2 / 默认 cap=4).
+  - `apps/web/src/pages/AIPreAnnotate/components/HistoryTable.test.tsx` (新): 6 case (空选中 / 单选 / 全选 / 批量重激活 reason 校验 / 部分失败结果视图).
+  - `apps/web/src/pages/AIPreAnnotate/components/ProjectCardGrid.test.tsx` (新): 4 case (空态 / 加载态 / 渲染元素 / onSelect).
+  - `apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.test.tsx` (新): 8 case (header / 多选 prompt 显隐 / 串行 mutateAsync 调用顺序 / 并行 Promise.all / 未绑定 backend 警告 / onBack).
+
+### Changed
+
+- **`apps/api/app/services/batch.py:reset_to_draft`**: 返回签名升级为 `(batch, affected_tasks, cascade_counts)`. 调用方 `apps/api/app/api/v1/batches.py:432` 同步, audit detail 加 `cascade` 字段.
+- **`apps/api/app/services/batch.py:check_auto_transitions`**: 加 INFO/DEBUG 日志覆盖 `pre_annotated → annotating` / `active → annotating` / `annotating → reviewing` 三条转换路径, 后续端到端定位 admin 反馈的 "标注员开始标注未转 annotating" 真因.
+- **`apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx`**: 354 行 stepper 主体 + 内嵌 `<FailedPredictionsTab />` 简化为 ~70 行壳 (ProjectCardGrid + ProjectDetailPanel 切换). 旧 v0.9.7 拆出的 4 个 stepper 子组件 (PreannotateStepper / ProjectBatchPicker / PromptComposer / RunPanel) + `usePreannotateDraft` hook 文件保留, 等 v0.9.13+ 「精细单批次模式」复用 (走 modal 入口).
+- **`apps/web/src/pages/ModelMarket/ModelMarketPage.tsx`**: 删 tab 容器逻辑 (TABS 数组 + tab nav UI + `useFailedPredictions` 徽章), 直接渲染 `<RegisteredBackendsTab />`. `?tab=failed` 自动 redirect 到 `/ai-pre/jobs?status=failed` 兼容老书签.
+- **`apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx`**: `statusFilter` 初始值从 URL `?status=` 读取, 支持 ModelMarket redirect 直接落到失败筛选.
+- **`apps/web/src/pages/Dashboard/AdminDashboard.tsx:179`**: 失败预测入口 `navigate("/model-market?tab=failed")` 改为 `navigate("/ai-pre/jobs?status=failed")`.
+- **`apps/api/app/services/audit.py`**: 新增 `AuditAction.PREANNOTATE_BULK_CLEAR = "preannotate.bulk_clear"`.
+
+### Fixed
+
+- **`apps/api/app/services/batch.py:reset_to_draft` 缺级联清理 (B-15)**: 之前 reset 后 `predictions` / `failed_predictions` / `prediction_jobs` 仍残留, `/ai-pre` HistoryTable 仍渲染该 batch 已就绪卡片. 加 4 条 delete (含 `annotations.parent_prediction_id` NULL → `prediction_metas` 先删 → `predictions/failed_predictions` → `prediction_jobs`), 删除顺序遵循 projects.py:416-434 同款.
+- **`/model-market?tab=failed` 与 `/ai-pre/jobs` 双源真相漂移 (B-14)**: 删 ModelMarket 失败预测 tab, 唯一入口收口到 `/ai-pre/jobs?status=failed`.
+- **`apps/web/src/hooks/__tests__/useNotificationSocket.test.tsx:85` stale 测试**: v0.9.11 修了 URL `/api/v1/ws/notifications` → `/ws/notifications` 但漏更新此测试断言, v0.9.12 同步修复 (期望 `/ws/notifications` + `not.toMatch(/api/v1/ws/notifications/)`).
+
+### Operational notes
+
+- **`max_concurrency` 改后需重启 worker**: per-backend Semaphore 按 backend_id 永久缓存; 改 `ml_backends.extra_params.max_concurrency` JSONB 字段后须 `docker compose restart api celery-worker`. 工时 vs 简洁性的取舍, 见 `docs-site/dev/architecture/ai-models.md`.
+- **`predictions_only` mode 语义**: 删 prediction 后 batch 同时回 `active` (避免 PRE_ANNOTATED 状态但 prediction 已空的矛盾态); 与 `reset_to_draft` 全量重置区分明确.
+- **B-15 第二症状诊断**: `check_auto_transitions` 日志已加 (INFO 级触发转换, DEBUG 级未触发), 但代码逻辑本身覆盖 `pre_annotated → annotating`. 后续端到端跑实际触发点定位真因; 若结论是 30s refetch 延迟感知误差, 留 follow-up 加 batch.status 变更 WS 广播 (`/ws/batches/project/:id`).
+- **未删除文件**: 旧 stepper 4 个子组件 + `usePreannotateDraft` 文件保留 (orphan 但被 plan §5 标注 "v0.9.13+ 复用"); 不计入 bundle (vite tree-shake).
+
+---
+
 ## [0.9.11] - 2026-05-09
 
 > **Modular Star — CSP nonce 收紧 + GPU PerfHud 浮窗 + v0.9.8 schema/cost gap 收口.** 三块并行: ① CSP `script-src` 从 `'unsafe-inline'` 收紧为 nonce-based (Nginx `sub_filter` 替换 `__CSP_NONCE__` 占位符为 `$request_id`, vite plugin build 时给 `<script>` + `<meta>` 注入占位符, FastAPI middleware 同步收紧 API 响应路径; `style-src 'unsafe-inline'` 仍保留待 v0.10.x ProjectSettingsPage 重构同窗口收紧 ~2600 处内联 style); ② GPU/ML backend 实时监控浮窗 PerfHud (后端 `pynvml` + `psutil` 扩 `/health.gpu_info` util/温度/功耗 + `host` 容器 CPU/RAM, API `/ws/ml-backend-stats` admin-only WS + Celery beat 1s pull/publish + Redis 订阅者计数门控, 前端 280×180 浮窗 4 progress bar + 60s sparkline, 全局 `Ctrl+Shift+P` + TopBar activity icon admin only); ③ v0.9.8 遗留 gap 收口 — 后端 `PredictionShape` Pydantic 模型 (geometry 复用 `_jsonb_types.{Bbox,Polygon}Geometry`), `PredictionOut.result` 类型从 `list[dict]` 收紧到 `list[PredictionShape]`, 前端 `apps/web/src/types/index.ts` 切 codegen 派生; `prediction_jobs.total_cost` 接通 `PredictionMeta.total_cost` 累加 (worker 循环内汇总, job 完成时写 `Decimal(10,4)`).

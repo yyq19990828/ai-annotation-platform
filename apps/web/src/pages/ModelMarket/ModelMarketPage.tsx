@@ -1,31 +1,21 @@
-import { useSearchParams } from "react-router-dom";
-import { Icon } from "@/components/ui/Icon";
-import type { IconName } from "@/components/ui/Icon";
-import { useFailedPredictions } from "@/hooks/useFailedPredictions";
+import { useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { RegisteredBackendsTab } from "./RegisteredBackendsTab";
-import { FailedPredictionsTab } from "./FailedPredictionsTab";
 
-type TabKey = "backends" | "failed";
-
-const TABS: { key: TabKey; label: string; icon: IconName }[] = [
-  { key: "backends", label: "已接入 Backend", icon: "bot" },
-  { key: "failed", label: "失败预测", icon: "warning" },
-];
+// v0.9.12 BUG B-14 · 删 failed tab; 失败预测已迁到 /ai-pre/jobs?status=failed.
+// FailedPredictionsTab.tsx 文件保留 (AIPreAnnotatePage 仍 import 此组件; 等 Phase 5 IA 重构一并清理).
+// 模式市场只剩 RegisteredBackends 单视图, 不再做 tab 容器, ModelMarketPage 直接渲染.
 
 export function ModelMarketPage() {
-  const [params, setParams] = useSearchParams();
-  const raw = params.get("tab");
-  const active: TabKey = raw === "failed" ? "failed" : "backends";
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
 
-  const failedQuery = useFailedPredictions(1, 1, false);
-  const failedTotal = failedQuery.data?.total ?? 0;
-
-  const setTab = (key: TabKey) => {
-    const next = new URLSearchParams(params);
-    if (key === "backends") next.delete("tab");
-    else next.set("tab", key);
-    setParams(next, { replace: true });
-  };
+  // 兼容老书签: ?tab=failed → 自动 redirect 到 /ai-pre/jobs?status=failed
+  useEffect(() => {
+    if (params.get("tab") === "failed") {
+      navigate("/ai-pre/jobs?status=failed", { replace: true });
+    }
+  }, [params, navigate]);
 
   return (
     <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
@@ -34,74 +24,11 @@ export function ModelMarketPage() {
           模型市场
         </h1>
         <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>
-          全局只读总览：所有项目已注册的 ML Backend，以及调用失败的预测重试管理。
+          全局只读总览：所有项目已注册的 ML Backend。
         </p>
       </div>
 
-      <div
-        role="tablist"
-        style={{
-          display: "inline-flex",
-          gap: 0,
-          borderBottom: "1px solid var(--color-border)",
-          marginBottom: 16,
-        }}
-      >
-        {TABS.map((t) => {
-          const selected = active === t.key;
-          const showBadge = t.key === "failed" && failedTotal > 0;
-          return (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={selected}
-              onClick={() => setTab(t.key)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                fontSize: 13,
-                fontWeight: 500,
-                background: "transparent",
-                color: selected ? "var(--color-fg)" : "var(--color-fg-muted)",
-                border: "none",
-                borderBottom: selected
-                  ? "2px solid var(--color-accent)"
-                  : "2px solid transparent",
-                marginBottom: -1,
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              <Icon name={t.icon} size={13} />
-              {t.label}
-              {showBadge && (
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    minWidth: 18,
-                    height: 18,
-                    padding: "0 5px",
-                    borderRadius: 9,
-                    background: "var(--color-danger)",
-                    color: "white",
-                    fontSize: 10,
-                    fontWeight: 600,
-                  }}
-                >
-                  {failedTotal > 99 ? "99+" : failedTotal}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {active === "backends" && <RegisteredBackendsTab />}
-      {active === "failed" && <FailedPredictionsTab />}
+      <RegisteredBackendsTab />
     </div>
   );
 }

@@ -689,11 +689,16 @@ class BatchService:
     # ── Auto-transitions ───────────────────────────────────────────────────
 
     async def check_auto_transitions(self, batch_id: uuid.UUID | None) -> None:
+        # v0.9.12 · INFO 日志诊断 B-15: admin 反馈 "标注员开始标注后 batch 未转 annotating".
+        # 6 个调用点见 tasks.py (acquire_next_task / save_annotation / complete_task etc.).
         if not batch_id:
             return
         batch = await self.db.get(TaskBatch, batch_id)
         if not batch:
+            logger.info("check_auto_transitions: batch_id=%s not found", batch_id)
             return
+
+        from_status = batch.status
 
         if batch.status in (BatchStatus.ACTIVE, BatchStatus.PRE_ANNOTATED):
             has_in_progress = await self.db.execute(
@@ -707,6 +712,17 @@ class BatchService:
             if has_in_progress.scalar_one_or_none():
                 batch.status = BatchStatus.ANNOTATING
                 await self.db.flush()
+                logger.info(
+                    "batch.auto_transition: %s %s -> annotating (task in_progress detected)",
+                    batch_id,
+                    from_status,
+                )
+            else:
+                logger.debug(
+                    "batch.auto_transition: %s %s -> no_change (no in_progress task)",
+                    batch_id,
+                    from_status,
+                )
 
         elif batch.status == BatchStatus.ANNOTATING:
             pending_or_ip = await self.db.execute(
@@ -720,6 +736,10 @@ class BatchService:
             if not pending_or_ip.scalar_one_or_none():
                 batch.status = BatchStatus.REVIEWING
                 await self.db.flush()
+                logger.info(
+                    "batch.auto_transition: %s annotating -> reviewing (all tasks done)",
+                    batch_id,
+                )
 
     # ── Batch rejection ────────────────────────────────────────────────────
 
@@ -766,18 +786,24 @@ class BatchService:
 
     # ── Reset to draft (v0.7.6) ────────────────────────────────────────────
 
-    async def reset_to_draft(self, batch_id: uuid.UUID) -> tuple[TaskBatch, int]:
-        """v0.7.6 · 终极重置：任意状态 → draft。
+    async def reset_to_draft(
+        self, batch_id: uuid.UUID
+    ) -> tuple[TaskBatch, int, dict[str, int]]:
+        """v0.7.6 · 终极重置：任意状态 → draft.
 
-        - task 全部回 pending（不论 review / completed / in_progress）
-        - 保留 annotation 记录与 is_active（参考 reject_batch 模式）
-        - 删除该批次下所有 task_locks（释放标注员锁）
-        - 清空 review_feedback / reviewed_at / reviewed_by
-        - 不调用 VALID_TRANSITIONS — 这是绕过状态机的 owner 兜底操作
+        v0.9.12 BUG B-15 · 加 prediction 级联清理 (predictions / failed_predictions /
+        prediction_jobs / prediction_metas), 否则 `/ai-pre` 仍渲染该 batch 卡片. 删除顺序
+        遵循 projects.py:416-434 同款 (NULL annotations.parent_prediction_id → DELETE
+        prediction_metas → DELETE predictions/failed_predictions → DELETE prediction_jobs).
 
-        调用方负责：鉴权（owner-only）、reason 校验（schema 层 min_length=10）、audit 打点。
+        Returns: (batch, tasks_reset, cascade_counts)
+            cascade_counts = {"predictions": N, "failed_predictions": N, "prediction_jobs": N}
         """
         from app.db.models.task_lock import TaskLock
+        from app.db.models.prediction import Prediction, FailedPrediction
+        from app.db.models.prediction_job import PredictionJob
+        from app.db.models.annotation import Annotation
+        from sqlalchemy import text
 
         batch = await self.db.get(TaskBatch, batch_id)
         if not batch:
@@ -799,6 +825,43 @@ class BatchService:
             )
         )
 
+        # annotations.parent_prediction_id FK 无 ondelete; 必须先 NULL 才能 DELETE predictions
+        task_ids_subq = select(Task.id).where(Task.batch_id == batch_id)
+        await self.db.execute(
+            update(Annotation)
+            .where(Annotation.task_id.in_(task_ids_subq))
+            .values(parent_prediction_id=None)
+        )
+
+        # prediction_metas FK 无 ondelete; 用 raw SQL 因 model 未在 batch.py 顶端导入
+        await self.db.execute(
+            text(
+                "DELETE FROM prediction_metas WHERE prediction_id IN "
+                "(SELECT id FROM predictions WHERE task_id IN "
+                "(SELECT id FROM tasks WHERE batch_id = :bid)) "
+                "OR failed_prediction_id IN "
+                "(SELECT id FROM failed_predictions WHERE task_id IN "
+                "(SELECT id FROM tasks WHERE batch_id = :bid))"
+            ),
+            {"bid": str(batch_id)},
+        )
+
+        pred_result = await self.db.execute(
+            delete(Prediction).where(Prediction.task_id.in_(task_ids_subq))
+        )
+        failed_result = await self.db.execute(
+            delete(FailedPrediction).where(FailedPrediction.task_id.in_(task_ids_subq))
+        )
+        job_result = await self.db.execute(
+            delete(PredictionJob).where(PredictionJob.batch_id == batch_id)
+        )
+
+        cascade_counts = {
+            "predictions": pred_result.rowcount or 0,
+            "failed_predictions": failed_result.rowcount or 0,
+            "prediction_jobs": job_result.rowcount or 0,
+        }
+
         batch.status = BatchStatus.DRAFT
         batch.review_feedback = None
         batch.reviewed_at = None
@@ -806,7 +869,7 @@ class BatchService:
 
         await self.db.flush()
         await self.recalculate_counters(batch_id)
-        return batch, affected
+        return batch, affected, cascade_counts
 
     # ── Bulk operations (v0.7.3) ───────────────────────────────────────────
 

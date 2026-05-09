@@ -3477,6 +3477,91 @@
         "title": "BulkBatchReassign",
         "type": "object"
       },
+      "BulkClearItem": {
+        "properties": {
+          "batch_id": {
+            "format": "uuid",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id",
+          "reason"
+        ],
+        "title": "BulkClearItem",
+        "type": "object"
+      },
+      "BulkClearRequest": {
+        "properties": {
+          "batch_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Batch Ids",
+            "type": "array"
+          },
+          "mode": {
+            "default": "predictions_only",
+            "enum": [
+              "predictions_only",
+              "reset_to_draft"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_ids",
+          "reason"
+        ],
+        "title": "BulkClearRequest",
+        "type": "object"
+      },
+      "BulkClearResponse": {
+        "properties": {
+          "failed": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BulkClearItem"
+            },
+            "title": "Failed",
+            "type": "array"
+          },
+          "skipped": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BulkClearItem"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "succeeded": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Succeeded",
+            "type": "array"
+          }
+        },
+        "title": "BulkClearResponse",
+        "type": "object"
+      },
       "CacheStats": {
         "additionalProperties": true,
         "properties": {
@@ -5672,6 +5757,129 @@
           "points"
         ],
         "title": "PolygonGeometry",
+        "type": "object"
+      },
+      "PreannotateProjectSummary": {
+        "properties": {
+          "active_batches": {
+            "default": 0,
+            "title": "Active Batches",
+            "type": "integer"
+          },
+          "last_job_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Job At"
+          },
+          "ml_backend_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend Id"
+          },
+          "ml_backend_max_concurrency": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend Max Concurrency"
+          },
+          "ml_backend_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend Name"
+          },
+          "ml_backend_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend State"
+          },
+          "project_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Display Id"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "ready_batches": {
+            "default": 0,
+            "title": "Ready Batches",
+            "type": "integer"
+          },
+          "recent_failures": {
+            "default": 0,
+            "title": "Recent Failures",
+            "type": "integer"
+          },
+          "type_key": {
+            "title": "Type Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "project_name",
+          "type_key"
+        ],
+        "title": "PreannotateProjectSummary",
+        "type": "object"
+      },
+      "PreannotateProjectSummaryResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PreannotateProjectSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PreannotateProjectSummaryResponse",
         "type": "object"
       },
       "PreannotateQueueItem": {
@@ -9334,6 +9542,80 @@
           }
         ],
         "summary": "List Preannotate Queue",
+        "tags": [
+          "admin-preannotate"
+        ]
+      }
+    },
+    "/api/v1/admin/preannotate-queue/bulk-clear": {
+      "post": {
+        "description": "v0.9.12 B-16 · 批量清理 /ai-pre 已就绪卡片.\n\n- predictions_only: 仅清 prediction / failed_prediction / prediction_jobs / prediction_metas;\n  batch.status 从 PRE_ANNOTATED 回 ACTIVE (避免 \"状态 PRE_ANNOTATED 但 prediction 已空\" 矛盾态).\n- reset_to_draft: 复用 BatchService.reset_to_draft, 全量重置 + 级联清理 (Phase 1 落地).\n\nproject_admin 只能处理自己 owned 项目下的 batch; 跨项目越权进 skipped.",
+        "operationId": "bulk_clear_preannotate_api_v1_admin_preannotate_queue_bulk_clear_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkClearRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkClearResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bulk Clear Preannotate",
+        "tags": [
+          "admin-preannotate"
+        ]
+      }
+    },
+    "/api/v1/admin/preannotate-summary": {
+      "get": {
+        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有 ml_backend 注册的项目 (EXISTS ml_backends WHERE project_id=...).",
+        "operationId": "list_preannotate_project_summary_api_v1_admin_preannotate_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreannotateProjectSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Preannotate Project Summary",
         "tags": [
           "admin-preannotate"
         ]

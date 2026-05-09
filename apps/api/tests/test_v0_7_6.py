@@ -493,3 +493,175 @@ async def test_annotations_page_invalid_cursor(
         headers=_bearer(owner_token),
     )
     assert res.status_code == 400
+
+
+# ── v0.9.12 · BUG B-15 · reset_to_draft 级联 prediction 清理 ────────────────
+
+
+@pytest.mark.asyncio
+async def test_reset_to_draft_cascades_predictions(
+    httpx_client_bound, db_session, super_admin, annotator
+):
+    """v0.9.12 B-15: reset_to_draft 必须清光本 batch 关联的 predictions / failed_predictions /
+    prediction_jobs / prediction_metas. 否则 /ai-pre 仍会渲染该 batch 已就绪卡片."""
+    from app.db.models.ml_backend import MLBackend
+    from app.db.models.prediction import FailedPrediction, Prediction, PredictionMeta
+    from app.db.models.prediction_job import PredictionJob
+
+    owner, owner_token = super_admin
+    user, _ = annotator
+    p, batch = await _seed_batch_with_locked_tasks(
+        db_session,
+        owner.id,
+        user.id,
+        batch_status="pre_annotated",
+        n_tasks=2,
+        task_status="pending",
+    )
+    backend = MLBackend(
+        id=uuid.uuid4(),
+        project_id=p.id,
+        name="cascade-test",
+        url="http://example/",
+    )
+    db_session.add(backend)
+    await db_session.flush()
+    tasks = (
+        (await db_session.execute(select(Task).where(Task.batch_id == batch.id)))
+        .scalars()
+        .all()
+    )
+    pred = Prediction(
+        id=uuid.uuid4(),
+        task_id=tasks[0].id,
+        project_id=p.id,
+        ml_backend_id=backend.id,
+        result={"shapes": []},
+    )
+    db_session.add(pred)
+    fp = FailedPrediction(
+        id=uuid.uuid4(),
+        task_id=tasks[1].id,
+        project_id=p.id,
+        ml_backend_id=backend.id,
+        error_type="TIMEOUT",
+        message="boom",
+    )
+    db_session.add(fp)
+    await db_session.flush()
+    db_session.add(
+        PredictionMeta(
+            id=uuid.uuid4(), prediction_id=pred.id, total_cost=0.001
+        )
+    )
+    db_session.add(
+        PredictionMeta(
+            id=uuid.uuid4(), failed_prediction_id=fp.id
+        )
+    )
+    job = PredictionJob(
+        id=uuid.uuid4(),
+        project_id=p.id,
+        batch_id=batch.id,
+        ml_backend_id=backend.id,
+        prompt="x",
+        output_mode="mask",
+        status="completed",
+        total_tasks=2,
+        success_count=1,
+        failed_count=1,
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    # 重置
+    res = await httpx_client_bound.post(
+        f"/api/v1/projects/{p.id}/batches/{batch.id}/reset",
+        json={"reason": "B-15 级联清理回归测试"},
+        headers=_bearer(owner_token),
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "draft"
+
+    # predictions / failed_predictions / prediction_jobs / prediction_metas 全部清空
+    task_ids = [t.id for t in tasks]
+    preds_after = (
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id.in_(task_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    failed_after = (
+        (
+            await db_session.execute(
+                select(FailedPrediction).where(FailedPrediction.task_id.in_(task_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    jobs_after = (
+        (
+            await db_session.execute(
+                select(PredictionJob).where(PredictionJob.batch_id == batch.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    metas_after = (
+        (await db_session.execute(select(PredictionMeta))).scalars().all()
+    )
+    assert preds_after == []
+    assert failed_after == []
+    assert jobs_after == []
+    assert metas_after == []
+
+    # audit detail 含 cascade counts
+    audit = (
+        await db_session.execute(
+            select(AuditLog).where(
+                AuditLog.action == "batch.reset_to_draft",
+                AuditLog.target_id == str(batch.id),
+            )
+        )
+    ).scalar_one()
+    cascade = audit.detail_json.get("cascade") or {}
+    assert cascade.get("predictions") == 1
+    assert cascade.get("failed_predictions") == 1
+    assert cascade.get("prediction_jobs") == 1
+
+
+@pytest.mark.asyncio
+async def test_check_auto_transitions_pre_annotated_to_annotating(
+    db_session, super_admin, annotator
+):
+    """v0.9.12 B-15 第二症状回归: pre_annotated batch 内 task 变 in_progress 时 batch 应转 annotating."""
+    from app.services.batch import BatchService
+
+    owner, _ = super_admin
+    user, _ = annotator
+    p, batch = await _seed_batch_with_locked_tasks(
+        db_session,
+        owner.id,
+        user.id,
+        batch_status="pre_annotated",
+        n_tasks=2,
+        task_status="pending",
+    )
+    # 模拟标注员开始标注: 把 1 个 task 改成 in_progress
+    tasks = (
+        (await db_session.execute(select(Task).where(Task.batch_id == batch.id)))
+        .scalars()
+        .all()
+    )
+    tasks[0].status = "in_progress"
+    await db_session.flush()
+
+    svc = BatchService(db_session)
+    await svc.check_auto_transitions(batch.id)
+    await db_session.refresh(batch)
+    assert batch.status == "annotating"

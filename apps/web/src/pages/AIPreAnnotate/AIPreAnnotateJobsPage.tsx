@@ -6,7 +6,7 @@
  */
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { Card } from "@/components/ui/Card";
@@ -35,8 +35,14 @@ type StatusFilter = "" | "running" | "completed" | "failed";
 
 export default function AIPreAnnotateJobsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // v0.9.12 · ModelMarket failed tab redirect 来源支持 ?status=failed 直接落到失败筛选.
+  const initialStatus = (() => {
+    const s = searchParams.get("status");
+    return s === "running" || s === "completed" || s === "failed" ? s : "";
+  })() as StatusFilter;
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatus);
   const [cursorStack, setCursorStack] = useState<string[]>([]);
   const currentCursor = cursorStack[cursorStack.length - 1] ?? undefined;
 

@@ -78,6 +78,8 @@ class AuditAction(str, Enum):
     # v0.8.8 · 失败预测 soft-delete
     FAILED_PREDICTION_DISMISSED = "failed_prediction.dismissed"
     FAILED_PREDICTION_RESTORED = "failed_prediction.restored"
+    # v0.9.12 BUG B-16 · /ai-pre 已就绪卡片多选批量重激活/删除 prediction
+    PREANNOTATE_BULK_CLEAR = "preannotate.bulk_clear"
     # v0.8.8 · WebSocket 鉴权过期重连：grace 期内换发新 token
     AUTH_TOKEN_REFRESH = "auth.token_refresh"
 

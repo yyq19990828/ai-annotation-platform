@@ -429,7 +429,7 @@ async def reset_batch_to_draft(
         raise HTTPException(status_code=404, detail="Batch not found")
 
     from_status = batch.status
-    batch, affected = await svc.reset_to_draft(batch_id)
+    batch, affected, cascade = await svc.reset_to_draft(batch_id)
 
     await AuditService.log(
         db,
@@ -443,6 +443,7 @@ async def reset_batch_to_draft(
             "from_status": from_status,
             "reason": data.reason,
             "affected_tasks": affected,
+            "cascade": cascade,
         },
     )
 

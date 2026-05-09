@@ -1,6 +1,20 @@
-# AI 文本批量预标（v0.9.5 / v0.9.6 / v0.9.7 / v0.9.8）
+# AI 文本批量预标（v0.9.5 / v0.9.6 / v0.9.7 / v0.9.8 / v0.9.12）
 
 > 一次性给整批图跑 SAM 文本预标，标注员从 AI 候选起步而非从 0 画。
+
+**v0.9.12 起** (Humming Roaming Oasis) — 信息架构重构：
+
+- **首页改为「项目卡片网格」**：进入 `/ai-pre` 直接看到所有**已注册 ML backend** 的项目（无 backend 的项目不显示），每张卡片含 ml_backend 状态 chip（灰=disconnected / 黄=mismatch / 绿=ready） + 三个数字徽章（待预标 / 已就绪 / 近期失败） + 最近 job 时间。
+- **点项目卡片进详情面板**：左上「← 返回项目列表」按钮随时回到卡片网格。详情面板上方列「待预标批次（active）」+ checkbox 多选 + 全选；勾选 ≥1 批次后下方出现 Prompt 输入 + 输出形态 + Run 按钮。
+- **多选批次 → 串/并行预标**：勾选 ≥2 批次时出现「串行 / 并行」单选；
+  - 串行 = 前端依次发送多个 trigger 请求（worker 排队消费）；
+  - 并行 = `Promise.all` 同时发起；后端按 `ml_backends.extra_params.max_concurrency` per-backend Semaphore 限速保护（默认 4 并发，可在 DB JSONB 字段调）。
+  - 项目卡片 + 详情面板头部都会显示 backend 的 `max_concurrency` 提示。
+- **已就绪批次卡片支持多选删除**：详情面板下方「AI 预标已就绪批次」表（HistoryTable）每行 + 表头加 checkbox，勾选后底部浮窗有「批量重激活（清 prediction，batch 回 active）」+「批量重置 draft（全量重置 + 清 task lock）」两个按钮，需输入 ≥10 字 reason 写入 audit log。部分失败时弹结果视图，可展开看 `failed[i].reason`。
+- **删除 `/model-market?tab=failed`**：失败预测唯一入口收口到 `/ai-pre/jobs?status=failed`；老书签 `?tab=failed` 自动 redirect。
+- **batch 重置级联清理 prediction**：admin 在项目设置重置某批次到 draft 时，自动清空该 batch 关联的 predictions / failed_predictions / prediction_jobs / prediction_metas（之前会残留导致 `/ai-pre` 卡片不消失）。
+
+> 注：v0.9.12 之前的 stepper 流程（4-step 引导 + alias chips + 单批次精细控制）暂时收起；如需要回归（含 box_threshold / text_threshold 等精细 prompt 工程项），等 v0.9.13+「精细单批次预标 modal」回来。
 
 **v0.9.8 起** (Fluffy Cosmos)：
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 import httpx
 from dataclasses import dataclass
@@ -7,6 +9,24 @@ from dataclasses import dataclass
 from app.config import settings
 from app.db.models.ml_backend import MLBackend
 from app.observability.metrics import observe_ml_backend
+
+logger = logging.getLogger(__name__)
+
+# v0.9.12 BUG B-17 · per-backend asyncio.Semaphore 限速. 受 ml_backends.extra_params.max_concurrency
+# 控制 (默认 4, 匹配现有 celery worker --concurrency=4 不破坏既有行为). 改 extra_params 后需 worker
+# 重启才生效 (信号量按 backend_id 永久缓存; 工时换简洁性的取舍, 见 docs-site/dev/architecture/ai-models.md).
+_DEFAULT_MAX_CONCURRENCY = 4
+_semaphores: dict[str, asyncio.Semaphore] = {}
+
+
+def _get_semaphore(backend_id: str | None, max_cc: int) -> asyncio.Semaphore | None:
+    if not backend_id:
+        return None
+    sem = _semaphores.get(backend_id)
+    if sem is None:
+        sem = asyncio.Semaphore(max(1, int(max_cc)))
+        _semaphores[backend_id] = sem
+    return sem
 
 
 @dataclass
@@ -27,6 +47,11 @@ class MLBackendClient:
         self.auth_method = backend.auth_method
         self.auth_token = backend.auth_token
         self.backend_id = str(getattr(backend, "id", "")) or None
+        extra = getattr(backend, "extra_params", None) or {}
+        self.max_concurrency = int(
+            extra.get("max_concurrency", _DEFAULT_MAX_CONCURRENCY)
+        )
+        self._semaphore = _get_semaphore(self.backend_id, self.max_concurrency)
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Content-Type": "application/json"}
@@ -70,6 +95,20 @@ class MLBackendClient:
         except (httpx.RequestError, httpx.TimeoutException):
             return False, None
 
+    async def _acquire(self):
+        """v0.9.12 · per-backend Semaphore 限速 context manager. 无 backend_id 时降级为 noop."""
+
+        class _NullCtx:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+        if self._semaphore is None:
+            return _NullCtx()
+        return self._semaphore
+
     async def predict(
         self, tasks: list[dict], context: dict | None = None
     ) -> list[PredictionResult]:
@@ -80,14 +119,17 @@ class MLBackendClient:
             # v0.9.5 · 批量预标透传 context（含 type=text + prompt + output 三模式 + DINO 阈值）。
             payload["context"] = context
         try:
-            async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
-                resp = await client.post(
-                    f"{self.base_url}/predict",
-                    json=payload,
-                    headers=self._headers(),
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            async with await self._acquire():
+                async with httpx.AsyncClient(
+                    timeout=settings.ml_predict_timeout
+                ) as client:
+                    resp = await client.post(
+                        f"{self.base_url}/predict",
+                        json=payload,
+                        headers=self._headers(),
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
         except Exception:
             outcome = "error"
             observe_ml_backend(self.backend_id, outcome, time.monotonic() - start)
@@ -117,14 +159,17 @@ class MLBackendClient:
         start = time.monotonic()
         outcome = "success"
         try:
-            async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
-                resp = await client.post(
-                    f"{self.base_url}/predict",
-                    json={"task": task_data, "context": context},
-                    headers=self._headers(),
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            async with await self._acquire():
+                async with httpx.AsyncClient(
+                    timeout=settings.ml_predict_timeout
+                ) as client:
+                    resp = await client.post(
+                        f"{self.base_url}/predict",
+                        json={"task": task_data, "context": context},
+                        headers=self._headers(),
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
         except Exception:
             outcome = "error"
             observe_ml_backend(self.backend_id, outcome, time.monotonic() - start)
