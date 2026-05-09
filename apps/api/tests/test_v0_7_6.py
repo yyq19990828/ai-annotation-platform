@@ -550,15 +550,9 @@ async def test_reset_to_draft_cascades_predictions(
     db_session.add(fp)
     await db_session.flush()
     db_session.add(
-        PredictionMeta(
-            id=uuid.uuid4(), prediction_id=pred.id, total_cost=0.001
-        )
+        PredictionMeta(id=uuid.uuid4(), prediction_id=pred.id, total_cost=0.001)
     )
-    db_session.add(
-        PredictionMeta(
-            id=uuid.uuid4(), failed_prediction_id=fp.id
-        )
-    )
+    db_session.add(PredictionMeta(id=uuid.uuid4(), failed_prediction_id=fp.id))
     job = PredictionJob(
         id=uuid.uuid4(),
         project_id=p.id,
@@ -612,9 +606,7 @@ async def test_reset_to_draft_cascades_predictions(
         .scalars()
         .all()
     )
-    metas_after = (
-        (await db_session.execute(select(PredictionMeta))).scalars().all()
-    )
+    metas_after = (await db_session.execute(select(PredictionMeta))).scalars().all()
     assert preds_after == []
     assert failed_after == []
     assert jobs_after == []

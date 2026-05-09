@@ -68,7 +68,9 @@ async def test_preannotate_queue_returns_pre_annotated_batches(
 # ── v0.9.12 · bulk-clear (B-16) ───────────────────────────────────────────────
 
 
-async def _seed_batch_with_predictions(db, project_id, *, status: str = "pre_annotated"):
+async def _seed_batch_with_predictions(
+    db, project_id, *, status: str = "pre_annotated"
+):
     from app.db.models.ml_backend import MLBackend
     from app.db.models.prediction import Prediction
     from app.db.models.prediction_job import PredictionJob
@@ -229,4 +231,6 @@ async def test_preannotate_summary_filters_to_projects_with_ml_backend(
     item = next(it for it in items if it["project_name"] == "with-ml")
     assert item["ready_batches"] == 1
     assert item["ml_backend_state"] in ("disconnected", "ready", "mismatch")
-    assert item["ml_backend_max_concurrency"] is None  # 未配 extra_params.max_concurrency
+    assert (
+        item["ml_backend_max_concurrency"] is None
+    )  # 未配 extra_params.max_concurrency

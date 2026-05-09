@@ -6,7 +6,6 @@ style-src 'unsafe-inline' 保留, 留 v0.10.x ProjectSettingsPage 重构同窗�
 
 from __future__ import annotations
 
-import pytest
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -35,7 +34,9 @@ def test_csp_script_src_drops_unsafe_inline():
     assert script_src_idx >= 0, csp
     script_src_end = csp.find(";", script_src_idx)
     script_src = csp[script_src_idx:script_src_end]
-    assert "'unsafe-inline'" not in script_src, f"script-src 仍含 unsafe-inline: {script_src}"
+    assert "'unsafe-inline'" not in script_src, (
+        f"script-src 仍含 unsafe-inline: {script_src}"
+    )
     # Turnstile 仍允许
     assert "https://challenges.cloudflare.com" in script_src
 

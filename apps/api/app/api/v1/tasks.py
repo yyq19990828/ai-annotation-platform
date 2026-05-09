@@ -534,9 +534,7 @@ async def accept_prediction(
 ):
     _assert_task_editable(await _load_task_or_404(db, task_id))
     svc = AnnotationService(db)
-    await svc.accept_prediction(
-        prediction_id, current_user.id, shape_index=shape_index
-    )
+    await svc.accept_prediction(prediction_id, current_user.id, shape_index=shape_index)
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     await db.commit()
     return await svc.list_by_task(task_id)

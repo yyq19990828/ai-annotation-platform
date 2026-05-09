@@ -148,7 +148,9 @@ class MLBackendClient:
                     score=item.get("score"),
                     model_version=item.get("model_version"),
                     inference_time_ms=item.get("inference_time_ms") or wall_ms,
-                    meta=item.get("meta"),  # v0.9.11 · LLM cost/token (grounded-sam2 不返回)
+                    meta=item.get(
+                        "meta"
+                    ),  # v0.9.11 · LLM cost/token (grounded-sam2 不返回)
                 )
             )
         return results

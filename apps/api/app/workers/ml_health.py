@@ -81,10 +81,14 @@ async def _publish_stats_async() -> dict:
         async with SessionLocal() as db:
             # ml_backends 无 is_active 字段; state == 'disconnected' 跳过 (一直 down 的 backend 不打)
             rows = (
-                await db.execute(
-                    select(MLBackend).where(MLBackend.state != "disconnected")
+                (
+                    await db.execute(
+                        select(MLBackend).where(MLBackend.state != "disconnected")
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             backends = list(rows)
     finally:
         await engine.dispose()

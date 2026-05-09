@@ -204,7 +204,9 @@ async def bulk_clear_preannotate(
             continue
         proj = projects_by_id.get(batch.project_id)
         if not proj:
-            response.skipped.append(BulkClearItem(batch_id=bid, reason="project_missing"))
+            response.skipped.append(
+                BulkClearItem(batch_id=bid, reason="project_missing")
+            )
             continue
         if not is_super and proj.owner_id != admin.id:
             response.skipped.append(BulkClearItem(batch_id=bid, reason="forbidden"))
@@ -325,9 +327,7 @@ async def list_preannotate_project_summary(
     """
     pres = await db.execute(
         select(Project).where(
-            select(MLBackend.id)
-            .where(MLBackend.project_id == Project.id)
-            .exists()
+            select(MLBackend.id).where(MLBackend.project_id == Project.id).exists()
         )
     )
     projects = list(pres.scalars().all())
@@ -402,7 +402,10 @@ async def list_preannotate_project_summary(
         )
 
     items.sort(
-        key=lambda x: (x.last_job_at.timestamp() if x.last_job_at else 0, x.project_name),
+        key=lambda x: (
+            x.last_job_at.timestamp() if x.last_job_at else 0,
+            x.project_name,
+        ),
         reverse=True,
     )
     return PreannotateProjectSummaryResponse(items=items)

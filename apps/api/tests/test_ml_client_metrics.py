@@ -15,7 +15,12 @@ from app.db.models.ml_backend import MLBackend
 from app.services.ml_client import MLBackendClient
 
 
-def _backend(url="http://fake:9090", *, backend_id="00000000-0000-0000-0000-000000000099", extra_params=None):
+def _backend(
+    url="http://fake:9090",
+    *,
+    backend_id="00000000-0000-0000-0000-000000000099",
+    extra_params=None,
+):
     b = MLBackend()
     b.id = backend_id
     b.url = url
