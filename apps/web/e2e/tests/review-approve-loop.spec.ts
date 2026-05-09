@@ -2,7 +2,7 @@
  * v0.8.8 · review 通过路径 E2E：reviewer approve 真实 UI 流。
  *
  * - annotator 提交（advance_task → submitted/review）
- * - reviewer 进 /review?task={id} → 点通过按钮
+ * - reviewer 进 /projects/:id/review?task={id} → 点通过按钮
  * - 后端 task.status 应为 completed
  * - annotator 视角应能从 /api/v1/notifications 取到 task.approved 事件
  *
@@ -33,14 +33,12 @@ test.describe("review approve loop", () => {
       reviewerEmail: data.reviewer_email,
     });
 
-    // 2. reviewer 登录 → 进 /review?taskId={id}（ReviewPage 用 ?taskId= 触发 drawer）
+    // 2. reviewer 登录 → 进项目级 review workbench 路由
     await seed.injectToken(page, data.reviewer_email);
-    await page.goto("/review");
-    await page.waitForLoadState("networkidle");
-    await page.goto(`/review?taskId=${data.task_ids[0]}`);
+    await page.goto(`/projects/${data.project_id}/review?task=${data.task_ids[0]}`);
     await page.waitForLoadState("networkidle");
 
-    // 3. 点通过按钮（v0.8.7 已就位 data-testid="review-approve"）
+    // 3. 点通过按钮
     const approveBtn = page.getByTestId("review-approve");
     await expect(approveBtn).toBeVisible({ timeout: 10_000 });
     await approveBtn.click();

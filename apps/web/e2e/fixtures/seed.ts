@@ -64,7 +64,8 @@ class SeedAPI {
       throw new Error(`seed/login failed: ${res.status()}`);
     }
     const body = (await res.json()) as { access_token: string; user: unknown };
-    const target = baseURL ?? "http://localhost:3000";
+    const target =
+      baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
     await page.goto(target);
     await page.evaluate(
       ({ token, user }) => {
