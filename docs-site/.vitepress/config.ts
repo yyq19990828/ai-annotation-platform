@@ -41,26 +41,34 @@ export default withMermaid(defineConfig({
 
   themeConfig: {
     nav: [
+      { text: "快速开始", link: "/user-guide/getting-started" },
       { text: "用户手册", link: "/user-guide/" },
       { text: "开发文档", link: "/dev/" },
+      { text: "部署与运维", link: "/ops/" },
       { text: "API 文档", link: "/api/" },
-      { text: "更新日志", link: "/changelog/" },
-      { text: "Roadmap", link: "/roadmap/" },
+      {
+        text: "更新日志 / Roadmap",
+        items: [
+          { text: "更新日志", link: "/changelog/" },
+          { text: "Roadmap", link: "/roadmap/" },
+        ],
+      },
     ],
 
     sidebar: {
       "/user-guide/": [
         {
-          text: "入门",
+          text: "入口",
           items: [
             { text: "概述", link: "/user-guide/" },
+            { text: "平台概念与术语", link: "/user-guide/concepts" },
             { text: "快速开始", link: "/user-guide/getting-started" },
           ],
         },
         {
-          text: "标注工作台",
+          text: "标注员",
           items: [
-            { text: "界面与快捷键", link: "/user-guide/workbench/" },
+            { text: "工作台概览", link: "/user-guide/workbench/" },
             { text: "Bbox 标注", link: "/user-guide/workbench/bbox" },
             { text: "Polygon 标注", link: "/user-guide/workbench/polygon" },
             { text: "关键点标注", link: "/user-guide/workbench/keypoint" },
@@ -68,19 +76,19 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: "项目与批次",
+          text: "项目管理员",
+          collapsed: true,
           items: [
-            { text: "创建项目", link: "/user-guide/projects/" },
+            { text: "项目管理", link: "/user-guide/projects/" },
             { text: "批次与分配", link: "/user-guide/projects/batch" },
+            { text: "AI 预标注", link: "/user-guide/projects/ai-preannotate" },
           ],
         },
         {
-          text: "审核",
-          items: [{ text: "审核流程", link: "/user-guide/review/" }],
-        },
-        {
-          text: "导出",
-          items: [{ text: "数据导出格式", link: "/user-guide/export/" }],
+          text: "审核员",
+          items: [
+            { text: "审核流程", link: "/user-guide/review/" },
+          ],
         },
         {
           text: "超级管理员",
@@ -95,8 +103,17 @@ export default withMermaid(defineConfig({
           ],
         },
         {
+          text: "参考",
+          collapsed: true,
+          items: [
+            { text: "数据导出格式", link: "/user-guide/export/" },
+          ],
+        },
+        {
           text: "其他",
-          items: [{ text: "FAQ", link: "/user-guide/faq" }],
+          items: [
+            { text: "FAQ", link: "/user-guide/faq" },
+          ],
         },
       ],
 
@@ -112,8 +129,10 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: "架构",
+          text: "概念（架构）",
+          collapsed: true,
           items: [
+            { text: "架构地图", link: "/dev/concepts/" },
             { text: "系统全景", link: "/dev/architecture/overview" },
             { text: "后端基础设施（容器）", link: "/dev/architecture/backend-infrastructure" },
             { text: "后端分层", link: "/dev/architecture/backend-layers" },
@@ -123,16 +142,7 @@ export default withMermaid(defineConfig({
             { text: "API Schema 边界", link: "/dev/architecture/api-schema-boundary" },
             { text: "预标注流水线", link: "/dev/architecture/prediction-pipeline" },
             { text: "部署拓扑", link: "/dev/architecture/deployment-topology" },
-          ],
-        },
-        {
-          text: "部署与协议",
-          items: [
-            { text: "部署指南", link: "/dev/deploy" },
-            { text: "安全模型", link: "/dev/security" },
-            { text: "可观测性 / 监控", link: "/dev/monitoring" },
-            { text: "ML Backend 协议", link: "/dev/ml-backend-protocol" },
-            { text: "WebSocket 协议", link: "/dev/ws-protocol" },
+            { text: "性能 HUD", link: "/dev/architecture/perfhud" },
           ],
         },
         {
@@ -146,7 +156,16 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: "故障排查 / 踩坑",
+          text: "协议与规范",
+          collapsed: true,
+          items: [
+            { text: "ML Backend 协议", link: "/dev/ml-backend-protocol" },
+            { text: "WebSocket 协议", link: "/dev/ws-protocol" },
+            { text: "图标约定", link: "/dev/icon-conventions" },
+          ],
+        },
+        {
+          text: "故障排查",
           collapsed: true,
           items: [
             { text: "总览与速查表", link: "/dev/troubleshooting/" },
@@ -166,13 +185,40 @@ export default withMermaid(defineConfig({
         },
       ],
 
+      "/ops/": [
+        {
+          text: "部署与运维",
+          items: [
+            { text: "概览", link: "/ops/" },
+          ],
+        },
+        {
+          text: "部署",
+          items: [
+            { text: "部署指南", link: "/dev/deploy" },
+          ],
+        },
+        {
+          text: "可观测性",
+          items: [
+            { text: "监控与告警", link: "/dev/monitoring" },
+          ],
+        },
+        {
+          text: "安全",
+          items: [
+            { text: "安全模型", link: "/dev/security" },
+          ],
+        },
+      ],
+
       "/changelog/": changelogSidebarItems,
       "/roadmap/": roadmapSidebarItems,
 
       "/api/": [
         { text: "API 总览", link: "/api/" },
         {
-          text: "按资源域指南",
+          text: "指南",
           items: [
             { text: "认证", link: "/api/guides/auth" },
             { text: "项目", link: "/api/guides/projects" },
