@@ -1,6 +1,6 @@
 # 提案 · 截图自动化 v2（释放 Playwright 全部能力）
 
-> 状态：**草案 / 待对齐**。前置：v0.8.7 已落地 14 场景脚手架（`apps/web/e2e/screenshots/scenes.ts` + `screenshots.spec.ts` + `playwright.screenshots.config.ts`）。本提案是它的下一代。
+> 状态：**已归档**。前置：v0.8.7 已落地 14 场景脚手架（`apps/web/e2e/screenshots/scenes.ts` + `screenshots.spec.ts` + `playwright.screenshots.config.ts`）。本提案是它的下一代。
 >
 > 目标：从「截 14 张静态 PNG」升级为「跑一次 → 文档站 95% 视觉素材自动产出 + 可视化回归 + 多视口 / 多主题 / 多语言矩阵 + 流程 GIF / MP4」。
 
