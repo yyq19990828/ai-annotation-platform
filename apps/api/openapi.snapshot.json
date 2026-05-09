@@ -675,6 +675,7 @@
             "discriminator": {
               "mapping": {
                 "bbox": "#/components/schemas/BboxGeometry",
+                "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry"
               },
               "propertyName": "type"
@@ -685,6 +686,9 @@
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/MultiPolygonGeometry"
               }
             ],
             "title": "Geometry"
@@ -836,6 +840,7 @@
             "discriminator": {
               "mapping": {
                 "bbox": "#/components/schemas/BboxGeometry",
+                "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry"
               },
               "propertyName": "type"
@@ -846,6 +851,9 @@
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/MultiPolygonGeometry"
               }
             ],
             "title": "Geometry"
@@ -1029,6 +1037,7 @@
                 "discriminator": {
                   "mapping": {
                     "bbox": "#/components/schemas/BboxGeometry",
+                    "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
                     "polygon": "#/components/schemas/PolygonGeometry"
                   },
                   "propertyName": "type"
@@ -1039,6 +1048,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/PolygonGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MultiPolygonGeometry"
                   }
                 ]
               },
@@ -5432,6 +5444,31 @@
         "title": "Mention",
         "type": "object"
       },
+      "MultiPolygonGeometry": {
+        "additionalProperties": false,
+        "description": "多连通域 polygon 集合。每个 polygons[i] 内部仍是带 hole 的单连通 PolygonGeometry。\n\nv0.9.14 · 配合 mask_to_multi_polygon (apps/_shared/mask_utils) 输出。Predictor 在\n单连通无 hole 时仍输出 PolygonGeometry 兼容老前端; 多连通或带 hole 才走本分支。",
+        "properties": {
+          "polygons": {
+            "items": {
+              "$ref": "#/components/schemas/PolygonGeometry"
+            },
+            "minItems": 1,
+            "title": "Polygons",
+            "type": "array"
+          },
+          "type": {
+            "const": "multi_polygon",
+            "default": "multi_polygon",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "polygons"
+        ],
+        "title": "MultiPolygonGeometry",
+        "type": "object"
+      },
       "MyBatchItem": {
         "description": "v0.7.1 B-17 · 标注员视角的批次卡片：自己被分派的、状态为\nactive / annotating / rejected / reviewing 的批次。",
         "properties": {
@@ -5739,7 +5776,21 @@
       },
       "PolygonGeometry": {
         "additionalProperties": false,
+        "description": "单连通域 polygon。\n\nv0.9.14 · holes 字段新增, 默认 [] 向后兼容。老存量 / 老前端写入仍走 type=polygon\n+ 仅 points 路径; 新 prediction 在有 hole 时把 hole 顶点列表填进 holes, 多连通域\n走 MultiPolygonGeometry 分支。",
         "properties": {
+          "holes": {
+            "items": {
+              "items": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "title": "Holes",
+            "type": "array"
+          },
           "points": {
             "items": {
               "items": {
@@ -6430,6 +6481,9 @@
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/MultiPolygonGeometry"
               },
               {
                 "additionalProperties": true,

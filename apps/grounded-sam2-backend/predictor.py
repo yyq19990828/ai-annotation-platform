@@ -5,10 +5,15 @@ vendor 形态: vendor/grounded-sam-2/ 下放上游官方仓库副本 (固定 com
 返回平台协议要求的 polygonlabels / rectanglelabels 字典数组.
 
 mask → polygon 简化策略 (v0.9.4 phase 3 起抽到 apps/_shared/mask_utils, 与 v0.10.x sam3-backend 共用):
-    cv2.findContours(RETR_EXTERNAL, CHAIN_APPROX_NONE)
-    → 取面积最大的外环
+    cv2.findContours(RETR_CCOMP, CHAIN_APPROX_NONE)  # v0.9.14 升级到 CCOMP 抓内外环
+    → 各连通域外环 / hole 配对（hierarchy parent 索引归属）
     → shapely.simplify(tolerance=DEFAULT_SIMPLIFY_TOLERANCE, preserve_topology=True)
     → 像素坐标归一化到 [0,1] (6 位精度对齐协议)
+
+输出 shape 智能选择 (v0.9.14):
+- 单连通域无 hole → polygonlabels {points}                 // 字面与 v0.9.13 一致, 老前端 / 老 fixture 不破
+- 单连通域带 hole → polygonlabels {points, holes}          // 新增, 前端 PolygonGeometry.holes 渲染镂空
+- 多连通域       → polygonlabels {polygons:[{points, holes}]}  // 新增 multi_polygon, 前端 MultiPolygonGeometry
 
 tolerance 默认值见 DEFAULT_SIMPLIFY_TOLERANCE; 单次请求可由 Context.simplify_tolerance 覆盖.
 """
@@ -31,7 +36,7 @@ import torch
 from PIL import Image
 
 from embedding_cache import CacheEntry, EmbeddingCache
-from mask_utils import mask_to_polygon
+from mask_utils import MultiPolygonRing, mask_to_multi_polygon
 
 logger = logging.getLogger(__name__)
 
@@ -277,23 +282,16 @@ class GroundedSAM2Predictor:
             # SAM scores 仅反映"给定 box prompt 时 mask 切得有多好", 与 detection 强弱无关.
             score = _dino_score(i)
             label = phrases[i] if i < len(phrases) else default_label
-            poly = mask_to_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))
-            if not poly:
+            rings = mask_to_multi_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))
+            if not rings:
                 continue
-            if len(poly) > VERTEX_COUNT_WARN_THRESHOLD:
-                logger.warning(
-                    "polygon vertex count %d > %d (tolerance=%.2f, mask area=%d, prompt=text)",
-                    len(poly),
-                    VERTEX_COUNT_WARN_THRESHOLD,
-                    eff_tol,
-                    int(mask.sum()),
-                )
+            self._maybe_warn_vertex_count(rings, eff_tol, int(mask.sum()), prompt="text")
             if output == "both":
                 # 配对返回: 同 instance 一对 rect + poly (前端按需选).
                 results.append(self._box_to_rect_label(boxes_xyxy[i], w, h, label, score))
-                results.append(self._poly_to_polygon_label(poly, label, score))
+                results.append(self._rings_to_polygon_label(rings, label, score))
             else:  # mask
-                results.append(self._poly_to_polygon_label(poly, label, score))
+                results.append(self._rings_to_polygon_label(rings, label, score))
         return results, hit
 
     @staticmethod
@@ -322,14 +320,70 @@ class GroundedSAM2Predictor:
         }
 
     @staticmethod
-    def _poly_to_polygon_label(
-        poly: list[list[float]], label: str, score: float
+    def _rings_to_polygon_label(
+        rings: list[MultiPolygonRing], label: str, score: float
     ) -> dict[str, Any]:
+        """v0.9.14 · mask_to_multi_polygon 输出 → LabelStudio polygonlabels shape.
+
+        智能选择三种字面:
+        - 单连通无 hole → {points, polygonlabels}                  (与 v0.9.13 之前字面完全一致)
+        - 单连通带 hole → {points, holes, polygonlabels}            (新, 老前端忽略 holes 字段)
+        - 多连通       → {polygons:[{points,holes?},...], polygonlabels}  (新, 老前端忽略 polygons 字段)
+
+        老前端遇到带 holes / polygons 的新字段会 fallback 到 points (老路径) 还是空, 取决于
+        前端反序列化实现; v0.9.14 同时升级前端 transforms.ts 适配, 老前端兼容靠"单连通无 hole
+        时不写新字段"这条路径覆盖大多数 mask.
+        """
+        if len(rings) == 1 and not rings[0]["holes"]:
+            return {
+                "type": "polygonlabels",
+                "value": {
+                    "points": rings[0]["exterior"],
+                    "polygonlabels": [label],
+                },
+                "score": score,
+            }
+        if len(rings) == 1:
+            return {
+                "type": "polygonlabels",
+                "value": {
+                    "points": rings[0]["exterior"],
+                    "holes": rings[0]["holes"],
+                    "polygonlabels": [label],
+                },
+                "score": score,
+            }
         return {
             "type": "polygonlabels",
-            "value": {"points": poly, "polygonlabels": [label]},
+            "value": {
+                "polygons": [
+                    {"points": r["exterior"], "holes": r["holes"]}
+                    if r["holes"]
+                    else {"points": r["exterior"]}
+                    for r in rings
+                ],
+                "polygonlabels": [label],
+            },
             "score": score,
         }
+
+    @staticmethod
+    def _maybe_warn_vertex_count(
+        rings: list[MultiPolygonRing], eff_tol: float, mask_area: int, *, prompt: str
+    ) -> None:
+        total = sum(
+            len(r["exterior"]) + sum(len(h) for h in r["holes"]) for r in rings
+        )
+        if total > VERTEX_COUNT_WARN_THRESHOLD:
+            logger.warning(
+                "polygon vertex count %d > %d (tolerance=%.2f, mask area=%d, prompt=%s, rings=%d)",
+                total,
+                VERTEX_COUNT_WARN_THRESHOLD,
+                eff_tol,
+                mask_area,
+                prompt,
+                len(rings),
+            )
 
     # ---------- 内部工具 ----------
 
@@ -379,23 +433,17 @@ class GroundedSAM2Predictor:
             DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
         )
         for i, mask in enumerate(masks):
-            poly = mask_to_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))
-            if not poly:
+            rings = mask_to_multi_polygon(
+                mask, tolerance=eff_tol, normalize_to=(w, h)
+            )
+            if not rings:
                 continue
-            if len(poly) > VERTEX_COUNT_WARN_THRESHOLD:
-                logger.warning(
-                    "polygon vertex count %d > %d (tolerance=%.2f, mask area=%d, prompt=point/bbox)",
-                    len(poly),
-                    VERTEX_COUNT_WARN_THRESHOLD,
-                    eff_tol,
-                    int(mask.sum()),
-                )
+            self._maybe_warn_vertex_count(
+                rings, eff_tol, int(mask.sum()), prompt="point/bbox"
+            )
             score = float(scores[i]) if scores is not None and i < len(scores) else None
-            entry: dict[str, Any] = {
-                "type": "polygonlabels",
-                "value": {"points": poly, "polygonlabels": ["object"]},
-            }
-            if score is not None:
-                entry["score"] = score
+            entry = self._rings_to_polygon_label(rings, "object", score or 0.0)
+            if score is None:
+                entry.pop("score", None)
             out.append(entry)
         return out

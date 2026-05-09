@@ -160,8 +160,16 @@ class BboxGeometry(BaseModel):
 
 
 class PolygonGeometry(BaseModel):
+    """单连通域 polygon。
+
+    v0.9.14 · holes 字段新增, 默认 [] 向后兼容。老存量 / 老前端写入仍走 type=polygon
+    + 仅 points 路径; 新 prediction 在有 hole 时把 hole 顶点列表填进 holes, 多连通域
+    走 MultiPolygonGeometry 分支。
+    """
+
     type: Literal["polygon"] = "polygon"
     points: list[list[float]] = Field(min_length=3)
+    holes: list[list[list[float]]] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -173,9 +181,33 @@ class PolygonGeometry(BaseModel):
                 raise ValueError(f"points[{i}] 必须是 [x, y]")
         return v
 
+    @field_validator("holes")
+    @classmethod
+    def _check_holes(cls, v: list[list[list[float]]]) -> list[list[list[float]]]:
+        for hi, hole in enumerate(v):
+            if len(hole) < 3:
+                raise ValueError(f"holes[{hi}] 顶点 < 3, 不构成有效环")
+            for pi, pt in enumerate(hole):
+                if len(pt) != 2:
+                    raise ValueError(f"holes[{hi}][{pi}] 必须是 [x, y]")
+        return v
+
+
+class MultiPolygonGeometry(BaseModel):
+    """多连通域 polygon 集合。每个 polygons[i] 内部仍是带 hole 的单连通 PolygonGeometry。
+
+    v0.9.14 · 配合 mask_to_multi_polygon (apps/_shared/mask_utils) 输出。Predictor 在
+    单连通无 hole 时仍输出 PolygonGeometry 兼容老前端; 多连通或带 hole 才走本分支。
+    """
+
+    type: Literal["multi_polygon"] = "multi_polygon"
+    polygons: list[PolygonGeometry] = Field(min_length=1)
+
+    model_config = ConfigDict(extra="forbid")
+
 
 Geometry = Annotated[
-    BboxGeometry | PolygonGeometry,
+    BboxGeometry | PolygonGeometry | MultiPolygonGeometry,
     Field(discriminator="type"),
 ]
 

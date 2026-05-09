@@ -95,9 +95,14 @@ const config: Parameters<typeof defineConfig>[0] = {
       // FailedPredictionsPage / useNotificationSocket（含 ws reauth 关键路径）/
       // AnnotationHistoryTimeline；同时把 scripts/** build-time 工具脚本从
       // coverage 分母里排除。
+      //
+      // v0.9.14 · 推到 30%（实测 30.30%，420+ case）。新增 5 个 test 文件 ~30 case：
+      // GeneralSection / DatasetsSection / AuditPage / BatchesSection (smoke) +
+      // transforms.test multi_polygon 几何映射；同时修 ProjectDetailPanel.test
+      // 缺 useUpdateProject mock + useBatchEventsSocket WS 触发 worker crash 回归.
       thresholds: {
-        lines: 25,
-        statements: 25,
+        lines: 30,
+        statements: 30,
         functions: 30,
         branches: 60,
       },

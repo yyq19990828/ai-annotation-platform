@@ -102,10 +102,28 @@ export interface ReviewClaimResponse {
 
 // ── Annotation ──────────────────────────────────────────────────────────────
 
-/** Discriminated union: 形状自描述。v0.5.3 起新增 polygon。后续可扩展 keypoint / mask / cuboid。 */
+/** Discriminated union: 形状自描述。v0.5.3 起新增 polygon, v0.9.14 多连通域升级。后续可扩展 keypoint / mask / cuboid。 */
 export type BboxGeometry = { type: "bbox"; x: number; y: number; w: number; h: number };
-export type PolygonGeometry = { type: "polygon"; points: [number, number][] };
-export type Geometry = BboxGeometry | PolygonGeometry;
+/**
+ * v0.9.14 · holes 字段为可选; 老存量 / 老前端写入仍走仅 points 路径, 默认 undefined 即无
+ * hole. 新 prediction (mask 单连通带空洞) 在此填 hole 顶点列表 (内环, 与外环 evenodd
+ * 镂空). 编辑工具 PolygonTool 仅支持单环, hole 当前只读渲染 (v0.10.x 客户反馈触发再扩).
+ */
+export type PolygonGeometry = {
+  type: "polygon";
+  points: [number, number][];
+  holes?: [number, number][][];
+};
+/**
+ * v0.9.14 · 多连通域 polygon 集合 (mask RETR_CCOMP 输出). 每个 polygons[i] 仍是带 hole
+ * 的单连通 PolygonGeometry. 后端 to_internal_shape (apps/api/app/services/prediction.py)
+ * 在 LS shape value.polygons 时输出本类型; 单连通无 hole 仍走 PolygonGeometry 兼容旧前端.
+ */
+export type MultiPolygonGeometry = {
+  type: "multi_polygon";
+  polygons: PolygonGeometry[];
+};
+export type Geometry = BboxGeometry | PolygonGeometry | MultiPolygonGeometry;
 
 export interface AIBox {
   id: string;
@@ -116,8 +134,13 @@ export interface AIBox {
   h: number;
   cls: string;
   conf: number;
-  /** polygon 形状时填具体顶点（归一化坐标）。bbox 时为 undefined。 */
+  /** polygon 形状时填具体外环顶点（归一化坐标）。bbox 时为 undefined。 */
   polygon?: [number, number][];
+  /** v0.9.14 · 单连通带 hole 时填内环顶点（归一化坐标）。仅作只读渲染参考, 不参与编辑路径. */
+  holes?: [number, number][][];
+  /** v0.9.14 · 多连通域时填全部 polygon (含 holes). 当前前端按主外环渲染降级,
+   *  保留全字段供 v0.10.x 镂空渲染升级与多 ring 拆分使用. */
+  multiPolygon?: { points: [number, number][]; holes?: [number, number][][] }[];
 }
 
 export interface Annotation extends AIBox {

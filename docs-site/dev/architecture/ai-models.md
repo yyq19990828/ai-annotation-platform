@@ -19,10 +19,84 @@ apps/api (FastAPI 3.11) ──HTTP /predict──▶ grounded-sam2-backend  (v0.
 
 **SAM 系列必须独立服务进程**：v0.9.x 锁 Python 3.10 / torch 2.3 / CUDA 12.1（GroundingDINO Deformable Attention 算子要 nvcc 现场编译），与 v0.10.x SAM 3 的 3.12 / 2.7 / 12.6 互不兼容。共用进程会触发 ABI 冲突（TORCH_CUDA_ARCH_LIST、cudnn 版本）。
 
-每个 backend：
-- 独立 docker-compose service，`profiles: ["gpu"]` + nvidia device reservation。
-- `healthcheck start_period=120s`（首次冷启要拉 ~900MB checkpoints）。
-- 镜像基于 `pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel`（**devel** 必需）。
+### 1.1 docker-compose profile + nvidia 资源预留
+
+> **v0.9.14 通用模板**：以 `grounded-sam2-backend` 为参考实例，v0.10.x `sam3-backend` 接入时复用相同骨架（仅替换 service 名 / 镜像 / 端口）。
+
+每个 backend service 必备四项：① 独立 service + 独立端口；② `profiles: ["gpu"]` opt-in（dev 默认 CPU mock 不启 GPU profile，避免开发机被占用）；③ `deploy.resources.reservations.devices` 申请 nvidia GPU；④ `healthcheck start_period=120s`（首次冷启 ~900MB checkpoint 下载）。
+
+```yaml
+# docker-compose.yml 节选
+services:
+  grounded-sam2-backend:
+    profiles: ["gpu"]                     # 默认不启, --profile gpu opt-in
+    build:
+      context: ./apps/grounded-sam2-backend
+      dockerfile: Dockerfile
+    image: ai-annotation/grounded-sam2-backend:0.9
+    ports:
+      - "8001:8000"                       # host:container
+    environment:
+      SAM_VARIANT: tiny                   # tiny|small|base_plus|large; 显存预算见 §1.2
+      DINO_VARIANT: T                     # T|B
+      CHECKPOINT_DIR: /app/checkpoints
+    volumes:
+      - ./checkpoints:/app/checkpoints    # 持久化, 避免 image 重建拉权重
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      start_period: 120s                  # 首次冷启 + checkpoint 加载
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1                    # 每 backend 1 张卡; 多变体并存看 §1.2
+              capabilities: [gpu]
+```
+
+**dev vs 生产差异**：
+
+| 场景 | 启动命令 | GPU 需求 | 显存预算 | 备注 |
+|---|---|---|---|---|
+| **dev (无 GPU 机)** | `docker compose up` | 0 | 0 | grounded-sam2-backend 不启动, ml_backends 行 state=stopped, 标注页前端走 disabled UI |
+| **dev (有 GPU)** | `docker compose --profile gpu up` | 1 卡 | ~3GB (tiny) | 单变体常驻; 改变体 = 改 env + rebuild |
+| **生产 (单租户)** | `docker compose --profile gpu up -d` | ≥ 1 卡 | 见 §1.2 | 按显存档位选 SAM_VARIANT |
+| **生产 (多变体并存)** | 拆 service: `gsam2-tiny` / `gsam2-large` (各自 profile) | ≥ 2 卡 (推荐) 或 1 张 ≥ 24GB | 累加 §1.2 | C → B 升级路径见 ROADMAP §A 注册 backend 选变体 |
+
+### 1.2 显存预算 + variant 选型
+
+每个 backend 常驻 = SAM 模型权重 + GroundingDINO 权重 + 推理时 mask buffer + embedding cache buffer。**SAM_VARIANT 与 DINO_VARIANT 通过 env 锁死**（v0.9.x 阶段一变体一容器, 运行期不可变；v0.10.x 阶段 1 计划升级为注册时声明，参见 ROADMAP §A AI 模型）。
+
+| SAM 变体 | 模型权重 | 推理时峰值 | 推荐显存 | 推荐卡 |
+|---|---|---|---|---|
+| `tiny` (default) | ~155MB | ~3GB | 6GB+ | 4060 8GB / 3070 8GB |
+| `small` | ~185MB | ~4GB | 8GB+ | 3070 / 4070 |
+| `base_plus` | ~320MB | ~5GB | 10GB+ | 3080 / 4070 Ti |
+| `large` | ~895MB | ~7GB | 12GB+ | 3090 24GB / A4000 |
+
+GroundingDINO 额外占用：`T` ~700MB / `B` ~1.5GB（仅 mask + box 模式需要，box 模式跳过 SAM 仍占 DINO）。
+
+embedding cache buffer（v0.9.1）：`EMBEDDING_CACHE_CAPACITY` 默认 32 entries，每 entry ~5MB（HxW 256-d feature map 浮点），cap=32 ≈ 160MB；按 GPU 显存富余度调到 16~64。
+
+**显存预算表（典型 dev / 生产组合）**：
+
+| GPU | 推荐 SAM | 推荐 DINO | 单实例总显存 | 可同卡跑变体数 |
+|---|---|---|---|---|
+| 4060 / 3060 (8GB) | tiny | T | ~3.7GB | 1 (单变体) |
+| 3070 / 4070 (12GB) | small / base_plus | T | ~4.7-5.7GB | 1-2 |
+| 3090 / A4000 (24GB) | large | T 或 B | ~7.7-8.5GB | 2-3 (多容器并存) |
+| A100 40GB / H100 | large | B | ~8.5GB | 4+ (整租户多变体池) |
+
+**多容器并存**（生产高负载）：把 `grounded-sam2-backend` 拆成 `gsam2-tiny` / `gsam2-large` 两个 service（独立 profile + 独立端口），按业务 tier 路由不同 batch（tier-A 高精度走 large，tier-B 快通走 tiny）。运行期切换 / 模型 pool 在 ROADMAP §A 阶段 2 (B) 触发后做。
+
+### 1.3 镜像基础 + checkpoint 同步
+
+镜像基于 `pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel`（**devel** 必需，runtime 镜像缺 nvcc 触发 GroundingDINO 编译失败）。Dockerfile 末段 `pip install -e ../_shared/mask_utils` 把共享 mask 转换包链入容器（v0.9.14 起包内含 `mask_to_multi_polygon`，详 ADR-0013）。
+
+checkpoint 同步：`apps/grounded-sam2-backend/scripts/download_checkpoints.py` 按 SAM_VARIANT / DINO_VARIANT env 拉 hf-mirror 镜像；首次冷启或换 variant 时跑一次。生产环境推荐挂 PV / EBS 把 `/app/checkpoints` 持久化（~900MB-2GB），避免 image rebuild 重新下载。
 
 ---
 

@@ -173,3 +173,154 @@ def test_geometry_passthrough_preserves_unknown_fields():
     out = to_internal_shape(raw)
     assert out is raw  # 同一对象返回, 字段无损
     assert out["extra_meta"] == {"hint": "from-sam"}
+
+
+# ─── v0.9.14 · mask 多连通域 / 空洞 LS → 内部 schema ─────────────────
+
+
+def test_polygonlabels_with_holes_field():
+    """单连通带 hole: value.holes 透传到 geometry.holes."""
+    raw = {
+        "type": "polygonlabels",
+        "score": 0.91,
+        "value": {
+            "points": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+            "holes": [
+                [[0.4, 0.4], [0.6, 0.4], [0.6, 0.6], [0.4, 0.6]],
+            ],
+            "polygonlabels": ["donut"],
+        },
+    }
+    out = to_internal_shape(raw)
+    assert out["geometry"]["type"] == "polygon"
+    assert len(out["geometry"]["points"]) == 4
+    assert len(out["geometry"]["holes"]) == 1
+    assert len(out["geometry"]["holes"][0]) == 4
+
+
+def test_polygonlabels_with_polygons_field_multi():
+    """多连通域: value.polygons → geometry.multi_polygon."""
+    raw = {
+        "type": "polygonlabels",
+        "score": 0.88,
+        "value": {
+            "polygons": [
+                {
+                    "points": [[0, 0], [1, 0], [1, 1]],
+                    "holes": [],
+                },
+                {
+                    "points": [[2, 2], [3, 2], [3, 3], [2, 3]],
+                    "holes": [[[2.4, 2.4], [2.6, 2.4], [2.6, 2.6]]],
+                },
+            ],
+            "polygonlabels": ["multi"],
+        },
+    }
+    out = to_internal_shape(raw)
+    assert out["geometry"]["type"] == "multi_polygon"
+    assert len(out["geometry"]["polygons"]) == 2
+    assert "holes" not in out["geometry"]["polygons"][0]  # 无 hole 时不写字段
+    assert len(out["geometry"]["polygons"][1]["holes"]) == 1
+
+
+def test_polygonlabels_legacy_no_holes_field_unchanged():
+    """老格式 LS shape (仅 points, 无 holes / polygons) 输出与 v0.9.13 之前字面一致."""
+    raw = {
+        "type": "polygonlabels",
+        "score": 0.85,
+        "value": {
+            "points": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]],
+            "polygonlabels": ["person"],
+        },
+    }
+    out = to_internal_shape(raw)
+    # 老回归: geometry 字面值不带 holes 字段
+    assert out["geometry"] == {
+        "type": "polygon",
+        "points": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]],
+    }
+
+
+def test_pydantic_polygon_geometry_default_holes_empty():
+    """PolygonGeometry 解析无 holes 字段的老 dict 时 holes 默认 []."""
+    from app.schemas._jsonb_types import PolygonGeometry
+
+    g = PolygonGeometry.model_validate(
+        {"type": "polygon", "points": [[0, 0], [1, 0], [1, 1]]}
+    )
+    assert g.holes == []
+
+
+def test_pydantic_polygon_geometry_with_holes():
+    from app.schemas._jsonb_types import PolygonGeometry
+
+    g = PolygonGeometry.model_validate(
+        {
+            "type": "polygon",
+            "points": [[0, 0], [10, 0], [10, 10], [0, 10]],
+            "holes": [
+                [[2, 2], [8, 2], [8, 8], [2, 8]],
+            ],
+        }
+    )
+    assert len(g.holes) == 1
+    assert len(g.holes[0]) == 4
+
+
+def test_pydantic_polygon_geometry_rejects_invalid_hole():
+    """hole 顶点 < 3 时 422."""
+    from pydantic import ValidationError
+
+    from app.schemas._jsonb_types import PolygonGeometry
+
+    import pytest as _pytest
+
+    with _pytest.raises(ValidationError):
+        PolygonGeometry.model_validate(
+            {
+                "type": "polygon",
+                "points": [[0, 0], [1, 0], [1, 1]],
+                "holes": [[[0.5, 0.5], [0.6, 0.5]]],  # 仅 2 顶点
+            }
+        )
+
+
+def test_pydantic_multi_polygon_discriminator():
+    """Geometry union discriminator 路由 type=multi_polygon → MultiPolygonGeometry."""
+    from pydantic import TypeAdapter
+
+    from app.schemas._jsonb_types import (
+        Geometry,
+        MultiPolygonGeometry,
+    )
+
+    adapter = TypeAdapter(Geometry)
+    g = adapter.validate_python(
+        {
+            "type": "multi_polygon",
+            "polygons": [
+                {"type": "polygon", "points": [[0, 0], [1, 0], [1, 1]]},
+                {
+                    "type": "polygon",
+                    "points": [[2, 2], [3, 2], [3, 3]],
+                    "holes": [[[2.2, 2.2], [2.8, 2.2], [2.8, 2.8]]],
+                },
+            ],
+        }
+    )
+    assert isinstance(g, MultiPolygonGeometry)
+    assert len(g.polygons) == 2
+    assert g.polygons[0].holes == []
+    assert len(g.polygons[1].holes) == 1
+
+
+def test_pydantic_multi_polygon_requires_at_least_one():
+    from pydantic import ValidationError
+
+    from app.schemas._jsonb_types import MultiPolygonGeometry
+
+    import pytest as _pytest
+
+    with _pytest.raises(ValidationError):
+        MultiPolygonGeometry(polygons=[])

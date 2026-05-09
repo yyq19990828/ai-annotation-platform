@@ -21,6 +21,72 @@
 
 ## 最新版本
 
+## [0.9.14] - 2026-05-09
+
+> **Fluttering Wirth — mask 多连通域 / 空洞协议升级 + 前端单测覆盖率 25→30 + 文档收口.** 0.9.x 收尾三段第二版. 主线: ① mask→polygon 协议升级 — `mask_to_multi_polygon` (RETR_CCOMP 抓内外环树) + `PolygonGeometry.holes` 默认 [] 向后兼容 + 新 `MultiPolygonGeometry` discriminated union, predictor 智能选择三种 LS shape 字面 (单连通无 hole 字面与 v0.9.13 100% 一致, 老 fixture / 老前端不破); ② 前端 `transforms.geometryToShape` 处理 multi_polygon 分支降级取主外环 + 完整 polygons 透传 `multiPolygon` 字段供 v0.10.x 镂空渲染升级 (ImageStage Konva sceneFunc evenodd 留 v0.10.x sam3-backend 接入同窗口做, 避免二次破窗); ③ `scripts/eval_simplify.py` 双跑 single + multi, 输出加 `iou_multi@{tol}` / `multi_only_helps %` 列, 90 张合成 fixture 跑 tol=1.0: IoU≥0.95 占比 92.2% → 100%, multi_only_helps 8.9% (即多连通 / 带空洞长尾根因占比); ④ 前端单测 25→30 — 新增 GeneralSection (7 case) / DatasetsSection (7 case) / AuditPage (7 case) / BatchesSection smoke (3 case) + transforms multi_polygon 几何映射 (4 case), 实测 30.30%; ⑤ ai-models.md §1 部署章节展开 (compose profile + nvidia 资源预留 + 显存预算表 + dev/生产差异); ⑥ ADR-0013 加 v0.9.14 多连通域升级章节. **不在范围**: 系统设置 admin UI (调研发现实际已落地, ROADMAP 优先级表删除该项); ImageStage Konva 镂空渲染 (推 v0.10.x); v0.9.15 admin-locked + bulk-approve/reject. → [plan](docs/plans/2026-05-09-v0.9.14-fluttering-wirth.md).
+
+### Added
+
+- **`mask_to_multi_polygon` 算法** (`apps/_shared/mask_utils/src/mask_utils/polygon.py`):
+  - `cv2.findContours(RETR_CCOMP, CHAIN_APPROX_NONE)` 抓两层环树 (顶层 = 各连通域外环, 二层 = hole), `hierarchy[i][3] == -1` 区分外环 vs hole, hole 通过 parent 索引归属对应外环.
+  - 每个外环 + 每个 hole 各自走 `shapely.simplify(tolerance, preserve_topology=True)`, 共用同一 tolerance.
+  - `min_area=4.0` 像素阈值过滤 1-2 像素噪声 hole; 形态学 closing 默认 off (避免吞掉小真实 hole).
+  - 输出 `list[{exterior, holes}]`, 按外环面积降序排列 (与 mask_to_polygon 单环时返回最大者语义对齐).
+  - 保留 `mask_to_polygon` 旧函数不动, predictor 在单连通无 hole 时仍走旧路径以保持向后兼容. 新增 `_simplify_contour` / `_polygon_signed_area` 辅助.
+  - 新增 `apps/_shared/mask_utils/tests/test_multi_polygon.py` 10 测试 (donut / 两圆 / 单连通退化 / 噪点 hole / 排序 / 归一化 / bool dtype) 全绿.
+- **`PolygonGeometry.holes` + `MultiPolygonGeometry` schema** (`apps/api/app/schemas/_jsonb_types.py`):
+  - `PolygonGeometry` 加可选 `holes: list[list[list[float]]]` 字段 (默认 `Field(default_factory=list)`, 老存量 / 老前端反序列化默认 [] 不破), 加 `_check_holes` validator (顶点 < 3 时 422).
+  - 新增 `MultiPolygonGeometry { type: "multi_polygon", polygons: list[PolygonGeometry] }` (`min_length=1`).
+  - `Geometry` discriminated union 加新分支 `BboxGeometry | PolygonGeometry | MultiPolygonGeometry`.
+  - `apps/api/app/schemas/prediction.py`: `PredictionShape.geometry` Union 加 `MultiPolygonGeometry`.
+- **`to_internal_shape` 三 shape 解析** (`apps/api/app/services/prediction.py`):
+  - LS `polygonlabels` 现在识别三种 value 字面: ① `{points}` 单连通无 hole (老路径, 字面与 v0.9.13 之前完全一致, 不写 holes 字段); ② `{points, holes}` 单连通带 hole; ③ `{polygons:[{points, holes?}]}` 多连通.
+  - 老 fixture / 老 DB JSONB 字面零变化; 新 fixture 透传新字段, Pydantic 反序列化 PolygonGeometry.holes 默认 [] 兜底.
+- **predictor 智能选择 LS shape** (`apps/grounded-sam2-backend/predictor.py`):
+  - 新增 `_rings_to_polygon_label(rings, label, score)`: 单连通无 hole 输出 `{points, polygonlabels}` (字面零差异); 单连通带 hole 输出 `{points, holes, polygonlabels}`; 多连通输出 `{polygons:[{points, holes?}], polygonlabels}`.
+  - 新增 `_maybe_warn_vertex_count`: 累加所有 ring 顶点数 (外环 + holes), > 200 触发 logger.warning, 同时打 `rings=N` 帮助运维定位多连通来源.
+  - `_masks_to_results` (point/bbox 路径) + `predict_text` (text 路径) 两处统一走 `mask_to_multi_polygon` + `_rings_to_polygon_label`.
+  - 新增 `apps/grounded-sam2-backend/tests/test_multi_polygon_output.py` 6 测试 (三种 shape 字面 + score 透传 + score=None 路径 + text 路径 hole).
+- **前端 `MultiPolygonGeometry` 类型 + transforms** (`apps/web/src/types/index.ts`, `apps/web/src/pages/Workbench/state/transforms.ts`):
+  - `PolygonGeometry` 加可选 `holes?: [number, number][][]`, 新增 `MultiPolygonGeometry`, `Geometry` union 加新分支.
+  - `AIBox` 加可选 `holes?` / `multiPolygon?` 字段, transforms `geometryToShape` 处理 multi_polygon 分支: `multiPolygonBounds` 计算 union AABB + `pickPrimaryPolygon` 取顶点数最多的主外环作为 `polygon` 字段 (编辑路径兼容), 完整 polygons 数组挂在 `multiPolygon` 透传给 v0.10.x 镂空渲染.
+  - `transforms.test.ts` 加 4 v0.9.14 用例 (polygon+holes / multi_polygon 主环选择 / annotationToBox 透传 / predictionsToBoxes donut), 18 测试全绿.
+- **`scripts/eval_simplify.py` 升级评测**:
+  - 同时跑 `mask_to_polygon` + `mask_to_multi_polygon`, 表加 `iou_multi@{tol}` / `verts_multi@{tol}` / `rings@{tol}` / `iou_diff@{tol}` 列.
+  - 汇总段加「v0.9.14 · 多连通域 / 空洞升级评测」表, 含 `multi_only_helps %` (升级使 IoU 提升 ≥ 0.02 的样本占比).
+  - 新增 `_multi_polygon_iou(rings, mask)`: 外环 fillPoly 1 + hole fillPoly 0 累加 → IoU 公平比较.
+  - 90 张合成 fixture tol=1.0: 单 polygon IoU≥0.95 占比 92.2% → multi 100%, multi_only_helps 8.9% (即多连通 / 带空洞的长尾根因).
+- **前端 v0.9.14 单测推到 30%** (实测 30.30%, 425 case):
+  - `apps/web/src/pages/Projects/sections/GeneralSection.test.tsx` (新, 7 case): 渲染初值 / dirty 检测 / 类别 chip 添加+删除 / 空名校验 / 启用 AI / 保存 mutation 触发.
+  - `apps/web/src/pages/Projects/sections/DatasetsSection.test.tsx` (新, 7 case): 加载态 / 空 linked / 已关联表 / 关联 modal 候选 / 链接 mutation / 无候选 disabled / 取消关联 modal 触发.
+  - `apps/web/src/pages/Audit/AuditPage.test.tsx` (新, 7 case): 总数 / 数据渲染 / CSV 导出 / detail 键值联动 / URL actor_id 追溯 / 刷新 refetch / target_type 同步.
+  - `apps/web/src/pages/Projects/sections/BatchesSection.test.tsx` (新, 3 case smoke): 加载态 / 空 batches / useBatchEventsSocket 透传 project.id. 完整交互 (创建/bulk/逆向迁移/看板) 推到 v0.9.15 与 admin-locked UI 测试合并写.
+  - 阈值 `apps/web/vite.config.ts:99-103` lines/statements 25 → 30, functions 30 / branches 60 不动.
+- **api schema 测试** (`apps/api/tests/test_prediction_schema_adapter.py`):
+  - 新增 8 v0.9.14 用例: `polygonlabels` 含 holes / 含 polygons / 老路径无 holes 字面不变 / Pydantic PolygonGeometry holes 默认 [] / hole 顶点 < 3 拒绝 / Geometry union discriminator 路由 multi_polygon / multi_polygon polygons 不能为空. 43 测试全绿.
+
+### Changed
+
+- **`apps/_shared/mask_utils/src/mask_utils/__init__.py`**: 导出 `MultiPolygonRing` + `mask_to_multi_polygon`, `__version__` 0.1.0 → 0.2.0.
+- **`apps/_shared/mask_utils/tests/fixtures/synthetic.py`**: 新增 `donut_mask` / `two_circles_mask` / `multi_polygon_iou` 辅助 (test_multi_polygon.py 用).
+- **`docs-site/dev/architecture/ai-models.md` §1 部署拓扑**: 展开为 §1.1 (compose profile + nvidia 资源预留 + dev/生产差异表) / §1.2 (显存预算 + variant 选型, 4 类 GPU 推荐组合) / §1.3 (镜像基础 + checkpoint 同步). 通用模板写法, v0.10.x sam3-backend 接入时直接复用骨架.
+- **`docs/adr/0013-mask-to-polygon-server-side.md`**: Status 加 v0.9.14 注记, 新增「v0.9.14 update — mask 多连通域 / 空洞升级」章节 (触发 / 算法 / 协议 / 评测 / 前端落点 / 升级触发条件).
+- **`apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.test.tsx`**: 加 `useUpdateProject` mock (v0.9.13 起 ProjectDetailPanel 调用持久化 chips/threshold) + `useBatchEventsSocket` noop mock (v0.9.13 起 mount 时发起 ws upgrade, MSW 没装 ws handler 时 libuv stream assert 致 worker crash). 修复 v0.9.13 落地遗留 10 个 fail test.
+
+### Removed
+
+- 无 (向后兼容, 老路径全保留).
+
+### Operational notes
+
+- **协议向后兼容承诺**: PolygonGeometry 加 `holes` 字段是纯加字段, 默认 []. MultiPolygonGeometry 是新 discriminator 分支. 老存量 DB JSONB / 老 fixture / 老前端字面零变化. predictor 在单连通无 hole 时永远输出旧 shape, 即使前端没合也不破.
+- **前端 ImageStage Konva 镂空渲染降级**: v0.9.14 协议 + 类型 + transforms 已就位, 但 ImageStage 的 Konva `<Line>` 渲染层暂不变 (仅渲染主外环, holes 字段忽略). 客户场景里 8.9% 多连通 / 带空洞样本目前显示主外环 + 无镂空, 与 v0.9.13 之前可视一致, 不破回归. v0.10.x sam3-backend 接入时一并升级 sceneFunc evenodd 路径 (避免二次破窗).
+- **用户 accept multi_polygon prediction 转 annotation**: 取主外环 (编辑路径单环假设), 丢 hole / 其余 ring. 客户反馈需要保留多 ring 时再扩 (与 PolygonTool 编辑器画 hole 同窗口做).
+- **GPU 真实 SAM 50 张验收待补**: ROADMAP P3 `真实 SAM mask 50 张 simplify tolerance 验收` 仍开. 当前 90 张合成 fixture 量化 multi_only_helps 8.9%, 真实 SAM 长尾形态可能更显著 (mask 边界更碎). GPU 时窗到位时跑 `python scripts/eval_simplify.py --masks-dir <real_sam_dir>` 观察 multi_only_helps 是否 > 15%.
+- **形态学 closing 默认 off**: 客户反馈「polygon 边界锯齿严重」时再开 (新增 `Context.morph_close=true` body 覆盖). 默认 on 会吞掉小真实 hole (甜甜圈中心半径 < 5 像素填实), 与「准确还原 mask」目标冲突.
+
+---
+
 ## [0.9.13] - 2026-05-09
 
 > **Eager Karp — 收尾 BUG 簇 + dev experience.** 0.9.x 三段收尾的第一版, 7/8 条收口. 主线: ① batch.status 变更 WS 广播 (`/ws/batches/project/:id` + `BatchEventPublisher.publish_batch_status_change` + 前端 `useBatchEventsSocket`, 接入 ProjectDetailPanel / BatchesSection / WorkbenchShell 三处 useBatches 消费方), B-15 第二症状端到端验证 100% 通过 (admin POST transition → redis pub/sub → 浏览器 WS 收 `batch.status_changed` 帧, multi-tab 实时同步); ② ProjectDetailPanel 加 alias chips 点击 toggle / 一键重填 + ThresholdRow (box/text slider 显式保存避免拖动 N 次 PATCH); ③ MlBackendFormModal 加 `max_concurrency` number input (1-32, 留空走默认 4) + RegisteredBackendsTab 行 `≤N 并发` chip; ④ 3 个 WS hook smoke 测试 (useGlobalPreannotationJobs / usePreannotation / useMLBackendStats, 16 case 全绿) 兜底 v0.9.11 「14 个月没人发现 URL 写错」类 bug; ⑤ `apps/api/app/main.py` lifespan + `apps/api/app/api/v1/ws.py:close_redis_pool()` (`asyncio.wait_for(timeout=2s)` 兜底) 缓解 uvicorn `--reload` 长 WS 卡 `Waiting for background tasks to complete`; ⑥ `apps/web/src/lib/wsHost.ts:getWsHost()` / `buildWsUrl()` 抽出收口 4 处 hook 重复的 `import.meta.env.DEV ? "localhost:8000" : window.location.host` 拼接 (vite proxy `/ws` 多并发卡死的绕法保留, 上游 minimal repro issue 留 follow-up); ⑦ docs-site/dev/architecture/ai-models.md §4.5 追加注册表单 UI 暴露说明. 截图 fixture 4 张空白态推迟 (用户已对齐, 不侵入 dev seed.py). → [plan](docs/plans/2026-05-09-v0.9.13-eager-karp.md).

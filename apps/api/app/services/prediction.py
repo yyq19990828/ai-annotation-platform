@@ -49,10 +49,31 @@ def to_internal_shape(s: dict) -> dict:
             "h": float(val.get("height", 0)),
         }
     elif typ == "polygonlabels":
-        geometry = {
-            "type": "polygon",
-            "points": val.get("points", []),
-        }
+        # v0.9.14 · 三种 LS shape 兼容:
+        #   ① 旧: {points: [[x,y]...]}                      → polygon (无 hole)
+        #   ② 新单连通带 hole: {points, holes: [[[x,y]...]]} → polygon (带 hole)
+        #   ③ 新多连通: {polygons: [{points, holes?}, ...]}  → multi_polygon
+        # ② / ③ 由 grounded-sam2-backend predictor.py 在 mask 多连通或带 hole 时输出.
+        # 老路径 (无 holes / polygons) 输出字面与 v0.9.13 之前完全一致, 不写 holes 字段
+        # 给老 fixture / 老 DB JSONB 持续兼容; PolygonGeometry.holes 默认 [] 由 Pydantic 补.
+        polygons_raw = val.get("polygons")
+        if polygons_raw:
+            new_polys: list[dict] = []
+            for p in polygons_raw:
+                entry: dict = {"type": "polygon", "points": p.get("points", [])}
+                holes = p.get("holes") or []
+                if holes:
+                    entry["holes"] = holes
+                new_polys.append(entry)
+            geometry = {"type": "multi_polygon", "polygons": new_polys}
+        else:
+            geometry = {
+                "type": "polygon",
+                "points": val.get("points", []),
+            }
+            holes = val.get("holes") or []
+            if holes:
+                geometry["holes"] = holes
     else:
         geometry = {}
 

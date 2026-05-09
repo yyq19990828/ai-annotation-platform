@@ -35,7 +35,7 @@ _MASK_UTILS_SRC = Path(__file__).resolve().parents[1] / "apps" / "_shared" / "ma
 if _MASK_UTILS_SRC.is_dir() and str(_MASK_UTILS_SRC) not in sys.path:
     sys.path.insert(0, str(_MASK_UTILS_SRC))
 
-from mask_utils import mask_to_polygon  # noqa: E402
+from mask_utils import mask_to_multi_polygon, mask_to_polygon  # noqa: E402
 
 
 def _load_mask(path: Path) -> np.ndarray | None:
@@ -46,12 +46,32 @@ def _load_mask(path: Path) -> np.ndarray | None:
 
 
 def _polygon_iou(poly_pixel_coords: list[list[float]], mask: np.ndarray) -> float:
-    """polygon (像素坐标) 重栅格化 → 与原 mask 的 IoU."""
+    """单 polygon (像素坐标) 重栅格化 → 与原 mask 的 IoU."""
     if not poly_pixel_coords:
         return 0.0
     rast = np.zeros_like(mask)
     pts = np.array(poly_pixel_coords, dtype=np.int32)
     cv2.fillPoly(rast, [pts], 1)
+    inter = np.logical_and(rast, mask).sum()
+    union = np.logical_or(rast, mask).sum()
+    return float(inter) / float(union) if union > 0 else 0.0
+
+
+def _multi_polygon_iou(rings: list[dict], mask: np.ndarray) -> float:
+    """v0.9.14 · 多连通域 polygons (含 hole) 重栅格化 → 与原 mask 的 IoU.
+
+    每个外环 fillPoly 1, 内部 holes fillPoly 0; 多连通域多个外环全部累加.
+    评测 mask_to_multi_polygon 在长尾样本上比 mask_to_polygon 提升多少.
+    """
+    if not rings:
+        return 0.0
+    rast = np.zeros_like(mask)
+    for r in rings:
+        ext_pts = np.array(r["exterior"], dtype=np.int32)
+        cv2.fillPoly(rast, [ext_pts], 1)
+        for hole in r.get("holes", []):
+            hpts = np.array(hole, dtype=np.int32)
+            cv2.fillPoly(rast, [hpts], 0)
     inter = np.logical_and(rast, mask).sum()
     union = np.logical_or(rast, mask).sum()
     return float(inter) / float(union) if union > 0 else 0.0
@@ -75,6 +95,10 @@ def _eval_dir(masks_dir: Path, tolerances: list[float]) -> tuple[list[dict], dic
     rows: list[dict] = []
     per_tol_iou: dict[float, list[float]] = {t: [] for t in tolerances}
     per_tol_verts: dict[float, list[int]] = {t: [] for t in tolerances}
+    # v0.9.14 · 同时跑 mask_to_multi_polygon, 评测多连通域 / hole 升级在长尾样本上的提升
+    per_tol_iou_multi: dict[float, list[float]] = {t: [] for t in tolerances}
+    per_tol_verts_multi: dict[float, list[int]] = {t: [] for t in tolerances}
+    per_tol_rings_multi: dict[float, list[int]] = {t: [] for t in tolerances}
 
     files = sorted(p for p in masks_dir.glob("*.png"))
     if not files:
@@ -95,6 +119,19 @@ def _eval_dir(masks_dir: Path, tolerances: list[float]) -> tuple[list[dict], dic
             row[f"verts@{tol}"] = n_verts
             per_tol_iou[tol].append(iou)
             per_tol_verts[tol].append(n_verts)
+
+            rings = mask_to_multi_polygon(mask, tolerance=tol, normalize_to=None)
+            iou_m = _multi_polygon_iou(rings, mask)
+            verts_m = sum(
+                len(r["exterior"]) + sum(len(h) for h in r["holes"]) for r in rings
+            )
+            row[f"iou_multi@{tol}"] = round(iou_m, 3)
+            row[f"verts_multi@{tol}"] = verts_m
+            row[f"rings@{tol}"] = len(rings)
+            row[f"iou_diff@{tol}"] = round(iou_m - iou, 3)
+            per_tol_iou_multi[tol].append(iou_m)
+            per_tol_verts_multi[tol].append(verts_m)
+            per_tol_rings_multi[tol].append(len(rings))
         rows.append(row)
 
     summary: dict[float, dict] = {}
@@ -106,6 +143,35 @@ def _eval_dir(masks_dir: Path, tolerances: list[float]) -> tuple[list[dict], dic
                 round(
                     100.0
                     * sum(1 for v in per_tol_iou[tol] if v >= 0.95)
+                    / max(1, len(per_tol_iou[tol])),
+                    1,
+                )
+            ),
+            "iou_multi": _summary(per_tol_iou_multi[tol]),
+            "verts_multi": _summary(
+                [float(v) for v in per_tol_verts_multi[tol]], precision=1
+            ),
+            "iou_multi>=0.95_pct": (
+                round(
+                    100.0
+                    * sum(1 for v in per_tol_iou_multi[tol] if v >= 0.95)
+                    / max(1, len(per_tol_iou_multi[tol])),
+                    1,
+                )
+            ),
+            "rings_multi": _summary(
+                [float(v) for v in per_tol_rings_multi[tol]], precision=1
+            ),
+            "multi_only_helps_pct": (
+                round(
+                    100.0
+                    * sum(
+                        1
+                        for s, m in zip(
+                            per_tol_iou[tol], per_tol_iou_multi[tol]
+                        )
+                        if m - s >= 0.02
+                    )
                     / max(1, len(per_tol_iou[tol])),
                     1,
                 )
@@ -139,7 +205,7 @@ def _render_markdown(
         "合成 mask 形状规则, IoU 偏高; 真实 SAM mask 边界更复杂, 数据替换后请重跑此脚本。"
     )
     lines.append("")
-    lines.append("## 汇总 (per tolerance)")
+    lines.append("## 汇总 (per tolerance) — 单 polygon (v0.9.13 之前)")
     lines.append("")
     lines.append("| tolerance (px) | n | IoU mean | IoU median | IoU p95 | IoU≥0.95 % | verts mean | verts median | verts p95 |")
     lines.append("|---|---|---|---|---|---|---|---|---|")
@@ -149,6 +215,24 @@ def _render_markdown(
             f"| {tol} | {s['iou']['n']} | {s['iou']['mean']} | {s['iou']['median']} | "
             f"{s['iou']['p95']} | {s['iou>=0.95_pct']} | {s['verts']['mean']} | "
             f"{s['verts']['median']} | {s['verts']['p95']} |"
+        )
+    lines.append("")
+    lines.append("## v0.9.14 · 多连通域 / 空洞升级评测")
+    lines.append("")
+    lines.append(
+        "`mask_to_multi_polygon` (RETR_CCOMP) 在同 tolerance 下与 `mask_to_polygon` "
+        "(RETR_EXTERNAL + max area) 的 IoU 对比。`multi_only_helps %` 列 = 升级使 IoU 提升 ≥ 0.02 的样本占比，"
+        "这部分样本是「多连通 / 带空洞」的长尾根因。"
+    )
+    lines.append("")
+    lines.append("| tolerance | IoU mean | IoU median | IoU≥0.95 % | rings median | multi_only_helps % |")
+    lines.append("|---|---|---|---|---|---|")
+    for tol in tolerances:
+        s = summary[tol]
+        lines.append(
+            f"| {tol} | {s['iou_multi']['mean']} | {s['iou_multi']['median']} | "
+            f"{s['iou_multi>=0.95_pct']} | {s['rings_multi']['median']} | "
+            f"{s['multi_only_helps_pct']} |"
         )
     lines.append("")
     lines.append("## 数据驱动结论")

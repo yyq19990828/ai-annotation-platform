@@ -207,3 +207,129 @@ describe("predictionsToBoxes 黄金样本 (v0.9.8 schema 边界)", () => {
     expect(b.cls).toBe("");
   });
 });
+
+/**
+ * v0.9.14 · multi_polygon / hole 几何映射 — mask→polygon 协议升级后, 后端
+ * to_internal_shape (apps/api/app/services/prediction.py) 在 mask 多连通或带 hole
+ * 时分别输出 polygon+holes / multi_polygon 两类, 前端 transforms 必须正确解析.
+ * 当前编辑路径只识别单环 polygon, 多连通时降级取主外环, 完整 polygons 透传到
+ * multiPolygon 字段供 v0.10.x 镂空渲染升级.
+ */
+describe("v0.9.14 mask 多连通域 / 空洞", () => {
+  it("polygon + holes → polygon 字段是外环, holes 字段透传", () => {
+    const s = geometryToShape({
+      type: "polygon",
+      points: [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+      ],
+      holes: [
+        [
+          [3, 3],
+          [7, 3],
+          [7, 7],
+          [3, 7],
+        ],
+      ],
+    });
+    expect(s.polygon).toHaveLength(4);
+    expect(s.holes).toHaveLength(1);
+    expect(s.holes![0]).toHaveLength(4);
+    // bounding rect 跟外环一致
+    expect(s.x).toBe(0);
+    expect(s.w).toBe(10);
+  });
+
+  it("multi_polygon → 主外环走 polygon 字段, 全部 polygons 留在 multiPolygon", () => {
+    const s = geometryToShape({
+      type: "multi_polygon",
+      polygons: [
+        // 小三角
+        { type: "polygon", points: [[0, 0], [1, 0], [0.5, 1]] },
+        // 大五边形 (顶点最多, 选作主环)
+        {
+          type: "polygon",
+          points: [
+            [10, 10],
+            [12, 10],
+            [13, 12],
+            [11, 14],
+            [9, 12],
+          ],
+          holes: [
+            [
+              [10.5, 11],
+              [11.5, 11],
+              [11.5, 12],
+              [10.5, 12],
+            ],
+          ],
+        },
+      ],
+    });
+    expect(s.polygon).toHaveLength(5);
+    expect(s.holes).toHaveLength(1); // 来自主环的 hole
+    expect(s.multiPolygon).toHaveLength(2);
+    // bounding rect 应覆盖所有 polygon
+    expect(s.x).toBe(0);
+    expect(s.w).toBeCloseTo(13);
+    expect(s.h).toBeCloseTo(14);
+  });
+
+  it("annotationToBox 透传 holes / multiPolygon", () => {
+    const ann = {
+      id: "a-multi",
+      geometry: {
+        type: "multi_polygon",
+        polygons: [
+          { type: "polygon", points: [[0, 0], [1, 0], [1, 1]] },
+          { type: "polygon", points: [[2, 2], [3, 2], [3, 3], [2, 3]] },
+        ],
+      },
+      class_name: "donut",
+      confidence: 0.91,
+      source: "prediction_based",
+    } as any;
+    const box = annotationToBox(ann);
+    expect(box.cls).toBe("donut");
+    expect(box.multiPolygon).toHaveLength(2);
+    expect(box.polygon).toBeDefined();
+  });
+
+  it("predictionsToBoxes 处理 polygon + holes (单连通带空洞)", () => {
+    const preds = [
+      {
+        id: "p-donut",
+        result: [
+          {
+            geometry: {
+              type: "polygon",
+              points: [
+                [0.1, 0.1],
+                [0.9, 0.1],
+                [0.9, 0.9],
+                [0.1, 0.9],
+              ],
+              holes: [
+                [
+                  [0.4, 0.4],
+                  [0.6, 0.4],
+                  [0.6, 0.6],
+                  [0.4, 0.6],
+                ],
+              ],
+            },
+            class_name: "donut",
+            confidence: 0.88,
+          },
+        ],
+      },
+    ] as any;
+    const [b] = predictionsToBoxes(preds);
+    expect(b.polygon).toHaveLength(4);
+    expect(b.holes).toHaveLength(1);
+    expect(b.cls).toBe("donut");
+  });
+});

@@ -18,6 +18,13 @@ const mockAliasFreqAPI = vi.fn();
 vi.mock("@/hooks/useProjects", () => ({
   useProject: (id: string) => mockUseProject(id),
   useProjects: () => ({ data: [], isLoading: false }),
+  // v0.9.13 起 ProjectDetailPanel 调用 useUpdateProject 持久化 chips/threshold; mock 默认 noop
+  useUpdateProject: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
+}));
+// v0.9.13 起 useBatchEventsSocket 在 mount 时发起 ws upgrade, MSW 没装 ws handler 时
+// libuv stream assert → worker crash. 单测里直接 noop 即可 (WS 行为另有 useBatchEventsSocket 自己的 smoke 测试).
+vi.mock("@/hooks/useBatchEventsSocket", () => ({
+  useBatchEventsSocket: () => undefined,
 }));
 vi.mock("@/hooks/useBatches", () => ({
   useBatches: (pid: string, status: string) => mockUseBatches(pid, status),

@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详情见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；最近一版 **v0.9.13 (Eager Karp)** — batch.status WS 广播 + alias chips/threshold UI 搬到 ProjectDetailPanel + max_concurrency 注册表单 UI + 3 个 WS hook smoke 测试 + lifespan close pool + getWsHost helper. 0.9.x 段暂存 root CHANGELOG，开 v0.10 时再迁回 `docs/changelogs/0.9.x.md`.
+> 已完成版本详情见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；最近一版 **v0.9.14 (Fluttering Wirth)** — mask→polygon 多连通域 / 空洞协议升级 (`mask_to_multi_polygon` RETR_CCOMP + `MultiPolygonGeometry` discriminator + predictor 智能 LS shape) + 前端单测 25→30 (实测 30.30%, 含 GeneralSection / DatasetsSection / AuditPage / BatchesSection smoke) + ai-models.md 部署章节 + ADR-0013 v0.9.14 update. 0.9.x 段暂存 root CHANGELOG，开 v0.10 时再迁回 `docs/changelogs/0.9.x.md`.
 
 ---
 
@@ -12,6 +12,7 @@
 
 ### 已收尾（条目越短越好；详情看 plan 文件 / CHANGELOG）
 
+- ~~**v0.9.14 — Fluttering Wirth**~~ ✅ mask 多连通域 / 空洞协议升级 (`mask_to_multi_polygon` RETR_CCOMP + `PolygonGeometry.holes` 默认 [] 向后兼容 + `MultiPolygonGeometry` discriminator + predictor 智能选择三种 LS shape 字面 + `to_internal_shape` 三 shape 解析) + 前端 transforms multi_polygon 主外环降级 + types/AIBox 加 holes/multiPolygon 字段 + `eval_simplify.py` 双跑 single + multi (合成 fixture multi_only_helps 8.9%) + 前端单测 25→30 (实测 30.30%, 425 case 全绿, GeneralSection/DatasetsSection/AuditPage/BatchesSection smoke + transforms 多连通 4 case + 修 ProjectDetailPanel.test useUpdateProject + useBatchEventsSocket mock 缺失致 worker crash 回归) + ai-models.md §1 部署章节展开 (compose profile + nvidia 资源预留 + 显存预算表 + dev/生产差异) + ADR-0013 v0.9.14 update. 系统设置 admin UI 调研发现已落地, 优先级表对应行删除. ImageStage Konva 镂空 sceneFunc 推 v0.10.x sam3-backend 同窗口做. → [plan](docs/plans/2026-05-09-v0.9.14-fluttering-wirth.md).
 - ~~**v0.9.13 — Eager Karp**~~ ✅ batch.status WS 广播 (`/ws/batches/project/:id` + `BatchEventPublisher` + `useBatchEventsSocket` 接入 ProjectDetailPanel/BatchesSection/WorkbenchShell) + B-15 第二症状端到端验证（admin/anno 多端实时同步 100% 通过) + ProjectDetailPanel chips 点击 toggle / 重填 + ThresholdRow (box/text slider 显式保存) + max_concurrency 注册表单 number input + 列表行 chip + 3 hook WS smoke 测试 (useGlobalPreannotationJobs / usePreannotation / useMLBackendStats, 16 全绿) + `apps/web/src/lib/wsHost.ts` 抽 `getWsHost()` / `buildWsUrl()` 收口 4 处 hook + `apps/api/app/main.py` lifespan + `ws.py:close_redis_pool()` (asyncio.wait_for 2s timeout 兜底). 截图 fixture 4 张空白态推迟到 v0.9.14+ 决策 (不侵入 dev seed.py). → [plan](docs/plans/2026-05-09-v0.9.13-eager-karp.md).
 - ~~**v0.9.12 — Humming Roaming Oasis**~~ ✅ `/ai-pre` IA 重构 (ProjectCardGrid + ProjectDetailPanel 多选 batch + 串/并行调度) + BUG B-14~B-17 收尾 (B-14 删 ModelMarket failed tab + redirect / B-15 reset_to_draft 4 条级联 + check_auto_transitions 日志 / B-16 HistoryTable 多选 + bulk-clear 端点 / B-17 项目卡片网格) + `ml_backends.extra_params.max_concurrency` per-backend asyncio.Semaphore 限速 + v0.9.11 stale `useNotificationSocket.test.tsx` 修复. → [plan](docs/plans/2026-05-09-v0.9.12-ai-pre-workflow-redesign.md).
 - ~~**v0.9.11 — Modular Star**~~ ✅ CSP `script-src` nonce 收紧 (Nginx sub_filter + vite plugin 占位符) + GPU/ML PerfHud 浮窗 (pynvml/psutil + WS 1s + 4 progress bar + 60s sparkline) + `PredictionShape` Pydantic + 前端 codegen 派生 + `prediction_jobs.total_cost` 接通累加 + 4 处 WS hook 修复 (`/ws/notifications` URL 历史 v0.6.9 bug + dev 直连 :8000 绕 vite proxy /ws 多并发卡死) + Celery 拆 `celery-beat` 独立 service. → [plan](docs/plans/2026-05-09-v0.9.11-modular-star.md).
@@ -37,8 +38,9 @@
 - **i18n 框架接入**（P3，与全站 inline style 重构合并节省破窗成本，inline style 密度最高的 ProjectSettingsPage sections 群可作为切入点）
 - **截图 fixture 数据补齐 + 重跑**（P3）：v0.9.7 19 张 PNG 已 commit，4 张空白态需在 `apps/api/scripts/seed.py` 或 scene `prepare()` 钩子造数据后重跑（`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`）。
 - **v0.9.11 落地后新发现**：① 真实 SAM mask 50 张 simplify tolerance 验收（v0.9.4 phase 3 归档遗留，需 GPU 环境）；② PerfHud 浏览器侧指标（FPS / JS heap / longtask / API p95 / WS 重连数 / 当前 task 框数）—— 留到 §C.1 keyset 分页拐点判断时一并加。
-- **v0.9.13 落地后新发现**（P3）：① 实测一次 lifespan shutdown hang 后给 `close_redis_pool` 加 `asyncio.wait_for(timeout=2s)` 兜底，避免 `disconnect(inuse_connections=True)` 等不到 task 取消时无限阻塞 (`apps/api/app/api/v1/ws.py:34-50`)；② vite 上游 ws upgrade 卡死的 minimal repro issue 还没提（绕法保留：dev 直连 :8000 已抽进 `apps/web/src/lib/wsHost.ts:getWsHost()`）, follow-up；③ 4 张空白态截图 fixture (`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`) 用户已确认不侵入 dev `seed.py`，留 v0.9.14+ 决策侵入 vs 新增独立 `screenshot_fixture.py` 路径；④ 验证脚本里发现 `rtk` token-killer 代理会截断 curl stdout（>500 字节就丢），后续大 JSON 测试要用 `/usr/bin/curl` 绕开（已写入 v0.9.13 落地经验）；⑤ "精细单批次预标 modal" 回归仍 open（ROADMAP 优先级表 P3），4 个 orphan stepper 子组件继续等回归触发。
-- **mask→polygon 多连通域 / 空洞支持**（P2，长尾 follow-up，与 sam3-backend 共做）：详见 §A.AI / 模型 与优先级表对应行。
+- **v0.9.13 落地后新发现**（P3）：① 实测一次 lifespan shutdown hang 后给 `close_redis_pool` 加 `asyncio.wait_for(timeout=2s)` 兜底，避免 `disconnect(inuse_connections=True)` 等不到 task 取消时无限阻塞 (`apps/api/app/api/v1/ws.py:34-50`)；② vite 上游 ws upgrade 卡死的 minimal repro issue 还没提（绕法保留：dev 直连 :8000 已抽进 `apps/web/src/lib/wsHost.ts:getWsHost()`）, follow-up；③ 4 张空白态截图 fixture (`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`) 用户已确认不侵入 dev `seed.py`，留 v0.9.15+ 决策侵入 vs 新增独立 `screenshot_fixture.py` 路径；④ 验证脚本里发现 `rtk` token-killer 代理会截断 curl stdout（>500 字节就丢），后续大 JSON 测试要用 `/usr/bin/curl` 绕开（已写入 v0.9.13 落地经验）；⑤ "精细单批次预标 modal" 回归仍 open（ROADMAP 优先级表 P3），4 个 orphan stepper 子组件继续等回归触发。
+- **v0.9.14 落地后新发现**（P3）：① 调研发现「系统设置 admin UI 可编辑」实际已落地（`apps/api/app/api/v1/system_settings.py:51-93` PATCH endpoint RBAC SUPER_ADMIN + audit log + `apps/web/src/pages/Settings/SettingsPage.tsx:351-573` SystemSection 编辑 UI + SMTP 测试按钮全齐), 优先级表对应行删除；② docker-compose 缺 mailpit / mailhog dev SMTP service, dev 测试 SMTP 链路要么挂外部 (MailTrap) 要么 v0.9.15 / 单挂 chip:dev-experience 时加 `mailpit` service + .env `SMTP_HOST=mailpit SMTP_PORT=1025`；③ 前端 polygon 编辑器 PolygonTool 仍只支持单环, multi_polygon prediction accept 后转 annotation 取主外环丢 hole / 其余 ring, 客户反馈触发再扩；④ ImageStage Konva sceneFunc + evenodd 镂空可视化与 v0.10.x sam3-backend 接入同窗口做（避免二次破窗），protocol + transforms 已就位；⑤ v0.9.13 落地遗留 `ProjectDetailPanel.test.tsx` 缺 `useUpdateProject` mock + `useBatchEventsSocket` mount 触发 ws upgrade 致 vitest worker libuv assert crash, v0.9.14 修复时一并 mock noop, 后续新加 ProjectDetailPanel 相关 test 都要 mock 这两条；⑥ vitest CI 模式下若使用 RTK token-killer 代理，`pnpm exec vitest` 输出会被 RTK 透传截断，验证测试结果时直接用 `/usr/bin/env CI=1 pnpm exec vitest run`。
+- ~~**mask→polygon 多连通域 / 空洞支持**~~（P2）✅ v0.9.14 落地 (`mask_to_multi_polygon` + `MultiPolygonGeometry` discriminator + 后端 LS shape 智能选择 + 前端 transforms 主外环降级). ImageStage Konva sceneFunc evenodd 镂空可视化推 v0.10.x sam3-backend 同窗口做.
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **predictions 月分区 Stage 2**：单月 INSERT > 100k 或 总行数 > 1M（ADR-0006）
@@ -206,12 +208,11 @@
 
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
-| **P3** | 真实 SAM mask 50 张 simplify tolerance 验收 | v0.9.4 phase 3 归档遗留, 需 GPU 环境 50 张真实 mask 重跑 `docs/research/13-simplify-tolerance-eval.md`；与 mask→polygon 多连通域 follow-up 同窗口 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
+| **P3** | 真实 SAM mask 50 张 simplify tolerance 验收 | v0.9.4 phase 3 归档遗留, 需 GPU 环境 50 张真实 mask 重跑 `docs/research/13-simplify-tolerance-eval.md`；v0.9.14 已落地多连通域算法, 验收时同时观察 `multi_only_helps %` 是否 > 15% (合成 fixture 8.9% 基线) | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P3** | `/ai-pre` 精细单批次预标 modal（v0.9.13 后回归） | v0.9.12 IA 重构 + v0.9.13 chips/threshold UI 已搬到 ProjectDetailPanel；4 个 stepper 子组件 (`PreannotateStepper` / `ProjectBatchPicker` / `RunPanel` / `usePreannotateDraft`) 仍 orphan，客户场景需要单 batch 精细调（草稿恢复 / 阶段进度可视化）时唤起 modal 复用旧组件；如反馈不需要再删 orphan 文件 | — |
-| **P2** | mask→polygon 多连通域 / 空洞支持 | v0.9.4 phase 3 长尾分析暴露：< 15% 样本 IoU 落 [0.5, 0.95)，根因 `RETR_EXTERNAL + max area` 假设。修复方向：multi_polygon 输出 + `RETR_CCOMP` 内外环编码 + morphological closing；触发：长尾 IoU<0.95 占比 > 20%、或客户抱怨 polygon 与 mask 形状差异 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
+| **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
-| **P2** | 系统设置 admin UI 可编辑（含开放注册 toggle） | 当前所有系统设置仅 env 控制，运维成本高 | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
 | **P2** | 非 image-det 工作台（image-seg → keypoint → video → lidar） | 体量大，按业务优先级排队 | — |
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
@@ -221,7 +222,7 @@
 | **P3** | 截图 fixture 数据补齐 + 重跑（v0.9.7 19 张已 commit, 4 张空白态需补 seed） | seed.py 加 prepare 钩子: 5+ pre_annotated 批次 / 类别无 alias 项目 / 同 task 双 prediction (IoU) / 30+ tasks (bulk-edit) | — |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |
-| **P3** | 前端单测从 25% 推到 30% | v0.8.8 已推回 25.17%；下阶段补 `pages/Projects/sections/{BatchesSection,GeneralSection,DatasetsSection}` / `AuditPage` / `WorkbenchShell` 关键 hook 单测 | — |
+| **P3** | 前端单测从 30 推到 35 | v0.9.14 实测 30.30%；下阶段补 `BatchesSection` 完整交互（创建/bulk/逆向迁移/看板）+ `WorkbenchShell` 关键 hook + `useBatchEventsSocket` 端到端 | — |
 | **P3** | PerfHud 浏览器侧指标扩展（FPS / JS heap / longtask / API p95 / WS 重连数 / task 框数） | v0.9.11 落地 GPU MVP 后, 浏览器侧指标延期到 §C.1 keyset 分页拐点判断时一并加；当前后端视角 GPU/容器指标已足够排预标卡顿/OOM | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
