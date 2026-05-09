@@ -123,7 +123,7 @@ user-guide/
 **关键变化**：
 - 一级菜单从「功能模块」(workbench / projects / review / export / superadmin) 转为「角色」(for-X) + 「场景」(workflows)，对应 Encord 风格。
 - 把 `export/` 降到 reference（标注员从 ribbon 直接进，不需要在主导航占位）。
-- `concepts.md` 收录平台核心名词（task / batch / job / pipeline / prediction / annotation 的差别），同 [glossary.md](docs-site/user-guide/reference/glossary.md) 互相 anchor。
+- `concepts.md` 收录平台核心名词（task / batch / job / pipeline / prediction / annotation 的差别），同 `user-guide/reference/glossary.md`（待建）互相 anchor。
 - `workflows/` 是 explanation + tutorial 杂交：用户读完一个 workflow 能从头跑通一遍，不需要在 5 个章节间跳转。
 
 ### 3.3 dev/ 重排（Diátaxis 显式落地）
@@ -324,4 +324,4 @@ VitePress 主题在 sidebar / 搜索结果旁渲染 audience badge；CI 校验 `
 - Roboflow Docs：https://docs.roboflow.com/
 - Encord Docs：https://docs.encord.com/
 - VitePress rewrites / sidebar：https://vitepress.dev/reference/site-config
-- 内部参考：[CLAUDE.md 文档索引](../CLAUDE.md)、[docs-site/.vitepress/config.ts](../docs-site/.vitepress/config.ts)、[ROADMAP/0.10.x.md](./0.10.x.md)
+- 内部参考：CLAUDE.md 文档索引、[docs-site/.vitepress/config.ts](../docs-site/.vitepress/config.ts)、[ROADMAP/0.10.x.md](./0.10.x.md)

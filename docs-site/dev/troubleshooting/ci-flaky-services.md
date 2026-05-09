@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: how-to
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # CI 服务依赖踩坑
 
 GitHub Actions e2e job 跑挂的几个非典型问题，集中归档。

@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: reference
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # 故障排查 / 踩坑手册
 
 收录从 v0.8 起在实际开发与 CI 中踩到的"非显然 BUG"，以**症状 → 根因 → 修复**的方式归档，便于快速对症。每篇都标注关联 commit / ADR，可顺藤往代码层挖。

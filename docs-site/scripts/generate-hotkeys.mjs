@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = resolve(here, "../../apps/web/src/pages/Workbench/state/hotkeys.ts");
-const dst = resolve(here, "../user-guide/workbench/hotkeys.generated.md");
+const dst = resolve(here, "../user-guide/for-annotators/hotkeys.generated.md");
 
 const text = readFileSync(src, "utf8");
 

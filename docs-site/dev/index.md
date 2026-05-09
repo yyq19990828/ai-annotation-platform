@@ -1,14 +1,32 @@
 # 开发文档
 
-面向贡献者和团队工程师。第一次进入项目请按以下顺序：
+面向贡献者和团队工程师。文档按 [Diátaxis](https://diataxis.fr/) 四象限组织：**起步**（跑通） / **概念**（理解） / **How-to**（任务） / **故障排查**（问题）。
 
-1. [本地开发](./local-dev) — 怎么把 Postgres / API / Web 跑起来
-2. [架构 / 系统全景](./architecture/overview) — 模块怎么划分
-3. [测试指南](./testing) — 怎么写单测、契约测试、E2E
-4. [约定与规范](./conventions) — 命名、提交、PR
-5. [发布流程](./release) — 版本号、CHANGELOG
+## 5 分钟跑通
 
-## 项目仓库
+```bash
+git clone https://github.com/yyq19990828/ai-annotation-platform
+cd ai-annotation-platform
+cp .env.example .env
+docker compose up -d
+# API: http://localhost:8000  Web: http://localhost:5173
+```
+
+详见 [本地开发](./local-dev)。
+
+## 我该改哪里？
+
+| 任务 | 入口 |
+|---|---|
+| 加一个后端 API | [How-to: 新增 API 端点](./how-to/add-api-endpoint) |
+| 加一个前端页面 | [How-to: 新增前端页面](./how-to/add-page) |
+| 改数据库结构 | [How-to: Alembic 迁移](./how-to/add-migration) |
+| 写 / 调试后台任务 | [How-to: 调试 Celery](./how-to/debug-celery) |
+| 理解整体架构 | [概念：架构地图](./concepts/) |
+| 排查运行时问题 | [故障排查总览](./troubleshooting/) |
+| 查协议规范 | [ML Backend 协议](./ml-backend-protocol) · [WebSocket 协议](./ws-protocol) |
+
+## 项目仓库结构
 
 `apps/` 下两个子项目：
 
@@ -23,16 +41,5 @@
 
 - 行为准则：`/CLAUDE.md`
 - 版本历史与 roadmap：`/CHANGELOG.md`
-- 调研报告：`/docs/research/`
-- 架构决策：`/docs/adr/`
-- 计划档案：`/docs/plans/`
-
-## 我该改哪里？
-
-| 任务 | 改动位置 |
-|---|---|
-| 加一个后端 API | [How-to: 新增 API 端点](./how-to/add-api-endpoint) |
-| 加一个前端页面 | [How-to: 新增前端页面](./how-to/add-page) |
-| 改数据库结构 | [How-to: Alembic 迁移](./how-to/add-migration) |
-| 写一个后台任务 | [How-to: 调试 Celery](./how-to/debug-celery) |
-| 改 OpenAPI schema | [测试指南 / OpenAPI 契约](./testing#openapi-契约测试) |
+- 架构决策：`/docs/adr/` · [ADR 列表](./adr/)（侧边栏）
+- 部署 / 运维：[部署与运维](/ops/)

@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: reference
+since: v0.9.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # Predictions / Prediction Jobs
 
 两张表，两个用途：

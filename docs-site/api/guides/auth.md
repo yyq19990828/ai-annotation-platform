@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: reference
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # 认证
 
 ## 登录

@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: reference
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # 导出
 
 标注数据导出为下游训练可用格式。导出走 Celery 异步，跑完通过 WebSocket 推下载链接。

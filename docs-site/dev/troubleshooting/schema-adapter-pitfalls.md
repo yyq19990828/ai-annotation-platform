@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: explanation
+since: v0.9.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # Prediction Schema 适配器陷阱
 
 ## 症状

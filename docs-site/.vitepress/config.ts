@@ -26,7 +26,13 @@ export default withMermaid(defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   // 允许指向本地开发服务器的链接，构建期不当 dead link
-  ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?(\/|$)/],
+  ignoreDeadLinks: [
+    /^https?:\/\/localhost(:\d+)?(\/|$)/,
+    // ROADMAP / ADR mirror files contain relative links to source code files outside docs-site
+    (url) => /\.(tsx?|py|json|ya?ml|sh|toml|Dockerfile\w*)$/.test(url),
+    (url) => /\/(apps|infra)\//.test(url),
+    (url) => /IMAGE_CHECKLIST/.test(url),
+  ],
 
   // mermaid 11.x 的 chunk 直接 import `dayjs/dayjs.min.js`（UMD 文件），Vite 当 ESM
   // 解析失败 → "does not provide an export named 'default'"。alias 指向 ESM 入口。
@@ -41,62 +47,88 @@ export default withMermaid(defineConfig({
 
   themeConfig: {
     nav: [
+      { text: "快速开始", link: "/user-guide/getting-started" },
       { text: "用户手册", link: "/user-guide/" },
       { text: "开发文档", link: "/dev/" },
+      { text: "部署与运维", link: "/ops/" },
       { text: "API 文档", link: "/api/" },
-      { text: "更新日志", link: "/changelog/" },
-      { text: "Roadmap", link: "/roadmap/" },
+      {
+        text: "更新日志 / Roadmap",
+        items: [
+          { text: "更新日志", link: "/changelog/" },
+          { text: "Roadmap", link: "/roadmap/" },
+        ],
+      },
     ],
 
     sidebar: {
       "/user-guide/": [
         {
-          text: "入门",
+          text: "入口",
           items: [
             { text: "概述", link: "/user-guide/" },
+            { text: "平台概念与术语", link: "/user-guide/concepts" },
             { text: "快速开始", link: "/user-guide/getting-started" },
           ],
         },
         {
-          text: "标注工作台",
+          text: "标注员",
           items: [
-            { text: "界面与快捷键", link: "/user-guide/workbench/" },
-            { text: "Bbox 标注", link: "/user-guide/workbench/bbox" },
-            { text: "Polygon 标注", link: "/user-guide/workbench/polygon" },
-            { text: "关键点标注", link: "/user-guide/workbench/keypoint" },
-            { text: "SAM 智能工具", link: "/user-guide/workbench/sam-tool" },
+            { text: "工作台概览", link: "/user-guide/for-annotators/" },
+            { text: "Bbox 标注", link: "/user-guide/for-annotators/bbox" },
+            { text: "Polygon 标注", link: "/user-guide/for-annotators/polygon" },
+            { text: "关键点标注", link: "/user-guide/for-annotators/keypoint" },
+            { text: "SAM 智能工具", link: "/user-guide/for-annotators/sam-tool" },
           ],
         },
         {
-          text: "项目与批次",
+          text: "项目管理员",
+          collapsed: true,
           items: [
-            { text: "创建项目", link: "/user-guide/projects/" },
-            { text: "批次与分配", link: "/user-guide/projects/batch" },
+            { text: "项目管理", link: "/user-guide/for-project-admins/" },
+            { text: "批次与分配", link: "/user-guide/for-project-admins/batch" },
+            { text: "AI 预标注", link: "/user-guide/for-project-admins/ai-preannotate" },
           ],
         },
         {
-          text: "审核",
-          items: [{ text: "审核流程", link: "/user-guide/review/" }],
-        },
-        {
-          text: "导出",
-          items: [{ text: "数据导出格式", link: "/user-guide/export/" }],
+          text: "审核员",
+          items: [
+            { text: "审核流程", link: "/user-guide/for-reviewers/" },
+          ],
         },
         {
           text: "超级管理员",
           collapsed: true,
           items: [
-            { text: "概览", link: "/user-guide/superadmin/" },
-            { text: "ML Backend 注册", link: "/user-guide/superadmin/ml-backend-registry" },
-            { text: "模型市场", link: "/user-guide/superadmin/model-market" },
-            { text: "失败预测排查", link: "/user-guide/superadmin/failed-predictions" },
-            { text: "审计日志", link: "/user-guide/superadmin/audit-logs" },
-            { text: "系统监控", link: "/user-guide/superadmin/system-monitoring" },
+            { text: "概览", link: "/user-guide/for-superadmins/" },
+            { text: "ML Backend 注册", link: "/user-guide/for-superadmins/ml-backend-registry" },
+            { text: "模型市场", link: "/user-guide/for-superadmins/model-market" },
+            { text: "失败预测排查", link: "/user-guide/for-superadmins/failed-predictions" },
+            { text: "审计日志", link: "/user-guide/for-superadmins/audit-logs" },
+            { text: "系统监控", link: "/user-guide/for-superadmins/system-monitoring" },
+          ],
+        },
+        {
+          text: "场景 / 工作流",
+          collapsed: true,
+          items: [
+            { text: "新项目端到端", link: "/user-guide/workflows/new-project-end-to-end" },
+            { text: "AI 预标注流水线", link: "/user-guide/workflows/ai-preannotate-pipeline" },
+            { text: "失败预测恢复", link: "/user-guide/workflows/failed-prediction-recovery" },
+          ],
+        },
+        {
+          text: "参考",
+          collapsed: true,
+          items: [
+            { text: "数据导出格式", link: "/user-guide/reference/export-formats" },
           ],
         },
         {
           text: "其他",
-          items: [{ text: "FAQ", link: "/user-guide/faq" }],
+          items: [
+            { text: "FAQ", link: "/user-guide/faq" },
+          ],
         },
       ],
 
@@ -105,34 +137,33 @@ export default withMermaid(defineConfig({
           text: "起步",
           items: [
             { text: "概览", link: "/dev/" },
-            { text: "本地开发", link: "/dev/local-dev" },
             { text: "测试指南", link: "/dev/testing" },
-            { text: "约定与规范", link: "/dev/conventions" },
             { text: "发布流程", link: "/dev/release" },
           ],
         },
         {
-          text: "架构",
+          text: "教程",
+          collapsed: true,
           items: [
-            { text: "系统全景", link: "/dev/architecture/overview" },
-            { text: "后端基础设施（容器）", link: "/dev/architecture/backend-infrastructure" },
-            { text: "后端分层", link: "/dev/architecture/backend-layers" },
-            { text: "前端分层", link: "/dev/architecture/frontend-layers" },
-            { text: "数据流", link: "/dev/architecture/data-flow" },
-            { text: "AI 模型集成", link: "/dev/architecture/ai-models" },
-            { text: "API Schema 边界", link: "/dev/architecture/api-schema-boundary" },
-            { text: "预标注流水线", link: "/dev/architecture/prediction-pipeline" },
-            { text: "部署拓扑", link: "/dev/architecture/deployment-topology" },
+            { text: "本地开发", link: "/dev/tutorials/local-dev" },
+            { text: "第一个贡献", link: "/dev/tutorials/first-contribution" },
           ],
         },
         {
-          text: "部署与协议",
+          text: "概念（架构）",
+          collapsed: true,
           items: [
-            { text: "部署指南", link: "/dev/deploy" },
-            { text: "安全模型", link: "/dev/security" },
-            { text: "可观测性 / 监控", link: "/dev/monitoring" },
-            { text: "ML Backend 协议", link: "/dev/ml-backend-protocol" },
-            { text: "WebSocket 协议", link: "/dev/ws-protocol" },
+            { text: "架构地图", link: "/dev/concepts/" },
+            { text: "系统全景", link: "/dev/concepts/overview" },
+            { text: "后端基础设施（容器）", link: "/dev/concepts/backend-infrastructure" },
+            { text: "后端分层", link: "/dev/concepts/backend-layers" },
+            { text: "前端分层", link: "/dev/concepts/frontend-layers" },
+            { text: "数据流", link: "/dev/concepts/data-flow" },
+            { text: "AI 模型集成", link: "/dev/concepts/ai-models" },
+            { text: "API Schema 边界", link: "/dev/concepts/api-schema-boundary" },
+            { text: "预标注流水线", link: "/dev/concepts/prediction-pipeline" },
+            { text: "部署拓扑", link: "/dev/concepts/deployment-topology" },
+            { text: "性能 HUD", link: "/dev/concepts/perfhud" },
           ],
         },
         {
@@ -146,7 +177,18 @@ export default withMermaid(defineConfig({
           ],
         },
         {
-          text: "故障排查 / 踩坑",
+          text: "协议与规范",
+          collapsed: true,
+          items: [
+            { text: "ML Backend 协议", link: "/dev/reference/ml-backend-protocol" },
+            { text: "WebSocket 协议", link: "/dev/reference/ws-protocol" },
+            { text: "代码规范", link: "/dev/reference/conventions" },
+            { text: "图标约定", link: "/dev/reference/icon-conventions" },
+            { text: "环境变量", link: "/dev/reference/env-vars" },
+          ],
+        },
+        {
+          text: "故障排查",
           collapsed: true,
           items: [
             { text: "总览与速查表", link: "/dev/troubleshooting/" },
@@ -166,13 +208,50 @@ export default withMermaid(defineConfig({
         },
       ],
 
+      "/ops/": [
+        {
+          text: "部署与运维",
+          items: [
+            { text: "概览", link: "/ops/" },
+            { text: "升级指南", link: "/ops/upgrade-guide" },
+          ],
+        },
+        {
+          text: "部署",
+          items: [
+            { text: "Docker Compose 部署", link: "/ops/deploy/docker-compose" },
+          ],
+        },
+        {
+          text: "可观测性",
+          items: [
+            { text: "监控与告警", link: "/ops/observability/" },
+          ],
+        },
+        {
+          text: "安全",
+          items: [
+            { text: "安全模型", link: "/ops/security/" },
+          ],
+        },
+        {
+          text: "Runbooks",
+          collapsed: true,
+          items: [
+            { text: "Celery Worker 卡死", link: "/ops/runbooks/celery-worker-stuck" },
+            { text: "ML Backend 不可用", link: "/ops/runbooks/ml-backend-down" },
+            { text: "PG 连接池耗尽", link: "/ops/runbooks/postgres-connection-pool-exhausted" },
+          ],
+        },
+      ],
+
       "/changelog/": changelogSidebarItems,
       "/roadmap/": roadmapSidebarItems,
 
       "/api/": [
         { text: "API 总览", link: "/api/" },
         {
-          text: "按资源域指南",
+          text: "指南",
           items: [
             { text: "认证", link: "/api/guides/auth" },
             { text: "项目", link: "/api/guides/projects" },

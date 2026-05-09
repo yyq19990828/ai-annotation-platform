@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: explanation
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # React useState 初始化器的 TDZ 陷阱
 
 ## 症状

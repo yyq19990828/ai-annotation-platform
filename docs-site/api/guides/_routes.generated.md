@@ -25,6 +25,8 @@
 | Method | Path |
 |---|---|
 | GET | `/admin/preannotate-queue` |
+| POST | `/admin/preannotate-queue/bulk-clear` |
+| GET | `/admin/preannotate-summary` |
 
 ## `admin_preannotate_jobs.py`
 
@@ -288,4 +290,4 @@
 
 ---
 
-_共 28 模块 / 151 路由_
+_共 28 模块 / 153 路由_
