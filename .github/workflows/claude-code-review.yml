@@ -31,6 +31,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Find previous code review comment
+        id: find-code-review-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: "github-actions[bot]"
+          body-includes: "<!-- claude-code-review -->"
+
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
@@ -43,8 +51,11 @@ jobs:
           prompt: |
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
 
+            Language: Write all PR comments and inline review comments in Chinese (Simplified).
+
             Required output behavior:
             - Publish the review results back to the PR, not only to the action log.
+            - Start the top-level PR comment with the HTML marker `<!-- claude-code-review -->` (invisible to readers, used for deduplication).
             - Prefer one concise top-level PR comment that summarizes findings.
             - If there are actionable line-specific findings, also use inline review comments where useful.
             - If you found no meaningful issues, say that explicitly in the PR comment.
@@ -56,3 +67,15 @@ jobs:
             Keep the PR-visible output concise and actionable.
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
+
+      - name: Delete previous code review comment
+        if: steps.find-code-review-comment.outputs.comment-id != ''
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.issues.deleteComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: ${{ steps.find-code-review-comment.outputs.comment-id }},
+            });

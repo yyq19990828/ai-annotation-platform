@@ -2,11 +2,11 @@
  * v0.8.7 F3 · review 反馈环 E2E：reviewer reject 真实 UI 流。
  *
  * - annotator 提交（advance_task → submitted/review）
- * - reviewer 进 /review/[task] → 点退回 → RejectReasonModal 选预设原因 → 确认
+ * - reviewer 进 /projects/:id/review?task={id} → 点退回 → RejectReasonModal 选预设原因 → 确认
  * - 后端 task.status 应为 rejected，task.reject_reason 应非空
  *
- * 不走 _test_seed.advance_task 的 reject 短路，全程通过 UI 触发后端
- * /tasks/{id}/reject。reviewer 通过 injectToken 跳过登录，但 reject 流程必须真实。
+ * 不走 _test_seed.advance_task 的 reject 短路，全程通过 UI 触发当前 review workbench
+ * 的 /tasks/{id}/review/reject。reviewer 通过 injectToken 跳过登录，但 reject 流程必须真实。
  */
 import { test, expect } from "../fixtures/seed";
 
@@ -32,28 +32,24 @@ test.describe("review feedback loop", () => {
       reviewerEmail: data.reviewer_email,
     });
 
-    // 2. reviewer 登录 → 进 /review 路由
+    // 2. reviewer 登录 → 进项目级 review workbench 路由
     await seed.injectToken(page, data.reviewer_email);
-    await page.goto("/review");
+    await page.goto(`/projects/${data.project_id}/review?task=${data.task_ids[0]}`);
     await page.waitForLoadState("networkidle");
 
-    // 3. 直接进入该 task 的 review workbench：ReviewPage 用 ?taskId= 触发 drawer
-    await page.goto(`/review?taskId=${data.task_ids[0]}`);
-    await page.waitForLoadState("networkidle");
-
-    // 4. 点退回按钮 → 弹出 RejectReasonModal
+    // 3. 点退回按钮 → 弹出 RejectReasonModal
     const rejectBtn = page.getByTestId("review-reject");
     await expect(rejectBtn).toBeVisible({ timeout: 10_000 });
     await rejectBtn.click();
 
-    // 5. 默认选中第一项「类别错误」→ 直接确认
+    // 4. 默认选中第一项「类别错误」→ 直接确认
     const confirmBtn = page.getByTestId("reject-confirm");
     await expect(confirmBtn).toBeVisible();
     await confirmBtn.click();
 
-    // 6. Modal 关闭后，从后端 API 直接读 task 状态确认 reject 成功
-    //    （UI 列表可能已切到下一题，跳过 DOM 断言避免 flaky）
-    // 等 200ms 让 mutation onSuccess 完成
+    // 5. Modal 关闭后，从后端 API 直接读 task 状态确认 reject 成功
+    //    （UI 可能已导航走，跳过 DOM 断言避免 flaky）
+    // 等 500ms 让 mutation onSuccess 完成
     await page.waitForTimeout(500);
 
     // 拿 reviewer token 直查 task 状态
@@ -71,9 +67,7 @@ test.describe("review feedback loop", () => {
       status: string;
       reject_reason: string | null;
     };
-    // reject 端点把任务退回给标注员（status=in_progress + reject_reason 持久化），
-    // 而不是终态 "rejected"——后者代表整批退回。
-    expect(task.status).toBe("in_progress");
+    expect(task.status).toBe("rejected");
     expect(task.reject_reason).toBe("类别错误");
   });
 });

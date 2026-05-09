@@ -250,7 +250,7 @@ class TestTaskLockFlow:
         )
         assert r.status_code == 400
 
-        # 合法 reason → 持久化
+        # 合法 reason → 持久化，并进入 rejected 等待标注员 accept-rejection
         r = await httpx_client_bound.post(
             f"/api/v1/tasks/{tid}/review/reject",
             json={"reason": "框漏了 3 处行人"},
@@ -258,7 +258,7 @@ class TestTaskLockFlow:
         )
         assert r.status_code == 200
         await db_session.refresh(task)
-        assert task.status == "in_progress"
+        assert task.status == "rejected"
         assert task.reject_reason == "框漏了 3 处行人"
 
     async def test_state_transitions_emit_audit_logs(
