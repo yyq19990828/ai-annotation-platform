@@ -9,37 +9,77 @@
 ```
 新人路径：
   系统全景（overview）
-    → 项目模块 / 任务模块 / 批次模块
-      → 状态机总览
-        → Scheduler 与派题 / Task Lock
-          → 预标注流水线 / AI 模型集成
+    → 业务域模型（project / batch / task / annotation / review）
+      → 工作流机制（状态机 / 派题 / 锁 / 权限）
+        → 端到端流程（batch lifecycle / AI handoff）
+          → AI 子系统 / 平台实现
 ```
 
-## 各篇索引
+## 总览
 
-| 文档 | 回答的问题 |
-|---|---|
-| [系统全景](../architecture/overview) | 各模块是什么、怎么拼在一起 |
-| [项目模块](./project-module) | Project 承载哪些配置、权限和统计边界 |
-| [任务模块](./task-module) | Task 状态机、锁、审核流和可见性如何工作 |
-| [批次模块](./batch-module) | Batch 状态机、分派、调度联动和 bulk 行为 |
-| [标注模块](./annotation-module) | Annotation 的数据模型、采纳与回写联动（占位） |
-| [审核模块](./review-module) | Review 流、角色矩阵与批次审核语义（占位） |
-| [状态机总览](./state-machines) | Project / Batch / Task 三套状态机如何联动 |
-| [Scheduler 与派题](./scheduler-and-task-dispatch) | `/tasks/next` 如何选题、过滤和上锁 |
-| [Task Lock](./task-locking) | 锁的 TTL、接管、续期和并发保护 |
-| [可见性与权限](./visibility-and-permissions) | 用户为什么能看到某个 project / batch / task |
-| [批次生命周期（端到端）](./batch-lifecycle-end-to-end) | 从建批到归档的完整链路（占位） |
-| [AI 预标注接管](./ai-preannotate-handoff) | `pre_annotated` 的进入、接管与回滚（占位） |
-| [后端基础设施（容器）](../architecture/backend-infrastructure) | 哪些容器，各自职责，容器间网络 |
-| [后端分层](../architecture/backend-layers) | FastAPI / Service / Repository 各层边界 |
-| [前端分层](../architecture/frontend-layers) | 页面 / 组件 / Store / API Client 的关系 |
-| [数据流](../architecture/data-flow) | 一条标注从上传到导出走哪些节点 |
-| [AI 模型集成](../architecture/ai-models) | GroundingDINO / SAM 怎么接入，预测怎么存 |
-| [API Schema 边界](../architecture/api-schema-boundary) | 前后端契约在哪里定义、如何保证一致 |
-| [预标注流水线](../architecture/prediction-pipeline) | Job 生命周期、Celery 任务链、错误处理 |
-| [部署拓扑](../architecture/deployment-topology) | 生产环境的网络拓扑与服务边界 |
-| [性能 HUD](../architecture/perfhud) | 开发期内置性能面板的原理与使用 |
+- [架构地图](./)：
+  概念章节入口与阅读顺序
+- [系统全景](./overview)：
+  各模块是什么、怎么拼在一起
+
+## 业务域模型
+
+- [项目模块](./project-module)：
+  Project 承载哪些配置、权限和统计边界
+- [批次模块](./batch-module)：
+  Batch 状态机、分派、调度联动和 bulk 行为
+- [任务模块](./task-module)：
+  Task 状态机、锁、审核流和可见性如何工作
+- [标注模块](./annotation-module)：
+  Annotation 的数据模型、采纳、版本控制与 task / batch 回写
+- [审核模块](./review-module)：
+  Task review、batch review、角色矩阵与通知审计联动
+
+## 工作流与协作机制
+
+- [状态机总览](./state-machines)：
+  Project / Batch / Task 三套状态机如何联动
+- [Scheduler 与派题](./scheduler-and-task-dispatch)：
+  `/tasks/next` 如何选题、过滤和上锁
+- [Task Lock](./task-locking)：
+  锁的 TTL、接管、续期和并发保护
+- [可见性与权限](./visibility-and-permissions)：
+  用户为什么能看到某个 project / batch / task
+- [计数与派生字段](./counters-and-derived-fields)：
+  聚合字段如何回写、哪些页面依赖它们
+- [审计与通知](./audit-and-notifications)：
+  业务动作如何落审计、怎样 fan-out 到在线用户
+
+## 端到端业务流程
+
+- [批次生命周期（端到端）](./batch-lifecycle-end-to-end)：
+  从建批、预标、送审到归档 / 重置的完整链路
+- [AI 预标注接管](./ai-preannotate-handoff)：
+  `pre_annotated` 的进入、人工接管、清理与回滚
+- [数据流](./data-flow)：
+  一条标注从上传到导出走哪些节点
+
+## AI 与推理子系统
+
+- [预标注流水线](./prediction-pipeline)：
+  Job 生命周期、Celery 任务链、错误处理
+- [AI 模型集成](./ai-models)：
+  GroundingDINO / SAM 怎么接入，预测怎么存
+
+## 平台实现架构
+
+- [后端分层](./backend-layers)：
+  FastAPI / Service / Repository 各层边界
+- [前端分层](./frontend-layers)：
+  页面 / 组件 / Store / API Client 的关系
+- [API Schema 边界](./api-schema-boundary)：
+  前后端契约在哪里定义、如何保证一致
+- [后端基础设施（容器）](./backend-infrastructure)：
+  哪些容器，各自职责，容器间网络
+- [部署拓扑](./deployment-topology)：
+  生产环境的网络拓扑与服务边界
+- [性能 HUD](./perfhud)：
+  开发期内置性能面板的原理与使用
 
 ## 尚未覆盖（待补充）
 

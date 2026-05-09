@@ -27,6 +27,7 @@ docker compose up -d
 | 理解批次模块 | [概念：批次模块](./concepts/batch-module) |
 | 理解派题与锁 | [Scheduler 与派题](./concepts/scheduler-and-task-dispatch) · [Task Lock](./concepts/task-locking) |
 | 理解状态流 | [状态机总览](./concepts/state-machines) |
+| 理解横切机制 | [计数与派生字段](./concepts/counters-and-derived-fields) · [审计与通知](./concepts/audit-and-notifications) |
 | 理解整体架构 | [概念：架构地图](./concepts/) |
 | 排查运行时问题 | [故障排查总览](./troubleshooting/) |
 | 查协议规范 | [ML Backend 协议](./ml-backend-protocol) · [WebSocket 协议](./ws-protocol) |
