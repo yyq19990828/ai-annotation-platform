@@ -271,6 +271,7 @@
 | POST | `/{task_id}/review/approve` |
 | POST | `/{task_id}/review/reject` |
 | POST | `/{task_id}/reopen` |
+| POST | `/{task_id}/accept-rejection` |
 | POST | `/{task_id}/lock` |
 | POST | `/{task_id}/lock/heartbeat` |
 | DELETE | `/{task_id}/lock` |
@@ -290,4 +291,4 @@
 
 ---
 
-_共 28 模块 / 153 路由_
+_共 28 模块 / 154 路由_
