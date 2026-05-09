@@ -7,8 +7,10 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProject } from "@/hooks/useProjects";
 import {
   useTaskList, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
-  useUpdateAnnotation, useSubmitTask, useSkipTask, useWithdrawTask, useReopenTask,
+  useUpdateAnnotation, useSubmitTask, useSkipTask, useWithdrawTask, useReopenTask, useAcceptRejection,
+  useApproveTask, useRejectTask, useReviewClaim,
 } from "@/hooks/useTasks";
+import type { ReviewClaimResponse } from "@/types";
 import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
@@ -59,10 +61,13 @@ import {
 import { useWorkbenchOfflineQueue } from "../state/useWorkbenchOfflineQueue";
 import { OfflineQueueDrawer } from "./OfflineQueueDrawer";
 import { WorkbenchSkeleton } from "./WorkbenchSkeleton";
+import { ReviewerMiniPanel } from "@/pages/Review/ReviewerMiniPanel";
+import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 
 type Geom = { x: number; y: number; w: number; h: number };
+type DiffMode = "final" | "raw" | "diff";
 
-export function WorkbenchShell() {
+export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "review" }) {
   const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const onBack = useCallback(() => navigate("/dashboard"), [navigate]);
@@ -102,6 +107,12 @@ export function WorkbenchShell() {
     // 让管理员一进 /annotate 就能看到批次结构、不至于以为「没批次」。
     // v0.7.0：成员视角额外纳入 rejected（被分派标注员可看到 reviewer 留言并继续重做）。
     // v0.9.6 · pre_annotated 加入两类视图: admin 跑完预标后能在工作台看到该批次, 标注员也能接管
+    // M2 · review 模式展示有待审任务的批次（annotating/reviewing 态）供审核员按批次过滤
+    if (mode === "review") {
+      return (batchList ?? []).filter((b) =>
+        ["annotating", "reviewing", "active"].includes(b.status),
+      );
+    }
     const ownerStatuses = ["draft", "active", "pre_annotated", "annotating", "rejected"];
     const memberStatuses = ["active", "pre_annotated", "annotating", "rejected"];
     if (isOwner || !meUserId) {
@@ -110,11 +121,14 @@ export function WorkbenchShell() {
     return (batchList ?? [])
       .filter((b) => memberStatuses.includes(b.status))
       .filter((b) => b.annotator_id === meUserId);
-  }, [batchList, isOwner, meUserId]);
+  }, [batchList, isOwner, meUserId, mode]);
 
   const taskListParams = useMemo(
-    () => (selectedBatchId ? { batch_id: selectedBatchId } : undefined),
-    [selectedBatchId],
+    () => ({
+      ...(mode === "review" ? { status: "review" as const } : {}),
+      ...(selectedBatchId ? { batch_id: selectedBatchId } : {}),
+    }),
+    [mode, selectedBatchId],
   );
   const { data: taskListData, hasNextPage, isFetchingNextPage, fetchNextPage } = useTaskList(projectId, taskListParams);
   const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
@@ -258,6 +272,7 @@ export function WorkbenchShell() {
   const submitTaskMut = useSubmitTask();
   const withdrawTaskMut = useWithdrawTask();
   const reopenTaskMut = useReopenTask();
+  const acceptRejectionMut = useAcceptRejection();
   const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
@@ -740,9 +755,57 @@ export function WorkbenchShell() {
   });
 
   // v0.6.5 · 任务锁定（提交质检后 / 审核通过后） + 撤回 / 重开
-  const isLocked = task?.status === "review" || task?.status === "completed";
+  // M2 · review 模式下审核员可编辑 review 态任务（不锁 review 状态）
+  const isLocked = mode === "review"
+    ? task?.status === "completed"
+    : task?.status === "review" || task?.status === "completed";
   const canWithdraw = task?.status === "review" && !task?.reviewer_claimed_at;
   const canReopen = task?.status === "completed";
+
+  // M2 · review 模式专属状态
+  const [diffMode, setDiffMode] = useState<DiffMode>("diff");
+  const [rejectingTask, setRejectingTask] = useState(false);
+  const [claimInfo, setClaimInfo] = useState<ReviewClaimResponse | null>(null);
+  const approveMut = useApproveTask();
+  const rejectMut = useRejectTask();
+  const claimMut = useReviewClaim();
+
+  // claim 逻辑：进入审核工作台时（status=review）调 claim
+  useEffect(() => {
+    if (mode !== "review" || !taskId || task?.status !== "review") return;
+    claimMut.mutate(taskId, {
+      onSuccess: (data) => setClaimInfo(data),
+      onError: () => {},
+    });
+    // claimMut 故意不在依赖数组中（每次 taskId 变化只 fire 一次）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, taskId, task?.status]);
+
+  const handleApproveTask = useCallback(() => {
+    if (!taskId) return;
+    approveMut.mutate(taskId, {
+      onSuccess: () => {
+        pushToast({ msg: "任务已通过", kind: "success" });
+        navigateTask("next");
+      },
+      onError: () => pushToast({ msg: "通过失败，请重试", kind: "error" }),
+    });
+  }, [taskId, approveMut, pushToast, navigateTask]);
+
+  const handleRejectTask = useCallback(
+    (reason: string) => {
+      if (!taskId) return;
+      rejectMut.mutate({ taskId, reason }, {
+        onSuccess: () => {
+          pushToast({ msg: "任务已退回", kind: "success" });
+          setRejectingTask(false);
+          navigateTask("next");
+        },
+        onError: () => pushToast({ msg: "退回失败，请重试", kind: "error" }),
+      });
+    },
+    [taskId, rejectMut, pushToast, navigateTask],
+  );
 
   const handleWithdrawTask = useCallback(() => {
     if (!taskId || !canWithdraw) return;
@@ -841,6 +904,25 @@ export function WorkbenchShell() {
     return () => window.removeEventListener("keydown", handler, true);
   }, [s.tool, sam, samPendingAccept]);
 
+  // ── M2 · review 模式专属快捷键（A=通过, R=退回，不依赖 dispatchKey 主链路）───
+  useEffect(() => {
+    if (mode !== "review") return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
+      if (e.key === "a" || e.key === "A") {
+        e.preventDefault();
+        handleApproveTask();
+      } else if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        setRejectingTask(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [mode, handleApproveTask]);
+
   // ── 键盘快捷键（v0.6.4 P1 抽 hook） ───────────────────────────────────
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
@@ -926,6 +1008,7 @@ export function WorkbenchShell() {
         onSetSamSubTool={s.setSamSubTool}
         samPolarity={s.samPolarity}
         onSetSamPolarity={s.setSamPolarity}
+        reviewMode={mode === "review"}
       />
 
       <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -944,8 +1027,37 @@ export function WorkbenchShell() {
           </div>
         )}
 
-        {/* v0.6.5 · 任务状态锁定横幅（用 token 化颜色，避免暗色下白字白底） */}
-        {task?.status === "review" && (
+        {/* M2 · review 模式横幅 */}
+        {mode === "review" && claimInfo && !claimInfo.is_self && (
+          <div
+            style={{
+              padding: "6px 14px",
+              background: "oklch(0.95 0.05 70)",
+              borderBottom: "1px solid oklch(0.85 0.10 70)",
+              fontSize: 12, color: "oklch(0.40 0.15 70)",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            <Icon name="warning" size={13} />
+            已被其他审核员认领（{new Date(claimInfo.reviewer_claimed_at).toLocaleString("zh-CN")}），仍可接力处理
+          </div>
+        )}
+        {mode === "review" && task?.skip_reason && (
+          <div
+            style={{
+              padding: "6px 14px",
+              background: "oklch(0.94 0.06 300)",
+              borderBottom: "1px solid oklch(0.78 0.12 300)",
+              fontSize: 12, color: "oklch(0.35 0.18 300)",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            <Icon name="warning" size={13} />
+            标注员跳过此题 · 可通过（无目标即视为完成）或退回重派
+          </div>
+        )}
+        {/* v0.6.5 · annotate 模式：任务状态锁定横幅（用 token 化颜色，避免暗色下白字白底） */}
+        {mode === "annotate" && task?.status === "review" && (
           <div
             style={{
               padding: "8px 14px",
@@ -970,7 +1082,7 @@ export function WorkbenchShell() {
             </Button>
           </div>
         )}
-        {task?.status === "completed" && (
+        {mode === "annotate" && task?.status === "completed" && (
           <div
             style={{
               padding: "8px 14px",
@@ -996,18 +1108,45 @@ export function WorkbenchShell() {
             </Button>
           </div>
         )}
-        {task?.status === "in_progress" && task.reject_reason && (
+        {mode === "annotate" && task?.status === "rejected" && (
           <div
             style={{
               padding: "8px 14px",
               background: "var(--color-danger-soft)",
               borderBottom: "1px solid var(--color-border)",
               fontSize: 12, color: "var(--color-danger)",
+              display: "flex", alignItems: "center", gap: 8,
+            }}
+          >
+            <Icon name="warning" size={13} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1 }}><b>审核员退回：</b>{task.reject_reason}</span>
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={acceptRejectionMut.isPending}
+              onClick={() => {
+                if (!taskId) return;
+                acceptRejectionMut.mutate(taskId, {
+                  onError: () => pushToast({ kind: "error", msg: "接受退回失败，请重试" }),
+                });
+              }}
+            >
+              接受退回开始重做
+            </Button>
+          </div>
+        )}
+        {mode === "annotate" && task?.status === "in_progress" && task.reject_reason && (
+          <div
+            style={{
+              padding: "8px 14px",
+              background: "color-mix(in oklab, var(--color-warning) 10%, transparent)",
+              borderBottom: "1px solid var(--color-border)",
+              fontSize: 12, color: "var(--color-fg-muted)",
               display: "flex", alignItems: "flex-start", gap: 8,
             }}
           >
-            <Icon name="warning" size={13} />
-            <span><b>审核员退回：</b>{task.reject_reason}</span>
+            <Icon name="rotate-ccw" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>重做中 · <b>退回原因：</b>{task.reject_reason}</span>
           </div>
         )}
 
@@ -1024,8 +1163,8 @@ export function WorkbenchShell() {
           onPrev={() => navigateTask("prev")}
           onNext={() => navigateTask("next")}
           onSubmit={handleSubmitTask}
-          onSmartNextOpen={() => smartNext("open")}
-          onSmartNextUncertain={() => smartNext("uncertain")}
+          onSmartNextOpen={mode === "annotate" ? () => smartNext("open") : undefined}
+          onSmartNextUncertain={mode === "annotate" ? () => smartNext("uncertain") : undefined}
           overflowSlot={<ThemeSwitcher />}
           canWithdraw={canWithdraw}
           canReopen={canReopen}
@@ -1034,7 +1173,13 @@ export function WorkbenchShell() {
           onWithdraw={handleWithdrawTask}
           onReopen={handleReopenTask}
           isSkipping={skipTaskMut.isPending}
-          onSkip={handleSkipTask}
+          onSkip={mode === "annotate" ? handleSkipTask : undefined}
+          mode={mode}
+          onApprove={handleApproveTask}
+          onReject={() => setRejectingTask(true)}
+          isApproving={approveMut.isPending}
+          isRejecting={rejectMut.isPending}
+          reviewInfoSlot={mode === "review" ? <ReviewerMiniPanel /> : undefined}
         />
 
         <ImageStage
@@ -1047,8 +1192,8 @@ export function WorkbenchShell() {
           selectedIds={s.selectedIds}
           fadedAiIds={dimmedAiIds}
           nudgeMap={nudgeMap}
-          userBoxes={userBoxes}
-          aiBoxes={aiBoxes}
+          userBoxes={mode === "review" && diffMode === "raw" ? [] : userBoxes}
+          aiBoxes={mode === "review" && diffMode === "final" ? [] : aiBoxes}
           spacePan={spacePan}
           vp={vp}
           setVp={setVp}
@@ -1206,6 +1351,8 @@ export function WorkbenchShell() {
           onShowQueueDrawer={openOfflineDrawer}
           lockRemainingMs={remainingMs}
           lockError={lockError}
+          diffMode={mode === "review" ? diffMode : undefined}
+          onSetDiffMode={mode === "review" ? setDiffMode : undefined}
         />
       </div>
 
@@ -1279,6 +1426,15 @@ export function WorkbenchShell() {
         onOverwrite={handleConflictOverwrite}
         onClose={() => setConflictOpen(false)}
       />
+      {mode === "review" && (
+        <RejectReasonModal
+          open={rejectingTask}
+          count={1}
+          onClose={() => setRejectingTask(false)}
+          onConfirm={handleRejectTask}
+          skipReasonHint={task?.skip_reason ?? null}
+        />
+      )}
     </div>
   );
 }

@@ -490,6 +490,16 @@ async def annotator_dashboard(
     )
     assigned_tasks = assigned_result.scalar() or 0
 
+    rejected_tasks_result = await db.execute(
+        select(func.count())
+        .select_from(Task)
+        .where(
+            Task.assignee_id == current_user.id,
+            Task.status == "rejected",
+        )
+    )
+    rejected_tasks_count = rejected_tasks_result.scalar() or 0
+
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
@@ -703,6 +713,7 @@ async def annotator_dashboard(
         active_minutes_today=active_minutes_today,
         streak_days=streak_days,
         hour_buckets=hour_buckets,
+        rejected_tasks_count=rejected_tasks_count,
     )
 
 

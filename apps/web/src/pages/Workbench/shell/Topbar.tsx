@@ -36,6 +36,14 @@ interface TopbarProps {
   // v0.8.7 F7 · 任务跳过；缺省时不渲染按钮
   isSkipping?: boolean;
   onSkip?: (reason: SkipReason, note?: string) => void;
+  /** M2 · review 模式专属操作 */
+  mode?: "annotate" | "review";
+  onApprove?: () => void;
+  onReject?: () => void;
+  isApproving?: boolean;
+  isRejecting?: boolean;
+  /** M2 · review 模式下 Topbar 左侧附加插槽（ReviewerMiniPanel chip） */
+  reviewInfoSlot?: React.ReactNode;
 }
 
 /**
@@ -53,6 +61,8 @@ export function Topbar({
   canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
   onWithdraw, onReopen,
   isSkipping = false, onSkip,
+  mode = "annotate", onApprove, onReject, isApproving = false, isRejecting = false,
+  reviewInfoSlot,
 }: TopbarProps) {
   // v0.8.7 F7 · 跳过任务 modal 状态
   const [skipOpen, setSkipOpen] = useState(false);
@@ -150,7 +160,30 @@ export function Topbar({
       {/* 中：任务导航 + 状态相关主操作 */}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <Button size="sm" onClick={onPrev}><Icon name="chevLeft" size={13} />上一</Button>
-        {isReview ? (
+        {mode === "review" ? (
+          <>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onApprove}
+              disabled={isApproving || !onApprove}
+              data-testid="review-approve"
+              title="通过 (A)"
+            >
+              <Icon name="check" size={13} />通过
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={onReject}
+              disabled={isRejecting || !onReject}
+              data-testid="review-reject"
+              title="退回 (R)"
+            >
+              <Icon name="x" size={12} />退回
+            </Button>
+          </>
+        ) : isReview ? (
           <Button
             variant="primary"
             size="sm"
@@ -219,8 +252,9 @@ export function Topbar({
         )}
       </div>
 
-      {/* 右：AI 主操作 + 溢出菜单 */}
+      {/* 右：AI 主操作（annotate）或 ReviewerMini chip（review）+ 溢出菜单 */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end", position: "relative" }}>
+        {reviewInfoSlot}
         {showThr && confThreshold !== undefined && (
           <span
             className="mono"
@@ -241,12 +275,14 @@ export function Topbar({
             阈值 {(confThreshold * 100).toFixed(0)}%
           </span>
         )}
-        <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning}>
-          {aiRunning
-            ? <Icon name="loader2" size={13} className="spin" />
-            : <Icon name="wandSparkles" size={13} />}
-          {aiRunning ? "AI 推理中..." : "AI 一键预标"}
-        </Button>
+        {mode === "annotate" && (
+          <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning}>
+            {aiRunning
+              ? <Icon name="loader2" size={13} className="spin" />
+              : <Icon name="wandSparkles" size={13} />}
+            {aiRunning ? "AI 推理中..." : "AI 一键预标"}
+          </Button>
+        )}
 
         <DropdownMenu
           minWidth={200}

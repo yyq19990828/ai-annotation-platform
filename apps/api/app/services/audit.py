@@ -61,6 +61,10 @@ class AuditAction(str, Enum):
     TASK_REOPEN = "task.reopen"
     # v0.8.7 F7 · 任务跳过
     TASK_SKIP = "task.skip"
+    # M1 · 标注员接受退回，rejected → in_progress
+    TASK_ACCEPT_REJECTION = "task.accept_rejection"
+    # M2 · 审核员在 review 态直接微调标注（区别于标注员的 ANNOTATION_UPDATE）
+    TASK_REVIEWER_EDIT = "task.reviewer_edit"
     # v0.7.8 · 导出审计 + 会话管理
     PROJECT_EXPORT = "project.export"
     BATCH_EXPORT = "batch.export"

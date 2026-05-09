@@ -60,6 +60,33 @@ export function AnnotatorDashboard() {
         </Button>
       </div>
 
+      {/* M1 · 退回待重做提示 */}
+      {(stats.rejected_tasks_count ?? 0) > 0 && (
+        <div
+          style={{
+            margin: "0 0 16px",
+            padding: "12px 16px",
+            background: "color-mix(in oklab, var(--color-danger) 8%, transparent)",
+            border: "1px solid color-mix(in oklab, var(--color-danger) 30%, transparent)",
+            borderRadius: "var(--radius-md)",
+            display: "flex", alignItems: "center", gap: 12,
+          }}
+        >
+          <Icon name="warning" size={16} style={{ color: "var(--color-danger)", flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-danger)" }}>
+              {stats.rejected_tasks_count} 个任务被退回，需重做
+            </span>
+            <span style={{ fontSize: 12, color: "var(--color-fg-muted)", marginLeft: 8 }}>
+              请进入工作台查看退回原因并重新提交
+            </span>
+          </div>
+          <Button size="sm" variant="danger" onClick={() => navigate("/annotate")}>
+            进入工作台
+          </Button>
+        </div>
+      )}
+
       {/* 产能 */}
       <SectionDivider label="产能" hint="完成数 / 单题耗时" />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>

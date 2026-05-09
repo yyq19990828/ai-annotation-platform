@@ -13,6 +13,8 @@ interface ToolDockProps {
   onSetSamSubTool?: (sub: SamSubTool) => void;
   samPolarity?: SamPolarity;
   onSetSamPolarity?: (p: SamPolarity) => void;
+  /** M2 · review 模式下只显示 Hand 工具（审核员仅需平移 + 微调已有框）。 */
+  reviewMode?: boolean;
 }
 
 interface ToolDescriptor {
@@ -46,7 +48,9 @@ export function ToolDock({
   onSetSamSubTool,
   samPolarity = "positive",
   onSetSamPolarity,
+  reviewMode = false,
 }: ToolDockProps) {
+  const visibleTools = reviewMode ? ALL_TOOLS.filter((t) => t.id === "hand") : ALL_TOOLS;
   return (
     <div
       style={{
@@ -57,7 +61,7 @@ export function ToolDock({
         borderRight: "1px solid var(--color-border)",
       }}
     >
-      {ALL_TOOLS.map((t, idx) => {
+      {visibleTools.map((t, idx) => {
         const active = tool === t.id;
         const isSamActive = t.id === "sam" && active;
         const descriptor = TOOL_DESCRIPTORS[t.id];

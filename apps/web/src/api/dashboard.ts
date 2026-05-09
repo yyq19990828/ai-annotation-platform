@@ -91,6 +91,8 @@ export interface AnnotatorDashboardStats {
   streak_days?: number | null;
   // v0.8.5 · 当日 0-23 时分钟数
   hour_buckets?: number[];
+  // M1 · 当前待重做退回任务数
+  rejected_tasks_count?: number;
 }
 
 // v0.8.4 · 管理员人员看板

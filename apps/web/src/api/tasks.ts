@@ -105,6 +105,9 @@ export const tasksApi = {
   reopen: (id: string) =>
     apiClient.post<SubmitResponse & { reopened_count: number }>(`/tasks/${id}/reopen`),
 
+  acceptRejection: (id: string) =>
+    apiClient.post<SubmitResponse>(`/tasks/${id}/accept-rejection`),
+
   reviewClaim: (id: string) =>
     apiClient.post<ReviewClaimResponse>(`/tasks/${id}/review/claim`),
 

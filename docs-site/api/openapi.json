@@ -1122,6 +1122,11 @@
             ],
             "title": "Rejected Rate"
           },
+          "rejected_tasks_count": {
+            "default": 0,
+            "title": "Rejected Tasks Count",
+            "type": "integer"
+          },
           "reopened_avg": {
             "anyOf": [
               {
@@ -16734,6 +16739,53 @@
           }
         ],
         "summary": "Get Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/accept-rejection": {
+      "post": {
+        "description": "M1 · 标注员接受退回，将 task 从 rejected 转回 in_progress 开始重做。\n不清空 reject_reason（保留审核员退回原因，前端可降级为\"重做中\"提示）。",
+        "operationId": "accept_rejection_api_v1_tasks__task_id__accept_rejection_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept Rejection",
         "tags": [
           "tasks"
         ]

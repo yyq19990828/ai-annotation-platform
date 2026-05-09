@@ -179,7 +179,7 @@ function PlaceholderPage({ title }: { title: string }) {
   );
 }
 
-function FullScreenWorkbench() {
+function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
   const tooNarrow = useMediaQuery("(max-width: 767px)");
   const bugDrawerOpen = useBugDrawerStore((s) => s.open);
   const bugDrawerFocusId = useBugDrawerStore((s) => s.focusBugId);
@@ -195,7 +195,7 @@ function FullScreenWorkbench() {
   return (
     <div style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
       <Suspense fallback={<PageLoader />}>
-        <WorkbenchPage />
+        <WorkbenchPage mode={mode} />
       </Suspense>
       <ToastRack />
       <BugReportFAB onClick={() => openBugDrawer()} />
@@ -249,6 +249,16 @@ export function App() {
           <RequireAuth>
             <RequireProjectMember>
               <FullScreenWorkbench />
+            </RequireProjectMember>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/projects/:id/review"
+        element={
+          <RequireAuth>
+            <RequireProjectMember>
+              <FullScreenWorkbench mode="review" />
             </RequireProjectMember>
           </RequireAuth>
         }
