@@ -10,6 +10,7 @@ import type { IconName } from "@/components/ui/Icon";
 import { NotificationsPopover } from "./NotificationsPopover";
 import { PreannotateJobsBadge } from "./PreannotateJobsBadge";
 import { CommandPalette } from "@/components/CommandPalette";
+import { usePerfHudStore } from "@/components/PerfHud";
 
 interface TopBarProps {
   workspace: string;
@@ -248,6 +249,29 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
               </button>
             )}
           />
+
+          {/* v0.9.11 PerfHud · 性能监控浮窗 toggle (admin only, 快捷键 Ctrl+Shift+P 同步) */}
+          {(user?.role === "super_admin" || user?.role === "project_admin") ? (
+            <button
+              title="性能监控 (Ctrl+Shift+P)"
+              onClick={() => usePerfHudStore.getState().toggle()}
+              aria-label="切换性能监控浮窗"
+              style={{
+                width: 30,
+                height: 30,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "transparent",
+                border: "1px solid transparent",
+                borderRadius: "var(--radius-md)",
+                color: "var(--color-fg-muted)",
+                cursor: "pointer",
+              }}
+            >
+              <Icon name="activity" size={15} />
+            </button>
+          ) : null}
 
           {/* v0.9.8 · 全局预标 job 徽章 (admin only, 0 个时隐身) */}
           <PreannotateJobsBadge />

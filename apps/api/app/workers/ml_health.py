@@ -5,20 +5,33 @@
 避免同节点 backend 同时被打 health 触发 GPU CUDA 上下文 contention。
 
 设计理由参考 `docs/plans/2026-05-07-v0.8.6-rustling-raven.md` §F2。
+
+v0.9.11 PerfHud · 新增 publish_ml_backend_stats: 每 1s 把所有 is_active=true backend 的
+/health 实时快照 publish 到 redis channel `ml-backend-stats:global`. 仅在 WS 订阅者 > 0
+时执行实拉 (Redis key `ml-backend-stats:subscribers` 计数门控), 节省 GPU 探活成本.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
 from datetime import datetime, timezone
 
+import redis as redis_sync
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
+from app.config import settings
 from app.db.base import async_session
 from app.db.models.ml_backend import MLBackend
 from app.services.ml_backend import MLBackendService
+from app.services.ml_client import MLBackendClient
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -31,6 +44,92 @@ def check_ml_backends_health() -> dict:
 
 async def _run_async() -> dict:
     return await check_all_backends()
+
+
+@celery_app.task(name="app.workers.ml_health.publish_ml_backend_stats")
+def publish_ml_backend_stats() -> dict:
+    """v0.9.11 PerfHud · 1s 实时快照推送到 WS. 0 订阅者时短路 skip."""
+    return asyncio.run(_publish_stats_async())
+
+
+async def _publish_stats_async() -> dict:
+    r = redis_sync.from_url(settings.redis_url)
+    try:
+        raw = r.get("ml-backend-stats:subscribers")
+    except Exception as e:  # noqa: BLE001
+        log.debug("subscribers key read failed: %s", e)
+        raw = None
+    finally:
+        try:
+            r.close()
+        except Exception:
+            pass
+    try:
+        subscribers = int(raw) if raw is not None else 0
+    except (TypeError, ValueError):
+        subscribers = 0
+    if subscribers <= 0:
+        return {"skipped": True, "subscribers": 0}
+
+    # Celery prefork + 全局 asyncpg engine 共享会触发 "another operation in progress",
+    # 用 per-task engine + NullPool 模式 (与 tasks._run_batch 一致). 1s 高频但单次 < 50ms.
+    engine = create_async_engine(settings.database_url, echo=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    try:
+        async with SessionLocal() as db:
+            # ml_backends 无 is_active 字段; state == 'disconnected' 跳过 (一直 down 的 backend 不打)
+            rows = (
+                await db.execute(
+                    select(MLBackend).where(MLBackend.state != "disconnected")
+                )
+            ).scalars().all()
+            backends = list(rows)
+    finally:
+        await engine.dispose()
+
+    snapshots: list[dict] = []
+    now = datetime.now(timezone.utc).isoformat()
+    for backend in backends:
+        try:
+            client = MLBackendClient(backend)
+            ok, meta = await client.health_meta()
+            snap = {
+                "backend_id": str(backend.id),
+                "backend_name": backend.name,
+                "state": "ok" if ok else "error",
+                "timestamp": now,
+            }
+            if meta:
+                for key in ("gpu_info", "host", "cache", "model_version"):
+                    if key in meta:
+                        snap[key] = meta[key]
+            snapshots.append(snap)
+        except Exception as exc:  # noqa: BLE001 — 单 backend 失败不影响其他
+            log.debug("publish_ml_backend_stats: backend=%s err=%s", backend.id, exc)
+            snapshots.append(
+                {
+                    "backend_id": str(backend.id),
+                    "backend_name": backend.name,
+                    "state": "error",
+                    "timestamp": now,
+                }
+            )
+
+    r2 = redis_sync.from_url(settings.redis_url)
+    try:
+        # 单帧 publish 整个 list, 前端按 backend_id 路由到对应 PerfHud panel
+        r2.publish(
+            "ml-backend-stats:global",
+            json.dumps({"backends": snapshots, "timestamp": now}),
+        )
+    finally:
+        try:
+            r2.close()
+        except Exception:
+            pass
+    return {"published": len(snapshots), "subscribers": subscribers}
 
 
 async def check_all_backends(jitter_max_seconds: float = 3.0) -> dict:

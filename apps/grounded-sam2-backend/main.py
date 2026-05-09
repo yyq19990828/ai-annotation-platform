@@ -33,7 +33,14 @@ from PIL import Image
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from embedding_cache import EmbeddingCache, compute_cache_key
-from observability import record_cache, record_inference, update_cache_size
+from observability import (
+    init_perfhud_collectors,
+    record_cache,
+    record_inference,
+    sample_perfhud,
+    shutdown_perfhud_collectors,
+    update_cache_size,
+)
 from predictor import GroundedSAM2Predictor
 from schemas import BatchPredictResponse, PredictionResult
 
@@ -68,6 +75,13 @@ def _load_models() -> None:
         embedding_cache=_cache,
     )
     logger.info("models loaded; device=%s", _predictor.device)
+    # v0.9.11 PerfHud · pynvml + psutil 初始化 (无 GPU 环境会降级, 不阻塞 startup)
+    init_perfhud_collectors()
+
+
+@app.on_event("shutdown")
+def _shutdown_perfhud() -> None:
+    shutdown_perfhud_collectors()
 
 
 @app.get("/health")
@@ -90,10 +104,21 @@ def health() -> dict:
             }
         except Exception:  # noqa: BLE001 — 显存查询失败不阻塞 /health
             gpu_info = None
+    # v0.9.11 PerfHud · 同步采样 GPU util/温度/功耗 + 容器 CPU/RAM (无 GPU 环境字段为 None)
+    perf = sample_perfhud()
+    if gpu_info is not None:
+        gpu_info["gpu_utilization_percent"] = perf["gpu_utilization_percent"]
+        gpu_info["gpu_temperature_celsius"] = perf["gpu_temperature_celsius"]
+        gpu_info["gpu_power_watts"] = perf["gpu_power_watts"]
+    host = {
+        "container_cpu_percent": perf["container_cpu_percent"],
+        "container_memory_percent": perf["container_memory_percent"],
+    }
     return {
         "ok": True,
         "gpu": available,
         "gpu_info": gpu_info,
+        "host": host,
         "cache": _cache.stats(),
         "model_version": MODEL_VERSION,
         "loaded": _predictor is not None,

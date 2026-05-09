@@ -142,6 +142,7 @@ export default withMermaid(defineConfig({
             { text: "新增前端页面", link: "/dev/how-to/add-page" },
             { text: "Alembic 迁移", link: "/dev/how-to/add-migration" },
             { text: "调试 Celery", link: "/dev/how-to/debug-celery" },
+            { text: "调试 WebSocket", link: "/dev/how-to/debug-websocket" },
           ],
         },
         {

@@ -2,11 +2,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
+import { cspNoncePlugin } from "./vite-plugins/csp-nonce";
 
 // vitest 字段在 vite 6 的 UserConfig 类型里未直接合并，用类型断言放过。
 // `/// <reference types="vitest" />` 已注入运行时 schema。
 const config: Parameters<typeof defineConfig>[0] = {
-  plugins: [react()],
+  plugins: [react(), cspNoncePlugin()],
   // v0.8.8 · 仓库根 `.env` 是前后端共用 SoT。vite 默认从 `apps/web/.env`
   // 读取会与后端 .env 漂移；显式指向仓库根确保 VITE_* 变量与后端 settings 同源。
   envDir: resolve(__dirname, "../../"),

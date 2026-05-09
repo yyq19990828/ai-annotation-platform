@@ -123,6 +123,75 @@ async def prediction_jobs_socket(
             pass
 
 
+_ML_STATS_CHANNEL = "ml-backend-stats:global"
+_ML_STATS_SUBSCRIBERS_KEY = "ml-backend-stats:subscribers"
+
+
+@router.websocket("/ws/ml-backend-stats")
+async def ml_backend_stats_socket(
+    websocket: WebSocket,
+    token: str = Query(...),
+):
+    """v0.9.11 PerfHud · admin-only ML backend 实时统计 WS.
+
+    Channel: `ml-backend-stats:global` (Celery beat `publish_ml_backend_stats` 每 1s
+    pull 所有 is_active=true backend 的 /health → publish snapshot list).
+    订阅者计数键: `ml-backend-stats:subscribers` (INCR/DECR), beat 任务读这个
+    决定是否实拉 — 0 订阅者时直接 skip, 节省 GPU 探活成本.
+
+    鉴权: super_admin / project_admin 才能看 (运维向, 标注员不需要).
+    """
+    try:
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+        role = payload.get("role")
+        if not user_id:
+            raise ValueError("missing sub")
+        uuid.UUID(user_id)
+        if role not in ("super_admin", "project_admin"):
+            raise PermissionError("not admin")
+    except Exception:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    await websocket.accept()
+    r = aioredis.Redis(connection_pool=_get_redis_pool())
+    pubsub = r.pubsub()
+    await pubsub.subscribe(_ML_STATS_CHANNEL)
+    # v0.9.11 · 订阅者计数 +1 (Celery beat 1s 实拉门控)
+    try:
+        await r.incr(_ML_STATS_SUBSCRIBERS_KEY)
+    except Exception as e:
+        log.warning("incr subscribers key failed: %s", e)
+
+    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+    try:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                data = message["data"]
+                await websocket.send_text(
+                    data.decode() if isinstance(data, bytes) else data
+                )
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        log.warning("ml-backend-stats WS error user=%s err=%s", user_id, e)
+    finally:
+        heartbeat_task.cancel()
+        try:
+            # 计数 -1; 防计数漂移 (异常退出场景), 取 max(0, ...)
+            count = await r.decr(_ML_STATS_SUBSCRIBERS_KEY)
+            if count is not None and count < 0:
+                await r.set(_ML_STATS_SUBSCRIBERS_KEY, 0)
+        except Exception as e:
+            log.debug("decr subscribers key failed: %s", e)
+        try:
+            await pubsub.unsubscribe(_ML_STATS_CHANNEL)
+            await pubsub.close()
+        except Exception:
+            pass
+
+
 @router.websocket("/ws/notifications")
 async def notifications_socket(
     websocket: WebSocket,

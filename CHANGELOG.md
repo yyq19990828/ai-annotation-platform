@@ -21,6 +21,62 @@
 
 ## 最新版本
 
+## [0.9.11] - 2026-05-09
+
+> **Modular Star — CSP nonce 收紧 + GPU PerfHud 浮窗 + v0.9.8 schema/cost gap 收口.** 三块并行: ① CSP `script-src` 从 `'unsafe-inline'` 收紧为 nonce-based (Nginx `sub_filter` 替换 `__CSP_NONCE__` 占位符为 `$request_id`, vite plugin build 时给 `<script>` + `<meta>` 注入占位符, FastAPI middleware 同步收紧 API 响应路径; `style-src 'unsafe-inline'` 仍保留待 v0.10.x ProjectSettingsPage 重构同窗口收紧 ~2600 处内联 style); ② GPU/ML backend 实时监控浮窗 PerfHud (后端 `pynvml` + `psutil` 扩 `/health.gpu_info` util/温度/功耗 + `host` 容器 CPU/RAM, API `/ws/ml-backend-stats` admin-only WS + Celery beat 1s pull/publish + Redis 订阅者计数门控, 前端 280×180 浮窗 4 progress bar + 60s sparkline, 全局 `Ctrl+Shift+P` + TopBar activity icon admin only); ③ v0.9.8 遗留 gap 收口 — 后端 `PredictionShape` Pydantic 模型 (geometry 复用 `_jsonb_types.{Bbox,Polygon}Geometry`), `PredictionOut.result` 类型从 `list[dict]` 收紧到 `list[PredictionShape]`, 前端 `apps/web/src/types/index.ts` 切 codegen 派生; `prediction_jobs.total_cost` 接通 `PredictionMeta.total_cost` 累加 (worker 循环内汇总, job 完成时写 `Decimal(10,4)`).
+
+### Added
+
+- **CSP nonce 基础设施**:
+  - `apps/web/vite-plugins/csp-nonce.ts`: 自定义 vite plugin, `transformIndexHtml.post` 给所有 `<script>` 加 `nonce="__CSP_NONCE__"` + `<head>` 内插 `<meta name="csp-nonce" content="__CSP_NONCE__">`.
+  - `infra/docker/nginx.conf`: `sub_filter '__CSP_NONCE__' $request_id` (sub_filter_once off, sub_filter_types text/html), 同时 `add_header Content-Security-Policy "...script-src 'self' 'nonce-$request_id' https://challenges.cloudflare.com..."`. CSP / X-Frame-Options / HSTS / Referrer-Policy 全套头在 location / 出站. /assets / 不动.
+  - `apps/web/index.html`: 加 `<meta name="csp-nonce" content="__CSP_NONCE__">`.
+  - `apps/web/src/lib/turnstile.ts`: 动态 script 注入读 meta 设 `script.nonce`. 加 2 个 vitest case.
+  - `apps/api/tests/test_security_headers.py` (新): 3 case 验 API 路径 CSP `script-src` 不含 `'unsafe-inline'` / `style-src` 仍保留 / 其他安全头不变.
+- **PerfHud (GPU MVP)**:
+  - `apps/grounded-sam2-backend/observability.py`: 新增 5 个 Gauge (`gpu_utilization_percent` / `gpu_temperature_celsius` / `gpu_power_watts` / `container_cpu_percent` / `container_memory_percent`) + `init_perfhud_collectors` / `shutdown_perfhud_collectors` / `sample_perfhud()` (pynvml + psutil 同步采样, 异常降级返回 None).
+  - `apps/grounded-sam2-backend/main.py`: lifespan startup 调 `init_perfhud_collectors`, shutdown 调 cleanup; `/health` 调 `sample_perfhud()` 扩 `gpu_info` util/温度/功耗 + 新增 `host` 段.
+  - `apps/grounded-sam2-backend/pyproject.toml`: 加 `pynvml>=11.5` + `psutil>=5.9`.
+  - `apps/api/app/schemas/ml_backend.py`: 新增 `GpuInfo` / `HostInfo` / `CacheStats` / `HealthMeta` / `MLBackendStatsSnapshot` Pydantic 子模型 (前端 codegen 派生); `MLBackendOut.health_meta` 类型从 `dict` 收紧到 `HealthMeta`.
+  - `apps/api/app/services/ml_client.py:health_meta`: 透传 `host` 段到 `ml_backends.health_meta`.
+  - `apps/api/app/api/v1/ws.py:/ws/ml-backend-stats`: admin-only (super_admin / project_admin) WebSocket. accept 时 `INCR ml-backend-stats:subscribers`, close 时 `DECR` (异常退出走 `max(0, ...)` 防漂移). 30s 心跳保活. 订阅 redis `ml-backend-stats:global` channel.
+  - `apps/api/app/workers/ml_health.py:publish_ml_backend_stats`: 新 Celery task. 1s 触发: 读订阅者计数 → 0 时 skip, > 0 时拉所有 `state != 'disconnected'` backend 的 `health_meta()` → publish 单帧 list 到 `ml-backend-stats:global`.
+  - `apps/api/app/workers/celery_app.py`: 新增 `publish-ml-backend-stats` beat schedule (`timedelta(seconds=1)`).
+  - `docker-compose.yml`: 新增独立 `celery-beat` service (复用 `Dockerfile.api` image, command `celery ... beat -l info --schedule=/tmp/celerybeat-schedule`). worker / beat 解耦 — worker 可 scale 多副本, beat 必须单实例避免 schedule 重复触发. PerfHud 1s 推送 + audit partition 月度任务 + ml health 60s 等都依赖此进程.
+  - `apps/grounded-sam2-backend/Dockerfile`: 硬编码 pip install 列表加 `pynvml>=11.5` + `psutil>=5.9` (Dockerfile 不读 pyproject.toml, 必须显式列出).
+  - `apps/web/src/components/PerfHud/`: 新组件目录. `PerfHud.tsx` (280×180 fixed top-right 浮窗, 4 progress bar 阈值变色 < 70% 绿 / 70-90% 黄 / > 90% 红, 展开后 60s sparkline `apps/web/src/components/ui/Sparkline.tsx` 复用, 底部 device_name / temp / power / cache hit rate / model_version, 多 backend select 切换); `useMLBackendStats.ts` (visible 时建 WS, 关闭即断, 60 帧 ring buffer × 4 metrics); `usePerfHudStore.ts` (zustand visibility store).
+  - `apps/web/src/App.tsx`: 全局 `Ctrl+Shift+P` keydown listener (input/textarea/contenteditable 内不拦截) + `<PerfHud />` 挂载.
+  - `apps/web/src/components/shell/TopBar.tsx`: activity icon button (super_admin / project_admin only) toggle perfhud store.
+  - `docs-site/dev/architecture/perfhud.md` (新): 数据流图 + 关键文件 + 性能开销 + 待扩展. `docs-site/dev/monitoring.md` 加交叉引用.
+- **PredictionShape codegen + total_cost 接通**:
+  - `apps/api/app/schemas/prediction.py`: 新增 `PredictionShape` Pydantic 模型 (`type: str`, `class_name: str`, `geometry: BboxGeometry | PolygonGeometry | dict[str, Any]`, `confidence: float`). `PredictionOut.result` 类型从 `list[dict]` 收紧到 `list[PredictionShape]`. 复用 `_jsonb_types.{Bbox,Polygon}Geometry`.
+  - `apps/api/openapi.snapshot.json` + `apps/web/src/api/generated/types.gen.ts`: 重导后含新 `PredictionShape` / 收紧 `PredictionOut.result`.
+  - `apps/web/src/types/index.ts`: 删手写 `PredictionShape` / `PredictionResponse`, 改 re-export generated 类型 + 对 geometry 做轻度窄化 (剔除 dict fallback) 兼容 `transforms.ts` 强类型消费.
+  - `apps/api/app/services/ml_client.py:PredictionResult`: 加 `meta: dict | None` 字段 (LLM-backed backend 透传 token/cost 用; grounded-sam2 走 None).
+  - `apps/api/tests/test_prediction_jobs_worker.py:test_run_batch_accumulates_total_cost` (新): mock `MLBackendClient` 返回带 `meta.total_cost=0.0012` × 2, 验证 `job.total_cost == Decimal("0.0024")`.
+
+### Changed
+
+- **`apps/api/app/middleware/security_headers.py`**: API 响应路径 CSP `script-src` 删除 `'unsafe-inline'` (改为 `'self' https://challenges.cloudflare.com`). HTML 路径 CSP 由 Nginx 注入 nonce, 中间件不再处理 nonce. `style-src 'unsafe-inline'` 保留 (前端 ~2600 处内联 style 留 v0.10.x 迁移).
+- **`apps/api/app/api/v1/tasks.py:get_predictions`**: read 路径重构. 之前 `PredictionOut.model_validate(p)` 直读 DB 上的 LabelStudio raw shapes, 然后覆盖 `out.result = shapes`; v0.9.11 因 `result` 类型收紧到 `list[PredictionShape]` 直读会失败, 改为 `to_internal_shape()` 转换后再用显式 dict 构造 `PredictionOut.model_validate({...})`.
+- **`apps/api/app/workers/tasks.py:_run_batch`**: 加 `running_total_cost` 累加器, 每条 prediction `meta.total_cost` 累加; job 完成时 `job.total_cost = Decimal(running_total_cost.4f)`. 空任务 job 也写 `Decimal("0.0000")` (与正常路径一致, 避免 NULL 残留).
+- **`docs/adr/0010-security-headers-middleware.md`**: 加 v0.9.11 update 段, 状态从 Accepted (baseline) 升到 Accepted (script-src nonce). Follow-up 1 改为只剩 style-src 迁移.
+- **`docs-site/dev/architecture/api-schema-boundary.md`**: v0.9.8 ⚠ 状态改 ✅ "v0.9.11 codegen 迁移完成", 标注 PredictionShape / PredictionResponse 已切派生.
+
+### Fixed
+
+- **`apps/web/src/hooks/useNotificationSocket.ts:45`**: URL 从错误的 `/api/v1/ws/notifications` 改回 `/ws/notifications` (`ws_router` 在 `apps/api/app/main.py:108` 是 `app.include_router(ws_router)` 无 prefix 注册). v0.6.9 起就写错的隐性 bug — 通知 WS 实时推送一直返回 404 立即关闭, 标注员通知红点徽章纯靠 v0.7.0 加的 30s `useNotifications` refetchInterval 兜底拿到, 误以为 WS 在工作. v0.9.11 PerfHud 联调时 console 一并暴露此 bug 并修.
+- **`apps/web/` 4 处 WS hook (`useMLBackendStats` / `useNotificationSocket` / `useGlobalPreannotationJobs` / `usePreannotation`)**: dev 模式 (`import.meta.env.DEV`) 直连 `localhost:8000` 绕过 vite proxy `/ws`. 触发: 多个 WS hook 在同一会话并发建立时, vite 内部 http-proxy ws-mode 偶发卡 CONNECTING 永不返回 (单 WS 时 OK; 浏览器看不到 onerror/onclose 回调 → 浮窗永远显示"正在连接"). production 走 nginx 反向代理 `/ws/` location 不受影响 (`infra/docker/nginx.conf` 已就绪).
+- **`apps/api/app/workers/celery_app.py:32-44`**: `task_routes` 补 `publish_ml_backend_stats` + `check_ml_backends_health` 显式路由到 `default` queue. worker 订阅 `default,ml,media` 但缺路由的 task 默认走 celery 队列, 触发 65 条 task 堆积无人消费. 历史 `check_ml_backends_health` 也漏在路由表外, 同步补上.
+- **`apps/api/app/workers/ml_health.py:_publish_stats_async`**: 改用 per-task `create_async_engine` + `async_sessionmaker` (与 `tasks._run_batch` 一致), 替换全局 `async_session()`. Celery prefork pool concurrency=2 + 1s 高频触发时全局 engine 在 fork worker 间共享触发 asyncpg `InterfaceError: cannot perform operation: another operation is in progress`. per-task engine 单次 < 50ms, dispose 干净.
+
+### Operational notes (运维提示, 非代码改动)
+
+- **uvicorn `--reload` + 长 WS 连接 = reload 永卡死**: 改 `app/workers/celery_app.py` 触发 `WatchFiles detected changes ... Reloading`, 老 worker 进入 graceful shutdown 等所有 background tasks 完成 → 浏览器持有的 WS 长连接永远不"完成" → 老进程死锁在 `Waiting for background tasks to complete (CTRL+C to force quit)`, 新代码永不加载. 临时绕法: `kill -9 <pid>` 强杀 + 重启. 长期看可考虑启动时加 `--ws-max-size` / 自定义 lifespan close-on-reload, 留 follow-up.
+- **docker celery-worker / celery-beat 必须分别 build**: image 用 `COPY` 而非 volume mount, `apps/api/app/workers/*.py` 改后必须 `docker compose build celery-worker && docker compose up -d celery-worker celery-beat` (重启不够 — 见 CLAUDE.md §7 "Docker rebuild vs restart"). v0.9.11 拆出独立 `celery-beat` service (worker / beat 解耦, beat 单实例避免 schedule 重复触发, 与 Celery 最佳实践对齐).
+
+---
+
 ## [0.9.10] - 2026-05-08
 
 管理员反馈第二轮 BUG 修复 (B-10 ~ B-13) + AI 置信度链路修复:

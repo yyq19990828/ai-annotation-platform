@@ -74,3 +74,4 @@ production 不建议把 prometheus / grafana 跟应用塞同一 docker-compose�
 | Grafana provisioning | `infra/grafana/provisioning/` |
 | Prometheus scrape | `infra/prometheus/prometheus.yml` |
 | docker-compose monitoring profile | `docker-compose.yml` |
+| GPU/ML backend 实时浮窗 (PerfHud) | [architecture/perfhud.md](./architecture/perfhud.md) |

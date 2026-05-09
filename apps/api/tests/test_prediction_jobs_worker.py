@@ -270,6 +270,108 @@ async def test_mark_job_failed_skips_already_completed(
     assert fresh.error_message is None
 
 
+@pytest.mark.asyncio
+async def test_run_batch_accumulates_total_cost(
+    db_session: AsyncSession, monkeypatch, super_admin
+):
+    """v0.9.11 · _run_batch 把每条 PredictionResult.meta.total_cost 累加到 prediction_jobs.total_cost.
+
+    grounded-sam2-backend 不返回 cost (走 None 路径不累加); LLM-backed backend 通过 meta.total_cost
+    透传; 本测试用 stub MLBackendClient 模拟带 cost 的响应, 验证 sum 正确写入 Decimal(10,4) 列.
+    """
+    from decimal import Decimal
+
+    from app.db.models.task import Task
+    from app.services.ml_client import PredictionResult
+    from app.workers import tasks as worker_tasks
+
+    user, _ = super_admin
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+
+    t1 = Task(
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        display_id="T-1",
+        file_name="a.jpg",
+        file_path="http://x/a.jpg",
+        file_type="image",
+        status="pending",
+    )
+    t2 = Task(
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        display_id="T-2",
+        file_name="b.jpg",
+        file_path="http://x/b.jpg",
+        file_type="image",
+        status="pending",
+    )
+    db_session.add_all([t1, t2])
+    await db_session.flush()
+
+    class _StubClient:
+        def __init__(self, _backend):
+            self._backend = _backend
+
+        async def predict(self, tasks_payload, context=None):
+            return [
+                PredictionResult(
+                    task_id=tasks_payload[0]["id"],
+                    result=[],
+                    score=0.9,
+                    model_version="stub-v1",
+                    inference_time_ms=10,
+                    meta={"total_cost": 0.0012},
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient", _StubClient, raising=True
+    )
+
+    class _PassThroughEngine:
+        async def dispose(self):
+            pass
+
+    def _fake_engine(*_a, **_kw):
+        return _PassThroughEngine()
+
+    class _PassThroughSessionFactory:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        def __call__(self):
+            class _Ctx:
+                async def __aenter__(self_inner):
+                    return db_session
+
+                async def __aexit__(self_inner, *args):
+                    return False
+
+            return _Ctx()
+
+    import sqlalchemy.ext.asyncio as sa_async
+
+    monkeypatch.setattr(sa_async, "create_async_engine", _fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", _PassThroughSessionFactory)
+
+    await worker_tasks._run_batch(
+        project_id=str(proj.id),
+        ml_backend_id=str(backend.id),
+        task_ids=[str(t1.id), str(t2.id)],
+        prompt="x",
+    )
+
+    res = await db_session.execute(
+        select(PredictionJob).where(PredictionJob.project_id == proj.id)
+    )
+    job = res.scalar_one()
+    assert job.status == "completed"
+    assert job.success_count == 2
+    # 0.0012 × 2 = 0.0024 (Numeric(10,4) 截断到 4 位)
+    assert job.total_cost == Decimal("0.0024")
+
+
 def test_batch_predict_task_on_failure_dispatches_mark_helper(monkeypatch):
     """_BatchPredictTask.on_failure 同步调用 _mark_job_failed (asyncio.run 包裹)."""
     from app.workers import tasks as worker_tasks

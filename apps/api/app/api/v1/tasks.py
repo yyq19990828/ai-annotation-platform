@@ -1,6 +1,7 @@
 import base64
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select, func, or_, and_
@@ -465,24 +466,38 @@ async def get_predictions(
     # 第一步：LabelStudio → 内部 schema 适配 + min_confidence 过滤
     # v0.9.7 fix · DB 存 LabelStudio 标准 {type, value, score}, 前端期望 {type, class_name,
     # geometry, confidence}. 在 read 路径补 adapter, DB 不动 (保持导出兼容).
+    # v0.9.11 · PredictionOut.result 类型从 list[dict] 收紧到 list[PredictionShape], 改为
+    # 内部 shape 转换后再构造 PredictionOut (避免 raw LS shape 直接验证失败).
     from app.services.prediction import to_internal_shape
 
-    base: list[tuple[PredictionOut, list[dict]]] = []
+    def _build_out(p, shapes: list[dict]) -> PredictionOut:
+        ms, cost = meta_map.get(p.id, (None, None))
+        return PredictionOut.model_validate(
+            {
+                "id": p.id,
+                "task_id": p.task_id,
+                "project_id": p.project_id,
+                "ml_backend_id": p.ml_backend_id,
+                "model_version": p.model_version,
+                "score": p.score,
+                "result": shapes,
+                "cluster": p.cluster,
+                "created_at": p.created_at,
+                "inference_time_ms": ms,
+                "total_cost": cost,
+            }
+        )
+
+    base: list[tuple[Any, list[dict]]] = []  # (raw prediction, internal shapes)
     for p in predictions:
         shapes = [to_internal_shape(s) for s in (p.result or [])]
         if min_confidence is not None:
             shapes = [s for s in shapes if s.get("confidence", 0.0) >= min_confidence]
         if shapes:
-            out = PredictionOut.model_validate(p)
-            ms, cost = meta_map.get(p.id, (None, None))
-            out.inference_time_ms = ms
-            out.total_cost = cost
-            base.append((out, shapes))
+            base.append((p, shapes))
 
     if limit is None and offset == 0:
-        for out, shapes in base:
-            out.result = shapes
-        return [out for out, _ in base]
+        return [_build_out(p, shapes) for p, shapes in base]
 
     # 第二步：跨 Prediction 按置信度排序 + offset/limit 截取
     flat: list[tuple[int, dict]] = []
@@ -497,10 +512,9 @@ async def get_predictions(
     for idx, s in sliced:
         grouped.setdefault(idx, []).append(s)
     result: list[PredictionOut] = []
-    for idx, (out, _) in enumerate(base):
+    for idx, (p, _) in enumerate(base):
         if idx in grouped:
-            out.result = grouped[idx]
-            result.append(out)
+            result.append(_build_out(p, grouped[idx]))
     return result
 
 

@@ -16,6 +16,9 @@ class PredictionResult:
     score: float | None = None
     model_version: str | None = None
     inference_time_ms: int | None = None
+    # v0.9.11 · token / cost 透传 (LLM-backed backend 才有, grounded-sam2 当前留 None).
+    # worker 累加到 prediction_jobs.total_cost, prediction_meta 单条留档.
+    meta: dict | None = None
 
 
 class MLBackendClient:
@@ -57,10 +60,10 @@ class MLBackendClient:
                     data = resp.json()
                 except Exception:
                     return True, None
-                # 仅取深度指标三段, 减小 jsonb 体积
+                # v0.9.11 · 加 host (PerfHud 容器 CPU/RAM); gpu_info/cache/model_version 保留
                 meta = {
                     k: data[k]
-                    for k in ("gpu_info", "cache", "model_version")
+                    for k in ("gpu_info", "host", "cache", "model_version")
                     if k in data
                 }
                 return True, meta or None
@@ -103,6 +106,7 @@ class MLBackendClient:
                     score=item.get("score"),
                     model_version=item.get("model_version"),
                     inference_time_ms=item.get("inference_time_ms") or wall_ms,
+                    meta=item.get("meta"),  # v0.9.11 · LLM cost/token (grounded-sam2 不返回)
                 )
             )
         return results
@@ -135,6 +139,7 @@ class MLBackendClient:
             score=data.get("score"),
             model_version=data.get("model_version"),
             inference_time_ms=data.get("inference_time_ms") or wall_ms,
+            meta=data.get("meta"),
         )
 
     async def setup(self) -> dict:

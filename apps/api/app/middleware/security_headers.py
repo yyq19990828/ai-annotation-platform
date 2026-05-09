@@ -4,11 +4,12 @@ v0.8.8 · 仅在 environment=="production" 时由 main.py 注册。
 注册顺序应在 CORSMiddleware 之前（先注册→后执行→最外层最后写头），
 确保 CORS preflight / 业务响应都被覆盖。
 
-CSP 当前为「宽松基线版」：
-  - 允许 'unsafe-inline' style（前端运行时仍有部分 inline style，未来用 nonce 收紧）
-  - 允许 Cloudflare Turnstile 域用于 CAPTCHA（v0.8.7 接入）
-  - frame-ancestors 'none' 等价于 X-Frame-Options: DENY 的 modern 写法
-未来 follow-up（见 ADR-0010）：CSP nonce-based + script-src 去 'unsafe-inline'。
+v0.9.11 · CSP script-src nonce 收紧（仅 HTML 路径走 Nginx 注入 nonce, API 响应不含 HTML
+所以 script-src 直接收紧到 'self' + Turnstile 即可, 无需 nonce）.
+  - HTML 出站 CSP (含 nonce) 由 infra/docker/nginx.conf 的 sub_filter + add_header 处理
+  - API 响应 CSP 由本中间件处理: script-src 已去 'unsafe-inline'
+  - style-src 'unsafe-inline' 仍保留（前端 ~2600 处 <style={{}}>, 迁移留 v0.10.x ProjectSettingsPage 重构同窗口）
+ADR-0010 已更新.
 """
 
 from __future__ import annotations
@@ -21,11 +22,13 @@ from starlette.types import ASGIApp
 
 _HSTS_MAX_AGE = 60 * 60 * 24 * 365  # 1 year
 
+# v0.9.11 · API 响应不含 HTML, script-src 不需要 nonce; 直接收紧到 'self' + Turnstile.
+# style-src 'unsafe-inline' 保留, 见模块注释.
 _CSP_DIRECTIVES = (
     "default-src 'self'; "
     "img-src 'self' data: blob: https:; "
     "style-src 'self' 'unsafe-inline'; "
-    "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; "
+    "script-src 'self' https://challenges.cloudflare.com; "
     "frame-src https://challenges.cloudflare.com; "
     "connect-src 'self' https: wss: ws:; "
     "font-src 'self' data:; "

@@ -101,6 +101,26 @@ services:
       minio:
         condition: service_healthy
 
+  # v0.9.11 · Celery beat 独立 service. worker 与 beat 解耦 (worker 可 scale 多副本,
+  # beat 必须单实例避免 schedule 重复触发). 复用同一 image (Dockerfile.api).
+  # PerfHud 1s 推送 + audit partition 月度任务 + ml health 60s 等都依赖此进程.
+  celery-beat:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    command: celery -A app.workers.celery_app beat -l info --schedule=/tmp/celerybeat-schedule
+    environment:
+      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
   # v0.9.0+ Grounded-SAM-2 ML Backend (GroundingDINO + SAM 2.1).
   # 默认 GPU profile, dev 无 GPU 笔记本不会被拉起; 启用方式:
   #   docker compose --profile gpu up grounded-sam2-backend

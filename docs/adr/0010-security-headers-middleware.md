@@ -1,9 +1,9 @@
 # ADR-0010: Production Security Headers Middleware
 
-- **Status**: Accepted
-- **Date**: 2026-05-07
+- **Status**: Accepted (v0.9.11 update — script-src nonce 收紧已落地)
+- **Date**: 2026-05-07 (v0.9.11 update: 2026-05-09)
 - **Supersedes**: —
-- **Related**: deploy.md（nginx TLS 终结）
+- **Related**: deploy.md（nginx TLS 终结）, infra/docker/nginx.conf
 
 ## Context
 
@@ -90,11 +90,35 @@ frame-ancestors 'none'
   前应当先用 `max-age=300` 灰度 24h，确认 https 稳定后再切换长 TTL。
   本 ADR 默认值适合稳定 production；初次切换的运维 SOP 留给 deploy.md。
 
+## v0.9.11 Update — script-src nonce 收紧
+
+**已落地**（2026-05-09）：
+
+- **HTML 出站路径**：`infra/docker/nginx.conf` 启用 `sub_filter` 把 vite plugin
+  (`apps/web/vite-plugins/csp-nonce.ts`) 注入的 `__CSP_NONCE__` 占位符替换为
+  `$request_id` (Nginx 自动生成的 32-char hex)。同请求 CSP header 也用同一个
+  `$request_id`，HTML 内 `<script nonce="...">` 与 header 中 `script-src
+  'nonce-XXX'` 完全一致。
+- **API 响应路径**：`SecurityHeadersMiddleware` 的 CSP 直接收紧 `script-src
+  'self' https://challenges.cloudflare.com`（无 nonce — API 响应不含 HTML，
+  没有 inline script 的合法用例）。`'unsafe-inline'` 完全移除。
+- **Turnstile 兼容**：`apps/web/src/lib/turnstile.ts` 动态注入 script 时读
+  `<meta name="csp-nonce">` 设 `script.nonce`。Cloudflare 域已在 `script-src`
+  白名单里，nonce + 域名双因子允许。
+- **style-src 'unsafe-inline'** 仍保留：前端 ~2600 处 `<style={{}}>` 全量重构留
+  v0.10.x ProjectSettingsPage 重构同窗口做（破窗成本最低）。
+
+**为什么走 Nginx 而不是 FastAPI**：SPA 由 Nginx 直接 serve `/usr/share/nginx/html`，
+FastAPI 不出 HTML。改 Nginx 比把 SPA 移到 FastAPI route + Jinja2 模板小一个数量级
+（不用动 vite build 输出 / 静态资源路由）。代价是 nginx.conf 与 middleware 双源 CSP
+策略需要保持同步——靠注释交叉引用 + 集成测试 (test_security_headers.py 验 API 路径)。
+
 ## Follow-ups
 
-1. CSP nonce-based migration：剔除 `'unsafe-inline'` 的 script/style，
-   配合 vite plugin 注入 build-time nonce。预计 v0.10.x 与
-   ProjectSettingsPage 重构同窗口做。
+1. **style-src nonce 化**（v0.10.x）：剔除 style 'unsafe-inline'。前置依赖
+   全站 ~2600 处 `style={{}}` 重构（迁 CSS modules / vanilla-extract），切入点
+   选 inline style 密度最高的 `apps/web/src/pages/Projects/sections/` 群
+   （`BatchesSection.tsx` 948 行等）。与 ProjectSettingsPage 重构同窗口。
 2. `Permissions-Policy` 头补全（camera / microphone 等）。
 3. CORS preflight 路径是否需要单独 short-circuit 跳过 SecurityHeaders？
    当前不跳过——浏览器看 OPTIONS 响应也希望带 HSTS。

@@ -71,4 +71,27 @@ describe("loadTurnstileScript", () => {
     s.onerror?.(new Event("error"));
     await expect(p).rejects.toThrow(/turnstile script failed/);
   });
+
+  it("v0.9.11 · 注入 script 时从 meta[name=csp-nonce] 读取 nonce 设到 script.nonce", async () => {
+    const meta = document.createElement("meta");
+    meta.setAttribute("name", "csp-nonce");
+    meta.setAttribute("content", "test-nonce-abc123");
+    document.head.appendChild(meta);
+
+    const { loadTurnstileScript } = await import("../turnstile");
+    loadTurnstileScript();
+    const s = document.head.querySelector(
+      "script[src^='https://challenges.cloudflare.com']",
+    ) as HTMLScriptElement;
+    expect(s.nonce).toBe("test-nonce-abc123");
+  });
+
+  it("v0.9.11 · meta 缺省时不设 nonce (dev 模式无 Nginx 替换占位符)", async () => {
+    const { loadTurnstileScript } = await import("../turnstile");
+    loadTurnstileScript();
+    const s = document.head.querySelector(
+      "script[src^='https://challenges.cloudflare.com']",
+    ) as HTMLScriptElement;
+    expect(s.nonce).toBe("");
+  });
 });

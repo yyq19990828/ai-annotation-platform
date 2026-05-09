@@ -149,27 +149,24 @@ export interface AnnotationResponse {
 
 // ── Prediction ──────────────────────────────────────────────────────────────
 
-export interface PredictionShape {
-  type: string;
-  class_name: string;
-  geometry: Geometry;
-  confidence: number;
-}
+// v0.9.11 · PredictionShape / PredictionResponse 切换为 codegen 派生 (api-schema-boundary.md).
+// 后端 PredictionShape Pydantic 模型在 apps/api/app/schemas/prediction.py; OpenAPI snapshot
+// 经 export_openapi.py + pnpm codegen 生成 src/api/generated/types.gen.ts. 这里 re-export
+// 并对 geometry 做窄化 (去掉 dict fallback) — 因为前端消费方 (transforms.ts) 仅处理已知
+// shape, 未知 LS 类型 (keypoints 等) 在后端 to_internal_shape 已转空 geometry, 前端遇到时
+// 走 generic 渲染路径不需要类型支持.
+import type {
+  PredictionShape as GeneratedPredictionShape,
+  PredictionOut as GeneratedPredictionOut,
+} from "@/api/generated/types.gen";
 
-export interface PredictionResponse {
-  id: string;
-  task_id: string;
-  project_id: string;
-  ml_backend_id: string | null;
-  model_version: string | null;
-  score: number | null;
+export type PredictionShape = Omit<GeneratedPredictionShape, "geometry"> & {
+  geometry: Geometry;
+};
+
+export type PredictionResponse = Omit<GeneratedPredictionOut, "result"> & {
   result: PredictionShape[];
-  cluster: number | null;
-  created_at: string;
-  /** v0.9.5 · 单条费用 / 推理时间，AIInspectorPanel 「本题花费」直显 */
-  inference_time_ms?: number | null;
-  total_cost?: number | null;
-}
+};
 
 // ── ML Backend ──────────────────────────────────────────────────────────────
 

@@ -3477,6 +3477,68 @@
         "title": "BulkBatchReassign",
         "type": "object"
       },
+      "CacheStats": {
+        "additionalProperties": true,
+        "properties": {
+          "capacity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity"
+          },
+          "hit_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hit Rate"
+          },
+          "hits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hits"
+          },
+          "misses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Misses"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          }
+        },
+        "title": "CacheStats",
+        "type": "object"
+      },
       "CanvasDrawing": {
         "additionalProperties": false,
         "description": "Reviewer 端 Konva overlay 序列化的批注笔触集合（归一化坐标 [0,1]）。",
@@ -4350,6 +4412,89 @@
         "title": "GlobalBackendListResponse",
         "type": "object"
       },
+      "GpuInfo": {
+        "properties": {
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "gpu_power_watts": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Power Watts"
+          },
+          "gpu_temperature_celsius": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Temperature Celsius"
+          },
+          "gpu_utilization_percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Utilization Percent"
+          },
+          "memory_free_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Free Mb"
+          },
+          "memory_total_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Total Mb"
+          },
+          "memory_used_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Used Mb"
+          }
+        },
+        "title": "GpuInfo",
+        "type": "object"
+      },
       "GroupAssignPayload": {
         "properties": {
           "group_id": {
@@ -4479,6 +4624,55 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HealthMeta": {
+        "additionalProperties": true,
+        "description": "v0.9.11 · backend `/health` 深度指标缓存. 由 services/ml_backend.check_health 写入,\n`/admin/ml-integrations/overview` + PerfHud WS 消费.",
+        "properties": {
+          "cache": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CacheStats"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gpu_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GpuInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "host": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HostInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          }
+        },
+        "title": "HealthMeta",
+        "type": "object"
+      },
       "HistoryEntry": {
         "description": "一条历史事件 — audit 或 comment 统一外形。\n\nkind ∈ { audit, comment }；audit 含 action + detail；comment 含 body + comment_id。\n所有事件按 timestamp 升序合并。",
         "properties": {
@@ -4553,6 +4747,34 @@
           "timestamp"
         ],
         "title": "HistoryEntry",
+        "type": "object"
+      },
+      "HostInfo": {
+        "properties": {
+          "container_cpu_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Cpu Percent"
+          },
+          "container_memory_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Memory Percent"
+          }
+        },
+        "title": "HostInfo",
         "type": "object"
       },
       "InteractiveRequest": {
@@ -4922,14 +5144,12 @@
           "health_meta": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/HealthMeta"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Health Meta"
+            ]
           },
           "id": {
             "format": "uuid",
@@ -5937,8 +6157,7 @@
           },
           "result": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/PredictionShape"
             },
             "title": "Result",
             "type": "array"
@@ -5979,6 +6198,45 @@
           "created_at"
         ],
         "title": "PredictionOut",
+        "type": "object"
+      },
+      "PredictionShape": {
+        "properties": {
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "geometry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BboxGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/PolygonGeometry"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "title": "Geometry"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "class_name",
+          "geometry",
+          "confidence"
+        ],
+        "title": "PredictionShape",
         "type": "object"
       },
       "ProbeRequest": {

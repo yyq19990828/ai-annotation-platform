@@ -55,6 +55,46 @@ class MLBackendUpdate(BaseModel):
         return _validate_ml_backend_url(v)
 
 
+# v0.9.11 PerfHud · health_meta 子结构 (Pydantic 模型 → 前端 codegen 派生类型)
+class GpuInfo(BaseModel):
+    device_name: str | None = None
+    memory_used_mb: int | None = None
+    memory_total_mb: int | None = None
+    memory_free_mb: int | None = None
+    gpu_utilization_percent: int | None = None
+    gpu_temperature_celsius: int | None = None
+    gpu_power_watts: float | None = None
+
+
+class HostInfo(BaseModel):
+    container_cpu_percent: float | None = None
+    container_memory_percent: float | None = None
+
+
+class CacheStats(BaseModel):
+    hits: int | None = None
+    misses: int | None = None
+    size: int | None = None
+    capacity: int | None = None
+    hit_rate: float | None = None
+
+    class Config:
+        extra = "allow"  # backend 可能扩展指标, 不强约束
+
+
+class HealthMeta(BaseModel):
+    """v0.9.11 · backend `/health` 深度指标缓存. 由 services/ml_backend.check_health 写入,
+    `/admin/ml-integrations/overview` + PerfHud WS 消费."""
+
+    gpu_info: GpuInfo | None = None
+    host: HostInfo | None = None
+    cache: CacheStats | None = None
+    model_version: str | None = None
+
+    class Config:
+        extra = "allow"
+
+
 class MLBackendOut(BaseModel):
     id: UUID
     project_id: UUID
@@ -66,7 +106,8 @@ class MLBackendOut(BaseModel):
     extra_params: dict
     # v0.9.6 · 缓存的 backend `/health` 深度指标 (gpu_info / cache / model_version);
     # 由 services/ml_backend.check_health 写入, /admin/ml-integrations/overview 直接消费.
-    health_meta: dict | None = None
+    # v0.9.11 · 类型从 dict 收紧到 HealthMeta (含 host PerfHud 字段), 前端 codegen 派生.
+    health_meta: HealthMeta | None = None
     error_message: str | None
     last_checked_at: datetime | None = None
     created_at: datetime
@@ -74,6 +115,18 @@ class MLBackendOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# v0.9.11 PerfHud · WS /ws/ml-backend-stats 推送的单次快照
+class MLBackendStatsSnapshot(BaseModel):
+    backend_id: UUID
+    backend_name: str | None = None
+    state: str
+    gpu_info: GpuInfo | None = None
+    host: HostInfo | None = None
+    cache: CacheStats | None = None
+    model_version: str | None = None
+    timestamp: datetime
 
 
 class MLBackendHealthResponse(BaseModel):

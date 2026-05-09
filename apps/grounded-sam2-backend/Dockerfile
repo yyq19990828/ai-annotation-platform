@@ -56,7 +56,9 @@ RUN pip install --upgrade "pip" "setuptools>=62.3.0,<75.9" "wheel" && \
         "addict>=2.4" \
         "pycocotools>=2.0" \
         "timm>=0.9" \
-        "yapf"
+        "yapf" \
+        "pynvml>=11.5" \
+        "psutil>=5.9"
 
 # v0.9.4 phase 3: build context 升级为 apps/ 以便 COPY 兄弟目录 _shared/mask_utils.
 # 所有 COPY 路径以 apps/ 为根; 历史命令 `docker build apps/grounded-sam2-backend/` 不再可用,

@@ -26,6 +26,9 @@ dependencies = [
     "timm>=0.9",
     "yapf",
     "prometheus-client>=0.20",
+    # v0.9.11 PerfHud · GPU util/温度/功耗 (NVIDIA NVML 绑定); 容器 CPU/RAM (cgroup 视角)
+    "pynvml>=11.5",
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]

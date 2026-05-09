@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes, useSearchParams } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
+import { PerfHud, usePerfHudStore } from "@/components/PerfHud";
 import { useNotificationSocket } from "@/hooks/useNotificationSocket";
 import { useHeartbeat } from "@/hooks/useHeartbeat";
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -112,6 +113,21 @@ function AppShell() {
 
   useNotificationSocket();
   useHeartbeat();
+  // v0.9.11 PerfHud · 全局快捷键 Ctrl+Shift+P 切换性能监控浮窗 (super_admin/project_admin only).
+  // 权限 gating 在 PerfHud 组件内做; 此 listener 只负责 toggle store.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "P" || e.key === "p")) {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName?.toLowerCase();
+        if (tag === "input" || tag === "textarea" || target?.isContentEditable) return;
+        e.preventDefault();
+        usePerfHudStore.getState().toggle();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <div
@@ -147,6 +163,8 @@ function AppShell() {
       <ToastRack />
       <BugReportFAB onClick={() => openBugDrawer()} />
       <BugReportDrawer open={bugDrawerOpen} focusBugId={bugDrawerFocusId} onClose={closeBugDrawer} />
+      {/* v0.9.11 PerfHud · 全局浮窗 (内部按角色 gating + visibility store 控制渲染) */}
+      <PerfHud />
     </div>
   );
 }

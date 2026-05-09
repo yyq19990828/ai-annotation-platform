@@ -60,12 +60,13 @@ cd apps/web && pnpm codegen
 
 `pnpm build` 通过 `prebuild` hook (`scripts/codegen-if-changed.mjs`) 仅在 snapshot 比生成产物新时跑 codegen, 加速开发循环。
 
-### v0.9.8 codegen 迁移现状
+### v0.9.11 codegen 迁移完成
 
 - ✅ `PredictionJobOut` (新增 v0.9.8 端点) **从 codegen 派生**, 见 `apps/web/src/api/adminPreannotateJobs.ts`
-- ⚠️ `PredictionShape` / `PredictionResponse` **仍手写** (`apps/web/src/types/index.ts:152-172`)
-  - 原因: 后端 `Prediction.result` 是 JSONB, Pydantic schema 是 `list[dict]`, codegen 只能生成 `Array<Record<string, unknown>>`, 拿不到内部字段
-  - 下一步: 在 `apps/api/app/schemas/prediction.py` 加专门的 `PredictionShape` Pydantic 模型 + 把 `PredictionOut.result` 类型化, 然后前端切换. 留待 v0.9.9+
+- ✅ `PredictionShape` / `PredictionResponse` **从 codegen 派生** (v0.9.11)
+  - 后端: `apps/api/app/schemas/prediction.py` 加 `PredictionShape` Pydantic 模型 (geometry 复用 `_jsonb_types.{Bbox,Polygon}Geometry`); `PredictionOut.result: list[PredictionShape]`
+  - 前端: `apps/web/src/types/index.ts` re-export generated 类型, 对 `geometry` 做轻度窄化 (剔除 dict fallback) 兼容 transforms.ts 强类型消费
+  - 数据流: DB 仍存 LabelStudio 标准 `{type, value, score}` (导出兼容); 读路径 `to_internal_shape()` 在 `apps/api/app/api/v1/tasks.py` 转换后构造 PredictionOut
 
 ## 兼容旧 schema 的最小不变量
 

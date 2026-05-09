@@ -79,6 +79,9 @@ async def _run_batch(
     success_count = 0
     failed_count = 0
     project_name: str | None = None
+    # v0.9.11 · 累加每条 prediction.meta.total_cost; job 完成时写 prediction_jobs.total_cost.
+    # grounded-sam2-backend 当前不返回 cost (留 0.0), LLM-backed backend (sam3 / future) 自然到位.
+    running_total_cost = 0.0
 
     async with SessionLocal() as db:
         backend = await db.get(MLBackend, uuid.UUID(ml_backend_id))
@@ -155,10 +158,13 @@ async def _run_batch(
         if total == 0:
             duration_ms = int((time.perf_counter() - started_perf) * 1000)
             from datetime import datetime, timezone
+            from decimal import Decimal
 
             job.status = PredictionJobStatus.COMPLETED.value
             job.completed_at = datetime.now(timezone.utc)
             job.duration_ms = duration_ms
+            # v0.9.11 · 空任务 job 同样写 0.0000 而非 NULL, 与正常路径一致
+            job.total_cost = Decimal("0.0000")
             await db.commit()
             _publish_progress(
                 project_id,
@@ -190,7 +196,13 @@ async def _run_batch(
                         score=pred_result.score,
                         model_version=pred_result.model_version,
                         inference_time_ms=pred_result.inference_time_ms,
+                        token_meta=pred_result.meta,
                     )
+                    # v0.9.11 · 单条 cost 累加到 job 级总费用
+                    if pred_result.meta:
+                        cost = pred_result.meta.get("total_cost")
+                        if cost is not None:
+                            running_total_cost += float(cost)
                 await db.commit()
                 success_count += 1
             except Exception as exc:
@@ -215,6 +227,7 @@ async def _run_batch(
 
         # v0.9.8 · 结束时点 → 写 prediction_jobs final stats
         from datetime import datetime, timezone
+        from decimal import Decimal
 
         duration_ms = int((time.perf_counter() - started_perf) * 1000)
         job.status = PredictionJobStatus.COMPLETED.value
@@ -222,6 +235,8 @@ async def _run_batch(
         job.duration_ms = duration_ms
         job.success_count = success_count
         job.failed_count = failed_count
+        # v0.9.11 · total_cost 接通 PredictionMeta.total_cost 累加 (Numeric(10,4) 精度)
+        job.total_cost = Decimal(f"{running_total_cost:.4f}")
         await db.commit()
 
         _publish_progress(

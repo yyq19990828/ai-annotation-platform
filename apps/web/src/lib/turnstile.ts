@@ -33,6 +33,17 @@ export function getTurnstileSiteKey(): string | null {
   return typeof key === "string" && key.length > 0 ? key : null;
 }
 
+/**
+ * v0.9.11 · 读取 index.html 中 `<meta name="csp-nonce">` 的 per-request nonce.
+ * 用于动态 script 注入时显式带 `nonce` 属性, 满足 nonce-based CSP.
+ * dev 模式下 meta content 仍是 placeholder (Nginx 才替换), 浏览器忽略不影响渲染.
+ */
+function getCspNonce(): string {
+  if (typeof document === "undefined") return "";
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="csp-nonce"]');
+  return meta?.content ?? "";
+}
+
 export function loadTurnstileScript(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
   if (window.turnstile) return Promise.resolve();
@@ -51,6 +62,9 @@ export function loadTurnstileScript(): Promise<void> {
     s.src = `${SCRIPT_SRC}?render=explicit`;
     s.async = true;
     s.defer = true;
+    // v0.9.11 · CSP nonce-based 收紧 — 动态注入 script 必须显式设 nonce 才能通过 script-src
+    const nonce = getCspNonce();
+    if (nonce) s.nonce = nonce;
     s.onload = () => resolve();
     s.onerror = () => reject(new Error("turnstile script failed"));
     document.head.appendChild(s);
