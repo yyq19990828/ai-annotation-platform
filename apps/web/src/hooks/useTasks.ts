@@ -267,6 +267,18 @@ export function useReopenTask() {
   });
 }
 
+export function useAcceptRejection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => tasksApi.acceptRejection(taskId),
+    onSuccess: (_, taskId) => {
+      qc.invalidateQueries({ queryKey: ["task", taskId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
 export function useReviewClaim() {
   const qc = useQueryClient();
   return useMutation({

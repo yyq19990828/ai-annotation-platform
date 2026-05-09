@@ -111,6 +111,8 @@ class AnnotatorDashboardStats(BaseModel):
     streak_days: int | None = None
     # v0.8.5 · 当日 0-23 时分钟数（按 task_events.started_at hour 聚合）
     hour_buckets: list[int] = []
+    # M1 · 当前待重做退回任务数
+    rejected_tasks_count: int = 0
 
 
 class ReviewerDashboardExtras(BaseModel):

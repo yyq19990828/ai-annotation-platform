@@ -51,14 +51,18 @@ _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
 _LOCKED_STATUSES = {"review", "completed"}
 
 
-def _assert_task_editable(task: Task) -> None:
+def _assert_task_editable(task: Task, user: User | None = None) -> None:
     """v0.6.5: 已提交质检 / 已通过审核的任务对所有 annotation 写动作锁死。
-    标注员要继续编辑必须先 withdraw（review 态）或 reopen（completed 态）。"""
-    if task.status in _LOCKED_STATUSES:
-        raise HTTPException(
-            status_code=409,
-            detail={"reason": "task_locked", "status": task.status},
-        )
+    标注员要继续编辑必须先 withdraw（review 态）或 reopen（completed 态）。
+    M2: 审核员可在 status=review 时直接微调标注（审计记 TASK_REVIEWER_EDIT）。"""
+    if task.status not in _LOCKED_STATUSES:
+        return
+    if task.status == "review" and user is not None and user.role in _REVIEWERS:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail={"reason": "task_locked", "status": task.status},
+    )
 
 
 async def _load_task_or_404(db: AsyncSession, task_id: uuid.UUID) -> Task:
@@ -339,7 +343,8 @@ async def update_annotation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
-    _assert_task_editable(await _load_task_or_404(db, task_id))
+    _task = await _load_task_or_404(db, task_id)
+    _assert_task_editable(_task, current_user)
     svc = AnnotationService(db)
     fields = data.model_dump(exclude_unset=True)
     if not fields:
@@ -379,10 +384,15 @@ async def update_annotation(
             status_code=400, detail="Annotation does not belong to this task"
         )
     await TaskLockService(db).heartbeat(task_id, current_user.id)
+    _audit_action = (
+        AuditAction.TASK_REVIEWER_EDIT
+        if _task.status == "review" and current_user.role in _REVIEWERS
+        else AuditAction.ANNOTATION_UPDATE
+    )
     await AuditService.log(
         db,
         actor=current_user,
-        action=AuditAction.ANNOTATION_UPDATE,
+        action=_audit_action,
         target_type="annotation",
         target_id=str(annotation.id),
         request=request,
@@ -907,7 +917,7 @@ async def reject_task(
     if not reason or not reason.strip():
         raise HTTPException(status_code=400, detail="reject reason is required")
 
-    task.status = "in_progress"
+    task.status = "rejected"
     now = datetime.now(timezone.utc)
     task.reviewed_at = now
     task.reject_reason = reason.strip()
@@ -943,6 +953,24 @@ async def reject_task(
             "reason": task.reject_reason,
         },
     )
+
+    if task.assignee_id is not None and task.assignee_id != current_user.id:
+        from app.services.notification import NotificationService
+
+        notif_svc = NotificationService(db)
+        await notif_svc.notify_many(
+            user_ids=[task.assignee_id],
+            type="task.rejected",
+            target_type="task",
+            target_id=task.id,
+            payload={
+                "task_display_id": task.display_id,
+                "project_id": str(task.project_id),
+                "reject_reason": task.reject_reason,
+                "actor_id": str(current_user.id),
+                "actor_name": current_user.name,
+            },
+        )
 
     await db.commit()
     return {"status": "rejected", "task_id": str(task_id), "reason": task.reject_reason}
@@ -1036,6 +1064,54 @@ async def reopen_task(
         "task_id": str(task_id),
         "reopened_count": task.reopened_count,
     }
+
+
+@router.post("/{task_id}/accept-rejection")
+async def accept_rejection(
+    task_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """M1 · 标注员接受退回，将 task 从 rejected 转回 in_progress 开始重做。
+    不清空 reject_reason（保留审核员退回原因，前端可降级为"重做中"提示）。"""
+    task = await _load_task_or_404(db, task_id)
+    if task.status != "rejected":
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "task_not_rejected", "status": task.status},
+        )
+    if task.assignee_id != current_user.id and current_user.role not in (
+        UserRole.SUPER_ADMIN.value,
+        UserRole.PROJECT_ADMIN.value,
+    ):
+        raise HTTPException(status_code=403, detail="only assignee can accept rejection")
+
+    task.status = "in_progress"
+
+    from app.services.batch import BatchService
+
+    batch_svc = BatchService(db)
+    await batch_svc.check_auto_transitions(task.batch_id)
+    if task.batch_id:
+        await batch_svc.recalculate_counters(task.batch_id)
+
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.TASK_ACCEPT_REJECTION,
+        target_type="task",
+        target_id=str(task_id),
+        request=request,
+        status_code=200,
+        detail={
+            "project_id": str(task.project_id),
+            "reject_reason": task.reject_reason,
+        },
+    )
+
+    await db.commit()
+    return {"status": "in_progress", "task_id": str(task_id)}
 
 
 # ── Task Lock endpoints ─────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 export type UserRole = "super_admin" | "project_admin" | "reviewer" | "annotator" | "viewer";
 export type ProjectStatus = "in_progress" | "completed" | "pending_review" | "archived";
-export type TaskStatus = "uploading" | "pending" | "in_progress" | "completed" | "review";
+export type TaskStatus = "uploading" | "pending" | "in_progress" | "rejected" | "completed" | "review";
 export type BatchStatus = "draft" | "active" | "annotating" | "reviewing" | "approved" | "rejected" | "archived";
 
 // ── Project ─────────────────────────────────────────────────────────────────

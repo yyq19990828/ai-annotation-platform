@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -55,15 +55,18 @@ function TaskItem({
   onSelect: () => void;
 }) {
   const isLocked = task.status === "review" || task.status === "completed";
+  const isRejected = task.status === "rejected";
   const statusLabel =
     task.status === "completed" ? "已完成"
     : task.status === "review" ? "待审核"
+    : task.status === "rejected" ? "待重做"
     : task.total_annotations > 0 ? "进行中"
     : task.total_predictions > 0 ? "AI 已预标"
     : "未开始";
   const statusColor =
     task.status === "completed" ? "var(--color-success)"
     : task.status === "review" ? "var(--color-warning)"
+    : task.status === "rejected" ? "var(--color-danger)"
     : task.total_annotations > 0 ? "var(--color-accent)"
     : task.total_predictions > 0 ? "var(--color-ai)"
     : "var(--color-fg-subtle)";
@@ -76,8 +79,8 @@ function TaskItem({
         display: "flex", alignItems: "center", gap: 10,
         padding: "9px 10px 9px 12px", margin: "3px 0",
         borderRadius: "var(--radius-md)",
-        background: isActive ? "var(--color-accent-soft)" : "transparent",
-        border: "1px solid " + (isActive ? "color-mix(in oklab, var(--color-accent) 30%, transparent)" : "transparent"),
+        background: isActive ? "var(--color-accent-soft)" : isRejected ? "color-mix(in oklab, var(--color-danger) 6%, transparent)" : "transparent",
+        border: "1px solid " + (isActive ? "color-mix(in oklab, var(--color-accent) 30%, transparent)" : isRejected ? "color-mix(in oklab, var(--color-danger) 25%, transparent)" : "transparent"),
         cursor: "pointer",
         transition: "background 0.12s, border-color 0.12s",
       }}
@@ -94,6 +97,15 @@ function TaskItem({
           style={{
             position: "absolute", left: 2, top: 8, bottom: 8, width: 3,
             background: "var(--color-accent)", borderRadius: 2,
+          }}
+        />
+      )}
+      {!isActive && isRejected && (
+        <span
+          aria-hidden
+          style={{
+            position: "absolute", left: 2, top: 8, bottom: 8, width: 3,
+            background: "var(--color-danger)", borderRadius: 2,
           }}
         />
       )}
@@ -150,8 +162,17 @@ export function TaskQueuePanel({
 }: TaskQueuePanelProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
+  // rejected 任务置顶，其余保持原序
+  const sortedTasks = useMemo(() => {
+    const rejected = tasks.filter((t) => t.status === "rejected");
+    const rest = tasks.filter((t) => t.status !== "rejected");
+    return [...rejected, ...rest];
+  }, [tasks]);
+
+  const rejectedCount = useMemo(() => tasks.filter((t) => t.status === "rejected").length, [tasks]);
+
   const virtualizer = useVirtualizer({
-    count: tasks.length,
+    count: sortedTasks.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 88,
     overscan: 5,
@@ -162,7 +183,7 @@ export function TaskQueuePanel({
     const virtualItems = virtualizer.getVirtualItems();
     if (!virtualItems.length) return;
     const last = virtualItems[virtualItems.length - 1];
-    if (last.index >= tasks.length - 10 && hasNextPage && !isFetchingNextPage) {
+    if (last.index >= sortedTasks.length - 10 && hasNextPage && !isFetchingNextPage) {
       onFetchNextPage();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,11 +296,27 @@ export function TaskQueuePanel({
       )}
 
       <div style={{ padding: "10px 14px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontSize: 12, fontWeight: 600 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
           任务队列
           {selectedBatchId && batches && (
-            <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-fg-subtle)", marginLeft: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-fg-subtle)" }}>
               · 当前批次
+            </span>
+          )}
+          {rejectedCount > 0 && (
+            <span
+              title={`${rejectedCount} 个任务被退回，需重做`}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 3,
+                fontSize: 10, fontWeight: 600, color: "var(--color-danger)",
+                background: "color-mix(in oklab, var(--color-danger) 12%, transparent)",
+                border: "1px solid color-mix(in oklab, var(--color-danger) 30%, transparent)",
+                borderRadius: "var(--radius-full)",
+                padding: "1px 6px",
+              }}
+            >
+              <Icon name="warning" size={10} />
+              {rejectedCount} 待重做
             </span>
           )}
         </div>
@@ -302,7 +339,7 @@ export function TaskQueuePanel({
       <div ref={parentRef} style={{ flex: 1, overflowY: "auto", padding: "0 8px 10px" }}>
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((vItem) => {
-            const t = tasks[vItem.index];
+            const t = sortedTasks[vItem.index];
             if (!t) return null;
             return (
               <div

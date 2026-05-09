@@ -55,6 +55,7 @@
 - **数据集版本 snapshot + 主动学习闭环**（与训练队列一起做）
 - **2FA / TOTP**（super_admin 必选 / 其它角色可选）
 - **批次状态机二阶段：admin-locked + bulk-approve / bulk-reject**（ADR-0008 Proposed → 实施前补 scheduler 测试覆盖）
+- **WorkbenchShell → WorkbenchCore 拆分（审核工作台方案 C）**：将 stage / hotkey / queue 抽到 `WorkbenchCore`，`annotate` / `review` 各自只写自己的 Topbar / 操作按钮，比当前 `mode` prop 分支更干净。**触发条件**：v0.10.x SAM 3 工作台改动收尾后，届时 shell 已稳定不再与 SAM 3 改动冲突。估时 ~5-7d。见 [plan](ROADMAP/2026-05-09-task-reject-and-review-workbench.md) §2.2 方案 C。
 
 ---
 
@@ -229,6 +230,7 @@
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 | — |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
+| **P3** | WorkbenchShell → WorkbenchCore 拆分 | M2 方案 B（mode prop）已落，方案 C 更干净但需等 v0.10.x SAM3 工作台收尾后触发，避免冲突；估时 ~5-7d | — |
 
 ---
 

@@ -29,6 +29,8 @@ KNOWN_NOTIFICATION_TYPES = [
     "bug_report.reopened",
     "bug_report.status_changed",
     "batch.rejected",
+    "task.approved",
+    "task.rejected",
 ]
 
 

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
 import { authApi } from "@/api/auth";
 import { buildWsUrl } from "@/lib/wsHost";
+import { useToastStore } from "@/components/ui/Toast";
 
 // v0.8.8 · WS 鉴权过期重连。
 // 后端 /api/v1/ws/notifications 鉴权失败用 1008（policy violation）关闭。
@@ -23,6 +24,7 @@ export function useNotificationSocket() {
   const token = useAuthStore((s) => s.token);
   const setToken = useAuthStore((s) => s.setToken);
   const qc = useQueryClient();
+  const pushToast = useToastStore((s) => s.push);
 
   useEffect(() => {
     if (!token) return;
@@ -57,7 +59,7 @@ export function useNotificationSocket() {
       };
       ws.onmessage = (e) => {
         // v0.7.0：服务端 30s 心跳 ping 帧不应触发 invalidate
-        let parsed: { type?: string } | null = null;
+        let parsed: { type?: string; payload?: Record<string, unknown> } | null = null;
         try {
           parsed = JSON.parse(e.data as string);
           if (parsed && parsed.type === "ping") return;
@@ -67,6 +69,16 @@ export function useNotificationSocket() {
         // v0.8.6 F6 · retry.* 进度事件触发失败预测列表 invalidate
         if (parsed?.type?.startsWith?.("failed_prediction.retry.")) {
           qc.invalidateQueries({ queryKey: ["admin", "failed-predictions"] });
+        }
+        // M1 · task.rejected → 弹 toast 提醒标注员
+        if (parsed?.type === "task.rejected" && parsed.payload) {
+          const p = parsed.payload;
+          const displayId = p.task_display_id as string | undefined;
+          const reason = p.reject_reason as string | undefined;
+          pushToast({
+            kind: "error",
+            msg: `任务 ${displayId ?? ""} 被审核员退回${reason ? `：${reason}` : ""}`,
+          });
         }
         qc.invalidateQueries({ queryKey: ["notifications"] });
       };
@@ -109,5 +121,5 @@ export function useNotificationSocket() {
       if (retryTimer) window.clearTimeout(retryTimer);
       try { ws?.close(); } catch { /* noop */ }
     };
-  }, [token, qc, setToken]);
+  }, [token, qc, setToken, pushToast]);
 }

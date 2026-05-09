@@ -715,7 +715,8 @@ class BatchService:
                 select(Task.id)
                 .where(
                     Task.batch_id == batch_id,
-                    Task.status == "in_progress",
+                    # M1: rejected 也算"标注进行中"
+                    Task.status.in_(["in_progress", "rejected"]),
                 )
                 .limit(1)
             )
@@ -745,7 +746,8 @@ class BatchService:
                 select(Task.id)
                 .where(
                     Task.batch_id == batch_id,
-                    Task.status.in_(["pending", "in_progress"]),
+                    # M1: rejected 任务仍需标注员重做，不能视为完成
+                    Task.status.in_(["pending", "in_progress", "rejected"]),
                 )
                 .limit(1)
             )

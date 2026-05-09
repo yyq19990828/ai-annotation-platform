@@ -8,6 +8,8 @@ interface PreannotationProgress {
   status: string;
 }
 
+type DiffMode = "final" | "raw" | "diff";
+
 interface StatusBarProps {
   userBoxesCount: number;
   aiBoxesCount: number;
@@ -30,6 +32,9 @@ interface StatusBarProps {
   lockRemainingMs?: number;
   /** 锁错误消息。非空时优先展示错误。 */
   lockError?: string | null;
+  /** M2 · review 模式下的 diff 控制（final/raw/diff）。有值时渲染 segmented control。 */
+  diffMode?: DiffMode;
+  onSetDiffMode?: (m: DiffMode) => void;
 }
 
 function formatLockTime(ms: number): string {
@@ -45,6 +50,7 @@ export function StatusBar({
   avgLeadMs, remainingTaskCount,
   offlineQueueCount, online, onShowQueueDrawer,
   lockRemainingMs, lockError,
+  diffMode, onSetDiffMode,
 }: StatusBarProps) {
   const dimText = imageWidth && imageHeight ? `${imageWidth}×${imageHeight}` : "—";
   const cursorText = cursor && imageWidth && imageHeight
@@ -110,6 +116,30 @@ export function StatusBar({
         </span>
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        {diffMode !== undefined && onSetDiffMode && (
+          <>
+            <div style={{ display: "flex", gap: 2 }}>
+              {(["final", "raw", "diff"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => onSetDiffMode(m)}
+                  style={{
+                    padding: "1px 8px", fontSize: 11, cursor: "pointer",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: m === "final" ? "3px 0 0 3px" : m === "diff" ? "0 3px 3px 0" : "0",
+                    background: diffMode === m ? "var(--color-accent)" : "var(--color-bg-elev)",
+                    color: diffMode === m ? "white" : "var(--color-fg-muted)",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {m === "final" ? "仅最终" : m === "raw" ? "仅 AI" : "叠加"}
+                </button>
+              ))}
+            </div>
+            <Sep />
+          </>
+        )}
         {(offlineQueueCount && offlineQueueCount > 0) || online === false ? (
           <button
             type="button"

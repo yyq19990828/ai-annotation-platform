@@ -27,6 +27,7 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   uploading: "上传中",
   pending: "待标注",
   in_progress: "标注中",
+  rejected: "待重做",
   completed: "已完成",
   review: "待审核",
 };

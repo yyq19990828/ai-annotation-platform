@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -9,7 +9,6 @@ import { useRejectBatch } from "@/hooks/useBatches";
 import { useReviewerStats } from "@/hooks/useDashboard";
 import type { TaskResponse } from "@/types";
 import type { ReviewingBatchItem } from "@/api/dashboard";
-import { ReviewWorkbench } from "./ReviewWorkbench";
 import { RejectReasonModal } from "./RejectReasonModal";
 import { ReviewSidebar } from "./ReviewSidebar";
 
@@ -80,6 +79,7 @@ function TaskRow({
 
 export function ReviewPage() {
   const pushToast = useToastStore((s) => s.push);
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProjectId, setSelectedProjectId] = useState<string>(
     () => searchParams.get("project") ?? "",
@@ -155,7 +155,13 @@ export function ReviewPage() {
   };
 
   const openTask = (id: string) => {
-    setSearchParams({ taskId: id });
+    if (projectId) {
+      const params = new URLSearchParams({ task: id });
+      if (selectedBatchId) params.set("batch", selectedBatchId);
+      navigate(`/projects/${projectId}/review?${params}`);
+    } else {
+      setSearchParams({ taskId: id });
+    }
   };
   const closeTask = () => setSearchParams({});
 
@@ -352,31 +358,6 @@ export function ReviewPage() {
           </>
         )}
       </section>
-
-      {openTaskId && (
-        <>
-          <div
-            onClick={closeTask}
-            style={{ position: "fixed", inset: 0, background: "oklch(0 0 0 / 0.4)", zIndex: 40, backdropFilter: "blur(2px)" }}
-          />
-          <div
-            style={{
-              position: "fixed", top: 0, right: 0, bottom: 0,
-              width: "70vw", minWidth: 800, zIndex: 41,
-              background: "var(--color-bg)", boxShadow: "var(--shadow-lg)",
-              display: "flex", flexDirection: "column",
-            }}
-          >
-            <ReviewWorkbench
-              taskId={openTaskId}
-              onApprove={() => handleApprove(openTaskId)}
-              onReject={() => handleRejectSingle(openTaskId)}
-              onPrev={openTaskIdx > 0 ? goPrev : undefined}
-              onNext={openTaskIdx >= 0 && openTaskIdx < tasks.length - 1 ? goNext : undefined}
-            />
-          </div>
-        </>
-      )}
 
       <RejectReasonModal
         open={!!rejectingIds}
