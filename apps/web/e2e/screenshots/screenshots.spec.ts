@@ -190,26 +190,38 @@ test.describe("screenshots automation", () => {
       } else if (capture.kind === "fullPage") {
         await page.screenshot({ path: out, fullPage: true, animations: "disabled", mask: maskLocators });
       } else if (capture.kind === "locator") {
+        // timeout:0 → 不等待，元素不存在时直接 null/throw；fallback 到 viewport 截图
         const locator = page.locator(capture.selector);
-        if (capture.padding) {
-          const box = await locator.boundingBox();
-          if (box) {
-            await page.screenshot({
-              path: out,
-              animations: "disabled",
-              mask: maskLocators,
-              clip: {
-                x:      Math.max(0, box.x - capture.padding),
-                y:      Math.max(0, box.y - capture.padding),
-                width:  box.width  + capture.padding * 2,
-                height: box.height + capture.padding * 2,
-              },
-            });
-          } else {
-            await locator.screenshot({ path: out, animations: "disabled", mask: maskLocators });
-          }
+        let box: { x: number; y: number; width: number; height: number } | null = null;
+        try {
+          box = await locator.boundingBox(
+            { timeout: 0 } as Parameters<typeof locator.boundingBox>[0],
+          );
+        } catch {
+          // 元素不存在或不可见，fallback
+        }
+
+        if (!box) {
+          await page.screenshot({ path: out, fullPage: false, animations: "disabled", mask: maskLocators });
+        } else if (capture.padding) {
+          await page.screenshot({
+            path: out,
+            animations: "disabled",
+            mask: maskLocators,
+            clip: {
+              x:      Math.max(0, box.x - capture.padding),
+              y:      Math.max(0, box.y - capture.padding),
+              width:  box.width  + capture.padding * 2,
+              height: box.height + capture.padding * 2,
+            },
+          });
         } else {
-          await locator.screenshot({ path: out, animations: "disabled", mask: maskLocators });
+          await page.screenshot({
+            path: out,
+            animations: "disabled",
+            mask: maskLocators,
+            clip: { x: box.x, y: box.y, width: box.width, height: box.height },
+          });
         }
       } else if (capture.kind === "clip") {
         await page.screenshot({ path: out, animations: "disabled", mask: maskLocators, clip: capture.rect });

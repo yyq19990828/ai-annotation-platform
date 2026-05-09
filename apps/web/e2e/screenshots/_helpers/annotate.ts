@@ -42,12 +42,18 @@ export async function injectAnnotations(
   };
 
   // 收集所有元素的 boundingBox
+  // timeout:0 → 不等待元素出现，若当前 DOM 中不存在则跳过（避免超时）
   const boxes: BoxEntry[] = [];
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     const style = entry.style ?? "rect-red";
     const locator = page.locator(entry.selector).first();
-    const box = await locator.boundingBox();
+    let box: { x: number; y: number; width: number; height: number } | null = null;
+    try {
+      box = await locator.boundingBox({ timeout: 0 } as Parameters<typeof locator.boundingBox>[0]);
+    } catch {
+      // 元素不存在或不可见，跳过此注释条目
+    }
     if (!box) continue;
     boxes.push({ ...box, style, label: entry.label, index: i + 1 });
   }
