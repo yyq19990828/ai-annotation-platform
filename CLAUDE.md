@@ -67,8 +67,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 涉及以下变更时，必须检查对应文档：
 - 新增/修改 API → 检查 `docs-site/api/`、`README.md`
 - 新增/修改功能 → 检查 `docs-site/user-guide/`、`CHANGELOG.md`
-- 架构变更 → 检查 `docs-site/dev/`，必要时新增 ADR（`docs/adr/`）
-- 环境变量变更 → 检查 `.env.example`、`DEV.md`
+- 架构变更 → 检查 `docs-site/dev/concepts/`，必要时新增 ADR（`docs/adr/`）
+- 环境变量变更 → 更新 `.env.example`，运行 `pnpm docs:gen-env-vars`，检查 `DEV.md`
 
 ## 6. /plan 模式下计划文件的命名规范
 
@@ -153,9 +153,17 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 
 ### VitePress 文档站（docs-site/）
 
-- [docs-site/user-guide/](docs-site/user-guide/) — 用户手册（标注员/管理员）
-- [docs-site/dev/](docs-site/dev/) — 开发文档（架构/How-to/测试/规范）
+按 [Diátaxis](https://diataxis.fr/) 框架组织，按角色 × 任务分层。
+
+- [docs-site/user-guide/](docs-site/user-guide/) — 用户手册（按角色：for-annotators / for-project-admins / for-reviewers / for-superadmins）
+- [docs-site/dev/](docs-site/dev/) — 开发文档（tutorials / concepts / how-to / reference / troubleshooting）
+- [docs-site/ops/](docs-site/ops/) — 部署与运维（deploy / observability / security / runbooks）
 - [docs-site/api/](docs-site/api/) — 后端 API 文档（基于 OpenAPI 自动渲染）
+
+关键路径：
+- 架构文档：`docs-site/dev/concepts/`（原 `dev/architecture/`）
+- 协议规范：`docs-site/dev/reference/`（含 env-vars.md / ml-backend-protocol.md）
+- 环境变量变更 → 同步更新 `.env.example`，再运行 `pnpm docs:gen-env-vars` 重生成 `dev/reference/env-vars.md`
 
 本地预览：`pnpm docs:dev` → http://localhost:5173
 

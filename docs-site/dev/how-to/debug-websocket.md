@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: how-to
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # How-to：调试 WebSocket
 
 > v0.9.11 落地 PerfHud 时一并修了 4 处 WS hook 的历史 bug 与 dev 环境陷阱。本文档记录每一类问题的现象、根因、定位手法，让以后 WS 出问题时不再像 v0.6.9-v0.9.10 间通知 WS 静默 404 那样 14 个月没人发现。

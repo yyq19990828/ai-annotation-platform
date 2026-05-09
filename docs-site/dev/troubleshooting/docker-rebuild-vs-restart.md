@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: how-to
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # Docker rebuild vs restart：Celery 不会热重载
 
 ## 症状

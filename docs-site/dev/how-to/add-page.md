@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: how-to
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # How-to：新增前端页面
 
 ## 步骤

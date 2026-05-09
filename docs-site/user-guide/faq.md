@@ -1,3 +1,11 @@
+---
+audience: [annotator, project_admin, reviewer, super_admin]
+type: reference
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # FAQ
 
 ## 登录与账号

@@ -1,3 +1,11 @@
+---
+audience: [dev, ops]
+type: reference
+since: v0.9.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # ML Backend
 
 ## 列出 / 详情

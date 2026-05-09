@@ -1,3 +1,11 @@
+---
+audience: [dev, ops]
+type: reference
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # 环境变量与 config 路径
 
 ## 症状

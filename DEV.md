@@ -224,7 +224,7 @@ docker build -f apps/grounded-sam2-backend/Dockerfile apps/
 - **`context.type`**：`point` / `bbox` / `text`
 - **v0.9.4 phase 2 字段**：`output: "box" | "mask" | "both"`（仅 type=text 生效，默认 mask 老前端兼容）
 - **v0.9.4 phase 3 字段**：`simplify_tolerance: float | null`（仅 mask/both 路径，默认 1.0；像素级；调高减顶点 / 调低保细节；顶点 > 200 后端 logger.warning）
-- 完整协议见 [docs-site/dev/ml-backend-protocol.md](docs-site/dev/ml-backend-protocol.md)
+- 完整协议见 [docs-site/dev/reference/ml-backend-protocol.md](docs-site/dev/reference/ml-backend-protocol.md)
 
 ### `mask_utils` 共享包
 

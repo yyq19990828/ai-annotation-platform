@@ -1,3 +1,11 @@
+---
+audience: [dev]
+type: how-to
+since: v0.1.0
+status: stable
+last_reviewed: 2026-05-09
+---
+
 # How-to：新增 API 端点
 
 > 本文以 **v0.7.8 真实落地的 `POST /auth/logout`** 为线索，走全链路一遍。完整代码可在 git log 中按 `auth.logout` 关键词检索。
