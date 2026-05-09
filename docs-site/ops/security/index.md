@@ -10,7 +10,7 @@ last_reviewed: 2026-05-09
 
 > 适用读者：负责评估平台安全姿态的工程师 / 合规人员；想了解某个能力背后的访问控制规则的开发者。
 >
-> 这份文档描述「平台内置」的安全机制。HTTPS / WAF / 网络隔离等基础设施层属于部署侧，见 [`deploy.md`](./deploy)。
+> 这份文档描述「平台内置」的安全机制。HTTPS / WAF / 网络隔离等基础设施层属于部署侧，见 [`deploy.md`](/ops/deploy/docker-compose)。
 
 ---
 
@@ -227,7 +227,7 @@ CREATE TRIGGER trg_audit_log_no_delete BEFORE DELETE ON audit_logs ...
 
 ### 6.1 Production 安全响应头（v0.8.8）
 
-`apps/api/app/middleware/security_headers.py` 在 `environment == "production"` 时由 `main.py` 注册（详见 [ADR-0010](./adr/0010-security-headers-middleware)）。dev / staging 不启用，避免本地热更新被 inline script 打挂。
+`apps/api/app/middleware/security_headers.py` 在 `environment == "production"` 时由 `main.py` 注册（详见 [ADR-0010](/dev/adr/0010-security-headers-middleware)）。dev / staging 不启用，避免本地热更新被 inline script 打挂。
 
 | Header | Value |
 |---|---|

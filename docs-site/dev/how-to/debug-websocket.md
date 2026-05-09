@@ -101,7 +101,7 @@ cd apps/api && uv run uvicorn app.main:app --reload --port 8000  # 重启
 
 ### 4. 后端 WS 端点 def 改完了但调不到（404）
 
-**根因**：docker celery-worker / api 容器 image 用 `COPY` 而不是 volume mount 源码（[infra/docker/Dockerfile.api](../../../infra/docker/Dockerfile.api)），改代码必须 rebuild image：
+**根因**：docker celery-worker / api 容器 image 用 `COPY` 而不是 volume mount 源码（`infra/docker/Dockerfile.api`），改代码必须 rebuild image：
 
 ```bash
 docker compose build api celery-worker celery-beat   # rebuild
@@ -110,7 +110,7 @@ docker compose up -d                                  # restart
 
 **dev 推荐路径**：本地 uvicorn `--reload` 跑 api（前提：注意问题 3）+ celery worker 跑 docker（worker 路径不常改，改了再 build）。docker-compose.yml 里 `api` service 默认注释掉就是这个原因（仓库根 v0.9.11 之前没单独的 celery-beat service，v0.9.11 拆出独立 celery-beat 服务）。
 
-详见 [CLAUDE.md §7 Docker rebuild vs restart](../../../CLAUDE.md)。
+详见 CLAUDE.md §7 Docker rebuild vs restart。
 
 ### 5. Celery beat 发任务但 worker 不消费
 

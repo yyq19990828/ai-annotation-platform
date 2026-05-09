@@ -51,7 +51,7 @@ cd apps/api && uv run celery -A app.workers worker -l info
 
 API 文档：
 - 实时 Swagger UI：http://localhost:8000/docs
-- 静态化文档：[../api/](../api/)（来自 openapi.snapshot.json）
+- 静态化文档：[/api/](/api/)（来自 openapi.snapshot.json）
 
 ## 常用脚本
 
@@ -86,4 +86,4 @@ uv run alembic revision --autogenerate -m "..."      # 生成新迁移
 uv run alembic downgrade -1                          # 回滚 1 步
 ```
 
-详见 [How-to / Alembic 迁移](./how-to/add-migration)。
+详见 [How-to / Alembic 迁移](../how-to/add-migration)。

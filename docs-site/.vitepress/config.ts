@@ -26,7 +26,13 @@ export default withMermaid(defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   // 允许指向本地开发服务器的链接，构建期不当 dead link
-  ignoreDeadLinks: [/^https?:\/\/localhost(:\d+)?(\/|$)/],
+  ignoreDeadLinks: [
+    /^https?:\/\/localhost(:\d+)?(\/|$)/,
+    // ROADMAP / ADR mirror files contain relative links to source code files outside docs-site
+    (url) => /\.(tsx?|py|json|ya?ml|sh|toml|Dockerfile\w*)$/.test(url),
+    (url) => /\/(apps|infra)\//.test(url),
+    (url) => /IMAGE_CHECKLIST/.test(url),
+  ],
 
   // mermaid 11.x 的 chunk 直接 import `dayjs/dayjs.min.js`（UMD 文件），Vite 当 ESM
   // 解析失败 → "does not provide an export named 'default'"。alias 指向 ESM 入口。

@@ -160,7 +160,7 @@ client.ts 已自动 logout()  // 路由层会跳 /login
 
 - **后端关闭码必须是 1008**（`apps/api/app/api/v1/ws.py:87` 用 `WS_1008_POLICY_VIOLATION`），其他 close code 走原有指数退避，不调 refresh。
 - **同一次过期只调一次 refresh**：hook 内 `refreshing` flag 防止重连风暴打 `/auth/refresh` 限流（5/min）。
-- **refresh 端点详细规约**：见 [ADR-0011](./adr/0011-websocket-token-reauth)。
+- **refresh 端点详细规约**：见 [ADR-0011](../adr/0011-websocket-token-reauth)。
 
 ---
 
