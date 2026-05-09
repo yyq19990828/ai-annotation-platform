@@ -49,7 +49,7 @@ test.describe("review feedback loop", () => {
 
     // 5. Modal 关闭后，从后端 API 直接读 task 状态确认 reject 成功
     //    （UI 可能已导航走，跳过 DOM 断言避免 flaky）
-    // 等 200ms 让 mutation onSuccess 完成
+    // 等 500ms 让 mutation onSuccess 完成
     await page.waitForTimeout(500);
 
     // 拿 reviewer token 直查 task 状态
