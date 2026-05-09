@@ -21,24 +21,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
+      pull-requests: write
+      issues: write
       id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          track_progress: true
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+
+            Required output behavior:
+            - Publish the review results back to the PR, not only to the action log.
+            - Prefer one concise top-level PR comment that summarizes findings.
+            - If there are actionable line-specific findings, also use inline review comments where useful.
+            - If you found no meaningful issues, say that explicitly in the PR comment.
+
+            Review scope:
+            - Bugs, behavioral regressions, state-machine drift, permission drift, missing tests.
+            - High-risk workflow interactions across project / batch / task / annotation / scheduler / review / AI preannotate.
+
+            Keep the PR-visible output concise and actionable.
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
-
