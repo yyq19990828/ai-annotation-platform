@@ -22,6 +22,11 @@ docker compose up -d
 | 加一个前端页面 | [How-to: 新增前端页面](./how-to/add-page) |
 | 改数据库结构 | [How-to: Alembic 迁移](./how-to/add-migration) |
 | 写 / 调试后台任务 | [How-to: 调试 Celery](./how-to/debug-celery) |
+| 理解项目模块 | [概念：项目模块](./concepts/project-module) |
+| 理解任务模块 | [概念：任务模块](./concepts/task-module) |
+| 理解批次模块 | [概念：批次模块](./concepts/batch-module) |
+| 理解派题与锁 | [Scheduler 与派题](./concepts/scheduler-and-task-dispatch) · [Task Lock](./concepts/task-locking) |
+| 理解状态流 | [状态机总览](./concepts/state-machines) |
 | 理解整体架构 | [概念：架构地图](./concepts/) |
 | 排查运行时问题 | [故障排查总览](./troubleshooting/) |
 | 查协议规范 | [ML Backend 协议](./ml-backend-protocol) · [WebSocket 协议](./ws-protocol) |

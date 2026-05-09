@@ -1,32 +1,109 @@
-# 0008 — 批次 admin-locked 字段（与状态机正交）
+# 0008 — 批次 admin-locked 字段（soft hold，与状态机正交）
 
-- **Status:** Proposed（v0.8.2 仅设计；实现推迟到 v0.9 评估窗口，前提是 scheduler 测试覆盖补齐到能验证锁短路路径）
+- **Status:** Proposed（2026-05-10 基于现仓代码路径复审后收紧范围）
 - **Date:** 2026-05-06
 - **Deciders:** core team
 - **Supersedes:** —
 
 ## Context
 
-`BatchService.check_auto_transitions`（`apps/api/app/services/batch.py:661-692`）是批次状态机的"自动驾驶"——基于子 task 的状态自动推进 batch.status：
+当前仓库里的批次状态机已经不是最初的 7 态，而是 8 态：
 
-```
-ACTIVE        ─→  ANNOTATING   （任意 task 进入 in_progress）
-ANNOTATING    ─→  REVIEWING    （所有 task 离开 pending / in_progress）
-```
+`draft → active → pre_annotated → annotating → reviewing → {approved, rejected} → archived`
 
-每个写 task 的端点（assign / submit / reset）调用一次 `check_auto_transitions`，让运维不需要手动推 batch 状态。
+其中真正会“自动推状态”的代码只有两处，且都在 `BatchService.check_auto_transitions`：
 
-但 ROADMAP A §批次状态机二阶段提到一个真实需求：**临时叫停一个批次（`annotating → active`）**——比如标注规范要改、数据有版权问题、客户要求暂停。当前这条迁移做不动：
+- `active | pre_annotated → annotating`：batch 内任一 task 进入 `in_progress` / `rejected`
+- `annotating → reviewing`：batch 内不再存在 `pending` / `in_progress` / `rejected`
 
-1. 直接改 `batch.status = ACTIVE`；
-2. 下一个标注员请求 task 时，scheduler 看到任 task 是 in_progress，立即把 batch 推回 ANNOTATING；
-3. 等于没暂停，且每次重试还覆写状态，运维体感"按钮失灵"。
+对应实现见：
 
-强行做的话还要把 in_progress task 全部复位到 pending（等于踢断标注员现场），代价大且语义错（暂停不应丢数据）。
+- `apps/api/app/services/batch.py`
+- `apps/api/app/db/enums.py`
+
+问题仍然存在：项目 owner 想“临时叫停一个批次”时，单改 `batch.status = active` 没有意义。下一次 task 写入或下一次调度，`check_auto_transitions` 又会把它推回 `annotating`。
+
+但仓库审查后可以确认，原 ADR 把“暂停”的落地范围写得过满了。当前真实入口至少有 4 类：
+
+- 自动状态推进：`BatchService.check_auto_transitions`
+- 下一题派发：`apps/api/app/services/scheduler.py:get_next_task`
+- 任务可见性：`GET /tasks`、`GET /tasks/{id}` 只按 `batch.status` 做过滤
+- 标注写入：`AnnotationService._update_task_stats` 会把 `task.status` 从 `pending` 推到 `in_progress`
+
+因此，“只给 batch 加一个 bool，再在 `check_auto_transitions` 里短路”只能解决**状态被自动改回去**的问题，不能自动等价为“严格暂停整批工作”。
 
 ## Decision
 
-引入 batch 级 `admin_locked: bool` 字段，**与 7 态 `status` 枚举正交**。`check_auto_transitions` 起始处短路返回：
+引入 batch 级 `admin_locked` 维度，但**把本 ADR 明确定义为 soft hold，而不是 hard pause**。
+
+本 ADR 在 v0.9.x 只承诺 3 件事：
+
+1. **冻结 batch 自动状态推进**
+   `check_auto_transitions` 遇到 `admin_locked=True` 直接返回，不再自动改 `batch.status`。
+2. **阻断 `/tasks/next` 新派单**
+   `scheduler.get_next_task` 不再从 `admin_locked=True` 的 batch 里选新任务。
+3. **暴露可审计的锁元数据**
+   owner / super_admin 可以锁定 / 解锁批次，前后端都能读取锁状态、锁定人、锁定时间、锁定原因。
+
+反过来说，本 ADR **不承诺**下面这些“严格暂停”语义：
+
+- 不保证 `GET /tasks` / `GET /tasks/{id}` 自动隐藏已锁批次的任务
+- 不保证 annotation 写接口只允许“已在做的人继续做”
+- 不保证 task 级锁与 batch admin lock 联动
+- 不把已 `in_progress` 的 task 复位到 `pending`
+
+如果产品最终要的是“暂停后任何新进入者都不能打开 / 编辑该 batch，只允许现有会话收尾”，那是另一个更重的设计题，需单独收敛任务可见性、task lock 归属校验和 annotation 写门禁；**不在本 ADR 范围内**。
+
+## Data Model
+
+在 `task_batches` 增加 4 个字段：
+
+```sql
+ALTER TABLE task_batches
+    ADD COLUMN admin_locked BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN admin_lock_reason VARCHAR(500) NULL,
+    ADD COLUMN admin_locked_at TIMESTAMPTZ NULL,
+    ADD COLUMN admin_locked_by UUID NULL REFERENCES users(id) ON DELETE SET NULL;
+
+CREATE INDEX ix_task_batches_admin_locked
+    ON task_batches(admin_locked)
+    WHERE admin_locked = TRUE;
+```
+
+说明：
+
+- `admin_lock_reason` 必须落库。只写 audit 不足以支撑批次列表 / 详情 tooltip。
+- 不新增 `paused_status` 之类枚举，避免把“业务状态”和“管理开关”混成一个维度。
+
+## API Contract
+
+沿用现有批次路由风格，新增两个 owner 端点：
+
+- `POST /projects/{project_id}/batches/{batch_id}/admin-lock`
+- `POST /projects/{project_id}/batches/{batch_id}/admin-unlock`
+
+权限与现有 `require_project_owner` 对齐：仅 `super_admin` 或项目 owner。
+
+请求 / 响应约束：
+
+- `admin-lock`：body `{"reason": "..."}`，`reason` 必填，1-500 字
+- `admin-unlock`：无 body
+- 重复 lock 已锁批次 / 重复 unlock 未锁批次返回 `409`
+
+`BatchOut` 需新增：
+
+- `admin_locked: bool`
+- `admin_lock_reason: str | null`
+- `admin_locked_at: datetime | null`
+- `admin_locked_by: UUID | null`
+
+前端如果要显示“由谁锁定”，可先复用 ID；是否补 `UserBrief` 不在本 ADR 强制要求。
+
+## Service Changes
+
+### 1. Batch auto transition
+
+`apps/api/app/services/batch.py`
 
 ```python
 async def check_auto_transitions(self, batch_id: uuid.UUID | None) -> None:
@@ -34,111 +111,131 @@ async def check_auto_transitions(self, batch_id: uuid.UUID | None) -> None:
         return
     batch = await self.db.get(TaskBatch, batch_id)
     if not batch or batch.admin_locked:
-        return  # admin 锁定时 scheduler 不动 status
-    # ... 既有逻辑保持不变 ...
+        return
+    # existing logic...
 ```
 
-`admin_locked = True` 时：
-- scheduler 完全不读 / 不写 batch.status，已 in_progress 的 task 保持原位（标注员可继续在已锁的题上保存——锁的是 batch 级状态推进，不是 task 锁）；
-- 新分配 task 走 `BatchAssignmentService` 的另一条短路（仍需在该服务也加同样的检查；`/batches/{id}/lock` API 应触发"停止派单"事件）。
+### 2. Task dispatch
 
-### 状态机示意
+真实派单入口是 `apps/api/app/services/scheduler.py:get_next_task`，不是旧 ADR 里写的 `BatchAssignmentService`。
 
-```mermaid
-stateDiagram-v2
-    [*] --> DRAFT
-    DRAFT --> ACTIVE
-    ACTIVE --> ANNOTATING: any task in_progress
-    ANNOTATING --> REVIEWING: all tasks done
-    REVIEWING --> APPROVED
-    REVIEWING --> REJECTED: reject_batch
-    REJECTED --> DRAFT: reset
-    APPROVED --> ARCHIVED
+candidate query 需要补一条：
 
-    note right of ANNOTATING
-      admin_locked = true 时
-      scheduler 不动 status
-      （正交维度，任意状态都可锁）
-    end note
+```python
+TaskBatch.admin_locked.is_(False)
 ```
 
-### 表迁移
+这样 `/tasks/next` 不会继续把新任务送进已锁批次。
 
-```sql
-ALTER TABLE task_batches
-    ADD COLUMN admin_locked BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN admin_locked_at TIMESTAMPTZ NULL,
-    ADD COLUMN admin_locked_by UUID NULL REFERENCES users(id);
+### 3. Batch mutations
 
-CREATE INDEX ix_task_batches_admin_locked ON task_batches(admin_locked) WHERE admin_locked;
-```
+`apps/api/app/api/v1/batches.py` 增加 lock / unlock 端点，并做：
 
-部分索引（`WHERE admin_locked`）让"列出所有被锁的批次"扫描成本与锁定批次数线性相关，而非全表。
+- 字段写入
+- `AuditService.log(...)`
+- `NotificationService.notify_many(...)`
 
-### API 影响
+### 4. Read model
 
-新增两个端点（admin / project_owner only）：
+`apps/api/app/db/models/task_batch.py` 和 `apps/api/app/schemas/batch.py` 同步暴露新增字段。
 
-- `POST /batches/{id}/lock`，body `{ "reason": "..." }` → 写 `admin_locked=true / _at=now / _by=current_user.id`，写审计 `BATCH_ADMIN_LOCK`，通知 batch.assignee。
-- `POST /batches/{id}/unlock` → 清三字段，写审计 `BATCH_ADMIN_UNLOCK`。
+## Audit And Notifications
 
-前端在批次列表 / 详情页显示 lock 徽标（`<Lock />` 图标 + tooltip "由 X 于 Y 锁定，原因：..."）。
+原 ADR 里写的 `BATCH_ADMIN_LOCK`、`NotifType.BATCH_ADMIN_LOCK` 都不是现仓已有抽象。
 
-### 通知
+按当前代码风格，新增两条 audit action：
 
-- 锁定时：通知项目所有 super_admin / project_owner / 批次内所有 assignee（`NotificationService.dispatch(NotifType.BATCH_ADMIN_LOCK, ...)`）。
-- 解锁时：通知同上群体 + 让前端取消"批次已暂停"的 banner。
+- `batch.admin_lock`
+- `batch.admin_unlock`
+
+通知继续走字符串 type，建议：
+
+- `batch.admin_locked`
+- `batch.admin_unlocked`
+
+通知接收方先收紧到最小可用集合：
+
+- 批次 `annotator_id`
+- 批次 `reviewer_id`
+- 当前项目 owner（如与操作者不同）
+
+是否 fan-out 到“项目所有成员”不是本 ADR 必需项。
+
+## Frontend Impact
+
+`BatchesSection` 当前已有批量归档 / 激活 / 改派 / 删除，但没有 lock / unlock。
+
+本 ADR 对前端的最小要求是：
+
+- 批次行显示 locked 徽标
+- owner 看到“锁定 / 解锁”按钮
+- 调新端点后刷新 `useBatches(project.id)` 缓存
+
+批量锁 / 解锁不在本 ADR 范围；先把单批次链路打通。
+
+## Verification Plan
+
+实施时至少补以下测试：
+
+1. `apps/api/tests/test_batch_lifecycle.py`
+   验证 owner 可 lock / unlock，非 owner `403`，重复操作 `409`，audit / notification 落地。
+2. `BatchService.check_auto_transitions`
+   验证 `admin_locked=True` 时，`active -> annotating` / `annotating -> reviewing` 都不会发生。
+3. `scheduler.get_next_task`
+   验证 locked batch 中的 task 不会被 `/tasks/next` 选中。
+4. `BatchOut`
+   验证列表 / 详情 API 返回新增锁字段。
+
+注意：当前仓库已经有 `test_batch_lifecycle.py`、`test_v0_7_6.py`、`test_batch_pre_annotated.py` 覆盖状态机主干，所以本版要补的是 **admin_locked 增量覆盖**，不是从零补 scheduler 测试。
 
 ## Consequences
 
 正向：
 
-- 运维有了真正的暂停按钮；锁状态独立记录 actor / time / reason，审计完整
-- 状态机基数不变，下游零改动
-- API 设计简单（只两个端点，无 transition graph）
+- 解决“owner 改回 active 后又被自动推回 annotating”的核心问题
+- 保持 `BatchStatus` 枚举稳定，不扩大状态机基数
+- 落地成本可控，且与当前代码结构一致
 
 负向：
 
-- `BatchAssignmentService`（task 派发入口）要加同样的 `if batch.admin_locked: raise Locked` 短路，否则锁的是 status 推进但 task 还能新派——半锁状态。实施时一并改。
-- 既存 `check_auto_transitions` 调用方（约 10+ 处）零侵入：只要短路在函数内部，调用方该怎么调还怎么调。
-- 前端列表过滤需要新增 `?admin_locked=true|false` query；中等改动量。
+- 这只是 **soft hold**，不是严格意义上的“全链路暂停”
+- 若后续要禁止手动打开 locked batch 的 task，还需继续改 `GET /tasks`、`GET /tasks/{id}`、task lock 和 annotation 写路径
+- 需要同步修正文档，避免用户手册继续把“暂停 / 恢复”写成已上线能力
 
-## Alternatives Considered（详）
+## Alternatives Considered
 
-### A. 新增 PAUSED 枚举值
+### A. 新增 `PAUSED` 枚举值
 
-把 `BatchStatus` 扩成 8 态。
+不选。原因不变：暂停语义是管理开关，不是业务推进状态；塞进 `BatchStatus` 会污染现有查询和前端看板。
 
-**为什么不**：
-- 状态机基数膨胀，下游查询（`status IN ('annotating', 'reviewing')` 之类的过滤）都要加 `OR PAUSED`；
-- 看板 / 报表 / 项目卡片"批次概览"全都得跟改，触发点 8+；
-- 暂停语义本就**正交**于业务推进——它不是另一种业务状态，而是"业务推进按钮被关掉"。塞进枚举是把维度混掉。
+### B. 一次性做 hard pause
 
-### B. task 级锁
+暂不选。按现仓结构，这会同时牵涉：
 
-给每个 task 加 `locked: bool`。
+- task 可见性查询
+- task lock 归属判定
+- annotation 写门禁
+- 现有“开始标注即自动把 pending 推成 in_progress”的副作用
 
-**为什么不**：
-- 粒度错：运维场景几乎都是项目 / 批次级（数据版权、规范修订、客户 hold），而不是单题；
-- O(N) 写代价：锁批次 1 次变更 → 锁 task 要 N 次 UPDATE；
-- 标注员同一批次内"有的题能标有的不能"是糟糕 UX。
+这已经不是“加一个 batch 字段”的量级，单独开 ADR 更清楚。
 
-### C. 不动 scheduler，靠"标志位 + 调度器忽略"绕过
+### C. 锁批次时把 `in_progress` task 全部复位到 `pending`
 
-例如把 `BatchStatus.ARCHIVED` 当临时锁。
-
-**为什么不**：ARCHIVED 是终态，语义为"批次已归档不可操作"，借它当暂停按钮等于丢失了"暂停后还要恢复"的语义。
+不选。它会直接踢断现场工作，而且与“暂停不丢上下文”的运营诉求冲突。
 
 ## Notes
 
 不在本 ADR 范围：
 
-- 实现代码（v0.9 跟进）
-- "批次级超时自动解锁"（如锁定 30 天后自动解锁）—— 暂不引入，避免与 ARCHIVED 冷归档语义重叠，等真实运营需求出现再开新 ADR。
+- 批量 lock / unlock
+- 自动超时解锁
+- locked batch 的严格只读 / 不可见语义
+- 为 `admin_locked_by` 补 `UserBrief` 展示层优化
 
 引用：
 
-- `apps/api/app/services/batch.py:661-692` —— `check_auto_transitions` 当前实现
-- `apps/api/app/db/enums.py:27-34` —— `BatchStatus` 7 态枚举
-- ROADMAP A §批次状态机增补 · 二阶段 ——「`annotating → active` 暂停」难点描述
-- ADR-0005 —— 任务锁与审核流转角色矩阵（task 锁的实现参考）
+- `apps/api/app/services/batch.py`
+- `apps/api/app/services/scheduler.py`
+- `apps/api/app/services/annotation.py`
+- `apps/api/app/api/v1/batches.py`
+- `apps/api/app/schemas/batch.py`
