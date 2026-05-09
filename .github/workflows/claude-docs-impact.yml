@@ -1,0 +1,60 @@
+name: Claude Docs Impact
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  claude-docs-impact:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare docs impact hint
+        run: |
+          node scripts/check-doc-impact.mjs \
+            --base=${{ github.event.pull_request.base.sha }} \
+            --head=${{ github.event.pull_request.head.sha }} \
+            --write=.tmp/docs-impact.json \
+            --write-markdown=.tmp/docs-impact.md
+
+      - name: Run Claude Docs Impact Review
+        id: claude-docs-impact
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          track_progress: true
+          prompt: |
+            Analyze whether PR #${{ github.event.pull_request.number }} in ${{ github.repository }} likely needs documentation updates.
+
+            Use these local inputs:
+            - `.github/docs-impact-map.json` as the repository-maintained path-to-doc mapping.
+            - `.tmp/docs-impact.json` and `.tmp/docs-impact.md` as deterministic hints generated from the changed files.
+            - The actual PR diff as the source of truth.
+
+            Required output behavior:
+            - Post exactly one concise PR comment.
+            - Start the comment with the marker `<!-- claude-docs-impact -->`.
+            - If a previous bot comment with that marker exists, update/replace it instead of creating duplicates.
+
+            Comment structure:
+            1. A one-line conclusion: docs update likely needed / probably not needed / uncertain.
+            2. A short bullet list of the most relevant docs to review.
+            3. A short rationale that ties the recommendation to changed code paths or behavior.
+            4. If no doc update looks necessary, say why.
+
+            Review rules:
+            - Prefer repository docs paths over generic advice.
+            - Mention ADR only when the change appears architectural or semantics-changing.
+            - Be conservative: if the PR changes user-facing behavior, API contract, workflow semantics, permissions, state machines, AI handoff, or environment config, call that out.
+            - Keep the PR-visible comment compact and specific.

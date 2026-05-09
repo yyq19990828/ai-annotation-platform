@@ -1,0 +1,216 @@
+{
+  "rules": [
+    {
+      "id": "api-contract",
+      "name": "API contract and public endpoints",
+      "codeMatchers": [
+        "apps/api/app/api/v1/",
+        "apps/api/app/schemas/"
+      ],
+      "recommendDocs": [
+        "apps/api/openapi.snapshot.json",
+        "docs-site/api/guides/_routes.generated.md",
+        "docs-site/dev/concepts/api-schema-boundary.md"
+      ],
+      "acceptDocs": [
+        "apps/api/openapi.snapshot.json",
+        "docs-site/api/",
+        "docs-site/dev/concepts/api-schema-boundary.md",
+        "docs-site/user-guide/",
+        "README.md",
+        "DEV.md"
+      ]
+    },
+    {
+      "id": "project-workflow",
+      "name": "Project model, ownership, and project-level operations",
+      "codeMatchers": [
+        "apps/api/app/db/models/project.py",
+        "apps/api/app/db/models/project_member.py",
+        "apps/api/app/api/v1/projects.py",
+        "apps/web/src/pages/Projects/",
+        "apps/web/src/api/projects.ts"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/concepts/project-module.md",
+        "docs-site/dev/concepts/visibility-and-permissions.md",
+        "docs-site/dev/concepts/counters-and-derived-fields.md"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/concepts/project-module.md",
+        "docs-site/dev/concepts/visibility-and-permissions.md",
+        "docs-site/dev/concepts/counters-and-derived-fields.md",
+        "docs-site/user-guide/for-project-admins/",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "batch-workflow",
+      "name": "Batch lifecycle, transitions, and batch admin operations",
+      "codeMatchers": [
+        "apps/api/app/services/batch.py",
+        "apps/api/app/api/v1/batches.py",
+        "apps/api/app/db/models/task_batch.py",
+        "apps/api/app/schemas/batch.py",
+        "apps/web/src/pages/Projects/sections/Batches",
+        "apps/web/src/pages/Projects/sections/BatchesSection.tsx",
+        "apps/web/src/pages/Projects/sections/BatchesKanbanView.tsx",
+        "apps/web/src/api/batches.ts"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/concepts/batch-module.md",
+        "docs-site/dev/concepts/state-machines.md",
+        "docs-site/dev/concepts/batch-lifecycle-end-to-end.md",
+        "docs-site/dev/concepts/review-module.md",
+        "docs-site/user-guide/for-project-admins/batch.md",
+        "docs/adr/"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/concepts/batch-module.md",
+        "docs-site/dev/concepts/state-machines.md",
+        "docs-site/dev/concepts/batch-lifecycle-end-to-end.md",
+        "docs-site/dev/concepts/review-module.md",
+        "docs-site/user-guide/for-project-admins/batch.md",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "task-annotation-review",
+      "name": "Task workflow, annotation editing, and reviewer actions",
+      "codeMatchers": [
+        "apps/api/app/api/v1/tasks.py",
+        "apps/api/app/services/annotation.py",
+        "apps/api/app/db/models/task.py",
+        "apps/api/app/db/models/annotation.py",
+        "apps/api/app/db/models/task_lock.py",
+        "apps/web/src/api/tasks.ts",
+        "apps/web/src/hooks/useTasks.ts",
+        "apps/web/src/pages/Annotate/",
+        "apps/web/src/pages/Review/",
+        "apps/web/src/pages/Workbench/"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/concepts/task-module.md",
+        "docs-site/dev/concepts/annotation-module.md",
+        "docs-site/dev/concepts/review-module.md",
+        "docs-site/dev/concepts/task-locking.md",
+        "docs-site/dev/concepts/counters-and-derived-fields.md",
+        "docs-site/dev/concepts/audit-and-notifications.md"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/concepts/task-module.md",
+        "docs-site/dev/concepts/annotation-module.md",
+        "docs-site/dev/concepts/review-module.md",
+        "docs-site/dev/concepts/task-locking.md",
+        "docs-site/dev/concepts/counters-and-derived-fields.md",
+        "docs-site/dev/concepts/audit-and-notifications.md",
+        "docs-site/user-guide/for-annotators/",
+        "docs-site/user-guide/review/",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "scheduler-and-visibility",
+      "name": "Dispatch, visibility, and workbench access rules",
+      "codeMatchers": [
+        "apps/api/app/services/scheduler.py",
+        "apps/api/app/deps.py",
+        "apps/web/src/pages/Workbench/shell/",
+        "apps/web/src/hooks/useTaskLock.ts"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/concepts/scheduler-and-task-dispatch.md",
+        "docs-site/dev/concepts/task-locking.md",
+        "docs-site/dev/concepts/visibility-and-permissions.md",
+        "docs-site/dev/concepts/task-module.md",
+        "docs-site/dev/concepts/batch-module.md"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/concepts/scheduler-and-task-dispatch.md",
+        "docs-site/dev/concepts/task-locking.md",
+        "docs-site/dev/concepts/visibility-and-permissions.md",
+        "docs-site/dev/concepts/task-module.md",
+        "docs-site/dev/concepts/batch-module.md",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "ai-preannotate",
+      "name": "AI preannotation, prediction jobs, and handoff",
+      "codeMatchers": [
+        "apps/api/app/workers/tasks.py",
+        "apps/api/app/services/prediction.py",
+        "apps/api/app/db/models/prediction.py",
+        "apps/api/app/db/models/prediction_job.py",
+        "apps/api/app/api/v1/admin_preannotate.py",
+        "apps/api/app/api/v1/admin_preannotate_jobs.py",
+        "apps/api/app/api/v1/ml_backends.py",
+        "apps/api/app/services/ml_backend.py",
+        "apps/web/src/pages/AIPreAnnotate/",
+        "apps/web/src/api/adminPreannotate.ts",
+        "apps/web/src/api/predictions.ts"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/concepts/ai-preannotate-handoff.md",
+        "docs-site/dev/concepts/prediction-pipeline.md",
+        "docs-site/dev/concepts/ai-models.md",
+        "docs-site/dev/concepts/batch-module.md",
+        "docs-site/user-guide/projects/ai-preannotate.md"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/concepts/ai-preannotate-handoff.md",
+        "docs-site/dev/concepts/prediction-pipeline.md",
+        "docs-site/dev/concepts/ai-models.md",
+        "docs-site/dev/concepts/batch-module.md",
+        "docs-site/user-guide/projects/ai-preannotate.md",
+        "docs-site/user-guide/superadmin/failed-predictions.md",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "audit-and-notifications",
+      "name": "Audit logs, notifications, and websocket delivery",
+      "codeMatchers": [
+        "apps/api/app/services/audit.py",
+        "apps/api/app/services/notification.py",
+        "apps/api/app/api/v1/audit_logs.py",
+        "apps/api/app/api/v1/notifications.py",
+        "apps/api/app/api/v1/ws.py",
+        "apps/api/app/db/models/audit_log.py",
+        "apps/api/app/db/models/notification.py"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/concepts/audit-and-notifications.md",
+        "docs-site/dev/ws-protocol.md",
+        "docs-site/user-guide/superadmin/audit-logs.md"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/concepts/audit-and-notifications.md",
+        "docs-site/dev/ws-protocol.md",
+        "docs-site/user-guide/superadmin/audit-logs.md",
+        "docs/adr/"
+      ]
+    },
+    {
+      "id": "env-and-runtime-config",
+      "name": "Environment variables and runtime configuration",
+      "codeMatchers": [
+        ".env.example",
+        "apps/api/app/config.py",
+        "docker-compose.yml",
+        "compose.yaml",
+        "docker-compose.override.yml"
+      ],
+      "recommendDocs": [
+        ".env.example",
+        "DEV.md",
+        "docs-site/dev/reference/env-vars.md"
+      ],
+      "acceptDocs": [
+        ".env.example",
+        "DEV.md",
+        "docs-site/dev/reference/env-vars.md"
+      ]
+    }
+  ]
+}
