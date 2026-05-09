@@ -1,0 +1,128 @@
+{
+  "docs-site/user-guide/images/getting-started/login.png": {
+    "auto": true,
+    "scene": "getting-started/login",
+    "lastRun": "2026-05-09T14:58:00.386Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/getting-started/forgot-password.png": {
+    "auto": true,
+    "scene": "getting-started/forgot-password",
+    "lastRun": "2026-05-09T14:58:01.825Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/bbox/toolbar.png": {
+    "auto": true,
+    "scene": "bbox/toolbar",
+    "lastRun": "2026-05-09T14:58:03.816Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/bbox/iou.png": {
+    "auto": true,
+    "scene": "bbox/iou",
+    "lastRun": "2026-05-09T14:58:05.835Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/bbox/bulk-edit.png": {
+    "auto": true,
+    "scene": "bbox/bulk-edit",
+    "lastRun": "2026-05-09T14:58:07.885Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/polygon/vertex-edit.png": {
+    "auto": true,
+    "scene": "polygon/vertex-edit",
+    "lastRun": "2026-05-09T14:58:09.966Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/polygon/close-hint.png": {
+    "auto": true,
+    "scene": "polygon/close-hint",
+    "lastRun": "2026-05-09T14:58:12.111Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/sam/subtoolbar.png": {
+    "auto": true,
+    "scene": "sam/subtoolbar",
+    "lastRun": "2026-05-09T14:58:14.291Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/sam/text-three-modes.png": {
+    "auto": true,
+    "scene": "sam/text-three-modes",
+    "lastRun": "2026-05-09T14:58:16.646Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/create-entry.png": {
+    "auto": true,
+    "scene": "projects/create-entry",
+    "lastRun": "2026-05-09T14:58:18.226Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/wizard-steps.png": {
+    "auto": true,
+    "scene": "projects/wizard-steps",
+    "lastRun": "2026-05-09T14:58:20.200Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/empty-state.png": {
+    "auto": true,
+    "scene": "projects/empty-state",
+    "lastRun": "2026-05-09T14:58:21.814Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/error-state.png": {
+    "auto": true,
+    "scene": "projects/error-state",
+    "lastRun": "2026-05-09T14:58:23.268Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/review/workbench.png": {
+    "auto": true,
+    "scene": "review/workbench",
+    "lastRun": "2026-05-09T14:58:24.749Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/review/reject-form.png": {
+    "auto": true,
+    "scene": "review/reject-form",
+    "lastRun": "2026-05-09T14:58:26.244Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/export/format-select.png": {
+    "auto": true,
+    "scene": "export/format-select",
+    "lastRun": "2026-05-09T14:58:27.767Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/export/progress.png": {
+    "auto": true,
+    "scene": "export/progress",
+    "lastRun": "2026-05-09T14:58:29.272Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/ai-pre-stepper.png": {
+    "auto": true,
+    "scene": "ai-pre/stepper",
+    "lastRun": "2026-05-09T14:58:30.718Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/ai-pre-history-search.png": {
+    "auto": true,
+    "scene": "ai-pre/history-search",
+    "lastRun": "2026-05-09T14:58:32.126Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/ai-pre-empty-alias.png": {
+    "auto": true,
+    "scene": "ai-pre/empty-alias",
+    "lastRun": "2026-05-09T14:58:33.527Z",
+    "project": "desktop-light"
+  },
+  "docs-site/user-guide/images/projects/wizard-step4-backend.png": {
+    "auto": true,
+    "scene": "wizard/step4-backend",
+    "lastRun": "2026-05-09T14:58:34.951Z",
+    "project": "desktop-light"
+  }
+}
