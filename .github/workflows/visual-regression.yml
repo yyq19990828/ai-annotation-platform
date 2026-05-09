@@ -1,0 +1,149 @@
+name: Visual Regression
+
+# M4 · 视觉回归 CI
+# 触发：每周一 01:00 UTC cron + 手动 dispatch
+# 目的：捕捉 UI 偷改导致文档截图陈旧
+
+on:
+  schedule:
+    - cron: "0 1 * * 1"   # 每周一 01:00 UTC
+  workflow_dispatch:
+    inputs:
+      update_snapshots:
+        description: "更新基线截图（--update-snapshots）"
+        required: false
+        default: "false"
+        type: boolean
+
+concurrency:
+  group: visual-regression
+  cancel-in-progress: false
+
+jobs:
+  regression:
+    name: Playwright Visual Regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: annotation
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @anno/web exec playwright install --with-deps chromium
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install Python deps
+        working-directory: apps/api
+        run: uv sync
+
+      - name: Run DB migrations
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/annotation
+        run: uv run alembic upgrade head
+
+      - name: Seed test data
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/annotation
+          ENVIRONMENT: test
+        run: PYTHONPATH=. uv run python scripts/seed.py
+
+      - name: Start API server
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/annotation
+          REDIS_URL: redis://localhost:6379
+          ENVIRONMENT: test
+          SECRET_KEY: ci-secret-key-not-for-prod
+        run: |
+          uv run uvicorn app.main:app --port 8000 &
+          sleep 5
+
+      - name: Build frontend
+        working-directory: apps/web
+        run: pnpm build
+
+      - name: Start preview server
+        working-directory: apps/web
+        run: |
+          pnpm preview --port 3000 &
+          sleep 3
+
+      - name: Run visual regression
+        working-directory: apps/web
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+          PLAYWRIGHT_API_BASE: http://localhost:8000
+        run: |
+          if [ "${{ inputs.update_snapshots }}" = "true" ]; then
+            pnpm screenshots:regression -- --update-snapshots
+          else
+            pnpm screenshots:regression
+          fi
+
+      - name: Upload diff artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-diff-${{ github.run_id }}
+          path: |
+            apps/web/test-results/
+            apps/web/e2e/screenshots/regression/__screenshots__/
+          retention-days: 14
+
+      - name: Check image manifest
+        run: node docs-site/scripts/check-image-manifest.mjs --strict
+
+      - name: Open issue on failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `[Visual Regression] 发现 UI 变更 — ${new Date().toISOString().slice(0,10)}`;
+            const body = `视觉回归 CI 检测到截图差异，请检查：\n\n` +
+              `- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n` +
+              `- 如确认是有意变更，下载 diff artifacts 后更新基线：\n` +
+              `  \`pnpm screenshots:regression -- --update-snapshots\`\n` +
+              `  然后提交 \`regression/__screenshots__/\` 目录变更。`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ["visual-regression", "documentation"],
+            });
