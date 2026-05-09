@@ -184,6 +184,39 @@ class TestTaskLockMultiRowResilience:
         assert len(rows) == 1
         assert rows[0].user_id == ann_user.id
 
+    async def test_acquire_force_takeover_clears_others_for_assignee(
+        self, db_session, annotator, reviewer
+    ):
+        """B-21：assignee 重进时 force_takeover=True 应直接清掉他人锁。
+
+        旧逻辑要等他人锁 expire_at < now + TTL/2 才接管，导致用户退出后短时间重进
+        被自己 4 分钟前的旁路锁挡住，看到"他人正在编辑"提示。
+        """
+        ann_user, _ = annotator
+        rev_user, _ = reviewer
+        task = await _seed_project_and_task(db_session, owner_id=ann_user.id)
+
+        # 他人活锁：expire_at = now + 280s（按现有阈值不会被自动接管）
+        db_session.add(_stale_lock(task.id, rev_user.id, ttl_s=280))
+        await db_session.flush()
+
+        svc = TaskLockService(db_session)
+        lock = await svc.acquire(task.id, ann_user.id, force_takeover=True)
+        assert lock is not None
+        assert lock.user_id == ann_user.id
+
+        rows = (
+            (
+                await db_session.execute(
+                    select(TaskLock).where(TaskLock.task_id == task.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].user_id == ann_user.id
+
     async def test_is_locked_tolerates_multi_row(self, db_session, annotator, reviewer):
         """is_locked 在多行残留下也不能 500。"""
         ann_user, _ = annotator

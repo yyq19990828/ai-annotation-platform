@@ -5455,6 +5455,11 @@
             "title": "Completed Tasks",
             "type": "integer"
           },
+          "in_progress_tasks": {
+            "default": 0,
+            "title": "In Progress Tasks",
+            "type": "integer"
+          },
           "progress_pct": {
             "title": "Progress Pct",
             "type": "number"

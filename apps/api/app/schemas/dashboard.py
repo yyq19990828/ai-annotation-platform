@@ -187,6 +187,8 @@ class MyBatchItem(BaseModel):
     total_tasks: int
     completed_tasks: int
     review_tasks: int
+    # B-20：标注员已动工但未送审的任务数（status='in_progress'），用于显示"标注中"进度。
+    in_progress_tasks: int = 0
     approved_tasks: int
     rejected_tasks: int
     progress_pct: float

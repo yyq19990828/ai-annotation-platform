@@ -16,7 +16,11 @@ class TaskLockService:
         self.db = db
 
     async def acquire(
-        self, task_id: uuid.UUID, user_id: uuid.UUID, ttl: int | None = None
+        self,
+        task_id: uuid.UUID,
+        user_id: uuid.UUID,
+        ttl: int | None = None,
+        force_takeover: bool = False,
     ) -> TaskLock | None:
         # B-6 修复：表上 unique 约束是 (task_id, user_id)，并不阻止同一 task_id 出现多行（不同用户）。
         # 历史并发 / 残留可能留下重复行，原本 scalar_one_or_none() 会抛 MultipleResultsFound → 500。
@@ -49,12 +53,15 @@ class TaskLockService:
             # v0.6.7 B-13：他人锁存在但若全部「即将过期」（last heartbeat > TTL/2 前）→ 视为悬挂残留自动接管。
             # 真活会话每 60s 心跳一次，expire_at - now ∈ [240, 300]；阈值 TTL/2 = 150s 给两次心跳容错窗。
             #
-            # 注：v0.6.8 评估过加「持有者非任务 assignee 即接管」，但会破坏审核员合法持锁
-            # （reviewer 不是 assignee 仍要锁审核中的任务），舍弃，只保留单锁场景的更宽阈值。
+            # v0.9.13 B-21：调用方判定 user 即任务 assignee 时显式 force_takeover —
+            # 处理"标注员退出后他人残留锁 / 任务重派" 场景，避免本人重进被旧锁挡住。
+            # reviewer 走非 assignee 路径仍按 stale_threshold 判定，不会被本机制破坏。
             now = datetime.now(timezone.utc)
             stale_threshold = now + timedelta(seconds=self.DEFAULT_TTL // 2)
 
-            takeover = all(lock.expire_at < stale_threshold for lock in others)
+            takeover = force_takeover or all(
+                lock.expire_at < stale_threshold for lock in others
+            )
             if takeover:
                 for lock in others:
                     await self.db.delete(lock)

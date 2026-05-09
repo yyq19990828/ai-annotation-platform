@@ -166,6 +166,7 @@ export function ReviewerDashboard() {
                     cursor: "pointer",
                     textAlign: "left",
                     fontFamily: "inherit",
+                    color: "inherit",
                     borderTop: "1px solid var(--color-border-subtle)",
                     alignItems: "center",
                     justifyContent: "space-between",

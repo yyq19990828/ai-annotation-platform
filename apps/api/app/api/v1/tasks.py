@@ -1047,8 +1047,12 @@ async def acquire_lock(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
+    # B-21：任务的当前 assignee 重进时强制接管残留锁，
+    # 否则上一个会话残留的他人 lock 会让本人误判"他人正在编辑"。
+    task = await _load_task_or_404(db, task_id)
+    is_assignee = task.assignee_id is not None and task.assignee_id == current_user.id
     svc = TaskLockService(db)
-    lock = await svc.acquire(task_id, current_user.id)
+    lock = await svc.acquire(task_id, current_user.id, force_takeover=is_assignee)
     if not lock:
         raise HTTPException(status_code=409, detail="Task is locked by another user")
     await db.commit()

@@ -154,6 +154,8 @@ export interface MyBatchItem {
   total_tasks: number;
   completed_tasks: number;
   review_tasks: number;
+  /** B-20：标注员已动工 (status='in_progress') 的任务数 */
+  in_progress_tasks?: number;
   approved_tasks: number;
   rejected_tasks: number;
   progress_pct: number;

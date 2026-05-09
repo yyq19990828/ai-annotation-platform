@@ -62,7 +62,8 @@ export function Sidebar({ reviewCount }: SidebarProps) {
   const failedQuery = useFailedPredictions(1, 1, false, canSeeFailed);
   const failedTotal = failedQuery.data?.total ?? 0;
   // v0.9.5 · pre_annotated 批次徽章（仅 super_admin 能拉 /dashboard/admin）
-  const adminStatsQ = useAdminStats();
+  // B-19：非超管角色禁用此查询，避免 dashboard 加载时弹出"需要角色权限"toast。
+  const adminStatsQ = useAdminStats(role === "super_admin");
   const preAnnotatedTotal = adminStatsQ.data?.pre_annotated_batches ?? 0;
 
   const sections = sectionsForRole(role === "super_admin");

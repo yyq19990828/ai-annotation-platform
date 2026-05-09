@@ -736,6 +736,22 @@ async def my_batches(
 
     rows = (await db.execute(q)).all()
 
+    # B-20 · 标注员视角的进度分三档（in_progress / review / completed）：旧字段
+    # completed_tasks 仅记 reviewer 已通过的任务，标注员看不到自己已动工的进展。
+    # 这里一次 GROUP BY 拉齐每个 batch 的 in_progress 数量。
+    batch_ids = [b.id for b, _, _ in rows]
+    in_progress_map: dict = {}
+    if batch_ids:
+        ip_rows = await db.execute(
+            select(Task.batch_id, func.count())
+            .where(
+                Task.batch_id.in_(batch_ids),
+                Task.status == "in_progress",
+            )
+            .group_by(Task.batch_id)
+        )
+        in_progress_map = {row[0]: row[1] for row in ip_rows.all()}
+
     # v0.7.2 · 单值语义 — 一 batch 一审核员
     project_user_map: dict = {}
     for b, _, _ in rows:
@@ -749,6 +765,7 @@ async def my_batches(
     for b, pname, pid in rows:
         per_proj = briefs_by_project.get(b.project_id, {})
         reviewer = per_proj.get(str(b.reviewer_id)) if b.reviewer_id else None
+        in_progress_tasks = in_progress_map.get(b.id, 0)
         items.append(
             MyBatchItem(
                 batch_id=str(b.id),
@@ -760,6 +777,7 @@ async def my_batches(
                 total_tasks=b.total_tasks,
                 completed_tasks=b.completed_tasks,
                 review_tasks=b.review_tasks,
+                in_progress_tasks=in_progress_tasks,
                 approved_tasks=b.approved_tasks,
                 rejected_tasks=b.rejected_tasks,
                 progress_pct=round(

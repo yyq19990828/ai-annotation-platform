@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
 
-export function useAdminStats() {
+export function useAdminStats(enabled: boolean = true) {
   return useQuery({
     queryKey: ["dashboard", "admin"],
     queryFn: dashboardApi.getAdminStats,
+    enabled,
   });
 }
 
@@ -26,6 +27,9 @@ export function useMyBatches() {
   return useQuery({
     queryKey: ["dashboard", "annotator", "batches"],
     queryFn: dashboardApi.getMyBatches,
+    // B-20：标注员看进度需实时性，10s 轻量轮询；窗口可见时才轮询，避免后台 tab 浪费
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
 }
 

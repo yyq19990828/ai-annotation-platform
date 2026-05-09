@@ -4,7 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { Thumbnail } from "@/components/Thumbnail";
 import { useTaskList } from "@/hooks/useTasks";
@@ -141,10 +140,21 @@ export function AnnotatePage() {
     navigate(`/projects/${selectedBatch.project_id}/annotate?${q.toString()}`);
   };
 
-  const remaining = selectedBatch
-    ? Math.max(0, selectedBatch.total_tasks - selectedBatch.completed_tasks)
+  // B-20：分三档进度 — 已动工 / 送审 / 已通过；提交按钮不再以 allDone 强制门禁，
+  // 让标注员能整批提交（剩余 pending 由 confirm 二次确认）。
+  const inProgress = selectedBatch?.in_progress_tasks ?? 0;
+  const startedDone = selectedBatch
+    ? inProgress + selectedBatch.review_tasks + selectedBatch.completed_tasks
     : 0;
-  const allDone = selectedBatch && selectedBatch.total_tasks > 0 && remaining === 0;
+  const reviewDone = selectedBatch
+    ? selectedBatch.review_tasks + selectedBatch.completed_tasks
+    : 0;
+  const approvedDone = selectedBatch?.completed_tasks ?? 0;
+  const totalTasks = selectedBatch?.total_tasks ?? 0;
+  const startedPct = totalTasks ? Math.round((startedDone / totalTasks) * 1000) / 10 : 0;
+  const reviewPct = totalTasks ? Math.round((reviewDone / totalTasks) * 1000) / 10 : 0;
+  const approvedPct = totalTasks ? Math.round((approvedDone / totalTasks) * 1000) / 10 : 0;
+  const pendingTasks = Math.max(0, totalTasks - startedDone);
 
   return (
     <div
@@ -196,8 +206,11 @@ export function AnnotatePage() {
                 <>
                   <span className="mono" style={{ color: "var(--color-accent)" }}>{selectedBatch.batch_display_id}</span>
                   <span> · {selectedBatch.project_name}</span>
-                  <span> · 共 {selectedBatch.total_tasks} 任务 · 完成 {selectedBatch.completed_tasks}</span>
-                  {remaining > 0 && <span> · 待标 {remaining}</span>}
+                  <span> · 共 {selectedBatch.total_tasks} 任务</span>
+                  {pendingTasks > 0 && <span> · 待标 {pendingTasks}</span>}
+                  {inProgress > 0 && <span> · 标注中 {inProgress}</span>}
+                  {selectedBatch.review_tasks > 0 && <span> · 送审 {selectedBatch.review_tasks}</span>}
+                  {selectedBatch.completed_tasks > 0 && <span> · 已通过 {selectedBatch.completed_tasks}</span>}
                 </>
               ) : (
                 <>左侧选择批次开始标注；任务进度在画布内自动同步</>
@@ -210,10 +223,13 @@ export function AnnotatePage() {
                 <Button
                   variant="primary"
                   size="sm"
-                  disabled={!allDone || submitMut.isPending}
-                  title={allDone ? "整批提交质检" : `还剩 ${remaining} 个任务未完成`}
+                  disabled={submitMut.isPending}
+                  title={pendingTasks > 0 ? `仍有 ${pendingTasks} 个未开始；确认后整批提交` : "整批提交质检"}
                   onClick={() => {
-                    if (!window.confirm(`确认将批次「${selectedBatch.batch_name}」提交质检？提交后无法继续修改。`)) return;
+                    const warn = pendingTasks > 0
+                      ? `批次「${selectedBatch.batch_name}」仍有 ${pendingTasks} 个任务未开始。确认整批提交质检？提交后无法继续修改。`
+                      : `确认将批次「${selectedBatch.batch_name}」提交质检？提交后无法继续修改。`;
+                    if (!window.confirm(warn)) return;
                     submitMut.mutate(selectedBatch);
                   }}
                 >
@@ -246,16 +262,27 @@ export function AnnotatePage() {
 
         {selectedBatch && (
           <div style={{ marginBottom: 12, padding: "10px 12px", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", background: "var(--color-bg-elev)" }}>
-            <ProgressBar value={selectedBatch.progress_pct} />
-            <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
-              <span>
-                进度 {selectedBatch.progress_pct}% ·
-                <span className="mono"> {selectedBatch.completed_tasks} / {selectedBatch.total_tasks}</span>
-              </span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>批次进度</span>
               <Badge variant={STATUS_BADGE[selectedBatch.status]?.variant ?? "outline"} dot>
                 {STATUS_BADGE[selectedBatch.status]?.label ?? selectedBatch.status}
               </Badge>
             </div>
+            {[
+              { label: "标注中", pct: startedPct, count: startedDone, bar: "var(--color-accent)" },
+              { label: "送审", pct: reviewPct, count: reviewDone, bar: "var(--color-warning)" },
+              { label: "通过", pct: approvedPct, count: approvedDone, bar: "var(--color-success)" },
+            ].map((r) => (
+              <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--color-fg-muted)", marginTop: 4 }}>
+                <span style={{ flex: "0 0 48px" }}>{r.label}</span>
+                <div style={{ flex: 1, height: 5, background: "var(--color-bg-sunken)", borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.min(100, r.pct)}%`, height: "100%", background: r.bar }} />
+                </div>
+                <span className="mono" style={{ flex: "0 0 100px", textAlign: "right", color: "var(--color-fg-subtle)" }}>
+                  {r.count}/{selectedBatch.total_tasks} · {r.pct}%
+                </span>
+              </div>
+            ))}
           </div>
         )}
 

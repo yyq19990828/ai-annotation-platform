@@ -236,7 +236,24 @@ class AnnotationService:
         count = count_result.scalar() or 0
 
         task = await self.db.get(Task, task_id)
+        status_changed = False
         if task:
             task.total_annotations = count
             task.is_labeled = count > 0
+            # B-20：首次产生标注 → 把 task 从 pending 转 in_progress；标注全删 → 回 pending。
+            # 让 batch.in_progress_tasks / dashboard 进度条与"已动工"状态对齐。
+            if count > 0 and task.status == "pending":
+                task.status = "in_progress"
+                status_changed = True
+            elif count == 0 and task.status == "in_progress":
+                task.status = "pending"
+                status_changed = True
         await self.db.flush()
+
+        if status_changed and task and task.batch_id:
+            # 在函数内 import 避免 services 层循环依赖。
+            from app.services.batch import BatchService
+
+            batch_svc = BatchService(self.db)
+            await batch_svc.check_auto_transitions(task.batch_id)
+            await batch_svc.recalculate_counters(task.batch_id)

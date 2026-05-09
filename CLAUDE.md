@@ -138,7 +138,7 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT display_id, title, description, severity, status, route, browser_ua, recent_api_calls, recent_console_errors FROM bug_reports WHERE display_id = 'B-1';"
 ```
-
+前端BUG合理利用chrome devtools mcp功能，查看最近的API调用和console错误，帮助定位问题。
 ---
 
 ## 项目文档索引

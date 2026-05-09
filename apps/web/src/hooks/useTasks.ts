@@ -101,6 +101,8 @@ export function useCreateAnnotation(taskId: string | undefined) {
         );
       }
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      // B-20 接续：首条标注会把 task 从 pending 转 in_progress，需刷新批次进度
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -127,6 +129,7 @@ export function useDeleteAnnotation(taskId: string | undefined) {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["annotations", taskId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -188,6 +191,7 @@ export function useSubmitTask() {
       qc.invalidateQueries({ queryKey: ["task", taskId] });
       qc.invalidateQueries({ queryKey: ["annotations", taskId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -208,6 +212,7 @@ export function useSkipTask() {
     onSuccess: (_, { taskId }) => {
       qc.invalidateQueries({ queryKey: ["task", taskId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -219,6 +224,7 @@ export function useApproveTask() {
     onSuccess: (_, taskId) => {
       qc.invalidateQueries({ queryKey: ["task", taskId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -231,6 +237,7 @@ export function useRejectTask() {
     onSuccess: (_, { taskId }) => {
       qc.invalidateQueries({ queryKey: ["task", taskId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -242,6 +249,7 @@ export function useWithdrawTask() {
     onSuccess: (_, taskId) => {
       qc.invalidateQueries({ queryKey: ["task", taskId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -254,6 +262,7 @@ export function useReopenTask() {
       qc.invalidateQueries({ queryKey: ["task", taskId] });
       qc.invalidateQueries({ queryKey: ["annotations", taskId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
