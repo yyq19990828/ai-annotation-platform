@@ -190,16 +190,9 @@ test.describe("screenshots automation", () => {
       } else if (capture.kind === "fullPage") {
         await page.screenshot({ path: out, fullPage: true, animations: "disabled", mask: maskLocators });
       } else if (capture.kind === "locator") {
-        // timeout:0 → 不等待，元素不存在时直接 null/throw；fallback 到 viewport 截图
+        // count() 不重试，立即返回当前 DOM 匹配数；0 → fallback 到 viewport 截图
         const locator = page.locator(capture.selector);
-        let box: { x: number; y: number; width: number; height: number } | null = null;
-        try {
-          box = await locator.boundingBox(
-            { timeout: 0 } as Parameters<typeof locator.boundingBox>[0],
-          );
-        } catch {
-          // 元素不存在或不可见，fallback
-        }
+        const box = (await locator.count() > 0) ? await locator.boundingBox() : null;
 
         if (!box) {
           await page.screenshot({ path: out, fullPage: false, animations: "disabled", mask: maskLocators });

@@ -48,12 +48,9 @@ export async function injectAnnotations(
     const entry = entries[i];
     const style = entry.style ?? "rect-red";
     const locator = page.locator(entry.selector).first();
-    let box: { x: number; y: number; width: number; height: number } | null = null;
-    try {
-      box = await locator.boundingBox({ timeout: 0 } as Parameters<typeof locator.boundingBox>[0]);
-    } catch {
-      // 元素不存在或不可见，跳过此注释条目
-    }
+    // count() 不重试，立即返回当前 DOM 中匹配数；0 → 跳过，不等待
+    if (await locator.count() === 0) continue;
+    const box = await locator.boundingBox();
     if (!box) continue;
     boxes.push({ ...box, style, label: entry.label, index: i + 1 });
   }
