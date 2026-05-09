@@ -267,9 +267,17 @@ function ProjectGroup({
                 {b.url}
               </td>
               <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-border)" }}>
-                <Badge variant={b.is_interactive ? "ai" : "outline"}>
-                  {b.is_interactive ? "交互式" : "批量"}
-                </Badge>
+                <div style={{ display: "inline-flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+                  <Badge variant={b.is_interactive ? "ai" : "outline"}>
+                    {b.is_interactive ? "交互式" : "批量"}
+                  </Badge>
+                  {/* v0.9.13 · max_concurrency chip; 缺省（默认 4）不显示, 避免列表噪音 */}
+                  {typeof b.extra_params?.max_concurrency === "number" && (
+                    <span title="单 backend 最大并发预标请求数" style={{ display: "inline-flex" }}>
+                      <Badge variant="outline">≤{b.extra_params.max_concurrency} 并发</Badge>
+                    </span>
+                  )}
+                </div>
               </td>
               <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-border)" }}>
                 <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>

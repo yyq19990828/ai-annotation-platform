@@ -21,6 +21,58 @@
 
 ## 最新版本
 
+## [0.9.13] - 2026-05-09
+
+> **Eager Karp — 收尾 BUG 簇 + dev experience.** 0.9.x 三段收尾的第一版, 7/8 条收口. 主线: ① batch.status 变更 WS 广播 (`/ws/batches/project/:id` + `BatchEventPublisher.publish_batch_status_change` + 前端 `useBatchEventsSocket`, 接入 ProjectDetailPanel / BatchesSection / WorkbenchShell 三处 useBatches 消费方), B-15 第二症状端到端验证 100% 通过 (admin POST transition → redis pub/sub → 浏览器 WS 收 `batch.status_changed` 帧, multi-tab 实时同步); ② ProjectDetailPanel 加 alias chips 点击 toggle / 一键重填 + ThresholdRow (box/text slider 显式保存避免拖动 N 次 PATCH); ③ MlBackendFormModal 加 `max_concurrency` number input (1-32, 留空走默认 4) + RegisteredBackendsTab 行 `≤N 并发` chip; ④ 3 个 WS hook smoke 测试 (useGlobalPreannotationJobs / usePreannotation / useMLBackendStats, 16 case 全绿) 兜底 v0.9.11 「14 个月没人发现 URL 写错」类 bug; ⑤ `apps/api/app/main.py` lifespan + `apps/api/app/api/v1/ws.py:close_redis_pool()` (`asyncio.wait_for(timeout=2s)` 兜底) 缓解 uvicorn `--reload` 长 WS 卡 `Waiting for background tasks to complete`; ⑥ `apps/web/src/lib/wsHost.ts:getWsHost()` / `buildWsUrl()` 抽出收口 4 处 hook 重复的 `import.meta.env.DEV ? "localhost:8000" : window.location.host` 拼接 (vite proxy `/ws` 多并发卡死的绕法保留, 上游 minimal repro issue 留 follow-up); ⑦ docs-site/dev/architecture/ai-models.md §4.5 追加注册表单 UI 暴露说明. 截图 fixture 4 张空白态推迟 (用户已对齐, 不侵入 dev seed.py). → [plan](docs/plans/2026-05-09-v0.9.13-eager-karp.md).
+
+### Added
+
+- **batch.status 变更 WS 广播**:
+  - `apps/api/app/services/progress.py`: 新增 `publish_batch_status_change(project_id, batch_id, from_status, to_status)`, 频道 `project:{project_id}:batch`, 消息体 `{type, batch_id, from, to, at}`. 一次性 `aioredis.from_url` instance + close (与 ProgressPublisher 同模式). 广播失败 log.warning 不阻塞业务事务.
+  - `apps/api/app/api/v1/ws.py:batch_events_socket`: 新增 `/ws/batches/project/{project_id}` 端点, 复用 `_get_redis_pool()` + `_heartbeat_loop()` 心跳, 鉴权与 `/ws/projects/{id}/preannotate` 一致 (无 token, batch 状态非机密 + 项目内成员均需感知).
+  - `apps/api/app/services/batch.py`: `BatchService.transition()` + `check_auto_transitions()` (ANNOTATING / REVIEWING 两条转态) 在 `db.flush()` 之后 emit, `from_status != to_status` 守卫避免无变化广播.
+  - `apps/web/src/hooks/useBatchEventsSocket.ts` (新): 复用 `useReconnectingWebSocket`, 收 `batch.status_changed` 事件 invalidate `["batches", projectId]` + `["projects"]`. 心跳 ping 帧不触发 invalidate.
+  - 接入: `ProjectDetailPanel.tsx` (项目详情面板) / `BatchesSection.tsx` (项目设置批次列表) / `WorkbenchShell.tsx` (标注工作台) 三处. 闭环 B-15 第二症状: useBatches 无 refetchInterval, useNotificationSocket 不会因 batch.auto_transition 触发 (该路径不写 notification 表).
+- **alias chips + threshold UI (ProjectDetailPanel)**:
+  - `apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx`: prompt textarea 上方插入一行 alias chips (按预标频率排序, 复用 `aliasChipStyle` / `aliasChipActiveStyle` from `styles.ts`), 点击 chip 通过 `toggleAlias()` 添加 / 移除 (复用 PromptComposer.tsx 同款逻辑). 行末加「重填」按钮一键拼回所有 alias.
+  - 新增 `ThresholdRow` 子组件: box_threshold / text_threshold 两个 range slider (step 0.05, 0-1), 拖动跟手, 脏检查 + 显式「保存」按钮提交 `useUpdateProject` (避免拖动过程触发 N 次 PATCH).
+  - 项目级 `text_threshold` / `box_threshold` 字段已在 `apps/api/app/schemas/project.py:25-26,82-83` 就绪 (v0.9.2 GroundingDINO 阈值), `apps/web/src/pages/Projects/sections/GeneralSection.tsx:72-73` 已有同字段 UI; v0.9.13 把快捷调节路径搬到 `/ai-pre`, 让 admin 跑预标时无需切「项目设置」就能调阈值.
+- **`max_concurrency` 注册表单 UI**:
+  - `apps/web/src/components/projects/MlBackendFormModal.tsx`: 「认证方式」与「高级 extra_params」之间插入「最大并发」number input (min=1 / max=32 / placeholder「默认 4」). 提交时合并到 `extra_params.max_concurrency` (覆盖 textarea JSON 同名键, 避免双源真相). edit 模式从 `backend.extra_params.max_concurrency` 回填 + 从 textarea 视图剔除避免重复.
+  - `apps/web/src/pages/ModelMarket/RegisteredBackendsTab.tsx`: 类型列「交互式 / 批量」Badge 旁加 `≤N 并发` outline chip, 仅当 `extra_params.max_concurrency` 存在时渲染 (缺省值不显示避免列表噪音). 包一层 span 加 `title` (Badge 组件不支持 title prop).
+- **WS hook smoke 测试 (3 文件)**:
+  - `apps/web/src/hooks/__tests__/useGlobalPreannotationJobs.test.tsx` (新, 6 case): admin + token URL 拼接 / 无 token 不建连 / 非 admin 不建连 / running 消息 → runningJobs 反映 / ping 帧不触发 state / 卸载主动 close.
+  - `apps/web/src/hooks/__tests__/usePreannotation.test.tsx` (新, 4 case): projectId URL 拼接 / projectId 空不建连 / 收消息 setProgress / 卸载主动断.
+  - `apps/web/src/components/PerfHud/__tests__/useMLBackendStats.test.tsx` (新, 6 case): visible+token URL / 不可见不建连 / 无 token 不建连 / backends 帧 → snapshots 反映 / ping 帧不触发 / 卸载主动 close.
+  - 共 16 case 全绿. MockWebSocket 加 `static readonly CONNECTING/OPEN/CLOSING/CLOSED` 静态常量, 让 `useReconnectingWebSocket` 的 `ws.readyState === WebSocket.OPEN` 卸载逻辑能在测试环境触发.
+- **WS host helper**:
+  - `apps/web/src/lib/wsHost.ts` (新): 导出 `getWsHost()` (dev 直连 `localhost:8000`, prod 走 `window.location.host`) + `getWsProtocol()` + `buildWsUrl(path, params?)` 一站式 ws/wss + host + path + query 拼接.
+- **lifespan close pool**:
+  - `apps/api/app/api/v1/ws.py:close_redis_pool()` (新): 用 `asyncio.wait_for(_REDIS_POOL.disconnect(inuse_connections=True), timeout=2.0)` 强断 in-use 连接, 即便 pubsub.listen() 协程未及时收到 cancellation 也 2s 超时释放; 任何异常都不阻塞 shutdown (进程退出后内核会回收 socket).
+  - `apps/api/app/main.py` lifespan yield 后 `await _close_ws_redis_pool()` (异常 try/except 兜底, uvicorn 会捕获后转 ERROR 日志并继续退出).
+
+### Changed
+
+- **`apps/web/src/hooks/useNotificationSocket.ts:48`** + **`useGlobalPreannotationJobs.ts:52`** + **`usePreannotation.ts:25`** + **`apps/web/src/components/PerfHud/useMLBackendStats.ts:69`**: 4 处硬编码 `import.meta.env.DEV ? "localhost:8000" : window.location.host` 全部迁移到 `import { buildWsUrl } from "@/lib/wsHost"`. `grep localhost:8000 apps/web/src/` 残留只剩 helper 内部 2 行.
+- **`apps/api/app/services/progress.py`**: 模块级加 `logger` (供 publish_batch_status_change 错误处理用).
+- **`apps/api/app/services/batch.py:20`**: 加 `from app.services.progress import publish_batch_status_change` import.
+- **`docs-site/dev/architecture/ai-models.md` §4.5**: 末尾追加「注册表单 UI 暴露 (v0.9.13)」段, 说明 number input + chip 渲染规则 + 不再需要手改 DB JSONB.
+
+### Fixed
+
+- **B-15 第二症状闭环**: v0.9.12 已加 INFO/DEBUG 日志诊断「标注员开始标注 batch 未转 annotating」, 但 root cause 不是日志缺位 — 是前端无 invalidate 路径 (useBatches 无 refetchInterval, useNotificationSocket 仅监听 `["notifications"]`, batch.auto_transition 不写 notification 表). v0.9.13 加 batch.status WS 广播 + 前端 useBatchEventsSocket invalidate `["batches", projectId]` 闭环.
+- **`apps/web/src/pages/ModelMarket/RegisteredBackendsTab.tsx:275`**: max_concurrency chip 原打算用 `<Badge variant="outline" title="...">`, 但 BadgeProps 不支持 title (`Type '{ children: ...; variant: "outline"; title: string; }' is not assignable to type 'IntrinsicAttributes & BadgeProps'`). 改为外层 `<span title="...">` 包 Badge.
+
+### Operational notes
+
+- **lifespan shutdown 仍可能 hang (剩余风险)**: v0.9.13 实测中遇到一次 lifespan 卡死 (API 不响应需手动重启), 已加 `asyncio.wait_for(timeout=2s)` 兜底但不能 100% 杜绝; 如再发, 考虑给 uvicorn 启动加 `--timeout-graceful-shutdown 5`. 详见 `docs-site/dev/how-to/debug-websocket.md` (待补).
+- **vite 上游 ws upgrade 卡死 issue**: v0.9.13 抽 helper 不追根因, dev 直连 `localhost:8000` 绕法保留. minimal repro issue 还没提到 vitejs/vite, 留 v0.9.13 落地后新发现 ② 跟踪.
+- **截图 fixture 推迟**: ROADMAP 原表 #8 用户已对齐推迟 — 不侵入 dev `apps/api/scripts/seed.py` (会污染开发数据), 留 v0.9.14+ 决策侵入 vs 新增独立 `screenshot_fixture.py` 路径.
+- **rtk token-killer 代理 curl stdout 截断**: 验证脚本里发现 `rtk` (Rust Token Killer) 把 curl 输出截断到 ~500 字节. 后续大 JSON 测试要用 `/usr/bin/curl` 绕开 (已写入 v0.9.13 落地经验).
+- **未删除文件**: 4 个 v0.9.7 stepper 子组件 (`PreannotateStepper` / `ProjectBatchPicker` / `PromptComposer` / `RunPanel`) + `usePreannotateDraft` 仍 orphan, 等「精细单批次预标 modal」回归时复用; v0.9.13 chips/threshold UI 是搬到 ProjectDetailPanel 不动 PromptComposer.
+
+---
+
 ## [0.9.12] - 2026-05-09
 
 > **Humming Roaming Oasis — `/ai-pre` 工作流再设计 + BUG B-14~B-17 收尾.** Admin 反馈簇 4 条一并落地: ① B-17 IA 重构 `/ai-pre` 主页从 stepper 改为「项目卡片网格 (`ProjectCardGrid`) → 项目详情面板 (`ProjectDetailPanel`)」两层信息架构, 主视图仅渲染接了 ml_backend 的项目, 进入项目后多选 batch + 串/并行预标 + 已就绪 HistoryTable; ② B-16 HistoryTable 加 checkbox 多选 + 浮窗批量「重激活 (predictions_only)」/「重置 draft (reset_to_draft)」, 复用 BatchesSection 同款 BulkActionResponse 模式; ③ B-15 `BatchService.reset_to_draft` 加 4 条级联清理 (NULL `annotations.parent_prediction_id` → DELETE `prediction_metas` → DELETE `predictions/failed_predictions` → DELETE `prediction_jobs`), `check_auto_transitions` 加 INFO 日志诊断「标注员开始标注后 batch 未转 annotating」第二症状; ④ B-14 删除 `/model-market?tab=failed` (失败预测已迁到 `/ai-pre/jobs`), 老书签 `?tab=failed` 自动 redirect 到 `/ai-pre/jobs?status=failed`. 同时收口: ① `ml_backends.extra_params.max_concurrency` 接通 per-backend `asyncio.Semaphore` 限速 (默认 4 兼容 worker concurrency); ② v0.9.11 修了 URL 但漏更新的 `useNotificationSocket.test.tsx` stale 测试同步修. → [plan](docs/plans/2026-05-09-v0.9.12-ai-pre-workflow-redesign.md).

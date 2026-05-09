@@ -30,6 +30,33 @@ def _get_redis_pool() -> ConnectionPool:
     return _REDIS_POOL
 
 
+async def close_redis_pool() -> None:
+    """v0.9.13 · uvicorn --reload / SIGTERM 时释放 Redis 连接池, 让悬挂 WS 收到 1006.
+
+    现行架构无内存级 connection 表 (全靠 Redis pub/sub), 各 endpoint finally 块虽然
+    会 close pubsub, 但 SIGTERM 路径下 finally 不一定执行 — disconnect 释放 socket,
+    客户端 WS 收到 abnormal closure 后走自带的指数退避重连.
+
+    重要: 必须 timeout 兜底. inuse_connections=True 会等持有 in-use 连接的 task 主动
+    释放, 但 lifespan shutdown 阶段那些 task 未必已被 cancel (asyncio task 取消是
+    协作式的); 不带 timeout 会让 worker 永久卡 "Waiting for background tasks to
+    complete". 实测 2s 足够 pubsub.listen() 协程注意到 cancellation 退出.
+    """
+    global _REDIS_POOL
+    if _REDIS_POOL is None:
+        return
+    try:
+        await asyncio.wait_for(
+            _REDIS_POOL.disconnect(inuse_connections=True),
+            timeout=2.0,
+        )
+    except (asyncio.TimeoutError, Exception) as e:
+        # 超时或任何异常都不能阻塞 shutdown; 进程退出后内核会回收 socket
+        log.debug("close_redis_pool: %s (continuing shutdown)", e)
+    finally:
+        _REDIS_POOL = None
+
+
 HEARTBEAT_INTERVAL = 30  # 秒；防 LB / nginx idle timeout（默认 60s）主动断连
 
 
@@ -65,6 +92,45 @@ async def preannotate_progress(websocket: WebSocket, project_id: uuid.UUID):
     finally:
         await pubsub.unsubscribe(channel)
         await pubsub.close()
+
+
+@router.websocket("/ws/batches/project/{project_id}")
+async def batch_events_socket(websocket: WebSocket, project_id: uuid.UUID):
+    """v0.9.13 · 项目级 batch 状态变更广播.
+
+    Channel: `project:{project_id}:batch` (BatchService.transition / check_auto_transitions
+    在 publish_batch_status_change() 推 batch.status_changed 事件). 前端
+    useBatchEventsSocket 收到后 invalidate ["batches", projectId], 让标注员/admin
+    多端实时看到 batch 状态翻转 (B-15).
+
+    无鉴权 (与 /ws/projects/{id}/preannotate 一致), batch 状态非机密信息;
+    项目内成员均需感知, 限管理员会丢失标注员实时同步语义.
+    """
+    await websocket.accept()
+    r = aioredis.Redis(connection_pool=_get_redis_pool())
+    pubsub = r.pubsub()
+    channel = f"project:{project_id}:batch"
+    await pubsub.subscribe(channel)
+
+    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+    try:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                data = message["data"]
+                await websocket.send_text(
+                    data.decode() if isinstance(data, bytes) else data
+                )
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        log.warning("batch-events WS error project=%s err=%s", project_id, e)
+    finally:
+        heartbeat_task.cancel()
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
+        except Exception:
+            pass
 
 
 @router.websocket("/ws/prediction-jobs")

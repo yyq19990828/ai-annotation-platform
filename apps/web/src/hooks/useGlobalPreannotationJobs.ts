@@ -13,6 +13,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useAuthStore } from "@/stores/authStore";
 import { useReconnectingWebSocket } from "@/hooks/useReconnectingWebSocket";
+import { buildWsUrl } from "@/lib/wsHost";
 
 export interface GlobalJobProgress {
   job_id: string;
@@ -46,11 +47,7 @@ export function useGlobalPreannotationJobs(): {
 
   const url = useMemo(() => {
     if (!token || !isAdmin) return null;
-    // v0.9.11 fix · dev 直连 :8000 绕过 vite proxy /ws (多 WS 并发偶发 CONNECTING 卡死);
-    // production 走 nginx 反向代理 (相对路径).
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = import.meta.env.DEV ? "localhost:8000" : window.location.host;
-    return `${proto}//${host}/ws/prediction-jobs?token=${encodeURIComponent(token)}`;
+    return buildWsUrl("/ws/prediction-jobs", { token });
   }, [token, isAdmin]);
 
   const onMessage = useCallback((e: MessageEvent) => {

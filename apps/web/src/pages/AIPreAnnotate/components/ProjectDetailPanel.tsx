@@ -13,8 +13,9 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import { useProject } from "@/hooks/useProjects";
+import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import { useBatches } from "@/hooks/useBatches";
+import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useMLBackends } from "@/hooks/useMLBackends";
 import {
   useTriggerPreannotation,
@@ -25,7 +26,14 @@ import { aliasFrequencyApi } from "@/api/aliasFrequency";
 
 import { TabRow } from "@/components/ui/TabRow";
 import { HistoryTable } from "./HistoryTable";
-import { FS_XS, FS_SM, FS_LG, SECTION_GAP } from "../styles";
+import {
+  FS_XS,
+  FS_SM,
+  FS_LG,
+  SECTION_GAP,
+  aliasChipStyle,
+  aliasChipActiveStyle,
+} from "../styles";
 
 const OUTPUT_MODE_TABS = ["□ 框", "○ 掩膜", "⊕ 全部"];
 const OUTPUT_MODE_LABELS: Record<TextOutputMode, string> = {
@@ -59,14 +67,20 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
 
+  // v0.9.13 · 订阅 batch 状态变更, 让"待预标批次"列表实时刷新 (B-15)
+  useBatchEventsSocket(projectId);
+
   const projectQ = useProject(projectId);
   const project = projectQ.data as unknown as
     | {
         type_key?: string;
         ml_backend_id?: string | null;
         classes_config?: Record<string, { alias?: string | null }>;
+        box_threshold?: number | null;
+        text_threshold?: number | null;
       }
     | undefined;
+  const updateProject = useUpdateProject(projectId);
 
   // v0.9.12 · 复活 v0.9.7 alias 频率排序: prompt 默认勾选项目所有 alias (按预标频率降序).
   const freqQ = useQuery({
@@ -119,6 +133,32 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const [outputMode, setOutputMode] = useState<TextOutputMode>("mask");
   const [concurrency, setConcurrency] = useState<ConcurrencyMode>("serial");
   const [running, setRunning] = useState(false);
+
+  // v0.9.13 · prompt token 集合 (复用 PromptComposer.tsx:84 模式), 用于 chip active 态判定
+  const promptTokenSet = useMemo(() => {
+    const tokens = prompt
+      .split(",")
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+    return new Set(tokens);
+  }, [prompt]);
+
+  const toggleAlias = (alias: string) => {
+    const a = alias.trim();
+    if (!a) return;
+    const aLower = a.toLowerCase();
+    if (promptTokenSet.has(aLower)) {
+      const next = prompt
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t && t.toLowerCase() !== aLower)
+        .join(", ");
+      setPrompt(next);
+    } else {
+      const trimmed = prompt.trim().replace(/,\s*$/, "");
+      setPrompt(trimmed ? `${trimmed}, ${a}` : a);
+    }
+  };
 
   // 项目切换时重置选择 / 默认 outputMode / prompt
   useEffect(() => {
@@ -338,6 +378,58 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               <span style={{ fontSize: FS_XS, color: "var(--color-fg-muted)" }}>
                 Prompt（同一段文本应用到所有选中批次；逗号分隔）
               </span>
+              {/* v0.9.13 · alias chips: 点击 toggle prompt 添加 / 移除. 频率排序见 aliases useMemo. */}
+              {aliases.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 4,
+                    marginBottom: 6,
+                    maxHeight: 96,
+                    overflowY: "auto",
+                  }}
+                >
+                  {aliases.map((a) => {
+                    const isActive = promptTokenSet.has(a.alias.toLowerCase());
+                    return (
+                      <button
+                        key={a.name}
+                        type="button"
+                        onClick={() => toggleAlias(a.alias)}
+                        style={isActive ? aliasChipActiveStyle : aliasChipStyle}
+                        title={`${isActive ? "移除" : "添加"} 类别「${a.name}」的 alias${a.count > 0 ? ` · 历史 ${a.count} 次` : ""}`}
+                      >
+                        <span>{isActive ? "✓ " : ""}{a.alias}</span>
+                        <span style={{ color: "var(--color-fg-subtle)", fontSize: 10 }}>
+                          ({a.name})
+                        </span>
+                        {a.count > 0 && (
+                          <span style={{ fontSize: 9, color: "var(--color-ai)", fontVariantNumeric: "tabular-nums" }}>
+                            ×{a.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => setPrompt(aliases.map((x) => x.alias).join(", "))}
+                    style={{
+                      padding: "1px 6px",
+                      fontSize: 10,
+                      background: "var(--color-bg-sunken)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-sm)",
+                      color: "var(--color-fg-muted)",
+                      cursor: "pointer",
+                    }}
+                    title="一键重填: 按频率拼上所有 alias"
+                  >
+                    重填
+                  </button>
+                </div>
+              )}
               <textarea
                 rows={2}
                 value={prompt}
@@ -355,6 +447,20 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                 }}
               />
             </label>
+
+            {/* v0.9.13 · 项目级 GroundingDINO 阈值快捷调节 (仅 SAM 文本路径生效).
+                复用 GeneralSection.tsx:368-397 的 range slider 模式; 改完即写后端 (useUpdateProject). */}
+            <ThresholdRow
+              boxThreshold={project?.box_threshold ?? 0.35}
+              textThreshold={project?.text_threshold ?? 0.25}
+              saving={updateProject.isPending}
+              onCommit={(box, text) =>
+                updateProject.mutate({
+                  box_threshold: box,
+                  text_threshold: text,
+                } as never)
+              }
+            />
 
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span style={{ fontSize: FS_XS, color: "var(--color-fg-muted)" }}>输出形态</span>
@@ -407,6 +513,91 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       )}
 
       <HistoryTable items={projectQueue} isLoading={queueQ.isLoading} />
+    </div>
+  );
+}
+
+/**
+ * v0.9.13 · 项目级 GroundingDINO 阈值快捷调节. 拖动时本地 state 跟手, 松手 (onChange
+ * commit 一次) 才落库. 避免拖动过程触发 N 次 PATCH /projects/{id}.
+ */
+function ThresholdRow({
+  boxThreshold,
+  textThreshold,
+  saving,
+  onCommit,
+}: {
+  boxThreshold: number;
+  textThreshold: number;
+  saving: boolean;
+  onCommit: (box: number, text: number) => void;
+}) {
+  const [box, setBox] = useState(boxThreshold);
+  const [text, setText] = useState(textThreshold);
+
+  // 切项目 / 后端推送新值时同步本地 (avoid 拖动中被外部值覆盖)
+  useEffect(() => {
+    setBox(boxThreshold);
+  }, [boxThreshold]);
+  useEffect(() => {
+    setText(textThreshold);
+  }, [textThreshold]);
+
+  const dirty =
+    Math.abs(box - boxThreshold) > 0.001 || Math.abs(text - textThreshold) > 0.001;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontSize: FS_XS, color: "var(--color-fg-muted)" }}>
+        阈值（仅 SAM 文本路径生效）
+        {saving && <span style={{ marginLeft: 6, color: "var(--color-ai)" }}>· 保存中…</span>}
+      </span>
+      <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: FS_XS }}>
+          <span style={{ color: "var(--color-fg-muted)", minWidth: 86 }}>box_threshold</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={box}
+            onChange={(e) => setBox(Number(e.target.value))}
+            style={{ width: 140 }}
+          />
+          <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 32 }}>{box.toFixed(2)}</span>
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: FS_XS }}>
+          <span style={{ color: "var(--color-fg-muted)", minWidth: 86 }}>text_threshold</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={text}
+            onChange={(e) => setText(Number(e.target.value))}
+            style={{ width: 140 }}
+          />
+          <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 32 }}>{text.toFixed(2)}</span>
+        </label>
+        {dirty && (
+          <button
+            type="button"
+            onClick={() => onCommit(box, text)}
+            disabled={saving}
+            style={{
+              padding: "2px 10px",
+              fontSize: FS_XS,
+              background: "var(--color-ai-soft)",
+              border: "1px solid var(--color-ai)",
+              borderRadius: "var(--radius-sm)",
+              color: "var(--color-fg)",
+              cursor: saving ? "not-allowed" : "pointer",
+            }}
+          >
+            保存
+          </button>
+        )}
+      </div>
     </div>
   );
 }

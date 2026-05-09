@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
 import { authApi } from "@/api/auth";
+import { buildWsUrl } from "@/lib/wsHost";
 
 // v0.8.8 · WS 鉴权过期重连。
 // 后端 /api/v1/ws/notifications 鉴权失败用 1008（policy violation）关闭。
@@ -41,12 +42,9 @@ export function useNotificationSocket() {
       const t = currentToken();
       if (!t) return;
 
-      // v0.9.11 fix · 后端 ws_router 在 main.py:108 无 prefix 注册, 路径是 /ws/notifications
-      // (历史 v0.6.9 写错为 /api/v1/ws/...). dev 直连 :8000 绕过 vite proxy /ws (并发 WS 偶发 CONNECTING 卡死);
-      // production 走 nginx 反向代理 (相对路径).
-      const proto = window.location.protocol === "https:" ? "wss" : "ws";
-      const host = import.meta.env.DEV ? "localhost:8000" : window.location.host;
-      const url = `${proto}://${host}/ws/notifications?token=${encodeURIComponent(t)}`;
+      // 后端 ws_router 在 main.py:108 无 prefix 注册, 路径是 /ws/notifications
+      // (历史 v0.6.9 写错为 /api/v1/ws/...). v0.9.13 host/proto 拼接迁到 buildWsUrl helper.
+      const url = buildWsUrl("/ws/notifications", { token: t });
       try {
         ws = new WebSocket(url);
       } catch {

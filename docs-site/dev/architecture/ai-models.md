@@ -158,6 +158,8 @@ histogram_quantile(0.95,
 
 **调整后必须重启 worker**: 信号量按 backend_id 永久缓存, 改字段后须 `docker compose restart api celery-worker` 才能生效. 工时换简洁性的取舍 — 真要运行期热更新需要把 cache key 改 `(backend_id, max_cc)` 或加 invalidation 机制, 留 v0.10.x sam3 注册 + UI 配置同窗口.
 
+**注册表单 UI 暴露 (v0.9.13)**: `MlBackendFormModal` 在「认证方式」下方加「最大并发」number input (1-32, 留空走默认 4), 提交时合并到 `extra_params.max_concurrency` (覆盖 textarea JSON 同名键). `RegisteredBackendsTab` 列表行类型列旁显示 `≤N 并发` chip, 缺省值不渲染避免列表噪音. 不再需要直接手改 DB JSONB 字段.
+
 **前端可见性**: `/admin/preannotate-summary` 透传 `ml_backend_max_concurrency` 给 `ProjectCardGrid` 卡片 + `ProjectDetailPanel` 头部展示「最多 N 并发」, 多 batch 并行预标时给 admin 心理预期.
 
 **触发**: B-17 admin 反馈「多 batch 并行预标」需要并发护盾, 否则单 backend 被打爆 → grounded-sam2 GPU OOM 风险.

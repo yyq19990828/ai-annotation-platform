@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/stores/authStore";
+import { buildWsUrl } from "@/lib/wsHost";
 import { usePerfHudStore } from "./usePerfHudStore";
 
 export interface BackendSnapshot {
@@ -63,11 +64,8 @@ export function useMLBackendStats() {
       return;
     }
     // ws_router 在 main.py 无 prefix 注册, 路径直接是 /ws/ml-backend-stats (与 /ws/prediction-jobs 一致).
-    // dev 直连 :8000 绕过 vite proxy /ws (vite proxy 在多 WS 并发场景偶尔卡 CONNECTING);
-    // production 走 nginx 反向代理 (相对路径) — import.meta.env.DEV 自动切换.
-    const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const host = import.meta.env.DEV ? "localhost:8000" : window.location.host;
-    const url = `${proto}://${host}/ws/ml-backend-stats?token=${encodeURIComponent(token)}`;
+    // v0.9.13 host/proto 拼接迁到 buildWsUrl helper.
+    const url = buildWsUrl("/ws/ml-backend-stats", { token });
     let ws: WebSocket | null;
     setStatus("connecting");
     try {

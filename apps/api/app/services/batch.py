@@ -18,6 +18,7 @@ from app.db.models.project import Project
 from app.db.models.user import User
 from app.schemas.batch import BatchCreate, BatchUpdate, BatchSplitRequest
 from app.services.display_id import next_display_id
+from app.services.progress import publish_batch_status_change
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +339,15 @@ class BatchService:
 
         batch.status = target_status
         await self.db.flush()
+
+        # v0.9.13 · 广播 batch 状态变更, 前端 useBatchEventsSocket invalidate ["batches", projectId]
+        if from_status != target_status:
+            await publish_batch_status_change(
+                str(batch.project_id),
+                str(batch_id),
+                from_status,
+                target_status,
+            )
 
         if target_status == BatchStatus.APPROVED:
             await self.on_batch_approved(batch_id)
@@ -717,6 +727,12 @@ class BatchService:
                     batch_id,
                     from_status,
                 )
+                await publish_batch_status_change(
+                    str(batch.project_id),
+                    str(batch_id),
+                    from_status,
+                    BatchStatus.ANNOTATING,
+                )
             else:
                 logger.debug(
                     "batch.auto_transition: %s %s -> no_change (no in_progress task)",
@@ -739,6 +755,12 @@ class BatchService:
                 logger.info(
                     "batch.auto_transition: %s annotating -> reviewing (all tasks done)",
                     batch_id,
+                )
+                await publish_batch_status_change(
+                    str(batch.project_id),
+                    str(batch_id),
+                    from_status,
+                    BatchStatus.REVIEWING,
                 )
 
     # ── Batch rejection ────────────────────────────────────────────────────

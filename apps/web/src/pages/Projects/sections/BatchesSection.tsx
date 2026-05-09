@@ -20,6 +20,7 @@ import {
   useBulkActivateBatches,
   useUnclassifiedTaskCount,
 } from "@/hooks/useBatches";
+import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { BatchAssignmentModal } from "@/components/projects/BatchAssignmentModal";
 import { ProjectDistributeBatchesModal } from "@/components/projects/ProjectDistributeBatchesModal";
@@ -65,6 +66,8 @@ const BULK_LABEL: Record<BulkActionKind, string> = {
 
 export function BatchesSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
+  // v0.9.13 · 后端 batch 状态变更 (transition / auto_transition) 实时刷新本页列表
+  useBatchEventsSocket(project.id);
   const { data: batches = [], isLoading } = useBatches(project.id);
   const createBatch = useCreateBatch(project.id);
   const deleteBatch = useDeleteBatch(project.id);

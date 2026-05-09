@@ -2,7 +2,7 @@
 
 > 三类内容：**A. 代码观察到的硬占位 / 残留 mock / 孤儿 UI**（带文件 / 行号引用，可立即开工）；**B. 架构 & 治理向前演进**（按价值 vs 成本排序的优化方向）；**C. 标注工作台专项优化**（性能 / 界面 / 标注体验 / 多类型架构）。
 >
-> 已完成版本详情见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；最近一版 **v0.9.12 (Humming Roaming Oasis)** — `/ai-pre` IA 重构 (项目卡片 + 多选 batch 串/并行) + B-14~B-17 BUG 反馈簇收尾 + max_concurrency Semaphore 限速. 0.9.x 段暂存 root CHANGELOG，开 v0.10 时再迁回 `docs/changelogs/0.9.x.md`.
+> 已完成版本详情见 [CHANGELOG.md](./CHANGELOG.md) 与 [docs/changelogs/](docs/changelogs/)；最近一版 **v0.9.13 (Eager Karp)** — batch.status WS 广播 + alias chips/threshold UI 搬到 ProjectDetailPanel + max_concurrency 注册表单 UI + 3 个 WS hook smoke 测试 + lifespan close pool + getWsHost helper. 0.9.x 段暂存 root CHANGELOG，开 v0.10 时再迁回 `docs/changelogs/0.9.x.md`.
 
 ---
 
@@ -12,6 +12,7 @@
 
 ### 已收尾（条目越短越好；详情看 plan 文件 / CHANGELOG）
 
+- ~~**v0.9.13 — Eager Karp**~~ ✅ batch.status WS 广播 (`/ws/batches/project/:id` + `BatchEventPublisher` + `useBatchEventsSocket` 接入 ProjectDetailPanel/BatchesSection/WorkbenchShell) + B-15 第二症状端到端验证（admin/anno 多端实时同步 100% 通过) + ProjectDetailPanel chips 点击 toggle / 重填 + ThresholdRow (box/text slider 显式保存) + max_concurrency 注册表单 number input + 列表行 chip + 3 hook WS smoke 测试 (useGlobalPreannotationJobs / usePreannotation / useMLBackendStats, 16 全绿) + `apps/web/src/lib/wsHost.ts` 抽 `getWsHost()` / `buildWsUrl()` 收口 4 处 hook + `apps/api/app/main.py` lifespan + `ws.py:close_redis_pool()` (asyncio.wait_for 2s timeout 兜底). 截图 fixture 4 张空白态推迟到 v0.9.14+ 决策 (不侵入 dev seed.py). → [plan](docs/plans/2026-05-09-v0.9.13-eager-karp.md).
 - ~~**v0.9.12 — Humming Roaming Oasis**~~ ✅ `/ai-pre` IA 重构 (ProjectCardGrid + ProjectDetailPanel 多选 batch + 串/并行调度) + BUG B-14~B-17 收尾 (B-14 删 ModelMarket failed tab + redirect / B-15 reset_to_draft 4 条级联 + check_auto_transitions 日志 / B-16 HistoryTable 多选 + bulk-clear 端点 / B-17 项目卡片网格) + `ml_backends.extra_params.max_concurrency` per-backend asyncio.Semaphore 限速 + v0.9.11 stale `useNotificationSocket.test.tsx` 修复. → [plan](docs/plans/2026-05-09-v0.9.12-ai-pre-workflow-redesign.md).
 - ~~**v0.9.11 — Modular Star**~~ ✅ CSP `script-src` nonce 收紧 (Nginx sub_filter + vite plugin 占位符) + GPU/ML PerfHud 浮窗 (pynvml/psutil + WS 1s + 4 progress bar + 60s sparkline) + `PredictionShape` Pydantic + 前端 codegen 派生 + `prediction_jobs.total_cost` 接通累加 + 4 处 WS hook 修复 (`/ws/notifications` URL 历史 v0.6.9 bug + dev 直连 :8000 绕 vite proxy /ws 多并发卡死) + Celery 拆 `celery-beat` 独立 service. → [plan](docs/plans/2026-05-09-v0.9.11-modular-star.md).
 - ~~**v0.9.8 — Fluffy Cosmos**~~ ✅ Prediction job 历史 + WS 全局可见性 + URL loopback validator + schema 边界文档. → [plan](docs/plans/2026-05-08-v0.9.8-fluffy-cosmos.md). 清空 v0.9.7 4 项 known gaps（schema codegen 派生留 v0.9.11 收口）.
@@ -36,7 +37,7 @@
 - **i18n 框架接入**（P3，与全站 inline style 重构合并节省破窗成本，inline style 密度最高的 ProjectSettingsPage sections 群可作为切入点）
 - **截图 fixture 数据补齐 + 重跑**（P3）：v0.9.7 19 张 PNG 已 commit，4 张空白态需在 `apps/api/scripts/seed.py` 或 scene `prepare()` 钩子造数据后重跑（`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`）。
 - **v0.9.11 落地后新发现**：① 真实 SAM mask 50 张 simplify tolerance 验收（v0.9.4 phase 3 归档遗留，需 GPU 环境）；② PerfHud 浏览器侧指标（FPS / JS heap / longtask / API p95 / WS 重连数 / 当前 task 框数）—— 留到 §C.1 keyset 分页拐点判断时一并加。
-- **v0.9.12 落地后新发现**（P3）：① B-15 第二症状（标注员开始标注 batch 未转 annotating）已加 INFO/DEBUG 日志诊断，但代码逻辑本身覆盖 `pre_annotated → annotating`；端到端跑实际触发点定位真因。若结论是 30s `useBatches` refetchInterval 延迟感知误差，加 batch.status 变更 WS 广播 (`/ws/batches/project/:id`) follow-up 单独立项。② **alias 默认填充已复活到 `ProjectDetailPanel`**（按预标频率降序拼 prompt，等 `freqQ.isFetched` 守卫顺便修了 v0.9.7 的 race bug — 老逻辑 freq 解析前已按字母序填，解析后不重排）；剩余 stepper 子组件（`PreannotateStepper` / `ProjectBatchPicker` / `PromptComposer` chip+threshold UI / `RunPanel` / `usePreannotateDraft` 草稿持久化）仍 orphan，等 v0.9.13+「精细单批次预标 modal」回归再复用；vite tree-shake 不计 bundle，如客户反馈不需要再删。③ alias chips 点击插入 / 一键重填默认 / 项目级 `text_threshold` `box_threshold` 暴露 UI 暂未搬到新 IA，按客户反馈触发再补。④ `max_concurrency` 改后需 worker 重启（信号量按 backend_id 永久缓存）；改字段 UI 暴露留 v0.10.x sam3 注册同窗口。⑤ 顺手修了 v0.9.11 漏更新的 stale `useNotificationSocket.test.tsx` URL 断言（`/api/v1/ws/notifications` → `/ws/notifications`），WS e2e smoke 测试仍缺位（见下 §B 测试 / 开发体验段）。
+- **v0.9.13 落地后新发现**（P3）：① 实测一次 lifespan shutdown hang 后给 `close_redis_pool` 加 `asyncio.wait_for(timeout=2s)` 兜底，避免 `disconnect(inuse_connections=True)` 等不到 task 取消时无限阻塞 (`apps/api/app/api/v1/ws.py:34-50`)；② vite 上游 ws upgrade 卡死的 minimal repro issue 还没提（绕法保留：dev 直连 :8000 已抽进 `apps/web/src/lib/wsHost.ts:getWsHost()`）, follow-up；③ 4 张空白态截图 fixture (`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`) 用户已确认不侵入 dev `seed.py`，留 v0.9.14+ 决策侵入 vs 新增独立 `screenshot_fixture.py` 路径；④ 验证脚本里发现 `rtk` token-killer 代理会截断 curl stdout（>500 字节就丢），后续大 JSON 测试要用 `/usr/bin/curl` 绕开（已写入 v0.9.13 落地经验）；⑤ "精细单批次预标 modal" 回归仍 open（ROADMAP 优先级表 P3），4 个 orphan stepper 子组件继续等回归触发。
 - **mask→polygon 多连通域 / 空洞支持**（P2，长尾 follow-up，与 sam3-backend 共做）：详见 §A.AI / 模型 与优先级表对应行。
 
 ### 等业务规模 / 监控触发（先观察、不做）
@@ -149,9 +150,9 @@
 ### 测试 / 开发体验
 - **前端单元测试 — 页面级覆盖**：vitest + MSW 基座 v0.7.4；v0.8.5 推到 25.28% / 阈值 25；v0.8.7 因引入 8 个新组件回退到 22.04% / 阈值临时降到 22；**v0.8.8 推回 25.17% / 阈值 25**（5 个新 test 文件 ~35 case：turnstile / useCanvasDraftPersistence / RejectReasonModal / FailedPredictionsPage / useNotificationSocket / AnnotationHistoryTimeline）。下阶段目标 25→30：补 `pages/Projects/sections/BatchesSection`（948 行）/ `GeneralSection`（433 行）/ `DatasetsSection`（395 行）/ `AuditPage` / `WorkbenchShell` 关键 hook（`ProjectSettingsPage` shell 自身 v0.9.x 已拆到 181 行，无业务逻辑可测）。
 - **size-limit / scripts 脚本测试**：v0.8.8 加的 `apps/web/scripts/check-bundle-size.mjs` 自实现 glob match + 单位解析，目前无单测；如未来加更多 build-time 脚本，建议给该目录建独立 vitest 项目（不算主分母覆盖率）。
-- **WS 端到端测试缺位（P3）**：v0.9.11 修了 v0.6.9 起 `useNotificationSocket` URL 历史 bug（错写 `/api/v1/ws/notifications`），通知 WS 一直 404 但靠 30s `useNotifications` refetchInterval 兜底，14 个月没人发现；v0.9.12 同步修复了 v0.9.11 漏更新的 stale 单测断言。但 e2e WS smoke 仍缺位：需要登录 admin → 触发预标 → 确认 `/ws/prediction-jobs` 收到帧；或单测层面 mock `WebSocket` 全局对象批量验证 4 处 WS hook (notifications / prediction-jobs / ml-backend-stats / preannotation) URL 派发。详见 [docs-site/dev/how-to/debug-websocket.md](docs-site/dev/how-to/debug-websocket.md)。
-- **uvicorn `--reload` + 长 WS = reload 卡死（P3 dev experience）**：改 `app/workers/celery_app.py` 等触发 watch reload 时，老 worker 进 graceful shutdown 等所有 background tasks 完成 → 浏览器 WS 长连接永不"完成" → 进程死锁在 `Waiting for background tasks to complete (CTRL+C to force quit)`. 当前临时绕法 `kill -9 <pid>` + 重启，长期看可改自定义 lifespan close-on-reload 或起 watcher 时设 `--ws-max-queue 0` / `--timeout-graceful-shutdown 5`. 详见 debug-websocket.md。
-- **vite proxy `/ws` 多并发偶发 CONNECTING 卡死（P3 dev experience）**：v0.9.11 临时绕法是 4 处 WS hook dev 模式直连 `localhost:8000`（`import.meta.env.DEV ? "localhost:8000" : window.location.host`），prod 走 nginx 反代不受影响。根因待追：vite 6 内部 http-proxy ws 模式在并发多个 ws upgrade 时偶发卡 server.upgrade 回调；可考虑升级 vite 7 或换 `vite-plugin-ws-proxy` 替代方案，或定位到具体 issue 上游。
+- ~~**WS 端到端测试缺位**~~（**v0.9.13 已收**）：4 处 WS hook 单测覆盖完成 (useNotificationSocket / useGlobalPreannotationJobs / usePreannotation / useMLBackendStats)，URL 拼接 + 鉴权门 + 重连 + 收消息 4 类断言齐；MockWebSocket 加 `WebSocket.OPEN` 静态常量让 `useReconnectingWebSocket` 卸载逻辑触发。e2e 流程层面：v0.9.13 用 chrome devtools mcp 跑了 `/ws/batches/project/:id` 全链路（admin POST transition → redis pub/sub → 浏览器收 `batch.status_changed` 帧）, 100% 通过。
+- **uvicorn `--reload` + 长 WS = reload 卡死（P3 dev experience，v0.9.13 部分缓解）**：v0.9.13 给 `apps/api/app/main.py` lifespan 加 `_close_ws_redis_pool()` shutdown 钩子, `apps/api/app/api/v1/ws.py:close_redis_pool()` 用 `asyncio.wait_for(timeout=2s)` 强断 Redis pool（即便 in-use connections 等不到 task 取消也 2s 强制释放）。**剩余风险**：实测中仍发生过一次 lifespan hang（API 不响应需重启），可能与 vite 上游 ws upgrade 卡死同源；如再发，考虑加 `--timeout-graceful-shutdown 5` 兜底.
+- **vite proxy `/ws` 多并发偶发 CONNECTING 卡死（P3 dev experience，v0.9.13 局部收口）**：v0.9.13 抽 `apps/web/src/lib/wsHost.ts:getWsHost()` / `buildWsUrl()` 收口 4 处 hook 的 host 拼接（dev 直连 `localhost:8000` 绕法保留）, 后续如有第 5 处 WS hook 直接 import helper. **根因待追**：vite 6 内部 http-proxy ws 模式在 4+ 并发 ws upgrade 时偶发卡 server.upgrade 回调；minimal repro issue 还没提到 vitejs/vite 上游 — v0.9.13 落地后新发现 ② 跟踪.
 
 ### i18n / 主题 / 无障碍
 - **i18n 框架**：当前所有用户可见文案中文硬编码；接入 react-intl / i18next，分文案与代码。
@@ -206,9 +207,7 @@
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
 | **P3** | 真实 SAM mask 50 张 simplify tolerance 验收 | v0.9.4 phase 3 归档遗留, 需 GPU 环境 50 张真实 mask 重跑 `docs/research/13-simplify-tolerance-eval.md`；与 mask→polygon 多连通域 follow-up 同窗口 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
-| **P3** | `/ai-pre` 精细单批次预标 modal（v0.9.12 后回归） | v0.9.12 IA 重构后 stepper 4 子组件 + 草稿持久化 orphan；客户场景需要单 batch 精细调（`text_threshold` / `box_threshold` / alias chips 点击插入 / 草稿恢复）时, 在 ProjectDetailPanel 加「精细模式」按钮唤起 modal 复用旧组件；如反馈不需要再删 orphan 文件 | — |
-| **P3** | `max_concurrency` 注册表单 UI 暴露 | v0.9.12 已读 `extra_params.max_concurrency` 加 Semaphore 限速 + summary/详情面板渲染上限提示, 但仅靠 DB JSONB 配；UI 暴露与 v0.10.x sam3 注册「variant 字段」同窗口落地 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
-| **P3** | batch.status 变更 WS 广播 | v0.9.12 B-15 第二症状若日志诊断结论是 30s `useBatches` refetchInterval 延迟感知误差, 加 `/ws/batches/project/:id` 推送实时刷新；触发: 日志确认调用点齐全但用户仍报感觉不变 | — |
+| **P3** | `/ai-pre` 精细单批次预标 modal（v0.9.13 后回归） | v0.9.12 IA 重构 + v0.9.13 chips/threshold UI 已搬到 ProjectDetailPanel；4 个 stepper 子组件 (`PreannotateStepper` / `ProjectBatchPicker` / `RunPanel` / `usePreannotateDraft`) 仍 orphan，客户场景需要单 batch 精细调（草稿恢复 / 阶段进度可视化）时唤起 modal 复用旧组件；如反馈不需要再删 orphan 文件 | — |
 | **P2** | mask→polygon 多连通域 / 空洞支持 | v0.9.4 phase 3 长尾分析暴露：< 15% 样本 IoU 落 [0.5, 0.95)，根因 `RETR_EXTERNAL + max area` 假设。修复方向：multi_polygon 输出 + `RETR_CCOMP` 内外环编码 + morphological closing；触发：长尾 IoU<0.95 占比 > 20%、或客户抱怨 polygon 与 mask 形状差异 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |

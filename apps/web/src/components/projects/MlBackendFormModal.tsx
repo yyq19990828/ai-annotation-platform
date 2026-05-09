@@ -58,6 +58,10 @@ export function MlBackendFormModal({ open, projectId, backend, onClose }: Props)
   const [isInteractive, setIsInteractive] = useState(false);
   const [authMethod, setAuthMethod] = useState<"none" | "token">("none");
   const [authToken, setAuthToken] = useState("");
+  // v0.9.13 · max_concurrency 单独 number input, 提交时合并进 extra_params (覆盖
+  // textarea JSON 同名键). 后端 ml_client.py:51-54 读 extra_params.max_concurrency
+  // 控制单 backend 最大并发预标请求数, 默认 4.
+  const [maxConcurrency, setMaxConcurrency] = useState<string>("");
   const [extraText, setExtraText] = useState("");
   const [extraOpen, setExtraOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +121,11 @@ export function MlBackendFormModal({ open, projectId, backend, onClose }: Props)
       setIsInteractive(backend.is_interactive);
       setAuthMethod((backend.auth_method as "none" | "token") ?? "none");
       setAuthToken("");
-      const extra = backend.extra_params ?? {};
+      const extra = { ...(backend.extra_params ?? {}) } as Record<string, unknown>;
+      const mc = extra.max_concurrency;
+      setMaxConcurrency(typeof mc === "number" ? String(mc) : "");
+      // 把 max_concurrency 从 textarea 视图剔除, 避免与上方 number input 重复
+      delete extra.max_concurrency;
       setExtraText(Object.keys(extra).length ? JSON.stringify(extra, null, 2) : "");
       setExtraOpen(Object.keys(extra).length > 0);
     } else {
@@ -126,6 +134,7 @@ export function MlBackendFormModal({ open, projectId, backend, onClose }: Props)
       setIsInteractive(false);
       setAuthMethod("none");
       setAuthToken("");
+      setMaxConcurrency("");
       setExtraText("");
       setExtraOpen(false);
     }
@@ -162,6 +171,16 @@ export function MlBackendFormModal({ open, projectId, backend, onClose }: Props)
         setError(`extra_params JSON 解析失败：${(e as Error).message}`);
         return;
       }
+    }
+
+    // v0.9.13 · max_concurrency 校验 + 合并 (覆盖 textarea JSON 同名键)
+    if (maxConcurrency.trim()) {
+      const mc = Number(maxConcurrency);
+      if (!Number.isInteger(mc) || mc < 1 || mc > 32) {
+        setError("max_concurrency 需为 1-32 整数");
+        return;
+      }
+      extraParams.max_concurrency = mc;
     }
 
     try {
@@ -309,6 +328,21 @@ export function MlBackendFormModal({ open, projectId, backend, onClose }: Props)
               />
             </div>
           )}
+        </div>
+        <div>
+          <label style={labelStyle}>最大并发（max_concurrency）</label>
+          <input
+            type="number"
+            min={1}
+            max={32}
+            value={maxConcurrency}
+            onChange={(e) => setMaxConcurrency(e.target.value)}
+            placeholder="默认 4"
+            style={{ ...inputStyle, width: 120 }}
+          />
+          <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 4 }}>
+            单 backend 同时处理的预标请求上限；留空走默认（4）。
+          </div>
         </div>
         <div>
           <button

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.v1.router import api_router
-from app.api.v1.ws import router as ws_router
+from app.api.v1.ws import router as ws_router, close_redis_pool as _close_ws_redis_pool
 from app.api.health import router as health_router
 from app.core.logging import setup_logging
 from slowapi import _rate_limit_exceeded_handler
@@ -69,6 +69,14 @@ async def lifespan(app: FastAPI):
         )
     storage_service.ensure_all_buckets()
     yield
+    # v0.9.13 · shutdown: 释放 WS Redis pool (带 2s timeout), 避免 --reload / SIGTERM 时
+    # worker 卡 "Waiting for background tasks to complete". 客户端 WS 收到 1006 后会自走
+    # 指数退避重连. timeout 兜底见 ws.py:close_redis_pool 注释.
+    try:
+        await _close_ws_redis_pool()
+    except Exception:
+        # shutdown 期任何异常都不能传播 — uvicorn 会捕获后转 ERROR 日志并继续退出
+        pass
 
 
 app = FastAPI(title=settings.app_name, version="0.8.8", lifespan=lifespan)

@@ -15,6 +15,7 @@ import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
 import { ApiError } from "@/api/client";
 import { useBatches } from "@/hooks/useBatches";
+import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
 import type { TaskResponse, AnnotationResponse } from "@/types";
@@ -92,6 +93,9 @@ export function WorkbenchShell() {
   const initialBatchId = searchParams.get("batch");
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(initialBatchId);
   const { data: batchList } = useBatches(projectId ?? "", undefined);
+  // v0.9.13 · batch 状态实时同步 (B-15): 标注员触发 in_progress → batch
+  // active/pre_annotated → annotating, 工作台无需手动刷新即可见状态变化
+  useBatchEventsSocket(projectId);
   const isOwner = useIsProjectOwner(currentProject ?? null);
   const activeBatches = useMemo(() => {
     // v0.6.8 B-15：owner 视角额外纳入 draft（数据集导入自动建的「{ds} 默认包」），
