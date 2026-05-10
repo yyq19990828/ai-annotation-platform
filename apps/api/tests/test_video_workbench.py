@@ -41,12 +41,21 @@ def test_video_bbox_geometry_validates_and_bbox_stays_compatible():
     adapter = TypeAdapter(Geometry)
 
     parsed = adapter.validate_python(
-        {"type": "video_bbox", "frame_index": 12, "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}
+        {
+            "type": "video_bbox",
+            "frame_index": 12,
+            "x": 0.1,
+            "y": 0.2,
+            "w": 0.3,
+            "h": 0.4,
+        }
     )
     assert parsed.type == "video_bbox"
     assert parsed.frame_index == 12
 
-    legacy_bbox = adapter.validate_python({"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1})
+    legacy_bbox = adapter.validate_python(
+        {"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1}
+    )
     assert legacy_bbox.type == "bbox"
 
 
@@ -151,7 +160,13 @@ async def test_video_manifest_returns_signed_urls(
         file_name="clip.mp4",
         file_path="videos/clip.mp4",
         file_type="video",
-        metadata_={"video": {"fps": 30, "frame_count": 90, "poster_frame_path": "posters/clip.webp"}},
+        metadata_={
+            "video": {
+                "fps": 30,
+                "frame_count": 90,
+                "poster_frame_path": "posters/clip.webp",
+            }
+        },
     )
     db_session.add(item)
     await db_session.flush()

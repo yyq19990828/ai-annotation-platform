@@ -418,7 +418,9 @@ async def scan_items(
         from app.workers.media import generate_thumbnail, generate_video_metadata
 
         item_rows = await db.execute(
-            select(DatasetItem.id, DatasetItem.file_type).where(DatasetItem.id.in_(new_ids))
+            select(DatasetItem.id, DatasetItem.file_type).where(
+                DatasetItem.id.in_(new_ids)
+            )
         )
 
         for iid, file_type in item_rows:

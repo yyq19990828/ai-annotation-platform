@@ -1297,7 +1297,9 @@ async def _attach_dimensions(
 async def _attach_dimensions_batch(
     db: AsyncSession,
     tasks: list[Task],
-) -> dict[uuid.UUID, tuple[int | None, int | None, str | None, str | None, dict | None]]:
+) -> dict[
+    uuid.UUID, tuple[int | None, int | None, str | None, str | None, dict | None]
+]:
     result: dict[
         uuid.UUID,
         tuple[int | None, int | None, str | None, str | None, dict | None],
@@ -1324,9 +1326,7 @@ async def _attach_dimensions_batch(
                 row[2],
                 row[3],
                 row[4],
-                dict((row[6] or {}).get("video") or {})
-                if row[5] == "video"
-                else None,
+                dict((row[6] or {}).get("video") or {}) if row[5] == "video" else None,
             )
             for row in rows
         }

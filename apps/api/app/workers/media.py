@@ -64,7 +64,9 @@ def parse_ffprobe_video_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     width = video_stream.get("width")
     height = video_stream.get("height")
     return {
-        "duration_ms": int(round(duration_s * 1000)) if duration_s is not None else None,
+        "duration_ms": int(round(duration_s * 1000))
+        if duration_s is not None
+        else None,
         "fps": round(float(fps), 3) if fps and math.isfinite(fps) else None,
         "frame_count": frame_count,
         "width": int(width) if width is not None else None,
