@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -15,6 +15,7 @@ import { BatchesSection } from "./sections/BatchesSection";
 import { ClassesSection } from "./sections/ClassesSection";
 import { DatasetsSection } from "./sections/DatasetsSection";
 import { MlBackendsSection } from "./sections/MlBackendsSection";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 
 type SectionKey = "general" | "classes" | "attributes" | "members" | "datasets" | "batches" | "ml-backends" | "owner" | "danger";
 
@@ -35,6 +36,7 @@ const VALID_SECTIONS: SectionKey[] = ["general", "classes", "attributes", "membe
 export function ProjectSettingsPage() {
   const { id = "" } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { role } = usePermissions();
   const { data: project, isLoading, error } = useProject(id);
@@ -112,7 +114,9 @@ export function ProjectSettingsPage() {
               </Button>
             )}
             {project.type_key === "image-det" && (
-              <Button onClick={() => navigate(`/projects/${project.id}/annotate`)}>
+              <Button onClick={() => navigate(buildWorkbenchUrl(project.id, {
+                returnTo: currentWorkbenchReturnTo(location),
+              }))}>
                 <Icon name="target" size={12} />打开工作台
               </Button>
             )}

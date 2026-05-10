@@ -5,17 +5,19 @@ import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
 import { SectionDivider } from "@/components/ui/SectionDivider";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useToastStore } from "@/components/ui/Toast";
 import { useReviewerStats, useMyRecentReviews } from "@/hooks/useDashboard";
 import { useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReviewTaskItem, RecentReviewItem } from "@/api/dashboard";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 
 export function ReviewerDashboard() {
   const { data: stats, isLoading } = useReviewerStats();
   const { data: recentReviews = [] } = useMyRecentReviews(20);
   const navigate = useNavigate();
+  const location = useLocation();
   const pushToast = useToastStore((s) => s.push);
   const qc = useQueryClient();
   const approveMut = useApproveTask();
@@ -217,7 +219,14 @@ export function ReviewerDashboard() {
         ) : (
           <div>
             {recentReviews.map((r) => (
-              <RecentReviewRow key={r.task_id} item={r} onClick={() => navigate(`/projects/${r.project_id}/annotate?task=${r.task_id}`)} />
+              <RecentReviewRow
+                key={r.task_id}
+                item={r}
+                onClick={() => navigate(buildWorkbenchUrl(r.project_id, {
+                  taskId: r.task_id,
+                  returnTo: currentWorkbenchReturnTo(location),
+                }))}
+              />
             ))}
           </div>
         )}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -55,6 +55,11 @@ import { Minimap } from "../stage/Minimap";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
 import {
+  getRememberedWorkbenchTask,
+  rememberWorkbenchTask,
+  resolveWorkbenchReturnTo,
+} from "@/utils/workbenchNavigation";
+import {
   getAll as offlineQueueGetAll,
   removeById as offlineQueueRemoveById,
 } from "../state/offlineQueue";
@@ -70,7 +75,15 @@ type DiffMode = "final" | "raw" | "diff";
 export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "review" }) {
   const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const onBack = useCallback(() => navigate("/dashboard"), [navigate]);
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const currentPath = `${location.pathname}${location.search}${location.hash}`;
+  const returnTo = searchParams.get("returnTo");
+  const backTarget = useMemo(
+    () => resolveWorkbenchReturnTo(returnTo, currentPath),
+    [returnTo, currentPath],
+  );
+  const onBack = useCallback(() => navigate(backTarget), [navigate, backTarget]);
   const pushToast = useToastStore((s) => s.push);
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
@@ -94,7 +107,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   const meUserId = useAuthStore((s) => s.user?.id);
   // v0.7.1 B-17：支持 /annotate?batch=<id> 深链（从 dashboard「我的批次」跳过来）
-  const [searchParams] = useSearchParams();
   const initialBatchId = searchParams.get("batch");
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(initialBatchId);
   const { data: batchList } = useBatches(projectId ?? "", undefined);
@@ -135,6 +147,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const tasksTotal = taskListData?.pages[0]?.total ?? tasks.length;
 
   const s = useWorkbenchState();
+  const currentTaskId = s.currentTaskId;
+  const setCurrentTaskId = s.setCurrentTaskId;
   const { vp, setVp } = useViewportTransform();
   const [fitTick, setFitTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
@@ -151,8 +165,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   }, [s.confThreshold]);
 
   const task: TaskResponse | undefined = useMemo(
-    () => tasks.find((t) => t.id === s.currentTaskId) ?? tasks[0],
-    [tasks, s.currentTaskId],
+    () => tasks.find((t) => t.id === currentTaskId) ?? tasks[0],
+    [tasks, currentTaskId],
   );
   const taskId = task?.id;
   const taskIdx = tasks.findIndex((t) => t.id === taskId);
@@ -166,15 +180,26 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const thumbnailUrl = useMemo(() => task?.thumbnail_url ?? null, [task?.id]);
 
   // v0.7.1 · 支持 /annotate 深链 ?batch=&task= 自动选中任务
-  const initialTaskId = searchParams.get("task");
+  // B-23 · 无 task 参数时按 batch 恢复上次打开的任务，避免每次进批次都回到第一题。
+  const requestedTaskId = searchParams.get("task");
   useEffect(() => {
-    if (tasks.length === 0 || s.currentTaskId) return;
-    if (initialTaskId && tasks.some((t) => t.id === initialTaskId)) {
-      s.setCurrentTaskId(initialTaskId);
-    } else {
-      s.setCurrentTaskId(tasks[0].id);
-    }
-  }, [tasks, s.currentTaskId, initialTaskId]);
+    if (tasks.length === 0) return;
+    if (currentTaskId && tasks.some((t) => t.id === currentTaskId)) return;
+
+    const rememberedTaskId = getRememberedWorkbenchTask(selectedBatchId);
+    const nextTaskId =
+      requestedTaskId && tasks.some((t) => t.id === requestedTaskId)
+        ? requestedTaskId
+        : rememberedTaskId && tasks.some((t) => t.id === rememberedTaskId)
+          ? rememberedTaskId
+          : tasks[0].id;
+    setCurrentTaskId(nextTaskId);
+  }, [tasks, currentTaskId, requestedTaskId, selectedBatchId, setCurrentTaskId]);
+
+  useEffect(() => {
+    if (currentTaskId !== taskId) return;
+    rememberWorkbenchTask(selectedBatchId, taskId);
+  }, [selectedBatchId, taskId, currentTaskId]);
 
   useEffect(() => {
     // 默认选最近使用过的类（如果该项目存在），否则取首个
@@ -945,7 +970,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12, color: "var(--color-fg-muted)" }}>
         <Icon name="warning" size={40} />
         <div style={{ fontSize: 15 }}>项目不存在或无访问权限</div>
-        <Button onClick={onBack}><Icon name="chevLeft" size={12} />返回总览</Button>
+        <Button onClick={onBack}><Icon name="chevLeft" size={12} />返回</Button>
       </div>
     );
   }
@@ -955,7 +980,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12, color: "var(--color-fg-muted)" }}>
         <Icon name="inbox" size={40} />
         <div style={{ fontSize: 15 }}>该项目暂无任务</div>
-        <Button onClick={onBack}><Icon name="chevLeft" size={12} />返回总览</Button>
+        <Button onClick={onBack}><Icon name="chevLeft" size={12} />返回</Button>
       </div>
     );
   }

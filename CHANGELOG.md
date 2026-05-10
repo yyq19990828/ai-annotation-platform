@@ -17,50 +17,6 @@
 | 0.2.x | [docs/changelogs/0.2.x.md](docs/changelogs/0.2.x.md) |
 | 0.1.x | [docs/changelogs/0.1.x.md](docs/changelogs/0.1.x.md) |
 
----
-
-## 文档站变更记录（非版本）
-
-### [docs-M2] - 2026-05-09 · 文档 IA 深度重构
-
-> 对应计划：[ROADMAP/2026-05-09-docs-ia-redesign.md](ROADMAP/2026-05-09-docs-ia-redesign.md) · ADR-0016
-
-**物理目录迁移（旧路径保留 client-side redirect）**
-
-- `user-guide/workbench/` → `user-guide/for-annotators/`
-- `user-guide/projects/` → `user-guide/for-project-admins/`
-- `user-guide/review/` → `user-guide/for-reviewers/`
-- `user-guide/superadmin/` → `user-guide/for-superadmins/`
-- `user-guide/export/` → `user-guide/reference/export-formats.md`
-- `dev/architecture/` → `dev/concepts/`（原文件 10 篇全部迁移）
-- `dev/local-dev.md` → `dev/tutorials/local-dev.md`
-- `dev/conventions.md` / `icon-conventions.md` / `ml-backend-protocol.md` / `ws-protocol.md` → `dev/reference/`
-- `dev/deploy.md` / `dev/monitoring.md` / `dev/security.md` → `ops/deploy/` / `ops/observability/` / `ops/security/`
-
-**新增内容**
-
-- `user-guide/workflows/`：新项目端到端、AI 预标注流水线、失败预测恢复 3 篇工作流
-- `dev/tutorials/first-contribution.md`：新贡献者引导
-- `dev/reference/env-vars.md`：环境变量参考（含自动生成脚本）
-- `ops/runbooks/`：Celery Worker 卡死、ML Backend 不可用、PG 连接池耗尽 3 篇 Runbook
-- `ops/upgrade-guide.md`：版本升级指南
-- `docs/adr/0016-docs-ia-redesign.md`：记录 Diátaxis 选型与 audience 字段约定
-
-**元数据 / CI**
-
-- 所有 `.md` 文件（58 个）加齐 `audience / type / since / status / last_reviewed` frontmatter
-- `scripts/check-doc-frontmatter.mjs`：CI 强制 frontmatter 必填字段
-- `scripts/check-doc-freshness.mjs`：`last_reviewed` 超 180 天输出 warning
-- `scripts/generate-env-vars.mjs`：从 `.env.example` 自动生成 `dev/reference/env-vars.md`
-- `scripts/generate-hotkeys.mjs`：输出路径更新为 `for-annotators/`
-
-### [docs-M1] - 2026-05-09 · 文档 IA 轻量重排
-
-- `config.ts`：顶部 nav 新增「快速开始」「部署与运维」入口，changelog/roadmap 合并为下拉
-- `user-guide/` sidebar：改为按角色（标注员 / 项目管理员 / 审核员 / 超管）骨架
-- `dev/` sidebar：「架构」改名「概念（架构）」并折叠；新增 `dev/concepts/README.md` 架构地图
-- `docs-site/index.md`：首页改为 6 张读者旅程卡（带链接）
-- 新增 `user-guide/concepts.md`（核心术语表）、`ops/index.md`（运维入口占位页）
 
 ---
 

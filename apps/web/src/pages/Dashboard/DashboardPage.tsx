@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -21,6 +21,7 @@ import { useAuditLogs } from "@/hooks/useAudit";
 import { auditActionLabel } from "@/utils/auditLabels";
 import { FilterDrawer, EMPTY_FILTERS, type DashboardFilters } from "./FilterDrawer";
 import { ProjectGrid } from "./ProjectGrid";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 
 const TYPE_ICONS: Record<string, string> = {
   "image-det": "rect",
@@ -196,6 +197,7 @@ export function DashboardPage() {
   const [advanced, setAdvanced] = useState<DashboardFilters>(EMPTY_FILTERS);
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const wizardOpen = searchParams.get("new") === "1";
   const viewMode: "list" | "grid" = searchParams.get("view") === "grid" ? "grid" : "list";
@@ -219,7 +221,7 @@ export function DashboardPage() {
 
   const onOpenProject = (p: ProjectResponse) => {
     if (p.type_key === "image-det") {
-      navigate(`/projects/${p.id}/annotate`);
+      navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
       pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type_label} 的标注界面尚未实现` });
     }

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -11,6 +11,7 @@ import { SectionDivider } from "@/components/ui/SectionDivider";
 import { useAnnotatorStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
 import { MyBatchesCard } from "./MyBatchesCard";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 
 function formatMs(ms: number | null | undefined): string {
   if (ms == null) return "—";
@@ -24,6 +25,9 @@ export function AnnotatorDashboard() {
   const { data: stats, isLoading } = useAnnotatorStats();
   const { data: myProjects = [] } = useProjects();
   const navigate = useNavigate();
+  const location = useLocation();
+  const openWorkbench = (projectId: string) =>
+    navigate(buildWorkbenchUrl(projectId, { returnTo: currentWorkbenchReturnTo(location) }));
 
   const sortedProjects = useMemo(
     () =>
@@ -245,7 +249,7 @@ export function AnnotatorDashboard() {
                   <tr
                     key={p.id}
                     style={{ cursor: "pointer" }}
-                    onClick={() => navigate(`/projects/${p.id}/annotate`)}
+                    onClick={() => openWorkbench(p.id)}
                   >
                     <td style={{ padding: "10px 12px 10px 16px", borderBottom: "1px solid var(--color-border)" }}>
                       <div style={{ fontSize: 13, fontWeight: 500 }}>{p.name}</div>
@@ -266,7 +270,7 @@ export function AnnotatorDashboard() {
                       <Button
                         size="sm"
                         variant="primary"
-                        onClick={(e: any) => { e.stopPropagation(); navigate(`/projects/${p.id}/annotate`); }}
+                        onClick={(e: any) => { e.stopPropagation(); openWorkbench(p.id); }}
                       >
                         <Icon name="target" size={11} />打开
                       </Button>

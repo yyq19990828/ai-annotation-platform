@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -10,6 +10,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import type { ProjectResponse } from "@/api/projects";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
 const FILTER_STATUS_MAP: Record<string, string | undefined> = {
@@ -23,10 +24,11 @@ export function ViewerDashboard() {
   const [filter, setFilter] = useState<string>("全部");
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
   const pushToast = useToastStore((s) => s.push);
   const onOpenProject = (p: ProjectResponse) => {
     if (p.type_key === "image-det") {
-      navigate(`/projects/${p.id}/annotate`);
+      navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
       pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type_label} 的标注界面尚未实现` });
     }

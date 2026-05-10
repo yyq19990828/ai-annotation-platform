@@ -6,7 +6,7 @@
  */
 
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { Card } from "@/components/ui/Card";
@@ -17,6 +17,7 @@ import {
   adminPreannotateJobsApi,
   type PredictionJobOut,
 } from "@/api/adminPreannotateJobs";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 
 import {
   PAGE_PADDING_X,
@@ -35,6 +36,7 @@ type StatusFilter = "" | "running" | "completed" | "failed";
 
 export default function AIPreAnnotateJobsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   // v0.9.12 · ModelMarket failed tab redirect 来源支持 ?status=failed 直接落到失败筛选.
   const initialStatus = (() => {
@@ -154,7 +156,12 @@ export default function AIPreAnnotateJobsPage() {
                 </thead>
                 <tbody>
                   {items.map((it) => (
-                    <JobRow key={it.id} job={it} navigate={navigate} />
+                    <JobRow
+                      key={it.id}
+                      job={it}
+                      navigate={navigate}
+                      returnTo={currentWorkbenchReturnTo(location)}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -204,9 +211,11 @@ export default function AIPreAnnotateJobsPage() {
 function JobRow({
   job,
   navigate,
+  returnTo,
 }: {
   job: PredictionJobOut;
   navigate: (path: string) => void;
+  returnTo: string;
 }) {
   const promptShort =
     job.prompt.length > 50 ? job.prompt.slice(0, 50) + "…" : job.prompt;
@@ -267,7 +276,10 @@ function JobRow({
           size="sm"
           variant="ghost"
           onClick={() =>
-            navigate(`/projects/${job.project_id}/annotate?batch=${job.batch_id ?? ""}`)
+            navigate(buildWorkbenchUrl(job.project_id, {
+              batchId: job.batch_id,
+              returnTo,
+            }))
           }
           title="去工作台"
           disabled={!job.batch_id}

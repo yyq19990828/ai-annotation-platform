@@ -211,7 +211,7 @@ export function TaskQueuePanel({
       <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--color-border)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <Button variant="ghost" size="sm" onClick={onBack} style={{ padding: "2px 6px" }}>
-            <Icon name="chevLeft" size={11} />返回总览
+            <Icon name="chevLeft" size={11} />返回
           </Button>
           <Button variant="ghost" size="sm" onClick={onToggle} title="收起任务列表" style={{ padding: "2px 6px" }}>
             <Icon name="panelLeft" size={14} />

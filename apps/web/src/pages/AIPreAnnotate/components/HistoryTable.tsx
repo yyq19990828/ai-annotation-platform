@@ -4,7 +4,7 @@
  */
 
 import { Fragment, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -12,6 +12,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
 import type { PreannotateQueueItem, BulkClearMode, BulkClearResponse } from "@/api/adminPreannotate";
 import { useBulkPreannotateClear } from "@/hooks/useBulkPreannotateActions";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import {
   cardBodyStyle,
   cardHeaderStyle,
@@ -33,6 +34,7 @@ interface Props {
 
 export function HistoryTable({ items, isLoading }: Props) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("last_run_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -314,7 +316,10 @@ export function HistoryTable({ items, isLoading }: Props) {
                                       variant="ghost"
                                       onClick={() =>
                                         navigate(
-                                          `/projects/${it.project_id}/annotate?batch=${it.batch_id}`,
+                                          buildWorkbenchUrl(it.project_id, {
+                                            batchId: it.batch_id,
+                                            returnTo: currentWorkbenchReturnTo(location),
+                                          }),
                                         )
                                       }
                                       title="打开工作台接管 review"

@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import {
   useNotifications,
@@ -10,6 +10,7 @@ import type { NotificationItem } from "@/api/notifications";
 import { useAuthStore } from "@/stores/authStore";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 
 function relativeTime(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -134,6 +135,7 @@ function NotifRow({ item, onClick }: NotifRowProps) {
  */
 export function NotificationsPopover() {
   const navigate = useNavigate();
+  const location = useLocation();
   const role = useAuthStore((s) => s.user?.role);
   const openBugDrawer = useBugDrawerStore((s) => s.openDrawer);
   const { data: unreadData } = useUnreadCount();
@@ -203,7 +205,10 @@ export function NotificationsPopover() {
               const payload = (item.payload || {}) as { project_id?: string };
               const projectId = payload.project_id;
               if (projectId) {
-                navigate(`/projects/${projectId}/annotate?batch=${item.target_id}`);
+                navigate(buildWorkbenchUrl(projectId, {
+                  batchId: item.target_id,
+                  returnTo: currentWorkbenchReturnTo(location),
+                }));
               }
             }
             close();

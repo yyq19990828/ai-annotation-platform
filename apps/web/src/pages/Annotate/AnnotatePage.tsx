@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +12,7 @@ import { batchesApi, type BatchResponse } from "@/api/batches";
 import type { MyBatchItem } from "@/api/dashboard";
 import type { TaskResponse } from "@/types";
 import { AnnotateSidebar } from "./AnnotateSidebar";
+import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 
 const STATUS_BADGE: Record<string, { label: string; variant: "accent" | "warning" | "danger" | "outline" }> = {
   active: { label: "未开始", variant: "outline" },
@@ -88,6 +89,7 @@ function TaskRow({ task, onOpen }: { task: TaskResponse; onOpen: () => void }) {
 export function AnnotatePage() {
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialBatchId = searchParams.get("batch") ?? "";
@@ -135,9 +137,11 @@ export function AnnotatePage() {
 
   const openWorkbench = (taskId?: string) => {
     if (!selectedBatch) return;
-    const q = new URLSearchParams({ batch: selectedBatch.batch_id });
-    if (taskId) q.set("task", taskId);
-    navigate(`/projects/${selectedBatch.project_id}/annotate?${q.toString()}`);
+    navigate(buildWorkbenchUrl(selectedBatch.project_id, {
+      batchId: selectedBatch.batch_id,
+      taskId,
+      returnTo: currentWorkbenchReturnTo(location),
+    }));
   };
 
   // B-20：分三档进度 — 已动工 / 送审 / 已通过；提交按钮不再以 allDone 强制门禁，
