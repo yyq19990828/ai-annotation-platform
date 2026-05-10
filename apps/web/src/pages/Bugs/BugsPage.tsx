@@ -304,11 +304,12 @@ export function BugsPage() {
                 </div>
               ))}
             </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+              <textarea
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
-                placeholder="添加评论..."
+                placeholder="添加评论，支持 Markdown..."
+                rows={3}
                 style={{
                   flex: 1,
                   padding: "6px 8px",
@@ -317,8 +318,15 @@ export function BugsPage() {
                   border: "1px solid var(--color-border)",
                   borderRadius: "var(--radius-md)",
                   color: "var(--color-fg)",
+                  fontFamily: "inherit",
+                  resize: "vertical",
                 }}
-                onKeyDown={(e) => e.key === "Enter" && addComment()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    addComment();
+                  }
+                }}
               />
               <button
                 onClick={addComment}

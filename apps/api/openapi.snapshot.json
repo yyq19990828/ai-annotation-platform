@@ -2642,6 +2642,7 @@
       "BugCommentCreate": {
         "properties": {
           "body": {
+            "maxLength": 10000,
             "minLength": 1,
             "title": "Body",
             "type": "string"
@@ -2722,6 +2723,7 @@
             "title": "Browser Ua"
           },
           "description": {
+            "maxLength": 20000,
             "minLength": 1,
             "title": "Description",
             "type": "string"
@@ -2745,6 +2747,7 @@
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "maxItems": 100,
                 "type": "array"
               },
               {
@@ -2760,6 +2763,7 @@
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "maxItems": 100,
                 "type": "array"
               },
               {
@@ -2860,7 +2864,6 @@
             "title": "Browser Ua"
           },
           "comments": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/BugCommentOut"
             },
@@ -3357,6 +3360,8 @@
           "description": {
             "anyOf": [
               {
+                "maxLength": 20000,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -11212,6 +11217,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BugReportList"
+                }
+              },
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
                 }
               }
             },

@@ -48,6 +48,9 @@ const AuditPage = lazy(() =>
 const BugsPage = lazy(() =>
   import("@/pages/Bugs/BugsPage").then((m) => ({ default: m.BugsPage }))
 );
+const BugReportDrawer = lazy(() =>
+  import("@/components/bugreport/BugReportDrawer").then((m) => ({ default: m.BugReportDrawer }))
+);
 const SettingsPage = lazy(() =>
   import("@/pages/Settings/SettingsPage").then((m) => ({ default: m.SettingsPage }))
 );
@@ -70,7 +73,6 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useAppStore } from "@/stores/appStore";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { BugReportFAB } from "@/components/bugreport/BugReportFAB";
-import { BugReportDrawer } from "@/components/bugreport/BugReportDrawer";
 import { initBugReportCapture, patchFetchForBugCapture } from "@/utils/bugReportCapture";
 import { PageLoader } from "@/components/PageLoader";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
@@ -162,7 +164,11 @@ function AppShell() {
       </main>
       <ToastRack />
       <BugReportFAB onClick={() => openBugDrawer()} />
-      <BugReportDrawer open={bugDrawerOpen} focusBugId={bugDrawerFocusId} onClose={closeBugDrawer} />
+      {bugDrawerOpen && (
+        <Suspense fallback={null}>
+          <BugReportDrawer open={bugDrawerOpen} focusBugId={bugDrawerFocusId} onClose={closeBugDrawer} />
+        </Suspense>
+      )}
       {/* v0.9.11 PerfHud · 全局浮窗 (内部按角色 gating + visibility store 控制渲染) */}
       <PerfHud />
     </div>
@@ -199,7 +205,11 @@ function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
       </Suspense>
       <ToastRack />
       <BugReportFAB onClick={() => openBugDrawer()} />
-      <BugReportDrawer open={bugDrawerOpen} focusBugId={bugDrawerFocusId} onClose={closeBugDrawer} />
+      {bugDrawerOpen && (
+        <Suspense fallback={null}>
+          <BugReportDrawer open={bugDrawerOpen} focusBugId={bugDrawerFocusId} onClose={closeBugDrawer} />
+        </Suspense>
+      )}
       {tooNarrow && <MobileWorkbenchBlock />}
     </div>
   );

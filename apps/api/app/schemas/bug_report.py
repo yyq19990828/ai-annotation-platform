@@ -48,15 +48,15 @@ class BugAttachment(BaseModel):
 
 class BugReportCreate(BaseModel):
     title: str = Field(min_length=1, max_length=500)
-    description: str = Field(min_length=1)
+    description: str = Field(min_length=1, max_length=20000)
     severity: str = Field(default="medium", pattern="^(low|medium|high|critical)$")
     route: str = ""
     browser_ua: str | None = None
     viewport: str | None = None
     project_id: UUID | None = None
     task_id: UUID | None = None
-    recent_api_calls: list[dict] | None = None
-    recent_console_errors: list[dict] | None = None
+    recent_api_calls: list[dict] | None = Field(default=None, max_length=100)
+    recent_console_errors: list[dict] | None = Field(default=None, max_length=100)
     screenshot_url: str | None = None
     attachments: list[BugAttachment] = Field(default_factory=list, max_length=5)
 
@@ -67,7 +67,7 @@ class BugReportUpdate(BaseModel):
     )
     severity: str | None = Field(default=None, pattern="^(low|medium|high|critical)$")
     title: str | None = Field(default=None, min_length=1, max_length=500)
-    description: str | None = None
+    description: str | None = Field(default=None, min_length=1, max_length=20000)
     duplicate_of_id: UUID | None = None
     assigned_to_id: UUID | None = None
     fixed_in_version: str | None = None
@@ -75,7 +75,7 @@ class BugReportUpdate(BaseModel):
 
 
 class BugCommentCreate(BaseModel):
-    body: str = Field(min_length=1)
+    body: str = Field(min_length=1, max_length=10000)
 
 
 class BugCommentOut(BaseModel):
@@ -124,7 +124,7 @@ class BugReportOut(BaseModel):
 
 
 class BugReportDetail(BugReportOut):
-    comments: list[BugCommentOut] = []
+    comments: list[BugCommentOut] = Field(default_factory=list)
 
 
 class BugReportList(BaseModel):

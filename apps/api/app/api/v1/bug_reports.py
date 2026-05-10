@@ -2,8 +2,11 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
+import redis.asyncio as aioredis
+from redis.asyncio.connection import ConnectionPool
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.ratelimit import limiter
 from app.deps import get_db, get_current_user, require_roles
 from app.db.enums import UserRole
@@ -27,6 +30,25 @@ from sqlalchemy import select
 from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter()
+_BUG_REOPEN_REDIS_POOL: ConnectionPool | None = None
+
+
+def _get_bug_reopen_redis() -> aioredis.Redis:
+    global _BUG_REOPEN_REDIS_POOL
+    if _BUG_REOPEN_REDIS_POOL is None:
+        _BUG_REOPEN_REDIS_POOL = ConnectionPool.from_url(
+            settings.redis_url,
+            max_connections=8,
+            decode_responses=True,
+        )
+    return aioredis.Redis(connection_pool=_BUG_REOPEN_REDIS_POOL)
+
+
+async def close_bug_reopen_redis_pool() -> None:
+    global _BUG_REOPEN_REDIS_POOL
+    if _BUG_REOPEN_REDIS_POOL is not None:
+        await _BUG_REOPEN_REDIS_POOL.aclose()
+        _BUG_REOPEN_REDIS_POOL = None
 
 
 class ScreenshotInitRequest(BaseModel):
@@ -131,7 +153,18 @@ async def create_bug_report(
     return report
 
 
-@router.get("/bug_reports", response_model=BugReportList)
+@router.get(
+    "/bug_reports",
+    response_model=BugReportList,
+    responses={
+        200: {
+            "content": {
+                "application/json": {},
+                "text/markdown": {"schema": {"type": "string"}},
+            }
+        }
+    },
+)
 async def list_bug_reports(
     status: str | None = Query(None),
     severity: str | None = Query(None),
@@ -332,22 +365,16 @@ async def add_bug_comment(
         "duplicate",
     )
     if will_reopen:
-        import redis.asyncio as aioredis
-        from app.config import settings
-
         rkey = f"bug:reopen:{current_user.id}:{report_id}:day"
-        r = aioredis.from_url(settings.redis_url)
-        try:
-            count = await r.incr(rkey)
-            if count == 1:
-                await r.expire(rkey, 86400)
-            if count > 5:
-                raise HTTPException(
-                    status_code=429,
-                    detail="reopen 次数超出每日上限（5 次/日）",
-                )
-        finally:
-            await r.close()
+        r = _get_bug_reopen_redis()
+        count = await r.incr(rkey)
+        if count == 1:
+            await r.expire(rkey, 86400)
+        if count > 5:
+            raise HTTPException(
+                status_code=429,
+                detail="reopen 次数超出每日上限（5 次/日）",
+            )
 
     result = await svc.add_comment(report_id, current_user.id, data.body)
     if not result:
