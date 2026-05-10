@@ -3,14 +3,17 @@ import { authApi, type LoginPayload } from "../api/auth";
 import { useAuthStore } from "../stores/authStore";
 
 export function useLogin() {
-  const { setToken, setUser } = useAuthStore();
+  const setAuth = useAuthStore((s) => s.setAuth);
 
   return useMutation({
     mutationFn: async (payload: LoginPayload) => {
       const { access_token } = await authApi.login(payload);
-      setToken(access_token);
-      const user = await authApi.me();
-      setUser(user);
+      localStorage.setItem("token", access_token);
+      const user = await authApi.me().catch((err) => {
+        localStorage.removeItem("token");
+        throw err;
+      });
+      setAuth(access_token, user);
       return user;
     },
   });
