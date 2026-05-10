@@ -18,9 +18,7 @@ from datetime import datetime
 class PredictionShape(BaseModel):
     type: str  # LabelStudio 类型: rectanglelabels | polygonlabels | ...
     class_name: str
-    geometry: Union[
-        BboxGeometry, PolygonGeometry, MultiPolygonGeometry, dict[str, Any]
-    ]
+    geometry: Union[BboxGeometry, PolygonGeometry, MultiPolygonGeometry, dict[str, Any]]
     confidence: float
 
 

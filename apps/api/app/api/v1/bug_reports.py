@@ -68,7 +68,9 @@ async def init_bug_screenshot_upload(
         }[data.content_type]
         safe_name += ext
     # B-4 · bug 截图改投独立桶 (bug-reports),与 anno 桶解耦
-    storage_key = f"{BUG_ATTACHMENT_KEY_PREFIX}{current_user.id}/{uuid.uuid4()}-{safe_name}"
+    storage_key = (
+        f"{BUG_ATTACHMENT_KEY_PREFIX}{current_user.id}/{uuid.uuid4()}-{safe_name}"
+    )
     upload_url = storage_service.generate_upload_url(
         storage_key,
         data.content_type,
