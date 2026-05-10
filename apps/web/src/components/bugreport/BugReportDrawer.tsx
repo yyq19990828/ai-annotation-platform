@@ -167,7 +167,8 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
           setScreenshotUploadFail(null);
         } catch (e) {
           // v0.7.0：失败不再静默降级，停在表单让用户选 retry / skip / cancel
-          setScreenshotUploadFail(e instanceof Error ? e.message : String(e));
+          console.error("Bug screenshot upload failed", e);
+          setScreenshotUploadFail("请稍后重试，或跳过截图继续提交。");
           setSubmitting(false);
           return;
         }

@@ -47,7 +47,7 @@ class BugReportService:
                 report.fixed_at = datetime.now(timezone.utc)
 
         for key, value in fields.items():
-            if value is not None and hasattr(report, key):
+            if hasattr(report, key):
                 setattr(report, key, value)
 
         await self.db.flush()
@@ -90,9 +90,6 @@ class BugReportService:
     async def delete(self, report_id: uuid.UUID) -> None:
         report = await self.db.get(BugReport, report_id)
         if report:
-            await self.db.execute(
-                select(BugComment).where(BugComment.bug_report_id == report_id)
-            )
             from sqlalchemy import delete as sa_delete
 
             await self.db.execute(
@@ -171,22 +168,31 @@ class BugReportService:
         return similar
 
     async def get_markdown(self, report_id: uuid.UUID) -> str | None:
-        report, comments = await self.get_with_comments(report_id)
+        report, comment_rows = await self.get_with_comments(report_id)
         if not report:
             return None
+        comments = [comment for comment, _, _ in comment_rows]
         return self._format_markdown(report, comments)
 
     async def list_markdown(self, status: str = "new") -> str:
         items, _ = await self.list(status=status, limit=50)
+        if not items:
+            return ""
+
+        comment_result = await self.db.execute(
+            select(BugComment)
+            .where(BugComment.bug_report_id.in_([item.id for item in items]))
+            .order_by(BugComment.bug_report_id, BugComment.created_at)
+        )
+        comments_by_report: dict[uuid.UUID, list[BugComment]] = {
+            item.id: [] for item in items
+        }
+        for comment in comment_result.scalars().all():
+            comments_by_report.setdefault(comment.bug_report_id, []).append(comment)
+
         parts: list[str] = []
         for item in items:
-            result = await self.db.execute(
-                select(BugComment)
-                .where(BugComment.bug_report_id == item.id)
-                .order_by(BugComment.created_at)
-            )
-            comments = list(result.scalars().all())
-            parts.append(self._format_markdown(item, comments))
+            parts.append(self._format_markdown(item, comments_by_report[item.id]))
             parts.append("\n---\n")
         return "\n".join(parts)
 

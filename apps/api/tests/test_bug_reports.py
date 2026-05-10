@@ -83,6 +83,21 @@ async def test_admin_comment_on_fixed_does_not_reopen(
 
 
 @pytest.mark.asyncio
+async def test_bug_report_update_can_clear_nullable_fields(db_session, annotator):
+    """PATCH 使用 exclude_unset 后，显式 null 应能清空 nullable 字段。"""
+    user, _ = annotator
+    report = await _seed_bug(db_session, user.id, status="fixed")
+    report.resolution = "已在 v1 修复"
+    await db_session.flush()
+
+    svc = BugReportService(db_session)
+    updated = await svc.update(report.id, resolution=None)
+
+    assert updated is not None
+    assert updated.resolution is None
+
+
+@pytest.mark.asyncio
 async def test_reporter_comment_on_new_does_not_reopen(db_session, annotator):
     """非终态评论不触发 reopen。"""
     user, _ = annotator
@@ -233,6 +248,56 @@ async def test_bug_report_attachment_invalid_key_rejected(
                 }
             ],
         },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_bug_report_rejects_oversized_description(httpx_client_bound, annotator):
+    """描述长度有硬上限，避免前端捕获内容被无限放大。"""
+    _, token = annotator
+    resp = await httpx_client_bound.post(
+        "/api/v1/bug_reports",
+        json={
+            "title": "too long",
+            "description": "x" * 20001,
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_bug_report_rejects_too_many_recent_api_calls(
+    httpx_client_bound, annotator
+):
+    """最近请求记录最多保留 100 条。"""
+    _, token = annotator
+    resp = await httpx_client_bound.post(
+        "/api/v1/bug_reports",
+        json={
+            "title": "too many calls",
+            "description": "d",
+            "recent_api_calls": [{"url": "/x"} for _ in range(101)],
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_bug_comment_rejects_oversized_body(
+    httpx_client_bound, db_session, annotator
+):
+    """评论正文有硬上限，仍允许普通 Markdown 长评论。"""
+    reporter, token = annotator
+    report = await _seed_bug(db_session, reporter.id, status="new")
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/bug_reports/{report.id}/comments",
+        json={"body": "x" * 10001},
         headers=_bearer(token),
     )
     assert resp.status_code == 422
