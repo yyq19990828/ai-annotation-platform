@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+concurrency:
+  group: claude-docs-impact-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   claude-docs-impact:
     runs-on: ubuntu-latest
@@ -17,7 +21,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+
+      - name: Fetch PR range
+        run: git fetch --depth=100 origin ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}
 
       - name: Prepare docs impact hint
         run: |
@@ -27,7 +34,14 @@ jobs:
             --write=.tmp/docs-impact.json \
             --write-markdown=.tmp/docs-impact.md
 
+      - name: Check if Claude review needed
+        id: needs-claude
+        run: |
+          NEEDED=$(node -e "const r=JSON.parse(require('fs').readFileSync('.tmp/docs-impact.json','utf8')); console.log(r.hasPotentialMiss ? 'true' : 'false')")
+          echo "needed=$NEEDED" >> $GITHUB_OUTPUT
+
       - name: Run Claude Docs Impact Review
+        if: steps.needs-claude.outputs.needed == 'true'
         id: claude-docs-impact
         uses: anthropics/claude-code-action@v1
         with:
