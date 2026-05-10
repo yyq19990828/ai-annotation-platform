@@ -24,6 +24,10 @@ vi.mock("@/hooks/useBatches", () => ({
   useBulkDeleteBatches: () => mutationStub(),
   useBulkReassignBatches: () => mutationStub(),
   useBulkActivateBatches: () => mutationStub(),
+  useBulkApproveBatches: () => mutationStub(),
+  useBulkRejectBatches: () => mutationStub(),
+  useAdminLockBatch: () => mutationStub(),
+  useAdminUnlockBatch: () => mutationStub(),
   useUnclassifiedTaskCount: () => mockUseUnclassified(),
 }));
 vi.mock("@/hooks/useBatchEventsSocket", () => ({

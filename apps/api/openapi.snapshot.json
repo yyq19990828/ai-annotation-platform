@@ -85,6 +85,21 @@
         "title": "AdminDashboardStats",
         "type": "object"
       },
+      "AdminLockRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "AdminLockRequest",
+        "type": "object"
+      },
       "AdminPeopleList": {
         "properties": {
           "items": {
@@ -2017,6 +2032,46 @@
       },
       "BatchOut": {
         "properties": {
+          "admin_lock_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Lock Reason"
+          },
+          "admin_locked": {
+            "default": false,
+            "title": "Admin Locked",
+            "type": "boolean"
+          },
+          "admin_locked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Locked At"
+          },
+          "admin_locked_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Locked By"
+          },
           "annotator": {
             "anyOf": [
               {
@@ -3495,6 +3550,25 @@
         "title": "BulkBatchActionResponse",
         "type": "object"
       },
+      "BulkBatchApprove": {
+        "properties": {
+          "batch_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Batch Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batch_ids"
+        ],
+        "title": "BulkBatchApprove",
+        "type": "object"
+      },
       "BulkBatchIds": {
         "properties": {
           "batch_ids": {
@@ -3555,6 +3629,32 @@
           "batch_ids"
         ],
         "title": "BulkBatchReassign",
+        "type": "object"
+      },
+      "BulkBatchReject": {
+        "properties": {
+          "batch_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Batch Ids",
+            "type": "array"
+          },
+          "feedback": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Feedback",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_ids",
+          "feedback"
+        ],
+        "title": "BulkBatchReject",
         "type": "object"
       },
       "BulkClearItem": {
@@ -14530,6 +14630,64 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/batches/bulk-approve": {
+      "post": {
+        "operationId": "bulk_approve_batches_api_v1_projects__project_id__batches_bulk_approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkBatchApprove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkBatchActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bulk Approve Batches",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/batches/bulk-archive": {
       "post": {
         "operationId": "bulk_archive_batches_api_v1_projects__project_id__batches_bulk_archive_post",
@@ -14699,6 +14857,64 @@
           }
         ],
         "summary": "Bulk Reassign Batches",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/bulk-reject": {
+      "post": {
+        "operationId": "bulk_reject_batches_api_v1_projects__project_id__batches_bulk_reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkBatchReject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkBatchActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bulk Reject Batches",
         "tags": [
           "batches"
         ]
@@ -15030,6 +15246,132 @@
           }
         ],
         "summary": "Update Batch",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/admin-lock": {
+      "post": {
+        "operationId": "admin_lock_batch_api_v1_projects__project_id__batches__batch_id__admin_lock_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Lock Batch",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/admin-unlock": {
+      "post": {
+        "operationId": "admin_unlock_batch_api_v1_projects__project_id__batches__batch_id__admin_unlock_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Unlock Batch",
         "tags": [
           "batches"
         ]

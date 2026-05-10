@@ -19,6 +19,10 @@ import {
   useBulkReassignBatches,
   useBulkActivateBatches,
   useUnclassifiedTaskCount,
+  useAdminLockBatch,
+  useAdminUnlockBatch,
+  useBulkApproveBatches,
+  useBulkRejectBatches,
 } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
@@ -28,6 +32,8 @@ import { RejectBatchModal } from "./RejectBatchModal";
 import { BulkReassignModal } from "./BulkReassignModal";
 import { ReverseTransitionModal, type ReverseKind } from "./ReverseTransitionModal";
 import { ResetBatchModal } from "./ResetBatchModal";
+import { AdminLockModal } from "./AdminLockModal";
+import { BulkRejectModal } from "./BulkRejectModal";
 import { BatchesKanbanView } from "./BatchesKanbanView";
 import { BatchAuditLogDrawer } from "./BatchAuditLogDrawer";
 import type { ProjectResponse } from "@/api/projects";
@@ -55,13 +61,15 @@ const STATUS_VARIANTS: Record<string, "default" | "accent" | "success" | "warnin
 
 type CreateMode = "single" | "split";
 
-type BulkActionKind = "archive" | "delete" | "reassign" | "activate";
+type BulkActionKind = "archive" | "delete" | "reassign" | "activate" | "approve" | "reject";
 
 const BULK_LABEL: Record<BulkActionKind, string> = {
   archive: "归档",
   delete: "删除",
   reassign: "改派",
   activate: "激活",
+  approve: "通过",
+  reject: "驳回",
 };
 
 export function BatchesSection({ project }: { project: ProjectResponse }) {
@@ -77,6 +85,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const bulkDelete = useBulkDeleteBatches(project.id);
   const bulkReassign = useBulkReassignBatches(project.id);
   const bulkActivate = useBulkActivateBatches(project.id);
+  const bulkApprove = useBulkApproveBatches(project.id);
+  const bulkReject = useBulkRejectBatches(project.id);
+  const adminLock = useAdminLockBatch(project.id);
+  const adminUnlock = useAdminUnlockBatch(project.id);
   const isOwner = useIsProjectOwner(project);
   const { data: unclassified } = useUnclassifiedTaskCount(project.id);
   const unclassifiedCount = unclassified?.count ?? 0;
@@ -104,6 +116,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const [auditTarget, setAuditTarget] = useState<BatchResponse | null>(null);
   // v0.7.6 · 终极重置到 draft
   const [resetTarget, setResetTarget] = useState<BatchResponse | null>(null);
+  // v0.9.15 · ADR-0008 admin-lock
+  const [lockTarget, setLockTarget] = useState<BatchResponse | null>(null);
 
   // v0.7.6 · view toggle [list | kanban] + URL ?batch_view=kanban 持久化
   const [searchParams, setSearchParams] = useSearchParams();
@@ -200,6 +214,43 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           },
         },
       );
+    });
+  };
+
+  const runBulkApprove = () => {
+    bulkApprove.mutate([...selectedIds], {
+      onSuccess: (data) => {
+        handleBulkResult("approve", data);
+        setConfirmBulk(null);
+      },
+      onError: (e) => pushToast({ msg: "批量通过失败", sub: (e as Error).message }),
+    });
+  };
+
+  const runBulkReject = (feedback: string) => {
+    bulkReject.mutate({ batchIds: [...selectedIds], feedback }, {
+      onSuccess: (data) => {
+        handleBulkResult("reject", data);
+        setConfirmBulk(null);
+      },
+      onError: (e) => pushToast({ msg: "批量驳回失败", sub: (e as Error).message }),
+    });
+  };
+
+  const handleAdminLock = (batch: BatchResponse, reason: string) => {
+    adminLock.mutate({ batchId: batch.id, reason }, {
+      onSuccess: () => {
+        pushToast({ msg: `批次 ${batch.display_id} 已锁定`, kind: "success" });
+        setLockTarget(null);
+      },
+      onError: (e) => pushToast({ msg: "锁定失败", sub: (e as Error).message }),
+    });
+  };
+
+  const handleAdminUnlock = (batch: BatchResponse) => {
+    adminUnlock.mutate(batch.id, {
+      onSuccess: () => pushToast({ msg: `批次 ${batch.display_id} 已解锁`, kind: "success" }),
+      onError: (e) => pushToast({ msg: "解锁失败", sub: (e as Error).message }),
     });
   };
 
@@ -394,6 +445,20 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               <Button onClick={() => setConfirmBulk("activate")} title="对选中的 draft 批次批量激活">
                 <Icon name="play" size={12} /> 激活
               </Button>
+              <Button
+                onClick={() => setConfirmBulk("approve")}
+                style={{ background: "var(--color-success)", color: "#fff" }}
+                title="批量通过审核（仅审核中的批次生效）"
+              >
+                <Icon name="check" size={12} /> 通过
+              </Button>
+              <Button
+                onClick={() => setConfirmBulk("reject")}
+                style={{ background: "var(--color-danger)", color: "#fff" }}
+                title="批量驳回（仅审核中的批次生效，需填写驳回原因）"
+              >
+                <Icon name="x" size={12} /> 驳回
+              </Button>
               <Button onClick={() => setReassignOpen(true)} title="批量改派 annotator / reviewer">
                 <Icon name="users" size={12} /> 改派
               </Button>
@@ -541,9 +606,18 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     </div>
                   </td>
                   <td style={{ padding: "10px 12px" }}>
-                    <Badge variant={STATUS_VARIANTS[b.status] ?? "default"} dot>
-                      {STATUS_LABELS[b.status] ?? b.status}
-                    </Badge>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                      <Badge variant={STATUS_VARIANTS[b.status] ?? "default"} dot>
+                        {STATUS_LABELS[b.status] ?? b.status}
+                      </Badge>
+                      {b.admin_locked && (
+                        <span title={b.admin_lock_reason ?? "已锁定"}>
+                          <Badge variant="warning">
+                            <Icon name="lock" size={10} /> 已锁定
+                          </Badge>
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td style={{ padding: "10px 12px" }}>
                     {(() => {
@@ -687,6 +761,25 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                       <Button onClick={() => setAuditTarget(b)} title="操作历史">
                         <Icon name="clock" size={12} />
                       </Button>
+                      {/* v0.9.15 · ADR-0008 admin-lock */}
+                      {isOwner && !b.admin_locked && (
+                        <Button
+                          onClick={() => setLockTarget(b)}
+                          title="锁定批次（冻结自动推进，阻止新派单）"
+                          style={{ color: "var(--color-warning)" }}
+                        >
+                          <Icon name="lock" size={12} />
+                        </Button>
+                      )}
+                      {isOwner && b.admin_locked && (
+                        <Button
+                          onClick={() => handleAdminUnlock(b)}
+                          title="解锁批次"
+                          style={{ color: "var(--color-success)" }}
+                        >
+                          <Icon name="unlock" size={12} />
+                        </Button>
+                      )}
                     </div>
                     {b.status === "rejected" && b.review_feedback && (
                       <div
@@ -871,7 +964,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
       {/* v0.7.3：批量操作二次确认 Modal */}
       <Modal
-        open={confirmBulk === "archive" || confirmBulk === "delete" || confirmBulk === "activate"}
+        open={confirmBulk === "archive" || confirmBulk === "delete" || confirmBulk === "activate" || confirmBulk === "approve"}
         title={`批量${confirmBulk ? BULK_LABEL[confirmBulk] : ""}`}
         onClose={() => setConfirmBulk(null)}
       >
@@ -887,6 +980,9 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           {confirmBulk === "activate" && (
             <p>将激活已选 <strong>{selectedCount}</strong> 个 draft 批次。前置条件不满足（未指派标注员或任务为空）的批次会失败但不影响其他。</p>
           )}
+          {confirmBulk === "approve" && (
+            <p>将把已选 <strong>{selectedCount}</strong> 个批次中的「审核中」批次全部通过。非审核中状态的批次会自动跳过。</p>
+          )}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
             <Button onClick={() => setConfirmBulk(null)}>取消</Button>
             <Button
@@ -894,11 +990,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 if (confirmBulk === "archive") runBulkArchive();
                 else if (confirmBulk === "delete") runBulkDelete();
                 else if (confirmBulk === "activate") runBulkActivate();
+                else if (confirmBulk === "approve") runBulkApprove();
               }}
-              disabled={bulkArchive.isPending || bulkDelete.isPending || bulkActivate.isPending}
+              disabled={bulkArchive.isPending || bulkDelete.isPending || bulkActivate.isPending || bulkApprove.isPending}
               style={{
                 background:
-                  confirmBulk === "delete" ? "var(--color-danger)" : "var(--color-accent)",
+                  confirmBulk === "delete" ? "var(--color-danger)" :
+                  confirmBulk === "approve" ? "var(--color-success)" :
+                  "var(--color-accent)",
                 color: "#fff",
               }}
             >
@@ -944,6 +1043,26 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           projectId={project.id}
           batch={resetTarget}
           onClose={() => setResetTarget(null)}
+        />
+      )}
+
+      {/* v0.9.15：管理员锁定 Modal */}
+      {lockTarget && (
+        <AdminLockModal
+          batch={lockTarget}
+          onClose={() => setLockTarget(null)}
+          onSubmit={(reason) => handleAdminLock(lockTarget, reason)}
+          pending={adminLock.isPending}
+        />
+      )}
+
+      {/* v0.9.15：批量驳回 Modal */}
+      {confirmBulk === "reject" && (
+        <BulkRejectModal
+          count={selectedCount}
+          onClose={() => setConfirmBulk(null)}
+          onSubmit={runBulkReject}
+          pending={bulkReject.isPending}
         />
       )}
     </>

@@ -1,6 +1,6 @@
 # 0008 — 批次 admin-locked 字段（soft hold，与状态机正交）
 
-- **Status:** Proposed（2026-05-10 基于现仓代码路径复审后收紧范围）
+- **Status:** Accepted（实施完成于 v0.9.15，2026-05-11）
 - **Date:** 2026-05-06
 - **Deciders:** core team
 - **Supersedes:** —
@@ -239,3 +239,42 @@ TaskBatch.admin_locked.is_(False)
 - `apps/api/app/services/annotation.py`
 - `apps/api/app/api/v1/batches.py`
 - `apps/api/app/schemas/batch.py`
+
+## 实施细节（v0.9.15，2026-05-11）
+
+### 关键文件
+
+| 文件 | 变更 |
+|---|---|
+| `apps/api/alembic/versions/0055_batch_admin_lock.py` | Migration：4 列 + 部分索引 |
+| `apps/api/app/db/models/task_batch.py` | 4 mapped_column |
+| `apps/api/app/schemas/batch.py` | BatchOut 4 字段 + AdminLockRequest + BulkBatchApprove/Reject |
+| `apps/api/app/services/batch.py` | admin_lock/unlock + bulk_approve/reject + check_auto_transitions 短路 |
+| `apps/api/app/services/scheduler.py` | 候选查询加 `admin_locked.is_(False)` |
+| `apps/api/app/services/audit.py` | 4 AuditAction：batch.admin_lock/unlock、batch.bulk_approve/reject |
+| `apps/api/app/api/v1/batches.py` | 4 端点：admin-lock/unlock、bulk-approve/reject |
+| `apps/api/tests/test_scheduler.py` | 新建：19 个 scheduler 测试（Phase 1 门控） |
+| `apps/api/tests/test_batch_lifecycle.py` | TestAdminLock（10 cases）+ TestBulkApproveReject（8 cases） |
+| `apps/web/src/api/batches.ts` | 4 字段 + 4 API 方法 |
+| `apps/web/src/hooks/useBatches.ts` | 4 hooks |
+| `apps/web/src/pages/Projects/sections/BatchesSection.tsx` | lock/unlock 按钮 + badge + bulk approve/reject 操作栏 |
+| `apps/web/src/pages/Projects/sections/AdminLockModal.tsx` | 新建 |
+| `apps/web/src/pages/Projects/sections/BulkRejectModal.tsx` | 新建 |
+
+### 同时完成的 bulk-approve/reject（Phase 3）
+
+v0.9.15 同步实施了 bulk approve/reject，权限为 reviewer 级（reviewer / project_admin / super_admin）：
+
+- `POST /projects/{project_id}/batches/bulk-approve`：reviewing → approved，locked 批次 fail gracefully
+- `POST /projects/{project_id}/batches/bulk-reject`：reviewing → rejected + 任务软重置（review/completed → pending）+ 共享 feedback
+
+audit actions：`batch.bulk_approve`、`batch.bulk_reject`
+
+### 测试覆盖
+
+```
+pytest apps/api/tests/test_scheduler.py -v    # 19 passed
+pytest apps/api/tests/test_batch_lifecycle.py::TestAdminLock -v    # 10 passed
+pytest apps/api/tests/test_batch_lifecycle.py::TestBulkApproveReject -v  # 8 passed
+pnpm --filter web exec vitest run  # 435 passed
+```

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import select, func, update, delete, or_
+from sqlalchemy import Integer, select, func, update, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import BatchStatus, UserRole
@@ -707,6 +707,12 @@ class BatchService:
         if not batch:
             logger.info("check_auto_transitions: batch_id=%s not found", batch_id)
             return
+        # v0.9.15 · ADR-0008: admin_locked batch 跳过自动状态推进
+        if batch.admin_locked:
+            logger.info(
+                "check_auto_transitions: batch_id=%s admin_locked, skipping", batch_id
+            )
+            return
 
         from_status = batch.status
 
@@ -1053,6 +1059,145 @@ class BatchService:
             succeeded.append(bid)
         await self.db.flush()
         return {"succeeded": succeeded, "skipped": skipped, "failed": failed}
+
+    # ── v0.9.15 · ADR-0008 Admin Lock ─────────────────────────────────────
+
+    async def admin_lock(
+        self,
+        batch_id: uuid.UUID,
+        *,
+        reason: str,
+        locked_by: uuid.UUID,
+    ) -> TaskBatch:
+        batch = await self.db.get(TaskBatch, batch_id)
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+        if batch.admin_locked:
+            raise HTTPException(status_code=409, detail="Batch is already locked")
+        batch.admin_locked = True
+        batch.admin_lock_reason = reason
+        batch.admin_locked_at = datetime.now(timezone.utc)
+        batch.admin_locked_by = locked_by
+        await self.db.flush()
+        return batch
+
+    async def admin_unlock(self, batch_id: uuid.UUID) -> TaskBatch:
+        batch = await self.db.get(TaskBatch, batch_id)
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+        if not batch.admin_locked:
+            raise HTTPException(status_code=409, detail="Batch is not locked")
+        batch.admin_locked = False
+        batch.admin_lock_reason = None
+        batch.admin_locked_at = None
+        batch.admin_locked_by = None
+        await self.db.flush()
+        return batch
+
+    # ── v0.9.15 · Bulk Approve/Reject ──────────────────────────────────────
+
+    async def bulk_approve(
+        self,
+        project_id: uuid.UUID,
+        batch_ids: list[uuid.UUID],
+    ) -> dict[str, list]:
+        loaded = await self._load_batches_for_bulk(project_id, batch_ids)
+        succeeded: list[uuid.UUID] = []
+        skipped: list[dict] = []
+        failed: list[dict] = []
+        for bid in batch_ids:
+            batch = loaded.get(bid)
+            if batch is None:
+                failed.append({"batch_id": bid, "reason": "not found"})
+                continue
+            if batch.status == BatchStatus.APPROVED:
+                skipped.append({"batch_id": bid, "reason": "already approved"})
+                continue
+            if batch.admin_locked:
+                failed.append({"batch_id": bid, "reason": "batch is admin-locked"})
+                continue
+            if batch.status != BatchStatus.REVIEWING:
+                failed.append(
+                    {"batch_id": bid, "reason": f"cannot approve from '{batch.status}'"}
+                )
+                continue
+            batch.status = BatchStatus.APPROVED
+            succeeded.append(bid)
+        await self.db.flush()
+        return {"succeeded": succeeded, "skipped": skipped, "failed": failed}
+
+    async def bulk_reject(
+        self,
+        project_id: uuid.UUID,
+        batch_ids: list[uuid.UUID],
+        *,
+        feedback: str,
+        reviewer_id: uuid.UUID,
+    ) -> dict[str, list]:
+        loaded = await self._load_batches_for_bulk(project_id, batch_ids)
+        succeeded: list[uuid.UUID] = []
+        skipped: list[dict] = []
+        failed: list[dict] = []
+        for bid in batch_ids:
+            batch = loaded.get(bid)
+            if batch is None:
+                failed.append({"batch_id": bid, "reason": "not found"})
+                continue
+            if batch.status == BatchStatus.REJECTED:
+                skipped.append({"batch_id": bid, "reason": "already rejected"})
+                continue
+            if batch.status != BatchStatus.REVIEWING:
+                failed.append(
+                    {"batch_id": bid, "reason": f"cannot reject from '{batch.status}'"}
+                )
+                continue
+            # soft reset: review/completed tasks → pending
+            await self.db.execute(
+                update(Task)
+                .where(
+                    Task.batch_id == bid,
+                    Task.status.in_(["review", "completed"]),
+                )
+                .values(status="pending", is_labeled=False)
+            )
+            batch.status = BatchStatus.REJECTED
+            batch.review_feedback = feedback
+            batch.reviewed_at = datetime.now(timezone.utc)
+            batch.reviewed_by = reviewer_id
+            succeeded.append(bid)
+        await self.db.flush()
+        for bid in succeeded:
+            await self._recalculate_batch_counters(bid)
+        return {"succeeded": succeeded, "skipped": skipped, "failed": failed}
+
+    async def _load_batches_for_bulk(
+        self, project_id: uuid.UUID, batch_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, TaskBatch]:
+        rows = await self.db.execute(
+            select(TaskBatch).where(
+                TaskBatch.id.in_(batch_ids),
+                TaskBatch.project_id == project_id,
+            )
+        )
+        return {b.id: b for b in rows.scalars().all()}
+
+    async def _recalculate_batch_counters(self, batch_id: uuid.UUID) -> None:
+        result = await self.db.execute(
+            select(
+                func.count(Task.id).label("total"),
+                func.sum(func.cast(Task.is_labeled, Integer)).label("completed"),
+                func.sum(
+                    func.cast(Task.status == "review", Integer)
+                ).label("review"),
+            ).where(Task.batch_id == batch_id)
+        )
+        row = result.one()
+        batch = await self.db.get(TaskBatch, batch_id)
+        if batch:
+            batch.total_tasks = row.total or 0
+            batch.completed_tasks = row.completed or 0
+            batch.review_tasks = row.review or 0
+            await self.db.flush()
 
     # ── AI/ML hook ─────────────────────────────────────────────────────────
 

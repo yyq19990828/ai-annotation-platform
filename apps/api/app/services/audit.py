@@ -86,6 +86,11 @@ class AuditAction(str, Enum):
     PREANNOTATE_BULK_CLEAR = "preannotate.bulk_clear"
     # v0.8.8 · WebSocket 鉴权过期重连：grace 期内换发新 token
     AUTH_TOKEN_REFRESH = "auth.token_refresh"
+    # v0.9.15 · ADR-0008 批次 admin-lock + bulk approve/reject
+    BATCH_ADMIN_LOCK = "batch.admin_lock"
+    BATCH_ADMIN_UNLOCK = "batch.admin_unlock"
+    BULK_BATCH_APPROVE = "batch.bulk_approve"
+    BULK_BATCH_REJECT = "batch.bulk_reject"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

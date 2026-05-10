@@ -213,3 +213,54 @@ export function useResetBatch(projectId: string) {
     },
   });
 }
+
+// v0.9.15 · ADR-0008 admin-lock
+export function useAdminLockBatch(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ batchId, reason }: { batchId: string; reason: string }) =>
+      batchesApi.adminLock(projectId, batchId, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["batch-audit-logs", projectId] });
+    },
+  });
+}
+
+export function useAdminUnlockBatch(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (batchId: string) => batchesApi.adminUnlock(projectId, batchId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["batch-audit-logs", projectId] });
+    },
+  });
+}
+
+// v0.9.15 · Bulk approve/reject
+export function useBulkApproveBatches(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (batchIds: string[]) => batchesApi.bulkApprove(projectId, batchIds),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useBulkRejectBatches(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ batchIds, feedback }: { batchIds: string[]; feedback: string }) =>
+      batchesApi.bulkReject(projectId, batchIds, feedback),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}

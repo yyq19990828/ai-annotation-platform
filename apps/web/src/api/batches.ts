@@ -32,6 +32,11 @@ export interface BatchResponse {
   review_feedback: string | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  // v0.9.15 · ADR-0008 admin-lock
+  admin_locked: boolean;
+  admin_lock_reason: string | null;
+  admin_locked_at: string | null;
+  admin_locked_by: string | null;
 }
 
 export interface BatchCreatePayload {
@@ -196,6 +201,32 @@ export const batchesApi = {
     apiClient.post<BulkBatchActionResponse>(
       `/projects/${projectId}/batches/bulk-activate`,
       { batch_ids: batchIds },
+    ),
+
+  // v0.9.15 · ADR-0008 admin-lock
+  adminLock: (projectId: string, batchId: string, reason: string) =>
+    apiClient.post<BatchResponse>(
+      `/projects/${projectId}/batches/${batchId}/admin-lock`,
+      { reason },
+    ),
+
+  adminUnlock: (projectId: string, batchId: string) =>
+    apiClient.post<BatchResponse>(
+      `/projects/${projectId}/batches/${batchId}/admin-unlock`,
+      {},
+    ),
+
+  // v0.9.15 · Bulk approve/reject
+  bulkApprove: (projectId: string, batchIds: string[]) =>
+    apiClient.post<BulkBatchActionResponse>(
+      `/projects/${projectId}/batches/bulk-approve`,
+      { batch_ids: batchIds },
+    ),
+
+  bulkReject: (projectId: string, batchIds: string[], feedback: string) =>
+    apiClient.post<BulkBatchActionResponse>(
+      `/projects/${projectId}/batches/bulk-reject`,
+      { batch_ids: batchIds, feedback },
     ),
 
   // v0.7.3 · 批次操作历史

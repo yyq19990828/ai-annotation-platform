@@ -26,6 +26,9 @@ from app.schemas.batch import (
     BulkBatchIds,
     BulkBatchReassign,
     BulkBatchActionResponse,
+    AdminLockRequest,
+    BulkBatchApprove,
+    BulkBatchReject,
 )
 from app.services.batch import BatchService, assert_can_transition, REVERSE_TRANSITIONS
 from app.services.audit import AuditService, AuditAction
@@ -453,6 +456,117 @@ async def reset_batch_to_draft(
     return _batch_to_out(batch, briefs)
 
 
+# ── v0.9.15 · ADR-0008 Admin Lock/Unlock ─────────────────────────────────
+
+
+@router.post("/{batch_id}/admin-lock", response_model=BatchOut)
+async def admin_lock_batch(
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    data: AdminLockRequest,
+    request: Request,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    svc = BatchService(db)
+    batch = await svc.get(batch_id)
+    if not batch or batch.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    batch = await svc.admin_lock(batch_id, reason=data.reason, locked_by=current_user.id)
+
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.BATCH_ADMIN_LOCK,
+        target_type="batch",
+        target_id=str(batch_id),
+        request=request,
+        status_code=200,
+        detail={"reason": data.reason, "batch_status": batch.status},
+    )
+
+    notif_recipients: list[uuid.UUID] = []
+    if batch.annotator_id and batch.annotator_id != current_user.id:
+        notif_recipients.append(batch.annotator_id)
+    if batch.reviewer_id and batch.reviewer_id != current_user.id:
+        notif_recipients.append(batch.reviewer_id)
+    if project.owner_id != current_user.id:
+        notif_recipients.append(project.owner_id)
+    if notif_recipients:
+        notif_svc = NotificationService(db)
+        await notif_svc.notify_many(
+            user_ids=notif_recipients,
+            type="batch.admin_locked",
+            target_type="batch",
+            target_id=batch.id,
+            payload={
+                "batch_display_id": batch.display_id,
+                "batch_name": batch.name,
+                "project_id": str(project_id),
+                "reason": data.reason,
+            },
+        )
+
+    await db.commit()
+    await db.refresh(batch)
+    briefs = await _briefs_for_batches(db, project_id, [batch])
+    return _batch_to_out(batch, briefs)
+
+
+@router.post("/{batch_id}/admin-unlock", response_model=BatchOut)
+async def admin_unlock_batch(
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    request: Request,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    svc = BatchService(db)
+    batch = await svc.get(batch_id)
+    if not batch or batch.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    batch = await svc.admin_unlock(batch_id)
+
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.BATCH_ADMIN_UNLOCK,
+        target_type="batch",
+        target_id=str(batch_id),
+        request=request,
+        status_code=200,
+        detail={"batch_status": batch.status},
+    )
+
+    notif_recipients: list[uuid.UUID] = []
+    if batch.annotator_id and batch.annotator_id != current_user.id:
+        notif_recipients.append(batch.annotator_id)
+    if batch.reviewer_id and batch.reviewer_id != current_user.id:
+        notif_recipients.append(batch.reviewer_id)
+    if notif_recipients:
+        notif_svc = NotificationService(db)
+        await notif_svc.notify_many(
+            user_ids=notif_recipients,
+            type="batch.admin_unlocked",
+            target_type="batch",
+            target_id=batch.id,
+            payload={
+                "batch_display_id": batch.display_id,
+                "batch_name": batch.name,
+                "project_id": str(project_id),
+            },
+        )
+
+    await db.commit()
+    await db.refresh(batch)
+    briefs = await _briefs_for_batches(db, project_id, [batch])
+    return _batch_to_out(batch, briefs)
+
+
 # ── v0.7.3 · 多选批量操作 ─────────────────────────────────────────────────
 
 
@@ -586,6 +700,82 @@ async def bulk_activate_batches(
         status_code=200,
         detail=_bulk_audit_detail({"batch_ids": data.batch_ids}, summary),
     )
+    await db.commit()
+    return summary
+
+
+@router.post("/bulk-approve", response_model=BulkBatchActionResponse)
+async def bulk_approve_batches(
+    project_id: uuid.UUID,
+    data: BulkBatchApprove,
+    request: Request,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    svc = BatchService(db)
+    summary = await svc.bulk_approve(project_id, data.batch_ids)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.BULK_BATCH_APPROVE,
+        target_type="project",
+        target_id=str(project_id),
+        request=request,
+        status_code=200,
+        detail=_bulk_audit_detail({"batch_ids": data.batch_ids}, summary),
+    )
+    await db.commit()
+    return summary
+
+
+@router.post("/bulk-reject", response_model=BulkBatchActionResponse)
+async def bulk_reject_batches(
+    project_id: uuid.UUID,
+    data: BulkBatchReject,
+    request: Request,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_REVIEWERS)),
+):
+    svc = BatchService(db)
+    summary = await svc.bulk_reject(
+        project_id,
+        data.batch_ids,
+        feedback=data.feedback,
+        reviewer_id=current_user.id,
+    )
+    audit_detail = _bulk_audit_detail({"batch_ids": data.batch_ids}, summary)
+    audit_detail["feedback"] = data.feedback
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.BULK_BATCH_REJECT,
+        target_type="project",
+        target_id=str(project_id),
+        request=request,
+        status_code=200,
+        detail=audit_detail,
+    )
+    # 通知各批次的标注员
+    if summary["succeeded"]:
+        loaded = await svc._load_batches_for_bulk(project_id, summary["succeeded"])
+        notif_svc = NotificationService(db)
+        for batch in loaded.values():
+            if batch.annotator_id and batch.annotator_id != current_user.id:
+                await notif_svc.notify_many(
+                    user_ids=[batch.annotator_id],
+                    type="batch.rejected",
+                    target_type="batch",
+                    target_id=batch.id,
+                    payload={
+                        "batch_display_id": batch.display_id,
+                        "batch_name": batch.name,
+                        "project_id": str(project_id),
+                        "feedback": data.feedback,
+                        "bulk": True,
+                    },
+                )
     await db.commit()
     return summary
 

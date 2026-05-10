@@ -34,6 +34,10 @@ function batch(over: Partial<BatchResponse> = {}): BatchResponse {
     review_feedback: null,
     reviewed_at: null,
     reviewed_by: null,
+    admin_locked: false,
+    admin_lock_reason: null,
+    admin_locked_at: null,
+    admin_locked_by: null,
     ...over,
   };
 }

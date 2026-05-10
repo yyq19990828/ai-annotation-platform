@@ -1055,3 +1055,465 @@ class TestBatchAuditLogs:
         actions = [e["action"] for e in logs]
         assert "batch.status_changed" in actions  # 直接 transition
         assert "batch.bulk_archive" in actions  # bulk 也会进来
+
+
+# ── 9. v0.9.15 · ADR-0008 admin-lock ────────────────────────────────────────
+
+
+class TestAdminLock:
+    @pytest.mark.asyncio
+    async def test_owner_can_lock_batch(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="annotating"
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-lock",
+            json={"reason": "质量问题暂停"},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["admin_locked"] is True
+        assert body["admin_lock_reason"] == "质量问题暂停"
+        assert body["admin_locked_by"] == str(owner.id)
+        assert body["admin_locked_at"] is not None
+
+    @pytest.mark.asyncio
+    async def test_owner_can_unlock_batch(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="annotating"
+        )
+        batch.admin_locked = True
+        batch.admin_lock_reason = "test"
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-unlock",
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["admin_locked"] is False
+        assert body["admin_lock_reason"] is None
+        assert body["admin_locked_at"] is None
+        assert body["admin_locked_by"] is None
+
+    @pytest.mark.asyncio
+    async def test_non_owner_cannot_lock(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, _ = super_admin
+        user, token = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="annotating"
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-lock",
+            json={"reason": "尝试锁"},
+            headers=_bearer(token),
+        )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_repeated_lock_returns_409(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="annotating"
+        )
+        batch.admin_locked = True
+        batch.admin_lock_reason = "already"
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-lock",
+            json={"reason": "再锁"},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_repeated_unlock_returns_409(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="annotating"
+        )
+        await db_session.commit()  # admin_locked defaults to False
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-unlock",
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_lock_creates_audit_log(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="active"
+        )
+        await db_session.commit()
+
+        await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-lock",
+            json={"reason": "审计测试"},
+            headers=_bearer(owner_token),
+        )
+
+        logs = (
+            await db_session.execute(
+                select(AuditLog).where(
+                    AuditLog.target_type == "batch",
+                    AuditLog.target_id == str(batch.id),
+                    AuditLog.action == "batch.admin_lock",
+                )
+            )
+        ).scalars().all()
+        assert len(logs) == 1
+        assert logs[0].detail_json["reason"] == "审计测试"
+
+    @pytest.mark.asyncio
+    async def test_lock_sends_notification_to_annotator(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="annotating"
+        )
+        await db_session.commit()
+
+        await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-lock",
+            json={"reason": "通知测试"},
+            headers=_bearer(owner_token),
+        )
+
+        notifs = (
+            await db_session.execute(
+                select(Notification).where(
+                    Notification.user_id == user.id,
+                    Notification.type == "batch.admin_locked",
+                )
+            )
+        ).scalars().all()
+        assert len(notifs) == 1
+        assert notifs[0].payload["reason"] == "通知测试"
+
+    @pytest.mark.asyncio
+    async def test_locked_batch_blocks_auto_transition(
+        self, db_session, super_admin, annotator
+    ):
+        """admin_locked batch 不应被 check_auto_transitions 自动推进状态。"""
+        from app.services.batch import BatchService
+
+        owner, _ = super_admin
+        user, _ = annotator
+        p, batch, tasks = await _seed(
+            db_session, owner.id, user.id,
+            batch_status="active", task_status="pending",
+        )
+        tasks[0].status = "in_progress"
+        batch.admin_locked = True
+        batch.admin_lock_reason = "locked"
+        await db_session.flush()
+
+        await BatchService(db_session).check_auto_transitions(batch.id)
+        await db_session.refresh(batch)
+        # 锁定后自动推进被短路，状态应保持 active
+        assert batch.status == "active"
+
+    @pytest.mark.asyncio
+    async def test_locked_batch_excluded_from_get_next_task(
+        self, db_session, super_admin, annotator
+    ):
+        """admin_locked batch 的任务不应被 get_next_task 派发。"""
+        from app.services.scheduler import get_next_task
+
+        owner, _ = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id,
+            batch_status="active", task_status="pending",
+        )
+        batch.admin_locked = True
+        batch.admin_lock_reason = "locked"
+        await db_session.commit()
+
+        result = await get_next_task(user, p.id, db_session)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_batch_out_includes_lock_fields(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, _ = await _seed(
+            db_session, owner.id, user.id, batch_status="active"
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.get(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}",
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "admin_locked" in body
+        assert body["admin_locked"] is False
+        assert body["admin_lock_reason"] is None
+
+
+# ── 10. v0.9.15 · Bulk Approve/Reject ───────────────────────────────────────
+
+
+class TestBulkApproveReject:
+    @pytest.mark.asyncio
+    async def test_bulk_approve_reviewing_batches(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id,
+            statuses=["reviewing", "reviewing", "reviewing"],
+            n_tasks_each=1,
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-approve",
+            json={"batch_ids": [str(b.id) for b in batches]},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["succeeded"]) == 3
+        assert len(body["skipped"]) == 0
+        assert len(body["failed"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_bulk_approve_skips_already_approved(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id,
+            statuses=["reviewing", "approved"],
+            n_tasks_each=1,
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-approve",
+            json={"batch_ids": [str(b.id) for b in batches]},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["succeeded"]) == 1
+        assert body["succeeded"][0] == str(batches[0].id)
+        assert len(body["skipped"]) == 1
+        assert body["skipped"][0]["batch_id"] == str(batches[1].id)
+
+    @pytest.mark.asyncio
+    async def test_bulk_approve_fails_non_reviewing(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id,
+            statuses=["reviewing", "active"],
+            n_tasks_each=1,
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-approve",
+            json={"batch_ids": [str(b.id) for b in batches]},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["succeeded"]) == 1
+        assert len(body["failed"]) == 1
+        assert body["failed"][0]["batch_id"] == str(batches[1].id)
+
+    @pytest.mark.asyncio
+    async def test_bulk_reject_with_feedback_resets_tasks(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id,
+            statuses=["reviewing", "reviewing"],
+            n_tasks_each=2,
+        )
+        # 把 tasks 设为 review/completed
+        from sqlalchemy import update as sa_update
+        await db_session.execute(
+            sa_update(Task)
+            .where(Task.batch_id.in_([b.id for b in batches]))
+            .values(status="review", is_labeled=True)
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-reject",
+            json={
+                "batch_ids": [str(b.id) for b in batches],
+                "feedback": "质量不达标",
+            },
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["succeeded"]) == 2
+
+        # 验证 tasks 被 reset 为 pending
+        await db_session.refresh(batches[0])
+        tasks_after = (
+            await db_session.execute(
+                select(Task).where(Task.batch_id == batches[0].id)
+            )
+        ).scalars().all()
+        assert all(t.status == "pending" for t in tasks_after)
+        assert all(t.is_labeled is False for t in tasks_after)
+
+        # 验证 review_feedback 写入
+        await db_session.refresh(batches[0])
+        assert batches[0].review_feedback == "质量不达标"
+        assert batches[0].status == "rejected"
+
+    @pytest.mark.asyncio
+    async def test_bulk_reject_sends_notification_to_annotator(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id,
+            statuses=["reviewing"],
+            n_tasks_each=1,
+        )
+        await db_session.commit()
+
+        await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-reject",
+            json={
+                "batch_ids": [str(batches[0].id)],
+                "feedback": "通知测试",
+            },
+            headers=_bearer(owner_token),
+        )
+
+        notifs = (
+            await db_session.execute(
+                select(Notification).where(
+                    Notification.user_id == user.id,
+                    Notification.type == "batch.rejected",
+                )
+            )
+        ).scalars().all()
+        assert len(notifs) == 1
+        assert notifs[0].payload["feedback"] == "通知测试"
+
+    @pytest.mark.asyncio
+    async def test_annotator_cannot_bulk_approve(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, _ = super_admin
+        user, token = annotator
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id,
+            statuses=["reviewing"],
+            n_tasks_each=1,
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-approve",
+            json={"batch_ids": [str(batches[0].id)]},
+            headers=_bearer(token),
+        )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_reviewer_can_bulk_approve(
+        self, httpx_client_bound, db_session, super_admin, annotator, reviewer
+    ):
+        owner, _ = super_admin
+        user, _ = annotator
+        rev, rev_token = reviewer
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id,
+            statuses=["reviewing"],
+            n_tasks_each=1,
+        )
+        from app.db.models.project_member import ProjectMember as PM
+
+        db_session.add(PM(project_id=p.id, user_id=rev.id, role="reviewer", assigned_by=owner.id))
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-approve",
+            json={"batch_ids": [str(batches[0].id)]},
+            headers=_bearer(rev_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["succeeded"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_bulk_approve_creates_audit_log(
+        self, httpx_client_bound, db_session, super_admin, annotator
+    ):
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batches = await _seed_multi(
+            db_session, owner.id, user.id,
+            statuses=["reviewing"],
+            n_tasks_each=1,
+        )
+        await db_session.commit()
+
+        await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/bulk-approve",
+            json={"batch_ids": [str(batches[0].id)]},
+            headers=_bearer(owner_token),
+        )
+
+        logs = (
+            await db_session.execute(
+                select(AuditLog).where(
+                    AuditLog.target_type == "project",
+                    AuditLog.target_id == str(p.id),
+                    AuditLog.action == "batch.bulk_approve",
+                )
+            )
+        ).scalars().all()
+        assert len(logs) == 1

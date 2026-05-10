@@ -59,6 +59,11 @@ class BatchOut(BaseModel):
     review_feedback: str | None = None
     reviewed_at: datetime | None = None
     reviewed_by: UUID | None = None
+    # v0.9.15 · ADR-0008 admin-lock
+    admin_locked: bool = False
+    admin_lock_reason: str | None = None
+    admin_locked_at: datetime | None = None
+    admin_locked_by: UUID | None = None
 
     class Config:
         from_attributes = True
@@ -119,6 +124,21 @@ class BulkBatchActionResponse(BaseModel):
     succeeded: list[UUID] = []
     skipped: list[BulkBatchActionItem] = []
     failed: list[BulkBatchActionItem] = []
+
+
+# v0.9.15 · ADR-0008 admin-lock
+class AdminLockRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+# v0.9.15 · Bulk approve/reject
+class BulkBatchApprove(BaseModel):
+    batch_ids: list[UUID] = Field(..., min_length=1, max_length=200)
+
+
+class BulkBatchReject(BaseModel):
+    batch_ids: list[UUID] = Field(..., min_length=1, max_length=200)
+    feedback: str = Field(..., min_length=1, max_length=500)
 
 
 class BatchSplitRequest(BaseModel):

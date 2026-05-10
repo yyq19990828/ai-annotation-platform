@@ -22,6 +22,31 @@
 
 ## 最新版本
 
+## [0.9.15] - 2026-05-11
+
+> **Sorted Mountain — 批次状态机二阶段：ADR-0008 admin-lock + bulk-approve/reject.** 0.9.x 终版. 主线: ① batch admin-lock (soft hold，ADR-0008 Accepted) — 4 字段 DB 列 + Alembic migration 0055 + `check_auto_transitions` 短路 + `get_next_task` 排除已锁批次 + owner 端点 admin-lock/unlock + 通知 + 审计日志; ② bulk-approve/reject (reviewer 级权限) — reviewing → approved / rejected + 任务软重置 (review/completed → pending) + shared feedback; ③ 前端 — BatchesSection lock/unlock 按钮 + 已锁徽标 + 批量通过/驳回操作栏 + AdminLockModal + BulkRejectModal; ④ Phase 1 门控 — `test_scheduler.py` 19 cases 覆盖 check_auto_transitions + get_next_task; ⑤ 全套测试 435 前端 / 19 scheduler / 10 TestAdminLock / 8 TestBulkApproveReject 全绿; ⑥ ADR-0008 Proposed→Accepted + 实施细节章节. 0.9.x 全部 P2 长尾清零，立即开 v0.10.0 sam3-backend. → [plan](docs/plans/roadmap-md-roadmap-0-9-y-md-0-9-15-sorted-mountain.md).
+
+### Added
+
+- **Batch admin-lock (ADR-0008)**: owner/super_admin 可通过 `POST /{batch_id}/admin-lock` 冻结批次自动状态推进和新任务派发；`POST /{batch_id}/admin-unlock` 解锁。锁定原因落 audit log 并通知标注员/审核员/项目 owner
+- **Bulk approve**: `POST /batches/bulk-approve` — 批量将「审核中」批次通过（reviewer 级权限）
+- **Bulk reject**: `POST /batches/bulk-reject` — 批量驳回「审核中」批次，任务软重置为 pending，共享 feedback（reviewer 级权限）
+- **BatchesSection UI**: lock/unlock 按钮（owner-only）+ 已锁 warning badge + 批量通过/驳回操作栏按钮 + AdminLockModal + BulkRejectModal
+- **test_scheduler.py**: 19 个 scheduler 单测覆盖 `check_auto_transitions` 和 `get_next_task` 批次过滤逻辑
+
+### Changed
+
+- `BatchService.check_auto_transitions`: `admin_locked=True` 时直接返回，不再推状态
+- `scheduler.get_next_task`: 候选查询追加 `admin_locked.is_(False)` 过滤
+- `BatchOut` schema: 新增 `admin_locked`、`admin_lock_reason`、`admin_locked_at`、`admin_locked_by` 字段
+- ADR-0008 Status: `Proposed` → `Accepted`，追加实施细节章节
+
+### Fixed
+
+- 无
+
+---
+
 ## [0.9.14] - 2026-05-09
 
 > **Fluttering Wirth — mask 多连通域 / 空洞协议升级 + 前端单测覆盖率 25→30 + 文档收口.** 0.9.x 收尾三段第二版. 主线: ① mask→polygon 协议升级 — `mask_to_multi_polygon` (RETR_CCOMP 抓内外环树) + `PolygonGeometry.holes` 默认 [] 向后兼容 + 新 `MultiPolygonGeometry` discriminated union, predictor 智能选择三种 LS shape 字面 (单连通无 hole 字面与 v0.9.13 100% 一致, 老 fixture / 老前端不破); ② 前端 `transforms.geometryToShape` 处理 multi_polygon 分支降级取主外环 + 完整 polygons 透传 `multiPolygon` 字段供 v0.10.x 镂空渲染升级 (ImageStage Konva sceneFunc evenodd 留 v0.10.x sam3-backend 接入同窗口做, 避免二次破窗); ③ `scripts/eval_simplify.py` 双跑 single + multi, 输出加 `iou_multi@{tol}` / `multi_only_helps %` 列, 90 张合成 fixture 跑 tol=1.0: IoU≥0.95 占比 92.2% → 100%, multi_only_helps 8.9% (即多连通 / 带空洞长尾根因占比); ④ 前端单测 25→30 — 新增 GeneralSection (7 case) / DatasetsSection (7 case) / AuditPage (7 case) / BatchesSection smoke (3 case) + transforms multi_polygon 几何映射 (4 case), 实测 30.30%; ⑤ ai-models.md §1 部署章节展开 (compose profile + nvidia 资源预留 + 显存预算表 + dev/生产差异); ⑥ ADR-0013 加 v0.9.14 多连通域升级章节. **不在范围**: 系统设置 admin UI (调研发现实际已落地, ROADMAP 优先级表删除该项); ImageStage Konva 镂空渲染 (推 v0.10.x); v0.9.15 admin-locked + bulk-approve/reject. → [plan](docs/plans/2026-05-09-v0.9.14-fluttering-wirth.md).

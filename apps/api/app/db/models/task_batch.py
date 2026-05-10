@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+import sqlalchemy as sa
 from sqlalchemy import (
     String,
     Integer,
@@ -80,4 +81,17 @@ class TaskBatch(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+    # v0.9.15 · ADR-0008 admin-lock (soft hold: 冻结自动推进 + 阻断新派单)
+    admin_locked: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
+    admin_lock_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    admin_locked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    admin_locked_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
     )

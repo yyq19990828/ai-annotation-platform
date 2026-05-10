@@ -111,6 +111,7 @@ async def get_next_task(
             Task.is_labeled.is_(False),
             ~Task.id.in_(already_annotated_subq),
             TaskBatch.status.in_(["active", "annotating"]),
+            TaskBatch.admin_locked.is_(False),  # v0.9.15 · ADR-0008
         )
     )
 
