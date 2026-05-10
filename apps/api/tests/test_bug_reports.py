@@ -214,7 +214,9 @@ async def test_create_bug_report_accepts_multi_image_attachments(
 
 
 @pytest.mark.asyncio
-async def test_bug_report_attachment_invalid_key_rejected(httpx_client_bound, annotator):
+async def test_bug_report_attachment_invalid_key_rejected(
+    httpx_client_bound, annotator
+):
     """附件 key 必须在 BUG 附件前缀下，防止任意对象 key 注入。"""
     _, token = annotator
     resp = await httpx_client_bound.post(
@@ -237,9 +239,7 @@ async def test_bug_report_attachment_invalid_key_rejected(httpx_client_bound, an
 
 
 @pytest.mark.asyncio
-async def test_bug_report_upload_init_rejects_non_image(
-    httpx_client_bound, annotator
-):
+async def test_bug_report_upload_init_rejects_non_image(httpx_client_bound, annotator):
     _, token = annotator
     resp = await httpx_client_bound.post(
         "/api/v1/bug_reports/screenshot/upload-init",

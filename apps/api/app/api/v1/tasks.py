@@ -1085,7 +1085,9 @@ async def accept_rejection(
         UserRole.SUPER_ADMIN.value,
         UserRole.PROJECT_ADMIN.value,
     ):
-        raise HTTPException(status_code=403, detail="only assignee can accept rejection")
+        raise HTTPException(
+            status_code=403, detail="only assignee can accept rejection"
+        )
 
     task.status = "in_progress"
 
