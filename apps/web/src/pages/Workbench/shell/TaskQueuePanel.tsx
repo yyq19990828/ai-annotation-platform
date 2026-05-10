@@ -170,6 +170,10 @@ export function TaskQueuePanel({
   }, [tasks]);
 
   const rejectedCount = useMemo(() => tasks.filter((t) => t.status === "rejected").length, [tasks]);
+  const activeTaskIndex = useMemo(
+    () => sortedTasks.findIndex((t) => t.id === taskId),
+    [sortedTasks, taskId],
+  );
 
   const virtualizer = useVirtualizer({
     count: sortedTasks.length,
@@ -188,6 +192,14 @@ export function TaskQueuePanel({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [virtualizer.getVirtualItems(), hasNextPage, isFetchingNextPage]);
+
+  useEffect(() => {
+    if (!open || activeTaskIndex < 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      virtualizer.scrollToIndex(activeTaskIndex, { align: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, activeTaskIndex, virtualizer]);
 
   if (!open) {
     return (

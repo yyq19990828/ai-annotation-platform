@@ -24,9 +24,17 @@ function readLastTaskMap(storage: StorageLike | null): Record<string, string> {
   }
 }
 
-export function getRememberedWorkbenchTask(batchId: string | null | undefined, storage = getStorage()) {
+function scopedBatchKey(batchId: string, scope?: string | null) {
+  return scope ? `${scope}:${batchId}` : batchId;
+}
+
+export function getRememberedWorkbenchTask(
+  batchId: string | null | undefined,
+  storage = getStorage(),
+  scope?: string | null,
+) {
   if (!batchId) return null;
-  const taskId = readLastTaskMap(storage)[batchId];
+  const taskId = readLastTaskMap(storage)[scopedBatchKey(batchId, scope)];
   return typeof taskId === "string" && taskId ? taskId : null;
 }
 
@@ -34,10 +42,11 @@ export function rememberWorkbenchTask(
   batchId: string | null | undefined,
   taskId: string | null | undefined,
   storage = getStorage(),
+  scope?: string | null,
 ) {
   if (!batchId || !taskId || !storage) return;
   const next = readLastTaskMap(storage);
-  next[batchId] = taskId;
+  next[scopedBatchKey(batchId, scope)] = taskId;
   try {
     storage.setItem(LAST_TASK_BY_BATCH_KEY, JSON.stringify(next));
   } catch {
@@ -74,4 +83,16 @@ export function buildWorkbenchUrl(
   if (opts.returnTo) q.set("returnTo", opts.returnTo);
   const qs = q.toString();
   return `/projects/${projectId}/annotate${qs ? `?${qs}` : ""}`;
+}
+
+export function buildReviewWorkbenchUrl(
+  projectId: string,
+  opts: { batchId?: string | null; taskId?: string | null; returnTo?: string | null } = {},
+) {
+  const q = new URLSearchParams();
+  if (opts.batchId) q.set("batch", opts.batchId);
+  if (opts.taskId) q.set("task", opts.taskId);
+  if (opts.returnTo) q.set("returnTo", opts.returnTo);
+  const qs = q.toString();
+  return `/projects/${projectId}/review${qs ? `?${qs}` : ""}`;
 }

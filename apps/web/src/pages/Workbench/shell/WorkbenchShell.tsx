@@ -184,22 +184,24 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const requestedTaskId = searchParams.get("task");
   useEffect(() => {
     if (tasks.length === 0) return;
+    if (requestedTaskId && tasks.some((t) => t.id === requestedTaskId)) {
+      if (currentTaskId !== requestedTaskId) setCurrentTaskId(requestedTaskId);
+      return;
+    }
     if (currentTaskId && tasks.some((t) => t.id === currentTaskId)) return;
 
-    const rememberedTaskId = getRememberedWorkbenchTask(selectedBatchId);
+    const rememberedTaskId = getRememberedWorkbenchTask(selectedBatchId, undefined, mode);
     const nextTaskId =
-      requestedTaskId && tasks.some((t) => t.id === requestedTaskId)
-        ? requestedTaskId
-        : rememberedTaskId && tasks.some((t) => t.id === rememberedTaskId)
+      rememberedTaskId && tasks.some((t) => t.id === rememberedTaskId)
           ? rememberedTaskId
           : tasks[0].id;
     setCurrentTaskId(nextTaskId);
-  }, [tasks, currentTaskId, requestedTaskId, selectedBatchId, setCurrentTaskId]);
+  }, [tasks, currentTaskId, requestedTaskId, selectedBatchId, setCurrentTaskId, mode]);
 
   useEffect(() => {
     if (currentTaskId !== taskId) return;
-    rememberWorkbenchTask(selectedBatchId, taskId);
-  }, [selectedBatchId, taskId, currentTaskId]);
+    rememberWorkbenchTask(selectedBatchId, taskId, undefined, mode);
+  }, [selectedBatchId, taskId, currentTaskId, mode]);
 
   useEffect(() => {
     // 默认选最近使用过的类（如果该项目存在），否则取首个

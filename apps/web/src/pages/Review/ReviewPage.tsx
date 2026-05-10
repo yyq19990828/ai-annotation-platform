@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Thumbnail } from "@/components/Thumbnail";
 import { useToastStore } from "@/components/ui/Toast";
 import { useTaskList, useAnnotations, useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { useRejectBatch } from "@/hooks/useBatches";
 import { useReviewerStats } from "@/hooks/useDashboard";
 import type { TaskResponse } from "@/types";
 import type { ReviewingBatchItem } from "@/api/dashboard";
+import { buildReviewWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { RejectReasonModal } from "./RejectReasonModal";
 import { ReviewSidebar } from "./ReviewSidebar";
 
@@ -47,7 +49,7 @@ function TaskRow({
         background: "var(--color-bg-elev)",
         marginBottom: 8,
         display: "grid",
-        gridTemplateColumns: "32px 1fr 200px 100px",
+        gridTemplateColumns: "32px 48px minmax(0, 1fr) 140px 200px 96px",
         alignItems: "center",
         gap: 12,
         padding: "10px 14px",
@@ -60,19 +62,34 @@ function TaskRow({
           style={{ accentColor: "var(--color-accent)" }}
         />
       </label>
-      <div onClick={onOpen} style={{ cursor: "pointer" }}>
+      <Thumbnail src={task.thumbnail_url} blurhash={task.blurhash} width={40} height={40} />
+      <div onClick={onOpen} style={{ minWidth: 0, cursor: "pointer" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>{task.display_id}</span>
-          <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>{task.file_name}</span>
+          <span
+            style={{
+              fontSize: 12.5,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {task.file_name}
+          </span>
         </div>
         <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
           {task.total_annotations} 个标注 · {task.total_predictions} 个预测
         </div>
       </div>
+      <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+        <Badge variant="warning" dot>待审核</Badge>
+      </div>
       <AnnotationPreview taskId={task.id} />
-      <Button size="sm" onClick={onOpen}>
-        <Icon name="rect" size={12} />预览
-      </Button>
+      <div style={{ textAlign: "right" }}>
+        <Button size="sm" variant="primary" onClick={onOpen}>
+          <Icon name="target" size={11} />打开
+        </Button>
+      </div>
     </div>
   );
 }
@@ -80,6 +97,7 @@ function TaskRow({
 export function ReviewPage() {
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProjectId, setSelectedProjectId] = useState<string>(
     () => searchParams.get("project") ?? "",
@@ -156,9 +174,11 @@ export function ReviewPage() {
 
   const openTask = (id: string) => {
     if (projectId) {
-      const params = new URLSearchParams({ task: id });
-      if (selectedBatchId) params.set("batch", selectedBatchId);
-      navigate(`/projects/${projectId}/review?${params}`);
+      navigate(buildReviewWorkbenchUrl(projectId, {
+        batchId: selectedBatchId,
+        taskId: id,
+        returnTo: currentWorkbenchReturnTo(location),
+      }));
     } else {
       setSearchParams({ taskId: id });
     }
@@ -230,6 +250,15 @@ export function ReviewPage() {
     if (openTaskIdx >= 0 && openTaskIdx < tasks.length - 1) openTask(tasks[openTaskIdx + 1].id);
   };
 
+  const totalTasks = selectedBatch?.total_tasks ?? 0;
+  const pendingReview = selectedBatch?.review_tasks ?? 0;
+  const approvedDone = selectedBatch?.completed_tasks ?? 0;
+  const unsubmitted = selectedBatch
+    ? Math.max(0, selectedBatch.total_tasks - selectedBatch.review_tasks - selectedBatch.completed_tasks)
+    : 0;
+  const reviewPct = totalTasks ? Math.round((pendingReview / totalTasks) * 1000) / 10 : 0;
+  const approvedPct = totalTasks ? Math.round((approvedDone / totalTasks) * 1000) / 10 : 0;
+
   return (
     <div
       style={{
@@ -284,26 +313,59 @@ export function ReviewPage() {
             </p>
           </div>
           {selectedBatchId && (
-            <Button
-              size="sm"
-              variant="danger"
-              onClick={() => {
-                const feedback = window.prompt("整批退回原因（必填，最大 500 字）：");
-                if (!feedback || !feedback.trim()) return;
-                rejectBatchMut.mutate(
-                  { batchId: selectedBatchId, feedback: feedback.trim() },
-                  {
-                    onSuccess: () =>
-                      pushToast({ msg: "整批已退回，已通知被分派标注员", kind: "success" }),
-                    onError: (e) => pushToast({ msg: "退回失败", sub: (e as Error).message }),
-                  },
-                );
-              }}
-            >
-              <Icon name="x" size={11} />整批退回
-            </Button>
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              <Button size="sm" onClick={() => tasks[0] && openTask(tasks[0].id)} disabled={tasks.length === 0}>
+                <Icon name="target" size={11} />打开画布
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  const feedback = window.prompt("整批退回原因（必填，最大 500 字）：");
+                  if (!feedback || !feedback.trim()) return;
+                  rejectBatchMut.mutate(
+                    { batchId: selectedBatchId, feedback: feedback.trim() },
+                    {
+                      onSuccess: () =>
+                        pushToast({ msg: "整批已退回，已通知被分派标注员", kind: "success" }),
+                      onError: (e) => pushToast({ msg: "退回失败", sub: (e as Error).message }),
+                    },
+                  );
+                }}
+              >
+                <Icon name="x" size={11} />整批退回
+              </Button>
+            </div>
           )}
         </div>
+
+        {selectedBatch && (
+          <div style={{ marginBottom: 12, padding: "10px 12px", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", background: "var(--color-bg-elev)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>批次进度</span>
+              <Badge variant="warning" dot>审核中</Badge>
+            </div>
+            {[
+              { label: "待审", pct: reviewPct, count: pendingReview, bar: "var(--color-warning)" },
+              { label: "通过", pct: approvedPct, count: approvedDone, bar: "var(--color-success)" },
+            ].map((r) => (
+              <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--color-fg-muted)", marginTop: 4 }}>
+                <span style={{ flex: "0 0 48px" }}>{r.label}</span>
+                <div style={{ flex: 1, height: 5, background: "var(--color-bg-sunken)", borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.min(100, r.pct)}%`, height: "100%", background: r.bar }} />
+                </div>
+                <span className="mono" style={{ flex: "0 0 100px", textAlign: "right", color: "var(--color-fg-subtle)" }}>
+                  {r.count}/{selectedBatch.total_tasks} · {r.pct}%
+                </span>
+              </div>
+            ))}
+            {unsubmitted > 0 && (
+              <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 6 }}>
+                仍有 {unsubmitted} 个任务尚未提交质检
+              </div>
+            )}
+          </div>
+        )}
 
         {isLoading ? (
           <div style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>加载中...</div>
