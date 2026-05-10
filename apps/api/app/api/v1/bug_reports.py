@@ -3,7 +3,6 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 import redis.asyncio as aioredis
-from redis.asyncio.connection import ConnectionPool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -30,25 +29,14 @@ from sqlalchemy import select
 from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter()
-_BUG_REOPEN_REDIS_POOL: ConnectionPool | None = None
 
 
 def _get_bug_reopen_redis() -> aioredis.Redis:
-    global _BUG_REOPEN_REDIS_POOL
-    if _BUG_REOPEN_REDIS_POOL is None:
-        _BUG_REOPEN_REDIS_POOL = ConnectionPool.from_url(
-            settings.redis_url,
-            max_connections=8,
-            decode_responses=True,
-        )
-    return aioredis.Redis(connection_pool=_BUG_REOPEN_REDIS_POOL)
+    return aioredis.from_url(settings.redis_url, decode_responses=True)
 
 
 async def close_bug_reopen_redis_pool() -> None:
-    global _BUG_REOPEN_REDIS_POOL
-    if _BUG_REOPEN_REDIS_POOL is not None:
-        await _BUG_REOPEN_REDIS_POOL.aclose()
-        _BUG_REOPEN_REDIS_POOL = None
+    return None
 
 
 class ScreenshotInitRequest(BaseModel):
@@ -367,9 +355,12 @@ async def add_bug_comment(
     if will_reopen:
         rkey = f"bug:reopen:{current_user.id}:{report_id}:day"
         r = _get_bug_reopen_redis()
-        count = await r.incr(rkey)
-        if count == 1:
-            await r.expire(rkey, 86400)
+        try:
+            count = await r.incr(rkey)
+            if count == 1:
+                await r.expire(rkey, 86400)
+        finally:
+            await r.aclose()
         if count > 5:
             raise HTTPException(
                 status_code=429,

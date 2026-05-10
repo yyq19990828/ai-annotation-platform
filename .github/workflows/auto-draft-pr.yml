@@ -15,10 +15,19 @@ jobs:
         with:
           github-token: ${{ github.token }}
           script: |
-            await github.graphql(`
-              mutation($id: ID!) {
-                convertPullRequestToDraft(input: { pullRequestId: $id }) {
-                  pullRequest { isDraft }
+            try {
+              await github.graphql(`
+                mutation($id: ID!) {
+                  convertPullRequestToDraft(input: { pullRequestId: $id }) {
+                    pullRequest { isDraft }
+                  }
                 }
+              `, { id: context.payload.pull_request.node_id })
+            } catch (error) {
+              const message = error?.message || String(error)
+              if (message.includes('Resource not accessible by integration')) {
+                core.warning(`Cannot convert PR to draft with GITHUB_TOKEN: ${message}`)
+                return
               }
-            `, { id: context.payload.pull_request.node_id })
+              throw error
+            }
