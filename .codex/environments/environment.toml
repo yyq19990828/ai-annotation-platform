@@ -10,7 +10,7 @@ cd "$CODEX_WORKTREE_PATH"
 
 link_from_source() {
   local rel="$1"
-  local source="$CODEX_SOURCE_WORKSPACE_PATH/$rel"
+  local source="$CODEX_SOURCE_TREE_PATH/$rel"
   local target="$CODEX_WORKTREE_PATH/$rel"
 
   if [ -e "$source" ] && [ ! -e "$target" ] && [ ! -L "$target" ]; then
@@ -38,17 +38,15 @@ if [ ! -e apps/api/.venv ] && [ ! -L apps/api/.venv ]; then
   cd ../..
 fi
 
-if [ -f "$CODEX_SOURCE_WORKSPACE_PATH/.env" ] && [ ! -e .env ] && [ ! -L .env ]; then
-  ln -s "$CODEX_SOURCE_WORKSPACE_PATH/.env" .env
+if [ -f "$CODEX_SOURCE_TREE_PATH/.env" ] && [ ! -e .env ] && [ ! -L .env ]; then
+  ln -s "$CODEX_SOURCE_TREE_PATH/.env" .env
 elif [ -f .env.example ] && [ ! -e .env ] && [ ! -L .env ]; then
   ln -s .env.example .env
 fi
 '''
 
 [cleanup]
-script = '''
-rm -rf .pytest_cache .ruff_cache apps/web/coverage apps/web/test-results apps/web/playwright-report docs-site/.vitepress/cache
-'''
+script = "rm -rf .pytest_cache .ruff_cache apps/web/coverage apps/web/test-results apps/web/playwright-report docs-site/.vitepress/cache"
 
 [[actions]]
 name = "Web typecheck"
