@@ -2,7 +2,7 @@ name: Claude Docs Impact
 
 on:
   pull_request:
-    types: [ready_for_review, reopened]
+    types: [opened, ready_for_review, reopened]
 
 concurrency:
   group: claude-docs-impact-${{ github.event.pull_request.number }}
