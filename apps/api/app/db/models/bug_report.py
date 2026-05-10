@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, func
+from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, func, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
@@ -38,6 +38,9 @@ class BugReport(Base):
     recent_api_calls: Mapped[dict | None] = mapped_column(JSONB)
     recent_console_errors: Mapped[dict | None] = mapped_column(JSONB)
     screenshot_url: Mapped[str | None] = mapped_column(String(512))
+    attachments: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
     resolution: Mapped[str | None] = mapped_column(Text)
     fixed_in_version: Mapped[str | None] = mapped_column(String(20))
     assigned_to_id: Mapped[uuid.UUID | None] = mapped_column(

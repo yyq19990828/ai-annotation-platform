@@ -3,7 +3,47 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+BUG_ATTACHMENT_KEY_PREFIX = "bug-report-attachments/"
+BUG_ATTACHMENT_LEGACY_PREFIX = "bug-screenshots/"
+BUG_ATTACHMENT_LEGACY_PATTERN = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/"
+)
+BUG_ATTACHMENT_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
+
+
+class BugAttachment(BaseModel):
+    storage_key: str = Field(alias="storageKey", min_length=1, max_length=512)
+    file_name: str = Field(alias="fileName", min_length=1, max_length=255)
+    mime_type: str = Field(alias="mimeType", min_length=1, max_length=128)
+    size: int = Field(ge=0, le=10 * 1024 * 1024)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @field_validator("storage_key")
+    @classmethod
+    def _validate_storage_key(cls, v: str) -> str:
+        import re
+
+        if (
+            v.startswith(BUG_ATTACHMENT_KEY_PREFIX)
+            or v.startswith(BUG_ATTACHMENT_LEGACY_PREFIX)
+            or re.match(BUG_ATTACHMENT_LEGACY_PATTERN, v)
+        ):
+            return v
+        raise ValueError(
+            f"attachments[].storageKey 必须以 {BUG_ATTACHMENT_KEY_PREFIX!r} 开头"
+        )
+
+    @field_validator("mime_type")
+    @classmethod
+    def _validate_mime_type(cls, v: str) -> str:
+        if v not in BUG_ATTACHMENT_MIME_TYPES:
+            raise ValueError("BUG 截图仅支持 PNG / JPEG / WebP")
+        return v
 
 
 class BugReportCreate(BaseModel):
@@ -18,6 +58,7 @@ class BugReportCreate(BaseModel):
     recent_api_calls: list[dict] | None = None
     recent_console_errors: list[dict] | None = None
     screenshot_url: str | None = None
+    attachments: list[BugAttachment] = Field(default_factory=list, max_length=5)
 
 
 class BugReportUpdate(BaseModel):
@@ -68,6 +109,7 @@ class BugReportOut(BaseModel):
     recent_api_calls: list[dict] | None = None
     recent_console_errors: list[dict] | None = None
     screenshot_url: str | None = None
+    attachments: list[BugAttachment] = Field(default_factory=list)
     resolution: str | None = None
     fixed_in_version: str | None = None
     assigned_to_id: UUID | None = None

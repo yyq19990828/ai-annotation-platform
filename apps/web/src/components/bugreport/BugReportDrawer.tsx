@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ClipboardEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import { bugReportsApi, uploadBugScreenshot, type BugReportResponse, type BugReportDetail } from "@/api/bug-reports";
+import { bugReportsApi, uploadBugAttachment, type BugAttachment, type BugReportResponse, type BugReportDetail } from "@/api/bug-reports";
 import { getRecentApiCalls, getRecentConsoleErrors, sanitizeApiCalls, captureScreenshot } from "@/utils/bugReportCapture";
 import { ScreenshotEditor } from "./ScreenshotEditor";
+import { MarkdownBlock } from "./MarkdownBlock";
 
 interface Props {
   open: boolean;
@@ -12,6 +13,17 @@ interface Props {
 }
 
 type ViewState = "list" | "create" | "detail" | "edit";
+
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+interface PendingAttachment {
+  id: string;
+  blob: Blob;
+  fileName: string;
+  mimeType: string;
+}
 
 export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
   const [view, setView] = useState<ViewState>("list");
@@ -33,7 +45,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
   // v0.6.6 · 截图状态
   const [screenshotBlob, setScreenshotBlob] = useState<Blob | null>(null);
   const [screenshotEditing, setScreenshotEditing] = useState(false);
-  const [screenshotKey, setScreenshotKey] = useState<string | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   // v0.7.0：上传失败 retry 状态
   const [screenshotUploadFail, setScreenshotUploadFail] = useState<string | null>(null);
 
@@ -78,15 +90,80 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
     }
   };
 
+  const addPendingAttachment = (blob: Blob, fileName: string) => {
+    const mimeType = blob.type || "image/png";
+    if (!ALLOWED_ATTACHMENT_TYPES.has(mimeType)) {
+      pushToast({ msg: "仅支持 PNG / JPEG / WebP 截图", kind: "error" });
+      return false;
+    }
+    if (blob.size > MAX_ATTACHMENT_SIZE) {
+      pushToast({ msg: "截图超过 10MB", kind: "error" });
+      return false;
+    }
+    if (pendingAttachments.length >= MAX_ATTACHMENTS) {
+      pushToast({ msg: `最多上传 ${MAX_ATTACHMENTS} 张截图`, kind: "error" });
+      return false;
+    }
+    setPendingAttachments((items) => [
+      ...items,
+      {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        blob,
+        fileName,
+        mimeType,
+      },
+    ]);
+    setScreenshotUploadFail(null);
+    return true;
+  };
+
+  const handlePasteImage = (e: ClipboardEvent) => {
+    if (view !== "create") return;
+    const files = Array.from(e.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+    if (files.length === 0) return;
+    e.preventDefault();
+    const nextAttachments: PendingAttachment[] = [];
+    let nextCount = pendingAttachments.length;
+    for (const file of files) {
+      const mimeType = file.type || "image/png";
+      if (!ALLOWED_ATTACHMENT_TYPES.has(mimeType)) {
+        pushToast({ msg: "仅支持 PNG / JPEG / WebP 截图", kind: "error" });
+        continue;
+      }
+      if (file.size > MAX_ATTACHMENT_SIZE) {
+        pushToast({ msg: "截图超过 10MB", kind: "error" });
+        continue;
+      }
+      if (nextCount >= MAX_ATTACHMENTS) {
+        pushToast({ msg: `最多上传 ${MAX_ATTACHMENTS} 张截图`, kind: "error" });
+        break;
+      }
+      const ext = file.type === "image/jpeg" ? "jpg" : file.type === "image/webp" ? "webp" : "png";
+      nextAttachments.push({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        blob: file,
+        fileName: file.name || `clipboard-${Date.now()}-${nextAttachments.length + 1}.${ext}`,
+        mimeType,
+      });
+      nextCount += 1;
+    }
+    if (nextAttachments.length > 0) {
+      setPendingAttachments((items) => [...items, ...nextAttachments]);
+      setScreenshotUploadFail(null);
+      pushToast({ msg: `已添加 ${nextAttachments.length} 张截图`, kind: "success" });
+    }
+  };
+
   const handleSubmit = async (skipScreenshot = false) => {
     if (!title.trim() || !desc.trim()) return;
     setSubmitting(true);
     try {
-      // 若有未上传的截图 blob → 先上传拿 storage_key
-      let finalKey = screenshotKey;
-      if (!skipScreenshot && screenshotBlob && !finalKey) {
+      let uploadedAttachments: BugAttachment[] = [];
+      if (!skipScreenshot && pendingAttachments.length > 0) {
         try {
-          finalKey = await uploadBugScreenshot(screenshotBlob);
+          uploadedAttachments = await Promise.all(
+            pendingAttachments.map((item) => uploadBugAttachment(item.blob, item.fileName)),
+          );
           setScreenshotUploadFail(null);
         } catch (e) {
           // v0.7.0：失败不再静默降级，停在表单让用户选 retry / skip / cancel
@@ -104,14 +181,15 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
         viewport: `${window.innerWidth}x${window.innerHeight}`,
         recent_api_calls: sanitizeApiCalls(getRecentApiCalls()),
         recent_console_errors: getRecentConsoleErrors().map((e) => ({ msg: e.msg, stack: e.stack || "" })),
-        screenshot_url: finalKey,
+        screenshot_url: uploadedAttachments[0]?.storageKey ?? null,
+        attachments: uploadedAttachments,
       });
       pushToast({ msg: "反馈已提交", kind: "success" });
       setTitle("");
       setDesc("");
       setSeverity("medium");
       setScreenshotBlob(null);
-      setScreenshotKey(null);
+      setPendingAttachments([]);
       setView("list");
     } catch {
       pushToast({ msg: "提交失败，请稍后重试", kind: "error" });
@@ -127,7 +205,6 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
       const blob = await captureScreenshot();
       setScreenshotBlob(blob);
       setScreenshotEditing(true);
-      setScreenshotKey(null);
     } catch (e) {
       pushToast({
         msg: "截图失败",
@@ -299,7 +376,16 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
           {view === "list" && (
             <div>
               <button
-                onClick={() => setView("create")}
+                onClick={() => {
+                  setTitle("");
+                  setDesc("");
+                  setSeverity("medium");
+                  setPendingAttachments([]);
+                  setScreenshotBlob(null);
+                  setScreenshotEditing(false);
+                  setScreenshotUploadFail(null);
+                  setView("create");
+                }}
                 style={{
                   width: "100%",
                   padding: "8px 0",
@@ -351,6 +437,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
 
           {view === "create" && (
             <form
+              onPaste={handlePasteImage}
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSubmit();
@@ -433,7 +520,8 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                   <ScreenshotEditor
                     imageBlob={screenshotBlob}
                     onConfirm={(blob) => {
-                      setScreenshotBlob(blob);
+                      addPendingAttachment(blob, `screenshot-${Date.now()}.png`);
+                      setScreenshotBlob(null);
                       setScreenshotEditing(false);
                     }}
                     onCancel={() => {
@@ -441,53 +529,68 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                       setScreenshotEditing(false);
                     }}
                   />
-                ) : screenshotBlob ? (
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
-                      已附加截图（{Math.round(screenshotBlob.size / 1024)} KB）
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setScreenshotEditing(true)}
-                      style={{
-                        padding: "4px 8px", fontSize: 11,
-                        border: "1px solid var(--color-border)",
-                        borderRadius: "var(--radius-sm)",
-                        background: "var(--color-bg-elev)",
-                        cursor: "pointer", color: "var(--color-fg)",
-                      }}
-                    >
-                      重新涂抹
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setScreenshotBlob(null); setScreenshotKey(null); }}
-                      style={{
-                        padding: "4px 8px", fontSize: 11,
-                        border: "1px solid var(--color-border)",
-                        borderRadius: "var(--radius-sm)",
-                        background: "transparent",
-                        cursor: "pointer", color: "var(--color-fg-muted)",
-                      }}
-                    >
-                      移除
-                    </button>
-                  </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={handleCaptureScreenshot}
-                    style={{
-                      padding: "6px 10px", fontSize: 12,
-                      border: "1px dashed var(--color-border)",
-                      borderRadius: "var(--radius-sm)",
-                      background: "transparent",
-                      cursor: "pointer", color: "var(--color-fg-muted)",
-                      display: "inline-flex", alignItems: "center", gap: 4,
-                    }}
-                  >
-                    <Icon name="image" size={12} /> 截取当前画面
-                  </button>
+                  <>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={handleCaptureScreenshot}
+                        disabled={pendingAttachments.length >= MAX_ATTACHMENTS}
+                        style={{
+                          padding: "6px 10px", fontSize: 12,
+                          border: "1px dashed var(--color-border)",
+                          borderRadius: "var(--radius-sm)",
+                          background: "transparent",
+                          cursor: pendingAttachments.length >= MAX_ATTACHMENTS ? "not-allowed" : "pointer",
+                          color: "var(--color-fg-muted)",
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                        }}
+                      >
+                        <Icon name="image" size={12} /> 截取当前画面
+                      </button>
+                      <span style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>
+                        可直接粘贴剪贴板截图，最多 {MAX_ATTACHMENTS} 张
+                      </span>
+                    </div>
+                    {pendingAttachments.length > 0 && (
+                      <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                        {pendingAttachments.map((att, index) => (
+                          <div
+                            key={att.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              padding: "6px 8px",
+                              border: "1px solid var(--color-border)",
+                              borderRadius: "var(--radius-sm)",
+                              background: "var(--color-bg-sunken)",
+                            }}
+                          >
+                            <Icon name="image" size={12} />
+                            <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--color-fg-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              图 {index + 1} · {att.fileName} · {Math.round(att.blob.size / 1024)} KB
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setPendingAttachments((items) => items.filter((item) => item.id !== att.id))}
+                              style={{
+                                padding: "2px 6px",
+                                border: "1px solid var(--color-border)",
+                                borderRadius: 3,
+                                background: "transparent",
+                                color: "var(--color-fg-muted)",
+                                cursor: "pointer",
+                                fontSize: 11,
+                              }}
+                            >
+                              移除
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -710,9 +813,40 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
               <div style={{ color: "var(--color-fg-muted)", marginBottom: 10 }}>
                 路由：<code style={{ fontSize: 11 }}>{detail.route}</code>
               </div>
-              <p style={{ color: "var(--color-fg)", lineHeight: 1.55, whiteSpace: "pre-wrap", margin: "0 0 14px" }}>
-                {detail.description}
-              </p>
+              <div style={{ marginBottom: 14 }}>
+                <MarkdownBlock compact>{detail.description}</MarkdownBlock>
+              </div>
+              {detail.attachments?.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 500, marginBottom: 6, fontSize: 12 }}>截图附件 ({detail.attachments.length})</div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {detail.attachments.map((att) => (
+                      <a
+                        key={att.storageKey}
+                        href={bugReportsApi.attachmentDownloadUrl(detail.id, att.storageKey)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "6px 8px",
+                          border: "1px solid var(--color-border)",
+                          borderRadius: "var(--radius-sm)",
+                          color: "var(--color-fg-muted)",
+                          textDecoration: "none",
+                        }}
+                      >
+                        <Icon name="image" size={12} />
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {att.fileName}
+                        </span>
+                        <span style={{ fontSize: 11 }}>{Math.round(att.size / 1024)} KB</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
               {detail.resolution && (
                 <div style={{ padding: 8, background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)", marginBottom: 14 }}>
                   <span style={{ fontWeight: 500 }}>处理结果：</span>{detail.resolution}
@@ -735,7 +869,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                         {new Date(c.created_at).toLocaleString("zh-CN")}
                       </span>
                     </div>
-                    <span style={{ color: "var(--color-fg)", whiteSpace: "pre-wrap" }}>{c.body}</span>
+                    <MarkdownBlock compact>{c.body}</MarkdownBlock>
                   </div>
                 ))}
                 {detail.comments.length === 0 && (

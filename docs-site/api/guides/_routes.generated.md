@@ -107,6 +107,7 @@
 | GET | `/bug_reports` |
 | GET | `/bug_reports/mine` |
 | GET | `/bug_reports/{report_id}` |
+| GET | `/bug_reports/{report_id}/attachments/download` |
 | PATCH | `/bug_reports/{report_id}` |
 | DELETE | `/bug_reports/{report_id}` |
 | POST | `/bug_reports/{report_id}/comments` |
@@ -291,4 +292,4 @@
 
 ---
 
-_共 28 模块 / 154 路由_
+_共 28 模块 / 155 路由_

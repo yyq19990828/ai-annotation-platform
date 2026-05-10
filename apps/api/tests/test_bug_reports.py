@@ -169,3 +169,130 @@ async def test_reporter_can_comment_via_http(httpx_client_bound, db_session, ann
     assert body["status"] == "triaged"
     assert body["reopen_count"] == 1
     assert body["last_reopened_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_create_bug_report_accepts_multi_image_attachments(
+    httpx_client_bound, annotator
+):
+    """提交 BUG 时可登记多张截图附件，详情接口原样返回。"""
+    _, token = annotator
+    attachments = [
+        {
+            "storageKey": f"bug-report-attachments/{uuid.uuid4()}/{uuid.uuid4()}-a.png",
+            "fileName": "a.png",
+            "mimeType": "image/png",
+            "size": 1234,
+        },
+        {
+            "storageKey": f"bug-report-attachments/{uuid.uuid4()}/{uuid.uuid4()}-b.webp",
+            "fileName": "b.webp",
+            "mimeType": "image/webp",
+            "size": 5678,
+        },
+    ]
+
+    resp = await httpx_client_bound.post(
+        "/api/v1/bug_reports",
+        json={
+            "title": "markdown bug",
+            "description": "**bold** detail",
+            "severity": "high",
+            "attachments": attachments,
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["attachments"] == attachments
+
+    detail = await httpx_client_bound.get(
+        f"/api/v1/bug_reports/{data['id']}", headers=_bearer(token)
+    )
+    assert detail.status_code == 200
+    assert detail.json()["attachments"] == attachments
+
+
+@pytest.mark.asyncio
+async def test_bug_report_attachment_invalid_key_rejected(httpx_client_bound, annotator):
+    """附件 key 必须在 BUG 附件前缀下，防止任意对象 key 注入。"""
+    _, token = annotator
+    resp = await httpx_client_bound.post(
+        "/api/v1/bug_reports",
+        json={
+            "title": "bad attachment",
+            "description": "d",
+            "attachments": [
+                {
+                    "storageKey": "comment-attachments/not-a-bug.png",
+                    "fileName": "x.png",
+                    "mimeType": "image/png",
+                    "size": 1,
+                }
+            ],
+        },
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_bug_report_upload_init_rejects_non_image(
+    httpx_client_bound, annotator
+):
+    _, token = annotator
+    resp = await httpx_client_bound.post(
+        "/api/v1/bug_reports/screenshot/upload-init",
+        json={"file_name": "x.txt", "content_type": "text/plain"},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_bug_report_attachment_download_checks_registered_key(
+    httpx_client_bound, db_session, annotator, reviewer, monkeypatch
+):
+    reporter, token = annotator
+    _, other_token = reviewer
+    key = f"bug-report-attachments/{reporter.id}/{uuid.uuid4()}-x.png"
+    report = await _seed_bug(db_session, reporter.id, status="new")
+    report.attachments = [
+        {
+            "storageKey": key,
+            "fileName": "x.png",
+            "mimeType": "image/png",
+            "size": 10,
+        }
+    ]
+    await db_session.commit()
+
+    from app.api.v1 import bug_reports
+
+    monkeypatch.setattr(
+        bug_reports.storage_service,
+        "generate_download_url",
+        lambda *args, **kwargs: "http://minio.test/signed",
+    )
+
+    ok = await httpx_client_bound.get(
+        f"/api/v1/bug_reports/{report.id}/attachments/download",
+        params={"key": key},
+        headers=_bearer(token),
+    )
+    assert ok.status_code == 302
+    assert ok.headers["location"] == "http://minio.test/signed"
+
+    bad_key = await httpx_client_bound.get(
+        f"/api/v1/bug_reports/{report.id}/attachments/download",
+        params={"key": f"bug-report-attachments/{reporter.id}/{uuid.uuid4()}-y.png"},
+        headers=_bearer(token),
+    )
+    assert bad_key.status_code == 400
+
+    forbidden = await httpx_client_bound.get(
+        f"/api/v1/bug_reports/{report.id}/attachments/download",
+        params={"key": key},
+        headers=_bearer(other_token),
+    )
+    assert forbidden.status_code == 403
