@@ -28,6 +28,8 @@ last_reviewed: 2026-05-09
 
 工具：`B` 矩形 · `P` 多边形 · `V` 平移。完整快捷键列表见下方（按工作台代码 SoT 自动生成）。
 
+视频任务会在同一工作台切到视频时间轴视图。详见 [视频追踪标注](./video-track)。
+
 ## 完整快捷键
 
 > 真值来源：`apps/web/src/pages/Workbench/state/hotkeys.ts`。下表由 `docs-site/scripts/generate-hotkeys.mjs` 在每次 docs build 前自动重生成，与代码必然一致。

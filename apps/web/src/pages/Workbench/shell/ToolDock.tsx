@@ -15,6 +15,8 @@ interface ToolDockProps {
   onSetSamPolarity?: (p: SamPolarity) => void;
   /** M2 · review 模式下只显示 Hand 工具（审核员仅需平移 + 微调已有框）。 */
   reviewMode?: boolean;
+  /** v0.9.16 · 视频首版只开放 bbox + hand，SAM / polygon / canvas 后续再接。 */
+  videoMode?: boolean;
 }
 
 interface ToolDescriptor {
@@ -49,8 +51,13 @@ export function ToolDock({
   samPolarity = "positive",
   onSetSamPolarity,
   reviewMode = false,
+  videoMode = false,
 }: ToolDockProps) {
-  const visibleTools = reviewMode ? ALL_TOOLS.filter((t) => t.id === "hand") : ALL_TOOLS;
+  const visibleTools = reviewMode
+    ? ALL_TOOLS.filter((t) => t.id === "hand")
+    : videoMode
+      ? ALL_TOOLS.filter((t) => t.id === "box" || t.id === "hand")
+      : ALL_TOOLS;
   return (
     <div
       style={{

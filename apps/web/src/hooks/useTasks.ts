@@ -43,6 +43,14 @@ export function useTask(id: string) {
   });
 }
 
+export function useVideoManifest(taskId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["task-video-manifest", taskId],
+    queryFn: () => tasksApi.getVideoManifest(taskId!),
+    enabled: !!taskId && enabled,
+  });
+}
+
 export function useAnnotations(taskId: string | undefined) {
   return useQuery({
     queryKey: ["annotations", taskId],

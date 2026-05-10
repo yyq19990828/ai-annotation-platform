@@ -91,10 +91,14 @@
 | POST | `/distribute-batches` |
 | POST | `/{batch_id}/reject` |
 | POST | `/{batch_id}/reset` |
+| POST | `/{batch_id}/admin-lock` |
+| POST | `/{batch_id}/admin-unlock` |
 | POST | `/bulk-archive` |
 | POST | `/bulk-delete` |
 | POST | `/bulk-reassign` |
 | POST | `/bulk-activate` |
+| POST | `/bulk-approve` |
+| POST | `/bulk-reject` |
 | GET | `/{batch_id}/audit-logs` |
 | GET | `/{batch_id}/export` |
 
@@ -258,6 +262,7 @@
 |---|---|
 | GET | `/next` |
 | GET | `/{task_id}` |
+| GET | `/{task_id}/video/manifest` |
 | GET | `/{task_id}/annotations` |
 | GET | `/{task_id}/annotations/page` |
 | POST | `/{task_id}/annotations` |
@@ -292,4 +297,4 @@
 
 ---
 
-_共 28 模块 / 155 路由_
+_共 28 模块 / 160 路由_

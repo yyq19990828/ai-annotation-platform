@@ -5,6 +5,7 @@ import type {
   TaskLockResponse,
   ReviewClaimResponse,
   Geometry,
+  TaskVideoManifestResponse,
 } from "@/types";
 
 export interface TaskListResponse {
@@ -65,6 +66,9 @@ export const tasksApi = {
   },
 
   get: (id: string) => apiClient.get<TaskResponse>(`/tasks/${id}`),
+
+  getVideoManifest: (id: string) =>
+    apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`),
 
   getAnnotations: (id: string) =>
     apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations`),

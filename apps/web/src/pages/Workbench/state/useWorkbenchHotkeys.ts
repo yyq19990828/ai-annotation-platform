@@ -93,6 +93,8 @@ export interface UseWorkbenchHotkeysArgs {
 
   // 切题（清 nudge）
   taskId: string | undefined;
+
+  disabled?: boolean;
 }
 
 export interface UseWorkbenchHotkeysReturn {
@@ -110,7 +112,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
-    updateMutation, taskId,
+    updateMutation, taskId, disabled = false,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -142,6 +144,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
 
   // polygon 专用键：Enter / Esc / Backspace
   useEffect(() => {
+    if (disabled) return;
     if (s.tool !== "polygon") return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target;
@@ -165,10 +168,11 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [s.tool, polygonDraftPoints, submitPolygon, setPolygonDraftPoints]);
+  }, [disabled, s.tool, polygonDraftPoints, submitPolygon, setPolygonDraftPoints]);
 
   // 主 keydown / keyup
   useEffect(() => {
+    if (disabled) return;
     const isInputFocused = (el: EventTarget | null) =>
       el instanceof HTMLElement && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 
@@ -409,6 +413,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       window.removeEventListener("keyup", onKeyUp);
     };
   }, [
+    disabled,
     s, history, classes, currentProject, annotationsRef, batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,
     recordRecentClass, handleDeleteBox, handleBatchDelete,

@@ -63,6 +63,11 @@ describe("geometryToShape", () => {
     expect(s).toEqual({ x: 0, y: 0, w: 1, h: 1 });
     expect((s as { polygon?: unknown }).polygon).toBeUndefined();
   });
+
+  it("video_bbox → 忽略 frame_index 并返回当前帧 bbox 几何", () => {
+    const s = geometryToShape({ type: "video_bbox", frame_index: 12, x: 0.1, y: 0.2, w: 0.3, h: 0.4 });
+    expect(s).toEqual({ x: 0.1, y: 0.2, w: 0.3, h: 0.4 });
+  });
 });
 
 describe("annotationToBox", () => {

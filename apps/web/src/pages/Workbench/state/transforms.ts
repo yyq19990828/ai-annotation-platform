@@ -83,6 +83,9 @@ export function geometryToShape(g: Geometry): {
       multiPolygon: g.polygons.map((p) => ({ points: p.points, holes: p.holes })),
     };
   }
+  if (g.type === "video_bbox") {
+    return { x: g.x, y: g.y, w: g.w, h: g.h };
+  }
   return { x: g.x, y: g.y, w: g.w, h: g.h };
 }
 

@@ -19,6 +19,7 @@ interface TopbarProps {
   confThreshold?: number;
   onShowHotkeys: () => void;
   onRunAi: () => void;
+  aiDisabled?: boolean;
   onPrev: () => void;
   onNext: () => void;
   onSubmit: () => void;
@@ -56,7 +57,7 @@ interface TopbarProps {
  */
 export function Topbar({
   task, taskIdx, taskTotal, aiRunning, batchStatus, isSubmitting, confThreshold,
-  onShowHotkeys, onRunAi, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
+  onShowHotkeys, onRunAi, aiDisabled = false, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
   overflowSlot,
   canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
   onWithdraw, onReopen,
@@ -276,7 +277,13 @@ export function Topbar({
           </span>
         )}
         {mode === "annotate" && (
-          <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning}>
+          <Button
+            variant="ai"
+            size="sm"
+            onClick={onRunAi}
+            disabled={aiRunning || aiDisabled}
+            title={aiDisabled ? "视频任务暂不支持 AI 一键预标" : undefined}
+          >
             {aiRunning
               ? <Icon name="loader2" size={13} className="spin" />
               : <Icon name="wandSparkles" size={13} />}

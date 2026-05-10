@@ -1,9 +1,122 @@
 import asyncio
 import io
+import json
+import math
+import subprocess
+import tempfile
 import uuid
+from pathlib import Path
+from typing import Any
 
 from app.workers.celery_app import celery_app
 from app.config import settings
+
+
+def _parse_ratio(value: str | None) -> float | None:
+    if not value:
+        return None
+    if "/" in value:
+        num, den = value.split("/", 1)
+        try:
+            n = float(num)
+            d = float(den)
+            if d == 0:
+                return None
+            return n / d
+        except ValueError:
+            return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def parse_ffprobe_video_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    streams = payload.get("streams") or []
+    video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+    if not video_stream:
+        raise ValueError("ffprobe did not return a video stream")
+
+    fmt = payload.get("format") or {}
+    fps = _parse_ratio(video_stream.get("avg_frame_rate")) or _parse_ratio(
+        video_stream.get("r_frame_rate")
+    )
+    duration_s: float | None = None
+    for raw in (video_stream.get("duration"), fmt.get("duration")):
+        if raw is None:
+            continue
+        try:
+            duration_s = float(raw)
+            break
+        except (TypeError, ValueError):
+            continue
+
+    frame_count: int | None = None
+    raw_frames = video_stream.get("nb_frames")
+    if raw_frames not in (None, "N/A"):
+        try:
+            frame_count = int(raw_frames)
+        except (TypeError, ValueError):
+            frame_count = None
+    if frame_count is None and fps and duration_s:
+        frame_count = max(1, int(round(fps * duration_s)))
+
+    width = video_stream.get("width")
+    height = video_stream.get("height")
+    return {
+        "duration_ms": int(round(duration_s * 1000)) if duration_s is not None else None,
+        "fps": round(float(fps), 3) if fps and math.isfinite(fps) else None,
+        "frame_count": frame_count,
+        "width": int(width) if width is not None else None,
+        "height": int(height) if height is not None else None,
+        "codec": video_stream.get("codec_name"),
+    }
+
+
+def probe_video_file(path: str | Path) -> dict[str, Any]:
+    proc = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name,width,height,avg_frame_rate,r_frame_rate,nb_frames,duration",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "ffprobe failed")
+    return parse_ffprobe_video_metadata(json.loads(proc.stdout or "{}"))
+
+
+def extract_video_poster(input_path: str | Path, output_path: str | Path) -> None:
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_path),
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale='min(512,iw)':-2",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "ffmpeg poster extraction failed")
 
 
 async def _generate_thumbnail(item_id: str) -> None:
@@ -87,6 +200,81 @@ async def _generate_thumbnail(item_id: str) -> None:
     await engine.dispose()
 
 
+async def _generate_video_metadata(item_id: str) -> None:
+    from sqlalchemy.ext.asyncio import (
+        create_async_engine,
+        async_sessionmaker,
+        AsyncSession,
+    )
+    from app.db.models.dataset import DatasetItem
+    from app.services.storage import StorageService
+
+    engine = create_async_engine(settings.database_url, echo=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    async with SessionLocal() as db:
+        item = await db.get(DatasetItem, uuid.UUID(item_id))
+        if not item or item.file_type != "video":
+            return
+
+        storage = StorageService()
+        meta = dict(item.metadata_ or {})
+        video_meta = dict(meta.get("video") or {})
+
+        try:
+            resp = storage.client.get_object(
+                Bucket=storage.datasets_bucket, Key=item.file_path
+            )
+            raw = resp["Body"].read()
+        except Exception as exc:
+            video_meta["probe_error"] = str(exc)
+            meta["video"] = video_meta
+            item.metadata_ = meta
+            await db.commit()
+            return
+
+        with tempfile.TemporaryDirectory(prefix="anno-video-") as tmp:
+            suffix = Path(item.file_name).suffix or ".mp4"
+            input_path = Path(tmp) / f"source{suffix}"
+            poster_path = Path(tmp) / "poster.webp"
+            input_path.write_bytes(raw)
+
+            try:
+                video_meta.update(probe_video_file(input_path))
+                video_meta.pop("probe_error", None)
+            except Exception as exc:
+                video_meta["probe_error"] = str(exc)
+
+            if video_meta.get("width") is not None:
+                item.width = int(video_meta["width"])
+            if video_meta.get("height") is not None:
+                item.height = int(video_meta["height"])
+
+            try:
+                extract_video_poster(input_path, poster_path)
+                poster_key = f"thumbnails/{item_id}.webp"
+                storage.ensure_bucket(storage.datasets_bucket)
+                storage.client.put_object(
+                    Bucket=storage.datasets_bucket,
+                    Key=poster_key,
+                    Body=poster_path.read_bytes(),
+                    ContentType="image/webp",
+                )
+                item.thumbnail_path = poster_key
+                video_meta["poster_frame_path"] = poster_key
+                video_meta.pop("poster_error", None)
+            except Exception as exc:
+                video_meta["poster_error"] = str(exc)
+
+        meta["video"] = video_meta
+        item.metadata_ = meta
+        await db.commit()
+
+    await engine.dispose()
+
+
 async def _backfill_media(dataset_id: str) -> None:
     from sqlalchemy.ext.asyncio import (
         create_async_engine,
@@ -105,8 +293,7 @@ async def _backfill_media(dataset_id: str) -> None:
         rows = await db.execute(
             select(DatasetItem.id).where(
                 DatasetItem.dataset_id == uuid.UUID(dataset_id),
-                DatasetItem.file_type == "image",
-                DatasetItem.thumbnail_path.is_(None),
+                DatasetItem.file_type.in_(["image", "video"]),
             )
         )
         item_ids = [str(r[0]) for r in rows.all()]
@@ -115,6 +302,7 @@ async def _backfill_media(dataset_id: str) -> None:
 
     for iid in item_ids:
         await _generate_thumbnail(iid)
+        await _generate_video_metadata(iid)
 
 
 async def _generate_task_thumbnail(task_id: str) -> None:
@@ -220,6 +408,11 @@ async def _backfill_tasks(project_id: str) -> None:
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60, queue="media")
 def generate_thumbnail(self, item_id: str) -> None:
     asyncio.run(_generate_thumbnail(item_id))
+
+
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, queue="media")
+def generate_video_metadata(self, item_id: str) -> None:
+    asyncio.run(_generate_video_metadata(item_id))
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60, queue="media")

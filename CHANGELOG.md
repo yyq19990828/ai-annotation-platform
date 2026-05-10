@@ -22,6 +22,30 @@
 
 ## 最新版本
 
+## [0.9.16] - 2026-05-11
+
+> **Video Workbench MVP — 视频数据底座 + 逐帧 bbox 工作台.** 主线: ① dataset 视频导入后由 media worker 调 `ffprobe` 写入 `metadata["video"]`，并用 `ffmpeg` 抽 poster；② `GET /tasks/{id}/video/manifest` 返回视频播放 URL、poster 和规范化元数据，`TaskOut` 透出 `video_metadata`；③ annotation schema 新增 `video_bbox`，用 `frame_index` 表达逐帧框；④ 前端新增 `VideoStage`，支持播放/暂停、逐帧定位、时间轴标记、当前帧 bbox 创建/移动/删除；⑤ 视频任务禁用 SAM / polygon / canvas 工具，继续复用 WorkbenchShell 的队列、提交、审核、评论、锁和离线队列；⑥ 文档新增视频标注用户手册和开发概念页. → [plan](docs/plans/2026-05-11-v0.9.16-video-workbench.md).
+
+### Added
+
+- **视频媒体处理**：`generate_video_metadata` Celery 任务解析视频 `duration_ms` / `fps` / `frame_count` / `width` / `height` / `codec`，并生成 poster 缩略图。
+- **视频 manifest API**：`GET /tasks/{task_id}/video/manifest` 返回签名视频 URL、poster URL 和元数据。
+- **`video_bbox` geometry**：新增逐帧 bbox schema `{type, frame_index, x, y, w, h}`。
+- **`VideoStage`**：视频播放、暂停编辑、逐帧跳转、时间轴关键帧标记、当前帧 bbox 标注。
+- **视频标注文档**：新增标注员操作页与开发者概念页。
+
+### Changed
+
+- API/Celery Docker image 安装 `ffmpeg`，因此部署该版本后需要 rebuild API/Celery image。
+- `TaskOut` 增加 `video_metadata`；前端 `TaskResponse`、OpenAPI snapshot 和 codegen 同步更新。
+- `WorkbenchShell` 对视频任务选择 `VideoStage`；图片任务仍走原 `ImageStage`。
+
+### Fixed
+
+- 无
+
+---
+
 ## [0.9.15] - 2026-05-11
 
 > **Sorted Mountain — 批次状态机二阶段：ADR-0008 admin-lock + bulk-approve/reject.** 0.9.x 终版. 主线: ① batch admin-lock (soft hold，ADR-0008 Accepted) — 4 字段 DB 列 + Alembic migration 0055 + `check_auto_transitions` 短路 + `get_next_task` 排除已锁批次 + owner 端点 admin-lock/unlock + 通知 + 审计日志; ② bulk-approve/reject (reviewer 级权限) — reviewing → approved / rejected + 任务软重置 (review/completed → pending) + shared feedback; ③ 前端 — BatchesSection lock/unlock 按钮 + 已锁徽标 + 批量通过/驳回操作栏 + AdminLockModal + BulkRejectModal; ④ Phase 1 门控 — `test_scheduler.py` 19 cases 覆盖 check_auto_transitions + get_next_task; ⑤ 全套测试 435 前端 / 19 scheduler / 10 TestAdminLock / 8 TestBulkApproveReject 全绿; ⑥ ADR-0008 Proposed→Accepted + 实施细节章节. 0.9.x 全部 P2 长尾清零，立即开 v0.10.0 sam3-backend. → [plan](docs/plans/roadmap-md-roadmap-0-9-y-md-0-9-15-sorted-mountain.md).

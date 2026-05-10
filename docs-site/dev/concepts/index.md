@@ -32,6 +32,8 @@
   Task 状态机、锁、审核流和可见性如何工作
 - [标注模块](./annotation-module)：
   Annotation 的数据模型、采纳、版本控制与 task / batch 回写
+- [视频标注工作台](./video-annotation-workbench)：
+  视频元数据、manifest、`video_bbox` schema 与前端 Stage 边界
 - [审核模块](./review-module)：
   Task review、batch review、角色矩阵与通知审计联动
 
