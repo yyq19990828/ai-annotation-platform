@@ -474,7 +474,9 @@ async def admin_lock_batch(
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
 
-    batch = await svc.admin_lock(batch_id, reason=data.reason, locked_by=current_user.id)
+    batch = await svc.admin_lock(
+        batch_id, reason=data.reason, locked_by=current_user.id
+    )
 
     await AuditService.log(
         db,
