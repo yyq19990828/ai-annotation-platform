@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { bugReportsApi, type BugReportResponse, type BugReportDetail } from "@/api/bug-reports";
 import { useToastStore } from "@/components/ui/Toast";
 import { Icon } from "@/components/ui/Icon";
+import { MarkdownBlock } from "@/components/bugreport/MarkdownBlock";
 
 const STATUS_OPTIONS = ["new", "triaged", "in_progress", "fixed", "wont_fix", "duplicate"];
 const SEVERITY_OPTIONS = ["low", "medium", "high", "critical"];
@@ -214,7 +215,44 @@ export function BugsPage() {
                 </span>
               )}
             </div>
-            <p style={{ margin: "0 0 14px", lineHeight: 1.55, color: "var(--color-fg)", whiteSpace: "pre-wrap" }}>{detail.description}</p>
+            <div style={{ marginBottom: 14 }}>
+              <MarkdownBlock>{detail.description}</MarkdownBlock>
+            </div>
+
+            {detail.attachments?.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontWeight: 500, fontSize: 12, marginBottom: 6 }}>
+                  截图附件 ({detail.attachments.length})
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {detail.attachments.map((att) => (
+                    <a
+                      key={att.storageKey}
+                      href={bugReportsApi.attachmentDownloadUrl(detail.id, att.storageKey)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "6px 8px",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: "var(--radius-sm)",
+                        background: "var(--color-bg-elev)",
+                        color: "var(--color-fg-muted)",
+                        textDecoration: "none",
+                      }}
+                    >
+                      <Icon name="image" size={13} />
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {att.fileName}
+                      </span>
+                      <span style={{ fontSize: 11 }}>{Math.round(att.size / 1024)} KB</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {detail.resolution && (
               <div style={{ padding: 8, background: "var(--color-bg-elev)", borderRadius: "var(--radius-md)", marginBottom: 14 }}>
@@ -262,7 +300,7 @@ export function BugsPage() {
                       {new Date(c.created_at).toLocaleString("zh-CN")}
                     </span>
                   </div>
-                  <span style={{ color: "var(--color-fg)", whiteSpace: "pre-wrap" }}>{c.body}</span>
+                  <MarkdownBlock compact>{c.body}</MarkdownBlock>
                 </div>
               ))}
             </div>

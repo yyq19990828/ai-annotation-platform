@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ratelimit import limiter
@@ -15,13 +16,15 @@ from app.schemas.bug_report import (
     BugReportList,
     BugCommentCreate,
     BugCommentOut,
+    BUG_ATTACHMENT_KEY_PREFIX,
+    BUG_ATTACHMENT_MIME_TYPES,
 )
 from app.services.bug_report import BugReportService
 from app.services.audit import AuditService
 from app.services.notification import NotificationService
 from app.services.storage import storage_service
 from sqlalchemy import select
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter()
 
@@ -29,6 +32,13 @@ router = APIRouter()
 class ScreenshotInitRequest(BaseModel):
     file_name: str = Field(default="screenshot.png", min_length=1, max_length=200)
     content_type: str = Field(default="image/png", min_length=1, max_length=100)
+
+    @field_validator("content_type")
+    @classmethod
+    def _validate_content_type(cls, content_type: str) -> str:
+        if content_type not in BUG_ATTACHMENT_MIME_TYPES:
+            raise ValueError("BUG 截图仅支持 PNG / JPEG / WebP")
+        return content_type
 
 
 class ScreenshotInitResponse(BaseModel):
@@ -46,14 +56,19 @@ async def init_bug_screenshot_upload(
 ):
     """v0.6.6 · 给 BugReportDrawer 截图签发 PUT 预签名 URL。
 
-    storage_key 形如 `bug-screenshots/{user_id}/{uuid}.png`；MinIO bucket lifecycle
+    storage_key 形如 `bug-report-attachments/{user_id}/{uuid}.png`；MinIO bucket lifecycle
     180 天过期（见 storage_service._ensure_lifecycle）。
     """
     safe_name = data.file_name.replace("/", "_").replace("\\", "_")
     if not safe_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-        safe_name += ".png"
+        ext = {
+            "image/png": ".png",
+            "image/jpeg": ".jpg",
+            "image/webp": ".webp",
+        }[data.content_type]
+        safe_name += ext
     # B-4 · bug 截图改投独立桶 (bug-reports),与 anno 桶解耦
-    storage_key = f"{current_user.id}/{uuid.uuid4()}-{safe_name}"
+    storage_key = f"{BUG_ATTACHMENT_KEY_PREFIX}{current_user.id}/{uuid.uuid4()}-{safe_name}"
     upload_url = storage_service.generate_upload_url(
         storage_key,
         data.content_type,
@@ -64,6 +79,22 @@ async def init_bug_screenshot_upload(
         upload_url=upload_url,
         expires_in=900,
     )
+
+
+def _bug_is_visible_to_user(report, current_user: User) -> bool:
+    is_admin = current_user.role in (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+    return bool(is_admin or report.reporter_id == current_user.id)
+
+
+def _bug_attachment_keys(report) -> set[str]:
+    keys = {
+        str(a.get("storageKey") or a.get("storage_key"))
+        for a in (report.attachments or [])
+        if a.get("storageKey") or a.get("storage_key")
+    }
+    if report.screenshot_url:
+        keys.add(report.screenshot_url)
+    return keys
 
 
 @router.post("/bug_reports", response_model=BugReportOut, status_code=201)
@@ -148,8 +179,7 @@ async def get_bug_report(
     report, comment_rows = await svc.get_with_comments(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Bug report not found")
-    is_admin = current_user.role in (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
-    if not is_admin and report.reporter_id != current_user.id:
+    if not _bug_is_visible_to_user(report, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
     comments_out = [
         BugCommentOut(
@@ -164,6 +194,29 @@ async def get_bug_report(
         for (c, name, role) in comment_rows
     ]
     return BugReportDetail(**{**report.__dict__, "comments": comments_out})
+
+
+@router.get("/bug_reports/{report_id}/attachments/download")
+async def download_bug_attachment(
+    report_id: uuid.UUID,
+    key: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    svc = BugReportService(db)
+    report = await svc.get(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Bug report not found")
+    if not _bug_is_visible_to_user(report, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if key not in _bug_attachment_keys(report):
+        raise HTTPException(status_code=400, detail="invalid attachment key")
+    url = storage_service.generate_download_url(
+        key,
+        expires_in=300,
+        bucket=storage_service.bug_reports_bucket,
+    )
+    return RedirectResponse(url, status_code=302)
 
 
 @router.patch("/bug_reports/{report_id}", response_model=BugReportOut)

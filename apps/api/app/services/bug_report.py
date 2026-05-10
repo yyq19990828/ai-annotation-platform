@@ -211,6 +211,14 @@ class BugReportService:
             lines.append(f"- **Task**: {report.task_id}")
         if report.screenshot_url:
             lines.append(f"- **Screenshot**: {report.screenshot_url}")
+        if report.attachments:
+            lines.append("")
+            lines.append("### Attachments")
+            for att in report.attachments[:5]:
+                key = att.get("storageKey") or att.get("storage_key") or ""
+                name = att.get("fileName") or att.get("file_name") or key
+                if key:
+                    lines.append(f"- {name}: `{key}`")
         if report.recent_api_calls:
             lines.append("")
             lines.append("### Recent API Calls")

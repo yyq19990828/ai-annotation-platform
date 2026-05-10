@@ -72,7 +72,7 @@ docker logs ai-annotation-platform-api-1 2>&1 | jq 'select(.status>=500)'
 
 ## 错误监控
 
-前后端错误打到 Sentry（DSN 见 `.env`）。前端 BUG 反馈侧通过 `BugReportDrawer` 入 `bug_reports` 表（`docker exec ... psql` 即可查询，详见 CLAUDE.md 末尾）。
+前后端错误打到 Sentry（DSN 见 `.env`）。前端 BUG 反馈侧通过 `BugReportDrawer` 入 `bug_reports` 表；超管也可从侧边栏 **管理 → BUG反馈** 进入 `/bugs` 处理状态、查看 Markdown 描述/评论和截图附件。
 
 ## 容量规划经验值
 

@@ -12,6 +12,14 @@ export interface BugReportPayload {
   recent_api_calls?: Array<{ method: string; url: string; status: number; ms: number }>;
   recent_console_errors?: Array<{ msg: string; stack?: string }>;
   screenshot_url?: string | null;
+  attachments?: BugAttachment[];
+}
+
+export interface BugAttachment {
+  storageKey: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
 }
 
 export interface BugReportResponse {
@@ -32,6 +40,7 @@ export interface BugReportResponse {
   recent_api_calls: unknown;
   recent_console_errors: unknown;
   screenshot_url: string | null;
+  attachments: BugAttachment[];
   resolution: string | null;
   fixed_in_version: string | null;
   assigned_to_id: string | null;
@@ -107,16 +116,36 @@ export const bugReportsApi = {
       "/bug_reports/screenshot/upload-init",
       { file_name, content_type },
     ),
+
+  attachmentDownloadUrl: (reportId: string, key: string) =>
+    `/api/v1/bug_reports/${reportId}/attachments/download?key=${encodeURIComponent(key)}`,
 };
 
 /** 高阶：先 init 拿 PUT URL，再前端 fetch PUT 上传，返回 storage_key */
 export async function uploadBugScreenshot(blob: Blob): Promise<string> {
-  const init = await bugReportsApi.initScreenshotUpload();
+  const init = await bugReportsApi.initScreenshotUpload("screenshot.png", blob.type || "image/png");
   const res = await fetch(init.upload_url, {
     method: "PUT",
-    headers: { "Content-Type": "image/png" },
+    headers: { "Content-Type": blob.type || "image/png" },
     body: blob,
   });
   if (!res.ok) throw new Error(`上传失败 (${res.status})`);
   return init.storage_key;
+}
+
+export async function uploadBugAttachment(file: Blob, fileName = "screenshot.png"): Promise<BugAttachment> {
+  const mimeType = file.type || "image/png";
+  const init = await bugReportsApi.initScreenshotUpload(fileName, mimeType);
+  const res = await fetch(init.upload_url, {
+    method: "PUT",
+    headers: { "Content-Type": mimeType },
+    body: file,
+  });
+  if (!res.ok) throw new Error(`上传失败 (${res.status})`);
+  return {
+    storageKey: init.storage_key,
+    fileName,
+    mimeType,
+    size: file.size,
+  };
 }

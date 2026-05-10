@@ -2603,6 +2603,42 @@
         "title": "BucketsResponse",
         "type": "object"
       },
+      "BugAttachment": {
+        "properties": {
+          "fileName": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "mimeType": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 10485760.0,
+            "minimum": 0.0,
+            "title": "Size",
+            "type": "integer"
+          },
+          "storageKey": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Storagekey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "storageKey",
+          "fileName",
+          "mimeType",
+          "size"
+        ],
+        "title": "BugAttachment",
+        "type": "object"
+      },
       "BugCommentCreate": {
         "properties": {
           "body": {
@@ -2666,6 +2702,14 @@
       },
       "BugReportCreate": {
         "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/BugAttachment"
+            },
+            "maxItems": 5,
+            "title": "Attachments",
+            "type": "array"
+          },
           "browser_ua": {
             "anyOf": [
               {
@@ -2796,6 +2840,13 @@
               }
             ],
             "title": "Assigned To Id"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/BugAttachment"
+            },
+            "title": "Attachments",
+            "type": "array"
           },
           "browser_ua": {
             "anyOf": [
@@ -3060,6 +3111,13 @@
               }
             ],
             "title": "Assigned To Id"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/BugAttachment"
+            },
+            "title": "Attachments",
+            "type": "array"
           },
           "browser_ua": {
             "anyOf": [
@@ -11312,7 +11370,7 @@
     },
     "/api/v1/bug_reports/screenshot/upload-init": {
       "post": {
-        "description": "v0.6.6 · 给 BugReportDrawer 截图签发 PUT 预签名 URL。\n\nstorage_key 形如 `bug-screenshots/{user_id}/{uuid}.png`；MinIO bucket lifecycle\n180 天过期（见 storage_service._ensure_lifecycle）。",
+        "description": "v0.6.6 · 给 BugReportDrawer 截图签发 PUT 预签名 URL。\n\nstorage_key 形如 `bug-report-attachments/{user_id}/{uuid}.png`；MinIO bucket lifecycle\n180 天过期（见 storage_service._ensure_lifecycle）。",
         "operationId": "init_bug_screenshot_upload_api_v1_bug_reports_screenshot_upload_init_post",
         "requestBody": {
           "content": {
@@ -11495,6 +11553,61 @@
           }
         ],
         "summary": "Update Bug Report",
+        "tags": [
+          "bug-reports"
+        ]
+      }
+    },
+    "/api/v1/bug_reports/{report_id}/attachments/download": {
+      "get": {
+        "operationId": "download_bug_attachment_api_v1_bug_reports__report_id__attachments_download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download Bug Attachment",
         "tags": [
           "bug-reports"
         ]
