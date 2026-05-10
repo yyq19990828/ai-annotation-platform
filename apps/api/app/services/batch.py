@@ -1186,9 +1186,7 @@ class BatchService:
             select(
                 func.count(Task.id).label("total"),
                 func.sum(func.cast(Task.is_labeled, Integer)).label("completed"),
-                func.sum(
-                    func.cast(Task.status == "review", Integer)
-                ).label("review"),
+                func.sum(func.cast(Task.status == "review", Integer)).label("review"),
             ).where(Task.batch_id == batch_id)
         )
         row = result.one()

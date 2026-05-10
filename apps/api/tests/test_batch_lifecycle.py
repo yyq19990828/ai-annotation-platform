@@ -1169,9 +1169,7 @@ class TestAdminLock:
     ):
         owner, owner_token = super_admin
         user, _ = annotator
-        p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="active"
-        )
+        p, batch, _ = await _seed(db_session, owner.id, user.id, batch_status="active")
         await db_session.commit()
 
         await httpx_client_bound.post(
@@ -1181,14 +1179,18 @@ class TestAdminLock:
         )
 
         logs = (
-            await db_session.execute(
-                select(AuditLog).where(
-                    AuditLog.target_type == "batch",
-                    AuditLog.target_id == str(batch.id),
-                    AuditLog.action == "batch.admin_lock",
+            (
+                await db_session.execute(
+                    select(AuditLog).where(
+                        AuditLog.target_type == "batch",
+                        AuditLog.target_id == str(batch.id),
+                        AuditLog.action == "batch.admin_lock",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(logs) == 1
         assert logs[0].detail_json["reason"] == "审计测试"
 
@@ -1210,13 +1212,17 @@ class TestAdminLock:
         )
 
         notifs = (
-            await db_session.execute(
-                select(Notification).where(
-                    Notification.user_id == user.id,
-                    Notification.type == "batch.admin_locked",
+            (
+                await db_session.execute(
+                    select(Notification).where(
+                        Notification.user_id == user.id,
+                        Notification.type == "batch.admin_locked",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(notifs) == 1
         assert notifs[0].payload["reason"] == "通知测试"
 
@@ -1230,8 +1236,11 @@ class TestAdminLock:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="active", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="active",
+            task_status="pending",
         )
         tasks[0].status = "in_progress"
         batch.admin_locked = True
@@ -1253,8 +1262,11 @@ class TestAdminLock:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="active", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="active",
+            task_status="pending",
         )
         batch.admin_locked = True
         batch.admin_lock_reason = "locked"
@@ -1269,9 +1281,7 @@ class TestAdminLock:
     ):
         owner, owner_token = super_admin
         user, _ = annotator
-        p, batch, _ = await _seed(
-            db_session, owner.id, user.id, batch_status="active"
-        )
+        p, batch, _ = await _seed(db_session, owner.id, user.id, batch_status="active")
         await db_session.commit()
 
         resp = await httpx_client_bound.get(
@@ -1296,7 +1306,9 @@ class TestBulkApproveReject:
         owner, owner_token = super_admin
         user, _ = annotator
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             statuses=["reviewing", "reviewing", "reviewing"],
             n_tasks_each=1,
         )
@@ -1320,7 +1332,9 @@ class TestBulkApproveReject:
         owner, owner_token = super_admin
         user, _ = annotator
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             statuses=["reviewing", "approved"],
             n_tasks_each=1,
         )
@@ -1345,7 +1359,9 @@ class TestBulkApproveReject:
         owner, owner_token = super_admin
         user, _ = annotator
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             statuses=["reviewing", "active"],
             n_tasks_each=1,
         )
@@ -1369,12 +1385,15 @@ class TestBulkApproveReject:
         owner, owner_token = super_admin
         user, _ = annotator
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             statuses=["reviewing", "reviewing"],
             n_tasks_each=2,
         )
         # 把 tasks 设为 review/completed
         from sqlalchemy import update as sa_update
+
         await db_session.execute(
             sa_update(Task)
             .where(Task.batch_id.in_([b.id for b in batches]))
@@ -1397,10 +1416,14 @@ class TestBulkApproveReject:
         # 验证 tasks 被 reset 为 pending
         await db_session.refresh(batches[0])
         tasks_after = (
-            await db_session.execute(
-                select(Task).where(Task.batch_id == batches[0].id)
+            (
+                await db_session.execute(
+                    select(Task).where(Task.batch_id == batches[0].id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert all(t.status == "pending" for t in tasks_after)
         assert all(t.is_labeled is False for t in tasks_after)
 
@@ -1416,7 +1439,9 @@ class TestBulkApproveReject:
         owner, owner_token = super_admin
         user, _ = annotator
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             statuses=["reviewing"],
             n_tasks_each=1,
         )
@@ -1432,13 +1457,17 @@ class TestBulkApproveReject:
         )
 
         notifs = (
-            await db_session.execute(
-                select(Notification).where(
-                    Notification.user_id == user.id,
-                    Notification.type == "batch.rejected",
+            (
+                await db_session.execute(
+                    select(Notification).where(
+                        Notification.user_id == user.id,
+                        Notification.type == "batch.rejected",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(notifs) == 1
         assert notifs[0].payload["feedback"] == "通知测试"
 
@@ -1449,7 +1478,9 @@ class TestBulkApproveReject:
         owner, _ = super_admin
         user, token = annotator
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             statuses=["reviewing"],
             n_tasks_each=1,
         )
@@ -1470,13 +1501,17 @@ class TestBulkApproveReject:
         user, _ = annotator
         rev, rev_token = reviewer
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             statuses=["reviewing"],
             n_tasks_each=1,
         )
         from app.db.models.project_member import ProjectMember as PM
 
-        db_session.add(PM(project_id=p.id, user_id=rev.id, role="reviewer", assigned_by=owner.id))
+        db_session.add(
+            PM(project_id=p.id, user_id=rev.id, role="reviewer", assigned_by=owner.id)
+        )
         await db_session.commit()
 
         resp = await httpx_client_bound.post(
@@ -1495,7 +1530,9 @@ class TestBulkApproveReject:
         owner, owner_token = super_admin
         user, _ = annotator
         p, batches = await _seed_multi(
-            db_session, owner.id, user.id,
+            db_session,
+            owner.id,
+            user.id,
             statuses=["reviewing"],
             n_tasks_each=1,
         )
@@ -1508,12 +1545,16 @@ class TestBulkApproveReject:
         )
 
         logs = (
-            await db_session.execute(
-                select(AuditLog).where(
-                    AuditLog.target_type == "project",
-                    AuditLog.target_id == str(p.id),
-                    AuditLog.action == "batch.bulk_approve",
+            (
+                await db_session.execute(
+                    select(AuditLog).where(
+                        AuditLog.target_type == "project",
+                        AuditLog.target_id == str(p.id),
+                        AuditLog.action == "batch.bulk_approve",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(logs) == 1

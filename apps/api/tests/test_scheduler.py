@@ -26,6 +26,7 @@ from app.services.display_id import next_display_id
 
 # ── 共用 seed helper ─────────────────────────────────────────────────────────
 
+
 async def _seed(
     db: AsyncSession,
     owner_id: uuid.UUID,
@@ -102,8 +103,11 @@ class TestAutoTransitionActiveToAnnotating:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="active", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="active",
+            task_status="pending",
         )
         tasks[0].status = "in_progress"
         await db_session.flush()
@@ -122,8 +126,11 @@ class TestAutoTransitionActiveToAnnotating:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="active", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="active",
+            task_status="pending",
         )
         tasks[0].status = "rejected"
         await db_session.flush()
@@ -141,8 +148,11 @@ class TestAutoTransitionActiveToAnnotating:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="active", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="active",
+            task_status="pending",
         )
 
         await BatchService(db_session).check_auto_transitions(batch.id)
@@ -158,8 +168,11 @@ class TestAutoTransitionActiveToAnnotating:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="pre_annotated", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="pre_annotated",
+            task_status="pending",
         )
         tasks[0].status = "in_progress"
         await db_session.flush()
@@ -177,8 +190,11 @@ class TestAutoTransitionActiveToAnnotating:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="pre_annotated", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="pre_annotated",
+            task_status="pending",
         )
 
         await BatchService(db_session).check_auto_transitions(batch.id)
@@ -199,8 +215,12 @@ class TestAutoTransitionAnnotatingToReviewing:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="annotating", task_status="review", is_labeled=True,
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            task_status="review",
+            is_labeled=True,
         )
 
         await BatchService(db_session).check_auto_transitions(batch.id)
@@ -216,8 +236,12 @@ class TestAutoTransitionAnnotatingToReviewing:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="annotating", task_status="completed", is_labeled=True,
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            task_status="completed",
+            is_labeled=True,
         )
 
         await BatchService(db_session).check_auto_transitions(batch.id)
@@ -233,8 +257,12 @@ class TestAutoTransitionAnnotatingToReviewing:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="annotating", task_status="review", is_labeled=True,
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            task_status="review",
+            is_labeled=True,
         )
         tasks[0].status = "pending"
         tasks[0].is_labeled = False
@@ -253,8 +281,12 @@ class TestAutoTransitionAnnotatingToReviewing:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="annotating", task_status="review", is_labeled=True,
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            task_status="review",
+            is_labeled=True,
         )
         tasks[0].status = "in_progress"
         tasks[0].is_labeled = False
@@ -274,8 +306,12 @@ class TestAutoTransitionAnnotatingToReviewing:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="annotating", task_status="review", is_labeled=True,
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            task_status="review",
+            is_labeled=True,
         )
         tasks[0].status = "rejected"
         tasks[0].is_labeled = False
@@ -307,17 +343,19 @@ class TestAutoTransitionBoundary:
         # 没有抛出异常即通过
 
     @pytest.mark.asyncio
-    async def test_reviewing_status_is_noop(
-        self, db_session, super_admin, annotator
-    ):
+    async def test_reviewing_status_is_noop(self, db_session, super_admin, annotator):
         """reviewing 态不在 check_auto_transitions 处理范围，不应变更。"""
         from app.services.batch import BatchService
 
         owner, _ = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="reviewing", task_status="review", is_labeled=True,
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="reviewing",
+            task_status="review",
+            is_labeled=True,
         )
 
         await BatchService(db_session).check_auto_transitions(batch.id)
@@ -331,8 +369,12 @@ class TestAutoTransitionBoundary:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="approved", task_status="completed", is_labeled=True,
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="approved",
+            task_status="completed",
+            is_labeled=True,
         )
 
         await BatchService(db_session).check_auto_transitions(batch.id)
@@ -353,8 +395,11 @@ class TestGetNextTaskBatchFiltering:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="active", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="active",
+            task_status="pending",
         )
         await db_session.commit()
 
@@ -371,8 +416,11 @@ class TestGetNextTaskBatchFiltering:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, tasks = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="annotating", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            task_status="pending",
         )
         await db_session.commit()
 
@@ -387,8 +435,11 @@ class TestGetNextTaskBatchFiltering:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="draft", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="draft",
+            task_status="pending",
         )
         await db_session.commit()
 
@@ -402,8 +453,12 @@ class TestGetNextTaskBatchFiltering:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="reviewing", task_status="review", is_labeled=True,
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="reviewing",
+            task_status="review",
+            is_labeled=True,
         )
         await db_session.commit()
 
@@ -417,8 +472,11 @@ class TestGetNextTaskBatchFiltering:
         owner, _ = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(
-            db_session, owner.id, user.id,
-            batch_status="archived", task_status="pending",
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="archived",
+            task_status="pending",
         )
         await db_session.commit()
 
