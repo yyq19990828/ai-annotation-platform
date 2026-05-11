@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { projectsApi, type ExportFormat } from "@/api/projects";
+import { projectsApi, type ExportFormat, type VideoFrameMode } from "@/api/projects";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
 
 interface ExportSectionProps {
   projectId: string;
+  projectTypeKey?: string;
 }
 
 const FORMATS: { value: ExportFormat; label: string }[] = [
@@ -15,7 +16,7 @@ const FORMATS: { value: ExportFormat; label: string }[] = [
 /** 项目行的「导出」按钮 + 浮层。
  *  浮层包含格式选择 + 「包含属性数据」复选框（默认勾选 = 后端 default true）。
  *  v0.9.3 · 改用 DropdownMenu content 模式（统一浮层骨架与键盘行为）。 */
-export function ExportSection({ projectId }: ExportSectionProps) {
+export function ExportSection({ projectId, projectTypeKey }: ExportSectionProps) {
   return (
     <div onClick={(e) => e.stopPropagation()}>
       <DropdownMenu
@@ -43,21 +44,32 @@ export function ExportSection({ projectId }: ExportSectionProps) {
             导出 ▾
           </button>
         )}
-        content={({ close }) => <ExportForm projectId={projectId} onDone={close} />}
+        content={({ close }) => (
+          <ExportForm
+            projectId={projectId}
+            projectTypeKey={projectTypeKey}
+            onDone={close}
+          />
+        )}
       />
     </div>
   );
 }
 
-function ExportForm({ projectId, onDone }: { projectId: string; onDone: () => void }) {
+function ExportForm({ projectId, projectTypeKey, onDone }: { projectId: string; projectTypeKey?: string; onDone: () => void }) {
+  const isVideoProject = projectTypeKey === "video-track";
   const [format, setFormat] = useState<ExportFormat>("coco");
   const [includeAttributes, setIncludeAttributes] = useState(true);
+  const [videoFrameMode, setVideoFrameMode] = useState<VideoFrameMode>("keyframes");
   const [busy, setBusy] = useState(false);
 
   const handleExport = async () => {
     setBusy(true);
     try {
-      await projectsApi.exportProject(projectId, format, { includeAttributes });
+      await projectsApi.exportProject(projectId, isVideoProject ? "coco" : format, {
+        includeAttributes,
+        ...(isVideoProject ? { videoFrameMode } : {}),
+      });
       onDone();
     } finally {
       setBusy(false);
@@ -75,31 +87,70 @@ function ExportForm({ projectId, onDone }: { projectId: string; onDone: () => vo
         gap: 10,
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>格式</div>
-        <div style={{ display: "flex", gap: 4 }}>
-          {FORMATS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => setFormat(f.value)}
-              style={{
-                flex: 1,
-                padding: "4px 8px",
-                fontSize: 11,
-                borderRadius: "var(--radius-sm)",
-                border: `1px solid ${format === f.value ? "oklch(0.55 0.18 250)" : "var(--color-border)"}`,
-                background: format === f.value ? "oklch(0.55 0.18 250 / 0.10)" : "var(--color-bg-sunken)",
-                color: format === f.value ? "oklch(0.55 0.18 250)" : "var(--color-fg)",
-                cursor: "pointer",
-                fontWeight: format === f.value ? 600 : 400,
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
+      {isVideoProject ? (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>格式</div>
+            <div style={{ padding: "5px 8px", fontSize: 12, border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)", background: "var(--color-bg-sunken)" }}>
+              Video JSON
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>帧模式</div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {[
+                { value: "keyframes" as const, label: "关键帧" },
+                { value: "all_frames" as const, label: "所有帧" },
+              ].map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setVideoFrameMode(item.value)}
+                  style={{
+                    flex: 1,
+                    padding: "4px 8px",
+                    fontSize: 11,
+                    borderRadius: "var(--radius-sm)",
+                    border: `1px solid ${videoFrameMode === item.value ? "oklch(0.55 0.18 250)" : "var(--color-border)"}`,
+                    background: videoFrameMode === item.value ? "oklch(0.55 0.18 250 / 0.10)" : "var(--color-bg-sunken)",
+                    color: videoFrameMode === item.value ? "oklch(0.55 0.18 250)" : "var(--color-fg)",
+                    cursor: "pointer",
+                    fontWeight: videoFrameMode === item.value ? 600 : 400,
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>格式</div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {FORMATS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setFormat(f.value)}
+                style={{
+                  flex: 1,
+                  padding: "4px 8px",
+                  fontSize: 11,
+                  borderRadius: "var(--radius-sm)",
+                  border: `1px solid ${format === f.value ? "oklch(0.55 0.18 250)" : "var(--color-border)"}`,
+                  background: format === f.value ? "oklch(0.55 0.18 250 / 0.10)" : "var(--color-bg-sunken)",
+                  color: format === f.value ? "oklch(0.55 0.18 250)" : "var(--color-fg)",
+                  cursor: "pointer",
+                  fontWeight: format === f.value ? 600 : 400,
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
       <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
         <input
           type="checkbox"

@@ -18,6 +18,7 @@ import type { useWorkbenchState } from "./useWorkbenchState";
 import type { useAnnotationHistory } from "./useAnnotationHistory";
 import type { AnnotationResponse } from "@/types";
 import type { AiBox } from "./transforms";
+import type { VideoStageControls } from "../stage/VideoStage";
 
 type Geom = { x: number; y: number; w: number; h: number };
 
@@ -96,6 +97,8 @@ export interface UseWorkbenchHotkeysArgs {
 
   disabled?: boolean;
   ignoredKeys?: Set<string>;
+  videoMode?: boolean;
+  videoControlsRef?: React.RefObject<VideoStageControls | null>;
 }
 
 export interface UseWorkbenchHotkeysReturn {
@@ -113,7 +116,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
-    updateMutation, taskId, disabled = false, ignoredKeys,
+    updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, videoControlsRef,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -230,6 +233,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         hasSelection: !!s.selectedId || s.selectedIds.length > 0,
         pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging,
         attributeHotkey,
+        videoMode,
       });
       if (!action) return;
       recordHotkeyUsage(action.type);
@@ -239,6 +243,28 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "redo": e.preventDefault(); history.redo(); return;
         case "fitReset": e.preventDefault(); setFitTick((n) => n + 1); return;
         case "navigateTask": e.preventDefault(); navigateTask(action.dir); return;
+
+        case "videoTogglePlayback":
+          e.preventDefault();
+          videoControlsRef?.current?.togglePlayback();
+          return;
+        case "videoSeek":
+          e.preventDefault();
+          videoControlsRef?.current?.seekByFrames(action.delta);
+          return;
+        case "videoDeleteSelected":
+          e.preventDefault();
+          if (s.selectedId) handleDeleteBox(s.selectedId);
+          return;
+        case "videoCycleTrack": {
+          const list = annotationsRef.current.filter((ann) => ann.geometry.type === "video_track");
+          if (list.length === 0) return;
+          e.preventDefault();
+          const idxNow = s.selectedId ? list.findIndex((a) => a.id === s.selectedId) : -1;
+          const next = (idxNow + action.dir + list.length) % list.length;
+          s.setSelectedId(list[next].id);
+          return;
+        }
 
         case "selectAllUser":
           e.preventDefault();
@@ -417,6 +443,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
   }, [
     disabled,
     ignoredKeys,
+    videoMode,
+    videoControlsRef,
     s, history, classes, currentProject, annotationsRef, batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,
     recordRecentClass, handleDeleteBox, handleBatchDelete,

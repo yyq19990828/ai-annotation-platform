@@ -37,6 +37,11 @@ export type ProjectCreatePayload = ProjectCreate & {
 export type ProjectUpdatePayload = ProjectUpdate;
 
 export type ExportFormat = "coco" | "voc" | "yolo";
+export type VideoFrameMode = "keyframes" | "all_frames";
+export interface ExportOptions {
+  includeAttributes?: boolean;
+  videoFrameMode?: VideoFrameMode;
+}
 
 export interface ProjectListParams {
   status?: string;
@@ -97,14 +102,18 @@ export const projectsApi = {
   cleanupOrphanTasks: (id: string) =>
     apiClient.post<{ deleted_tasks: number; deleted_annotations: number }>(`/projects/${id}/orphan-tasks/cleanup`),
 
-  exportProject: async (id: string, format: ExportFormat, opts?: { includeAttributes?: boolean }) => {
+  exportProject: async (id: string, format: ExportFormat, opts?: ExportOptions) => {
     const token = localStorage.getItem("token");
     const includeAttr = opts?.includeAttributes !== false;
     const params = new URLSearchParams({ format, include_attributes: String(includeAttr) });
+    if (opts?.videoFrameMode) params.set("video_frame_mode", opts.videoFrameMode);
     const res = await fetch(`/api/v1/projects/${id}/export?${params.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    if (!res.ok) throw new Error("Export failed");
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.detail ?? "Export failed");
+    }
     const blob = await res.blob();
     const disposition = res.headers.get("Content-Disposition") ?? "";
     const match = disposition.match(/filename=(.+)/);

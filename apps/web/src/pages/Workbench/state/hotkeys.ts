@@ -1,7 +1,7 @@
 // Single source of truth for Workbench shortcuts.
 // useEffect 注册和 HotkeyCheatSheet 都从这里读，避免漂移。
 
-export type HotkeyGroup = "view" | "draw" | "ai" | "nav" | "system";
+export type HotkeyGroup = "view" | "draw" | "ai" | "nav" | "video" | "system";
 
 export interface HotkeyDef {
   keys: string[];        // display labels e.g. ["Ctrl", "Z"]
@@ -51,6 +51,15 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Space", "+ drag"], desc: "平移画布", group: "view", actionType: "spacePanOn" },
   { keys: ["双击空白"], desc: "适应视口", group: "view" },
 
+  { keys: ["Space"], desc: "视频播放 / 暂停", group: "video", actionType: "videoTogglePlayback" },
+  { keys: ["← / →"], desc: "视频逐帧后退 / 前进", group: "video", actionType: "videoSeek" },
+  { keys: ["Shift", "← / →"], desc: "视频后退 / 前进 10 帧", group: "video", actionType: "videoSeek" },
+  { keys: ["Delete / Backspace"], desc: "删除选中轨迹", group: "video", actionType: "videoDeleteSelected" },
+  { keys: ["Tab"], desc: "下一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
+  { keys: ["Shift", "Tab"], desc: "上一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
+  { keys: ["Esc"], desc: "取消选择", group: "video", actionType: "cancel" },
+  { keys: ["1 — 9"], desc: "切换视频 active class", group: "video", actionType: "setClassByDigit" },
+
   { keys: ["A"], desc: "采纳选中 AI 框", group: "ai", actionType: "acceptAi" },
   { keys: ["D"], desc: "驳回选中 AI 框", group: "ai", actionType: "rejectAi" },
   { keys: ["["], desc: "降低置信度阈值 (-0.05)", group: "ai", actionType: "thresholdAdjust" },
@@ -71,6 +80,7 @@ export const GROUP_LABEL: Record<HotkeyGroup, string> = {
   draw: "绘制",
   ai: "AI",
   nav: "导航",
+  video: "视频",
   system: "系统",
 };
 
@@ -103,7 +113,11 @@ export type HotkeyAction =
   | { type: "submit" }
   | { type: "acceptAi" }
   | { type: "rejectAi" }
-  | { type: "samPolarity"; polarity: "positive" | "negative" };
+  | { type: "samPolarity"; polarity: "positive" | "negative" }
+  | { type: "videoTogglePlayback" }
+  | { type: "videoSeek"; delta: number }
+  | { type: "videoDeleteSelected" }
+  | { type: "videoCycleTrack"; dir: 1 | -1 };
 
 /** 属性 hotkey 解析结果（D.1）：
  * 由 WorkbenchShell 根据当前 selected box 的 class_name + project.attribute_schema 计算
@@ -129,6 +143,8 @@ export interface DispatchCtx {
    *  实现由 WorkbenchShell 层注入（绑了项目 schema 与当前 annotation.attributes）。
    */
   attributeHotkey?: (digit: string) => AttributeHotkeyHit | null;
+  /** video stage active: consume video namespace before image drawing shortcuts. */
+  videoMode?: boolean;
 }
 
 const RESERVED_LETTERS = new Set(["v","V","b","B","p","P","s","S","a","A","d","D","e","E","n","N","u","U","j","J","k","K","c","C"]);
@@ -149,6 +165,20 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (k === "c") return { type: "copy" };
     if (k === "v") return { type: "paste" };
     if (k === "d") return { type: "duplicate" };
+    return null;
+  }
+
+  if (ctx.videoMode) {
+    if (e.key === " ") return { type: "videoTogglePlayback" };
+    if (e.key === "ArrowRight") return { type: "videoSeek", delta: e.shiftKey ? 10 : 1 };
+    if (e.key === "ArrowLeft") return { type: "videoSeek", delta: e.shiftKey ? -10 : -1 };
+    if (e.key === "Tab") return { type: "videoCycleTrack", dir: e.shiftKey ? -1 : 1 };
+    if (e.key === "Escape") return { type: "cancel" };
+    if (e.key === "Delete" || e.key === "Backspace") return { type: "videoDeleteSelected" };
+    if (e.key >= "1" && e.key <= "9") {
+      return { type: "setClassByDigit", idx: parseInt(e.key, 10) - 1 };
+    }
+    if (e.key === "?") return { type: "showHotkeys" };
     return null;
   }
 

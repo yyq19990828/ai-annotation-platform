@@ -55,4 +55,20 @@ describe("ExportSection", () => {
       includeAttributes: true,
     });
   });
+
+  it("视频项目只展示 Video JSON 并传递 frame mode", async () => {
+    render(<ExportSection projectId="p3" projectTypeKey="video-track" />);
+    fireEvent.click(screen.getByText("导出 ▾"));
+
+    expect(screen.getByText("Video JSON")).toBeInTheDocument();
+    expect(screen.queryByText("YOLO")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("所有帧"));
+    fireEvent.click(screen.getByText("导出"));
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(projectsApi.exportProject).toHaveBeenCalledWith("p3", "coco", {
+      includeAttributes: true,
+      videoFrameMode: "all_frames",
+    });
+  });
 });

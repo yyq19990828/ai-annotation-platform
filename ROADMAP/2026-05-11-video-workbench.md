@@ -1,6 +1,6 @@
 # P0 · 视频标注工作台 Epic
 
-> 状态：M0 + M1 已在 v0.9.16 落地；M2 + M3 已在 v0.9.17 落地；M4 待实现。
+> 状态：M0 + M1 已在 v0.9.16 落地；M2 + M3 已在 v0.9.17 落地；M4 已在 v0.9.18 落地。
 >
 > 范围：先交付 `video-track` 人工标注闭环。`video-mm`、视频 AI tracker、SAM 3 video predictor、长视频切片和多人协同都作为后续增强。
 
@@ -143,20 +143,24 @@
 
 ### M4 · 导出与文档闭环
 
+**状态**：v0.9.18 已落地。
+
 **目标**：视频标注结果能被训练和质检流程消费。
 
 - 导出格式：
   - JSON 首选：保留 track / keyframe / interpolated metadata。
-  - COCO / YOLO 如需支持，只导出为逐帧展开结果，并明确损失信息。
-  - 导出时可选“仅关键帧”或“展开所有帧”。
+  - v0.9.18 复用 `format=coco` 兼容入口，但 `video-track` 返回专用 Video Tracks JSON（`export_type="video_tracks"`），不是 COCO。
+  - `video_frame_mode=keyframes|all_frames` 可选“仅关键帧”或“展开所有帧”；默认 `keyframes`。
+  - `all_frames` 导出在后端按相邻有效关键帧线性插值，`absent=true` 阻断跨段插值。
+  - YOLO / VOC 对视频项目返回清晰 400，避免丢失 track 语义。
 - 文档：
-  - 用户手册新增视频标注流程。
-  - 开发文档新增 video annotation schema。
-  - 若数据模型变化较大，补 ADR：视频任务与轨迹标注模型。
+  - 用户手册说明 Video JSON、关键帧 / 所有帧模式和 `absent` 语义。
+  - 开发文档新增 Video Tracks JSON schema 与快捷键中心化说明。
+  - 本期未新增数据库表或迁移，不补 ADR。
 - 验收：
-  - 一个含 2 条 track、各 3 个关键帧的视频任务可导出 JSON。
-  - 导出的 frame index 与前端时间轴一致。
-  - 文档能说明关键帧、插值帧、目标消失段的语义。
+  - 已覆盖 video project `format=coco` 返回 Video JSON、batch filter、`all_frames` 插值、`absent` 阻断、`include_attributes=false`、video `yolo/voc` 400。
+  - 导出的 frame index 与前端时间轴一致，均从 0 开始。
+  - 文档已说明关键帧、插值帧、目标消失段的语义。
 
 ---
 

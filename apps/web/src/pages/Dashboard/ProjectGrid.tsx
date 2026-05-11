@@ -33,7 +33,7 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
 
   const exportProject = async (p: ProjectResponse, format: ExportFormat) => {
     try {
-      await projectsApi.exportProject(p.id, format);
+      await projectsApi.exportProject(p.id, format, p.type_key === "video-track" ? { videoFrameMode: "keyframes" } : undefined);
     } catch (e) {
       pushToast({ msg: "导出失败", sub: (e as Error).message, kind: "error" });
     }
@@ -175,11 +175,15 @@ function ProjectMoreMenu({
     });
     items.push({ id: "div-1", divider: true, label: "" });
   }
-  items.push(
-    { id: "exp-coco", label: "导出 COCO JSON", icon: "download", onSelect: () => onExport(project, "coco") },
-    { id: "exp-voc", label: "导出 Pascal VOC", icon: "download", onSelect: () => onExport(project, "voc") },
-    { id: "exp-yolo", label: "导出 YOLO", icon: "download", onSelect: () => onExport(project, "yolo") },
-  );
+  if (project.type_key === "video-track") {
+    items.push({ id: "exp-video", label: "导出 Video JSON", icon: "download", onSelect: () => onExport(project, "coco") });
+  } else {
+    items.push(
+      { id: "exp-coco", label: "导出 COCO JSON", icon: "download", onSelect: () => onExport(project, "coco") },
+      { id: "exp-voc", label: "导出 Pascal VOC", icon: "download", onSelect: () => onExport(project, "voc") },
+      { id: "exp-yolo", label: "导出 YOLO", icon: "download", onSelect: () => onExport(project, "yolo") },
+    );
+  }
   return (
     <DropdownMenu
       minWidth={180}

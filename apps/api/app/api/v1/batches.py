@@ -846,6 +846,11 @@ async def export_batch(
     batch_id: uuid.UUID,
     format: str = Query("coco", pattern="^(coco|voc|yolo)$"),
     include_attributes: bool = Query(True),
+    video_frame_mode: str = Query(
+        "keyframes",
+        pattern="^(keyframes|all_frames)$",
+        description="video-track 导出帧模式：keyframes 仅关键帧，all_frames 展开逐帧插值；图片项目忽略",
+    ),
     project: Project = Depends(require_project_visible),
     actor: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -864,7 +869,10 @@ async def export_batch(
     if format == "coco":
         try:
             content = await svc.export_coco(
-                project_id, batch_id=batch_id, include_attributes=include_attributes
+                project_id,
+                batch_id=batch_id,
+                include_attributes=include_attributes,
+                video_frame_mode=video_frame_mode,
             )
         except UnsupportedExportError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -884,14 +892,18 @@ async def export_batch(
                     "project_id": str(project_id),
                     "batch_display_id": batch.display_id,
                 },
-                filter_criteria={"include_attributes": include_attributes},
+                filter_criteria={
+                    "include_attributes": include_attributes,
+                    "video_frame_mode": video_frame_mode,
+                },
             ),
         )
         await db.commit()
+        suffix = "video_tracks" if project.type_key == "video-track" else "coco"
         return Response(
             content=content,
             media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename={fname}_coco.json"},
+            headers={"Content-Disposition": f"attachment; filename={fname}_{suffix}.json"},
         )
 
     if format == "yolo":

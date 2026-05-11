@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { ExportFormat } from "./projects";
+import type { ExportFormat, ExportOptions } from "./projects";
 import type { UserBrief } from "@/types";
 
 export interface BatchResponse {
@@ -241,16 +241,22 @@ export const batchesApi = {
       `/projects/${projectId}/batches/unclassified-count`,
     ),
 
-  exportBatch: async (projectId: string, batchId: string, format: ExportFormat) => {
+  exportBatch: async (projectId: string, batchId: string, format: ExportFormat, opts?: ExportOptions) => {
+    const includeAttr = opts?.includeAttributes !== false;
+    const params = new URLSearchParams({ format, include_attributes: String(includeAttr) });
+    if (opts?.videoFrameMode) params.set("video_frame_mode", opts.videoFrameMode);
     const resp = await fetch(
-      `/api/v1/projects/${projectId}/batches/${batchId}/export?format=${format}`,
+      `/api/v1/projects/${projectId}/batches/${batchId}/export?${params.toString()}`,
       {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
       },
     );
-    if (!resp.ok) throw new Error("Export failed");
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null);
+      throw new Error(body?.detail ?? "Export failed");
+    }
     const blob = await resp.blob();
     const cd = resp.headers.get("content-disposition") ?? "";
     const fname = cd.match(/filename=(.+)/)?.[1] ?? `batch_export.${format === "coco" ? "json" : "zip"}`;

@@ -11,21 +11,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
+from app.db.models.dataset import DatasetItem
 from app.db.models.task import Task
 from app.db.models.project import Project
 
 IMG_W, IMG_H = 1920, 1280
 VIDEO_PROJECT_TYPES = {"video-track", "video-mm"}
+VIDEO_FRAME_MODES = {"keyframes", "all_frames"}
 
 
 class UnsupportedExportError(ValueError):
     pass
 
 
-def _assert_supported_project(project: Project) -> None:
+def _assert_image_export_supported(project: Project) -> None:
     if project.type_key in VIDEO_PROJECT_TYPES:
         raise UnsupportedExportError(
-            "Video annotation export is not supported for COCO/YOLO/VOC yet"
+            "Video projects only support Video JSON export via format=coco"
         )
 
 
@@ -36,6 +38,121 @@ def _bbox_geometry(annotation: Annotation) -> dict | None:
     if not all(k in geometry for k in ("x", "y", "w", "h")):
         return None
     return geometry
+
+
+def _video_metadata(item: DatasetItem | None) -> dict:
+    if not item:
+        return {}
+    metadata = item.metadata_ or {}
+    video = metadata.get("video")
+    return video if isinstance(video, dict) else {}
+
+
+def _sorted_keyframes(geometry: dict) -> list[dict]:
+    keyframes = geometry.get("keyframes")
+    if not isinstance(keyframes, list):
+        return []
+    return sorted(
+        [kf for kf in keyframes if isinstance(kf, dict)],
+        key=lambda kf: int(kf.get("frame_index", 0)),
+    )
+
+
+def _clean_keyframe(kf: dict, *, include_attributes: bool) -> dict:
+    row = {
+        "frame_index": int(kf.get("frame_index", 0)),
+        "bbox": kf.get("bbox") or {},
+        "source": kf.get("source", "manual"),
+        "absent": bool(kf.get("absent", False)),
+        "occluded": bool(kf.get("occluded", False)),
+    }
+    if include_attributes and isinstance(kf.get("attributes"), dict):
+        row["attributes"] = kf["attributes"]
+    return row
+
+
+def _clean_video_bbox_geometry(geometry: dict) -> dict:
+    return {
+        "frame_index": int(geometry.get("frame_index", 0)),
+        "bbox": {
+            "x": geometry.get("x", 0),
+            "y": geometry.get("y", 0),
+            "w": geometry.get("w", 0),
+            "h": geometry.get("h", 0),
+        },
+    }
+
+
+def _lerp_bbox(before: dict, after: dict, ratio: float) -> dict:
+    before_bbox = before.get("bbox") or {}
+    after_bbox = after.get("bbox") or {}
+    return {
+        key: round(
+            float(before_bbox.get(key, 0))
+            + (float(after_bbox.get(key, 0)) - float(before_bbox.get(key, 0))) * ratio,
+            6,
+        )
+        for key in ("x", "y", "w", "h")
+    }
+
+
+def _has_absent_between(keyframes: list[dict], from_frame: int, to_frame: int) -> bool:
+    return any(
+        bool(kf.get("absent"))
+        and int(kf.get("frame_index", 0)) > from_frame
+        and int(kf.get("frame_index", 0)) < to_frame
+        for kf in keyframes
+    )
+
+
+def _resolve_track_at_frame(
+    keyframes: list[dict], frame_index: int
+) -> dict | None:
+    exact = next(
+        (kf for kf in keyframes if int(kf.get("frame_index", 0)) == frame_index),
+        None,
+    )
+    if exact:
+        if exact.get("absent"):
+            return None
+        return {
+            "frame_index": frame_index,
+            "bbox": exact.get("bbox") or {},
+            "source": exact.get("source", "manual"),
+            "occluded": bool(exact.get("occluded", False)),
+        }
+
+    before = next(
+        (
+            kf
+            for kf in reversed(keyframes)
+            if int(kf.get("frame_index", 0)) < frame_index and not kf.get("absent")
+        ),
+        None,
+    )
+    after = next(
+        (
+            kf
+            for kf in keyframes
+            if int(kf.get("frame_index", 0)) > frame_index and not kf.get("absent")
+        ),
+        None,
+    )
+    if not before or not after:
+        return None
+    before_frame = int(before.get("frame_index", 0))
+    after_frame = int(after.get("frame_index", 0))
+    if after_frame == before_frame or _has_absent_between(
+        keyframes, before_frame, after_frame
+    ):
+        return None
+    ratio = (frame_index - before_frame) / (after_frame - before_frame)
+    return {
+        "frame_index": frame_index,
+        "bbox": _lerp_bbox(before, after, ratio),
+        "source": "interpolated",
+        "occluded": False,
+    }
 
 
 class ExportService:
@@ -73,17 +190,178 @@ class ExportService:
 
         return project, tasks, annotations
 
+    async def _load_dataset_items(
+        self, tasks: list[Task]
+    ) -> dict[uuid.UUID, DatasetItem]:
+        item_ids = [t.dataset_item_id for t in tasks if t.dataset_item_id]
+        if not item_ids:
+            return {}
+        result = await self.db.execute(
+            select(DatasetItem).where(DatasetItem.id.in_(item_ids))
+        )
+        return {item.id: item for item in result.scalars().all()}
+
+    async def export_video_tracks(
+        self,
+        project_id: uuid.UUID,
+        *,
+        batch_id: uuid.UUID | None = None,
+        include_attributes: bool = True,
+        video_frame_mode: str = "keyframes",
+    ) -> str:
+        if video_frame_mode not in VIDEO_FRAME_MODES:
+            raise UnsupportedExportError(
+                "video_frame_mode must be one of: keyframes, all_frames"
+            )
+
+        project, tasks, annotations = await self._load_data(project_id, batch_id)
+        if not project:
+            return json.dumps({})
+        if project.type_key != "video-track":
+            raise UnsupportedExportError(
+                "Video JSON export is only supported for video-track projects"
+            )
+
+        dataset_items = await self._load_dataset_items(tasks)
+        task_by_id = {task.id: task for task in tasks}
+        categories = [{"id": i, "name": name} for i, name in enumerate(project.classes)]
+
+        exported_tasks = []
+        video_metadata_by_task: dict[uuid.UUID, dict] = {}
+        for index, task in enumerate(tasks):
+            item = dataset_items.get(task.dataset_item_id) if task.dataset_item_id else None
+            video = _video_metadata(item)
+            video_metadata_by_task[task.id] = video
+            exported_tasks.append(
+                {
+                    "id": str(task.id),
+                    "display_id": task.display_id,
+                    "file_name": task.file_name,
+                    "file_path": task.file_path,
+                    "file_type": task.file_type,
+                    "sequence_order": task.sequence_order,
+                    "batch_id": str(task.batch_id) if task.batch_id else None,
+                    "video_metadata": video,
+                    "order": index,
+                }
+            )
+
+        tracks = []
+        flattened_keyframes = []
+        legacy_video_bbox = []
+        for ann in annotations:
+            task = task_by_id.get(ann.task_id)
+            if not task:
+                continue
+            geometry = ann.geometry or {}
+            if geometry.get("type") == "video_track":
+                keyframes = [
+                    _clean_keyframe(kf, include_attributes=include_attributes)
+                    for kf in _sorted_keyframes(geometry)
+                ]
+                track = {
+                    "annotation_id": str(ann.id),
+                    "task_id": str(ann.task_id),
+                    "task_display_id": task.display_id,
+                    "track_id": geometry.get("track_id"),
+                    "class_name": ann.class_name,
+                    "source": ann.source,
+                    "confidence": ann.confidence,
+                    "keyframes": keyframes,
+                }
+                if include_attributes:
+                    track["attributes"] = ann.attributes or {}
+                if video_frame_mode == "all_frames":
+                    max_keyframe = max(
+                        (kf["frame_index"] for kf in keyframes),
+                        default=0,
+                    )
+                    frame_count = int(
+                        video_metadata_by_task.get(ann.task_id, {}).get(
+                            "frame_count", max_keyframe + 1
+                        )
+                        or max_keyframe + 1
+                    )
+                    frame_count = max(frame_count, max_keyframe + 1)
+                    source_keyframes = _sorted_keyframes(geometry)
+                    track["frames"] = [
+                        resolved
+                        for frame_index in range(frame_count)
+                        if (
+                            resolved := _resolve_track_at_frame(
+                                source_keyframes, frame_index
+                            )
+                        )
+                    ]
+                tracks.append(track)
+                for kf in keyframes:
+                    flattened_keyframes.append(
+                        {
+                            "annotation_id": str(ann.id),
+                            "task_id": str(ann.task_id),
+                            "track_id": geometry.get("track_id"),
+                            "class_name": ann.class_name,
+                            **kf,
+                        }
+                    )
+            elif geometry.get("type") == "video_bbox":
+                row = {
+                    "annotation_id": str(ann.id),
+                    "task_id": str(ann.task_id),
+                    "task_display_id": task.display_id,
+                    "class_name": ann.class_name,
+                    "source": ann.source,
+                    **_clean_video_bbox_geometry(geometry),
+                }
+                if include_attributes:
+                    row["attributes"] = ann.attributes or {}
+                legacy_video_bbox.append(row)
+
+        project_row = {
+            "id": str(project.id),
+            "display_id": project.display_id,
+            "name": project.name,
+            "type_key": project.type_key,
+        }
+        if include_attributes:
+            project_row["attribute_schema"] = project.attribute_schema or {"fields": []}
+
+        payload = {
+            "export_type": "video_tracks",
+            "exported_at": datetime.utcnow().isoformat(),
+            "frame_mode": video_frame_mode,
+            "project": project_row,
+            "categories": categories,
+            "tasks": exported_tasks,
+            "tracks": tracks,
+            "keyframes": flattened_keyframes,
+            "video_bbox": legacy_video_bbox,
+            "video_metadata": {
+                str(task_id): metadata
+                for task_id, metadata in video_metadata_by_task.items()
+            },
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
     async def export_coco(
         self,
         project_id: uuid.UUID,
         *,
         batch_id: uuid.UUID | None = None,
         include_attributes: bool = True,
+        video_frame_mode: str = "keyframes",
     ) -> str:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return json.dumps({})
-        _assert_supported_project(project)
+        if project.type_key == "video-track":
+            return await self.export_video_tracks(
+                project_id,
+                batch_id=batch_id,
+                include_attributes=include_attributes,
+                video_frame_mode=video_frame_mode,
+            )
+        _assert_image_export_supported(project)
 
         categories = [{"id": i, "name": name} for i, name in enumerate(project.classes)]
         cat_map = {c["name"]: c["id"] for c in categories}
@@ -155,7 +433,7 @@ class ExportService:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return b""
-        _assert_supported_project(project)
+        _assert_image_export_supported(project)
 
         cat_map = {name: i for i, name in enumerate(project.classes)}
         ann_by_task: dict[uuid.UUID, list[Annotation]] = {}
@@ -213,7 +491,7 @@ class ExportService:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return b""
-        _assert_supported_project(project)
+        _assert_image_export_supported(project)
 
         ann_by_task: dict[uuid.UUID, list[Annotation]] = {}
         for ann in annotations:
