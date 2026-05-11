@@ -139,7 +139,11 @@ class ExportService:
         exported_tasks = []
         video_metadata_by_task: dict[uuid.UUID, dict] = {}
         for index, task in enumerate(tasks):
-            item = dataset_items.get(task.dataset_item_id) if task.dataset_item_id else None
+            item = (
+                dataset_items.get(task.dataset_item_id)
+                if task.dataset_item_id
+                else None
+            )
             video = _video_metadata(item)
             video_metadata_by_task[task.id] = video
             exported_tasks.append(

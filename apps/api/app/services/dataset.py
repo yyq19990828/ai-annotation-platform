@@ -458,9 +458,7 @@ class DatasetService:
             created_by_project[project_id] = created_by_project.get(project_id, 0) + 1
 
         projects = (
-            (
-                await self.db.execute(select(Project).where(Project.id.in_(project_ids)))
-            )
+            (await self.db.execute(select(Project).where(Project.id.in_(project_ids))))
             .scalars()
             .all()
         )

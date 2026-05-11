@@ -233,7 +233,9 @@ class AnnotationService:
                     None,
                 )
                 if not exact or exact.get("absent"):
-                    raise ValueError("frame split requires an exact non-absent keyframe")
+                    raise ValueError(
+                        "frame split requires an exact non-absent keyframe"
+                    )
                 frames = [
                     {
                         "frame_index": frame_index,
@@ -260,7 +262,9 @@ class AnnotationService:
         if not frames:
             raise ValueError("track conversion produced no frames")
         if len(frames) > max_created:
-            raise ValueError(f"track conversion would create more than {max_created} bboxes")
+            raise ValueError(
+                f"track conversion would create more than {max_created} bboxes"
+            )
 
         created: list[Annotation] = []
         for frame in frames:
