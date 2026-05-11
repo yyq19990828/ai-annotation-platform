@@ -35,16 +35,19 @@ router = APIRouter()
 log = logging.getLogger(__name__)
 
 _BUG_REOPEN_REDIS_POOL: ConnectionPool | None = None
+_BUG_REOPEN_REDIS_POOL_LOOP: asyncio.AbstractEventLoop | None = None
 
 
 def _get_bug_reopen_redis_pool() -> ConnectionPool:
-    global _BUG_REOPEN_REDIS_POOL
-    if _BUG_REOPEN_REDIS_POOL is None:
+    global _BUG_REOPEN_REDIS_POOL, _BUG_REOPEN_REDIS_POOL_LOOP
+    loop = asyncio.get_running_loop()
+    if _BUG_REOPEN_REDIS_POOL is None or _BUG_REOPEN_REDIS_POOL_LOOP is not loop:
         _BUG_REOPEN_REDIS_POOL = ConnectionPool.from_url(
             settings.redis_url,
             max_connections=8,
             decode_responses=True,
         )
+        _BUG_REOPEN_REDIS_POOL_LOOP = loop
     return _BUG_REOPEN_REDIS_POOL
 
 
@@ -53,7 +56,7 @@ def _get_bug_reopen_redis() -> aioredis.Redis:
 
 
 async def close_bug_reopen_redis_pool() -> None:
-    global _BUG_REOPEN_REDIS_POOL
+    global _BUG_REOPEN_REDIS_POOL, _BUG_REOPEN_REDIS_POOL_LOOP
     if _BUG_REOPEN_REDIS_POOL is None:
         return
     try:
@@ -65,6 +68,7 @@ async def close_bug_reopen_redis_pool() -> None:
         log.debug("close_bug_reopen_redis_pool: %s (continuing shutdown)", exc)
     finally:
         _BUG_REOPEN_REDIS_POOL = None
+        _BUG_REOPEN_REDIS_POOL_LOOP = None
 
 
 class ScreenshotInitRequest(BaseModel):
