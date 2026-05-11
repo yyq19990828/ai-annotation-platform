@@ -1,6 +1,6 @@
 # P0 · 视频标注工作台 Epic
 
-> 状态：M0 + M1 已在 v0.9.16 落地；M2+ 待实现。
+> 状态：M0 + M1 已在 v0.9.16 落地；M2 + M3 已在 v0.9.17 落地；M4 待实现。
 >
 > 范围：先交付 `video-track` 人工标注闭环。`video-mm`、视频 AI tracker、SAM 3 video predictor、长视频切片和多人协同都作为后续增强。
 
@@ -96,13 +96,15 @@
 
 ### M2 · Track 数据模型与关键帧编辑
 
+**状态**：v0.9.17 已落地。
+
 **目标**：把视频标注从“单帧框”升级为“对象轨迹”。
 
 - Annotation schema：
   - `geometry.type="video_track"`。
-  - 每个轨迹有稳定 `track_id`、`class_id`、`keyframes[]`。
-  - `keyframes[]` 至少包含 `frame_index`、`bbox`、`source=manual|interpolated|prediction`。
-  - 支持 track 级属性和 frame 级属性的扩展位置，但首版只落必要字段。
+  - 每个轨迹有稳定 `track_id`、`keyframes[]`；类别继续复用 annotation `class_name`。
+  - `keyframes[]` 至少包含 `frame_index`、`bbox`、`source=manual|interpolated|prediction`，并支持 `absent` / `occluded`。
+  - 支持 track 级属性和 frame 级属性的扩展位置，但 v0.9.17 只落必要字段。
 - 前端能力：
   - “新建轨迹”模式：第一次画框生成 track。
   - “延续轨迹”模式：在其它帧调整同一对象，形成关键帧。
@@ -113,16 +115,18 @@
   - 保留 optimistic update 和冲突提示，沿用现有工作台提交体验。
 - 验收：
   - 同一对象在 3 个关键帧上调整后，轨迹列表只出现 1 条 track。
-  - 删除中间关键帧后，插值结果重新计算。
-  - 图片 annotation schema 不受影响。
+  - 已覆盖同一轨迹新增关键帧、插值显示、旧 `video_bbox` 兼容和图片 geometry 兼容。
+  - 删除中间关键帧后重新计算插值的独立 UI 入口留到后续增强。
 
 ### M3 · 关键帧插值与质量检查
+
+**状态**：v0.9.17 已落地。
 
 **目标**：让视频工作台具备生产效率，而不是只能逐帧手工画。
 
 - 插值：
   - bbox 先做线性插值：`x/y/w/h` 按 frame distance 计算。
-  - 插值只在相邻关键帧之间生效，不跨越被用户标记为 occluded / absent 的区间。
+  - 插值只在相邻关键帧之间生效，不跨越被用户标记为 absent 的区间；occluded 作为当前关键帧视觉状态展示。
   - 首版不做光流 / tracker 自动传播，避免不确定性过高。
 - 质量检查：
   - 轨迹断裂提示：同一 track 中间缺口过大。
@@ -130,12 +134,12 @@
   - 极小框提示，不静默保存。
   - 同一帧同类高度重叠框提示。
 - 审核：
-  - 审核员可以按 track 浏览关键帧。
-  - reject reason 可以定位到 `track_id` + `frame_index`。
+  - 审核员可以通过轨迹列表按 track 浏览。
+  - 当前轨迹面板展示 `track_id` + `frame_index`，可用于 reject reason 定位。
 - 验收：
   - 标注第 1 / 30 / 60 帧后，第 2-29 / 31-59 帧能显示插值框。
   - 标注员可以把某一段标记为目标消失，插值不会穿过该区间。
-  - 审核员能指出某个 track 某一帧的问题。
+  - 当前轨迹面板能指出某个 track 某一帧的问题。
 
 ### M4 · 导出与文档闭环
 

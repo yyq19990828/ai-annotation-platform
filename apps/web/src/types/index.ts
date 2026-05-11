@@ -133,6 +133,19 @@ export type VideoBboxGeometry = {
   w: number;
   h: number;
 };
+export type VideoTrackBbox = { x: number; y: number; w: number; h: number };
+export type VideoTrackKeyframe = {
+  frame_index: number;
+  bbox: VideoTrackBbox;
+  source: "manual" | "interpolated" | "prediction";
+  absent?: boolean;
+  occluded?: boolean;
+};
+export type VideoTrackGeometry = {
+  type: "video_track";
+  track_id: string;
+  keyframes: VideoTrackKeyframe[];
+};
 /**
  * v0.9.14 · holes 字段为可选; 老存量 / 老前端写入仍走仅 points 路径, 默认 undefined 即无
  * hole. 新 prediction (mask 单连通带空洞) 在此填 hole 顶点列表 (内环, 与外环 evenodd
@@ -152,7 +165,7 @@ export type MultiPolygonGeometry = {
   type: "multi_polygon";
   polygons: PolygonGeometry[];
 };
-export type Geometry = BboxGeometry | VideoBboxGeometry | PolygonGeometry | MultiPolygonGeometry;
+export type Geometry = BboxGeometry | VideoBboxGeometry | VideoTrackGeometry | PolygonGeometry | MultiPolygonGeometry;
 
 export interface AIBox {
   id: string;

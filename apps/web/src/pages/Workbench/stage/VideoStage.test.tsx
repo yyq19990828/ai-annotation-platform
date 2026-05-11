@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { fireEvent, render } from "@testing-library/react";
 import { VideoStage } from "./VideoStage";
 import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
@@ -45,6 +45,11 @@ function pointer(type: string, clientX: number, clientY: number) {
 }
 
 describe("VideoStage", () => {
+  beforeAll(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, "pause", { configurable: true, value: vi.fn() });
+    Object.defineProperty(HTMLMediaElement.prototype, "play", { configurable: true, value: vi.fn() });
+  });
+
   it("draws a bbox on the current frame while paused", () => {
     const onCreate = vi.fn();
     const { getByTestId } = render(
@@ -56,6 +61,7 @@ describe("VideoStage", () => {
         onSelect={() => {}}
         onCreate={onCreate}
         onUpdate={() => {}}
+        onRename={() => {}}
         onDelete={() => {}}
       />,
     );
@@ -89,7 +95,7 @@ describe("VideoStage", () => {
       },
     ] as AnnotationResponse[];
 
-    const { queryByText } = render(
+    const { getByTestId } = render(
       <VideoStage
         manifest={manifest}
         annotations={annotations}
@@ -98,11 +104,128 @@ describe("VideoStage", () => {
         onSelect={() => {}}
         onCreate={() => {}}
         onUpdate={() => {}}
+        onRename={() => {}}
         onDelete={() => {}}
       />,
     );
 
-    expect(queryByText("car")).not.toBeNull();
-    expect(queryByText("person")).toBeNull();
+    expect(getByTestId("video-overlay").textContent).toContain("car");
+    expect(getByTestId("video-overlay").textContent).not.toContain("person");
+  });
+
+  it("adds a keyframe to the selected video track", () => {
+    const onUpdate = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId, getByLabelText } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={onUpdate}
+        onRename={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "3" } });
+    fireEvent(overlay, pointer("pointerdown", 200, 100));
+    fireEvent(overlay, pointer("pointermove", 500, 250));
+    fireEvent(overlay, pointer("pointerup", 500, 250));
+
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const [, geometry] = onUpdate.mock.calls[0];
+    expect(geometry.type).toBe("video_track");
+    expect(geometry.keyframes).toHaveLength(2);
+    expect(geometry.keyframes[1].frame_index).toBe(3);
+    expect(geometry.keyframes[1].bbox.x).toBeCloseTo(0.2);
+  });
+
+  it("renders interpolated track boxes between keyframes", () => {
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 2, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByLabelText, getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "1" } });
+
+    expect(getByTestId("video-overlay").textContent).toContain("car · 插值");
+  });
+
+  it("does not interpolate across an absent keyframe", () => {
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 1, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", absent: true },
+            { frame_index: 2, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByLabelText, getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "1" } });
+
+    expect(getByTestId("video-overlay").textContent).not.toContain("car");
   });
 });

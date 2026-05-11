@@ -11,7 +11,7 @@ import {
   useApproveTask, useRejectTask, useReviewClaim,
   useVideoManifest,
 } from "@/hooks/useTasks";
-import type { ReviewClaimResponse, VideoBboxGeometry } from "@/types";
+import type { Geometry, ReviewClaimResponse, VideoTrackGeometry } from "@/types";
 import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
@@ -709,10 +709,26 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   const handleVideoCreate = useCallback((frameIndex: number, geo: Geom) => {
     const cls = s.activeClass || UNKNOWN_CLASS;
+    const trackId = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? `trk_${crypto.randomUUID()}`
+      : `trk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const geometry: VideoTrackGeometry = {
+      type: "video_track",
+      track_id: trackId,
+      keyframes: [
+        {
+          frame_index: frameIndex,
+          bbox: geo,
+          source: "manual",
+          absent: false,
+          occluded: false,
+        },
+      ],
+    };
     const payload = {
-      annotation_type: "video_bbox",
+      annotation_type: "video_track",
       class_name: cls,
-      geometry: { type: "video_bbox", frame_index: frameIndex, ...geo } as VideoBboxGeometry,
+      geometry,
     };
     createAnnotation.mutate(payload, {
       onSuccess: (created) => {
@@ -722,16 +738,21 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     });
   }, [createAnnotation, history, recordRecentClass, s.activeClass]);
 
-  const handleVideoUpdate = useCallback((ann: AnnotationResponse, geo: Geom) => {
-    if (ann.geometry.type !== "video_bbox") return;
+  const handleVideoUpdate = useCallback((ann: AnnotationResponse, geometry: Geometry) => {
+    if (geometry.type !== "video_bbox" && geometry.type !== "video_track") return;
     const before = { geometry: ann.geometry };
-    const after = {
-      geometry: {
-        type: "video_bbox",
-        frame_index: ann.geometry.frame_index,
-        ...geo,
-      } as VideoBboxGeometry,
-    };
+    const after = { geometry };
+    updateAnnotationMut.mutate(
+      { annotationId: ann.id, payload: after },
+      {
+        onSuccess: () => history.push({ kind: "update", annotationId: ann.id, before, after }),
+      },
+    );
+  }, [history, updateAnnotationMut]);
+
+  const handleVideoRename = useCallback((ann: AnnotationResponse, className: string) => {
+    const before = { class_name: ann.class_name };
+    const after = { class_name: className };
     updateAnnotationMut.mutate(
       { annotationId: ann.id, payload: after },
       {
@@ -1265,6 +1286,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             onSelect={handleSelectBox}
             onCreate={handleVideoCreate}
             onUpdate={handleVideoUpdate}
+            onRename={handleVideoRename}
             onDelete={handleDeleteBox}
             onCursorMove={setCursor}
           />

@@ -692,7 +692,8 @@
                 "bbox": "#/components/schemas/BboxGeometry",
                 "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry",
-                "video_bbox": "#/components/schemas/VideoBboxGeometry"
+                "video_bbox": "#/components/schemas/VideoBboxGeometry",
+                "video_track": "#/components/schemas/VideoTrackGeometry"
               },
               "propertyName": "type"
             },
@@ -702,6 +703,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoBboxGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackGeometry"
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
@@ -861,7 +865,8 @@
                 "bbox": "#/components/schemas/BboxGeometry",
                 "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry",
-                "video_bbox": "#/components/schemas/VideoBboxGeometry"
+                "video_bbox": "#/components/schemas/VideoBboxGeometry",
+                "video_track": "#/components/schemas/VideoTrackGeometry"
               },
               "propertyName": "type"
             },
@@ -871,6 +876,9 @@
               },
               {
                 "$ref": "#/components/schemas/VideoBboxGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackGeometry"
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
@@ -1062,7 +1070,8 @@
                     "bbox": "#/components/schemas/BboxGeometry",
                     "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
                     "polygon": "#/components/schemas/PolygonGeometry",
-                    "video_bbox": "#/components/schemas/VideoBboxGeometry"
+                    "video_bbox": "#/components/schemas/VideoBboxGeometry",
+                    "video_track": "#/components/schemas/VideoTrackGeometry"
                   },
                   "propertyName": "type"
                 },
@@ -1072,6 +1081,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/VideoBboxGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VideoTrackGeometry"
                   },
                   {
                     "$ref": "#/components/schemas/PolygonGeometry"
@@ -9389,6 +9401,105 @@
           }
         },
         "title": "VideoMetadata",
+        "type": "object"
+      },
+      "VideoTrackBbox": {
+        "additionalProperties": false,
+        "properties": {
+          "h": {
+            "title": "H",
+            "type": "number"
+          },
+          "w": {
+            "title": "W",
+            "type": "number"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "VideoTrackBbox",
+        "type": "object"
+      },
+      "VideoTrackGeometry": {
+        "additionalProperties": false,
+        "description": "v0.9.17 · 视频对象轨迹。\n\n轨迹以 compact JSON 保存，不逐帧展开写库。`track_id` 在一个 annotation 内稳定；\n`keyframes` 保存手工 / 预测关键帧，插值结果由前端按需计算。",
+        "properties": {
+          "keyframes": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackKeyframe"
+            },
+            "minItems": 1,
+            "title": "Keyframes",
+            "type": "array"
+          },
+          "track_id": {
+            "minLength": 1,
+            "title": "Track Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "video_track",
+            "default": "video_track",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track_id",
+          "keyframes"
+        ],
+        "title": "VideoTrackGeometry",
+        "type": "object"
+      },
+      "VideoTrackKeyframe": {
+        "additionalProperties": false,
+        "properties": {
+          "absent": {
+            "default": false,
+            "title": "Absent",
+            "type": "boolean"
+          },
+          "bbox": {
+            "$ref": "#/components/schemas/VideoTrackBbox"
+          },
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "occluded": {
+            "default": false,
+            "title": "Occluded",
+            "type": "boolean"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "interpolated",
+              "prediction"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frame_index",
+          "bbox"
+        ],
+        "title": "VideoTrackKeyframe",
         "type": "object"
       },
       "VisibleIfRule": {

@@ -1,5 +1,6 @@
 import uuid
 
+import pytest
 from pydantic import TypeAdapter
 
 from app.db.models.dataset import Dataset, DatasetItem
@@ -57,6 +58,69 @@ def test_video_bbox_geometry_validates_and_bbox_stays_compatible():
         {"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1}
     )
     assert legacy_bbox.type == "bbox"
+
+
+def test_video_track_geometry_validates_and_video_bbox_stays_compatible():
+    adapter = TypeAdapter(Geometry)
+
+    parsed = adapter.validate_python(
+        {
+            "type": "video_track",
+            "track_id": "trk_abc123",
+            "keyframes": [
+                {
+                    "frame_index": 0,
+                    "bbox": {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
+                    "source": "manual",
+                },
+                {
+                    "frame_index": 30,
+                    "bbox": {"x": 0.2, "y": 0.2, "w": 0.3, "h": 0.4},
+                    "source": "prediction",
+                    "occluded": True,
+                },
+            ],
+        }
+    )
+    assert parsed.type == "video_track"
+    assert parsed.track_id == "trk_abc123"
+    assert parsed.keyframes[1].occluded is True
+
+    legacy_video_bbox = adapter.validate_python(
+        {
+            "type": "video_bbox",
+            "frame_index": 12,
+            "x": 0.1,
+            "y": 0.2,
+            "w": 0.3,
+            "h": 0.4,
+        }
+    )
+    assert legacy_video_bbox.type == "video_bbox"
+
+
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        {"type": "video_track", "track_id": "trk_empty", "keyframes": []},
+        {
+            "type": "video_track",
+            "track_id": "trk_negative",
+            "keyframes": [
+                {
+                    "frame_index": -1,
+                    "bbox": {"x": 0, "y": 0, "w": 1, "h": 1},
+                    "source": "manual",
+                }
+            ],
+        },
+    ],
+)
+def test_video_track_geometry_rejects_invalid_keyframes(geometry):
+    adapter = TypeAdapter(Geometry)
+
+    with pytest.raises(ValueError):
+        adapter.validate_python(geometry)
 
 
 async def test_get_task_exposes_video_metadata(
