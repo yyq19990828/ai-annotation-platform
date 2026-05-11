@@ -258,6 +258,15 @@ stateDiagram-v2
 - bulk pause / resume
 - admin_locked 语义
 
+### 批次导出
+
+`GET /api/v1/projects/{project_id}/batches/{batch_id}/export` 与项目级导出共享同一套格式参数。图片项目支持 `format=coco|yolo|voc`；`video-track` 批次通过 `format=coco` 兼容入口返回 Video JSON，并透传：
+
+- `include_attributes`：控制是否输出属性 schema 与标注属性。
+- `video_frame_mode=keyframes|all_frames`：控制视频轨迹只导出关键帧，或展开插值后的逐帧 bbox。
+
+批次级 Video JSON 文件名使用 `*_video_tracks.json` 后缀，避免与图片 COCO JSON 混淆。
+
 ## 前端同步点
 
 如果你改 batch 状态相关逻辑，至少检查这些文件：
@@ -308,5 +317,6 @@ stateDiagram-v2
 - `BatchStatus` 枚举
 - `VALID_TRANSITIONS`
 - 批量操作集合
+- 批次导出的格式、查询参数或文件命名
 - owner / annotator / reviewer 的迁移权限
 - `pre_annotated` 或未来新状态的业务语义

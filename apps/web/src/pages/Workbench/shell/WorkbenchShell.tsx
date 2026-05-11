@@ -437,6 +437,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     updateAnnotation: (id, payload) =>
       updateAnnotationMut.mutateAsync({ annotationId: id, payload }),
     updateVideoKeyframe: async (id, frameIndex, keyframe) => {
+      // undo/redo 按当前轨迹 geometry 合并目标 keyframe；若轨迹已被整体改写，会保留当前其他帧状态。
       const ann = annotationsRef.current.find((a) => a.id === id);
       if (!ann || ann.geometry.type !== "video_track") throw new Error("Video track not found");
       const geometry = applyVideoKeyframeToGeometry(ann.geometry, frameIndex, keyframe);
@@ -1576,11 +1577,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
                   imgW={stageGeom.imgW}
                   imgH={stageGeom.imgH}
                   vp={vp}
-                  anchor={
-                    s.pendingDrawing.kind === "video_bbox" || s.pendingDrawing.kind === "video_track"
-                      ? s.pendingDrawing.anchor
-                      : undefined
-                  }
                   classes={classes}
                   recent={recentClasses}
                   defaultClass={s.activeClass}

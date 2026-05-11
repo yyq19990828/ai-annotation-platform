@@ -114,6 +114,30 @@ v0.9.17 起，新建视频标注默认使用 compact `video_track`，一条 anno
 
 `video_track.keyframes[]` 只保存关键帧；插值帧由前端按需计算，不会展开写入 `annotations` 表。旧 `video_bbox` 数据仍可读取和显示。
 
+## 视频轨迹转独立框
+
+v0.9.20 起，视频轨迹可以转换为一个或多个独立 `video_bbox`：
+
+```http
+POST /api/v1/tasks/:id/annotations/:annotation_id/video/convert-to-bboxes
+{
+  "operation": "copy",
+  "scope": "track",
+  "frame_mode": "all_frames"
+}
+```
+
+参数：
+
+| 字段 | 取值 | 说明 |
+|---|---|---|
+| `operation` | `copy` / `split` | `copy` 保留源轨迹；`split` 移除源关键帧或整条源轨迹 |
+| `scope` | `frame` / `track` | 转换当前帧或整条轨迹 |
+| `frame_index` | number | `scope=frame` 时必填 |
+| `frame_mode` | `keyframes` / `all_frames` | `scope=track` 时生效 |
+
+响应包含 `source_annotation`、`created_annotations[]`、`deleted_source` 与 `removed_frame_indexes`。`copy` 不会移除源帧，所以 `removed_frame_indexes` 为空；`split` 才会返回被移除的帧号。
+
 ## 候选预测（AI 紫框）
 
 ```http
