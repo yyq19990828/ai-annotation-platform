@@ -1013,6 +1013,10 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   }, [mode, handleApproveTask]);
 
   // ── 键盘快捷键（v0.6.4 P1 抽 hook） ───────────────────────────────────
+  const videoIgnoredHotkeys = useMemo(
+    () => (isVideoTask ? new Set([" ", "ArrowLeft", "ArrowRight", "Delete", "Backspace"]) : undefined),
+    [isVideoTask],
+  );
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
     batchChanging, setBatchChanging, showHotkeys,
@@ -1024,7 +1028,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
-    disabled: isVideoTask,
+    ignoredKeys: videoIgnoredHotkeys,
   });
   if (isProjectLoading) {
     return <WorkbenchSkeleton />;

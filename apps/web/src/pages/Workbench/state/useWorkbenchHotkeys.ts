@@ -95,6 +95,7 @@ export interface UseWorkbenchHotkeysArgs {
   taskId: string | undefined;
 
   disabled?: boolean;
+  ignoredKeys?: Set<string>;
 }
 
 export interface UseWorkbenchHotkeysReturn {
@@ -112,7 +113,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
-    updateMutation, taskId, disabled = false,
+    updateMutation, taskId, disabled = false, ignoredKeys,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -202,6 +203,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
 
     const onKey = (e: KeyboardEvent) => {
+      if (ignoredKeys?.has(e.key)) return;
       const attributeHotkey = (digit: string) => {
         const sel = s.selectedId;
         if (!sel) return null;
@@ -414,6 +416,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
   }, [
     disabled,
+    ignoredKeys,
     s, history, classes, currentProject, annotationsRef, batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,
     recordRecentClass, handleDeleteBox, handleBatchDelete,

@@ -850,7 +850,7 @@ async def export_batch(
     actor: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.export import ExportService
+    from app.services.export import ExportService, UnsupportedExportError
     from app.services.audit import AuditService, AuditAction, export_detail
 
     svc_batch = BatchService(db)
@@ -862,9 +862,12 @@ async def export_batch(
     fname = f"{project.display_id}_{batch.display_id}"
 
     if format == "coco":
-        content = await svc.export_coco(
-            project_id, batch_id=batch_id, include_attributes=include_attributes
-        )
+        try:
+            content = await svc.export_coco(
+                project_id, batch_id=batch_id, include_attributes=include_attributes
+            )
+        except UnsupportedExportError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         await AuditService.log(
             db,
             actor=actor,
@@ -892,9 +895,12 @@ async def export_batch(
         )
 
     if format == "yolo":
-        data = await svc.export_yolo(
-            project_id, batch_id=batch_id, include_attributes=include_attributes
-        )
+        try:
+            data = await svc.export_yolo(
+                project_id, batch_id=batch_id, include_attributes=include_attributes
+            )
+        except UnsupportedExportError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         await AuditService.log(
             db,
             actor=actor,
@@ -921,9 +927,12 @@ async def export_batch(
             headers={"Content-Disposition": f"attachment; filename={fname}_yolo.zip"},
         )
 
-    data = await svc.export_voc(
-        project_id, batch_id=batch_id, include_attributes=include_attributes
-    )
+    try:
+        data = await svc.export_voc(
+            project_id, batch_id=batch_id, include_attributes=include_attributes
+        )
+    except UnsupportedExportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await AuditService.log(
         db,
         actor=actor,

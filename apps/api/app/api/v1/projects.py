@@ -620,15 +620,18 @@ async def export_project(
     actor: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.export import ExportService
+    from app.services.export import ExportService, UnsupportedExportError
     from app.services.audit import AuditService, AuditAction, export_detail
 
     svc = ExportService(db)
 
     if format == "coco":
-        content = await svc.export_coco(
-            project.id, include_attributes=include_attributes
-        )
+        try:
+            content = await svc.export_coco(
+                project.id, include_attributes=include_attributes
+            )
+        except UnsupportedExportError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         await AuditService.log(
             db,
             actor=actor,
@@ -654,7 +657,13 @@ async def export_project(
         )
 
     if format == "yolo":
-        data = await svc.export_yolo(project.id, include_attributes=include_attributes)
+        try:
+            data = await svc.export_yolo(
+                project.id,
+                include_attributes=include_attributes,
+            )
+        except UnsupportedExportError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         await AuditService.log(
             db,
             actor=actor,
@@ -679,7 +688,10 @@ async def export_project(
             },
         )
 
-    data = await svc.export_voc(project.id, include_attributes=include_attributes)
+    try:
+        data = await svc.export_voc(project.id, include_attributes=include_attributes)
+    except UnsupportedExportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await AuditService.log(
         db,
         actor=actor,

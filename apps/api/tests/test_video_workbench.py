@@ -394,3 +394,31 @@ async def test_video_manifest_rejects_non_video(
     )
 
     assert resp.status_code == 400
+
+
+async def test_video_project_export_returns_clear_400(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project = Project(
+        display_id=f"P-VID-{uuid.uuid4().hex[:6]}",
+        name="Video Project",
+        type_key="video-track",
+        type_label="视频 · 时序追踪",
+        owner_id=user.id,
+        classes=["car"],
+    )
+    db_session.add(project)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{project.id}/export?format=coco",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == (
+        "Video annotation export is not supported for COCO/YOLO/VOC yet"
+    )
