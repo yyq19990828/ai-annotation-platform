@@ -41,7 +41,7 @@ import { buildIoUIndex } from "../stage/iou-index";
 import { setActiveClassesConfig, sortClassesByConfig, UNKNOWN_CLASS } from "../stage/colors";
 import { getMissingRequired } from "./AttributeForm";
 import { ImageStage } from "../stage/ImageStage";
-import { VideoStage } from "../stage/VideoStage";
+import { VideoStage, type VideoStageControls } from "../stage/VideoStage";
 import { CanvasToolbar } from "../stage/CanvasToolbar";
 import { Topbar } from "./Topbar";
 import { ToolDock } from "./ToolDock";
@@ -854,6 +854,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   // M2 · review 模式专属状态
   const [diffMode, setDiffMode] = useState<DiffMode>("diff");
   const [rejectingTask, setRejectingTask] = useState(false);
+  const videoControlsRef = useRef<VideoStageControls | null>(null);
   const [claimInfo, setClaimInfo] = useState<ReviewClaimResponse | null>(null);
   const approveMut = useApproveTask();
   const rejectMut = useRejectTask();
@@ -1013,10 +1014,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   }, [mode, handleApproveTask]);
 
   // ── 键盘快捷键（v0.6.4 P1 抽 hook） ───────────────────────────────────
-  const videoIgnoredHotkeys = useMemo(
-    () => (isVideoTask ? new Set([" ", "ArrowLeft", "ArrowRight", "Delete", "Backspace"]) : undefined),
-    [isVideoTask],
-  );
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
     batchChanging, setBatchChanging, showHotkeys,
@@ -1028,7 +1025,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
-    ignoredKeys: videoIgnoredHotkeys,
+    videoMode: isVideoTask,
+    videoControlsRef,
   });
   if (isProjectLoading) {
     return <WorkbenchSkeleton />;
@@ -1280,6 +1278,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
         {isVideoTask ? (
           <VideoStage
+            ref={videoControlsRef}
             manifest={videoManifest.data}
             isLoading={videoManifest.isLoading}
             error={videoManifest.error}
@@ -1291,7 +1290,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             onCreate={handleVideoCreate}
             onUpdate={handleVideoUpdate}
             onRename={handleVideoRename}
-            onDelete={handleDeleteBox}
             onCursorMove={setCursor}
           />
         ) : (

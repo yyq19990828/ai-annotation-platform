@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type {
@@ -38,8 +38,12 @@ interface VideoStageProps {
   onCreate: (frameIndex: number, geom: Geom) => void;
   onUpdate: (annotation: AnnotationResponse, geometry: VideoGeometry) => void;
   onRename: (annotation: AnnotationResponse, className: string) => void;
-  onDelete: (id: string) => void;
   onCursorMove?: (pt: { x: number; y: number } | null) => void;
+}
+
+export interface VideoStageControls {
+  togglePlayback: () => void;
+  seekByFrames: (delta: number) => void;
 }
 
 function clamp01(v: number) {
@@ -153,7 +157,7 @@ function shortTrackId(trackId: string) {
   return trackId.length > 8 ? trackId.slice(0, 8) : trackId;
 }
 
-export function VideoStage({
+export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(function VideoStage({
   manifest,
   isLoading = false,
   error,
@@ -165,9 +169,8 @@ export function VideoStage({
   onCreate,
   onUpdate,
   onRename,
-  onDelete,
   onCursorMove,
-}: VideoStageProps) {
+}: VideoStageProps, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
   const [frameIndex, setFrameIndex] = useState(0);
@@ -292,6 +295,23 @@ export function VideoStage({
     }
   }, [isPlaying]);
 
+  const seekByFrames = useCallback(
+    (delta: number) => {
+      videoRef.current?.pause();
+      seekFrame(frameIndex + delta);
+    },
+    [frameIndex, seekFrame],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      togglePlayback,
+      seekByFrames,
+    }),
+    [seekByFrames, togglePlayback],
+  );
+
   useEffect(() => {
     const taskId = manifest?.task_id ?? null;
     if (!taskId || lastResetTaskIdRef.current === taskId) return;
@@ -347,31 +367,6 @@ export function VideoStage({
     raf = schedule(tick);
     return () => cancel(raf);
   }, [fps, isPlaying, maxFrame]);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
-      if (!manifest) return;
-      if (e.key === " ") {
-        e.preventDefault();
-        togglePlayback();
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        videoRef.current?.pause();
-        seekFrame(frameIndex + (e.shiftKey ? 10 : 1));
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        videoRef.current?.pause();
-        seekFrame(frameIndex - (e.shiftKey ? 10 : 1));
-      } else if ((e.key === "Delete" || e.key === "Backspace") && selectedId && !readOnly) {
-        e.preventDefault();
-        onDelete(selectedId);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [frameIndex, manifest, onDelete, readOnly, seekFrame, selectedId, togglePlayback]);
 
   const pointFromEvent = useCallback((evt: React.PointerEvent<SVGSVGElement>) => {
     const rect = overlayRef.current?.getBoundingClientRect();
@@ -727,7 +722,7 @@ export function VideoStage({
 
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 12, alignItems: "center", padding: "10px 14px", background: "var(--color-bg-elev)", borderTop: "1px solid var(--color-border)" }}>
         <div style={{ display: "flex", gap: 6 }}>
-          <Button size="sm" onClick={() => seekFrame(frameIndex - 1)} title="上一帧">
+          <Button size="sm" onClick={() => seekByFrames(-1)} title="上一帧">
             <Icon name="chevLeft" size={13} />
           </Button>
           <Button
@@ -739,7 +734,7 @@ export function VideoStage({
           >
             <Icon name={isPlaying ? "pause" : "play"} size={13} />
           </Button>
-          <Button size="sm" onClick={() => seekFrame(frameIndex + 1)} title="下一帧">
+          <Button size="sm" onClick={() => seekByFrames(1)} title="下一帧">
             <Icon name="chevRight" size={13} />
           </Button>
         </div>
@@ -781,4 +776,4 @@ export function VideoStage({
       </div>
     </div>
   );
-}
+});

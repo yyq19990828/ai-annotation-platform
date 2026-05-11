@@ -145,6 +145,45 @@ describe("dispatchKey · 上下文相关", () => {
   });
 });
 
+describe("dispatchKey · video mode", () => {
+  const videoCtx: Partial<DispatchCtx> = { videoMode: true };
+
+  it("Space → videoTogglePlayback", () => {
+    expect(dispatch({ key: " " }, videoCtx)).toEqual({ type: "videoTogglePlayback" });
+  });
+
+  it("ArrowLeft / ArrowRight → videoSeek", () => {
+    expect(dispatch({ key: "ArrowRight" }, videoCtx)).toEqual({ type: "videoSeek", delta: 1 });
+    expect(dispatch({ key: "ArrowLeft" }, videoCtx)).toEqual({ type: "videoSeek", delta: -1 });
+  });
+
+  it("Shift + ArrowLeft / ArrowRight → videoSeek 10 frames", () => {
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, videoCtx)).toEqual({ type: "videoSeek", delta: 10 });
+    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, videoCtx)).toEqual({ type: "videoSeek", delta: -10 });
+  });
+
+  it("Delete / Backspace → videoDeleteSelected", () => {
+    expect(dispatch({ key: "Delete" }, videoCtx)).toEqual({ type: "videoDeleteSelected" });
+    expect(dispatch({ key: "Backspace" }, videoCtx)).toEqual({ type: "videoDeleteSelected" });
+  });
+
+  it("Tab / Shift+Tab → videoCycleTrack", () => {
+    expect(dispatch({ key: "Tab" }, videoCtx)).toEqual({ type: "videoCycleTrack", dir: 1 });
+    expect(dispatch({ key: "Tab", shiftKey: true }, videoCtx)).toEqual({ type: "videoCycleTrack", dir: -1 });
+  });
+
+  it("Esc → cancel", () => {
+    expect(dispatch({ key: "Escape" }, videoCtx)).toEqual({ type: "cancel" });
+  });
+
+  it("1-9 → setClassByDigit and image tool letters are disabled", () => {
+    expect(dispatch({ key: "4" }, videoCtx)).toEqual({ type: "setClassByDigit", idx: 3 });
+    expect(dispatch({ key: "b" }, videoCtx)).toBeNull();
+    expect(dispatch({ key: "s" }, videoCtx)).toBeNull();
+    expect(dispatch({ key: "p" }, videoCtx)).toBeNull();
+  });
+});
+
 describe("dispatchKey · 属性 hotkey 绑定 (D.1)", () => {
   it("无选中按 1 → setClassByDigit (保留原行为)", () => {
     expect(dispatch({ key: "1" }, { hasSelection: false }))

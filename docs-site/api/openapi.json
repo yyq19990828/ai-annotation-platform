@@ -15842,6 +15842,19 @@
               "title": "Include Attributes",
               "type": "boolean"
             }
+          },
+          {
+            "description": "video-track 导出帧模式：keyframes 仅关键帧，all_frames 展开逐帧插值；图片项目忽略",
+            "in": "query",
+            "name": "video_frame_mode",
+            "required": false,
+            "schema": {
+              "default": "keyframes",
+              "description": "video-track 导出帧模式：keyframes 仅关键帧，all_frames 展开逐帧插值；图片项目忽略",
+              "pattern": "^(keyframes|all_frames)$",
+              "title": "Video Frame Mode",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -16217,6 +16230,19 @@
               "description": "是否在导出包中携带 annotation.attributes 与 project.attribute_schema",
               "title": "Include Attributes",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "video-track 导出帧模式：keyframes 仅关键帧，all_frames 展开逐帧插值；图片项目忽略",
+            "in": "query",
+            "name": "video_frame_mode",
+            "required": false,
+            "schema": {
+              "default": "keyframes",
+              "description": "video-track 导出帧模式：keyframes 仅关键帧，all_frames 展开逐帧插值；图片项目忽略",
+              "pattern": "^(keyframes|all_frames)$",
+              "title": "Video Frame Mode",
+              "type": "string"
             }
           }
         ],

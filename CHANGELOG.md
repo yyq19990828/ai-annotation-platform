@@ -22,6 +22,30 @@
 
 ## 最新版本
 
+## [0.9.18] - 2026-05-11
+
+> **Video Export Loop — 视频导出闭环 + 快捷键中心化.** 主线: ① `video-track` 项目复用 `format=coco` 导出入口返回专用 Video Tracks JSON（`export_type="video_tracks"`），支持 `video_frame_mode=keyframes|all_frames`；② `all_frames` 按后端线性插值展开逐帧 bbox，`absent=true` 阻断跨段插值，缺少 `frame_count` 时用最大已标注帧兜底；③ Dashboard 表格 / 卡片视频项目只暴露 Video JSON 导出，图片项目 COCO / VOC / YOLO 行为不变；④ `VideoStage` 改为 `forwardRef` 暴露播放与逐帧控制，视频快捷键并入 `hotkeys.ts` / `useWorkbenchHotkeys` 与统一帮助面板。→ [plan](docs/plans/2026-05-11-v0.9.18-video-export-hotkeys.md).
+
+### Added
+
+- **Video Tracks JSON 导出**：`GET /api/v1/projects/{id}/export?format=coco` 在 `video-track` 项目返回 `*_video_tracks.json`，包含 project、categories、tasks、tracks、keyframes、legacy `video_bbox`、video_metadata 与导出时间。
+- **视频帧模式参数**：新增 `video_frame_mode=keyframes|all_frames`，默认 `keyframes`；批次导出同样支持。
+- **逐帧展开**：`all_frames` 导出按相邻有效关键帧线性插值；`absent=true` 不跨段展开。
+- **视频快捷键帮助**：统一帮助面板新增视频分组，覆盖 Space、方向键、Shift+方向键、Delete/Backspace、Tab、Esc、1-9。
+
+### Changed
+
+- `include_attributes=false` 对视频 JSON 同样生效：不输出项目 attribute schema，也不输出 annotation / track / legacy bbox attributes。
+- `format=yolo|voc` 对视频项目返回 400，并提示视频项目只支持通过 `format=coco` 获取 Video JSON。
+- Dashboard 视频项目导出入口只显示 Video JSON；图片项目仍显示 COCO / VOC / YOLO 与“包含属性数据”。
+- `VideoStage` 移除组件内部全局 `keydown` listener，由 `useWorkbenchHotkeys` 在 video mode 下分发播放、逐帧、删除、轨迹循环和类别切换。
+
+### Fixed
+
+- 视频快捷键不再绕过 `hotkeys.ts`，避免图片 nudge / SAM / polygon 快捷键与视频播放控制并存冲突。
+
+---
+
 ## [0.9.17] - 2026-05-11
 
 > **Video Track Keyframes — 轨迹模型 + 关键帧插值.** 主线: ① annotation schema 新增 compact `video_track`，用 `track_id + keyframes[]` 表达同一对象轨迹；② `VideoStage` 默认创建轨迹而不是逐帧 `video_bbox`，支持选中轨迹后在其它帧追加/更新关键帧；③ 当前帧 overlay 可显示手工关键帧、预测关键帧和线性插值框，并保留旧 `video_bbox` 兼容渲染；④ 轨迹列表支持显隐、锁定、类别重命名和当前帧状态；⑤ 支持 `absent` / `occluded` 标记，插值不会跨越目标消失段；⑥ 前端提示关键帧间隔过大、极小框、同帧同类高重叠等基础质检问题. → [plan](docs/plans/2026-05-11-v0.9.17-video-track-keyframes.md).

@@ -8,94 +8,78 @@ last_reviewed: 2026-05-11
 
 # 导出
 
-标注数据导出为下游训练可用格式。导出走 Celery 异步，跑完通过 WebSocket 推下载链接。
+标注数据导出为下游训练可用格式。当前项目 / 批次导出接口直接返回文件响应；历史异步导出 job 设计保留为后续大规模导出方向。
 
 ## 触发导出
 
 ```http
-POST /api/v1/projects/:id/export
-{
-  "format": "labelstudio",        // labelstudio / coco / yolo / cvat
-  "scope": "completed",           // all / completed / batch / range
-  "batch_id": 5,                  // scope=batch 必填
-  "incremental_since": "2026-05-01T00:00:00Z"  // 可选，增量
-}
+GET /api/v1/projects/{project_id}/export?format=coco&include_attributes=true
+GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&include_attributes=true
 ```
 
-返回：
+参数：
 
-```json
-{ "job_id": "exp_abc123", "status": "queued" }
-```
+| 参数 | 取值 | 说明 |
+|---|---|---|
+| `format` | `coco` / `voc` / `yolo` | 图片项目导出格式；`video-track` 仅支持通过 `coco` 兼容入口导出 Video JSON |
+| `include_attributes` | `true` / `false` | 是否携带 `annotation.attributes` 与 `project.attribute_schema` |
+| `video_frame_mode` | `keyframes` / `all_frames` | 仅 `video-track` 生效；默认 `keyframes` |
 
-## 查询状态
-
-```http
-GET /api/v1/projects/:id/exports                       # 历史列表
-GET /api/v1/projects/:id/exports/:job_id               # 详情
-```
-
-状态机：`queued → running → succeeded | failed`，与 prediction_jobs 类似。
-
-## 拿下载链接
-
-跑完后服务端通过 WS `user:{uid}:notify` 推：
-
-```json
-{
-  "type": "export.ready",
-  "job_id": "exp_abc123",
-  "download_url": "https://minio.../exports/exp_abc123.zip?X-Amz-...",
-  "expires_at": "..."
-}
-```
-
-URL 是 MinIO presigned，默认 1h 有效。也可主动拉：
-
-```http
-GET /api/v1/projects/:id/exports/:job_id/download
-```
-
-后端会重新生成 presigned URL 并 302 重定向。
+`format=coco` 返回 JSON；`format=voc|yolo` 返回 zip。`video-track` 的 `format=yolo|voc` 会返回 400。
 
 ## 格式说明
 
 | 格式 | 适用 |
 |---|---|
-| **labelstudio** | LabelStudio 标准 JSON，最完整（含 prediction、attribute、history） |
 | **coco** | COCO `instances_*.json`，目标检测标杆 |
 | **yolo** | YOLO txt 格式 + classes.txt，每图一文件 |
-| **cvat** | CVAT 1.1 XML |
+| **voc** | Pascal VOC XML |
+| **video tracks json** | `video-track` 专用 JSON，经 `format=coco` 兼容入口返回 |
 
-每种格式都会同时打包**原图引用**（默认仅 URL，可选嵌入 / 压缩）。
+图片导出的 COCO / YOLO / VOC 只处理 bbox annotation。
 
-## 视频轨迹限制
+## 视频轨迹导出
 
-v0.9.16 / v0.9.17 的视频工作台已支持 `video_bbox` 与 `video_track` 写入，但当前导出服务仍按图片检测格式生成 COCO / YOLO / VOC，默认读取 `geometry.x/y/w/h`。
+v0.9.18 起，`video-track` 项目通过 `format=coco` 入口返回专用 Video Tracks JSON，文件名为 `*_video_tracks.json`。响应顶层包含：
 
-因此：
-
-- `video_track` 暂不支持导出逐帧展开结果。
-- `video_bbox` / `video_track` 不应直接走 COCO / YOLO / VOC 训练导出。
-- 需要保留视频轨迹原始结构时，优先通过任务 / 标注 API 拉取原始 annotation JSON。
-
-后续视频导出应新增专门格式，明确区分“仅关键帧”和“展开所有帧”。schema 语义见 [视频标注工作台](/dev/concepts/video-annotation-workbench)。
-
-## 增量导出
-
-`incremental_since` 参数让本次只导出该时间后**修改过**的标注（基于 `annotations.updated_at`）。配合训练流水线做 delta 训练。
-
-## 取消
-
-```http
-DELETE /api/v1/projects/:id/exports/:job_id
+```json
+{
+  "export_type": "video_tracks",
+  "frame_mode": "keyframes",
+  "project": { "id": "...", "display_id": "P-1", "type_key": "video-track" },
+  "categories": [{ "id": 0, "name": "car" }],
+  "tasks": [{ "id": "...", "display_id": "T-1", "video_metadata": { "fps": 25 } }],
+  "tracks": [
+    {
+      "annotation_id": "...",
+      "task_id": "...",
+      "track_id": "trk_car",
+      "class_name": "car",
+      "keyframes": [
+        {
+          "frame_index": 0,
+          "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
+          "source": "manual",
+          "absent": false,
+          "occluded": false
+        }
+      ]
+    }
+  ],
+  "keyframes": [],
+  "video_bbox": [],
+  "video_metadata": {}
+}
 ```
 
-仅在 `queued/running` 状态可取消，`succeeded` 后产物保留可重复下载。
+`video_frame_mode`：
 
-## 清理
+- `keyframes`：只输出持久化关键帧，适合备份、质检和后续可编辑 ingest。
+- `all_frames`：在每条 track 的 `frames[]` 中展开逐帧 bbox。后端按相邻有效关键帧线性插值，`absent=true` 阻断跨段插值。缺少 `frame_count` 时用最大已标注帧兜底。
 
-导出包默认 30 天后由 lifecycle 规则清理（详见 [部署拓扑 - 数据卷](../../dev/architecture/deployment-topology#数据卷与持久化)）。
+`include_attributes=false` 时，视频 JSON 不输出 `project.attribute_schema`，也不输出 track / legacy `video_bbox` 的 `attributes`。
+
+schema 语义见 [视频标注工作台](/dev/concepts/video-annotation-workbench)。
 
 ## 权限
 

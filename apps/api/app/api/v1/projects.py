@@ -616,6 +616,11 @@ async def export_project(
         True,
         description="是否在导出包中携带 annotation.attributes 与 project.attribute_schema",
     ),
+    video_frame_mode: str = Query(
+        "keyframes",
+        pattern="^(keyframes|all_frames)$",
+        description="video-track 导出帧模式：keyframes 仅关键帧，all_frames 展开逐帧插值；图片项目忽略",
+    ),
     project: Project = Depends(require_project_visible),
     actor: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -628,7 +633,9 @@ async def export_project(
     if format == "coco":
         try:
             content = await svc.export_coco(
-                project.id, include_attributes=include_attributes
+                project.id,
+                include_attributes=include_attributes,
+                video_frame_mode=video_frame_mode,
             )
         except UnsupportedExportError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -644,15 +651,19 @@ async def export_project(
                 actor=actor,
                 request=request,
                 base={"format": format, "project_display_id": project.display_id},
-                filter_criteria={"include_attributes": include_attributes},
+                filter_criteria={
+                    "include_attributes": include_attributes,
+                    "video_frame_mode": video_frame_mode,
+                },
             ),
         )
         await db.commit()
+        suffix = "video_tracks" if project.type_key == "video-track" else "coco"
         return Response(
             content=content,
             media_type="application/json",
             headers={
-                "Content-Disposition": f"attachment; filename={project.display_id}_coco.json"
+                "Content-Disposition": f"attachment; filename={project.display_id}_{suffix}.json"
             },
         )
 

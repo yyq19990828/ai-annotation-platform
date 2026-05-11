@@ -4,7 +4,7 @@ import type { AttributeSchema } from "@/api/projects";
 import { GROUP_LABEL, HOTKEYS, type HotkeyDef, type HotkeyGroup } from "../state/hotkeys";
 import { getHotkeyUsage } from "../state/hotkeyUsage";
 
-const GROUPS: HotkeyGroup[] = ["draw", "view", "ai", "nav", "system"];
+const GROUPS: HotkeyGroup[] = ["draw", "video", "view", "ai", "nav", "system"];
 
 const KBD_STYLE: React.CSSProperties = {
   padding: "1px 6px",

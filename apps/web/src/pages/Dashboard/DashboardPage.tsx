@@ -162,7 +162,7 @@ function ProjectRow({
       </td>
       <td style={{ padding: "12px 16px 12px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right", verticalAlign: "middle" }}>
         <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
-          <ExportSection projectId={p.id} />
+          <ExportSection projectId={p.id} projectTypeKey={p.type_key} />
           {canManage && (
             <Button
               size="sm"

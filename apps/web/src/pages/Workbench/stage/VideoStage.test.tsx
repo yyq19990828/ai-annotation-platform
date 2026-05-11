@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { VideoStage } from "./VideoStage";
+import { createRef } from "react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { VideoStage, type VideoStageControls } from "./VideoStage";
 import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
 
 const manifest: TaskVideoManifestResponse = {
@@ -73,7 +74,6 @@ describe("VideoStage", () => {
         onCreate={onCreate}
         onUpdate={() => {}}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
     const overlay = getByTestId("video-overlay");
@@ -104,7 +104,6 @@ describe("VideoStage", () => {
         onCreate={onCreate}
         onUpdate={() => {}}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
     const overlay = getByTestId("video-overlay");
@@ -129,13 +128,40 @@ describe("VideoStage", () => {
         onCreate={() => {}}
         onUpdate={() => {}}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
 
     fireEvent.click(getByTitle("播放 / 暂停 (Space)"));
 
     expect(await screen.findByTestId("video-playback-error")).toHaveTextContent("no supported sources");
+  });
+
+  it("exposes playback and frame seeking through ref controls", async () => {
+    const ref = createRef<VideoStageControls>();
+    const { getByLabelText } = render(
+      <VideoStage
+        ref={ref}
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    await act(async () => {
+      ref.current?.togglePlayback();
+    });
+    expect(playMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      ref.current?.seekByFrames(3);
+    });
+    expect(pauseMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("3"));
   });
 
   it("renders only annotations from the selected frame", () => {
@@ -162,7 +188,6 @@ describe("VideoStage", () => {
         onCreate={() => {}}
         onUpdate={() => {}}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
 
@@ -189,7 +214,6 @@ describe("VideoStage", () => {
         onCreate={() => {}}
         onUpdate={() => {}}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
 
@@ -224,7 +248,6 @@ describe("VideoStage", () => {
         onCreate={() => {}}
         onUpdate={onUpdate}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
     const overlay = getByTestId("video-overlay");
@@ -269,7 +292,6 @@ describe("VideoStage", () => {
         onCreate={() => {}}
         onUpdate={() => {}}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
 
@@ -305,7 +327,6 @@ describe("VideoStage", () => {
         onCreate={() => {}}
         onUpdate={() => {}}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
 
@@ -327,7 +348,6 @@ describe("VideoStage", () => {
         onCreate={() => {}}
         onUpdate={() => {}}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
 
@@ -343,7 +363,6 @@ describe("VideoStage", () => {
         onCreate={() => {}}
         onUpdate={() => {}}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
 
@@ -377,7 +396,6 @@ describe("VideoStage", () => {
         onCreate={() => {}}
         onUpdate={() => {}}
         onRename={() => {}}
-        onDelete={() => {}}
       />,
     );
     onSelect.mockClear();
