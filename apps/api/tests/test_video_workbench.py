@@ -293,9 +293,15 @@ async def test_video_manifest_returns_signed_urls(
     db_session.add(task)
     await db_session.flush()
 
+    signed: list[tuple[str, int]] = []
+
+    def fake_generate_download_url(key, expires_in=3600, bucket=None):
+        signed.append((key, expires_in))
+        return f"http://storage.local/{key}"
+
     monkeypatch.setattr(
         "app.api.v1.tasks.storage_service.generate_download_url",
-        lambda key, expires_in=3600, bucket=None: f"http://storage.local/{key}",
+        fake_generate_download_url,
     )
 
     resp = await httpx_client_bound.get(
@@ -309,6 +315,50 @@ async def test_video_manifest_returns_signed_urls(
     assert body["video_url"] == "http://storage.local/videos/clip.mp4"
     assert body["poster_url"] == "http://storage.local/posters/clip.webp"
     assert body["metadata"]["fps"] == 30
+    assert body["expires_in"] == 3600
+    assert signed == [("videos/clip.mp4", 3600), ("posters/clip.webp", 3600)]
+
+
+async def test_video_manifest_returns_503_when_metadata_not_ready(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+    monkeypatch,
+):
+    user, token = super_admin
+    project = Project(
+        display_id=f"P-VID-{uuid.uuid4().hex[:6]}",
+        name="Video Project",
+        type_key="video-track",
+        type_label="视频 · 时序追踪",
+        owner_id=user.id,
+        classes=["car"],
+    )
+    db_session.add(project)
+    await db_session.flush()
+    task = Task(
+        project_id=project.id,
+        display_id=f"T-VID-{uuid.uuid4().hex[:6]}",
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        status="pending",
+    )
+    db_session.add(task)
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        "app.api.v1.tasks.storage_service.generate_download_url",
+        lambda key, expires_in=3600, bucket=None: f"http://storage.local/{key}",
+    )
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/manifest",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Video metadata not ready"
 
 
 async def test_video_manifest_rejects_non_video(

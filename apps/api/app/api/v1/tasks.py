@@ -45,6 +45,7 @@ from app.db.models.task_batch import TaskBatch
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+VIDEO_MANIFEST_URL_EXPIRES_IN = 3600
 
 _ANNOTATORS = (
     UserRole.SUPER_ADMIN,
@@ -259,7 +260,23 @@ async def get_video_manifest(
         else storage_service.bucket
     )
     try:
-        video_url = storage_service.generate_download_url(task.file_path, bucket=bucket)
+        _, _, thumb, _, video_metadata = await _attach_dimensions(db, task)
+    except Exception as exc:
+        logger.exception("Failed to load video metadata task_id=%s", task.id)
+        raise HTTPException(
+            status_code=503, detail="Video metadata unavailable"
+        ) from exc
+
+    metadata = VideoMetadata.model_validate(video_metadata or {})
+    if not metadata.fps or not metadata.frame_count:
+        raise HTTPException(status_code=503, detail="Video metadata not ready")
+
+    try:
+        video_url = storage_service.generate_download_url(
+            task.file_path,
+            expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
+            bucket=bucket,
+        )
     except ClientError as exc:
         code = (exc.response.get("Error") or {}).get("Code")
         if code in {"NoSuchKey", "404", "NotFound"}:
@@ -296,21 +313,13 @@ async def get_video_manifest(
             status_code=503, detail="Video storage unavailable"
         ) from exc
 
-    try:
-        w, h, thumb, bh, video_metadata = await _attach_dimensions(db, task)
-    except Exception as exc:
-        logger.exception("Failed to load video metadata task_id=%s", task.id)
-        raise HTTPException(
-            status_code=503, detail="Video metadata unavailable"
-        ) from exc
-
-    metadata = VideoMetadata.model_validate(video_metadata or {})
     poster_path = metadata.poster_frame_path or thumb
     poster_url: str | None = None
     if poster_path:
         try:
             poster_url = storage_service.generate_download_url(
                 poster_path,
+                expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
                 bucket=bucket,
             )
         except ClientError as exc:
@@ -342,6 +351,7 @@ async def get_video_manifest(
         video_url=video_url,
         poster_url=poster_url,
         metadata=metadata,
+        expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
     )
 
 

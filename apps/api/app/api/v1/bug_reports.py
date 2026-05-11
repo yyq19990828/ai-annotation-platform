@@ -42,7 +42,7 @@ def _get_bug_reopen_redis_pool() -> ConnectionPool:
     if _BUG_REOPEN_REDIS_POOL is None:
         _BUG_REOPEN_REDIS_POOL = ConnectionPool.from_url(
             settings.redis_url,
-            max_connections=50,
+            max_connections=8,
             decode_responses=True,
         )
     return _BUG_REOPEN_REDIS_POOL

@@ -330,7 +330,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   useEffect(() => {
     if (!isVideoTask) return;
     if (s.tool !== "box" && s.tool !== "hand") s.setTool("box");
-  }, [isVideoTask, s]);
+  }, [isVideoTask, s.tool, s.setTool]);
 
   // 编辑冲突状态
   const conflictIdRef = useRef<string>("");

@@ -175,6 +175,12 @@ export function VideoStage({
   const [drag, setDrag] = useState<DragState>(null);
   const [hiddenTrackIds, setHiddenTrackIds] = useState<Set<string>>(() => new Set());
   const [lockedTrackIds, setLockedTrackIds] = useState<Set<string>>(() => new Set());
+  const onSelectRef = useRef(onSelect);
+  const lastResetTaskIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
 
   const fps = manifest?.metadata.fps && manifest.metadata.fps > 0 ? manifest.metadata.fps : 30;
   const frameCount = Math.max(
@@ -267,13 +273,16 @@ export function VideoStage({
   );
 
   useEffect(() => {
+    const taskId = manifest?.task_id ?? null;
+    if (!taskId || lastResetTaskIdRef.current === taskId) return;
+    lastResetTaskIdRef.current = taskId;
     setFrameIndex(0);
     setIsPlaying(false);
     setDrag(null);
     setHiddenTrackIds(new Set());
     setLockedTrackIds(new Set());
-    onSelect(null);
-  }, [manifest?.task_id, onSelect]);
+    onSelectRef.current(null);
+  }, [manifest?.task_id]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -348,11 +357,11 @@ export function VideoStage({
 
   const beginMove = useCallback((evt: React.PointerEvent<SVGRectElement>, entry: FrameEntry) => {
     const trackId = isVideoTrack(entry.ann) ? entry.ann.geometry.track_id : null;
+    evt.stopPropagation();
+    onSelect(entry.ann.id);
     if (readOnly || isPlaying || (trackId && lockedTrackIds.has(trackId))) return;
     const pt = pointFromEvent(evt as unknown as React.PointerEvent<SVGSVGElement>);
     if (!pt) return;
-    evt.stopPropagation();
-    onSelect(entry.ann.id);
     (evt.currentTarget.ownerSVGElement as SVGSVGElement | null)?.setPointerCapture?.(evt.pointerId);
     setDrag({ kind: "move", id: entry.ann.id, start: pt, origin: entry.geom, current: entry.geom });
   }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly]);
@@ -469,7 +478,7 @@ export function VideoStage({
                 width: "100%",
                 height: "100%",
                 cursor: readOnly || isPlaying || selectedTrackLocked ? "default" : "crosshair",
-                pointerEvents: readOnly && !selectedId ? "none" : "auto",
+                pointerEvents: "auto",
               }}
             >
               {currentFrameEntries.map((entry) => {

@@ -228,4 +228,79 @@ describe("VideoStage", () => {
 
     expect(getByTestId("video-overlay").textContent).not.toContain("car");
   });
+
+  it("does not reset frame or selection when callback references change for the same task", () => {
+    const firstSelect = vi.fn();
+    const secondSelect = vi.fn();
+    const { rerender } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={firstSelect}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(firstSelect).toHaveBeenCalledWith(null);
+
+    rerender(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={secondSelect}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(secondSelect).not.toHaveBeenCalled();
+  });
+
+  it("allows reviewers to select boxes in read-only mode", () => {
+    const onSelect = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { container } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        readOnly
+        onSelect={onSelect}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+    onSelect.mockClear();
+
+    const rect = container.querySelector("rect");
+    expect(rect).not.toBeNull();
+    fireEvent(rect!, pointer("pointerdown", 100, 100));
+
+    expect(onSelect).toHaveBeenCalledWith("t1");
+  });
 });

@@ -307,7 +307,7 @@ async def _backfill_media(dataset_id: str) -> None:
 
     async with SessionLocal() as db:
         rows = await db.execute(
-            select(DatasetItem.id).where(
+            select(DatasetItem.id, DatasetItem.file_type).where(
                 DatasetItem.dataset_id == uuid.UUID(dataset_id),
                 or_(
                     and_(
@@ -321,13 +321,15 @@ async def _backfill_media(dataset_id: str) -> None:
                 ),
             )
         )
-        item_ids = [str(r[0]) for r in rows.all()]
+        items = [(str(row.id), row.file_type) for row in rows.all()]
 
     await engine.dispose()
 
-    for iid in item_ids:
-        await _generate_thumbnail(iid)
-        await _generate_video_metadata(iid)
+    for item_id, file_type in items:
+        if file_type == "image":
+            await _generate_thumbnail(item_id)
+        elif file_type == "video":
+            await _generate_video_metadata(item_id)
 
 
 async def _generate_task_thumbnail(task_id: str) -> None:
