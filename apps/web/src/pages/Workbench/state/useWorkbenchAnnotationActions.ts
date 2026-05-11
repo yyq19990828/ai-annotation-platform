@@ -32,9 +32,9 @@ interface ToastInput {
 }
 
 export interface AnnotationMutations {
-  create: { mutate: (p: AnnotationPayload, opts?: { onSuccess?: (a: AnnotationResponse) => void; onError?: (e: unknown) => void }) => void };
-  update: { mutate: (vars: { annotationId: string; payload: Partial<AnnotationPayload> }, opts?: { onSuccess?: () => void; onError?: (e: unknown) => void }) => void };
-  delete: { mutate: (id: string, opts?: { onSuccess?: () => void; onError?: (e: unknown) => void }) => void };
+  create: { mutate: (p: AnnotationPayload, opts?: { onSuccess?: (a: AnnotationResponse) => void; onError?: (e: unknown) => void; onSettled?: () => void }) => void };
+  update: { mutate: (vars: { annotationId: string; payload: Partial<AnnotationPayload> }, opts?: { onSuccess?: () => void; onError?: (e: unknown) => void; onSettled?: () => void }) => void };
+  delete: { mutate: (id: string, opts?: { onSuccess?: () => void; onError?: (e: unknown) => void; onSettled?: () => void }) => void };
 }
 
 export interface UseWorkbenchAnnotationActionsArgs {
@@ -57,6 +57,7 @@ export interface UseWorkbenchAnnotationActionsArgs {
 export interface UseWorkbenchAnnotationActionsReturn {
   /** 共用 create fallback：分配 tmpId → cache → history → enqueue。*/
   optimisticEnqueueCreate: (payload: AnnotationPayload) => void;
+  createBboxWithClass: (geom: Geom, cls: string) => boolean;
   handlePickPendingClass: (cls: string) => void;
   submitPolygon: (points: [number, number][]) => void;
   handleDeleteBox: (id: string) => void;
@@ -199,19 +200,17 @@ export function useWorkbenchAnnotationActions({
 
   // ── handlers ───────────────────────────────────────────────────────
 
-  const handlePickPendingClass = useCallback(
-    (cls: string) => {
-      if (blockIfLocked()) { s.setPendingDrawing(null); return; }
-      const pending = s.pendingDrawing;
-      if (!pending || !cls) return;
+  const createBboxWithClass = useCallback(
+    (geom: Geom, cls: string): boolean => {
+      if (blockIfLocked()) return false;
+      if (!cls) return false;
       const isUnknown = cls === UNKNOWN_CLASS;
       const payload: AnnotationPayload = {
         annotation_type: "bbox",
         class_name: cls,
-        geometry: bboxGeom(pending.geom),
+        geometry: bboxGeom(geom),
         confidence: 1,
       };
-      s.setPendingDrawing(null);
       // unknown 是「画完未选类」的兜底，不应污染 activeClass / 最近使用类。
       if (!isUnknown) {
         s.setActiveClass(cls);
@@ -224,8 +223,19 @@ export function useWorkbenchAnnotationActions({
         },
         onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
       });
+      return true;
     },
     [blockIfLocked, s, mutations, history, recordRecentClass, enqueueOnError, optimisticEnqueueCreate],
+  );
+
+  const handlePickPendingClass = useCallback(
+    (cls: string) => {
+      const pending = s.pendingDrawing;
+      if (!pending || !cls) return;
+      s.setPendingDrawing(null);
+      createBboxWithClass(pending.geom, cls);
+    },
+    [s, createBboxWithClass],
   );
 
   const handleDeleteBox = useCallback(
@@ -358,6 +368,7 @@ export function useWorkbenchAnnotationActions({
 
   return {
     optimisticEnqueueCreate,
+    createBboxWithClass,
     handlePickPendingClass,
     submitPolygon,
     handleDeleteBox,

@@ -1,6 +1,6 @@
 # 提案 · Task 退回态可见性 + 审核工作台升级
 
-> 状态：**✅ 已归档（M1 + M2 均已实现，2026-05-09）**。M1：rejected 状态机 + 通知 + 前端可见性。M2：WorkbenchShell mode="review" 全功能工作台（方案 B）。方案 C（WorkbenchCore 拆分）已录入 ROADMAP.md 等独立 epic，待 v0.10.x SAM3 收尾后触发。
+> 状态：**✅ 已归档（M1 + M2 均已实现，2026-05-09）**。M1：rejected 状态机 + 通知 + 前端可见性。M2：WorkbenchShell mode="review" 全功能工作台（方案 B）。方案 C（WorkbenchCore 拆分）已被 2026-05-11 WorkbenchShell decomposition / ADR-0017 取代：后续保留单 Shell + mode hooks + StageHost，不再按两套 wrapper 推进。
 >
 > 目标：
 > 1. 让"被退回的 task"对标注员**可发现、可分流、可追溯**（当前只是 banner，完全依赖标注员主动点开任务）。

@@ -52,7 +52,8 @@ graph TD
 | `apps/api/app/services/batch.py` | annotation 写入后 batch 自动迁移 |
 | `apps/web/src/api/tasks.ts` | 前端 annotation API wrapper |
 | `apps/web/src/hooks/useTasks.ts` | React Query mutation 与 optimistic update |
-| `apps/web/src/pages/Workbench/state/useWorkbenchAnnotationActions.ts` | 画布内增删改主消费方 |
+| `apps/web/src/pages/Workbench/stages/image/useImageAnnotationActions.ts` | 图片工作台 annotation action 主消费方 |
+| `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频工作台 annotation action 主消费方 |
 
 ## 数据模型
 
@@ -290,15 +291,18 @@ annotation 路径几乎都带两个伴随动作：
 | `apps/web/src/api/tasks.ts` | annotation API 包装 |
 | `apps/web/src/hooks/useTasks.ts` | create/update/delete mutation |
 | `apps/web/src/hooks/usePredictions.ts` | accept prediction 后的双缓存失效 |
-| `apps/web/src/pages/Workbench/state/useWorkbenchAnnotationActions.ts` | 画布上的 optimistic edit |
-| `apps/web/src/pages/Review/ReviewWorkbench.tsx` | reviewer 视角查看 annotation + prediction |
+| `apps/web/src/pages/Workbench/stages/image/useImageAnnotationActions.ts` | 图片 bbox / polygon / SAM / AI 候选 / 批量操作 |
+| `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频 bbox / track / keyframe / 转换操作 |
+| `apps/web/src/pages/Workbench/modes/useReviewMode.tsx` | reviewer 模式下的 annotation 查看与审核策略 |
 | `apps/web/src/pages/Workbench/state/useCanvasDraftPersistence.ts` | 当前主草稿路径仍在前端本地 |
 
 视频工作台还要检查：
 
 | 文件 | 为什么要看 |
 |---|---|
+| `apps/web/src/pages/Workbench/stages/video/VideoWorkbench.tsx` | 视频 Stage concrete implementation |
 | `apps/web/src/pages/Workbench/stage/VideoStage.tsx` | 视频播放、关键帧编辑、轨迹列表和插值显示 |
+| `apps/web/src/pages/Workbench/stages/video/useVideoAnnotationActions.ts` | 视频 annotation payload 与离线兜底 |
 | `apps/web/src/pages/Workbench/state/transforms.ts` | `video_bbox` / `video_track` 与工作台 shape 的转换 |
 | `apps/api/app/schemas/task.py` | `TaskOut.video_metadata` 和 video manifest response |
 

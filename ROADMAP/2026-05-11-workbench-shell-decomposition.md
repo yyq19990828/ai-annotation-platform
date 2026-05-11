@@ -1,5 +1,7 @@
 # WorkbenchShell 拆分路线图 · Image / Video / 3D 与标注 / 审核模式
 
+> 状态：**已归档（2026-05-11）**。M6.0–M6.4 已落地：Overlay 外提、Mode controller、Stage-specific action hooks、StageHost 收口、文档与 ADR 收尾均完成。本文件保留作历史切片和架构决策背景；后续优化项已迁入 [../ROADMAP.md](../ROADMAP.md)。
+>
 > 类型：P0 架构优化路线图（**not yet a milestone plan**）
 >
 > 背景：v0.9.20 视频工作台补齐工具语义后，`WorkbenchShell` 已同时承载图片、视频、标注员模式、审核员模式、任务流、快捷键、弹窗、离线队列、history、AI、评论与右栏逻辑。当前文件规模约 **1732 行**，`ImageStage` 约 **1108 行**，`VideoStage` 约 **1055 行**。
@@ -260,6 +262,16 @@ apps/web/src/pages/Workbench/
 ---
 
 ## 4. 分阶段计划
+
+> 状态更新（2026-05-11）：M6.0–M6.4 已完成。当前 `WorkbenchShell.tsx` 为 790 行；`pnpm typecheck` 通过；工作台相关定向测试通过。
+
+| Milestone | 状态 | 落地记录 |
+|---|---|---|
+| M6.0 Overlay 外提 | 已完成 | `WorkbenchOverlays` 承接跨 Stage class picker / SAM / 批量改类弹窗 |
+| M6.1 Mode controller 外提 | 已完成 | `useAnnotateMode` / `useReviewMode` 收口标注与审核模式策略 |
+| M6.2 Stage-specific action hooks | 已完成 | 图片与视频 action hooks 拆出并补 focused tests |
+| M6.3 StageHost 收口 | 已完成 | `WorkbenchStageHost` 分派 `ImageWorkbench` / `VideoWorkbench` / `ThreeDWorkbench.placeholder` |
+| M6.4 收尾与文档 | 已完成 | 补工作台架构文档、用户手册、ADR-0017 与本状态记录 |
 
 ### M6.0 · Overlay 外提（最高优先）
 

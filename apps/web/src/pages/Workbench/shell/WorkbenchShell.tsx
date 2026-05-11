@@ -7,16 +7,13 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProject } from "@/hooks/useProjects";
 import {
   useTaskList, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
-  useUpdateAnnotation, useSubmitTask, useSkipTask, useWithdrawTask, useReopenTask, useAcceptRejection,
-  useApproveTask, useRejectTask, useReviewClaim,
+  useUpdateAnnotation, useSubmitTask,
   useVideoManifest,
 } from "@/hooks/useTasks";
-import type { Geometry, ReviewClaimResponse, VideoTrackGeometry } from "@/types";
-import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
+import { usePredictions } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
-import { tasksApi, type AnnotationPayload } from "@/api/tasks";
-import { ApiError } from "@/api/client";
+import { tasksApi } from "@/api/tasks";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
@@ -25,36 +22,23 @@ import type { TaskResponse, AnnotationResponse } from "@/types";
 
 import { useWorkbenchState } from "../state/useWorkbenchState";
 import { useViewportTransform } from "../state/useViewportTransform";
-import { useAnnotationHistory, type Command } from "../state/useAnnotationHistory";
+import { useAnnotationHistory } from "../state/useAnnotationHistory";
 import { useRecentClasses } from "../state/useRecentClasses";
 import { useSessionStats } from "../state/useSessionStats";
-import { useClipboard } from "../state/useClipboard";
-import { useWorkbenchAnnotationActions } from "../state/useWorkbenchAnnotationActions";
 import { useWorkbenchHotkeys } from "../state/useWorkbenchHotkeys";
 import { useCanvasDraftPersistence } from "../state/useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "../state/useWorkbenchTaskFlow";
 import { useInteractiveAI } from "../state/useInteractiveAI";
 import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
-import { annotationToBox, polygonBounds, predictionsToBoxes, type AiBox } from "../state/transforms";
-import { applyVideoKeyframeToGeometry, buildVideoKeyframeCommand } from "../state/videoTrackCommands";
-import { iouShape } from "../stage/iou";
-import { buildIoUIndex } from "../stage/iou-index";
+import { annotationToBox } from "../state/transforms";
+import { applyVideoKeyframeToGeometry } from "../state/videoTrackCommands";
+import { useAnnotateMode } from "../modes/useAnnotateMode";
+import { useReviewMode } from "../modes/useReviewMode";
 import { setActiveClassesConfig, sortClassesByConfig, UNKNOWN_CLASS } from "../stage/colors";
-import { getMissingRequired } from "./AttributeForm";
-import { ImageStage } from "../stage/ImageStage";
-import { VideoStage, type VideoStageControls } from "../stage/VideoStage";
-import { CanvasToolbar } from "../stage/CanvasToolbar";
-import { Topbar } from "./Topbar";
-import { ToolDock } from "./ToolDock";
-import { FloatingDock } from "./FloatingDock";
+import type { VideoStageControls } from "../stage/VideoStage";
 import { ThemeSwitcher } from "./ThemeSwitcher";
-import { TaskQueuePanel } from "./TaskQueuePanel";
-import { AIInspectorPanel } from "./AIInspectorPanel";
-import { StatusBar } from "./StatusBar";
-import { ConflictModal } from "@/components/workbench/ConflictModal";
-import { HotkeyCheatSheet } from "./HotkeyCheatSheet";
-import { ClassPickerPopover } from "./ClassPickerPopover";
-import { Minimap } from "../stage/Minimap";
+import { WorkbenchOverlays } from "./WorkbenchOverlays";
+import { WorkbenchLayout } from "./WorkbenchLayout";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
 import {
@@ -64,22 +48,13 @@ import {
   updateWorkbenchUrlSearch,
 } from "@/utils/workbenchNavigation";
 import {
-  enqueue,
   getAll as offlineQueueGetAll,
   removeById as offlineQueueRemoveById,
 } from "../state/offlineQueue";
 import { useWorkbenchOfflineQueue } from "../state/useWorkbenchOfflineQueue";
-import { OfflineQueueDrawer } from "./OfflineQueueDrawer";
 import { WorkbenchSkeleton } from "./WorkbenchSkeleton";
-import { ReviewerMiniPanel } from "@/pages/Review/ReviewerMiniPanel";
-import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
-
-type Geom = { x: number; y: number; w: number; h: number };
-type DiffMode = "final" | "raw" | "diff";
-
-function isConflictError(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 409;
-}
+import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
+import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
 
 export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "review" }) {
   const { id: routeId } = useParams<{ id: string }>();
@@ -210,6 +185,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const blurhash = useMemo(() => task?.blurhash ?? null, [task?.id]);
   const thumbnailUrl = useMemo(() => task?.thumbnail_url ?? null, [task?.id]);
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
+  const stageKind = currentProject?.type_key === "lidar" ? "3d" : isVideoTask ? "video" : "image";
   const videoManifest = useVideoManifest(taskId, isVideoTask);
 
   // v0.7.1 · 支持 /annotate 深链 ?batch=&task= 自动选中任务
@@ -280,45 +256,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     () => (annotationsData ?? []).map(annotationToBox),
     [annotationsData],
   );
-  const allAiBoxes = useMemo(
-    () => predictionsToBoxes(predictionsData),
-    [predictionsData],
-  );
-
-  // B-11 · 已采纳 / 已驳回 (会话级) 的 shape 从画布隐去. 之前按 prediction 维度过滤
-  // 导致一个紫框被采纳后, 同 prediction 下其它紫框跟着消失 — 改成 shape 级 (predictionId+shapeIndex).
-  // 标记格式与 AiBox.id 一致: `pred-${predictionId}-${shapeIndex}`.
-  const acceptedShapeKeys = useMemo(() => {
-    const set = new Set<string>();
-    for (const ann of annotationsData ?? []) {
-      if (!ann.parent_prediction_id) continue;
-      // _shape_index 由后端 accept_prediction 写入 attributes; 旧数据可能缺失 → 退回 prediction 维度过滤
-      // (整条 prediction 一并采纳的"全部采纳"路径也会缺单 shape index, 用 -* 通配符).
-      const idx = (ann.attributes as { _shape_index?: number } | undefined)?._shape_index;
-      if (typeof idx === "number") {
-        set.add(`pred-${ann.parent_prediction_id}-${idx}`);
-      } else {
-        set.add(`pred-${ann.parent_prediction_id}-*`);
-      }
-    }
-    return set;
-  }, [annotationsData]);
-
-  const [dismissedShapeKeys, setDismissedShapeKeys] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    setDismissedShapeKeys(new Set());
-  }, [taskId]);
-
-  const aiBoxes = useMemo(
-    () => allAiBoxes.filter((b) => {
-      if (b.conf < s.confThreshold) return false;
-      if (acceptedShapeKeys.has(b.id)) return false;
-      if (acceptedShapeKeys.has(`pred-${b.predictionId}-*`)) return false;
-      if (dismissedShapeKeys.has(b.id)) return false;
-      return true;
-    }),
-    [allAiBoxes, s.confThreshold, acceptedShapeKeys, dismissedShapeKeys],
-  );
 
   // v0.9.5 · 本题累计 AI 费用 / 平均推理时间（PredictionMeta 已 join 进 PredictionResponse）
   const taskAiMeta = useMemo(() => {
@@ -340,21 +277,11 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     };
   }, [predictionsData]);
 
-  const aiTakeoverRate = useMemo(() => {
-    if (!annotationsData || annotationsData.length === 0) return 0;
-    const aiDerived = annotationsData.filter((a) => a.parent_prediction_id).length;
-    return Math.round((aiDerived / annotationsData.length) * 100);
-  }, [annotationsData]);
-
   const createAnnotation = useCreateAnnotation(taskId);
   const deleteAnnotationMut = useDeleteAnnotation(taskId);
   const conflictCbRef = useRef<(annotationId: string, version: number) => void>(() => {});
   const updateAnnotationMut = useUpdateAnnotation(taskId, (...args) => conflictCbRef.current(...args));
   const submitTaskMut = useSubmitTask();
-  const withdrawTaskMut = useWithdrawTask();
-  const reopenTaskMut = useReopenTask();
-  const acceptRejectionMut = useAcceptRejection();
-  const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
     usePreannotationProgress(projectId);
@@ -463,52 +390,35 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     return tasks.filter((t) => t.status !== "completed" && t.id !== taskId).length;
   }, [tasks, taskId]);
 
-  // 剪贴板
-  const clipboard = useClipboard({
-    userBoxes,
-    selectedIds: s.selectedIds,
-    clipboard: s.clipboard,
-    setClipboard: s.setClipboard,
-    createAnnotation: (payload) => createAnnotation.mutateAsync(payload),
-    pushBatch: history.pushBatch,
-    setSelectedIds: (ids) => s.replaceSelected(ids),
-    imgW: stageGeom.imgW,
-    imgH: stageGeom.imgH,
-  });
-
-  // IoU 视觉去重：与已确认 user 框 IoU > 项目级阈值（默认 0.7）且 class 相同的 AI 框 → 淡化
-  // v0.9.3 · 用 rbush 同类分桶预筛包围盒候选，候选过 iouShape 精确判定，some() 早退保留
-  const iouDedupThreshold = currentProject?.iou_dedup_threshold ?? 0.7;
-  const userIoUIndex = useMemo(() => buildIoUIndex(userBoxes), [userBoxes]);
-  const dimmedAiIds = useMemo(() => {
-    const out = new Set<string>();
-    if (userBoxes.length === 0 || aiBoxes.length === 0) return out;
-    for (const a of aiBoxes) {
-      const candidates = userIoUIndex.candidatesForBox(a);
-      if (candidates.some((u) => iouShape(u, a) > iouDedupThreshold)) out.add(a.id);
-    }
-    return out;
-  }, [userBoxes, aiBoxes, userIoUIndex, iouDedupThreshold]);
-
-  // 批量改类 popover：anchor 到 selectedIds 第一个 user 框的 geom
-  const [batchChanging, setBatchChanging] = useState(false);
-
-  // v0.9.2 · SAM 候选接受：用户按 Enter → 锁定一个候选，弹 ClassPicker 选类后落库。
-  const [samPendingAccept, setSamPendingAccept] = useState<{ idx: number } | null>(null);
-
   // ── 离线队列接线（v0.6.3 P1 抽 hook）：online / executeOp / flushAll / drawer ──
   const offlineQ = useWorkbenchOfflineQueue({ history, queryClient, pushToast });
   const { online, queueCount, enqueueOnError, flushOne: executeOp, flushAll: flushOffline,
     drawerOpen: offlineDrawerOpen, openDrawer: openOfflineDrawer, closeDrawer: closeOfflineDrawer } = offlineQ;
 
-  // ── 标注 mutation 接线（v0.6.4 P1 抽 hook；v0.6.5 加 isLocked 守卫） ──
-  const isLockedForActions = task?.status === "review" || task?.status === "completed";
-  const annotationActions = useWorkbenchAnnotationActions({
-    taskId, projectId, meUserId,
-    queryClient, history, s, pushToast, recordRecentClass,
+  // ── image stage action hook（bbox / polygon / SAM / AI 候选 / 批量操作 / 剪贴板）──
+  const isLockedForActions = mode === "review"
+    ? task?.status === "completed"
+    : task?.status === "review" || task?.status === "completed";
+  const imageActions = useImageAnnotationActions({
+    taskId,
+    projectId,
+    meUserId,
+    queryClient,
+    history,
+    s,
+    pushToast,
+    recordRecentClass,
+    annotationsData,
     annotationsRef,
-    enqueueOnError,
+    predictionsData,
+    userBoxes,
+    stageGeom,
+    iouDedupThreshold: currentProject?.iou_dedup_threshold ?? 0.7,
+    classes,
+    sam,
+    createAnnotationAsync: (payload) => createAnnotation.mutateAsync(payload),
     isLocked: isLockedForActions,
+    enqueueOnError,
     mutations: {
       create: createAnnotation,
       update: { mutate: (vars, opts) => updateAnnotationMut.mutate(vars, opts) },
@@ -516,6 +426,15 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     },
   });
   const {
+    aiBoxes,
+    aiTakeoverRate,
+    dimmedAiIds,
+    clipboard,
+    batchChanging,
+    setBatchChanging,
+    batchChangeTarget,
+    samPendingGeom,
+    samDefaultClass,
     optimisticEnqueueCreate,
     handlePickPendingClass,
     submitPolygon,
@@ -526,7 +445,20 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     polygonDraftPoints,
     setPolygonDraftPoints,
     polygonHandle,
-  } = annotationActions;
+    handleBatchDelete,
+    handleStartBatchChangeClass,
+    handleCommitBatchChangeClass,
+    handleCancelBatchChange,
+    handleRejectPrediction,
+    handleAcceptPrediction,
+    handleAcceptAll,
+    handleCommitDrawing,
+    handleStartChangeClass,
+    handleCommitChangeClass,
+    handleCancelChangeClass,
+    handleSamCommitClass,
+    handleSamCancelClass,
+  } = imageActions;
 
 
   /** Shift+click 多选；普通 click 单选；点 AI 框始终单选。 */
@@ -539,183 +471,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       s.setSelectedId(id);
     }
   }, [s]);
-
-  /**
-   * 当前 SAM 候选几何 AABB → 用作 ClassPicker 锚点。
-   * v0.9.4 phase 2 · polygonlabels 走 polygonBounds; rectanglelabels 直接用 bbox.
-   */
-  const samPendingGeom = useMemo<Geom | null>(() => {
-    if (!samPendingAccept) return null;
-    const cand = sam.candidates[samPendingAccept.idx];
-    if (!cand) return null;
-    if (cand.type === "rectanglelabels" && cand.bbox) {
-      return { x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height };
-    }
-    if (cand.points && cand.points.length >= 3) return polygonBounds(cand.points);
-    return null;
-  }, [samPendingAccept, sam.candidates]);
-
-  const handleSamCommitClass = useCallback(
-    (cls: string) => {
-      const pending = samPendingAccept;
-      if (!pending) return;
-      const cand = sam.candidates[pending.idx];
-      setSamPendingAccept(null);
-      if (!cand || !cls) return;
-      s.setActiveClass(cls);
-      // v0.9.4 phase 2 · 按 type 分发: rectanglelabels 走 bbox 创建路径 (与用户手画框 + 选类等价).
-      if (cand.type === "rectanglelabels" && cand.bbox) {
-        s.setPendingDrawing({
-          geom: { x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height },
-        });
-        handlePickPendingClass(cls);
-      } else if (cand.points && cand.points.length >= 3) {
-        submitPolygon(cand.points);
-      }
-      sam.consume(pending.idx);
-    },
-    [samPendingAccept, sam, s, submitPolygon, handlePickPendingClass],
-  );
-
-  const handleSamCancelClass = useCallback(() => {
-    setSamPendingAccept(null);
-  }, []);
-
-  /** 批量删除当前选中的所有 user 框：成功后聚合 1 条 batch 命令进 history。 */
-  const handleBatchDelete = useCallback(() => {
-    const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
-    if (ids.length === 0) return;
-    const targets = ids
-      .map((id) => annotationsRef.current.find((a) => a.id === id))
-      .filter(Boolean) as AnnotationResponse[];
-    let pending = ids.length;
-    let succeeded = 0, failed = 0;
-    const cmds: { kind: "delete"; annotation: AnnotationResponse }[] = [];
-    targets.forEach((ann) => {
-      deleteAnnotationMut.mutate(ann.id, {
-        onSuccess: () => { succeeded++; cmds.push({ kind: "delete", annotation: ann }); },
-        onError: () => { failed++; },
-        onSettled: () => {
-          pending--;
-          if (pending === 0) {
-            if (cmds.length > 0) history.pushBatch(cmds);
-            pushToast({
-              msg: `已删除 ${succeeded}/${targets.length} 个标注`,
-              sub: failed ? `${failed} 项失败` : undefined,
-              kind: failed ? "error" : "success",
-            });
-            s.setSelectedId(null);
-          }
-        },
-      });
-    });
-  }, [s, deleteAnnotationMut, history, pushToast]);
-
-  /** 触发批量改类弹窗（实际批量更新由 popover commit 触发）。 */
-  const handleStartBatchChangeClass = useCallback(() => {
-    const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
-    if (ids.length === 0) return;
-    setBatchChanging(true);
-  }, [s.selectedIds]);
-
-  const handleCommitBatchChangeClass = useCallback((cls: string) => {
-    setBatchChanging(false);
-    if (!cls) return;
-    const ids = s.selectedIds.filter((id) => annotationsRef.current.some((a) => a.id === id));
-    if (ids.length === 0) return;
-    let pending = ids.length;
-    let succeeded = 0, failed = 0;
-    const cmds: { kind: "update"; annotationId: string; before: { class_name: string }; after: { class_name: string } }[] = [];
-    ids.forEach((id) => {
-      const ann = annotationsRef.current.find((a) => a.id === id);
-      if (!ann || ann.class_name === cls) { pending--; return; }
-      const before = { class_name: ann.class_name };
-      const after = { class_name: cls };
-      updateAnnotationMut.mutate(
-        { annotationId: id, payload: after },
-        {
-          onSuccess: () => { succeeded++; cmds.push({ kind: "update", annotationId: id, before, after }); },
-          onError: () => { failed++; },
-          onSettled: () => {
-            pending--;
-            if (pending === 0) {
-              if (cmds.length > 0) history.pushBatch(cmds);
-              s.setActiveClass(cls);
-              recordRecentClass(cls);
-              pushToast({
-                msg: `${succeeded} 个标注已改为 ${cls}`,
-                sub: failed ? `${failed} 项失败` : undefined,
-                kind: failed ? "error" : "success",
-              });
-            }
-          },
-        },
-      );
-    });
-    if (pending === 0) setBatchChanging(false);
-  }, [s, updateAnnotationMut, history, pushToast, recordRecentClass]);
-
-  const handleCancelBatchChange = useCallback(() => setBatchChanging(false), []);
-
-  const handleRejectPrediction = useCallback((box: AiBox) => {
-    setDismissedShapeKeys((prev) => {
-      if (prev.has(box.id)) return prev;
-      const next = new Set(prev);
-      next.add(box.id);
-      return next;
-    });
-  }, []);
-
-  const handleAcceptPrediction = useCallback((box: AiBox) => {
-    if (!box.predictionId) return;
-    // 单点采纳: 仅采纳当前 shape, 不波及同 prediction 下其它框.
-    acceptPredictionMut.mutate(
-      { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
-      {
-        onSuccess: (created) => {
-          const ids = created.map((a) => a.id);
-          history.push({ kind: "acceptPrediction", predictionId: box.predictionId, createdAnnotationIds: ids });
-          pushToast({ msg: "已采纳 AI 标注", sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`, kind: "success" });
-        },
-      },
-    );
-  }, [acceptPredictionMut, history, pushToast]);
-
-  const handleAcceptAll = useCallback(() => {
-    // 只采纳画布上"还在显示"的 shape (已过 confThreshold + 未驳回);
-    // 之前按 prediction 整条采纳, 会把被阈值过滤的低置信框也吞进去, 与用户视觉认知不一致.
-    if (aiBoxes.length === 0) return;
-    const totalBoxes = aiBoxes.length;
-    let succeeded = 0;
-    let failed = 0;
-    let pending = aiBoxes.length;
-    aiBoxes.forEach((box) => {
-      acceptPredictionMut.mutate(
-        { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
-        {
-          onSuccess: (created) => {
-            succeeded++;
-            history.push({
-              kind: "acceptPrediction",
-              predictionId: box.predictionId,
-              createdAnnotationIds: created.map((a) => a.id),
-            });
-          },
-          onError: () => { failed++; },
-          onSettled: () => {
-            pending--;
-            if (pending === 0) {
-              pushToast({
-                msg: `采纳 ${succeeded}/${totalBoxes} 个 AI 框`,
-                sub: failed ? `${failed} 项失败` : undefined,
-                kind: failed ? "error" : "success",
-              });
-            }
-          },
-        },
-      );
-    });
-  }, [aiBoxes, acceptPredictionMut, history, pushToast]);
 
   const handleRunAi = useCallback(() => {
     if (!projectId) return;
@@ -759,202 +514,34 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     );
   }, [projectId, currentProject, aiModel, taskId, triggerPreannotation, pushToast]);
 
-  // 画完框 → 进入待选类别 pending 态。class 由 ClassPickerPopover 选定后才落库。
-  const handleCommitDrawing = useCallback((geo: Geom) => {
-    s.setPendingDrawing({ geom: geo });
-  }, [s]);
-
-  const buildVideoUpdateCommand = useCallback((ann: AnnotationResponse, geometry: Geometry): Command => {
-    if (ann.geometry.type === "video_track" && geometry.type === "video_track") {
-      const keyframeCommand = buildVideoKeyframeCommand(ann.id, ann.geometry, geometry);
-      if (keyframeCommand) return keyframeCommand;
-    }
-    return { kind: "update", annotationId: ann.id, before: { geometry: ann.geometry }, after: { geometry } };
-  }, []);
-
-  const optimisticUpdateAnnotation = useCallback((annotationId: string, patch: { geometry?: Geometry; class_name?: string }) => {
-    if (!taskId) return;
-    queryClient.setQueryData<AnnotationResponse[]>(
-      ["annotations", taskId],
-      (prev) => (prev ?? []).map((a) => (a.id === annotationId ? { ...a, ...patch } : a)),
-    );
-  }, [queryClient, taskId]);
-
-  const handleVideoCreateWithClass = useCallback((kind: "video_bbox" | "video_track", frameIndex: number, geo: Geom, cls: string) => {
-    const className = cls || UNKNOWN_CLASS;
-    let payload: AnnotationPayload;
-    if (kind === "video_bbox") {
-      payload = {
-        annotation_type: "video_bbox",
-        class_name: className,
-        geometry: { type: "video_bbox", frame_index: frameIndex, ...geo },
-      };
-    } else {
-    const trackId = typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? `trk_${crypto.randomUUID()}`
-      : `trk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    const geometry: VideoTrackGeometry = {
-      type: "video_track",
-      track_id: trackId,
-      keyframes: [
-        {
-          frame_index: frameIndex,
-          bbox: geo,
-          source: "manual",
-          absent: false,
-          occluded: false,
-        },
-      ],
-    };
-      payload = {
-      annotation_type: "video_track",
-        class_name: className,
-      geometry,
-    };
-    }
-    createAnnotation.mutate(payload, {
-      onSuccess: (created) => {
-        history.push({ kind: "create", annotationId: created.id, payload });
-        if (className !== UNKNOWN_CLASS) {
-          s.setActiveClass(className);
-          recordRecentClass(className);
-        }
-        s.setSelectedId(created.id);
-      },
-      onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
-    });
-  }, [createAnnotation, enqueueOnError, history, optimisticEnqueueCreate, recordRecentClass, s]);
-
-  const handleVideoCreate = useCallback((frameIndex: number, geo: Geom) => {
-    handleVideoCreateWithClass("video_track", frameIndex, geo, s.activeClass || UNKNOWN_CLASS);
-  }, [handleVideoCreateWithClass, s.activeClass]);
-
-  const handleVideoPendingDraw = useCallback((
-    kind: "video_bbox" | "video_track",
-    frameIndex: number,
-    geom: Geom,
-    anchor: { left: number; top: number },
-  ) => {
-    s.setPendingDrawing({ kind, frameIndex, geom, anchor });
-  }, [s]);
+  const {
+    handleVideoCreate,
+    handleVideoPendingDraw,
+    handlePickVideoPendingClass,
+    handleVideoUpdate,
+    handleVideoRename,
+    handleVideoSetSelectedClass,
+    handleVideoConvertToBboxes,
+  } = useVideoAnnotationActions({
+    taskId,
+    queryClient,
+    history,
+    s,
+    annotationsRef,
+    pushToast,
+    recordRecentClass,
+    optimisticEnqueueCreate,
+    enqueueOnError,
+    mutations: {
+      create: createAnnotation,
+      update: { mutate: (vars, opts) => updateAnnotationMut.mutate(vars, opts) },
+    },
+  });
 
   const handlePickPendingClassAny = useCallback((cls: string) => {
-    const pending = s.pendingDrawing;
-    if (pending?.kind === "video_bbox" || pending?.kind === "video_track") {
-      s.setPendingDrawing(null);
-      handleVideoCreateWithClass(pending.kind, pending.frameIndex, pending.geom, cls);
-      return;
-    }
+    if (handlePickVideoPendingClass(cls)) return;
     handlePickPendingClass(cls);
-  }, [handlePickPendingClass, handleVideoCreateWithClass, s]);
-
-  const handleVideoUpdate = useCallback((ann: AnnotationResponse, geometry: Geometry) => {
-    if (geometry.type !== "video_bbox" && geometry.type !== "video_track") return;
-    const after = { geometry };
-    const command = buildVideoUpdateCommand(ann, geometry);
-    updateAnnotationMut.mutate(
-      { annotationId: ann.id, payload: after },
-      {
-        onSuccess: () => history.push(command),
-        onError: (err) => {
-          if (isConflictError(err)) return;
-          enqueueOnError(err, () => {
-            optimisticUpdateAnnotation(ann.id, { geometry });
-            history.push(command);
-            if (taskId) enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
-          });
-        },
-      },
-    );
-  }, [buildVideoUpdateCommand, enqueueOnError, history, optimisticUpdateAnnotation, taskId, updateAnnotationMut]);
-
-  const handleVideoRename = useCallback((ann: AnnotationResponse, className: string) => {
-    const before = { class_name: ann.class_name };
-    const after = { class_name: className };
-    updateAnnotationMut.mutate(
-      { annotationId: ann.id, payload: after },
-      {
-        onSuccess: () => history.push({ kind: "update", annotationId: ann.id, before, after }),
-        onError: (err) => {
-          if (isConflictError(err)) return;
-          enqueueOnError(err, () => {
-            optimisticUpdateAnnotation(ann.id, { class_name: className });
-            history.push({ kind: "update", annotationId: ann.id, before, after });
-            if (taskId) enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
-          });
-        },
-      },
-    );
-  }, [enqueueOnError, history, optimisticUpdateAnnotation, taskId, updateAnnotationMut]);
-
-  const handleVideoSetSelectedClass = useCallback((className: string) => {
-    if (!s.selectedId) return false;
-    const ann = annotationsRef.current.find((a) => a.id === s.selectedId);
-    if (!ann || (ann.geometry.type !== "video_bbox" && ann.geometry.type !== "video_track")) return false;
-    if (ann.class_name === className) return true;
-    handleVideoRename(ann, className);
-    recordRecentClass(className);
-    return true;
-  }, [handleVideoRename, recordRecentClass, s.selectedId]);
-
-  const handleVideoConvertToBboxes = useCallback(async (
-    ann: AnnotationResponse,
-    options: {
-      operation: "copy" | "split";
-      scope: "frame" | "track";
-      frameIndex?: number;
-      frameMode?: "keyframes" | "all_frames";
-    },
-  ) => {
-    if (!taskId || ann.geometry.type !== "video_track") return;
-    if (options.frameMode === "all_frames") {
-      const ok = window.confirm("将按插值结果展开所有可见帧，长视频可能生成大量独立框。继续？");
-      if (!ok) return;
-    }
-    try {
-      const result = await tasksApi.convertVideoTrackToBboxes(taskId, ann.id, {
-        operation: options.operation,
-        scope: options.scope,
-        frame_index: options.frameIndex,
-        frame_mode: options.frameMode ?? "keyframes",
-      });
-      queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) => {
-        const base = (prev ?? []).filter((item) => !result.created_annotations.some((created) => created.id === item.id));
-        const withoutSource = result.deleted_source ? base.filter((item) => item.id !== ann.id) : base;
-        const updatedSource = result.source_annotation
-          ? withoutSource.map((item) => (item.id === ann.id ? result.source_annotation! : item))
-          : withoutSource;
-        return [...updatedSource, ...result.created_annotations];
-      });
-      const commands: Exclude<Command, { kind: "batch" }>[] = result.created_annotations.map((created) => ({
-        kind: "create",
-        annotationId: created.id,
-        payload: {
-          annotation_type: created.annotation_type,
-          class_name: created.class_name,
-          geometry: created.geometry,
-          confidence: created.confidence ?? undefined,
-          attributes: created.attributes,
-        },
-      }));
-      if (result.deleted_source) {
-        commands.push({ kind: "delete", annotation: ann });
-        s.setSelectedId(null);
-      } else if (result.source_annotation && result.source_annotation.geometry.type === "video_track") {
-        commands.push({
-          kind: "update",
-          annotationId: ann.id,
-          before: { geometry: ann.geometry },
-          after: { geometry: result.source_annotation.geometry },
-        });
-        s.setSelectedId(result.source_annotation.id);
-      }
-      history.pushBatch(commands);
-      pushToast({ msg: `已生成 ${result.created_annotations.length} 个独立框`, kind: "success" });
-    } catch (err) {
-      pushToast({ msg: "轨迹转换失败", sub: String(err), kind: "error" });
-    }
-  }, [history, pushToast, queryClient, s, taskId]);
+  }, [handlePickPendingClass, handlePickVideoPendingClass]);
 
   const handleCancelPending = useCallback(() => {
     // 画完框未选类别时（Esc / 点外部）不丢弃，按 __unknown 落库为灰色框；
@@ -962,46 +549,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     if (s.pendingDrawing) handlePickPendingClassAny(UNKNOWN_CLASS);
     else s.setPendingDrawing(null);
   }, [s, handlePickPendingClassAny]);
-
-  // 已落库 user 框 → 改类别
-  const handleStartChangeClass = useCallback((annotationId: string) => {
-    const ann = annotationsRef.current.find((a) => a.id === annotationId);
-    if (!ann) return;
-    s.setEditingClass({
-      annotationId,
-      geom: ann.geometry as Geom,
-      currentClass: ann.class_name,
-    });
-  }, [s]);
-
-  const handleCommitChangeClass = useCallback((cls: string) => {
-    const editing = s.editingClass;
-    if (!editing || !cls || cls === editing.currentClass) {
-      s.setEditingClass(null);
-      return;
-    }
-    const before = { class_name: editing.currentClass };
-    const after = { class_name: cls };
-    s.setEditingClass(null);
-    s.setActiveClass(cls);
-    recordRecentClass(cls);
-    updateAnnotationMut.mutate(
-      { annotationId: editing.annotationId, payload: after },
-      {
-        onSuccess: () => {
-          history.push({
-            kind: "update", annotationId: editing.annotationId,
-            before, after,
-          });
-          pushToast({ msg: `已改为 ${cls}`, kind: "success" });
-        },
-      },
-    );
-  }, [s, updateAnnotationMut, history, pushToast, recordRecentClass]);
-
-  const handleCancelChangeClass = useCallback(() => {
-    s.setEditingClass(null);
-  }, [s]);
 
   /** 选中态的 AnnotationResponse（驱动右侧栏属性表单）。仅单选 user 框时返回。 */
   const selectedAnnotationForPanel = useMemo<AnnotationResponse | null>(() => {
@@ -1024,8 +571,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   // v0.6.6 · 评论 hover → 历史画布批注叠加
   const hoveredCommentShapes = useHoveredCommentStore((s) => s.shapes);
 
-  // v0.6.6 · 切题 + 提交流程拆到 hook（navigateTask / smartNext / hasMissingRequired / handleSubmitTask）
-  const { navigateTask, smartNext, hasMissingRequired, handleSubmitTask } = useWorkbenchTaskFlow({
+  // v0.6.6 · 切题 + 提交流程拆到 hook（navigateTask / smartNext / handleSubmitTask）
+  const { navigateTask, smartNext, handleSubmitTask } = useWorkbenchTaskFlow({
     taskId, task, tasks,
     hasNextPage, isFetchingNextPage, fetchNextPage,
     annotationsRef,
@@ -1038,74 +585,28 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     submitTaskMut,
   });
 
-  // v0.6.5 · 任务锁定（提交质检后 / 审核通过后） + 撤回 / 重开
-  // M2 · review 模式下审核员可编辑 review 态任务（不锁 review 状态）
-  const isLocked = mode === "review"
-    ? task?.status === "completed"
-    : task?.status === "review" || task?.status === "completed";
-  const canWithdraw = task?.status === "review" && !task?.reviewer_claimed_at;
-  const canReopen = task?.status === "completed";
-
-  // M2 · review 模式专属状态
-  const [diffMode, setDiffMode] = useState<DiffMode>("diff");
-  const [rejectingTask, setRejectingTask] = useState(false);
   const videoControlsRef = useRef<VideoStageControls | null>(null);
-  const [claimInfo, setClaimInfo] = useState<ReviewClaimResponse | null>(null);
-  const approveMut = useApproveTask();
-  const rejectMut = useRejectTask();
-  const claimMut = useReviewClaim();
 
-  // claim 逻辑：进入审核工作台时（status=review）调 claim
-  useEffect(() => {
-    if (mode !== "review" || !taskId || task?.status !== "review") return;
-    claimMut.mutate(taskId, {
-      onSuccess: (data) => setClaimInfo(data),
-      onError: () => {},
-    });
-    // claimMut 故意不在依赖数组中（每次 taskId 变化只 fire 一次）
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, taskId, task?.status]);
-
-  const handleApproveTask = useCallback(() => {
-    if (!taskId) return;
-    approveMut.mutate(taskId, {
-      onSuccess: () => {
-        pushToast({ msg: "任务已通过", kind: "success" });
-        navigateTask("next");
-      },
-      onError: () => pushToast({ msg: "通过失败，请重试", kind: "error" }),
-    });
-  }, [taskId, approveMut, pushToast, navigateTask]);
-
-  const handleRejectTask = useCallback(
-    (reason: string) => {
-      if (!taskId) return;
-      rejectMut.mutate({ taskId, reason }, {
-        onSuccess: () => {
-          pushToast({ msg: "任务已退回", kind: "success" });
-          setRejectingTask(false);
-          navigateTask("next");
-        },
-        onError: () => pushToast({ msg: "退回失败，请重试", kind: "error" }),
-      });
-    },
-    [taskId, rejectMut, pushToast, navigateTask],
-  );
-
-  const handleWithdrawTask = useCallback(() => {
-    if (!taskId || !canWithdraw) return;
-    withdrawTaskMut.mutate(taskId, {
-      onSuccess: () => pushToast({ msg: "已撤回提交，可继续编辑", kind: "success" }),
-      onError: (err) => {
-        const isApi = err instanceof ApiError;
-        const reason = isApi ? (err.detailRaw as { reason?: string } | undefined)?.reason : undefined;
-        let msg = "撤回失败，请刷新后重试";
-        if (reason === "task_already_claimed") msg = "审核员已介入，无法撤回";
-        else if (isApi && err.status === 403) msg = "只有任务的指派人可撤回（请联系管理员重新指派）";
-        pushToast({ msg, kind: "error" });
-      },
-    });
-  }, [taskId, canWithdraw, withdrawTaskMut, pushToast]);
+  const annotateModeState = useAnnotateMode({
+    mode,
+    taskId,
+    task,
+    navigateTask,
+    smartNext,
+    onSubmit: handleSubmitTask,
+    isSubmitting: submitTaskMut.isPending,
+    pushToast,
+  });
+  const reviewModeState = useReviewMode({
+    mode,
+    taskId,
+    task,
+    navigateTask,
+    pushToast,
+  });
+  const modeState = mode === "review" ? reviewModeState : annotateModeState;
+  const { topbarActions, bannerActions } = modeState;
+  const isLocked = modeState.isLocked;
 
   // v0.6.5: canvas 草稿持久化（sessionStorage 5min TTL + beforeunload guard）
   useCanvasDraftPersistence({
@@ -1113,100 +614,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     canvasDraft: s.canvasDraft,
     beginCanvasDraft: s.beginCanvasDraft,
   });
-
-  const handleReopenTask = useCallback(() => {
-    if (!taskId || !canReopen) return;
-    reopenTaskMut.mutate(taskId, {
-      onSuccess: () => pushToast({ msg: "已重开任务，可继续编辑", sub: "改完记得重新提交质检", kind: "success" }),
-      onError: () => pushToast({ msg: "重开失败，请刷新后重试", kind: "error" }),
-    });
-  }, [taskId, canReopen, reopenTaskMut, pushToast]);
-
-  // v0.8.7 F7 · 跳过任务（图像损坏 / 无目标 / 不清晰）
-  const skipTaskMut = useSkipTask();
-  const handleSkipTask = useCallback(
-    (
-      reason: "image_corrupt" | "no_target" | "unclear" | "other",
-      note?: string,
-    ) => {
-      if (!taskId) return;
-      skipTaskMut.mutate(
-        { taskId, reason, note },
-        {
-          onSuccess: () => {
-            pushToast({ msg: "已跳过本题，等待审核员复核", kind: "success" });
-            navigateTask("next");
-          },
-          onError: (err) => {
-            const isApi = err instanceof ApiError;
-            const reason = isApi
-              ? (err.detailRaw as { reason?: string } | undefined)?.reason
-              : undefined;
-            let msg = "跳过失败，请刷新后重试";
-            if (reason === "task_not_skippable") msg = "当前状态无法跳过";
-            else if (reason === "invalid_skip_reason") msg = "原因无效";
-            pushToast({ msg, kind: "error" });
-          },
-        },
-      );
-    },
-    [taskId, skipTaskMut, pushToast, navigateTask],
-  );
-
-  // v0.9.2 · SAM 候选模式下拦截 Enter / Esc / Tab。
-  // 在 useWorkbenchHotkeys (主 keydown) 之前的 capture 阶段触发；
-  // 仅当 tool === "sam" 且有候选时介入，否则透传。
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (s.tool !== "sam") return;
-      if (sam.candidates.length === 0) return;
-      // 焦点在 input/textarea 时不接管（让用户在 AI 助手文本框输入时不被吞键）
-      const target = e.target as HTMLElement | null;
-      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
-      // ClassPicker 打开时让它独占键盘（避免 Enter 二次触发）
-      if (samPendingAccept) return;
-
-      if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        setSamPendingAccept({ idx: sam.activeIdx });
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        sam.cancel();
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        e.stopPropagation();
-        sam.cycle(e.shiftKey ? -1 : 1);
-        return;
-      }
-    };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, [s.tool, sam, samPendingAccept]);
-
-  // ── M2 · review 模式专属快捷键（A=通过, R=退回，不依赖 dispatchKey 主链路）───
-  useEffect(() => {
-    if (mode !== "review") return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target as HTMLElement | null;
-      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
-      if (e.key === "a" || e.key === "A") {
-        e.preventDefault();
-        handleApproveTask();
-      } else if (e.key === "r" || e.key === "R") {
-        e.preventDefault();
-        setRejectingTask(true);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [mode, handleApproveTask]);
 
   // ── 键盘快捷键（v0.6.4 P1 抽 hook） ───────────────────────────────────
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
@@ -1251,523 +658,133 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   // 窄屏强制收两侧
   const leftOpen = isNarrow ? false : s.leftOpen;
   const rightOpen = isNarrow ? false : s.rightOpen;
-  const videoPendingDrawing =
-    s.pendingDrawing?.kind === "video_bbox" || s.pendingDrawing?.kind === "video_track"
-      ? s.pendingDrawing
-      : null;
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: `${leftOpen ? `${s.leftWidth}px` : "32px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "32px"}`,
-        height: "100%", overflow: "hidden", background: "var(--color-bg-sunken)",
+    <WorkbenchLayout
+      gridTemplateColumns={`${leftOpen ? `${s.leftWidth}px` : "32px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "32px"}`}
+      taskQueue={{
+        open: leftOpen, projectName, projectDisplayId, classes, classesConfig: currentProject?.classes_config,
+        activeClass: s.activeClass, recentClasses, tasks, taskId, taskIdx, hasNextPage,
+        isFetchingNextPage, onFetchNextPage: fetchNextPage, onBack, onToggle: () => s.setLeftOpen(!s.leftOpen),
+        onSelectTask: selectTask, batches: activeBatches, selectedBatchId, onSelectBatch: handleSelectBatch,
+        totalCount: tasksTotal, isOwner, onGoToBatchSettings: () => { if (projectId) navigate(`/projects/${projectId}/settings?section=batches`); },
+        width: s.leftWidth, onResize: s.setLeftWidth,
       }}
-    >
-      <TaskQueuePanel
-        open={leftOpen}
-        projectName={projectName}
-        projectDisplayId={projectDisplayId}
-        classes={classes}
-        classesConfig={currentProject?.classes_config}
-        activeClass={s.activeClass}
-        recentClasses={recentClasses}
-        tasks={tasks}
-        taskId={taskId}
-        taskIdx={taskIdx}
-        hasNextPage={hasNextPage}
-        isFetchingNextPage={isFetchingNextPage}
-        onFetchNextPage={fetchNextPage}
-        onBack={onBack}
-        onToggle={() => s.setLeftOpen(!s.leftOpen)}
-        onSelectTask={selectTask}
-        batches={activeBatches}
-        selectedBatchId={selectedBatchId}
-        onSelectBatch={handleSelectBatch}
-        totalCount={tasksTotal}
-        isOwner={isOwner}
-        onGoToBatchSettings={() => {
-          if (projectId) navigate(`/projects/${projectId}/settings?section=batches`);
-        }}
-        width={s.leftWidth}
-        onResize={s.setLeftWidth}
-      />
-
-      <ToolDock
-        tool={s.tool}
-        onSetTool={s.setTool}
-        videoTool={s.videoTool}
-        onSetVideoTool={s.setVideoTool}
-        samSubTool={s.samSubTool}
-        onSetSamSubTool={s.setSamSubTool}
-        samPolarity={s.samPolarity}
-        onSetSamPolarity={s.setSamPolarity}
-        reviewMode={mode === "review"}
-        videoMode={isVideoTask}
-      />
-
-      <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {lockError && (
-          <div
-            style={{
-              padding: "6px 14px",
-              background: "var(--color-danger-soft)",
-              borderBottom: "1px solid var(--color-border)",
-              fontSize: 12, color: "var(--color-danger)",
-              display: "flex", alignItems: "center", gap: 6,
-            }}
-          >
-            <Icon name="warning" size={13} />
-            {lockError === "Lock expired" ? "任务锁已过期，请刷新页面" : "该任务正被其他用户编辑"}
-          </div>
-        )}
-
-        {/* M2 · review 模式横幅 */}
-        {mode === "review" && claimInfo && !claimInfo.is_self && (
-          <div
-            style={{
-              padding: "6px 14px",
-              background: "oklch(0.95 0.05 70)",
-              borderBottom: "1px solid oklch(0.85 0.10 70)",
-              fontSize: 12, color: "oklch(0.40 0.15 70)",
-              display: "flex", alignItems: "center", gap: 6,
-            }}
-          >
-            <Icon name="warning" size={13} />
-            已被其他审核员认领（{new Date(claimInfo.reviewer_claimed_at).toLocaleString("zh-CN")}），仍可接力处理
-          </div>
-        )}
-        {mode === "review" && task?.skip_reason && (
-          <div
-            style={{
-              padding: "6px 14px",
-              background: "oklch(0.94 0.06 300)",
-              borderBottom: "1px solid oklch(0.78 0.12 300)",
-              fontSize: 12, color: "oklch(0.35 0.18 300)",
-              display: "flex", alignItems: "center", gap: 6,
-            }}
-          >
-            <Icon name="warning" size={13} />
-            标注员跳过此题 · 可通过（无目标即视为完成）或退回重派
-          </div>
-        )}
-        {/* v0.6.5 · annotate 模式：任务状态锁定横幅（用 token 化颜色，避免暗色下白字白底） */}
-        {mode === "annotate" && task?.status === "review" && (
-          <div
-            style={{
-              padding: "8px 14px",
-              background: "var(--color-accent-soft)",
-              borderBottom: "1px solid var(--color-border)",
-              fontSize: 12, color: "var(--color-accent-fg)",
-              display: "flex", alignItems: "center", gap: 10,
-            }}
-          >
-            <Icon name="check" size={13} />
-            <span style={{ flex: 1 }}>
-              已提交质检 · 等待审核
-              {task.reviewer_claimed_at && <span style={{ marginLeft: 8, opacity: 0.7 }}>· 审核员已介入</span>}
-            </span>
-            <Button
-              size="sm"
-              disabled={!canWithdraw || withdrawTaskMut.isPending}
-              onClick={handleWithdrawTask}
-              title={canWithdraw ? "撤回提交，回到编辑态" : "审核员已介入，无法撤回"}
-            >
-              撤回提交
-            </Button>
-          </div>
-        )}
-        {mode === "annotate" && task?.status === "completed" && (
-          <div
-            style={{
-              padding: "8px 14px",
-              background: "var(--color-success-soft)",
-              borderBottom: "1px solid var(--color-border)",
-              fontSize: 12, color: "var(--color-success)",
-              display: "flex", alignItems: "center", gap: 10,
-            }}
-          >
-            <Icon name="check" size={13} />
-            <span style={{ flex: 1 }}>
-              已通过审核 · 任务已锁定
-              {task.reopened_count > 0 && (
-                <span style={{ marginLeft: 8, opacity: 0.7 }}>· 历史重开 {task.reopened_count} 次</span>
-              )}
-            </span>
-            <Button
-              size="sm"
-              disabled={reopenTaskMut.isPending}
-              onClick={handleReopenTask}
-            >
-              继续编辑
-            </Button>
-          </div>
-        )}
-        {mode === "annotate" && task?.status === "rejected" && (
-          <div
-            style={{
-              padding: "8px 14px",
-              background: "var(--color-danger-soft)",
-              borderBottom: "1px solid var(--color-border)",
-              fontSize: 12, color: "var(--color-danger)",
-              display: "flex", alignItems: "center", gap: 8,
-            }}
-          >
-            <Icon name="warning" size={13} style={{ flexShrink: 0 }} />
-            <span style={{ flex: 1 }}><b>审核员退回：</b>{task.reject_reason}</span>
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={acceptRejectionMut.isPending}
-              onClick={() => {
-                if (!taskId) return;
-                acceptRejectionMut.mutate(taskId, {
-                  onError: () => pushToast({ kind: "error", msg: "接受退回失败，请重试" }),
-                });
-              }}
-            >
-              接受退回开始重做
-            </Button>
-          </div>
-        )}
-        {mode === "annotate" && task?.status === "in_progress" && task.reject_reason && (
-          <div
-            style={{
-              padding: "8px 14px",
-              background: "color-mix(in oklab, var(--color-warning) 10%, transparent)",
-              borderBottom: "1px solid var(--color-border)",
-              fontSize: 12, color: "var(--color-fg-muted)",
-              display: "flex", alignItems: "flex-start", gap: 8,
-            }}
-          >
-            <Icon name="rotate-ccw" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-            <span>重做中 · <b>退回原因：</b>{task.reject_reason}</span>
-          </div>
-        )}
-
-        <Topbar
-          task={task}
-          taskIdx={taskIdx}
-          taskTotal={tasks.length}
-          aiRunning={aiRunning}
-          batchStatus={currentBatchStatus}
-          isSubmitting={submitTaskMut.isPending}
-          confThreshold={s.confThreshold}
-          onShowHotkeys={() => setShowHotkeys(true)}
-          onRunAi={handleRunAi}
-          aiDisabled={isVideoTask}
-          onPrev={() => navigateTask("prev")}
-          onNext={() => navigateTask("next")}
-          onSubmit={handleSubmitTask}
-          onSmartNextOpen={mode === "annotate" ? () => smartNext("open") : undefined}
-          onSmartNextUncertain={mode === "annotate" ? () => smartNext("uncertain") : undefined}
-          overflowSlot={<ThemeSwitcher />}
-          canWithdraw={canWithdraw}
-          canReopen={canReopen}
-          isWithdrawing={withdrawTaskMut.isPending}
-          isReopening={reopenTaskMut.isPending}
-          onWithdraw={handleWithdrawTask}
-          onReopen={handleReopenTask}
-          isSkipping={skipTaskMut.isPending}
-          onSkip={mode === "annotate" ? handleSkipTask : undefined}
-          mode={mode}
-          onApprove={handleApproveTask}
-          onReject={() => setRejectingTask(true)}
-          isApproving={approveMut.isPending}
-          isRejecting={rejectMut.isPending}
-          reviewInfoSlot={mode === "review" ? <ReviewerMiniPanel /> : undefined}
-        />
-
-        {isVideoTask ? (
-          <VideoStage
-            ref={videoControlsRef}
-            manifest={videoManifest.data}
-            isLoading={videoManifest.isLoading}
-            error={videoManifest.error}
-            annotations={annotationsData ?? []}
-            selectedId={s.selectedId}
-            activeClass={s.activeClass}
-            readOnly={isLocked}
-            videoTool={s.videoTool}
-            onSelect={handleSelectBox}
-            onCreate={handleVideoCreate}
-            onPendingDraw={handleVideoPendingDraw}
-            onUpdate={handleVideoUpdate}
-            onRename={handleVideoRename}
-            onChangeUserBoxClass={handleStartChangeClass}
-            onDelete={(ann) => handleDeleteBox(ann.id)}
-            onConvertToBboxes={handleVideoConvertToBboxes}
-            onCursorMove={setCursor}
-          />
-        ) : (
-          <ImageStage
-            readOnly={isLocked}
-            fileUrl={fileUrl}
-            blurhash={blurhash}
-            tool={s.tool}
-            activeClass={s.activeClass}
-            selectedId={s.selectedId}
-            selectedIds={s.selectedIds}
-            fadedAiIds={dimmedAiIds}
-            nudgeMap={nudgeMap}
-            userBoxes={mode === "review" && diffMode === "raw" ? [] : userBoxes}
-            aiBoxes={mode === "review" && diffMode === "final" ? [] : aiBoxes}
-            spacePan={spacePan}
-            vp={vp}
-            setVp={setVp}
-            fitTick={fitTick}
+      toolDock={{
+        tool: s.tool, onSetTool: s.setTool, videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
+        samSubTool: s.samSubTool, onSetSamSubTool: s.setSamSubTool, samPolarity: s.samPolarity,
+        onSetSamPolarity: s.setSamPolarity, reviewMode: mode === "review", videoMode: isVideoTask,
+      }}
+      banners={{
+        mode, task, lockError, claimInfo: modeState.claimInfo, canWithdraw: bannerActions.canWithdraw,
+        isWithdrawing: bannerActions.isWithdrawing, isReopening: bannerActions.isReopening,
+        isAcceptingRejection: bannerActions.isAcceptingRejection, onWithdraw: bannerActions.onWithdraw,
+        onReopen: bannerActions.onReopen, onAcceptRejection: bannerActions.onAcceptRejection,
+      }}
+      topbar={{
+        task, taskIdx, taskTotal: tasks.length, aiRunning, batchStatus: currentBatchStatus,
+        isSubmitting: topbarActions.isSubmitting ?? submitTaskMut.isPending, confThreshold: s.confThreshold,
+        onShowHotkeys: () => setShowHotkeys(true), onRunAi: handleRunAi, aiDisabled: isVideoTask,
+        onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
+        onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
+        onSmartNextUncertain: topbarActions.onSmartNextUncertain, overflowSlot: <ThemeSwitcher />,
+        canWithdraw: topbarActions.canWithdraw, canReopen: topbarActions.canReopen,
+        isWithdrawing: topbarActions.isWithdrawing, isReopening: topbarActions.isReopening,
+        onWithdraw: topbarActions.onWithdraw, onReopen: topbarActions.onReopen,
+        isSkipping: topbarActions.isSkipping, onSkip: topbarActions.onSkip, mode,
+        onApprove: topbarActions.onApprove, onReject: topbarActions.onReject,
+        isApproving: topbarActions.isApproving, isRejecting: topbarActions.isRejecting,
+        reviewInfoSlot: topbarActions.reviewInfoSlot,
+      }}
+      stageHost={{
+        stageKind, readOnly: isLocked, activeClass: s.activeClass, selectedId: s.selectedId,
+        annotations: annotationsData ?? [], onSelectBox: handleSelectBox, onCursorMove: setCursor,
+        videoManifest: videoManifest.data, videoManifestLoading: videoManifest.isLoading,
+        videoManifestError: videoManifest.error, videoTool: s.videoTool, onVideoCreate: handleVideoCreate,
+        onVideoPendingDraw: handleVideoPendingDraw, onVideoUpdate: handleVideoUpdate,
+        onVideoRename: handleVideoRename, onVideoConvertToBboxes: handleVideoConvertToBboxes,
+        fileUrl, blurhash, thumbnailUrl, tool: s.tool, selectedIds: s.selectedIds, fadedAiIds: dimmedAiIds,
+        nudgeMap, userBoxes: modeState.diffMode === "raw" ? [] : userBoxes,
+        aiBoxes: modeState.diffMode === "final" ? [] : aiBoxes, spacePan, vp, setVp, fitTick, setFitTick,
+        pendingDrawing: s.pendingDrawing, onAcceptPrediction: handleAcceptPrediction,
+        onRejectPrediction: handleRejectPrediction, onDeleteUserBox: handleDeleteBox,
+        onCommitDrawing: handleCommitDrawing,
+        onSamPrompt: (prompt) => prompt.kind === "point" ? sam.runPoint(prompt.pt, prompt.alt ? 0 : 1) : sam.runBbox(prompt.bbox),
+        samCandidates: sam.candidates, samActiveIdx: sam.activeIdx, samSubTool: s.samSubTool,
+        samPolarity: s.samPolarity, onCommitMove: handleCommitMove, onCommitResize: handleCommitResize,
+        onCommitPolygonGeometry: handleCommitPolygonGeometry, onChangeUserBoxClass: handleStartChangeClass,
+        onBatchDelete: handleBatchDelete, onBatchChangeClass: handleStartBatchChangeClass,
+        onStageGeometry: setStageGeom, polygonDraft: s.tool === "polygon" ? polygonHandle : undefined,
+        canvasShapes: s.canvasDraft.shapes, canvasEditable: s.canvasDraft.active, canvasStroke: s.canvasDraft.stroke,
+        onCanvasStrokeCommit: (points, stroke) => s.appendCanvasShape({ type: "line", points, stroke }),
+        historicalShapes: hoveredCommentShapes ?? undefined, canUndo: history.canUndo, canRedo: history.canRedo,
+        onUndo: history.undo, onRedo: history.redo, onSetCanvasStroke: s.setCanvasStroke,
+        canvasShapeCount: s.canvasDraft.shapes.length, onUndoCanvasShape: s.undoCanvasShape,
+        onClearCanvasShapes: s.clearCanvasShapes, onCancelCanvasDraft: s.cancelCanvasDraft,
+        onDoneCanvasDraft: s.endCanvasDraft, stageGeom,
+        overlays: (
+          <WorkbenchOverlays
             pendingDrawing={s.pendingDrawing}
-            onSelectBox={handleSelectBox}
-            onAcceptPrediction={handleAcceptPrediction}
-            onRejectPrediction={handleRejectPrediction}
-            onDeleteUserBox={handleDeleteBox}
-            onCommitDrawing={handleCommitDrawing}
-            onSamPrompt={(prompt) => {
-              if (prompt.kind === "point") {
-                sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
-              } else {
-                sam.runBbox(prompt.bbox);
-              }
-            }}
-            samCandidates={sam.candidates}
-            samActiveIdx={sam.activeIdx}
-            samSubTool={s.samSubTool}
-            samPolarity={s.samPolarity}
-            onCommitMove={handleCommitMove}
-            onCommitResize={handleCommitResize}
-            onCommitPolygonGeometry={handleCommitPolygonGeometry}
-            onCursorMove={setCursor}
-            onChangeUserBoxClass={handleStartChangeClass}
-            onBatchDelete={handleBatchDelete}
-            onBatchChangeClass={handleStartBatchChangeClass}
-            onStageGeometry={setStageGeom}
-            polygonDraft={s.tool === "polygon" ? polygonHandle : undefined}
-            canvasShapes={s.canvasDraft.shapes}
-            canvasEditable={s.canvasDraft.active}
-            canvasStroke={s.canvasDraft.stroke}
-            onCanvasStrokeCommit={(points, stroke) =>
-              s.appendCanvasShape({ type: "line", points, stroke })
-            }
-            historicalShapes={hoveredCommentShapes ?? undefined}
-            overlay={
-            <>
-              <FloatingDock
-                scale={vp.scale}
-                canUndo={history.canUndo}
-                canRedo={history.canRedo}
-                onUndo={history.undo}
-                onRedo={history.redo}
-                onZoomIn={() => setVp((cur) => ({ ...cur, scale: Math.min(8, cur.scale * 1.2) }))}
-                onZoomOut={() => setVp((cur) => ({ ...cur, scale: Math.max(0.2, cur.scale / 1.2) }))}
-                onFit={() => setFitTick((n) => n + 1)}
-              />
-              {s.canvasDraft.active && (
-                <CanvasToolbar
-                  stroke={s.canvasDraft.stroke}
-                  onSetStroke={s.setCanvasStroke}
-                  shapeCount={s.canvasDraft.shapes.length}
-                  onUndo={s.undoCanvasShape}
-                  onClear={s.clearCanvasShapes}
-                  onCancel={s.cancelCanvasDraft}
-                  onDone={s.endCanvasDraft}
-                />
-              )}
-              {s.pendingDrawing && stageGeom.imgW > 0 && (
-                <ClassPickerPopover
-                  geom={s.pendingDrawing.geom}
-                  imgW={stageGeom.imgW}
-                  imgH={stageGeom.imgH}
-                  vp={vp}
-                  classes={classes}
-                  recent={recentClasses}
-                  defaultClass={s.activeClass}
-                  onPick={handlePickPendingClassAny}
-                  onCancel={handleCancelPending}
-                />
-              )}
-              {s.editingClass && stageGeom.imgW > 0 && !s.pendingDrawing && (
-                <ClassPickerPopover
-                  geom={s.editingClass.geom}
-                  imgW={stageGeom.imgW}
-                  imgH={stageGeom.imgH}
-                  vp={vp}
-                  classes={classes}
-                  recent={recentClasses}
-                  defaultClass={s.editingClass.currentClass}
-                  title={`改类别 (当前: ${s.editingClass.currentClass})`}
-                  onPick={handleCommitChangeClass}
-                  onCancel={handleCancelChangeClass}
-                />
-              )}
-              {samPendingGeom && stageGeom.imgW > 0 && !s.pendingDrawing && !s.editingClass && (
-                <ClassPickerPopover
-                  geom={samPendingGeom}
-                  imgW={stageGeom.imgW}
-                  imgH={stageGeom.imgH}
-                  vp={vp}
-                  classes={classes}
-                  recent={recentClasses}
-                  defaultClass={
-                    sam.candidates[samPendingAccept!.idx]?.label &&
-                    classes.includes(sam.candidates[samPendingAccept!.idx].label)
-                      ? sam.candidates[samPendingAccept!.idx].label
-                      : s.activeClass
-                  }
-                  title="接受 SAM 候选 → 选类别"
-                  onPick={handleSamCommitClass}
-                  onCancel={handleSamCancelClass}
-                />
-              )}
-              {batchChanging && stageGeom.imgW > 0 && !s.pendingDrawing && !s.editingClass && (() => {
-                const firstId = s.selectedIds[0];
-                const firstAnn = annotationsRef.current.find((a) => a.id === firstId);
-                if (!firstAnn) return null;
-                return (
-                  <ClassPickerPopover
-                    geom={firstAnn.geometry as Geom}
-                    imgW={stageGeom.imgW}
-                    imgH={stageGeom.imgH}
-                    vp={vp}
-                    classes={classes}
-                    recent={recentClasses}
-                    defaultClass={firstAnn.class_name}
-                    title={`批量改类别 (${s.selectedIds.length} 个)`}
-                    onPick={handleCommitBatchChangeClass}
-                    onCancel={handleCancelBatchChange}
-                  />
-                );
-              })()}
-              {stageGeom.imgW > 0 && stageGeom.vpSize.w > 0 && (
-                <Minimap
-                  imgW={stageGeom.imgW}
-                  imgH={stageGeom.imgH}
-                  vpSize={stageGeom.vpSize}
-                  vp={vp}
-                  setVp={setVp}
-                  thumbnailUrl={thumbnailUrl}
-                  fileUrl={fileUrl}
-                />
-              )}
-            </>
-            }
-          />
-        )}
-        {videoPendingDrawing && (
-          <ClassPickerPopover
-            geom={videoPendingDrawing.geom}
-            imgW={1}
-            imgH={1}
+            editingClass={s.editingClass}
+            samPendingGeom={samPendingGeom}
+            samDefaultClass={samDefaultClass}
+            batchChanging={batchChanging}
+            batchChangeTarget={batchChangeTarget}
+            imageOverlayEnabled={stageKind === "image"}
+            stageGeom={stageGeom}
             vp={vp}
-            anchor={videoPendingDrawing.anchor}
             classes={classes}
-            recent={recentClasses}
-            defaultClass={s.activeClass}
-            onPick={handlePickPendingClassAny}
-            onCancel={handleCancelPending}
+            recentClasses={recentClasses}
+            activeClass={s.activeClass}
+            onPickPendingClass={handlePickPendingClassAny}
+            onCancelPending={handleCancelPending}
+            onCommitChangeClass={handleCommitChangeClass}
+            onCancelChangeClass={handleCancelChangeClass}
+            onSamCommitClass={handleSamCommitClass}
+            onSamCancelClass={handleSamCancelClass}
+            onCommitBatchChangeClass={handleCommitBatchChangeClass}
+            onCancelBatchChange={handleCancelBatchChange}
           />
-        )}
-
-        <StatusBar
-          userBoxesCount={userBoxes.length}
-          aiBoxesCount={aiBoxes.length}
-          activeClass={s.activeClass}
-          imageWidth={imageWidth}
-          imageHeight={imageHeight}
-          cursor={cursor}
-          preannotationProgress={preannotationProgress}
-          preannotationConn={preannotationConn}
-          preannotationRetries={preannotationRetries}
-          avgLeadMs={avgMs}
-          remainingTaskCount={remainingTaskCount}
-          offlineQueueCount={queueCount}
-          online={online}
-          onShowQueueDrawer={openOfflineDrawer}
-          lockRemainingMs={remainingMs}
-          lockError={lockError}
-          diffMode={mode === "review" ? diffMode : undefined}
-          onSetDiffMode={mode === "review" ? setDiffMode : undefined}
-        />
-      </div>
-
-      <AIInspectorPanel
-        open={rightOpen}
-        width={s.rightWidth}
-        onResize={s.setRightWidth}
-        readOnly={isLocked}
-        aiModel={aiModel}
-        aiRunning={aiRunning}
-        aiBoxes={aiBoxes}
-        userBoxes={userBoxes}
-        selectedId={s.selectedId}
-        selectedIds={s.selectedIds}
-        dimmedAiIds={dimmedAiIds}
-        confThreshold={s.confThreshold}
-        aiTakeoverRate={aiTakeoverRate}
-        imageWidth={imageWidth}
-        imageHeight={imageHeight}
-        hasMorePredictions={!!predictionsInfinite.hasNextPage}
-        isFetchingMorePredictions={predictionsInfinite.isFetchingNextPage}
-        onFetchMorePredictions={() => predictionsInfinite.fetchNextPage()}
-        onToggle={() => s.setRightOpen(!s.rightOpen)}
-        onRunAi={handleRunAi}
-        onAcceptAll={handleAcceptAll}
-        onSetConfThreshold={s.setConfThreshold}
-        onSelect={handleSelectBox}
-        onAcceptPrediction={handleAcceptPrediction}
-        onRejectPrediction={handleRejectPrediction}
-        onClearSelection={() => s.setSelectedId(null)}
-        onDeleteUserBox={handleDeleteBox}
-        onChangeUserBoxClass={handleStartChangeClass}
-        attributeSchema={currentProject?.attribute_schema}
-        selectedAnnotation={selectedAnnotationForPanel}
-        onUpdateAttributes={handleUpdateAttributes}
-        currentUserId={meUserId}
-        taskFileUrl={task?.file_url}
-        tool={s.tool}
-        onRunSamText={sam.runText}
-        samRunning={sam.isRunning}
-        samCandidateCount={sam.candidates.length}
-        projectId={projectId}
-        projectTypeKey={currentProject?.type_key ?? null}
-        samTextFocusKey={s.samTextFocusKey}
-        taskAiCost={taskAiMeta.totalCost}
-        taskAiAvgMs={taskAiMeta.avgMs}
-        taskAiPredictionCount={taskAiMeta.count}
-        liveCommentCanvas={{
+        ),
+      }}
+      videoControlsRef={videoControlsRef}
+      statusBar={{
+        userBoxesCount: userBoxes.length, aiBoxesCount: aiBoxes.length, activeClass: s.activeClass,
+        imageWidth, imageHeight, cursor, preannotationProgress, preannotationConn, preannotationRetries,
+        avgLeadMs: avgMs, remainingTaskCount, offlineQueueCount: queueCount, online,
+        onShowQueueDrawer: openOfflineDrawer, lockRemainingMs: remainingMs, lockError,
+        diffMode: modeState.diffMode, onSetDiffMode: modeState.onSetDiffMode,
+      }}
+      inspector={{
+        open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
+        aiModel, aiRunning, aiBoxes, userBoxes, selectedId: s.selectedId, selectedIds: s.selectedIds,
+        dimmedAiIds, confThreshold: s.confThreshold, aiTakeoverRate, imageWidth, imageHeight,
+        hasMorePredictions: !!predictionsInfinite.hasNextPage,
+        isFetchingMorePredictions: predictionsInfinite.isFetchingNextPage,
+        onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(), onToggle: () => s.setRightOpen(!s.rightOpen),
+        onRunAi: handleRunAi, onAcceptAll: handleAcceptAll, onSetConfThreshold: s.setConfThreshold,
+        onSelect: handleSelectBox, onAcceptPrediction: handleAcceptPrediction, onRejectPrediction: handleRejectPrediction,
+        onClearSelection: () => s.setSelectedId(null), onDeleteUserBox: handleDeleteBox,
+        onChangeUserBoxClass: handleStartChangeClass, attributeSchema: currentProject?.attribute_schema,
+        selectedAnnotation: selectedAnnotationForPanel, onUpdateAttributes: handleUpdateAttributes,
+        currentUserId: meUserId, taskFileUrl: task?.file_url, tool: s.tool, onRunSamText: sam.runText,
+        samRunning: sam.isRunning, samCandidateCount: sam.candidates.length, projectId,
+        projectTypeKey: currentProject?.type_key ?? null, samTextFocusKey: s.samTextFocusKey,
+        taskAiCost: taskAiMeta.totalCost, taskAiAvgMs: taskAiMeta.avgMs, taskAiPredictionCount: taskAiMeta.count,
+        liveCommentCanvas: {
           active: s.canvasDraft.active,
           result: s.canvasDraft.pendingResult,
           onStart: (initial) => s.beginCanvasDraft(selectedAnnotationForPanel?.id ?? null, initial),
           onConsume: s.consumeCanvasResult,
-        }}
-      />
-
-      <HotkeyCheatSheet
-        open={showHotkeys}
-        onClose={() => setShowHotkeys(false)}
-        attributeSchema={currentProject?.attribute_schema}
-      />
-      <OfflineQueueDrawer
-        open={offlineDrawerOpen}
-        onClose={closeOfflineDrawer}
-        currentTaskId={taskId}
-        onFlushOne={executeOp}
-        onFlushAll={flushOffline}
-      />
-      <ConflictModal
-        open={conflictOpen}
-        onReload={handleConflictReload}
-        onOverwrite={handleConflictOverwrite}
-        onClose={() => setConflictOpen(false)}
-      />
-      {mode === "review" && (
-        <RejectReasonModal
-          open={rejectingTask}
-          count={1}
-          onClose={() => setRejectingTask(false)}
-          onConfirm={handleRejectTask}
-          skipReasonHint={task?.skip_reason ?? null}
-        />
-      )}
-    </div>
+        },
+      }}
+      hotkeys={{ open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: currentProject?.attribute_schema }}
+      offlineQueue={{ open: offlineDrawerOpen, onClose: closeOfflineDrawer, currentTaskId: taskId, onFlushOne: executeOp, onFlushAll: flushOffline }}
+      conflict={{ open: conflictOpen, onReload: handleConflictReload, onOverwrite: handleConflictOverwrite, onClose: () => setConflictOpen(false) }}
+      rejectModal={modeState.rejectModal ? {
+        open: modeState.rejectModal.open, count: 1, onClose: modeState.rejectModal.onClose,
+        onConfirm: modeState.rejectModal.onConfirm, skipReasonHint: modeState.rejectModal.skipReasonHint,
+      } : undefined}
+    />
   );
 }

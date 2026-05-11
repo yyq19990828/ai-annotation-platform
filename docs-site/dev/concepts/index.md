@@ -74,6 +74,8 @@
   FastAPI / Service / Repository 各层边界
 - [前端分层](./frontend-layers)：
   页面 / 组件 / Store / API Client 的关系
+- [工作台 Shell 架构](./workbench-shell)：
+  标注 / 审核模式与 image / video / 3D Stage 边界
 - [API Schema 边界](./api-schema-boundary)：
   前后端契约在哪里定义、如何保证一致
 - [后端基础设施（容器）](./backend-infrastructure)：

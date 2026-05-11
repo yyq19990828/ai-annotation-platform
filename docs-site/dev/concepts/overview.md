@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-11
 ---
 
 # 系统全景
@@ -51,7 +51,7 @@ app/
 ```
 src/
 ├── pages/          # 路由级页面
-│   ├── Workbench/  # 标注工作台（最复杂，含 stage/state/shell 三层）
+│   ├── Workbench/  # 标注工作台（含 modes/state/stage/stages/shell）
 │   ├── Dashboard/
 │   ├── Projects/
 │   └── Users/
@@ -67,7 +67,7 @@ src/
 └── main.tsx
 ```
 
-详见 [前端分层](./frontend-layers)。
+详见 [前端分层](./frontend-layers) 与 [工作台 Shell 架构](./workbench-shell)。
 
 ## 关键数据流
 

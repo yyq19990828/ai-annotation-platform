@@ -44,3 +44,12 @@
 - [0006](0006-predictions-partition-by-month.md) — predictions 表按月 RANGE 分区
 - [0007](0007-audit-log-partitioning.md) — 审计日志月分区
 - [0008](0008-batch-admin-locked-status.md) — 批次 admin-locked 字段（与状态机正交）
+- [0009](0009-task-events-table-and-partition.md) — task_events 表与按月分区方案
+- [0010](0010-security-headers-middleware.md) — Production Security Headers Middleware
+- [0011](0011-websocket-token-reauth.md) — WebSocket 鉴权过期重连
+- [0012](0012-sam-backend-as-independent-gpu-service.md) — SAM 系列 backend 独立 GPU 服务化
+- [0013](0013-mask-to-polygon-server-side.md) — mask→polygon 转换在 ML backend 端做
+- [0014](0014-prediction-jobs-table.md) — Prediction Jobs 历史表与 Worker 三时点写入
+- [0015](0015-ml-backend-url-validation.md) — ML Backend URL 验证：拒绝 loopback
+- [0016](0016-docs-ia-redesign.md) — 文档 IA 重构：Diátaxis 框架 + audience 元数据
+- [0017](0017-workbench-shell-mode-and-stage-adapters.md) — 工作台 Shell 采用 Mode Hooks 与 Stage Adapters

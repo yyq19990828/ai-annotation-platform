@@ -29,6 +29,7 @@
 - **截图 fixture 数据补齐 + 重跑**（P3）：4 张空白态需补数据后重跑（`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`）。
 - **PerfHud 浏览器侧指标**（P3）：FPS / JS heap / longtask / API p95 / WS 重连数 / 当前 task 框数，留到 §C.1 keyset 分页拐点判断时一并加。
 - **dev SMTP 测试链路**（P3）：docker-compose 缺 mailpit / mailhog dev SMTP service；可加 `mailpit` service + `.env` `SMTP_HOST=mailpit SMTP_PORT=1025`。
+- **Workbench Shell 拆分后续精简**（P3，M6 归档后的维护项）：`WorkbenchShell.tsx` 已降到 790 行并保留单 Shell + mode hooks；下一步只做低风险瘦身：① 把 `WorkbenchStageHostProps` 按 image/video 分组，降低 Host prop 面积；② 等真实 3D 需求出现再抽通用 `StageControls`，当前不为 camera/viewport 预设接口；③ 给 `WorkbenchLayout` / `WorkbenchStageHost` 补 focused render tests，避免后续改 topbar/overlay 时回归；④ 若 Shell 再超过 900 行，再考虑 `useWorkbenchShellModel` 装配 hook。
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **predictions 月分区 Stage 2**：单月 INSERT > 100k 或 总行数 > 1M（ADR-0006）
@@ -44,14 +45,13 @@
 - **数据集版本 snapshot + 主动学习闭环**（与训练队列一起做）
 - **2FA / TOTP**（super_admin 必选 / 其它角色可选）
 - **批次状态机二阶段：admin-locked + bulk-approve / bulk-reject**（ADR-0008 Proposed → 实施前补 scheduler 测试覆盖）
-- **WorkbenchShell → WorkbenchCore 拆分（审核工作台方案 C）**：将 stage / hotkey / queue 抽到 `WorkbenchCore`，`annotate` / `review` 各自只写自己的 Topbar / 操作按钮，比当前 `mode` prop 分支更干净。**触发条件**：v0.10.x SAM 3 工作台改动收尾后，届时 shell 已稳定不再与 SAM 3 改动冲突。估时 ~5-7d。见 [plan](ROADMAP/2026-05-09-task-reject-and-review-workbench.md) §2.2 方案 C。
 
 ---
 
 ## A · 代码观察到的硬占位 / 残留 mock
 
 ### 项目模块
-- **非 image-det 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / video-track / mm 共 6 类点击「打开」仅显示 toast `类型 X 的标注界面尚未实现`（`DashboardPage.tsx:139`、`ViewerDashboard.tsx:31`）。
+- **非 image-det / video-track 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / mm 仍未提供真实标注能力。`lidar` 在 Workbench StageHost 中已有 3D placeholder，但 Dashboard 入口仍未把它作为可用工作台开放；接入真实 3D 前不要复用图片 / 视频 geometry。
 - **项目模板**：当前每次新建项目都从 0 配置类别 / AI 模型；无「从已有项目复制」或「保存为模板」入口（v0.7.6 wizard 已扩为 6 步含属性 schema，模板复用更有意义了）。
 
 ### 数据 & 存储
@@ -167,15 +167,16 @@
 
 ### C.4 工作台架构分层（多任务类型如何复用同一外壳）
 
-> 决策：**单工作台外壳 + 按维度切分的画布渲染器 + 工具可插拔**（v0.4.9 Step 1 完成）。当前只支持矩形框 + polygon，数据模型 `annotation_type: String(30)` + `geometry: JSONB` discriminated union 已为多类型留好口子。
+> 决策：**单工作台外壳 + Mode Hooks + StageHost + 按类型独立 action hooks**（M6 已归档）。不要把图片、视频、3D 强行统一成同一个 geometry editor。
 
-- **Layer 1 · 工作台外壳（`<WorkbenchShell>`）**：路由 `/projects/:id/annotate`、左侧任务队列、Topbar、AI 助手、状态栏、各 hooks。跨所有类型共用 ~80%。
-- **Layer 2 · 画布渲染器（按维度切，3 个）**：
-  - `<ImageStage>`：image-det / image-seg / image-kp / mm（图像类）共用
-  - `<VideoStage>`：video-mm / video-track，多了**时间轴 + 关键帧插值**控件
-  - `<LidarStage>`：lidar 单独，Three.js / WebGL viewport
-- **Layer 3 · 工具（画布内插件）**：每个工具实现统一接口 `{ id, hotkey, icon, onPointerDown, ... }`。当前 `<ImageStage>` 注册 BboxTool / HandTool / PolygonTool。
-- **Step 2 触发条件**：业务需要 keypoint / video / lidar 时才动；当前 image-det + polygon 双类型不必预先抽象。
+- **Layer 1 · 工作台外壳（`<WorkbenchShell>`）**：路由 `/projects/:id/annotate` / review mode、任务队列、Topbar、右栏、状态栏、history、offline、hotkeys。Shell 只做装配。
+- **Layer 2 · 模式策略（`modes/`）**：`useAnnotateMode` / `useReviewMode` 注入提交、跳过、领取审核、通过 / 退回、diffMode 与横幅策略；不拆 `AnnotateWorkbench` / `ReviewWorkbench` 两套页面。
+- **Layer 3 · Stage 分派（`WorkbenchStageHost` + `stages/types.ts`）**：
+  - `ImageWorkbench`：包装 `ImageStage`，承接 image bbox / polygon / SAM / canvas / AI 候选。
+  - `VideoWorkbench`：包装 `VideoStage`，承接 video bbox / track / keyframe / timeline。
+  - `ThreeDWorkbench.placeholder`：仅占位，不接真实 3D 业务。
+- **Layer 4 · Stage-specific actions**：`stages/image/useImageAnnotationActions.ts` 与 `stages/video/useVideoAnnotationActions.ts` 各自维护 payload、optimistic edit、offline fallback 和 focused tests。
+- **后续触发条件**：真实 lidar / 3D 标注需求出现时，先设计 `LidarStage` / 3D geometry / camera controls；只复用 `StageKind` / `StageCapabilities` / `WorkbenchStageHost` 外围边界。
 
 ---
 
@@ -206,7 +207,7 @@
 | **P3** | C.3 SAM 后续延伸：Magic Box、类别确认 hint | 依赖 SAM 基座 | — |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
-| **P3** | WorkbenchShell → WorkbenchCore 拆分 | M2 方案 B（mode prop）已落，方案 C 更干净但需等 v0.10.x SAM3 工作台收尾后触发，避免冲突；估时 ~5-7d | — |
+| **P3** | Workbench Shell 拆分后续精简 | M6 已归档并确认不拆两套页面；后续只做 prop 分组、Host/Layout focused tests、必要时 `useWorkbenchShellModel`，真实 3D 前不抽通用 geometry / camera controls | [0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md) |
 
 ---
 

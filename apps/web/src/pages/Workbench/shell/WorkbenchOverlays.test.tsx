@@ -1,0 +1,130 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { WorkbenchOverlays } from "./WorkbenchOverlays";
+
+const noop = () => {};
+const baseProps = {
+  pendingDrawing: null,
+  editingClass: null,
+  samPendingGeom: null,
+  samDefaultClass: "Car",
+  batchChanging: false,
+  batchChangeTarget: null,
+  imageOverlayEnabled: true,
+  stageGeom: { imgW: 0, imgH: 0 },
+  vp: { scale: 1, tx: 0, ty: 0 },
+  classes: ["Car", "Bike"],
+  recentClasses: [],
+  activeClass: "Car",
+  onPickPendingClass: noop,
+  onCancelPending: noop,
+  onCommitChangeClass: noop,
+  onCancelChangeClass: noop,
+  onSamCommitClass: noop,
+  onSamCancelClass: noop,
+  onCommitBatchChangeClass: noop,
+  onCancelBatchChange: noop,
+};
+
+describe("WorkbenchOverlays", () => {
+  it("renders video pending class picker with fixed anchor even without image geometry", () => {
+    const onPickPendingClass = vi.fn();
+    render(
+      <WorkbenchOverlays
+        {...baseProps}
+        pendingDrawing={{
+          kind: "video_bbox",
+          frameIndex: 12,
+          geom: { x: 0.2, y: 0.3, w: 0.1, h: 0.2 },
+          anchor: { left: 48, top: 64 },
+        }}
+        onPickPendingClass={onPickPendingClass}
+      />,
+    );
+
+    const popover = screen.getByTestId("class-picker-popover");
+    expect(popover.style.position).toBe("fixed");
+    expect(popover.style.left).toBe("48px");
+    expect(popover.style.top).toBe("64px");
+
+    fireEvent.click(screen.getByText("Bike"));
+    expect(onPickPendingClass).toHaveBeenCalledWith("Bike");
+  });
+
+  it("waits for image geometry before rendering image-anchored pending picker", () => {
+    const { rerender } = render(
+      <WorkbenchOverlays
+        {...baseProps}
+        pendingDrawing={{ geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } }}
+      />,
+    );
+    expect(screen.queryByTestId("class-picker-popover")).toBeNull();
+
+    rerender(
+      <WorkbenchOverlays
+        {...baseProps}
+        stageGeom={{ imgW: 1000, imgH: 500 }}
+        pendingDrawing={{ geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } }}
+      />,
+    );
+    expect(screen.getByTestId("class-picker-popover").style.position).toBe("absolute");
+  });
+
+  it("renders SAM and batch pickers only when no higher-priority picker is active", () => {
+    const { rerender } = render(
+      <WorkbenchOverlays
+        {...baseProps}
+        stageGeom={{ imgW: 1000, imgH: 500 }}
+        samPendingGeom={{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }}
+        samDefaultClass="Bike"
+      />,
+    );
+    expect(screen.getByText("接受 SAM 候选 → 选类别")).toBeTruthy();
+
+    rerender(
+      <WorkbenchOverlays
+        {...baseProps}
+        stageGeom={{ imgW: 1000, imgH: 500 }}
+        batchChanging
+        batchChangeTarget={{
+          geom: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 },
+          className: "Car",
+          count: 3,
+        }}
+      />,
+    );
+    expect(screen.getByText("批量改类别 (3 个)")).toBeTruthy();
+
+    rerender(
+      <WorkbenchOverlays
+        {...baseProps}
+        stageGeom={{ imgW: 1000, imgH: 500 }}
+        pendingDrawing={{ geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } }}
+        batchChanging
+        batchChangeTarget={{
+          geom: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 },
+          className: "Car",
+          count: 3,
+        }}
+      />,
+    );
+    expect(screen.getByText("选择类别")).toBeTruthy();
+    expect(screen.queryByText("批量改类别 (3 个)")).toBeNull();
+  });
+
+  it("suppresses image-position overlays when the current stage is not image", () => {
+    render(
+      <WorkbenchOverlays
+        {...baseProps}
+        imageOverlayEnabled={false}
+        stageGeom={{ imgW: 1000, imgH: 500 }}
+        editingClass={{
+          annotationId: "ann-1",
+          geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+          currentClass: "Car",
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("class-picker-popover")).toBeNull();
+  });
+});

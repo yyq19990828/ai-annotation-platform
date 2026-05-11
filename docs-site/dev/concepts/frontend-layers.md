@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-11
 ---
 
 # 前端分层
@@ -21,10 +21,14 @@ pages → components/ui + stores + api → generated types
 ## 页面（pages）
 
 - 一个路由一个目录
-- 复杂页面可拆 `state/` `stage/` `shell/`：
+- 复杂页面可拆 `state/` `stage/` `stages/` `modes/` `shell/`：
   - `state/` — Zustand store + reducer-like actions
-  - `stage/` — Konva 画布层（标注工作台特有）
-  - `shell/` — 该页特有的容器组件
+  - `stage/` — 底层画布 / 播放器组件（标注工作台特有）
+  - `stages/` — image / video / 3D 的 Stage adapter 与 stage-specific action hooks
+  - `modes/` — annotate / review 的页面策略 hook
+  - `shell/` — 该页特有的布局、面板、overlay 与 Host 组件
+
+Workbench 的细分边界见 [工作台 Shell 架构](./workbench-shell)。
 
 ## API 层（src/api）
 

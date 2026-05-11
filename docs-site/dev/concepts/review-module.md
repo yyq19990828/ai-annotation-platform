@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-05-11
 ---
 
 # 审核模块
@@ -52,7 +52,8 @@ graph TD
 | `apps/api/app/services/scheduler.py` | reviewer 可见性的 batch 过滤 |
 | `apps/web/src/api/tasks.ts` | 前端 task review API |
 | `apps/web/src/pages/Review/ReviewPage.tsx` | reviewer 列表页与批量审核 |
-| `apps/web/src/pages/Review/ReviewWorkbench.tsx` | reviewer 预览画布 |
+| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` | `mode="review"` 的审核工作台外壳 |
+| `apps/web/src/pages/Workbench/modes/useReviewMode.tsx` | reviewer claim / approve / reject / diffMode 策略 |
 | `apps/web/src/pages/Annotate/AnnotatePage.tsx` | annotator 侧整批送审 |
 
 ## Review 不是单一状态机
@@ -357,7 +358,8 @@ review 链路几乎每个动作都带审计。
 | `apps/web/src/api/tasks.ts` | task review 端点定义 |
 | `apps/web/src/hooks/useTasks.ts` | approve / reject / reopen mutation |
 | `apps/web/src/pages/Review/ReviewPage.tsx` | reviewer 列表与批量处理 |
-| `apps/web/src/pages/Review/ReviewWorkbench.tsx` | reviewer 画布预览与 AI 对比 |
+| `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` | 审核模式共用工作台 |
+| `apps/web/src/pages/Workbench/modes/useReviewMode.tsx` | reviewer 画布预览、AI 对比与 topbar 操作策略 |
 | `apps/web/src/pages/Annotate/AnnotatePage.tsx` | annotator 整批送审入口 |
 | `apps/web/src/hooks/useBatches.ts` | batch reject / reset / transition |
 

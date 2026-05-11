@@ -2,33 +2,51 @@ import { useEffect, useRef } from "react";
 import type { Viewport } from "../state/useViewportTransform";
 import { ClassPalette, shortcutForIndex } from "./ClassPalette";
 
-interface ClassPickerPopoverProps {
-  geom: { x: number; y: number; w: number; h: number };
-  imgW: number;
-  imgH: number;
-  vp: Viewport;
+type Geom = { x: number; y: number; w: number; h: number };
+type FixedAnchor = { left: number; top: number };
+
+type CommonProps = {
   classes: string[];
   recent: string[];
   defaultClass: string;
-  anchor?: { left: number; top: number };
   title?: string;
   onPick: (cls: string) => void;
   onCancel: () => void;
-}
+};
+
+type ImagePositionProps = CommonProps & {
+  position?: "image";
+  geom: Geom;
+  imgW: number;
+  imgH: number;
+  vp: Viewport;
+};
+
+type FixedPositionProps = CommonProps & {
+  position: "fixed";
+  anchor: FixedAnchor;
+};
+
+type ClassPickerPopoverProps = ImagePositionProps | FixedPositionProps;
 
 /**
  * 画框完成后的类别选择 popover。
- * - 锚定到框左下角；超出视口右侧时自动右翻
+ * - image 模式锚定到框左下角；fixed 模式使用调用方给出的 viewport 坐标
  * - 数字 1-9 / 字母 a-z 直选；Enter 默认 default；Esc 取消；点外部取消
  */
 export function ClassPickerPopover({
-  geom, imgW, imgH, vp, classes, recent, defaultClass, anchor, title = "选择类别", onPick, onCancel,
+  classes, recent, defaultClass, title = "选择类别", onPick, onCancel, ...positionProps
 }: ClassPickerPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
 
-  // pixel anchor: box bottom-left in container space
-  const left = anchor?.left ?? (geom.x * imgW * vp.scale + vp.tx);
-  const top = anchor?.top ?? ((geom.y + geom.h) * imgH * vp.scale + vp.ty + 6);
+  const isFixed = positionProps.position === "fixed";
+  // image 模式：框左下角（容器坐标）；fixed 模式：调用方传 viewport/client 坐标。
+  const left = isFixed
+    ? positionProps.anchor.left
+    : (positionProps.geom.x * positionProps.imgW * positionProps.vp.scale + positionProps.vp.tx);
+  const top = isFixed
+    ? positionProps.anchor.top
+    : ((positionProps.geom.y + positionProps.geom.h) * positionProps.imgH * positionProps.vp.scale + positionProps.vp.ty + 6);
 
   // keyboard
   useEffect(() => {
@@ -76,8 +94,9 @@ export function ClassPickerPopover({
   return (
     <div
       ref={ref}
+      data-testid="class-picker-popover"
       style={{
-        position: anchor ? "fixed" : "absolute",
+        position: isFixed ? "fixed" : "absolute",
         left,
         top,
         minWidth: 220,

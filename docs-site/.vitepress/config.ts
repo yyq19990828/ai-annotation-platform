@@ -225,6 +225,7 @@ export default withMermaid(defineConfig({
               items: [
                 { text: "后端分层", link: "/dev/concepts/backend-layers" },
                 { text: "前端分层", link: "/dev/concepts/frontend-layers" },
+                { text: "工作台 Shell 架构", link: "/dev/concepts/workbench-shell" },
                 { text: "API Schema 边界", link: "/dev/concepts/api-schema-boundary" },
                 { text: "后端基础设施（容器）", link: "/dev/concepts/backend-infrastructure" },
                 { text: "部署拓扑", link: "/dev/concepts/deployment-topology" },

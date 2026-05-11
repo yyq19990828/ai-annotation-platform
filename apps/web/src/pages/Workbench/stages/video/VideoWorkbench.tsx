@@ -1,0 +1,78 @@
+import { forwardRef } from "react";
+import type { AnnotationResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
+import type { VideoTool } from "../../state/useWorkbenchState";
+import type { VideoConvertOptions } from "./useVideoAnnotationActions";
+
+type Geom = { x: number; y: number; w: number; h: number };
+type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
+
+export interface VideoWorkbenchProps {
+  manifest: TaskVideoManifestResponse | undefined;
+  isLoading?: boolean;
+  error?: unknown;
+  annotations: AnnotationResponse[];
+  selectedId: string | null;
+  activeClass: string;
+  readOnly: boolean;
+  videoTool: VideoTool;
+  onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
+  onCreate: (frameIndex: number, geom: Geom) => void;
+  onPendingDraw: (
+    kind: "video_bbox" | "video_track",
+    frameIndex: number,
+    geom: Geom,
+    anchor: { left: number; top: number },
+  ) => void;
+  onUpdate: (annotation: AnnotationResponse, geometry: VideoGeometry) => void;
+  onRename: (annotation: AnnotationResponse, className: string) => void;
+  onChangeUserBoxClass: (id: string) => void;
+  onDeleteUserBox: (id: string) => void;
+  onConvertToBboxes: (annotation: AnnotationResponse, options: VideoConvertOptions) => void;
+  onCursorMove: (pt: { x: number; y: number } | null) => void;
+}
+
+export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps>(
+  function VideoWorkbench({
+    manifest,
+    isLoading,
+    error,
+    annotations,
+    selectedId,
+    activeClass,
+    readOnly,
+    videoTool,
+    onSelect,
+    onCreate,
+    onPendingDraw,
+    onUpdate,
+    onRename,
+    onChangeUserBoxClass,
+    onDeleteUserBox,
+    onConvertToBboxes,
+    onCursorMove,
+  }, ref) {
+    return (
+      <VideoStage
+        ref={ref}
+        manifest={manifest}
+        isLoading={isLoading}
+        error={error}
+        annotations={annotations}
+        selectedId={selectedId}
+        activeClass={activeClass}
+        readOnly={readOnly}
+        videoTool={videoTool}
+        onSelect={onSelect}
+        onCreate={onCreate}
+        onPendingDraw={onPendingDraw}
+        onUpdate={onUpdate}
+        onRename={onRename}
+        onChangeUserBoxClass={onChangeUserBoxClass}
+        onDelete={(ann) => onDeleteUserBox(ann.id)}
+        onConvertToBboxes={onConvertToBboxes}
+        onCursorMove={onCursorMove}
+      />
+    );
+  },
+);
