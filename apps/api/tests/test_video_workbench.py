@@ -10,10 +10,12 @@ from app.db.models.task import Task
 from app.schemas._jsonb_types import Geometry
 from app.workers.media import (
     FFMPEG_POSTER_TIMEOUT_SECONDS,
+    FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
     FFPROBE_TIMEOUT_SECONDS,
     extract_video_poster,
     parse_ffprobe_video_metadata,
     probe_video_file,
+    transcode_video_for_browser,
 )
 
 
@@ -85,6 +87,27 @@ def test_extract_video_poster_uses_timeout(tmp_path, monkeypatch):
     extract_video_poster(video, poster)
 
     assert seen["timeout"] == FFMPEG_POSTER_TIMEOUT_SECONDS
+
+
+def test_transcode_video_for_browser_uses_timeout(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    playback = tmp_path / "playback.mp4"
+    video.write_bytes(b"fake")
+    seen: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        seen["args"] = args[0]
+        seen["timeout"] = kwargs.get("timeout")
+        return subprocess.CompletedProcess(
+            args=args[0], returncode=0, stdout="", stderr=""
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    transcode_video_for_browser(video, playback)
+
+    assert seen["timeout"] == FFMPEG_TRANSCODE_TIMEOUT_SECONDS
+    assert "libx264" in seen["args"]
 
 
 def test_video_bbox_geometry_validates_and_bbox_stays_compatible():
@@ -277,6 +300,8 @@ async def test_video_manifest_returns_signed_urls(
             "video": {
                 "fps": 30,
                 "frame_count": 90,
+                "playback_path": "playback/clip.mp4",
+                "playback_codec": "h264",
                 "poster_frame_path": "posters/clip.webp",
             }
         },
@@ -314,11 +339,12 @@ async def test_video_manifest_returns_signed_urls(
     assert resp.status_code == 200
     body = resp.json()
     assert body["task_id"] == str(task.id)
-    assert body["video_url"] == "http://storage.local/videos/clip.mp4"
+    assert body["video_url"] == "http://storage.local/playback/clip.mp4"
     assert body["poster_url"] == "http://storage.local/posters/clip.webp"
     assert body["metadata"]["fps"] == 30
+    assert body["metadata"]["playback_path"] == "playback/clip.mp4"
     assert body["expires_in"] == 3600
-    assert signed == [("videos/clip.mp4", 3600), ("posters/clip.webp", 3600)]
+    assert signed == [("playback/clip.mp4", 3600), ("posters/clip.webp", 3600)]
 
 
 async def test_video_manifest_returns_503_when_metadata_not_ready(

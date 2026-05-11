@@ -12,6 +12,9 @@ class VideoMetadata(BaseModel):
     width: int | None = None
     height: int | None = None
     codec: str | None = None
+    playback_path: str | None = None
+    playback_codec: str | None = None
+    playback_error: str | None = None
     poster_frame_path: str | None = None
     probe_error: str | None = None
     poster_error: str | None = None

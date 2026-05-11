@@ -56,6 +56,8 @@ curl -f http://localhost:5173
 
 v0.9.16 引入视频元数据处理，API / Celery 镜像内需要 `ffmpeg` 与 `ffprobe`。该版本修改了 `infra/docker/Dockerfile.api`，升级时必须 rebuild API 与 Celery worker 镜像，不能只重启容器。
 
+v0.9.17+ media worker 还会为非 H.264 视频生成浏览器播放用的 `playback/*.mp4`。升级后如存量视频播放按钮无效，先 rebuild/restart Celery worker，再对相关 dataset 重新触发 media backfill。
+
 ```bash
 docker compose build api celery-worker
 docker compose up -d api celery-worker

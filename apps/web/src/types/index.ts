@@ -108,6 +108,9 @@ export interface VideoMetadata {
   width: number | null;
   height: number | null;
   codec: string | null;
+  playback_path: string | null;
+  playback_codec: string | null;
+  playback_error: string | null;
   poster_frame_path: string | null;
   probe_error: string | null;
   poster_error: string | null;

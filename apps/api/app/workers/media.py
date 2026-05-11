@@ -13,6 +13,8 @@ from app.config import settings
 
 FFPROBE_TIMEOUT_SECONDS = 30
 FFMPEG_POSTER_TIMEOUT_SECONDS = 60
+FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 600
+BROWSER_PLAYABLE_VIDEO_CODECS = {"h264", "avc1"}
 
 
 def _parse_ratio(value: str | None) -> float | None:
@@ -126,6 +128,37 @@ def extract_video_poster(input_path: str | Path, output_path: str | Path) -> Non
         raise RuntimeError(proc.stderr.strip() or "ffmpeg poster extraction failed")
 
 
+def transcode_video_for_browser(input_path: str | Path, output_path: str | Path) -> None:
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_path),
+            "-map",
+            "0:v:0",
+            "-an",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "ffmpeg browser transcode failed")
+
+
 async def _generate_thumbnail(item_id: str) -> None:
     from sqlalchemy.ext.asyncio import (
         create_async_engine,
@@ -234,6 +267,7 @@ async def _generate_video_metadata(item_id: str) -> None:
             suffix = Path(item.file_name).suffix or ".mp4"
             input_path = Path(tmp) / f"source{suffix}"
             poster_path = Path(tmp) / "poster.webp"
+            playback_path = Path(tmp) / "playback.mp4"
 
             try:
                 with input_path.open("wb") as fh:
@@ -263,6 +297,30 @@ async def _generate_video_metadata(item_id: str) -> None:
                 item.width = int(video_meta["width"])
             if video_meta.get("height") is not None:
                 item.height = int(video_meta["height"])
+
+            if (
+                video_meta.get("codec")
+                and video_meta.get("codec") not in BROWSER_PLAYABLE_VIDEO_CODECS
+            ):
+                try:
+                    transcode_video_for_browser(input_path, playback_path)
+                    playback_key = f"playback/{item_id}.mp4"
+                    storage.ensure_bucket(storage.datasets_bucket)
+                    storage.client.put_object(
+                        Bucket=storage.datasets_bucket,
+                        Key=playback_key,
+                        Body=playback_path.read_bytes(),
+                        ContentType="video/mp4",
+                    )
+                    video_meta["playback_path"] = playback_key
+                    video_meta["playback_codec"] = "h264"
+                    video_meta.pop("playback_error", None)
+                except subprocess.TimeoutExpired:
+                    video_meta["playback_error"] = (
+                        f"ffmpeg browser transcode timed out after {FFMPEG_TRANSCODE_TIMEOUT_SECONDS}s"
+                    )
+                except Exception as exc:
+                    video_meta["playback_error"] = str(exc)
 
             try:
                 extract_video_poster(input_path, poster_path)

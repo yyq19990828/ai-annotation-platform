@@ -9355,6 +9355,39 @@
             ],
             "title": "Height"
           },
+          "playback_codec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playback Codec"
+          },
+          "playback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playback Error"
+          },
+          "playback_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playback Path"
+          },
           "poster_error": {
             "anyOf": [
               {

@@ -271,9 +271,10 @@ async def get_video_manifest(
     if not metadata.fps or not metadata.frame_count:
         raise HTTPException(status_code=503, detail="Video metadata not ready")
 
+    video_path = metadata.playback_path or task.file_path
     try:
         video_url = storage_service.generate_download_url(
-            task.file_path,
+            video_path,
             expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
             bucket=bucket,
         )
@@ -287,7 +288,7 @@ async def get_video_manifest(
             "Failed to generate video manifest URL task_id=%s bucket=%s key=%s",
             task.id,
             bucket,
-            task.file_path,
+            video_path,
         )
         raise HTTPException(
             status_code=503, detail="Video storage unavailable"
@@ -297,7 +298,7 @@ async def get_video_manifest(
             "Failed to generate video manifest URL task_id=%s bucket=%s key=%s",
             task.id,
             bucket,
-            task.file_path,
+            video_path,
         )
         raise HTTPException(
             status_code=503, detail="Video storage unavailable"
@@ -307,7 +308,7 @@ async def get_video_manifest(
             "Unexpected video manifest URL error task_id=%s bucket=%s key=%s",
             task.id,
             bucket,
-            task.file_path,
+            video_path,
         )
         raise HTTPException(
             status_code=503, detail="Video storage unavailable"

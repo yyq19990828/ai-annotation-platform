@@ -56,7 +56,9 @@ v0.9.16 起，视频任务会在 `GET /api/v1/tasks/:id` 的 `TaskOut.video_meta
     "frame_count": 25,
     "width": 640,
     "height": 360,
-    "codec": "h264",
+    "codec": "mpeg4",
+    "playback_path": "playback/...",
+    "playback_codec": "h264",
     "poster_frame_path": "thumbnails/..."
   }
 }
@@ -67,6 +69,8 @@ v0.9.16 起，视频任务会在 `GET /api/v1/tasks/:id` 的 `TaskOut.video_meta
 ```http
 GET /api/v1/tasks/:id/video/manifest
 ```
+
+如果原视频编码不是浏览器稳定支持的 H.264，media worker 会生成 `playback/*.mp4`；manifest 的 `video_url` 优先返回该播放版本。
 
 返回 presigned 播放地址、poster 地址和同一份标准化 metadata。非视频任务会返回 `400`。
 

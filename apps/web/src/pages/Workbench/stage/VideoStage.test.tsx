@@ -1,5 +1,5 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
-import { fireEvent, render } from "@testing-library/react";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { VideoStage } from "./VideoStage";
 import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
 
@@ -15,11 +15,17 @@ const manifest: TaskVideoManifestResponse = {
     width: 1000,
     height: 500,
     codec: "h264",
+    playback_path: null,
+    playback_codec: null,
+    playback_error: null,
     poster_frame_path: "poster.webp",
     probe_error: null,
     poster_error: null,
   },
 };
+
+const playMock = vi.fn();
+const pauseMock = vi.fn();
 
 function setRect(el: Element) {
   vi.spyOn(el, "getBoundingClientRect").mockReturnValue({
@@ -46,8 +52,13 @@ function pointer(type: string, clientX: number, clientY: number) {
 
 describe("VideoStage", () => {
   beforeAll(() => {
-    Object.defineProperty(HTMLMediaElement.prototype, "pause", { configurable: true, value: vi.fn() });
-    Object.defineProperty(HTMLMediaElement.prototype, "play", { configurable: true, value: vi.fn() });
+    Object.defineProperty(HTMLMediaElement.prototype, "pause", { configurable: true, value: pauseMock });
+    Object.defineProperty(HTMLMediaElement.prototype, "play", { configurable: true, value: playMock });
+  });
+
+  beforeEach(() => {
+    playMock.mockClear();
+    pauseMock.mockClear();
   });
 
   it("draws a bbox on the current frame while paused", () => {
@@ -81,6 +92,52 @@ describe("VideoStage", () => {
     expect(geom.h).toBeCloseTo(0.3);
   });
 
+  it("toggles playback when clicking the video surface without drawing", () => {
+    const onCreate = vi.fn();
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={onCreate}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 100, 100));
+    fireEvent(overlay, pointer("pointerup", 100, 100));
+
+    expect(playMock).toHaveBeenCalledTimes(1);
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it("shows playback errors when the browser rejects the video source", async () => {
+    playMock.mockRejectedValueOnce(new Error("The element has no supported sources."));
+    const { getByTitle } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    fireEvent.click(getByTitle("播放 / 暂停 (Space)"));
+
+    expect(await screen.findByTestId("video-playback-error")).toHaveTextContent("no supported sources");
+  });
+
   it("renders only annotations from the selected frame", () => {
     const annotations = [
       {
@@ -111,6 +168,34 @@ describe("VideoStage", () => {
 
     expect(getByTestId("video-overlay").textContent).toContain("car");
     expect(getByTestId("video-overlay").textContent).not.toContain("person");
+  });
+
+  it("renders visible screen-pixel strokes for current frame boxes", () => {
+    const annotations = [
+      {
+        id: "a1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 0, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      },
+    ] as AnnotationResponse[];
+
+    const { container } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    const rect = container.querySelector("svg rect");
+    expect(rect?.getAttribute("stroke-width")).toBe("2");
+    expect(rect?.getAttribute("vector-effect")).toBe("non-scaling-stroke");
   });
 
   it("adds a keyframe to the selected video track", () => {

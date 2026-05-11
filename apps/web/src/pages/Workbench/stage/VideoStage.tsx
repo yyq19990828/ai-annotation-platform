@@ -172,6 +172,7 @@ export function VideoStage({
   const overlayRef = useRef<SVGSVGElement>(null);
   const [frameIndex, setFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState>(null);
   const [hiddenTrackIds, setHiddenTrackIds] = useState<Set<string>>(() => new Set());
   const [lockedTrackIds, setLockedTrackIds] = useState<Set<string>>(() => new Set());
@@ -272,12 +273,32 @@ export function VideoStage({
     [fps, maxFrame],
   );
 
+  const togglePlayback = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!video.paused || isPlaying) {
+      video.pause();
+      setIsPlaying(false);
+      return;
+    }
+    setPlaybackError(null);
+    setIsPlaying(true);
+    const playResult = video.play();
+    if (playResult && typeof playResult.catch === "function") {
+      void playResult.catch((err: unknown) => {
+        setIsPlaying(false);
+        setPlaybackError(err instanceof Error ? err.message : "视频无法播放");
+      });
+    }
+  }, [isPlaying]);
+
   useEffect(() => {
     const taskId = manifest?.task_id ?? null;
     if (!taskId || lastResetTaskIdRef.current === taskId) return;
     lastResetTaskIdRef.current = taskId;
     setFrameIndex(0);
     setIsPlaying(false);
+    setPlaybackError(null);
     setDrag(null);
     setHiddenTrackIds(new Set());
     setLockedTrackIds(new Set());
@@ -290,17 +311,42 @@ export function VideoStage({
     const onTime = () => setFrameIndex(Math.max(0, Math.min(maxFrame, Math.round(video.currentTime * fps))));
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
+    const onEnded = () => setIsPlaying(false);
+    const onError = () => {
+      setIsPlaying(false);
+      setPlaybackError(video.error?.message || "当前浏览器无法播放该视频源");
+    };
     video.addEventListener("timeupdate", onTime);
     video.addEventListener("seeked", onTime);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
+    video.addEventListener("ended", onEnded);
+    video.addEventListener("error", onError);
     return () => {
       video.removeEventListener("timeupdate", onTime);
       video.removeEventListener("seeked", onTime);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
+      video.removeEventListener("ended", onEnded);
+      video.removeEventListener("error", onError);
     };
   }, [fps, maxFrame]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const schedule = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame
+      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
+    const cancel = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : window.clearTimeout;
+    let raf = 0;
+    const tick = () => {
+      const video = videoRef.current;
+      if (video) setFrameIndex(Math.max(0, Math.min(maxFrame, Math.round(video.currentTime * fps))));
+      raf = schedule(tick);
+    };
+    raf = schedule(tick);
+    return () => cancel(raf);
+  }, [fps, isPlaying, maxFrame]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -309,10 +355,7 @@ export function VideoStage({
       if (!manifest) return;
       if (e.key === " ") {
         e.preventDefault();
-        const video = videoRef.current;
-        if (!video) return;
-        if (video.paused) void video.play();
-        else video.pause();
+        togglePlayback();
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         videoRef.current?.pause();
@@ -328,7 +371,7 @@ export function VideoStage({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [frameIndex, manifest, onDelete, readOnly, seekFrame, selectedId]);
+  }, [frameIndex, manifest, onDelete, readOnly, seekFrame, selectedId, togglePlayback]);
 
   const pointFromEvent = useCallback((evt: React.PointerEvent<SVGSVGElement>) => {
     const rect = overlayRef.current?.getBoundingClientRect();
@@ -391,7 +434,10 @@ export function VideoStage({
     if (!pt || !cur) return;
     if (cur.kind === "draw") {
       const geom = normalizeGeom(cur.start, pt);
-      if (geom.w < 0.003 || geom.h < 0.003) return;
+      if (geom.w < 0.003 || geom.h < 0.003) {
+        togglePlayback();
+        return;
+      }
       if (selectedTrack && !lockedTrackIds.has(selectedTrack.geometry.track_id)) {
         onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, geom));
       } else {
@@ -406,7 +452,7 @@ export function VideoStage({
     } else if (isVideoBbox(ann)) {
       onUpdate(ann, { type: "video_bbox", frame_index: ann.geometry.frame_index, ...cur.current });
     }
-  }, [annotations, drag, frameIndex, lockedTrackIds, onCreate, onUpdate, pointFromEvent, selectedTrack]);
+  }, [annotations, drag, frameIndex, lockedTrackIds, onCreate, onUpdate, pointFromEvent, selectedTrack, togglePlayback]);
 
   const toggleTrackSet = useCallback((setter: React.Dispatch<React.SetStateAction<Set<string>>>, trackId: string) => {
     setter((prev) => {
@@ -452,12 +498,7 @@ export function VideoStage({
               poster={manifest.poster_url ?? undefined}
               playsInline
               style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-              onClick={() => {
-                const video = videoRef.current;
-                if (!video) return;
-                if (video.paused) void video.play();
-                else video.pause();
-              }}
+              onClick={togglePlayback}
             />
             <svg
               ref={overlayRef}
@@ -493,10 +534,10 @@ export function VideoStage({
                       y={g.y}
                       width={g.w}
                       height={g.h}
-                      fill="transparent"
+                      fill={selected ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)"}
                       stroke={color}
-                      strokeWidth={selected ? 0.004 : 0.002}
-                      strokeDasharray={entry.source === "interpolated" || entry.occluded ? "0.012 0.008" : undefined}
+                      strokeWidth={selected ? 3 : 2}
+                      strokeDasharray={entry.source === "interpolated" || entry.occluded ? "6 4" : undefined}
                       vectorEffect="non-scaling-stroke"
                       onPointerDown={(evt) => beginMove(evt, entry)}
                     />
@@ -522,9 +563,9 @@ export function VideoStage({
                   height={draft.h}
                   fill="rgba(255,255,255,0.08)"
                   stroke={classColor(selectedTrack?.class_name ?? activeClass)}
-                  strokeWidth={0.002}
+                  strokeWidth={2}
                   vectorEffect="non-scaling-stroke"
-                  strokeDasharray="0.01 0.008"
+                  strokeDasharray="6 4"
                 />
               )}
             </svg>
@@ -544,6 +585,27 @@ export function VideoStage({
               }}
             >
               播放中 · 暂停后编辑
+            </div>
+          )}
+          {playbackError && (
+            <div
+              data-testid="video-playback-error"
+              style={{
+                position: "absolute",
+                top: 14,
+                left: "50%",
+                transform: "translateX(-50%)",
+                maxWidth: "min(520px, calc(100% - 28px))",
+                padding: "6px 10px",
+                borderRadius: 6,
+                background: "rgba(127,29,29,0.88)",
+                color: "white",
+                fontSize: 12,
+                lineHeight: 1.4,
+                textAlign: "center",
+              }}
+            >
+              视频无法播放：{playbackError}
             </div>
           )}
           {qualityWarnings.length > 0 && (
@@ -671,10 +733,7 @@ export function VideoStage({
           <Button
             size="sm"
             onClick={() => {
-              const video = videoRef.current;
-              if (!video) return;
-              if (video.paused) void video.play();
-              else video.pause();
+              togglePlayback();
             }}
             title="播放 / 暂停 (Space)"
           >
