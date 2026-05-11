@@ -47,6 +47,7 @@ interface VideoStageProps {
   ) => void;
   onUpdate: (annotation: AnnotationResponse, geometry: VideoGeometry) => void;
   onRename: (annotation: AnnotationResponse, className: string) => void;
+  onChangeUserBoxClass?: (id: string) => void;
   onDelete?: (annotation: AnnotationResponse) => void;
   onConvertToBboxes?: (
     annotation: AnnotationResponse,
@@ -186,7 +187,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   onCreate,
   onPendingDraw,
   onUpdate,
-  onRename,
+  onChangeUserBoxClass,
   onDelete,
   onConvertToBboxes,
   onCursorMove,
@@ -755,12 +756,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               <Button
                 size="sm"
                 title="修改类别"
-                onClick={() => {
-                  const next = window.prompt("类别", selectedAnnotation.class_name);
-                  if (next && next.trim() && next.trim() !== selectedAnnotation.class_name) {
-                    onRename(selectedAnnotation, next.trim());
-                  }
-                }}
+                disabled={!onChangeUserBoxClass}
+                onClick={() => onChangeUserBoxClass?.(selectedAnnotation.id)}
               >
                 <Icon name="tag" size={12} />
               </Button>
@@ -878,11 +875,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
                     <Button
                       size="sm"
                       title="重命名轨迹类别"
-                      disabled={readOnly}
+                      disabled={readOnly || !onChangeUserBoxClass}
                       onClick={(e) => {
                         e.stopPropagation();
-                        const next = window.prompt("轨迹类别", ann.class_name);
-                        if (next && next.trim() && next.trim() !== ann.class_name) onRename(ann, next.trim());
+                        onChangeUserBoxClass?.(ann.id);
                       }}
                     >
                       <Icon name="edit" size={12} />

@@ -29,10 +29,14 @@ class UnsupportedExportError(ValueError):
     pass
 
 
-def _assert_image_export_supported(project: Project) -> None:
+def _assert_image_export_supported(project: Project, export_format: str) -> None:
     if project.type_key in VIDEO_PROJECT_TYPES:
+        if project.type_key == "video-track":
+            raise UnsupportedExportError(
+                f"video-track projects do not support {export_format.upper()} export yet"
+            )
         raise UnsupportedExportError(
-            "Only video-track projects support Video JSON export; this project type and export format combination is not supported"
+            f"Video annotation export is not supported for {project.type_key} projects"
         )
 
 
@@ -270,7 +274,7 @@ class ExportService:
                 include_attributes=include_attributes,
                 video_frame_mode=video_frame_mode,
             )
-        _assert_image_export_supported(project)
+        _assert_image_export_supported(project, "coco")
 
         categories = [{"id": i, "name": name} for i, name in enumerate(project.classes)]
         cat_map = {c["name"]: c["id"] for c in categories}
@@ -342,7 +346,7 @@ class ExportService:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return b""
-        _assert_image_export_supported(project)
+        _assert_image_export_supported(project, "yolo")
 
         cat_map = {name: i for i, name in enumerate(project.classes)}
         ann_by_task: dict[uuid.UUID, list[Annotation]] = {}
@@ -400,7 +404,7 @@ class ExportService:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return b""
-        _assert_image_export_supported(project)
+        _assert_image_export_supported(project, "voc")
 
         ann_by_task: dict[uuid.UUID, list[Annotation]] = {}
         for ann in annotations:
