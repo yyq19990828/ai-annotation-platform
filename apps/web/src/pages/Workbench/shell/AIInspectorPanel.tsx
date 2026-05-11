@@ -9,6 +9,7 @@ import type { Annotation, AnnotationResponse } from "@/types";
 import type { AttributeSchema } from "@/api/projects";
 import type { AiBox } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
+import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { AttributeForm } from "./AttributeForm";
 import { CommentsPanel } from "./CommentsPanel";
 import { ResizeHandle } from "./ResizeHandle";
@@ -52,6 +53,7 @@ interface AIInspectorPanelProps {
   hasMorePredictions?: boolean;
   isFetchingMorePredictions?: boolean;
   onFetchMorePredictions?: () => void;
+  currentFrameIndex?: number;
   onToggle: () => void;
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
@@ -81,6 +83,7 @@ export function AIInspectorPanel({
   attributeSchema, selectedAnnotation, onUpdateAttributes, currentUserId,
   taskFileUrl, enableCommentCanvasDrawing = true, liveCommentCanvas,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
+  currentFrameIndex,
   onToggle,
   onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   readOnly = false,
@@ -180,6 +183,7 @@ export function AIInspectorPanel({
         hasMore={hasMorePredictions}
         isFetchingMore={isFetchingMorePredictions}
         onFetchMore={onFetchMorePredictions}
+        currentFrameIndex={currentFrameIndex}
         onSelect={onSelect}
         onAcceptPrediction={onAcceptPrediction}
         onRejectPrediction={onRejectPrediction}
@@ -605,9 +609,81 @@ function SamTextPanel({
 // ── 虚拟化合并列表 ─────────────────────────────────────────────────────────
 type Row =
   | { kind: "ai"; box: AiBox; key: string }
-  | { kind: "header"; count: number; key: string; label: string }
+  | {
+    kind: "header";
+    count: number;
+    totalCount: number;
+    key: string;
+    label: string;
+    filter: FrameFilter;
+    onFilterChange: (filter: FrameFilter) => void;
+    showFrameFilter: boolean;
+  }
   | { kind: "videoTracks"; key: string }
   | { kind: "user"; box: Annotation; key: string };
+
+type FrameFilter = "all" | "current";
+
+function boxIsOnFrame(box: Annotation | AiBox, frameIndex: number) {
+  const geometry = box.geometry;
+  if (!geometry) return true;
+  if (geometry.type === "video_bbox") return geometry.frame_index === frameIndex;
+  if (geometry.type === "video_track") return resolveTrackAtFrame(geometry, frameIndex) !== null;
+  return true;
+}
+
+function filterBoxesByFrame<T extends Annotation | AiBox>(
+  boxes: T[],
+  frameIndex: number | undefined,
+  filter: FrameFilter,
+) {
+  if (filter !== "current" || typeof frameIndex !== "number") return boxes;
+  return boxes.filter((box) => boxIsOnFrame(box, frameIndex));
+}
+
+function FrameFilterTabs({ value, onChange }: { value: FrameFilter; onChange: (filter: FrameFilter) => void }) {
+  const options: Array<{ value: FrameFilter; label: string }> = [
+    { value: "all", label: "全部" },
+    { value: "current", label: "当前帧" },
+  ];
+  return (
+    <div
+      aria-label="帧过滤"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        marginTop: 7,
+        border: "1px solid var(--color-border)",
+        borderRadius: 6,
+        overflow: "hidden",
+        background: "var(--color-bg)",
+      }}
+    >
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            style={{
+              height: 24,
+              border: 0,
+              borderLeft: option.value === "current" ? "1px solid var(--color-border)" : 0,
+              background: active ? "var(--color-accent-soft)" : "transparent",
+              color: active ? "var(--color-accent-fg)" : "var(--color-fg-muted)",
+              fontSize: 11,
+              fontWeight: active ? 600 : 500,
+              cursor: "pointer",
+            }}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 interface BoxesListProps {
   aiBoxes: AiBox[];
@@ -619,6 +695,7 @@ interface BoxesListProps {
   hasMore?: boolean;
   isFetchingMore?: boolean;
   onFetchMore?: () => void;
+  currentFrameIndex?: number;
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
   onAcceptPrediction: (b: AiBox) => void;
   onRejectPrediction?: (b: AiBox) => void;
@@ -631,27 +708,58 @@ interface BoxesListProps {
 function BoxesList({
   aiBoxes, userBoxes, selSet, dimmedAiIds, imageWidth, imageHeight,
   hasMore, isFetchingMore, onFetchMore,
+  currentFrameIndex,
   onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   videoTrackPanel,
 }: BoxesListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const [aiFrameFilter, setAiFrameFilter] = useState<FrameFilter>("all");
+  const [userFrameFilter, setUserFrameFilter] = useState<FrameFilter>("all");
+  const showFrameFilter = typeof currentFrameIndex === "number";
+
+  const filteredAiBoxes = useMemo(
+    () => filterBoxesByFrame(aiBoxes, currentFrameIndex, aiFrameFilter),
+    [aiBoxes, currentFrameIndex, aiFrameFilter],
+  );
+  const filteredUserBoxes = useMemo(
+    () => filterBoxesByFrame(userBoxes, currentFrameIndex, userFrameFilter),
+    [userBoxes, currentFrameIndex, userFrameFilter],
+  );
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
-    out.push({ kind: "header", label: "AI 待审", count: aiBoxes.length, key: "ai-header" });
-    aiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
-    out.push({ kind: "header", label: "人工", count: userBoxes.length, key: "user-header" });
-    userBoxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
+    out.push({
+      kind: "header",
+      label: "AI 待审",
+      count: filteredAiBoxes.length,
+      totalCount: aiBoxes.length,
+      key: "ai-header",
+      filter: aiFrameFilter,
+      onFilterChange: setAiFrameFilter,
+      showFrameFilter,
+    });
+    filteredAiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
+    out.push({
+      kind: "header",
+      label: "人工",
+      count: filteredUserBoxes.length,
+      totalCount: userBoxes.length,
+      key: "user-header",
+      filter: userFrameFilter,
+      onFilterChange: setUserFrameFilter,
+      showFrameFilter,
+    });
+    filteredUserBoxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
     if (videoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
     return out;
-  }, [aiBoxes, userBoxes, videoTrackPanel]);
+  }, [aiBoxes.length, aiFrameFilter, filteredAiBoxes, filteredUserBoxes, showFrameFilter, userBoxes.length, userFrameFilter, videoTrackPanel]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (i) => {
       const row = rows[i];
-      if (row?.kind === "header") return 28;
+      if (row?.kind === "header") return row.showFrameFilter ? 62 : 36;
       if (row?.kind === "videoTracks") return 420;
       return 68;
     },
@@ -703,19 +811,23 @@ function BoxesList({
               {r.kind === "header" && (
                 <div
                   style={{
-                    fontSize: 12,
-                    fontWeight: 600,
                     color: "var(--color-fg)",
-                    padding: "10px 6px 4px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
+                    padding: "7px 10px",
+                    margin: "0 0 6px",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 8,
+                    background: "var(--color-bg-elev)",
                   }}
                 >
-                  <span>{r.label}</span>
-                  <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)", fontWeight: 500 }}>
-                    {r.count}
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)", fontWeight: 500 }}>
+                      {r.showFrameFilter && r.filter === "current" ? `${r.count}/${r.totalCount}` : r.count}
+                    </span>
+                  </div>
+                  {r.showFrameFilter && (
+                    <FrameFilterTabs value={r.filter} onChange={r.onFilterChange} />
+                  )}
                 </div>
               )}
               {r.kind === "videoTracks" && (

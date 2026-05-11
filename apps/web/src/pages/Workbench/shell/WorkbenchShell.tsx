@@ -782,7 +782,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       }}
       inspector={{
         open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
-        aiBoxes: !isVideoTask && modeState.diffMode !== "final" ? aiBoxes : [],
+        aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
         userBoxes, selectedId: s.selectedId, selectedIds: s.selectedIds,
         dimmedAiIds,
         imageWidth, imageHeight, onToggle: () => s.setRightOpen(!s.rightOpen),
@@ -793,9 +793,10 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onChangeUserBoxClass: handleStartChangeClass, attributeSchema: currentProject?.attribute_schema,
         selectedAnnotation: selectedAnnotationForPanel, onUpdateAttributes: handleUpdateAttributes,
         currentUserId: meUserId, taskFileUrl: task?.file_url,
-        hasMorePredictions: !isVideoTask && !!predictionsInfinite.hasNextPage,
-        isFetchingMorePredictions: !isVideoTask && predictionsInfinite.isFetchingNextPage,
+        hasMorePredictions: modeState.diffMode !== "final" && !!predictionsInfinite.hasNextPage,
+        isFetchingMorePredictions: modeState.diffMode !== "final" && predictionsInfinite.isFetchingNextPage,
         onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(),
+        currentFrameIndex: isVideoTask ? s.videoFrameIndex : undefined,
         videoTrackPanel: isVideoTask ? (
           <VideoTrackSidebar
             annotations={annotationsData ?? []}
@@ -808,6 +809,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             onSelect={(id) => handleSelectBox(id)}
             onToggleHiddenTrack={s.toggleHiddenVideoTrack}
             onToggleLockedTrack={s.toggleLockedVideoTrack}
+            onSeekFrame={s.setVideoFrameIndex}
             onChangeUserBoxClass={handleStartChangeClass}
             onRenameTracks={handleVideoBatchRename}
             onDeleteTracks={handleVideoBatchDelete}

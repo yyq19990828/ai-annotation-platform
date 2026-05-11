@@ -26,9 +26,10 @@ interface VideoTrackSidebarProps {
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
   classes?: string[];
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   onToggleHiddenTrack: (trackId: string) => void;
   onToggleLockedTrack: (trackId: string) => void;
+  onSeekFrame?: (frameIndex: number) => void;
   onChangeUserBoxClass?: (id: string) => void;
   onRenameTracks?: (annotations: AnnotationResponse[], className: string) => void;
   onDeleteTracks?: (annotations: AnnotationResponse[]) => void;
@@ -69,6 +70,7 @@ export function VideoTrackSidebar({
   onSelect,
   onToggleHiddenTrack,
   onToggleLockedTrack,
+  onSeekFrame,
   onChangeUserBoxClass,
   onRenameTracks,
   onDeleteTracks,
@@ -170,6 +172,11 @@ export function VideoTrackSidebar({
     onSelect(id);
   }, [onSelect, selectedTrackIds]);
 
+  const startNewTrack = useCallback(() => {
+    setSelectedTrackIds(new Set());
+    onSelect(null);
+  }, [onSelect]);
+
   const setSelectedTracksHidden = useCallback((hidden: boolean) => {
     for (const ann of selectedTracks) {
       const isHidden = hiddenTrackIds.has(ann.geometry.track_id);
@@ -262,6 +269,8 @@ export function VideoTrackSidebar({
       onSelect={selectTrack}
       onToggleHiddenTrack={onToggleHiddenTrack}
       onToggleLockedTrack={onToggleLockedTrack}
+      onSeekFrame={onSeekFrame}
+      onStartNewTrack={startNewTrack}
       onChangeUserBoxClass={onChangeUserBoxClass}
       onBatchRenameTracks={onRenameTracks ? renameSelectedTracks : undefined}
       onBatchDeleteTracks={onDeleteTracks ? deleteSelectedTracks : undefined}

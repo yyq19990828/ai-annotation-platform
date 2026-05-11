@@ -10,12 +10,15 @@ export function VideoQcWarnings({ warnings }: VideoQcWarningsProps) {
       data-testid="video-qc-warnings"
       style={{
         position: "absolute",
+        top: 14,
         left: 14,
-        bottom: 14,
         display: "grid",
         gap: 4,
+        maxWidth: "min(520px, calc(100% - 28px))",
         color: "var(--color-warning)",
         fontSize: 12,
+        pointerEvents: "none",
+        zIndex: 5,
       }}
     >
       {warnings.map((w) => (

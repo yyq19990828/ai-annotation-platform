@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { VideoStage, type VideoStageControls } from "./VideoStage";
 import { VideoTrackSidebar } from "./VideoTrackSidebar";
 import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
@@ -189,6 +189,41 @@ describe("VideoStage", () => {
     expect(playbackOverlay).toHaveStyle({ opacity: "0" });
   });
 
+  it("renders video quality warnings at the top of the stage", () => {
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 40, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    const warnings = getByTestId("video-qc-warnings");
+    expect(warnings).toHaveTextContent("car trk_car 关键帧间隔 40 帧");
+    expect(warnings).toHaveStyle({ top: "14px" });
+    expect(warnings).not.toHaveStyle({ bottom: "14px" });
+  });
+
   it("renders only annotations from the selected frame", () => {
     const annotations = [
       {
@@ -251,7 +286,7 @@ describe("VideoStage", () => {
     expect(rect?.getAttribute("y")).toBe("0.05");
   });
 
-  it("keeps video labels fixed at the overlay top", () => {
+  it("keeps video labels attached to their frame box", () => {
     const annotations = [
       {
         id: "a1",
@@ -274,7 +309,8 @@ describe("VideoStage", () => {
     );
 
     const text = container.querySelector("svg text");
-    expect(text).toHaveAttribute("y", "0.045");
+    expect(text).toHaveAttribute("x", "0.1");
+    expect(text).toHaveAttribute("y", "0.424");
   });
 
   it("adds a keyframe to the selected video track", () => {
@@ -370,8 +406,9 @@ describe("VideoStage", () => {
       />,
     );
 
-    expect(sidebar.getByText("手动")).toBeInTheDocument();
-    expect(sidebar.getByText(/1 关键帧/)).toHaveTextContent("trk_car · 1 关键帧 · F0");
+    expect(sidebar.getAllByText("手动").length).toBeGreaterThan(0);
+    expect(sidebar.getByText(/1 关键帧/)).toHaveTextContent("1 关键帧 · F0");
+    expect(sidebar.getAllByText("trk_car").length).toBeGreaterThan(0);
 
     fireEvent.click(sidebar.getByText("复制到当前帧"));
 
@@ -465,7 +502,8 @@ describe("VideoStage", () => {
     expect(getByTestId("video-overlay").textContent).toContain("car · 插值");
     const label = Array.from(getByTestId("video-overlay").querySelectorAll("text"))
       .find((node) => node.textContent?.includes("car · 插值"));
-    expect(label).toHaveAttribute("y", "0.045");
+    expect(label).toHaveAttribute("x", "0.2");
+    expect(label).toHaveAttribute("y", "0.044");
   });
 
   it("does not interpolate across an absent keyframe", () => {
@@ -647,6 +685,94 @@ describe("VideoStage", () => {
     promptSpy.mockRestore();
   });
 
+  it("clears the selected track so the next track draw creates a new track", () => {
+    const onSelect = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByText } = render(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId="t1"
+        frameIndex={0}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={onSelect}
+        onUpdate={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+      />,
+    );
+
+    fireEvent.click(getByText("新建轨迹"));
+
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it("filters track rows to tracks present on the current frame", () => {
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+      {
+        id: "t2",
+        class_name: "person",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_person",
+          keyframes: [
+            { frame_index: 3, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const view = render(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId={null}
+        frameIndex={0}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={() => {}}
+        onUpdate={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+      />,
+    );
+
+    expect(view.getAllByTestId("video-track-row")).toHaveLength(2);
+
+    const filter = view.getByRole("tablist", { name: "轨迹过滤" });
+    expect(within(filter).queryByText("隐藏")).not.toBeInTheDocument();
+    fireEvent.click(within(filter).getByText("当前帧"));
+
+    expect(view.getAllByTestId("video-track-row")).toHaveLength(1);
+    expect(view.getByText("car")).toBeInTheDocument();
+    expect(view.queryByText("person")).not.toBeInTheDocument();
+  });
+
   it("multi-selects tracks in the sidebar and routes batch actions", async () => {
     const onRenameTracks = vi.fn();
     const onToggleHiddenTrack = vi.fn();
@@ -700,7 +826,7 @@ describe("VideoStage", () => {
     fireEvent.change(getByLabelText("批量改类"), { target: { value: "bus" } });
     expect(onRenameTracks).toHaveBeenCalledWith(annotations, "bus");
 
-    fireEvent.click(getByText("隐藏"));
+    fireEvent.click(within(getByTestId("video-track-batch-toolbar")).getByText("隐藏"));
     expect(onToggleHiddenTrack).toHaveBeenCalledWith("trk_car");
     expect(onToggleHiddenTrack).toHaveBeenCalledWith("trk_person");
 
@@ -741,7 +867,7 @@ describe("VideoStage", () => {
       />,
     );
 
-    fireEvent.click(view.getByText("复制当前关键帧"));
+    fireEvent.click(view.getByTitle("复制当前轨迹在当前帧的关键帧"));
     expect(view.getByText(/已复制:/).textContent).toContain("F0");
 
     view.rerender(
@@ -759,7 +885,7 @@ describe("VideoStage", () => {
       />,
     );
 
-    fireEvent.click(view.getByText("粘贴到当前帧"));
+    fireEvent.click(view.getByTitle("把已复制的关键帧粘贴到当前帧"));
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     const [, geometry] = onUpdate.mock.calls[0];

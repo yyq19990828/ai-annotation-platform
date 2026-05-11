@@ -57,7 +57,7 @@ export function VideoFrameOverlay({
   const viewBoxHeight = Number.isFinite(aspectRatio) && aspectRatio > 0 ? 1 / aspectRatio : 9 / 16;
   const y = (value: number) => value * viewBoxHeight;
   const h = (value: number) => value * viewBoxHeight;
-  const labelTopY = 0.045;
+  const labelY = (geom: VideoStageGeom) => Number(Math.max(0.028, y(geom.y) - 0.006).toFixed(4));
 
   return (
     <svg
@@ -136,11 +136,9 @@ export function VideoFrameOverlay({
         const selected = entry.ann.id === selectedId;
         const labelSuffix = entry.source === "interpolated"
           ? " · 插值"
-          : entry.source === "legacy"
-            ? " · 旧框"
-            : entry.occluded
-              ? " · 遮挡"
-              : "";
+          : entry.occluded
+            ? " · 遮挡"
+            : "";
         return (
           <g key={`${entry.id}-${entry.trackId ?? "legacy"}`}>
             <rect
@@ -157,7 +155,7 @@ export function VideoFrameOverlay({
             />
             <text
               x={g.x}
-              y={labelTopY}
+              y={labelY(g)}
               fontSize="0.025"
               fill={color}
               stroke="rgba(0,0,0,0.75)"
@@ -186,7 +184,7 @@ export function VideoFrameOverlay({
           />
           <text
             x={selectedTrackGhost.geom.x}
-            y={labelTopY}
+            y={labelY(selectedTrackGhost.geom)}
             fontSize="0.025"
             fill={classColor(selectedTrackGhost.className)}
             stroke="rgba(0,0,0,0.75)"
