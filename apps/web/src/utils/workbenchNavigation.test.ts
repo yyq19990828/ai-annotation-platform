@@ -5,6 +5,7 @@ import {
   getRememberedWorkbenchTask,
   rememberWorkbenchTask,
   resolveWorkbenchReturnTo,
+  updateWorkbenchUrlSearch,
 } from "./workbenchNavigation";
 
 function memoryStorage(initial?: Record<string, string>) {
@@ -62,5 +63,32 @@ describe("workbenchNavigation", () => {
     expect(resolveWorkbenchReturnTo("//example.com/path", "/projects/p/annotate")).toBe("/dashboard");
     expect(resolveWorkbenchReturnTo("/ai-pre", "/projects/p/annotate")).toBe("/ai-pre");
     expect(resolveWorkbenchReturnTo("/projects/p/annotate", "/projects/p/annotate")).toBe("/dashboard");
+  });
+
+  it("updates workbench batch/task query while preserving return target", () => {
+    expect(
+      updateWorkbenchUrlSearch(
+        {
+          pathname: "/projects/project-1/review",
+          search: "?batch=batch-1&task=task-1&returnTo=%2Freview%3Fbatch%3Dbatch-1",
+          hash: "#stage",
+        },
+        { batchId: "batch-2", taskId: "task-2" },
+      ),
+    ).toBe(
+      "/projects/project-1/review?batch=batch-2&task=task-2&returnTo=%2Freview%3Fbatch%3Dbatch-1#stage",
+    );
+  });
+
+  it("can clear workbench batch/task query", () => {
+    expect(
+      updateWorkbenchUrlSearch(
+        {
+          pathname: "/projects/project-1/review",
+          search: "?batch=batch-1&task=task-1&returnTo=%2Freview",
+        },
+        { batchId: null, taskId: null },
+      ),
+    ).toBe("/projects/project-1/review?returnTo=%2Freview");
   });
 });

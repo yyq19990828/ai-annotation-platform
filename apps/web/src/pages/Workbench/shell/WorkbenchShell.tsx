@@ -61,6 +61,7 @@ import {
   getRememberedWorkbenchTask,
   rememberWorkbenchTask,
   resolveWorkbenchReturnTo,
+  updateWorkbenchUrlSearch,
 } from "@/utils/workbenchNavigation";
 import {
   enqueue,
@@ -87,11 +88,22 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const [searchParams] = useSearchParams();
   const currentPath = `${location.pathname}${location.search}${location.hash}`;
   const returnTo = searchParams.get("returnTo");
+  const requestedBatchId = searchParams.get("batch");
+  const requestedTaskId = searchParams.get("task");
   const backTarget = useMemo(
     () => resolveWorkbenchReturnTo(returnTo, currentPath),
     [returnTo, currentPath],
   );
   const onBack = useCallback(() => navigate(backTarget), [navigate, backTarget]);
+  const updateUrl = useCallback(
+    (opts: { batchId?: string | null; taskId?: string | null; replace?: boolean }) => {
+      const nextUrl = updateWorkbenchUrlSearch(location, opts);
+      if (nextUrl !== currentPath) {
+        navigate(nextUrl, { replace: opts.replace ?? false });
+      }
+    },
+    [currentPath, location, navigate],
+  );
   const pushToast = useToastStore((s) => s.push);
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
@@ -115,8 +127,10 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   const meUserId = useAuthStore((s) => s.user?.id);
   // v0.7.1 B-17：支持 /annotate?batch=<id> 深链（从 dashboard「我的批次」跳过来）
-  const initialBatchId = searchParams.get("batch");
-  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(initialBatchId);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(requestedBatchId);
+  useEffect(() => {
+    setSelectedBatchId((prev) => (prev === requestedBatchId ? prev : requestedBatchId));
+  }, [requestedBatchId]);
   const { data: batchList } = useBatches(projectId ?? "", undefined);
   // v0.9.13 · batch 状态实时同步 (B-15): 标注员触发 in_progress → batch
   // active/pre_annotated → annotating, 工作台无需手动刷新即可见状态变化
@@ -157,6 +171,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const s = useWorkbenchState();
   const currentTaskId = s.currentTaskId;
   const setCurrentTaskId = s.setCurrentTaskId;
+  const setSelectedId = s.setSelectedId;
   const { vp, setVp } = useViewportTransform();
   const [fitTick, setFitTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
@@ -178,6 +193,14 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   );
   const taskId = task?.id;
   const taskIdx = tasks.findIndex((t) => t.id === taskId);
+  const selectTask = useCallback(
+    (id: string, opts: { replace?: boolean } = {}) => {
+      setCurrentTaskId(id);
+      setSelectedId(null);
+      updateUrl({ batchId: selectedBatchId, taskId: id, replace: opts.replace });
+    },
+    [selectedBatchId, setCurrentTaskId, setSelectedId, updateUrl],
+  );
   const imageWidth = task?.image_width ?? null;
   const imageHeight = task?.image_height ?? null;
   // B-19：file_url 是 MinIO presigned URL，每次任务列表 refetch 都会换签名。
@@ -191,27 +214,48 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   // v0.7.1 · 支持 /annotate 深链 ?batch=&task= 自动选中任务
   // B-23 · 无 task 参数时按 batch 恢复上次打开的任务，避免每次进批次都回到第一题。
-  const requestedTaskId = searchParams.get("task");
   useEffect(() => {
     if (tasks.length === 0) return;
     if (requestedTaskId && tasks.some((t) => t.id === requestedTaskId)) {
-      if (currentTaskId !== requestedTaskId) setCurrentTaskId(requestedTaskId);
+      if (currentTaskId !== requestedTaskId) {
+        setCurrentTaskId(requestedTaskId);
+        setSelectedId(null);
+      }
       return;
     }
-    if (currentTaskId && tasks.some((t) => t.id === currentTaskId)) return;
+    if (!requestedTaskId && currentTaskId && tasks.some((t) => t.id === currentTaskId)) return;
 
     const rememberedTaskId = getRememberedWorkbenchTask(selectedBatchId, undefined, mode);
     const nextTaskId =
       rememberedTaskId && tasks.some((t) => t.id === rememberedTaskId)
           ? rememberedTaskId
           : tasks[0].id;
-    setCurrentTaskId(nextTaskId);
-  }, [tasks, currentTaskId, requestedTaskId, selectedBatchId, setCurrentTaskId, mode]);
+    selectTask(nextTaskId, { replace: true });
+  }, [
+    tasks,
+    currentTaskId,
+    requestedTaskId,
+    selectedBatchId,
+    setCurrentTaskId,
+    setSelectedId,
+    selectTask,
+    mode,
+  ]);
 
   useEffect(() => {
     if (currentTaskId !== taskId) return;
     rememberWorkbenchTask(selectedBatchId, taskId, undefined, mode);
   }, [selectedBatchId, taskId, currentTaskId, mode]);
+
+  const handleSelectBatch = useCallback(
+    (batchId: string | null) => {
+      setSelectedBatchId(batchId);
+      setCurrentTaskId(null);
+      setSelectedId(null);
+      updateUrl({ batchId, taskId: null });
+    },
+    [setCurrentTaskId, setSelectedId, updateUrl],
+  );
 
   useEffect(() => {
     // 默认选最近使用过的类（如果该项目存在），否则取首个
@@ -988,7 +1032,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     annotationsData,
     currentProject,
     userBoxesCount: userBoxes.length,
-    setCurrentTaskId: s.setCurrentTaskId,
+    setCurrentTaskId: selectTask,
     setSelectedId: s.setSelectedId,
     pushToast,
     submitTaskMut,
@@ -1236,10 +1280,10 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onFetchNextPage={fetchNextPage}
         onBack={onBack}
         onToggle={() => s.setLeftOpen(!s.leftOpen)}
-        onSelectTask={(id) => { s.setCurrentTaskId(id); s.setSelectedId(null); }}
+        onSelectTask={selectTask}
         batches={activeBatches}
         selectedBatchId={selectedBatchId}
-        onSelectBatch={setSelectedBatchId}
+        onSelectBatch={handleSelectBatch}
         totalCount={tasksTotal}
         isOwner={isOwner}
         onGoToBatchSettings={() => {
