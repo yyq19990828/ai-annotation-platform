@@ -8,6 +8,7 @@ import type {
   VideoTrackGeometry,
   VideoTrackKeyframe,
 } from "@/types";
+import type { VideoTool } from "../state/useWorkbenchState";
 import { classColor } from "./colors";
 import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
 
@@ -35,10 +36,27 @@ interface VideoStageProps {
   selectedId: string | null;
   activeClass: string;
   readOnly?: boolean;
+  videoTool?: VideoTool;
   onSelect: (id: string | null) => void;
   onCreate: (frameIndex: number, geom: Geom) => void;
+  onPendingDraw?: (
+    kind: "video_bbox" | "video_track",
+    frameIndex: number,
+    geom: Geom,
+    anchor: { left: number; top: number },
+  ) => void;
   onUpdate: (annotation: AnnotationResponse, geometry: VideoGeometry) => void;
   onRename: (annotation: AnnotationResponse, className: string) => void;
+  onDelete?: (annotation: AnnotationResponse) => void;
+  onConvertToBboxes?: (
+    annotation: AnnotationResponse,
+    options: {
+      operation: "copy" | "split";
+      scope: "frame" | "track";
+      frameIndex?: number;
+      frameMode?: "keyframes" | "all_frames";
+    },
+  ) => void;
   onCursorMove?: (pt: { x: number; y: number } | null) => void;
 }
 
@@ -163,10 +181,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   selectedId,
   activeClass,
   readOnly = false,
+  videoTool = "box",
   onSelect,
   onCreate,
+  onPendingDraw,
   onUpdate,
   onRename,
+  onDelete,
+  onConvertToBboxes,
   onCursorMove,
 }: VideoStageProps, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -204,6 +226,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const selectedTrack = useMemo(
     () => videoTracks.find((ann) => ann.id === selectedId) ?? null,
     [selectedId, videoTracks],
+  );
+  const selectedAnnotation = useMemo(
+    () => annotations.find((ann) => ann.id === selectedId) ?? null,
+    [annotations, selectedId],
   );
 
   const currentFrameEntries = useMemo(() => {
@@ -433,14 +459,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
 
   const beginDraw = useCallback((evt: React.PointerEvent<SVGSVGElement>) => {
-    if (readOnly || isPlaying || selectedTrackLocked) return;
+    if (readOnly || isPlaying || (videoTool === "track" && selectedTrackLocked)) return;
     const pt = pointFromEvent(evt);
     if (!pt) return;
-    if (!selectedTrack) onSelect(null);
+    if (videoTool !== "track" || !selectedTrack) onSelect(null);
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     setPlaybackOverlayVisible(false);
     setDrag({ kind: "draw", start: pt, current: pt });
-  }, [isPlaying, onSelect, pointFromEvent, readOnly, selectedTrack, selectedTrackLocked]);
+  }, [isPlaying, onSelect, pointFromEvent, readOnly, selectedTrack, selectedTrackLocked, videoTool]);
 
   const beginMove = useCallback((evt: React.PointerEvent<SVGRectElement>, entry: FrameEntry) => {
     const trackId = isVideoTrack(entry.ann) ? entry.ann.geometry.track_id : null;
@@ -485,10 +511,16 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         togglePlayback();
         return;
       }
-      if (selectedTrack && !lockedTrackIds.has(selectedTrack.geometry.track_id)) {
+      if (videoTool === "track" && selectedTrack && !lockedTrackIds.has(selectedTrack.geometry.track_id)) {
         onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, geom));
       } else {
-        onCreate(frameIndex, geom);
+        const rect = overlayRef.current?.getBoundingClientRect();
+        const anchor = rect
+          ? { left: rect.left + geom.x * rect.width, top: rect.top + (geom.y + geom.h) * rect.height + 6 }
+          : { left: 0, top: 0 };
+        const kind = videoTool === "track" ? "video_track" : "video_bbox";
+        if (onPendingDraw) onPendingDraw(kind, frameIndex, geom, anchor);
+        else onCreate(frameIndex, geom);
       }
       return;
     }
@@ -499,7 +531,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     } else if (isVideoBbox(ann)) {
       onUpdate(ann, { type: "video_bbox", frame_index: ann.geometry.frame_index, ...cur.current });
     }
-  }, [annotations, drag, frameIndex, lockedTrackIds, onCreate, onUpdate, pointFromEvent, schedulePlaybackOverlayHide, selectedTrack, showPlaybackOverlay, togglePlayback]);
+  }, [annotations, drag, frameIndex, lockedTrackIds, onCreate, onPendingDraw, onUpdate, pointFromEvent, schedulePlaybackOverlayHide, selectedTrack, showPlaybackOverlay, togglePlayback, videoTool]);
 
   const toggleTrackSet = useCallback((setter: React.Dispatch<React.SetStateAction<Set<string>>>, trackId: string) => {
     setter((prev) => {
@@ -520,6 +552,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     if (!selectedTrack || !selectedTrackGhost || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
     onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, selectedTrackGhost.geom));
   }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack, selectedTrackGhost]);
+
+  const deleteTrackKeyframe = useCallback((ann: AnnotationResponse & { geometry: VideoTrackGeometry }, targetFrame: number) => {
+    if (readOnly || lockedTrackIds.has(ann.geometry.track_id) || ann.geometry.keyframes.length <= 1) return;
+    onUpdate(ann, {
+      ...ann.geometry,
+      keyframes: sortedKeyframes(ann.geometry).filter((kf) => kf.frame_index !== targetFrame),
+    });
+  }, [lockedTrackIds, onUpdate, readOnly]);
 
   if (isLoading) {
     return (
@@ -578,7 +618,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
                 inset: 0,
                 width: "100%",
                 height: "100%",
-                cursor: readOnly || isPlaying || selectedTrackLocked ? "default" : "crosshair",
+                cursor: readOnly || isPlaying || (videoTool === "track" && selectedTrackLocked) ? "default" : videoTool === "track" ? "copy" : "crosshair",
                 pointerEvents: "auto",
               }}
             >
@@ -695,6 +735,64 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               }}
             >
               视频无法播放：{playbackError}
+            </div>
+          )}
+          {selectedAnnotation && !readOnly && (
+            <div
+              data-testid="video-selection-actions"
+              style={{
+                position: "absolute",
+                top: 14,
+                right: 14,
+                display: "flex",
+                gap: 6,
+                padding: 6,
+                borderRadius: 8,
+                background: "rgba(0,0,0,0.68)",
+                boxShadow: "0 6px 18px rgba(0,0,0,0.24)",
+              }}
+            >
+              <Button
+                size="sm"
+                title="修改类别"
+                onClick={() => {
+                  const next = window.prompt("类别", selectedAnnotation.class_name);
+                  if (next && next.trim() && next.trim() !== selectedAnnotation.class_name) {
+                    onRename(selectedAnnotation, next.trim());
+                  }
+                }}
+              >
+                <Icon name="tag" size={12} />
+              </Button>
+              {isVideoTrack(selectedAnnotation) && (
+                <>
+                  <Button
+                    size="sm"
+                    title="复制当前帧为独立框"
+                    onClick={() => onConvertToBboxes?.(selectedAnnotation, {
+                      operation: "copy",
+                      scope: "frame",
+                      frameIndex,
+                    })}
+                  >
+                    复制框
+                  </Button>
+                  <Button
+                    size="sm"
+                    title="拆当前关键帧为独立框"
+                    onClick={() => onConvertToBboxes?.(selectedAnnotation, {
+                      operation: "split",
+                      scope: "frame",
+                      frameIndex,
+                    })}
+                  >
+                    拆框
+                  </Button>
+                </>
+              )}
+              <Button size="sm" title="删除" onClick={() => onDelete?.(selectedAnnotation)}>
+                <Icon name="trash" size={12} />
+              </Button>
             </div>
           )}
           {qualityWarnings.length > 0 && (
@@ -830,10 +928,123 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               </Button>
             </div>
             {selectedTrack && (
-              <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)", lineHeight: 1.5 }}>
-                track_id: {selectedTrack.geometry.track_id}<br />
-                frame_index: {frameIndex}
-              </div>
+              <>
+                <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)", lineHeight: 1.5 }}>
+                  track_id: {selectedTrack.geometry.track_id}<br />
+                  frame_index: {frameIndex}
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                    <b style={{ fontSize: 12 }}>关键帧</b>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <Button
+                        size="sm"
+                        disabled={readOnly}
+                        title="复制整条轨迹的关键帧为独立框"
+                        onClick={() => onConvertToBboxes?.(selectedTrack, {
+                          operation: "copy",
+                          scope: "track",
+                          frameMode: "keyframes",
+                        })}
+                      >
+                        复制关键帧
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={readOnly}
+                        title="复制整条轨迹插值后的所有帧为独立框"
+                        onClick={() => onConvertToBboxes?.(selectedTrack, {
+                          operation: "copy",
+                          scope: "track",
+                          frameMode: "all_frames",
+                        })}
+                      >
+                        复制全帧
+                      </Button>
+                    </div>
+                  </div>
+                  {sortedKeyframes(selectedTrack.geometry).map((kf) => (
+                    <div
+                      key={kf.frame_index}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr auto",
+                        gap: 6,
+                        alignItems: "center",
+                        padding: "5px 6px",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: 6,
+                        fontSize: 11,
+                      }}
+                    >
+                      <span>
+                        F{kf.frame_index}
+                        {kf.absent ? " · 消失" : kf.occluded ? " · 遮挡" : ""}
+                      </span>
+                      <span style={{ display: "flex", gap: 4 }}>
+                        <Button
+                          size="sm"
+                          disabled={readOnly || Boolean(kf.absent)}
+                          title="复制此关键帧为独立框"
+                          onClick={() => onConvertToBboxes?.(selectedTrack, {
+                            operation: "copy",
+                            scope: "frame",
+                            frameIndex: kf.frame_index,
+                          })}
+                        >
+                          复制
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={readOnly || Boolean(kf.absent)}
+                          title="拆此关键帧为独立框"
+                          onClick={() => onConvertToBboxes?.(selectedTrack, {
+                            operation: "split",
+                            scope: "frame",
+                            frameIndex: kf.frame_index,
+                          })}
+                        >
+                          拆
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={readOnly || selectedTrack.geometry.keyframes.length <= 1}
+                          title="删除关键帧"
+                          onClick={() => deleteTrackKeyframe(selectedTrack, kf.frame_index)}
+                        >
+                          <Icon name="trash" size={11} />
+                        </Button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <Button
+                    size="sm"
+                    disabled={readOnly}
+                    title="拆整条轨迹关键帧为独立框并删除原轨迹"
+                    onClick={() => onConvertToBboxes?.(selectedTrack, {
+                      operation: "split",
+                      scope: "track",
+                      frameMode: "keyframes",
+                    })}
+                  >
+                    拆关键帧
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={readOnly}
+                    title="拆整条轨迹所有插值帧为独立框并删除原轨迹"
+                    onClick={() => onConvertToBboxes?.(selectedTrack, {
+                      operation: "split",
+                      scope: "track",
+                      frameMode: "all_frames",
+                    })}
+                  >
+                    拆全帧
+                  </Button>
+                </div>
+              </>
             )}
           </div>
         </aside>

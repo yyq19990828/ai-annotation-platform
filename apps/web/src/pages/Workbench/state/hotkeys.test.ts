@@ -181,9 +181,11 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "Escape" }, videoCtx)).toEqual({ type: "cancel" });
   });
 
-  it("1-9 → setClassByDigit and image tool letters are disabled", () => {
+  it("1-9 → setClassByDigit and video B/T switch video tools", () => {
     expect(dispatch({ key: "4" }, videoCtx)).toEqual({ type: "setClassByDigit", idx: 3 });
-    expect(dispatch({ key: "b" }, videoCtx)).toBeNull();
+    expect(dispatch({ key: "b" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "box" });
+    expect(dispatch({ key: "T" }, videoCtx)).toEqual({ type: "setVideoTool", tool: "track" });
+    expect(dispatch({ key: "2", altKey: true }, videoCtx)).toEqual({ type: "setVideoTool", tool: "track" });
     expect(dispatch({ key: "s" }, videoCtx)).toBeNull();
     expect(dispatch({ key: "p" }, videoCtx)).toBeNull();
   });

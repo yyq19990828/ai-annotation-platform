@@ -1,6 +1,6 @@
 # P0 · 视频标注工作台 Epic
 
-> 状态：M0 + M1 已在 v0.9.16 落地；M2 + M3 已在 v0.9.17 落地；M4 已在 v0.9.18 落地。
+> 状态：M0 + M1 已在 v0.9.16 落地；M2 + M3 已在 v0.9.17 落地；M4 已在 v0.9.18 落地；M5.0 已在 v0.9.20 落地。
 >
 > 范围：先交付 `video-track` 人工标注闭环。`video-mm`、视频 AI tracker、SAM 3 video predictor、长视频切片和多人协同都作为后续增强。
 
@@ -161,6 +161,28 @@
   - 已覆盖 video project `format=coco` 返回 Video JSON、batch filter、`all_frames` 插值、`absent` 阻断、`include_attributes=false`、video `yolo/voc` 400。
   - 导出的 frame index 与前端时间轴一致，均从 0 开始。
   - 文档已说明关键帧、插值帧、目标消失段的语义。
+
+### M5.0 · 工具语义补全
+
+**状态**：v0.9.20 已落地。
+
+**目标**：解决视频工作台“单帧矩形框”和“轨迹关键帧”语义混在一起的问题，让标注员可以明确选择创建 `video_bbox` 或 `video_track`。
+
+- 前端工具：
+  - 视频模式新增独立 `videoTool="box"|"track"`，图片 `Tool` 不变。
+  - `B` 创建当前帧独立 `video_bbox`；`T` 创建 / 延续 `video_track`。
+  - 视频拖框后复用 `ClassPickerPopover` 选类，不再静默使用 active class。
+  - 选中视频对象后 `1-9` 直接改该对象类别；无选中时仍切 active class。
+- Track 转换：
+  - 新增 `POST /tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes`。
+  - 支持 `copy|split`、`frame|track`、`keyframes|all_frames`。
+  - `copy` 保留原 track；`split` 删除源 keyframe 或整条源 track。
+  - `all_frames` 复用导出插值语义，`absent=true` 阻断跨段插值。
+  - 单次最多生成 5000 个 `video_bbox`。
+- 轨迹面板：
+  - 展示关键帧列表。
+  - 支持删除中间关键帧、复制关键帧为独立框、拆关键帧为独立框。
+  - 支持整条轨迹按关键帧或全帧复制 / 拆分为独立框。
 
 ---
 

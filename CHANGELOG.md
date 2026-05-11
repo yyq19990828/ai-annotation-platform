@@ -22,6 +22,28 @@
 
 ## 最新版本
 
+## [0.9.20] - 2026-05-11
+
+> **Video Tool Semantics — 视频矩形框 / 轨迹工具分离 + track 转独立框.** 主线: ① 视频工作台新增独立 `videoTool`，`B` 画当前帧 `video_bbox`，`T` 创建 / 延续 `video_track`；② 视频拖框恢复图片侧“画完选类”流程，不再默认吞掉第一个类别；③ 选中视频对象后 `1-9` 可直接改类；④ 新增事务端点把 track 当前帧、关键帧或插值全帧转换为独立 `video_bbox`，支持 copy / split 双语义和 5000 条上限；⑤ 轨迹侧栏补 keyframe 列表、关键帧删除、复制 / 拆分入口。→ [plan](docs/plans/2026-05-11-v0.9.20-video-tool-semantics.md).
+
+### Added
+
+- **视频工具语义分离**：视频任务左侧工具栏只展示“矩形框”和“轨迹”，图片工作台工具模型不变。
+- **`video_bbox` 创建入口**：矩形框工具在当前帧创建单帧独立框；轨迹工具才创建或延续 `video_track`。
+- **视频 pending class picker**：VideoStage 拖框后复用 `ClassPickerPopover` 选类，Esc / 点外部仍按 `__unknown` 兜底。
+- **Track 转独立框 API**：`POST /tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` 支持 `copy|split`、`frame|track`、`keyframes|all_frames`。
+- **轨迹关键帧列表**：侧栏展示 keyframes，并提供复制为独立框、拆为独立框、删除关键帧、整条复制 / 拆分入口。
+
+### Changed
+
+- 视频模式 `1-9` 在有选中 `video_bbox` / `video_track` 时改选中对象类别；无选中时继续切换 active class。
+- Video Tracks JSON 导出和 track 转独立框共用同一套后端插值 helper，`absent=true` 阻断语义保持一致。
+
+### Fixed
+
+- 视频工作台不再把每次拖框都强制保存为轨迹。
+- 新建视频标注不再静默使用当前 active class 或第一个类别，用户可以在落库前明确选类。
+
 ## [0.9.19] - 2026-05-11
 
 > **Video Workbench Foundations — keyframe 撤销重做 + 离线兜底 + 悬浮时间轴.** 主线: ① `video_track` 关键帧编辑进入 track-aware history，单帧新增/修改/消失/遮挡可按 keyframe 粒度撤销/重做；② 视频创建、更新、重命名补齐网络断开 / 5xx 离线队列 fallback，409 冲突继续走现有 `ConflictModal`；③ `VideoStage` 底部固定时间轴改为画布内悬浮 playback overlay，保留关键帧 tick、帧号、时间和当前帧框数；④ 视频模式新增 `,` / `.` 上一帧 / 下一帧备用快捷键并同步帮助面板。→ [plan](docs/plans/2026-05-11-v0.9.19-video-workbench-foundations-overlay.md).

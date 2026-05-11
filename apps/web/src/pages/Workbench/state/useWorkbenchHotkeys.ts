@@ -68,6 +68,7 @@ export interface UseWorkbenchHotkeysArgs {
   handleAcceptPrediction: (b: AiBox) => void;
   handleRejectPrediction?: (b: AiBox) => void;
   handleUpdateAttributes: (id: string, attrs: Record<string, unknown>) => void;
+  handleVideoSetSelectedClass?: (className: string) => boolean;
 
   // ai
   aiBoxes: AiBox[];
@@ -113,7 +114,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     navigateTask, smartNext, setFitTick,
     recordRecentClass, handleDeleteBox, handleBatchDelete,
     handleStartChangeClass, handleStartBatchChangeClass,
-    handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
+    handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, videoControlsRef,
@@ -371,6 +372,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           return;
         }
 
+        case "setVideoTool":
+          s.setVideoTool(action.tool);
+          return;
+
         case "samPolarity": {
           // 仅 SAM-point 子工具下消费; 其它情境 +/= / - 键不应该影响 polarity.
           if (s.tool === "sam" && s.samSubTool === "point") {
@@ -380,7 +385,11 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         }
 
         case "setClassByDigit":
-          if (classes[action.idx]) { s.setActiveClass(classes[action.idx]); recordRecentClass(classes[action.idx]); }
+          if (classes[action.idx]) {
+            if (videoMode && handleVideoSetSelectedClass?.(classes[action.idx])) return;
+            s.setActiveClass(classes[action.idx]);
+            recordRecentClass(classes[action.idx]);
+          }
           return;
 
         case "setAttribute": {
@@ -449,7 +458,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     navigateTask, smartNext, setFitTick,
     recordRecentClass, handleDeleteBox, handleBatchDelete,
     handleStartChangeClass, handleStartBatchChangeClass,
-    handleSubmitTask, handleAcceptPrediction, handleUpdateAttributes,
+    handleSubmitTask, handleAcceptPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom.imgW, stageGeom.imgH,
     flushNudges,
   ]);

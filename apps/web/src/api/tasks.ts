@@ -42,6 +42,20 @@ export interface AnnotationUpdatePayload {
   attributes?: Record<string, unknown>;
 }
 
+export interface VideoTrackConvertToBboxesPayload {
+  operation: "copy" | "split";
+  scope: "frame" | "track";
+  frame_index?: number;
+  frame_mode?: "keyframes" | "all_frames";
+}
+
+export interface VideoTrackConvertToBboxesResponse {
+  source_annotation: AnnotationResponse | null;
+  created_annotations: AnnotationResponse[];
+  deleted_source: boolean;
+  removed_frame_indexes: number[];
+}
+
 export interface SubmitResponse {
   status: string;
   task_id: string;
@@ -85,6 +99,16 @@ export const tasksApi = {
 
   deleteAnnotation: (taskId: string, annotationId: string) =>
     apiClient.delete<void>(`/tasks/${taskId}/annotations/${annotationId}`),
+
+  convertVideoTrackToBboxes: (
+    taskId: string,
+    annotationId: string,
+    payload: VideoTrackConvertToBboxesPayload,
+  ) =>
+    apiClient.post<VideoTrackConvertToBboxesResponse>(
+      `/tasks/${taskId}/annotations/${annotationId}/video/convert-to-bboxes`,
+      payload,
+    ),
 
   submit: (id: string) =>
     apiClient.post<SubmitResponse>(`/tasks/${id}/submit`),

@@ -3,6 +3,7 @@ import uuid
 
 import pytest
 from pydantic import TypeAdapter
+from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem
@@ -586,6 +587,25 @@ async def _create_video_export_fixture(db_session, user):
     return project, batch_a, batch_b
 
 
+async def _video_fixture_task_and_track(db_session, project):
+    task = (
+        await db_session.execute(
+            select(Task).where(Task.project_id == project.id, Task.file_name == "clip-a.mp4")
+        )
+    ).scalar_one()
+    track = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.task_id == task.id,
+                Annotation.annotation_type == "video_track",
+                Annotation.class_name == "car",
+                Annotation.is_active.is_(True),
+            )
+        )
+    ).scalar_one()
+    return task, track
+
+
 async def test_video_project_export_returns_video_tracks_json(
     db_session,
     httpx_client_bound,
@@ -656,6 +676,119 @@ async def test_video_export_all_frames_interpolates_and_absent_blocks(
     assert [frame["frame_index"] for frame in car["frames"]] == [0, 1, 2]
     assert car["frames"][1]["source"] == "interpolated"
     assert car["frames"][1]["bbox"] == {"x": 0.2, "y": 0.3, "w": 0.2, "h": 0.2}
+
+
+async def test_video_track_convert_frame_copy_preserves_source(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/{track.id}/video/convert-to-bboxes",
+        json={"operation": "copy", "scope": "frame", "frame_index": 1},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deleted_source"] is False
+    assert body["source_annotation"]["id"] == str(track.id)
+    assert len(body["created_annotations"]) == 1
+    created = body["created_annotations"][0]
+    assert created["annotation_type"] == "video_bbox"
+    assert created["geometry"] == {
+        "type": "video_bbox",
+        "frame_index": 1,
+        "x": 0.2,
+        "y": 0.3,
+        "w": 0.2,
+        "h": 0.2,
+    }
+
+
+async def test_video_track_convert_frame_split_removes_exact_keyframe(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/{track.id}/video/convert-to-bboxes",
+        json={"operation": "split", "scope": "frame", "frame_index": 2},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deleted_source"] is False
+    assert body["removed_frame_indexes"] == [2]
+    assert [kf["frame_index"] for kf in body["source_annotation"]["geometry"]["keyframes"]] == [0, 4]
+    assert body["created_annotations"][0]["geometry"]["frame_index"] == 2
+
+
+async def test_video_track_convert_track_split_all_frames_deletes_source(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/{track.id}/video/convert-to-bboxes",
+        json={
+            "operation": "split",
+            "scope": "track",
+            "frame_mode": "all_frames",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deleted_source"] is True
+    assert body["source_annotation"] is None
+    assert [ann["geometry"]["frame_index"] for ann in body["created_annotations"]] == [0, 1, 2]
+    assert body["created_annotations"][1]["geometry"]["x"] == 0.2
+
+
+async def test_video_track_convert_rejects_non_track_annotation(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task = (
+        await db_session.execute(
+            select(Task).where(Task.project_id == project.id, Task.file_name == "clip-a.mp4")
+        )
+    ).scalar_one()
+    bbox = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.task_id == task.id,
+                Annotation.annotation_type == "video_bbox",
+            )
+        )
+    ).scalar_one()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/{bbox.id}/video/convert-to-bboxes",
+        json={"operation": "copy", "scope": "frame", "frame_index": 1},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Annotation is not a video_track"
 
 
 async def test_video_export_include_attributes_false_removes_schema_and_attrs(

@@ -10,6 +10,7 @@ interface ClassPickerPopoverProps {
   classes: string[];
   recent: string[];
   defaultClass: string;
+  anchor?: { left: number; top: number };
   title?: string;
   onPick: (cls: string) => void;
   onCancel: () => void;
@@ -21,13 +22,13 @@ interface ClassPickerPopoverProps {
  * - 数字 1-9 / 字母 a-z 直选；Enter 默认 default；Esc 取消；点外部取消
  */
 export function ClassPickerPopover({
-  geom, imgW, imgH, vp, classes, recent, defaultClass, title = "选择类别", onPick, onCancel,
+  geom, imgW, imgH, vp, classes, recent, defaultClass, anchor, title = "选择类别", onPick, onCancel,
 }: ClassPickerPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   // pixel anchor: box bottom-left in container space
-  const left = geom.x * imgW * vp.scale + vp.tx;
-  const top = (geom.y + geom.h) * imgH * vp.scale + vp.ty + 6;
+  const left = anchor?.left ?? (geom.x * imgW * vp.scale + vp.tx);
+  const top = anchor?.top ?? ((geom.y + geom.h) * imgH * vp.scale + vp.ty + 6);
 
   // keyboard
   useEffect(() => {
@@ -76,7 +77,7 @@ export function ClassPickerPopover({
     <div
       ref={ref}
       style={{
-        position: "absolute",
+        position: anchor ? "fixed" : "absolute",
         left,
         top,
         minWidth: 220,

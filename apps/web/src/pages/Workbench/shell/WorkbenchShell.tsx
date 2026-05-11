@@ -15,7 +15,7 @@ import type { Geometry, ReviewClaimResponse, VideoTrackGeometry } from "@/types"
 import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
-import { tasksApi } from "@/api/tasks";
+import { tasksApi, type AnnotationPayload } from "@/api/tasks";
 import { ApiError } from "@/api/client";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
@@ -779,8 +779,16 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     );
   }, [queryClient, taskId]);
 
-  const handleVideoCreate = useCallback((frameIndex: number, geo: Geom) => {
-    const cls = s.activeClass || UNKNOWN_CLASS;
+  const handleVideoCreateWithClass = useCallback((kind: "video_bbox" | "video_track", frameIndex: number, geo: Geom, cls: string) => {
+    const className = cls || UNKNOWN_CLASS;
+    let payload: AnnotationPayload;
+    if (kind === "video_bbox") {
+      payload = {
+        annotation_type: "video_bbox",
+        class_name: className,
+        geometry: { type: "video_bbox", frame_index: frameIndex, ...geo },
+      };
+    } else {
     const trackId = typeof crypto !== "undefined" && "randomUUID" in crypto
       ? `trk_${crypto.randomUUID()}`
       : `trk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -797,19 +805,47 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         },
       ],
     };
-    const payload = {
+      payload = {
       annotation_type: "video_track",
-      class_name: cls,
+        class_name: className,
       geometry,
     };
+    }
     createAnnotation.mutate(payload, {
       onSuccess: (created) => {
         history.push({ kind: "create", annotationId: created.id, payload });
-        recordRecentClass(cls);
+        if (className !== UNKNOWN_CLASS) {
+          s.setActiveClass(className);
+          recordRecentClass(className);
+        }
+        s.setSelectedId(created.id);
       },
       onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
     });
-  }, [createAnnotation, enqueueOnError, history, optimisticEnqueueCreate, recordRecentClass, s.activeClass]);
+  }, [createAnnotation, enqueueOnError, history, optimisticEnqueueCreate, recordRecentClass, s]);
+
+  const handleVideoCreate = useCallback((frameIndex: number, geo: Geom) => {
+    handleVideoCreateWithClass("video_track", frameIndex, geo, s.activeClass || UNKNOWN_CLASS);
+  }, [handleVideoCreateWithClass, s.activeClass]);
+
+  const handleVideoPendingDraw = useCallback((
+    kind: "video_bbox" | "video_track",
+    frameIndex: number,
+    geom: Geom,
+    anchor: { left: number; top: number },
+  ) => {
+    s.setPendingDrawing({ kind, frameIndex, geom, anchor });
+  }, [s]);
+
+  const handlePickPendingClassAny = useCallback((cls: string) => {
+    const pending = s.pendingDrawing;
+    if (pending?.kind === "video_bbox" || pending?.kind === "video_track") {
+      s.setPendingDrawing(null);
+      handleVideoCreateWithClass(pending.kind, pending.frameIndex, pending.geom, cls);
+      return;
+    }
+    handlePickPendingClass(cls);
+  }, [handlePickPendingClass, handleVideoCreateWithClass, s]);
 
   const handleVideoUpdate = useCallback((ann: AnnotationResponse, geometry: Geometry) => {
     if (geometry.type !== "video_bbox" && geometry.type !== "video_track") return;
@@ -850,12 +886,81 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     );
   }, [enqueueOnError, history, optimisticUpdateAnnotation, taskId, updateAnnotationMut]);
 
+  const handleVideoSetSelectedClass = useCallback((className: string) => {
+    if (!s.selectedId) return false;
+    const ann = annotationsRef.current.find((a) => a.id === s.selectedId);
+    if (!ann || (ann.geometry.type !== "video_bbox" && ann.geometry.type !== "video_track")) return false;
+    if (ann.class_name === className) return true;
+    handleVideoRename(ann, className);
+    recordRecentClass(className);
+    return true;
+  }, [handleVideoRename, recordRecentClass, s.selectedId]);
+
+  const handleVideoConvertToBboxes = useCallback(async (
+    ann: AnnotationResponse,
+    options: {
+      operation: "copy" | "split";
+      scope: "frame" | "track";
+      frameIndex?: number;
+      frameMode?: "keyframes" | "all_frames";
+    },
+  ) => {
+    if (!taskId || ann.geometry.type !== "video_track") return;
+    if (options.frameMode === "all_frames") {
+      const ok = window.confirm("将按插值结果展开所有可见帧，长视频可能生成大量独立框。继续？");
+      if (!ok) return;
+    }
+    try {
+      const result = await tasksApi.convertVideoTrackToBboxes(taskId, ann.id, {
+        operation: options.operation,
+        scope: options.scope,
+        frame_index: options.frameIndex,
+        frame_mode: options.frameMode ?? "keyframes",
+      });
+      queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) => {
+        const base = (prev ?? []).filter((item) => !result.created_annotations.some((created) => created.id === item.id));
+        const withoutSource = result.deleted_source ? base.filter((item) => item.id !== ann.id) : base;
+        const updatedSource = result.source_annotation
+          ? withoutSource.map((item) => (item.id === ann.id ? result.source_annotation! : item))
+          : withoutSource;
+        return [...updatedSource, ...result.created_annotations];
+      });
+      const commands: Exclude<Command, { kind: "batch" }>[] = result.created_annotations.map((created) => ({
+        kind: "create",
+        annotationId: created.id,
+        payload: {
+          annotation_type: created.annotation_type,
+          class_name: created.class_name,
+          geometry: created.geometry,
+          confidence: created.confidence ?? undefined,
+          attributes: created.attributes,
+        },
+      }));
+      if (result.deleted_source) {
+        commands.push({ kind: "delete", annotation: ann });
+        s.setSelectedId(null);
+      } else if (result.source_annotation && result.source_annotation.geometry.type === "video_track") {
+        commands.push({
+          kind: "update",
+          annotationId: ann.id,
+          before: { geometry: ann.geometry },
+          after: { geometry: result.source_annotation.geometry },
+        });
+        s.setSelectedId(result.source_annotation.id);
+      }
+      history.pushBatch(commands);
+      pushToast({ msg: `已生成 ${result.created_annotations.length} 个独立框`, kind: "success" });
+    } catch (err) {
+      pushToast({ msg: "轨迹转换失败", sub: String(err), kind: "error" });
+    }
+  }, [history, pushToast, queryClient, s, taskId]);
+
   const handleCancelPending = useCallback(() => {
     // 画完框未选类别时（Esc / 点外部）不丢弃，按 __unknown 落库为灰色框；
     // 用户后续可通过「改类别」补类。
-    if (s.pendingDrawing) handlePickPendingClass(UNKNOWN_CLASS);
+    if (s.pendingDrawing) handlePickPendingClassAny(UNKNOWN_CLASS);
     else s.setPendingDrawing(null);
-  }, [s, handlePickPendingClass]);
+  }, [s, handlePickPendingClassAny]);
 
   // 已落库 user 框 → 改类别
   const handleStartChangeClass = useCallback((annotationId: string) => {
@@ -1110,6 +1215,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     recordRecentClass, handleDeleteBox, handleBatchDelete,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
+    handleVideoSetSelectedClass,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
@@ -1144,6 +1250,10 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   // 窄屏强制收两侧
   const leftOpen = isNarrow ? false : s.leftOpen;
   const rightOpen = isNarrow ? false : s.rightOpen;
+  const videoPendingDrawing =
+    s.pendingDrawing?.kind === "video_bbox" || s.pendingDrawing?.kind === "video_track"
+      ? s.pendingDrawing
+      : null;
 
   return (
     <div
@@ -1185,6 +1295,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       <ToolDock
         tool={s.tool}
         onSetTool={s.setTool}
+        videoTool={s.videoTool}
+        onSetVideoTool={s.setVideoTool}
         samSubTool={s.samSubTool}
         onSetSamSubTool={s.setSamSubTool}
         samPolarity={s.samPolarity}
@@ -1375,10 +1487,14 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             selectedId={s.selectedId}
             activeClass={s.activeClass}
             readOnly={isLocked}
+            videoTool={s.videoTool}
             onSelect={handleSelectBox}
             onCreate={handleVideoCreate}
+            onPendingDraw={handleVideoPendingDraw}
             onUpdate={handleVideoUpdate}
             onRename={handleVideoRename}
+            onDelete={(ann) => handleDeleteBox(ann.id)}
+            onConvertToBboxes={handleVideoConvertToBboxes}
             onCursorMove={setCursor}
           />
         ) : (
@@ -1460,10 +1576,15 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
                   imgW={stageGeom.imgW}
                   imgH={stageGeom.imgH}
                   vp={vp}
+                  anchor={
+                    s.pendingDrawing.kind === "video_bbox" || s.pendingDrawing.kind === "video_track"
+                      ? s.pendingDrawing.anchor
+                      : undefined
+                  }
                   classes={classes}
                   recent={recentClasses}
                   defaultClass={s.activeClass}
-                  onPick={handlePickPendingClass}
+                  onPick={handlePickPendingClassAny}
                   onCancel={handleCancelPending}
                 />
               )}
@@ -1532,6 +1653,20 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
               )}
             </>
             }
+          />
+        )}
+        {videoPendingDrawing && (
+          <ClassPickerPopover
+            geom={videoPendingDrawing.geom}
+            imgW={1}
+            imgH={1}
+            vp={vp}
+            anchor={videoPendingDrawing.anchor}
+            classes={classes}
+            recent={recentClasses}
+            defaultClass={s.activeClass}
+            onPick={handlePickPendingClassAny}
+            onCancel={handleCancelPending}
           />
         )}
 

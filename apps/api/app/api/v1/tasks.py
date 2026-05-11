@@ -14,6 +14,7 @@ from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.annotation import Annotation
+from app.db.models.dataset import DatasetItem
 from app.schemas.task import (
     TaskOut,
     TaskListResponse,
@@ -27,6 +28,8 @@ from app.schemas.annotation import (
     AnnotationListPage,
     AnnotationOut,
     AnnotationUpdate,
+    VideoTrackConvertToBboxesRequest,
+    VideoTrackConvertToBboxesResponse,
 )
 from app.schemas.prediction import PredictionOut
 from app.services.annotation import AnnotationService
@@ -558,6 +561,86 @@ async def update_annotation(
     await db.refresh(annotation)
     response.headers["ETag"] = f'W/"{annotation.version}"'
     return annotation
+
+
+@router.post(
+    "/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes",
+    response_model=VideoTrackConvertToBboxesResponse,
+)
+async def convert_video_track_to_bboxes(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    data: VideoTrackConvertToBboxesRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    _assert_task_editable(task, current_user)
+    annotation = await db.get(Annotation, annotation_id)
+    if annotation is None or not annotation.is_active:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    if annotation.task_id != task_id:
+        raise HTTPException(
+            status_code=400, detail="Annotation does not belong to this task"
+        )
+    if (annotation.geometry or {}).get("type") != "video_track":
+        raise HTTPException(status_code=400, detail="Annotation is not a video_track")
+
+    svc = AnnotationService(db)
+    try:
+        source, created, deleted_source, removed_frame_indexes = (
+            await svc.convert_video_track_to_bboxes(
+                task=task,
+                annotation=annotation,
+                user_id=current_user.id,
+                operation=data.operation,
+                scope=data.scope,
+                frame_index=data.frame_index,
+                frame_mode=data.frame_mode,
+                frame_count=await _video_frame_count(db, task),
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_UPDATE,
+        target_type="annotation",
+        target_id=str(annotation_id),
+        request=request,
+        status_code=200,
+        detail={
+            "task_id": str(task_id),
+            "operation": "video_track.convert_to_bboxes",
+            "convert_operation": data.operation,
+            "scope": data.scope,
+            "frame_mode": data.frame_mode,
+            "frame_index": data.frame_index,
+            "created_count": len(created),
+            "deleted_source": deleted_source,
+        },
+    )
+    await db.commit()
+    for ann in created:
+        await db.refresh(ann)
+    if source is not None:
+        await db.refresh(source)
+    return VideoTrackConvertToBboxesResponse(
+        source_annotation=(
+            AnnotationOut.model_validate(source, from_attributes=True)
+            if source is not None
+            else None
+        ),
+        created_annotations=[
+            AnnotationOut.model_validate(ann, from_attributes=True) for ann in created
+        ],
+        deleted_source=deleted_source,
+        removed_frame_indexes=removed_frame_indexes,
+    )
 
 
 @router.get("/{task_id}/predictions", response_model=list[PredictionOut])
@@ -1367,6 +1450,22 @@ async def _attach_dimensions(
                 video_metadata,
             )
     return None, None, task.thumbnail_path, task.blurhash, None
+
+
+async def _video_frame_count(db: AsyncSession, task: Task) -> int | None:
+    if not task.dataset_item_id:
+        return None
+    item = await db.get(DatasetItem, task.dataset_item_id)
+    if not item:
+        return None
+    video = (item.metadata_ or {}).get("video")
+    if not isinstance(video, dict):
+        return None
+    frame_count = video.get("frame_count")
+    try:
+        return int(frame_count) if frame_count is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 async def _attach_dimensions_batch(
