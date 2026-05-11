@@ -51,7 +51,7 @@ interface TopbarProps {
  * Topbar 三段（v0.5.3）：
  * - 左：标题 / 索引（task.display_id · file_name · n / total）
  * - 中：上一题 / 提交 / 下一题 / ⌄ 智能切题
- * - 右：阈值反馈浮 + AI 一键预标 + ⋯ 溢出菜单（? 帮助 + 主题 + ...）
+ * - 右：阈值反馈浮 + AI + ⋯ 溢出菜单（? 帮助 + 主题 + ...）
  *
  * 工具切换 → ToolDock（左侧垂直）；撤销/重做/缩放/适应 → FloatingDock（画布右下）。
  */
@@ -281,13 +281,13 @@ export function Topbar({
             variant="ai"
             size="sm"
             onClick={onRunAi}
-            disabled={aiRunning || aiDisabled}
-            title={aiDisabled ? "视频任务暂不支持 AI 一键预标" : undefined}
+            disabled={aiDisabled}
+            title={aiDisabled ? "视频任务暂不支持 AI" : "打开 AI 面板"}
           >
             {aiRunning
               ? <Icon name="loader2" size={13} className="spin" />
               : <Icon name="wandSparkles" size={13} />}
-            {aiRunning ? "AI 推理中..." : "AI 一键预标"}
+            AI
           </Button>
         )}
 

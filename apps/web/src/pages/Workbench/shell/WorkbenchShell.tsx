@@ -153,6 +153,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [showHotkeys, setShowHotkeys] = useState(false);
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
+  const [aiPopoverPosition, setAiPopoverPosition] = useState<{ left: number; top: number } | null>(null);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(routeId);
@@ -482,18 +483,18 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   const handleRunAi = useCallback(() => {
     if (!projectId) return;
-    // B-8: 工作台 AI 一键预标 — 单图触发要求项目已绑定 ML backend
+    // B-8: 工作台 AI 预标 — 单图触发要求项目已绑定 ML backend
     const mlBackendId = currentProject?.ml_backend_id;
     if (!mlBackendId) {
       pushToast({
-        msg: "AI 一键预标暂不可用",
+        msg: "AI 暂不可用",
         sub: "项目尚未绑定 ML 推理后端,请到「项目设置 → AI 配置」注册并选择",
         kind: "error",
       });
       return;
     }
     // B-12 · DINO 后端要求 prompt 非空 (无 prompt 直接 422); 用项目所有 alias
-    // 拼成默认 prompt, 让"一键预标注"自带"识别所有已配类别"的语义.
+    // 拼成默认 prompt, 让 AI 预标自带"识别所有已配类别"的语义.
     const aliases: string[] = [];
     const cfg = currentProject?.classes_config ?? {};
     for (const entry of Object.values(cfg)) {
@@ -502,7 +503,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     }
     if (aliases.length === 0) {
       pushToast({
-        msg: "AI 一键预标暂不可用",
+        msg: "AI 暂不可用",
         sub: "项目类别未配置英文 alias,请到「项目设置 → 类别管理」补全",
         kind: "error",
       });
@@ -692,7 +693,13 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       topbar={{
         task, taskIdx, taskTotal: tasks.length, aiRunning, batchStatus: currentBatchStatus,
         isSubmitting: topbarActions.isSubmitting ?? submitTaskMut.isPending, confThreshold: s.confThreshold,
-        onShowHotkeys: () => setShowHotkeys(true), onRunAi: () => setAiPopoverOpen((open) => !open), aiDisabled: isVideoTask,
+        onShowHotkeys: () => setShowHotkeys(true),
+        onRunAi: () => {
+          const nextOpen = !aiPopoverOpen;
+          setAiPopoverOpen(nextOpen);
+          if (nextOpen && !s.rightOpen) s.setRightOpen(true);
+        },
+        aiDisabled: isVideoTask,
         onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
         onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
         onSmartNextUncertain: topbarActions.onSmartNextUncertain, overflowSlot: <ThemeSwitcher />,
@@ -770,13 +777,20 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       }}
       inspector={{
         open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
+        aiBoxes: !isVideoTask && modeState.diffMode !== "final" ? aiBoxes : [],
         userBoxes, selectedId: s.selectedId, selectedIds: s.selectedIds,
+        dimmedAiIds,
         imageWidth, imageHeight, onToggle: () => s.setRightOpen(!s.rightOpen),
         onSelect: handleSelectBox,
+        onAcceptPrediction: handleAcceptPrediction,
+        onRejectPrediction: handleRejectPrediction,
         onClearSelection: () => s.setSelectedId(null), onDeleteUserBox: handleDeleteBox,
         onChangeUserBoxClass: handleStartChangeClass, attributeSchema: currentProject?.attribute_schema,
         selectedAnnotation: selectedAnnotationForPanel, onUpdateAttributes: handleUpdateAttributes,
         currentUserId: meUserId, taskFileUrl: task?.file_url,
+        hasMorePredictions: !isVideoTask && !!predictionsInfinite.hasNextPage,
+        isFetchingMorePredictions: !isVideoTask && predictionsInfinite.isFetchingNextPage,
+        onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(),
         videoTrackPanel: isVideoTask ? (
           <VideoTrackSidebar
             annotations={annotationsData ?? []}
@@ -803,19 +817,14 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       aiPopover={{
         open: aiPopoverOpen && !isVideoTask,
         rightOffset: rightOpen ? s.rightWidth + 44 : 44,
-        aiModel, aiRunning, aiBoxes, selectedId: s.selectedId, selectedIds: s.selectedIds,
-        dimmedAiIds, confThreshold: s.confThreshold, aiTakeoverRate, imageWidth, imageHeight,
-        hasMorePredictions: !!predictionsInfinite.hasNextPage,
-        isFetchingMorePredictions: predictionsInfinite.isFetchingNextPage,
-        onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(),
+        position: aiPopoverPosition,
+        onPositionChange: setAiPopoverPosition,
+        aiModel, aiRunning, aiBoxCount: modeState.diffMode !== "final" ? aiBoxes.length : 0,
+        confThreshold: s.confThreshold, aiTakeoverRate,
         onClose: () => setAiPopoverOpen(false),
         onRunAi: handleRunAi,
         onAcceptAll: handleAcceptAll,
         onSetConfThreshold: s.setConfThreshold,
-        onSelect: handleSelectBox,
-        onAcceptPrediction: handleAcceptPrediction,
-        onRejectPrediction: handleRejectPrediction,
-        onClearSelection: () => s.setSelectedId(null),
         tool: s.tool,
         onRunSamText: sam.runText,
         samRunning: sam.isRunning,

@@ -21,9 +21,12 @@ interface AIInspectorPanelProps {
   /** 受控宽度（仅 open=true 生效）。 */
   width: number;
   onResize: (w: number) => void;
+  aiBoxes: AiBox[];
   userBoxes: Annotation[];
   selectedId: string | null;
   selectedIds?: string[];
+  /** 与 user 框 IoU > 0.7 的同类 AI 框 id（视觉淡化）。 */
+  dimmedAiIds?: Set<string>;
   imageWidth: number | null;
   imageHeight: number | null;
   /** 项目级属性 schema（v0.5.4）。空时不渲染表单。 */
@@ -52,6 +55,8 @@ interface AIInspectorPanelProps {
   onToggle: () => void;
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
+  onAcceptPrediction: (b: AiBox) => void;
+  onRejectPrediction?: (b: AiBox) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
@@ -69,12 +74,15 @@ const stripStyle: React.CSSProperties = {
 
 export function AIInspectorPanel({
   open, width, onResize,
+  aiBoxes,
   userBoxes, selectedId, selectedIds,
+  dimmedAiIds,
   imageWidth, imageHeight,
   attributeSchema, selectedAnnotation, onUpdateAttributes, currentUserId,
   taskFileUrl, enableCommentCanvasDrawing = true, liveCommentCanvas,
+  hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   onToggle,
-  onSelect, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   readOnly = false,
   videoTrackPanel,
 }: AIInspectorPanelProps) {
@@ -110,23 +118,11 @@ export function AIInspectorPanel({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{
-                width: 24, height: 24, borderRadius: "var(--radius-sm)",
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                background: "var(--color-bg-sunken)",
-                color: "var(--color-fg-muted)",
-              }}
-            >
-              <Icon name="panelRight" size={14} />
-            </span>
-            <b style={{ fontSize: 13 }}>标注详情</b>
-          </div>
+          <b style={{ fontSize: 13 }}>标注详情</b>
           <Button variant="ghost" size="sm" onClick={onToggle} title="收起标注详情" style={{ padding: "2px 6px" }}>
             <Icon name="panelRight" size={14} />
           </Button>
-      </div>
+        </div>
       </div>
 
       {videoTrackPanel}
@@ -177,13 +173,18 @@ export function AIInspectorPanel({
       )}
 
       <BoxesList
-        aiBoxes={[]}
+        aiBoxes={aiBoxes}
         userBoxes={userBoxes}
         selSet={selSet}
+        dimmedAiIds={dimmedAiIds}
         imageWidth={imageWidth}
         imageHeight={imageHeight}
+        hasMore={hasMorePredictions}
+        isFetchingMore={isFetchingMorePredictions}
+        onFetchMore={onFetchMorePredictions}
         onSelect={onSelect}
-        onAcceptPrediction={() => {}}
+        onAcceptPrediction={onAcceptPrediction}
+        onRejectPrediction={onRejectPrediction}
         onClearSelection={onClearSelection}
         onDeleteUserBox={onDeleteUserBox}
         onChangeUserBoxClass={onChangeUserBoxClass}
@@ -195,27 +196,17 @@ export function AIInspectorPanel({
 interface AIPredictionPopoverProps {
   open: boolean;
   rightOffset: number;
+  position: { left: number; top: number } | null;
+  onPositionChange: (position: { left: number; top: number }) => void;
   aiModel: string;
   aiRunning: boolean;
-  aiBoxes: AiBox[];
-  selectedId: string | null;
-  selectedIds?: string[];
-  dimmedAiIds?: Set<string>;
+  aiBoxCount: number;
   confThreshold: number;
   aiTakeoverRate: number;
-  imageWidth: number | null;
-  imageHeight: number | null;
-  hasMorePredictions?: boolean;
-  isFetchingMorePredictions?: boolean;
-  onFetchMorePredictions?: () => void;
   onClose: () => void;
   onRunAi: () => void;
   onAcceptAll: () => void;
   onSetConfThreshold: (v: number) => void;
-  onSelect: (id: string, opts?: { shift?: boolean }) => void;
-  onAcceptPrediction: (b: AiBox) => void;
-  onRejectPrediction?: (b: AiBox) => void;
-  onClearSelection: () => void;
   tool?: "box" | "hand" | "polygon" | "canvas" | "sam";
   onRunSamText?: (text: string, outputMode: TextOutputMode) => void;
   samRunning?: boolean;
@@ -231,27 +222,17 @@ interface AIPredictionPopoverProps {
 export function AIPredictionPopover({
   open,
   rightOffset,
+  position,
+  onPositionChange,
   aiModel,
   aiRunning,
-  aiBoxes,
-  selectedId,
-  selectedIds,
-  dimmedAiIds,
+  aiBoxCount,
   confThreshold,
   aiTakeoverRate,
-  imageWidth,
-  imageHeight,
-  hasMorePredictions,
-  isFetchingMorePredictions,
-  onFetchMorePredictions,
   onClose,
   onRunAi,
   onAcceptAll,
   onSetConfThreshold,
-  onSelect,
-  onAcceptPrediction,
-  onRejectPrediction,
-  onClearSelection,
   tool,
   onRunSamText,
   samRunning = false,
@@ -263,19 +244,44 @@ export function AIPredictionPopover({
   taskAiAvgMs,
   taskAiPredictionCount,
 }: AIPredictionPopoverProps) {
-  const selSet = selectedIds && selectedIds.length > 0
-    ? new Set(selectedIds)
-    : selectedId ? new Set([selectedId]) : new Set<string>();
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleDragStart = (evt: React.PointerEvent<HTMLDivElement>) => {
+    if ((evt.target as HTMLElement).closest("button")) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragOffsetRef.current = { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
+    evt.currentTarget.setPointerCapture?.(evt.pointerId);
+    evt.preventDefault();
+  };
+
+  const handleDragMove = (evt: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragOffsetRef.current) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    const width = rect?.width ?? 360;
+    const height = rect?.height ?? 260;
+    const maxLeft = Math.max(8, window.innerWidth - width - 8);
+    const maxTop = Math.max(8, window.innerHeight - height - 8);
+    onPositionChange({
+      left: Math.min(maxLeft, Math.max(8, evt.clientX - dragOffsetRef.current.x)),
+      top: Math.min(maxTop, Math.max(8, evt.clientY - dragOffsetRef.current.y)),
+    });
+  };
+
+  const handleDragEnd = () => {
+    dragOffsetRef.current = null;
+  };
 
   if (!open) return null;
 
   return (
     <div
+      ref={panelRef}
       data-testid="ai-prediction-popover"
       style={{
-        position: "absolute",
-        top: 58,
-        right: rightOffset,
+        position: "fixed",
+        ...(position ? { left: position.left, top: position.top } : { top: 58, right: rightOffset }),
         width: 360,
         maxWidth: "calc(100vw - 80px)",
         maxHeight: "calc(100vh - 92px)",
@@ -290,11 +296,18 @@ export function AIPredictionPopover({
       }}
     >
       <div
+        onPointerDown={handleDragStart}
+        onPointerMove={handleDragMove}
+        onPointerUp={handleDragEnd}
+        onPointerCancel={handleDragEnd}
         style={{
           padding: "12px 14px",
           borderBottom: "1px solid var(--color-border)",
           background: "linear-gradient(180deg, color-mix(in oklab, var(--color-ai-soft) 72%, transparent), transparent 82%)",
+          cursor: "move",
+          touchAction: "none",
         }}
+        title="拖动 AI 面板"
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -308,20 +321,22 @@ export function AIPredictionPopover({
             >
               <Icon name="bot" size={14} />
             </span>
-            <b style={{ fontSize: 13 }}>AI 预标</b>
+            <b style={{ fontSize: 13 }}>AI</b>
+            <Icon name="move" size={12} style={{ color: "var(--color-fg-subtle)" }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Badge variant="ai" dot={!aiRunning} style={{ fontSize: 10, display: "inline-flex", alignItems: "center", gap: 4 }}>
               {aiRunning && <Icon name="loader2" size={10} className="spin" />}
               {aiRunning ? "推理中" : "就绪"}
             </Badge>
-            <Button variant="ghost" size="sm" onClick={onClose} title="关闭 AI 预标" style={{ padding: "2px 6px" }}>
+            <Button variant="ghost" size="sm" onClick={onClose} title="关闭 AI" style={{ padding: "2px 6px" }}>
               <Icon name="x" size={12} />
             </Button>
           </div>
         </div>
-        <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginBottom: 8 }}>
-          模型: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{aiModel}</span>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11.5, color: "var(--color-fg-muted)", marginBottom: 8 }}>
+          <span>模型: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{aiModel}</span></span>
+          <span className="mono">{aiBoxCount} 待审</span>
         </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
           <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} style={{ flex: 1 }}>
@@ -330,7 +345,7 @@ export function AIPredictionPopover({
               : <Icon name="wandSparkles" size={11} />}
             {aiRunning ? "推理中..." : "开始预标"}
           </Button>
-          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxes.length === 0} style={{ flex: 1 }}>
+          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxCount === 0} style={{ flex: 1 }}>
             <Icon name="check" size={11} />全部采纳
           </Button>
         </div>
@@ -385,33 +400,6 @@ export function AIPredictionPopover({
           focusKey={samTextFocusKey}
         />
       )}
-
-      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--color-border)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600 }}>AI 待审</span>
-          <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{aiBoxes.length} 项</span>
-        </div>
-        {aiBoxes.length === 0 && (
-          <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)", padding: "4px 0" }}>暂无，点击“开始预标”运行</div>
-        )}
-      </div>
-
-      <BoxesList
-        aiBoxes={aiBoxes}
-        userBoxes={[]}
-        selSet={selSet}
-        dimmedAiIds={dimmedAiIds}
-        imageWidth={imageWidth}
-        imageHeight={imageHeight}
-        hasMore={hasMorePredictions}
-        isFetchingMore={isFetchingMorePredictions}
-        onFetchMore={onFetchMorePredictions}
-        onSelect={onSelect}
-        onAcceptPrediction={onAcceptPrediction}
-        onRejectPrediction={onRejectPrediction}
-        onClearSelection={onClearSelection}
-        onDeleteUserBox={() => {}}
-      />
 
       <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px", background: "var(--color-bg-sunken)" }}>
         <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>本次效率</div>
@@ -618,7 +606,7 @@ function SamTextPanel({
 // ── 虚拟化合并列表 ─────────────────────────────────────────────────────────
 type Row =
   | { kind: "ai"; box: AiBox; key: string }
-  | { kind: "header"; count: number; key: string }
+  | { kind: "header"; count: number; key: string; label: string }
   | { kind: "user"; box: Annotation; key: string };
 
 interface BoxesListProps {
@@ -648,8 +636,9 @@ function BoxesList({
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
+    out.push({ kind: "header", label: "AI 待审", count: aiBoxes.length, key: "ai-header" });
     aiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
-    if (userBoxes.length > 0) out.push({ kind: "header", count: userBoxes.length, key: "user-header" });
+    out.push({ kind: "header", label: "人工", count: userBoxes.length, key: "user-header" });
     userBoxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
     return out;
   }, [aiBoxes, userBoxes]);
@@ -665,9 +654,11 @@ function BoxesList({
   const items = virtualizer.getVirtualItems();
   useEffect(() => {
     if (!items.length || !hasMore || isFetchingMore || !onFetchMore) return;
-    const last = items[items.length - 1];
-    // last 在 AI 区段（aiBoxes 区间）内，且距末尾 5 行内
-    if (last.index >= aiBoxes.length - 5) onFetchMore();
+    const aiEndIndex = aiBoxes.length;
+    const visibleAiNearEnd = aiBoxes.length > 0 && items.some(
+      (item) => item.index <= aiEndIndex && item.index >= Math.max(1, aiBoxes.length - 4),
+    );
+    if (visibleAiNearEnd) onFetchMore();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, hasMore, isFetchingMore, aiBoxes.length]);
 
@@ -702,8 +693,21 @@ function BoxesList({
                 />
               )}
               {r.kind === "header" && (
-                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-fg-muted)", padding: "10px 6px 4px", textTransform: "uppercase", letterSpacing: 0.5 }}>
-                  已确认 ({r.count})
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "var(--color-fg)",
+                    padding: "10px 6px 4px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>{r.label}</span>
+                  <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)", fontWeight: 500 }}>
+                    {r.count}
+                  </span>
                 </div>
               )}
               {r.kind === "user" && (
