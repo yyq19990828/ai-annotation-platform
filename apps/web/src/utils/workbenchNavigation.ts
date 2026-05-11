@@ -96,3 +96,20 @@ export function buildReviewWorkbenchUrl(
   const qs = q.toString();
   return `/projects/${projectId}/review${qs ? `?${qs}` : ""}`;
 }
+
+export function updateWorkbenchUrlSearch(
+  location: { pathname: string; search?: string; hash?: string },
+  opts: { batchId?: string | null; taskId?: string | null } = {},
+) {
+  const q = new URLSearchParams(location.search ?? "");
+  if ("batchId" in opts) {
+    if (opts.batchId) q.set("batch", opts.batchId);
+    else q.delete("batch");
+  }
+  if ("taskId" in opts) {
+    if (opts.taskId) q.set("task", opts.taskId);
+    else q.delete("task");
+  }
+  const qs = q.toString();
+  return `${location.pathname}${qs ? `?${qs}` : ""}${location.hash ?? ""}`;
+}
