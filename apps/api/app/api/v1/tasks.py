@@ -263,14 +263,18 @@ async def get_video_manifest(
     except ClientError as exc:
         code = (exc.response.get("Error") or {}).get("Code")
         if code in {"NoSuchKey", "404", "NotFound"}:
-            raise HTTPException(status_code=404, detail="Video file not available") from exc
+            raise HTTPException(
+                status_code=404, detail="Video file not available"
+            ) from exc
         logger.exception(
             "Failed to generate video manifest URL task_id=%s bucket=%s key=%s",
             task.id,
             bucket,
             task.file_path,
         )
-        raise HTTPException(status_code=503, detail="Video storage unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Video storage unavailable"
+        ) from exc
     except BotoCoreError as exc:
         logger.exception(
             "Failed to generate video manifest URL task_id=%s bucket=%s key=%s",
@@ -278,7 +282,9 @@ async def get_video_manifest(
             bucket,
             task.file_path,
         )
-        raise HTTPException(status_code=503, detail="Video storage unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Video storage unavailable"
+        ) from exc
     except Exception as exc:
         logger.exception(
             "Unexpected video manifest URL error task_id=%s bucket=%s key=%s",
@@ -286,13 +292,17 @@ async def get_video_manifest(
             bucket,
             task.file_path,
         )
-        raise HTTPException(status_code=503, detail="Video storage unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Video storage unavailable"
+        ) from exc
 
     try:
         w, h, thumb, bh, video_metadata = await _attach_dimensions(db, task)
     except Exception as exc:
         logger.exception("Failed to load video metadata task_id=%s", task.id)
-        raise HTTPException(status_code=503, detail="Video metadata unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Video metadata unavailable"
+        ) from exc
 
     metadata = VideoMetadata.model_validate(video_metadata or {})
     poster_path = metadata.poster_frame_path or thumb

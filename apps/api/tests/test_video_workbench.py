@@ -74,7 +74,9 @@ def test_extract_video_poster_uses_timeout(tmp_path, monkeypatch):
 
     def fake_run(*args, **kwargs):
         seen["timeout"] = kwargs.get("timeout")
-        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            args=args[0], returncode=0, stdout="", stderr=""
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
