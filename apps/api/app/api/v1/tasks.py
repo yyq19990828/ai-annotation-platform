@@ -576,6 +576,7 @@ async def convert_video_track_to_bboxes(
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
     _assert_task_editable(task, current_user)
     annotation = await db.get(Annotation, annotation_id)
     if annotation is None or not annotation.is_active:

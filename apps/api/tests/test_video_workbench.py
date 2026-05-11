@@ -835,6 +835,27 @@ async def test_video_track_convert_rejects_non_track_annotation(
     assert resp.json()["detail"] == "Annotation is not a video_track"
 
 
+async def test_video_track_convert_requires_task_visibility(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+    annotator,
+):
+    user, _ = super_admin
+    _, annotator_token = annotator
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/{track.id}/video/convert-to-bboxes",
+        json={"operation": "copy", "scope": "frame", "frame_index": 1},
+        headers={"Authorization": f"Bearer {annotator_token}"},
+    )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Task not found"
+
+
 async def test_video_export_include_attributes_false_removes_schema_and_attrs(
     db_session,
     httpx_client_bound,
@@ -872,7 +893,7 @@ async def test_video_project_yolo_voc_export_returns_clear_400(
 
     assert resp.status_code == 400
     assert resp.json()["detail"] == (
-        "Only video-track projects support Video JSON export; this project type and export format combination is not supported"
+        f"video-track projects do not support {format.upper()} export yet"
     )
 
 
@@ -894,5 +915,5 @@ async def test_video_mm_coco_export_returns_clear_400(
 
     assert resp.status_code == 400
     assert resp.json()["detail"] == (
-        "Only video-track projects support Video JSON export; this project type and export format combination is not supported"
+        "Video annotation export is not supported for video-mm projects"
     )

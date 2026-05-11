@@ -521,4 +521,74 @@ describe("VideoStage", () => {
 
     expect(onSelect).toHaveBeenCalledWith("t1");
   });
+
+  it("routes selected object class changes through the class picker flow", () => {
+    const promptSpy = vi.spyOn(window, "prompt");
+    const onChangeUserBoxClass = vi.fn();
+    const annotations = [
+      {
+        id: "b1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 0, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTitle } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="b1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onChangeUserBoxClass={onChangeUserBoxClass}
+      />,
+    );
+
+    fireEvent.click(getByTitle("修改类别"));
+
+    expect(onChangeUserBoxClass).toHaveBeenCalledWith("b1");
+    expect(promptSpy).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+
+  it("routes track row rename through the class picker flow", () => {
+    const promptSpy = vi.spyOn(window, "prompt");
+    const onChangeUserBoxClass = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTitle } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onChangeUserBoxClass={onChangeUserBoxClass}
+      />,
+    );
+
+    fireEvent.click(getByTitle("重命名轨迹类别"));
+
+    expect(onChangeUserBoxClass).toHaveBeenCalledWith("t1");
+    expect(promptSpy).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
 });

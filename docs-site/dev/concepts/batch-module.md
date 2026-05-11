@@ -187,6 +187,8 @@ stateDiagram-v2
 
 因此，改 batch 状态机会直接影响工作台拿题行为。
 
+上传、ZIP 导入或扫描新增的数据项会先生成 task；如果 task 仍是 `batch_id=None`，非特权用户不会在工作台派题中看到它。项目管理员需要把新增 task split / 分配到批次并让批次进入可工作状态后，标注员才会拿到这些题。
+
 ### annotation 写入
 
 `apps/api/app/services/annotation.py:_update_task_stats()` 在首次产生标注时会：

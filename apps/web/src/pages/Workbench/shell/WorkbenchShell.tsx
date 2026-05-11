@@ -1494,6 +1494,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             onPendingDraw={handleVideoPendingDraw}
             onUpdate={handleVideoUpdate}
             onRename={handleVideoRename}
+            onChangeUserBoxClass={handleStartChangeClass}
             onDelete={(ann) => handleDeleteBox(ann.id)}
             onConvertToBboxes={handleVideoConvertToBboxes}
             onCursorMove={setCursor}
