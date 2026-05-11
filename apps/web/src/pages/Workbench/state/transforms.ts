@@ -97,6 +97,8 @@ export function annotationToBox(a: AnnotationResponse): Annotation {
   const shape = geometryToShape(a.geometry);
   return {
     id: a.id,
+    annotation_type: a.annotation_type,
+    geometry: a.geometry,
     ...shape,
     cls: a.class_name,
     conf: a.confidence ?? 1,
@@ -114,6 +116,8 @@ export function predictionsToBoxes(predictions: PredictionResponse[]): AiBox[] {
       const s = geometryToShape(shape.geometry);
       return {
         id: `pred-${p.id}-${i}`,
+        annotation_type: shape.geometry.type,
+        geometry: shape.geometry,
         predictionId: p.id,
         shapeIndex: i,
         ...s,

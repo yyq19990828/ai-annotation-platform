@@ -2,18 +2,16 @@
 
 > 类型：P0 调研报告 / 优化路线图。
 >
-> 状态：**已清理过时内容（2026-05-11）**。O11–O14 主路径已在 v0.9.20 落地，WorkbenchShell stage 分发已在 M6 中改为 `WorkbenchStageHost`，V1 `VideoStage` 拆分已落地。本文只保留当前仍 open 的差距和建议顺序。
+> 状态：**已清理过时内容（2026-05-11）**。O11–O14 主路径已在 v0.9.20 落地，WorkbenchShell stage 分发已在 M6 中改为 `WorkbenchStageHost`，V1 `VideoStage` 拆分已落地，V2/V3 已落地。本文只保留当前仍 open 的差距和建议顺序。
 
 ---
 
 ## 0. 当前结论
 
-视频工作台已经具备人工标注主链路：视频播放、逐帧定位、`video_bbox`、`video_track`、关键帧插值、轨迹列表、关键帧级撤销 / 重做、离线队列、track → bbox 转换、Video Tracks JSON 导出。
+视频工作台已经具备人工标注主链路：视频播放、逐帧定位、`video_bbox`、`video_track`、关键帧插值、轨迹列表、track 多选与批量操作、关键帧复制 / 粘贴、关键帧级撤销 / 重做、离线队列、track → bbox 转换、Video Tracks JSON 导出。
 
 和图片工作台相比，当前仍有价值的差距集中在：
 
-- 轨迹侧栏缺 track 多选与批量操作。
-- keyframe 复制 / 粘贴语义尚未落地。
 - review 模式缺视频 raw / final / diff 视图与精准评论锚点。
 - probe / poster 失败缺重试和管理侧可见性。
 - `video_bbox` → `video_track` 反向聚合未做。
@@ -33,33 +31,10 @@
 - O14 选中视频对象后改类与轻量操作条主路径。
 - M6 前的 Shell stage 分发描述。当前已由 `WorkbenchStageHost` 分派到 `ImageWorkbench` / `VideoWorkbench` / `ThreeDWorkbench.placeholder`。
 - V1 `VideoStage` 子组件拆分。当前已拆出 `VideoFrameOverlay`、`VideoSelectionActions`、`VideoTrackPanel`、`VideoQcWarnings`、`videoStageGeometry`、`videoStageTypes`。
+- V2 Track 多选与批量操作。当前轨迹侧栏支持 Shift / Cmd / Ctrl 多选，批量改类、删除、显隐和锁定。
+- V3 Keyframe 复制 / 粘贴。当前支持显式「复制当前关键帧」和「粘贴到当前帧」，暂不绑定全局 Ctrl+C / Ctrl+V。
 
 ## 2. 仍然 Open 的差距
-
-### V2 · Track 多选与批量操作
-
-**现状**：视频侧只有单选。图片侧的 `selectedIds` / batch change class 不能直接复用到 track，因为视频对象是 track + keyframes。
-
-**建议范围**：
-
-- 只在 `VideoTrackPanel` 里做多选。
-- Shift / Cmd 点击多选 track。
-- 批量改类、删除、显隐、锁定。
-- 不先做 overlay 多选。
-
-**依赖**：V1 已完成；后续多选状态应落在 `VideoTrackPanel` 边界内，再由 `VideoStage` 编排批量命令。
-
-### V3 · Keyframe 复制 / 粘贴
-
-**现状**：已有“复制当前帧为独立 bbox”等转换能力，但没有“复制 keyframe 到另一帧”的高频编辑流。
-
-**建议范围**：
-
-- 先提供显式按钮或菜单项：复制当前 track 当前帧 keyframe，到目标帧粘贴。
-- 可以从“复制到当前播放帧”开始，不抢 Ctrl+C / Ctrl+V。
-- 后续再做整条 track 平移、复制整条 track。
-
-**未决**：全局快捷键复制的是“当前 keyframe”还是“整条 track”。未定前不要绑定 Ctrl+C / Ctrl+V。
 
 ### V4 · Review 模式视频差异化
 
@@ -103,11 +78,9 @@
 
 ## 4. 建议执行顺序
 
-1. **V2 Track 多选**：补批量改类 / 删除 / 显隐 / 锁定。
-2. **V3 Keyframe 复制 / 粘贴**：先做显式 UI，后补快捷键。
-3. **V4 Review 视频差异化**：补 raw / final、track + frame 定位。
-4. **V5 Probe / poster 重试**：独立后端 / 管理侧增强，可穿插做。
-5. **V6 bbox → track 聚合**：等多选稳定后做。
+1. **V4 Review 视频差异化**：补 raw / final、track + frame 定位。
+2. **V5 Probe / poster 重试**：独立后端 / 管理侧增强，可穿插做。
+3. **V6 bbox → track 聚合**：等多选稳定后做。
 
 ## 5. 暂缓项
 

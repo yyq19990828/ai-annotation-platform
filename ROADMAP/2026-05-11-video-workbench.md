@@ -19,6 +19,8 @@
   - `T`：视频轨迹。
 - 新建视频 bbox / track 已接入画完选类浮层。
 - 选中视频对象后 `1-9` 改当前对象类别；无选中时切 active class。
+- 轨迹侧栏支持 Shift / Cmd / Ctrl 多选，已覆盖批量改类、删除、显隐和锁定。
+- 关键帧面板支持显式「复制当前关键帧」和「粘贴到当前帧」，暂不抢占全局 Ctrl+C / Ctrl+V。
 - Track → `video_bbox` 转换已支持 `copy|split`、`frame|track`、`keyframes|all_frames`。
 - 关键帧级撤销 / 重做、离线队列兜底、通用 conflict modal 已覆盖视频创建和更新主路径。
 - `format=coco` 对 `video-track` 项目返回 Video Tracks JSON；YOLO / VOC 对视频项目返回 400。
@@ -27,25 +29,15 @@
 
 这些是视频工作台在 M5.0 后仍值得继续推进的项：
 
-1. **Track 多选与批量操作**
-   - 在轨迹侧栏支持 Shift / Cmd 多选 track。
-   - 先做批量改类、批量删除、批量显隐 / 锁定。
-   - 不先做 overlay 多选；同帧 overlay 多选收益低且交互复杂。
-
-2. **Keyframe 复制 / 粘贴**
-   - 先做显式 UI：复制当前 keyframe 到当前帧或指定帧。
-   - 暂不抢占全局 Ctrl+C / Ctrl+V，避免和图片 clipboard 语义冲突。
-   - 后续再评估整条 track 复制、按时间轴整体平移。
-
-3. **Review 模式视频差异化**
+1. **Review 模式视频差异化**
    - 短期：track 列表区分 manual / interpolated / prediction 来源，并支持 raw / final 视图。
    - 中期：审核评论锚定到 `(track_id, frame_index)`。
 
-4. **Probe / poster 失败重试**
+2. **Probe / poster 失败重试**
    - 后端把 probe / poster 抽成可重试任务。
    - 管理侧展示失败视频并提供手动重试入口。
 
-5. **`video_bbox` → `video_track` 反向聚合**
+3. **`video_bbox` → `video_track` 反向聚合**
    - 依赖 track 多选或 frame 列表选择。
    - 选中多条同类、不同帧的 `video_bbox` 后合并成一条 `video_track`。
 
@@ -60,8 +52,6 @@
 
 ## 4. 建议顺序
 
-1. 做 track 多选和批量操作。
-2. 做 keyframe 复制 / 粘贴。
-3. 做 review diff 与评论锚点。
-4. 做 probe / poster 失败重试。
-5. 做 `video_bbox` → `video_track` 反向聚合。
+1. 做 review diff 与评论锚点。
+2. 做 probe / poster 失败重试。
+3. 做 `video_bbox` → `video_track` 反向聚合。

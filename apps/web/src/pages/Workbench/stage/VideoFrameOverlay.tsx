@@ -6,11 +6,14 @@ import type {
   VideoFrameEntry,
   VideoStageGeom,
   VideoTrackGhost,
+  VideoTrackPreview,
 } from "./videoStageTypes";
 
 interface VideoFrameOverlayProps {
   overlayRef: RefObject<SVGSVGElement>;
   entries: VideoFrameEntry[];
+  trackPreviews: VideoTrackPreview[];
+  aspectRatio: number;
   selectedId: string | null;
   selectedTrackGhost: VideoTrackGhost | null;
   draft: VideoStageGeom | null;
@@ -32,6 +35,8 @@ interface VideoFrameOverlayProps {
 export function VideoFrameOverlay({
   overlayRef,
   entries,
+  trackPreviews,
+  aspectRatio,
   selectedId,
   selectedTrackGhost,
   draft,
@@ -49,12 +54,17 @@ export function VideoFrameOverlay({
   onCancelDrag,
   onPointerLeave,
 }: VideoFrameOverlayProps) {
+  const viewBoxHeight = Number.isFinite(aspectRatio) && aspectRatio > 0 ? 1 / aspectRatio : 9 / 16;
+  const y = (value: number) => value * viewBoxHeight;
+  const h = (value: number) => value * viewBoxHeight;
+  const labelTopY = 0.045;
+
   return (
     <svg
       ref={overlayRef}
       data-testid="video-overlay"
-      viewBox="0 0 1 1"
-      preserveAspectRatio="none"
+      viewBox={`0 0 1 ${viewBoxHeight}`}
+      preserveAspectRatio="xMidYMid meet"
       onPointerDown={onBeginDraw}
       onPointerMove={onPointerMove}
       onPointerUp={onFinishDrag}
@@ -73,6 +83,53 @@ export function VideoFrameOverlay({
         pointerEvents: "auto",
       }}
     >
+      {trackPreviews.map((preview) => {
+        const color = classColor(preview.className);
+        const points = [...preview.keyframes]
+          .filter((kf) => !kf.absent)
+          .sort((a, b) => a.frame_index - b.frame_index)
+          .map((kf) => ({
+            frame: kf.frame_index,
+            x: kf.bbox.x + kf.bbox.w / 2,
+            y: y(kf.bbox.y + kf.bbox.h / 2),
+            occluded: Boolean(kf.occluded),
+          }));
+        if (points.length === 0) return null;
+        const pointAttr = points.map((p) => `${p.x},${p.y}`).join(" ");
+        return (
+          <g
+            key={preview.id}
+            data-testid="video-track-path-preview"
+            opacity={preview.selected ? 0.82 : 0.42}
+            style={{ pointerEvents: "none" }}
+          >
+            {points.length > 1 && (
+              <polyline
+                points={pointAttr}
+                fill="none"
+                stroke={color}
+                strokeWidth={preview.selected ? 2.5 : 1.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray={preview.selected ? undefined : "4 4"}
+                vectorEffect="non-scaling-stroke"
+              />
+            )}
+            {points.map((p) => (
+              <circle
+                key={`${preview.id}-${p.frame}`}
+                cx={p.x}
+                cy={p.y}
+                r={p.occluded ? 0.008 : 0.006}
+                fill={p.occluded ? "var(--color-bg-elev)" : color}
+                stroke={color}
+                strokeWidth="1.5"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+          </g>
+        );
+      })}
       {entries.map((entry) => {
         const g = drag?.kind === "move" && drag.id === entry.ann.id ? drag.current : entry.geom;
         const color = classColor(entry.className);
@@ -88,9 +145,9 @@ export function VideoFrameOverlay({
           <g key={`${entry.id}-${entry.trackId ?? "legacy"}`}>
             <rect
               x={g.x}
-              y={g.y}
+              y={y(g.y)}
               width={g.w}
-              height={g.h}
+              height={h(g.h)}
               fill={selected ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)"}
               stroke={color}
               strokeWidth={selected ? 3 : 2}
@@ -100,7 +157,7 @@ export function VideoFrameOverlay({
             />
             <text
               x={g.x}
-              y={Math.max(0.02, g.y - 0.008)}
+              y={labelTopY}
               fontSize="0.025"
               fill={color}
               stroke="rgba(0,0,0,0.75)"
@@ -116,9 +173,9 @@ export function VideoFrameOverlay({
         <g data-testid="video-track-ghost">
           <rect
             x={selectedTrackGhost.geom.x}
-            y={selectedTrackGhost.geom.y}
+            y={y(selectedTrackGhost.geom.y)}
             width={selectedTrackGhost.geom.w}
-            height={selectedTrackGhost.geom.h}
+            height={h(selectedTrackGhost.geom.h)}
             fill="rgba(255,255,255,0.035)"
             stroke={classColor(selectedTrackGhost.className)}
             strokeWidth={2}
@@ -129,7 +186,7 @@ export function VideoFrameOverlay({
           />
           <text
             x={selectedTrackGhost.geom.x}
-            y={Math.max(0.02, selectedTrackGhost.geom.y - 0.008)}
+            y={labelTopY}
             fontSize="0.025"
             fill={classColor(selectedTrackGhost.className)}
             stroke="rgba(0,0,0,0.75)"
@@ -144,9 +201,9 @@ export function VideoFrameOverlay({
       {draft && (
         <rect
           x={draft.x}
-          y={draft.y}
+          y={y(draft.y)}
           width={draft.w}
-          height={draft.h}
+          height={h(draft.h)}
           fill="rgba(255,255,255,0.08)"
           stroke={classColor(selectedTrackClassName ?? activeClass)}
           strokeWidth={2}

@@ -28,7 +28,13 @@ interface VideoAnnotationMutations {
   update: {
     mutate: (
       vars: { annotationId: string; payload: Partial<AnnotationPayload> },
-      opts?: { onSuccess?: () => void; onError?: (e: unknown) => void },
+      opts?: { onSuccess?: () => void; onError?: (e: unknown) => void; onSettled?: () => void },
+    ) => void;
+  };
+  delete: {
+    mutate: (
+      id: string,
+      opts?: { onSuccess?: () => void; onError?: (e: unknown) => void; onSettled?: () => void },
     ) => void;
   };
 }
@@ -205,6 +211,82 @@ export function useVideoAnnotationActions({
     );
   }, [enqueueOnError, history, mutations.update, optimisticUpdateAnnotation, taskId]);
 
+  const handleVideoBatchRename = useCallback((annotations: AnnotationResponse[], className: string) => {
+    const targets = annotations.filter((ann) =>
+      ann.geometry.type === "video_track" && ann.class_name !== className,
+    );
+    if (!className || targets.length === 0) return;
+
+    let pending = targets.length;
+    let succeeded = 0;
+    let failed = 0;
+    const commands: Extract<Command, { kind: "update" }>[] = [];
+
+    targets.forEach((ann) => {
+      const before = { class_name: ann.class_name };
+      const after = { class_name: className };
+      mutations.update.mutate(
+        { annotationId: ann.id, payload: after },
+        {
+          onSuccess: () => {
+            succeeded++;
+            commands.push({ kind: "update", annotationId: ann.id, before, after });
+          },
+          onError: () => {
+            failed++;
+          },
+          onSettled: () => {
+            pending--;
+            if (pending !== 0) return;
+            if (commands.length > 0) history.pushBatch(commands);
+            if (succeeded > 0) {
+              s.setActiveClass(className);
+              recordRecentClass(className);
+            }
+            pushToast({
+              msg: `${succeeded} 条轨迹已改为 ${className}`,
+              sub: failed ? `${failed} 项失败` : undefined,
+              kind: failed ? "error" : "success",
+            });
+          },
+        },
+      );
+    });
+  }, [history, mutations.update, pushToast, recordRecentClass, s]);
+
+  const handleVideoBatchDelete = useCallback((annotations: AnnotationResponse[]) => {
+    const targets = annotations.filter((ann) => ann.geometry.type === "video_track");
+    if (targets.length === 0) return;
+
+    let pending = targets.length;
+    let succeeded = 0;
+    let failed = 0;
+    const commands: Extract<Command, { kind: "delete" }>[] = [];
+
+    targets.forEach((ann) => {
+      mutations.delete.mutate(ann.id, {
+        onSuccess: () => {
+          succeeded++;
+          commands.push({ kind: "delete", annotation: ann });
+        },
+        onError: () => {
+          failed++;
+        },
+        onSettled: () => {
+          pending--;
+          if (pending !== 0) return;
+          if (commands.length > 0) history.pushBatch(commands);
+          pushToast({
+            msg: `已删除 ${succeeded}/${targets.length} 条轨迹`,
+            sub: failed ? `${failed} 项失败` : undefined,
+            kind: failed ? "error" : "success",
+          });
+          s.setSelectedId(null);
+        },
+      });
+    });
+  }, [history, mutations.delete, pushToast, s]);
+
   const handleVideoSetSelectedClass = useCallback((className: string) => {
     if (!s.selectedId) return false;
     const ann = annotationsRef.current.find((a) => a.id === s.selectedId);
@@ -275,6 +357,8 @@ export function useVideoAnnotationActions({
     handlePickVideoPendingClass,
     handleVideoUpdate,
     handleVideoRename,
+    handleVideoBatchRename,
+    handleVideoBatchDelete,
     handleVideoSetSelectedClass,
     handleVideoConvertToBboxes,
   };

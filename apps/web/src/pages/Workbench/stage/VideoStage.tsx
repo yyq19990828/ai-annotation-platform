@@ -27,6 +27,7 @@ import type {
   VideoStageGeometry,
   VideoTrackConversionOptions,
   VideoTrackGhost,
+  VideoTrackPreview,
 } from "./videoStageTypes";
 
 const EMPTY_TRACK_ID_SET = new Set<string>();
@@ -118,6 +119,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       1,
   );
   const maxFrame = Math.max(0, frameCount - 1);
+  const videoAspectRatio = manifest?.metadata.width && manifest.metadata.height
+    ? manifest.metadata.width / manifest.metadata.height
+    : 16 / 9;
   const stageAspect = manifest?.metadata.width && manifest.metadata.height
     ? `${manifest.metadata.width} / ${manifest.metadata.height}`
     : "16 / 9";
@@ -172,6 +176,19 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       originFrame: nearest.frame_index,
     };
   }, [currentFrameEntries, frameIndex, hiddenTrackIds, selectedTrack]);
+
+  const trackPreviews = useMemo<VideoTrackPreview[]>(
+    () => videoTracks
+      .filter((ann) => !hiddenTrackIds.has(ann.geometry.track_id))
+      .map((ann) => ({
+        id: ann.id,
+        trackId: ann.geometry.track_id,
+        className: ann.class_name,
+        keyframes: ann.geometry.keyframes,
+        selected: ann.id === selectedId,
+      })),
+    [hiddenTrackIds, selectedId, videoTracks],
+  );
 
   const annotatedFrames = useMemo(() => {
     const out = new Set<number>();
@@ -406,7 +423,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     if (cur.kind === "draw") {
       const geom = normalizeGeom(cur.start, pt);
       if (geom.w < 0.003 || geom.h < 0.003) {
-        togglePlayback();
         return;
       }
       if (videoTool === "track" && selectedTrack && !lockedTrackIds.has(selectedTrack.geometry.track_id)) {
@@ -441,7 +457,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     schedulePlaybackOverlayHide,
     selectedTrack,
     showPlaybackOverlay,
-    togglePlayback,
     videoTool,
   ]);
 
@@ -492,6 +507,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             <VideoFrameOverlay
               overlayRef={overlayRef}
               entries={currentFrameEntries}
+              trackPreviews={trackPreviews}
+              aspectRatio={videoAspectRatio}
               selectedId={selectedId}
               selectedTrackGhost={selectedTrackGhost}
               draft={draft}

@@ -262,8 +262,10 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   );
 
   const userBoxes = useMemo(
-    () => (annotationsData ?? []).map(annotationToBox),
-    [annotationsData],
+    () => (annotationsData ?? [])
+      .filter((ann) => !(isVideoTask && ann.geometry.type === "video_track"))
+      .map(annotationToBox),
+    [annotationsData, isVideoTask],
   );
 
   // v0.9.5 · 本题累计 AI 费用 / 平均推理时间（PredictionMeta 已 join 进 PredictionResponse）
@@ -529,6 +531,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handlePickVideoPendingClass,
     handleVideoUpdate,
     handleVideoRename,
+    handleVideoBatchRename,
+    handleVideoBatchDelete,
     handleVideoSetSelectedClass,
     handleVideoConvertToBboxes,
   } = useVideoAnnotationActions({
@@ -544,6 +548,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     mutations: {
       create: createAnnotation,
       update: { mutate: (vars, opts) => updateAnnotationMut.mutate(vars, opts) },
+      delete: { mutate: (id, opts) => deleteAnnotationMut.mutate(id, opts) },
     },
   });
 
@@ -799,10 +804,13 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             readOnly={isLocked}
             hiddenTrackIds={s.hiddenVideoTrackIds}
             lockedTrackIds={s.lockedVideoTrackIds}
+            classes={classes}
             onSelect={(id) => handleSelectBox(id)}
             onToggleHiddenTrack={s.toggleHiddenVideoTrack}
             onToggleLockedTrack={s.toggleLockedVideoTrack}
             onChangeUserBoxClass={handleStartChangeClass}
+            onRenameTracks={handleVideoBatchRename}
+            onDeleteTracks={handleVideoBatchDelete}
             onUpdate={handleVideoUpdate}
             onConvertToBboxes={handleVideoConvertToBboxes}
           />

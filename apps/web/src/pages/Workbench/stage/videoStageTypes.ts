@@ -27,6 +27,14 @@ export type VideoTrackGhost = VideoFrameEntry & {
   originFrame: number;
 };
 
+export type VideoTrackPreview = {
+  id: string;
+  trackId: string;
+  className: string;
+  keyframes: VideoTrackKeyframe[];
+  selected: boolean;
+};
+
 export type VideoDragState =
   | { kind: "draw"; start: { x: number; y: number }; current: { x: number; y: number } }
   | { kind: "move"; id: string; start: { x: number; y: number }; origin: VideoStageGeom; current: VideoStageGeom }

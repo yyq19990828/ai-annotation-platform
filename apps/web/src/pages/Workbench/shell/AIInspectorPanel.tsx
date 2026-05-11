@@ -125,8 +125,6 @@ export function AIInspectorPanel({
         </div>
       </div>
 
-      {videoTrackPanel}
-
       {multiCount > 0 && (
         <div
           style={{
@@ -188,6 +186,7 @@ export function AIInspectorPanel({
         onClearSelection={onClearSelection}
         onDeleteUserBox={onDeleteUserBox}
         onChangeUserBoxClass={onChangeUserBoxClass}
+        videoTrackPanel={videoTrackPanel}
       />
     </div>
   );
@@ -607,6 +606,7 @@ function SamTextPanel({
 type Row =
   | { kind: "ai"; box: AiBox; key: string }
   | { kind: "header"; count: number; key: string; label: string }
+  | { kind: "videoTracks"; key: string }
   | { kind: "user"; box: Annotation; key: string };
 
 interface BoxesListProps {
@@ -625,12 +625,14 @@ interface BoxesListProps {
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
+  videoTrackPanel?: React.ReactNode;
 }
 
 function BoxesList({
   aiBoxes, userBoxes, selSet, dimmedAiIds, imageWidth, imageHeight,
   hasMore, isFetchingMore, onFetchMore,
   onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  videoTrackPanel,
 }: BoxesListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -640,13 +642,19 @@ function BoxesList({
     aiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
     out.push({ kind: "header", label: "人工", count: userBoxes.length, key: "user-header" });
     userBoxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
+    if (videoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
     return out;
-  }, [aiBoxes, userBoxes]);
+  }, [aiBoxes, userBoxes, videoTrackPanel]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (i) => (rows[i]?.kind === "header" ? 28 : 56),
+    estimateSize: (i) => {
+      const row = rows[i];
+      if (row?.kind === "header") return 28;
+      if (row?.kind === "videoTracks") return 420;
+      return 68;
+    },
     overscan: 8,
   });
 
@@ -708,6 +716,11 @@ function BoxesList({
                   <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)", fontWeight: 500 }}>
                     {r.count}
                   </span>
+                </div>
+              )}
+              {r.kind === "videoTracks" && (
+                <div data-testid="video-track-panel-row">
+                  {videoTrackPanel}
                 </div>
               )}
               {r.kind === "user" && (

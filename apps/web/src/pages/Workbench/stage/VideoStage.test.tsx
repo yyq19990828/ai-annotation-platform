@@ -93,7 +93,7 @@ describe("VideoStage", () => {
     expect(geom.h).toBeCloseTo(0.3);
   });
 
-  it("toggles playback when clicking the video surface without drawing", () => {
+  it("does not toggle playback when clicking the paused overlay without drawing", () => {
     const onCreate = vi.fn();
     const { getByTestId } = render(
       <VideoStage
@@ -113,7 +113,7 @@ describe("VideoStage", () => {
     fireEvent(overlay, pointer("pointerdown", 100, 100));
     fireEvent(overlay, pointer("pointerup", 100, 100));
 
-    expect(playMock).toHaveBeenCalledTimes(1);
+    expect(playMock).not.toHaveBeenCalled();
     expect(onCreate).not.toHaveBeenCalled();
   });
 
@@ -242,9 +242,39 @@ describe("VideoStage", () => {
       />,
     );
 
+    const svg = container.querySelector("svg");
     const rect = container.querySelector("svg rect");
+    expect(svg?.getAttribute("viewBox")).toBe("0 0 1 0.5");
+    expect(svg?.getAttribute("preserveAspectRatio")).toBe("xMidYMid meet");
     expect(rect?.getAttribute("stroke-width")).toBe("2");
     expect(rect?.getAttribute("vector-effect")).toBe("non-scaling-stroke");
+    expect(rect?.getAttribute("y")).toBe("0.05");
+  });
+
+  it("keeps video labels fixed at the overlay top", () => {
+    const annotations = [
+      {
+        id: "a1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 0, x: 0.1, y: 0.86, w: 0.2, h: 0.1 },
+      },
+    ] as AnnotationResponse[];
+
+    const { container } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    const text = container.querySelector("svg text");
+    expect(text).toHaveAttribute("y", "0.045");
   });
 
   it("adds a keyframe to the selected video track", () => {
@@ -340,6 +370,9 @@ describe("VideoStage", () => {
       />,
     );
 
+    expect(sidebar.getByText("手动")).toBeInTheDocument();
+    expect(sidebar.getByText(/1 关键帧/)).toHaveTextContent("trk_car · 1 关键帧 · F0");
+
     fireEvent.click(sidebar.getByText("复制到当前帧"));
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
@@ -428,7 +461,11 @@ describe("VideoStage", () => {
 
     fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "1" } });
 
+    expect(getByTestId("video-track-path-preview")).toBeInTheDocument();
     expect(getByTestId("video-overlay").textContent).toContain("car · 插值");
+    const label = Array.from(getByTestId("video-overlay").querySelectorAll("text"))
+      .find((node) => node.textContent?.includes("car · 插值"));
+    expect(label).toHaveAttribute("y", "0.045");
   });
 
   it("does not interpolate across an absent keyframe", () => {
@@ -608,5 +645,128 @@ describe("VideoStage", () => {
     expect(onChangeUserBoxClass).toHaveBeenCalledWith("t1");
     expect(promptSpy).not.toHaveBeenCalled();
     promptSpy.mockRestore();
+  });
+
+  it("multi-selects tracks in the sidebar and routes batch actions", async () => {
+    const onRenameTracks = vi.fn();
+    const onToggleHiddenTrack = vi.fn();
+    const onToggleLockedTrack = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+      {
+        id: "t2",
+        class_name: "person",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_person",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getAllByTestId, getByLabelText, getByTestId, getByText } = render(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId="t1"
+        frameIndex={0}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        classes={["car", "person", "bus"]}
+        onSelect={() => {}}
+        onToggleHiddenTrack={onToggleHiddenTrack}
+        onToggleLockedTrack={onToggleLockedTrack}
+        onRenameTracks={onRenameTracks}
+        onUpdate={() => {}}
+      />,
+    );
+
+    fireEvent.click(getAllByTestId("video-track-row")[1], { shiftKey: true });
+
+    await waitFor(() => expect(getByTestId("video-track-batch-toolbar")).toHaveTextContent("已选 2 条轨迹"));
+
+    fireEvent.change(getByLabelText("批量改类"), { target: { value: "bus" } });
+    expect(onRenameTracks).toHaveBeenCalledWith(annotations, "bus");
+
+    fireEvent.click(getByText("隐藏"));
+    expect(onToggleHiddenTrack).toHaveBeenCalledWith("trk_car");
+    expect(onToggleHiddenTrack).toHaveBeenCalledWith("trk_person");
+
+    fireEvent.click(getByText("锁定"));
+    expect(onToggleLockedTrack).toHaveBeenCalledWith("trk_car");
+    expect(onToggleLockedTrack).toHaveBeenCalledWith("trk_person");
+  });
+
+  it("copies the current keyframe and pastes it to the current frame", () => {
+    const onUpdate = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 3, bbox: { x: 0.5, y: 0.2, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const view = render(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId="t1"
+        frameIndex={0}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    fireEvent.click(view.getByText("复制当前关键帧"));
+    expect(view.getByText(/已复制:/).textContent).toContain("F0");
+
+    view.rerender(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId="t1"
+        frameIndex={3}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    fireEvent.click(view.getByText("粘贴到当前帧"));
+
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const [, geometry] = onUpdate.mock.calls[0];
+    expect(geometry.type).toBe("video_track");
+    const pasted = (geometry.keyframes as Array<{ frame_index: number; bbox: { x: number; y: number } }>)
+      .find((kf) => kf.frame_index === 3);
+    expect(pasted?.bbox.x).toBeCloseTo(0.1);
+    expect(pasted?.bbox.y).toBeCloseTo(0.1);
   });
 });

@@ -172,6 +172,8 @@ export type Geometry = BboxGeometry | VideoBboxGeometry | VideoTrackGeometry | P
 
 export interface AIBox {
   id: string;
+  annotation_type?: string;
+  geometry?: Geometry;
   /** bounding rect — 对所有形状都填，方便列表/Minimap/IoU 近似/选中浮条锚点。 */
   x: number;
   y: number;

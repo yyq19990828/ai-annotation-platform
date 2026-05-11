@@ -34,6 +34,11 @@ last_reviewed: 2026-05-11
 - 视频任务切到视频时间轴视图，支持 bbox / track、关键帧和轨迹操作。详见 [视频追踪标注](./video-track)。
 - 3D 点云 Stage 目前只预留入口；如果项目类型进入该路径，会显示未支持占位，不会复用图片工具。
 
+## 选择与批量操作
+
+- 图片任务：`Shift + 点击`画布里的人工框，或右侧「人工」列表条目，可叠加多选；`Ctrl + A` 会全选当前帧人工框。AI 待审候选保持单选，需要先采纳后才会进入人工框批量选择。
+- 视频任务：右侧轨迹列表支持 `Shift` / `Cmd` / `Ctrl + 点击`多选轨迹，批量改类、删除、显隐和锁定都只作用于轨迹列表里的多选结果。
+
 ## 完整快捷键
 
 > 真值来源：`apps/web/src/pages/Workbench/state/hotkeys.ts`。下表由 `docs-site/scripts/generate-hotkeys.mjs` 在每次 docs build 前自动重生成，与代码必然一致。
