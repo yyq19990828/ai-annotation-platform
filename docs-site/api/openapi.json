@@ -12977,7 +12977,7 @@
     },
     "/api/v1/datasets/{dataset_id}/backfill-media": {
       "post": {
-        "description": "异步触发存量图像的缩略图 + blurhash 回填。",
+        "description": "异步触发存量图像缩略图 / 视频元数据与 poster 回填。",
         "operationId": "backfill_media_endpoint_api_v1_datasets__dataset_id__backfill_media_post",
         "parameters": [
           {

@@ -172,6 +172,7 @@ async def upload_complete(
 ):
     from app.db.models.dataset import DatasetItem
 
+    svc = DatasetService(db)
     item = await db.get(DatasetItem, item_id)
     if not item or item.dataset_id != dataset_id:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -181,7 +182,6 @@ async def upload_complete(
     )
     if not meta:
         # 上传未完成 — 清理占位 DatasetItem
-        svc = DatasetService(db)
         await svc.delete_item(item_id)
         await db.commit()
         raise HTTPException(status_code=400, detail="File not found in storage")
@@ -193,7 +193,6 @@ async def upload_complete(
     # ETag（MinIO 单 PUT = md5）用于去重
     etag = (meta.get("ETag") or "").strip('"')
     if len(etag) == 32:
-        svc = DatasetService(db)
         existing = await svc.find_by_hash(dataset_id, etag)
         if existing and existing.id != item_id:
             # 删除刚上传的对象与占位记录，返回 409 告知前端
@@ -222,6 +221,7 @@ async def upload_complete(
         if dims:
             item.width, item.height = dims
 
+    linked_tasks = await svc.create_tasks_for_items(dataset_id, [item.id])
     await db.commit()
 
     if item.file_type == "image":
@@ -233,7 +233,7 @@ async def upload_complete(
 
         generate_video_metadata.delay(str(item_id))
 
-    return {"status": "ok", "item_id": str(item_id)}
+    return {"status": "ok", "item_id": str(item_id), "linked_tasks": linked_tasks}
 
 
 _ZIP_MAX_BYTES = 200 * 1024 * 1024  # 200 MB
@@ -282,6 +282,7 @@ async def upload_zip(
     errors: list[dict] = []
     new_image_item_ids: list[uuid.UUID] = []
     new_video_item_ids: list[uuid.UUID] = []
+    new_item_ids: list[uuid.UUID] = []
 
     from sqlalchemy import select as sa_select
     from app.db.models.dataset import DatasetItem
@@ -373,11 +374,13 @@ async def upload_zip(
             height=height,
         )
         added += 1
+        new_item_ids.append(item.id)
         if file_type == "image":
             new_image_item_ids.append(item.id)
         elif file_type == "video":
             new_video_item_ids.append(item.id)
 
+    linked_tasks = await svc.create_tasks_for_items(dataset_id, new_item_ids)
     await db.commit()
 
     if new_image_item_ids:
@@ -397,6 +400,7 @@ async def upload_zip(
         "skipped": len(skipped),
         "errors": errors,
         "total_in_zip": len(infos),
+        "linked_tasks": linked_tasks,
     }
 
 
@@ -411,6 +415,7 @@ async def scan_items(
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
     new_ids = await svc.scan_and_import(dataset_id)
+    linked_tasks = await svc.create_tasks_for_items(dataset_id, new_ids)
     await db.commit()
 
     if new_ids:
@@ -429,7 +434,7 @@ async def scan_items(
             elif file_type == "video":
                 generate_video_metadata.delay(str(iid))
 
-    return {"status": "ok", "new_items": len(new_ids)}
+    return {"status": "ok", "new_items": len(new_ids), "linked_tasks": linked_tasks}
 
 
 @router.post("/{dataset_id}/backfill-dimensions")
@@ -482,7 +487,7 @@ async def backfill_media_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
-    """异步触发存量图像的缩略图 + blurhash 回填。"""
+    """异步触发存量图像缩略图 / 视频元数据与 poster 回填。"""
     svc = DatasetService(db)
     ds = await svc.get(dataset_id)
     if not ds:

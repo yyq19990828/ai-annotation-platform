@@ -132,6 +132,47 @@ async def test_link_project_empty_dataset(db_session: AsyncSession, super_admin)
 
 
 @pytest.mark.asyncio
+async def test_append_item_after_link_creates_tasks_for_linked_projects(
+    db_session: AsyncSession, super_admin
+):
+    user, _ = super_admin
+    ds = await _seed_dataset(db_session, user.id, n_items=0)
+    project_a = await _seed_project(db_session, user.id)
+    project_b = await _seed_project(db_session, user.id)
+
+    svc = DatasetService(db_session)
+    await svc.link_project(ds.id, project_a.id)
+    await svc.link_project(ds.id, project_b.id)
+
+    item = await svc.add_item(
+        dataset_id=ds.id,
+        file_name="new-video.mp4",
+        file_path="link_project bulk test/new-video.mp4",
+        file_type="video",
+        file_size=123,
+    )
+
+    created = await svc.create_tasks_for_items(ds.id, [item.id])
+    assert created == 2
+    assert await svc.create_tasks_for_items(ds.id, [item.id]) == 0
+
+    for project in (project_a, project_b):
+        count = (
+            await db_session.execute(
+                select(func.count())
+                .select_from(Task)
+                .where(
+                    Task.project_id == project.id,
+                    Task.dataset_item_id == item.id,
+                )
+            )
+        ).scalar()
+        assert count == 1
+        await db_session.refresh(project)
+        assert project.total_tasks == 1
+
+
+@pytest.mark.asyncio
 async def test_link_project_no_default_batch(db_session: AsyncSession, super_admin):
     """v0.7.3：link_project 不再创建「{数据集} 默认包」batch；新建 task 全部 batch_id=NULL，
     走「未归类任务」语义，由用户主动 split 归到 batch。"""

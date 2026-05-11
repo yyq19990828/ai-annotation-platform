@@ -22,6 +22,35 @@
 
 ## 最新版本
 
+## [0.9.19] - 2026-05-11
+
+> **Video Workbench Foundations — keyframe 撤销重做 + 离线兜底 + 悬浮时间轴.** 主线: ① `video_track` 关键帧编辑进入 track-aware history，单帧新增/修改/消失/遮挡可按 keyframe 粒度撤销/重做；② 视频创建、更新、重命名补齐网络断开 / 5xx 离线队列 fallback，409 冲突继续走现有 `ConflictModal`；③ `VideoStage` 底部固定时间轴改为画布内悬浮 playback overlay，保留关键帧 tick、帧号、时间和当前帧框数；④ 视频模式新增 `,` / `.` 上一帧 / 下一帧备用快捷键并同步帮助面板。→ [plan](docs/plans/2026-05-11-v0.9.19-video-workbench-foundations-overlay.md).
+
+### Added
+
+- **Keyframe 级 history**：新增 `videoKeyframe` history command，只替换目标 `frame_index` 的 keyframe，保留同一 track 其它关键帧。
+- **视频离线 fallback**：`handleVideoCreate` / `handleVideoUpdate` / `handleVideoRename` 在网络断开或 5xx 时写入现有 offline queue。
+- **悬浮时间轴**：新增 `VideoPlaybackOverlay`，将播放、逐帧、scrubber、关键帧 tick 和帧信息悬浮到视频画布底部。
+- **视频逐帧备用键**：`,` / `.` 分别后退 / 前进 1 帧。
+- **视频数据集媒体信息**：数据集文件列表新增媒体信息列，视频文件直接显示分辨率、fps、帧数与 codec。
+- **已关联数据集追加文件同步**：数据集已关联项目后，后续上传、ZIP 导入或扫描导入的新文件会自动生成对应项目任务。
+- **空帧轨迹参考框**：选中轨迹跳到无框帧时显示最近关键帧的虚线参考框，并支持拖动或「复制到当前帧」生成当前帧关键帧。
+
+### Changed
+
+- `VideoStage` 删除底部固定 playback bar，画布可用高度增加；播放控件在 hover 时显示，编辑拖拽时隐藏。
+- `useAnnotationHistory` 增加可选 `updateVideoKeyframe` handler，图片工作台原有 create / update / delete / batch 行为不变。
+- 视频数据集不再显示图片专属“回填维度”按钮，改为“补生成元数据”；上传完成后刷新数据集与文件列表。
+- 数据集上传 / 扫描完成后同步刷新任务列表、项目列表和项目统计缓存。
+
+### Fixed
+
+- 视频关键帧编辑不再只能按整条 annotation geometry 粗粒度回滚。
+- 视频更新失败时不再绕过现有离线队列；409 冲突不被误判为离线暂存。
+- 修复已关联项目的数据集追加视频后，工作台任务列表不出现新任务，必须解绑重连才可见的问题。
+
+---
+
 ## [0.9.18] - 2026-05-11
 
 > **Video Export Loop — 视频导出闭环 + 快捷键中心化.** 主线: ① `video-track` 项目复用 `format=coco` 导出入口返回专用 Video Tracks JSON（`export_type="video_tracks"`），支持 `video_frame_mode=keyframes|all_frames`；② `all_frames` 按后端线性插值展开逐帧 bbox，`absent=true` 阻断跨段插值，缺少 `frame_count` 时用最大已标注帧兜底；③ Dashboard 表格 / 卡片视频项目只暴露 Video JSON 导出，图片项目 COCO / VOC / YOLO 行为不变；④ `VideoStage` 改为 `forwardRef` 暴露播放与逐帧控制，视频快捷键并入 `hotkeys.ts` / `useWorkbenchHotkeys` 与统一帮助面板。→ [plan](docs/plans/2026-05-11-v0.9.18-video-export-hotkeys.md).

@@ -99,6 +99,54 @@ describe("applyLeaf · create redo / update / delete 不受 tmpId 分支影响",
   });
 });
 
+describe("applyLeaf · video keyframe undo / redo", () => {
+  it("undo videoKeyframe → 用 before 调 updateVideoKeyframe", async () => {
+    const updateVideoKeyframe = vi.fn(async () => ({}));
+    const h = makeHandlers({ updateVideoKeyframe });
+    const before = {
+      frame_index: 3,
+      bbox: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+      source: "manual" as const,
+    };
+    const after = {
+      frame_index: 3,
+      bbox: { x: 0.2, y: 0.2, w: 0.3, h: 0.4 },
+      source: "manual" as const,
+    };
+
+    await applyLeaf(
+      { kind: "videoKeyframe", annotationId: "track-1", frameIndex: 3, before, after },
+      "undo",
+      h,
+    );
+
+    expect(updateVideoKeyframe).toHaveBeenCalledWith("track-1", 3, before);
+  });
+
+  it("redo videoKeyframe deletion → 用 null 调 updateVideoKeyframe", async () => {
+    const updateVideoKeyframe = vi.fn(async () => ({}));
+    const h = makeHandlers({ updateVideoKeyframe });
+
+    await applyLeaf(
+      {
+        kind: "videoKeyframe",
+        annotationId: "track-1",
+        frameIndex: 3,
+        before: {
+          frame_index: 3,
+          bbox: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+          source: "manual",
+        },
+        after: null,
+      },
+      "redo",
+      h,
+    );
+
+    expect(updateVideoKeyframe).toHaveBeenCalledWith("track-1", 3, null);
+  });
+});
+
 
 // ── v0.8.7 F8 · sessionStorage 持久化 ────────────────────────────────
 

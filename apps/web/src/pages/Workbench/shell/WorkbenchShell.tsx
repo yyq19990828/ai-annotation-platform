@@ -25,7 +25,7 @@ import type { TaskResponse, AnnotationResponse } from "@/types";
 
 import { useWorkbenchState } from "../state/useWorkbenchState";
 import { useViewportTransform } from "../state/useViewportTransform";
-import { useAnnotationHistory } from "../state/useAnnotationHistory";
+import { useAnnotationHistory, type Command } from "../state/useAnnotationHistory";
 import { useRecentClasses } from "../state/useRecentClasses";
 import { useSessionStats } from "../state/useSessionStats";
 import { useClipboard } from "../state/useClipboard";
@@ -36,6 +36,7 @@ import { useWorkbenchTaskFlow } from "../state/useWorkbenchTaskFlow";
 import { useInteractiveAI } from "../state/useInteractiveAI";
 import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
 import { annotationToBox, polygonBounds, predictionsToBoxes, type AiBox } from "../state/transforms";
+import { applyVideoKeyframeToGeometry, buildVideoKeyframeCommand } from "../state/videoTrackCommands";
 import { iouShape } from "../stage/iou";
 import { buildIoUIndex } from "../stage/iou-index";
 import { setActiveClassesConfig, sortClassesByConfig, UNKNOWN_CLASS } from "../stage/colors";
@@ -62,6 +63,7 @@ import {
   resolveWorkbenchReturnTo,
 } from "@/utils/workbenchNavigation";
 import {
+  enqueue,
   getAll as offlineQueueGetAll,
   removeById as offlineQueueRemoveById,
 } from "../state/offlineQueue";
@@ -73,6 +75,10 @@ import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type DiffMode = "final" | "raw" | "diff";
+
+function isConflictError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 409;
+}
 
 export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "review" }) {
   const { id: routeId } = useParams<{ id: string }>();
@@ -386,6 +392,12 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     deleteAnnotation: (id) => deleteAnnotationMut.mutateAsync(id),
     updateAnnotation: (id, payload) =>
       updateAnnotationMut.mutateAsync({ annotationId: id, payload }),
+    updateVideoKeyframe: async (id, frameIndex, keyframe) => {
+      const ann = annotationsRef.current.find((a) => a.id === id);
+      if (!ann || ann.geometry.type !== "video_track") throw new Error("Video track not found");
+      const geometry = applyVideoKeyframeToGeometry(ann.geometry, frameIndex, keyframe);
+      await updateAnnotationMut.mutateAsync({ annotationId: id, payload: { geometry } });
+    },
     // v0.6.3 P0：tmpId 上的 create undo 不走远端，仅清 cache + 抹离线队列对应 create op
     removeLocalCreate: async (id: string) => {
       if (!taskId) return;
@@ -707,6 +719,22 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     s.setPendingDrawing({ geom: geo });
   }, [s]);
 
+  const buildVideoUpdateCommand = useCallback((ann: AnnotationResponse, geometry: Geometry): Command => {
+    if (ann.geometry.type === "video_track" && geometry.type === "video_track") {
+      const keyframeCommand = buildVideoKeyframeCommand(ann.id, ann.geometry, geometry);
+      if (keyframeCommand) return keyframeCommand;
+    }
+    return { kind: "update", annotationId: ann.id, before: { geometry: ann.geometry }, after: { geometry } };
+  }, []);
+
+  const optimisticUpdateAnnotation = useCallback((annotationId: string, patch: { geometry?: Geometry; class_name?: string }) => {
+    if (!taskId) return;
+    queryClient.setQueryData<AnnotationResponse[]>(
+      ["annotations", taskId],
+      (prev) => (prev ?? []).map((a) => (a.id === annotationId ? { ...a, ...patch } : a)),
+    );
+  }, [queryClient, taskId]);
+
   const handleVideoCreate = useCallback((frameIndex: number, geo: Geom) => {
     const cls = s.activeClass || UNKNOWN_CLASS;
     const trackId = typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -735,20 +763,29 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         history.push({ kind: "create", annotationId: created.id, payload });
         recordRecentClass(cls);
       },
+      onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
     });
-  }, [createAnnotation, history, recordRecentClass, s.activeClass]);
+  }, [createAnnotation, enqueueOnError, history, optimisticEnqueueCreate, recordRecentClass, s.activeClass]);
 
   const handleVideoUpdate = useCallback((ann: AnnotationResponse, geometry: Geometry) => {
     if (geometry.type !== "video_bbox" && geometry.type !== "video_track") return;
-    const before = { geometry: ann.geometry };
     const after = { geometry };
+    const command = buildVideoUpdateCommand(ann, geometry);
     updateAnnotationMut.mutate(
       { annotationId: ann.id, payload: after },
       {
-        onSuccess: () => history.push({ kind: "update", annotationId: ann.id, before, after }),
+        onSuccess: () => history.push(command),
+        onError: (err) => {
+          if (isConflictError(err)) return;
+          enqueueOnError(err, () => {
+            optimisticUpdateAnnotation(ann.id, { geometry });
+            history.push(command);
+            if (taskId) enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
+          });
+        },
       },
     );
-  }, [history, updateAnnotationMut]);
+  }, [buildVideoUpdateCommand, enqueueOnError, history, optimisticUpdateAnnotation, taskId, updateAnnotationMut]);
 
   const handleVideoRename = useCallback((ann: AnnotationResponse, className: string) => {
     const before = { class_name: ann.class_name };
@@ -757,9 +794,17 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       { annotationId: ann.id, payload: after },
       {
         onSuccess: () => history.push({ kind: "update", annotationId: ann.id, before, after }),
+        onError: (err) => {
+          if (isConflictError(err)) return;
+          enqueueOnError(err, () => {
+            optimisticUpdateAnnotation(ann.id, { class_name: className });
+            history.push({ kind: "update", annotationId: ann.id, before, after });
+            if (taskId) enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
+          });
+        },
       },
     );
-  }, [history, updateAnnotationMut]);
+  }, [enqueueOnError, history, optimisticUpdateAnnotation, taskId, updateAnnotationMut]);
 
   const handleCancelPending = useCallback(() => {
     // 画完框未选类别时（Esc / 点外部）不丢弃，按 __unknown 落库为灰色框；

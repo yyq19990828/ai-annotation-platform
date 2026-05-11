@@ -9,7 +9,8 @@ import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
-import { useDatasets, useDatasetItems, useCreateDataset, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions } from "@/hooks/useDatasets";
+import { useQueryClient } from "@tanstack/react-query";
+import { useDatasets, useDatasetItems, useCreateDataset, useDatasetProjects, useUnlinkProject, useLinkProject, useScanDatasetItems, useBackfillDimensions, useBackfillMedia } from "@/hooks/useDatasets";
 import { datasetsApi } from "@/api/datasets";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useProjects } from "@/hooks/useProjects";
@@ -49,6 +50,35 @@ const FILTER_MAP: Record<string, string | undefined> = {
   "3D": "point_cloud",
   "多模态": "multimodal",
 };
+
+function getErrorMessage(err: unknown) {
+  return err instanceof Error ? err.message : "未知错误";
+}
+
+function getVideoMeta(item: { metadata: Record<string, unknown> }) {
+  const video = item.metadata?.video;
+  return video && typeof video === "object" ? video as Record<string, unknown> : null;
+}
+
+function formatMediaInfo(item: { file_type: string; width: number | null; height: number | null; metadata: Record<string, unknown> }) {
+  if (item.file_type === "image") {
+    return item.width && item.height ? `${item.width}×${item.height}` : "待回填";
+  }
+  if (item.file_type === "video") {
+    const video = getVideoMeta(item);
+    if (!video) return "元数据生成中";
+    const probeError = typeof video.probe_error === "string" ? video.probe_error : "";
+    if (probeError) return `解析失败: ${probeError}`;
+    const w = typeof video.width === "number" ? video.width : item.width;
+    const h = typeof video.height === "number" ? video.height : item.height;
+    const fps = typeof video.fps === "number" ? `${video.fps}fps` : "";
+    const frames = typeof video.frame_count === "number" ? `${video.frame_count}帧` : "";
+    const codec = typeof video.codec === "string" ? video.codec : "";
+    const dims = w && h ? `${w}×${h}` : "";
+    return [dims, fps, frames, codec].filter(Boolean).join(" · ") || "元数据生成中";
+  }
+  return "—";
+}
 
 function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpanded: boolean; onToggle: () => void }) {
   const created = new Date(ds.created_at).toLocaleDateString("zh-CN");
@@ -101,6 +131,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
   const [itemPage, setItemPage] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState<ProjectResponse | null>(null);
+  const queryClient = useQueryClient();
   const { data: itemsData, isLoading: itemsLoading } = useDatasetItems(ds.id, { limit: 10, offset: itemPage * 10 });
   const { data: linkedProjects = [] } = useDatasetProjects(ds.id);
   const { data: allProjects } = useProjects();
@@ -108,11 +139,14 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
   const linkMutation = useLinkProject(ds.id);
   const scanMutation = useScanDatasetItems(ds.id);
   const backfillMutation = useBackfillDimensions(ds.id);
+  const backfillMediaMutation = useBackfillMedia(ds.id);
   const pushToast = useToastStore((s) => s.push);
 
   const items = itemsData?.items ?? [];
   const totalItems = itemsData?.total ?? 0;
   const totalPages = Math.ceil(totalItems / 10);
+  const isImageDataset = ds.data_type === "image";
+  const isVideoDataset = ds.data_type === "video";
 
   const linkedIds = new Set(linkedProjects.map((p) => p.id));
   const availableProjects = (allProjects ?? []).filter((p) => !linkedIds.has(p.id));
@@ -146,26 +180,47 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                   >
                     <Icon name="refresh" size={12} /> {scanMutation.isPending ? "扫描中..." : "扫描导入"}
                   </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      backfillMutation.mutate(undefined, {
-                        onSuccess: (res) => {
-                          pushToast({
-                            msg: `回填完成 · 处理 ${res.processed} / 失败 ${res.failed}` +
-                              (res.remaining_hint ? "，仍有未处理项，可再次点击" : ""),
-                          });
-                        },
-                        onError: (err: any) => {
-                          pushToast({ msg: `回填失败: ${err?.message ?? "未知错误"}`, kind: "error" });
-                        },
-                      });
-                    }}
-                    disabled={backfillMutation.isPending}
-                    title="对缺失 width/height 的图片执行维度回填"
-                  >
-                    <Icon name="refresh" size={12} /> {backfillMutation.isPending ? "回填中..." : "回填维度"}
-                  </Button>
+                  {isImageDataset && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        backfillMutation.mutate(undefined, {
+                          onSuccess: (res) => {
+                            pushToast({
+                              msg: `回填完成 · 处理 ${res.processed} / 失败 ${res.failed}` +
+                                (res.remaining_hint ? "，仍有未处理项，可再次点击" : ""),
+                            });
+                          },
+                          onError: (err: unknown) => {
+                            pushToast({ msg: `回填失败: ${getErrorMessage(err)}`, kind: "error" });
+                          },
+                        });
+                      }}
+                      disabled={backfillMutation.isPending}
+                      title="对缺失 width/height 的图片执行维度回填"
+                    >
+                      <Icon name="refresh" size={12} /> {backfillMutation.isPending ? "回填中..." : "回填维度"}
+                    </Button>
+                  )}
+                  {isVideoDataset && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        backfillMediaMutation.mutate(undefined, {
+                          onSuccess: () => {
+                            pushToast({ msg: "已提交视频元数据补生成任务", sub: "稍后刷新文件列表可查看处理结果" });
+                          },
+                          onError: (err: unknown) => {
+                            pushToast({ msg: `提交失败: ${getErrorMessage(err)}`, kind: "error" });
+                          },
+                        });
+                      }}
+                      disabled={backfillMediaMutation.isPending}
+                      title="对缺失视频元数据、poster 或播放转码结果的文件重新入队"
+                    >
+                      <Icon name="refresh" size={12} /> {backfillMediaMutation.isPending ? "提交中..." : "补生成元数据"}
+                    </Button>
+                  )}
                   <Button size="sm" onClick={() => setUploadOpen(true)}>
                     <Icon name="upload" size={12} /> 上传
                   </Button>
@@ -174,6 +229,13 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                     onClose={() => setUploadOpen(false)}
                     datasetId={ds.id}
                     datasetName={ds.name}
+                    onUploaded={() => {
+                      queryClient.invalidateQueries({ queryKey: ["datasets"] });
+                      queryClient.invalidateQueries({ queryKey: ["dataset-items", ds.id] });
+                      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+                      queryClient.invalidateQueries({ queryKey: ["projects"] });
+                      queryClient.invalidateQueries({ queryKey: ["project-stats"] });
+                    }}
                   />
 
                 </div>
@@ -181,7 +243,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
               <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 12.5 }}>
                 <thead>
                   <tr>
-                    {["文件名", "类型", "大小", "上传时间"].map((h, i) => (
+                    {["文件名", "类型", "大小", "媒体信息", "上传时间"].map((h, i) => (
                       <th key={i} style={{
                         textAlign: "left", fontWeight: 500, fontSize: 11,
                         color: "var(--color-fg-muted)", padding: "6px 8px",
@@ -193,7 +255,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                 </thead>
                 <tbody>
                   {itemsLoading && (
-                    <tr><td colSpan={4} style={{ textAlign: "center", padding: 20, color: "var(--color-fg-subtle)" }}>加载中...</td></tr>
+                    <tr><td colSpan={5} style={{ textAlign: "center", padding: 20, color: "var(--color-fg-subtle)" }}>加载中...</td></tr>
                   )}
                   {!itemsLoading && items.map((item) => (
                     <tr key={item.id}>
@@ -209,13 +271,27 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                       <td style={{ padding: "8px", borderBottom: "1px solid var(--color-border)", color: "var(--color-fg-muted)" }}>
                         {item.file_size ? `${(item.file_size / 1024).toFixed(1)} KB` : "—"}
                       </td>
+                      <td
+                        title={formatMediaInfo(item)}
+                        style={{
+                          padding: "8px",
+                          borderBottom: "1px solid var(--color-border)",
+                          color: formatMediaInfo(item).includes("失败") ? "var(--color-danger)" : "var(--color-fg-muted)",
+                          maxWidth: 220,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {formatMediaInfo(item)}
+                      </td>
                       <td style={{ padding: "8px", borderBottom: "1px solid var(--color-border)", color: "var(--color-fg-muted)" }}>
                         {new Date(item.created_at).toLocaleDateString("zh-CN")}
                       </td>
                     </tr>
                   ))}
                   {!itemsLoading && items.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: "center", padding: 20, color: "var(--color-fg-subtle)" }}>暂无文件</td></tr>
+                    <tr><td colSpan={5} style={{ textAlign: "center", padding: 20, color: "var(--color-fg-subtle)" }}>暂无文件</td></tr>
                   )}
                 </tbody>
               </table>

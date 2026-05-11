@@ -82,6 +82,8 @@ graph TD
 | `reopened_count` / `last_reopened_at` | 重开编辑历史 |
 | `version` | annotation 写入时的乐观并发辅助 |
 
+数据集关联项目时会为该数据集的现有 `dataset_items` 创建 task；关联关系存在期间，后续上传、ZIP 导入或扫描导入新增的 item 也会扇出为对应项目的 task，并同步更新 `project.total_tasks`。
+
 ## Task 状态机
 
 task 状态枚举当前是：
