@@ -1,32 +1,36 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/Button";
+import type { Dispatch, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
 import { Icon } from "@/components/ui/Icon";
-import type {
-  AnnotationResponse,
-  TaskVideoManifestResponse,
-  VideoBboxGeometry,
-  VideoTrackGeometry,
-  VideoTrackKeyframe,
-} from "@/types";
+import type { AnnotationResponse, TaskVideoManifestResponse, VideoTrackKeyframe } from "@/types";
 import type { VideoTool } from "../state/useWorkbenchState";
-import { classColor } from "./colors";
+import { VideoFrameOverlay } from "./VideoFrameOverlay";
 import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
-
-type Geom = { x: number; y: number; w: number; h: number };
-type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
-type FrameEntry = {
-  id: string;
-  ann: AnnotationResponse;
-  geom: Geom;
-  className: string;
-  source: "manual" | "prediction" | "interpolated" | "legacy";
-  occluded?: boolean;
-  trackId?: string;
-};
-type DragState =
-  | { kind: "draw"; start: { x: number; y: number }; current: { x: number; y: number } }
-  | { kind: "move"; id: string; start: { x: number; y: number }; origin: Geom; current: Geom }
-  | null;
+import { VideoQcWarnings } from "./VideoQcWarnings";
+import { VideoSelectionActions } from "./VideoSelectionActions";
+import { VideoTrackPanel } from "./VideoTrackPanel";
+import {
+  clamp01,
+  clampGeom,
+  isVideoBbox,
+  isVideoTrack,
+  nearestTrackBbox,
+  nearestTrackKeyframe,
+  normalizeGeom,
+  resolveTrackAtFrame,
+  shapeIou,
+  shortTrackId,
+  sortedKeyframes,
+  upsertKeyframe,
+} from "./videoStageGeometry";
+import type {
+  VideoDragState,
+  VideoFrameEntry,
+  VideoStageGeom,
+  VideoStageGeometry,
+  VideoTrackAnnotation,
+  VideoTrackConversionOptions,
+  VideoTrackGhost,
+} from "./videoStageTypes";
 
 interface VideoStageProps {
   manifest: TaskVideoManifestResponse | undefined;
@@ -38,140 +42,24 @@ interface VideoStageProps {
   readOnly?: boolean;
   videoTool?: VideoTool;
   onSelect: (id: string | null) => void;
-  onCreate: (frameIndex: number, geom: Geom) => void;
+  onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
   onPendingDraw?: (
     kind: "video_bbox" | "video_track",
     frameIndex: number,
-    geom: Geom,
+    geom: VideoStageGeom,
     anchor: { left: number; top: number },
   ) => void;
-  onUpdate: (annotation: AnnotationResponse, geometry: VideoGeometry) => void;
+  onUpdate: (annotation: AnnotationResponse, geometry: VideoStageGeometry) => void;
   onRename: (annotation: AnnotationResponse, className: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
   onDelete?: (annotation: AnnotationResponse) => void;
-  onConvertToBboxes?: (
-    annotation: AnnotationResponse,
-    options: {
-      operation: "copy" | "split";
-      scope: "frame" | "track";
-      frameIndex?: number;
-      frameMode?: "keyframes" | "all_frames";
-    },
-  ) => void;
+  onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
   onCursorMove?: (pt: { x: number; y: number } | null) => void;
 }
 
 export interface VideoStageControls {
   togglePlayback: () => void;
   seekByFrames: (delta: number) => void;
-}
-
-function clamp01(v: number) {
-  if (!Number.isFinite(v)) return 0;
-  return Math.max(0, Math.min(1, v));
-}
-
-function clampGeom(g: Geom): Geom {
-  const w = clamp01(g.w);
-  const h = clamp01(g.h);
-  return {
-    x: Math.max(0, Math.min(1 - w, clamp01(g.x))),
-    y: Math.max(0, Math.min(1 - h, clamp01(g.y))),
-    w,
-    h,
-  };
-}
-
-function normalizeGeom(a: { x: number; y: number }, b: { x: number; y: number }): Geom {
-  const x1 = clamp01(Math.min(a.x, b.x));
-  const y1 = clamp01(Math.min(a.y, b.y));
-  const x2 = clamp01(Math.max(a.x, b.x));
-  const y2 = clamp01(Math.max(a.y, b.y));
-  return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
-}
-
-function isVideoBbox(ann: AnnotationResponse): ann is AnnotationResponse & { geometry: VideoBboxGeometry } {
-  return ann.geometry.type === "video_bbox";
-}
-
-function isVideoTrack(ann: AnnotationResponse): ann is AnnotationResponse & { geometry: VideoTrackGeometry } {
-  return ann.geometry.type === "video_track";
-}
-
-function sortedKeyframes(track: VideoTrackGeometry) {
-  return [...track.keyframes].sort((a, b) => a.frame_index - b.frame_index);
-}
-
-function upsertKeyframe(track: VideoTrackGeometry, frameIndex: number, bbox: Geom, patch?: Partial<VideoTrackKeyframe>): VideoTrackGeometry {
-  const next = sortedKeyframes(track).filter((kf) => kf.frame_index !== frameIndex);
-  next.push({
-    frame_index: frameIndex,
-    bbox: clampGeom(bbox),
-    source: "manual",
-    absent: false,
-    occluded: false,
-    ...patch,
-  });
-  return { ...track, keyframes: next.sort((a, b) => a.frame_index - b.frame_index) };
-}
-
-function frameHasAbsentBetween(keyframes: VideoTrackKeyframe[], from: number, to: number) {
-  return keyframes.some((kf) => kf.absent && kf.frame_index > from && kf.frame_index < to);
-}
-
-function interpolate(a: VideoTrackKeyframe, b: VideoTrackKeyframe, frameIndex: number): Geom {
-  const span = Math.max(1, b.frame_index - a.frame_index);
-  const t = (frameIndex - a.frame_index) / span;
-  return {
-    x: a.bbox.x + (b.bbox.x - a.bbox.x) * t,
-    y: a.bbox.y + (b.bbox.y - a.bbox.y) * t,
-    w: a.bbox.w + (b.bbox.w - a.bbox.w) * t,
-    h: a.bbox.h + (b.bbox.h - a.bbox.h) * t,
-  };
-}
-
-function resolveTrackAtFrame(track: VideoTrackGeometry, frameIndex: number): { geom: Geom; source: FrameEntry["source"]; occluded?: boolean } | null {
-  const keyframes = sortedKeyframes(track);
-  const exact = keyframes.find((kf) => kf.frame_index === frameIndex);
-  if (exact) {
-    if (exact.absent) return null;
-    return { geom: exact.bbox, source: exact.source === "prediction" ? "prediction" : "manual", occluded: exact.occluded };
-  }
-
-  const before = [...keyframes].reverse().find((kf) => kf.frame_index < frameIndex && !kf.absent);
-  const after = keyframes.find((kf) => kf.frame_index > frameIndex && !kf.absent);
-  if (!before || !after) return null;
-  if (frameHasAbsentBetween(keyframes, before.frame_index, after.frame_index)) return null;
-  return { geom: interpolate(before, after, frameIndex), source: "interpolated" };
-}
-
-function nearestTrackBbox(track: VideoTrackGeometry, frameIndex: number): Geom {
-  const current = resolveTrackAtFrame(track, frameIndex);
-  if (current) return current.geom;
-  return nearestTrackKeyframe(track, frameIndex)?.bbox ?? { x: 0, y: 0, w: 0.1, h: 0.1 };
-}
-
-function nearestTrackKeyframe(track: VideoTrackGeometry, frameIndex: number): VideoTrackKeyframe | null {
-  const keyframes = sortedKeyframes(track).filter((kf) => !kf.absent);
-  const nearest = keyframes.reduce<VideoTrackKeyframe | null>((best, kf) => {
-    if (!best) return kf;
-    return Math.abs(kf.frame_index - frameIndex) < Math.abs(best.frame_index - frameIndex) ? kf : best;
-  }, null);
-  return nearest;
-}
-
-function shapeIou(a: Geom, b: Geom) {
-  const x1 = Math.max(a.x, b.x);
-  const y1 = Math.max(a.y, b.y);
-  const x2 = Math.min(a.x + a.w, b.x + b.w);
-  const y2 = Math.min(a.y + a.h, b.y + b.h);
-  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-  const union = a.w * a.h + b.w * b.h - inter;
-  return union > 0 ? inter / union : 0;
-}
-
-function shortTrackId(trackId: string) {
-  return trackId.length > 8 ? trackId.slice(0, 8) : trackId;
 }
 
 export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(function VideoStage({
@@ -197,7 +85,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const [frameIndex, setFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
-  const [drag, setDrag] = useState<DragState>(null);
+  const [drag, setDrag] = useState<VideoDragState>(null);
   const [hiddenTrackIds, setHiddenTrackIds] = useState<Set<string>>(() => new Set());
   const [lockedTrackIds, setLockedTrackIds] = useState<Set<string>>(() => new Set());
   const [playbackOverlayVisible, setPlaybackOverlayVisible] = useState(true);
@@ -234,7 +122,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   );
 
   const currentFrameEntries = useMemo(() => {
-    const out: FrameEntry[] = [];
+    const out: VideoFrameEntry[] = [];
     for (const ann of annotations) {
       if (isVideoBbox(ann) && ann.geometry.frame_index === frameIndex) {
         out.push({ id: ann.id, ann, geom: ann.geometry, className: ann.class_name, source: "legacy" });
@@ -256,7 +144,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     return out;
   }, [annotations, frameIndex, hiddenTrackIds]);
 
-  const selectedTrackGhost = useMemo(() => {
+  const selectedTrackGhost = useMemo<VideoTrackGhost | null>(() => {
     if (!selectedTrack || hiddenTrackIds.has(selectedTrack.geometry.track_id)) return null;
     if (currentFrameEntries.some((entry) => entry.ann.id === selectedTrack.id)) return null;
     const exact = selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex);
@@ -268,7 +156,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       ann: selectedTrack,
       geom: nearest.bbox,
       className: selectedTrack.class_name,
-      source: "manual" as const,
+      source: "manual",
       trackId: selectedTrack.geometry.track_id,
       originFrame: nearest.frame_index,
     };
@@ -443,7 +331,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     return () => cancel(raf);
   }, [fps, isPlaying, maxFrame]);
 
-  const pointFromEvent = useCallback((evt: React.PointerEvent<SVGSVGElement>) => {
+  const pointFromEvent = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     const rect = overlayRef.current?.getBoundingClientRect();
     if (!rect) return null;
     return {
@@ -452,14 +340,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     };
   }, []);
 
-  const updateCursor = useCallback((evt: React.PointerEvent<SVGSVGElement>) => {
+  const updateCursor = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     const pt = pointFromEvent(evt);
     onCursorMove?.(pt);
   }, [onCursorMove, pointFromEvent]);
 
   const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
 
-  const beginDraw = useCallback((evt: React.PointerEvent<SVGSVGElement>) => {
+  const beginDraw = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     if (readOnly || isPlaying || (videoTool === "track" && selectedTrackLocked)) return;
     const pt = pointFromEvent(evt);
     if (!pt) return;
@@ -469,19 +357,19 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     setDrag({ kind: "draw", start: pt, current: pt });
   }, [isPlaying, onSelect, pointFromEvent, readOnly, selectedTrack, selectedTrackLocked, videoTool]);
 
-  const beginMove = useCallback((evt: React.PointerEvent<SVGRectElement>, entry: FrameEntry) => {
+  const beginMove = useCallback((evt: ReactPointerEvent<SVGRectElement>, entry: VideoFrameEntry | VideoTrackGhost) => {
     const trackId = isVideoTrack(entry.ann) ? entry.ann.geometry.track_id : null;
     evt.stopPropagation();
     onSelect(entry.ann.id);
     if (readOnly || isPlaying || (trackId && lockedTrackIds.has(trackId))) return;
-    const pt = pointFromEvent(evt as unknown as React.PointerEvent<SVGSVGElement>);
+    const pt = pointFromEvent(evt as unknown as ReactPointerEvent<SVGSVGElement>);
     if (!pt) return;
     (evt.currentTarget.ownerSVGElement as SVGSVGElement | null)?.setPointerCapture?.(evt.pointerId);
     setPlaybackOverlayVisible(false);
     setDrag({ kind: "move", id: entry.ann.id, start: pt, origin: entry.geom, current: entry.geom });
   }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly]);
 
-  const onPointerMove = useCallback((evt: React.PointerEvent<SVGSVGElement>) => {
+  const onPointerMove = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     updateCursor(evt);
     const pt = pointFromEvent(evt);
     if (!pt || !drag) return;
@@ -499,7 +387,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     setDrag({ ...drag, current: next });
   }, [drag, pointFromEvent, updateCursor]);
 
-  const finishDrag = useCallback((evt: React.PointerEvent<SVGSVGElement>) => {
+  const finishDrag = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     const pt = pointFromEvent(evt);
     const cur = drag;
     setDrag(null);
@@ -532,9 +420,28 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     } else if (isVideoBbox(ann)) {
       onUpdate(ann, { type: "video_bbox", frame_index: ann.geometry.frame_index, ...cur.current });
     }
-  }, [annotations, drag, frameIndex, lockedTrackIds, onCreate, onPendingDraw, onUpdate, pointFromEvent, schedulePlaybackOverlayHide, selectedTrack, showPlaybackOverlay, togglePlayback, videoTool]);
+  }, [
+    annotations,
+    drag,
+    frameIndex,
+    lockedTrackIds,
+    onCreate,
+    onPendingDraw,
+    onUpdate,
+    pointFromEvent,
+    schedulePlaybackOverlayHide,
+    selectedTrack,
+    showPlaybackOverlay,
+    togglePlayback,
+    videoTool,
+  ]);
 
-  const toggleTrackSet = useCallback((setter: React.Dispatch<React.SetStateAction<Set<string>>>, trackId: string) => {
+  const onOverlayPointerLeave = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
+    onCursorMove?.(null);
+    if (drag) finishDrag(evt);
+  }, [drag, finishDrag, onCursorMove]);
+
+  const toggleTrackSet = useCallback((setter: Dispatch<SetStateAction<Set<string>>>, trackId: string) => {
     setter((prev) => {
       const next = new Set(prev);
       if (next.has(trackId)) next.delete(trackId);
@@ -554,7 +461,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, selectedTrackGhost.geom));
   }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack, selectedTrackGhost]);
 
-  const deleteTrackKeyframe = useCallback((ann: AnnotationResponse & { geometry: VideoTrackGeometry }, targetFrame: number) => {
+  const deleteTrackKeyframe = useCallback((ann: VideoTrackAnnotation, targetFrame: number) => {
     if (readOnly || lockedTrackIds.has(ann.geometry.track_id) || ann.geometry.keyframes.length <= 1) return;
     onUpdate(ann, {
       ...ann.geometry,
@@ -601,104 +508,26 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
               onClick={togglePlayback}
             />
-            <svg
-              ref={overlayRef}
-              data-testid="video-overlay"
-              viewBox="0 0 1 1"
-              preserveAspectRatio="none"
-              onPointerDown={beginDraw}
+            <VideoFrameOverlay
+              overlayRef={overlayRef}
+              entries={currentFrameEntries}
+              selectedId={selectedId}
+              selectedTrackGhost={selectedTrackGhost}
+              draft={draft}
+              drag={drag}
+              activeClass={activeClass}
+              selectedTrackClassName={selectedTrack?.class_name}
+              readOnly={readOnly}
+              isPlaying={isPlaying}
+              videoTool={videoTool}
+              selectedTrackLocked={selectedTrackLocked}
+              onBeginDraw={beginDraw}
+              onBeginMove={beginMove}
               onPointerMove={onPointerMove}
-              onPointerUp={finishDrag}
-              onPointerCancel={() => setDrag(null)}
-              onPointerLeave={(evt) => {
-                onCursorMove?.(null);
-                if (drag) finishDrag(evt);
-              }}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                cursor: readOnly || isPlaying || (videoTool === "track" && selectedTrackLocked) ? "default" : videoTool === "track" ? "copy" : "crosshair",
-                pointerEvents: "auto",
-              }}
-            >
-              {currentFrameEntries.map((entry) => {
-                const g: Geom = drag?.kind === "move" && drag.id === entry.ann.id ? drag.current : entry.geom;
-                const color = classColor(entry.className);
-                const selected = entry.ann.id === selectedId;
-                const labelSuffix = entry.source === "interpolated" ? " · 插值" : entry.source === "legacy" ? " · 旧框" : entry.occluded ? " · 遮挡" : "";
-                return (
-                  <g key={`${entry.id}-${entry.trackId ?? "legacy"}`}>
-                    <rect
-                      x={g.x}
-                      y={g.y}
-                      width={g.w}
-                      height={g.h}
-                      fill={selected ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)"}
-                      stroke={color}
-                      strokeWidth={selected ? 3 : 2}
-                      strokeDasharray={entry.source === "interpolated" || entry.occluded ? "6 4" : undefined}
-                      vectorEffect="non-scaling-stroke"
-                      onPointerDown={(evt) => beginMove(evt, entry)}
-                    />
-                    <text
-                      x={g.x}
-                      y={Math.max(0.02, g.y - 0.008)}
-                      fontSize="0.025"
-                      fill={color}
-                      stroke="rgba(0,0,0,0.75)"
-                      strokeWidth="0.004"
-                      paintOrder="stroke"
-                    >
-                      {entry.className}{labelSuffix}
-                    </text>
-                  </g>
-                );
-              })}
-              {selectedTrackGhost && !drag && (
-                <g data-testid="video-track-ghost">
-                  <rect
-                    x={selectedTrackGhost.geom.x}
-                    y={selectedTrackGhost.geom.y}
-                    width={selectedTrackGhost.geom.w}
-                    height={selectedTrackGhost.geom.h}
-                    fill="rgba(255,255,255,0.035)"
-                    stroke={classColor(selectedTrackGhost.className)}
-                    strokeWidth={2}
-                    strokeDasharray="3 5"
-                    opacity={0.72}
-                    vectorEffect="non-scaling-stroke"
-                    onPointerDown={(evt) => beginMove(evt, selectedTrackGhost)}
-                  />
-                  <text
-                    x={selectedTrackGhost.geom.x}
-                    y={Math.max(0.02, selectedTrackGhost.geom.y - 0.008)}
-                    fontSize="0.025"
-                    fill={classColor(selectedTrackGhost.className)}
-                    stroke="rgba(0,0,0,0.75)"
-                    strokeWidth="0.004"
-                    opacity={0.86}
-                    paintOrder="stroke"
-                  >
-                    {selectedTrackGhost.className} · 参考 F{selectedTrackGhost.originFrame}
-                  </text>
-                </g>
-              )}
-              {draft && (
-                <rect
-                  x={draft.x}
-                  y={draft.y}
-                  width={draft.w}
-                  height={draft.h}
-                  fill="rgba(255,255,255,0.08)"
-                  stroke={classColor(selectedTrack?.class_name ?? activeClass)}
-                  strokeWidth={2}
-                  vectorEffect="non-scaling-stroke"
-                  strokeDasharray="6 4"
-                />
-              )}
-            </svg>
+              onFinishDrag={finishDrag}
+              onCancelDrag={() => setDrag(null)}
+              onPointerLeave={onOverlayPointerLeave}
+            />
           </div>
           {isPlaying && (
             <div
@@ -738,80 +567,15 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               视频无法播放：{playbackError}
             </div>
           )}
-          {selectedAnnotation && !readOnly && (
-            <div
-              data-testid="video-selection-actions"
-              style={{
-                position: "absolute",
-                top: 14,
-                right: 14,
-                display: "flex",
-                gap: 6,
-                padding: 6,
-                borderRadius: 8,
-                background: "rgba(0,0,0,0.68)",
-                boxShadow: "0 6px 18px rgba(0,0,0,0.24)",
-              }}
-            >
-              <Button
-                size="sm"
-                title="修改类别"
-                disabled={!onChangeUserBoxClass}
-                onClick={() => onChangeUserBoxClass?.(selectedAnnotation.id)}
-              >
-                <Icon name="tag" size={12} />
-              </Button>
-              {isVideoTrack(selectedAnnotation) && (
-                <>
-                  <Button
-                    size="sm"
-                    title="复制当前帧为独立框"
-                    onClick={() => onConvertToBboxes?.(selectedAnnotation, {
-                      operation: "copy",
-                      scope: "frame",
-                      frameIndex,
-                    })}
-                  >
-                    复制框
-                  </Button>
-                  <Button
-                    size="sm"
-                    title="拆当前关键帧为独立框"
-                    onClick={() => onConvertToBboxes?.(selectedAnnotation, {
-                      operation: "split",
-                      scope: "frame",
-                      frameIndex,
-                    })}
-                  >
-                    拆框
-                  </Button>
-                </>
-              )}
-              <Button size="sm" title="删除" onClick={() => onDelete?.(selectedAnnotation)}>
-                <Icon name="trash" size={12} />
-              </Button>
-            </div>
-          )}
-          {qualityWarnings.length > 0 && (
-            <div
-              data-testid="video-qc-warnings"
-              style={{
-                position: "absolute",
-                left: 14,
-                bottom: 14,
-                display: "grid",
-                gap: 4,
-                color: "var(--color-warning)",
-                fontSize: 12,
-              }}
-            >
-              {qualityWarnings.map((w) => (
-                <div key={w} style={{ padding: "4px 8px", background: "rgba(0,0,0,0.68)", borderRadius: 6 }}>
-                  {w}
-                </div>
-              ))}
-            </div>
-          )}
+          <VideoSelectionActions
+            selectedAnnotation={selectedAnnotation}
+            frameIndex={frameIndex}
+            readOnly={readOnly}
+            onChangeUserBoxClass={onChangeUserBoxClass}
+            onDelete={onDelete}
+            onConvertToBboxes={onConvertToBboxes}
+          />
+          <VideoQcWarnings warnings={qualityWarnings} />
           <VideoPlaybackOverlay
             frameIndex={frameIndex}
             maxFrame={maxFrame}
@@ -831,221 +595,26 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
           />
         </div>
 
-        <aside style={{ minHeight: 0, overflow: "auto", borderLeft: "1px solid var(--color-border)", background: "var(--color-bg-elev)", padding: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <b style={{ fontSize: 13 }}>轨迹</b>
-            <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>{videoTracks.length}</span>
-          </div>
-          <div style={{ display: "grid", gap: 8 }}>
-            {videoTracks.map((ann) => {
-              const track = ann.geometry;
-              const selected = ann.id === selectedId;
-              const hidden = hiddenTrackIds.has(track.track_id);
-              const locked = lockedTrackIds.has(track.track_id);
-              const exact = track.keyframes.find((kf) => kf.frame_index === frameIndex);
-              return (
-                <div
-                  key={ann.id}
-                  data-testid="video-track-row"
-                  onClick={() => onSelect(ann.id)}
-                  style={{
-                    display: "grid",
-                    gap: 7,
-                    padding: 8,
-                    border: `1px solid ${selected ? "var(--color-accent)" : "var(--color-border)"}`,
-                    borderRadius: 8,
-                    background: selected ? "color-mix(in oklab, var(--color-accent) 12%, var(--color-bg-elev))" : "transparent",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 999, background: classColor(ann.class_name) }} />
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {ann.class_name}
-                    </span>
-                    <span className="mono" style={{ fontSize: 10, color: "var(--color-fg-muted)" }}>{shortTrackId(track.track_id)}</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <Button size="sm" title={hidden ? "显示轨迹" : "隐藏轨迹"} onClick={(e) => { e.stopPropagation(); toggleTrackSet(setHiddenTrackIds, track.track_id); }}>
-                      <Icon name={hidden ? "eyeOff" : "eye"} size={12} />
-                    </Button>
-                    <Button size="sm" title={locked ? "解锁轨迹" : "锁定轨迹"} onClick={(e) => { e.stopPropagation(); toggleTrackSet(setLockedTrackIds, track.track_id); }}>
-                      <Icon name={locked ? "lock" : "unlock"} size={12} />
-                    </Button>
-                    <Button
-                      size="sm"
-                      title="重命名轨迹类别"
-                      disabled={readOnly || !onChangeUserBoxClass}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onChangeUserBoxClass?.(ann.id);
-                      }}
-                    >
-                      <Icon name="edit" size={12} />
-                    </Button>
-                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--color-fg-muted)" }}>
-                      {exact?.absent ? "当前消失" : exact ? "关键帧" : "非关键帧"}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-            {videoTracks.length === 0 && (
-              <div style={{ color: "var(--color-fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
-                暂无轨迹。暂停后画框会创建第一条轨迹。
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
-            <b style={{ fontSize: 13 }}>当前轨迹</b>
-            <div style={{ display: "flex", gap: 6 }}>
-              <Button
-                size="sm"
-                disabled={!selectedTrack || readOnly || selectedTrackLocked}
-                onClick={() => markSelectedTrack({ absent: true, occluded: false })}
-              >
-                消失
-              </Button>
-              <Button
-                size="sm"
-                disabled={!selectedTrack || readOnly || selectedTrackLocked}
-                onClick={() => markSelectedTrack({ absent: false, occluded: true })}
-              >
-                遮挡
-              </Button>
-              <Button
-                size="sm"
-                disabled={!selectedTrackGhost || readOnly || selectedTrackLocked}
-                title="使用最近关键帧的框在当前帧创建关键帧"
-                onClick={copySelectedTrackToCurrentFrame}
-              >
-                复制到当前帧
-              </Button>
-            </div>
-            {selectedTrack && (
-              <>
-                <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)", lineHeight: 1.5 }}>
-                  track_id: {selectedTrack.geometry.track_id}<br />
-                  frame_index: {frameIndex}
-                </div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                    <b style={{ fontSize: 12 }}>关键帧</b>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <Button
-                        size="sm"
-                        disabled={readOnly}
-                        title="复制整条轨迹的关键帧为独立框"
-                        onClick={() => onConvertToBboxes?.(selectedTrack, {
-                          operation: "copy",
-                          scope: "track",
-                          frameMode: "keyframes",
-                        })}
-                      >
-                        复制关键帧
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={readOnly}
-                        title="复制整条轨迹插值后的所有帧为独立框"
-                        onClick={() => onConvertToBboxes?.(selectedTrack, {
-                          operation: "copy",
-                          scope: "track",
-                          frameMode: "all_frames",
-                        })}
-                      >
-                        复制全帧
-                      </Button>
-                    </div>
-                  </div>
-                  {sortedKeyframes(selectedTrack.geometry).map((kf) => (
-                    <div
-                      key={kf.frame_index}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr auto",
-                        gap: 6,
-                        alignItems: "center",
-                        padding: "5px 6px",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: 6,
-                        fontSize: 11,
-                      }}
-                    >
-                      <span>
-                        F{kf.frame_index}
-                        {kf.absent ? " · 消失" : kf.occluded ? " · 遮挡" : ""}
-                      </span>
-                      <span style={{ display: "flex", gap: 4 }}>
-                        <Button
-                          size="sm"
-                          disabled={readOnly || Boolean(kf.absent)}
-                          title="复制此关键帧为独立框"
-                          onClick={() => onConvertToBboxes?.(selectedTrack, {
-                            operation: "copy",
-                            scope: "frame",
-                            frameIndex: kf.frame_index,
-                          })}
-                        >
-                          复制
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={readOnly || Boolean(kf.absent)}
-                          title="拆此关键帧为独立框"
-                          onClick={() => onConvertToBboxes?.(selectedTrack, {
-                            operation: "split",
-                            scope: "frame",
-                            frameIndex: kf.frame_index,
-                          })}
-                        >
-                          拆
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={readOnly || selectedTrack.geometry.keyframes.length <= 1}
-                          title="删除关键帧"
-                          onClick={() => deleteTrackKeyframe(selectedTrack, kf.frame_index)}
-                        >
-                          <Icon name="trash" size={11} />
-                        </Button>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <Button
-                    size="sm"
-                    disabled={readOnly}
-                    title="拆整条轨迹关键帧为独立框并删除原轨迹"
-                    onClick={() => onConvertToBboxes?.(selectedTrack, {
-                      operation: "split",
-                      scope: "track",
-                      frameMode: "keyframes",
-                    })}
-                  >
-                    拆关键帧
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={readOnly}
-                    title="拆整条轨迹所有插值帧为独立框并删除原轨迹"
-                    onClick={() => onConvertToBboxes?.(selectedTrack, {
-                      operation: "split",
-                      scope: "track",
-                      frameMode: "all_frames",
-                    })}
-                  >
-                    拆全帧
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </aside>
+        <VideoTrackPanel
+          videoTracks={videoTracks}
+          selectedId={selectedId}
+          selectedTrack={selectedTrack}
+          selectedTrackGhost={selectedTrackGhost}
+          selectedTrackLocked={selectedTrackLocked}
+          frameIndex={frameIndex}
+          readOnly={readOnly}
+          hiddenTrackIds={hiddenTrackIds}
+          lockedTrackIds={lockedTrackIds}
+          onSelect={onSelect}
+          onToggleHiddenTrack={(trackId) => toggleTrackSet(setHiddenTrackIds, trackId)}
+          onToggleLockedTrack={(trackId) => toggleTrackSet(setLockedTrackIds, trackId)}
+          onChangeUserBoxClass={onChangeUserBoxClass}
+          onMarkSelectedTrack={markSelectedTrack}
+          onCopySelectedTrackToCurrentFrame={copySelectedTrackToCurrentFrame}
+          onDeleteTrackKeyframe={deleteTrackKeyframe}
+          onConvertToBboxes={onConvertToBboxes}
+        />
       </div>
-
     </div>
   );
 });
