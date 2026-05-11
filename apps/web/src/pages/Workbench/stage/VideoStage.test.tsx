@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { VideoStage, type VideoStageControls } from "./VideoStage";
+import { VideoTrackSidebar } from "./VideoTrackSidebar";
 import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
 
 const manifest: TaskVideoManifestResponse = {
@@ -307,7 +308,7 @@ describe("VideoStage", () => {
       },
     ] as AnnotationResponse[];
 
-    const { getByLabelText, getByTestId, getByText } = render(
+    const { getByLabelText, getByTestId } = render(
       <VideoStage
         manifest={manifest}
         annotations={annotations}
@@ -324,7 +325,22 @@ describe("VideoStage", () => {
 
     expect(getByTestId("video-track-ghost").textContent).toContain("car · 参考 F0");
 
-    fireEvent.click(getByText("复制到当前帧"));
+    const sidebar = render(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId="t1"
+        frameIndex={3}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    fireEvent.click(sidebar.getByText("复制到当前帧"));
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     const [, geometry] = onUpdate.mock.calls[0];
@@ -572,15 +588,17 @@ describe("VideoStage", () => {
     ] as AnnotationResponse[];
 
     const { getByTitle } = render(
-      <VideoStage
-        manifest={manifest}
+      <VideoTrackSidebar
         annotations={annotations}
         selectedId="t1"
-        activeClass="car"
+        frameIndex={0}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
         onSelect={() => {}}
-        onCreate={() => {}}
         onUpdate={() => {}}
-        onRename={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
         onChangeUserBoxClass={onChangeUserBoxClass}
       />,
     );

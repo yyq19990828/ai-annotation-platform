@@ -49,7 +49,7 @@ export function VideoTrackPanel({
   onConvertToBboxes,
 }: VideoTrackPanelProps) {
   return (
-    <aside style={{ minHeight: 0, overflow: "auto", borderLeft: "1px solid var(--color-border)", background: "var(--color-bg-elev)", padding: 10 }}>
+    <div style={{ display: "grid", gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--color-border)" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <b style={{ fontSize: 13 }}>轨迹</b>
         <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>{videoTracks.length}</span>
@@ -261,6 +261,6 @@ export function VideoTrackPanel({
           </>
         )}
       </div>
-    </aside>
+    </div>
   );
 }

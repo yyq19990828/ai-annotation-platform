@@ -21,16 +21,9 @@ interface AIInspectorPanelProps {
   /** 受控宽度（仅 open=true 生效）。 */
   width: number;
   onResize: (w: number) => void;
-  aiModel: string;
-  aiRunning: boolean;
-  aiBoxes: AiBox[];
   userBoxes: Annotation[];
   selectedId: string | null;
   selectedIds?: string[];
-  /** 与 user 框 IoU > 0.7 的同类 AI 框 id（视觉淡化）。 */
-  dimmedAiIds?: Set<string>;
-  confThreshold: number;
-  aiTakeoverRate: number;
   imageWidth: number | null;
   imageHeight: number | null;
   /** 项目级属性 schema（v0.5.4）。空时不渲染表单。 */
@@ -57,39 +50,14 @@ interface AIInspectorPanelProps {
   isFetchingMorePredictions?: boolean;
   onFetchMorePredictions?: () => void;
   onToggle: () => void;
-  onRunAi: () => void;
-  onAcceptAll: () => void;
-  onSetConfThreshold: (v: number) => void;
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
-  onAcceptPrediction: (b: AiBox) => void;
-  onRejectPrediction?: (b: AiBox) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
   /** v0.6.5 · 任务已锁定（review/completed），属性表单只读。 */
   readOnly?: boolean;
-  /** v0.9.2 · 当前工具（仅 sam 时显文本提示输入面板）。 */
-  tool?: "box" | "hand" | "polygon" | "canvas" | "sam";
-  /**
-   * v0.9.2 · SAM 文本 prompt 触发，仅 tool === "sam" 时启用。
-   * v0.9.4 phase 2 · 加 outputMode 参数让面板内 segmented control 三选一传给后端.
-   */
-  onRunSamText?: (text: string, outputMode: TextOutputMode) => void;
-  samRunning?: boolean;
-  samCandidateCount?: number;
-  /** v0.9.4 phase 2 · 用于读 / 写 sessionStorage `wb:sam:textOutput:{projectId}` */
-  projectId?: string;
-  /** v0.9.4 phase 2 · 智能默认 outputMode (image-det → "box", 其它 → "mask") */
-  projectTypeKey?: string | null;
-  /** v0.9.4 phase 2 · 切到 sam-text 子工具时计数自增, useEffect 拿到后 input.focus(). */
-  samTextFocusKey?: number;
-  /** v0.9.5 · 本题累计 AI 费用 (¥) — 「本次效率」段下方展示 */
-  taskAiCost?: number;
-  /** v0.9.5 · 本题平均推理时间 (ms) */
-  taskAiAvgMs?: number | null;
-  /** v0.9.5 · 本题预测条数 */
-  taskAiPredictionCount?: number;
+  videoTrackPanel?: React.ReactNode;
 }
 
 const stripStyle: React.CSSProperties = {
@@ -101,18 +69,14 @@ const stripStyle: React.CSSProperties = {
 
 export function AIInspectorPanel({
   open, width, onResize,
-  aiModel, aiRunning, aiBoxes, userBoxes, selectedId, selectedIds, dimmedAiIds,
-  confThreshold, aiTakeoverRate,
+  userBoxes, selectedId, selectedIds,
   imageWidth, imageHeight,
   attributeSchema, selectedAnnotation, onUpdateAttributes, currentUserId,
   taskFileUrl, enableCommentCanvasDrawing = true, liveCommentCanvas,
-  hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
-  onToggle, onRunAi, onAcceptAll, onSetConfThreshold,
-  onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  onToggle,
+  onSelect, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   readOnly = false,
-  tool, onRunSamText, samRunning = false, samCandidateCount = 0,
-  projectId, projectTypeKey, samTextFocusKey,
-  taskAiCost, taskAiAvgMs, taskAiPredictionCount,
+  videoTrackPanel,
 }: AIInspectorPanelProps) {
   const selSet = selectedIds && selectedIds.length > 0
     ? new Set(selectedIds)
@@ -121,9 +85,9 @@ export function AIInspectorPanel({
   if (!open) {
     return (
       <div style={{ borderLeft: "1px solid var(--color-border)", overflow: "hidden" }}>
-        <button onClick={onToggle} title="展开 AI 助手" style={stripStyle}>
+        <button onClick={onToggle} title="展开标注详情" style={stripStyle}>
           <Icon name="panelRight" size={16} />
-          <span style={{ fontSize: 10, writingMode: "vertical-rl", letterSpacing: 1, opacity: 0.6 }}>AI 助手</span>
+          <span style={{ fontSize: 10, writingMode: "vertical-rl", letterSpacing: 1, opacity: 0.6 }}>标注详情</span>
         </button>
       </div>
     );
@@ -142,130 +106,30 @@ export function AIInspectorPanel({
         style={{
           padding: "12px 14px",
           borderBottom: "1px solid var(--color-border)",
-          background: "linear-gradient(180deg, color-mix(in oklab, var(--color-ai-soft) 60%, transparent), transparent 80%)",
-          borderLeft: "2px solid color-mix(in oklab, var(--color-ai) 35%, transparent)",
+          background: "var(--color-bg-elev)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span
               style={{
                 width: 24, height: 24, borderRadius: "var(--radius-sm)",
                 display: "inline-flex", alignItems: "center", justifyContent: "center",
-                background: "color-mix(in oklab, var(--color-ai) 18%, transparent)",
-                color: "var(--color-ai)",
+                background: "var(--color-bg-sunken)",
+                color: "var(--color-fg-muted)",
               }}
             >
-              <Icon name="bot" size={14} />
-            </span>
-            <b style={{ fontSize: 13 }}>AI 助手</b>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Badge variant="ai" dot={!aiRunning} style={{ fontSize: 10, display: "inline-flex", alignItems: "center", gap: 4 }}>
-              {aiRunning && <Icon name="loader2" size={10} className="spin" />}
-              {aiRunning ? "推理中" : "在线"}
-            </Badge>
-            <Button variant="ghost" size="sm" onClick={onToggle} title="收起 AI 助手" style={{ padding: "2px 6px" }}>
               <Icon name="panelRight" size={14} />
-            </Button>
-          </div>
-        </div>
-        <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginBottom: 8 }}>
-          模型: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{aiModel}</span>
-        </div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-          <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} style={{ flex: 1 }}>
-            {aiRunning
-              ? <Icon name="loader2" size={11} className="spin" />
-              : <Icon name="wandSparkles" size={11} />}
-            {aiRunning ? "推理中..." : "一键预标"}
-          </Button>
-          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxes.length === 0} style={{ flex: 1 }}>
-            <Icon name="check" size={11} />全部采纳
-          </Button>
-        </div>
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 11, marginBottom: 4 }}>
-            <span
-              style={{ color: "var(--color-fg-muted)" }}
-              title="只显示置信度 ≥ 该阈值的 AI 框；低于阈值的框被隐藏，「全部采纳」也不会采纳它们。注意：这是前端展示过滤，不重新跑模型；要改 DINO 召回阈值请到「项目设置 → AI 配置 → box/text threshold」。"
-            >
-              置信度阈值（仅前端过滤显示，不重跑模型）
             </span>
-            <span
-              className="mono"
-              style={{
-                fontWeight: 600, fontSize: 12,
-                color: "var(--color-ai)",
-                padding: "0 6px", borderRadius: "var(--radius-sm)",
-                background: "color-mix(in oklab, var(--color-ai) 12%, transparent)",
-              }}
-            >{(confThreshold * 100).toFixed(0)}%</span>
+            <b style={{ fontSize: 13 }}>标注详情</b>
           </div>
-          {/* v0.8.7 F5.2 · slider 改为 read-only 数值；调整入口统一到 Topbar `[`/`]`，
-              避免双控件 state 漂移与单测覆盖混乱。 */}
-          <div
-            style={{
-              padding: "6px 8px",
-              fontSize: 11,
-              color: "var(--color-fg-muted)",
-              background: "var(--color-bg-sunken)",
-              border: "1px dashed var(--color-border)",
-              borderRadius: "var(--radius-sm)",
-              textAlign: "center",
-            }}
-            onWheel={(e) => {
-              // 鼠标滚轮调整阈值，给老用户一个 fallback；按住 Shift 可快速 ±0.1
-              e.preventDefault();
-              const step = e.shiftKey ? 0.1 : 0.05;
-              const next = Math.min(
-                1,
-                Math.max(0, confThreshold + (e.deltaY < 0 ? step : -step)),
-              );
-              onSetConfThreshold(Number(next.toFixed(2)));
-            }}
-            data-testid="ai-threshold-display"
-          >
-            在工具栏使用 <kbd>[</kbd> / <kbd>]</kbd> 调整
-          </div>
-          <div
-            style={{
-              display: "flex", justifyContent: "space-between", fontSize: 10,
-              color: "var(--color-fg-subtle)", marginTop: 4,
-            }}
-          >
-            <span>0%</span>
-            <span style={{ opacity: 0.6 }}>·</span>
-            <span>50%</span>
-            <span style={{ opacity: 0.6 }}>·</span>
-            <span>100%</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-fg-subtle)", marginTop: 2 }}>
-            <span>显示更多</span><span>更精准</span>
-          </div>
-        </div>
+          <Button variant="ghost" size="sm" onClick={onToggle} title="收起标注详情" style={{ padding: "2px 6px" }}>
+            <Icon name="panelRight" size={14} />
+          </Button>
+      </div>
       </div>
 
-      {tool === "sam" && onRunSamText && (
-        <SamTextPanel
-          onRun={onRunSamText}
-          running={samRunning}
-          candidateCount={samCandidateCount}
-          projectId={projectId}
-          projectTypeKey={projectTypeKey}
-          focusKey={samTextFocusKey}
-        />
-      )}
-
-      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--color-border)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600 }}>AI 待审</span>
-          <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{aiBoxes.length} 项</span>
-        </div>
-        {aiBoxes.length === 0 && (
-          <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)", padding: "4px 0" }}>暂无,点击"一键预标"开始</div>
-        )}
-      </div>
+      {videoTrackPanel}
 
       {multiCount > 0 && (
         <div
@@ -313,8 +177,228 @@ export function AIInspectorPanel({
       )}
 
       <BoxesList
-        aiBoxes={aiBoxes}
+        aiBoxes={[]}
         userBoxes={userBoxes}
+        selSet={selSet}
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        onSelect={onSelect}
+        onAcceptPrediction={() => {}}
+        onClearSelection={onClearSelection}
+        onDeleteUserBox={onDeleteUserBox}
+        onChangeUserBoxClass={onChangeUserBoxClass}
+      />
+    </div>
+  );
+}
+
+interface AIPredictionPopoverProps {
+  open: boolean;
+  rightOffset: number;
+  aiModel: string;
+  aiRunning: boolean;
+  aiBoxes: AiBox[];
+  selectedId: string | null;
+  selectedIds?: string[];
+  dimmedAiIds?: Set<string>;
+  confThreshold: number;
+  aiTakeoverRate: number;
+  imageWidth: number | null;
+  imageHeight: number | null;
+  hasMorePredictions?: boolean;
+  isFetchingMorePredictions?: boolean;
+  onFetchMorePredictions?: () => void;
+  onClose: () => void;
+  onRunAi: () => void;
+  onAcceptAll: () => void;
+  onSetConfThreshold: (v: number) => void;
+  onSelect: (id: string, opts?: { shift?: boolean }) => void;
+  onAcceptPrediction: (b: AiBox) => void;
+  onRejectPrediction?: (b: AiBox) => void;
+  onClearSelection: () => void;
+  tool?: "box" | "hand" | "polygon" | "canvas" | "sam";
+  onRunSamText?: (text: string, outputMode: TextOutputMode) => void;
+  samRunning?: boolean;
+  samCandidateCount?: number;
+  projectId?: string;
+  projectTypeKey?: string | null;
+  samTextFocusKey?: number;
+  taskAiCost?: number;
+  taskAiAvgMs?: number | null;
+  taskAiPredictionCount?: number;
+}
+
+export function AIPredictionPopover({
+  open,
+  rightOffset,
+  aiModel,
+  aiRunning,
+  aiBoxes,
+  selectedId,
+  selectedIds,
+  dimmedAiIds,
+  confThreshold,
+  aiTakeoverRate,
+  imageWidth,
+  imageHeight,
+  hasMorePredictions,
+  isFetchingMorePredictions,
+  onFetchMorePredictions,
+  onClose,
+  onRunAi,
+  onAcceptAll,
+  onSetConfThreshold,
+  onSelect,
+  onAcceptPrediction,
+  onRejectPrediction,
+  onClearSelection,
+  tool,
+  onRunSamText,
+  samRunning = false,
+  samCandidateCount = 0,
+  projectId,
+  projectTypeKey,
+  samTextFocusKey,
+  taskAiCost,
+  taskAiAvgMs,
+  taskAiPredictionCount,
+}: AIPredictionPopoverProps) {
+  const selSet = selectedIds && selectedIds.length > 0
+    ? new Set(selectedIds)
+    : selectedId ? new Set([selectedId]) : new Set<string>();
+
+  if (!open) return null;
+
+  return (
+    <div
+      data-testid="ai-prediction-popover"
+      style={{
+        position: "absolute",
+        top: 58,
+        right: rightOffset,
+        width: 360,
+        maxWidth: "calc(100vw - 80px)",
+        maxHeight: "calc(100vh - 92px)",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        zIndex: 30,
+        background: "var(--color-bg-elev)",
+        border: "1px solid color-mix(in oklab, var(--color-ai) 35%, var(--color-border))",
+        borderRadius: 8,
+        boxShadow: "0 18px 44px rgba(0,0,0,0.24)",
+      }}
+    >
+      <div
+        style={{
+          padding: "12px 14px",
+          borderBottom: "1px solid var(--color-border)",
+          background: "linear-gradient(180deg, color-mix(in oklab, var(--color-ai-soft) 72%, transparent), transparent 82%)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                width: 24, height: 24, borderRadius: "var(--radius-sm)",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                background: "color-mix(in oklab, var(--color-ai) 18%, transparent)",
+                color: "var(--color-ai)",
+              }}
+            >
+              <Icon name="bot" size={14} />
+            </span>
+            <b style={{ fontSize: 13 }}>AI 预标</b>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Badge variant="ai" dot={!aiRunning} style={{ fontSize: 10, display: "inline-flex", alignItems: "center", gap: 4 }}>
+              {aiRunning && <Icon name="loader2" size={10} className="spin" />}
+              {aiRunning ? "推理中" : "就绪"}
+            </Badge>
+            <Button variant="ghost" size="sm" onClick={onClose} title="关闭 AI 预标" style={{ padding: "2px 6px" }}>
+              <Icon name="x" size={12} />
+            </Button>
+          </div>
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginBottom: 8 }}>
+          模型: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{aiModel}</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} style={{ flex: 1 }}>
+            {aiRunning
+              ? <Icon name="loader2" size={11} className="spin" />
+              : <Icon name="wandSparkles" size={11} />}
+            {aiRunning ? "推理中..." : "开始预标"}
+          </Button>
+          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxes.length === 0} style={{ flex: 1 }}>
+            <Icon name="check" size={11} />全部采纳
+          </Button>
+        </div>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 11, marginBottom: 4 }}>
+            <span
+              style={{ color: "var(--color-fg-muted)" }}
+              title="只显示置信度 >= 该阈值的 AI 框；低于阈值的框被隐藏，全部采纳也不会采纳它们。"
+            >
+              置信度阈值
+            </span>
+            <span
+              className="mono"
+              style={{
+                fontWeight: 600, fontSize: 12,
+                color: "var(--color-ai)",
+                padding: "0 6px", borderRadius: "var(--radius-sm)",
+                background: "color-mix(in oklab, var(--color-ai) 12%, transparent)",
+              }}
+            >{(confThreshold * 100).toFixed(0)}%</span>
+          </div>
+          <div
+            style={{
+              padding: "6px 8px",
+              fontSize: 11,
+              color: "var(--color-fg-muted)",
+              background: "var(--color-bg-sunken)",
+              border: "1px dashed var(--color-border)",
+              borderRadius: "var(--radius-sm)",
+              textAlign: "center",
+            }}
+            onWheel={(e) => {
+              e.preventDefault();
+              const step = e.shiftKey ? 0.1 : 0.05;
+              const next = Math.min(1, Math.max(0, confThreshold + (e.deltaY < 0 ? step : -step)));
+              onSetConfThreshold(Number(next.toFixed(2)));
+            }}
+            data-testid="ai-threshold-display"
+          >
+            在工具栏使用 <kbd>[</kbd> / <kbd>]</kbd> 调整
+          </div>
+        </div>
+      </div>
+
+      {tool === "sam" && onRunSamText && (
+        <SamTextPanel
+          onRun={onRunSamText}
+          running={samRunning}
+          candidateCount={samCandidateCount}
+          projectId={projectId}
+          projectTypeKey={projectTypeKey}
+          focusKey={samTextFocusKey}
+        />
+      )}
+
+      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--color-border)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>AI 待审</span>
+          <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{aiBoxes.length} 项</span>
+        </div>
+        {aiBoxes.length === 0 && (
+          <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)", padding: "4px 0" }}>暂无，点击“开始预标”运行</div>
+        )}
+      </div>
+
+      <BoxesList
+        aiBoxes={aiBoxes}
+        userBoxes={[]}
         selSet={selSet}
         dimmedAiIds={dimmedAiIds}
         imageWidth={imageWidth}
@@ -326,8 +410,7 @@ export function AIInspectorPanel({
         onAcceptPrediction={onAcceptPrediction}
         onRejectPrediction={onRejectPrediction}
         onClearSelection={onClearSelection}
-        onDeleteUserBox={onDeleteUserBox}
-        onChangeUserBoxClass={onChangeUserBoxClass}
+        onDeleteUserBox={() => {}}
       />
 
       <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px", background: "var(--color-bg-sunken)" }}>
@@ -337,7 +420,6 @@ export function AIInspectorPanel({
           <span className="mono" style={{ fontWeight: 600, color: "var(--color-ai)" }}>{aiTakeoverRate}%</span>
         </div>
         <ProgressBar value={aiTakeoverRate} color="var(--color-ai)" />
-        {/* v0.9.5 · 本题 AI 费用 / 推理时间单条透传 */}
         {taskAiPredictionCount && taskAiPredictionCount > 0 && (
           <div
             data-testid="task-ai-cost"
@@ -352,9 +434,7 @@ export function AIInspectorPanel({
           >
             <span>本题</span>
             <span className="mono" style={{ color: "var(--color-fg)" }}>
-              {taskAiCost != null && taskAiCost > 0
-                ? `¥${taskAiCost.toFixed(4)}`
-                : "¥0"}
+              {taskAiCost != null && taskAiCost > 0 ? `¥${taskAiCost.toFixed(4)}` : "¥0"}
               {taskAiAvgMs != null && (
                 <>
                   <span style={{ color: "var(--color-fg-subtle)", margin: "0 4px" }}>·</span>

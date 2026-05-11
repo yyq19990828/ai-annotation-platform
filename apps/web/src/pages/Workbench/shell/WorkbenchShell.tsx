@@ -36,6 +36,7 @@ import { useAnnotateMode } from "../modes/useAnnotateMode";
 import { useReviewMode } from "../modes/useReviewMode";
 import { setActiveClassesConfig, sortClassesByConfig, UNKNOWN_CLASS } from "../stage/colors";
 import type { VideoStageControls } from "../stage/VideoStage";
+import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { WorkbenchOverlays } from "./WorkbenchOverlays";
 import { WorkbenchLayout } from "./WorkbenchLayout";
@@ -151,6 +152,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const [fitTick, setFitTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [showHotkeys, setShowHotkeys] = useState(false);
+  const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(routeId);
@@ -187,6 +189,12 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
   const stageKind = currentProject?.type_key === "lidar" ? "3d" : isVideoTask ? "video" : "image";
   const videoManifest = useVideoManifest(taskId, isVideoTask);
+  const resetVideoStageUi = s.resetVideoStageUi;
+
+  useEffect(() => {
+    resetVideoStageUi();
+    setAiPopoverOpen(false);
+  }, [taskId, resetVideoStageUi]);
 
   // v0.7.1 · 支持 /annotate 深链 ?batch=&task= 自动选中任务
   // B-23 · 无 task 参数时按 batch 恢复上次打开的任务，避免每次进批次都回到第一题。
@@ -684,7 +692,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       topbar={{
         task, taskIdx, taskTotal: tasks.length, aiRunning, batchStatus: currentBatchStatus,
         isSubmitting: topbarActions.isSubmitting ?? submitTaskMut.isPending, confThreshold: s.confThreshold,
-        onShowHotkeys: () => setShowHotkeys(true), onRunAi: handleRunAi, aiDisabled: isVideoTask,
+        onShowHotkeys: () => setShowHotkeys(true), onRunAi: () => setAiPopoverOpen((open) => !open), aiDisabled: isVideoTask,
         onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
         onSubmit: topbarActions.onSubmit ?? handleSubmitTask, onSmartNextOpen: topbarActions.onSmartNextOpen,
         onSmartNextUncertain: topbarActions.onSmartNextUncertain, overflowSlot: <ThemeSwitcher />,
@@ -700,7 +708,12 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         stageKind, readOnly: isLocked, activeClass: s.activeClass, selectedId: s.selectedId,
         annotations: annotationsData ?? [], onSelectBox: handleSelectBox, onCursorMove: setCursor,
         videoManifest: videoManifest.data, videoManifestLoading: videoManifest.isLoading,
-        videoManifestError: videoManifest.error, videoTool: s.videoTool, onVideoCreate: handleVideoCreate,
+        videoManifestError: videoManifest.error, videoTool: s.videoTool,
+        videoFrameIndex: s.videoFrameIndex,
+        hiddenVideoTrackIds: s.hiddenVideoTrackIds,
+        lockedVideoTrackIds: s.lockedVideoTrackIds,
+        onVideoFrameIndexChange: s.setVideoFrameIndex,
+        onVideoCreate: handleVideoCreate,
         onVideoPendingDraw: handleVideoPendingDraw, onVideoUpdate: handleVideoUpdate,
         onVideoRename: handleVideoRename, onVideoConvertToBboxes: handleVideoConvertToBboxes,
         fileUrl, blurhash, thumbnailUrl, tool: s.tool, selectedIds: s.selectedIds, fadedAiIds: dimmedAiIds,
@@ -757,26 +770,62 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       }}
       inspector={{
         open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
-        aiModel, aiRunning, aiBoxes, userBoxes, selectedId: s.selectedId, selectedIds: s.selectedIds,
-        dimmedAiIds, confThreshold: s.confThreshold, aiTakeoverRate, imageWidth, imageHeight,
-        hasMorePredictions: !!predictionsInfinite.hasNextPage,
-        isFetchingMorePredictions: predictionsInfinite.isFetchingNextPage,
-        onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(), onToggle: () => s.setRightOpen(!s.rightOpen),
-        onRunAi: handleRunAi, onAcceptAll: handleAcceptAll, onSetConfThreshold: s.setConfThreshold,
-        onSelect: handleSelectBox, onAcceptPrediction: handleAcceptPrediction, onRejectPrediction: handleRejectPrediction,
+        userBoxes, selectedId: s.selectedId, selectedIds: s.selectedIds,
+        imageWidth, imageHeight, onToggle: () => s.setRightOpen(!s.rightOpen),
+        onSelect: handleSelectBox,
         onClearSelection: () => s.setSelectedId(null), onDeleteUserBox: handleDeleteBox,
         onChangeUserBoxClass: handleStartChangeClass, attributeSchema: currentProject?.attribute_schema,
         selectedAnnotation: selectedAnnotationForPanel, onUpdateAttributes: handleUpdateAttributes,
-        currentUserId: meUserId, taskFileUrl: task?.file_url, tool: s.tool, onRunSamText: sam.runText,
-        samRunning: sam.isRunning, samCandidateCount: sam.candidates.length, projectId,
-        projectTypeKey: currentProject?.type_key ?? null, samTextFocusKey: s.samTextFocusKey,
-        taskAiCost: taskAiMeta.totalCost, taskAiAvgMs: taskAiMeta.avgMs, taskAiPredictionCount: taskAiMeta.count,
+        currentUserId: meUserId, taskFileUrl: task?.file_url,
+        videoTrackPanel: isVideoTask ? (
+          <VideoTrackSidebar
+            annotations={annotationsData ?? []}
+            selectedId={s.selectedId}
+            frameIndex={s.videoFrameIndex}
+            readOnly={isLocked}
+            hiddenTrackIds={s.hiddenVideoTrackIds}
+            lockedTrackIds={s.lockedVideoTrackIds}
+            onSelect={(id) => handleSelectBox(id)}
+            onToggleHiddenTrack={s.toggleHiddenVideoTrack}
+            onToggleLockedTrack={s.toggleLockedVideoTrack}
+            onChangeUserBoxClass={handleStartChangeClass}
+            onUpdate={handleVideoUpdate}
+            onConvertToBboxes={handleVideoConvertToBboxes}
+          />
+        ) : undefined,
         liveCommentCanvas: {
           active: s.canvasDraft.active,
           result: s.canvasDraft.pendingResult,
           onStart: (initial) => s.beginCanvasDraft(selectedAnnotationForPanel?.id ?? null, initial),
           onConsume: s.consumeCanvasResult,
         },
+      }}
+      aiPopover={{
+        open: aiPopoverOpen && !isVideoTask,
+        rightOffset: rightOpen ? s.rightWidth + 44 : 44,
+        aiModel, aiRunning, aiBoxes, selectedId: s.selectedId, selectedIds: s.selectedIds,
+        dimmedAiIds, confThreshold: s.confThreshold, aiTakeoverRate, imageWidth, imageHeight,
+        hasMorePredictions: !!predictionsInfinite.hasNextPage,
+        isFetchingMorePredictions: predictionsInfinite.isFetchingNextPage,
+        onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(),
+        onClose: () => setAiPopoverOpen(false),
+        onRunAi: handleRunAi,
+        onAcceptAll: handleAcceptAll,
+        onSetConfThreshold: s.setConfThreshold,
+        onSelect: handleSelectBox,
+        onAcceptPrediction: handleAcceptPrediction,
+        onRejectPrediction: handleRejectPrediction,
+        onClearSelection: () => s.setSelectedId(null),
+        tool: s.tool,
+        onRunSamText: sam.runText,
+        samRunning: sam.isRunning,
+        samCandidateCount: sam.candidates.length,
+        projectId,
+        projectTypeKey: currentProject?.type_key ?? null,
+        samTextFocusKey: s.samTextFocusKey,
+        taskAiCost: taskAiMeta.totalCost,
+        taskAiAvgMs: taskAiMeta.avgMs,
+        taskAiPredictionCount: taskAiMeta.count,
       }}
       hotkeys={{ open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: currentProject?.attribute_schema }}
       offlineQueue={{ open: offlineDrawerOpen, onClose: closeOfflineDrawer, currentTaskId: taskId, onFlushOne: executeOp, onFlushAll: flushOffline }}

@@ -2,7 +2,7 @@ import type { ComponentProps, ComponentPropsWithoutRef, Ref } from "react";
 import { ConflictModal } from "@/components/workbench/ConflictModal";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 import type { VideoStageControls } from "../stage/VideoStage";
-import { AIInspectorPanel } from "./AIInspectorPanel";
+import { AIInspectorPanel, AIPredictionPopover } from "./AIInspectorPanel";
 import { HotkeyCheatSheet } from "./HotkeyCheatSheet";
 import { OfflineQueueDrawer } from "./OfflineQueueDrawer";
 import { StatusBar } from "./StatusBar";
@@ -22,6 +22,7 @@ interface WorkbenchLayoutProps {
   videoControlsRef: Ref<VideoStageControls>;
   statusBar: ComponentProps<typeof StatusBar>;
   inspector: ComponentProps<typeof AIInspectorPanel>;
+  aiPopover: ComponentProps<typeof AIPredictionPopover>;
   hotkeys: ComponentProps<typeof HotkeyCheatSheet>;
   offlineQueue: ComponentProps<typeof OfflineQueueDrawer>;
   conflict: ComponentProps<typeof ConflictModal>;
@@ -38,6 +39,7 @@ export function WorkbenchLayout({
   videoControlsRef,
   statusBar,
   inspector,
+  aiPopover,
   hotkeys,
   offlineQueue,
   conflict,
@@ -51,6 +53,7 @@ export function WorkbenchLayout({
         height: "100%",
         overflow: "hidden",
         background: "var(--color-bg-sunken)",
+        position: "relative",
       }}
     >
       <TaskQueuePanel {...taskQueue} />
@@ -64,6 +67,7 @@ export function WorkbenchLayout({
       </div>
 
       <AIInspectorPanel {...inspector} />
+      <AIPredictionPopover {...aiPopover} />
       <HotkeyCheatSheet {...hotkeys} />
       <OfflineQueueDrawer {...offlineQueue} />
       <ConflictModal {...conflict} />

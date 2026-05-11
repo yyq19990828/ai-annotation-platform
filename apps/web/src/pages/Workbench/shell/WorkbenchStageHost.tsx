@@ -30,6 +30,10 @@ interface WorkbenchStageHostProps {
   videoManifestLoading?: boolean;
   videoManifestError?: unknown;
   videoTool: VideoTool;
+  videoFrameIndex: number;
+  hiddenVideoTrackIds: Set<string>;
+  lockedVideoTrackIds: Set<string>;
+  onVideoFrameIndexChange: (frameIndex: number) => void;
   onVideoCreate: (frameIndex: number, geom: Geom) => void;
   onVideoPendingDraw: (
     kind: "video_bbox" | "video_track",
@@ -113,6 +117,10 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     videoManifestLoading,
     videoManifestError,
     videoTool,
+    videoFrameIndex,
+    hiddenVideoTrackIds,
+    lockedVideoTrackIds,
+    onVideoFrameIndexChange,
     onVideoCreate,
     onVideoPendingDraw,
     onVideoUpdate,
@@ -180,9 +188,13 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             annotations={annotations}
             selectedId={selectedId}
             activeClass={activeClass}
+            frameIndex={videoFrameIndex}
+            hiddenTrackIds={hiddenVideoTrackIds}
+            lockedTrackIds={lockedVideoTrackIds}
             readOnly={readOnly}
             videoTool={videoTool}
             onSelect={onSelectBox}
+            onFrameIndexChange={onVideoFrameIndexChange}
             onCreate={onVideoCreate}
             onPendingDraw={onVideoPendingDraw}
             onUpdate={onVideoUpdate}

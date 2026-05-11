@@ -62,6 +62,9 @@ export function useWorkbenchState() {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("box");
   const [videoTool, setVideoTool] = useState<VideoTool>("box");
+  const [videoFrameIndex, setVideoFrameIndex] = useState(0);
+  const [hiddenVideoTrackIds, setHiddenVideoTrackIds] = useState<Set<string>>(() => new Set());
+  const [lockedVideoTrackIds, setLockedVideoTrackIds] = useState<Set<string>>(() => new Set());
   // v0.9.4 phase 2 · SAM 子工具 (point/bbox/text) + polarity (+/−) + 文本焦点 trigger.
   const [samSubTool, setSamSubTool] = useState<SamSubTool>("point");
   const [samPolarity, setSamPolarity] = useState<SamPolarity>("positive");
@@ -109,6 +112,27 @@ export function useWorkbenchState() {
     const clamped = Math.max(220, Math.min(600, Math.round(w)));
     setRightWidthRaw(clamped);
     try { localStorage.setItem("workbench.rightWidth", String(clamped)); } catch { /* noop */ }
+  }, []);
+  const toggleHiddenVideoTrack = useCallback((trackId: string) => {
+    setHiddenVideoTrackIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(trackId)) next.delete(trackId);
+      else next.add(trackId);
+      return next;
+    });
+  }, []);
+  const toggleLockedVideoTrack = useCallback((trackId: string) => {
+    setLockedVideoTrackIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(trackId)) next.delete(trackId);
+      else next.add(trackId);
+      return next;
+    });
+  }, []);
+  const resetVideoStageUi = useCallback(() => {
+    setVideoFrameIndex(0);
+    setHiddenVideoTrackIds(new Set());
+    setLockedVideoTrackIds(new Set());
   }, []);
   /** 同任务内剪贴板（仅本会话内存）。 */
   const [clipboard, setClipboard] = useState<Annotation[]>([]);
@@ -203,6 +227,9 @@ export function useWorkbenchState() {
     currentTaskId, setCurrentTaskId,
     tool, setTool,
     videoTool, setVideoTool,
+    videoFrameIndex, setVideoFrameIndex,
+    hiddenVideoTrackIds, lockedVideoTrackIds,
+    toggleHiddenVideoTrack, toggleLockedVideoTrack, resetVideoStageUi,
     // v0.9.4 phase 2 · SAM 子工具栏
     samSubTool, setSamSubTool,
     samPolarity, setSamPolarity,

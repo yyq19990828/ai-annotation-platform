@@ -14,9 +14,13 @@ export interface VideoWorkbenchProps {
   annotations: AnnotationResponse[];
   selectedId: string | null;
   activeClass: string;
+  frameIndex: number;
+  hiddenTrackIds: Set<string>;
+  lockedTrackIds: Set<string>;
   readOnly: boolean;
   videoTool: VideoTool;
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
+  onFrameIndexChange: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: Geom) => void;
   onPendingDraw: (
     kind: "video_bbox" | "video_track",
@@ -40,9 +44,13 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     annotations,
     selectedId,
     activeClass,
+    frameIndex,
+    hiddenTrackIds,
+    lockedTrackIds,
     readOnly,
     videoTool,
     onSelect,
+    onFrameIndexChange,
     onCreate,
     onPendingDraw,
     onUpdate,
@@ -61,9 +69,13 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         annotations={annotations}
         selectedId={selectedId}
         activeClass={activeClass}
+        frameIndex={frameIndex}
+        hiddenTrackIds={hiddenTrackIds}
+        lockedTrackIds={lockedTrackIds}
         readOnly={readOnly}
         videoTool={videoTool}
         onSelect={onSelect}
+        onFrameIndexChange={onFrameIndexChange}
         onCreate={onCreate}
         onPendingDraw={onPendingDraw}
         onUpdate={onUpdate}

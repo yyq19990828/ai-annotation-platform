@@ -1,19 +1,17 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { Dispatch, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
-import type { AnnotationResponse, TaskVideoManifestResponse, VideoTrackKeyframe } from "@/types";
+import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
 import type { VideoTool } from "../state/useWorkbenchState";
 import { VideoFrameOverlay } from "./VideoFrameOverlay";
 import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { VideoSelectionActions } from "./VideoSelectionActions";
-import { VideoTrackPanel } from "./VideoTrackPanel";
 import {
   clamp01,
   clampGeom,
   isVideoBbox,
   isVideoTrack,
-  nearestTrackBbox,
   nearestTrackKeyframe,
   normalizeGeom,
   resolveTrackAtFrame,
@@ -27,10 +25,11 @@ import type {
   VideoFrameEntry,
   VideoStageGeom,
   VideoStageGeometry,
-  VideoTrackAnnotation,
   VideoTrackConversionOptions,
   VideoTrackGhost,
 } from "./videoStageTypes";
+
+const EMPTY_TRACK_ID_SET = new Set<string>();
 
 interface VideoStageProps {
   manifest: TaskVideoManifestResponse | undefined;
@@ -39,9 +38,13 @@ interface VideoStageProps {
   annotations: AnnotationResponse[];
   selectedId: string | null;
   activeClass: string;
+  frameIndex?: number;
+  hiddenTrackIds?: Set<string>;
+  lockedTrackIds?: Set<string>;
   readOnly?: boolean;
   videoTool?: VideoTool;
   onSelect: (id: string | null) => void;
+  onFrameIndexChange?: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
   onPendingDraw?: (
     kind: "video_bbox" | "video_track",
@@ -69,9 +72,13 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   annotations,
   selectedId,
   activeClass,
+  frameIndex: controlledFrameIndex,
+  hiddenTrackIds = EMPTY_TRACK_ID_SET,
+  lockedTrackIds = EMPTY_TRACK_ID_SET,
   readOnly = false,
   videoTool = "box",
   onSelect,
+  onFrameIndexChange,
   onCreate,
   onPendingDraw,
   onUpdate,
@@ -82,12 +89,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
 }: VideoStageProps, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
-  const [frameIndex, setFrameIndex] = useState(0);
+  const [uncontrolledFrameIndex, setUncontrolledFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [drag, setDrag] = useState<VideoDragState>(null);
-  const [hiddenTrackIds, setHiddenTrackIds] = useState<Set<string>>(() => new Set());
-  const [lockedTrackIds, setLockedTrackIds] = useState<Set<string>>(() => new Set());
   const [playbackOverlayVisible, setPlaybackOverlayVisible] = useState(true);
   const [highlightAction, setHighlightAction] = useState<"prev" | "next" | "play" | null>(null);
   const onSelectRef = useRef(onSelect);
@@ -98,6 +103,12 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
+
+  const frameIndex = controlledFrameIndex ?? uncontrolledFrameIndex;
+  const setFrameIndex = useCallback((nextFrame: number) => {
+    if (controlledFrameIndex === undefined) setUncontrolledFrameIndex(nextFrame);
+    onFrameIndexChange?.(nextFrame);
+  }, [controlledFrameIndex, onFrameIndexChange]);
 
   const fps = manifest?.metadata.fps && manifest.metadata.fps > 0 ? manifest.metadata.fps : 30;
   const frameCount = Math.max(
@@ -208,7 +219,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       const video = videoRef.current;
       if (video) video.currentTime = frame / fps;
     },
-    [fps, maxFrame],
+    [fps, maxFrame, setFrameIndex],
   );
 
   const showPlaybackOverlay = useCallback(() => {
@@ -275,11 +286,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     setIsPlaying(false);
     setPlaybackError(null);
     setDrag(null);
-    setHiddenTrackIds(new Set());
-    setLockedTrackIds(new Set());
     setPlaybackOverlayVisible(true);
     onSelectRef.current(null);
-  }, [manifest?.task_id]);
+  }, [manifest?.task_id, setFrameIndex]);
 
   useEffect(() => {
     return () => {
@@ -313,7 +322,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("error", onError);
     };
-  }, [fps, maxFrame]);
+  }, [fps, maxFrame, setFrameIndex]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -329,7 +338,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     };
     raf = schedule(tick);
     return () => cancel(raf);
-  }, [fps, isPlaying, maxFrame]);
+  }, [fps, isPlaying, maxFrame, setFrameIndex]);
 
   const pointFromEvent = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     const rect = overlayRef.current?.getBoundingClientRect();
@@ -441,34 +450,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     if (drag) finishDrag(evt);
   }, [drag, finishDrag, onCursorMove]);
 
-  const toggleTrackSet = useCallback((setter: Dispatch<SetStateAction<Set<string>>>, trackId: string) => {
-    setter((prev) => {
-      const next = new Set(prev);
-      if (next.has(trackId)) next.delete(trackId);
-      else next.add(trackId);
-      return next;
-    });
-  }, []);
-
-  const markSelectedTrack = useCallback((patch: Partial<VideoTrackKeyframe>) => {
-    if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
-    const bbox = nearestTrackBbox(selectedTrack.geometry, frameIndex);
-    onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, bbox, patch));
-  }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack]);
-
-  const copySelectedTrackToCurrentFrame = useCallback(() => {
-    if (!selectedTrack || !selectedTrackGhost || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
-    onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, selectedTrackGhost.geom));
-  }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack, selectedTrackGhost]);
-
-  const deleteTrackKeyframe = useCallback((ann: VideoTrackAnnotation, targetFrame: number) => {
-    if (readOnly || lockedTrackIds.has(ann.geometry.track_id) || ann.geometry.keyframes.length <= 1) return;
-    onUpdate(ann, {
-      ...ann.geometry,
-      keyframes: sortedKeyframes(ann.geometry).filter((kf) => kf.frame_index !== targetFrame),
-    });
-  }, [lockedTrackIds, onUpdate, readOnly]);
-
   if (isLoading) {
     return (
       <div style={{ flex: 1, display: "grid", placeItems: "center", color: "var(--color-fg-muted)" }}>
@@ -497,7 +478,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       onMouseLeave={schedulePlaybackOverlayHide}
       style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateRows: "1fr", background: "#050507" }}
     >
-      <div style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr) 260px" }}>
+      <div style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr)" }}>
         <div style={{ position: "relative", minHeight: 0, display: "grid", placeItems: "center", overflow: "hidden" }}>
           <div style={{ position: "relative", width: "100%", maxWidth: "100%", maxHeight: "100%", aspectRatio: stageAspect }}>
             <video
@@ -595,25 +576,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
           />
         </div>
 
-        <VideoTrackPanel
-          videoTracks={videoTracks}
-          selectedId={selectedId}
-          selectedTrack={selectedTrack}
-          selectedTrackGhost={selectedTrackGhost}
-          selectedTrackLocked={selectedTrackLocked}
-          frameIndex={frameIndex}
-          readOnly={readOnly}
-          hiddenTrackIds={hiddenTrackIds}
-          lockedTrackIds={lockedTrackIds}
-          onSelect={onSelect}
-          onToggleHiddenTrack={(trackId) => toggleTrackSet(setHiddenTrackIds, trackId)}
-          onToggleLockedTrack={(trackId) => toggleTrackSet(setLockedTrackIds, trackId)}
-          onChangeUserBoxClass={onChangeUserBoxClass}
-          onMarkSelectedTrack={markSelectedTrack}
-          onCopySelectedTrackToCurrentFrame={copySelectedTrackToCurrentFrame}
-          onDeleteTrackKeyframe={deleteTrackKeyframe}
-          onConvertToBboxes={onConvertToBboxes}
-        />
       </div>
     </div>
   );
