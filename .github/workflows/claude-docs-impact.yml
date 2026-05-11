@@ -64,8 +64,9 @@ jobs:
             Decision rules:
             - Prefer repository docs paths over generic advice.
             - Mention ADR only when the change appears architectural or semantics-changing.
-            - When `hasPotentialMiss` is `true` in `.tmp/docs-impact.json`, focus on the `unmatchedRules` array. For each unmatched rule, examine the actual PR diff and decide: (a) does this code change genuinely affect the semantics covered by the rule's suggested docs, or (b) is this rule a false positive for this specific PR? Only use `probably_not_needed` if you can justify that EVERY unmatched rule is a false positive. If even one unmatched rule has a plausible doc gap, output that rule's suggested docs with appropriate confidence.
-            - If `hasPotentialMiss` is `false`, or all unmatched rules are clear false positives, return an empty `suggested_files` array and status `probably_not_needed`.
+            - For EVERY rule in `matchedRules` (regardless of `hasAcceptedDocChanges`): check whether the files in that rule's `recommendDocs` were individually present in `docsTouched`. A rule's `hasAcceptedDocChanges: true` only means *some* doc was touched — it does NOT mean all `recommendDocs` were covered. If key `recommendDocs` files were not touched, treat them as potential gaps.
+            - For `unmatchedRules` (where `hasAcceptedDocChanges: false`): examine the actual PR diff to decide if this rule is a true positive or a false positive for this specific PR.
+            - Only use `probably_not_needed` if you can justify that EVERY rule's `recommendDocs` either (a) were specifically touched, or (b) genuinely don't need updating given the nature of this PR's changes. When in doubt, prefer `uncertain` over `probably_not_needed`.
           claude_args: >-
             --model claude-haiku-4-5
             --json-schema
