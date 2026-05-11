@@ -590,7 +590,9 @@ async def _create_video_export_fixture(db_session, user):
 async def _video_fixture_task_and_track(db_session, project):
     task = (
         await db_session.execute(
-            select(Task).where(Task.project_id == project.id, Task.file_name == "clip-a.mp4")
+            select(Task).where(
+                Task.project_id == project.id, Task.file_name == "clip-a.mp4"
+            )
         )
     ).scalar_one()
     track = (
@@ -651,7 +653,9 @@ async def test_video_batch_export_filters_tasks_and_annotations(
     assert resp.status_code == 200
     assert "_video_tracks.json" in resp.headers["content-disposition"]
     body = resp.json()
-    assert [task["display_id"] for task in body["tasks"]] == [batch_a.display_id.replace("B-A", "T-A")]
+    assert [task["display_id"] for task in body["tasks"]] == [
+        batch_a.display_id.replace("B-A", "T-A")
+    ]
     assert [track["track_id"] for track in body["tracks"]] == ["trk_car"]
     assert len(body["video_bbox"]) == 1
 
@@ -729,7 +733,9 @@ async def test_video_track_convert_frame_split_removes_exact_keyframe(
     body = resp.json()
     assert body["deleted_source"] is False
     assert body["removed_frame_indexes"] == [2]
-    assert [kf["frame_index"] for kf in body["source_annotation"]["geometry"]["keyframes"]] == [0, 4]
+    assert [
+        kf["frame_index"] for kf in body["source_annotation"]["geometry"]["keyframes"]
+    ] == [0, 4]
     assert body["created_annotations"][0]["geometry"]["frame_index"] == 2
 
 
@@ -756,7 +762,11 @@ async def test_video_track_convert_track_split_all_frames_deletes_source(
     body = resp.json()
     assert body["deleted_source"] is True
     assert body["source_annotation"] is None
-    assert [ann["geometry"]["frame_index"] for ann in body["created_annotations"]] == [0, 1, 2]
+    assert [ann["geometry"]["frame_index"] for ann in body["created_annotations"]] == [
+        0,
+        1,
+        2,
+    ]
     assert body["created_annotations"][1]["geometry"]["x"] == 0.2
 
 
@@ -769,7 +779,9 @@ async def test_video_track_convert_rejects_non_track_annotation(
     project, _, _ = await _create_video_export_fixture(db_session, user)
     task = (
         await db_session.execute(
-            select(Task).where(Task.project_id == project.id, Task.file_name == "clip-a.mp4")
+            select(Task).where(
+                Task.project_id == project.id, Task.file_name == "clip-a.mp4"
+            )
         )
     ).scalar_one()
     bbox = (

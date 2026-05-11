@@ -589,17 +589,20 @@ async def convert_video_track_to_bboxes(
 
     svc = AnnotationService(db)
     try:
-        source, created, deleted_source, removed_frame_indexes = (
-            await svc.convert_video_track_to_bboxes(
-                task=task,
-                annotation=annotation,
-                user_id=current_user.id,
-                operation=data.operation,
-                scope=data.scope,
-                frame_index=data.frame_index,
-                frame_mode=data.frame_mode,
-                frame_count=await _video_frame_count(db, task),
-            )
+        (
+            source,
+            created,
+            deleted_source,
+            removed_frame_indexes,
+        ) = await svc.convert_video_track_to_bboxes(
+            task=task,
+            annotation=annotation,
+            user_id=current_user.id,
+            operation=data.operation,
+            scope=data.scope,
+            frame_index=data.frame_index,
+            frame_mode=data.frame_mode,
+            frame_count=await _video_frame_count(db, task),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

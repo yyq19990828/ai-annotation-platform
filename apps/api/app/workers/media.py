@@ -128,7 +128,9 @@ def extract_video_poster(input_path: str | Path, output_path: str | Path) -> Non
         raise RuntimeError(proc.stderr.strip() or "ffmpeg poster extraction failed")
 
 
-def transcode_video_for_browser(input_path: str | Path, output_path: str | Path) -> None:
+def transcode_video_for_browser(
+    input_path: str | Path, output_path: str | Path
+) -> None:
     proc = subprocess.run(
         [
             "ffmpeg",
