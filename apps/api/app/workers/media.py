@@ -87,7 +87,7 @@ def probe_video_file(path: str | Path) -> dict[str, Any]:
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=codec_name,width,height,avg_frame_rate,r_frame_rate,nb_frames,duration",
+            "stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,nb_frames,duration",
             "-show_entries",
             "format=duration",
             "-of",

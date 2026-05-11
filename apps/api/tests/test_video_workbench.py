@@ -51,6 +51,7 @@ def test_probe_video_file_uses_timeout(tmp_path, monkeypatch):
     seen: dict[str, object] = {}
 
     def fake_run(*args, **kwargs):
+        seen["args"] = args[0]
         seen["timeout"] = kwargs.get("timeout")
         return subprocess.CompletedProcess(
             args=args[0],
@@ -64,6 +65,7 @@ def test_probe_video_file_uses_timeout(tmp_path, monkeypatch):
     probe_video_file(video)
 
     assert seen["timeout"] == FFPROBE_TIMEOUT_SECONDS
+    assert any("stream=codec_type,codec_name" in arg for arg in seen["args"])
 
 
 def test_extract_video_poster_uses_timeout(tmp_path, monkeypatch):
