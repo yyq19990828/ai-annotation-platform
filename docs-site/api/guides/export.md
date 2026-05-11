@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-11
 ---
 
 # 导出
@@ -68,6 +68,18 @@ GET /api/v1/projects/:id/exports/:job_id/download
 | **cvat** | CVAT 1.1 XML |
 
 每种格式都会同时打包**原图引用**（默认仅 URL，可选嵌入 / 压缩）。
+
+## 视频轨迹限制
+
+v0.9.16 / v0.9.17 的视频工作台已支持 `video_bbox` 与 `video_track` 写入，但当前导出服务仍按图片检测格式生成 COCO / YOLO / VOC，默认读取 `geometry.x/y/w/h`。
+
+因此：
+
+- `video_track` 暂不支持导出逐帧展开结果。
+- `video_bbox` / `video_track` 不应直接走 COCO / YOLO / VOC 训练导出。
+- 需要保留视频轨迹原始结构时，优先通过任务 / 标注 API 拉取原始 annotation JSON。
+
+后续视频导出应新增专门格式，明确区分“仅关键帧”和“展开所有帧”。schema 语义见 [视频标注工作台](/dev/concepts/video-annotation-workbench)。
 
 ## 增量导出
 

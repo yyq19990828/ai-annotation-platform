@@ -3,7 +3,7 @@ audience: [annotator, project_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-11
 ---
 
 # 数据导出格式
@@ -64,6 +64,16 @@ nc: 3
 
 平台间迁移用，含完整原数据 + 标注 + 审核备注。
 
+## 视频轨迹
+
+v0.9.16 / v0.9.17 的视频任务可以保存逐帧框和对象轨迹，但当前导出页面的 COCO / YOLO / VOC 仍面向图片检测数据。
+
+视频轨迹导出边界：
+
+- `video_track` 暂不支持“一键展开为每帧 bbox”导出。
+- `video_bbox` / `video_track` 不建议选择 COCO、YOLO 或 Pascal VOC。
+- 如需迁移或备份视频轨迹，请保留平台原始 annotation JSON；其中 `keyframes[]` 是真实保存的数据，插值帧不会写入库。
+
 ## 选哪个？
 
 | 用途 | 推荐 |
@@ -71,4 +81,5 @@ nc: 3
 | 训练 YOLOv8 | YOLO |
 | 训练 Detectron2 / MMDetection | COCO |
 | 数据迁移 / 备份 | Label Studio JSON |
+| 视频轨迹备份 | 原始 annotation JSON |
 | 老项目维护 | Pascal VOC |
