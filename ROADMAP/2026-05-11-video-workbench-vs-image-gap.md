@@ -2,7 +2,7 @@
 
 > 类型：P0 调研报告 / 优化路线图。
 >
-> 状态：**已清理过时内容（2026-05-11）**。O11–O14 主路径已在 v0.9.20 落地，WorkbenchShell stage 分发已在 M6 中改为 `WorkbenchStageHost`，V1 `VideoStage` 拆分已落地，V2/V3 已落地。本文只保留当前仍 open 的差距和建议顺序。
+> 状态：**已清理过时内容（2026-05-11）**。O11–O14 主路径已在 v0.9.20 落地，WorkbenchShell stage 分发已在 M6 中改为 `WorkbenchStageHost`，V1 `VideoStage` 拆分已落地，V2/V3 已完成。本文只保留当前仍 open 的差距和建议顺序。
 
 ---
 
@@ -31,8 +31,8 @@
 - O14 选中视频对象后改类与轻量操作条主路径。
 - M6 前的 Shell stage 分发描述。当前已由 `WorkbenchStageHost` 分派到 `ImageWorkbench` / `VideoWorkbench` / `ThreeDWorkbench.placeholder`。
 - V1 `VideoStage` 子组件拆分。当前已拆出 `VideoFrameOverlay`、`VideoSelectionActions`、`VideoTrackPanel`、`VideoQcWarnings`、`videoStageGeometry`、`videoStageTypes`。
-- V2 Track 多选与批量操作。当前轨迹侧栏支持 Shift / Cmd / Ctrl 多选，批量改类、删除、显隐和锁定。
-- V3 Keyframe 复制 / 粘贴。当前支持显式「复制当前关键帧」和「粘贴到当前帧」，暂不绑定全局 Ctrl+C / Ctrl+V。
+- V2 Track 多选与批量操作：**已完成**。当前轨迹侧栏支持 Shift / Cmd / Ctrl 多选，批量改类、删除、显隐和锁定。
+- V3 Keyframe 复制 / 粘贴：**已完成**。当前支持显式「复制当前关键帧」和「粘贴到当前帧」，暂不绑定全局 Ctrl+C / Ctrl+V。
 
 ## 2. 仍然 Open 的差距
 

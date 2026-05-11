@@ -1,6 +1,6 @@
 # P0 · 视频标注工作台 Epic
 
-> 状态：**主线已归档（2026-05-11）**。M0–M5.0 已完成：视频数据底座、`VideoStage`、`video_track`、关键帧插值、Video Tracks JSON 导出、工具语义补全均已落地。
+> 状态：**主线已归档（2026-05-11）**。M0–M5.0、V2、V3 已完成：视频数据底座、`VideoStage`、`video_track`、关键帧插值、Video Tracks JSON 导出、工具语义补全、轨迹多选批量操作、关键帧复制 / 粘贴均已落地。
 >
 > 本文件只保留视频工作台当前基线和后续增强。历史阶段细节不再维护，避免与代码和文档重复。
 
@@ -19,8 +19,8 @@
   - `T`：视频轨迹。
 - 新建视频 bbox / track 已接入画完选类浮层。
 - 选中视频对象后 `1-9` 改当前对象类别；无选中时切 active class。
-- 轨迹侧栏支持 Shift / Cmd / Ctrl 多选，已覆盖批量改类、删除、显隐和锁定。
-- 关键帧面板支持显式「复制当前关键帧」和「粘贴到当前帧」，暂不抢占全局 Ctrl+C / Ctrl+V。
+- V2 已完成：轨迹侧栏支持 Shift / Cmd / Ctrl 多选，已覆盖批量改类、删除、显隐和锁定。
+- V3 已完成：关键帧面板支持显式「复制当前关键帧」和「粘贴到当前帧」，暂不抢占全局 Ctrl+C / Ctrl+V。
 - Track → `video_bbox` 转换已支持 `copy|split`、`frame|track`、`keyframes|all_frames`。
 - 关键帧级撤销 / 重做、离线队列兜底、通用 conflict modal 已覆盖视频创建和更新主路径。
 - `format=coco` 对 `video-track` 项目返回 Video Tracks JSON；YOLO / VOC 对视频项目返回 400。
