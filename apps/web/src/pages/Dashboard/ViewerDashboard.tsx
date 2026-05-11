@@ -19,6 +19,7 @@ const FILTER_STATUS_MAP: Record<string, string | undefined> = {
   "待审核": "pending_review",
   "已完成": "completed",
 };
+const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track"]);
 
 export function ViewerDashboard() {
   const [filter, setFilter] = useState<string>("全部");
@@ -27,7 +28,7 @@ export function ViewerDashboard() {
   const location = useLocation();
   const pushToast = useToastStore((s) => s.push);
   const onOpenProject = (p: ProjectResponse) => {
-    if (p.type_key === "image-det") {
+    if (WORKBENCH_PROJECT_TYPES.has(p.type_key)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
       pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type_label} 的标注界面尚未实现` });

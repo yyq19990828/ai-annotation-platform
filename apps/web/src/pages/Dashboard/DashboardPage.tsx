@@ -32,6 +32,7 @@ const TYPE_ICONS: Record<string, string> = {
   "video-track": "video",
   mm: "mm",
 };
+const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track"]);
 
 function ProjectRow({
   p,
@@ -220,7 +221,7 @@ export function DashboardPage() {
     navigate(`/projects/${p.id}/settings${section ? `?section=${section}` : ""}`);
 
   const onOpenProject = (p: ProjectResponse) => {
-    if (p.type_key === "image-det") {
+    if (WORKBENCH_PROJECT_TYPES.has(p.type_key)) {
       navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
     } else {
       pushToast({ msg: `项目 "${p.name}" 已打开`, sub: `类型 ${p.type_label} 的标注界面尚未实现` });

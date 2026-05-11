@@ -1002,7 +1002,7 @@ function SuccessStep({
   onOpenSettings: () => void;
   onDone: () => void;
 }) {
-  const canOpen = project.type_key === "image-det";
+  const canOpen = project.type_key === "image-det" || project.type_key === "video-track";
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 0 4px" }}>
       <div
