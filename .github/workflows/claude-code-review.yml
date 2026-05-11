@@ -48,11 +48,8 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ github.token }}
           track_progress: false
-          claude_args: "--model claude-opus-4-7"
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
+          claude_args: "--model claude-opus-4-7 --allowedTools Bash"
           prompt: |
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
 

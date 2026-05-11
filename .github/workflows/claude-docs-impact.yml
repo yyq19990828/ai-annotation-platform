@@ -69,7 +69,7 @@ jobs:
           claude_args: >-
             --model claude-haiku-4-5
             --json-schema
-            {"type":"object","properties":{"status":{"type":"string","enum":["needs_update","probably_not_needed","uncertain"]},"suggested_files":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"path":{"type":"string"},"confidence":{"type":"string","enum":["high","medium","low"]}},"required":["path","confidence"],"additionalProperties":false}}},"required":["status","suggested_files"],"additionalProperties":false}
+            '{"type":"object","properties":{"status":{"type":"string","enum":["needs_update","probably_not_needed","uncertain"]},"suggested_files":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"path":{"type":"string"},"confidence":{"type":"string","enum":["high","medium","low"]}},"required":["path","confidence"],"additionalProperties":false}}},"required":["status","suggested_files"],"additionalProperties":false}'
 
       - name: Render docs impact comment
         id: render-docs-impact-comment
