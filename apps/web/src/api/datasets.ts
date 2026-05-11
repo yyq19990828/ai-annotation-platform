@@ -81,19 +81,19 @@ export const datasetsApi = {
     ),
 
   uploadComplete: (id: string, itemId: string) =>
-    apiClient.post<{ status: string; item_id: string }>(
+    apiClient.post<{ status: string; item_id: string; linked_tasks: number }>(
       `/datasets/${id}/items/upload-complete/${itemId}`,
     ),
 
   /**
    * 上传 ZIP 包到后端，由服务端解压并入库；最大 200MB。
-   * 返回 { added, skipped, errors, total_in_zip }。
+   * 返回 { added, skipped, errors, total_in_zip, linked_tasks }。
    */
   uploadZip: (
     id: string,
     file: File,
     onProgress?: (pct: number) => void,
-  ): Promise<{ added: number; skipped: number; errors: Array<{ name: string; error: string }>; total_in_zip: number }> => {
+  ): Promise<{ added: number; skipped: number; errors: Array<{ name: string; error: string }>; total_in_zip: number; linked_tasks: number }> => {
     return new Promise((resolve, reject) => {
       const token = localStorage.getItem("token");
       const xhr = new XMLHttpRequest();
@@ -106,7 +106,7 @@ export const datasetsApi = {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             resolve(JSON.parse(xhr.responseText));
-          } catch (e) {
+          } catch {
             reject(new Error("响应解析失败"));
           }
         } else {
@@ -128,12 +128,15 @@ export const datasetsApi = {
   },
 
   scanItems: (id: string) =>
-    apiClient.post<{ status: string; new_items: number }>(`/datasets/${id}/items/scan`),
+    apiClient.post<{ status: string; new_items: number; linked_tasks: number }>(`/datasets/${id}/items/scan`),
 
   backfillDimensions: (id: string, batch = 50) =>
     apiClient.post<{ processed: number; failed: number; remaining_hint: boolean }>(
       `/datasets/${id}/backfill-dimensions?batch=${batch}`,
     ),
+
+  backfillMedia: (id: string) =>
+    apiClient.post<{ status: string; dataset_id: string }>(`/datasets/${id}/backfill-media`),
 
   deleteItem: (id: string, itemId: string) =>
     apiClient.delete<void>(`/datasets/${id}/items/${itemId}`),

@@ -62,6 +62,9 @@ export function useScanDatasetItems(datasetId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["datasets"] });
       qc.invalidateQueries({ queryKey: ["dataset-items", datasetId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project-stats"] });
     },
   });
 }
@@ -70,6 +73,16 @@ export function useBackfillDimensions(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (batch?: number) => datasetsApi.backfillDimensions(datasetId, batch ?? 50),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dataset-items", datasetId] });
+    },
+  });
+}
+
+export function useBackfillMedia(datasetId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => datasetsApi.backfillMedia(datasetId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dataset-items", datasetId] });
     },

@@ -4,7 +4,7 @@ audience: [project_admin, annotator, reviewer]
 type: tutorial
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-11
 ---
 
 # 新项目端到端流程
@@ -31,8 +31,10 @@ last_reviewed: 2026-05-09
    - 项目名称（唯一）
    - 标注类型：bbox / polygon / keypoint / classification
    - 关联 AI 模型（可选，供预标注使用）
-3. 上传数据集（支持批量图片 ZIP 或逐张上传）
-4. 保存后系统自动生成对应 Task（状态 `unlabeled`）
+3. 上传数据集（支持批量 ZIP 或逐个文件上传）
+4. 保存后系统自动生成对应 Task（状态 `pending`）
+
+项目已经关联数据集后，后续在数据集页继续上传或扫描导入新增文件，也会自动追加对应 Task。
 
 详见 [项目管理](../for-project-admins/)。
 

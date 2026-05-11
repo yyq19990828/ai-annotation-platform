@@ -61,7 +61,7 @@ if (groupMatch) {
 }
 
 // 4. 按 group 排序输出
-const groupOrder = ["draw", "view", "ai", "nav", "system"];
+const groupOrder = ["draw", "view", "video", "ai", "nav", "system"];
 const byGroup = new Map();
 for (const it of items) {
   if (!byGroup.has(it.group)) byGroup.set(it.group, []);

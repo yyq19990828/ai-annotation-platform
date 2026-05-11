@@ -9,6 +9,7 @@ import type {
   VideoTrackKeyframe,
 } from "@/types";
 import { classColor } from "./colors";
+import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
@@ -70,13 +71,6 @@ function normalizeGeom(a: { x: number; y: number }, b: { x: number; y: number })
   return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
 }
 
-function formatTime(seconds: number) {
-  if (!Number.isFinite(seconds)) return "00:00.000";
-  const m = Math.floor(seconds / 60);
-  const s = seconds - m * 60;
-  return `${String(m).padStart(2, "0")}:${s.toFixed(3).padStart(6, "0")}`;
-}
-
 function isVideoBbox(ann: AnnotationResponse): ann is AnnotationResponse & { geometry: VideoBboxGeometry } {
   return ann.geometry.type === "video_bbox";
 }
@@ -135,12 +129,16 @@ function resolveTrackAtFrame(track: VideoTrackGeometry, frameIndex: number): { g
 function nearestTrackBbox(track: VideoTrackGeometry, frameIndex: number): Geom {
   const current = resolveTrackAtFrame(track, frameIndex);
   if (current) return current.geom;
+  return nearestTrackKeyframe(track, frameIndex)?.bbox ?? { x: 0, y: 0, w: 0.1, h: 0.1 };
+}
+
+function nearestTrackKeyframe(track: VideoTrackGeometry, frameIndex: number): VideoTrackKeyframe | null {
   const keyframes = sortedKeyframes(track).filter((kf) => !kf.absent);
   const nearest = keyframes.reduce<VideoTrackKeyframe | null>((best, kf) => {
     if (!best) return kf;
     return Math.abs(kf.frame_index - frameIndex) < Math.abs(best.frame_index - frameIndex) ? kf : best;
   }, null);
-  return nearest?.bbox ?? { x: 0, y: 0, w: 0.1, h: 0.1 };
+  return nearest;
 }
 
 function shapeIou(a: Geom, b: Geom) {
@@ -179,8 +177,12 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const [drag, setDrag] = useState<DragState>(null);
   const [hiddenTrackIds, setHiddenTrackIds] = useState<Set<string>>(() => new Set());
   const [lockedTrackIds, setLockedTrackIds] = useState<Set<string>>(() => new Set());
+  const [playbackOverlayVisible, setPlaybackOverlayVisible] = useState(true);
+  const [highlightAction, setHighlightAction] = useState<"prev" | "next" | "play" | null>(null);
   const onSelectRef = useRef(onSelect);
   const lastResetTaskIdRef = useRef<string | null>(null);
+  const overlayHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -226,6 +228,24 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     }
     return out;
   }, [annotations, frameIndex, hiddenTrackIds]);
+
+  const selectedTrackGhost = useMemo(() => {
+    if (!selectedTrack || hiddenTrackIds.has(selectedTrack.geometry.track_id)) return null;
+    if (currentFrameEntries.some((entry) => entry.ann.id === selectedTrack.id)) return null;
+    const exact = selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex);
+    if (exact?.absent) return null;
+    const nearest = nearestTrackKeyframe(selectedTrack.geometry, frameIndex);
+    if (!nearest) return null;
+    return {
+      id: `ghost-${selectedTrack.id}`,
+      ann: selectedTrack,
+      geom: nearest.bbox,
+      className: selectedTrack.class_name,
+      source: "manual" as const,
+      trackId: selectedTrack.geometry.track_id,
+      originFrame: nearest.frame_index,
+    };
+  }, [currentFrameEntries, frameIndex, hiddenTrackIds, selectedTrack]);
 
   const annotatedFrames = useMemo(() => {
     const out = new Set<number>();
@@ -276,7 +296,25 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     [fps, maxFrame],
   );
 
+  const showPlaybackOverlay = useCallback(() => {
+    if (overlayHideTimerRef.current) clearTimeout(overlayHideTimerRef.current);
+    setPlaybackOverlayVisible(true);
+  }, []);
+
+  const schedulePlaybackOverlayHide = useCallback(() => {
+    if (overlayHideTimerRef.current) clearTimeout(overlayHideTimerRef.current);
+    overlayHideTimerRef.current = setTimeout(() => setPlaybackOverlayVisible(false), 2000);
+  }, []);
+
+  const flashPlaybackAction = useCallback((action: "prev" | "next" | "play") => {
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    setHighlightAction(action);
+    highlightTimerRef.current = setTimeout(() => setHighlightAction(null), 180);
+  }, []);
+
   const togglePlayback = useCallback(() => {
+    showPlaybackOverlay();
+    flashPlaybackAction("play");
     const video = videoRef.current;
     if (!video) return;
     if (!video.paused || isPlaying) {
@@ -293,14 +331,16 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         setPlaybackError(err instanceof Error ? err.message : "视频无法播放");
       });
     }
-  }, [isPlaying]);
+  }, [flashPlaybackAction, isPlaying, showPlaybackOverlay]);
 
   const seekByFrames = useCallback(
     (delta: number) => {
+      showPlaybackOverlay();
+      flashPlaybackAction(delta < 0 ? "prev" : "next");
       videoRef.current?.pause();
       seekFrame(frameIndex + delta);
     },
-    [frameIndex, seekFrame],
+    [flashPlaybackAction, frameIndex, seekFrame, showPlaybackOverlay],
   );
 
   useImperativeHandle(
@@ -322,8 +362,16 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     setDrag(null);
     setHiddenTrackIds(new Set());
     setLockedTrackIds(new Set());
+    setPlaybackOverlayVisible(true);
     onSelectRef.current(null);
   }, [manifest?.task_id]);
+
+  useEffect(() => {
+    return () => {
+      if (overlayHideTimerRef.current) clearTimeout(overlayHideTimerRef.current);
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -390,6 +438,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     if (!pt) return;
     if (!selectedTrack) onSelect(null);
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
+    setPlaybackOverlayVisible(false);
     setDrag({ kind: "draw", start: pt, current: pt });
   }, [isPlaying, onSelect, pointFromEvent, readOnly, selectedTrack, selectedTrackLocked]);
 
@@ -401,6 +450,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     const pt = pointFromEvent(evt as unknown as React.PointerEvent<SVGSVGElement>);
     if (!pt) return;
     (evt.currentTarget.ownerSVGElement as SVGSVGElement | null)?.setPointerCapture?.(evt.pointerId);
+    setPlaybackOverlayVisible(false);
     setDrag({ kind: "move", id: entry.ann.id, start: pt, origin: entry.geom, current: entry.geom });
   }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly]);
 
@@ -426,6 +476,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     const pt = pointFromEvent(evt);
     const cur = drag;
     setDrag(null);
+    showPlaybackOverlay();
+    schedulePlaybackOverlayHide();
     if (!pt || !cur) return;
     if (cur.kind === "draw") {
       const geom = normalizeGeom(cur.start, pt);
@@ -447,7 +499,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     } else if (isVideoBbox(ann)) {
       onUpdate(ann, { type: "video_bbox", frame_index: ann.geometry.frame_index, ...cur.current });
     }
-  }, [annotations, drag, frameIndex, lockedTrackIds, onCreate, onUpdate, pointFromEvent, selectedTrack, togglePlayback]);
+  }, [annotations, drag, frameIndex, lockedTrackIds, onCreate, onUpdate, pointFromEvent, schedulePlaybackOverlayHide, selectedTrack, showPlaybackOverlay, togglePlayback]);
 
   const toggleTrackSet = useCallback((setter: React.Dispatch<React.SetStateAction<Set<string>>>, trackId: string) => {
     setter((prev) => {
@@ -463,6 +515,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     const bbox = nearestTrackBbox(selectedTrack.geometry, frameIndex);
     onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, bbox, patch));
   }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack]);
+
+  const copySelectedTrackToCurrentFrame = useCallback(() => {
+    if (!selectedTrack || !selectedTrackGhost || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
+    onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, selectedTrackGhost.geom));
+  }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack, selectedTrackGhost]);
 
   if (isLoading) {
     return (
@@ -483,7 +540,15 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const draft = drag?.kind === "draw" ? normalizeGeom(drag.start, drag.current) : null;
 
   return (
-    <div data-testid="video-stage" style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateRows: "1fr auto", background: "#050507" }}>
+    <div
+      data-testid="video-stage"
+      onMouseEnter={showPlaybackOverlay}
+      onMouseMove={() => {
+        if (!drag) showPlaybackOverlay();
+      }}
+      onMouseLeave={schedulePlaybackOverlayHide}
+      style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateRows: "1fr", background: "#050507" }}
+    >
       <div style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr) 260px" }}>
         <div style={{ position: "relative", minHeight: 0, display: "grid", placeItems: "center", overflow: "hidden" }}>
           <div style={{ position: "relative", width: "100%", maxWidth: "100%", maxHeight: "100%", aspectRatio: stageAspect }}>
@@ -550,6 +615,35 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
                   </g>
                 );
               })}
+              {selectedTrackGhost && !drag && (
+                <g data-testid="video-track-ghost">
+                  <rect
+                    x={selectedTrackGhost.geom.x}
+                    y={selectedTrackGhost.geom.y}
+                    width={selectedTrackGhost.geom.w}
+                    height={selectedTrackGhost.geom.h}
+                    fill="rgba(255,255,255,0.035)"
+                    stroke={classColor(selectedTrackGhost.className)}
+                    strokeWidth={2}
+                    strokeDasharray="3 5"
+                    opacity={0.72}
+                    vectorEffect="non-scaling-stroke"
+                    onPointerDown={(evt) => beginMove(evt, selectedTrackGhost)}
+                  />
+                  <text
+                    x={selectedTrackGhost.geom.x}
+                    y={Math.max(0.02, selectedTrackGhost.geom.y - 0.008)}
+                    fontSize="0.025"
+                    fill={classColor(selectedTrackGhost.className)}
+                    stroke="rgba(0,0,0,0.75)"
+                    strokeWidth="0.004"
+                    opacity={0.86}
+                    paintOrder="stroke"
+                  >
+                    {selectedTrackGhost.className} · 参考 F{selectedTrackGhost.originFrame}
+                  </text>
+                </g>
+              )}
               {draft && (
                 <rect
                   x={draft.x}
@@ -623,6 +717,23 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               ))}
             </div>
           )}
+          <VideoPlaybackOverlay
+            frameIndex={frameIndex}
+            maxFrame={maxFrame}
+            fps={fps}
+            isPlaying={isPlaying}
+            annotatedFrames={[...annotatedFrames].sort((a, b) => a - b)}
+            currentFrameEntryCount={currentFrameEntries.length}
+            visible={playbackOverlayVisible && !drag}
+            highlightAction={highlightAction}
+            onSeek={(frame) => {
+              showPlaybackOverlay();
+              videoRef.current?.pause();
+              seekFrame(frame);
+            }}
+            onSeekByFrames={seekByFrames}
+            onTogglePlay={togglePlayback}
+          />
         </div>
 
         <aside style={{ minHeight: 0, overflow: "auto", borderLeft: "1px solid var(--color-border)", background: "var(--color-bg-elev)", padding: 10 }}>
@@ -709,6 +820,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               >
                 遮挡
               </Button>
+              <Button
+                size="sm"
+                disabled={!selectedTrackGhost || readOnly || selectedTrackLocked}
+                title="使用最近关键帧的框在当前帧创建关键帧"
+                onClick={copySelectedTrackToCurrentFrame}
+              >
+                复制到当前帧
+              </Button>
             </div>
             {selectedTrack && (
               <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)", lineHeight: 1.5 }}>
@@ -720,60 +839,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         </aside>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 12, alignItems: "center", padding: "10px 14px", background: "var(--color-bg-elev)", borderTop: "1px solid var(--color-border)" }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          <Button size="sm" onClick={() => seekByFrames(-1)} title="上一帧">
-            <Icon name="chevLeft" size={13} />
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              togglePlayback();
-            }}
-            title="播放 / 暂停 (Space)"
-          >
-            <Icon name={isPlaying ? "pause" : "play"} size={13} />
-          </Button>
-          <Button size="sm" onClick={() => seekByFrames(1)} title="下一帧">
-            <Icon name="chevRight" size={13} />
-          </Button>
-        </div>
-        <div style={{ position: "relative", height: 28, display: "flex", alignItems: "center" }}>
-          <input
-            aria-label="视频帧时间轴"
-            type="range"
-            min={0}
-            max={maxFrame}
-            value={frameIndex}
-            onChange={(e) => {
-              videoRef.current?.pause();
-              seekFrame(Number(e.currentTarget.value));
-            }}
-            style={{ width: "100%" }}
-          />
-          <div style={{ position: "absolute", inset: "0 6px", pointerEvents: "none" }}>
-            {[...annotatedFrames].map((f) => (
-              <span
-                key={f}
-                style={{
-                  position: "absolute",
-                  left: `${maxFrame > 0 ? (f / maxFrame) * 100 : 0}%`,
-                  top: 3,
-                  width: 2,
-                  height: 8,
-                  background: "var(--color-accent)",
-                  borderRadius: 1,
-                }}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="mono" style={{ display: "flex", gap: 10, fontSize: 12, color: "var(--color-fg-muted)", whiteSpace: "nowrap" }}>
-          <span>F {frameIndex} / {maxFrame}</span>
-          <span>{formatTime(frameIndex / fps)}</span>
-          <span>{currentFrameEntries.length} 框</span>
-        </div>
-      </div>
     </div>
   );
 });

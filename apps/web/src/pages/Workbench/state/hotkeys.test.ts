@@ -157,6 +157,11 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "ArrowLeft" }, videoCtx)).toEqual({ type: "videoSeek", delta: -1 });
   });
 
+  it(", / . → videoSeek as frame-step aliases", () => {
+    expect(dispatch({ key: "." }, videoCtx)).toEqual({ type: "videoSeek", delta: 1 });
+    expect(dispatch({ key: "," }, videoCtx)).toEqual({ type: "videoSeek", delta: -1 });
+  });
+
   it("Shift + ArrowLeft / ArrowRight → videoSeek 10 frames", () => {
     expect(dispatch({ key: "ArrowRight", shiftKey: true }, videoCtx)).toEqual({ type: "videoSeek", delta: 10 });
     expect(dispatch({ key: "ArrowLeft", shiftKey: true }, videoCtx)).toEqual({ type: "videoSeek", delta: -10 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AnnotationResponse } from "@/types";
+import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 
 /**
@@ -10,6 +10,13 @@ export type Command =
   | { kind: "create"; annotationId: string; payload: AnnotationPayload }
   | { kind: "delete"; annotation: AnnotationResponse }
   | { kind: "update"; annotationId: string; before: AnnotationUpdatePayload; after: AnnotationUpdatePayload }
+  | {
+      kind: "videoKeyframe";
+      annotationId: string;
+      frameIndex: number;
+      before: VideoTrackKeyframe | null;
+      after: VideoTrackKeyframe | null;
+    }
   | { kind: "acceptPrediction"; predictionId: string; createdAnnotationIds: string[] }
   /** 批量命令：undo 时反序应用、redo 时正序应用。子命令必须不含 batch（一层）。 */
   | { kind: "batch"; commands: Exclude<Command, { kind: "batch" }>[] };
@@ -52,6 +59,10 @@ export async function applyLeaf(
   } else if (cmd.kind === "update") {
     const target = direction === "undo" ? cmd.before : cmd.after;
     await h.updateAnnotation(cmd.annotationId, target);
+  } else if (cmd.kind === "videoKeyframe") {
+    if (!h.updateVideoKeyframe) throw new Error("updateVideoKeyframe handler is required");
+    const target = direction === "undo" ? cmd.before : cmd.after;
+    await h.updateVideoKeyframe(cmd.annotationId, cmd.frameIndex, target);
   } else if (cmd.kind === "acceptPrediction") {
     // accept 的 undo：删掉那一批由 prediction 派生的 annotation；redo 走批量删除策略不实现，避免重复采纳引发 ID 漂移。
     if (direction === "undo") {
@@ -67,6 +78,11 @@ export interface HistoryHandlers {
   createAnnotation: (payload: AnnotationPayload) => Promise<AnnotationResponse>;
   deleteAnnotation: (annotationId: string) => Promise<unknown>;
   updateAnnotation: (annotationId: string, payload: AnnotationUpdatePayload) => Promise<unknown>;
+  updateVideoKeyframe?: (
+    annotationId: string,
+    frameIndex: number,
+    keyframe: VideoTrackKeyframe | null,
+  ) => Promise<unknown>;
   /** v0.6.3 P0：tmpId 上的 create undo 不能走远端（必 404）。
    *  调用方在工作台闭包内提供：从 react-query cache 删 tmpId + 从离线队列删对应 create op。 */
   removeLocalCreate?: (annotationId: string) => Promise<void> | void;
@@ -202,6 +218,7 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
       if (c.kind === "update" && c.annotationId === tmpId) return { ...c, annotationId: realId };
       if (c.kind === "delete" && c.annotation.id === tmpId)
         return { ...c, annotation: { ...c.annotation, id: realId } };
+      if (c.kind === "videoKeyframe" && c.annotationId === tmpId) return { ...c, annotationId: realId };
       if (c.kind === "acceptPrediction" && c.createdAnnotationIds.includes(tmpId))
         return { ...c, createdAnnotationIds: c.createdAnnotationIds.map((id) => (id === tmpId ? realId : id)) };
       return c;

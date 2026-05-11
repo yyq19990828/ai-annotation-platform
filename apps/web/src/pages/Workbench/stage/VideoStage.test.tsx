@@ -164,6 +164,30 @@ describe("VideoStage", () => {
     await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("3"));
   });
 
+  it("renders playback controls as a floating overlay and hides it while editing", () => {
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    const playbackOverlay = getByTestId("video-playback-overlay");
+    setRect(overlay);
+
+    expect(playbackOverlay).toHaveStyle({ opacity: "1" });
+
+    fireEvent(overlay, pointer("pointerdown", 100, 100));
+
+    expect(playbackOverlay).toHaveStyle({ opacity: "0" });
+  });
+
   it("renders only annotations from the selected frame", () => {
     const annotations = [
       {
@@ -264,6 +288,96 @@ describe("VideoStage", () => {
     expect(geometry.keyframes).toHaveLength(2);
     expect(geometry.keyframes[1].frame_index).toBe(3);
     expect(geometry.keyframes[1].bbox.x).toBeCloseTo(0.2);
+  });
+
+  it("shows a nearest-keyframe ghost for selected tracks on empty frames", () => {
+    const onUpdate = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByLabelText, getByTestId, getByText } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={onUpdate}
+        onRename={() => {}}
+      />,
+    );
+
+    fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "3" } });
+
+    expect(getByTestId("video-track-ghost").textContent).toContain("car · 参考 F0");
+
+    fireEvent.click(getByText("复制到当前帧"));
+
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const [, geometry] = onUpdate.mock.calls[0];
+    expect(geometry.type).toBe("video_track");
+    expect(geometry.keyframes).toHaveLength(2);
+    expect(geometry.keyframes[1].frame_index).toBe(3);
+    expect(geometry.keyframes[1].bbox.x).toBeCloseTo(0.1);
+  });
+
+  it("drags the selected-track ghost into a current-frame keyframe", () => {
+    const onUpdate = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByLabelText, getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={onUpdate}
+        onRename={() => {}}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "3" } });
+    const ghostRect = getByTestId("video-track-ghost").querySelector("rect");
+    expect(ghostRect).not.toBeNull();
+
+    fireEvent(ghostRect!, pointer("pointerdown", 100, 50));
+    fireEvent(overlay, pointer("pointermove", 200, 150));
+    fireEvent(overlay, pointer("pointerup", 200, 150));
+
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const [, geometry] = onUpdate.mock.calls[0];
+    expect(geometry.type).toBe("video_track");
+    expect(geometry.keyframes[1].frame_index).toBe(3);
+    expect(geometry.keyframes[1].bbox.x).toBeCloseTo(0.2);
+    expect(geometry.keyframes[1].bbox.y).toBeCloseTo(0.3);
   });
 
   it("renders interpolated track boxes between keyframes", () => {

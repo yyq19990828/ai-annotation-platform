@@ -377,6 +377,101 @@ class DatasetService:
         await self.db.flush()
         return link
 
+    async def create_tasks_for_items(
+        self, dataset_id: uuid.UUID, item_ids: list[uuid.UUID]
+    ) -> int:
+        """Create tasks for newly added dataset items in already linked projects.
+
+        `link_project` handles the initial backfill. This method covers the append path:
+        upload / zip / scan can add new DatasetItem rows after a dataset is already linked.
+        """
+        unique_item_ids = list(dict.fromkeys(item_ids))
+        if not unique_item_ids:
+            return 0
+
+        project_rows = await self.db.execute(
+            select(ProjectDataset.project_id).where(
+                ProjectDataset.dataset_id == dataset_id
+            )
+        )
+        project_ids = [row[0] for row in project_rows.all()]
+        if not project_ids:
+            return 0
+
+        items_result = await self.db.execute(
+            select(
+                DatasetItem.id,
+                DatasetItem.file_name,
+                DatasetItem.file_path,
+                DatasetItem.file_type,
+            ).where(
+                DatasetItem.dataset_id == dataset_id,
+                DatasetItem.id.in_(unique_item_ids),
+            )
+        )
+        items = items_result.all()
+        if not items:
+            return 0
+
+        existing_rows = await self.db.execute(
+            select(Task.project_id, Task.dataset_item_id).where(
+                Task.project_id.in_(project_ids),
+                Task.dataset_item_id.in_([item.id for item in items]),
+            )
+        )
+        existing_pairs = {(row[0], row[1]) for row in existing_rows.all()}
+
+        pending = []
+        for project_id in project_ids:
+            for item in items:
+                if (project_id, item.id) in existing_pairs:
+                    continue
+                pending.append((project_id, item))
+
+        if not pending:
+            return 0
+
+        seq_result = await self.db.execute(
+            text("SELECT nextval('display_seq_tasks') FROM generate_series(1, :n)"),
+            {"n": len(pending)},
+        )
+        display_nums = [row[0] for row in seq_result.all()]
+
+        rows = [
+            {
+                "id": uuid.uuid4(),
+                "project_id": project_id,
+                "dataset_item_id": item.id,
+                "batch_id": None,
+                "display_id": f"T-{display_nums[i]}",
+                "file_name": item.file_name,
+                "file_path": item.file_path,
+                "file_type": item.file_type,
+                "status": "pending",
+            }
+            for i, (project_id, item) in enumerate(pending)
+        ]
+        await self.db.execute(insert(Task), rows)
+
+        created_by_project: dict[uuid.UUID, int] = {}
+        for project_id, _item in pending:
+            created_by_project[project_id] = created_by_project.get(project_id, 0) + 1
+
+        projects = (
+            (
+                await self.db.execute(select(Project).where(Project.id.in_(project_ids)))
+            )
+            .scalars()
+            .all()
+        )
+        for project in projects:
+            project.total_tasks = (project.total_tasks or 0) + created_by_project.get(
+                project.id, 0
+            )
+
+        await self.db.flush()
+        return len(rows)
+
     async def unlink_project(
         self, dataset_id: uuid.UUID, project_id: uuid.UUID
     ) -> dict | None:

@@ -53,6 +53,7 @@ export const HOTKEYS: HotkeyDef[] = [
 
   { keys: ["Space"], desc: "视频播放 / 暂停", group: "video", actionType: "videoTogglePlayback" },
   { keys: ["← / →"], desc: "视频逐帧后退 / 前进", group: "video", actionType: "videoSeek" },
+  { keys: [", / ."], desc: "视频上一帧 / 下一帧（备用）", group: "video", actionType: "videoSeek" },
   { keys: ["Shift", "← / →"], desc: "视频后退 / 前进 10 帧", group: "video", actionType: "videoSeek" },
   { keys: ["Delete / Backspace"], desc: "删除选中轨迹", group: "video", actionType: "videoDeleteSelected" },
   { keys: ["Tab"], desc: "下一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
@@ -172,6 +173,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === " ") return { type: "videoTogglePlayback" };
     if (e.key === "ArrowRight") return { type: "videoSeek", delta: e.shiftKey ? 10 : 1 };
     if (e.key === "ArrowLeft") return { type: "videoSeek", delta: e.shiftKey ? -10 : -1 };
+    if (e.key === ".") return { type: "videoSeek", delta: 1 };
+    if (e.key === ",") return { type: "videoSeek", delta: -1 };
     if (e.key === "Tab") return { type: "videoCycleTrack", dir: e.shiftKey ? -1 : 1 };
     if (e.key === "Escape") return { type: "cancel" };
     if (e.key === "Delete" || e.key === "Backspace") return { type: "videoDeleteSelected" };
