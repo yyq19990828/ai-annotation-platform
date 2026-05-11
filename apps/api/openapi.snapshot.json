@@ -9465,6 +9465,90 @@
         "title": "VideoTrackBbox",
         "type": "object"
       },
+      "VideoTrackConvertToBboxesRequest": {
+        "properties": {
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "frame_mode": {
+            "default": "keyframes",
+            "enum": [
+              "keyframes",
+              "all_frames"
+            ],
+            "title": "Frame Mode",
+            "type": "string"
+          },
+          "operation": {
+            "default": "copy",
+            "enum": [
+              "copy",
+              "split"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "scope": {
+            "default": "frame",
+            "enum": [
+              "frame",
+              "track"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "title": "VideoTrackConvertToBboxesRequest",
+        "type": "object"
+      },
+      "VideoTrackConvertToBboxesResponse": {
+        "properties": {
+          "created_annotations": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Created Annotations",
+            "type": "array"
+          },
+          "deleted_source": {
+            "title": "Deleted Source",
+            "type": "boolean"
+          },
+          "removed_frame_indexes": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Removed Frame Indexes",
+            "type": "array"
+          },
+          "source_annotation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnnotationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "source_annotation",
+          "created_annotations",
+          "deleted_source"
+        ],
+        "title": "VideoTrackConvertToBboxesResponse",
+        "type": "object"
+      },
       "VideoTrackGeometry": {
         "additionalProperties": false,
         "description": "v0.9.17 · 视频对象轨迹。\n\n轨迹以 compact JSON 保存，不逐帧展开写库。`track_id` 在一个 annotation 内稳定；\n`keyframes` 保存手工 / 预测关键帧，插值结果由前端按需计算。",
@@ -17929,6 +18013,74 @@
           }
         ],
         "summary": "Update Annotation",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes": {
+      "post": {
+        "operationId": "convert_video_track_to_bboxes_api_v1_tasks__task_id__annotations__annotation_id__video_convert_to_bboxes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoTrackConvertToBboxesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackConvertToBboxesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Convert Video Track To Bboxes",
         "tags": [
           "tasks"
         ]

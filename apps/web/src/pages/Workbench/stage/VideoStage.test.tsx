@@ -268,6 +268,7 @@ describe("VideoStage", () => {
         annotations={annotations}
         selectedId="t1"
         activeClass="car"
+        videoTool="track"
         onSelect={() => {}}
         onCreate={() => {}}
         onUpdate={onUpdate}

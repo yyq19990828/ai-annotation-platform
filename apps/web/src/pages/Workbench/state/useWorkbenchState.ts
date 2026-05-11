@@ -3,6 +3,7 @@ import type { Annotation } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 
 export type Tool = "box" | "hand" | "polygon" | "canvas" | "sam";
+export type VideoTool = "box" | "track";
 
 /**
  * v0.9.4 phase 2 · SAM 工具子模式 (`Tool === "sam"` 时生效).
@@ -40,7 +41,15 @@ const DEFAULT_CANVAS_STROKE = "#ef4444";
 
 export type Geom = { x: number; y: number; w: number; h: number };
 
-export type PendingDrawing = { geom: Geom } | null;
+export type PendingDrawing =
+  | { kind?: "bbox"; geom: Geom }
+  | {
+      kind: "video_bbox" | "video_track";
+      frameIndex: number;
+      geom: Geom;
+      anchor: { left: number; top: number };
+    }
+  | null;
 
 /** 选中已落库 user 框后，再次"改类别"时的状态。 */
 export type EditingClass = {
@@ -52,6 +61,7 @@ export type EditingClass = {
 export function useWorkbenchState() {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("box");
+  const [videoTool, setVideoTool] = useState<VideoTool>("box");
   // v0.9.4 phase 2 · SAM 子工具 (point/bbox/text) + polarity (+/−) + 文本焦点 trigger.
   const [samSubTool, setSamSubTool] = useState<SamSubTool>("point");
   const [samPolarity, setSamPolarity] = useState<SamPolarity>("positive");
@@ -192,6 +202,7 @@ export function useWorkbenchState() {
   return {
     currentTaskId, setCurrentTaskId,
     tool, setTool,
+    videoTool, setVideoTool,
     // v0.9.4 phase 2 · SAM 子工具栏
     samSubTool, setSamSubTool,
     samPolarity, setSamPolarity,

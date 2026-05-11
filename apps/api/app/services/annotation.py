@@ -9,6 +9,13 @@ from app.db.models.annotation import Annotation
 from app.db.models.prediction import Prediction
 from app.db.models.task import Task
 from app.db.models.task_lock import AnnotationDraft
+from app.services.video_tracks import (
+    resolved_track_frames,
+    resolve_track_at_frame,
+    sorted_keyframes,
+)
+
+VIDEO_BBOX_CONVERSION_LIMIT = 5000
 
 
 class AnnotationService:
@@ -190,6 +197,118 @@ class AnnotationService:
         annotation.version += 1
         await self.db.flush()
         return annotation
+
+    async def convert_video_track_to_bboxes(
+        self,
+        *,
+        task: Task,
+        annotation: Annotation,
+        user_id: uuid.UUID,
+        operation: str,
+        scope: str,
+        frame_index: int | None = None,
+        frame_mode: str = "keyframes",
+        frame_count: int | None = None,
+        max_created: int = VIDEO_BBOX_CONVERSION_LIMIT,
+    ) -> tuple[Annotation | None, list[Annotation], bool, list[int]]:
+        geometry = annotation.geometry or {}
+        if geometry.get("type") != "video_track":
+            raise ValueError("annotation must be a video_track")
+
+        frames: list[dict]
+        removed_frame_indexes: list[int] = []
+        deleted_source = False
+
+        if scope == "frame":
+            if frame_index is None:
+                raise ValueError("frame_index is required for frame scope")
+            keyframes = sorted_keyframes(geometry)
+            if operation == "split":
+                exact = next(
+                    (
+                        kf
+                        for kf in keyframes
+                        if int(kf.get("frame_index", 0)) == frame_index
+                    ),
+                    None,
+                )
+                if not exact or exact.get("absent"):
+                    raise ValueError("frame split requires an exact non-absent keyframe")
+                frames = [
+                    {
+                        "frame_index": frame_index,
+                        "bbox": exact.get("bbox") or {},
+                        "source": exact.get("source", "manual"),
+                    }
+                ]
+                removed_frame_indexes = [frame_index]
+            else:
+                resolved = resolve_track_at_frame(keyframes, frame_index)
+                if not resolved:
+                    raise ValueError("track has no bbox at the requested frame")
+                frames = [resolved]
+        elif scope == "track":
+            frames = resolved_track_frames(
+                geometry,
+                frame_mode=frame_mode,
+                frame_count=frame_count,
+            )
+            removed_frame_indexes = [int(frame["frame_index"]) for frame in frames]
+        else:
+            raise ValueError("scope must be one of: frame, track")
+
+        if not frames:
+            raise ValueError("track conversion produced no frames")
+        if len(frames) > max_created:
+            raise ValueError(f"track conversion would create more than {max_created} bboxes")
+
+        created: list[Annotation] = []
+        for frame in frames:
+            bbox = frame.get("bbox") or {}
+            created_ann = Annotation(
+                id=uuid.uuid4(),
+                task_id=task.id,
+                project_id=task.project_id,
+                user_id=user_id,
+                source=annotation.source,
+                annotation_type="video_bbox",
+                class_name=annotation.class_name,
+                geometry={
+                    "type": "video_bbox",
+                    "frame_index": int(frame.get("frame_index", 0)),
+                    "x": bbox.get("x", 0),
+                    "y": bbox.get("y", 0),
+                    "w": bbox.get("w", 0),
+                    "h": bbox.get("h", 0),
+                },
+                confidence=annotation.confidence,
+                parent_annotation_id=annotation.id,
+                attributes=dict(annotation.attributes or {}),
+            )
+            self.db.add(created_ann)
+            created.append(created_ann)
+
+        if operation == "split":
+            if scope == "frame":
+                remaining = [
+                    kf
+                    for kf in sorted_keyframes(geometry)
+                    if int(kf.get("frame_index", 0)) != frame_index
+                ]
+                if remaining:
+                    annotation.geometry = {**geometry, "keyframes": remaining}
+                    annotation.version += 1
+                else:
+                    annotation.is_active = False
+                    deleted_source = True
+            else:
+                annotation.is_active = False
+                deleted_source = True
+
+        await self.db.flush()
+        await self._update_task_stats(task.id)
+        source = None if deleted_source else annotation
+        return source, created, deleted_source, removed_frame_indexes
 
     async def save_draft(
         self, task_id: uuid.UUID, user_id: uuid.UUID, result: dict

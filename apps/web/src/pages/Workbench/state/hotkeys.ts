@@ -52,6 +52,8 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["双击空白"], desc: "适应视口", group: "view" },
 
   { keys: ["Space"], desc: "视频播放 / 暂停", group: "video", actionType: "videoTogglePlayback" },
+  { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
+  { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
   { keys: ["← / →"], desc: "视频逐帧后退 / 前进", group: "video", actionType: "videoSeek" },
   { keys: [", / ."], desc: "视频上一帧 / 下一帧（备用）", group: "video", actionType: "videoSeek" },
   { keys: ["Shift", "← / →"], desc: "视频后退 / 前进 10 帧", group: "video", actionType: "videoSeek" },
@@ -59,7 +61,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Tab"], desc: "下一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
   { keys: ["Shift", "Tab"], desc: "上一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
   { keys: ["Esc"], desc: "取消选择", group: "video", actionType: "cancel" },
-  { keys: ["1 — 9"], desc: "切换视频 active class", group: "video", actionType: "setClassByDigit" },
+  { keys: ["1 — 9"], desc: "切换视频类别（有选中则改选中对象）", group: "video", actionType: "setClassByDigit" },
 
   { keys: ["A"], desc: "采纳选中 AI 框", group: "ai", actionType: "acceptAi" },
   { keys: ["D"], desc: "驳回选中 AI 框", group: "ai", actionType: "rejectAi" },
@@ -107,6 +109,7 @@ export type HotkeyAction =
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
   | { type: "setTool"; tool: "box" | "hand" | "polygon" | "sam" }
+  | { type: "setVideoTool"; tool: "box" | "track" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
   | { type: "setAttribute"; key: string; value: unknown }
@@ -170,7 +173,13 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   }
 
   if (ctx.videoMode) {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      if (e.key === "1") return { type: "setVideoTool", tool: "box" };
+      if (e.key === "2") return { type: "setVideoTool", tool: "track" };
+    }
     if (e.key === " ") return { type: "videoTogglePlayback" };
+    if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };
+    if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };
     if (e.key === "ArrowRight") return { type: "videoSeek", delta: e.shiftKey ? 10 : 1 };
     if (e.key === "ArrowLeft") return { type: "videoSeek", delta: e.shiftKey ? -10 : -1 };
     if (e.key === ".") return { type: "videoSeek", delta: 1 };

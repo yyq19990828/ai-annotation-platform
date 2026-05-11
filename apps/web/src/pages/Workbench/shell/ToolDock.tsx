@@ -2,12 +2,14 @@ import { Fragment } from "react";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ALL_TOOLS, type ToolId } from "../stage/tools";
-import type { SamPolarity, SamSubTool } from "../state/useWorkbenchState";
+import type { SamPolarity, SamSubTool, VideoTool } from "../state/useWorkbenchState";
 import { SamSubToolbar } from "./SamSubToolbar";
 
 interface ToolDockProps {
   tool: ToolId;
   onSetTool: (t: ToolId) => void;
+  videoTool?: VideoTool;
+  onSetVideoTool?: (t: VideoTool) => void;
   /** v0.9.4 phase 2 · 仅 tool === "sam" 时浮出子工具栏. */
   samSubTool?: SamSubTool;
   onSetSamSubTool?: (sub: SamSubTool) => void;
@@ -15,7 +17,7 @@ interface ToolDockProps {
   onSetSamPolarity?: (p: SamPolarity) => void;
   /** M2 · review 模式下只显示 Hand 工具（审核员仅需平移 + 微调已有框）。 */
   reviewMode?: boolean;
-  /** v0.9.16 · 视频首版只开放 bbox + hand，SAM / polygon / canvas 后续再接。 */
+  /** v0.9.20 · 视频工作台分离单帧 bbox 与 track 工具。 */
   videoMode?: boolean;
 }
 
@@ -32,6 +34,11 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor & { altDigit?: number }> =
   canvas: { desc: "评论批注 (内部, 不展示)" },
 };
 
+const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: IconName; desc: string; altDigit: number }> = [
+  { id: "box", hotkey: "B", label: "矩形框", icon: "rect", desc: "当前帧独立矩形框", altDigit: 1 },
+  { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2 },
+];
+
 /**
  * 左侧垂直工具栏（v0.5.3）。
  *
@@ -46,6 +53,8 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor & { altDigit?: number }> =
 export function ToolDock({
   tool,
   onSetTool,
+  videoTool = "box",
+  onSetVideoTool,
   samSubTool = "point",
   onSetSamSubTool,
   samPolarity = "positive",
@@ -53,11 +62,79 @@ export function ToolDock({
   reviewMode = false,
   videoMode = false,
 }: ToolDockProps) {
+  if (videoMode) {
+    return (
+      <div
+        style={{
+          position: "relative",
+          display: "flex", flexDirection: "column", alignItems: "center",
+          padding: "10px 4px", gap: 6,
+          background: "var(--color-bg-elev)",
+          borderRight: "1px solid var(--color-border)",
+        }}
+      >
+        {VIDEO_TOOLS.map((t) => {
+          const active = videoTool === t.id;
+          return (
+            <Tooltip
+              key={t.id}
+              name={t.label}
+              desc={`${t.desc} · 备用 Alt+${t.altDigit}`}
+              hotkey={t.hotkey}
+              side="right"
+              delay={250}
+            >
+              <button
+                type="button"
+                onClick={() => onSetVideoTool?.(t.id)}
+                aria-label={t.label}
+                aria-pressed={active}
+                data-testid={`video-tool-btn-${t.id}`}
+                style={{
+                  position: "relative",
+                  width: 38, height: 38,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: active ? "var(--color-accent)" : "transparent",
+                  color: active ? "white" : "var(--color-fg-muted)",
+                  border: "1px solid " + (active ? "var(--color-accent)" : "transparent"),
+                  borderRadius: "var(--radius-md)",
+                  cursor: "pointer",
+                  transition: "background 0.12s, color 0.12s, transform 0.08s, box-shadow 0.12s",
+                  boxShadow: active
+                    ? "inset 2px 0 0 color-mix(in oklab, var(--color-accent) 70%, white), 0 2px 6px color-mix(in oklab, var(--color-accent) 45%, transparent)"
+                    : "none",
+                }}
+              >
+                <Icon name={t.icon} size={17} />
+                <span
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    right: 3,
+                    bottom: 1,
+                    fontSize: 8,
+                    fontWeight: 700,
+                    lineHeight: 1,
+                    color: active
+                      ? "color-mix(in oklab, white 80%, transparent)"
+                      : "color-mix(in oklab, var(--color-fg-muted) 65%, transparent)",
+                    pointerEvents: "none",
+                    letterSpacing: 0,
+                  }}
+                >
+                  {t.hotkey}
+                </span>
+              </button>
+            </Tooltip>
+          );
+        })}
+      </div>
+    );
+  }
+
   const visibleTools = reviewMode
     ? ALL_TOOLS.filter((t) => t.id === "hand")
-    : videoMode
-      ? ALL_TOOLS.filter((t) => t.id === "box" || t.id === "hand")
-      : ALL_TOOLS;
+    : ALL_TOOLS;
   return (
     <div
       style={{

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, field_validator
 from uuid import UUID
 from datetime import datetime
+from typing import Literal
 
 from app.schemas._jsonb_types import (
     AnnotationAttributes,
@@ -43,6 +44,20 @@ class AnnotationListPage(BaseModel):
     next_cursor: str | None = None
 
 
+class VideoTrackConvertToBboxesRequest(BaseModel):
+    operation: Literal["copy", "split"] = "copy"
+    scope: Literal["frame", "track"] = "frame"
+    frame_index: int | None = None
+    frame_mode: Literal["keyframes", "all_frames"] = "keyframes"
+
+
+class VideoTrackConvertToBboxesResponse(BaseModel):
+    source_annotation: "AnnotationOut | None"
+    created_annotations: list["AnnotationOut"]
+    deleted_source: bool
+    removed_frame_indexes: list[int] = []
+
+
 class AnnotationOut(BaseModel):
     id: UUID
     task_id: UUID
@@ -73,3 +88,4 @@ class AnnotationOut(BaseModel):
 
 
 AnnotationListPage.model_rebuild()
+VideoTrackConvertToBboxesResponse.model_rebuild()
