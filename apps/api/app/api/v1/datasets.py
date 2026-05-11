@@ -6,6 +6,7 @@ import uuid
 import zipfile
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db, get_current_user, require_roles
@@ -227,6 +228,10 @@ async def upload_complete(
         from app.workers.media import generate_thumbnail
 
         generate_thumbnail.delay(str(item_id))
+    elif item.file_type == "video":
+        from app.workers.media import generate_video_metadata
+
+        generate_video_metadata.delay(str(item_id))
 
     return {"status": "ok", "item_id": str(item_id)}
 
@@ -276,6 +281,7 @@ async def upload_zip(
     skipped: list[str] = []
     errors: list[dict] = []
     new_image_item_ids: list[uuid.UUID] = []
+    new_video_item_ids: list[uuid.UUID] = []
 
     from sqlalchemy import select as sa_select
     from app.db.models.dataset import DatasetItem
@@ -369,6 +375,8 @@ async def upload_zip(
         added += 1
         if file_type == "image":
             new_image_item_ids.append(item.id)
+        elif file_type == "video":
+            new_video_item_ids.append(item.id)
 
     await db.commit()
 
@@ -377,6 +385,11 @@ async def upload_zip(
 
         for iid in new_image_item_ids:
             generate_thumbnail.delay(str(iid))
+    if new_video_item_ids:
+        from app.workers.media import generate_video_metadata
+
+        for iid in new_video_item_ids:
+            generate_video_metadata.delay(str(iid))
 
     return {
         "added": added,
@@ -401,10 +414,20 @@ async def scan_items(
     await db.commit()
 
     if new_ids:
-        from app.workers.media import generate_thumbnail
+        from app.db.models.dataset import DatasetItem
+        from app.workers.media import generate_thumbnail, generate_video_metadata
 
-        for iid in new_ids:
-            generate_thumbnail.delay(str(iid))
+        item_rows = await db.execute(
+            select(DatasetItem.id, DatasetItem.file_type).where(
+                DatasetItem.id.in_(new_ids)
+            )
+        )
+
+        for iid, file_type in item_rows:
+            if file_type == "image":
+                generate_thumbnail.delay(str(iid))
+            elif file_type == "video":
+                generate_video_metadata.delay(str(iid))
 
     return {"status": "ok", "new_items": len(new_ids)}
 

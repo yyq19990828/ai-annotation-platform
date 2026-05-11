@@ -4,7 +4,7 @@ audience: [ops]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-11
 ---
 
 # 版本升级指南
@@ -49,6 +49,34 @@ curl -f http://localhost:5173
 - 数据库迁移通过 Alembic 自动管理，每次升级必须执行 `alembic upgrade head`
 - 若迁移失败，可回滚：`alembic downgrade -1`（回退一个版本）
 - 前端静态资源由 Vite 构建，版本号在文件名中，无缓存问题
+
+## 版本注意事项
+
+### 升级到 v0.9.16+
+
+v0.9.16 引入视频元数据处理，API / Celery 镜像内需要 `ffmpeg` 与 `ffprobe`。该版本修改了 `infra/docker/Dockerfile.api`，升级时必须 rebuild API 与 Celery worker 镜像，不能只重启容器。
+
+```bash
+docker compose build api celery-worker
+docker compose up -d api celery-worker
+```
+
+验证镜像内依赖：
+
+```bash
+docker exec ai-annotation-platform-api-1 ffprobe -version
+docker exec ai-annotation-platform-celery-worker-1 ffmpeg -version
+```
+
+如果视频导入后没有 `video_metadata` 或 poster，优先检查 `media` 队列 worker 日志：
+
+```bash
+docker logs ai-annotation-platform-celery-worker-1 --tail 200
+```
+
+### 升级到 v0.9.17+
+
+v0.9.17 新建视频标注默认写 `video_track`，旧 `video_bbox` 继续可读。该版本不新增数据库表；重点检查 OpenAPI / 前端类型是否与后端同步，避免旧前端无法识别 `video_track` discriminator。
 
 ## 回滚步骤
 

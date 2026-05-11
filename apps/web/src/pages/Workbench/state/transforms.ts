@@ -83,6 +83,13 @@ export function geometryToShape(g: Geometry): {
       multiPolygon: g.polygons.map((p) => ({ points: p.points, holes: p.holes })),
     };
   }
+  if (g.type === "video_bbox") {
+    return { x: g.x, y: g.y, w: g.w, h: g.h };
+  }
+  if (g.type === "video_track") {
+    const keyframe = g.keyframes.find((kf) => !kf.absent) ?? g.keyframes[0];
+    return keyframe?.bbox ?? { x: 0, y: 0, w: 0, h: 0 };
+  }
   return { x: g.x, y: g.y, w: g.w, h: g.h };
 }
 

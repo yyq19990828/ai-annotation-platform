@@ -22,6 +22,54 @@
 
 ## 最新版本
 
+## [0.9.17] - 2026-05-11
+
+> **Video Track Keyframes — 轨迹模型 + 关键帧插值.** 主线: ① annotation schema 新增 compact `video_track`，用 `track_id + keyframes[]` 表达同一对象轨迹；② `VideoStage` 默认创建轨迹而不是逐帧 `video_bbox`，支持选中轨迹后在其它帧追加/更新关键帧；③ 当前帧 overlay 可显示手工关键帧、预测关键帧和线性插值框，并保留旧 `video_bbox` 兼容渲染；④ 轨迹列表支持显隐、锁定、类别重命名和当前帧状态；⑤ 支持 `absent` / `occluded` 标记，插值不会跨越目标消失段；⑥ 前端提示关键帧间隔过大、极小框、同帧同类高重叠等基础质检问题. → [plan](docs/plans/2026-05-11-v0.9.17-video-track-keyframes.md).
+
+### Added
+
+- **`video_track` geometry**：新增 `{type, track_id, keyframes[]}` schema；每个 keyframe 包含 `frame_index`、`bbox`、`source`、`absent`、`occluded`。
+- **轨迹关键帧编辑**：视频工作台画框创建 track，选中 track 后在其它帧绘制或移动会更新同一条 annotation 的 keyframes。
+- **线性插值显示**：相邻有效关键帧之间按帧距插值 bbox，插值框用虚线与手工关键帧区分。
+- **轨迹列表**：展示类别 / track_id / 当前帧状态，并支持显隐、锁定和类别重命名。
+- **视频质检提示**：提示关键帧间隔过大、极小框、同类高重叠框；编辑时 bbox clamp 到归一化范围。
+
+### Changed
+
+- 视频新建标注默认写 `annotation_type="video_track"`；v0.9.16 的 `video_bbox` 继续可读可显示。
+- `WorkbenchShell` 的视频创建 / 更新路径改为保存完整 track geometry，继续复用现有 annotation API、history、乐观更新和冲突提示。
+- 更新视频标注用户文档、开发概念文档、roadmap、OpenAPI snapshot 和前端生成类型。
+
+### Fixed
+
+- 无
+
+---
+
+## [0.9.16] - 2026-05-11
+
+> **Video Workbench MVP — 视频数据底座 + 逐帧 bbox 工作台.** 主线: ① dataset 视频导入后由 media worker 调 `ffprobe` 写入 `metadata["video"]`，并用 `ffmpeg` 抽 poster；② `GET /tasks/{id}/video/manifest` 返回视频播放 URL、poster 和规范化元数据，`TaskOut` 透出 `video_metadata`；③ annotation schema 新增 `video_bbox`，用 `frame_index` 表达逐帧框；④ 前端新增 `VideoStage`，支持播放/暂停、逐帧定位、时间轴标记、当前帧 bbox 创建/移动/删除；⑤ 视频任务禁用 SAM / polygon / canvas 工具，继续复用 WorkbenchShell 的队列、提交、审核、评论、锁和离线队列；⑥ 文档新增视频标注用户手册和开发概念页. → [plan](docs/plans/2026-05-11-v0.9.16-video-workbench.md).
+
+### Added
+
+- **视频媒体处理**：`generate_video_metadata` Celery 任务解析视频 `duration_ms` / `fps` / `frame_count` / `width` / `height` / `codec`，并生成 poster 缩略图。
+- **视频 manifest API**：`GET /tasks/{task_id}/video/manifest` 返回签名视频 URL、poster URL 和元数据。
+- **`video_bbox` geometry**：新增逐帧 bbox schema `{type, frame_index, x, y, w, h}`。
+- **`VideoStage`**：视频播放、暂停编辑、逐帧跳转、时间轴关键帧标记、当前帧 bbox 标注。
+- **视频标注文档**：新增标注员操作页与开发者概念页。
+
+### Changed
+
+- API/Celery Docker image 安装 `ffmpeg`，因此部署该版本后需要 rebuild API/Celery image。
+- `TaskOut` 增加 `video_metadata`；前端 `TaskResponse`、OpenAPI snapshot 和 codegen 同步更新。
+- `WorkbenchShell` 对视频任务选择 `VideoStage`；图片任务仍走原 `ImageStage`。
+
+### Fixed
+
+- 无
+
+---
+
 ## [0.9.15] - 2026-05-11
 
 > **Sorted Mountain — 批次状态机二阶段：ADR-0008 admin-lock + bulk-approve/reject.** 0.9.x 终版. 主线: ① batch admin-lock (soft hold，ADR-0008 Accepted) — 4 字段 DB 列 + Alembic migration 0055 + `check_auto_transitions` 短路 + `get_next_task` 排除已锁批次 + owner 端点 admin-lock/unlock + 通知 + 审计日志; ② bulk-approve/reject (reviewer 级权限) — reviewing → approved / rejected + 任务软重置 (review/completed → pending) + shared feedback; ③ 前端 — BatchesSection lock/unlock 按钮 + 已锁徽标 + 批量通过/驳回操作栏 + AdminLockModal + BulkRejectModal; ④ Phase 1 门控 — `test_scheduler.py` 19 cases 覆盖 check_auto_transitions + get_next_task; ⑤ 全套测试 435 前端 / 19 scheduler / 10 TestAdminLock / 8 TestBulkApproveReject 全绿; ⑥ ADR-0008 Proposed→Accepted + 实施细节章节. 0.9.x 全部 P2 长尾清零，立即开 v0.10.0 sam3-backend. → [plan](docs/plans/roadmap-md-roadmap-0-9-y-md-0-9-15-sorted-mountain.md).

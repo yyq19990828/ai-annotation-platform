@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-05-11
 ---
 
 # 标注模块
@@ -66,7 +66,7 @@ graph TD
 | `project_id` | 所属项目，便于跨 task 聚合 |
 | `user_id` | 标注创建者 |
 | `source` | `manual` 或 `prediction_based` |
-| `annotation_type` | 如 `bbox` |
+| `annotation_type` | 几何类型，如 `bbox`、`polygon`、`video_bbox`、`video_track` |
 | `class_name` | 类目名 |
 | `geometry` | JSONB 几何体 |
 | `confidence` | 置信度，可空 |
@@ -83,6 +83,20 @@ graph TD
 - 真实删除走 soft delete，`delete()` 只会把 `is_active` 置 `False`
 - “有效标注数量”同时要求 `is_active=True` 且 `was_cancelled=False`
 - `parent_prediction_id` 让系统能追踪“哪些标注来自 AI 采纳”
+
+### Geometry union
+
+`geometry` 是 JSONB，但 schema 边界由 `apps/api/app/schemas/_jsonb_types.py` 的 Pydantic discriminated union 约束。当前主分支包括：
+
+| `geometry.type` | 用途 | 持久化语义 |
+|---|---|---|
+| `bbox` | 图片矩形框 | 单个归一化 bbox |
+| `polygon` | 图片多边形 | 单个外环，可带 `holes` |
+| `multi_polygon` | 多连通域 / 空洞预测 | 多个 polygon ring，主要来自 mask adapter |
+| `video_bbox` | v0.9.16 视频逐帧框 | 单个 frame 上的 bbox，带 `frame_index` |
+| `video_track` | v0.9.17 视频对象轨迹 | 一条 annotation 保存稳定 `track_id` 和 `keyframes[]` |
+
+`video_track` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。`absent=true` 表示目标在该关键帧消失，插值不能跨过该点；`occluded=true` 表示目标仍存在但被遮挡。
 
 ### `AnnotationDraft`
 
@@ -138,6 +152,8 @@ graph TD
 - `annotation.version += 1`
 - 返回新版本
 - 路由层把 `ETag: W/"{version}"` 写回响应头
+
+视频轨迹编辑也走同一条 `PATCH /tasks/{task_id}/annotations/{annotation_id}` 路径：新增关键帧、移动当前帧框、标记消失 / 遮挡，都会作为完整 `video_track` geometry 的一次更新保存。
 
 ### 3. 删除 annotation
 
@@ -259,6 +275,14 @@ annotation 路径几乎都带两个伴随动作：
 | `apps/web/src/pages/Workbench/state/useWorkbenchAnnotationActions.ts` | 画布上的 optimistic edit |
 | `apps/web/src/pages/Review/ReviewWorkbench.tsx` | reviewer 视角查看 annotation + prediction |
 | `apps/web/src/pages/Workbench/state/useCanvasDraftPersistence.ts` | 当前主草稿路径仍在前端本地 |
+
+视频工作台还要检查：
+
+| 文件 | 为什么要看 |
+|---|---|
+| `apps/web/src/pages/Workbench/stage/VideoStage.tsx` | 视频播放、关键帧编辑、轨迹列表和插值显示 |
+| `apps/web/src/pages/Workbench/state/transforms.ts` | `video_bbox` / `video_track` 与工作台 shape 的转换 |
+| `apps/api/app/schemas/task.py` | `TaskOut.video_metadata` 和 video manifest response |
 
 ## 常见误解
 

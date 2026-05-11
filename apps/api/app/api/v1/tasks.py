@@ -1,7 +1,9 @@
 import base64
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select, func, or_, and_
@@ -17,6 +19,8 @@ from app.schemas.task import (
     TaskListResponse,
     TaskLockResponse,
     ReviewClaimResponse,
+    TaskVideoManifestResponse,
+    VideoMetadata,
 )
 from app.schemas.annotation import (
     AnnotationCreate,
@@ -40,6 +44,8 @@ from app.services.user_brief import resolve_briefs
 from app.db.models.task_batch import TaskBatch
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+VIDEO_MANIFEST_URL_EXPIRES_IN = 3600
 
 _ANNOTATORS = (
     UserRole.SUPER_ADMIN,
@@ -193,7 +199,11 @@ async def list_tasks(
     )
     return TaskListResponse(
         items=[
-            _task_with_url(t, *dims.get(t.id, (None, None, None, None)), briefs=briefs)
+            _task_with_url(
+                t,
+                *dims.get(t.id, (None, None, None, None, None)),
+                briefs=briefs,
+            )
             for t in tasks
         ],
         total=total,
@@ -215,9 +225,9 @@ async def next_task(
     if not task:
         return None
     await db.commit()
-    w, h, thumb, bh = await _attach_dimensions(db, task)
+    w, h, thumb, bh, video_metadata = await _attach_dimensions(db, task)
     briefs = await resolve_briefs(db, [task.assignee_id, task.reviewer_id])
-    return _task_with_url(task, w, h, thumb, bh, briefs=briefs)
+    return _task_with_url(task, w, h, thumb, bh, video_metadata, briefs=briefs)
 
 
 @router.get("/{task_id}", response_model=TaskOut)
@@ -228,9 +238,121 @@ async def get_task(
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
-    w, h, thumb, bh = await _attach_dimensions(db, task)
+    w, h, thumb, bh, video_metadata = await _attach_dimensions(db, task)
     briefs = await resolve_briefs(db, [task.assignee_id, task.reviewer_id])
-    return _task_with_url(task, w, h, thumb, bh, briefs=briefs)
+    return _task_with_url(task, w, h, thumb, bh, video_metadata, briefs=briefs)
+
+
+@router.get("/{task_id}/video/manifest", response_model=TaskVideoManifestResponse)
+async def get_video_manifest(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    if task.file_type != "video":
+        raise HTTPException(status_code=400, detail="Task is not a video task")
+
+    bucket = (
+        storage_service.datasets_bucket
+        if task.dataset_item_id
+        else storage_service.bucket
+    )
+    try:
+        _, _, thumb, _, video_metadata = await _attach_dimensions(db, task)
+    except Exception as exc:
+        logger.exception("Failed to load video metadata task_id=%s", task.id)
+        raise HTTPException(
+            status_code=503, detail="Video metadata unavailable"
+        ) from exc
+
+    metadata = VideoMetadata.model_validate(video_metadata or {})
+    if not metadata.fps or not metadata.frame_count:
+        raise HTTPException(status_code=503, detail="Video metadata not ready")
+
+    try:
+        video_url = storage_service.generate_download_url(
+            task.file_path,
+            expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
+            bucket=bucket,
+        )
+    except ClientError as exc:
+        code = (exc.response.get("Error") or {}).get("Code")
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            raise HTTPException(
+                status_code=404, detail="Video file not available"
+            ) from exc
+        logger.exception(
+            "Failed to generate video manifest URL task_id=%s bucket=%s key=%s",
+            task.id,
+            bucket,
+            task.file_path,
+        )
+        raise HTTPException(
+            status_code=503, detail="Video storage unavailable"
+        ) from exc
+    except BotoCoreError as exc:
+        logger.exception(
+            "Failed to generate video manifest URL task_id=%s bucket=%s key=%s",
+            task.id,
+            bucket,
+            task.file_path,
+        )
+        raise HTTPException(
+            status_code=503, detail="Video storage unavailable"
+        ) from exc
+    except Exception as exc:
+        logger.exception(
+            "Unexpected video manifest URL error task_id=%s bucket=%s key=%s",
+            task.id,
+            bucket,
+            task.file_path,
+        )
+        raise HTTPException(
+            status_code=503, detail="Video storage unavailable"
+        ) from exc
+
+    poster_path = metadata.poster_frame_path or thumb
+    poster_url: str | None = None
+    if poster_path:
+        try:
+            poster_url = storage_service.generate_download_url(
+                poster_path,
+                expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
+                bucket=bucket,
+            )
+        except ClientError as exc:
+            code = (exc.response.get("Error") or {}).get("Code")
+            if code not in {"NoSuchKey", "404", "NotFound"}:
+                logger.exception(
+                    "Failed to generate video poster URL task_id=%s bucket=%s key=%s",
+                    task.id,
+                    bucket,
+                    poster_path,
+                )
+        except BotoCoreError:
+            logger.exception(
+                "Failed to generate video poster URL task_id=%s bucket=%s key=%s",
+                task.id,
+                bucket,
+                poster_path,
+            )
+        except Exception:
+            logger.exception(
+                "Unexpected video poster URL error task_id=%s bucket=%s key=%s",
+                task.id,
+                bucket,
+                poster_path,
+            )
+
+    return TaskVideoManifestResponse(
+        task_id=task.id,
+        video_url=video_url,
+        poster_url=poster_url,
+        metadata=metadata,
+        expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
+    )
 
 
 @router.get("/{task_id}/annotations", response_model=list[AnnotationOut])
@@ -1171,6 +1293,7 @@ def _task_with_url(
     height: int | None = None,
     thumbnail_path: str | None = None,
     blurhash: str | None = None,
+    video_metadata: dict | None = None,
     briefs: dict | None = None,
 ) -> TaskOut:
     """v0.8.8 · 由手写 dict 改为 ``TaskOut.model_validate`` + 动态字段注入。
@@ -1210,6 +1333,9 @@ def _task_with_url(
     out.image_width = width
     out.image_height = height
     out.blurhash = blurhash
+    out.video_metadata = (
+        VideoMetadata.model_validate(video_metadata) if video_metadata else None
+    )
     if briefs is not None:
         if task.assignee_id is not None:
             out.assignee = briefs.get(str(task.assignee_id))
@@ -1221,21 +1347,37 @@ def _task_with_url(
 async def _attach_dimensions(
     db: AsyncSession,
     task: Task,
-) -> tuple[int | None, int | None, str | None, str | None]:
+) -> tuple[int | None, int | None, str | None, str | None, dict | None]:
     if task.dataset_item_id:
         from app.db.models.dataset import DatasetItem
 
         item = await db.get(DatasetItem, task.dataset_item_id)
         if item:
-            return item.width, item.height, item.thumbnail_path, item.blurhash
-    return None, None, task.thumbnail_path, task.blurhash
+            video_metadata = (
+                dict((item.metadata_ or {}).get("video") or {})
+                if item.file_type == "video"
+                else None
+            )
+            return (
+                item.width,
+                item.height,
+                item.thumbnail_path,
+                item.blurhash,
+                video_metadata,
+            )
+    return None, None, task.thumbnail_path, task.blurhash, None
 
 
 async def _attach_dimensions_batch(
     db: AsyncSession,
     tasks: list[Task],
-) -> dict[uuid.UUID, tuple[int | None, int | None, str | None, str | None]]:
-    result: dict[uuid.UUID, tuple[int | None, int | None, str | None, str | None]] = {}
+) -> dict[
+    uuid.UUID, tuple[int | None, int | None, str | None, str | None, dict | None]
+]:
+    result: dict[
+        uuid.UUID,
+        tuple[int | None, int | None, str | None, str | None, dict | None],
+    ] = {}
 
     item_ids = [t.dataset_item_id for t in tasks if t.dataset_item_id]
     if item_ids:
@@ -1248,17 +1390,28 @@ async def _attach_dimensions_batch(
                 DatasetItem.height,
                 DatasetItem.thumbnail_path,
                 DatasetItem.blurhash,
+                DatasetItem.file_type,
+                DatasetItem.metadata_,
             ).where(DatasetItem.id.in_(item_ids))
         )
-        item_data = {row[0]: (row[1], row[2], row[3], row[4]) for row in rows}
+        item_data = {
+            row[0]: (
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                dict((row[6] or {}).get("video") or {}) if row[5] == "video" else None,
+            )
+            for row in rows
+        }
         for t in tasks:
             if t.dataset_item_id:
                 result[t.id] = item_data.get(
-                    t.dataset_item_id, (None, None, None, None)
+                    t.dataset_item_id, (None, None, None, None, None)
                 )
 
     for t in tasks:
         if t.id not in result:
-            result[t.id] = (None, None, t.thumbnail_path, t.blurhash)
+            result[t.id] = (None, None, t.thumbnail_path, t.blurhash, None)
 
     return result

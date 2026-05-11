@@ -110,6 +110,34 @@
       ]
     },
     {
+      "id": "video-workbench",
+      "name": "Video metadata, manifest, and video annotation workbench",
+      "codeMatchers": [
+        "apps/api/app/workers/media.py",
+        "apps/web/src/pages/Workbench/stage/VideoStage",
+        "apps/api/tests/test_video_workbench.py"
+      ],
+      "recommendDocs": [
+        "docs-site/dev/concepts/video-annotation-workbench.md",
+        "docs-site/user-guide/for-annotators/video-track.md",
+        "docs-site/api/guides/tasks-and-annotations.md",
+        "docs-site/ops/upgrade-guide.md"
+      ],
+      "acceptDocs": [
+        "docs-site/dev/concepts/video-annotation-workbench.md",
+        "docs-site/user-guide/for-annotators/video-track.md",
+        "docs-site/api/guides/tasks-and-annotations.md",
+        "docs-site/user-guide/for-reviewers/",
+        "docs-site/user-guide/reference/export-formats.md",
+        "docs-site/api/guides/export.md",
+        "docs-site/ops/upgrade-guide.md",
+        "apps/api/openapi.snapshot.json",
+        "docs-site/api/openapi.json",
+        "CHANGELOG.md",
+        "ROADMAP/"
+      ]
+    },
+    {
       "id": "scheduler-and-visibility",
       "name": "Dispatch, visibility, and workbench access rules",
       "codeMatchers": [

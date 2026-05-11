@@ -159,6 +159,56 @@ class BboxGeometry(BaseModel):
     model_config = ConfigDict(extra="allow")  # 允许 width/height 等历史别名
 
 
+class VideoBboxGeometry(BaseModel):
+    """v0.9.16 · 视频单帧 bbox。
+
+    首版视频工作台只保存逐帧框，不表达 track/keyframe/interpolation。`frame_index`
+    是唯一时间轴定位字段，展示层可自行换算 timecode。
+    """
+
+    type: Literal["video_bbox"] = "video_bbox"
+    frame_index: int = Field(ge=0)
+    x: float
+    y: float
+    w: float
+    h: float
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class VideoTrackBbox(BaseModel):
+    x: float
+    y: float
+    w: float
+    h: float
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class VideoTrackKeyframe(BaseModel):
+    frame_index: int = Field(ge=0)
+    bbox: VideoTrackBbox
+    source: Literal["manual", "interpolated", "prediction"] = "manual"
+    absent: bool = False
+    occluded: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class VideoTrackGeometry(BaseModel):
+    """v0.9.17 · 视频对象轨迹。
+
+    轨迹以 compact JSON 保存，不逐帧展开写库。`track_id` 在一个 annotation 内稳定；
+    `keyframes` 保存手工 / 预测关键帧，插值结果由前端按需计算。
+    """
+
+    type: Literal["video_track"] = "video_track"
+    track_id: str = Field(min_length=1)
+    keyframes: list[VideoTrackKeyframe] = Field(min_length=1)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class PolygonGeometry(BaseModel):
     """单连通域 polygon。
 
@@ -207,7 +257,11 @@ class MultiPolygonGeometry(BaseModel):
 
 
 Geometry = Annotated[
-    BboxGeometry | PolygonGeometry | MultiPolygonGeometry,
+    BboxGeometry
+    | VideoBboxGeometry
+    | VideoTrackGeometry
+    | PolygonGeometry
+    | MultiPolygonGeometry,
     Field(discriminator="type"),
 ]
 

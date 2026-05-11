@@ -15,6 +15,27 @@ from app.db.models.task import Task
 from app.db.models.project import Project
 
 IMG_W, IMG_H = 1920, 1280
+VIDEO_PROJECT_TYPES = {"video-track", "video-mm"}
+
+
+class UnsupportedExportError(ValueError):
+    pass
+
+
+def _assert_supported_project(project: Project) -> None:
+    if project.type_key in VIDEO_PROJECT_TYPES:
+        raise UnsupportedExportError(
+            "Video annotation export is not supported for COCO/YOLO/VOC yet"
+        )
+
+
+def _bbox_geometry(annotation: Annotation) -> dict | None:
+    geometry = annotation.geometry or {}
+    if geometry.get("type") not in {"bbox", None}:
+        return None
+    if not all(k in geometry for k in ("x", "y", "w", "h")):
+        return None
+    return geometry
 
 
 class ExportService:
@@ -62,6 +83,7 @@ class ExportService:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return json.dumps({})
+        _assert_supported_project(project)
 
         categories = [{"id": i, "name": name} for i, name in enumerate(project.classes)]
         cat_map = {c["name"]: c["id"] for c in categories}
@@ -83,7 +105,9 @@ class ExportService:
             img_id = task_id_to_img_id.get(ann.task_id)
             if img_id is None:
                 continue
-            g = ann.geometry
+            g = _bbox_geometry(ann)
+            if g is None:
+                continue
             x_px = g["x"] * IMG_W
             y_px = g["y"] * IMG_H
             w_px = g["w"] * IMG_W
@@ -131,6 +155,7 @@ class ExportService:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return b""
+        _assert_supported_project(project)
 
         cat_map = {name: i for i, name in enumerate(project.classes)}
         ann_by_task: dict[uuid.UUID, list[Annotation]] = {}
@@ -157,7 +182,9 @@ class ExportService:
                 lines = []
                 attrs_per_line: list[dict] = []
                 for ann in ann_by_task.get(t.id, []):
-                    g = ann.geometry
+                    g = _bbox_geometry(ann)
+                    if g is None:
+                        continue
                     cx = g["x"] + g["w"] / 2
                     cy = g["y"] + g["h"] / 2
                     cid = cat_map.get(ann.class_name, 0)
@@ -186,6 +213,7 @@ class ExportService:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
             return b""
+        _assert_supported_project(project)
 
         ann_by_task: dict[uuid.UUID, list[Annotation]] = {}
         for ann in annotations:
@@ -202,7 +230,9 @@ class ExportService:
                 SubElement(size, "depth").text = "3"
 
                 for ann in ann_by_task.get(t.id, []):
-                    g = ann.geometry
+                    g = _bbox_geometry(ann)
+                    if g is None:
+                        continue
                     obj = SubElement(root, "object")
                     SubElement(obj, "name").text = ann.class_name
                     SubElement(obj, "difficult").text = "0"

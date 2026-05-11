@@ -78,6 +78,7 @@ export interface TaskResponse {
   image_height: number | null;
   thumbnail_url: string | null;
   blurhash: string | null;
+  video_metadata: VideoMetadata | null;
   // v0.6.5 · 状态机锁定相关
   submitted_at: string | null;
   reviewer_id: string | null;
@@ -100,10 +101,51 @@ export interface ReviewClaimResponse {
   is_self: boolean;
 }
 
+export interface VideoMetadata {
+  duration_ms: number | null;
+  fps: number | null;
+  frame_count: number | null;
+  width: number | null;
+  height: number | null;
+  codec: string | null;
+  poster_frame_path: string | null;
+  probe_error: string | null;
+  poster_error: string | null;
+}
+
+export interface TaskVideoManifestResponse {
+  task_id: string;
+  video_url: string;
+  poster_url: string | null;
+  metadata: VideoMetadata;
+  expires_in: number;
+}
+
 // ── Annotation ──────────────────────────────────────────────────────────────
 
 /** Discriminated union: 形状自描述。v0.5.3 起新增 polygon, v0.9.14 多连通域升级。后续可扩展 keypoint / mask / cuboid。 */
 export type BboxGeometry = { type: "bbox"; x: number; y: number; w: number; h: number };
+export type VideoBboxGeometry = {
+  type: "video_bbox";
+  frame_index: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+export type VideoTrackBbox = { x: number; y: number; w: number; h: number };
+export type VideoTrackKeyframe = {
+  frame_index: number;
+  bbox: VideoTrackBbox;
+  source: "manual" | "interpolated" | "prediction";
+  absent?: boolean;
+  occluded?: boolean;
+};
+export type VideoTrackGeometry = {
+  type: "video_track";
+  track_id: string;
+  keyframes: VideoTrackKeyframe[];
+};
 /**
  * v0.9.14 · holes 字段为可选; 老存量 / 老前端写入仍走仅 points 路径, 默认 undefined 即无
  * hole. 新 prediction (mask 单连通带空洞) 在此填 hole 顶点列表 (内环, 与外环 evenodd
@@ -123,7 +165,7 @@ export type MultiPolygonGeometry = {
   type: "multi_polygon";
   polygons: PolygonGeometry[];
 };
-export type Geometry = BboxGeometry | PolygonGeometry | MultiPolygonGeometry;
+export type Geometry = BboxGeometry | VideoBboxGeometry | VideoTrackGeometry | PolygonGeometry | MultiPolygonGeometry;
 
 export interface AIBox {
   id: string;

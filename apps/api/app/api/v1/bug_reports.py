@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -30,25 +32,43 @@ from sqlalchemy import select
 from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+
 _BUG_REOPEN_REDIS_POOL: ConnectionPool | None = None
+_BUG_REOPEN_REDIS_POOL_LOOP: asyncio.AbstractEventLoop | None = None
 
 
-def _get_bug_reopen_redis() -> aioredis.Redis:
-    global _BUG_REOPEN_REDIS_POOL
-    if _BUG_REOPEN_REDIS_POOL is None:
+def _get_bug_reopen_redis_pool() -> ConnectionPool:
+    global _BUG_REOPEN_REDIS_POOL, _BUG_REOPEN_REDIS_POOL_LOOP
+    loop = asyncio.get_running_loop()
+    if _BUG_REOPEN_REDIS_POOL is None or _BUG_REOPEN_REDIS_POOL_LOOP is not loop:
         _BUG_REOPEN_REDIS_POOL = ConnectionPool.from_url(
             settings.redis_url,
             max_connections=8,
             decode_responses=True,
         )
-    return aioredis.Redis(connection_pool=_BUG_REOPEN_REDIS_POOL)
+        _BUG_REOPEN_REDIS_POOL_LOOP = loop
+    return _BUG_REOPEN_REDIS_POOL
+
+
+def _get_bug_reopen_redis() -> aioredis.Redis:
+    return aioredis.Redis(connection_pool=_get_bug_reopen_redis_pool())
 
 
 async def close_bug_reopen_redis_pool() -> None:
-    global _BUG_REOPEN_REDIS_POOL
-    if _BUG_REOPEN_REDIS_POOL is not None:
-        await _BUG_REOPEN_REDIS_POOL.aclose()
+    global _BUG_REOPEN_REDIS_POOL, _BUG_REOPEN_REDIS_POOL_LOOP
+    if _BUG_REOPEN_REDIS_POOL is None:
+        return
+    try:
+        await asyncio.wait_for(
+            _BUG_REOPEN_REDIS_POOL.disconnect(inuse_connections=True),
+            timeout=2.0,
+        )
+    except (asyncio.TimeoutError, Exception) as exc:
+        log.debug("close_bug_reopen_redis_pool: %s (continuing shutdown)", exc)
+    finally:
         _BUG_REOPEN_REDIS_POOL = None
+        _BUG_REOPEN_REDIS_POOL_LOOP = None
 
 
 class ScreenshotInitRequest(BaseModel):
@@ -367,9 +387,12 @@ async def add_bug_comment(
     if will_reopen:
         rkey = f"bug:reopen:{current_user.id}:{report_id}:day"
         r = _get_bug_reopen_redis()
-        count = await r.incr(rkey)
-        if count == 1:
-            await r.expire(rkey, 86400)
+        try:
+            count = await r.incr(rkey)
+            if count == 1:
+                await r.expire(rkey, 86400)
+        finally:
+            await r.aclose(close_connection_pool=False)
         if count > 5:
             raise HTTPException(
                 status_code=429,

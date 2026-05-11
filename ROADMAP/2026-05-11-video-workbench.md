@@ -1,6 +1,6 @@
 # P0 · 视频标注工作台 Epic
 
-> 状态：计划中 / 最高优先级。
+> 状态：M0 + M1 已在 v0.9.16 落地；M2 + M3 已在 v0.9.17 落地；M4 待实现。
 >
 > 范围：先交付 `video-track` 人工标注闭环。`video-mm`、视频 AI tracker、SAM 3 video predictor、长视频切片和多人协同都作为后续增强。
 
@@ -8,13 +8,12 @@
 
 ## 0. 目标
 
-把现有 image-det / polygon 工作台扩展到视频任务，先交付一个可生产使用的 **video-track 工作台 MVP**：
+把现有 image-det / polygon 工作台扩展到视频任务，先交付一个可用的 **video-track 工作台 MVP**：
 
 - 项目管理员可以导入视频并创建视频任务。
-- 标注员可以在视频时间轴上逐帧查看、画框、调整关键帧。
-- 系统可以在关键帧之间做线性插值，减少逐帧重复标注。
-- 审核员可以按对象轨迹检查结果，而不是只看单帧孤立标注。
-- 导出结果能表达 `track_id`、`frame_index`、关键帧 / 插值帧来源。
+- 标注员可以在视频时间轴上逐帧查看、播放 / 暂停、逐帧画框。
+- v0.9.16 先用 `video_bbox` 表达单帧视频框，保存 `frame_index`。
+- 后续 M2+ 再引入 `video_track`、`track_id`、关键帧、插值、轨迹审核和展开导出。
 
 ## 1. 范围边界
 
@@ -31,7 +30,7 @@
 1. 复用现有 `WorkbenchShell` 的队列、权限、提交、审核、离线队列、评论、快捷键分发和批次状态。
 2. 新增 `<VideoStage>`，不要把视频逻辑硬塞进 `<ImageStage>`。
 3. 先让人工标注闭环可靠，再接视频 AI。
-4. 数据模型优先表达“轨迹”与“帧”，不是把每一帧伪装成独立图片任务。
+4. v0.9.16 数据模型先表达“视频帧上的框”，后续再升级为“轨迹”与“关键帧”。
 5. 大文件、解码、缩略图、关键帧预览都按异步处理设计，避免前端直接承担重活。
 
 ## 3. 当前基线
@@ -39,8 +38,8 @@
 - 项目类型里已经出现 `video-mm` / `video-track`，Dashboard 也有视频图标。
 - 数据集导入支持视频文件类型，单文件上限仍受当前上传链路限制。
 - `Task.file_type` / `Task.sequence_order` 能表达一部分序列信息，但缺少视频元数据。
-- 非 image-det 类型打开工作台仍是未实现提示，视频工作台还没有真实 UI。
-- 现有工作台能力集中在图片：`WorkbenchShell` + `ImageStage` + Bbox / Polygon / SAM 工具。
+- v0.9.16 已新增 `VideoStage`，`WorkbenchShell` 可按 `Task.file_type="video"` 或 `video-track` 项目类型切换。
+- 视频任务下已禁用 SAM / polygon / canvas AI 工具，图片工作台仍沿用 `ImageStage` + Bbox / Polygon / SAM 工具。
 
 ---
 
@@ -48,32 +47,36 @@
 
 ### M0 · 视频数据底座
 
+**状态**：v0.9.16 已落地。
+
 **目标**：视频能被稳定导入、解析、建任务，并提供前端播放所需元数据。
 
 - 数据模型：
-  - 给 `dataset_items` 或新表补视频元数据：`duration_ms`、`fps`、`frame_count`、`width`、`height`、`codec`、`poster_frame_path`。
+  - 在 `dataset_items.metadata["video"]` 保存视频元数据：`duration_ms`、`fps`、`frame_count`、`width`、`height`、`codec`、`poster_frame_path`。
   - 明确 `Task.file_type="video"` 的语义：一个 task 对应一个视频片段或一个完整视频。
   - 记录可寻址帧：统一使用 `frame_index`，展示层再换算时间码。
 - 后端处理：
-  - 上传完成后异步 probe 视频元数据。
-  - 生成首帧 / poster 缩略图，供任务队列和列表快速展示。
-  - 对损坏视频、无法识别 fps、超长视频给出明确导入错误。
+  - 上传完成后异步 probe 视频元数据，API / Celery 镜像安装 `ffmpeg` / `ffprobe`。
+  - 生成 poster 缩略图并复用现有 `thumbnail_path` 流程，供任务队列和列表快速展示。
+  - probe / poster 失败写入 metadata 错误字段，不生成破损前端状态。
 - API：
-  - `GET /tasks/{id}` 返回视频元数据。
-  - `GET /tasks/{id}/video/manifest` 返回播放 URL、poster、fps、frame_count。
+  - `GET /tasks/{id}` 返回 `video_metadata`。
+  - `GET /tasks/{id}/video/manifest` 返回 presigned 播放 URL、poster URL、fps、frame_count 等标准化元数据。
 - 验收：
-  - 导入 3 个不同分辨率 / fps 的视频后，Dashboard 和任务详情都能显示正确元数据。
-  - 损坏视频不会生成不可打开任务。
-  - 不依赖前端读取完整视频后再推断基础信息。
+  - 已覆盖 ffprobe 解析、poster 失败记录、`GET /tasks/{id}` 暴露 `video_metadata`、manifest 视频 / 非视频分支。
+  - 手工导入多个真实视频、损坏视频和超长视频策略仍需后续环境验证。
+  - 前端不依赖读取完整视频后再推断基础信息。
 
 ### M1 · `<VideoStage>` 与时间轴 MVP
+
+**状态**：v0.9.16 已落地。
 
 **目标**：标注员能打开视频任务、播放 / 暂停、逐帧定位，并在当前帧画 bbox。
 
 - 前端结构：
   - 新建 `VideoStage`，与 `ImageStage` 并列挂到 `WorkbenchShell`。
   - `WorkbenchShell` 根据项目类型 / task file_type 选择 stage。
-  - 时间轴包含播放头、帧号、时间码、缩放、关键帧刻度。
+  - 时间轴包含播放头、帧号、时间码和已标注帧标记；时间轴缩放留到 M2+。
 - 交互：
   - 空格播放 / 暂停。
   - 左右方向键逐帧移动，Shift + 左右按较大步长跳转。
@@ -81,21 +84,27 @@
   - 任务队列仍沿用现有左侧面板。
 - 状态：
   - 播放时默认只读，暂停后进入编辑，避免拖框和播放争抢焦点。
-  - 当前帧无标注时显示空态，但不弹出教学文案。
+  - 当前帧只显示当前 `frame_index` 的 `video_bbox`。
+- Annotation schema：
+  - v0.9.16 新增 `geometry.type="video_bbox"`。
+  - 几何格式：`{ type: "video_bbox", frame_index, x, y, w, h }`。
+  - `annotation_type="video_bbox"`；`video_track` 留到 M2。
 - 验收：
-  - 标注员能在第 0 / 中间 / 最后一帧创建 bbox 并保存。
-  - 切换任务后播放状态、当前帧、选中对象不会串到下一个任务。
+  - 已覆盖 `VideoStage` 当前帧过滤、暂停编辑、`video_bbox` 几何转换和 image / video stage 选择。
   - 现有图片工作台行为不回退。
+  - 第 0 / 中间 / 最后一帧真实视频手工保存 / reload 验证仍需后续环境执行。
 
 ### M2 · Track 数据模型与关键帧编辑
+
+**状态**：v0.9.17 已落地。
 
 **目标**：把视频标注从“单帧框”升级为“对象轨迹”。
 
 - Annotation schema：
   - `geometry.type="video_track"`。
-  - 每个轨迹有稳定 `track_id`、`class_id`、`keyframes[]`。
-  - `keyframes[]` 至少包含 `frame_index`、`bbox`、`source=manual|interpolated|prediction`。
-  - 支持 track 级属性和 frame 级属性的扩展位置，但首版只落必要字段。
+  - 每个轨迹有稳定 `track_id`、`keyframes[]`；类别继续复用 annotation `class_name`。
+  - `keyframes[]` 至少包含 `frame_index`、`bbox`、`source=manual|interpolated|prediction`，并支持 `absent` / `occluded`。
+  - 支持 track 级属性和 frame 级属性的扩展位置，但 v0.9.17 只落必要字段。
 - 前端能力：
   - “新建轨迹”模式：第一次画框生成 track。
   - “延续轨迹”模式：在其它帧调整同一对象，形成关键帧。
@@ -106,16 +115,18 @@
   - 保留 optimistic update 和冲突提示，沿用现有工作台提交体验。
 - 验收：
   - 同一对象在 3 个关键帧上调整后，轨迹列表只出现 1 条 track。
-  - 删除中间关键帧后，插值结果重新计算。
-  - 图片 annotation schema 不受影响。
+  - 已覆盖同一轨迹新增关键帧、插值显示、旧 `video_bbox` 兼容和图片 geometry 兼容。
+  - 删除中间关键帧后重新计算插值的独立 UI 入口留到后续增强。
 
 ### M3 · 关键帧插值与质量检查
+
+**状态**：v0.9.17 已落地。
 
 **目标**：让视频工作台具备生产效率，而不是只能逐帧手工画。
 
 - 插值：
   - bbox 先做线性插值：`x/y/w/h` 按 frame distance 计算。
-  - 插值只在相邻关键帧之间生效，不跨越被用户标记为 occluded / absent 的区间。
+  - 插值只在相邻关键帧之间生效，不跨越被用户标记为 absent 的区间；occluded 作为当前关键帧视觉状态展示。
   - 首版不做光流 / tracker 自动传播，避免不确定性过高。
 - 质量检查：
   - 轨迹断裂提示：同一 track 中间缺口过大。
@@ -123,12 +134,12 @@
   - 极小框提示，不静默保存。
   - 同一帧同类高度重叠框提示。
 - 审核：
-  - 审核员可以按 track 浏览关键帧。
-  - reject reason 可以定位到 `track_id` + `frame_index`。
+  - 审核员可以通过轨迹列表按 track 浏览。
+  - 当前轨迹面板展示 `track_id` + `frame_index`，可用于 reject reason 定位。
 - 验收：
   - 标注第 1 / 30 / 60 帧后，第 2-29 / 31-59 帧能显示插值框。
   - 标注员可以把某一段标记为目标消失，插值不会穿过该区间。
-  - 审核员能指出某个 track 某一帧的问题。
+  - 当前轨迹面板能指出某个 track 某一帧的问题。
 
 ### M4 · 导出与文档闭环
 

@@ -9,8 +9,9 @@ import {
   useTaskList, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
   useUpdateAnnotation, useSubmitTask, useSkipTask, useWithdrawTask, useReopenTask, useAcceptRejection,
   useApproveTask, useRejectTask, useReviewClaim,
+  useVideoManifest,
 } from "@/hooks/useTasks";
-import type { ReviewClaimResponse } from "@/types";
+import type { Geometry, ReviewClaimResponse, VideoTrackGeometry } from "@/types";
 import { usePredictions, useAcceptPrediction } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
@@ -40,6 +41,7 @@ import { buildIoUIndex } from "../stage/iou-index";
 import { setActiveClassesConfig, sortClassesByConfig, UNKNOWN_CLASS } from "../stage/colors";
 import { getMissingRequired } from "./AttributeForm";
 import { ImageStage } from "../stage/ImageStage";
+import { VideoStage } from "../stage/VideoStage";
 import { CanvasToolbar } from "../stage/CanvasToolbar";
 import { Topbar } from "./Topbar";
 import { ToolDock } from "./ToolDock";
@@ -178,6 +180,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const fileUrl = useMemo(() => task?.file_url ?? null, [task?.id]);
   const blurhash = useMemo(() => task?.blurhash ?? null, [task?.id]);
   const thumbnailUrl = useMemo(() => task?.thumbnail_url ?? null, [task?.id]);
+  const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
+  const videoManifest = useVideoManifest(taskId, isVideoTask);
 
   // v0.7.1 · 支持 /annotate 深链 ?batch=&task= 自动选中任务
   // B-23 · 无 task 参数时按 batch 恢复上次打开的任务，避免每次进批次都回到第一题。
@@ -323,6 +327,10 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     if (s.tool !== "sam" && sam.candidates.length > 0) sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.tool]);
+  useEffect(() => {
+    if (!isVideoTask) return;
+    if (s.tool !== "box" && s.tool !== "hand") s.setTool("box");
+  }, [isVideoTask, s.tool, s.setTool]);
 
   // 编辑冲突状态
   const conflictIdRef = useRef<string>("");
@@ -699,6 +707,60 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     s.setPendingDrawing({ geom: geo });
   }, [s]);
 
+  const handleVideoCreate = useCallback((frameIndex: number, geo: Geom) => {
+    const cls = s.activeClass || UNKNOWN_CLASS;
+    const trackId = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? `trk_${crypto.randomUUID()}`
+      : `trk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const geometry: VideoTrackGeometry = {
+      type: "video_track",
+      track_id: trackId,
+      keyframes: [
+        {
+          frame_index: frameIndex,
+          bbox: geo,
+          source: "manual",
+          absent: false,
+          occluded: false,
+        },
+      ],
+    };
+    const payload = {
+      annotation_type: "video_track",
+      class_name: cls,
+      geometry,
+    };
+    createAnnotation.mutate(payload, {
+      onSuccess: (created) => {
+        history.push({ kind: "create", annotationId: created.id, payload });
+        recordRecentClass(cls);
+      },
+    });
+  }, [createAnnotation, history, recordRecentClass, s.activeClass]);
+
+  const handleVideoUpdate = useCallback((ann: AnnotationResponse, geometry: Geometry) => {
+    if (geometry.type !== "video_bbox" && geometry.type !== "video_track") return;
+    const before = { geometry: ann.geometry };
+    const after = { geometry };
+    updateAnnotationMut.mutate(
+      { annotationId: ann.id, payload: after },
+      {
+        onSuccess: () => history.push({ kind: "update", annotationId: ann.id, before, after }),
+      },
+    );
+  }, [history, updateAnnotationMut]);
+
+  const handleVideoRename = useCallback((ann: AnnotationResponse, className: string) => {
+    const before = { class_name: ann.class_name };
+    const after = { class_name: className };
+    updateAnnotationMut.mutate(
+      { annotationId: ann.id, payload: after },
+      {
+        onSuccess: () => history.push({ kind: "update", annotationId: ann.id, before, after }),
+      },
+    );
+  }, [history, updateAnnotationMut]);
+
   const handleCancelPending = useCallback(() => {
     // 画完框未选类别时（Esc / 点外部）不丢弃，按 __unknown 落库为灰色框；
     // 用户后续可通过「改类别」补类。
@@ -951,6 +1013,10 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   }, [mode, handleApproveTask]);
 
   // ── 键盘快捷键（v0.6.4 P1 抽 hook） ───────────────────────────────────
+  const videoIgnoredHotkeys = useMemo(
+    () => (isVideoTask ? new Set([" ", "ArrowLeft", "ArrowRight", "Delete", "Backspace"]) : undefined),
+    [isVideoTask],
+  );
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
     batchChanging, setBatchChanging, showHotkeys,
@@ -962,6 +1028,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
+    ignoredKeys: videoIgnoredHotkeys,
   });
   if (isProjectLoading) {
     return <WorkbenchSkeleton />;
@@ -1036,6 +1103,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         samPolarity={s.samPolarity}
         onSetSamPolarity={s.setSamPolarity}
         reviewMode={mode === "review"}
+        videoMode={isVideoTask}
       />
 
       <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -1187,6 +1255,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           confThreshold={s.confThreshold}
           onShowHotkeys={() => setShowHotkeys(true)}
           onRunAi={handleRunAi}
+          aiDisabled={isVideoTask}
           onPrev={() => navigateTask("prev")}
           onNext={() => navigateTask("next")}
           onSubmit={handleSubmitTask}
@@ -1209,56 +1278,73 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           reviewInfoSlot={mode === "review" ? <ReviewerMiniPanel /> : undefined}
         />
 
-        <ImageStage
-          readOnly={isLocked}
-          fileUrl={fileUrl}
-          blurhash={blurhash}
-          tool={s.tool}
-          activeClass={s.activeClass}
-          selectedId={s.selectedId}
-          selectedIds={s.selectedIds}
-          fadedAiIds={dimmedAiIds}
-          nudgeMap={nudgeMap}
-          userBoxes={mode === "review" && diffMode === "raw" ? [] : userBoxes}
-          aiBoxes={mode === "review" && diffMode === "final" ? [] : aiBoxes}
-          spacePan={spacePan}
-          vp={vp}
-          setVp={setVp}
-          fitTick={fitTick}
-          pendingDrawing={s.pendingDrawing}
-          onSelectBox={handleSelectBox}
-          onAcceptPrediction={handleAcceptPrediction}
-          onRejectPrediction={handleRejectPrediction}
-          onDeleteUserBox={handleDeleteBox}
-          onCommitDrawing={handleCommitDrawing}
-          onSamPrompt={(prompt) => {
-            if (prompt.kind === "point") {
-              sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
-            } else {
-              sam.runBbox(prompt.bbox);
+        {isVideoTask ? (
+          <VideoStage
+            manifest={videoManifest.data}
+            isLoading={videoManifest.isLoading}
+            error={videoManifest.error}
+            annotations={annotationsData ?? []}
+            selectedId={s.selectedId}
+            activeClass={s.activeClass}
+            readOnly={isLocked}
+            onSelect={handleSelectBox}
+            onCreate={handleVideoCreate}
+            onUpdate={handleVideoUpdate}
+            onRename={handleVideoRename}
+            onDelete={handleDeleteBox}
+            onCursorMove={setCursor}
+          />
+        ) : (
+          <ImageStage
+            readOnly={isLocked}
+            fileUrl={fileUrl}
+            blurhash={blurhash}
+            tool={s.tool}
+            activeClass={s.activeClass}
+            selectedId={s.selectedId}
+            selectedIds={s.selectedIds}
+            fadedAiIds={dimmedAiIds}
+            nudgeMap={nudgeMap}
+            userBoxes={mode === "review" && diffMode === "raw" ? [] : userBoxes}
+            aiBoxes={mode === "review" && diffMode === "final" ? [] : aiBoxes}
+            spacePan={spacePan}
+            vp={vp}
+            setVp={setVp}
+            fitTick={fitTick}
+            pendingDrawing={s.pendingDrawing}
+            onSelectBox={handleSelectBox}
+            onAcceptPrediction={handleAcceptPrediction}
+            onRejectPrediction={handleRejectPrediction}
+            onDeleteUserBox={handleDeleteBox}
+            onCommitDrawing={handleCommitDrawing}
+            onSamPrompt={(prompt) => {
+              if (prompt.kind === "point") {
+                sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
+              } else {
+                sam.runBbox(prompt.bbox);
+              }
+            }}
+            samCandidates={sam.candidates}
+            samActiveIdx={sam.activeIdx}
+            samSubTool={s.samSubTool}
+            samPolarity={s.samPolarity}
+            onCommitMove={handleCommitMove}
+            onCommitResize={handleCommitResize}
+            onCommitPolygonGeometry={handleCommitPolygonGeometry}
+            onCursorMove={setCursor}
+            onChangeUserBoxClass={handleStartChangeClass}
+            onBatchDelete={handleBatchDelete}
+            onBatchChangeClass={handleStartBatchChangeClass}
+            onStageGeometry={setStageGeom}
+            polygonDraft={s.tool === "polygon" ? polygonHandle : undefined}
+            canvasShapes={s.canvasDraft.shapes}
+            canvasEditable={s.canvasDraft.active}
+            canvasStroke={s.canvasDraft.stroke}
+            onCanvasStrokeCommit={(points, stroke) =>
+              s.appendCanvasShape({ type: "line", points, stroke })
             }
-          }}
-          samCandidates={sam.candidates}
-          samActiveIdx={sam.activeIdx}
-          samSubTool={s.samSubTool}
-          samPolarity={s.samPolarity}
-          onCommitMove={handleCommitMove}
-          onCommitResize={handleCommitResize}
-          onCommitPolygonGeometry={handleCommitPolygonGeometry}
-          onCursorMove={setCursor}
-          onChangeUserBoxClass={handleStartChangeClass}
-          onBatchDelete={handleBatchDelete}
-          onBatchChangeClass={handleStartBatchChangeClass}
-          onStageGeometry={setStageGeom}
-          polygonDraft={s.tool === "polygon" ? polygonHandle : undefined}
-          canvasShapes={s.canvasDraft.shapes}
-          canvasEditable={s.canvasDraft.active}
-          canvasStroke={s.canvasDraft.stroke}
-          onCanvasStrokeCommit={(points, stroke) =>
-            s.appendCanvasShape({ type: "line", points, stroke })
-          }
-          historicalShapes={hoveredCommentShapes ?? undefined}
-          overlay={
+            historicalShapes={hoveredCommentShapes ?? undefined}
+            overlay={
             <>
               <FloatingDock
                 scale={vp.scale}
@@ -1358,8 +1444,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
                 />
               )}
             </>
-          }
-        />
+            }
+          />
+        )}
 
         <StatusBar
           userBoxesCount={userBoxes.length}

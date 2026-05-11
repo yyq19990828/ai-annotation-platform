@@ -33,6 +33,7 @@ celery_app.conf.update(
         "app.workers.tasks.batch_predict": {"queue": "ml"},
         "app.workers.predictions_retry.retry_failed_prediction": {"queue": "ml"},
         "app.workers.media.generate_thumbnail": {"queue": "media"},
+        "app.workers.media.generate_video_metadata": {"queue": "media"},
         "app.workers.media.generate_task_thumbnail": {"queue": "media"},
         "app.workers.media.backfill_media": {"queue": "media"},
         "app.workers.media.backfill_tasks": {"queue": "media"},

@@ -63,6 +63,23 @@ describe("geometryToShape", () => {
     expect(s).toEqual({ x: 0, y: 0, w: 1, h: 1 });
     expect((s as { polygon?: unknown }).polygon).toBeUndefined();
   });
+
+  it("video_bbox → 忽略 frame_index 并返回当前帧 bbox 几何", () => {
+    const s = geometryToShape({ type: "video_bbox", frame_index: 12, x: 0.1, y: 0.2, w: 0.3, h: 0.4 });
+    expect(s).toEqual({ x: 0.1, y: 0.2, w: 0.3, h: 0.4 });
+  });
+
+  it("video_track → 返回第一条非消失关键帧 bbox", () => {
+    const s = geometryToShape({
+      type: "video_track",
+      track_id: "trk_1",
+      keyframes: [
+        { frame_index: 0, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual", absent: true },
+        { frame_index: 12, bbox: { x: 0.2, y: 0.3, w: 0.4, h: 0.5 }, source: "manual" },
+      ],
+    });
+    expect(s).toEqual({ x: 0.2, y: 0.3, w: 0.4, h: 0.5 });
+  });
 });
 
 describe("annotationToBox", () => {

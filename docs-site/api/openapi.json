@@ -691,13 +691,21 @@
               "mapping": {
                 "bbox": "#/components/schemas/BboxGeometry",
                 "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
-                "polygon": "#/components/schemas/PolygonGeometry"
+                "polygon": "#/components/schemas/PolygonGeometry",
+                "video_bbox": "#/components/schemas/VideoBboxGeometry",
+                "video_track": "#/components/schemas/VideoTrackGeometry"
               },
               "propertyName": "type"
             },
             "oneOf": [
               {
                 "$ref": "#/components/schemas/BboxGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoBboxGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackGeometry"
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
@@ -856,13 +864,21 @@
               "mapping": {
                 "bbox": "#/components/schemas/BboxGeometry",
                 "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
-                "polygon": "#/components/schemas/PolygonGeometry"
+                "polygon": "#/components/schemas/PolygonGeometry",
+                "video_bbox": "#/components/schemas/VideoBboxGeometry",
+                "video_track": "#/components/schemas/VideoTrackGeometry"
               },
               "propertyName": "type"
             },
             "oneOf": [
               {
                 "$ref": "#/components/schemas/BboxGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoBboxGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/VideoTrackGeometry"
               },
               {
                 "$ref": "#/components/schemas/PolygonGeometry"
@@ -1053,13 +1069,21 @@
                   "mapping": {
                     "bbox": "#/components/schemas/BboxGeometry",
                     "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
-                    "polygon": "#/components/schemas/PolygonGeometry"
+                    "polygon": "#/components/schemas/PolygonGeometry",
+                    "video_bbox": "#/components/schemas/VideoBboxGeometry",
+                    "video_track": "#/components/schemas/VideoTrackGeometry"
                   },
                   "propertyName": "type"
                 },
                 "oneOf": [
                   {
                     "$ref": "#/components/schemas/BboxGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VideoBboxGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VideoTrackGeometry"
                   },
                   {
                     "$ref": "#/components/schemas/PolygonGeometry"
@@ -8857,6 +8881,16 @@
               }
             ],
             "title": "Updated At"
+          },
+          "video_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -8869,6 +8903,45 @@
           "created_at"
         ],
         "title": "TaskOut",
+        "type": "object"
+      },
+      "TaskVideoManifestResponse": {
+        "properties": {
+          "expires_in": {
+            "default": 3600,
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/VideoMetadata"
+          },
+          "poster_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Url"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "video_url": {
+            "title": "Video Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "video_url",
+          "metadata"
+        ],
+        "title": "TaskVideoManifestResponse",
         "type": "object"
       },
       "Token": {
@@ -9181,6 +9254,252 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VideoBboxGeometry": {
+        "additionalProperties": false,
+        "description": "v0.9.16 · 视频单帧 bbox。\n\n首版视频工作台只保存逐帧框，不表达 track/keyframe/interpolation。`frame_index`\n是唯一时间轴定位字段，展示层可自行换算 timecode。",
+        "properties": {
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "h": {
+            "title": "H",
+            "type": "number"
+          },
+          "type": {
+            "const": "video_bbox",
+            "default": "video_bbox",
+            "title": "Type",
+            "type": "string"
+          },
+          "w": {
+            "title": "W",
+            "type": "number"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "frame_index",
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "VideoBboxGeometry",
+        "type": "object"
+      },
+      "VideoMetadata": {
+        "properties": {
+          "codec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codec"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Count"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "poster_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Error"
+          },
+          "poster_frame_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Frame Path"
+          },
+          "probe_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probe Error"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "title": "VideoMetadata",
+        "type": "object"
+      },
+      "VideoTrackBbox": {
+        "additionalProperties": false,
+        "properties": {
+          "h": {
+            "title": "H",
+            "type": "number"
+          },
+          "w": {
+            "title": "W",
+            "type": "number"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "VideoTrackBbox",
+        "type": "object"
+      },
+      "VideoTrackGeometry": {
+        "additionalProperties": false,
+        "description": "v0.9.17 · 视频对象轨迹。\n\n轨迹以 compact JSON 保存，不逐帧展开写库。`track_id` 在一个 annotation 内稳定；\n`keyframes` 保存手工 / 预测关键帧，插值结果由前端按需计算。",
+        "properties": {
+          "keyframes": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackKeyframe"
+            },
+            "minItems": 1,
+            "title": "Keyframes",
+            "type": "array"
+          },
+          "track_id": {
+            "minLength": 1,
+            "title": "Track Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "video_track",
+            "default": "video_track",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track_id",
+          "keyframes"
+        ],
+        "title": "VideoTrackGeometry",
+        "type": "object"
+      },
+      "VideoTrackKeyframe": {
+        "additionalProperties": false,
+        "properties": {
+          "absent": {
+            "default": false,
+            "title": "Absent",
+            "type": "boolean"
+          },
+          "bbox": {
+            "$ref": "#/components/schemas/VideoTrackBbox"
+          },
+          "frame_index": {
+            "minimum": 0.0,
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "occluded": {
+            "default": false,
+            "title": "Occluded",
+            "type": "boolean"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "interpolated",
+              "prediction"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frame_index",
+          "bbox"
+        ],
+        "title": "VideoTrackKeyframe",
         "type": "object"
       },
       "VisibleIfRule": {
@@ -18189,6 +18508,54 @@
           }
         ],
         "summary": "Submit Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/manifest": {
+      "get": {
+        "operationId": "get_video_manifest_api_v1_tasks__task_id__video_manifest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskVideoManifestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Manifest",
         "tags": [
           "tasks"
         ]

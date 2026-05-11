@@ -5,6 +5,18 @@ from datetime import datetime
 from app.schemas.user import UserBrief
 
 
+class VideoMetadata(BaseModel):
+    duration_ms: int | None = None
+    fps: float | None = None
+    frame_count: int | None = None
+    width: int | None = None
+    height: int | None = None
+    codec: str | None = None
+    poster_frame_path: str | None = None
+    probe_error: str | None = None
+    poster_error: str | None = None
+
+
 class TaskOut(BaseModel):
     id: UUID
     project_id: UUID
@@ -28,6 +40,7 @@ class TaskOut(BaseModel):
     image_height: int | None = None
     thumbnail_url: str | None = None
     blurhash: str | None = None
+    video_metadata: VideoMetadata | None = None
     # v0.6.5 · 状态机锁定相关
     submitted_at: datetime | None = None
     reviewer_id: UUID | None = None
@@ -56,6 +69,14 @@ class ReviewClaimResponse(BaseModel):
 class TaskFileUrlResponse(BaseModel):
     url: str
     expires_in: int
+
+
+class TaskVideoManifestResponse(BaseModel):
+    task_id: UUID
+    video_url: str
+    poster_url: str | None = None
+    metadata: VideoMetadata
+    expires_in: int = 3600
 
 
 class TaskLockResponse(BaseModel):
