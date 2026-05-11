@@ -64,8 +64,8 @@ jobs:
             Decision rules:
             - Prefer repository docs paths over generic advice.
             - Mention ADR only when the change appears architectural or semantics-changing.
-            - Be conservative: if the PR changes user-facing behavior, API contract, workflow semantics, permissions, state machines, AI handoff, or environment config, that increases confidence.
-            - If no docs update looks necessary, return an empty `suggested_files` array and status `probably_not_needed`.
+            - When `hasPotentialMiss` is `true` in `.tmp/docs-impact.json`, focus on the `unmatchedRules` array. For each unmatched rule, examine the actual PR diff and decide: (a) does this code change genuinely affect the semantics covered by the rule's suggested docs, or (b) is this rule a false positive for this specific PR? Only use `probably_not_needed` if you can justify that EVERY unmatched rule is a false positive. If even one unmatched rule has a plausible doc gap, output that rule's suggested docs with appropriate confidence.
+            - If `hasPotentialMiss` is `false`, or all unmatched rules are clear false positives, return an empty `suggested_files` array and status `probably_not_needed`.
           claude_args: >-
             --model claude-haiku-4-5
             --json-schema
