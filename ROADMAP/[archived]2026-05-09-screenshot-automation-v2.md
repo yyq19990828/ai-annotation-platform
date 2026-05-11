@@ -282,7 +282,7 @@ scene 默认只跑 `desktop-light`；声明 `matrix.themes:['light','dark']` 自
 ## 5. 与既有 Roadmap 的关联
 
 - 与 [v0.10.x](./0.10.x.md) 协同：sam3 / exemplar 工作台需要新场景，M1 完成后 v0.10.1 可直接加 scene 文件。
-- 与「文档 IA 重构」（[2026-05-09-docs-ia-redesign.md](./2026-05-09-docs-ia-redesign.md)）协同：IA M2 物理迁移会改图片路径，本提案 M4 的 manifest 校验能在迁移时给出精准 dead-image 列表。
+- 与「文档 IA 重构」（[2026-05-09-docs-ia-redesign.md](./[archived]2026-05-09-docs-ia-redesign.md)）协同：IA M2 物理迁移会改图片路径，本提案 M4 的 manifest 校验能在迁移时给出精准 dead-image 列表。
 - 替代 `IMAGE_CHECKLIST.md` 的人工对账：M4 上线后 manifest.json 即真相，CHECKLIST 文件可移到 archived。
 
 ---

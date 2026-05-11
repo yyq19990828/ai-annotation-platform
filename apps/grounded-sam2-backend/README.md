@@ -2,7 +2,7 @@
 
 > v0.9.x AI 基座的 ML Backend — 把 [`IDEA-Research/Grounded-SAM-2`](https://github.com/IDEA-Research/Grounded-SAM-2) 打包成独立 GPU 服务，遵循平台 [ML Backend 协议契约](../../docs-site/dev/ml-backend-protocol.md)。
 >
-> 当前版本：**v0.9.1 (M1 — embedding 缓存 + Prometheus)**。后续 v0.9.2 ~ v0.9.5 在 [`ROADMAP/0.9.x.md`](../../ROADMAP/0.9.x.md) 切片。
+> 当前版本：**v0.9.1 (M1 — embedding 缓存 + Prometheus)**。后续 v0.9.2 ~ v0.9.5 在 [`ROADMAP/[archived]0.9.x.md`](../../ROADMAP/[archived]0.9.x.md) 切片。
 
 ---
 

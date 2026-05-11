@@ -4,7 +4,7 @@
 # Usage:
 #   bash scripts/sync_vendor.sh <commit-sha>
 #
-# 默认 commit 见 README.md "Vendor & 固定 commit" 段; M0 选定后更新 ROADMAP/0.9.x.md.
+# 默认 commit 见 README.md "Vendor & 固定 commit" 段; M0 选定后更新 ROADMAP/[archived]0.9.x.md.
 
 set -euo pipefail
 

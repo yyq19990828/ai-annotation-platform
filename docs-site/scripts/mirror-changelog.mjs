@@ -43,6 +43,15 @@ function escapeAnglesOutsideCode(text) {
 
 const GITHUB_BLOB = "https://github.com/yyq19990828/ai-annotation-platform/blob/main";
 
+function encodeRouteStem(stem) {
+  return stem.replace(/^\[archived\]/, "archived-").replace(/\[/g, "").replace(/\]/g, "");
+}
+
+function mirrorFileName(file) {
+  const stem = file.replace(/\.md$/, "");
+  return `${encodeRouteStem(stem)}.md`;
+}
+
 // 链接改写：把仓库内引用改成 VitePress 站点路径或 GitHub blob URL。
 // 涵盖 root（CHANGELOG.md / ROADMAP.md）与子目录（docs/changelogs/, ROADMAP/）两种
 // 视角，因此同时匹配 `./xxx`、`xxx`、`../xxx` 三种相对前缀。
@@ -59,7 +68,8 @@ function rewriteLinks(text) {
     // CHANGELOG.md → /changelog/
     .replace(new RegExp(`\\]\\(${REL}CHANGELOG\\.md${HASH}\\)`, "g"), "](/changelog/$1)")
     // ROADMAP/<ver>.md → /roadmap/<ver>
-    .replace(new RegExp(`\\]\\(${REL}ROADMAP\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"), "](/roadmap/$1$2)")
+    .replace(new RegExp(`\\]\\(${REL}ROADMAP\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"), (_m, stem, hash = "") =>
+      `](/roadmap/${encodeRouteStem(stem)}${hash})`)
     // ROADMAP.md → /roadmap/
     .replace(new RegExp(`\\]\\(${REL}ROADMAP\\.md${HASH}\\)`, "g"), "](/roadmap/$1)")
     // ADR → /dev/adr/<id>
@@ -68,6 +78,8 @@ function rewriteLinks(text) {
     .replace(new RegExp(`\\]\\(${REL}docs\\/(plans|research)\\/([^)#\\s]+?\\.md)${HASH}\\)`, "g"),
       `](${GITHUB_BLOB}/docs/$1/$2$3)`)
     // 同目录 ./0.10.x.md（在 ROADMAP/ 内或 docs/changelogs/ 内的版本互引）→ 站点干净 URL
+    .replace(/\]\(\.\/(\[archived\][^)#\s]+?)\.md(#[^)\s]*)?\)/g, (_m, stem, hash = "") =>
+      `](./${encodeRouteStem(stem)}${hash})`)
     .replace(/\]\(\.\/(\d+(?:\.\d+)*\.x)\.md(#[^)\s]*)?\)/g, "](./$1$2)");
 }
 
@@ -112,7 +124,7 @@ function buildGroup({ name, rootSrc, rootSrcRel, dirSrc, dirSrcRel, dstDir, urlP
     mirrorOne({
       srcFile: resolve(dirSrc, file),
       srcRel: `${dirSrcRel}/${file}`,
-      dstFile: resolve(dstDir, file),
+      dstFile: resolve(dstDir, mirrorFileName(file)),
     });
   }
 
@@ -120,7 +132,7 @@ function buildGroup({ name, rootSrc, rootSrcRel, dirSrc, dirSrcRel, dstDir, urlP
   const sidebar = [{ text: `${name} 总览`, link: `${urlPrefix}/` }];
   for (const file of versionFiles) {
     const stem = file.replace(/\.md$/, "");
-    sidebar.push({ text: `v${stem}`, link: `${urlPrefix}/${stem}` });
+    sidebar.push({ text: `v${stem}`, link: `${urlPrefix}/${encodeRouteStem(stem)}` });
   }
   writeFileSync(
     resolve(dstDir, "sidebar.generated.json"),
