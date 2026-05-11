@@ -1,8 +1,11 @@
+import asyncio
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 import redis.asyncio as aioredis
+from redis.asyncio.connection import ConnectionPool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -29,14 +32,39 @@ from sqlalchemy import select
 from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+
+_BUG_REOPEN_REDIS_POOL: ConnectionPool | None = None
+
+
+def _get_bug_reopen_redis_pool() -> ConnectionPool:
+    global _BUG_REOPEN_REDIS_POOL
+    if _BUG_REOPEN_REDIS_POOL is None:
+        _BUG_REOPEN_REDIS_POOL = ConnectionPool.from_url(
+            settings.redis_url,
+            max_connections=50,
+            decode_responses=True,
+        )
+    return _BUG_REOPEN_REDIS_POOL
 
 
 def _get_bug_reopen_redis() -> aioredis.Redis:
-    return aioredis.from_url(settings.redis_url, decode_responses=True)
+    return aioredis.Redis(connection_pool=_get_bug_reopen_redis_pool())
 
 
 async def close_bug_reopen_redis_pool() -> None:
-    return None
+    global _BUG_REOPEN_REDIS_POOL
+    if _BUG_REOPEN_REDIS_POOL is None:
+        return
+    try:
+        await asyncio.wait_for(
+            _BUG_REOPEN_REDIS_POOL.disconnect(inuse_connections=True),
+            timeout=2.0,
+        )
+    except (asyncio.TimeoutError, Exception) as exc:
+        log.debug("close_bug_reopen_redis_pool: %s (continuing shutdown)", exc)
+    finally:
+        _BUG_REOPEN_REDIS_POOL = None
 
 
 class ScreenshotInitRequest(BaseModel):
@@ -360,7 +388,7 @@ async def add_bug_comment(
             if count == 1:
                 await r.expire(rkey, 86400)
         finally:
-            await r.aclose()
+            await r.aclose(close_connection_pool=False)
         if count > 5:
             raise HTTPException(
                 status_code=429,

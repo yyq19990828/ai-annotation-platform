@@ -1,3 +1,4 @@
+import subprocess
 import uuid
 
 import pytest
@@ -7,7 +8,13 @@ from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.schemas._jsonb_types import Geometry
-from app.workers.media import parse_ffprobe_video_metadata
+from app.workers.media import (
+    FFMPEG_POSTER_TIMEOUT_SECONDS,
+    FFPROBE_TIMEOUT_SECONDS,
+    extract_video_poster,
+    parse_ffprobe_video_metadata,
+    probe_video_file,
+)
 
 
 def test_parse_ffprobe_video_metadata_computes_fps_and_frame_count():
@@ -36,6 +43,44 @@ def test_parse_ffprobe_video_metadata_computes_fps_and_frame_count():
         "height": 720,
         "codec": "h264",
     }
+
+
+def test_probe_video_file_uses_timeout(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+    seen: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout='{"streams":[{"codec_type":"video","width":1,"height":1}]}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    probe_video_file(video)
+
+    assert seen["timeout"] == FFPROBE_TIMEOUT_SECONDS
+
+
+def test_extract_video_poster_uses_timeout(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    poster = tmp_path / "poster.webp"
+    video.write_bytes(b"fake")
+    seen: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    extract_video_poster(video, poster)
+
+    assert seen["timeout"] == FFMPEG_POSTER_TIMEOUT_SECONDS
 
 
 def test_video_bbox_geometry_validates_and_bbox_stays_compatible():

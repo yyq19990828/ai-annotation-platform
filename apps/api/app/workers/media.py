@@ -11,6 +11,9 @@ from typing import Any
 from app.workers.celery_app import celery_app
 from app.config import settings
 
+FFPROBE_TIMEOUT_SECONDS = 30
+FFMPEG_POSTER_TIMEOUT_SECONDS = 60
+
 
 def _parse_ratio(value: str | None) -> float | None:
     if not value:
@@ -94,6 +97,7 @@ def probe_video_file(path: str | Path) -> dict[str, Any]:
         check=False,
         capture_output=True,
         text=True,
+        timeout=FFPROBE_TIMEOUT_SECONDS,
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "ffprobe failed")
@@ -116,6 +120,7 @@ def extract_video_poster(input_path: str | Path, output_path: str | Path) -> Non
         check=False,
         capture_output=True,
         text=True,
+        timeout=FFMPEG_POSTER_TIMEOUT_SECONDS,
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "ffmpeg poster extraction failed")
@@ -225,27 +230,32 @@ async def _generate_video_metadata(item_id: str) -> None:
         meta = dict(item.metadata_ or {})
         video_meta = dict(meta.get("video") or {})
 
-        try:
-            resp = storage.client.get_object(
-                Bucket=storage.datasets_bucket, Key=item.file_path
-            )
-            raw = resp["Body"].read()
-        except Exception as exc:
-            video_meta["probe_error"] = str(exc)
-            meta["video"] = video_meta
-            item.metadata_ = meta
-            await db.commit()
-            return
-
         with tempfile.TemporaryDirectory(prefix="anno-video-") as tmp:
             suffix = Path(item.file_name).suffix or ".mp4"
             input_path = Path(tmp) / f"source{suffix}"
             poster_path = Path(tmp) / "poster.webp"
-            input_path.write_bytes(raw)
+
+            try:
+                with input_path.open("wb") as fh:
+                    storage.client.download_fileobj(
+                        Bucket=storage.datasets_bucket,
+                        Key=item.file_path,
+                        Fileobj=fh,
+                    )
+            except Exception as exc:
+                video_meta["probe_error"] = str(exc)
+                meta["video"] = video_meta
+                item.metadata_ = meta
+                await db.commit()
+                return
 
             try:
                 video_meta.update(probe_video_file(input_path))
                 video_meta.pop("probe_error", None)
+            except subprocess.TimeoutExpired:
+                video_meta["probe_error"] = (
+                    f"ffprobe timed out after {FFPROBE_TIMEOUT_SECONDS}s"
+                )
             except Exception as exc:
                 video_meta["probe_error"] = str(exc)
 
@@ -267,6 +277,10 @@ async def _generate_video_metadata(item_id: str) -> None:
                 item.thumbnail_path = poster_key
                 video_meta["poster_frame_path"] = poster_key
                 video_meta.pop("poster_error", None)
+            except subprocess.TimeoutExpired:
+                video_meta["poster_error"] = (
+                    f"ffmpeg poster extraction timed out after {FFMPEG_POSTER_TIMEOUT_SECONDS}s"
+                )
             except Exception as exc:
                 video_meta["poster_error"] = str(exc)
 
@@ -283,7 +297,7 @@ async def _backfill_media(dataset_id: str) -> None:
         async_sessionmaker,
         AsyncSession,
     )
-    from sqlalchemy import select
+    from sqlalchemy import and_, or_, select
     from app.db.models.dataset import DatasetItem
 
     engine = create_async_engine(settings.database_url, echo=False)
@@ -295,7 +309,16 @@ async def _backfill_media(dataset_id: str) -> None:
         rows = await db.execute(
             select(DatasetItem.id).where(
                 DatasetItem.dataset_id == uuid.UUID(dataset_id),
-                DatasetItem.file_type.in_(["image", "video"]),
+                or_(
+                    and_(
+                        DatasetItem.file_type == "image",
+                        DatasetItem.thumbnail_path.is_(None),
+                    ),
+                    and_(
+                        DatasetItem.file_type == "video",
+                        DatasetItem.metadata_["video"]["frame_count"].astext.is_(None),
+                    ),
+                ),
             )
         )
         item_ids = [str(r[0]) for r in rows.all()]
