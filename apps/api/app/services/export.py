@@ -32,7 +32,7 @@ class UnsupportedExportError(ValueError):
 def _assert_image_export_supported(project: Project) -> None:
     if project.type_key in VIDEO_PROJECT_TYPES:
         raise UnsupportedExportError(
-            "Video projects only support Video JSON export via format=coco"
+            "Only video-track projects support Video JSON export; this project type and export format combination is not supported"
         )
 
 

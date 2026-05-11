@@ -155,7 +155,25 @@ graph TD
 
 视频轨迹编辑也走同一条 `PATCH /tasks/{task_id}/annotations/{annotation_id}` 路径：新增关键帧、移动当前帧框、标记消失 / 遮挡，都会作为完整 `video_track` geometry 的一次更新保存。
 
-### 3. 删除 annotation
+### 3. 视频轨迹转独立框
+
+入口：
+
+- `POST /tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes`
+- `AnnotationService.convert_video_track_to_bboxes()`
+
+这个动作只接受 `video_track` 源 annotation，会创建一个或多个 `video_bbox`，并通过 `parent_annotation_id` 保留派生关系。
+
+请求语义：
+
+- `operation=copy`：保留源轨迹，只新增独立框；响应里的 `removed_frame_indexes` 为空。
+- `operation=split`：从源轨迹移除对应关键帧，或在整条轨迹转换时删除源轨迹；响应里的 `removed_frame_indexes` 返回被移除的帧号。
+- `scope=frame`：只转换指定 `frame_index`。
+- `scope=track`：转换整条轨迹，`frame_mode=keyframes|all_frames` 决定只转换关键帧还是展开后端插值帧。
+
+`all_frames` 与视频导出共用插值 helper，`absent=true` 不生成 bbox，并会阻断跨段插值。单次转换最多创建 5000 个 `video_bbox`，避免长视频一次写入过多 annotation。
+
+### 4. 删除 annotation
 
 入口：
 

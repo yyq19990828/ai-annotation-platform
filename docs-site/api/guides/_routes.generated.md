@@ -267,6 +267,7 @@
 | GET | `/{task_id}/annotations/page` |
 | POST | `/{task_id}/annotations` |
 | PATCH | `/{task_id}/annotations/{annotation_id}` |
+| POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
 | GET | `/{task_id}/predictions` |
 | POST | `/{task_id}/predictions/{prediction_id}/accept` |
 | DELETE | `/{task_id}/annotations/{annotation_id}` |
@@ -297,4 +298,4 @@
 
 ---
 
-_共 28 模块 / 160 路由_
+_共 28 模块 / 161 路由_

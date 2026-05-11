@@ -146,7 +146,7 @@ POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes
 | `frame_index` | number | `scope=frame` 时必填 |
 | `frame_mode` | `keyframes` / `all_frames` | `scope=track` 时决定只转关键帧还是展开插值帧 |
 
-响应返回源 annotation 的新状态、创建出的 `video_bbox[]`、是否删除源 track，以及被移除的 frame indexes。`all_frames` 使用与 Video Tracks JSON 导出相同的后端插值 helper：精确关键帧优先，`absent=true` 不输出 bbox 并阻断跨段插值。为避免长视频一次性写爆 annotation 表，单次请求最多生成 5000 个 `video_bbox`。
+响应返回源 annotation 的新状态、创建出的 `video_bbox[]`、是否删除源 track，以及被移除的 frame indexes。`copy` 不会改动源轨迹，`removed_frame_indexes` 为空；`split` 才会移除源关键帧或删除整条源轨迹，并返回被移除的帧号。`all_frames` 使用与 Video Tracks JSON 导出相同的后端插值 helper：精确关键帧优先，`absent=true` 不输出 bbox 并阻断跨段插值。为避免长视频一次性写爆 annotation 表，单次请求最多生成 5000 个 `video_bbox`。
 
 ## 插值与质量检查
 

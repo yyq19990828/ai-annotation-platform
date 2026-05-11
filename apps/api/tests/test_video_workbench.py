@@ -761,6 +761,7 @@ async def test_video_track_convert_track_split_all_frames_deletes_source(
     assert resp.status_code == 200
     body = resp.json()
     assert body["deleted_source"] is True
+    assert body["removed_frame_indexes"] == [0, 1, 2]
     assert body["source_annotation"] is None
     assert [ann["geometry"]["frame_index"] for ann in body["created_annotations"]] == [
         0,
@@ -768,6 +769,37 @@ async def test_video_track_convert_track_split_all_frames_deletes_source(
         2,
     ]
     assert body["created_annotations"][1]["geometry"]["x"] == 0.2
+
+
+async def test_video_track_convert_track_copy_keeps_removed_frames_empty(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/{track.id}/video/convert-to-bboxes",
+        json={
+            "operation": "copy",
+            "scope": "track",
+            "frame_mode": "all_frames",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deleted_source"] is False
+    assert body["removed_frame_indexes"] == []
+    assert body["source_annotation"]["id"] == str(track.id)
+    assert [ann["geometry"]["frame_index"] for ann in body["created_annotations"]] == [
+        0,
+        1,
+        2,
+    ]
 
 
 async def test_video_track_convert_rejects_non_track_annotation(
@@ -840,5 +872,27 @@ async def test_video_project_yolo_voc_export_returns_clear_400(
 
     assert resp.status_code == 400
     assert resp.json()["detail"] == (
-        "Video projects only support Video JSON export via format=coco"
+        "Only video-track projects support Video JSON export; this project type and export format combination is not supported"
+    )
+
+
+async def test_video_mm_coco_export_returns_clear_400(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    project.type_key = "video-mm"
+    project.type_label = "视频 · 多模态"
+    await db_session.flush()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{project.id}/export?format=coco",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == (
+        "Only video-track projects support Video JSON export; this project type and export format combination is not supported"
     )

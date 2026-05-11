@@ -255,7 +255,8 @@ class AnnotationService:
                 frame_mode=frame_mode,
                 frame_count=frame_count,
             )
-            removed_frame_indexes = [int(frame["frame_index"]) for frame in frames]
+            if operation == "split":
+                removed_frame_indexes = [int(frame["frame_index"]) for frame in frames]
         else:
             raise ValueError("scope must be one of: frame, track")
 

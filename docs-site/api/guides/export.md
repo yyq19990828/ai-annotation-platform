@@ -25,7 +25,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&include_
 | `include_attributes` | `true` / `false` | 是否携带 `annotation.attributes` 与 `project.attribute_schema` |
 | `video_frame_mode` | `keyframes` / `all_frames` | 仅 `video-track` 生效；默认 `keyframes` |
 
-`format=coco` 返回 JSON；`format=voc|yolo` 返回 zip。`video-track` 的 `format=yolo|voc` 会返回 400。
+`format=coco` 返回 JSON；`format=voc|yolo` 返回 zip。`video-track` 的 `format=yolo|voc` 会返回 400；其它视频项目类型当前不支持 Video JSON 导出。
 
 ## 格式说明
 

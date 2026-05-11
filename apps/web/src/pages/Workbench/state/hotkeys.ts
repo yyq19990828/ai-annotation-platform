@@ -173,6 +173,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   }
 
   if (ctx.videoMode) {
+    if (ctx.pendingActive) {
+      if (e.key === "Escape") return { type: "cancel" };
+      return null;
+    }
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       if (e.key === "1") return { type: "setVideoTool", tool: "box" };
       if (e.key === "2") return { type: "setVideoTool", tool: "track" };

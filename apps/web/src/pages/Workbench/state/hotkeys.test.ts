@@ -189,6 +189,14 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "s" }, videoCtx)).toBeNull();
     expect(dispatch({ key: "p" }, videoCtx)).toBeNull();
   });
+
+  it("pending popover owns video-mode keys except Esc cancel", () => {
+    const pendingVideoCtx: Partial<DispatchCtx> = { videoMode: true, pendingActive: true };
+    expect(dispatch({ key: "4" }, pendingVideoCtx)).toBeNull();
+    expect(dispatch({ key: "Delete" }, pendingVideoCtx)).toBeNull();
+    expect(dispatch({ key: "Backspace" }, pendingVideoCtx)).toBeNull();
+    expect(dispatch({ key: "Escape" }, pendingVideoCtx)).toEqual({ type: "cancel" });
+  });
 });
 
 describe("dispatchKey · 属性 hotkey 绑定 (D.1)", () => {
