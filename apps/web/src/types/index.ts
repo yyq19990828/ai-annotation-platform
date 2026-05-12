@@ -142,6 +142,22 @@ export interface TaskVideoFrameTimetableResponse {
   frames: VideoFrameTimetableEntry[];
 }
 
+export interface VideoFrameOut {
+  frame_index: number;
+  width: number;
+  format: "webp" | "jpeg";
+  status: "pending" | "ready" | "failed";
+  url: string | null;
+  retry_after: number | null;
+  error: string | null;
+}
+
+export interface VideoFramePrefetchResponse {
+  dataset_item_id: string;
+  task_id: string | null;
+  frames: VideoFrameOut[];
+}
+
 // ── Annotation ──────────────────────────────────────────────────────────────
 
 /** Discriminated union: 形状自描述。v0.5.3 起新增 polygon, v0.9.14 多连通域升级。后续可扩展 keypoint / mask / cuboid。 */
@@ -256,6 +272,7 @@ import type {
 
 export type PredictionShape = Omit<GeneratedPredictionShape, "geometry"> & {
   geometry: Geometry;
+  shape_index?: number;
 };
 
 export type PredictionResponse = Omit<GeneratedPredictionOut, "result"> & {

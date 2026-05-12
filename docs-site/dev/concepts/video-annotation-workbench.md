@@ -26,6 +26,8 @@ v0.9.24 升级时间轴可视化：选中轨迹时显示 keyframe、outside、in
 
 v0.9.26 补齐轻量视频导航：时间轴支持本地 loop region，播放可在片段内循环；当前帧可打书签并通过 marker 跳回；显式 seek 会记录最近 50 个位置用于前进 / 后退。
 
+v0.9.27 接入后端单帧缓存的第一层前端消费：时间轴 hover 显示当前帧缩略图，并对选中轨迹关键帧、书签帧和 loop region 边界做预取 hint。
+
 ## 数据入口
 
 视频文件通过 dataset 导入进入系统：
@@ -103,6 +105,24 @@ GET /api/v1/tasks/{task_id}/video/frame-timetable?from=0&to=120
 ```
 
 当存量视频还没有时间表时，接口返回 `source: "estimated"` 和空 `frames`；前端使用 `fps` 与 `frame_count` 继续估算，不阻断打开工作台。`from` / `to` 都是可选且包含边界。
+
+## Frame Preview API
+
+v0.9.27 起，视频工作台前端消费 v0.9.25 的 task 级单帧缓存接口：
+
+```http
+GET /api/v1/tasks/{task_id}/video/frames/{frame_index}?format=webp&w=320
+POST /api/v1/tasks/{task_id}/video/frames:prefetch
+```
+
+`VideoStage` 只把它用于时间轴 hover preview 和轻量预取，不替代 `<video>` 的主播放源。响应状态处理：
+
+- `ready` 且有 `url`：时间轴 preview popover 显示 signed URL 图片。
+- `pending`：显示轻量 loading，并在短延迟后重试一次；不弹 toast。
+- `failed` 或网络错误：保留 frame/time 文案，当前 hover 帧不阻断 seek/playback。
+- `400` / `404`：认为当前 task 不支持 frame service，本次打开期间停用 hover preview，只保留原 frame tooltip。
+
+前端会对以下帧调用 `frames:prefetch` 作为 hint：当前选中 `video_track` 的 keyframes、当前 task 的 bookmark frames，以及 loop region 的起止帧。预取只影响后端单帧缓存，不写 annotation，也不会改变播放 / seek 语义。
 
 ## Annotation Schema
 
@@ -316,6 +336,7 @@ v0.9.19 后，`VideoStage` 底部固定控制条改为 `VideoPlaybackOverlay`：
 - v0.9.26 起，`Shift+drag` 时间轴可创建本地 loop region；播放越过范围末帧后 seek 回起始帧，逐帧和手动 seek 不被限制。
 - loop region、书签和跳转历史只存前端会话状态，按 task 写入 `sessionStorage`，不改变 annotation schema 或后端 API。
 - 书签以小三角 marker 显示，`Ctrl+M` 在当前帧加 / 删；显式 seek、bookmark 跳转和关键帧跳转写入最近 50 条跳转历史，播放 tick 不写历史。
+- v0.9.27 起，hover 时间轴会请求单帧预览图；ready 时显示缩略图，pending/error 时降级显示 frame/time。选中轨迹关键帧、书签帧和 loop region 边界会被预取。
 
 ## History / Offline
 

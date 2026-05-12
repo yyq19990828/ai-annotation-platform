@@ -7,6 +7,8 @@ import type {
   Geometry,
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
+  VideoFrameOut,
+  VideoFramePrefetchResponse,
 } from "@/types";
 
 export interface TaskListResponse {
@@ -62,6 +64,11 @@ export interface VideoFrameTimetableParams {
   to?: number;
 }
 
+export interface VideoFrameParams {
+  format?: "webp" | "jpeg";
+  width?: number;
+}
+
 export interface SubmitResponse {
   status: string;
   task_id: string;
@@ -99,6 +106,26 @@ export const tasksApi = {
       `/tasks/${id}/video/frame-timetable${suffix}`,
     );
   },
+
+  getVideoFrame: (id: string, frameIndex: number, params?: VideoFrameParams) => {
+    const q = new URLSearchParams();
+    if (params?.format) q.set("format", params.format);
+    if (params?.width !== undefined) q.set("w", String(params.width));
+    const suffix = q.toString() ? `?${q}` : "";
+    return apiClient.get<VideoFrameOut>(
+      `/tasks/${id}/video/frames/${frameIndex}${suffix}`,
+    );
+  },
+
+  prefetchVideoFrames: (id: string, frameIndices: number[], params?: VideoFrameParams) =>
+    apiClient.post<VideoFramePrefetchResponse>(
+      `/tasks/${id}/video/frames:prefetch`,
+      {
+        frame_indices: frameIndices,
+        width: params?.width ?? 320,
+        format: params?.format ?? "webp",
+      },
+    ),
 
   getAnnotations: (id: string) =>
     apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations`),

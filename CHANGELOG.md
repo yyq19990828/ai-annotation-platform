@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.27] - 2026-05-12
+
+> **Video Timeline Hover Preview — 时间轴缩略图预览 + 单帧缓存预取.** 主线: ① 前端新增 task video frame API helper 与 `useVideoFramePreview`，消费 v0.9.25 后端 `frames/{frame_index}` / `frames:prefetch`; ② `VideoPlaybackOverlay` hover 时间轴时显示当前 frame、时间和 WebP/JPEG 缩略图，pending/error 状态降级为轻量文案；③ `VideoStage` 对选中 track keyframes、bookmarks、loop region 起止帧主动预取，提升回访体验；④ 缓存和请求去重保持在前端内存，不引入 ImageBitmap、chapter 或 WebCodecs。→ [plan](docs/plans/2026-05-12-v0.9.27-video-timeline-hover-preview.md).
+
+### Added
+
+- **时间轴 hover 缩略图**：`VideoPlaybackOverlay` 增加 preview popover，ready 状态显示 frame image，pending/error 状态保留 frame/time 上下文，不影响 seek。
+- **单帧预览 hook**：新增 `useVideoFramePreview`，支持 120 条内存 LRU、pending 一次重试、400/404 自动禁用当前 task 的 frame preview。
+- **预取 hint**：选中轨迹关键帧、书签帧和 loop region 起止帧会通过 `frames:prefetch` 提前触发后端单帧缓存。
+
+### Changed
+
+- 前端 `tasksApi` 增加 `getVideoFrame` / `prefetchVideoFrames`，并补齐 `VideoFrameOut` / `VideoFramePrefetchResponse` 类型。
+- 本版只消费现有后端帧服务；chapter、已下载范围可视化、ImageBitmap 缓存和多速率播放继续保持独立候选切片。
+
 ## [0.9.26] - 2026-05-12
 
 > **Video Loop Bookmark Navigation — 播放范围 + 书签 + 跳转历史.** 主线: ① 视频时间轴支持 `Shift+drag` 设定本地 loop region，播放越过范围末帧后回到起始帧；② loop region、书签和跳转历史按 task 存入 `sessionStorage`，不占用并行开发中的后端帧服务 v0.9.25 接口；③ `Ctrl+M` 添加/移除当前帧书签，书签 marker 可点击跳转；④ 显式 seek 记录最近 50 个位置，`Ctrl+[` / `Ctrl+]` 后退/前进，`Alt+L` 清除播放范围。→ [plan](docs/plans/2026-05-12-v0.9.26-video-loop-bookmark-navigation.md).

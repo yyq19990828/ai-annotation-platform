@@ -318,7 +318,8 @@
 
 > CVAT 时间轴鼠标 hover 任意位置时弹出该帧缩略图（已下载帧立即显示，否则触发后端单帧拉取）。
 
-- **R17.1 缩略图**：与 R5.1 keyframe poster 共用后端接口；前端按 hover 节流（≥100ms）。
+- **状态（v0.9.27）**：R17.1 + R5.1 第一版已完成。前端新增 `useVideoFramePreview`，时间轴 hover 显示 frame/time/缩略图；选中 track keyframes、bookmarks、loop region 起止帧会通过既有 `frames:prefetch` 预取。未引入 chapter、ImageBitmap 或 WebCodecs。
+- **R17.1 缩略图**：已完成第一版。与 R5.1 keyframe poster 共用后端单帧缓存接口；前端按 hover 帧去重并维护内存 LRU，pending 自动重试一次。
 - **R17.2 章节叠加**：R13 chapter 段在时间轴顶层用色带表示。
 - **R17.3 已下载范围**：R5.2 / R5.3 缓存命中的帧用浅蓝条带覆盖，用户可见"哪些帧 seek 不会卡"。
 
@@ -326,6 +327,7 @@
 
 > CVAT 的 `FrameSpeed: Fastest(100) | Fast(50) | Usual(25) | Slow(15) | Slower(12)` 多档速率切换；标准 NLE 编辑器的 J/K/L 三键习惯。
 
+- **候选计划（未绑定版本）**：和 R6.1 `seekFrameAsync` 合并做。J/K/L 需要一个可 await 的 seek 原语，否则反向播放、loop region 边界和跳转历史会互相抢状态。
 - **R18.1 五档播放速率**：键盘 `J`（反向 / 减速）、`K`（暂停）、`L`（正向 / 加速）。连按 L 提速。
 - **R18.2 反向播放**：除常用 1x 外加入 0.25x / 0.5x / 2x / 4x；反向播放靠帧回退（不靠浏览器 video，因为 `playbackRate=-1` 不可靠）。
 - **R18.3 与 R1 FrameClock 协同**：所有播放节奏统一从 FrameClock 走，video 元素只做被动渲染源。
@@ -339,6 +341,11 @@
 - **R19.1 bookmark**：已完成轻量版。`Ctrl+M` 在当前 frame 加 / 删书签，时间轴 marker 可点击跳转；注释和侧栏列表未做。
 - **R19.2 跳转历史**：已完成第一版。显式 seek 推入栈，`Ctrl+[ / Ctrl+]` 在最近 50 个位置间游走；播放 tick 不写历史。
 - 完全前端实现，状态隔离在 `VideoStage`，按 task 存到 sessionStorage；不占用后端帧服务 v0.9.25 接口。
+
+#### R19.3 · 书签侧栏与注释（**S，后续**）
+
+- 把当前轻量 bookmark 从时间轴 marker 扩展为侧栏列表，支持 label 编辑、排序、删除和点击跳转。
+- 暂不接审核评论系统；等 V4 评论锚点 `(track_id, frame_index)` 落地后再决定是否把 bookmark 升级为正式 review anchor。
 
 ### 数据组织与切帧
 
@@ -401,25 +408,25 @@
 
 ## 7. 优先级与建议顺序
 
+> 当前状态（2026-05-12 晚）：R1 / R2 / R3 / R4 / R19 轻量基础已经落地；后端 B1 / B2 / B3 / B6 / B7 第一版已落地。v0.9.27 的 plan 已确定；之后版本会受并行开发影响，本文只给候选顺序，不预占版本号。
+
 ```
-Wave 0 · 功能尾巴（接 M5.0 的最后三件）
+Wave 0 · 功能尾巴（接 M5.0 的最后三件，仍 open）
   V5 probe/poster 重试 (1 周，与 B3 共享后端)
   V4 review 差异化 (1-2 周，依赖 R4 时间轴 source 着色)
   V6 bbox→track 反向聚合 (1 周，与 R15 合并语义共享底层 API)
 
-Wave 1 · 基础夯实（必做，可并行启动）
-  R1 帧索引精度 (1-2 周)
-  R3 插值索引化 (3-5 天)
-  R7 观测与基准 (随时插入)
+Wave 1 · 基础夯实（已完成第一版）
+  R1 帧索引精度
+  R2 渲染分层
+  R3 插值索引化 + outside 段
+  R4 时间轴可视化
+  R19 轻量 bookmark / 跳转历史
 
-Wave 2 · 体感收益（依赖 Wave 1）
-  R2 渲染分层 (1-2 周)
-    └→ R4 时间轴可视化 (1 周)
-         └→ R17 章节可视化 + Hover 缩略图 (3-5 天，扩展 R4)
-         └→ R18 多速率播放 (J/K/L) (3-5 天)
-         └→ R19 Bookmark / 跳转栈 (3-5 天)
-         └→ R5.1 poster 预取 (3-5 天，与 V5 后端共享)
-              └→ R6 状态原子化 (3-5 天)
+Wave 2 · 当前近期体感收益
+  R17.1 Hover 缩略图 + R5.1 keyframe/bookmark/loop 预取 (v0.9.27 已完成第一版)
+    └→ R18 多速率播放 (J/K/L) + R6.1 seekFrameAsync (候选，3-5 天)
+         └→ R7.2/R7.3 视频基准与 BugReport 诊断附带 (候选，3-5 天)
 
 Wave 3 · 工程加固（按数据触发）
   R5.2 ImageBitmap 缓存 (1 周)
@@ -449,8 +456,8 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 ```
 
 - **Wave 0** 是功能闭环的最后三件，与渲染优化正交可并行；V5 / V6 与 R15 / B3 共享底层 API，落地时合并设计。
-- **Wave 1** 是「脚下夯实」，没有它们后面所有优化都没办法量化。
-- **Wave 2** 体感收益最高，用户立刻可感；R17-R19 是时间轴的三件套，与 R4 一起做最经济。
+- **Wave 1** 已完成第一版，后续只补 R7 观测和回归。
+- **Wave 2** 是当前最应该继续开发的切片：v0.9.27 先消费现有 frame cache；后续播放状态模型、观测包等只作为候选顺序，不绑定具体版本。
 - **Wave 3** 按 Wave 1 的 trace 数据决定是否上 chunk 解码。
 - **Wave 4 / Wave 5** 是能力扩展，必须先与 `2026-05-12-video-backend-frame-service.md` 后端 epic 对齐协议。
 - **Wave 6 / Wave 7** 按客户场景与长期规划触发，不阻塞前面波次。
@@ -511,3 +518,78 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 - `cvat/apps/engine/models.py:Segment` — 视频分段 + overlap
 - `cvat/apps/quality_control/statistics.py` — 质量评估基础
 - `ai-models/tracker/sam2/func.py` — SAM 2 video tracker
+
+---
+
+## 11. 近期开发切片
+
+> 目的：把本 epic 从“大地图”收敛成可交付切片。v0.9.27 已有确定 plan；其余条目是候选顺序，不预占版本号。每个切片完成后再更新本文件状态、`CHANGELOG.md`、概念文档和对应 `docs/plans/` outcome。
+
+### v0.9.27 · Video Timeline Hover Preview（已完成第一版）
+
+- **范围来源**：R17.1 + R5.1。
+- **核心交付（已落地）**：
+  - `VideoPlaybackOverlay` hover 时间轴时显示当前 hover frame、时间戳、缩略图预览。
+  - 新增前端 frame preview hook，调用后端 v0.9.25 已有 `GET /api/v1/tasks/{task_id}/video/frames/{frame_index}?format=webp&w=320`。
+  - 对选中 track 的 keyframes、bookmark frames、loop region 起止帧做 `frames:prefetch` hint。
+  - 缓存状态分三态：`ready` 显示图、`pending` 显示轻量 loading、`error` 显示 frame/time fallback。
+- **不做**：
+  - 不做 chapter 数据模型（R13/R17.2）。
+  - 不做 ImageBitmap 背景缓存（R5.2）。
+  - 不接 WebCodecs chunk 解码（R5.3）。
+- **验证**：
+  - 单测覆盖 hover debounce、pending retry、prefetch 去重。
+  - 手动验证未命中 frame cache 时 API 返回 202 不会让 overlay 闪烁或报错。
+
+### 候选 · Video J/K/L Playback + Atomic Seek
+
+- **范围来源**：R18 + R6.1。
+- **核心交付**：
+  - `seekFrameAsync(frame)` 统一串起 `FrameClock.seekTo`、`setFrameIndex`、overlay 更新和 history 记录。
+  - `J/K/L` 多速率播放：`K` 暂停，`L` 正向 0.25x/0.5x/1x/2x/4x，`J` 反向同档位。
+  - loop region、bookmark jump、keyframe jump 都走同一 seek 原语，避免并发 seek 旧结果覆盖新结果。
+- **不做**：
+  - 不使用 `video.playbackRate = -1`；反向播放只走 frame stepping。
+  - 不把速度状态持久化到后端。
+- **验证**：
+  - 单测覆盖连续 seek 只采纳最后一次、反向播放越过 0/loop start 自动停或回环。
+
+### 候选 · Video Observability Pack
+
+- **范围来源**：R7.2 + R7.3。
+- **核心交付**：
+  - 固化 720p/1080p/4K 三组视频 bench fixture 描述与脚本入口。
+  - BugReportDrawer 在视频工作台自动附带 `window.__videoFrameClockDiagnostics`、最近 seek 耗时、frame cache 命中状态和当前 timeline mode。
+  - docs-site 增加视频性能回归 how-to。
+- **不做**：
+  - 不把 trace 上传为长期资产；先保留本地生成和 PR 附件路径。
+
+### 候选 · Probe / Poster / Frame Asset Retry
+
+- **范围来源**：V5 + B3 后续。
+- **核心交付**：
+  - 后端统一 probe / poster / timetable / frame cache / chunk 失败状态与 retry task。
+  - 管理侧视频失败列表展示 `probe_error` / `poster_error` / `frame_timetable_error` / chunk/frame cache 最近失败。
+  - 手动 retry 后进入 media queue，并在 UI 上展示 pending / ready / failed。
+- **不做**：
+  - 不引入新服务；仍复用 Celery media queue。
+
+### 候选 · Review Video Anchors
+
+- **范围来源**：V4。
+- **核心交付**：
+  - Review 模式支持 raw / final 视图切换。
+  - 审核反馈可锚定 `(annotation_id, track_id?, frame_index)`。
+  - track 列表与时间轴区分 manual / interpolated / prediction，并能跳到下一条 prediction。
+- **不做**：
+  - 不做像素级视频 diff；先做对象级差异和锚点。
+
+### 候选 · Track Composition
+
+- **范围来源**：V6 + R14 + R15。
+- **核心交付**：
+  - `video_bbox` -> `video_track` 反向聚合。
+  - Track split / merge 共用后端 composition service。
+  - history 增加 `trackSplit` / `trackMerge` command kind。
+- **触发条件**：
+  - Review anchor 稳定后再做，避免同时改 track 生命周期和审核定位。

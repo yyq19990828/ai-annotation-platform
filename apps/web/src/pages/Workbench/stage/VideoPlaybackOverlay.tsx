@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { frameToTime, type FrameTimebase } from "./frameTimebase";
 import type { VideoBookmark, VideoLoopRegion } from "./videoNavigationState";
+import type { VideoFramePreview } from "./useVideoFramePreview";
 import type { VideoTimelineMarker } from "./videoFrameBuckets";
 import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
 
@@ -20,6 +21,7 @@ interface VideoPlaybackOverlayProps {
   globalTimelineDensity?: VideoTimelineDensityBin[];
   loopRegion?: VideoLoopRegion | null;
   bookmarks?: VideoBookmark[];
+  hoverPreview?: VideoFramePreview | null;
   currentFrameEntryCount: number;
   visible: boolean;
   interactive?: boolean;
@@ -30,6 +32,7 @@ interface VideoPlaybackOverlayProps {
   onLoopRegionChange?: (region: VideoLoopRegion) => void;
   onClearLoopRegion?: () => void;
   onSeekBookmark?: (frameIndex: number) => void;
+  onHoverFrameChange?: (frameIndex: number | null) => void;
 }
 
 function formatTime(seconds: number) {
@@ -50,6 +53,7 @@ export function VideoPlaybackOverlay({
   globalTimelineDensity = [],
   loopRegion = null,
   bookmarks = [],
+  hoverPreview = null,
   currentFrameEntryCount,
   visible,
   interactive = true,
@@ -60,6 +64,7 @@ export function VideoPlaybackOverlay({
   onLoopRegionChange,
   onClearLoopRegion,
   onSeekBookmark,
+  onHoverFrameChange,
 }: VideoPlaybackOverlayProps) {
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
   const [loopDraft, setLoopDraft] = useState<VideoLoopRegion | null>(null);
@@ -74,7 +79,8 @@ export function VideoPlaybackOverlay({
   );
   const frameLeft = (frame: number) => `${maxFrame > 0 ? (frame / maxFrame) * 100 : 0}%`;
   const frameFromPointer = (clientX: number, rect: DOMRect) => {
-    const ratio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+    const pointerX = Number.isFinite(clientX) ? clientX : rect.left;
+    const ratio = rect.width > 0 ? (pointerX - rect.left) / rect.width : 0;
     return Math.max(0, Math.min(maxFrame, Math.round(ratio * maxFrame)));
   };
   const normalizeLoop = (from: number, to: number): VideoLoopRegion => ({
@@ -86,6 +92,8 @@ export function VideoPlaybackOverlay({
     const right = maxFrame > 0 ? (to / maxFrame) * 100 : 0;
     return { left: `${left}%`, width: `${Math.max(0.5, right - left)}%` };
   };
+  const hoverLeft = maxFrame > 0 ? ((hoverFrame ?? 0) / maxFrame) * 100 : 0;
+  const hoverPopoverLeft = `${Math.max(12, Math.min(88, hoverLeft))}%`;
 
   const iconButtonStyle = (active: boolean): CSSProperties => ({
     color: "#fff",
@@ -180,9 +188,14 @@ export function VideoPlaybackOverlay({
           onChange={(e) => onSeek(Number(e.currentTarget.value))}
           onPointerMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
-            setHoverFrame(frameFromPointer(e.clientX, rect));
+            const nextFrame = frameFromPointer(e.clientX, rect);
+            setHoverFrame(nextFrame);
+            onHoverFrameChange?.(nextFrame);
           }}
-          onPointerLeave={() => setHoverFrame(null)}
+          onPointerLeave={() => {
+            setHoverFrame(null);
+            onHoverFrameChange?.(null);
+          }}
           style={{ width: "100%", accentColor: "var(--color-accent)" }}
         />
         <div style={{ position: "absolute", inset: "0 6px", pointerEvents: "none" }}>
@@ -352,21 +365,61 @@ export function VideoPlaybackOverlay({
         </div>
         {frameTooltip && (
           <div
-            data-testid="video-frame-tooltip"
+            data-testid={hoverPreview ? "video-frame-preview-popover" : "video-frame-tooltip"}
             style={{
               position: "absolute",
-              left: `${maxFrame > 0 ? ((hoverFrame ?? 0) / maxFrame) * 100 : 0}%`,
-              bottom: 30,
+              left: hoverPreview ? hoverPopoverLeft : `${hoverLeft}%`,
+              bottom: 32,
               transform: "translateX(-50%)",
-              padding: "3px 6px",
-              borderRadius: 5,
+              width: hoverPreview ? 208 : undefined,
+              padding: hoverPreview ? 8 : "3px 6px",
+              borderRadius: hoverPreview ? 8 : 5,
               background: "rgba(0,0,0,0.78)",
               color: "#fff",
               fontSize: 11,
               whiteSpace: "nowrap",
+              boxShadow: hoverPreview ? "0 10px 24px rgba(0,0,0,0.38)" : undefined,
+              border: hoverPreview ? "1px solid rgba(255,255,255,0.16)" : undefined,
+              pointerEvents: "none",
             }}
           >
-            {frameTooltip}
+            {hoverPreview ? (
+              <div style={{ display: "grid", gap: 6 }}>
+                <div
+                  data-testid="video-frame-preview-image-shell"
+                  style={{
+                    width: "100%",
+                    aspectRatio: "16 / 9",
+                    borderRadius: 5,
+                    overflow: "hidden",
+                    display: "grid",
+                    placeItems: "center",
+                    background: "rgba(255,255,255,0.08)",
+                    color: "rgba(255,255,255,0.72)",
+                    fontSize: 11,
+                  }}
+                >
+                  {hoverPreview.status === "ready" ? (
+                    <img
+                      data-testid="video-frame-preview-image"
+                      src={hoverPreview.url}
+                      alt=""
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  ) : hoverPreview.status === "pending" ? (
+                    <span>Loading F {hoverPreview.frameIndex}</span>
+                  ) : (
+                    <span>Preview unavailable</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span>{frameTooltip}</span>
+                  <span style={{ color: "rgba(255,255,255,0.58)" }}>
+                    {hoverPreview.status === "ready" ? hoverPreview.format.toUpperCase() : hoverPreview.status}
+                  </span>
+                </div>
+              </div>
+            ) : frameTooltip}
           </div>
         )}
       </div>

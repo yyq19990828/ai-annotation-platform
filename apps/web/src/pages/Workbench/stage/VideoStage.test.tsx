@@ -6,6 +6,15 @@ import { VideoTrackSidebar } from "./VideoTrackSidebar";
 import { videoNavigationStorageKey } from "./videoNavigationState";
 import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
 
+const apiMocks = vi.hoisted(() => ({
+  getVideoFrame: vi.fn(),
+  prefetchVideoFrames: vi.fn(),
+}));
+
+vi.mock("@/api/tasks", () => ({
+  tasksApi: apiMocks,
+}));
+
 const manifest: TaskVideoManifestResponse = {
   task_id: "task-1",
   video_url: "http://storage.local/video.mp4",
@@ -64,6 +73,22 @@ describe("VideoStage", () => {
   beforeEach(() => {
     playMock.mockClear();
     pauseMock.mockClear();
+    apiMocks.getVideoFrame.mockReset();
+    apiMocks.prefetchVideoFrames.mockReset();
+    apiMocks.getVideoFrame.mockResolvedValue({
+      frame_index: 0,
+      width: 320,
+      format: "webp",
+      status: "ready",
+      url: "/frame-0.webp",
+      retry_after: null,
+      error: null,
+    });
+    apiMocks.prefetchVideoFrames.mockResolvedValue({
+      dataset_item_id: "item-1",
+      task_id: "task-1",
+      frames: [],
+    });
     sessionStorage.clear();
   });
 
@@ -208,6 +233,51 @@ describe("VideoStage", () => {
     });
 
     await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("7"));
+  });
+
+  it("prefetches selected keyframes and loop region endpoints for timeline previews", async () => {
+    sessionStorage.setItem(
+      videoNavigationStorageKey(manifest.task_id, "loop"),
+      JSON.stringify({ startFrame: 2, endFrame: 5 }),
+    );
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 7, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(apiMocks.prefetchVideoFrames).toHaveBeenCalledWith(
+      "task-1",
+      [0, 7],
+      { width: 320, format: "webp" },
+    ));
+    await waitFor(() => expect(apiMocks.prefetchVideoFrames).toHaveBeenCalledWith(
+      "task-1",
+      [2, 5],
+      { width: 320, format: "webp" },
+    ));
   });
 
   it("toggles bookmarks and navigates explicit seek history through ref controls", async () => {

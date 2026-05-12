@@ -12,6 +12,7 @@ import { VideoStageSurface } from "./VideoStageSurface";
 import { applyResize } from "./ResizeHandles";
 import { buildFrameTimebase, frameToTime } from "./frameTimebase";
 import { useFrameClock } from "./useFrameClock";
+import { useVideoFramePreview } from "./useVideoFramePreview";
 import { videoTimelineMarkers } from "./videoFrameBuckets";
 import {
   emptyVideoJumpHistory,
@@ -244,6 +245,17 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     () => selectedTrack ? [] : buildGlobalTimelineDensity(videoTracks.map((ann) => ann.geometry), maxFrame),
     [maxFrame, selectedTrack, videoTracks],
   );
+  const {
+    preview: framePreview,
+    previewFor: previewFrame,
+    prefetch: prefetchFrames,
+  } = useVideoFramePreview({
+    taskId: manifest?.task_id,
+    maxFrame,
+    enabled: Boolean(manifest),
+    width: 320,
+    format: "webp",
+  });
 
   const pendingDraft = useMemo(() => {
     if (
@@ -450,6 +462,20 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     }
     onSelectRef.current(null);
   }, [manifest?.task_id, maxFrame, setFrameIndex]);
+
+  useEffect(() => {
+    if (!selectedTrack) return;
+    prefetchFrames(sortedKeyframes(selectedTrack.geometry).map((keyframe) => keyframe.frame_index));
+  }, [prefetchFrames, selectedTrack]);
+
+  useEffect(() => {
+    prefetchFrames(bookmarks.map((bookmark) => bookmark.frameIndex));
+  }, [bookmarks, prefetchFrames]);
+
+  useEffect(() => {
+    if (!loopRegion) return;
+    prefetchFrames([loopRegion.startFrame, loopRegion.endFrame]);
+  }, [loopRegion, prefetchFrames]);
 
   useEffect(() => {
     const taskId = manifest?.task_id;
@@ -769,6 +795,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             globalTimelineDensity={globalTimelineDensity}
             loopRegion={loopRegion}
             bookmarks={bookmarks}
+            hoverPreview={framePreview}
             currentFrameEntryCount={currentFrameEntries.length}
             visible={playbackOverlayVisible && !drag}
             interactive
@@ -783,6 +810,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             onLoopRegionChange={setNormalizedLoopRegion}
             onClearLoopRegion={clearLoopRegion}
             onSeekBookmark={(targetFrame) => seekToFrame(targetFrame, { recordHistory: true })}
+            onHoverFrameChange={previewFrame}
           />
         </div>
 
