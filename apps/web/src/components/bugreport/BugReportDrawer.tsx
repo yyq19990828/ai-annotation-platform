@@ -3,6 +3,12 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { bugReportsApi, uploadBugAttachment, type BugAttachment, type BugReportResponse, type BugReportDetail } from "@/api/bug-reports";
 import { getRecentApiCalls, getRecentConsoleErrors, sanitizeApiCalls, captureScreenshot } from "@/utils/bugReportCapture";
+import {
+  appendVideoWorkbenchDiagnostics,
+  getVideoWorkbenchDiagnosticsSnapshot,
+  taskIdFromVideoWorkbenchDiagnostics,
+  videoWorkbenchDiagnosticsConsoleEntry,
+} from "@/utils/videoWorkbenchDiagnostics";
 import { ScreenshotEditor } from "./ScreenshotEditor";
 import { MarkdownBlock } from "./MarkdownBlock";
 
@@ -173,15 +179,20 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
           return;
         }
       }
+      const videoDiagnostics = getVideoWorkbenchDiagnosticsSnapshot();
+      const videoDiagnosticsEntry = videoWorkbenchDiagnosticsConsoleEntry(videoDiagnostics);
+      const recentConsoleErrors = getRecentConsoleErrors().map((e) => ({ msg: e.msg, stack: e.stack || "" }));
+      if (videoDiagnosticsEntry) recentConsoleErrors.unshift(videoDiagnosticsEntry);
       await bugReportsApi.create({
         title: title.trim(),
-        description: desc.trim(),
+        description: appendVideoWorkbenchDiagnostics(desc.trim(), videoDiagnostics),
         severity: severity as "low" | "medium" | "high" | "critical",
         route: location.pathname + location.search,
         browser_ua: navigator.userAgent.slice(0, 200),
         viewport: `${window.innerWidth}x${window.innerHeight}`,
+        task_id: taskIdFromVideoWorkbenchDiagnostics(videoDiagnostics),
         recent_api_calls: sanitizeApiCalls(getRecentApiCalls()),
-        recent_console_errors: getRecentConsoleErrors().map((e) => ({ msg: e.msg, stack: e.stack || "" })),
+        recent_console_errors: recentConsoleErrors,
         screenshot_url: uploadedAttachments[0]?.storageKey ?? null,
         attachments: uploadedAttachments,
       });

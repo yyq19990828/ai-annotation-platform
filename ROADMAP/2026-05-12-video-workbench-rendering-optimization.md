@@ -408,7 +408,7 @@
 
 ## 7. 优先级与建议顺序
 
-> 当前状态（2026-05-12 晚）：R1 / R2 / R3 / R4 / R19 轻量基础已经落地；后端 B1 / B2 / B3 / B6 / B7 第一版已落地。v0.9.27 与 v0.9.29 已落地；之后版本会受并行开发影响，本文只给候选顺序，不预占版本号。
+> 当前状态（2026-05-12 晚）：R1 / R2 / R3 / R4 / R19 轻量基础已经落地；后端 B1 / B2 / B3 / B6 / B7 第一版已落地。v0.9.27、v0.9.29 与 v0.9.31 已落地；之后版本会受并行开发影响，本文只给候选顺序，不预占版本号。
 
 ```
 Wave 0 · 功能尾巴（接 M5.0 的最后三件，仍 open）
@@ -426,7 +426,7 @@ Wave 1 · 基础夯实（已完成第一版）
 Wave 2 · 当前近期体感收益
   R17.1 Hover 缩略图 + R5.1 keyframe/bookmark/loop 预取 (v0.9.27 已完成第一版)
     └→ R18 多速率播放 (J/K/L) + R6.1 seekFrameAsync (v0.9.29 已完成第一版)
-         └→ R7.2/R7.3 视频基准与 BugReport 诊断附带 (候选，3-5 天)
+         └→ R7.2/R7.3 视频基准与 BugReport 诊断附带 (v0.9.31 已完成第一版)
 
 Wave 3 · 工程加固（按数据触发）
   R5.2 ImageBitmap 缓存 (1 周)
@@ -457,7 +457,7 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 
 - **Wave 0** 是功能闭环的最后三件，与渲染优化正交可并行；V5 / V6 与 R15 / B3 共享底层 API，落地时合并设计。
 - **Wave 1** 已完成第一版，后续只补 R7 观测和回归。
-- **Wave 2** 是当前最应该继续开发的切片：v0.9.27 已消费现有 frame cache，v0.9.29 已落地 J/K/L + atomic seek；后续观测包等只作为候选顺序，不绑定具体版本。
+- **Wave 2** 是当前最应该继续开发的切片：v0.9.27 已消费现有 frame cache，v0.9.29 已落地 J/K/L + atomic seek，v0.9.31 已补本地 bench 入口与 BugReport 诊断附带。
 - **Wave 3** 按 Wave 1 的 trace 数据决定是否上 chunk 解码。
 - **Wave 4 / Wave 5** 是能力扩展，必须先与 `2026-05-12-video-backend-frame-service.md` 后端 epic 对齐协议。
 - **Wave 6 / Wave 7** 按客户场景与长期规划触发，不阻塞前面波次。
@@ -523,7 +523,7 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 
 ## 11. 近期开发切片
 
-> 目的：把本 epic 从“大地图”收敛成可交付切片。v0.9.27 与 v0.9.29 已落地；其余条目是候选顺序，不预占版本号。每个切片完成后再更新本文件状态、`CHANGELOG.md`、概念文档和对应 `docs/plans/` outcome。
+> 目的：把本 epic 从“大地图”收敛成可交付切片。v0.9.27、v0.9.29 与 v0.9.31 已落地；其余条目是候选顺序，不预占版本号。每个切片完成后再更新本文件状态、`CHANGELOG.md`、概念文档和对应 `docs/plans/` outcome。
 
 ### v0.9.27 · Video Timeline Hover Preview（已完成第一版）
 
@@ -556,10 +556,10 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 - **验证**：
   - 单测覆盖 J/K/L hotkey dispatch、正向速率、暂停、反向不使用负 `playbackRate`、overlay 速度显示。
 
-### 候选 · Video Observability Pack
+### v0.9.31 · Video Observability Pack（已完成第一版）
 
 - **范围来源**：R7.2 + R7.3。
-- **核心交付**：
+- **核心交付（已落地）**：
   - 固化 720p/1080p/4K 三组视频 bench fixture 描述与脚本入口。
   - BugReportDrawer 在视频工作台自动附带 `window.__videoFrameClockDiagnostics`、最近 seek 耗时、frame cache 命中状态和当前 timeline mode。
   - docs-site 增加视频性能回归 how-to。

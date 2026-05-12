@@ -15,7 +15,15 @@ export interface FrameClockDiagnostics {
   longTasks: number;
   lastSeekMs: number | null;
   lastFrameReadySource: "rvfc" | "seeked" | "timeupdate" | "raf" | "timeout" | null;
+  recentSeeks: Array<{
+    frameIndex: number;
+    ms: number | null;
+    source: "rvfc" | "seeked" | "timeupdate" | "raf" | "timeout";
+    at: string;
+  }>;
 }
+
+type FrameReadySource = NonNullable<FrameClockDiagnostics["lastFrameReadySource"]>;
 
 export interface FrameSeekResult {
   accepted: boolean;
@@ -32,6 +40,7 @@ interface UseFrameClockOptions {
 }
 
 const SEEK_TIMEOUT_MS = 300;
+const MAX_RECENT_SEEKS = 12;
 
 function hasRequestVideoFrameCallback(video: HTMLVideoElement | null): boolean {
   return typeof (video as VideoWithFrameCallback | null)?.requestVideoFrameCallback === "function";
@@ -51,6 +60,7 @@ export function useFrameClock({
     longTasks: 0,
     lastSeekMs: null,
     lastFrameReadySource: null,
+    recentSeeks: [],
   });
   const latestSeekIdRef = useRef(0);
   const seekStartedAtRef = useRef<number | null>(null);
@@ -86,7 +96,7 @@ export function useFrameClock({
     }
   }, [frameIndex]);
 
-  const recordFrameReady = useCallback((source: FrameClockDiagnostics["lastFrameReadySource"], frame: number) => {
+  const recordFrameReady = useCallback((source: FrameReadySource, frame: number) => {
     const seekTarget = targetFrameRef.current;
     const seekStartedAt = seekStartedAtRef.current;
     if (seekTarget !== null && Math.abs(seekTarget - frame) <= 1) {
@@ -94,16 +104,21 @@ export function useFrameClock({
       seekStartedAtRef.current = null;
       setIsSeeking(false);
       resolveSeek(latestSeekIdRef.current, { accepted: true, frameIndex: frame, source });
+      const seekMs = seekStartedAt === null ? null : Math.round(performance.now() - seekStartedAt);
       setDiagnosticsPatch({
         lastFrameReadySource: source,
-        lastSeekMs: seekStartedAt === null ? null : Math.round(performance.now() - seekStartedAt),
+        lastSeekMs: seekMs,
+        recentSeeks: [
+          { frameIndex: frame, ms: seekMs, source, at: new Date().toISOString() },
+          ...diagnosticsRef.current.recentSeeks,
+        ].slice(0, MAX_RECENT_SEEKS),
       });
       return;
     }
     setDiagnosticsPatch({ lastFrameReadySource: source });
   }, [resolveSeek, setDiagnosticsPatch]);
 
-  const updateFrameFromTime = useCallback((mediaTime: number, source: FrameClockDiagnostics["lastFrameReadySource"]) => {
+  const updateFrameFromTime = useCallback((mediaTime: number, source: FrameReadySource) => {
     const nextFrame = timeToFrame(mediaTime, timebase);
     onFrameChange(nextFrame);
     recordFrameReady(source, nextFrame);
@@ -153,6 +168,10 @@ export function useFrameClock({
       setDiagnosticsPatch({
         lastFrameReadySource: "timeout",
         lastSeekMs: null,
+        recentSeeks: [
+          { frameIndex: frame, ms: null, source: "timeout" as const, at: new Date().toISOString() },
+          ...diagnosticsRef.current.recentSeeks,
+        ].slice(0, MAX_RECENT_SEEKS),
       });
     }, SEEK_TIMEOUT_MS);
     return seekId;

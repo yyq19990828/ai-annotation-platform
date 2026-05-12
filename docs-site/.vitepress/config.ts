@@ -260,6 +260,7 @@ export default withMermaid(defineConfig({
             { text: "调试 Celery", link: "/dev/how-to/debug-celery" },
             { text: "调试 WebSocket", link: "/dev/how-to/debug-websocket" },
             { text: "更新截图", link: "/dev/how-to/update-screenshots" },
+            { text: "视频工作台性能回归", link: "/dev/how-to/video-workbench-performance-regression" },
           ],
         },
         {

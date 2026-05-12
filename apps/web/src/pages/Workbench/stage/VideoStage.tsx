@@ -274,6 +274,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     preview: framePreview,
     previewFor: previewFrame,
     prefetch: prefetchFrames,
+    diagnostics: framePreviewDiagnostics,
   } = useVideoFramePreview({
     taskId: manifest?.task_id,
     maxFrame,
@@ -678,16 +679,64 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }, []);
 
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
     const diagnosticsTarget = window as unknown as {
       __videoFrameClockDiagnostics?: Record<string, unknown>;
+      __videoWorkbenchDiagnostics?: {
+        activeTaskId?: string;
+        byTask?: Record<string, Record<string, unknown>>;
+      };
     };
     const taskId = manifest?.task_id ?? "unknown";
+    const timelineMode = selectedTrack ? "selected-track" : "global-density";
+    const playbackRateLabel = isJogPlaying ? `${jogPlayback.direction < 0 ? "-" : ""}${jogPlayback.rate}x` : "paused";
+    const snapshot = {
+      taskId,
+      updatedAt: new Date().toISOString(),
+      route: `${window.location.pathname}${window.location.search}`,
+      frameIndex,
+      maxFrame,
+      fps,
+      isPlaying,
+      isSeeking: frameClock.isSeeking,
+      playbackRate: playbackRateLabel,
+      timelineMode,
+      selectedTrackId: selectedTrack?.geometry.track_id ?? null,
+      visibleObjects: currentFrameEntries.length,
+      totalTracks: videoTracks.length,
+      bookmarks: bookmarks.length,
+      loopRegion,
+      frameClock: frameClock.diagnostics,
+      framePreview: framePreviewDiagnostics,
+    };
     diagnosticsTarget.__videoFrameClockDiagnostics = {
       ...(diagnosticsTarget.__videoFrameClockDiagnostics ?? {}),
       [taskId]: frameClock.diagnostics,
     };
-  }, [frameClock.diagnostics, manifest?.task_id]);
+    diagnosticsTarget.__videoWorkbenchDiagnostics = {
+      activeTaskId: taskId,
+      byTask: {
+        ...(diagnosticsTarget.__videoWorkbenchDiagnostics?.byTask ?? {}),
+        [taskId]: snapshot,
+      },
+    };
+  }, [
+    bookmarks.length,
+    currentFrameEntries.length,
+    fps,
+    frameClock.diagnostics,
+    frameClock.isSeeking,
+    frameIndex,
+    framePreviewDiagnostics,
+    isJogPlaying,
+    isPlaying,
+    jogPlayback.direction,
+    jogPlayback.rate,
+    loopRegion,
+    manifest?.task_id,
+    maxFrame,
+    selectedTrack,
+    videoTracks.length,
+  ]);
 
   const pointFromEvent = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     const svg = overlayRef.current;
