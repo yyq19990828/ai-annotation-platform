@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { frameToTime, type FrameTimebase } from "./frameTimebase";
+import type { VideoBookmark, VideoLoopRegion } from "./videoNavigationState";
 import type { VideoTimelineMarker } from "./videoFrameBuckets";
 import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
 
@@ -17,6 +18,8 @@ interface VideoPlaybackOverlayProps {
   timelineMarkers?: VideoTimelineMarker[];
   selectedTrackTimeline?: VideoTrackTimeline | null;
   globalTimelineDensity?: VideoTimelineDensityBin[];
+  loopRegion?: VideoLoopRegion | null;
+  bookmarks?: VideoBookmark[];
   currentFrameEntryCount: number;
   visible: boolean;
   interactive?: boolean;
@@ -24,6 +27,9 @@ interface VideoPlaybackOverlayProps {
   onSeek: (frameIndex: number) => void;
   onSeekByFrames: (delta: number) => void;
   onTogglePlay: () => void;
+  onLoopRegionChange?: (region: VideoLoopRegion) => void;
+  onClearLoopRegion?: () => void;
+  onSeekBookmark?: (frameIndex: number) => void;
 }
 
 function formatTime(seconds: number) {
@@ -42,6 +48,8 @@ export function VideoPlaybackOverlay({
   timelineMarkers = [],
   selectedTrackTimeline = null,
   globalTimelineDensity = [],
+  loopRegion = null,
+  bookmarks = [],
   currentFrameEntryCount,
   visible,
   interactive = true,
@@ -49,8 +57,13 @@ export function VideoPlaybackOverlay({
   onSeek,
   onSeekByFrames,
   onTogglePlay,
+  onLoopRegionChange,
+  onClearLoopRegion,
+  onSeekBookmark,
 }: VideoPlaybackOverlayProps) {
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
+  const [loopDraft, setLoopDraft] = useState<VideoLoopRegion | null>(null);
+  const loopDraftRef = useRef<VideoLoopRegion | null>(null);
   const frameTooltip = useMemo(() => {
     if (hoverFrame === null) return null;
     return `F ${hoverFrame} · ${formatTime(frameToTime(hoverFrame, timebase))}`;
@@ -60,6 +73,14 @@ export function VideoPlaybackOverlay({
     [globalTimelineDensity],
   );
   const frameLeft = (frame: number) => `${maxFrame > 0 ? (frame / maxFrame) * 100 : 0}%`;
+  const frameFromPointer = (clientX: number, rect: DOMRect) => {
+    const ratio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+    return Math.max(0, Math.min(maxFrame, Math.round(ratio * maxFrame)));
+  };
+  const normalizeLoop = (from: number, to: number): VideoLoopRegion => ({
+    startFrame: Math.min(from, to),
+    endFrame: Math.max(from, to),
+  });
   const rangeStyle = (from: number, to: number) => {
     const left = maxFrame > 0 ? (from / maxFrame) * 100 : 0;
     const right = maxFrame > 0 ? (to / maxFrame) * 100 : 0;
@@ -110,7 +131,46 @@ export function VideoPlaybackOverlay({
         </Button>
       </div>
 
-      <div style={{ position: "relative", height: 28, display: "flex", alignItems: "center", pointerEvents: visible && interactive ? "auto" : "none" }}>
+      <div
+        data-testid="video-timeline-shell"
+        style={{ position: "relative", height: 28, display: "flex", alignItems: "center", pointerEvents: visible && interactive ? "auto" : "none" }}
+        onPointerDownCapture={(e) => {
+          if (!e.shiftKey || !onLoopRegionChange) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const rect = e.currentTarget.getBoundingClientRect();
+          const frame = frameFromPointer(e.clientX, rect);
+          const next = { startFrame: frame, endFrame: frame };
+          loopDraftRef.current = next;
+          setLoopDraft(next);
+          e.currentTarget.setPointerCapture?.(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const draft = loopDraftRef.current;
+          if (!draft) return;
+          e.preventDefault();
+          const rect = e.currentTarget.getBoundingClientRect();
+          const frame = frameFromPointer(e.clientX, rect);
+          const next = normalizeLoop(draft.startFrame, frame);
+          loopDraftRef.current = next;
+          setLoopDraft(next);
+        }}
+        onPointerUp={(e) => {
+          const draft = loopDraftRef.current;
+          if (!draft || !onLoopRegionChange) return;
+          e.preventDefault();
+          onLoopRegionChange(draft);
+          loopDraftRef.current = null;
+          setLoopDraft(null);
+          e.currentTarget.releasePointerCapture?.(e.pointerId);
+        }}
+        onPointerCancel={(e) => {
+          if (!loopDraftRef.current) return;
+          loopDraftRef.current = null;
+          setLoopDraft(null);
+          e.currentTarget.releasePointerCapture?.(e.pointerId);
+        }}
+      >
         <input
           aria-label="视频帧时间轴"
           type="range"
@@ -120,13 +180,53 @@ export function VideoPlaybackOverlay({
           onChange={(e) => onSeek(Number(e.currentTarget.value))}
           onPointerMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
-            const ratio = rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0;
-            setHoverFrame(Math.max(0, Math.min(maxFrame, Math.round(ratio * maxFrame))));
+            setHoverFrame(frameFromPointer(e.clientX, rect));
           }}
           onPointerLeave={() => setHoverFrame(null)}
           style={{ width: "100%", accentColor: "var(--color-accent)" }}
         />
         <div style={{ position: "absolute", inset: "0 6px", pointerEvents: "none" }}>
+          {(loopRegion || loopDraft) && (
+            <span
+              data-testid={loopDraft ? "video-loop-region-preview" : "video-loop-region"}
+              style={{
+                position: "absolute",
+                ...rangeStyle((loopDraft ?? loopRegion)!.startFrame, (loopDraft ?? loopRegion)!.endFrame),
+                top: 0,
+                height: 4,
+                background: loopDraft ? "rgba(34,211,238,0.52)" : "rgba(34,211,238,0.72)",
+                borderRadius: 999,
+              }}
+            />
+          )}
+          {bookmarks.map((bookmark) => (
+            <button
+              key={bookmark.id}
+              type="button"
+              data-testid="video-bookmark-marker"
+              title={bookmark.label ?? `F ${bookmark.frameIndex}`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSeekBookmark?.(bookmark.frameIndex);
+              }}
+              style={{
+                position: "absolute",
+                left: frameLeft(bookmark.frameIndex),
+                top: -1,
+                width: 0,
+                height: 0,
+                padding: 0,
+                transform: "translateX(-50%)",
+                borderLeft: "5px solid transparent",
+                borderRight: "5px solid transparent",
+                borderTop: "8px solid rgba(34,211,238,0.92)",
+                background: "transparent",
+                pointerEvents: visible && interactive ? "auto" : "none",
+                cursor: "pointer",
+              }}
+            />
+          ))}
           {!selectedTrackTimeline && globalTimelineDensity.length > 0 && (
             <div data-testid="video-timeline-density" style={{ position: "absolute", inset: "15px 0 2px 0" }}>
               {globalTimelineDensity.map((bin) => {
@@ -271,9 +371,30 @@ export function VideoPlaybackOverlay({
         )}
       </div>
 
-      <div className="mono" style={{ display: "flex", gap: 10, fontSize: 12, color: "rgba(255,255,255,0.82)", whiteSpace: "nowrap" }}>
+      <div className="mono" style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12, color: "rgba(255,255,255,0.82)", whiteSpace: "nowrap" }}>
         <span>F {frameIndex} / {maxFrame}</span>
         <span>{formatTime(frameToTime(frameIndex, timebase))}</span>
+        {loopRegion && (
+          <>
+            <span data-testid="video-loop-region-label">Loop {loopRegion.startFrame}-{loopRegion.endFrame}</span>
+            <button
+              type="button"
+              title="清除播放范围 (Alt+L)"
+              onClick={onClearLoopRegion}
+              style={{
+                color: "rgba(255,255,255,0.86)",
+                background: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255,255,255,0.16)",
+                borderRadius: 5,
+                padding: "1px 5px",
+                pointerEvents: visible && interactive ? "auto" : "none",
+                cursor: "pointer",
+              }}
+            >
+              清除
+            </button>
+          </>
+        )}
         <span>{currentFrameEntryCount} 框</span>
       </div>
     </div>

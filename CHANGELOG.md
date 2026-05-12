@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.26] - 2026-05-12
+
+> **Video Loop Bookmark Navigation — 播放范围 + 书签 + 跳转历史.** 主线: ① 视频时间轴支持 `Shift+drag` 设定本地 loop region，播放越过范围末帧后回到起始帧；② loop region、书签和跳转历史按 task 存入 `sessionStorage`，不占用并行开发中的后端帧服务 v0.9.25 接口；③ `Ctrl+M` 添加/移除当前帧书签，书签 marker 可点击跳转；④ 显式 seek 记录最近 50 个位置，`Ctrl+[` / `Ctrl+]` 后退/前进，`Alt+L` 清除播放范围。→ [plan](docs/plans/2026-05-12-v0.9.26-video-loop-bookmark-navigation.md).
+
+### Added
+
+- **播放范围**：`VideoPlaybackOverlay` 新增 loop region 色带、拖选 preview、范围文案和清除按钮；`VideoStage` 播放时在范围末帧自动回到起始帧。
+- **书签与跳转历史**：新增 `videoNavigationState.ts`，集中管理 loop、bookmark、jump history 的归一化、会话存储解析和最近 50 次显式 seek 导航。
+- **视频导航快捷键**：视频模式新增 `Ctrl+M`、`Ctrl+[`、`Ctrl+]`、`Alt+L`，并接入统一 hotkey 分发和帮助面板数据源。
+
+### Changed
+
+- `VideoStageControls` 扩展为可按显式用户动作记录跳转历史，播放 tick 和自动 frame clock 更新不会污染历史栈。
+- 本版只改前端本地导航状态；后端 frame service、chunk/cache、hover thumbnail 和多速率播放仍保持独立排期。
+
 ## [0.9.24] - 2026-05-12
 
 > **Video Track Timeline Navigation — 单轨时间轴 + 全局密度条 + 关键帧跳转.** 主线: ① 选中 `video_track` 时，播放条显示 keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；② 未选中轨迹时显示全局 keyframe 密度条；③ `Shift+←/→` 在选中轨迹时跳上/下可见 keyframe，未选中轨迹时保留原有 ±10 帧跳转；④ 新增 `videoTrackTimeline` helper，复用 effective outside 语义，避免插值段跨越 outside / legacy absent。→ [plan](docs/plans/2026-05-12-v0.9.24-video-track-timeline-navigation.md).

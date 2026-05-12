@@ -160,12 +160,12 @@
 
 升级现有 `VideoPlaybackOverlay` 的 seekbar：
 
-- **状态（v0.9.24）**：R4.1 / R4.2 / R4.3 已完成第一版。选中 `video_track` 时，`VideoPlaybackOverlay` 显示单轨 keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；未选中 track 时显示全局 keyframe 密度条；`Shift+←/→` 在选中 track 时跳上/下可见 keyframe，未选中时保留 ±10 帧跳转。R4.4 loop region 尚未做。
+- **状态（v0.9.26）**：R4.1 / R4.2 / R4.3 / R4.4 已完成第一版。选中 `video_track` 时，`VideoPlaybackOverlay` 显示单轨 keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；未选中 track 时显示全局 keyframe 密度条；`Shift+←/→` 在选中 track 时跳上/下可见 keyframe，未选中时保留 ±10 帧跳转；`Shift+drag` 时间轴可设置本地 loop region，播放越过范围末帧后回到起始帧。
 
 - **R4.1 多轨时间轴**：已完成第一版。显示当前选中 track 一条轨道，叠加（a）keyframe 圆点、（b）outside 段灰色区间、（c）interpolated 段虚线、（d）prediction 段不同色 hatch。
 - **R4.2 全局密度条**：已完成第一版。未选中时显示全部 track 的密度热度图（每 N 帧分桶计数），帮助跳到"有标注的区段"。
 - **R4.3 keyframe 跳转快捷键**：已完成第一版。`Shift+←/→` 在选中 track 时跳上/下可见 keyframe（跳过 outside / absent），未选中时保持原有 ±10 帧跳转。
-- **R4.4 播放范围（loop region）**：拖选时间轴一段，循环播放；为后续 review 评论锚点 `(track_id, frame_range)` 铺路。
+- **R4.4 播放范围（loop region）**：已完成第一版。拖选时间轴一段并以本地 sessionStorage 按 task 记忆，播放时循环该范围；为后续 review 评论锚点 `(track_id, frame_range)` 铺路。
 
 **衡量**：用户测试，"找到第 N 个手工 keyframe"操作步数下降。
 
@@ -335,9 +335,10 @@
 
 > 在视频中"打书签"快速回访；浏览栈记录最近 N 次 seek 位置，`Ctrl+[/]` 前进/后退（类似 IDE）。
 
-- **R19.1 bookmark**：`Ctrl+M` 在当前 frame 加书签 + 注释；侧栏列表。
-- **R19.2 跳转历史**：每次 seek 推入栈，`Ctrl+[ / Ctrl+]` 在最近 50 个位置间游走。
-- 完全前端实现，存到 `useWorkbenchState` 加 sessionStorage 持久化。
+- **状态（v0.9.26）**：轻量前端基础已完成。当前帧 bookmark、时间轴 marker 点击跳转、最近 50 次显式 seek 历史和 `sessionStorage` 恢复已落地；书签注释与侧栏列表仍留后续版本。
+- **R19.1 bookmark**：已完成轻量版。`Ctrl+M` 在当前 frame 加 / 删书签，时间轴 marker 可点击跳转；注释和侧栏列表未做。
+- **R19.2 跳转历史**：已完成第一版。显式 seek 推入栈，`Ctrl+[ / Ctrl+]` 在最近 50 个位置间游走；播放 tick 不写历史。
+- 完全前端实现，状态隔离在 `VideoStage`，按 task 存到 sessionStorage；不占用后端帧服务 v0.9.25 接口。
 
 ### 数据组织与切帧
 
@@ -494,8 +495,8 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 | 渲染分层 | `stage/VideoStageSurface.tsx` + `Video*Layer.tsx` | 已完成 CVAT-aligned surface；后续接 R5/R8/R17 |
 | 插值 | `stage/videoStageGeometry.ts` / `stage/videoTrackOutside.ts` / `stage/videoFrameBuckets.ts` | R3.1-R3.4 已完成第一版；后续接 R4/R9 |
 | 类型 | `types/index.ts` / `stage/videoStageTypes.ts` | `outside: Range[]` 已完成；`geometry.kind` 留给 R9 |
-| 时间轴 | `stage/VideoPlaybackOverlay.tsx` / `stage/videoTrackTimeline.ts` | R4.1-R4.3 已完成第一版；loop region、章节、hover 缩略图留给 R4.4/R17/R18/R19 |
-| 状态 | `state/useWorkbenchState.ts` L62-180 | stage 隔离 + `seekFrameAsync` + bookmark 栈（R6 / R19） |
+| 时间轴 | `stage/VideoPlaybackOverlay.tsx` / `stage/videoTrackTimeline.ts` / `stage/videoNavigationState.ts` | R4.1-R4.4 与 R19 轻量导航基础已完成；章节、hover 缩略图、多速率播放留给 R17/R18 |
+| 状态 | `stage/VideoStage.tsx` / `state/useWorkbenchState.ts` L62-180 | loop/bookmark/history 先在 stage 内按 task 隔离；后续再做 `seekFrameAsync` 与全局 stage 状态收敛（R6） |
 | 撤销重做 | `state/useAnnotationHistory.ts` | `videoOutsideSegment` / `trackSplit` / `trackMerge` kind（R3.4 / R14 / R15） |
 | Track 编辑入口 | `stage/VideoTrackPanel.tsx` | 加 split / merge / join 操作（R14 / R15 / R16） |
 

@@ -260,6 +260,18 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           e.preventDefault();
           videoControlsRef?.current?.seekToKeyframe(action.dir);
           return;
+        case "videoToggleBookmark":
+          e.preventDefault();
+          videoControlsRef?.current?.toggleBookmark();
+          return;
+        case "videoJumpHistory":
+          e.preventDefault();
+          videoControlsRef?.current?.jumpHistory(action.dir);
+          return;
+        case "videoClearLoopRegion":
+          e.preventDefault();
+          videoControlsRef?.current?.clearLoopRegion();
+          return;
         case "videoDeleteSelected":
           e.preventDefault();
           if (s.selectedId) handleDeleteBox(s.selectedId);

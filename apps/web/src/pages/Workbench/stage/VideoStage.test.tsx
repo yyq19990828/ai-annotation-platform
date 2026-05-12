@@ -3,6 +3,7 @@ import { createRef } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { VideoStage, type VideoStageControls } from "./VideoStage";
 import { VideoTrackSidebar } from "./VideoTrackSidebar";
+import { videoNavigationStorageKey } from "./videoNavigationState";
 import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
 
 const manifest: TaskVideoManifestResponse = {
@@ -63,6 +64,7 @@ describe("VideoStage", () => {
   beforeEach(() => {
     playMock.mockClear();
     pauseMock.mockClear();
+    sessionStorage.clear();
   });
 
   it("draws a bbox on the current frame while paused", () => {
@@ -206,6 +208,73 @@ describe("VideoStage", () => {
     });
 
     await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("7"));
+  });
+
+  it("toggles bookmarks and navigates explicit seek history through ref controls", async () => {
+    const ref = createRef<VideoStageControls>();
+    const { getByLabelText, getByTestId } = render(
+      <VideoStage
+        ref={ref}
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    await act(async () => {
+      ref.current?.toggleBookmark();
+    });
+    expect(getByTestId("video-bookmark-marker")).toBeInTheDocument();
+
+    await act(async () => {
+      ref.current?.seekByFrames(5);
+    });
+    await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("5"));
+
+    fireEvent.click(getByTestId("video-bookmark-marker"));
+    await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("0"));
+
+    await act(async () => {
+      ref.current?.jumpHistory(-1);
+    });
+    await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("5"));
+  });
+
+  it("restores, clears, and applies loop regions while playing", async () => {
+    sessionStorage.setItem(
+      videoNavigationStorageKey(manifest.task_id, "loop"),
+      JSON.stringify({ startFrame: 2, endFrame: 5 }),
+    );
+    const { container, getByLabelText, getByTestId, getByTitle, queryByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(getByTestId("video-loop-region")).toBeInTheDocument());
+    expect(getByTestId("video-loop-region-label")).toHaveTextContent("Loop 2-5");
+
+    fireEvent.click(getByTitle("播放 / 暂停 (Space)"));
+    const video = container.querySelector("video")!;
+    video.currentTime = 0.6;
+    fireEvent.timeUpdate(video);
+
+    await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("2"));
+
+    fireEvent.click(getByTitle("清除播放范围 (Alt+L)"));
+    expect(queryByTestId("video-loop-region")).not.toBeInTheDocument();
   });
 
   it("syncs externally controlled frame changes to the video element", async () => {

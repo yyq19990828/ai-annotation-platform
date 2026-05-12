@@ -10,9 +10,21 @@ import { VideoQcWarnings } from "./VideoQcWarnings";
 import { VideoSelectionActions } from "./VideoSelectionActions";
 import { VideoStageSurface } from "./VideoStageSurface";
 import { applyResize } from "./ResizeHandles";
-import { buildFrameTimebase } from "./frameTimebase";
+import { buildFrameTimebase, frameToTime } from "./frameTimebase";
 import { useFrameClock } from "./useFrameClock";
 import { videoTimelineMarkers } from "./videoFrameBuckets";
+import {
+  emptyVideoJumpHistory,
+  jumpVideoHistory,
+  normalizeLoopRegion,
+  parseStoredBookmarks,
+  parseStoredJumpHistory,
+  parseStoredLoopRegion,
+  pushVideoJumpHistory,
+  toggleVideoBookmark,
+  videoNavigationStorageKey,
+} from "./videoNavigationState";
+import type { VideoBookmark, VideoJumpHistory, VideoLoopRegion } from "./videoNavigationState";
 import {
   buildGlobalTimelineDensity,
   buildSelectedTrackTimeline,
@@ -78,8 +90,12 @@ interface VideoStageProps {
 
 export interface VideoStageControls {
   togglePlayback: () => void;
-  seekByFrames: (delta: number) => void;
-  seekToKeyframe: (dir: -1 | 1) => void;
+  seekByFrames: (delta: number, options?: { recordHistory?: boolean }) => void;
+  seekToKeyframe: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
+  seekToFrame: (frameIndex: number, options?: { recordHistory?: boolean }) => void;
+  toggleBookmark: () => void;
+  jumpHistory: (dir: -1 | 1) => void;
+  clearLoopRegion: () => void;
 }
 
 export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(function VideoStage({
@@ -114,6 +130,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const [drag, setDrag] = useState<VideoDragState>(null);
   const [playbackOverlayVisible, setPlaybackOverlayVisible] = useState(true);
   const [highlightAction, setHighlightAction] = useState<"prev" | "next" | "play" | null>(null);
+  const [loopRegion, setLoopRegion] = useState<VideoLoopRegion | null>(null);
+  const [bookmarks, setBookmarks] = useState<VideoBookmark[]>([]);
+  const [jumpHistory, setJumpHistory] = useState<VideoJumpHistory>(() => emptyVideoJumpHistory());
   const onSelectRef = useRef(onSelect);
   const lastResetTaskIdRef = useRef<string | null>(null);
   const overlayHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -272,8 +291,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       videoRef.current?.pause();
       return;
     }
+    if (isPlaying && loopRegion && nextFrame > loopRegion.endFrame) {
+      setFrameIndex(loopRegion.startFrame);
+      const video = videoRef.current;
+      if (video) video.currentTime = frameToTime(loopRegion.startFrame, timebase);
+      return;
+    }
     setFrameIndex(nextFrame);
-  }, [setFrameIndex, stageModeGuard.canSetupFrame]);
+  }, [isPlaying, loopRegion, setFrameIndex, stageModeGuard.canSetupFrame, timebase]);
 
   const frameClock = useFrameClock({
     videoRef,
@@ -284,11 +309,15 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   });
 
   const seekFrame = useCallback(
-    (nextFrame: number) => {
+    (nextFrame: number, options?: { recordHistory?: boolean }) => {
       if (!stageModeGuard.canSetupFrame) return;
-      frameClock.seekTo(nextFrame);
+      const targetFrame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
+      if (options?.recordHistory) {
+        setJumpHistory((history) => pushVideoJumpHistory(history, targetFrame));
+      }
+      frameClock.seekTo(targetFrame);
     },
-    [frameClock, stageModeGuard.canSetupFrame],
+    [frameClock, maxFrame, stageModeGuard.canSetupFrame],
   );
 
   const showPlaybackOverlay = useCallback(() => {
@@ -317,6 +346,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       setIsPlaying(false);
       return;
     }
+    if (loopRegion && (frameIndex < loopRegion.startFrame || frameIndex > loopRegion.endFrame)) {
+      seekFrame(loopRegion.startFrame, { recordHistory: true });
+    }
     setPlaybackError(null);
     setIsPlaying(true);
     const playResult = video.play();
@@ -326,30 +358,63 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         setPlaybackError(err instanceof Error ? err.message : "视频无法播放");
       });
     }
-  }, [flashPlaybackAction, isPlaying, showPlaybackOverlay]);
+  }, [flashPlaybackAction, frameIndex, isPlaying, loopRegion, seekFrame, showPlaybackOverlay]);
 
   const seekByFrames = useCallback(
-    (delta: number) => {
+    (delta: number, options?: { recordHistory?: boolean }) => {
       showPlaybackOverlay();
       flashPlaybackAction(delta < 0 ? "prev" : "next");
       videoRef.current?.pause();
-      seekFrame(frameIndex + delta);
+      seekFrame(frameIndex + delta, { recordHistory: options?.recordHistory ?? true });
     },
     [flashPlaybackAction, frameIndex, seekFrame, showPlaybackOverlay],
   );
 
   const seekToKeyframe = useCallback(
-    (dir: -1 | 1) => {
+    (dir: -1 | 1, options?: { recordHistory?: boolean }) => {
       if (!selectedTrack) return;
       const nextFrame = nextVisibleKeyframeFrame(selectedTrack.geometry, frameIndex, dir);
       if (nextFrame === null) return;
       showPlaybackOverlay();
       flashPlaybackAction(dir < 0 ? "prev" : "next");
       videoRef.current?.pause();
-      seekFrame(nextFrame);
+      seekFrame(nextFrame, { recordHistory: options?.recordHistory ?? true });
     },
     [flashPlaybackAction, frameIndex, seekFrame, selectedTrack, showPlaybackOverlay],
   );
+
+  const seekToFrame = useCallback(
+    (nextFrame: number, options?: { recordHistory?: boolean }) => {
+      showPlaybackOverlay();
+      videoRef.current?.pause();
+      seekFrame(nextFrame, { recordHistory: options?.recordHistory ?? true });
+    },
+    [seekFrame, showPlaybackOverlay],
+  );
+
+  const toggleBookmark = useCallback(() => {
+    showPlaybackOverlay();
+    setBookmarks((current) => toggleVideoBookmark(current, frameIndex));
+  }, [frameIndex, showPlaybackOverlay]);
+
+  const jumpHistoryBy = useCallback((dir: -1 | 1) => {
+    const result = jumpVideoHistory(jumpHistory, dir);
+    setJumpHistory(result.history);
+    if (result.frameIndex === null) return;
+    showPlaybackOverlay();
+    videoRef.current?.pause();
+    seekFrame(result.frameIndex, { recordHistory: false });
+  }, [jumpHistory, seekFrame, showPlaybackOverlay]);
+
+  const clearLoopRegion = useCallback(() => {
+    showPlaybackOverlay();
+    setLoopRegion(null);
+  }, [showPlaybackOverlay]);
+
+  const setNormalizedLoopRegion = useCallback((region: VideoLoopRegion) => {
+    showPlaybackOverlay();
+    setLoopRegion(normalizeLoopRegion(region.startFrame, region.endFrame, maxFrame));
+  }, [maxFrame, showPlaybackOverlay]);
 
   useImperativeHandle(
     ref,
@@ -357,8 +422,12 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       togglePlayback,
       seekByFrames,
       seekToKeyframe,
+      seekToFrame,
+      toggleBookmark,
+      jumpHistory: jumpHistoryBy,
+      clearLoopRegion,
     }),
-    [seekByFrames, seekToKeyframe, togglePlayback],
+    [clearLoopRegion, jumpHistoryBy, seekByFrames, seekToFrame, seekToKeyframe, toggleBookmark, togglePlayback],
   );
 
   useEffect(() => {
@@ -370,8 +439,49 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     setPlaybackError(null);
     setDrag(null);
     setPlaybackOverlayVisible(true);
+    try {
+      setLoopRegion(parseStoredLoopRegion(sessionStorage.getItem(videoNavigationStorageKey(taskId, "loop")), maxFrame));
+      setBookmarks(parseStoredBookmarks(sessionStorage.getItem(videoNavigationStorageKey(taskId, "bookmarks")), maxFrame));
+      setJumpHistory(parseStoredJumpHistory(sessionStorage.getItem(videoNavigationStorageKey(taskId, "history")), maxFrame));
+    } catch {
+      setLoopRegion(null);
+      setBookmarks([]);
+      setJumpHistory(emptyVideoJumpHistory());
+    }
     onSelectRef.current(null);
-  }, [manifest?.task_id, setFrameIndex]);
+  }, [manifest?.task_id, maxFrame, setFrameIndex]);
+
+  useEffect(() => {
+    const taskId = manifest?.task_id;
+    if (!taskId) return;
+    try {
+      const key = videoNavigationStorageKey(taskId, "loop");
+      if (loopRegion) sessionStorage.setItem(key, JSON.stringify(loopRegion));
+      else sessionStorage.removeItem(key);
+    } catch {
+      // sessionStorage may be unavailable in private contexts.
+    }
+  }, [loopRegion, manifest?.task_id]);
+
+  useEffect(() => {
+    const taskId = manifest?.task_id;
+    if (!taskId) return;
+    try {
+      sessionStorage.setItem(videoNavigationStorageKey(taskId, "bookmarks"), JSON.stringify(bookmarks));
+    } catch {
+      // noop
+    }
+  }, [bookmarks, manifest?.task_id]);
+
+  useEffect(() => {
+    const taskId = manifest?.task_id;
+    if (!taskId) return;
+    try {
+      sessionStorage.setItem(videoNavigationStorageKey(taskId, "history"), JSON.stringify(jumpHistory));
+    } catch {
+      // noop
+    }
+  }, [jumpHistory, manifest?.task_id]);
 
   useEffect(() => {
     return () => {
@@ -657,6 +767,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             timelineMarkers={timelineMarkers}
             selectedTrackTimeline={selectedTrackTimeline}
             globalTimelineDensity={globalTimelineDensity}
+            loopRegion={loopRegion}
+            bookmarks={bookmarks}
             currentFrameEntryCount={currentFrameEntries.length}
             visible={playbackOverlayVisible && !drag}
             interactive
@@ -664,10 +776,13 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             onSeek={(frame) => {
               showPlaybackOverlay();
               videoRef.current?.pause();
-              seekFrame(frame);
+              seekFrame(frame, { recordHistory: true });
             }}
             onSeekByFrames={seekByFrames}
             onTogglePlay={togglePlayback}
+            onLoopRegionChange={setNormalizedLoopRegion}
+            onClearLoopRegion={clearLoopRegion}
+            onSeekBookmark={(targetFrame) => seekToFrame(targetFrame, { recordHistory: true })}
           />
         </div>
 

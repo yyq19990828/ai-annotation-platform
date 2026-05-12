@@ -57,6 +57,9 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["← / →"], desc: "视频逐帧后退 / 前进", group: "video", actionType: "videoSeek" },
   { keys: [", / ."], desc: "视频上一帧 / 下一帧（备用）", group: "video", actionType: "videoSeek" },
   { keys: ["Shift", "← / →"], desc: "选中轨迹跳上/下关键帧；否则后退 / 前进 10 帧", group: "video", actionType: "videoSeekKeyframe" },
+  { keys: ["Ctrl", "M"], desc: "视频当前帧添加 / 移除书签", group: "video", actionType: "videoToggleBookmark" },
+  { keys: ["Ctrl", "[ / ]"], desc: "视频跳转历史后退 / 前进", group: "video", actionType: "videoJumpHistory" },
+  { keys: ["Alt", "L"], desc: "清除视频播放范围", group: "video", actionType: "videoClearLoopRegion" },
   { keys: ["Delete / Backspace"], desc: "删除选中轨迹", group: "video", actionType: "videoDeleteSelected" },
   { keys: ["Tab"], desc: "下一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
   { keys: ["Shift", "Tab"], desc: "上一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
@@ -121,6 +124,9 @@ export type HotkeyAction =
   | { type: "videoTogglePlayback" }
   | { type: "videoSeek"; delta: number }
   | { type: "videoSeekKeyframe"; dir: -1 | 1 }
+  | { type: "videoToggleBookmark" }
+  | { type: "videoJumpHistory"; dir: -1 | 1 }
+  | { type: "videoClearLoopRegion" }
   | { type: "videoDeleteSelected" }
   | { type: "videoCycleTrack"; dir: 1 | -1 };
 
@@ -168,6 +174,9 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "0") return { type: "fitReset" };
     if (e.key === "ArrowRight") return { type: "navigateTask", dir: "next" };
     if (e.key === "ArrowLeft")  return { type: "navigateTask", dir: "prev" };
+    if (ctx.videoMode && k === "m") return { type: "videoToggleBookmark" };
+    if (ctx.videoMode && e.key === "[") return { type: "videoJumpHistory", dir: -1 };
+    if (ctx.videoMode && e.key === "]") return { type: "videoJumpHistory", dir: 1 };
     if (k === "a") return { type: "selectAllUser" };
     if (k === "c") return { type: "copy" };
     if (k === "v") return { type: "paste" };
@@ -183,6 +192,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       if (e.key === "1") return { type: "setVideoTool", tool: "box" };
       if (e.key === "2") return { type: "setVideoTool", tool: "track" };
+      if (e.key === "l" || e.key === "L") return { type: "videoClearLoopRegion" };
     }
     if (e.key === " ") return { type: "videoTogglePlayback" };
     if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };

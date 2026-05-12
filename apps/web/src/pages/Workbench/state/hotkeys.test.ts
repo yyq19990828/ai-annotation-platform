@@ -173,6 +173,16 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "ArrowLeft", shiftKey: true }, selectedTrackCtx)).toEqual({ type: "videoSeekKeyframe", dir: -1 });
   });
 
+  it("Ctrl+M and Ctrl+[ / ] map to video bookmark navigation in video mode", () => {
+    expect(dispatch({ key: "m", ctrlKey: true }, videoCtx)).toEqual({ type: "videoToggleBookmark" });
+    expect(dispatch({ key: "[", ctrlKey: true }, videoCtx)).toEqual({ type: "videoJumpHistory", dir: -1 });
+    expect(dispatch({ key: "]", ctrlKey: true }, videoCtx)).toEqual({ type: "videoJumpHistory", dir: 1 });
+  });
+
+  it("Alt+L clears the video loop region in video mode", () => {
+    expect(dispatch({ key: "l", altKey: true }, videoCtx)).toEqual({ type: "videoClearLoopRegion" });
+  });
+
   it("Delete / Backspace → videoDeleteSelected", () => {
     expect(dispatch({ key: "Delete" }, videoCtx)).toEqual({ type: "videoDeleteSelected" });
     expect(dispatch({ key: "Backspace" }, videoCtx)).toEqual({ type: "videoDeleteSelected" });
