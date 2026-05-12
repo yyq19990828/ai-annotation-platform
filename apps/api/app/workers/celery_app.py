@@ -37,6 +37,9 @@ celery_app.conf.update(
         "app.workers.media.generate_task_thumbnail": {"queue": "media"},
         "app.workers.media.backfill_media": {"queue": "media"},
         "app.workers.media.backfill_tasks": {"queue": "media"},
+        "app.workers.media.ensure_video_chunks": {"queue": "media"},
+        "app.workers.media.extract_video_frames": {"queue": "media"},
+        "app.workers.media.cleanup_video_frame_assets": {"queue": "media"},
         "app.workers.cleanup.purge_soft_deleted_attachments": {"queue": "cleanup"},
         # v0.7.6 · audit 异步 INSERT 走独立队列，不与 ml/media 抢资源
         "app.workers.audit.persist_audit_entry": {"queue": "audit"},
@@ -91,6 +94,11 @@ celery_app.conf.update(
         "publish-ml-backend-stats": {
             "task": "app.workers.ml_health.publish_ml_backend_stats",
             "schedule": timedelta(seconds=1),
+        },
+        # v0.9.25 · 视频帧服务缓存 TTL housekeeping。
+        "cleanup-video-frame-assets": {
+            "task": "app.workers.media.cleanup_video_frame_assets",
+            "schedule": crontab(hour=2, minute=30),
         },
     },
 )

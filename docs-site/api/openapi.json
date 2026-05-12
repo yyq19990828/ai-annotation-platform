@@ -9362,6 +9362,268 @@
         "title": "VideoBboxGeometry",
         "type": "object"
       },
+      "VideoChunkOut": {
+        "properties": {
+          "byte_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byte Size"
+          },
+          "chunk_id": {
+            "title": "Chunk Id",
+            "type": "integer"
+          },
+          "end_frame": {
+            "title": "End Frame",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "retry_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After"
+          },
+          "start_frame": {
+            "title": "Start Frame",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "chunk_id",
+          "start_frame",
+          "end_frame",
+          "status"
+        ],
+        "title": "VideoChunkOut",
+        "type": "object"
+      },
+      "VideoChunksResponse": {
+        "properties": {
+          "chunk_size_frames": {
+            "title": "Chunk Size Frames",
+            "type": "integer"
+          },
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/VideoChunkOut"
+            },
+            "title": "Chunks",
+            "type": "array"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "fallback_video_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Video Url"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "chunk_size_frames",
+          "chunks"
+        ],
+        "title": "VideoChunksResponse",
+        "type": "object"
+      },
+      "VideoFrameOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "format": {
+            "enum": [
+              "webp",
+              "jpeg"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "retry_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame_index",
+          "width",
+          "format",
+          "status"
+        ],
+        "title": "VideoFrameOut",
+        "type": "object"
+      },
+      "VideoFramePrefetchRequest": {
+        "properties": {
+          "format": {
+            "default": "webp",
+            "enum": [
+              "webp",
+              "jpeg"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "frame_indices": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Frame Indices",
+            "type": "array"
+          },
+          "width": {
+            "default": 512,
+            "maximum": 4096.0,
+            "minimum": 1.0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "title": "VideoFramePrefetchRequest",
+        "type": "object"
+      },
+      "VideoFramePrefetchResponse": {
+        "properties": {
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/VideoFrameOut"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "frames"
+        ],
+        "title": "VideoFramePrefetchResponse",
+        "type": "object"
+      },
       "VideoFrameTimetableEntry": {
         "properties": {
           "byte_offset": {
@@ -9405,6 +9667,121 @@
           "is_keyframe"
         ],
         "title": "VideoFrameTimetableEntry",
+        "type": "object"
+      },
+      "VideoManifestV2Response": {
+        "properties": {
+          "chunk_size_frames": {
+            "title": "Chunk Size Frames",
+            "type": "integer"
+          },
+          "chunks_manifest_url": {
+            "title": "Chunks Manifest Url",
+            "type": "string"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "expires_in": {
+            "default": 3600,
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "frame_cache_formats": {
+            "default": [
+              "webp",
+              "jpeg"
+            ],
+            "items": {
+              "enum": [
+                "webp",
+                "jpeg"
+              ],
+              "type": "string"
+            },
+            "title": "Frame Cache Formats",
+            "type": "array"
+          },
+          "frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Count"
+          },
+          "frame_service_base": {
+            "title": "Frame Service Base",
+            "type": "string"
+          },
+          "frame_timetable_url": {
+            "title": "Frame Timetable Url",
+            "type": "string"
+          },
+          "poster_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Url"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "video_url": {
+            "title": "Video Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "video_url",
+          "chunks_manifest_url",
+          "frame_timetable_url",
+          "frame_service_base",
+          "chunk_size_frames"
+        ],
+        "title": "VideoManifestV2Response",
         "type": "object"
       },
       "VideoMetadata": {
@@ -18892,6 +19269,145 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/video/chunks": {
+      "get": {
+        "operationId": "get_video_chunks_api_v1_tasks__task_id__video_chunks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Frame"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Frame"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChunksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Chunks",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/chunks/{chunk_id}": {
+      "get": {
+        "operationId": "get_video_chunk_api_v1_tasks__task_id__video_chunks__chunk_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "chunk_id",
+            "required": true,
+            "schema": {
+              "title": "Chunk Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChunkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Chunk",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/video/frame-timetable": {
       "get": {
         "operationId": "get_video_frame_timetable_api_v1_tasks__task_id__video_frame_timetable_get",
@@ -18974,6 +19490,147 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/video/frames/{frame_index}": {
+      "get": {
+        "operationId": "get_video_frame_api_v1_tasks__task_id__video_frames__frame_index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "frame_index",
+            "required": true,
+            "schema": {
+              "title": "Frame Index",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "webp",
+              "enum": [
+                "webp",
+                "jpeg"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "w",
+            "required": false,
+            "schema": {
+              "default": 512,
+              "maximum": 4096,
+              "minimum": 1,
+              "title": "W",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFrameOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Frame",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/frames:prefetch": {
+      "post": {
+        "operationId": "prefetch_video_frame_assets_api_v1_tasks__task_id__video_frames_prefetch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoFramePrefetchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFramePrefetchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Prefetch Video Frame Assets",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/video/manifest": {
       "get": {
         "operationId": "get_video_manifest_api_v1_tasks__task_id__video_manifest_get",
@@ -19017,6 +19674,54 @@
           }
         ],
         "summary": "Get Video Manifest",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/manifest-v2": {
+      "get": {
+        "operationId": "get_video_manifest_v2_api_v1_tasks__task_id__video_manifest_v2_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoManifestV2Response"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Manifest V2",
         "tags": [
           "tasks"
         ]
@@ -19541,6 +20246,416 @@
         "summary": "Change User Role",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/chunks": {
+      "get": {
+        "operationId": "get_video_chunks_api_v1_videos__dataset_item_id__chunks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Frame"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Frame"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChunksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Chunks",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/chunks/{chunk_id}": {
+      "get": {
+        "operationId": "get_video_chunk_api_v1_videos__dataset_item_id__chunks__chunk_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "chunk_id",
+            "required": true,
+            "schema": {
+              "title": "Chunk Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChunkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Chunk",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/frame-timetable": {
+      "get": {
+        "operationId": "get_video_frame_timetable_api_v1_videos__dataset_item_id__frame_timetable_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskVideoFrameTimetableResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Frame Timetable",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/frames/{frame_index}": {
+      "get": {
+        "operationId": "get_video_frame_api_v1_videos__dataset_item_id__frames__frame_index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "frame_index",
+            "required": true,
+            "schema": {
+              "title": "Frame Index",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "webp",
+              "enum": [
+                "webp",
+                "jpeg"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "w",
+            "required": false,
+            "schema": {
+              "default": 512,
+              "maximum": 4096,
+              "minimum": 1,
+              "title": "W",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFrameOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Frame",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/frames:prefetch": {
+      "post": {
+        "operationId": "prefetch_video_frame_assets_api_v1_videos__dataset_item_id__frames_prefetch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoFramePrefetchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFramePrefetchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Prefetch Video Frame Assets",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/manifest": {
+      "get": {
+        "operationId": "get_video_manifest_api_v1_videos__dataset_item_id__manifest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoManifestV2Response"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Manifest",
+        "tags": [
+          "videos"
         ]
       }
     },

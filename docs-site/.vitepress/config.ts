@@ -251,6 +251,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: "ML Backend 协议", link: "/dev/reference/ml-backend-protocol" },
             { text: "WebSocket 协议", link: "/dev/reference/ws-protocol" },
+            { text: "视频帧服务", link: "/dev/reference/video-frame-service" },
             { text: "代码规范", link: "/dev/reference/conventions" },
             { text: "图标约定", link: "/dev/reference/icon-conventions" },
             { text: "环境变量", link: "/dev/reference/env-vars" },
@@ -309,6 +310,7 @@ export default withMermaid(defineConfig({
           items: [
             { text: "Celery Worker 卡死", link: "/ops/runbooks/celery-worker-stuck" },
             { text: "ML Backend 不可用", link: "/ops/runbooks/ml-backend-down" },
+            { text: "视频帧服务", link: "/ops/runbooks/video-frame-service" },
             { text: "PG 连接池耗尽", link: "/ops/runbooks/postgres-connection-pool-exhausted" },
           ],
         },

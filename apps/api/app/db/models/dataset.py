@@ -104,6 +104,102 @@ class VideoFrameIndex(Base):
     )
 
 
+class VideoChunk(Base):
+    __tablename__ = "video_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    dataset_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("dataset_items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chunk_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_frame: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_frame: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_pts_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_pts_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    byte_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_accessed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_item_id",
+            "chunk_id",
+            name="uq_video_chunks_item_chunk",
+        ),
+        Index(
+            "ix_video_chunks_item_frames",
+            "dataset_item_id",
+            "start_frame",
+            "end_frame",
+        ),
+    )
+
+
+class VideoFrameCache(Base):
+    __tablename__ = "video_frame_cache"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    dataset_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("dataset_items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    frame_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    format: Mapped[str] = mapped_column(String(10), nullable=False)
+    storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    byte_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_accessed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_item_id",
+            "frame_index",
+            "width",
+            "format",
+            name="uq_video_frame_cache_item_frame_width_format",
+        ),
+        Index(
+            "ix_video_frame_cache_item_frame",
+            "dataset_item_id",
+            "frame_index",
+        ),
+        Index(
+            "ix_video_frame_cache_status_accessed",
+            "status",
+            "last_accessed_at",
+        ),
+    )
+
+
 class ProjectDataset(Base):
     __tablename__ = "project_datasets"
 

@@ -9,7 +9,14 @@ from app.db.models.task_lock import TaskLock, AnnotationDraft
 from app.db.models.task_event import TaskEvent
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_comment import AnnotationComment
-from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset, VideoFrameIndex
+from app.db.models.dataset import (
+    Dataset,
+    DatasetItem,
+    ProjectDataset,
+    VideoChunk,
+    VideoFrameCache,
+    VideoFrameIndex,
+)
 from app.db.models.ml_backend import MLBackend
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
 from app.db.models.prediction_job import PredictionJob, PredictionJobStatus
@@ -39,6 +46,8 @@ __all__ = [
     "Dataset",
     "DatasetItem",
     "ProjectDataset",
+    "VideoChunk",
+    "VideoFrameCache",
     "VideoFrameIndex",
     "MLBackend",
     "Prediction",

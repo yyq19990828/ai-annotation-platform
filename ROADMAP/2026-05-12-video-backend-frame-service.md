@@ -50,7 +50,7 @@
   - v0.9.21 先对 probe 成功的视频全量存表；长视频稀疏采样（每 N 帧一行）后续再补。
   - I/B/P 帧分布在导出时也有用（避免在 B 帧上做精确 seek）。
 - **B1.2 接口**：`GET /api/v1/tasks/{task_id}/video/frame-timetable?from=&to=` 返回 JSON 帧表；无表时返回 `source="estimated"` 和空 `frames`。
-- **B1.3 ETag + Cache-Control**：内容只读不变，强缓存。（未完成）
+- **B1.3 ETag + Cache-Control**：内容只读不变，强缓存。（v0.9.25 已补第一版）
 
 **衡量**：1 小时 30fps 视频 timetable 压缩后 <500KB。
 
@@ -60,11 +60,13 @@
 
 > 解决 G2。对标 CVAT 的 chunk 概念。
 
+- **状态（v0.9.25）**：B2 第一版已完成。当前按 `DatasetItem` 存 `video_chunks`，task 路由与 `/api/v1/videos/{dataset_item_id}` facade 双入口暴露；缺失 chunk 懒投递 Celery media 任务，第一版统一 H.264 baseline fragmented MP4 重编码，GOP smart-copy 后续再补。
+
 - **B2.1 切片策略**：
   - 单位：默认每 chunk = 60 帧（30fps 即 2 秒），可配置。
-  - 编码：原始视频如果是 H.264 / H.265 且 GOP 对齐良好，按 GOP 切分（无重编码，速度快）；否则后台 Celery 重编 H.264 baseline + 短 GOP（每 30 帧 1 keyframe）。
+  - 编码：v0.9.25 先统一后台 Celery 重编 H.264 baseline + 短 GOP；原始视频 H.264 / H.265 且 GOP 对齐良好时 smart-copy 后续再补。
   - 容器：`.mp4` fragmented 形式，方便 MSE / WebCodecs 直接吃。
-- **B2.2 存储布局**：`s3://annotation/videos/{video_id}/chunks/{chunk_id}.mp4`，索引表 `VideoChunk(video_id, chunk_id, start_frame, end_frame, byte_size, url, ready)`。
+- **B2.2 存储布局**：`s3://datasets/videos/{dataset_item_id}/chunks/{chunk_id}.mp4`，索引表 `VideoChunk(dataset_item_id, chunk_id, start_frame, end_frame, byte_size, storage_key, status)`。
 - **B2.3 懒切片**：首次访问触发 Celery，未 ready 时返回 202 + Retry-After；同时 fallback 到原始 `video_url`（前端 R5 自动降级）。
 - **B2.4 接口**：
   - `GET /api/videos/{id}/chunks?from_frame=&to_frame=` 返回 chunk 列表 + 签名 URL。
@@ -78,6 +80,8 @@
 ### B3 · 帧抽取与缓存服务（**配套，AI 与 thumbnail 共享**）
 
 > 解决 G3 / G5。
+
+- **状态（v0.9.25）**：B3 第一版已完成。当前按 `DatasetItem` 存 `video_frame_cache`，支持 WebP/JPEG 单帧查询和批量 prefetch；内部 `get_frame_array()` 可复用 ready 缓存并带进程内 LRU。thumbnail/poster 与失败重试复用仍留后续。
 
 - **B3.1 单帧接口**：`GET /api/videos/{id}/frames/{frame_index}?format=jpeg|webp&w=` 返回静态图。
   - 实现：先查 MinIO `s3://.../frames/{frame_index}_{w}.webp`，未命中走 Celery（`ffmpeg -ss <pts> -frames:v 1`），缓存后返回。
@@ -125,6 +129,8 @@
 
 > 解决 G6。
 
+- **状态（v0.9.25）**：B6.1 / B6.3 第一版已完成。manifest v2 暴露在 `/api/v1/tasks/{task_id}/video/manifest-v2` 与 `/api/v1/videos/{dataset_item_id}/manifest`；协议文档见 `docs-site/dev/reference/video-frame-service.md`。B6.2 rebuild 命令后续再补。
+
 - **B6.1 manifest v2**：`/api/v2/videos/{id}/manifest` 返回：
   ```jsonc
   {
@@ -145,6 +151,8 @@
 ---
 
 ### B7 · 观测与运维（**必做**）
+
+- **状态（v0.9.25）**：B7 第一版已完成。新增 chunk / frame cache 指标、缓存 TTL 配置和 `docs-site/ops/runbooks/video-frame-service.md`；AI tracker GPU OOM runbook 内容等 B5 落地时补全。
 
 - **B7.1 指标**：每个接口暴露 Prometheus metrics（QPS / P50/P95 / cache hit）。
 - **B7.2 容量预算**：上线前算清 chunk 存储 = 原视频体积 × (1 + GOP 重编系数 ~0.3)；frame cache ~ 平均访问帧数 × 单帧 ~50KB。

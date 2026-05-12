@@ -22,6 +22,26 @@
 
 ## 最新版本
 
+## [0.9.25] - 2026-05-12
+
+> **Video Frame Service Wave B — chunk / frame cache / manifest v2.** 主线: ① 新增视频 chunk 与单帧缓存表，按 `DatasetItem` 存储后端帧服务资产；② task 路由和 `/videos/{dataset_item_id}` facade 同时暴露 manifest v2、chunks、frames、prefetch；③ Celery media worker 负责 H.264 fragmented MP4 chunk 生成、WebP/JPEG 单帧抽取和 TTL 清理；④ 补齐 Prometheus 指标、环境变量、协议文档和运维 runbook。→ [plan](docs/plans/2026-05-12-v0.9.25-video-frame-service-wave-b.md).
+
+### Added
+
+- **视频 chunk 服务**：新增 `VideoChunk` 表和 `GET /api/v1/tasks/{task_id}/video/chunks` / `/api/v1/videos/{dataset_item_id}/chunks`，缺失 chunk 懒投递 Celery，ready 后返回 signed URL。
+- **单帧缓存服务**：新增 `VideoFrameCache` 表和 `GET .../frames/{frame_index}` / `POST .../frames:prefetch`，抽帧优先使用 B1 `pts_ms`，旧视频按 fps 估算。
+- **Manifest v2**：新增 task 兼容路由和 videos facade，返回 `chunks_manifest_url`、`frame_timetable_url`、`frame_service_base` 和 `chunk_size_frames`。
+- **观测与运维**：新增视频帧服务 Prometheus 指标、缓存 TTL 配置、Celery beat 清理任务和 `docs-site/ops/runbooks/video-frame-service.md`。
+
+### Changed
+
+- `frame-timetable` 接口补 `Cache-Control` / `ETag` 响应头。
+- API/Celery 依赖增加 `numpy`，供内部 `get_frame_array()` 返回缓存帧数组。
+
+### Deferred
+
+- B4 segment 协同、B5 AI tracker 编排、GOP smart-copy、多码率转码、HLS/DASH 留到后续版本。
+
 ## [0.9.23] - 2026-05-12
 
 > **Video Outside Timeline Foundation — outside 段协议 + 时间轴语义 marker.** 主线: ① `video_track` 支持可选 `outside: [{ from, to, source }]` 闭区间，向后兼容旧 `keyframes[].absent`; ② 前后端渲染、导出和 track → `video_bbox` 转换统一走 effective outside 判断；③ 时间轴 marker 扩展 keyframe / prediction / outside segment 语义，现有悬浮播放条可轻量展示 outside 灰段；④ 用户标记当前帧消失时写 outside 单帧区间，写入可见关键帧时自动清理该帧 outside 覆盖。→ [plan](docs/plans/2026-05-12-v0.9.23-video-outside-timeline-foundation.md).
