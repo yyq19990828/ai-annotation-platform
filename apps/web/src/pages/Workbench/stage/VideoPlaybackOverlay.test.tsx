@@ -41,6 +41,13 @@ function pointerMove(clientX: number) {
   return event;
 }
 
+function pointerDown(clientX: number) {
+  const event = new Event("pointerdown", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clientX", { value: clientX });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  return event;
+}
+
 function renderOverlay(extra: Partial<ComponentProps<typeof VideoPlaybackOverlay>> = {}) {
   return render(
     <VideoPlaybackOverlay
@@ -48,7 +55,6 @@ function renderOverlay(extra: Partial<ComponentProps<typeof VideoPlaybackOverlay
       maxFrame={9}
       timebase={timebase}
       isPlaying={false}
-      annotatedFrames={[]}
       currentFrameEntryCount={0}
       visible
       onSeek={() => {}}
@@ -79,14 +85,26 @@ describe("VideoPlaybackOverlay", () => {
       },
       onHoverFrameChange,
     });
-    const range = getByLabelText("视频帧时间轴");
-    setRect(range);
+    getByLabelText("视频帧时间轴");
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
 
-    fireEvent(range, pointerMove(560));
+    fireEvent(shell, pointerMove(560));
 
     expect(onHoverFrameChange).toHaveBeenCalledWith(5);
     expect(getByTestId("video-frame-preview-popover")).toHaveTextContent("F 5");
     expect(getByTestId("video-frame-preview-image")).toHaveAttribute("src", "/frame-5.webp");
+  });
+
+  it("seeks from the timeline shell instead of relying on native range pointer focus", () => {
+    const onSeek = vi.fn();
+    const { getByTestId } = renderOverlay({ onSeek });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+
+    fireEvent(shell, pointerDown(560));
+
+    expect(onSeek).toHaveBeenCalledWith(5);
   });
 
   it("renders pending and error preview fallbacks without hiding frame context", () => {
@@ -100,10 +118,11 @@ describe("VideoPlaybackOverlay", () => {
         error: null,
       },
     });
-    const range = getByLabelText("视频帧时间轴");
-    setRect(range);
+    getByLabelText("视频帧时间轴");
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
 
-    fireEvent(range, pointerMove(440));
+    fireEvent(shell, pointerMove(440));
 
     expect(getByTestId("video-frame-preview-popover")).toHaveTextContent("Loading F 4");
 
@@ -113,7 +132,6 @@ describe("VideoPlaybackOverlay", () => {
         maxFrame={9}
         timebase={timebase}
         isPlaying={false}
-        annotatedFrames={[]}
         currentFrameEntryCount={0}
         visible
         hoverPreview={{
@@ -130,9 +148,54 @@ describe("VideoPlaybackOverlay", () => {
       />,
     );
 
-    fireEvent(getByLabelText("视频帧时间轴"), pointerMove(440));
+    fireEvent(shell, pointerMove(440));
 
     expect(getByTestId("video-frame-preview-popover")).toHaveTextContent("Preview unavailable");
     expect(getByTestId("video-frame-preview-popover")).toHaveTextContent("F 4");
+  });
+
+  it("uses overlay frame stepping for range arrow keys", () => {
+    const onSeekByFrames = vi.fn();
+    const { getByLabelText } = renderOverlay({ onSeekByFrames });
+    const range = getByLabelText("视频帧时间轴");
+
+    const dispatched = fireEvent.keyDown(range, { key: "ArrowRight" });
+    fireEvent.keyDown(range, { key: "ArrowLeft", shiftKey: true });
+
+    expect(dispatched).toBe(false);
+    expect(onSeekByFrames).toHaveBeenNthCalledWith(1, 1);
+    expect(onSeekByFrames).toHaveBeenNthCalledWith(2, -10);
+  });
+
+  it("moves keyboard focus from the range to the timeline shell after pointer interaction", () => {
+    const { getByLabelText, getByTestId } = renderOverlay();
+    const shell = getByTestId("video-timeline-shell") as HTMLDivElement;
+    const range = getByLabelText("视频帧时间轴") as HTMLInputElement;
+    const focus = vi.spyOn(shell, "focus");
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 1;
+    });
+
+    fireEvent.focus(range);
+    fireEvent.pointerUp(range);
+
+    expect(shell.tabIndex).toBe(0);
+    expect(range.tabIndex).toBe(-1);
+    expect(focus).toHaveBeenCalledTimes(2);
+    raf.mockRestore();
+  });
+
+  it("captures arrow keys when the timeline shell owns focus", () => {
+    const onSeekByFrames = vi.fn();
+    const { getByTestId } = renderOverlay({ onSeekByFrames });
+    const shell = getByTestId("video-timeline-shell") as HTMLDivElement;
+
+    shell.focus();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "ArrowLeft", shiftKey: true });
+
+    expect(onSeekByFrames).toHaveBeenNthCalledWith(1, 1);
+    expect(onSeekByFrames).toHaveBeenNthCalledWith(2, -10);
   });
 });

@@ -126,6 +126,53 @@ button.btn.ghost:disabled {
 
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
+.video-timeline-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.video-timeline-range:focus {
+  outline: none;
+}
+
+.video-timeline-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.video-timeline-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: var(--radius-pill);
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  background: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.28);
+}
+
+.video-timeline-range::-moz-range-track,
+.video-timeline-range::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.video-timeline-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  background: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.28);
+}
+
 /* v0.9.6 P2-b · 通用旋转动画 (Icon spinner / Loading 状态). */
 @keyframes spin {
   from { transform: rotate(0deg); }

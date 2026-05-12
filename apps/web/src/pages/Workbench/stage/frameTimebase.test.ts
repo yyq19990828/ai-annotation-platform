@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFrameTimebase, frameToTime, timeToFrame } from "./frameTimebase";
+import { buildFrameTimebase, frameToSeekTime, frameToTime, timeToFrame } from "./frameTimebase";
 import type { TaskVideoFrameTimetableResponse, VideoMetadata } from "@/types";
 
 const metadata: VideoMetadata = {
@@ -24,6 +24,8 @@ describe("frameTimebase", () => {
     const timebase = buildFrameTimebase(metadata);
 
     expect(frameToTime(3, timebase)).toBe(0.3);
+    expect(frameToSeekTime(3, timebase)).toBe(0.325);
+    expect(timeToFrame(frameToSeekTime(3, timebase), timebase)).toBe(3);
     expect(timeToFrame(0.32, timebase)).toBe(3);
     expect(timeToFrame(99, timebase)).toBe(9);
   });
@@ -45,6 +47,8 @@ describe("frameTimebase", () => {
 
     expect(timebase.source).toBe("ffprobe");
     expect(frameToTime(2, timebase)).toBe(0.083);
+    expect(frameToSeekTime(2, timebase)).toBe(0.0935);
+    expect(timeToFrame(frameToSeekTime(2, timebase), timebase)).toBe(2);
     expect(timeToFrame(0.05, timebase)).toBe(1);
     expect(timeToFrame(0.12, timebase)).toBe(3);
   });

@@ -1299,7 +1299,7 @@ describe("VideoStage", () => {
     expect(getByTestId("video-overlay").textContent).not.toContain("car");
   });
 
-  it("does not render track boxes on outside frames and marks the timeline segment", () => {
+  it("does not render track boxes on outside frames", () => {
     const annotations = [
       {
         id: "t1",
@@ -1332,7 +1332,6 @@ describe("VideoStage", () => {
     fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "1" } });
 
     expect(getByTestId("video-overlay").textContent).not.toContain("car");
-    expect(getByTestId("video-timeline-outside")).toBeInTheDocument();
   });
 
   it("renders selected track timeline and global density timeline", () => {
@@ -1369,6 +1368,7 @@ describe("VideoStage", () => {
     expect(selected.getByTestId("video-track-timeline")).toBeInTheDocument();
     expect(selected.getAllByTestId("video-timeline-track-keyframe")).toHaveLength(3);
     expect(selected.getByTestId("video-timeline-interpolated")).toBeInTheDocument();
+    expect(selected.getByTestId("video-timeline-outside")).toBeInTheDocument();
     selected.unmount();
 
     const global = render(

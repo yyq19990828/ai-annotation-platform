@@ -108,6 +108,14 @@ export interface UseWorkbenchHotkeysReturn {
   flushNudges: () => void;
 }
 
+export function isWorkbenchInputFocused(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  if (el instanceof HTMLInputElement && el.type === "range" && el.classList.contains("video-timeline-range")) {
+    return false;
+  }
+  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
+}
+
 export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbenchHotkeysReturn {
   const {
     s, history, classes, currentProject, annotationsRef, batchChanging, setBatchChanging, showHotkeys,
@@ -178,9 +186,6 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
   // 主 keydown / keyup
   useEffect(() => {
     if (disabled) return;
-    const isInputFocused = (el: EventTarget | null) =>
-      el instanceof HTMLElement && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
-
     const applyArrowNudge = (dx: number, dy: number) => {
       const userTargets = s.selectedIds
         .map((id) => annotationsRef.current.find((a) => a.id === id))
@@ -230,7 +235,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       };
 
       const action = dispatchKey(e, {
-        isInputFocused: isInputFocused(e.target),
+        isInputFocused: isWorkbenchInputFocused(e.target),
         hasSelection: !!s.selectedId || s.selectedIds.length > 0,
         pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging,
         attributeHotkey,

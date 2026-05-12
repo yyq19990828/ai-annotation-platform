@@ -1,11 +1,10 @@
-import { useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { frameToTime, type FrameTimebase } from "./frameTimebase";
 import type { VideoBookmark, VideoLoopRegion } from "./videoNavigationState";
 import type { VideoFramePreview } from "./useVideoFramePreview";
-import type { VideoTimelineMarker } from "./videoFrameBuckets";
 import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
 
 type HighlightAction = "prev" | "next" | "play" | null;
@@ -16,8 +15,6 @@ interface VideoPlaybackOverlayProps {
   timebase: FrameTimebase;
   isPlaying: boolean;
   playbackRateLabel?: string;
-  annotatedFrames: number[];
-  timelineMarkers?: VideoTimelineMarker[];
   selectedTrackTimeline?: VideoTrackTimeline | null;
   globalTimelineDensity?: VideoTimelineDensityBin[];
   loopRegion?: VideoLoopRegion | null;
@@ -49,8 +46,6 @@ export function VideoPlaybackOverlay({
   timebase,
   isPlaying,
   playbackRateLabel,
-  annotatedFrames,
-  timelineMarkers = [],
   selectedTrackTimeline = null,
   globalTimelineDensity = [],
   loopRegion = null,
@@ -71,6 +66,8 @@ export function VideoPlaybackOverlay({
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
   const [loopDraft, setLoopDraft] = useState<VideoLoopRegion | null>(null);
   const loopDraftRef = useRef<VideoLoopRegion | null>(null);
+  const seekDragRef = useRef(false);
+  const timelineShellRef = useRef<HTMLDivElement | null>(null);
   const frameTooltip = useMemo(() => {
     if (hoverFrame === null) return null;
     return `F ${hoverFrame} · ${formatTime(frameToTime(hoverFrame, timebase))}`;
@@ -94,6 +91,39 @@ export function VideoPlaybackOverlay({
     const right = maxFrame > 0 ? (to / maxFrame) * 100 : 0;
     return { left: `${left}%`, width: `${Math.max(0.5, right - left)}%` };
   };
+  const stepTimelineByKey = (e: ReactKeyboardEvent, target: HTMLElement) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return false;
+    e.preventDefault();
+    e.stopPropagation();
+    const step = e.shiftKey ? 10 : 1;
+    onSeekByFrames(e.key === "ArrowRight" ? step : -step);
+    target.focus({ preventScroll: true });
+    return true;
+  };
+  const focusTimelineShell = (target: HTMLElement) => {
+    const shell = target.closest('[data-testid="video-timeline-shell"]') as HTMLElement | null;
+    if (!shell) return;
+    window.requestAnimationFrame(() => {
+      shell.focus({ preventScroll: true });
+    });
+  };
+  useEffect(() => {
+    if (!visible || !interactive) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const shell = timelineShellRef.current;
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || !shell) return;
+      const isTimelineFocus = active === shell || active.classList.contains("video-timeline-range");
+      if (!isTimelineFocus) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const step = e.shiftKey ? 10 : 1;
+      onSeekByFrames(e.key === "ArrowRight" ? step : -step);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [interactive, onSeekByFrames, visible]);
   const hoverLeft = maxFrame > 0 ? ((hoverFrame ?? 0) / maxFrame) * 100 : 0;
   const hoverPopoverLeft = `${Math.max(12, Math.min(88, hoverLeft))}%`;
 
@@ -143,51 +173,90 @@ export function VideoPlaybackOverlay({
 
       <div
         data-testid="video-timeline-shell"
-        style={{ position: "relative", height: 28, display: "flex", alignItems: "center", pointerEvents: visible && interactive ? "auto" : "none" }}
+        ref={timelineShellRef}
+        tabIndex={0}
+        style={{ position: "relative", height: 28, display: "flex", alignItems: "center", pointerEvents: visible && interactive ? "auto" : "none", outline: "none" }}
+        onKeyDown={(e) => {
+          stepTimelineByKey(e, e.currentTarget);
+        }}
         onPointerDownCapture={(e) => {
-          if (!e.shiftKey || !onLoopRegionChange) return;
           e.preventDefault();
           e.stopPropagation();
           const rect = e.currentTarget.getBoundingClientRect();
           const frame = frameFromPointer(e.clientX, rect);
+          focusTimelineShell(e.currentTarget);
+          if (!e.shiftKey || !onLoopRegionChange) {
+            seekDragRef.current = true;
+            onSeek(frame);
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            return;
+          }
           const next = { startFrame: frame, endFrame: frame };
           loopDraftRef.current = next;
           setLoopDraft(next);
           e.currentTarget.setPointerCapture?.(e.pointerId);
         }}
         onPointerMove={(e) => {
-          const draft = loopDraftRef.current;
-          if (!draft) return;
-          e.preventDefault();
           const rect = e.currentTarget.getBoundingClientRect();
           const frame = frameFromPointer(e.clientX, rect);
-          const next = normalizeLoop(draft.startFrame, frame);
-          loopDraftRef.current = next;
-          setLoopDraft(next);
+          setHoverFrame(frame);
+          onHoverFrameChange?.(frame);
+          const draft = loopDraftRef.current;
+          if (draft) {
+            e.preventDefault();
+            const next = normalizeLoop(draft.startFrame, frame);
+            loopDraftRef.current = next;
+            setLoopDraft(next);
+            return;
+          }
+          if (seekDragRef.current) {
+            e.preventDefault();
+            onSeek(frame);
+          }
         }}
         onPointerUp={(e) => {
           const draft = loopDraftRef.current;
-          if (!draft || !onLoopRegionChange) return;
-          e.preventDefault();
-          onLoopRegionChange(draft);
+          if (draft && onLoopRegionChange) {
+            e.preventDefault();
+            onLoopRegionChange(draft);
+            loopDraftRef.current = null;
+            setLoopDraft(null);
+            e.currentTarget.releasePointerCapture?.(e.pointerId);
+            return;
+          }
+          if (seekDragRef.current) {
+            e.preventDefault();
+            seekDragRef.current = false;
+            focusTimelineShell(e.currentTarget);
+            e.currentTarget.releasePointerCapture?.(e.pointerId);
+          }
+        }}
+        onPointerCancel={(e) => {
+          if (!loopDraftRef.current && !seekDragRef.current) return;
+          seekDragRef.current = false;
           loopDraftRef.current = null;
           setLoopDraft(null);
           e.currentTarget.releasePointerCapture?.(e.pointerId);
         }}
-        onPointerCancel={(e) => {
-          if (!loopDraftRef.current) return;
-          loopDraftRef.current = null;
-          setLoopDraft(null);
-          e.currentTarget.releasePointerCapture?.(e.pointerId);
+        onPointerLeave={() => {
+          if (seekDragRef.current || loopDraftRef.current) return;
+          setHoverFrame(null);
+          onHoverFrameChange?.(null);
         }}
       >
         <input
+          className="video-timeline-range"
           aria-label="视频帧时间轴"
           type="range"
           min={0}
           max={maxFrame}
+          tabIndex={-1}
           value={frameIndex}
           onChange={(e) => onSeek(Number(e.currentTarget.value))}
+          onFocus={(e) => focusTimelineShell(e.currentTarget)}
+          onKeyDown={(e) => {
+            stepTimelineByKey(e, e.currentTarget);
+          }}
           onPointerMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const nextFrame = frameFromPointer(e.clientX, rect);
@@ -198,7 +267,8 @@ export function VideoPlaybackOverlay({
             setHoverFrame(null);
             onHoverFrameChange?.(null);
           }}
-          style={{ width: "100%", accentColor: "var(--color-accent)" }}
+          onPointerUp={(e) => focusTimelineShell(e.currentTarget)}
+          style={{ width: "100%", pointerEvents: "none" }}
         />
         <div style={{ position: "absolute", inset: "0 6px", pointerEvents: "none" }}>
           {(loopRegion || loopDraft) && (
@@ -243,7 +313,7 @@ export function VideoPlaybackOverlay({
             />
           ))}
           {!selectedTrackTimeline && globalTimelineDensity.length > 0 && (
-            <div data-testid="video-timeline-density" style={{ position: "absolute", inset: "15px 0 2px 0" }}>
+            <div data-testid="video-timeline-density" style={{ position: "absolute", inset: "5px 0 16px 0" }}>
               {globalTimelineDensity.map((bin) => {
                 if (bin.density <= 0) return null;
                 const left = maxFrame > 0 ? (bin.from / maxFrame) * 100 : 0;
@@ -256,7 +326,7 @@ export function VideoPlaybackOverlay({
                       left: `${left}%`,
                       bottom: 0,
                       width: `${Math.max(0.7, width)}%`,
-                      height: `${Math.max(3, (bin.density / maxDensity) * 10)}px`,
+                      height: `${Math.max(3, (bin.density / maxDensity) * 8)}px`,
                       background: "rgba(45,212,191,0.58)",
                       borderRadius: 2,
                     }}
@@ -313,57 +383,6 @@ export function VideoPlaybackOverlay({
               ))}
             </div>
           )}
-          {annotatedFrames.map((f) => (
-            <span
-              key={f}
-              style={{
-                position: "absolute",
-                left: `${maxFrame > 0 ? (f / maxFrame) * 100 : 0}%`,
-                top: 3,
-                width: 2,
-                height: 8,
-                background: "rgba(255,255,255,0.45)",
-                borderRadius: 1,
-              }}
-            />
-          ))}
-          {timelineMarkers.map((marker) => {
-            if (marker.type === "outside") {
-              const left = maxFrame > 0 ? (marker.from / maxFrame) * 100 : 0;
-              const right = maxFrame > 0 ? (marker.to / maxFrame) * 100 : 0;
-              return (
-                <span
-                  key={`outside-${marker.from}-${marker.to}-${marker.trackIds.join("-")}`}
-                  data-testid="video-timeline-outside"
-                  style={{
-                    position: "absolute",
-                    left: `${left}%`,
-                    top: 12,
-                    width: `${Math.max(0.5, right - left)}%`,
-                    height: 7,
-                    background: marker.hasPrediction ? "rgba(148,163,184,0.48)" : "rgba(148,163,184,0.36)",
-                    borderRadius: 999,
-                  }}
-                />
-              );
-            }
-            return (
-              <span
-                key={`keyframe-${marker.frame}-${marker.trackIds.join("-")}`}
-                data-testid="video-timeline-keyframe"
-                style={{
-                  position: "absolute",
-                  left: `${maxFrame > 0 ? (marker.frame / maxFrame) * 100 : 0}%`,
-                  top: 2,
-                  width: marker.density > 1 ? 3 : 2,
-                  height: marker.hasAbsent ? 12 : 9,
-                  background: marker.hasPrediction ? "oklch(0.78 0.14 78)" : "var(--color-accent)",
-                  opacity: marker.hasAbsent ? 0.75 : 1,
-                  borderRadius: 1,
-                }}
-              />
-            );
-          })}
         </div>
         {frameTooltip && (
           <div

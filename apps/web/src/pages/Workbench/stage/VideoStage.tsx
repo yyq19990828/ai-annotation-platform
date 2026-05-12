@@ -18,7 +18,6 @@ import { buildFrameTimebase, frameToTime } from "./frameTimebase";
 import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import { useVideoFramePreview } from "./useVideoFramePreview";
-import { videoTimelineMarkers } from "./videoFrameBuckets";
 import {
   emptyVideoJumpHistory,
   jumpVideoHistory,
@@ -188,6 +187,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const isJogPlaying = jogPlayback.direction !== 0;
   const isPlaybackActive = isPlaying || isJogPlaying;
   const setFrameIndex = useCallback((nextFrame: number) => {
+    frameIndexRef.current = nextFrame;
     if (controlledFrameIndex === undefined) setUncontrolledFrameIndex(nextFrame);
     onFrameIndexChange?.(nextFrame);
   }, [controlledFrameIndex, onFrameIndexChange]);
@@ -271,24 +271,20 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     [hiddenTrackIds, selectedId, videoTracks],
   );
 
-  const annotatedFrames = useMemo(() => {
-    const out = new Set<number>();
-    for (const ann of annotations) {
-      if (isVideoBbox(ann)) out.add(ann.geometry.frame_index);
-      if (isVideoTrack(ann)) {
-        for (const kf of ann.geometry.keyframes) out.add(kf.frame_index);
-      }
-    }
-    return out;
-  }, [annotations]);
-  const timelineMarkers = useMemo(() => videoTimelineMarkers(videoTracks.map((ann) => ann.geometry)), [videoTracks]);
   const selectedTrackTimeline = useMemo(
     () => selectedTrack ? buildSelectedTrackTimeline(selectedTrack.geometry) : null,
     [selectedTrack],
   );
+  const manualBboxFrames = useMemo(
+    () => annotations
+      .flatMap((ann) => (isVideoBbox(ann) && ann.source !== "prediction_based" ? [ann.geometry.frame_index] : [])),
+    [annotations],
+  );
   const globalTimelineDensity = useMemo(
-    () => selectedTrack ? [] : buildGlobalTimelineDensity(videoTracks.map((ann) => ann.geometry), maxFrame),
-    [maxFrame, selectedTrack, videoTracks],
+    () => selectedTrack
+      ? []
+      : buildGlobalTimelineDensity(videoTracks.map((ann) => ann.geometry), maxFrame, 80, manualBboxFrames),
+    [manualBboxFrames, maxFrame, selectedTrack, videoTracks],
   );
   const {
     preview: framePreview,
@@ -489,22 +485,22 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       showPlaybackOverlay();
       flashPlaybackAction(delta < 0 ? "prev" : "next");
       pausePlayback();
-      void seekFrameAsync(frameIndex + delta, { recordHistory: options?.recordHistory ?? true });
+      void seekFrameAsync(frameIndexRef.current + delta, { recordHistory: options?.recordHistory ?? true });
     },
-    [flashPlaybackAction, frameIndex, pausePlayback, seekFrameAsync, showPlaybackOverlay],
+    [flashPlaybackAction, pausePlayback, seekFrameAsync, showPlaybackOverlay],
   );
 
   const seekToKeyframe = useCallback(
     (dir: -1 | 1, options?: { recordHistory?: boolean }) => {
       if (!selectedTrack) return;
-      const nextFrame = nextVisibleKeyframeFrame(selectedTrack.geometry, frameIndex, dir);
+      const nextFrame = nextVisibleKeyframeFrame(selectedTrack.geometry, frameIndexRef.current, dir);
       if (nextFrame === null) return;
       showPlaybackOverlay();
       flashPlaybackAction(dir < 0 ? "prev" : "next");
       pausePlayback();
       void seekFrameAsync(nextFrame, { recordHistory: options?.recordHistory ?? true });
     },
-    [flashPlaybackAction, frameIndex, pausePlayback, seekFrameAsync, selectedTrack, showPlaybackOverlay],
+    [flashPlaybackAction, pausePlayback, seekFrameAsync, selectedTrack, showPlaybackOverlay],
   );
 
   const seekToFrame = useCallback(
@@ -1134,8 +1130,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             timebase={timebase}
             isPlaying={isPlaybackActive}
             playbackRateLabel={isJogPlaying ? `${jogPlayback.direction < 0 ? "-" : ""}${jogPlayback.rate}x` : undefined}
-            annotatedFrames={[...annotatedFrames].sort((a, b) => a - b)}
-            timelineMarkers={timelineMarkers}
             selectedTrackTimeline={selectedTrackTimeline}
             globalTimelineDensity={globalTimelineDensity}
             loopRegion={loopRegion}

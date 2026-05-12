@@ -76,13 +76,13 @@ describe("videoTrackTimeline", () => {
           { frame_index: 9, bbox, source: "manual" },
         ],
       }),
-    ], 9, 5);
+    ], 9, 5, [5, 6]);
 
     expect(bins).toEqual([
       { index: 0, from: 0, to: 1, density: 1 },
       { index: 1, from: 2, to: 3, density: 0 },
-      { index: 2, from: 4, to: 5, density: 2 },
-      { index: 3, from: 6, to: 7, density: 0 },
+      { index: 2, from: 4, to: 5, density: 3 },
+      { index: 3, from: 6, to: 7, density: 1 },
       { index: 4, from: 8, to: 9, density: 1 },
     ]);
   });

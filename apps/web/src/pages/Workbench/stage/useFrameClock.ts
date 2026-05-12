@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { frameToTime, timeToFrame, type FrameTimebase } from "./frameTimebase";
+import { frameToSeekTime, frameToTime, timeToFrame, type FrameTimebase } from "./frameTimebase";
 
 type FrameMetadata = { mediaTime: number };
 type VideoFrameCallback = (now: DOMHighResTimeStamp, metadata: FrameMetadata) => void;
@@ -119,7 +119,9 @@ export function useFrameClock({
   }, [resolveSeek, setDiagnosticsPatch]);
 
   const updateFrameFromTime = useCallback((mediaTime: number, source: FrameReadySource) => {
-    const nextFrame = timeToFrame(mediaTime, timebase);
+    const mediaFrame = timeToFrame(mediaTime, timebase);
+    const seekTarget = targetFrameRef.current;
+    const nextFrame = seekTarget !== null && Math.abs(seekTarget - mediaFrame) <= 1 ? seekTarget : mediaFrame;
     onFrameChange(nextFrame);
     recordFrameReady(source, nextFrame);
   }, [onFrameChange, recordFrameReady, timebase]);
@@ -141,7 +143,7 @@ export function useFrameClock({
     onFrameChange(frame);
 
     if (video) {
-      video.currentTime = frameToTime(frame, timebase);
+      video.currentTime = frameToSeekTime(frame, timebase);
 
       if (hasRequestVideoFrameCallback(video)) {
         const frameVideo = video as VideoWithFrameCallback;

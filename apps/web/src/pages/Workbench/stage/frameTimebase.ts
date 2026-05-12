@@ -62,6 +62,23 @@ export function frameToTime(frameIndex: number, timebase: FrameTimebase): number
   return frame / timebase.fps;
 }
 
+export function frameToSeekTime(frameIndex: number, timebase: FrameTimebase): number {
+  const frame = clampFrame(frameIndex, timebase.frameCount);
+  const pts = timebase.ptsMs?.[frame];
+  if (pts !== undefined && Number.isFinite(pts)) {
+    const nextPts = timebase.ptsMs?.[frame + 1];
+    if (nextPts !== undefined && Number.isFinite(nextPts) && nextPts > pts) {
+      return (pts + (nextPts - pts) * 0.25) / 1000;
+    }
+    const prevPts = timebase.ptsMs?.[frame - 1];
+    if (prevPts !== undefined && Number.isFinite(prevPts) && pts > prevPts) {
+      return (pts + (pts - prevPts) * 0.25) / 1000;
+    }
+    return pts / 1000;
+  }
+  return (frame + 0.25) / timebase.fps;
+}
+
 export function timeToFrame(mediaTime: number, timebase: FrameTimebase): number {
   if (!Number.isFinite(mediaTime)) return 0;
   const targetMs = Math.max(0, mediaTime * 1000);

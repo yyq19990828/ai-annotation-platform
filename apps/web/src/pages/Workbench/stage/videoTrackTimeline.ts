@@ -89,17 +89,26 @@ export function buildGlobalTimelineDensity(
   tracks: readonly VideoTrackGeometry[],
   maxFrame: number,
   bins = 80,
+  manualBboxFrames: readonly number[] = [],
 ): VideoTimelineDensityBin[] {
   const safeMaxFrame = Math.max(0, Math.floor(maxFrame));
   const binCount = Math.max(1, Math.min(Math.floor(bins), safeMaxFrame + 1 || 1));
   const counts = Array.from({ length: binCount }, () => 0);
 
+  const incrementFrame = (frameIndex: number) => {
+    const frame = Math.max(0, Math.min(safeMaxFrame, Math.floor(frameIndex)));
+    const index = safeMaxFrame > 0 ? Math.min(binCount - 1, Math.floor((frame / (safeMaxFrame + 1)) * binCount)) : 0;
+    counts[index] += 1;
+  };
+
   for (const track of tracks) {
     for (const keyframe of sortedLatestKeyframes(track)) {
-      const frame = Math.max(0, Math.min(safeMaxFrame, Math.floor(keyframe.frame_index)));
-      const index = safeMaxFrame > 0 ? Math.min(binCount - 1, Math.floor((frame / (safeMaxFrame + 1)) * binCount)) : 0;
-      counts[index] += 1;
+      incrementFrame(keyframe.frame_index);
     }
+  }
+
+  for (const frameIndex of manualBboxFrames) {
+    incrementFrame(frameIndex);
   }
 
   return counts.map((density, index) => {
