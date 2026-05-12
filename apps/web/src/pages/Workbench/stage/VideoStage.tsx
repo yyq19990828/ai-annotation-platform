@@ -4,14 +4,17 @@ import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse } from "@/types";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import { VideoFrameOverlay } from "./VideoFrameOverlay";
+import { VideoMediaLayer } from "./VideoMediaLayer";
 import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { VideoSelectionActions } from "./VideoSelectionActions";
+import { VideoStageSurface } from "./VideoStageSurface";
 import { applyResize } from "./ResizeHandles";
 import { buildFrameTimebase } from "./frameTimebase";
 import { useFrameClock } from "./useFrameClock";
+import { clientPointToVideoPoint } from "./videoStageCoordinates";
+import { modeFromDrag, getVideoStageModeGuard } from "./videoStageMode";
 import {
-  clamp01,
   clampGeom,
   isVideoBbox,
   isVideoTrack,
@@ -247,19 +250,30 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     return [...new Set(warnings)].slice(0, 3);
   }, [currentFrameEntries, fps, videoTracks]);
 
+  const stageMode = modeFromDrag(drag);
+  const stageModeGuard = getVideoStageModeGuard(stageMode);
+  const handleFrameClockChange = useCallback((nextFrame: number) => {
+    if (!stageModeGuard.canSetupFrame) {
+      videoRef.current?.pause();
+      return;
+    }
+    setFrameIndex(nextFrame);
+  }, [setFrameIndex, stageModeGuard.canSetupFrame]);
+
   const frameClock = useFrameClock({
     videoRef,
     frameIndex,
     timebase,
     isPlaying,
-    onFrameChange: setFrameIndex,
+    onFrameChange: handleFrameClockChange,
   });
 
   const seekFrame = useCallback(
     (nextFrame: number) => {
+      if (!stageModeGuard.canSetupFrame) return;
       frameClock.seekTo(nextFrame);
     },
-    [frameClock],
+    [frameClock, stageModeGuard.canSetupFrame],
   );
 
   const showPlaybackOverlay = useCallback(() => {
@@ -372,13 +386,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }, [frameClock.diagnostics, manifest?.task_id]);
 
   const pointFromEvent = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
-    const rect = overlayRef.current?.getBoundingClientRect();
-    if (!rect) return null;
-    return {
-      x: clamp01((evt.clientX - rect.left) / rect.width),
-      y: clamp01((evt.clientY - rect.top) / rect.height),
-    };
-  }, []);
+    const svg = overlayRef.current;
+    if (!svg) return null;
+    const viewBoxHeight = Number.isFinite(videoAspectRatio) && videoAspectRatio > 0 ? 1 / videoAspectRatio : 9 / 16;
+    return clientPointToVideoPoint(svg, { x: evt.clientX, y: evt.clientY }, viewBoxHeight);
+  }, [videoAspectRatio]);
 
   const updateCursor = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     const pt = pointFromEvent(evt);
@@ -388,42 +400,42 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
 
   const beginDraw = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
-    if (readOnly || isPlaying || (videoTool === "track" && selectedTrackLocked)) return;
+    if (!stageModeGuard.canBeginDraw || readOnly || isPlaying || (videoTool === "track" && selectedTrackLocked)) return;
     const pt = pointFromEvent(evt);
     if (!pt) return;
     if (videoTool !== "track" || !selectedTrack) onSelect(null);
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     setPlaybackOverlayVisible(false);
     setDrag({ kind: "draw", start: pt, current: pt });
-  }, [isPlaying, onSelect, pointFromEvent, readOnly, selectedTrack, selectedTrackLocked, videoTool]);
+  }, [isPlaying, onSelect, pointFromEvent, readOnly, selectedTrack, selectedTrackLocked, stageModeGuard.canBeginDraw, videoTool]);
 
-  const beginMove = useCallback((evt: ReactPointerEvent<SVGRectElement>, entry: VideoFrameEntry | VideoTrackGhost) => {
+  const beginMove = useCallback((evt: ReactPointerEvent<SVGElement>, entry: VideoFrameEntry | VideoTrackGhost) => {
     const trackId = isVideoTrack(entry.ann) ? entry.ann.geometry.track_id : null;
     evt.stopPropagation();
     onSelect(entry.ann.id);
-    if (readOnly || isPlaying || (trackId && lockedTrackIds.has(trackId))) return;
+    if (!stageModeGuard.canBeginDrag || readOnly || isPlaying || (trackId && lockedTrackIds.has(trackId))) return;
     const pt = pointFromEvent(evt as unknown as ReactPointerEvent<SVGSVGElement>);
     if (!pt) return;
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     setPlaybackOverlayVisible(false);
     setDrag({ kind: "move", id: entry.ann.id, start: pt, origin: entry.geom, current: entry.geom });
-  }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly]);
+  }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly, stageModeGuard.canBeginDrag]);
 
   const beginResize = useCallback((
     dir: VideoResizeDirection,
-    evt: ReactPointerEvent<SVGRectElement>,
+    evt: ReactPointerEvent<SVGElement>,
     entry: VideoFrameEntry | VideoTrackGhost,
   ) => {
     const trackId = isVideoTrack(entry.ann) ? entry.ann.geometry.track_id : null;
     evt.stopPropagation();
     onSelect(entry.ann.id);
-    if (readOnly || isPlaying || (trackId && lockedTrackIds.has(trackId))) return;
+    if (!stageModeGuard.canBeginResize || readOnly || isPlaying || (trackId && lockedTrackIds.has(trackId))) return;
     const pt = pointFromEvent(evt as unknown as ReactPointerEvent<SVGSVGElement>);
     if (!pt) return;
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     setPlaybackOverlayVisible(false);
     setDrag({ kind: "resize", id: entry.ann.id, dir, start: pt, origin: entry.geom, current: entry.geom });
-  }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly]);
+  }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly, stageModeGuard.canBeginResize]);
 
   const onPointerMove = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     updateCursor(evt);
@@ -528,13 +540,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     >
       <div style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr)" }}>
         <div style={{ position: "relative", minHeight: 0, display: "grid", placeItems: "center", overflow: "hidden" }}>
-          <div style={{ position: "relative", width: "100%", maxWidth: "100%", maxHeight: "100%", aspectRatio: stageAspect }}>
-            <video
+          <VideoStageSurface aspectRatio={stageAspect}>
+            <VideoMediaLayer
               ref={videoRef}
               src={manifest.video_url}
               poster={manifest.poster_url ?? undefined}
-              playsInline
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
               onClick={togglePlayback}
             />
             <VideoFrameOverlay
@@ -561,7 +571,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               onCancelDrag={() => setDrag(null)}
               onPointerLeave={onOverlayPointerLeave}
             />
-          </div>
+          </VideoStageSurface>
           {isPlaying && (
             <div
               style={{

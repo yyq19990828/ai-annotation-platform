@@ -22,6 +22,28 @@
 
 ## 最新版本
 
+## [0.9.22] - 2026-05-12
+
+> **Video Rendering Surface — CVAT 对齐的渲染分层 + 时间轴分桶基建.** 主线: ① 视频 stage 拆为 Media / Bitmap / Grid / Objects / Text / Interaction / Attachment 七个逻辑层，保留 React + SVG + HTML video 技术栈；② bbox 命中测试从每个 SVG 节点事件迁到 Interaction 层统一 picker；③ 新增统一坐标转换 helper 与 `VideoStageMode` busy guard，拖拽/缩放期间不接受播放 tick 覆盖当前编辑状态；④ 新增 `videoFrameBuckets`，按 track keyframe 输出稳定 marker，为 R4 时间轴可视化铺数据。→ [plan](docs/plans/2026-05-12-v0.9.22-video-render-layering.md).
+
+### Added
+
+- **CVAT-aligned stage surface**：新增 `VideoStageSurface`、`VideoMediaLayer`、`VideoBitmapLayer`、`VideoGridLayer`、`VideoObjectsLayer`、`VideoTextLayer`、`VideoInteractionLayer` 和 `VideoAttachmentLayer`，明确视频工作台各层职责。
+- **统一坐标转换与 picker**：新增 `videoStageCoordinates.ts` 和 `videoStagePicking.ts`，pointer 坐标统一走 `client -> video` 映射，顶层 bbox 命中由 Interaction 层计算。
+- **Stage mode guard**：新增 `videoStageMode.ts`，在 draw / drag / resize 期间阻止 frame setup 覆盖编辑中的几何。
+- **Frame buckets**：新增 `videoFrameBuckets.ts`，从 `video_track.keyframes[]` 生成 `Map<frame, trackId[]>` 和稳定 marker，记录 manual / prediction / absent 状态。
+
+### Changed
+
+- `VideoFrameOverlay` 不再把媒体、对象、label、handle、draft、ghost 和 pointer handler 混在同一个 SVG；对象层只渲染 committed geometry，拖拽态由 Interaction 层负责。
+- `VideoStage` 视频元素改由 `VideoMediaLayer` 承载，播放/seek 仍由 v0.9.21 的 `useFrameClock` 驱动。
+- 现有 `video_bbox` / `video_track` wire shape、后端 API、导出协议不变。
+
+### Fixed
+
+- 密集 bbox 场景下不再为每个 bbox 主体挂 `pointerdown` handler，降低 React diff 和事件绑定压力。
+- 拖拽或缩放过程中，播放 tick / seek 回调不会把当前帧切走并覆盖编辑态。
+
 ## [0.9.21] - 2026-05-12
 
 > **Video Frame Clock — 帧时间表 + 精确 seek 基础.** 主线: ① media worker 用 `ffprobe -show_frames` 生成视频帧时间表并写入 `video_frame_indices`；② 新增 `GET /tasks/{task_id}/video/frame-timetable`，旧视频无时间表时返回 estimated 降级；③ 前端新增 `frameTimebase` / `useFrameClock`，优先用 `requestVideoFrameCallback` 做 frame ↔ mediaTime 映射；④ `resolveTrackAtFrame` 改为 keyframe 索引 + 二分查找 + 1000 条插值 LRU；⑤ 开发环境记录视频帧时钟 seek/longtask 诊断。→ [plan](docs/plans/2026-05-12-v0.9.21-video-frame-clock-timetable.md).

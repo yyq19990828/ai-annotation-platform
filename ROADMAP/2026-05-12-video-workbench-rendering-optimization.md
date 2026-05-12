@@ -124,18 +124,21 @@
 
 ### R2 · 渲染分层与脏区（**必做，中等改动**）
 
-把当前「video + 单层 SVG」拆成 3 层，为后续 viewport / mask / 大密度做准备：
+- **状态（v0.9.22）**：R2.1 / R2.2 / R2.3 / R2.4 已落地第一版，并按 CVAT canvas 边界扩展为 Media / Bitmap / Grid / Objects / Text / Interaction / Attachment 七层。当前仍保留 React + SVG + HTML video，不引入 `fabric` / `svg.js`；Bitmap/Grid/Attachment 为 R5/R8/R17 预留入口。
+
+把当前「video + 单层 SVG」拆成 CVAT-aligned surface，为后续 viewport / mask / 大密度做准备：
 
 1. **Media 层**：`<video>` 或未来 `<canvas>`（chunk 解码模式），由 R1 的 `FrameClock` 驱动。
-2. **Shapes 层**：SVG，按 track id 做 React `memo` 切分，单 track 几何不变则跳过 diff。
-3. **Interaction 层**：单独 SVG / div，承载选中态、resize handle、ghost、辅助线；与 Shapes 层解耦，频繁更新只动这一层。
+2. **Objects / Text 层**：SVG / HTML overlay，按 track id 做 React `memo` 切分，单 track 几何不变则跳过 diff，label 独立于交互命中。
+3. **Interaction 层**：单独 SVG，承载选中态、resize handle、ghost、辅助线与统一 picker；与 Objects 层解耦，频繁更新只动这一层。
+4. **Bitmap / Grid / Attachment 预留层**：为 R5.2 ImageBitmap、R8 viewport/grid、R17 hover thumbnail 与 review issue anchor 预留挂载点。
 
 具体改造：
 
-- **R2.1 拆 `VideoFrameOverlay`**：拆为 `<ShapesLayer>` + `<InteractionLayer>`，前者依赖 `currentFrame` + `entries`，后者依赖 `selectionId` + `dragState`。
-- **R2.2 Track 渲染 memo**：每个 track 一个 `<TrackShape>` 组件，props 走稳定引用 + frame 索引；拖拽中只重渲被拖的那条。
-- **R2.3 命中测试外移**：把当前依赖 SVG 事件冒泡的 hit-test 改为基于几何的 picker（`pickTopAt(x, y)`），返回 id，事件层只挂一个 `pointerdown`。这一步消除"密集场景下 React 每个节点挂 handler"的内存与 GC 成本。
-- **R2.4 viewport 接口预留**：在 layer 容器上预留 `transform: translate(tx, ty) scale(s)` 入口，不实现 UI，但保证三层可同步变换。
+- **R2.1 拆 `VideoFrameOverlay`**：已拆为 `VideoStageSurface` + Media / Bitmap / Grid / Objects / Text / Interaction / Attachment 层；Objects 依赖 `entries`，Interaction 依赖 `selectionId` + `dragState`。
+- **R2.2 Track 渲染 memo**：已新增 `VideoTrackShape`，bbox 主体使用稳定 props 和 `React.memo`；拖拽中 committed geometry 留在 Objects 层，预览只动 Interaction 层。
+- **R2.3 命中测试外移**：已新增 `videoStagePicking.ts` 和 `videoStageCoordinates.ts`，把当前依赖 SVG 节点事件的 hit-test 改为基于几何的 picker，Interaction 层只挂一个主 `pointerdown`。
+- **R2.4 viewport 接口预留**：已在 `VideoStageSurface` 和各 layer 保持统一 coordinate space；Bitmap/Grid/Attachment 层为后续 viewport / cache / hover 扩展预留。
 
 **衡量**：用 Chrome Performance 录 200 tracks 拖拽场景，长任务个数 / 帧时间下降。
 
@@ -143,7 +146,7 @@
 
 ### R3 · 轨迹插值索引化（**必做，小改动**）
 
-- **状态（v0.9.21）**：R3.1 与 R3.3 已完成；R3.2 时间轴分桶和 R3.4 outside 段协议仍未做。
+- **状态（v0.9.22）**：R3.1 / R3.2 / R3.3 已完成；R3.4 outside 段协议仍未做。R3.2 当前提供 `videoFrameBuckets.ts`，从 `video_track.keyframes[]` 生成稳定 marker，供 R4 时间轴可视化复用。
 - **R3.1 keyframe 索引**：`video_track` 加载时构建 `sortedFrames: number[]` 缓存（已 sort 过的 `frame_index` 数组），`resolveTrackAtFrame` 改为二分查找前后 keyframe（O(log n) 替代 O(n)）。
 - **R3.2 当前帧分桶**：对所有 track 维护 `frameBuckets: Map<frame, trackId[]>`（仅在 keyframe 上有桶），用于快速回答"帧 F 处需要插值的 track 集合"。注意：插值期间任意帧都可能出现轨迹，所以分桶只用于 keyframe 命中提示与时间轴标记。
 - **R3.3 插值结果 LRU**：`LRU<trackId+frame, bbox>`，上限 1000 条，防止暂停状态下来回 scrub 重复算。
@@ -485,9 +488,9 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 
 | 模块 | 当前文件 | 改造方向 |
 | --- | --- | --- |
-| FrameClock | `stage/VideoStage.tsx` L247-385 | 抽出 `useFrameClock.ts`（R1） |
-| 渲染分层 | `stage/VideoFrameOverlay.tsx` L171-375 | 拆 ShapesLayer / InteractionLayer（R2） |
-| 插值 | `stage/videoStageGeometry.ts` L41-94 | 二分 + LRU + outside 段（R3） |
+| FrameClock | `stage/useFrameClock.ts` / `stage/frameTimebase.ts` | 已完成 R1 第一版；后续接 R18 多速率播放 |
+| 渲染分层 | `stage/VideoStageSurface.tsx` + `Video*Layer.tsx` | 已完成 CVAT-aligned surface；后续接 R5/R8/R17 |
+| 插值 | `stage/videoStageGeometry.ts` / `stage/videoFrameBuckets.ts` | R3.1/R3.2/R3.3 已完成；R3.4 outside 段待做 |
 | 类型 | `stage/videoStageTypes.ts` | 增加 `outside: Range[]` / `geometry.kind`（R3.4 / R9） |
 | 时间轴 | `stage/VideoPlaybackOverlay.tsx` | 新增 TrackTimeline + 章节 + hover 缩略图（R4 / R17 / R18 / R19） |
 | 状态 | `state/useWorkbenchState.ts` L62-180 | stage 隔离 + `seekFrameAsync` + bookmark 栈（R6 / R19） |

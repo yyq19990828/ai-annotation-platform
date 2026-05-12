@@ -243,12 +243,38 @@ describe("VideoStage", () => {
 
     expect(playbackOverlay).toHaveStyle({ opacity: "1" });
     expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "auto" });
-    expect(overlay).toHaveStyle({ zIndex: "2", pointerEvents: "auto" });
+    expect(overlay).toHaveStyle({ zIndex: "6", pointerEvents: "auto" });
 
     fireEvent.mouseMove(stage);
 
     expect(playbackOverlay).toHaveStyle({ opacity: "1" });
     expect(overlay).toHaveStyle({ cursor: "crosshair" });
+  });
+
+  it("mounts CVAT-aligned rendering layers in deterministic order", () => {
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    const surface = getByTestId("video-stage-surface");
+    expect([...surface.children].map((node) => (node as HTMLElement).dataset.testid)).toEqual([
+      "video-media-layer",
+      "video-bitmap-layer",
+      "video-grid-layer",
+      "video-objects-layer",
+      "video-label-overlay",
+      "video-overlay",
+      "video-attachment-layer",
+    ]);
   });
 
   it("keeps the pending video box visible while class selection is open", () => {
@@ -298,7 +324,7 @@ describe("VideoStage", () => {
     );
 
     expect(getByTestId("video-playback-overlay")).toHaveStyle({ opacity: "1" });
-    expect(getByTestId("video-overlay")).toHaveStyle({ zIndex: "2", pointerEvents: "auto" });
+    expect(getByTestId("video-overlay")).toHaveStyle({ zIndex: "6", pointerEvents: "auto" });
     expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "auto" });
   });
 
@@ -390,8 +416,8 @@ describe("VideoStage", () => {
       />,
     );
 
-    const svg = container.querySelector("svg");
-    const rect = container.querySelector("svg rect");
+    const svg = container.querySelector('[data-testid="video-objects-layer"]');
+    const rect = container.querySelector('[data-testid="video-objects-layer"] rect');
     expect(svg?.getAttribute("viewBox")).toBe("0 0 1 0.5");
     expect(svg?.getAttribute("preserveAspectRatio")).toBe("xMidYMid meet");
     expect(rect?.getAttribute("stroke-width")).toBe("2");
@@ -460,16 +486,16 @@ describe("VideoStage", () => {
     setRect(overlay);
 
     fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "3" } });
-    fireEvent(overlay, pointer("pointerdown", 200, 100));
-    fireEvent(overlay, pointer("pointermove", 500, 250));
-    fireEvent(overlay, pointer("pointerup", 500, 250));
+    fireEvent(overlay, pointer("pointerdown", 400, 100));
+    fireEvent(overlay, pointer("pointermove", 600, 250));
+    fireEvent(overlay, pointer("pointerup", 600, 250));
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     const [, geometry] = onUpdate.mock.calls[0];
     expect(geometry.type).toBe("video_track");
     expect(geometry.keyframes).toHaveLength(2);
     expect(geometry.keyframes[1].frame_index).toBe(3);
-    expect(geometry.keyframes[1].bbox.x).toBeCloseTo(0.2);
+    expect(geometry.keyframes[1].bbox.x).toBeCloseTo(0.4);
   });
 
   it("shows a nearest-keyframe ghost for selected tracks on empty frames", () => {
@@ -567,10 +593,9 @@ describe("VideoStage", () => {
     setRect(overlay);
 
     fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "3" } });
-    const ghostRect = getByTestId("video-track-ghost").querySelector("rect");
-    expect(ghostRect).not.toBeNull();
+    expect(getByTestId("video-track-ghost")).toBeInTheDocument();
 
-    fireEvent(ghostRect!, pointer("pointerdown", 100, 50));
+    fireEvent(overlay, pointer("pointerdown", 100, 50));
     fireEvent(overlay, pointer("pointermove", 200, 150));
     fireEvent(overlay, pointer("pointerup", 200, 150));
 
@@ -859,7 +884,7 @@ describe("VideoStage", () => {
       },
     ] as AnnotationResponse[];
 
-    const { container } = render(
+    const { getByTestId } = render(
       <VideoStage
         manifest={manifest}
         annotations={annotations}
@@ -874,9 +899,9 @@ describe("VideoStage", () => {
     );
     onSelect.mockClear();
 
-    const rect = container.querySelector("rect");
-    expect(rect).not.toBeNull();
-    fireEvent(rect!, pointer("pointerdown", 100, 100));
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+    fireEvent(overlay, pointer("pointerdown", 100, 100));
 
     expect(onSelect).toHaveBeenCalledWith("t1");
   });
