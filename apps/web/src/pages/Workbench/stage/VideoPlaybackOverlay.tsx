@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { frameToTime, type FrameTimebase } from "./frameTimebase";
+import type { VideoTimelineMarker } from "./videoFrameBuckets";
 
 type HighlightAction = "prev" | "next" | "play" | null;
 
@@ -12,6 +13,7 @@ interface VideoPlaybackOverlayProps {
   timebase: FrameTimebase;
   isPlaying: boolean;
   annotatedFrames: number[];
+  timelineMarkers?: VideoTimelineMarker[];
   currentFrameEntryCount: number;
   visible: boolean;
   interactive?: boolean;
@@ -34,6 +36,7 @@ export function VideoPlaybackOverlay({
   timebase,
   isPlaying,
   annotatedFrames,
+  timelineMarkers = [],
   currentFrameEntryCount,
   visible,
   interactive = true,
@@ -118,11 +121,48 @@ export function VideoPlaybackOverlay({
                 top: 3,
                 width: 2,
                 height: 8,
-                background: "var(--color-accent)",
+                background: "rgba(255,255,255,0.45)",
                 borderRadius: 1,
               }}
             />
           ))}
+          {timelineMarkers.map((marker) => {
+            if (marker.type === "outside") {
+              const left = maxFrame > 0 ? (marker.from / maxFrame) * 100 : 0;
+              const right = maxFrame > 0 ? (marker.to / maxFrame) * 100 : 0;
+              return (
+                <span
+                  key={`outside-${marker.from}-${marker.to}-${marker.trackIds.join("-")}`}
+                  data-testid="video-timeline-outside"
+                  style={{
+                    position: "absolute",
+                    left: `${left}%`,
+                    top: 12,
+                    width: `${Math.max(0.5, right - left)}%`,
+                    height: 7,
+                    background: marker.hasPrediction ? "rgba(148,163,184,0.48)" : "rgba(148,163,184,0.36)",
+                    borderRadius: 999,
+                  }}
+                />
+              );
+            }
+            return (
+              <span
+                key={`keyframe-${marker.frame}-${marker.trackIds.join("-")}`}
+                data-testid="video-timeline-keyframe"
+                style={{
+                  position: "absolute",
+                  left: `${maxFrame > 0 ? (marker.frame / maxFrame) * 100 : 0}%`,
+                  top: 2,
+                  width: marker.density > 1 ? 3 : 2,
+                  height: marker.hasAbsent ? 12 : 9,
+                  background: marker.hasPrediction ? "oklch(0.78 0.14 78)" : "var(--color-accent)",
+                  opacity: marker.hasAbsent ? 0.75 : 1,
+                  borderRadius: 1,
+                }}
+              />
+            );
+          })}
         </div>
         {frameTooltip && (
           <div

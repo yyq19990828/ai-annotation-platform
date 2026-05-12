@@ -10,6 +10,7 @@ import {
   sortedKeyframes,
   upsertKeyframe,
 } from "./videoStageGeometry";
+import { addOutsideRange, isFrameOutside, removeOutsideFrame } from "./videoTrackOutside";
 import { VideoTrackPanel } from "./VideoTrackPanel";
 import type {
   VideoFrameEntry,
@@ -137,8 +138,6 @@ export function VideoTrackSidebar({
   const selectedTrackGhost = useMemo<VideoTrackGhost | null>(() => {
     if (!selectedTrack || hiddenTrackIds.has(selectedTrack.geometry.track_id)) return null;
     if (currentFrameEntries.some((entry) => entry.ann.id === selectedTrack.id)) return null;
-    const exact = selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex);
-    if (exact?.absent) return null;
     const nearest = nearestTrackKeyframe(selectedTrack.geometry, frameIndex);
     if (!nearest) return null;
     return {
@@ -205,8 +204,16 @@ export function VideoTrackSidebar({
 
   const markSelectedTrack = useCallback((patch: Partial<VideoTrackKeyframe>) => {
     if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
+    if (patch.absent) {
+      onUpdate(selectedTrack, addOutsideRange(selectedTrack.geometry, {
+        from: frameIndex,
+        to: frameIndex,
+        source: patch.source === "prediction" ? "prediction" : "manual",
+      }));
+      return;
+    }
     const bbox = nearestTrackBbox(selectedTrack.geometry, frameIndex);
-    onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, bbox, patch));
+    onUpdate(selectedTrack, upsertKeyframe(removeOutsideFrame(selectedTrack.geometry, frameIndex), frameIndex, bbox, patch));
   }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack]);
 
   const copySelectedTrackToCurrentFrame = useCallback(() => {
@@ -261,6 +268,7 @@ export function VideoTrackSidebar({
       selectedTrack={selectedTrack}
       selectedTrackGhost={selectedTrackGhost}
       selectedTrackLocked={selectedTrackLocked}
+      currentFrameOutside={selectedTrack ? isFrameOutside(selectedTrack.geometry, frameIndex) : false}
       frameIndex={frameIndex}
       readOnly={readOnly}
       classes={classes}

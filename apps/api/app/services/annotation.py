@@ -10,6 +10,7 @@ from app.db.models.prediction import Prediction
 from app.db.models.task import Task
 from app.db.models.task_lock import AnnotationDraft
 from app.services.video_tracks import (
+    frame_is_outside,
     resolved_track_frames,
     resolve_track_at_frame,
     sorted_keyframes,
@@ -232,7 +233,7 @@ class AnnotationService:
                     ),
                     None,
                 )
-                if not exact or exact.get("absent"):
+                if not exact or exact.get("absent") or frame_is_outside(geometry, frame_index):
                     raise ValueError(
                         "frame split requires an exact non-absent keyframe"
                     )
@@ -245,7 +246,7 @@ class AnnotationService:
                 ]
                 removed_frame_indexes = [frame_index]
             else:
-                resolved = resolve_track_at_frame(keyframes, frame_index)
+                resolved = resolve_track_at_frame(geometry, frame_index)
                 if not resolved:
                     raise ValueError("track has no bbox at the requested frame")
                 frames = [resolved]

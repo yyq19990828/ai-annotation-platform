@@ -907,6 +907,37 @@ async def test_video_export_all_frames_interpolates_and_absent_blocks(
     assert car["frames"][1]["bbox"] == {"x": 0.2, "y": 0.3, "w": 0.2, "h": 0.2}
 
 
+async def test_video_export_preserves_and_applies_outside_ranges(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    _, track = await _video_fixture_task_and_track(db_session, project)
+    track.geometry = {
+        **track.geometry,
+        "outside": [
+            {"from": 1, "to": 1},
+            {"from": 5, "to": 6, "source": "prediction"},
+        ],
+    }
+    await db_session.flush()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{project.id}/export?format=coco&video_frame_mode=all_frames",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    car = next(track for track in resp.json()["tracks"] if track["track_id"] == "trk_car")
+    assert car["outside"] == [
+        {"from": 1, "to": 1, "source": "manual"},
+        {"from": 5, "to": 6, "source": "prediction"},
+    ]
+    assert [frame["frame_index"] for frame in car["frames"]] == [0, 2]
+
+
 async def test_video_track_convert_frame_copy_preserves_source(
     db_session,
     httpx_client_bound,
@@ -937,6 +968,27 @@ async def test_video_track_convert_frame_copy_preserves_source(
         "w": 0.2,
         "h": 0.2,
     }
+
+
+async def test_video_track_convert_frame_copy_rejects_outside_frame(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+    track.geometry = {**track.geometry, "outside": [{"from": 1, "to": 1}]}
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/{track.id}/video/convert-to-bboxes",
+        json={"operation": "copy", "scope": "frame", "frame_index": 1},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "track has no bbox at the requested frame"
 
 
 async def test_video_track_convert_frame_split_removes_exact_keyframe(

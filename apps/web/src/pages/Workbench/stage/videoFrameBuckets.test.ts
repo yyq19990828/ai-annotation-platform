@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildVideoFrameBuckets, videoFrameBucketMarkers } from "./videoFrameBuckets";
+import { buildVideoFrameBuckets, videoFrameBucketMarkers, videoTimelineMarkers } from "./videoFrameBuckets";
 import type { VideoTrackGeometry } from "@/types";
 
 describe("videoFrameBuckets", () => {
@@ -60,5 +60,45 @@ describe("videoFrameBuckets", () => {
       hasPrediction: false,
       hasAbsent: true,
     });
+  });
+
+  it("emits outside timeline segments separately from keyframe density", () => {
+    const tracks: VideoTrackGeometry[] = [{
+      type: "video_track",
+      track_id: "trk",
+      outside: [{ from: 3, to: 5 }],
+      keyframes: [
+        { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
+        { frame_index: 7, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "prediction" },
+      ],
+    }];
+
+    expect(videoTimelineMarkers(tracks)).toEqual([
+      {
+        type: "keyframe",
+        frame: 1,
+        trackIds: ["trk"],
+        hasManual: true,
+        hasPrediction: false,
+        hasAbsent: false,
+        density: 1,
+      },
+      {
+        type: "outside",
+        from: 3,
+        to: 5,
+        trackIds: ["trk"],
+        hasPrediction: false,
+      },
+      {
+        type: "keyframe",
+        frame: 7,
+        trackIds: ["trk"],
+        hasManual: false,
+        hasPrediction: true,
+        hasAbsent: false,
+        density: 1,
+      },
+    ]);
   });
 });

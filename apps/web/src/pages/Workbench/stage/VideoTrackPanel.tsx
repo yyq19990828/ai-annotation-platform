@@ -5,6 +5,7 @@ import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
 import { classColor } from "./colors";
 import { resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
+import { isFrameOutside } from "./videoTrackOutside";
 import type {
   VideoTrackAnnotation,
   VideoTrackConversionOptions,
@@ -18,6 +19,7 @@ interface VideoTrackPanelProps {
   selectedTrack: VideoTrackAnnotation | null;
   selectedTrackGhost: VideoTrackGhost | null;
   selectedTrackLocked: boolean;
+  currentFrameOutside: boolean;
   frameIndex: number;
   readOnly: boolean;
   classes?: string[];
@@ -66,8 +68,9 @@ function firstVisibleTrackFrame(track: VideoTrackAnnotation["geometry"]): number
   return Math.min(...frames);
 }
 
-function exactFrameLabel(selectedTrack: VideoTrackAnnotation | null, frameIndex: number): string {
+function exactFrameLabel(selectedTrack: VideoTrackAnnotation | null, frameIndex: number, outside: boolean): string {
   if (!selectedTrack) return `F${frameIndex}`;
+  if (outside) return `F${frameIndex} · 消失`;
   const exact = selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex);
   if (exact?.absent) return `F${frameIndex} · 消失`;
   if (exact?.occluded) return `F${frameIndex} · 遮挡`;
@@ -104,7 +107,8 @@ function copyText(text: string): void {
   void navigator.clipboard?.writeText(text);
 }
 
-function statusChipText(kf: VideoTrackKeyframe | undefined): string {
+function statusChipText(kf: VideoTrackKeyframe | undefined, outside = false): string {
+  if (outside) return "当前消失";
   if (kf?.absent) return "当前消失";
   if (kf?.occluded) return "当前遮挡";
   return kf ? "关键帧" : "非关键帧";
@@ -166,6 +170,7 @@ export function VideoTrackPanel({
   selectedTrack,
   selectedTrackGhost,
   selectedTrackLocked,
+  currentFrameOutside,
   frameIndex,
   readOnly,
   classes,
@@ -196,7 +201,7 @@ export function VideoTrackPanel({
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
   const batchMutationDisabled = readOnly || batchSelectionDisabled;
-  const currentFrameLabel = exactFrameLabel(selectedTrack, frameIndex);
+  const currentFrameLabel = exactFrameLabel(selectedTrack, frameIndex, currentFrameOutside);
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
   const filteredVideoTracks = useMemo(
     () => trackFilter === "current"
@@ -284,6 +289,7 @@ export function VideoTrackPanel({
           const hidden = hiddenTrackIds.has(track.track_id);
           const locked = lockedTrackIds.has(track.track_id);
           const exact = track.keyframes.find((kf) => kf.frame_index === frameIndex);
+          const outside = isFrameOutside(track, frameIndex);
           const sourceLabel = ann.source === "prediction_based" ? "AI 采纳" : "手动";
           const frames = track.keyframes.map((kf) => kf.frame_index);
           return (
@@ -334,11 +340,11 @@ export function VideoTrackPanel({
                     borderRadius: 8,
                     padding: "5px 8px",
                     fontSize: 11,
-                    color: exact?.absent ? "var(--color-danger)" : "var(--color-fg-muted)",
+                    color: outside || exact?.absent ? "var(--color-danger)" : "var(--color-fg-muted)",
                     background: "var(--color-bg-elev)",
                   }}
                 >
-                  {statusChipText(exact)}
+                  {statusChipText(exact, outside)}
                 </span>
                 <Button
                   size="sm"

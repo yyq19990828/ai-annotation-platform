@@ -5,6 +5,12 @@ import type {
   VideoTrackKeyframe,
 } from "@/types";
 import type { VideoFrameEntry, VideoStageGeom } from "./videoStageTypes";
+import {
+  effectiveOutsideRanges,
+  isFrameInOutsideRanges,
+  outsideRangesIntersect,
+  removeOutsideFrame,
+} from "./videoTrackOutside";
 
 export function clamp01(v: number) {
   if (!Number.isFinite(v)) return 0;
@@ -42,7 +48,7 @@ type ResolvedTrackFrame = { geom: VideoStageGeom; source: VideoFrameEntry["sourc
 type TrackIndex = {
   keyframes: VideoTrackKeyframe[];
   visibleKeyframes: VideoTrackKeyframe[];
-  absentFrames: number[];
+  outsideRanges: ReturnType<typeof effectiveOutsideRanges>;
 };
 
 const trackIndexCache = new WeakMap<VideoTrackGeometry, TrackIndex>();
@@ -65,9 +71,9 @@ function getTrackIndex(track: VideoTrackGeometry): TrackIndex {
   const cached = trackIndexCache.get(track);
   if (cached) return cached;
   const keyframes = [...track.keyframes].sort((a, b) => a.frame_index - b.frame_index);
-  const visibleKeyframes = keyframes.filter((kf) => !kf.absent);
-  const absentFrames = keyframes.filter((kf) => kf.absent).map((kf) => kf.frame_index);
-  const index = { keyframes, visibleKeyframes, absentFrames };
+  const outsideRanges = effectiveOutsideRanges(track);
+  const visibleKeyframes = keyframes.filter((kf) => !kf.absent && !isFrameInOutsideRanges(outsideRanges, kf.frame_index));
+  const index = { keyframes, visibleKeyframes, outsideRanges };
   trackIndexCache.set(track, index);
   return index;
 }
@@ -107,20 +113,19 @@ export function upsertKeyframe(
   patch?: Partial<VideoTrackKeyframe>,
 ): VideoTrackGeometry {
   const next = sortedKeyframes(track).filter((kf) => kf.frame_index !== frameIndex);
-  next.push({
+  const keyframe = {
     frame_index: frameIndex,
     bbox: clampGeom(bbox),
     source: "manual",
     absent: false,
     occluded: false,
     ...patch,
+  } satisfies VideoTrackKeyframe;
+  next.push({
+    ...keyframe,
   });
-  return { ...track, keyframes: next.sort((a, b) => a.frame_index - b.frame_index) };
-}
-
-function indexedFrameHasAbsentBetween(absentFrames: number[], from: number, to: number) {
-  const idx = lowerBound(absentFrames, from + 1, (frame) => frame);
-  return idx < absentFrames.length && absentFrames[idx] < to;
+  const withKeyframes = { ...track, keyframes: next.sort((a, b) => a.frame_index - b.frame_index) };
+  return keyframe.absent ? withKeyframes : removeOutsideFrame(withKeyframes, frameIndex);
 }
 
 function interpolate(a: VideoTrackKeyframe, b: VideoTrackKeyframe, frameIndex: number): VideoStageGeom {
@@ -141,7 +146,12 @@ export function resolveTrackAtFrame(
   const cache = getResolvedCache(track);
   if (cache.has(frameIndex)) return cache.get(frameIndex) ?? null;
 
-  const { keyframes, visibleKeyframes, absentFrames } = getTrackIndex(track);
+  const { keyframes, visibleKeyframes, outsideRanges } = getTrackIndex(track);
+  if (isFrameInOutsideRanges(outsideRanges, frameIndex)) {
+    setResolvedCache(track, frameIndex, null);
+    return null;
+  }
+
   const exactIndex = lowerBound(keyframes, frameIndex, (kf) => kf.frame_index);
   const exact = keyframes[exactIndex]?.frame_index === frameIndex ? keyframes[exactIndex] : null;
   if (exact) {
@@ -161,7 +171,7 @@ export function resolveTrackAtFrame(
     setResolvedCache(track, frameIndex, null);
     return null;
   }
-  if (indexedFrameHasAbsentBetween(absentFrames, before.frame_index, after.frame_index)) {
+  if (outsideRangesIntersect(outsideRanges, before.frame_index + 1, after.frame_index - 1)) {
     setResolvedCache(track, frameIndex, null);
     return null;
   }

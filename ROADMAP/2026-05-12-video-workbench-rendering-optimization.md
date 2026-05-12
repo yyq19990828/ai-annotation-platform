@@ -146,11 +146,11 @@
 
 ### R3 · 轨迹插值索引化（**必做，小改动**）
 
-- **状态（v0.9.22）**：R3.1 / R3.2 / R3.3 已完成；R3.4 outside 段协议仍未做。R3.2 当前提供 `videoFrameBuckets.ts`，从 `video_track.keyframes[]` 生成稳定 marker，供 R4 时间轴可视化复用。
+- **状态（v0.9.23）**：R3.1 / R3.2 / R3.3 / R3.4 已完成第一版。`video_track` 支持可选 `outside: [{ from, to, source }]` 闭区间，并向后兼容旧 `keyframes[].absent`；前端渲染、时间轴 marker、后端导出和 track → `video_bbox` 转换都走 effective outside 判断。
 - **R3.1 keyframe 索引**：`video_track` 加载时构建 `sortedFrames: number[]` 缓存（已 sort 过的 `frame_index` 数组），`resolveTrackAtFrame` 改为二分查找前后 keyframe（O(log n) 替代 O(n)）。
 - **R3.2 当前帧分桶**：对所有 track 维护 `frameBuckets: Map<frame, trackId[]>`（仅在 keyframe 上有桶），用于快速回答"帧 F 处需要插值的 track 集合"。注意：插值期间任意帧都可能出现轨迹，所以分桶只用于 keyframe 命中提示与时间轴标记。
 - **R3.3 插值结果 LRU**：`LRU<trackId+frame, bbox>`，上限 1000 条，防止暂停状态下来回 scrub 重复算。
-- **R3.4 outside 段一等公民**：现在用 `absent` 单帧标记表达"消失"，改为 `outside: [{from, to}]` 段表达（向后兼容旧 keyframe），渲染、时间轴、导出三处统一逻辑。
+- **R3.4 outside 段一等公民**：已新增 `outside: [{from, to, source}]` 段表达（向后兼容旧 keyframe），渲染、时间轴、导出和 track 转独立框四处统一逻辑；新的「标记消失」写 outside 单帧区间，写入可见关键帧时清理该帧 outside 覆盖。
 
 **衡量**：500 tracks × 平均 8 keyframes 场景下，单帧 resolve 时间从 ~ms 级降到亚 ms。
 
@@ -159,6 +159,8 @@
 ### R4 · 时间轴可视化升级（**必做，UI 改动**）
 
 替换现有 `VideoPlaybackOverlay` 的 seekbar：
+
+- **状态（v0.9.23）**：R4 的完整多轨时间轴仍未做；本版只完成数据前置与轻量展示。`videoFrameBuckets.ts` 可输出 keyframe / prediction / outside segment markers，现有 `VideoPlaybackOverlay` 可显示 outside 灰段。
 
 - **R4.1 多轨时间轴**：显示当前选中 track 一条轨道，叠加（a）keyframe 圆点、（b）outside 段灰色区间、（c）interpolated 段虚线、（d）prediction 段不同色 hatch。
 - **R4.2 全局密度条**：未选中时显示全部 track 的密度热度图（每 N 帧分桶计数），帮助跳到"有标注的区段"。
@@ -490,9 +492,9 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 | --- | --- | --- |
 | FrameClock | `stage/useFrameClock.ts` / `stage/frameTimebase.ts` | 已完成 R1 第一版；后续接 R18 多速率播放 |
 | 渲染分层 | `stage/VideoStageSurface.tsx` + `Video*Layer.tsx` | 已完成 CVAT-aligned surface；后续接 R5/R8/R17 |
-| 插值 | `stage/videoStageGeometry.ts` / `stage/videoFrameBuckets.ts` | R3.1/R3.2/R3.3 已完成；R3.4 outside 段待做 |
-| 类型 | `stage/videoStageTypes.ts` | 增加 `outside: Range[]` / `geometry.kind`（R3.4 / R9） |
-| 时间轴 | `stage/VideoPlaybackOverlay.tsx` | 新增 TrackTimeline + 章节 + hover 缩略图（R4 / R17 / R18 / R19） |
+| 插值 | `stage/videoStageGeometry.ts` / `stage/videoTrackOutside.ts` / `stage/videoFrameBuckets.ts` | R3.1-R3.4 已完成第一版；后续接 R4/R9 |
+| 类型 | `types/index.ts` / `stage/videoStageTypes.ts` | `outside: Range[]` 已完成；`geometry.kind` 留给 R9 |
+| 时间轴 | `stage/VideoPlaybackOverlay.tsx` | v0.9.23 已有 marker/outside 灰段；完整 TrackTimeline + 章节 + hover 缩略图留给 R4/R17/R18/R19 |
 | 状态 | `state/useWorkbenchState.ts` L62-180 | stage 隔离 + `seekFrameAsync` + bookmark 栈（R6 / R19） |
 | 撤销重做 | `state/useAnnotationHistory.ts` | `videoOutsideSegment` / `trackSplit` / `trackMerge` kind（R3.4 / R14 / R15） |
 | Track 编辑入口 | `stage/VideoTrackPanel.tsx` | 加 split / merge / join 操作（R14 / R15 / R16） |

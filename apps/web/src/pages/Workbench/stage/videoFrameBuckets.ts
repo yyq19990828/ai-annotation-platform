@@ -1,4 +1,5 @@
 import type { VideoTrackGeometry } from "@/types";
+import { effectiveOutsideRanges } from "./videoTrackOutside";
 
 export interface VideoFrameBucket {
   frame: number;
@@ -11,6 +12,24 @@ export interface VideoFrameBucket {
 export type VideoFrameBucketMarker = VideoFrameBucket & {
   density: number;
 };
+
+export type VideoTimelineMarker =
+  | {
+    type: "keyframe";
+    frame: number;
+    trackIds: string[];
+    hasManual: boolean;
+    hasPrediction: boolean;
+    hasAbsent: boolean;
+    density: number;
+  }
+  | {
+    type: "outside";
+    from: number;
+    to: number;
+    trackIds: string[];
+    hasPrediction: boolean;
+  };
 
 function ensureBucket(buckets: Map<number, VideoFrameBucket>, frame: number) {
   let bucket = buckets.get(frame);
@@ -60,4 +79,52 @@ export function videoFrameBucketMarkers(buckets: Map<number, VideoFrameBucket>):
       density: bucket.trackIds.length,
     }))
     .sort((a, b) => a.frame - b.frame);
+}
+
+function ensureOutsideMarker(
+  markers: Map<string, Extract<VideoTimelineMarker, { type: "outside" }>>,
+  from: number,
+  to: number,
+) {
+  const key = `${from}:${to}`;
+  let marker = markers.get(key);
+  if (!marker) {
+    marker = { type: "outside", from, to, trackIds: [], hasPrediction: false };
+    markers.set(key, marker);
+  }
+  return marker;
+}
+
+export function videoTimelineMarkers(tracks: readonly VideoTrackGeometry[]): VideoTimelineMarker[] {
+  const keyframeMarkers = videoFrameBucketMarkers(buildVideoFrameBuckets(tracks)).map((bucket) => ({
+    type: "keyframe" as const,
+    frame: bucket.frame,
+    trackIds: bucket.trackIds,
+    hasManual: bucket.hasManual,
+    hasPrediction: bucket.hasPrediction,
+    hasAbsent: bucket.hasAbsent,
+    density: bucket.density,
+  }));
+  const outsideMarkers = new Map<string, Extract<VideoTimelineMarker, { type: "outside" }>>();
+
+  for (const track of tracks) {
+    for (const range of effectiveOutsideRanges(track)) {
+      const marker = ensureOutsideMarker(outsideMarkers, range.from, range.to);
+      if (!marker.trackIds.includes(track.track_id)) marker.trackIds.push(track.track_id);
+      if (range.source === "prediction") marker.hasPrediction = true;
+    }
+  }
+
+  return [
+    ...keyframeMarkers,
+    ...[...outsideMarkers.values()].map((marker) => ({
+      ...marker,
+      trackIds: [...marker.trackIds].sort((a, b) => a.localeCompare(b)),
+    })),
+  ].sort((a, b) => {
+    const aFrame = a.type === "keyframe" ? a.frame : a.from;
+    const bFrame = b.type === "keyframe" ? b.frame : b.from;
+    if (aFrame !== bFrame) return aFrame - bFrame;
+    return a.type.localeCompare(b.type);
+  });
 }

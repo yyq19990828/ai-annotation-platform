@@ -3,6 +3,7 @@ import type {
   VideoBboxGeometry,
   VideoTrackGeometry,
   VideoTrackKeyframe,
+  VideoTrackOutsideRange,
 } from "@/types";
 
 export type VideoStageGeom = { x: number; y: number; w: number; h: number };
@@ -33,6 +34,7 @@ export type VideoTrackPreview = {
   trackId: string;
   className: string;
   keyframes: VideoTrackKeyframe[];
+  outside?: VideoTrackOutsideRange[];
   selected: boolean;
 };
 

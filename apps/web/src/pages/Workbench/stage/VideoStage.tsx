@@ -12,6 +12,7 @@ import { VideoStageSurface } from "./VideoStageSurface";
 import { applyResize } from "./ResizeHandles";
 import { buildFrameTimebase } from "./frameTimebase";
 import { useFrameClock } from "./useFrameClock";
+import { videoTimelineMarkers } from "./videoFrameBuckets";
 import { clientPointToVideoPoint } from "./videoStageCoordinates";
 import { modeFromDrag, getVideoStageModeGuard } from "./videoStageMode";
 import {
@@ -172,8 +173,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const selectedTrackGhost = useMemo<VideoTrackGhost | null>(() => {
     if (!selectedTrack || hiddenTrackIds.has(selectedTrack.geometry.track_id)) return null;
     if (currentFrameEntries.some((entry) => entry.ann.id === selectedTrack.id)) return null;
-    const exact = selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex);
-    if (exact?.absent) return null;
     const nearest = nearestTrackKeyframe(selectedTrack.geometry, frameIndex);
     if (!nearest) return null;
     return {
@@ -195,6 +194,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         trackId: ann.geometry.track_id,
         className: ann.class_name,
         keyframes: ann.geometry.keyframes,
+        outside: ann.geometry.outside,
         selected: ann.id === selectedId,
       })),
     [hiddenTrackIds, selectedId, videoTracks],
@@ -210,6 +210,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     }
     return out;
   }, [annotations]);
+  const timelineMarkers = useMemo(() => videoTimelineMarkers(videoTracks.map((ann) => ann.geometry)), [videoTracks]);
 
   const pendingDraft = useMemo(() => {
     if (
@@ -625,6 +626,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             timebase={timebase}
             isPlaying={isPlaying}
             annotatedFrames={[...annotatedFrames].sort((a, b) => a - b)}
+            timelineMarkers={timelineMarkers}
             currentFrameEntryCount={currentFrameEntries.length}
             visible={playbackOverlayVisible && !drag}
             interactive

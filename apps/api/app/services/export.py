@@ -17,6 +17,7 @@ from app.db.models.project import Project
 from app.services.video_tracks import (
     VIDEO_FRAME_MODES,
     clean_keyframe,
+    normalize_outside_ranges,
     resolved_track_frames,
     sorted_keyframes,
 )
@@ -186,6 +187,7 @@ class ExportService:
                     "source": ann.source,
                     "confidence": ann.confidence,
                     "keyframes": keyframes,
+                    "outside": normalize_outside_ranges(geometry.get("outside") or []),
                 }
                 if include_attributes:
                     track["attributes"] = ann.attributes or {}

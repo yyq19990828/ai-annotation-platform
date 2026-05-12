@@ -1,6 +1,7 @@
 import { classColor } from "./colors";
 import { VideoTrackShape } from "./VideoTrackShape";
 import type { VideoFrameEntry, VideoStageGeom, VideoTrackPreview } from "./videoStageTypes";
+import { isFrameOutside } from "./videoTrackOutside";
 
 type VideoObjectEntry = {
   key: string;
@@ -40,8 +41,14 @@ export function VideoObjectsLayer({
     >
       {trackPreviews.map((preview) => {
         const color = classColor(preview.className);
+        const previewTrack = {
+          type: "video_track" as const,
+          track_id: preview.trackId,
+          keyframes: preview.keyframes,
+          outside: preview.outside,
+        };
         const points = [...preview.keyframes]
-          .filter((kf) => !kf.absent)
+          .filter((kf) => !kf.absent && !isFrameOutside(previewTrack, kf.frame_index))
           .sort((a, b) => a.frame_index - b.frame_index)
           .map((kf) => ({
             frame: kf.frame_index,

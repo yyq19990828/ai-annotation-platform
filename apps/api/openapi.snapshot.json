@@ -9692,6 +9692,13 @@
             "title": "Keyframes",
             "type": "array"
           },
+          "outside": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackOutsideRange"
+            },
+            "title": "Outside",
+            "type": "array"
+          },
           "track_id": {
             "minLength": 1,
             "title": "Track Id",
@@ -9748,6 +9755,36 @@
           "bbox"
         ],
         "title": "VideoTrackKeyframe",
+        "type": "object"
+      },
+      "VideoTrackOutsideRange": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "minimum": 0.0,
+            "title": "From",
+            "type": "integer"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "prediction"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "to": {
+            "minimum": 0.0,
+            "title": "To",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "VideoTrackOutsideRange",
         "type": "object"
       },
       "VisibleIfRule": {

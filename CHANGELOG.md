@@ -22,6 +22,27 @@
 
 ## 最新版本
 
+## [0.9.23] - 2026-05-12
+
+> **Video Outside Timeline Foundation — outside 段协议 + 时间轴语义 marker.** 主线: ① `video_track` 支持可选 `outside: [{ from, to, source }]` 闭区间，向后兼容旧 `keyframes[].absent`; ② 前后端渲染、导出和 track → `video_bbox` 转换统一走 effective outside 判断；③ 时间轴 marker 扩展 keyframe / prediction / outside segment 语义，现有悬浮播放条可轻量展示 outside 灰段；④ 用户标记当前帧消失时写 outside 单帧区间，写入可见关键帧时自动清理该帧 outside 覆盖。→ [plan](docs/plans/2026-05-12-v0.9.23-video-outside-timeline-foundation.md).
+
+### Added
+
+- **outside 段协议**：`video_track` geometry 新增可选 `outside` 区间，支持 manual / prediction 来源，并通过前后端 helper 归一化排序、合并和兼容 legacy `absent`。
+- **Timeline markers**：`videoFrameBuckets` 扩展输出 keyframe marker 与 outside segment，供 R4 多轨时间轴继续复用。
+- **后端 outside 导出语义**：Video Tracks JSON 保留显式 `outside` 字段，`video_frame_mode=all_frames` 和 track 转独立框都会跳过 outside 范围。
+
+### Changed
+
+- `resolveTrackAtFrame` 在前端先判断 effective outside，再解析 exact keyframe 或插值；旧 `absent=true` 仍作为单帧 outside 兼容输入。
+- `VideoPlaybackOverlay` 保持原布局，但底层标记支持 prediction keyframe 和 outside 灰段。
+- 轨迹侧栏“标记消失”不再写新的 `absent` keyframe，而是写 outside 单帧区间；复制/写入可见关键帧会移除当前帧 outside 覆盖。
+
+### Fixed
+
+- 导出和 track → `video_bbox` 转换不再把 outside 覆盖的帧当作可见 bbox。
+- 显式 outside 与旧 absent 混用时，前端渲染、时间轴提示和后端展开逻辑保持一致。
+
 ## [0.9.22] - 2026-05-12
 
 > **Video Rendering Surface — CVAT 对齐的渲染分层 + 时间轴分桶基建.** 主线: ① 视频 stage 拆为 Media / Bitmap / Grid / Objects / Text / Interaction / Attachment 七个逻辑层，保留 React + SVG + HTML video 技术栈；② bbox 命中测试从每个 SVG 节点事件迁到 Interaction 层统一 picker；③ 新增统一坐标转换 helper 与 `VideoStageMode` busy guard，拖拽/缩放期间不接受播放 tick 覆盖当前编辑状态；④ 新增 `videoFrameBuckets`，按 track keyframe 输出稳定 marker，为 R4 时间轴可视化铺数据。→ [plan](docs/plans/2026-05-12-v0.9.22-video-render-layering.md).

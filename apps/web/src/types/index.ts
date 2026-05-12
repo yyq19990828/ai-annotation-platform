@@ -162,10 +162,16 @@ export type VideoTrackKeyframe = {
   absent?: boolean;
   occluded?: boolean;
 };
+export type VideoTrackOutsideRange = {
+  from: number;
+  to: number;
+  source?: "manual" | "prediction";
+};
 export type VideoTrackGeometry = {
   type: "video_track";
   track_id: string;
   keyframes: VideoTrackKeyframe[];
+  outside?: VideoTrackOutsideRange[];
 };
 /**
  * v0.9.14 · holes 字段为可选; 老存量 / 老前端写入仍走仅 points 路径, 默认 undefined 即无

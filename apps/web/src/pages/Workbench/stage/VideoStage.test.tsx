@@ -834,6 +834,42 @@ describe("VideoStage", () => {
     expect(getByTestId("video-overlay").textContent).not.toContain("car");
   });
 
+  it("does not render track boxes on outside frames and marks the timeline segment", () => {
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          outside: [{ from: 1, to: 1 }],
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 2, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByLabelText, getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "1" } });
+
+    expect(getByTestId("video-overlay").textContent).not.toContain("car");
+    expect(getByTestId("video-timeline-outside")).toBeInTheDocument();
+  });
+
   it("does not reset frame or selection when callback references change for the same task", () => {
     const firstSelect = vi.fn();
     const secondSelect = vi.fn();
