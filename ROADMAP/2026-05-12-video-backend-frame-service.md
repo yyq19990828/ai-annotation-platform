@@ -1,6 +1,6 @@
 # P1 · 视频后端帧服务 Epic
 
-> 状态：**partial shipped（B1/B2/B3/B4/B6/B7 第一版已落地，B5 job 壳 v0.9.32 已落地，adapter/worker 待开发）**。承载前端 `2026-05-12-video-workbench-rendering-optimization.md` 中 R5.3 / R10 / R11 三块的服务端依赖。
+> 状态：**partial shipped（B1/B2/B3/B4/B6/B7 第一版已落地，B5 job 壳 v0.9.32 已落地，adapter/worker MVP v0.9.34 已落地；SAM/GPU 深化待开发）**。承载前端 `2026-05-12-video-workbench-rendering-optimization.md` 中 R5.3 / R10 / R11 三块的服务端依赖。
 >
 > 当前后端只暴露单一 `manifest.video_url`，让浏览器自己用 `<video>` 解码。这对于短视频 + 单人 + 单段是够用的，但要支持：长视频（>10 分钟）、4K、多人协同、AI tracker 流式补帧、精确帧导航，必须把"帧"作为一等资源在后端暴露和缓存。
 >
@@ -168,7 +168,7 @@
 
 - **已落地**：B1 frame timetable、B2 chunk service、B3 frame cache + retry + poster 复用、B4 segment 协同 MVP、B6 manifest v2 / rebuild timetable / 协议文档、B7 基础指标与 runbook。
 - **仍需补齐**：B1 compact / 稀疏时间表、B2 GOP smart-copy、B7 AI tracker GPU OOM runbook。
-- **下一条主线**：做 B5 AI tracker 编排。原因是 segment 边界、frame cache 和 rebuild 修复入口已具备，tracker 可以在明确 frame range / segment lock 的基础上落 job 状态机。
+- **下一条主线**：做 S6 GPU / 模型深化。原因是 B5 已具备 job 状态机、adapter contract、worker 与 `video_track` 写回闭环，后续可以在明确 frame range / segment lock 的基础上接 SAM 2 / SAM 3 video predictor。
 
 ### 4.2 建议交付切片
 
@@ -178,7 +178,7 @@
 | S2 · Segment 分配与锁 | B4.1 Segment 分配与锁 | segment claim / heartbeat / release API、TTL lock、权限与审计 | **v0.9.28 已完成第一版**；导出按 segment 聚合后续补 |
 | S3 · Timetable / Frame Cache 补齐 | B6.2 + B3 补齐 | `python -m app.cli.video.rebuild_timetable`、poster / thumbnail 重试复用 B3、失败重试入口的后端 API | **v0.9.30 已完成** |
 | S4 · Tracker Job 壳 | B5.0 Tracker job 壳 | `video_tracker_jobs` 或扩展 `prediction_jobs` 的决策落地、创建 / 查询 / 取消 job、Redis pub/sub 或 WS 事件通道 | **v0.9.32 已完成**；adapter/worker 后续补 |
-| S5 · Tracker Adapter MVP | B5.1 Tracker adapter MVP | `tracker_registry`、先接一个最小 adapter（建议从 bbox propagation / KCF mock 起步，再接 SAM video）、逐帧结果写入 `video_track.outside` / prediction keyframes | adapter contract 单测、worker eager 集成测试、前端 R10 对接样例 |
+| S5 · Tracker Adapter MVP | B5.1 Tracker adapter MVP | `tracker_registry`、先接一个最小 adapter（建议从 bbox propagation / KCF mock 起步，再接 SAM video）、逐帧结果写入 `video_track.outside` / prediction keyframes | **v0.9.34 已完成 MVP**；SAM video 接入后续补 |
 | S6 · GPU / 模型深化 | B5.2 GPU / 模型深化 | SAM 2 / SAM 3 video predictor、GPU 队列容量控制、OOM runbook、长视频分段续跑 | GPU profile 手测、runbook 演练、端到端性能基准 |
 
 ### 4.3 B4 最小可用实现细化

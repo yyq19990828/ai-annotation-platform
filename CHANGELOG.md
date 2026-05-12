@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.34] - 2026-05-12
+
+> **Video Tracker Adapter MVP — AI tracker 后端闭环.** 主线: ① 新增 tracker adapter registry 与 `mock_bbox` contract adapter；② 创建 tracker job 后投递 Celery worker；③ worker 跑通 `queued/running/completed/failed/cancelled` 状态机、Redis 事件发布和 `video_track` prediction keyframes 写回；④ 协议文档和 runbook 同步 worker 边界。→ [plan](docs/plans/2026-05-12-v0.9.34-video-tracker-adapter-mvp.md).
+
+### Added
+
+- **Tracker adapter registry**：新增 `TrackerAdapter.propagate(ctx)` 契约和 `mock_bbox` adapter，用于前端 R10 / worker eager 测试先跑通逐帧输出协议。
+- **Tracker worker**：新增 `app.workers.video_tracker.run_video_tracker_job`，通过 `gpu` Celery queue 消费 tracker job，发布 `job_started/frame_result/job_progress/job_completed/job_failed/job_cancelled` 事件。
+- **结果写回**：worker 将 tracker 结果合并到源 annotation 的 `video_track.keyframes`，保留 manual keyframe，不用 prediction 结果覆盖人工关键帧。
+- **事件通道**：新增 `/ws/video-tracker-jobs/{job_id}?token=...`，订阅 job 专属 Redis pub/sub 事件。
+
+### Deferred
+
+- SAM 2 / SAM 3 video predictor、GPU 并发容量控制、OOM 演练和长视频性能基准留到 S6。
+
 ## [0.9.32] - 2026-05-12
 
 > **Video Tracker Job Shell — AI tracker 编排壳.** 主线: ① 新增独立 `video_tracker_jobs` 表，不复用批量预标 `prediction_jobs`；② 支持创建 / 查询 / 取消 tracker job；③ 创建时校验 video task、annotation、frame range 与 segment lock；④ 协议文档和 runbook 补齐 tracker job 当前边界。→ [plan](docs/plans/2026-05-12-v0.9.32-video-tracker-jobs.md).

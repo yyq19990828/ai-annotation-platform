@@ -490,6 +490,15 @@ async def test_video_tracker_job_create_get_cancel(
     )
     db_session.add(annotation)
     await db_session.flush()
+    queued_jobs: list[str] = []
+
+    class FakeAsyncResult:
+        id = "tracker-celery-task"
+
+    monkeypatch.setattr(
+        "app.workers.video_tracker.run_video_tracker_job.delay",
+        lambda job_id: queued_jobs.append(job_id) or FakeAsyncResult(),
+    )
 
     segments_resp = await httpx_client_bound.get(
         f"/api/v1/tasks/{task.id}/video/segments",
@@ -520,6 +529,8 @@ async def test_video_tracker_job_create_get_cancel(
     assert body["task_id"] == str(task.id)
     assert body["annotation_id"] == str(annotation.id)
     assert body["event_channel"] == f"video-tracker-job:{body['id']}"
+    assert body["celery_task_id"] == "tracker-celery-task"
+    assert queued_jobs == [body["id"]]
 
     get_resp = await httpx_client_bound.get(
         f"/api/v1/video-tracker-jobs/{body['id']}",

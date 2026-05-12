@@ -114,7 +114,7 @@ GET /api/v1/video-tracker-jobs/{job_id}
 DELETE /api/v1/video-tracker-jobs/{job_id}
 ```
 
-v0.9.32 先落 job 编排壳，不执行真实模型推理。创建请求：
+v0.9.34 起，创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`，第一版内置 `mock_bbox` contract adapter，用于跑通状态机、事件流和 `video_track` prediction keyframes 写回。创建请求：
 
 ```json
 {
@@ -134,7 +134,22 @@ v0.9.32 先落 job 编排壳，不执行真实模型推理。创建请求：
 - `from_frame/to_frame` 必须在视频帧范围内，且不能反向。
 - 非管理员用户必须先持有覆盖该 frame range 的有效 segment lock；跨 segment 请求会被拒绝。
 
-响应中的 `event_channel` 形如 `video-tracker-job:{job_id}`，预留给后续 Redis pub/sub + WebSocket 流式输出。当前状态机为 `queued -> running -> completed | failed | cancelled`；`DELETE` 对 queued/running job 标记 `cancel_requested_at` 并进入 `cancelled`，对 terminal job 幂等返回当前状态。
+响应中的 `event_channel` 形如 `video-tracker-job:{job_id}`。前端可订阅：
+
+```http
+WS /api/v1/ws/video-tracker-jobs/{job_id}?token=<access-token>
+```
+
+事件类型：
+
+- `job_started`
+- `frame_result`：`{ frame_index, geometry, confidence, outside, source }`
+- `job_progress`：`{ current, total }`
+- `job_completed`
+- `job_failed`
+- `job_cancelled`
+
+当前状态机为 `queued -> running -> completed | failed | cancelled`；`DELETE` 对 queued/running job 标记 `cancel_requested_at` 并进入 `cancelled`，对 terminal job 幂等返回当前状态。worker 会保留人工 `video_track` keyframe，不用 prediction keyframe 覆盖 manual 结果。
 
 ## 配置与指标
 
@@ -147,6 +162,10 @@ v0.9.32 先落 job 编排壳，不执行真实模型推理。创建请求：
 | `VIDEO_SEGMENT_SIZE_FRAMES` | 18000 | 协作 segment 帧数 |
 | `VIDEO_SEGMENT_LOCK_TTL_SECONDS` | 300 | segment lock 心跳 TTL |
 
+Celery route：
+
+- `app.workers.video_tracker.run_video_tracker_job` -> `gpu` queue
+
 Prometheus 指标：
 
 - `video_chunk_requests_total{status}`
@@ -157,4 +176,4 @@ Prometheus 指标：
 
 ## 运维注意
 
-修改 `apps/api/app/workers/media.py` 后必须重启 Celery worker；修改依赖或 Dockerfile 后需要 rebuild API/Celery 镜像。
+修改 `apps/api/app/workers/media.py` 或 `apps/api/app/workers/video_tracker.py` 后必须重启 Celery worker；修改依赖或 Dockerfile 后需要 rebuild API/Celery 镜像。开发环境 worker 需要订阅 `gpu` 队列。

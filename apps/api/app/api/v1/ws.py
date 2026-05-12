@@ -189,6 +189,60 @@ async def prediction_jobs_socket(
             pass
 
 
+@router.websocket("/ws/video-tracker-jobs/{job_id}")
+async def video_tracker_job_socket(
+    websocket: WebSocket,
+    job_id: uuid.UUID,
+    token: str = Query(...),
+):
+    try:
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            raise ValueError("missing sub")
+        user_uuid = uuid.UUID(user_id)
+        from app.api.v1.tasks import _assert_task_visible
+        from app.db.base import async_session
+        from app.db.models.task import Task
+        from app.db.models.user import User
+        from app.db.models.video_tracker_job import VideoTrackerJob
+
+        async with async_session() as db:
+            user = await db.get(User, user_uuid)
+            job = await db.get(VideoTrackerJob, job_id)
+            task = await db.get(Task, job.task_id) if job is not None else None
+            if user is None or not user.is_active or job is None or task is None:
+                raise ValueError("tracker job not visible")
+            await _assert_task_visible(db, task, user)
+    except Exception:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    await websocket.accept()
+    r = aioredis.Redis(connection_pool=_get_redis_pool())
+    pubsub = r.pubsub()
+    channel = f"video-tracker-job:{job_id}"
+    await pubsub.subscribe(channel)
+
+    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket))
+    try:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                data = message["data"]
+                await websocket.send_text(
+                    data.decode() if isinstance(data, bytes) else data
+                )
+    except WebSocketDisconnect:
+        pass
+    finally:
+        heartbeat_task.cancel()
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
+        except Exception:
+            pass
+
+
 _ML_STATS_CHANNEL = "ml-backend-stats:global"
 _ML_STATS_SUBSCRIBERS_KEY = "ml-backend-stats:subscribers"
 

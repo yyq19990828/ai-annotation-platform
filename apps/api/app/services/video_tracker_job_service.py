@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -21,6 +22,8 @@ from app.services.scheduler import is_privileged_for_project
 from app.services.video_frame_service import VideoContext
 from app.services.video_segment_service import ensure_segments
 
+
+log = logging.getLogger(__name__)
 
 _TERMINAL_STATUSES = {
     VideoTrackerJobStatus.COMPLETED.value,
@@ -165,6 +168,17 @@ async def create_tracker_job(
     row.event_channel = f"video-tracker-job:{row.id}"
     await db.commit()
     await db.refresh(row)
+
+    try:
+        from app.workers.video_tracker import run_video_tracker_job
+
+        result = run_video_tracker_job.delay(str(row.id))
+        row.celery_task_id = result.id
+        await db.commit()
+        await db.refresh(row)
+    except Exception as exc:
+        log.warning("video tracker job enqueue failed job_id=%s err=%s", row.id, exc)
+
     return _job_out(row)
 
 

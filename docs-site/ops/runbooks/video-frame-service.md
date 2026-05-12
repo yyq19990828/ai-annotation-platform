@@ -14,6 +14,7 @@ last_reviewed: 2026-05-12
 - 视频 chunk 或单帧接口持续返回 202。
 - 时间轴 hover / 预取图片一直不可用。
 - segment claim 后很快丢锁，或同一段持续显示被他人占用。
+- tracker job 长时间 queued/running，或前端收不到逐帧事件。
 - MinIO 空间增长明显。
 - Celery media 队列积压。
 
@@ -28,6 +29,8 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT status, count(*) FROM video_frame_cache GROUP BY status;"
 docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT status, count(*) FROM video_segments GROUP BY status;"
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT status, count(*) FROM video_tracker_jobs GROUP BY status;"
 ```
 
 ## Chunk 一直 pending
@@ -157,8 +160,28 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 
 - 返回 409：当前用户没有持有覆盖 frame range 的有效 segment lock。先调用 segment claim，再发起 tracker job。
 - 返回 400：frame range 越界、反向，或跨越多个 segment。第一版要求单 job 在一个 segment 内。
-- job 长时间停留 `queued`：v0.9.32 只落编排壳，真实 adapter/worker 在后续版本接入；前端应展示排队/可取消状态。
-- 取消后仍看到部分结果：后续 worker 接入后会保留已产出的 prediction keyframes，未完成区间不落库。
+- job 长时间停留 `queued`：确认 worker 订阅了 `gpu` 队列。开发 compose 默认命令应包含 `-Q default,ml,media,gpu`。
+- job 进入 `failed`：查看 `error_message`。`Unsupported tracker model` 通常表示前端传了后端 registry 尚未支持的 `model_key`；v0.9.34 仅内置 `mock_bbox`。
+- 取消后仍看到部分结果：worker 会保留已发布或已写回的 prediction keyframes，未完成区间不落库。
+
+## Tracker Job 事件缺失
+
+前端订阅：
+
+```bash
+ws "$API_WS/api/v1/ws/video-tracker-jobs/$JOB_ID?token=$TOKEN"
+```
+
+排查：
+
+1. 确认 Redis 可用，worker 和 API 使用同一个 `REDIS_URL`。
+2. 查看 job 是否有 `event_channel=video-tracker-job:<job_id>`。
+3. worker 日志里查 `video tracker event publish failed`。
+4. 如果刚改过 `apps/api/app/workers/video_tracker.py` 或 adapter 代码，重启 worker：
+
+```bash
+docker compose restart celery-worker
+```
 
 ## 指标
 
