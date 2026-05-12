@@ -135,13 +135,21 @@ GET /api/v1/video-tracker-jobs/{job_id}
 DELETE /api/v1/video-tracker-jobs/{job_id}
 ```
 
-v0.9.34 起，创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`，第一版内置 `mock_bbox` contract adapter，用于跑通状态机、事件流和 `video_track` prediction keyframes 写回。创建请求：
+v0.9.34 起，创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`。v0.9.36 支持三类 `model_key`：
+
+| model_key | 用途 |
+|---|---|
+| `mock_bbox` | 无 GPU contract adapter，复用输入 bbox 逐帧输出，供 CI / 前端对接使用。 |
+| `sam2_video` | 调项目绑定的 connected ML Backend，发送 `context.type="video_tracker"`。 |
+| `sam3_video` | 与 `sam2_video` 相同协议，供 v0.10.x SAM 3 backend 并存接入。 |
+
+创建请求：
 
 ```json
 {
   "from_frame": 0,
   "to_frame": 120,
-  "model_key": "mock_bbox",
+  "model_key": "sam2_video",
   "direction": "forward",
   "segment_id": "optional-segment-uuid",
   "prompt": { "type": "bbox", "geometry": {} }
@@ -172,6 +180,51 @@ WS /api/v1/ws/video-tracker-jobs/{job_id}?token=<access-token>
 
 当前状态机为 `queued -> running -> completed | failed | cancelled`；`DELETE` 对 queued/running job 标记 `cancel_requested_at` 并进入 `cancelled`，对 terminal job 幂等返回当前状态。worker 会保留人工 `video_track` keyframe，不用 prediction keyframe 覆盖 manual 结果。
 
+SAM video adapter 会调用项目绑定的 ML Backend `/predict`：
+
+```json
+{
+  "task": {
+    "id": "<task_id>",
+    "file_path": "<signed-video-url>",
+    "dataset_item_id": "<dataset_item_id>",
+    "file_name": "clip.mp4",
+    "file_type": "video"
+  },
+  "context": {
+    "type": "video_tracker",
+    "model_key": "sam2_video",
+    "job_id": "<job_id>",
+    "task_id": "<task_id>",
+    "project_id": "<project_id>",
+    "dataset_item_id": "<dataset_item_id>",
+    "annotation_id": "<annotation_id>",
+    "from_frame": 0,
+    "to_frame": 299,
+    "direction": "forward",
+    "prompt": { "type": "bbox", "geometry": {} },
+    "source_geometry": {}
+  }
+}
+```
+
+Backend 响应沿用交互式 `/predict` 响应，其中 `result` 是逐帧数组：
+
+```json
+{
+  "result": [
+    {
+      "frame_index": 1,
+      "geometry": { "type": "bbox", "x": 10, "y": 20, "w": 40, "h": 50 },
+      "confidence": 0.91,
+      "outside": false
+    }
+  ]
+}
+```
+
+长区间会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 分窗多次调用 backend；整体 job 仍只发布同一个事件流。`confidence` 低于 `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` 的结果会按 outside prediction range 写回，不生成 prediction keyframe。
+
 ## 配置与指标
 
 | 配置 | 默认值 | 用途 |
@@ -182,6 +235,8 @@ WS /api/v1/ws/video-tracker-jobs/{job_id}?token=<access-token>
 | `VIDEO_FRAME_MEMORY_CACHE_ITEMS` | 64 | 进程内 frame array LRU 上限 |
 | `VIDEO_SEGMENT_SIZE_FRAMES` | 18000 | 协作 segment 帧数 |
 | `VIDEO_SEGMENT_LOCK_TTL_SECONDS` | 300 | segment lock 心跳 TTL |
+| `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` | 300 | tracker 调 ML Backend 的单次 frame window 上限 |
+| `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` | 0.15 | 低置信度 tracker 结果写 outside 的阈值 |
 
 Celery route：
 

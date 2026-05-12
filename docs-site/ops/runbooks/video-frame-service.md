@@ -161,8 +161,47 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 - 返回 409：当前用户没有持有覆盖 frame range 的有效 segment lock。先调用 segment claim，再发起 tracker job。
 - 返回 400：frame range 越界、反向，或跨越多个 segment。第一版要求单 job 在一个 segment 内。
 - job 长时间停留 `queued`：确认 worker 订阅了 `gpu` 队列。开发 compose 默认命令应包含 `-Q default,ml,media,gpu`。
-- job 进入 `failed`：查看 `error_message`。`Unsupported tracker model` 通常表示前端传了后端 registry 尚未支持的 `model_key`；v0.9.34 仅内置 `mock_bbox`。
+- job 进入 `failed`：查看 `error_message`。`Unsupported tracker model` 通常表示前端传了后端 registry 尚未支持的 `model_key`；`sam2_video` / `sam3_video` 需要项目绑定的 ML Backend 处于 `connected`。
 - 取消后仍看到部分结果：worker 会保留已发布或已写回的 prediction keyframes，未完成区间不落库。
+
+## Tracker GPU OOM / 长视频分窗
+
+`sam2_video` / `sam3_video` 不在平台 API 进程内加载模型，而是由 GPU Celery worker 调项目绑定 ML Backend。worker 会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 把长区间拆成多个 `/predict context.type=video_tracker` 请求。
+
+常见现象：
+
+- job 进入 `failed`，`error_message` 含 OOM、CUDA out of memory、HTTP 5xx 或 timeout。
+- GPU 后端容器重启，平台侧 job 停在 `running` 后转 failed。
+- `gpu` queue 堆积，但 `media/default` 正常。
+
+排查步骤：
+
+```bash
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT id, status, model_key, from_frame, to_frame, error_message FROM video_tracker_jobs ORDER BY created_at DESC LIMIT 20;"
+```
+
+```bash
+docker logs ai-annotation-platform-grounded-sam2-backend-1 --tail 200
+docker compose ps celery-worker grounded-sam2-backend
+```
+
+缓解：
+
+1. 降低单次分窗，例如：
+
+```env
+VIDEO_TRACKER_WINDOW_SIZE_FRAMES=120
+```
+
+2. 重启 worker 让配置生效：
+
+```bash
+docker compose restart celery-worker
+```
+
+3. 如果 OOM 发生在 backend 容器，降低 `SAM_VARIANT` 或减少该 backend 的 `extra_params.max_concurrency`，再重启 GPU backend。
+4. 已失败 job 可由前端重新发起；已完成的 prediction keyframes 保留，低置信度结果会写入 outside range。
 
 ## Tracker Job 事件缺失
 

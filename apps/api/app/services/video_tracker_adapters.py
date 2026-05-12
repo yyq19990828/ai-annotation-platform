@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+from app.config import settings
+from app.services.ml_client import MLBackendClient
+
+if TYPE_CHECKING:
+    from app.db.models.ml_backend import MLBackend
 
 
 @dataclass(frozen=True)
@@ -17,6 +23,8 @@ class TrackerFrameResult:
 @dataclass(frozen=True)
 class TrackerContext:
     job_id: uuid.UUID
+    task_id: uuid.UUID
+    project_id: uuid.UUID
     dataset_item_id: uuid.UUID
     annotation_id: uuid.UUID
     from_frame: int
@@ -24,12 +32,14 @@ class TrackerContext:
     direction: str
     prompt: dict
     source_geometry: dict
+    task_data: dict
+    ml_backend: "MLBackend | None" = None
 
 
 class TrackerAdapter(Protocol):
     model_key: str
 
-    def propagate(self, ctx: TrackerContext) -> Iterator[TrackerFrameResult]:
+    def propagate(self, ctx: TrackerContext) -> AsyncIterator[TrackerFrameResult]:
         ...
 
 
@@ -56,7 +66,7 @@ def _bbox_from_geometry(geometry: dict) -> dict:
 class MockBboxTrackerAdapter:
     model_key = "mock_bbox"
 
-    def propagate(self, ctx: TrackerContext) -> Iterator[TrackerFrameResult]:
+    async def propagate(self, ctx: TrackerContext) -> AsyncIterator[TrackerFrameResult]:
         prompt_geometry = ctx.prompt.get("geometry")
         bbox = _bbox_from_geometry(
             prompt_geometry
@@ -76,8 +86,74 @@ class MockBboxTrackerAdapter:
             )
 
 
+class MLBackendVideoTrackerAdapter:
+    def __init__(self, model_key: str) -> None:
+        self.model_key = model_key
+
+    async def propagate(self, ctx: TrackerContext) -> AsyncIterator[TrackerFrameResult]:
+        backend = ctx.ml_backend
+        if backend is None:
+            raise ValueError(
+                f"{self.model_key} requires a connected project ML backend"
+            )
+        if backend.state != "connected":
+            raise ValueError(
+                f"{self.model_key} requires a connected project ML backend"
+            )
+
+        client = MLBackendClient(backend)
+        result = await client.predict_interactive(
+            task_data=ctx.task_data,
+            context={
+                "type": "video_tracker",
+                "model_key": self.model_key,
+                "job_id": str(ctx.job_id),
+                "task_id": str(ctx.task_id),
+                "project_id": str(ctx.project_id),
+                "dataset_item_id": str(ctx.dataset_item_id),
+                "annotation_id": str(ctx.annotation_id),
+                "from_frame": ctx.from_frame,
+                "to_frame": ctx.to_frame,
+                "direction": ctx.direction,
+                "prompt": ctx.prompt,
+                "source_geometry": ctx.source_geometry,
+            },
+        )
+
+        for item in result.result:
+            if isinstance(item, dict):
+                yield _frame_result_from_payload(item)
+
+
+def _frame_result_from_payload(payload: dict) -> TrackerFrameResult:
+    confidence = payload.get("confidence")
+    if confidence is not None:
+        confidence = float(confidence)
+    outside = bool(payload.get("outside", False))
+    if (
+        confidence is not None
+        and confidence < settings.video_tracker_low_confidence_outside_threshold
+    ):
+        outside = True
+
+    geometry = payload.get("geometry")
+    if not isinstance(geometry, dict):
+        geometry = {k: payload[k] for k in ("type", "x", "y", "w", "h") if k in payload}
+    if not geometry:
+        geometry = {"type": "bbox", "x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}
+
+    return TrackerFrameResult(
+        frame_index=int(payload["frame_index"]),
+        geometry=geometry,
+        confidence=confidence,
+        outside=outside,
+    )
+
+
 _REGISTRY: dict[str, TrackerAdapter] = {
     MockBboxTrackerAdapter.model_key: MockBboxTrackerAdapter(),
+    "sam2_video": MLBackendVideoTrackerAdapter("sam2_video"),
+    "sam3_video": MLBackendVideoTrackerAdapter("sam3_video"),
 }
 
 

@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.36] - 2026-05-12
+
+> **Video Tracker GPU / Model Deepening — SAM video 协议桥与长区间分窗.** 主线: ① 新增 `sam2_video` / `sam3_video` tracker adapter，按 ADR-0012 调项目绑定的独立 ML Backend；② worker 按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 拆分长 frame range，降低单次 GPU OOM 风险；③ 低置信度 tracker 结果写入 outside prediction range；④ 同步协议文档、runbook、env-vars 和 S6 roadmap 状态。→ [plan](docs/plans/2026-05-12-v0.9.36-video-tracker-gpu-model-deepening.md).
+
+### Added
+
+- **SAM video tracker adapter**：`model_key="sam2_video"` / `"sam3_video"` 会调用项目绑定的 connected ML Backend `/predict`，发送 `context.type="video_tracker"`、frame range、direction、prompt 和 source geometry。
+- **长区间分窗**：新增 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES`，worker 自动把长视频 tracker job 拆成多个 backend 请求，整体仍保持同一个 job 事件流。
+- **低置信度 outside**：新增 `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD`，低于阈值的结果按 outside prediction range 写回，不生成 prediction keyframe。
+- **GPU OOM runbook**：补充 tracker job 失败排查、`gpu` queue 检查、分窗调小和 GPU backend 重启步骤。
+
+### Deferred
+
+- 真实 SAM 2 / SAM 3 backend 的 video predictor 实现、GPU profile 手测和端到端性能基准继续留给后续 backend 工程。
+
 ## [0.9.34] - 2026-05-12
 
 > **Video Tracker Adapter MVP — AI tracker 后端闭环.** 主线: ① 新增 tracker adapter registry 与 `mock_bbox` contract adapter；② 创建 tracker job 后投递 Celery worker；③ worker 跑通 `queued/running/completed/failed/cancelled` 状态机、Redis 事件发布和 `video_track` prediction keyframes 写回；④ 协议文档和 runbook 同步 worker 边界。→ [plan](docs/plans/2026-05-12-v0.9.34-video-tracker-adapter-mvp.md).
