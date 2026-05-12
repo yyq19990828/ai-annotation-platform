@@ -53,3 +53,4 @@
 - [0015](0015-ml-backend-url-validation.md) — ML Backend URL 验证：拒绝 loopback
 - [0016](0016-docs-ia-redesign.md) — 文档 IA 重构：Diátaxis 框架 + audience 元数据
 - [0017](0017-workbench-shell-mode-and-stage-adapters.md) — 工作台 Shell 采用 Mode Hooks 与 Stage Adapters
+- [0018](0018-video-frame-service-segments-and-tracker-boundary.md) — 视频帧服务 Segment 与 Tracker 边界

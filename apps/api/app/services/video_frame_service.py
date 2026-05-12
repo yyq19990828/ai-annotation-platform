@@ -342,8 +342,93 @@ async def prefetch_frames(
     )
 
 
-def manifest_v2(ctx: VideoContext, base_url: str) -> VideoManifestV2Response:
+async def retry_frames(
+    db: AsyncSession,
+    ctx: VideoContext,
+    frame_indices: list[int],
+    width: int,
+    format_: FrameFormat,
+    *,
+    force: bool = False,
+) -> VideoFramePrefetchResponse:
+    normalized = sorted(set(frame_indices))
+    if normalized:
+        if force:
+            rows = [
+                await _ensure_frame_row(db, ctx, frame_index, width, format_)
+                for frame_index in normalized
+            ]
+        else:
+            rows = (
+                (
+                    await db.execute(
+                        select(VideoFrameCache)
+                        .where(
+                            VideoFrameCache.dataset_item_id == ctx.item.id,
+                            VideoFrameCache.frame_index.in_(normalized),
+                            VideoFrameCache.width == width,
+                            VideoFrameCache.format == format_,
+                            VideoFrameCache.status == "failed",
+                        )
+                        .order_by(VideoFrameCache.frame_index.asc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+    else:
+        rows = (
+            (
+                await db.execute(
+                    select(VideoFrameCache)
+                    .where(
+                        VideoFrameCache.dataset_item_id == ctx.item.id,
+                        VideoFrameCache.width == width,
+                        VideoFrameCache.format == format_,
+                        VideoFrameCache.status == "failed",
+                    )
+                    .order_by(VideoFrameCache.frame_index.asc())
+                    .limit(500)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    now = _now()
+    requests = []
+    for row in rows:
+        row.status = "pending"
+        row.error = None
+        row.last_accessed_at = now
+        if force:
+            row.storage_key = None
+            row.byte_size = None
+        requests.append(
+            {"frame_index": row.frame_index, "width": row.width, "format": row.format}
+        )
+    await db.commit()
+
+    if requests:
+        from app.workers.media import extract_video_frames
+
+        extract_video_frames.delay(str(ctx.item.id), requests)
+
+    return VideoFramePrefetchResponse(
+        dataset_item_id=ctx.item.id,
+        task_id=ctx.task_id,
+        frames=[_frame_out(row) for row in rows],
+    )
+
+
+async def manifest_v2(
+    db: AsyncSession, ctx: VideoContext, base_url: str
+) -> VideoManifestV2Response:
     _metadata_ready(ctx.metadata)
+    from app.services.video_segment_service import ensure_segments, segment_out
+
+    segment_rows = await ensure_segments(db, ctx)
+    await db.commit()
     base = base_url.rstrip("/")
     if ctx.task_id:
         service_base = f"{base}/api/v1/tasks/{ctx.task_id}/video"
@@ -369,6 +454,7 @@ def manifest_v2(ctx: VideoContext, base_url: str) -> VideoManifestV2Response:
         frame_timetable_url=timetable_url,
         frame_service_base=frame_base,
         chunk_size_frames=settings.video_chunk_size_frames,
+        segments=[segment_out(row) for row in segment_rows],
     )
 
 

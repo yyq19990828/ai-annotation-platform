@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.34] - 2026-05-12
+
+> **Video Tracker Adapter MVP — AI tracker 后端闭环.** 主线: ① 新增 tracker adapter registry 与 `mock_bbox` contract adapter；② 创建 tracker job 后投递 Celery worker；③ worker 跑通 `queued/running/completed/failed/cancelled` 状态机、Redis 事件发布和 `video_track` prediction keyframes 写回；④ 协议文档和 runbook 同步 worker 边界。→ [plan](docs/plans/2026-05-12-v0.9.34-video-tracker-adapter-mvp.md).
+
+### Added
+
+- **Tracker adapter registry**：新增 `TrackerAdapter.propagate(ctx)` 契约和 `mock_bbox` adapter，用于前端 R10 / worker eager 测试先跑通逐帧输出协议。
+- **Tracker worker**：新增 `app.workers.video_tracker.run_video_tracker_job`，通过 `gpu` Celery queue 消费 tracker job，发布 `job_started/frame_result/job_progress/job_completed/job_failed/job_cancelled` 事件。
+- **结果写回**：worker 将 tracker 结果合并到源 annotation 的 `video_track.keyframes`，保留 manual keyframe，不用 prediction 结果覆盖人工关键帧。
+- **事件通道**：新增 `/ws/video-tracker-jobs/{job_id}?token=...`，订阅 job 专属 Redis pub/sub 事件。
+
+### Deferred
+
+- SAM 2 / SAM 3 video predictor、GPU 并发容量控制、OOM 演练和长视频性能基准留到 S6。
+
 ## [0.9.33] - 2026-05-12
 
 > **Video Frame Asset Retry — 视频资产失败列表与 media 队列重试.** 主线: ① 存储 API 汇总视频 `probe_error` / `poster_error` / `frame_timetable_error` 以及 chunk / frame cache 失败行；② 新增手动 retry 入口，复用既有 `generate_video_metadata`、`ensure_video_chunks`、`extract_video_frames` Celery media 任务；③ 存储管理页增加「视频资产失败」面板，可查看项目/任务、失败类型、错误摘要并重试。→ [plan](docs/plans/2026-05-12-v0.9.33-video-frame-asset-retry.md).
@@ -36,6 +51,20 @@
 
 - 视频 probe / poster / timetable 失败不再只能靠数据库或日志定位；管理侧有统一可见入口。
 - chunk / frame cache 失败从被动等待下一次访问，扩展为可人工重试的运维动作。
+
+## [0.9.32] - 2026-05-12
+
+> **Video Tracker Job Shell — AI tracker 编排壳.** 主线: ① 新增独立 `video_tracker_jobs` 表，不复用批量预标 `prediction_jobs`；② 支持创建 / 查询 / 取消 tracker job；③ 创建时校验 video task、annotation、frame range 与 segment lock；④ 协议文档和 runbook 补齐 tracker job 当前边界。→ [plan](docs/plans/2026-05-12-v0.9.32-video-tracker-jobs.md).
+
+### Added
+
+- **VideoTrackerJob 模型**：新增 `VideoTrackerJob` 与 `0059_video_tracker_jobs.py` 迁移，状态机覆盖 `queued/running/completed/failed/cancelled`，并保存 `model_key`、`direction`、`prompt`、`event_channel` 和取消请求时间。
+- **Tracker job API**：新增 `POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate`、`GET /api/v1/video-tracker-jobs/{job_id}`、`DELETE /api/v1/video-tracker-jobs/{job_id}`。
+- **Segment lock 校验**：非管理员创建 tracker job 前必须持有覆盖 frame range 的有效 segment lock；跨 segment 或越界请求会被拒绝。
+
+### Deferred
+
+- 真实 tracker adapter、GPU worker、逐帧 prediction keyframe 写回和 WebSocket 流式结果留到后续版本。
 
 ## [0.9.31] - 2026-05-12
 
@@ -53,6 +82,19 @@
 - `useFrameClock` 的 diagnostics 增加最近 seek 样本，便于定位快速 scrub / loop / 反向播放时的帧准备耗时。
 - `useVideoFramePreview` 记录 cache hit/miss、prefetch、unsupported 和最近状态，用于判断 hover preview 是否命中后端单帧缓存。
 
+## [0.9.30] - 2026-05-12
+
+> **Video Timetable / Frame Cache Repair — 旧视频帧表重建与缓存修复闭环.** 主线: ① 新增 `python -m app.cli.video.rebuild_timetable`，支持按视频、数据集或全量重建 `video_frame_indices`；② 新增 task/videos facade 的 `frames:retry` API，失败单帧缓存可重新投递，`force=true` 可刷新指定帧；③ 视频 poster 改为复用 `VideoFrameCache(frame_index=0,width=512,format=webp)` 产物。→ [plan](docs/plans/2026-05-12-v0.9.30-video-timetable-frame-cache-repair.md).
+
+### Added
+
+- **Timetable rebuild CLI**：新增 `app.cli.video.rebuild_timetable`，用于旧视频或异常视频重新生成 B1 帧时间表，并回写 `metadata.video.frame_timetable_frame_count` / `frame_timetable_error`。
+- **Frame cache retry API**：新增 `POST /api/v1/tasks/{task_id}/video/frames:retry` 与 `POST /api/v1/videos/{dataset_item_id}/frames:retry`。
+
+### Changed
+
+- **Poster 复用 B3 缓存**：视频 metadata 任务生成 poster 时写入 `videos/{dataset_item_id}/frames/0_512.webp`，`DatasetItem.thumbnail_path` 与 `poster_frame_path` 共享该缓存 key。
+
 ## [0.9.29] - 2026-05-12
 
 > **Video J/K/L Playback + Atomic Seek — 多速率播放与异步帧跳转.** 主线: ① `useFrameClock` 暴露 `seekToAsync`，连续 seek 时旧回调会被标记为 stale；② `VideoStage` 统一 timeline scrub、逐帧、关键帧跳转、bookmark 和跳转历史到同一 `seekFrameAsync` 原语；③ 视频模式新增 `J / K / L` 播放控制，支持 `0.25x / 0.5x / 1x / 2x / 4x`，反向播放不使用浏览器负 `playbackRate`，而是按帧步进；④ 播放 overlay 显示当前 jog 速度。→ [plan](docs/plans/2026-05-12-v0.9.29-video-jkl-playback-atomic-seek.md).
@@ -67,6 +109,21 @@
 
 - 时间轴拖动、逐帧、关键帧跳转、bookmark marker、跳转历史和 loop region 入口统一走 `VideoStage.seekFrameAsync`。
 - 正向多速率播放复用浏览器 `<video>` 和 `playbackRate`；反向播放按帧调用 `seekFrameAsync`，不依赖不稳定的 `playbackRate = -1`。
+
+## [0.9.28] - 2026-05-12
+
+> **Video Segment Collaboration MVP — 后端 segment 协作基线.** 主线: ① 新增 `video_segments` 表，按 `DatasetItem` 表达视频内 frame range；② manifest v2 和 task/videos facade 返回 segment 列表；③ task 入口支持 claim / heartbeat / release 的短 TTL lock；④ 同步协议文档、runbook、环境变量和 ADR。→ [plan](docs/plans/2026-05-12-v0.9.28-video-segments.md).
+
+### Added
+
+- **VideoSegment 模型**：新增 `VideoSegment(dataset_item_id, segment_index, start_frame, end_frame, assignee_id, status, locked_by, locked_at, lock_expires_at)` 和 `0058_video_segments.py` 迁移。
+- **Segment API**：新增 `GET /api/v1/tasks/{task_id}/video/segments`、`GET /api/v1/videos/{dataset_item_id}/segments`，以及 task 入口的 `:claim` / `:heartbeat` / `:release`。
+- **Manifest v2 segments**：`/video/manifest-v2` 和 `/videos/{dataset_item_id}/manifest` 懒生成并返回 `segments`。
+- **配置**：新增 `VIDEO_SEGMENT_SIZE_FRAMES` 与 `VIDEO_SEGMENT_LOCK_TTL_SECONDS`。
+
+### Deferred
+
+- Presence WebSocket、segment 级 scheduler、B5 AI tracker job 和 tracker adapter 留到后续版本。
 
 ## [0.9.27] - 2026-05-12
 

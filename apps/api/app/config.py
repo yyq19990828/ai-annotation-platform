@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     video_frame_cache_ttl_days: int = 14
     video_chunk_cache_ttl_days: int = 30
     video_frame_memory_cache_items: int = 64
+    video_segment_size_frames: int = 18000
+    video_segment_lock_ttl_seconds: int = 300
 
     # v0.7.6 · AuditMiddleware 异步化开关。true = 通过 Celery 旁路写 audit_logs；
     # false 或 broker 不可用时，自动 fallback 到原同步路径。

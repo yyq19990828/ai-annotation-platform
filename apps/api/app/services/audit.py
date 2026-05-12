@@ -91,6 +91,11 @@ class AuditAction(str, Enum):
     BATCH_ADMIN_UNLOCK = "batch.admin_unlock"
     BULK_BATCH_APPROVE = "batch.bulk_approve"
     BULK_BATCH_REJECT = "batch.bulk_reject"
+    VIDEO_SEGMENT_CLAIM = "video_segment.claim"
+    VIDEO_SEGMENT_HEARTBEAT = "video_segment.heartbeat"
+    VIDEO_SEGMENT_RELEASE = "video_segment.release"
+    VIDEO_TRACKER_JOB_CREATE = "video_tracker_job.create"
+    VIDEO_TRACKER_JOB_CANCEL = "video_tracker_job.cancel"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

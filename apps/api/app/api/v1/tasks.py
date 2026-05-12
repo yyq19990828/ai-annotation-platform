@@ -31,7 +31,14 @@ from app.schemas.video_frame_service import (
     VideoFrameOut,
     VideoFramePrefetchRequest,
     VideoFramePrefetchResponse,
+    VideoFrameRetryRequest,
     VideoManifestV2Response,
+    VideoSegmentOut,
+    VideoSegmentsResponse,
+)
+from app.schemas.video_tracker_job import (
+    VideoTrackerJobOut,
+    VideoTrackerPropagateRequest,
 )
 from app.schemas.annotation import (
     AnnotationCreate,
@@ -60,7 +67,15 @@ from app.services.video_frame_service import (
     list_chunks as list_video_chunks,
     manifest_v2 as build_video_manifest_v2,
     prefetch_frames as prefetch_video_frames,
+    retry_frames as retry_video_frames,
 )
+from app.services.video_segment_service import (
+    claim_segment,
+    heartbeat_segment,
+    list_segments as list_video_segments,
+    release_segment,
+)
+from app.services.video_tracker_job_service import create_tracker_job
 from app.services.user_brief import resolve_briefs
 from app.db.models.task_batch import TaskBatch
 
@@ -460,7 +475,122 @@ async def get_video_manifest_v2(
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
     ctx = await build_context_from_task(db, task)
-    return build_video_manifest_v2(ctx, str(request.base_url))
+    return await build_video_manifest_v2(db, ctx, str(request.base_url))
+
+
+@router.get("/{task_id}/video/segments", response_model=VideoSegmentsResponse)
+async def get_video_segments(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return await list_video_segments(db, ctx)
+
+
+@router.post(
+    "/{task_id}/video/segments/{segment_id}:claim",
+    response_model=VideoSegmentOut,
+)
+async def claim_video_segment(
+    task_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    from app.db.models.project import Project
+
+    project = await db.get(Project, task.project_id)
+    privileged = bool(project and is_privileged_for_project(current_user, project))
+    body = await claim_segment(db, ctx, segment_id, current_user, privileged=privileged)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_SEGMENT_CLAIM,
+        target_type="video_segment",
+        target_id=segment_id,
+        request=request,
+        status_code=200,
+        detail={"task_id": str(task.id), "dataset_item_id": str(ctx.item.id)},
+    )
+    await db.commit()
+    return body
+
+
+@router.post(
+    "/{task_id}/video/segments/{segment_id}:heartbeat",
+    response_model=VideoSegmentOut,
+)
+async def heartbeat_video_segment(
+    task_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    from app.db.models.project import Project
+
+    project = await db.get(Project, task.project_id)
+    privileged = bool(project and is_privileged_for_project(current_user, project))
+    body = await heartbeat_segment(
+        db, ctx, segment_id, current_user, privileged=privileged
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_SEGMENT_HEARTBEAT,
+        target_type="video_segment",
+        target_id=segment_id,
+        request=request,
+        status_code=200,
+        detail={"task_id": str(task.id), "dataset_item_id": str(ctx.item.id)},
+    )
+    await db.commit()
+    return body
+
+
+@router.post(
+    "/{task_id}/video/segments/{segment_id}:release",
+    response_model=VideoSegmentOut,
+)
+async def release_video_segment(
+    task_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    from app.db.models.project import Project
+
+    project = await db.get(Project, task.project_id)
+    privileged = bool(project and is_privileged_for_project(current_user, project))
+    body = await release_segment(
+        db, ctx, segment_id, current_user, privileged=privileged
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_SEGMENT_RELEASE,
+        target_type="video_segment",
+        target_id=segment_id,
+        request=request,
+        status_code=200,
+        detail={"task_id": str(task.id), "dataset_item_id": str(ctx.item.id)},
+    )
+    await db.commit()
+    return body
 
 
 @router.get("/{task_id}/video/chunks", response_model=VideoChunksResponse)
@@ -532,6 +662,77 @@ async def prefetch_video_frame_assets(
     return await prefetch_video_frames(
         db, ctx, payload.frame_indices, payload.width, payload.format
     )
+
+
+@router.post(
+    "/{task_id}/video/frames:retry",
+    response_model=VideoFramePrefetchResponse,
+)
+async def retry_video_frame_assets(
+    task_id: uuid.UUID,
+    payload: VideoFrameRetryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return await retry_video_frames(
+        db,
+        ctx,
+        payload.frame_indices,
+        payload.width,
+        payload.format,
+        force=payload.force,
+    )
+
+
+@router.post(
+    "/{task_id}/video/tracks/{annotation_id}:propagate",
+    response_model=VideoTrackerJobOut,
+    status_code=202,
+)
+async def propagate_video_track(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    payload: VideoTrackerPropagateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    ctx = await build_context_from_task(db, task)
+    body = await create_tracker_job(
+        db,
+        task=task,
+        ctx=ctx,
+        annotation_id=annotation_id,
+        payload=payload,
+        user=current_user,
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_TRACKER_JOB_CREATE,
+        target_type="video_tracker_job",
+        target_id=body.id,
+        request=request,
+        status_code=202,
+        detail={
+            "task_id": str(task.id),
+            "annotation_id": str(annotation_id),
+            "dataset_item_id": str(ctx.item.id),
+            "segment_id": str(body.segment_id) if body.segment_id else None,
+            "from_frame": body.from_frame,
+            "to_frame": body.to_frame,
+            "model_key": body.model_key,
+            "direction": body.direction,
+        },
+    )
+    await db.commit()
+    return body
 
 
 @router.get("/{task_id}/annotations", response_model=list[AnnotationOut])

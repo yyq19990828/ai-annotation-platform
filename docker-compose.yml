@@ -86,7 +86,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.api
-    command: celery -A app.workers.celery_app worker -l info -Q default,ml,media --concurrency=4
+    command: celery -A app.workers.celery_app worker -l info -Q default,ml,media,gpu --concurrency=4
     environment:
       DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
       REDIS_URL: redis://redis:6379/0

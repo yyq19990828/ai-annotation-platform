@@ -18,6 +18,7 @@ from app.observability.metrics import (
     VIDEO_FRAME_ASSET_BYTES,
     VIDEO_FRAME_EXTRACTION_SECONDS,
 )
+from app.schemas.task import VideoMetadata
 from app.services.video_frame_service import (
     cache_key_for_chunk,
     cache_key_for_frame,
@@ -327,6 +328,66 @@ def extract_video_frame_image(
         raise RuntimeError(proc.stderr.strip() or "ffmpeg frame extraction failed")
 
 
+async def _get_or_create_frame_cache_row(
+    db,
+    item_id: uuid.UUID,
+    frame_index: int,
+    width: int,
+    format_: str,
+) -> VideoFrameCache:
+    row = (
+        await db.execute(
+            select(VideoFrameCache).where(
+                VideoFrameCache.dataset_item_id == item_id,
+                VideoFrameCache.frame_index == frame_index,
+                VideoFrameCache.width == width,
+                VideoFrameCache.format == format_,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = VideoFrameCache(
+            dataset_item_id=item_id,
+            frame_index=frame_index,
+            width=width,
+            format=format_,
+            status="pending",
+        )
+        db.add(row)
+        await db.flush()
+    return row
+
+
+async def _store_frame_cache_image(
+    db,
+    storage,
+    item: DatasetItem,
+    metadata,
+    input_path: Path,
+    tmp_dir: Path,
+    row: VideoFrameCache,
+) -> None:
+    fmt = row.format if row.format in {"webp", "jpeg"} else "webp"
+    ext = "jpg" if fmt == "jpeg" else "webp"
+    output_path = tmp_dir / f"frame-{row.frame_index}-{row.width}.{ext}"
+    pts_ms = await pts_ms_for_frame(db, item.id, row.frame_index, metadata)
+    extract_video_frame_image(input_path, output_path, pts_ms or 0, row.width)
+    key = cache_key_for_frame(item.id, row.frame_index, row.width, fmt)
+    body = output_path.read_bytes()
+    storage.ensure_bucket(storage.datasets_bucket)
+    storage.client.put_object(
+        Bucket=storage.datasets_bucket,
+        Key=key,
+        Body=body,
+        ContentType="image/jpeg" if fmt == "jpeg" else "image/webp",
+    )
+    row.storage_key = key
+    row.byte_size = len(body)
+    row.status = "ready"
+    row.error = None
+    row.last_accessed_at = datetime.now(timezone.utc)
+
+
 async def _generate_thumbnail(item_id: str) -> None:
     from sqlalchemy.ext.asyncio import (
         create_async_engine,
@@ -434,7 +495,6 @@ async def _generate_video_metadata(item_id: str) -> None:
         with tempfile.TemporaryDirectory(prefix="anno-video-") as tmp:
             suffix = Path(item.file_name).suffix or ".mp4"
             input_path = Path(tmp) / f"source{suffix}"
-            poster_path = Path(tmp) / "poster.webp"
             playback_path = Path(tmp) / "playback.mp4"
 
             try:
@@ -520,25 +580,50 @@ async def _generate_video_metadata(item_id: str) -> None:
                 except Exception as exc:
                     video_meta["playback_error"] = str(exc)
 
+            poster_row = None
+            start = time.perf_counter()
             try:
-                extract_video_poster(input_path, poster_path)
-                poster_key = f"thumbnails/{item_id}.webp"
-                storage.ensure_bucket(storage.datasets_bucket)
-                storage.client.put_object(
-                    Bucket=storage.datasets_bucket,
-                    Key=poster_key,
-                    Body=poster_path.read_bytes(),
-                    ContentType="image/webp",
+                poster_row = await _get_or_create_frame_cache_row(
+                    db, item.id, 0, 512, "webp"
                 )
-                item.thumbnail_path = poster_key
-                video_meta["poster_frame_path"] = poster_key
+                poster_row.status = "pending"
+                poster_row.error = None
+                await db.commit()
+                await _store_frame_cache_image(
+                    db,
+                    storage,
+                    item,
+                    VideoMetadata.model_validate(video_meta),
+                    input_path,
+                    Path(tmp),
+                    poster_row,
+                )
+                VIDEO_FRAME_EXTRACTION_SECONDS.labels(
+                    outcome="success", format="webp"
+                ).observe(time.perf_counter() - start)
+                item.thumbnail_path = poster_row.storage_key
+                video_meta["poster_frame_path"] = poster_row.storage_key
                 video_meta.pop("poster_error", None)
             except subprocess.TimeoutExpired:
+                if poster_row is not None:
+                    poster_row.status = "failed"
+                    poster_row.error = (
+                        f"ffmpeg poster extraction timed out after {FFMPEG_FRAME_TIMEOUT_SECONDS}s"
+                    )
                 video_meta["poster_error"] = (
-                    f"ffmpeg poster extraction timed out after {FFMPEG_POSTER_TIMEOUT_SECONDS}s"
+                    f"ffmpeg poster extraction timed out after {FFMPEG_FRAME_TIMEOUT_SECONDS}s"
                 )
+                VIDEO_FRAME_EXTRACTION_SECONDS.labels(
+                    outcome="error", format="webp"
+                ).observe(time.perf_counter() - start)
             except Exception as exc:
+                if poster_row is not None:
+                    poster_row.status = "failed"
+                    poster_row.error = str(exc)
                 video_meta["poster_error"] = str(exc)
+                VIDEO_FRAME_EXTRACTION_SECONDS.labels(
+                    outcome="error", format="webp"
+                ).observe(time.perf_counter() - start)
 
         meta["video"] = video_meta
         item.metadata_ = meta
@@ -846,33 +931,17 @@ async def _extract_video_frames(
                 row.error = None
                 await db.commit()
                 fmt = row.format if row.format in {"webp", "jpeg"} else "webp"
-                ext = "jpg" if fmt == "jpeg" else "webp"
-                output_path = Path(tmp) / f"frame-{row.frame_index}-{row.width}.{ext}"
                 start = time.perf_counter()
                 try:
-                    pts_ms = await pts_ms_for_frame(
-                        db, item.id, row.frame_index, metadata
-                    )
-                    extract_video_frame_image(
+                    await _store_frame_cache_image(
+                        db,
+                        storage,
+                        item,
+                        metadata,
                         input_path,
-                        output_path,
-                        pts_ms or 0,
-                        row.width,
+                        Path(tmp),
+                        row,
                     )
-                    key = cache_key_for_frame(item.id, row.frame_index, row.width, fmt)
-                    body = output_path.read_bytes()
-                    storage.ensure_bucket(storage.datasets_bucket)
-                    storage.client.put_object(
-                        Bucket=storage.datasets_bucket,
-                        Key=key,
-                        Body=body,
-                        ContentType="image/jpeg" if fmt == "jpeg" else "image/webp",
-                    )
-                    row.storage_key = key
-                    row.byte_size = len(body)
-                    row.status = "ready"
-                    row.error = None
-                    row.last_accessed_at = datetime.now(timezone.utc)
                     VIDEO_FRAME_EXTRACTION_SECONDS.labels(
                         outcome="success", format=fmt
                     ).observe(time.perf_counter() - start)

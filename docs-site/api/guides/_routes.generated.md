@@ -267,10 +267,16 @@
 | GET | `/{task_id}/video/manifest` |
 | GET | `/{task_id}/video/frame-timetable` |
 | GET | `/{task_id}/video/manifest-v2` |
+| GET | `/{task_id}/video/segments` |
+| POST | `/{task_id}/video/segments/{segment_id}:claim` |
+| POST | `/{task_id}/video/segments/{segment_id}:heartbeat` |
+| POST | `/{task_id}/video/segments/{segment_id}:release` |
 | GET | `/{task_id}/video/chunks` |
 | GET | `/{task_id}/video/chunks/{chunk_id}` |
 | GET | `/{task_id}/video/frames/{frame_index}` |
 | POST | `/{task_id}/video/frames:prefetch` |
+| POST | `/{task_id}/video/frames:retry` |
+| POST | `/{task_id}/video/tracks/{annotation_id}:propagate` |
 | GET | `/{task_id}/annotations` |
 | GET | `/{task_id}/annotations/page` |
 | POST | `/{task_id}/annotations` |
@@ -304,17 +310,26 @@
 | POST | `/{user_id}/deactivate` |
 | PATCH | `/{user_id}/group` |
 
+## `video_tracker_jobs.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{job_id}` |
+| DELETE | `/{job_id}` |
+
 ## `videos.py`
 
 | Method | Path |
 |---|---|
 | GET | `/{dataset_item_id}/manifest` |
+| GET | `/{dataset_item_id}/segments` |
 | GET | `/{dataset_item_id}/frame-timetable` |
 | GET | `/{dataset_item_id}/chunks` |
 | GET | `/{dataset_item_id}/chunks/{chunk_id}` |
 | GET | `/{dataset_item_id}/frames/{frame_index}` |
 | POST | `/{dataset_item_id}/frames:prefetch` |
+| POST | `/{dataset_item_id}/frames:retry` |
 
 ---
 
-_共 29 模块 / 175 路由_
+_共 30 模块 / 185 路由_

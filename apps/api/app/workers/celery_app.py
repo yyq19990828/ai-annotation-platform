@@ -19,6 +19,7 @@ celery_app = Celery(
         "app.workers.presence",
         "app.workers.ml_health",
         "app.workers.predictions_retry",
+        "app.workers.video_tracker",
     ],
 )
 
@@ -40,6 +41,7 @@ celery_app.conf.update(
         "app.workers.media.ensure_video_chunks": {"queue": "media"},
         "app.workers.media.extract_video_frames": {"queue": "media"},
         "app.workers.media.cleanup_video_frame_assets": {"queue": "media"},
+        "app.workers.video_tracker.run_video_tracker_job": {"queue": "gpu"},
         "app.workers.cleanup.purge_soft_deleted_attachments": {"queue": "cleanup"},
         # v0.7.6 · audit 异步 INSERT 走独立队列，不与 ml/media 抢资源
         "app.workers.audit.persist_audit_entry": {"queue": "audit"},

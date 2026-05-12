@@ -16,10 +16,12 @@ from app.db.models.dataset import (
     VideoChunk,
     VideoFrameCache,
     VideoFrameIndex,
+    VideoSegment,
 )
 from app.db.models.ml_backend import MLBackend
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
 from app.db.models.prediction_job import PredictionJob, PredictionJobStatus
+from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
 from app.db.models.bug_report import BugReport, BugComment
@@ -49,12 +51,15 @@ __all__ = [
     "VideoChunk",
     "VideoFrameCache",
     "VideoFrameIndex",
+    "VideoSegment",
     "MLBackend",
     "Prediction",
     "PredictionMeta",
     "FailedPrediction",
     "PredictionJob",
     "PredictionJobStatus",
+    "VideoTrackerJob",
+    "VideoTrackerJobStatus",
     "AuditLog",
     "UserInvitation",
     "BugReport",
