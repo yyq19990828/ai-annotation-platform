@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse } from "@/types";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
+import type { DiffMode } from "../modes/types";
 import { VideoFrameOverlay } from "./VideoFrameOverlay";
 import { VideoMediaLayer } from "./VideoMediaLayer";
 import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
@@ -74,6 +75,12 @@ function nextLowerPlaybackRate(rate: VideoPlaybackRate): VideoPlaybackRate | nul
   return idx <= 0 ? null : VIDEO_PLAYBACK_RATES[idx - 1];
 }
 
+function visibleInReviewMode(source: VideoFrameEntry["source"], mode?: DiffMode): boolean {
+  if (!mode || mode === "diff") return true;
+  if (mode === "raw") return source === "prediction" || source === "interpolated";
+  return source === "manual" || source === "legacy";
+}
+
 interface VideoStageProps {
   manifest: TaskVideoManifestResponse | undefined;
   frameTimetable?: TaskVideoFrameTimetableResponse;
@@ -83,6 +90,7 @@ interface VideoStageProps {
   selectedId: string | null;
   activeClass: string;
   frameIndex?: number;
+  reviewDisplayMode?: DiffMode;
   hiddenTrackIds?: Set<string>;
   lockedTrackIds?: Set<string>;
   readOnly?: boolean;
@@ -126,6 +134,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   selectedId,
   activeClass,
   frameIndex: controlledFrameIndex,
+  reviewDisplayMode,
   hiddenTrackIds = EMPTY_TRACK_ID_SET,
   lockedTrackIds = EMPTY_TRACK_ID_SET,
   readOnly = false,
@@ -202,10 +211,12 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     const out: VideoFrameEntry[] = [];
     for (const ann of annotations) {
       if (isVideoBbox(ann) && ann.geometry.frame_index === frameIndex) {
-        out.push({ id: ann.id, ann, geom: ann.geometry, className: ann.class_name, source: "legacy" });
+        if (visibleInReviewMode("legacy", reviewDisplayMode)) {
+          out.push({ id: ann.id, ann, geom: ann.geometry, className: ann.class_name, source: "legacy" });
+        }
       } else if (isVideoTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
         const resolved = resolveTrackAtFrame(ann.geometry, frameIndex);
-        if (resolved) {
+        if (resolved && visibleInReviewMode(resolved.source, reviewDisplayMode)) {
           out.push({
             id: ann.id,
             ann,
@@ -219,10 +230,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       }
     }
     return out;
-  }, [annotations, frameIndex, hiddenTrackIds]);
+  }, [annotations, frameIndex, hiddenTrackIds, reviewDisplayMode]);
 
   const selectedTrackGhost = useMemo<VideoTrackGhost | null>(() => {
     if (!selectedTrack || hiddenTrackIds.has(selectedTrack.geometry.track_id)) return null;
+    if (!visibleInReviewMode("manual", reviewDisplayMode)) return null;
     if (currentFrameEntries.some((entry) => entry.ann.id === selectedTrack.id)) return null;
     const nearest = nearestTrackKeyframe(selectedTrack.geometry, frameIndex);
     if (!nearest) return null;
@@ -235,7 +247,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       trackId: selectedTrack.geometry.track_id,
       originFrame: nearest.frame_index,
     };
-  }, [currentFrameEntries, frameIndex, hiddenTrackIds, selectedTrack]);
+  }, [currentFrameEntries, frameIndex, hiddenTrackIds, reviewDisplayMode, selectedTrack]);
 
   const trackPreviews = useMemo<VideoTrackPreview[]>(
     () => videoTracks

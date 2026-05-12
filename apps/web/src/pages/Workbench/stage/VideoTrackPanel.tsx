@@ -3,10 +3,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
+import type { DiffMode } from "../modes/types";
 import { classColor } from "./colors";
 import { resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
 import type {
+  VideoFrameEntry,
   VideoTrackAnnotation,
   VideoTrackConversionOptions,
   VideoTrackGhost,
@@ -46,6 +48,7 @@ interface VideoTrackPanelProps {
   onPasteKeyframeToCurrentFrame: () => void;
   onDeleteTrackKeyframe: (annotation: VideoTrackAnnotation, targetFrame: number) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
+  reviewDisplayMode?: DiffMode;
 }
 
 function frameRange(frames: number[]): string {
@@ -112,6 +115,35 @@ function statusChipText(kf: VideoTrackKeyframe | undefined, outside = false): st
   if (kf?.absent) return "当前消失";
   if (kf?.occluded) return "当前遮挡";
   return kf ? "关键帧" : "非关键帧";
+}
+
+function sourceChipText(source: VideoFrameEntry["source"] | null): string {
+  if (source === "prediction") return "prediction";
+  if (source === "interpolated") return "interpolated";
+  if (source === "legacy") return "legacy bbox";
+  if (source === "manual") return "manual";
+  return "无当前帧";
+}
+
+function sourceChipColor(source: VideoFrameEntry["source"] | null): React.CSSProperties {
+  if (source === "prediction") return { color: "var(--color-ai)", borderColor: "color-mix(in oklab, var(--color-ai) 40%, var(--color-border))" };
+  if (source === "interpolated") return { color: "var(--color-warning)", borderColor: "color-mix(in oklab, var(--color-warning) 45%, var(--color-border))" };
+  if (source === "manual" || source === "legacy") return { color: "var(--color-success)", borderColor: "color-mix(in oklab, var(--color-success) 40%, var(--color-border))" };
+  return { color: "var(--color-fg-muted)" };
+}
+
+function visibleInReviewMode(source: VideoFrameEntry["source"] | null, mode?: DiffMode): boolean {
+  if (!mode || mode === "diff") return true;
+  if (!source) return false;
+  if (mode === "raw") return source === "prediction" || source === "interpolated";
+  return source === "manual" || source === "legacy";
+}
+
+function nextPredictionFrame(track: VideoTrackAnnotation["geometry"], frameIndex: number): number | null {
+  const predictionFrames = sortedKeyframes(track)
+    .filter((kf) => kf.source === "prediction" && !kf.absent)
+    .map((kf) => kf.frame_index);
+  return predictionFrames.find((frame) => frame > frameIndex) ?? predictionFrames[0] ?? null;
 }
 
 type TrackFilter = "all" | "current";
@@ -197,6 +229,7 @@ export function VideoTrackPanel({
   onPasteKeyframeToCurrentFrame,
   onDeleteTrackKeyframe,
   onConvertToBboxes,
+  reviewDisplayMode,
 }: VideoTrackPanelProps) {
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
@@ -204,11 +237,17 @@ export function VideoTrackPanel({
   const currentFrameLabel = exactFrameLabel(selectedTrack, frameIndex, currentFrameOutside);
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
   const filteredVideoTracks = useMemo(
-    () => trackFilter === "current"
-      ? videoTracks.filter((ann) => resolveTrackAtFrame(ann.geometry, frameIndex))
-      : videoTracks,
-    [frameIndex, trackFilter, videoTracks],
+    () => videoTracks.filter((ann) => {
+      const currentSource = resolveTrackAtFrame(ann.geometry, frameIndex)?.source ?? null;
+      if (trackFilter === "all") return true;
+      if (!currentSource) return false;
+      return visibleInReviewMode(currentSource, reviewDisplayMode);
+    }),
+    [frameIndex, reviewDisplayMode, trackFilter, videoTracks],
   );
+  const selectedTrackNextPredictionFrame = selectedTrack
+    ? nextPredictionFrame(selectedTrack.geometry, frameIndex)
+    : null;
 
   return (
     <div style={{ display: "grid", gap: 12, padding: "2px 0 8px" }}>
@@ -290,6 +329,7 @@ export function VideoTrackPanel({
           const locked = lockedTrackIds.has(track.track_id);
           const exact = track.keyframes.find((kf) => kf.frame_index === frameIndex);
           const outside = isFrameOutside(track, frameIndex);
+          const currentSource = resolveTrackAtFrame(track, frameIndex)?.source ?? null;
           const sourceLabel = ann.source === "prediction_based" ? "AI 采纳" : "手动";
           const frames = track.keyframes.map((kf) => kf.frame_index);
           return (
@@ -345,6 +385,19 @@ export function VideoTrackPanel({
                   }}
                 >
                   {statusChipText(exact, outside)}
+                </span>
+                <span
+                  data-testid="video-track-current-source"
+                  style={{
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 8,
+                    padding: "5px 8px",
+                    fontSize: 11,
+                    background: "var(--color-bg-elev)",
+                    ...sourceChipColor(currentSource),
+                  }}
+                >
+                  {sourceChipText(currentSource)}
                 </span>
                 <Button
                   size="sm"
@@ -446,6 +499,17 @@ export function VideoTrackPanel({
                 onClick={() => copyText(selectedTrack.geometry.track_id)}
               >
                 <Icon name="copy" size={13} />复制 ID
+              </Button>
+              <Button
+                size="sm"
+                style={{ ...compactButtonStyle, height: 30 }}
+                disabled={selectedTrackNextPredictionFrame === null || !onSeekFrame}
+                title="跳转到下一条 prediction 关键帧"
+                onClick={() => {
+                  if (selectedTrackNextPredictionFrame !== null) onSeekFrame?.(selectedTrackNextPredictionFrame);
+                }}
+              >
+                <Icon name="arrowRight" size={13} />下一预测
               </Button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>

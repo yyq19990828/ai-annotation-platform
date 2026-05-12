@@ -15,6 +15,7 @@ import { usePredictions } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
+import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
@@ -38,6 +39,7 @@ import { useReviewMode } from "../modes/useReviewMode";
 import { setActiveClassesConfig, sortClassesByConfig, UNKNOWN_CLASS } from "../stage/colors";
 import type { VideoStageControls } from "../stage/VideoStage";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
+import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { WorkbenchOverlays } from "./WorkbenchOverlays";
 import { WorkbenchLayout } from "./WorkbenchLayout";
@@ -575,6 +577,28 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     return (annotationsData ?? []).find((a) => a.id === s.selectedId) ?? null;
   }, [s.selectedId, s.selectedIds.length, annotationsData]);
 
+  const videoCommentAnchor = useMemo<AnnotationCommentAnchor | null>(() => {
+    const ann = selectedAnnotationForPanel;
+    if (!isVideoTask || !ann) return null;
+    if (isVideoTrack(ann)) {
+      const resolved = resolveTrackAtFrame(ann.geometry, s.videoFrameIndex);
+      return {
+        kind: "video_frame",
+        frameIndex: s.videoFrameIndex,
+        trackId: ann.geometry.track_id,
+        source: resolved?.source ?? null,
+      };
+    }
+    if (isVideoBbox(ann)) {
+      return {
+        kind: "video_frame",
+        frameIndex: ann.geometry.frame_index,
+        source: "legacy",
+      };
+    }
+    return null;
+  }, [isVideoTask, s.videoFrameIndex, selectedAnnotationForPanel]);
+
   const handleUpdateAttributes = useCallback((annotationId: string, next: Record<string, unknown>) => {
     const ann = annotationsRef.current.find((a) => a.id === annotationId);
     if (!ann) return;
@@ -728,6 +752,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         videoFrameTimetable: videoFrameTimetable.data,
         videoManifestError: videoManifest.error, videoTool: s.videoTool,
         videoFrameIndex: s.videoFrameIndex,
+        videoReviewDisplayMode: mode === "review" ? modeState.diffMode : undefined,
         hiddenVideoTrackIds: s.hiddenVideoTrackIds,
         lockedVideoTrackIds: s.lockedVideoTrackIds,
         onVideoFrameIndexChange: s.setVideoFrameIndex,
@@ -804,6 +829,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(),
         currentFrameIndex: isVideoTask ? s.videoFrameIndex : undefined,
         onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
+        commentAnchor: videoCommentAnchor,
         videoTrackPanel: isVideoTask ? (
           <VideoTrackSidebar
             annotations={annotationsData ?? []}
@@ -817,6 +843,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             onToggleHiddenTrack={s.toggleHiddenVideoTrack}
             onToggleLockedTrack={s.toggleLockedVideoTrack}
             onSeekFrame={s.setVideoFrameIndex}
+            reviewDisplayMode={mode === "review" ? modeState.diffMode : undefined}
             onChangeUserBoxClass={handleStartChangeClass}
             onRenameTracks={handleVideoBatchRename}
             onDeleteTracks={handleVideoBatchDelete}

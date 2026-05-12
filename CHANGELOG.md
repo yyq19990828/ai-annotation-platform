@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.35] - 2026-05-12
+
+> **Review Video Anchors — 视频审核锚点与来源视图.** 主线: ① annotation comments 增加可选 `anchor`，支持视频 `(frame_index, track_id?, source)` 锚点；② review 模式的视频工作台复用 raw / final / diff 控制，区分 prediction/interpolated 与 manual/legacy；③ 评论面板自动带入当前视频帧锚点，评论列表可点击跳帧；④ 轨迹侧栏显示当前帧来源并支持跳到下一条 prediction keyframe。→ [plan](docs/plans/2026-05-12-v0.9.35-review-video-anchors.md).
+
+### Added
+
+- **评论锚点协议**：`AnnotationCommentCreate/Out.anchor` 支持 `kind="video_frame"`、`frameIndex`、`trackId` 和 `source`，用于对象级视频审核反馈定位。
+- **视频 review 来源视图**：review 状态栏的 `raw / final / diff` 控制现在也作用于视频 stage；`raw` 显示 prediction/interpolated，`final` 显示 manual/legacy，`diff` 保持叠加。
+- **视频评论跳帧**：选中视频标注时，评论输入区显示当前帧锚点；已有锚点评论渲染 frame / track / source chip，点击可跳回对应帧。
+- **轨迹侧栏来源导航**：轨迹列表显示当前帧的 `manual / interpolated / prediction / legacy` 来源，选中轨迹后可跳到下一条 prediction keyframe。
+
+### Deferred
+
+- 像素级视频 diff、正式 review issue 表、track split / merge 与 `video_bbox` 聚合留到后续 Track Composition 切片。
+
 ## [0.9.34] - 2026-05-12
 
 > **Video Tracker Adapter MVP — AI tracker 后端闭环.** 主线: ① 新增 tracker adapter registry 与 `mock_bbox` contract adapter；② 创建 tracker job 后投递 Celery worker；③ worker 跑通 `queued/running/completed/failed/cancelled` 状态机、Redis 事件发布和 `video_track` prediction keyframes 写回；④ 协议文档和 runbook 同步 worker 边界。→ [plan](docs/plans/2026-05-12-v0.9.34-video-tracker-adapter-mvp.md).

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
+import type { DiffMode } from "../modes/types";
 import {
   isVideoBbox,
   isVideoTrack,
@@ -36,6 +37,7 @@ interface VideoTrackSidebarProps {
   onDeleteTracks?: (annotations: AnnotationResponse[]) => void;
   onUpdate: (annotation: AnnotationResponse, geometry: VideoTrackAnnotation["geometry"]) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
+  reviewDisplayMode?: DiffMode;
 }
 
 interface CopiedKeyframe {
@@ -77,6 +79,7 @@ export function VideoTrackSidebar({
   onDeleteTracks,
   onUpdate,
   onConvertToBboxes,
+  reviewDisplayMode,
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const selectedTrack = useMemo(
@@ -295,6 +298,7 @@ export function VideoTrackSidebar({
       onPasteKeyframeToCurrentFrame={pasteKeyframeToCurrentFrame}
       onDeleteTrackKeyframe={deleteTrackKeyframe}
       onConvertToBboxes={onConvertToBboxes}
+      reviewDisplayMode={reviewDisplayMode}
     />
   );
 }

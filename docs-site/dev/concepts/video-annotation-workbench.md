@@ -369,6 +369,7 @@ v0.9.19 后，`VideoStage` 底部固定控制条改为 `VideoPlaybackOverlay`：
 - 书签以小三角 marker 显示，`Ctrl+M` 在当前帧加 / 删；显式 seek、bookmark 跳转和关键帧跳转写入最近 50 条跳转历史，播放 tick 不写历史。
 - v0.9.27 起，hover 时间轴会请求单帧预览图；ready 时显示缩略图，pending/error 时降级显示 frame/time。选中轨迹关键帧、书签帧和 loop region 边界会被预取。
 - v0.9.29 起，`useFrameClock.seekToAsync` 作为 `VideoStage.seekFrameAsync` 的底层原语；时间轴 scrub、逐帧、关键帧、书签和跳转历史都通过它跳帧。J/K/L jog 播放支持 `0.25x / 0.5x / 1x / 2x / 4x`，overlay 会显示当前速度，反向播放通过帧步进实现。
+- v0.9.35 起，review 模式的 `raw / final / diff` 同步作用于视频工作台：`raw` 显示 prediction / interpolated 来源，`final` 显示 manual / legacy，`diff` 叠加。评论协议增加可选 `anchor`，视频评论可记录当前 `frameIndex`、`trackId` 和来源，评论 chip 可点击跳回对应帧。
 
 ## History / Offline
 

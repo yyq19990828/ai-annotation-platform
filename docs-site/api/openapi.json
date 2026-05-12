@@ -425,6 +425,16 @@
       },
       "AnnotationCommentCreate": {
         "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "attachments": {
             "items": {
               "$ref": "#/components/schemas/Attachment"
@@ -492,6 +502,16 @@
       },
       "AnnotationCommentOut": {
         "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "annotation_id": {
             "format": "uuid",
             "title": "Annotation Id",
@@ -3943,6 +3963,57 @@
           "new_name"
         ],
         "title": "ClassRenameRequest",
+        "type": "object"
+      },
+      "CommentAnchor": {
+        "additionalProperties": false,
+        "description": "评论锚点。v0.9.35 起用于视频 review 的帧级定位。",
+        "properties": {
+          "frameIndex": {
+            "minimum": 0.0,
+            "title": "Frameindex",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "video_frame",
+            "title": "Kind",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "manual",
+                  "prediction",
+                  "interpolated",
+                  "legacy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "trackId": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trackid"
+          }
+        },
+        "required": [
+          "kind",
+          "frameIndex"
+        ],
+        "title": "CommentAnchor",
         "type": "object"
       },
       "CommentAttachmentUploadInitRequest": {

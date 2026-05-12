@@ -59,6 +59,7 @@ def _to_out(
         mentions=c.mentions or [],
         attachments=c.attachments or [],
         canvas_drawing=c.canvas_drawing,
+        anchor=c.anchor,
         created_at=c.created_at,
         updated_at=c.updated_at,
     )
@@ -221,6 +222,9 @@ async def create_comment(
             a.model_dump(by_alias=True, mode="json") for a in data.attachments
         ],
         canvas_drawing=data.canvas_drawing,
+        anchor=data.anchor.model_dump(by_alias=True, mode="json")
+        if data.anchor
+        else None,
     )
     db.add(comment)
     await db.flush()
@@ -239,6 +243,7 @@ async def create_comment(
             "mention_count": len(data.mentions),
             "attachment_count": len(data.attachments),
             "has_canvas_drawing": data.canvas_drawing is not None,
+            "has_anchor": data.anchor is not None,
         },
     )
     await db.commit()

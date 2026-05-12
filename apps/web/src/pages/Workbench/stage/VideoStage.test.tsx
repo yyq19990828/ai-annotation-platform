@@ -1045,6 +1045,66 @@ describe("VideoStage", () => {
     expect(label).toHaveStyle({ left: "20%", top: "10%" });
   });
 
+  it("filters video entries by review raw/final display mode", () => {
+    const annotations = [
+      {
+        id: "manual-track",
+        class_name: "manual-car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_manual",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+      {
+        id: "prediction-track",
+        class_name: "prediction-car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_prediction",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "prediction" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const raw = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        reviewDisplayMode="raw"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    expect(raw.getByTestId("video-label-overlay")).toHaveTextContent("prediction-car");
+    expect(raw.getByTestId("video-label-overlay")).not.toHaveTextContent("manual-car");
+    raw.unmount();
+
+    const final = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        reviewDisplayMode="final"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    expect(final.getByTestId("video-label-overlay")).toHaveTextContent("manual-car");
+    expect(final.getByTestId("video-label-overlay")).not.toHaveTextContent("prediction-car");
+  });
+
   it("does not interpolate across an absent keyframe", () => {
     const annotations = [
       {
@@ -1438,6 +1498,44 @@ describe("VideoStage", () => {
     expect(view.getAllByTestId("video-track-row")).toHaveLength(1);
     expect(view.getByText("car")).toBeInTheDocument();
     expect(view.queryByText("person")).not.toBeInTheDocument();
+  });
+
+  it("shows track source and jumps to the next prediction keyframe", () => {
+    const onSeekFrame = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 4, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "prediction" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const view = render(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId="t1"
+        frameIndex={0}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={() => {}}
+        onUpdate={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+        onSeekFrame={onSeekFrame}
+      />,
+    );
+
+    expect(view.getByTestId("video-track-current-source")).toHaveTextContent("manual");
+    fireEvent.click(view.getByText("下一预测"));
+    expect(onSeekFrame).toHaveBeenCalledWith(4);
   });
 
   it("multi-selects tracks in the sidebar and routes batch actions", async () => {

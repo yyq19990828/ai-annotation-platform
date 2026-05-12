@@ -8,6 +8,7 @@ import type {
 } from "@/types";
 import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
+import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions } from "./useVideoAnnotationActions";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -22,6 +23,7 @@ export interface VideoWorkbenchProps {
   selectedId: string | null;
   activeClass: string;
   frameIndex: number;
+  reviewDisplayMode?: DiffMode;
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
   readOnly: boolean;
@@ -54,6 +56,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     selectedId,
     activeClass,
     frameIndex,
+    reviewDisplayMode,
     hiddenTrackIds,
     lockedTrackIds,
     readOnly,
@@ -81,6 +84,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         selectedId={selectedId}
         activeClass={activeClass}
         frameIndex={frameIndex}
+        reviewDisplayMode={reviewDisplayMode}
         hiddenTrackIds={hiddenTrackIds}
         lockedTrackIds={lockedTrackIds}
         readOnly={readOnly}

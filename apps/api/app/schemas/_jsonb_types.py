@@ -348,6 +348,17 @@ class CanvasDrawing(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CommentAnchor(BaseModel):
+    """评论锚点。v0.9.35 起用于视频 review 的帧级定位。"""
+
+    kind: Literal["video_frame"]
+    frame_index: int = Field(ge=0, alias="frameIndex")
+    track_id: str | None = Field(default=None, alias="trackId", max_length=120)
+    source: Literal["manual", "prediction", "interpolated", "legacy"] | None = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
 # ── AuditLog detail_json ────────────────────────────────────────────
 
 

@@ -124,6 +124,44 @@ async def test_attachment_storagekey_wrong_prefix_rejected(
 
 
 @pytest.mark.asyncio
+async def test_video_comment_anchor_roundtrips(httpx_client, db_session, super_admin):
+    sa_user, sa_token = super_admin
+    _, ann = await _seed_project_with_annotation(db_session, sa_user.id)
+
+    r = await httpx_client.post(
+        f"/api/v1/annotations/{ann.id}/comments",
+        json={
+            "body": "看一下这一帧",
+            "mentions": [],
+            "attachments": [],
+            "canvas_drawing": None,
+            "anchor": {
+                "kind": "video_frame",
+                "frameIndex": 42,
+                "trackId": "trk-1234567890",
+                "source": "prediction",
+            },
+        },
+        headers=_bearer(sa_token),
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["anchor"] == {
+        "kind": "video_frame",
+        "frameIndex": 42,
+        "trackId": "trk-1234567890",
+        "source": "prediction",
+    }
+
+    page = await httpx_client.get(
+        f"/api/v1/annotations/{ann.id}/comments/page",
+        headers=_bearer(sa_token),
+    )
+    assert page.status_code == 200, page.text
+    assert page.json()["items"][0]["anchor"]["frameIndex"] == 42
+
+
+@pytest.mark.asyncio
 async def test_download_wrong_prefix_rejected(httpx_client, db_session, super_admin):
     sa_user, sa_token = super_admin
     _, ann = await _seed_project_with_annotation(db_session, sa_user.id)

@@ -13,7 +13,12 @@ import {
 import { useAnnotationAuditHistory } from "@/hooks/useAnnotationAuditHistory";
 import { AnnotationHistoryTimeline } from "@/components/AnnotationHistoryTimeline";
 import { CommentInput, renderCommentBody } from "./CommentInput";
-import type { CommentAttachment, CommentCanvasDrawing, CommentMention } from "@/api/comments";
+import type {
+  AnnotationCommentAnchor,
+  CommentAttachment,
+  CommentCanvasDrawing,
+  CommentMention,
+} from "@/api/comments";
 
 type Tab = "comments" | "history";
 
@@ -37,9 +42,18 @@ interface Props {
     onStart: (initial?: CommentCanvasDrawing | null) => void;
     onConsume: () => void;
   };
+  commentAnchor?: AnnotationCommentAnchor | null;
+  onSeekFrame?: (frameIndex: number) => void;
 }
 
-export function CommentsPanel({ annotationId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas }: Props) {
+function anchorLabel(anchor: AnnotationCommentAnchor): string {
+  const parts = [`F${anchor.frameIndex}`];
+  if (anchor.trackId) parts.push(anchor.trackId.slice(0, 8));
+  if (anchor.source) parts.push(anchor.source);
+  return parts.join(" · ");
+}
+
+export function CommentsPanel({ annotationId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame }: Props) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("comments");
   // v0.8.8 · keyset 分页：单标注 100+ 评论时按需加载，初始首屏只拉最近 50 条。
@@ -71,14 +85,16 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
     mentions,
     attachments,
     canvas_drawing,
+    anchor,
   }: {
     body: string;
     mentions: CommentMention[];
     attachments: CommentAttachment[];
     canvas_drawing: CommentCanvasDrawing | null;
+    anchor?: AnnotationCommentAnchor | null;
   }) => {
     if (!body && attachments.length === 0 && !canvas_drawing) return;
-    createMut.mutate({ body, mentions, attachments, canvas_drawing });
+    createMut.mutate({ body, mentions, attachments, canvas_drawing, anchor });
   };
 
   return (
@@ -116,6 +132,7 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
         imageHeight={imageHeight}
         enableCanvasDrawing={enableCanvasDrawing}
         liveCanvas={liveCanvas}
+        anchor={commentAnchor}
         onSubmit={handleSubmit}
       />
 
@@ -171,6 +188,31 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
               <div style={{ fontSize: 12, color: "var(--color-fg)", whiteSpace: "pre-wrap" }}>
                 {renderCommentBody(c.body, c.mentions ?? [], (uid) => navigate(`/audit?actor=${uid}`))}
               </div>
+              {c.anchor?.kind === "video_frame" && (
+                <button
+                  type="button"
+                  data-testid="comment-anchor-chip"
+                  onClick={() => onSeekFrame?.(c.anchor!.frameIndex)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    marginTop: 6,
+                    padding: "2px 6px",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 4,
+                    background: "var(--color-bg-sunken)",
+                    color: "var(--color-fg-muted)",
+                    fontSize: 11,
+                    cursor: onSeekFrame ? "pointer" : "default",
+                    fontFamily: "inherit",
+                  }}
+                  title="跳转到评论锚定的视频帧"
+                >
+                  <Icon name="film" size={12} />
+                  <span className="mono">{anchorLabel(c.anchor)}</span>
+                </button>
+              )}
               {c.canvas_drawing && c.canvas_drawing.shapes && c.canvas_drawing.shapes.length > 0 && (
                 <div style={{ marginTop: 6 }}>
                   <CanvasDrawingPreview

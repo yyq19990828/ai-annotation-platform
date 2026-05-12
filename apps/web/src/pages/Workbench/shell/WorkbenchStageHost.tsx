@@ -11,6 +11,7 @@ import type { CommentCanvasDrawing } from "@/api/comments";
 import type { AiBox } from "../state/transforms";
 import type { PendingDrawing, SamPolarity, SamSubTool, Tool, VideoTool } from "../state/useWorkbenchState";
 import type { Viewport } from "../state/useViewportTransform";
+import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { VideoStageControls } from "../stage/VideoStage";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
@@ -39,6 +40,7 @@ interface WorkbenchStageHostProps {
   videoManifestError?: unknown;
   videoTool: VideoTool;
   videoFrameIndex: number;
+  videoReviewDisplayMode?: DiffMode;
   hiddenVideoTrackIds: Set<string>;
   lockedVideoTrackIds: Set<string>;
   onVideoFrameIndexChange: (frameIndex: number) => void;
@@ -127,6 +129,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     videoManifestError,
     videoTool,
     videoFrameIndex,
+    videoReviewDisplayMode,
     hiddenVideoTrackIds,
     lockedVideoTrackIds,
     onVideoFrameIndexChange,
@@ -199,6 +202,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             selectedId={selectedId}
             activeClass={activeClass}
             frameIndex={videoFrameIndex}
+            reviewDisplayMode={videoReviewDisplayMode}
             hiddenTrackIds={hiddenVideoTrackIds}
             lockedTrackIds={lockedVideoTrackIds}
             readOnly={readOnly}
