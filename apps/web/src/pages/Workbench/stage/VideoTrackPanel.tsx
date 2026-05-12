@@ -24,6 +24,7 @@ interface VideoTrackPanelProps {
   currentFrameOutside: boolean;
   frameIndex: number;
   readOnly: boolean;
+  selectedBboxCount?: number;
   classes?: string[];
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
@@ -35,6 +36,10 @@ interface VideoTrackPanelProps {
   onChangeUserBoxClass?: (id: string) => void;
   onBatchRenameTracks?: (className: string) => void;
   onBatchDeleteTracks?: () => void;
+  onAggregateSelectedBboxes?: () => void;
+  onSplitSelectedTrack?: () => void;
+  onMergeSelectedTracks?: () => void;
+  canMergeSelectedTracks?: boolean;
   onShowSelectedTracks?: () => void;
   onHideSelectedTracks?: () => void;
   onLockSelectedTracks?: () => void;
@@ -205,6 +210,7 @@ export function VideoTrackPanel({
   currentFrameOutside,
   frameIndex,
   readOnly,
+  selectedBboxCount = 0,
   classes,
   hiddenTrackIds,
   lockedTrackIds,
@@ -216,6 +222,10 @@ export function VideoTrackPanel({
   onChangeUserBoxClass,
   onBatchRenameTracks,
   onBatchDeleteTracks,
+  onAggregateSelectedBboxes,
+  onSplitSelectedTrack,
+  onMergeSelectedTracks,
+  canMergeSelectedTracks = false,
   onShowSelectedTracks,
   onHideSelectedTracks,
   onLockSelectedTracks,
@@ -234,6 +244,7 @@ export function VideoTrackPanel({
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
   const batchMutationDisabled = readOnly || batchSelectionDisabled;
+  const canAggregateBboxes = !readOnly && selectedBboxCount > 1 && Boolean(onAggregateSelectedBboxes);
   const currentFrameLabel = exactFrameLabel(selectedTrack, frameIndex, currentFrameOutside);
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
   const filteredVideoTracks = useMemo(
@@ -265,6 +276,17 @@ export function VideoTrackPanel({
             {trackFilter === "current" ? `${filteredVideoTracks.length}/${videoTracks.length}` : videoTracks.length}
           </span>
         </div>
+        {selectedBboxCount > 1 && (
+          <Button
+            size="sm"
+            style={{ ...compactButtonStyle, width: "100%", justifyContent: "center", marginTop: 8 }}
+            disabled={!canAggregateBboxes}
+            title="把已多选的单帧 video_bbox 聚合为一条 video_track"
+            onClick={onAggregateSelectedBboxes}
+          >
+            <Icon name="link" size={13} />聚合 {selectedBboxCount} 个框
+          </Button>
+        )}
         <TrackFilterTabs value={trackFilter} onChange={setTrackFilter} />
       </div>
       <div style={{ display: "grid", gap: 8 }}>
@@ -313,6 +335,15 @@ export function VideoTrackPanel({
             <Button size="sm" style={compactButtonStyle} disabled={!onHideSelectedTracks} onClick={onHideSelectedTracks}>隐藏</Button>
             <Button size="sm" style={compactButtonStyle} disabled={batchSelectionDisabled || !onLockSelectedTracks} onClick={onLockSelectedTracks}>锁定</Button>
             <Button size="sm" style={compactButtonStyle} disabled={batchSelectionDisabled || !onUnlockSelectedTracks} onClick={onUnlockSelectedTracks}>解锁</Button>
+            <Button
+              size="sm"
+              style={compactButtonStyle}
+              disabled={batchMutationDisabled || !canMergeSelectedTracks || !onMergeSelectedTracks}
+              title={canMergeSelectedTracks ? "合并两条同类且不重叠的轨迹" : "只支持合并两条同类轨迹"}
+              onClick={onMergeSelectedTracks}
+            >
+              合并
+            </Button>
             <Button size="sm" style={compactButtonStyle} variant="danger" disabled={batchMutationDisabled || !onBatchDeleteTracks} onClick={onBatchDeleteTracks}>
               删除
             </Button>
@@ -491,6 +522,15 @@ export function VideoTrackPanel({
                 onClick={onStartNewTrack}
               >
                 <Icon name="plus" size={13} />新建轨迹
+              </Button>
+              <Button
+                size="sm"
+                style={{ ...compactButtonStyle, height: 30 }}
+                disabled={readOnly || selectedTrackLocked || !onSplitSelectedTrack}
+                title="在当前帧之后拆出后段轨迹"
+                onClick={onSplitSelectedTrack}
+              >
+                <Icon name="scissors" size={13} />拆轨迹
               </Button>
               <Button
                 size="sm"

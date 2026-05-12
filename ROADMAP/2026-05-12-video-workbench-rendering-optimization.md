@@ -1,6 +1,6 @@
 # P0/P1 · 视频标注工作台 Epic（综合）
 
-> 状态：**进行中**。主线 M0-M5.0 / V2 / V3 已归档；R1-R4、R17/R18/R19、V4/V5 已完成第一版。当前剩余重点是 V6 Track Composition、R5.2 ImageBitmap 缓存、R8 Viewport / Minimap，以及后续 AI / 协同 / 专属导出能力。
+> 状态：**进行中**。主线 M0-M5.0 / V2 / V3 已归档；R1-R4、R17/R18/R19、V4/V5、V6 已完成第一版。当前剩余重点是 R5.2 ImageBitmap 缓存、R8 Viewport / Minimap，以及后续 AI / 协同 / 专属导出能力。
 >
 > 文件原名 `video-workbench-rendering-optimization`，保留以维持外链；实际范围包括：视频功能尾巴、渲染体系优化、CVAT 视频专项借鉴。
 
@@ -21,6 +21,7 @@
 | V3 关键帧复制粘贴 | v0.9.20+ | 显式复制当前关键帧 / 粘贴到当前帧，不抢占全局剪贴板 |
 | V5 Probe / Poster / Frame Asset Retry | v0.9.33 | 存储管理页展示失败视频资产，手动重试 probe / poster / timetable / chunk / frame cache |
 | V4 Review Video Anchors | v0.9.35 | review raw/final/diff 视频来源视图；评论锚定 frame / track / source；prediction keyframe 导航 |
+| V6 Track Composition | v0.9.37 | `video_bbox` 聚合为 `video_track`；track split；同类不重叠 track merge 并补 outside gap |
 
 ### 1.2 渲染与导航基建
 
@@ -48,18 +49,6 @@
 ---
 
 ## 2. 当前未完成 Backlog
-
-### P0 · Track Composition（V6 + R14 + R15）
-
-**目标**：补齐视频轨迹生命周期编辑。
-
-- `video_bbox` → `video_track` 反向聚合。
-- Track split：在当前帧把一条 track 拆成前后两条。
-- Track merge：合并两条同类、时间不重叠的 track，中间自动补 outside 段。
-- 共用底层 `compositeTrack(ids[])` / composition service。
-- `useAnnotationHistory` 增加 `trackSplit` / `trackMerge` command kind。
-
-**不做**：Re-ID 自动 join、AI 建议合并、多人冲突解决。
 
 ### P0 · R5.2 ImageBitmap 缓存
 
@@ -149,7 +138,7 @@
 Wave 0 · 功能闭环
   ✅ V5 Probe / Poster / Frame Asset Retry (v0.9.33)
   ✅ V4 Review Video Anchors (v0.9.35)
-  →  V6 Track Composition
+  ✅ V6 Track Composition (v0.9.37)
 
 Wave 1 · 基础夯实
   ✅ R1 FrameClock / timetable (v0.9.21)

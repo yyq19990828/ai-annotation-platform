@@ -45,6 +45,8 @@ from app.schemas.annotation import (
     AnnotationListPage,
     AnnotationOut,
     AnnotationUpdate,
+    VideoTrackCompositionRequest,
+    VideoTrackCompositionResponse,
     VideoTrackConvertToBboxesRequest,
     VideoTrackConvertToBboxesResponse,
 )
@@ -937,6 +939,82 @@ async def update_annotation(
     await db.refresh(annotation)
     response.headers["ETag"] = f'W/"{annotation.version}"'
     return annotation
+
+
+@router.post(
+    "/{task_id}/annotations/video/track-compositions",
+    response_model=VideoTrackCompositionResponse,
+)
+async def compose_video_tracks(
+    task_id: uuid.UUID,
+    data: VideoTrackCompositionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    if not data.annotation_ids:
+        raise HTTPException(status_code=400, detail="annotation_ids is required")
+    if len(set(data.annotation_ids)) != len(data.annotation_ids):
+        raise HTTPException(status_code=400, detail="annotation_ids must be unique")
+
+    annotations: list[Annotation] = []
+    for annotation_id in data.annotation_ids:
+        ann = await db.get(Annotation, annotation_id)
+        if ann is None or not ann.is_active:
+            raise HTTPException(status_code=404, detail="Annotation not found")
+        if ann.task_id != task_id:
+            raise HTTPException(
+                status_code=400, detail="Annotation does not belong to this task"
+            )
+        annotations.append(ann)
+
+    svc = AnnotationService(db)
+    try:
+        updated, created, deleted_ids = await svc.compose_video_tracks(
+            task=task,
+            annotations=annotations,
+            user_id=current_user.id,
+            operation=data.operation,
+            frame_index=data.frame_index,
+            delete_sources=data.delete_sources,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_UPDATE,
+        target_type="annotation",
+        request=request,
+        status_code=200,
+        detail={
+            "task_id": str(task_id),
+            "operation": f"video_track.{data.operation}",
+            "annotation_ids": [str(annotation_id) for annotation_id in data.annotation_ids],
+            "frame_index": data.frame_index,
+            "created_count": len(created),
+            "updated_count": len(updated),
+            "deleted_count": len(deleted_ids),
+        },
+    )
+    await db.commit()
+    for ann in [*updated, *created]:
+        await db.refresh(ann)
+    return VideoTrackCompositionResponse(
+        operation=data.operation,
+        updated_annotations=[
+            AnnotationOut.model_validate(ann, from_attributes=True) for ann in updated
+        ],
+        created_annotations=[
+            AnnotationOut.model_validate(ann, from_attributes=True) for ann in created
+        ],
+        deleted_annotation_ids=deleted_ids,
+    )
 
 
 @router.post(

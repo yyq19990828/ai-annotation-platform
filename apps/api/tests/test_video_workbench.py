@@ -1208,6 +1208,370 @@ async def test_video_track_convert_requires_task_visibility(
     assert resp.json()["detail"] == "Task not found"
 
 
+async def test_video_track_composition_aggregate_bboxes_deletes_sources(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task = (
+        await db_session.execute(
+            select(Task).where(
+                Task.project_id == project.id, Task.file_name == "clip-a.mp4"
+            )
+        )
+    ).scalar_one()
+    first = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.task_id == task.id,
+                Annotation.annotation_type == "video_bbox",
+            )
+        )
+    ).scalar_one()
+    second = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="person",
+        geometry={"type": "video_bbox", "frame_index": 3, "x": 0.3, "y": 0.2, "w": 0.1, "h": 0.1},
+    )
+    db_session.add(second)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "aggregate_bboxes",
+            "annotation_ids": [str(first.id), str(second.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["operation"] == "aggregate_bboxes"
+    assert set(body["deleted_annotation_ids"]) == {str(first.id), str(second.id)}
+    created = body["created_annotations"][0]
+    assert created["annotation_type"] == "video_track"
+    assert created["class_name"] == "person"
+    assert [kf["frame_index"] for kf in created["geometry"]["keyframes"]] == [1, 3]
+    await db_session.refresh(first)
+    await db_session.refresh(second)
+    assert first.is_active is False
+    assert second.is_active is False
+
+
+async def test_video_track_composition_aggregate_rejects_mixed_classes(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task = (
+        await db_session.execute(
+            select(Task).where(
+                Task.project_id == project.id, Task.file_name == "clip-a.mp4"
+            )
+        )
+    ).scalar_one()
+    person = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.task_id == task.id,
+                Annotation.annotation_type == "video_bbox",
+            )
+        )
+    ).scalar_one()
+    car = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="car",
+        geometry={"type": "video_bbox", "frame_index": 3, "x": 0.3, "y": 0.2, "w": 0.1, "h": 0.1},
+    )
+    db_session.add(car)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "aggregate_bboxes",
+            "annotation_ids": [str(person.id), str(car.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "video_bbox annotations must share one class"
+
+
+async def test_video_track_composition_aggregate_rejects_duplicate_frames(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task = (
+        await db_session.execute(
+            select(Task).where(
+                Task.project_id == project.id, Task.file_name == "clip-a.mp4"
+            )
+        )
+    ).scalar_one()
+    first = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.task_id == task.id,
+                Annotation.annotation_type == "video_bbox",
+            )
+        )
+    ).scalar_one()
+    second = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="person",
+        geometry={"type": "video_bbox", "frame_index": 1, "x": 0.3, "y": 0.2, "w": 0.1, "h": 0.1},
+    )
+    db_session.add(second)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "aggregate_bboxes",
+            "annotation_ids": [str(first.id), str(second.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "video_bbox annotations must not share a frame_index"
+
+
+async def test_video_track_composition_split_visible_frame_creates_tail_track(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "split_track",
+            "annotation_ids": [str(track.id)],
+            "frame_index": 1,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    source = body["updated_annotations"][0]
+    tail = body["created_annotations"][0]
+    assert source["id"] == str(track.id)
+    assert [kf["frame_index"] for kf in source["geometry"]["keyframes"]] == [0, 1]
+    assert [kf["frame_index"] for kf in tail["geometry"]["keyframes"]] == [2, 4]
+    assert tail["parent_annotation_id"] == str(track.id)
+
+
+async def test_video_track_composition_split_rejects_absent_frame(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "split_track",
+            "annotation_ids": [str(track.id)],
+            "frame_index": 4,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "split_track requires a visible frame"
+
+
+async def test_video_track_composition_merge_tracks_adds_outside_gap(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    second = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="car",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_car_tail",
+            "keyframes": [
+                {"frame_index": 5, "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+                {"frame_index": 6, "bbox": {"x": 0.7, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+            ],
+        },
+    )
+    db_session.add(second)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "merge_tracks",
+            "annotation_ids": [str(first.id), str(second.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deleted_annotation_ids"] == [str(second.id)]
+    merged = body["updated_annotations"][0]
+    assert merged["id"] == str(first.id)
+    assert [kf["frame_index"] for kf in merged["geometry"]["keyframes"]] == [0, 2, 4, 5, 6]
+    assert {"from": 3, "to": 4, "source": "manual"} in merged["geometry"]["outside"]
+    await db_session.refresh(second)
+    assert second.is_active is False
+
+
+async def test_video_track_composition_merge_rejects_overlap_and_mixed_classes(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    overlap = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="car",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_overlap",
+            "keyframes": [
+                {"frame_index": 1, "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+            ],
+        },
+    )
+    mixed = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="person",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_person_tail",
+            "keyframes": [
+                {"frame_index": 5, "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+            ],
+        },
+    )
+    db_session.add_all([overlap, mixed])
+    await db_session.flush()
+
+    overlap_resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "merge_tracks",
+            "annotation_ids": [str(first.id), str(overlap.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    mixed_resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "merge_tracks",
+            "annotation_ids": [str(first.id), str(mixed.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert overlap_resp.status_code == 400
+    assert overlap_resp.json()["detail"] == "merge_tracks requires non-overlapping tracks"
+    assert mixed_resp.status_code == 400
+    assert mixed_resp.json()["detail"] == "merge_tracks requires tracks with the same class"
+
+
+async def test_video_track_composition_rejects_annotation_from_other_task(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+    other = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.project_id == project.id,
+                Annotation.task_id != task.id,
+                Annotation.annotation_type == "video_track",
+            )
+        )
+    ).scalar_one()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "merge_tracks",
+            "annotation_ids": [str(track.id), str(other.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Annotation does not belong to this task"
+
+
+async def test_video_track_composition_requires_task_visibility(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+    annotator,
+):
+    user, _ = super_admin
+    _, annotator_token = annotator
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "split_track",
+            "annotation_ids": [str(track.id)],
+            "frame_index": 1,
+        },
+        headers={"Authorization": f"Bearer {annotator_token}"},
+    )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Task not found"
+
+
 async def test_video_export_include_attributes_false_removes_schema_and_attrs(
     db_session,
     httpx_client_bound,

@@ -1600,6 +1600,107 @@ describe("VideoStage", () => {
     expect(onToggleLockedTrack).toHaveBeenCalledWith("trk_person");
   });
 
+  it("routes selected video bboxes to aggregate composition", () => {
+    const onComposeTracks = vi.fn();
+    const annotations = [
+      {
+        id: "b1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 0, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      },
+      {
+        id: "b2",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 3, x: 0.2, y: 0.1, w: 0.2, h: 0.2 },
+      },
+    ] as AnnotationResponse[];
+
+    const view = render(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId="b2"
+        selectedIds={["b1", "b2"]}
+        frameIndex={0}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+        onUpdate={() => {}}
+        onComposeTracks={onComposeTracks}
+      />,
+    );
+
+    fireEvent.click(view.getByTitle("把已多选的单帧 video_bbox 聚合为一条 video_track"));
+
+    expect(onComposeTracks).toHaveBeenCalledWith({
+      operation: "aggregate_bboxes",
+      annotationIds: ["b1", "b2"],
+      deleteSources: true,
+    });
+  });
+
+  it("routes current-track split and same-class two-track merge", async () => {
+    const onComposeTracks = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+      {
+        id: "t2",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car_tail",
+          keyframes: [
+            { frame_index: 4, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const view = render(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId="t1"
+        frameIndex={0}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+        onUpdate={() => {}}
+        onComposeTracks={onComposeTracks}
+      />,
+    );
+
+    fireEvent.click(view.getByText("拆轨迹"));
+    expect(onComposeTracks).toHaveBeenCalledWith({
+      operation: "split_track",
+      annotationIds: ["t1"],
+      frameIndex: 0,
+    });
+
+    fireEvent.click(view.getAllByTestId("video-track-row")[1], { shiftKey: true });
+    await waitFor(() => expect(view.getByTestId("video-track-batch-toolbar")).toHaveTextContent("已选 2 条轨迹"));
+    fireEvent.click(within(view.getByTestId("video-track-batch-toolbar")).getByText("合并"));
+
+    expect(onComposeTracks).toHaveBeenLastCalledWith({
+      operation: "merge_tracks",
+      annotationIds: ["t1", "t2"],
+    });
+  });
+
   it("copies the current keyframe and pastes it to the current frame", () => {
     const onUpdate = vi.fn();
     const annotations = [

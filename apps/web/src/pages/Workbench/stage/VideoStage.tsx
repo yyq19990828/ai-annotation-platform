@@ -96,7 +96,7 @@ interface VideoStageProps {
   readOnly?: boolean;
   videoTool?: VideoTool;
   pendingDrawing?: PendingDrawing;
-  onSelect: (id: string | null) => void;
+  onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange?: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
   onPendingDraw?: (
@@ -777,7 +777,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const beginMove = useCallback((evt: ReactPointerEvent<SVGElement>, entry: VideoFrameEntry | VideoTrackGhost) => {
     const trackId = isVideoTrack(entry.ann) ? entry.ann.geometry.track_id : null;
     evt.stopPropagation();
-    onSelect(entry.ann.id);
+    const toggle = evt.shiftKey || evt.metaKey || evt.ctrlKey;
+    if (toggle) onSelect(entry.ann.id, { shift: true });
+    else onSelect(entry.ann.id);
+    if (toggle) return;
     if (!stageModeGuard.canBeginDrag || readOnly || isPlaybackActive || (trackId && lockedTrackIds.has(trackId))) return;
     const pt = pointFromEvent(evt as unknown as ReactPointerEvent<SVGSVGElement>);
     if (!pt) return;

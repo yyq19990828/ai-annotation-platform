@@ -539,6 +539,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handleVideoBatchDelete,
     handleVideoSetSelectedClass,
     handleVideoConvertToBboxes,
+    handleVideoComposeTracks,
   } = useVideoAnnotationActions({
     taskId,
     queryClient,
@@ -834,6 +835,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           <VideoTrackSidebar
             annotations={annotationsData ?? []}
             selectedId={s.selectedId}
+            selectedIds={s.selectedIds}
             frameIndex={s.videoFrameIndex}
             readOnly={isLocked}
             hiddenTrackIds={s.hiddenVideoTrackIds}
@@ -849,6 +851,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             onDeleteTracks={handleVideoBatchDelete}
             onUpdate={handleVideoUpdate}
             onConvertToBboxes={handleVideoConvertToBboxes}
+            onComposeTracks={handleVideoComposeTracks}
           />
         ) : undefined,
         liveCommentCanvas: {

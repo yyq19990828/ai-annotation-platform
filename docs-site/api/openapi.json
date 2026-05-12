@@ -10496,6 +10496,92 @@
         "title": "VideoTrackBbox",
         "type": "object"
       },
+      "VideoTrackCompositionRequest": {
+        "properties": {
+          "annotation_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Annotation Ids",
+            "type": "array"
+          },
+          "delete_sources": {
+            "default": true,
+            "title": "Delete Sources",
+            "type": "boolean"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "operation": {
+            "enum": [
+              "aggregate_bboxes",
+              "split_track",
+              "merge_tracks"
+            ],
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "VideoTrackCompositionRequest",
+        "type": "object"
+      },
+      "VideoTrackCompositionResponse": {
+        "properties": {
+          "created_annotations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Created Annotations",
+            "type": "array"
+          },
+          "deleted_annotation_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Deleted Annotation Ids",
+            "type": "array"
+          },
+          "operation": {
+            "enum": [
+              "aggregate_bboxes",
+              "split_track",
+              "merge_tracks"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "updated_annotations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Updated Annotations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "VideoTrackCompositionResponse",
+        "type": "object"
+      },
       "VideoTrackConvertToBboxesRequest": {
         "properties": {
           "frame_index": {
@@ -19304,6 +19390,64 @@
           }
         ],
         "summary": "Get Annotations Paged",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotations/video/track-compositions": {
+      "post": {
+        "operationId": "compose_video_tracks_api_v1_tasks__task_id__annotations_video_track_compositions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoTrackCompositionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackCompositionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Compose Video Tracks",
         "tags": [
           "tasks"
         ]

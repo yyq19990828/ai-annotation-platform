@@ -16,6 +16,7 @@ import { VideoTrackPanel } from "./VideoTrackPanel";
 import type {
   VideoFrameEntry,
   VideoTrackAnnotation,
+  VideoTrackCompositionOptions,
   VideoTrackConversionOptions,
   VideoTrackGhost,
 } from "./videoStageTypes";
@@ -23,6 +24,7 @@ import type {
 interface VideoTrackSidebarProps {
   annotations: AnnotationResponse[];
   selectedId: string | null;
+  selectedIds?: string[];
   frameIndex: number;
   readOnly: boolean;
   hiddenTrackIds: Set<string>;
@@ -37,6 +39,7 @@ interface VideoTrackSidebarProps {
   onDeleteTracks?: (annotations: AnnotationResponse[]) => void;
   onUpdate: (annotation: AnnotationResponse, geometry: VideoTrackAnnotation["geometry"]) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
+  onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   reviewDisplayMode?: DiffMode;
 }
 
@@ -65,6 +68,7 @@ function sameStringSet(a: Set<string>, b: Set<string>): boolean {
 export function VideoTrackSidebar({
   annotations,
   selectedId,
+  selectedIds = [],
   frameIndex,
   readOnly,
   hiddenTrackIds,
@@ -79,9 +83,14 @@ export function VideoTrackSidebar({
   onDeleteTracks,
   onUpdate,
   onConvertToBboxes,
+  onComposeTracks,
   reviewDisplayMode,
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
+  const selectedBboxes = useMemo(
+    () => annotations.filter((ann) => isVideoBbox(ann) && selectedIds.includes(ann.id)),
+    [annotations, selectedIds],
+  );
   const selectedTrack = useMemo(
     () => videoTracks.find((ann) => ann.id === selectedId) ?? null,
     [selectedId, videoTracks],
@@ -109,6 +118,7 @@ export function VideoTrackSidebar({
     () => videoTracks.filter((ann) => selectedTrackIds.has(ann.id)),
     [selectedTrackIds, videoTracks],
   );
+  const canMergeSelectedTracks = selectedTracks.length === 2 && selectedTracks[0].class_name === selectedTracks[1].class_name;
 
   const currentKeyframe = useMemo(
     () => selectedTrack?.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null,
@@ -205,6 +215,32 @@ export function VideoTrackSidebar({
     setSelectedTrackIds(new Set());
   }, [onDeleteTracks, selectedTracks]);
 
+  const aggregateSelectedBboxes = useCallback(() => {
+    if (selectedBboxes.length <= 1 || readOnly || !onComposeTracks) return;
+    onComposeTracks({
+      operation: "aggregate_bboxes",
+      annotationIds: selectedBboxes.map((ann) => ann.id),
+      deleteSources: true,
+    });
+  }, [onComposeTracks, readOnly, selectedBboxes]);
+
+  const splitSelectedTrack = useCallback(() => {
+    if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id) || !onComposeTracks) return;
+    onComposeTracks({
+      operation: "split_track",
+      annotationIds: [selectedTrack.id],
+      frameIndex,
+    });
+  }, [frameIndex, lockedTrackIds, onComposeTracks, readOnly, selectedTrack]);
+
+  const mergeSelectedTracks = useCallback(() => {
+    if (!canMergeSelectedTracks || readOnly || !onComposeTracks) return;
+    onComposeTracks({
+      operation: "merge_tracks",
+      annotationIds: selectedTracks.map((ann) => ann.id),
+    });
+  }, [canMergeSelectedTracks, onComposeTracks, readOnly, selectedTracks]);
+
   const markSelectedTrack = useCallback((patch: Partial<VideoTrackKeyframe>) => {
     if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
     if (patch.absent) {
@@ -274,6 +310,7 @@ export function VideoTrackSidebar({
       currentFrameOutside={selectedTrack ? isFrameOutside(selectedTrack.geometry, frameIndex) : false}
       frameIndex={frameIndex}
       readOnly={readOnly}
+      selectedBboxCount={selectedBboxes.length}
       classes={classes}
       hiddenTrackIds={hiddenTrackIds}
       lockedTrackIds={lockedTrackIds}
@@ -285,6 +322,10 @@ export function VideoTrackSidebar({
       onChangeUserBoxClass={onChangeUserBoxClass}
       onBatchRenameTracks={onRenameTracks ? renameSelectedTracks : undefined}
       onBatchDeleteTracks={onDeleteTracks ? deleteSelectedTracks : undefined}
+      onAggregateSelectedBboxes={onComposeTracks ? aggregateSelectedBboxes : undefined}
+      onSplitSelectedTrack={onComposeTracks ? splitSelectedTrack : undefined}
+      onMergeSelectedTracks={onComposeTracks ? mergeSelectedTracks : undefined}
+      canMergeSelectedTracks={canMergeSelectedTracks}
       onShowSelectedTracks={() => setSelectedTracksHidden(false)}
       onHideSelectedTracks={() => setSelectedTracksHidden(true)}
       onLockSelectedTracks={() => setSelectedTracksLocked(true)}

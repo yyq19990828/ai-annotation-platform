@@ -165,6 +165,28 @@ POST /api/v1/tasks/:id/annotations/:annotation_id/video/convert-to-bboxes
 
 响应包含 `source_annotation`、`created_annotations[]`、`deleted_source` 与 `removed_frame_indexes`。`copy` 不会移除源帧，所以 `removed_frame_indexes` 为空；`split` 才会返回被移除的帧号。
 
+v0.9.37 起，视频标注也支持 track composition：
+
+```http
+POST /api/v1/tasks/:id/annotations/video/track-compositions
+```
+
+```json
+{
+  "operation": "aggregate_bboxes",
+  "annotation_ids": ["bbox-a", "bbox-b"],
+  "delete_sources": true
+}
+```
+
+| `operation` | 说明 |
+|---|---|
+| `aggregate_bboxes` | 将同任务、同类、无重复帧的 `video_bbox[]` 聚合为一条 `video_track` |
+| `split_track` | 在 `frame_index` 可见帧之后，把一条 track 拆成前后两条 |
+| `merge_tracks` | 合并两条同类、可见帧区间不重叠的 track，并自动补中间 `outside` gap |
+
+响应包含 `updated_annotations[]`、`created_annotations[]` 和 `deleted_annotation_ids[]`，客户端应按这三组结果更新 annotation 列表。
+
 ## 候选预测（AI 紫框）
 
 ```http

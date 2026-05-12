@@ -51,4 +51,11 @@ export type VideoTrackConversionOptions = {
   frameMode?: "keyframes" | "all_frames";
 };
 
+export type VideoTrackCompositionOptions = {
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  annotationIds: string[];
+  frameIndex?: number;
+  deleteSources?: boolean;
+};
+
 export type VideoTrackKeyframePatch = Partial<VideoTrackKeyframe>;

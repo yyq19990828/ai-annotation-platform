@@ -59,6 +59,20 @@ export interface VideoTrackConvertToBboxesResponse {
   removed_frame_indexes: number[];
 }
 
+export interface VideoTrackCompositionPayload {
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  annotation_ids: string[];
+  frame_index?: number;
+  delete_sources?: boolean;
+}
+
+export interface VideoTrackCompositionResponse {
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  updated_annotations: AnnotationResponse[];
+  created_annotations: AnnotationResponse[];
+  deleted_annotation_ids: string[];
+}
+
 export interface VideoFrameTimetableParams {
   from?: number;
   to?: number;
@@ -150,6 +164,15 @@ export const tasksApi = {
   ) =>
     apiClient.post<VideoTrackConvertToBboxesResponse>(
       `/tasks/${taskId}/annotations/${annotationId}/video/convert-to-bboxes`,
+      payload,
+    ),
+
+  composeVideoTracks: (
+    taskId: string,
+    payload: VideoTrackCompositionPayload,
+  ) =>
+    apiClient.post<VideoTrackCompositionResponse>(
+      `/tasks/${taskId}/annotations/video/track-compositions`,
       payload,
     ),
 

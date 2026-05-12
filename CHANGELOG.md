@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.37] - 2026-05-12
+
+> **Video Track Composition — 视频轨迹生命周期组合编辑.** 主线: ① 新增视频 composition 事务接口，支持 `video_bbox` 聚合为 `video_track`、track split、track merge；② 前端轨迹侧栏增加聚合、拆轨迹、合并入口；③ composition 响应写入 React Query cache 并复用 batch history 保持 undo/redo；④ 视频工作台概念文档与 API guide 同步新接口。→ [plan](docs/plans/2026-05-12-v0.9.37-video-track-composition.md).
+
+### Added
+
+- **轨迹组合 API**：新增 `POST /api/v1/tasks/{task_id}/annotations/video/track-compositions`，`operation` 支持 `aggregate_bboxes`、`split_track`、`merge_tracks`。
+- **`video_bbox` 反向聚合**：同任务、同类、无重复帧的单帧视频框可事务聚合为一条 compact `video_track`，默认删除源 bbox。
+- **Track split / merge**：支持在可见当前帧之后拆出后段轨迹；支持合并两条同类且可见帧区间不重叠的轨迹，并自动补中间 `outside` gap。
+- **前端侧栏入口**：视频轨迹侧栏支持多选 bbox 聚合、当前轨迹拆分、同类双轨合并，操作成功后保持选中态和 undo/redo。
+
+### Deferred
+
+- Re-ID 自动 join、AI 建议合并、多人冲突解决、R5.2 ImageBitmap 缓存与 R8 Viewport / Minimap 留到后续切片。
+
 ## [0.9.35] - 2026-05-12
 
 > **Review Video Anchors — 视频审核锚点与来源视图.** 主线: ① annotation comments 增加可选 `anchor`，支持视频 `(frame_index, track_id?, source)` 锚点；② review 模式的视频工作台复用 raw / final / diff 控制，区分 prediction/interpolated 与 manual/legacy；③ 评论面板自动带入当前视频帧锚点，评论列表可点击跳帧；④ 轨迹侧栏显示当前帧来源并支持跳到下一条 prediction keyframe。→ [plan](docs/plans/2026-05-12-v0.9.35-review-video-anchors.md).

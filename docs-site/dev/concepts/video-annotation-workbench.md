@@ -245,6 +245,40 @@ POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes
 
 响应返回源 annotation 的新状态、创建出的 `video_bbox[]`、是否删除源 track，以及被移除的 frame indexes。`copy` 不会改动源轨迹，`removed_frame_indexes` 为空；`split` 才会移除源关键帧或删除整条源轨迹，并返回被移除的帧号。`all_frames` 使用与 Video Tracks JSON 导出相同的后端插值 helper：outside/absent 范围不输出 bbox，也不会跨消失段转换。为避免长视频一次性写爆 annotation 表，单次请求最多生成 5000 个 `video_bbox`。
 
+### Track Composition
+
+v0.9.37 新增反向组合接口：
+
+```http
+POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
+```
+
+请求体按 `operation` 分三类：
+
+```json
+{
+  "operation": "merge_tracks",
+  "annotation_ids": ["track-a", "track-b"],
+  "frame_index": 120
+}
+```
+
+字段：
+
+| 字段 | 取值 | 说明 |
+|---|---|---|
+| `operation` | `aggregate_bboxes` / `split_track` / `merge_tracks` | 聚合单帧框、拆分轨迹、合并轨迹 |
+| `annotation_ids` | UUID[] | 聚合时传 `video_bbox[]`；拆分时传 1 条 `video_track`；合并时传 2 条 `video_track` |
+| `frame_index` | number | `split_track` 必填，表示在当前可见帧之后切出后段 |
+| `delete_sources` | boolean | `aggregate_bboxes` 默认为 true，成功后删除源 `video_bbox` |
+
+约束：
+
+- `aggregate_bboxes` 要求同任务、同类、每帧最多一个 `video_bbox`。
+- `split_track` 要求切点是可见帧，源 annotation 保留前段，新 annotation 保存后段。
+- `merge_tracks` 只接受两条同类且可见帧区间不重叠的 track；中间 gap 会写入 `outside` 段。
+- 响应返回 `updated_annotations[]`、`created_annotations[]` 和 `deleted_annotation_ids[]`，前端用这些结果更新 annotation cache 并组成 undo/redo batch。
+
 ## 插值与质量检查
 
 前端只在相邻有效关键帧之间做 bbox 线性插值：
