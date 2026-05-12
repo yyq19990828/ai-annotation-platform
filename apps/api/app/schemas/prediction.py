@@ -20,6 +20,9 @@ class PredictionShape(BaseModel):
     class_name: str
     geometry: Union[BboxGeometry, PolygonGeometry, MultiPolygonGeometry, dict[str, Any]]
     confidence: float
+    # 原始 predictions.result 数组下标。GET /predictions 可能过滤/重排 shape,
+    # 采纳时必须把这个原始下标传回 /accept?shape_index=...
+    shape_index: int | None = None
 
 
 class PredictionOut(BaseModel):

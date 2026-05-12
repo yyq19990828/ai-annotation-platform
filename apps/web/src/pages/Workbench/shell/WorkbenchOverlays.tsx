@@ -1,6 +1,6 @@
 import type { PendingDrawing, EditingClass, Geom } from "../state/useWorkbenchState";
 import type { Viewport } from "../state/useViewportTransform";
-import { ClassPickerPopover } from "./ClassPickerPopover";
+import { ClassPickerPopover, type ClassPickerCancelReason } from "./ClassPickerPopover";
 
 type StageGeometry = {
   imgW: number;
@@ -27,7 +27,7 @@ interface WorkbenchOverlaysProps {
   recentClasses: string[];
   activeClass: string;
   onPickPendingClass: (cls: string) => void;
-  onCancelPending: () => void;
+  onCancelPending: (reason: ClassPickerCancelReason) => void;
   onCommitChangeClass: (cls: string) => void;
   onCancelChangeClass: () => void;
   onSamCommitClass: (cls: string) => void;

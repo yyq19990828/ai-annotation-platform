@@ -710,7 +710,11 @@ async def get_predictions(
 
     base: list[tuple[Any, list[dict]]] = []  # (raw prediction, internal shapes)
     for p in predictions:
-        shapes = [to_internal_shape(s) for s in (p.result or [])]
+        shapes = []
+        for shape_index, raw_shape in enumerate(p.result or []):
+            shape = dict(to_internal_shape(raw_shape))
+            shape["shape_index"] = shape_index
+            shapes.append(shape)
         if min_confidence is not None:
             shapes = [s for s in shapes if s.get("confidence", 0.0) >= min_confidence]
         if shapes:

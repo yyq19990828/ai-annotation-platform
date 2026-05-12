@@ -4,6 +4,7 @@ import { ClassPalette, shortcutForIndex } from "./ClassPalette";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type FixedAnchor = { left: number; top: number };
+export type ClassPickerCancelReason = "escape" | "outside";
 
 type CommonProps = {
   classes: string[];
@@ -11,7 +12,7 @@ type CommonProps = {
   defaultClass: string;
   title?: string;
   onPick: (cls: string) => void;
-  onCancel: () => void;
+  onCancel: (reason: ClassPickerCancelReason) => void;
 };
 
 type ImagePositionProps = CommonProps & {
@@ -54,7 +55,7 @@ export function ClassPickerPopover({
       if (e.target instanceof HTMLInputElement && e.key !== "Escape" && e.key !== "Enter") {
         return; // 让搜索框正常输入
       }
-      if (e.key === "Escape") { e.preventDefault(); onCancel(); return; }
+      if (e.key === "Escape") { e.preventDefault(); onCancel("escape"); return; }
       if (e.key === "Enter") {
         e.preventDefault();
         const fallback = defaultClass || classes[0];
@@ -81,7 +82,7 @@ export function ClassPickerPopover({
   // click outside to cancel
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onCancel();
+      if (ref.current && !ref.current.contains(e.target as Node)) onCancel("outside");
     };
     // 延迟绑定，避免捕获到落框那次 mouseup
     const t = setTimeout(() => document.addEventListener("mousedown", onDown), 0);

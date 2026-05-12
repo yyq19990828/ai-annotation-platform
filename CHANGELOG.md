@@ -30,7 +30,7 @@
 
 - **视频工具语义分离**：视频任务左侧工具栏只展示“矩形框”和“轨迹”，图片工作台工具模型不变。
 - **`video_bbox` 创建入口**：矩形框工具在当前帧创建单帧独立框；轨迹工具才创建或延续 `video_track`。
-- **视频 pending class picker**：VideoStage 拖框后复用 `ClassPickerPopover` 选类，Esc / 点外部仍按 `__unknown` 兜底。
+- **视频 pending class picker**：VideoStage 拖框后复用 `ClassPickerPopover` 选类，Esc 明确取消绘制，点外部仍按 `__unknown` 兜底。
 - **Track 转独立框 API**：`POST /tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` 支持 `copy|split`、`frame|track`、`keyframes|all_frames`。
 - **轨迹关键帧列表**：侧栏展示 keyframes，并提供复制为独立框、拆为独立框、删除关键帧、整条复制 / 拆分入口。
 
@@ -38,11 +38,16 @@
 
 - 视频模式 `1-9` 在有选中 `video_bbox` / `video_track` 时改选中对象类别；无选中时继续切换 active class。
 - Video Tracks JSON 导出和 track 转独立框共用同一套后端插值 helper，`absent=true` 阻断语义保持一致。
+- 标注详情里的 AI 待审 / 人工列表改为与轨迹列表一致的行式布局，采纳、驳回、改类、删除收敛为小图标操作。
+- 图片 / 视频画布的框体标签字号、标签底色和 resize 控制点尺寸统一；视频选中 `video_bbox` 或 `video_track` 当前帧框后显示 8 个控制点，支持边角缩放、`Shift` 锁定纵横比和 `Alt` 中心缩放。
 
 ### Fixed
 
 - 视频工作台不再把每次拖框都强制保存为轨迹。
 - 新建视频标注不再静默使用当前 active class 或第一个类别，用户可以在落库前明确选类。
+- 视频新建轨迹框 resize 后，悬浮播放条和隐藏态播放按钮不再拦截后续 resize 操作；选中框体的控制点层级高于时间轴。
+- AI 预测列表经过置信度过滤后，采纳单个预测框仍使用原始 `shape_index`，不再把不同类别的预测保存成同一类别。
+- 画完框后的类别选择中，Esc 不再落 `__unknown` 框；只有鼠标点外部才保留 `__unknown` 兜底。
 
 ## [0.9.19] - 2026-05-11
 

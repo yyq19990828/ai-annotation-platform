@@ -15,6 +15,8 @@ const DIRECTIONS: { dir: Direction; cx: number; cy: number; cursor: string }[] =
   { dir: "w",  cx: 0, cy: 0.5, cursor: "ew-resize" },
 ];
 
+type ResizeBox = Pick<Annotation, "x" | "y" | "w" | "h">;
+
 interface ResizeHandlesProps {
   b: Annotation;
   onResizeStart: (dir: Direction, e: React.PointerEvent) => void;
@@ -56,7 +58,7 @@ export type ResizeDirection = Direction;
  *   - 两键叠加：先按 aspect ratio 锁定，再以中心 mirror
  */
 export function applyResize(
-  start: Annotation,
+  start: ResizeBox,
   startPt: { x: number; y: number },
   curPt: { x: number; y: number },
   dir: Direction,

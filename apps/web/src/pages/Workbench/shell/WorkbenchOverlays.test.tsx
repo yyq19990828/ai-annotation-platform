@@ -70,6 +70,34 @@ describe("WorkbenchOverlays", () => {
     expect(screen.getByTestId("class-picker-popover").style.position).toBe("absolute");
   });
 
+  it("reports Escape separately from outside-click cancellation", async () => {
+    const onCancelPending = vi.fn();
+    const { unmount } = render(
+      <WorkbenchOverlays
+        {...baseProps}
+        stageGeom={{ imgW: 1000, imgH: 500 }}
+        pendingDrawing={{ geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } }}
+        onCancelPending={onCancelPending}
+      />,
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onCancelPending).toHaveBeenCalledWith("escape");
+    unmount();
+
+    const onOutsideCancel = vi.fn();
+    render(
+      <WorkbenchOverlays
+        {...baseProps}
+        stageGeom={{ imgW: 1000, imgH: 500 }}
+        pendingDrawing={{ geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } }}
+        onCancelPending={onOutsideCancel}
+      />,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.mouseDown(document.body);
+    expect(onOutsideCancel).toHaveBeenCalledWith("outside");
+  });
+
   it("renders SAM and batch pickers only when no higher-priority picker is active", () => {
     const { rerender } = render(
       <WorkbenchOverlays

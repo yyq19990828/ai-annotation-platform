@@ -9,6 +9,7 @@ export type VideoStageGeom = { x: number; y: number; w: number; h: number };
 export type VideoStageGeometry = VideoBboxGeometry | VideoTrackGeometry;
 export type VideoBboxAnnotation = AnnotationResponse & { geometry: VideoBboxGeometry };
 export type VideoTrackAnnotation = AnnotationResponse & { geometry: VideoTrackGeometry };
+export type VideoResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
 export type VideoFrameEntry = {
   id: string;
@@ -38,6 +39,7 @@ export type VideoTrackPreview = {
 export type VideoDragState =
   | { kind: "draw"; start: { x: number; y: number }; current: { x: number; y: number } }
   | { kind: "move"; id: string; start: { x: number; y: number }; origin: VideoStageGeom; current: VideoStageGeom }
+  | { kind: "resize"; id: string; dir: VideoResizeDirection; start: { x: number; y: number }; origin: VideoStageGeom; current: VideoStageGeom }
   | null;
 
 export type VideoTrackConversionOptions = {

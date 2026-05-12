@@ -114,12 +114,13 @@ export function predictionsToBoxes(predictions: PredictionResponse[]): AiBox[] {
   return predictions.flatMap((p) =>
     p.result.map((shape, i) => {
       const s = geometryToShape(shape.geometry);
+      const shapeIndex = typeof shape.shape_index === "number" ? shape.shape_index : i;
       return {
-        id: `pred-${p.id}-${i}`,
+        id: `pred-${p.id}-${shapeIndex}`,
         annotation_type: shape.geometry.type,
         geometry: shape.geometry,
         predictionId: p.id,
-        shapeIndex: i,
+        shapeIndex,
         ...s,
         cls: shape.class_name,
         conf: shape.confidence,

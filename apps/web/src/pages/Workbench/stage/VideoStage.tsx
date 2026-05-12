@@ -7,6 +7,7 @@ import { VideoFrameOverlay } from "./VideoFrameOverlay";
 import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { VideoSelectionActions } from "./VideoSelectionActions";
+import { applyResize } from "./ResizeHandles";
 import {
   clamp01,
   clampGeom,
@@ -23,6 +24,7 @@ import {
 import type {
   VideoDragState,
   VideoFrameEntry,
+  VideoResizeDirection,
   VideoStageGeom,
   VideoStageGeometry,
   VideoTrackConversionOptions,
@@ -390,9 +392,25 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     if (readOnly || isPlaying || (trackId && lockedTrackIds.has(trackId))) return;
     const pt = pointFromEvent(evt as unknown as ReactPointerEvent<SVGSVGElement>);
     if (!pt) return;
-    (evt.currentTarget.ownerSVGElement as SVGSVGElement | null)?.setPointerCapture?.(evt.pointerId);
+    evt.currentTarget.setPointerCapture?.(evt.pointerId);
     setPlaybackOverlayVisible(false);
     setDrag({ kind: "move", id: entry.ann.id, start: pt, origin: entry.geom, current: entry.geom });
+  }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly]);
+
+  const beginResize = useCallback((
+    dir: VideoResizeDirection,
+    evt: ReactPointerEvent<SVGRectElement>,
+    entry: VideoFrameEntry | VideoTrackGhost,
+  ) => {
+    const trackId = isVideoTrack(entry.ann) ? entry.ann.geometry.track_id : null;
+    evt.stopPropagation();
+    onSelect(entry.ann.id);
+    if (readOnly || isPlaying || (trackId && lockedTrackIds.has(trackId))) return;
+    const pt = pointFromEvent(evt as unknown as ReactPointerEvent<SVGSVGElement>);
+    if (!pt) return;
+    evt.currentTarget.setPointerCapture?.(evt.pointerId);
+    setPlaybackOverlayVisible(false);
+    setDrag({ kind: "resize", id: entry.ann.id, dir, start: pt, origin: entry.geom, current: entry.geom });
   }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly]);
 
   const onPointerMove = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
@@ -403,13 +421,16 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       setDrag({ ...drag, current: pt });
       return;
     }
-    const dx = pt.x - drag.start.x;
-    const dy = pt.y - drag.start.y;
-    const next = clampGeom({
-      ...drag.origin,
-      x: drag.origin.x + dx,
-      y: drag.origin.y + dy,
-    });
+    const next = drag.kind === "resize"
+      ? applyResize(drag.origin, drag.start, pt, drag.dir, {
+        shiftKey: evt.shiftKey,
+        altKey: evt.altKey,
+      })
+      : clampGeom({
+        ...drag.origin,
+        x: drag.origin.x + (pt.x - drag.start.x),
+        y: drag.origin.y + (pt.y - drag.start.y),
+      });
     setDrag({ ...drag, current: next });
   }, [drag, pointFromEvent, updateCursor]);
 
@@ -440,6 +461,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     }
     const ann = annotations.find((a) => a.id === cur.id);
     if (!ann) return;
+    if (cur.kind === "resize" && (cur.current.w < 0.003 || cur.current.h < 0.003)) return;
     if (isVideoTrack(ann)) {
       onUpdate(ann, upsertKeyframe(ann.geometry, frameIndex, cur.current));
     } else if (isVideoBbox(ann)) {
@@ -482,6 +504,12 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }
 
   const draft = drag?.kind === "draw" ? normalizeGeom(drag.start, drag.current) : null;
+  const hasEditableSelection = Boolean(
+    !readOnly &&
+      !isPlaying &&
+      selectedId &&
+      (currentFrameEntries.some((entry) => entry.ann.id === selectedId) || selectedTrackGhost?.ann.id === selectedId),
+  );
 
   return (
     <div
@@ -521,6 +549,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               selectedTrackLocked={selectedTrackLocked}
               onBeginDraw={beginDraw}
               onBeginMove={beginMove}
+              onBeginResize={beginResize}
               onPointerMove={onPointerMove}
               onFinishDrag={finishDrag}
               onCancelDrag={() => setDrag(null)}
@@ -582,6 +611,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             annotatedFrames={[...annotatedFrames].sort((a, b) => a - b)}
             currentFrameEntryCount={currentFrameEntries.length}
             visible={playbackOverlayVisible && !drag}
+            interactive={!hasEditableSelection}
             highlightAction={highlightAction}
             onSeek={(frame) => {
               showPlaybackOverlay();

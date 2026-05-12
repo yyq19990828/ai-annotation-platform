@@ -4,6 +4,12 @@ import type { Annotation } from "@/types";
 import type { ResizeDirection } from "./ResizeHandles";
 import { classColorForCanvas, hexToRgba } from "./colors";
 import type { Pt } from "./polygonGeom";
+import {
+  BOX_HANDLE_SCREEN_PX,
+  BOX_LABEL_FONT_PX,
+  BOX_LABEL_OFFSET_PX,
+  BOX_LABEL_PAD_PX,
+} from "./boxVisual";
 
 const HANDLE_DIRECTIONS: { dir: ResizeDirection; cx: number; cy: number; cursor: string }[] = [
   { dir: "nw", cx: 0,   cy: 0,   cursor: "nwse-resize" },
@@ -15,8 +21,6 @@ const HANDLE_DIRECTIONS: { dir: ResizeDirection; cx: number; cy: number; cursor:
   { dir: "sw", cx: 0,   cy: 1,   cursor: "nesw-resize" },
   { dir: "w",  cx: 0,   cy: 0.5, cursor: "ew-resize" },
 ];
-const HANDLE_SCREEN_PX = 9;
-
 interface KonvaBoxProps {
   b: Annotation;
   isAi: boolean;
@@ -40,9 +44,8 @@ export function KonvaBox({
 }: KonvaBoxProps) {
   const color = classColorForCanvas(b.cls);
   const sw = (selected ? 2 : 1.5) / scale;
-  const handleSize = HANDLE_SCREEN_PX / scale;
-  const labelFontSize = 10.5 / scale;
-  const labelPad = 4 / scale;
+  const handleSize = BOX_HANDLE_SCREEN_PX / scale;
+  const labelFontSize = BOX_LABEL_FONT_PX / scale;
   const isUserSelected = selected && !isAi && editable;
   const labelText = isAi
     ? `✦ ${b.cls} ${(b.conf * 100).toFixed(0)}%`
@@ -80,13 +83,13 @@ export function KonvaBox({
         }}
       />
 
-      <Label x={b.x * imgW} y={b.y * imgH - 22 / scale} listening={false}>
+      <Label x={b.x * imgW} y={b.y * imgH - BOX_LABEL_OFFSET_PX / scale} listening={false}>
         <Tag fill={color} cornerRadius={3 / scale} />
         <Text
           text={labelText}
           fill="white"
           fontSize={labelFontSize}
-          padding={labelPad}
+          padding={BOX_LABEL_PAD_PX / scale}
           fontFamily="var(--font-sans, sans-serif)"
         />
       </Label>
@@ -148,8 +151,7 @@ export function KonvaPolygon({
 }: KonvaPolygonProps) {
   const color = classColorForCanvas(b.cls);
   const sw = (selected ? 2 : 1.5) / scale;
-  const labelFontSize = 10.5 / scale;
-  const labelPad = 4 / scale;
+  const labelFontSize = BOX_LABEL_FONT_PX / scale;
   const labelText = isAi
     ? `✦ ${b.cls} ${(b.conf * 100).toFixed(0)}%`
     : b.cls;
@@ -188,13 +190,13 @@ export function KonvaPolygon({
         }}
       />
       {flat.length >= 2 && (
-        <Label x={flat[0]} y={flat[1] - 22 / scale} listening={false}>
+        <Label x={flat[0]} y={flat[1] - BOX_LABEL_OFFSET_PX / scale} listening={false}>
           <Tag fill={strokeColor} cornerRadius={3 / scale} />
           <Text
             text={labelText + (selfIntersect ? " ⚠" : "")}
             fill="white"
             fontSize={labelFontSize}
-            padding={labelPad}
+            padding={BOX_LABEL_PAD_PX / scale}
             fontFamily="var(--font-sans, sans-serif)"
           />
         </Label>

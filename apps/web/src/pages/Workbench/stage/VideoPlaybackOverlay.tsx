@@ -13,6 +13,7 @@ interface VideoPlaybackOverlayProps {
   annotatedFrames: number[];
   currentFrameEntryCount: number;
   visible: boolean;
+  interactive?: boolean;
   highlightAction?: HighlightAction;
   onSeek: (frameIndex: number) => void;
   onSeekByFrames: (delta: number) => void;
@@ -34,6 +35,7 @@ export function VideoPlaybackOverlay({
   annotatedFrames,
   currentFrameEntryCount,
   visible,
+  interactive = true,
   highlightAction = null,
   onSeek,
   onSeekByFrames,
@@ -49,6 +51,7 @@ export function VideoPlaybackOverlay({
     color: "#fff",
     background: active ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.08)",
     borderColor: active ? "rgba(255,255,255,0.36)" : "rgba(255,255,255,0.18)",
+    pointerEvents: visible && interactive ? "auto" : "none",
   });
 
   return (
@@ -60,7 +63,7 @@ export function VideoPlaybackOverlay({
         bottom: 12,
         transform: `translateX(-50%) translateY(${visible ? 0 : 8}px)`,
         opacity: visible ? 1 : 0,
-        pointerEvents: visible ? "auto" : "none",
+        pointerEvents: "none",
         transition: "opacity 160ms ease, transform 160ms ease",
         width: "min(820px, calc(100% - 28px))",
         display: "grid",
@@ -76,7 +79,7 @@ export function VideoPlaybackOverlay({
         zIndex: 4,
       }}
     >
-      <div style={{ display: "flex", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6, pointerEvents: visible && interactive ? "auto" : "none" }}>
         <Button size="sm" title="上一帧" onClick={() => onSeekByFrames(-1)} style={iconButtonStyle(highlightAction === "prev")}>
           <Icon name="chevLeft" size={13} />
         </Button>
@@ -88,7 +91,7 @@ export function VideoPlaybackOverlay({
         </Button>
       </div>
 
-      <div style={{ position: "relative", height: 28, display: "flex", alignItems: "center" }}>
+      <div style={{ position: "relative", height: 28, display: "flex", alignItems: "center", pointerEvents: visible && interactive ? "auto" : "none" }}>
         <input
           aria-label="视频帧时间轴"
           type="range"

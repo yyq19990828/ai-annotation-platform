@@ -557,9 +557,12 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handlePickPendingClass(cls);
   }, [handlePickPendingClass, handlePickVideoPendingClass]);
 
-  const handleCancelPending = useCallback(() => {
-    // 画完框未选类别时（Esc / 点外部）不丢弃，按 __unknown 落库为灰色框；
-    // 用户后续可通过「改类别」补类。
+  const handleCancelPending = useCallback((reason: "escape" | "outside") => {
+    // Esc 是明确放弃本次绘制；点外部保留原兜底，落 __unknown 供后续补类。
+    if (reason === "escape") {
+      s.setPendingDrawing(null);
+      return;
+    }
     if (s.pendingDrawing) handlePickPendingClassAny(UNKNOWN_CLASS);
     else s.setPendingDrawing(null);
   }, [s, handlePickPendingClassAny]);

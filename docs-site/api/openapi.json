@@ -6684,6 +6684,17 @@
             ],
             "title": "Geometry"
           },
+          "shape_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shape Index"
+          },
           "type": {
             "title": "Type",
             "type": "string"

@@ -79,6 +79,14 @@ function annotationToolMeta(
   };
 }
 
+const rowActionButtonStyle: React.CSSProperties = {
+  width: 30,
+  height: 30,
+  padding: 0,
+  justifyContent: "center",
+  borderRadius: 8,
+};
+
 interface BoxListItemProps {
   b: Annotation;
   isAi?: boolean;
@@ -105,87 +113,136 @@ export function BoxListItem({
     <div
       onClick={(e) => onSelect({ shiftKey: e.shiftKey })}
       style={{
-        padding: "6px 8px", borderRadius: "var(--radius-md)", cursor: "pointer",
-        background: selected ? "var(--color-bg-sunken)" : "transparent",
-        border: "1px solid " + (selected ? "var(--color-border-strong)" : "transparent"),
-        marginBottom: 2,
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr) auto",
+        gap: 8,
+        alignItems: "center",
+        padding: "8px 10px",
+        borderRadius: 8,
+        cursor: "pointer",
+        background: selected ? "color-mix(in oklab, var(--color-accent) 12%, var(--color-bg-elev))" : "transparent",
+        border: `1px solid ${selected ? "var(--color-accent)" : "var(--color-border)"}`,
+        marginBottom: 8,
         opacity: dimmed ? 0.55 : 1,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-        <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flex: "0 0 8px" }} />
-        <span style={{ fontWeight: 500 }}>{b.cls}</span>
-        {dimmed && (
-          <span
-            style={{
-              fontSize: 9.5, padding: "1px 5px", borderRadius: 3,
-              background: "var(--color-bg-sunken)", color: "var(--color-fg-subtle)",
-              border: "1px solid var(--color-border)",
-            }}
-            title="已被同类用户框（IoU > 0.7）覆盖"
-          >已被覆盖</span>
-        )}
-        {isAi ? (
-          <Badge variant="ai" style={{ fontSize: 9.5, padding: "1px 5px", marginLeft: "auto" }}>
-            <Icon name="sparkle" size={8} />{(b.conf * 100).toFixed(0)}%
-          </Badge>
-        ) : (
-          <Badge variant={b.source === "prediction_based" ? "default" : "accent"} style={{ fontSize: 9.5, padding: "1px 5px", marginLeft: "auto" }}>
-            {b.source === "prediction_based" ? "AI 采纳" : "手动"}
-          </Badge>
-        )}
-      </div>
       <div
-        className="mono"
         style={{
-          fontSize: 10,
-          color: "var(--color-fg-subtle)",
-          marginTop: 4,
-          paddingLeft: 14,
-          display: "flex",
-          gap: 6,
+          display: "grid",
+          gridTemplateColumns: "auto minmax(0, 1fr)",
+          gap: "4px 8px",
           alignItems: "center",
           minWidth: 0,
         }}
       >
-        <span
-          style={{
-            flex: "0 0 auto",
-            padding: "1px 5px",
-            borderRadius: 4,
-            border: "1px solid var(--color-border)",
-            background: "var(--color-bg-sunken)",
-            color: "var(--color-fg-muted)",
-            fontFamily: "inherit",
-          }}
-        >
-          {toolMeta.label}
-        </span>
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {toolMeta.detail}
-        </span>
-      </div>
-      {selected && (
-        <div style={{ display: "flex", gap: 4, marginTop: 6, paddingLeft: 14 }}>
+        <span style={{ gridRow: "1 / span 2", width: 10, height: 10, borderRadius: 999, background: color }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+          <b style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.cls}</b>
           {isAi ? (
-            <>
-              <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); onAccept?.(); }} style={{ flex: 1 }}>采纳</Button>
-              <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onReject?.(); }} style={{ flex: 1 }}>驳回</Button>
-            </>
+            <Badge variant="ai" style={{ fontSize: 10, padding: "1px 6px" }}>
+              <Icon name="sparkle" size={8} />{(b.conf * 100).toFixed(0)}%
+            </Badge>
           ) : (
-            <>
-              {onChangeClass && (
-                <Button size="sm" onClick={(e) => { e.stopPropagation(); onChangeClass(); }} style={{ flex: 1 }} title="改类别 (C)">
-                  改类
-                </Button>
-              )}
-              <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onDelete?.(); }} style={{ flex: 1 }}>
-                <Icon name="trash" size={10} />删除
-              </Button>
-            </>
+            <Badge variant={b.source === "prediction_based" ? "default" : "accent"} style={{ fontSize: 10, padding: "1px 6px" }}>
+              {b.source === "prediction_based" ? "AI 采纳" : "手动"}
+            </Badge>
+          )}
+          {dimmed && (
+            <span
+              style={{
+                fontSize: 10, padding: "1px 6px", borderRadius: 6,
+                background: "var(--color-bg-sunken)", color: "var(--color-fg-subtle)",
+                border: "1px solid var(--color-border)",
+              }}
+              title="已被同类用户框（IoU > 0.7）覆盖"
+            >已被覆盖</span>
           )}
         </div>
-      )}
+        <div
+          className="mono"
+          style={{
+            display: "flex",
+            gap: 6,
+            alignItems: "center",
+            minWidth: 0,
+            fontSize: 11,
+            color: "var(--color-fg-muted)",
+          }}
+        >
+          <span
+            style={{
+              flex: "0 0 auto",
+              padding: "1px 5px",
+              borderRadius: 4,
+              border: "1px solid var(--color-border)",
+              background: "var(--color-bg-sunken)",
+              color: "var(--color-fg-muted)",
+              fontFamily: "inherit",
+            }}
+          >
+            {toolMeta.label}
+          </span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {toolMeta.detail}
+          </span>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        {isAi ? (
+          <>
+            {onAccept && (
+              <Button
+                variant="primary"
+                size="sm"
+                title="采纳预测"
+                aria-label="采纳预测"
+                onClick={(e) => { e.stopPropagation(); onAccept(); }}
+                style={rowActionButtonStyle}
+              >
+                <Icon name="check" size={14} />
+              </Button>
+            )}
+            {onReject && (
+              <Button
+                variant="danger"
+                size="sm"
+                title="驳回预测"
+                aria-label="驳回预测"
+                onClick={(e) => { e.stopPropagation(); onReject(); }}
+                style={rowActionButtonStyle}
+              >
+                <Icon name="x" size={14} />
+              </Button>
+            )}
+          </>
+        ) : (
+          <>
+            {onChangeClass && (
+              <Button
+                size="sm"
+                title="修改类别"
+                aria-label="修改类别"
+                onClick={(e) => { e.stopPropagation(); onChangeClass(); }}
+                style={rowActionButtonStyle}
+              >
+                <Icon name="tag" size={14} />
+              </Button>
+            )}
+            {onDelete && (
+              <Button
+                variant="danger"
+                size="sm"
+                title="删除标注"
+                aria-label="删除标注"
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                style={rowActionButtonStyle}
+              >
+                <Icon name="trash" size={14} />
+              </Button>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

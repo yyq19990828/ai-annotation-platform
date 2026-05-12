@@ -1,13 +1,34 @@
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { VideoTool } from "../state/useWorkbenchState";
 import { classColor } from "./colors";
+import {
+  BOX_LABEL_FONT_PX,
+  BOX_LABEL_PAD_PX,
+  VIDEO_HANDLE_HIT_SIZE,
+  VIDEO_HANDLE_SIZE,
+  VIDEO_LABEL_HEIGHT,
+  VIDEO_LABEL_OFFSET,
+  VIDEO_LABEL_WIDTH,
+} from "./boxVisual";
 import type {
   VideoDragState,
   VideoFrameEntry,
+  VideoResizeDirection,
   VideoStageGeom,
   VideoTrackGhost,
   VideoTrackPreview,
 } from "./videoStageTypes";
+
+const HANDLE_DIRECTIONS: { dir: VideoResizeDirection; cx: number; cy: number; cursor: string }[] = [
+  { dir: "nw", cx: 0, cy: 0, cursor: "nwse-resize" },
+  { dir: "n", cx: 0.5, cy: 0, cursor: "ns-resize" },
+  { dir: "ne", cx: 1, cy: 0, cursor: "nesw-resize" },
+  { dir: "e", cx: 1, cy: 0.5, cursor: "ew-resize" },
+  { dir: "se", cx: 1, cy: 1, cursor: "nwse-resize" },
+  { dir: "s", cx: 0.5, cy: 1, cursor: "ns-resize" },
+  { dir: "sw", cx: 0, cy: 1, cursor: "nesw-resize" },
+  { dir: "w", cx: 0, cy: 0.5, cursor: "ew-resize" },
+];
 
 interface VideoFrameOverlayProps {
   overlayRef: RefObject<SVGSVGElement>;
@@ -26,6 +47,11 @@ interface VideoFrameOverlayProps {
   selectedTrackLocked: boolean;
   onBeginDraw: (evt: ReactPointerEvent<SVGSVGElement>) => void;
   onBeginMove: (evt: ReactPointerEvent<SVGRectElement>, entry: VideoFrameEntry | VideoTrackGhost) => void;
+  onBeginResize: (
+    dir: VideoResizeDirection,
+    evt: ReactPointerEvent<SVGRectElement>,
+    entry: VideoFrameEntry | VideoTrackGhost,
+  ) => void;
   onPointerMove: (evt: ReactPointerEvent<SVGSVGElement>) => void;
   onFinishDrag: (evt: ReactPointerEvent<SVGSVGElement>) => void;
   onCancelDrag: () => void;
@@ -49,6 +75,7 @@ export function VideoFrameOverlay({
   selectedTrackLocked,
   onBeginDraw,
   onBeginMove,
+  onBeginResize,
   onPointerMove,
   onFinishDrag,
   onCancelDrag,
@@ -57,7 +84,79 @@ export function VideoFrameOverlay({
   const viewBoxHeight = Number.isFinite(aspectRatio) && aspectRatio > 0 ? 1 / aspectRatio : 9 / 16;
   const y = (value: number) => value * viewBoxHeight;
   const h = (value: number) => value * viewBoxHeight;
-  const labelY = (geom: VideoStageGeom) => Number(Math.max(0.028, y(geom.y) - 0.006).toFixed(4));
+  const labelY = (geom: VideoStageGeom) => Number(Math.max(0, y(geom.y) - VIDEO_LABEL_OFFSET).toFixed(4));
+  const renderLabel = (geom: VideoStageGeom, color: string, text: string, opacity = 1) => (
+    <foreignObject
+      x={geom.x}
+      y={labelY(geom)}
+      width={VIDEO_LABEL_WIDTH}
+      height={VIDEO_LABEL_HEIGHT}
+      style={{ overflow: "visible", pointerEvents: "none" }}
+    >
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          maxWidth: "100%",
+          padding: `${BOX_LABEL_PAD_PX - 1}px ${BOX_LABEL_PAD_PX + 2}px`,
+          borderRadius: 3,
+          background: color,
+          color: "white",
+          fontSize: BOX_LABEL_FONT_PX,
+          fontFamily: "var(--font-sans, sans-serif)",
+          fontWeight: 500,
+          lineHeight: 1.1,
+          whiteSpace: "nowrap",
+          opacity,
+          boxShadow: "0 1px 4px rgba(0,0,0,0.22)",
+        }}
+      >
+        {text}
+      </div>
+    </foreignObject>
+  );
+  const renderResizeHandles = (
+    geom: VideoStageGeom,
+    color: string,
+    entry: VideoFrameEntry | VideoTrackGhost,
+  ) => (
+    <>
+      {HANDLE_DIRECTIONS.map(({ dir, cx, cy, cursor }) => {
+        const centerX = geom.x + geom.w * cx;
+        const centerY = y(geom.y + geom.h * cy);
+        return (
+          <g key={dir}>
+            <rect
+              data-testid="video-resize-hit-area"
+              data-dir={dir}
+              x={centerX - VIDEO_HANDLE_HIT_SIZE / 2}
+              y={centerY - VIDEO_HANDLE_HIT_SIZE / 2}
+              width={VIDEO_HANDLE_HIT_SIZE}
+              height={VIDEO_HANDLE_HIT_SIZE}
+              fill="transparent"
+              style={{ cursor, pointerEvents: "visibleFill" }}
+              onPointerDown={(evt) => onBeginResize(dir, evt, entry)}
+            />
+            <rect
+              data-testid="video-resize-handle"
+              data-dir={dir}
+              x={centerX - VIDEO_HANDLE_SIZE / 2}
+              y={centerY - VIDEO_HANDLE_SIZE / 2}
+              width={VIDEO_HANDLE_SIZE}
+              height={VIDEO_HANDLE_SIZE}
+              rx={0.0025}
+              fill="white"
+              stroke={color}
+              strokeWidth={1.5}
+              vectorEffect="non-scaling-stroke"
+              style={{ cursor, pointerEvents: "auto" }}
+              onPointerDown={(evt) => onBeginResize(dir, evt, entry)}
+            />
+          </g>
+        );
+      })}
+    </>
+  );
 
   return (
     <svg
@@ -75,6 +174,7 @@ export function VideoFrameOverlay({
         inset: 0,
         width: "100%",
         height: "100%",
+        zIndex: 2,
         cursor: readOnly || isPlaying || (videoTool === "track" && selectedTrackLocked)
           ? "default"
           : videoTool === "track"
@@ -131,9 +231,10 @@ export function VideoFrameOverlay({
         );
       })}
       {entries.map((entry) => {
-        const g = drag?.kind === "move" && drag.id === entry.ann.id ? drag.current : entry.geom;
+        const g = (drag?.kind === "move" || drag?.kind === "resize") && drag.id === entry.ann.id ? drag.current : entry.geom;
         const color = classColor(entry.className);
         const selected = entry.ann.id === selectedId;
+        const canEditSelected = selected && !readOnly && !isPlaying && !(entry.trackId && selectedTrackLocked);
         const labelSuffix = entry.source === "interpolated"
           ? " · 插值"
           : entry.occluded
@@ -151,19 +252,11 @@ export function VideoFrameOverlay({
               strokeWidth={selected ? 3 : 2}
               strokeDasharray={entry.source === "interpolated" || entry.occluded ? "6 4" : undefined}
               vectorEffect="non-scaling-stroke"
+              style={{ cursor: canEditSelected ? "move" : "pointer", pointerEvents: "auto" }}
               onPointerDown={(evt) => onBeginMove(evt, entry)}
             />
-            <text
-              x={g.x}
-              y={labelY(g)}
-              fontSize="0.025"
-              fill={color}
-              stroke="rgba(0,0,0,0.75)"
-              strokeWidth="0.004"
-              paintOrder="stroke"
-            >
-              {entry.className}{labelSuffix}
-            </text>
+            {renderLabel(g, color, `${entry.className}${labelSuffix}`)}
+            {canEditSelected && renderResizeHandles(g, color, entry)}
           </g>
         );
       })}
@@ -180,20 +273,37 @@ export function VideoFrameOverlay({
             strokeDasharray="3 5"
             opacity={0.72}
             vectorEffect="non-scaling-stroke"
+            style={{ cursor: "move", pointerEvents: "auto" }}
             onPointerDown={(evt) => onBeginMove(evt, selectedTrackGhost)}
           />
-          <text
-            x={selectedTrackGhost.geom.x}
-            y={labelY(selectedTrackGhost.geom)}
-            fontSize="0.025"
-            fill={classColor(selectedTrackGhost.className)}
-            stroke="rgba(0,0,0,0.75)"
-            strokeWidth="0.004"
-            opacity={0.86}
-            paintOrder="stroke"
-          >
-            {selectedTrackGhost.className} · 参考 F{selectedTrackGhost.originFrame}
-          </text>
+          {renderLabel(
+            selectedTrackGhost.geom,
+            classColor(selectedTrackGhost.className),
+            `${selectedTrackGhost.className} · 参考 F${selectedTrackGhost.originFrame}`,
+            0.86,
+          )}
+          {!readOnly && !isPlaying && !selectedTrackLocked && renderResizeHandles(
+            selectedTrackGhost.geom,
+            classColor(selectedTrackGhost.className),
+            selectedTrackGhost,
+          )}
+        </g>
+      )}
+      {selectedTrackGhost && (drag?.kind === "move" || drag?.kind === "resize") && drag.id === selectedTrackGhost.ann.id && (
+        <g data-testid="video-track-ghost">
+          <rect
+            x={drag.current.x}
+            y={y(drag.current.y)}
+            width={drag.current.w}
+            height={h(drag.current.h)}
+            fill="rgba(255,255,255,0.035)"
+            stroke={classColor(selectedTrackGhost.className)}
+            strokeWidth={2}
+            strokeDasharray="3 5"
+            opacity={0.72}
+            vectorEffect="non-scaling-stroke"
+          />
+          {drag.kind === "resize" && renderResizeHandles(drag.current, classColor(selectedTrackGhost.className), selectedTrackGhost)}
         </g>
       )}
       {draft && (

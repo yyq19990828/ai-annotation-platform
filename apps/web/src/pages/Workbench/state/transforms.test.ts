@@ -134,6 +134,26 @@ describe("predictionsToBoxes", () => {
     expect(boxes[0].predictionId).toBe("p1");
     expect(boxes[0].source).toBe("prediction_based");
   });
+
+  it("uses original shape_index for ids and accept payloads when predictions are filtered", () => {
+    const preds = [
+      {
+        id: "p1",
+        result: [
+          {
+            shape_index: 2,
+            geometry: { type: "bbox", x: 0.5, y: 0.5, w: 0.2, h: 0.2 },
+            class_name: "person",
+            confidence: 0.9,
+          },
+        ],
+      },
+    ] as any;
+    const [box] = predictionsToBoxes(preds);
+    expect(box.id).toBe("pred-p1-2");
+    expect(box.shapeIndex).toBe(2);
+    expect(box.cls).toBe("person");
+  });
 });
 
 /**

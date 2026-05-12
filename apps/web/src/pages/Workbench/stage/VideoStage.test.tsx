@@ -65,7 +65,7 @@ describe("VideoStage", () => {
 
   it("draws a bbox on the current frame while paused", () => {
     const onCreate = vi.fn();
-    const { getByTestId } = render(
+    const { getByTestId, getByTitle } = render(
       <VideoStage
         manifest={manifest}
         annotations={[]}
@@ -95,7 +95,7 @@ describe("VideoStage", () => {
 
   it("does not toggle playback when clicking the paused overlay without drawing", () => {
     const onCreate = vi.fn();
-    const { getByTestId } = render(
+    const { getByTestId, getByTitle } = render(
       <VideoStage
         manifest={manifest}
         annotations={[]}
@@ -166,7 +166,7 @@ describe("VideoStage", () => {
   });
 
   it("renders playback controls as a floating overlay and hides it while editing", () => {
-    const { getByTestId } = render(
+    const { getByTestId, getByTitle } = render(
       <VideoStage
         manifest={manifest}
         annotations={[]}
@@ -183,10 +183,74 @@ describe("VideoStage", () => {
     setRect(overlay);
 
     expect(playbackOverlay).toHaveStyle({ opacity: "1" });
+    expect(playbackOverlay).toHaveStyle({ pointerEvents: "none" });
 
     fireEvent(overlay, pointer("pointerdown", 100, 100));
 
     expect(playbackOverlay).toHaveStyle({ opacity: "0" });
+    expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "none" });
+  });
+
+  it("lets playback controls visually float but not capture events while an editable box is selected", () => {
+    const annotations = [
+      {
+        id: "b1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 0, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId, getByTitle } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="b1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const stage = getByTestId("video-stage");
+    const overlay = getByTestId("video-overlay");
+    const playbackOverlay = getByTestId("video-playback-overlay");
+
+    expect(playbackOverlay).toHaveStyle({ opacity: "1" });
+    expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "none" });
+    expect(overlay).toHaveStyle({ zIndex: "2", pointerEvents: "auto" });
+
+    fireEvent.mouseMove(stage);
+
+    expect(playbackOverlay).toHaveStyle({ opacity: "1" });
+    expect(overlay).toHaveStyle({ cursor: "crosshair" });
+  });
+
+  it("keeps playback controls available when the selected bbox is on another frame", () => {
+    const annotations = [
+      {
+        id: "b1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 3, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId, getByTitle } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="b1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    expect(getByTestId("video-playback-overlay")).toHaveStyle({ opacity: "1" });
+    expect(getByTestId("video-overlay")).toHaveStyle({ zIndex: "2", pointerEvents: "auto" });
+    expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "auto" });
   });
 
   it("renders video quality warnings at the top of the stage", () => {
@@ -308,9 +372,9 @@ describe("VideoStage", () => {
       />,
     );
 
-    const text = container.querySelector("svg text");
-    expect(text).toHaveAttribute("x", "0.1");
-    expect(text).toHaveAttribute("y", "0.424");
+    const label = container.querySelector("svg foreignObject");
+    expect(label).toHaveAttribute("x", "0.1");
+    expect(label).toHaveAttribute("y", "0.387");
   });
 
   it("adds a keyframe to the selected video track", () => {
@@ -467,6 +531,160 @@ describe("VideoStage", () => {
     expect(geometry.keyframes[1].bbox.y).toBeCloseTo(0.3);
   });
 
+  it("resizes a selected video bbox with corner handles", () => {
+    const onUpdate = vi.fn();
+    const annotations = [
+      {
+        id: "b1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 0, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      },
+    ] as AnnotationResponse[];
+
+    const { getAllByTestId, getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="b1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={onUpdate}
+        onRename={() => {}}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    expect(getAllByTestId("video-resize-handle")).toHaveLength(8);
+    expect(getAllByTestId("video-resize-hit-area")).toHaveLength(8);
+    const seHitArea = overlay.querySelector('[data-testid="video-resize-hit-area"][data-dir="se"]');
+    expect(seHitArea).not.toBeNull();
+
+    fireEvent(seHitArea!, pointer("pointerdown", 300, 150));
+    fireEvent(overlay, pointer("pointermove", 400, 200));
+    fireEvent(overlay, pointer("pointerup", 400, 200));
+
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const [, geometry] = onUpdate.mock.calls[0];
+    expect(geometry).toMatchObject({ type: "video_bbox", frame_index: 0 });
+    expect(geometry.x).toBeCloseTo(0.1);
+    expect(geometry.y).toBeCloseTo(0.1);
+    expect(geometry.w).toBeCloseTo(0.3);
+    expect(geometry.h).toBeCloseTo(0.3);
+  });
+
+  it("resizes a selected-track ghost into a current-frame keyframe", () => {
+    const onUpdate = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByLabelText, getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={onUpdate}
+        onRename={() => {}}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "3" } });
+    const ghost = getByTestId("video-track-ghost");
+    const seHandle = ghost.querySelector('[data-testid="video-resize-handle"][data-dir="se"]');
+    expect(seHandle).not.toBeNull();
+
+    fireEvent(seHandle!, pointer("pointerdown", 300, 150));
+    fireEvent(overlay, pointer("pointermove", 400, 200));
+    fireEvent(overlay, pointer("pointerup", 400, 200));
+
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const [, geometry] = onUpdate.mock.calls[0];
+    expect(geometry.type).toBe("video_track");
+    expect(geometry.keyframes).toHaveLength(2);
+    expect(geometry.keyframes[1].frame_index).toBe(3);
+    expect(geometry.keyframes[1].bbox.w).toBeCloseTo(0.3);
+    expect(geometry.keyframes[1].bbox.h).toBeCloseTo(0.3);
+  });
+
+  it("allows resizing the same selected track twice without moving it first", () => {
+    const onUpdate = vi.fn();
+    const baseTrack: AnnotationResponse = {
+      id: "t1",
+      class_name: "car",
+      geometry: {
+        type: "video_track",
+        track_id: "trk_car",
+        keyframes: [
+          { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+        ],
+      },
+    } as AnnotationResponse;
+
+    const { getByTestId, rerender } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[baseTrack]}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={onUpdate}
+        onRename={() => {}}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    const firstHandle = overlay.querySelector('[data-testid="video-resize-handle"][data-dir="se"]');
+    expect(firstHandle).not.toBeNull();
+    fireEvent(firstHandle!, pointer("pointerdown", 300, 150));
+    fireEvent(overlay, pointer("pointermove", 400, 200));
+    fireEvent(overlay, pointer("pointerup", 400, 200));
+
+    const firstGeometry = onUpdate.mock.calls[0][1];
+    const resizedTrack = { ...baseTrack, geometry: firstGeometry } as AnnotationResponse;
+    rerender(
+      <VideoStage
+        manifest={manifest}
+        annotations={[resizedTrack]}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={onUpdate}
+        onRename={() => {}}
+      />,
+    );
+
+    const secondHandle = getByTestId("video-overlay").querySelector('[data-testid="video-resize-handle"][data-dir="se"]');
+    expect(secondHandle).not.toBeNull();
+    fireEvent(secondHandle!, pointer("pointerdown", 400, 200));
+    fireEvent(getByTestId("video-overlay"), pointer("pointermove", 450, 225));
+    fireEvent(getByTestId("video-overlay"), pointer("pointerup", 450, 225));
+
+    expect(onUpdate).toHaveBeenCalledTimes(2);
+    const secondGeometry = onUpdate.mock.calls[1][1];
+    expect(secondGeometry.keyframes[0].bbox.w).toBeCloseTo(0.35);
+    expect(secondGeometry.keyframes[0].bbox.h).toBeCloseTo(0.35);
+  });
+
   it("renders interpolated track boxes between keyframes", () => {
     const annotations = [
       {
@@ -500,10 +718,10 @@ describe("VideoStage", () => {
 
     expect(getByTestId("video-track-path-preview")).toBeInTheDocument();
     expect(getByTestId("video-overlay").textContent).toContain("car · 插值");
-    const label = Array.from(getByTestId("video-overlay").querySelectorAll("text"))
+    const label = Array.from(getByTestId("video-overlay").querySelectorAll("foreignObject"))
       .find((node) => node.textContent?.includes("car · 插值"));
     expect(label).toHaveAttribute("x", "0.2");
-    expect(label).toHaveAttribute("y", "0.044");
+    expect(label).toHaveAttribute("y", "0.007");
   });
 
   it("does not interpolate across an absent keyframe", () => {
