@@ -14,6 +14,7 @@ export function modeFromDrag(drag: VideoDragState): VideoStageMode {
   if (!drag) return "idle";
   if (drag.kind === "draw") return "draw";
   if (drag.kind === "move") return "drag";
+  if (drag.kind === "pan") return "pan";
   return "resize";
 }
 

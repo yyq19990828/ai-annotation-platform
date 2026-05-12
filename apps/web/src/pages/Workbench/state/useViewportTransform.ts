@@ -64,6 +64,15 @@ export function useElementSize<T extends HTMLElement>(ref: React.RefObject<T | n
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    if (typeof ResizeObserver === "undefined") {
+      const update = () => {
+        const r = el.getBoundingClientRect();
+        setSize({ w: r.width, h: r.height });
+      };
+      update();
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
         const r = e.contentRect;

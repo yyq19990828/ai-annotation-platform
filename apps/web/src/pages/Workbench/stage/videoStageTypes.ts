@@ -42,6 +42,7 @@ export type VideoDragState =
   | { kind: "draw"; start: { x: number; y: number }; current: { x: number; y: number } }
   | { kind: "move"; id: string; start: { x: number; y: number }; origin: VideoStageGeom; current: VideoStageGeom }
   | { kind: "resize"; id: string; dir: VideoResizeDirection; start: { x: number; y: number }; origin: VideoStageGeom; current: VideoStageGeom }
+  | { kind: "pan"; sx: number; sy: number }
   | null;
 
 export type VideoTrackConversionOptions = {

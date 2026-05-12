@@ -1,6 +1,6 @@
 # P0/P1 · 视频标注工作台 Epic（综合）
 
-> 状态：**进行中**。主线 M0-M5.0 / V2 / V3 已归档；R1-R4、R17/R18/R19、V4/V5、V6 已完成第一版。当前剩余重点是 R5.2 ImageBitmap 缓存、R8 Viewport / Minimap，以及后续 AI / 协同 / 专属导出能力。
+> 状态：**进行中**。主线 M0-M5.0 / V2 / V3 已归档；R1-R4、R17/R18/R19、V4/V5、V6、R5.2、R8 已完成第一版。当前剩余重点是后续 AI / 协同 / 专属导出能力。
 >
 > 文件原名 `video-workbench-rendering-optimization`，保留以维持外链；实际范围包括：视频功能尾巴、渲染体系优化、CVAT 视频专项借鉴。
 
@@ -35,6 +35,8 @@
 | R17.1 Hover 缩略图 + R5.1 预取 | v0.9.27 | 时间轴 hover 单帧预览；选中轨迹 keyframe / bookmark / loop 边界预取 |
 | R18 J/K/L 多速率播放 + R6.1 atomic seek | v0.9.29 | `seekToAsync`、J/K/L jog 播放、反向按帧步进、速度 overlay |
 | R7.2/R7.3 观测包 | v0.9.31 | `video:bench` 入口、BugReport 自动附带视频诊断、性能回归 how-to |
+| R5.2 ImageBitmap 缓存 | v0.9.39 | seek / scrub 可显示 `ImageBitmap` LRU 缓存帧，浏览器不支持时降级 |
+| R8 Viewport / Minimap | v0.9.39 | 视频 media / bitmap / overlay 层共享 viewport；支持 fit、1:1、滚轮缩放、平移和 minimap |
 
 ### 1.3 后端相关已就位
 
@@ -50,25 +52,25 @@
 
 ## 2. 当前未完成 Backlog
 
-### P0 · R5.2 ImageBitmap 缓存
+### 已完成 · R5.2 ImageBitmap 缓存
 
 **目标**：在不引入 WebCodecs / wasm 的前提下改善 scrub 和跨段 seek 体感。
 
-- 在 Media 层旁增加 bitmap canvas。
-- seek 后用 `createImageBitmap(video)` 抓帧入 LRU。
-- scrub 时优先显示缓存帧，video 元素异步追赶。
-- 时间轴显示已缓存范围，接 R17.3。
+- ✅ 在 Media 层旁增加 bitmap canvas。
+- ✅ seek 后用 `createImageBitmap(video)` 抓帧入 LRU。
+- ✅ scrub / seek 时优先显示缓存帧，video 元素异步追赶。
+- ✅ Minimap 显示已缓存范围，接 R17.3。
 
 **不做**：R5.3 chunk Worker 解码、ffmpeg.wasm、Broadway.js。
 
-### P0 · R8 Viewport / Pan-Zoom / Minimap
+### 已完成 · R8 Viewport / Pan-Zoom / Minimap
 
 **目标**：让 1080p / 4K 视频可以放大检查边缘。
 
-- 抽取图片侧 `useViewportTransform` 为共享实现。
-- 视频 Media / Objects / Interaction 层同步 transform。
-- 支持 `F` fit、`0` 1:1、Ctrl+滚轮缩放、空格拖拽平移。
-- 复用图片 Minimap，额外显示当前帧和缓存范围。
+- ✅ 复用图片侧 `useViewportTransform`。
+- ✅ 视频 Media / Bitmap / Objects / Interaction 层同步 transform。
+- ✅ 支持 `F` fit、`0` 1:1、Ctrl+滚轮缩放、右键拖拽平移。
+- ✅ 复用图片 Minimap，额外显示当前帧和缓存范围。
 
 **不做**：播放中复杂 zoom 操作、R9 polygon/mask track。
 
@@ -153,11 +155,11 @@ Wave 2 · 体感收益
   ✅ R7.2/R7.3 observability (v0.9.31)
 
 Wave 3 · 工程加固
-  → R5.2 ImageBitmap 缓存
+  ✅ R5.2 ImageBitmap 缓存 (v0.9.39)
   → R5.3 WebCodecs chunk decode（依赖后端帧服务，按数据触发）
 
 Wave 4 · 能力上探
-  → R8 Viewport / Minimap
+  ✅ R8 Viewport / Minimap (v0.9.39)
   → R9 Polygon / Polyline / Mask track
   → R13 Chapter
   → R20 frameStep

@@ -40,6 +40,7 @@ const manifest: TaskVideoManifestResponse = {
 
 const playMock = vi.fn();
 const pauseMock = vi.fn();
+const closeBitmapMock = vi.fn();
 
 function setRect(el: Element) {
   vi.spyOn(el, "getBoundingClientRect").mockReturnValue({
@@ -55,19 +56,42 @@ function setRect(el: Element) {
   });
 }
 
-function pointer(type: string, clientX: number, clientY: number) {
+function pointer(type: string, clientX: number, clientY: number, button = 0) {
   return new MouseEvent(type, {
     bubbles: true,
     cancelable: true,
     clientX,
     clientY,
+    button,
   });
+}
+
+function installBitmapMocks() {
+  const drawImage = vi.fn();
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    clearRect: vi.fn(),
+    drawImage,
+  } as unknown as CanvasRenderingContext2D);
+  const createImageBitmapMock = vi.fn().mockResolvedValue({
+    width: 1000,
+    height: 500,
+    close: closeBitmapMock,
+  });
+  Object.defineProperty(window, "createImageBitmap", {
+    value: createImageBitmapMock,
+    writable: true,
+    configurable: true,
+  });
+  return { createImageBitmapMock, drawImage };
 }
 
 describe("VideoStage", () => {
   beforeAll(() => {
     Object.defineProperty(HTMLMediaElement.prototype, "pause", { configurable: true, value: pauseMock });
     Object.defineProperty(HTMLMediaElement.prototype, "play", { configurable: true, value: playMock });
+    Object.defineProperty(HTMLMediaElement.prototype, "readyState", { configurable: true, get: () => HTMLMediaElement.HAVE_CURRENT_DATA });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => 1000 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => 500 });
   });
 
   beforeEach(() => {
@@ -88,6 +112,12 @@ describe("VideoStage", () => {
       dataset_item_id: "item-1",
       task_id: "task-1",
       frames: [],
+    });
+    closeBitmapMock.mockClear();
+    Object.defineProperty(window, "createImageBitmap", {
+      value: undefined,
+      writable: true,
+      configurable: true,
     });
     sessionStorage.clear();
   });
@@ -521,6 +551,135 @@ describe("VideoStage", () => {
       "video-overlay",
       "video-attachment-layer",
     ]);
+  });
+
+  it("renders a cached ImageBitmap on the bitmap layer and hides it while playing", async () => {
+    const { createImageBitmapMock, drawImage } = installBitmapMocks();
+    const { getByTestId, getByTitle } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(createImageBitmapMock).toHaveBeenCalled());
+    const bitmapLayer = getByTestId("video-bitmap-layer");
+    await waitFor(() => expect(bitmapLayer).toHaveStyle({ display: "block" }));
+    expect(drawImage).toHaveBeenCalled();
+
+    fireEvent.click(getByTitle("播放 / 暂停 (Space)"));
+
+    await waitFor(() => expect(playMock).toHaveBeenCalled());
+    await waitFor(() => expect(bitmapLayer).toHaveStyle({ display: "none" }));
+  });
+
+  it("falls back without the bitmap layer when ImageBitmap capture is unsupported", async () => {
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    expect(getByTestId("video-bitmap-layer")).toHaveStyle({ display: "none" });
+    await waitFor(() => {
+      const diagnostics = (window as any).__videoWorkbenchDiagnostics?.byTask?.["task-1"];
+      expect(diagnostics?.bitmapCache?.supported).toBe(false);
+    });
+  });
+
+  it("clears cached bitmaps when the video task changes", async () => {
+    installBitmapMocks();
+    const { getByTestId, rerender } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(getByTestId("video-bitmap-layer")).toHaveStyle({ display: "block" }));
+
+    rerender(
+      <VideoStage
+        manifest={{ ...manifest, task_id: "task-2" }}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(closeBitmapMock).toHaveBeenCalled());
+  });
+
+  it("supports video viewport fit, 1:1, wheel zoom, and right-button pan", async () => {
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const stage = getByTestId("video-stage");
+    const surface = getByTestId("video-stage-surface");
+    const overlay = getByTestId("video-overlay");
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 500,
+      height: 250,
+      right: 500,
+      bottom: 250,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    setRect(overlay);
+    fireEvent(window, new Event("resize"));
+
+    fireEvent.keyDown(window, { key: "f" });
+    await waitFor(() => expect(surface).toHaveStyle({ transform: "translate(0px, 0px) scale(0.5)" }));
+
+    fireEvent.keyDown(window, { key: "0" });
+    await waitFor(() => expect(surface).toHaveStyle({ transform: "translate(-250px, -125px) scale(1)" }));
+
+    fireEvent.wheel(stage, { ctrlKey: true, deltaY: -100, clientX: 250, clientY: 125 });
+    await waitFor(() => expect(surface.style.transform).toContain("scale(1.1)"));
+    expect(getByTestId("minimap-current-frame").parentElement).toHaveStyle({ bottom: "64px" });
+
+    fireEvent(overlay, pointer("pointerdown", 100, 100, 2));
+    fireEvent(overlay, pointer("pointermove", 125, 130));
+    fireEvent(overlay, pointer("pointerup", 125, 130));
+
+    await waitFor(() => {
+      expect(surface.style.transform).toContain("translate(-275px, -120px)");
+    });
   });
 
   it("keeps the pending video box visible while class selection is open", () => {

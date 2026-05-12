@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.9.39] - 2026-05-12
+
+> **Video Workbench Rendering P0 — 视频帧缓存与视口导航.** 主线: ① 视频工作台新增 `ImageBitmap` LRU 帧缓存，seek / scrub 时可先显示缓存帧，`<video>` 仍作为主播放源；② 视频 media / bitmap / grid / objects / text / interaction 层统一走 viewport transform；③ 支持 `F` 适应、`0` 1:1、Ctrl/Meta+滚轮缩放、右键拖拽平移和视频 minimap；④ 诊断快照补充 bitmap cache 与 viewport 状态。→ [plan](ROADMAP/2026-05-12-video-workbench-rendering-optimization.md).
+
+### Added
+
+- **ImageBitmap 帧缓存**：新增视频帧 `ImageBitmap` LRU，浏览器不支持 `createImageBitmap(video)` 时自动降级为原播放行为。
+- **视频 Viewport / Minimap**：视频工作台支持放大检查边缘、平移画面、浮动缩放控制和 minimap；minimap 会显示当前帧与已缓存帧范围。
+- **视频渲染诊断扩展**：`window.__videoWorkbenchDiagnostics` 增加 bitmap cache、viewport scale/translation 和 minimap 可见状态。
+
+### Changed
+
+- 视频 stage 的 media、bitmap canvas、grid、objects、label、interaction 和 attachment 层现在共享同一 viewport transform，缩放/平移后绘制、选中、拖拽、resize 仍使用归一化视频坐标。
+
 ## [0.9.37] - 2026-05-12
 
 > **Video Track Composition — 视频轨迹生命周期组合编辑.** 主线: ① 新增视频 composition 事务接口，支持 `video_bbox` 聚合为 `video_track`、track split、track merge；② 前端轨迹侧栏增加聚合、拆轨迹、合并入口；③ composition 响应写入 React Query cache 并复用 batch history 保持 undo/redo；④ 视频工作台概念文档与 API guide 同步新接口。→ [plan](docs/plans/2026-05-12-v0.9.37-video-track-composition.md).

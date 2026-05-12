@@ -1,9 +1,12 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
+import { FloatingDock } from "../shell/FloatingDock";
 import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse } from "@/types";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
+import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
+import { Minimap } from "./Minimap";
 import { VideoFrameOverlay } from "./VideoFrameOverlay";
 import { VideoMediaLayer } from "./VideoMediaLayer";
 import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
@@ -13,6 +16,7 @@ import { VideoStageSurface } from "./VideoStageSurface";
 import { applyResize } from "./ResizeHandles";
 import { buildFrameTimebase, frameToTime } from "./frameTimebase";
 import { useFrameClock } from "./useFrameClock";
+import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import { videoTimelineMarkers } from "./videoFrameBuckets";
 import {
@@ -150,8 +154,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   onConvertToBboxes,
   onCursorMove,
 }: VideoStageProps, ref) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
+  const viewportSize = useElementSize(containerRef);
+  const { vp, vpRef, setVp, fit, zoomAt } = useViewportTransform();
   const [uncontrolledFrameIndex, setUncontrolledFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [jogPlayback, setJogPlayback] = useState<VideoJogPlayback>(PAUSED_JOG_PLAYBACK);
@@ -164,6 +171,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const [jumpHistory, setJumpHistory] = useState<VideoJumpHistory>(() => emptyVideoJumpHistory());
   const onSelectRef = useRef(onSelect);
   const lastResetTaskIdRef = useRef<string | null>(null);
+  const fittedTaskIdRef = useRef<string | null>(null);
+  const minimapVisibleRef = useRef(false);
   const overlayHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameIndexRef = useRef(0);
@@ -193,9 +202,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const videoAspectRatio = manifest?.metadata.width && manifest.metadata.height
     ? manifest.metadata.width / manifest.metadata.height
     : 16 / 9;
-  const stageAspect = manifest?.metadata.width && manifest.metadata.height
-    ? `${manifest.metadata.width} / ${manifest.metadata.height}`
-    : "16 / 9";
+  const videoPixelWidth = manifest?.metadata.width || 1280;
+  const videoPixelHeight = manifest?.metadata.height || Math.round(videoPixelWidth / videoAspectRatio);
 
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const selectedTrack = useMemo(
@@ -294,6 +302,16 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     width: 320,
     format: "webp",
   });
+  const {
+    activeBitmap,
+    cachedRanges,
+    capture: captureBitmapFrame,
+    showFrame: showCachedBitmapFrame,
+    diagnostics: bitmapCacheDiagnostics,
+  } = useVideoBitmapCache({
+    taskId: manifest?.task_id,
+  });
+  const showCachedBitmap = Boolean(activeBitmap && !isPlaybackActive);
 
   const pendingDraft = useMemo(() => {
     if (
@@ -359,6 +377,22 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     onFrameChange: handleFrameClockChange,
   });
 
+  const fitViewport = useCallback(() => {
+    fit(viewportSize.w, viewportSize.h, videoPixelWidth, videoPixelHeight);
+  }, [fit, videoPixelHeight, videoPixelWidth, viewportSize.h, viewportSize.w]);
+
+  const setActualSize = useCallback(() => {
+    if (!viewportSize.w || !viewportSize.h) {
+      setVp({ scale: 1, tx: 0, ty: 0 });
+      return;
+    }
+    setVp({
+      scale: 1,
+      tx: (viewportSize.w - videoPixelWidth) / 2,
+      ty: (viewportSize.h - videoPixelHeight) / 2,
+    });
+  }, [setVp, videoPixelHeight, videoPixelWidth, viewportSize.h, viewportSize.w]);
+
   const pausePlayback = useCallback(() => {
     const video = videoRef.current;
     if (video) {
@@ -376,9 +410,12 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       if (options?.recordHistory) {
         setJumpHistory((history) => pushVideoJumpHistory(history, targetFrame));
       }
-      return frameClock.seekToAsync(targetFrame);
+      showCachedBitmapFrame(targetFrame);
+      const result = await frameClock.seekToAsync(targetFrame);
+      void captureBitmapFrame(videoRef.current, targetFrame);
+      return result;
     },
-    [frameClock, maxFrame, stageModeGuard.canSetupFrame],
+    [captureBitmapFrame, frameClock, maxFrame, showCachedBitmapFrame, stageModeGuard.canSetupFrame],
   );
   const seekFrameAsyncRef = useRef(seekFrameAsync);
 
@@ -612,6 +649,49 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }, [manifest?.task_id, maxFrame, setFrameIndex]);
 
   useEffect(() => {
+    const taskId = manifest?.task_id ?? null;
+    if (!taskId || fittedTaskIdRef.current === taskId) return;
+    if (!viewportSize.w || !viewportSize.h || !videoPixelWidth || !videoPixelHeight) return;
+    fittedTaskIdRef.current = taskId;
+    fitViewport();
+  }, [fitViewport, manifest?.task_id, videoPixelHeight, videoPixelWidth, viewportSize.h, viewportSize.w]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      zoomAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current.scale * factor);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [vpRef, zoomAt]);
+
+  useEffect(() => {
+    const isInputFocused = (el: EventTarget | null) =>
+      el instanceof HTMLElement && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isInputFocused(e.target)) return;
+      if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        fitViewport();
+        return;
+      }
+      if (e.key === "0" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setActualSize();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [fitViewport, setActualSize]);
+
+  useEffect(() => {
     if (!selectedTrack) return;
     prefetchFrames(sortedKeyframes(selectedTrack.geometry).map((keyframe) => keyframe.frame_index));
   }, [prefetchFrames, selectedTrack]);
@@ -682,13 +762,36 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     video.addEventListener("pause", onPause);
     video.addEventListener("ended", onEnded);
     video.addEventListener("error", onError);
+    const onFrameReady = () => {
+      if (!isPlaybackActive) void captureBitmapFrame(video, frameIndexRef.current);
+    };
+    video.addEventListener("seeked", onFrameReady);
+    video.addEventListener("loadeddata", onFrameReady);
     return () => {
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("error", onError);
+      video.removeEventListener("seeked", onFrameReady);
+      video.removeEventListener("loadeddata", onFrameReady);
     };
-  }, []);
+  }, [captureBitmapFrame, isPlaybackActive]);
+
+  useEffect(() => {
+    if (isPlaybackActive || frameClock.isSeeking) return;
+    const schedule = typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
+    const cancel = typeof window.cancelAnimationFrame === "function"
+      ? window.cancelAnimationFrame.bind(window)
+      : window.clearTimeout.bind(window);
+    const raf = schedule(() => {
+      void captureBitmapFrame(videoRef.current, frameIndex);
+    });
+    return () => {
+      cancel(raf);
+    };
+  }, [captureBitmapFrame, frameClock.isSeeking, frameIndex, isPlaybackActive]);
 
   useEffect(() => {
     const diagnosticsTarget = window as unknown as {
@@ -719,6 +822,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       loopRegion,
       frameClock: frameClock.diagnostics,
       framePreview: framePreviewDiagnostics,
+      bitmapCache: bitmapCacheDiagnostics,
+      viewport: {
+        scale: vp.scale,
+        tx: vp.tx,
+        ty: vp.ty,
+        size: viewportSize,
+        minimapVisible: minimapVisibleRef.current,
+      },
     };
     diagnosticsTarget.__videoFrameClockDiagnostics = {
       ...(diagnosticsTarget.__videoFrameClockDiagnostics ?? {}),
@@ -739,6 +850,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     frameClock.isSeeking,
     frameIndex,
     framePreviewDiagnostics,
+    bitmapCacheDiagnostics,
     isJogPlaying,
     isPlaying,
     jogPlayback.direction,
@@ -748,6 +860,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     maxFrame,
     selectedTrack,
     videoTracks.length,
+    viewportSize,
+    vp.scale,
+    vp.tx,
+    vp.ty,
   ]);
 
   const pointFromEvent = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
@@ -763,6 +879,13 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }, [onCursorMove, pointFromEvent]);
 
   const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
+
+  const beginPan = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
+    evt.currentTarget.setPointerCapture?.(evt.pointerId);
+    pausePlayback();
+    setPlaybackOverlayVisible(false);
+    setDrag({ kind: "pan", sx: evt.clientX, sy: evt.clientY });
+  }, [pausePlayback]);
 
   const beginDraw = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     if (!stageModeGuard.canBeginDraw || readOnly || isPlaybackActive || (videoTool === "track" && selectedTrackLocked)) return;
@@ -807,8 +930,16 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
 
   const onPointerMove = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     updateCursor(evt);
+    if (!drag) return;
+    if (drag.kind === "pan") {
+      const dx = evt.clientX - drag.sx;
+      const dy = evt.clientY - drag.sy;
+      setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy }));
+      setDrag({ kind: "pan", sx: evt.clientX, sy: evt.clientY });
+      return;
+    }
     const pt = pointFromEvent(evt);
-    if (!pt || !drag) return;
+    if (!pt) return;
     if (drag.kind === "draw") {
       setDrag({ ...drag, current: pt });
       return;
@@ -824,14 +955,15 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         y: drag.origin.y + (pt.y - drag.start.y),
       });
     setDrag({ ...drag, current: next });
-  }, [drag, pointFromEvent, updateCursor]);
+  }, [drag, pointFromEvent, setVp, updateCursor]);
 
   const finishDrag = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
-    const pt = pointFromEvent(evt);
     const cur = drag;
     setDrag(null);
     showPlaybackOverlay();
     schedulePlaybackOverlayHide();
+    if (cur?.kind === "pan") return;
+    const pt = pointFromEvent(evt);
     if (!pt || !cur) return;
     if (cur.kind === "draw") {
       const geom = normalizeGeom(cur.start, pt);
@@ -896,19 +1028,25 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }
 
   const draft = drag?.kind === "draw" ? normalizeGeom(drag.start, drag.current) : null;
+  const videoMinimapVisible = viewportSize.w > 0 && viewportSize.h > 0
+    ? viewportSize.w / (videoPixelWidth * vp.scale) < 0.85 || viewportSize.h / (videoPixelHeight * vp.scale) < 0.85
+    : false;
+  minimapVisibleRef.current = videoMinimapVisible;
+
   return (
     <div
+      ref={containerRef}
       data-testid="video-stage"
+      onContextMenu={(evt) => evt.preventDefault()}
       onMouseEnter={showPlaybackOverlay}
       onMouseMove={() => {
         if (!drag) showPlaybackOverlay();
       }}
       onMouseLeave={schedulePlaybackOverlayHide}
-      style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateRows: "1fr", background: "#050507" }}
+      style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", background: "#050507" }}
     >
-      <div style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr)" }}>
-        <div style={{ position: "relative", minHeight: 0, display: "grid", placeItems: "center", overflow: "hidden" }}>
-          <VideoStageSurface aspectRatio={stageAspect}>
+      <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+          <VideoStageSurface width={videoPixelWidth} height={videoPixelHeight} viewport={vp}>
             <VideoMediaLayer
               ref={videoRef}
               src={manifest.video_url}
@@ -917,6 +1055,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             />
             <VideoFrameOverlay
               overlayRef={overlayRef}
+              cachedBitmap={activeBitmap}
+              showCachedBitmap={showCachedBitmap}
               entries={currentFrameEntries}
               trackPreviews={trackPreviews}
               pendingDraft={pendingDraft}
@@ -931,6 +1071,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               isPlaying={isPlaybackActive}
               videoTool={videoTool}
               selectedTrackLocked={selectedTrackLocked}
+              onBeginPan={beginPan}
               onBeginDraw={beginDraw}
               onBeginMove={beginMove}
               onBeginResize={beginResize}
@@ -1016,9 +1157,33 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             onSeekBookmark={(targetFrame) => seekToFrame(targetFrame, { recordHistory: true })}
             onHoverFrameChange={previewFrame}
           />
-        </div>
-
       </div>
+      <FloatingDock
+        scale={vp.scale}
+        canUndo={false}
+        canRedo={false}
+        onUndo={() => {}}
+        onRedo={() => {}}
+        onZoomIn={() => setVp((cur) => ({ ...cur, scale: Math.min(8, cur.scale * 1.2) }))}
+        onZoomOut={() => setVp((cur) => ({ ...cur, scale: Math.max(0.2, cur.scale / 1.2) }))}
+        onFit={fitViewport}
+        showHistory={false}
+      />
+      {viewportSize.w > 0 && viewportSize.h > 0 && (
+        <Minimap
+          imgW={videoPixelWidth}
+          imgH={videoPixelHeight}
+          vpSize={viewportSize}
+          vp={vp}
+          setVp={setVp}
+          thumbnailUrl={manifest.poster_url ?? null}
+          fileUrl={manifest.video_url}
+          currentFrameIndex={frameIndex}
+          maxFrame={maxFrame}
+          cachedFrameRanges={cachedRanges}
+          bottom={64}
+        />
+      )}
     </div>
   );
 });

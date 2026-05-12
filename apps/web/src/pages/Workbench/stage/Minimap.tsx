@@ -9,6 +9,11 @@ interface MinimapProps {
   setVp: React.Dispatch<React.SetStateAction<Viewport>>;
   thumbnailUrl: string | null;
   fileUrl: string | null;
+  currentFrameIndex?: number;
+  maxFrame?: number;
+  cachedFrameRanges?: { from: number; to: number }[];
+  right?: number;
+  bottom?: number;
 }
 
 const MINIMAP_MAX_W = 160;
@@ -18,7 +23,20 @@ const MINIMAP_MAX_H = 120;
  * 缩略图导航。仅当图像放大到容器尺寸 1.5× 以上才显示。
  * 点击 minimap 任意位置，把视口中心移到该位置。
  */
-export function Minimap({ imgW, imgH, vpSize, vp, setVp, thumbnailUrl, fileUrl }: MinimapProps) {
+export function Minimap({
+  imgW,
+  imgH,
+  vpSize,
+  vp,
+  setVp,
+  thumbnailUrl,
+  fileUrl,
+  currentFrameIndex,
+  maxFrame,
+  cachedFrameRanges = [],
+  right = 12,
+  bottom = 12,
+}: MinimapProps) {
   const ref = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
   const rafRef = useRef<number | null>(null);
@@ -85,6 +103,7 @@ export function Minimap({ imgW, imgH, vpSize, vp, setVp, thumbnailUrl, fileUrl }
   if (!needsMinimap) return null;
 
   const src = thumbnailUrl || fileUrl;
+  const canRenderFrameAxis = typeof currentFrameIndex === "number" && typeof maxFrame === "number" && maxFrame > 0;
 
   return (
     <div
@@ -106,8 +125,8 @@ export function Minimap({ imgW, imgH, vpSize, vp, setVp, thumbnailUrl, fileUrl }
       onPointerCancel={stopDragging}
       style={{
         position: "absolute",
-        right: 12,
-        bottom: 12,
+        right,
+        bottom,
         width: mw,
         height: mh,
         background: "var(--color-bg-elev, white)",
@@ -128,6 +147,43 @@ export function Minimap({ imgW, imgH, vpSize, vp, setVp, thumbnailUrl, fileUrl }
           alt=""
           draggable={false}
           style={{ width: "100%", height: "100%", objectFit: "fill", opacity: 0.85, pointerEvents: "none" }}
+        />
+      )}
+      {cachedFrameRanges.length > 0 && typeof maxFrame === "number" && maxFrame > 0 && (
+        <div data-testid="minimap-cached-frame-ranges" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 4, pointerEvents: "none" }}>
+          {cachedFrameRanges.map((range) => {
+            const left = (Math.max(0, Math.min(maxFrame, range.from)) / maxFrame) * 100;
+            const right = (Math.max(0, Math.min(maxFrame, range.to)) / maxFrame) * 100;
+            return (
+              <span
+                key={`${range.from}-${range.to}`}
+                style={{
+                  position: "absolute",
+                  left: `${left}%`,
+                  width: `${Math.max(1, right - left)}%`,
+                  top: 0,
+                  bottom: 0,
+                  background: "rgba(45,212,191,0.84)",
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
+      {canRenderFrameAxis && (
+        <span
+          data-testid="minimap-current-frame"
+          style={{
+            position: "absolute",
+            left: `${(Math.max(0, Math.min(maxFrame, currentFrameIndex)) / maxFrame) * 100}%`,
+            bottom: 0,
+            width: 2,
+            height: 12,
+            transform: "translateX(-50%)",
+            background: "rgba(255,255,255,0.92)",
+            boxShadow: "0 0 0 1px rgba(0,0,0,0.5)",
+            pointerEvents: "none",
+          }}
         />
       )}
       <div

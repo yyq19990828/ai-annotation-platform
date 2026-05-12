@@ -15,9 +15,12 @@ import type {
   VideoTrackGhost,
   VideoTrackPreview,
 } from "./videoStageTypes";
+import type { CachedVideoBitmap } from "./useVideoBitmapCache";
 
 interface VideoFrameOverlayProps {
   overlayRef: RefObject<SVGSVGElement>;
+  cachedBitmap?: CachedVideoBitmap | null;
+  showCachedBitmap?: boolean;
   entries: VideoFrameEntry[];
   trackPreviews: VideoTrackPreview[];
   pendingDraft?: { geom: VideoStageGeom; className: string } | null;
@@ -32,6 +35,7 @@ interface VideoFrameOverlayProps {
   isPlaying: boolean;
   videoTool: VideoTool;
   selectedTrackLocked: boolean;
+  onBeginPan: (evt: ReactPointerEvent<SVGSVGElement>) => void;
   onBeginDraw: (evt: ReactPointerEvent<SVGSVGElement>) => void;
   onBeginMove: (evt: ReactPointerEvent<SVGElement>, entry: VideoFrameEntry | VideoTrackGhost) => void;
   onBeginResize: (
@@ -47,6 +51,8 @@ interface VideoFrameOverlayProps {
 
 export function VideoFrameOverlay({
   overlayRef,
+  cachedBitmap = null,
+  showCachedBitmap = false,
   entries,
   trackPreviews,
   pendingDraft,
@@ -61,6 +67,7 @@ export function VideoFrameOverlay({
   isPlaying,
   videoTool,
   selectedTrackLocked,
+  onBeginPan,
   onBeginDraw,
   onBeginMove,
   onBeginResize,
@@ -116,7 +123,7 @@ export function VideoFrameOverlay({
 
   return (
     <>
-      <VideoBitmapLayer />
+      <VideoBitmapLayer bitmap={cachedBitmap} visible={showCachedBitmap} />
       <VideoGridLayer viewBoxHeight={viewBoxHeight} />
       <VideoObjectsLayer
         viewBoxHeight={viewBoxHeight}
@@ -138,6 +145,7 @@ export function VideoFrameOverlay({
         isPlaying={isPlaying}
         videoTool={videoTool}
         selectedTrackLocked={selectedTrackLocked}
+        onBeginPan={onBeginPan}
         onBeginDraw={onBeginDraw}
         onBeginMove={onBeginMove}
         onBeginResize={onBeginResize}

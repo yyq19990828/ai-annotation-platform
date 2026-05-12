@@ -47,6 +47,7 @@ interface VideoInteractionLayerProps {
   isPlaying: boolean;
   videoTool: VideoTool;
   selectedTrackLocked: boolean;
+  onBeginPan: (evt: ReactPointerEvent<SVGSVGElement>) => void;
   onBeginDraw: (evt: ReactPointerEvent<SVGSVGElement>) => void;
   onBeginMove: (evt: ReactPointerEvent<SVGElement>, entry: VideoFrameEntry | VideoTrackGhost) => void;
   onBeginResize: (
@@ -73,6 +74,7 @@ export function VideoInteractionLayer({
   isPlaying,
   videoTool,
   selectedTrackLocked,
+  onBeginPan,
   onBeginDraw,
   onBeginMove,
   onBeginResize,
@@ -131,6 +133,12 @@ export function VideoInteractionLayer({
   );
 
   const onPointerDown = (evt: ReactPointerEvent<SVGSVGElement>) => {
+    if (evt.button === 2) {
+      evt.preventDefault();
+      onBeginPan(evt);
+      return;
+    }
+    if (evt.button !== 0) return;
     const svg = overlayRef.current;
     if (!svg) {
       onBeginDraw(evt);
@@ -160,6 +168,7 @@ export function VideoInteractionLayer({
       onPointerUp={onFinishDrag}
       onPointerCancel={onCancelDrag}
       onPointerLeave={onPointerLeave}
+      onContextMenu={(evt) => evt.preventDefault()}
       style={{
         position: "absolute",
         inset: 0,
