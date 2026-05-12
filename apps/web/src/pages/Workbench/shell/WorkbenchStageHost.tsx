@@ -1,5 +1,12 @@
 import { forwardRef, type ReactNode } from "react";
-import type { Annotation, AnnotationResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import type {
+  Annotation,
+  AnnotationResponse,
+  TaskVideoFrameTimetableResponse,
+  TaskVideoManifestResponse,
+  VideoBboxGeometry,
+  VideoTrackGeometry,
+} from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { AiBox } from "../state/transforms";
 import type { PendingDrawing, SamPolarity, SamSubTool, Tool, VideoTool } from "../state/useWorkbenchState";
@@ -27,6 +34,7 @@ interface WorkbenchStageHostProps {
   onCursorMove: (pt: { x: number; y: number } | null) => void;
 
   videoManifest: TaskVideoManifestResponse | undefined;
+  videoFrameTimetable?: TaskVideoFrameTimetableResponse;
   videoManifestLoading?: boolean;
   videoManifestError?: unknown;
   videoTool: VideoTool;
@@ -114,6 +122,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     onSelectBox,
     onCursorMove,
     videoManifest,
+    videoFrameTimetable,
     videoManifestLoading,
     videoManifestError,
     videoTool,
@@ -183,6 +192,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           <VideoWorkbench
             ref={ref}
             manifest={videoManifest}
+            frameTimetable={videoFrameTimetable}
             isLoading={videoManifestLoading}
             error={videoManifestError}
             annotations={annotations}

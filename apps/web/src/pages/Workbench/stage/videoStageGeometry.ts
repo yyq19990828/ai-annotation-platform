@@ -38,8 +38,66 @@ export function isVideoTrack(ann: AnnotationResponse): ann is AnnotationResponse
   return ann.geometry.type === "video_track";
 }
 
+type ResolvedTrackFrame = { geom: VideoStageGeom; source: VideoFrameEntry["source"]; occluded?: boolean };
+type TrackIndex = {
+  keyframes: VideoTrackKeyframe[];
+  visibleKeyframes: VideoTrackKeyframe[];
+  absentFrames: number[];
+};
+
+const trackIndexCache = new WeakMap<VideoTrackGeometry, TrackIndex>();
+const resolvedFrameCache = new WeakMap<VideoTrackGeometry, Map<number, ResolvedTrackFrame | null>>();
+const resolvedFrameCacheOrder: Array<{ track: VideoTrackGeometry; frameIndex: number }> = [];
+const RESOLVED_FRAME_CACHE_LIMIT = 1000;
+
+function lowerBound<T>(items: T[], target: number, pick: (item: T) => number) {
+  let lo = 0;
+  let hi = items.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (pick(items[mid]) < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function getTrackIndex(track: VideoTrackGeometry): TrackIndex {
+  const cached = trackIndexCache.get(track);
+  if (cached) return cached;
+  const keyframes = [...track.keyframes].sort((a, b) => a.frame_index - b.frame_index);
+  const visibleKeyframes = keyframes.filter((kf) => !kf.absent);
+  const absentFrames = keyframes.filter((kf) => kf.absent).map((kf) => kf.frame_index);
+  const index = { keyframes, visibleKeyframes, absentFrames };
+  trackIndexCache.set(track, index);
+  return index;
+}
+
+function getResolvedCache(track: VideoTrackGeometry) {
+  let cache = resolvedFrameCache.get(track);
+  if (!cache) {
+    cache = new Map();
+    resolvedFrameCache.set(track, cache);
+  }
+  return cache;
+}
+
+function setResolvedCache(track: VideoTrackGeometry, frameIndex: number, value: ResolvedTrackFrame | null) {
+  const cache = getResolvedCache(track);
+  if (cache.has(frameIndex)) {
+    cache.set(frameIndex, value);
+    return;
+  }
+  cache.set(frameIndex, value);
+  resolvedFrameCacheOrder.push({ track, frameIndex });
+  while (resolvedFrameCacheOrder.length > RESOLVED_FRAME_CACHE_LIMIT) {
+    const oldest = resolvedFrameCacheOrder.shift();
+    if (!oldest) break;
+    resolvedFrameCache.get(oldest.track)?.delete(oldest.frameIndex);
+  }
+}
+
 export function sortedKeyframes(track: VideoTrackGeometry) {
-  return [...track.keyframes].sort((a, b) => a.frame_index - b.frame_index);
+  return getTrackIndex(track).keyframes;
 }
 
 export function upsertKeyframe(
@@ -60,8 +118,9 @@ export function upsertKeyframe(
   return { ...track, keyframes: next.sort((a, b) => a.frame_index - b.frame_index) };
 }
 
-function frameHasAbsentBetween(keyframes: VideoTrackKeyframe[], from: number, to: number) {
-  return keyframes.some((kf) => kf.absent && kf.frame_index > from && kf.frame_index < to);
+function indexedFrameHasAbsentBetween(absentFrames: number[], from: number, to: number) {
+  const idx = lowerBound(absentFrames, from + 1, (frame) => frame);
+  return idx < absentFrames.length && absentFrames[idx] < to;
 }
 
 function interpolate(a: VideoTrackKeyframe, b: VideoTrackKeyframe, frameIndex: number): VideoStageGeom {
@@ -78,19 +137,37 @@ function interpolate(a: VideoTrackKeyframe, b: VideoTrackKeyframe, frameIndex: n
 export function resolveTrackAtFrame(
   track: VideoTrackGeometry,
   frameIndex: number,
-): { geom: VideoStageGeom; source: VideoFrameEntry["source"]; occluded?: boolean } | null {
-  const keyframes = sortedKeyframes(track);
-  const exact = keyframes.find((kf) => kf.frame_index === frameIndex);
+): ResolvedTrackFrame | null {
+  const cache = getResolvedCache(track);
+  if (cache.has(frameIndex)) return cache.get(frameIndex) ?? null;
+
+  const { keyframes, visibleKeyframes, absentFrames } = getTrackIndex(track);
+  const exactIndex = lowerBound(keyframes, frameIndex, (kf) => kf.frame_index);
+  const exact = keyframes[exactIndex]?.frame_index === frameIndex ? keyframes[exactIndex] : null;
   if (exact) {
-    if (exact.absent) return null;
-    return { geom: exact.bbox, source: exact.source === "prediction" ? "prediction" : "manual", occluded: exact.occluded };
+    if (exact.absent) {
+      setResolvedCache(track, frameIndex, null);
+      return null;
+    }
+    const resolved = { geom: exact.bbox, source: exact.source === "prediction" ? "prediction" : "manual", occluded: exact.occluded } satisfies ResolvedTrackFrame;
+    setResolvedCache(track, frameIndex, resolved);
+    return resolved;
   }
 
-  const before = [...keyframes].reverse().find((kf) => kf.frame_index < frameIndex && !kf.absent);
-  const after = keyframes.find((kf) => kf.frame_index > frameIndex && !kf.absent);
-  if (!before || !after) return null;
-  if (frameHasAbsentBetween(keyframes, before.frame_index, after.frame_index)) return null;
-  return { geom: interpolate(before, after, frameIndex), source: "interpolated" };
+  const afterIndex = lowerBound(visibleKeyframes, frameIndex, (kf) => kf.frame_index);
+  const before = visibleKeyframes[afterIndex - 1];
+  const after = visibleKeyframes[afterIndex];
+  if (!before || !after) {
+    setResolvedCache(track, frameIndex, null);
+    return null;
+  }
+  if (indexedFrameHasAbsentBetween(absentFrames, before.frame_index, after.frame_index)) {
+    setResolvedCache(track, frameIndex, null);
+    return null;
+  }
+  const resolved = { geom: interpolate(before, after, frameIndex), source: "interpolated" } satisfies ResolvedTrackFrame;
+  setResolvedCache(track, frameIndex, resolved);
+  return resolved;
 }
 
 export function nearestTrackBbox(track: VideoTrackGeometry, frameIndex: number): VideoStageGeom {
@@ -100,11 +177,14 @@ export function nearestTrackBbox(track: VideoTrackGeometry, frameIndex: number):
 }
 
 export function nearestTrackKeyframe(track: VideoTrackGeometry, frameIndex: number): VideoTrackKeyframe | null {
-  const keyframes = sortedKeyframes(track).filter((kf) => !kf.absent);
-  return keyframes.reduce<VideoTrackKeyframe | null>((best, kf) => {
-    if (!best) return kf;
-    return Math.abs(kf.frame_index - frameIndex) < Math.abs(best.frame_index - frameIndex) ? kf : best;
-  }, null);
+  const keyframes = getTrackIndex(track).visibleKeyframes;
+  if (keyframes.length === 0) return null;
+  const afterIndex = lowerBound(keyframes, frameIndex, (kf) => kf.frame_index);
+  if (afterIndex <= 0) return keyframes[0];
+  if (afterIndex >= keyframes.length) return keyframes[keyframes.length - 1];
+  const before = keyframes[afterIndex - 1];
+  const after = keyframes[afterIndex];
+  return Math.abs(before.frame_index - frameIndex) <= Math.abs(after.frame_index - frameIndex) ? before : after;
 }
 
 export function shapeIou(a: VideoStageGeom, b: VideoStageGeom) {

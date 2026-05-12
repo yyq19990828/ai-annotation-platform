@@ -263,6 +263,7 @@
 | GET | `/next` |
 | GET | `/{task_id}` |
 | GET | `/{task_id}/video/manifest` |
+| GET | `/{task_id}/video/frame-timetable` |
 | GET | `/{task_id}/annotations` |
 | GET | `/{task_id}/annotations/page` |
 | POST | `/{task_id}/annotations` |
@@ -298,4 +299,4 @@
 
 ---
 
-_共 28 模块 / 161 路由_
+_共 28 模块 / 162 路由_

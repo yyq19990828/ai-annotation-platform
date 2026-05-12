@@ -8916,6 +8916,59 @@
         "title": "TaskOut",
         "type": "object"
       },
+      "TaskVideoFrameTimetableResponse": {
+        "properties": {
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Count"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/VideoFrameTimetableEntry"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "ffprobe",
+              "estimated"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "source",
+          "frames"
+        ],
+        "title": "TaskVideoFrameTimetableResponse",
+        "type": "object"
+      },
       "TaskVideoManifestResponse": {
         "properties": {
           "expires_in": {
@@ -9309,6 +9362,51 @@
         "title": "VideoBboxGeometry",
         "type": "object"
       },
+      "VideoFrameTimetableEntry": {
+        "properties": {
+          "byte_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byte Offset"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "is_keyframe": {
+            "title": "Is Keyframe",
+            "type": "boolean"
+          },
+          "pict_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pict Type"
+          },
+          "pts_ms": {
+            "title": "Pts Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame_index",
+          "pts_ms",
+          "is_keyframe"
+        ],
+        "title": "VideoFrameTimetableEntry",
+        "type": "object"
+      },
       "VideoMetadata": {
         "properties": {
           "codec": {
@@ -9354,6 +9452,28 @@
               }
             ],
             "title": "Frame Count"
+          },
+          "frame_timetable_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Timetable Error"
+          },
+          "frame_timetable_frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Timetable Frame Count"
           },
           "height": {
             "anyOf": [
@@ -18730,6 +18850,88 @@
           }
         ],
         "summary": "Submit Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/frame-timetable": {
+      "get": {
+        "operationId": "get_video_frame_timetable_api_v1_tasks__task_id__video_frame_timetable_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskVideoFrameTimetableResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Frame Timetable",
         "tags": [
           "tasks"
         ]

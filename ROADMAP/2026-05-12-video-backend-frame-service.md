@@ -45,11 +45,12 @@
 
 > 解决 G1。前端 R1.2 直接依赖这个接口。
 
+- **状态（v0.9.21）**：B1 第一版已完成。当前按 `DatasetItem` 存 `video_frame_indices(dataset_item_id, frame_index, pts_ms, is_keyframe, pict_type, byte_offset)`，并通过任务路由暴露；compact/ETag/稀疏长视频策略后续再补。
 - **B1.1 probe 任务增强**：用 `ffprobe -show_frames -select_streams v -of json` 抽每一帧的 `pkt_pts_time`、`pict_type`、`key_frame` 标记，存到 `VideoFrameIndex` 表（`video_id, frame_index, pts, dts, is_keyframe, byte_offset`）。
-  - 短视频（<10 万帧）全量存。长视频只存 keyframe + 稀疏采样（每 N 帧一行），其余按 fps 推算。
+  - v0.9.21 先对 probe 成功的视频全量存表；长视频稀疏采样（每 N 帧一行）后续再补。
   - I/B/P 帧分布在导出时也有用（避免在 B 帧上做精确 seek）。
-- **B1.2 接口**：`GET /api/videos/{id}/frame-timetable?from=&to=&format=compact` 返回 `Int32Array`（pts，单位 ms）或稀疏版本 `{ keyframes: [...], fps_segments: [...] }`。
-- **B1.3 ETag + Cache-Control**：内容只读不变，强缓存。
+- **B1.2 接口**：`GET /api/v1/tasks/{task_id}/video/frame-timetable?from=&to=` 返回 JSON 帧表；无表时返回 `source="estimated"` 和空 `frames`。
+- **B1.3 ETag + Cache-Control**：内容只读不变，强缓存。（未完成）
 
 **衡量**：1 小时 30fps 视频 timetable 压缩后 <500KB。
 

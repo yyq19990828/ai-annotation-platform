@@ -114,6 +114,8 @@ export interface VideoMetadata {
   poster_frame_path: string | null;
   probe_error: string | null;
   poster_error: string | null;
+  frame_timetable_frame_count: number | null;
+  frame_timetable_error: string | null;
 }
 
 export interface TaskVideoManifestResponse {
@@ -122,6 +124,22 @@ export interface TaskVideoManifestResponse {
   poster_url: string | null;
   metadata: VideoMetadata;
   expires_in: number;
+}
+
+export interface VideoFrameTimetableEntry {
+  frame_index: number;
+  pts_ms: number;
+  is_keyframe: boolean;
+  pict_type: string | null;
+  byte_offset: number | null;
+}
+
+export interface TaskVideoFrameTimetableResponse {
+  task_id: string;
+  fps: number | null;
+  frame_count: number | null;
+  source: "ffprobe" | "estimated";
+  frames: VideoFrameTimetableEntry[];
 }
 
 // ── Annotation ──────────────────────────────────────────────────────────────

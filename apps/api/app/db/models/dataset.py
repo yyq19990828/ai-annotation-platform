@@ -1,6 +1,18 @@
-import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Integer, BigInteger, DateTime, ForeignKey, func
+import uuid
+
+from sqlalchemy import (
+    Boolean,
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
@@ -54,6 +66,41 @@ class DatasetItem(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class VideoFrameIndex(Base):
+    __tablename__ = "video_frame_indices"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    dataset_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("dataset_items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    frame_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    pts_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_keyframe: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pict_type: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    byte_offset: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_item_id",
+            "frame_index",
+            name="uq_video_frame_indices_item_frame",
+        ),
+        Index(
+            "ix_video_frame_indices_item_pts",
+            "dataset_item_id",
+            "pts_ms",
+        ),
     )
 
 

@@ -1,5 +1,11 @@
 import { forwardRef } from "react";
-import type { AnnotationResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import type {
+  AnnotationResponse,
+  TaskVideoFrameTimetableResponse,
+  TaskVideoManifestResponse,
+  VideoBboxGeometry,
+  VideoTrackGeometry,
+} from "@/types";
 import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import type { VideoConvertOptions } from "./useVideoAnnotationActions";
@@ -9,6 +15,7 @@ type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
 
 export interface VideoWorkbenchProps {
   manifest: TaskVideoManifestResponse | undefined;
+  frameTimetable?: TaskVideoFrameTimetableResponse;
   isLoading?: boolean;
   error?: unknown;
   annotations: AnnotationResponse[];
@@ -40,6 +47,7 @@ export interface VideoWorkbenchProps {
 export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps>(
   function VideoWorkbench({
     manifest,
+    frameTimetable,
     isLoading,
     error,
     annotations,
@@ -66,6 +74,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       <VideoStage
         ref={ref}
         manifest={manifest}
+        frameTimetable={frameTimetable}
         isLoading={isLoading}
         error={error}
         annotations={annotations}

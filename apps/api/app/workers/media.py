@@ -8,6 +8,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import delete
+
+from app.db.models.dataset import VideoFrameIndex
 from app.workers.celery_app import celery_app
 from app.config import settings
 
@@ -80,6 +83,55 @@ def parse_ffprobe_video_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _parse_frame_time_ms(frame: dict[str, Any]) -> int | None:
+    for key in (
+        "best_effort_timestamp_time",
+        "pkt_pts_time",
+        "pts_time",
+        "pkt_dts_time",
+    ):
+        raw = frame.get(key)
+        if raw in (None, "N/A"):
+            continue
+        try:
+            seconds = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(seconds):
+            return int(round(seconds * 1000))
+    return None
+
+
+def _parse_int(value: Any) -> int | None:
+    if value in (None, "N/A"):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_ffprobe_frame_timetable(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    frames = payload.get("frames") or []
+    out: list[dict[str, Any]] = []
+    for frame in frames:
+        if frame.get("media_type") not in (None, "video"):
+            continue
+        pts_ms = _parse_frame_time_ms(frame)
+        if pts_ms is None:
+            continue
+        out.append(
+            {
+                "frame_index": len(out),
+                "pts_ms": pts_ms,
+                "is_keyframe": bool(_parse_int(frame.get("key_frame")) or 0),
+                "pict_type": frame.get("pict_type"),
+                "byte_offset": _parse_int(frame.get("pkt_pos")),
+            }
+        )
+    return out
+
+
 def probe_video_file(path: str | Path) -> dict[str, Any]:
     proc = subprocess.run(
         [
@@ -104,6 +156,31 @@ def probe_video_file(path: str | Path) -> dict[str, Any]:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "ffprobe failed")
     return parse_ffprobe_video_metadata(json.loads(proc.stdout or "{}"))
+
+
+def probe_video_frame_timetable(path: str | Path) -> list[dict[str, Any]]:
+    proc = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_frames",
+            "-show_entries",
+            "frame=media_type,key_frame,pict_type,best_effort_timestamp_time,pkt_pts_time,pts_time,pkt_dts_time,pkt_pos",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=FFPROBE_TIMEOUT_SECONDS,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "ffprobe frame timetable failed")
+    return parse_ffprobe_frame_timetable(json.loads(proc.stdout or "{}"))
 
 
 def extract_video_poster(input_path: str | Path, output_path: str | Path) -> None:
@@ -294,6 +371,36 @@ async def _generate_video_metadata(item_id: str) -> None:
                 )
             except Exception as exc:
                 video_meta["probe_error"] = str(exc)
+
+            if not video_meta.get("probe_error"):
+                try:
+                    frame_timetable = probe_video_frame_timetable(input_path)
+                    await db.execute(
+                        delete(VideoFrameIndex).where(
+                            VideoFrameIndex.dataset_item_id == item.id
+                        )
+                    )
+                    db.add_all(
+                        [
+                            VideoFrameIndex(
+                                dataset_item_id=item.id,
+                                frame_index=entry["frame_index"],
+                                pts_ms=entry["pts_ms"],
+                                is_keyframe=entry["is_keyframe"],
+                                pict_type=entry.get("pict_type"),
+                                byte_offset=entry.get("byte_offset"),
+                            )
+                            for entry in frame_timetable
+                        ]
+                    )
+                    video_meta["frame_timetable_frame_count"] = len(frame_timetable)
+                    video_meta.pop("frame_timetable_error", None)
+                except subprocess.TimeoutExpired:
+                    video_meta["frame_timetable_error"] = (
+                        f"ffprobe frame timetable timed out after {FFPROBE_TIMEOUT_SECONDS}s"
+                    )
+                except Exception as exc:
+                    video_meta["frame_timetable_error"] = str(exc)
 
             if video_meta.get("width") is not None:
                 item.width = int(video_meta["width"])

@@ -23,6 +23,8 @@ const manifest: TaskVideoManifestResponse = {
     poster_frame_path: "poster.webp",
     probe_error: null,
     poster_error: null,
+    frame_timetable_frame_count: null,
+    frame_timetable_error: null,
   },
 };
 

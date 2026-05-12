@@ -5,6 +5,7 @@ import type {
   TaskLockResponse,
   ReviewClaimResponse,
   Geometry,
+  TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
 } from "@/types";
 
@@ -56,6 +57,11 @@ export interface VideoTrackConvertToBboxesResponse {
   removed_frame_indexes: number[];
 }
 
+export interface VideoFrameTimetableParams {
+  from?: number;
+  to?: number;
+}
+
 export interface SubmitResponse {
   status: string;
   task_id: string;
@@ -83,6 +89,16 @@ export const tasksApi = {
 
   getVideoManifest: (id: string) =>
     apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`),
+
+  getVideoFrameTimetable: (id: string, params?: VideoFrameTimetableParams) => {
+    const q = new URLSearchParams();
+    if (params?.from !== undefined) q.set("from", String(params.from));
+    if (params?.to !== undefined) q.set("to", String(params.to));
+    const suffix = q.toString() ? `?${q}` : "";
+    return apiClient.get<TaskVideoFrameTimetableResponse>(
+      `/tasks/${id}/video/frame-timetable${suffix}`,
+    );
+  },
 
   getAnnotations: (id: string) =>
     apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations`),

@@ -110,6 +110,7 @@
 
 ### R1 · 帧索引与 seek 精度（**必做，基础**）
 
+- **状态（v0.9.21）**：R1.1 / R1.2 / R1.3 已落地第一版。前端新增 `useFrameClock.ts` 与 `frameTimebase.ts`，后端通过 `GET /api/v1/tasks/{task_id}/video/frame-timetable` 暴露 `pts_ms` 时间表；旧视频无时间表时按 fps 降级。
 - **R1.1 引入 `FrameClock`**：在 `VideoStage` 之上抽一个 `useFrameClock(video, fps, totalFrames)` hook，集中处理：
   - `seekTo(frameIndex)`：使用 `video.requestVideoFrameCallback`（Chrome / Safari 已支持）回调确认到位，回退到 `seeked` + 容差比较。
   - `tick()`：以 `requestVideoFrameCallback` 取代 `requestAnimationFrame`，得到带 `mediaTime` 的精确帧号；浏览器不支持时回退当前实现。
@@ -142,6 +143,7 @@
 
 ### R3 · 轨迹插值索引化（**必做，小改动**）
 
+- **状态（v0.9.21）**：R3.1 与 R3.3 已完成；R3.2 时间轴分桶和 R3.4 outside 段协议仍未做。
 - **R3.1 keyframe 索引**：`video_track` 加载时构建 `sortedFrames: number[]` 缓存（已 sort 过的 `frame_index` 数组），`resolveTrackAtFrame` 改为二分查找前后 keyframe（O(log n) 替代 O(n)）。
 - **R3.2 当前帧分桶**：对所有 track 维护 `frameBuckets: Map<frame, trackId[]>`（仅在 keyframe 上有桶），用于快速回答"帧 F 处需要插值的 track 集合"。注意：插值期间任意帧都可能出现轨迹，所以分桶只用于 keyframe 命中提示与时间轴标记。
 - **R3.3 插值结果 LRU**：`LRU<trackId+frame, bbox>`，上限 1000 条，防止暂停状态下来回 scrub 重复算。
@@ -188,6 +190,7 @@
 
 ### R7 · 观测与回归（**贯穿，必做**）
 
+- **状态（v0.9.21）**：R7.1 已有开发环境诊断对象 `window.__videoFrameClockDiagnostics`；R7.2 基准脚本和 R7.3 BugReportDrawer 自动附带仍未做。
 - **R7.1 FPS / 长任务上报**：开发环境给 `VideoStage` 挂一个 `PerformanceObserver('longtask')`，把数据写到 console + 可选上报 endpoint，便于回归。
 - **R7.2 基准用例**：固定 3 个 fixture 视频（720p/3min、1080p/5min、4K/30s）+ 3 套 annotation 密度（10/100/500 tracks），写到 `apps/web/scripts/video-bench/`，每次改动跑一遍录 trace。
 - **R7.3 Bug 反馈对接**：BugReportDrawer 收到视频工作台 BUG 时自动附带最近 `frameClock.diagnostics()` 输出（最近 N 次 seek 耗时 / 解码失败次数）。

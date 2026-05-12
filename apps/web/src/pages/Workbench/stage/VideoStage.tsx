@@ -1,13 +1,15 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
-import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
+import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse } from "@/types";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import { VideoFrameOverlay } from "./VideoFrameOverlay";
 import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { VideoSelectionActions } from "./VideoSelectionActions";
 import { applyResize } from "./ResizeHandles";
+import { buildFrameTimebase } from "./frameTimebase";
+import { useFrameClock } from "./useFrameClock";
 import {
   clamp01,
   clampGeom,
@@ -36,6 +38,7 @@ const EMPTY_TRACK_ID_SET = new Set<string>();
 
 interface VideoStageProps {
   manifest: TaskVideoManifestResponse | undefined;
+  frameTimetable?: TaskVideoFrameTimetableResponse;
   isLoading?: boolean;
   error?: unknown;
   annotations: AnnotationResponse[];
@@ -71,6 +74,7 @@ export interface VideoStageControls {
 
 export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(function VideoStage({
   manifest,
+  frameTimetable,
   isLoading = false,
   error,
   annotations,
@@ -115,13 +119,12 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     onFrameIndexChange?.(nextFrame);
   }, [controlledFrameIndex, onFrameIndexChange]);
 
-  const fps = manifest?.metadata.fps && manifest.metadata.fps > 0 ? manifest.metadata.fps : 30;
-  const frameCount = Math.max(
-    1,
-    manifest?.metadata.frame_count ??
-      Math.ceil(((manifest?.metadata.duration_ms ?? 0) / 1000) * fps) ??
-      1,
+  const timebase = useMemo(
+    () => buildFrameTimebase(manifest?.metadata, frameTimetable),
+    [frameTimetable, manifest?.metadata],
   );
+  const fps = timebase.fps;
+  const frameCount = timebase.frameCount;
   const maxFrame = Math.max(0, frameCount - 1);
   const videoAspectRatio = manifest?.metadata.width && manifest.metadata.height
     ? manifest.metadata.width / manifest.metadata.height
@@ -244,27 +247,20 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     return [...new Set(warnings)].slice(0, 3);
   }, [currentFrameEntries, fps, videoTracks]);
 
+  const frameClock = useFrameClock({
+    videoRef,
+    frameIndex,
+    timebase,
+    isPlaying,
+    onFrameChange: setFrameIndex,
+  });
+
   const seekFrame = useCallback(
     (nextFrame: number) => {
-      const frame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
-      setFrameIndex(frame);
-      const video = videoRef.current;
-      if (video) video.currentTime = frame / fps;
+      frameClock.seekTo(nextFrame);
     },
-    [fps, maxFrame, setFrameIndex],
+    [frameClock],
   );
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const frame = Math.max(0, Math.min(maxFrame, Math.round(frameIndex)));
-    const nextTime = frame / fps;
-    if (!Number.isFinite(nextTime)) return;
-    const tolerance = Math.max(0.001, 0.5 / fps);
-    if (Math.abs(video.currentTime - nextTime) > tolerance) {
-      video.currentTime = nextTime;
-    }
-  }, [fps, frameIndex, maxFrame]);
 
   const showPlaybackOverlay = useCallback(() => {
     if (overlayHideTimerRef.current) clearTimeout(overlayHideTimerRef.current);
@@ -344,7 +340,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const onTime = () => setFrameIndex(Math.max(0, Math.min(maxFrame, Math.round(video.currentTime * fps))));
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onEnded = () => setIsPlaying(false);
@@ -352,37 +347,29 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       setIsPlaying(false);
       setPlaybackError(video.error?.message || "当前浏览器无法播放该视频源");
     };
-    video.addEventListener("timeupdate", onTime);
-    video.addEventListener("seeked", onTime);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
     video.addEventListener("ended", onEnded);
     video.addEventListener("error", onError);
     return () => {
-      video.removeEventListener("timeupdate", onTime);
-      video.removeEventListener("seeked", onTime);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("error", onError);
     };
-  }, [fps, maxFrame, setFrameIndex]);
+  }, []);
 
   useEffect(() => {
-    if (!isPlaying) return;
-    const schedule = typeof requestAnimationFrame === "function"
-      ? requestAnimationFrame
-      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
-    const cancel = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : window.clearTimeout;
-    let raf = 0;
-    const tick = () => {
-      const video = videoRef.current;
-      if (video) setFrameIndex(Math.max(0, Math.min(maxFrame, Math.round(video.currentTime * fps))));
-      raf = schedule(tick);
+    if (!import.meta.env.DEV) return;
+    const diagnosticsTarget = window as unknown as {
+      __videoFrameClockDiagnostics?: Record<string, unknown>;
     };
-    raf = schedule(tick);
-    return () => cancel(raf);
-  }, [fps, isPlaying, maxFrame, setFrameIndex]);
+    const taskId = manifest?.task_id ?? "unknown";
+    diagnosticsTarget.__videoFrameClockDiagnostics = {
+      ...(diagnosticsTarget.__videoFrameClockDiagnostics ?? {}),
+      [taskId]: frameClock.diagnostics,
+    };
+  }, [frameClock.diagnostics, manifest?.task_id]);
 
   const pointFromEvent = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     const rect = overlayRef.current?.getBoundingClientRect();
@@ -625,7 +612,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
           <VideoPlaybackOverlay
             frameIndex={frameIndex}
             maxFrame={maxFrame}
-            fps={fps}
+            timebase={timebase}
             isPlaying={isPlaying}
             annotatedFrames={[...annotatedFrames].sort((a, b) => a - b)}
             currentFrameEntryCount={currentFrameEntries.length}

@@ -2,13 +2,14 @@ import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { frameToTime, type FrameTimebase } from "./frameTimebase";
 
 type HighlightAction = "prev" | "next" | "play" | null;
 
 interface VideoPlaybackOverlayProps {
   frameIndex: number;
   maxFrame: number;
-  fps: number;
+  timebase: FrameTimebase;
   isPlaying: boolean;
   annotatedFrames: number[];
   currentFrameEntryCount: number;
@@ -30,7 +31,7 @@ function formatTime(seconds: number) {
 export function VideoPlaybackOverlay({
   frameIndex,
   maxFrame,
-  fps,
+  timebase,
   isPlaying,
   annotatedFrames,
   currentFrameEntryCount,
@@ -44,8 +45,8 @@ export function VideoPlaybackOverlay({
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
   const frameTooltip = useMemo(() => {
     if (hoverFrame === null) return null;
-    return `F ${hoverFrame} · ${formatTime(hoverFrame / fps)}`;
-  }, [fps, hoverFrame]);
+    return `F ${hoverFrame} · ${formatTime(frameToTime(hoverFrame, timebase))}`;
+  }, [hoverFrame, timebase]);
 
   const iconButtonStyle = (active: boolean): CSSProperties => ({
     color: "#fff",
@@ -146,7 +147,7 @@ export function VideoPlaybackOverlay({
 
       <div className="mono" style={{ display: "flex", gap: 10, fontSize: 12, color: "rgba(255,255,255,0.82)", whiteSpace: "nowrap" }}>
         <span>F {frameIndex} / {maxFrame}</span>
-        <span>{formatTime(frameIndex / fps)}</span>
+        <span>{formatTime(frameToTime(frameIndex, timebase))}</span>
         <span>{currentFrameEntryCount} 框</span>
       </div>
     </div>

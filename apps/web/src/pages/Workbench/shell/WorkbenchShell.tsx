@@ -9,6 +9,7 @@ import {
   useTaskList, useAnnotations, useCreateAnnotation, useDeleteAnnotation,
   useUpdateAnnotation, useSubmitTask,
   useVideoManifest,
+  useVideoFrameTimetable,
 } from "@/hooks/useTasks";
 import { usePredictions } from "@/hooks/usePredictions";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
@@ -190,6 +191,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
   const stageKind = currentProject?.type_key === "lidar" ? "3d" : isVideoTask ? "video" : "image";
   const videoManifest = useVideoManifest(taskId, isVideoTask);
+  const videoFrameTimetable = useVideoFrameTimetable(taskId, isVideoTask && !!videoManifest.data);
   const resetVideoStageUi = s.resetVideoStageUi;
 
   useEffect(() => {
@@ -723,6 +725,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         stageKind, readOnly: isLocked, activeClass: s.activeClass, selectedId: s.selectedId,
         annotations: annotationsData ?? [], onSelectBox: handleSelectBox, onCursorMove: setCursor,
         videoManifest: videoManifest.data, videoManifestLoading: videoManifest.isLoading,
+        videoFrameTimetable: videoFrameTimetable.data,
         videoManifestError: videoManifest.error, videoTool: s.videoTool,
         videoFrameIndex: s.videoFrameIndex,
         hiddenVideoTrackIds: s.hiddenVideoTrackIds,

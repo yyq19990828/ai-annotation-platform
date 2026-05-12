@@ -22,6 +22,28 @@
 
 ## 最新版本
 
+## [0.9.21] - 2026-05-12
+
+> **Video Frame Clock — 帧时间表 + 精确 seek 基础.** 主线: ① media worker 用 `ffprobe -show_frames` 生成视频帧时间表并写入 `video_frame_indices`；② 新增 `GET /tasks/{task_id}/video/frame-timetable`，旧视频无时间表时返回 estimated 降级；③ 前端新增 `frameTimebase` / `useFrameClock`，优先用 `requestVideoFrameCallback` 做 frame ↔ mediaTime 映射；④ `resolveTrackAtFrame` 改为 keyframe 索引 + 二分查找 + 1000 条插值 LRU；⑤ 开发环境记录视频帧时钟 seek/longtask 诊断。→ [plan](docs/plans/2026-05-12-v0.9.21-video-frame-clock-timetable.md).
+
+### Added
+
+- **视频帧时间表**：新增 `video_frame_indices` 表，按 `dataset_item_id + frame_index` 保存 `pts_ms`、关键帧标记、帧类型和可选 byte offset。
+- **Frame timetable API**：`GET /api/v1/tasks/{task_id}/video/frame-timetable?from=&to=` 返回 ffprobe 帧时间表；无表时返回 `source="estimated"` 和空 `frames`。
+- **前端 FrameClock**：`VideoStage` 播放、逐帧和 scrubber seek 统一走 `useFrameClock`，支持 `requestVideoFrameCallback`，并对快速连续 seek 丢弃过期回调。
+- **帧时钟诊断**：开发环境暴露 `window.__videoFrameClockDiagnostics`，记录 seek 次数、过期回调、最近 frame-ready 来源和 long task 计数。
+
+### Changed
+
+- 悬浮时间轴的时间显示改用 `frameTimebase`，有真实 `pts_ms` 时不再直接用 `frame / fps`。
+- `video_track` 插值解析改为 WeakMap keyframe 索引、二分查找和 1000 条结果 LRU；`absent=true` 阻断语义保持不变。
+- 视频元数据增加 `frame_timetable_frame_count` / `frame_timetable_error`，probe 失败不会阻断现有 manifest。
+
+### Fixed
+
+- 快速拖动时间轴时，旧的 frame callback 不再覆盖最新目标帧。
+- 密集轨迹场景下，暂停 scrub 重复计算同一 track/frame 的开销下降。
+
 ## [0.9.20] - 2026-05-11
 
 > **Video Tool Semantics — 视频矩形框 / 轨迹工具分离 + track 转独立框.** 主线: ① 视频工作台新增独立 `videoTool`，`B` 画当前帧 `video_bbox`，`T` 创建 / 延续 `video_track`；② 视频拖框恢复图片侧“画完选类”流程，不再默认吞掉第一个类别；③ 选中视频对象后 `1-9` 可直接改类；④ 新增事务端点把 track 当前帧、关键帧或插值全帧转换为独立 `video_bbox`，支持 copy / split 双语义和 5000 条上限；⑤ 轨迹侧栏补 keyframe 列表、关键帧删除、复制 / 拆分入口。→ [plan](docs/plans/2026-05-11-v0.9.20-video-tool-semantics.md).

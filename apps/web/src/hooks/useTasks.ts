@@ -51,6 +51,15 @@ export function useVideoManifest(taskId: string | undefined, enabled = true) {
   });
 }
 
+export function useVideoFrameTimetable(taskId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["task-video-frame-timetable", taskId],
+    queryFn: () => tasksApi.getVideoFrameTimetable(taskId!),
+    enabled: !!taskId && enabled,
+    staleTime: Infinity,
+  });
+}
+
 export function useAnnotations(taskId: string | undefined) {
   return useQuery({
     queryKey: ["annotations", taskId],

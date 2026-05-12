@@ -59,7 +59,8 @@ v0.9.16 起，视频任务会在 `GET /api/v1/tasks/:id` 的 `TaskOut.video_meta
     "codec": "mpeg4",
     "playback_path": "playback/...",
     "playback_codec": "h264",
-    "poster_frame_path": "thumbnails/..."
+    "poster_frame_path": "thumbnails/...",
+    "frame_timetable_frame_count": 25
   }
 }
 ```
@@ -73,6 +74,32 @@ GET /api/v1/tasks/:id/video/manifest
 如果原视频编码不是浏览器稳定支持的 H.264，media worker 会生成 `playback/*.mp4`；manifest 的 `video_url` 优先返回该播放版本。
 
 返回 presigned 播放地址、poster 地址和同一份标准化 metadata。非视频任务会返回 `400`。
+
+v0.9.21 起，工作台还会读取帧时间表，用真实 `pts_ms` 替代单纯 `frame / fps`：
+
+```http
+GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
+```
+
+```json
+{
+  "task_id": "...",
+  "fps": 29.97,
+  "frame_count": 1800,
+  "source": "ffprobe",
+  "frames": [
+    {
+      "frame_index": 0,
+      "pts_ms": 0,
+      "is_keyframe": true,
+      "pict_type": "I",
+      "byte_offset": 48
+    }
+  ]
+}
+```
+
+存量视频没有时间表时会返回 `source: "estimated"` 和空 `frames`，前端继续按 `fps` 估算。
 
 v0.9.16 的视频标注使用逐帧 `video_bbox`：
 

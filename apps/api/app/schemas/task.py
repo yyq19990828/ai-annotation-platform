@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
+from typing import Literal
 
 from app.schemas.user import UserBrief
 
@@ -18,6 +19,8 @@ class VideoMetadata(BaseModel):
     poster_frame_path: str | None = None
     probe_error: str | None = None
     poster_error: str | None = None
+    frame_timetable_frame_count: int | None = None
+    frame_timetable_error: str | None = None
 
 
 class TaskOut(BaseModel):
@@ -80,6 +83,22 @@ class TaskVideoManifestResponse(BaseModel):
     poster_url: str | None = None
     metadata: VideoMetadata
     expires_in: int = 3600
+
+
+class VideoFrameTimetableEntry(BaseModel):
+    frame_index: int
+    pts_ms: int
+    is_keyframe: bool
+    pict_type: str | None = None
+    byte_offset: int | None = None
+
+
+class TaskVideoFrameTimetableResponse(BaseModel):
+    task_id: UUID
+    fps: float | None = None
+    frame_count: int | None = None
+    source: Literal["ffprobe", "estimated"]
+    frames: list[VideoFrameTimetableEntry]
 
 
 class TaskLockResponse(BaseModel):

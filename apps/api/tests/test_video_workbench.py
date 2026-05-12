@@ -6,7 +6,7 @@ from pydantic import TypeAdapter
 from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import Dataset, DatasetItem
+from app.db.models.dataset import Dataset, DatasetItem, VideoFrameIndex
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
@@ -17,7 +17,9 @@ from app.workers.media import (
     FFPROBE_TIMEOUT_SECONDS,
     extract_video_poster,
     parse_ffprobe_video_metadata,
+    parse_ffprobe_frame_timetable,
     probe_video_file,
+    probe_video_frame_timetable,
     transcode_video_for_browser,
 )
 
@@ -50,6 +52,50 @@ def test_parse_ffprobe_video_metadata_computes_fps_and_frame_count():
     }
 
 
+def test_parse_ffprobe_frame_timetable_extracts_frame_pts():
+    frames = parse_ffprobe_frame_timetable(
+        {
+            "frames": [
+                {
+                    "media_type": "video",
+                    "key_frame": 1,
+                    "best_effort_timestamp_time": "0.000000",
+                    "pict_type": "I",
+                    "pkt_pos": "48",
+                },
+                {
+                    "media_type": "video",
+                    "key_frame": 0,
+                    "pkt_pts_time": "0.033367",
+                    "pict_type": "P",
+                    "pkt_pos": "4096",
+                },
+                {
+                    "media_type": "audio",
+                    "best_effort_timestamp_time": "0.040000",
+                },
+            ]
+        }
+    )
+
+    assert frames == [
+        {
+            "frame_index": 0,
+            "pts_ms": 0,
+            "is_keyframe": True,
+            "pict_type": "I",
+            "byte_offset": 48,
+        },
+        {
+            "frame_index": 1,
+            "pts_ms": 33,
+            "is_keyframe": False,
+            "pict_type": "P",
+            "byte_offset": 4096,
+        },
+    ]
+
+
 def test_probe_video_file_uses_timeout(tmp_path, monkeypatch):
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"fake")
@@ -71,6 +117,30 @@ def test_probe_video_file_uses_timeout(tmp_path, monkeypatch):
 
     assert seen["timeout"] == FFPROBE_TIMEOUT_SECONDS
     assert any("stream=codec_type,codec_name" in arg for arg in seen["args"])
+
+
+def test_probe_video_frame_timetable_uses_timeout(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+    seen: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        seen["args"] = args[0]
+        seen["timeout"] = kwargs.get("timeout")
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout='{"frames":[{"media_type":"video","best_effort_timestamp_time":"0","key_frame":1}]}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    frames = probe_video_frame_timetable(video)
+
+    assert frames[0]["pts_ms"] == 0
+    assert seen["timeout"] == FFPROBE_TIMEOUT_SECONDS
+    assert "-show_frames" in seen["args"]
 
 
 def test_extract_video_poster_uses_timeout(tmp_path, monkeypatch):
@@ -348,6 +418,161 @@ async def test_video_manifest_returns_signed_urls(
     assert body["metadata"]["playback_path"] == "playback/clip.mp4"
     assert body["expires_in"] == 3600
     assert signed == [("playback/clip.mp4", 3600), ("posters/clip.webp", 3600)]
+
+
+async def test_video_frame_timetable_returns_ffprobe_rows(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project = Project(
+        display_id=f"P-VID-{uuid.uuid4().hex[:6]}",
+        name="Video Project",
+        type_key="video-track",
+        type_label="视频 · 时序追踪",
+        owner_id=user.id,
+        classes=["car"],
+    )
+    dataset = Dataset(
+        display_id=f"D-VID-{uuid.uuid4().hex[:6]}",
+        name="videos",
+        data_type="video",
+        created_by=user.id,
+    )
+    db_session.add_all([project, dataset])
+    await db_session.flush()
+    item = DatasetItem(
+        dataset_id=dataset.id,
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        metadata_={"video": {"fps": 30, "frame_count": 4}},
+    )
+    db_session.add(item)
+    await db_session.flush()
+    task = Task(
+        project_id=project.id,
+        dataset_item_id=item.id,
+        display_id=f"T-VID-{uuid.uuid4().hex[:6]}",
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        status="pending",
+    )
+    db_session.add(task)
+    db_session.add_all(
+        [
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=0,
+                pts_ms=0,
+                is_keyframe=True,
+                pict_type="I",
+                byte_offset=10,
+            ),
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=1,
+                pts_ms=33,
+                is_keyframe=False,
+                pict_type="P",
+                byte_offset=20,
+            ),
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=2,
+                pts_ms=67,
+                is_keyframe=False,
+                pict_type="P",
+                byte_offset=30,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/frame-timetable?from=1&to=2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "ffprobe"
+    assert body["fps"] == 30
+    assert body["frame_count"] == 4
+    assert body["frames"] == [
+        {
+            "frame_index": 1,
+            "pts_ms": 33,
+            "is_keyframe": False,
+            "pict_type": "P",
+            "byte_offset": 20,
+        },
+        {
+            "frame_index": 2,
+            "pts_ms": 67,
+            "is_keyframe": False,
+            "pict_type": "P",
+            "byte_offset": 30,
+        },
+    ]
+
+
+async def test_video_frame_timetable_falls_back_to_estimated(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project = Project(
+        display_id=f"P-VID-{uuid.uuid4().hex[:6]}",
+        name="Video Project",
+        type_key="video-track",
+        type_label="视频 · 时序追踪",
+        owner_id=user.id,
+        classes=["car"],
+    )
+    dataset = Dataset(
+        display_id=f"D-VID-{uuid.uuid4().hex[:6]}",
+        name="videos",
+        data_type="video",
+        created_by=user.id,
+    )
+    db_session.add_all([project, dataset])
+    await db_session.flush()
+    item = DatasetItem(
+        dataset_id=dataset.id,
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        metadata_={"video": {"fps": 24, "frame_count": 12}},
+    )
+    db_session.add(item)
+    await db_session.flush()
+    task = Task(
+        project_id=project.id,
+        dataset_item_id=item.id,
+        display_id=f"T-VID-{uuid.uuid4().hex[:6]}",
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        status="pending",
+    )
+    db_session.add(task)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/frame-timetable",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "estimated"
+    assert body["fps"] == 24
+    assert body["frame_count"] == 12
+    assert body["frames"] == []
 
 
 async def test_video_manifest_returns_503_when_metadata_not_ready(
