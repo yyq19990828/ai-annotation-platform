@@ -23,6 +23,7 @@ from app.schemas.video_frame_service import (
     VideoFramePrefetchRequest,
     VideoFramePrefetchResponse,
     VideoManifestV2Response,
+    VideoSegmentsResponse,
 )
 from app.services.video_frame_service import (
     build_context_from_dataset_item,
@@ -32,6 +33,7 @@ from app.services.video_frame_service import (
     manifest_v2 as build_video_manifest_v2,
     prefetch_frames as prefetch_video_frames,
 )
+from app.services.video_segment_service import list_segments as list_video_segments
 
 router = APIRouter()
 
@@ -65,7 +67,18 @@ async def get_video_manifest(
 ):
     task = await _visible_video_task_for_item(db, dataset_item_id, current_user)
     ctx = await build_context_from_dataset_item(db, dataset_item_id, task=task)
-    return build_video_manifest_v2(ctx, str(request.base_url))
+    return await build_video_manifest_v2(db, ctx, str(request.base_url))
+
+
+@router.get("/{dataset_item_id}/segments", response_model=VideoSegmentsResponse)
+async def get_video_segments(
+    dataset_item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _visible_video_task_for_item(db, dataset_item_id, current_user)
+    ctx = await build_context_from_dataset_item(db, dataset_item_id, task=task)
+    return await list_video_segments(db, ctx)
 
 
 @router.get(

@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-12
 ---
 
 # 环境变量参考
@@ -12,84 +12,117 @@ last_reviewed: 2026-05-09
 > **自动生成说明**：本页由 `docs-site/scripts/generate-env-vars.mjs` 从 `.env.example` 生成。
 > 修改环境变量说明请编辑 `.env.example` 中的注释，再运行 `pnpm docs:gen-env-vars`。
 
-## 数据库（PostgreSQL）
+## 数据库 (PostgreSQL)
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `DATABASE_URL` | `postgresql+asyncpg://user:pass@localhost:5432/annotation` | 异步数据库连接串。生产环境替换为真实凭据。 |
+| `DATABASE_URL` | `postgresql+asyncpg://user:pass@localhost:5432/annotation` | 异步数据库连接串，格式：postgresql+asyncpg://用户名:密码@主机:端口/数据库名 本地开发可直接使用下方默认值；生产环境请替换为真实凭据 |
 
-## 缓存 / 消息队列（Redis）
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis 连接地址，用于会话缓存、速率限制、Celery Broker。 |
-
-## 对象存储（MinIO / S3 兼容）
+## 缓存 / 消息队列 (Redis)
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `MINIO_ENDPOINT` | `localhost:9000` | MinIO 服务地址（不含协议前缀）。 |
-| `MINIO_ACCESS_KEY` | `minioadmin` | 访问密钥（相当于 AWS Access Key ID）。 |
-| `MINIO_SECRET_KEY` | `minioadmin` | 密钥（相当于 AWS Secret Access Key）。**生产环境必须更换。** |
-| `MINIO_BUCKET` | `annotations` | 存放标注文件的桶名称。 |
-| `ML_BACKEND_STORAGE_HOST` | `172.17.0.1:9000` | ML Backend 访问 MinIO 的地址。容器网络中 Backend 无法直接访问 `localhost`，需设为 Docker 网关地址。生产 K8s 环境留空。 |
-| `ML_BACKEND_DEFAULT_URL` | `http://172.17.0.1:8001` | ML Backend 注册表单的 URL 预填值。 |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis 连接地址，用于会话缓存、速率限制等 格式：redis://[:密码@]主机:端口/数据库编号 |
 
-## 视频帧服务（v0.9.25+）
+## 对象存储 (MinIO / S3 兼容)
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `VIDEO_CHUNK_SIZE_FRAMES` | `60` | 每个视频 chunk 包含的帧数。30fps 下默认约 2 秒。 |
+| `MINIO_ENDPOINT` | `localhost:9000` | MinIO 服务地址（不含协议前缀），Docker 默认 localhost:9000 |
+| `MINIO_ACCESS_KEY` | `minioadmin` | MinIO 访问密钥（相当于 AWS Access Key ID） |
+| `MINIO_SECRET_KEY` | `minioadmin` | MinIO 密钥（相当于 AWS Secret Access Key）；生产环境务必更换 |
+| `MINIO_BUCKET` | `annotations` | 存放标注文件（图片、音频等）的桶名称 |
+| `ML_BACKEND_STORAGE_HOST` | `172.17.0.1:9000` | v0.9.4 · ML backend 在 docker compose 网内、平台 api 在 host 进程时, SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge 网关地址即可。 Linux: 172.17.0.1:9000; macOS/Win Docker Desktop: host.docker.internal:9000; 生产 (api/sam/minio 同 K8s 网) 留空。 |
+
+## v0.9.6 · ML Backend 注册表单 URL 默认值预填 hint (avoid 手敲).
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `ML_BACKEND_DEFAULT_URL` | `http://172.17.0.1:8001` | 留空则用前端硬编码默认 http://172.17.0.1:8001; 生产 K8s 同 namespace 时可设为 service DNS, 让运维注册时直接 ready. |
+
+## 视频帧服务 (v0.9.25+)
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `VIDEO_CHUNK_SIZE_FRAMES` | `60` | 每个 chunk 包含的帧数。30fps 下默认 60 帧约等于 2 秒。 |
 | `VIDEO_FRAME_CACHE_TTL_DAYS` | `14` | 单帧 WebP/JPEG 缓存对象未访问多少天后由 Celery beat 清理。 |
 | `VIDEO_CHUNK_CACHE_TTL_DAYS` | `30` | 视频 chunk 缓存对象未访问多少天后由 Celery beat 清理。 |
-| `VIDEO_FRAME_MEMORY_CACHE_ITEMS` | `64` | AI worker 通过内部 `frame_service.get_frame_array` 读取单帧时的进程内 LRU 上限。 |
+| `VIDEO_FRAME_MEMORY_CACHE_ITEMS` | `64` | AI worker 通过内部 frame_service.get_frame_array 读取单帧时的进程内 LRU 上限。 |
+| `VIDEO_SEGMENT_SIZE_FRAMES` | `18000` | 每个协作 segment 包含的帧数。30fps 下默认 18000 帧约等于 10 分钟。 |
+| `VIDEO_SEGMENT_LOCK_TTL_SECONDS` | `300` | segment claim/heartbeat 锁 TTL，单位秒。 |
 
 ## 认证 / 安全
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `SECRET_KEY` | _(示例值)_ | JWT 签名密钥。**生产环境必须替换为高强度随机字符串（≥32 字符）。** |
-| `ALLOW_OPEN_REGISTRATION` | `false` | 是否允许开放注册。`true` 任何人可注册（默认 viewer 角色）；`false` 仅管理员可创建账号。v0.8.1+ 可在系统设置中热更新。 |
-| `TURNSTILE_ENABLED` | `false` | 是否启用 Cloudflare Turnstile CAPTCHA（v0.8.7+）。启用后注册和忘记密码接口需携带 captcha_token。 |
-| `TURNSTILE_SITE_KEY` | — | Turnstile sitekey（与 `VITE_TURNSTILE_SITE_KEY` 保持一致）。 |
-| `TURNSTILE_SECRET_KEY` | — | Turnstile siteverify 用的 secret，**绝不可暴露给前端**。 |
-| `AUDIT_RETENTION_MONTHS` | `12` | 审计日志保留月数（v0.8.1+）。超期分区归档为 `audit-archive/{YYYY}/{MM}.jsonl.gz` 上传 MinIO 后删除。 |
+| `SECRET_KEY` | `change-this-to-a-random-string-in-production` | JWT 签名密钥；生产环境必须替换为高强度随机字符串（≥32 字符） |
+
+## 是否允许开放注册（v0.7.7+；v0.8.1 起可在 SettingsPage > 系统设置 中热更新覆盖）
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `ALLOW_OPEN_REGISTRATION` | `false` | true  — 任何人可自行注册，默认获得 viewer 角色 false — 仅管理员可创建账号 |
+
+## Cloudflare Turnstile CAPTCHA（v0.8.7+，防分布式刷号）
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `TURNSTILE_ENABLED` | `false` | dev/CI 留默认 false；production 放量前在控制台申请 site key + secret key 后启用： https://dash.cloudflare.com/?to=/:account/turnstile 启用后注册（/auth/register-open）与忘记密码（/auth/forgot-password）必须携带 captcha_token， 后端向 challenges.cloudflare.com/turnstile/v0/siteverify 校验失败返 400 captcha_failed。 |
+| `TURNSTILE_SITE_KEY` | `# 前端 widget 的 sitekey（同时设置 VITE_TURNSTILE_SITE_KEY）` | — |
+| `TURNSTILE_SECRET_KEY` | `# 后端 siteverify 用的 secret，绝不可暴露给前端` | — |
+
+## 审计日志冷数据保留月数（v0.8.1+）
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `AUDIT_RETENTION_MONTHS` | `12` | Celery beat 每月 2 日扫描超期分区，归档为 jsonl.gz 上传 MinIO `audit-archive/{YYYY}/{MM}.jsonl.gz`， 然后 DROP 该分区。默认 12 个月。 |
 
 ## 前端
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `VITE_API_URL` | `http://localhost:8000` | 前端访问后端 API 的基础 URL（Vite 构建时注入）。部署时改为实际域名。 |
-| `VITE_SENTRY_DSN` | — | 前端 Sentry DSN（v0.6.6+）。留空禁用前端错误上报。 |
-| `VITE_TURNSTILE_SITE_KEY` | — | Turnstile sitekey（v0.8.7+）。留空时注册页不渲染 CAPTCHA widget。 |
+| `VITE_API_URL` | `http://localhost:8000` | 前端访问后端 API 的基础 URL（Vite 构建时注入） 本地开发通常为 http://localhost:8000；部署时改为实际域名 |
 
-## 错误监控（Sentry）
+## 错误监控 (Sentry, v0.6.6+)
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `SENTRY_DSN` | — | 后端 Sentry DSN（v0.6.6+）。留空禁用后端错误上报。 |
-| `SENTRY_ENVIRONMENT` | `development` | Sentry 环境标签，用于区分 development / staging / production。 |
-| `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | 性能追踪采样率（0.0–1.0）。 |
+| `SENTRY_DSN` | `—` | 后端 Sentry DSN；留空则禁用后端错误上报 |
+| `SENTRY_ENVIRONMENT` | `development` | Sentry 环境标签，用于区分 development / staging / production |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | 性能追踪采样率，0.0 ~ 1.0（0.1 = 采样 10% 的请求） |
+| `VITE_SENTRY_DSN` | `—` | 前端 Sentry DSN（Vite 构建时注入）；留空则禁用前端错误上报 |
 
-## 跨域（CORS）
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `CORS_ALLOW_ORIGINS` | — | 允许的前端来源列表，支持 JSON 数组或逗号分隔字符串。**生产环境必填。** |
-| `CORS_ALLOW_ORIGIN_REGEX` | — | 来源正则匹配（仅 dev/staging 生效，production 自动忽略）。 |
-
-## Grounded-SAM-2 ML Backend（v0.9.0+，GPU profile）
+## 前端 Turnstile sitekey（v0.8.7+，与 TURNSTILE_SITE_KEY 一致）；留空时注册页不渲染 widget。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `SAM_VARIANT` | `tiny` | 模型变体：`tiny` / `small` / `base_plus` / `large`，按精度/显存递增。`tiny` 对 RTX 4060 友好。 |
-| `DINO_VARIANT` | `T` | GroundingDINO 变体：`T`（Swin-T）/ `B`（Swin-B，更准但显存翻倍）。 |
-| `BOX_THRESHOLD` | `0.35` | DINO 检测阈值。召回不足可下调到 0.25，误检多则上调到 0.45。 |
-| `TEXT_THRESHOLD` | `0.25` | DINO 文本-标签匹配阈值。 |
-| `GSAM2_LOG_LEVEL` | `INFO` | Backend 日志级别：`DEBUG` / `INFO` / `WARNING`。 |
+| `VITE_TURNSTILE_SITE_KEY` | `—` | — |
+
+## 跨域 (CORS)
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `CORS_ALLOW_ORIGINS` | `["https://app.example.com","https://admin.example.com"]` | 允许的前端来源列表，支持两种格式： JSON 数组：["https://app.example.com","https://admin.example.com"] 逗号分隔：https://app.example.com,https://admin.example.com production 环境必填；dev/staging 留空则默认放行 localhost 常用端口 |
+| `CORS_ALLOW_ORIGINS` | `https://app.example.com,https://admin.example.com` | — |
+
+## 来源正则匹配（仅 dev/staging 生效，production 自动忽略以防误放本机正则上线）
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `CORS_ALLOW_ORIGIN_REGEX` | `http://localhost:\d+` | — |
+
+## Grounded-SAM-2 ML Backend (v0.9.0+, GPU profile)
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `SAM_VARIANT` | `tiny` | 仅当 docker compose --profile gpu up grounded-sam2-backend 时生效. 模型变体 (按精度/显存递增): tiny | small | base_plus | large; 默认 tiny (4060 友好). |
+| `DINO_VARIANT` | `T` | GroundingDINO 变体: T (Swin-T, 默认) | B (Swin-B, 更准但显存翻倍). |
+| `BOX_THRESHOLD` | `0.35` | DINO 检测阈值; 业务图召回不足可下调到 0.25, 误检多则上调到 0.45. |
+| `TEXT_THRESHOLD` | `0.25` | DINO 文本-标签匹配阈值; 短语 prompt 通常 0.25 即可. |
+| `GSAM2_LOG_LEVEL` | `INFO` | Backend 日志级别 (DEBUG / INFO / WARNING). |
 
 ## 部署环境
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `ENVIRONMENT` | `development` | 当前运行环境：`development` / `staging` / `production`，影响 CORS 策略、日志级别、调试开关。 |
+| `ENVIRONMENT` | `development` | 当前运行环境，影响 CORS 策略、日志级别、调试开关等 可选值：development | staging | production |

@@ -265,6 +265,10 @@
 | GET | `/{task_id}/video/manifest` |
 | GET | `/{task_id}/video/frame-timetable` |
 | GET | `/{task_id}/video/manifest-v2` |
+| GET | `/{task_id}/video/segments` |
+| POST | `/{task_id}/video/segments/{segment_id}:claim` |
+| POST | `/{task_id}/video/segments/{segment_id}:heartbeat` |
+| POST | `/{task_id}/video/segments/{segment_id}:release` |
 | GET | `/{task_id}/video/chunks` |
 | GET | `/{task_id}/video/chunks/{chunk_id}` |
 | GET | `/{task_id}/video/frames/{frame_index}` |
@@ -307,6 +311,7 @@
 | Method | Path |
 |---|---|
 | GET | `/{dataset_item_id}/manifest` |
+| GET | `/{dataset_item_id}/segments` |
 | GET | `/{dataset_item_id}/frame-timetable` |
 | GET | `/{dataset_item_id}/chunks` |
 | GET | `/{dataset_item_id}/chunks/{chunk_id}` |
@@ -315,4 +320,4 @@
 
 ---
 
-_共 29 模块 / 173 路由_
+_共 29 模块 / 178 路由_

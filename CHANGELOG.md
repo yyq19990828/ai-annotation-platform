@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.28] - 2026-05-12
+
+> **Video Segment Collaboration MVP — 后端 segment 协作基线.** 主线: ① 新增 `video_segments` 表，按 `DatasetItem` 表达视频内 frame range；② manifest v2 和 task/videos facade 返回 segment 列表；③ task 入口支持 claim / heartbeat / release 的短 TTL lock；④ 同步协议文档、runbook、环境变量和 ADR。→ [plan](docs/plans/2026-05-12-v0.9.28-video-segments.md).
+
+### Added
+
+- **VideoSegment 模型**：新增 `VideoSegment(dataset_item_id, segment_index, start_frame, end_frame, assignee_id, status, locked_by, locked_at, lock_expires_at)` 和 `0058_video_segments.py` 迁移。
+- **Segment API**：新增 `GET /api/v1/tasks/{task_id}/video/segments`、`GET /api/v1/videos/{dataset_item_id}/segments`，以及 task 入口的 `:claim` / `:heartbeat` / `:release`。
+- **Manifest v2 segments**：`/video/manifest-v2` 和 `/videos/{dataset_item_id}/manifest` 懒生成并返回 `segments`。
+- **配置**：新增 `VIDEO_SEGMENT_SIZE_FRAMES` 与 `VIDEO_SEGMENT_LOCK_TTL_SECONDS`。
+
+### Deferred
+
+- Presence WebSocket、segment 级 scheduler、B5 AI tracker job 和 tracker adapter 留到后续版本。
+
 ## [0.9.26] - 2026-05-12
 
 > **Video Loop Bookmark Navigation — 播放范围 + 书签 + 跳转历史.** 主线: ① 视频时间轴支持 `Shift+drag` 设定本地 loop region，播放越过范围末帧后回到起始帧；② loop region、书签和跳转历史按 task 存入 `sessionStorage`，不占用并行开发中的后端帧服务 v0.9.25 接口；③ `Ctrl+M` 添加/移除当前帧书签，书签 marker 可点击跳转；④ 显式 seek 记录最近 50 个位置，`Ctrl+[` / `Ctrl+]` 后退/前进，`Alt+L` 清除播放范围。→ [plan](docs/plans/2026-05-12-v0.9.26-video-loop-bookmark-navigation.md).

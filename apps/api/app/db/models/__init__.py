@@ -16,6 +16,7 @@ from app.db.models.dataset import (
     VideoChunk,
     VideoFrameCache,
     VideoFrameIndex,
+    VideoSegment,
 )
 from app.db.models.ml_backend import MLBackend
 from app.db.models.prediction import Prediction, PredictionMeta, FailedPrediction
@@ -49,6 +50,7 @@ __all__ = [
     "VideoChunk",
     "VideoFrameCache",
     "VideoFrameIndex",
+    "VideoSegment",
     "MLBackend",
     "Prediction",
     "PredictionMeta",

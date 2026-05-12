@@ -13,6 +13,7 @@ last_reviewed: 2026-05-12
 
 - 视频 chunk 或单帧接口持续返回 202。
 - 时间轴 hover / 预取图片一直不可用。
+- segment claim 后很快丢锁，或同一段持续显示被他人占用。
 - MinIO 空间增长明显。
 - Celery media 队列积压。
 
@@ -25,6 +26,8 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT status, count(*) FROM video_chunks GROUP BY status;"
 docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT status, count(*) FROM video_frame_cache GROUP BY status;"
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT status, count(*) FROM video_segments GROUP BY status;"
 ```
 
 ## Chunk 一直 pending
@@ -84,6 +87,21 @@ VIDEO_CHUNK_CACHE_TTL_DAYS=14
 ```bash
 docker compose up -d celery-worker celery-beat
 ```
+
+## Segment 锁异常
+
+查看当前锁：
+
+```bash
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT id, dataset_item_id, segment_index, assignee_id, locked_by, lock_expires_at FROM video_segments WHERE locked_by IS NOT NULL ORDER BY lock_expires_at DESC LIMIT 20;"
+```
+
+常见原因：
+
+- 前端未按 TTL 发送 heartbeat：检查 `VIDEO_SEGMENT_LOCK_TTL_SECONDS` 和浏览器网络请求。
+- 用户异常退出后锁未过期：等待 TTL 到期，或由项目管理员调用 release 接口释放。
+- segment 切分过粗：降低 `VIDEO_SEGMENT_SIZE_FRAMES` 后，新视频会按更小粒度生成；已有 segment 需人工迁移或重建。
 
 ## 指标
 

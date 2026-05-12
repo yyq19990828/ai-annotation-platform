@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -47,6 +48,25 @@ class VideoFramePrefetchResponse(BaseModel):
     frames: list[VideoFrameOut]
 
 
+class VideoSegmentOut(BaseModel):
+    id: UUID
+    segment_index: int
+    start_frame: int
+    end_frame: int
+    status: Literal["open", "assigned", "locked", "completed"]
+    assignee_id: UUID | None = None
+    locked_by: UUID | None = None
+    locked_at: datetime | None = None
+    lock_expires_at: datetime | None = None
+
+
+class VideoSegmentsResponse(BaseModel):
+    dataset_item_id: UUID
+    task_id: UUID | None = None
+    segment_size_frames: int
+    segments: list[VideoSegmentOut]
+
+
 class VideoManifestV2Response(BaseModel):
     task_id: UUID | None = None
     dataset_item_id: UUID
@@ -59,5 +79,6 @@ class VideoManifestV2Response(BaseModel):
     frame_timetable_url: str
     frame_service_base: str
     chunk_size_frames: int
+    segments: list[VideoSegmentOut] = Field(default_factory=list)
     frame_cache_formats: list[Literal["webp", "jpeg"]] = ["webp", "jpeg"]
     expires_in: int = 3600

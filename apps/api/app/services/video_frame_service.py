@@ -342,8 +342,14 @@ async def prefetch_frames(
     )
 
 
-def manifest_v2(ctx: VideoContext, base_url: str) -> VideoManifestV2Response:
+async def manifest_v2(
+    db: AsyncSession, ctx: VideoContext, base_url: str
+) -> VideoManifestV2Response:
     _metadata_ready(ctx.metadata)
+    from app.services.video_segment_service import ensure_segments, segment_out
+
+    segment_rows = await ensure_segments(db, ctx)
+    await db.commit()
     base = base_url.rstrip("/")
     if ctx.task_id:
         service_base = f"{base}/api/v1/tasks/{ctx.task_id}/video"
@@ -369,6 +375,7 @@ def manifest_v2(ctx: VideoContext, base_url: str) -> VideoManifestV2Response:
         frame_timetable_url=timetable_url,
         frame_service_base=frame_base,
         chunk_size_frames=settings.video_chunk_size_frames,
+        segments=[segment_out(row) for row in segment_rows],
     )
 
 
