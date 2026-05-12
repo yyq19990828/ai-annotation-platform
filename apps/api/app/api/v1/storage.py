@@ -250,6 +250,8 @@ async def retry_video_asset(
             raise HTTPException(status_code=404, detail="Video chunk not found")
         row.status = "pending"
         row.error = None
+        row.generation_mode = None
+        row.diagnostics = {}
         await db.commit()
         from app.workers.media import ensure_video_chunks
 

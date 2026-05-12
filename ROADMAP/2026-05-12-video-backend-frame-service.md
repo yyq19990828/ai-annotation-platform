@@ -1,212 +1,188 @@
 # P1 · 视频后端帧服务 Epic
 
-> 状态：**partial shipped（B1/B2/B3/B4/B6/B7 第一版已落地，B5 job 壳 v0.9.32 已落地，adapter/worker MVP v0.9.34 已落地；SAM/GPU 深化待开发）**。承载前端 `2026-05-12-video-workbench-rendering-optimization.md` 中 R5.3 / R10 / R11 三块的服务端依赖。
+> 状态：**进行中**。B1/B2/B3/B4/B6/B7 第一版已落地，B5 tracker job 壳、adapter/worker MVP、SAM video 协议桥与 GPU 分窗已分别在 v0.9.32 / v0.9.34 / v0.9.36 落地，chunk smart-copy 与诊断字段已在 v0.9.38 落地。当前剩余重点是：真实 SAM video backend、长视频 timetable compact / sparse、segment 导出聚合，以及视频专属导出 / 质量评估的后端底座。
 >
-> 当前后端只暴露单一 `manifest.video_url`，让浏览器自己用 `<video>` 解码。这对于短视频 + 单人 + 单段是够用的，但要支持：长视频（>10 分钟）、4K、多人协同、AI tracker 流式补帧、精确帧导航，必须把"帧"作为一等资源在后端暴露和缓存。
->
-> 本 epic 是后端独立工程，不涉及前端 UI 改造（前端改造见 R5 / R8-R11）。后端仍属 FastAPI + Celery + PostgreSQL + MinIO/S3 现有栈，**不引入新服务**。
+> 本 epic 承载前端 [`2026-05-12-video-workbench-rendering-optimization.md`](2026-05-12-video-workbench-rendering-optimization.md) 中 R5.3 / R10 / R11 / R20 / R21 / R22 / R24 的服务端依赖。后端仍属 FastAPI + Celery + PostgreSQL + MinIO/S3 现有栈，**不引入独立 video service**。
 
 ---
 
-## 1. 现状盘点
+## 1. 已完成基线
 
-### 1.1 后端视频处理（apps/api/app/）
+### 1.1 帧服务与缓存
 
-- 上传走 `/uploads`，存储到 MinIO/S3。
-- `probe` 任务（Celery）：用 ffprobe 抽 fps / duration / 总帧数 / codec，结果写入 `DatasetItem.metadata.video`。
-- `poster` 任务：抽首帧 / 中间帧做封面，输出到 storage。
-- 标注落地：`Annotation` 表，按 `task_id / dataset_item_id + frame_index` 关联；`video_track` 用 JSON 字段存 keyframes。
-- 协议：旧 task manifest 返回 `{ video_url, fps, total_frames, duration, poster_url }`；v0.9.25 起新增 `/api/v1/tasks/{task_id}/video/manifest-v2` 与 `/api/v1/videos/{dataset_item_id}/manifest`。
+| 项目 | 版本 | 结果 |
+| --- | --- | --- |
+| B1 Frame Timetable | v0.9.21 / v0.9.25 | `video_frame_indices` 保存 `frame_index -> pts_ms`，task 路由暴露 frame-timetable，并补 ETag / Cache-Control |
+| B2 Chunk Service Wave B | v0.9.25 | `video_chunks`、task/videos facade、懒投递 Celery media 任务、H.264 baseline fragmented MP4 第一版 |
+| B3 Frame Cache | v0.9.25 / v0.9.30 | WebP/JPEG 单帧缓存、prefetch、retry、`get_frame_array()` 进程内 LRU、poster 复用 frame cache |
+| B6 Manifest v2 | v0.9.25 / v0.9.30 | `/tasks/{task_id}/video/manifest-v2` 与 `/videos/{dataset_item_id}/manifest` 返回 chunk / timetable / frame service / segments |
+| Timetable repair CLI | v0.9.30 | `python -m app.cli.video.rebuild_timetable` 支持按 item / dataset / all 重建旧视频帧表 |
+| Video asset retry | v0.9.33 | 存储管理 API 汇总并重试 probe / poster / timetable / chunk / frame cache 失败资产 |
+| Chunk Smart-Copy | v0.9.38 | keyframe 对齐 chunk 优先 stream copy，失败 fallback transcode，并暴露 codec/keyframe/byte offset 诊断 |
 
-### 1.2 当前痛点（驱动本 epic）
+### 1.2 协同与 tracker
 
-1. **帧定位漂移**：前端只能 `video.currentTime = idx / fps`，浮点误差累计。
-2. **大视频卡顿**：浏览器要先下载整段 MP4（或边下边播）才能 seek，跨段跳转白屏。
-3. **协同冲突**：单条视频任务，多人同时编辑只能靠乐观锁 + 整体重试，颗粒度太粗。
-4. **AI 推理无入口**：模型推理需要拿到指定帧 → 现在只能后端用 ffmpeg 抽一次，没有缓存复用。
-5. **导出不一致**：导出走后端，前端 seek 走浏览器，两边帧号映射不一致时会出现"导出的标注帧 ≠ 用户在画面上看到的帧"。
+| 项目 | 版本 | 结果 |
+| --- | --- | --- |
+| B4 Segment 协作基线 | v0.9.28 | `video_segments`、短视频默认单段、manifest v2 segments、claim / heartbeat / release 短 TTL lock |
+| B5 Tracker Job Shell | v0.9.32 | 独立 `video_tracker_jobs` 表，创建 / 查询 / 取消 API，frame range + segment lock 校验，`event_channel` |
+| Tracker Adapter MVP | v0.9.34 | `mock_bbox` contract adapter、`gpu` queue worker、状态机、Redis/WebSocket 事件、`video_track` prediction keyframes 写回 |
+| SAM video 协议桥 | v0.9.36 | `sam2_video` / `sam3_video` model key，调用项目绑定 ML Backend 的 `context.type="video_tracker"`，长区间分窗 |
+| 低置信度 outside 写回 | v0.9.36 | `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` 低于阈值时写 outside prediction range，不生成 prediction keyframe |
 
----
+### 1.3 观测与文档
 
-## 2. 设计目标
-
-- **G1 帧寻址**：后端定义统一的 `frame_index ↔ (chunk_id, offset, timestamp)` 映射，前端和后端共用一套帧号。
-- **G2 chunk 服务**：按 N 秒 / N 帧切片，HTTP Range 友好，CDN 可缓存，浏览器 Worker 解码。
-- **G3 帧缓存**：抽帧结果（PNG / JPEG / WebP）后端 LRU 缓存（MinIO 一层 + 内存一层），供 AI 推理、thumbnail、poster 共用。
-- **G4 任务切片**：长视频自动切 segment，segment 是协同单位，可分配、可独立 lock。
-- **G5 AI 推理桥**：模型推理任务能直接拿 `(dataset_item_id, frame_index)` 取帧，不重复抽帧。
-- **G6 协议向后兼容**：旧 manifest 接口保留；新接口已采用 `/api/v1/tasks/{task_id}/video/manifest-v2` 与 `/api/v1/videos/{dataset_item_id}/manifest`。
-
----
-
-## 3. 任务分解
-
-### B1 · 帧时间表 `frame_timetable`（**必做，基础**）
-
-> 解决 G1。前端 R1.2 直接依赖这个接口。
-
-- **状态（v0.9.25）**：B1 第一版已完成。当前按 `DatasetItem` 存 `video_frame_indices(dataset_item_id, frame_index, pts_ms, is_keyframe, pict_type, byte_offset)`，并通过任务路由暴露；ETag / Cache-Control 已补，compact / 稀疏长视频策略后续再补。
-- **B1.1 probe 任务增强**：用 `ffprobe -show_frames -select_streams v -of json` 抽每一帧的 `pkt_pts_time`、`pict_type`、`key_frame` 标记，存到 `VideoFrameIndex` 表（`dataset_item_id, frame_index, pts_ms, is_keyframe, pict_type, byte_offset`）。
-  - v0.9.21 先对 probe 成功的视频全量存表；长视频稀疏采样（每 N 帧一行）后续再补。
-  - I/B/P 帧分布在导出时也有用（避免在 B 帧上做精确 seek）。
-- **B1.2 接口**：`GET /api/v1/tasks/{task_id}/video/frame-timetable?from=&to=` 返回 JSON 帧表；无表时返回 `source="estimated"` 和空 `frames`。
-- **B1.3 ETag + Cache-Control**：内容只读不变，强缓存。（v0.9.25 已补第一版）
-
-**衡量**：1 小时 30fps 视频 timetable 压缩后 <500KB。
+| 项目 | 版本 | 结果 |
+| --- | --- | --- |
+| B7 基础指标 | v0.9.25 | chunk / frame cache QPS、生成耗时、cache hit/miss、资产容量指标 |
+| Video frame service reference | v0.9.25+ | `docs-site/dev/reference/video-frame-service.md` 覆盖 timetable / chunk / frame / segment / tracker job |
+| Runbook | v0.9.25+ / v0.9.36 | `docs-site/ops/runbooks/video-frame-service.md` 覆盖 Celery、MinIO、chunk/frame 失败、tracker GPU OOM |
+| Env reference | v0.9.25+ / v0.9.36 | chunk/cache/segment/tracker 分窗和低置信度阈值同步到 `.env.example` 与 env-vars |
 
 ---
 
-### B2 · Chunk 切片服务（**核心，前端 R5.3 依赖**）
+## 2. 当前未完成 Backlog
 
-> 解决 G2。对标 CVAT 的 chunk 概念。
+### P0 · 真实 SAM Video Backend
 
-- **状态（v0.9.25）**：B2 第一版已完成。当前按 `DatasetItem` 存 `video_chunks`，task 路由与 `/api/v1/videos/{dataset_item_id}` facade 双入口暴露；缺失 chunk 懒投递 Celery media 任务，第一版统一 H.264 baseline fragmented MP4 重编码，GOP smart-copy 后续再补。
+**目标**：把 v0.9.36 的平台侧 `sam2_video` / `sam3_video` 协议桥接到真实模型服务。
 
-- **B2.1 切片策略**：
-  - 单位：默认每 chunk = 60 帧（30fps 即 2 秒），可配置。
-  - 编码：v0.9.25 先统一后台 Celery 重编 H.264 baseline + 短 GOP；原始视频 H.264 / H.265 且 GOP 对齐良好时 smart-copy 后续再补。
-  - 容器：`.mp4` fragmented 形式，方便 MSE / WebCodecs 直接吃。
-- **B2.2 存储布局**：`s3://datasets/videos/{dataset_item_id}/chunks/{chunk_id}.mp4`，索引表 `VideoChunk(dataset_item_id, chunk_id, start_frame, end_frame, byte_size, storage_key, status)`。
-- **B2.3 懒切片**：首次访问触发 Celery，未 ready 时返回 202 + Retry-After；同时 fallback 到原始 `video_url`（前端 R5 自动降级）。
-- **B2.4 接口**：
-  - `GET /api/v1/tasks/{task_id}/video/chunks?from_frame=&to_frame=` 返回 chunk 列表 + 签名 URL。
-  - `GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}` 返回 MinIO 预签名 URL 元数据（含 Range 友好对象）。
-- **B2.5 GC**：长时间未访问的 chunk 删除，下次再生（标记表里只置 `ready=false`，不删元数据）。
+- 在 `grounded-sam2-backend` 或后续 `sam3-backend` 实现 `/predict context.type="video_tracker"`。
+- 输入消费 `task.file_path`、`from_frame/to_frame`、`direction`、`prompt`、`source_geometry`。
+- 输出逐帧 `{ frame_index, geometry, confidence, outside }`，与平台 worker 写回契约一致。
+- GPU profile 覆盖 30s / 30fps、10min、长 segment 分窗三类场景。
+- OOM / timeout / backend 5xx 失败要能让 `video_tracker_jobs.error_message` 可诊断。
 
-**衡量**：1080p / 30fps / 1 小时视频，chunk 总数 ~1800，单 chunk <2MB，HTTP Range 命中率 >90%。
+**不做**：不把 SAM 2 / SAM 3 predictor 加进 `apps/api` 进程；仍遵循 ADR-0012 的独立 GPU service 边界。
 
----
+### ✅ P0 · Chunk Smart-Copy 与 R5.3 后端加固
 
-### B3 · 帧抽取与缓存服务（**配套，AI 与 thumbnail 共享**）
+**目标**：让前端 WebCodecs / Worker 解码不再完全依赖重编码 fallback。
 
-> 解决 G3 / G5。
+- ✅ H.264 / H.265 且 GOP 对齐良好的源视频走 smart-copy。
+- ✅ chunk 元数据补足 codec / keyframe / byte range 诊断字段，便于前端降级判断。
+- ✅ chunk 失败 retry 与 V5 失败列表联动保持可见。
+- ⏳ 评估 chunk warmup：在 manifest / timeline 预取命中热点 range 时提前投递 media 任务。
 
-- **状态（v0.9.30）**：B3 第一版已完成并补齐修复入口。当前按 `DatasetItem` 存 `video_frame_cache`，支持 WebP/JPEG 单帧查询、批量 prefetch、失败 retry；内部 `get_frame_array()` 可复用 ready 缓存并带进程内 LRU。视频 poster 已复用 `frame_index=0,width=512,format=webp` 的 frame cache 产物。
+**不做**：不上 DASH / HLS / adaptive bitrate；标注场景优先帧精度和可缓存 chunk。
 
-- **B3.1 单帧接口**：`GET /api/v1/tasks/{task_id}/video/frames/{frame_index}?format=jpeg|webp&w=` / `GET /api/v1/videos/{dataset_item_id}/frames/{frame_index}` 返回静态图元数据。
-  - 实现：先查 MinIO `s3://.../frames/{frame_index}_{w}.webp`，未命中走 Celery（`ffmpeg -ss <pts> -frames:v 1`），缓存后返回。
-  - 用 PTS（B1 输出）而非 `frame / fps`，避免浮点误差。
-- **B3.2 LRU + TTL**：MinIO 上没有原生 LRU，写一个轻量 housekeeping 任务（Celery beat 每天扫描 `last_accessed_at`，淘汰超时 + 容量），元数据存到 `VideoFrameCache` 表。
-- **B3.3 批量预取 / 重试**：`POST /api/v1/tasks/{task_id}/video/frames:prefetch { frame_indices: [...] }`，前端 R5.1 / R5.2 可主动 hint；`POST .../frames:retry` 可重投失败缓存，必要时 `force=true` 刷新指定帧。
-- **B3.4 AI 推理钩子**：内部 Python API `frame_service.get_frame_array(dataset_item_id, frame_index) -> np.ndarray`，模型 worker 直接调用，与 HTTP 层共享同一缓存（避免双倍抽帧）。
+### P1 · Timetable Compact / Sparse
 
-**衡量**：thumbnail / poster / AI / 前端预取，**任何一处缺帧时一次抽帧、四处复用**。
+**目标**：长视频帧表在 1h / 30fps 量级下仍保持轻量可缓存。
 
----
+- 对长视频按 keyframe + fixed stride 存 sparse timetable，短视频继续 full table。
+- API 保持 `frame_index -> pts_ms` 查询语义，缺口由服务端估算或插值。
+- 导出与 worker 使用同一套 timetable helper，避免前后端帧号漂移。
+- 重新校准目标：1 小时 30fps timetable 压缩后 <500KB。
 
-### B4 · Segment 与协同（**前端 R11 依赖**）
+### P1 · Segment 导出聚合与 Overlap 底座
 
-> 解决 G4。
+**目标**：让 segment 不只是 lock 单位，也能参与导出和后续 overlap 质检。
 
-- **B4.1 Segment 模型**：`VideoSegment(id, dataset_item_id, segment_index, start_frame, end_frame, assignee_id, status, locked_by, locked_at, lock_expires_at)`。
-  - 短视频默认 1 segment（与 video 1:1）。
-  - 长视频上传完成后 Celery 自动按 N 分钟切（与 chunk 解耦，segment 是逻辑单位，chunk 是物理单位）。
-- **B4.2 分配 API**：先走 task 兼容入口 `POST /api/v1/tasks/{task_id}/video/segments/{sid}:claim` / `:release` / `:heartbeat`，长期补 `/api/v1/videos/{dataset_item_id}/segments/...` facade。
-- **B4.3 Lock 协议**：进入工作台获取行级 `lock`，TTL 5 分钟，心跳续约；过期他人可抢。
-- **B4.4 Annotation 表加 segment_id 索引**：导出按 segment 聚合，跨段合并按 frame_index 排序。
-- **B4.5 Presence（轻量）**：Redis pub/sub 广播 `{dataset_item_id, segment_id, user_id, frame_index}`，WebSocket 推前端。不做实时编辑同步。
+- `Annotation` 查询 / 导出按 `segment_id` 或 frame range 聚合。
+- 跨 segment 合并按 `frame_index` 排序，outside / prediction keyframe 不丢。
+- overlap 区间元数据为前端 R21 / IAA / IDF1 报告预留。
+- Presence 继续可选；不做实时编辑同步。
 
-**衡量**：1 小时视频切 6 段，3 人并行标注，零冲突。
+### P1 · FrameStep / Chapter 后端原语
 
----
+**目标**：支撑前端 R13 / R20 的长视频导航与抽样标注。
 
-### B5 · AI Tracker 任务编排（**前端 R10 依赖**）
+- 项目或任务级 `frameStep` 配置，导出时明确 sampled / interpolated / held frame 来源。
+- `VideoChapter` 或轻量 chapter metadata：`start_frame/end_frame/title/color/metadata`。
+- segment 边界可按 step 对齐，避免跨段首尾帧语义混乱。
 
-> 解决 G5。
+### P2 · 视频专属导出
 
-- **状态（v0.9.32）**：S4 Tracker Job 壳已完成。新增独立 `video_tracker_jobs` 表、创建 / 查询 / 取消 API、frame range + segment lock 校验和 `event_channel` 字段；真实 tracker adapter、GPU worker、逐帧结果写回留到 S5/S6。
+**目标**：补齐 CVAT / MOT 场景常用互操作格式。
 
-- **B5.1 任务接口**：`POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate { from_frame, to_frame, model_key, direction, segment_id? }` 创建 tracker job，返回 `job_id`。
-- **B5.2 流式输出**：第一版复用 Redis pub/sub + WebSocket 推送 `{ frame_index, geometry, confidence, outside }`，前端逐帧累加；SSE 可作为后续 facade。
-- **B5.3 中断与续跑**：`DELETE /api/v1/video-tracker-jobs/{job_id}` 请求取消；中断后剩余区间标记为 "未传播"，前端 UI 可二次发起。
-- **B5.4 模型适配层**：内部 `tracker_registry`，先支持 SAM 2 video predictor / Cutie / DEVA / 简单 KCF，统一 input: 起始帧 + bbox/mask + 帧范围；output: per-frame geometry + confidence + outside_flag。
-  - 推理 worker 调 B3.4 拿帧，避免重复抽帧。
-- **B5.5 GPU 队列**：单独 `gpu` Celery queue，按显存动态并发；失败重试 1 次后落 `failed` 状态，写入 V5 失败列表（共享 `2026-05-12-video-workbench-rendering-optimization.md` V5 重试 UI）。
+- MOT 16/17/20 CSV。
+- KITTI Tracking。
+- DAVIS mask 序列。
+- Video Tracks JSON 继续作为内部稳定格式。
+- outside / absent / occluded / prediction source 在各格式中有明确映射。
 
-**衡量**：30s / 30fps 视频，SAM 2 全段传播 P95 <30s。
+### P2 · Track 级质量评估
 
----
+**目标**：为前端 R24 和长期质量审计提供后端 worker。
 
-### B6 · 协议与导出一致性（**贯穿**）
-
-> 解决 G6。
-
-- **状态（v0.9.30）**：B6.1 / B6.2 / B6.3 第一版已完成。manifest v2 暴露在 `/api/v1/tasks/{task_id}/video/manifest-v2` 与 `/api/v1/videos/{dataset_item_id}/manifest`；协议文档见 `docs-site/dev/reference/video-frame-service.md`；旧视频可用 `python -m app.cli.video.rebuild_timetable` 重建帧时间表。
-
-- **B6.1 manifest v2**：`/api/v1/tasks/{task_id}/video/manifest-v2` 与 `/api/v1/videos/{dataset_item_id}/manifest` 返回：
-  ```jsonc
-  {
-    "video_url": "...",          // 原始整段，向后兼容
-    "chunks_manifest_url": "...", // B2 chunk 列表
-    "frame_timetable_url": "...", // B1 时间表
-    "fps": 29.97,
-    "total_frames": 1798,
-    "duration_ms": 60003,
-    "segments": [...],            // B4
-    "frame_service_base": "/api/v1/tasks/{task_id}/video/frames"
-  }
-  ```
-  旧 task manifest 保留至少 6 个月。
-- **B6.2 导出帧号一致性**：导出走 B1 timetable，frame_index 与前端看到的一致；旧任务可运行 `python -m app.cli.video.rebuild_timetable` 重建 B1 表。
-- **B6.3 协议文档**：写入 `docs-site/dev/reference/video-frame-service.md`，覆盖 timetable / chunk / frame / segment / tracker job 五个接口族。
+- MOTA / IDF1 / HOTA 评估 worker。
+- 按 track / segment / chapter 输出错误定位。
+- 与 overlap 区和标注质量 AI 审计长期线打通。
 
 ---
 
-### B7 · 观测与运维（**必做**）
+## 3. 建议顺序
 
-- **状态（v0.9.25）**：B7 第一版已完成。新增 chunk / frame cache 指标、缓存 TTL 配置和 `docs-site/ops/runbooks/video-frame-service.md`；AI tracker GPU OOM runbook 内容等 B5 落地时补全。
+```text
+Wave 0 · 后端帧服务基线
+  ✅ B1 Frame Timetable (v0.9.21 / v0.9.25)
+  ✅ B2 Chunk Service Wave B (v0.9.25)
+  ✅ B3 Frame Cache / Retry / Poster Reuse (v0.9.25 / v0.9.30)
+  ✅ B6 Manifest v2 / Protocol Docs (v0.9.25 / v0.9.30)
+  ✅ B7 Metrics / Runbook (v0.9.25+)
 
-- **B7.1 指标**：每个接口暴露 Prometheus metrics（QPS / P50/P95 / cache hit）。
-- **B7.2 容量预算**：上线前算清 chunk 存储 = 原视频体积 × (1 + GOP 重编系数 ~0.3)；frame cache ~ 平均访问帧数 × 单帧 ~50KB。
-- **B7.3 Runbook**：写到 `docs-site/ops/runbooks/video-frame-service.md`，覆盖：Celery 卡死、MinIO 空间满、chunk 切片失败、AI tracker GPU OOM 四个常见场景。
+Wave 1 · 协同与 tracker 编排
+  ✅ B4 Segment MVP (v0.9.28)
+  ✅ B5 Tracker Job Shell (v0.9.32)
+  ✅ Tracker Adapter / Worker MVP (v0.9.34)
+  ✅ SAM video protocol bridge / GPU windowing (v0.9.36)
+
+Wave 2 · AI 模型深化
+  → 真实 SAM 2 / SAM 3 video backend
+  → GPU profile / OOM 演练 / 端到端性能基准
+
+Wave 3 · R5.3 解码体验
+  ✅ Chunk smart-copy (v0.9.38)
+  → chunk warmup / retry 可视化加固
+  → timetable compact / sparse
+
+Wave 4 · 长视频协同
+  → segment 导出聚合
+  → overlap 区元数据
+  → frameStep / chapter 后端原语
+
+Wave 5 · 数据互操作
+  → MOT / KITTI / DAVIS 导出
+
+Wave 6 · 质量评估
+  → MOTA / IDF1 / HOTA worker
+```
 
 ---
 
-## 4. 当前基线与后续开发顺序
+## 4. 硬约束 / 暂缓
 
-### 4.1 当前基线（截至 v0.9.30）
+- 不引入独立 video service；所有后端任务继续跑在现有 FastAPI + Celery 架构内，按 queue 隔离。
+- 不在 `apps/api` 内加载 torch / CUDA / SAM predictor；GPU 模型遵循 ADR-0012 独立 ML Backend。
+- 不上 WebRTC / DASH / HLS；本阶段只做原视频 fallback + fragmented MP4 chunk。
+- 不做 adaptive bitrate；标注场景需要原画质和帧精度，不需要多档码率。
+- 不做 OT / CRDT；多人协同优先用 segment lock + 乐观重试。
+- 不把 scheduler 改造成 segment 调度器；第一版仍以 task 为入口，segment 是 task 内部协作单位。
+- 不为旧视频强制迁移；旧视频通过 rebuild timetable / lazy chunk / retry 入口渐进修复。
 
-- **已落地**：B1 frame timetable、B2 chunk service、B3 frame cache + retry + poster 复用、B4 segment 协同 MVP、B6 manifest v2 / rebuild timetable / 协议文档、B7 基础指标与 runbook。
-- **仍需补齐**：B1 compact / 稀疏时间表、B2 GOP smart-copy、B7 AI tracker GPU OOM runbook。
-- **下一条主线**：做 S6 GPU / 模型深化。原因是 B5 已具备 job 状态机、adapter contract、worker 与 `video_track` 写回闭环，后续可以在明确 frame range / segment lock 的基础上接 SAM 2 / SAM 3 video predictor。
+---
 
-### 4.2 建议交付切片
+## 5. 关键文件
 
-| 切片 | 范围 | 交付 | 验证 |
-| --- | --- | --- | --- |
-| S1 · Segment 只读基线 | B4.0 Segment 只读基线 | `video_segments` 表、短视频默认 1 段、manifest v2 返回 `segments`、task / videos facade 查询接口 | **v0.9.28 已完成** |
-| S2 · Segment 分配与锁 | B4.1 Segment 分配与锁 | segment claim / heartbeat / release API、TTL lock、权限与审计 | **v0.9.28 已完成第一版**；导出按 segment 聚合后续补 |
-| S3 · Timetable / Frame Cache 补齐 | B6.2 + B3 补齐 | `python -m app.cli.video.rebuild_timetable`、poster / thumbnail 重试复用 B3、失败重试入口的后端 API | **v0.9.30 已完成** |
-| S4 · Tracker Job 壳 | B5.0 Tracker job 壳 | `video_tracker_jobs` 或扩展 `prediction_jobs` 的决策落地、创建 / 查询 / 取消 job、Redis pub/sub 或 WS 事件通道 | **v0.9.32 已完成**；adapter/worker 后续补 |
-| S5 · Tracker Adapter MVP | B5.1 Tracker adapter MVP | `tracker_registry`、先接一个最小 adapter（建议从 bbox propagation / KCF mock 起步，再接 SAM video）、逐帧结果写入 `video_track.outside` / prediction keyframes | **v0.9.34 已完成 MVP**；SAM video 接入后续补 |
-| S6 · GPU / 模型深化 | B5.2 GPU / 模型深化 | SAM 2 / SAM 3 video predictor、GPU 队列容量控制、OOM runbook、长视频分段续跑 | GPU profile 手测、runbook 演练、端到端性能基准 |
+| 模块 | 文件 | 当前状态 |
+| --- | --- | --- |
+| 视频帧 API | `apps/api/app/api/v1/tasks.py` / `apps/api/app/api/v1/videos.py` | task 兼容入口 + videos facade 已承载 manifest / chunk / frame / segment / tracker |
+| 帧服务核心 | `apps/api/app/services/video_frame_service.py` | timetable、chunk、frame cache、manifest v2、frame array LRU |
+| media worker | `apps/api/app/workers/media.py` | probe / poster / timetable / chunk / frame extraction / cleanup |
+| 数据模型 | `apps/api/app/db/models/dataset.py` | `VideoFrameIndex` / `VideoChunk` / `VideoFrameCache` / `VideoSegment` |
+| tracker job | `apps/api/app/db/models/video_tracker_job.py` / `apps/api/app/services/video_tracker_job_service.py` | job 持久化、创建 / 查询 / 取消、segment lock 校验 |
+| tracker worker | `apps/api/app/workers/video_tracker.py` / `apps/api/app/services/video_tracker_runner.py` | `gpu` queue、状态机、事件流、分窗、结果写回 |
+| tracker adapters | `apps/api/app/services/video_tracker_adapters.py` | `mock_bbox`、`sam2_video`、`sam3_video` registry |
+| ML Backend client | `apps/api/app/services/ml_client.py` | `/predict` 调用、per-backend concurrency、metrics |
+| 协议文档 | `docs-site/dev/reference/video-frame-service.md` / `docs-site/dev/reference/ml-backend-protocol.md` | frame service 与 `context.type="video_tracker"` 契约 |
+| Runbook | `docs-site/ops/runbooks/video-frame-service.md` | chunk/frame 失败、segment lock、tracker queue / GPU OOM |
 
-### 4.3 B4 最小可用实现细化
+---
 
-**目标**：让后端先能表达"一条视频被切成多个可分配 frame range"，并且短视频不改变现有工作流。
+## 6. 每次开发前固定检查
 
-- **数据模型**：新增 `VideoSegment(dataset_item_id, segment_index, start_frame, end_frame, assignee_id, status, locked_by, locked_at, lock_expires_at)`；`dataset_item_id + segment_index` 唯一；`dataset_item_id + start_frame + end_frame` 建索引。
-- **生成策略**：probe / media 回填完成后按配置 `VIDEO_SEGMENT_SIZE_FRAMES` 生成；短视频或 metadata 未 ready 时懒生成单段；segment 与 chunk 解耦。
-- **manifest v2**：新增 `segments: [{ id, segment_index, start_frame, end_frame, status, assignee_id, locked_by, lock_expires_at }]`，旧前端忽略该字段。
-- **API**：先走 task 兼容入口：`GET /api/v1/tasks/{task_id}/video/segments`、`POST /segments/{segment_id}:claim`、`POST /segments/{segment_id}:heartbeat`、`POST /segments/{segment_id}:release`；长期 facade 再补 `/api/v1/videos/{dataset_item_id}/segments`。
-- **权限**：复用任务可见性；annotator 只能 claim 未分配或分配给自己的 segment；project_admin / super_admin 可强制 release / reassign。
-- **不做**：不拆 Task，不把 scheduler 改成 segment 调度器；第一版仍以 task 为入口，segment 只是 task 内部协作单位。
-
-### 4.4 B5 最小可用实现细化
-
-**目标**：先把 tracker 编排协议、job 状态机和事件流跑通，模型质量后置。
-
-- **Job 模型选择**：优先新增 `VideoTrackerJob`，不要硬塞进现有 `PredictionJob`。现有 `prediction_jobs` 是批量预标注历史，字段强依赖 `project_id / batch_id / ml_backend_id / total_tasks`；tracker 是交互式、frame range、可取消、可流式，独立表能减少迁移风险。
-- **状态机**：`queued -> running -> completed | failed | cancelled`；事件流包含 `job_started`、`frame_result`、`job_progress`、`job_completed`、`job_failed`、`job_cancelled`。
-- **API**：`POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate` 创建 job；`GET /api/v1/video-tracker-jobs/{job_id}` 查询；`DELETE /api/v1/video-tracker-jobs/{job_id}` 取消；事件先复用 WebSocket / Redis pubsub，SSE 可后补。
-- **输入契约**：`from_frame`、`to_frame`、`direction`、`model_key`、`prompt`（bbox / mask / point）、可选 `segment_id`。后端必须校验 frame range 不跨越用户无锁 segment。
-- **输出契约**：逐帧输出 `{ frame_index, geometry, confidence, outside, source="prediction" }`；低置信度结果优先写 outside 段，不直接覆盖 manual keyframe。
-- **模型 adapter**：`TrackerAdapter.propagate(ctx) -> Iterator[TrackerFrameResult]`；第一版允许 mock / KCF 作为 contract test，SAM video 接入遵循 ADR-0012 的独立 GPU service 原则。
-- **取消**：API 写 `cancel_requested_at`，worker 每 N 帧检查一次；已产出的 prediction keyframes 保留，未完成区间不落库。
-
-### 4.5 每次开发前的固定检查
-
-1. 写实施 plan 到 `docs/plans/yyyy-mm-dd-<topic>.md`；如果实施时 release version 已确定，再使用 `docs/plans/yyyy-mm-dd-vx.y.z-<topic>.md`。
+1. 写实施 plan 到 `docs/plans/yyyy-mm-dd-<topic>.md`；若 release version 已确定，用 `docs/plans/yyyy-mm-dd-vx.y.z-<topic>.md`。
 2. 对照 `docs-site/dev/reference/video-frame-service.md`、`docs-site/dev/reference/ml-backend-protocol.md`、`docs-site/ops/runbooks/video-frame-service.md` 判断是否同步。
 3. 若改 API，运行 OpenAPI 导出并检查 `docs-site/api/` 生成物。
 4. 若改 Celery media / tracker worker，开发环境只需重启 worker；改依赖 / Dockerfile 才 rebuild。
@@ -214,32 +190,9 @@
 
 ---
 
-## 5. 不做 / 暂缓
+## 7. 关联 Roadmap
 
-- **不引入新服务（如独立 video service）**：所有任务跑在现有 Celery worker，分队列即可。
-- **不上 WebRTC / DASH / HLS**：复杂度远高于收益，对标注场景帧精度更重要。
-- **不做实时编辑同步（OT / CRDT）**：与前端 R11 保持一致，行级锁足够。
-- **不做端侧 GPU 推理**：所有 AI 走后端 GPU 队列。
-- **不做视频转码到多分辨率（adaptive bitrate）**：标注场景只需要原画质 + chunk，不需要多档码率。
-
----
-
-## 6. 风险
-
-| 风险 | 影响 | 缓解 |
-| --- | --- | --- |
-| ffprobe 抽 frame 表对 1h 视频耗时 ~5min | probe 任务长 | B1 异步任务化，进度可见；前端用 v1 协议降级 |
-| chunk 切片爆 MinIO | 存储成本上升 | GC 任务 + 容量预警；非热点视频走 cold storage |
-| WebCodecs 浏览器矩阵 | Firefox 弱 | 前端 R5 自动降级到 video 标签 |
-| AI tracker GPU 排队 | UX 卡顿 | 优先级队列 + 显示队列位置 |
-| 旧 video / 旧 annotation 帧号不一致 | 数据迁移痛 | B6.2 提供 rebuild 命令；新接口与旧并存 |
-
----
-
-## 7. 关联文档
-
-- 前端：`ROADMAP/2026-05-12-video-workbench-rendering-optimization.md`（R5.3 / R10 / R11）
-- 功能：`ROADMAP/2026-05-12-video-workbench-rendering-optimization.md`（V5 probe / poster 重试共享 B3）
-- 协议文档：`docs-site/dev/reference/video-frame-service.md`
-- 现有协议：`docs-site/dev/reference/ml-backend-protocol.md`（B5 需对齐）
-- ADR：B4/B5 开发前补一份 `docs/adr/00xx-video-frame-service.md` 记录"为什么自建 chunk 而不用 HLS / 为什么 tracker job 独立于 prediction_jobs"
+- [`2026-05-12-video-workbench-rendering-optimization.md`](2026-05-12-video-workbench-rendering-optimization.md)：前端 R5.3 / R10 / R11 / R20 / R21 / R22 / R24。
+- [`2026-05-12-image-workbench-optimization.md`](2026-05-12-image-workbench-optimization.md)：viewport / minimap / bitmap cache 的共享设计来源。
+- [`0.10.x.md`](0.10.x.md)：SAM 3 backend、tracker registry、模型并存窗口。
+- [`2026-05-12-long-term-strategy.md`](2026-05-12-long-term-strategy.md)：L15 标注质量 AI 审计与 Track 级质量评估。

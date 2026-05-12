@@ -263,6 +263,55 @@ async def test_video_chunks_create_pending_rows_and_enqueue(
     assert len(rows) == 2
 
 
+async def test_video_chunk_api_exposes_generation_diagnostics(
+    db_session, httpx_client_bound, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    db_session.add(
+        VideoChunk(
+            dataset_item_id=item.id,
+            chunk_id=0,
+            start_frame=0,
+            end_frame=59,
+            start_pts_ms=0,
+            end_pts_ms=1967,
+            storage_key=f"videos/{item.id}/chunks/0.mp4",
+            byte_size=1234,
+            generation_mode="smart_copy",
+            diagnostics={
+                "source_codec": "h264",
+                "output_codec": "h264",
+                "keyframe_aligned": True,
+                "start_byte_offset": 100,
+                "end_byte_offset": 9000,
+                "smart_copy_eligible": True,
+                "fallback_reason": None,
+            },
+            status="ready",
+        )
+    )
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        "app.services.video_frame_service.storage_service.generate_download_url",
+        lambda key, expires_in=3600, bucket=None: f"http://storage.local/{key}",
+    )
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/chunks/0",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ready"
+    assert body["generation_mode"] == "smart_copy"
+    assert body["diagnostics"]["source_codec"] == "h264"
+    assert body["diagnostics"]["keyframe_aligned"] is True
+    assert body["diagnostics"]["smart_copy_eligible"] is True
+
+
 async def test_video_frame_ready_returns_cached_url_without_enqueue(
     db_session, httpx_client_bound, super_admin, monkeypatch
 ):

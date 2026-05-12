@@ -36,6 +36,20 @@
 
 - 视频 stage 的 media、bitmap canvas、grid、objects、label、interaction 和 attachment 层现在共享同一 viewport transform，缩放/平移后绘制、选中、拖拽、resize 仍使用归一化视频坐标。
 
+## [0.9.38] - 2026-05-12
+
+> **Video Chunk Smart-Copy — R5.3 解码后端诊断底座.** 主线: ① `VideoChunk` 增加生成模式与诊断元数据；② media worker 在 codec 支持且 chunk 起始帧 keyframe 对齐时优先尝试 ffmpeg stream copy；③ smart-copy 失败自动 fallback 到现有 H.264 baseline fragmented MP4 重编码；④ chunk API 暴露 codec、keyframe、byte offset 与 fallback reason，供前端 WebCodecs / Worker 解码降级判断。→ [plan](docs/plans/2026-05-12-v0.9.38-video-chunk-smart-copy.md).
+
+### Added
+
+- **Chunk smart-copy**：H.264 / H.265 源且 chunk 起始帧 keyframe 对齐时，`ensure_video_chunks` 优先使用 stream copy，减少不必要重编码。
+- **Chunk 诊断字段**：chunk 响应新增 `generation_mode` 与 `diagnostics`，包含 source/output codec、keyframe 对齐、byte offset、smart-copy eligibility 和 fallback reason。
+- **Fallback 保底**：smart-copy ffmpeg 失败时自动回退到既有 H.264 baseline transcode，保持 chunk URL、pending/ready/failed 和 retry 行为兼容。
+
+### Deferred
+
+- 真实 SAM video backend、GPU profile、AI 质量评估、timetable compact / sparse 继续留在后续版本。
+
 ## [0.9.37] - 2026-05-12
 
 > **Video Track Composition — 视频轨迹生命周期组合编辑.** 主线: ① 新增视频 composition 事务接口，支持 `video_bbox` 聚合为 `video_track`、track split、track merge；② 前端轨迹侧栏增加聚合、拆轨迹、合并入口；③ composition 响应写入 React Query cache 并复用 batch history 保持 undo/redo；④ 视频工作台概念文档与 API guide 同步新接口。→ [plan](docs/plans/2026-05-12-v0.9.37-video-track-composition.md).
@@ -50,6 +64,21 @@
 ### Deferred
 
 - Re-ID 自动 join、AI 建议合并、多人冲突解决、R5.2 ImageBitmap 缓存与 R8 Viewport / Minimap 留到后续切片。
+
+## [0.9.36] - 2026-05-12
+
+> **Video Tracker GPU / Model Deepening — SAM video 协议桥与长区间分窗.** 主线: ① 新增 `sam2_video` / `sam3_video` tracker adapter，按 ADR-0012 调项目绑定的独立 ML Backend；② worker 按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 拆分长 frame range，降低单次 GPU OOM 风险；③ 低置信度 tracker 结果写入 outside prediction range；④ 同步协议文档、runbook、env-vars 和 S6 roadmap 状态。→ [plan](docs/plans/2026-05-12-v0.9.36-video-tracker-gpu-model-deepening.md).
+
+### Added
+
+- **SAM video tracker adapter**：`model_key="sam2_video"` / `"sam3_video"` 会调用项目绑定的 connected ML Backend `/predict`，发送 `context.type="video_tracker"`、frame range、direction、prompt 和 source geometry。
+- **长区间分窗**：新增 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES`，worker 自动把长视频 tracker job 拆成多个 backend 请求，整体仍保持同一个 job 事件流。
+- **低置信度 outside**：新增 `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD`，低于阈值的结果按 outside prediction range 写回，不生成 prediction keyframe。
+- **GPU OOM runbook**：补充 tracker job 失败排查、`gpu` queue 检查、分窗调小和 GPU backend 重启步骤。
+
+### Deferred
+
+- 真实 SAM 2 / SAM 3 backend 的 video predictor 实现、GPU profile 手测和端到端性能基准继续留给后续 backend 工程。
 
 ## [0.9.35] - 2026-05-12
 

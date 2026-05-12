@@ -7,6 +7,16 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class VideoChunkDiagnostics(BaseModel):
+    source_codec: str | None = None
+    output_codec: str | None = None
+    keyframe_aligned: bool | None = None
+    start_byte_offset: int | None = None
+    end_byte_offset: int | None = None
+    smart_copy_eligible: bool | None = None
+    fallback_reason: str | None = None
+
+
 class VideoChunkOut(BaseModel):
     chunk_id: int
     start_frame: int
@@ -14,6 +24,8 @@ class VideoChunkOut(BaseModel):
     status: Literal["pending", "ready", "failed"]
     url: str | None = None
     byte_size: int | None = None
+    generation_mode: Literal["smart_copy", "transcode"] | None = None
+    diagnostics: VideoChunkDiagnostics | None = None
     retry_after: int | None = None
     error: str | None = None
 

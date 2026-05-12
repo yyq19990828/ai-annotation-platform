@@ -46,7 +46,26 @@ GET /api/v1/tasks/{task_id}/video/chunks/{chunk_id}
 GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}
 ```
 
-首次请求缺失 chunk 时，API 创建 `VideoChunk(status="pending")` 并投递 `ensure_video_chunks` Celery 任务。单 chunk 未 ready 时返回 HTTP 202 和 `Retry-After`；ready 后返回 signed URL。第一版 chunk 使用 H.264 baseline fragmented MP4 重编码，后续再补 GOP smart-copy。
+首次请求缺失 chunk 时，API 创建 `VideoChunk(status="pending")` 并投递 `ensure_video_chunks` Celery 任务。单 chunk 未 ready 时返回 HTTP 202 和 `Retry-After`；ready 后返回 signed URL。
+
+v0.9.38 起，media worker 会在源 codec 为 H.264 / H.265 且 chunk 起始帧 keyframe 对齐时优先尝试 ffmpeg stream copy；不满足条件或 smart-copy 失败时，自动 fallback 到既有 H.264 baseline fragmented MP4 重编码。API 行为保持兼容，只额外返回诊断字段：
+
+```json
+{
+  "generation_mode": "smart_copy",
+  "diagnostics": {
+    "source_codec": "h264",
+    "output_codec": "h264",
+    "keyframe_aligned": true,
+    "start_byte_offset": 100,
+    "end_byte_offset": 9000,
+    "smart_copy_eligible": true,
+    "fallback_reason": null
+  }
+}
+```
+
+前端可用这些字段判断 WebCodecs / Worker 解码是否继续使用 chunk，或降级到整段视频 / frame service。
 
 MinIO key：
 
@@ -100,6 +119,8 @@ POST /api/v1/storage/video-assets/retry
 
 `probe` / `poster` / `frame_timetable` 共用 metadata 任务，因此重试任一项都会重新跑视频 metadata 生成链路。`chunk` / `frame` 重试会先把对应行恢复到 `pending` 并清空 `error`，再投递 media 队列。
 
+chunk 重试会清空旧的 `generation_mode` / `diagnostics`，下一次 worker 会重新判断 smart-copy eligibility。
+
 ## Timetable 重建
 
 旧视频或 probe 异常视频可重建 B1 帧时间表：
@@ -135,13 +156,21 @@ GET /api/v1/video-tracker-jobs/{job_id}
 DELETE /api/v1/video-tracker-jobs/{job_id}
 ```
 
-v0.9.34 起，创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`，第一版内置 `mock_bbox` contract adapter，用于跑通状态机、事件流和 `video_track` prediction keyframes 写回。创建请求：
+v0.9.34 起，创建 job 后会投递 `app.workers.video_tracker.run_video_tracker_job`。v0.9.36 支持三类 `model_key`：
+
+| model_key | 用途 |
+|---|---|
+| `mock_bbox` | 无 GPU contract adapter，复用输入 bbox 逐帧输出，供 CI / 前端对接使用。 |
+| `sam2_video` | 调项目绑定的 connected ML Backend，发送 `context.type="video_tracker"`。 |
+| `sam3_video` | 与 `sam2_video` 相同协议，供 v0.10.x SAM 3 backend 并存接入。 |
+
+创建请求：
 
 ```json
 {
   "from_frame": 0,
   "to_frame": 120,
-  "model_key": "mock_bbox",
+  "model_key": "sam2_video",
   "direction": "forward",
   "segment_id": "optional-segment-uuid",
   "prompt": { "type": "bbox", "geometry": {} }
@@ -172,6 +201,51 @@ WS /api/v1/ws/video-tracker-jobs/{job_id}?token=<access-token>
 
 当前状态机为 `queued -> running -> completed | failed | cancelled`；`DELETE` 对 queued/running job 标记 `cancel_requested_at` 并进入 `cancelled`，对 terminal job 幂等返回当前状态。worker 会保留人工 `video_track` keyframe，不用 prediction keyframe 覆盖 manual 结果。
 
+SAM video adapter 会调用项目绑定的 ML Backend `/predict`：
+
+```json
+{
+  "task": {
+    "id": "<task_id>",
+    "file_path": "<signed-video-url>",
+    "dataset_item_id": "<dataset_item_id>",
+    "file_name": "clip.mp4",
+    "file_type": "video"
+  },
+  "context": {
+    "type": "video_tracker",
+    "model_key": "sam2_video",
+    "job_id": "<job_id>",
+    "task_id": "<task_id>",
+    "project_id": "<project_id>",
+    "dataset_item_id": "<dataset_item_id>",
+    "annotation_id": "<annotation_id>",
+    "from_frame": 0,
+    "to_frame": 299,
+    "direction": "forward",
+    "prompt": { "type": "bbox", "geometry": {} },
+    "source_geometry": {}
+  }
+}
+```
+
+Backend 响应沿用交互式 `/predict` 响应，其中 `result` 是逐帧数组：
+
+```json
+{
+  "result": [
+    {
+      "frame_index": 1,
+      "geometry": { "type": "bbox", "x": 10, "y": 20, "w": 40, "h": 50 },
+      "confidence": 0.91,
+      "outside": false
+    }
+  ]
+}
+```
+
+长区间会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 分窗多次调用 backend；整体 job 仍只发布同一个事件流。`confidence` 低于 `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` 的结果会按 outside prediction range 写回，不生成 prediction keyframe。
+
 ## 配置与指标
 
 | 配置 | 默认值 | 用途 |
@@ -182,6 +256,8 @@ WS /api/v1/ws/video-tracker-jobs/{job_id}?token=<access-token>
 | `VIDEO_FRAME_MEMORY_CACHE_ITEMS` | 64 | 进程内 frame array LRU 上限 |
 | `VIDEO_SEGMENT_SIZE_FRAMES` | 18000 | 协作 segment 帧数 |
 | `VIDEO_SEGMENT_LOCK_TTL_SECONDS` | 300 | segment lock 心跳 TTL |
+| `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` | 300 | tracker 调 ML Backend 的单次 frame window 上限 |
+| `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD` | 0.15 | 低置信度 tracker 结果写 outside 的阈值 |
 
 Celery route：
 

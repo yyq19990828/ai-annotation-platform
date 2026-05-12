@@ -123,6 +123,8 @@ class VideoChunk(Base):
     end_pts_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     byte_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    generation_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    diagnostics: Mapped[dict] = mapped_column(JSONB, default=dict)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_accessed_at: Mapped[datetime | None] = mapped_column(
