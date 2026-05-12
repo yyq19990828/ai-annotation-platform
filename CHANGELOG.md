@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.24] - 2026-05-12
+
+> **Video Track Timeline Navigation — 单轨时间轴 + 全局密度条 + 关键帧跳转.** 主线: ① 选中 `video_track` 时，播放条显示 keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；② 未选中轨迹时显示全局 keyframe 密度条；③ `Shift+←/→` 在选中轨迹时跳上/下可见 keyframe，未选中轨迹时保留原有 ±10 帧跳转；④ 新增 `videoTrackTimeline` helper，复用 effective outside 语义，避免插值段跨越 outside / legacy absent。→ [plan](docs/plans/2026-05-12-v0.9.24-video-track-timeline-navigation.md).
+
+### Added
+
+- **单轨时间轴模型**：新增 `videoTrackTimeline.ts`，输出选中轨迹的 keyframe、outside、interpolated segment 和可见 keyframe 导航目标。
+- **全局密度条**：未选中轨迹时按固定 bin 聚合全部 track keyframe 密度，帮助定位有标注的帧段。
+- **关键帧跳转**：`VideoStageControls` 增加 `seekToKeyframe(dir)`，视频快捷键接线支持选中轨迹时跳上/下可见 keyframe。
+
+### Changed
+
+- `VideoPlaybackOverlay` 在保留原 seekbar 和播放按钮的基础上，按选中状态切换单轨 timeline 或全局密度视图。
+- `Shift+←/→` 在视频模式下变为上下文快捷键：选中 track 跳 keyframe，否则继续跳 10 帧。
+
 ## [0.9.23] - 2026-05-12
 
 > **Video Outside Timeline Foundation — outside 段协议 + 时间轴语义 marker.** 主线: ① `video_track` 支持可选 `outside: [{ from, to, source }]` 闭区间，向后兼容旧 `keyframes[].absent`; ② 前后端渲染、导出和 track → `video_bbox` 转换统一走 effective outside 判断；③ 时间轴 marker 扩展 keyframe / prediction / outside segment 语义，现有悬浮播放条可轻量展示 outside 灰段；④ 用户标记当前帧消失时写 outside 单帧区间，写入可见关键帧时自动清理该帧 outside 覆盖。→ [plan](docs/plans/2026-05-12-v0.9.23-video-outside-timeline-foundation.md).

@@ -65,6 +65,23 @@ export default withMermaid(defineConfig({
     optimizeDeps: {
       include: ["dayjs/esm/index.js", "@braintree/sanitize-url", "debug"],
     },
+    build: {
+      // VitePress local search emits a large generated index for the whole docs site.
+      // Keep the threshold above that expected artifact while still warning on accidental
+      // multi-megabyte application chunks.
+      chunkSizeWarningLimit: 2048,
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (!id.includes("node_modules")) return;
+            if (id.includes("/@scalar/")) return "vendor-api-reference";
+            if (id.includes("/minisearch/")) return "vendor-search";
+            if (id.includes("/vitepress/")) return "vendor-vitepress";
+            if (id.includes("/vue/") || id.includes("/@vue/")) return "vendor-vue";
+          },
+        },
+      },
+    },
   },
 
   themeConfig: {

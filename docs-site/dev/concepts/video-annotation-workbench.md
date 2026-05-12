@@ -22,6 +22,8 @@ v0.9.22 把视频渲染面向 CVAT 的 canvas 边界对齐：Media / Bitmap / Gr
 
 v0.9.23 引入 `outside` 段语义：`video_track` 可用闭区间表达目标在一段帧内不存在，前后端渲染、导出和 track → `video_bbox` 转换都兼容旧 `absent=true` 并优先尊重 outside。
 
+v0.9.24 升级时间轴可视化：选中轨迹时显示 keyframe、outside、interpolated 和 prediction 分布；未选中轨迹时显示全局 keyframe 密度条，并支持 `Shift+←/→` 跳上/下可见关键帧。
+
 ## 数据入口
 
 视频文件通过 dataset 导入进入系统：
@@ -270,7 +272,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `B` / `T` 切换视频矩形框 / 轨迹工具
 - `←` / `→` 逐帧
 - `,` / `.` 逐帧备用键
-- `Shift + ←/→` 跳 10 帧
+- `Shift + ←/→` 选中 `video_track` 时跳上/下可见关键帧；未选中轨迹时跳 10 帧
 - `Delete` / `Backspace` 删除选中轨迹
 - `Tab` / `Shift+Tab` 循环轨迹
 - `Esc` 取消选择
@@ -303,7 +305,9 @@ v0.9.19 后，`VideoStage` 底部固定控制条改为 `VideoPlaybackOverlay`：
 - 悬浮在视频画布底部，不再占用 stage 布局高度。
 - hover 时显示，离开后延迟淡出；绘制或拖动 bbox 时隐藏，避免误触 scrubber。
 - 保留播放 / 暂停、逐帧按钮、range scrubber、关键帧 tick、当前帧号、时间和当前帧框数。
-- v0.9.23 起，底部标记的数据源升级为 timeline markers：keyframe 仍显示为细线，prediction 使用不同颜色，outside 段显示为灰色区间；完整多轨时间轴仍留给 R4。
+- v0.9.23 起，底部标记的数据源升级为 timeline markers：keyframe 仍显示为细线，prediction 使用不同颜色，outside 段显示为灰色区间。
+- v0.9.24 起，选中 `video_track` 时显示该轨迹的单轨 timeline：keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；未选中轨迹时显示全局 keyframe 密度条。
+- `Shift+←/→` 复用同一套可见关键帧计算，跳过 outside 和 legacy `absent=true` 帧；如果没有选中轨迹，则保持原有 ±10 帧跳转。
 
 ## History / Offline
 

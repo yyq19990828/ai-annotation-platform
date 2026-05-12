@@ -13,6 +13,11 @@ import { applyResize } from "./ResizeHandles";
 import { buildFrameTimebase } from "./frameTimebase";
 import { useFrameClock } from "./useFrameClock";
 import { videoTimelineMarkers } from "./videoFrameBuckets";
+import {
+  buildGlobalTimelineDensity,
+  buildSelectedTrackTimeline,
+  nextVisibleKeyframeFrame,
+} from "./videoTrackTimeline";
 import { clientPointToVideoPoint } from "./videoStageCoordinates";
 import { modeFromDrag, getVideoStageModeGuard } from "./videoStageMode";
 import {
@@ -74,6 +79,7 @@ interface VideoStageProps {
 export interface VideoStageControls {
   togglePlayback: () => void;
   seekByFrames: (delta: number) => void;
+  seekToKeyframe: (dir: -1 | 1) => void;
 }
 
 export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(function VideoStage({
@@ -211,6 +217,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     return out;
   }, [annotations]);
   const timelineMarkers = useMemo(() => videoTimelineMarkers(videoTracks.map((ann) => ann.geometry)), [videoTracks]);
+  const selectedTrackTimeline = useMemo(
+    () => selectedTrack ? buildSelectedTrackTimeline(selectedTrack.geometry) : null,
+    [selectedTrack],
+  );
+  const globalTimelineDensity = useMemo(
+    () => selectedTrack ? [] : buildGlobalTimelineDensity(videoTracks.map((ann) => ann.geometry), maxFrame),
+    [maxFrame, selectedTrack, videoTracks],
+  );
 
   const pendingDraft = useMemo(() => {
     if (
@@ -324,13 +338,27 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     [flashPlaybackAction, frameIndex, seekFrame, showPlaybackOverlay],
   );
 
+  const seekToKeyframe = useCallback(
+    (dir: -1 | 1) => {
+      if (!selectedTrack) return;
+      const nextFrame = nextVisibleKeyframeFrame(selectedTrack.geometry, frameIndex, dir);
+      if (nextFrame === null) return;
+      showPlaybackOverlay();
+      flashPlaybackAction(dir < 0 ? "prev" : "next");
+      videoRef.current?.pause();
+      seekFrame(nextFrame);
+    },
+    [flashPlaybackAction, frameIndex, seekFrame, selectedTrack, showPlaybackOverlay],
+  );
+
   useImperativeHandle(
     ref,
     () => ({
       togglePlayback,
       seekByFrames,
+      seekToKeyframe,
     }),
-    [seekByFrames, togglePlayback],
+    [seekByFrames, seekToKeyframe, togglePlayback],
   );
 
   useEffect(() => {
@@ -627,6 +655,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             isPlaying={isPlaying}
             annotatedFrames={[...annotatedFrames].sort((a, b) => a - b)}
             timelineMarkers={timelineMarkers}
+            selectedTrackTimeline={selectedTrackTimeline}
+            globalTimelineDensity={globalTimelineDensity}
             currentFrameEntryCount={currentFrameEntries.length}
             visible={playbackOverlayVisible && !drag}
             interactive

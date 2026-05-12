@@ -167,6 +167,12 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "ArrowLeft", shiftKey: true }, videoCtx)).toEqual({ type: "videoSeek", delta: -10 });
   });
 
+  it("Shift + ArrowLeft / ArrowRight → videoSeekKeyframe when a video track is selected", () => {
+    const selectedTrackCtx: Partial<DispatchCtx> = { videoMode: true, hasSelectedVideoTrack: true };
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, selectedTrackCtx)).toEqual({ type: "videoSeekKeyframe", dir: 1 });
+    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, selectedTrackCtx)).toEqual({ type: "videoSeekKeyframe", dir: -1 });
+  });
+
   it("Delete / Backspace → videoDeleteSelected", () => {
     expect(dispatch({ key: "Delete" }, videoCtx)).toEqual({ type: "videoDeleteSelected" });
     expect(dispatch({ key: "Backspace" }, videoCtx)).toEqual({ type: "videoDeleteSelected" });

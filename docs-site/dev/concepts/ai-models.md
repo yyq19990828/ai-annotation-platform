@@ -198,7 +198,7 @@ scrape_configs:
 
 ### 4.4 关键查询
 
-```promql
+```text
 # embedding 缓存命中率（按 prompt 类型）
 sum by (prompt_type) (rate(embedding_cache_hits_total[5m]))
   / (

@@ -167,6 +167,47 @@ describe("VideoStage", () => {
     await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("3"));
   });
 
+  it("seeks to the next visible keyframe through ref controls", async () => {
+    const ref = createRef<VideoStageControls>();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          outside: [{ from: 3, to: 4 }],
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 3, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 5, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", absent: true },
+            { frame_index: 7, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "prediction" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByLabelText } = render(
+      <VideoStage
+        ref={ref}
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    await act(async () => {
+      ref.current?.seekToKeyframe(1);
+    });
+
+    await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("7"));
+  });
+
   it("syncs externally controlled frame changes to the video element", async () => {
     const props = {
       manifest,
@@ -868,6 +909,58 @@ describe("VideoStage", () => {
 
     expect(getByTestId("video-overlay").textContent).not.toContain("car");
     expect(getByTestId("video-timeline-outside")).toBeInTheDocument();
+  });
+
+  it("renders selected track timeline and global density timeline", () => {
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          outside: [{ from: 4, to: 5 }],
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 3, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "prediction" },
+            { frame_index: 8, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const selected = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    expect(selected.getByTestId("video-track-timeline")).toBeInTheDocument();
+    expect(selected.getAllByTestId("video-timeline-track-keyframe")).toHaveLength(3);
+    expect(selected.getByTestId("video-timeline-interpolated")).toBeInTheDocument();
+    selected.unmount();
+
+    const global = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    expect(global.getByTestId("video-timeline-density")).toBeInTheDocument();
   });
 
   it("does not reset frame or selection when callback references change for the same task", () => {

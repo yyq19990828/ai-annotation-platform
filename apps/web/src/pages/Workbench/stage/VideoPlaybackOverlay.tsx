@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { frameToTime, type FrameTimebase } from "./frameTimebase";
 import type { VideoTimelineMarker } from "./videoFrameBuckets";
+import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
 
 type HighlightAction = "prev" | "next" | "play" | null;
 
@@ -14,6 +15,8 @@ interface VideoPlaybackOverlayProps {
   isPlaying: boolean;
   annotatedFrames: number[];
   timelineMarkers?: VideoTimelineMarker[];
+  selectedTrackTimeline?: VideoTrackTimeline | null;
+  globalTimelineDensity?: VideoTimelineDensityBin[];
   currentFrameEntryCount: number;
   visible: boolean;
   interactive?: boolean;
@@ -37,6 +40,8 @@ export function VideoPlaybackOverlay({
   isPlaying,
   annotatedFrames,
   timelineMarkers = [],
+  selectedTrackTimeline = null,
+  globalTimelineDensity = [],
   currentFrameEntryCount,
   visible,
   interactive = true,
@@ -50,6 +55,16 @@ export function VideoPlaybackOverlay({
     if (hoverFrame === null) return null;
     return `F ${hoverFrame} · ${formatTime(frameToTime(hoverFrame, timebase))}`;
   }, [hoverFrame, timebase]);
+  const maxDensity = useMemo(
+    () => Math.max(1, ...globalTimelineDensity.map((bin) => bin.density)),
+    [globalTimelineDensity],
+  );
+  const frameLeft = (frame: number) => `${maxFrame > 0 ? (frame / maxFrame) * 100 : 0}%`;
+  const rangeStyle = (from: number, to: number) => {
+    const left = maxFrame > 0 ? (from / maxFrame) * 100 : 0;
+    const right = maxFrame > 0 ? (to / maxFrame) * 100 : 0;
+    return { left: `${left}%`, width: `${Math.max(0.5, right - left)}%` };
+  };
 
   const iconButtonStyle = (active: boolean): CSSProperties => ({
     color: "#fff",
@@ -112,6 +127,77 @@ export function VideoPlaybackOverlay({
           style={{ width: "100%", accentColor: "var(--color-accent)" }}
         />
         <div style={{ position: "absolute", inset: "0 6px", pointerEvents: "none" }}>
+          {!selectedTrackTimeline && globalTimelineDensity.length > 0 && (
+            <div data-testid="video-timeline-density" style={{ position: "absolute", inset: "15px 0 2px 0" }}>
+              {globalTimelineDensity.map((bin) => {
+                if (bin.density <= 0) return null;
+                const left = maxFrame > 0 ? (bin.from / maxFrame) * 100 : 0;
+                const width = maxFrame > 0 ? ((bin.to - bin.from + 1) / (maxFrame + 1)) * 100 : 100;
+                return (
+                  <span
+                    key={bin.index}
+                    style={{
+                      position: "absolute",
+                      left: `${left}%`,
+                      bottom: 0,
+                      width: `${Math.max(0.7, width)}%`,
+                      height: `${Math.max(3, (bin.density / maxDensity) * 10)}px`,
+                      background: "rgba(45,212,191,0.58)",
+                      borderRadius: 2,
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
+          {selectedTrackTimeline && (
+            <div data-testid="video-track-timeline" style={{ position: "absolute", inset: 0 }}>
+              {selectedTrackTimeline.interpolated.map((segment) => (
+                <span
+                  key={`interpolated-${segment.from}-${segment.to}`}
+                  data-testid="video-timeline-interpolated"
+                  style={{
+                    position: "absolute",
+                    ...rangeStyle(segment.from, segment.to),
+                    top: 12,
+                    borderTop: `2px dashed ${segment.hasPrediction ? "rgba(251,191,36,0.78)" : "rgba(255,255,255,0.42)"}`,
+                  }}
+                />
+              ))}
+              {selectedTrackTimeline.outside.map((segment) => (
+                <span
+                  key={`track-outside-${segment.from}-${segment.to}`}
+                  data-testid="video-timeline-outside"
+                  style={{
+                    position: "absolute",
+                    ...rangeStyle(segment.from, segment.to),
+                    top: 16,
+                    height: 7,
+                    background: segment.source === "prediction" ? "rgba(148,163,184,0.5)" : "rgba(148,163,184,0.38)",
+                    borderRadius: 999,
+                  }}
+                />
+              ))}
+              {selectedTrackTimeline.keyframes.map((keyframe) => (
+                <span
+                  key={`track-keyframe-${keyframe.frame}`}
+                  data-testid="video-timeline-track-keyframe"
+                  style={{
+                    position: "absolute",
+                    left: frameLeft(keyframe.frame),
+                    top: keyframe.occluded ? 4 : 5,
+                    width: keyframe.source === "prediction" ? 8 : 7,
+                    height: keyframe.source === "prediction" ? 8 : 7,
+                    transform: "translateX(-50%)",
+                    borderRadius: 999,
+                    background: keyframe.source === "prediction" ? "oklch(0.78 0.14 78)" : "var(--color-accent)",
+                    border: keyframe.occluded ? "1px dashed rgba(255,255,255,0.9)" : "1px solid rgba(255,255,255,0.8)",
+                    boxShadow: "0 0 0 1px rgba(0,0,0,0.35)",
+                  }}
+                />
+              ))}
+            </div>
+          )}
           {annotatedFrames.map((f) => (
             <span
               key={f}

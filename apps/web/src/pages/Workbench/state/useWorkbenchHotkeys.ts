@@ -235,6 +235,9 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging,
         attributeHotkey,
         videoMode,
+        hasSelectedVideoTrack: videoMode && !!s.selectedId && annotationsRef.current.some(
+          (ann) => ann.id === s.selectedId && ann.geometry.type === "video_track",
+        ),
       });
       if (!action) return;
       recordHotkeyUsage(action.type);
@@ -252,6 +255,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "videoSeek":
           e.preventDefault();
           videoControlsRef?.current?.seekByFrames(action.delta);
+          return;
+        case "videoSeekKeyframe":
+          e.preventDefault();
+          videoControlsRef?.current?.seekToKeyframe(action.dir);
           return;
         case "videoDeleteSelected":
           e.preventDefault();

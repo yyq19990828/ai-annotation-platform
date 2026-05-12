@@ -158,13 +158,13 @@
 
 ### R4 · 时间轴可视化升级（**必做，UI 改动**）
 
-替换现有 `VideoPlaybackOverlay` 的 seekbar：
+升级现有 `VideoPlaybackOverlay` 的 seekbar：
 
-- **状态（v0.9.23）**：R4 的完整多轨时间轴仍未做；本版只完成数据前置与轻量展示。`videoFrameBuckets.ts` 可输出 keyframe / prediction / outside segment markers，现有 `VideoPlaybackOverlay` 可显示 outside 灰段。
+- **状态（v0.9.24）**：R4.1 / R4.2 / R4.3 已完成第一版。选中 `video_track` 时，`VideoPlaybackOverlay` 显示单轨 keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；未选中 track 时显示全局 keyframe 密度条；`Shift+←/→` 在选中 track 时跳上/下可见 keyframe，未选中时保留 ±10 帧跳转。R4.4 loop region 尚未做。
 
-- **R4.1 多轨时间轴**：显示当前选中 track 一条轨道，叠加（a）keyframe 圆点、（b）outside 段灰色区间、（c）interpolated 段虚线、（d）prediction 段不同色 hatch。
-- **R4.2 全局密度条**：未选中时显示全部 track 的密度热度图（每 N 帧分桶计数），帮助跳到"有标注的区段"。
-- **R4.3 keyframe 跳转快捷键**：`Shift+←/→` 跳上/下 keyframe（CVAT 上下方向键的等价），与现有 prev/next frame 共存。
+- **R4.1 多轨时间轴**：已完成第一版。显示当前选中 track 一条轨道，叠加（a）keyframe 圆点、（b）outside 段灰色区间、（c）interpolated 段虚线、（d）prediction 段不同色 hatch。
+- **R4.2 全局密度条**：已完成第一版。未选中时显示全部 track 的密度热度图（每 N 帧分桶计数），帮助跳到"有标注的区段"。
+- **R4.3 keyframe 跳转快捷键**：已完成第一版。`Shift+←/→` 在选中 track 时跳上/下可见 keyframe（跳过 outside / absent），未选中时保持原有 ±10 帧跳转。
 - **R4.4 播放范围（loop region）**：拖选时间轴一段，循环播放；为后续 review 评论锚点 `(track_id, frame_range)` 铺路。
 
 **衡量**：用户测试，"找到第 N 个手工 keyframe"操作步数下降。
@@ -494,7 +494,7 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 | 渲染分层 | `stage/VideoStageSurface.tsx` + `Video*Layer.tsx` | 已完成 CVAT-aligned surface；后续接 R5/R8/R17 |
 | 插值 | `stage/videoStageGeometry.ts` / `stage/videoTrackOutside.ts` / `stage/videoFrameBuckets.ts` | R3.1-R3.4 已完成第一版；后续接 R4/R9 |
 | 类型 | `types/index.ts` / `stage/videoStageTypes.ts` | `outside: Range[]` 已完成；`geometry.kind` 留给 R9 |
-| 时间轴 | `stage/VideoPlaybackOverlay.tsx` | v0.9.23 已有 marker/outside 灰段；完整 TrackTimeline + 章节 + hover 缩略图留给 R4/R17/R18/R19 |
+| 时间轴 | `stage/VideoPlaybackOverlay.tsx` / `stage/videoTrackTimeline.ts` | R4.1-R4.3 已完成第一版；loop region、章节、hover 缩略图留给 R4.4/R17/R18/R19 |
 | 状态 | `state/useWorkbenchState.ts` L62-180 | stage 隔离 + `seekFrameAsync` + bookmark 栈（R6 / R19） |
 | 撤销重做 | `state/useAnnotationHistory.ts` | `videoOutsideSegment` / `trackSplit` / `trackMerge` kind（R3.4 / R14 / R15） |
 | Track 编辑入口 | `stage/VideoTrackPanel.tsx` | 加 split / merge / join 操作（R14 / R15 / R16） |
