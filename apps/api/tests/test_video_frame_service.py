@@ -8,10 +8,12 @@ from app.db.models.dataset import (
     VideoFrameIndex,
     VideoSegment,
 )
+from app.db.models.annotation import Annotation
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
+from app.db.models.video_tracker_job import VideoTrackerJob
 from app.cli.video.rebuild_timetable import rebuild_item_timetable
 
 
@@ -444,3 +446,167 @@ async def test_rebuild_timetable_cli_helper_replaces_rows(
     assert count == 2
     assert [row.pts_ms for row in rows] == [0, 33]
     assert item.metadata_["video"]["frame_timetable_frame_count"] == 2
+
+
+async def test_video_tracker_job_create_get_cancel(
+    db_session, httpx_client_bound, project_admin, annotator, monkeypatch
+):
+    owner, _ = project_admin
+    user, token = annotator
+    task, item = await _make_video_task(db_session, owner.id)
+    monkeypatch.setattr(
+        "app.services.video_segment_service.settings.video_segment_size_frames",
+        45,
+    )
+    batch = TaskBatch(
+        project_id=task.project_id,
+        dataset_id=item.dataset_id,
+        display_id=f"B-VTJ-{uuid.uuid4().hex[:6]}",
+        name="Video tracker batch",
+        status="active",
+        annotator_id=user.id,
+        assigned_user_ids=[str(user.id)],
+    )
+    db_session.add_all(
+        [
+            ProjectMember(
+                project_id=task.project_id,
+                user_id=user.id,
+                role="annotator",
+                assigned_by=owner.id,
+            ),
+            batch,
+        ]
+    )
+    await db_session.flush()
+    task.batch_id = batch.id
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "x": 1, "y": 2, "width": 10, "height": 12},
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+
+    segments_resp = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/segments",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    segment_id = segments_resp.json()["segments"][0]["id"]
+    await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/segments/{segment_id}:claim",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    create_resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}:propagate",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "from_frame": 0,
+            "to_frame": 12,
+            "model_key": "mock_bbox",
+            "direction": "forward",
+            "segment_id": segment_id,
+            "prompt": {"type": "bbox", "geometry": annotation.geometry},
+        },
+    )
+
+    assert create_resp.status_code == 202
+    body = create_resp.json()
+    assert body["status"] == "queued"
+    assert body["task_id"] == str(task.id)
+    assert body["annotation_id"] == str(annotation.id)
+    assert body["event_channel"] == f"video-tracker-job:{body['id']}"
+
+    get_resp = await httpx_client_bound.get(
+        f"/api/v1/video-tracker-jobs/{body['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert get_resp.status_code == 200
+    assert get_resp.json()["id"] == body["id"]
+
+    cancel_resp = await httpx_client_bound.delete(
+        f"/api/v1/video-tracker-jobs/{body['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    repeat_cancel_resp = await httpx_client_bound.delete(
+        f"/api/v1/video-tracker-jobs/{body['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert cancel_resp.status_code == 200
+    assert cancel_resp.json()["status"] == "cancelled"
+    assert cancel_resp.json()["cancel_requested_at"] is not None
+    assert repeat_cancel_resp.status_code == 200
+    assert repeat_cancel_resp.json()["status"] == "cancelled"
+    row = await db_session.get(VideoTrackerJob, uuid.UUID(body["id"]))
+    assert row is not None
+    assert row.status == "cancelled"
+
+
+async def test_video_tracker_job_requires_current_segment_lock(
+    db_session, httpx_client_bound, project_admin, annotator, monkeypatch
+):
+    owner, _ = project_admin
+    user, token = annotator
+    task, item = await _make_video_task(db_session, owner.id)
+    monkeypatch.setattr(
+        "app.services.video_segment_service.settings.video_segment_size_frames",
+        45,
+    )
+    batch = TaskBatch(
+        project_id=task.project_id,
+        dataset_id=item.dataset_id,
+        display_id=f"B-VTJ-{uuid.uuid4().hex[:6]}",
+        name="Video tracker batch",
+        status="active",
+        annotator_id=user.id,
+        assigned_user_ids=[str(user.id)],
+    )
+    db_session.add_all(
+        [
+            ProjectMember(
+                project_id=task.project_id,
+                user_id=user.id,
+                role="annotator",
+                assigned_by=owner.id,
+            ),
+            batch,
+        ]
+    )
+    await db_session.flush()
+    task.batch_id = batch.id
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "x": 1, "y": 2, "width": 10, "height": 12},
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+
+    segments_resp = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/segments",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    segment_id = segments_resp.json()["segments"][0]["id"]
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/tracks/{annotation.id}:propagate",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "from_frame": 0,
+            "to_frame": 12,
+            "model_key": "mock_bbox",
+            "direction": "forward",
+            "segment_id": segment_id,
+            "prompt": {"type": "bbox", "geometry": annotation.geometry},
+        },
+    )
+
+    assert resp.status_code == 409

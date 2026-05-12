@@ -36,6 +36,10 @@ from app.schemas.video_frame_service import (
     VideoSegmentOut,
     VideoSegmentsResponse,
 )
+from app.schemas.video_tracker_job import (
+    VideoTrackerJobOut,
+    VideoTrackerPropagateRequest,
+)
 from app.schemas.annotation import (
     AnnotationCreate,
     AnnotationListPage,
@@ -71,6 +75,7 @@ from app.services.video_segment_service import (
     list_segments as list_video_segments,
     release_segment,
 )
+from app.services.video_tracker_job_service import create_tracker_job
 from app.services.user_brief import resolve_briefs
 from app.db.models.task_batch import TaskBatch
 
@@ -680,6 +685,54 @@ async def retry_video_frame_assets(
         payload.format,
         force=payload.force,
     )
+
+
+@router.post(
+    "/{task_id}/video/tracks/{annotation_id}:propagate",
+    response_model=VideoTrackerJobOut,
+    status_code=202,
+)
+async def propagate_video_track(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    payload: VideoTrackerPropagateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    ctx = await build_context_from_task(db, task)
+    body = await create_tracker_job(
+        db,
+        task=task,
+        ctx=ctx,
+        annotation_id=annotation_id,
+        payload=payload,
+        user=current_user,
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_TRACKER_JOB_CREATE,
+        target_type="video_tracker_job",
+        target_id=body.id,
+        request=request,
+        status_code=202,
+        detail={
+            "task_id": str(task.id),
+            "annotation_id": str(annotation_id),
+            "dataset_item_id": str(ctx.item.id),
+            "segment_id": str(body.segment_id) if body.segment_id else None,
+            "from_frame": body.from_frame,
+            "to_frame": body.to_frame,
+            "model_key": body.model_key,
+            "direction": body.direction,
+        },
+    )
+    await db.commit()
+    return body
 
 
 @router.get("/{task_id}/annotations", response_model=list[AnnotationOut])

@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.9.32] - 2026-05-12
+
+> **Video Tracker Job Shell — AI tracker 编排壳.** 主线: ① 新增独立 `video_tracker_jobs` 表，不复用批量预标 `prediction_jobs`；② 支持创建 / 查询 / 取消 tracker job；③ 创建时校验 video task、annotation、frame range 与 segment lock；④ 协议文档和 runbook 补齐 tracker job 当前边界。→ [plan](docs/plans/2026-05-12-v0.9.32-video-tracker-jobs.md).
+
+### Added
+
+- **VideoTrackerJob 模型**：新增 `VideoTrackerJob` 与 `0059_video_tracker_jobs.py` 迁移，状态机覆盖 `queued/running/completed/failed/cancelled`，并保存 `model_key`、`direction`、`prompt`、`event_channel` 和取消请求时间。
+- **Tracker job API**：新增 `POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate`、`GET /api/v1/video-tracker-jobs/{job_id}`、`DELETE /api/v1/video-tracker-jobs/{job_id}`。
+- **Segment lock 校验**：非管理员创建 tracker job 前必须持有覆盖 frame range 的有效 segment lock；跨 segment 或越界请求会被拒绝。
+
+### Deferred
+
+- 真实 tracker adapter、GPU worker、逐帧 prediction keyframe 写回和 WebSocket 流式结果留到后续版本。
+
 ## [0.9.30] - 2026-05-12
 
 > **Video Timetable / Frame Cache Repair — 旧视频帧表重建与缓存修复闭环.** 主线: ① 新增 `python -m app.cli.video.rebuild_timetable`，支持按视频、数据集或全量重建 `video_frame_indices`；② 新增 task/videos facade 的 `frames:retry` API，失败单帧缓存可重新投递，`force=true` 可刷新指定帧；③ 视频 poster 改为复用 `VideoFrameCache(frame_index=0,width=512,format=webp)` 产物。→ [plan](docs/plans/2026-05-12-v0.9.30-video-timetable-frame-cache-repair.md).

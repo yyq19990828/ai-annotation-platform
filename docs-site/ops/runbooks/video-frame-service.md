@@ -144,6 +144,22 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 - 用户异常退出后锁未过期：等待 TTL 到期，或由项目管理员调用 release 接口释放。
 - segment 切分过粗：降低 `VIDEO_SEGMENT_SIZE_FRAMES` 后，新视频会按更小粒度生成；已有 segment 需人工迁移或重建。
 
+## Tracker Job 无法创建或取消
+
+查看最近 job：
+
+```bash
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT id, task_id, annotation_id, segment_id, status, from_frame, to_frame, cancel_requested_at FROM video_tracker_jobs ORDER BY created_at DESC LIMIT 20;"
+```
+
+常见原因：
+
+- 返回 409：当前用户没有持有覆盖 frame range 的有效 segment lock。先调用 segment claim，再发起 tracker job。
+- 返回 400：frame range 越界、反向，或跨越多个 segment。第一版要求单 job 在一个 segment 内。
+- job 长时间停留 `queued`：v0.9.32 只落编排壳，真实 adapter/worker 在后续版本接入；前端应展示排队/可取消状态。
+- 取消后仍看到部分结果：后续 worker 接入后会保留已产出的 prediction keyframes，未完成区间不落库。
+
 ## 指标
 
 重点观察：

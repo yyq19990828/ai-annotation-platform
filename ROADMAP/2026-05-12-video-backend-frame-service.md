@@ -1,6 +1,6 @@
 # P1 · 视频后端帧服务 Epic
 
-> 状态：**partial shipped（B1/B2/B3/B4/B6/B7 第一版已落地，B5 待开发）**。承载前端 `2026-05-12-video-workbench-rendering-optimization.md` 中 R5.3 / R10 / R11 三块的服务端依赖。
+> 状态：**partial shipped（B1/B2/B3/B4/B6/B7 第一版已落地，B5 job 壳 v0.9.32 已落地，adapter/worker 待开发）**。承载前端 `2026-05-12-video-workbench-rendering-optimization.md` 中 R5.3 / R10 / R11 三块的服务端依赖。
 >
 > 当前后端只暴露单一 `manifest.video_url`，让浏览器自己用 `<video>` 解码。这对于短视频 + 单人 + 单段是够用的，但要支持：长视频（>10 分钟）、4K、多人协同、AI tracker 流式补帧、精确帧导航，必须把"帧"作为一等资源在后端暴露和缓存。
 >
@@ -114,6 +114,8 @@
 
 > 解决 G5。
 
+- **状态（v0.9.32）**：S4 Tracker Job 壳已完成。新增独立 `video_tracker_jobs` 表、创建 / 查询 / 取消 API、frame range + segment lock 校验和 `event_channel` 字段；真实 tracker adapter、GPU worker、逐帧结果写回留到 S5/S6。
+
 - **B5.1 任务接口**：`POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate { from_frame, to_frame, model_key, direction, segment_id? }` 创建 tracker job，返回 `job_id`。
 - **B5.2 流式输出**：第一版复用 Redis pub/sub + WebSocket 推送 `{ frame_index, geometry, confidence, outside }`，前端逐帧累加；SSE 可作为后续 facade。
 - **B5.3 中断与续跑**：`DELETE /api/v1/video-tracker-jobs/{job_id}` 请求取消；中断后剩余区间标记为 "未传播"，前端 UI 可二次发起。
@@ -175,7 +177,7 @@
 | S1 · Segment 只读基线 | B4.0 Segment 只读基线 | `video_segments` 表、短视频默认 1 段、manifest v2 返回 `segments`、task / videos facade 查询接口 | **v0.9.28 已完成** |
 | S2 · Segment 分配与锁 | B4.1 Segment 分配与锁 | segment claim / heartbeat / release API、TTL lock、权限与审计 | **v0.9.28 已完成第一版**；导出按 segment 聚合后续补 |
 | S3 · Timetable / Frame Cache 补齐 | B6.2 + B3 补齐 | `python -m app.cli.video.rebuild_timetable`、poster / thumbnail 重试复用 B3、失败重试入口的后端 API | **v0.9.30 已完成** |
-| S4 · Tracker Job 壳 | B5.0 Tracker job 壳 | `video_tracker_jobs` 或扩展 `prediction_jobs` 的决策落地、创建 / 查询 / 取消 job、Redis pub/sub 或 WS 事件通道 | job 状态机单测、取消幂等测试、OpenAPI 快照 |
+| S4 · Tracker Job 壳 | B5.0 Tracker job 壳 | `video_tracker_jobs` 或扩展 `prediction_jobs` 的决策落地、创建 / 查询 / 取消 job、Redis pub/sub 或 WS 事件通道 | **v0.9.32 已完成**；adapter/worker 后续补 |
 | S5 · Tracker Adapter MVP | B5.1 Tracker adapter MVP | `tracker_registry`、先接一个最小 adapter（建议从 bbox propagation / KCF mock 起步，再接 SAM video）、逐帧结果写入 `video_track.outside` / prediction keyframes | adapter contract 单测、worker eager 集成测试、前端 R10 对接样例 |
 | S6 · GPU / 模型深化 | B5.2 GPU / 模型深化 | SAM 2 / SAM 3 video predictor、GPU 队列容量控制、OOM runbook、长视频分段续跑 | GPU profile 手测、runbook 演练、端到端性能基准 |
 

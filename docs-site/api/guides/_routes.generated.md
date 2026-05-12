@@ -274,6 +274,7 @@
 | GET | `/{task_id}/video/frames/{frame_index}` |
 | POST | `/{task_id}/video/frames:prefetch` |
 | POST | `/{task_id}/video/frames:retry` |
+| POST | `/{task_id}/video/tracks/{annotation_id}:propagate` |
 | GET | `/{task_id}/annotations` |
 | GET | `/{task_id}/annotations/page` |
 | POST | `/{task_id}/annotations` |
@@ -307,6 +308,13 @@
 | POST | `/{user_id}/deactivate` |
 | PATCH | `/{user_id}/group` |
 
+## `video_tracker_jobs.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{job_id}` |
+| DELETE | `/{job_id}` |
+
 ## `videos.py`
 
 | Method | Path |
@@ -322,4 +330,4 @@
 
 ---
 
-_共 29 模块 / 180 路由_
+_共 30 模块 / 183 路由_
