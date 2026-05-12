@@ -35,6 +35,15 @@ last_reviewed: 2026-05-09
 | `ML_BACKEND_STORAGE_HOST` | `172.17.0.1:9000` | ML Backend 访问 MinIO 的地址。容器网络中 Backend 无法直接访问 `localhost`，需设为 Docker 网关地址。生产 K8s 环境留空。 |
 | `ML_BACKEND_DEFAULT_URL` | `http://172.17.0.1:8001` | ML Backend 注册表单的 URL 预填值。 |
 
+## 视频帧服务（v0.9.25+）
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `VIDEO_CHUNK_SIZE_FRAMES` | `60` | 每个视频 chunk 包含的帧数。30fps 下默认约 2 秒。 |
+| `VIDEO_FRAME_CACHE_TTL_DAYS` | `14` | 单帧 WebP/JPEG 缓存对象未访问多少天后由 Celery beat 清理。 |
+| `VIDEO_CHUNK_CACHE_TTL_DAYS` | `30` | 视频 chunk 缓存对象未访问多少天后由 Celery beat 清理。 |
+| `VIDEO_FRAME_MEMORY_CACHE_ITEMS` | `64` | AI worker 通过内部 `frame_service.get_frame_array` 读取单帧时的进程内 LRU 上限。 |
+
 ## 认证 / 安全
 
 | 变量 | 默认值 | 说明 |

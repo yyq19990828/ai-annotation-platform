@@ -4,19 +4,35 @@ import json
 import math
 import subprocess
 import tempfile
+import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
-from app.db.models.dataset import VideoFrameIndex
+from app.db.models.dataset import DatasetItem, VideoChunk, VideoFrameCache, VideoFrameIndex
+from app.observability.metrics import (
+    VIDEO_CHUNK_GENERATION_SECONDS,
+    VIDEO_FRAME_ASSET_BYTES,
+    VIDEO_FRAME_EXTRACTION_SECONDS,
+)
+from app.services.video_frame_service import (
+    cache_key_for_chunk,
+    cache_key_for_frame,
+    metadata_for_item,
+    pts_ms_for_frame,
+    source_key_for_item,
+)
 from app.workers.celery_app import celery_app
 from app.config import settings
 
 FFPROBE_TIMEOUT_SECONDS = 30
 FFMPEG_POSTER_TIMEOUT_SECONDS = 60
 FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 600
+FFMPEG_CHUNK_TIMEOUT_SECONDS = 180
+FFMPEG_FRAME_TIMEOUT_SECONDS = 60
 BROWSER_PLAYABLE_VIDEO_CODECS = {"h264", "avc1"}
 
 
@@ -236,6 +252,79 @@ def transcode_video_for_browser(
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "ffmpeg browser transcode failed")
+
+
+def extract_video_chunk(
+    input_path: str | Path,
+    output_path: str | Path,
+    start_ms: int,
+    frame_count: int,
+) -> None:
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{max(0, start_ms) / 1000:.3f}",
+            "-i",
+            str(input_path),
+            "-frames:v",
+            str(max(1, frame_count)),
+            "-an",
+            "-c:v",
+            "libx264",
+            "-profile:v",
+            "baseline",
+            "-pix_fmt",
+            "yuv420p",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-g",
+            "30",
+            "-keyint_min",
+            "30",
+            "-movflags",
+            "frag_keyframe+empty_moov+default_base_moof",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=FFMPEG_CHUNK_TIMEOUT_SECONDS,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "ffmpeg chunk extraction failed")
+
+
+def extract_video_frame_image(
+    input_path: str | Path,
+    output_path: str | Path,
+    pts_ms: int,
+    width: int,
+) -> None:
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{max(0, pts_ms) / 1000:.3f}",
+            "-i",
+            str(input_path),
+            "-frames:v",
+            "1",
+            "-vf",
+            f"scale='min({max(1, width)},iw)':-2",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=FFMPEG_FRAME_TIMEOUT_SECONDS,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "ffmpeg frame extraction failed")
 
 
 async def _generate_thumbnail(item_id: str) -> None:
@@ -599,6 +688,302 @@ async def _backfill_tasks(project_id: str) -> None:
         await _generate_task_thumbnail(tid)
 
 
+async def _ensure_video_chunks(item_id: str, chunk_ids: list[int]) -> None:
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+    from app.services.storage import StorageService
+
+    engine = create_async_engine(settings.database_url, echo=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    async with SessionLocal() as db:
+        item = await db.get(DatasetItem, uuid.UUID(item_id))
+        if not item or item.file_type != "video":
+            await engine.dispose()
+            return
+        metadata = metadata_for_item(item)
+        source_key = source_key_for_item(item)
+        storage = StorageService()
+
+        with tempfile.TemporaryDirectory(prefix="anno-video-chunk-") as tmp:
+            suffix = Path(item.file_name).suffix or ".mp4"
+            input_path = Path(tmp) / f"source{suffix}"
+            try:
+                with input_path.open("wb") as fh:
+                    storage.client.download_fileobj(
+                        Bucket=storage.datasets_bucket,
+                        Key=source_key,
+                        Fileobj=fh,
+                    )
+            except Exception as exc:
+                rows = (
+                    await db.execute(
+                        select(VideoChunk).where(
+                            VideoChunk.dataset_item_id == item.id,
+                            VideoChunk.chunk_id.in_(chunk_ids),
+                        )
+                    )
+                ).scalars()
+                for row in rows:
+                    row.status = "failed"
+                    row.error = str(exc)
+                await db.commit()
+                await engine.dispose()
+                return
+
+            for chunk_id in chunk_ids:
+                row = (
+                    await db.execute(
+                        select(VideoChunk).where(
+                            VideoChunk.dataset_item_id == item.id,
+                            VideoChunk.chunk_id == int(chunk_id),
+                        )
+                    )
+                ).scalar_one_or_none()
+                if row is None:
+                    continue
+                row.status = "pending"
+                row.error = None
+                await db.commit()
+                output_path = Path(tmp) / f"chunk-{chunk_id}.mp4"
+                start = time.perf_counter()
+                try:
+                    start_ms = row.start_pts_ms
+                    if start_ms is None:
+                        start_ms = await pts_ms_for_frame(
+                            db, item.id, row.start_frame, metadata
+                        )
+                    extract_video_chunk(
+                        input_path,
+                        output_path,
+                        start_ms or 0,
+                        row.end_frame - row.start_frame + 1,
+                    )
+                    key = cache_key_for_chunk(item.id, row.chunk_id)
+                    storage.ensure_bucket(storage.datasets_bucket)
+                    body = output_path.read_bytes()
+                    storage.client.put_object(
+                        Bucket=storage.datasets_bucket,
+                        Key=key,
+                        Body=body,
+                        ContentType="video/mp4",
+                    )
+                    row.storage_key = key
+                    row.byte_size = len(body)
+                    row.status = "ready"
+                    row.error = None
+                    row.last_accessed_at = datetime.now(timezone.utc)
+                    VIDEO_CHUNK_GENERATION_SECONDS.labels(outcome="success").observe(
+                        time.perf_counter() - start
+                    )
+                except Exception as exc:
+                    row.status = "failed"
+                    row.error = str(exc)
+                    VIDEO_CHUNK_GENERATION_SECONDS.labels(outcome="error").observe(
+                        time.perf_counter() - start
+                    )
+                await db.commit()
+
+        await _refresh_video_asset_bytes(db)
+
+    await engine.dispose()
+
+
+async def _extract_video_frames(
+    item_id: str, frame_requests: list[dict[str, Any]]
+) -> None:
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+    from app.services.storage import StorageService
+
+    engine = create_async_engine(settings.database_url, echo=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    async with SessionLocal() as db:
+        item = await db.get(DatasetItem, uuid.UUID(item_id))
+        if not item or item.file_type != "video":
+            await engine.dispose()
+            return
+        metadata = metadata_for_item(item)
+        source_key = source_key_for_item(item)
+        storage = StorageService()
+
+        with tempfile.TemporaryDirectory(prefix="anno-video-frame-") as tmp:
+            suffix = Path(item.file_name).suffix or ".mp4"
+            input_path = Path(tmp) / f"source{suffix}"
+            try:
+                with input_path.open("wb") as fh:
+                    storage.client.download_fileobj(
+                        Bucket=storage.datasets_bucket,
+                        Key=source_key,
+                        Fileobj=fh,
+                    )
+            except Exception as exc:
+                for request in frame_requests:
+                    row = await _load_frame_cache_row(db, item.id, request)
+                    if row:
+                        row.status = "failed"
+                        row.error = str(exc)
+                await db.commit()
+                await engine.dispose()
+                return
+
+            for request in frame_requests:
+                row = await _load_frame_cache_row(db, item.id, request)
+                if row is None:
+                    continue
+                row.status = "pending"
+                row.error = None
+                await db.commit()
+                fmt = row.format if row.format in {"webp", "jpeg"} else "webp"
+                ext = "jpg" if fmt == "jpeg" else "webp"
+                output_path = Path(tmp) / f"frame-{row.frame_index}-{row.width}.{ext}"
+                start = time.perf_counter()
+                try:
+                    pts_ms = await pts_ms_for_frame(
+                        db, item.id, row.frame_index, metadata
+                    )
+                    extract_video_frame_image(
+                        input_path,
+                        output_path,
+                        pts_ms or 0,
+                        row.width,
+                    )
+                    key = cache_key_for_frame(item.id, row.frame_index, row.width, fmt)
+                    body = output_path.read_bytes()
+                    storage.ensure_bucket(storage.datasets_bucket)
+                    storage.client.put_object(
+                        Bucket=storage.datasets_bucket,
+                        Key=key,
+                        Body=body,
+                        ContentType="image/jpeg" if fmt == "jpeg" else "image/webp",
+                    )
+                    row.storage_key = key
+                    row.byte_size = len(body)
+                    row.status = "ready"
+                    row.error = None
+                    row.last_accessed_at = datetime.now(timezone.utc)
+                    VIDEO_FRAME_EXTRACTION_SECONDS.labels(
+                        outcome="success", format=fmt
+                    ).observe(time.perf_counter() - start)
+                except Exception as exc:
+                    row.status = "failed"
+                    row.error = str(exc)
+                    VIDEO_FRAME_EXTRACTION_SECONDS.labels(
+                        outcome="error", format=fmt
+                    ).observe(time.perf_counter() - start)
+                await db.commit()
+
+        await _refresh_video_asset_bytes(db)
+
+    await engine.dispose()
+
+
+async def _load_frame_cache_row(
+    db, item_id: uuid.UUID, request: dict[str, Any]
+) -> VideoFrameCache | None:
+    return (
+        await db.execute(
+            select(VideoFrameCache).where(
+                VideoFrameCache.dataset_item_id == item_id,
+                VideoFrameCache.frame_index == int(request["frame_index"]),
+                VideoFrameCache.width == int(request["width"]),
+                VideoFrameCache.format == str(request["format"]),
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def _cleanup_video_frame_assets() -> None:
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+    from app.services.storage import StorageService
+
+    engine = create_async_engine(settings.database_url, echo=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    async with SessionLocal() as db:
+        storage = StorageService()
+        now = datetime.now(timezone.utc)
+        frame_cutoff = now - timedelta(days=settings.video_frame_cache_ttl_days)
+        chunk_cutoff = now - timedelta(days=settings.video_chunk_cache_ttl_days)
+
+        frame_rows = (
+            await db.execute(
+                select(VideoFrameCache).where(
+                    VideoFrameCache.status == "ready",
+                    VideoFrameCache.last_accessed_at.is_not(None),
+                    VideoFrameCache.last_accessed_at < frame_cutoff,
+                )
+            )
+        ).scalars()
+        for row in frame_rows:
+            if row.storage_key:
+                storage.delete_object(row.storage_key, bucket=storage.datasets_bucket)
+            row.status = "pending"
+            row.storage_key = None
+            row.byte_size = None
+
+        chunk_rows = (
+            await db.execute(
+                select(VideoChunk).where(
+                    VideoChunk.status == "ready",
+                    VideoChunk.last_accessed_at.is_not(None),
+                    VideoChunk.last_accessed_at < chunk_cutoff,
+                )
+            )
+        ).scalars()
+        for row in chunk_rows:
+            if row.storage_key:
+                storage.delete_object(row.storage_key, bucket=storage.datasets_bucket)
+            row.status = "pending"
+            row.storage_key = None
+            row.byte_size = None
+
+        await db.commit()
+        await _refresh_video_asset_bytes(db)
+
+    await engine.dispose()
+
+
+async def _refresh_video_asset_bytes(db) -> None:
+    frame_bytes = sum(
+        row.byte_size or 0
+        for row in (
+            await db.execute(
+                select(VideoFrameCache).where(VideoFrameCache.status == "ready")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    chunk_bytes = sum(
+        row.byte_size or 0
+        for row in (
+            await db.execute(select(VideoChunk).where(VideoChunk.status == "ready"))
+        )
+        .scalars()
+        .all()
+    )
+    VIDEO_FRAME_ASSET_BYTES.labels(asset_type="frame").set(frame_bytes)
+    VIDEO_FRAME_ASSET_BYTES.labels(asset_type="chunk").set(chunk_bytes)
+
+
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60, queue="media")
 def generate_thumbnail(self, item_id: str) -> None:
     asyncio.run(_generate_thumbnail(item_id))
@@ -622,3 +1007,20 @@ def backfill_media(self, dataset_id: str) -> None:
 @celery_app.task(bind=True, max_retries=1, queue="media")
 def backfill_tasks(self, project_id: str) -> None:
     asyncio.run(_backfill_tasks(project_id))
+
+
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=30, queue="media")
+def ensure_video_chunks(self, item_id: str, chunk_ids: list[int]) -> None:
+    asyncio.run(_ensure_video_chunks(item_id, chunk_ids))
+
+
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=30, queue="media")
+def extract_video_frames(
+    self, item_id: str, frame_requests: list[dict[str, Any]]
+) -> None:
+    asyncio.run(_extract_video_frames(item_id, frame_requests))
+
+
+@celery_app.task(bind=True, max_retries=1, queue="media")
+def cleanup_video_frame_assets(self) -> None:
+    asyncio.run(_cleanup_video_frame_assets())

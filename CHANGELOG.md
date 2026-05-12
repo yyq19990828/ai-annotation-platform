@@ -37,6 +37,26 @@
 - `VideoStageControls` 扩展为可按显式用户动作记录跳转历史，播放 tick 和自动 frame clock 更新不会污染历史栈。
 - 本版只改前端本地导航状态；后端 frame service、chunk/cache、hover thumbnail 和多速率播放仍保持独立排期。
 
+## [0.9.25] - 2026-05-12
+
+> **Video Frame Service Wave B — chunk / frame cache / manifest v2.** 主线: ① 新增视频 chunk 与单帧缓存表，按 `DatasetItem` 存储后端帧服务资产；② task 路由和 `/videos/{dataset_item_id}` facade 同时暴露 manifest v2、chunks、frames、prefetch；③ Celery media worker 负责 H.264 fragmented MP4 chunk 生成、WebP/JPEG 单帧抽取和 TTL 清理；④ 补齐 Prometheus 指标、环境变量、协议文档和运维 runbook。→ [plan](docs/plans/2026-05-12-v0.9.25-video-frame-service-wave-b.md).
+
+### Added
+
+- **视频 chunk 服务**：新增 `VideoChunk` 表和 `GET /api/v1/tasks/{task_id}/video/chunks` / `/api/v1/videos/{dataset_item_id}/chunks`，缺失 chunk 懒投递 Celery，ready 后返回 signed URL。
+- **单帧缓存服务**：新增 `VideoFrameCache` 表和 `GET .../frames/{frame_index}` / `POST .../frames:prefetch`，抽帧优先使用 B1 `pts_ms`，旧视频按 fps 估算。
+- **Manifest v2**：新增 task 兼容路由和 videos facade，返回 `chunks_manifest_url`、`frame_timetable_url`、`frame_service_base` 和 `chunk_size_frames`。
+- **观测与运维**：新增视频帧服务 Prometheus 指标、缓存 TTL 配置、Celery beat 清理任务和 `docs-site/ops/runbooks/video-frame-service.md`。
+
+### Changed
+
+- `frame-timetable` 接口补 `Cache-Control` / `ETag` 响应头。
+- API/Celery 依赖增加 `numpy`，供内部 `get_frame_array()` 返回缓存帧数组。
+
+### Deferred
+
+- B4 segment 协同、B5 AI tracker 编排、GOP smart-copy、多码率转码、HLS/DASH 留到后续版本。
+
 ## [0.9.24] - 2026-05-12
 
 > **Video Track Timeline Navigation — 单轨时间轴 + 全局密度条 + 关键帧跳转.** 主线: ① 选中 `video_track` 时，播放条显示 keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；② 未选中轨迹时显示全局 keyframe 密度条；③ `Shift+←/→` 在选中轨迹时跳上/下可见 keyframe，未选中轨迹时保留原有 ±10 帧跳转；④ 新增 `videoTrackTimeline` helper，复用 effective outside 语义，避免插值段跨越 outside / legacy absent。→ [plan](docs/plans/2026-05-12-v0.9.24-video-track-timeline-navigation.md).

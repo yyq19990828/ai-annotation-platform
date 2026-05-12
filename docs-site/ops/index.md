@@ -27,5 +27,6 @@
 | `ops/security/` | 威胁模型 / CSP / 鉴权授权 |
 | `ops/runbooks/celery-worker-stuck.md` | Celery Worker 卡死处理手册 |
 | `ops/runbooks/ml-backend-down.md` | ML Backend 不可用处理手册 |
+| `ops/runbooks/video-frame-service.md` | 视频帧服务 chunk / frame cache 排障手册 |
 | `ops/runbooks/postgres-connection-pool-exhausted.md` | PG 连接池耗尽处理手册 |
 | `ops/upgrade-guide.md` | 版本升级指南 |

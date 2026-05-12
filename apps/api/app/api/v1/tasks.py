@@ -2,7 +2,7 @@ import base64
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
@@ -25,6 +25,14 @@ from app.schemas.task import (
     VideoFrameTimetableEntry,
     VideoMetadata,
 )
+from app.schemas.video_frame_service import (
+    VideoChunkOut,
+    VideoChunksResponse,
+    VideoFrameOut,
+    VideoFramePrefetchRequest,
+    VideoFramePrefetchResponse,
+    VideoManifestV2Response,
+)
 from app.schemas.annotation import (
     AnnotationCreate,
     AnnotationListPage,
@@ -45,6 +53,14 @@ from app.services.scheduler import (
     visible_batch_statuses_for,
 )
 from app.services.storage import storage_service
+from app.services.video_frame_service import (
+    build_context_from_task,
+    get_chunk as get_video_chunk_asset,
+    get_frame as get_video_frame_asset,
+    list_chunks as list_video_chunks,
+    manifest_v2 as build_video_manifest_v2,
+    prefetch_frames as prefetch_video_frames,
+)
 from app.services.user_brief import resolve_briefs
 from app.db.models.task_batch import TaskBatch
 
@@ -367,6 +383,7 @@ async def get_video_manifest(
 )
 async def get_video_frame_timetable(
     task_id: uuid.UUID,
+    response: Response,
     from_frame: int | None = Query(default=None, ge=0, alias="from"),
     to_frame: int | None = Query(default=None, ge=0, alias="to"),
     db: AsyncSession = Depends(get_db),
@@ -376,6 +393,7 @@ async def get_video_frame_timetable(
     await _assert_task_visible(db, task, current_user)
     if task.file_type != "video":
         raise HTTPException(status_code=400, detail="Task is not a video task")
+    response.headers["Cache-Control"] = "private, max-age=3600"
 
     _, _, _, _, video_metadata = await _attach_dimensions(db, task)
     metadata = VideoMetadata.model_validate(video_metadata or {})
@@ -409,7 +427,7 @@ async def get_video_frame_timetable(
         await db.execute(stmt.order_by(VideoFrameIndex.frame_index.asc()))
     ).scalars().all()
 
-    return TaskVideoFrameTimetableResponse(
+    body = TaskVideoFrameTimetableResponse(
         task_id=task.id,
         fps=metadata.fps,
         frame_count=metadata.frame_count,
@@ -424,6 +442,95 @@ async def get_video_frame_timetable(
             )
             for row in rows
         ],
+    )
+    response.headers["ETag"] = (
+        f'"video-timetable:{task.dataset_item_id}:{metadata.frame_count}:'
+        f'{len(body.frames)}:{from_frame or 0}:{to_frame or ""}"'
+    )
+    return body
+
+
+@router.get("/{task_id}/video/manifest-v2", response_model=VideoManifestV2Response)
+async def get_video_manifest_v2(
+    task_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return build_video_manifest_v2(ctx, str(request.base_url))
+
+
+@router.get("/{task_id}/video/chunks", response_model=VideoChunksResponse)
+async def get_video_chunks(
+    task_id: uuid.UUID,
+    from_frame: int | None = Query(default=None, ge=0),
+    to_frame: int | None = Query(default=None, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return await list_video_chunks(db, ctx, from_frame, to_frame)
+
+
+@router.get("/{task_id}/video/chunks/{chunk_id}", response_model=VideoChunkOut)
+async def get_video_chunk(
+    task_id: uuid.UUID,
+    chunk_id: int,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    body = await get_video_chunk_asset(db, ctx, chunk_id)
+    if body.status == "pending":
+        response.status_code = 202
+        response.headers["Retry-After"] = str(body.retry_after or 3)
+    return body
+
+
+@router.get("/{task_id}/video/frames/{frame_index}", response_model=VideoFrameOut)
+async def get_video_frame(
+    task_id: uuid.UUID,
+    frame_index: int,
+    response: Response,
+    format: Literal["webp", "jpeg"] = Query(default="webp"),
+    w: int = Query(default=512, ge=1, le=4096),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    body = await get_video_frame_asset(db, ctx, frame_index, w, format)
+    if body.status == "pending":
+        response.status_code = 202
+        response.headers["Retry-After"] = str(body.retry_after or 3)
+    response.headers["Cache-Control"] = "private, max-age=3600"
+    return body
+
+
+@router.post(
+    "/{task_id}/video/frames:prefetch",
+    response_model=VideoFramePrefetchResponse,
+)
+async def prefetch_video_frame_assets(
+    task_id: uuid.UUID,
+    payload: VideoFramePrefetchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return await prefetch_video_frames(
+        db, ctx, payload.frame_indices, payload.width, payload.format
     )
 
 
