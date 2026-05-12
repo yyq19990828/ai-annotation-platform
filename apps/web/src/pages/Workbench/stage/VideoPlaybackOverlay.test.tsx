@@ -60,6 +60,12 @@ function renderOverlay(extra: Partial<ComponentProps<typeof VideoPlaybackOverlay
 }
 
 describe("VideoPlaybackOverlay", () => {
+  it("renders the active jog playback rate when provided", () => {
+    const { getByTestId } = renderOverlay({ isPlaying: true, playbackRateLabel: "-2x" });
+
+    expect(getByTestId("video-playback-rate")).toHaveTextContent("-2x");
+  });
+
   it("reports hover frame changes and renders ready frame previews", () => {
     const onHoverFrameChange = vi.fn();
     const { getByLabelText, getByTestId } = renderOverlay({

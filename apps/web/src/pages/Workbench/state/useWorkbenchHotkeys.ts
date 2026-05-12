@@ -252,6 +252,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           e.preventDefault();
           videoControlsRef?.current?.togglePlayback();
           return;
+        case "videoJogPlayback":
+          e.preventDefault();
+          videoControlsRef?.current?.jogPlayback(action.dir);
+          return;
+        case "videoPausePlayback":
+          e.preventDefault();
+          videoControlsRef?.current?.pausePlayback();
+          return;
         case "videoSeek":
           e.preventDefault();
           videoControlsRef?.current?.seekByFrames(action.delta);

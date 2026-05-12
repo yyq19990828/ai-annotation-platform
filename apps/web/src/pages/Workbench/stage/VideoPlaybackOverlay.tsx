@@ -15,6 +15,7 @@ interface VideoPlaybackOverlayProps {
   maxFrame: number;
   timebase: FrameTimebase;
   isPlaying: boolean;
+  playbackRateLabel?: string;
   annotatedFrames: number[];
   timelineMarkers?: VideoTimelineMarker[];
   selectedTrackTimeline?: VideoTrackTimeline | null;
@@ -47,6 +48,7 @@ export function VideoPlaybackOverlay({
   maxFrame,
   timebase,
   isPlaying,
+  playbackRateLabel,
   annotatedFrames,
   timelineMarkers = [],
   selectedTrackTimeline = null,
@@ -427,6 +429,7 @@ export function VideoPlaybackOverlay({
       <div className="mono" style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12, color: "rgba(255,255,255,0.82)", whiteSpace: "nowrap" }}>
         <span>F {frameIndex} / {maxFrame}</span>
         <span>{formatTime(frameToTime(frameIndex, timebase))}</span>
+        {playbackRateLabel && <span data-testid="video-playback-rate">{playbackRateLabel}</span>}
         {loopRegion && (
           <>
             <span data-testid="video-loop-region-label">Loop {loopRegion.startFrame}-{loopRegion.endFrame}</span>

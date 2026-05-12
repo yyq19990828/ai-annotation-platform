@@ -194,6 +194,72 @@ describe("VideoStage", () => {
     await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("3"));
   });
 
+  it("supports J/K/L style jog playback through ref controls", async () => {
+    const ref = createRef<VideoStageControls>();
+    const { container, getByTestId, queryByTestId } = render(
+      <VideoStage
+        ref={ref}
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const video = container.querySelector("video")!;
+
+    await act(async () => {
+      ref.current?.jogPlayback(1);
+    });
+    await waitFor(() => expect(playMock).toHaveBeenCalledTimes(1));
+    expect(video.playbackRate).toBe(1);
+    expect(getByTestId("video-playback-rate")).toHaveTextContent("1x");
+
+    await act(async () => {
+      ref.current?.jogPlayback(1);
+    });
+    await waitFor(() => expect(video.playbackRate).toBe(2));
+    expect(getByTestId("video-playback-rate")).toHaveTextContent("2x");
+
+    await act(async () => {
+      ref.current?.pausePlayback();
+    });
+    expect(pauseMock).toHaveBeenCalled();
+    expect(video.playbackRate).toBe(1);
+    expect(queryByTestId("video-playback-rate")).not.toBeInTheDocument();
+  });
+
+  it("starts reverse jog playback without using negative native playbackRate", async () => {
+    const ref = createRef<VideoStageControls>();
+    const { container, getByTestId } = render(
+      <VideoStage
+        ref={ref}
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        frameIndex={5}
+        onFrameIndexChange={() => {}}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const video = container.querySelector("video")!;
+
+    await act(async () => {
+      ref.current?.jogPlayback(-1);
+    });
+
+    expect(pauseMock).toHaveBeenCalled();
+    expect(video.playbackRate).toBe(1);
+    expect(getByTestId("video-playback-rate")).toHaveTextContent("-1x");
+  });
+
   it("seeks to the next visible keyframe through ref controls", async () => {
     const ref = createRef<VideoStageControls>();
     const annotations = [

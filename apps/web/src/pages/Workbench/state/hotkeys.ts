@@ -52,6 +52,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["双击空白"], desc: "适应视口", group: "view" },
 
   { keys: ["Space"], desc: "视频播放 / 暂停", group: "video", actionType: "videoTogglePlayback" },
+  { keys: ["J / K / L"], desc: "视频反向 / 暂停 / 正向多速率播放", group: "video", actionType: "videoJogPlayback" },
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
   { keys: ["← / →"], desc: "视频逐帧后退 / 前进", group: "video", actionType: "videoSeek" },
@@ -122,6 +123,8 @@ export type HotkeyAction =
   | { type: "rejectAi" }
   | { type: "samPolarity"; polarity: "positive" | "negative" }
   | { type: "videoTogglePlayback" }
+  | { type: "videoJogPlayback"; dir: -1 | 1 }
+  | { type: "videoPausePlayback" }
   | { type: "videoSeek"; delta: number }
   | { type: "videoSeekKeyframe"; dir: -1 | 1 }
   | { type: "videoToggleBookmark" }
@@ -195,6 +198,9 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
       if (e.key === "l" || e.key === "L") return { type: "videoClearLoopRegion" };
     }
     if (e.key === " ") return { type: "videoTogglePlayback" };
+    if (e.key === "j" || e.key === "J") return { type: "videoJogPlayback", dir: -1 };
+    if (e.key === "k" || e.key === "K") return { type: "videoPausePlayback" };
+    if (e.key === "l" || e.key === "L") return { type: "videoJogPlayback", dir: 1 };
     if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };
     if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };
     if (e.key === "ArrowRight") {

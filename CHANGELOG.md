@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.29] - 2026-05-12
+
+> **Video J/K/L Playback + Atomic Seek — 多速率播放与异步帧跳转.** 主线: ① `useFrameClock` 暴露 `seekToAsync`，连续 seek 时旧回调会被标记为 stale；② `VideoStage` 统一 timeline scrub、逐帧、关键帧跳转、bookmark 和跳转历史到同一 `seekFrameAsync` 原语；③ 视频模式新增 `J / K / L` 播放控制，支持 `0.25x / 0.5x / 1x / 2x / 4x`，反向播放不使用浏览器负 `playbackRate`，而是按帧步进；④ 播放 overlay 显示当前 jog 速度。→ [plan](docs/plans/2026-05-12-v0.9.29-video-jkl-playback-atomic-seek.md).
+
+### Added
+
+- **J/K/L 视频播放控制**：`L` 正向播放 / 加速，`K` 暂停，`J` 反向播放 / 减速；视频模式下接管这些快捷键，图片模式原有 `J / K` 框选择行为不变。
+- **异步 seek 原语**：`useFrameClock.seekToAsync` 返回帧就绪结果，旧 seek 被新 seek 覆盖时返回 stale，避免快速 scrub / 跳转时旧回调覆盖新帧。
+- **播放速度状态显示**：`VideoPlaybackOverlay` 在 jog 播放时显示 `1x / 2x / -1x` 等速度标签。
+
+### Changed
+
+- 时间轴拖动、逐帧、关键帧跳转、bookmark marker、跳转历史和 loop region 入口统一走 `VideoStage.seekFrameAsync`。
+- 正向多速率播放复用浏览器 `<video>` 和 `playbackRate`；反向播放按帧调用 `seekFrameAsync`，不依赖不稳定的 `playbackRate = -1`。
+
 ## [0.9.27] - 2026-05-12
 
 > **Video Timeline Hover Preview — 时间轴缩略图预览 + 单帧缓存预取.** 主线: ① 前端新增 task video frame API helper 与 `useVideoFramePreview`，消费 v0.9.25 后端 `frames/{frame_index}` / `frames:prefetch`; ② `VideoPlaybackOverlay` hover 时间轴时显示当前 frame、时间和 WebP/JPEG 缩略图，pending/error 状态降级为轻量文案；③ `VideoStage` 对选中 track keyframes、bookmarks、loop region 起止帧主动预取，提升回访体验；④ 缓存和请求去重保持在前端内存，不引入 ImageBitmap、chapter 或 WebCodecs。→ [plan](docs/plans/2026-05-12-v0.9.27-video-timeline-hover-preview.md).

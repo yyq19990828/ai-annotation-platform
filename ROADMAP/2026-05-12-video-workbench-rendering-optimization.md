@@ -408,7 +408,7 @@
 
 ## 7. 优先级与建议顺序
 
-> 当前状态（2026-05-12 晚）：R1 / R2 / R3 / R4 / R19 轻量基础已经落地；后端 B1 / B2 / B3 / B6 / B7 第一版已落地。v0.9.27 的 plan 已确定；之后版本会受并行开发影响，本文只给候选顺序，不预占版本号。
+> 当前状态（2026-05-12 晚）：R1 / R2 / R3 / R4 / R19 轻量基础已经落地；后端 B1 / B2 / B3 / B6 / B7 第一版已落地。v0.9.27 与 v0.9.29 已落地；之后版本会受并行开发影响，本文只给候选顺序，不预占版本号。
 
 ```
 Wave 0 · 功能尾巴（接 M5.0 的最后三件，仍 open）
@@ -425,7 +425,7 @@ Wave 1 · 基础夯实（已完成第一版）
 
 Wave 2 · 当前近期体感收益
   R17.1 Hover 缩略图 + R5.1 keyframe/bookmark/loop 预取 (v0.9.27 已完成第一版)
-    └→ R18 多速率播放 (J/K/L) + R6.1 seekFrameAsync (候选，3-5 天)
+    └→ R18 多速率播放 (J/K/L) + R6.1 seekFrameAsync (v0.9.29 已完成第一版)
          └→ R7.2/R7.3 视频基准与 BugReport 诊断附带 (候选，3-5 天)
 
 Wave 3 · 工程加固（按数据触发）
@@ -457,7 +457,7 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 
 - **Wave 0** 是功能闭环的最后三件，与渲染优化正交可并行；V5 / V6 与 R15 / B3 共享底层 API，落地时合并设计。
 - **Wave 1** 已完成第一版，后续只补 R7 观测和回归。
-- **Wave 2** 是当前最应该继续开发的切片：v0.9.27 先消费现有 frame cache；后续播放状态模型、观测包等只作为候选顺序，不绑定具体版本。
+- **Wave 2** 是当前最应该继续开发的切片：v0.9.27 已消费现有 frame cache，v0.9.29 已落地 J/K/L + atomic seek；后续观测包等只作为候选顺序，不绑定具体版本。
 - **Wave 3** 按 Wave 1 的 trace 数据决定是否上 chunk 解码。
 - **Wave 4 / Wave 5** 是能力扩展，必须先与 `2026-05-12-video-backend-frame-service.md` 后端 epic 对齐协议。
 - **Wave 6 / Wave 7** 按客户场景与长期规划触发，不阻塞前面波次。
@@ -523,7 +523,7 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 
 ## 11. 近期开发切片
 
-> 目的：把本 epic 从“大地图”收敛成可交付切片。v0.9.27 已有确定 plan；其余条目是候选顺序，不预占版本号。每个切片完成后再更新本文件状态、`CHANGELOG.md`、概念文档和对应 `docs/plans/` outcome。
+> 目的：把本 epic 从“大地图”收敛成可交付切片。v0.9.27 与 v0.9.29 已落地；其余条目是候选顺序，不预占版本号。每个切片完成后再更新本文件状态、`CHANGELOG.md`、概念文档和对应 `docs/plans/` outcome。
 
 ### v0.9.27 · Video Timeline Hover Preview（已完成第一版）
 
@@ -541,18 +541,20 @@ Wave 7 · 质量与评估（与长期 L15 联动）
   - 单测覆盖 hover debounce、pending retry、prefetch 去重。
   - 手动验证未命中 frame cache 时 API 返回 202 不会让 overlay 闪烁或报错。
 
-### 候选 · Video J/K/L Playback + Atomic Seek
+### v0.9.29 · Video J/K/L Playback + Atomic Seek（已完成第一版）
 
 - **范围来源**：R18 + R6.1。
-- **核心交付**：
-  - `seekFrameAsync(frame)` 统一串起 `FrameClock.seekTo`、`setFrameIndex`、overlay 更新和 history 记录。
-  - `J/K/L` 多速率播放：`K` 暂停，`L` 正向 0.25x/0.5x/1x/2x/4x，`J` 反向同档位。
-  - loop region、bookmark jump、keyframe jump 都走同一 seek 原语，避免并发 seek 旧结果覆盖新结果。
+- **核心交付（已落地）**：
+  - `useFrameClock.seekToAsync(frame)` 返回 frame ready / stale 结果；连续 seek 时旧回调不再覆盖最新目标。
+  - `VideoStage.seekFrameAsync(frame)` 统一承接时间轴 scrub、逐帧、关键帧跳转、bookmark、jump history 和 loop region 起跳。
+  - `J/K/L` 多速率播放：`K` 暂停，`L` 正向播放 / 加速，`J` 反向播放 / 减速，支持 0.25x/0.5x/1x/2x/4x 档位。
+  - 反向播放按帧步进调用 `seekFrameAsync`，不使用 `video.playbackRate = -1`；overlay 显示当前 jog 速度。
 - **不做**：
-  - 不使用 `video.playbackRate = -1`；反向播放只走 frame stepping。
+  - 不引入 WebCodecs / chunk decode。
+  - 不做 ImageBitmap 背景缓存。
   - 不把速度状态持久化到后端。
 - **验证**：
-  - 单测覆盖连续 seek 只采纳最后一次、反向播放越过 0/loop start 自动停或回环。
+  - 单测覆盖 J/K/L hotkey dispatch、正向速率、暂停、反向不使用负 `playbackRate`、overlay 速度显示。
 
 ### 候选 · Video Observability Pack
 

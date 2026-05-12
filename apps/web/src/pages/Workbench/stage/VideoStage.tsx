@@ -57,6 +57,22 @@ import type {
 } from "./videoStageTypes";
 
 const EMPTY_TRACK_ID_SET = new Set<string>();
+const VIDEO_PLAYBACK_RATES = [0.25, 0.5, 1, 2, 4] as const;
+
+type VideoPlaybackRate = typeof VIDEO_PLAYBACK_RATES[number];
+type VideoJogPlayback = { direction: -1 | 0 | 1; rate: VideoPlaybackRate };
+
+const PAUSED_JOG_PLAYBACK: VideoJogPlayback = { direction: 0, rate: 1 };
+
+function nextHigherPlaybackRate(rate: VideoPlaybackRate): VideoPlaybackRate {
+  const idx = VIDEO_PLAYBACK_RATES.indexOf(rate);
+  return VIDEO_PLAYBACK_RATES[Math.min(VIDEO_PLAYBACK_RATES.length - 1, idx + 1)];
+}
+
+function nextLowerPlaybackRate(rate: VideoPlaybackRate): VideoPlaybackRate | null {
+  const idx = VIDEO_PLAYBACK_RATES.indexOf(rate);
+  return idx <= 0 ? null : VIDEO_PLAYBACK_RATES[idx - 1];
+}
 
 interface VideoStageProps {
   manifest: TaskVideoManifestResponse | undefined;
@@ -91,6 +107,8 @@ interface VideoStageProps {
 
 export interface VideoStageControls {
   togglePlayback: () => void;
+  jogPlayback: (dir: -1 | 1) => void;
+  pausePlayback: () => void;
   seekByFrames: (delta: number, options?: { recordHistory?: boolean }) => void;
   seekToKeyframe: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
   seekToFrame: (frameIndex: number, options?: { recordHistory?: boolean }) => void;
@@ -127,6 +145,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const overlayRef = useRef<SVGSVGElement>(null);
   const [uncontrolledFrameIndex, setUncontrolledFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [jogPlayback, setJogPlayback] = useState<VideoJogPlayback>(PAUSED_JOG_PLAYBACK);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [drag, setDrag] = useState<VideoDragState>(null);
   const [playbackOverlayVisible, setPlaybackOverlayVisible] = useState(true);
@@ -138,12 +157,18 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const lastResetTaskIdRef = useRef<string | null>(null);
   const overlayHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const frameIndexRef = useRef(0);
+  const jogPlaybackRef = useRef<VideoJogPlayback>(PAUSED_JOG_PLAYBACK);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
 
   const frameIndex = controlledFrameIndex ?? uncontrolledFrameIndex;
+  frameIndexRef.current = frameIndex;
+  jogPlaybackRef.current = jogPlayback;
+  const isJogPlaying = jogPlayback.direction !== 0;
+  const isPlaybackActive = isPlaying || isJogPlaying;
   const setFrameIndex = useCallback((nextFrame: number) => {
     if (controlledFrameIndex === undefined) setUncontrolledFrameIndex(nextFrame);
     onFrameIndexChange?.(nextFrame);
@@ -301,16 +326,17 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const handleFrameClockChange = useCallback((nextFrame: number) => {
     if (!stageModeGuard.canSetupFrame) {
       videoRef.current?.pause();
+      setJogPlayback(PAUSED_JOG_PLAYBACK);
       return;
     }
-    if (isPlaying && loopRegion && nextFrame > loopRegion.endFrame) {
+    if (isPlaybackActive && loopRegion && nextFrame > loopRegion.endFrame) {
       setFrameIndex(loopRegion.startFrame);
       const video = videoRef.current;
       if (video) video.currentTime = frameToTime(loopRegion.startFrame, timebase);
       return;
     }
     setFrameIndex(nextFrame);
-  }, [isPlaying, loopRegion, setFrameIndex, stageModeGuard.canSetupFrame, timebase]);
+  }, [isPlaybackActive, loopRegion, setFrameIndex, stageModeGuard.canSetupFrame, timebase]);
 
   const frameClock = useFrameClock({
     videoRef,
@@ -320,17 +346,32 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     onFrameChange: handleFrameClockChange,
   });
 
-  const seekFrame = useCallback(
-    (nextFrame: number, options?: { recordHistory?: boolean }) => {
+  const pausePlayback = useCallback(() => {
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+      video.playbackRate = 1;
+    }
+    setIsPlaying(false);
+    setJogPlayback(PAUSED_JOG_PLAYBACK);
+  }, []);
+
+  const seekFrameAsync = useCallback(
+    async (nextFrame: number, options?: { recordHistory?: boolean }) => {
       if (!stageModeGuard.canSetupFrame) return;
       const targetFrame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
       if (options?.recordHistory) {
         setJumpHistory((history) => pushVideoJumpHistory(history, targetFrame));
       }
-      frameClock.seekTo(targetFrame);
+      return frameClock.seekToAsync(targetFrame);
     },
     [frameClock, maxFrame, stageModeGuard.canSetupFrame],
   );
+  const seekFrameAsyncRef = useRef(seekFrameAsync);
+
+  useEffect(() => {
+    seekFrameAsyncRef.current = seekFrameAsync;
+  }, [seekFrameAsync]);
 
   const showPlaybackOverlay = useCallback(() => {
     if (overlayHideTimerRef.current) clearTimeout(overlayHideTimerRef.current);
@@ -353,15 +394,16 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     flashPlaybackAction("play");
     const video = videoRef.current;
     if (!video) return;
-    if (!video.paused || isPlaying) {
-      video.pause();
-      setIsPlaying(false);
+    if (!video.paused || isPlaybackActive) {
+      pausePlayback();
       return;
     }
     if (loopRegion && (frameIndex < loopRegion.startFrame || frameIndex > loopRegion.endFrame)) {
-      seekFrame(loopRegion.startFrame, { recordHistory: true });
+      void seekFrameAsync(loopRegion.startFrame, { recordHistory: true });
     }
     setPlaybackError(null);
+    setJogPlayback(PAUSED_JOG_PLAYBACK);
+    video.playbackRate = 1;
     setIsPlaying(true);
     const playResult = video.play();
     if (playResult && typeof playResult.catch === "function") {
@@ -370,16 +412,36 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         setPlaybackError(err instanceof Error ? err.message : "视频无法播放");
       });
     }
-  }, [flashPlaybackAction, frameIndex, isPlaying, loopRegion, seekFrame, showPlaybackOverlay]);
+  }, [flashPlaybackAction, frameIndex, isPlaybackActive, loopRegion, pausePlayback, seekFrameAsync, showPlaybackOverlay]);
+
+  const jogPlaybackBy = useCallback((dir: -1 | 1) => {
+    showPlaybackOverlay();
+    flashPlaybackAction(dir < 0 ? "prev" : "next");
+    setPlaybackError(null);
+    const current = jogPlaybackRef.current;
+    const next = current.direction === 0
+      ? { direction: dir, rate: 1 as VideoPlaybackRate }
+      : current.direction === dir
+        ? { direction: dir, rate: nextHigherPlaybackRate(current.rate) }
+        : (() => {
+          const lower = nextLowerPlaybackRate(current.rate);
+          return lower ? { ...current, rate: lower } : PAUSED_JOG_PLAYBACK;
+        })();
+    if (next.direction === 0) {
+      pausePlayback();
+      return;
+    }
+    setJogPlayback(next);
+  }, [flashPlaybackAction, pausePlayback, showPlaybackOverlay]);
 
   const seekByFrames = useCallback(
     (delta: number, options?: { recordHistory?: boolean }) => {
       showPlaybackOverlay();
       flashPlaybackAction(delta < 0 ? "prev" : "next");
-      videoRef.current?.pause();
-      seekFrame(frameIndex + delta, { recordHistory: options?.recordHistory ?? true });
+      pausePlayback();
+      void seekFrameAsync(frameIndex + delta, { recordHistory: options?.recordHistory ?? true });
     },
-    [flashPlaybackAction, frameIndex, seekFrame, showPlaybackOverlay],
+    [flashPlaybackAction, frameIndex, pausePlayback, seekFrameAsync, showPlaybackOverlay],
   );
 
   const seekToKeyframe = useCallback(
@@ -389,19 +451,19 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       if (nextFrame === null) return;
       showPlaybackOverlay();
       flashPlaybackAction(dir < 0 ? "prev" : "next");
-      videoRef.current?.pause();
-      seekFrame(nextFrame, { recordHistory: options?.recordHistory ?? true });
+      pausePlayback();
+      void seekFrameAsync(nextFrame, { recordHistory: options?.recordHistory ?? true });
     },
-    [flashPlaybackAction, frameIndex, seekFrame, selectedTrack, showPlaybackOverlay],
+    [flashPlaybackAction, frameIndex, pausePlayback, seekFrameAsync, selectedTrack, showPlaybackOverlay],
   );
 
   const seekToFrame = useCallback(
     (nextFrame: number, options?: { recordHistory?: boolean }) => {
       showPlaybackOverlay();
-      videoRef.current?.pause();
-      seekFrame(nextFrame, { recordHistory: options?.recordHistory ?? true });
+      pausePlayback();
+      void seekFrameAsync(nextFrame, { recordHistory: options?.recordHistory ?? true });
     },
-    [seekFrame, showPlaybackOverlay],
+    [pausePlayback, seekFrameAsync, showPlaybackOverlay],
   );
 
   const toggleBookmark = useCallback(() => {
@@ -414,9 +476,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     setJumpHistory(result.history);
     if (result.frameIndex === null) return;
     showPlaybackOverlay();
-    videoRef.current?.pause();
-    seekFrame(result.frameIndex, { recordHistory: false });
-  }, [jumpHistory, seekFrame, showPlaybackOverlay]);
+    pausePlayback();
+    void seekFrameAsync(result.frameIndex, { recordHistory: false });
+  }, [jumpHistory, pausePlayback, seekFrameAsync, showPlaybackOverlay]);
 
   const clearLoopRegion = useCallback(() => {
     showPlaybackOverlay();
@@ -428,10 +490,82 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     setLoopRegion(normalizeLoopRegion(region.startFrame, region.endFrame, maxFrame));
   }, [maxFrame, showPlaybackOverlay]);
 
+  useEffect(() => {
+    if (jogPlayback.direction !== 1) return;
+    const video = videoRef.current;
+    if (!video) return;
+    if (loopRegion && (frameIndexRef.current < loopRegion.startFrame || frameIndexRef.current > loopRegion.endFrame)) {
+      void seekFrameAsyncRef.current(loopRegion.startFrame, { recordHistory: true });
+    }
+    video.playbackRate = jogPlayback.rate;
+    setIsPlaying(true);
+    const playResult = video.play();
+    if (playResult && typeof playResult.catch === "function") {
+      void playResult.catch((err: unknown) => {
+        setIsPlaying(false);
+        setJogPlayback(PAUSED_JOG_PLAYBACK);
+        setPlaybackError(err instanceof Error ? err.message : "视频无法播放");
+      });
+    }
+  }, [jogPlayback.direction, jogPlayback.rate, loopRegion]);
+
+  useEffect(() => {
+    if (jogPlayback.direction !== -1) return;
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+      video.playbackRate = 1;
+    }
+    setIsPlaying(false);
+    let raf = 0;
+    let last = performance.now();
+    let accumulator = 0;
+    let seeking = false;
+    let cancelled = false;
+    const schedule = typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
+    const cancel = typeof window.cancelAnimationFrame === "function"
+      ? window.cancelAnimationFrame.bind(window)
+      : window.clearTimeout.bind(window);
+
+    const tick = (now: number) => {
+      if (cancelled) return;
+      const elapsedMs = Math.min(250, Math.max(0, now - last));
+      last = now;
+      accumulator += (elapsedMs / 1000) * fps * jogPlayback.rate;
+      const steps = Math.floor(accumulator);
+      if (steps > 0 && !seeking) {
+        accumulator -= steps;
+        const current = frameIndexRef.current;
+        let nextFrame = current - steps;
+        if (loopRegion) {
+          if (nextFrame < loopRegion.startFrame) nextFrame = loopRegion.endFrame;
+        } else if (nextFrame < 0) {
+          nextFrame = 0;
+          setJogPlayback(PAUSED_JOG_PLAYBACK);
+        }
+        seeking = true;
+        void Promise.resolve(seekFrameAsyncRef.current(nextFrame, { recordHistory: false })).finally(() => {
+          seeking = false;
+        });
+      }
+      raf = schedule(tick);
+    };
+
+    raf = schedule(tick);
+    return () => {
+      cancelled = true;
+      cancel(raf);
+    };
+  }, [fps, jogPlayback.direction, jogPlayback.rate, loopRegion]);
+
   useImperativeHandle(
     ref,
     () => ({
       togglePlayback,
+      jogPlayback: jogPlaybackBy,
+      pausePlayback,
       seekByFrames,
       seekToKeyframe,
       seekToFrame,
@@ -439,7 +573,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       jumpHistory: jumpHistoryBy,
       clearLoopRegion,
     }),
-    [clearLoopRegion, jumpHistoryBy, seekByFrames, seekToFrame, seekToKeyframe, toggleBookmark, togglePlayback],
+    [clearLoopRegion, jogPlaybackBy, jumpHistoryBy, pausePlayback, seekByFrames, seekToFrame, seekToKeyframe, toggleBookmark, togglePlayback],
   );
 
   useEffect(() => {
@@ -448,6 +582,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     lastResetTaskIdRef.current = taskId;
     setFrameIndex(0);
     setIsPlaying(false);
+    setJogPlayback(PAUSED_JOG_PLAYBACK);
     setPlaybackError(null);
     setDrag(null);
     setPlaybackOverlayVisible(true);
@@ -521,9 +656,13 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     if (!video) return;
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
-    const onEnded = () => setIsPlaying(false);
+    const onEnded = () => {
+      setIsPlaying(false);
+      setJogPlayback(PAUSED_JOG_PLAYBACK);
+    };
     const onError = () => {
       setIsPlaying(false);
+      setJogPlayback(PAUSED_JOG_PLAYBACK);
       setPlaybackError(video.error?.message || "当前浏览器无法播放该视频源");
     };
     video.addEventListener("play", onPlay);
@@ -565,26 +704,26 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
 
   const beginDraw = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
-    if (!stageModeGuard.canBeginDraw || readOnly || isPlaying || (videoTool === "track" && selectedTrackLocked)) return;
+    if (!stageModeGuard.canBeginDraw || readOnly || isPlaybackActive || (videoTool === "track" && selectedTrackLocked)) return;
     const pt = pointFromEvent(evt);
     if (!pt) return;
     if (videoTool !== "track" || !selectedTrack) onSelect(null);
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     setPlaybackOverlayVisible(false);
     setDrag({ kind: "draw", start: pt, current: pt });
-  }, [isPlaying, onSelect, pointFromEvent, readOnly, selectedTrack, selectedTrackLocked, stageModeGuard.canBeginDraw, videoTool]);
+  }, [isPlaybackActive, onSelect, pointFromEvent, readOnly, selectedTrack, selectedTrackLocked, stageModeGuard.canBeginDraw, videoTool]);
 
   const beginMove = useCallback((evt: ReactPointerEvent<SVGElement>, entry: VideoFrameEntry | VideoTrackGhost) => {
     const trackId = isVideoTrack(entry.ann) ? entry.ann.geometry.track_id : null;
     evt.stopPropagation();
     onSelect(entry.ann.id);
-    if (!stageModeGuard.canBeginDrag || readOnly || isPlaying || (trackId && lockedTrackIds.has(trackId))) return;
+    if (!stageModeGuard.canBeginDrag || readOnly || isPlaybackActive || (trackId && lockedTrackIds.has(trackId))) return;
     const pt = pointFromEvent(evt as unknown as ReactPointerEvent<SVGSVGElement>);
     if (!pt) return;
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     setPlaybackOverlayVisible(false);
     setDrag({ kind: "move", id: entry.ann.id, start: pt, origin: entry.geom, current: entry.geom });
-  }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly, stageModeGuard.canBeginDrag]);
+  }, [isPlaybackActive, lockedTrackIds, onSelect, pointFromEvent, readOnly, stageModeGuard.canBeginDrag]);
 
   const beginResize = useCallback((
     dir: VideoResizeDirection,
@@ -594,13 +733,13 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     const trackId = isVideoTrack(entry.ann) ? entry.ann.geometry.track_id : null;
     evt.stopPropagation();
     onSelect(entry.ann.id);
-    if (!stageModeGuard.canBeginResize || readOnly || isPlaying || (trackId && lockedTrackIds.has(trackId))) return;
+    if (!stageModeGuard.canBeginResize || readOnly || isPlaybackActive || (trackId && lockedTrackIds.has(trackId))) return;
     const pt = pointFromEvent(evt as unknown as ReactPointerEvent<SVGSVGElement>);
     if (!pt) return;
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     setPlaybackOverlayVisible(false);
     setDrag({ kind: "resize", id: entry.ann.id, dir, start: pt, origin: entry.geom, current: entry.geom });
-  }, [isPlaying, lockedTrackIds, onSelect, pointFromEvent, readOnly, stageModeGuard.canBeginResize]);
+  }, [isPlaybackActive, lockedTrackIds, onSelect, pointFromEvent, readOnly, stageModeGuard.canBeginResize]);
 
   const onPointerMove = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     updateCursor(evt);
@@ -725,7 +864,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               activeClass={activeClass}
               selectedTrackClassName={selectedTrack?.class_name}
               readOnly={readOnly}
-              isPlaying={isPlaying}
+              isPlaying={isPlaybackActive}
               videoTool={videoTool}
               selectedTrackLocked={selectedTrackLocked}
               onBeginDraw={beginDraw}
@@ -737,7 +876,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               onPointerLeave={onOverlayPointerLeave}
             />
           </VideoStageSurface>
-          {isPlaying && (
+          {isPlaybackActive && (
             <div
               style={{
                 position: "absolute",
@@ -751,7 +890,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
                 fontSize: 12,
               }}
             >
-              播放中 · 暂停后编辑
+              {jogPlayback.direction < 0 ? `反向 ${jogPlayback.rate}x · 暂停后编辑` : "播放中 · 暂停后编辑"}
             </div>
           )}
           {playbackError && (
@@ -788,7 +927,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             frameIndex={frameIndex}
             maxFrame={maxFrame}
             timebase={timebase}
-            isPlaying={isPlaying}
+            isPlaying={isPlaybackActive}
+            playbackRateLabel={isJogPlaying ? `${jogPlayback.direction < 0 ? "-" : ""}${jogPlayback.rate}x` : undefined}
             annotatedFrames={[...annotatedFrames].sort((a, b) => a - b)}
             timelineMarkers={timelineMarkers}
             selectedTrackTimeline={selectedTrackTimeline}
@@ -802,8 +942,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             highlightAction={highlightAction}
             onSeek={(frame) => {
               showPlaybackOverlay();
-              videoRef.current?.pause();
-              seekFrame(frame, { recordHistory: true });
+              pausePlayback();
+              void seekFrameAsync(frame, { recordHistory: true });
             }}
             onSeekByFrames={seekByFrames}
             onTogglePlay={togglePlayback}

@@ -17,6 +17,12 @@ export interface FrameClockDiagnostics {
   lastFrameReadySource: "rvfc" | "seeked" | "timeupdate" | "raf" | "timeout" | null;
 }
 
+export interface FrameSeekResult {
+  accepted: boolean;
+  frameIndex: number;
+  source: FrameClockDiagnostics["lastFrameReadySource"] | "stale";
+}
+
 interface UseFrameClockOptions {
   videoRef: RefObject<HTMLVideoElement | null>;
   frameIndex: number;
@@ -50,6 +56,7 @@ export function useFrameClock({
   const seekStartedAtRef = useRef<number | null>(null);
   const diagnosticsRef = useRef(diagnostics);
   const targetFrameRef = useRef<number | null>(null);
+  const seekResolversRef = useRef(new Map<number, (result: FrameSeekResult) => void>());
 
   diagnosticsRef.current = diagnostics;
 
@@ -64,6 +71,21 @@ export function useFrameClock({
     });
   }, []);
 
+  const resolveSeek = useCallback((seekId: number, result: FrameSeekResult) => {
+    const resolver = seekResolversRef.current.get(seekId);
+    if (!resolver) return;
+    seekResolversRef.current.delete(seekId);
+    resolver(result);
+  }, []);
+
+  const resolveStaleSeeks = useCallback((latestSeekId: number) => {
+    for (const [seekId, resolver] of seekResolversRef.current) {
+      if (seekId >= latestSeekId) continue;
+      seekResolversRef.current.delete(seekId);
+      resolver({ accepted: false, frameIndex: targetFrameRef.current ?? frameIndex, source: "stale" });
+    }
+  }, [frameIndex]);
+
   const recordFrameReady = useCallback((source: FrameClockDiagnostics["lastFrameReadySource"], frame: number) => {
     const seekTarget = targetFrameRef.current;
     const seekStartedAt = seekStartedAtRef.current;
@@ -71,6 +93,7 @@ export function useFrameClock({
       targetFrameRef.current = null;
       seekStartedAtRef.current = null;
       setIsSeeking(false);
+      resolveSeek(latestSeekIdRef.current, { accepted: true, frameIndex: frame, source });
       setDiagnosticsPatch({
         lastFrameReadySource: source,
         lastSeekMs: seekStartedAt === null ? null : Math.round(performance.now() - seekStartedAt),
@@ -78,7 +101,7 @@ export function useFrameClock({
       return;
     }
     setDiagnosticsPatch({ lastFrameReadySource: source });
-  }, [setDiagnosticsPatch]);
+  }, [resolveSeek, setDiagnosticsPatch]);
 
   const updateFrameFromTime = useCallback((mediaTime: number, source: FrameClockDiagnostics["lastFrameReadySource"]) => {
     const nextFrame = timeToFrame(mediaTime, timebase);
@@ -91,6 +114,7 @@ export function useFrameClock({
     const frame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
     const seekId = latestSeekIdRef.current + 1;
     latestSeekIdRef.current = seekId;
+    resolveStaleSeeks(seekId);
     targetFrameRef.current = frame;
     seekStartedAtRef.current = performance.now();
     setIsSeeking(true);
@@ -101,21 +125,23 @@ export function useFrameClock({
     });
     onFrameChange(frame);
 
-    if (!video) return;
-    video.currentTime = frameToTime(frame, timebase);
+    if (video) {
+      video.currentTime = frameToTime(frame, timebase);
 
-    if (hasRequestVideoFrameCallback(video)) {
-      const frameVideo = video as VideoWithFrameCallback;
-      frameVideo.requestVideoFrameCallback?.((_now, metadata) => {
-        if (seekId !== latestSeekIdRef.current) {
-          const cur = diagnosticsRef.current;
-          const next = { ...cur, staleCallbacks: cur.staleCallbacks + 1 };
-          diagnosticsRef.current = next;
-          setDiagnostics(next);
-          return;
-        }
-        updateFrameFromTime(metadata.mediaTime, "rvfc");
-      });
+      if (hasRequestVideoFrameCallback(video)) {
+        const frameVideo = video as VideoWithFrameCallback;
+        frameVideo.requestVideoFrameCallback?.((_now, metadata) => {
+          if (seekId !== latestSeekIdRef.current) {
+            const cur = diagnosticsRef.current;
+            const next = { ...cur, staleCallbacks: cur.staleCallbacks + 1 };
+            diagnosticsRef.current = next;
+            setDiagnostics(next);
+            resolveSeek(seekId, { accepted: false, frameIndex: frame, source: "stale" });
+            return;
+          }
+          updateFrameFromTime(metadata.mediaTime, "rvfc");
+        });
+      }
     }
 
     window.setTimeout(() => {
@@ -123,12 +149,22 @@ export function useFrameClock({
       targetFrameRef.current = null;
       seekStartedAtRef.current = null;
       setIsSeeking(false);
+      resolveSeek(seekId, { accepted: true, frameIndex: frame, source: "timeout" });
       setDiagnosticsPatch({
         lastFrameReadySource: "timeout",
         lastSeekMs: null,
       });
     }, SEEK_TIMEOUT_MS);
-  }, [maxFrame, onFrameChange, setDiagnosticsPatch, timebase, updateFrameFromTime, videoRef]);
+    return seekId;
+  }, [maxFrame, onFrameChange, resolveSeek, resolveStaleSeeks, setDiagnosticsPatch, timebase, updateFrameFromTime, videoRef]);
+
+  const seekToAsync = useCallback((nextFrame: number) => {
+    const frame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
+    const seekId = seekTo(frame);
+    return new Promise<FrameSeekResult>((resolve) => {
+      seekResolversRef.current.set(seekId, resolve);
+    });
+  }, [maxFrame, seekTo]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -204,6 +240,7 @@ export function useFrameClock({
     currentFrame: frameIndex,
     isSeeking,
     seekTo,
+    seekToAsync,
     diagnostics,
     diagnosticsRef,
   };

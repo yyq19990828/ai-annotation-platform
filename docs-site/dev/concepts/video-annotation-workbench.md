@@ -28,6 +28,8 @@ v0.9.26 补齐轻量视频导航：时间轴支持本地 loop region，播放可
 
 v0.9.27 接入后端单帧缓存的第一层前端消费：时间轴 hover 显示当前帧缩略图，并对选中轨迹关键帧、书签帧和 loop region 边界做预取 hint。
 
+v0.9.29 增加 J/K/L 多速率播放和异步 seek 原语：显式跳帧入口统一走 `seekFrameAsync`，`L` 正向播放 / 加速，`K` 暂停，`J` 反向播放 / 减速；反向播放按帧步进，不使用浏览器负 `playbackRate`。
+
 ## 数据入口
 
 视频文件通过 dataset 导入进入系统：
@@ -291,6 +293,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 `VideoStage` 暴露 `VideoStageControls` ref，由 `useWorkbenchHotkeys` 在 `videoMode` 下统一分发快捷键。视频模式快捷键：
 
 - `Space` 播放 / 暂停
+- `J` / `K` / `L` 反向播放或减速 / 暂停 / 正向播放或加速
 - `B` / `T` 切换视频矩形框 / 轨迹工具
 - `←` / `→` 逐帧
 - `,` / `.` 逐帧备用键
@@ -337,6 +340,7 @@ v0.9.19 后，`VideoStage` 底部固定控制条改为 `VideoPlaybackOverlay`：
 - loop region、书签和跳转历史只存前端会话状态，按 task 写入 `sessionStorage`，不改变 annotation schema 或后端 API。
 - 书签以小三角 marker 显示，`Ctrl+M` 在当前帧加 / 删；显式 seek、bookmark 跳转和关键帧跳转写入最近 50 条跳转历史，播放 tick 不写历史。
 - v0.9.27 起，hover 时间轴会请求单帧预览图；ready 时显示缩略图，pending/error 时降级显示 frame/time。选中轨迹关键帧、书签帧和 loop region 边界会被预取。
+- v0.9.29 起，`useFrameClock.seekToAsync` 作为 `VideoStage.seekFrameAsync` 的底层原语；时间轴 scrub、逐帧、关键帧、书签和跳转历史都通过它跳帧。J/K/L jog 播放支持 `0.25x / 0.5x / 1x / 2x / 4x`，overlay 会显示当前速度，反向播放通过帧步进实现。
 
 ## History / Offline
 

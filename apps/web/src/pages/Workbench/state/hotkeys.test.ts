@@ -152,6 +152,12 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: " " }, videoCtx)).toEqual({ type: "videoTogglePlayback" });
   });
 
+  it("J / K / L → video jog playback controls", () => {
+    expect(dispatch({ key: "j" }, videoCtx)).toEqual({ type: "videoJogPlayback", dir: -1 });
+    expect(dispatch({ key: "K" }, videoCtx)).toEqual({ type: "videoPausePlayback" });
+    expect(dispatch({ key: "l" }, videoCtx)).toEqual({ type: "videoJogPlayback", dir: 1 });
+  });
+
   it("ArrowLeft / ArrowRight → videoSeek", () => {
     expect(dispatch({ key: "ArrowRight" }, videoCtx)).toEqual({ type: "videoSeek", delta: 1 });
     expect(dispatch({ key: "ArrowLeft" }, videoCtx)).toEqual({ type: "videoSeek", delta: -1 });
