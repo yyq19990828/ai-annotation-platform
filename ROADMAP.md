@@ -12,8 +12,11 @@
 
 ### 计划中
 
-- **[P0 · 视频标注工作台](./ROADMAP/2026-05-11-video-workbench.md)**：优先级最高。先做 `video-track` 人工闭环：视频元数据 / manifest、`<VideoStage>` + 时间轴、track/keyframe schema、插值与审核、导出与文档。AI tracker / SAM 3 video predictor 后置。
 - **[v0.10.x — SAM 3 接入（与 Grounded-SAM-2 并存）](./ROADMAP/0.10.x.md)**：新增 sam3-backend 作为高精度选项，**不替换** v0.9.x grounded-sam2-backend；增加 exemplar prompt + 路由策略 UI + AB 对比工具。共享 `apps/_shared/mask_utils/`。预计 ~3.5 周。
+- **[P0/P1 · 视频标注工作台综合 epic](./ROADMAP/2026-05-12-video-workbench-rendering-optimization.md)**：已合并原 [`[archived]2026-05-11-video-workbench.md`](./ROADMAP/%5Barchived%5D2026-05-11-video-workbench.md) 功能线。范围：V4-V6 功能尾巴（review 差异化 / probe 重试 / bbox→track 聚合）+ R1-R12 渲染体系（帧索引 / 分层 / 插值 / 时间轴 / 帧缓存 / Viewport / Polygon track / AI tracker / segment）+ R13-R24 CVAT 视频深度借鉴（Chapter / Track Split-Merge-Join / MOT 导出 / frameStep / Job overlap / Tracker Registry / MOTA-IDF1）。共 7 个 Wave。
+- **[P1 · 视频后端帧服务 epic](./ROADMAP/2026-05-12-video-backend-frame-service.md)**：B1-B7 后端独立工程，承载帧时间表、chunk 切片、帧抽取缓存、segment 协同、AI tracker 编排、manifest v2、监控运维。前端 R5.3 / R10 / R11 / R20 / R21 / R23 的服务端依赖。
+- **[P2 · 图片工作台优化（渲染 + 能力扩展）](./ROADMAP/2026-05-12-image-workbench-optimization.md)**：I1-I8 渲染优化（大图 tile、多边形 LOD、SAM 缓存、双图比对、批注时间线）+ I9-I21 CVAT 借鉴能力扩展（Ellipse / Skeleton / Mask 编辑器 / Object Group / Attribute Schema / Autoborder / Issue 锚点 / GT-IAA / Interactor 协议）。
+- **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 
 ---
 
@@ -24,7 +27,7 @@
 ### 现在可做（无前置依赖，作为 `chip:maintenance` 穿插推进，不抢 v0.10.x 主线）
 
 - **CSP `style-src` nonce 收紧**（P3，留 v0.10.x 与 ProjectSettingsPage 重构 + 全站 ~2600 处 `<style={{}}>` 重构同窗口；script-src 已 v0.9.11 收紧）
-- **OpenSeadragon 瓦片金字塔**（P2，§C.1，极大图 > 50MP 才必要）
+- **OpenSeadragon 瓦片金字塔**（已合并到[图片工作台优化 I1](ROADMAP/2026-05-12-image-workbench-optimization.md)；极大图 > 50MP 才必要）
 - **i18n 框架接入**（P3，与全站 inline style 重构合并节省破窗成本，inline style 密度最高的 ProjectSettingsPage sections 群可作为切入点）
 - **截图 fixture 数据补齐 + 重跑**（P3）：4 张空白态需补数据后重跑（`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`）。
 - **PerfHud 浏览器侧指标**（P3）：FPS / JS heap / longtask / API p95 / WS 重连数 / 当前 task 框数，留到 §C.1 keyset 分页拐点判断时一并加。
@@ -39,12 +42,13 @@
 - **OAuth2 / SSO**：等具体客户驱动（企业场景需求触发再做）
 
 ### 等独立 epic（体量大、不适合塞进收尾版）
-- **视频标注工作台**（P0）：详见 [ROADMAP/2026-05-11-video-workbench.md](ROADMAP/2026-05-11-video-workbench.md)。
-- **非视频工作台**（image-seg / keypoint / lidar，C.4 Layer 2 触发）
+- **视频工作台（功能 + 渲染 + 后端）三联**：见上文「计划中」四个文档。
+- **非视频工作台**（image-seg / keypoint / lidar，C.4 Layer 2 触发；图片侧渲染优化已独立 epic）
 - **大文件分片上传**（>5GB 视频 / 点云）
-- **数据集版本 snapshot + 主动学习闭环**（与训练队列一起做）
+- **数据集版本 snapshot + 主动学习闭环**（与训练队列一起做，长期规划 L1 / L2）
 - **2FA / TOTP**（super_admin 必选 / 其它角色可选）
 - **批次状态机二阶段：admin-locked + bulk-approve / bulk-reject**（ADR-0008 Proposed → 实施前补 scheduler 测试覆盖）
+- **长期方向**：见 [`ROADMAP/2026-05-12-long-term-strategy.md`](ROADMAP/2026-05-12-long-term-strategy.md)（数据中台、主动学习、合规认证、跨模态等 15 个方向）。
 
 ---
 
@@ -154,7 +158,7 @@
 > 横向参考：CVAT（Konva + 关键帧 + 骨架）、Label Studio（interactive ML backend）、X-AnyLabeling（SAM 工厂）、Encord（SAM2 Smart Polygon + SAM3 文本驱动批量检测）。
 
 ### C.1 渲染性能 / 大图大量框
-- **OpenSeadragon 瓦片金字塔**：当前直接加载完整图像，> 50MP 会卡。需要后端切瓦片 + 前端 OpenSeadragon viewport，与 Konva overlay 共生。极大图场景才必要。
+- **大图 tile / 多边形 LOD / 双图比对**：已合并到 [图片工作台优化 epic](ROADMAP/2026-05-12-image-workbench-optimization.md)（I1 / I2 / I5）。极大图场景才必要。
 - **Annotation 列表后端分页**：与 B「Annotation keyset 分页」共建。`useAnnotations` 全量拉，单任务 1000+ 框阻塞渲染。
 
 ### C.3 标注体验（核心生产力杠杆）
@@ -186,7 +190,9 @@
 
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
-| **P0** | 视频标注工作台 | 最高优先级；先做 `video-track` 人工闭环，详见 [video workbench epic](ROADMAP/2026-05-11-video-workbench.md) | — |
+| **P0/P1** | 视频标注工作台综合 epic | V4-V6 功能尾巴 + R1-R12 渲染优化 + R13-R24 CVAT 视频深度借鉴（Chapter / Track Split-Merge-Join / MOT 导出 / frameStep / Job overlap / Tracker Registry / MOTA-IDF1） → [详见](ROADMAP/2026-05-12-video-workbench-rendering-optimization.md) | — |
+| **P1** | 视频后端帧服务（B1-B7） | 前端 R5.3 / R10 / R11 / R20 / R21 / R23 的服务端依赖 → [详见](ROADMAP/2026-05-12-video-backend-frame-service.md) | — |
+| **P2** | 图片工作台优化（I1-I21） | 渲染（大图 tile / LOD / 双图比对）+ 能力扩展（Ellipse / Skeleton / Mask 编辑器 / Object Group / Attribute / Issue / GT-IAA / Interactor） → [详见](ROADMAP/2026-05-12-image-workbench-optimization.md) | [0004](docs/adr/0004-canvas-stack-konva.md) |
 | **P3** | `/ai-pre` 精细单批次预标 modal（v0.9.13 后回归） | v0.9.12 IA 重构 + v0.9.13 chips/threshold UI 已搬到 ProjectDetailPanel；4 个 stepper 子组件 (`PreannotateStepper` / `ProjectBatchPicker` / `RunPanel` / `usePreannotateDraft`) 仍 orphan，客户场景需要单 batch 精细调（草稿恢复 / 阶段进度可视化）时唤起 modal 复用旧组件；如反馈不需要再删 orphan 文件 | — |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
@@ -194,7 +200,6 @@
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
 | **P2** | 非视频工作台（image-seg → keypoint → lidar） | 体量大，视频工作台已单独提升为 P0 | — |
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
-| **P2** | C.1 OpenSeadragon 瓦片金字塔 | 极大图 > 50MP 才必要；纯前端 IoU rbush 已 v0.9.3 落地 | [0004](docs/adr/0004-canvas-stack-konva.md) |
 | **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
 | **P3** | CSP `style-src` nonce 收紧（v0.9.11 已收紧 script-src） | `style-src 'unsafe-inline'` 仍保留, 前置依赖全站 ~2600 处 `style={{}}` 迁 CSS modules（切入点 `pages/Projects/sections/` 群）, 与 v0.10.x ProjectSettingsPage 重构同窗口 | [0010](docs/adr/0010-security-headers-middleware.md) |
 | **P3** | 截图 fixture 数据补齐 + 重跑（v0.9.7 19 张已 commit, 4 张空白态需补 seed） | seed.py 加 prepare 钩子: 5+ pre_annotated 批次 / 类别无 alias 项目 / 同 task 双 prediction (IoU) / 30+ tasks (bulk-edit) | — |
