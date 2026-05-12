@@ -1,6 +1,6 @@
 # P1 · 视频后端帧服务 Epic
 
-> 状态：**进行中**。B1/B2/B3/B4/B6/B7 第一版已落地，B5 tracker job 壳、adapter/worker MVP、SAM video 协议桥与 GPU 分窗已分别在 v0.9.32 / v0.9.34 / v0.9.36 落地。当前剩余重点是：真实 SAM video backend、chunk smart-copy、长视频 timetable compact / sparse、segment 导出聚合，以及视频专属导出 / 质量评估的后端底座。
+> 状态：**进行中**。B1/B2/B3/B4/B6/B7 第一版已落地，B5 tracker job 壳、adapter/worker MVP、SAM video 协议桥与 GPU 分窗已分别在 v0.9.32 / v0.9.34 / v0.9.36 落地，chunk smart-copy 与诊断字段已在 v0.9.38 落地。当前剩余重点是：真实 SAM video backend、长视频 timetable compact / sparse、segment 导出聚合，以及视频专属导出 / 质量评估的后端底座。
 >
 > 本 epic 承载前端 [`2026-05-12-video-workbench-rendering-optimization.md`](2026-05-12-video-workbench-rendering-optimization.md) 中 R5.3 / R10 / R11 / R20 / R21 / R22 / R24 的服务端依赖。后端仍属 FastAPI + Celery + PostgreSQL + MinIO/S3 现有栈，**不引入独立 video service**。
 
@@ -18,6 +18,7 @@
 | B6 Manifest v2 | v0.9.25 / v0.9.30 | `/tasks/{task_id}/video/manifest-v2` 与 `/videos/{dataset_item_id}/manifest` 返回 chunk / timetable / frame service / segments |
 | Timetable repair CLI | v0.9.30 | `python -m app.cli.video.rebuild_timetable` 支持按 item / dataset / all 重建旧视频帧表 |
 | Video asset retry | v0.9.33 | 存储管理 API 汇总并重试 probe / poster / timetable / chunk / frame cache 失败资产 |
+| Chunk Smart-Copy | v0.9.38 | keyframe 对齐 chunk 优先 stream copy，失败 fallback transcode，并暴露 codec/keyframe/byte offset 诊断 |
 
 ### 1.2 协同与 tracker
 
@@ -54,14 +55,14 @@
 
 **不做**：不把 SAM 2 / SAM 3 predictor 加进 `apps/api` 进程；仍遵循 ADR-0012 的独立 GPU service 边界。
 
-### P0 · Chunk Smart-Copy 与 R5.3 后端加固
+### ✅ P0 · Chunk Smart-Copy 与 R5.3 后端加固
 
 **目标**：让前端 WebCodecs / Worker 解码不再完全依赖重编码 fallback。
 
-- H.264 / H.265 且 GOP 对齐良好的源视频走 smart-copy。
-- chunk 元数据补足 codec / keyframe / byte range 诊断字段，便于前端降级判断。
-- chunk 失败 retry 与 V5 失败列表联动保持可见。
-- 评估 chunk warmup：在 manifest / timeline 预取命中热点 range 时提前投递 media 任务。
+- ✅ H.264 / H.265 且 GOP 对齐良好的源视频走 smart-copy。
+- ✅ chunk 元数据补足 codec / keyframe / byte range 诊断字段，便于前端降级判断。
+- ✅ chunk 失败 retry 与 V5 失败列表联动保持可见。
+- ⏳ 评估 chunk warmup：在 manifest / timeline 预取命中热点 range 时提前投递 media 任务。
 
 **不做**：不上 DASH / HLS / adaptive bitrate；标注场景优先帧精度和可缓存 chunk。
 
@@ -132,7 +133,7 @@ Wave 2 · AI 模型深化
   → GPU profile / OOM 演练 / 端到端性能基准
 
 Wave 3 · R5.3 解码体验
-  → Chunk smart-copy
+  ✅ Chunk smart-copy (v0.9.38)
   → chunk warmup / retry 可视化加固
   → timetable compact / sparse
 

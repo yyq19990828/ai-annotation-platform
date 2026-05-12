@@ -6,17 +6,26 @@ from pydantic import TypeAdapter
 from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import Dataset, DatasetItem, VideoFrameCache, VideoFrameIndex
+from app.db.models.dataset import (
+    Dataset,
+    DatasetItem,
+    VideoChunk,
+    VideoFrameCache,
+    VideoFrameIndex,
+)
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.schemas._jsonb_types import Geometry
 from app.schemas.task import VideoMetadata
 from app.workers.media import (
+    FFMPEG_CHUNK_TIMEOUT_SECONDS,
     FFMPEG_POSTER_TIMEOUT_SECONDS,
     FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
     FFPROBE_TIMEOUT_SECONDS,
     _store_frame_cache_image,
+    _store_video_chunk,
+    extract_video_chunk_smart_copy,
     extract_video_poster,
     parse_ffprobe_video_metadata,
     parse_ffprobe_frame_timetable,
@@ -256,6 +265,244 @@ def test_transcode_video_for_browser_uses_timeout(tmp_path, monkeypatch):
 
     assert seen["timeout"] == FFMPEG_TRANSCODE_TIMEOUT_SECONDS
     assert "libx264" in seen["args"]
+
+
+def test_extract_video_chunk_smart_copy_uses_copy_and_timeout(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    chunk = tmp_path / "chunk.mp4"
+    video.write_bytes(b"fake")
+    seen: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        seen["args"] = args[0]
+        seen["timeout"] = kwargs.get("timeout")
+        return subprocess.CompletedProcess(
+            args=args[0], returncode=0, stdout="", stderr=""
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    extract_video_chunk_smart_copy(video, chunk, 1000, 2000)
+
+    assert seen["timeout"] == FFMPEG_CHUNK_TIMEOUT_SECONDS
+    assert seen["args"][
+        seen["args"].index("-c:v") + 1
+    ] == "copy"
+
+
+class _FakeVideoChunkClient:
+    def __init__(self):
+        self.puts = []
+
+    def put_object(self, **kwargs):
+        self.puts.append(kwargs)
+
+
+class _FakeVideoChunkStorage:
+    datasets_bucket = "datasets"
+
+    def __init__(self):
+        self.client = _FakeVideoChunkClient()
+
+    def ensure_bucket(self, bucket):
+        assert bucket == "datasets"
+
+
+async def _make_video_chunk_fixture(db_session, owner_id, *, codec="h264"):
+    dataset = Dataset(
+        display_id=f"D-VCH-{uuid.uuid4().hex[:6]}",
+        name="videos",
+        data_type="video",
+        created_by=owner_id,
+    )
+    db_session.add(dataset)
+    await db_session.flush()
+    item = DatasetItem(
+        dataset_id=dataset.id,
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        metadata_={"video": {"fps": 30, "frame_count": 60, "codec": codec}},
+    )
+    db_session.add(item)
+    await db_session.flush()
+    chunk = VideoChunk(
+        dataset_item_id=item.id,
+        chunk_id=0,
+        start_frame=0,
+        end_frame=29,
+        start_pts_ms=0,
+        end_pts_ms=967,
+        status="pending",
+    )
+    db_session.add(chunk)
+    await db_session.flush()
+    return item, chunk
+
+
+async def test_store_video_chunk_uses_smart_copy_when_keyframe_aligned(
+    db_session, tmp_path, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    item, chunk = await _make_video_chunk_fixture(db_session, user.id, codec="h264")
+    db_session.add_all(
+        [
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=0,
+                pts_ms=0,
+                is_keyframe=True,
+                pict_type="I",
+                byte_offset=100,
+            ),
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=29,
+                pts_ms=967,
+                is_keyframe=False,
+                pict_type="P",
+                byte_offset=9000,
+            ),
+        ]
+    )
+    await db_session.flush()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fake")
+    calls: list[str] = []
+
+    def fake_smart_copy(input_path, output_path, start_ms, duration_ms):
+        calls.append(f"smart:{start_ms}:{duration_ms}")
+        output_path.write_bytes(b"smart")
+
+    def fake_transcode(*args):
+        calls.append("transcode")
+
+    monkeypatch.setattr("app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy)
+    monkeypatch.setattr("app.workers.media.extract_video_chunk", fake_transcode)
+
+    storage = _FakeVideoChunkStorage()
+    await _store_video_chunk(
+        db_session,
+        storage,
+        item,
+        VideoMetadata.model_validate(item.metadata_["video"]),
+        source,
+        tmp_path,
+        chunk,
+    )
+
+    assert calls == ["smart:0:1000"]
+    assert chunk.status == "ready"
+    assert chunk.generation_mode == "smart_copy"
+    assert chunk.diagnostics["source_codec"] == "h264"
+    assert chunk.diagnostics["output_codec"] == "h264"
+    assert chunk.diagnostics["keyframe_aligned"] is True
+    assert chunk.diagnostics["start_byte_offset"] == 100
+    assert chunk.diagnostics["end_byte_offset"] == 9000
+    assert chunk.diagnostics["smart_copy_eligible"] is True
+    assert chunk.diagnostics["fallback_reason"] is None
+    assert storage.client.puts[0]["Body"] == b"smart"
+
+
+async def test_store_video_chunk_transcodes_when_not_keyframe_aligned(
+    db_session, tmp_path, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    item, chunk = await _make_video_chunk_fixture(db_session, user.id, codec="h264")
+    db_session.add(
+        VideoFrameIndex(
+            dataset_item_id=item.id,
+            frame_index=0,
+            pts_ms=0,
+            is_keyframe=False,
+            pict_type="P",
+            byte_offset=100,
+        )
+    )
+    await db_session.flush()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fake")
+    calls: list[str] = []
+
+    def fake_smart_copy(*args):
+        calls.append("smart")
+
+    def fake_transcode(input_path, output_path, start_ms, frame_count):
+        calls.append(f"transcode:{start_ms}:{frame_count}")
+        output_path.write_bytes(b"transcoded")
+
+    monkeypatch.setattr("app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy)
+    monkeypatch.setattr("app.workers.media.extract_video_chunk", fake_transcode)
+
+    storage = _FakeVideoChunkStorage()
+    await _store_video_chunk(
+        db_session,
+        storage,
+        item,
+        VideoMetadata.model_validate(item.metadata_["video"]),
+        source,
+        tmp_path,
+        chunk,
+    )
+
+    assert calls == ["transcode:0:30"]
+    assert chunk.status == "ready"
+    assert chunk.generation_mode == "transcode"
+    assert chunk.diagnostics["output_codec"] == "h264"
+    assert chunk.diagnostics["smart_copy_eligible"] is False
+    assert chunk.diagnostics["fallback_reason"] == "start_frame_not_keyframe"
+    assert storage.client.puts[0]["Body"] == b"transcoded"
+
+
+async def test_store_video_chunk_falls_back_when_smart_copy_fails(
+    db_session, tmp_path, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    item, chunk = await _make_video_chunk_fixture(db_session, user.id, codec="h264")
+    db_session.add(
+        VideoFrameIndex(
+            dataset_item_id=item.id,
+            frame_index=0,
+            pts_ms=0,
+            is_keyframe=True,
+            pict_type="I",
+            byte_offset=100,
+        )
+    )
+    await db_session.flush()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fake")
+    calls: list[str] = []
+
+    def fake_smart_copy(*args):
+        calls.append("smart")
+        raise RuntimeError("copy failed")
+
+    def fake_transcode(input_path, output_path, start_ms, frame_count):
+        calls.append(f"transcode:{start_ms}:{frame_count}")
+        output_path.write_bytes(b"transcoded")
+
+    monkeypatch.setattr("app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy)
+    monkeypatch.setattr("app.workers.media.extract_video_chunk", fake_transcode)
+
+    storage = _FakeVideoChunkStorage()
+    await _store_video_chunk(
+        db_session,
+        storage,
+        item,
+        VideoMetadata.model_validate(item.metadata_["video"]),
+        source,
+        tmp_path,
+        chunk,
+    )
+
+    assert calls == ["smart", "transcode:0:30"]
+    assert chunk.status == "ready"
+    assert chunk.generation_mode == "transcode"
+    assert chunk.diagnostics["output_codec"] == "h264"
+    assert chunk.diagnostics["smart_copy_eligible"] is False
+    assert chunk.diagnostics["fallback_reason"].startswith("smart_copy_failed:")
+    assert storage.client.puts[0]["Body"] == b"transcoded"
 
 
 def test_video_bbox_geometry_validates_and_bbox_stays_compatible():

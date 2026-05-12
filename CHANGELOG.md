@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.9.38] - 2026-05-12
+
+> **Video Chunk Smart-Copy — R5.3 解码后端诊断底座.** 主线: ① `VideoChunk` 增加生成模式与诊断元数据；② media worker 在 codec 支持且 chunk 起始帧 keyframe 对齐时优先尝试 ffmpeg stream copy；③ smart-copy 失败自动 fallback 到现有 H.264 baseline fragmented MP4 重编码；④ chunk API 暴露 codec、keyframe、byte offset 与 fallback reason，供前端 WebCodecs / Worker 解码降级判断。→ [plan](docs/plans/2026-05-12-v0.9.38-video-chunk-smart-copy.md).
+
+### Added
+
+- **Chunk smart-copy**：H.264 / H.265 源且 chunk 起始帧 keyframe 对齐时，`ensure_video_chunks` 优先使用 stream copy，减少不必要重编码。
+- **Chunk 诊断字段**：chunk 响应新增 `generation_mode` 与 `diagnostics`，包含 source/output codec、keyframe 对齐、byte offset、smart-copy eligibility 和 fallback reason。
+- **Fallback 保底**：smart-copy ffmpeg 失败时自动回退到既有 H.264 baseline transcode，保持 chunk URL、pending/ready/failed 和 retry 行为兼容。
+
+### Deferred
+
+- 真实 SAM video backend、GPU profile、AI 质量评估、timetable compact / sparse 继续留在后续版本。
+
 ## [0.9.36] - 2026-05-12
 
 > **Video Tracker GPU / Model Deepening — SAM video 协议桥与长区间分窗.** 主线: ① 新增 `sam2_video` / `sam3_video` tracker adapter，按 ADR-0012 调项目绑定的独立 ML Backend；② worker 按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 拆分长 frame range，降低单次 GPU OOM 风险；③ 低置信度 tracker 结果写入 outside prediction range；④ 同步协议文档、runbook、env-vars 和 S6 roadmap 状态。→ [plan](docs/plans/2026-05-12-v0.9.36-video-tracker-gpu-model-deepening.md).

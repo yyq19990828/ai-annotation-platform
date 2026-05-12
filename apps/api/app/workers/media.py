@@ -35,6 +35,7 @@ FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 600
 FFMPEG_CHUNK_TIMEOUT_SECONDS = 180
 FFMPEG_FRAME_TIMEOUT_SECONDS = 60
 BROWSER_PLAYABLE_VIDEO_CODECS = {"h264", "avc1"}
+SMART_COPY_VIDEO_CODECS = {"h264", "avc1", "hevc", "h265"}
 
 
 def _parse_ratio(value: str | None) -> float | None:
@@ -297,6 +298,40 @@ def extract_video_chunk(
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "ffmpeg chunk extraction failed")
+
+
+def extract_video_chunk_smart_copy(
+    input_path: str | Path,
+    output_path: str | Path,
+    start_ms: int,
+    duration_ms: int,
+) -> None:
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{max(0, start_ms) / 1000:.3f}",
+            "-i",
+            str(input_path),
+            "-t",
+            f"{max(1, duration_ms) / 1000:.3f}",
+            "-map",
+            "0:v:0",
+            "-an",
+            "-c:v",
+            "copy",
+            "-movflags",
+            "frag_keyframe+empty_moov+default_base_moof",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=FFMPEG_CHUNK_TIMEOUT_SECONDS,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "ffmpeg chunk smart-copy failed")
 
 
 def extract_video_frame_image(
@@ -773,6 +808,150 @@ async def _backfill_tasks(project_id: str) -> None:
         await _generate_task_thumbnail(tid)
 
 
+def _normalize_video_codec(codec: str | None) -> str | None:
+    if not codec:
+        return None
+    normalized = codec.lower().strip()
+    if normalized in {"avc1", "h264"}:
+        return "h264"
+    if normalized in {"hevc", "h265"}:
+        return "hevc"
+    return normalized
+
+
+def _chunk_source_codec(metadata: VideoMetadata) -> str | None:
+    if metadata.playback_path:
+        codec = metadata.playback_codec or metadata.codec
+    else:
+        codec = metadata.codec
+    return _normalize_video_codec(codec)
+
+
+def _transcode_fallback_reason(
+    source_codec: str | None,
+    keyframe_aligned: bool | None,
+    has_start_timetable: bool,
+) -> str | None:
+    if not source_codec:
+        return "missing_source_codec"
+    if source_codec not in SMART_COPY_VIDEO_CODECS:
+        return "unsupported_codec"
+    if not has_start_timetable:
+        return "missing_start_frame_timetable"
+    if not keyframe_aligned:
+        return "start_frame_not_keyframe"
+    return None
+
+
+def _chunk_duration_ms(row: VideoChunk, metadata: VideoMetadata) -> int:
+    if row.start_pts_ms is not None and row.end_pts_ms is not None:
+        frame_ms = int(round(1000 / metadata.fps)) if metadata.fps else 1
+        return max(1, row.end_pts_ms - row.start_pts_ms + frame_ms)
+    if metadata.fps:
+        frame_count = max(1, row.end_frame - row.start_frame + 1)
+        return max(1, int(round((frame_count / metadata.fps) * 1000)))
+    return 1
+
+
+async def _chunk_diagnostics(
+    db,
+    item: DatasetItem,
+    metadata: VideoMetadata,
+    row: VideoChunk,
+) -> dict[str, Any]:
+    frame_rows = {
+        frame.frame_index: frame
+        for frame in (
+            await db.execute(
+                select(VideoFrameIndex).where(
+                    VideoFrameIndex.dataset_item_id == item.id,
+                    VideoFrameIndex.frame_index.in_([row.start_frame, row.end_frame]),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    }
+    start_entry = frame_rows.get(row.start_frame)
+    end_entry = frame_rows.get(row.end_frame)
+    source_codec = _chunk_source_codec(metadata)
+    keyframe_aligned = start_entry.is_keyframe if start_entry else None
+    fallback_reason = _transcode_fallback_reason(
+        source_codec,
+        keyframe_aligned,
+        start_entry is not None,
+    )
+    return {
+        "source_codec": source_codec,
+        "output_codec": None,
+        "keyframe_aligned": keyframe_aligned,
+        "start_byte_offset": start_entry.byte_offset if start_entry else None,
+        "end_byte_offset": end_entry.byte_offset if end_entry else None,
+        "smart_copy_eligible": fallback_reason is None,
+        "fallback_reason": fallback_reason,
+    }
+
+
+async def _store_video_chunk(
+    db,
+    storage,
+    item: DatasetItem,
+    metadata: VideoMetadata,
+    input_path: Path,
+    tmp_dir: Path,
+    row: VideoChunk,
+) -> None:
+    diagnostics = await _chunk_diagnostics(db, item, metadata, row)
+    start_ms = row.start_pts_ms
+    if start_ms is None:
+        start_ms = await pts_ms_for_frame(db, item.id, row.start_frame, metadata)
+
+    output_path = tmp_dir / f"chunk-{row.chunk_id}.mp4"
+    generation_mode = "transcode"
+    if diagnostics["smart_copy_eligible"]:
+        try:
+            extract_video_chunk_smart_copy(
+                input_path,
+                output_path,
+                start_ms or 0,
+                _chunk_duration_ms(row, metadata),
+            )
+            generation_mode = "smart_copy"
+            diagnostics["output_codec"] = diagnostics["source_codec"]
+        except Exception as exc:
+            output_path.unlink(missing_ok=True)
+            diagnostics["fallback_reason"] = f"smart_copy_failed: {exc}"
+            diagnostics["smart_copy_eligible"] = False
+
+    if generation_mode == "transcode":
+        row.generation_mode = generation_mode
+        row.diagnostics = diagnostics
+        extract_video_chunk(
+            input_path,
+            output_path,
+            start_ms or 0,
+            row.end_frame - row.start_frame + 1,
+        )
+        diagnostics["output_codec"] = "h264"
+
+    key = cache_key_for_chunk(item.id, row.chunk_id)
+    storage.ensure_bucket(storage.datasets_bucket)
+    body = output_path.read_bytes()
+    storage.client.put_object(
+        Bucket=storage.datasets_bucket,
+        Key=key,
+        Body=body,
+        ContentType="video/mp4",
+    )
+    row.storage_key = key
+    row.byte_size = len(body)
+    row.generation_mode = generation_mode
+    row.diagnostics = diagnostics
+    row.status = "ready"
+    row.error = None
+    row.last_accessed_at = datetime.now(timezone.utc)
+
+
 async def _ensure_video_chunks(item_id: str, chunk_ids: list[int]) -> None:
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
@@ -834,35 +1013,20 @@ async def _ensure_video_chunks(item_id: str, chunk_ids: list[int]) -> None:
                     continue
                 row.status = "pending"
                 row.error = None
+                row.generation_mode = None
+                row.diagnostics = {}
                 await db.commit()
-                output_path = Path(tmp) / f"chunk-{chunk_id}.mp4"
                 start = time.perf_counter()
                 try:
-                    start_ms = row.start_pts_ms
-                    if start_ms is None:
-                        start_ms = await pts_ms_for_frame(
-                            db, item.id, row.start_frame, metadata
-                        )
-                    extract_video_chunk(
+                    await _store_video_chunk(
+                        db,
+                        storage,
+                        item,
+                        metadata,
                         input_path,
-                        output_path,
-                        start_ms or 0,
-                        row.end_frame - row.start_frame + 1,
+                        Path(tmp),
+                        row,
                     )
-                    key = cache_key_for_chunk(item.id, row.chunk_id)
-                    storage.ensure_bucket(storage.datasets_bucket)
-                    body = output_path.read_bytes()
-                    storage.client.put_object(
-                        Bucket=storage.datasets_bucket,
-                        Key=key,
-                        Body=body,
-                        ContentType="video/mp4",
-                    )
-                    row.storage_key = key
-                    row.byte_size = len(body)
-                    row.status = "ready"
-                    row.error = None
-                    row.last_accessed_at = datetime.now(timezone.utc)
                     VIDEO_CHUNK_GENERATION_SECONDS.labels(outcome="success").observe(
                         time.perf_counter() - start
                     )
@@ -1007,6 +1171,8 @@ async def _cleanup_video_frame_assets() -> None:
             row.status = "pending"
             row.storage_key = None
             row.byte_size = None
+            row.generation_mode = None
+            row.diagnostics = {}
 
         chunk_rows = (
             await db.execute(

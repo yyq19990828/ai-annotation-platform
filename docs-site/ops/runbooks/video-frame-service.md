@@ -55,6 +55,22 @@ docker compose build celery-worker
 docker compose up -d celery-worker
 ```
 
+## Chunk smart-copy 诊断
+
+v0.9.38 后，ready chunk 会返回 `generation_mode` 与 `diagnostics`。常见 fallback：
+
+- `unsupported_codec`：源 codec 不是 H.264 / H.265，worker 会走 H.264 transcode。
+- `missing_start_frame_timetable`：缺少 chunk 起始帧 timetable 行，先重建帧时间表。
+- `start_frame_not_keyframe`：chunk 起始帧不是 keyframe，stream copy 不安全，worker 会转码。
+- `smart_copy_failed: ...`：ffmpeg stream copy 失败，但已尝试回退 transcode；如果最终仍 failed，查看 `video_chunks.error`。
+
+查看最近 chunk 诊断：
+
+```bash
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT chunk_id, generation_mode, diagnostics, error FROM video_chunks ORDER BY updated_at DESC LIMIT 20;"
+```
+
 ## 单帧缓存失败
 
 查看失败原因：

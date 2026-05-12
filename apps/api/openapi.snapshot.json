@@ -9645,6 +9645,89 @@
         "title": "VideoBboxGeometry",
         "type": "object"
       },
+      "VideoChunkDiagnostics": {
+        "properties": {
+          "end_byte_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Byte Offset"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "keyframe_aligned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keyframe Aligned"
+          },
+          "output_codec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Codec"
+          },
+          "smart_copy_eligible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smart Copy Eligible"
+          },
+          "source_codec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Codec"
+          },
+          "start_byte_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Byte Offset"
+          }
+        },
+        "title": "VideoChunkDiagnostics",
+        "type": "object"
+      },
       "VideoChunkOut": {
         "properties": {
           "byte_size": {
@@ -9662,6 +9745,16 @@
             "title": "Chunk Id",
             "type": "integer"
           },
+          "diagnostics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoChunkDiagnostics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "end_frame": {
             "title": "End Frame",
             "type": "integer"
@@ -9676,6 +9769,21 @@
               }
             ],
             "title": "Error"
+          },
+          "generation_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "smart_copy",
+                  "transcode"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Mode"
           },
           "retry_after": {
             "anyOf": [

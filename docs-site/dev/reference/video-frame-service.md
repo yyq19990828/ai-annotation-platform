@@ -46,7 +46,26 @@ GET /api/v1/tasks/{task_id}/video/chunks/{chunk_id}
 GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}
 ```
 
-首次请求缺失 chunk 时，API 创建 `VideoChunk(status="pending")` 并投递 `ensure_video_chunks` Celery 任务。单 chunk 未 ready 时返回 HTTP 202 和 `Retry-After`；ready 后返回 signed URL。第一版 chunk 使用 H.264 baseline fragmented MP4 重编码，后续再补 GOP smart-copy。
+首次请求缺失 chunk 时，API 创建 `VideoChunk(status="pending")` 并投递 `ensure_video_chunks` Celery 任务。单 chunk 未 ready 时返回 HTTP 202 和 `Retry-After`；ready 后返回 signed URL。
+
+v0.9.38 起，media worker 会在源 codec 为 H.264 / H.265 且 chunk 起始帧 keyframe 对齐时优先尝试 ffmpeg stream copy；不满足条件或 smart-copy 失败时，自动 fallback 到既有 H.264 baseline fragmented MP4 重编码。API 行为保持兼容，只额外返回诊断字段：
+
+```json
+{
+  "generation_mode": "smart_copy",
+  "diagnostics": {
+    "source_codec": "h264",
+    "output_codec": "h264",
+    "keyframe_aligned": true,
+    "start_byte_offset": 100,
+    "end_byte_offset": 9000,
+    "smart_copy_eligible": true,
+    "fallback_reason": null
+  }
+}
+```
+
+前端可用这些字段判断 WebCodecs / Worker 解码是否继续使用 chunk，或降级到整段视频 / frame service。
 
 MinIO key：
 
@@ -99,6 +118,8 @@ POST /api/v1/storage/video-assets/retry
 | `frame` | `video_frame_cache.status = "failed"` | `extract_video_frames` |
 
 `probe` / `poster` / `frame_timetable` 共用 metadata 任务，因此重试任一项都会重新跑视频 metadata 生成链路。`chunk` / `frame` 重试会先把对应行恢复到 `pending` 并清空 `error`，再投递 media 队列。
+
+chunk 重试会清空旧的 `generation_mode` / `diagnostics`，下一次 worker 会重新判断 smart-copy eligibility。
 
 ## Timetable 重建
 

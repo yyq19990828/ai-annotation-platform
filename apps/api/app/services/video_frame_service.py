@@ -184,6 +184,11 @@ async def _ensure_chunk_rows(
 def _chunk_out(row: VideoChunk) -> VideoChunkOut:
     status = row.status if row.status in {"pending", "ready", "failed"} else "pending"
     url = _asset_url(row.storage_key) if status == "ready" and row.storage_key else None
+    generation_mode = (
+        row.generation_mode
+        if row.generation_mode in {"smart_copy", "transcode"}
+        else None
+    )
     VIDEO_CHUNK_REQUESTS_TOTAL.labels(status=status).inc()
     return VideoChunkOut(
         chunk_id=row.chunk_id,
@@ -192,6 +197,8 @@ def _chunk_out(row: VideoChunk) -> VideoChunkOut:
         status=status,
         url=url,
         byte_size=row.byte_size,
+        generation_mode=generation_mode,
+        diagnostics=row.diagnostics or None,
         retry_after=3 if status == "pending" else None,
         error=row.error if status == "failed" else None,
     )
