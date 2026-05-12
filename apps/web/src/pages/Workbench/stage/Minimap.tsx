@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Viewport } from "../state/useViewportTransform";
 
 interface MinimapProps {
@@ -20,6 +20,10 @@ const MINIMAP_MAX_H = 120;
  */
 export function Minimap({ imgW, imgH, vpSize, vp, setVp, thumbnailUrl, fileUrl }: MinimapProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
+  const pendingPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   // 是否需要 minimap：图像在视口里需要滚动才看完
   const visibleW = vpSize.w / (imgW * vp.scale);
@@ -41,16 +45,42 @@ export function Minimap({ imgW, imgH, vpSize, vp, setVp, thumbnailUrl, fileUrl }
   const rectW = visibleW * mw;
   const rectH = visibleH * mh;
 
-  const onClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const moveViewportTo = useCallback((clientX: number, clientY: number) => {
     if (!ref.current) return;
     const r = ref.current.getBoundingClientRect();
-    const cx = e.clientX - r.left;
-    const cy = e.clientY - r.top;
+    const cx = Math.max(0, Math.min(mw, clientX - r.left));
+    const cy = Math.max(0, Math.min(mh, clientY - r.top));
     // 把图像 (cx/mw, cy/mh) 这点移到容器中心
     const imgPxX = (cx / mw) * imgW * vp.scale;
     const imgPxY = (cy / mh) * imgH * vp.scale;
     setVp({ scale: vp.scale, tx: vpSize.w / 2 - imgPxX, ty: vpSize.h / 2 - imgPxY });
   }, [mw, mh, imgW, imgH, vp.scale, vpSize.w, vpSize.h, setVp]);
+
+  const scheduleMoveViewportTo = useCallback((clientX: number, clientY: number) => {
+    pendingPointRef.current = { clientX, clientY };
+    if (rafRef.current !== null) return;
+    const schedule = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame
+      : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
+    rafRef.current = schedule(() => {
+      rafRef.current = null;
+      const point = pendingPointRef.current;
+      pendingPointRef.current = null;
+      if (point) moveViewportTo(point.clientX, point.clientY);
+    });
+  }, [moveViewportTo]);
+
+  const stopDragging = useCallback(() => {
+    draggingRef.current = false;
+    setIsDragging(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const cancel = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : window.clearTimeout;
+      if (rafRef.current !== null) cancel(rafRef.current);
+    };
+  }, []);
 
   if (!needsMinimap) return null;
 
@@ -59,7 +89,21 @@ export function Minimap({ imgW, imgH, vpSize, vp, setVp, thumbnailUrl, fileUrl }
   return (
     <div
       ref={ref}
-      onClick={onClick}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        draggingRef.current = true;
+        setIsDragging(true);
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        scheduleMoveViewportTo(e.clientX, e.clientY);
+      }}
+      onPointerMove={(e) => {
+        if (draggingRef.current) scheduleMoveViewportTo(e.clientX, e.clientY);
+      }}
+      onPointerUp={(e) => {
+        e.currentTarget.releasePointerCapture?.(e.pointerId);
+        stopDragging();
+      }}
+      onPointerCancel={stopDragging}
       style={{
         position: "absolute",
         right: 12,
@@ -70,10 +114,11 @@ export function Minimap({ imgW, imgH, vpSize, vp, setVp, thumbnailUrl, fileUrl }
         border: "1px solid var(--color-border)",
         borderRadius: 4,
         overflow: "hidden",
-        cursor: "crosshair",
+        cursor: isDragging ? "grabbing" : "grab",
         zIndex: 15,
         boxShadow: "var(--shadow-md, 0 4px 12px rgba(0,0,0,0.15))",
         userSelect: "none",
+        touchAction: "none",
       }}
       title="缩略图导航：点击跳转视口"
     >
@@ -95,6 +140,7 @@ export function Minimap({ imgW, imgH, vpSize, vp, setVp, thumbnailUrl, fileUrl }
           border: "2px solid oklch(0.62 0.18 252)",
           background: "rgba(99, 130, 217, 0.12)",
           pointerEvents: "none",
+          transition: isDragging ? "none" : "left 80ms linear, top 80ms linear",
         }}
       />
     </div>

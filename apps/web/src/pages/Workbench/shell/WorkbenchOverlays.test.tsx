@@ -155,4 +155,29 @@ describe("WorkbenchOverlays", () => {
     );
     expect(screen.queryByTestId("class-picker-popover")).toBeNull();
   });
+
+  it("renders video class editing picker with fixed anchor", () => {
+    const onCommitChangeClass = vi.fn();
+    render(
+      <WorkbenchOverlays
+        {...baseProps}
+        imageOverlayEnabled={false}
+        editingClass={{
+          annotationId: "ann-1",
+          geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+          currentClass: "Car",
+          anchor: { left: 120, top: 88 },
+        }}
+        onCommitChangeClass={onCommitChangeClass}
+      />,
+    );
+
+    const popover = screen.getByTestId("class-picker-popover");
+    expect(popover.style.position).toBe("fixed");
+    expect(popover.style.left).toBe("120px");
+    expect(popover.style.top).toBe("88px");
+
+    fireEvent.click(screen.getByText("Bike"));
+    expect(onCommitChangeClass).toHaveBeenCalledWith("Bike");
+  });
 });

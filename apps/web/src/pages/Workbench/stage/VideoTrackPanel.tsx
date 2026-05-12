@@ -59,6 +59,13 @@ function keyframeStatus(kf: VideoTrackKeyframe): string {
   return "正常";
 }
 
+function firstVisibleTrackFrame(track: VideoTrackAnnotation["geometry"]): number | null {
+  if (track.keyframes.length === 0) return null;
+  const visible = track.keyframes.filter((kf) => !kf.absent);
+  const frames = (visible.length > 0 ? visible : track.keyframes).map((kf) => kf.frame_index);
+  return Math.min(...frames);
+}
+
 function exactFrameLabel(selectedTrack: VideoTrackAnnotation | null, frameIndex: number): string {
   if (!selectedTrack) return `F${frameIndex}`;
   const exact = selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex);
@@ -284,7 +291,14 @@ export function VideoTrackPanel({
               key={ann.id}
               data-testid="video-track-row"
               aria-selected={selected}
-              onClick={(e) => onSelect(ann.id, { toggle: e.shiftKey || e.metaKey || e.ctrlKey })}
+              onClick={(e) => {
+                const toggle = e.shiftKey || e.metaKey || e.ctrlKey;
+                if (!toggle) {
+                  const targetFrame = firstVisibleTrackFrame(track);
+                  if (targetFrame !== null) onSeekFrame?.(targetFrame);
+                }
+                onSelect(ann.id, { toggle });
+              }}
               style={{
                 display: "grid",
                 gridTemplateColumns: "minmax(0, 1fr) auto",

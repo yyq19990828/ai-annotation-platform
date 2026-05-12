@@ -165,6 +165,29 @@ describe("VideoStage", () => {
     await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("3"));
   });
 
+  it("syncs externally controlled frame changes to the video element", async () => {
+    const props = {
+      manifest,
+      annotations: [] as AnnotationResponse[],
+      selectedId: null,
+      activeClass: "car",
+      frameIndex: 0,
+      onSelect: () => {},
+      onCreate: () => {},
+      onUpdate: () => {},
+      onRename: () => {},
+    };
+    const { container, rerender } = render(<VideoStage {...props} />);
+    const video = container.querySelector("video");
+
+    expect(video).not.toBeNull();
+    expect(video!.currentTime).toBe(0);
+
+    rerender(<VideoStage {...props} frameIndex={5} />);
+
+    await waitFor(() => expect(video!.currentTime).toBeCloseTo(0.5));
+  });
+
   it("renders playback controls as a floating overlay and hides it while editing", () => {
     const { getByTestId, getByTitle } = render(
       <VideoStage
@@ -191,7 +214,7 @@ describe("VideoStage", () => {
     expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "none" });
   });
 
-  it("lets playback controls visually float but not capture events while an editable box is selected", () => {
+  it("keeps playback controls interactive while an editable box is selected", () => {
     const annotations = [
       {
         id: "b1",
@@ -217,13 +240,37 @@ describe("VideoStage", () => {
     const playbackOverlay = getByTestId("video-playback-overlay");
 
     expect(playbackOverlay).toHaveStyle({ opacity: "1" });
-    expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "none" });
+    expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "auto" });
     expect(overlay).toHaveStyle({ zIndex: "2", pointerEvents: "auto" });
 
     fireEvent.mouseMove(stage);
 
     expect(playbackOverlay).toHaveStyle({ opacity: "1" });
     expect(overlay).toHaveStyle({ cursor: "crosshair" });
+  });
+
+  it("keeps the pending video box visible while class selection is open", () => {
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        pendingDrawing={{
+          kind: "video_bbox",
+          frameIndex: 0,
+          geom: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 },
+          anchor: { left: 100, top: 100 },
+        }}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+
+    expect(getByTestId("video-pending-draft")).toBeInTheDocument();
+    expect(getByTestId("video-label-overlay")).toHaveTextContent("car");
   });
 
   it("keeps playback controls available when the selected bbox is on another frame", () => {
@@ -315,8 +362,8 @@ describe("VideoStage", () => {
       />,
     );
 
-    expect(getByTestId("video-overlay").textContent).toContain("car");
-    expect(getByTestId("video-overlay").textContent).not.toContain("person");
+    expect(getByTestId("video-label-overlay").textContent).toContain("car");
+    expect(getByTestId("video-label-overlay").textContent).not.toContain("person");
   });
 
   it("renders visible screen-pixel strokes for current frame boxes", () => {
@@ -372,9 +419,10 @@ describe("VideoStage", () => {
       />,
     );
 
-    const label = container.querySelector("svg foreignObject");
-    expect(label).toHaveAttribute("x", "0.1");
-    expect(label).toHaveAttribute("y", "0.387");
+    const label = container.querySelector('[data-testid="video-label"]');
+    expect(label).toHaveTextContent("car");
+    expect(label).toHaveStyle({ left: "10%", top: "86%" });
+    expect(container.querySelector("svg foreignObject")).toBeNull();
   });
 
   it("adds a keyframe to the selected video track", () => {
@@ -453,7 +501,8 @@ describe("VideoStage", () => {
 
     fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "3" } });
 
-    expect(getByTestId("video-track-ghost").textContent).toContain("car · 参考 F0");
+    expect(getByTestId("video-track-ghost")).toBeInTheDocument();
+    expect(getByTestId("video-label-overlay")).toHaveTextContent("car · 参考 F0");
 
     const sidebar = render(
       <VideoTrackSidebar
@@ -717,11 +766,10 @@ describe("VideoStage", () => {
     fireEvent.change(getByLabelText("视频帧时间轴"), { target: { value: "1" } });
 
     expect(getByTestId("video-track-path-preview")).toBeInTheDocument();
-    expect(getByTestId("video-overlay").textContent).toContain("car · 插值");
-    const label = Array.from(getByTestId("video-overlay").querySelectorAll("foreignObject"))
+    expect(getByTestId("video-label-overlay").textContent).toContain("car · 插值");
+    const label = Array.from(getByTestId("video-label-overlay").querySelectorAll('[data-testid="video-label"]'))
       .find((node) => node.textContent?.includes("car · 插值"));
-    expect(label).toHaveAttribute("x", "0.2");
-    expect(label).toHaveAttribute("y", "0.007");
+    expect(label).toHaveStyle({ left: "20%", top: "10%" });
   });
 
   it("does not interpolate across an absent keyframe", () => {
@@ -901,6 +949,46 @@ describe("VideoStage", () => {
     expect(onChangeUserBoxClass).toHaveBeenCalledWith("t1");
     expect(promptSpy).not.toHaveBeenCalled();
     promptSpy.mockRestore();
+  });
+
+  it("seeks to the first visible keyframe when selecting a track row", () => {
+    const onSelect = vi.fn();
+    const onSeekFrame = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 9, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 3, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId } = render(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId={null}
+        frameIndex={0}
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={onSelect}
+        onUpdate={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+        onSeekFrame={onSeekFrame}
+      />,
+    );
+
+    fireEvent.click(getByTestId("video-track-row"));
+
+    expect(onSeekFrame).toHaveBeenCalledWith(3);
+    expect(onSelect).toHaveBeenCalledWith("t1");
   });
 
   it("clears the selected track so the next track draw creates a new track", () => {

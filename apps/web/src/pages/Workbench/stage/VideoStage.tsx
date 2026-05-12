@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
-import type { VideoTool } from "../state/useWorkbenchState";
+import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import { VideoFrameOverlay } from "./VideoFrameOverlay";
 import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
@@ -46,6 +46,7 @@ interface VideoStageProps {
   lockedTrackIds?: Set<string>;
   readOnly?: boolean;
   videoTool?: VideoTool;
+  pendingDrawing?: PendingDrawing;
   onSelect: (id: string | null) => void;
   onFrameIndexChange?: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
@@ -80,6 +81,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   lockedTrackIds = EMPTY_TRACK_ID_SET,
   readOnly = false,
   videoTool = "box",
+  pendingDrawing = null,
   onSelect,
   onFrameIndexChange,
   onCreate,
@@ -203,6 +205,17 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     return out;
   }, [annotations]);
 
+  const pendingDraft = useMemo(() => {
+    if (
+      !pendingDrawing ||
+      (pendingDrawing.kind !== "video_bbox" && pendingDrawing.kind !== "video_track") ||
+      pendingDrawing.frameIndex !== frameIndex
+    ) {
+      return null;
+    }
+    return { geom: pendingDrawing.geom, className: activeClass || "未分类" };
+  }, [activeClass, frameIndex, pendingDrawing]);
+
   const qualityWarnings = useMemo(() => {
     const warnings: string[] = [];
     const maxGap = Math.max(30, Math.round(fps * 2));
@@ -240,6 +253,18 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     },
     [fps, maxFrame, setFrameIndex],
   );
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const frame = Math.max(0, Math.min(maxFrame, Math.round(frameIndex)));
+    const nextTime = frame / fps;
+    if (!Number.isFinite(nextTime)) return;
+    const tolerance = Math.max(0.001, 0.5 / fps);
+    if (Math.abs(video.currentTime - nextTime) > tolerance) {
+      video.currentTime = nextTime;
+    }
+  }, [fps, frameIndex, maxFrame]);
 
   const showPlaybackOverlay = useCallback(() => {
     if (overlayHideTimerRef.current) clearTimeout(overlayHideTimerRef.current);
@@ -504,13 +529,6 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }
 
   const draft = drag?.kind === "draw" ? normalizeGeom(drag.start, drag.current) : null;
-  const hasEditableSelection = Boolean(
-    !readOnly &&
-      !isPlaying &&
-      selectedId &&
-      (currentFrameEntries.some((entry) => entry.ann.id === selectedId) || selectedTrackGhost?.ann.id === selectedId),
-  );
-
   return (
     <div
       data-testid="video-stage"
@@ -536,6 +554,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               overlayRef={overlayRef}
               entries={currentFrameEntries}
               trackPreviews={trackPreviews}
+              pendingDraft={pendingDraft}
               aspectRatio={videoAspectRatio}
               selectedId={selectedId}
               selectedTrackGhost={selectedTrackGhost}
@@ -611,7 +630,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             annotatedFrames={[...annotatedFrames].sort((a, b) => a - b)}
             currentFrameEntryCount={currentFrameEntries.length}
             visible={playbackOverlayVisible && !drag}
-            interactive={!hasEditableSelection}
+            interactive
             highlightAction={highlightAction}
             onSeek={(frame) => {
               showPlaybackOverlay();

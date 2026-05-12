@@ -42,6 +42,12 @@ function isAnchoredPending(
   return !!pending && "anchor" in pending;
 }
 
+function hasFixedAnchor<T extends { anchor?: { left: number; top: number } } | null>(
+  value: T,
+): value is NonNullable<T> & { anchor: { left: number; top: number } } {
+  return !!value?.anchor;
+}
+
 export function WorkbenchOverlays({
   pendingDrawing,
   editingClass,
@@ -92,7 +98,19 @@ export function WorkbenchOverlays({
           onCancel={onCancelPending}
         />
       )}
-      {editingClass && canUseImagePosition && !pendingDrawing && (
+      {editingClass && hasFixedAnchor(editingClass) && !pendingDrawing && (
+        <ClassPickerPopover
+          position="fixed"
+          anchor={editingClass.anchor}
+          classes={classes}
+          recent={recentClasses}
+          defaultClass={editingClass.currentClass}
+          title={`改类别 (当前: ${editingClass.currentClass})`}
+          onPick={onCommitChangeClass}
+          onCancel={onCancelChangeClass}
+        />
+      )}
+      {editingClass && !hasFixedAnchor(editingClass) && canUseImagePosition && !pendingDrawing && (
         <ClassPickerPopover
           geom={editingClass.geom}
           imgW={stageGeom.imgW}

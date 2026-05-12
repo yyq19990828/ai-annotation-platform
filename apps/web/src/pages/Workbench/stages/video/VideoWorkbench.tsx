@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import type { AnnotationResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
 import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
-import type { VideoTool } from "../../state/useWorkbenchState";
+import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import type { VideoConvertOptions } from "./useVideoAnnotationActions";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -19,6 +19,7 @@ export interface VideoWorkbenchProps {
   lockedTrackIds: Set<string>;
   readOnly: boolean;
   videoTool: VideoTool;
+  pendingDrawing: PendingDrawing;
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: Geom) => void;
@@ -49,6 +50,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     lockedTrackIds,
     readOnly,
     videoTool,
+    pendingDrawing,
     onSelect,
     onFrameIndexChange,
     onCreate,
@@ -74,6 +76,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         lockedTrackIds={lockedTrackIds}
         readOnly={readOnly}
         videoTool={videoTool}
+        pendingDrawing={pendingDrawing}
         onSelect={onSelect}
         onFrameIndexChange={onFrameIndexChange}
         onCreate={onCreate}

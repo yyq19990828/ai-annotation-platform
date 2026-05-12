@@ -800,6 +800,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         isFetchingMorePredictions: modeState.diffMode !== "final" && predictionsInfinite.isFetchingNextPage,
         onFetchMorePredictions: () => predictionsInfinite.fetchNextPage(),
         currentFrameIndex: isVideoTask ? s.videoFrameIndex : undefined,
+        onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
         videoTrackPanel: isVideoTask ? (
           <VideoTrackSidebar
             annotations={annotationsData ?? []}

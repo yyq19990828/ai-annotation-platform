@@ -7,7 +7,7 @@ import { buildIoUIndex } from "../../stage/iou-index";
 import { iouShape } from "../../stage/iou";
 import type { useAnnotationHistory } from "../../state/useAnnotationHistory";
 import type { UseInteractiveAIReturn } from "../../state/useInteractiveAI";
-import { polygonBounds, predictionsToBoxes, type AiBox } from "../../state/transforms";
+import { geometryToShape, polygonBounds, predictionsToBoxes, type AiBox } from "../../state/transforms";
 import { useClipboard } from "../../state/useClipboard";
 import {
   useWorkbenchAnnotationActions,
@@ -386,10 +386,16 @@ export function useImageAnnotationActions({
   const handleStartChangeClass = useCallback((annotationId: string) => {
     const ann = annotationsRef.current.find((a) => a.id === annotationId);
     if (!ann) return;
+    const isVideoGeometry = ann.geometry.type === "video_bbox" || ann.geometry.type === "video_track";
+    const geom = isVideoGeometry ? geometryToShape(ann.geometry) : ann.geometry as Geom;
+    const anchor = isVideoGeometry && typeof window !== "undefined"
+      ? { left: Math.max(16, window.innerWidth - 340), top: 96 }
+      : undefined;
     s.setEditingClass({
       annotationId,
-      geom: ann.geometry as Geom,
+      geom,
       currentClass: ann.class_name,
+      anchor,
     });
   }, [s, annotationsRef]);
 

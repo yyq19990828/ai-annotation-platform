@@ -193,6 +193,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             lockedTrackIds={lockedVideoTrackIds}
             readOnly={readOnly}
             videoTool={videoTool}
+            pendingDrawing={pendingDrawing}
             onSelect={onSelectBox}
             onFrameIndexChange={onVideoFrameIndexChange}
             onCreate={onVideoCreate}

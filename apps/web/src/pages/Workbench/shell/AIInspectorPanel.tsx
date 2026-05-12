@@ -54,6 +54,7 @@ interface AIInspectorPanelProps {
   isFetchingMorePredictions?: boolean;
   onFetchMorePredictions?: () => void;
   currentFrameIndex?: number;
+  onSeekFrame?: (frameIndex: number) => void;
   onToggle: () => void;
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
@@ -83,7 +84,7 @@ export function AIInspectorPanel({
   attributeSchema, selectedAnnotation, onUpdateAttributes, currentUserId,
   taskFileUrl, enableCommentCanvasDrawing = true, liveCommentCanvas,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
-  currentFrameIndex,
+  currentFrameIndex, onSeekFrame,
   onToggle,
   onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   readOnly = false,
@@ -184,6 +185,7 @@ export function AIInspectorPanel({
         isFetchingMore={isFetchingMorePredictions}
         onFetchMore={onFetchMorePredictions}
         currentFrameIndex={currentFrameIndex}
+        onSeekFrame={onSeekFrame}
         onSelect={onSelect}
         onAcceptPrediction={onAcceptPrediction}
         onRejectPrediction={onRejectPrediction}
@@ -632,6 +634,16 @@ function boxIsOnFrame(box: Annotation | AiBox, frameIndex: number) {
   return true;
 }
 
+function firstTrackFrame(box: Annotation | AiBox): number | null {
+  const geometry = box.geometry;
+  if (!geometry) return null;
+  if (geometry.type === "video_bbox") return geometry.frame_index;
+  if (geometry.type !== "video_track" || geometry.keyframes.length === 0) return null;
+  const visible = geometry.keyframes.filter((kf) => !kf.absent);
+  const frames = (visible.length > 0 ? visible : geometry.keyframes).map((kf) => kf.frame_index);
+  return Math.min(...frames);
+}
+
 function filterBoxesByFrame<T extends Annotation | AiBox>(
   boxes: T[],
   frameIndex: number | undefined,
@@ -702,6 +714,7 @@ interface BoxesListProps {
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
+  onSeekFrame?: (frameIndex: number) => void;
   videoTrackPanel?: React.ReactNode;
 }
 
@@ -709,6 +722,7 @@ function BoxesList({
   aiBoxes, userBoxes, selSet, dimmedAiIds, imageWidth, imageHeight,
   hasMore, isFetchingMore, onFetchMore,
   currentFrameIndex,
+  onSeekFrame,
   onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   videoTrackPanel,
 }: BoxesListProps) {
@@ -753,6 +767,14 @@ function BoxesList({
     if (videoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
     return out;
   }, [aiBoxes.length, aiFrameFilter, filteredAiBoxes, filteredUserBoxes, showFrameFilter, userBoxes.length, userFrameFilter, videoTrackPanel]);
+
+  const selectBox = (box: Annotation | AiBox, shift: boolean | undefined) => {
+    if (!shift) {
+      const frame = firstTrackFrame(box);
+      if (frame !== null) onSeekFrame?.(frame);
+    }
+    onSelect(box.id, { shift: !!shift });
+  };
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -800,7 +822,7 @@ function BoxesList({
                   selected={selSet.has(r.box.id)}
                   dimmed={dimmedAiIds?.has(r.box.id) ?? false}
                   imageWidth={imageWidth} imageHeight={imageHeight}
-                  onSelect={(e) => onSelect(r.box.id, { shift: !!e?.shiftKey })}
+                  onSelect={(e) => selectBox(r.box, e?.shiftKey)}
                   onAccept={() => onAcceptPrediction(r.box)}
                   onReject={() => {
                     onRejectPrediction?.(r.box);
@@ -840,7 +862,7 @@ function BoxesList({
                   b={r.box}
                   selected={selSet.has(r.box.id)}
                   imageWidth={imageWidth} imageHeight={imageHeight}
-                  onSelect={(e) => onSelect(r.box.id, { shift: !!e?.shiftKey })}
+                  onSelect={(e) => selectBox(r.box, e?.shiftKey)}
                   onDelete={() => onDeleteUserBox(r.box.id)}
                   onChangeClass={onChangeUserBoxClass ? () => onChangeUserBoxClass(r.box.id) : undefined}
                 />

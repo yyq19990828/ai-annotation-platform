@@ -56,6 +56,7 @@ export type EditingClass = {
   annotationId: string;
   geom: Geom;
   currentClass: string;
+  anchor?: { left: number; top: number };
 } | null;
 
 export function useWorkbenchState() {
