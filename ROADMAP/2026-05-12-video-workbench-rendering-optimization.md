@@ -566,15 +566,16 @@ Wave 7 · 质量与评估（与长期 L15 联动）
 - **不做**：
   - 不把 trace 上传为长期资产；先保留本地生成和 PR 附件路径。
 
-### 候选 · Probe / Poster / Frame Asset Retry
+### v0.9.33 · Probe / Poster / Frame Asset Retry（已完成第一版）
 
 - **范围来源**：V5 + B3 后续。
-- **核心交付**：
-  - 后端统一 probe / poster / timetable / frame cache / chunk 失败状态与 retry task。
-  - 管理侧视频失败列表展示 `probe_error` / `poster_error` / `frame_timetable_error` / chunk/frame cache 最近失败。
-  - 手动 retry 后进入 media queue，并在 UI 上展示 pending / ready / failed。
+- **核心交付（已落地）**：
+  - 后端统一列出 `probe_error` / `poster_error` / `frame_timetable_error` 与 chunk / frame cache 失败行。
+  - 新增 `POST /storage/video-assets/retry`，复用 `generate_video_metadata` / `ensure_video_chunks` / `extract_video_frames` media 队列任务。
+  - 存储管理页新增「视频资产失败」面板，展示项目、任务、失败类型、错误摘要与重试入口。
 - **不做**：
   - 不引入新服务；仍复用 Celery media queue。
+  - 第一版不做自动重试和长期失败趋势图。
 
 ### 候选 · Review Video Anchors
 

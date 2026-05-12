@@ -247,6 +247,8 @@
 |---|---|
 | GET | `/health` |
 | GET | `/buckets` |
+| GET | `/video-assets/failures` |
+| POST | `/video-assets/retry` |
 
 ## `system_settings.py`
 
@@ -315,4 +317,4 @@
 
 ---
 
-_共 29 模块 / 173 路由_
+_共 29 模块 / 175 路由_

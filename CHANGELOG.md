@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.9.33] - 2026-05-12
+
+> **Video Frame Asset Retry — 视频资产失败列表与 media 队列重试.** 主线: ① 存储 API 汇总视频 `probe_error` / `poster_error` / `frame_timetable_error` 以及 chunk / frame cache 失败行；② 新增手动 retry 入口，复用既有 `generate_video_metadata`、`ensure_video_chunks`、`extract_video_frames` Celery media 任务；③ 存储管理页增加「视频资产失败」面板，可查看项目/任务、失败类型、错误摘要并重试。→ [plan](docs/plans/2026-05-12-v0.9.33-video-frame-asset-retry.md).
+
+### Added
+
+- **视频资产失败列表 API**：`GET /api/v1/storage/video-assets/failures` 返回 probe / poster / frame timetable / chunk / frame cache 的失败资产，包含 dataset item、task、project、错误信息和更新时间。
+- **视频资产重试 API**：`POST /api/v1/storage/video-assets/retry` 根据 asset type 投递现有 media Celery 任务；chunk / frame 重试前会把失败行恢复为 `pending`。
+- **存储页管理入口**：`/storage` 新增「视频资产失败」面板，管理员可直接看到失败视频资产并投递重试。
+
+### Changed
+
+- 视频 probe / poster / timetable 失败不再只能靠数据库或日志定位；管理侧有统一可见入口。
+- chunk / frame cache 失败从被动等待下一次访问，扩展为可人工重试的运维动作。
+
 ## [0.9.31] - 2026-05-12
 
 > **Video Observability Pack — 视频工作台性能回归与 BUG 诊断包.** 主线: ① 新增 `video:bench` 脚本与 720p/1080p/4K × 10/100/500 tracks 的基准矩阵；② 视频工作台维护当前 task 的诊断快照，覆盖 frame clock、最近 seek、J/K/L 播放状态、timeline mode 和 frame preview cache；③ BugReportDrawer 在视频工作台自动把诊断写入反馈描述和 structured console payload；④ docs-site 增加视频性能回归 how-to。→ [plan](docs/plans/2026-05-12-v0.9.31-video-observability-pack.md).

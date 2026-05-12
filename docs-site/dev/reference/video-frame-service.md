@@ -70,6 +70,27 @@ videos/{dataset_item_id}/frames/{frame_index}_{width}.{format}
 
 内部 AI worker 可调用 `app.services.video_frame_service.get_frame_array()` 读取已缓存帧，进程内 LRU 上限由 `VIDEO_FRAME_MEMORY_CACHE_ITEMS` 控制。
 
+## 失败资产与重试
+
+v0.9.33 起，管理侧通过存储 API 汇总视频资产失败状态：
+
+```http
+GET /api/v1/storage/video-assets/failures
+POST /api/v1/storage/video-assets/retry
+```
+
+失败列表覆盖五类资产：
+
+| asset_type | 来源 | 重试任务 |
+|---|---|---|
+| `probe` | `dataset_items.metadata["video"]["probe_error"]` | `generate_video_metadata` |
+| `poster` | `dataset_items.metadata["video"]["poster_error"]` | `generate_video_metadata` |
+| `frame_timetable` | `dataset_items.metadata["video"]["frame_timetable_error"]` | `generate_video_metadata` |
+| `chunk` | `video_chunks.status = "failed"` | `ensure_video_chunks` |
+| `frame` | `video_frame_cache.status = "failed"` | `extract_video_frames` |
+
+`probe` / `poster` / `frame_timetable` 共用 metadata 任务，因此重试任一项都会重新跑视频 metadata 生成链路。`chunk` / `frame` 重试会先把对应行恢复到 `pending` 并清空 `error`，再投递 media 队列。
+
 ## 配置与指标
 
 | 配置 | 默认值 | 用途 |
