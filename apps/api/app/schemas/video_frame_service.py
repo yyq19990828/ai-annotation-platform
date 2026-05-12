@@ -42,6 +42,13 @@ class VideoFramePrefetchRequest(BaseModel):
     format: Literal["webp", "jpeg"] = "webp"
 
 
+class VideoFrameRetryRequest(BaseModel):
+    frame_indices: list[int] = Field(default_factory=list, max_length=500)
+    width: int = Field(default=512, ge=1, le=4096)
+    format: Literal["webp", "jpeg"] = "webp"
+    force: bool = False
+
+
 class VideoFramePrefetchResponse(BaseModel):
     dataset_item_id: UUID
     task_id: UUID | None = None

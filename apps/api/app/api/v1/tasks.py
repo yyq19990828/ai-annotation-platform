@@ -31,6 +31,7 @@ from app.schemas.video_frame_service import (
     VideoFrameOut,
     VideoFramePrefetchRequest,
     VideoFramePrefetchResponse,
+    VideoFrameRetryRequest,
     VideoManifestV2Response,
     VideoSegmentOut,
     VideoSegmentsResponse,
@@ -62,6 +63,7 @@ from app.services.video_frame_service import (
     list_chunks as list_video_chunks,
     manifest_v2 as build_video_manifest_v2,
     prefetch_frames as prefetch_video_frames,
+    retry_frames as retry_video_frames,
 )
 from app.services.video_segment_service import (
     claim_segment,
@@ -654,6 +656,29 @@ async def prefetch_video_frame_assets(
     ctx = await build_context_from_task(db, task)
     return await prefetch_video_frames(
         db, ctx, payload.frame_indices, payload.width, payload.format
+    )
+
+
+@router.post(
+    "/{task_id}/video/frames:retry",
+    response_model=VideoFramePrefetchResponse,
+)
+async def retry_video_frame_assets(
+    task_id: uuid.UUID,
+    payload: VideoFrameRetryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return await retry_video_frames(
+        db,
+        ctx,
+        payload.frame_indices,
+        payload.width,
+        payload.format,
+        force=payload.force,
     )
 
 

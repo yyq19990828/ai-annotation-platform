@@ -58,11 +58,15 @@ videos/{dataset_item_id}/chunks/{chunk_id}.mp4
 ```http
 GET /api/v1/tasks/{task_id}/video/frames/{frame_index}?format=webp&w=512
 POST /api/v1/tasks/{task_id}/video/frames:prefetch
+POST /api/v1/tasks/{task_id}/video/frames:retry
 GET /api/v1/videos/{dataset_item_id}/frames/{frame_index}?format=jpeg&w=320
 POST /api/v1/videos/{dataset_item_id}/frames:prefetch
+POST /api/v1/videos/{dataset_item_id}/frames:retry
 ```
 
 缓存命中返回 `status="ready"` 和 signed URL；未命中创建 `VideoFrameCache(status="pending")`，投递 `extract_video_frames`，并返回 HTTP 202。抽帧优先使用 B1 的 `pts_ms`，旧视频缺 timetable 时按 `fps` 估算。
+
+`frames:retry` 默认只重投 `status="failed"` 的缓存行；传入 `frame_indices` 时只处理这些帧，未传时最多处理当前 `width + format` 下 500 条失败行。`force=true` 会重置指定帧的 storage key / byte size 并重新投递，适合源视频修复后刷新坏缓存。
 
 MinIO key：
 
@@ -70,7 +74,22 @@ MinIO key：
 videos/{dataset_item_id}/frames/{frame_index}_{width}.{format}
 ```
 
+视频 metadata 任务生成 poster 时也写入同一套缓存：`frame_index=0,width=512,format=webp`。因此 `DatasetItem.thumbnail_path` 与 `metadata.video.poster_frame_path` 会指向 `videos/{dataset_item_id}/frames/0_512.webp`。
+
 内部 AI worker 可调用 `app.services.video_frame_service.get_frame_array()` 读取已缓存帧，进程内 LRU 上限由 `VIDEO_FRAME_MEMORY_CACHE_ITEMS` 控制。
+
+## Timetable 重建
+
+旧视频或 probe 异常视频可重建 B1 帧时间表：
+
+```bash
+cd apps/api
+uv run python -m app.cli.video.rebuild_timetable --dataset-item-id <uuid>
+uv run python -m app.cli.video.rebuild_timetable --dataset-id <uuid> --keep-going
+uv run python -m app.cli.video.rebuild_timetable --all --limit 100
+```
+
+命令会下载源视频或 playback 视频，调用 `ffprobe -show_frames`，替换该视频的 `video_frame_indices` 行，并更新 `metadata.video.frame_timetable_frame_count`。失败时写入 `metadata.video.frame_timetable_error`。
 
 ## Segment 协同
 

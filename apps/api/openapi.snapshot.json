@@ -9624,6 +9624,41 @@
         "title": "VideoFramePrefetchResponse",
         "type": "object"
       },
+      "VideoFrameRetryRequest": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "format": {
+            "default": "webp",
+            "enum": [
+              "webp",
+              "jpeg"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "frame_indices": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 500,
+            "title": "Frame Indices",
+            "type": "array"
+          },
+          "width": {
+            "default": 512,
+            "maximum": 4096.0,
+            "minimum": 1.0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "title": "VideoFrameRetryRequest",
+        "type": "object"
+      },
       "VideoFrameTimetableEntry": {
         "properties": {
           "byte_offset": {
@@ -19765,6 +19800,64 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/video/frames:retry": {
+      "post": {
+        "operationId": "retry_video_frame_assets_api_v1_tasks__task_id__video_frames_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoFrameRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFramePrefetchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Video Frame Assets",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/video/manifest": {
       "get": {
         "operationId": "get_video_manifest_api_v1_tasks__task_id__video_manifest_get",
@@ -20962,6 +21055,64 @@
           }
         ],
         "summary": "Prefetch Video Frame Assets",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/frames:retry": {
+      "post": {
+        "operationId": "retry_video_frame_assets_api_v1_videos__dataset_item_id__frames_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoFrameRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFramePrefetchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Video Frame Assets",
         "tags": [
           "videos"
         ]

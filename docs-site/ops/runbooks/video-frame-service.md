@@ -67,6 +67,47 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 - 视频 metadata 未生成：重新触发媒体回填。
 - ffmpeg 超时：先确认视频是否损坏或码流异常。
 
+修复源视频或 metadata 后，可通过 API 重投失败帧：
+
+```bash
+curl -X POST "$API/api/v1/tasks/$TASK_ID/video/frames:retry" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"width":512,"format":"webp"}'
+```
+
+只刷新指定帧并丢弃旧缓存：
+
+```bash
+curl -X POST "$API/api/v1/videos/$DATASET_ITEM_ID/frames:retry" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"frame_indices":[0,30,60],"width":512,"format":"webp","force":true}'
+```
+
+## 帧时间表缺失或漂移
+
+先确认该视频是否有 B1 表：
+
+```bash
+docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+  "SELECT count(*) FROM video_frame_indices WHERE dataset_item_id = '<dataset_item_id>';"
+```
+
+旧视频可在 API/Celery 镜像内重建：
+
+```bash
+docker exec ai-annotation-platform-api-1 \
+  python -m app.cli.video.rebuild_timetable --dataset-item-id <dataset_item_id>
+```
+
+批量数据集重建建议加 `--keep-going`，避免单个损坏视频阻断整批：
+
+```bash
+docker exec ai-annotation-platform-api-1 \
+  python -m app.cli.video.rebuild_timetable --dataset-id <dataset_id> --keep-going
+```
+
 ## MinIO 空间增长
 
 视频帧服务通过 Celery beat 每天清理未访问缓存。先确认 beat 正常：

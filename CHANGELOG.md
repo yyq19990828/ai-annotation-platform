@@ -22,6 +22,19 @@
 
 ## 最新版本
 
+## [0.9.30] - 2026-05-12
+
+> **Video Timetable / Frame Cache Repair — 旧视频帧表重建与缓存修复闭环.** 主线: ① 新增 `python -m app.cli.video.rebuild_timetable`，支持按视频、数据集或全量重建 `video_frame_indices`；② 新增 task/videos facade 的 `frames:retry` API，失败单帧缓存可重新投递，`force=true` 可刷新指定帧；③ 视频 poster 改为复用 `VideoFrameCache(frame_index=0,width=512,format=webp)` 产物。→ [plan](docs/plans/2026-05-12-v0.9.30-video-timetable-frame-cache-repair.md).
+
+### Added
+
+- **Timetable rebuild CLI**：新增 `app.cli.video.rebuild_timetable`，用于旧视频或异常视频重新生成 B1 帧时间表，并回写 `metadata.video.frame_timetable_frame_count` / `frame_timetable_error`。
+- **Frame cache retry API**：新增 `POST /api/v1/tasks/{task_id}/video/frames:retry` 与 `POST /api/v1/videos/{dataset_item_id}/frames:retry`。
+
+### Changed
+
+- **Poster 复用 B3 缓存**：视频 metadata 任务生成 poster 时写入 `videos/{dataset_item_id}/frames/0_512.webp`，`DatasetItem.thumbnail_path` 与 `poster_frame_path` 共享该缓存 key。
+
 ## [0.9.28] - 2026-05-12
 
 > **Video Segment Collaboration MVP — 后端 segment 协作基线.** 主线: ① 新增 `video_segments` 表，按 `DatasetItem` 表达视频内 frame range；② manifest v2 和 task/videos facade 返回 segment 列表；③ task 入口支持 claim / heartbeat / release 的短 TTL lock；④ 同步协议文档、runbook、环境变量和 ADR。→ [plan](docs/plans/2026-05-12-v0.9.28-video-segments.md).

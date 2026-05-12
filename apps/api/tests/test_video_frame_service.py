@@ -5,12 +5,14 @@ from app.db.models.dataset import (
     DatasetItem,
     VideoChunk,
     VideoFrameCache,
+    VideoFrameIndex,
     VideoSegment,
 )
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
+from app.cli.video.rebuild_timetable import rebuild_item_timetable
 
 
 async def _make_video_task(db_session, owner_id):
@@ -330,3 +332,115 @@ async def test_video_frame_prefetch_creates_missing_rows(
             ],
         )
     ]
+
+
+async def test_video_frame_retry_resets_failed_rows_only(
+    db_session, httpx_client_bound, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    queued: list[tuple[str, list[dict]]] = []
+    db_session.add_all(
+        [
+            VideoFrameCache(
+                dataset_item_id=item.id,
+                frame_index=7,
+                width=512,
+                format="webp",
+                status="failed",
+                error="ffmpeg failed",
+            ),
+            VideoFrameCache(
+                dataset_item_id=item.id,
+                frame_index=8,
+                width=512,
+                format="webp",
+                status="ready",
+                storage_key=f"videos/{item.id}/frames/8_512.webp",
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        "app.workers.media.extract_video_frames.delay",
+        lambda item_id, requests: queued.append((item_id, requests)),
+    )
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/frames:retry",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"frame_indices": [7, 8], "width": 512, "format": "webp"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [frame["frame_index"] for frame in body["frames"]] == [7]
+    assert body["frames"][0]["status"] == "pending"
+    assert queued == [
+        (
+            str(item.id),
+            [{"frame_index": 7, "width": 512, "format": "webp"}],
+        )
+    ]
+
+
+async def test_rebuild_timetable_cli_helper_replaces_rows(
+    db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    _, item = await _make_video_task(db_session, user.id)
+    db_session.add(
+        VideoFrameIndex(
+            dataset_item_id=item.id,
+            frame_index=0,
+            pts_ms=999,
+            is_keyframe=False,
+        )
+    )
+    await db_session.flush()
+
+    class FakeClient:
+        def download_fileobj(self, Bucket, Key, Fileobj):
+            assert Key == "playback/clip.mp4"
+            Fileobj.write(b"fake video")
+
+    class FakeStorage:
+        datasets_bucket = "datasets"
+        client = FakeClient()
+
+    monkeypatch.setattr(
+        "app.cli.video.rebuild_timetable.probe_video_frame_timetable",
+        lambda path: [
+            {
+                "frame_index": 0,
+                "pts_ms": 0,
+                "is_keyframe": True,
+                "pict_type": "I",
+                "byte_offset": 10,
+            },
+            {
+                "frame_index": 1,
+                "pts_ms": 33,
+                "is_keyframe": False,
+                "pict_type": "P",
+                "byte_offset": 20,
+            },
+        ],
+    )
+
+    count = await rebuild_item_timetable(db_session, item, storage=FakeStorage())
+
+    rows = (
+        await db_session.execute(
+            VideoFrameIndex.__table__
+            .select()
+            .where(VideoFrameIndex.dataset_item_id == item.id)
+            .order_by(VideoFrameIndex.frame_index.asc())
+        )
+    ).all()
+    await db_session.refresh(item)
+
+    assert count == 2
+    assert [row.pts_ms for row in rows] == [0, 33]
+    assert item.metadata_["video"]["frame_timetable_frame_count"] == 2

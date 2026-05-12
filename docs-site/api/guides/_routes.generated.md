@@ -273,6 +273,7 @@
 | GET | `/{task_id}/video/chunks/{chunk_id}` |
 | GET | `/{task_id}/video/frames/{frame_index}` |
 | POST | `/{task_id}/video/frames:prefetch` |
+| POST | `/{task_id}/video/frames:retry` |
 | GET | `/{task_id}/annotations` |
 | GET | `/{task_id}/annotations/page` |
 | POST | `/{task_id}/annotations` |
@@ -317,7 +318,8 @@
 | GET | `/{dataset_item_id}/chunks/{chunk_id}` |
 | GET | `/{dataset_item_id}/frames/{frame_index}` |
 | POST | `/{dataset_item_id}/frames:prefetch` |
+| POST | `/{dataset_item_id}/frames:retry` |
 
 ---
 
-_共 29 模块 / 178 路由_
+_共 29 模块 / 180 路由_

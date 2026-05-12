@@ -6,15 +6,17 @@ from pydantic import TypeAdapter
 from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import Dataset, DatasetItem, VideoFrameIndex
+from app.db.models.dataset import Dataset, DatasetItem, VideoFrameCache, VideoFrameIndex
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.schemas._jsonb_types import Geometry
+from app.schemas.task import VideoMetadata
 from app.workers.media import (
     FFMPEG_POSTER_TIMEOUT_SECONDS,
     FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
     FFPROBE_TIMEOUT_SECONDS,
+    _store_frame_cache_image,
     extract_video_poster,
     parse_ffprobe_video_metadata,
     parse_ffprobe_frame_timetable,
@@ -160,6 +162,79 @@ def test_extract_video_poster_uses_timeout(tmp_path, monkeypatch):
     extract_video_poster(video, poster)
 
     assert seen["timeout"] == FFMPEG_POSTER_TIMEOUT_SECONDS
+
+
+async def test_store_frame_cache_image_uses_shared_video_frame_cache(
+    db_session, tmp_path, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    dataset = Dataset(
+        display_id=f"D-VID-{uuid.uuid4().hex[:6]}",
+        name="videos",
+        data_type="video",
+        created_by=user.id,
+    )
+    db_session.add(dataset)
+    await db_session.flush()
+    item = DatasetItem(
+        dataset_id=dataset.id,
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        metadata_={"video": {"fps": 30, "frame_count": 10}},
+    )
+    db_session.add(item)
+    await db_session.flush()
+    row = VideoFrameCache(
+        dataset_item_id=item.id,
+        frame_index=0,
+        width=512,
+        format="webp",
+        status="pending",
+    )
+    db_session.add(row)
+    await db_session.flush()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fake")
+
+    class FakeClient:
+        def __init__(self):
+            self.puts = []
+
+        def put_object(self, **kwargs):
+            self.puts.append(kwargs)
+
+    class FakeStorage:
+        datasets_bucket = "datasets"
+
+        def __init__(self):
+            self.client = FakeClient()
+
+        def ensure_bucket(self, bucket):
+            assert bucket == "datasets"
+
+    def fake_extract(input_path, output_path, pts_ms, width):
+        assert input_path == source
+        assert pts_ms == 0
+        assert width == 512
+        output_path.write_bytes(b"poster")
+
+    storage = FakeStorage()
+    monkeypatch.setattr("app.workers.media.extract_video_frame_image", fake_extract)
+
+    await _store_frame_cache_image(
+        db_session,
+        storage,
+        item,
+        VideoMetadata.model_validate({"fps": 30, "frame_count": 10}),
+        source,
+        tmp_path,
+        row,
+    )
+
+    assert row.status == "ready"
+    assert row.storage_key == f"videos/{item.id}/frames/0_512.webp"
+    assert storage.client.puts[0]["Key"] == row.storage_key
 
 
 def test_transcode_video_for_browser_uses_timeout(tmp_path, monkeypatch):
