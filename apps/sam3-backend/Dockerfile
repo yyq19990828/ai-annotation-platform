@@ -59,7 +59,20 @@ RUN pip install --upgrade "pip" "setuptools>=68,<81" "wheel" && \
         "transformers>=4.45" \
         "supervision>=0.21" \
         "pynvml>=11.5" \
-        "psutil>=5.9"
+        "psutil>=5.9" \
+        "einops>=0.7" \
+        "hydra-core>=1.3" \
+        "omegaconf>=2.3" \
+        "scipy>=1.11" \
+        "scikit-image>=0.22" \
+        "scikit-learn>=1.3"
+
+# 上面 6 个补丁是 vendor/sam3 在 pyproject 里漏列的运行时 import (grep sam3/ 拿到):
+#   einops      — sam3/sam/rope.py 用; SAM 注意力机制必经
+#   hydra-core  — sam3 模型构造走 hydra config 系统
+#   omegaconf   — hydra 底层 schema; 与 hydra-core 配套
+#   scipy / scikit-image / scikit-learn — segmentation 后处理 / 评估指标常用
+# 如启动时再报新 ModuleNotFoundError, 加到这块 + sync_vendor.sh 升级 commit 时复核.
 
 # build context 是 apps/ (与 grounded-sam2-backend 一致); 所有 COPY 路径以 apps/ 为根.
 # 启动方式: `docker compose --profile gpu-sam3 build sam3-backend`
