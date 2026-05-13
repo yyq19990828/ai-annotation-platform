@@ -9,6 +9,14 @@ import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTi
 
 type HighlightAction = "prev" | "next" | "play" | null;
 
+export interface VideoTimelineChapter {
+  id: string;
+  startFrame: number;
+  endFrame: number;
+  title: string;
+  color?: string | null;
+}
+
 interface VideoPlaybackOverlayProps {
   frameIndex: number;
   maxFrame: number;
@@ -19,6 +27,7 @@ interface VideoPlaybackOverlayProps {
   globalTimelineDensity?: VideoTimelineDensityBin[];
   loopRegion?: VideoLoopRegion | null;
   bookmarks?: VideoBookmark[];
+  chapters?: VideoTimelineChapter[];
   hoverPreview?: VideoFramePreview | null;
   currentFrameEntryCount: number;
   visible: boolean;
@@ -31,6 +40,7 @@ interface VideoPlaybackOverlayProps {
   onClearLoopRegion?: () => void;
   onSeekBookmark?: (frameIndex: number) => void;
   onHoverFrameChange?: (frameIndex: number | null) => void;
+  onSeekChapter?: (chapterId: string, frameIndex: number) => void;
 }
 
 function formatTime(seconds: number) {
@@ -50,6 +60,7 @@ export function VideoPlaybackOverlay({
   globalTimelineDensity = [],
   loopRegion = null,
   bookmarks = [],
+  chapters = [],
   hoverPreview = null,
   currentFrameEntryCount,
   visible,
@@ -62,12 +73,14 @@ export function VideoPlaybackOverlay({
   onClearLoopRegion,
   onSeekBookmark,
   onHoverFrameChange,
+  onSeekChapter,
 }: VideoPlaybackOverlayProps) {
   const [hoverFrame, setHoverFrame] = useState<number | null>(null);
   const [loopDraft, setLoopDraft] = useState<VideoLoopRegion | null>(null);
   const loopDraftRef = useRef<VideoLoopRegion | null>(null);
   const seekDragRef = useRef(false);
   const timelineShellRef = useRef<HTMLDivElement | null>(null);
+  const hoverFrameRef = useRef<number | null>(null);
   const frameTooltip = useMemo(() => {
     if (hoverFrame === null) return null;
     return `F ${hoverFrame} · ${formatTime(frameToTime(hoverFrame, timebase))}`;
@@ -86,6 +99,12 @@ export function VideoPlaybackOverlay({
     startFrame: Math.min(from, to),
     endFrame: Math.max(from, to),
   });
+  const updateHoverFrame = (nextFrame: number | null) => {
+    if (hoverFrameRef.current === nextFrame) return;
+    hoverFrameRef.current = nextFrame;
+    setHoverFrame(nextFrame);
+    onHoverFrameChange?.(nextFrame);
+  };
   const rangeStyle = (from: number, to: number) => {
     const left = maxFrame > 0 ? (from / maxFrame) * 100 : 0;
     const right = maxFrame > 0 ? (to / maxFrame) * 100 : 0;
@@ -199,8 +218,7 @@ export function VideoPlaybackOverlay({
         onPointerMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const frame = frameFromPointer(e.clientX, rect);
-          setHoverFrame(frame);
-          onHoverFrameChange?.(frame);
+          updateHoverFrame(frame);
           const draft = loopDraftRef.current;
           if (draft) {
             e.preventDefault();
@@ -240,8 +258,7 @@ export function VideoPlaybackOverlay({
         }}
         onPointerLeave={() => {
           if (seekDragRef.current || loopDraftRef.current) return;
-          setHoverFrame(null);
-          onHoverFrameChange?.(null);
+          updateHoverFrame(null);
         }}
       >
         <input
@@ -260,12 +277,10 @@ export function VideoPlaybackOverlay({
           onPointerMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const nextFrame = frameFromPointer(e.clientX, rect);
-            setHoverFrame(nextFrame);
-            onHoverFrameChange?.(nextFrame);
+            updateHoverFrame(nextFrame);
           }}
           onPointerLeave={() => {
-            setHoverFrame(null);
-            onHoverFrameChange?.(null);
+            updateHoverFrame(null);
           }}
           onPointerUp={(e) => focusTimelineShell(e.currentTarget)}
           style={{ width: "100%", pointerEvents: "none" }}
@@ -283,6 +298,44 @@ export function VideoPlaybackOverlay({
                 borderRadius: 999,
               }}
             />
+          )}
+          {chapters.length > 0 && (
+            <div
+              data-testid="video-timeline-chapters"
+              style={{ position: "absolute", left: 0, right: 0, top: -7, height: 5 }}
+            >
+              {chapters.map((chapter) => {
+                const span = Math.max(0, chapter.endFrame - chapter.startFrame);
+                const widthPct = maxFrame > 0 ? ((span + 1) / (maxFrame + 1)) * 100 : 100;
+                const leftPct = maxFrame > 0 ? (chapter.startFrame / maxFrame) * 100 : 0;
+                return (
+                  <button
+                    key={chapter.id}
+                    type="button"
+                    data-testid="video-timeline-chapter"
+                    title={`${chapter.title} · F${chapter.startFrame}-F${chapter.endFrame}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onSeekChapter?.(chapter.id, chapter.startFrame);
+                    }}
+                    style={{
+                      position: "absolute",
+                      left: `${leftPct}%`,
+                      width: `${Math.max(0.5, widthPct)}%`,
+                      top: 0,
+                      height: 5,
+                      padding: 0,
+                      border: "1px solid rgba(255,255,255,0.18)",
+                      borderRadius: 3,
+                      background: chapter.color ?? "oklch(0.62 0.18 252)",
+                      pointerEvents: visible && interactive ? "auto" : "none",
+                      cursor: "pointer",
+                    }}
+                  />
+                );
+              })}
+            </div>
           )}
           {bookmarks.map((bookmark) => (
             <button

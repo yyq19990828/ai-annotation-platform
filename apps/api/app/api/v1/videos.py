@@ -187,7 +187,9 @@ async def get_video_frame(
     if body.status == "pending":
         response.status_code = 202
         response.headers["Retry-After"] = str(body.retry_after or 3)
-    response.headers["Cache-Control"] = "private, max-age=3600"
+    response.headers["Cache-Control"] = (
+        "private, max-age=3600" if body.status == "ready" else "no-store"
+    )
     return body
 
 

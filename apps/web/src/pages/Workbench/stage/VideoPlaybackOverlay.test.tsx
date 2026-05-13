@@ -96,6 +96,19 @@ describe("VideoPlaybackOverlay", () => {
     expect(getByTestId("video-frame-preview-image")).toHaveAttribute("src", "/frame-5.webp");
   });
 
+  it("does not report duplicate hover changes for the same frame", () => {
+    const onHoverFrameChange = vi.fn();
+    const { getByTestId } = renderOverlay({ onHoverFrameChange });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+
+    fireEvent(shell, pointerMove(560));
+    fireEvent(shell, pointerMove(561));
+
+    expect(onHoverFrameChange).toHaveBeenCalledTimes(1);
+    expect(onHoverFrameChange).toHaveBeenCalledWith(5);
+  });
+
   it("seeks from the timeline shell instead of relying on native range pointer focus", () => {
     const onSeek = vi.fn();
     const { getByTestId } = renderOverlay({ onSeek });

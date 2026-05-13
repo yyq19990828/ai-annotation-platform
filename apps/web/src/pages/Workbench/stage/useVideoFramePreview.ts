@@ -54,6 +54,7 @@ interface UseVideoFramePreviewArgs {
 }
 
 const MAX_CACHE_ITEMS = 120;
+const MAX_PENDING_RETRIES = 10;
 const RETRY_DELAY_MS = 800;
 const EMPTY_DIAGNOSTICS: VideoFramePreviewDiagnostics = {
   cacheSize: 0,
@@ -125,6 +126,7 @@ export function useVideoFramePreview({
   const cacheRef = useRef(new Map<string, VideoFramePreview>());
   const inFlightRef = useRef(new Set<string>());
   const unsupportedTaskRef = useRef<string | null>(null);
+  const activeRequestKeyRef = useRef<string | null>(null);
   const requestSeqRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -188,10 +190,13 @@ export function useVideoFramePreview({
           lastStatus: next.status,
           errors: next.status === "error" ? cur.errors + 1 : cur.errors,
         }));
-        if (next.status === "pending" && retryAttempt < 1) {
+        if (next.status === "pending" && retryAttempt < MAX_PENDING_RETRIES) {
+          const retryDelay = frame.retry_after
+            ? Math.min(frame.retry_after * 1000, RETRY_DELAY_MS)
+            : RETRY_DELAY_MS;
           retryTimerRef.current = setTimeout(() => {
             fetchFrame(frameIndex, requestId, retryAttempt + 1);
-          }, frame.retry_after ? frame.retry_after * 1000 : RETRY_DELAY_MS);
+          }, retryDelay);
         }
       })
       .catch((err: unknown) => {
@@ -225,16 +230,24 @@ export function useVideoFramePreview({
   }, [enabled, format, patchDiagnostics, remember, taskId, width]);
 
   const previewFor = useCallback((rawFrameIndex: number | null) => {
-    clearRetry();
-    requestSeqRef.current += 1;
     if (rawFrameIndex === null || !taskId || !enabled || unsupportedTaskRef.current === taskId) {
+      clearRetry();
+      activeRequestKeyRef.current = null;
+      requestSeqRef.current += 1;
       setPreview(null);
       return;
     }
     const frameIndex = clampFrame(rawFrameIndex, maxFrame);
     const key = cacheKey(taskId, frameIndex, width, format);
+    const sameActiveRequest = activeRequestKeyRef.current === key;
+    if (!sameActiveRequest) {
+      clearRetry();
+      activeRequestKeyRef.current = key;
+      requestSeqRef.current += 1;
+    }
     const cached = cacheRef.current.get(key);
     if (cached) {
+      clearRetry();
       setPreview(cached);
       setDiagnostics((cur) => ({
         ...cur,
@@ -290,6 +303,7 @@ export function useVideoFramePreview({
   const clear = useCallback(() => {
     clearRetry();
     requestSeqRef.current += 1;
+    activeRequestKeyRef.current = null;
     cacheRef.current.clear();
     inFlightRef.current.clear();
     setPreview(null);

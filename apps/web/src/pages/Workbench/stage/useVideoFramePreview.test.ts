@@ -47,7 +47,7 @@ describe("useVideoFramePreview", () => {
     expect(api.getVideoFrame).toHaveBeenCalledTimes(1);
   });
 
-  it("retries one pending frame preview request", async () => {
+  it("keeps polling pending frame previews until the cache is ready", async () => {
     vi.useFakeTimers();
     api.getVideoFrame
       .mockResolvedValueOnce({
@@ -56,7 +56,16 @@ describe("useVideoFramePreview", () => {
         format: "webp",
         status: "pending",
         url: null,
-        retry_after: null,
+        retry_after: 3,
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        frame_index: 2,
+        width: 320,
+        format: "webp",
+        status: "pending",
+        url: null,
+        retry_after: 3,
         error: null,
       })
       .mockResolvedValueOnce({
@@ -81,9 +90,47 @@ describe("useVideoFramePreview", () => {
       vi.advanceTimersByTime(800);
       await Promise.resolve();
     });
+    expect(result.current.preview?.status).toBe("pending");
+
+    await act(async () => {
+      vi.advanceTimersByTime(800);
+      await Promise.resolve();
+    });
 
     expect(result.current.preview?.status).toBe("ready");
-    expect(api.getVideoFrame).toHaveBeenCalledTimes(2);
+    expect(api.getVideoFrame).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not stale an in-flight preview when pointermove repeats the same frame", async () => {
+    const readyFrame = {
+      frame_index: 6,
+      width: 320,
+      format: "webp" as const,
+      status: "ready" as const,
+      url: "/frame-6.webp",
+      retry_after: null,
+      error: null,
+    };
+    let resolveFrame: ((value: typeof readyFrame) => void) | undefined;
+    api.getVideoFrame.mockReturnValue(new Promise((resolve) => {
+      resolveFrame = resolve;
+    }));
+
+    const { result } = renderHook(() => useVideoFramePreview({ taskId: "task-1", maxFrame: 9 }));
+
+    act(() => result.current.previewFor(6));
+    act(() => result.current.previewFor(6));
+
+    expect(api.getVideoFrame).toHaveBeenCalledTimes(1);
+    expect(result.current.preview?.status).toBe("pending");
+
+    await act(async () => {
+      resolveFrame?.(readyFrame);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(result.current.preview?.status).toBe("ready"));
+    expect(result.current.preview?.url).toBe("/frame-6.webp");
   });
 
   it("prefetches unique clamped frames without binding preview state", async () => {

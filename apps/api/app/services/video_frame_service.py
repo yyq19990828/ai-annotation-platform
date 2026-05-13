@@ -4,7 +4,7 @@ import io
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -34,6 +34,7 @@ from app.services.storage import storage_service
 
 FrameFormat = Literal["webp", "jpeg"]
 _FRAME_ARRAY_CACHE: OrderedDict[tuple[uuid.UUID, int, int, str], Any] = OrderedDict()
+PENDING_FRAME_REQUEUE_AFTER = timedelta(seconds=30)
 
 
 @dataclass(frozen=True)
@@ -260,7 +261,7 @@ async def _ensure_frame_row(
     frame_index: int,
     width: int,
     format_: FrameFormat,
-) -> VideoFrameCache:
+) -> tuple[VideoFrameCache, bool, bool]:
     _safe_frame_range(ctx.metadata, frame_index, frame_index)
     row = (
         await db.execute(
@@ -272,6 +273,14 @@ async def _ensure_frame_row(
             )
         )
     ).scalar_one_or_none()
+    created = False
+    now = _now()
+    stale_pending = (
+        row is not None
+        and row.status == "pending"
+        and row.updated_at is not None
+        and now - row.updated_at > PENDING_FRAME_REQUEUE_AFTER
+    )
     if row is None:
         row = VideoFrameCache(
             dataset_item_id=ctx.item.id,
@@ -281,9 +290,10 @@ async def _ensure_frame_row(
             status="pending",
         )
         db.add(row)
-    row.last_accessed_at = _now()
+        created = True
+    row.last_accessed_at = now
     await db.flush()
-    return row
+    return row, created, stale_pending
 
 
 def _frame_out(row: VideoFrameCache) -> VideoFrameOut:
@@ -309,9 +319,12 @@ async def get_frame(
     width: int,
     format_: FrameFormat,
 ) -> VideoFrameOut:
-    row = await _ensure_frame_row(db, ctx, frame_index, width, format_)
+    row, created, stale_pending = await _ensure_frame_row(
+        db, ctx, frame_index, width, format_
+    )
+    should_enqueue = created or stale_pending or row.status == "failed"
     await db.commit()
-    if row.status != "ready":
+    if should_enqueue:
         from app.workers.media import extract_video_frames
 
         extract_video_frames.delay(
@@ -328,14 +341,15 @@ async def prefetch_frames(
     width: int,
     format_: FrameFormat,
 ) -> VideoFramePrefetchResponse:
-    rows = [
+    ensured = [
         await _ensure_frame_row(db, ctx, frame_index, width, format_)
         for frame_index in sorted(set(frame_indices))
     ]
+    rows = [row for row, _, _ in ensured]
     missing = [
         {"frame_index": row.frame_index, "width": row.width, "format": row.format}
-        for row in rows
-        if row.status != "ready"
+        for row, created, stale_pending in ensured
+        if created or stale_pending or row.status == "failed"
     ]
     await db.commit()
     if missing:
@@ -362,7 +376,7 @@ async def retry_frames(
     if normalized:
         if force:
             rows = [
-                await _ensure_frame_row(db, ctx, frame_index, width, format_)
+                (await _ensure_frame_row(db, ctx, frame_index, width, format_))[0]
                 for frame_index in normalized
             ]
         else:

@@ -1091,6 +1091,8 @@ async def _extract_video_frames(
                 row = await _load_frame_cache_row(db, item.id, request)
                 if row is None:
                     continue
+                if row.status == "ready" and row.storage_key:
+                    continue
                 row.status = "pending"
                 row.error = None
                 await db.commit()

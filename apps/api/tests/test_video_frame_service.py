@@ -346,9 +346,43 @@ async def test_video_frame_ready_returns_cached_url_without_enqueue(
     )
 
     assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "private, max-age=3600"
     body = resp.json()
     assert body["status"] == "ready"
     assert body["url"].endswith(f"/videos/{item.id}/frames/12_512.webp")
+    assert queued == []
+
+
+async def test_video_frame_pending_does_not_enqueue_duplicate_worker(
+    db_session, httpx_client_bound, super_admin, monkeypatch
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    queued: list[object] = []
+    db_session.add(
+        VideoFrameCache(
+            dataset_item_id=item.id,
+            frame_index=12,
+            width=512,
+            format="webp",
+            status="pending",
+        )
+    )
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        "app.workers.media.extract_video_frames.delay",
+        lambda *args: queued.append(args),
+    )
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/frames/12?format=webp&w=512",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 202
+    assert resp.headers["cache-control"] == "no-store"
+    assert resp.json()["status"] == "pending"
     assert queued == []
 
 
