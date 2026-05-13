@@ -20,6 +20,8 @@ v0.9.1 (M1) 加入 SAM 2 image embedding LRU 缓存:
 
 from __future__ import annotations
 
+import asyncio
+import gc
 import logging
 import os
 import time
@@ -54,33 +56,114 @@ TEXT_THRESHOLD = float(os.getenv("TEXT_THRESHOLD", "0.25"))
 MODEL_VERSION = f"grounded-sam2-dino{DINO_VARIANT}-sam2.1{SAM_VARIANT}"
 IMAGE_DOWNLOAD_TIMEOUT = float(os.getenv("IMAGE_DOWNLOAD_TIMEOUT", "30"))
 EMBEDDING_CACHE_SIZE = int(os.getenv("EMBEDDING_CACHE_SIZE", "16"))
+# B-28+ · idle 自动卸载. 0 / 负数 关闭定时卸载, 仍可通过 POST /unload 手动卸载.
+IDLE_UNLOAD_SECONDS = float(os.getenv("IDLE_UNLOAD_SECONDS", "600"))
+IDLE_CHECK_INTERVAL = float(os.getenv("IDLE_CHECK_INTERVAL", "60"))
 
 app = FastAPI(title="grounded-sam2-backend", version="0.9.1")
 _predictor: GroundedSAM2Predictor | None = None
 _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=SAM_VARIANT)
+_last_request_at: float = time.monotonic()
+_predictor_lock = asyncio.Lock()
+_idle_task: asyncio.Task | None = None
 
 
-@app.on_event("startup")
-def _load_models() -> None:
-    global _predictor
-    logger.info(
-        "loading models: dino=%s sam=%s box_th=%.2f text_th=%.2f cache_size=%d",
-        DINO_VARIANT, SAM_VARIANT, BOX_THRESHOLD, TEXT_THRESHOLD, EMBEDDING_CACHE_SIZE,
-    )
-    _predictor = GroundedSAM2Predictor(
+def _build_predictor() -> GroundedSAM2Predictor:
+    return GroundedSAM2Predictor(
         sam_variant=SAM_VARIANT,
         dino_variant=DINO_VARIANT,
         box_threshold=BOX_THRESHOLD,
         text_threshold=TEXT_THRESHOLD,
         embedding_cache=_cache,
     )
+
+
+def _free_gpu_memory() -> None:
+    """显式释放 CUDA caching allocator 持有的显存, 让 nvidia-smi 立刻可见下降."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        try:
+            torch.cuda.ipc_collect()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _ensure_predictor_loaded() -> GroundedSAM2Predictor:
+    """懒加载: 若已被 unload, 在锁内重建. 锁避免并发请求并行加载导致 OOM."""
+    global _predictor, _last_request_at
+    if _predictor is not None:
+        _last_request_at = time.monotonic()
+        return _predictor
+    async with _predictor_lock:
+        if _predictor is None:
+            logger.info("reloading models on demand (after idle unload or manual unload)")
+            loop = asyncio.get_running_loop()
+            _predictor = await loop.run_in_executor(None, _build_predictor)
+            logger.info("models reloaded; device=%s", _predictor.device)
+        _last_request_at = time.monotonic()
+        return _predictor
+
+
+async def _unload_predictor(reason: str) -> bool:
+    """卸载模型释放显存. 返回是否真的执行了卸载 (已为 None 返回 False)."""
+    global _predictor
+    async with _predictor_lock:
+        if _predictor is None:
+            return False
+        logger.info("unloading models: reason=%s", reason)
+        _predictor = None
+        _free_gpu_memory()
+        # embedding cache 持有的 _features 张量也跟着没用了, 清空避免悬挂引用占显存
+        _cache.clear()
+        _free_gpu_memory()
+        return True
+
+
+async def _idle_watcher() -> None:
+    """周期检查最近请求时间; 超过 IDLE_UNLOAD_SECONDS 触发自动卸载."""
+    while True:
+        try:
+            await asyncio.sleep(IDLE_CHECK_INTERVAL)
+            if _predictor is None or IDLE_UNLOAD_SECONDS <= 0:
+                continue
+            idle_for = time.monotonic() - _last_request_at
+            if idle_for >= IDLE_UNLOAD_SECONDS:
+                await _unload_predictor(reason=f"idle {idle_for:.0f}s")
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            logger.exception("idle watcher loop error; continuing")
+
+
+@app.on_event("startup")
+async def _load_models() -> None:
+    global _predictor, _idle_task, _last_request_at
+    logger.info(
+        "loading models: dino=%s sam=%s box_th=%.2f text_th=%.2f cache_size=%d idle_unload=%.0fs",
+        DINO_VARIANT, SAM_VARIANT, BOX_THRESHOLD, TEXT_THRESHOLD, EMBEDDING_CACHE_SIZE,
+        IDLE_UNLOAD_SECONDS,
+    )
+    loop = asyncio.get_running_loop()
+    _predictor = await loop.run_in_executor(None, _build_predictor)
+    _last_request_at = time.monotonic()
     logger.info("models loaded; device=%s", _predictor.device)
     # v0.9.11 PerfHud · pynvml + psutil 初始化 (无 GPU 环境会降级, 不阻塞 startup)
     init_perfhud_collectors()
+    if IDLE_UNLOAD_SECONDS > 0:
+        _idle_task = asyncio.create_task(_idle_watcher())
 
 
 @app.on_event("shutdown")
-def _shutdown_perfhud() -> None:
+async def _shutdown() -> None:
+    global _idle_task
+    if _idle_task is not None:
+        _idle_task.cancel()
+        try:
+            await _idle_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+        _idle_task = None
     shutdown_perfhud_collectors()
 
 
@@ -122,6 +205,8 @@ def health() -> dict:
         "cache": _cache.stats(),
         "model_version": MODEL_VERSION,
         "loaded": _predictor is not None,
+        "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
+        "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),
     }
 
 
@@ -159,6 +244,21 @@ def metrics() -> Response:
 @app.get("/cache/stats")
 def cache_stats() -> dict:
     return _cache.stats()
+
+
+@app.post("/unload")
+async def unload() -> dict:
+    """主动卸载模型释放显存. 已为空闲状态时返回 ok=true, unloaded=false."""
+    unloaded = await _unload_predictor(reason="manual")
+    return {"ok": True, "unloaded": unloaded, "loaded": _predictor is not None}
+
+
+@app.post("/reload")
+async def reload() -> dict:
+    """主动 (重新) 加载模型. 已加载时是 noop."""
+    was_loaded = _predictor is not None
+    await _ensure_predictor_loaded()
+    return {"ok": True, "loaded": True, "reloaded": not was_loaded}
 
 
 def _fetch_image(file_path: str) -> Image.Image:
@@ -269,6 +369,8 @@ def _observe(prompt_type: str, hit: bool, started: float) -> int:
 @app.post("/predict")
 async def predict(request: Request):
     body = await request.json()
+    # 懒加载: 若已被 idle / 手动卸载, 此处 await 触发后台 executor 重建模型.
+    await _ensure_predictor_loaded()
     started = time.perf_counter()
 
     # 交互式: 单条 task + context

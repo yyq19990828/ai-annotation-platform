@@ -51,6 +51,22 @@ export function useMLBackendHealth(projectId: string) {
   });
 }
 
+export function useMLBackendUnload(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (backendId: string) => mlBackendsApi.unload(projectId, backendId),
+    onSuccess: () => invalidateBackendQueries(qc, projectId),
+  });
+}
+
+export function useMLBackendReload(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (backendId: string) => mlBackendsApi.reload(projectId, backendId),
+    onSuccess: () => invalidateBackendQueries(qc, projectId),
+  });
+}
+
 export function useInteractiveAnnotate(projectId: string, backendId: string | undefined) {
   return useMutation({
     mutationFn: (payload: { task_id: string; context: Record<string, unknown> }) => {

@@ -116,6 +116,9 @@ docker exec ai-annotation-platform-celery-worker-1 \
 
 **Common pitfall:** Celery workers silently run stale code after editing a task signature, because Celery has no `--reload` equivalent. Symptom is dispatch-time `TypeError` on new kwargs while source on disk looks correct. Always restart the worker container after editing files under `apps/api/app/workers/`.
 
+## Keep Docs in Sync
+- When code changes affect documented behavior, update the relevant docs **in the same change** — not in a follow-up.
+- Removed/renamed symbols → grep all `*.md` for the old name and fix every reference. Stale doc links are bugs.
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

@@ -5,7 +5,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.ml_backend import MLBackend
+from app.db.models.prediction_job import PredictionJob, PredictionJobStatus
 from app.services.ml_client import MLBackendClient
+
+
+class MLBackendDeleteBlocked(Exception):
+    """B-28 · ml_backend 上仍有 running prediction job，拒绝删除。"""
+
+    def __init__(self, running_jobs: int) -> None:
+        super().__init__(f"ml backend has {running_jobs} running prediction job(s)")
+        self.running_jobs = running_jobs
 
 
 class MLBackendService:
@@ -50,9 +59,32 @@ class MLBackendService:
         backend = await self.get(backend_id)
         if not backend:
             return False
+        running = await self.db.execute(
+            select(PredictionJob).where(
+                PredictionJob.ml_backend_id == backend_id,
+                PredictionJob.status == PredictionJobStatus.RUNNING.value,
+            )
+        )
+        running_jobs = list(running.scalars().all())
+        if running_jobs:
+            raise MLBackendDeleteBlocked(len(running_jobs))
         await self.db.delete(backend)
         await self.db.flush()
         return True
+
+    async def unload(self, backend_id: uuid.UUID) -> dict | None:
+        backend = await self.get(backend_id)
+        if not backend:
+            return None
+        client = MLBackendClient(backend)
+        return await client.unload()
+
+    async def reload(self, backend_id: uuid.UUID) -> dict | None:
+        backend = await self.get(backend_id)
+        if not backend:
+            return None
+        client = MLBackendClient(backend)
+        return await client.reload()
 
     async def check_health(self, backend_id: uuid.UUID) -> bool:
         from datetime import UTC, datetime

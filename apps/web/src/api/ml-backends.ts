@@ -38,6 +38,16 @@ export const mlBackendsApi = {
       `/projects/${projectId}/ml-backends/${backendId}/health`,
     ),
 
+  unload: (projectId: string, backendId: string) =>
+    apiClient.post<{ ok: boolean; unloaded: boolean; loaded: boolean }>(
+      `/projects/${projectId}/ml-backends/${backendId}/unload`,
+    ),
+
+  reload: (projectId: string, backendId: string) =>
+    apiClient.post<{ ok: boolean; loaded: boolean; reloaded: boolean }>(
+      `/projects/${projectId}/ml-backends/${backendId}/reload`,
+    ),
+
   predictTest: (projectId: string, backendId: string, taskId: string) =>
     apiClient.post(`/projects/${projectId}/ml-backends/${backendId}/predict-test?task_id=${taskId}`),
 

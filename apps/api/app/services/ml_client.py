@@ -189,6 +189,24 @@ class MLBackendClient:
             meta=data.get("meta"),
         )
 
+    async def unload(self) -> dict:
+        """B-28+ · 让 backend 卸载模型释放显存. backend 必须实现 POST /unload."""
+        async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
+            resp = await client.post(
+                f"{self.base_url}/unload", headers=self._headers()
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def reload(self) -> dict:
+        """B-28+ · 让 backend 重新加载模型. 重载耗时可能远高于 health 探活, 用 predict 超时配额."""
+        async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
+            resp = await client.post(
+                f"{self.base_url}/reload", headers=self._headers()
+            )
+            resp.raise_for_status()
+            return resp.json()
+
     async def setup(self) -> dict:
         async with httpx.AsyncClient(timeout=settings.ml_health_timeout) as client:
             resp = await client.get(f"{self.base_url}/setup", headers=self._headers())

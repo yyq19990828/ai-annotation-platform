@@ -13,6 +13,8 @@ import {
 import {
   useDeleteMLBackend,
   useMLBackendHealth,
+  useMLBackendReload,
+  useMLBackendUnload,
 } from "@/hooks/useMLBackends";
 import { MlBackendFormModal } from "@/components/projects/MlBackendFormModal";
 import type { MLBackendResponse } from "@/types";
@@ -170,6 +172,8 @@ function ProjectGroup({
   const pushToast = useToastStore((s) => s.push);
   const del = useDeleteMLBackend(group.project_id);
   const health = useMLBackendHealth(group.project_id);
+  const unload = useMLBackendUnload(group.project_id);
+  const reload = useMLBackendReload(group.project_id);
 
   const onDelete = (b: MLBackendItem) => {
     if (!window.confirm(`确认删除 backend「${b.name}」？此操作不可撤销。`)) return;
@@ -187,6 +191,28 @@ function ProjectGroup({
           kind: res.status === "connected" ? "success" : "warning",
         }),
       onError: (e) => pushToast({ msg: "健康检查失败", sub: (e as Error).message }),
+    });
+  };
+
+  const onUnload = (b: MLBackendItem) => {
+    unload.mutate(b.id, {
+      onSuccess: (res) =>
+        pushToast({
+          msg: res.unloaded ? `${b.name} 已卸载，显存已释放` : `${b.name} 当前未加载，无需卸载`,
+          kind: "success",
+        }),
+      onError: (e) => pushToast({ msg: "卸载失败", sub: (e as Error).message }),
+    });
+  };
+
+  const onReload = (b: MLBackendItem) => {
+    reload.mutate(b.id, {
+      onSuccess: (res) =>
+        pushToast({
+          msg: res.reloaded ? `${b.name} 已重载到显存` : `${b.name} 已在显存中`,
+          kind: "success",
+        }),
+      onError: (e) => pushToast({ msg: "重载失败", sub: (e as Error).message }),
     });
   };
 
@@ -327,6 +353,22 @@ function ProjectGroup({
                 <div style={{ display: "inline-flex", gap: 6 }}>
                   <Button size="sm" onClick={() => onHealth(b)} disabled={health.isPending} title="健康检查">
                     <Icon name="refresh" size={11} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => onUnload(b)}
+                    disabled={unload.isPending}
+                    title="卸载模型释放显存 (空闲时建议)"
+                  >
+                    <Icon name="pause" size={11} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => onReload(b)}
+                    disabled={reload.isPending}
+                    title="重新加载模型到显存"
+                  >
+                    <Icon name="play" size={11} />
                   </Button>
                   <Button size="sm" onClick={() => onEdit(itemToResponse(b))} title="编辑">
                     <Icon name="edit" size={11} />

@@ -16,7 +16,7 @@ from app.schemas.ml_backend import (
     MLBackendHealthResponse,
     InteractiveRequest,
 )
-from app.services.ml_backend import MLBackendService
+from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
 from app.services.ml_client import MLBackendClient
 from app.services.storage import StorageService
 from app.services.audit import AuditService
@@ -148,7 +148,13 @@ async def delete_ml_backend(
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     svc = MLBackendService(db)
-    deleted = await svc.delete(backend_id)
+    try:
+        deleted = await svc.delete(backend_id)
+    except MLBackendDeleteBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"ML Backend has {exc.running_jobs} running prediction job(s); wait or cancel before deleting",
+        )
     if not deleted:
         raise HTTPException(status_code=404, detail="ML Backend not found")
     await AuditService.log(
@@ -162,6 +168,66 @@ async def delete_ml_backend(
         detail={"project_id": str(project_id)},
     )
     await db.commit()
+
+
+@router.post("/{backend_id}/unload")
+async def unload_ml_backend(
+    project_id: uuid.UUID,
+    backend_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """B-28+ · 触发 backend 卸载模型释放显存. backend 未实现 /unload 时返回 502."""
+    svc = MLBackendService(db)
+    try:
+        result = await svc.unload(backend_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"backend unload failed: {exc}")
+    if result is None:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="ml_backend.unloaded",
+        target_type="ml_backend",
+        target_id=str(backend_id),
+        request=request,
+        status_code=200,
+        detail={"project_id": str(project_id), "result": result},
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/{backend_id}/reload")
+async def reload_ml_backend(
+    project_id: uuid.UUID,
+    backend_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_MANAGERS)),
+):
+    """B-28+ · 触发 backend 重新加载模型. 已加载则 noop."""
+    svc = MLBackendService(db)
+    try:
+        result = await svc.reload(backend_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"backend reload failed: {exc}")
+    if result is None:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action="ml_backend.reloaded",
+        target_type="ml_backend",
+        target_id=str(backend_id),
+        request=request,
+        status_code=200,
+        detail={"project_id": str(project_id), "result": result},
+    )
+    await db.commit()
+    return result
 
 
 @router.post("/{backend_id}/health", response_model=MLBackendHealthResponse)

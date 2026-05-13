@@ -6510,9 +6510,16 @@
             "type": "string"
           },
           "ml_backend_id": {
-            "format": "uuid",
-            "title": "Ml Backend Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ml Backend Id"
           },
           "output_mode": {
             "title": "Output Mode",
@@ -6581,7 +6588,6 @@
         "required": [
           "id",
           "project_id",
-          "ml_backend_id",
           "prompt",
           "output_mode",
           "status",
@@ -18698,6 +18704,120 @@
           }
         ],
         "summary": "Predict Test",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/reload": {
+      "post": {
+        "description": "B-28+ · 触发 backend 重新加载模型. 已加载则 noop.",
+        "operationId": "reload_ml_backend_api_v1_projects__project_id__ml_backends__backend_id__reload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reload Ml Backend",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/unload": {
+      "post": {
+        "description": "B-28+ · 触发 backend 卸载模型释放显存. backend 未实现 /unload 时返回 502.",
+        "operationId": "unload_ml_backend_api_v1_projects__project_id__ml_backends__backend_id__unload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unload Ml Backend",
         "tags": [
           "ml-backends"
         ]

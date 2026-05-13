@@ -40,10 +40,10 @@ class PredictionJob(Base):
         ForeignKey("task_batches.id", ondelete="CASCADE"),
         nullable=True,
     )
-    ml_backend_id: Mapped[uuid.UUID] = mapped_column(
+    ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("ml_backends.id", ondelete="RESTRICT"),
-        nullable=False,
+        ForeignKey("ml_backends.id", ondelete="SET NULL"),
+        nullable=True,
     )
     prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
     output_mode: Mapped[str] = mapped_column(String(30), nullable=False, default="mask")

@@ -36,7 +36,7 @@ class PredictionJobOut(BaseModel):
     project_name: str | None = None
     project_display_id: str | None = None
     batch_id: uuid.UUID | None = None
-    ml_backend_id: uuid.UUID
+    ml_backend_id: uuid.UUID | None = None
     prompt: str
     output_mode: str
     status: str
