@@ -65,13 +65,17 @@ RUN pip install --upgrade "pip" "setuptools>=68,<81" "wheel" && \
         "omegaconf>=2.3" \
         "scipy>=1.11" \
         "scikit-image>=0.22" \
-        "scikit-learn>=1.3"
+        "scikit-learn>=1.3" \
+        "pycocotools>=2.0" \
+        "open_clip_torch>=2.24"
 
-# 上面 6 个补丁是 vendor/sam3 在 pyproject 里漏列的运行时 import (grep sam3/ 拿到):
-#   einops      — sam3/sam/rope.py 用; SAM 注意力机制必经
-#   hydra-core  — sam3 模型构造走 hydra config 系统
-#   omegaconf   — hydra 底层 schema; 与 hydra-core 配套
+# 上面 8 个补丁是 vendor/sam3 在 pyproject 里漏列的运行时 import (grep sam3/ 拿到):
+#   einops          — sam3/sam/rope.py 用; SAM 注意力机制必经
+#   hydra-core      — sam3 模型构造走 hydra config 系统
+#   omegaconf       — hydra 底层 schema; 与 hydra-core 配套
 #   scipy / scikit-image / scikit-learn — segmentation 后处理 / 评估指标常用
+#   pycocotools     — mask 编解码 (RLE) 工具
+#   open_clip_torch — sam3 text encoder backbone
 # 如启动时再报新 ModuleNotFoundError, 加到这块 + sync_vendor.sh 升级 commit 时复核.
 
 # build context 是 apps/ (与 grounded-sam2-backend 一致); 所有 COPY 路径以 apps/ 为根.
