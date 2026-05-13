@@ -42,7 +42,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 平台 backend 自身依赖 (不含 torch / torchvision; base image 已锁 2.7.1).
-RUN pip install --upgrade "pip" "setuptools>=68" "wheel" && \
+# setuptools 锁 <81: 81 起移除 pkg_resources, 而 vendor/sam3/model_builder.py 仍 `import pkg_resources`.
+# base image 自带 setuptools 75.8 已满足, 这里不升级即可, 显式上限防止 transient 依赖把它顶上 81+.
+RUN pip install --upgrade "pip" "setuptools>=68,<81" "wheel" && \
     pip install \
         "fastapi>=0.110" \
         "uvicorn[standard]>=0.27" \
