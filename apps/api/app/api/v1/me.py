@@ -8,7 +8,7 @@ from app.core.security import hash_password, verify_password
 from app.deps import get_current_user, get_db
 from app.db.models.user import User
 from app.schemas.me import PasswordChange, ProfileUpdate
-from app.schemas.user import UserOut
+from app.schemas.user import UserOut, UserPreferences
 from app.services.audit import AuditAction, AuditService
 from app.services.deactivation_service import DeactivationService
 
@@ -110,6 +110,24 @@ async def request_self_deactivation(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+@router.get("/preferences", response_model=UserPreferences)
+async def get_preferences(user: User = Depends(get_current_user)) -> UserPreferences:
+    """v0.9.41 · 读取当前用户的标注偏好。空字段走 schema 默认值。"""
+    return UserPreferences.model_validate(user.preferences or {})
+
+
+@router.patch("/preferences", response_model=UserPreferences)
+async def update_preferences(
+    payload: UserPreferences,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> UserPreferences:
+    """v0.9.41 · 整体替换 preferences（含默认值填充）。pydantic forbid extra 防脏写入。"""
+    user.preferences = payload.model_dump(mode="json")
+    await db.commit()
+    return payload
 
 
 @router.delete("/deactivation-request", response_model=UserOut)

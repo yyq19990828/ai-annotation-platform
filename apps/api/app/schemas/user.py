@@ -1,6 +1,27 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
+
+
+class WorkbenchPreferences(BaseModel):
+    """v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。
+    所有字段都有默认值，前端缺省可直接落库；schema 用严格 forbid 防脏写入。"""
+
+    model_config = {"extra": "forbid"}
+
+    smoothImage: bool = True
+    cssImageFilter: str = Field(default="", max_length=255)
+    controlPointsSize: int = Field(default=6, ge=2, le=20)
+    snapToGrid: bool = False
+    longTaskSampleRate: float = Field(default=0.05, ge=0.0, le=1.0)
+
+
+class UserPreferences(BaseModel):
+    """User.preferences JSONB root. 仅声明已知子树；未来按 epic 追加。"""
+
+    model_config = {"extra": "forbid"}
+
+    workbench: WorkbenchPreferences = Field(default_factory=WorkbenchPreferences)
 
 
 class UserCreate(BaseModel):
@@ -27,6 +48,8 @@ class UserOut(BaseModel):
     # v0.8.1 · 自助注销冷静期信息（已申请时返回 scheduled_at）；未申请均为 None
     deactivation_requested_at: datetime | None = None
     deactivation_scheduled_at: datetime | None = None
+    # v0.9.41 · 标注偏好（workbench 渲染配置等）。空对象 = 用客户端默认。
+    preferences: dict = Field(default_factory=dict)
     created_at: datetime
 
     class Config:

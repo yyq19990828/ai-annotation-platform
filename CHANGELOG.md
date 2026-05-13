@@ -22,6 +22,28 @@
 
 ## 最新版本
 
+## [0.9.41] - 2026-05-13
+
+> **图片工作台 Wave α 基础稳态.** ROADMAP/2026-05-12-image-workbench-optimization.md 中 Wave α（I3 + I7 + I8 + I16 + I17）落地：① 选区/共享 hooks/性能采样基础设施；② User.preferences JSONB + 工作台渲染偏好（图像平滑、CSS 滤镜、顶点大小、采样率）。纯前端 + 一条后端迁移，无新 UI 范式，为 Wave β/γ 性能与形状能力扩展铺路。→ [plan](docs/plans/roadmap-2026-05-12-image-workbench-optim-zazzy-pnueli.md).
+
+### Added
+
+- **共享 stage hooks**（I7）：新增 `stage/shared/` 目录，迁入 `useViewportTransform` / `Minimap` / `geometry/polygon`；新增 `useRafThrottle`（rAF 合帧 schedule/flush）。旧路径保留 1 行 re-export 不破坏外链。
+- **`useWorkbenchPerf` hook**（I8）：基于 PerformanceObserver longtask；DEV 全采，PROD 按 `longTaskSampleRate`（默认 5%）采样；统计 `{longTaskCount, longTaskMaxMs, lastLongTaskAt}` 暴露到 `window.__workbenchPerf`，BugReport 提交时自动附 `[workbench-perf]` 行到 recent_console_errors。
+- **`useDirtyTracker` hook**（I16）：按 annotation 标记脏字段集合，为 Wave γ 多字段批量编辑铺路；当前 useWorkbenchAnnotationActions 已字段级 PATCH，本 hook 暂作基础设施。
+- **`User.preferences` JSONB + 标注偏好**（I17）：alembic `0063_user_preferences` 加 JSONB 列（server_default `'{}'`）；`GET/PATCH /auth/me/preferences` 端点，pydantic `UserPreferences` 严格 `extra: forbid`；前端 `useWorkbenchConfig` hook 乐观更新；SettingsPage 新增「标注偏好」分区（图像平滑、CSS 滤镜、控制点大小、longtask 采样率）。
+
+### Changed
+
+- **ImageStage selSet 引用稳定**（I3）：选区 ids 内容签名相同则复用同一 Set 实例，避免下游 KonvaBox / KonvaPolygon memo 误失效。
+- **user 层 listening 按工具切换**（I3）：`tool === 'hand'` 或只读时关闭 user 层 listening，省 hit-test 开销。
+- **KonvaImage 与 stage 容器消费偏好**（I17）：KonvaImage `imageSmoothingEnabled` 跟随 `smoothImage`；stage 容器 inline `filter` 跟随 `cssImageFilter`（暗图反色 / 对比度增强）。
+
+### Notes
+
+- 迁移：`docker exec ai-annotation-platform-api-1 uv run alembic upgrade head` 跑 0063。
+- 视频侧仅 import 路径搬迁，行为不变；v0.9.40 视频 AI Tracker + 章节系统不受影响。
+
 ## [0.9.40] - 2026-05-13
 
 > **Video Workbench R10 AI Tracker 前端 + R13 章节系统.** 主线: ① 消费 v0.9.32-v0.9.36 已落地的 tracker 后端：选中轨迹支持「AI 传播」入口（按钮 + `Shift+T`），可选 `forward/backward/bidirectional`、目标范围 preset、`mock_bbox`/`sam2_video`/`sam3_video`；② 前端通过 `/ws/video-tracker-jobs/{job_id}` 订阅事件流，轨迹卡片显示 queued/running/completed/failed/cancelled badge 与窗口进度，job 完成自动失效 annotation cache；③ 关键帧列表对 `source: prediction` 渲染「接受」「拒绝」按钮，接受改 source 为 manual，拒绝把该帧并入 outside；④ 新增 `VideoChapter` 模型 + 0062 迁移 + CRUD endpoints；⑤ 视频时间轴新增章节色带、章节侧栏 + 创建/编辑/删除表单、`PageUp/PageDown` 跨章节跳转。→ [plan](docs/plans/2026-05-13-v0.9.40-video-workbench-r10-r13.md).

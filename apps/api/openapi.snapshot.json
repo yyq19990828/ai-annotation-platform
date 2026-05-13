@@ -9319,6 +9319,11 @@
             ],
             "title": "Password Admin Reset At"
           },
+          "preferences": {
+            "additionalProperties": true,
+            "title": "Preferences",
+            "type": "object"
+          },
           "role": {
             "title": "Role",
             "type": "string"
@@ -9338,6 +9343,17 @@
           "created_at"
         ],
         "title": "UserOut",
+        "type": "object"
+      },
+      "UserPreferences": {
+        "additionalProperties": false,
+        "description": "User.preferences JSONB root. 仅声明已知子树；未来按 epic 追加。",
+        "properties": {
+          "workbench": {
+            "$ref": "#/components/schemas/WorkbenchPreferences"
+          }
+        },
+        "title": "UserPreferences",
         "type": "object"
       },
       "UsersStats": {
@@ -11355,6 +11371,44 @@
         ],
         "title": "VisibleIfRule",
         "type": "object"
+      },
+      "WorkbenchPreferences": {
+        "additionalProperties": false,
+        "description": "v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。\n所有字段都有默认值，前端缺省可直接落库；schema 用严格 forbid 防脏写入。",
+        "properties": {
+          "controlPointsSize": {
+            "default": 6,
+            "maximum": 20.0,
+            "minimum": 2.0,
+            "title": "Controlpointssize",
+            "type": "integer"
+          },
+          "cssImageFilter": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Cssimagefilter",
+            "type": "string"
+          },
+          "longTaskSampleRate": {
+            "default": 0.05,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Longtasksamplerate",
+            "type": "number"
+          },
+          "smoothImage": {
+            "default": true,
+            "title": "Smoothimage",
+            "type": "boolean"
+          },
+          "snapToGrid": {
+            "default": false,
+            "title": "Snaptogrid",
+            "type": "boolean"
+          }
+        },
+        "title": "WorkbenchPreferences",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -13148,6 +13202,78 @@
           }
         ],
         "summary": "Change Password",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/auth/me/preferences": {
+      "get": {
+        "description": "v0.9.41 · 读取当前用户的标注偏好。空字段走 schema 默认值。",
+        "operationId": "get_preferences_api_v1_auth_me_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Preferences",
+        "tags": [
+          "me"
+        ]
+      },
+      "patch": {
+        "description": "v0.9.41 · 整体替换 preferences（含默认值填充）。pydantic forbid extra 防脏写入。",
+        "operationId": "update_preferences_api_v1_auth_me_preferences_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPreferences"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Preferences",
         "tags": [
           "me"
         ]

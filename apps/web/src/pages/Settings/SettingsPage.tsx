@@ -11,17 +11,19 @@ import type { SystemSettingsPatch } from "@/api/settings";
 import { ROLE_LABELS } from "@/constants/roles";
 import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
 import { notificationsApi, type NotificationPreferenceItem } from "@/api/notifications";
+import { useWorkbenchConfig } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { UserRole } from "@/types";
 
-type SectionKey = "profile" | "feedback" | "notifications" | "system";
+type SectionKey = "profile" | "workbench" | "feedback" | "notifications" | "system";
 
 export function SettingsPage() {
   const { role } = usePermissions();
   const isAdmin = role === "super_admin";
   const [section, setSection] = useState<SectionKey>("profile");
 
-  const sections: { key: SectionKey; label: string; icon: "user" | "flag" | "bell" | "settings" }[] = [
+  const sections: { key: SectionKey; label: string; icon: "user" | "flag" | "bell" | "settings" | "image" }[] = [
     { key: "profile", label: "个人资料", icon: "user" },
+    { key: "workbench", label: "标注偏好", icon: "image" },
     { key: "feedback", label: "我的反馈", icon: "flag" },
     { key: "notifications", label: "通知偏好", icon: "bell" },
     ...(isAdmin ? [{ key: "system" as SectionKey, label: "系统设置", icon: "settings" as const }] : []),
@@ -72,6 +74,7 @@ export function SettingsPage() {
 
         <div>
           {section === "profile" && <ProfileSection />}
+          {section === "workbench" && <WorkbenchPreferencesSection />}
           {section === "feedback" && <MyFeedbackSection />}
           {section === "notifications" && <NotificationPreferencesSection />}
           {section === "system" && isAdmin && <SystemSection />}
@@ -568,6 +571,82 @@ function SystemSection() {
           </button>
         </div>
       </form>
+    </Card>
+  );
+}
+
+function WorkbenchPreferencesSection() {
+  const { config, loaded, saving, update } = useWorkbenchConfig();
+  const pushToast = useToastStore((s) => s.push);
+  const [localFilter, setLocalFilter] = useState(config.cssImageFilter);
+  useEffect(() => { setLocalFilter(config.cssImageFilter); }, [config.cssImageFilter]);
+
+  if (!loaded) {
+    return (
+      <Card>
+        <SectionHeader title="标注偏好" />
+        <div style={{ padding: 20, color: "var(--color-fg-muted)", fontSize: 13 }}>加载中…</div>
+      </Card>
+    );
+  }
+
+  const commit = (patch: Parameters<typeof update>[0]) => {
+    update(patch).catch(() => pushToast({ msg: "保存失败", kind: "warning" }));
+  };
+
+  return (
+    <Card>
+      <SectionHeader title="标注偏好" />
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+        <Field label="图像平滑（关闭后像素清晰，适合医学影像 / 像素艺术）">
+          <label style={{ display: "inline-flex", gap: 8, alignItems: "center", cursor: "pointer", fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={config.smoothImage}
+              disabled={saving}
+              onChange={(e) => commit({ smoothImage: e.target.checked })}
+            />
+            <span>{config.smoothImage ? "已开启 — 默认双线性插值" : "已关闭 — 像素 nearest-neighbor"}</span>
+          </label>
+        </Field>
+
+        <Field label="CSS 图像滤镜（例：brightness(1.2) contrast(1.1) invert(0)；留空恢复原图）">
+          <input
+            value={localFilter}
+            onChange={(e) => setLocalFilter(e.target.value.slice(0, 255))}
+            onBlur={() => { if (localFilter !== config.cssImageFilter) commit({ cssImageFilter: localFilter.trim() }); }}
+            placeholder="brightness(1.2) contrast(1.1)"
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label={`控制点大小（顶点拖拽手柄半径）：${config.controlPointsSize}px`}>
+          <input
+            type="range"
+            min={2}
+            max={20}
+            value={config.controlPointsSize}
+            disabled={saving}
+            onChange={(e) => commit({ controlPointsSize: Number(e.target.value) })}
+            style={{ width: "100%" }}
+          />
+        </Field>
+
+        <Field label={`性能采样率（PerformanceObserver longtask 采样率，0–1）：${config.longTaskSampleRate.toFixed(2)}`}>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={config.longTaskSampleRate}
+            disabled={saving}
+            onChange={(e) => commit({ longTaskSampleRate: Number(e.target.value) })}
+            style={{ width: "100%" }}
+          />
+        </Field>
+
+        {saving && <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>保存中…</div>}
+      </div>
     </Card>
   );
 }
