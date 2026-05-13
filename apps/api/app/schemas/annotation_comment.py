@@ -6,6 +6,7 @@ from app.schemas._jsonb_types import (
     ATTACHMENT_KEY_PREFIX,
     Attachment,
     CanvasDrawing,
+    CommentAnchor,
     Mention,
 )
 
@@ -16,6 +17,7 @@ __all__ = [
     "Mention",
     "Attachment",
     "CanvasDrawing",
+    "CommentAnchor",
     "AnnotationCommentCreate",
     "AnnotationCommentUpdate",
     "AnnotationCommentOut",
@@ -30,6 +32,7 @@ class AnnotationCommentCreate(BaseModel):
     mentions: list[Mention] = Field(default_factory=list)
     attachments: list[Attachment] = Field(default_factory=list)
     canvas_drawing: CanvasDrawing | None = None
+    anchor: CommentAnchor | None = None
 
 
 class AnnotationCommentUpdate(BaseModel):
@@ -49,6 +52,7 @@ class AnnotationCommentOut(BaseModel):
     mentions: list[Mention] = []
     attachments: list[Attachment] = []
     canvas_drawing: CanvasDrawing | None = None
+    anchor: CommentAnchor | None = None
     created_at: datetime
     updated_at: datetime | None = None
 

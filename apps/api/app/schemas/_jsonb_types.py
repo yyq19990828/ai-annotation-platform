@@ -195,6 +195,14 @@ class VideoTrackKeyframe(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class VideoTrackOutsideRange(BaseModel):
+    from_: int = Field(alias="from", ge=0)
+    to: int = Field(ge=0)
+    source: Literal["manual", "prediction"] = "manual"
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
 class VideoTrackGeometry(BaseModel):
     """v0.9.17 · 视频对象轨迹。
 
@@ -205,6 +213,7 @@ class VideoTrackGeometry(BaseModel):
     type: Literal["video_track"] = "video_track"
     track_id: str = Field(min_length=1)
     keyframes: list[VideoTrackKeyframe] = Field(min_length=1)
+    outside: list[VideoTrackOutsideRange] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -337,6 +346,17 @@ class CanvasDrawing(BaseModel):
     shapes: list[CanvasShape] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
+
+
+class CommentAnchor(BaseModel):
+    """评论锚点。v0.9.35 起用于视频 review 的帧级定位。"""
+
+    kind: Literal["video_frame"]
+    frame_index: int = Field(ge=0, alias="frameIndex")
+    track_id: str | None = Field(default=None, alias="trackId", max_length=120)
+    source: Literal["manual", "prediction", "interpolated", "legacy"] | None = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
 # ── AuditLog detail_json ────────────────────────────────────────────

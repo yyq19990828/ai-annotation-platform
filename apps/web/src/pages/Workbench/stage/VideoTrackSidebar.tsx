@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
+import type { DiffMode } from "../modes/types";
 import {
   isVideoBbox,
   isVideoTrack,
@@ -10,10 +11,13 @@ import {
   sortedKeyframes,
   upsertKeyframe,
 } from "./videoStageGeometry";
+import { addOutsideRange, isFrameOutside, removeOutsideFrame } from "./videoTrackOutside";
 import { VideoTrackPanel } from "./VideoTrackPanel";
+// VideoTrackerJobState type imported lazily via inline import in props
 import type {
   VideoFrameEntry,
   VideoTrackAnnotation,
+  VideoTrackCompositionOptions,
   VideoTrackConversionOptions,
   VideoTrackGhost,
 } from "./videoStageTypes";
@@ -21,6 +25,7 @@ import type {
 interface VideoTrackSidebarProps {
   annotations: AnnotationResponse[];
   selectedId: string | null;
+  selectedIds?: string[];
   frameIndex: number;
   readOnly: boolean;
   hiddenTrackIds: Set<string>;
@@ -35,6 +40,11 @@ interface VideoTrackSidebarProps {
   onDeleteTracks?: (annotations: AnnotationResponse[]) => void;
   onUpdate: (annotation: AnnotationResponse, geometry: VideoTrackAnnotation["geometry"]) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
+  onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
+  reviewDisplayMode?: DiffMode;
+  trackerJobsByAnnotation?: Record<string, import("@/hooks/useVideoTrackerJobs").VideoTrackerJobState>;
+  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  onCancelTrackerJob?: (jobId: string) => void;
 }
 
 interface CopiedKeyframe {
@@ -62,6 +72,7 @@ function sameStringSet(a: Set<string>, b: Set<string>): boolean {
 export function VideoTrackSidebar({
   annotations,
   selectedId,
+  selectedIds = [],
   frameIndex,
   readOnly,
   hiddenTrackIds,
@@ -76,8 +87,17 @@ export function VideoTrackSidebar({
   onDeleteTracks,
   onUpdate,
   onConvertToBboxes,
+  onComposeTracks,
+  reviewDisplayMode,
+  trackerJobsByAnnotation,
+  onPropagateTrack,
+  onCancelTrackerJob,
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
+  const selectedBboxes = useMemo(
+    () => annotations.filter((ann) => isVideoBbox(ann) && selectedIds.includes(ann.id)),
+    [annotations, selectedIds],
+  );
   const selectedTrack = useMemo(
     () => videoTracks.find((ann) => ann.id === selectedId) ?? null,
     [selectedId, videoTracks],
@@ -105,6 +125,7 @@ export function VideoTrackSidebar({
     () => videoTracks.filter((ann) => selectedTrackIds.has(ann.id)),
     [selectedTrackIds, videoTracks],
   );
+  const canMergeSelectedTracks = selectedTracks.length === 2 && selectedTracks[0].class_name === selectedTracks[1].class_name;
 
   const currentKeyframe = useMemo(
     () => selectedTrack?.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null,
@@ -137,8 +158,6 @@ export function VideoTrackSidebar({
   const selectedTrackGhost = useMemo<VideoTrackGhost | null>(() => {
     if (!selectedTrack || hiddenTrackIds.has(selectedTrack.geometry.track_id)) return null;
     if (currentFrameEntries.some((entry) => entry.ann.id === selectedTrack.id)) return null;
-    const exact = selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex);
-    if (exact?.absent) return null;
     const nearest = nearestTrackKeyframe(selectedTrack.geometry, frameIndex);
     if (!nearest) return null;
     return {
@@ -203,10 +222,44 @@ export function VideoTrackSidebar({
     setSelectedTrackIds(new Set());
   }, [onDeleteTracks, selectedTracks]);
 
+  const aggregateSelectedBboxes = useCallback(() => {
+    if (selectedBboxes.length <= 1 || readOnly || !onComposeTracks) return;
+    onComposeTracks({
+      operation: "aggregate_bboxes",
+      annotationIds: selectedBboxes.map((ann) => ann.id),
+      deleteSources: true,
+    });
+  }, [onComposeTracks, readOnly, selectedBboxes]);
+
+  const splitSelectedTrack = useCallback(() => {
+    if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id) || !onComposeTracks) return;
+    onComposeTracks({
+      operation: "split_track",
+      annotationIds: [selectedTrack.id],
+      frameIndex,
+    });
+  }, [frameIndex, lockedTrackIds, onComposeTracks, readOnly, selectedTrack]);
+
+  const mergeSelectedTracks = useCallback(() => {
+    if (!canMergeSelectedTracks || readOnly || !onComposeTracks) return;
+    onComposeTracks({
+      operation: "merge_tracks",
+      annotationIds: selectedTracks.map((ann) => ann.id),
+    });
+  }, [canMergeSelectedTracks, onComposeTracks, readOnly, selectedTracks]);
+
   const markSelectedTrack = useCallback((patch: Partial<VideoTrackKeyframe>) => {
     if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
+    if (patch.absent) {
+      onUpdate(selectedTrack, addOutsideRange(selectedTrack.geometry, {
+        from: frameIndex,
+        to: frameIndex,
+        source: patch.source === "prediction" ? "prediction" : "manual",
+      }));
+      return;
+    }
     const bbox = nearestTrackBbox(selectedTrack.geometry, frameIndex);
-    onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, bbox, patch));
+    onUpdate(selectedTrack, upsertKeyframe(removeOutsideFrame(selectedTrack.geometry, frameIndex), frameIndex, bbox, patch));
   }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack]);
 
   const copySelectedTrackToCurrentFrame = useCallback(() => {
@@ -253,6 +306,36 @@ export function VideoTrackSidebar({
     ? `${copiedKeyframe.className} ${shortTrackId(copiedKeyframe.trackId)} · F${copiedKeyframe.frameIndex}`
     : null;
 
+  const acceptPredictionKeyframe = useCallback(
+    (track: VideoTrackAnnotation, targetFrame: number) => {
+      if (readOnly) return;
+      const exact = track.geometry.keyframes.find((kf) => kf.frame_index === targetFrame);
+      if (!exact || exact.source !== "prediction") return;
+      const nextKeyframes = track.geometry.keyframes.map((kf) =>
+        kf.frame_index === targetFrame ? { ...kf, source: "manual" as const } : kf,
+      );
+      onUpdate(track, { ...track.geometry, keyframes: nextKeyframes });
+    },
+    [onUpdate, readOnly],
+  );
+
+  const rejectPredictionKeyframe = useCallback(
+    (track: VideoTrackAnnotation, targetFrame: number) => {
+      if (readOnly) return;
+      const exact = track.geometry.keyframes.find((kf) => kf.frame_index === targetFrame);
+      if (!exact || exact.source !== "prediction") return;
+      const nextKeyframes = track.geometry.keyframes.filter(
+        (kf) => kf.frame_index !== targetFrame,
+      );
+      const withOutside = addOutsideRange(
+        { ...track.geometry, keyframes: nextKeyframes },
+        { from: targetFrame, to: targetFrame, source: "prediction" },
+      );
+      onUpdate(track, withOutside);
+    },
+    [onUpdate, readOnly],
+  );
+
   return (
     <VideoTrackPanel
       videoTracks={videoTracks}
@@ -261,8 +344,10 @@ export function VideoTrackSidebar({
       selectedTrack={selectedTrack}
       selectedTrackGhost={selectedTrackGhost}
       selectedTrackLocked={selectedTrackLocked}
+      currentFrameOutside={selectedTrack ? isFrameOutside(selectedTrack.geometry, frameIndex) : false}
       frameIndex={frameIndex}
       readOnly={readOnly}
+      selectedBboxCount={selectedBboxes.length}
       classes={classes}
       hiddenTrackIds={hiddenTrackIds}
       lockedTrackIds={lockedTrackIds}
@@ -274,6 +359,10 @@ export function VideoTrackSidebar({
       onChangeUserBoxClass={onChangeUserBoxClass}
       onBatchRenameTracks={onRenameTracks ? renameSelectedTracks : undefined}
       onBatchDeleteTracks={onDeleteTracks ? deleteSelectedTracks : undefined}
+      onAggregateSelectedBboxes={onComposeTracks ? aggregateSelectedBboxes : undefined}
+      onSplitSelectedTrack={onComposeTracks ? splitSelectedTrack : undefined}
+      onMergeSelectedTracks={onComposeTracks ? mergeSelectedTracks : undefined}
+      canMergeSelectedTracks={canMergeSelectedTracks}
       onShowSelectedTracks={() => setSelectedTracksHidden(false)}
       onHideSelectedTracks={() => setSelectedTracksHidden(true)}
       onLockSelectedTracks={() => setSelectedTracksLocked(true)}
@@ -287,6 +376,12 @@ export function VideoTrackSidebar({
       onPasteKeyframeToCurrentFrame={pasteKeyframeToCurrentFrame}
       onDeleteTrackKeyframe={deleteTrackKeyframe}
       onConvertToBboxes={onConvertToBboxes}
+      reviewDisplayMode={reviewDisplayMode}
+      trackerJobsByAnnotation={trackerJobsByAnnotation}
+      onPropagateTrack={onPropagateTrack}
+      onCancelTrackerJob={onCancelTrackerJob}
+      onAcceptPredictionKeyframe={acceptPredictionKeyframe}
+      onRejectPredictionKeyframe={rejectPredictionKeyframe}
     />
   );
 }

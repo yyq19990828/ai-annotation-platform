@@ -1,11 +1,20 @@
 import { forwardRef, type ReactNode } from "react";
-import type { Annotation, AnnotationResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import type {
+  Annotation,
+  AnnotationResponse,
+  TaskVideoFrameTimetableResponse,
+  TaskVideoManifestResponse,
+  VideoBboxGeometry,
+  VideoTrackGeometry,
+} from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { AiBox } from "../state/transforms";
 import type { PendingDrawing, SamPolarity, SamSubTool, Tool, VideoTool } from "../state/useWorkbenchState";
 import type { Viewport } from "../state/useViewportTransform";
+import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { VideoStageControls } from "../stage/VideoStage";
+import type { VideoTimelineChapter } from "../stage/VideoPlaybackOverlay";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
 import type { StageKind } from "../stages/types";
 import { ThreeDWorkbenchPlaceholder } from "../stages/three-d/ThreeDWorkbench.placeholder";
@@ -27,10 +36,13 @@ interface WorkbenchStageHostProps {
   onCursorMove: (pt: { x: number; y: number } | null) => void;
 
   videoManifest: TaskVideoManifestResponse | undefined;
+  videoFrameTimetable?: TaskVideoFrameTimetableResponse;
   videoManifestLoading?: boolean;
   videoManifestError?: unknown;
+  videoChapters?: VideoTimelineChapter[];
   videoTool: VideoTool;
   videoFrameIndex: number;
+  videoReviewDisplayMode?: DiffMode;
   hiddenVideoTrackIds: Set<string>;
   lockedVideoTrackIds: Set<string>;
   onVideoFrameIndexChange: (frameIndex: number) => void;
@@ -114,10 +126,13 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     onSelectBox,
     onCursorMove,
     videoManifest,
+    videoFrameTimetable,
     videoManifestLoading,
     videoManifestError,
+    videoChapters,
     videoTool,
     videoFrameIndex,
+    videoReviewDisplayMode,
     hiddenVideoTrackIds,
     lockedVideoTrackIds,
     onVideoFrameIndexChange,
@@ -183,17 +198,20 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           <VideoWorkbench
             ref={ref}
             manifest={videoManifest}
+            frameTimetable={videoFrameTimetable}
             isLoading={videoManifestLoading}
             error={videoManifestError}
             annotations={annotations}
             selectedId={selectedId}
             activeClass={activeClass}
             frameIndex={videoFrameIndex}
+            reviewDisplayMode={videoReviewDisplayMode}
             hiddenTrackIds={hiddenVideoTrackIds}
             lockedTrackIds={lockedVideoTrackIds}
             readOnly={readOnly}
             videoTool={videoTool}
             pendingDrawing={pendingDrawing}
+            chapters={videoChapters}
             onSelect={onSelectBox}
             onFrameIndexChange={onVideoFrameIndexChange}
             onCreate={onVideoCreate}

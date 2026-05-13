@@ -2,7 +2,7 @@ import base64
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
@@ -14,20 +14,39 @@ from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import DatasetItem
+from app.db.models.dataset import DatasetItem, VideoFrameIndex
 from app.schemas.task import (
     TaskOut,
     TaskListResponse,
     TaskLockResponse,
     ReviewClaimResponse,
+    TaskVideoFrameTimetableResponse,
     TaskVideoManifestResponse,
+    VideoFrameTimetableEntry,
     VideoMetadata,
+)
+from app.schemas.video_frame_service import (
+    VideoChunkOut,
+    VideoChunksResponse,
+    VideoFrameOut,
+    VideoFramePrefetchRequest,
+    VideoFramePrefetchResponse,
+    VideoFrameRetryRequest,
+    VideoManifestV2Response,
+    VideoSegmentOut,
+    VideoSegmentsResponse,
+)
+from app.schemas.video_tracker_job import (
+    VideoTrackerJobOut,
+    VideoTrackerPropagateRequest,
 )
 from app.schemas.annotation import (
     AnnotationCreate,
     AnnotationListPage,
     AnnotationOut,
     AnnotationUpdate,
+    VideoTrackCompositionRequest,
+    VideoTrackCompositionResponse,
     VideoTrackConvertToBboxesRequest,
     VideoTrackConvertToBboxesResponse,
 )
@@ -43,6 +62,22 @@ from app.services.scheduler import (
     visible_batch_statuses_for,
 )
 from app.services.storage import storage_service
+from app.services.video_frame_service import (
+    build_context_from_task,
+    get_chunk as get_video_chunk_asset,
+    get_frame as get_video_frame_asset,
+    list_chunks as list_video_chunks,
+    manifest_v2 as build_video_manifest_v2,
+    prefetch_frames as prefetch_video_frames,
+    retry_frames as retry_video_frames,
+)
+from app.services.video_segment_service import (
+    claim_segment,
+    heartbeat_segment,
+    list_segments as list_video_segments,
+    release_segment,
+)
+from app.services.video_tracker_job_service import create_tracker_job
 from app.services.user_brief import resolve_briefs
 from app.db.models.task_batch import TaskBatch
 
@@ -352,11 +387,357 @@ async def get_video_manifest(
 
     return TaskVideoManifestResponse(
         task_id=task.id,
+        dataset_item_id=task.dataset_item_id,
         video_url=video_url,
         poster_url=poster_url,
         metadata=metadata,
         expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
     )
+
+
+@router.get(
+    "/{task_id}/video/frame-timetable",
+    response_model=TaskVideoFrameTimetableResponse,
+)
+async def get_video_frame_timetable(
+    task_id: uuid.UUID,
+    response: Response,
+    from_frame: int | None = Query(default=None, ge=0, alias="from"),
+    to_frame: int | None = Query(default=None, ge=0, alias="to"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    if task.file_type != "video":
+        raise HTTPException(status_code=400, detail="Task is not a video task")
+    response.headers["Cache-Control"] = "private, max-age=3600"
+
+    _, _, _, _, video_metadata = await _attach_dimensions(db, task)
+    metadata = VideoMetadata.model_validate(video_metadata or {})
+    if not metadata.fps or not metadata.frame_count:
+        raise HTTPException(status_code=503, detail="Video metadata not ready")
+
+    if not task.dataset_item_id:
+        return TaskVideoFrameTimetableResponse(
+            task_id=task.id,
+            fps=metadata.fps,
+            frame_count=metadata.frame_count,
+            source="estimated",
+            frames=[],
+        )
+
+    has_timetable = (
+        await db.execute(
+            select(func.count(VideoFrameIndex.id)).where(
+                VideoFrameIndex.dataset_item_id == task.dataset_item_id
+            )
+        )
+    ).scalar_one() > 0
+    stmt = select(VideoFrameIndex).where(
+        VideoFrameIndex.dataset_item_id == task.dataset_item_id
+    )
+    if from_frame is not None:
+        stmt = stmt.where(VideoFrameIndex.frame_index >= from_frame)
+    if to_frame is not None:
+        stmt = stmt.where(VideoFrameIndex.frame_index <= to_frame)
+    rows = (
+        await db.execute(stmt.order_by(VideoFrameIndex.frame_index.asc()))
+    ).scalars().all()
+
+    body = TaskVideoFrameTimetableResponse(
+        task_id=task.id,
+        fps=metadata.fps,
+        frame_count=metadata.frame_count,
+        source="ffprobe" if has_timetable else "estimated",
+        frames=[
+            VideoFrameTimetableEntry(
+                frame_index=row.frame_index,
+                pts_ms=row.pts_ms,
+                is_keyframe=row.is_keyframe,
+                pict_type=row.pict_type,
+                byte_offset=row.byte_offset,
+            )
+            for row in rows
+        ],
+    )
+    response.headers["ETag"] = (
+        f'"video-timetable:{task.dataset_item_id}:{metadata.frame_count}:'
+        f'{len(body.frames)}:{from_frame or 0}:{to_frame or ""}"'
+    )
+    return body
+
+
+@router.get("/{task_id}/video/manifest-v2", response_model=VideoManifestV2Response)
+async def get_video_manifest_v2(
+    task_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return await build_video_manifest_v2(db, ctx, str(request.base_url))
+
+
+@router.get("/{task_id}/video/segments", response_model=VideoSegmentsResponse)
+async def get_video_segments(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return await list_video_segments(db, ctx)
+
+
+@router.post(
+    "/{task_id}/video/segments/{segment_id}:claim",
+    response_model=VideoSegmentOut,
+)
+async def claim_video_segment(
+    task_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    from app.db.models.project import Project
+
+    project = await db.get(Project, task.project_id)
+    privileged = bool(project and is_privileged_for_project(current_user, project))
+    body = await claim_segment(db, ctx, segment_id, current_user, privileged=privileged)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_SEGMENT_CLAIM,
+        target_type="video_segment",
+        target_id=segment_id,
+        request=request,
+        status_code=200,
+        detail={"task_id": str(task.id), "dataset_item_id": str(ctx.item.id)},
+    )
+    await db.commit()
+    return body
+
+
+@router.post(
+    "/{task_id}/video/segments/{segment_id}:heartbeat",
+    response_model=VideoSegmentOut,
+)
+async def heartbeat_video_segment(
+    task_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    from app.db.models.project import Project
+
+    project = await db.get(Project, task.project_id)
+    privileged = bool(project and is_privileged_for_project(current_user, project))
+    body = await heartbeat_segment(
+        db, ctx, segment_id, current_user, privileged=privileged
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_SEGMENT_HEARTBEAT,
+        target_type="video_segment",
+        target_id=segment_id,
+        request=request,
+        status_code=200,
+        detail={"task_id": str(task.id), "dataset_item_id": str(ctx.item.id)},
+    )
+    await db.commit()
+    return body
+
+
+@router.post(
+    "/{task_id}/video/segments/{segment_id}:release",
+    response_model=VideoSegmentOut,
+)
+async def release_video_segment(
+    task_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    from app.db.models.project import Project
+
+    project = await db.get(Project, task.project_id)
+    privileged = bool(project and is_privileged_for_project(current_user, project))
+    body = await release_segment(
+        db, ctx, segment_id, current_user, privileged=privileged
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_SEGMENT_RELEASE,
+        target_type="video_segment",
+        target_id=segment_id,
+        request=request,
+        status_code=200,
+        detail={"task_id": str(task.id), "dataset_item_id": str(ctx.item.id)},
+    )
+    await db.commit()
+    return body
+
+
+@router.get("/{task_id}/video/chunks", response_model=VideoChunksResponse)
+async def get_video_chunks(
+    task_id: uuid.UUID,
+    from_frame: int | None = Query(default=None, ge=0),
+    to_frame: int | None = Query(default=None, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return await list_video_chunks(db, ctx, from_frame, to_frame)
+
+
+@router.get("/{task_id}/video/chunks/{chunk_id}", response_model=VideoChunkOut)
+async def get_video_chunk(
+    task_id: uuid.UUID,
+    chunk_id: int,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    body = await get_video_chunk_asset(db, ctx, chunk_id)
+    if body.status == "pending":
+        response.status_code = 202
+        response.headers["Retry-After"] = str(body.retry_after or 3)
+    return body
+
+
+@router.get("/{task_id}/video/frames/{frame_index}", response_model=VideoFrameOut)
+async def get_video_frame(
+    task_id: uuid.UUID,
+    frame_index: int,
+    response: Response,
+    format: Literal["webp", "jpeg"] = Query(default="webp"),
+    w: int = Query(default=512, ge=1, le=4096),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    body = await get_video_frame_asset(db, ctx, frame_index, w, format)
+    if body.status == "pending":
+        response.status_code = 202
+        response.headers["Retry-After"] = str(body.retry_after or 3)
+    response.headers["Cache-Control"] = (
+        "private, max-age=3600" if body.status == "ready" else "no-store"
+    )
+    return body
+
+
+@router.post(
+    "/{task_id}/video/frames:prefetch",
+    response_model=VideoFramePrefetchResponse,
+)
+async def prefetch_video_frame_assets(
+    task_id: uuid.UUID,
+    payload: VideoFramePrefetchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return await prefetch_video_frames(
+        db, ctx, payload.frame_indices, payload.width, payload.format
+    )
+
+
+@router.post(
+    "/{task_id}/video/frames:retry",
+    response_model=VideoFramePrefetchResponse,
+)
+async def retry_video_frame_assets(
+    task_id: uuid.UUID,
+    payload: VideoFrameRetryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    ctx = await build_context_from_task(db, task)
+    return await retry_video_frames(
+        db,
+        ctx,
+        payload.frame_indices,
+        payload.width,
+        payload.format,
+        force=payload.force,
+    )
+
+
+@router.post(
+    "/{task_id}/video/tracks/{annotation_id}:propagate",
+    response_model=VideoTrackerJobOut,
+    status_code=202,
+)
+async def propagate_video_track(
+    task_id: uuid.UUID,
+    annotation_id: uuid.UUID,
+    payload: VideoTrackerPropagateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    ctx = await build_context_from_task(db, task)
+    body = await create_tracker_job(
+        db,
+        task=task,
+        ctx=ctx,
+        annotation_id=annotation_id,
+        payload=payload,
+        user=current_user,
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_TRACKER_JOB_CREATE,
+        target_type="video_tracker_job",
+        target_id=body.id,
+        request=request,
+        status_code=202,
+        detail={
+            "task_id": str(task.id),
+            "annotation_id": str(annotation_id),
+            "dataset_item_id": str(ctx.item.id),
+            "segment_id": str(body.segment_id) if body.segment_id else None,
+            "from_frame": body.from_frame,
+            "to_frame": body.to_frame,
+            "model_key": body.model_key,
+            "direction": body.direction,
+        },
+    )
+    await db.commit()
+    return body
 
 
 @router.get("/{task_id}/annotations", response_model=list[AnnotationOut])
@@ -561,6 +942,82 @@ async def update_annotation(
     await db.refresh(annotation)
     response.headers["ETag"] = f'W/"{annotation.version}"'
     return annotation
+
+
+@router.post(
+    "/{task_id}/annotations/video/track-compositions",
+    response_model=VideoTrackCompositionResponse,
+)
+async def compose_video_tracks(
+    task_id: uuid.UUID,
+    data: VideoTrackCompositionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
+    if not data.annotation_ids:
+        raise HTTPException(status_code=400, detail="annotation_ids is required")
+    if len(set(data.annotation_ids)) != len(data.annotation_ids):
+        raise HTTPException(status_code=400, detail="annotation_ids must be unique")
+
+    annotations: list[Annotation] = []
+    for annotation_id in data.annotation_ids:
+        ann = await db.get(Annotation, annotation_id)
+        if ann is None or not ann.is_active:
+            raise HTTPException(status_code=404, detail="Annotation not found")
+        if ann.task_id != task_id:
+            raise HTTPException(
+                status_code=400, detail="Annotation does not belong to this task"
+            )
+        annotations.append(ann)
+
+    svc = AnnotationService(db)
+    try:
+        updated, created, deleted_ids = await svc.compose_video_tracks(
+            task=task,
+            annotations=annotations,
+            user_id=current_user.id,
+            operation=data.operation,
+            frame_index=data.frame_index,
+            delete_sources=data.delete_sources,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.ANNOTATION_UPDATE,
+        target_type="annotation",
+        request=request,
+        status_code=200,
+        detail={
+            "task_id": str(task_id),
+            "operation": f"video_track.{data.operation}",
+            "annotation_ids": [str(annotation_id) for annotation_id in data.annotation_ids],
+            "frame_index": data.frame_index,
+            "created_count": len(created),
+            "updated_count": len(updated),
+            "deleted_count": len(deleted_ids),
+        },
+    )
+    await db.commit()
+    for ann in [*updated, *created]:
+        await db.refresh(ann)
+    return VideoTrackCompositionResponse(
+        operation=data.operation,
+        updated_annotations=[
+            AnnotationOut.model_validate(ann, from_attributes=True) for ann in updated
+        ],
+        created_annotations=[
+            AnnotationOut.model_validate(ann, from_attributes=True) for ann in created
+        ],
+        deleted_annotation_ids=deleted_ids,
+    )
 
 
 @router.post(

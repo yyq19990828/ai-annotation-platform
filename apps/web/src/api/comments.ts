@@ -2,6 +2,7 @@ import { apiClient } from "./client";
 import type {
   Mention,
   Attachment,
+  CommentAnchor,
   CanvasDrawing,
   AnnotationCommentOut,
   AnnotationCommentCreate,
@@ -16,6 +17,7 @@ import type {
 
 export type CommentMention = Mention;
 export type CommentAttachment = Attachment;
+export type AnnotationCommentAnchor = CommentAnchor;
 export type CommentCanvasDrawing = CanvasDrawing;
 export type AnnotationCommentResponse = AnnotationCommentOut;
 export type CreateCommentPayload = AnnotationCommentCreate;

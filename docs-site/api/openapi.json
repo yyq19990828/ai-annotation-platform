@@ -425,6 +425,16 @@
       },
       "AnnotationCommentCreate": {
         "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "attachments": {
             "items": {
               "$ref": "#/components/schemas/Attachment"
@@ -492,6 +502,16 @@
       },
       "AnnotationCommentOut": {
         "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "annotation_id": {
             "format": "uuid",
             "title": "Annotation Id",
@@ -3943,6 +3963,57 @@
           "new_name"
         ],
         "title": "ClassRenameRequest",
+        "type": "object"
+      },
+      "CommentAnchor": {
+        "additionalProperties": false,
+        "description": "评论锚点。v0.9.35 起用于视频 review 的帧级定位。",
+        "properties": {
+          "frameIndex": {
+            "minimum": 0.0,
+            "title": "Frameindex",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "video_frame",
+            "title": "Kind",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "manual",
+                  "prediction",
+                  "interpolated",
+                  "legacy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "trackId": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trackid"
+          }
+        },
+        "required": [
+          "kind",
+          "frameIndex"
+        ],
+        "title": "CommentAnchor",
         "type": "object"
       },
       "CommentAttachmentUploadInitRequest": {
@@ -8916,8 +8987,73 @@
         "title": "TaskOut",
         "type": "object"
       },
+      "TaskVideoFrameTimetableResponse": {
+        "properties": {
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Count"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/VideoFrameTimetableEntry"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "ffprobe",
+              "estimated"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "source",
+          "frames"
+        ],
+        "title": "TaskVideoFrameTimetableResponse",
+        "type": "object"
+      },
       "TaskVideoManifestResponse": {
         "properties": {
+          "dataset_item_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Item Id"
+          },
           "expires_in": {
             "default": 3600,
             "title": "Expires In",
@@ -9267,6 +9403,289 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "VideoAssetFailureItem": {
+        "properties": {
+          "asset_key": {
+            "title": "Asset Key",
+            "type": "string"
+          },
+          "asset_type": {
+            "enum": [
+              "probe",
+              "poster",
+              "frame_timetable",
+              "chunk",
+              "frame"
+            ],
+            "title": "Asset Type",
+            "type": "string"
+          },
+          "chunk_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Id"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "task_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Display Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "asset_key",
+          "asset_type",
+          "dataset_item_id",
+          "file_name",
+          "error"
+        ],
+        "title": "VideoAssetFailureItem",
+        "type": "object"
+      },
+      "VideoAssetFailuresResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/VideoAssetFailureItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "VideoAssetFailuresResponse",
+        "type": "object"
+      },
+      "VideoAssetRetryRequest": {
+        "properties": {
+          "asset_type": {
+            "enum": [
+              "probe",
+              "poster",
+              "frame_timetable",
+              "chunk",
+              "frame"
+            ],
+            "title": "Asset Type",
+            "type": "string"
+          },
+          "chunk_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Id"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "webp",
+                  "jpeg"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "maximum": 4096.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "asset_type",
+          "dataset_item_id"
+        ],
+        "title": "VideoAssetRetryRequest",
+        "type": "object"
+      },
+      "VideoAssetRetryResponse": {
+        "properties": {
+          "asset_type": {
+            "enum": [
+              "probe",
+              "poster",
+              "frame_timetable",
+              "chunk",
+              "frame"
+            ],
+            "title": "Asset Type",
+            "type": "string"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "queued",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "asset_type",
+          "dataset_item_id"
+        ],
+        "title": "VideoAssetRetryResponse",
+        "type": "object"
+      },
       "VideoBboxGeometry": {
         "additionalProperties": false,
         "description": "v0.9.16 · 视频单帧 bbox。\n\n首版视频工作台只保存逐帧框，不表达 track/keyframe/interpolation。`frame_index`\n是唯一时间轴定位字段，展示层可自行换算 timecode。",
@@ -9307,6 +9726,783 @@
           "h"
         ],
         "title": "VideoBboxGeometry",
+        "type": "object"
+      },
+      "VideoChapterCreate": {
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "end_frame": {
+            "minimum": 0.0,
+            "title": "End Frame",
+            "type": "integer"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "start_frame": {
+            "minimum": 0.0,
+            "title": "Start Frame",
+            "type": "integer"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_frame",
+          "end_frame",
+          "title"
+        ],
+        "title": "VideoChapterCreate",
+        "type": "object"
+      },
+      "VideoChapterList": {
+        "properties": {
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/VideoChapterOut"
+            },
+            "title": "Chapters",
+            "type": "array"
+          }
+        },
+        "title": "VideoChapterList",
+        "type": "object"
+      },
+      "VideoChapterOut": {
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "end_frame": {
+            "title": "End Frame",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "start_frame": {
+            "title": "Start Frame",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "dataset_item_id",
+          "start_frame",
+          "end_frame",
+          "title",
+          "created_at"
+        ],
+        "title": "VideoChapterOut",
+        "type": "object"
+      },
+      "VideoChapterUpdate": {
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "end_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Frame"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "start_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Frame"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "VideoChapterUpdate",
+        "type": "object"
+      },
+      "VideoChunkDiagnostics": {
+        "properties": {
+          "end_byte_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Byte Offset"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "keyframe_aligned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keyframe Aligned"
+          },
+          "output_codec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Codec"
+          },
+          "smart_copy_eligible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smart Copy Eligible"
+          },
+          "source_codec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Codec"
+          },
+          "start_byte_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Byte Offset"
+          }
+        },
+        "title": "VideoChunkDiagnostics",
+        "type": "object"
+      },
+      "VideoChunkOut": {
+        "properties": {
+          "byte_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byte Size"
+          },
+          "chunk_id": {
+            "title": "Chunk Id",
+            "type": "integer"
+          },
+          "diagnostics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoChunkDiagnostics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "end_frame": {
+            "title": "End Frame",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "generation_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "smart_copy",
+                  "transcode"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Mode"
+          },
+          "retry_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After"
+          },
+          "start_frame": {
+            "title": "Start Frame",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "chunk_id",
+          "start_frame",
+          "end_frame",
+          "status"
+        ],
+        "title": "VideoChunkOut",
+        "type": "object"
+      },
+      "VideoChunksResponse": {
+        "properties": {
+          "chunk_size_frames": {
+            "title": "Chunk Size Frames",
+            "type": "integer"
+          },
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/VideoChunkOut"
+            },
+            "title": "Chunks",
+            "type": "array"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "fallback_video_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Video Url"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "chunk_size_frames",
+          "chunks"
+        ],
+        "title": "VideoChunksResponse",
+        "type": "object"
+      },
+      "VideoFrameOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "format": {
+            "enum": [
+              "webp",
+              "jpeg"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "retry_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame_index",
+          "width",
+          "format",
+          "status"
+        ],
+        "title": "VideoFrameOut",
+        "type": "object"
+      },
+      "VideoFramePrefetchRequest": {
+        "properties": {
+          "format": {
+            "default": "webp",
+            "enum": [
+              "webp",
+              "jpeg"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "frame_indices": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Frame Indices",
+            "type": "array"
+          },
+          "width": {
+            "default": 512,
+            "maximum": 4096.0,
+            "minimum": 1.0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "title": "VideoFramePrefetchRequest",
+        "type": "object"
+      },
+      "VideoFramePrefetchResponse": {
+        "properties": {
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/VideoFrameOut"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "frames"
+        ],
+        "title": "VideoFramePrefetchResponse",
+        "type": "object"
+      },
+      "VideoFrameRetryRequest": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "format": {
+            "default": "webp",
+            "enum": [
+              "webp",
+              "jpeg"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "frame_indices": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 500,
+            "title": "Frame Indices",
+            "type": "array"
+          },
+          "width": {
+            "default": 512,
+            "maximum": 4096.0,
+            "minimum": 1.0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "title": "VideoFrameRetryRequest",
+        "type": "object"
+      },
+      "VideoFrameTimetableEntry": {
+        "properties": {
+          "byte_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byte Offset"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "is_keyframe": {
+            "title": "Is Keyframe",
+            "type": "boolean"
+          },
+          "pict_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pict Type"
+          },
+          "pts_ms": {
+            "title": "Pts Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame_index",
+          "pts_ms",
+          "is_keyframe"
+        ],
+        "title": "VideoFrameTimetableEntry",
+        "type": "object"
+      },
+      "VideoManifestV2Response": {
+        "properties": {
+          "chunk_size_frames": {
+            "title": "Chunk Size Frames",
+            "type": "integer"
+          },
+          "chunks_manifest_url": {
+            "title": "Chunks Manifest Url",
+            "type": "string"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "expires_in": {
+            "default": 3600,
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fps"
+          },
+          "frame_cache_formats": {
+            "default": [
+              "webp",
+              "jpeg"
+            ],
+            "items": {
+              "enum": [
+                "webp",
+                "jpeg"
+              ],
+              "type": "string"
+            },
+            "title": "Frame Cache Formats",
+            "type": "array"
+          },
+          "frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Count"
+          },
+          "frame_service_base": {
+            "title": "Frame Service Base",
+            "type": "string"
+          },
+          "frame_timetable_url": {
+            "title": "Frame Timetable Url",
+            "type": "string"
+          },
+          "poster_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Url"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/VideoSegmentOut"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "video_url": {
+            "title": "Video Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "video_url",
+          "chunks_manifest_url",
+          "frame_timetable_url",
+          "frame_service_base",
+          "chunk_size_frames"
+        ],
+        "title": "VideoManifestV2Response",
         "type": "object"
       },
       "VideoMetadata": {
@@ -9354,6 +10550,28 @@
               }
             ],
             "title": "Frame Count"
+          },
+          "frame_timetable_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Timetable Error"
+          },
+          "frame_timetable_frame_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Timetable Frame Count"
           },
           "height": {
             "anyOf": [
@@ -9447,6 +10665,133 @@
         "title": "VideoMetadata",
         "type": "object"
       },
+      "VideoSegmentOut": {
+        "properties": {
+          "assignee_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "end_frame": {
+            "title": "End Frame",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "lock_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lock Expires At"
+          },
+          "locked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked At"
+          },
+          "locked_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked By"
+          },
+          "segment_index": {
+            "title": "Segment Index",
+            "type": "integer"
+          },
+          "start_frame": {
+            "title": "Start Frame",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "assigned",
+              "locked",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "segment_index",
+          "start_frame",
+          "end_frame",
+          "status"
+        ],
+        "title": "VideoSegmentOut",
+        "type": "object"
+      },
+      "VideoSegmentsResponse": {
+        "properties": {
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "segment_size_frames": {
+            "title": "Segment Size Frames",
+            "type": "integer"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/VideoSegmentOut"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "segment_size_frames",
+          "segments"
+        ],
+        "title": "VideoSegmentsResponse",
+        "type": "object"
+      },
       "VideoTrackBbox": {
         "additionalProperties": false,
         "properties": {
@@ -9474,6 +10819,92 @@
           "h"
         ],
         "title": "VideoTrackBbox",
+        "type": "object"
+      },
+      "VideoTrackCompositionRequest": {
+        "properties": {
+          "annotation_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Annotation Ids",
+            "type": "array"
+          },
+          "delete_sources": {
+            "default": true,
+            "title": "Delete Sources",
+            "type": "boolean"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "operation": {
+            "enum": [
+              "aggregate_bboxes",
+              "split_track",
+              "merge_tracks"
+            ],
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "VideoTrackCompositionRequest",
+        "type": "object"
+      },
+      "VideoTrackCompositionResponse": {
+        "properties": {
+          "created_annotations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Created Annotations",
+            "type": "array"
+          },
+          "deleted_annotation_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Deleted Annotation Ids",
+            "type": "array"
+          },
+          "operation": {
+            "enum": [
+              "aggregate_bboxes",
+              "split_track",
+              "merge_tracks"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "updated_annotations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnnotationOut"
+            },
+            "title": "Updated Annotations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "VideoTrackCompositionResponse",
         "type": "object"
       },
       "VideoTrackConvertToBboxesRequest": {
@@ -9572,6 +11003,13 @@
             "title": "Keyframes",
             "type": "array"
           },
+          "outside": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackOutsideRange"
+            },
+            "title": "Outside",
+            "type": "array"
+          },
           "track_id": {
             "minLength": 1,
             "title": "Track Id",
@@ -9628,6 +11066,269 @@
           "bbox"
         ],
         "title": "VideoTrackKeyframe",
+        "type": "object"
+      },
+      "VideoTrackOutsideRange": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "minimum": 0.0,
+            "title": "From",
+            "type": "integer"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "prediction"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "to": {
+            "minimum": 0.0,
+            "title": "To",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "VideoTrackOutsideRange",
+        "type": "object"
+      },
+      "VideoTrackerJobOut": {
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "cancel_requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Requested At"
+          },
+          "celery_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celery Task Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "forward",
+              "backward",
+              "bidirectional"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "event_channel": {
+            "title": "Event Channel",
+            "type": "string"
+          },
+          "from_frame": {
+            "title": "From Frame",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "model_key": {
+            "title": "Model Key",
+            "type": "string"
+          },
+          "prompt": {
+            "additionalProperties": true,
+            "title": "Prompt",
+            "type": "object"
+          },
+          "segment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "to_frame": {
+            "title": "To Frame",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "dataset_item_id",
+          "annotation_id",
+          "status",
+          "model_key",
+          "direction",
+          "from_frame",
+          "to_frame",
+          "event_channel",
+          "created_at"
+        ],
+        "title": "VideoTrackerJobOut",
+        "type": "object"
+      },
+      "VideoTrackerPropagateRequest": {
+        "properties": {
+          "direction": {
+            "default": "forward",
+            "enum": [
+              "forward",
+              "backward",
+              "bidirectional"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "from_frame": {
+            "minimum": 0.0,
+            "title": "From Frame",
+            "type": "integer"
+          },
+          "model_key": {
+            "default": "mock_bbox",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Model Key",
+            "type": "string"
+          },
+          "prompt": {
+            "additionalProperties": true,
+            "title": "Prompt",
+            "type": "object"
+          },
+          "segment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Id"
+          },
+          "to_frame": {
+            "minimum": 0.0,
+            "title": "To Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from_frame",
+          "to_frame"
+        ],
+        "title": "VideoTrackerPropagateRequest",
         "type": "object"
       },
       "VisibleIfRule": {
@@ -17424,6 +19125,113 @@
         ]
       }
     },
+    "/api/v1/storage/video-assets/failures": {
+      "get": {
+        "operationId": "list_video_asset_failures_api_v1_storage_video_assets_failures_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoAssetFailuresResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Video Asset Failures",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/video-assets/retry": {
+      "post": {
+        "operationId": "retry_video_asset_api_v1_storage_video_assets_retry_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoAssetRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoAssetRetryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Video Asset",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
     "/api/v1/tasks": {
       "get": {
         "operationId": "list_tasks_api_v1_tasks_get",
@@ -17907,6 +19715,64 @@
           }
         ],
         "summary": "Get Annotations Paged",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotations/video/track-compositions": {
+      "post": {
+        "operationId": "compose_video_tracks_api_v1_tasks__task_id__annotations_video_track_compositions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoTrackCompositionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackCompositionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Compose Video Tracks",
         "tags": [
           "tasks"
         ]
@@ -18735,6 +20601,426 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/video/chunks": {
+      "get": {
+        "operationId": "get_video_chunks_api_v1_tasks__task_id__video_chunks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Frame"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Frame"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChunksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Chunks",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/chunks/{chunk_id}": {
+      "get": {
+        "operationId": "get_video_chunk_api_v1_tasks__task_id__video_chunks__chunk_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "chunk_id",
+            "required": true,
+            "schema": {
+              "title": "Chunk Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChunkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Chunk",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/frame-timetable": {
+      "get": {
+        "operationId": "get_video_frame_timetable_api_v1_tasks__task_id__video_frame_timetable_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskVideoFrameTimetableResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Frame Timetable",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/frames/{frame_index}": {
+      "get": {
+        "operationId": "get_video_frame_api_v1_tasks__task_id__video_frames__frame_index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "frame_index",
+            "required": true,
+            "schema": {
+              "title": "Frame Index",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "webp",
+              "enum": [
+                "webp",
+                "jpeg"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "w",
+            "required": false,
+            "schema": {
+              "default": 512,
+              "maximum": 4096,
+              "minimum": 1,
+              "title": "W",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFrameOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Frame",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/frames:prefetch": {
+      "post": {
+        "operationId": "prefetch_video_frame_assets_api_v1_tasks__task_id__video_frames_prefetch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoFramePrefetchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFramePrefetchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Prefetch Video Frame Assets",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/frames:retry": {
+      "post": {
+        "operationId": "retry_video_frame_assets_api_v1_tasks__task_id__video_frames_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoFrameRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFramePrefetchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Video Frame Assets",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/video/manifest": {
       "get": {
         "operationId": "get_video_manifest_api_v1_tasks__task_id__video_manifest_get",
@@ -18778,6 +21064,344 @@
           }
         ],
         "summary": "Get Video Manifest",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/manifest-v2": {
+      "get": {
+        "operationId": "get_video_manifest_v2_api_v1_tasks__task_id__video_manifest_v2_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoManifestV2Response"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Manifest V2",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/segments": {
+      "get": {
+        "operationId": "get_video_segments_api_v1_tasks__task_id__video_segments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoSegmentsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Segments",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/segments/{segment_id}:claim": {
+      "post": {
+        "operationId": "claim_video_segment_api_v1_tasks__task_id__video_segments__segment_id__claim_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "segment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Segment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoSegmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim Video Segment",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/segments/{segment_id}:heartbeat": {
+      "post": {
+        "operationId": "heartbeat_video_segment_api_v1_tasks__task_id__video_segments__segment_id__heartbeat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "segment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Segment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoSegmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Heartbeat Video Segment",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/segments/{segment_id}:release": {
+      "post": {
+        "operationId": "release_video_segment_api_v1_tasks__task_id__video_segments__segment_id__release_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "segment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Segment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoSegmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Release Video Segment",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate": {
+      "post": {
+        "operationId": "propagate_video_track_api_v1_tasks__task_id__video_tracks__annotation_id__propagate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "annotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Annotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoTrackerPropagateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Propagate Video Track",
         "tags": [
           "tasks"
         ]
@@ -19302,6 +21926,837 @@
         "summary": "Change User Role",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/v1/video-tracker-jobs/{job_id}": {
+      "delete": {
+        "operationId": "cancel_video_tracker_job_api_v1_video_tracker_jobs__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Video Tracker Job",
+        "tags": [
+          "video-tracker-jobs"
+        ]
+      },
+      "get": {
+        "operationId": "get_video_tracker_job_api_v1_video_tracker_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Tracker Job",
+        "tags": [
+          "video-tracker-jobs"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/chapters": {
+      "get": {
+        "operationId": "list_video_chapters_api_v1_videos__dataset_item_id__chapters_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChapterList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Video Chapters",
+        "tags": [
+          "videos"
+        ]
+      },
+      "post": {
+        "operationId": "create_video_chapter_api_v1_videos__dataset_item_id__chapters_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoChapterCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChapterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Video Chapter",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/chapters/{chapter_id}": {
+      "delete": {
+        "operationId": "delete_video_chapter_api_v1_videos__dataset_item_id__chapters__chapter_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "chapter_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Chapter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Video Chapter",
+        "tags": [
+          "videos"
+        ]
+      },
+      "patch": {
+        "operationId": "update_video_chapter_api_v1_videos__dataset_item_id__chapters__chapter_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "chapter_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Chapter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoChapterUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChapterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Video Chapter",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/chunks": {
+      "get": {
+        "operationId": "get_video_chunks_api_v1_videos__dataset_item_id__chunks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Frame"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Frame"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChunksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Chunks",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/chunks/{chunk_id}": {
+      "get": {
+        "operationId": "get_video_chunk_api_v1_videos__dataset_item_id__chunks__chunk_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "chunk_id",
+            "required": true,
+            "schema": {
+              "title": "Chunk Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChunkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Chunk",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/frame-timetable": {
+      "get": {
+        "operationId": "get_video_frame_timetable_api_v1_videos__dataset_item_id__frame_timetable_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskVideoFrameTimetableResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Frame Timetable",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/frames/{frame_index}": {
+      "get": {
+        "operationId": "get_video_frame_api_v1_videos__dataset_item_id__frames__frame_index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "frame_index",
+            "required": true,
+            "schema": {
+              "title": "Frame Index",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "webp",
+              "enum": [
+                "webp",
+                "jpeg"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "w",
+            "required": false,
+            "schema": {
+              "default": 512,
+              "maximum": 4096,
+              "minimum": 1,
+              "title": "W",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFrameOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Frame",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/frames:prefetch": {
+      "post": {
+        "operationId": "prefetch_video_frame_assets_api_v1_videos__dataset_item_id__frames_prefetch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoFramePrefetchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFramePrefetchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Prefetch Video Frame Assets",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/frames:retry": {
+      "post": {
+        "operationId": "retry_video_frame_assets_api_v1_videos__dataset_item_id__frames_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoFrameRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoFramePrefetchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Video Frame Assets",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/manifest": {
+      "get": {
+        "operationId": "get_video_manifest_api_v1_videos__dataset_item_id__manifest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoManifestV2Response"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Manifest",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/segments": {
+      "get": {
+        "operationId": "get_video_segments_api_v1_videos__dataset_item_id__segments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoSegmentsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Segments",
+        "tags": [
+          "videos"
         ]
       }
     },

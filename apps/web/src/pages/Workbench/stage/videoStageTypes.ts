@@ -3,6 +3,7 @@ import type {
   VideoBboxGeometry,
   VideoTrackGeometry,
   VideoTrackKeyframe,
+  VideoTrackOutsideRange,
 } from "@/types";
 
 export type VideoStageGeom = { x: number; y: number; w: number; h: number };
@@ -33,6 +34,7 @@ export type VideoTrackPreview = {
   trackId: string;
   className: string;
   keyframes: VideoTrackKeyframe[];
+  outside?: VideoTrackOutsideRange[];
   selected: boolean;
 };
 
@@ -40,6 +42,7 @@ export type VideoDragState =
   | { kind: "draw"; start: { x: number; y: number }; current: { x: number; y: number } }
   | { kind: "move"; id: string; start: { x: number; y: number }; origin: VideoStageGeom; current: VideoStageGeom }
   | { kind: "resize"; id: string; dir: VideoResizeDirection; start: { x: number; y: number }; origin: VideoStageGeom; current: VideoStageGeom }
+  | { kind: "pan"; sx: number; sy: number }
   | null;
 
 export type VideoTrackConversionOptions = {
@@ -47,6 +50,13 @@ export type VideoTrackConversionOptions = {
   scope: "frame" | "track";
   frameIndex?: number;
   frameMode?: "keyframes" | "all_frames";
+};
+
+export type VideoTrackCompositionOptions = {
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  annotationIds: string[];
+  frameIndex?: number;
+  deleteSources?: boolean;
 };
 
 export type VideoTrackKeyframePatch = Partial<VideoTrackKeyframe>;

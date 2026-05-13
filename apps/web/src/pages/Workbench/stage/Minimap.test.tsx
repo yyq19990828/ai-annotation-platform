@@ -60,4 +60,24 @@ describe("Minimap", () => {
     expect(minimap).toHaveStyle({ cursor: "grabbing" });
     expect(setVp).toHaveBeenCalledWith({ scale: 2, tx: -750, ty: -375 });
   });
+
+  it("renders optional video frame and cache range overlays", () => {
+    const { getByTestId } = render(
+      <Minimap
+        imgW={1000}
+        imgH={500}
+        vpSize={{ w: 500, h: 250 }}
+        vp={{ scale: 2, tx: 0, ty: 0 }}
+        setVp={() => {}}
+        thumbnailUrl="/poster.jpg"
+        fileUrl="/video.mp4"
+        currentFrameIndex={5}
+        maxFrame={10}
+        cachedFrameRanges={[{ from: 2, to: 4 }]}
+      />,
+    );
+
+    expect(getByTestId("minimap-current-frame")).toHaveStyle({ left: "50%" });
+    expect(getByTestId("minimap-cached-frame-ranges")).toBeInTheDocument();
+  });
 });

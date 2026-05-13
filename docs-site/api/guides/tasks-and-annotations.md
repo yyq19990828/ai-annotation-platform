@@ -59,7 +59,8 @@ v0.9.16 起，视频任务会在 `GET /api/v1/tasks/:id` 的 `TaskOut.video_meta
     "codec": "mpeg4",
     "playback_path": "playback/...",
     "playback_codec": "h264",
-    "poster_frame_path": "thumbnails/..."
+    "poster_frame_path": "thumbnails/...",
+    "frame_timetable_frame_count": 25
   }
 }
 ```
@@ -73,6 +74,32 @@ GET /api/v1/tasks/:id/video/manifest
 如果原视频编码不是浏览器稳定支持的 H.264，media worker 会生成 `playback/*.mp4`；manifest 的 `video_url` 优先返回该播放版本。
 
 返回 presigned 播放地址、poster 地址和同一份标准化 metadata。非视频任务会返回 `400`。
+
+v0.9.21 起，工作台还会读取帧时间表，用真实 `pts_ms` 替代单纯 `frame / fps`：
+
+```http
+GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
+```
+
+```json
+{
+  "task_id": "...",
+  "fps": 29.97,
+  "frame_count": 1800,
+  "source": "ffprobe",
+  "frames": [
+    {
+      "frame_index": 0,
+      "pts_ms": 0,
+      "is_keyframe": true,
+      "pict_type": "I",
+      "byte_offset": 48
+    }
+  ]
+}
+```
+
+存量视频没有时间表时会返回 `source: "estimated"` 和空 `frames`，前端继续按 `fps` 估算。
 
 v0.9.16 的视频标注使用逐帧 `video_bbox`：
 
@@ -137,6 +164,28 @@ POST /api/v1/tasks/:id/annotations/:annotation_id/video/convert-to-bboxes
 | `frame_mode` | `keyframes` / `all_frames` | `scope=track` 时生效 |
 
 响应包含 `source_annotation`、`created_annotations[]`、`deleted_source` 与 `removed_frame_indexes`。`copy` 不会移除源帧，所以 `removed_frame_indexes` 为空；`split` 才会返回被移除的帧号。
+
+v0.9.37 起，视频标注也支持 track composition：
+
+```http
+POST /api/v1/tasks/:id/annotations/video/track-compositions
+```
+
+```json
+{
+  "operation": "aggregate_bboxes",
+  "annotation_ids": ["bbox-a", "bbox-b"],
+  "delete_sources": true
+}
+```
+
+| `operation` | 说明 |
+|---|---|
+| `aggregate_bboxes` | 将同任务、同类、无重复帧的 `video_bbox[]` 聚合为一条 `video_track` |
+| `split_track` | 在 `frame_index` 可见帧之后，把一条 track 拆成前后两条 |
+| `merge_tracks` | 合并两条同类、可见帧区间不重叠的 track，并自动补中间 `outside` gap |
+
+响应包含 `updated_annotations[]`、`created_annotations[]` 和 `deleted_annotation_ids[]`，客户端应按这三组结果更新 annotation 列表。
 
 ## 候选预测（AI 紫框）
 

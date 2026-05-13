@@ -27,6 +27,8 @@ from app.api.v1 import (
     system_settings,
     tasks,
     users,
+    video_tracker_jobs,
+    videos,
 )
 
 api_router = APIRouter()
@@ -62,6 +64,12 @@ api_router.include_router(
 )
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
+api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
+api_router.include_router(
+    video_tracker_jobs.router,
+    prefix="/video-tracker-jobs",
+    tags=["video-tracker-jobs"],
+)
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(groups.router, prefix="/groups", tags=["groups"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])

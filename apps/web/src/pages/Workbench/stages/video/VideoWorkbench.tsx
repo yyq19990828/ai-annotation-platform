@@ -1,7 +1,15 @@
 import { forwardRef } from "react";
-import type { AnnotationResponse, TaskVideoManifestResponse, VideoBboxGeometry, VideoTrackGeometry } from "@/types";
+import type {
+  AnnotationResponse,
+  TaskVideoFrameTimetableResponse,
+  TaskVideoManifestResponse,
+  VideoBboxGeometry,
+  VideoTrackGeometry,
+} from "@/types";
 import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
+import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
+import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions } from "./useVideoAnnotationActions";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -9,17 +17,20 @@ type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
 
 export interface VideoWorkbenchProps {
   manifest: TaskVideoManifestResponse | undefined;
+  frameTimetable?: TaskVideoFrameTimetableResponse;
   isLoading?: boolean;
   error?: unknown;
   annotations: AnnotationResponse[];
   selectedId: string | null;
   activeClass: string;
   frameIndex: number;
+  reviewDisplayMode?: DiffMode;
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
   readOnly: boolean;
   videoTool: VideoTool;
   pendingDrawing: PendingDrawing;
+  chapters?: VideoTimelineChapter[];
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: Geom) => void;
@@ -40,17 +51,20 @@ export interface VideoWorkbenchProps {
 export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps>(
   function VideoWorkbench({
     manifest,
+    frameTimetable,
     isLoading,
     error,
     annotations,
     selectedId,
     activeClass,
     frameIndex,
+    reviewDisplayMode,
     hiddenTrackIds,
     lockedTrackIds,
     readOnly,
     videoTool,
     pendingDrawing,
+    chapters,
     onSelect,
     onFrameIndexChange,
     onCreate,
@@ -66,17 +80,20 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       <VideoStage
         ref={ref}
         manifest={manifest}
+        frameTimetable={frameTimetable}
         isLoading={isLoading}
         error={error}
         annotations={annotations}
         selectedId={selectedId}
         activeClass={activeClass}
         frameIndex={frameIndex}
+        reviewDisplayMode={reviewDisplayMode}
         hiddenTrackIds={hiddenTrackIds}
         lockedTrackIds={lockedTrackIds}
         readOnly={readOnly}
         videoTool={videoTool}
         pendingDrawing={pendingDrawing}
+        chapters={chapters}
         onSelect={onSelect}
         onFrameIndexChange={onFrameIndexChange}
         onCreate={onCreate}

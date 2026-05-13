@@ -3,13 +3,18 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
+import type { VideoTrackerJobState } from "@/hooks/useVideoTrackerJobs";
+import type { DiffMode } from "../modes/types";
 import { classColor } from "./colors";
 import { resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
+import { isFrameOutside } from "./videoTrackOutside";
 import type {
+  VideoFrameEntry,
   VideoTrackAnnotation,
   VideoTrackConversionOptions,
   VideoTrackGhost,
 } from "./videoStageTypes";
+import { VideoTrackerJobBadge } from "./VideoTrackerJobBadge";
 
 interface VideoTrackPanelProps {
   videoTracks: VideoTrackAnnotation[];
@@ -18,8 +23,10 @@ interface VideoTrackPanelProps {
   selectedTrack: VideoTrackAnnotation | null;
   selectedTrackGhost: VideoTrackGhost | null;
   selectedTrackLocked: boolean;
+  currentFrameOutside: boolean;
   frameIndex: number;
   readOnly: boolean;
+  selectedBboxCount?: number;
   classes?: string[];
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
@@ -31,6 +38,10 @@ interface VideoTrackPanelProps {
   onChangeUserBoxClass?: (id: string) => void;
   onBatchRenameTracks?: (className: string) => void;
   onBatchDeleteTracks?: () => void;
+  onAggregateSelectedBboxes?: () => void;
+  onSplitSelectedTrack?: () => void;
+  onMergeSelectedTracks?: () => void;
+  canMergeSelectedTracks?: boolean;
   onShowSelectedTracks?: () => void;
   onHideSelectedTracks?: () => void;
   onLockSelectedTracks?: () => void;
@@ -44,6 +55,12 @@ interface VideoTrackPanelProps {
   onPasteKeyframeToCurrentFrame: () => void;
   onDeleteTrackKeyframe: (annotation: VideoTrackAnnotation, targetFrame: number) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
+  reviewDisplayMode?: DiffMode;
+  trackerJobsByAnnotation?: Record<string, VideoTrackerJobState>;
+  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  onCancelTrackerJob?: (jobId: string) => void;
+  onAcceptPredictionKeyframe?: (annotation: VideoTrackAnnotation, frameIndex: number) => void;
+  onRejectPredictionKeyframe?: (annotation: VideoTrackAnnotation, frameIndex: number) => void;
 }
 
 function frameRange(frames: number[]): string {
@@ -66,8 +83,9 @@ function firstVisibleTrackFrame(track: VideoTrackAnnotation["geometry"]): number
   return Math.min(...frames);
 }
 
-function exactFrameLabel(selectedTrack: VideoTrackAnnotation | null, frameIndex: number): string {
+function exactFrameLabel(selectedTrack: VideoTrackAnnotation | null, frameIndex: number, outside: boolean): string {
   if (!selectedTrack) return `F${frameIndex}`;
+  if (outside) return `F${frameIndex} · 消失`;
   const exact = selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex);
   if (exact?.absent) return `F${frameIndex} · 消失`;
   if (exact?.occluded) return `F${frameIndex} · 遮挡`;
@@ -104,10 +122,40 @@ function copyText(text: string): void {
   void navigator.clipboard?.writeText(text);
 }
 
-function statusChipText(kf: VideoTrackKeyframe | undefined): string {
+function statusChipText(kf: VideoTrackKeyframe | undefined, outside = false): string {
+  if (outside) return "当前消失";
   if (kf?.absent) return "当前消失";
   if (kf?.occluded) return "当前遮挡";
   return kf ? "关键帧" : "非关键帧";
+}
+
+function sourceChipText(source: VideoFrameEntry["source"] | null): string {
+  if (source === "prediction") return "prediction";
+  if (source === "interpolated") return "interpolated";
+  if (source === "legacy") return "legacy bbox";
+  if (source === "manual") return "manual";
+  return "无当前帧";
+}
+
+function sourceChipColor(source: VideoFrameEntry["source"] | null): React.CSSProperties {
+  if (source === "prediction") return { color: "var(--color-ai)", borderColor: "color-mix(in oklab, var(--color-ai) 40%, var(--color-border))" };
+  if (source === "interpolated") return { color: "var(--color-warning)", borderColor: "color-mix(in oklab, var(--color-warning) 45%, var(--color-border))" };
+  if (source === "manual" || source === "legacy") return { color: "var(--color-success)", borderColor: "color-mix(in oklab, var(--color-success) 40%, var(--color-border))" };
+  return { color: "var(--color-fg-muted)" };
+}
+
+function visibleInReviewMode(source: VideoFrameEntry["source"] | null, mode?: DiffMode): boolean {
+  if (!mode || mode === "diff") return true;
+  if (!source) return false;
+  if (mode === "raw") return source === "prediction" || source === "interpolated";
+  return source === "manual" || source === "legacy";
+}
+
+function nextPredictionFrame(track: VideoTrackAnnotation["geometry"], frameIndex: number): number | null {
+  const predictionFrames = sortedKeyframes(track)
+    .filter((kf) => kf.source === "prediction" && !kf.absent)
+    .map((kf) => kf.frame_index);
+  return predictionFrames.find((frame) => frame > frameIndex) ?? predictionFrames[0] ?? null;
 }
 
 type TrackFilter = "all" | "current";
@@ -166,8 +214,10 @@ export function VideoTrackPanel({
   selectedTrack,
   selectedTrackGhost,
   selectedTrackLocked,
+  currentFrameOutside,
   frameIndex,
   readOnly,
+  selectedBboxCount = 0,
   classes,
   hiddenTrackIds,
   lockedTrackIds,
@@ -179,6 +229,10 @@ export function VideoTrackPanel({
   onChangeUserBoxClass,
   onBatchRenameTracks,
   onBatchDeleteTracks,
+  onAggregateSelectedBboxes,
+  onSplitSelectedTrack,
+  onMergeSelectedTracks,
+  canMergeSelectedTracks = false,
   onShowSelectedTracks,
   onHideSelectedTracks,
   onLockSelectedTracks,
@@ -192,18 +246,31 @@ export function VideoTrackPanel({
   onPasteKeyframeToCurrentFrame,
   onDeleteTrackKeyframe,
   onConvertToBboxes,
+  reviewDisplayMode,
+  trackerJobsByAnnotation = {},
+  onPropagateTrack,
+  onCancelTrackerJob,
+  onAcceptPredictionKeyframe,
+  onRejectPredictionKeyframe,
 }: VideoTrackPanelProps) {
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
   const batchMutationDisabled = readOnly || batchSelectionDisabled;
-  const currentFrameLabel = exactFrameLabel(selectedTrack, frameIndex);
+  const canAggregateBboxes = !readOnly && selectedBboxCount > 1 && Boolean(onAggregateSelectedBboxes);
+  const currentFrameLabel = exactFrameLabel(selectedTrack, frameIndex, currentFrameOutside);
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
   const filteredVideoTracks = useMemo(
-    () => trackFilter === "current"
-      ? videoTracks.filter((ann) => resolveTrackAtFrame(ann.geometry, frameIndex))
-      : videoTracks,
-    [frameIndex, trackFilter, videoTracks],
+    () => videoTracks.filter((ann) => {
+      const currentSource = resolveTrackAtFrame(ann.geometry, frameIndex)?.source ?? null;
+      if (trackFilter === "all") return true;
+      if (!currentSource) return false;
+      return visibleInReviewMode(currentSource, reviewDisplayMode);
+    }),
+    [frameIndex, reviewDisplayMode, trackFilter, videoTracks],
   );
+  const selectedTrackNextPredictionFrame = selectedTrack
+    ? nextPredictionFrame(selectedTrack.geometry, frameIndex)
+    : null;
 
   return (
     <div style={{ display: "grid", gap: 12, padding: "2px 0 8px" }}>
@@ -221,6 +288,17 @@ export function VideoTrackPanel({
             {trackFilter === "current" ? `${filteredVideoTracks.length}/${videoTracks.length}` : videoTracks.length}
           </span>
         </div>
+        {selectedBboxCount > 1 && (
+          <Button
+            size="sm"
+            style={{ ...compactButtonStyle, width: "100%", justifyContent: "center", marginTop: 8 }}
+            disabled={!canAggregateBboxes}
+            title="把已多选的单帧 video_bbox 聚合为一条 video_track"
+            onClick={onAggregateSelectedBboxes}
+          >
+            <Icon name="link" size={13} />聚合 {selectedBboxCount} 个框
+          </Button>
+        )}
         <TrackFilterTabs value={trackFilter} onChange={setTrackFilter} />
       </div>
       <div style={{ display: "grid", gap: 8 }}>
@@ -269,6 +347,15 @@ export function VideoTrackPanel({
             <Button size="sm" style={compactButtonStyle} disabled={!onHideSelectedTracks} onClick={onHideSelectedTracks}>隐藏</Button>
             <Button size="sm" style={compactButtonStyle} disabled={batchSelectionDisabled || !onLockSelectedTracks} onClick={onLockSelectedTracks}>锁定</Button>
             <Button size="sm" style={compactButtonStyle} disabled={batchSelectionDisabled || !onUnlockSelectedTracks} onClick={onUnlockSelectedTracks}>解锁</Button>
+            <Button
+              size="sm"
+              style={compactButtonStyle}
+              disabled={batchMutationDisabled || !canMergeSelectedTracks || !onMergeSelectedTracks}
+              title={canMergeSelectedTracks ? "合并两条同类且不重叠的轨迹" : "只支持合并两条同类轨迹"}
+              onClick={onMergeSelectedTracks}
+            >
+              合并
+            </Button>
             <Button size="sm" style={compactButtonStyle} variant="danger" disabled={batchMutationDisabled || !onBatchDeleteTracks} onClick={onBatchDeleteTracks}>
               删除
             </Button>
@@ -284,6 +371,8 @@ export function VideoTrackPanel({
           const hidden = hiddenTrackIds.has(track.track_id);
           const locked = lockedTrackIds.has(track.track_id);
           const exact = track.keyframes.find((kf) => kf.frame_index === frameIndex);
+          const outside = isFrameOutside(track, frameIndex);
+          const currentSource = resolveTrackAtFrame(track, frameIndex)?.source ?? null;
           const sourceLabel = ann.source === "prediction_based" ? "AI 采纳" : "手动";
           const frames = track.keyframes.map((kf) => kf.frame_index);
           return (
@@ -334,11 +423,24 @@ export function VideoTrackPanel({
                     borderRadius: 8,
                     padding: "5px 8px",
                     fontSize: 11,
-                    color: exact?.absent ? "var(--color-danger)" : "var(--color-fg-muted)",
+                    color: outside || exact?.absent ? "var(--color-danger)" : "var(--color-fg-muted)",
                     background: "var(--color-bg-elev)",
                   }}
                 >
-                  {statusChipText(exact)}
+                  {statusChipText(exact, outside)}
+                </span>
+                <span
+                  data-testid="video-track-current-source"
+                  style={{
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 8,
+                    padding: "5px 8px",
+                    fontSize: 11,
+                    background: "var(--color-bg-elev)",
+                    ...sourceChipColor(currentSource),
+                  }}
+                >
+                  {sourceChipText(currentSource)}
                 </span>
                 <Button
                   size="sm"
@@ -436,12 +538,49 @@ export function VideoTrackPanel({
               <Button
                 size="sm"
                 style={{ ...compactButtonStyle, height: 30 }}
+                disabled={readOnly || selectedTrackLocked || !onSplitSelectedTrack}
+                title="在当前帧之后拆出后段轨迹"
+                onClick={onSplitSelectedTrack}
+              >
+                <Icon name="scissors" size={13} />拆轨迹
+              </Button>
+              <Button
+                size="sm"
+                style={{ ...compactButtonStyle, height: 30 }}
                 title="复制轨迹 ID"
                 onClick={() => copyText(selectedTrack.geometry.track_id)}
               >
                 <Icon name="copy" size={13} />复制 ID
               </Button>
+              <Button
+                size="sm"
+                style={{ ...compactButtonStyle, height: 30 }}
+                disabled={selectedTrackNextPredictionFrame === null || !onSeekFrame}
+                title="跳转到下一条 prediction 关键帧"
+                onClick={() => {
+                  if (selectedTrackNextPredictionFrame !== null) onSeekFrame?.(selectedTrackNextPredictionFrame);
+                }}
+              >
+                <Icon name="arrowRight" size={13} />下一预测
+              </Button>
+              <Button
+                size="sm"
+                style={{ ...compactButtonStyle, height: 30 }}
+                disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
+                title="发起 AI 传播 (Shift+T)"
+                onClick={() => onPropagateTrack?.(selectedTrack)}
+              >
+                <Icon name="bot" size={13} />AI 传播
+              </Button>
             </div>
+            {trackerJobsByAnnotation[selectedTrack.id] && (
+              <div data-testid="video-tracker-job-row" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <VideoTrackerJobBadge
+                  job={trackerJobsByAnnotation[selectedTrack.id]}
+                  onCancel={onCancelTrackerJob}
+                />
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
               <Button
                 size="sm"
@@ -531,6 +670,7 @@ export function VideoTrackPanel({
                 {sortedKeyframes(selectedTrack.geometry).map((kf) => (
                   <div
                     key={kf.frame_index}
+                    data-testid={kf.source === "prediction" ? "video-prediction-keyframe-row" : "video-track-keyframe-row"}
                     style={{
                       display: "grid",
                       gridTemplateColumns: "58px minmax(64px, 1fr) auto",
@@ -538,7 +678,9 @@ export function VideoTrackPanel({
                       alignItems: "center",
                       padding: "7px 10px",
                       borderTop: "1px solid var(--color-border)",
-                      background: "var(--color-bg-elev)",
+                      background: kf.source === "prediction"
+                        ? "color-mix(in oklab, var(--color-ai) 6%, var(--color-bg-elev))"
+                        : "var(--color-bg-elev)",
                       fontSize: 12,
                     }}
                   >
@@ -549,10 +691,13 @@ export function VideoTrackPanel({
                           width: 7,
                           height: 7,
                           borderRadius: 999,
-                          background: kf.absent ? "var(--color-danger)" : "oklch(0.68 0.16 145)",
+                          background: kf.absent ? "var(--color-danger)" : kf.source === "prediction" ? "oklch(0.78 0.14 78)" : "oklch(0.68 0.16 145)",
                         }}
                       />
                       {keyframeStatus(kf)}
+                      {kf.source === "prediction" && (
+                        <Badge variant="default" style={{ fontSize: 10, padding: "1px 6px" }}>预测</Badge>
+                      )}
                     </span>
                     <span style={{ display: "flex", gap: 5 }}>
                       <Button
@@ -564,6 +709,28 @@ export function VideoTrackPanel({
                       >
                         <Icon name="arrowRight" size={12} />跳转
                       </Button>
+                      {kf.source === "prediction" && onAcceptPredictionKeyframe && (
+                        <Button
+                          size="sm"
+                          style={{ ...keyframeButtonStyle, color: "var(--color-success)" }}
+                          disabled={readOnly}
+                          title="接受预测：source 改为 manual"
+                          onClick={() => onAcceptPredictionKeyframe(selectedTrack, kf.frame_index)}
+                        >
+                          <Icon name="check" size={12} />接受
+                        </Button>
+                      )}
+                      {kf.source === "prediction" && onRejectPredictionKeyframe && (
+                        <Button
+                          size="sm"
+                          style={{ ...keyframeButtonStyle, color: "var(--color-danger)" }}
+                          disabled={readOnly}
+                          title="拒绝预测：把该帧并入 outside"
+                          onClick={() => onRejectPredictionKeyframe(selectedTrack, kf.frame_index)}
+                        >
+                          <Icon name="x" size={12} />拒绝
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         style={keyframeButtonStyle}

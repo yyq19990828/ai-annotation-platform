@@ -6,18 +6,31 @@ from pydantic import TypeAdapter
 from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import Dataset, DatasetItem
+from app.db.models.dataset import (
+    Dataset,
+    DatasetItem,
+    VideoChunk,
+    VideoFrameCache,
+    VideoFrameIndex,
+)
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.schemas._jsonb_types import Geometry
+from app.schemas.task import VideoMetadata
 from app.workers.media import (
+    FFMPEG_CHUNK_TIMEOUT_SECONDS,
     FFMPEG_POSTER_TIMEOUT_SECONDS,
     FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
     FFPROBE_TIMEOUT_SECONDS,
+    _store_frame_cache_image,
+    _store_video_chunk,
+    extract_video_chunk_smart_copy,
     extract_video_poster,
     parse_ffprobe_video_metadata,
+    parse_ffprobe_frame_timetable,
     probe_video_file,
+    probe_video_frame_timetable,
     transcode_video_for_browser,
 )
 
@@ -50,6 +63,50 @@ def test_parse_ffprobe_video_metadata_computes_fps_and_frame_count():
     }
 
 
+def test_parse_ffprobe_frame_timetable_extracts_frame_pts():
+    frames = parse_ffprobe_frame_timetable(
+        {
+            "frames": [
+                {
+                    "media_type": "video",
+                    "key_frame": 1,
+                    "best_effort_timestamp_time": "0.000000",
+                    "pict_type": "I",
+                    "pkt_pos": "48",
+                },
+                {
+                    "media_type": "video",
+                    "key_frame": 0,
+                    "pkt_pts_time": "0.033367",
+                    "pict_type": "P",
+                    "pkt_pos": "4096",
+                },
+                {
+                    "media_type": "audio",
+                    "best_effort_timestamp_time": "0.040000",
+                },
+            ]
+        }
+    )
+
+    assert frames == [
+        {
+            "frame_index": 0,
+            "pts_ms": 0,
+            "is_keyframe": True,
+            "pict_type": "I",
+            "byte_offset": 48,
+        },
+        {
+            "frame_index": 1,
+            "pts_ms": 33,
+            "is_keyframe": False,
+            "pict_type": "P",
+            "byte_offset": 4096,
+        },
+    ]
+
+
 def test_probe_video_file_uses_timeout(tmp_path, monkeypatch):
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"fake")
@@ -73,6 +130,30 @@ def test_probe_video_file_uses_timeout(tmp_path, monkeypatch):
     assert any("stream=codec_type,codec_name" in arg for arg in seen["args"])
 
 
+def test_probe_video_frame_timetable_uses_timeout(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+    seen: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        seen["args"] = args[0]
+        seen["timeout"] = kwargs.get("timeout")
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout='{"frames":[{"media_type":"video","best_effort_timestamp_time":"0","key_frame":1}]}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    frames = probe_video_frame_timetable(video)
+
+    assert frames[0]["pts_ms"] == 0
+    assert seen["timeout"] == FFPROBE_TIMEOUT_SECONDS
+    assert "-show_frames" in seen["args"]
+
+
 def test_extract_video_poster_uses_timeout(tmp_path, monkeypatch):
     video = tmp_path / "clip.mp4"
     poster = tmp_path / "poster.webp"
@@ -90,6 +171,79 @@ def test_extract_video_poster_uses_timeout(tmp_path, monkeypatch):
     extract_video_poster(video, poster)
 
     assert seen["timeout"] == FFMPEG_POSTER_TIMEOUT_SECONDS
+
+
+async def test_store_frame_cache_image_uses_shared_video_frame_cache(
+    db_session, tmp_path, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    dataset = Dataset(
+        display_id=f"D-VID-{uuid.uuid4().hex[:6]}",
+        name="videos",
+        data_type="video",
+        created_by=user.id,
+    )
+    db_session.add(dataset)
+    await db_session.flush()
+    item = DatasetItem(
+        dataset_id=dataset.id,
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        metadata_={"video": {"fps": 30, "frame_count": 10}},
+    )
+    db_session.add(item)
+    await db_session.flush()
+    row = VideoFrameCache(
+        dataset_item_id=item.id,
+        frame_index=0,
+        width=512,
+        format="webp",
+        status="pending",
+    )
+    db_session.add(row)
+    await db_session.flush()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fake")
+
+    class FakeClient:
+        def __init__(self):
+            self.puts = []
+
+        def put_object(self, **kwargs):
+            self.puts.append(kwargs)
+
+    class FakeStorage:
+        datasets_bucket = "datasets"
+
+        def __init__(self):
+            self.client = FakeClient()
+
+        def ensure_bucket(self, bucket):
+            assert bucket == "datasets"
+
+    def fake_extract(input_path, output_path, pts_ms, width):
+        assert input_path == source
+        assert pts_ms == 0
+        assert width == 512
+        output_path.write_bytes(b"poster")
+
+    storage = FakeStorage()
+    monkeypatch.setattr("app.workers.media.extract_video_frame_image", fake_extract)
+
+    await _store_frame_cache_image(
+        db_session,
+        storage,
+        item,
+        VideoMetadata.model_validate({"fps": 30, "frame_count": 10}),
+        source,
+        tmp_path,
+        row,
+    )
+
+    assert row.status == "ready"
+    assert row.storage_key == f"videos/{item.id}/frames/0_512.webp"
+    assert storage.client.puts[0]["Key"] == row.storage_key
 
 
 def test_transcode_video_for_browser_uses_timeout(tmp_path, monkeypatch):
@@ -111,6 +265,244 @@ def test_transcode_video_for_browser_uses_timeout(tmp_path, monkeypatch):
 
     assert seen["timeout"] == FFMPEG_TRANSCODE_TIMEOUT_SECONDS
     assert "libx264" in seen["args"]
+
+
+def test_extract_video_chunk_smart_copy_uses_copy_and_timeout(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    chunk = tmp_path / "chunk.mp4"
+    video.write_bytes(b"fake")
+    seen: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        seen["args"] = args[0]
+        seen["timeout"] = kwargs.get("timeout")
+        return subprocess.CompletedProcess(
+            args=args[0], returncode=0, stdout="", stderr=""
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    extract_video_chunk_smart_copy(video, chunk, 1000, 2000)
+
+    assert seen["timeout"] == FFMPEG_CHUNK_TIMEOUT_SECONDS
+    assert seen["args"][
+        seen["args"].index("-c:v") + 1
+    ] == "copy"
+
+
+class _FakeVideoChunkClient:
+    def __init__(self):
+        self.puts = []
+
+    def put_object(self, **kwargs):
+        self.puts.append(kwargs)
+
+
+class _FakeVideoChunkStorage:
+    datasets_bucket = "datasets"
+
+    def __init__(self):
+        self.client = _FakeVideoChunkClient()
+
+    def ensure_bucket(self, bucket):
+        assert bucket == "datasets"
+
+
+async def _make_video_chunk_fixture(db_session, owner_id, *, codec="h264"):
+    dataset = Dataset(
+        display_id=f"D-VCH-{uuid.uuid4().hex[:6]}",
+        name="videos",
+        data_type="video",
+        created_by=owner_id,
+    )
+    db_session.add(dataset)
+    await db_session.flush()
+    item = DatasetItem(
+        dataset_id=dataset.id,
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        metadata_={"video": {"fps": 30, "frame_count": 60, "codec": codec}},
+    )
+    db_session.add(item)
+    await db_session.flush()
+    chunk = VideoChunk(
+        dataset_item_id=item.id,
+        chunk_id=0,
+        start_frame=0,
+        end_frame=29,
+        start_pts_ms=0,
+        end_pts_ms=967,
+        status="pending",
+    )
+    db_session.add(chunk)
+    await db_session.flush()
+    return item, chunk
+
+
+async def test_store_video_chunk_uses_smart_copy_when_keyframe_aligned(
+    db_session, tmp_path, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    item, chunk = await _make_video_chunk_fixture(db_session, user.id, codec="h264")
+    db_session.add_all(
+        [
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=0,
+                pts_ms=0,
+                is_keyframe=True,
+                pict_type="I",
+                byte_offset=100,
+            ),
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=29,
+                pts_ms=967,
+                is_keyframe=False,
+                pict_type="P",
+                byte_offset=9000,
+            ),
+        ]
+    )
+    await db_session.flush()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fake")
+    calls: list[str] = []
+
+    def fake_smart_copy(input_path, output_path, start_ms, duration_ms):
+        calls.append(f"smart:{start_ms}:{duration_ms}")
+        output_path.write_bytes(b"smart")
+
+    def fake_transcode(*args):
+        calls.append("transcode")
+
+    monkeypatch.setattr("app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy)
+    monkeypatch.setattr("app.workers.media.extract_video_chunk", fake_transcode)
+
+    storage = _FakeVideoChunkStorage()
+    await _store_video_chunk(
+        db_session,
+        storage,
+        item,
+        VideoMetadata.model_validate(item.metadata_["video"]),
+        source,
+        tmp_path,
+        chunk,
+    )
+
+    assert calls == ["smart:0:1000"]
+    assert chunk.status == "ready"
+    assert chunk.generation_mode == "smart_copy"
+    assert chunk.diagnostics["source_codec"] == "h264"
+    assert chunk.diagnostics["output_codec"] == "h264"
+    assert chunk.diagnostics["keyframe_aligned"] is True
+    assert chunk.diagnostics["start_byte_offset"] == 100
+    assert chunk.diagnostics["end_byte_offset"] == 9000
+    assert chunk.diagnostics["smart_copy_eligible"] is True
+    assert chunk.diagnostics["fallback_reason"] is None
+    assert storage.client.puts[0]["Body"] == b"smart"
+
+
+async def test_store_video_chunk_transcodes_when_not_keyframe_aligned(
+    db_session, tmp_path, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    item, chunk = await _make_video_chunk_fixture(db_session, user.id, codec="h264")
+    db_session.add(
+        VideoFrameIndex(
+            dataset_item_id=item.id,
+            frame_index=0,
+            pts_ms=0,
+            is_keyframe=False,
+            pict_type="P",
+            byte_offset=100,
+        )
+    )
+    await db_session.flush()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fake")
+    calls: list[str] = []
+
+    def fake_smart_copy(*args):
+        calls.append("smart")
+
+    def fake_transcode(input_path, output_path, start_ms, frame_count):
+        calls.append(f"transcode:{start_ms}:{frame_count}")
+        output_path.write_bytes(b"transcoded")
+
+    monkeypatch.setattr("app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy)
+    monkeypatch.setattr("app.workers.media.extract_video_chunk", fake_transcode)
+
+    storage = _FakeVideoChunkStorage()
+    await _store_video_chunk(
+        db_session,
+        storage,
+        item,
+        VideoMetadata.model_validate(item.metadata_["video"]),
+        source,
+        tmp_path,
+        chunk,
+    )
+
+    assert calls == ["transcode:0:30"]
+    assert chunk.status == "ready"
+    assert chunk.generation_mode == "transcode"
+    assert chunk.diagnostics["output_codec"] == "h264"
+    assert chunk.diagnostics["smart_copy_eligible"] is False
+    assert chunk.diagnostics["fallback_reason"] == "start_frame_not_keyframe"
+    assert storage.client.puts[0]["Body"] == b"transcoded"
+
+
+async def test_store_video_chunk_falls_back_when_smart_copy_fails(
+    db_session, tmp_path, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    item, chunk = await _make_video_chunk_fixture(db_session, user.id, codec="h264")
+    db_session.add(
+        VideoFrameIndex(
+            dataset_item_id=item.id,
+            frame_index=0,
+            pts_ms=0,
+            is_keyframe=True,
+            pict_type="I",
+            byte_offset=100,
+        )
+    )
+    await db_session.flush()
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"fake")
+    calls: list[str] = []
+
+    def fake_smart_copy(*args):
+        calls.append("smart")
+        raise RuntimeError("copy failed")
+
+    def fake_transcode(input_path, output_path, start_ms, frame_count):
+        calls.append(f"transcode:{start_ms}:{frame_count}")
+        output_path.write_bytes(b"transcoded")
+
+    monkeypatch.setattr("app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy)
+    monkeypatch.setattr("app.workers.media.extract_video_chunk", fake_transcode)
+
+    storage = _FakeVideoChunkStorage()
+    await _store_video_chunk(
+        db_session,
+        storage,
+        item,
+        VideoMetadata.model_validate(item.metadata_["video"]),
+        source,
+        tmp_path,
+        chunk,
+    )
+
+    assert calls == ["smart", "transcode:0:30"]
+    assert chunk.status == "ready"
+    assert chunk.generation_mode == "transcode"
+    assert chunk.diagnostics["output_codec"] == "h264"
+    assert chunk.diagnostics["smart_copy_eligible"] is False
+    assert chunk.diagnostics["fallback_reason"].startswith("smart_copy_failed:")
+    assert storage.client.puts[0]["Body"] == b"transcoded"
 
 
 def test_video_bbox_geometry_validates_and_bbox_stays_compatible():
@@ -348,6 +740,161 @@ async def test_video_manifest_returns_signed_urls(
     assert body["metadata"]["playback_path"] == "playback/clip.mp4"
     assert body["expires_in"] == 3600
     assert signed == [("playback/clip.mp4", 3600), ("posters/clip.webp", 3600)]
+
+
+async def test_video_frame_timetable_returns_ffprobe_rows(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project = Project(
+        display_id=f"P-VID-{uuid.uuid4().hex[:6]}",
+        name="Video Project",
+        type_key="video-track",
+        type_label="视频 · 时序追踪",
+        owner_id=user.id,
+        classes=["car"],
+    )
+    dataset = Dataset(
+        display_id=f"D-VID-{uuid.uuid4().hex[:6]}",
+        name="videos",
+        data_type="video",
+        created_by=user.id,
+    )
+    db_session.add_all([project, dataset])
+    await db_session.flush()
+    item = DatasetItem(
+        dataset_id=dataset.id,
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        metadata_={"video": {"fps": 30, "frame_count": 4}},
+    )
+    db_session.add(item)
+    await db_session.flush()
+    task = Task(
+        project_id=project.id,
+        dataset_item_id=item.id,
+        display_id=f"T-VID-{uuid.uuid4().hex[:6]}",
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        status="pending",
+    )
+    db_session.add(task)
+    db_session.add_all(
+        [
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=0,
+                pts_ms=0,
+                is_keyframe=True,
+                pict_type="I",
+                byte_offset=10,
+            ),
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=1,
+                pts_ms=33,
+                is_keyframe=False,
+                pict_type="P",
+                byte_offset=20,
+            ),
+            VideoFrameIndex(
+                dataset_item_id=item.id,
+                frame_index=2,
+                pts_ms=67,
+                is_keyframe=False,
+                pict_type="P",
+                byte_offset=30,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/frame-timetable?from=1&to=2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "ffprobe"
+    assert body["fps"] == 30
+    assert body["frame_count"] == 4
+    assert body["frames"] == [
+        {
+            "frame_index": 1,
+            "pts_ms": 33,
+            "is_keyframe": False,
+            "pict_type": "P",
+            "byte_offset": 20,
+        },
+        {
+            "frame_index": 2,
+            "pts_ms": 67,
+            "is_keyframe": False,
+            "pict_type": "P",
+            "byte_offset": 30,
+        },
+    ]
+
+
+async def test_video_frame_timetable_falls_back_to_estimated(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project = Project(
+        display_id=f"P-VID-{uuid.uuid4().hex[:6]}",
+        name="Video Project",
+        type_key="video-track",
+        type_label="视频 · 时序追踪",
+        owner_id=user.id,
+        classes=["car"],
+    )
+    dataset = Dataset(
+        display_id=f"D-VID-{uuid.uuid4().hex[:6]}",
+        name="videos",
+        data_type="video",
+        created_by=user.id,
+    )
+    db_session.add_all([project, dataset])
+    await db_session.flush()
+    item = DatasetItem(
+        dataset_id=dataset.id,
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        metadata_={"video": {"fps": 24, "frame_count": 12}},
+    )
+    db_session.add(item)
+    await db_session.flush()
+    task = Task(
+        project_id=project.id,
+        dataset_item_id=item.id,
+        display_id=f"T-VID-{uuid.uuid4().hex[:6]}",
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        status="pending",
+    )
+    db_session.add(task)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/frame-timetable",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "estimated"
+    assert body["fps"] == 24
+    assert body["frame_count"] == 12
+    assert body["frames"] == []
 
 
 async def test_video_manifest_returns_503_when_metadata_not_ready(
@@ -682,6 +1229,37 @@ async def test_video_export_all_frames_interpolates_and_absent_blocks(
     assert car["frames"][1]["bbox"] == {"x": 0.2, "y": 0.3, "w": 0.2, "h": 0.2}
 
 
+async def test_video_export_preserves_and_applies_outside_ranges(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    _, track = await _video_fixture_task_and_track(db_session, project)
+    track.geometry = {
+        **track.geometry,
+        "outside": [
+            {"from": 1, "to": 1},
+            {"from": 5, "to": 6, "source": "prediction"},
+        ],
+    }
+    await db_session.flush()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{project.id}/export?format=coco&video_frame_mode=all_frames",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    car = next(track for track in resp.json()["tracks"] if track["track_id"] == "trk_car")
+    assert car["outside"] == [
+        {"from": 1, "to": 1, "source": "manual"},
+        {"from": 5, "to": 6, "source": "prediction"},
+    ]
+    assert [frame["frame_index"] for frame in car["frames"]] == [0, 2]
+
+
 async def test_video_track_convert_frame_copy_preserves_source(
     db_session,
     httpx_client_bound,
@@ -712,6 +1290,27 @@ async def test_video_track_convert_frame_copy_preserves_source(
         "w": 0.2,
         "h": 0.2,
     }
+
+
+async def test_video_track_convert_frame_copy_rejects_outside_frame(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+    track.geometry = {**track.geometry, "outside": [{"from": 1, "to": 1}]}
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/{track.id}/video/convert-to-bboxes",
+        json={"operation": "copy", "scope": "frame", "frame_index": 1},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "track has no bbox at the requested frame"
 
 
 async def test_video_track_convert_frame_split_removes_exact_keyframe(
@@ -849,6 +1448,370 @@ async def test_video_track_convert_requires_task_visibility(
     resp = await httpx_client_bound.post(
         f"/api/v1/tasks/{task.id}/annotations/{track.id}/video/convert-to-bboxes",
         json={"operation": "copy", "scope": "frame", "frame_index": 1},
+        headers={"Authorization": f"Bearer {annotator_token}"},
+    )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Task not found"
+
+
+async def test_video_track_composition_aggregate_bboxes_deletes_sources(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task = (
+        await db_session.execute(
+            select(Task).where(
+                Task.project_id == project.id, Task.file_name == "clip-a.mp4"
+            )
+        )
+    ).scalar_one()
+    first = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.task_id == task.id,
+                Annotation.annotation_type == "video_bbox",
+            )
+        )
+    ).scalar_one()
+    second = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="person",
+        geometry={"type": "video_bbox", "frame_index": 3, "x": 0.3, "y": 0.2, "w": 0.1, "h": 0.1},
+    )
+    db_session.add(second)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "aggregate_bboxes",
+            "annotation_ids": [str(first.id), str(second.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["operation"] == "aggregate_bboxes"
+    assert set(body["deleted_annotation_ids"]) == {str(first.id), str(second.id)}
+    created = body["created_annotations"][0]
+    assert created["annotation_type"] == "video_track"
+    assert created["class_name"] == "person"
+    assert [kf["frame_index"] for kf in created["geometry"]["keyframes"]] == [1, 3]
+    await db_session.refresh(first)
+    await db_session.refresh(second)
+    assert first.is_active is False
+    assert second.is_active is False
+
+
+async def test_video_track_composition_aggregate_rejects_mixed_classes(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task = (
+        await db_session.execute(
+            select(Task).where(
+                Task.project_id == project.id, Task.file_name == "clip-a.mp4"
+            )
+        )
+    ).scalar_one()
+    person = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.task_id == task.id,
+                Annotation.annotation_type == "video_bbox",
+            )
+        )
+    ).scalar_one()
+    car = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="car",
+        geometry={"type": "video_bbox", "frame_index": 3, "x": 0.3, "y": 0.2, "w": 0.1, "h": 0.1},
+    )
+    db_session.add(car)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "aggregate_bboxes",
+            "annotation_ids": [str(person.id), str(car.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "video_bbox annotations must share one class"
+
+
+async def test_video_track_composition_aggregate_rejects_duplicate_frames(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task = (
+        await db_session.execute(
+            select(Task).where(
+                Task.project_id == project.id, Task.file_name == "clip-a.mp4"
+            )
+        )
+    ).scalar_one()
+    first = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.task_id == task.id,
+                Annotation.annotation_type == "video_bbox",
+            )
+        )
+    ).scalar_one()
+    second = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="person",
+        geometry={"type": "video_bbox", "frame_index": 1, "x": 0.3, "y": 0.2, "w": 0.1, "h": 0.1},
+    )
+    db_session.add(second)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "aggregate_bboxes",
+            "annotation_ids": [str(first.id), str(second.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "video_bbox annotations must not share a frame_index"
+
+
+async def test_video_track_composition_split_visible_frame_creates_tail_track(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "split_track",
+            "annotation_ids": [str(track.id)],
+            "frame_index": 1,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    source = body["updated_annotations"][0]
+    tail = body["created_annotations"][0]
+    assert source["id"] == str(track.id)
+    assert [kf["frame_index"] for kf in source["geometry"]["keyframes"]] == [0, 1]
+    assert [kf["frame_index"] for kf in tail["geometry"]["keyframes"]] == [2, 4]
+    assert tail["parent_annotation_id"] == str(track.id)
+
+
+async def test_video_track_composition_split_rejects_absent_frame(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "split_track",
+            "annotation_ids": [str(track.id)],
+            "frame_index": 4,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "split_track requires a visible frame"
+
+
+async def test_video_track_composition_merge_tracks_adds_outside_gap(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    second = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="car",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_car_tail",
+            "keyframes": [
+                {"frame_index": 5, "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+                {"frame_index": 6, "bbox": {"x": 0.7, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+            ],
+        },
+    )
+    db_session.add(second)
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "merge_tracks",
+            "annotation_ids": [str(first.id), str(second.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deleted_annotation_ids"] == [str(second.id)]
+    merged = body["updated_annotations"][0]
+    assert merged["id"] == str(first.id)
+    assert [kf["frame_index"] for kf in merged["geometry"]["keyframes"]] == [0, 2, 4, 5, 6]
+    assert {"from": 3, "to": 4, "source": "manual"} in merged["geometry"]["outside"]
+    await db_session.refresh(second)
+    assert second.is_active is False
+
+
+async def test_video_track_composition_merge_rejects_overlap_and_mixed_classes(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    overlap = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="car",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_overlap",
+            "keyframes": [
+                {"frame_index": 1, "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+            ],
+        },
+    )
+    mixed = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="person",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_person_tail",
+            "keyframes": [
+                {"frame_index": 5, "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+            ],
+        },
+    )
+    db_session.add_all([overlap, mixed])
+    await db_session.flush()
+
+    overlap_resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "merge_tracks",
+            "annotation_ids": [str(first.id), str(overlap.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    mixed_resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "merge_tracks",
+            "annotation_ids": [str(first.id), str(mixed.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert overlap_resp.status_code == 400
+    assert overlap_resp.json()["detail"] == "merge_tracks requires non-overlapping tracks"
+    assert mixed_resp.status_code == 400
+    assert mixed_resp.json()["detail"] == "merge_tracks requires tracks with the same class"
+
+
+async def test_video_track_composition_rejects_annotation_from_other_task(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+    other = (
+        await db_session.execute(
+            select(Annotation).where(
+                Annotation.project_id == project.id,
+                Annotation.task_id != task.id,
+                Annotation.annotation_type == "video_track",
+            )
+        )
+    ).scalar_one()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "merge_tracks",
+            "annotation_ids": [str(track.id), str(other.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Annotation does not belong to this task"
+
+
+async def test_video_track_composition_requires_task_visibility(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+    annotator,
+):
+    user, _ = super_admin
+    _, annotator_token = annotator
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, track = await _video_fixture_task_and_track(db_session, project)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "split_track",
+            "annotation_ids": [str(track.id)],
+            "frame_index": 1,
+        },
         headers={"Authorization": f"Bearer {annotator_token}"},
     )
 

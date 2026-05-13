@@ -34,6 +34,7 @@ class AnnotationComment(Base):
         JSONB, server_default="[]", default=list, nullable=False
     )
     canvas_drawing: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    anchor: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

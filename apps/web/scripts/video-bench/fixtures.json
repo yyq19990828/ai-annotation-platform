@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "video-720p-3m",
+      "label": "720p / 3 min",
+      "resolution": "1280x720",
+      "durationSec": 180,
+      "fps": 30,
+      "targetFile": "fixtures/video/720p-3m.mp4"
+    },
+    {
+      "id": "video-1080p-5m",
+      "label": "1080p / 5 min",
+      "resolution": "1920x1080",
+      "durationSec": 300,
+      "fps": 30,
+      "targetFile": "fixtures/video/1080p-5m.mp4"
+    },
+    {
+      "id": "video-4k-30s",
+      "label": "4K / 30 sec",
+      "resolution": "3840x2160",
+      "durationSec": 30,
+      "fps": 30,
+      "targetFile": "fixtures/video/4k-30s.mp4"
+    }
+  ],
+  "annotationDensities": [
+    {
+      "id": "tracks-10",
+      "trackCount": 10,
+      "keyframesPerTrack": 8
+    },
+    {
+      "id": "tracks-100",
+      "trackCount": 100,
+      "keyframesPerTrack": 8
+    },
+    {
+      "id": "tracks-500",
+      "trackCount": 500,
+      "keyframesPerTrack": 8
+    }
+  ],
+  "scenarios": [
+    "open-video-workbench",
+    "scrub-timeline-20s",
+    "drag-selected-track-3s",
+    "jkl-forward-reverse-10s",
+    "hover-preview-keyframes"
+  ],
+  "budgets": {
+    "longTaskMs": 50,
+    "visibleFirstFrameSeekMs": 200,
+    "dragFps": 30
+  }
+}

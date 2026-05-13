@@ -114,14 +114,49 @@ export interface VideoMetadata {
   poster_frame_path: string | null;
   probe_error: string | null;
   poster_error: string | null;
+  frame_timetable_frame_count: number | null;
+  frame_timetable_error: string | null;
 }
 
 export interface TaskVideoManifestResponse {
   task_id: string;
+  dataset_item_id?: string | null;
   video_url: string;
   poster_url: string | null;
   metadata: VideoMetadata;
   expires_in: number;
+}
+
+export interface VideoFrameTimetableEntry {
+  frame_index: number;
+  pts_ms: number;
+  is_keyframe: boolean;
+  pict_type: string | null;
+  byte_offset: number | null;
+}
+
+export interface TaskVideoFrameTimetableResponse {
+  task_id: string;
+  fps: number | null;
+  frame_count: number | null;
+  source: "ffprobe" | "estimated";
+  frames: VideoFrameTimetableEntry[];
+}
+
+export interface VideoFrameOut {
+  frame_index: number;
+  width: number;
+  format: "webp" | "jpeg";
+  status: "pending" | "ready" | "failed";
+  url: string | null;
+  retry_after: number | null;
+  error: string | null;
+}
+
+export interface VideoFramePrefetchResponse {
+  dataset_item_id: string;
+  task_id: string | null;
+  frames: VideoFrameOut[];
 }
 
 // ── Annotation ──────────────────────────────────────────────────────────────
@@ -144,10 +179,16 @@ export type VideoTrackKeyframe = {
   absent?: boolean;
   occluded?: boolean;
 };
+export type VideoTrackOutsideRange = {
+  from: number;
+  to: number;
+  source?: "manual" | "prediction";
+};
 export type VideoTrackGeometry = {
   type: "video_track";
   track_id: string;
   keyframes: VideoTrackKeyframe[];
+  outside?: VideoTrackOutsideRange[];
 };
 /**
  * v0.9.14 · holes 字段为可选; 老存量 / 老前端写入仍走仅 points 路径, 默认 undefined 即无
@@ -232,6 +273,7 @@ import type {
 
 export type PredictionShape = Omit<GeneratedPredictionShape, "geometry"> & {
   geometry: Geometry;
+  shape_index?: number;
 };
 
 export type PredictionResponse = Omit<GeneratedPredictionOut, "result"> & {

@@ -59,6 +59,13 @@ export interface VideoConvertOptions {
   frameMode?: "keyframes" | "all_frames";
 }
 
+export interface VideoTrackCompositionOptions {
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  annotationIds: string[];
+  frameIndex?: number;
+  deleteSources?: boolean;
+}
+
 export function buildVideoCreatePayload(
   kind: "video_bbox" | "video_track",
   frameIndex: number,
@@ -104,6 +111,50 @@ export function buildVideoUpdateCommand(ann: AnnotationResponse, geometry: Video
     if (keyframeCommand) return keyframeCommand;
   }
   return { kind: "update", annotationId: ann.id, before: { geometry: ann.geometry }, after: { geometry } };
+}
+
+export function buildVideoCompositionCommands(
+  beforeAnnotations: AnnotationResponse[],
+  result: {
+    updated_annotations: AnnotationResponse[];
+    created_annotations: AnnotationResponse[];
+    deleted_annotation_ids: string[];
+  },
+): Exclude<Command, { kind: "batch" }>[] {
+  const beforeById = new Map(beforeAnnotations.map((ann) => [ann.id, ann]));
+  const commands: Exclude<Command, { kind: "batch" }>[] = [];
+
+  for (const updated of result.updated_annotations) {
+    const before = beforeById.get(updated.id);
+    if (!before) continue;
+    commands.push({
+      kind: "update",
+      annotationId: updated.id,
+      before: { geometry: before.geometry },
+      after: { geometry: updated.geometry },
+    });
+  }
+
+  for (const deletedId of result.deleted_annotation_ids) {
+    const before = beforeById.get(deletedId);
+    if (before) commands.push({ kind: "delete", annotation: before });
+  }
+
+  for (const created of result.created_annotations) {
+    commands.push({
+      kind: "create",
+      annotationId: created.id,
+      payload: {
+        annotation_type: created.annotation_type,
+        class_name: created.class_name,
+        geometry: created.geometry,
+        confidence: created.confidence ?? undefined,
+        attributes: created.attributes,
+      },
+    });
+  }
+
+  return commands;
 }
 
 function isConflictError(err: unknown): boolean {
@@ -351,6 +402,46 @@ export function useVideoAnnotationActions({
     }
   }, [history, pushToast, queryClient, s, taskId]);
 
+  const handleVideoComposeTracks = useCallback(async (options: VideoTrackCompositionOptions) => {
+    if (!taskId || options.annotationIds.length === 0) return;
+    const before = annotationsRef.current.filter((ann) => options.annotationIds.includes(ann.id));
+    try {
+      const result = await tasksApi.composeVideoTracks(taskId, {
+        operation: options.operation,
+        annotation_ids: options.annotationIds,
+        frame_index: options.frameIndex,
+        delete_sources: options.deleteSources,
+      });
+      queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) => {
+        const deleted = new Set(result.deleted_annotation_ids);
+        const updatedById = new Map(result.updated_annotations.map((ann) => [ann.id, ann]));
+        const createdIds = new Set(result.created_annotations.map((ann) => ann.id));
+        const kept = (prev ?? [])
+          .filter((ann) => !deleted.has(ann.id) && !createdIds.has(ann.id))
+          .map((ann) => updatedById.get(ann.id) ?? ann);
+        const present = new Set(kept.map((ann) => ann.id));
+        return [
+          ...kept,
+          ...result.updated_annotations.filter((ann) => !present.has(ann.id)),
+          ...result.created_annotations,
+        ];
+      });
+      history.pushBatch(buildVideoCompositionCommands(before, result));
+      const nextSelected = result.created_annotations[0]?.id
+        ?? result.updated_annotations[0]?.id
+        ?? null;
+      s.setSelectedId(nextSelected);
+      const label = options.operation === "aggregate_bboxes"
+        ? "已聚合为轨迹"
+        : options.operation === "split_track"
+          ? "轨迹已拆分"
+          : "轨迹已合并";
+      pushToast({ msg: label, kind: "success" });
+    } catch (err) {
+      pushToast({ msg: "轨迹组合失败", sub: String(err), kind: "error" });
+    }
+  }, [annotationsRef, history, pushToast, queryClient, s, taskId]);
+
   return {
     handleVideoCreate,
     handleVideoPendingDraw,
@@ -361,5 +452,6 @@ export function useVideoAnnotationActions({
     handleVideoBatchDelete,
     handleVideoSetSelectedClass,
     handleVideoConvertToBboxes,
+    handleVideoComposeTracks,
   };
 }

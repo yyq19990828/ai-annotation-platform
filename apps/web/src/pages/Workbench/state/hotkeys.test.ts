@@ -152,6 +152,12 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: " " }, videoCtx)).toEqual({ type: "videoTogglePlayback" });
   });
 
+  it("J / K / L → video jog playback controls", () => {
+    expect(dispatch({ key: "j" }, videoCtx)).toEqual({ type: "videoJogPlayback", dir: -1 });
+    expect(dispatch({ key: "K" }, videoCtx)).toEqual({ type: "videoPausePlayback" });
+    expect(dispatch({ key: "l" }, videoCtx)).toEqual({ type: "videoJogPlayback", dir: 1 });
+  });
+
   it("ArrowLeft / ArrowRight → videoSeek", () => {
     expect(dispatch({ key: "ArrowRight" }, videoCtx)).toEqual({ type: "videoSeek", delta: 1 });
     expect(dispatch({ key: "ArrowLeft" }, videoCtx)).toEqual({ type: "videoSeek", delta: -1 });
@@ -165,6 +171,22 @@ describe("dispatchKey · video mode", () => {
   it("Shift + ArrowLeft / ArrowRight → videoSeek 10 frames", () => {
     expect(dispatch({ key: "ArrowRight", shiftKey: true }, videoCtx)).toEqual({ type: "videoSeek", delta: 10 });
     expect(dispatch({ key: "ArrowLeft", shiftKey: true }, videoCtx)).toEqual({ type: "videoSeek", delta: -10 });
+  });
+
+  it("Shift + ArrowLeft / ArrowRight → videoSeekKeyframe when a video track is selected", () => {
+    const selectedTrackCtx: Partial<DispatchCtx> = { videoMode: true, hasSelectedVideoTrack: true };
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, selectedTrackCtx)).toEqual({ type: "videoSeekKeyframe", dir: 1 });
+    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, selectedTrackCtx)).toEqual({ type: "videoSeekKeyframe", dir: -1 });
+  });
+
+  it("Ctrl+M and Ctrl+[ / ] map to video bookmark navigation in video mode", () => {
+    expect(dispatch({ key: "m", ctrlKey: true }, videoCtx)).toEqual({ type: "videoToggleBookmark" });
+    expect(dispatch({ key: "[", ctrlKey: true }, videoCtx)).toEqual({ type: "videoJumpHistory", dir: -1 });
+    expect(dispatch({ key: "]", ctrlKey: true }, videoCtx)).toEqual({ type: "videoJumpHistory", dir: 1 });
+  });
+
+  it("Alt+L clears the video loop region in video mode", () => {
+    expect(dispatch({ key: "l", altKey: true }, videoCtx)).toEqual({ type: "videoClearLoopRegion" });
   });
 
   it("Delete / Backspace → videoDeleteSelected", () => {

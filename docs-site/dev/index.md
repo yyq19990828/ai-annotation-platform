@@ -30,7 +30,7 @@ docker compose up -d
 | 理解横切机制 | [计数与派生字段](./concepts/counters-and-derived-fields) · [审计与通知](./concepts/audit-and-notifications) |
 | 理解整体架构 | [概念：架构地图](./concepts/) |
 | 排查运行时问题 | [故障排查总览](./troubleshooting/) |
-| 查协议规范 | [ML Backend 协议](./ml-backend-protocol) · [WebSocket 协议](./ws-protocol) |
+| 查协议规范 | [ML Backend 协议](./ml-backend-protocol) · [WebSocket 协议](./ws-protocol) · [视频帧服务](./reference/video-frame-service) |
 
 ## 项目仓库结构
 

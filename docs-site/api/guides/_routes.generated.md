@@ -247,6 +247,8 @@
 |---|---|
 | GET | `/health` |
 | GET | `/buckets` |
+| GET | `/video-assets/failures` |
+| POST | `/video-assets/retry` |
 
 ## `system_settings.py`
 
@@ -263,10 +265,23 @@
 | GET | `/next` |
 | GET | `/{task_id}` |
 | GET | `/{task_id}/video/manifest` |
+| GET | `/{task_id}/video/frame-timetable` |
+| GET | `/{task_id}/video/manifest-v2` |
+| GET | `/{task_id}/video/segments` |
+| POST | `/{task_id}/video/segments/{segment_id}:claim` |
+| POST | `/{task_id}/video/segments/{segment_id}:heartbeat` |
+| POST | `/{task_id}/video/segments/{segment_id}:release` |
+| GET | `/{task_id}/video/chunks` |
+| GET | `/{task_id}/video/chunks/{chunk_id}` |
+| GET | `/{task_id}/video/frames/{frame_index}` |
+| POST | `/{task_id}/video/frames:prefetch` |
+| POST | `/{task_id}/video/frames:retry` |
+| POST | `/{task_id}/video/tracks/{annotation_id}:propagate` |
 | GET | `/{task_id}/annotations` |
 | GET | `/{task_id}/annotations/page` |
 | POST | `/{task_id}/annotations` |
 | PATCH | `/{task_id}/annotations/{annotation_id}` |
+| POST | `/{task_id}/annotations/video/track-compositions` |
 | POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
 | GET | `/{task_id}/predictions` |
 | POST | `/{task_id}/predictions/{prediction_id}/accept` |
@@ -296,6 +311,26 @@
 | POST | `/{user_id}/deactivate` |
 | PATCH | `/{user_id}/group` |
 
+## `video_tracker_jobs.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{job_id}` |
+| DELETE | `/{job_id}` |
+
+## `videos.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{dataset_item_id}/manifest` |
+| GET | `/{dataset_item_id}/segments` |
+| GET | `/{dataset_item_id}/frame-timetable` |
+| GET | `/{dataset_item_id}/chunks` |
+| GET | `/{dataset_item_id}/chunks/{chunk_id}` |
+| GET | `/{dataset_item_id}/frames/{frame_index}` |
+| POST | `/{dataset_item_id}/frames:prefetch` |
+| POST | `/{dataset_item_id}/frames:retry` |
+
 ---
 
-_共 28 模块 / 161 路由_
+_共 30 模块 / 186 路由_

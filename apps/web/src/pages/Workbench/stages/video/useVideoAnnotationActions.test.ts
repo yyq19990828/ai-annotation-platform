@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AnnotationResponse, VideoTrackGeometry } from "@/types";
-import { buildVideoCreatePayload, buildVideoUpdateCommand } from "./useVideoAnnotationActions";
+import {
+  buildVideoCompositionCommands,
+  buildVideoCreatePayload,
+  buildVideoUpdateCommand,
+} from "./useVideoAnnotationActions";
 
 const box = { x: 0.1, y: 0.2, w: 0.3, h: 0.4 };
 
@@ -84,5 +88,26 @@ describe("video annotation actions helpers", () => {
       before: { geometry: ann.geometry },
       after: { geometry: after },
     });
+  });
+
+  it("builds batchable composition history commands", () => {
+    const bbox = annotation({ type: "video_bbox", frame_index: 1, ...box });
+    const track = annotation({
+      type: "video_track",
+      track_id: "trk_1",
+      keyframes: [{ frame_index: 1, bbox: box, source: "manual" }],
+    });
+    const updated = { ...track, geometry: { ...track.geometry, keyframes: [] } as VideoTrackGeometry };
+
+    const commands = buildVideoCompositionCommands([bbox, track], {
+      updated_annotations: [updated],
+      created_annotations: [track],
+      deleted_annotation_ids: [bbox.id],
+    });
+
+    expect(commands.map((cmd) => cmd.kind)).toEqual(["update", "delete", "create"]);
+    expect(commands[0]).toMatchObject({ kind: "update", annotationId: track.id });
+    expect(commands[1]).toMatchObject({ kind: "delete", annotation: { id: bbox.id } });
+    expect(commands[2]).toMatchObject({ kind: "create", annotationId: track.id });
   });
 });

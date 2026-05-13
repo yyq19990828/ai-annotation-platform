@@ -4,7 +4,13 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { UserPicker, type UserPickerOption } from "@/components/UserPicker";
 import { CanvasDrawingEditor } from "@/components/CanvasDrawingEditor";
-import { commentsApi, type CommentAttachment, type CommentCanvasDrawing, type CommentMention } from "@/api/comments";
+import {
+  commentsApi,
+  type AnnotationCommentAnchor,
+  type CommentAttachment,
+  type CommentCanvasDrawing,
+  type CommentMention,
+} from "@/api/comments";
 
 interface CommentInputProps {
   annotationId: string;
@@ -27,11 +33,13 @@ interface CommentInputProps {
     onStart: (initial?: CommentCanvasDrawing | null) => void;
     onConsume: () => void;
   };
+  anchor?: AnnotationCommentAnchor | null;
   onSubmit: (payload: {
     body: string;
     mentions: CommentMention[];
     attachments: CommentAttachment[];
     canvas_drawing: CommentCanvasDrawing | null;
+    anchor?: AnnotationCommentAnchor | null;
   }) => void;
 }
 
@@ -45,6 +53,13 @@ interface PickerState {
 }
 
 const MAX_ATTACH_BYTES = 20 * 1024 * 1024; // 20MB / file
+
+function sourceLabel(source: NonNullable<AnnotationCommentAnchor["source"]>): string {
+  if (source === "prediction") return "prediction";
+  if (source === "interpolated") return "interpolated";
+  if (source === "legacy") return "legacy bbox";
+  return "manual";
+}
 
 /** Serialize contenteditable 内容：扁平化文本 + 抽取 mention chip 的 (offset, length, userId, displayName)。
  *  v0.6.6 起 export 给单测。 */
@@ -123,7 +138,7 @@ function insertMentionChip(triggerRange: { node: Node; offset: number }, opt: Us
   sel.addRange(newRange);
 }
 
-export function CommentInput({ annotationId, members, busy, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, onSubmit }: CommentInputProps) {
+export function CommentInput({ annotationId, members, busy, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, anchor, onSubmit }: CommentInputProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [picker, setPicker] = useState<PickerState>({ open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null });
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
@@ -235,9 +250,9 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
     if (!editorRef.current) return;
     const { body, mentions } = serialize(editorRef.current);
     if (!body && attachments.length === 0 && !canvasDrawing) return;
-    onSubmit({ body, mentions, attachments, canvas_drawing: canvasDrawing });
+    onSubmit({ body, mentions, attachments, canvas_drawing: canvasDrawing, anchor });
     reset();
-  }, [attachments, canvasDrawing, onSubmit, reset]);
+  }, [anchor, attachments, canvasDrawing, onSubmit, reset]);
 
   const submitDisabled = busy || uploading;
 
@@ -271,6 +286,28 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
           whiteSpace: "pre-wrap",
         }}
       />
+      {anchor?.kind === "video_frame" && (
+        <div
+          data-testid="comment-anchor-preview"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            alignSelf: "flex-start",
+            padding: "2px 6px",
+            border: "1px solid var(--color-border)",
+            borderRadius: 4,
+            background: "var(--color-bg-sunken)",
+            color: "var(--color-fg-muted)",
+            fontSize: 11,
+          }}
+        >
+          <Icon name="film" size={12} />
+          <span className="mono">F{anchor.frameIndex}</span>
+          {anchor.trackId && <span className="mono">{anchor.trackId.slice(0, 8)}</span>}
+          {anchor.source && <span>{sourceLabel(anchor.source)}</span>}
+        </div>
+      )}
       {attachments.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
           {attachments.map((a, i) => (

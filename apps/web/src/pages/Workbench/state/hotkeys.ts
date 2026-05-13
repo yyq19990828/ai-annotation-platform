@@ -52,12 +52,18 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["双击空白"], desc: "适应视口", group: "view" },
 
   { keys: ["Space"], desc: "视频播放 / 暂停", group: "video", actionType: "videoTogglePlayback" },
+  { keys: ["J / K / L"], desc: "视频反向 / 暂停 / 正向多速率播放", group: "video", actionType: "videoJogPlayback" },
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
   { keys: ["← / →"], desc: "视频逐帧后退 / 前进", group: "video", actionType: "videoSeek" },
   { keys: [", / ."], desc: "视频上一帧 / 下一帧（备用）", group: "video", actionType: "videoSeek" },
-  { keys: ["Shift", "← / →"], desc: "视频后退 / 前进 10 帧", group: "video", actionType: "videoSeek" },
+  { keys: ["Shift", "← / →"], desc: "选中轨迹跳上/下关键帧；否则后退 / 前进 10 帧", group: "video", actionType: "videoSeekKeyframe" },
+  { keys: ["Ctrl", "M"], desc: "视频当前帧添加 / 移除书签", group: "video", actionType: "videoToggleBookmark" },
+  { keys: ["Ctrl", "[ / ]"], desc: "视频跳转历史后退 / 前进", group: "video", actionType: "videoJumpHistory" },
+  { keys: ["Alt", "L"], desc: "清除视频播放范围", group: "video", actionType: "videoClearLoopRegion" },
   { keys: ["Delete / Backspace"], desc: "删除选中轨迹", group: "video", actionType: "videoDeleteSelected" },
+  { keys: ["PageUp"], desc: "跳到上一章节", group: "video" },
+  { keys: ["PageDown"], desc: "跳到下一章节", group: "video" },
   { keys: ["Tab"], desc: "下一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
   { keys: ["Shift", "Tab"], desc: "上一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
   { keys: ["Esc"], desc: "取消选择", group: "video", actionType: "cancel" },
@@ -119,7 +125,13 @@ export type HotkeyAction =
   | { type: "rejectAi" }
   | { type: "samPolarity"; polarity: "positive" | "negative" }
   | { type: "videoTogglePlayback" }
+  | { type: "videoJogPlayback"; dir: -1 | 1 }
+  | { type: "videoPausePlayback" }
   | { type: "videoSeek"; delta: number }
+  | { type: "videoSeekKeyframe"; dir: -1 | 1 }
+  | { type: "videoToggleBookmark" }
+  | { type: "videoJumpHistory"; dir: -1 | 1 }
+  | { type: "videoClearLoopRegion" }
   | { type: "videoDeleteSelected" }
   | { type: "videoCycleTrack"; dir: 1 | -1 };
 
@@ -149,6 +161,8 @@ export interface DispatchCtx {
   attributeHotkey?: (digit: string) => AttributeHotkeyHit | null;
   /** video stage active: consume video namespace before image drawing shortcuts. */
   videoMode?: boolean;
+  /** selected annotation is a video_track; used for contextual video timeline shortcuts. */
+  hasSelectedVideoTrack?: boolean;
 }
 
 const RESERVED_LETTERS = new Set(["v","V","b","B","p","P","s","S","a","A","d","D","e","E","n","N","u","U","j","J","k","K","c","C"]);
@@ -165,6 +179,9 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "0") return { type: "fitReset" };
     if (e.key === "ArrowRight") return { type: "navigateTask", dir: "next" };
     if (e.key === "ArrowLeft")  return { type: "navigateTask", dir: "prev" };
+    if (ctx.videoMode && k === "m") return { type: "videoToggleBookmark" };
+    if (ctx.videoMode && e.key === "[") return { type: "videoJumpHistory", dir: -1 };
+    if (ctx.videoMode && e.key === "]") return { type: "videoJumpHistory", dir: 1 };
     if (k === "a") return { type: "selectAllUser" };
     if (k === "c") return { type: "copy" };
     if (k === "v") return { type: "paste" };
@@ -180,12 +197,22 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       if (e.key === "1") return { type: "setVideoTool", tool: "box" };
       if (e.key === "2") return { type: "setVideoTool", tool: "track" };
+      if (e.key === "l" || e.key === "L") return { type: "videoClearLoopRegion" };
     }
     if (e.key === " ") return { type: "videoTogglePlayback" };
+    if (e.key === "j" || e.key === "J") return { type: "videoJogPlayback", dir: -1 };
+    if (e.key === "k" || e.key === "K") return { type: "videoPausePlayback" };
+    if (e.key === "l" || e.key === "L") return { type: "videoJogPlayback", dir: 1 };
     if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };
     if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };
-    if (e.key === "ArrowRight") return { type: "videoSeek", delta: e.shiftKey ? 10 : 1 };
-    if (e.key === "ArrowLeft") return { type: "videoSeek", delta: e.shiftKey ? -10 : -1 };
+    if (e.key === "ArrowRight") {
+      if (e.shiftKey && ctx.hasSelectedVideoTrack) return { type: "videoSeekKeyframe", dir: 1 };
+      return { type: "videoSeek", delta: e.shiftKey ? 10 : 1 };
+    }
+    if (e.key === "ArrowLeft") {
+      if (e.shiftKey && ctx.hasSelectedVideoTrack) return { type: "videoSeekKeyframe", dir: -1 };
+      return { type: "videoSeek", delta: e.shiftKey ? -10 : -1 };
+    }
     if (e.key === ".") return { type: "videoSeek", delta: 1 };
     if (e.key === ",") return { type: "videoSeek", delta: -1 };
     if (e.key === "Tab") return { type: "videoCycleTrack", dir: e.shiftKey ? -1 : 1 };

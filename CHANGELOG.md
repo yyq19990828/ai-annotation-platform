@@ -22,6 +22,333 @@
 
 ## 最新版本
 
+## [0.9.40] - 2026-05-13
+
+> **Video Workbench R10 AI Tracker 前端 + R13 章节系统.** 主线: ① 消费 v0.9.32-v0.9.36 已落地的 tracker 后端：选中轨迹支持「AI 传播」入口（按钮 + `Shift+T`），可选 `forward/backward/bidirectional`、目标范围 preset、`mock_bbox`/`sam2_video`/`sam3_video`；② 前端通过 `/ws/video-tracker-jobs/{job_id}` 订阅事件流，轨迹卡片显示 queued/running/completed/failed/cancelled badge 与窗口进度，job 完成自动失效 annotation cache；③ 关键帧列表对 `source: prediction` 渲染「接受」「拒绝」按钮，接受改 source 为 manual，拒绝把该帧并入 outside；④ 新增 `VideoChapter` 模型 + 0062 迁移 + CRUD endpoints；⑤ 视频时间轴新增章节色带、章节侧栏 + 创建/编辑/删除表单、`PageUp/PageDown` 跨章节跳转。→ [plan](docs/plans/2026-05-13-v0.9.40-video-workbench-r10-r13.md).
+
+### Added
+
+- **AI Tracker 前端**：`VideoTrackerPropagateDialog` 与「AI 传播」按钮（`Shift+T`）；`VideoTrackerJobBadge` 显示 queued/running/completed/failed/cancelled，运行中可取消；prediction keyframe 在关键帧列表显示「预测」徽章 + 接受 / 拒绝按钮。
+- **Tracker job 状态 hook**：`useVideoTrackerJobs` 维护多 job 状态机，按 `event_channel` 订阅 WS，1500ms 终止后自动清理；window 进度落到 UI；job 完成时自动失效 `["annotations", taskId]` 查询。
+- **VideoChapter 系统**：后端模型 / 迁移 / Pydantic schema / CRUD endpoints（`GET/POST/PATCH/DELETE /api/v1/videos/{dataset_item_id}/chapters`），仅 `super_admin` 与项目 owner 可写；audit `VIDEO_CHAPTER_CREATE/UPDATE/DELETE`。
+- **章节时间轴 + 侧栏**：`VideoPlaybackOverlay` 增加章节色带（hover 显示标题 + 范围、点击跳到起点）；`VideoChapterSidebar` 显示章节列表、当前帧高亮、`PageUp/PageDown` 跨章节跳转；编辑表单支持取当前帧为起止 + 颜色 palette。
+- **manifest 返回 dataset_item_id**：`TaskVideoManifestResponse` 新增 `dataset_item_id`，方便前端直接调 `/videos/{dataset_item_id}/...`。
+
+### Changed
+
+- `VideoTrackPanel`「当前轨迹」工具栏新增「AI 传播」按钮，运行中显示 tracker job badge。
+- `WorkbenchShell` 在视频任务下注入 `useVideoTrackerJobs` 与 `useVideoChapters`，并把 propagate 对话框挂到布局根。
+
+### Deferred
+
+- Re-ID 自动 join、tracker registry UI、章节自动 shot detection、章节进导出格式（MOT/KITTI/DAVIS）、WS 鉴权统一改造。
+
+## [0.9.39] - 2026-05-12
+
+> **Video Workbench Rendering P0 — 视频帧缓存与视口导航.** 主线: ① 视频工作台新增 `ImageBitmap` LRU 帧缓存，seek / scrub 时可先显示缓存帧，`<video>` 仍作为主播放源；② 视频 media / bitmap / grid / objects / text / interaction 层统一走 viewport transform；③ 支持 `F` 适应、`0` 1:1、Ctrl/Meta+滚轮缩放、右键拖拽平移和视频 minimap；④ 诊断快照补充 bitmap cache 与 viewport 状态。→ [plan](ROADMAP/2026-05-12-video-workbench-rendering-optimization.md).
+
+### Added
+
+- **ImageBitmap 帧缓存**：新增视频帧 `ImageBitmap` LRU，浏览器不支持 `createImageBitmap(video)` 时自动降级为原播放行为。
+- **视频 Viewport / Minimap**：视频工作台支持放大检查边缘、平移画面、浮动缩放控制和 minimap；minimap 会显示当前帧与已缓存帧范围。
+- **视频渲染诊断扩展**：`window.__videoWorkbenchDiagnostics` 增加 bitmap cache、viewport scale/translation 和 minimap 可见状态。
+
+### Changed
+
+- 视频 stage 的 media、bitmap canvas、grid、objects、label、interaction 和 attachment 层现在共享同一 viewport transform，缩放/平移后绘制、选中、拖拽、resize 仍使用归一化视频坐标。
+
+## [0.9.38] - 2026-05-12
+
+> **Video Chunk Smart-Copy — R5.3 解码后端诊断底座.** 主线: ① `VideoChunk` 增加生成模式与诊断元数据；② media worker 在 codec 支持且 chunk 起始帧 keyframe 对齐时优先尝试 ffmpeg stream copy；③ smart-copy 失败自动 fallback 到现有 H.264 baseline fragmented MP4 重编码；④ chunk API 暴露 codec、keyframe、byte offset 与 fallback reason，供前端 WebCodecs / Worker 解码降级判断。→ [plan](docs/plans/2026-05-12-v0.9.38-video-chunk-smart-copy.md).
+
+### Added
+
+- **Chunk smart-copy**：H.264 / H.265 源且 chunk 起始帧 keyframe 对齐时，`ensure_video_chunks` 优先使用 stream copy，减少不必要重编码。
+- **Chunk 诊断字段**：chunk 响应新增 `generation_mode` 与 `diagnostics`，包含 source/output codec、keyframe 对齐、byte offset、smart-copy eligibility 和 fallback reason。
+- **Fallback 保底**：smart-copy ffmpeg 失败时自动回退到既有 H.264 baseline transcode，保持 chunk URL、pending/ready/failed 和 retry 行为兼容。
+
+### Deferred
+
+- 真实 SAM video backend、GPU profile、AI 质量评估、timetable compact / sparse 继续留在后续版本。
+
+## [0.9.37] - 2026-05-12
+
+> **Video Track Composition — 视频轨迹生命周期组合编辑.** 主线: ① 新增视频 composition 事务接口，支持 `video_bbox` 聚合为 `video_track`、track split、track merge；② 前端轨迹侧栏增加聚合、拆轨迹、合并入口；③ composition 响应写入 React Query cache 并复用 batch history 保持 undo/redo；④ 视频工作台概念文档与 API guide 同步新接口。→ [plan](docs/plans/2026-05-12-v0.9.37-video-track-composition.md).
+
+### Added
+
+- **轨迹组合 API**：新增 `POST /api/v1/tasks/{task_id}/annotations/video/track-compositions`，`operation` 支持 `aggregate_bboxes`、`split_track`、`merge_tracks`。
+- **`video_bbox` 反向聚合**：同任务、同类、无重复帧的单帧视频框可事务聚合为一条 compact `video_track`，默认删除源 bbox。
+- **Track split / merge**：支持在可见当前帧之后拆出后段轨迹；支持合并两条同类且可见帧区间不重叠的轨迹，并自动补中间 `outside` gap。
+- **前端侧栏入口**：视频轨迹侧栏支持多选 bbox 聚合、当前轨迹拆分、同类双轨合并，操作成功后保持选中态和 undo/redo。
+
+### Deferred
+
+- Re-ID 自动 join、AI 建议合并、多人冲突解决、R5.2 ImageBitmap 缓存与 R8 Viewport / Minimap 留到后续切片。
+
+## [0.9.36] - 2026-05-12
+
+> **Video Tracker GPU / Model Deepening — SAM video 协议桥与长区间分窗.** 主线: ① 新增 `sam2_video` / `sam3_video` tracker adapter，按 ADR-0012 调项目绑定的独立 ML Backend；② worker 按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 拆分长 frame range，降低单次 GPU OOM 风险；③ 低置信度 tracker 结果写入 outside prediction range；④ 同步协议文档、runbook、env-vars 和 S6 roadmap 状态。→ [plan](docs/plans/2026-05-12-v0.9.36-video-tracker-gpu-model-deepening.md).
+
+### Added
+
+- **SAM video tracker adapter**：`model_key="sam2_video"` / `"sam3_video"` 会调用项目绑定的 connected ML Backend `/predict`，发送 `context.type="video_tracker"`、frame range、direction、prompt 和 source geometry。
+- **长区间分窗**：新增 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES`，worker 自动把长视频 tracker job 拆成多个 backend 请求，整体仍保持同一个 job 事件流。
+- **低置信度 outside**：新增 `VIDEO_TRACKER_LOW_CONFIDENCE_OUTSIDE_THRESHOLD`，低于阈值的结果按 outside prediction range 写回，不生成 prediction keyframe。
+- **GPU OOM runbook**：补充 tracker job 失败排查、`gpu` queue 检查、分窗调小和 GPU backend 重启步骤。
+
+### Deferred
+
+- 真实 SAM 2 / SAM 3 backend 的 video predictor 实现、GPU profile 手测和端到端性能基准继续留给后续 backend 工程。
+
+## [0.9.35] - 2026-05-12
+
+> **Review Video Anchors — 视频审核锚点与来源视图.** 主线: ① annotation comments 增加可选 `anchor`，支持视频 `(frame_index, track_id?, source)` 锚点；② review 模式的视频工作台复用 raw / final / diff 控制，区分 prediction/interpolated 与 manual/legacy；③ 评论面板自动带入当前视频帧锚点，评论列表可点击跳帧；④ 轨迹侧栏显示当前帧来源并支持跳到下一条 prediction keyframe。→ [plan](docs/plans/2026-05-12-v0.9.35-review-video-anchors.md).
+
+### Added
+
+- **评论锚点协议**：`AnnotationCommentCreate/Out.anchor` 支持 `kind="video_frame"`、`frameIndex`、`trackId` 和 `source`，用于对象级视频审核反馈定位。
+- **视频 review 来源视图**：review 状态栏的 `raw / final / diff` 控制现在也作用于视频 stage；`raw` 显示 prediction/interpolated，`final` 显示 manual/legacy，`diff` 保持叠加。
+- **视频评论跳帧**：选中视频标注时，评论输入区显示当前帧锚点；已有锚点评论渲染 frame / track / source chip，点击可跳回对应帧。
+- **轨迹侧栏来源导航**：轨迹列表显示当前帧的 `manual / interpolated / prediction / legacy` 来源，选中轨迹后可跳到下一条 prediction keyframe。
+
+### Deferred
+
+- 像素级视频 diff、正式 review issue 表、track split / merge 与 `video_bbox` 聚合留到后续 Track Composition 切片。
+
+## [0.9.34] - 2026-05-12
+
+> **Video Tracker Adapter MVP — AI tracker 后端闭环.** 主线: ① 新增 tracker adapter registry 与 `mock_bbox` contract adapter；② 创建 tracker job 后投递 Celery worker；③ worker 跑通 `queued/running/completed/failed/cancelled` 状态机、Redis 事件发布和 `video_track` prediction keyframes 写回；④ 协议文档和 runbook 同步 worker 边界。→ [plan](docs/plans/2026-05-12-v0.9.34-video-tracker-adapter-mvp.md).
+
+### Added
+
+- **Tracker adapter registry**：新增 `TrackerAdapter.propagate(ctx)` 契约和 `mock_bbox` adapter，用于前端 R10 / worker eager 测试先跑通逐帧输出协议。
+- **Tracker worker**：新增 `app.workers.video_tracker.run_video_tracker_job`，通过 `gpu` Celery queue 消费 tracker job，发布 `job_started/frame_result/job_progress/job_completed/job_failed/job_cancelled` 事件。
+- **结果写回**：worker 将 tracker 结果合并到源 annotation 的 `video_track.keyframes`，保留 manual keyframe，不用 prediction 结果覆盖人工关键帧。
+- **事件通道**：新增 `/ws/video-tracker-jobs/{job_id}?token=...`，订阅 job 专属 Redis pub/sub 事件。
+
+### Deferred
+
+- SAM 2 / SAM 3 video predictor、GPU 并发容量控制、OOM 演练和长视频性能基准留到 S6。
+
+## [0.9.33] - 2026-05-12
+
+> **Video Frame Asset Retry — 视频资产失败列表与 media 队列重试.** 主线: ① 存储 API 汇总视频 `probe_error` / `poster_error` / `frame_timetable_error` 以及 chunk / frame cache 失败行；② 新增手动 retry 入口，复用既有 `generate_video_metadata`、`ensure_video_chunks`、`extract_video_frames` Celery media 任务；③ 存储管理页增加「视频资产失败」面板，可查看项目/任务、失败类型、错误摘要并重试。→ [plan](docs/plans/2026-05-12-v0.9.33-video-frame-asset-retry.md).
+
+### Added
+
+- **视频资产失败列表 API**：`GET /api/v1/storage/video-assets/failures` 返回 probe / poster / frame timetable / chunk / frame cache 的失败资产，包含 dataset item、task、project、错误信息和更新时间。
+- **视频资产重试 API**：`POST /api/v1/storage/video-assets/retry` 根据 asset type 投递现有 media Celery 任务；chunk / frame 重试前会把失败行恢复为 `pending`。
+- **存储页管理入口**：`/storage` 新增「视频资产失败」面板，管理员可直接看到失败视频资产并投递重试。
+
+### Changed
+
+- 视频 probe / poster / timetable 失败不再只能靠数据库或日志定位；管理侧有统一可见入口。
+- chunk / frame cache 失败从被动等待下一次访问，扩展为可人工重试的运维动作。
+
+## [0.9.32] - 2026-05-12
+
+> **Video Tracker Job Shell — AI tracker 编排壳.** 主线: ① 新增独立 `video_tracker_jobs` 表，不复用批量预标 `prediction_jobs`；② 支持创建 / 查询 / 取消 tracker job；③ 创建时校验 video task、annotation、frame range 与 segment lock；④ 协议文档和 runbook 补齐 tracker job 当前边界。→ [plan](docs/plans/2026-05-12-v0.9.32-video-tracker-jobs.md).
+
+### Added
+
+- **VideoTrackerJob 模型**：新增 `VideoTrackerJob` 与 `0059_video_tracker_jobs.py` 迁移，状态机覆盖 `queued/running/completed/failed/cancelled`，并保存 `model_key`、`direction`、`prompt`、`event_channel` 和取消请求时间。
+- **Tracker job API**：新增 `POST /api/v1/tasks/{task_id}/video/tracks/{annotation_id}:propagate`、`GET /api/v1/video-tracker-jobs/{job_id}`、`DELETE /api/v1/video-tracker-jobs/{job_id}`。
+- **Segment lock 校验**：非管理员创建 tracker job 前必须持有覆盖 frame range 的有效 segment lock；跨 segment 或越界请求会被拒绝。
+
+### Deferred
+
+- 真实 tracker adapter、GPU worker、逐帧 prediction keyframe 写回和 WebSocket 流式结果留到后续版本。
+
+## [0.9.31] - 2026-05-12
+
+> **Video Observability Pack — 视频工作台性能回归与 BUG 诊断包.** 主线: ① 新增 `video:bench` 脚本与 720p/1080p/4K × 10/100/500 tracks 的基准矩阵；② 视频工作台维护当前 task 的诊断快照，覆盖 frame clock、最近 seek、J/K/L 播放状态、timeline mode 和 frame preview cache；③ BugReportDrawer 在视频工作台自动把诊断写入反馈描述和 structured console payload；④ docs-site 增加视频性能回归 how-to。→ [plan](docs/plans/2026-05-12-v0.9.31-video-observability-pack.md).
+
+### Added
+
+- **视频 bench 入口**：`pnpm --filter @anno/web video:bench` 生成本地 run manifest 和 PR 附件路径，矩阵固定为 3 组视频规格 × 3 档轨迹密度。
+- **视频诊断快照**：`VideoStage` 暴露 `window.__videoWorkbenchDiagnostics`，包含当前 frame、timeline mode、播放速度、对象密度、FrameClock 诊断和 frame preview cache 状态。
+- **BUG 反馈自动附带诊断**：视频工作台内提交反馈时自动追加 `Video Workbench Diagnostics` 描述块，并在 `recent_console_errors` 中加入结构化 JSON payload。
+- **视频性能回归文档**：新增 docs-site how-to，记录 bench 运行、PR 附件和 BugReport 诊断读取方式。
+
+### Changed
+
+- `useFrameClock` 的 diagnostics 增加最近 seek 样本，便于定位快速 scrub / loop / 反向播放时的帧准备耗时。
+- `useVideoFramePreview` 记录 cache hit/miss、prefetch、unsupported 和最近状态，用于判断 hover preview 是否命中后端单帧缓存。
+
+## [0.9.30] - 2026-05-12
+
+> **Video Timetable / Frame Cache Repair — 旧视频帧表重建与缓存修复闭环.** 主线: ① 新增 `python -m app.cli.video.rebuild_timetable`，支持按视频、数据集或全量重建 `video_frame_indices`；② 新增 task/videos facade 的 `frames:retry` API，失败单帧缓存可重新投递，`force=true` 可刷新指定帧；③ 视频 poster 改为复用 `VideoFrameCache(frame_index=0,width=512,format=webp)` 产物。→ [plan](docs/plans/2026-05-12-v0.9.30-video-timetable-frame-cache-repair.md).
+
+### Added
+
+- **Timetable rebuild CLI**：新增 `app.cli.video.rebuild_timetable`，用于旧视频或异常视频重新生成 B1 帧时间表，并回写 `metadata.video.frame_timetable_frame_count` / `frame_timetable_error`。
+- **Frame cache retry API**：新增 `POST /api/v1/tasks/{task_id}/video/frames:retry` 与 `POST /api/v1/videos/{dataset_item_id}/frames:retry`。
+
+### Changed
+
+- **Poster 复用 B3 缓存**：视频 metadata 任务生成 poster 时写入 `videos/{dataset_item_id}/frames/0_512.webp`，`DatasetItem.thumbnail_path` 与 `poster_frame_path` 共享该缓存 key。
+
+## [0.9.29] - 2026-05-12
+
+> **Video J/K/L Playback + Atomic Seek — 多速率播放与异步帧跳转.** 主线: ① `useFrameClock` 暴露 `seekToAsync`，连续 seek 时旧回调会被标记为 stale；② `VideoStage` 统一 timeline scrub、逐帧、关键帧跳转、bookmark 和跳转历史到同一 `seekFrameAsync` 原语；③ 视频模式新增 `J / K / L` 播放控制，支持 `0.25x / 0.5x / 1x / 2x / 4x`，反向播放不使用浏览器负 `playbackRate`，而是按帧步进；④ 播放 overlay 显示当前 jog 速度。→ [plan](docs/plans/2026-05-12-v0.9.29-video-jkl-playback-atomic-seek.md).
+
+### Added
+
+- **J/K/L 视频播放控制**：`L` 正向播放 / 加速，`K` 暂停，`J` 反向播放 / 减速；视频模式下接管这些快捷键，图片模式原有 `J / K` 框选择行为不变。
+- **异步 seek 原语**：`useFrameClock.seekToAsync` 返回帧就绪结果，旧 seek 被新 seek 覆盖时返回 stale，避免快速 scrub / 跳转时旧回调覆盖新帧。
+- **播放速度状态显示**：`VideoPlaybackOverlay` 在 jog 播放时显示 `1x / 2x / -1x` 等速度标签。
+
+### Changed
+
+- 时间轴拖动、逐帧、关键帧跳转、bookmark marker、跳转历史和 loop region 入口统一走 `VideoStage.seekFrameAsync`。
+- 正向多速率播放复用浏览器 `<video>` 和 `playbackRate`；反向播放按帧调用 `seekFrameAsync`，不依赖不稳定的 `playbackRate = -1`。
+
+## [0.9.28] - 2026-05-12
+
+> **Video Segment Collaboration MVP — 后端 segment 协作基线.** 主线: ① 新增 `video_segments` 表，按 `DatasetItem` 表达视频内 frame range；② manifest v2 和 task/videos facade 返回 segment 列表；③ task 入口支持 claim / heartbeat / release 的短 TTL lock；④ 同步协议文档、runbook、环境变量和 ADR。→ [plan](docs/plans/2026-05-12-v0.9.28-video-segments.md).
+
+### Added
+
+- **VideoSegment 模型**：新增 `VideoSegment(dataset_item_id, segment_index, start_frame, end_frame, assignee_id, status, locked_by, locked_at, lock_expires_at)` 和 `0058_video_segments.py` 迁移。
+- **Segment API**：新增 `GET /api/v1/tasks/{task_id}/video/segments`、`GET /api/v1/videos/{dataset_item_id}/segments`，以及 task 入口的 `:claim` / `:heartbeat` / `:release`。
+- **Manifest v2 segments**：`/video/manifest-v2` 和 `/videos/{dataset_item_id}/manifest` 懒生成并返回 `segments`。
+- **配置**：新增 `VIDEO_SEGMENT_SIZE_FRAMES` 与 `VIDEO_SEGMENT_LOCK_TTL_SECONDS`。
+
+### Deferred
+
+- Presence WebSocket、segment 级 scheduler、B5 AI tracker job 和 tracker adapter 留到后续版本。
+
+## [0.9.27] - 2026-05-12
+
+> **Video Timeline Hover Preview — 时间轴缩略图预览 + 单帧缓存预取.** 主线: ① 前端新增 task video frame API helper 与 `useVideoFramePreview`，消费 v0.9.25 后端 `frames/{frame_index}` / `frames:prefetch`; ② `VideoPlaybackOverlay` hover 时间轴时显示当前 frame、时间和 WebP/JPEG 缩略图，pending/error 状态降级为轻量文案；③ `VideoStage` 对选中 track keyframes、bookmarks、loop region 起止帧主动预取，提升回访体验；④ 缓存和请求去重保持在前端内存，不引入 ImageBitmap、chapter 或 WebCodecs。→ [plan](docs/plans/2026-05-12-v0.9.27-video-timeline-hover-preview.md).
+
+### Added
+
+- **时间轴 hover 缩略图**：`VideoPlaybackOverlay` 增加 preview popover，ready 状态显示 frame image，pending/error 状态保留 frame/time 上下文，不影响 seek。
+- **单帧预览 hook**：新增 `useVideoFramePreview`，支持 120 条内存 LRU、pending 一次重试、400/404 自动禁用当前 task 的 frame preview。
+- **预取 hint**：选中轨迹关键帧、书签帧和 loop region 起止帧会通过 `frames:prefetch` 提前触发后端单帧缓存。
+
+### Changed
+
+- 前端 `tasksApi` 增加 `getVideoFrame` / `prefetchVideoFrames`，并补齐 `VideoFrameOut` / `VideoFramePrefetchResponse` 类型。
+- 本版只消费现有后端帧服务；chapter、已下载范围可视化、ImageBitmap 缓存和多速率播放继续保持独立候选切片。
+
+## [0.9.26] - 2026-05-12
+
+> **Video Loop Bookmark Navigation — 播放范围 + 书签 + 跳转历史.** 主线: ① 视频时间轴支持 `Shift+drag` 设定本地 loop region，播放越过范围末帧后回到起始帧；② loop region、书签和跳转历史按 task 存入 `sessionStorage`，不占用并行开发中的后端帧服务 v0.9.25 接口；③ `Ctrl+M` 添加/移除当前帧书签，书签 marker 可点击跳转；④ 显式 seek 记录最近 50 个位置，`Ctrl+[` / `Ctrl+]` 后退/前进，`Alt+L` 清除播放范围。→ [plan](docs/plans/2026-05-12-v0.9.26-video-loop-bookmark-navigation.md).
+
+### Added
+
+- **播放范围**：`VideoPlaybackOverlay` 新增 loop region 色带、拖选 preview、范围文案和清除按钮；`VideoStage` 播放时在范围末帧自动回到起始帧。
+- **书签与跳转历史**：新增 `videoNavigationState.ts`，集中管理 loop、bookmark、jump history 的归一化、会话存储解析和最近 50 次显式 seek 导航。
+- **视频导航快捷键**：视频模式新增 `Ctrl+M`、`Ctrl+[`、`Ctrl+]`、`Alt+L`，并接入统一 hotkey 分发和帮助面板数据源。
+
+### Changed
+
+- `VideoStageControls` 扩展为可按显式用户动作记录跳转历史，播放 tick 和自动 frame clock 更新不会污染历史栈。
+- 本版只改前端本地导航状态；后端 frame service、chunk/cache、hover thumbnail 和多速率播放仍保持独立排期。
+
+## [0.9.25] - 2026-05-12
+
+> **Video Frame Service Wave B — chunk / frame cache / manifest v2.** 主线: ① 新增视频 chunk 与单帧缓存表，按 `DatasetItem` 存储后端帧服务资产；② task 路由和 `/videos/{dataset_item_id}` facade 同时暴露 manifest v2、chunks、frames、prefetch；③ Celery media worker 负责 H.264 fragmented MP4 chunk 生成、WebP/JPEG 单帧抽取和 TTL 清理；④ 补齐 Prometheus 指标、环境变量、协议文档和运维 runbook。→ [plan](docs/plans/2026-05-12-v0.9.25-video-frame-service-wave-b.md).
+
+### Added
+
+- **视频 chunk 服务**：新增 `VideoChunk` 表和 `GET /api/v1/tasks/{task_id}/video/chunks` / `/api/v1/videos/{dataset_item_id}/chunks`，缺失 chunk 懒投递 Celery，ready 后返回 signed URL。
+- **单帧缓存服务**：新增 `VideoFrameCache` 表和 `GET .../frames/{frame_index}` / `POST .../frames:prefetch`，抽帧优先使用 B1 `pts_ms`，旧视频按 fps 估算。
+- **Manifest v2**：新增 task 兼容路由和 videos facade，返回 `chunks_manifest_url`、`frame_timetable_url`、`frame_service_base` 和 `chunk_size_frames`。
+- **观测与运维**：新增视频帧服务 Prometheus 指标、缓存 TTL 配置、Celery beat 清理任务和 `docs-site/ops/runbooks/video-frame-service.md`。
+
+### Changed
+
+- `frame-timetable` 接口补 `Cache-Control` / `ETag` 响应头。
+- API/Celery 依赖增加 `numpy`，供内部 `get_frame_array()` 返回缓存帧数组。
+
+### Deferred
+
+- B4 segment 协同、B5 AI tracker 编排、GOP smart-copy、多码率转码、HLS/DASH 留到后续版本。
+
+## [0.9.24] - 2026-05-12
+
+> **Video Track Timeline Navigation — 单轨时间轴 + 全局密度条 + 关键帧跳转.** 主线: ① 选中 `video_track` 时，播放条显示 keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；② 未选中轨迹时显示全局 keyframe 密度条；③ `Shift+←/→` 在选中轨迹时跳上/下可见 keyframe，未选中轨迹时保留原有 ±10 帧跳转；④ 新增 `videoTrackTimeline` helper，复用 effective outside 语义，避免插值段跨越 outside / legacy absent。→ [plan](docs/plans/2026-05-12-v0.9.24-video-track-timeline-navigation.md).
+
+### Added
+
+- **单轨时间轴模型**：新增 `videoTrackTimeline.ts`，输出选中轨迹的 keyframe、outside、interpolated segment 和可见 keyframe 导航目标。
+- **全局密度条**：未选中轨迹时按固定 bin 聚合全部 track keyframe 密度，帮助定位有标注的帧段。
+- **关键帧跳转**：`VideoStageControls` 增加 `seekToKeyframe(dir)`，视频快捷键接线支持选中轨迹时跳上/下可见 keyframe。
+
+### Changed
+
+- `VideoPlaybackOverlay` 在保留原 seekbar 和播放按钮的基础上，按选中状态切换单轨 timeline 或全局密度视图。
+- `Shift+←/→` 在视频模式下变为上下文快捷键：选中 track 跳 keyframe，否则继续跳 10 帧。
+
+## [0.9.23] - 2026-05-12
+
+> **Video Outside Timeline Foundation — outside 段协议 + 时间轴语义 marker.** 主线: ① `video_track` 支持可选 `outside: [{ from, to, source }]` 闭区间，向后兼容旧 `keyframes[].absent`; ② 前后端渲染、导出和 track → `video_bbox` 转换统一走 effective outside 判断；③ 时间轴 marker 扩展 keyframe / prediction / outside segment 语义，现有悬浮播放条可轻量展示 outside 灰段；④ 用户标记当前帧消失时写 outside 单帧区间，写入可见关键帧时自动清理该帧 outside 覆盖。→ [plan](docs/plans/2026-05-12-v0.9.23-video-outside-timeline-foundation.md).
+
+### Added
+
+- **outside 段协议**：`video_track` geometry 新增可选 `outside` 区间，支持 manual / prediction 来源，并通过前后端 helper 归一化排序、合并和兼容 legacy `absent`。
+- **Timeline markers**：`videoFrameBuckets` 扩展输出 keyframe marker 与 outside segment，供 R4 多轨时间轴继续复用。
+- **后端 outside 导出语义**：Video Tracks JSON 保留显式 `outside` 字段，`video_frame_mode=all_frames` 和 track 转独立框都会跳过 outside 范围。
+
+### Changed
+
+- `resolveTrackAtFrame` 在前端先判断 effective outside，再解析 exact keyframe 或插值；旧 `absent=true` 仍作为单帧 outside 兼容输入。
+- `VideoPlaybackOverlay` 保持原布局，但底层标记支持 prediction keyframe 和 outside 灰段。
+- 轨迹侧栏“标记消失”不再写新的 `absent` keyframe，而是写 outside 单帧区间；复制/写入可见关键帧会移除当前帧 outside 覆盖。
+
+### Fixed
+
+- 导出和 track → `video_bbox` 转换不再把 outside 覆盖的帧当作可见 bbox。
+- 显式 outside 与旧 absent 混用时，前端渲染、时间轴提示和后端展开逻辑保持一致。
+
+## [0.9.22] - 2026-05-12
+
+> **Video Rendering Surface — CVAT 对齐的渲染分层 + 时间轴分桶基建.** 主线: ① 视频 stage 拆为 Media / Bitmap / Grid / Objects / Text / Interaction / Attachment 七个逻辑层，保留 React + SVG + HTML video 技术栈；② bbox 命中测试从每个 SVG 节点事件迁到 Interaction 层统一 picker；③ 新增统一坐标转换 helper 与 `VideoStageMode` busy guard，拖拽/缩放期间不接受播放 tick 覆盖当前编辑状态；④ 新增 `videoFrameBuckets`，按 track keyframe 输出稳定 marker，为 R4 时间轴可视化铺数据。→ [plan](docs/plans/2026-05-12-v0.9.22-video-render-layering.md).
+
+### Added
+
+- **CVAT-aligned stage surface**：新增 `VideoStageSurface`、`VideoMediaLayer`、`VideoBitmapLayer`、`VideoGridLayer`、`VideoObjectsLayer`、`VideoTextLayer`、`VideoInteractionLayer` 和 `VideoAttachmentLayer`，明确视频工作台各层职责。
+- **统一坐标转换与 picker**：新增 `videoStageCoordinates.ts` 和 `videoStagePicking.ts`，pointer 坐标统一走 `client -> video` 映射，顶层 bbox 命中由 Interaction 层计算。
+- **Stage mode guard**：新增 `videoStageMode.ts`，在 draw / drag / resize 期间阻止 frame setup 覆盖编辑中的几何。
+- **Frame buckets**：新增 `videoFrameBuckets.ts`，从 `video_track.keyframes[]` 生成 `Map<frame, trackId[]>` 和稳定 marker，记录 manual / prediction / absent 状态。
+
+### Changed
+
+- `VideoFrameOverlay` 不再把媒体、对象、label、handle、draft、ghost 和 pointer handler 混在同一个 SVG；对象层只渲染 committed geometry，拖拽态由 Interaction 层负责。
+- `VideoStage` 视频元素改由 `VideoMediaLayer` 承载，播放/seek 仍由 v0.9.21 的 `useFrameClock` 驱动。
+- 现有 `video_bbox` / `video_track` wire shape、后端 API、导出协议不变。
+
+### Fixed
+
+- 密集 bbox 场景下不再为每个 bbox 主体挂 `pointerdown` handler，降低 React diff 和事件绑定压力。
+- 拖拽或缩放过程中，播放 tick / seek 回调不会把当前帧切走并覆盖编辑态。
+
+## [0.9.21] - 2026-05-12
+
+> **Video Frame Clock — 帧时间表 + 精确 seek 基础.** 主线: ① media worker 用 `ffprobe -show_frames` 生成视频帧时间表并写入 `video_frame_indices`；② 新增 `GET /tasks/{task_id}/video/frame-timetable`，旧视频无时间表时返回 estimated 降级；③ 前端新增 `frameTimebase` / `useFrameClock`，优先用 `requestVideoFrameCallback` 做 frame ↔ mediaTime 映射；④ `resolveTrackAtFrame` 改为 keyframe 索引 + 二分查找 + 1000 条插值 LRU；⑤ 开发环境记录视频帧时钟 seek/longtask 诊断。→ [plan](docs/plans/2026-05-12-v0.9.21-video-frame-clock-timetable.md).
+
+### Added
+
+- **视频帧时间表**：新增 `video_frame_indices` 表，按 `dataset_item_id + frame_index` 保存 `pts_ms`、关键帧标记、帧类型和可选 byte offset。
+- **Frame timetable API**：`GET /api/v1/tasks/{task_id}/video/frame-timetable?from=&to=` 返回 ffprobe 帧时间表；无表时返回 `source="estimated"` 和空 `frames`。
+- **前端 FrameClock**：`VideoStage` 播放、逐帧和 scrubber seek 统一走 `useFrameClock`，支持 `requestVideoFrameCallback`，并对快速连续 seek 丢弃过期回调。
+- **帧时钟诊断**：开发环境暴露 `window.__videoFrameClockDiagnostics`，记录 seek 次数、过期回调、最近 frame-ready 来源和 long task 计数。
+
+### Changed
+
+- 悬浮时间轴的时间显示改用 `frameTimebase`，有真实 `pts_ms` 时不再直接用 `frame / fps`。
+- `video_track` 插值解析改为 WeakMap keyframe 索引、二分查找和 1000 条结果 LRU；`absent=true` 阻断语义保持不变。
+- 视频元数据增加 `frame_timetable_frame_count` / `frame_timetable_error`，probe 失败不会阻断现有 manifest。
+
+### Fixed
+
+- 快速拖动时间轴时，旧的 frame callback 不再覆盖最新目标帧。
+- 密集轨迹场景下，暂停 scrub 重复计算同一 track/frame 的开销下降。
+
 ## [0.9.20] - 2026-05-11
 
 > **Video Tool Semantics — 视频矩形框 / 轨迹工具分离 + track 转独立框.** 主线: ① 视频工作台新增独立 `videoTool`，`B` 画当前帧 `video_bbox`，`T` 创建 / 延续 `video_track`；② 视频拖框恢复图片侧“画完选类”流程，不再默认吞掉第一个类别；③ 选中视频对象后 `1-9` 可直接改类；④ 新增事务端点把 track 当前帧、关键帧或插值全帧转换为独立 `video_bbox`，支持 copy / split 双语义和 5000 条上限；⑤ 轨迹侧栏补 keyframe 列表、关键帧删除、复制 / 拆分入口。→ [plan](docs/plans/2026-05-11-v0.9.20-video-tool-semantics.md).

@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { TabRow } from "@/components/ui/TabRow";
 import type { Annotation, AnnotationResponse } from "@/types";
+import type { AnnotationCommentAnchor } from "@/api/comments";
 import type { AttributeSchema } from "@/api/projects";
 import type { AiBox } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
@@ -55,6 +56,7 @@ interface AIInspectorPanelProps {
   onFetchMorePredictions?: () => void;
   currentFrameIndex?: number;
   onSeekFrame?: (frameIndex: number) => void;
+  commentAnchor?: AnnotationCommentAnchor | null;
   onToggle: () => void;
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
@@ -84,7 +86,7 @@ export function AIInspectorPanel({
   attributeSchema, selectedAnnotation, onUpdateAttributes, currentUserId,
   taskFileUrl, enableCommentCanvasDrawing = true, liveCommentCanvas,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
-  currentFrameIndex, onSeekFrame,
+  currentFrameIndex, onSeekFrame, commentAnchor,
   onToggle,
   onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   readOnly = false,
@@ -171,6 +173,8 @@ export function AIInspectorPanel({
           imageHeight={imageHeight}
           enableCanvasDrawing={enableCommentCanvasDrawing}
           liveCanvas={liveCommentCanvas}
+          commentAnchor={commentAnchor}
+          onSeekFrame={onSeekFrame}
         />
       )}
 

@@ -5,7 +5,10 @@ import type {
   TaskLockResponse,
   ReviewClaimResponse,
   Geometry,
+  TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
+  VideoFrameOut,
+  VideoFramePrefetchResponse,
 } from "@/types";
 
 export interface TaskListResponse {
@@ -56,6 +59,30 @@ export interface VideoTrackConvertToBboxesResponse {
   removed_frame_indexes: number[];
 }
 
+export interface VideoTrackCompositionPayload {
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  annotation_ids: string[];
+  frame_index?: number;
+  delete_sources?: boolean;
+}
+
+export interface VideoTrackCompositionResponse {
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  updated_annotations: AnnotationResponse[];
+  created_annotations: AnnotationResponse[];
+  deleted_annotation_ids: string[];
+}
+
+export interface VideoFrameTimetableParams {
+  from?: number;
+  to?: number;
+}
+
+export interface VideoFrameParams {
+  format?: "webp" | "jpeg";
+  width?: number;
+}
+
 export interface SubmitResponse {
   status: string;
   task_id: string;
@@ -84,6 +111,36 @@ export const tasksApi = {
   getVideoManifest: (id: string) =>
     apiClient.get<TaskVideoManifestResponse>(`/tasks/${id}/video/manifest`),
 
+  getVideoFrameTimetable: (id: string, params?: VideoFrameTimetableParams) => {
+    const q = new URLSearchParams();
+    if (params?.from !== undefined) q.set("from", String(params.from));
+    if (params?.to !== undefined) q.set("to", String(params.to));
+    const suffix = q.toString() ? `?${q}` : "";
+    return apiClient.get<TaskVideoFrameTimetableResponse>(
+      `/tasks/${id}/video/frame-timetable${suffix}`,
+    );
+  },
+
+  getVideoFrame: (id: string, frameIndex: number, params?: VideoFrameParams) => {
+    const q = new URLSearchParams();
+    if (params?.format) q.set("format", params.format);
+    if (params?.width !== undefined) q.set("w", String(params.width));
+    const suffix = q.toString() ? `?${q}` : "";
+    return apiClient.get<VideoFrameOut>(
+      `/tasks/${id}/video/frames/${frameIndex}${suffix}`,
+    );
+  },
+
+  prefetchVideoFrames: (id: string, frameIndices: number[], params?: VideoFrameParams) =>
+    apiClient.post<VideoFramePrefetchResponse>(
+      `/tasks/${id}/video/frames:prefetch`,
+      {
+        frame_indices: frameIndices,
+        width: params?.width ?? 320,
+        format: params?.format ?? "webp",
+      },
+    ),
+
   getAnnotations: (id: string) =>
     apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations`),
 
@@ -107,6 +164,15 @@ export const tasksApi = {
   ) =>
     apiClient.post<VideoTrackConvertToBboxesResponse>(
       `/tasks/${taskId}/annotations/${annotationId}/video/convert-to-bboxes`,
+      payload,
+    ),
+
+  composeVideoTracks: (
+    taskId: string,
+    payload: VideoTrackCompositionPayload,
+  ) =>
+    apiClient.post<VideoTrackCompositionResponse>(
+      `/tasks/${taskId}/annotations/video/track-compositions`,
       payload,
     ),
 

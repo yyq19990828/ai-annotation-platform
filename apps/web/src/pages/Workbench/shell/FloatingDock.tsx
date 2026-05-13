@@ -9,6 +9,7 @@ interface FloatingDockProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFit: () => void;
+  showHistory?: boolean;
 }
 
 /**
@@ -17,7 +18,7 @@ interface FloatingDockProps {
  * 与 Konva viewport 贴合，不占 Topbar 横向空间。
  */
 export function FloatingDock({
-  scale, canUndo, canRedo, onUndo, onRedo, onZoomIn, onZoomOut, onFit,
+  scale, canUndo, canRedo, onUndo, onRedo, onZoomIn, onZoomOut, onFit, showHistory = true,
 }: FloatingDockProps) {
   return (
     <div
@@ -36,13 +37,17 @@ export function FloatingDock({
         userSelect: "none",
       }}
     >
-      <DockButton onClick={onUndo} disabled={!canUndo} title="撤销 (Ctrl+Z)">
-        <Icon name="chevLeft" size={14} />
-      </DockButton>
-      <DockButton onClick={onRedo} disabled={!canRedo} title="重做 (Ctrl+Shift+Z)">
-        <Icon name="chevRight" size={14} />
-      </DockButton>
-      <Sep />
+      {showHistory && (
+        <>
+          <DockButton onClick={onUndo} disabled={!canUndo} title="撤销 (Ctrl+Z)">
+            <Icon name="chevLeft" size={14} />
+          </DockButton>
+          <DockButton onClick={onRedo} disabled={!canRedo} title="重做 (Ctrl+Shift+Z)">
+            <Icon name="chevRight" size={14} />
+          </DockButton>
+          <Sep />
+        </>
+      )}
       <DockButton onClick={onZoomOut} title="缩小">
         <Icon name="zoomOut" size={14} />
       </DockButton>
