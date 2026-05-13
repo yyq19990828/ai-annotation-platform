@@ -1,4 +1,8 @@
-import type { VideoTrackGeometry, VideoTrackKeyframe } from "@/types";
+import type {
+  VideoTrackGeometry,
+  VideoTrackKeyframe,
+  VideoTrackOutsideRange,
+} from "@/types";
 import type { Command } from "./useAnnotationHistory";
 
 function cloneKeyframe(kf: VideoTrackKeyframe): VideoTrackKeyframe {
@@ -25,6 +29,23 @@ function sameKeyframe(a: VideoTrackKeyframe | undefined, b: VideoTrackKeyframe |
   );
 }
 
+function sameOutsideRanges(
+  a: VideoTrackOutsideRange[] | undefined,
+  b: VideoTrackOutsideRange[] | undefined,
+): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    const l = left[i];
+    const r = right[i];
+    if (l.from !== r.from || l.to !== r.to || (l.source ?? null) !== (r.source ?? null)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function buildVideoKeyframeCommand(
   annotationId: string,
   before: VideoTrackGeometry,
@@ -32,6 +53,7 @@ export function buildVideoKeyframeCommand(
 ): Extract<Command, { kind: "videoKeyframe" }> | null {
   if (before.type !== "video_track" || after.type !== "video_track") return null;
   if (before.track_id !== after.track_id) return null;
+  if (!sameOutsideRanges(before.outside, after.outside)) return null;
 
   const frames = new Set<number>();
   before.keyframes.forEach((kf) => frames.add(kf.frame_index));

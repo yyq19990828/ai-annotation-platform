@@ -19,8 +19,6 @@ export interface VideoTrackerJobState {
   status: VideoTrackerJobStatus;
   fromFrame: number;
   toFrame: number;
-  windowFrom?: number;
-  windowTo?: number;
   windowProgress?: { current: number; total: number };
   errorMessage?: string | null;
   modelKey: string;
@@ -93,7 +91,15 @@ class TrackerJobStore {
   }
 
   private handleMessage(jobId: string, evt: MessageEvent): void {
-    let payload: { type?: string; status?: VideoTrackerJobStatus; error_message?: string; window?: { from?: number; to?: number; index?: number; total?: number } } | null = null;
+    let payload:
+      | {
+          type?: string;
+          status?: VideoTrackerJobStatus;
+          error_message?: string;
+          current?: number;
+          total?: number;
+        }
+      | null = null;
     try {
       const data = JSON.parse(evt.data);
       if (data?.type === "ping") return;
@@ -111,46 +117,67 @@ class TrackerJobStore {
       errorMessage: payload.error_message ?? cur.errorMessage,
       receivedAt: Date.now(),
     };
-    if (payload.window) {
-      next.windowFrom = payload.window.from ?? next.windowFrom;
-      next.windowTo = payload.window.to ?? next.windowTo;
-      if (typeof payload.window.index === "number" && typeof payload.window.total === "number") {
-        next.windowProgress = { current: payload.window.index, total: payload.window.total };
-      }
+    if (typeof payload.current === "number" && typeof payload.total === "number") {
+      next.windowProgress = { current: payload.current, total: payload.total };
     }
     this.jobs = { ...this.jobs, [jobId]: next };
     this.emit();
 
-    if (payload.type === "job.window_completed" || payload.type === "job.completed") {
+    if (payload.type === "job_completed" || payload.type === "job_cancelled") {
       this.invalidateAnnotations(cur.taskId);
     }
 
     if (status === "completed" || status === "failed" || status === "cancelled") {
-      const timer = this.removeTimers.get(jobId);
-      if (timer) clearTimeout(timer);
-      this.removeTimers.set(
-        jobId,
-        setTimeout(() => {
-          const { [jobId]: _drop, ...rest } = this.jobs;
-          this.jobs = rest;
-          this.removeTimers.delete(jobId);
-          const sock = this.sockets.get(jobId);
-          if (sock) {
-            try {
-              sock.close();
-            } catch {
-              /* noop */
-            }
-            this.sockets.delete(jobId);
-          }
-          this.emit();
-        }, REMOVE_AFTER_DONE_MS),
-      );
+      this.scheduleTerminalCleanup(jobId);
     }
   }
 
+  private scheduleTerminalCleanup(jobId: string): void {
+    const timer = this.removeTimers.get(jobId);
+    if (timer) clearTimeout(timer);
+    this.removeTimers.set(
+      jobId,
+      setTimeout(() => {
+        const { [jobId]: _drop, ...rest } = this.jobs;
+        this.jobs = rest;
+        this.removeTimers.delete(jobId);
+        const sock = this.sockets.get(jobId);
+        if (sock) {
+          try {
+            sock.close();
+          } catch {
+            /* noop */
+          }
+          this.sockets.delete(jobId);
+        }
+        this.emit();
+      }, REMOVE_AFTER_DONE_MS),
+    );
+  }
+
   async cancel(jobId: string): Promise<void> {
-    await videoTrackerApi.cancel(jobId).catch(() => undefined);
+    const updated = await videoTrackerApi.cancel(jobId).catch(() => undefined);
+    if (!updated) return;
+    const cur = this.jobs[jobId];
+    if (!cur) return;
+    this.jobs = {
+      ...this.jobs,
+      [jobId]: {
+        ...cur,
+        status: updated.status,
+        errorMessage: updated.error_message ?? cur.errorMessage,
+        receivedAt: Date.now(),
+      },
+    };
+    this.emit();
+    if (
+      updated.status === "completed" ||
+      updated.status === "failed" ||
+      updated.status === "cancelled"
+    ) {
+      this.invalidateAnnotations(cur.taskId);
+      this.scheduleTerminalCleanup(jobId);
+    }
   }
 }
 
@@ -159,18 +186,15 @@ function mapEventToStatus(
   prev: VideoTrackerJobStatus,
 ): VideoTrackerJobStatus {
   switch (type) {
-    case "job.queued":
-      return "queued";
-    case "job.started":
-    case "job.window_started":
-    case "job.window_progress":
-    case "job.window_completed":
+    case "job_started":
+    case "job_progress":
+    case "frame_result":
       return "running";
-    case "job.completed":
+    case "job_completed":
       return "completed";
-    case "job.failed":
+    case "job_failed":
       return "failed";
-    case "job.cancelled":
+    case "job_cancelled":
       return "cancelled";
     default:
       return prev;
