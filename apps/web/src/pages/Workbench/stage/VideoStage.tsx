@@ -664,8 +664,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
       zoomAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current.scale * factor);
     };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    el.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    return () => el.removeEventListener("wheel", onWheel, { capture: true });
   }, [vpRef, zoomAt]);
 
   useEffect(() => {
