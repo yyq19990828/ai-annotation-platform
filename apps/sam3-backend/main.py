@@ -11,11 +11,17 @@
     POST /unload        主动卸载模型释放显存
     POST /reload        主动重载模型
 
-prompt 类型 (v0.10.0 相对 grounded-sam2 新增 exemplar):
-    - context.type == "point"    → SAM 3 image predictor 出 mask
-    - context.type == "bbox"     → SAM 3 image predictor 出 mask
-    - context.type == "text"     → SAM 3 PCS 单模型一步出 mask
-    - context.type == "exemplar" → SAM 3 PCS 视觉示例 → 全图相似实例 masks (新)
+prompt 类型 (v0.10.0 选项 A — 不启用 inst_interactivity, 放弃 point):
+    - context.type == "text"     → Sam3Processor.set_text_prompt → 全图所有匹配概念的 masks
+    - context.type == "bbox"     → Sam3Processor.add_geometric_prompt(label=True) → 全图相似实例
+    - context.type == "exemplar" → 与 bbox 同底层; 协议层语义不同
+    - context.type == "point"    → 返回 400. SAM 3 image API 没有点 prompt;
+                                    需 enable_inst_interactivity=True 才有, v0.10.0 选项 A 放弃.
+                                    workbench 单点交互让 grounded-sam2-backend 兜底.
+
+⚠️ SAM 3 image API 的 bbox 与 SAM 2 行为不同: 它不是「这个 box 内出一个 mask」,
+而是「找全图与 box 内对象相似的所有实例」(SAM 3 PCS 视觉示例语义). 用户想要
+单框单 mask 走 grounded-sam2 backend.
 
 Idle Unload (双 backend 并存场景的显存让渡机制):
     SAM 3.1 FP16 ~6-7GB 常驻显存; 3090 单卡若同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB),
@@ -211,9 +217,10 @@ def setup() -> dict:
         "name": "sam3",
         "labels": [],
         "is_interactive": True,
-        # v0.10.0 · supported_prompts 在 grounded-sam2 三种之上加 exemplar.
-        # 前端按此动态启用 Shift+拖框 = exemplar 入口 (v0.10.1 落地).
-        "supported_prompts": ["point", "bbox", "text", "exemplar"],
+        # v0.10.0 选项 A: 不暴露 "point" (Sam3Processor image API 不支持).
+        # 前端按此动态启用 Shift+拖框 = exemplar 入口 (v0.10.1 落地);
+        # 单点交互项目挂 grounded-sam2-backend 兜底.
+        "supported_prompts": ["bbox", "text", "exemplar"],
         "supported_text_outputs": ["box", "mask", "both"],
         "params": {
             "model_variant": MODEL_VERSION,
@@ -288,17 +295,12 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
     score_th = ctx.get("score_threshold")
 
     if ptype == "point":
-        points = ctx.get("points") or []
-        labels = ctx.get("labels") or [1] * len(points)
-        if not points:
-            raise HTTPException(status_code=422, detail="context.points required for type=point")
-        if not _cache.peek(cache_key):
-            image = _fetch_image(file_path)
-            return p.predict_point(
-                image, points, labels, cache_key=cache_key, simplify_tolerance=simplify_tol
-            )
-        return p.predict_point(
-            None, points, labels, cache_key=cache_key, simplify_tolerance=simplify_tol
+        # v0.10.0 选项 A: sam3-backend 不支持 point. workbench 应该挂 grounded-sam2 兜底.
+        raise HTTPException(
+            status_code=400,
+            detail="sam3-backend does not support point prompts. "
+            "Use grounded-sam2-backend for point interactivity, "
+            "or send type=bbox/text/exemplar to this backend.",
         )
 
     if ptype == "bbox":

@@ -22,12 +22,14 @@
 
 ## 能力盘点
 
+> v0.10.0 选项 A: 不启用 `enable_inst_interactivity`. SAM 3 原生 image API 不包含 point prompt, 单点交互让 grounded-sam2-backend 兜底.
+
 | Prompt | 链路 | 用途 |
 |---|---|---|
-| `context.type=point` | SAM 3 image predictor 出 mask | 工作台 `S` 工具单点交互 |
-| `context.type=bbox` | SAM 3 image predictor 出 mask | 工作台 `S` 工具拖框交互 |
-| `context.type=text` | SAM 3 PCS 一步出 mask | 文本批量预标 / `/ai-pre` |
-| `context.type=exemplar` | SAM 3 PCS 视觉示例 → 全图相似实例 | v0.10.1 工作台 Shift+拖框入口 |
+| `context.type=point` | ❌ 不支持 | 返回 400; workbench 应挂 grounded-sam2-backend |
+| `context.type=bbox` | `add_geometric_prompt(box, label=True)` → 全图相似实例 | ⚠️ 行为与 SAM 2 不同: 不是「box 内出一个 mask」, 而是「找全图与 box 内对象相似的实例」(SAM 3 PCS 视觉示例语义). 单框单 mask 场景请走 grounded-sam2 |
+| `context.type=text` | `set_text_prompt(prompt)` → PCS 一步出全图匹配概念 | 文本批量预标 / `/ai-pre` |
+| `context.type=exemplar` | 与 bbox 同底层调用 | v0.10.1 工作台 Shift+拖框入口; 协议层独立类型方便前端 UI 区分 |
 
 返回数据均为 `polygonlabels` / `rectanglelabels` (归一化 [0,1]) + score + model_version + inference_time_ms.
 
@@ -71,7 +73,7 @@ git add vendor/sam3 && git commit -m "vendor: bump sam3 to <commit-sha>"
 
 **当前固定 commit**: `4cbac146c1b5a1e3a7f5c6a894901090b4dfd65b` (2026-05-13 拉取, main HEAD: "Fix PYRE_MISSING_ANNOTATIONS issues in fbcode/deeplearning/projects/sam3_release/sam3/model/io_utils.py").
 
-> ⚠️ **2026-05-13 状态**: vendor 已就位 + 已核对真实 API; `predictor.py` / `embedding_cache.py` / `tests/` 当前是 vendor pull 之前基于假设写的, 与真实 API 有 6 处主要不匹配 (详见 `predictor.py` 顶部 TODO 块). **不可直接 build / 部署**, 单独切一刀重写.
+> ✅ **2026-05-13 状态**: vendor 已就位 + `predictor.py` / `embedding_cache.py` / `tests/` 已按真实 API 重写 (45 单测全绿). v0.10.0 选项 A: 不启用 `enable_inst_interactivity`, 放弃 point prompt, 让 grounded-sam2-backend 兜底单点交互. 等首位 GPU 部署者跑端到端验收 (HF_TOKEN + `--profile gpu-sam3`).
 
 升级 commit 时务必跑 5-clicks 集成验收, 复核 `Sam3Processor` 公共方法签名 (`set_image` / `set_text_prompt` / `add_geometric_prompt` / `reset_all_prompts`) 与 `state` dict 字段 (`backbone_out` / `geometric_prompt` / `masks` / `boxes` / `scores`) 是否仍然存在.
 

@@ -1,41 +1,33 @@
-"""SAM 3 推理封装 (v0.10.0 / M0).
+"""SAM 3 推理封装 (v0.10.0 / M0, vendor 对齐重写于 2026-05-13).
 
-⚠️ **WIP — 2026-05-13**: 本文件在 vendor pull 之前基于路线图描述的假设 API 写就,
-拉到 facebookresearch/sam3 commit 4cbac14 后核对发现 6 处主要不匹配 (见下方
-TODO 块). 不要直接 build/部署本文件; 重写工作单独切一刀, 进度见
-docs/plans/2026-05-13-v0.10.0.x-sam3-predictor-rewrite.md (TBD).
+vendor: facebookresearch/sam3 @ 4cbac14, 通过 scripts/sync_vendor.sh 同步.
+入口: `from sam3 import build_sam3_image_model` + `from sam3.model.sam3_image_processor import Sam3Processor`.
 
-### TODO: predictor.py vendor 对齐重写
-1. 工厂签名: `build_sam3_image_model(bpe_path=..., checkpoint_path=...)` (不是 `checkpoint=`,
-   且 bpe_path 必填). 默认 `load_from_HF=True` 自动从 HF 拉权重.
-2. **API 完全不同**: 必须套 `from sam3.model.sam3_image_processor import Sam3Processor`,
-   是 stateful dict 模式; `processor.set_image(image) → state`, 然后
-   `set_text_prompt(state, prompt=...)` 或 `add_geometric_prompt(state, box, label=True/False)`
-   写副作用到 `state["masks"|"boxes"|"scores"]`. 没有 `model.predict(point_coords=..., box=...)`.
-3. **bbox 输入是归一化 cxcywh** (中心 + 宽高), 不是 xyxy. 用 `box_xywh_to_cxcywh` 转换.
-4. **exemplar 没有独立 API**: 就是 `add_geometric_prompt(state, box, label=True)`, 可累积多个
-   正负样本框 (label=False 是负样本). type=exemplar 与 type=bbox 在底层是同一调用.
-5. **embedding cache 字段重设计**: 真实可缓存对象是 `state["backbone_out"]` 整个 dict;
-   `CacheEntry` 的 `features/_orig_hw/_is_batch` 字段名要换.
-6. **point prompt 不在 image API 里**: Sam3Processor 只暴露 text + box geometric.
-   点要走 `enable_inst_interactivity=True` 的 `SAM3InteractiveImagePredictor` (独立模型路径,
-   额外 ~2-3GB 显存). 产品上待定是否支持; 暂保留方法签名但不能跑.
+支持的 prompt (v0.10.0 选项 A: 不启用 inst_interactivity):
+  - text:     processor.set_text_prompt(prompt, state) → 全图所有匹配概念的 mask + box
+  - bbox:     processor.add_geometric_prompt(box, label=True, state) → 全图与 box 内对象相似的所有实例
+  - exemplar: 与 bbox 同一底层调用; 协议层语义不同, 物理上是 alias
+  - point:    ❌ 不支持. SAM 3 image API 没有点 prompt; 需要 enable_inst_interactivity=True
+              额外加载 ~2-3GB tracker base. 选项 A 显式放弃, 让 grounded-sam2-backend 兜底.
 
-mask → polygon 简化逻辑与 grounded-sam2-backend 共用 apps/_shared/mask_utils
-**这部分仍然有效**, 重写时直接复用.
-"""
+API 形态关键点 (与 SAM 2 / grounded-sam2 完全不同):
+  1. Sam3Processor 是 stateful wrapper, state 是 dict. set_image() 把图像 features 写到
+     state["backbone_out"], 后续 prompt 调用是副作用修改 state.
+  2. _forward_grounding 写 state["masks" / "boxes" / "scores" / "masks_logits"]:
+       - boxes: 像素 xyxy (已转换好)
+       - masks: bool tensor (N, 1, H, W), 已 interpolate 到原图分辨率
+       - scores: float (N,), 已经 sigmoid 过
+  3. confidence_threshold 是 processor 实例属性; 单 worker 串行下可临时修改实现 per-request override.
+  4. reset_all_prompts(state) 清掉 language_features + geometric_prompt + boxes/masks/scores,
+     但保留 backbone_out 中的图像 features. 缓存命中时只缓存 backbone_out + 原图尺寸.
+  5. 没有 label / phrase 输出. 一次 text prompt 是单 phrase, 所有 N 个 mask 共用同一 label.
+  6. bbox 输入: 归一化 cxcywh (中心 + 宽高), 用 vendor/sam3/sam3/model/box_ops.box_xywh_to_cxcywh
+     转换. 我们对外协议用归一化 xyxy, 转换在 predictor 内部完成.
 
-SAM 3 vs Grounded-SAM-2 推理路径差异:
-- text 路径: SAM 3 PCS 单模型一步出 mask, 不再走 DINO → SAM 复合链
-- exemplar 路径 (新增): SAM 3 PCS 接受视觉示例 bbox → 全图相似实例 masks
-- point / bbox: 与 SAM 2 image predictor 行为对齐
+mask → polygon 简化复用 apps/_shared/mask_utils; 与 grounded-sam2-backend 同源.
 
-mask → polygon 简化逻辑与 grounded-sam2-backend 共用 apps/_shared/mask_utils,
-单一来源避免重写 (v0.9.4 phase 3 抽到 _shared 时就为 v0.10.x 留接口).
-
-⚠️ vendor API 接入提示: facebookresearch/sam3 的具体 Python 入口 (类名 /
-build_* 工厂 / 字段命名) 以 sync_vendor.sh 拉到的 commit 为准. 本文件在每个
-vendor 调用点都打了 `# vendor:` 注释; 升级 commit 时按注释逐个核对.
+Idle unload 集成: __init__ 加载到 self.device; main.py 在 idle 后 del self._predictor +
+torch.cuda.empty_cache(); 重建是再调一次 __init__.
 """
 
 from __future__ import annotations
@@ -45,9 +37,8 @@ import os
 import sys
 from typing import Any
 
-# vendor/sam3/ 内 Python 包通常按 `import sam3` 暴露 (与官仓 facebookresearch/sam3 的
-# pyproject 一致). vendor 根写入 sys.path 让 import 走得通; 容器内由 Dockerfile
-# `pip install -e ./vendor/sam3` 提供, 本地 pytest 走 conftest 注入.
+# vendor: container 内由 Dockerfile `pip install -e ./vendor/sam3` 提供; 本地测试通过
+# pyproject.toml 的 pythonpath 注入. 显式把 vendor 根加进 sys.path 兜底.
 _VENDOR_ROOT = "/app/vendor/sam3"
 if os.path.isdir(_VENDOR_ROOT) and _VENDOR_ROOT not in sys.path:
     sys.path.insert(0, _VENDOR_ROOT)
@@ -63,21 +54,20 @@ logger = logging.getLogger(__name__)
 
 # 与 grounded-sam2-backend 一致的默认 simplify tolerance (像素).
 DEFAULT_SIMPLIFY_TOLERANCE = 1.0
-# polygon 顶点数 > 阈值时 logger.warning, 提示 simplify 没收敛 (运维信号, 非阻塞).
 VERTEX_COUNT_WARN_THRESHOLD = 200
 
 CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "/app/checkpoints")
-# SAM 3 当前仅一档 848M; 路线图 §1.1 明确. 未来量化版本接入时改这里 + 启动脚本.
+# SAM 3 当前仅一档 848M; 路线图 §1.1 明确.
 MODEL_VARIANT = "sam3.1"
-CHECKPOINT_FILE = os.getenv("SAM3_CHECKPOINT_FILE", "sam3.1.pt")
 
-# SAM 3 PCS 推理时 score 过滤阈值 (text / exemplar 路径生效).
-# context.score_threshold 可单次覆盖; 缺省时走此环境默认.
+# Sam3Processor 默认 confidence_threshold; per-request 由 context.score_threshold 覆盖.
 DEFAULT_SCORE_THRESHOLD = float(os.getenv("SAM3_SCORE_THRESHOLD", "0.5"))
+# Sam3Processor 默认推理分辨率 (vendor 默认值, 不暴露 env).
+SAM3_RESOLUTION = 1008
 
 
 class SAM3Predictor:
-    """四种 prompt 路由到 SAM 3; 返回归一化 polygon / rectangle 字典列表."""
+    """三种 prompt (text / bbox / exemplar) 路由到 Sam3Processor; 返回归一化 polygon dict 列表."""
 
     def __init__(
         self,
@@ -91,68 +81,118 @@ class SAM3Predictor:
         self.embedding_cache = embedding_cache
         self.score_threshold = score_threshold
 
-        self._image_predictor = self._load_image_predictor()
+        self._model = self._load_model()
+        self._processor = self._build_processor()
 
     # ---------- 模型加载 ----------
 
-    def _load_image_predictor(self):
-        """加载 SAM 3 image predictor (point / bbox / text / exemplar 共享 backbone).
-
-        vendor: facebookresearch/sam3 暴露 `build_sam3_image_model()` 工厂 (路线图 §0.10.0).
-        升级 vendor commit 时若工厂签名变, 改这一段即可; 其余调用面走 self._image_predictor
-        的方法属性, 命名跟随上游.
-        """
-        # vendor: from sam3 import build_sam3_image_model  (sync_vendor.sh 拉到 commit 后核对)
+    def _load_model(self):
+        """加载 SAM 3 image model. 选项 A: 不启用 inst_interactivity (无点 prompt)."""
+        # vendor: facebookresearch/sam3 commit 4cbac14
         from sam3 import build_sam3_image_model  # type: ignore[import-not-found]
 
-        ckpt_path = os.path.join(self.checkpoint_dir, CHECKPOINT_FILE)
-        predictor = build_sam3_image_model(checkpoint=ckpt_path, device=self.device)
-        return predictor
+        # 优先用本地 checkpoint (容器启动时由 download_checkpoints.py 拉到 /app/checkpoints),
+        # fallback 走 vendor 内置 hf_hub_download (`load_from_HF=True`).
+        ckpt_path: str | None = None
+        candidate = os.path.join(self.checkpoint_dir, "sam3.1_multiplex.pt")
+        if os.path.isfile(candidate):
+            ckpt_path = candidate
+            logger.info("using local checkpoint: %s", ckpt_path)
 
-    # ---------- SAM 3 内部状态 snapshot / restore ----------
-    #
-    # 字段名跟随 vendor facebookresearch/sam3 image predictor; sync_vendor.sh 升级 commit
-    # 时必须人肉跑 5-clicks 集成验收, 确认这几个属性名未变.
+        model = build_sam3_image_model(
+            checkpoint_path=ckpt_path,
+            load_from_HF=(ckpt_path is None),
+            device=self.device,
+            enable_segmentation=True,
+            enable_inst_interactivity=False,  # 选项 A
+            eval_mode=True,
+        )
+        return model
 
-    def _snapshot_sam(self, w: int, h: int) -> CacheEntry:
-        sp = self._image_predictor
-        # vendor: SAM 3 image predictor 在 set_image() 后把 image features 写到 _features /
-        # _orig_hw 等实例属性; 与 SAM 2 设计一脉相承.
-        orig_hw = sp._orig_hw[0] if isinstance(sp._orig_hw, list) else sp._orig_hw
-        return CacheEntry(
-            features=sp._features,
-            orig_hw=tuple(orig_hw),  # type: ignore[arg-type]
-            is_batch=getattr(sp, "_is_batch", False),
-            wh=(w, h),
+    def _build_processor(self):
+        from sam3.model.sam3_image_processor import Sam3Processor  # type: ignore[import-not-found]
+
+        return Sam3Processor(
+            self._model,
+            resolution=SAM3_RESOLUTION,
+            device=self.device,
+            confidence_threshold=self.score_threshold,
         )
 
-    def _restore_sam(self, entry: CacheEntry) -> None:
-        sp = self._image_predictor
-        sp._features = entry.features
-        sp._orig_hw = [tuple(entry.orig_hw)]
-        sp._is_image_set = True
-        if hasattr(sp, "_is_batch"):
-            sp._is_batch = entry.is_batch
+    # ---------- 缓存辅助 ----------
+
+    def _prime_state(
+        self, image: Image.Image | None, cache_key: str | None
+    ) -> tuple[dict, int, int, bool]:
+        """获取一个干净 state dict (含 backbone_out + 原图尺寸). 命中 cache 跳过 set_image."""
+        if cache_key and self.embedding_cache is not None:
+            entry = self.embedding_cache.get(cache_key)
+            if entry is not None:
+                # 复用缓存的 backbone_out (内含 GPU 张量, 同 device, 不需拷贝).
+                state = {
+                    "backbone_out": dict(entry.features),  # shallow copy: 外层 dict 隔离, 内层张量共享
+                    "original_height": entry.orig_hw[0],
+                    "original_width": entry.orig_hw[1],
+                }
+                return state, entry.wh[0], entry.wh[1], True
+
+        if image is None:
+            raise ValueError("image is required when cache miss")
+        # set_image 内部会 normalize + resize + backbone.forward_image, 写入 state.
+        state = self._processor.set_image(image)
+        w, h = image.size
+        if cache_key and self.embedding_cache is not None:
+            # 缓存的是干净 backbone_out (此时还没跑过任何 prompt, 没有 language_features 污染).
+            self.embedding_cache.put(
+                cache_key,
+                CacheEntry(
+                    features=dict(state["backbone_out"]),  # shallow copy
+                    orig_hw=(state["original_height"], state["original_width"]),
+                    is_batch=False,
+                    wh=(w, h),
+                ),
+            )
+        return state, w, h, False
+
+    def _apply_score_threshold(self, score_threshold: float | None) -> None:
+        """per-request 阈值覆盖. 单 worker 串行执行下安全; 多 worker 需重新设计."""
+        eff = self.score_threshold if score_threshold is None else float(score_threshold)
+        self._processor.confidence_threshold = eff
 
     # ---------- 公开 prompt 接口 ----------
 
-    def predict_point(
+    def predict_text(
         self,
         image: Image.Image | None,
-        points: list[list[float]],
-        labels: list[int],
+        text: str,
         *,
+        output: str = "mask",
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
+        score_threshold: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
-        """返回 (results, cache_hit). image=None 仅在 cache_key 命中时可省."""
-        w, h, hit = self._prime_sam(image, cache_key)
-        px = np.array([[p[0] * w, p[1] * h] for p in points], dtype=np.float32)
-        lab = np.array(labels, dtype=np.int32)
-        masks, scores, _ = self._image_predictor.predict(
-            point_coords=px, point_labels=lab, multimask_output=False
-        )
-        return self._masks_to_results(masks, scores, w, h, simplify_tolerance), hit
+        """SAM 3 PCS text prompt 单模型一步出 mask.
+        - "box":  跳过 mask → polygon 简化, 返回 rectanglelabels
+        - "mask": 默认; mask → polygon, 返回 polygonlabels
+        - "both": 同 instance 配对返回 [rect, poly]
+        """
+        self._apply_score_threshold(score_threshold)
+        state, w, h, hit = self._prime_state(image, cache_key)
+        self._processor.reset_all_prompts(state)
+        state = self._processor.set_text_prompt(text.strip(), state)
+
+        boxes, masks, scores = self._extract_outputs(state)
+        # cleanup: reset 让 backbone_out 回到干净态, 下次缓存命中可用.
+        self._processor.reset_all_prompts(state)
+
+        if masks is None or len(masks) == 0:
+            logger.info("SAM 3 returned 0 instances for text=%r", text)
+            return [], hit
+
+        return self._build_results(
+            boxes, masks, scores, w, h, label=text.strip(), output=output,
+            simplify_tolerance=simplify_tolerance, prompt_name="text",
+        ), hit
 
     def predict_bbox(
         self,
@@ -161,81 +201,16 @@ class SAM3Predictor:
         *,
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
-    ) -> tuple[list[dict[str, Any]], bool]:
-        w, h, hit = self._prime_sam(image, cache_key)
-        x1, y1, x2, y2 = bbox
-        box_px = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
-        masks, scores, _ = self._image_predictor.predict(
-            point_coords=None, point_labels=None, box=box_px[None, :], multimask_output=False
-        )
-        return self._masks_to_results(masks, scores, w, h, simplify_tolerance), hit
-
-    def predict_text(
-        self,
-        image: Image.Image,
-        text: str,
-        *,
-        output: str = "mask",
-        cache_key: str | None = None,
-        simplify_tolerance: float | None = None,
         score_threshold: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
-        """SAM 3 PCS 文本 prompt 单模型一步出 mask (与 grounded-sam2 协议对齐):
-        - "box":  仅取 PCS 返回的 boxes, 跳过 mask → polygon 简化, 返回 rectanglelabels
-        - "mask": 默认; PCS 返回的 mask → polygon, 返回 polygonlabels
-        - "both": 同 instance 配对返回 [rectangle, polygon] 两条
-
-        与 grounded-sam2 的 DINO → SAM 复合不同, SAM 3 PCS 是单 backbone 一次前向,
-        但平台对外的 output 形态约定保持一致, 让前端 segmented control 复用.
+        """SAM 3 image API 中 bbox prompt 与 exemplar 是同一调用 (add_geometric_prompt),
+        语义都是「找全图与 box 内对象相似的所有实例」. 没有 SAM-2-style 的「这个 box 内部出一个 mask」.
+        用户期待单框单 mask 的场景请走 grounded-sam2-backend.
         """
-        w, h, hit = self._prime_sam(image, cache_key)
-        eff_score_th = (
-            self.score_threshold if score_threshold is None else float(score_threshold)
+        return self._predict_geometric(
+            image, bbox, cache_key=cache_key, simplify_tolerance=simplify_tolerance,
+            score_threshold=score_threshold, prompt_name="bbox",
         )
-        # vendor: SAM 3 PCS text prompt 接口签名以 vendor commit 为准. 通常返回
-        # masks (N, H, W) + boxes (N, 4) + scores (N,) + labels (N,) 四元组.
-        boxes_px, masks, scores, phrases = self._image_predictor.predict_text(
-            text=text.strip(),
-            score_threshold=eff_score_th,
-        )
-        if masks is None or len(masks) == 0:
-            logger.info("SAM 3 PCS returned 0 instances for text=%r", text)
-            return [], hit
-
-        if masks.ndim == 4:
-            masks = masks[:, 0]
-        default_label = text.strip()
-
-        def _label(i: int) -> str:
-            return phrases[i] if phrases is not None and i < len(phrases) else default_label
-
-        def _score(i: int) -> float:
-            return float(scores[i]) if scores is not None and i < len(scores) else 0.0
-
-        # box 模式: 跳过 mask → polygon 简化, 直接出 rectanglelabels
-        if output == "box":
-            return [
-                self._box_to_rect_label(boxes_px[i], w, h, _label(i), _score(i))
-                for i in range(len(boxes_px))
-            ], hit
-
-        eff_tol = (
-            DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
-        )
-        results: list[dict[str, Any]] = []
-        for i, mask in enumerate(masks):
-            label = _label(i)
-            score = _score(i)
-            rings = mask_to_multi_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))
-            if not rings:
-                continue
-            self._maybe_warn_vertex_count(rings, eff_tol, int(mask.sum()), prompt="text")
-            if output == "both":
-                results.append(self._box_to_rect_label(boxes_px[i], w, h, label, score))
-                results.append(self._rings_to_polygon_label(rings, label, score))
-            else:
-                results.append(self._rings_to_polygon_label(rings, label, score))
-        return results, hit
 
     def predict_exemplar(
         self,
@@ -246,65 +221,113 @@ class SAM3Predictor:
         simplify_tolerance: float | None = None,
         score_threshold: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
-        """v0.10.0 新增: SAM 3 PCS 视觉示例 prompt.
+        """v0.10.0 新增 exemplar prompt; 与 predict_bbox 同底层调用, 协议层语义不同."""
+        return self._predict_geometric(
+            image, exemplar_bbox, cache_key=cache_key, simplify_tolerance=simplify_tolerance,
+            score_threshold=score_threshold, prompt_name="exemplar",
+        )
 
-        输入: 图中已有的一个 bbox (归一化 [0,1]) 作为视觉示例.
-        输出: 全图相似实例的 polygonlabels, label 统一为 "object" (前端按当前 active label
-              批量改写; 与 point/bbox 路径对齐).
-        """
-        w, h, hit = self._prime_sam(image, cache_key)
-        x1, y1, x2, y2 = exemplar_bbox
-        exemplar_px = np.array([x1 * w, y1 * h, x2 * w, y2 * h], dtype=np.float32)
-        eff_score_th = (
-            self.score_threshold if score_threshold is None else float(score_threshold)
+    def _predict_geometric(
+        self,
+        image: Image.Image | None,
+        bbox: list[float],
+        *,
+        cache_key: str | None,
+        simplify_tolerance: float | None,
+        score_threshold: float | None,
+        prompt_name: str,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        self._apply_score_threshold(score_threshold)
+        state, w, h, hit = self._prime_state(image, cache_key)
+        self._processor.reset_all_prompts(state)
+
+        # 协议 bbox 是归一化 xyxy → 转 归一化 cxcywh
+        x1, y1, x2, y2 = bbox
+        cx = (x1 + x2) / 2.0
+        cy = (y1 + y2) / 2.0
+        bw = x2 - x1
+        bh = y2 - y1
+        state = self._processor.add_geometric_prompt(
+            [cx, cy, bw, bh], True, state
         )
-        # vendor: SAM 3 PCS exemplar prompt 接口以 vendor commit 为准.
-        boxes_px, masks, scores = self._image_predictor.predict_exemplar(
-            exemplar_box=exemplar_px,
-            score_threshold=eff_score_th,
-        )
+
+        boxes, masks, scores = self._extract_outputs(state)
+        self._processor.reset_all_prompts(state)
+
         if masks is None or len(masks) == 0:
             logger.info(
-                "SAM 3 PCS returned 0 similar instances for exemplar=%s", exemplar_bbox
+                "SAM 3 returned 0 similar instances for %s bbox=%s", prompt_name, bbox
             )
             return [], hit
 
-        if masks.ndim == 4:
-            masks = masks[:, 0]
+        # geometric prompt 没有自然 label, 用 "object" 占位; workbench 会按当前 active label 重写.
+        return self._build_results(
+            boxes, masks, scores, w, h, label="object", output="mask",
+            simplify_tolerance=simplify_tolerance, prompt_name=prompt_name,
+        ), hit
+
+    # ---------- 输出处理 ----------
+
+    @staticmethod
+    def _extract_outputs(state: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """把 state 中的 GPU 张量提到 numpy."""
+        boxes_t = state.get("boxes")
+        masks_t = state.get("masks")
+        scores_t = state.get("scores")
+        if masks_t is None or len(masks_t) == 0:
+            return (
+                np.empty((0, 4), dtype=np.float32),
+                np.empty((0,), dtype=bool),
+                np.empty((0,), dtype=np.float32),
+            )
+        boxes = boxes_t.detach().cpu().numpy()
+        # masks shape: (N, 1, H, W) bool → (N, H, W)
+        if masks_t.ndim == 4:
+            masks = masks_t[:, 0].detach().cpu().numpy()
+        else:
+            masks = masks_t.detach().cpu().numpy()
+        scores = scores_t.detach().cpu().numpy() if scores_t is not None else np.zeros(len(boxes))
+        return boxes, masks, scores
+
+    def _build_results(
+        self,
+        boxes: np.ndarray,
+        masks: np.ndarray,
+        scores: np.ndarray,
+        w: int,
+        h: int,
+        *,
+        label: str,
+        output: str,
+        simplify_tolerance: float | None,
+        prompt_name: str,
+    ) -> list[dict[str, Any]]:
         eff_tol = (
             DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
         )
         results: list[dict[str, Any]] = []
+
+        if output == "box":
+            for i in range(len(boxes)):
+                results.append(self._box_to_rect_label(boxes[i], w, h, label, float(scores[i])))
+            return results
+
         for i, mask in enumerate(masks):
-            score = float(scores[i]) if scores is not None and i < len(scores) else 0.0
-            rings = mask_to_multi_polygon(mask, tolerance=eff_tol, normalize_to=(w, h))
+            score = float(scores[i])
+            rings = mask_to_multi_polygon(
+                mask.astype(np.uint8), tolerance=eff_tol, normalize_to=(w, h)
+            )
             if not rings:
                 continue
-            self._maybe_warn_vertex_count(rings, eff_tol, int(mask.sum()), prompt="exemplar")
-            results.append(self._rings_to_polygon_label(rings, "object", score))
-        return results, hit
-
-    # ---------- 共用 prime / 形状转换 ----------
-
-    def _prime_sam(
-        self, image: Image.Image | None, cache_key: str | None
-    ) -> tuple[int, int, bool]:
-        """命中: restore state, 返回 (w, h, True). 未命中: set_image + put, 返回 (w, h, False).
-
-        cache_key=None 时绕过缓存.
-        """
-        if cache_key and self.embedding_cache is not None:
-            entry = self.embedding_cache.get(cache_key)
-            if entry is not None:
-                self._restore_sam(entry)
-                return entry.wh[0], entry.wh[1], True
-        if image is None:
-            raise ValueError("image is required when cache miss")
-        np_img, w, h = self._to_numpy(image)
-        self._image_predictor.set_image(np_img)
-        if cache_key and self.embedding_cache is not None:
-            self.embedding_cache.put(cache_key, self._snapshot_sam(w, h))
-        return w, h, False
+            self._maybe_warn_vertex_count(
+                rings, eff_tol, int(mask.sum()), prompt=prompt_name
+            )
+            if output == "both":
+                results.append(self._box_to_rect_label(boxes[i], w, h, label, score))
+                results.append(self._rings_to_polygon_label(rings, label, score))
+            else:
+                results.append(self._rings_to_polygon_label(rings, label, score))
+        return results
 
     @staticmethod
     def _box_to_rect_label(
@@ -314,7 +337,7 @@ class SAM3Predictor:
         label: str,
         score: float,
     ) -> dict[str, Any]:
-        """像素 xyxy → 归一化 [0,1] 的 rectanglelabels 字典."""
+        """像素 xyxy → 归一化 [0,1] 的 rectanglelabels 字典 (与 grounded-sam2 同源)."""
         x1, y1, x2, y2 = float(box_px[0]), float(box_px[1]), float(box_px[2]), float(box_px[3])
         return {
             "type": "rectanglelabels",
@@ -332,13 +355,7 @@ class SAM3Predictor:
     def _rings_to_polygon_label(
         rings: list[MultiPolygonRing], label: str, score: float
     ) -> dict[str, Any]:
-        """mask_to_multi_polygon 输出 → LabelStudio polygonlabels shape.
-
-        与 grounded-sam2-backend 字面完全一致 (v0.9.14 智能选择):
-        - 单连通无 hole → {points, polygonlabels}
-        - 单连通带 hole → {points, holes, polygonlabels}
-        - 多连通       → {polygons:[{points,holes?},...], polygonlabels}
-        """
+        """与 grounded-sam2 完全一致的 polygonlabels 智能字面 (v0.9.14)."""
         if len(rings) == 1 and not rings[0]["holes"]:
             return {
                 "type": "polygonlabels",
@@ -389,39 +406,3 @@ class SAM3Predictor:
                 prompt,
                 len(rings),
             )
-
-    @staticmethod
-    def _to_numpy(image: Image.Image) -> tuple[np.ndarray, int, int]:
-        arr = np.array(image)
-        h, w = arr.shape[:2]
-        return arr, w, h
-
-    def _masks_to_results(
-        self,
-        masks: np.ndarray,
-        scores: np.ndarray | None,
-        w: int,
-        h: int,
-        simplify_tolerance: float | None = None,
-    ) -> list[dict[str, Any]]:
-        if masks.ndim == 4:
-            masks = masks[:, 0]
-        out: list[dict[str, Any]] = []
-        eff_tol = (
-            DEFAULT_SIMPLIFY_TOLERANCE if simplify_tolerance is None else float(simplify_tolerance)
-        )
-        for i, mask in enumerate(masks):
-            rings = mask_to_multi_polygon(
-                mask, tolerance=eff_tol, normalize_to=(w, h)
-            )
-            if not rings:
-                continue
-            self._maybe_warn_vertex_count(
-                rings, eff_tol, int(mask.sum()), prompt="point/bbox"
-            )
-            score = float(scores[i]) if scores is not None and i < len(scores) else None
-            entry = self._rings_to_polygon_label(rings, "object", score or 0.0)
-            if score is None:
-                entry.pop("score", None)
-            out.append(entry)
-        return out

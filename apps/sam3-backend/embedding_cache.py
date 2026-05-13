@@ -24,8 +24,17 @@ from urllib.parse import urlsplit
 class CacheEntry:
     """一条缓存的 SAM 3 image embedding 状态快照.
 
-    字段命名跟随 SAM 3 image predictor 内部属性 (vendor commit 见 README.md).
-    sync_vendor.sh 升级 commit 时必须人肉跑一次集成验收, 确认这几个属性名未变.
+    `features` 持有 Sam3Processor.set_image() 写到 state["backbone_out"] 的字典:
+    包含 vision tower features + (若 inst_interactivity 开启) sam2_backbone_out 等.
+    其内部张量在 GPU 上, 不做深拷贝 (LRU 容量是显存上限的物理保证).
+
+    `orig_hw = (original_height, original_width)`, `wh = (image.width, image.height)`,
+    两者冗余但分别对应 _forward_grounding 用的 height/width 和我们 polygon 归一化用的 (w, h).
+
+    `is_batch` 给未来 set_image_batch 留位; v0.10.0 不用.
+
+    sync_vendor.sh 升级 commit 时务必跑端到端验收, 确认 Sam3Processor.set_image() 写到 state
+    的 keys (`backbone_out`, `original_height`, `original_width`) 仍然一致.
     """
 
     features: dict[str, Any]
