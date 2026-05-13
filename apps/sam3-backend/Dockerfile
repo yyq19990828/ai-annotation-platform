@@ -1,13 +1,19 @@
-# Base image / 编译工具链与官仓 facebookresearch/sam3/Dockerfile 对齐:
-#   - cuda12.6-cudnn-devel (而非 runtime): SAM 3 训练相关算子需 nvcc; 推理 image predictor
-#     在某些 CUDA kernel (FlashAttention / custom ops) 上也需现场编译.
-#   - gcc-10 / g++-10: 与 CUDA 12.6 兼容性以官仓推荐为准, 升级 vendor commit 时复核.
-# torch / torchvision 已由 base image 预装, pyproject.toml 不重复锁.
-FROM pytorch/pytorch:2.7.0-cuda12.6-cudnn-devel
+# Base image / 编译工具链对齐 vendor/sam3/README.md (commit 4cbac14):
+#   - torch >= 2.7 (vendor README §70 写下限); 选 2.7.1 是该系列最末稳定版
+#   - CUDA >= 12.6 (同上下限); 选 12.8 与 vendor 的 cu128 wheel index 对齐
+#   - cudnn9-devel (devel 而非 runtime — vendor 某些 CUDA 扩展需 nvcc 现场编译;
+#     `cudnn9` 是 cudnn 大版本号必须带的后缀)
+# torch / torchvision 已由 base image 预装 (2.7.1 + 对应 torchvision),
+# pyproject.toml 不重复锁; 与 grounded-sam2-backend 同款策略.
+#
+# mirror 注意: 若你的 docker mirror 无该 tag, 备选:
+#   - pytorch/pytorch:2.7.1-cuda12.6-cudnn9-devel  (CUDA 12.6 下限)
+#   - pytorch/pytorch:2.8.0-cuda12.8-cudnn9-devel  (更新更好, 不一定存在)
+FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
 
 ARG USE_CUDA=1
-# 覆盖 A100 (8.0) / RTX 30 (8.6) / RTX 40 / Ada (8.9) / H100 (9.0) / H200 (9.0).
-# 不包含 7.x (V100/T4) — 路线图明确 SAM 3 不部署在老卡; 4060 显存也吃紧, 走 grounded-sam2.
+# 覆盖 A100 (8.0) / RTX 30 (8.6) / RTX 40 / Ada (8.9) / H100 / H200 (9.0).
+# 不含 7.x (V100/T4) — 路线图明确 SAM 3 不部 4060/老卡; sam3 显存吃紧.
 ARG TORCH_ARCH="8.0;8.6;8.9;9.0"
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -19,9 +25,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     AM_I_DOCKER=True \
     BUILD_WITH_CUDA=${USE_CUDA} \
     TORCH_CUDA_ARCH_LIST=${TORCH_ARCH} \
-    CUDA_HOME=/usr/local/cuda-12.6/ \
-    PATH=/usr/local/cuda-12.6/bin:${PATH} \
-    LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64:${LD_LIBRARY_PATH}
+    CUDA_HOME=/opt/conda \
+    PATH=/opt/conda/bin:${PATH}
 
 WORKDIR /app
 
@@ -30,23 +35,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
         ninja-build \
-        gcc-10 \
-        g++-10 \
+        gcc \
+        g++ \
         libgl1 \
         libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-ENV CC=gcc-10 \
-    CXX=g++-10
-
-# 平台 backend 自身依赖 (不含 torch / torchvision; base image 已锁 2.7.0).
+# 平台 backend 自身依赖 (不含 torch / torchvision; base image 已锁 2.7.1).
 RUN pip install --upgrade "pip" "setuptools>=68" "wheel" && \
     pip install \
         "fastapi>=0.110" \
         "uvicorn[standard]>=0.27" \
         "pydantic>=2.5" \
         "httpx>=0.27" \
-        "numpy>=1.26,<3.0" \
+        "numpy>=1.26,<2.0" \
         "pillow>=10.0" \
         "opencv-python-headless>=4.9" \
         "shapely>=2.0" \
@@ -61,7 +63,8 @@ RUN pip install --upgrade "pip" "setuptools>=68" "wheel" && \
 # 启动方式: `docker compose --profile gpu-sam3 build sam3-backend`
 # 直接 build: `docker build -f apps/sam3-backend/Dockerfile apps/`
 
-# vendor 含上游 facebookresearch/sam3 全树; 通过 scripts/sync_vendor.sh 同步并固定 commit.
+# vendor 含上游 facebookresearch/sam3 全树 (commit 见 vendor/sam3/.commit);
+# 通过 scripts/sync_vendor.sh 同步并固定 commit.
 COPY sam3-backend/vendor/ ./vendor/
 RUN if [ ! -d "vendor/sam3" ] || [ -z "$(ls -A vendor/sam3 2>/dev/null)" ]; then \
         echo "ERROR: vendor/sam3 is empty. Run sam3-backend/scripts/sync_vendor.sh <commit> on host before 'docker build'." >&2; \
@@ -80,6 +83,6 @@ RUN mkdir -p /app/checkpoints /app/.cache/huggingface
 
 EXPOSE 8002
 
-# 启动时下载 sam3.1 权重 (gated, 必须 HF_TOKEN), 然后启 uvicorn.
+# 启动时下载 sam3.1 权重 + config (gated, 必须 HF_TOKEN), 然后启 uvicorn.
 # 已下载会跳过, 失败 fail-fast 避免半残上线.
 ENTRYPOINT ["/bin/bash", "-c", "python /app/scripts/download_checkpoints.py && exec uvicorn main:app --host 0.0.0.0 --port 8002 --workers 1"]

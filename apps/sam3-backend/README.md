@@ -100,11 +100,13 @@ git add vendor/sam3 && git commit -m "vendor: bump sam3 to <commit-sha>"
 ## 本地启动 (GPU 主机)
 
 前置条件:
-- NVIDIA driver ≥ **555** (CUDA 12.6 minimum); 老机房需先升驱动.
+- NVIDIA driver ≥ **570** (CUDA 12.8 minimum, 对齐 vendor README §70); 老机房需先升驱动.
 - `nvidia-container-toolkit` 已装好.
 - 主机 GPU 架构在 `TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"` 范围内 (A100 / RTX 30 / RTX 40 / H100 / H200).
 - 显存建议 ≥ 16 GB (FP16 下 sam3 单图 ~6-7 GB, 留余量做 batch).
 - `.env` 已配 `HF_TOKEN` 并接受 sam3.1 license.
+
+**镜像 mirror 注意**: Dockerfile 用 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` (torch + CUDA + cudnn 一站式, 不需要 pip 重装 torch). 若 mirror 无该 tag, 备选 `pytorch/pytorch:2.7.1-cuda12.6-cudnn9-devel` (CUDA 12.6 下限) 或 `pytorch/pytorch:2.8.0-cuda12.8-cudnn9-devel` (更新, 不一定存在). vendor README §82 推荐的是 `torch==2.10.0+cu128`, 我们用 2.7.1 已满足 vendor §70 的「torch >= 2.7」下限, 换取镜像可用性.
 
 ```bash
 # 1. 同步 vendor (一次性)
