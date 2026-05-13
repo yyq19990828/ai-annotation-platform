@@ -61,22 +61,16 @@ RUN pip install --upgrade "pip" "setuptools>=68,<81" "wheel" && \
         "pynvml>=11.5" \
         "psutil>=5.9" \
         "einops>=0.7" \
-        "hydra-core>=1.3" \
-        "omegaconf>=2.3" \
-        "scipy>=1.11" \
-        "scikit-image>=0.22" \
-        "scikit-learn>=1.3" \
         "pycocotools>=2.0" \
         "open_clip_torch>=2.24"
 
-# 上面 8 个补丁是 vendor/sam3 在 pyproject 里漏列的运行时 import (grep sam3/ 拿到):
-#   einops          — sam3/sam/rope.py 用; SAM 注意力机制必经
-#   hydra-core      — sam3 模型构造走 hydra config 系统
-#   omegaconf       — hydra 底层 schema; 与 hydra-core 配套
-#   scipy / scikit-image / scikit-learn — segmentation 后处理 / 评估指标常用
-#   pycocotools     — mask 编解码 (RLE) 工具
-#   open_clip_torch — sam3 text encoder backbone
-# 如启动时再报新 ModuleNotFoundError, 加到这块 + sync_vendor.sh 升级 commit 时复核.
+# 三个手工补丁是 vendor 真实运行时 import 但 [train] extra 没覆盖的:
+#   einops          — sam3/sam/rope.py 用; vendor 只在 [notebooks] extra 里列, 但 notebooks 还
+#                     夹带 jupyter/ipywidgets/decord 等 200MB+ 运行时无关包, 不值得整 extra
+#   pycocotools     — vendor 在 [dev] 和 [notebooks] extras 里, dev 还夹带 pytest/black/yt-dlp 等
+#   open_clip_torch — sam3 text encoder backbone; vendor pyproject 完全漏列, 必须手补
+# hydra-core / omegaconf / scipy / scikit-image / scikit-learn / torchmetrics 走下面的
+# `pip install -e ./vendor/sam3[train]` 一并装入, 不在这里重复.
 
 # build context 是 apps/ (与 grounded-sam2-backend 一致); 所有 COPY 路径以 apps/ 为根.
 # 启动方式: `docker compose --profile gpu-sam3 build sam3-backend`
@@ -85,11 +79,15 @@ RUN pip install --upgrade "pip" "setuptools>=68,<81" "wheel" && \
 # vendor 含上游 facebookresearch/sam3 全树 (commit 见 vendor/sam3/.commit);
 # 通过 scripts/sync_vendor.sh 同步并固定 commit.
 COPY sam3-backend/vendor/ ./vendor/
+# 带 [train] extra: 拉 vendor 自己声明的 hydra-core / omegaconf / scipy / scikit-image /
+# scikit-learn / torchmetrics / fvcore / fairscale / submitit / tensorboard / zstandard.
+# 部分 train 专用包 (submitit/fairscale/tensorboard) 推理路径用不到, 镜像多吃 ~50MB,
+# 远比手工 grep 漏装翻车便宜. notebooks extra 拉 jupyter/ipywidgets 等 200MB+ 不要.
 RUN if [ ! -d "vendor/sam3" ] || [ -z "$(ls -A vendor/sam3 2>/dev/null)" ]; then \
         echo "ERROR: vendor/sam3 is empty. Run sam3-backend/scripts/sync_vendor.sh <commit> on host before 'docker build'." >&2; \
         exit 1; \
     fi && \
-    pip install --no-build-isolation -e ./vendor/sam3
+    pip install --no-build-isolation -e "./vendor/sam3[train]"
 
 # 共享 mask_utils 包 (apps/_shared/mask_utils) editable 安装, 与 grounded-sam2-backend 共用.
 COPY _shared/mask_utils/ /app/mask_utils/
