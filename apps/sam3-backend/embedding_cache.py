@@ -1,0 +1,119 @@
+"""SAM 3 image embedding LRU 缓存 (v0.10.0 / M0).
+
+直接镜像 grounded-sam2-backend 的 EmbeddingCache 设计 (cap 32, LRU, 线程安全):
+SAM 3 单次 image encoder 前向 ~ 1-2s (3090 / A100), 缓存命中后同图二次 prompt
+跳过 encoder, 与 sam2 缓存机制语义等价.
+
+Key 设计差异: variant 标签固定为 "sam3.1" (SAM 3 仅一档 848M, 无 tiny/large 之分),
+但仍保留 sam_variant 字段以便未来量化版本接入时分桶 (e.g. "sam3.1-int8").
+sam2 缓存与 sam3 缓存互不共享 (embedding 来自不同模型, 不能跨), 由 cache_key 包含 variant
+天然隔离.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import threading
+from collections import OrderedDict
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urlsplit
+
+
+@dataclass
+class CacheEntry:
+    """一条缓存的 SAM 3 image embedding 状态快照.
+
+    字段命名跟随 SAM 3 image predictor 内部属性 (vendor commit 见 README.md).
+    sync_vendor.sh 升级 commit 时必须人肉跑一次集成验收, 确认这几个属性名未变.
+    """
+
+    features: dict[str, Any]
+    orig_hw: tuple[int, int]
+    is_batch: bool
+    wh: tuple[int, int]
+
+
+def compute_cache_key(file_path: str, sam_variant: str) -> str:
+    """`sha1(url_path|variant)`.
+
+    HTTP/HTTPS URL 剥掉 query string (MinIO presigned signature TTL 滚动会让原串变,
+    但底层对象不变); 本地路径直接用原串.
+    """
+    if file_path.startswith(("http://", "https://")):
+        parts = urlsplit(file_path)
+        identity = f"{parts.scheme}://{parts.netloc}{parts.path}"
+    else:
+        identity = file_path
+    payload = f"{identity}|{sam_variant}".encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+class EmbeddingCache:
+    """线程安全 LRU. FastAPI 单 worker 也加锁, 与 grounded-sam2-backend 实现完全一致."""
+
+    def __init__(self, capacity: int = 32, sam_variant: str = "sam3.1") -> None:
+        if capacity <= 0:
+            raise ValueError("capacity must be positive")
+        self._capacity = capacity
+        self._sam_variant = sam_variant
+        self._store: OrderedDict[str, CacheEntry] = OrderedDict()
+        self._lock = threading.Lock()
+        self._hits = 0
+        self._misses = 0
+
+    @property
+    def capacity(self) -> int:
+        return self._capacity
+
+    @property
+    def sam_variant(self) -> str:
+        return self._sam_variant
+
+    def get(self, key: str) -> CacheEntry | None:
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                self._misses += 1
+                return None
+            self._store.move_to_end(key)
+            self._hits += 1
+            return entry
+
+    def peek(self, key: str) -> bool:
+        """检查 key 是否存在, 不动 LRU 顺序也不计入 hits/misses."""
+        with self._lock:
+            return key in self._store
+
+    def put(self, key: str, entry: CacheEntry) -> None:
+        with self._lock:
+            if key in self._store:
+                self._store.move_to_end(key)
+                self._store[key] = entry
+                return
+            self._store[key] = entry
+            if len(self._store) > self._capacity:
+                self._store.popitem(last=False)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._store.clear()
+            self._hits = 0
+            self._misses = 0
+
+    def stats(self) -> dict[str, Any]:
+        with self._lock:
+            total = self._hits + self._misses
+            hit_rate = (self._hits / total) if total else 0.0
+            return {
+                "size": len(self._store),
+                "capacity": self._capacity,
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate": round(hit_rate, 4),
+                "variant": self._sam_variant,
+            }
+
+    def size(self) -> int:
+        with self._lock:
+            return len(self._store)

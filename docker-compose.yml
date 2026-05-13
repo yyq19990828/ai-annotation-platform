@@ -142,6 +142,9 @@ services:
       TEXT_THRESHOLD: ${TEXT_THRESHOLD:-0.25}
       HF_HOME: /app/.cache/huggingface
       LOG_LEVEL: ${GSAM2_LOG_LEVEL:-INFO}
+      # B-28+ · 空闲 N 秒后自动卸载模型释放显存; <=0 关闭定时卸载, 仍可手动 POST /unload.
+      IDLE_UNLOAD_SECONDS: ${IDLE_UNLOAD_SECONDS:-600}
+      IDLE_CHECK_INTERVAL: ${IDLE_CHECK_INTERVAL:-60}
     volumes:
       - gsam2_checkpoints:/app/checkpoints
       - gsam2_hf_cache:/app/.cache/huggingface
@@ -158,6 +161,46 @@ services:
       timeout: 10s
       retries: 3
       start_period: 120s
+
+  # v0.10.0+ SAM 3 ML Backend (facebookresearch/sam3 + facebook/sam3.1 weights).
+  # 独立 profile `gpu-sam3` (与 grounded-sam2 的 `gpu` profile 解耦, 让用户单独控制):
+  #   docker compose --profile gpu-sam3 up sam3-backend
+  # 两个 backend 可并存; sam3 是高精度首选 (3090/A100), grounded-sam2 兜底 (4060 友好).
+  # 首次启动会下载 sam3.1 权重 (~3.2GB, gated, 需 HF_TOKEN), start_period 留足 180s.
+  sam3-backend:
+    build:
+      context: ./apps
+      dockerfile: sam3-backend/Dockerfile
+    profiles: ["gpu-sam3"]
+    ports:
+      - "8002:8002"
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+      HF_HOME: /app/.cache/huggingface
+      SAM3_EMBEDDING_CACHE_SIZE: ${SAM3_EMBEDDING_CACHE_SIZE:-32}
+      SAM3_SCORE_THRESHOLD: ${SAM3_SCORE_THRESHOLD:-0.5}
+      LOG_LEVEL: ${SAM3_LOG_LEVEL:-INFO}
+      # 空闲 N 秒后自动卸载模型释放显存; <=0 关闭定时卸载, 仍可手动 POST /unload.
+      # sam3 显存占用 ~7GB FP16, 与 grounded-sam2 并存时强烈建议保留 idle unload.
+      # SAM3_ 前缀, 与 grounded-sam2 的 IDLE_UNLOAD_SECONDS 解耦, 两个 backend 可独立调.
+      SAM3_IDLE_UNLOAD_SECONDS: ${SAM3_IDLE_UNLOAD_SECONDS:-600}
+      SAM3_IDLE_CHECK_INTERVAL: ${SAM3_IDLE_CHECK_INTERVAL:-60}
+    volumes:
+      - sam3_checkpoints:/app/checkpoints
+      - sam3_hf_cache:/app/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
 
   # v0.8.8 · 可观测性 stack（默认 profile=monitoring 不启动，避免 dev 多吃 ~200MB）
   # 启动方式：`docker compose --profile monitoring up -d prometheus grafana`
@@ -199,5 +242,7 @@ volumes:
   miniodata:
   gsam2_checkpoints:
   gsam2_hf_cache:
+  sam3_checkpoints:
+  sam3_hf_cache:
   prometheus_data:
   grafana_data:
