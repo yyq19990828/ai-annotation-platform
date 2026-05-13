@@ -1,8 +1,29 @@
 """SAM 3 推理封装 (v0.10.0 / M0).
 
-vendor 形态: vendor/sam3/ 下放上游 facebookresearch/sam3 副本 (固定 commit,
-通过 scripts/sync_vendor.sh 同步). 本模块对 vendor 内的 SAM 3 image predictor 做
-一层 prompt 适配, 返回平台协议要求的 polygonlabels / rectanglelabels 字典数组.
+⚠️ **WIP — 2026-05-13**: 本文件在 vendor pull 之前基于路线图描述的假设 API 写就,
+拉到 facebookresearch/sam3 commit 4cbac14 后核对发现 6 处主要不匹配 (见下方
+TODO 块). 不要直接 build/部署本文件; 重写工作单独切一刀, 进度见
+docs/plans/2026-05-13-v0.10.0.x-sam3-predictor-rewrite.md (TBD).
+
+### TODO: predictor.py vendor 对齐重写
+1. 工厂签名: `build_sam3_image_model(bpe_path=..., checkpoint_path=...)` (不是 `checkpoint=`,
+   且 bpe_path 必填). 默认 `load_from_HF=True` 自动从 HF 拉权重.
+2. **API 完全不同**: 必须套 `from sam3.model.sam3_image_processor import Sam3Processor`,
+   是 stateful dict 模式; `processor.set_image(image) → state`, 然后
+   `set_text_prompt(state, prompt=...)` 或 `add_geometric_prompt(state, box, label=True/False)`
+   写副作用到 `state["masks"|"boxes"|"scores"]`. 没有 `model.predict(point_coords=..., box=...)`.
+3. **bbox 输入是归一化 cxcywh** (中心 + 宽高), 不是 xyxy. 用 `box_xywh_to_cxcywh` 转换.
+4. **exemplar 没有独立 API**: 就是 `add_geometric_prompt(state, box, label=True)`, 可累积多个
+   正负样本框 (label=False 是负样本). type=exemplar 与 type=bbox 在底层是同一调用.
+5. **embedding cache 字段重设计**: 真实可缓存对象是 `state["backbone_out"]` 整个 dict;
+   `CacheEntry` 的 `features/_orig_hw/_is_batch` 字段名要换.
+6. **point prompt 不在 image API 里**: Sam3Processor 只暴露 text + box geometric.
+   点要走 `enable_inst_interactivity=True` 的 `SAM3InteractiveImagePredictor` (独立模型路径,
+   额外 ~2-3GB 显存). 产品上待定是否支持; 暂保留方法签名但不能跑.
+
+mask → polygon 简化逻辑与 grounded-sam2-backend 共用 apps/_shared/mask_utils
+**这部分仍然有效**, 重写时直接复用.
+"""
 
 SAM 3 vs Grounded-SAM-2 推理路径差异:
 - text 路径: SAM 3 PCS 单模型一步出 mask, 不再走 DINO → SAM 复合链

@@ -32,8 +32,24 @@ echo "==> wiping previous vendor copy at ${VENDOR_DIR}"
 rm -rf "${VENDOR_DIR}"
 mkdir -p "${VENDOR_DIR}"
 
-echo "==> rsyncing (excluding .git)"
-rsync -a --exclude='.git' "${TMP_DIR}/sam3/" "${VENDOR_DIR}/"
+echo "==> rsyncing (excluding .git + 大文件 > 2 MB / 仓库 pre-commit 限制)"
+# 排除项:
+#   - .git: 显然
+#   - 大型 demo 资产 (gif/mp4/大 png) 和大 ipynb: pre-commit check-added-large-files
+#     默认拒绝 > 2 MB; 这些资产仅 README / 示例需要, 不影响运行时
+#   - eval gold/silver 大型 JSON: 评测数据集, 平台不跑这块
+#   - test/: vendor 自身的 pytest, 我们不跑
+rsync -a \
+    --exclude='.git' \
+    --exclude='*.gif' \
+    --exclude='*.mp4' \
+    --exclude='assets/saco_gold_annotation.png' \
+    --exclude='assets/veval/' \
+    --exclude='scripts/eval/' \
+    --exclude='examples/sam3_image_batched_inference.ipynb' \
+    --exclude='examples/sam3_image_predictor_example.ipynb' \
+    --exclude='test/' \
+    "${TMP_DIR}/sam3/" "${VENDOR_DIR}/"
 
 rm -rf "${TMP_DIR}"
 

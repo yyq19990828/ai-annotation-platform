@@ -69,9 +69,11 @@ bash scripts/sync_vendor.sh <commit-sha>
 git add vendor/sam3 && git commit -m "vendor: bump sam3 to <commit-sha>"
 ```
 
-**当前固定 commit**: _待 v0.10.0 实施时由首位接入者选定 facebookresearch/sam3 main HEAD 写入此处_.
+**当前固定 commit**: `4cbac146c1b5a1e3a7f5c6a894901090b4dfd65b` (2026-05-13 拉取, main HEAD: "Fix PYRE_MISSING_ANNOTATIONS issues in fbcode/deeplearning/projects/sam3_release/sam3/model/io_utils.py").
 
-升级 commit 时务必跑 5-clicks 集成验收, 复核 `predictor._snapshot_sam` / `_restore_sam` 引用的内部字段名 (`_features` / `_orig_hw` / `_is_image_set` / `_is_batch`) 仍然存在.
+> ⚠️ **2026-05-13 状态**: vendor 已就位 + 已核对真实 API; `predictor.py` / `embedding_cache.py` / `tests/` 当前是 vendor pull 之前基于假设写的, 与真实 API 有 6 处主要不匹配 (详见 `predictor.py` 顶部 TODO 块). **不可直接 build / 部署**, 单独切一刀重写.
+
+升级 commit 时务必跑 5-clicks 集成验收, 复核 `Sam3Processor` 公共方法签名 (`set_image` / `set_text_prompt` / `add_geometric_prompt` / `reset_all_prompts`) 与 `state` dict 字段 (`backbone_out` / `geometric_prompt` / `masks` / `boxes` / `scores`) 是否仍然存在.
 
 ---
 
