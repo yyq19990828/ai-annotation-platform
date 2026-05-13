@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
+import type { VideoTrackerJobState } from "@/hooks/useVideoTrackerJobs";
 import type { DiffMode } from "../modes/types";
 import { classColor } from "./colors";
 import { resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
@@ -13,6 +14,7 @@ import type {
   VideoTrackConversionOptions,
   VideoTrackGhost,
 } from "./videoStageTypes";
+import { VideoTrackerJobBadge } from "./VideoTrackerJobBadge";
 
 interface VideoTrackPanelProps {
   videoTracks: VideoTrackAnnotation[];
@@ -54,6 +56,11 @@ interface VideoTrackPanelProps {
   onDeleteTrackKeyframe: (annotation: VideoTrackAnnotation, targetFrame: number) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
   reviewDisplayMode?: DiffMode;
+  trackerJobsByAnnotation?: Record<string, VideoTrackerJobState>;
+  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  onCancelTrackerJob?: (jobId: string) => void;
+  onAcceptPredictionKeyframe?: (annotation: VideoTrackAnnotation, frameIndex: number) => void;
+  onRejectPredictionKeyframe?: (annotation: VideoTrackAnnotation, frameIndex: number) => void;
 }
 
 function frameRange(frames: number[]): string {
@@ -240,6 +247,11 @@ export function VideoTrackPanel({
   onDeleteTrackKeyframe,
   onConvertToBboxes,
   reviewDisplayMode,
+  trackerJobsByAnnotation = {},
+  onPropagateTrack,
+  onCancelTrackerJob,
+  onAcceptPredictionKeyframe,
+  onRejectPredictionKeyframe,
 }: VideoTrackPanelProps) {
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
@@ -551,7 +563,24 @@ export function VideoTrackPanel({
               >
                 <Icon name="arrowRight" size={13} />下一预测
               </Button>
+              <Button
+                size="sm"
+                style={{ ...compactButtonStyle, height: 30 }}
+                disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
+                title="发起 AI 传播 (Shift+T)"
+                onClick={() => onPropagateTrack?.(selectedTrack)}
+              >
+                <Icon name="bot" size={13} />AI 传播
+              </Button>
             </div>
+            {trackerJobsByAnnotation[selectedTrack.id] && (
+              <div data-testid="video-tracker-job-row" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <VideoTrackerJobBadge
+                  job={trackerJobsByAnnotation[selectedTrack.id]}
+                  onCancel={onCancelTrackerJob}
+                />
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
               <Button
                 size="sm"
@@ -641,6 +670,7 @@ export function VideoTrackPanel({
                 {sortedKeyframes(selectedTrack.geometry).map((kf) => (
                   <div
                     key={kf.frame_index}
+                    data-testid={kf.source === "prediction" ? "video-prediction-keyframe-row" : "video-track-keyframe-row"}
                     style={{
                       display: "grid",
                       gridTemplateColumns: "58px minmax(64px, 1fr) auto",
@@ -648,7 +678,9 @@ export function VideoTrackPanel({
                       alignItems: "center",
                       padding: "7px 10px",
                       borderTop: "1px solid var(--color-border)",
-                      background: "var(--color-bg-elev)",
+                      background: kf.source === "prediction"
+                        ? "color-mix(in oklab, var(--color-ai) 6%, var(--color-bg-elev))"
+                        : "var(--color-bg-elev)",
                       fontSize: 12,
                     }}
                   >
@@ -659,10 +691,13 @@ export function VideoTrackPanel({
                           width: 7,
                           height: 7,
                           borderRadius: 999,
-                          background: kf.absent ? "var(--color-danger)" : "oklch(0.68 0.16 145)",
+                          background: kf.absent ? "var(--color-danger)" : kf.source === "prediction" ? "oklch(0.78 0.14 78)" : "oklch(0.68 0.16 145)",
                         }}
                       />
                       {keyframeStatus(kf)}
+                      {kf.source === "prediction" && (
+                        <Badge variant="default" style={{ fontSize: 10, padding: "1px 6px" }}>预测</Badge>
+                      )}
                     </span>
                     <span style={{ display: "flex", gap: 5 }}>
                       <Button
@@ -674,6 +709,28 @@ export function VideoTrackPanel({
                       >
                         <Icon name="arrowRight" size={12} />跳转
                       </Button>
+                      {kf.source === "prediction" && onAcceptPredictionKeyframe && (
+                        <Button
+                          size="sm"
+                          style={{ ...keyframeButtonStyle, color: "var(--color-success)" }}
+                          disabled={readOnly}
+                          title="接受预测：source 改为 manual"
+                          onClick={() => onAcceptPredictionKeyframe(selectedTrack, kf.frame_index)}
+                        >
+                          <Icon name="check" size={12} />接受
+                        </Button>
+                      )}
+                      {kf.source === "prediction" && onRejectPredictionKeyframe && (
+                        <Button
+                          size="sm"
+                          style={{ ...keyframeButtonStyle, color: "var(--color-danger)" }}
+                          disabled={readOnly}
+                          title="拒绝预测：把该帧并入 outside"
+                          onClick={() => onRejectPredictionKeyframe(selectedTrack, kf.frame_index)}
+                        >
+                          <Icon name="x" size={12} />拒绝
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         style={keyframeButtonStyle}

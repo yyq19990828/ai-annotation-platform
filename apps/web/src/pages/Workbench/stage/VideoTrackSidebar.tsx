@@ -13,6 +13,7 @@ import {
 } from "./videoStageGeometry";
 import { addOutsideRange, isFrameOutside, removeOutsideFrame } from "./videoTrackOutside";
 import { VideoTrackPanel } from "./VideoTrackPanel";
+// VideoTrackerJobState type imported lazily via inline import in props
 import type {
   VideoFrameEntry,
   VideoTrackAnnotation,
@@ -41,6 +42,9 @@ interface VideoTrackSidebarProps {
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
   onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   reviewDisplayMode?: DiffMode;
+  trackerJobsByAnnotation?: Record<string, import("@/hooks/useVideoTrackerJobs").VideoTrackerJobState>;
+  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
+  onCancelTrackerJob?: (jobId: string) => void;
 }
 
 interface CopiedKeyframe {
@@ -85,6 +89,9 @@ export function VideoTrackSidebar({
   onConvertToBboxes,
   onComposeTracks,
   reviewDisplayMode,
+  trackerJobsByAnnotation,
+  onPropagateTrack,
+  onCancelTrackerJob,
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const selectedBboxes = useMemo(
@@ -299,6 +306,36 @@ export function VideoTrackSidebar({
     ? `${copiedKeyframe.className} ${shortTrackId(copiedKeyframe.trackId)} · F${copiedKeyframe.frameIndex}`
     : null;
 
+  const acceptPredictionKeyframe = useCallback(
+    (track: VideoTrackAnnotation, targetFrame: number) => {
+      if (readOnly) return;
+      const exact = track.geometry.keyframes.find((kf) => kf.frame_index === targetFrame);
+      if (!exact || exact.source !== "prediction") return;
+      const nextKeyframes = track.geometry.keyframes.map((kf) =>
+        kf.frame_index === targetFrame ? { ...kf, source: "manual" as const } : kf,
+      );
+      onUpdate(track, { ...track.geometry, keyframes: nextKeyframes });
+    },
+    [onUpdate, readOnly],
+  );
+
+  const rejectPredictionKeyframe = useCallback(
+    (track: VideoTrackAnnotation, targetFrame: number) => {
+      if (readOnly) return;
+      const exact = track.geometry.keyframes.find((kf) => kf.frame_index === targetFrame);
+      if (!exact || exact.source !== "prediction") return;
+      const nextKeyframes = track.geometry.keyframes.filter(
+        (kf) => kf.frame_index !== targetFrame,
+      );
+      const withOutside = addOutsideRange(
+        { ...track.geometry, keyframes: nextKeyframes },
+        { from: targetFrame, to: targetFrame, source: "prediction" },
+      );
+      onUpdate(track, withOutside);
+    },
+    [onUpdate, readOnly],
+  );
+
   return (
     <VideoTrackPanel
       videoTracks={videoTracks}
@@ -340,6 +377,11 @@ export function VideoTrackSidebar({
       onDeleteTrackKeyframe={deleteTrackKeyframe}
       onConvertToBboxes={onConvertToBboxes}
       reviewDisplayMode={reviewDisplayMode}
+      trackerJobsByAnnotation={trackerJobsByAnnotation}
+      onPropagateTrack={onPropagateTrack}
+      onCancelTrackerJob={onCancelTrackerJob}
+      onAcceptPredictionKeyframe={acceptPredictionKeyframe}
+      onRejectPredictionKeyframe={rejectPredictionKeyframe}
     />
   );
 }

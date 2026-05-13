@@ -39,6 +39,7 @@ sequenceDiagram
 |---|---|---|---|---|
 | 用户通知 | `/ws/notifications?token=<jwt>` | JWT (query param) | `notify:{user_id}` (`notification.py:27`) | 任务分配、AI 进度、导出完成、@提及 等 |
 | 预标注进度 | `/ws/projects/{project_id}/preannotate` | 无（依赖 cookie 会话） | `project:{project_id}:preannotate` (`ws.py:53`) | 单次自动预标注的 progress |
+| 视频 tracker job | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT (query param) | `video-tracker-job:{job_id}` (`video_tracker_runner.py`) | 单条 tracker job 的 `queued / started / window_progress / window_completed / completed / failed / cancelled` 事件 |
 
 base URL：`ws://<api-host>/ws/...` 或 `wss://...`。前端通过 `apps/web/src/hooks/useReconnectingWebSocket.ts` 处理重连。
 

@@ -120,6 +120,7 @@ export interface VideoMetadata {
 
 export interface TaskVideoManifestResponse {
   task_id: string;
+  dataset_item_id?: string | null;
   video_url: string;
   poster_url: string | null;
   metadata: VideoMetadata;

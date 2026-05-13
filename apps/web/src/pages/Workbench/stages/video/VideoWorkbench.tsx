@@ -7,6 +7,7 @@ import type {
   VideoTrackGeometry,
 } from "@/types";
 import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
+import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions } from "./useVideoAnnotationActions";
@@ -29,6 +30,7 @@ export interface VideoWorkbenchProps {
   readOnly: boolean;
   videoTool: VideoTool;
   pendingDrawing: PendingDrawing;
+  chapters?: VideoTimelineChapter[];
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: Geom) => void;
@@ -62,6 +64,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     readOnly,
     videoTool,
     pendingDrawing,
+    chapters,
     onSelect,
     onFrameIndexChange,
     onCreate,
@@ -90,6 +93,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         readOnly={readOnly}
         videoTool={videoTool}
         pendingDrawing={pendingDrawing}
+        chapters={chapters}
         onSelect={onSelect}
         onFrameIndexChange={onFrameIndexChange}
         onCreate={onCreate}

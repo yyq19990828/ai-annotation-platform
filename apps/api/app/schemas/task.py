@@ -79,6 +79,7 @@ class TaskFileUrlResponse(BaseModel):
 
 class TaskVideoManifestResponse(BaseModel):
     task_id: UUID
+    dataset_item_id: UUID | None = None
     video_url: str
     poster_url: str | None = None
     metadata: VideoMetadata

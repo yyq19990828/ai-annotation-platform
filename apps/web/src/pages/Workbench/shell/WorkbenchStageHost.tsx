@@ -14,6 +14,7 @@ import type { Viewport } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { VideoStageControls } from "../stage/VideoStage";
+import type { VideoTimelineChapter } from "../stage/VideoPlaybackOverlay";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
 import type { StageKind } from "../stages/types";
 import { ThreeDWorkbenchPlaceholder } from "../stages/three-d/ThreeDWorkbench.placeholder";
@@ -38,6 +39,7 @@ interface WorkbenchStageHostProps {
   videoFrameTimetable?: TaskVideoFrameTimetableResponse;
   videoManifestLoading?: boolean;
   videoManifestError?: unknown;
+  videoChapters?: VideoTimelineChapter[];
   videoTool: VideoTool;
   videoFrameIndex: number;
   videoReviewDisplayMode?: DiffMode;
@@ -127,6 +129,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     videoFrameTimetable,
     videoManifestLoading,
     videoManifestError,
+    videoChapters,
     videoTool,
     videoFrameIndex,
     videoReviewDisplayMode,
@@ -208,6 +211,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             readOnly={readOnly}
             videoTool={videoTool}
             pendingDrawing={pendingDrawing}
+            chapters={videoChapters}
             onSelect={onSelectBox}
             onFrameIndexChange={onVideoFrameIndexChange}
             onCreate={onVideoCreate}

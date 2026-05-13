@@ -38,8 +38,13 @@ import { useAnnotateMode } from "../modes/useAnnotateMode";
 import { useReviewMode } from "../modes/useReviewMode";
 import { setActiveClassesConfig, sortClassesByConfig, UNKNOWN_CLASS } from "../stage/colors";
 import type { VideoStageControls } from "../stage/VideoStage";
+import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
+import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { isVideoBbox, isVideoTrack, resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { useVideoChapters } from "@/hooks/useVideoChapters";
+import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
+import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { WorkbenchOverlays } from "./WorkbenchOverlays";
 import { WorkbenchLayout } from "./WorkbenchLayout";
@@ -194,6 +199,82 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const stageKind = currentProject?.type_key === "lidar" ? "3d" : isVideoTask ? "video" : "image";
   const videoManifest = useVideoManifest(taskId, isVideoTask);
   const videoFrameTimetable = useVideoFrameTimetable(taskId, isVideoTask && !!videoManifest.data);
+  const videoDatasetItemId = videoManifest.data?.dataset_item_id ?? null;
+  const videoChaptersQuery = useVideoChapters(isVideoTask ? videoDatasetItemId : null);
+  const videoChaptersData = videoChaptersQuery.data ?? [];
+  const videoTimelineChapters = useMemo(
+    () =>
+      videoChaptersData.map((c) => ({
+        id: c.id,
+        startFrame: c.start_frame,
+        endFrame: c.end_frame,
+        title: c.title,
+        color: c.color,
+      })),
+    [videoChaptersData],
+  );
+  useEffect(() => {
+    if (!isVideoTask) return;
+    if (videoChaptersData.length === 0) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "PageUp" && e.key !== "PageDown") return;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        const tag = active.tagName.toLowerCase();
+        if (tag === "input" || tag === "textarea" || active.isContentEditable) return;
+      }
+      const target = pickChapterTargetFrame(
+        videoChaptersData,
+        s.videoFrameIndex,
+        e.key === "PageDown" ? "next" : "prev",
+      );
+      if (target === null) return;
+      e.preventDefault();
+      s.setVideoFrameIndex(target);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isVideoTask, videoChaptersData, s.videoFrameIndex, s.setVideoFrameIndex]);
+
+  const trackerJobs = useVideoTrackerJobs();
+  const [propagateDialog, setPropagateDialog] = useState<{
+    annotation: VideoTrackAnnotation;
+    submitting: boolean;
+  } | null>(null);
+
+  const openPropagateDialog = useCallback((annotation: VideoTrackAnnotation) => {
+    setPropagateDialog({ annotation, submitting: false });
+  }, []);
+
+  const handlePropagateSubmit = useCallback(
+    async (payload: Parameters<typeof trackerJobs.propagate>[2]) => {
+      if (!propagateDialog || !taskId) return;
+      setPropagateDialog((prev) => (prev ? { ...prev, submitting: true } : prev));
+      try {
+        await trackerJobs.propagate(taskId, propagateDialog.annotation.id, payload);
+        setPropagateDialog(null);
+      } catch (e) {
+        setPropagateDialog((prev) => (prev ? { ...prev, submitting: false } : prev));
+        throw e;
+      }
+    },
+    [propagateDialog, taskId, trackerJobs],
+  );
+
+  const videoFrameCount = videoManifest.data?.metadata.frame_count ?? 0;
+  const videoFps = videoManifest.data?.metadata.fps ?? null;
+  const videoChapterTimebase = useMemo(
+    () =>
+      videoFps && videoFrameCount > 0
+        ? {
+            fps: videoFps,
+            frameCount: videoFrameCount,
+            source: "estimated" as const,
+            ptsMs: null,
+          }
+        : undefined,
+    [videoFps, videoFrameCount],
+  );
   const resetVideoStageUi = s.resetVideoStageUi;
 
   useEffect(() => {
@@ -258,6 +339,25 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const { data: annotationsData } = useAnnotations(taskId);
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
+
+  // Shift+T 在视频模式下对选中轨迹打开 propagate 对话框
+  useEffect(() => {
+    if (!isVideoTask) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "T" || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        const tag = active.tagName.toLowerCase();
+        if (tag === "input" || tag === "textarea" || active.isContentEditable) return;
+      }
+      const sel = annotationsRef.current.find((ann) => ann.id === s.selectedId);
+      if (!sel || !isVideoTrack(sel)) return;
+      e.preventDefault();
+      openPropagateDialog(sel as VideoTrackAnnotation);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isVideoTask, s.selectedId, openPropagateDialog]);
   const predictionsInfinite = usePredictions(taskId, undefined, debouncedConf);
   const predictionsPages = predictionsInfinite.data?.pages ?? [];
   const predictionsData = useMemo(
@@ -703,7 +803,16 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const leftOpen = isNarrow ? false : s.leftOpen;
   const rightOpen = isNarrow ? false : s.rightOpen;
 
+  const propagateDialogTrack = propagateDialog?.annotation ?? null;
+  const propagateDialogNextKeyframe = propagateDialogTrack
+    ? [...propagateDialogTrack.geometry.keyframes]
+        .map((kf) => kf.frame_index)
+        .filter((idx) => idx > s.videoFrameIndex)
+        .sort((a, b) => a - b)[0] ?? null
+    : null;
+
   return (
+    <>
     <WorkbenchLayout
       gridTemplateColumns={`${leftOpen ? `${s.leftWidth}px` : "32px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "32px"}`}
       taskQueue={{
@@ -751,6 +860,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         annotations: annotationsData ?? [], onSelectBox: handleSelectBox, onCursorMove: setCursor,
         videoManifest: videoManifest.data, videoManifestLoading: videoManifest.isLoading,
         videoFrameTimetable: videoFrameTimetable.data,
+        videoChapters: isVideoTask ? videoTimelineChapters : undefined,
         videoManifestError: videoManifest.error, videoTool: s.videoTool,
         videoFrameIndex: s.videoFrameIndex,
         videoReviewDisplayMode: mode === "review" ? modeState.diffMode : undefined,
@@ -832,27 +942,40 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
         commentAnchor: videoCommentAnchor,
         videoTrackPanel: isVideoTask ? (
-          <VideoTrackSidebar
-            annotations={annotationsData ?? []}
-            selectedId={s.selectedId}
-            selectedIds={s.selectedIds}
-            frameIndex={s.videoFrameIndex}
-            readOnly={isLocked}
-            hiddenTrackIds={s.hiddenVideoTrackIds}
-            lockedTrackIds={s.lockedVideoTrackIds}
-            classes={classes}
-            onSelect={(id) => handleSelectBox(id)}
-            onToggleHiddenTrack={s.toggleHiddenVideoTrack}
-            onToggleLockedTrack={s.toggleLockedVideoTrack}
-            onSeekFrame={s.setVideoFrameIndex}
-            reviewDisplayMode={mode === "review" ? modeState.diffMode : undefined}
-            onChangeUserBoxClass={handleStartChangeClass}
-            onRenameTracks={handleVideoBatchRename}
-            onDeleteTracks={handleVideoBatchDelete}
-            onUpdate={handleVideoUpdate}
-            onConvertToBboxes={handleVideoConvertToBboxes}
-            onComposeTracks={handleVideoComposeTracks}
-          />
+          <div style={{ display: "grid", gap: 12 }}>
+            <VideoTrackSidebar
+              annotations={annotationsData ?? []}
+              selectedId={s.selectedId}
+              selectedIds={s.selectedIds}
+              frameIndex={s.videoFrameIndex}
+              readOnly={isLocked}
+              hiddenTrackIds={s.hiddenVideoTrackIds}
+              lockedTrackIds={s.lockedVideoTrackIds}
+              classes={classes}
+              onSelect={(id) => handleSelectBox(id)}
+              onToggleHiddenTrack={s.toggleHiddenVideoTrack}
+              onToggleLockedTrack={s.toggleLockedVideoTrack}
+              onSeekFrame={s.setVideoFrameIndex}
+              reviewDisplayMode={mode === "review" ? modeState.diffMode : undefined}
+              onChangeUserBoxClass={handleStartChangeClass}
+              onRenameTracks={handleVideoBatchRename}
+              onDeleteTracks={handleVideoBatchDelete}
+              onUpdate={handleVideoUpdate}
+              onConvertToBboxes={handleVideoConvertToBboxes}
+              onComposeTracks={handleVideoComposeTracks}
+              trackerJobsByAnnotation={trackerJobs.byAnnotation}
+              onPropagateTrack={openPropagateDialog}
+              onCancelTrackerJob={trackerJobs.cancel}
+            />
+            <VideoChapterSidebar
+              datasetItemId={videoDatasetItemId}
+              frameIndex={s.videoFrameIndex}
+              maxFrame={Math.max(0, videoFrameCount - 1)}
+              timebase={videoChapterTimebase}
+              canEdit={!isLocked && isOwner}
+              onSeekFrame={s.setVideoFrameIndex}
+            />
+          </div>
         ) : undefined,
         liveCommentCanvas: {
           active: s.canvasDraft.active,
@@ -891,5 +1014,15 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onConfirm: modeState.rejectModal.onConfirm, skipReasonHint: modeState.rejectModal.skipReasonHint,
       } : undefined}
     />
+    <VideoTrackerPropagateDialog
+      open={Boolean(propagateDialog)}
+      frameIndex={s.videoFrameIndex}
+      maxFrame={Math.max(0, videoFrameCount - 1)}
+      nextKeyframeAfter={propagateDialogNextKeyframe}
+      submitting={Boolean(propagateDialog?.submitting)}
+      onCancel={() => setPropagateDialog(null)}
+      onSubmit={handlePropagateSubmit}
+    />
+    </>
   );
 }

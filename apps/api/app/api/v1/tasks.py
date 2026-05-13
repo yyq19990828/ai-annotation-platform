@@ -387,6 +387,7 @@ async def get_video_manifest(
 
     return TaskVideoManifestResponse(
         task_id=task.id,
+        dataset_item_id=task.dataset_item_id,
         video_url=video_url,
         poster_url=poster_url,
         metadata=metadata,

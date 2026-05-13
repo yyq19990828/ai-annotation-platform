@@ -9,7 +9,7 @@ import type { DiffMode } from "../modes/types";
 import { Minimap } from "./Minimap";
 import { VideoFrameOverlay } from "./VideoFrameOverlay";
 import { VideoMediaLayer } from "./VideoMediaLayer";
-import { VideoPlaybackOverlay } from "./VideoPlaybackOverlay";
+import { VideoPlaybackOverlay, type VideoTimelineChapter } from "./VideoPlaybackOverlay";
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { VideoSelectionActions } from "./VideoSelectionActions";
 import { VideoStageSurface } from "./VideoStageSurface";
@@ -99,6 +99,7 @@ interface VideoStageProps {
   readOnly?: boolean;
   videoTool?: VideoTool;
   pendingDrawing?: PendingDrawing;
+  chapters?: VideoTimelineChapter[];
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange?: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
@@ -143,6 +144,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   readOnly = false,
   videoTool = "box",
   pendingDrawing = null,
+  chapters = [],
   onSelect,
   onFrameIndexChange,
   onCreate,
@@ -1134,6 +1136,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             globalTimelineDensity={globalTimelineDensity}
             loopRegion={loopRegion}
             bookmarks={bookmarks}
+            chapters={chapters}
             hoverPreview={framePreview}
             currentFrameEntryCount={currentFrameEntries.length}
             visible={playbackOverlayVisible && !drag}
@@ -1149,6 +1152,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             onLoopRegionChange={setNormalizedLoopRegion}
             onClearLoopRegion={clearLoopRegion}
             onSeekBookmark={(targetFrame) => seekToFrame(targetFrame, { recordHistory: true })}
+            onSeekChapter={(_, frame) => seekToFrame(frame, { recordHistory: true })}
             onHoverFrameChange={previewFrame}
           />
       </div>

@@ -22,6 +22,8 @@
 | V5 Probe / Poster / Frame Asset Retry | v0.9.33 | 存储管理页展示失败视频资产，手动重试 probe / poster / timetable / chunk / frame cache |
 | V4 Review Video Anchors | v0.9.35 | review raw/final/diff 视频来源视图；评论锚定 frame / track / source；prediction keyframe 导航 |
 | V6 Track Composition | v0.9.37 | `video_bbox` 聚合为 `video_track`；track split；同类不重叠 track merge 并补 outside gap |
+| R10 AI Tracker 前端 | v0.9.40 | 选中轨迹「AI 传播」入口、WS job 状态机、prediction keyframe 接受/拒绝、`Shift+T` 入口 |
+| R13 Chapter 系统 | v0.9.40 | `VideoChapter` 模型 + CRUD、时间轴章节色带、章节侧栏、`PageUp/PageDown` 跳转 |
 
 ### 1.2 渲染与导航基建
 
@@ -83,14 +85,16 @@
 - mask track 依赖 R5.2 / R5.3 的 canvas / frame bitmap 能力。
 - 同步 `docs-site/dev/reference/` 与导出协议。
 
-### P1 · R13 / R17.2 Chapter 系统
+### 已完成 · R13 / R17.2 Chapter 系统
 
 **目标**：长视频内容分段和快速定位。
 
-- `VideoChapter(id, video_id, start_frame, end_frame, title, color, metadata)`。
-- 时间轴章节色带。
-- 章节侧栏与 `PageUp/PageDown` 跳转。
-- 可后接后端 shot detection。
+- ✅ `VideoChapter(id, dataset_item_id, start_frame, end_frame, title, color, metadata)` 模型 + 0062 迁移。
+- ✅ `GET/POST/PATCH/DELETE /api/v1/videos/{dataset_item_id}/chapters`，`super_admin` / 项目 owner 可写。
+- ✅ 时间轴章节色带 + hover tooltip + 点击跳到起点。
+- ✅ `VideoChapterSidebar` 列表 / 表单 / 当前帧高亮。
+- ✅ `PageUp/PageDown` 跨章节跳转。
+- → 后端 shot detection / 自动分章 worker（后续切片）。
 
 ### P1 · R20 frameStep 跳帧标注
 
@@ -101,15 +105,15 @@
 - `Shift+←/→` 保留单帧微调。
 - segment overlap 边界按 step 对齐。
 
-### P1 · R10 / R16 / R23 AI Tracker 前端
+### 已完成 · R10 AI Tracker 前端 (R16 / R23 留后续)
 
-**目标**：消费 v0.9.32-v0.9.34 已落地的 tracker 后端能力。
+**目标**：消费 v0.9.32-v0.9.36 已落地的 tracker 后端能力。
 
-- 前端工具入口：向前 / 向后传播 N 帧 / 到下个 keyframe / 到结尾。
-- 展示 queued / running / completed / failed / cancelled。
-- SSE / WebSocket 增量结果写入 `video_track` prediction keyframes。
-- prediction 接受 / 拒绝和下一条 prediction 导航。
-- Re-ID join 和 tracker registry 属后续增强。
+- ✅ 前端工具入口：向前 / 向后 / 双向，N 帧 / 到下一关键帧 / 到结尾 preset。
+- ✅ 轨迹卡片显示 queued / running / completed / failed / cancelled badge + 窗口进度。
+- ✅ WebSocket `/ws/video-tracker-jobs/{job_id}` 增量事件订阅；job 完成自动失效 annotation cache → prediction keyframes 自动出现。
+- ✅ 关键帧列表 prediction 行显示「接受」（source → manual）/「拒绝」（并入 outside, source=prediction）按钮，复用 `nextPredictionFrame` 导航。
+- → Re-ID join (R16) 和 tracker registry UI (R23) 后续。
 
 ### P2 · R11 / R21 长视频协同与 overlap
 
@@ -160,12 +164,12 @@ Wave 3 · 工程加固
 
 Wave 4 · 能力上探
   ✅ R8 Viewport / Minimap (v0.9.39)
+  ✅ R13 Chapter (v0.9.40)
   → R9 Polygon / Polyline / Mask track
-  → R13 Chapter
   → R20 frameStep
 
 Wave 5 · AI 与协同
-  → R10 AI Tracker 前端
+  ✅ R10 AI Tracker 前端 (v0.9.40)
   → R16 Track Join
   → R23 Tracker Registry
   → R11/R21 长视频 segment / overlap

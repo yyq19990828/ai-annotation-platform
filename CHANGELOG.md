@@ -22,6 +22,27 @@
 
 ## 最新版本
 
+## [0.9.40] - 2026-05-13
+
+> **Video Workbench R10 AI Tracker 前端 + R13 章节系统.** 主线: ① 消费 v0.9.32-v0.9.36 已落地的 tracker 后端：选中轨迹支持「AI 传播」入口（按钮 + `Shift+T`），可选 `forward/backward/bidirectional`、目标范围 preset、`mock_bbox`/`sam2_video`/`sam3_video`；② 前端通过 `/ws/video-tracker-jobs/{job_id}` 订阅事件流，轨迹卡片显示 queued/running/completed/failed/cancelled badge 与窗口进度，job 完成自动失效 annotation cache；③ 关键帧列表对 `source: prediction` 渲染「接受」「拒绝」按钮，接受改 source 为 manual，拒绝把该帧并入 outside；④ 新增 `VideoChapter` 模型 + 0062 迁移 + CRUD endpoints；⑤ 视频时间轴新增章节色带、章节侧栏 + 创建/编辑/删除表单、`PageUp/PageDown` 跨章节跳转。→ [plan](docs/plans/2026-05-13-v0.9.40-video-workbench-r10-r13.md).
+
+### Added
+
+- **AI Tracker 前端**：`VideoTrackerPropagateDialog` 与「AI 传播」按钮（`Shift+T`）；`VideoTrackerJobBadge` 显示 queued/running/completed/failed/cancelled，运行中可取消；prediction keyframe 在关键帧列表显示「预测」徽章 + 接受 / 拒绝按钮。
+- **Tracker job 状态 hook**：`useVideoTrackerJobs` 维护多 job 状态机，按 `event_channel` 订阅 WS，1500ms 终止后自动清理；window 进度落到 UI；job 完成时自动失效 `["annotations", taskId]` 查询。
+- **VideoChapter 系统**：后端模型 / 迁移 / Pydantic schema / CRUD endpoints（`GET/POST/PATCH/DELETE /api/v1/videos/{dataset_item_id}/chapters`），仅 `super_admin` 与项目 owner 可写；audit `VIDEO_CHAPTER_CREATE/UPDATE/DELETE`。
+- **章节时间轴 + 侧栏**：`VideoPlaybackOverlay` 增加章节色带（hover 显示标题 + 范围、点击跳到起点）；`VideoChapterSidebar` 显示章节列表、当前帧高亮、`PageUp/PageDown` 跨章节跳转；编辑表单支持取当前帧为起止 + 颜色 palette。
+- **manifest 返回 dataset_item_id**：`TaskVideoManifestResponse` 新增 `dataset_item_id`，方便前端直接调 `/videos/{dataset_item_id}/...`。
+
+### Changed
+
+- `VideoTrackPanel`「当前轨迹」工具栏新增「AI 传播」按钮，运行中显示 tracker job badge。
+- `WorkbenchShell` 在视频任务下注入 `useVideoTrackerJobs` 与 `useVideoChapters`，并把 propagate 对话框挂到布局根。
+
+### Deferred
+
+- Re-ID 自动 join、tracker registry UI、章节自动 shot detection、章节进导出格式（MOT/KITTI/DAVIS）、WS 鉴权统一改造。
+
 ## [0.9.39] - 2026-05-12
 
 > **Video Workbench Rendering P0 — 视频帧缓存与视口导航.** 主线: ① 视频工作台新增 `ImageBitmap` LRU 帧缓存，seek / scrub 时可先显示缓存帧，`<video>` 仍作为主播放源；② 视频 media / bitmap / grid / objects / text / interaction 层统一走 viewport transform；③ 支持 `F` 适应、`0` 1:1、Ctrl/Meta+滚轮缩放、右键拖拽平移和视频 minimap；④ 诊断快照补充 bitmap cache 与 viewport 状态。→ [plan](ROADMAP/2026-05-12-video-workbench-rendering-optimization.md).

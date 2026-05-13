@@ -5,16 +5,26 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks import _assert_task_visible
+from app.db.enums import UserRole
 from app.db.models.dataset import VideoFrameIndex
+from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
-from app.deps import get_current_user, get_db
+from app.db.models.video_chapter import VideoChapter
+from app.deps import get_current_user, get_db, require_roles
 from app.schemas.task import (
     TaskVideoFrameTimetableResponse,
     VideoFrameTimetableEntry,
+)
+from app.schemas.video_chapter import (
+    VideoChapterCreate,
+    VideoChapterList,
+    VideoChapterOut,
+    VideoChapterUpdate,
 )
 from app.schemas.video_frame_service import (
     VideoChunkOut,
@@ -26,6 +36,8 @@ from app.schemas.video_frame_service import (
     VideoManifestV2Response,
     VideoSegmentsResponse,
 )
+from app.services.audit import AuditAction, AuditService
+from app.services.scheduler import is_privileged_for_project
 from app.services.video_frame_service import (
     build_context_from_dataset_item,
     get_chunk as get_video_chunk_asset,
@@ -38,6 +50,38 @@ from app.services.video_frame_service import (
 from app.services.video_segment_service import list_segments as list_video_segments
 
 router = APIRouter()
+
+
+_CHAPTER_EDITORS = (
+    UserRole.SUPER_ADMIN,
+    UserRole.PROJECT_ADMIN,
+)
+
+
+def _chapter_out(row: VideoChapter) -> VideoChapterOut:
+    return VideoChapterOut.model_validate(
+        {
+            "id": row.id,
+            "dataset_item_id": row.dataset_item_id,
+            "start_frame": row.start_frame,
+            "end_frame": row.end_frame,
+            "title": row.title,
+            "color": row.color,
+            "metadata": dict(row.chapter_metadata or {}),
+            "created_by": row.created_by,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+    )
+
+
+async def _assert_chapter_editor(db: AsyncSession, task: Task, user: User) -> None:
+    project = await db.get(Project, task.project_id)
+    if project is not None and is_privileged_for_project(user, project):
+        return
+    raise HTTPException(
+        status_code=403, detail="仅项目负责人或超级管理员可管理章节"
+    )
 
 
 async def _visible_video_task_for_item(
@@ -230,3 +274,173 @@ async def retry_video_frame_assets(
         payload.format,
         force=payload.force,
     )
+
+
+@router.get("/{dataset_item_id}/chapters", response_model=VideoChapterList)
+async def list_video_chapters(
+    dataset_item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _visible_video_task_for_item(db, dataset_item_id, current_user)
+    rows = (
+        await db.execute(
+            select(VideoChapter)
+            .where(VideoChapter.dataset_item_id == dataset_item_id)
+            .order_by(VideoChapter.start_frame.asc(), VideoChapter.end_frame.asc())
+        )
+    ).scalars().all()
+    return VideoChapterList(chapters=[_chapter_out(row) for row in rows])
+
+
+@router.post(
+    "/{dataset_item_id}/chapters",
+    response_model=VideoChapterOut,
+    status_code=201,
+)
+async def create_video_chapter(
+    dataset_item_id: uuid.UUID,
+    payload: VideoChapterCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_CHAPTER_EDITORS)),
+):
+    task = await _visible_video_task_for_item(db, dataset_item_id, current_user)
+    await _assert_chapter_editor(db, task, current_user)
+    chapter = VideoChapter(
+        dataset_item_id=dataset_item_id,
+        start_frame=payload.start_frame,
+        end_frame=payload.end_frame,
+        title=payload.title,
+        color=payload.color,
+        chapter_metadata=dict(payload.metadata or {}),
+        created_by=current_user.id,
+    )
+    db.add(chapter)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="章节起止帧与现有章节重复",
+        )
+    body = _chapter_out(chapter)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_CHAPTER_CREATE,
+        target_type="video_chapter",
+        target_id=chapter.id,
+        request=request,
+        status_code=201,
+        detail={
+            "dataset_item_id": str(dataset_item_id),
+            "start_frame": chapter.start_frame,
+            "end_frame": chapter.end_frame,
+            "title": chapter.title,
+        },
+    )
+    await db.commit()
+    return body
+
+
+@router.patch(
+    "/{dataset_item_id}/chapters/{chapter_id}",
+    response_model=VideoChapterOut,
+)
+async def update_video_chapter(
+    dataset_item_id: uuid.UUID,
+    chapter_id: uuid.UUID,
+    payload: VideoChapterUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_CHAPTER_EDITORS)),
+):
+    task = await _visible_video_task_for_item(db, dataset_item_id, current_user)
+    await _assert_chapter_editor(db, task, current_user)
+    chapter = await db.get(VideoChapter, chapter_id)
+    if chapter is None or chapter.dataset_item_id != dataset_item_id:
+        raise HTTPException(status_code=404, detail="章节不存在")
+
+    changes: dict[str, object] = {}
+    if payload.start_frame is not None:
+        chapter.start_frame = payload.start_frame
+        changes["start_frame"] = payload.start_frame
+    if payload.end_frame is not None:
+        chapter.end_frame = payload.end_frame
+        changes["end_frame"] = payload.end_frame
+    if chapter.end_frame < chapter.start_frame:
+        raise HTTPException(
+            status_code=422, detail="end_frame 必须 >= start_frame"
+        )
+    if payload.title is not None:
+        chapter.title = payload.title
+        changes["title"] = payload.title
+    if payload.color is not None:
+        chapter.color = payload.color
+        changes["color"] = payload.color
+    if payload.metadata is not None:
+        chapter.chapter_metadata = dict(payload.metadata)
+        changes["metadata"] = True
+
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="章节起止帧与现有章节重复",
+        )
+    body = _chapter_out(chapter)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_CHAPTER_UPDATE,
+        target_type="video_chapter",
+        target_id=chapter.id,
+        request=request,
+        status_code=200,
+        detail={
+            "dataset_item_id": str(dataset_item_id),
+            "changes": changes,
+        },
+    )
+    await db.commit()
+    return body
+
+
+@router.delete(
+    "/{dataset_item_id}/chapters/{chapter_id}",
+    status_code=204,
+)
+async def delete_video_chapter(
+    dataset_item_id: uuid.UUID,
+    chapter_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_CHAPTER_EDITORS)),
+):
+    task = await _visible_video_task_for_item(db, dataset_item_id, current_user)
+    await _assert_chapter_editor(db, task, current_user)
+    chapter = await db.get(VideoChapter, chapter_id)
+    if chapter is None or chapter.dataset_item_id != dataset_item_id:
+        raise HTTPException(status_code=404, detail="章节不存在")
+    snapshot = {
+        "start_frame": chapter.start_frame,
+        "end_frame": chapter.end_frame,
+        "title": chapter.title,
+    }
+    await db.delete(chapter)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.VIDEO_CHAPTER_DELETE,
+        target_type="video_chapter",
+        target_id=chapter_id,
+        request=request,
+        status_code=204,
+        detail={"dataset_item_id": str(dataset_item_id), **snapshot},
+    )
+    await db.commit()
+    return Response(status_code=204)

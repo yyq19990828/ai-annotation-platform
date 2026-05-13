@@ -62,6 +62,8 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Ctrl", "[ / ]"], desc: "视频跳转历史后退 / 前进", group: "video", actionType: "videoJumpHistory" },
   { keys: ["Alt", "L"], desc: "清除视频播放范围", group: "video", actionType: "videoClearLoopRegion" },
   { keys: ["Delete / Backspace"], desc: "删除选中轨迹", group: "video", actionType: "videoDeleteSelected" },
+  { keys: ["PageUp"], desc: "跳到上一章节", group: "video" },
+  { keys: ["PageDown"], desc: "跳到下一章节", group: "video" },
   { keys: ["Tab"], desc: "下一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
   { keys: ["Shift", "Tab"], desc: "上一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
   { keys: ["Esc"], desc: "取消选择", group: "video", actionType: "cancel" },
