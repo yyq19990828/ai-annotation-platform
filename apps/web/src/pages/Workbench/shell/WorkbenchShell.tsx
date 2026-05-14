@@ -592,6 +592,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handlePickPendingClass,
     submitPolygon,
     handleDeleteBox,
+    handlePatchShapeFlag,
     handleCommitMove,
     handleCommitResize,
     handleCommitPolygonGeometry,
@@ -802,7 +803,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     s, history, classes, currentProject, annotationsRef,
     batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,
-    recordRecentClass, handleDeleteBox, handleBatchDelete,
+    recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes,
     handleVideoSetSelectedClass,
@@ -993,7 +994,14 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction,
         onClearSelection: () => s.setSelectedId(null), onDeleteUserBox: handleDeleteBox,
-        onChangeUserBoxClass: handleStartChangeClass, attributeSchema: currentProject?.attribute_schema,
+        onChangeUserBoxClass: handleStartChangeClass,
+        onToggleUserBoxFlag: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => {
+          const ann = userBoxes.find((b) => b.id === id);
+          if (!ann) return;
+          const cur = !!ann[flag];
+          handlePatchShapeFlag(id, flag, !cur);
+        },
+        attributeSchema: currentProject?.attribute_schema,
         selectedAnnotation: selectedAnnotationForPanel, onUpdateAttributes: handleUpdateAttributes,
         currentUserId: meUserId, taskFileUrl: task?.file_url,
         hasMorePredictions: modeState.diffMode !== "final" && !!predictionsInfinite.hasNextPage,

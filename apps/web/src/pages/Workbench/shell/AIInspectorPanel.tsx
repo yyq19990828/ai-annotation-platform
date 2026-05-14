@@ -65,6 +65,8 @@ interface AIInspectorPanelProps {
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
+  /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden/occluded）。 */
+  onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => void;
   /** v0.6.5 · 任务已锁定（review/completed），属性表单只读。 */
   readOnly?: boolean;
   videoTrackPanel?: React.ReactNode;
@@ -89,6 +91,7 @@ export function AIInspectorPanel({
   currentFrameIndex, onSeekFrame, commentAnchor,
   onToggle,
   onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  onToggleUserBoxFlag,
   readOnly = false,
   videoTrackPanel,
 }: AIInspectorPanelProps) {
@@ -196,6 +199,7 @@ export function AIInspectorPanel({
         onClearSelection={onClearSelection}
         onDeleteUserBox={onDeleteUserBox}
         onChangeUserBoxClass={onChangeUserBoxClass}
+        onToggleUserBoxFlag={onToggleUserBoxFlag}
         videoTrackPanel={videoTrackPanel}
       />
     </div>
@@ -719,6 +723,8 @@ interface BoxesListProps {
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
+  /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden/occluded）。 */
+  onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => void;
   onSeekFrame?: (frameIndex: number) => void;
   videoTrackPanel?: React.ReactNode;
 }
@@ -729,6 +735,7 @@ function BoxesList({
   currentFrameIndex,
   onSeekFrame,
   onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  onToggleUserBoxFlag,
   videoTrackPanel,
 }: BoxesListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -870,6 +877,7 @@ function BoxesList({
                   onSelect={(e) => selectBox(r.box, e?.shiftKey)}
                   onDelete={() => onDeleteUserBox(r.box.id)}
                   onChangeClass={onChangeUserBoxClass ? () => onChangeUserBoxClass(r.box.id) : undefined}
+                  onToggleFlag={onToggleUserBoxFlag ? (flag) => onToggleUserBoxFlag(r.box.id, flag) : undefined}
                 />
               )}
             </div>

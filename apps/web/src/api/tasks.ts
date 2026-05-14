@@ -43,6 +43,11 @@ export interface AnnotationUpdatePayload {
   class_name?: string;
   confidence?: number;
   attributes?: Record<string, unknown>;
+  // v0.10.5 M4-β · shape 状态位（I15）。
+  z_order?: number;
+  is_locked?: boolean;
+  is_hidden?: boolean;
+  is_occluded?: boolean;
 }
 
 export interface VideoTrackConvertToBboxesPayload {

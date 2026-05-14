@@ -105,6 +105,11 @@ export function annotationToBox(a: AnnotationResponse): Annotation {
     source: a.source as Annotation["source"],
     parent_prediction_id: a.parent_prediction_id,
     lead_time: a.lead_time,
+    // v0.10.5 M4-β · shape 状态位（I15）。
+    z_order: a.z_order ?? 0,
+    is_locked: a.is_locked ?? false,
+    is_hidden: a.is_hidden ?? false,
+    is_occluded: a.is_occluded ?? false,
   };
 }
 

@@ -71,8 +71,11 @@ export const HOTKEYS: HotkeyDef[] = [
 
   { keys: ["A"], desc: "采纳选中 AI 框", group: "ai", actionType: "acceptAi" },
   { keys: ["D"], desc: "驳回选中 AI 框", group: "ai", actionType: "rejectAi" },
-  { keys: ["["], desc: "降低置信度阈值 (-0.05)", group: "ai", actionType: "thresholdAdjust" },
-  { keys: ["]"], desc: "提高置信度阈值 (+0.05)", group: "ai", actionType: "thresholdAdjust" },
+  { keys: ["["], desc: "选中态：z_order -1；否则降置信度阈值", group: "ai", actionType: "thresholdAdjust" },
+  { keys: ["]"], desc: "选中态：z_order +1；否则升置信度阈值", group: "ai", actionType: "thresholdAdjust" },
+  { keys: ["L"], desc: "切换选中 shape 锁定状态", group: "draw", actionType: "toggleShapeFlag" },
+  { keys: ["H"], desc: "切换选中 shape 隐藏状态", group: "draw", actionType: "toggleShapeFlag" },
+  { keys: ["O"], desc: "切换选中 shape 遮挡 (occluded) 状态", group: "draw", actionType: "toggleShapeFlag" },
 
   { keys: ["Ctrl", "→"], desc: "下一题", group: "nav", actionType: "navigateTask" },
   { keys: ["Ctrl", "←"], desc: "上一题", group: "nav", actionType: "navigateTask" },
@@ -120,6 +123,9 @@ export type HotkeyAction =
   | { type: "setClassByLetter"; letter: string }
   | { type: "setAttribute"; key: string; value: unknown }
   | { type: "deleteSelected" }
+  // v0.10.5 M4-β · I15 shape 状态位快捷键。
+  | { type: "toggleShapeFlag"; flag: "is_locked" | "is_hidden" | "is_occluded" }
+  | { type: "bumpZOrder"; delta: -1 | 1 }
   | { type: "submit" }
   | { type: "acceptAi" }
   | { type: "rejectAi" }
@@ -165,7 +171,8 @@ export interface DispatchCtx {
   hasSelectedVideoTrack?: boolean;
 }
 
-const RESERVED_LETTERS = new Set(["v","V","b","B","p","P","s","S","a","A","d","D","e","E","n","N","u","U","j","J","k","K","c","C"]);
+// v0.10.5 M4-β · L/H/O 用于 shape 状态位切换（仅选中态消费；保留以防 setClassByLetter 抢键）。
+const RESERVED_LETTERS = new Set(["v","V","b","B","p","P","s","S","a","A","d","D","e","E","n","N","u","U","j","J","k","K","c","C","l","L","h","H","o","O"]);
 
 /** 纯函数：解析 keydown 事件为 HotkeyAction。返回 null 表示不消费。 */
 export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | null {
@@ -254,8 +261,22 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   // popover 活跃时，类别字母 / 数字键归它消费
   if (ctx.pendingActive) return null;
 
-  if (e.key === "[")  return { type: "thresholdAdjust", delta: -0.05 };
-  if (e.key === "]")  return { type: "thresholdAdjust", delta:  0.05 };
+  // v0.10.5 M4-β I15 · 有选中时 `[`/`]` 调 z_order（向下/向上）；无选中时维持原 threshold 行为。
+  if (e.key === "[") {
+    if (ctx.hasSelection) return { type: "bumpZOrder", delta: -1 };
+    return { type: "thresholdAdjust", delta: -0.05 };
+  }
+  if (e.key === "]") {
+    if (ctx.hasSelection) return { type: "bumpZOrder", delta: 1 };
+    return { type: "thresholdAdjust", delta:  0.05 };
+  }
+
+  // v0.10.5 M4-β I15 · L/H/O 切换选中 shape 的 lock/hidden/occluded。仅在有选中时消费。
+  if (ctx.hasSelection) {
+    if (e.key === "l" || e.key === "L") return { type: "toggleShapeFlag", flag: "is_locked" };
+    if (e.key === "h" || e.key === "H") return { type: "toggleShapeFlag", flag: "is_hidden" };
+    if (e.key === "o" || e.key === "O") return { type: "toggleShapeFlag", flag: "is_occluded" };
+  }
 
   // v0.9.4 phase 2 · SAM 子工具栏 polarity (sam-point 下生效, 由消费端 gate by tool/samSubTool).
   // "+" 需要 Shift+=, "=" 单按 = SAM positive; "-" 单按 = SAM negative.

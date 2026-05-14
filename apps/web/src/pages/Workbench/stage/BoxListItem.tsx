@@ -101,11 +101,13 @@ interface BoxListItemProps {
   onReject?: () => void;
   onDelete?: () => void;
   onChangeClass?: () => void;
+  /** v0.10.5 M4-β · I15 切换 lock/hidden/occluded；仅人工框传入。 */
+  onToggleFlag?: (flag: "is_locked" | "is_hidden" | "is_occluded") => void;
 }
 
 export function BoxListItem({
   b, isAi, selected, dimmed = false, imageWidth, imageHeight,
-  onSelect, onAccept, onReject, onDelete, onChangeClass,
+  onSelect, onAccept, onReject, onDelete, onChangeClass, onToggleFlag,
 }: BoxListItemProps) {
   const color = classColor(b.cls);
   const toolMeta = annotationToolMeta(b, imageWidth, imageHeight);
@@ -217,6 +219,49 @@ export function BoxListItem({
           </>
         ) : (
           <>
+            {onToggleFlag && (
+              <>
+                <Button
+                  size="sm"
+                  title={b.is_hidden ? "显示 (H)" : "隐藏 (H)"}
+                  aria-label={b.is_hidden ? "显示" : "隐藏"}
+                  aria-pressed={!!b.is_hidden}
+                  onClick={(e) => { e.stopPropagation(); onToggleFlag("is_hidden"); }}
+                  style={{
+                    ...rowActionButtonStyle,
+                    opacity: b.is_hidden ? 1 : 0.55,
+                  }}
+                >
+                  <Icon name={b.is_hidden ? "eyeOff" : "eye"} size={14} />
+                </Button>
+                <Button
+                  size="sm"
+                  title={b.is_locked ? "解锁 (L)" : "锁定 (L)"}
+                  aria-label={b.is_locked ? "解锁" : "锁定"}
+                  aria-pressed={!!b.is_locked}
+                  onClick={(e) => { e.stopPropagation(); onToggleFlag("is_locked"); }}
+                  style={{
+                    ...rowActionButtonStyle,
+                    opacity: b.is_locked ? 1 : 0.55,
+                  }}
+                >
+                  <Icon name={b.is_locked ? "lock" : "unlock"} size={14} />
+                </Button>
+                <Button
+                  size="sm"
+                  title={b.is_occluded ? "取消遮挡 (O)" : "标记遮挡 (O)"}
+                  aria-label={b.is_occluded ? "取消遮挡" : "标记遮挡"}
+                  aria-pressed={!!b.is_occluded}
+                  onClick={(e) => { e.stopPropagation(); onToggleFlag("is_occluded"); }}
+                  style={{
+                    ...rowActionButtonStyle,
+                    opacity: b.is_occluded ? 1 : 0.55,
+                  }}
+                >
+                  <Icon name="circleDot" size={14} />
+                </Button>
+              </>
+            )}
             {onChangeClass && (
               <Button
                 size="sm"

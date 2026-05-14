@@ -241,6 +241,10 @@ class AnnotationService:
         class_name: str | None = None,
         confidence: float | None = None,
         attributes: dict | None = None,
+        z_order: int | None = None,
+        is_locked: bool | None = None,
+        is_hidden: bool | None = None,
+        is_occluded: bool | None = None,
     ) -> Annotation | None:
         """Surgical update of mutable fields. Increments version for optimistic concurrency."""
         annotation = await self.db.get(Annotation, annotation_id)
@@ -254,6 +258,15 @@ class AnnotationService:
             annotation.confidence = confidence
         if attributes is not None:
             annotation.attributes = attributes
+        # v0.10.5 M4-β · shape 状态位字段级 PATCH（I15）
+        if z_order is not None:
+            annotation.z_order = z_order
+        if is_locked is not None:
+            annotation.is_locked = is_locked
+        if is_hidden is not None:
+            annotation.is_hidden = is_hidden
+        if is_occluded is not None:
+            annotation.is_occluded = is_occluded
         annotation.version += 1
         await self.db.flush()
         return annotation

@@ -43,6 +43,8 @@ interface KonvaBoxProps {
   selected: boolean;
   editable: boolean;
   faded: boolean;
+  /** v0.10.5 M4-β · I15 occluded：渲染为虚线 + 半透。 */
+  occluded?: boolean;
   imgW: number;
   imgH: number;
   scale: number;
@@ -52,7 +54,7 @@ interface KonvaBoxProps {
 }
 
 export function KonvaBox({
-  b, isAi, selected, editable, faded,
+  b, isAi, selected, editable, faded, occluded = false,
   imgW, imgH, scale,
   onClick,
   onMoveStart,
@@ -76,9 +78,9 @@ export function KonvaBox({
         height={b.h * imgH}
         stroke={color}
         strokeWidth={sw}
-        dash={isAi ? [4 / scale, 3 / scale] : undefined}
+        dash={isAi || occluded ? [4 / scale, 3 / scale] : undefined}
         fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
-        opacity={faded ? 0.35 : 1}
+        opacity={faded ? 0.35 : occluded ? 0.5 : 1}
         shadowEnabled={selected && !faded}
         shadowColor={color}
         shadowBlur={8 / scale}
@@ -144,6 +146,8 @@ interface KonvaPolygonProps {
   isAi: boolean;
   selected: boolean;
   faded: boolean;
+  /** v0.10.5 M4-β · I15 occluded：渲染为虚线 + 半透（与 selfIntersect 红色互斥）。 */
+  occluded?: boolean;
   imgW: number;
   imgH: number;
   scale: number;
@@ -159,7 +163,7 @@ interface KonvaPolygonProps {
 }
 
 export function KonvaPolygon({
-  b, isAi, selected, faded, imgW, imgH, scale, onClick,
+  b, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
   points,
   selfIntersect,
   editable,
@@ -203,9 +207,9 @@ export function KonvaPolygon({
         closed
         stroke={strokeColor}
         strokeWidth={sw}
-        dash={isAi || selfIntersect ? [4 / scale, 3 / scale] : undefined}
+        dash={isAi || selfIntersect || occluded ? [4 / scale, 3 / scale] : undefined}
         fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
-        opacity={faded ? 0.35 : 1}
+        opacity={faded ? 0.35 : occluded ? 0.5 : 1}
         shadowEnabled={selected && !faded}
         shadowColor={selfIntersect ? "oklch(0.55 0.22 25)" : color}
         shadowBlur={8 / scale}

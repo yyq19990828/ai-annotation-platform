@@ -235,6 +235,11 @@ export interface Annotation extends AIBox {
   source: "manual" | "prediction_based";
   parent_prediction_id?: string | null;
   lead_time?: number | null;
+  // v0.10.5 M4-β · shape 状态位（I15）。所有可选并回落默认值，AI 候选 / 历史数据兼容。
+  z_order?: number;
+  is_locked?: boolean;
+  is_hidden?: boolean;
+  is_occluded?: boolean;
 }
 
 export interface AnnotationResponse {
@@ -253,6 +258,11 @@ export interface AnnotationResponse {
   is_active: boolean;
   ground_truth: boolean;
   attributes?: Record<string, unknown>;
+  // v0.10.5 M4-β · shape 状态位（I15）；后端总是回写，旧记录由迁移默认值兜底。
+  z_order?: number;
+  is_locked?: boolean;
+  is_hidden?: boolean;
+  is_occluded?: boolean;
   version?: number;
   created_at: string;
   updated_at: string | null;

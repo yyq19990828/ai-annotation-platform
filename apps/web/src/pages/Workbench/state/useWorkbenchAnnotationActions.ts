@@ -20,7 +20,7 @@ import { bboxGeom, polygonGeom } from "../state/transforms";
 import { enqueue } from "../state/offlineQueue";
 import type { useWorkbenchState } from "../state/useWorkbenchState";
 import type { useAnnotationHistory } from "../state/useAnnotationHistory";
-import type { AnnotationPayload } from "@/api/tasks";
+import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 import type { AnnotationResponse } from "@/types";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -64,6 +64,12 @@ export interface UseWorkbenchAnnotationActionsReturn {
   handleCommitMove: (id: string, before: Geom, after: Geom) => void;
   handleCommitResize: (id: string, before: Geom, after: Geom) => void;
   handleCommitPolygonGeometry: (id: string, before: Pt[], after: Pt[]) => void;
+  /** v0.10.5 M4-β · I15 shape 状态位 (z_order / is_locked / is_hidden / is_occluded) 字段级 PATCH。*/
+  handlePatchShapeFlag: (
+    id: string,
+    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    value: number | boolean,
+  ) => void;
   /** polygon 草稿点集（由 hotkeys hook 借用一份引用做 Enter/Esc/Backspace 处理）。*/
   polygonDraftPoints: [number, number][];
   setPolygonDraftPoints: React.Dispatch<React.SetStateAction<[number, number][]>>;
@@ -366,6 +372,50 @@ export function useWorkbenchAnnotationActions({
     [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom],
   );
 
+  // v0.10.5 M4-β · I15 shape 状态位字段级 PATCH。
+  // `flag` ∈ { z_order, is_locked, is_hidden, is_occluded }；value 直传。
+  // 失败时仍 enqueue 离线 op（与 handleCommitMove 一致）。
+  const handlePatchShapeFlag = useCallback(
+    (
+      id: string,
+      flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+      value: number | boolean,
+    ) => {
+      if (blockIfLocked()) return;
+      if (!taskId) return;
+      const target = annotationsRef.current.find((a) => a.id === id);
+      const before = target ? (target as unknown as Record<string, unknown>)[flag] : undefined;
+      const payload = { [flag]: value } as AnnotationUpdatePayload;
+      mutations.update.mutate(
+        { annotationId: id, payload },
+        {
+          onSuccess: () => {
+            history.push({
+              kind: "update",
+              annotationId: id,
+              before: { [flag]: before } as AnnotationUpdatePayload,
+              after: payload,
+            });
+          },
+          onError: (err) =>
+            enqueueOnError(err, () => {
+              history.push({
+                kind: "update",
+                annotationId: id,
+                before: { [flag]: before } as AnnotationUpdatePayload,
+                after: payload,
+              });
+              enqueue({
+                kind: "update", id: crypto.randomUUID(), taskId,
+                annotationId: id, payload, ts: Date.now(),
+              });
+            }),
+        },
+      );
+    },
+    [blockIfLocked, mutations, history, taskId, enqueueOnError, annotationsRef],
+  );
+
   return {
     optimisticEnqueueCreate,
     createBboxWithClass,
@@ -375,6 +425,7 @@ export function useWorkbenchAnnotationActions({
     handleCommitMove,
     handleCommitResize,
     handleCommitPolygonGeometry,
+    handlePatchShapeFlag,
     polygonDraftPoints,
     setPolygonDraftPoints,
     polygonHandle,

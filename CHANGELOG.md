@@ -22,6 +22,39 @@
 
 ## 最新版本
 
+## [0.10.5] - 2026-05-15
+
+> **图片工作台形状元数据一等态 (M4-β).** ROADMAP/2026-05-12-image-workbench-optimization.md 的 I15 落地：annotation 表加 4 个状态位 (`z_order` / `is_locked` / `is_hidden` / `is_occluded`)，从前端 transient → DB 持久化；KonvaBox/KonvaPolygon 按 flag 调渲染 (hidden 跳过 / locked 禁拖 / occluded 虚线+半透)；annotation 列表按 z_order ASC 排序高 z_order 后渲染 (在上)；右栏卡片新增 3 个 toggle icon (隐藏 / 锁 / 遮挡)；快捷键 `L`/`H`/`O` 切对应 flag，`[`/`]` 选中态调 z_order ±1（无选中维持原 threshold ±0.05）。前端工具栏在锁定时不进入编辑态；PATCH 走现有字段级路径无需新端点。是 v0.10.4 epic 的第 2/4 子版本。→ [plan](docs/plans/claude-image-workbench-optimization-cha-logical-minsky.md) · [roadmap](ROADMAP/2026-05-12-image-workbench-optimization.md).
+
+### Added
+
+- **alembic 0065** ([0065_annotation_shape_metadata.py](apps/api/alembic/versions/0065_annotation_shape_metadata.py))：annotations 表加 `z_order int default 0` + `is_locked` / `is_hidden` / `is_occluded` 三个 bool default false，全部 not null。
+- **Annotation 模型 + Pydantic schema 透出**：[annotation.py:model](apps/api/app/db/models/annotation.py) 新增 4 mapped_column；[annotation.py:schema](apps/api/app/schemas/annotation.py) `AnnotationOut` 直传 + `AnnotationUpdate` 接受 partial PATCH；service.update 加 4 kwargs。3 个 pytest 覆盖默认值 / 全量 PATCH / 单字段 partial。
+- **`handlePatchShapeFlag`** ([useWorkbenchAnnotationActions.ts](apps/web/src/pages/Workbench/state/useWorkbenchAnnotationActions.ts))：字段级 PATCH 入口，复用现有 `mutations.update` + `history.push` + 离线 enqueue 兜底；写入 `update` 历史 kind 支持撤销重做。
+- **BoxListItem toggle icons** ([BoxListItem.tsx](apps/web/src/pages/Workbench/stage/BoxListItem.tsx))：用户态卡片新增 3 个 icon 按钮 (eye/eyeOff、lock/unlock、circleDot for occluded)，title 含快捷键提示；处于 active 状态时不透明，否则 55% 透明。
+- **快捷键 L / H / O / `[` / `]`** ([hotkeys.ts](apps/web/src/pages/Workbench/state/hotkeys.ts) + [useWorkbenchHotkeys.ts](apps/web/src/pages/Workbench/state/useWorkbenchHotkeys.ts))：新增 HotkeyAction `toggleShapeFlag` / `bumpZOrder`；选中态时 `[`/`]` 改调 z_order ±1（无选中维持 thresholdAdjust）；L/H/O 切 lock/hidden/occluded（无选中 → 不消费，避开 setClassByLetter 抢键）。HotkeyCheatSheet 表同步。8 个新单测覆盖 dispatcher 分支。
+
+### Changed
+
+- **`ImageStage` 渲染 pipeline**：新增 `visibleSortedUserBoxes` memo：filter `!is_hidden` + sort by `z_order` ASC (tie-breaker = 原数组顺序)，user 层 `.map` 改走它。
+- **`KonvaBox` / `KonvaPolygon`**：新增 `occluded` prop，true 时 stroke 走 `dash=[4,3]/scale` + `opacity=0.5`；与 `selfIntersect` 的红色虚线视觉互斥（selfIntersect 优先）。
+- **`ImageStage` 编辑态门控**：`isPrimarySingleSelect` 与 `editable` 在 `is_locked` 时为 false → 不显示 resize/move/vertex handle；polygon 同步。
+- **`useInteractiveAI.warmup`**：保持 v0.10.4 行为，与 M4-β 无关。
+- **`AnnotationUpdatePayload`** ([api/tasks.ts](apps/web/src/api/tasks.ts)) + **`Annotation` / `AnnotationResponse`** ([types/index.ts](apps/web/src/types/index.ts))：补 4 个新字段。`annotationToBox` transform 默认回落 0 / false 保持向后兼容。
+
+### Verified
+
+- pytest `test_annotation_shape_metadata.py`：3/3 通过；alembic 0065 在本地 + 测试 DB 都已 upgrade。
+- vitest 触及域回归：`hotkeys.test.ts` 56 例 + `BoxListItem.test.tsx` + `useAnnotationHistory.hook.test.ts` 全绿。
+- `pnpm --filter web typecheck` + `lint` 全绿（warnings 全部预存）。
+- 浏览器烟囱：anno 登录 → 进入图片工作台 → 点 BoxListItem 锁定按钮 → DB 字段 `is_locked=true, version=2`，按钮文案翻转为「解锁」；撤回到 false 验证可逆。
+
+### Notes
+
+- 后端 PATCH 路径已字段级（`data.model_dump(exclude_unset=True)`），无需改 tasks.py 端点，新字段自动透传。
+- 旧记录的默认值由 alembic server_default 兜底（z_order=0 / false×3），前端 transform 再叠一层归零保险。
+- M4-γ (v0.10.6) 衔接：Attribute mutable/immutable + useDirtyTracker 首次消费。
+
 ## [0.10.4] - 2026-05-14
 
 > **图片工作台 Wave β · polygon 性能闭环 + SAM 前端缓存 (M4-α).** ROADMAP/2026-05-12-image-workbench-optimization.md 的 Wave β 起步落地：① I2.1 KonvaPolygon 渲染层 Douglas-Peucker LOD（编辑/选中态用原顶点，其它按 viewport scale 简化到 1px 视觉等价）；② I2.2 自相交检测分两档：拖顶点中 O(n) 增量（仅检受影响两条边），静态 / 加载时 O(n²) 全量兜底；③ I2.3 扩展现有 `rbush` 索引到 polygon 顶点，编辑态视口外顶点不渲染 Konva Circle 句柄（500-顶点 polygon 视口内 ~20 个时节点数 -95%）；④ I6.1 SAM 候选前端 LRU 缓存（32 项，key 含 `taskId|backend|ctxKind|normalize(ctx)`，浮点 4 位小数 round 防抖动），切 backend 时 clearAll；⑤ I6.2 工作台 mount 时 dummy point @ image center 静默触发 backend embed 预热，每 (task, backend) 一次。同步把 roadmap I20/I13/I14/I15/I16/I2/I6 文案校准到 v0.9.41+v0.10.3 现状。→ [plan](docs/plans/claude-image-workbench-optimization-cha-logical-minsky.md) · [roadmap](ROADMAP/2026-05-12-image-workbench-optimization.md).

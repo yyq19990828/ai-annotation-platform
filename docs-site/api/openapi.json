@@ -923,6 +923,21 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "is_hidden": {
+            "default": false,
+            "title": "Is Hidden",
+            "type": "boolean"
+          },
+          "is_locked": {
+            "default": false,
+            "title": "Is Locked",
+            "type": "boolean"
+          },
+          "is_occluded": {
+            "default": false,
+            "title": "Is Occluded",
+            "type": "boolean"
+          },
           "lead_time": {
             "anyOf": [
               {
@@ -1006,6 +1021,11 @@
           "version": {
             "default": 1,
             "title": "Version",
+            "type": "integer"
+          },
+          "z_order": {
+            "default": 0,
+            "title": "Z Order",
             "type": "integer"
           }
         },
@@ -1118,6 +1138,50 @@
               }
             ],
             "title": "Geometry"
+          },
+          "is_hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Hidden"
+          },
+          "is_locked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Locked"
+          },
+          "is_occluded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Occluded"
+          },
+          "z_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Z Order"
           }
         },
         "title": "AnnotationUpdate",

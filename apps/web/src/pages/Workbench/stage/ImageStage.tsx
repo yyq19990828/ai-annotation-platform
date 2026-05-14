@@ -188,6 +188,16 @@ export function ImageStage({
   const imgH = image?.naturalHeight || 600;
   const imageLoaded = !!image?.naturalWidth;
 
+  // v0.10.5 M4-β · 按 is_hidden 过滤；按 z_order ASC 排序（高 z_order 后渲染 = 在上层）。
+  // 同 z_order 保持原数组顺序作 tie-breaker，避免选中态下渲染顺序闪烁。
+  const visibleSortedUserBoxes = useMemo(() => {
+    const visible = userBoxes.filter((b) => !b.is_hidden);
+    return visible
+      .map((b, i) => ({ b, i }))
+      .sort((a, c) => (a.b.z_order ?? 0) - (c.b.z_order ?? 0) || a.i - c.i)
+      .map((entry) => entry.b);
+  }, [userBoxes]);
+
   // v0.10.4 I2.3 · 当前视口在归一化 [0,1] 空间的 bbox，用于大 polygon 顶点视口粗筛。
   // 加 1 顶点 buffer 防边缘抖动；imgW/imgH 未就绪时返回 undefined（不启用粗筛）。
   const viewportBBox = useMemo(() => {
@@ -588,14 +598,15 @@ export function ImageStage({
 
         {/* user 层：人工框 + 选中态 + resize handle */}
         <Layer name="user" listening={userLayerListening}>
-          {userBoxes.map((b) => {
+          {visibleSortedUserBoxes.map((b) => {
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;
             // polygon 走多边形渲染（v0.5.4 加顶点编辑 / Alt 新增 / Shift 删除）
             if (display.polygon && display.polygon.length >= 3) {
               const polyOv = polyOverridePoints(b.id);
               const livePoints = polyOv ?? (display.polygon as Pt[]);
-              const isOnlySelected = selectedId === b.id && selSet.size === 1 && !readOnly;
+              // v0.10.5 M4-β · 锁定时不进入编辑态，但仍允许 click 选中。
+              const isOnlySelected = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
               // v0.10.4 I2.2 · 顶点拖拽中走 O(n) 增量检测；静态态用 O(n²) 全量（n 通常 <50）。
               const draggingThisVertex =
                 drag?.kind === "polyVertex" && drag.id === b.id ? drag.vidx : -1;
@@ -614,6 +625,7 @@ export function ImageStage({
                   selfIntersect={intersects}
                   viewportBBox={viewportBBox}
                   editable={isOnlySelected}
+                  occluded={!!b.is_occluded}
                   onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                   onVertexMouseDown={(vidx, e) => {
                     const cur = (polyOverridePoints(b.id) ?? (b.polygon as Pt[])).slice();
@@ -646,7 +658,8 @@ export function ImageStage({
               );
             }
             // 单体选中时（且只有一个选中）才允许 move/resize；多选时禁用以避免冲突
-            const isPrimarySingleSelect = selectedId === b.id && selSet.size === 1 && !readOnly;
+            // v0.10.5 M4-β · 锁定 (is_locked) 时禁 move/resize；occluded 影响 stroke 风格。
+            const isPrimarySingleSelect = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
             return (
               <KonvaBox
                 key={b.id}
@@ -654,7 +667,8 @@ export function ImageStage({
                 isAi={false}
                 selected={selSet.has(b.id)}
                 faded={false}
-                editable={!readOnly}
+                editable={!readOnly && !b.is_locked}
+                occluded={!!b.is_occluded}
                 imgW={imgW} imgH={imgH} scale={vp.scale}
                 onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                 onMoveStart={isPrimarySingleSelect ? (e) => {

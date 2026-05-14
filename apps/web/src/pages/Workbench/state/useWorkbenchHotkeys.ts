@@ -62,6 +62,12 @@ export interface UseWorkbenchHotkeysArgs {
   recordRecentClass: (cls: string) => void;
   handleDeleteBox: (id: string) => void;
   handleBatchDelete: () => void;
+  /** v0.10.5 M4-β · I15 shape 状态位字段级 PATCH（lock/hidden/occluded/z_order）。 */
+  handlePatchShapeFlag?: (
+    id: string,
+    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    value: number | boolean,
+  ) => void;
   handleStartChangeClass: (id: string) => void;
   handleStartBatchChangeClass: () => void;
   handleSubmitTask: () => void;
@@ -122,7 +128,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
   const {
     s, history, classes, currentProject, annotationsRef, batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,
-    recordRecentClass, handleDeleteBox, handleBatchDelete,
+    recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
@@ -357,6 +363,32 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           s.setConfThreshold(Math.max(0, Math.min(1, +(s.confThreshold + action.delta).toFixed(2))));
           return;
 
+        // v0.10.5 M4-β I15 · 切换选中 shape 状态位（lock/hidden/occluded）。
+        case "toggleShapeFlag": {
+          if (!handlePatchShapeFlag) return;
+          const id = s.selectedId;
+          if (!id) return;
+          const ann = annotationsRef.current.find((a) => a.id === id);
+          if (!ann) return;
+          e.preventDefault();
+          const cur = !!(ann as unknown as Record<string, unknown>)[action.flag];
+          handlePatchShapeFlag(id, action.flag, !cur);
+          return;
+        }
+
+        // v0.10.5 M4-β I15 · 调整选中 shape 的 z_order。
+        case "bumpZOrder": {
+          if (!handlePatchShapeFlag) return;
+          const id = s.selectedId;
+          if (!id) return;
+          const ann = annotationsRef.current.find((a) => a.id === id);
+          if (!ann) return;
+          e.preventDefault();
+          const cur = typeof ann.z_order === "number" ? ann.z_order : 0;
+          handlePatchShapeFlag(id, "z_order", cur + action.delta);
+          return;
+        }
+
         case "cycleUser": {
           const list = annotationsRef.current;
           if (list.length === 0) return;
@@ -497,7 +529,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     videoControlsRef,
     s, history, classes, currentProject, annotationsRef, batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,
-    recordRecentClass, handleDeleteBox, handleBatchDelete,
+    recordRecentClass, handleDeleteBox, handleBatchDelete, handlePatchShapeFlag,
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom.imgW, stageGeom.imgH,

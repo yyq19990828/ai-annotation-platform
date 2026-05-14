@@ -30,6 +30,11 @@ class AnnotationUpdate(BaseModel):
     class_name: str | None = None
     confidence: float | None = None
     attributes: AnnotationAttributes | None = None
+    # v0.10.5 M4-β · shape 状态位（I15）
+    z_order: int | None = None
+    is_locked: bool | None = None
+    is_hidden: bool | None = None
+    is_occluded: bool | None = None
 
     @field_validator("geometry", mode="before")
     @classmethod
@@ -88,6 +93,11 @@ class AnnotationOut(BaseModel):
     is_active: bool
     ground_truth: bool = False
     attributes: AnnotationAttributes = {}
+    # v0.10.5 M4-β · shape 状态位（I15）；旧记录回落默认值。
+    z_order: int = 0
+    is_locked: bool = False
+    is_hidden: bool = False
+    is_occluded: bool = False
     version: int = 1
     created_at: datetime
     updated_at: datetime | None = None

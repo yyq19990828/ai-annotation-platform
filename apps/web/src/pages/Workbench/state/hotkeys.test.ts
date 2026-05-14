@@ -265,3 +265,39 @@ describe("dispatchKey · 属性 hotkey 绑定 (D.1)", () => {
       .toEqual({ type: "setClassByDigit", idx: 0 });
   });
 });
+
+describe("v0.10.5 M4-β · shape 状态位快捷键", () => {
+  it("无选中 [ → thresholdAdjust -0.05", () => {
+    expect(dispatch({ key: "[" })).toEqual({ type: "thresholdAdjust", delta: -0.05 });
+  });
+  it("无选中 ] → thresholdAdjust +0.05", () => {
+    expect(dispatch({ key: "]" })).toEqual({ type: "thresholdAdjust", delta: 0.05 });
+  });
+  it("选中态 [ → bumpZOrder -1", () => {
+    expect(dispatch({ key: "[" }, { hasSelection: true }))
+      .toEqual({ type: "bumpZOrder", delta: -1 });
+  });
+  it("选中态 ] → bumpZOrder +1", () => {
+    expect(dispatch({ key: "]" }, { hasSelection: true }))
+      .toEqual({ type: "bumpZOrder", delta: 1 });
+  });
+  it("选中态 L → toggleShapeFlag is_locked", () => {
+    expect(dispatch({ key: "l" }, { hasSelection: true }))
+      .toEqual({ type: "toggleShapeFlag", flag: "is_locked" });
+    expect(dispatch({ key: "L" }, { hasSelection: true }))
+      .toEqual({ type: "toggleShapeFlag", flag: "is_locked" });
+  });
+  it("选中态 H → toggleShapeFlag is_hidden", () => {
+    expect(dispatch({ key: "h" }, { hasSelection: true }))
+      .toEqual({ type: "toggleShapeFlag", flag: "is_hidden" });
+  });
+  it("选中态 O → toggleShapeFlag is_occluded", () => {
+    expect(dispatch({ key: "o" }, { hasSelection: true }))
+      .toEqual({ type: "toggleShapeFlag", flag: "is_occluded" });
+  });
+  it("无选中 L/H/O → null（不消费）", () => {
+    expect(dispatch({ key: "l" })).toBeNull();
+    expect(dispatch({ key: "h" })).toBeNull();
+    expect(dispatch({ key: "o" })).toBeNull();
+  });
+});
