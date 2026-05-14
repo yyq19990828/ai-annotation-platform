@@ -22,6 +22,34 @@
 
 ## 最新版本
 
+## [0.10.7] - 2026-05-15
+
+> **Mask 编辑器 v1 算法核 + v0.10.4 epic 收尾 (M4-δ).** ROADMAP/2026-05-12-image-workbench-optimization.md 的 I11 算法核落地（UI 集成留 v0.10.7.1 / v0.11.0）：① 新增数据层 `stage/shared/geometry/maskBuffer.ts` —— 纯 TS 单通道 `Uint8Array` alpha 缓冲，brush / erase / clear / fromPolygon (扫描线填充) / toAlphaImageData / clone，半径 1-200px 单笔 ≤ 125k 像素操作；② 新增算法层 `stage/shared/geometry/maskToPolygon.ts` —— flood-fill 找连通分量 + Moore-Neighborhood 8-邻轮廓追踪 + `polygon-clipping@0.15.7` union 去自相交 / 平滑锯齿 + 复用 `simplifyPolygon` RDP 压缩，多连通时取最大面积外环 + `multipleComponents=true` 上抛 UI；③ ADR-0021 polygon LOD + 空间索引（I2 决策回填）+ ADR-0022 mask editor architecture（不引入 RLE schema 的 v1 决策）。**不引入** 浏览器 OffscreenCanvas API（jsdom / SSR / preview 也能跑）、d3-contour（包体 ~30KB 不划算）、RLE mask schema（留 v0.11+ 与 I9 / I10 一并做 geometry.kind 统一）。是 v0.10.4 epic 的第 4/4 子版本兼 epic 收尾。→ [plan](docs/plans/2026-05-15-v0.10.7-mask-editor-v1.md) · [epic](docs/plans/2026-05-14-image-workbench-wave-beta-gamma-epic.md) · [roadmap](ROADMAP/2026-05-12-image-workbench-optimization.md) · [ADR-0021](docs/adr/0021-polygon-lod-and-spatial-index.md) · [ADR-0022](docs/adr/0022-mask-editor-tool-architecture.md).
+
+### Added
+
+- **`MaskBuffer`** ([maskBuffer.ts](apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts))：纯 TS alpha 缓冲（Uint8Array W*H，0/255 二值），`brush(cx, cy, r, value)` 圆栅格化双循环 + bbox 裁剪，`erase` = `brush(0)` 糖，`clear` 全清零，`fromPolygon` 扫描线 + 射线投票（与 canvas2d fill 等价），`toAlphaImageData` 输出 RGBA 缓冲（仅 A 通道），`clone` 深拷贝。12 例单测覆盖构造异常 / 圆笔刷面积近似 π·r² / 越界裁剪 / erase 抹掉 / 矩形 polygon / 三角形 polygon / 顶点 < 3 静默 / polygon 越界裁剪 / RGB 通道为 0 / clone 独立。
+- **`maskToPolygon`** ([maskToPolygon.ts](apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts))：marching-squares + Moore-Neighborhood tracing 主流程：flood-fill `findComponents` → 选最大分量 → `traceBoundary` 8-邻顺时针绕一圈 → `polygon-clipping.union([poly])` 去自相交 / 平滑锯齿 → `simplifyPolygon`（RDP，epsilon 默认 1px）压顶点 → 去连续重复点。7 例单测覆盖空 mask / 矩形 / 圆形（RDP 起效，顶点数 << 周长）/ 多连通取大丢小 / 顶点无重复 / threshold 阈值控制 / epsilon=0 跳过简化。
+- **ADR-0021** ([0021-polygon-lod-and-spatial-index.md](docs/adr/0021-polygon-lod-and-spatial-index.md))：I2 决策回填（v0.10.4 实际落地）—— Douglas-Peucker LOD + O(n) 增量自相交 + rbush 顶点视口粗筛 + commit 路径复查 no-op；候选方案 B（远视距 bbox fallback）/ C（WebGL 自渲染）拒绝理由。
+- **ADR-0022** ([0022-mask-editor-tool-architecture.md](docs/adr/0022-mask-editor-tool-architecture.md))：I11 v1 决策 —— 离屏 alpha 缓冲 + marching-squares + 不引入 RLE schema；候选方案 B（直接做 RLE schema 升级）/ C（d3-contour）拒绝理由；v0.10.7.1 / v0.11.0 后续 UI 集成清单。
+
+### Changed
+
+- **ROADMAP I11 描述更新**：从「待开发」改为「算法核 ✅ v0.10.7 / UI 集成 🚧 v0.10.7.1」，并列出后续待补条目（MaskTool / ToolDock / AIPredictionPopover / hotkey）。
+- **epic 计划文件**：[2026-05-14-image-workbench-wave-beta-gamma-epic.md](docs/plans/2026-05-14-image-workbench-wave-beta-gamma-epic.md) 表格 v0.10.7 行改为「✅ 算法核已发布」，「跨 sub-milestone 收尾」节列出 v0.10.7 实际收尾动作（CHANGELOG / ROADMAP / ADR 完成；e2e 推迟）。
+
+### Verified
+
+- vitest 全量 90 test files / 661 tests 全绿（+19 新例：MaskBuffer 12 + maskToPolygon 7）；
+- `pnpm --filter web typecheck` 全绿；`pnpm --filter web lint` 0 errors / 125 warnings（warnings 全部预存，未新增）；
+- 浏览器手测 / e2e 推迟到 v0.10.7.1 UI 集成时一并做（本期纯算法核，无 UI 副作用面）。
+
+### Notes
+
+- **范围裁剪说明**：plan 原文写 Konva `stage/tools/MaskTool.tsx` + `MaskCanvas.tsx` + AIPredictionPopover「精修」+ ToolDock 入口 + B/E/Shift+滚轮/Esc/Enter 笔刷 hotkey；本期裁到「算法核单测稳住」+ ADR 决策固化，UI 集成推迟到 v0.10.7.1 / v0.11.0。理由：UI 集成是高耦合 / 高视觉验证成本的工作，独立子版本里跑完整 e2e 更稳；算法核纯 TS 可单测，可以独立稳住。
+- **v0.10.4 epic 收尾**：本版是 v0.10.4 epic（图片工作台 Wave β + γ I11/I13/I15）的第 4/4 子版本。epic 全程 4 个子版本（v0.10.4 polygon LOD + SAM 缓存 / v0.10.5 形状元数据 / v0.10.6 attribute mutable / v0.10.7 mask 算法核）。后续 v0.11+ 接 I1 大图 tile 金字塔独立 epic + I9 / I10 / I11 v2 一并做 geometry.kind 收口。
+- **协同**：mask 编辑器笔刷的「一笔不入 history、松手前累计 flush 一次」路径预计复用 v0.10.6 落地的 `useDirtyTracker.flush`。
+
 ## [0.10.6] - 2026-05-15
 
 > **Attribute mutable/immutable + useDirtyTracker 首次消费 (M4-γ).** ROADMAP/2026-05-12-image-workbench-optimization.md 的 I13.2 + I16 落地：① schemas `AttributeField` 加 `mutable: bool` 字段（默认 None / 向后兼容，仅视频任务消费），class_definitions 仍 JSONB 无需 alembic；② schemas `VideoTrackKeyframe` 加 `attributes: dict | None` 字段，承载 mutable 属性的逐帧 override（不污染 track 默认 attributes），video_track geometry 也是 JSONB 同样无需 alembic；③ 前端 `AttributeForm` 接受 `context: "image" | "video"` prop，`context=video` 下 mutable 字段渲染「逐帧」徽标，`context=image` 维持忽略（向后兼容）；④ `useDirtyTracker` 补 `flush(id, commit)` API：commit 同步抛或 Promise reject 自动回滚 dirty；`AttributeForm` 作为首位消费者，接收 `dirtyTracker` + `annotationId` 时旁路 400ms debounce，改为「输入标 dirty / blur 出 form 一次 flush」节奏（避免逐字段请求风暴）。是 v0.10.4 epic 的第 3/4 子版本。→ [plan](docs/plans/2026-05-15-v0.10.6-attribute-mutability.md) · [epic](docs/plans/2026-05-14-image-workbench-wave-beta-gamma-epic.md) · [roadmap](ROADMAP/2026-05-12-image-workbench-optimization.md).

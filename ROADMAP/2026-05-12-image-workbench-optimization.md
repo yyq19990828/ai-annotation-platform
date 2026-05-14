@@ -169,7 +169,11 @@
 > CVAT 对 mask 标注用单独的 `masksHandler.ts`：圆/方笔刷、橡皮、polygon-plus/polygon-minus、Shift+滚轮调笔刷大小，最后 RLE 压缩。
 
 - 我们当前 SAM 出的 mask 是"接受 → polygon"流程，不可二次精修。要实现"AI 出粗结果 → 笔刷细修"必须有 mask 编辑器。
-- 落地点：新 `stage/tools/MaskTool.tsx`，离屏 canvas 承载像素状态（与 I6 / R5.2 同套基础设施），编辑完触发 mask→RLE 压缩落地。
+- ✅ **v0.10.7 v1 算法核已落地**（[ADR-0022](../docs/adr/0022-mask-editor-tool-architecture.md)）：
+  - 数据层 [`stage/shared/geometry/maskBuffer.ts`](../apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts)：纯 TS Uint8Array alpha 缓冲，brush / erase / clear / fromPolygon / toAlphaImageData / clone（12 例单测）；
+  - 算法层 [`stage/shared/geometry/maskToPolygon.ts`](../apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts)：marching-squares + Moore-Neighborhood tracing + polygon-clipping union 去自相交 + RDP 简化（7 例单测）；
+  - 不引入 RLE schema：v1 走「mask 临时态 → polygon 入库」单向，与 polygon 等价落库；RLE 留 v0.11+ 与 I9 / I10 一并做 geometry.kind 统一。
+- 🚧 **v0.10.7.1 / v0.11.0 待补**：Konva `stage/tools/MaskTool.tsx` 集成 + ToolDock 独立工具按钮 + AIPredictionPopover「精修」入口 + 笔刷 hotkey（B/E + Shift+滚轮 + Esc/Enter）。
 - 与 I1 大图 tile 共存：mask 编辑时仅在当前 viewport 范围内做像素操作，全图导出时合并。
 - 来源：`cvat-canvas/src/typescript/masksHandler.ts`。
 
