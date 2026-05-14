@@ -201,6 +201,7 @@ class SAM3Predictor:
         image: Image.Image | None,
         bbox: list[float],
         *,
+        output: str = "mask",
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
         score_threshold: float | None = None,
@@ -210,7 +211,8 @@ class SAM3Predictor:
         用户期待单框单 mask 的场景请走 grounded-sam2-backend.
         """
         return self._predict_geometric(
-            image, bbox, cache_key=cache_key, simplify_tolerance=simplify_tolerance,
+            image, bbox, output=output, cache_key=cache_key,
+            simplify_tolerance=simplify_tolerance,
             score_threshold=score_threshold, prompt_name="bbox",
         )
 
@@ -219,13 +221,15 @@ class SAM3Predictor:
         image: Image.Image | None,
         exemplar_bbox: list[float],
         *,
+        output: str = "mask",
         cache_key: str | None = None,
         simplify_tolerance: float | None = None,
         score_threshold: float | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         """v0.10.0 新增 exemplar prompt; 与 predict_bbox 同底层调用, 协议层语义不同."""
         return self._predict_geometric(
-            image, exemplar_bbox, cache_key=cache_key, simplify_tolerance=simplify_tolerance,
+            image, exemplar_bbox, output=output, cache_key=cache_key,
+            simplify_tolerance=simplify_tolerance,
             score_threshold=score_threshold, prompt_name="exemplar",
         )
 
@@ -234,6 +238,7 @@ class SAM3Predictor:
         image: Image.Image | None,
         bbox: list[float],
         *,
+        output: str,
         cache_key: str | None,
         simplify_tolerance: float | None,
         score_threshold: float | None,
@@ -266,7 +271,7 @@ class SAM3Predictor:
 
         # geometric prompt 没有自然 label, 用 "object" 占位; workbench 会按当前 active label 重写.
         return self._build_results(
-            boxes, masks, scores, w, h, label="object", output="mask",
+            boxes, masks, scores, w, h, label="object", output=output,
             simplify_tolerance=simplify_tolerance, prompt_name=prompt_name,
         ), hit
 

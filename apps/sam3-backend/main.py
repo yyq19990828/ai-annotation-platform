@@ -222,6 +222,8 @@ def setup() -> dict:
         # 单点交互项目挂 grounded-sam2-backend 兜底.
         "supported_prompts": ["bbox", "text", "exemplar"],
         "supported_text_outputs": ["box", "mask", "both"],
+        # bbox / exemplar 走同一 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
+        "supported_geometric_outputs": ["box", "mask", "both"],
         "params": {
             "model_variant": MODEL_VERSION,
             "embedding_cache_size": EMBEDDING_CACHE_SIZE,
@@ -287,6 +289,16 @@ def _coerce_simplify_tolerance(ctx: dict) -> float | None:
     return val
 
 
+def _coerce_output(ctx: dict) -> str:
+    mode = ctx.get("output", "mask")
+    if mode not in ("box", "mask", "both"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"context.output must be one of box|mask|both, got {mode!r}",
+        )
+    return mode
+
+
 def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict], bool]:
     """返回 (results, cache_hit). 命中时 point/bbox/exemplar 跳过 image fetch."""
     ptype = ctx.get("type")
@@ -307,25 +319,23 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
         bbox = ctx.get("bbox")
         if not bbox or len(bbox) != 4:
             raise HTTPException(status_code=422, detail="context.bbox=[x1,y1,x2,y2] required")
+        output_mode = _coerce_output(ctx)
         if not _cache.peek(cache_key):
             image = _fetch_image(file_path)
             return p.predict_bbox(
-                image, bbox, cache_key=cache_key, simplify_tolerance=simplify_tol
+                image, bbox, output=output_mode, cache_key=cache_key,
+                simplify_tolerance=simplify_tol, score_threshold=score_th,
             )
         return p.predict_bbox(
-            None, bbox, cache_key=cache_key, simplify_tolerance=simplify_tol
+            None, bbox, output=output_mode, cache_key=cache_key,
+            simplify_tolerance=simplify_tol, score_threshold=score_th,
         )
 
     if ptype == "text":
         text = (ctx.get("text") or "").strip()
         if not text:
             raise HTTPException(status_code=422, detail="context.text required for type=text")
-        output_mode = ctx.get("output", "mask")
-        if output_mode not in ("box", "mask", "both"):
-            raise HTTPException(
-                status_code=422,
-                detail=f"context.output must be one of box|mask|both, got {output_mode!r}",
-            )
+        output_mode = _coerce_output(ctx)
         # SAM 3 PCS text 走 image predictor + 缓存; 与 grounded-sam2 (DINO 原图必拉) 不同,
         # 缓存命中时可省 _fetch_image.
         if not _cache.peek(cache_key):
@@ -354,11 +364,13 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
                 status_code=422,
                 detail="context.bbox=[x1,y1,x2,y2] required for type=exemplar",
             )
+        output_mode = _coerce_output(ctx)
         if not _cache.peek(cache_key):
             image = _fetch_image(file_path)
             return p.predict_exemplar(
                 image,
                 exemplar_bbox,
+                output=output_mode,
                 cache_key=cache_key,
                 simplify_tolerance=simplify_tol,
                 score_threshold=score_th,
@@ -366,6 +378,7 @@ def _run_prompt(p: SAM3Predictor, file_path: str, ctx: dict) -> tuple[list[dict]
         return p.predict_exemplar(
             None,
             exemplar_bbox,
+            output=output_mode,
             cache_key=cache_key,
             simplify_tolerance=simplify_tol,
             score_threshold=score_th,
