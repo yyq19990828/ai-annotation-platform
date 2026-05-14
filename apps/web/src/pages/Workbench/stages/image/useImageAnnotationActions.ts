@@ -220,7 +220,9 @@ export function useImageAnnotationActions({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (s.tool !== "sam") return;
+      // v0.10.2 · sam 拆分后, Tab/Enter 候选导航在任一 AI 工具激活下都启用.
+      const isAIActive = s.tool === "smart-point" || s.tool === "smart-box" || s.tool === "text-prompt" || s.tool === "exemplar";
+      if (!isAIActive) return;
       if (sam.candidates.length === 0) return;
       const target = e.target as HTMLElement | null;
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;

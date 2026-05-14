@@ -22,6 +22,36 @@
 
 ## 最新版本
 
+## [0.10.2] - 2026-05-14
+
+> **Prompt-first ToolDock + Exemplar 入口 (M2).** 把单 SAM 工具拆为 4 个独立工具 (智能点 / 智能框 / 文本提示 / Exemplar), 每个声明 `requiredPrompt` 与 backend `/setup.supported_prompts` 联动; backend 不支持的工具自动置灰 + tooltip 提示. 工具激活时右侧浮出 `AIToolDrawer` (后端 + 工具特定控件 + 参数面板). 自研最小 `SchemaForm` (~200 行, 不引 `@rjsf`) 从 `/setup.params` 自动渲染 number/boolean/enum/string 控件, 用户可在工作台动态调 `box_threshold` 等参数, 透传到 `/interactive-annotating` 请求体. → [plan](docs/plans/2026-05-14-v0.10.2-prompt-first-tooldock.md) · [roadmap](ROADMAP/0.10.x.md).
+
+### Added
+
+- **4 个独立工具**: `SmartPointTool` / `SmartBoxTool` / `TextPromptTool` / `ExemplarTool` (`apps/web/src/pages/Workbench/stage/tools/`). 每个工具的 `CanvasTool.requiredPrompt` 声明所需 backend 能力 ("point" / "bbox" / "text" / "exemplar"). 旧 `SamTool` 删除, `samSubTool` 状态由 `tool` 派生.
+- **`useInteractiveAI.runExemplar()`** + 各 `run*` 接受可选 `extraParams`: AIToolDrawer 把 schema-form 参数 (`box_threshold` / `text_threshold` 等) 通过 `extraParams` 注入到 context, 透传后端.
+- **`AIToolDrawer`** (`apps/web/src/pages/Workbench/shell/AIToolDrawer.tsx`): AI 工具激活时显示, 含后端选择器 (1:1 阶段单项 disabled) + 工具特定控件 (smart-point 极性 / 文案提示) + Schema-form 参数面板 + 状态指示 (Healthy / 加载中 / 失败).
+- **`SchemaForm`** (`apps/web/src/pages/Workbench/components/SchemaForm/index.tsx`): JSON Schema Draft-07 子集渲染 (number/integer slider, boolean checkbox, string enum dropdown, string text input). 包含 `deriveDefaults()` 辅助. 不依赖 `@rjsf/core`, ~200 行自研.
+- **能力变化兜底**: 当前激活的 AI 工具因 backend 切换 / 解绑而不再支持时, 自动切回 `hand` 工具并 toast 提示.
+- **E2E**: `apps/web/e2e/tests/annotation.spec.ts` 新增两个用例 — grounded-sam2 capability 下 exemplar 置灰 + smart-point dispatch context.type="point"; sam3 capability 下 smart-point 置灰 + 拖框 exemplar dispatch context.type="exemplar".
+- **SchemaForm 单测** (`SchemaForm.test.tsx`): number/boolean/enum/deriveDefaults/空 schema 五个分支.
+
+### Changed
+
+- **ToolDock UI 重构** (`apps/web/src/pages/Workbench/shell/ToolDock.tsx`): 删除 SAM 单工具特殊渲染分支, 改为统一 `requiredPrompt` 联动置灰 + `aiToolDrawer` slot. 分组顺序: 绘制工具 → AI 工具组 → 视图工具.
+- **`S` 热键语义**: 从「进入 SAM 并循环子工具」改为「在 4 个 AI 工具间循环, 跳过置灰的」. `hotkeys.ts` 的 `setTool` action 新增 `"ai-cycle"` 元值; `useWorkbenchHotkeys` 据 `useMLCapabilities.isPromptSupported` 决定下一个工具. Alt+2 改绑 polygon, Alt+3 改绑 ai-cycle.
+- **`AIPredictionPopover` 文本面板**: 渲染门控从 `tool === "sam" && samSubTool === "text"` 改为 `tool === "text-prompt"`.
+- **`useWorkbenchState`**: `Tool` union 移除 `"sam"`, 加入 4 个新工具 id. `samSubTool` 改为 `useMemo` 派生 (公开 read-only), 移除 `setSamSubTool`. 新增 `aiToolParams` 状态 + `setAiToolParams` setter.
+- **`onSamPrompt`** 类型扩展: 新增 `{ kind: "exemplar"; bbox }`, WorkbenchShell 据 `prompt.kind` 路由到 `runPoint` / `runBbox` / `runExemplar`.
+
+### Removed
+
+- `apps/web/src/pages/Workbench/stage/tools/SamTool.ts` (拆为 4 个独立工具).
+- `apps/web/src/pages/Workbench/shell/SamSubToolbar.tsx` (子工具栏功能迁移到 AIToolDrawer + ToolDock 主按钮).
+- `useWorkbenchState.setSamSubTool` / `nextSamSubTool` (samSubTool 派生, 不再独立持有).
+
+---
+
 ## [0.10.1] - 2026-05-14
 
 > **Capability 协商基础设施 (M1).** 把 ML backend 的 `/setup` 标准化为 JSON Schema 自描述协议, apps/api 暴露 `/projects/{id}/ml-backends/{bid}/setup` 代理端点, 前端落地 `useMLCapabilities` hook 作为 ML 能力的单一事实源. 同时落地 `MAX_ML_BACKENDS_PER_PROJECT` env (默认 1) 锁住运行时 1:1, DB/UI 一步到位 1:N. 本期 hook 只挂载、不消费; M2 (v0.10.2 Prompt-first ToolDock) 才接入消费. → [plan](docs/plans/2026-05-14-v0.10.1-capability-negotiation.md) · [roadmap](ROADMAP/0.10.x.md).

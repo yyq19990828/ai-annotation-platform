@@ -79,6 +79,7 @@ interface WorkbenchStageHostProps {
   onSamPrompt: (prompt:
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
+    | { kind: "exemplar"; bbox: [number, number, number, number] }
   ) => void;
   samCandidates: {
     id: string;
@@ -87,7 +88,7 @@ interface WorkbenchStageHostProps {
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
   samActiveIdx: number;
-  samSubTool: SamSubTool;
+  samSubTool: SamSubTool | null;
   samPolarity: SamPolarity;
   onCommitMove: (id: string, before: Geom, after: Geom) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;

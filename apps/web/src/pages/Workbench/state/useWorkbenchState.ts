@@ -1,26 +1,60 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Annotation } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 
-export type Tool = "box" | "hand" | "polygon" | "canvas" | "sam";
+// v0.10.2 · Tool union 扩展: 旧 "sam" 拆为 4 个独立 AI 工具 (smart-point / smart-box /
+// text-prompt / exemplar), 每个绑定一个 prompt 范式. 状态层仅保留 polarity (smart-point
+// 用) 和 aiToolParams (AIToolDrawer 用); samSubTool 由 tool 派生, 不再独立持有.
+export type Tool =
+  | "box"
+  | "hand"
+  | "polygon"
+  | "canvas"
+  | "smart-point"
+  | "smart-box"
+  | "text-prompt"
+  | "exemplar";
 export type VideoTool = "box" | "track";
 
 /**
- * v0.9.4 phase 2 · SAM 工具子模式 (`Tool === "sam"` 时生效).
- * point: 单击产生 positive point prompt; Alt+点击 / polarity=negative 产生 negative point.
- * bbox:  拖框产生 bbox prompt (单击不响应).
- * text:  画布事件不响应; 焦点切到右栏 SamTextPanel 输入框.
+ * v0.10.2 · 派生型 SAM 子工具, 仅作 ImageStage / AIInspectorPanel 等老消费者的兼容外观.
+ * 取值由 tool 决定; tool 不是 AI 工具时为 null.
  */
-export type SamSubTool = "point" | "bbox" | "text";
+export type SamSubTool = "point" | "bbox" | "text" | "exemplar";
 
-/** SAM-point 子工具下的 polarity, "+" / "-" 键切换; 仅 sam-point 时有意义. */
+/** SAM-point 子工具下的 polarity, "+" / "-" 键切换; 仅 smart-point 时有意义. */
 export type SamPolarity = "positive" | "negative";
 
-const SAM_CYCLE: SamSubTool[] = ["point", "bbox", "text"];
+/** v0.10.2 · 由 tool 派生 samSubTool, 给老消费者用 (ImageStage / AIInspectorPanel). */
+export function toolToSamSubTool(tool: Tool): SamSubTool | null {
+  switch (tool) {
+    case "smart-point":
+      return "point";
+    case "smart-box":
+      return "bbox";
+    case "text-prompt":
+      return "text";
+    case "exemplar":
+      return "exemplar";
+    default:
+      return null;
+  }
+}
 
-export function nextSamSubTool(current: SamSubTool): SamSubTool {
-  const i = SAM_CYCLE.indexOf(current);
-  return SAM_CYCLE[(i + 1) % SAM_CYCLE.length];
+const AI_TOOL_CYCLE: Tool[] = ["smart-point", "smart-box", "text-prompt", "exemplar"];
+
+/** v0.10.2 · S 键循环 4 个 AI 工具; isEnabled 判定是否跳过 (置灰工具). */
+export function nextAITool(current: Tool, isEnabled: (t: Tool) => boolean): Tool {
+  const i = AI_TOOL_CYCLE.indexOf(current);
+  if (i < 0) {
+    return AI_TOOL_CYCLE.find(isEnabled) ?? "box";
+  }
+  for (let k = 1; k <= AI_TOOL_CYCLE.length; k++) {
+    const next = AI_TOOL_CYCLE[(i + k) % AI_TOOL_CYCLE.length];
+    if (next === AI_TOOL_CYCLE[0] && k === AI_TOOL_CYCLE.length) return "box";
+    if (isEnabled(next)) return next;
+  }
+  return "box";
 }
 
 /** v0.6.4：canvas 工具激活时的草稿状态。
@@ -66,11 +100,13 @@ export function useWorkbenchState() {
   const [videoFrameIndex, setVideoFrameIndex] = useState(0);
   const [hiddenVideoTrackIds, setHiddenVideoTrackIds] = useState<Set<string>>(() => new Set());
   const [lockedVideoTrackIds, setLockedVideoTrackIds] = useState<Set<string>>(() => new Set());
-  // v0.9.4 phase 2 · SAM 子工具 (point/bbox/text) + polarity (+/−) + 文本焦点 trigger.
-  const [samSubTool, setSamSubTool] = useState<SamSubTool>("point");
+  // v0.10.2 · samSubTool 改为派生 (见 toolToSamSubTool); polarity + aiToolParams 仍是 state.
   const [samPolarity, setSamPolarity] = useState<SamPolarity>("positive");
-  // text 子工具激活时让 SamTextPanel 抓焦点; 每次切到 text 自增, useEffect 依赖此值即可.
+  // text 子工具激活时让 AIToolDrawer 抓焦点; 每次切到 text-prompt 自增.
   const [samTextFocusKey, setSamTextFocusKey] = useState(0);
+  /** v0.10.2 · AIToolDrawer 维护的后端参数 (来自 /setup.params schema). 切换工具时重置. */
+  const [aiToolParams, setAiToolParams] = useState<Record<string, unknown>>({});
+  const samSubTool = useMemo(() => toolToSamSubTool(tool), [tool]);
   /**
    * activeClass 语义：默认/最近使用类别。仅作为绘制时浮框颜色预览 + popover 的默认选中。
    * 实际类别在画完框 → ClassPickerPopover 中确认。
@@ -231,10 +267,11 @@ export function useWorkbenchState() {
     videoFrameIndex, setVideoFrameIndex,
     hiddenVideoTrackIds, lockedVideoTrackIds,
     toggleHiddenVideoTrack, toggleLockedVideoTrack, resetVideoStageUi,
-    // v0.9.4 phase 2 · SAM 子工具栏
-    samSubTool, setSamSubTool,
+    // v0.10.2 · 派生 samSubTool (read-only) + polarity + AI 工具参数 + 文本焦点 trigger.
+    samSubTool,
     samPolarity, setSamPolarity,
     samTextFocusKey, bumpSamTextFocus: () => setSamTextFocusKey((k) => k + 1),
+    aiToolParams, setAiToolParams,
     activeClass, setActiveClass,
     pendingDrawing, setPendingDrawing,
     editingClass, setEditingClass,

@@ -16,10 +16,10 @@ export interface HotkeyDef {
 export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
   { keys: ["Alt", "1"], desc: "矩形框工具（备用，避免与切类别冲突）", group: "draw", actionType: "setTool" },
-  { keys: ["S"], desc: "SAM 智能工具（再按循环切子工具：点 → 框 → 文本 → 退出）", group: "ai", actionType: "setTool" },
-  { keys: ["Alt", "2"], desc: "SAM 智能工具（备用）", group: "ai", actionType: "setTool" },
-  { keys: ["= / +"], desc: "SAM 子工具栏：正向点 (sam-point 子工具下生效)", group: "ai", actionType: "samPolarity" },
-  { keys: ["-"], desc: "SAM 子工具栏：负向点 (sam-point 子工具下生效)", group: "ai", actionType: "samPolarity" },
+  { keys: ["S"], desc: "AI 工具循环：智能点 → 智能框 → 文本提示 → Exemplar → 退出（跳过置灰）", group: "ai", actionType: "setTool" },
+  { keys: ["Alt", "3"], desc: "AI 工具（备用）", group: "ai", actionType: "setTool" },
+  { keys: ["= / +"], desc: "智能点工具：切正向", group: "ai", actionType: "samPolarity" },
+  { keys: ["-"], desc: "智能点工具：切负向", group: "ai", actionType: "samPolarity" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
   { keys: ["Alt", "3"], desc: "多边形工具（备用）", group: "draw", actionType: "setTool" },
   { keys: ["V"], desc: "平移工具", group: "draw", actionType: "setTool" },
@@ -114,7 +114,7 @@ export type HotkeyAction =
   | { type: "cycleUser"; dir: 1 | -1; loop: boolean }
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
-  | { type: "setTool"; tool: "box" | "hand" | "polygon" | "sam" }
+  | { type: "setTool"; tool: "box" | "hand" | "polygon" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "ai-cycle" }
   | { type: "setVideoTool"; tool: "box" | "track" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
@@ -229,8 +229,9 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   // 单按 1-9 仍切类别 (老用户肌肉记忆不变); Alt+digit 仅在画布无 input 聚焦时生效.
   if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
     if (e.key === "1") return { type: "setTool", tool: "box" };
-    if (e.key === "2") return { type: "setTool", tool: "sam" };
-    if (e.key === "3") return { type: "setTool", tool: "polygon" };
+    if (e.key === "2") return { type: "setTool", tool: "polygon" };
+    // v0.10.2 · Alt+3 进入 AI 工具组 (循环). 单按 S 同样进入循环.
+    if (e.key === "3") return { type: "setTool", tool: "ai-cycle" };
     if (e.key === "4") return { type: "setTool", tool: "hand" };
   }
 
@@ -273,7 +274,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
 
   if (e.key === "v" || e.key === "V") return { type: "setTool", tool: "hand" };
   if (e.key === "b" || e.key === "B") return { type: "setTool", tool: "box" };
-  if (e.key === "s" || e.key === "S") return { type: "setTool", tool: "sam" };
+  // v0.10.2 · S 循环 4 个 AI 工具 (具体下一个工具由消费侧根据 capabilities 决定).
+  if (e.key === "s" || e.key === "S") return { type: "setTool", tool: "ai-cycle" };
   if (e.key === "p" || e.key === "P") return { type: "setTool", tool: "polygon" };
 
   if (e.key >= "1" && e.key <= "9") {

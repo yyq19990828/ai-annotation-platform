@@ -1,35 +1,42 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { ALL_TOOLS, type ToolId } from "../stage/tools";
-import type { SamPolarity, SamSubTool, VideoTool } from "../state/useWorkbenchState";
-import { SamSubToolbar } from "./SamSubToolbar";
+import { ALL_TOOLS, type CanvasTool, type ToolId } from "../stage/tools";
+import type { VideoTool } from "../state/useWorkbenchState";
 
 interface ToolDockProps {
   tool: ToolId;
   onSetTool: (t: ToolId) => void;
   videoTool?: VideoTool;
   onSetVideoTool?: (t: VideoTool) => void;
-  /** v0.9.4 phase 2 · 仅 tool === "sam" 时浮出子工具栏. */
-  samSubTool?: SamSubTool;
-  onSetSamSubTool?: (sub: SamSubTool) => void;
-  samPolarity?: SamPolarity;
-  onSetSamPolarity?: (p: SamPolarity) => void;
-  /** M2 · review 模式下只显示 Hand 工具（审核员仅需平移 + 微调已有框）。 */
+  /** v0.10.2 · 由 useMLCapabilities 注入. tool.requiredPrompt 不在 supported 集合 → 置灰. */
+  isPromptSupported?: (type: string) => boolean;
+  /** v0.10.2 · capability 加载中: AI 工具组半透 + 不可点 (避免误用回退到的 fallback). */
+  capabilitiesLoading?: boolean;
+  /**
+   * v0.10.2 · AI 工具激活时由父层渲染的右侧抽屉 (AIToolDrawer).
+   * ToolDock 自身不持有 schema/params 状态, 只负责定位.
+   */
+  aiToolDrawer?: ReactNode;
+  /** M2 · review 模式下只显示 Hand 工具. */
   reviewMode?: boolean;
-  /** v0.9.20 · 视频工作台分离单帧 bbox 与 track 工具。 */
+  /** v0.9.20 · 视频工作台分离单帧 bbox 与 track 工具. */
   videoMode?: boolean;
 }
 
 interface ToolDescriptor {
   desc: string;
+  altDigit?: number;
 }
 
-/** v0.9.6 P2-b · 主工具栏 Tooltip 描述 + Alt+digit 副 hotkey (避免与数字切类别冲突). */
-const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor & { altDigit?: number }> = {
+/** v0.10.2 · Tooltip + Alt+digit 副 hotkey. */
+const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   box: { desc: "拖鼠标画矩形框", altDigit: 1 },
-  sam: { desc: "AI 智能分割：点 / 框 / 文本", altDigit: 2 },
-  polygon: { desc: "逐点画多边形 (Enter 闭合)", altDigit: 3 },
+  polygon: { desc: "逐点画多边形 (Enter 闭合)", altDigit: 2 },
+  "smart-point": { desc: "单击 = 正向点；Alt+点 = 负向点", altDigit: 3 },
+  "smart-box": { desc: "拖框作为 SAM 提示" },
+  "text-prompt": { desc: "文本召回 (右侧 AI 面板输入)" },
+  exemplar: { desc: "拖框示例 → 全图相似实例 (SAM 3)" },
   hand: { desc: "拖拽平移画布", altDigit: 4 },
   canvas: { desc: "评论批注 (内部, 不展示)" },
 };
@@ -40,25 +47,25 @@ const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: I
 ];
 
 /**
- * 左侧垂直工具栏（v0.5.3）。
+ * v0.10.2 · 左侧垂直工具栏 (Prompt-first 重构).
  *
- * v0.9.4 phase 2 · SAM 子工具栏拆分（点 / 框 / 文本）
- * v0.9.6 P2-b · UX 重构:
- *   - native title 替为 Tooltip 组件 (3 行: name + desc + hotkey 徽)
- *   - 主按钮右下加 hotkey 角标 (8px 字母, 不靠 hover 即可见)
- *   - 激活态加 inset 2px 左侧 accent 边条
- *   - 在 Polygon 与 Hand 之间插入 1px 分组分隔线 (操作工具 vs 视图工具)
- *   - SAM 子工具栏从主按钮下方迁出, 改为 SAM 主按钮右侧 absolute 抽屉 (SamSubToolbar.tsx)
+ * 工具分组:
+ *   普通绘制: box, polygon
+ *   ─── 分隔 ───
+ *   AI 工具 (按 prompt 范式): smart-point, smart-box, text-prompt, exemplar
+ *     每个工具声明 requiredPrompt; backend 不支持时按钮置灰 + tooltip 提示.
+ *     任一 AI 工具激活时, 其右侧抽屉显示 AIToolDrawer (后端 + 参数 + 工具控件).
+ *   ─── 分隔 ───
+ *   视图: hand
  */
 export function ToolDock({
   tool,
   onSetTool,
   videoTool = "box",
   onSetVideoTool,
-  samSubTool = "point",
-  onSetSamSubTool,
-  samPolarity = "positive",
-  onSetSamPolarity,
+  isPromptSupported,
+  capabilitiesLoading = false,
+  aiToolDrawer,
   reviewMode = false,
   videoMode = false,
 }: ToolDockProps) {
@@ -99,29 +106,10 @@ export function ToolDock({
                   border: "1px solid " + (active ? "var(--color-accent)" : "transparent"),
                   borderRadius: "var(--radius-md)",
                   cursor: "pointer",
-                  transition: "background 0.12s, color 0.12s, transform 0.08s, box-shadow 0.12s",
-                  boxShadow: active
-                    ? "inset 2px 0 0 color-mix(in oklab, var(--color-accent) 70%, white), 0 2px 6px color-mix(in oklab, var(--color-accent) 45%, transparent)"
-                    : "none",
                 }}
               >
                 <Icon name={t.icon} size={17} />
-                <span
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    right: 3,
-                    bottom: 1,
-                    fontSize: 8,
-                    fontWeight: 700,
-                    lineHeight: 1,
-                    color: active
-                      ? "color-mix(in oklab, white 80%, transparent)"
-                      : "color-mix(in oklab, var(--color-fg-muted) 65%, transparent)",
-                    pointerEvents: "none",
-                    letterSpacing: 0,
-                  }}
-                >
+                <span aria-hidden style={{ position: "absolute", right: 3, bottom: 1, fontSize: 8, fontWeight: 700, lineHeight: 1 }}>
                   {t.hotkey}
                 </span>
               </button>
@@ -135,6 +123,12 @@ export function ToolDock({
   const visibleTools = reviewMode
     ? ALL_TOOLS.filter((t) => t.id === "hand")
     : ALL_TOOLS;
+
+  // 分组分隔: 普通绘制 → AI 工具 → 视图工具
+  const isAITool = (t: CanvasTool) => !!t.requiredPrompt;
+  const groupOf = (t: CanvasTool): "draw" | "ai" | "view" =>
+    t.id === "hand" ? "view" : isAITool(t) ? "ai" : "draw";
+
   return (
     <div
       style={{
@@ -147,13 +141,25 @@ export function ToolDock({
     >
       {visibleTools.map((t, idx) => {
         const active = tool === t.id;
-        const isSamActive = t.id === "sam" && active;
+        const prevGroup = idx > 0 ? groupOf(visibleTools[idx - 1]) : null;
+        const curGroup = groupOf(t);
+        const showDivider = prevGroup !== null && prevGroup !== curGroup;
         const descriptor = TOOL_DESCRIPTORS[t.id];
         const desc = descriptor?.desc ?? "";
         const altDigit = descriptor?.altDigit;
         const tooltipDesc = altDigit ? `${desc} · 备用 Alt+${altDigit}` : desc;
-        // 在 Hand 之前 (即 Polygon 与 Hand 之间) 插入分组分隔
-        const showDivider = t.id === "hand" && idx > 0;
+        const requiredPrompt = t.requiredPrompt;
+        const supported = requiredPrompt
+          ? (isPromptSupported ? isPromptSupported(requiredPrompt) : true)
+          : true;
+        const disabled = requiredPrompt
+          ? capabilitiesLoading || !supported
+          : false;
+        const disabledHint = requiredPrompt && !capabilitiesLoading && !supported
+          ? "当前后端不支持此交互模式"
+          : capabilitiesLoading && requiredPrompt
+          ? "正在协商后端能力…"
+          : null;
         return (
           <Fragment key={t.id}>
             {showDivider && (
@@ -168,13 +174,24 @@ export function ToolDock({
               />
             )}
             <div style={{ position: "relative", display: "flex" }}>
-              <Tooltip name={t.label} desc={tooltipDesc} hotkey={t.hotkey} side="right" delay={250}>
+              <Tooltip
+                name={t.label}
+                desc={disabledHint ?? tooltipDesc}
+                hotkey={t.hotkey}
+                side="right"
+                delay={250}
+              >
                 <button
                   type="button"
-                  onClick={() => onSetTool(t.id)}
+                  onClick={() => {
+                    if (disabled) return;
+                    onSetTool(t.id);
+                  }}
                   aria-label={t.label}
                   aria-pressed={active}
+                  aria-disabled={disabled || undefined}
                   data-testid={`tool-btn-${t.id}`}
+                  disabled={disabled}
                   style={{
                     position: "relative",
                     width: 38, height: 38,
@@ -183,20 +200,21 @@ export function ToolDock({
                     color: active ? "white" : "var(--color-fg-muted)",
                     border: "1px solid " + (active ? "var(--color-accent)" : "transparent"),
                     borderRadius: "var(--radius-md)",
-                    cursor: "pointer",
-                    transition: "background 0.12s, color 0.12s, transform 0.08s, box-shadow 0.12s",
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    opacity: disabled ? 0.4 : 1,
+                    transition: "background 0.12s, color 0.12s, opacity 0.12s",
                     boxShadow: active
                       ? "inset 2px 0 0 color-mix(in oklab, var(--color-accent) 70%, white), 0 2px 6px color-mix(in oklab, var(--color-accent) 45%, transparent)"
                       : "none",
                   }}
                   onMouseEnter={(e) => {
-                    if (!active) {
+                    if (!active && !disabled) {
                       e.currentTarget.style.background = "var(--color-bg-hover)";
                       e.currentTarget.style.color = "var(--color-fg)";
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!active) {
+                    if (!active && !disabled) {
                       e.currentTarget.style.background = "transparent";
                       e.currentTarget.style.color = "var(--color-fg-muted)";
                     }
@@ -207,23 +225,20 @@ export function ToolDock({
                     aria-hidden
                     style={{
                       position: "absolute",
-                      right: 3,
-                      bottom: 1,
-                      fontSize: 8,
-                      fontWeight: 700,
-                      lineHeight: 1,
+                      right: 3, bottom: 1,
+                      fontSize: 8, fontWeight: 700, lineHeight: 1,
                       color: active
                         ? "color-mix(in oklab, white 80%, transparent)"
                         : "color-mix(in oklab, var(--color-fg-muted) 65%, transparent)",
                       pointerEvents: "none",
-                      letterSpacing: 0,
                     }}
                   >
                     {t.hotkey.toUpperCase()}
                   </span>
                 </button>
               </Tooltip>
-              {isSamActive && onSetSamSubTool && onSetSamPolarity && (
+              {/* AIToolDrawer 在 AI 工具激活时挂在该按钮右侧 */}
+              {active && isAITool(t) && aiToolDrawer && (
                 <div
                   style={{
                     position: "absolute",
@@ -233,12 +248,7 @@ export function ToolDock({
                     zIndex: 5,
                   }}
                 >
-                  <SamSubToolbar
-                    samSubTool={samSubTool}
-                    onSetSamSubTool={onSetSamSubTool}
-                    samPolarity={samPolarity}
-                    onSetSamPolarity={onSetSamPolarity}
-                  />
+                  {aiToolDrawer}
                 </div>
               )}
             </div>

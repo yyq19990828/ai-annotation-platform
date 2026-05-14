@@ -40,6 +40,7 @@ export interface ImageWorkbenchProps {
   onSamPrompt: (prompt:
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
+    | { kind: "exemplar"; bbox: [number, number, number, number] }
   ) => void;
   samCandidates: {
     id: string;
@@ -48,7 +49,8 @@ export interface ImageWorkbenchProps {
     bbox?: { x: number; y: number; width: number; height: number };
   }[];
   samActiveIdx: number;
-  samSubTool: SamSubTool;
+  /** v0.10.2 · 派生自 tool, 非 AI 工具时为 null. */
+  samSubTool: SamSubTool | null;
   samPolarity: SamPolarity;
   onCommitMove: (id: string, before: Geom, after: Geom) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;

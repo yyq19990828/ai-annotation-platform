@@ -3,83 +3,105 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-14
 ---
 
-# SAM 智能工具（v0.9.2 起；v0.9.4 子工具拆分；v0.9.6 P2-b 工具栏 UX 重整）
+# AI 工具组（Prompt-first，v0.10.2 重构）
 
-> 让你点一下、框一下、写个英文词，AI 就把 polygon 画出来。
+> 点 / 框 / 文本 / 示例 — 选一种交互方式让 AI 把 polygon 画出来。
 
-按 `S` 切到 SAM 工具，光标变十字。SAM 会先在图上跑一次 image embedding（首次 ~1.6 s，命中缓存后 < 50 ms），然后按你给的 prompt 类型出 polygon 候选。
+v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆分的 4 个独立工具**。你直接在工具栏选「想怎么交互」，AI 自动跑对应的模型 prompt。
 
-**v0.9.6 起**：主工具栏右下角嵌入 hotkey 角标（`B/S/P/V`），hover 主工具显示 Tooltip（名称 + 描述 + 快捷键）。备用快捷键 `Alt+1/2/3/4` 切工具，避免与单数字键 1-9 切类别冲突。
+| 工具 | 图标 | 默认快捷键 | 后端要求 |
+|---|---|---|---|
+| **智能点** | 🎯 | `S` 循环 | `point` |
+| **智能框** | ▭ | `S` 循环 | `bbox` |
+| **文本提示** | 💬 | `S` 循环 | `text` |
+| **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` (仅 SAM 3) |
 
-**v0.9.4 起**：S 激活后向右弹出**子工具抽屉** —— 显式选择 prompt 模式（点 / 框 / 文本），不再靠鼠标动作隐式分流：
+按 `S` 在 4 个 AI 工具之间循环，**跳过当前后端不支持的工具**（按钮置灰）；第 5 次按 `S` 回到默认矩形工具。`Alt+3` 与 `S` 等价。
 
-- **点子工具**（默认）：单击 = 正向点；Alt + 单击 = 负向点。下方圆形「+ / −」可切默认 polarity（按 `=` 切正向，`-` 切负向）
-- **框子工具**：拖框作为 SAM bbox 提示
-- **文本子工具**：聚焦 AI 助手面板的「找全图」输入框，输英文 prompt（如 `ripe apple`）让 DINO 全图召回
+> **能力来自后端 `/setup.supported_prompts`**：项目挂的是 `grounded-sam2`（point/bbox/text）时 Exemplar 灰；挂 `sam3-backend` 时 Smart Point 灰。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。
 
-按 `S` 在三种子工具间循环切换；连按 4 次 `S` 退出 SAM。
+## 工具说明
 
-## 三种 prompt
+### 智能点（Smart Point）— 单击让 SAM 找边缘
 
-| 操作 | prompt | 适用场景 |
-|---|---|---|
-| 点子工具 + 单击 | positive point | 已经看到目标，让 SAM 把这个东西的轮廓找出来 |
-| 点子工具 + Alt+单击 | negative point | "这块不要" — 给上一个 positive point 做减法（refining） |
-| 框子工具 + 拖框 | bbox | 大致圈一个区域，SAM 收到边缘 |
-| 文本子工具 + 「找全图」 | text | 在不知道有几个目标时，让 GroundingDINO 先批量找出所有 "person" / "ripe apple" |
+- **单击**：在目标上点一下 → SAM 把这个东西的轮廓找出来（positive point）
+- **Alt + 单击**：负向点，告诉 SAM「这块不要」做减法
+- 工具激活时右侧 **AIToolDrawer** 显示极性切换圆按钮，按 `=` / `+` 切正向，按 `-` 切负向
 
-文本子工具下还可以**显式选择输出形态**（v0.9.4 起）：
+### 智能框（Smart Box）— 拖框作 bbox prompt
 
-- `□ 框`：仅 DINO 出 box，跳过 SAM mask；速度最快（image-det 项目首选）
-- `○ 掩膜`：DINO + SAM mask → polygon（image-seg 项目默认）
-- `⊕ 全部`：同实例配对返回 box + polygon；Tab 切换活跃形态
+拖框，SAM 把框内主要前景的 polygon 找出来。比智能点更明确「就是这一块」，适合背景杂乱时。
 
-项目设置 → 基本信息 →「SAM 文本预标默认输出」可锁定项目级默认（v0.9.5 起；新建项目 wizard step 4 也可设置，v0.9.6 起）。
+### 文本提示（Text Prompt）— 不知道有几个目标就用文本
 
-## 候选确认流
+激活该工具后，**右栏 AI 面板**会弹出「找全图」输入框（同时 AIToolDrawer 显示提示文案）。输入英文 prompt（如 `ripe apple`、`car . truck . bicycle`），GroundingDINO 或 SAM 3 PCS 批量返回候选。
 
-SAM 返回的 polygon 是**待确认**状态，画布上以**紫色虚线**叠加。这一步不会落库，你需要明确决定：
+输出形态三选一：
 
-- **`Enter`** — 接受当前候选 → 弹类别选择器 → 选好类别 polygon 才进库
-- **`Tab`** / **Shift+Tab** — 切换到下一个 / 上一个候选（文本路径常见有多条）
+- `□ 框`：仅 box，跳过 mask（速度最快，image-det 项目首选）
+- `○ 掩膜`：mask → polygon（image-seg 项目默认）
+- `⊕ 全部`：同实例配对 box + polygon（Tab 切活跃形态）
+
+项目设置 → 基本信息 →「文本预标默认输出」可锁定项目级默认。
+
+### Exemplar 示例（v0.10.2 新增，仅 SAM 3）
+
+拖框圈出图中**已有的一个示例实例**，SAM 3 PCS 一步返回**全图相似实例**的 mask。
+
+适用场景：
+
+- 图里有 50 个红苹果，你只想框 1 个让模型批量补齐
+- 不容易用英文描述的形态（特定造型部件 / 罕见品类）
+
+> 与「智能框」手势相同（拖框），但意图不同：智能框是「就找这块的轮廓」，Exemplar 是「找全图所有跟这块相似的」。激活的工具决定路由。
+
+## 候选确认
+
+所有 AI 工具返回的 polygon 都是**待确认紫虚线**，需要确认才落库：
+
+- **`Enter`** — 接受当前候选 → 弹类别选择器 → 选好类别才进库
+- **`Tab` / `Shift+Tab`** — 切换候选（文本 / exemplar 路径常见多条）
 - **`Esc`** — 全部取消
 
-文本路径下，AI 助手面板顶部会显「N 候选 · Tab 切换 · Enter 接受」chip，候选数 > 1 时记得用 Tab 看一遍。
+## 参数面板（AIToolDrawer）
 
-## 文本提示要点
+工具激活时右侧抽屉显示一份**由后端 `/setup.params` 自动生成的参数表单**，常见字段：
 
-- **英文召回最佳**：底层 GroundingDINO 训练语料以英文为主。"person" 比 "人" 准得多；复合词用空格隔开（"ripe apple"）；多类别用句号分隔（"car . truck . bicycle"）。
-- **阈值在哪调**：项目设置 → 基本信息 → 「DINO box 阈值」/「DINO text 阈值」。默认 0.35 / 0.25 适合一般场景；车牌、商品、卫星这类小物或专域可降到 0.20 / 0.15 提召回；夜景、低对比度图片可升到 0.5 / 0.4 减少误检。
-- **prompt 没召回怎么办**：先调 box 阈值；再换 prompt 措辞（"man" 不灵，试 "person walking"）；最后还可以拿一两个 positive point 配合手动定位。
+- `box_threshold` / `text_threshold` — DINO 置信度（grounded-sam2）
+- `score_threshold` — PCS 置信度（sam3）
+- `model_variant` — base / large
+
+调整后再次触发的 AI 请求会带上新参数，**仅在本次会话内生效**，不持久化到项目。
 
 ## 与 BboxTool / PolygonTool 的关系
 
-- `B` 矩形工具：你完全自己画框，SAM 不参与。最快、最精准，但累。
-- `S` SAM 工具：你给 prompt，SAM 出 polygon。最省手，但需要候选确认 + 选类别。
-- `P` polygon 工具：你逐顶点点出 polygon。最精细，复杂形状用它。
+- `B` 矩形工具：完全自己画框，AI 不参与，最快最精准但累。
+- `S` AI 工具组：给 prompt 让 AI 出 polygon，最省手但需要确认候选。
+- `P` polygon 工具：逐顶点画，最精细。
 
-**典型工作流**：先 S 跑文本「找全图」拿大类目，Tab + Enter 收完明显的 → 切 B 手补漏的小框 → 切 P 精修 SAM 没拟合好的边缘。
+**典型工作流**：先 `S` → 文本提示「找全图」拿大类目，Tab + Enter 收明显的 → `B` 手补漏的 → `P` 精修 AI 没拟合好的边缘 → 复杂形态目标用 Exemplar 一键批量补齐。
 
 ## 快捷键速查
 
 | 键 | 行为 |
 |---|---|
-| `S` | 切 SAM 工具 / 在子工具间循环 (点 → 框 → 文本 → 退出) |
-| `Alt + 2` | 直接切 SAM 工具 (备用, 不影响 1-9 切类别) |
-| 单击 | 点子工具下: positive point prompt |
-| Alt + 单击 | 点子工具下: negative point prompt |
-| `=` / `+` | 点子工具默认 polarity 切正向 |
-| `-` | 点子工具默认 polarity 切负向 |
-| 拖动 | 框子工具下: bbox prompt |
+| `S` | 在 4 个 AI 工具间循环（跳过置灰） |
+| `Alt + 3` | 同 `S` |
+| 单击 | Smart Point: positive point |
+| `Alt + 单击` | Smart Point: negative point |
+| `=` / `+` / `-` | Smart Point 默认极性切换 |
+| 拖框 | Smart Box / Exemplar 触发 |
 | `Enter` | 接受当前候选 |
 | `Esc` | 取消所有候选 |
 | `Tab` / `Shift+Tab` | 切换候选 |
 
 ## 常见问题
 
-- **候选 polygon 一直没出来**：项目可能未绑定 ML Backend；右下 toast 会提示，去项目设置 → AI 集成绑定。
-- **同图反复点击很慢**：第一次会跑 image encoder ~1.6s，之后命中 LRU 缓存 < 50ms；如果一直慢，是 backend 缓存被切掉了（重启服务后冷启）。
-- **拖框后没反应但单击有反应**：拖动距离 < 0.5% 图像短边时被识别为「单击」，再大一点就是 bbox。
+- **某个 AI 工具置灰**：当前项目挂的后端不支持该 prompt 类型；hover 工具看 tooltip，或到项目设置切换后端。
+- **AIToolDrawer 没显示**：当前激活的不是 AI 工具，或 `/setup` 拉取失败（看右下状态指示，红 = 失败）。
+- **参数调了没生效**：参数仅在本会话生效；切换项目或刷新会重置。需要持久化请到项目设置。
+- **Exemplar 框出来 0 个结果**：示例区域太小 / 太模糊；尝试更明显的示例，或调低 `score_threshold`。
+- **同图反复点击很慢**：第一次会跑 image encoder（~1.6s SAM2 / ~2-3s SAM3），命中 LRU 缓存后 < 50ms。

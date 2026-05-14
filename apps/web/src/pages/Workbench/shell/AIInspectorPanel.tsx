@@ -216,7 +216,8 @@ interface AIPredictionPopoverProps {
   onRunAi: () => void;
   onAcceptAll: () => void;
   onSetConfThreshold: (v: number) => void;
-  tool?: "box" | "hand" | "polygon" | "canvas" | "sam";
+  // v0.10.2 · Tool union 扩展; SamTextPanel 现在仅在 tool === "text-prompt" 时显示.
+  tool?: "box" | "hand" | "polygon" | "canvas" | "smart-point" | "smart-box" | "text-prompt" | "exemplar";
   onRunSamText?: (text: string, outputMode: TextOutputMode) => void;
   samRunning?: boolean;
   samCandidateCount?: number;
@@ -399,7 +400,7 @@ export function AIPredictionPopover({
         </div>
       </div>
 
-      {tool === "sam" && onRunSamText && (
+      {tool === "text-prompt" && onRunSamText && (
         <SamTextPanel
           onRun={onRunSamText}
           running={samRunning}
@@ -449,7 +450,7 @@ export function AIPredictionPopover({
   );
 }
 
-// ── SAM 文本提示面板（v0.9.2，仅 tool === "sam" 时显） ─────────────────────────
+// ── SAM 文本提示面板（v0.9.2 引入，v0.10.2 由 tool === "text-prompt" 时显） ─────────────────────────
 interface SamTextPanelProps {
   /** v0.9.4 phase 2 · onRun 接 outputMode (box / mask / both) 参数 */
   onRun: (text: string, outputMode: TextOutputMode) => void;

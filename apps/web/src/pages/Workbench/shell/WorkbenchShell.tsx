@@ -31,6 +31,9 @@ import { useWorkbenchHotkeys } from "../state/useWorkbenchHotkeys";
 import { useCanvasDraftPersistence } from "../state/useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "../state/useWorkbenchTaskFlow";
 import { useInteractiveAI } from "../state/useInteractiveAI";
+import { useMLCapabilities } from "../state/useMLCapabilities";
+import { AIToolDrawer } from "./AIToolDrawer";
+import { isAIToolId } from "../stage/tools";
 import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
 import { annotationToBox } from "../state/transforms";
 import { applyVideoKeyframeToGeometry } from "../state/videoTrackCommands";
@@ -410,15 +413,43 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     taskId,
     mlBackendId: currentProject?.ml_backend_id ?? null,
   });
-  // 切题清候选；切工具离开 SAM 也清（避免用户切回 box 时仍残留紫虚线）
+  // v0.10.1 · ML backend 能力协商 (供 ToolDock 置灰 + AIToolDrawer 渲染参数面板)
+  const mlCapabilities = useMLCapabilities(
+    projectId ?? null,
+    currentProject?.ml_backend_id ?? null,
+  );
+  // 切题清候选；切工具离开 AI 工具组也清（避免用户切回 box 时仍残留紫虚线）
   useEffect(() => {
     sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
   useEffect(() => {
-    if (s.tool !== "sam" && sam.candidates.length > 0) sam.cancel();
+    if (!isAIToolId(s.tool) && sam.candidates.length > 0) sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.tool]);
+  // v0.10.2 · 切换 AI 工具时清空 params (避免上工具的脏值带过来); 切到 text-prompt 时 bump 焦点
+  useEffect(() => {
+    s.setAiToolParams({});
+    if (s.tool === "text-prompt") s.bumpSamTextFocus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.tool]);
+  // v0.10.2 · 兜底: 能力变化使当前 AI 工具不再支持 → 切回 hand + toast
+  useEffect(() => {
+    if (mlCapabilities.isLoading) return;
+    if (!isAIToolId(s.tool)) return;
+    const requiredPrompt = (
+      { "smart-point": "point", "smart-box": "bbox", "text-prompt": "text", exemplar: "exemplar" } as const
+    )[s.tool as "smart-point" | "smart-box" | "text-prompt" | "exemplar"];
+    if (!mlCapabilities.isPromptSupported(requiredPrompt)) {
+      s.setTool("hand");
+      pushToast({
+        msg: "当前后端不支持此 AI 工具",
+        sub: "已切回手型；请到项目设置切换后端",
+        kind: "warning",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mlCapabilities.prompts.join(","), mlCapabilities.isLoading]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (s.tool !== "box" && s.tool !== "hand") s.setTool("box");
@@ -774,6 +805,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     taskId,
     videoMode: isVideoTask,
     videoControlsRef,
+    isPromptSupported: mlCapabilities.isPromptSupported,
   });
   if (isProjectLoading) {
     return <WorkbenchSkeleton />;
@@ -825,8 +857,23 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       }}
       toolDock={{
         tool: s.tool, onSetTool: s.setTool, videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
-        samSubTool: s.samSubTool, onSetSamSubTool: s.setSamSubTool, samPolarity: s.samPolarity,
-        onSetSamPolarity: s.setSamPolarity, reviewMode: mode === "review", videoMode: isVideoTask,
+        isPromptSupported: mlCapabilities.isPromptSupported,
+        capabilitiesLoading: mlCapabilities.isLoading,
+        aiToolDrawer: isAIToolId(s.tool) ? (
+          <AIToolDrawer
+            tool={s.tool}
+            backendName={mlCapabilities.capability?.name}
+            capability={mlCapabilities.capability}
+            paramsSchema={mlCapabilities.paramsSchema}
+            params={s.aiToolParams}
+            onSetParams={s.setAiToolParams}
+            samPolarity={s.samPolarity}
+            onSetSamPolarity={s.setSamPolarity}
+            isLoading={mlCapabilities.isLoading}
+            isError={mlCapabilities.isError}
+          />
+        ) : null,
+        reviewMode: mode === "review", videoMode: isVideoTask,
       }}
       banners={{
         mode, task, lockError, claimInfo: modeState.claimInfo, canWithdraw: bannerActions.canWithdraw,
@@ -876,7 +923,14 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         pendingDrawing: s.pendingDrawing, onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction, onDeleteUserBox: handleDeleteBox,
         onCommitDrawing: handleCommitDrawing,
-        onSamPrompt: (prompt) => prompt.kind === "point" ? sam.runPoint(prompt.pt, prompt.alt ? 0 : 1) : sam.runBbox(prompt.bbox),
+        onSamPrompt: (prompt) => {
+          // v0.10.2 · 按 prompt.kind 路由; exemplar 与 bbox 同手势但走独立 dispatcher.
+          // params 透传 (box_threshold 等) — 见 useInteractiveAI.extraParams.
+          const extra = s.aiToolParams;
+          if (prompt.kind === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
+          if (prompt.kind === "exemplar") return sam.runExemplar(prompt.bbox, extra);
+          return sam.runBbox(prompt.bbox, extra);
+        },
         samCandidates: sam.candidates, samActiveIdx: sam.activeIdx, samSubTool: s.samSubTool,
         samPolarity: s.samPolarity, onCommitMove: handleCommitMove, onCommitResize: handleCommitResize,
         onCommitPolygonGeometry: handleCommitPolygonGeometry, onChangeUserBoxClass: handleStartChangeClass,
@@ -996,7 +1050,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onAcceptAll: handleAcceptAll,
         onSetConfThreshold: s.setConfThreshold,
         tool: s.tool,
-        onRunSamText: sam.runText,
+        onRunSamText: (text, mode) => sam.runText(text, mode, s.aiToolParams),
         samRunning: sam.isRunning,
         samCandidateCount: sam.candidates.length,
         projectId,

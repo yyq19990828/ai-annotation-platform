@@ -83,20 +83,14 @@ test.describe("annotation workbench", () => {
   });
 
   /**
-   * v0.9.4 phase 3 · SAM 工具子工具栏 + page.route 拦截 mock /interactive-annotating.
-   *
-   * 范围：
-   *   ① SAM 工具按钮可激活, 子工具栏 + 3 个子工具按钮 (point/bbox/text) 可见
-   *   ② 子工具切换 aria-pressed 互斥 (point → bbox → text)
-   *   ③ page.route 拦截 /interactive-annotating, 点击 stage 在 point 模式下触发 mock 命中
-   *
-   * 不验证：
-   *   - polygon 候选在 Konva canvas 上的实际渲染 (canvas 内部, DOM 不可断言)
-   *   - 真 SAM backend 链路 (docker-compose --profile gpu 默认不起, CI 跑不动)
-   *
-   * 真接通由 backend 单测 (`apps/grounded-sam2-backend/tests/`) + 协议契约文件覆盖.
+   * v0.10.2 · Prompt-first ToolDock + capability 协商.
+   * mock /setup 返回 grounded-sam2 三件套 (point/bbox/text), 断言:
+   *   ① smart-point / smart-box / text-prompt 可点
+   *   ② exemplar 工具置灰 (aria-disabled="true")
+   *   ③ AIToolDrawer 在 smart-point 激活时出现
+   *   ④ 点击 stage 触发 /interactive-annotating, body.context.type === "point"
    */
-  test("SAM 工具 → 子工具栏 + page.route mock /interactive-annotating", async ({ page, seed }) => {
+  test("Prompt-first · grounded-sam2 capability → smart-point dispatch", async ({ page, seed }) => {
     const data = await seed.reset();
     await seed.advanceTask({
       taskId: data.task_ids[0],
@@ -105,12 +99,38 @@ test.describe("annotation workbench", () => {
     });
     await seed.injectToken(page, data.annotator_email);
 
-    // ① page.route 拦截 mock backend 路径; 预制单 polygon 候选回应.
+    // mock /setup → grounded-sam2 (无 exemplar)
+    await page.route(
+      /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            name: "grounded-sam2",
+            version: "0.9.0",
+            is_interactive: true,
+            labels: [],
+            supported_prompts: ["point", "bbox", "text"],
+            supported_text_outputs: ["box", "mask", "both"],
+            params: {
+              type: "object",
+              properties: {
+                box_threshold: { type: "number", minimum: 0, maximum: 1, default: 0.25, title: "Box 阈值" },
+              },
+            },
+          }),
+        });
+      },
+    );
+
     let interactiveCalls = 0;
+    const state: { lastBody: { context?: { type?: string } } | null } = { lastBody: null };
     await page.route(
       /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/interactive-annotating/,
-      async (route) => {
+      async (route, req) => {
         interactiveCalls += 1;
+        try { state.lastBody = req.postDataJSON() as { context?: { type?: string } }; } catch { /* noop */ }
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -118,15 +138,7 @@ test.describe("annotation workbench", () => {
             result: [
               {
                 type: "polygonlabels",
-                value: {
-                  points: [
-                    [0.3, 0.3],
-                    [0.6, 0.3],
-                    [0.6, 0.6],
-                    [0.3, 0.6],
-                  ],
-                  polygonlabels: ["object"],
-                },
+                value: { points: [[0.3, 0.3], [0.6, 0.3], [0.6, 0.6], [0.3, 0.6]], polygonlabels: ["object"] },
                 score: 0.95,
               },
             ],
@@ -140,40 +152,119 @@ test.describe("annotation workbench", () => {
     await page.goto(`/projects/${data.project_id}/annotate`);
     await page.waitForLoadState("networkidle");
 
-    // ② SAM 工具按钮 + 子工具栏可见
-    const samBtn = page.getByTestId("tool-btn-sam");
-    await expect(samBtn).toBeVisible({ timeout: 10_000 });
-    await samBtn.click();
-    await expect(samBtn).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("sam-subtoolbar")).toBeVisible();
+    // ① 4 个 AI 工具按钮可见
+    const pointBtn = page.getByTestId("tool-btn-smart-point");
+    const boxBtn = page.getByTestId("tool-btn-smart-box");
+    const textBtn = page.getByTestId("tool-btn-text-prompt");
+    const exemplarBtn = page.getByTestId("tool-btn-exemplar");
+    await expect(pointBtn).toBeVisible({ timeout: 10_000 });
+    await expect(boxBtn).toBeVisible();
+    await expect(textBtn).toBeVisible();
+    await expect(exemplarBtn).toBeVisible();
 
-    const subPoint = page.getByTestId("sam-sub-point");
-    const subBbox = page.getByTestId("sam-sub-bbox");
-    const subText = page.getByTestId("sam-sub-text");
-    await expect(subPoint).toBeVisible();
-    await expect(subBbox).toBeVisible();
-    await expect(subText).toBeVisible();
+    // ② exemplar 工具置灰
+    await expect(exemplarBtn).toHaveAttribute("aria-disabled", "true");
 
-    // ③ 子工具切换 aria-pressed 互斥
-    await expect(subPoint).toHaveAttribute("aria-pressed", "true");
-    await subBbox.click();
-    await expect(subBbox).toHaveAttribute("aria-pressed", "true");
-    await expect(subPoint).toHaveAttribute("aria-pressed", "false");
-    await subPoint.click();
-    await expect(subPoint).toHaveAttribute("aria-pressed", "true");
+    // ③ 激活 smart-point → AIToolDrawer 出现
+    await pointBtn.click();
+    await expect(pointBtn).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("ai-tool-drawer")).toBeVisible();
 
-    // ④ point 模式 + 点击 stage → useInteractiveAI 80ms 防抖后 dispatch
-    //   page.route 命中即视为整链路通 (前端 → 平台 API → mock backend → resp 解析).
+    // ④ 点击 stage → dispatch context.type === "point"
     const stage = page.getByTestId("workbench-stage");
-    await expect(stage).toBeVisible();
     const box = await stage.boundingBox();
     if (!box) throw new Error("workbench-stage boundingBox 不可用");
     await page.mouse.click(box.x + box.width * 0.4, box.y + box.height * 0.4);
-
-    // 等防抖窗口 (80ms) + RTT; 给 300ms 足够稳.
     await page.waitForTimeout(300);
 
-    expect(interactiveCalls, "page.route 必须命中至少一次 /interactive-annotating").toBeGreaterThanOrEqual(1);
-    await expect(page).toHaveURL(new RegExp(`/projects/${data.project_id}/annotate`));
+    expect(interactiveCalls).toBeGreaterThanOrEqual(1);
+    expect(state.lastBody?.context?.type).toBe("point");
+  });
+
+  /**
+   * v0.10.2 · sam3 capability → exemplar 工具可用; smart-point 置灰; 拖框 → exemplar dispatch.
+   */
+  test("Prompt-first · sam3 capability → exemplar dispatch", async ({ page, seed }) => {
+    const data = await seed.reset();
+    await seed.advanceTask({
+      taskId: data.task_ids[0],
+      toStatus: "pending",
+      annotatorEmail: data.annotator_email,
+    });
+    await seed.injectToken(page, data.annotator_email);
+
+    await page.route(
+      /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/setup/,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            name: "sam3-backend",
+            version: "0.10.0",
+            is_interactive: true,
+            labels: [],
+            supported_prompts: ["bbox", "text", "exemplar"],
+            supported_text_outputs: ["box", "mask", "both"],
+            params: { type: "object", properties: {} },
+          }),
+        });
+      },
+    );
+
+    let interactiveCalls = 0;
+    const state: { lastBody: { context?: { type?: string } } | null } = { lastBody: null };
+    await page.route(
+      /\/api\/v1\/projects\/[^/]+\/ml-backends\/[^/]+\/interactive-annotating/,
+      async (route, req) => {
+        interactiveCalls += 1;
+        try { state.lastBody = req.postDataJSON() as { context?: { type?: string } }; } catch { /* noop */ }
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            result: [
+              {
+                type: "polygonlabels",
+                value: { points: [[0.2, 0.2], [0.4, 0.2], [0.4, 0.4], [0.2, 0.4]], polygonlabels: ["object"] },
+                score: 0.88,
+              },
+            ],
+            score: 0.88,
+            inference_time_ms: 55,
+          }),
+        });
+      },
+    );
+
+    await page.goto(`/projects/${data.project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+
+    // smart-point 置灰; exemplar 可用
+    const pointBtn = page.getByTestId("tool-btn-smart-point");
+    const exemplarBtn = page.getByTestId("tool-btn-exemplar");
+    await expect(pointBtn).toBeVisible({ timeout: 10_000 });
+    await expect(pointBtn).toHaveAttribute("aria-disabled", "true");
+    await expect(exemplarBtn).not.toHaveAttribute("aria-disabled", "true");
+
+    await exemplarBtn.click();
+    await expect(exemplarBtn).toHaveAttribute("aria-pressed", "true");
+
+    // 拖框 → exemplar
+    const stage = page.getByTestId("workbench-stage");
+    const box = await stage.boundingBox();
+    if (!box) throw new Error("workbench-stage boundingBox 不可用");
+    const sx = box.x + box.width * 0.3;
+    const sy = box.y + box.height * 0.3;
+    const ex = box.x + box.width * 0.6;
+    const ey = box.y + box.height * 0.6;
+    await page.mouse.move(sx, sy);
+    await page.mouse.down();
+    await page.mouse.move(ex, ey, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+
+    expect(interactiveCalls).toBeGreaterThanOrEqual(1);
+    expect(state.lastBody?.context?.type).toBe("exemplar");
   });
 });

@@ -100,6 +100,8 @@ export interface UseWorkbenchHotkeysArgs {
   ignoredKeys?: Set<string>;
   videoMode?: boolean;
   videoControlsRef?: React.RefObject<VideoStageControls | null>;
+  /** v0.10.2 · 由 useMLCapabilities 透传; S 键循环 AI 工具时用来跳过置灰. */
+  isPromptSupported?: (type: string) => boolean;
 }
 
 export interface UseWorkbenchHotkeysReturn {
@@ -126,6 +128,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, videoControlsRef,
+    isPromptSupported,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -381,26 +384,32 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         }
 
         case "setTool": {
-          // v0.9.4 phase 2 · S 键循环切 SAM 子工具:
-          //   tool !== sam      → 进入 sam (samSubTool 保留上次值)
-          //   tool === sam · point → 切 bbox
-          //   tool === sam · bbox  → 切 text
-          //   tool === sam · text  → 退出 SAM (回 box 默认)
-          if (action.tool === "sam" && s.tool === "sam") {
-            const cycle: Array<"point" | "bbox" | "text"> = ["point", "bbox", "text"];
-            const i = cycle.indexOf(s.samSubTool);
-            if (i === cycle.length - 1) {
-              s.setTool("box");
-            } else {
-              s.setSamSubTool(cycle[(i + 1) % cycle.length]);
-              if (cycle[(i + 1) % cycle.length] === "text") s.bumpSamTextFocus();
+          // v0.10.2 · S / Alt+3 → "ai-cycle": 在 4 个 AI 工具中循环, 跳过置灰的;
+          // 末位再按退回 box. capabilities 通过 props 传入 isPromptSupported.
+          if (action.tool === "ai-cycle") {
+            const cycle: Array<"smart-point" | "smart-box" | "text-prompt" | "exemplar"> = [
+              "smart-point", "smart-box", "text-prompt", "exemplar",
+            ];
+            const requiredOf = (t: typeof cycle[number]) =>
+              ({ "smart-point": "point", "smart-box": "bbox", "text-prompt": "text", exemplar: "exemplar" } as const)[t];
+            const isEnabled = (t: typeof cycle[number]) =>
+              isPromptSupported ? isPromptSupported(requiredOf(t)) : true;
+            const curIdx = cycle.indexOf(s.tool as typeof cycle[number]);
+            if (curIdx < 0) {
+              const first = cycle.find(isEnabled);
+              if (first) s.setTool(first);
+              return;
             }
-          } else {
-            if (action.tool === "sam" && s.samSubTool === "text") {
-              s.bumpSamTextFocus();
+            for (let k = 1; k <= cycle.length; k++) {
+              const nextIdx = (curIdx + k) % cycle.length;
+              if (nextIdx === 0 && k === cycle.length) { s.setTool("box"); return; }
+              const next = cycle[nextIdx];
+              if (isEnabled(next)) { s.setTool(next); return; }
             }
-            s.setTool(action.tool);
+            s.setTool("box");
+            return;
           }
+          s.setTool(action.tool);
           return;
         }
 
@@ -409,8 +418,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           return;
 
         case "samPolarity": {
-          // 仅 SAM-point 子工具下消费; 其它情境 +/= / - 键不应该影响 polarity.
-          if (s.tool === "sam" && s.samSubTool === "point") {
+          // v0.10.2 · 仅 smart-point 工具下消费.
+          if (s.tool === "smart-point") {
             s.setSamPolarity(action.polarity);
           }
           return;

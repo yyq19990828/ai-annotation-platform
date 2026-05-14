@@ -49,17 +49,19 @@ describe("dispatchKey · 单键", () => {
     expect(dispatch({ key: "b" })).toEqual({ type: "setTool", tool: "box" });
     expect(dispatch({ key: "v" })).toEqual({ type: "setTool", tool: "hand" });
     expect(dispatch({ key: "p" })).toEqual({ type: "setTool", tool: "polygon" });
-    expect(dispatch({ key: "s" })).toEqual({ type: "setTool", tool: "sam" });
-    expect(dispatch({ key: "S" })).toEqual({ type: "setTool", tool: "sam" });
+    // v0.10.2 · S → "ai-cycle" (具体进入哪个 AI 工具由消费层据 capabilities 决定).
+    expect(dispatch({ key: "s" })).toEqual({ type: "setTool", tool: "ai-cycle" });
+    expect(dispatch({ key: "S" })).toEqual({ type: "setTool", tool: "ai-cycle" });
   });
   it("数字键 1-9 → setClassByDigit", () => {
     expect(dispatch({ key: "3" })).toEqual({ type: "setClassByDigit", idx: 2 });
     expect(dispatch({ key: "9" })).toEqual({ type: "setClassByDigit", idx: 8 });
   });
   it("Alt+1/2/3/4 → setTool (v0.9.6 P2-b 备用切工具)", () => {
+    // v0.10.2 · Alt+2 → polygon, Alt+3 → ai-cycle (4 个 AI 工具循环).
     expect(dispatch({ key: "1", altKey: true })).toEqual({ type: "setTool", tool: "box" });
-    expect(dispatch({ key: "2", altKey: true })).toEqual({ type: "setTool", tool: "sam" });
-    expect(dispatch({ key: "3", altKey: true })).toEqual({ type: "setTool", tool: "polygon" });
+    expect(dispatch({ key: "2", altKey: true })).toEqual({ type: "setTool", tool: "polygon" });
+    expect(dispatch({ key: "3", altKey: true })).toEqual({ type: "setTool", tool: "ai-cycle" });
     expect(dispatch({ key: "4", altKey: true })).toEqual({ type: "setTool", tool: "hand" });
   });
   it("Alt+5..9 不映射 (5-9 留给数字切类别 fallback)", () => {

@@ -23,7 +23,8 @@ type Drag =
   | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
   | {
       kind: "samProbe";
-      mode: "point" | "bbox";
+      // v0.10.2 · 加 exemplar; 行为同 bbox 但松手时派发到 onSamPrompt.kind="exemplar".
+      mode: "point" | "bbox" | "exemplar";
       sx: number;
       sy: number;
       cx: number;
@@ -80,10 +81,14 @@ interface ImageStageProps {
   onDeleteUserBox?: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
   onCommitDrawing?: (geo: Geom) => void;
-  /** v0.9.2 · SAM 工具松手时派发 prompt（point / bbox 由 ImageStage 按几何尺寸分流）。 */
+  /**
+   * v0.9.2 · SAM 工具松手时派发 prompt.
+   * v0.10.2 · 新增 exemplar 类型 (与 bbox 同手势, kind 区分由父层路由到 runExemplar).
+   */
   onSamPrompt?: (prompt:
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
+    | { kind: "exemplar"; bbox: [number, number, number, number] }
   ) => void;
   /**
    * v0.9.2 · SAM 候选 polygon（待确认紫虚线）。当前候选 stroke 加粗，其它半透。
@@ -108,8 +113,12 @@ interface ImageStageProps {
   overlay?: React.ReactNode;
   /** polygon 工具草稿（v0.5.3）。仅 tool === "polygon" 时使用。 */
   polygonDraft?: PolygonDraftHandle;
-  /** v0.9.4 phase 2 · 仅 tool === "sam" 时透传; 决定子工具行为 (point/bbox/text). */
-  samSubTool?: "point" | "bbox" | "text";
+  /**
+   * v0.9.4 phase 2 / v0.10.2 · 派生型 sub-tool; 仅作 cursor / preview hint 用.
+   * 派生自 tool: smart-point → "point", smart-box → "bbox", text-prompt → "text", exemplar → "exemplar".
+   * 非 AI 工具时为 null.
+   */
+  samSubTool?: "point" | "bbox" | "text" | "exemplar" | null;
   /** v0.9.4 phase 2 · 仅 sam-point 子工具下生效, "+/-" 切换 (与 Alt 修饰键合并). */
   samPolarity?: "positive" | "negative";
   /** v0.6.4：画布批注 shapes（已落地的笔触）。read-only 渲染。 */
@@ -134,7 +143,7 @@ export function ImageStage({
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass,
   onCommitDrawing, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
-  onStageGeometry, overlay, polygonDraft, samSubTool, samPolarity,
+  onStageGeometry, overlay, polygonDraft, samPolarity,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
   historicalShapes,
 }: ImageStageProps) {
@@ -315,17 +324,20 @@ export function ImageStage({
           const h = Math.abs(d.cy - d.sy);
           if (w > 0.005 && h > 0.005) onCommitDrawing?.({ x, y, w, h });
         } else if (d.kind === "samProbe") {
-          // v0.9.4 phase 2 · 按子工具 mode 分发, 不再隐式按拖动距离猜.
+          // v0.10.2 · 按 mode 分发 (point / bbox / exemplar).
           if (d.mode === "point") {
             onSamPrompt?.({ kind: "point", pt: [d.sx, d.sy], alt: d.alt });
           } else {
-            // bbox: 仍然要拖出有效区域才发, 否则忽略 (避免极小框被 SAM 当全图).
             const x1 = Math.min(d.sx, d.cx);
             const y1 = Math.min(d.sy, d.cy);
             const x2 = Math.max(d.sx, d.cx);
             const y2 = Math.max(d.sy, d.cy);
             if (x2 - x1 > 0.005 && y2 - y1 > 0.005) {
-              onSamPrompt?.({ kind: "bbox", bbox: [x1, y1, x2, y2] });
+              if (d.mode === "exemplar") {
+                onSamPrompt?.({ kind: "exemplar", bbox: [x1, y1, x2, y2] });
+              } else {
+                onSamPrompt?.({ kind: "bbox", bbox: [x1, y1, x2, y2] });
+              }
             }
           }
         } else if (d.kind === "move") {
@@ -380,7 +392,6 @@ export function ImageStage({
       pendingDrawing: !!pendingDrawing,
       onClearSelection: () => onSelectBox(null),
       polygonDraft,
-      samSubTool,
       samPolarity,
     });
     if (init) setDrag(init);
