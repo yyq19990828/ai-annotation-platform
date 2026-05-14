@@ -177,11 +177,13 @@ class SAM3Predictor:
         - "both": 同 instance 配对返回 [rect, poly]
         """
         self._apply_score_threshold(score_threshold)
-        state, w, h, hit = self._prime_state(image, cache_key)
-        self._processor.reset_all_prompts(state)
-        state = self._processor.set_text_prompt(text.strip(), state)
-
-        boxes, masks, scores = self._extract_outputs(state)
+        # SAM3.1 multiplex ckpt 部分权重 (vision_backbone.convs.3.*) 缺失, 默认 init 为 fp32,
+        # 其余权重以 bf16 加载 → 不包 autocast 会 dtype 冲突. vendor 也是这样用 (见 examples/).
+        with torch.autocast(self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")):
+            state, w, h, hit = self._prime_state(image, cache_key)
+            self._processor.reset_all_prompts(state)
+            state = self._processor.set_text_prompt(text.strip(), state)
+            boxes, masks, scores = self._extract_outputs(state)
         # cleanup: reset 让 backbone_out 回到干净态, 下次缓存命中可用.
         self._processor.reset_all_prompts(state)
 
@@ -238,20 +240,22 @@ class SAM3Predictor:
         prompt_name: str,
     ) -> tuple[list[dict[str, Any]], bool]:
         self._apply_score_threshold(score_threshold)
-        state, w, h, hit = self._prime_state(image, cache_key)
-        self._processor.reset_all_prompts(state)
+        # 同 predict_text: ckpt fp32/bf16 混搭, 必须包 autocast.
+        with torch.autocast(self.device, dtype=torch.bfloat16, enabled=(self.device == "cuda")):
+            state, w, h, hit = self._prime_state(image, cache_key)
+            self._processor.reset_all_prompts(state)
 
-        # 协议 bbox 是归一化 xyxy → 转 归一化 cxcywh
-        x1, y1, x2, y2 = bbox
-        cx = (x1 + x2) / 2.0
-        cy = (y1 + y2) / 2.0
-        bw = x2 - x1
-        bh = y2 - y1
-        state = self._processor.add_geometric_prompt(
-            [cx, cy, bw, bh], True, state
-        )
+            # 协议 bbox 是归一化 xyxy → 转 归一化 cxcywh
+            x1, y1, x2, y2 = bbox
+            cx = (x1 + x2) / 2.0
+            cy = (y1 + y2) / 2.0
+            bw = x2 - x1
+            bh = y2 - y1
+            state = self._processor.add_geometric_prompt(
+                [cx, cy, bw, bh], True, state
+            )
 
-        boxes, masks, scores = self._extract_outputs(state)
+            boxes, masks, scores = self._extract_outputs(state)
         self._processor.reset_all_prompts(state)
 
         if masks is None or len(masks) == 0:
@@ -280,13 +284,18 @@ class SAM3Predictor:
                 np.empty((0,), dtype=bool),
                 np.empty((0,), dtype=np.float32),
             )
-        boxes = boxes_t.detach().cpu().numpy()
-        # masks shape: (N, 1, H, W) bool → (N, H, W)
+        # autocast(bf16) 下 boxes/scores 是 bf16, numpy 不支持 BFloat16 → 先 .float().
+        boxes = boxes_t.detach().float().cpu().numpy()
+        # masks shape: (N, 1, H, W) bool → (N, H, W); bool 张量不受 autocast 影响.
         if masks_t.ndim == 4:
             masks = masks_t[:, 0].detach().cpu().numpy()
         else:
             masks = masks_t.detach().cpu().numpy()
-        scores = scores_t.detach().cpu().numpy() if scores_t is not None else np.zeros(len(boxes))
+        scores = (
+            scores_t.detach().float().cpu().numpy()
+            if scores_t is not None
+            else np.zeros(len(boxes))
+        )
         return boxes, masks, scores
 
     def _build_results(
