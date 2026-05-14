@@ -1,6 +1,13 @@
 # P2 · 图片工作台渲染体系 + 能力扩展
 
-> 状态：**proposal（2026-05-12）**。与视频工作台优化（`2026-05-12-video-workbench-rendering-optimization.md`）并行。
+> 状态：**Wave α 已落地 v0.9.41（2026-05-13）**；Wave β/γ/δ/ε proposal。与视频工作台优化（`2026-05-12-video-workbench-rendering-optimization.md`）并行。
+>
+> v0.9.41 落地清单（详见 [docs/plans/2026-05-13-v0.9.41-image-workbench-wave-alpha.md](../docs/plans/2026-05-13-v0.9.41-image-workbench-wave-alpha.md)）：
+> - ✅ **I3** selectedIds 签名稳定 + user 层按工具 listening
+> - ✅ **I7** `stage/shared/` 抽取（useViewportTransform / Minimap / geometry/polygon / useRafThrottle）
+> - ✅ **I8** `useWorkbenchPerf` + BugReport `[workbench-perf]` 快照
+> - ✅ **I16** `useDirtyTracker` 基础设施（注：useWorkbenchAnnotationActions 早已字段级 PATCH，`polygonVertexBatch` kind 判定冗余未加）
+> - ✅ **I17** `User.preferences` JSONB + `/auth/me/preferences` + Settings「标注偏好」+ KonvaImage `imageSmoothingEnabled` / 容器 `filter`
 >
 > 图片工作台是项目最成熟的一块：Konva + 五层结构、Viewport / Minimap / Blurhash 占位、rAF 节流、SAM 集成都已就位。本 epic 范围：
 > 1. **§2 I1-I8**：渲染体系本身的薄弱点（大图、polygon LOD、selectedIds、共享 hooks、SAM 缓存、双图比对、批注时间线、观测）。
@@ -67,7 +74,7 @@
 
 ---
 
-### I3 · selectedIds / memo 稳定引用（**必做，小改**）
+### I3 · selectedIds / memo 稳定引用（**必做，小改**） — ✅ v0.9.41
 
 - **I3.1** `selectedIds` 从 `new Set(...)` 改为带 dedup 的 `useMemo`，仅在内容变更时返回新引用。
 - **I3.2** `currentShapes` 的衍生（filteredShapes / visibleShapes）走稳定 selector 模式，避免 Konva 每帧 re-create children。
@@ -112,7 +119,7 @@
 
 ---
 
-### I7 · 工程一致性（**与视频侧统一**）
+### I7 · 工程一致性（**与视频侧统一**） — ✅ v0.9.41
 
 - **I7.1 提取 `shared/useViewportTransform`**：图片侧已有的实现搬到 `stage/shared/`，视频侧 R8 直接复用。
 - **I7.2 提取 `shared/Minimap`**：同上，加可选 props `accent`（用于视频版叠加帧位置）。
@@ -121,7 +128,7 @@
 
 ---
 
-### I8 · 观测与回归（**贯穿，借鉴视频 R7**）
+### I8 · 观测与回归（**贯穿，借鉴视频 R7**） — ✅ v0.9.41（基准 fixture 推迟到 Wave β）
 
 - **I8.1 PerformanceObserver longtask 上报**：与视频侧共用一个 `useWorkbenchPerf()` hook。
 - **I8.2 基准 fixture**：3 张图片（2K / 8K / 多边形密集）+ 3 套标注密度（10 / 100 / 500 shapes），与视频 fixture 并列。
@@ -207,7 +214,7 @@
 
 ### 数据模型与协议
 
-#### I16 · State 脏标记 + 增量序列化（**S，纯前端**）
+#### I16 · State 脏标记 + 增量序列化（**S，纯前端**） — ✅ v0.9.41（`useDirtyTracker` 基础设施；现有 actions 已字段级 PATCH，`polygonVertexBatch` kind 判定冗余）
 
 > CVAT 用 `UpdateFlags`（每个 shape 上的 bit 位）追踪哪些字段变了，提交时只序列化变更字段，不发整段。
 
@@ -216,7 +223,7 @@
 - 与 R11 协同段冲突合并对接（行锁 + 字段级 patch 减少冲突面）。
 - 来源：`cvat-core/src/object-state.ts` UpdateFlags。
 
-#### I17 · 渲染配置化（Configuration 系统）（**S，纯前端**）
+#### I17 · 渲染配置化（Configuration 系统）（**S，纯前端**） — ✅ v0.9.41（项目级覆盖留 Wave γ）
 
 > CVAT 的 `canvasModel.ts` 暴露 `Configuration` 接口：`smoothImage`、`CSSImageFilter`、`adaptiveZoom`、`snapToPoint`、`controlPointsSize`、`autoborderHandler` 等十几个开关。
 
@@ -324,12 +331,12 @@
 ## 5. 优先级与建议顺序
 
 ```
-Wave α · 基础稳态（必做）
-  I3 selectedIds 稳定引用 (1-2 天)
-  I7 共享 hooks 抽取 (3-5 天，与视频 R2/R8 同期收益)
-  I8 观测接入 (随时)
-  I16 State 脏标记 (3-5 天)
-  I17 渲染 Configuration 收口 (3-5 天)
+Wave α · 基础稳态（必做） — ✅ 已落地 v0.9.41
+  ✅ I3 selectedIds 稳定引用 (1-2 天)
+  ✅ I7 共享 hooks 抽取 (3-5 天，与视频 R2/R8 同期收益)
+  ✅ I8 观测接入 (随时)
+  ✅ I16 State 脏标记 (3-5 天)
+  ✅ I17 渲染 Configuration 收口 (3-5 天)
 
 Wave β · 性能（必做）
   I2 polygon LOD + 命中测试 (1-2 周)

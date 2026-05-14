@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Integer, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Integer, func, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
@@ -50,6 +50,10 @@ class User(Base):
     )
     # v0.8.4 · 用户级周目标（标注员任务量目标）；ProjectMember.weekly_target 覆盖优先
     weekly_target_default: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # v0.9.41 · 用户偏好 JSONB：标注工作台渲染配置（smoothImage / cssImageFilter / 顶点大小等）；schema 在 schemas/user_preferences.py。
+    preferences: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

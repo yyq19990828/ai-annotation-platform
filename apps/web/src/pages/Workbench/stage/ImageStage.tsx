@@ -17,6 +17,8 @@ import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, moveVertex, type Pt } from "./polygonGeom";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon } from "./ImageStageShapes";
+import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
+import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type Drag =
@@ -147,10 +149,34 @@ export function ImageStage({
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
   historicalShapes,
 }: ImageStageProps) {
-  const selSet = useMemo(
-    () => new Set(selectedIds && selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : []),
-    [selectedIds, selectedId],
-  );
+  // selSet 引用稳定化（I3）：以排序后的 id 串作为签名，签名不变则返回上次同一 Set 实例，
+  // 让下游 KonvaBox / KonvaPolygon 的 selected prop 维持引用稳定，避免误触发 memo 失效。
+  const selSetCacheRef = useRef<{ sig: string; set: Set<string> }>({ sig: " ", set: new Set() });
+  const selSet = useMemo(() => {
+    const ids = selectedIds && selectedIds.length > 0
+      ? selectedIds
+      : selectedId
+        ? [selectedId]
+        : [];
+    if (ids.length === 0) {
+      if (selSetCacheRef.current.sig !== "") {
+        selSetCacheRef.current = { sig: "", set: new Set() };
+      }
+      return selSetCacheRef.current.set;
+    }
+    const sorted = [...ids].sort();
+    const sig = sorted.join("");
+    if (sig === selSetCacheRef.current.sig) return selSetCacheRef.current.set;
+    const set = new Set(ids);
+    selSetCacheRef.current = { sig, set };
+    return set;
+  }, [selectedIds, selectedId]);
+  // user 层在 HandTool / 只读时关闭 listening，省 hit-test 开销。
+  // ai 层只要不在只读模式都开（支持点击采纳），HandTool 下也可点选 AI 候选。
+  const userLayerListening = tool !== "hand" && !readOnly;
+  // v0.9.41 · 标注偏好（I17）：smoothImage / cssImageFilter / longTaskSampleRate。
+  const { config: workbenchConfig } = useWorkbenchConfig();
+  useWorkbenchPerf(workbenchConfig.longTaskSampleRate);
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const vpRef = useRef(vp);
@@ -465,6 +491,8 @@ export function ImageStage({
         flex: 1, position: "relative", overflow: "hidden",
         background: "repeating-conic-gradient(var(--color-canvas-checker-a) 0% 25%, var(--color-canvas-checker-b) 0% 50%) 0 0/16px 16px",
         cursor: containerCursor,
+        // v0.9.41 I17 · 用户级 CSS 滤镜（暗图反色、对比度增强等）。
+        filter: workbenchConfig.cssImageFilter || undefined,
       }}
       onMouseLeave={() => onCursorMove(null)}
     >
@@ -500,7 +528,15 @@ export function ImageStage({
         {/* bg 层：图像本体；不响应 hit-test，独立缓存 */}
         <Layer name="bg" listening={false}>
           {image && (
-            <KonvaImage image={image} x={0} y={0} width={imgW} height={imgH} listening={false} />
+            <KonvaImage
+              image={image}
+              x={0}
+              y={0}
+              width={imgW}
+              height={imgH}
+              listening={false}
+              imageSmoothingEnabled={workbenchConfig.smoothImage}
+            />
           )}
         </Layer>
 
@@ -536,7 +572,7 @@ export function ImageStage({
         </Layer>
 
         {/* user 层：人工框 + 选中态 + resize handle */}
-        <Layer name="user">
+        <Layer name="user" listening={userLayerListening}>
           {userBoxes.map((b) => {
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;

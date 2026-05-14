@@ -9,6 +9,7 @@ import {
   taskIdFromVideoWorkbenchDiagnostics,
   videoWorkbenchDiagnosticsConsoleEntry,
 } from "@/utils/videoWorkbenchDiagnostics";
+import { readWorkbenchPerfSnapshot } from "@/pages/Workbench/stage/shared/useWorkbenchPerf";
 import { ScreenshotEditor } from "./ScreenshotEditor";
 import { MarkdownBlock } from "./MarkdownBlock";
 
@@ -183,6 +184,11 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
       const videoDiagnosticsEntry = videoWorkbenchDiagnosticsConsoleEntry(videoDiagnostics);
       const recentConsoleErrors = getRecentConsoleErrors().map((e) => ({ msg: e.msg, stack: e.stack || "" }));
       if (videoDiagnosticsEntry) recentConsoleErrors.unshift(videoDiagnosticsEntry);
+      // v0.9.41: 附 workbench longtask 快照，便于 BUG 排查时定位卡顿点。
+      const perf = readWorkbenchPerfSnapshot();
+      if (perf.longTaskCount > 0) {
+        recentConsoleErrors.unshift({ msg: "[workbench-perf]", stack: JSON.stringify(perf, null, 2) });
+      }
       await bugReportsApi.create({
         title: title.trim(),
         description: appendVideoWorkbenchDiagnostics(desc.trim(), videoDiagnostics),
