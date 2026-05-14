@@ -442,8 +442,10 @@ async def get_video_frame_timetable(
     if to_frame is not None:
         stmt = stmt.where(VideoFrameIndex.frame_index <= to_frame)
     rows = (
-        await db.execute(stmt.order_by(VideoFrameIndex.frame_index.asc()))
-    ).scalars().all()
+        (await db.execute(stmt.order_by(VideoFrameIndex.frame_index.asc())))
+        .scalars()
+        .all()
+    )
 
     body = TaskVideoFrameTimetableResponse(
         task_id=task.id,
@@ -998,7 +1000,9 @@ async def compose_video_tracks(
         detail={
             "task_id": str(task_id),
             "operation": f"video_track.{data.operation}",
-            "annotation_ids": [str(annotation_id) for annotation_id in data.annotation_ids],
+            "annotation_ids": [
+                str(annotation_id) for annotation_id in data.annotation_ids
+            ],
             "frame_index": data.frame_index,
             "created_count": len(created),
             "updated_count": len(updated),

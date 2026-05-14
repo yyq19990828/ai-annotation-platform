@@ -36,7 +36,9 @@ async def publish_tracker_event(channel: str, payload: dict) -> None:
     try:
         await redis.publish(channel, json.dumps(payload))
     except Exception as exc:
-        log.warning("video tracker event publish failed channel=%s err=%s", channel, exc)
+        log.warning(
+            "video tracker event publish failed channel=%s err=%s", channel, exc
+        )
     finally:
         try:
             await redis.close()

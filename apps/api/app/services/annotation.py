@@ -33,7 +33,9 @@ def _clean_bbox_geometry(geometry: dict) -> dict:
     }
 
 
-def _composition_keyframe(frame_index: int, bbox: dict, *, source: str = "manual") -> dict:
+def _composition_keyframe(
+    frame_index: int, bbox: dict, *, source: str = "manual"
+) -> dict:
     return {
         "frame_index": int(frame_index),
         "bbox": _clean_bbox_geometry(bbox),
@@ -52,7 +54,9 @@ def _track_visible_keyframes(geometry: dict) -> list[dict]:
     ]
 
 
-def _clip_outside_ranges(geometry: dict, *, start: int | None, end: int | None) -> list[dict]:
+def _clip_outside_ranges(
+    geometry: dict, *, start: int | None, end: int | None
+) -> list[dict]:
     out: list[dict] = []
     for range_ in geometry.get("outside") or []:
         from_frame = int(range_.get("from", 0))
@@ -62,11 +66,15 @@ def _clip_outside_ranges(geometry: dict, *, start: int | None, end: int | None) 
         if end is not None:
             to_frame = min(to_frame, end)
         if from_frame <= to_frame:
-            out.append({
-                "from": from_frame,
-                "to": to_frame,
-                "source": "prediction" if range_.get("source") == "prediction" else "manual",
-            })
+            out.append(
+                {
+                    "from": from_frame,
+                    "to": to_frame,
+                    "source": "prediction"
+                    if range_.get("source") == "prediction"
+                    else "manual",
+                }
+            )
     return normalize_outside_ranges(out)
 
 
@@ -284,7 +292,11 @@ class AnnotationService:
                     ),
                     None,
                 )
-                if not exact or exact.get("absent") or frame_is_outside(geometry, frame_index):
+                if (
+                    not exact
+                    or exact.get("absent")
+                    or frame_is_outside(geometry, frame_index)
+                ):
                     raise ValueError(
                         "frame split requires an exact non-absent keyframe"
                     )
@@ -484,7 +496,9 @@ class AnnotationService:
         before_keyframes = [
             dict(kf) for kf in keyframes if int(kf.get("frame_index", 0)) <= frame_index
         ]
-        if not any(int(kf.get("frame_index", 0)) == frame_index for kf in before_keyframes):
+        if not any(
+            int(kf.get("frame_index", 0)) == frame_index for kf in before_keyframes
+        ):
             resolved = resolve_track_at_frame(geometry, frame_index)
             if not resolved:
                 raise ValueError("split_track requires a visible frame")
@@ -505,7 +519,9 @@ class AnnotationService:
                 0, _composition_keyframe(next_frame, next_resolved.get("bbox") or {})
             )
         after_keyframes.sort(key=lambda kf: int(kf.get("frame_index", 0)))
-        if not _track_visible_keyframes({"type": "video_track", "keyframes": after_keyframes}):
+        if not _track_visible_keyframes(
+            {"type": "video_track", "keyframes": after_keyframes}
+        ):
             raise ValueError("split_track requires a visible tail segment")
 
         source.geometry = {
@@ -544,7 +560,9 @@ class AnnotationService:
     ) -> tuple[list[Annotation], list[Annotation], list[uuid.UUID]]:
         if len(annotations) != 2:
             raise ValueError("merge_tracks requires exactly two annotations")
-        if any((ann.geometry or {}).get("type") != "video_track" for ann in annotations):
+        if any(
+            (ann.geometry or {}).get("type") != "video_track" for ann in annotations
+        ):
             raise ValueError("merge_tracks only accepts video_track annotations")
         if annotations[0].class_name != annotations[1].class_name:
             raise ValueError("merge_tracks requires tracks with the same class")
@@ -583,11 +601,13 @@ class AnnotationService:
             for range_ in ((ann.geometry or {}).get("outside") or [])
         ]
         if first_end + 1 <= second_start - 1:
-            outside.append({
-                "from": first_end + 1,
-                "to": second_start - 1,
-                "source": "manual",
-            })
+            outside.append(
+                {
+                    "from": first_end + 1,
+                    "to": second_start - 1,
+                    "source": "manual",
+                }
+            )
 
         survivor.geometry = {
             **(survivor.geometry or {}),

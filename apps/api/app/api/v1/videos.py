@@ -79,9 +79,7 @@ async def _assert_chapter_editor(db: AsyncSession, task: Task, user: User) -> No
     project = await db.get(Project, task.project_id)
     if project is not None and is_privileged_for_project(user, project):
         return
-    raise HTTPException(
-        status_code=403, detail="仅项目负责人或超级管理员可管理章节"
-    )
+    raise HTTPException(status_code=403, detail="仅项目负责人或超级管理员可管理章节")
 
 
 async def _visible_video_task_for_item(
@@ -159,8 +157,10 @@ async def get_video_frame_timetable(
     if to_frame is not None:
         stmt = stmt.where(VideoFrameIndex.frame_index <= to_frame)
     rows = (
-        await db.execute(stmt.order_by(VideoFrameIndex.frame_index.asc()))
-    ).scalars().all()
+        (await db.execute(stmt.order_by(VideoFrameIndex.frame_index.asc())))
+        .scalars()
+        .all()
+    )
     body = TaskVideoFrameTimetableResponse(
         task_id=task.id,
         fps=ctx.metadata.fps,
@@ -284,12 +284,16 @@ async def list_video_chapters(
 ):
     await _visible_video_task_for_item(db, dataset_item_id, current_user)
     rows = (
-        await db.execute(
-            select(VideoChapter)
-            .where(VideoChapter.dataset_item_id == dataset_item_id)
-            .order_by(VideoChapter.start_frame.asc(), VideoChapter.end_frame.asc())
+        (
+            await db.execute(
+                select(VideoChapter)
+                .where(VideoChapter.dataset_item_id == dataset_item_id)
+                .order_by(VideoChapter.start_frame.asc(), VideoChapter.end_frame.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return VideoChapterList(chapters=[_chapter_out(row) for row in rows])
 
 
@@ -371,9 +375,7 @@ async def update_video_chapter(
         chapter.end_frame = payload.end_frame
         changes["end_frame"] = payload.end_frame
     if chapter.end_frame < chapter.start_frame:
-        raise HTTPException(
-            status_code=422, detail="end_frame 必须 >= start_frame"
-        )
+        raise HTTPException(status_code=422, detail="end_frame 必须 >= start_frame")
     if payload.title is not None:
         chapter.title = payload.title
         changes["title"] = payload.title

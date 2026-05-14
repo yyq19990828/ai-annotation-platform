@@ -39,8 +39,7 @@ class TrackerContext:
 class TrackerAdapter(Protocol):
     model_key: str
 
-    def propagate(self, ctx: TrackerContext) -> AsyncIterator[TrackerFrameResult]:
-        ...
+    def propagate(self, ctx: TrackerContext) -> AsyncIterator[TrackerFrameResult]: ...
 
 
 def _bbox_from_geometry(geometry: dict) -> dict:

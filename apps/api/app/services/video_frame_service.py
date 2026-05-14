@@ -20,7 +20,10 @@ from app.db.models.dataset import (
     VideoFrameIndex,
 )
 from app.db.models.task import Task
-from app.observability.metrics import VIDEO_CHUNK_REQUESTS_TOTAL, VIDEO_FRAME_CACHE_TOTAL
+from app.observability.metrics import (
+    VIDEO_CHUNK_REQUESTS_TOTAL,
+    VIDEO_FRAME_CACHE_TOTAL,
+)
 from app.schemas.task import VideoMetadata
 from app.schemas.video_frame_service import (
     VideoChunkOut,
@@ -111,7 +114,9 @@ def _asset_url(key: str) -> str:
             bucket=storage_service.datasets_bucket,
         )
     except (BotoCoreError, ClientError) as exc:
-        raise HTTPException(status_code=503, detail="Video storage unavailable") from exc
+        raise HTTPException(
+            status_code=503, detail="Video storage unavailable"
+        ) from exc
 
 
 async def build_context_from_task(db: AsyncSession, task: Task) -> VideoContext:
@@ -129,7 +134,10 @@ async def build_context_from_dataset_item(
 
 
 async def pts_ms_for_frame(
-    db: AsyncSession, dataset_item_id: uuid.UUID, frame_index: int, metadata: VideoMetadata
+    db: AsyncSession,
+    dataset_item_id: uuid.UUID,
+    frame_index: int,
+    metadata: VideoMetadata,
 ) -> int | None:
     row = (
         await db.execute(
@@ -233,7 +241,9 @@ async def list_chunks(
     )
 
 
-async def get_chunk(db: AsyncSession, ctx: VideoContext, chunk_id: int) -> VideoChunkOut:
+async def get_chunk(
+    db: AsyncSession, ctx: VideoContext, chunk_id: int
+) -> VideoChunkOut:
     _metadata_ready(ctx.metadata)
     row = (
         await db.execute(
@@ -306,7 +316,9 @@ def _frame_out(row: VideoFrameCache) -> VideoFrameOut:
         width=row.width,
         format=format_,
         status=status,
-        url=_asset_url(row.storage_key) if status == "ready" and row.storage_key else None,
+        url=_asset_url(row.storage_key)
+        if status == "ready" and row.storage_key
+        else None,
         retry_after=3 if status == "pending" else None,
         error=row.error if status == "failed" else None,
     )

@@ -1,7 +1,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -44,7 +53,9 @@ class VideoChapter(Base):
     )
 
     __table_args__ = (
-        CheckConstraint("end_frame >= start_frame", name="ck_video_chapters_frame_order"),
+        CheckConstraint(
+            "end_frame >= start_frame", name="ck_video_chapters_frame_order"
+        ),
         UniqueConstraint(
             "dataset_item_id",
             "start_frame",
