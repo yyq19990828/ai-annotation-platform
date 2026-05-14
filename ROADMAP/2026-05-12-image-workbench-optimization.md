@@ -61,14 +61,15 @@
 
 ### I2 · 多边形 LOD 与命中测试优化（**必做**）
 
-> 对标 CVAT 的 martinez 几何库 + 离屏 canvas 命中测试。
+> 对标 CVAT 的几何库 + 离屏 canvas 命中测试。
+> **现状校准（2026-05-14）**：`polygon-clipping@0.15.7` 已在依赖，iou.ts 用作 IoU 求交；`rbush` R-tree 已在 [iou-index.ts](apps/web/src/pages/Workbench/stage/iou-index.ts) 用于 IoU 排除；`isSelfIntersecting` 仍是 O(n²)；顶点拖拽已经在 pointerup 时单次 commit，但缺 history batch kind。
 
 - **I2.1 顶点 LOD**：渲染层根据当前 viewport scale，多边形顶点按 Douglas-Peucker 简化（保持视觉等价）。原始顶点存原表，渲染前过一次简化缓存。
   - 简化阈值 = 1px / scale，保证看不出差异。
   - 拖动 / hover 顶点时显示原始顶点（编辑模式无 LOD）。
-- **I2.2 自相交检测算法升级**：从 O(n²) 改为基于 Bentley-Ottmann 扫描线（n log n），或干脆只做"新加边 vs 已有边"的增量检测（O(n)）。
-- **I2.3 命中测试外移**：Konva 内置 hit-test 在密集 polygon 场景（100+ 形状）会有性能问题。可选优化：把当前帧所有形状的 bbox 建 R-tree（`rbush` 库），先用 bbox 粗筛再用精确几何检测。
-- **I2.4 顶点拖拽差量提交**：拖动中只更新本地 ref，鼠标松开才走 `onCommitPolygonGeometry`；history stack 也只 push 一条 patch。配套 `useAnnotationHistory` 加 `polygonVertexBatch` kind。
+- **I2.2 自相交检测算法升级**：从 O(n²) 改为只做"新加边 vs 已有边"的增量检测（O(n)）。Bentley-Ottmann 扫描线（n log n）作为全量版回退。
+- **I2.3 命中测试外移**：扩展现有 rbush 索引（iou-index.ts 已用于 IoU 排除）到 polygon 顶点命中粗筛；100+ polygon 同屏时先 bbox 粗筛再精确几何检测。
+- **I2.4 顶点拖拽差量提交**：拖动中只更新本地 ref，鼠标松开才走 `onCommitPolygonGeometry`（**已实现**）；history stack 也只 push 一条 patch（**待做**）。配套 `useAnnotationHistory` 加 `polygonVertexBatch` kind。
 
 **衡量**：500 顶点多边形拖动 ≥60fps；100 个 polygon 同屏选择无明显延迟。
 
@@ -111,8 +112,10 @@
 
 ### I6 · SAM 候选缓存与异步预热（**借鉴自视频 R5.2 ImageBitmap**）
 
-- **I6.1 SAM mask cache**：当前每次点击都重发 embed 请求。前端缓存 `(image_id, point_array) → mask_url`，重复点击秒回。
-- **I6.2 图像 embedding 预热**：进入图片工作台时立即异步触发后端 `/sam/embed`，用户开始用 SAM 工具时通常已就绪。
+> **现状校准（2026-05-14）**：后端 embedding LRU 已就位 — grounded-sam2 与 sam3 backend 都有 `EmbeddingCache` + `GET /cache/stats`；前端 mask cache 与进入工作台 embed 预热**未做**。
+
+- **I6.1 SAM mask cache**（前端）：当前每次点击都发新 `/interactive-annotating` 请求。前端缓存 `(image_id, prompt_kind, normalize(prompts)) → PendingCandidate`，重复点击秒回。
+- **I6.2 图像 embedding 预热**：工作台 mount 且任务是 image 类型 + 有绑定 backend 时，异步发一次低成本 prompt（dummy point @ image center）触发 backend embed 加载；丢弃结果，靠下次真实点击命中后端 embedding cache。
 - **I6.3 mask 预览离屏 canvas**：mask 叠加用单独离屏 canvas 渲染，不与 Konva 主层耦合，避免大 mask 拖累 hit-test。
 
 **衡量**：连续 SAM 点击平均响应 <100ms。
@@ -186,11 +189,12 @@
 
 > CVAT 给每个 label 配 attribute schema（select / radio / checkbox / number / text），区分 `mutable`（每帧可变）与 `immutable`（轨迹级）。前端按 schema 自动生成 form。
 
-- 我们 v0.7.6 已经支持 attribute schema 配置，但缺以下能力：
-  - **I13.1 input_type 完整支持**：当前只有简单 select，扩展 radio / checkbox / number / textarea。
-  - **I13.2 mutable / immutable 区分**：视频侧的 track 属性必须区分（沿用到 R9 polygon track）；图片侧默认 immutable 即可。
-  - **I13.3 自动 Form 渲染**：右栏对象属性面板按 schema 自动生成，无需为每个 label 写 UI。
-  - **I13.4 必填校验**：保存 / 提交时校验必填属性，缺失时阻断 + 高亮。
+- **现状校准（2026-05-14）**：v0.7.6 起 attribute schema 已基本完整：
+  - ✅ **I13.1 input_type**：已支持 text / number / boolean / select / multiselect / range 六种（[AttributeForm.tsx:123](apps/web/src/pages/Workbench/shell/AttributeForm.tsx:123)）。
+  - ✅ **I13.3 自动 Form 渲染**：[AttributeForm.tsx:47](apps/web/src/pages/Workbench/shell/AttributeForm.tsx:47) 已按 schema 自动生成。
+  - ✅ **I13.4 必填校验**：[AttributeForm.tsx:28](apps/web/src/pages/Workbench/shell/AttributeForm.tsx:28) `getMissingRequired` + 高亮红框；条件级联 `visible_if` 也支持。
+- **残留（本 epic 收口）**：
+  - **I13.2 mutable / immutable 区分**：[`AttributeField`](apps/api/app/schemas/_jsonb_types.py:29) 需加 `mutable: bool = False` 字段；视频侧 track 属性按帧覆盖 UI 未实现，沿用到 R9 polygon track。
 - 来源：`cvat-core/src/server-response-types.ts` L172-180 + `cvat-ui/.../object-item-attribute.tsx`。
 
 #### I14 · 多边形高级编辑（自动贴边 / 智能裁切）（**M，纯前端**）
@@ -199,22 +203,23 @@
 
 - 多对象密集标注场景（如细胞 / 道路网），相邻对象边界要严丝合缝，手工对齐效率低。
 - **I14.1 Auto-border**：开关式工具，多边形顶点拖动 / 新增时若距其他形状边 < 阈值，自动吸附。
-- **I14.2 Polygon crop**：新建多边形若与已有重叠，提供"裁切重叠区"选项（布尔差集，用 martinez）。
+- **I14.2 Polygon crop**：新建多边形若与已有重叠，提供"裁切重叠区"选项（布尔差集，基于已在依赖的 `polygon-clipping@0.15.7`；iou.ts 已用作 IoU 求交）。
 - 与 I2 自相交检测同一几何工具集。
 - 来源：`cvat-canvas/src/typescript/autoborderHandler.ts`。
 
-#### I15 · Z-Order / 锁定 / 隐藏 / occluded 一等态（**S，已部分实现 + 增强**）
+#### I15 · Z-Order / 锁定 / 隐藏 / occluded 一等态（**S，需后端字段**）
 
 > CVAT 每个 shape 有 `z_order` / `lock` / `hidden` / `outside` / `occluded` 五个独立状态位，可通过快捷键或右键菜单切换。
 
-- 我们目前只有 `lock` / `hidden` 部分支持。
-- **I15.1 z_order**：右键 / `[`、`]` 调整层级，影响渲染顺序与 hit-test 优先级。当前是按 array 顺序，需要持久化。
+- **现状校准（2026-05-14）**：annotation 表（[apps/api/app/db/models/annotation.py](apps/api/app/db/models/annotation.py)）**字段全空白**；只有前端 transient 显示状态。需 alembic 加四个列 + UI + 快捷键。
+- **I15.1 z_order**：右键 / `[`、`]` 调整层级，影响渲染顺序与 hit-test 优先级。需持久化字段。
 - **I15.2 occluded**：表示"被遮挡但仍存在"，视觉上变虚线 / 半透。视频 track 已有，图片侧也补上。
+- **I15.3 lock / hidden**：与 occluded 同步持久化为 `is_locked` / `is_hidden`，按 `L` / `H` 快捷键切换。
 - 来源：`cvat-canvas/src/typescript/canvasView.ts`。
 
 ### 数据模型与协议
 
-#### I16 · State 脏标记 + 增量序列化（**S，纯前端**） — ✅ v0.9.41（`useDirtyTracker` 基础设施；现有 actions 已字段级 PATCH，`polygonVertexBatch` kind 判定冗余）
+#### I16 · State 脏标记 + 增量序列化（**S，纯前端**） — ✅ v0.9.41（`useDirtyTracker` 基础设施已就位但无消费方；现有 actions 已字段级 PATCH。首次消费由 v0.10.6 M4-γ 的 I13 mutable 属性批量编辑承接）
 
 > CVAT 用 `UpdateFlags`（每个 shape 上的 bit 位）追踪哪些字段变了，提交时只序列化变更字段，不发整段。
 
@@ -257,15 +262,15 @@
 - 与长期规划 L15「标注质量 AI 审计」配套，可作为 L15 的前置。
 - 来源：`cvat-ui/src/components/quality-control/` + `cvat-ui/src/components/consensus-management-page/`。
 
-#### I20 · Interactor 协议（通用 AI 工具）（**M，后端协议升级**）
+#### I20 · Interactor 协议（通用 AI 工具）（**M，后端协议升级**） — ✅ v0.10.1-0.10.3（Interactor 类型）
 
 > CVAT 的 Lambda Manager 把"Interactor（SAM 类）"、"Tracker（跟踪类）"、"Auto Annotation（批量预标）"抽成统一协议。后端写一个 Lambda，前端自动支持。
 
-- 我们的 SAM 是硬编码在 `S` 工具里，新加一个交互式模型（比如 SEEM / SAM3 / 客户自训模型）要改前端。
-- **I20.1 Interactor 协议**：标准化 `POST /interactors/{name}/invoke { image_id, points: [{x,y,polarity}], previous_mask? } → { mask: RLE }`。前端工具栏按可用 interactor 动态生成按钮。
-- **I20.2 注册式工具**：每个 backend `/health` 返回 `capabilities: ['interactor', 'tracker', 'auto-annotation']`，前端工具栏据此渲染。
-- **I20.3 协议向后兼容**：现有 SAM 集成走 Interactor 协议 v1，新模型按需升级。
-- 与 v0.10.x SAM 3 接入同期推进，避免二次破窗。
+- **现状校准（2026-05-14）**：Interactor 类型的协议收口已经在 v0.10.1-v0.10.3 完成（参 [ADR-0020](../docs/adr/0020-ml-backend-capability-negotiation.md) Capability 协商 + [ADR-0019](../docs/adr/0019-prompt-first-tooldock-1n-arch.md) Prompt-first ToolDock + 1:N）。
+- ✅ **I20.1 Interactor 协议**：`GET /setup` 返回 JSON Schema Draft-07 子集 `{ name, version, model_version, supported_prompts, params }`；`POST /interactive-annotating` 携带 `context.type` 路由 backend。
+- ✅ **I20.2 注册式工具**：`useMLCapabilities` hook（[useMLCapabilities.ts](apps/web/src/pages/Workbench/state/useMLCapabilities.ts)）作为单一事实源；4 个 prompt-first 工具 (SmartPoint / SmartBox / TextPrompt / Exemplar) 按 `supported_prompts` 自动置灰。
+- ✅ **I20.3 协议向后兼容**：`supported_prompts` 缺失时回落 `["point","bbox","text"]`，console.warn。
+- **残留（挪 v0.11+）**：Tracker / Auto-Annotation 类型走相同 setup 协议。视频侧 R10 已有 `/video-tracker-jobs` 类似协议，但未与图片 setup 收口为同一 `supported_capabilities` 数组；v0.11.0 做协议统一收口。
 - 来源：`cvat-core/src/lambda-manager.ts`。
 
 #### I21 · 用户级快捷键自定义（**M，纯前端**）
@@ -338,18 +343,18 @@ Wave α · 基础稳态（必做） — ✅ 已落地 v0.9.41
   ✅ I16 State 脏标记 (3-5 天)
   ✅ I17 渲染 Configuration 收口 (3-5 天)
 
-Wave β · 性能（必做）
-  I2 polygon LOD + 命中测试 (1-2 周)
-  I6 SAM 缓存与预热 (3-5 天)
-    └→ I1 大图 tile (2-3 周，依赖后端切片服务)
+Wave β · 性能（必做） — 🚧 v0.10.4 epic 进行中
+  ✅ I2 polygon LOD + 命中测试 → v0.10.4 (M4-α)
+  ✅ I6 SAM 缓存与预热 → v0.10.4 (M4-α)
+  ⏭ I1 大图 tile → v0.11.0 独立 epic (后端切片 worker 重，不绑 v0.10.x)
 
-Wave γ · 形状能力（按客户场景触发）
-  I9 Ellipse (3-5 天，纯前端)
-  I15 z_order / occluded 状态一等化 (1 周)
-  I13 Attribute Schema 进阶 (1-2 周)
-  I14 Autoborder / Crop (1-2 周)
-  I11 Mask 编辑器 (2-3 周，与 v0.10.x SAM 3 同窗口)
-  I10 Skeleton (3-4 周，依赖后端 schema)
+Wave γ · 形状能力（按客户场景触发） — 🚧 v0.10.4 epic 进行中
+  I9 Ellipse (3-5 天，纯前端) — 留 v0.11.x（与 I10 / I11 v2 共 geometry.kind 收口）
+  ✅ I15 z_order / occluded 状态一等化 → v0.10.5 (M4-β)
+  ✅ I13 Attribute Schema 进阶 → v0.10.6 (M4-γ)
+  ✅ I11 Mask 编辑器 (v1: polygon 中转) → v0.10.7 (M4-δ)
+  I14 Autoborder / Crop (1-2 周) — 留 v0.11.x
+  I10 Skeleton (3-4 周，依赖后端 schema) — 留 v0.12.x
 
 Wave δ · 协作与质量（按规模触发）
   I12 Object Group (1-2 周，后端配套)
