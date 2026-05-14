@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AttributeField, AttributeSchema } from "@/api/projects";
 import { usePopover } from "@/hooks/usePopover";
+import type { DirtyTracker } from "../state/useDirtyTracker";
 
 export interface AttributeFormProps {
   schema: AttributeSchema | undefined;
@@ -10,6 +11,21 @@ export interface AttributeFormProps {
   attributes: Record<string, unknown> | undefined;
   onChange: (next: Record<string, unknown>) => void;
   readOnly?: boolean;
+  /**
+   * v0.10.6 M4-γ · I13.2：可选环境位。
+   * - `image`（默认）：忽略 `field.mutable` 标记，行为完全 = immutable，向后兼容。
+   * - `video`：mutable 字段视觉上展示「mutable」徽标，未来由 video 工作台接 keyframe override 路径。
+   */
+  context?: "image" | "video";
+  /**
+   * v0.10.6：可选 dirty tracker（useDirtyTracker 返回值）。传入时启用「批量改 → blur 一次 commit」路径：
+   * - 用户连续改 attribute 字段时，dirty 累积但 onChange 立即同步本地 draft；
+   * - 表单失焦（blur 出 form 容器）时调用 flush，调用方据此决定何时真正 PATCH。
+   * 不传时维持原 400ms debounce 行为（v0.6.x）。
+   */
+  dirtyTracker?: DirtyTracker;
+  /** v0.10.6：dirty tracker 模式下，需要 annotationId 才能 mark / flush。 */
+  annotationId?: string;
 }
 
 /** 判断 field 在当前 class + 当前值组合下是否应展示。 */
@@ -44,9 +60,15 @@ export function getMissingRequired(
   return missing;
 }
 
-export function AttributeForm({ schema, className, attributes, onChange, readOnly }: AttributeFormProps) {
+export function AttributeForm({
+  schema, className, attributes, onChange, readOnly,
+  context = "image", dirtyTracker, annotationId,
+}: AttributeFormProps) {
   const [draft, setDraft] = useState<Record<string, unknown>>(attributes ?? {});
   const lastFromUpstream = useRef<Record<string, unknown>>(attributes ?? {});
+  // v0.10.6：保留最新 draft 引用，blur flush 时取最新值上抛
+  const draftRef = useRef(draft);
+  useEffect(() => { draftRef.current = draft; }, [draft]);
 
   // 上游 attributes 变化（切选中标注 / 切类别）时同步本地 draft，避免输入残留。
   useEffect(() => {
@@ -57,15 +79,32 @@ export function AttributeForm({ schema, className, attributes, onChange, readOnl
     }
   }, [attributes]);
 
-  // 防抖 400ms 上抛
+  // 防抖 400ms 上抛（dirty tracker 模式下旁路：dirty 累积，blur 时一次 flush）
   const debounceRef = useRef<number | null>(null);
+  const useDirty = !!(dirtyTracker && annotationId);
+
   const scheduleCommit = (next: Record<string, unknown>) => {
     setDraft(next);
+    if (useDirty) {
+      // dirty tracker 模式：标脏即可，不立即触发 onChange；等 blur flush
+      dirtyTracker!.markDirty(annotationId!, "attributes");
+      return;
+    }
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       onChange(next);
       debounceRef.current = null;
     }, 400) as unknown as number;
+  };
+
+  // v0.10.6：form 整体 blur 时（焦点离开 form 容器）flush
+  const handleFormBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (!useDirty) return;
+    // relatedTarget 仍在 form 内 → 字段间跳转，不算 blur 出
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    dirtyTracker!.flush(annotationId!, () => {
+      onChange(draftRef.current);
+    });
   };
 
   useEffect(() => () => { if (debounceRef.current) window.clearTimeout(debounceRef.current); }, []);
@@ -80,7 +119,10 @@ export function AttributeForm({ schema, className, attributes, onChange, readOnl
   const missing = getMissingRequired(schema, className, draft);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "10px 12px", borderTop: "1px solid var(--color-border)" }}>
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: 10, padding: "10px 12px", borderTop: "1px solid var(--color-border)" }}
+      onBlur={handleFormBlur}
+    >
       <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--color-fg-muted)" }}>
         属性 {missing.length > 0 && <span style={{ color: "var(--color-danger)" }}>· {missing.length} 项必填未填</span>}
       </div>
@@ -99,6 +141,27 @@ export function AttributeForm({ schema, className, attributes, onChange, readOnl
             <span style={{ fontSize: 11.5, color: "var(--color-fg)", display: "inline-flex", alignItems: "center", gap: 6 }}>
               {f.label}
               {f.required && <span style={{ color: "var(--color-danger)", marginLeft: 4 }}>*</span>}
+              {/* v0.10.6 M4-γ · I13.2：视频任务下 mutable 字段标记徽标，提示「逐 keyframe 可变」语义。 */}
+              {context === "video" && f.mutable === true && (
+                <span
+                  title="逐 keyframe 可变（mutable）"
+                  data-testid={`attr-mutable-badge-${f.key}`}
+                  style={{
+                    padding: "1px 5px",
+                    fontSize: 9.5,
+                    lineHeight: 1.2,
+                    borderRadius: 3,
+                    background: "color-mix(in oklch, var(--color-warning, oklch(0.78 0.14 70)) 18%, var(--color-bg-elev))",
+                    border: "1px solid color-mix(in oklch, var(--color-warning, oklch(0.78 0.14 70)) 38%, var(--color-border))",
+                    color: "var(--color-warning-fg, var(--color-fg))",
+                    fontWeight: 600,
+                    letterSpacing: 0.3,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  逐帧
+                </span>
+              )}
               {f.description && <DescriptionPopover description={f.description} />}
               {f.hotkey && (f.type === "boolean" || f.type === "select") && (
                 <span

@@ -13,7 +13,7 @@
 |---|---|---|---|
 | **v0.10.4 (M4-α)** | I2 polygon LOD/命中/差量 + I6.1 前端 SAM mask cache + I6.2 embed 预热 | [2026-05-14-v0.10.4-polygon-lod-sam-cache.md](2026-05-14-v0.10.4-polygon-lod-sam-cache.md) | ✅ 已发布 ([c8f918b](#)) |
 | **v0.10.5 (M4-β)** | I15 z_order / lock / hidden / occluded 字段一等态 + UI + 快捷键 | [2026-05-15-v0.10.5-shape-metadata.md](2026-05-15-v0.10.5-shape-metadata.md) | ✅ 已发布 ([41b69be](#)) |
-| **v0.10.6 (M4-γ)** | I13 Attribute mutable/immutable + 视频 track 逐帧 UI + useDirtyTracker 首次消费 | [2026-05-15-v0.10.6-attribute-mutability.md](2026-05-15-v0.10.6-attribute-mutability.md) | 🚧 待开发 |
+| **v0.10.6 (M4-γ)** | I13 Attribute mutable/immutable + useDirtyTracker 首次消费（VideoTrackPanel 表格留到 v0.10.7） | [2026-05-15-v0.10.6-attribute-mutability.md](2026-05-15-v0.10.6-attribute-mutability.md) | ✅ 已发布 |
 | **v0.10.7 (M4-δ)** | I11 Mask 编辑器 v1（笔刷/橡皮 + polygon 中转，RLE schema 留 v0.11+） | [2026-05-15-v0.10.7-mask-editor-v1.md](2026-05-15-v0.10.7-mask-editor-v1.md) | 🚧 待开发 |
 | **v0.10.8 (M4-ε，可选)** | I1 大图 tile 金字塔 | — 推迟到 **v0.11.0 独立 epic**（后端切片 worker 重） | ⏭ 不在本 epic |
 

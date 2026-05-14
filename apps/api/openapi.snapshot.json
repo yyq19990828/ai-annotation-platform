@@ -1587,6 +1587,17 @@
             ],
             "title": "Min"
           },
+          "mutable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mutable"
+          },
           "options": {
             "anyOf": [
               {
@@ -11127,6 +11138,18 @@
             "default": false,
             "title": "Absent",
             "type": "boolean"
+          },
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
           },
           "bbox": {
             "$ref": "#/components/schemas/VideoTrackBbox"

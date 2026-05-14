@@ -61,6 +61,10 @@ class AttributeField(BaseModel):
     visible_if: VisibleIfRule | None = None
     hotkey: str | None = None
     description: str | None = None
+    # v0.10.6 M4-γ · I13.2 · 仅视频任务消费：true 表示属性可逐 keyframe 覆盖
+    # （CVAT 的 mutable / immutable 语义）。图片任务下忽略；前端展示「track 默认
+    # 值 / 当前帧覆盖」双行，PATCH 走 keyframe override 路径。默认 false 向后兼容。
+    mutable: bool | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -191,6 +195,10 @@ class VideoTrackKeyframe(BaseModel):
     source: Literal["manual", "interpolated", "prediction"] = "manual"
     absent: bool = False
     occluded: bool = False
+    # v0.10.6 M4-γ · I13.2 · mutable attribute 的逐帧覆盖。仅承载 schema 里
+    # `mutable=true` 的属性键值；为 None 时表示该帧用 annotation.attributes
+    # （track 默认值）。前端 PATCH 时只动这一字段，不污染 track 整体 attributes。
+    attributes: dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="forbid")
 

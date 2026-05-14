@@ -23,6 +23,9 @@ from app.schemas._jsonb_types import (
     ClassConfigEntry,
     Mention,
     PolygonGeometry,
+    VideoTrackBbox,
+    VideoTrackGeometry,
+    VideoTrackKeyframe,
 )
 
 
@@ -84,6 +87,62 @@ def test_attribute_schema_hotkey_constraints():
                 AttributeField(key="b", label="B", type="boolean", hotkey="1"),
             ]
         )
+
+
+# ── v0.10.6 M4-γ · I13.2 mutable / immutable ──────────────────────────
+
+
+def test_attribute_field_mutable_defaults_unset():
+    """旧 schema 不带 mutable 字段时序列化后仍是 None（向后兼容）。"""
+    f = AttributeField(key="color", label="Color", type="text")
+    assert f.mutable is None
+    # 同样接受显式 False / True
+    assert AttributeField(key="o", label="O", type="boolean", mutable=True).mutable is True
+    assert AttributeField(key="c", label="C", type="text", mutable=False).mutable is False
+
+
+def test_attribute_schema_mixed_mutable_immutable():
+    """同一 schema 内 mutable 与 immutable 共存，互不影响。"""
+    s = AttributeSchema(
+        fields=[
+            AttributeField(key="vehicle_color", label="车身颜色", type="select",
+                           options=[{"value": "red", "label": "红"}], mutable=False),
+            AttributeField(key="occluded", label="遮挡", type="boolean", mutable=True),
+        ]
+    )
+    by_key = {f.key: f for f in s.fields}
+    assert by_key["vehicle_color"].mutable is False
+    assert by_key["occluded"].mutable is True
+
+
+def test_video_track_keyframe_attributes_optional():
+    """keyframe.attributes 不写默认 None，可选地承载 mutable 属性覆盖。"""
+    kf = VideoTrackKeyframe(frame_index=0, bbox=VideoTrackBbox(x=0, y=0, w=1, h=1))
+    assert kf.attributes is None
+
+    kf2 = VideoTrackKeyframe(
+        frame_index=5,
+        bbox=VideoTrackBbox(x=0, y=0, w=1, h=1),
+        attributes={"occluded": True, "orientation": "left"},
+    )
+    assert kf2.attributes == {"occluded": True, "orientation": "left"}
+
+
+def test_video_track_geometry_keyframes_with_overrides():
+    """完整 VideoTrackGeometry 包含 attributes override 仍能通过校验。"""
+    geom = VideoTrackGeometry(
+        track_id="t1",
+        keyframes=[
+            VideoTrackKeyframe(frame_index=0, bbox=VideoTrackBbox(x=0, y=0, w=1, h=1)),
+            VideoTrackKeyframe(
+                frame_index=3,
+                bbox=VideoTrackBbox(x=0, y=0, w=1, h=1),
+                attributes={"occluded": True},
+            ),
+        ],
+    )
+    assert geom.keyframes[0].attributes is None
+    assert geom.keyframes[1].attributes == {"occluded": True}
 
 
 # ── ClassConfigEntry alias（v0.9.5）────────────────────────────────

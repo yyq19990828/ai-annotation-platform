@@ -22,6 +22,37 @@
 
 ## 最新版本
 
+## [0.10.6] - 2026-05-15
+
+> **Attribute mutable/immutable + useDirtyTracker 首次消费 (M4-γ).** ROADMAP/2026-05-12-image-workbench-optimization.md 的 I13.2 + I16 落地：① schemas `AttributeField` 加 `mutable: bool` 字段（默认 None / 向后兼容，仅视频任务消费），class_definitions 仍 JSONB 无需 alembic；② schemas `VideoTrackKeyframe` 加 `attributes: dict | None` 字段，承载 mutable 属性的逐帧 override（不污染 track 默认 attributes），video_track geometry 也是 JSONB 同样无需 alembic；③ 前端 `AttributeForm` 接受 `context: "image" | "video"` prop，`context=video` 下 mutable 字段渲染「逐帧」徽标，`context=image` 维持忽略（向后兼容）；④ `useDirtyTracker` 补 `flush(id, commit)` API：commit 同步抛或 Promise reject 自动回滚 dirty；`AttributeForm` 作为首位消费者，接收 `dirtyTracker` + `annotationId` 时旁路 400ms debounce，改为「输入标 dirty / blur 出 form 一次 flush」节奏（避免逐字段请求风暴）。是 v0.10.4 epic 的第 3/4 子版本。→ [plan](docs/plans/2026-05-15-v0.10.6-attribute-mutability.md) · [epic](docs/plans/2026-05-14-image-workbench-wave-beta-gamma-epic.md) · [roadmap](ROADMAP/2026-05-12-image-workbench-optimization.md).
+
+### Added
+
+- **`AttributeField.mutable`** ([_jsonb_types.py](apps/api/app/schemas/_jsonb_types.py))：可选 bool（默认 None），表达 CVAT 风格 mutable / immutable 二分。仅视频任务消费；图片任务忽略。
+- **`VideoTrackKeyframe.attributes`** ([_jsonb_types.py](apps/api/app/schemas/_jsonb_types.py))：可选 `dict[str, Any]`，承载该帧上 mutable 属性的 override；为 None 时该帧 fallback 到 annotation.attributes（track 默认值）。
+- **`AttributeForm` context + dirtyTracker 接入** ([AttributeForm.tsx](apps/web/src/pages/Workbench/shell/AttributeForm.tsx))：新增 `context: "image" | "video"` + 可选 `dirtyTracker` / `annotationId` props。video 模式下 mutable 字段加「逐帧」徽标；传 dirty tracker 时旁路防抖、blur form 一次 flush。
+- **`useDirtyTracker.flush(id, commit)`** ([useDirtyTracker.ts](apps/web/src/pages/Workbench/state/useDirtyTracker.ts))：取脏字段、先清空再 commit；commit 同步异常或 Promise reject 自动 markDirty 回滚，下次 flush 重试。9 个新单测覆盖累积去重 / 同步 commit / 异步 reject 回滚 / 同步抛 throw 回滚 / subscribe 通知 / 跨 annotation 隔离。
+- **`AttributeForm.test.tsx`**（新增）：4 例覆盖 video 下 mutable 徽标可见 / image 下被忽略 / dirtyTracker 模式 blur flush / 无 tracker 时维持 400ms debounce。
+- **pytest 4 例** ([test_jsonb_strong_types.py](apps/api/tests/test_jsonb_strong_types.py))：mutable 默认 None、AttributeSchema 混合 mutable/immutable、VideoTrackKeyframe.attributes 可选、完整 VideoTrackGeometry with override。
+
+### Changed
+
+- **`openapi.snapshot.json` + `docs-site/api/openapi.json`**：codegen 重新生成；前端 `apps/web/src/api/generated/types.gen.ts` 同步包含 `AttributeField.mutable?` 与 `VideoTrackKeyframe.attributes?`。
+- **`useDirtyTracker` 注释**：从「无消费者占位」更新为「首位消费者 = AttributeForm」，并补出 flush API 文档与回滚保证。
+
+### Verified
+
+- pytest `test_jsonb_strong_types.py` 26/26 + `test_attribute_audit.py` 1/1 全绿（4 个新例）。
+- vitest 全量 642/642 全绿（13 个新例：useDirtyTracker 9 + AttributeForm 4）。
+- `pnpm --filter web typecheck` 全绿；`pnpm --filter web lint` 0 errors / 125 warnings（warnings 全部预存，未新增）。
+- 浏览器烟囱推迟到 v0.10.7 epic 收尾时与 mask 编辑器一起 e2e 验。
+
+### Notes
+
+- 范围裁剪说明：plan 提到的 VideoTrackPanel 「track 默认 / 当前帧覆盖」表格留待 v0.10.6.1 或 v0.10.7 一起做（当前 `pages/Workbench/stage/VideoTrackPanel.tsx` 无 attribute 集成入口，引入会牵动视频工作台 UI 较多面积）。本期先把后端 schema 与前端基础设施稳住，等真有调用方再补 UI 表格。
+- M4-δ (v0.10.7) 衔接：mask 编辑器笔刷的「一笔不入 history、松手前累计 flush 一次」路径可直接复用 `useDirtyTracker.flush`。
+- v0.7.6 起 attribute schema 框架（6 种 input_type / 必填 / 条件级联 / AttributeForm 自动渲染）已完整；本期只补 I13.2 残留，I13.1/I13.3/I13.4 不再动。
+
 ## [0.10.5] - 2026-05-15
 
 > **图片工作台形状元数据一等态 (M4-β).** ROADMAP/2026-05-12-image-workbench-optimization.md 的 I15 落地：annotation 表加 4 个状态位 (`z_order` / `is_locked` / `is_hidden` / `is_occluded`)，从前端 transient → DB 持久化；KonvaBox/KonvaPolygon 按 flag 调渲染 (hidden 跳过 / locked 禁拖 / occluded 虚线+半透)；annotation 列表按 z_order ASC 排序高 z_order 后渲染 (在上)；右栏卡片新增 3 个 toggle icon (隐藏 / 锁 / 遮挡)；快捷键 `L`/`H`/`O` 切对应 flag，`[`/`]` 选中态调 z_order ±1（无选中维持原 threshold ±0.05）。前端工具栏在锁定时不进入编辑态；PATCH 走现有字段级路径无需新端点。是 v0.10.4 epic 的第 2/4 子版本。→ [plan](docs/plans/2026-05-15-v0.10.5-shape-metadata.md) · [epic](docs/plans/2026-05-14-image-workbench-wave-beta-gamma-epic.md) · [roadmap](ROADMAP/2026-05-12-image-workbench-optimization.md).

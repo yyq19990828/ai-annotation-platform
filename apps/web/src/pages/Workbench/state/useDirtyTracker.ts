@@ -4,13 +4,11 @@ import type { AnnotationUpdatePayload } from "@/api/tasks";
 export type DirtyField = keyof AnnotationUpdatePayload;
 
 /**
- * Per-annotation dirty-field tracker (v0.9.41 I16 infrastructure).
+ * Per-annotation dirty-field tracker.
  *
- * 当前 useWorkbenchAnnotationActions 在每次 commit 已经只发送变更字段（如
- * `{ geometry }`），不需要 dirty bits 也能省 PATCH 体积。这个 hook 是为未来
- * 多字段批量编辑（Wave γ I13 Attribute Schema、I12 Object Group）铺路：
- * 当一次交互涉及 className + attributes + geometry 多字段时，flush 路径可以
- * 用本 tracker 一次性收集后再合并到一个 PATCH。
+ * - v0.9.41 I16：仅基础设施骨架（markDirty / getDirtyFields / clear / subscribe）。
+ * - v0.10.6 M4-γ：首次消费 → AttributeForm 在 mutable 字段批改时累积 dirty bits，
+ *   blur 或 pointerup 调用 {@link flush} 合并一次 PATCH（避免逐字段请求风暴）。
  *
  * API:
  *   markDirty(id, field)        标记某条 annotation 的某字段已脏
@@ -18,6 +16,8 @@ export type DirtyField = keyof AnnotationUpdatePayload;
  *   clear(id)                   清空某条
  *   clearAll()                  清空所有
  *   subscribe(listener)         订阅变更，便于自动 flush
+ *   flush(id, commit)           取出脏字段并清空：commit(fields) 由调用方组装 PATCH
+ *                               返回值是脏字段列表；若为空表示无可 flush 项。
  */
 export function useDirtyTracker() {
   const mapRef = useRef<Map<string, Set<DirtyField>>>(new Map());
@@ -63,5 +63,53 @@ export function useDirtyTracker() {
     return () => { listenersRef.current.delete(listener); };
   }, []);
 
-  return { markDirty, getDirtyFields, clear, clearAll, subscribe, revision };
+  /**
+   * 取出并清空指定 annotation 的脏字段。
+   *
+   * - 若 commit 抛出异常，dirty 不清空，下次 flush 重试；
+   * - commit 返回 Promise / async 时，错误回滚也保留 dirty（外部 catch 重试）；
+   * - 同一帧多次 flush 时第二次返回 [] 且不再调 commit。
+   *
+   * @returns 实际 flush 的字段列表（拷贝，外部可读）；空数组表示无 dirty。
+   */
+  const flush = useCallback(
+    (id: string, commit?: (fields: DirtyField[]) => void | Promise<void>): DirtyField[] => {
+      const s = mapRef.current.get(id);
+      if (!s || s.size === 0) return [];
+      const fields = [...s];
+      // 先清空再 commit；commit 失败时 catch 后重新 markDirty 回滚
+      mapRef.current.delete(id);
+      notify();
+      if (!commit) return fields;
+      try {
+        const ret = commit(fields);
+        if (ret && typeof (ret as Promise<void>).then === "function") {
+          (ret as Promise<void>).catch(() => {
+            // 失败回滚：把字段重新放进 dirty set
+            let again = mapRef.current.get(id);
+            if (!again) {
+              again = new Set();
+              mapRef.current.set(id, again);
+            }
+            fields.forEach((f) => again!.add(f));
+            notify();
+          });
+        }
+      } catch {
+        let again = mapRef.current.get(id);
+        if (!again) {
+          again = new Set();
+          mapRef.current.set(id, again);
+        }
+        fields.forEach((f) => again!.add(f));
+        notify();
+      }
+      return fields;
+    },
+    [notify],
+  );
+
+  return { markDirty, getDirtyFields, clear, clearAll, subscribe, flush, revision };
 }
+
+export type DirtyTracker = ReturnType<typeof useDirtyTracker>;
