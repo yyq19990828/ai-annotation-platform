@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.10.7.1] - 2026-05-15
+
+> **Mask 编辑器状态层（M4-δ 后续）.** 把 v0.10.7 落地的 `MaskBuffer` / `maskToPolygon` 算法核组装成 `useMaskEditor` 状态 hook（[useMaskEditor.ts](apps/web/src/pages/Workbench/state/useMaskEditor.ts)）：维护 buffer 引用（useRef，paintAt 每笔不 rerender）+ active / mode (`brush`|`erase`) / radius (clamp 到 1-200px) / dirty (改过 buffer 没 commit 时 true) 状态，暴露 `beginBlank` / `initFromPolygon` (AI 候选精修入口) / `paintAt(x,y)` (按 mode + radius 调 brush/erase) / `setMode` / `setRadius` (clamp) / `cancel` / `commitToPolygon`（空 mask 返 null；非空走 maskToPolygon → 外环顶点）。状态层独立可单测，为 v0.10.7.2 / v0.11.0 的 Konva 集成 / ToolDock 按钮 / AIPredictionPopover「精修」入口 / 笔刷 hotkey 铺路。
+
+### Added
+
+- **`useMaskEditor`** ([useMaskEditor.ts](apps/web/src/pages/Workbench/state/useMaskEditor.ts))：mask 编辑器状态 hook + 12 例单测覆盖初始态 / radius clamp（含 NaN）/ beginBlank / initFromPolygon / paintAt brush 留圆 + erase 抹掉 + 非 active 静默 / cancel 清空 / commitToPolygon 空返 null + 有内容返外环顶点 + 非 active 返 null。
+- **`MASK_BRUSH_MIN_PX` / `MAX_PX` / `DEFAULT_PX`**：1 / 200 / 16，与 ADR-0022 笔刷参数对齐。
+
+### Notes
+
+- 本期不含：Konva 渲染层（MaskCanvasOverlay）、ImageStage `maskBrush` DragInit 派发、ToolDock 按钮、AIPredictionPopover「精修」入口、B/E/Shift+滚轮/Esc/Enter hotkey。这些 UI 集成留到 v0.10.7.2 / v0.11.0。理由同 v0.10.7：UI 集成高耦合 + 高视觉验证成本，独立子版本里跑完整 e2e 更稳。
+- 与 useDirtyTracker (v0.10.6) 协同：mask 编辑「一笔不入 history、松手前累计 flush 一次」语义可由 `useDirtyTracker.flush` 承载；commitToPolygon 入口由调用方决定何时触发 flush。
+
 ## [0.10.7] - 2026-05-15
 
 > **Mask 编辑器 v1 算法核 + v0.10.4 epic 收尾 (M4-δ).** ROADMAP/2026-05-12-image-workbench-optimization.md 的 I11 算法核落地（UI 集成留 v0.10.7.1 / v0.11.0）：① 新增数据层 `stage/shared/geometry/maskBuffer.ts` —— 纯 TS 单通道 `Uint8Array` alpha 缓冲，brush / erase / clear / fromPolygon (扫描线填充) / toAlphaImageData / clone，半径 1-200px 单笔 ≤ 125k 像素操作；② 新增算法层 `stage/shared/geometry/maskToPolygon.ts` —— flood-fill 找连通分量 + Moore-Neighborhood 8-邻轮廓追踪 + `polygon-clipping@0.15.7` union 去自相交 / 平滑锯齿 + 复用 `simplifyPolygon` RDP 压缩，多连通时取最大面积外环 + `multipleComponents=true` 上抛 UI；③ ADR-0021 polygon LOD + 空间索引（I2 决策回填）+ ADR-0022 mask editor architecture（不引入 RLE schema 的 v1 决策）。**不引入** 浏览器 OffscreenCanvas API（jsdom / SSR / preview 也能跑）、d3-contour（包体 ~30KB 不划算）、RLE mask schema（留 v0.11+ 与 I9 / I10 一并做 geometry.kind 统一）。是 v0.10.4 epic 的第 4/4 子版本兼 epic 收尾。→ [plan](docs/plans/2026-05-15-v0.10.7-mask-editor-v1.md) · [epic](docs/plans/2026-05-14-image-workbench-wave-beta-gamma-epic.md) · [roadmap](ROADMAP/2026-05-12-image-workbench-optimization.md) · [ADR-0021](docs/adr/0021-polygon-lod-and-spatial-index.md) · [ADR-0022](docs/adr/0022-mask-editor-tool-architecture.md).
