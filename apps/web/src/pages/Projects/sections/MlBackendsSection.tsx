@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -12,6 +13,8 @@ import {
 import { useUpdateProject } from "@/hooks/useProjects";
 import { usePermissions } from "@/hooks/usePermissions";
 import { MlBackendFormModal } from "@/components/projects/MlBackendFormModal";
+import { MlBackendLimitModal } from "@/components/projects/MlBackendLimitModal";
+import { mlBackendsApi, type MLBackendCapability } from "@/api/ml-backends";
 import type { ProjectResponse } from "@/api/projects";
 import type { MLBackendResponse } from "@/types";
 
@@ -47,10 +50,35 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
     );
   };
 
+  // v0.10.3 · 容量上限. 后端 ml_backend_limit 来自 settings.max_ml_backends_per_project.
+  // 0 视为不限 (与后端一致, 见 apps/api/app/api/v1/ml_backends.py:65).
+  const limit = (project as ProjectResponse & { ml_backend_limit?: number }).ml_backend_limit ?? 1;
+  const atLimit = limit > 0 && backends.length >= limit;
+
+  // v0.10.3 · 每个 backend 拉一次 /setup 拿 supported_prompts; 失败容忍, 列显示 "—".
+  // 管理面板低频, 不做合并端点; 未来 N>5 再优化.
+  const capabilities = useQueries({
+    queries: backends.map((b) => ({
+      queryKey: ["ml-backends", project.id, b.id, "setup"],
+      queryFn: () => mlBackendsApi.setup(project.id, b.id),
+      staleTime: 60_000,
+      retry: false,
+    })),
+  });
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MLBackendResponse | null>(null);
+  const [limitDetail, setLimitDetail] = useState<{
+    open: boolean;
+    serverMessage?: string;
+    currentOverride?: number;
+  }>({ open: false });
 
   const openCreate = () => {
+    if (atLimit) {
+      setLimitDetail({ open: true });
+      return;
+    }
     setEditing(null);
     setModalOpen(true);
   };
@@ -76,6 +104,12 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
     });
   };
 
+  const registerTitle = !canManage
+    ? "需要 PROJECT_ADMIN 权限"
+    : atLimit
+    ? `已达上限 ${limit}，请先解绑现有后端`
+    : undefined;
+
   return (
     <Card>
       <div
@@ -89,12 +123,30 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
         }}
       >
         <div>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>ML 模型</h3>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+            ML 模型
+            <span
+              data-testid="ml-backend-quota"
+              style={{
+                marginLeft: 8,
+                fontSize: 11,
+                fontWeight: 500,
+                color: "var(--color-fg-muted)",
+              }}
+            >
+              已用 {backends.length} / {limit > 0 ? limit : "∞"}
+            </span>
+          </h3>
           <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginTop: 2 }}>
             管理本项目作用域的 ML backend；注册后回「基本信息」可绑定为预标注 backend。
           </div>
         </div>
-        <Button variant="primary" disabled={!canManage} onClick={openCreate} title={canManage ? undefined : "需要 PROJECT_ADMIN 权限"}>
+        <Button
+          variant="primary"
+          disabled={!canManage || atLimit}
+          onClick={openCreate}
+          title={registerTitle}
+        >
           <Icon name="plus" size={12} />
           注册 backend
         </Button>
@@ -132,7 +184,7 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
           <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 12.5 }}>
             <thead>
               <tr>
-                {["名称", "URL", "类型", "状态", "最近检查", "操作"].map((h) => (
+                {["名称", "URL", "类型", "能力", "状态", "最近检查", "操作"].map((h) => (
                   <th
                     key={h}
                     style={{
@@ -151,83 +203,104 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
               </tr>
             </thead>
             <tbody>
-              {backends.map((b) => (
-                <tr key={b.id}>
-                  <td style={cellStyle}>{b.name}</td>
-                  <td
-                    style={{
-                      ...cellStyle,
-                      fontFamily: "var(--font-mono, monospace)",
-                      fontSize: 11,
-                      color: "var(--color-fg-muted)",
-                      maxWidth: 280,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {b.url}
-                  </td>
-                  <td style={cellStyle}>
-                    <Badge variant={b.is_interactive ? "ai" : "outline"}>
-                      {b.is_interactive ? "交互式" : "批量"}
-                    </Badge>
-                  </td>
-                  <td style={cellStyle}>
-                    <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
-                      {b.state}
-                    </Badge>
-                  </td>
-                  <td style={{ ...cellStyle, color: "var(--color-fg-muted)" }}>
-                    {formatDate(b.last_checked_at)}
-                  </td>
-                  <td style={cellStyle}>
-                    <div style={{ display: "inline-flex", gap: 6 }}>
-                      {project.ml_backend_id !== b.id && (
+              {backends.map((b, i) => {
+                const capQ = capabilities[i];
+                const cap = capQ?.data as MLBackendCapability | undefined;
+                return (
+                  <tr key={b.id}>
+                    <td style={cellStyle}>{b.name}</td>
+                    <td
+                      style={{
+                        ...cellStyle,
+                        fontFamily: "var(--font-mono, monospace)",
+                        fontSize: 11,
+                        color: "var(--color-fg-muted)",
+                        maxWidth: 280,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {b.url}
+                    </td>
+                    <td style={cellStyle}>
+                      <Badge variant={b.is_interactive ? "ai" : "outline"}>
+                        {b.is_interactive ? "交互式" : "批量"}
+                      </Badge>
+                    </td>
+                    <td style={cellStyle}>
+                      {capQ?.isLoading && (
+                        <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>…</span>
+                      )}
+                      {capQ?.isError && (
+                        <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>—</span>
+                      )}
+                      {cap?.supported_prompts && (
+                        <div style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+                          {cap.supported_prompts.map((p) => (
+                            <Badge key={p} variant="outline">
+                              {p}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td style={cellStyle}>
+                      <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
+                        {b.state}
+                      </Badge>
+                    </td>
+                    <td style={{ ...cellStyle, color: "var(--color-fg-muted)" }}>
+                      {formatDate(b.last_checked_at)}
+                    </td>
+                    <td style={cellStyle}>
+                      <div style={{ display: "inline-flex", gap: 6 }}>
+                        {project.ml_backend_id !== b.id && (
+                          <Button
+                            size="sm"
+                            variant="ai"
+                            onClick={() => onBind(b)}
+                            disabled={!canManage || updateProject.isPending}
+                            title={canManage ? "绑定到本项目（同时启用 AI）" : "需要 PROJECT_ADMIN 权限"}
+                          >
+                            绑定到本项目
+                          </Button>
+                        )}
+                        {project.ml_backend_id === b.id && (
+                          <Badge variant="ai" style={{ alignSelf: "center" }}>
+                            已绑定
+                          </Badge>
+                        )}
                         <Button
                           size="sm"
-                          variant="ai"
-                          onClick={() => onBind(b)}
-                          disabled={!canManage || updateProject.isPending}
-                          title={canManage ? "绑定到本项目（同时启用 AI）" : "需要 PROJECT_ADMIN 权限"}
+                          onClick={() => onHealth(b)}
+                          disabled={health.isPending}
+                          title="健康检查"
                         >
-                          绑定到本项目
+                          <Icon name="refresh" size={11} />
                         </Button>
-                      )}
-                      {project.ml_backend_id === b.id && (
-                        <Badge variant="ai" style={{ alignSelf: "center" }}>
-                          已绑定
-                        </Badge>
-                      )}
-                      <Button
-                        size="sm"
-                        onClick={() => onHealth(b)}
-                        disabled={health.isPending}
-                        title="健康检查"
-                      >
-                        <Icon name="refresh" size={11} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => openEdit(b)}
-                        disabled={!canManage}
-                        title={canManage ? "编辑" : "需要 PROJECT_ADMIN 权限"}
-                      >
-                        <Icon name="edit" size={11} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        onClick={() => onDelete(b)}
-                        disabled={!canManage || del.isPending}
-                        title={canManage ? "删除" : "需要 PROJECT_ADMIN 权限"}
-                      >
-                        <Icon name="trash" size={11} />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <Button
+                          size="sm"
+                          onClick={() => openEdit(b)}
+                          disabled={!canManage}
+                          title={canManage ? "编辑" : "需要 PROJECT_ADMIN 权限"}
+                        >
+                          <Icon name="edit" size={11} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() => onDelete(b)}
+                          disabled={!canManage || del.isPending}
+                          title={canManage ? "删除" : "需要 PROJECT_ADMIN 权限"}
+                        >
+                          <Icon name="trash" size={11} />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -238,6 +311,20 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
         projectId={project.id}
         backend={editing}
         onClose={() => setModalOpen(false)}
+        onLimitReached={(d) =>
+          setLimitDetail({
+            open: true,
+            serverMessage: d.message,
+            currentOverride: d.current,
+          })
+        }
+      />
+      <MlBackendLimitModal
+        open={limitDetail.open}
+        limit={limit}
+        current={limitDetail.currentOverride ?? backends.length}
+        serverMessage={limitDetail.serverMessage}
+        onClose={() => setLimitDetail({ open: false })}
       />
     </Card>
   );

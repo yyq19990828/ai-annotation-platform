@@ -128,6 +128,7 @@ export default withMermaid(defineConfig({
             { text: "项目管理", link: "/user-guide/for-project-admins/" },
             { text: "批次与分配", link: "/user-guide/for-project-admins/batch" },
             { text: "AI 预标注", link: "/user-guide/for-project-admins/ai-preannotate" },
+            { text: "ML 后端绑定", link: "/user-guide/for-project-admins/ml-backends" },
           ],
         },
         {

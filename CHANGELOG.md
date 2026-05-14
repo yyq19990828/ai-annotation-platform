@@ -22,6 +22,27 @@
 
 ## 最新版本
 
+## [0.10.3] - 2026-05-14
+
+> **1:N 后端管理 UI + 收口 (M3).** ProjectSettings 的 ML 后端区落地 roadmap §3.4 形态: 表头加 `已用 X / Y` 配额角标, 表格新增「能力」列展示 backend `supported_prompts`, 「注册 backend」按钮在达上限时置灰 + tooltip. 新增 `MlBackendLimitModal`, 在按钮被强行触发或表单创建撞 `409 ML_BACKEND_LIMIT_REACHED` 时弹出, 文案优先取服务器 `detail.message` (兜底 fallback 保证离线可读). 沉淀两条 ADR (Prompt-first 重构 + 1:N 架构、Capability 协商协议) 与一篇管理员侧 `ml-backends.md`. → [plan](docs/plans/2026-05-14-v0.10.3-1n-backend-mgmt-ui.md) · [roadmap](ROADMAP/0.10.x.md).
+
+### Added
+
+- **配额角标**: `MlBackendsSection` 标题旁显示 `已用 N / limit` (limit 来自 `project.ml_backend_limit`, 0 视为 ∞).
+- **能力列**: 每行通过 `useQueries` 拉 `/projects/{id}/ml-backends/{bid}/setup`, 渲染 `supported_prompts` 为 Badge 组; 加载中显示 `…`, 失败显示 `—`.
+- **`MlBackendLimitModal`** (`apps/web/src/components/projects/MlBackendLimitModal.tsx`): 「🚧 多后端共存暂未支持」专用模态, 文案优先服务器 `detail.message`, 缺失时走前端 fallback.
+- **ADR-0019** [`ML 工具 UI 的 Prompt-first 重构与 1:N 架构 (env 锁 1:1)`](docs/adr/0019-prompt-first-tooldock-1n-arch.md).
+- **ADR-0020** [`ML Backend Capability 协商协议 (GET /setup JSON Schema 契约)`](docs/adr/0020-ml-backend-capability-negotiation.md).
+- **管理员文档** [`docs-site/user-guide/for-project-admins/ml-backends.md`](docs-site/user-guide/for-project-admins/ml-backends.md): 注册 / 绑定 / 解绑流程 + 1:1 限制说明.
+
+### Changed
+
+- **`MlBackendFormModal.onSubmit`**: catch 块识别 `ApiError.status === 409` 且 `detailRaw.code === "ML_BACKEND_LIMIT_REACHED"`, 通过新 prop `onLimitReached` 上抛 (`limit` / `current` / `message`), 关闭表单切到 LimitModal; 其它错误仍走原有 `setError` 行内提示.
+- **「注册 backend」按钮**: 达上限时 `disabled` 同时 hover tooltip "已达上限 N, 请先解绑现有后端".
+- **VitePress 侧边栏**: 项目管理员组新增 `ML 后端绑定` 入口.
+
+---
+
 ## [0.10.2] - 2026-05-14
 
 > **Prompt-first ToolDock + Exemplar 入口 (M2).** 把单 SAM 工具拆为 4 个独立工具 (智能点 / 智能框 / 文本提示 / Exemplar), 每个声明 `requiredPrompt` 与 backend `/setup.supported_prompts` 联动; backend 不支持的工具自动置灰 + tooltip 提示. 工具激活时右侧浮出 `AIToolDrawer` (后端 + 工具特定控件 + 参数面板). 自研最小 `SchemaForm` (~200 行, 不引 `@rjsf`) 从 `/setup.params` 自动渲染 number/boolean/enum/string 控件, 用户可在工作台动态调 `box_threshold` 等参数, 透传到 `/interactive-annotating` 请求体. → [plan](docs/plans/2026-05-14-v0.10.2-prompt-first-tooldock.md) · [roadmap](ROADMAP/0.10.x.md).
