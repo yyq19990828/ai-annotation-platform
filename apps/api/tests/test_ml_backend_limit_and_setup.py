@@ -135,9 +135,7 @@ async def test_setup_proxy_returns_capability_and_caches(
         call_count["n"] += 1
         return capability
 
-    with patch(
-        "app.services.ml_client.MLBackendClient.setup", new=fake_setup
-    ):
+    with patch("app.services.ml_client.MLBackendClient.setup", new=fake_setup):
         url = f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/setup"
         headers = {"Authorization": f"Bearer {token}"}
         r1 = await httpx_client_bound.get(url, headers=headers)
@@ -177,9 +175,7 @@ async def test_setup_proxy_502_when_backend_unreachable(
     async def fake_setup(self):
         raise RuntimeError("connection refused")
 
-    with patch(
-        "app.services.ml_client.MLBackendClient.setup", new=fake_setup
-    ):
+    with patch("app.services.ml_client.MLBackendClient.setup", new=fake_setup):
         resp = await httpx_client_bound.get(
             f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/setup",
             headers={"Authorization": f"Bearer {token}"},
