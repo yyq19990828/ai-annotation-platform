@@ -108,16 +108,20 @@ async def _assert_segment_lock(
         return segment.id
 
     overlapping = (
-        await db.execute(
-            select(VideoSegment)
-            .where(
-                VideoSegment.dataset_item_id == ctx.item.id,
-                VideoSegment.start_frame <= payload.to_frame,
-                VideoSegment.end_frame >= payload.from_frame,
+        (
+            await db.execute(
+                select(VideoSegment)
+                .where(
+                    VideoSegment.dataset_item_id == ctx.item.id,
+                    VideoSegment.start_frame <= payload.to_frame,
+                    VideoSegment.end_frame >= payload.from_frame,
+                )
+                .order_by(VideoSegment.segment_index.asc())
             )
-            .order_by(VideoSegment.segment_index.asc())
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not overlapping:
         raise HTTPException(status_code=404, detail="Video segment not found")
     if len(overlapping) > 1:
@@ -189,9 +193,7 @@ async def get_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTrackerJo
     return row
 
 
-async def cancel_tracker_job(
-    db: AsyncSession, job_id: uuid.UUID
-) -> VideoTrackerJobOut:
+async def cancel_tracker_job(db: AsyncSession, job_id: uuid.UUID) -> VideoTrackerJobOut:
     row = (
         await db.execute(
             select(VideoTrackerJob)

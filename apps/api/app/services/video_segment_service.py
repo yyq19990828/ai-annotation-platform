@@ -51,12 +51,16 @@ def _segment_bounds(ctx: VideoContext, segment_index: int) -> tuple[int, int]:
 
 async def ensure_segments(db: AsyncSession, ctx: VideoContext) -> list[VideoSegment]:
     rows = (
-        await db.execute(
-            select(VideoSegment)
-            .where(VideoSegment.dataset_item_id == ctx.item.id)
-            .order_by(VideoSegment.segment_index.asc())
+        (
+            await db.execute(
+                select(VideoSegment)
+                .where(VideoSegment.dataset_item_id == ctx.item.id)
+                .order_by(VideoSegment.segment_index.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if rows:
         now = _now()
         for row in rows:
@@ -86,7 +90,9 @@ def segment_out(row: VideoSegment) -> VideoSegmentOut:
         segment_index=row.segment_index,
         start_frame=row.start_frame,
         end_frame=row.end_frame,
-        status=row.status if row.status in {"open", "assigned", "locked", "completed"} else "open",
+        status=row.status
+        if row.status in {"open", "assigned", "locked", "completed"}
+        else "open",
         assignee_id=row.assignee_id,
         locked_by=row.locked_by,
         locked_at=row.locked_at,
@@ -138,7 +144,9 @@ async def _load_segment_for_update(
 def _assert_can_touch_lock(row: VideoSegment, user: User, privileged: bool) -> None:
     if privileged or row.locked_by is None or row.locked_by == user.id:
         return
-    raise HTTPException(status_code=403, detail="Video segment lock belongs to another user")
+    raise HTTPException(
+        status_code=403, detail="Video segment lock belongs to another user"
+    )
 
 
 async def claim_segment(
@@ -154,14 +162,20 @@ async def claim_segment(
     _normalize_lock(row, now)
 
     if row.assignee_id and row.assignee_id != user.id and not privileged:
-        raise HTTPException(status_code=403, detail="Video segment is assigned to another user")
+        raise HTTPException(
+            status_code=403, detail="Video segment is assigned to another user"
+        )
     if row.locked_by and row.locked_by != user.id and not privileged:
-        raise HTTPException(status_code=409, detail="Video segment is locked by another user")
+        raise HTTPException(
+            status_code=409, detail="Video segment is locked by another user"
+        )
 
     row.assignee_id = row.assignee_id or user.id
     row.locked_by = user.id
     row.locked_at = now
-    row.lock_expires_at = now + timedelta(seconds=settings.video_segment_lock_ttl_seconds)
+    row.lock_expires_at = now + timedelta(
+        seconds=settings.video_segment_lock_ttl_seconds
+    )
     row.status = "locked"
     await db.flush()
     return segment_out(row)
@@ -181,7 +195,9 @@ async def heartbeat_segment(
     if row.locked_by is None:
         raise HTTPException(status_code=409, detail="Video segment is not locked")
     _assert_can_touch_lock(row, user, privileged)
-    row.lock_expires_at = now + timedelta(seconds=settings.video_segment_lock_ttl_seconds)
+    row.lock_expires_at = now + timedelta(
+        seconds=settings.video_segment_lock_ttl_seconds
+    )
     row.status = "locked"
     await db.flush()
     return segment_out(row)

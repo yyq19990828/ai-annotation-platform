@@ -73,7 +73,9 @@ def legacy_absent_ranges(keyframes: list[dict]) -> list[dict]:
             {
                 "from": int(kf.get("frame_index", 0)),
                 "to": int(kf.get("frame_index", 0)),
-                "source": "prediction" if kf.get("source") == "prediction" else "manual",
+                "source": "prediction"
+                if kf.get("source") == "prediction"
+                else "manual",
             }
             for kf in keyframes
             if bool(kf.get("absent"))
@@ -83,7 +85,10 @@ def legacy_absent_ranges(keyframes: list[dict]) -> list[dict]:
 
 def effective_outside_ranges(geometry: dict) -> list[dict]:
     return normalize_outside_ranges(
-        [*(geometry.get("outside") or []), *legacy_absent_ranges(sorted_keyframes(geometry))]
+        [
+            *(geometry.get("outside") or []),
+            *legacy_absent_ranges(sorted_keyframes(geometry)),
+        ]
     )
 
 
@@ -94,10 +99,14 @@ def frame_is_outside(geometry: dict, frame_index: int) -> bool:
     )
 
 
-def range_intersects_outside(ranges: list[dict], from_frame: int, to_frame: int) -> bool:
+def range_intersects_outside(
+    ranges: list[dict], from_frame: int, to_frame: int
+) -> bool:
     start = min(from_frame, to_frame)
     end = max(from_frame, to_frame)
-    return any(int(range_["from"]) <= end and int(range_["to"]) >= start for range_ in ranges)
+    return any(
+        int(range_["from"]) <= end and int(range_["to"]) >= start for range_ in ranges
+    )
 
 
 def lerp_bbox(before: dict, after: dict, ratio: float) -> dict:
@@ -115,11 +124,17 @@ def lerp_bbox(before: dict, after: dict, ratio: float) -> dict:
 
 def _coerce_geometry(geometry_or_keyframes: dict | list[dict]) -> dict:
     if isinstance(geometry_or_keyframes, list):
-        return {"type": "video_track", "track_id": "", "keyframes": geometry_or_keyframes}
+        return {
+            "type": "video_track",
+            "track_id": "",
+            "keyframes": geometry_or_keyframes,
+        }
     return geometry_or_keyframes
 
 
-def resolve_track_at_frame(geometry_or_keyframes: dict | list[dict], frame_index: int) -> dict | None:
+def resolve_track_at_frame(
+    geometry_or_keyframes: dict | list[dict], frame_index: int
+) -> dict | None:
     geometry = _coerce_geometry(geometry_or_keyframes)
     keyframes = sorted_keyframes(geometry)
     outside_ranges = effective_outside_ranges(geometry)

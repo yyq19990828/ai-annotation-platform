@@ -100,7 +100,9 @@ async def test_video_manifest_v2_exposes_service_urls(
     assert body["poster_url"] == "http://storage.local/posters/clip.webp"
     assert body["chunks_manifest_url"].endswith(f"/api/v1/tasks/{task.id}/video/chunks")
     assert body["frame_service_base"].endswith(f"/api/v1/tasks/{task.id}/video/frames")
-    assert [(s["segment_index"], s["start_frame"], s["end_frame"]) for s in body["segments"]] == [
+    assert [
+        (s["segment_index"], s["start_frame"], s["end_frame"]) for s in body["segments"]
+    ] == [
         (0, 0, 29),
         (1, 30, 59),
         (2, 60, 89),
@@ -653,8 +655,7 @@ async def test_rebuild_timetable_cli_helper_replaces_rows(
 
     rows = (
         await db_session.execute(
-            VideoFrameIndex.__table__
-            .select()
+            VideoFrameIndex.__table__.select()
             .where(VideoFrameIndex.dataset_item_id == item.id)
             .order_by(VideoFrameIndex.frame_index.asc())
         )

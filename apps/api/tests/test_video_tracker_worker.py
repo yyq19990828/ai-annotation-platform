@@ -383,5 +383,7 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
     await db_session.refresh(annotation)
 
     assert job.status == "completed"
-    assert annotation.geometry["outside"] == [{"from": 1, "to": 1, "source": "prediction"}]
+    assert annotation.geometry["outside"] == [
+        {"from": 1, "to": 1, "source": "prediction"}
+    ]
     assert [kf["frame_index"] for kf in annotation.geometry["keyframes"]] == [0, 2]

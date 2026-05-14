@@ -285,9 +285,7 @@ def test_extract_video_chunk_smart_copy_uses_copy_and_timeout(tmp_path, monkeypa
     extract_video_chunk_smart_copy(video, chunk, 1000, 2000)
 
     assert seen["timeout"] == FFMPEG_CHUNK_TIMEOUT_SECONDS
-    assert seen["args"][
-        seen["args"].index("-c:v") + 1
-    ] == "copy"
+    assert seen["args"][seen["args"].index("-c:v") + 1] == "copy"
 
 
 class _FakeVideoChunkClient:
@@ -377,7 +375,9 @@ async def test_store_video_chunk_uses_smart_copy_when_keyframe_aligned(
     def fake_transcode(*args):
         calls.append("transcode")
 
-    monkeypatch.setattr("app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy)
+    monkeypatch.setattr(
+        "app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy
+    )
     monkeypatch.setattr("app.workers.media.extract_video_chunk", fake_transcode)
 
     storage = _FakeVideoChunkStorage()
@@ -431,7 +431,9 @@ async def test_store_video_chunk_transcodes_when_not_keyframe_aligned(
         calls.append(f"transcode:{start_ms}:{frame_count}")
         output_path.write_bytes(b"transcoded")
 
-    monkeypatch.setattr("app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy)
+    monkeypatch.setattr(
+        "app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy
+    )
     monkeypatch.setattr("app.workers.media.extract_video_chunk", fake_transcode)
 
     storage = _FakeVideoChunkStorage()
@@ -482,7 +484,9 @@ async def test_store_video_chunk_falls_back_when_smart_copy_fails(
         calls.append(f"transcode:{start_ms}:{frame_count}")
         output_path.write_bytes(b"transcoded")
 
-    monkeypatch.setattr("app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy)
+    monkeypatch.setattr(
+        "app.workers.media.extract_video_chunk_smart_copy", fake_smart_copy
+    )
     monkeypatch.setattr("app.workers.media.extract_video_chunk", fake_transcode)
 
     storage = _FakeVideoChunkStorage()
@@ -1252,7 +1256,9 @@ async def test_video_export_preserves_and_applies_outside_ranges(
     )
 
     assert resp.status_code == 200
-    car = next(track for track in resp.json()["tracks"] if track["track_id"] == "trk_car")
+    car = next(
+        track for track in resp.json()["tracks"] if track["track_id"] == "trk_car"
+    )
     assert car["outside"] == [
         {"from": 1, "to": 1, "source": "manual"},
         {"from": 5, "to": 6, "source": "prediction"},
@@ -1483,7 +1489,14 @@ async def test_video_track_composition_aggregate_bboxes_deletes_sources(
         user_id=user.id,
         annotation_type="video_bbox",
         class_name="person",
-        geometry={"type": "video_bbox", "frame_index": 3, "x": 0.3, "y": 0.2, "w": 0.1, "h": 0.1},
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 3,
+            "x": 0.3,
+            "y": 0.2,
+            "w": 0.1,
+            "h": 0.1,
+        },
     )
     db_session.add(second)
     await db_session.flush()
@@ -1539,7 +1552,14 @@ async def test_video_track_composition_aggregate_rejects_mixed_classes(
         user_id=user.id,
         annotation_type="video_bbox",
         class_name="car",
-        geometry={"type": "video_bbox", "frame_index": 3, "x": 0.3, "y": 0.2, "w": 0.1, "h": 0.1},
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 3,
+            "x": 0.3,
+            "y": 0.2,
+            "w": 0.1,
+            "h": 0.1,
+        },
     )
     db_session.add(car)
     await db_session.flush()
@@ -1585,7 +1605,14 @@ async def test_video_track_composition_aggregate_rejects_duplicate_frames(
         user_id=user.id,
         annotation_type="video_bbox",
         class_name="person",
-        geometry={"type": "video_bbox", "frame_index": 1, "x": 0.3, "y": 0.2, "w": 0.1, "h": 0.1},
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 1,
+            "x": 0.3,
+            "y": 0.2,
+            "w": 0.1,
+            "h": 0.1,
+        },
     )
     db_session.add(second)
     await db_session.flush()
@@ -1600,7 +1627,9 @@ async def test_video_track_composition_aggregate_rejects_duplicate_frames(
     )
 
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "video_bbox annotations must not share a frame_index"
+    assert (
+        resp.json()["detail"] == "video_bbox annotations must not share a frame_index"
+    )
 
 
 async def test_video_track_composition_split_visible_frame_creates_tail_track(
@@ -1673,8 +1702,16 @@ async def test_video_track_composition_merge_tracks_adds_outside_gap(
             "type": "video_track",
             "track_id": "trk_car_tail",
             "keyframes": [
-                {"frame_index": 5, "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
-                {"frame_index": 6, "bbox": {"x": 0.7, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+                {
+                    "frame_index": 5,
+                    "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2},
+                    "source": "manual",
+                },
+                {
+                    "frame_index": 6,
+                    "bbox": {"x": 0.7, "y": 0.2, "w": 0.2, "h": 0.2},
+                    "source": "manual",
+                },
             ],
         },
     )
@@ -1695,7 +1732,13 @@ async def test_video_track_composition_merge_tracks_adds_outside_gap(
     assert body["deleted_annotation_ids"] == [str(second.id)]
     merged = body["updated_annotations"][0]
     assert merged["id"] == str(first.id)
-    assert [kf["frame_index"] for kf in merged["geometry"]["keyframes"]] == [0, 2, 4, 5, 6]
+    assert [kf["frame_index"] for kf in merged["geometry"]["keyframes"]] == [
+        0,
+        2,
+        4,
+        5,
+        6,
+    ]
     assert {"from": 3, "to": 4, "source": "manual"} in merged["geometry"]["outside"]
     await db_session.refresh(second)
     assert second.is_active is False
@@ -1719,7 +1762,11 @@ async def test_video_track_composition_merge_rejects_overlap_and_mixed_classes(
             "type": "video_track",
             "track_id": "trk_overlap",
             "keyframes": [
-                {"frame_index": 1, "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+                {
+                    "frame_index": 1,
+                    "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2},
+                    "source": "manual",
+                },
             ],
         },
     )
@@ -1733,7 +1780,11 @@ async def test_video_track_composition_merge_rejects_overlap_and_mixed_classes(
             "type": "video_track",
             "track_id": "trk_person_tail",
             "keyframes": [
-                {"frame_index": 5, "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2}, "source": "manual"},
+                {
+                    "frame_index": 5,
+                    "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2},
+                    "source": "manual",
+                },
             ],
         },
     )
@@ -1758,9 +1809,14 @@ async def test_video_track_composition_merge_rejects_overlap_and_mixed_classes(
     )
 
     assert overlap_resp.status_code == 400
-    assert overlap_resp.json()["detail"] == "merge_tracks requires non-overlapping tracks"
+    assert (
+        overlap_resp.json()["detail"] == "merge_tracks requires non-overlapping tracks"
+    )
     assert mixed_resp.status_code == 400
-    assert mixed_resp.json()["detail"] == "merge_tracks requires tracks with the same class"
+    assert (
+        mixed_resp.json()["detail"]
+        == "merge_tracks requires tracks with the same class"
+    )
 
 
 async def test_video_track_composition_rejects_annotation_from_other_task(

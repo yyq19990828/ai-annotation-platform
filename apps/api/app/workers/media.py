@@ -12,7 +12,12 @@ from typing import Any
 
 from sqlalchemy import delete, select
 
-from app.db.models.dataset import DatasetItem, VideoChunk, VideoFrameCache, VideoFrameIndex
+from app.db.models.dataset import (
+    DatasetItem,
+    VideoChunk,
+    VideoFrameCache,
+    VideoFrameIndex,
+)
 from app.observability.metrics import (
     VIDEO_CHUNK_GENERATION_SECONDS,
     VIDEO_FRAME_ASSET_BYTES,
@@ -642,9 +647,7 @@ async def _generate_video_metadata(item_id: str) -> None:
             except subprocess.TimeoutExpired:
                 if poster_row is not None:
                     poster_row.status = "failed"
-                    poster_row.error = (
-                        f"ffmpeg poster extraction timed out after {FFMPEG_FRAME_TIMEOUT_SECONDS}s"
-                    )
+                    poster_row.error = f"ffmpeg poster extraction timed out after {FFMPEG_FRAME_TIMEOUT_SECONDS}s"
                 video_meta["poster_error"] = (
                     f"ffmpeg poster extraction timed out after {FFMPEG_FRAME_TIMEOUT_SECONDS}s"
                 )
