@@ -60,7 +60,10 @@ EMBEDDING_CACHE_SIZE = int(os.getenv("EMBEDDING_CACHE_SIZE", "16"))
 IDLE_UNLOAD_SECONDS = float(os.getenv("IDLE_UNLOAD_SECONDS", "600"))
 IDLE_CHECK_INTERVAL = float(os.getenv("IDLE_CHECK_INTERVAL", "60"))
 
-app = FastAPI(title="grounded-sam2-backend", version="0.9.1")
+# v0.10.1 · /setup 协议标准化暴露 backend 镜像版本 (与 FastAPI app.version 同源).
+BACKEND_VERSION = os.getenv("BACKEND_VERSION", "0.10.1")
+
+app = FastAPI(title="grounded-sam2-backend", version=BACKEND_VERSION)
 _predictor: GroundedSAM2Predictor | None = None
 _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=SAM_VARIANT)
 _last_request_at: float = time.monotonic()
@@ -212,20 +215,51 @@ def health() -> dict:
 
 @app.get("/setup")
 def setup() -> dict:
+    # v0.10.1 · /setup 标准化为 JSON Schema 自描述协议 (与 sam3-backend 同构):
+    # - name / version / model_version: 必填三元组, 前端用于诊断与兼容判断
+    # - supported_prompts: 决定 ToolDock 哪些 AI 工具可用 (M2 ToolDock 重构消费)
+    # - params: JSON Schema (Draft-07 子集) — 前端 schema-form 自动渲染参数面板
     return {
         "name": "grounded-sam2",
+        "version": BACKEND_VERSION,
+        "model_version": MODEL_VERSION,
         "labels": [],
         "is_interactive": True,
-        # v0.9.4 phase 2 · 自描述协议: 平台前端按此驱动子工具栏渲染.
-        # 老前端不消费此字段; 老 backend 缺此字段时前端走兜底 ["point","bbox","text"] 路径.
         "supported_prompts": ["point", "bbox", "text"],
         # v0.9.4 phase 2 · text 路径输出形态选择 (box=DINO 直出, mask=DINO+SAM, both=配对返回).
         "supported_text_outputs": ["box", "mask", "both"],
         "params": {
-            "box_threshold": BOX_THRESHOLD,
-            "text_threshold": TEXT_THRESHOLD,
-            "sam_variant": SAM_VARIANT,
-            "dino_variant": DINO_VARIANT,
+            "type": "object",
+            "properties": {
+                "box_threshold": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": BOX_THRESHOLD,
+                    "title": "Box 置信度阈值",
+                },
+                "text_threshold": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": TEXT_THRESHOLD,
+                    "title": "Text 置信度阈值",
+                },
+                "sam_variant": {
+                    "type": "string",
+                    "enum": ["tiny", "small", "base", "large"],
+                    "default": SAM_VARIANT,
+                    "title": "SAM 2 变体",
+                    "readOnly": True,
+                },
+                "dino_variant": {
+                    "type": "string",
+                    "enum": ["T", "B"],
+                    "default": DINO_VARIANT,
+                    "title": "GroundingDINO 变体",
+                    "readOnly": True,
+                },
+            },
         },
     }
 

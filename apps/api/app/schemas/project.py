@@ -71,6 +71,9 @@ class ProjectOut(BaseModel):
     ai_enabled: bool
     ai_model: str | None
     ml_backend_id: UUID | None = None
+    # v0.10.1 · 单项目可绑定的 ML backend 数量上限 (来自 settings.max_ml_backends_per_project).
+    # 前端 ProjectSettings 据此渲染「+ 添加后端」按钮的禁用状态及 Modal 文案 (M3).
+    ml_backend_limit: int = 1
     classes: list[str] = []
     classes_config: ClassesConfig = {}
     attribute_schema: AttributeSchema = AttributeSchema()

@@ -7328,6 +7328,11 @@
             ],
             "title": "Ml Backend Id"
           },
+          "ml_backend_limit": {
+            "default": 1,
+            "title": "Ml Backend Limit",
+            "type": "integer"
+          },
           "model_version": {
             "anyOf": [
               {
@@ -18761,6 +18766,63 @@
           }
         ],
         "summary": "Reload Ml Backend",
+        "tags": [
+          "ml-backends"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/ml-backends/{backend_id}/setup": {
+      "get": {
+        "description": "v0.10.1 · 代理 backend /setup, 返回 JSON Schema 自描述能力 (供前端 useMLCapabilities).\n\n30s TTL 进程内缓存; backend 升级/重启后最坏延迟 30s. 删除/更新 backend 时 invalidate.",
+        "operationId": "get_ml_backend_setup_api_v1_projects__project_id__ml_backends__backend_id__setup_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "backend_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Backend Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Ml Backend Setup",
         "tags": [
           "ml-backends"
         ]

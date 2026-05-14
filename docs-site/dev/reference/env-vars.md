@@ -40,6 +40,12 @@ last_reviewed: 2026-05-12
 |---|---|---|
 | `ML_BACKEND_DEFAULT_URL` | `http://172.17.0.1:8001` | 留空则用前端硬编码默认 http://172.17.0.1:8001; 生产 K8s 同 namespace 时可设为 service DNS, 让运维注册时直接 ready. |
 
+## v0.10.1 · 单项目 ML backend 数量上限
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `MAX_ML_BACKENDS_PER_PROJECT` | `1` | 单项目最多可绑定的 ML backend 数量上限. DB/API/UI 均按 1:N 设计, 运行时通过此值锁定. 默认 1 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB) 显存爆炸. 超限时 POST /projects/{id}/ml-backends 返回 409 + detail{code:"ML_BACKEND_LIMIT_REACHED"}. 生产可调大; prompt-routing / fallback 在 v0.11+ 落地. |
+
 ## 视频帧服务 (v0.9.25+)
 
 | 变量 | 默认值 | 说明 |

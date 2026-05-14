@@ -62,6 +62,8 @@ logger = logging.getLogger("sam3-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 
 MODEL_VERSION = MODEL_VARIANT  # "sam3.1"; 路线图 §1.1 明确 SAM 3 仅一档
+# v0.10.1 · /setup 协议标准化暴露 backend 镜像版本 (与 FastAPI app.version 同源).
+BACKEND_VERSION = os.getenv("BACKEND_VERSION", "0.10.1")
 IMAGE_DOWNLOAD_TIMEOUT = float(os.getenv("IMAGE_DOWNLOAD_TIMEOUT", "30"))
 EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_EMBEDDING_CACHE_SIZE", "32"))
 
@@ -71,7 +73,7 @@ EMBEDDING_CACHE_SIZE = int(os.getenv("SAM3_EMBEDDING_CACHE_SIZE", "32"))
 IDLE_UNLOAD_SECONDS = float(os.getenv("SAM3_IDLE_UNLOAD_SECONDS", "600"))
 IDLE_CHECK_INTERVAL = float(os.getenv("SAM3_IDLE_CHECK_INTERVAL", "60"))
 
-app = FastAPI(title="sam3-backend", version="0.10.0")
+app = FastAPI(title="sam3-backend", version=BACKEND_VERSION)
 _predictor: SAM3Predictor | None = None
 _cache = EmbeddingCache(capacity=EMBEDDING_CACHE_SIZE, sam_variant=MODEL_VERSION)
 _last_request_at: float = time.monotonic()
@@ -213,20 +215,39 @@ def health() -> dict:
 
 @app.get("/setup")
 def setup() -> dict:
+    # v0.10.1 · /setup 标准化为 JSON Schema 自描述协议:
+    # - name / version / model_version: 必填三元组, 前端用于诊断与兼容判断
+    # - supported_prompts: 决定 ToolDock 哪些 AI 工具可用 (M2 ToolDock 重构消费)
+    # - params: JSON Schema (Draft-07 子集) — 前端 schema-form 自动渲染参数面板
     return {
-        "name": "sam3",
+        "name": "sam3-backend",
+        "version": BACKEND_VERSION,
+        "model_version": MODEL_VERSION,
         "labels": [],
         "is_interactive": True,
         # v0.10.0 选项 A: 不暴露 "point" (Sam3Processor image API 不支持).
-        # 前端按此动态启用 Shift+拖框 = exemplar 入口 (v0.10.1 落地);
         # 单点交互项目挂 grounded-sam2-backend 兜底.
         "supported_prompts": ["bbox", "text", "exemplar"],
         "supported_text_outputs": ["box", "mask", "both"],
         # bbox / exemplar 走同一 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
         "supported_geometric_outputs": ["box", "mask", "both"],
         "params": {
-            "model_variant": MODEL_VERSION,
-            "embedding_cache_size": EMBEDDING_CACHE_SIZE,
+            "type": "object",
+            "properties": {
+                "model_variant": {
+                    "type": "string",
+                    "default": MODEL_VERSION,
+                    "title": "模型版本",
+                    "readOnly": True,
+                },
+                "embedding_cache_size": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": EMBEDDING_CACHE_SIZE,
+                    "title": "Embedding 缓存容量",
+                    "readOnly": True,
+                },
+            },
         },
     }
 

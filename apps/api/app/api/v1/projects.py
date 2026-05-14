@@ -26,6 +26,7 @@ from app.schemas.project import (
     ProjectTransferRequest,
 )
 from app.services.display_id import next_display_id
+from app.config import settings
 
 router = APIRouter()
 
@@ -114,6 +115,8 @@ async def _serialize_project(
     data["member_count"] = member_count
     data["ai_completed_tasks"] = ai_completed
     data["batch_summary"] = batch_summary
+    # v0.10.1 · 透出 env 控制的 1:N 上限 (默认 1), 供前端渲染添加按钮禁用状态.
+    data["ml_backend_limit"] = settings.max_ml_backends_per_project
     return data
 
 

@@ -17,9 +17,29 @@ export interface InteractiveRequest {
   context: Record<string, unknown>;
 }
 
+// v0.10.1 · /setup 协议自描述响应 (与后端 sam3/grounded-sam2 main.py 同构).
+// `params` 为 JSON Schema (Draft-07 子集), M2 schema-form 据此渲染参数面板.
+export interface MLBackendCapability {
+  name: string;
+  version?: string;
+  model_version?: string;
+  is_interactive?: boolean;
+  labels?: string[];
+  supported_prompts: string[];
+  supported_text_outputs?: string[];
+  supported_geometric_outputs?: string[];
+  params?: {
+    type?: string;
+    properties?: Record<string, unknown>;
+  };
+}
+
 export const mlBackendsApi = {
   list: (projectId: string) =>
     apiClient.get<MLBackendResponse[]>(`/projects/${projectId}/ml-backends`),
+
+  setup: (projectId: string, backendId: string) =>
+    apiClient.get<MLBackendCapability>(`/projects/${projectId}/ml-backends/${backendId}/setup`),
 
   create: (projectId: string, payload: MLBackendCreatePayload) =>
     apiClient.post<MLBackendResponse>(`/projects/${projectId}/ml-backends`, payload),

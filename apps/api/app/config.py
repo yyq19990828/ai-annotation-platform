@@ -74,6 +74,11 @@ class Settings(BaseSettings):
 
     ml_predict_timeout: int = 100
     ml_health_timeout: int = 10
+
+    # v0.10.1 · 单项目最多可绑定的 ML backend 数量上限。schema/UI 已按 1:N 一步到位设计,
+    # 运行时通过此 env 锁定为 1, 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB)
+    # 显存爆炸。生产可调大, prompt-routing / fallback 在 v0.11+ 落地。
+    max_ml_backends_per_project: int = 1
     celery_broker_url: str = ""
 
     # v0.9.25 · 视频后端帧服务 Wave B。Chunk 与单帧缓存都落在 datasets bucket。

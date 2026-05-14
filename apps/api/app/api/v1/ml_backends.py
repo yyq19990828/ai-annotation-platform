@@ -1,11 +1,14 @@
 import re
+import time
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.deps import get_db, require_roles
 from app.db.enums import UserRole
+from app.db.models.ml_backend import MLBackend
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.project import Project
@@ -20,6 +23,11 @@ from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
 from app.services.ml_client import MLBackendClient
 from app.services.storage import StorageService
 from app.services.audit import AuditService
+
+# v0.10.1 · /setup 代理结果的进程内 TTL 缓存. 工作台进入即拉, 避免 N 次 backend 探活.
+# key = backend_id (绑定改动 → 重绑后新 backend_id 自然 invalidate); 30s TTL 兜底.
+_SETUP_CACHE_TTL_SECONDS = 30.0
+_setup_cache: dict[uuid.UUID, tuple[float, dict]] = {}
 
 router = APIRouter()
 
@@ -51,6 +59,30 @@ async def create_ml_backend(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
+    # v0.10.1 · MAX_ML_BACKENDS_PER_PROJECT 上限校验. DB 已按 1:N 设计 (project_id 非 unique),
+    # 应用层挡入口防显存爆炸. 超限时返 409 + 结构化 detail{code,message}, 前端 M3 据此渲染弹窗.
+    limit = settings.max_ml_backends_per_project
+    if limit > 0:
+        existing = await db.execute(
+            select(func.count())
+            .select_from(MLBackend)
+            .where(MLBackend.project_id == project_id)
+        )
+        existing_count = int(existing.scalar() or 0)
+        if existing_count >= limit:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "ML_BACKEND_LIMIT_REACHED",
+                    "message": (
+                        f"当前项目已绑定 {existing_count} 个 ML 后端,"
+                        f"达到上限 {limit}。请先解绑现有后端再添加。"
+                    ),
+                    "limit": limit,
+                    "current": existing_count,
+                },
+            )
+
     svc = MLBackendService(db)
     backend = await svc.create(
         project_id=project_id,
@@ -120,6 +152,7 @@ async def update_ml_backend(
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     svc = MLBackendService(db)
+    _setup_cache.pop(backend_id, None)
     updates = data.model_dump(exclude_unset=True)
     backend = await svc.update(backend_id, **updates)
     if not backend:
@@ -148,6 +181,7 @@ async def delete_ml_backend(
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     svc = MLBackendService(db)
+    _setup_cache.pop(backend_id, None)
     try:
         deleted = await svc.delete(backend_id)
     except MLBackendDeleteBlocked as exc:
@@ -228,6 +262,40 @@ async def reload_ml_backend(
     )
     await db.commit()
     return result
+
+
+@router.get("/{backend_id}/setup")
+async def get_ml_backend_setup(
+    project_id: uuid.UUID,
+    backend_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
+    ),
+):
+    """v0.10.1 · 代理 backend /setup, 返回 JSON Schema 自描述能力 (供前端 useMLCapabilities).
+
+    30s TTL 进程内缓存; backend 升级/重启后最坏延迟 30s. 删除/更新 backend 时 invalidate.
+    """
+    svc = MLBackendService(db)
+    backend = await svc.get(backend_id)
+    if not backend or backend.project_id != project_id:
+        raise HTTPException(status_code=404, detail="ML Backend not found")
+
+    now = time.monotonic()
+    cached = _setup_cache.get(backend_id)
+    if cached is not None and (now - cached[0]) < _SETUP_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    client = MLBackendClient(backend)
+    try:
+        data = await client.setup()
+    except Exception as exc:  # httpx.HTTPError 或 timeout
+        raise HTTPException(
+            status_code=502, detail=f"backend /setup unreachable: {exc}"
+        )
+    _setup_cache[backend_id] = (now, data)
+    return data
 
 
 @router.post("/{backend_id}/health", response_model=MLBackendHealthResponse)

@@ -22,6 +22,30 @@
 
 ## 最新版本
 
+## [0.10.1] - 2026-05-14
+
+> **Capability 协商基础设施 (M1).** 把 ML backend 的 `/setup` 标准化为 JSON Schema 自描述协议, apps/api 暴露 `/projects/{id}/ml-backends/{bid}/setup` 代理端点, 前端落地 `useMLCapabilities` hook 作为 ML 能力的单一事实源. 同时落地 `MAX_ML_BACKENDS_PER_PROJECT` env (默认 1) 锁住运行时 1:1, DB/UI 一步到位 1:N. 本期 hook 只挂载、不消费; M2 (v0.10.2 Prompt-first ToolDock) 才接入消费. → [plan](docs/plans/2026-05-14-v0.10.1-capability-negotiation.md) · [roadmap](ROADMAP/0.10.x.md).
+
+### Added
+
+- **`/setup` JSON Schema 自描述协议**: 两个 ML backend (`sam3-backend` / `grounded-sam2-backend`) 的 `/setup` 响应一步到位标准化为新契约: 新增必填三元组 `name` / `version` / `model_version`; `params` 从配置快照 dict 改为 JSON Schema (Draft-07 子集), 每个字段携带 `type` / `default` / `title` / `enum` / `readOnly` 等元数据, 供 M2 schema-form 自动渲染参数面板.
+- **`GET /projects/{id}/ml-backends/{bid}/setup` 代理端点** (`apps/api/app/api/v1/ml_backends.py`): 前端 useMLCapabilities 通过此端点拉 backend 能力, 不直连 ML backend; 30s TTL 进程内缓存避免 N 次探活, 删除/更新 backend 时自动 invalidate; 下游不可达返 502.
+- **`MAX_ML_BACKENDS_PER_PROJECT` env** (默认 1): 单项目可绑定的 ML backend 数量上限. `POST /projects/{id}/ml-backends` 在已绑定数 ≥ 上限时返 `409 + detail{code:"ML_BACKEND_LIMIT_REACHED", message, limit, current}`, 前端 M3 据此渲染「暂未支持多后端」Modal. DB schema 不变 (ml_backends.project_id 已允许多行), 应用层挡入口防显存爆炸.
+- **`ProjectOut.ml_backend_limit`**: `GET /projects/{id}` 响应体携带 env 控制的上限, 前端 ProjectSettings 据此决定「+ 添加后端」按钮的禁用状态 (M3).
+- **`apps/web/src/pages/Workbench/state/useMLCapabilities.ts`**: TanStack Query hook, 5min staleTime; 暴露 `prompts` / `paramsSchema` / `capability` / `isPromptSupported(type)` / `isLoading` / `isError`. 返回体缺 `supported_prompts` 时回落 `["point","bbox","text"]` 并 console.warn; 拉取失败时返回空 prompts (=禁用全 AI 工具). 配套 4 个单测覆盖成功 / 兜底 / 错误 / disabled 路径.
+- **后端单测** (`apps/api/tests/test_ml_backend_limit_and_setup.py`): 超限场景 / 上限调大可绑 / ml_backend_limit 字段透出 / setup 代理含缓存 / 跨项目 backend_id 404 / 下游不可达 502, 共 6 例.
+
+### Changed
+
+- `docs-site/dev/reference/ml-backend-protocol.md` §4 重写: `/setup` 从「可选自由 JSON」改为「v0.10.1 后必填 JSON Schema 协议」, 文档与两个 backend 同步.
+- `.env.example` + `docs-site/dev/reference/env-vars.md`: 新增 `MAX_ML_BACKENDS_PER_PROJECT` 段落.
+
+### Breaking Changes
+
+- **`/setup` 协议破坏式升级**: `params` 字段语义从「配置快照 dict (如 `{"box_threshold": 0.35}`)」改为「JSON Schema 对象 (`{"type":"object","properties":{...}}`)」. 仅影响第三方 backend 实现; 平台内置的 `sam3-backend` / `grounded-sam2-backend` 同 PR 升级. 老 backend 缺 `supported_prompts` 时前端回落 `["point","bbox","text"]` 并控制台告警, 不阻断使用.
+
+---
+
 ## [0.10.0] - 2026-05-13
 
 > **SAM 3 接入 M0 — sam3-backend 容器化 + exemplar 协议落地.** v0.10.x 双 backend 并存策略的第一步: 把 `facebookresearch/sam3` (848M, 单档) + `facebook/sam3.1` 权重打包成独立 GPU 服务, 与 grounded-sam2-backend 并存. 镜像 grounded-sam2-backend 结构, 复用 `apps/_shared/mask_utils` 共享包. 协议新增 `context.type="exemplar"` (视觉示例 prompt → 全图相似实例), 仅 sam3-backend 支持; 前端 UI 入口与 apps/api 路由策略留 v0.10.1. → [plan](docs/plans/roadmap-0-10-x-md-0-10-0-mellow-lantern.md) · [roadmap](ROADMAP/0.10.x.md).
