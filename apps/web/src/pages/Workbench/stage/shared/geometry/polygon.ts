@@ -23,7 +23,7 @@ function cross(a: Pt, b: Pt): number { return a[0] * b[1] - a[1] * b[0]; }
 
 /**
  * 检测多边形（隐式闭合）的边是否自相交。返回首对违规边的索引（若有）。
- * O(n²) 暴力，n 通常 < 50；对工作台用例足够。
+ * O(n²) 暴力，n 通常 < 50；对工作台用例足够。加载已有 polygon 一次性校验时使用。
  */
 export function isSelfIntersecting(points: Pt[]): { ok: boolean; edges?: [number, number] } {
   const n = points.length;
@@ -38,6 +38,43 @@ export function isSelfIntersecting(points: Pt[]): { ok: boolean; edges?: [number
       const b2 = points[(j + 1) % n];
       if (segmentsProperlyIntersect(a1, a2, b1, b2)) {
         return { ok: false, edges: [i, j] };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * v0.10.4 I2.2 · 增量自相交检测：只检查与顶点 `changedIdx` 相邻的 2 条边
+ * （边 (changedIdx-1, changedIdx) 与 (changedIdx, changedIdx+1)）是否与
+ * 其它非相邻边相交。O(n)，用于顶点拖拽 / 增删时的实时校验。
+ *
+ * 不检测"非相邻边对"之间是否本身已经相交；调用方应在 polygon 已知非自相交时使用，
+ * 或在最终 commit 时配合 `isSelfIntersecting()` 做一次全量兜底。
+ */
+export function isSelfIntersectingIncremental(
+  points: Pt[],
+  changedIdx: number,
+): { ok: boolean; edges?: [number, number] } {
+  const n = points.length;
+  if (n < 4) return { ok: true };
+  if (changedIdx < 0 || changedIdx >= n) return { ok: true };
+  const prev = (changedIdx - 1 + n) % n;
+  // 受影响的两条边：edge1 = (prev, changedIdx)，edge2 = (changedIdx, prev+2 mod n)
+  const touched: Array<[number, number]> = [
+    [prev, changedIdx],
+    [changedIdx, (changedIdx + 1) % n],
+  ];
+  for (const [ia, ib] of touched) {
+    const a1 = points[ia];
+    const a2 = points[ib];
+    for (let j = 0; j < n; j++) {
+      const k = (j + 1) % n;
+      if (j === ia || k === ia || j === ib || k === ib) continue;
+      const b1 = points[j];
+      const b2 = points[k];
+      if (segmentsProperlyIntersect(a1, a2, b1, b2)) {
+        return { ok: false, edges: [ia, j] };
       }
     }
   }

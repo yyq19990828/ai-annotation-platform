@@ -14,7 +14,7 @@ import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { Icon } from "@/components/ui/Icon";
-import { isSelfIntersecting, moveVertex, type Pt } from "./polygonGeom";
+import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon } from "./ImageStageShapes";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
@@ -187,6 +187,21 @@ export function ImageStage({
   const imgW = image?.naturalWidth || 900;
   const imgH = image?.naturalHeight || 600;
   const imageLoaded = !!image?.naturalWidth;
+
+  // v0.10.4 I2.3 · 当前视口在归一化 [0,1] 空间的 bbox，用于大 polygon 顶点视口粗筛。
+  // 加 1 顶点 buffer 防边缘抖动；imgW/imgH 未就绪时返回 undefined（不启用粗筛）。
+  const viewportBBox = useMemo(() => {
+    if (!imgW || !imgH || vp.scale <= 0 || !vpSize.w || !vpSize.h) return undefined;
+    const bufferPx = 8;
+    const sxW = vp.scale * imgW;
+    const sxH = vp.scale * imgH;
+    return {
+      minX: Math.max(0, (-vp.tx - bufferPx) / sxW),
+      minY: Math.max(0, (-vp.ty - bufferPx) / sxH),
+      maxX: Math.min(1, (vpSize.w - vp.tx + bufferPx) / sxW),
+      maxY: Math.min(1, (vpSize.h - vp.ty + bufferPx) / sxH),
+    };
+  }, [imgW, imgH, vp.scale, vp.tx, vp.ty, vpSize.w, vpSize.h]);
 
   // 把几何信息上抛给父级（Minimap / popover 锚点用）
   useEffect(() => {
@@ -581,7 +596,12 @@ export function ImageStage({
               const polyOv = polyOverridePoints(b.id);
               const livePoints = polyOv ?? (display.polygon as Pt[]);
               const isOnlySelected = selectedId === b.id && selSet.size === 1 && !readOnly;
-              const intersects = isOnlySelected && !isSelfIntersecting(livePoints).ok;
+              // v0.10.4 I2.2 · 顶点拖拽中走 O(n) 增量检测；静态态用 O(n²) 全量（n 通常 <50）。
+              const draggingThisVertex =
+                drag?.kind === "polyVertex" && drag.id === b.id ? drag.vidx : -1;
+              const intersects = isOnlySelected && (draggingThisVertex >= 0
+                ? !isSelfIntersectingIncremental(livePoints, draggingThisVertex).ok
+                : !isSelfIntersecting(livePoints).ok);
               return (
                 <KonvaPolygon
                   key={b.id}
@@ -592,6 +612,7 @@ export function ImageStage({
                   imgW={imgW} imgH={imgH} scale={vp.scale}
                   points={livePoints}
                   selfIntersect={intersects}
+                  viewportBBox={viewportBBox}
                   editable={isOnlySelected}
                   onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
                   onVertexMouseDown={(vidx, e) => {

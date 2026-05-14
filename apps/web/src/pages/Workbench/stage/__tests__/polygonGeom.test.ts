@@ -4,6 +4,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isSelfIntersecting,
+  isSelfIntersectingIncremental,
   projectOnSegment,
   nearestEdge,
   insertVertex,
@@ -47,6 +48,51 @@ describe("isSelfIntersecting", () => {
         [0, 1],
       ]).ok,
     ).toBe(true);
+  });
+});
+
+describe("isSelfIntersectingIncremental", () => {
+  it("正方形拖某个顶点不出界 → ok", () => {
+    const sq: Pt[] = [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+      [0.6, 0.5], // 顶点 3 拖到内部，但相邻边仍不交叉
+    ];
+    const r = isSelfIntersectingIncremental(sq, 3);
+    expect(r.ok).toBe(true);
+  });
+
+  it("拖顶点到对边内侧形成蝴蝶结 → 触发", () => {
+    // 正方形 → 把右上顶点 (1,1) 拖到左下角，触发对边交叉
+    const pts: Pt[] = [
+      [0, 0],
+      [1, 0],
+      [-0.5, 0.5], // 顶点 2 拖到左侧导致 (1,0)-(-0.5,0.5) 与 (0,1)-(0,0) 相交
+      [0, 1],
+    ];
+    const r = isSelfIntersectingIncremental(pts, 2);
+    expect(r.ok).toBe(false);
+    expect(r.edges).toBeDefined();
+  });
+
+  it("< 4 顶点 → ok", () => {
+    expect(isSelfIntersectingIncremental([[0, 0], [1, 0], [0.5, 1]], 0).ok).toBe(true);
+  });
+
+  it("changedIdx 越界 → ok（不抛错）", () => {
+    const sq: Pt[] = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    expect(isSelfIntersectingIncremental(sq, -1).ok).toBe(true);
+    expect(isSelfIntersectingIncremental(sq, 99).ok).toBe(true);
+  });
+
+  it("增量与全量对相邻边触发一致", () => {
+    // 蝴蝶结：相邻于顶点 1 的边 (0,1) 和 (1,2) 都参与冲突
+    const bowtie: Pt[] = [[0, 0], [1, 1], [1, 0], [0, 1]];
+    const full = isSelfIntersecting(bowtie);
+    const inc = isSelfIntersectingIncremental(bowtie, 1);
+    expect(full.ok).toBe(false);
+    expect(inc.ok).toBe(false);
   });
 });
 

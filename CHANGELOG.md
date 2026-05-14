@@ -22,6 +22,31 @@
 
 ## 最新版本
 
+## [0.10.4] - 2026-05-14
+
+> **图片工作台 Wave β · polygon 性能闭环 + SAM 前端缓存 (M4-α).** ROADMAP/2026-05-12-image-workbench-optimization.md 的 Wave β 起步落地：① I2.1 KonvaPolygon 渲染层 Douglas-Peucker LOD（编辑/选中态用原顶点，其它按 viewport scale 简化到 1px 视觉等价）；② I2.2 自相交检测分两档：拖顶点中 O(n) 增量（仅检受影响两条边），静态 / 加载时 O(n²) 全量兜底；③ I2.3 扩展现有 `rbush` 索引到 polygon 顶点，编辑态视口外顶点不渲染 Konva Circle 句柄（500-顶点 polygon 视口内 ~20 个时节点数 -95%）；④ I6.1 SAM 候选前端 LRU 缓存（32 项，key 含 `taskId|backend|ctxKind|normalize(ctx)`，浮点 4 位小数 round 防抖动），切 backend 时 clearAll；⑤ I6.2 工作台 mount 时 dummy point @ image center 静默触发 backend embed 预热，每 (task, backend) 一次。同步把 roadmap I20/I13/I14/I15/I16/I2/I6 文案校准到 v0.9.41+v0.10.3 现状。→ [plan](docs/plans/claude-image-workbench-optimization-cha-logical-minsky.md) · [roadmap](ROADMAP/2026-05-12-image-workbench-optimization.md).
+
+### Added
+
+- **`stage/shared/geometry/simplify.ts`** (I2.1): Douglas-Peucker 闭合多边形版（拆段 RDP 合并避免环裂开）+ `epsilonForScale` 工具。7 个单测覆盖近共线剔除 / 偏离保留 / ≥3 顶点保底 / 200-顶点 circle massive reduction。
+- **`isSelfIntersectingIncremental(points, changedIdx)`** ([polygon.ts](apps/web/src/pages/Workbench/stage/shared/geometry/polygon.ts)) (I2.2): O(n) 只检查与变更顶点相邻的两条边 vs 其它非相邻边；ImageStage 顶点拖拽中（`drag.kind === "polyVertex"`）走增量版，静态走全量。5 个单测覆盖。
+- **`buildVertexIndex(points)`** ([iou-index.ts](apps/web/src/pages/Workbench/stage/iou-index.ts)) (I2.3): 单 polygon 顶点 rbush 索引；`KonvaPolygon` 新增 `viewportBBox` prop，编辑态 + 顶点 ≥60 时按视口粗筛顶点 / 边句柄。`ImageStage` 计算归一化视口 bbox 传入。4 个单测覆盖。
+- **`useSamCache`** ([useSamCache.ts](apps/web/src/pages/Workbench/state/useSamCache.ts)) (I6.1): LRU 32 项 + `makeSamCacheKey`（坐标 4 位小数 round 防抖动 + key 排序后 JSON 稳定）+ `clearAll()`；`useInteractiveAI.dispatch` 命中直接 setCandidates 跳 HTTP，非空结果回写缓存，切 `mlBackendId` 时清空。10 个单测覆盖。
+- **`useInteractiveAI.warmup()`** (I6.2): 每 (taskId, backendId) 一次，发图中心 dummy point 静默触发 backend embedding 加载；返回值写入 cache，下次真实点击命中。失败静默（sam3 exemplar-only 等）。`WorkbenchShell` 在 image 工作台 + 已绑 backend 时自动调用。
+- **E2E 烟囱测占位** (`e2e/tests/workbench-perf.spec.ts`): 断言 `window.__workbenchPerf` 在 image 工作台 mount 后存在。完整 3×3 fixture（2K/8K/dense × 10/100/500 shapes）推迟到 v0.10.5（需后端 `_test_seed` 加 density 参数）。
+
+### Changed
+
+- **ROADMAP/2026-05-12-image-workbench-optimization.md 校准**: I20 标 ✅ v0.10.1-0.10.3（残留 tracker/auto-annotation 类型挪 v0.11+）; I13 重写现状（6 种 input_type / 必填 / 条件级联已就位，残留 mutable/immutable）; I14 把 martinez 改成已在依赖的 `polygon-clipping@0.15.7`; I15 重写现状（DB 字段全空白，需 alembic）; I16 文案精确化（基础设施在 useDirtyTracker，首次消费 v0.10.6）; I2 + I6 补现状分类（rbush 已用 / 后端 embedding cache 已就位）。Wave β/γ 优先级表标注 v0.10.4-0.10.7 sub-milestone 归属。
+- **`KonvaPolygon`**: 增加 `viewportBBox` prop + 内部 `useMemo` 算 `renderPs`（简化）+ `visibleVertexIdx`（视口可见顶点集合）；非编辑且未选中态走 LOD 渲染，编辑态走视口顶点粗筛。
+- **`useInteractiveAI.dispatch`**: 在 HTTP 调用前查前端缓存命中，命中即跳过；后端 embedding cache + 前端 mask cache 双层。
+
+### Notes
+
+- 纯前端 + 一条文档校准 + 一个 e2e 占位，无后端改动，无 alembic。
+- M4-α 是 v0.10.4 epic（Wave β + γ I11/I13/I15）的第 1/4 子版本；M4-β (v0.10.5) 接 I15 z_order/lock/hidden/occluded 字段一等态。
+- I2.4 "polygonVertexBatch history kind" 经过审视判定为冗余：现有 ImageStage drag 路径已是 pointerup 单条 commit，每次 `handleCommitPolygonGeometry` 仅 push 一条 update 历史，符合 roadmap I2.4 原意。
+
 ## [0.10.3] - 2026-05-14
 
 > **1:N 后端管理 UI + 收口 (M3).** ProjectSettings 的 ML 后端区落地 roadmap §3.4 形态: 表头加 `已用 X / Y` 配额角标, 表格新增「能力」列展示 backend `supported_prompts`, 「注册 backend」按钮在达上限时置灰 + tooltip. 新增 `MlBackendLimitModal`, 在按钮被强行触发或表单创建撞 `409 ML_BACKEND_LIMIT_REACHED` 时弹出, 文案优先取服务器 `detail.message` (兜底 fallback 保证离线可读). 沉淀两条 ADR (Prompt-first 重构 + 1:N 架构、Capability 协商协议) 与一篇管理员侧 `ml-backends.md`. → [plan](docs/plans/2026-05-14-v0.10.3-1n-backend-mgmt-ui.md) · [roadmap](ROADMAP/0.10.x.md).

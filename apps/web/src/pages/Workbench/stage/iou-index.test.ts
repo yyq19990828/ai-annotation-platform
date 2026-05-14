@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildIoUIndex } from "./iou-index";
+import { buildIoUIndex, buildVertexIndex } from "./iou-index";
+import type { Pt } from "./shared/geometry/polygon";
 
 interface Box {
   id: string;
@@ -66,5 +67,36 @@ describe("buildIoUIndex", () => {
       idx.candidatesForBox(b("q", "x", 0.15, 0.15, 0.05, 0.05)),
     ).toHaveLength(1);
     expect(idx.candidatesForBox(b("q", "x", 0.5, 0.5, 0.1, 0.1))).toEqual([]);
+  });
+});
+
+describe("buildVertexIndex", () => {
+  const pts: Pt[] = [
+    [0.05, 0.05], // idx 0  左上
+    [0.25, 0.10], // idx 1  上中
+    [0.50, 0.05], // idx 2  上右
+    [0.95, 0.50], // idx 3  右
+    [0.50, 0.95], // idx 4  下
+    [0.05, 0.50], // idx 5  左
+  ];
+
+  it("size 反映顶点数", () => {
+    expect(buildVertexIndex(pts).size).toBe(6);
+  });
+
+  it("命中左半区时只返回左侧顶点", () => {
+    const idx = buildVertexIndex(pts);
+    const hits = idx.verticesInBBox({ minX: 0, minY: 0, maxX: 0.3, maxY: 1 });
+    expect(hits).toEqual([0, 1, 5]);
+  });
+
+  it("空 bbox 返回空", () => {
+    const idx = buildVertexIndex(pts);
+    expect(idx.verticesInBBox({ minX: 0.8, minY: 0.8, maxX: 0.9, maxY: 0.9 })).toEqual([]);
+  });
+
+  it("覆盖全图返回全部顶点（已排序）", () => {
+    const idx = buildVertexIndex(pts);
+    expect(idx.verticesInBBox({ minX: 0, minY: 0, maxX: 1, maxY: 1 })).toEqual([0, 1, 2, 3, 4, 5]);
   });
 });

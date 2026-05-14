@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { mlBackendsApi } from "@/api/ml-backends";
 import { useToastStore } from "@/components/ui/Toast";
+import { createSamCache, makeSamCacheKey } from "./useSamCache";
 
 /**
  * v0.9.2 · 工作台 SAM 交互式 hook。
@@ -61,6 +62,12 @@ export interface UseInteractiveAIReturn {
   consume: (idx: number) => void;
   /** 清空所有候选（Esc） */
   cancel: () => void;
+  /**
+   * v0.10.4 I6.2 · 异步触发 backend embed 预热 (image encoder + 缓存)。
+   * 每个 (taskId, mlBackendId) 仅触发一次；结果丢弃但写入 cache，下次真实点击命中。
+   * 用 dummy point @ image center；后端不支持 point (sam3-only exemplar) 时静默忽略错误。
+   */
+  warmup: () => void;
 }
 
 const DEBOUNCE_MS = 80;
@@ -75,6 +82,12 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflightRef = useRef(0);
+
+  // v0.10.4 I6.1 · 按 (taskId, mlBackendId, ctx) 缓存候选；切 backend 时全清。
+  const cache = useMemo(() => createSamCache(), []);
+  useEffect(() => {
+    cache.clearAll();
+  }, [mlBackendId, cache]);
 
   useEffect(() => {
     return () => {
@@ -98,6 +111,15 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const dispatch = useCallback(
     async (context: Record<string, unknown>, source: PendingCandidate["source"]) => {
       if (!projectId || !taskId || !mlBackendId) return;
+      const ctxKind = (context.type as string | undefined) ?? source;
+      const cacheKey = makeSamCacheKey({ taskId, mlBackendId, ctxKind, ctx: context });
+      // 命中前端缓存：直接复用候选，跳过 HTTP。
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        setCandidates(cached);
+        setActiveIdx(0);
+        return;
+      }
       const myInflight = ++inflightRef.current;
       setIsRunning(true);
       try {
@@ -112,6 +134,8 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
           .filter((c): c is PendingCandidate => c !== null);
         setCandidates(next);
         setActiveIdx(0);
+        // 仅缓存非空结果，避免后端瞬时返空被钉死。
+        if (next.length > 0) cache.set(cacheKey, next);
         if (next.length === 0) {
           pushToast({
             msg: "SAM 未返回候选",
@@ -131,7 +155,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         if (myInflight === inflightRef.current) setIsRunning(false);
       }
     },
-    [projectId, taskId, mlBackendId, pushToast],
+    [projectId, taskId, mlBackendId, pushToast, cache],
   );
 
   const runPoint = useCallback(
@@ -201,6 +225,40 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     }
   }, []);
 
+  // v0.10.4 I6.2 · 预热去重：同 (taskId, mlBackendId) 只发一次。
+  const warmedRef = useRef<string | null>(null);
+  const warmup = useCallback(() => {
+    if (!projectId || !taskId || !mlBackendId) return;
+    const key = `${taskId}|${mlBackendId}`;
+    if (warmedRef.current === key) return;
+    warmedRef.current = key;
+    // 静默发一个图中心 point，结果丢；只是为了让后端 image encoder 加载 + cache。
+    // 用直接 fetch (绕过 dispatch 的 setCandidates / inflightRef)，失败完全静默。
+    mlBackendsApi
+      .interactiveAnnotate(projectId, mlBackendId, {
+        task_id: taskId,
+        context: { type: "point", points: [[0.5, 0.5]], labels: [1] },
+      })
+      .then((resp) => {
+        // 预热成功 → 写缓存，下次真实点击命中。
+        const ctx = { type: "point", points: [[0.5, 0.5]], labels: [1] };
+        const cacheKey = makeSamCacheKey({ taskId, mlBackendId, ctxKind: "point", ctx });
+        const next: PendingCandidate[] = (resp.result ?? [])
+          .map((r, i) => normalizeResult(r, i, "point"))
+          .filter((c): c is PendingCandidate => c !== null);
+        if (next.length > 0) cache.set(cacheKey, next);
+      })
+      .catch(() => {
+        // backend 不支持 point (如 sam3 exemplar-only) 或其它失败 → 静默，下次真实点击会重试。
+        warmedRef.current = null;
+      });
+  }, [projectId, taskId, mlBackendId, cache]);
+
+  // 切 task / backend → 重置预热记忆
+  useEffect(() => {
+    warmedRef.current = null;
+  }, [taskId, mlBackendId]);
+
   return {
     candidates,
     activeIdx,
@@ -212,6 +270,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     cycle: cycleStable,
     consume,
     cancel,
+    warmup,
   };
 }
 

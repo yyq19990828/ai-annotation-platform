@@ -423,6 +423,13 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
+  // v0.10.4 I6.2 · 图片任务 + 已绑定 backend 时异步触发 embed 预热（每 (task, backend) 一次）
+  useEffect(() => {
+    if (stageKind !== "image") return;
+    if (!taskId || !currentProject?.ml_backend_id) return;
+    sam.warmup();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageKind, taskId, currentProject?.ml_backend_id]);
   useEffect(() => {
     if (!isAIToolId(s.tool) && sam.candidates.length > 0) sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
