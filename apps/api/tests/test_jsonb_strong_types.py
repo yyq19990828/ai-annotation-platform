@@ -97,16 +97,25 @@ def test_attribute_field_mutable_defaults_unset():
     f = AttributeField(key="color", label="Color", type="text")
     assert f.mutable is None
     # 同样接受显式 False / True
-    assert AttributeField(key="o", label="O", type="boolean", mutable=True).mutable is True
-    assert AttributeField(key="c", label="C", type="text", mutable=False).mutable is False
+    assert (
+        AttributeField(key="o", label="O", type="boolean", mutable=True).mutable is True
+    )
+    assert (
+        AttributeField(key="c", label="C", type="text", mutable=False).mutable is False
+    )
 
 
 def test_attribute_schema_mixed_mutable_immutable():
     """同一 schema 内 mutable 与 immutable 共存，互不影响。"""
     s = AttributeSchema(
         fields=[
-            AttributeField(key="vehicle_color", label="车身颜色", type="select",
-                           options=[{"value": "red", "label": "红"}], mutable=False),
+            AttributeField(
+                key="vehicle_color",
+                label="车身颜色",
+                type="select",
+                options=[{"value": "red", "label": "红"}],
+                mutable=False,
+            ),
             AttributeField(key="occluded", label="遮挡", type="boolean", mutable=True),
         ]
     )

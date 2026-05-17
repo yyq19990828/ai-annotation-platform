@@ -65,7 +65,9 @@ async def _seed(db_session, ann_user):
 
 
 @pytest.mark.asyncio
-async def test_shape_metadata_defaults_are_zero_false(httpx_client, db_session, annotator):
+async def test_shape_metadata_defaults_are_zero_false(
+    httpx_client, db_session, annotator
+):
     ann_user, ann_token = annotator
     _, task, ann = await _seed(db_session, ann_user)
 
