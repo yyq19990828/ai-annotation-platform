@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
@@ -15,6 +15,8 @@ import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { auditActionLabel } from "@/utils/auditLabels";
 import type { UserRole } from "@/types";
+import type { RegistrationDayPoint } from "@/api/dashboard";
+import styles from "./AdminDashboard.module.css";
 
 export function AdminDashboard() {
   const { data: stats, isLoading } = useAdminStats();
@@ -43,7 +45,7 @@ export function AdminDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div style={{ padding: "60px 28px", textAlign: "center", color: "var(--color-fg-subtle)" }}>
+      <div className={styles.loadingState}>
         加载中...
       </div>
     );
@@ -52,13 +54,13 @@ export function AdminDashboard() {
   const projectsTotal = stats.total_projects || 1;
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24, marginBottom: 20 }}>
+    <div className={styles.page}>
+      <div className={styles.header}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>平台概览</h1>
-          <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>全局平台运行状态与资源分布</p>
+          <h1 className={styles.pageTitle}>平台概览</h1>
+          <p className={styles.pageSubtitle}>全局平台运行状态与资源分布</p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className={styles.headerActions}>
           <Button onClick={() => setImportOpen(true)}>
             <Icon name="upload" size={13} />导入数据集
           </Button>
@@ -78,7 +80,7 @@ export function AdminDashboard() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
+      <div className={styles.statsGrid}>
         <StatCard icon="users" label="用户总数" value={stats.total_users} hint={`${stats.active_users} 在线`} />
         <StatCard icon="layers" label="项目总数" value={stats.total_projects} hint={`${stats.projects_in_progress} 进行中`} />
         <StatCard icon="target" label="任务总量" value={stats.total_tasks.toLocaleString()} />
@@ -86,38 +88,31 @@ export function AdminDashboard() {
       </div>
 
       {/* v0.8.4 · 成员绩效入口 */}
-      <Card
-        onClick={() => navigate("/admin/people")}
-        style={{
-          cursor: "pointer",
-          padding: "12px 16px",
-          marginBottom: 20,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Icon name="users" size={16} />
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>成员绩效</div>
-            <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
-              全员效率卡片网格 + 抽屉下钻
+      <div className={styles.entryCardShell}>
+        <Card onClick={() => navigate("/admin/people")}>
+          <div className={styles.entryCardContent}>
+            <div className={styles.entryMain}>
+              <Icon name="users" size={16} />
+              <div>
+                <div className={styles.entryTitle}>成员绩效</div>
+                <div className={styles.entryDescription}>
+                  全员效率卡片网格 + 抽屉下钻
+                </div>
+              </div>
             </div>
+            <span className={styles.entryLink}>
+              打开 <Icon name="chevRight" size={11} />
+            </span>
           </div>
-        </div>
-        <span style={{ fontSize: 12, color: "var(--color-accent)" }}>
-          打开 <Icon name="chevRight" size={11} />
-        </span>
-      </Card>
+        </Card>
+      </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, marginBottom: 16 }}>
+      <div className={styles.distributionGrid}>
         <Card>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>项目状态分布</h3>
+          <div className={styles.cardHeader}>
+            <h3 className={styles.cardTitle}>项目状态分布</h3>
           </div>
-          <div style={{ padding: 16 }}>
+          <div className={styles.cardBody}>
             <StatusBar label="进行中" count={stats.projects_in_progress} total={projectsTotal} color="var(--color-accent)" />
             <StatusBar label="已完成" count={stats.projects_completed} total={projectsTotal} color="var(--color-success)" />
             <StatusBar label="待审核" count={stats.projects_pending_review} total={projectsTotal} color="var(--color-warning)" />
@@ -126,16 +121,16 @@ export function AdminDashboard() {
         </Card>
 
         <Card>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>用户角色分布</h3>
+          <div className={styles.cardHeader}>
+            <h3 className={styles.cardTitle}>用户角色分布</h3>
           </div>
-          <div style={{ padding: 16 }}>
+          <div className={styles.cardBody}>
             {Object.entries(stats.role_distribution).map(([role, count]) => (
-              <div key={role} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div key={role} className={styles.roleRow}>
+                <div className={styles.roleBadge}>
                   <Badge variant="outline">{ROLE_LABELS[role as UserRole] ?? role}</Badge>
                 </div>
-                <span className="mono" style={{ fontSize: 13, fontWeight: 500 }}>{count}</span>
+                <span className={`mono ${styles.roleCount}`}>{count}</span>
               </div>
             ))}
           </div>
@@ -144,34 +139,26 @@ export function AdminDashboard() {
 
       {/* v0.9.5 · AI 预标注队列卡片（仅在有 pre_annotated 批次时显示） */}
       {(stats.pre_annotated_batches ?? 0) > 0 && (
-        <Card
-          onClick={() => navigate("/ai-pre")}
-          style={{
-            cursor: "pointer",
-            padding: 16,
-            marginBottom: 12,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            background: "var(--color-ai-soft)",
-            border: "1px solid var(--color-border)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Icon name="wandSparkles" size={18} style={{ color: "var(--color-ai)" }} />
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>
-                AI 预标注队列 · {stats.pre_annotated_batches} 批待接管
+        <div className={styles.aiQueueShell}>
+          <Card onClick={() => navigate("/ai-pre")}>
+            <div className={styles.aiQueueCardContent}>
+              <div className={styles.entryMainLarge}>
+                <Icon name="wandSparkles" size={18} className={styles.aiIcon} />
+                <div>
+                  <div className={styles.aiQueueTitle}>
+                    AI 预标注队列 · {stats.pre_annotated_batches} 批待接管
+                  </div>
+                  <div className={styles.aiQueueDescription}>
+                    文本批量预标已跑完，等待人工分派接管
+                  </div>
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
-                文本批量预标已跑完，等待人工分派接管
-              </div>
+              <span className={styles.aiQueueLink}>
+                进入 <Icon name="chevRight" size={11} />
+              </span>
             </div>
-          </div>
-          <span style={{ fontSize: 12, color: "var(--color-ai)" }}>
-            进入 <Icon name="chevRight" size={11} />
-          </span>
-        </Card>
+          </Card>
+        </div>
       )}
 
       <RegistrationSourceCard series={stats.registration_by_day ?? []} />
@@ -182,69 +169,58 @@ export function AdminDashboard() {
       />
 
       {/* v0.8.6 F6 · 失败预测入口（super_admin / project_admin 可见）; v0.9.12 改指向 /ai-pre/jobs */}
-      <Card
-        onClick={() => navigate("/ai-pre/jobs?status=failed")}
-        style={{
-          cursor: "pointer",
-          padding: "12px 16px",
-          marginTop: 12,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Icon name="warning" size={16} style={{ color: "var(--color-warning)" }} />
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>失败预测管理</div>
-            <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
-              查看 ML Backend 调用失败的预测，并按需重试 (单条最多 3 次)
+      <div className={styles.failedPredictionShell}>
+        <Card onClick={() => navigate("/ai-pre/jobs?status=failed")}>
+          <div className={styles.entryCardContent}>
+            <div className={styles.entryMain}>
+              <Icon name="warning" size={16} className={styles.warningIcon} />
+              <div>
+                <div className={styles.entryTitle}>失败预测管理</div>
+                <div className={styles.entryDescription}>
+                  查看 ML Backend 调用失败的预测，并按需重试 (单条最多 3 次)
+                </div>
+              </div>
             </div>
+            <span className={styles.entryLink}>
+              打开 <Icon name="chevRight" size={11} />
+            </span>
           </div>
-        </div>
-        <span style={{ fontSize: 12, color: "var(--color-accent)" }}>
-          打开 <Icon name="chevRight" size={11} />
-        </span>
-      </Card>
+        </Card>
+      </div>
 
 
-      <Card style={{ marginTop: 16 }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>近期审计活动</h3>
+      <div className={styles.cardTop}>
+        <Card>
+        <div className={styles.cardHeaderSplit}>
+          <h3 className={styles.cardTitle}>近期审计活动</h3>
           <Button size="sm" variant="ghost" onClick={() => navigate("/audit")}>
             查看全部<Icon name="chevRight" size={11} />
           </Button>
         </div>
         {recentActivity.length === 0 ? (
-          <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
-            <Icon name="activity" size={26} style={{ opacity: 0.25, marginBottom: 8 }} />
+          <div className={styles.emptyStateCompact}>
+            <Icon name="activity" size={26} className={styles.emptyIcon} />
             <div>暂无业务事件</div>
           </div>
         ) : (
-          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          <ul className={styles.activityList}>
             {recentActivity.map((it) => (
               <li
                 key={it.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 16px",
-                  borderBottom: "1px solid var(--color-border)",
-                  fontSize: 12.5,
-                }}
+                className={styles.activityItem}
               >
                 <Avatar initial={(it.actor_email ?? "?").slice(0, 1).toUpperCase()} size="sm" />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontWeight: 500 }}>{it.actor_email ?? "匿名"}</span>
-                    <Badge variant="accent" style={{ fontSize: 10 }}>{auditActionLabel(it.action)}</Badge>
+                <div className={styles.activityBody}>
+                  <div className={styles.activityLine}>
+                    <span className={styles.actorName}>{it.actor_email ?? "匿名"}</span>
+                    <span className={styles.compactBadge}>
+                      <Badge variant="accent">{auditActionLabel(it.action)}</Badge>
+                    </span>
                     {it.target_type && (
-                      <span style={{ color: "var(--color-fg-muted)", fontSize: 11 }}>
+                      <span className={styles.targetMeta}>
                         {it.target_type}
                         {it.target_id && (
-                          <span className="mono" style={{ marginLeft: 4 }}>
+                          <span className={`mono ${styles.targetId}`}>
                             {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
                           </span>
                         )}
@@ -252,70 +228,74 @@ export function AdminDashboard() {
                     )}
                   </div>
                 </div>
-                <span style={{ fontSize: 11, color: "var(--color-fg-subtle)", whiteSpace: "nowrap" }}>
+                <span className={styles.activityTime}>
                   {relativeTime(it.created_at)}
                 </span>
               </li>
             ))}
           </ul>
         )}
-      </Card>
+        </Card>
+      </div>
 
-      <Card style={{ marginTop: 16 }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>全平台项目</h3>
-          <span style={{ fontSize: 12, color: "var(--color-fg-subtle)" }}>共 {projects.length} 个</span>
+      <div className={styles.cardTop}>
+        <Card>
+        <div className={styles.cardHeaderSplit}>
+          <h3 className={styles.cardTitle}>全平台项目</h3>
+          <span className={styles.cardCount}>共 {projects.length} 个</span>
         </div>
         {projectsLoading && (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>加载中...</div>
+          <div className={styles.emptyState}>加载中...</div>
         )}
         {!projectsLoading && projects.length === 0 && (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+          <div className={styles.emptyState}>
             暂无项目，点击右上角「新建项目」开始
           </div>
         )}
         {!projectsLoading && projects.length > 0 && (
-          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+          <table className={styles.projectTable}>
             <thead>
               <tr>
                 {["项目", "负责人", "成员", "状态", ""].map((h, i) => (
-                  <th key={i} style={{
-                    textAlign: "left", fontWeight: 500, fontSize: 12,
-                    color: "var(--color-fg-muted)", padding: "10px 12px",
-                    borderBottom: "1px solid var(--color-border)",
-                    background: "var(--color-bg-sunken)",
-                    ...(i === 0 ? { paddingLeft: 16 } : {}),
-                    ...(i === 4 ? { paddingRight: 16 } : {}),
-                  }}>{h}</th>
+                  <th
+                    key={i}
+                    className={[
+                      styles.tableHeadCell,
+                      i === 0 ? styles.tableHeadCellFirst : "",
+                      i === 4 ? styles.tableHeadCellLast : "",
+                    ].filter(Boolean).join(" ")}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {projects.map((p) => (
-                <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => navigate(`/projects/${p.id}/settings`)}>
-                  <td style={{ padding: "10px 12px 10px 16px", borderBottom: "1px solid var(--color-border)" }}>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                <tr key={p.id} className={styles.projectRow} onClick={() => navigate(`/projects/${p.id}/settings`)}>
+                  <td className={`${styles.tableCell} ${styles.tableCellFirst}`}>
+                    <div className={styles.projectName}>{p.name}</div>
+                    <div className={styles.projectMeta}>
                       <span className="mono">{p.display_id}</span> · {p.type_label}
                     </div>
                   </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <td className={styles.tableCell}>
+                    <div className={styles.ownerCell}>
                       <Avatar initial={p.owner_name?.slice(0, 1) ?? "?"} size="sm" />
-                      <span style={{ fontSize: 12.5 }}>{p.owner_name ?? "—"}</span>
+                      <span className={styles.ownerName}>{p.owner_name ?? "—"}</span>
                     </div>
                   </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", color: "var(--color-fg-muted)" }}>
+                  <td className={`${styles.tableCell} ${styles.mutedCell}`}>
                     {p.member_count}
                   </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)" }}>
+                  <td className={styles.tableCell}>
                     {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
                     {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
                     {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
                     {p.status === "archived" && <Badge variant="outline" dot>已归档</Badge>}
                   </td>
-                  <td style={{ padding: "10px 16px 10px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right" }}>
-                    <div style={{ display: "inline-flex", gap: 4 }}>
+                  <td className={`${styles.tableCell} ${styles.tableCellRight}`}>
+                    <div className={styles.rowActions}>
                       {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
                       <Button
                         size="sm"
@@ -338,7 +318,8 @@ export function AdminDashboard() {
             </tbody>
           </table>
         )}
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -358,17 +339,15 @@ function relativeTime(iso: string): string {
 function StatusBar({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {
   const pct = Math.round((count / total) * 100);
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-        <span style={{ color: "var(--color-fg-muted)" }}>{label}</span>
-        <span className="mono" style={{ fontWeight: 500 }}>{count} ({pct}%)</span>
+    <div className={styles.statusBar}>
+      <div className={styles.statusBarHeader}>
+        <span className={styles.statusLabel}>{label}</span>
+        <span className={`mono ${styles.statusCount}`}>{count} ({pct}%)</span>
       </div>
       <ProgressBar value={pct} color={color} />
     </div>
   );
 }
-
-import type { RegistrationDayPoint } from "@/api/dashboard";
 
 function RegistrationSourceCard({ series }: { series: RegistrationDayPoint[] }) {
   const totalInvite = series.reduce((s, d) => s + d.invite_count, 0);
@@ -377,62 +356,70 @@ function RegistrationSourceCard({ series }: { series: RegistrationDayPoint[] }) 
   const peak = Math.max(1, ...series.map((d) => d.invite_count + d.open_count));
 
   return (
-    <Card style={{ marginTop: 16 }}>
-      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>30 天注册来源</h3>
-        <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
-          共 {total} 人 · 邀请 {totalInvite} · 开放 {totalOpen}
+    <div className={styles.cardTop}>
+      <Card>
+        <div className={styles.cardHeaderSplit}>
+          <h3 className={styles.cardTitle}>30 天注册来源</h3>
+          <div className={styles.registrationMeta}>
+            共 {total} 人 · 邀请 {totalInvite} · 开放 {totalOpen}
+          </div>
         </div>
-      </div>
-      <div style={{ padding: 16 }}>
-        {total === 0 ? (
-          <div style={{ textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13, padding: "20px 0" }}>
-            过去 30 天暂无注册记录
-          </div>
-        ) : (
-          <div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-end",
-                gap: 3,
-                height: 80,
-                marginBottom: 8,
-              }}
-            >
-              {series.map((d) => {
-                const inviteH = (d.invite_count / peak) * 80;
-                const openH = (d.open_count / peak) * 80;
-                return (
-                  <div
-                    key={d.date}
-                    title={`${d.date}\n邀请 ${d.invite_count} · 开放 ${d.open_count}`}
-                    style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 1 }}
-                  >
-                    <div style={{ height: openH, background: "var(--color-success)", borderRadius: "2px 2px 0 0", minHeight: d.open_count ? 2 : 0 }} />
-                    <div style={{ height: inviteH, background: "var(--color-accent)", borderRadius: openH ? 0 : "2px 2px 0 0", minHeight: d.invite_count ? 2 : 0 }} />
-                  </div>
-                );
-              })}
+        <div className={styles.cardBody}>
+          {total === 0 ? (
+            <div className={styles.registrationEmpty}>
+              过去 30 天暂无注册记录
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-fg-subtle)" }}>
-              <span>{series[0]?.date}</span>
-              <span>{series[series.length - 1]?.date}</span>
+          ) : (
+            <div>
+              <div className={styles.registrationChart}>
+                {series.map((d) => (
+                  <RegistrationSourceBar key={d.date} point={d} peak={peak} />
+                ))}
+              </div>
+              <div className={styles.registrationAxis}>
+                <span>{series[0]?.date}</span>
+                <span>{series[series.length - 1]?.date}</span>
+              </div>
+              <div className={styles.registrationLegend}>
+                <span className={styles.legendItem}>
+                  <span className={styles.inviteSwatch} />
+                  邀请注册
+                </span>
+                <span className={styles.legendItem}>
+                  <span className={styles.openSwatch} />
+                  开放注册
+                </span>
+              </div>
             </div>
-            <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12 }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 10, height: 10, background: "var(--color-accent)", borderRadius: 2 }} />
-                邀请注册
-              </span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 10, height: 10, background: "var(--color-success)", borderRadius: 2 }} />
-                开放注册
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-    </Card>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function RegistrationSourceBar({ point, peak }: { point: RegistrationDayPoint; peak: number }) {
+  const barRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const node = barRef.current;
+    if (!node) return;
+
+    node.style.setProperty("--registration-open-height", `${(point.open_count / peak) * 80}px`);
+    node.style.setProperty("--registration-invite-height", `${(point.invite_count / peak) * 80}px`);
+    node.style.setProperty("--registration-open-min-height", point.open_count ? "2px" : "0");
+    node.style.setProperty("--registration-invite-min-height", point.invite_count ? "2px" : "0");
+  }, [peak, point.invite_count, point.open_count]);
+
+  return (
+    <div
+      ref={barRef}
+      className={styles.registrationBar}
+      title={`${point.date}\n邀请 ${point.invite_count} · 开放 ${point.open_count}`}
+    >
+      <div className={styles.openSegment} />
+      <div className={`${styles.inviteSegment} ${point.open_count ? styles.stackedInviteSegment : ""}`} />
+    </div>
   );
 }
 
@@ -456,24 +443,14 @@ function MLBackendsAndCostCard({
 
   return (
     <Card>
-      <div
-        style={{
-          padding: "14px 16px",
-          borderBottom: "1px solid var(--color-border)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>ML 后端 · 预测成本</h3>
+      <div className={styles.mlCardHeader}>
+        <div className={styles.mlTitleGroup}>
+          <h3 className={styles.cardTitle}>ML 后端 · 预测成本</h3>
           <Badge variant={backendsConnected > 0 ? "success" : "outline"}>
             {backendsConnected} / {backendsTotal} 在线
           </Badge>
         </div>
-        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        <div className={styles.mlActions}>
           <Button size="sm" variant="ghost" onClick={() => navigate("/model-market")}>
             集成总览<Icon name="chevRight" size={11} />
           </Button>
@@ -490,27 +467,13 @@ function MLBackendsAndCostCard({
         </div>
       </div>
       {backendsTotal === 0 ? (
-        <div
-          style={{
-            padding: "24px 16px",
-            textAlign: "center",
-            color: "var(--color-fg-subtle)",
-            fontSize: 13,
-          }}
-        >
-          <Icon name="bot" size={28} style={{ opacity: 0.25, marginBottom: 8 }} />
+        <div className={styles.mlEmpty}>
+          <Icon name="bot" size={28} className={styles.emptyIcon} />
           <div>暂无已注册的 ML 后端</div>
-          <div style={{ fontSize: 11.5, marginTop: 4 }}>在项目设置中添加模型服务</div>
+          <div className={styles.emptyHint}>在项目设置中添加模型服务</div>
         </div>
       ) : (
-        <div
-          style={{
-            padding: "16px",
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-            gap: 12,
-          }}
-        >
+        <div className={styles.mlStatsGrid}>
           <StatCard
             icon="activity"
             label="本期调用数"

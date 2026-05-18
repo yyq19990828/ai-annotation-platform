@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 
 import styles from "./Avatar.module.css";
+import { useElementStyle } from "./useElementStyle";
 
 interface AvatarProps {
   initial: string;
@@ -15,8 +16,9 @@ const sizeClassNames: Record<NonNullable<AvatarProps["size"]>, string> = {
 };
 
 export function Avatar({ initial, size = "sm", style }: AvatarProps) {
+  const styleRef = useElementStyle<HTMLDivElement>(style);
   return (
-    <div className={clsx(styles.avatar, sizeClassNames[size])} style={style}>
+    <div ref={styleRef} className={clsx(styles.avatar, sizeClassNames[size])}>
       {initial}
     </div>
   );

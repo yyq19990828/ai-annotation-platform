@@ -80,6 +80,7 @@ import {
 } from "lucide-react";
 
 import styles from "./Icon.module.css";
+import { useElementStyle } from "./useElementStyle";
 
 /**
  * 图标体系（v0.5.5）—— 内部走 Lucide React，对外保留稳定的 `<Icon name="..." />` API。
@@ -184,15 +185,15 @@ export const Icon = forwardRef<SVGSVGElement, IconProps>(function Icon(
   { name, size = 16, stroke = 1.6, style, className },
   ref,
 ) {
+  const styleRef = useElementStyle(style, ref);
   const Cmp = ICON_MAP[name as string];
   if (!Cmp) return null;
   return (
     <Cmp
-      ref={ref}
+      ref={styleRef}
       width={size}
       height={size}
       strokeWidth={stroke}
-      style={style}
       className={className ? `${styles.icon} ${className}` : styles.icon}
       aria-hidden="true"
     />

@@ -6,6 +6,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { useUsers } from "@/hooks/useUsers";
 import { useAuthStore } from "@/stores/authStore";
 import { PROJECT_TYPES } from "@/constants/projectTypes";
+import styles from "./FilterDrawer.module.css";
 
 export interface DashboardFilters {
   status?: string;
@@ -37,6 +38,10 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "completed", label: "已完成" },
 ];
 
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
+
 export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
   const [draft, setDraft] = useState<DashboardFilters>(initial);
   const currentUser = useAuthStore((s) => s.user);
@@ -67,9 +72,9 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title="高级筛选" width={520}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className={styles.content}>
         <Section title="状态">
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <div className={styles.chipGroup}>
             {STATUS_OPTIONS.map((s) => {
               const active = (draft.status ?? "") === s.value;
               return (
@@ -77,7 +82,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
                   key={s.value}
                   type="button"
                   onClick={() => setDraft({ ...draft, status: s.value || undefined })}
-                  style={chipStyle(active)}
+                  className={cn(styles.chip, active && styles.chipActive)}
                 >
                   {s.label}
                 </button>
@@ -87,7 +92,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
         </Section>
 
         <Section title="类型">
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <div className={styles.chipGroup}>
             {PROJECT_TYPES.map((t) => {
               const active = draft.type_key.includes(t.key);
               return (
@@ -95,7 +100,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
                   key={t.key}
                   type="button"
                   onClick={() => toggleType(t.key)}
-                  style={chipStyle(active)}
+                  className={cn(styles.chip, active && styles.chipActive)}
                   title={t.hint}
                 >
                   {t.label}
@@ -106,33 +111,25 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
         </Section>
 
         <Section title="成员">
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+          <div className={styles.memberQuickFilters}>
             <button
               type="button"
               onClick={() => setDraft({ ...draft, member_id: currentUser?.id })}
-              style={chipStyle(draft.member_id === currentUser?.id)}
+              className={cn(styles.chip, draft.member_id === currentUser?.id && styles.chipActive)}
             >
               我参与的
             </button>
             <button
               type="button"
               onClick={() => setDraft({ ...draft, member_id: undefined })}
-              style={chipStyle(!draft.member_id)}
+              className={cn(styles.chip, !draft.member_id && styles.chipActive)}
             >
               不限
             </button>
           </div>
-          <div
-            style={{
-              maxHeight: 160,
-              overflowY: "auto",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--color-bg-sunken)",
-            }}
-          >
+          <div className={styles.memberList}>
             {users.length === 0 && (
-              <div style={{ padding: 12, fontSize: 12, color: "var(--color-fg-subtle)", textAlign: "center" }}>
+              <div className={styles.emptyMembers}>
                 暂无成员
               </div>
             )}
@@ -143,24 +140,13 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
                   key={u.id}
                   type="button"
                   onClick={() => setDraft({ ...draft, member_id: active ? undefined : u.id })}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "6px 8px",
-                    width: "100%",
-                    textAlign: "left",
-                    background: active ? "var(--color-accent-soft)" : "transparent",
-                    border: "none",
-                    borderBottom: "1px solid var(--color-border)",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    color: "var(--color-fg)",
-                  }}
+                  className={cn(styles.memberButton, active && styles.memberButtonActive)}
                 >
                   <Avatar size="sm" initial={(u.name || "?").slice(0, 1).toUpperCase()} />
-                  <span style={{ fontSize: 12.5, fontWeight: 500 }}>{u.name}</span>
-                  <Badge variant="outline" style={{ fontSize: 10 }}>{u.role}</Badge>
+                  <span className={styles.memberName}>{u.name}</span>
+                  <span className={styles.memberRole}>
+                    <Badge variant="outline">{u.role}</Badge>
+                  </span>
                 </button>
               );
             })}
@@ -168,26 +154,26 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
         </Section>
 
         <Section title="创建时间">
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div className={styles.dateRow}>
             <input
               type="date"
               value={draft.created_from ?? ""}
               onChange={(e) => setDraft({ ...draft, created_from: e.target.value || undefined })}
-              style={dateStyle}
+              className={styles.dateInput}
             />
-            <span style={{ color: "var(--color-fg-muted)" }}>至</span>
+            <span className={styles.dateSeparator}>至</span>
             <input
               type="date"
               value={draft.created_to ?? ""}
               onChange={(e) => setDraft({ ...draft, created_to: e.target.value || undefined })}
-              style={dateStyle}
+              className={styles.dateInput}
             />
           </div>
         </Section>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--color-border)", paddingTop: 12 }}>
+        <div className={styles.footer}>
           <Button onClick={clear} size="sm">清空</Button>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className={styles.footerActions}>
             <Button onClick={onClose} size="sm">取消</Button>
             <Button
               onClick={apply}
@@ -206,42 +192,10 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: 0.4,
-          color: "var(--color-fg-muted)",
-          marginBottom: 6,
-        }}
-      >
+      <div className={styles.sectionTitle}>
         {title}
       </div>
       {children}
     </div>
   );
 }
-
-function chipStyle(active: boolean): React.CSSProperties {
-  return {
-    padding: "4px 10px",
-    fontSize: 12,
-    borderRadius: 999,
-    border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border)"}`,
-    background: active ? "var(--color-accent-soft)" : "transparent",
-    color: active ? "var(--color-accent)" : "var(--color-fg)",
-    cursor: "pointer",
-    fontFamily: "inherit",
-  };
-}
-
-const dateStyle: React.CSSProperties = {
-  padding: "4px 8px",
-  fontSize: 12,
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-sm)",
-  background: "var(--color-bg-elev)",
-  color: "var(--color-fg)",
-  fontFamily: "inherit",
-};

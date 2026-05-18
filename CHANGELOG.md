@@ -26,7 +26,7 @@
 
 ### Changed
 
-- **CSP style-src sections + Workbench + 基础 UI 群续推**：`pages/Projects/sections/*.tsx` 已清空 inline style，`BatchesSection` 原 1 处 CSS custom property hatch 改为三档 class 切换，也已清零；`pages/Workbench/**/*.tsx` 从 578 处 JSX `style=` 清到 0，并整体纳入 `no-restricted-syntax` guard。`components/ui` 并行迁移 18 个基础组件，其中 `AssigneeAvatarStack` / `DropdownMenu` / `Histogram` / `Modal` / `ProgressBar` / `RadialProgress` / `SearchInput` / `SectionDivider` / `Sparkline` / `StatCard` / `TabRow` / `Toast` / `Tooltip` 已清零并纳入 guard；`Button` / `Card` / `Badge` / `Icon` / `Avatar` 内部样式已迁 CSS modules，暂留 5 处 public `style` prop 兼容 hatch。`TextOutputDefaultSelect` 补 `className` 透传，避免 GeneralSection 继续用 inline 传入控件样式。当前全站 `rg "style\\s*=" apps/web/src --glob '*.tsx'` 为 2048 处。→ [plan](docs/plans/2026-05-18-v0.10.12-csp-style-src-sections.md) · [ROADMAP §B](ROADMAP.md) · [迁移指南](docs-site/dev/how-to/migrate-inline-style-to-css-modules.md)
+- **CSP style-src sections + Workbench + Dashboard + 基础 UI 群续推**：`pages/Projects/sections/*.tsx` 已清空 inline style，`BatchesSection` 原 1 处 CSS custom property hatch 改为三档 class 切换，也已清零；`pages/Workbench/**/*.tsx` 从 578 处 JSX `style=` 清到 0，并整体纳入 `no-restricted-syntax` guard；`pages/Dashboard/**/*.tsx` 同步清零并纳入 guard。`components/ui` 18 个基础组件自身 JSX `style=` 已清零并纳入 guard；`Button` / `Card` / `Badge` / `Icon` / `Avatar` 继续保留 public `style` prop 兼容性，但改由 `useElementStyle` ref 同步 DOM style，不再在组件 JSX 中透传。`TextOutputDefaultSelect` 补 `className` 透传，避免 GeneralSection 继续用 inline 传入控件样式。当前全站 `rg "style\\s*=" apps/web/src --glob '*.tsx'` 为 1682 处。→ [plan](docs/plans/2026-05-18-v0.10.12-csp-style-src-sections.md) · [ROADMAP §B](ROADMAP.md) · [迁移指南](docs-site/dev/how-to/migrate-inline-style-to-css-modules.md)
 
 ## [0.10.11] - 2026-05-18
 

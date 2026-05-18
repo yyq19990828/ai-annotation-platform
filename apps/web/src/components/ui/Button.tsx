@@ -2,6 +2,7 @@ import { clsx } from "clsx";
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 import styles from "./Button.module.css";
+import { useElementStyle } from "./useElementStyle";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "default" | "primary" | "ghost" | "ai" | "danger";
@@ -13,9 +14,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   { variant = "default", size = "md", className, children, style: callerStyle, ...props },
   ref,
 ) {
+  const styleRef = useElementStyle(callerStyle, ref);
   return (
     <button
-      ref={ref}
+      ref={styleRef}
       className={clsx(
         "btn",
         variant !== "default" && variant,
@@ -25,7 +27,6 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         styles[size],
         className,
       )}
-      style={callerStyle}
       {...props}
     >
       {children}

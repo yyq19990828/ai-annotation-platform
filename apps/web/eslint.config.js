@@ -48,10 +48,16 @@ export default tseslint.config(
   {
     files: [
       "src/pages/Projects/sections/*.tsx",
+      "src/pages/Dashboard/**/*.tsx",
       "src/pages/Workbench/**/*.tsx",
       "src/components/ui/AssigneeAvatarStack.tsx",
+      "src/components/ui/Avatar.tsx",
+      "src/components/ui/Badge.tsx",
+      "src/components/ui/Button.tsx",
+      "src/components/ui/Card.tsx",
       "src/components/ui/DropdownMenu.tsx",
       "src/components/ui/Histogram.tsx",
+      "src/components/ui/Icon.tsx",
       "src/components/ui/Modal.tsx",
       "src/components/ui/ProgressBar.tsx",
       "src/components/ui/RadialProgress.tsx",

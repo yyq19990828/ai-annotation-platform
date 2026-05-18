@@ -2,6 +2,7 @@ import { clsx } from "clsx";
 import type { ReactNode } from "react";
 
 import styles from "./Badge.module.css";
+import { useElementStyle } from "./useElementStyle";
 
 interface BadgeProps {
   variant?: "default" | "success" | "warning" | "danger" | "accent" | "ai" | "outline";
@@ -21,8 +22,9 @@ const variantClassNames: Record<NonNullable<BadgeProps["variant"]>, string> = {
 };
 
 export function Badge({ variant = "default", dot, children, style }: BadgeProps) {
+  const styleRef = useElementStyle<HTMLSpanElement>(style);
   return (
-    <span className={clsx(styles.badge, variantClassNames[variant])} style={style}>
+    <span ref={styleRef} className={clsx(styles.badge, variantClassNames[variant])}>
       {dot && <span className={styles.dot} />}
       {children}
     </span>

@@ -1,0 +1,163 @@
+.cardStack {
+  margin-top: 16px;
+}
+
+.cardHeaderPlain,
+.cardHeaderSplit {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cardHeaderSplit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.titleBadge {
+  margin-left: 8px;
+}
+
+.titleBadge > span {
+  font-size: 11px;
+}
+
+.emptyState {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+}
+
+.bulkActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bulkText {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+}
+
+.listBody {
+  padding: 8px 0;
+}
+
+.batchRow {
+  display: flex;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.batchRow + .batchRow {
+  border-top: 1px solid var(--color-border-subtle, var(--color-border));
+}
+
+.batchCheckbox {
+  flex: 0 0 auto;
+  cursor: pointer;
+  margin: 0;
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowTitleLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batchName {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.rowMeta {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  margin-top: 2px;
+}
+
+.progressTriple {
+  margin-top: 6px;
+  display: grid;
+  gap: 3px;
+  max-width: 420px;
+}
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+.progressLabel {
+  flex: 0 0 36px;
+}
+
+.progressTrack {
+  flex: 1;
+  height: 4px;
+  background: var(--color-bg-sunken);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progressFill {
+  width: var(--progress-pct);
+  height: 100%;
+  background: var(--progress-color);
+}
+
+.progressCount {
+  flex: 0 0 80px;
+  text-align: right;
+  color: var(--color-fg-subtle);
+}
+
+.avatarStackWrap {
+  margin-top: 6px;
+}
+
+.reviewFeedback {
+  margin-top: 6px;
+  padding: 4px 8px;
+  background: color-mix(in oklab, var(--color-danger) 8%, transparent);
+  border-left: 2px solid var(--color-danger);
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  max-width: 600px;
+}
+
+.reviewFeedbackLabel {
+  color: var(--color-danger);
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}

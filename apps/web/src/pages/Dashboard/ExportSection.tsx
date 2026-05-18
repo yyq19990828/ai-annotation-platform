@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { projectsApi, type ExportFormat, type VideoFrameMode } from "@/api/projects";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
+import styles from "./ExportSection.module.css";
 
 interface ExportSectionProps {
   projectId: string;
@@ -13,12 +14,16 @@ const FORMATS: { value: ExportFormat; label: string }[] = [
   { value: "yolo", label: "YOLO" },
 ];
 
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
+
 /** 项目行的「导出」按钮 + 浮层。
  *  浮层包含格式选择 + 「包含属性数据」复选框（默认勾选 = 后端 default true）。
  *  v0.9.3 · 改用 DropdownMenu content 模式（统一浮层骨架与键盘行为）。 */
 export function ExportSection({ projectId, projectTypeKey }: ExportSectionProps) {
   return (
-    <div onClick={(e) => e.stopPropagation()}>
+    <div className={styles.root} onClick={(e) => e.stopPropagation()}>
       <DropdownMenu
         align="end"
         minWidth={200}
@@ -28,18 +33,7 @@ export function ExportSection({ projectId, projectTypeKey }: ExportSectionProps)
             type="button"
             onClick={toggle}
             title="导出标注数据"
-            style={{
-              padding: "4px 8px",
-              fontSize: 11,
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--color-border)",
-              background: "var(--color-bg-elev)",
-              cursor: "pointer",
-              color: "var(--color-fg-muted)",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-            }}
+            className={styles.trigger}
           >
             导出 ▾
           </button>
@@ -80,24 +74,19 @@ function ExportForm({ projectId, projectTypeKey, onDone }: { projectId: string; 
     <div
       role="dialog"
       aria-label="导出选项"
-      style={{
-        padding: 12,
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-      }}
+      className={styles.form}
     >
       {isVideoProject ? (
         <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>格式</div>
-            <div style={{ padding: "5px 8px", fontSize: 12, border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)", background: "var(--color-bg-sunken)" }}>
+          <div className={styles.field}>
+            <div className={styles.label}>格式</div>
+            <div className={styles.readonlyValue}>
               Video JSON
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>帧模式</div>
-            <div style={{ display: "flex", gap: 4 }}>
+          <div className={styles.field}>
+            <div className={styles.label}>帧模式</div>
+            <div className={styles.optionRow}>
               {[
                 { value: "keyframes" as const, label: "关键帧" },
                 { value: "all_frames" as const, label: "所有帧" },
@@ -106,17 +95,7 @@ function ExportForm({ projectId, projectTypeKey, onDone }: { projectId: string; 
                   key={item.value}
                   type="button"
                   onClick={() => setVideoFrameMode(item.value)}
-                  style={{
-                    flex: 1,
-                    padding: "4px 8px",
-                    fontSize: 11,
-                    borderRadius: "var(--radius-sm)",
-                    border: `1px solid ${videoFrameMode === item.value ? "oklch(0.55 0.18 250)" : "var(--color-border)"}`,
-                    background: videoFrameMode === item.value ? "oklch(0.55 0.18 250 / 0.10)" : "var(--color-bg-sunken)",
-                    color: videoFrameMode === item.value ? "oklch(0.55 0.18 250)" : "var(--color-fg)",
-                    cursor: "pointer",
-                    fontWeight: videoFrameMode === item.value ? 600 : 400,
-                  }}
+                  className={cn(styles.optionButton, videoFrameMode === item.value && styles.optionButtonActive)}
                 >
                   {item.label}
                 </button>
@@ -125,25 +104,15 @@ function ExportForm({ projectId, projectTypeKey, onDone }: { projectId: string; 
           </div>
         </>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>格式</div>
-          <div style={{ display: "flex", gap: 4 }}>
+        <div className={styles.field}>
+          <div className={styles.label}>格式</div>
+          <div className={styles.optionRow}>
             {FORMATS.map((f) => (
               <button
                 key={f.value}
                 type="button"
                 onClick={() => setFormat(f.value)}
-                style={{
-                  flex: 1,
-                  padding: "4px 8px",
-                  fontSize: 11,
-                  borderRadius: "var(--radius-sm)",
-                  border: `1px solid ${format === f.value ? "oklch(0.55 0.18 250)" : "var(--color-border)"}`,
-                  background: format === f.value ? "oklch(0.55 0.18 250 / 0.10)" : "var(--color-bg-sunken)",
-                  color: format === f.value ? "oklch(0.55 0.18 250)" : "var(--color-fg)",
-                  cursor: "pointer",
-                  fontWeight: format === f.value ? 600 : 400,
-                }}
+                className={cn(styles.optionButton, format === f.value && styles.optionButtonActive)}
               >
                 {f.label}
               </button>
@@ -151,16 +120,16 @@ function ExportForm({ projectId, projectTypeKey, onDone }: { projectId: string; 
           </div>
         </div>
       )}
-      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
+      <label className={styles.checkboxLabel}>
         <input
           type="checkbox"
           checked={includeAttributes}
           onChange={(e) => setIncludeAttributes(e.target.checked)}
-          style={{ cursor: "pointer" }}
+          className={styles.checkbox}
         />
-        <span style={{ color: "var(--color-fg)" }}>包含属性数据</span>
+        <span className={styles.checkboxText}>包含属性数据</span>
       </label>
-      <div style={{ fontSize: 10, color: "var(--color-fg-muted)", lineHeight: 1.4 }}>
+      <div className={styles.helpText}>
         {includeAttributes
           ? "导出包将包含每个标注的 attributes 字段。"
           : "兼容旧版（v0.4.9 之前）格式，不含属性。"}
@@ -169,17 +138,7 @@ function ExportForm({ projectId, projectTypeKey, onDone }: { projectId: string; 
         type="button"
         disabled={busy}
         onClick={handleExport}
-        style={{
-          padding: "6px 10px",
-          fontSize: 12,
-          borderRadius: "var(--radius-sm)",
-          border: "1px solid oklch(0.55 0.18 250)",
-          background: "oklch(0.55 0.18 250)",
-          color: "white",
-          cursor: busy ? "wait" : "pointer",
-          fontWeight: 600,
-          opacity: busy ? 0.6 : 1,
-        }}
+        className={styles.submitButton}
       >
         {busy ? "导出中…" : "导出"}
       </button>

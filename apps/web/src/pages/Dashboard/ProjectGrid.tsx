@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/Card";
-import { Icon } from "@/components/ui/Icon";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -9,7 +9,9 @@ import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { useToastStore } from "@/components/ui/Toast";
 import { projectsApi, type ProjectResponse, type ExportFormat } from "@/api/projects";
 
-const TYPE_ICONS: Record<string, string> = {
+import styles from "./ProjectGrid.module.css";
+
+const TYPE_ICONS: Record<string, IconName> = {
   "image-det": "rect",
   "image-seg": "polygon",
   "image-kp": "point",
@@ -51,21 +53,14 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
 
   if (projects.length === 0) {
     return (
-      <div style={{ padding: "40px 16px", textAlign: "center", color: "var(--color-fg-subtle)" }}>
+      <div className={styles.empty}>
         没有匹配的项目
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-        gap: 12,
-        padding: 16,
-      }}
-    >
+    <div className={styles.grid}>
       {projects.map((p) => {
         const total = p.total_tasks || 1;
         const pct = Math.round((p.completed_tasks / total) * 100);
@@ -82,81 +77,67 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
           <Card
             key={p.id}
             onClick={() => onOpen(p)}
-            style={{
-              padding: 14,
-              cursor: "pointer",
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-            }}
           >
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <div
-                style={{
-                  width: 32, height: 32, borderRadius: 6,
-                  background: "var(--color-bg-sunken)",
-                  border: "1px solid var(--color-border)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  color: "var(--color-fg-muted)",
-                  flex: "0 0 32px",
-                }}
-              >
-                <Icon name={(TYPE_ICONS[p.type_key] || "image") as any} size={15} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {p.name}
+            <div className={styles.projectCard}>
+              <div className={styles.projectHeader}>
+                <div className={styles.typeIcon}>
+                  <Icon name={TYPE_ICONS[p.type_key] || "image"} size={15} />
                 </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2 }}>
-                  <span className="mono" style={{ fontSize: 10.5, color: "var(--color-fg-subtle)" }}>
-                    {p.display_id}
+                <div className={styles.projectInfo}>
+                  <div className={styles.projectName}>
+                    {p.name}
+                  </div>
+                  <div className={styles.projectMeta}>
+                    <span className={`mono ${styles.projectId}`}>
+                      {p.display_id}
+                    </span>
+                    <span className={styles.projectType}>{p.type_label}</span>
+                  </div>
+                </div>
+                {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
+                {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
+                {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
+              </div>
+
+              <div>
+                <ProgressBar value={pct} aiValue={aiPct} inProgressValue={startedPct} />
+                <div className={styles.progressMeta}>
+                  <span className="mono">
+                    {p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}
                   </span>
-                  <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>{p.type_label}</span>
+                  <span className={styles.progressPct}>{pct}%</span>
                 </div>
               </div>
-              {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
-              {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
-              {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
-            </div>
 
-            <div>
-              <ProgressBar value={pct} aiValue={aiPct} inProgressValue={startedPct} />
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "var(--color-fg-muted)" }}>
-                <span className="mono">
-                  {p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}
-                </span>
-                <span style={{ fontWeight: 500, color: "var(--color-fg)" }}>{pct}%</span>
+              <div className={styles.cardFooterMeta}>
+                <div className={styles.ownerMeta}>
+                  <Avatar size="sm" initial={ownerInitial} />
+                  <span className={styles.ownerName}>
+                    {p.owner_name ?? "—"}
+                  </span>
+                  <span className={styles.memberCount}>
+                    · {p.member_count ?? 0} 成员
+                  </span>
+                </div>
+                <span className={styles.dueDate}>截止 {due}</span>
               </div>
-            </div>
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                <Avatar size="sm" initial={ownerInitial} />
-                <span style={{ fontSize: 11.5, color: "var(--color-fg-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {p.owner_name ?? "—"}
-                </span>
-                <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
-                  · {p.member_count ?? 0} 成员
-                </span>
+              <div className={styles.cardActions} onClick={(e) => e.stopPropagation()}>
+                <ProjectMoreMenu
+                  project={p}
+                  canManage={canManage(p)}
+                  onSettings={onSettings}
+                  onExport={exportProject}
+                  onDuplicate={onDuplicate}
+                />
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={(e) => { e.stopPropagation(); onOpen(p); }}
+                >
+                  打开<Icon name="chevRight" size={11} />
+                </Button>
               </div>
-              <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>截止 {due}</span>
-            </div>
-
-            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: "auto" }} onClick={(e) => e.stopPropagation()}>
-              <ProjectMoreMenu
-                project={p}
-                canManage={canManage(p)}
-                onSettings={onSettings}
-                onExport={exportProject}
-                onDuplicate={onDuplicate}
-              />
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={(e) => { e.stopPropagation(); onOpen(p); }}
-              >
-                打开<Icon name="chevRight" size={11} />
-              </Button>
             </div>
           </Card>
         );

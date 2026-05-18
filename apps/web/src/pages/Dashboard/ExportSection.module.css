@@ -1,0 +1,104 @@
+.root {
+  display: inline-flex;
+}
+
+.trigger {
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+  cursor: pointer;
+  color: var(--color-fg-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.form {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+.readonlyValue {
+  padding: 5px 8px;
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sunken);
+}
+
+.optionRow {
+  display: flex;
+  gap: 4px;
+}
+
+.optionButton {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.optionButtonActive {
+  border-color: oklch(0.55 0.18 250);
+  background: oklch(0.55 0.18 250 / 0.10);
+  color: oklch(0.55 0.18 250);
+  font-weight: 600;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.checkbox {
+  cursor: pointer;
+}
+
+.checkboxText {
+  color: var(--color-fg);
+}
+
+.helpText {
+  font-size: 10px;
+  color: var(--color-fg-muted);
+  line-height: 1.4;
+}
+
+.submitButton {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid oklch(0.55 0.18 250);
+  background: oklch(0.55 0.18 250);
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.submitButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}

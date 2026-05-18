@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Icon } from "@/components/ui/Icon";
+import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -23,7 +23,9 @@ import { FilterDrawer, EMPTY_FILTERS, type DashboardFilters } from "./FilterDraw
 import { ProjectGrid } from "./ProjectGrid";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 
-const TYPE_ICONS: Record<string, string> = {
+import styles from "./DashboardPage.module.css";
+
+const TYPE_ICONS: Record<string, IconName> = {
   "image-det": "rect",
   "image-seg": "polygon",
   "image-kp": "point",
@@ -60,45 +62,40 @@ function ProjectRow({
   const ownerInitial = p.owner_name?.slice(0, 1) ?? "?";
 
   return (
-    <tr onClick={() => onOpen(p)} style={{ cursor: "pointer" }}>
-      <td style={{ padding: "12px 12px 12px 16px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 6,
-            background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "var(--color-fg-muted)", flex: "0 0 28px",
-          }}>
-            <Icon name={(TYPE_ICONS[p.type_key] || "image") as any} size={14} />
+    <tr className={styles.projectRow} onClick={() => onOpen(p)}>
+      <td className={styles.projectCellPrimary}>
+        <div className={styles.projectIdentity}>
+          <div className={styles.projectTypeIcon}>
+            <Icon name={TYPE_ICONS[p.type_key] || "image"} size={14} />
           </div>
           <div>
-            <div style={{ fontWeight: 500, fontSize: 13.5 }}>{p.name}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
-              <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{p.display_id}</span>
-              <span style={{ color: "var(--color-fg-faint)" }}>·</span>
-              <span style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>{p.type_label}</span>
+            <div className={styles.projectName}>{p.name}</div>
+            <div className={styles.projectMeta}>
+              <span className={`mono ${styles.projectId}`}>{p.display_id}</span>
+              <span className={styles.metaDot}>·</span>
+              <span className={styles.projectType}>{p.type_label}</span>
             </div>
           </div>
         </div>
       </td>
-      <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <td className={styles.projectCell}>
+        <div className={styles.ownerCell}>
           <Avatar initial={ownerInitial} size="sm" />
           <div>
-            <div style={{ fontSize: 12.5 }}>{p.owner_name ?? "—"}</div>
-            <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+            <div className={styles.ownerName}>{p.owner_name ?? "—"}</div>
+            <div className={styles.ownerSubtext}>
               {(p.member_count ?? 0) > 0 ? `${p.member_count} 名成员` : "暂无成员"}
             </div>
           </div>
         </div>
       </td>
-      <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle", minWidth: 220 }}>
+      <td className={styles.progressCell}>
         <ProgressBar value={pct} aiValue={aiPct} inProgressValue={startedPct} />
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "var(--color-fg-muted)" }}>
+        <div className={styles.progressMeta}>
           <span className="mono">
             {p.completed_tasks.toLocaleString()} / {p.total_tasks.toLocaleString()}
             {(p.in_progress_tasks ?? 0) + p.review_tasks > 0 && (
-              <span style={{ color: "var(--color-fg-subtle)" }}>
+              <span className={styles.progressDetail}>
                 {" · "}
                 {(p.in_progress_tasks ?? 0) > 0 && <>{p.in_progress_tasks} 进行中</>}
                 {(p.in_progress_tasks ?? 0) > 0 && p.review_tasks > 0 && " · "}
@@ -106,37 +103,25 @@ function ProjectRow({
               </span>
             )}
           </span>
-          <span style={{ fontWeight: 500, color: "var(--color-fg)" }}>{pct}%</span>
+          <span className={styles.progressPct}>{pct}%</span>
         </div>
         {canManage && (
           <>
             {(p.batch_summary?.total ?? 0) > 0 && (
-              <div style={{ marginTop: 3, fontSize: 11, color: "var(--color-fg-subtle)" }}>
+              <div className={styles.batchSummary}>
                 {p.batch_summary?.total} 个批次
                 {(p.batch_summary?.assigned ?? 0) > 0 && (
                   <> · {p.batch_summary?.assigned} 已分派</>
                 )}
                 {(p.batch_summary?.in_review ?? 0) > 0 && (
-                  <> · <span style={{ color: "var(--color-warning)" }}>{p.batch_summary?.in_review} 审核中</span></>
+                  <> · <span className={styles.batchReviewing}>{p.batch_summary?.in_review} 审核中</span></>
                 )}
               </div>
             )}
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onSettings(p, "batches"); }}
-              style={{
-                marginTop: 4,
-                padding: 0,
-                border: "none",
-                background: "transparent",
-                color: "var(--color-fg-subtle)",
-                fontSize: 11,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                textDecoration: "underline",
-                textDecorationStyle: "dotted",
-                textUnderlineOffset: 2,
-              }}
+              className={styles.batchLink}
               title="跳转到项目设置 → 批次管理"
             >
               <Icon name="layers" size={10} /> 查看批次分派
@@ -144,24 +129,24 @@ function ProjectRow({
           </>
         )}
       </td>
-      <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+      <td className={styles.projectCell}>
         {p.ai_enabled ? (
           <Badge variant="ai"><Icon name="sparkles" size={10} />{p.ai_model}</Badge>
         ) : (
-          <span style={{ fontSize: 12, color: "var(--color-fg-subtle)" }}>未启用</span>
+          <span className={styles.mutedSmall}>未启用</span>
         )}
       </td>
-      <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+      <td className={styles.projectCell}>
         {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
         {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
         {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
       </td>
-      <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <div style={{ fontSize: 12 }}>{due}</div>
-        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>更新 {updated}</div>
+      <td className={styles.projectCell}>
+        <div className={styles.dueDate}>{due}</div>
+        <div className={styles.updatedAt}>更新 {updated}</div>
       </td>
-      <td style={{ padding: "12px 16px 12px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right", verticalAlign: "middle" }}>
-        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+      <td className={styles.projectCellActions}>
+        <div className={styles.rowActions}>
           <ExportSection projectId={p.id} projectTypeKey={p.type_key} />
           {canManage && (
             <Button
@@ -267,13 +252,13 @@ export function DashboardPage() {
   const recentActivity = (audit?.items ?? []).filter((it) => !it.action.startsWith("http.")).slice(0, 8);
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24, marginBottom: 20 }}>
+    <div className={styles.page}>
+      <div className={styles.pageHeader}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>项目总览</h1>
-          <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>管理你的标注项目,跟踪进度与 AI 辅助效率</p>
+          <h1 className={styles.pageTitle}>项目总览</h1>
+          <p className={styles.pageSubtitle}>管理你的标注项目,跟踪进度与 AI 辅助效率</p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className={styles.headerActions}>
           <Can permission="dataset.create">
             <Button onClick={() => setImportOpen(true)}>
               <Icon name="upload" size={13} />导入数据集
@@ -293,7 +278,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className={styles.statsGrid}>
         <StatCard icon="layers" label="数据总量" value={(stats?.total_data ?? 0).toLocaleString()} trend={12} sparkValues={[42, 50, 48, 56, 60, 65, 78, 82, 89, 95, 102, 108]} sparkColor="var(--color-accent)" hint="近 12 周" />
         <StatCard icon="check" label="已完成标注" value={(stats?.completed ?? 0).toLocaleString()} trend={8} sparkValues={[20, 28, 24, 36, 42, 48, 56, 62, 68, 74, 80, 86]} sparkColor="var(--color-success)" hint="近 12 周" />
         <StatCard icon="sparkles" label="AI 接管率" value={`${stats?.ai_rate ?? 0}%`} trend={5} sparkValues={[42, 48, 50, 52, 55, 56, 58, 59, 60, 61, 62, 62]} sparkColor="var(--color-ai)" hint="自动通过" />
@@ -301,23 +286,23 @@ export function DashboardPage() {
       </div>
 
       <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>我的项目</h3>
+        <div className={styles.cardHeader}>
+          <div className={styles.cardTitleRow}>
+            <h3 className={styles.cardTitle}>我的项目</h3>
             <TabRow tabs={[...FILTERS]} active={filter} onChange={setFilter} />
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className={styles.cardActions}>
             <SearchInput placeholder="搜索项目..." value={query} onChange={setQuery} width={220} />
             <Button onClick={() => setFilterOpen(true)}>
               <Icon name="filter" size={13} />筛选
               {advancedActiveCount > 0 && (
-                <Badge variant="accent" style={{ marginLeft: 4, fontSize: 10 }}>{advancedActiveCount}</Badge>
+                <span className={styles.filterCount}>{advancedActiveCount}</span>
               )}
             </Button>
             <Button
               onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
               title={viewMode === "grid" ? "切换到列表视图" : "切换到网格视图"}
-              style={viewMode === "grid" ? { background: "var(--color-bg-sunken)" } : undefined}
+              className={viewMode === "grid" ? styles.viewToggleActive : undefined}
             >
               <Icon name={viewMode === "grid" ? "list" : "grid"} size={13} />
             </Button>
@@ -325,7 +310,7 @@ export function DashboardPage() {
         </div>
         {viewMode === "grid" ? (
           isLoading ? (
-            <div style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>
+            <div className={styles.emptyState}>
               加载中...
             </div>
           ) : (
@@ -337,18 +322,11 @@ export function DashboardPage() {
             />
           )
         ) : (
-        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+        <table className={styles.projectTable}>
           <thead>
             <tr>
               {["项目", "负责人", "进度", "AI 模型", "状态", "截止 / 更新", ""].map((h, i) => (
-                <th key={i} style={{
-                  textAlign: "left", fontWeight: 500, fontSize: 12,
-                  color: "var(--color-fg-muted)", padding: "10px 12px",
-                  borderBottom: "1px solid var(--color-border)",
-                  background: "var(--color-bg-sunken)",
-                  ...(i === 0 ? { paddingLeft: 16 } : {}),
-                  ...(i === 6 ? { paddingRight: 16 } : {}),
-                }}>
+                <th key={i}>
                   {h}
                 </th>
               ))}
@@ -357,7 +335,7 @@ export function DashboardPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={7} style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>
+                <td colSpan={7} className={styles.tableEmptyCell}>
                   加载中...
                 </td>
               </tr>
@@ -373,7 +351,7 @@ export function DashboardPage() {
             ))}
             {!isLoading && projects.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>
+                <td colSpan={7} className={styles.tableEmptyCell}>
                   没有匹配的项目
                 </td>
               </tr>
@@ -390,51 +368,44 @@ export function DashboardPage() {
         onApply={setAdvanced}
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginTop: 16 }}>
+      <div className={styles.bottomGrid}>
         <Card>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>AI 预标注队列</h3>
+          <div className={styles.cardHeader}>
+            <h3 className={styles.cardTitle}>AI 预标注队列</h3>
           </div>
-          <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
-            <Icon name="sparkles" size={28} style={{ opacity: 0.25, marginBottom: 8 }} />
+          <div className={styles.aiQueueEmpty}>
+            <Icon name="sparkles" size={28} className={styles.emptyIcon} />
             <div>暂无运行中的预标注任务</div>
-            <div style={{ fontSize: 11.5, marginTop: 4 }}>在标注工作台中点击"AI 一键预标"启动</div>
+            <div className={styles.emptyHint}>在标注工作台中点击"AI 一键预标"启动</div>
           </div>
         </Card>
 
         <Card>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>近期活动</h3>
+          <div className={styles.cardHeader}>
+            <h3 className={styles.cardTitle}>近期活动</h3>
           </div>
           {recentActivity.length === 0 ? (
-            <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
-              <Icon name="activity" size={26} style={{ opacity: 0.25, marginBottom: 8 }} />
+            <div className={styles.activityEmpty}>
+              <Icon name="activity" size={26} className={styles.emptyIcon} />
               <div>暂无业务事件</div>
             </div>
           ) : (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            <ul className={styles.activityList}>
               {recentActivity.map((it) => (
                 <li
                   key={it.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "10px 16px",
-                    borderBottom: "1px solid var(--color-border)",
-                    fontSize: 12.5,
-                  }}
+                  className={styles.activityItem}
                 >
                   <Avatar initial={(it.actor_email ?? "?").slice(0, 1).toUpperCase()} size="sm" />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontWeight: 500 }}>{it.actor_email ?? "匿名"}</span>
-                      <Badge variant="accent" style={{ fontSize: 10 }}>{auditActionLabel(it.action)}</Badge>
+                  <div className={styles.activityBody}>
+                    <div className={styles.activityMeta}>
+                      <span className={styles.activityActor}>{it.actor_email ?? "匿名"}</span>
+                      <Badge variant="accent">{auditActionLabel(it.action)}</Badge>
                       {it.target_type && (
-                        <span style={{ color: "var(--color-fg-muted)", fontSize: 11 }}>
+                        <span className={styles.activityTarget}>
                           {it.target_type}
                           {it.target_id && (
-                            <span className="mono" style={{ marginLeft: 4 }}>
+                            <span className={`mono ${styles.activityTargetId}`}>
                               {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
                             </span>
                           )}
@@ -442,7 +413,7 @@ export function DashboardPage() {
                       )}
                     </div>
                   </div>
-                  <span style={{ fontSize: 11, color: "var(--color-fg-subtle)", whiteSpace: "nowrap" }}>
+                  <span className={styles.activityTime}>
                     {relativeTime(it.created_at)}
                   </span>
                 </li>

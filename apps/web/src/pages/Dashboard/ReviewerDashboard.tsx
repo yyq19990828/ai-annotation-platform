@@ -12,6 +12,7 @@ import { useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReviewTaskItem, RecentReviewItem } from "@/api/dashboard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import styles from "./ReviewerDashboard.module.css";
 
 export function ReviewerDashboard() {
   const { data: stats, isLoading } = useReviewerStats();
@@ -45,18 +46,18 @@ export function ReviewerDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div style={{ padding: "60px 28px", textAlign: "center", color: "var(--color-fg-subtle)" }}>
+      <div className={styles.loading}>
         加载中...
       </div>
     );
   }
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 20 }}>
+    <div className={styles.page}>
+      <div className={styles.header}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>质检工作台</h1>
-          <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>审核标注质量，确保数据准确性</p>
+          <h1 className={styles.title}>质检工作台</h1>
+          <p className={styles.subtitle}>审核标注质量，确保数据准确性</p>
         </div>
         <Button variant="primary" onClick={() => navigate("/review")}>
           <Icon name="check" size={13} />进入审核页面
@@ -65,7 +66,7 @@ export function ReviewerDashboard() {
 
       {/* 产能 */}
       <SectionDivider label="产能" hint="待审 / 今日 / 单题耗时" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+      <div className={styles.statsGridFour}>
         <StatCard icon="flag" label="待审队列" value={stats.pending_review_count} />
         <StatCard
           icon="check"
@@ -91,7 +92,7 @@ export function ReviewerDashboard() {
 
       {/* 质量 */}
       <SectionDivider label="质量" hint="通过率 / 二次返修率" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+      <div className={styles.statsGridThree}>
         <StatCard icon="activity" label="24h 通过率" value={`${stats.approval_rate_24h}%`} />
         <StatCard icon="activity" label="历史通过率" value={`${stats.approval_rate}%`} />
         <StatCard
@@ -106,23 +107,25 @@ export function ReviewerDashboard() {
         />
       </div>
 
-      <div style={{ height: 16 }} />
+      <div className={styles.gap} />
 
       <Card>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+        <div className={styles.cardHeaderSplit}>
+          <h3 className={styles.cardTitle}>
             待审核任务
             {stats.pending_tasks.length > 0 && (
-              <Badge variant="warning" style={{ marginLeft: 8, fontSize: 11 }}>{stats.pending_tasks.length}</Badge>
+              <span className={styles.titleBadge}>
+                <Badge variant="warning">{stats.pending_tasks.length}</Badge>
+              </span>
             )}
           </h3>
         </div>
 
         {stats.pending_tasks.length === 0 ? (
-          <div style={{ padding: "48px 16px", textAlign: "center", color: "var(--color-fg-subtle)" }}>
-            <Icon name="check" size={36} style={{ opacity: 0.25, marginBottom: 10 }} />
-            <div style={{ fontSize: 14, marginBottom: 4 }}>暂无待审核任务</div>
-            <div style={{ fontSize: 12 }}>所有标注任务已审核完毕</div>
+          <div className={styles.emptyReviewState}>
+            <Icon name="check" size={36} className={styles.emptyIconLarge} />
+            <div className={styles.emptyTitle}>暂无待审核任务</div>
+            <div className={styles.emptyText}>所有标注任务已审核完毕</div>
           </div>
         ) : (
           <div>
@@ -139,16 +142,17 @@ export function ReviewerDashboard() {
       </Card>
 
       {(stats.reviewing_batches?.length ?? 0) > 0 && (
-        <Card style={{ marginTop: 16 }}>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+        <div className={styles.cardStack}>
+          <Card>
+          <div className={styles.cardHeaderPlain}>
+            <h3 className={styles.cardTitle}>
               审核中批次
-              <Badge variant="warning" style={{ marginLeft: 8, fontSize: 11 }}>
-                {stats.reviewing_batches!.length}
-              </Badge>
+              <span className={styles.titleBadge}>
+                <Badge variant="warning">{stats.reviewing_batches!.length}</Badge>
+              </span>
             </h3>
           </div>
-          <div style={{ padding: "8px 0" }}>
+          <div className={styles.listBody}>
             {stats.reviewing_batches!.map((b) => {
               const remaining = Math.max(0, b.total_tasks - b.completed_tasks - b.review_tasks);
               const reviewPct = b.total_tasks
@@ -159,25 +163,11 @@ export function ReviewerDashboard() {
                   key={b.batch_id}
                   type="button"
                   onClick={() => navigate(`/review?project=${b.project_id}&batch=${b.batch_id}`)}
-                  style={{
-                    display: "flex",
-                    width: "100%",
-                    padding: "10px 16px",
-                    border: "none",
-                    background: "transparent",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontFamily: "inherit",
-                    color: "inherit",
-                    borderTop: "1px solid var(--color-border-subtle)",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 12,
-                  }}
+                  className={styles.reviewingBatchRow}
                 >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{b.batch_name}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+                  <div className={styles.rowMain}>
+                    <div className={styles.rowName}>{b.batch_name}</div>
+                    <div className={styles.rowMeta}>
                       <span className="mono">{b.batch_display_id}</span>
                       <span> · {b.project_name}</span>
                       <span> · 共 {b.total_tasks} 任务</span>
@@ -185,13 +175,13 @@ export function ReviewerDashboard() {
                       {remaining > 0 && <span> · {remaining} 未交</span>}
                     </div>
                     {b.annotator && (
-                      <div style={{ marginTop: 6 }}>
+                      <div className={styles.avatarStackWrap}>
                         <AssigneeAvatarStack users={[b.annotator]} label="标注员" max={1} />
                       </div>
                     )}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
-                    <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }} className="mono">
+                  <div className={styles.rowSide}>
+                    <span className={`mono ${styles.reviewPct}`}>
                       {reviewPct}%
                     </span>
                     <Icon name="chevron-right" size={14} />
@@ -200,20 +190,24 @@ export function ReviewerDashboard() {
               );
             })}
           </div>
-        </Card>
+          </Card>
+        </div>
       )}
 
-      <Card style={{ marginTop: 16 }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+      <div className={styles.cardStack}>
+        <Card>
+        <div className={styles.cardHeaderPlain}>
+          <h3 className={styles.cardTitle}>
             我的最近审核记录
             {recentReviews.length > 0 && (
-              <Badge variant="outline" style={{ marginLeft: 8, fontSize: 11 }}>{recentReviews.length}</Badge>
+              <span className={styles.titleBadge}>
+                <Badge variant="outline">{recentReviews.length}</Badge>
+              </span>
             )}
           </h3>
         </div>
         {recentReviews.length === 0 ? (
-          <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+          <div className={styles.emptyCompact}>
             暂无审核记录
           </div>
         ) : (
@@ -230,7 +224,8 @@ export function ReviewerDashboard() {
             ))}
           </div>
         )}
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -244,30 +239,24 @@ function RecentReviewRow({ item, onClick }: { item: RecentReviewItem; onClick: (
   return (
     <div
       onClick={onClick}
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 200px 100px 160px",
-        alignItems: "center",
-        gap: 12,
-        padding: "10px 16px",
-        borderBottom: "1px solid var(--color-border)",
-        cursor: "pointer",
-      }}
+      className={styles.recentReviewRow}
     >
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--color-accent)" }}>
+        <div className={styles.rowTitleLine}>
+          <span className={`mono ${styles.taskId}`}>
             {item.task_display_id}
           </span>
-          <span style={{ fontSize: 12.5 }}>{item.file_name}</span>
+          <span className={styles.fileName}>{item.file_name}</span>
         </div>
-        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
-          <Badge variant="outline" style={{ fontSize: 10, padding: "0 5px" }}>{item.project_name}</Badge>
+        <div className={styles.rowMeta}>
+          <span className={styles.inlineBadge}>
+            <Badge variant="outline">{item.project_name}</Badge>
+          </span>
         </div>
       </div>
-      <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>审于 {reviewedAt}</div>
+      <div className={styles.rowDate}>审于 {reviewedAt}</div>
       <div>{statusBadge}</div>
-      <div style={{ textAlign: "right" }}>
+      <div className={styles.chevronCell}>
         <Icon name="chevRight" size={12} />
       </div>
     </div>
@@ -282,33 +271,28 @@ function ReviewTaskRow({ task, onApprove, onReject }: {
   const updated = task.updated_at ? new Date(task.updated_at).toLocaleDateString("zh-CN") : "—";
 
   return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "1fr 140px 100px 160px",
-      alignItems: "center",
-      gap: 12,
-      padding: "10px 16px",
-      borderBottom: "1px solid var(--color-border)",
-    }}>
+    <div className={styles.reviewTaskRow}>
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: "var(--color-accent)" }}>
+        <div className={styles.rowTitleLine}>
+          <span className={`mono ${styles.taskId}`}>
             {task.task_display_id}
           </span>
-          <span style={{ fontSize: 12.5 }}>{task.file_name}</span>
+          <span className={styles.fileName}>{task.file_name}</span>
         </div>
-        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
-          <Badge variant="outline" style={{ fontSize: 10, padding: "0 5px", marginRight: 6 }}>{task.project_name}</Badge>
+        <div className={styles.rowMeta}>
+          <span className={styles.inlineBadgeGap}>
+            <Badge variant="outline">{task.project_name}</Badge>
+          </span>
           {task.total_annotations} 个标注 · {task.total_predictions} 个预测
         </div>
       </div>
-      <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>
+      <div className={styles.rowDate}>
         更新 {updated}
       </div>
       <div>
         <Badge variant="warning" dot>待审核</Badge>
       </div>
-      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+      <div className={styles.actions}>
         <Button variant="primary" size="sm" onClick={() => onApprove(task.task_id)}>
           <Icon name="check" size={11} />通过
         </Button>

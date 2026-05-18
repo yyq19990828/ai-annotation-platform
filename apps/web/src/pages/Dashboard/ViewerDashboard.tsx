@@ -11,6 +11,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import type { ProjectResponse } from "@/api/projects";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import styles from "./ViewerDashboard.module.css";
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
 const FILTER_STATUS_MAP: Record<string, string | undefined> = {
@@ -42,13 +43,13 @@ export function ViewerDashboard() {
   const { data: stats } = useProjectStats();
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>项目概览</h1>
-        <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>查看项目进度与数据质量</p>
+    <div className={styles.page}>
+      <div className={styles.header}>
+        <h1 className={styles.title}>项目概览</h1>
+        <p className={styles.subtitle}>查看项目进度与数据质量</p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className={styles.statsGrid}>
         <StatCard icon="layers" label="数据总量" value={(stats?.total_data ?? 0).toLocaleString()} />
         <StatCard icon="check" label="已完成标注" value={(stats?.completed ?? 0).toLocaleString()} />
         <StatCard icon="sparkles" label="AI 接管率" value={`${stats?.ai_rate ?? 0}%`} />
@@ -56,24 +57,18 @@ export function ViewerDashboard() {
       </div>
 
       <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>项目列表</h3>
+        <div className={styles.cardHeader}>
+          <div className={styles.cardTitleGroup}>
+            <h3 className={styles.cardTitle}>项目列表</h3>
             <TabRow tabs={[...FILTERS]} active={filter} onChange={setFilter} />
           </div>
           <SearchInput placeholder="搜索项目..." value={query} onChange={setQuery} width={220} />
         </div>
-        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+        <table className={styles.table}>
           <thead>
             <tr>
               {["项目", "进度", "AI 模型", "状态"].map((h, i) => (
-                <th key={i} style={{
-                  textAlign: "left", fontWeight: 500, fontSize: 12,
-                  color: "var(--color-fg-muted)", padding: "10px 12px",
-                  borderBottom: "1px solid var(--color-border)",
-                  background: "var(--color-bg-sunken)",
-                  ...(i === 0 ? { paddingLeft: 16 } : {}),
-                }}>
+                <th key={i}>
                   {h}
                 </th>
               ))}
@@ -82,30 +77,30 @@ export function ViewerDashboard() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={4} style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>加载中...</td>
+                <td colSpan={4} className={styles.emptyCell}>加载中...</td>
               </tr>
             )}
             {!isLoading && projects.map((p) => {
               const total = p.total_tasks || 1;
               const pct = Math.round((p.completed_tasks / total) * 100);
               return (
-                <tr key={p.id} onClick={() => onOpenProject(p)} style={{ cursor: "pointer" }}>
-                  <td style={{ padding: "12px 12px 12px 16px", borderBottom: "1px solid var(--color-border)" }}>
-                    <div style={{ fontWeight: 500, fontSize: 13.5 }}>{p.name}</div>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{p.display_id}</span>
+                <tr key={p.id} onClick={() => onOpenProject(p)} className={styles.clickableRow}>
+                  <td>
+                    <div className={styles.projectName}>{p.name}</div>
+                    <span className={`mono ${styles.projectId}`}>{p.display_id}</span>
                   </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", minWidth: 180 }}>
+                  <td className={styles.progressCell}>
                     <ProgressBar value={pct} />
-                    <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>{pct}%</span>
+                    <span className={`mono ${styles.progressPct}`}>{pct}%</span>
                   </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)" }}>
+                  <td>
                     {p.ai_enabled ? (
                       <Badge variant="ai"><Icon name="sparkles" size={10} />{p.ai_model}</Badge>
                     ) : (
-                      <span style={{ fontSize: 12, color: "var(--color-fg-subtle)" }}>—</span>
+                      <span className={styles.noneText}>—</span>
                     )}
                   </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)" }}>
+                  <td>
                     {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
                     {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
                     {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
@@ -115,7 +110,7 @@ export function ViewerDashboard() {
             })}
             {!isLoading && projects.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>没有匹配的项目</td>
+                <td colSpan={4} className={styles.emptyCell}>没有匹配的项目</td>
               </tr>
             )}
           </tbody>

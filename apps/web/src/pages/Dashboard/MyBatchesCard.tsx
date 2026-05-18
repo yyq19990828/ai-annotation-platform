@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
@@ -10,6 +10,7 @@ import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { useMyBatches } from "@/hooks/useDashboard";
 import { batchesApi, type BatchResponse } from "@/api/batches";
 import type { MyBatchItem } from "@/api/dashboard";
+import styles from "./MyBatchesCard.module.css";
 
 const STATUS_LABEL: Record<string, { label: string; variant: "accent" | "warning" | "danger" | "outline" }> = {
   active: { label: "未开始", variant: "outline" },
@@ -17,6 +18,19 @@ const STATUS_LABEL: Record<string, { label: string; variant: "accent" | "warning
   reviewing: { label: "审核中", variant: "warning" },
   rejected: { label: "已驳回", variant: "danger" },
 };
+
+function ProgressFill({ pct, color }: { pct: number; color: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty("--progress-pct", `${Math.min(100, pct)}%`);
+    el.style.setProperty("--progress-color", color);
+  }, [color, pct]);
+
+  return <div ref={ref} className={styles.progressFill} />;
+}
 
 /** B-20：标注员视角的三段进度条 — 已动工 / 送审 / 通过。
  *  三条进度独立显示，文字小号附在右侧，避免占用太多行高。 */
@@ -43,14 +57,14 @@ function ProgressTriple({
     { label: "通过", pct: approvedPct, count: approvedCount, bar: "var(--color-success)" },
   ];
   return (
-    <div style={{ marginTop: 6, display: "grid", gap: 3, maxWidth: 420 }}>
+    <div className={styles.progressTriple}>
       {ROWS.map((r) => (
-        <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--color-fg-muted)" }}>
-          <span style={{ flex: "0 0 36px" }}>{r.label}</span>
-          <div style={{ flex: 1, height: 4, background: "var(--color-bg-sunken)", borderRadius: 2, overflow: "hidden" }}>
-            <div style={{ width: `${Math.min(100, r.pct)}%`, height: "100%", background: r.bar }} />
+        <div key={r.label} className={styles.progressRow}>
+          <span className={styles.progressLabel}>{r.label}</span>
+          <div className={styles.progressTrack}>
+            <ProgressFill pct={r.pct} color={r.bar} />
           </div>
-          <span className="mono" style={{ flex: "0 0 80px", textAlign: "right", color: "var(--color-fg-subtle)" }}>
+          <span className={`mono ${styles.progressCount}`}>
             {r.count}/{total} · {r.pct}%
           </span>
         </div>
@@ -99,14 +113,16 @@ export function MyBatchesCard() {
 
   if (isLoading) {
     return (
-      <Card style={{ marginTop: 16 }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>我的批次</h3>
+      <div className={styles.cardStack}>
+        <Card>
+        <div className={styles.cardHeaderPlain}>
+          <h3 className={styles.cardTitle}>我的批次</h3>
         </div>
-        <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+        <div className={styles.emptyState}>
           加载中...
         </div>
-      </Card>
+        </Card>
+      </div>
     );
   }
 
@@ -162,26 +178,18 @@ export function MyBatchesCard() {
   };
 
   return (
-    <Card style={{ marginTop: 16 }}>
-      <div
-        style={{
-          padding: "14px 16px",
-          borderBottom: "1px solid var(--color-border)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+    <div className={styles.cardStack}>
+      <Card>
+      <div className={styles.cardHeaderSplit}>
+        <h3 className={styles.cardTitle}>
           我的批次
-          <Badge variant="accent" style={{ marginLeft: 8, fontSize: 11 }}>
-            {batches.length}
-          </Badge>
+          <span className={styles.titleBadge}>
+            <Badge variant="accent">{batches.length}</Badge>
+          </span>
         </h3>
         {submittable.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+          <div className={styles.bulkActions}>
+            <span className={styles.bulkText}>
               已选 {selectedSubmittable.length} / {submittable.length} 可提交
             </span>
             <Button
@@ -196,8 +204,8 @@ export function MyBatchesCard() {
           </div>
         )}
       </div>
-      <div style={{ padding: "8px 0" }}>
-        {sorted.map((b, idx) => {
+      <div className={styles.listBody}>
+        {sorted.map((b) => {
           const meta = STATUS_LABEL[b.status] ?? { label: b.status, variant: "outline" as const };
           // B-20：分三档进度，每档独立条 — "标注中"(已动工含 in_progress) / "送审" / "审核通过"。
           // 旧版只用 completed/total 计算，导致 reviewer 没批复前进度永远 0%，且与后端三态语义脱节。
@@ -218,21 +226,7 @@ export function MyBatchesCard() {
               key={b.batch_id}
               type="button"
               onClick={() => navigate(annotateUrl)}
-              style={{
-                display: "flex",
-                width: "100%",
-                padding: "10px 16px",
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                textAlign: "left",
-                fontFamily: "inherit",
-                color: "inherit",
-                borderTop: idx === 0 ? "none" : "1px solid var(--color-border-subtle, var(--color-border))",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-              }}
+              className={styles.batchRow}
             >
               {canSelect && (
                 <input
@@ -241,15 +235,15 @@ export function MyBatchesCard() {
                   onClick={(e) => e.stopPropagation()}
                   onChange={() => toggleSelected(b.batch_id)}
                   title="选中以批量提交质检"
-                  style={{ flex: "0 0 auto", cursor: "pointer", margin: 0 }}
+                  className={styles.batchCheckbox}
                 />
               )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{b.batch_name}</span>
+              <div className={styles.rowMain}>
+                <div className={styles.rowTitleLine}>
+                  <span className={styles.batchName}>{b.batch_name}</span>
                   <Badge variant={meta.variant} dot>{meta.label}</Badge>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+                <div className={styles.rowMeta}>
                   <span className="mono">{b.batch_display_id}</span>
                   <span> · {b.project_name}</span>
                   <span> · 共 {b.total_tasks} 任务</span>
@@ -268,7 +262,7 @@ export function MyBatchesCard() {
                   total={b.total_tasks}
                 />
                 {b.reviewer && (
-                  <div style={{ marginTop: 6 }}>
+                  <div className={styles.avatarStackWrap}>
                     <AssigneeAvatarStack
                       users={[b.reviewer]}
                       label="审核员"
@@ -278,24 +272,16 @@ export function MyBatchesCard() {
                 )}
                 {b.status === "rejected" && b.review_feedback && (
                   <div
-                    style={{
-                      marginTop: 6,
-                      padding: "4px 8px",
-                      background: "color-mix(in oklab, var(--color-danger) 8%, transparent)",
-                      borderLeft: "2px solid var(--color-danger)",
-                      fontSize: 11,
-                      color: "var(--color-fg-muted)",
-                      maxWidth: 600,
-                    }}
+                    className={styles.reviewFeedback}
                     title={b.review_feedback}
                   >
-                    <strong style={{ color: "var(--color-danger)" }}>驳回原因：</strong>
+                    <strong className={styles.reviewFeedbackLabel}>驳回原因：</strong>
                     {b.review_feedback.length > 100 ? b.review_feedback.slice(0, 100) + "..." : b.review_feedback}
                   </div>
                 )}
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
+              <div className={styles.rowActions}>
                 {b.status === "annotating" && (
                   <Button
                     variant="primary"
@@ -325,6 +311,7 @@ export function MyBatchesCard() {
           );
         })}
       </div>
-    </Card>
+      </Card>
+    </div>
   );
 }

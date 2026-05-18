@@ -12,6 +12,7 @@ import { useAnnotatorStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
 import { MyBatchesCard } from "./MyBatchesCard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import styles from "./AnnotatorDashboard.module.css";
 
 function formatMs(ms: number | null | undefined): string {
   if (ms == null) return "—";
@@ -41,7 +42,7 @@ export function AnnotatorDashboard() {
 
   if (isLoading || !stats) {
     return (
-      <div style={{ padding: "60px 28px", textAlign: "center", color: "var(--color-fg-subtle)" }}>
+      <div className={styles.loading}>
         加载中...
       </div>
     );
@@ -53,11 +54,11 @@ export function AnnotatorDashboard() {
   const trendPct = stats.weekly_compare_pct ?? undefined;
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 12 }}>
+    <div className={styles.page}>
+      <div className={styles.header}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>标注工作台</h1>
-          <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>查看任务进度，高效完成标注工作</p>
+          <h1 className={styles.title}>标注工作台</h1>
+          <p className={styles.subtitle}>查看任务进度，高效完成标注工作</p>
         </div>
         <Button variant="primary" onClick={() => navigate("/annotate")}>
           <Icon name="target" size={13} />进入标注页面
@@ -66,22 +67,13 @@ export function AnnotatorDashboard() {
 
       {/* M1 · 退回待重做提示 */}
       {(stats.rejected_tasks_count ?? 0) > 0 && (
-        <div
-          style={{
-            margin: "0 0 16px",
-            padding: "12px 16px",
-            background: "color-mix(in oklab, var(--color-danger) 8%, transparent)",
-            border: "1px solid color-mix(in oklab, var(--color-danger) 30%, transparent)",
-            borderRadius: "var(--radius-md)",
-            display: "flex", alignItems: "center", gap: 12,
-          }}
-        >
-          <Icon name="warning" size={16} style={{ color: "var(--color-danger)", flexShrink: 0 }} />
-          <div style={{ flex: 1 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-danger)" }}>
+        <div className={styles.rejectedAlert}>
+          <Icon name="warning" size={16} className={styles.rejectedIcon} />
+          <div className={styles.rejectedContent}>
+            <span className={styles.rejectedTitle}>
               {stats.rejected_tasks_count} 个任务被退回，需重做
             </span>
-            <span style={{ fontSize: 12, color: "var(--color-fg-muted)", marginLeft: 8 }}>
+            <span className={styles.rejectedText}>
               请进入工作台查看退回原因并重新提交
             </span>
           </div>
@@ -93,7 +85,7 @@ export function AnnotatorDashboard() {
 
       {/* 产能 */}
       <SectionDivider label="产能" hint="完成数 / 单题耗时" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+      <div className={styles.statsGridFour}>
         <StatCard icon="flag" label="待标任务" value={stats.assigned_tasks} />
         <StatCard icon="check" label="今日完成" value={stats.today_completed} />
         <StatCard
@@ -114,7 +106,7 @@ export function AnnotatorDashboard() {
 
       {/* 质量 */}
       <SectionDivider label="质量" hint="原创比例 / 退回率 / 重审次数" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+      <div className={styles.statsGridThree}>
         <StatCard icon="sparkles" label="原创比例" value={`${stats.personal_accuracy}%`} />
         <StatCard
           icon="alert-triangle"
@@ -132,7 +124,7 @@ export function AnnotatorDashboard() {
 
       {/* 投入（依赖心跳；本期占位） */}
       <SectionDivider label="投入" hint="活跃时长 / 连续天数（待心跳上线）" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+      <div className={styles.statsGridThree}>
         <StatCard
           icon="clock"
           label="今日活跃时长"
@@ -149,33 +141,35 @@ export function AnnotatorDashboard() {
       </div>
 
       {/* v0.8.5 · 24-bar 当日专注时段分布 */}
-      <Card style={{ marginTop: 16 }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>今日专注时段分布</h3>
-          <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--color-fg-subtle)" }}>
+      <div className={styles.cardStack}>
+        <Card>
+        <div className={styles.cardHeaderPlain}>
+          <h3 className={styles.cardTitle}>今日专注时段分布</h3>
+          <p className={styles.cardHint}>
             按小时聚合的标注分钟数（0-23 时）
           </p>
         </div>
-        <div style={{ padding: "20px 16px" }}>
+        <div className={styles.cardBody}>
           <Histogram
             values={stats.hour_buckets ?? Array(24).fill(0)}
             height={80}
             xLabels={["00:00", ...Array(22).fill(""), "23:00"]}
           />
         </div>
-      </Card>
+        </Card>
+      </div>
 
-      <div style={{ height: 16 }} />
+      <div className={styles.gap} />
       <MyBatchesCard />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12, marginTop: 16 }}>
+      <div className={styles.analyticsGrid}>
         <Card>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>近 7 天标注趋势</h3>
+          <div className={styles.cardHeaderPlain}>
+            <h3 className={styles.cardTitle}>近 7 天标注趋势</h3>
           </div>
-          <div style={{ padding: "20px 16px" }}>
+          <div className={styles.cardBody}>
             <Sparkline values={stats.daily_counts} color="var(--color-accent)" width={480} height={80} />
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 11, color: "var(--color-fg-subtle)" }}>
+            <div className={styles.sparklineLabels}>
               <span>7 天前</span>
               <span>今天</span>
             </div>
@@ -183,11 +177,11 @@ export function AnnotatorDashboard() {
         </Card>
 
         <Card>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>本周目标进度</h3>
+          <div className={styles.cardHeaderPlain}>
+            <h3 className={styles.cardTitle}>本周目标进度</h3>
           </div>
-          <div style={{ padding: 20, textAlign: "center" }}>
-            <div style={{ position: "relative", width: 120, height: 120, margin: "0 auto 16px" }}>
+          <div className={styles.goalBody}>
+            <div className={styles.goalChart}>
               <svg viewBox="0 0 120 120" width={120} height={120}>
                 <circle cx="60" cy="60" r="52" fill="none" stroke="var(--color-border)" strokeWidth="8" />
                 <circle
@@ -198,46 +192,36 @@ export function AnnotatorDashboard() {
                   transform="rotate(-90 60 60)"
                 />
               </svg>
-              <div style={{
-                position: "absolute", inset: 0,
-                display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center",
-              }}>
-                <span style={{ fontSize: 22, fontWeight: 600 }}>{weeklyPct}%</span>
-                <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>完成率</span>
+              <div className={styles.goalCenter}>
+                <span className={styles.goalPct}>{weeklyPct}%</span>
+                <span className={styles.goalLabel}>完成率</span>
               </div>
             </div>
-            <div style={{ fontSize: 13, color: "var(--color-fg-muted)" }}>
+            <div className={styles.goalMeta}>
               {stats.weekly_completed} / {weeklyTarget} 个标注
             </div>
           </div>
         </Card>
       </div>
 
-      <Card style={{ marginTop: 16 }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>我的项目</h3>
-          <span style={{ fontSize: 12, color: "var(--color-fg-subtle)" }}>共 {sortedProjects.length} 个</span>
+      <div className={styles.cardStack}>
+        <Card>
+        <div className={styles.cardHeaderSplit}>
+          <h3 className={styles.cardTitle}>我的项目</h3>
+          <span className={styles.cardCount}>共 {sortedProjects.length} 个</span>
         </div>
         {noProjects ? (
-          <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
-            <Icon name="folder" size={28} style={{ opacity: 0.25, marginBottom: 8 }} />
+          <div className={styles.emptyState}>
+            <Icon name="folder" size={28} className={styles.emptyIcon} />
             <div>暂无分配项目</div>
-            <div style={{ fontSize: 11.5, marginTop: 4 }}>请联系项目管理员将你加入项目成员</div>
+            <div className={styles.emptyHint}>请联系项目管理员将你加入项目成员</div>
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+          <table className={styles.table}>
             <thead>
               <tr>
                 {["项目", "类型", "进度", "待标", ""].map((h, i) => (
-                  <th key={i} style={{
-                    textAlign: "left", fontWeight: 500, fontSize: 12,
-                    color: "var(--color-fg-muted)", padding: "10px 12px",
-                    borderBottom: "1px solid var(--color-border)",
-                    background: "var(--color-bg-sunken)",
-                    ...(i === 0 ? { paddingLeft: 16 } : {}),
-                    ...(i === 4 ? { paddingRight: 16 } : {}),
-                  }}>{h}</th>
+                  <th key={i}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -248,25 +232,27 @@ export function AnnotatorDashboard() {
                 return (
                   <tr
                     key={p.id}
-                    style={{ cursor: "pointer" }}
+                    className={styles.clickableRow}
                     onClick={() => openWorkbench(p.id)}
                   >
-                    <td style={{ padding: "10px 12px 10px 16px", borderBottom: "1px solid var(--color-border)" }}>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>{p.name}</div>
-                      <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                    <td>
+                      <div className={styles.projectName}>{p.name}</div>
+                      <div className={styles.projectId}>
                         <span className="mono">{p.display_id}</span>
                       </div>
                     </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", color: "var(--color-fg-muted)", fontSize: 12 }}>
+                    <td className={styles.mutedCell}>
                       {p.type_label}
                     </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", fontSize: 12, color: "var(--color-fg-muted)" }}>
+                    <td className={styles.mutedCell}>
                       {p.completed_tasks ?? 0} / {p.total_tasks ?? 0} <span className="mono">({pct}%)</span>
                     </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)" }}>
-                      <Badge variant={remaining > 0 ? "accent" : "outline"} style={{ fontSize: 11 }}>{remaining}</Badge>
+                    <td>
+                      <span className={styles.smallBadge}>
+                        <Badge variant={remaining > 0 ? "accent" : "outline"}>{remaining}</Badge>
+                      </span>
                     </td>
-                    <td style={{ padding: "10px 16px 10px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right" }}>
+                    <td className={styles.actionCell}>
                       <Button
                         size="sm"
                         variant="primary"
@@ -281,7 +267,8 @@ export function AnnotatorDashboard() {
             </tbody>
           </table>
         )}
-      </Card>
+        </Card>
+      </div>
 
     </div>
   );
