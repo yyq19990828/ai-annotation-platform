@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import type { PreannotateProjectSummary } from "@/api/adminPreannotate";
-import { FS_XS, FS_SM } from "../styles";
+import styles from "./ProjectCardGrid.module.css";
 
 interface Props {
   items: PreannotateProjectSummary[];
@@ -21,7 +21,7 @@ export function ProjectCardGrid({ items, isLoading, onSelect }: Props) {
   if (isLoading) {
     return (
       <Card>
-        <div style={{ padding: 24, textAlign: "center", color: "var(--color-fg-muted)", fontSize: FS_SM }}>
+        <div className={styles.loadingState}>
           加载项目列表…
         </div>
       </Card>
@@ -33,13 +33,7 @@ export function ProjectCardGrid({ items, isLoading, onSelect }: Props) {
   }
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-        gap: 12,
-      }}
-    >
+    <div className={styles.grid}>
       {items.map((it) => (
         <ProjectCard key={it.project_id} item={it} onClick={() => onSelect(it.project_id)} />
       ))}
@@ -54,83 +48,43 @@ function ProjectCard({
   item: PreannotateProjectSummary;
   onClick: () => void;
 }) {
-  const stateColor =
-    item.ml_backend_state === "ready"
-      ? "var(--color-success)"
-      : item.ml_backend_state === "mismatch"
-        ? "var(--color-warning)"
-        : "var(--color-fg-subtle)";
-
   return (
     <button
       type="button"
       onClick={onClick}
-      style={{
-        textAlign: "left",
-        cursor: "pointer",
-        padding: 14,
-        background: "var(--color-bg-elev)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        fontFamily: "inherit",
-        transition: "border-color 120ms ease",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = "var(--color-accent)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = "var(--color-border)";
-      }}
+      className={styles.projectCard}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
+      <div className={styles.cardTopRow}>
+        <div className={styles.cardTitleBlock}>
           <div
-            style={{
-              fontSize: FS_SM,
-              fontWeight: 600,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
+            className={styles.projectName}
             title={item.project_name}
           >
             {item.project_name}
           </div>
-          <div style={{ fontSize: FS_XS, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+          <div className={styles.projectMeta}>
             {item.project_display_id ?? "—"} · {item.type_key}
           </div>
         </div>
         <Icon name="chevRight" size={14} />
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <div className={styles.backendRow}>
         <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            fontSize: FS_XS,
-            padding: "2px 8px",
-            borderRadius: 999,
-            background: "var(--color-bg-sunken)",
-            color: stateColor,
-          }}
+          className={`${styles.backendChip} ${backendStateClass(item.ml_backend_state)}`}
         >
           <Icon name="bot" size={10} />
           {item.ml_backend_name ?? "(未绑定)"}
           {item.ml_backend_state && ` · ${item.ml_backend_state}`}
         </span>
         {item.ml_backend_max_concurrency != null && (
-          <span style={{ fontSize: FS_XS, color: "var(--color-fg-muted)" }}>
+          <span className={styles.concurrencyText}>
             最多 {item.ml_backend_max_concurrency} 并发
           </span>
         )}
       </div>
 
-      <div style={{ display: "flex", gap: 14, fontSize: FS_XS }}>
+      <div className={styles.statsRow}>
         <BadgeStat label="可预标" value={item.active_batches} variant={item.active_batches > 0 ? "ai" : "muted"} />
         <BadgeStat label="已就绪" value={item.ready_batches} variant={item.ready_batches > 0 ? "success" : "muted"} />
         <BadgeStat
@@ -141,7 +95,7 @@ function ProjectCard({
       </div>
 
       {item.last_job_at && (
-        <div style={{ fontSize: FS_XS, color: "var(--color-fg-muted)" }}>
+        <div className={styles.lastJobText}>
           最近 job · {formatRelative(item.last_job_at)}
         </div>
       )}
@@ -159,10 +113,10 @@ function BadgeStat({
   variant: "ai" | "success" | "danger" | "muted";
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <span style={{ color: "var(--color-fg-subtle)" }}>{label}</span>
+    <div className={styles.stat}>
+      <span className={styles.statLabel}>{label}</span>
       {variant === "muted" ? (
-        <span style={{ fontVariantNumeric: "tabular-nums", color: "var(--color-fg-subtle)" }}>{value}</span>
+        <span className={styles.mutedStatValue}>{value}</span>
       ) : (
         <Badge variant={variant === "ai" ? "ai" : variant === "success" ? "success" : "danger"}>
           {value}
@@ -175,22 +129,12 @@ function BadgeStat({
 function EmptyState() {
   return (
     <Card>
-      <div
-        style={{
-          padding: "32px 16px",
-          textAlign: "center",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 8,
-          color: "var(--color-fg-subtle)",
-        }}
-      >
+      <div className={styles.emptyState}>
         <Icon name="bot" size={28} />
-        <div style={{ fontSize: FS_SM, color: "var(--color-fg-muted)" }}>
+        <div className={styles.emptyTitle}>
           暂无接入 ML backend 的项目
         </div>
-        <div style={{ fontSize: FS_XS }}>
+        <div className={styles.emptyHint}>
           先在「模式市场」注册 backend 或在项目设置中绑定一个 backend，再回到这里跑预标。
         </div>
       </div>
@@ -206,4 +150,10 @@ function formatRelative(iso: string): string {
   if (sec < 3600) return `${Math.round(sec / 60)} 分钟前`;
   if (sec < 86400) return `${Math.round(sec / 3600)} 小时前`;
   return d.toLocaleDateString("zh-CN");
+}
+
+function backendStateClass(state: PreannotateProjectSummary["ml_backend_state"]): string {
+  if (state === "ready") return styles.backendReady;
+  if (state === "mismatch") return styles.backendMismatch;
+  return styles.backendDefault;
 }

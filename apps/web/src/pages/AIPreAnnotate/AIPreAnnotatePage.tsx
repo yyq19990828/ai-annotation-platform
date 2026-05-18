@@ -19,17 +19,11 @@ import { useMemo, useState } from "react";
 import { ProjectCardGrid } from "./components/ProjectCardGrid";
 import { ProjectDetailPanel } from "./components/ProjectDetailPanel";
 import { useAIPreProjectSummary } from "@/hooks/useBulkPreannotateActions";
-import {
-  PAGE_PADDING_X,
-  PAGE_PADDING_Y,
-  SECTION_GAP,
-  FS_SM,
-  FS_XL,
-} from "./styles";
+import styles from "./AIPreAnnotatePage.module.css";
 
 export default function AIPreAnnotatePage() {
   const summaryQ = useAIPreProjectSummary();
-  const items = summaryQ.data?.items ?? [];
+  const items = useMemo(() => summaryQ.data?.items ?? [], [summaryQ.data?.items]);
 
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
@@ -39,17 +33,10 @@ export default function AIPreAnnotatePage() {
   );
 
   return (
-    <div
-      style={{
-        padding: `${PAGE_PADDING_Y}px ${PAGE_PADDING_X}px`,
-        display: "flex",
-        flexDirection: "column",
-        gap: SECTION_GAP,
-      }}
-    >
+    <div className={styles.page}>
       <header>
-        <h1 style={{ fontSize: FS_XL, fontWeight: 600, margin: 0 }}>AI 文本批量预标</h1>
-        <p style={{ fontSize: FS_SM, color: "var(--color-fg-muted)", marginTop: 4 }}>
+        <h1 className={styles.title}>AI 文本批量预标</h1>
+        <p className={styles.subtitle}>
           先选项目（仅展示已绑定 ML backend 的项目），再多选批次跑预标。跑完后批次自动转 pre_annotated 等待人工接管。
         </p>
       </header>

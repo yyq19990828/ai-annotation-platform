@@ -5,7 +5,7 @@
 import { Card } from "@/components/ui/Card";
 import { TabRow } from "@/components/ui/TabRow";
 import type { TextOutputMode } from "@/hooks/usePreannotation";
-import { cardBodyStyle, cardHeaderStyle, labelStyle, helperTextStyle } from "../styles";
+import styles from "./OutputModeSelector.module.css";
 
 const OUTPUT_MODE_LABELS: Record<TextOutputMode, string> = {
   box: "□ 框",
@@ -35,12 +35,12 @@ interface Props {
 export function OutputModeSelector({ anchorId, stepBadge, outputMode, onChange }: Props) {
   return (
     <Card>
-      <div id={anchorId} style={{ ...cardHeaderStyle, scrollMarginTop: 80 }}>
+      <div id={anchorId} className={styles.cardHeader}>
         <span>{stepBadge} · 输出形态</span>
       </div>
-      <div style={cardBodyStyle}>
+      <div className={styles.cardBody}>
         <div>
-          <label style={labelStyle}>输出形态</label>
+          <label className={styles.label}>输出形态</label>
           <TabRow
             tabs={OUTPUT_MODE_TABS}
             active={OUTPUT_MODE_LABELS[outputMode]}
@@ -49,7 +49,7 @@ export function OutputModeSelector({ anchorId, stepBadge, outputMode, onChange }
               if (m) onChange(m);
             }}
           />
-          <div style={helperTextStyle}>{DESCRIPTIONS[outputMode]}</div>
+          <div className={styles.helperText}>{DESCRIPTIONS[outputMode]}</div>
         </div>
       </div>
     </Card>

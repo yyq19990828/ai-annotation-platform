@@ -7,14 +7,7 @@
 
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import {
-  cardBodyStyle,
-  cardHeaderStyle,
-  labelStyle,
-  selectStyle,
-  helperTextStyle,
-  FS_XS,
-} from "../styles";
+import styles from "./ProjectBatchPicker.module.css";
 
 interface ProjectOption {
   id: string;
@@ -64,16 +57,16 @@ export function ProjectBatchPicker({
 }: Props) {
   return (
     <Card>
-      <div id={anchorId} style={{ ...cardHeaderStyle, scrollMarginTop: 80 }}>
+      <div id={anchorId} className={styles.cardHeader}>
         <span>{stepBadge} · 项目与批次</span>
       </div>
-      <div style={cardBodyStyle}>
+      <div className={styles.cardBody}>
         <div>
-          <label style={labelStyle}>项目（仅显示已启用 AI）</label>
+          <label className={styles.label}>项目（仅显示已启用 AI）</label>
           <select
             value={projectId}
             onChange={(e) => onProjectChange(e.target.value)}
-            style={selectStyle}
+            className={styles.select}
             disabled={projectsLoading}
           >
             <option value="">-- 请选择 --</option>
@@ -84,40 +77,33 @@ export function ProjectBatchPicker({
             ))}
           </select>
           {projects.length === 0 && !projectsLoading && (
-            <div style={helperTextStyle}>暂无已启用 AI 的项目，先到项目设置开启。</div>
+            <div className={styles.helperText}>暂无已启用 AI 的项目，先到项目设置开启。</div>
           )}
         </div>
 
         {projectId && (
           <div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 6,
-              }}
-            >
-              <label style={{ ...labelStyle, marginBottom: 0 }}>批次（active 状态可预标）</label>
+            <div className={styles.batchHeader}>
+              <label className={`${styles.label} ${styles.batchLabel}`}>批次（active 状态可预标）</label>
               {boundBackend ? (
-                <Badge variant="success" style={{ fontSize: FS_XS }}>
-                  backend: {boundBackend.name}
-                </Badge>
+                <span className={styles.backendBadge}>
+                  <Badge variant="success">backend: {boundBackend.name}</Badge>
+                </span>
               ) : (
-                <Badge variant="danger" style={{ fontSize: FS_XS }}>
-                  未绑定 ML Backend，请到项目设置配置
-                </Badge>
+                <span className={styles.backendBadge}>
+                  <Badge variant="danger">未绑定 ML Backend，请到项目设置配置</Badge>
+                </span>
               )}
             </div>
             {batches.length === 0 ? (
-              <div style={{ ...helperTextStyle, padding: 8 }}>
+              <div className={styles.emptyBatchHint}>
                 本项目暂无 active 批次（draft → active 转换后可见）
               </div>
             ) : (
               <select
                 value={batchId}
                 onChange={(e) => onBatchChange(e.target.value)}
-                style={selectStyle}
+                className={styles.select}
               >
                 <option value="">-- 请选择 --</option>
                 {batches.map((b) => (

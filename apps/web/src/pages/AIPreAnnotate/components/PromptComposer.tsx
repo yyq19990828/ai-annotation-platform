@@ -13,18 +13,8 @@ import { useMemo, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
-import {
-  cardBodyStyle,
-  cardHeaderStyle,
-  labelStyle,
-  selectStyle,
-  helperTextStyle,
-  aliasChipStyle,
-  aliasChipActiveStyle,
-  CHIPS_MAX_HEIGHT,
-  CHIPS_SHOW_SEARCH_THRESHOLD,
-  FS_XS,
-} from "../styles";
+import { CHIPS_SHOW_SEARCH_THRESHOLD } from "../styles";
+import styles from "./PromptComposer.module.css";
 
 export interface AliasEntry {
   name: string;
@@ -118,46 +108,30 @@ export function PromptComposer({
 
   return (
     <Card>
-      <div id={anchorId} style={{ ...cardHeaderStyle, scrollMarginTop: 80 }}>
+      <div id={anchorId} className={styles.cardHeader}>
         <span>{stepBadge} · Prompt</span>
-        <span style={{ fontSize: FS_XS, color: "var(--color-fg-subtle)", fontWeight: 400 }}>
+        <span className={styles.shortcutHint}>
           ⌘/Ctrl + Enter 跑预标
         </span>
       </div>
-      <div style={cardBodyStyle}>
+      <div className={styles.cardBody}>
         {aliases.length > 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span style={{ fontSize: FS_XS, color: "var(--color-fg-subtle)" }}>
+          <div className={styles.aliasSection}>
+            <div className={styles.aliasToolbar}>
+              <span className={styles.aliasSummary}>
                 类别 alias 切换添加 / 移除 ({promptTokenSet.size}/{aliases.length})·按预标频率排序：
               </span>
               <button
                 type="button"
                 onClick={selectAll}
-                style={{
-                  padding: "1px 6px",
-                  fontSize: 10,
-                  background: "var(--color-bg-sunken)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-sm)",
-                  color: "var(--color-fg-muted)",
-                  cursor: "pointer",
-                }}
+                className={styles.toolbarButton}
               >
                 全选
               </button>
               <button
                 type="button"
                 onClick={clearAll}
-                style={{
-                  padding: "1px 6px",
-                  fontSize: 10,
-                  background: "var(--color-bg-sunken)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-sm)",
-                  color: "var(--color-fg-muted)",
-                  cursor: "pointer",
-                }}
+                className={styles.toolbarButton}
               >
                 清空
               </button>
@@ -167,30 +141,11 @@ export function PromptComposer({
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   placeholder="筛选 alias..."
-                  style={{
-                    flex: 1,
-                    minWidth: 140,
-                    padding: "2px 8px",
-                    fontSize: FS_XS,
-                    background: "var(--color-bg-sunken)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "var(--radius-sm)",
-                    color: "var(--color-fg)",
-                    outline: "none",
-                  }}
+                  className={styles.aliasFilter}
                 />
               )}
             </div>
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 6,
-                maxHeight: CHIPS_MAX_HEIGHT,
-                overflowY: "auto",
-                padding: "2px 0",
-              }}
-            >
+            <div className={styles.aliasChips}>
               {filteredAliases.map((a) => {
                 const isActive = promptTokenSet.has(a.alias.toLowerCase());
                 return (
@@ -198,21 +153,15 @@ export function PromptComposer({
                     key={a.name}
                     type="button"
                     onClick={() => toggleAlias(a.alias)}
-                    style={isActive ? aliasChipActiveStyle : aliasChipStyle}
+                    className={`${styles.aliasChip} ${isActive ? styles.aliasChipActive : ""}`}
                     title={`${isActive ? "移除" : "添加"} 类别「${a.name}」的 alias${a.count > 0 ? ` · 历史预标 ${a.count} 次` : ""}`}
                   >
                     <span>{isActive ? "✓ " : ""}{a.alias}</span>
-                    <span style={{ color: "var(--color-fg-subtle)", fontSize: 10 }}>
+                    <span className={styles.aliasName}>
                       ({a.name})
                     </span>
                     {a.count > 0 && (
-                      <span
-                        style={{
-                          fontSize: 9,
-                          color: "var(--color-ai)",
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
+                      <span className={styles.aliasCount}>
                         ×{a.count}
                       </span>
                     )}
@@ -220,7 +169,7 @@ export function PromptComposer({
                 );
               })}
               {filteredAliases.length === 0 && (
-                <span style={{ ...helperTextStyle, marginTop: 0 }}>
+                <span className={styles.emptyFilter}>
                   无匹配 alias（当前筛选：{filter}）
                 </span>
               )}
@@ -228,24 +177,12 @@ export function PromptComposer({
           </div>
         ) : (
           hasAnyClassConfigured && (
-            <div
-              style={{
-                padding: "10px 12px",
-                background: "var(--color-bg-sunken)",
-                border: "1px dashed var(--color-border)",
-                borderRadius: "var(--radius-sm)",
-                fontSize: FS_XS,
-                color: "var(--color-fg-muted)",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
+            <div className={styles.aliasEmptyCard}>
               <Icon name="info" size={12} />
               <span>本项目类别尚未配置英文 alias。</span>
               <Link
                 to={`/projects/${projectId}/settings#class-config`}
-                style={{ color: "var(--color-ai)", textDecoration: "none" }}
+                className={styles.settingsLink}
               >
                 前往项目设置 →
               </Link>
@@ -254,17 +191,17 @@ export function PromptComposer({
         )}
 
         <div>
-          <label style={labelStyle}>Prompt（英文召回最佳）</label>
+          <label className={styles.label}>Prompt（英文召回最佳）</label>
           <input
             type="text"
             value={prompt}
             onChange={(e) => onPromptChange(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="e.g. person, car, ripe apple"
-            style={selectStyle}
+            className={styles.promptInput}
             autoFocus
           />
-          <div style={helperTextStyle}>
+          <div className={styles.helperText}>
             项目当前 DINO 阈值：box={boxThreshold} / text={textThreshold}
           </div>
         </div>

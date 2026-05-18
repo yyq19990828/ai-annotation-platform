@@ -1,0 +1,130 @@
+.loadingState {
+  padding: 24px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.projectCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.projectCard:hover {
+  border-color: var(--color-accent);
+}
+
+.cardTopRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitleBlock {
+  min-width: 0;
+}
+
+.projectName {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectMeta {
+  margin-top: 2px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.backendRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.backendChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-bg-sunken);
+  font-size: 11px;
+}
+
+.backendReady {
+  color: var(--color-success);
+}
+
+.backendMismatch {
+  color: var(--color-warning);
+}
+
+.backendDefault {
+  color: var(--color-fg-subtle);
+}
+
+.concurrencyText,
+.lastJobText {
+  color: var(--color-fg-muted);
+  font-size: 11px;
+}
+
+.statsRow {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.statLabel,
+.mutedStatValue {
+  color: var(--color-fg-subtle);
+}
+
+.mutedStatValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--color-fg-subtle);
+  text-align: center;
+}
+
+.emptyTitle {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.emptyHint {
+  font-size: 11px;
+}

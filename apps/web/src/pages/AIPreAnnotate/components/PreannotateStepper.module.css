@@ -1,0 +1,93 @@
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elev);
+  box-shadow: var(--shadow-sm);
+}
+
+.stepItem {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.stepButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.stepButtonActive {
+  color: var(--color-fg);
+}
+
+.stepButtonComplete {
+  color: var(--color-fg-muted);
+}
+
+.stepButtonPending {
+  color: var(--color-fg-subtle);
+}
+
+.stepCircle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.stepCircleComplete {
+  background: var(--color-ai);
+  color: #fff;
+}
+
+.stepCircleActive {
+  border: 1.5px solid var(--color-ai);
+  background: var(--color-ai-soft);
+  color: var(--color-ai);
+}
+
+.stepCirclePending {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-subtle);
+}
+
+.stepLabel {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.stepLabelActive {
+  font-weight: 600;
+}
+
+.connector {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.connectorComplete {
+  background: var(--color-ai);
+}

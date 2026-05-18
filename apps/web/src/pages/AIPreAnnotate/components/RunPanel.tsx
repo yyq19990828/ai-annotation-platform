@@ -9,14 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Icon } from "@/components/ui/Icon";
-import {
-  cardBodyStyle,
-  cardHeaderStyle,
-  helperTextStyle,
-  FS_XS,
-  FS_HUGE,
-  FS_MD,
-} from "../styles";
+import styles from "./RunPanel.module.css";
 
 interface Progress {
   current: number;
@@ -55,16 +48,18 @@ export function RunPanel({
 
   return (
     <Card>
-      <div id={anchorId} style={{ ...cardHeaderStyle, scrollMarginTop: 80 }}>
+      <div id={anchorId} className={styles.cardHeader}>
         <span>{stepBadge} · 跑预标</span>
         {progress && (
-          <Badge variant={progress.status === "error" ? "danger" : "ai"} style={{ fontSize: 10 }}>
-            WS · {connection} · {progress.status}
-          </Badge>
+          <span className={styles.wsBadge}>
+            <Badge variant={progress.status === "error" ? "danger" : "ai"}>
+              WS · {connection} · {progress.status}
+            </Badge>
+          </span>
         )}
       </div>
-      <div style={cardBodyStyle}>
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div className={styles.cardBody}>
+        <div className={styles.actionRow}>
           <Button variant="ai" disabled={!canRun} onClick={onRun}>
             <Icon name={isPending || isRunning ? "loader2" : "wandSparkles"} size={14} className={isPending || isRunning ? "spin" : undefined} />{" "}
             {isPending ? "排队中…" : isRunning ? "推理中…" : "跑预标"}
@@ -72,21 +67,17 @@ export function RunPanel({
         </div>
 
         {progress && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-              <span style={{ fontSize: FS_MD, fontWeight: 600 }}>批次进度</span>
+          <div className={styles.progressStack}>
+            <div className={styles.progressSummary}>
+              <span className={styles.progressLabel}>批次进度</span>
               <span
-                style={{
-                  fontSize: FS_HUGE,
-                  fontWeight: 700,
-                  color: progress.status === "error" ? "var(--color-danger)" : "var(--color-ai)",
-                  fontVariantNumeric: "tabular-nums",
-                  lineHeight: 1,
-                }}
+                className={`${styles.progressPct} ${
+                  progress.status === "error" ? styles.progressPctError : styles.progressPctAi
+                }`}
               >
                 {pct}%
               </span>
-              <span style={{ ...helperTextStyle, marginTop: 0 }}>
+              <span className={styles.progressMeta}>
                 {progress.current} / {progress.total} 张
               </span>
             </div>
@@ -94,31 +85,14 @@ export function RunPanel({
             <ProgressBar value={pct} color="var(--color-ai)" />
 
             {progress.error && (
-              <div style={{ fontSize: FS_XS, color: "var(--color-danger)" }}>
+              <div className={styles.errorText}>
                 {progress.error}
               </div>
             )}
 
             {progress.status === "completed" && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  flexWrap: "wrap",
-                  paddingTop: 4,
-                }}
-              >
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: FS_MD,
-                    color: "var(--color-success)",
-                    fontWeight: 600,
-                  }}
-                >
+              <div className={styles.completedRow}>
+                <span className={styles.completedText}>
                   <Icon name="check" size={14} /> 已跑完，批次状态已转为 pre_annotated
                 </span>
                 <Button variant="ai" onClick={onOpenWorkbench}>
