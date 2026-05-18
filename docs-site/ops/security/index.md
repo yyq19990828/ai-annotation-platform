@@ -237,20 +237,20 @@ CREATE TRIGGER trg_audit_log_no_delete BEFORE DELETE ON audit_logs ...
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Content-Security-Policy` | 见下文 |
 
-**CSP 当前为「宽松基线版」**：
+**CSP 当前为 nonce 收紧版**：
 
 ```
 default-src 'self';
 img-src 'self' data: blob: https:;
-style-src 'self' 'unsafe-inline';
-script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com;
+style-src 'self' 'nonce-$request_id';
+script-src 'self' 'nonce-$request_id' https://challenges.cloudflare.com;
 frame-src https://challenges.cloudflare.com;
 connect-src 'self' https: wss: ws:;
 font-src 'self' data:;
 object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 ```
 
-`'unsafe-inline'` 是为了兼容现有 inline style 与 vite shim；下一阶段切到 nonce-based。`https://challenges.cloudflare.com` 是 Turnstile widget 的固定来源（v0.8.7 引入 CAPTCHA 后所必需）。
+生产 HTML 由 Nginx 注入 CSP header，并通过 `sub_filter` 把 vite build 时写入的 `__CSP_NONCE__` 占位符替换成同一个 `$request_id`；API 响应路径不含 HTML，由 FastAPI middleware 使用无 nonce 的 `style-src 'self'` / `script-src 'self' https://challenges.cloudflare.com`。`https://challenges.cloudflare.com` 是 Turnstile widget 的固定来源（v0.8.7 引入 CAPTCHA 后所必需）。
 
 **新增第三方依赖时的 checklist**：
 

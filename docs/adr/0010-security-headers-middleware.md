@@ -1,7 +1,7 @@
 # ADR-0010: Production Security Headers Middleware
 
-- **Status**: Accepted (v0.9.11 update — script-src nonce 收紧已落地)
-- **Date**: 2026-05-07 (v0.9.11 update: 2026-05-09)
+- **Status**: Accepted (v0.10.12 update — script-src / style-src nonce 收紧已落地)
+- **Date**: 2026-05-07 (v0.9.11 update: 2026-05-09; v0.10.12 update: 2026-05-18)
 - **Supersedes**: —
 - **Related**: deploy.md（nginx TLS 终结）, infra/docker/nginx.conf
 
@@ -66,6 +66,9 @@ frame-ancestors 'none'
 - `connect-src` 包括 `wss:` `ws:`：notification socket 与未来 ML
   backend 直连保留弹性。
 
+v0.9.11 / v0.10.12 已分别收紧 `script-src` 与 `style-src`，上述基线保留为
+初始决策记录；当前生产策略见下方 update 段。
+
 `/metrics` 由独立 ASGI 子应用挂载（main.py），不经过本中间件——这是
 有意设计：Prometheus 内网 scrape 不需要 HSTS / CSP。
 
@@ -105,20 +108,31 @@ frame-ancestors 'none'
 - **Turnstile 兼容**：`apps/web/src/lib/turnstile.ts` 动态注入 script 时读
   `<meta name="csp-nonce">` 设 `script.nonce`。Cloudflare 域已在 `script-src`
   白名单里，nonce + 域名双因子允许。
-- **style-src 'unsafe-inline'** 仍保留：前端 ~2600 处 `<style={{}}>` 全量重构留
-  v0.10.x ProjectSettingsPage 重构同窗口做（破窗成本最低）。
+- **当时的 style-src 取舍**：v0.9.11 仍保留 `style-src 'unsafe-inline'`，
+  前端 ~2600 处 `<style={{}}>` 全量重构留到 v0.10.x 同窗口做。
 
 **为什么走 Nginx 而不是 FastAPI**：SPA 由 Nginx 直接 serve `/usr/share/nginx/html`，
 FastAPI 不出 HTML。改 Nginx 比把 SPA 移到 FastAPI route + Jinja2 模板小一个数量级
 （不用动 vite build 输出 / 静态资源路由）。代价是 nginx.conf 与 middleware 双源 CSP
 策略需要保持同步——靠注释交叉引用 + 集成测试 (test_security_headers.py 验 API 路径)。
 
+## v0.10.12 Update — style-src nonce 收紧
+
+**已落地**（2026-05-18）：
+
+- **前端前置**：`apps/web/src/**/*.tsx` 的 JSX `style=` / `<style>` 已清零，
+  `apps/web/eslint.config.js` 的 `no-restricted-syntax` guard 已覆盖全站 TSX。
+- **HTML 出站路径**：`infra/docker/nginx.conf` 的 CSP 改为
+  `style-src 'self' 'nonce-$request_id'`。`apps/web/vite-plugins/csp-nonce.ts`
+  除 `<script>` 外也给 build 后 index.html 中的 `<style>` 标签补
+  `nonce="__CSP_NONCE__"`，继续由 Nginx `sub_filter` 替换为 `$request_id`。
+- **API 响应路径**：`SecurityHeadersMiddleware` 的 CSP 改为 `style-src 'self'`。
+  API 响应不含 HTML，无合法 inline style 用例，也不需要 nonce。
+- **测试约束**：`apps/api/tests/test_security_headers.py` 断言 API CSP 全文不含
+  `'unsafe-inline'`，避免 script/style 任一 directive 回潮。
+
 ## Follow-ups
 
-1. **style-src nonce 化**（v0.10.x）：剔除 style 'unsafe-inline'。前置依赖
-   全站 ~2600 处 `style={{}}` 重构（迁 CSS modules / vanilla-extract），切入点
-   选 inline style 密度最高的 `apps/web/src/pages/Projects/sections/` 群
-   （`BatchesSection.tsx` 948 行等）。与 ProjectSettingsPage 重构同窗口。
-2. `Permissions-Policy` 头补全（camera / microphone 等）。
-3. CORS preflight 路径是否需要单独 short-circuit 跳过 SecurityHeaders？
+1. `Permissions-Policy` 头补全（camera / microphone 等）。
+2. CORS preflight 路径是否需要单独 short-circuit 跳过 SecurityHeaders？
    当前不跳过——浏览器看 OPTIONS 响应也希望带 HSTS。

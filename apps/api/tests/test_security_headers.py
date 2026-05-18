@@ -1,7 +1,7 @@
-"""v0.9.11 · SecurityHeadersMiddleware CSP 收紧验证.
+"""SecurityHeadersMiddleware CSP 收紧验证.
 
 API 响应路径 script-src 已去 'unsafe-inline' (HTML 路径走 Nginx sub_filter 注入 nonce).
-style-src 'unsafe-inline' 保留, 留 v0.10.x ProjectSettingsPage 重构同窗口收紧.
+v0.10.12 起 style-src 也去 'unsafe-inline'.
 """
 
 from __future__ import annotations
@@ -41,8 +41,8 @@ def test_csp_script_src_drops_unsafe_inline():
     assert "https://challenges.cloudflare.com" in script_src
 
 
-def test_csp_style_src_retains_unsafe_inline():
-    """v0.9.11 仅收紧 script-src; style-src 'unsafe-inline' 保留 (前端 ~2600 处内联 style 待 v0.10.x 迁移)."""
+def test_csp_style_src_drops_unsafe_inline():
+    """API 响应 CSP style-src 不再含 'unsafe-inline'."""
     client = TestClient(_build_app())
     resp = client.get("/hello")
     csp = resp.headers["content-security-policy"]
@@ -50,7 +50,16 @@ def test_csp_style_src_retains_unsafe_inline():
     assert style_idx >= 0
     style_end = csp.find(";", style_idx)
     style_src = csp[style_idx:style_end]
-    assert "'unsafe-inline'" in style_src
+    assert "'unsafe-inline'" not in style_src
+    assert style_src == "style-src 'self'"
+
+
+def test_csp_contains_no_unsafe_inline():
+    """API 响应 CSP 所有 directive 都不再放开 inline 执行."""
+    client = TestClient(_build_app())
+    resp = client.get("/hello")
+    csp = resp.headers["content-security-policy"]
+    assert "'unsafe-inline'" not in csp
 
 
 def test_other_security_headers_intact():
