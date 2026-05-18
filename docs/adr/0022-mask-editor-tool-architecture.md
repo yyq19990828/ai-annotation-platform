@@ -60,7 +60,7 @@ SAM（grounded-sam2 / sam3）的候选 mask 一直走「polygon 化 → 用户�
 
 ### A.4 UI 接入位（v0.10.7 起，分步落地）
 
-- **入口 1：SAM 候选精修**：[`stage/AIPredictionPopover.tsx`](../../apps/web/src/pages/Workbench/stage/AIPredictionPopover.tsx) 候选 polygon 旁加「精修」按钮 → MaskTool 模式，`MaskBuffer.fromPolygon(候选顶点)` 作为起点；
+- **入口 1：SAM 候选精修**：[`shell/AIInspectorPanel.tsx`](../../apps/web/src/pages/Workbench/shell/AIInspectorPanel.tsx) 内的 `AIPredictionPopover` 在候选 polygon 旁加「精修」按钮 → MaskTool 模式，`MaskBuffer.fromPolygon(候选顶点)` 作为起点；
 - **入口 2：ToolDock 独立 mask 工具**：[`shell/ToolDock.tsx`](../../apps/web/src/pages/Workbench/shell/ToolDock.tsx) 加 mask 图标 → 空白 buffer 开始画；
 - **控件**：`Shift+滚轮` 调笔刷半径（5px-200px）；`B` / `E` 切笔刷/橡皮；`Esc` 取消、`Enter` 确认转 polygon。
 
@@ -95,7 +95,7 @@ SAM（grounded-sam2 / sam3）的候选 mask 一直走「polygon 化 → 用户�
   - `apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts`（+ `.test.ts`，12 例）
   - `apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts`（+ `.test.ts`，7 例）
 - 相关 ROADMAP / ADR：
-  - `ROADMAP/2026-05-12-image-workbench-optimization.md` I11 Mask 编辑器
+  - `ROADMAP/[archived]2026-05-12-image-workbench-optimization.md` I11 Mask 编辑器
   - ADR-0013 mask-to-polygon-server-side（后端把 SAM mask 转 polygon 的服务侧决策，本文是其前端对偶面）
   - ADR-0021 polygon-lod-and-spatial-index（本文借用了 `simplifyPolygon`）
 - 后续可能演进 / 触发条件：

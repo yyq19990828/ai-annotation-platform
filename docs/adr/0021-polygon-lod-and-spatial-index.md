@@ -87,7 +87,7 @@ v0.9.x 把 polygon 接入图片工作台后，500-顶点 polygon 拖动 / 多 po
   - `apps/web/src/pages/Workbench/stage/iou-index.ts`（+ `.test.ts`）
   - `apps/web/src/pages/Workbench/stage/ImageStageShapes.tsx`（KonvaPolygon LOD + viewport 粗筛）
   - `apps/web/src/pages/Workbench/stage/ImageStage.tsx`（drag 路径增量 / 全量分流）
-- 相关 ROADMAP / ADR：`ROADMAP/2026-05-12-image-workbench-optimization.md` I2.1 / I2.2 / I2.3 / I2.4；ADR-0004 canvas-stack-konva（建立 Konva 基线决策）
+- 相关 ROADMAP / ADR：`ROADMAP/[archived]2026-05-12-image-workbench-optimization.md` I2.1 / I2.2 / I2.3 / I2.4；ADR-0004 canvas-stack-konva（建立 Konva 基线决策）
 - 后续可能演进：
   - I1 大图 tile 金字塔（v0.11+ 独立 epic）可能引入瓦片级 polygon 剪裁，与本文方案 A.3 协同；
   - 顶点视口 buffer 在极端缩放下可改 16-32px，由 useViewportTransform 提供动态值。

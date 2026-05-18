@@ -25,7 +25,7 @@ v0.9.x 时工作台只有 1 个 ML backend（grounded-sam2），SAM 工具栏把
 **走方案 A**：
 
 1. **数据模型 / API 已经按 1:N 设计**。`ml_backends.project_id` 非 unique，[apps/api/app/api/v1/ml_backends.py:54-114](../../apps/api/app/api/v1/ml_backends.py) 的 `POST` 接受同 project 多行。
-2. **运行时上限由 env 控制**。`MAX_ML_BACKENDS_PER_PROJECT` 默认 1，落地 [apps/api/app/core/config.py](../../apps/api/app/core/config.py)。超限时后端返 `409` + `detail{code:"ML_BACKEND_LIMIT_REACHED", message, limit, current}`。
+2. **运行时上限由 env 控制**。`MAX_ML_BACKENDS_PER_PROJECT` 默认 1，落地 [apps/api/app/config.py](../../apps/api/app/config.py)。超限时后端返 `409` + `detail{code:"ML_BACKEND_LIMIT_REACHED", message, limit, current}`。
 3. **`GET /projects/{id}`** 透出 `ml_backend_limit`（[apps/api/app/schemas/project.py:76](../../apps/api/app/schemas/project.py)），前端据此渲染禁用状态和文案。
 4. **工具栏改 Prompt-first**：v0.10.2 拆 `SamTool` 为四个独立工具（SmartPoint / SmartBox / TextPrompt / Exemplar），通过 `useMLCapabilities.isPromptSupported(type)` 决定置灰。用户的心智是"想怎么交互"，不是"选哪个模型"。
 5. **ProjectSettings 渲染 1:N 形态**：表格列出已绑定后端 + 配额角标 + 「注册 backend」按钮；达上限时按钮置灰并 hover 提示，强行触发（或竞态）则弹 `MlBackendLimitModal`（v0.10.3 落地，[MlBackendsSection.tsx](../../apps/web/src/pages/Projects/sections/MlBackendsSection.tsx) / [MlBackendLimitModal.tsx](../../apps/web/src/components/projects/MlBackendLimitModal.tsx)）。
@@ -53,5 +53,5 @@ v0.9.x 时工作台只有 1 个 ML backend（grounded-sam2），SAM 工具栏把
   - 前端工作台：`apps/web/src/pages/Workbench/state/useMLCapabilities.ts`、四个工具 `apps/web/src/pages/Workbench/tools/*Tool.tsx`
   - 前端设置：`apps/web/src/pages/Projects/sections/MlBackendsSection.tsx`、`apps/web/src/components/projects/MlBackendLimitModal.tsx`
 - 相关 ADR：[0020](./0020-ml-backend-capability-negotiation.md)（capability 协商协议）
-- 相关 ROADMAP：[`ROADMAP/0.10.x.md`](../../ROADMAP/0.10.x.md) §3.1 / §3.3 / §3.4
+- 相关 ROADMAP：[`ROADMAP/[archived]0.10.x.md`](../../ROADMAP/[archived]0.10.x.md) §3.1 / §3.3 / §3.4
 - 后续触发条件：v0.11+ 需要双 backend 真实并存时，新建 ADR 描述 routing 层 + fallback 策略。

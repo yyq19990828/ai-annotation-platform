@@ -1,11 +1,11 @@
 # Epic — 图片工作台 Wave β + γ 关键能力收口（v0.10.4 ~ v0.10.7）
 
 > 跨多个子版本，无单一 v-prefix。子计划见下方表格。
-> 对应 roadmap：[ROADMAP/2026-05-12-image-workbench-optimization.md](../../ROADMAP/2026-05-12-image-workbench-optimization.md)（Wave β + Wave γ 中 I11/I13/I15）。
+> 对应 roadmap：[ROADMAP/[archived]2026-05-12-image-workbench-optimization.md](../../ROADMAP/[archived]2026-05-12-image-workbench-optimization.md)（Wave β + Wave γ 中 I11/I13/I15）。
 
 ## Context
 
-`ROADMAP/2026-05-12-image-workbench-optimization.md` 写于 v0.9.40 时点（2026-05-12），之后落地 v0.9.41（Wave α）与 v0.10.0-v0.10.3（SAM 3 接入 / Capability 协商 / Prompt-first ToolDock / 1:N 后端管理 UI）。Wave β（必做：I1 大图 tile + I2 polygon LOD + I6 SAM 缓存）与 Wave γ 关键能力（I11 Mask 编辑器 / I13 Attribute 进阶 / I15 z_order 等元数据一等态）一直没动。本 epic 把它们收口到 v0.10.4-v0.10.7 四个子版本，沿用 v0.10.0-0.10.3 的 M-letter 节奏。
+`ROADMAP/[archived]2026-05-12-image-workbench-optimization.md` 写于 v0.9.40 时点（2026-05-12），之后落地 v0.9.41（Wave α）与 v0.10.0-v0.10.3（SAM 3 接入 / Capability 协商 / Prompt-first ToolDock / 1:N 后端管理 UI）。Wave β（必做：I1 大图 tile + I2 polygon LOD + I6 SAM 缓存）与 Wave γ 关键能力（I11 Mask 编辑器 / I13 Attribute 进阶 / I15 z_order 等元数据一等态）一直没动。本 epic 把它们收口到 v0.10.4-v0.10.7 四个子版本，沿用 v0.10.0-0.10.3 的 M-letter 节奏。
 
 ## 范围与子版本拆分
 

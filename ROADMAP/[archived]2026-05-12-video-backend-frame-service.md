@@ -2,7 +2,7 @@
 
 > 状态：**进行中**。B1/B2/B3/B4/B6/B7 第一版已落地，B5 tracker job 壳、adapter/worker MVP、SAM video 协议桥与 GPU 分窗已分别在 v0.9.32 / v0.9.34 / v0.9.36 落地，chunk smart-copy 与诊断字段已在 v0.9.38 落地。当前剩余重点是：真实 SAM video backend、长视频 timetable compact / sparse、segment 导出聚合，以及视频专属导出 / 质量评估的后端底座。
 >
-> 本 epic 承载前端 [`2026-05-12-video-workbench-rendering-optimization.md`](2026-05-12-video-workbench-rendering-optimization.md) 中 R5.3 / R10 / R11 / R20 / R21 / R22 / R24 的服务端依赖。后端仍属 FastAPI + Celery + PostgreSQL + MinIO/S3 现有栈，**不引入独立 video service**。
+> 本 epic 承载前端 [`[archived]2026-05-12-video-workbench-rendering-optimization.md`]([archived]2026-05-12-video-workbench-rendering-optimization.md) 中 R5.3 / R10 / R11 / R20 / R21 / R22 / R24 的服务端依赖。后端仍属 FastAPI + Celery + PostgreSQL + MinIO/S3 现有栈，**不引入独立 video service**。
 
 ---
 
@@ -192,7 +192,7 @@ Wave 6 · 质量评估
 
 ## 7. 关联 Roadmap
 
-- [`2026-05-12-video-workbench-rendering-optimization.md`](2026-05-12-video-workbench-rendering-optimization.md)：前端 R5.3 / R10 / R11 / R20 / R21 / R22 / R24。
-- [`2026-05-12-image-workbench-optimization.md`](2026-05-12-image-workbench-optimization.md)：viewport / minimap / bitmap cache 的共享设计来源。
-- [`0.10.x.md`](0.10.x.md)：SAM 3 backend、tracker registry、模型并存窗口。
+- [`[archived]2026-05-12-video-workbench-rendering-optimization.md`]([archived]2026-05-12-video-workbench-rendering-optimization.md)：前端 R5.3 / R10 / R11 / R20 / R21 / R22 / R24。
+- [`[archived]2026-05-12-image-workbench-optimization.md`]([archived]2026-05-12-image-workbench-optimization.md)：viewport / minimap / bitmap cache 的共享设计来源。
+- [`[archived]0.10.x.md`]([archived]0.10.x.md)：SAM 3 backend、tracker registry、模型并存窗口。
 - [`2026-05-12-long-term-strategy.md`](2026-05-12-long-term-strategy.md)：L15 标注质量 AI 审计与 Track 级质量评估。

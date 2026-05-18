@@ -1,9 +1,9 @@
 # ~~0.9.x 收尾三版规划（v0.9.13 / v0.9.14 / v0.9.15）~~ ✅ ARCHIVED
 
-> **已归档（2026-05-11）**：v0.9.13 / v0.9.14 / v0.9.15 全部落地，0.9.x 生命周期结束。下一阶段见 [0.10.x.md](0.10.x.md)。
+> **已归档（2026-05-11）**：v0.9.13 / v0.9.14 / v0.9.15 全部落地，0.9.x 生命周期结束。下一阶段见 [[archived]0.10.x.md]([archived]0.10.x.md)。
 >
 > 元计划。**不是**单版 plan，每版动手前再单独写 `2026-mm-dd-vx.y.z-<codename>.md`。
-> 父引用：[ROADMAP.md](../ROADMAP.md) · [0.10.x.md](0.10.x.md)
+> 父引用：[ROADMAP.md](../ROADMAP.md) · [[archived]0.10.x.md]([archived]0.10.x.md)
 
 ## Context
 
@@ -57,7 +57,7 @@ v0.9.12 (Humming Roaming Oasis) 收完 `/ai-pre` IA 重构 + B-14~B-17 BUG 反�
 
 **验证**：① ADR-0008 用例矩阵全绿（admin_locked 阻断 scheduler / unlock 后正常推进 / bulk-approve 不绕过 admin-locked / in_progress task 复位释放锁）；② 端到端：admin 锁批次 → 标注员页面看到禁用提示 → unlock 后正常进入；③ bulk reject 必填 reason 校验生效, 审计日志记录 reason；④ 测试覆盖率不掉（仍 ≥ 30%）。
 
-**v0.9.15 落地后新发现**：① batch admin-lock 实施为 soft hold（不是 hard pause），locked batch 任务仍可见（GET /tasks 未过滤），当前够用；② bulk-approve/reject 权限收紧在 reviewer 级（非 owner-only），后端已实施，前端操作栏暂仅 owner 可见（实用够）；③ `TestAdminLock` 测试跑 `test_reporter_reopen_notifies_assignee` 时在全套执行时有概率 "Event loop is closed" 失败（pre-existing flakiness，与本版改动无关，单独跑无问题）；④ `test_scheduler.py` Phase 1 门控 19 cases 全绿，确认了新测试在「改动前」就能通过（正确基线），Phase 2 改动后仍保持全绿。→ [plan](../docs/plans/roadmap-md-roadmap-0-9-y-md-0-9-15-sorted-mountain.md).
+**v0.9.15 落地后新发现**：① batch admin-lock 实施为 soft hold（不是 hard pause），locked batch 任务仍可见（GET /tasks 未过滤），当前够用；② bulk-approve/reject 权限收紧在 reviewer 级（非 owner-only），后端已实施，前端操作栏暂仅 owner 可见（实用够）；③ `TestAdminLock` 测试跑 `test_reporter_reopen_notifies_assignee` 时在全套执行时有概率 "Event loop is closed" 失败（pre-existing flakiness，与本版改动无关，单独跑无问题）；④ `test_scheduler.py` Phase 1 门控 19 cases 全绿，确认了新测试在「改动前」就能通过（正确基线），Phase 2 改动后仍保持全绿。→ [plan](../docs/plans/2026-05-11-v0.9.15-sorted-mountain.md).
 
 ---
 
@@ -72,11 +72,11 @@ v0.9.12 (Humming Roaming Oasis) 收完 `/ai-pre` IA 重构 + B-14~B-17 BUG 反�
 
 - ROADMAP `## A · 代码观察到的硬占位` / `## B · 架构 & 治理向前演进` / 优先级表对应行删除已落项, 在每版 plan 后写 1 段「落地后新发现」（约定 #3 in §「优化建议 / 文档维护备忘」）
 - v0.9.x changelog 段（暂存 root CHANGELOG）整体迁回 `docs/changelogs/0.9.x.md`（开 v0.10 时该做）
-- 立即开 v0.10.0 plan：`2026-mm-dd-v0.10.0-<codename>.md`，参照 `ROADMAP/0.10.x.md` M0
+- 立即开 v0.10.0 plan：`2026-mm-dd-v0.10.0-<codename>.md`，参照 `ROADMAP/[archived]0.10.x.md` M0
 
 ## 不在本元计划范围
 
-- v0.10.x sam3-backend M0~M3（独立 epic, 已有 `ROADMAP/0.10.x.md`）
+- v0.10.x sam3-backend M0~M3（独立 epic, 已有 `ROADMAP/[archived]0.10.x.md`）
 - **Bug 反馈 LLM 聚类去重 + SMTP 邮件 digest（P2, 已对齐推迟）**：保留在 ROADMAP §B + 优先级表, 触发条件 = bug_reports > 100 或 客户提邮件 digest 需求；v0.10.x 并行做或独立小版本
 - 等独立 epic：非 image-det 工作台 / 大文件分片上传 / 数据集 snapshot / 2FA / OpenSeadragon 瓦片金字塔
 - 等业务规模触发：predictions 月分区 Stage 2 / batch_summary stored 列 / 审计冷数据归档物化

@@ -212,7 +212,7 @@ Wave 7 · 质量评估
 
 ## 6. 关联 Roadmap
 
-- [`2026-05-12-video-backend-frame-service.md`](2026-05-12-video-backend-frame-service.md)：后端帧服务、tracker、segment、frameStep、导出格式。
-- [`2026-05-12-image-workbench-optimization.md`](2026-05-12-image-workbench-optimization.md)：viewport / minimap / rAF 节流复用来源。
+- [`[archived]2026-05-12-video-backend-frame-service.md`]([archived]2026-05-12-video-backend-frame-service.md)：后端帧服务、tracker、segment、frameStep、导出格式。
+- [`[archived]2026-05-12-image-workbench-optimization.md`]([archived]2026-05-12-image-workbench-optimization.md)：viewport / minimap / rAF 节流复用来源。
 - [`2026-05-12-long-term-strategy.md`](2026-05-12-long-term-strategy.md)：R24 与 L15 标注质量 AI 审计。
-- [`0.10.x.md`](0.10.x.md)：SAM 3 / tracker registry 对齐窗口。
+- [`[archived]0.10.x.md`]([archived]0.10.x.md)：SAM 3 / tracker registry 对齐窗口。

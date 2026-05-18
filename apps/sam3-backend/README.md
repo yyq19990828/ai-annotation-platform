@@ -2,7 +2,7 @@
 
 > v0.10.x AI 基座的 ML Backend — 把 [`facebookresearch/sam3`](https://github.com/facebookresearch/sam3) (848M, 2025-11) + `facebook/sam3.1` (2026-03 权重) 打包成独立 GPU 服务, 遵循平台 [ML Backend 协议契约](../../docs-site/dev/reference/ml-backend-protocol.md).
 >
-> 当前版本: **v0.10.0 (M0 — 容器化 + exemplar 协议落地)**. 后续 v0.10.1 ~ v0.10.3 在 [`ROADMAP/0.10.x.md`](../../ROADMAP/0.10.x.md) 切片.
+> 当前版本: **v0.10.0 (M0 — 容器化 + exemplar 协议落地)**. 后续 v0.10.1 ~ v0.10.3 在 [`ROADMAP/[archived]0.10.x.md`](../../ROADMAP/[archived]0.10.x.md) 切片.
 
 ---
 

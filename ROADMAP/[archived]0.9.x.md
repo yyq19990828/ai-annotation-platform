@@ -1,10 +1,10 @@
 # v0.9.x — Grounded-SAM-2 接入（首版 AI 基座） 🗄️ ARCHIVED
 
-> **🗄️ 已归档（2026-05-08）** — v0.9.x 系列已完整收尾（M0+M1+M2+M3+M4+M5 + chip 包 + ADR-0012/0013）。本文件保留作历史参考与切片依据，不再列入 ROADMAP.md 顶部活跃版本。剩余文档同步（ml-backend-protocol §2 / sam-tool 用户手册 / ai-preannotate 用户手册 / ai-models.md 部署章节）与真实 SAM mask 50 张验收已迁移到 [../ROADMAP.md](../ROADMAP.md) §A AI/模型 与 §B 文档。后续 SAM 演进见 [`0.10.x.md`](./0.10.x.md)（与 Grounded-SAM-2 并存）。
+> **🗄️ 已归档（2026-05-08）** — v0.9.x 系列已完整收尾（M0+M1+M2+M3+M4+M5 + chip 包 + ADR-0012/0013）。本文件保留作历史参考与切片依据，不再列入 ROADMAP.md 顶部活跃版本。剩余文档同步（ml-backend-protocol §2 / sam-tool 用户手册 / ai-preannotate 用户手册 / ai-models.md 部署章节）与真实 SAM mask 50 张验收已迁移到 [../ROADMAP.md](../ROADMAP.md) §A AI/模型 与 §B 文档。后续 SAM 演进见 [`[archived]0.10.x.md`](./[archived]0.10.x.md)（与 Grounded-SAM-2 并存）。
 
 ---
 
-> 状态：**M0+M1+M2+M3+M4+M5 全落地**（M0 `01f8d45` / 2026-05-07；M1 v0.9.1 / 2026-05-07；M2 v0.9.2 / 2026-05-07；v0.9.3 phase 1/2/3 / 2026-05-07；v0.9.4 phase 1 / 2026-05-08 `c5eaf94`；v0.9.4 phase 2 Crystal Compass / 2026-05-08；v0.9.4 phase 3 Polished Contour / 2026-05-08；**v0.9.5 Async Oasis / 2026-05-08**）。v0.9.5 把 `/ai-pre` 文本批量 UI + 类别英文 alias + Batch pre_annotated + chip 包 + 运维收口一次性收齐。剩余工具栏 UX（Tooltip / hotkey 角标 / 抽屉 / 数字键 1-4 切工具）+ 截图自动化 14 张实跑回填留 v0.9.6 独立 epic。后续 v0.10.x 在此基础上**新增**（不替换）SAM 3 backend，详见 [`0.10.x.md`](./0.10.x.md)。
+> 状态：**M0+M1+M2+M3+M4+M5 全落地**（M0 `01f8d45` / 2026-05-07；M1 v0.9.1 / 2026-05-07；M2 v0.9.2 / 2026-05-07；v0.9.3 phase 1/2/3 / 2026-05-07；v0.9.4 phase 1 / 2026-05-08 `c5eaf94`；v0.9.4 phase 2 Crystal Compass / 2026-05-08；v0.9.4 phase 3 Polished Contour / 2026-05-08；**v0.9.5 Async Oasis / 2026-05-08**）。v0.9.5 把 `/ai-pre` 文本批量 UI + 类别英文 alias + Batch pre_annotated + chip 包 + 运维收口一次性收齐。剩余工具栏 UX（Tooltip / hotkey 角标 / 抽屉 / 数字键 1-4 切工具）+ 截图自动化 14 张实跑回填留 v0.9.6 独立 epic。后续 v0.10.x 在此基础上**新增**（不替换）SAM 3 backend，详见 [`[archived]0.10.x.md`](./[archived]0.10.x.md)。
 >
 > 一期范围：模式 A（文本批量预标）+ 模式 B（点 / 框 → mask 交互式精修）。**不做** exemplar prompt（→ v0.10.x）、视频追踪、训练闭环。
 >
@@ -281,4 +281,4 @@ Size:  LRU cap = 16（4060）/ 32（3090+）
 - IDEA-Research/Grounded-SAM-2: https://github.com/IDEA-Research/Grounded-SAM-2 (vendor @ `b7a9c29`)
 - 调研：`docs/research/06-ai-patterns.md` §3.3，`09-recommendations.md` §6.7
 - 协议契约：`docs-site/dev/ml-backend-protocol.md`
-- 后续版本：[`0.10.x.md`](./0.10.x.md)
+- 后续版本：[`[archived]0.10.x.md`](./[archived]0.10.x.md)
