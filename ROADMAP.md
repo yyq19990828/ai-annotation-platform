@@ -59,8 +59,8 @@
 
 ### 项目模块
 - **非 image-det / video-track 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / mm 仍未提供真实标注能力。`lidar` 在 Workbench StageHost 中已有 3D placeholder，但 Dashboard 入口仍未把它作为可用工作台开放；接入真实 3D 前不要复用图片 / 视频 geometry。
-- **Annotation Guide（项目级 Markdown 指引 + asset）**（**P2**，~1.5d）：参考 CVAT `Project.annotation_guide` —— ProjectSettingsPage 加「📖 标注指引」section（Markdown 编辑器 + 拖拽截图），工作台左侧栏加「📖 指引」浮层（默认折叠，新人首次自动展开 + localStorage 标记）。**对标注一致性提升远超技术 ROI**，直接降低 reject 率。DB：`projects` 加 `guide_markdown TEXT, guide_assets JSONB`；前端复用现有 `MarkdownView` + dataset upload 链路。与「项目模板」复用同 ProjectSettingsPage 破窗窗口。详见 [取经合集 §1.1](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#11-annotation-guide项目级-markdown-指引--asset)。
-- **项目模板**：v0.10.11 已落「从已有项目复制配置」形态（ProjectGrid 行操作 + AdminDashboard 项目表 + Wizard `sourceProjectId` 预填 + 后端 `POST /projects` 接 `source_project_id` 兜底 16 个可克隆字段 + 6 例后端单测）。**剩余**：独立 `ProjectTemplate` 表 + 模板库 UI（跨项目共享 / 公共模板），触发条件 = 客户提"模板库"明确需求；当前「复制」形态满足 80% 场景，无客户驱动前不开工。
+- **~~Annotation Guide（项目级 Markdown 指引 + asset）~~** ✅ v0.10.13 已落：projects 加 `annotation_guide TEXT` + `guide_assets JSONB`；新建 `/projects/{id}/guide-assets/*` 4 端点；CodeMirror 6 MarkdownEditor + GuideMarkdownView + GuidePanel 工作台浮层；CreateProjectWizard 加 `copy_annotation_guide` checkbox（默认勾选，存储 key 共享）。详见 CHANGELOG。
+- **项目模板**：v0.10.11 已落「从已有项目复制配置」形态（ProjectGrid 行操作 + AdminDashboard 项目表 + Wizard `sourceProjectId` 预填 + 后端 `POST /projects` 接 `source_project_id` 兜底 16 个可克隆字段 + 6 例后端单测）。**v0.10.14 开 epic**：独立 `ProjectTemplate` 表 + 模板库 UI（跨项目共享 / 公共模板 / `usage_count` / scope 三档）—— 用户 2026-05-18 决策，按计划独立 PR 推进，规模 ~5-7d。详见 [plan](docs/plans/2026-05-18-v0.10.14-project-template-library.md)。
 
 ### 数据 & 存储
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。

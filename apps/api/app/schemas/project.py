@@ -31,6 +31,9 @@ class ProjectCreate(BaseModel):
     # 不复制 datasets / tasks / annotations / members / batches.
     # 调用者必须对源项目有 view 权限; 否则 404.
     source_project_id: UUID | None = None
+    # v0.10.13 · E1 · 当 source_project_id 给定时, 是否同时复制 annotation_guide
+    # + guide_assets. 默认 False; 复制时 guide_assets 共享原 storage key (不重新上传).
+    copy_annotation_guide: bool = False
     due_date: date | None = None
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
@@ -61,6 +64,11 @@ class ProjectUpdate(BaseModel):
     text_output_default: Literal["box", "mask", "both"] | None = None
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict / 字段缺省 = 沿用用户级偏好
     rendering_config: ProjectRenderingConfig | None = None
+    # v0.10.13 · E1 · 标注指引 Markdown 原文; 显式 None 仅在 owner 主动清空时出现.
+    # 单独 PATCH guide_assets 用 guide_assets 端点; 这里允许 owner 在异常情况下手动
+    # 重置 list (例如批量删 orphan 后端 sync), 一般 UI 不直接写.
+    annotation_guide: str | None = None
+    guide_assets: list[dict] | None = None
 
 
 class ProjectBatchSummary(BaseModel):
@@ -99,6 +107,10 @@ class ProjectOut(BaseModel):
     text_output_default: str | None = None
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict 表示项目不覆盖任何字段
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
+    # v0.10.13 · E1 · 标注指引 Markdown 原文; None 表示未配置.
+    annotation_guide: str | None = None
+    # v0.10.13 · E1 · 已上传的指引图片资源元数据列表.
+    guide_assets: list[dict] = []
     model_version: str | None = None
     task_lock_ttl_seconds: int = 300
     total_tasks: int

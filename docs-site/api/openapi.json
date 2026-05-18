@@ -5046,6 +5046,108 @@
         "title": "GroupUpdate",
         "type": "object"
       },
+      "GuideAssetEntry": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "original_name": {
+            "title": "Original Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "uploaded_at": {
+            "format": "date-time",
+            "title": "Uploaded At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "original_name",
+          "content_type",
+          "size",
+          "uploaded_at"
+        ],
+        "title": "GuideAssetEntry",
+        "type": "object"
+      },
+      "GuideAssetSignedUrlResponse": {
+        "properties": {
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_in"
+        ],
+        "title": "GuideAssetSignedUrlResponse",
+        "type": "object"
+      },
+      "GuideAssetUploadInitRequest": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 5242880.0,
+            "minimum": 1.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type",
+          "size"
+        ],
+        "title": "GuideAssetUploadInitRequest",
+        "type": "object"
+      },
+      "GuideAssetUploadInitResponse": {
+        "properties": {
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "upload_url": {
+            "title": "Upload Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "upload_url",
+          "expires_in"
+        ],
+        "title": "GuideAssetUploadInitResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -7072,6 +7174,11 @@
             ],
             "title": "Classes Config"
           },
+          "copy_annotation_guide": {
+            "default": false,
+            "title": "Copy Annotation Guide",
+            "type": "boolean"
+          },
           "due_date": {
             "anyOf": [
               {
@@ -7312,6 +7419,17 @@
             ],
             "title": "Ai Model"
           },
+          "annotation_guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Guide"
+          },
           "attribute_schema": {
             "$ref": "#/components/schemas/AttributeSchema",
             "default": {
@@ -7371,6 +7489,15 @@
               }
             ],
             "title": "Due Date"
+          },
+          "guide_assets": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Guide Assets",
+            "type": "array"
           },
           "id": {
             "format": "uuid",
@@ -7674,6 +7801,17 @@
             ],
             "title": "Ai Model"
           },
+          "annotation_guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Guide"
+          },
           "attribute_schema": {
             "anyOf": [
               {
@@ -7736,6 +7874,21 @@
               }
             ],
             "title": "Due Date"
+          },
+          "guide_assets": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guide Assets"
           },
           "iou_dedup_threshold": {
             "anyOf": [
@@ -18374,6 +18527,236 @@
         "summary": "Export Project",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/guide-assets": {
+      "delete": {
+        "operationId": "guide_asset_delete_api_v1_projects__project_id__guide_assets_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Guide Asset Delete",
+        "tags": [
+          "guide-assets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/guide-assets/sign-url": {
+      "get": {
+        "operationId": "guide_asset_sign_url_api_v1_projects__project_id__guide_assets_sign_url_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideAssetSignedUrlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Guide Asset Sign Url",
+        "tags": [
+          "guide-assets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/guide-assets/upload-complete": {
+      "post": {
+        "operationId": "guide_asset_upload_complete_api_v1_projects__project_id__guide_assets_upload_complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideAssetEntry"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Guide Asset Upload Complete",
+        "tags": [
+          "guide-assets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/guide-assets/upload-init": {
+      "post": {
+        "operationId": "guide_asset_upload_init_api_v1_projects__project_id__guide_assets_upload_init_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuideAssetUploadInitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideAssetUploadInitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Guide Asset Upload Init",
+        "tags": [
+          "guide-assets"
         ]
       }
     },

@@ -314,15 +314,34 @@ async def create_project(
     # 若源项目带 ml_backend_id 且 caller 未单独指定 ml_backend_source_id,
     # 自动把源项目的 backend 作为 backend 克隆源.
     source_project_id = payload.pop("source_project_id", None)
+    # v0.10.13 · E1 · annotation_guide / guide_assets 不在默认克隆白名单 (避免信息错位);
+    # 通过独立 flag 触发, 仅当 source_project_id 给定时有效. 图片资源 storage key
+    # 复用 (不重新上传) — 源项目删除资源会影响新项目, UI 已在 wizard 标注.
+    copy_guide = payload.pop("copy_annotation_guide", False)
     if source_project_id is not None:
         source_project = await assert_project_visible(
             source_project_id, db, current_user
         )
         payload = _merge_from_source_project(payload, source_project)
+        if copy_guide:
+            import copy as _copy
+
+            if source_project.annotation_guide is not None:
+                payload.setdefault("annotation_guide", source_project.annotation_guide)
+            if source_project.guide_assets:
+                payload.setdefault(
+                    "guide_assets", _copy.deepcopy(source_project.guide_assets)
+                )
         if source_backend is None and source_project.ml_backend_id is not None:
             from app.db.models.ml_backend import MLBackend as _MLB
 
             source_backend = await db.get(_MLB, source_project.ml_backend_id)
+    elif copy_guide:
+        # 没给 source_project_id 却给了 copy_annotation_guide 是请求体错误, 提示前端
+        raise HTTPException(
+            status_code=400,
+            detail="copy_annotation_guide requires source_project_id",
+        )
 
     if payload.get("ml_backend_id"):
         payload = await _apply_backend_display_hint(db, payload)

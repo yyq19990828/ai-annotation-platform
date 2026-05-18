@@ -15,6 +15,7 @@ from app.api.v1 import (
     datasets,
     files,
     groups,
+    guide_assets,
     invitations,
     invitations_admin,
     me,
@@ -63,6 +64,10 @@ api_router.include_router(
     tags=["admin-preannotate-jobs"],
 )
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
+# v0.10.13 · E1 · 项目标注指引图片资源端点 (与 datasets items upload 独立, 不污染 dataset_items 表)
+api_router.include_router(
+    guide_assets.router, prefix="/projects", tags=["guide-assets"]
+)
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 api_router.include_router(

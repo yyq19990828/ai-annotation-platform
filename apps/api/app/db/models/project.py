@@ -1,6 +1,16 @@
 import uuid
 from datetime import datetime, date
-from sqlalchemy import String, Boolean, Integer, Date, DateTime, Float, ForeignKey, func
+from sqlalchemy import (
+    String,
+    Boolean,
+    Integer,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
@@ -58,6 +68,13 @@ class Project(Base):
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict = 全部沿用用户级 preferences
     rendering_config: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
+    )
+    # v0.10.13 · E1 · CVAT-style 项目级 Markdown 标注指引；None = 未配置
+    annotation_guide: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # v0.10.13 · E1 · 已上传的指引图片资源元数据列表
+    # entry: {key, original_name, content_type, size, uploaded_at}
+    guide_assets: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default="[]", default=list
     )
     model_version: Mapped[str | None] = mapped_column(String(100))
     task_lock_ttl_seconds: Mapped[int] = mapped_column(Integer, default=300)

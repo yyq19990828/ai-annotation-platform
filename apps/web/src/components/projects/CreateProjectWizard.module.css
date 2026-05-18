@@ -11,6 +11,15 @@
   font-size: 12px;
 }
 
+/* v0.10.13 · E1 · 复制项目时「同时复制标注指引」勾选 */
+.copyGuideToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  font-size: 12px;
+}
+
 .stepper {
   display: flex;
   align-items: center;

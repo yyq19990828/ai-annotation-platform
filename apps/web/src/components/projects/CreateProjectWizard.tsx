@@ -55,6 +55,9 @@ interface FormState {
   datasetIds: string[];
   splitNBatches: number; // 0 = 不切分（保留默认包），>=2 = 切分
   members: { userId: string; role: "annotator" | "reviewer" }[];
+  // v0.10.13 · E1 · 复制模式下是否同时携带源项目的 annotation_guide + guide_assets.
+  // 仅 sourceProjectId 给定时显示 UI; 默认 true.
+  copyAnnotationGuide: boolean;
 }
 
 const INITIAL: FormState = {
@@ -71,6 +74,7 @@ const INITIAL: FormState = {
   datasetIds: [],
   splitNBatches: 0,
   members: [],
+  copyAnnotationGuide: true,
 };
 
 type StepperStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -253,6 +257,8 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId }: Props) {
         // v0.10.11 · "从已有项目复制" — 给后端兜底未显式给出的字段 (例如 label_config /
         // rendering_config / iou_dedup_threshold / sampling 等不在 wizard 表单内的项).
         source_project_id: sourceProjectId ?? null,
+        // v0.10.13 · E1 · 仅复制模式下传该 flag; 后端校验若无 source_project_id 会返 400.
+        copy_annotation_guide: sourceProjectId ? form.copyAnnotationGuide : undefined,
         due_date: form.dueDate || null,
       },
       {
@@ -301,6 +307,18 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId }: Props) {
           {prefilling
             ? "正在从源项目加载配置…"
             : "已用源项目配置预填表单, 提交后将复制到新项目 (不复制数据集 / 任务 / 成员)"}
+          {!prefilling && (
+            <label className={styles.copyGuideToggle}>
+              <input
+                type="checkbox"
+                checked={form.copyAnnotationGuide}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, copyAnnotationGuide: e.target.checked }))
+                }
+              />
+              同时复制标注指引（图片资源与源项目共享存储）
+            </label>
+          )}
         </div>
       )}
 

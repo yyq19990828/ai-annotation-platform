@@ -31,6 +31,11 @@ last_reviewed: 2026-05-11
 ![向导步骤](../images/projects/wizard-steps.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 6 步 wizard 各步关键截图（基本信息 / 类型 / 类别 schema / 属性 schema / AI 模型 / 审核策略），可拼成一张长图。 -->
 
+## 标注指引（v0.10.13+）
+
+为项目编写 Markdown 形式的标注指引，工作台首次打开会自动展开浮层让标注员阅读。详见
+[标注指引（Annotation Guide）](./annotation-guide.md)。
+
 ## 从已有项目复制配置（v0.10.11+）
 
 如果新项目的 classes / 属性 schema / AI 模型 / 渲染配置等与既有项目相同（或大致相同），可以直接复制配置：
@@ -41,6 +46,10 @@ last_reviewed: 2026-05-11
 4. 提交后新项目就绪。**只复制配置**：classes / classes_config / attribute_schema / AI 配置 / label_config / rendering_config / 阈值 / 采样规则等。**不复制运行时数据**：datasets / tasks / annotations / members / batches。
 
 > 需要的不是「复制一次」而是「跨项目共享模板库」？请提需求 — 当前形态满足 80% 场景，独立 Template 库待客户驱动触发。
+
+v0.10.13 起在 banner 中新增 checkbox **「同时复制标注指引」**（默认勾选）：复制配置时连
+带源项目的 Markdown 指引与图片资源带过来。图片资源 storage key 与源项目共享，源项目删除资源会影响
+新项目；如需独立资源在新项目设置页里重新拖入图片即可。
 
 ## 任务生成
 

@@ -27,12 +27,18 @@
     "image:bench": "node scripts/image-bench/run-image-bench.mjs"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.43.0",
     "@sentry/react": "^8.45.0",
     "@tanstack/react-query": "^5.60.0",
     "@tanstack/react-virtual": "^3.13.24",
     "@types/rbush": "^4.0.0",
     "blurhash": "^2.0.5",
     "clsx": "^2.1.1",
+    "codemirror": "^6.0.2",
     "html2canvas-pro": "^2.0.2",
     "idb-keyval": "^6.2.2",
     "konva": "^10.2.5",

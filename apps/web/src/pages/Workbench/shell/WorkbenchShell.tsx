@@ -1121,6 +1121,10 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         open: modeState.rejectModal.open, count: 1, onClose: modeState.rejectModal.onClose,
         onConfirm: modeState.rejectModal.onConfirm, skipReasonHint: modeState.rejectModal.skipReasonHint,
       } : undefined}
+      guidePanel={projectId ? {
+        projectId,
+        content: (currentProject as unknown as { annotation_guide?: string | null } | undefined)?.annotation_guide ?? null,
+      } : undefined}
     />
     <VideoTrackerPropagateDialog
       open={Boolean(propagateDialog)}

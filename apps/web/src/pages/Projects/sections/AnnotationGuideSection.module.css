@@ -1,0 +1,99 @@
+.body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.description {
+  margin: 0;
+  color: var(--fg-muted, #888);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-subtle, #2c2c2c);
+}
+
+.tabBtn {
+  border: none;
+  background: transparent;
+  color: var(--fg-muted, #888);
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tabBtnActive {
+  color: var(--fg, #ddd);
+  border-bottom-color: var(--accent, #69a);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.previewPlaceholder {
+  padding: 24px;
+  border: 1px dashed var(--border-subtle, #2c2c2c);
+  border-radius: 6px;
+  text-align: center;
+  color: var(--fg-muted, #888);
+  font-size: 13px;
+}
+
+.savingHint {
+  font-size: 12px;
+  color: var(--fg-muted, #888);
+}
+
+.assetList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border-subtle, #2c2c2c);
+  border-radius: 6px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.assetItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-subtle, #2c2c2c);
+}
+
+.assetItem:last-child {
+  border-bottom: none;
+}
+
+.assetItem button {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border-subtle, #2c2c2c);
+  color: var(--danger, #d66);
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.assetSize {
+  color: var(--fg-muted, #888);
+}

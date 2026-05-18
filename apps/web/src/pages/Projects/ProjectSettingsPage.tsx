@@ -16,12 +16,28 @@ import { ClassesSection } from "./sections/ClassesSection";
 import { DatasetsSection } from "./sections/DatasetsSection";
 import { MlBackendsSection } from "./sections/MlBackendsSection";
 import { RenderingConfigSection } from "./sections/RenderingConfigSection";
+import { AnnotationGuideSection } from "./sections/AnnotationGuideSection";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import styles from "./ProjectSettingsPage.module.css";
 
-type SectionKey = "general" | "classes" | "attributes" | "members" | "datasets" | "batches" | "ml-backends" | "rendering" | "owner" | "danger";
+type SectionKey =
+  | "general"
+  | "classes"
+  | "attributes"
+  | "members"
+  | "datasets"
+  | "batches"
+  | "ml-backends"
+  | "rendering"
+  | "annotation-guide"
+  | "owner"
+  | "danger";
 
-const SECTIONS: { key: SectionKey; label: string; icon: "settings" | "users" | "user" | "trash" | "tag" | "rect" | "layers" | "db" | "bot" | "eye" }[] = [
+const SECTIONS: {
+  key: SectionKey;
+  label: string;
+  icon: "settings" | "users" | "user" | "trash" | "tag" | "rect" | "layers" | "db" | "bot" | "eye" | "book";
+}[] = [
   { key: "general", label: "基本信息", icon: "settings" },
   { key: "classes", label: "类别管理", icon: "rect" },
   { key: "attributes", label: "属性 schema", icon: "tag" },
@@ -31,11 +47,25 @@ const SECTIONS: { key: SectionKey; label: string; icon: "settings" | "users" | "
   { key: "ml-backends", label: "ML 模型", icon: "bot" },
   // v0.10.10 · I17.3
   { key: "rendering", label: "渲染配置", icon: "eye" },
+  // v0.10.13 · E1
+  { key: "annotation-guide", label: "标注指引", icon: "book" },
   { key: "owner", label: "负责人", icon: "user" },
   { key: "danger", label: "危险操作", icon: "trash" },
 ];
 
-const VALID_SECTIONS: SectionKey[] = ["general", "classes", "attributes", "members", "datasets", "batches", "ml-backends", "rendering", "owner", "danger"];
+const VALID_SECTIONS: SectionKey[] = [
+  "general",
+  "classes",
+  "attributes",
+  "members",
+  "datasets",
+  "batches",
+  "ml-backends",
+  "rendering",
+  "annotation-guide",
+  "owner",
+  "danger",
+];
 
 export function ProjectSettingsPage() {
   const { id = "" } = useParams<{ id: string }>();
@@ -144,6 +174,7 @@ export function ProjectSettingsPage() {
           {section === "batches" && <BatchesSection project={project} />}
           {section === "ml-backends" && <MlBackendsSection project={project} />}
           {section === "rendering" && <RenderingConfigSection project={project} />}
+          {section === "annotation-guide" && <AnnotationGuideSection project={project} />}
           {section === "owner" && role === "super_admin" && <OwnerSection project={project} />}
           {section === "danger" && <DangerSection project={project} />}
         </div>

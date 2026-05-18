@@ -47,11 +47,36 @@ export type ProjectCreatePayload = ProjectCreate & {
   text_output_default?: "box" | "mask" | "both" | null;
   ml_backend_source_id?: string | null;
   source_project_id?: string | null;
+  // v0.10.13 · E1 · 同时复制源项目 annotation_guide + guide_assets (storage key 共享).
+  copy_annotation_guide?: boolean;
 };
 // v0.10.10 · I17.3 · 加 rendering_config 字段；待 codegen 重跑。
+// v0.10.13 · E1 · 加 annotation_guide / guide_assets; 待 codegen 重跑。
 export type ProjectUpdatePayload = ProjectUpdate & {
   rendering_config?: ProjectRenderingConfig | null;
+  annotation_guide?: string | null;
+  guide_assets?: GuideAssetEntry[] | null;
 };
+
+// v0.10.13 · E1 · 项目标注指引图片资源 entry, 与后端 guide_asset.py 同构.
+export interface GuideAssetEntry {
+  key: string;
+  original_name: string;
+  content_type: string;
+  size: number;
+  uploaded_at: string;
+}
+
+export interface GuideAssetUploadInitResponse {
+  key: string;
+  upload_url: string;
+  expires_in: number;
+}
+
+export interface GuideAssetSignedUrlResponse {
+  url: string;
+  expires_in: number;
+}
 
 export type ExportFormat = "coco" | "voc" | "yolo";
 export type VideoFrameMode = "keyframes" | "all_frames";
@@ -118,6 +143,31 @@ export const projectsApi = {
     apiClient.get<{ orphan_tasks: number; orphan_annotations: number }>(`/projects/${id}/orphan-tasks/preview`),
   cleanupOrphanTasks: (id: string) =>
     apiClient.post<{ deleted_tasks: number; deleted_annotations: number }>(`/projects/${id}/orphan-tasks/cleanup`),
+
+  // v0.10.13 · E1 · 标注指引图片资源
+  guideAssets: {
+    uploadInit: (projectId: string, payload: { filename: string; content_type: string; size: number }) =>
+      apiClient.post<GuideAssetUploadInitResponse>(
+        `/projects/${projectId}/guide-assets/upload-init`,
+        payload,
+      ),
+    uploadComplete: (
+      projectId: string,
+      payload: { key: string; original_name: string; content_type: string },
+    ) =>
+      apiClient.post<GuideAssetEntry>(
+        `/projects/${projectId}/guide-assets/upload-complete`,
+        payload,
+      ),
+    remove: (projectId: string, key: string) =>
+      apiClient.delete<{ deleted: string }>(
+        `/projects/${projectId}/guide-assets?key=${encodeURIComponent(key)}`,
+      ),
+    signUrl: (projectId: string, key: string) =>
+      apiClient.get<GuideAssetSignedUrlResponse>(
+        `/projects/${projectId}/guide-assets/sign-url?key=${encodeURIComponent(key)}`,
+      ),
+  },
 
   exportProject: async (id: string, format: ExportFormat, opts?: ExportOptions) => {
     const token = localStorage.getItem("token");

@@ -167,6 +167,15 @@
 | PATCH | `/{group_id}` |
 | DELETE | `/{group_id}` |
 
+## `guide_assets.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{project_id}/guide-assets/upload-init` |
+| POST | `/{project_id}/guide-assets/upload-complete` |
+| DELETE | `/{project_id}/guide-assets` |
+| GET | `/{project_id}/guide-assets/sign-url` |
+
 ## `invitations.py`
 
 | Method | Path |
@@ -188,6 +197,8 @@
 | POST | `/heartbeat` |
 | POST | `/password` |
 | POST | `/deactivation-request` |
+| GET | `/preferences` |
+| PATCH | `/preferences` |
 | DELETE | `/deactivation-request` |
 | POST | `/task-events:batch` |
 
@@ -198,6 +209,9 @@
 | GET | `/{backend_id}` |
 | PUT | `/{backend_id}` |
 | DELETE | `/{backend_id}` |
+| POST | `/{backend_id}/unload` |
+| POST | `/{backend_id}/reload` |
+| GET | `/{backend_id}/setup` |
 | POST | `/{backend_id}/health` |
 | POST | `/{backend_id}/predict-test` |
 | POST | `/{backend_id}/interactive-annotating` |
@@ -330,7 +344,11 @@
 | GET | `/{dataset_item_id}/frames/{frame_index}` |
 | POST | `/{dataset_item_id}/frames:prefetch` |
 | POST | `/{dataset_item_id}/frames:retry` |
+| GET | `/{dataset_item_id}/chapters` |
+| POST | `/{dataset_item_id}/chapters` |
+| PATCH | `/{dataset_item_id}/chapters/{chapter_id}` |
+| DELETE | `/{dataset_item_id}/chapters/{chapter_id}` |
 
 ---
 
-_共 30 模块 / 186 路由_
+_共 31 模块 / 199 路由_

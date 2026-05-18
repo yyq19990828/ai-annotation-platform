@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Bell,
+  BookOpen,
   Bot,
   Box,
   Brain,
@@ -94,6 +95,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   activity: Activity,
   arrowRight: ArrowRight,
   bell: Bell,
+  // v0.10.13 · E1 · 标注指引图标
+  book: BookOpen,
   bot: Bot,
   box: Box,
   brain: Brain,

@@ -244,6 +244,93 @@ async def test_create_project_without_source_unchanged(httpx_client_bound, super
     assert data["ai_enabled"] is False
 
 
+async def test_clone_skips_annotation_guide_by_default(
+    httpx_client_bound, super_admin, db_session
+):
+    """v0.10.13 · E1 · annotation_guide / guide_assets 不在默认克隆白名单."""
+    user, token = super_admin
+    src = await _seed_project(
+        db_session,
+        user.id,
+        annotation_guide="# 源项目指引\n请标注所有车辆.",
+        guide_assets=[
+            {
+                "key": f"projects/{uuid.uuid4()}/guide/aaa-img.png",
+                "original_name": "img.png",
+                "content_type": "image/png",
+                "size": 1024,
+                "uploaded_at": "2026-05-18T00:00:00+00:00",
+            }
+        ],
+    )
+    await db_session.commit()
+
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "name": "默认不带 guide",
+        "type_label": "图像-检测",
+        "type_key": "image-det",
+        "source_project_id": str(src.id),
+    }
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["annotation_guide"] is None
+    assert data["guide_assets"] == []
+
+
+async def test_clone_with_copy_annotation_guide_flag(
+    httpx_client_bound, super_admin, db_session
+):
+    """v0.10.13 · E1 · copy_annotation_guide=true 时同时复制 guide + assets."""
+    user, token = super_admin
+    asset_entry = {
+        "key": f"projects/{uuid.uuid4()}/guide/bbb-pic.jpg",
+        "original_name": "pic.jpg",
+        "content_type": "image/jpeg",
+        "size": 2048,
+        "uploaded_at": "2026-05-18T01:00:00+00:00",
+    }
+    src = await _seed_project(
+        db_session,
+        user.id,
+        annotation_guide="# 源指引",
+        guide_assets=[asset_entry],
+    )
+    await db_session.commit()
+
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "name": "带 guide",
+        "type_label": "图像-检测",
+        "type_key": "image-det",
+        "source_project_id": str(src.id),
+        "copy_annotation_guide": True,
+    }
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["annotation_guide"] == "# 源指引"
+    assert len(data["guide_assets"]) == 1
+    assert data["guide_assets"][0]["key"] == asset_entry["key"]
+
+
+async def test_copy_annotation_guide_without_source_returns_400(
+    httpx_client_bound, super_admin
+):
+    """v0.10.13 · E1 · copy_annotation_guide 必须配合 source_project_id."""
+    _, token = super_admin
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "name": "孤儿 copy flag",
+        "type_label": "图像-检测",
+        "type_key": "image-det",
+        "copy_annotation_guide": True,
+    }
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
+    assert resp.status_code == 400, resp.text
+
+
 async def test_clone_jsonb_is_deep_copied(httpx_client_bound, super_admin, db_session):
     """修改新项目的 classes_config 不应该污染源项目 (避免共享 JSONB 引用)."""
     user, token = super_admin

@@ -11,6 +11,7 @@ import { ToolDock } from "./ToolDock";
 import { Topbar } from "./Topbar";
 import { WorkbenchBanners } from "./WorkbenchBanners";
 import { WorkbenchStageHost } from "./WorkbenchStageHost";
+import { GuidePanel } from "../sidebar/GuidePanel";
 import styles from "./WorkbenchLayout.module.css";
 
 interface WorkbenchLayoutProps {
@@ -28,6 +29,8 @@ interface WorkbenchLayoutProps {
   offlineQueue: ComponentProps<typeof OfflineQueueDrawer>;
   conflict: ComponentProps<typeof ConflictModal>;
   rejectModal?: ComponentProps<typeof RejectReasonModal>;
+  // v0.10.13 · E1 · 标注指引浮层 (可选; 项目无 guide 时不渲染).
+  guidePanel?: ComponentProps<typeof GuidePanel>;
 }
 
 export function WorkbenchLayout({
@@ -45,6 +48,7 @@ export function WorkbenchLayout({
   offlineQueue,
   conflict,
   rejectModal,
+  guidePanel,
 }: WorkbenchLayoutProps) {
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -73,6 +77,7 @@ export function WorkbenchLayout({
       <OfflineQueueDrawer {...offlineQueue} />
       <ConflictModal {...conflict} />
       {rejectModal && <RejectReasonModal {...rejectModal} />}
+      {guidePanel && <GuidePanel {...guidePanel} />}
     </div>
   );
 }
