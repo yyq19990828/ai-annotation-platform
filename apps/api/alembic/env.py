@@ -1,7 +1,7 @@
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -38,10 +38,21 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# celery-worker 与 celery-beat 同时启动会并发跑 alembic upgrade head, 没有锁的话
+# 两边可能同时执行同一条 ALTER, 先到的成功、后到的撞 DuplicateColumnError 直接退出.
+# Postgres session-level advisory lock 把 migration 串行化; 后到者等到 head 已就绪
+# 再进入, 跑出 no-op upgrade.
+_ALEMBIC_LOCK_ID = 727274
+
+
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
-    with context.begin_transaction():
-        context.run_migrations()
+    connection.execute(text("SELECT pg_advisory_lock(:k)").bindparams(k=_ALEMBIC_LOCK_ID))
+    try:
+        context.configure(connection=connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+    finally:
+        connection.execute(text("SELECT pg_advisory_unlock(:k)").bindparams(k=_ALEMBIC_LOCK_ID))
 
 
 async def run_async_migrations() -> None:
