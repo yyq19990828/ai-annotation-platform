@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { clsx } from "clsx";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Captcha, isCaptchaRequired } from "@/components/Captcha";
@@ -7,6 +8,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { UserRole } from "@/types";
 import type { ApiError } from "@/api/client";
+import styles from "./RegisterPage.module.css";
 
 function isPasswordStrong(pwd: string): boolean {
   return pwd.length >= 8 && /[A-Z]/.test(pwd) && /[a-z]/.test(pwd) && /\d/.test(pwd);
@@ -21,9 +23,9 @@ function PasswordStrengthIndicator({ pwd }: { pwd: string }) {
     { ok: /\d/.test(pwd), label: "含数字" },
   ];
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px", marginTop: 6, fontSize: 11 }}>
+    <div className={styles.passwordRules}>
       {rules.map((r) => (
-        <span key={r.label} style={{ color: r.ok ? "#22c55e" : "#ef4444" }}>
+        <span key={r.label} className={r.ok ? styles.passwordRuleOk : styles.passwordRuleBad}>
           {r.ok ? "✓" : "✗"} {r.label}
         </span>
       ))}
@@ -59,7 +61,7 @@ function OpenRegisterForm() {
   const captchaRequired = isCaptchaRequired();
 
   if (regStatus.isLoading) {
-    return <CenteredCard><span style={{ color: "var(--color-fg-muted)" }}>加载中…</span></CenteredCard>;
+    return <CenteredCard><span className={styles.mutedText}>加载中…</span></CenteredCard>;
   }
 
   if (!regStatus.data?.open_registration_enabled) {
@@ -92,9 +94,9 @@ function OpenRegisterForm() {
   return (
     <CenteredCard>
       <Brand />
-      <div style={cardStyle}>
-        <h1 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 600 }}>注册账号</h1>
-        <p style={{ margin: "0 0 18px", fontSize: 12.5, color: "var(--color-fg-muted)" }}>
+      <div className={styles.card}>
+        <h1 className={styles.title}>注册账号</h1>
+        <p className={styles.description}>
           创建账号后默认为观察者角色，管理员可为你分配更高权限。
         </p>
 
@@ -102,7 +104,7 @@ function OpenRegisterForm() {
           <ErrorBanner msg={(openRegister.error as Error).message} />
         )}
 
-        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <form onSubmit={submit} className={styles.form}>
           <Field label="邮箱">
             <input
               required
@@ -112,7 +114,7 @@ function OpenRegisterForm() {
               onChange={(e) => setEmail(e.target.value)}
               maxLength={255}
               placeholder="your@email.com"
-              style={inputStyle}
+              className={styles.input}
             />
           </Field>
 
@@ -123,24 +125,24 @@ function OpenRegisterForm() {
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
               placeholder="如何在平台中称呼你"
-              style={inputStyle}
+              className={styles.input}
             />
           </Field>
 
           <Field label="密码（至少 8 位，需含大小写字母��数字）">
-            <div style={{ position: "relative" }}>
+            <div className={styles.passwordField}>
               <input
                 required
                 type={showPwd ? "text" : "password"}
                 value={pwd}
                 onChange={(e) => setPwd(e.target.value)}
                 minLength={8}
-                style={{ ...inputStyle, paddingRight: 36 }}
+                className={clsx(styles.input, styles.passwordInput)}
               />
               <button
                 type="button"
                 onClick={() => setShowPwd((v) => !v)}
-                style={eyeBtnStyle}
+                className={styles.eyeButton}
                 aria-label="切换密码可见性"
               >
                 <Icon name={showPwd ? "eyeOff" : "eye"} size={14} />
@@ -155,13 +157,10 @@ function OpenRegisterForm() {
               type={showPwd ? "text" : "password"}
               value={pwd2}
               onChange={(e) => setPwd2(e.target.value)}
-              style={{
-                ...inputStyle,
-                borderColor: !passwordsMatch ? "#ef4444" : "var(--color-border)",
-              }}
+              className={clsx(styles.input, !passwordsMatch && styles.inputInvalid)}
             />
             {!passwordsMatch && (
-              <div style={{ fontSize: 11.5, color: "#ef4444", marginTop: 4 }}>两次密码不一致</div>
+              <div className={styles.mismatchText}>两次密码不一致</div>
             )}
           </Field>
 
@@ -177,15 +176,15 @@ function OpenRegisterForm() {
               openRegister.isPending ||
               (captchaRequired && !captchaToken)
             }
-            style={primaryBtnStyle(openRegister.isPending)}
+            className={clsx(styles.primaryButton, openRegister.isPending && styles.primaryButtonPending)}
           >
             {openRegister.isPending ? "注册中..." : "注册"}
           </button>
         </form>
 
-        <div style={{ marginTop: 16, textAlign: "center", fontSize: 12.5 }}>
-          <span style={{ color: "var(--color-fg-muted)" }}>已有账号？</span>{" "}
-          <a href="/login" style={{ color: "var(--color-accent)", textDecoration: "none" }}>立即登录</a>
+        <div className={styles.loginPrompt}>
+          <span className={styles.mutedText}>已有账号？</span>{" "}
+          <a href="/login" className={styles.link}>立即登录</a>
         </div>
       </div>
     </CenteredCard>
@@ -205,7 +204,7 @@ function InviteRegisterForm({ token }: { token: string }) {
   const [showPwd, setShowPwd] = useState(false);
 
   if (resolve.isLoading) {
-    return <CenteredCard><span style={{ color: "var(--color-fg-muted)" }}>正在校验邀请链接…</span></CenteredCard>;
+    return <CenteredCard><span className={styles.mutedText}>正在校验邀请链接…</span></CenteredCard>;
   }
 
   if (resolve.isError) {
@@ -240,14 +239,14 @@ function InviteRegisterForm({ token }: { token: string }) {
   return (
     <CenteredCard>
       <Brand />
-      <div style={cardStyle}>
-        <h1 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 600 }}>设置你的账号</h1>
-        <p style={{ margin: "0 0 18px", fontSize: 12.5, color: "var(--color-fg-muted)" }}>
+      <div className={styles.card}>
+        <h1 className={styles.title}>设置你的账号</h1>
+        <p className={styles.description}>
           来自 <strong>{inv.invited_by_name ?? "管理员"}</strong> 的邀请，绑定邮箱{" "}
-          <span className="mono" style={{ color: "var(--color-fg)" }}>{inv.email}</span>
+          <span className={clsx("mono", styles.inviteEmail)}>{inv.email}</span>
         </p>
 
-        <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
+        <div className={styles.pillRow}>
           <Pill>{ROLE_LABELS[inv.role as UserRole] ?? inv.role}</Pill>
           {inv.group_name && <Pill>{inv.group_name}</Pill>}
           <Pill>有效期至 {new Date(inv.expires_at).toLocaleString("zh-CN")}</Pill>
@@ -257,7 +256,7 @@ function InviteRegisterForm({ token }: { token: string }) {
           <ErrorBanner msg={(register.error as Error).message} />
         )}
 
-        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <form onSubmit={submit} className={styles.form}>
           <Field label="姓名">
             <input
               required
@@ -266,24 +265,24 @@ function InviteRegisterForm({ token }: { token: string }) {
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
               placeholder="如何在平台中称呼你"
-              style={inputStyle}
+              className={styles.input}
             />
           </Field>
 
           <Field label="密码（至少 8 位，需含大小写字母和数字）">
-            <div style={{ position: "relative" }}>
+            <div className={styles.passwordField}>
               <input
                 required
                 type={showPwd ? "text" : "password"}
                 value={pwd}
                 onChange={(e) => setPwd(e.target.value)}
                 minLength={8}
-                style={{ ...inputStyle, paddingRight: 36 }}
+                className={clsx(styles.input, styles.passwordInput)}
               />
               <button
                 type="button"
                 onClick={() => setShowPwd((v) => !v)}
-                style={eyeBtnStyle}
+                className={styles.eyeButton}
                 aria-label="切换密码可见性"
               >
                 <Icon name={showPwd ? "eyeOff" : "eye"} size={14} />
@@ -298,20 +297,17 @@ function InviteRegisterForm({ token }: { token: string }) {
               type={showPwd ? "text" : "password"}
               value={pwd2}
               onChange={(e) => setPwd2(e.target.value)}
-              style={{
-                ...inputStyle,
-                borderColor: !passwordsMatch ? "#ef4444" : "var(--color-border)",
-              }}
+              className={clsx(styles.input, !passwordsMatch && styles.inputInvalid)}
             />
             {!passwordsMatch && (
-              <div style={{ fontSize: 11.5, color: "#ef4444", marginTop: 4 }}>两次密码不一致</div>
+              <div className={styles.mismatchText}>两次密码不一致</div>
             )}
           </Field>
 
           <button
             type="submit"
             disabled={!name.trim() || !passwordsValid || !passwordsMatch || register.isPending}
-            style={primaryBtnStyle(register.isPending)}
+            className={clsx(styles.primaryButton, register.isPending && styles.primaryButtonPending)}
           >
             {register.isPending ? "创建中..." : "完成注册并登录"}
           </button>
@@ -323,13 +319,13 @@ function InviteRegisterForm({ token }: { token: string }) {
 
 function Brand() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24, justifyContent: "center" }}>
-      <div style={brandIcon}>
-        <div style={{ position: "absolute", inset: 6, border: "2px solid rgba(255,255,255,0.85)", borderRadius: 4 }} />
+    <div className={styles.brand}>
+      <div className={styles.brandIcon}>
+        <div className={styles.brandIconInner} />
       </div>
       <div>
-        <div style={{ fontWeight: 700, fontSize: 16 }}>标注中心</div>
-        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>AI Annotation Platform</div>
+        <div className={styles.brandTitle}>标注中心</div>
+        <div className={styles.brandSubtitle}>AI Annotation Platform</div>
       </div>
     </div>
   );
@@ -337,8 +333,8 @@ function Brand() {
 
 function CenteredCard({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg)", padding: 24 }}>
-      <div style={{ width: 400 }}>{children}</div>
+    <div className={styles.page}>
+      <div className={styles.shell}>{children}</div>
     </div>
   );
 }
@@ -348,13 +344,13 @@ function ErrorPanel({ title, hint }: { title: string; hint: string }) {
   return (
     <CenteredCard>
       <Brand />
-      <div style={cardStyle}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: "#ef4444" }}>
+      <div className={styles.card}>
+        <div className={styles.errorPanelTitleRow}>
           <Icon name="warning" size={16} />
-          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{title}</h1>
+          <h1 className={styles.errorPanelTitle}>{title}</h1>
         </div>
-        <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--color-fg-muted)" }}>{hint}</p>
-        <button onClick={() => navigate("/login")} style={primaryBtnStyle(false)}>
+        <p className={styles.errorPanelHint}>{hint}</p>
+        <button onClick={() => navigate("/login")} className={styles.primaryButton}>
           前往登录
         </button>
       </div>
@@ -364,20 +360,7 @@ function ErrorPanel({ title, hint }: { title: string; hint: string }) {
 
 function ErrorBanner({ msg }: { msg: string }) {
   return (
-    <div
-      style={{
-        marginBottom: 14,
-        padding: "8px 11px",
-        background: "rgba(239,68,68,0.08)",
-        border: "1px solid #ef4444",
-        borderRadius: "var(--radius-md)",
-        color: "#ef4444",
-        fontSize: 12.5,
-        display: "flex",
-        gap: 8,
-        alignItems: "center",
-      }}
-    >
+    <div className={styles.errorBanner}>
       <Icon name="warning" size={13} />{msg}
     </div>
   );
@@ -385,8 +368,8 @@ function ErrorBanner({ msg }: { msg: string }) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: "block" }}>
-      <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 5, color: "var(--color-fg-muted)" }}>{label}</div>
+    <label className={styles.field}>
+      <div className={styles.fieldLabel}>{label}</div>
       {children}
     </label>
   );
@@ -394,74 +377,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <span
-      style={{
-        fontSize: 11,
-        padding: "3px 8px",
-        borderRadius: 999,
-        border: "1px solid var(--color-border)",
-        background: "var(--color-bg-sunken)",
-        color: "var(--color-fg-muted)",
-      }}
-    >
+    <span className={styles.pill}>
       {children}
     </span>
   );
 }
-
-const brandIcon: React.CSSProperties = {
-  width: 32,
-  height: 32,
-  borderRadius: "var(--radius-md)",
-  background: "linear-gradient(135deg, var(--color-accent), oklch(0.55 0.22 280))",
-  position: "relative",
-  overflow: "hidden",
-  flexShrink: 0,
-};
-
-const cardStyle: React.CSSProperties = {
-  background: "var(--color-bg-elev)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-xl)",
-  padding: "26px 30px 30px",
-  boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 11px",
-  fontSize: 13.5,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  color: "var(--color-fg)",
-  outline: "none",
-};
-
-const eyeBtnStyle: React.CSSProperties = {
-  position: "absolute",
-  right: 10,
-  top: "50%",
-  transform: "translateY(-50%)",
-  background: "none",
-  border: "none",
-  cursor: "pointer",
-  color: "var(--color-fg-subtle)",
-  padding: 2,
-  display: "flex",
-  alignItems: "center",
-};
-
-const primaryBtnStyle = (pending: boolean): React.CSSProperties => ({
-  marginTop: 6,
-  width: "100%",
-  padding: "9px 0",
-  fontSize: 13.5,
-  fontWeight: 600,
-  background: pending ? "var(--color-accent-muted, oklch(0.45 0.18 250))" : "var(--color-accent)",
-  color: "#fff",
-  border: "none",
-  borderRadius: "var(--radius-md)",
-  cursor: pending ? "not-allowed" : "pointer",
-});

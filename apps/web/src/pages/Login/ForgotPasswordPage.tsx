@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiClient } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
 import { Captcha, isCaptchaRequired } from "@/components/Captcha";
+import styles from "./ForgotPasswordPage.module.css";
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -35,48 +36,30 @@ export function ForgotPasswordPage() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--color-bg)",
-      }}
-    >
-      <div style={{ width: 380 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32, justifyContent: "center" }}>
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: "var(--radius-md)",
-              background: "var(--color-accent)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Icon name="key" size={16} style={{ color: "#fff" }} />
+    <div className={styles.page}>
+      <div className={styles.shell}>
+        <div className={styles.brand}>
+          <div className={styles.iconBadge}>
+            <Icon name="key" size={16} className={styles.iconBadgeSvg} />
           </div>
-          <span style={{ fontSize: 18, fontWeight: 700, color: "var(--color-fg)" }}>忘记密码</span>
+          <span className={styles.brandTitle}>忘记密码</span>
         </div>
 
         {sent ? (
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 14, color: "var(--color-fg-muted)", marginBottom: 16 }}>
+          <div className={styles.success}>
+            <div className={styles.successText}>
               如果该邮箱已注册，您将收到一封包含重置链接的邮件。
             </div>
             <Link
               to="/login"
-              style={{ fontSize: 13, color: "var(--color-accent)", textDecoration: "none" }}
+              className={styles.successLink}
             >
               返回登录
             </Link>
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <label style={{ display: "block", fontSize: 12.5, fontWeight: 500, marginBottom: 6, color: "var(--color-fg-muted)" }}>
+            <label className={styles.label}>
               邮箱地址
             </label>
             <input
@@ -86,47 +69,26 @@ export function ForgotPasswordPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "8px 11px",
-                fontSize: 13.5,
-                background: "var(--color-bg-sunken)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
-                color: "var(--color-fg)",
-                outline: "none",
-              }}
+              className={styles.input}
             />
             {error && (
-              <div style={{ fontSize: 11.5, color: "#ef4444", marginTop: 6 }}>{error}</div>
+              <div className={styles.errorText}>{error}</div>
             )}
-            <div style={{ marginTop: 14 }}>
+            <div className={styles.captchaWrap}>
               <Captcha onChange={setCaptchaToken} />
             </div>
             <button
               type="submit"
               disabled={loading || (captchaRequired && !captchaToken)}
-              style={{
-                marginTop: 16,
-                width: "100%",
-                padding: "9px 0",
-                fontSize: 13.5,
-                fontWeight: 600,
-                background: loading ? "var(--color-accent-muted, oklch(0.45 0.18 250))" : "var(--color-accent)",
-                color: "#fff",
-                border: "none",
-                borderRadius: "var(--radius-md)",
-                cursor: loading ? "not-allowed" : "pointer",
-              }}
+              className={loading ? `${styles.primaryButton} ${styles.primaryButtonPending}` : styles.primaryButton}
             >
               {loading ? "提交中..." : "发送重置链接"}
             </button>
 
-            <div style={{ marginTop: 14, textAlign: "center" }}>
+            <div className={styles.backLinkWrap}>
               <Link
                 to="/login"
-                style={{ fontSize: 12.5, color: "var(--color-accent)", textDecoration: "none" }}
+                className={styles.backLink}
               >
                 返回登录
               </Link>

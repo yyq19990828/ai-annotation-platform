@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useSearchParams, Navigate } from "react-router-dom";
 import { apiClient } from "@/api/client";
 import { Icon } from "@/components/ui/Icon";
+import styles from "./ResetPasswordPage.module.css";
 
 export function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -33,48 +34,30 @@ export function ResetPasswordPage() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--color-bg)",
-      }}
-    >
-      <div style={{ width: 380 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32, justifyContent: "center" }}>
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: "var(--radius-md)",
-              background: "var(--color-accent)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Icon name="lock" size={16} style={{ color: "#fff" }} />
+    <div className={styles.page}>
+      <div className={styles.shell}>
+        <div className={styles.brand}>
+          <div className={styles.iconBadge}>
+            <Icon name="lock" size={16} className={styles.iconBadgeSvg} />
           </div>
-          <span style={{ fontSize: 18, fontWeight: 700, color: "var(--color-fg)" }}>重置密码</span>
+          <span className={styles.brandTitle}>重置密码</span>
         </div>
 
         {done ? (
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 14, color: "var(--color-fg-muted)", marginBottom: 16 }}>
+          <div className={styles.success}>
+            <div className={styles.successText}>
               密码已重置，请使用新密码登录。
             </div>
             <Link
               to="/login"
-              style={{ fontSize: 13, color: "var(--color-accent)", textDecoration: "none" }}
+              className={styles.successLink}
             >
               前往登录
             </Link>
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <label style={{ display: "block", fontSize: 12.5, fontWeight: 500, marginBottom: 6, color: "var(--color-fg-muted)" }}>
+            <label className={styles.label}>
               新密码（至少 8 位，需含大小写字母和数字）
             </label>
             <input
@@ -84,20 +67,10 @@ export function ResetPasswordPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "8px 11px",
-                fontSize: 13.5,
-                background: "var(--color-bg-sunken)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
-                color: "var(--color-fg)",
-                outline: "none",
-              }}
+              className={styles.input}
             />
 
-            <label style={{ display: "block", fontSize: 12.5, fontWeight: 500, marginBottom: 6, marginTop: 12, color: "var(--color-fg-muted)" }}>
+            <label className={`${styles.label} ${styles.confirmLabel}`}>
               确认密码
             </label>
             <input
@@ -107,39 +80,22 @@ export function ResetPasswordPage() {
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               required
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "8px 11px",
-                fontSize: 13.5,
-                background: "var(--color-bg-sunken)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
-                color: "var(--color-fg)",
-                outline: "none",
-              }}
+              className={styles.input}
             />
             {mismatch && (
-              <div style={{ fontSize: 11.5, color: "#ef4444", marginTop: 4 }}>两次密码不一致</div>
+              <div className={styles.mismatchText}>两次密码不一致</div>
             )}
             {error && (
-              <div style={{ fontSize: 11.5, color: "#ef4444", marginTop: 6 }}>{error}</div>
+              <div className={styles.errorText}>{error}</div>
             )}
             <button
               type="submit"
               disabled={loading || !!mismatch}
-              style={{
-                marginTop: 16,
-                width: "100%",
-                padding: "9px 0",
-                fontSize: 13.5,
-                fontWeight: 600,
-                background: loading ? "var(--color-accent-muted, oklch(0.45 0.18 250))" : "var(--color-accent)",
-                color: "#fff",
-                border: "none",
-                borderRadius: "var(--radius-md)",
-                cursor: loading || mismatch ? "not-allowed" : "pointer",
-              }}
+              className={
+                loading || mismatch
+                  ? `${styles.primaryButton} ${styles.primaryButtonDisabled}`
+                  : styles.primaryButton
+              }
             >
               {loading ? "提交中..." : "重置密码"}
             </button>

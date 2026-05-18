@@ -76,6 +76,7 @@ import { BugReportFAB } from "@/components/bugreport/BugReportFAB";
 import { initBugReportCapture, patchFetchForBugCapture } from "@/utils/bugReportCapture";
 import { PageLoader } from "@/components/PageLoader";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
+import styles from "./App.module.css";
 
 function DashboardRouter() {
   const { role } = usePermissions();
@@ -132,15 +133,7 @@ function AppShell() {
   }, []);
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: compact ? "0 1fr" : "220px 1fr",
-        gridTemplateRows: "48px 1fr",
-        height: "100vh",
-        overflow: "hidden",
-      }}
-    >
+    <div className={compact ? `${styles.appShell} ${styles.appShellCompact}` : styles.appShell}>
       <TopBar
         workspace={workspace}
         onWorkspaceChange={() => pushToast({ msg: "切换工作区面板已展开" })}
@@ -149,7 +142,7 @@ function AppShell() {
       />
       {compact ? (
         <>
-          <aside style={{ width: 0, overflow: "hidden" }} aria-hidden="true" />
+          <aside className={styles.hiddenSidebarSlot} aria-hidden="true" />
           <SidebarDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>
             <Sidebar reviewCount={0} />
           </SidebarDrawer>
@@ -157,7 +150,7 @@ function AppShell() {
       ) : (
         <Sidebar reviewCount={0} />
       )}
-      <main style={{ overflow: "auto", background: "var(--color-bg)" }}>
+      <main className={styles.main}>
         <Suspense fallback={<PageLoader />}>
           <Outlet />
         </Suspense>
@@ -177,10 +170,10 @@ function AppShell() {
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
-    <div style={{ padding: "60px 28px", textAlign: "center", color: "var(--color-fg-subtle)" }}>
-      <div style={{ fontSize: 48, marginBottom: 16 }}>🚧</div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--color-fg)", margin: "0 0 8px" }}>{title}</h2>
-      <p style={{ fontSize: 13, margin: 0 }}>此功能模块正在开发中</p>
+    <div className={styles.placeholder}>
+      <div className={styles.placeholderIcon}>🚧</div>
+      <h2 className={styles.placeholderTitle}>{title}</h2>
+      <p className={styles.placeholderText}>此功能模块正在开发中</p>
     </div>
   );
 }
@@ -199,7 +192,7 @@ function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
   useHeartbeat();
 
   return (
-    <div style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
+    <div className={styles.fullScreenWorkbench}>
       <Suspense fallback={<PageLoader />}>
         <WorkbenchPage mode={mode} />
       </Suspense>
@@ -220,27 +213,14 @@ function MobileWorkbenchBlock() {
     <div
       role="dialog"
       aria-modal="true"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15, 18, 25, 0.92)",
-        zIndex: 1000,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
-        textAlign: "center",
-        color: "#f5f7fb",
-        backdropFilter: "blur(6px)",
-      }}
+      className={styles.mobileWorkbenchBlock}
     >
-      <div style={{ fontSize: 38, marginBottom: 12 }}>🖥️</div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 6px" }}>请切换到桌面端</h2>
-      <p style={{ fontSize: 13, color: "#c8cdd6", margin: "0 0 14px", maxWidth: 360, lineHeight: 1.55 }}>
+      <div className={styles.mobileWorkbenchIcon}>🖥️</div>
+      <h2 className={styles.mobileWorkbenchTitle}>请切换到桌面端</h2>
+      <p className={styles.mobileWorkbenchText}>
         标注工作台依赖快捷键、画布鼠标交互和大屏侧栏。当前屏幕小于 768px，仅以只读方式展示，避免误操作。
       </p>
-      <div style={{ fontSize: 12, color: "#8c93a3" }}>建议宽度 ≥ 1024px</div>
+      <div className={styles.mobileWorkbenchHint}>建议宽度 ≥ 1024px</div>
     </div>
   );
 }

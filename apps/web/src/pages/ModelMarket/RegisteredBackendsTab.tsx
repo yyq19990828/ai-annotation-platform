@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -18,6 +19,7 @@ import {
 } from "@/hooks/useMLBackends";
 import { MlBackendFormModal } from "@/components/projects/MlBackendFormModal";
 import type { MLBackendResponse } from "@/types";
+import styles from "./RegisteredBackendsTab.module.css";
 
 const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"> = {
   connected: "success",
@@ -52,31 +54,22 @@ export function RegisteredBackendsTab() {
 
   if (isLoading) {
     return (
-      <Card style={{ padding: 24, textAlign: "center", color: "var(--color-fg-subtle)" }}>
-        加载中…
+      <Card>
+        <div className={styles.loadingCard}>加载中…</div>
       </Card>
     );
   }
 
   if (isError) {
     return (
-      <Card style={{ padding: 24, textAlign: "center", color: "var(--color-danger)" }}>
-        <Icon name="warning" size={20} style={{ marginBottom: 6 }} />
-        <div>加载失败：{(error as Error)?.message ?? "未知错误"}</div>
-        <button
-          onClick={() => refetch()}
-          style={{
-            marginTop: 8,
-            padding: "4px 12px",
-            fontSize: 12,
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-            background: "var(--color-bg-elev)",
-            cursor: "pointer",
-          }}
-        >
-          重试
-        </button>
+      <Card>
+        <div className={styles.errorCard}>
+          <Icon name="warning" size={20} className={styles.errorIcon} />
+          <div>加载失败：{(error as Error)?.message ?? "未知错误"}</div>
+          <button className={styles.retryButton} onClick={() => refetch()}>
+            重试
+          </button>
+        </div>
       </Card>
     );
   }
@@ -85,14 +78,7 @@ export function RegisteredBackendsTab() {
 
   return (
     <>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 12,
-          marginBottom: 16,
-        }}
-      >
+      <div className={styles.statsGrid}>
         <StatCard
           icon="bot"
           label="ML Backend"
@@ -108,36 +94,21 @@ export function RegisteredBackendsTab() {
       </div>
 
       <Card>
-        <div
-          style={{
-            padding: "12px 16px",
-            borderBottom: "1px solid var(--color-border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>项目级 ML Backend</h3>
-          <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+        <div className={styles.cardHeader}>
+          <h3 className={styles.cardTitle}>项目级 ML Backend</h3>
+          <span className={styles.cardMeta}>
             共 {data.projects.length} 个项目 · {data.total_backends} 个 backend
           </span>
         </div>
 
         {data.projects.length === 0 ? (
-          <div
-            style={{
-              padding: 32,
-              textAlign: "center",
-              color: "var(--color-fg-subtle)",
-              fontSize: 13,
-            }}
-          >
-            <Icon name="bot" size={28} style={{ opacity: 0.25, marginBottom: 6 }} />
+          <div className={styles.emptyState}>
+            <Icon name="bot" size={28} className={styles.emptyIcon} />
             <div>尚无项目注册了 ML Backend</div>
-            <div style={{ fontSize: 11.5, marginTop: 4 }}>到具体项目的「项目设置 → ML 模型」中注册</div>
+            <div className={styles.emptyHint}>到具体项目的「项目设置 → ML 模型」中注册</div>
           </div>
         ) : (
-          <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className={styles.groupList}>
             {data.projects.map((p) => (
               <ProjectGroup
                 key={p.project_id}
@@ -217,55 +188,30 @@ function ProjectGroup({
   };
 
   return (
-    <div
-      style={{
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        background: "var(--color-bg-elev)",
-      }}
-    >
-      <div
-        style={{
-          padding: "10px 14px",
-          borderBottom: "1px solid var(--color-border)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Icon name="folder" size={14} style={{ color: "var(--color-fg-muted)" }} />
-          <span style={{ fontSize: 13, fontWeight: 500 }}>{group.project_name}</span>
+    <div className={styles.projectGroup}>
+      <div className={styles.projectHeader}>
+        <div className={styles.projectTitle}>
+          <Icon name="folder" size={14} className={styles.mutedIcon} />
+          <span className={styles.projectName}>{group.project_name}</span>
         </div>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
+        <div className={styles.projectActions}>
           <Button size="sm" onClick={onCreate}>
             <Icon name="plus" size={11} />
             注册
           </Button>
           <a
             href={`/projects/${group.project_id}/settings?section=ml-backends`}
-            style={{ fontSize: 11.5, color: "var(--color-accent)", textDecoration: "none" }}
+            className={styles.projectSettingsLink}
           >
             打开项目设置 →
           </a>
         </div>
       </div>
-      <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 12.5 }}>
+      <table className={styles.backendTable}>
         <thead>
           <tr>
             {["名称", "URL", "类型", "状态", "最近检查", "操作"].map((h) => (
-              <th
-                key={h}
-                style={{
-                  textAlign: "left",
-                  fontWeight: 500,
-                  fontSize: 11,
-                  color: "var(--color-fg-muted)",
-                  padding: "6px 12px",
-                  background: "var(--color-bg-sunken)",
-                  borderBottom: "1px solid var(--color-border)",
-                }}
-              >
+              <th key={h} className={styles.tableHeaderCell}>
                 {h}
               </th>
             ))}
@@ -274,52 +220,30 @@ function ProjectGroup({
         <tbody>
           {group.backends.map((b) => (
             <tr key={b.id}>
-              <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-border)" }}>
-                {b.name}
-              </td>
-              <td
-                style={{
-                  padding: "8px 12px",
-                  borderBottom: "1px solid var(--color-border)",
-                  fontFamily: "var(--font-mono, monospace)",
-                  fontSize: 11,
-                  color: "var(--color-fg-muted)",
-                  maxWidth: 280,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <td className={styles.tableCell}>{b.name}</td>
+              <td className={clsx(styles.tableCell, styles.urlCell)}>
                 {b.url}
               </td>
-              <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-border)" }}>
-                <div style={{ display: "inline-flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+              <td className={styles.tableCell}>
+                <div className={styles.badgeList}>
                   <Badge variant={b.is_interactive ? "ai" : "outline"}>
                     {b.is_interactive ? "交互式" : "批量"}
                   </Badge>
                   {/* v0.9.13 · max_concurrency chip; 缺省（默认 4）不显示, 避免列表噪音 */}
                   {typeof b.extra_params?.max_concurrency === "number" && (
-                    <span title="单 backend 最大并发预标请求数" style={{ display: "inline-flex" }}>
+                    <span title="单 backend 最大并发预标请求数" className={styles.inlineChip}>
                       <Badge variant="outline">≤{b.extra_params.max_concurrency} 并发</Badge>
                     </span>
                   )}
                 </div>
               </td>
-              <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-border)" }}>
+              <td className={styles.tableCell}>
                 <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
                   {b.state}
                 </Badge>
                 {/* v0.9.6 · 深度健康指标 (gpu_info / cache hit / model_version), 由 /health 缓存. */}
                 {b.health_meta && (
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 10.5,
-                      color: "var(--color-fg-subtle)",
-                      lineHeight: 1.5,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <div className={styles.healthMeta}>
                     {b.health_meta.model_version && (
                       <div className="mono" title="model_version">
                         {b.health_meta.model_version}
@@ -340,17 +264,11 @@ function ProjectGroup({
                   </div>
                 )}
               </td>
-              <td
-                style={{
-                  padding: "8px 12px",
-                  borderBottom: "1px solid var(--color-border)",
-                  color: "var(--color-fg-muted)",
-                }}
-              >
+              <td className={clsx(styles.tableCell, styles.mutedCell)}>
                 {formatDate(b.last_checked_at)}
               </td>
-              <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-border)" }}>
-                <div style={{ display: "inline-flex", gap: 6 }}>
+              <td className={styles.tableCell}>
+                <div className={styles.actionList}>
                   <Button size="sm" onClick={() => onHealth(b)} disabled={health.isPending} title="健康检查">
                     <Icon name="refresh" size={11} />
                   </Button>

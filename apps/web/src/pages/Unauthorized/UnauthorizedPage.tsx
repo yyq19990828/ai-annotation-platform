@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { usePermissions } from "@/hooks/usePermissions";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { PageKey } from "@/types";
+import styles from "./UnauthorizedPage.module.css";
 
 const PAGE_PATH: Record<PageKey, string> = {
   dashboard: "/dashboard",
@@ -28,21 +29,14 @@ export function UnauthorizedPage() {
   const fallback = PAGE_PATH[allowedPages[0] ?? "dashboard"] ?? "/dashboard";
 
   return (
-    <div style={{ padding: "80px 28px", textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
-      <div
-        style={{
-          width: 64, height: 64, borderRadius: 16,
-          background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          margin: "0 auto 20px", color: "var(--color-fg-muted)",
-        }}
-      >
+    <div className={styles.page}>
+      <div className={styles.iconWrap}>
         <Icon name="shield" size={28} />
       </div>
-      <h2 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px", color: "var(--color-fg)" }}>
+      <h2 className={styles.title}>
         无权访问此页面
       </h2>
-      <p style={{ fontSize: 13, color: "var(--color-fg-muted)", margin: "0 0 16px", lineHeight: 1.6 }}>
+      <p className={styles.description}>
         您当前的角色 <Badge variant="outline">{ROLE_LABELS[role]}</Badge> 没有访问此功能的权限。
         如需获取权限，请联系项目管理员。
       </p>

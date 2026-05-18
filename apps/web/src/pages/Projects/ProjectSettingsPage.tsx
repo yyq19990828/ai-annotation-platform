@@ -17,6 +17,7 @@ import { DatasetsSection } from "./sections/DatasetsSection";
 import { MlBackendsSection } from "./sections/MlBackendsSection";
 import { RenderingConfigSection } from "./sections/RenderingConfigSection";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import styles from "./ProjectSettingsPage.module.css";
 
 type SectionKey = "general" | "classes" | "attributes" | "members" | "datasets" | "batches" | "ml-backends" | "rendering" | "owner" | "danger";
 
@@ -53,7 +54,7 @@ export function ProjectSettingsPage() {
 
   if (isLoading) {
     return (
-      <div style={{ padding: 60, textAlign: "center", color: "var(--color-fg-subtle)" }}>加载中...</div>
+      <div className={styles.loading}>加载中...</div>
     );
   }
   if (error || !project) {
@@ -70,31 +71,19 @@ export function ProjectSettingsPage() {
   });
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ marginBottom: 16 }}>
+    <div className={styles.page}>
+      <div className={styles.header}>
         <button
           type="button"
           onClick={() => navigate("/dashboard")}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            background: "transparent",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
-            color: "var(--color-fg-muted)",
-            fontSize: 12,
-            fontFamily: "inherit",
-            marginBottom: 8,
-          }}
+          className={styles.backButton}
         >
           <Icon name="chevLeft" size={12} />返回项目总览
         </button>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        <div className={styles.titleRow}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px" }}>{project.name}</h1>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--color-fg-muted)" }}>
+            <h1 className={styles.title}>{project.name}</h1>
+            <div className={styles.meta}>
               <span className="mono">{project.display_id}</span>
               <span>·</span>
               <span>{project.type_label}</span>
@@ -107,7 +96,7 @@ export function ProjectSettingsPage() {
               </Badge>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className={styles.actions}>
             {role === "super_admin" && (
               <Button
                 onClick={() => navigate(`/audit?target_type=project&target_id=${project.id}`)}
@@ -127,19 +116,8 @@ export function ProjectSettingsPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 20 }}>
-        <nav
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-            background: "var(--color-bg-elev)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-lg)",
-            padding: 6,
-            alignSelf: "flex-start",
-          }}
-        >
+      <div className={styles.layout}>
+        <nav className={styles.nav}>
           {visibleSections.map((s) => {
             const active = section === s.key;
             return (
@@ -148,21 +126,7 @@ export function ProjectSettingsPage() {
                 type="button"
                 data-testid={`settings-tab-${s.key}`}
                 onClick={() => setSection(s.key)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "8px 10px",
-                  background: active ? "var(--color-bg-sunken)" : "transparent",
-                  border: "none",
-                  borderRadius: "var(--radius-sm)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontSize: 13,
-                  fontWeight: active ? 600 : 500,
-                  color: active ? "var(--color-fg)" : "var(--color-fg-muted)",
-                  fontFamily: "inherit",
-                }}
+                className={active ? `${styles.navButton} ${styles.navButtonActive}` : styles.navButton}
               >
                 <Icon name={s.icon} size={13} />
                 {s.label}

@@ -1,0 +1,97 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.muted {
+  color: var(--color-fg-muted);
+}
+
+.swatch,
+.swatchActive {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+}
+
+.swatch[data-color="#ef4444"],
+.swatchActive[data-color="#ef4444"] {
+  background: #ef4444;
+}
+
+.swatch[data-color="#f59e0b"],
+.swatchActive[data-color="#f59e0b"] {
+  background: #f59e0b;
+}
+
+.swatch[data-color="#10b981"],
+.swatchActive[data-color="#10b981"] {
+  background: #10b981;
+}
+
+.swatch[data-color="#3b82f6"],
+.swatchActive[data-color="#3b82f6"] {
+  background: #3b82f6;
+}
+
+.swatchActive {
+  border: 2px solid var(--color-fg);
+}
+
+.hint {
+  margin-left: auto;
+  color: var(--color-fg-muted);
+  font-size: 11px;
+}
+
+.canvas {
+  position: relative;
+  width: 100%;
+  padding-bottom: var(--canvas-drawing-aspect-padding, 66.6667%);
+  overflow: hidden;
+  background: var(--canvas-drawing-bg, var(--color-bg-sunken));
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.drawingSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.preview {
+  position: relative;
+  width: var(--canvas-drawing-preview-width, 220px);
+  height: var(--canvas-drawing-preview-height, 147px);
+  overflow: hidden;
+  background: var(--canvas-drawing-bg, var(--color-bg-sunken));
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+}
+
+.previewSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}

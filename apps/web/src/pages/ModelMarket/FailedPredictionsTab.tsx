@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { clsx } from "clsx";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -10,6 +11,7 @@ import {
   useDismissFailedPrediction,
   useRestoreFailedPrediction,
 } from "@/hooks/useFailedPredictions";
+import styles from "./FailedPredictionsTab.module.css";
 
 const MAX_RETRY = 3;
 
@@ -70,28 +72,12 @@ export function FailedPredictionsTab() {
 
   return (
     <>
-      <div
-        style={{
-          marginBottom: 12,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <p style={{ color: "var(--color-fg-muted)", fontSize: 12.5, margin: 0 }}>
+      <div className={styles.toolbar}>
+        <p className={styles.description}>
           ML Backend 调用失败的预测记录；管理员可重试 (单条最多 {MAX_RETRY} 次) 或永久放弃。
         </p>
         <label
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 12.5,
-            color: "var(--color-fg-muted)",
-            cursor: "pointer",
-          }}
+          className={styles.toggle}
           data-testid="toggle-include-dismissed"
         >
           <input
@@ -108,34 +94,27 @@ export function FailedPredictionsTab() {
 
       <Card>
         {isLoading ? (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)" }}>
+          <div className={styles.loadingState}>
             加载中...
           </div>
         ) : !data || data.items.length === 0 ? (
-          <div
-            style={{
-              padding: "60px 16px",
-              textAlign: "center",
-              color: "var(--color-fg-subtle)",
-              fontSize: 13,
-            }}
-          >
-            <Icon name="check" size={26} style={{ opacity: 0.3, marginBottom: 8 }} />
+          <div className={styles.emptyState}>
+            <Icon name="check" size={26} className={styles.emptyIcon} />
             <div>暂无失败预测</div>
           </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <div className={styles.tableScroller}>
+            <table className={styles.table}>
               <thead>
-                <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-                  <th style={th}>项目</th>
-                  <th style={th}>任务</th>
-                  <th style={th}>Backend</th>
-                  <th style={th}>错误类型</th>
-                  <th style={th}>消息</th>
-                  <th style={th}>重试</th>
-                  <th style={th}>时间</th>
-                  <th style={th}>操作</th>
+                <tr className={styles.headerRow}>
+                  <th className={styles.headerCell}>项目</th>
+                  <th className={styles.headerCell}>任务</th>
+                  <th className={styles.headerCell}>Backend</th>
+                  <th className={styles.headerCell}>错误类型</th>
+                  <th className={styles.headerCell}>消息</th>
+                  <th className={styles.headerCell}>重试</th>
+                  <th className={styles.headerCell}>时间</th>
+                  <th className={styles.headerCell}>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -146,45 +125,34 @@ export function FailedPredictionsTab() {
                     <tr
                       key={it.id}
                       data-testid={`failed-prediction-row-${it.id}`}
-                      style={{
-                        borderBottom: "1px solid var(--color-border)",
-                        background: dismissed ? "var(--color-bg-subtle, #f5f5f5)" : undefined,
-                        opacity: dismissed ? 0.7 : 1,
-                      }}
+                      className={clsx(styles.row, dismissed && styles.dismissedRow)}
                     >
-                      <td style={td}>{it.project_name ?? "—"}</td>
-                      <td style={{ ...td, fontFamily: "var(--font-mono)" }}>
+                      <td className={styles.cell}>{it.project_name ?? "—"}</td>
+                      <td className={clsx(styles.cell, styles.monoCell)}>
                         {it.task_display_id ?? "—"}
                       </td>
-                      <td style={td}>{it.backend_name ?? "—"}</td>
-                      <td style={td}>
+                      <td className={styles.cell}>{it.backend_name ?? "—"}</td>
+                      <td className={styles.cell}>
                         <Badge variant="outline">{it.error_type}</Badge>
                         {dismissed && (
-                          <Badge variant="outline" style={{ marginLeft: 6 }}>
+                          <Badge variant="outline" className={styles.dismissedBadge}>
                             已放弃
                           </Badge>
                         )}
                       </td>
                       <td
-                        style={{
-                          ...td,
-                          maxWidth: 280,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          color: "var(--color-fg-muted)",
-                        }}
+                        className={clsx(styles.cell, styles.messageCell)}
                         title={it.message}
                       >
                         {it.message}
                       </td>
-                      <td style={td}>
+                      <td className={styles.cell}>
                         <span className="mono">{it.retry_count}</span> / {MAX_RETRY}
                       </td>
-                      <td style={{ ...td, color: "var(--color-fg-subtle)", fontSize: 12 }}>
+                      <td className={clsx(styles.cell, styles.timeCell)}>
                         {new Date(it.created_at).toLocaleString()}
                       </td>
-                      <td style={{ ...td, whiteSpace: "nowrap" }}>
+                      <td className={clsx(styles.cell, styles.actionsCell)}>
                         {dismissed ? (
                           <Button
                             size="sm"
@@ -214,7 +182,7 @@ export function FailedPredictionsTab() {
                               disabled={dismiss.isPending}
                               onClick={() => onDismiss(it.id, it.task_display_id)}
                               data-testid={`dismiss-${it.id}`}
-                              style={{ marginLeft: 6, color: "var(--color-danger, #c33)" }}
+                              className={styles.dismissButton}
                             >
                               放弃
                             </Button>
@@ -230,15 +198,7 @@ export function FailedPredictionsTab() {
         )}
 
         {totalPages > 1 && (
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 6,
-              padding: "10px 16px",
-              borderTop: "1px solid var(--color-border)",
-            }}
-          >
+          <div className={styles.pagination}>
             <Button
               size="sm"
               variant="ghost"
@@ -247,7 +207,7 @@ export function FailedPredictionsTab() {
             >
               上一页
             </Button>
-            <span style={{ fontSize: 12, alignSelf: "center", color: "var(--color-fg-muted)" }}>
+            <span className={styles.pageIndicator}>
               {page} / {totalPages}
             </span>
             <Button
@@ -264,16 +224,3 @@ export function FailedPredictionsTab() {
     </>
   );
 }
-
-const th: React.CSSProperties = {
-  textAlign: "left",
-  fontWeight: 500,
-  fontSize: 12,
-  color: "var(--color-fg-muted)",
-  padding: "10px 12px",
-};
-
-const td: React.CSSProperties = {
-  padding: "10px 12px",
-  verticalAlign: "middle",
-};

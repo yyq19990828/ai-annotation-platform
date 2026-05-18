@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import type { CommentCanvasDrawing } from "@/api/comments";
+import styles from "./CanvasDrawingEditor.module.css";
 
 interface Props {
   open: boolean;
@@ -44,6 +46,12 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
   const [stroke, setStroke] = useState<string>("#ef4444");
   const [drawing, setDrawing] = useState<number[] | null>(null); // 当前正在画的折线点 [x1, y1, x2, y2, ...]
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const canvasRef = useElementStyle<HTMLDivElement>(useMemo<CSSProperties>(() => ({
+    "--canvas-drawing-aspect-padding": `${aspectRatioPercent(imageWidth, imageHeight)}%`,
+    "--canvas-drawing-bg": backgroundUrl
+      ? `center/contain no-repeat url(${backgroundUrl})`
+      : "var(--color-bg-sunken)",
+  } as CSSProperties), [backgroundUrl, imageHeight, imageWidth]));
 
   // 重置 shapes（每次打开同步 initial）
   useEffect(() => {
@@ -95,45 +103,29 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
 
   return (
     <Modal open={open} onClose={onClose} title="画布批注（reviewer）" width={680}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-          <span style={{ color: "var(--color-fg-muted)" }}>颜色：</span>
+      <div className={styles.editor}>
+        <div className={styles.toolbar}>
+          <span className={styles.muted}>颜色：</span>
           {STROKE_COLORS.map((c) => (
             <button
               key={c.value}
               type="button"
               onClick={() => setStroke(c.value)}
               aria-label={c.label}
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: "50%",
-                border: stroke === c.value ? "2px solid var(--color-fg)" : "1px solid var(--color-border)",
-                background: c.value,
-                cursor: "pointer",
-              }}
+              className={stroke === c.value ? styles.swatchActive : styles.swatch}
+              data-color={c.value}
             />
           ))}
-          <span style={{ marginLeft: "auto", color: "var(--color-fg-muted)", fontSize: 11 }}>
+          <span className={styles.hint}>
             按住鼠标拖动绘制 · {shapes.length} 条线
           </span>
         </div>
-        <div
-          style={{
-            position: "relative",
-            width: "100%",
-            paddingBottom: `${aspectRatioPercent(imageWidth, imageHeight)}%`,
-            background: backgroundUrl ? `center/contain no-repeat url(${backgroundUrl})` : "var(--color-bg-sunken)",
-            border: "1px solid var(--color-border)",
-            borderRadius: 4,
-            overflow: "hidden",
-          }}
-        >
+        <div ref={canvasRef} className={styles.canvas}>
           <svg
             ref={svgRef}
             viewBox="0 0 1 1"
             preserveAspectRatio="none"
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", cursor: "crosshair" }}
+            className={styles.drawingSvg}
             onPointerDown={handleDown}
             onPointerMove={handleMove}
             onPointerUp={handleUp}
@@ -145,11 +137,10 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
                 points={pointsToString(s.points)}
                 fill="none"
                 stroke={s.stroke ?? "#ef4444"}
-                strokeWidth={0.005}
+                strokeWidth={2}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
-                style={{ strokeWidth: 2 } as React.CSSProperties}
               />
             ))}
             {drawing && drawing.length >= 4 && (
@@ -157,15 +148,14 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
                 points={pointsToString(drawing)}
                 fill="none"
                 stroke={stroke}
-                strokeWidth={0.005}
+                strokeWidth={2}
                 strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
-                style={{ strokeWidth: 2 } as React.CSSProperties}
               />
             )}
           </svg>
         </div>
-        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+        <div className={styles.actions}>
           <Button size="sm" onClick={handleUndo} disabled={shapes.length === 0}>
             <Icon name="trash" size={11} /> 撤销
           </Button>
@@ -203,22 +193,19 @@ export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl, imag
   const aw = imageWidth && imageWidth > 0 ? imageWidth : DEFAULT_W;
   const ah = imageHeight && imageHeight > 0 ? imageHeight : DEFAULT_H;
   const height = (ah / aw) * width;
+  const previewRef = useElementStyle<HTMLDivElement>(useMemo<CSSProperties>(() => ({
+    "--canvas-drawing-preview-width": width,
+    "--canvas-drawing-preview-height": height,
+    "--canvas-drawing-bg": backgroundUrl
+      ? `center/contain no-repeat url(${backgroundUrl})`
+      : "var(--color-bg-sunken)",
+  } as CSSProperties), [backgroundUrl, height, width]));
   return (
-    <div
-      style={{
-        position: "relative",
-        width,
-        height,
-        background: backgroundUrl ? `center/contain no-repeat url(${backgroundUrl})` : "var(--color-bg-sunken)",
-        border: "1px solid var(--color-border)",
-        borderRadius: 3,
-        overflow: "hidden",
-      }}
-    >
+    <div ref={previewRef} className={styles.preview}>
       <svg
         viewBox="0 0 1 1"
         preserveAspectRatio="none"
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+        className={styles.previewSvg}
       >
         {(drawing.shapes ?? []).map((s, i) => (
           <polyline
@@ -227,7 +214,7 @@ export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl, imag
             fill="none"
             stroke={s.stroke ?? "#ef4444"}
             vectorEffect="non-scaling-stroke"
-            style={{ strokeWidth: 2 } as React.CSSProperties}
+            strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
           />

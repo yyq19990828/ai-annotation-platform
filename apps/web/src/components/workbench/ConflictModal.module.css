@@ -1,0 +1,75 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.modal {
+  min-width: 360px;
+  max-width: 420px;
+  padding: 24px 28px;
+  background: var(--color-bg-elev);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+}
+
+.header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.warningIcon {
+  color: oklch(0.65 0.18 55);
+}
+
+.title {
+  color: var(--color-fg);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.description {
+  margin: 0 0 20px;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.button {
+  padding: 7px 16px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+
+.cancelButton {
+  color: var(--color-fg);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+}
+
+.overwriteButton {
+  color: #fff;
+  background: oklch(0.60 0.18 35);
+  border: none;
+}
+
+.reloadButton {
+  color: #fff;
+  font-weight: 600;
+  background: var(--color-accent);
+  border: none;
+}

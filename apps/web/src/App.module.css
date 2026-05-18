@@ -1,0 +1,89 @@
+.appShell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: 48px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.appShellCompact {
+  grid-template-columns: 0 1fr;
+}
+
+.hiddenSidebarSlot {
+  width: 0;
+  overflow: hidden;
+}
+
+.main {
+  overflow: auto;
+  background: var(--color-bg);
+}
+
+.placeholder {
+  padding: 60px 28px;
+  text-align: center;
+  color: var(--color-fg-subtle);
+}
+
+.placeholderIcon {
+  margin-bottom: 16px;
+  font-size: 48px;
+}
+
+.placeholderTitle {
+  margin: 0 0 8px;
+  color: var(--color-fg);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.placeholderText {
+  margin: 0;
+  font-size: 13px;
+}
+
+.fullScreenWorkbench {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.mobileWorkbenchBlock {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #f5f7fb;
+  text-align: center;
+  background: rgba(15, 18, 25, 0.92);
+  backdrop-filter: blur(6px);
+}
+
+.mobileWorkbenchIcon {
+  margin-bottom: 12px;
+  font-size: 38px;
+}
+
+.mobileWorkbenchTitle {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.mobileWorkbenchText {
+  max-width: 360px;
+  margin: 0 0 14px;
+  color: #c8cdd6;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.mobileWorkbenchHint {
+  color: #8c93a3;
+  font-size: 12px;
+}
