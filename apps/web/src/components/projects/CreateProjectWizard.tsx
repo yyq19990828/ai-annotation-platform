@@ -17,7 +17,8 @@ import {
   PRESET_AI_MODELS,
   CUSTOM_MODEL_KEY,
 } from "@/constants/projectTypes";
-import type { ProjectResponse, ClassesConfig, AttributeField, AttributeSchema } from "@/api/projects";
+import { projectsApi, type ProjectResponse, type ClassesConfig, type AttributeField, type AttributeSchema } from "@/api/projects";
+import type { ClassConfigEntry } from "@/api/projects";
 import type { DatasetResponse } from "@/api/datasets";
 import { ClassEditor, type ClassRow } from "@/pages/Projects/sections/ClassEditor";
 import { TextOutputDefaultSelect } from "@/components/projects/shared/TextOutputDefaultSelect";
@@ -28,6 +29,9 @@ type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 interface Props {
   open: boolean;
   onClose: () => void;
+  /** v0.10.11 · 给定时, 打开后以此项目为模板预填 FormState; 提交时携带
+   *  source_project_id, 后端用源项目兜底未显式给出的字段. */
+  sourceProjectId?: string;
 }
 
 interface FormState {
@@ -81,7 +85,54 @@ const STEP_LABELS: Record<StepperStep, string> = {
 // v0.7.6：扩为 6 步（+属性 schema），bump 草稿 key 防止旧 5 步草稿污染。
 const DRAFT_KEY = "create_project_draft_v0_7_6";
 
-export function CreateProjectWizard({ open, onClose }: Props) {
+/** v0.10.11 · 把 ProjectResponse 的可克隆配置字段还原为 Wizard FormState. 不包含
+ *  运行时数据 (datasets / tasks / members / batches); 后端 source_project_id 兜底
+ *  那些不在表单中的字段 (label_config / sampling / rendering_config 等). */
+function buildFormFromSource(src: ProjectResponse): FormState {
+  const classesConfig: ClassesConfig = (src.classes_config ?? {}) as ClassesConfig;
+  const orderedClasses = [...(src.classes ?? [])].sort((a, b) => {
+    const oa = classesConfig[a]?.order ?? 0;
+    const ob = classesConfig[b]?.order ?? 0;
+    return oa - ob;
+  });
+  const classRows: ClassRow[] = orderedClasses.map((name) => {
+    const cfg: ClassConfigEntry | undefined = classesConfig[name];
+    return {
+      name,
+      color: cfg?.color ?? "#888888",
+      ...(cfg?.alias ? { alias: cfg.alias } : {}),
+    };
+  });
+  const attributeFields: AttributeField[] =
+    (src.attribute_schema as AttributeSchema | undefined)?.fields ?? [];
+  const aiModel = src.ai_model ?? "";
+  const aiModelChoice = aiModel && PRESET_AI_MODELS.includes(aiModel)
+    ? aiModel
+    : aiModel
+      ? CUSTOM_MODEL_KEY
+      : PRESET_AI_MODELS[0];
+  const aiModelCustom = aiModel && !PRESET_AI_MODELS.includes(aiModel) ? aiModel : "";
+  const textOutputDefault =
+    src.text_output_default === "box" || src.text_output_default === "mask" ||
+    src.text_output_default === "both"
+      ? src.text_output_default
+      : "";
+  return {
+    ...INITIAL,
+    name: src.name ? `${src.name} (副本)` : "",
+    typeKey: src.type_key,
+    classRows,
+    attributeFields,
+    aiEnabled: src.ai_enabled,
+    aiModelChoice,
+    aiModelCustom,
+    textOutputDefault,
+    mlBackendSourceId: src.ml_backend_id ?? "",
+    // datasets / batches / members / dueDate 留空 — 这些是运行时数据
+  };
+}
+
+export function CreateProjectWizard({ open, onClose, sourceProjectId }: Props) {
   const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
   const createProject = useCreateProject();
@@ -89,15 +140,44 @@ export function CreateProjectWizard({ open, onClose }: Props) {
   const [step, setStep] = useState<Step>(1);
   const [form, setForm] = useState<FormState>(INITIAL);
   const [created, setCreated] = useState<ProjectResponse | null>(null);
+  // v0.10.11 · "从已有项目复制" — 拉源项目并 prefill 一次. 失败时 toast + 退化为
+  // 普通新建 (不阻塞 Wizard 流程).
+  const [prefilling, setPrefilling] = useState(false);
 
-  // 草稿恢复 / 持久化
+  // 草稿恢复 / 持久化 — v0.10.11 · 复制模式下跳过草稿 (避免与他人项目混合),
+  // 改为拉源项目 prefill.
   useEffect(() => {
     if (!open) {
       setStep(1);
       setForm(INITIAL);
       setCreated(null);
+      setPrefilling(false);
       createProject.reset();
       return;
+    }
+    if (sourceProjectId) {
+      let cancelled = false;
+      setPrefilling(true);
+      projectsApi
+        .get(sourceProjectId)
+        .then((src) => {
+          if (cancelled) return;
+          setForm(buildFormFromSource(src));
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          pushToast({
+            msg: "源项目读取失败, 走普通新建",
+            sub: (e as Error)?.message ?? "请稍后重试",
+            kind: "error",
+          });
+        })
+        .finally(() => {
+          if (!cancelled) setPrefilling(false);
+        });
+      return () => {
+        cancelled = true;
+      };
     }
     try {
       const saved = localStorage.getItem(DRAFT_KEY);
@@ -106,13 +186,14 @@ export function CreateProjectWizard({ open, onClose }: Props) {
       // ignore
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, sourceProjectId]);
 
   useEffect(() => {
-    if (open && !created) {
+    // v0.10.11 · 复制模式不写草稿 (避免下次普通新建被他人项目模板污染).
+    if (open && !created && !sourceProjectId) {
       try { localStorage.setItem(DRAFT_KEY, JSON.stringify(form)); } catch {/* */}
     }
-  }, [form, open, created]);
+  }, [form, open, created, sourceProjectId]);
 
   const selectedType = useMemo(
     () => PROJECT_TYPES.find((t) => t.key === form.typeKey) ?? PROJECT_TYPES[0],
@@ -167,6 +248,9 @@ export function CreateProjectWizard({ open, onClose }: Props) {
         // v0.9.7 · 仅启用 AI 且选了 source backend 时携带; 后端会复制 row 入新项目
         ml_backend_source_id:
           form.aiEnabled && form.mlBackendSourceId ? form.mlBackendSourceId : null,
+        // v0.10.11 · "从已有项目复制" — 给后端兜底未显式给出的字段 (例如 label_config /
+        // rendering_config / iou_dedup_threshold / sampling 等不在 wizard 表单内的项).
+        source_project_id: sourceProjectId ?? null,
         due_date: form.dueDate || null,
       },
       {
@@ -195,8 +279,41 @@ export function CreateProjectWizard({ open, onClose }: Props) {
   const stepperCurrent = (step >= 1 && step <= 6 ? step : 6) as StepperStep;
 
   return (
-    <Modal open={open} onClose={onClose} title={step === 7 ? "创建完成" : "新建项目"} width={620}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={
+        step === 7
+          ? "创建完成"
+          : sourceProjectId
+            ? "复制项目配置"
+            : "新建项目"
+      }
+      width={620}
+    >
       {step !== 7 && <Stepper current={stepperCurrent} />}
+      {/* v0.10.11 · 复制模式: 顶部横幅 + 加载态. */}
+      {sourceProjectId && step !== 7 && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: "8px 12px",
+            border: "1px solid var(--color-accent-soft)",
+            background: "var(--color-accent-soft)",
+            borderRadius: "var(--radius-md)",
+            fontSize: 12,
+            color: "var(--color-fg-muted)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <Icon name="copy" size={12} />
+          {prefilling
+            ? "正在从源项目加载配置…"
+            : "已用源项目配置预填表单, 提交后将复制到新项目 (不复制数据集 / 任务 / 成员)"}
+        </div>
+      )}
 
       {step === 1 && (
         <Step1

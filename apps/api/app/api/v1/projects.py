@@ -11,6 +11,7 @@ from app.deps import (
     require_roles,
     require_project_visible,
     require_project_owner,
+    assert_project_visible,
 )
 from app.db.enums import UserRole
 from app.db.models.user import User
@@ -292,7 +293,9 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
-    payload = data.model_dump(exclude_none=True)
+    # v0.10.11 · exclude_unset 让"未显式给出"与"显式给出默认值"可区分; 兜底字段
+    # 优先用 source_project_id 项目的值, 其次走 Project 模型列默认值.
+    payload = data.model_dump(exclude_unset=True)
 
     # v0.9.7 · 取出 source_id (若给定), 校验存在性后再创建项目;
     # 项目 INSERT 完成后再复制 backend (受 FK ml_backends.project_id 约束).
@@ -306,6 +309,20 @@ async def create_project(
             raise HTTPException(
                 status_code=400, detail="ml_backend_source_id not found"
             )
+
+    # v0.10.11 · "从已有项目复制配置" — 用源项目兜底未显式给出的字段;
+    # 若源项目带 ml_backend_id 且 caller 未单独指定 ml_backend_source_id,
+    # 自动把源项目的 backend 作为 backend 克隆源.
+    source_project_id = payload.pop("source_project_id", None)
+    if source_project_id is not None:
+        source_project = await assert_project_visible(
+            source_project_id, db, current_user
+        )
+        payload = _merge_from_source_project(payload, source_project)
+        if source_backend is None and source_project.ml_backend_id is not None:
+            from app.db.models.ml_backend import MLBackend as _MLB
+
+            source_backend = await db.get(_MLB, source_project.ml_backend_id)
 
     if payload.get("ml_backend_id"):
         payload = await _apply_backend_display_hint(db, payload)
@@ -363,6 +380,51 @@ async def _clone_backend_to_new_project(
     db.add(cloned)
     await db.flush()
     return new_id
+
+
+# v0.10.11 · 源项目可克隆字段白名单. 不在此列表的字段 (id/display_id/owner_id/
+# status/created_at/updated_at/total_tasks 等运行时状态, datasets/tasks/members/
+# batches 等关联数据) 不会被复制.
+_CLONEABLE_PROJECT_FIELDS: tuple[str, ...] = (
+    "type_label",
+    "type_key",
+    "classes",
+    "classes_config",
+    "attribute_schema",
+    "ai_enabled",
+    "ai_model",
+    "label_config",
+    "sampling",
+    "maximum_annotations",
+    "show_overlap_first",
+    "iou_dedup_threshold",
+    "box_threshold",
+    "text_threshold",
+    "text_output_default",
+    "rendering_config",
+)
+
+
+def _merge_from_source_project(payload: dict, source: Project) -> dict:
+    """v0.10.11 · 用 source 项目的可克隆字段兜底 payload 中缺失的项. 请求字段优先.
+
+    JSONB/dict/list 字段深拷贝, 避免新项目和源项目共享底层引用 (后续 mutate
+    污染源).
+    """
+    import copy
+
+    for field in _CLONEABLE_PROJECT_FIELDS:
+        if field in payload:
+            continue
+        if not hasattr(source, field):
+            continue
+        value = getattr(source, field)
+        if value is None:
+            continue
+        if isinstance(value, (dict, list)):
+            value = copy.deepcopy(value)
+        payload[field] = value
+    return payload
 
 
 async def _apply_backend_display_hint(db: AsyncSession, payload: dict) -> dict:

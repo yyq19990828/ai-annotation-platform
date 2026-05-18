@@ -29,9 +29,9 @@
 
 ### 现在可做（无前置依赖，作为 `chip:maintenance` 穿插推进，不抢 v0.10.x 主线）
 
-- **CSP `style-src` nonce 收紧**（P3，留 v0.10.x 与 ProjectSettingsPage 重构 + 全站 ~2600 处 `<style={{}}>` 重构同窗口；script-src 已 v0.9.11 收紧）
+- **CSP `style-src` nonce 收紧**（P3，v0.10.11 已落基建试点：`BatchesSection.tsx` 17 处 inline → CSS modules + 文件级 `no-restricted-syntax` lint guard + [迁移指南](docs-site/dev/how-to/migrate-inline-style-to-css-modules.md)；剩 ~2880 处 inline 跨全站，按 sections 群批次推进；待全站迁完后单独 PR 从 `security_headers.py` 摘 `'unsafe-inline'`；script-src 已 v0.9.11 收紧）
 - **OpenSeadragon 瓦片金字塔**（见 §C.7 图片工作台 · I1 大图 tile；极大图 > 50MP 才必要）
-- **i18n 框架接入**（P3，与全站 inline style 重构合并节省破窗成本，inline style 密度最高的 ProjectSettingsPage sections 群可作为切入点）
+- **i18n 框架接入**（P3，v0.10.11 已为 sections 群建 CSS modules 试点；i18n 可在迁 inline style 同窗口合并破窗，密度最高的 `pages/Projects/sections/` 仍是首选切入点）
 - **截图 fixture 数据补齐 + 重跑**（P3）：4 张空白态需补数据后重跑（`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`）。
 - **PerfHud 浏览器侧指标**（P3）：FPS / JS heap / longtask / API p95 / WS 重连数 / 当前 task 框数，留到 §C.1 keyset 分页拐点判断时一并加。
 - **dev SMTP 测试链路**（P3）：docker-compose 缺 mailpit / mailhog dev SMTP service；可加 `mailpit` service + `.env` `SMTP_HOST=mailpit SMTP_PORT=1025`。
@@ -59,7 +59,7 @@
 
 ### 项目模块
 - **非 image-det / video-track 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / mm 仍未提供真实标注能力。`lidar` 在 Workbench StageHost 中已有 3D placeholder，但 Dashboard 入口仍未把它作为可用工作台开放；接入真实 3D 前不要复用图片 / 视频 geometry。
-- **项目模板**：当前每次新建项目都从 0 配置类别 / AI 模型；无「从已有项目复制」或「保存为模板」入口（v0.7.6 wizard 已扩为 6 步含属性 schema，模板复用更有意义了）。
+- **项目模板**：v0.10.11 已落「从已有项目复制配置」形态（ProjectGrid 行操作 + AdminDashboard 项目表 + Wizard `sourceProjectId` 预填 + 后端 `POST /projects` 接 `source_project_id` 兜底 16 个可克隆字段 + 6 例后端单测）。**剩余**：独立 `ProjectTemplate` 表 + 模板库 UI（跨项目共享 / 公共模板），触发条件 = 客户提"模板库"明确需求；当前「复制」形态满足 80% 场景，无客户驱动前不开工。
 
 ### 数据 & 存储
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
@@ -128,7 +128,7 @@
 
 ### 安全
 - **2FA / TOTP**：super_admin 必选、其它角色可选。
-- **CSP `style-src` nonce 收紧**（v0.9.11 已收紧 script-src）：剩 style-src `'unsafe-inline'`，前置依赖**全站 ~2600 处 `style={{}}` 重构**（迁 CSS modules / vanilla-extract），切入点选 inline style 密度最高的 `pages/Projects/sections/` 群（`BatchesSection.tsx` 948 行 / `GeneralSection.tsx` 433 行 / `DatasetsSection.tsx` 395 行）。
+- **CSP `style-src` nonce 收紧**（v0.9.11 收紧 script-src，v0.10.11 落基建试点）：style-src `'unsafe-inline'` 仍在头里；v0.10.11 已迁 `BatchesSection.tsx`（17/17 inline 全清）+ 建 CSS modules 约定 + 文件级 lint guard 防回潮 + 写 [迁移指南](docs-site/dev/how-to/migrate-inline-style-to-css-modules.md)。**剩余**：① 推进 `pages/Projects/sections/` 群其余 sections（`GeneralSection.tsx` 433 行 / `DatasetsSection.tsx` 395 行 / `MlBackendsSection.tsx` 336 行 / `ClassEditor.tsx` 318 行 等），把 lint guard `files` 列表扩为 glob；② 处理 `Button` 组件自身 inline style（当前用 `!important` 桥接，Button 自身重构后摘掉所有覆盖类的 `!important`）；③ 其它高密度页面群（`pages/Workbench/` 578 处 / `pages/Dashboard/` 353 处）；④ 全部迁完后单独 PR 从 [`security_headers.py`](apps/api/app/middleware/security_headers.py) 摘 `'unsafe-inline'` + nginx sub_filter 加 style 标签 nonce 注入（复用 v0.9.11 script-src 路径）。
 
 ### 治理 / 合规
 - **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
@@ -245,7 +245,7 @@
 | **P2** | 非视频工作台（image-seg → keypoint → lidar） | 体量大，视频工作台已单独提升为 P0 | — |
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
 | **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
-| **P3** | CSP `style-src` nonce 收紧（v0.9.11 已收紧 script-src） | `style-src 'unsafe-inline'` 仍保留, 前置依赖全站 ~2600 处 `style={{}}` 迁 CSS modules（切入点 `pages/Projects/sections/` 群）, 与 v0.10.x ProjectSettingsPage 重构同窗口 | [0010](docs/adr/0010-security-headers-middleware.md) |
+| **P3** | CSP `style-src` nonce 收紧 sections 群续推 | v0.10.11 已落 `BatchesSection.tsx` 试点 + lint guard + 迁移指南；接下来按 `pages/Projects/sections/` 群其余文件批次推进，全部迁完后摘 `'unsafe-inline'` | [0010](docs/adr/0010-security-headers-middleware.md) |
 | **P3** | 截图 fixture 数据补齐 + 重跑（v0.9.7 19 张已 commit, 4 张空白态需补 seed） | seed.py 加 prepare 钩子: 5+ pre_annotated 批次 / 类别无 alias 项目 / 同 task 双 prediction (IoU) / 30+ tasks (bulk-edit) | — |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |

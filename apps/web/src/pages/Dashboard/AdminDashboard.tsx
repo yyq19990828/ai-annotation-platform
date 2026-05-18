@@ -23,6 +23,8 @@ export function AdminDashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const wizardOpen = searchParams.get("new") === "1";
+  // v0.10.11 · 从 ProjectGrid "复制项目" 跳来时携带 ?from=<id>; Wizard 据此预填.
+  const wizardSourceProjectId = searchParams.get("from") || undefined;
   const [importOpen, setImportOpen] = useState(false);
 
   const recentActivity = (audit?.items ?? []).filter((it) => !it.action.startsWith("http.")).slice(0, 8);
@@ -35,6 +37,7 @@ export function AdminDashboard() {
   const closeWizard = () => {
     const next = new URLSearchParams(searchParams);
     next.delete("new");
+    next.delete("from");
     setSearchParams(next, { replace: true });
   };
 
@@ -67,7 +70,11 @@ export function AdminDashboard() {
           <Button variant="primary" onClick={openWizard}>
             <Icon name="plus" size={13} />新建项目
           </Button>
-          <CreateProjectWizard open={wizardOpen} onClose={closeWizard} />
+          <CreateProjectWizard
+            open={wizardOpen}
+            onClose={closeWizard}
+            sourceProjectId={wizardSourceProjectId}
+          />
         </div>
       </div>
 
@@ -308,9 +315,23 @@ export function AdminDashboard() {
                     {p.status === "archived" && <Badge variant="outline" dot>已归档</Badge>}
                   </td>
                   <td style={{ padding: "10px 16px 10px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right" }}>
-                    <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(`/projects/${p.id}/settings`); }}>
-                      <Icon name="settings" size={13} />设置
-                    </Button>
+                    <div style={{ display: "inline-flex", gap: 4 }}>
+                      {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/dashboard?new=1&from=${p.id}`);
+                        }}
+                        title="复制项目配置（不复制数据集 / 任务 / 成员）"
+                      >
+                        <Icon name="copy" size={13} />复制
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(`/projects/${p.id}/settings`); }}>
+                        <Icon name="settings" size={13} />设置
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

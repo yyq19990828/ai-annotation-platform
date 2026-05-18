@@ -42,9 +42,11 @@ export type ProjectStatsResponse = ProjectStats;
 export type ProjectMemberResponse = ProjectMemberOut;
 // v0.9.6 · codegen 旧版 ProjectCreate 缺 text_output_default; 手动扩到 codegen 重跑.
 // v0.9.7 · 加 ml_backend_source_id (Wizard step 4 复用全局 backend), 同样待 codegen 重跑.
+// v0.10.11 · 加 source_project_id (从已有项目复制配置), 同样待 codegen 重跑.
 export type ProjectCreatePayload = ProjectCreate & {
   text_output_default?: "box" | "mask" | "both" | null;
   ml_backend_source_id?: string | null;
+  source_project_id?: string | null;
 };
 // v0.10.10 · I17.3 · 加 rendering_config 字段；待 codegen 重跑。
 export type ProjectUpdatePayload = ProjectUpdate & {

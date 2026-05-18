@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { useNavigate } from "react-router-dom";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { useToastStore } from "@/components/ui/Toast";
 import { projectsApi, type ProjectResponse, type ExportFormat } from "@/api/projects";
@@ -30,6 +31,15 @@ interface Props {
  */
 export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) {
   const pushToast = useToastStore((s) => s.push);
+  const navigate = useNavigate();
+
+  // v0.10.11 · 跳 Dashboard 并打开 Wizard 复制流; super_admin 看 AdminDashboard /
+  // project_admin 看 DashboardPage, 二者都挂在 /dashboard 下由 DashboardRouter 分派.
+  // (App.tsx 把 "/" index 设成 Navigate to="/dashboard" replace, 它不保留 query
+  // string, 所以这里直接拼 /dashboard.)
+  const onDuplicate = (p: ProjectResponse) => {
+    navigate(`/dashboard?new=1&from=${p.id}`);
+  };
 
   const exportProject = async (p: ProjectResponse, format: ExportFormat) => {
     try {
@@ -138,6 +148,7 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
                 canManage={canManage(p)}
                 onSettings={onSettings}
                 onExport={exportProject}
+                onDuplicate={onDuplicate}
               />
               <Button
                 size="sm"
@@ -159,11 +170,13 @@ function ProjectMoreMenu({
   canManage,
   onSettings,
   onExport,
+  onDuplicate,
 }: {
   project: ProjectResponse;
   canManage: boolean;
   onSettings: (p: ProjectResponse, section?: string) => void;
   onExport: (p: ProjectResponse, format: ExportFormat) => void;
+  onDuplicate: (p: ProjectResponse) => void;
 }) {
   const items: DropdownItem[] = [];
   if (canManage) {
@@ -172,6 +185,13 @@ function ProjectMoreMenu({
       label: "项目设置",
       icon: "settings",
       onSelect: () => onSettings(project),
+    });
+    // v0.10.11 · "复制项目" — 跳 Wizard 复制流, 仅 canManage 用户可见
+    items.push({
+      id: "duplicate",
+      label: "复制项目配置",
+      icon: "copy",
+      onSelect: () => onDuplicate(project),
     });
     items.push({ id: "div-1", divider: true, label: "" });
   }

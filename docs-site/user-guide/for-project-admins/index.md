@@ -31,6 +31,17 @@ last_reviewed: 2026-05-11
 ![向导步骤](../images/projects/wizard-steps.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 6 步 wizard 各步关键截图（基本信息 / 类型 / 类别 schema / 属性 schema / AI 模型 / 审核策略），可拼成一张长图。 -->
 
+## 从已有项目复制配置（v0.10.11+）
+
+如果新项目的 classes / 属性 schema / AI 模型 / 渲染配置等与既有项目相同（或大致相同），可以直接复制配置：
+
+1. 在 Dashboard 找到要复制的项目卡片 → 右下角 `⋮` → 「复制项目配置」。
+2. 自动跳到 Wizard，顶部出现 banner「已用源项目配置预填表单」；新项目名默认为 `{源项目名} (副本)`。
+3. 7 步流程正常往下走，任何字段都可以在某步覆盖（你的修改优先于源配置）。
+4. 提交后新项目就绪。**只复制配置**：classes / classes_config / attribute_schema / AI 配置 / label_config / rendering_config / 阈值 / 采样规则等。**不复制运行时数据**：datasets / tasks / annotations / members / batches。
+
+> 需要的不是「复制一次」而是「跨项目共享模板库」？请提需求 — 当前形态满足 80% 场景，独立 Template 库待客户驱动触发。
+
 ## 任务生成
 
 项目创建或数据集关联后，每条数据会自动生成一个任务，状态为 `pending`，等待分配。

@@ -201,6 +201,8 @@ export function DashboardPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const wizardOpen = searchParams.get("new") === "1";
+  // v0.10.11 · 从 ProjectGrid "复制项目" 跳来时携带 ?from=<id>; Wizard 据此预填.
+  const wizardSourceProjectId = searchParams.get("from") || undefined;
   const viewMode: "list" | "grid" = searchParams.get("view") === "grid" ? "grid" : "list";
   const setViewMode = (mode: "list" | "grid") => {
     const next = new URLSearchParams(searchParams);
@@ -236,6 +238,7 @@ export function DashboardPage() {
   const closeWizard = () => {
     const next = new URLSearchParams(searchParams);
     next.delete("new");
+    next.delete("from");
     setSearchParams(next, { replace: true });
   };
 
@@ -285,7 +288,7 @@ export function DashboardPage() {
             <Button variant="primary" onClick={openWizard}>
               <Icon name="plus" size={13} />新建项目
             </Button>
-            <CreateProjectWizard open={wizardOpen} onClose={closeWizard} />
+            <CreateProjectWizard open={wizardOpen} onClose={closeWizard} sourceProjectId={wizardSourceProjectId} />
           </Can>
         </div>
       </div>

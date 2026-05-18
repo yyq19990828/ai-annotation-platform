@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -38,6 +38,7 @@ import { BatchesKanbanView } from "./BatchesKanbanView";
 import { BatchAuditLogDrawer } from "./BatchAuditLogDrawer";
 import type { ProjectResponse } from "@/api/projects";
 import type { BatchResponse, BulkBatchActionResponse } from "@/api/batches";
+import styles from "./BatchesSection.module.css";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "草稿",
@@ -71,6 +72,11 @@ const BULK_LABEL: Record<BulkActionKind, string> = {
   approve: "通过",
   reject: "驳回",
 };
+
+// v0.10.11 · 拼接非空 class 名 (类似 clsx 但不引依赖, 单文件足够).
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
 
 export function BatchesSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
@@ -263,10 +269,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const renderBulkResultRow = (item: { batch_id: string; reason: string }) => {
     const b = idToBatch.get(item.batch_id);
     return (
-      <li key={item.batch_id} style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+      <li key={item.batch_id} className={styles.bulkResultRow}>
         <span className="mono">{b?.display_id ?? item.batch_id.slice(0, 8)}</span>
-        {b ? <span style={{ marginLeft: 6 }}>· {b.name}</span> : null}
-        <span style={{ marginLeft: 6, color: "var(--color-fg-subtle)" }}>— {item.reason}</span>
+        {b ? <span className={styles.bulkResultRowName}>· {b.name}</span> : null}
+        <span className={styles.bulkResultRowReason}>— {item.reason}</span>
       </li>
     );
   };
@@ -318,51 +324,34 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
     });
   };
 
+  // v0.10.11 · bulk confirm primary button — 3 档颜色用 CSS var 暴露给 TSX, 避免
+  // 3 个 class 写死. 该 style 是 *唯一* 允许的 inline style 残留 (动态变量赋值).
+  const bulkConfirmBg =
+    confirmBulk === "delete"
+      ? "var(--color-danger)"
+      : confirmBulk === "approve"
+        ? "var(--color-success)"
+        : "var(--color-accent)";
+
   return (
     <>
       <Card>
-        <div
-          style={{
-            padding: "14px 16px",
-            borderBottom: "1px solid var(--color-border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>批次管理</h3>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className={styles.toolbar}>
+          <h3 className={styles.toolbarTitle}>批次管理</h3>
+          <div className={styles.toolbarActions}>
             {/* v0.7.6 · view toggle */}
-            <div
-              role="tablist"
-              aria-label="批次视图"
-              style={{
-                display: "inline-flex",
-                background: "var(--color-bg-sunken)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
-                overflow: "hidden",
-              }}
-            >
+            <div role="tablist" aria-label="批次视图" className={styles.viewToggle}>
               {(["list", "kanban"] as const).map((v) => (
                 <button
                   key={v}
                   role="tab"
                   aria-selected={view === v}
                   onClick={() => setView(v)}
-                  style={{
-                    padding: "4px 10px",
-                    fontSize: 12,
-                    background: view === v ? "var(--color-bg-elev)" : "transparent",
-                    color: view === v ? "var(--color-fg)" : "var(--color-fg-muted)",
-                    border: "none",
-                    borderRight: v === "list" ? "1px solid var(--color-border)" : undefined,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 4,
-                  }}
+                  className={cn(
+                    styles.viewToggleButton,
+                    view === v && styles.viewToggleButtonActive,
+                    v === "list" && styles.viewToggleButtonList,
+                  )}
                   title={v === "list" ? "列表视图" : "看板视图（按状态分列）"}
                 >
                   <Icon name={v === "list" ? "list" : "grid"} size={11} />
@@ -383,31 +372,15 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           </div>
         </div>
 
-        {isLoading && (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
-            加载中...
-          </div>
-        )}
+        {isLoading && <div className={styles.placeholder}>加载中...</div>}
 
         {!isLoading && batches.length === 0 && (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
-            暂无批次
-          </div>
+          <div className={styles.placeholder}>暂无批次</div>
         )}
 
         {/* v0.7.3 · 未归类任务横带（关联数据集后但还没切分到 batch 的 task） */}
         {unclassifiedCount > 0 && (
-          <div
-            style={{
-              padding: "8px 16px",
-              background: "color-mix(in oklab, var(--color-warning) 8%, transparent)",
-              borderBottom: "1px solid var(--color-border)",
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              fontSize: 13,
-            }}
-          >
+          <div className={cn(styles.banner, styles.bannerWarn)}>
             <Icon name="info" size={14} />
             <span>
               本项目有 <strong>{unclassifiedCount}</strong> 个 <strong>未归类任务</strong>（数据集已关联但尚未划分到批次）。
@@ -418,7 +391,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                   setCreateMode("split");
                   setShowCreate(true);
                 }}
-                style={{ marginLeft: "auto" }}
+                className={styles.bannerListGoSplit}
                 title="按随机切分把未归类任务拆成 N 个批次"
               >
                 <Icon name="layers" size={12} /> 去分包
@@ -429,32 +402,22 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
         {/* v0.7.3 · 多选浮层操作条（仅 owner 可见） */}
         {isOwner && selectedCount > 0 && (
-          <div
-            style={{
-              padding: "8px 16px",
-              background: "var(--color-accent-soft)",
-              borderBottom: "1px solid var(--color-border)",
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              fontSize: 13,
-            }}
-          >
+          <div className={cn(styles.banner, styles.bannerAccent)}>
             <span>已选 <strong>{selectedCount}</strong> 个批次</span>
-            <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+            <div className={styles.bannerActionsRight}>
               <Button onClick={() => setConfirmBulk("activate")} title="对选中的 draft 批次批量激活">
                 <Icon name="play" size={12} /> 激活
               </Button>
               <Button
                 onClick={() => setConfirmBulk("approve")}
-                style={{ background: "var(--color-success)", color: "#fff" }}
+                className={styles.btnSuccess}
                 title="批量通过审核（仅审核中的批次生效）"
               >
                 <Icon name="check" size={12} /> 通过
               </Button>
               <Button
                 onClick={() => setConfirmBulk("reject")}
-                style={{ background: "var(--color-danger)", color: "#fff" }}
+                className={styles.btnDanger}
                 title="批量驳回（仅审核中的批次生效，需填写驳回原因）"
               >
                 <Icon name="x" size={12} /> 驳回
@@ -467,7 +430,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               </Button>
               <Button
                 onClick={() => setConfirmBulk("delete")}
-                style={{ background: "var(--color-danger)", color: "#fff" }}
+                className={styles.btnDanger}
                 title="批量删除"
               >
                 <Icon name="trash" size={12} /> 删除
@@ -481,25 +444,18 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
         {/* v0.7.3 · 上次批量操作结果（partial-success） */}
         {bulkResult && (
-          <div
-            style={{
-              padding: "8px 16px",
-              background: "var(--color-bg-sunken)",
-              borderBottom: "1px solid var(--color-border)",
-              fontSize: 12,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className={cn(styles.banner, styles.bannerSunken)}>
+            <div className={styles.bannerInline}>
               <span>
                 上次批量{BULK_LABEL[bulkResult.kind]}：
-                <strong style={{ color: "var(--color-success)" }}> 成功 {bulkResult.data.succeeded.length}</strong>
+                <strong className={styles.bulkOk}> 成功 {bulkResult.data.succeeded.length}</strong>
                 {bulkResult.data.skipped.length > 0 && (
-                  <strong style={{ color: "var(--color-warning)", marginLeft: 8 }}>
+                  <strong className={styles.bulkWarn}>
                     跳过 {bulkResult.data.skipped.length}
                   </strong>
                 )}
                 {bulkResult.data.failed.length > 0 && (
-                  <strong style={{ color: "var(--color-danger)", marginLeft: 8 }}>
+                  <strong className={styles.bulkFail}>
                     失败 {bulkResult.data.failed.length}
                   </strong>
                 )}
@@ -508,14 +464,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 <button
                   type="button"
                   onClick={() => setResultExpanded((v) => !v)}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "var(--color-accent)",
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontFamily: "inherit",
-                  }}
+                  className={styles.linkButton}
                 >
                   {resultExpanded ? "收起" : "查看详情"}
                 </button>
@@ -523,21 +472,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               <button
                 type="button"
                 onClick={() => setBulkResult(null)}
-                style={{
-                  marginLeft: "auto",
-                  background: "transparent",
-                  border: "none",
-                  color: "var(--color-fg-subtle)",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
+                className={styles.iconButton}
                 title="关闭"
               >
                 <Icon name="x" size={12} />
               </button>
             </div>
             {resultExpanded && (
-              <ul style={{ margin: "8px 0 0 16px", padding: 0, listStyle: "disc" }}>
+              <ul className={styles.bulkResultDetail}>
                 {bulkResult.data.skipped.map(renderBulkResultRow)}
                 {bulkResult.data.failed.map(renderBulkResultRow)}
               </ul>
@@ -554,31 +496,22 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         )}
 
         {!isLoading && batches.length > 0 && view === "list" && (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className={styles.table}>
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+              <tr className={styles.tableHeadRow}>
                 {isOwner && (
-                  <th style={{ padding: "8px 0 8px 12px", width: 28 }}>
+                  <th className={styles.thCheckbox}>
                     <input
                       type="checkbox"
                       checked={allSelected}
                       onChange={toggleAll}
                       title={allSelected ? "取消全选" : "全选"}
-                      style={{ cursor: "pointer" }}
+                      className={styles.checkbox}
                     />
                   </th>
                 )}
                 {["批次", "状态", "分派", "优先级", "截止日期", "进度", "操作"].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding: "8px 12px",
-                      textAlign: "left",
-                      fontWeight: 500,
-                      color: "var(--color-fg-muted)",
-                      fontSize: 12,
-                    }}
-                  >
+                  <th key={h} className={styles.thLabel}>
                     {h}
                   </th>
                 ))}
@@ -586,27 +519,27 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
             </thead>
             <tbody>
               {batches.map((b) => (
-                <tr key={b.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                <tr key={b.id} className={styles.tableBodyRow}>
                   {isOwner && (
-                    <td style={{ padding: "10px 0 10px 12px", width: 28 }}>
+                    <td className={styles.tdCheckbox}>
                       {b.display_id !== "B-DEFAULT" ? (
                         <input
                           type="checkbox"
                           checked={selectedIds.has(b.id)}
                           onChange={() => toggleOne(b.id)}
-                          style={{ cursor: "pointer" }}
+                          className={styles.checkbox}
                         />
                       ) : null}
                     </td>
                   )}
-                  <td style={{ padding: "10px 12px" }}>
-                    <div style={{ fontWeight: 500 }}>{b.name}</div>
-                    <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                  <td className={styles.td}>
+                    <div className={styles.cellTitle}>{b.name}</div>
+                    <div className={cn("mono", styles.cellSubId)}>
                       {b.display_id}
                     </div>
                   </td>
-                  <td style={{ padding: "10px 12px" }}>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                  <td className={styles.td}>
+                    <div className={styles.cellStatusRow}>
                       <Badge variant={STATUS_VARIANTS[b.status] ?? "default"} dot>
                         {STATUS_LABELS[b.status] ?? b.status}
                       </Badge>
@@ -619,7 +552,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                       )}
                     </div>
                   </td>
-                  <td style={{ padding: "10px 12px" }}>
+                  <td className={styles.td}>
                     {(() => {
                       const unassigned = !b.annotator_id && !b.reviewer_id;
                       const assignees = [b.annotator, b.reviewer].filter(Boolean) as NonNullable<typeof b.annotator>[];
@@ -628,19 +561,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           type="button"
                           onClick={() => setAssignTarget(b)}
                           title={unassigned ? "未分派 · 点击设置" : "点击修改分派"}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                            padding: "2px 6px",
-                            background: "transparent",
-                            border: `1px dashed ${unassigned ? "var(--color-warning)" : "var(--color-border)"}`,
-                            borderRadius: 100,
-                            cursor: "pointer",
-                            fontSize: 11,
-                            color: unassigned ? "var(--color-warning)" : "var(--color-fg-muted)",
-                            fontFamily: "inherit",
-                          }}
+                          className={cn(
+                            styles.assignChip,
+                            unassigned && styles.assignChipUnassigned,
+                          )}
                         >
                           {unassigned ? (
                             <>
@@ -653,20 +577,20 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                       );
                     })()}
                   </td>
-                  <td style={{ padding: "10px 12px" }}>{b.priority}</td>
-                  <td style={{ padding: "10px 12px", color: "var(--color-fg-muted)" }}>
+                  <td className={styles.td}>{b.priority}</td>
+                  <td className={styles.tdMuted}>
                     {b.deadline ?? "—"}
                   </td>
-                  <td style={{ padding: "10px 12px", minWidth: 140 }}>
+                  <td className={styles.tdProgress}>
                     <ProgressBar value={b.progress_pct} />
-                    <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginTop: 2 }}>
+                    <div className={styles.progressSublabel}>
                       <span className="mono">
                         {b.completed_tasks} / {b.total_tasks}
                       </span>
                     </div>
                   </td>
-                  <td style={{ padding: "10px 12px" }}>
-                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  <td className={styles.td}>
+                    <div className={styles.actionRow}>
                       {b.status === "draft" && (
                         <Button
                           onClick={() => handleTransition(b, "active")}
@@ -695,14 +619,14 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <Button
                             onClick={() => handleTransition(b, "approved")}
                             title="批次通过审核（reviewer / owner）"
-                            style={{ background: "var(--color-success)", color: "#fff" }}
+                            className={styles.btnSuccess}
                           >
                             <Icon name="check" size={12} /> 通过
                           </Button>
                           <Button
                             onClick={() => setRejectTarget(b)}
                             title="批次驳回（reviewer / owner）"
-                            style={{ background: "var(--color-danger)", color: "#fff" }}
+                            className={styles.btnDanger}
                           >
                             <Icon name="x" size={12} /> 驳回
                           </Button>
@@ -766,7 +690,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                         <Button
                           onClick={() => setLockTarget(b)}
                           title="锁定批次（冻结自动推进，阻止新派单）"
-                          style={{ color: "var(--color-warning)" }}
+                          className={styles.btnLockWarn}
                         >
                           <Icon name="lock" size={12} />
                         </Button>
@@ -775,7 +699,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                         <Button
                           onClick={() => handleAdminUnlock(b)}
                           title="解锁批次"
-                          style={{ color: "var(--color-success)" }}
+                          className={styles.btnUnlockSuccess}
                         >
                           <Icon name="unlock" size={12} />
                         </Button>
@@ -783,18 +707,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     </div>
                     {b.status === "rejected" && b.review_feedback && (
                       <div
-                        style={{
-                          marginTop: 6,
-                          padding: "6px 8px",
-                          background: "color-mix(in oklab, var(--color-danger) 8%, transparent)",
-                          borderLeft: "2px solid var(--color-danger)",
-                          fontSize: 11,
-                          color: "var(--color-fg-muted)",
-                          maxWidth: 300,
-                        }}
+                        className={styles.rejectFeedback}
                         title={b.review_feedback}
                       >
-                        <strong style={{ color: "var(--color-danger)" }}>驳回原因：</strong>
+                        <strong className={styles.rejectFeedbackLabel}>驳回原因：</strong>
                         {b.review_feedback.length > 80
                           ? b.review_feedback.slice(0, 80) + "…"
                           : b.review_feedback}
@@ -810,49 +726,35 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
       {/* 创建批次 Modal */}
       <Modal open={showCreate} title="创建批次" onClose={() => setShowCreate(false)}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "0 4px" }}>
-            <div style={{ display: "flex", gap: 8 }}>
+          <div className={styles.modalForm}>
+            <div className={styles.modeToggleRow}>
               <Button
                 onClick={() => setCreateMode("single")}
-                style={{
-                  background: createMode === "single" ? "var(--color-accent)" : undefined,
-                  color: createMode === "single" ? "#fff" : undefined,
-                }}
+                className={cn(createMode === "single" && styles.modeToggleActive)}
               >
                 单个批次
               </Button>
               <Button
                 onClick={() => setCreateMode("split")}
-                style={{
-                  background: createMode === "split" ? "var(--color-accent)" : undefined,
-                  color: createMode === "split" ? "#fff" : undefined,
-                }}
+                className={cn(createMode === "split" && styles.modeToggleActive)}
               >
                 随机切分
               </Button>
             </div>
 
             {createMode === "single" ? (
-              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              <label className={styles.formLabel}>
                 批次名称
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  style={{
-                    padding: "6px 10px",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "var(--radius-sm)",
-                    fontSize: 13,
-                    fontFamily: "inherit",
-                    background: "var(--color-bg)",
-                    color: "var(--color-fg)",
-                  }}
+                  className={styles.formInput}
                   placeholder="例如：第 1 批"
                 />
               </label>
             ) : (
               <>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                <label className={styles.formLabel}>
                   批次数量
                   <input
                     type="number"
@@ -860,39 +762,22 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     max={100}
                     value={nBatches}
                     onChange={(e) => setNBatches(Number(e.target.value))}
-                    style={{
-                      padding: "6px 10px",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-sm)",
-                      fontSize: 13,
-                      fontFamily: "inherit",
-                      background: "var(--color-bg)",
-                      color: "var(--color-fg)",
-                      width: 80,
-                    }}
+                    className={cn(styles.formInput, styles.formInputNarrow)}
                   />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                <label className={styles.formLabel}>
                   名称前缀
                   <input
                     value={namePrefix}
                     onChange={(e) => setNamePrefix(e.target.value)}
-                    style={{
-                      padding: "6px 10px",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-sm)",
-                      fontSize: 13,
-                      fontFamily: "inherit",
-                      background: "var(--color-bg)",
-                      color: "var(--color-fg)",
-                    }}
+                    className={styles.formInput}
                     placeholder="Batch"
                   />
                 </label>
               </>
             )}
 
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+            <label className={styles.formLabel}>
               优先级: {priority}
               <input
                 type="range"
@@ -900,16 +785,16 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 max={100}
                 value={priority}
                 onChange={(e) => setPriority(Number(e.target.value))}
-                style={{ width: "100%" }}
+                className={styles.formRange}
               />
             </label>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <div className={styles.formActions}>
               <Button onClick={() => setShowCreate(false)}>取消</Button>
               <Button
                 onClick={handleCreate}
                 disabled={createMode === "single" && !name.trim()}
-                style={{ background: "var(--color-accent)", color: "#fff" }}
+                className={styles.btnAccent}
               >
                 {createMode === "single" ? "创建" : `切分为 ${nBatches} 个批次`}
               </Button>
@@ -919,16 +804,16 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
       {/* 删除确认 */}
       <Modal open={!!confirmDelete} title="确认删除" onClose={() => setConfirmDelete(null)}>
-          <div style={{ fontSize: 13 }}>
+          <div className={styles.confirmBody}>
             <p>
               确定删除批次 <strong>{confirmDelete?.name}</strong>？
               其中的 {confirmDelete?.total_tasks ?? 0} 个任务将回归默认批次。
             </p>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+            <div className={styles.confirmActions}>
               <Button onClick={() => setConfirmDelete(null)}>取消</Button>
               <Button
                 onClick={() => confirmDelete && handleDelete(confirmDelete)}
-                style={{ background: "var(--color-danger)", color: "#fff" }}
+                className={styles.btnDanger}
               >
                 删除
               </Button>
@@ -968,12 +853,12 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         title={`批量${confirmBulk ? BULK_LABEL[confirmBulk] : ""}`}
         onClose={() => setConfirmBulk(null)}
       >
-        <div style={{ fontSize: 13 }}>
+        <div className={styles.confirmBody}>
           {confirmBulk === "archive" && (
             <p>将把已选 <strong>{selectedCount}</strong> 个批次归档。归档后批次进入终态，可由 owner 通过「撤销归档」恢复。</p>
           )}
           {confirmBulk === "delete" && (
-            <p style={{ color: "var(--color-danger)" }}>
+            <p className={styles.dangerText}>
               将永久删除已选 <strong>{selectedCount}</strong> 个批次。批次内的任务会回归默认批次（无默认批次时变为未归类）。此操作不可撤销。
             </p>
           )}
@@ -983,7 +868,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
           {confirmBulk === "approve" && (
             <p>将把已选 <strong>{selectedCount}</strong> 个批次中的「审核中」批次全部通过。非审核中状态的批次会自动跳过。</p>
           )}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+          <div className={styles.confirmActions}>
             <Button onClick={() => setConfirmBulk(null)}>取消</Button>
             <Button
               onClick={() => {
@@ -993,13 +878,11 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 else if (confirmBulk === "approve") runBulkApprove();
               }}
               disabled={bulkArchive.isPending || bulkDelete.isPending || bulkActivate.isPending || bulkApprove.isPending}
-              style={{
-                background:
-                  confirmBulk === "delete" ? "var(--color-danger)" :
-                  confirmBulk === "approve" ? "var(--color-success)" :
-                  "var(--color-accent)",
-                color: "#fff",
-              }}
+              className={styles.bulkConfirmPrimary}
+              // CSS custom property 值是真正的运行时动态量 (3 档 status 颜色),
+              // 这是 CSS modules 迁移后唯一被允许的 inline style 形态.
+              // eslint-disable-next-line no-restricted-syntax
+              style={{ ["--bulk-confirm-bg" as never]: bulkConfirmBg } as CSSProperties}
             >
               确认{confirmBulk ? BULK_LABEL[confirmBulk] : ""}
             </Button>

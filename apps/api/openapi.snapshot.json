@@ -7112,6 +7112,18 @@
             "title": "Name",
             "type": "string"
           },
+          "source_project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Project Id"
+          },
           "text_output_default": {
             "anyOf": [
               {

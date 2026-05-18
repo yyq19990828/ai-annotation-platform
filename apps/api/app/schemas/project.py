@@ -25,6 +25,12 @@ class ProjectCreate(BaseModel):
     # 与 ml_backend_id 互斥: 直接给 ml_backend_id 表示已存在本项目下的 backend (罕见);
     # 给 ml_backend_source_id 表示"从其它项目复用一份配置".
     ml_backend_source_id: UUID | None = None
+    # v0.10.11 · "从已有项目复制配置" — 给定时, 用源项目的可克隆字段
+    # (classes / classes_config / attribute_schema / ai 配置 / label_config /
+    # rendering_config / sampling 等) 兜底当前 payload 未显式给出的字段;
+    # 不复制 datasets / tasks / annotations / members / batches.
+    # 调用者必须对源项目有 view 权限; 否则 404.
+    source_project_id: UUID | None = None
     due_date: date | None = None
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
