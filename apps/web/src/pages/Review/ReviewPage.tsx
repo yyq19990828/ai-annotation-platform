@@ -192,12 +192,18 @@ export function ReviewPage() {
   };
   const handleRejectSingle = (id: string) => setRejectingIds([id]);
 
-  const runBatchReject = (ids: string[], reason: string) => {
+  const runBatchReject = (
+    ids: string[],
+    payload: {
+      reason_type: "missing" | "extra" | "wrong_label" | "wrong_geometry";
+      reason?: string;
+    },
+  ) => {
     let succeeded = 0;
     let failed = 0;
     let pending = ids.length;
     ids.forEach((id) => {
-      rejectMut.mutate({ taskId: id, reason }, {
+      rejectMut.mutate({ taskId: id, ...payload }, {
         onSuccess: () => { succeeded++; },
         onError: () => { failed++; },
         onSettled: () => {
@@ -205,7 +211,9 @@ export function ReviewPage() {
           if (pending === 0) {
             pushToast({
               msg: `已退回 ${succeeded}/${ids.length} 个任务`,
-              sub: failed ? `${failed} 项失败` : `原因：${reason}`,
+              sub: failed
+                ? `${failed} 项失败`
+                : `类型：${payload.reason_type}${payload.reason ? ` · ${payload.reason}` : ""}`,
               kind: failed ? "error" : "success",
             });
             setCheckedIds(new Set());
@@ -396,8 +404,8 @@ export function ReviewPage() {
         open={!!rejectingIds}
         count={rejectingIds?.length ?? 0}
         onClose={() => setRejectingIds(null)}
-        onConfirm={(reason) => {
-          if (rejectingIds) runBatchReject(rejectingIds, reason);
+        onConfirm={(payload) => {
+          if (rejectingIds) runBatchReject(rejectingIds, payload);
         }}
         // v0.8.8 · 单任务退回且该任务被跳过时透传 skip_reason 到 modal
         skipReasonHint={

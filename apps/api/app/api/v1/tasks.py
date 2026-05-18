@@ -1284,6 +1284,7 @@ async def submit_task(
     task.reviewer_claimed_at = None
     task.reviewed_at = None
     task.reject_reason = None
+    task.reject_reason_type = None
 
     lock_svc = TaskLockService(db)
     await lock_svc.release(task_id, current_user.id)
@@ -1365,6 +1366,7 @@ async def skip_task(
     task.reviewer_claimed_at = None
     task.reviewed_at = None
     task.reject_reason = None
+    task.reject_reason_type = None
 
     lock_svc = TaskLockService(db)
     await lock_svc.release(task_id, current_user.id)
@@ -1463,6 +1465,12 @@ async def withdraw_task(
 
 
 class ReviewAction(BaseModel):
+    """v0.10.16 · reviewer 驳回 payload。`reason_type` 自 v0.10.16 起必填，
+    `reason` 仍为可空自由文本补充。"""
+
+    reason_type: Literal[
+        "missing", "extra", "wrong_label", "wrong_geometry"
+    ] | None = None
     reason: str | None = None
 
 
@@ -1588,14 +1596,18 @@ async def reject_task(
     if task.status != "review":
         raise HTTPException(status_code=400, detail="Task is not in review status")
 
+    reason_type = body.reason_type if body else None
+    if reason_type is None:
+        raise HTTPException(status_code=422, detail="reject reason_type is required")
+
     reason = (body.reason if body else None) or None
-    if not reason or not reason.strip():
-        raise HTTPException(status_code=400, detail="reject reason is required")
+    reason_text = reason.strip() if reason else None
 
     task.status = "rejected"
     now = datetime.now(timezone.utc)
     task.reviewed_at = now
-    task.reject_reason = reason.strip()
+    task.reject_reason_type = reason_type
+    task.reject_reason = reason_text
     if task.reviewer_id is None:
         task.reviewer_id = current_user.id
     if task.reviewer_claimed_at is None:
@@ -1625,6 +1637,7 @@ async def reject_task(
         detail={
             "project_id": str(task.project_id),
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+            "reason_type": task.reject_reason_type,
             "reason": task.reject_reason,
         },
     )
@@ -1641,6 +1654,7 @@ async def reject_task(
             payload={
                 "task_display_id": task.display_id,
                 "project_id": str(task.project_id),
+                "reject_reason_type": task.reject_reason_type,
                 "reject_reason": task.reject_reason,
                 "actor_id": str(current_user.id),
                 "actor_name": current_user.name,
@@ -1648,7 +1662,12 @@ async def reject_task(
         )
 
     await db.commit()
-    return {"status": "rejected", "task_id": str(task_id), "reason": task.reject_reason}
+    return {
+        "status": "rejected",
+        "task_id": str(task_id),
+        "reason_type": task.reject_reason_type,
+        "reason": task.reject_reason,
+    }
 
 
 @router.post("/{task_id}/reopen")
@@ -1682,6 +1701,7 @@ async def reopen_task(
     task.reviewer_claimed_at = None
     task.reviewed_at = None
     task.reject_reason = None
+    task.reject_reason_type = None
     task.submitted_at = None
 
     from app.db.models.project import Project

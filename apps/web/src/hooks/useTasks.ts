@@ -249,8 +249,15 @@ export function useApproveTask() {
 export function useRejectTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, reason }: { taskId: string; reason: string }) =>
-      tasksApi.reject(taskId, reason),
+    mutationFn: ({
+      taskId,
+      reason_type,
+      reason,
+    }: {
+      taskId: string;
+      reason_type: "missing" | "extra" | "wrong_label" | "wrong_geometry";
+      reason?: string;
+    }) => tasksApi.reject(taskId, { reason_type, reason }),
     onSuccess: (_, { taskId }) => {
       qc.invalidateQueries({ queryKey: ["task", taskId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });

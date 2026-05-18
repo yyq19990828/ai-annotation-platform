@@ -22,6 +22,7 @@ const PAGE_PATH: Record<PageKey, string> = {
   settings: "/settings",
   "project-templates": "/project-templates",
   "admin-people": "/admin/people",
+  "admin-analytics": "/admin/analytics",
 };
 
 export function UnauthorizedPage() {

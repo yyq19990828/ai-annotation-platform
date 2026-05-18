@@ -118,9 +118,14 @@ describe("useReviewMode", () => {
     const { result } = renderReview("review", { skip_reason: "no_target" });
 
     expect(result.current.rejectModal?.skipReasonHint).toBe("no_target");
-    act(() => result.current.rejectModal?.onConfirm("框不完整"));
+    act(() =>
+      result.current.rejectModal?.onConfirm({
+        reason_type: "wrong_geometry",
+        reason: "框不完整",
+      }),
+    );
     expect(mocks.rejectMutate).toHaveBeenCalledWith(
-      { taskId: "t1", reason: "框不完整" },
+      { taskId: "t1", reason_type: "wrong_geometry", reason: "框不完整" },
       expect.any(Object),
     );
   });

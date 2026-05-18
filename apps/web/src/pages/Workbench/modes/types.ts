@@ -51,7 +51,10 @@ export interface WorkbenchBannerActions {
 export interface RejectTaskModalState {
   open: boolean;
   onClose: () => void;
-  onConfirm: (reason: string) => void;
+  onConfirm: (payload: {
+    reason_type: "missing" | "extra" | "wrong_label" | "wrong_geometry";
+    reason?: string;
+  }) => void;
   skipReasonHint: string | null;
 }
 

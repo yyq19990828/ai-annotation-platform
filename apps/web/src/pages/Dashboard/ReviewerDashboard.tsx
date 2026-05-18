@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -12,6 +13,7 @@ import { useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReviewTaskItem, RecentReviewItem } from "@/api/dashboard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 import styles from "./ReviewerDashboard.module.css";
 
 export function ReviewerDashboard() {
@@ -23,6 +25,7 @@ export function ReviewerDashboard() {
   const qc = useQueryClient();
   const approveMut = useApproveTask();
   const rejectMut = useRejectTask();
+  const [rejectingTaskId, setRejectingTaskId] = useState<string | null>(null);
 
   const handleApprove = (taskId: string) => {
     approveMut.mutate(taskId, {
@@ -33,15 +36,20 @@ export function ReviewerDashboard() {
     });
   };
 
-  const handleReject = (taskId: string) => {
-    const reason = window.prompt("退回原因（必填）");
-    if (!reason || !reason.trim()) return;
-    rejectMut.mutate({ taskId, reason: reason.trim() }, {
+  const handleReject = (taskId: string) => setRejectingTaskId(taskId);
+
+  const handleRejectConfirm = (payload: {
+    reason_type: "missing" | "extra" | "wrong_label" | "wrong_geometry";
+    reason?: string;
+  }) => {
+    if (!rejectingTaskId) return;
+    rejectMut.mutate({ taskId: rejectingTaskId, ...payload }, {
       onSuccess: () => {
         pushToast({ msg: "任务已退回标注员", kind: "success" });
         qc.invalidateQueries({ queryKey: ["dashboard", "reviewer"] });
       },
     });
+    setRejectingTaskId(null);
   };
 
   if (isLoading || !stats) {
@@ -226,6 +234,13 @@ export function ReviewerDashboard() {
         )}
         </Card>
       </div>
+
+      <RejectReasonModal
+        open={rejectingTaskId !== null}
+        count={1}
+        onClose={() => setRejectingTaskId(null)}
+        onConfirm={handleRejectConfirm}
+      />
     </div>
   );
 }

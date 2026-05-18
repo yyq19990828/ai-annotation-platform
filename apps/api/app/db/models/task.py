@@ -1,9 +1,19 @@
+import enum
 import uuid
 from datetime import datetime
 from sqlalchemy import String, Boolean, Integer, Float, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
+
+
+class RejectReasonType(str, enum.Enum):
+    """v0.10.16 · reviewer 驳回结构化枚举。收紧到 4 类，前端 4 个预设按钮一一映射。"""
+
+    MISSING = "missing"  # 漏标
+    EXTRA = "extra"  # 多标
+    WRONG_LABEL = "wrong_label"  # 类别错误
+    WRONG_GEOMETRY = "wrong_geometry"  # 位置/尺寸不准
 
 
 class Task(Base):
@@ -63,6 +73,9 @@ class Task(Base):
         DateTime(timezone=True), nullable=True
     )
     reject_reason: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    reject_reason_type: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, index=True
+    )
     # v0.8.7 F7 · 任务跳过：标注员遇图像损坏/无目标/不清晰时直转 reviewer 复核
     skip_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
     skipped_at: Mapped[datetime | None] = mapped_column(

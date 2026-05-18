@@ -31,33 +31,21 @@
   - 工作台浮层：左**上**角而不是左**侧栏**；`localStorage` `wb:guide-seen:{projectId}` + `wb:guide-collapsed:{projectId}` 双 key（前者控制首次自动展开，后者记忆折叠状态）。
 - **实际工作量**：约 1d（与原估 1.5d 接近，CodeMirror 6 接入额外 ~0.3d，但 storage 复用换成独立 module 节省了部分边界检查时间）。
 
-### 1.2 `reject_reason_type` 结构化枚举
+### 1.2 `reject_reason_type` 结构化枚举 ✅ 已完成 v0.10.16
 
-- **来源**：CVAT `AnnotationConflictType`（`missing / extra / mismatching_label / low_overlap / mismatching_direction`）。
-- **平台现状**：`reject_reason` 是自由文本，丢失了"漏标率 / 错标率 / 标错类别率"的可分析信号。
-- **设计**：
-  - DB：`annotations` / `tasks` 上 reject 路径加 `reject_reason_type ENUM`，原 `reject_reason` 留作 free text 补充。
-  - 枚举初版收紧到 4 类：`missing / extra / wrong_label / wrong_geometry`。
-  - reviewer UI 强制先选类型再写文本。
-- **工作量**：1d（migration + 前端下拉）。
-- **联动**：§4.1 Annotator Performance Dashboard 的关键维度。
-- **风险**：枚举一旦上线就难改，第一版要刻意收紧；后续按 reviewer 反馈再细分。
+> **2026-05-19 落地**：`tasks.reject_reason_type String(20)`（alembic 0070，nullable，旧数据不回填）+ index；`RejectReasonType` enum 收紧到 4 类 `missing / extra / wrong_label / wrong_geometry`（与原设计一致）；[`POST /tasks/{id}/review/reject`](../../apps/api/app/api/v1/tasks.py) 端点 `ReviewAction.reason_type` 必填（缺则 422），`reason` 自由文本继续可空；reviewer 三个入口（ReviewPage 批量、Workbench 单任务、ReviewerDashboard 列表）全部走 [`RejectReasonModal`](../../apps/web/src/pages/Review/RejectReasonModal.tsx) 4 按钮单选，ReviewerDashboard 从 `window.prompt` 升级到 Modal。中文 label 映射 [`rejectReasonTypes.ts`](../../apps/web/src/pages/Review/rejectReasonTypes.ts) 前端单点维护。详见 CHANGELOG v0.10.16 / [plan](../../docs/plans/2026-05-19-v0.10.16-roadmap-s1-closure.md)。
+>
+> **复盘**：① 「位置不准」+「框过大或过小」按用户决策合并为单一 `wrong_geometry` enum + UI label「位置或尺寸不准」（不拆 5 类），便于第一版数据收口；② 状态转移时 `reject_reason_type` 与 `reject_reason` 必须同步清零（涉及 submit / skip / reopen 三个路径，已统一）；③ DuckDB reject_rate 面板（§1.6）反向 join task 表读 reject_reason_type，分母只算 NOT NULL 行避免旧数据污染。后续若 reviewer 反馈不足再细分（如 wrong_position / wrong_size）。
 
-### 1.3 Webhook payload 加 `event_version` 字段
+- **来源**：CVAT `AnnotationConflictType`。
+- **实际设计**：DB `tasks.reject_reason_type String(20)` + index；后端 `Literal["missing","extra","wrong_label","wrong_geometry"]`；前端 4 个固定按钮 + 可选 comment 自由文本。
+- **联动**：§4.1 / §1.6 reject 率分类型面板（已实现）。
 
-- **来源**：Label Studio 历史教训 —— webhook 升级时客户端全挂。
-- **平台现状**：Webhook 完整体本身还没做（§2.1）；但**协议规范可以先定**。
-- **设计**：写进未来 ADR-0018 草稿（不必现在实现），约定所有 webhook payload 顶层带：
-  ```json
-  {
-    "event_version": "2026-05-18",
-    "event": "annotation.created",
-    "delivery_id": "...",
-    "data": { ... }
-  }
-  ```
-- **工作量**：0.5d（写 ADR 草案 + Pydantic schema 占位）。
-- **价值**：未来做 §2.1 时不会重写。
+### 1.3 Webhook payload 加 `event_version` 字段 ✅ 已完成 v0.10.16
+
+> **2026-05-19 落地**：[ADR-0025](../../docs/adr/0025-webhook-event-envelope-versioning.md)（Proposed 状态）+ [`EventEnvelope[T]` Pydantic 泛型](../../apps/api/app/schemas/event_envelope.py)。信封字段约定为 `event_version` / `event` / `delivery_id` / `occurred_at` / `data` 五项；版本规则沿用 Postel's law（发送方写满 null，接收方忽略未知）。**不实现** publisher / outbox / delivery 表，留给 ROADMAP §2.1 epic 启动时按此 ADR 实施。详见 CHANGELOG v0.10.16。
+>
+> **复盘**：① 原设计写「event_version "2026-05-18"」（日期戳）改为 SemVer 字符串 `"1.0"` —— 后续 minor/major 升级规则更清晰；② 与 §1.5 AAP JSON 的 `schema_version` 同源思路（信封版本 vs 数据版本独立演化）；③ EventName Literal 占位事件名 4 类 = `task.created / task.reviewed / task.approved / task.rejected`，与 §1.2 reject_reason_type 同窗口铺垫。
 
 ### 1.4 截图 fixture 数据补齐 + 重跑
 
@@ -71,29 +59,21 @@
 >
 > 后续延伸（annotations import / external_id 字段 / template manifest / 单 prediction 多 shape / video_track 导入）已转录到主 [ROADMAP §A AI/模型](../ROADMAP.md#ai--模型) "Predictions Import / AAP JSON 后续延伸"群。
 
-### 1.6 DuckDB 离线分析视图（不上 ClickHouse）
+### 1.6 DuckDB 离线分析视图（不上 ClickHouse） ✅ 已完成 v0.10.16
 
-- **来源**：CVAT 用 ClickHouse 存 events 做 OLAP，但平台数据量没到那个量级。
-- **平台现状**：`task_events` + `audit_log` 已 partition，但 ad-hoc 分析查询走 PostgreSQL 慢，没有现成 dashboard。
-- **设计**：
-  - Celery beat 每天把 `task_events` + `audit_log` 增量同步成 DuckDB 文件（`/var/lib/duckdb/analytics.duckdb`）。
-  - 加 `/admin/analytics` 页面（super_admin 可见），调几个固定 query：人均吞吐 / 项目 reject 率 / 标注耗时分布。
-  - **不暴露任意 SQL**，只给固定面板（防注入 + 防慢查询）。
-- **工作量**：2d（同步 worker 0.5d + 前端图表 1.5d，用现有 charts 组件）。
-- **价值**：为 §4.1 Annotator Dashboard 提供数据源；为 §3 公开 SDK 的"导出统计 API"铺路。
-- **升级路径**：等数据量超过 DuckDB 单机能扛（亿级 task_events），再考虑 ClickHouse。
+> **2026-05-19 落地**：[`duckdb_sync.py`](../../apps/api/app/services/duckdb_sync.py) 增量同步 `task_events`（带 `reject_reason_type` 反向 join，依赖 §1.2）+ `audit_logs` 到 `./data/duckdb/analytics.duckdb`；docker-compose celery-worker 加 bind mount `./data/duckdb:/var/lib/duckdb`；Celery beat `sync-to-duckdb` 每日 02:30 UTC 跑一次；[`analytics_queries.py`](../../apps/api/app/services/analytics_queries.py) 暴露 3 个固定面板 query（人均日吞吐 / reject 率分类型 / 标注耗时 p50/p95），**不**接受任意 SQL；[`/admin/analytics/{panel_name}`](../../apps/api/app/api/v1/admin_analytics.py) super_admin 守卫；前端 [`AnalyticsPage.tsx`](../../apps/web/src/pages/Admin/AnalyticsPage.tsx) 渲染三张卡片，时间范围下拉 7/30/90 天。
+>
+> **复盘**：① 数据源选择（用户决策）= 全走 DuckDB（task_events 完整同步），未复用 `mv_user_perf_daily`——架构统一胜过节省同步量；② DuckDB 文件位置（用户决策）= host `./data/duckdb/`（worker bind mount 互通），API 跑 host 时直接读，避免 docker volume 仅容器内可见；③ DuckDB 单 writer 多 reader：worker 写 / API `read_only=True`，并发安全；④ 首次同步未跑过时 API 返回 503，前端展示「数据初始化中」；⑤ Python 依赖 `duckdb>=1.1.0,<2.0.0`，不引入 `duckdb-engine`（直接 `duckdb.connect()` 够用）。
+>
+> 后续延伸（mv_user_perf_daily 退役？dataset 维度聚合？clip / video 维度面板？）等数据使用反馈再触发。**升级路径**保留：触发条件 `task_events` 单月 > 1000万 或 DuckDB 单 query > 10s。
 
-### 1.7 统一异步任务表 `async_jobs`（MVP）
+### 1.7 统一异步任务表 `async_jobs`（MVP） ✅ 已完成 v0.10.16
 
-- **来源**：CVAT `RequestAction` enum 把 autoannotate / import / export / batch 操作合并到一张 Request 表。
-- **平台现状**：Celery task 离散（预标、导出、视频转码、tracker job、partition archive 各管各的），前端没有"我的后台任务"统一入口。
-- **设计**：
-  - 新表 `async_jobs(id, kind, project_id, user_id, status, progress_pct, payload JSONB, result JSONB, error_message, created_at, updated_at)`。
-  - Celery task 在 enqueue / progress update / finish 时写这张表（用 Celery signals）。
-  - 前端右上"任务铃铛"列出进行中作业 + 最近完成历史（用现有 NotificationDrawer 复用 UI）。
-- **工作量**：3d（schema + 改造 5~7 个现有 Celery task signal hook + 前端列表）。
-- **价值**：**越早做收益越大** —— Celery task 类型还会继续加，迁移成本会越来越高。
-- **强依赖**：无（纯增量）。
+> **2026-05-19 落地**：新表 `async_jobs(id, kind, project_id, user_id, status, progress_pct, payload, result, error_message, celery_task_id, started_at, completed_at, created_at, updated_at)` + 3 索引（alembic 0071）；[`AsyncJobKind`](../../apps/api/app/db/models/async_job.py) enum = `batch_predict / video_tracker / audit_archive / predictions_import`（5 种 status 含 `cancelled`）。[`async_job` service](../../apps/api/app/services/async_job.py) 暴露 `create_job / mark_running / update_progress / mark_complete / mark_failed / mark_cancelled / track_job` 上下文管理器；[`workers/signals.py`](../../apps/api/app/workers/signals.py) Celery `task_failure` / `task_revoked` 信号兜底翻 failed/cancelled（按 celery_task_id 反查）；[`async_jobs_cleanup.py`](../../apps/api/app/workers/async_jobs_cleanup.py) Celery beat 每日 04:15 UTC 清 30 天前终态行。`batch_predict` / `video_tracker` / `audit_archive` / `predictions_import` 全部接入双写。API: [`GET/POST /async-jobs`](../../apps/api/app/api/v1/async_jobs.py) + cancel（MVP 仅 `predictions_import` / `audit_archive` 支持软取消）。前端 [Topbar JobsBell](../../apps/web/src/components/shell/JobsBell.tsx) 5s polling，badge 显示 in-progress 计数 + drawer 进度条/状态 pill/错误提示。详见 CHANGELOG v0.10.16。
+>
+> **复盘**：① 模型策略（用户决策）= **双写双轨**——`async_jobs` 只记最小元数据作为汇总索引层，专表保留为 domain 真值（保留 PredictionJob 的 prompt/output_mode/total_cost 等领域字段、VideoTrackerJob 的 from_frame/to_frame/segment_id 等）。前端铃铛只读 `async_jobs`，专表细节字段由各自页面（AIPreAnnotateJobsPage、VideoWorkbench tracker 面板）消费，**互不污染**；② 进度上报由 service 层显式 `update_progress`（batch_predict 内每 5% 步长写一次避免每条 task 都 DB write），Celery signals **仅做兜底**；③ 双写失败兜底：所有 async_jobs 写入路径包 try/except，专表写入失败仅记日志不阻断主业务流程；④ cancel MVP 范围 = `predictions_import` / `audit_archive`，`batch_predict` / `video_tracker` 留给 v0.10.17（涉及 Celery revoke + 专表语义协调）；⑤ retention 30 天 purge 作 MVP 一部分（Celery beat 每日 04:15 UTC）；⑥ 单测 11 例覆盖 service 5 个原子方法 + track_job 上下文 happy/raise + API owner-scope + super_admin / kind 白名单 / 终态拒绝。
+>
+> 后续延伸（kind 注册中心 / 进度 WebSocket 推送替换 polling / 全 kind cancel / 跨容器幂等 dispatch）已转录到主 ROADMAP §B "性能 / 扩展" 待触发项群。
 
 ---
 
@@ -493,12 +473,12 @@
 | 本文档条目 | 现 ROADMAP 状态 | 建议动作 |
 |---|---|---|
 | §1.1 Annotation Guide | ✅ **已完成 v0.10.13**（2026-05-18） | 配套延伸条目已转录到 ROADMAP §A 项目模块 |
-| §1.2 reject_reason_type | **新增** | 回流到 §A "项目模块" 或 §B "可观测性" |
-| §1.3 webhook event_version | **新增** | 与 §2.1 合并到一份 ADR 草案 |
+| §1.2 reject_reason_type | ✅ **已完成 v0.10.16**（2026-05-19） | 4 类 enum + RejectReasonModal 改造 + DuckDB 面板联动 |
+| §1.3 webhook event_version | ✅ **已完成 v0.10.16**（2026-05-19，仅 ADR 草案 + Pydantic 占位） | ADR-0025 Proposed，§2.1 epic 实施时按此 ADR 落地 |
 | §1.4 截图 fixture | 已在 §A 后续观察项 | 不动 |
 | §1.5 Predictions Import | ✅ **已完成 v0.10.15**（2026-05-19） | 后续延伸条目已转录到 ROADMAP §A "Predictions Import / AAP JSON 后续延伸" |
-| §1.6 DuckDB 离线视图 | **新增** | 回流到 §B "可观测性" |
-| §1.7 async_jobs 统一表 | **新增** | 回流到 §B "性能 / 扩展"，注明"早做收益越大" |
+| §1.6 DuckDB 离线视图 | ✅ **已完成 v0.10.16**（2026-05-19） | 三面板 + super_admin 守卫 + 升级路径 PG → DuckDB → ClickHouse 待触发 |
+| §1.7 async_jobs 统一表 | ✅ **已完成 v0.10.16**（2026-05-19） | 双写双轨 + Topbar 铃铛 + 4 kind 接入；cancel 全 kind / WebSocket 进度推送留 v0.10.17 |
 | §2.1 Webhook 系统 | §B 治理/合规 有 1 句话 | **升级范围**：拆独立 epic + ADR-0018 草案 |
 | §2.2 AnnotationFeedback 收敛 | §C.7 I18 仅图片侧 | **升级范围**：从 I18 扩为统一模型收敛任务 |
 | §2.3 Consensus / GT 拆分 | §C.7 I19 是 L 体量打包 | **升级范围**：建议 I19a/I19b 拆分 |
@@ -522,8 +502,8 @@
 
 不一次性全部回流，按下面三波推进，每波收尾后再评估下一波：
 
-**第 1 波（v0.11 内开工）**：~~§1.1 Annotation Guide~~ ✅ v0.10.13 / §1.2 reject_reason_type / ~~§1.5 Predictions Import~~ ✅ v0.10.15（与 §2.6 同窗口）/ §1.7 async_jobs。
-**特征**：低风险、低工作量、高可见价值；落地后给后续大项铺基建。
+**第 1 波（v0.11 内开工）✅ 全部收尾 v0.10.13 / v0.10.15 / v0.10.16**：~~§1.1 Annotation Guide~~ ✅ v0.10.13 / ~~§1.2 reject_reason_type~~ ✅ v0.10.16 / ~~§1.5 Predictions Import~~ ✅ v0.10.15（与 §2.6 同窗口）/ ~~§1.7 async_jobs~~ ✅ v0.10.16（与 §1.3 / §1.6 同窗口）。
+**特征**：低风险、低工作量、高可见价值；落地后给后续大项铺基建。第 1 波在 3 个版本内全部收尾，进入第 2 波。
 
 **第 2 波（v0.11 中后期）**：§2.1 Webhook 系统 / §2.2 AnnotationFeedback 收敛 / §3.1 公开 SDK。
 **特征**：协议层 + 生态扩面；做完平台从"内部工具"升级为"可对外集成的产品"。

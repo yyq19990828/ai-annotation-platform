@@ -1,10 +1,12 @@
 from fastapi import APIRouter
 from app.api.v1 import (
     admin_alias_freq,
+    admin_analytics,
     admin_ml_integrations,
     admin_preannotate,
     admin_preannotate_jobs,
     api_keys,
+    async_jobs,
     auth,
     audit_logs,
     annotation_comments,
@@ -103,6 +105,12 @@ api_router.include_router(bug_reports.router, tags=["bug-reports"])
 api_router.include_router(notifications.router, tags=["notifications"])
 # v0.8.6 F6 · 失败预测管理 + 重试
 api_router.include_router(predictions.router, tags=["predictions"])
+# v0.10.16 · 统一异步任务表
+api_router.include_router(async_jobs.router, tags=["async-jobs"])
+# v0.10.16 · DuckDB 离线分析面板（super_admin only）
+api_router.include_router(
+    admin_analytics.router, prefix="/admin/analytics", tags=["admin-analytics"]
+)
 
 # v0.8.3 · _test_seed router：仅非 production 暴露，供 Playwright E2E 造数 + 跳登录
 from app.config import settings as _settings  # noqa: E402

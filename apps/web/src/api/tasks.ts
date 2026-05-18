@@ -213,11 +213,19 @@ export const tasksApi = {
   approve: (id: string) =>
     apiClient.post<{ status: string; task_id: string }>(`/tasks/${id}/review/approve`),
 
-  reject: (id: string, reason?: string) =>
-    apiClient.post<{ status: string; task_id: string; reason: string | null }>(
-      `/tasks/${id}/review/reject`,
-      reason ? { reason } : undefined,
-    ),
+  reject: (
+    id: string,
+    payload: {
+      reason_type: "missing" | "extra" | "wrong_label" | "wrong_geometry";
+      reason?: string;
+    },
+  ) =>
+    apiClient.post<{
+      status: string;
+      task_id: string;
+      reason_type: string;
+      reason: string | null;
+    }>(`/tasks/${id}/review/reject`, payload),
 
   acquireLock: (taskId: string) =>
     apiClient.post<TaskLockResponse>(`/tasks/${taskId}/lock`),

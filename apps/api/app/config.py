@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     # v0.8.4 · task_events 异步写入开关。true = Celery 旁路写；false 或 broker 不可用 → 同步 fallback。
     task_events_async: bool = True
 
+    # v0.10.16 · DuckDB 离线分析文件位置。Celery worker 写、FastAPI 进程只读 (read_only)。
+    # docker compose 把 host 路径 ./data/duckdb 挂到 worker /var/lib/duckdb；API 跑 host
+    # 时直接读 host 文件。容器与 host 均可通过 DUCKDB_PATH env 覆盖。
+    duckdb_path: str = "./data/duckdb/analytics.duckdb"
+
     # Governance / invitations
     frontend_base_url: str = "http://localhost:5173"
     invitation_ttl_days: int = 7

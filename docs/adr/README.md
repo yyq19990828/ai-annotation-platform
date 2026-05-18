@@ -54,3 +54,10 @@
 - [0016](0016-docs-ia-redesign.md) — 文档 IA 重构：Diátaxis 框架 + audience 元数据
 - [0017](0017-workbench-shell-mode-and-stage-adapters.md) — 工作台 Shell 采用 Mode Hooks 与 Stage Adapters
 - [0018](0018-video-frame-service-segments-and-tracker-boundary.md) — 视频帧服务 Segment 与 Tracker 边界
+- [0019](0019-prompt-first-tooldock-1n-arch.md) — ToolDock prompt-first 1:n 架构
+- [0020](0020-ml-backend-capability-negotiation.md) — ML Backend capability 协商
+- [0021](0021-polygon-lod-and-spatial-index.md) — 多边形 LOD 与空间索引
+- [0022](0022-mask-editor-tool-architecture.md) — Mask 编辑器工具架构
+- [0023](0023-project-template-vs-clone.md) — 项目模板 vs 克隆策略
+- [0024](0024-aap-json-format.md) — AAP JSON v1.0 平台原生格式
+- [0025](0025-webhook-event-envelope-versioning.md) — Webhook 事件信封与版本化（草案，未实现）

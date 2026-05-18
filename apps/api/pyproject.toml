@@ -24,6 +24,8 @@ dependencies = [
     "blurhash-python>=1.2.0",
     "slowapi>=0.1.9",
     "sentry-sdk[fastapi]>=2.18.0",
+    # v0.10.16 · DuckDB 离线分析视图（ROADMAP §1.6）。Celery worker 写、API 只读。
+    "duckdb>=1.1.0,<2.0.0",
 ]
 
 [project.optional-dependencies]

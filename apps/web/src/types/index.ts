@@ -85,6 +85,8 @@ export interface TaskResponse {
   reviewer_claimed_at: string | null;
   reviewed_at: string | null;
   reject_reason: string | null;
+  // v0.10.16 · reject 结构化枚举（旧任务可能为 null）
+  reject_reason_type?: string | null;
   // v0.8.7 F7 · 任务跳过
   skip_reason: string | null;
   skipped_at: string | null;
@@ -359,4 +361,6 @@ export type PageKey =
   // v0.10.14 · E2 · 项目模板库（project_admin / super_admin）
   | "project-templates"
   // v0.8.4 · 成员绩效（super_admin only）
-  | "admin-people";
+  | "admin-people"
+  // v0.10.16 · DuckDB 离线分析面板（super_admin only）
+  | "admin-analytics";

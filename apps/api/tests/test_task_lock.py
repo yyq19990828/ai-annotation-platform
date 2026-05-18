@@ -223,9 +223,11 @@ class TestTaskLockFlow:
         )
         assert r.status_code == 403
 
-    async def test_reject_requires_reason_and_persists(
+    async def test_reject_requires_reason_type_and_persists(
         self, httpx_client_bound, db_session, annotator, reviewer
     ):
+        """v0.10.16: reject 必传 reason_type ∈ {missing, extra, wrong_label,
+        wrong_geometry}，reason 自由文本变可空补充。"""
         ann_user, ann_token = annotator
         _, rev_token = reviewer
         _, task = await _seed_project_and_task(
@@ -237,28 +239,36 @@ class TestTaskLockFlow:
             f"/api/v1/tasks/{tid}/submit", headers=_bearer(ann_token)
         )
 
-        # 缺 reason → 400
+        # 缺 reason_type → 422
         r = await httpx_client_bound.post(
             f"/api/v1/tasks/{tid}/review/reject", headers=_bearer(rev_token)
         )
-        assert r.status_code == 400
-        # 空白 reason → 400
-        r = await httpx_client_bound.post(
-            f"/api/v1/tasks/{tid}/review/reject",
-            json={"reason": "   "},
-            headers=_bearer(rev_token),
-        )
-        assert r.status_code == 400
-
-        # 合法 reason → 持久化，并进入 rejected 等待标注员 accept-rejection
+        assert r.status_code == 422
+        # 仅传 reason 不带 type → 422
         r = await httpx_client_bound.post(
             f"/api/v1/tasks/{tid}/review/reject",
             json={"reason": "框漏了 3 处行人"},
             headers=_bearer(rev_token),
         )
+        assert r.status_code == 422
+        # 非法 type → Pydantic 422
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/review/reject",
+            json={"reason_type": "garbage"},
+            headers=_bearer(rev_token),
+        )
+        assert r.status_code == 422
+
+        # 合法 type + 自由文本 → 持久化两字段
+        r = await httpx_client_bound.post(
+            f"/api/v1/tasks/{tid}/review/reject",
+            json={"reason_type": "missing", "reason": "框漏了 3 处行人"},
+            headers=_bearer(rev_token),
+        )
         assert r.status_code == 200
         await db_session.refresh(task)
         assert task.status == "rejected"
+        assert task.reject_reason_type == "missing"
         assert task.reject_reason == "框漏了 3 处行人"
 
     async def test_state_transitions_emit_audit_logs(

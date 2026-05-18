@@ -1515,6 +1515,164 @@
         "title": "ApiKeyOut",
         "type": "object"
       },
+      "AsyncJobListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AsyncJobOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "AsyncJobListResponse",
+        "type": "object"
+      },
+      "AsyncJobOut": {
+        "description": "v0.10.16 · 异步任务行 schema（前端铃铛 + 详情页消费）。",
+        "properties": {
+          "celery_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celery Task Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "progress_pct": {
+            "title": "Progress Pct",
+            "type": "integer"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "project_id",
+          "user_id",
+          "status",
+          "progress_pct",
+          "payload",
+          "result",
+          "error_message",
+          "celery_task_id",
+          "started_at",
+          "completed_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AsyncJobOut",
+        "type": "object"
+      },
       "Attachment": {
         "properties": {
           "fileName": {
@@ -8969,6 +9127,7 @@
         "type": "object"
       },
       "ReviewAction": {
+        "description": "v0.10.16 · reviewer 驳回 payload。`reason_type` 自 v0.10.16 起必填，\n`reason` 仍为可空自由文本补充。",
         "properties": {
           "reason": {
             "anyOf": [
@@ -8980,6 +9139,23 @@
               }
             ],
             "title": "Reason"
+          },
+          "reason_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "missing",
+                  "extra",
+                  "wrong_label",
+                  "wrong_geometry"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Type"
           }
         },
         "title": "ReviewAction",
@@ -9912,6 +10088,17 @@
               }
             ],
             "title": "Reject Reason"
+          },
+          "reject_reason_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason Type"
           },
           "reopened_count": {
             "default": 0,
@@ -12525,6 +12712,73 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/analytics/{panel_name}": {
+      "get": {
+        "description": "v0.10.16 · 取一个面板的数据。\n\nDuckDB 文件由 Celery beat (sync_to_duckdb) 每日更新；如果首次同步尚未跑过\n返回 503，让前端展示「数据初始化中」。",
+        "operationId": "get_analytics_panel_api_v1_admin_analytics__panel_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "panel_name",
+            "required": true,
+            "schema": {
+              "enum": [
+                "throughput_daily",
+                "reject_rate_by_type",
+                "duration_dist"
+              ],
+              "title": "Panel Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Analytics Panel Api V1 Admin Analytics  Panel Name  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Analytics Panel",
+        "tags": [
+          "admin-analytics"
+        ]
+      }
+    },
     "/api/v1/admin/failed-predictions": {
       "get": {
         "operationId": "list_failed_predictions_api_v1_admin_failed_predictions_get",
@@ -13546,6 +13800,202 @@
         "summary": "Get Annotation History",
         "tags": [
           "annotation-history"
+        ]
+      }
+    },
+    "/api/v1/async-jobs": {
+      "get": {
+        "description": "v0.10.16 · 当前用户可见 async_jobs 列表（super_admin 可见全部）。\n\n顺序：created_at DESC。前端铃铛走 polling，默认拉最近 50 行。",
+        "operationId": "list_async_jobs_api_v1_async_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "running",
+                    "completed",
+                    "failed",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncJobListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Async Jobs",
+        "tags": [
+          "async-jobs"
+        ]
+      }
+    },
+    "/api/v1/async-jobs/{job_id}": {
+      "get": {
+        "operationId": "get_async_job_api_v1_async_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Async Job",
+        "tags": [
+          "async-jobs"
+        ]
+      }
+    },
+    "/api/v1/async-jobs/{job_id}/cancel": {
+      "post": {
+        "description": "v0.10.16 · 软取消。MVP 仅支持 predictions_import / audit_archive。\n\nbatch_predict / video_tracker 走 domain 真值表（PredictionJob / VideoTrackerJob）\n自己的取消机制；本端点不动 Celery revoke。",
+        "operationId": "cancel_async_job_api_v1_async_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Async Job",
+        "tags": [
+          "async-jobs"
         ]
       }
     },

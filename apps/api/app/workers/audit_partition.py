@@ -33,17 +33,32 @@ async def _ensure_async(months_ahead: int) -> dict:
     return {"created": created}
 
 
-@celery_app.task(name="app.workers.audit_partition.archive_old_audit_partitions")
-def archive_old_audit_partitions() -> dict:
+@celery_app.task(
+    bind=True,
+    name="app.workers.audit_partition.archive_old_audit_partitions",
+)
+def archive_old_audit_partitions(self) -> dict:
     retain = int(getattr(settings, "audit_retention_months", None) or 12)
-    return asyncio.run(_archive_async(retain))
+    return asyncio.run(_archive_async(retain, getattr(self.request, "id", None)))
 
 
-async def _archive_async(retain_months: int) -> dict:
+async def _archive_async(
+    retain_months: int, celery_task_id: str | None = None
+) -> dict:
+    """v0.10.16 · 归档操作走 async_jobs track_job 上下文管理器（汇总索引）。"""
+    from app.services import async_job as async_job_svc
+
     async with async_session() as db:
-        result = await AuditPartitionService.archive_old_partitions(
-            db, retain_months=retain_months
-        )
-        await db.commit()
+        async with async_job_svc.track_job(
+            db,
+            kind="audit_archive",
+            payload={"retain_months": retain_months},
+            celery_task_id=celery_task_id,
+        ) as aj:
+            result = await AuditPartitionService.archive_old_partitions(
+                db, retain_months=retain_months
+            )
+            await async_job_svc.mark_complete(db, aj.id, result=result)
+            await db.commit()
     log.info("archive_old_audit_partitions: %s", result)
     return result

@@ -66,6 +66,7 @@ async def _run_batch(
     from app.db.models.project import Project
     from app.db.models.task import Task
     from app.db.models.task_batch import TaskBatch
+    from app.services import async_job as async_job_svc
     from app.services.ml_client import MLBackendClient
     from app.services.prediction import PredictionService
 
@@ -140,6 +141,28 @@ async def _run_batch(
         db.add(job)
         await db.commit()
         job_id = job.id
+
+        # v0.10.16 · async_jobs 双写（汇总索引层；失败不阻断主流程）
+        async_job_id: uuid.UUID | None = None
+        try:
+            aj = await async_job_svc.create_job(
+                db,
+                kind="batch_predict",
+                project_id=uuid.UUID(project_id),
+                payload={
+                    "prediction_job_id": str(job_id),
+                    "batch_id": batch_id,
+                    "total_tasks": total,
+                    "prompt": (prompt or "")[:200],
+                },
+                celery_task_id=celery_task_id,
+            )
+            await async_job_svc.mark_running(db, aj.id, celery_task_id=celery_task_id)
+            await db.commit()
+            async_job_id = aj.id
+        except Exception:
+            await db.rollback()
+            async_job_id = None
 
         job_meta_base = {
             "job_id": str(job_id),
@@ -218,6 +241,16 @@ async def _run_batch(
 
             _publish_progress(project_id, i + 1, total)
 
+            # v0.10.16 · async_jobs 进度（每 5% 步长写一次，避免每条都 DB write）
+            if async_job_id is not None and total > 0:
+                pct = int(((i + 1) / total) * 100)
+                if pct % 5 == 0 or (i + 1) == total:
+                    try:
+                        await async_job_svc.update_progress(db, async_job_id, pct)
+                        await db.commit()
+                    except Exception:
+                        await db.rollback()
+
         # v0.9.5 · 跑完自动 active → pre_annotated（仅当指定 batch + 当前还在 active 时）
         if batch_id:
             batch = await db.get(TaskBatch, uuid.UUID(batch_id))
@@ -238,6 +271,23 @@ async def _run_batch(
         # v0.9.11 · total_cost 接通 PredictionMeta.total_cost 累加 (Numeric(10,4) 精度)
         job.total_cost = Decimal(f"{running_total_cost:.4f}")
         await db.commit()
+
+        # v0.10.16 · 同步 mark async_job complete（失败不阻断）
+        if async_job_id is not None:
+            try:
+                await async_job_svc.mark_complete(
+                    db,
+                    async_job_id,
+                    result={
+                        "success_count": success_count,
+                        "failed_count": failed_count,
+                        "duration_ms": duration_ms,
+                        "total_cost": f"{running_total_cost:.4f}",
+                    },
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
 
         _publish_progress(
             project_id,
@@ -270,6 +320,7 @@ async def _mark_job_failed(celery_task_id: str, error_message: str) -> None:
     )
 
     from app.db.models.prediction_job import PredictionJob, PredictionJobStatus
+    from app.services import async_job as async_job_svc
 
     engine = create_async_engine(settings.database_url, echo=False)
     SessionLocal = async_sessionmaker(
@@ -293,6 +344,15 @@ async def _mark_job_failed(celery_task_id: str, error_message: str) -> None:
                 delta = job.completed_at - job.started_at
                 job.duration_ms = max(0, int(delta.total_seconds() * 1000))
             await db.commit()
+
+            # v0.10.16 · 同步 mark async_job failed（按 celery_task_id 反查）
+            try:
+                aj = await async_job_svc.find_by_celery_task_id(db, celery_task_id)
+                if aj is not None:
+                    await async_job_svc.mark_failed(db, aj.id, error=error_message)
+                    await db.commit()
+            except Exception:
+                await db.rollback()
     finally:
         await engine.dispose()
 

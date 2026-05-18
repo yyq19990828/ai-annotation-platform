@@ -1,6 +1,6 @@
 /**
- * v0.8.5 · ReviewerDashboard 单测：加载态 / 空 pending / handleApprove / handleReject
- * （含 prompt 退回原因）/ recentReviews 渲染。
+ * v0.10.16 · ReviewerDashboard 单测：加载态 / 空 pending / handleApprove /
+ * handleReject（弹 RejectReasonModal 选 reason_type）/ recentReviews 渲染。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -147,56 +147,7 @@ describe("ReviewerDashboard", () => {
     });
   });
 
-  it("退回按钮 prompt 取消 → 不调用 rejectMut", () => {
-    const s = {
-      ...baseStats,
-      pending_tasks: [
-        {
-          task_id: "t2",
-          task_display_id: "T-2",
-          file_name: "b.jpg",
-          project_id: "p1",
-          project_name: "Proj",
-          total_annotations: 1,
-          total_predictions: 0,
-          updated_at: null,
-        },
-      ],
-    };
-    mockUseReviewerStats.mockReturnValue({ data: s, isLoading: false });
-    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue(null);
-    renderUI();
-    fireEvent.click(screen.getByText("退回"));
-    expect(promptSpy).toHaveBeenCalled();
-    expect(mockRejectMutate).not.toHaveBeenCalled();
-    promptSpy.mockRestore();
-  });
-
-  it("退回按钮 prompt 输入空白 → 不调用 rejectMut", () => {
-    const s = {
-      ...baseStats,
-      pending_tasks: [
-        {
-          task_id: "t3",
-          task_display_id: "T-3",
-          file_name: "c.jpg",
-          project_id: "p1",
-          project_name: "Proj",
-          total_annotations: 1,
-          total_predictions: 0,
-          updated_at: null,
-        },
-      ],
-    };
-    mockUseReviewerStats.mockReturnValue({ data: s, isLoading: false });
-    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("   ");
-    renderUI();
-    fireEvent.click(screen.getByText("退回"));
-    expect(mockRejectMutate).not.toHaveBeenCalled();
-    promptSpy.mockRestore();
-  });
-
-  it("退回按钮 prompt 有效 → 调用 rejectMut + toast + invalidate", () => {
+  it("退回按钮 → 弹 RejectReasonModal，确认后调用 rejectMut (默认 missing)", () => {
     const s = {
       ...baseStats,
       pending_tasks: [
@@ -213,19 +164,46 @@ describe("ReviewerDashboard", () => {
       ],
     };
     mockUseReviewerStats.mockReturnValue({ data: s, isLoading: false });
-    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("  框位置不对  ");
     mockRejectMutate.mockImplementation((_args, opts) => opts?.onSuccess?.());
     renderUI();
     fireEvent.click(screen.getByText("退回"));
+    // Modal 弹出后默认选 missing，直接确认
+    fireEvent.click(screen.getByTestId("reject-confirm"));
     expect(mockRejectMutate).toHaveBeenCalledWith(
-      { taskId: "t4", reason: "框位置不对" },
+      { taskId: "t4", reason_type: "missing", reason: undefined },
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
     expect(mockPushToast).toHaveBeenCalledWith({
       msg: "任务已退回标注员",
       kind: "success",
     });
-    promptSpy.mockRestore();
+  });
+
+  it("退回 Modal 切换 type 后 payload 反映新 type", () => {
+    const s = {
+      ...baseStats,
+      pending_tasks: [
+        {
+          task_id: "t5",
+          task_display_id: "T-5",
+          file_name: "e.jpg",
+          project_id: "p1",
+          project_name: "Proj",
+          total_annotations: 0,
+          total_predictions: 0,
+          updated_at: null,
+        },
+      ],
+    };
+    mockUseReviewerStats.mockReturnValue({ data: s, isLoading: false });
+    renderUI();
+    fireEvent.click(screen.getByText("退回"));
+    fireEvent.click(screen.getByTestId("reject-type-wrong_label"));
+    fireEvent.click(screen.getByTestId("reject-confirm"));
+    expect(mockRejectMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: "t5", reason_type: "wrong_label" }),
+      expect.any(Object),
+    );
   });
 
   it("recentReviews 列表渲染 + 空态", () => {

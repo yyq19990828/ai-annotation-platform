@@ -69,9 +69,12 @@ export function useReviewMode({
   }, [taskId, approveMut, pushToast, navigateTask]);
 
   const handleRejectTask = useCallback(
-    (reason: string) => {
+    (payload: {
+      reason_type: "missing" | "extra" | "wrong_label" | "wrong_geometry";
+      reason?: string;
+    }) => {
       if (!taskId) return;
-      rejectMut.mutate({ taskId, reason }, {
+      rejectMut.mutate({ taskId, ...payload }, {
         onSuccess: () => {
           pushToast({ msg: "任务已退回", kind: "success" });
           setRejectingTask(false);

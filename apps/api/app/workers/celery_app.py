@@ -20,6 +20,10 @@ celery_app = Celery(
         "app.workers.ml_health",
         "app.workers.predictions_retry",
         "app.workers.video_tracker",
+        # v0.10.16 · async_jobs 兜底信号 + DuckDB 分析同步
+        "app.workers.signals",
+        "app.workers.analytics",
+        "app.workers.async_jobs_cleanup",
     ],
 )
 
@@ -43,6 +47,9 @@ celery_app.conf.update(
         "app.workers.media.cleanup_video_frame_assets": {"queue": "media"},
         "app.workers.video_tracker.run_video_tracker_job": {"queue": "gpu"},
         "app.workers.cleanup.purge_soft_deleted_attachments": {"queue": "cleanup"},
+        # v0.10.16 · DuckDB 同步 + async_jobs 清理走 cleanup 队列
+        "app.workers.analytics.sync_to_duckdb": {"queue": "cleanup"},
+        "app.workers.async_jobs_cleanup.purge_old_async_jobs": {"queue": "cleanup"},
         # v0.7.6 · audit 异步 INSERT 走独立队列，不与 ml/media 抢资源
         "app.workers.audit.persist_audit_entry": {"queue": "audit"},
         # v0.8.4 · task_events 批量 INSERT 走独立队列
@@ -101,6 +108,16 @@ celery_app.conf.update(
         "cleanup-video-frame-assets": {
             "task": "app.workers.media.cleanup_video_frame_assets",
             "schedule": crontab(hour=2, minute=30),
+        },
+        # v0.10.16 · DuckDB 离线分析视图同步（每日 02:30 UTC）
+        "sync-to-duckdb": {
+            "task": "app.workers.analytics.sync_to_duckdb",
+            "schedule": crontab(hour=2, minute=30),
+        },
+        # v0.10.16 · async_jobs 终态 retention purge：30 天后清 completed/failed/cancelled
+        "purge-old-async-jobs": {
+            "task": "app.workers.async_jobs_cleanup.purge_old_async_jobs",
+            "schedule": crontab(hour=4, minute=15),
         },
     },
 )

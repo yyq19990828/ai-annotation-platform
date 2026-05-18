@@ -86,13 +86,18 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.api
-    command: celery -A app.workers.celery_app worker -l info -Q default,ml,media,gpu --concurrency=4
+    command: celery -A app.workers.celery_app worker -l info -Q default,ml,media,gpu,cleanup,audit --concurrency=4
     environment:
       DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      # v0.10.16 · DuckDB 离线分析视图 (ROADMAP §1.6); host ./data/duckdb 挂到容器 /var/lib/duckdb
+      DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
+    volumes:
+      # v0.10.16 · DuckDB 文件 bind mount, worker 写 / API 跑 host 时只读
+      - ./data/duckdb:/var/lib/duckdb
     depends_on:
       redis:
         condition: service_healthy

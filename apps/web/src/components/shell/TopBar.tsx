@@ -10,6 +10,7 @@ import { useTheme, type ThemePref } from "@/hooks/useTheme";
 import type { IconName } from "@/components/ui/Icon";
 import { NotificationsPopover } from "./NotificationsPopover";
 import { PreannotateJobsBadge } from "./PreannotateJobsBadge";
+import { JobsBell } from "./JobsBell";
 import { CommandPalette } from "@/components/CommandPalette";
 import { usePerfHudStore } from "@/components/PerfHud";
 import styles from "./TopBar.module.css";
@@ -168,6 +169,9 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
 
           {/* v0.9.8 · 全局预标 job 徽章 (admin only, 0 个时隐身) */}
           <PreannotateJobsBadge />
+
+          {/* v0.10.16 · 后台异步任务铃铛（all users, polling /async-jobs） */}
+          <JobsBell />
 
           {/* 通知按钮（v0.7.6：组件自包含 trigger + popover，TopBar 不再管 open state） */}
           <NotificationsPopover />

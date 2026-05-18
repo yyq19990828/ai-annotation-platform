@@ -267,9 +267,34 @@ async def import_predictions(
     Prediction 行 source='external_import', ml_backend_id=NULL.
     """
 
+    from app.services import async_job as async_job_svc
     from app.services.predictions_import import import_aap_json, import_coco
 
     raw = await file.read()
+
+    # v0.10.16 · async_jobs 双写（同步端点；dry_run 不记录）
+    aj_id: uuid.UUID | None = None
+    if not dry_run:
+        try:
+            aj = await async_job_svc.create_job(
+                db,
+                kind="predictions_import",
+                project_id=project.id,
+                user_id=current_user.id,
+                payload={
+                    "format": format,
+                    "size_bytes": len(raw),
+                    "overwrite_existing": overwrite_existing,
+                    "model_version_fallback": model_version,
+                },
+            )
+            await async_job_svc.mark_running(db, aj.id)
+            await db.commit()
+            aj_id = aj.id
+        except Exception:
+            await db.rollback()
+            aj_id = None
+
     try:
         if format == "aap_json":
             result = await import_aap_json(
@@ -290,7 +315,21 @@ async def import_predictions(
                 dry_run=dry_run,
             )
     except ValueError as exc:
+        if aj_id is not None:
+            try:
+                await async_job_svc.mark_failed(db, aj_id, error=str(exc))
+                await db.commit()
+            except Exception:
+                await db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        if aj_id is not None:
+            try:
+                await async_job_svc.mark_failed(db, aj_id, error=str(exc))
+                await db.commit()
+            except Exception:
+                await db.rollback()
+        raise
 
     if not dry_run:
         await AuditService.log(
@@ -311,6 +350,19 @@ async def import_predictions(
                 "overwrite_existing": overwrite_existing,
             },
         )
+        if aj_id is not None:
+            try:
+                await async_job_svc.mark_complete(
+                    db,
+                    aj_id,
+                    result={
+                        "imported": result.imported,
+                        "skipped": result.skipped,
+                        "error_count": len(result.errors),
+                    },
+                )
+            except Exception:
+                pass
         await db.commit()
 
     return result

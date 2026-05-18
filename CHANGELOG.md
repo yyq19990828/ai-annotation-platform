@@ -22,6 +22,30 @@
 
 ## 最新版本
 
+## [0.10.16] - 2026-05-19
+
+> **ROADMAP §1 立即可做小颗粒收尾 (4 子项).** 一次性收口 CVAT/Label Studio 取经合集 §1 中尚未完成的 4 项基建：reject 原因结构化（§1.2）、Webhook 事件信封 ADR-0025 草案（§1.3）、DuckDB 离线分析视图（§1.6）、统一 async_jobs 异步任务表 MVP（§1.7）。本期不动 webhook 实现，只锁信封 schema；不引入 ClickHouse，先用 DuckDB 顶量级；async_jobs 与现有 `prediction_jobs` / `video_tracker_jobs` 走**双写双轨**——前者只记最小元数据作为汇总索引，后者保留为 domain 真值。为后续 reject 率分析、Annotator Dashboard（§4.1）、Webhook 系统（§2.1）一并铺底。→ [plan](docs/plans/2026-05-19-v0.10.16-roadmap-s1-closure.md) · [ADR-0025](docs/adr/0025-webhook-event-envelope-versioning.md)
+
+### Added
+
+- **`tasks.reject_reason_type` 4 类枚举 + alembic 0070**（[model](apps/api/app/db/models/task.py) · [migration](apps/api/alembic/versions/0070_task_reject_reason_type.py)）：`missing` / `extra` / `wrong_label` / `wrong_geometry`；旧数据 NULL 不回填，新 reject 强制选 type；reviewer dashboard + workbench + review page 全部走 [`RejectReasonModal`](apps/web/src/pages/Review/RejectReasonModal.tsx) 4 按钮单选（ReviewerDashboard 从 `window.prompt` 升级到 Modal）；中文 label 映射常量 [`rejectReasonTypes.ts`](apps/web/src/pages/Review/rejectReasonTypes.ts) 前端单点。
+- **`async_jobs` 统一异步任务表 + alembic 0071**（[model](apps/api/app/db/models/async_job.py) · [migration](apps/api/alembic/versions/0071_async_jobs.py) · [service](apps/api/app/services/async_job.py) · [API](apps/api/app/api/v1/async_jobs.py)）：`kind` ∈ `batch_predict|video_tracker|audit_archive|predictions_import`，`status` ∈ `pending|running|completed|failed|cancelled`；`GET /async-jobs`（owner-scoped，super_admin 看全部）+ `GET /async-jobs/{id}` + `POST /async-jobs/{id}/cancel`（MVP 仅支持 `predictions_import` / `audit_archive` 软取消）；Celery [`task_failure` / `task_revoked` signals](apps/api/app/workers/signals.py) 兜底翻 failed/cancelled；Celery beat 每日 04:15 UTC 跑 [`purge_old_async_jobs`](apps/api/app/workers/async_jobs_cleanup.py) 清 30 天前终态行。
+- **Topbar 后台任务铃铛**（[JobsBell.tsx](apps/web/src/components/shell/JobsBell.tsx)）：5s polling `/async-jobs?limit=20`，badge 显示 in-progress 计数，drawer 列进度条 + 状态 pill + 错误提示。与现有 `PreannotateJobsBadge`（Redis pub/sub 走预标专用通道）并存。
+- **DuckDB 离线分析 + `/admin/analytics`**（super_admin only）：[`duckdb_sync.py`](apps/api/app/services/duckdb_sync.py) 增量同步 `task_events`（带 `reject_reason_type` 反向 join）+ `audit_logs` 到 `./data/duckdb/analytics.duckdb`；[`analytics_queries.py`](apps/api/app/services/analytics_queries.py) 暴露 3 个固定面板查询（人均日吞吐 / reject 率分类型 / 标注耗时 p50/p95），**不**接受任意 SQL；[`AnalyticsPage.tsx`](apps/web/src/pages/Admin/AnalyticsPage.tsx) 渲染三张卡片；Celery beat 每日 02:30 UTC 跑 [`sync_to_duckdb`](apps/api/app/workers/analytics.py)。
+- **ADR-0025 Webhook 事件信封 + Pydantic schema 占位**（[ADR](docs/adr/0025-webhook-event-envelope-versioning.md) · [schema](apps/api/app/schemas/event_envelope.py)）：约定 `event_version` / `event` / `delivery_id` / `occurred_at` / `data` 5 个必备字段，breaking change 升 major、minor 只能加可空字段（Postel's law）；与 §1.5 AAP JSON 的 `schema_version` 同源思路。**不实现** publisher / outbox / delivery 表，留给 §2.1 epic。
+
+### Changed
+
+- **batch_predict / video_tracker / audit_archive / predictions_import 接入 async_jobs 双写**：service 层显式 `create_job` + `update_progress`（每 5% 步长）+ `mark_complete/failed`；专表（`prediction_jobs` / `video_tracker_jobs`）保留为 domain 真值。失败路径走 try/except 兜底，**专表写入失败不阻断主流程**。
+- **`docker-compose.yml` celery-worker 加 `./data/duckdb:/var/lib/duckdb` bind mount + 队列加 `cleanup,audit`**，确保 DuckDB 同步 + async_jobs 清理任务有 worker 接管。
+- **Python 新依赖**：`duckdb>=1.1.0,<2.0.0`（worker 写、API 只读，单 writer 多 reader 模型）。
+- **`docs/adr/README.md` 索引补齐 ADR 0019-0025**（旧索引停在 0018）。
+
+### Verified
+
+- 后端：`alembic upgrade head` 应用 0070/0071 通过；reject endpoint 缺 `reason_type` → 422、带合法 type → 200；`EventEnvelope` 序列化往返锁；FastAPI 加载 249 路由，含 `/api/v1/async-jobs/*` + `/api/v1/admin/analytics/{panel_name}`；Celery beat 11 项 schedule（含 `sync-to-duckdb` / `purge-old-async-jobs`）+ task_routes 含 analytics / async_jobs_cleanup 路由。
+- 前端：`RejectReasonModal` 4 按钮 + comment 可空 + skip hint 预填；`ReviewerDashboard` 改用 Modal 后 reject 流程；`JobsBell` 空态 / running badge 计数 / 终态不计入 badge 全部覆盖。
+
 ## [Unreleased]
 
 ### Changed
