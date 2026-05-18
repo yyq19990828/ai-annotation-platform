@@ -22,9 +22,7 @@ from app.db.models.project import Project
 from app.db.models.user import User
 
 
-async def _seed_project(
-    db: AsyncSession, owner_id: uuid.UUID, **overrides
-) -> Project:
+async def _seed_project(db: AsyncSession, owner_id: uuid.UUID, **overrides) -> Project:
     suffix = uuid.uuid4().hex[:8]
     defaults = dict(
         id=uuid.uuid4(),
@@ -103,9 +101,7 @@ async def test_clone_copies_all_cloneable_fields(
         "type_key": "image-det",
         "source_project_id": str(src.id),
     }
-    resp = await httpx_client_bound.post(
-        "/api/v1/projects", json=body, headers=headers
-    )
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()
 
@@ -158,9 +154,7 @@ async def test_clone_explicit_field_overrides_source(
         "ai_enabled": False,
         "box_threshold": 0.6,
     }
-    resp = await httpx_client_bound.post(
-        "/api/v1/projects", json=body, headers=headers
-    )
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()
     # 显式字段优先
@@ -188,9 +182,7 @@ async def test_clone_auto_derives_ml_backend_from_source(
         "type_key": "image-det",
         "source_project_id": str(src.id),
     }
-    resp = await httpx_client_bound.post(
-        "/api/v1/projects", json=body, headers=headers
-    )
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()
     # 新项目获得了自己的 backend (id != 源 backend id)
@@ -230,16 +222,12 @@ async def test_clone_without_view_permission_returns_404(
         "type_key": "image-det",
         "source_project_id": str(src.id),
     }
-    resp = await httpx_client_bound.post(
-        "/api/v1/projects", json=body, headers=headers
-    )
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
     # assert_project_visible 隐藏存在性, 返回 404 (project_admin 只能看 owner=self)
     assert resp.status_code == 404, resp.text
 
 
-async def test_create_project_without_source_unchanged(
-    httpx_client_bound, super_admin
-):
+async def test_create_project_without_source_unchanged(httpx_client_bound, super_admin):
     """回归: 不带 source_project_id 时, 走原路径, 不报错."""
     _, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
@@ -248,9 +236,7 @@ async def test_create_project_without_source_unchanged(
         "type_label": "图像-检测",
         "type_key": "image-det",
     }
-    resp = await httpx_client_bound.post(
-        "/api/v1/projects", json=body, headers=headers
-    )
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["name"] == "普通新建"
@@ -258,9 +244,7 @@ async def test_create_project_without_source_unchanged(
     assert data["ai_enabled"] is False
 
 
-async def test_clone_jsonb_is_deep_copied(
-    httpx_client_bound, super_admin, db_session
-):
+async def test_clone_jsonb_is_deep_copied(httpx_client_bound, super_admin, db_session):
     """修改新项目的 classes_config 不应该污染源项目 (避免共享 JSONB 引用)."""
     user, token = super_admin
     src = await _seed_project(
@@ -279,9 +263,7 @@ async def test_clone_jsonb_is_deep_copied(
         "type_key": "image-det",
         "source_project_id": str(src_id),
     }
-    resp = await httpx_client_bound.post(
-        "/api/v1/projects", json=body, headers=headers
-    )
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
     assert resp.status_code == 200
     new_id = resp.json()["id"]
 
