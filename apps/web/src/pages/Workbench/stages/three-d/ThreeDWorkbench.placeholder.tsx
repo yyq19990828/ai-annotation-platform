@@ -1,21 +1,15 @@
 import { Icon } from "@/components/ui/Icon";
+import styles from "./ThreeDWorkbench.placeholder.module.css";
 
 export function ThreeDWorkbenchPlaceholder() {
   return (
     <div
       data-testid="three-d-workbench-placeholder"
-      style={{
-        flex: 1,
-        minHeight: 0,
-        display: "grid",
-        placeItems: "center",
-        background: "var(--color-bg-sunken)",
-        color: "var(--color-fg-muted)",
-      }}
+      className={styles.placeholder}
     >
-      <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
+      <div className={styles.content}>
         <Icon name="box" size={32} />
-        <div style={{ fontSize: 13 }}>3D 标注工作台暂未启用</div>
+        <div className={styles.message}>3D 标注工作台暂未启用</div>
       </div>
     </div>
   );

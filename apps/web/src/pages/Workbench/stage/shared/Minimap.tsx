@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Viewport } from "./useViewportTransform";
+import styles from "./Minimap.module.css";
 
 interface MinimapProps {
   imgW: number;
@@ -18,6 +19,78 @@ interface MinimapProps {
 
 const MINIMAP_MAX_W = 160;
 const MINIMAP_MAX_H = 120;
+
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
+function CachedFrameRange({
+  range,
+  maxFrame,
+}: {
+  range: { from: number; to: number };
+  maxFrame: number;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    const left = (Math.max(0, Math.min(maxFrame, range.from)) / maxFrame) * 100;
+    const right = (Math.max(0, Math.min(maxFrame, range.to)) / maxFrame) * 100;
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty("--minimap-range-left", `${left}%`);
+    el.style.setProperty("--minimap-range-width", `${Math.max(1, right - left)}%`);
+  }, [maxFrame, range.from, range.to]);
+
+  return <span ref={ref} className={styles.cachedFrameRange} />;
+}
+
+function CurrentFrameIndicator({
+  currentFrameIndex,
+  maxFrame,
+}: {
+  currentFrameIndex: number;
+  maxFrame: number;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    const left = (Math.max(0, Math.min(maxFrame, currentFrameIndex)) / maxFrame) * 100;
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty("--minimap-current-frame-left", `${left}%`);
+    el.style.left = `${left}%`;
+  }, [currentFrameIndex, maxFrame]);
+
+  return <span ref={ref} data-testid="minimap-current-frame" className={styles.currentFrame} />;
+}
+
+function ViewportRect({
+  x,
+  y,
+  w,
+  h,
+  isDragging,
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  isDragging: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty("--minimap-viewport-left", `${x}px`);
+    el.style.setProperty("--minimap-viewport-top", `${y}px`);
+    el.style.setProperty("--minimap-viewport-width", `${w}px`);
+    el.style.setProperty("--minimap-viewport-height", `${h}px`);
+  }, [h, w, x, y]);
+
+  return <div ref={ref} className={cn(styles.viewportRect, isDragging && styles.viewportRectDragging)} />;
+}
 
 /**
  * 缩略图导航。仅当图像放大到容器尺寸 1.5× 以上才显示。
@@ -62,6 +135,16 @@ export function Minimap({
   const rectY = (-vp.ty / (imgH * vp.scale)) * mh;
   const rectW = visibleW * mw;
   const rectH = visibleH * mh;
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty("--minimap-right", `${right}px`);
+    el.style.setProperty("--minimap-bottom", `${bottom}px`);
+    el.style.setProperty("--minimap-width", `${mw}px`);
+    el.style.setProperty("--minimap-height", `${mh}px`);
+    el.style.cursor = isDragging ? "grabbing" : "grab";
+  }, [bottom, isDragging, mh, mw, needsMinimap, right]);
 
   const moveViewportTo = useCallback((clientX: number, clientY: number) => {
     if (!ref.current) return;
@@ -123,22 +206,7 @@ export function Minimap({
         stopDragging();
       }}
       onPointerCancel={stopDragging}
-      style={{
-        position: "absolute",
-        right,
-        bottom,
-        width: mw,
-        height: mh,
-        background: "var(--color-bg-elev, white)",
-        border: "1px solid var(--color-border)",
-        borderRadius: 4,
-        overflow: "hidden",
-        cursor: isDragging ? "grabbing" : "grab",
-        zIndex: 15,
-        boxShadow: "var(--shadow-md, 0 4px 12px rgba(0,0,0,0.15))",
-        userSelect: "none",
-        touchAction: "none",
-      }}
+      className={cn(styles.root, isDragging && styles.rootDragging)}
       title="缩略图导航：点击跳转视口"
     >
       {src && (
@@ -146,58 +214,25 @@ export function Minimap({
           src={src}
           alt=""
           draggable={false}
-          style={{ width: "100%", height: "100%", objectFit: "fill", opacity: 0.85, pointerEvents: "none" }}
+          className={styles.image}
         />
       )}
       {cachedFrameRanges.length > 0 && typeof maxFrame === "number" && maxFrame > 0 && (
-        <div data-testid="minimap-cached-frame-ranges" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 4, pointerEvents: "none" }}>
-          {cachedFrameRanges.map((range) => {
-            const left = (Math.max(0, Math.min(maxFrame, range.from)) / maxFrame) * 100;
-            const right = (Math.max(0, Math.min(maxFrame, range.to)) / maxFrame) * 100;
-            return (
-              <span
-                key={`${range.from}-${range.to}`}
-                style={{
-                  position: "absolute",
-                  left: `${left}%`,
-                  width: `${Math.max(1, right - left)}%`,
-                  top: 0,
-                  bottom: 0,
-                  background: "rgba(45,212,191,0.84)",
-                }}
-              />
-            );
-          })}
+        <div data-testid="minimap-cached-frame-ranges" className={styles.cachedFrameRanges}>
+          {cachedFrameRanges.map((range) => (
+            <CachedFrameRange key={`${range.from}-${range.to}`} range={range} maxFrame={maxFrame} />
+          ))}
         </div>
       )}
       {canRenderFrameAxis && (
-        <span
-          data-testid="minimap-current-frame"
-          style={{
-            position: "absolute",
-            left: `${(Math.max(0, Math.min(maxFrame, currentFrameIndex)) / maxFrame) * 100}%`,
-            bottom: 0,
-            width: 2,
-            height: 12,
-            transform: "translateX(-50%)",
-            background: "rgba(255,255,255,0.92)",
-            boxShadow: "0 0 0 1px rgba(0,0,0,0.5)",
-            pointerEvents: "none",
-          }}
-        />
+        <CurrentFrameIndicator currentFrameIndex={currentFrameIndex} maxFrame={maxFrame} />
       )}
-      <div
-        style={{
-          position: "absolute",
-          left: Math.max(0, rectX),
-          top: Math.max(0, rectY),
-          width: Math.min(mw - Math.max(0, rectX), rectW),
-          height: Math.min(mh - Math.max(0, rectY), rectH),
-          border: "2px solid oklch(0.62 0.18 252)",
-          background: "rgba(99, 130, 217, 0.12)",
-          pointerEvents: "none",
-          transition: isDragging ? "none" : "left 80ms linear, top 80ms linear",
-        }}
+      <ViewportRect
+        x={Math.max(0, rectX)}
+        y={Math.max(0, rectY)}
+        w={Math.min(mw - Math.max(0, rectX), rectW)}
+        h={Math.min(mh - Math.max(0, rectY), rectH)}
+        isDragging={isDragging}
       />
     </div>
   );

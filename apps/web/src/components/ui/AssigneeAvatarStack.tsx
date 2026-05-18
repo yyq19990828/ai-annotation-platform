@@ -1,4 +1,5 @@
 import { Avatar } from "@/components/ui/Avatar";
+import styles from "./AssigneeAvatarStack.module.css";
 
 export interface AssigneeBrief {
   id: string;
@@ -34,13 +35,7 @@ export function AssigneeAvatarStack({
 }: Props) {
   if (users.length === 0) {
     return (
-      <span
-        style={{
-          fontSize: 11,
-          color: "var(--color-fg-subtle)",
-          fontStyle: "italic",
-        }}
-      >
+      <span className={styles.empty}>
         {label ? `${label}：` : ""}{emptyHint}
       </span>
     );
@@ -53,23 +48,18 @@ export function AssigneeAvatarStack({
   return (
     <span
       title={tooltip}
-      style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}
+      className={styles.root}
     >
       {label && (
-        <span style={{ fontSize: 11, color: "var(--color-fg-muted)", whiteSpace: "nowrap" }}>
+        <span className={styles.label}>
           {label}
         </span>
       )}
-      <span style={{ display: "inline-flex" }}>
-        {visible.map((u, i) => (
+      <span className={styles.avatars}>
+        {visible.map((u) => (
           <span
             key={u.id}
-            style={{
-              marginLeft: i === 0 ? 0 : -6,
-              border: "1.5px solid var(--color-bg-elev)",
-              borderRadius: "50%",
-              background: "var(--color-bg-elev)",
-            }}
+            className={styles.avatarFrame}
           >
             <Avatar
               initial={
@@ -82,13 +72,7 @@ export function AssigneeAvatarStack({
         ))}
       </span>
       {overflow > 0 && (
-        <span
-          style={{
-            fontSize: 11,
-            color: "var(--color-fg-muted)",
-            marginLeft: 2,
-          }}
-        >
+        <span className={styles.overflow}>
           +{overflow}
         </span>
       )}

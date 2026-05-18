@@ -1,17 +1,18 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import styles from "./VideoTrackerJobBadge.module.css";
 
 import type { VideoTrackerJobState } from "@/hooks/useVideoTrackerJobs";
 
 const STATUS_STYLE: Record<
   VideoTrackerJobState["status"],
-  { label: string; color: string; bg: string }
+  { label: string; className: string; cancelClassName: string }
 > = {
-  queued: { label: "排队中", color: "var(--color-fg-muted)", bg: "color-mix(in oklab, var(--color-fg-muted) 14%, var(--color-bg-elev))" },
-  running: { label: "运行中", color: "var(--color-accent)", bg: "color-mix(in oklab, var(--color-accent) 14%, var(--color-bg-elev))" },
-  completed: { label: "完成", color: "var(--color-success)", bg: "color-mix(in oklab, var(--color-success) 12%, var(--color-bg-elev))" },
-  failed: { label: "失败", color: "var(--color-danger)", bg: "color-mix(in oklab, var(--color-danger) 12%, var(--color-bg-elev))" },
-  cancelled: { label: "已取消", color: "var(--color-fg-muted)", bg: "var(--color-bg-elev)" },
+  queued: { label: "排队中", className: styles.statusQueued, cancelClassName: styles.cancelMuted },
+  running: { label: "运行中", className: styles.statusRunning, cancelClassName: styles.cancelAccent },
+  completed: { label: "完成", className: styles.statusCompleted, cancelClassName: styles.cancelSuccess },
+  failed: { label: "失败", className: styles.statusFailed, cancelClassName: styles.cancelDanger },
+  cancelled: { label: "已取消", className: styles.statusCancelled, cancelClassName: styles.cancelMuted },
 };
 
 interface VideoTrackerJobBadgeProps {
@@ -20,7 +21,7 @@ interface VideoTrackerJobBadgeProps {
 }
 
 export function VideoTrackerJobBadge({ job, onCancel }: VideoTrackerJobBadgeProps) {
-  const style = STATUS_STYLE[job.status];
+  const statusMeta = STATUS_STYLE[job.status];
   const canCancel = onCancel && (job.status === "queued" || job.status === "running");
   const progressLabel = job.windowProgress
     ? `${job.windowProgress.current}/${job.windowProgress.total}`
@@ -30,23 +31,12 @@ export function VideoTrackerJobBadge({ job, onCancel }: VideoTrackerJobBadgeProp
     <div
       data-testid="video-tracker-job-badge"
       title={job.errorMessage ?? `${job.modelKey} · F${job.fromFrame}-F${job.toFrame}`}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        border: "1px solid var(--color-border)",
-        borderRadius: 999,
-        padding: "2px 8px",
-        background: style.bg,
-        color: style.color,
-        fontSize: 11,
-        lineHeight: 1.4,
-      }}
+      className={[styles.badge, statusMeta.className].join(" ")}
     >
       <Icon name="bot" size={12} />
-      <span>{style.label}</span>
+      <span>{statusMeta.label}</span>
       {progressLabel && (
-        <span className="mono" style={{ color: "var(--color-fg-muted)" }}>
+        <span className={`mono ${styles.progress}`}>
           {progressLabel}
         </span>
       )}
@@ -54,7 +44,7 @@ export function VideoTrackerJobBadge({ job, onCancel }: VideoTrackerJobBadgeProp
         <Button
           size="sm"
           variant="ghost"
-          style={{ padding: "0 4px", minWidth: 0, height: 18, color: style.color }}
+          className={[styles.cancelButton, statusMeta.cancelClassName].join(" ")}
           onClick={(e) => {
             e.stopPropagation();
             onCancel(job.jobId);

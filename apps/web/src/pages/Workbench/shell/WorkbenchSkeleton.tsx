@@ -1,36 +1,48 @@
-const shimmer: React.CSSProperties = {
-  background: "linear-gradient(90deg, var(--color-bg-sunken) 0%, var(--color-bg-elev) 50%, var(--color-bg-sunken) 100%)",
-  backgroundSize: "200% 100%",
-  animation: "wb-shimmer 1.4s linear infinite",
-};
+import styles from "./WorkbenchSkeleton.module.css";
 
-const styleTag = `@keyframes wb-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`;
+const blockSizeClassByKey = {
+  "120x16": styles.block120x16,
+  "80%x11": styles.block80p11,
+  "40x40": styles.block40x40,
+  "60%x11": styles.block60p11,
+  "80%x10": styles.block80p10,
+  "60x26": styles.block60x26,
+  "80x26": styles.block80x26,
+  "26x26": styles.block26x26,
+  "120x26": styles.block120x26,
+  "100%x32": styles.block100p32,
+  "100%x28": styles.block100p28,
+  "100%x42": styles.block100p42,
+  "50%x14": styles.block50p14,
+  "40%x11": styles.block40p11,
+} as const;
 
-function Block({ w, h, mb = 0, mt = 0, br = 4 }: { w: number | string; h: number; mb?: number; mt?: number; br?: number }) {
+const blockMarginClassByValue = {
+  6: styles.mb6,
+  8: styles.mb8,
+  10: styles.mb10,
+  20: styles.mb20,
+} as const;
+
+function Block({ w, h, mb = 0 }: { w: number | string; h: number; mb?: 0 | 6 | 8 | 10 | 20 }) {
+  const key = `${w}x${h}` as keyof typeof blockSizeClassByKey;
   return (
-    <div style={{ width: w, height: h, marginBottom: mb, marginTop: mt, borderRadius: br, ...shimmer }} />
+    <div className={`${styles.block} ${blockSizeClassByKey[key]} ${mb ? blockMarginClassByValue[mb] : ""}`} />
   );
 }
 
 export function WorkbenchSkeleton() {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "260px 1fr 280px",
-        height: "100%", overflow: "hidden", background: "var(--color-bg-sunken)",
-      }}
-    >
-      <style>{styleTag}</style>
+    <div className={styles.skeleton}>
 
       {/* 左侧 task list */}
-      <div style={{ background: "var(--color-bg-elev)", borderRight: "1px solid var(--color-border)", padding: 14 }}>
+      <div className={styles.leftPanel}>
         <Block w={120} h={16} mb={10} />
         <Block w="80%" h={11} mb={20} />
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <div key={i} className={styles.taskRow}>
             <Block w={40} h={40} />
-            <div style={{ flex: 1 }}>
+            <div className={styles.taskMeta}>
               <Block w="60%" h={11} mb={6} />
               <Block w="80%" h={10} />
             </div>
@@ -39,27 +51,26 @@ export function WorkbenchSkeleton() {
       </div>
 
       {/* 中央 stage */}
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", gap: 6, padding: 10, borderBottom: "1px solid var(--color-border)", background: "var(--color-bg-elev)" }}>
+      <div className={styles.stageShell}>
+        <div className={styles.toolbar}>
           <Block w={60} h={26} />
           <Block w={80} h={26} />
           <Block w={26} h={26} />
           <Block w={26} h={26} />
-          <div style={{ flex: 1 }} />
+          <div className={styles.toolbarSpacer} />
           <Block w={120} h={26} />
           <Block w={80} h={26} />
         </div>
-        <div style={{ flex: 1, position: "relative", padding: 40 }}>
-          <Block w="100%" h={undefined as unknown as number} />
-          <div style={{ position: "absolute", inset: 40, ...shimmer, borderRadius: 6 }} />
+        <div className={styles.stage}>
+          <div className={styles.stagePreview} />
         </div>
-        <div style={{ padding: 8, borderTop: "1px solid var(--color-border)", background: "var(--color-bg-elev)" }}>
+        <div className={styles.footer}>
           <Block w="40%" h={11} />
         </div>
       </div>
 
       {/* 右侧 AI panel */}
-      <div style={{ background: "var(--color-bg-elev)", borderLeft: "1px solid var(--color-border)", padding: 14 }}>
+      <div className={styles.rightPanel}>
         <Block w="50%" h={14} mb={10} />
         <Block w="100%" h={32} mb={10} />
         <Block w="100%" h={28} mb={20} />

@@ -1,4 +1,6 @@
+import { useEffect, useRef } from "react";
 import type { Annotation } from "@/types";
+import styles from "./ResizeHandles.module.css";
 
 const HANDLE_SIZE = 9;
 
@@ -26,24 +28,45 @@ export function ResizeHandles({ b, onResizeStart }: ResizeHandlesProps) {
   return (
     <>
       {DIRECTIONS.map(({ dir, cx, cy, cursor }) => (
-        <div
+        <ResizeHandleDot
           key={dir}
+          left={`calc(${(b.x + b.w * cx) * 100}% - ${HANDLE_SIZE / 2}px)`}
+          top={`calc(${(b.y + b.h * cy) * 100}% - ${HANDLE_SIZE / 2}px)`}
+          cursor={cursor}
           onPointerDown={(e) => { e.stopPropagation(); onResizeStart(dir, e); }}
-          style={{
-            position: "absolute",
-            left: `calc(${(b.x + b.w * cx) * 100}% - ${HANDLE_SIZE / 2}px)`,
-            top: `calc(${(b.y + b.h * cy) * 100}% - ${HANDLE_SIZE / 2}px)`,
-            width: HANDLE_SIZE,
-            height: HANDLE_SIZE,
-            background: "white",
-            border: "1.5px solid var(--color-accent)",
-            borderRadius: 2,
-            cursor,
-            zIndex: 10,
-          }}
         />
       ))}
     </>
+  );
+}
+
+function ResizeHandleDot({
+  left,
+  top,
+  cursor,
+  onPointerDown,
+}: {
+  left: string;
+  top: string;
+  cursor: string;
+  onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty("--resize-handle-left", left);
+    el.style.setProperty("--resize-handle-top", top);
+    el.style.setProperty("--resize-handle-cursor", cursor);
+  }, [left, top, cursor]);
+
+  return (
+    <div
+      ref={ref}
+      className={styles.handle}
+      onPointerDown={onPointerDown}
+    />
   );
 }
 

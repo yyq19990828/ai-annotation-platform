@@ -14,6 +14,7 @@ import type {
   VideoStageGeom,
   VideoTrackGhost,
 } from "./videoStageTypes";
+import styles from "./VideoInteractionLayer.module.css";
 
 const HANDLE_DIRECTIONS: { dir: VideoResizeDirection; cx: number; cy: number; cursor: string }[] = [
   { dir: "nw", cx: 0, cy: 0, cursor: "nwse-resize" },
@@ -108,7 +109,8 @@ export function VideoInteractionLayer({
               width={VIDEO_HANDLE_HIT_SIZE}
               height={VIDEO_HANDLE_HIT_SIZE}
               fill="transparent"
-              style={{ cursor, pointerEvents: "visibleFill" }}
+              cursor={cursor}
+              pointerEvents="visibleFill"
               onPointerDown={(evt) => onBeginResize(dir, evt, entry)}
             />
             <rect
@@ -123,7 +125,8 @@ export function VideoInteractionLayer({
               stroke={color}
               strokeWidth={1.5}
               vectorEffect="non-scaling-stroke"
-              style={{ cursor, pointerEvents: "auto" }}
+              cursor={cursor}
+              pointerEvents="auto"
               onPointerDown={(evt) => onBeginResize(dir, evt, entry)}
             />
           </g>
@@ -169,19 +172,14 @@ export function VideoInteractionLayer({
       onPointerCancel={onCancelDrag}
       onPointerLeave={onPointerLeave}
       onContextMenu={(evt) => evt.preventDefault()}
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        zIndex: 6,
-        cursor: readOnly || isPlaying || (videoTool === "track" && selectedTrackLocked)
-          ? "default"
+      className={[
+        styles.overlay,
+        readOnly || isPlaying || (videoTool === "track" && selectedTrackLocked)
+          ? styles.cursorDefault
           : videoTool === "track"
-            ? "copy"
-            : "crosshair",
-        pointerEvents: "auto",
-      }}
+            ? styles.cursorCopy
+            : styles.cursorCrosshair,
+      ].join(" ")}
     >
       {entries.map(({ key, entry, geom, color, canEditSelected }) => (
         <g key={key}>
@@ -197,7 +195,7 @@ export function VideoInteractionLayer({
                 stroke={color}
                 strokeWidth={3}
                 vectorEffect="non-scaling-stroke"
-                style={{ pointerEvents: "none" }}
+                pointerEvents="none"
               />
               {renderResizeHandles(geom, color, entry)}
             </>
@@ -217,7 +215,7 @@ export function VideoInteractionLayer({
             strokeDasharray="3 5"
             opacity={0.72}
             vectorEffect="non-scaling-stroke"
-            style={{ pointerEvents: "none" }}
+            pointerEvents="none"
           />
           {!readOnly && !isPlaying && !selectedTrackLocked && renderResizeHandles(
             selectedTrackGhost.geom,

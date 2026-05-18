@@ -1,6 +1,7 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/components/ui/Icon";
+import styles from "./Modal.module.css";
 
 interface ModalProps {
   open: boolean;
@@ -11,6 +12,8 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, width = 560, children }: ModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -25,71 +28,35 @@ export function Modal({ open, onClose, title, width = 560, children }: ModalProp
     };
   }, [open, onClose]);
 
+  useLayoutEffect(() => {
+    dialogRef.current?.style.setProperty("--modal-width", `${width}px`);
+  }, [width]);
+
   if (!open) return null;
 
   return createPortal(
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "oklch(0 0 0 / 0.4)",
-        zIndex: 50,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
-        backdropFilter: "blur(2px)",
-      }}
-    >
+    <div onClick={onClose} className={styles.overlay}>
       <div
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        style={{
-          width,
-          maxWidth: "100%",
-          maxHeight: "calc(100vh - 48px)",
-          background: "var(--color-bg-elev)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-lg)",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
+        className={styles.dialog}
       >
         {title !== undefined && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "14px 18px",
-              borderBottom: "1px solid var(--color-border)",
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-fg)" }}>{title}</div>
+          <div className={styles.header}>
+            <div className={styles.title}>{title}</div>
             <button
               type="button"
               onClick={onClose}
               aria-label="关闭"
-              style={{
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                color: "var(--color-fg-muted)",
-                padding: 4,
-                display: "inline-flex",
-                alignItems: "center",
-                borderRadius: "var(--radius-sm)",
-              }}
+              className={styles.closeButton}
             >
               <Icon name="x" size={16} />
             </button>
           </div>
         )}
-        <div style={{ overflowY: "auto", padding: "16px 18px" }}>{children}</div>
+        <div className={styles.body}>{children}</div>
       </div>
     </div>,
     document.body,

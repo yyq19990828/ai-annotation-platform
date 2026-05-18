@@ -1,0 +1,56 @@
+.stateBase {
+  flex: 1;
+  display: grid;
+  place-items: center;
+}
+
+.loadingState {
+  composes: stateBase;
+  color: var(--color-fg-muted);
+}
+
+.errorState {
+  composes: stateBase;
+  gap: 8px;
+  color: var(--color-danger);
+}
+
+.root {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: #050507;
+}
+
+.stageLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.playbackNotice {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 12px;
+}
+
+.playbackStatus {
+  composes: playbackNotice;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.playbackError {
+  composes: playbackNotice;
+  max-width: min(520px, calc(100% - 28px));
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(127, 29, 29, 0.88);
+  line-height: 1.4;
+  text-align: center;
+}

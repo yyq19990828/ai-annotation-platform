@@ -1,12 +1,15 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
+  type MutableRefObject,
   type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { Icon, type IconName } from "./Icon";
+import styles from "./DropdownMenu.module.css";
 
 export interface DropdownItem {
   /** 唯一 id，作为 React key */
@@ -59,6 +62,73 @@ interface DropdownMenuContentProps extends DropdownMenuBaseProps {
 
 type DropdownMenuProps = DropdownMenuItemsProps | DropdownMenuContentProps;
 
+const UNITLESS_STYLE_PROPS = new Set([
+  "animationIterationCount",
+  "aspectRatio",
+  "borderImageOutset",
+  "borderImageSlice",
+  "borderImageWidth",
+  "boxFlex",
+  "boxFlexGroup",
+  "boxOrdinalGroup",
+  "columnCount",
+  "columns",
+  "flex",
+  "flexGrow",
+  "flexPositive",
+  "flexShrink",
+  "flexNegative",
+  "flexOrder",
+  "gridArea",
+  "gridRow",
+  "gridRowEnd",
+  "gridRowSpan",
+  "gridRowStart",
+  "gridColumn",
+  "gridColumnEnd",
+  "gridColumnSpan",
+  "gridColumnStart",
+  "fontWeight",
+  "lineClamp",
+  "lineHeight",
+  "opacity",
+  "order",
+  "orphans",
+  "tabSize",
+  "widows",
+  "zIndex",
+  "zoom",
+]);
+
+function cssPropertyName(key: string) {
+  if (key.startsWith("--")) return key;
+  return key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
+}
+
+function cssPropertyValue(key: string, value: string | number) {
+  if (typeof value === "number" && value !== 0 && !UNITLESS_STYLE_PROPS.has(key)) {
+    return `${value}px`;
+  }
+  return String(value);
+}
+
+function syncDomStyles(
+  node: HTMLElement | null,
+  next: CSSProperties | undefined,
+  prev: MutableRefObject<CSSProperties | undefined>,
+) {
+  if (!node) return;
+  for (const key of Object.keys(prev.current ?? {})) {
+    if (!next || !(key in next)) node.style.removeProperty(cssPropertyName(key));
+  }
+  for (const [key, value] of Object.entries(next ?? {})) {
+    const name = cssPropertyName(key);
+    if (value === undefined || value === null) node.style.removeProperty(name);
+    else node.style.setProperty(name, cssPropertyValue(key, value as string | number));
+  }
+  prev.current = next;
+}
+
 /**
  * 通用 dropdown 菜单（v0.5.5 phase 2；v0.9.3 加 content 槽）：
  * - outside-mousedown / Esc 关闭；
@@ -83,6 +153,8 @@ export function DropdownMenu(props: DropdownMenuProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const prevHostStyleRef = useRef<CSSProperties | undefined>(undefined);
+  const prevPanelStyleRef = useRef<CSSProperties | undefined>(undefined);
   const [focusIdx, setFocusIdx] = useState(-1);
 
   const selectableIdx = items
@@ -159,8 +231,21 @@ export function DropdownMenu(props: DropdownMenuProps) {
     triggerRef.current?.focus();
   };
 
+  useLayoutEffect(() => {
+    syncDomStyles(hostRef.current, hostStyle, prevHostStyleRef);
+  }, [hostStyle]);
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+    menu.style.setProperty("--dropdown-min-width", `${minWidth}px`);
+    menu.style.setProperty("--dropdown-z-index", String(zIndex));
+    menu.style.setProperty("--dropdown-padding", disablePanelPadding ? "0" : "4px");
+    syncDomStyles(menu, panelStyle, prevPanelStyleRef);
+  }, [disablePanelPadding, minWidth, panelStyle, zIndex]);
+
   return (
-    <div ref={hostRef} style={{ position: "relative", display: "inline-flex", ...hostStyle }}>
+    <div ref={hostRef} className={styles.host}>
       {trigger({
         open,
         toggle: () => setOpen((v) => !v),
@@ -174,20 +259,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
           aria-orientation={items ? "vertical" : undefined}
           tabIndex={-1}
           onKeyDown={onMenuKey}
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            [align === "start" ? "left" : "right"]: 0,
-            minWidth,
-            padding: disablePanelPadding ? 0 : 4,
-            background: "var(--color-bg-elev)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-            boxShadow: "var(--shadow-md, 0 8px 24px rgba(0,0,0,0.12))",
-            zIndex,
-            outline: "none",
-            ...panelStyle,
-          }}
+          className={`${styles.panel} ${align === "start" ? styles.alignStart : styles.alignEnd}`}
         >
           {content
             ? content({ close })
@@ -197,11 +269,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
                     <div
                       key={it.id || `div-${i}`}
                       role="separator"
-                      style={{
-                        height: 1,
-                        background: "var(--color-border)",
-                        margin: "4px 0",
-                      }}
+                      className={styles.divider}
                     />
                   );
                 }
@@ -219,49 +287,22 @@ export function DropdownMenu(props: DropdownMenuProps) {
                       triggerRef.current?.focus();
                     }}
                     onMouseEnter={() => setFocusIdx(i)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      width: "100%",
-                      padding: "7px 10px",
-                      background:
-                        it.active || focused ? "var(--color-bg-sunken)" : "transparent",
-                      border: "none",
-                      borderRadius: "var(--radius-sm, 3px)",
-                      cursor: it.disabled ? "not-allowed" : "pointer",
-                      textAlign: "left",
-                      fontSize: 12.5,
-                      color: it.disabled
-                        ? "var(--color-fg-subtle)"
-                        : it.active
-                        ? "var(--color-fg)"
-                        : "var(--color-fg-muted)",
-                      fontWeight: it.active ? 600 : 400,
-                      fontFamily: "inherit",
-                      opacity: it.disabled ? 0.6 : 1,
-                    }}
+                    className={[
+                      styles.item,
+                      it.active && styles.itemActive,
+                      focused && styles.itemFocused,
+                      it.disabled && styles.itemDisabled,
+                    ].filter(Boolean).join(" ")}
                   >
                     {it.icon && <Icon name={it.icon} size={13} />}
-                    <span style={{ flex: 1 }}>{it.label}</span>
+                    <span className={styles.itemLabel}>{it.label}</span>
                     {it.kbd && (
-                      <span
-                        className="mono"
-                        style={{
-                          padding: "1px 5px",
-                          background: "var(--color-bg-sunken)",
-                          border: "1px solid var(--color-border)",
-                          borderBottomWidth: 2,
-                          borderRadius: 3,
-                          fontSize: 10.5,
-                          color: "var(--color-fg-muted)",
-                        }}
-                      >
+                      <span className={`mono ${styles.kbd}`}>
                         {it.kbd}
                       </span>
                     )}
                     {it.active && !it.kbd && (
-                      <Icon name="check" size={12} style={{ color: "var(--color-accent)" }} />
+                      <Icon name="check" size={12} className={styles.checkIcon} />
                     )}
                   </button>
                 );

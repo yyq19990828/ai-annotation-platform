@@ -17,6 +17,7 @@ import { ResizeHandle } from "./ResizeHandle";
 import type { TextOutputMode } from "../state/useInteractiveAI";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "../state/samTextOutput";
 import { useProject } from "@/hooks/useProjects";
+import styles from "./AIInspectorPanel.module.css";
 
 interface AIInspectorPanelProps {
   open: boolean;
@@ -76,12 +77,9 @@ interface AIInspectorPanelProps {
   videoTrackPanel?: React.ReactNode;
 }
 
-const stripStyle: React.CSSProperties = {
-  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-  height: "100%", gap: 8, cursor: "pointer", userSelect: "none",
-  background: "var(--color-bg-elev)", border: "none", width: "100%", padding: 0,
-  color: "var(--color-fg-muted)",
-};
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
 
 export function AIInspectorPanel({
   open, width, onResize,
@@ -106,58 +104,31 @@ export function AIInspectorPanel({
   const multiCount = selSet.size > 1 ? selSet.size : 0;
   if (!open) {
     return (
-      <div style={{ borderLeft: "1px solid var(--color-border)", overflow: "hidden" }}>
-        <button onClick={onToggle} title="展开标注详情" style={stripStyle}>
+      <div className={styles.collapsedShell}>
+        <button onClick={onToggle} title="展开标注详情" className={styles.collapsedButton}>
           <Icon name="panelRight" size={16} />
-          <span style={{ fontSize: 10, writingMode: "vertical-rl", letterSpacing: 1, opacity: 0.6 }}>标注详情</span>
+          <span className={styles.collapsedLabel}>标注详情</span>
         </button>
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        position: "relative",
-        background: "var(--color-bg-elev)", borderLeft: "1px solid var(--color-border)",
-        display: "flex", flexDirection: "column", overflow: "hidden",
-      }}
-    >
+    <div className={styles.panel}>
       <ResizeHandle side="left" width={width} onResize={onResize} min={220} max={600} />
-      <div
-        style={{
-          padding: "12px 14px",
-          borderBottom: "1px solid var(--color-border)",
-          background: "var(--color-bg-elev)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <b style={{ fontSize: 13 }}>标注详情</b>
-          <Button variant="ghost" size="sm" onClick={onToggle} title="收起标注详情" style={{ padding: "2px 6px" }}>
+      <div className={styles.panelHeader}>
+        <div className={styles.panelHeaderRow}>
+          <b className={styles.panelTitle}>标注详情</b>
+          <Button variant="ghost" size="sm" onClick={onToggle} title="收起标注详情" className={styles.compactIconButton}>
             <Icon name="panelRight" size={14} />
           </Button>
         </div>
       </div>
 
       {multiCount > 0 && (
-        <div
-          style={{
-            padding: "6px 14px",
-            background: "var(--color-accent-soft)",
-            borderBottom: "1px solid var(--color-border)",
-            fontSize: 11.5, color: "var(--color-accent-fg)",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-          }}
-        >
+        <div className={styles.multiSelectionBar}>
           <span>已选 <b>{multiCount}</b> 个 user 框</span>
-          <button
-            onClick={onClearSelection}
-            style={{
-              fontSize: 10.5, padding: "1px 6px", borderRadius: 3,
-              background: "transparent", border: "1px solid var(--color-border)",
-              color: "var(--color-fg-muted)", cursor: "pointer",
-            }}
-          >清除</button>
+          <button onClick={onClearSelection} className={styles.clearSelectionButton}>清除</button>
         </div>
       )}
 
@@ -295,110 +266,83 @@ export function AIPredictionPopover({
     dragOffsetRef.current = null;
   };
 
+  useEffect(() => {
+    const node = panelRef.current;
+    if (!node || !open) return;
+    if (position) {
+      node.style.setProperty("--ai-inspector-popover-left", `${position.left}px`);
+      node.style.setProperty("--ai-inspector-popover-top", `${position.top}px`);
+      node.style.removeProperty("--ai-inspector-popover-right");
+      return;
+    }
+    node.style.setProperty("--ai-inspector-popover-top", "58px");
+    node.style.setProperty("--ai-inspector-popover-right", `${rightOffset}px`);
+    node.style.removeProperty("--ai-inspector-popover-left");
+  }, [open, position, rightOffset]);
+
   if (!open) return null;
 
   return (
     <div
       ref={panelRef}
       data-testid="ai-prediction-popover"
-      style={{
-        position: "fixed",
-        ...(position ? { left: position.left, top: position.top } : { top: 58, right: rightOffset }),
-        width: 360,
-        maxWidth: "calc(100vw - 80px)",
-        maxHeight: "calc(100vh - 92px)",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        zIndex: 30,
-        background: "var(--color-bg-elev)",
-        border: "1px solid color-mix(in oklab, var(--color-ai) 35%, var(--color-border))",
-        borderRadius: 8,
-        boxShadow: "0 18px 44px rgba(0,0,0,0.24)",
-      }}
+      className={cn(styles.aiPopover, position ? styles.aiPopoverPositioned : styles.aiPopoverDocked)}
     >
       <div
         onPointerDown={handleDragStart}
         onPointerMove={handleDragMove}
         onPointerUp={handleDragEnd}
         onPointerCancel={handleDragEnd}
-        style={{
-          padding: "12px 14px",
-          borderBottom: "1px solid var(--color-border)",
-          background: "linear-gradient(180deg, color-mix(in oklab, var(--color-ai-soft) 72%, transparent), transparent 82%)",
-          cursor: "move",
-          touchAction: "none",
-        }}
+        className={styles.aiPopoverHeader}
         title="拖动 AI 面板"
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{
-                width: 24, height: 24, borderRadius: "var(--radius-sm)",
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                background: "color-mix(in oklab, var(--color-ai) 18%, transparent)",
-                color: "var(--color-ai)",
-              }}
-            >
+        <div className={styles.aiHeaderTopRow}>
+          <div className={styles.aiHeaderTitleGroup}>
+            <span className={styles.aiHeaderIcon}>
               <Icon name="bot" size={14} />
             </span>
-            <b style={{ fontSize: 13 }}>AI</b>
-            <Icon name="move" size={12} style={{ color: "var(--color-fg-subtle)" }} />
+            <b className={styles.panelTitle}>AI</b>
+            <Icon name="move" size={12} className={styles.subtleIcon} />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Badge variant="ai" dot={!aiRunning} style={{ fontSize: 10, display: "inline-flex", alignItems: "center", gap: 4 }}>
-              {aiRunning && <Icon name="loader2" size={10} className="spin" />}
-              {aiRunning ? "推理中" : "就绪"}
-            </Badge>
-            <Button variant="ghost" size="sm" onClick={onClose} title="关闭 AI" style={{ padding: "2px 6px" }}>
+          <div className={styles.aiHeaderActions}>
+            <span className={styles.compactBadge}>
+              <Badge variant="ai" dot={!aiRunning}>
+                {aiRunning && <Icon name="loader2" size={10} className="spin" />}
+                {aiRunning ? "推理中" : "就绪"}
+              </Badge>
+            </span>
+            <Button variant="ghost" size="sm" onClick={onClose} title="关闭 AI" className={styles.compactIconButton}>
               <Icon name="x" size={12} />
             </Button>
           </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11.5, color: "var(--color-fg-muted)", marginBottom: 8 }}>
-          <span>模型: <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{aiModel}</span></span>
+        <div className={styles.aiModelRow}>
+          <span>模型: <span className={styles.emphasisText}>{aiModel}</span></span>
           <span className="mono">{aiBoxCount} 待审</span>
         </div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-          <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} style={{ flex: 1 }}>
+        <div className={styles.aiActionRow}>
+          <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} className={styles.flexButton}>
             {aiRunning
               ? <Icon name="loader2" size={11} className="spin" />
               : <Icon name="wandSparkles" size={11} />}
             {aiRunning ? "推理中..." : "开始预标"}
           </Button>
-          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxCount === 0} style={{ flex: 1 }}>
+          <Button size="sm" onClick={onAcceptAll} disabled={aiBoxCount === 0} className={styles.flexButton}>
             <Icon name="check" size={11} />全部采纳
           </Button>
         </div>
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 11, marginBottom: 4 }}>
+          <div className={styles.thresholdHeader}>
             <span
-              style={{ color: "var(--color-fg-muted)" }}
+              className={styles.mutedText}
               title="只显示置信度 >= 该阈值的 AI 框；低于阈值的框被隐藏，全部采纳也不会采纳它们。"
             >
               置信度阈值
             </span>
-            <span
-              className="mono"
-              style={{
-                fontWeight: 600, fontSize: 12,
-                color: "var(--color-ai)",
-                padding: "0 6px", borderRadius: "var(--radius-sm)",
-                background: "color-mix(in oklab, var(--color-ai) 12%, transparent)",
-              }}
-            >{(confThreshold * 100).toFixed(0)}%</span>
+            <span className={cn("mono", styles.thresholdValue)}>{(confThreshold * 100).toFixed(0)}%</span>
           </div>
           <div
-            style={{
-              padding: "6px 8px",
-              fontSize: 11,
-              color: "var(--color-fg-muted)",
-              background: "var(--color-bg-sunken)",
-              border: "1px dashed var(--color-border)",
-              borderRadius: "var(--radius-sm)",
-              textAlign: "center",
-            }}
+            className={styles.thresholdDisplay}
             onWheel={(e) => {
               e.preventDefault();
               const step = e.shiftKey ? 0.1 : 0.05;
@@ -423,35 +367,28 @@ export function AIPredictionPopover({
         />
       )}
 
-      <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px", background: "var(--color-bg-sunken)" }}>
-        <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>本次效率</div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+      <div className={styles.aiStats}>
+        <div className={styles.aiStatsLabel}>本次效率</div>
+        <div className={styles.aiStatsRow}>
           <span>AI 接管率</span>
-          <span className="mono" style={{ fontWeight: 600, color: "var(--color-ai)" }}>{aiTakeoverRate}%</span>
+          <span className={cn("mono", styles.aiRateValue)}>{aiTakeoverRate}%</span>
         </div>
         <ProgressBar value={aiTakeoverRate} color="var(--color-ai)" />
         {taskAiPredictionCount && taskAiPredictionCount > 0 && (
           <div
             data-testid="task-ai-cost"
-            style={{
-              marginTop: 6,
-              fontSize: 11,
-              color: "var(--color-fg-muted)",
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 10,
-            }}
+            className={styles.taskAiCost}
           >
             <span>本题</span>
-            <span className="mono" style={{ color: "var(--color-fg)" }}>
+            <span className={cn("mono", styles.taskAiCostValue)}>
               {taskAiCost != null && taskAiCost > 0 ? `¥${taskAiCost.toFixed(4)}` : "¥0"}
               {taskAiAvgMs != null && (
                 <>
-                  <span style={{ color: "var(--color-fg-subtle)", margin: "0 4px" }}>·</span>
+                  <span className={styles.inlineSeparator}>·</span>
                   {taskAiAvgMs}ms
                 </>
               )}
-              <span style={{ color: "var(--color-fg-subtle)", marginLeft: 4 }}>
+              <span className={styles.predictionCount}>
                 ({taskAiPredictionCount} 次)
               </span>
             </span>
@@ -528,24 +465,22 @@ function SamTextPanel({
   return (
     <div
       data-testid="sam-text-panel"
-      style={{
-        padding: "10px 14px",
-        borderBottom: "1px solid var(--color-border)",
-        background: "color-mix(in oklab, var(--color-ai) 6%, transparent)",
-      }}
+      className={styles.samTextPanel}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+      <div className={styles.samTextHeader}>
+        <span className={styles.samTextTitle}>
           <Icon name="messageSquareText" size={11} /> SAM 文本提示
         </span>
         {candidateCount > 0 && (
-          <Badge variant="ai" style={{ fontSize: 10 }}>
-            {candidateCount} 候选 · Tab 切换 · Enter 接受
-          </Badge>
+          <span className={styles.compactBadge}>
+            <Badge variant="ai">
+              {candidateCount} 候选 · Tab 切换 · Enter 接受
+            </Badge>
+          </span>
         )}
       </div>
       {/* v0.9.4 phase 2 · 输出形态三选一 (智能默认按 type_key, 用户切换写 sessionStorage) */}
-      <div style={{ marginBottom: 6 }} data-testid="sam-text-output-mode">
+      <div className={styles.samTextOutputMode} data-testid="sam-text-output-mode">
         <TabRow
           tabs={OUTPUT_MODE_TABS}
           active={OUTPUT_MODE_LABELS[outputMode]}
@@ -555,7 +490,7 @@ function SamTextPanel({
       {aliases.length > 0 && (
         <div
           data-testid="sam-text-aliases"
-          style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}
+          className={styles.samTextAliases}
         >
           {aliases.map((a) => (
             <button
@@ -563,23 +498,14 @@ function SamTextPanel({
               type="button"
               onClick={() => setText(a.alias)}
               title={`使用类别「${a.name}」alias`}
-              style={{
-                fontSize: 10,
-                padding: "1px 6px",
-                background: "var(--color-ai-soft)",
-                border: "1px solid var(--color-border)",
-                borderRadius: 999,
-                cursor: "pointer",
-                color: "var(--color-fg)",
-                fontFamily: "inherit",
-              }}
+              className={styles.samAliasButton}
             >
               {a.alias}
             </button>
           ))}
         </div>
       )}
-      <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+      <div className={styles.samInputRow}>
         <input
           data-testid="sam-text-input"
           ref={inputRef}
@@ -594,28 +520,20 @@ function SamTextPanel({
           }}
           placeholder="e.g. person / car / ripe apple"
           disabled={running}
-          style={{
-            flex: 1,
-            fontSize: 12,
-            padding: "5px 8px",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-sm)",
-            background: "var(--color-bg)",
-            color: "var(--color-fg)",
-          }}
+          className={styles.samTextInput}
         />
         <Button
           variant="ai"
           size="sm"
           disabled={!trimmed || running}
           onClick={() => onRun(trimmed, outputMode)}
-          style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+          className={styles.inlineIconButton}
         >
           {running && <Icon name="loader2" size={11} className="spin" />}
           {running ? "推理中…" : "找全图"}
         </Button>
       </div>
-      <div style={{ fontSize: 10.5, color: "var(--color-fg-subtle)" }}>
+      <div className={styles.samHint}>
         {outputMode === "box" && "仅 DINO 出框,跳过 SAM mask, 速度最快; "}
         {outputMode === "mask" && "DINO + SAM mask → polygon, 默认行为; "}
         {outputMode === "both" && "同实例配对返回框 + 掩膜, Tab 切换活跃形态; "}
@@ -678,15 +596,7 @@ function FrameFilterTabs({ value, onChange }: { value: FrameFilter; onChange: (f
   return (
     <div
       aria-label="帧过滤"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        marginTop: 7,
-        border: "1px solid var(--color-border)",
-        borderRadius: 6,
-        overflow: "hidden",
-        background: "var(--color-bg)",
-      }}
+      className={styles.frameFilterTabs}
     >
       {options.map((option) => {
         const active = option.value === value;
@@ -695,16 +605,11 @@ function FrameFilterTabs({ value, onChange }: { value: FrameFilter; onChange: (f
             key={option.value}
             type="button"
             onClick={() => onChange(option.value)}
-            style={{
-              height: 24,
-              border: 0,
-              borderLeft: option.value === "current" ? "1px solid var(--color-border)" : 0,
-              background: active ? "var(--color-accent-soft)" : "transparent",
-              color: active ? "var(--color-accent-fg)" : "var(--color-fg-muted)",
-              fontSize: 11,
-              fontWeight: active ? 600 : 500,
-              cursor: "pointer",
-            }}
+            className={cn(
+              styles.frameFilterButton,
+              option.value === "current" && styles.frameFilterButtonWithDivider,
+              active && styles.frameFilterButtonActive,
+            )}
           >
             {option.label}
           </button>
@@ -824,10 +729,14 @@ function BoxesList({
     if (visibleAiNearEnd) onFetchMore();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, hasMore, isFetchingMore, aiBoxes.length]);
-
   return (
-    <div ref={parentRef} style={{ flex: 1, overflowY: "auto", padding: "4px 8px" }}>
-      <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+    <div ref={parentRef} className={styles.boxesScroller}>
+      <div
+        className={styles.virtualList}
+        ref={(node) => {
+          node?.style.setProperty("--ai-inspector-list-height", `${virtualizer.getTotalSize()}px`);
+        }}
+      >
         {items.map((vItem) => {
           const r = rows[vItem.index];
           if (!r) return null;
@@ -835,11 +744,11 @@ function BoxesList({
             <div
               key={r.key}
               data-index={vItem.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: "absolute", top: 0, left: 0, width: "100%",
-                transform: `translateY(${vItem.start}px)`,
+              ref={(node) => {
+                virtualizer.measureElement(node);
+                node?.style.setProperty("--ai-inspector-row-y", `${vItem.start}px`);
               }}
+              className={styles.virtualRow}
             >
               {r.kind === "ai" && (
                 <BoxListItem
@@ -859,19 +768,10 @@ function BoxesList({
                 />
               )}
               {r.kind === "header" && (
-                <div
-                  style={{
-                    color: "var(--color-fg)",
-                    padding: "7px 10px",
-                    margin: "0 0 6px",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 8,
-                    background: "var(--color-bg-elev)",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</span>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)", fontWeight: 500 }}>
+                <div className={styles.listHeaderCard}>
+                  <div className={styles.listHeaderRow}>
+                    <span className={styles.listHeaderLabel}>{r.label}</span>
+                    <span className={cn("mono", styles.listHeaderCount)}>
                       {r.showFrameFilter && r.filter === "current" ? `${r.count}/${r.totalCount}` : r.count}
                     </span>
                   </div>
@@ -904,15 +804,11 @@ function BoxesList({
         })}
       </div>
       {(hasMore || isFetchingMore) && (
-        <div style={{ padding: "6px 8px", fontSize: 11, color: "var(--color-fg-subtle)", textAlign: "center" }}>
+        <div className={styles.loadMoreFooter}>
           {isFetchingMore ? "加载更多预测..." : (
             <button
               onClick={onFetchMore}
-              style={{
-                background: "transparent", border: "1px solid var(--color-border)",
-                borderRadius: 4, padding: "4px 12px", fontSize: 11,
-                color: "var(--color-fg-muted)", cursor: "pointer",
-              }}
+              className={styles.loadMoreButton}
             >加载更多</button>
           )}
         </div>

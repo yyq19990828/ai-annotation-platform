@@ -1,3 +1,5 @@
+import styles from "./Histogram.module.css";
+
 interface HistogramProps {
   values: number[];
   height?: number;
@@ -21,15 +23,13 @@ export function Histogram({
 }: HistogramProps) {
   const peak = Math.max(1, ...values);
   return (
-    <div>
+    <div className={styles.root}>
       <div
-        style={{
-          position: "relative",
-          display: "flex",
-          alignItems: "flex-end",
-          gap: 2,
-          height,
+        ref={(element) => {
+          if (!element) return;
+          element.style.height = `${height}px`;
         }}
+        className={styles.bars}
       >
         {values.map((v, i) => {
           const h = Math.max(1, (v / peak) * height);
@@ -37,13 +37,14 @@ export function Histogram({
             <div
               key={i}
               title={xLabels?.[i] ? `${xLabels[i]}: ${v}` : String(v)}
-              style={{
-                flex: 1,
-                height: h,
-                background: color,
-                borderRadius: "2px 2px 0 0",
-                minHeight: 1,
+              ref={(element) => {
+                if (!element) return;
+                element.style.height = `${h}px`;
+                element.style.background = color;
+                element.style.borderRadius = "2px 2px 0 0";
+                element.style.minHeight = "1px";
               }}
+              className={styles.bar}
             />
           );
         })}
@@ -52,26 +53,13 @@ export function Histogram({
           return (
             <div
               key={m.label}
-              style={{
-                position: "absolute",
-                top: 0,
-                bottom: 0,
-                left,
-                width: 1,
-                background: "var(--color-fg-subtle)",
-                pointerEvents: "none",
+              ref={(element) => {
+                if (!element) return;
+                element.style.left = left;
               }}
+              className={styles.marker}
             >
-              <span
-                style={{
-                  position: "absolute",
-                  top: -14,
-                  left: 4,
-                  fontSize: 10,
-                  color: "var(--color-fg-muted)",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <span className={styles.markerLabel}>
                 {m.label}
               </span>
             </div>
@@ -79,15 +67,7 @@ export function Histogram({
         })}
       </div>
       {xLabels && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginTop: 4,
-            fontSize: 10,
-            color: "var(--color-fg-subtle)",
-          }}
-        >
+        <div className={styles.axis}>
           <span>{xLabels[0]}</span>
           <span>{xLabels[xLabels.length - 1]}</span>
         </div>

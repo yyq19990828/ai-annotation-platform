@@ -1,8 +1,10 @@
+import { useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { Annotation } from "@/types";
 import { classColor } from "./colors";
 import { ResizeHandles, type ResizeDirection } from "./ResizeHandles";
+import styles from "./BoxRenderer.module.css";
 
 interface BoxRendererProps {
   b: Annotation;
@@ -26,9 +28,26 @@ export function BoxRenderer({
 }: BoxRendererProps) {
   const color = classColor(b.cls);
   const isUserSelected = selected && !isAi && editable;
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    el.style.setProperty("--box-left", `${b.x * 100}%`);
+    el.style.setProperty("--box-top", `${b.y * 100}%`);
+    el.style.setProperty("--box-width", `${b.w * 100}%`);
+    el.style.setProperty("--box-height", `${b.h * 100}%`);
+    el.style.setProperty("--box-color", color);
+    el.style.setProperty("--box-border-width", selected ? "2px" : "1.5px");
+    el.style.setProperty("--box-fill-strength", isAi ? "8%" : "7%");
+    el.style.setProperty("--box-shadow", selected ? `0 0 0 1px ${color}, 0 4px 12px color-mix(in oklab, ${color} 25%, transparent)` : "none");
+    el.style.setProperty("--box-opacity", faded ? "0.35" : "1");
+    el.style.setProperty("--box-z-index", selected ? "5" : "1");
+  }, [b.x, b.y, b.w, b.h, color, faded, isAi, selected]);
 
   return (
     <div
+      ref={rootRef}
       onPointerDown={(e) => {
         // 选中态 + 用户框：左键 drag = move；其它：单击选中
         if (isUserSelected && e.button === 0 && onMoveStart) {
@@ -38,35 +57,23 @@ export function BoxRenderer({
         }
       }}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      style={{
-        position: "absolute",
-        left: b.x * 100 + "%", top: b.y * 100 + "%",
-        width: b.w * 100 + "%", height: b.h * 100 + "%",
-        border: `${selected ? 2 : 1.5}px ${isAi ? "dashed" : "solid"} ${color}`,
-        background: isAi ? color + "15" : color + "12",
-        boxShadow: selected ? `0 0 0 1px ${color}, 0 4px 12px ${color}40` : "none",
-        cursor: isUserSelected ? "move" : "pointer",
-        opacity: faded ? 0.35 : 1,
-        zIndex: selected ? 5 : 1,
-      }}
+      className={[
+        styles.box,
+        isAi ? styles.boxAi : styles.boxManual,
+        isUserSelected ? styles.boxMoveable : "",
+      ].filter(Boolean).join(" ")}
     >
-      <div style={{
-        position: "absolute", top: -22, left: -1,
-        background: color, color: "white", fontSize: 10.5,
-        padding: "2px 6px", borderRadius: 3, whiteSpace: "nowrap",
-        display: "flex", alignItems: "center", gap: 4,
-        pointerEvents: "none",
-      }}>
+      <div className={styles.label}>
         {isAi && <Icon name="sparkle" size={9} />}
         {b.cls}
         {isAi && b.conf !== undefined && (
-          <span style={{ opacity: 0.85, fontFamily: "var(--font-mono)" }}>
+          <span className={styles.confidence}>
             {(b.conf * 100).toFixed(0)}%
           </span>
         )}
       </div>
       {isAi && selected && editable && (
-        <div onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: -28, right: 0, display: "flex", gap: 4, background: "white", borderRadius: 4, padding: 2, boxShadow: "var(--shadow-md)" }}>
+        <div onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} className={styles.actionBar}>
           <Button variant="primary" size="sm" onClick={(e) => { e.stopPropagation(); onAccept?.(); }}>
             <Icon name="check" size={10} />采纳
           </Button>
@@ -76,7 +83,7 @@ export function BoxRenderer({
         </div>
       )}
       {!isAi && selected && editable && (
-        <div onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: -28, right: 0, display: "flex", gap: 4, background: "white", borderRadius: 4, padding: 2, boxShadow: "var(--shadow-md)" }}>
+        <div onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} className={styles.actionBar}>
           <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onDelete?.(); }}>
             <Icon name="trash" size={10} />删除
           </Button>

@@ -21,6 +21,7 @@ import { ThreeDWorkbenchPlaceholder } from "../stages/three-d/ThreeDWorkbench.pl
 import { VideoWorkbench } from "../stages/video/VideoWorkbench";
 import type { VideoConvertOptions } from "../stages/video/useVideoAnnotationActions";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
+import styles from "./WorkbenchStageHost.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -202,7 +203,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     projectRenderingConfig,
   }, ref) {
     return (
-      <div style={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column" }}>
+      <div className={styles.root}>
         {stageKind === "3d" ? (
           <ThreeDWorkbenchPlaceholder />
         ) : stageKind === "video" ? (

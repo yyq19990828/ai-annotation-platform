@@ -6,6 +6,7 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { MASK_BRUSH_MIN_PX, MASK_BRUSH_MAX_PX, type MaskMode } from "../state/useMaskEditor";
+import styles from "./MaskToolbar.module.css";
 
 interface MaskToolbarProps {
   active: boolean;
@@ -18,16 +19,7 @@ interface MaskToolbarProps {
   onCancel: () => void;
 }
 
-const chipStyle = (active: boolean): React.CSSProperties => ({
-  padding: "3px 10px",
-  fontSize: 11,
-  borderRadius: 4,
-  cursor: "pointer",
-  background: active ? "var(--color-accent)" : "transparent",
-  color: active ? "white" : "var(--color-fg)",
-  border: "1px solid " + (active ? "var(--color-accent)" : "var(--color-border)"),
-  fontFamily: "inherit",
-});
+const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 
 export function MaskToolbar({
   active, mode, radius, dirty,
@@ -36,42 +28,28 @@ export function MaskToolbar({
   return (
     <div
       data-testid="mask-toolbar"
-      style={{
-        position: "absolute",
-        top: 12,
-        left: "50%",
-        transform: "translateX(-50%)",
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "6px 12px",
-        background: "var(--color-bg-elev)",
-        border: "1px solid var(--color-border)",
-        borderRadius: 6,
-        boxShadow: "var(--shadow-md)",
-        zIndex: 5,
-      }}
+      className={styles.root}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-fg)" }}>Mask 编辑</span>
-      <div style={{ display: "flex", gap: 4 }}>
+      <span className={styles.title}>Mask 编辑</span>
+      <div className={styles.modeGroup}>
         <button
           type="button"
           onClick={() => onSetMode("brush")}
-          style={chipStyle(mode === "brush")}
+          className={cn(styles.chip, mode === "brush" && styles.chipActive)}
           title="笔刷 (B)"
           data-testid="mask-mode-brush"
         >笔刷 B</button>
         <button
           type="button"
           onClick={() => onSetMode("erase")}
-          style={chipStyle(mode === "erase")}
+          className={cn(styles.chip, mode === "erase" && styles.chipActive)}
           title="橡皮 (E)"
           data-testid="mask-mode-erase"
         >橡皮 E</button>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>半径</span>
+      <div className={styles.radiusGroup}>
+        <span className={styles.radiusLabel}>半径</span>
         <input
           type="range"
           min={MASK_BRUSH_MIN_PX}
@@ -79,17 +57,17 @@ export function MaskToolbar({
           step={1}
           value={radius}
           onChange={(e) => onSetRadius(parseInt(e.target.value, 10))}
-          style={{ width: 100 }}
+          className={styles.radiusSlider}
           data-testid="mask-radius-slider"
         />
-        <span className="mono" style={{ fontSize: 11, color: "var(--color-fg)", minWidth: 28, textAlign: "right" }}>
+        <span className={cn("mono", styles.radiusValue)}>
           {radius}px
         </span>
       </div>
-      <span style={{ fontSize: 11, color: dirty ? "var(--color-warning)" : "var(--color-fg-subtle)" }}>
+      <span className={cn(styles.status, dirty && styles.statusDirty)}>
         {dirty ? "未保存" : active ? "就绪" : "未激活"}
       </span>
-      <span style={{ fontSize: 10, color: "var(--color-fg-subtle)" }}>Shift+滚轮调半径</span>
+      <span className={styles.hint}>Shift+滚轮调半径</span>
       <Button size="sm" onClick={onCancel} title="取消 (Esc)">
         取消
       </Button>

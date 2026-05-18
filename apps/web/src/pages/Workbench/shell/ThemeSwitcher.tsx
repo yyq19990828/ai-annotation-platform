@@ -1,4 +1,5 @@
 import { useTheme, type ThemePref } from "@/hooks/useTheme";
+import styles from "./ThemeSwitcher.module.css";
 
 const OPTIONS: { value: ThemePref; label: string }[] = [
   { value: "light",  label: "亮色" },
@@ -13,9 +14,9 @@ const OPTIONS: { value: ThemePref; label: string }[] = [
 export function ThemeSwitcher() {
   const { theme, setTheme } = useTheme();
   return (
-    <div style={{ padding: "6px 10px", borderTop: "1px solid var(--color-border)", marginTop: 4 }}>
-      <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginBottom: 4 }}>主题</div>
-      <div style={{ display: "flex", gap: 4 }}>
+    <div className={styles.root}>
+      <div className={styles.label}>主题</div>
+      <div className={styles.options}>
         {OPTIONS.map((opt) => {
           const active = theme === opt.value;
           return (
@@ -24,15 +25,7 @@ export function ThemeSwitcher() {
               type="button"
               onClick={() => setTheme(opt.value)}
               aria-pressed={active}
-              style={{
-                flex: 1, padding: "4px 6px",
-                fontSize: 11,
-                background: active ? "var(--color-accent-soft)" : "var(--color-bg-sunken)",
-                color: active ? "var(--color-accent-fg)" : "var(--color-fg-muted)",
-                border: active ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
-                borderRadius: 3,
-                cursor: "pointer",
-              }}
+              className={active ? styles.optionActive : styles.option}
             >
               {opt.label}
             </button>

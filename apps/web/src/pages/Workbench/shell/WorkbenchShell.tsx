@@ -69,6 +69,7 @@ import { useImageAnnotationActions } from "../stages/image/useImageAnnotationAct
 import { useMaskEditor } from "../state/useMaskEditor";
 import { MaskToolbar } from "./MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
+import styles from "./WorkbenchShell.module.css";
 
 export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "review" }) {
   const { id: routeId } = useParams<{ id: string }>();
@@ -839,9 +840,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   if (!currentProject) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12, color: "var(--color-fg-muted)" }}>
+      <div className={styles.emptyState}>
         <Icon name="warning" size={40} />
-        <div style={{ fontSize: 15 }}>项目不存在或无访问权限</div>
+        <div className={styles.emptyStateText}>项目不存在或无访问权限</div>
         <Button onClick={onBack}><Icon name="chevLeft" size={12} />返回</Button>
       </div>
     );
@@ -849,9 +850,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   if (tasks.length === 0) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 12, color: "var(--color-fg-muted)" }}>
+      <div className={styles.emptyState}>
         <Icon name="inbox" size={40} />
-        <div style={{ fontSize: 15 }}>该项目暂无任务</div>
+        <div className={styles.emptyStateText}>该项目暂无任务</div>
         <Button onClick={onBack}><Icon name="chevLeft" size={12} />返回</Button>
       </div>
     );
@@ -1049,7 +1050,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
         commentAnchor: videoCommentAnchor,
         videoTrackPanel: isVideoTask ? (
-          <div style={{ display: "grid", gap: 12 }}>
+          <div className={styles.videoTrackPanel}>
             <VideoTrackSidebar
               annotations={annotationsData ?? []}
               selectedId={s.selectedId}

@@ -10,6 +10,7 @@ import {
 } from "@/hooks/useVideoChapters";
 
 import type { FrameTimebase } from "./frameTimebase";
+import styles from "./VideoChapterSidebar.module.css";
 
 const CHAPTER_PALETTE = [
   "oklch(0.62 0.18 252)",
@@ -17,6 +18,14 @@ const CHAPTER_PALETTE = [
   "oklch(0.68 0.16 75)",
   "oklch(0.62 0.20 25)",
   "oklch(0.60 0.20 295)",
+];
+
+const PALETTE_CLASSES = [
+  styles.paletteBlue,
+  styles.paletteGreen,
+  styles.paletteAmber,
+  styles.paletteRed,
+  styles.palettePurple,
 ];
 
 interface VideoChapterSidebarProps {
@@ -41,6 +50,10 @@ function formatChapterDuration(start: number, end: number, timebase?: FrameTimeb
 
 function defaultChapterColor(index: number): string {
   return CHAPTER_PALETTE[index % CHAPTER_PALETTE.length];
+}
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
 }
 
 interface ChapterFormState {
@@ -149,26 +162,19 @@ export function VideoChapterSidebar({
   return (
     <div
       data-testid="video-chapter-sidebar"
-      style={{
-        display: "grid",
-        gap: 8,
-        padding: "10px 12px",
-        border: "1px solid var(--color-border)",
-        borderRadius: 8,
-        background: "var(--color-bg-elev)",
-      }}
+      className={styles.sidebar}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <b style={{ fontSize: 13 }}>章节</b>
-          <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+      <div className={styles.header}>
+        <div className={styles.headerTitleGroup}>
+          <b className={styles.title}>章节</b>
+          <span className={cn("mono", styles.count)}>
             {sortedChapters.length}
           </span>
         </div>
         {canEdit && (
           <Button
             size="sm"
-            style={{ borderRadius: 8, padding: "4px 8px" }}
+            className={styles.createButton}
             disabled={Boolean(editing)}
             onClick={startCreate}
             title="新建章节"
@@ -179,16 +185,16 @@ export function VideoChapterSidebar({
       </div>
 
       {isLoading && sortedChapters.length === 0 && (
-        <div style={{ color: "var(--color-fg-muted)", fontSize: 12 }}>载入中…</div>
+        <div className={styles.stateMessage}>载入中…</div>
       )}
 
       {sortedChapters.length === 0 && !isLoading && !editing && (
-        <div style={{ color: "var(--color-fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
+        <div className={styles.emptyMessage}>
           暂无章节。用 PageDown / PageUp 在章节之间跳转。
         </div>
       )}
 
-      <div style={{ display: "grid", gap: 6 }}>
+      <div className={styles.list}>
         {sortedChapters.map((chapter, idx) => {
           const isInside = frameIndex >= chapter.start_frame && frameIndex <= chapter.end_frame;
           const color = chapter.color ?? defaultChapterColor(idx);
@@ -197,48 +203,28 @@ export function VideoChapterSidebar({
               key={chapter.id}
               data-testid="video-chapter-row"
               aria-selected={isInside}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "auto minmax(0, 1fr) auto",
-                gap: 8,
-                alignItems: "center",
-                padding: "7px 10px",
-                border: `1px solid ${isInside ? "var(--color-accent)" : "var(--color-border)"}`,
-                borderRadius: 8,
-                background: isInside
-                  ? "color-mix(in oklab, var(--color-accent) 10%, var(--color-bg-elev))"
-                  : "var(--color-bg)",
-              }}
+              className={cn(styles.row, isInside && styles.rowActive)}
             >
-              <span style={{ width: 10, height: 10, borderRadius: 999, background: color }} />
+              <svg className={styles.colorDot} viewBox="0 0 10 10" aria-hidden="true">
+                <circle cx="5" cy="5" r="5" fill={color} />
+              </svg>
               <button
                 type="button"
                 onClick={() => onSeekFrame?.(chapter.start_frame)}
-                style={{
-                  display: "grid",
-                  gap: 2,
-                  alignItems: "start",
-                  textAlign: "left",
-                  border: 0,
-                  background: "transparent",
-                  cursor: "pointer",
-                  color: "var(--color-fg)",
-                  padding: 0,
-                  minWidth: 0,
-                }}
+                className={styles.chapterButton}
               >
-                <b style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <b className={styles.chapterTitle}>
                   {idx + 1}. {chapter.title}
                 </b>
-                <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+                <span className={cn("mono", styles.chapterMeta)}>
                   F{chapter.start_frame}–F{chapter.end_frame} · {formatChapterDuration(chapter.start_frame, chapter.end_frame, timebase)}
                 </span>
               </button>
               {canEdit && (
-                <div style={{ display: "flex", gap: 4 }}>
+                <div className={styles.rowActions}>
                   <Button
                     size="sm"
-                    style={{ width: 26, height: 26, padding: 0, justifyContent: "center", borderRadius: 8 }}
+                    className={styles.iconButton}
                     title="编辑章节"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -249,7 +235,7 @@ export function VideoChapterSidebar({
                   </Button>
                   <Button
                     size="sm"
-                    style={{ width: 26, height: 26, padding: 0, justifyContent: "center", borderRadius: 8, color: "var(--color-danger)" }}
+                    className={cn(styles.iconButton, styles.deleteButton)}
                     title="删除章节"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -268,14 +254,7 @@ export function VideoChapterSidebar({
       {editing && (
         <div
           data-testid="video-chapter-form"
-          style={{
-            display: "grid",
-            gap: 6,
-            padding: "8px 10px",
-            border: "1px solid var(--color-accent)",
-            borderRadius: 8,
-            background: "color-mix(in oklab, var(--color-accent) 6%, var(--color-bg-elev))",
-          }}
+          className={styles.form}
         >
           <input
             type="text"
@@ -284,19 +263,12 @@ export function VideoChapterSidebar({
             onChange={(e) =>
               setEditing((prev) => (prev ? { ...prev, title: e.target.value } : prev))
             }
-            style={{
-              border: "1px solid var(--color-border)",
-              borderRadius: 6,
-              background: "var(--color-bg)",
-              color: "var(--color-fg)",
-              fontSize: 13,
-              padding: "5px 8px",
-            }}
+            className={styles.textInput}
           />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, alignItems: "center" }}>
-            <label style={{ display: "grid", gap: 2, fontSize: 11, color: "var(--color-fg-muted)" }}>
+          <div className={styles.fieldsGrid}>
+            <label className={styles.field}>
               起始帧
-              <div style={{ display: "flex", gap: 4 }}>
+              <div className={styles.fieldControl}>
                 <input
                   type="number"
                   min={0}
@@ -307,19 +279,11 @@ export function VideoChapterSidebar({
                       prev ? { ...prev, startFrame: Number(e.target.value) } : prev,
                     )
                   }
-                  style={{
-                    flex: 1,
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 6,
-                    background: "var(--color-bg)",
-                    color: "var(--color-fg)",
-                    fontSize: 12,
-                    padding: "4px 6px",
-                  }}
+                  className={styles.numberInput}
                 />
                 <Button
                   size="sm"
-                  style={{ borderRadius: 6, padding: "0 6px" }}
+                  className={styles.currentButton}
                   title="使用当前帧"
                   onClick={() =>
                     setEditing((prev) =>
@@ -331,9 +295,9 @@ export function VideoChapterSidebar({
                 </Button>
               </div>
             </label>
-            <label style={{ display: "grid", gap: 2, fontSize: 11, color: "var(--color-fg-muted)" }}>
+            <label className={styles.field}>
               结束帧
-              <div style={{ display: "flex", gap: 4 }}>
+              <div className={styles.fieldControl}>
                 <input
                   type="number"
                   min={0}
@@ -344,19 +308,11 @@ export function VideoChapterSidebar({
                       prev ? { ...prev, endFrame: Number(e.target.value) } : prev,
                     )
                   }
-                  style={{
-                    flex: 1,
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 6,
-                    background: "var(--color-bg)",
-                    color: "var(--color-fg)",
-                    fontSize: 12,
-                    padding: "4px 6px",
-                  }}
+                  className={styles.numberInput}
                 />
                 <Button
                   size="sm"
-                  style={{ borderRadius: 6, padding: "0 6px" }}
+                  className={styles.currentButton}
                   title="使用当前帧"
                   onClick={() =>
                     setEditing((prev) =>
@@ -369,40 +325,34 @@ export function VideoChapterSidebar({
               </div>
             </label>
           </div>
-          <label style={{ display: "grid", gap: 2, fontSize: 11, color: "var(--color-fg-muted)" }}>
+          <label className={styles.field}>
             颜色
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {CHAPTER_PALETTE.map((c) => (
+            <div className={styles.palette}>
+              {CHAPTER_PALETTE.map((c, idx) => (
                 <button
                   key={c}
                   type="button"
                   onClick={() => setEditing((prev) => (prev ? { ...prev, color: c } : prev))}
-                  style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: 999,
-                    background: c,
-                    border:
-                      editing.color === c
-                        ? "2px solid var(--color-fg)"
-                        : "1px solid var(--color-border)",
-                    cursor: "pointer",
-                  }}
+                  className={cn(
+                    styles.colorSwatch,
+                    PALETTE_CLASSES[idx],
+                    editing.color === c && styles.colorSwatchSelected,
+                  )}
                   aria-label={`color ${c}`}
                 />
               ))}
             </div>
           </label>
           {error && (
-            <div style={{ color: "var(--color-danger)", fontSize: 11 }}>{error}</div>
+            <div className={styles.error}>{error}</div>
           )}
-          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-            <Button size="sm" style={{ borderRadius: 6 }} variant="ghost" onClick={cancelForm}>
+          <div className={styles.formActions}>
+            <Button size="sm" className={styles.formButton} variant="ghost" onClick={cancelForm}>
               取消
             </Button>
             <Button
               size="sm"
-              style={{ borderRadius: 6 }}
+              className={styles.formButton}
               onClick={submitForm}
               disabled={createMutation.isPending || updateMutation.isPending}
             >

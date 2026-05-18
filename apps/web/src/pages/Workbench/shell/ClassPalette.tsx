@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClassesConfig } from "@/api/projects";
 import { classColor } from "../stage/colors";
+import styles from "./ClassPalette.module.css";
 
 interface ClassPaletteProps {
   classes: string[];
@@ -21,6 +22,10 @@ interface ClassPaletteProps {
 }
 
 const SHORTCUT_LETTERS = "abcdefghijklmnopqrstuvwxyz";
+
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
 
 /** 1-9 数字键 + a-z 字母键依次映射到 classes 列表。 */
 export function shortcutForIndex(idx: number): string {
@@ -56,11 +61,8 @@ export function ClassPalette({
     [recent, classes],
   );
 
-  const rowPad = dense ? "4px 8px" : "5px 8px";
-  const gap = dense ? 6 : 8;
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: dense ? 6 : 8 }}>
+    <div className={cn(styles.palette, dense && styles.paletteDense)}>
       {showSearch && (
         <input
           ref={inputRef}
@@ -68,41 +70,27 @@ export function ClassPalette({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索类别..."
-          style={{
-            padding: "5px 8px",
-            fontSize: 12,
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-sm)",
-            background: "var(--color-bg)",
-            outline: "none",
-          }}
+          className={styles.searchInput}
         />
       )}
 
       {visibleRecent.length > 0 && !query.trim() && (
         <div>
-          <div style={{ fontSize: 10, color: "var(--color-fg-subtle)", marginBottom: 4, letterSpacing: 0.5 }}>
+          <div className={styles.recentTitle}>
             最近使用
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          <div className={styles.recentList}>
             {visibleRecent.map((c) => (
               <button
                 key={`recent-${c}`}
                 type="button"
                 onClick={readOnly ? undefined : () => handlePick(c)}
                 disabled={readOnly}
-                style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  padding: "3px 7px",
-                  fontSize: 11.5,
-                  border: "1px solid var(--color-border)",
-                  background: "var(--color-bg)",
-                  borderRadius: 12,
-                  cursor: readOnly ? "default" : "pointer",
-                  color: "var(--color-fg)",
-                }}
+                className={cn(styles.recentButton, readOnly && styles.readOnly)}
               >
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: classColor(c, classesConfig) }} />
+                <svg className={styles.recentSwatch} viewBox="0 0 8 8" aria-hidden="true">
+                  <rect width="8" height="8" rx="2" fill={classColor(c, classesConfig)} />
+                </svg>
                 {c}
               </button>
             ))}
@@ -110,7 +98,7 @@ export function ClassPalette({
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+      <div className={styles.classList}>
         {filtered.map((c) => {
           const idx = classes.indexOf(c);
           const sk = shortcutForIndex(idx);
@@ -120,33 +108,26 @@ export function ClassPalette({
             <div
               key={c}
               onClick={readOnly ? undefined : () => handlePick(c)}
-              style={{
-                display: "flex", alignItems: "center", gap,
-                padding: rowPad, borderRadius: "var(--radius-sm)",
-                cursor: readOnly ? "default" : "pointer",
-                background: isHighlighted
-                  ? "var(--color-accent-soft)"
-                  : !readOnly && isActive ? "var(--color-bg-sunken)" : "transparent",
-                fontSize: 12.5,
-                border: "1px solid " + (isHighlighted ? "oklch(0.85 0.06 252)" : "transparent"),
-                opacity: readOnly ? 0.92 : 1,
-              }}
+              className={cn(
+                styles.classRow,
+                dense && styles.classRowDense,
+                readOnly && styles.classRowReadOnly,
+                !readOnly && isActive && styles.classRowActive,
+                isHighlighted && styles.classRowHighlighted,
+              )}
             >
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: classColor(c, classesConfig) }} />
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c}</span>
+              <svg className={styles.classSwatch} viewBox="0 0 10 10" aria-hidden="true">
+                <rect width="10" height="10" rx="2" fill={classColor(c, classesConfig)} />
+              </svg>
+              <span className={styles.className}>{c}</span>
               {sk && (
-                <span style={{
-                  display: "inline-block", padding: "1px 5px",
-                  background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)",
-                  borderBottomWidth: 2, borderRadius: 3,
-                  fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--color-fg-muted)", lineHeight: 1,
-                }}>{sk}</span>
+                <span className={styles.shortcut}>{sk}</span>
               )}
             </div>
           );
         })}
         {filtered.length === 0 && (
-          <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)", padding: "8px 4px", textAlign: "center" }}>
+          <div className={styles.emptyState}>
             没有匹配的类别
           </div>
         )}

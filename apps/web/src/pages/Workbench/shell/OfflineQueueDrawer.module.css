@@ -1,0 +1,291 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: oklch(0 0 0 / 0.25);
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  width: 420px;
+  max-width: 100vw;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+  box-shadow: var(--shadow-lg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.headerContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.title {
+  color: var(--color-fg);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.summary {
+  color: var(--color-fg-muted);
+  font-size: 11px;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-fg-muted);
+  font-size: 11px;
+}
+
+.filterLabel {
+  margin-right: 4px;
+}
+
+.filterLabelSpaced {
+  margin-right: 4px;
+  margin-left: 8px;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.emptyState {
+  padding: 32px 16px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.emptyIcon {
+  margin-bottom: 8px;
+  color: oklch(0.65 0.15 145);
+}
+
+.emptyHint {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.taskGroup {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  padding: 8px 16px;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.groupHeaderCurrent {
+  background: var(--color-bg-sunken);
+}
+
+.currentBadge {
+  color: var(--color-primary);
+  font-size: 10px;
+}
+
+.groupCount {
+  margin-left: auto;
+  color: var(--color-fg-muted);
+  font-weight: 400;
+}
+
+.queueItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px 10px 32px;
+  background: transparent;
+}
+
+.queueItemBusy {
+  opacity: 0.5;
+}
+
+.queueItemFailed {
+  background: oklch(0.96 0.04 25 / 0.18);
+}
+
+.itemMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kindBadge {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--color-bg-sunken);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.kindCreate {
+  color: oklch(0.65 0.15 145);
+}
+
+.kindUpdate {
+  color: oklch(0.70 0.15 75);
+}
+
+.kindDelete {
+  color: oklch(0.60 0.18 25);
+}
+
+.mutedMono {
+  color: var(--color-fg-muted);
+  font-size: 11px;
+}
+
+.retryBadge {
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.retryNeutral {
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+}
+
+.retryWarning {
+  background: oklch(0.96 0.06 80 / 0.5);
+  color: oklch(0.55 0.15 75);
+}
+
+.retryDanger {
+  background: oklch(0.96 0.05 25 / 0.5);
+  color: oklch(0.45 0.18 25);
+}
+
+.tmpId {
+  color: var(--color-fg-muted);
+  font-size: 10px;
+}
+
+.itemActions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.smallButton {
+  padding: 3px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.smallButton:disabled {
+  cursor: wait;
+}
+
+.discardButton {
+  background: transparent;
+  color: oklch(0.60 0.18 25);
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.footerButton {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: oklch(0.60 0.18 25);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.footerButton:disabled {
+  color: var(--color-fg-muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.syncAllButton {
+  padding: 6px 14px;
+  border-color: oklch(0.55 0.18 250);
+  background: oklch(0.55 0.18 250);
+  color: white;
+  font-weight: 600;
+}
+
+.filterChip {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-fg);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.filterChipActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: white;
+}
+
+.filterChip:disabled {
+  color: var(--color-fg-subtle);
+  cursor: not-allowed;
+  opacity: 0.5;
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
+import styles from "./VideoBitmapLayer.module.css";
 
 interface VideoBitmapLayerProps {
   bitmap: CachedVideoBitmap | null;
@@ -25,15 +26,7 @@ export function VideoBitmapLayer({ bitmap, visible }: VideoBitmapLayerProps) {
       ref={canvasRef}
       data-testid="video-bitmap-layer"
       aria-hidden="true"
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        display: visible && bitmap ? "block" : "none",
-        zIndex: 2,
-        pointerEvents: "none",
-      }}
+      className={visible && bitmap ? styles.layerVisible : styles.layerHidden}
     />
   );
 }

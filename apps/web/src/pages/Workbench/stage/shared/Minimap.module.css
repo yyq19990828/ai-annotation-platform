@@ -1,0 +1,74 @@
+.root {
+  position: absolute;
+  right: var(--minimap-right);
+  bottom: var(--minimap-bottom);
+  z-index: 15;
+  width: var(--minimap-width);
+  height: var(--minimap-height);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg-elev, white);
+  box-shadow: var(--shadow-md, 0 4px 12px rgb(0 0 0 / 15%));
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.rootDragging {
+  cursor: grabbing;
+}
+
+.image {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.cachedFrameRanges {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  pointer-events: none;
+}
+
+.cachedFrameRange {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--minimap-range-left);
+  width: var(--minimap-range-width);
+  background: rgb(45 212 191 / 84%);
+}
+
+.currentFrame {
+  position: absolute;
+  bottom: 0;
+  left: var(--minimap-current-frame-left);
+  width: 2px;
+  height: 12px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 50%);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.viewportRect {
+  position: absolute;
+  left: var(--minimap-viewport-left);
+  top: var(--minimap-viewport-top);
+  width: var(--minimap-viewport-width);
+  height: var(--minimap-viewport-height);
+  border: 2px solid oklch(0.62 0.18 252);
+  background: rgb(99 130 217 / 12%);
+  pointer-events: none;
+  transition: left 80ms linear, top 80ms linear;
+}
+
+.viewportRectDragging {
+  transition: none;
+}

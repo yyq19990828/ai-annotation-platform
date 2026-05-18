@@ -1,3 +1,5 @@
+import styles from "./RadialProgress.module.css";
+
 interface RadialProgressProps {
   value: number;
   max?: number;
@@ -27,7 +29,7 @@ export function RadialProgress({
   const pct = Math.min(1, Math.max(0, value / max));
   const dashLen = c * pct;
   return (
-    <div style={{ position: "relative", width: size, height: size }}>
+    <div className={styles.root}>
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={trackColor} strokeWidth={thickness} />
         <circle
@@ -42,30 +44,10 @@ export function RadialProgress({
           transform={`rotate(-90 ${cx} ${cy})`}
         />
       </svg>
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: size > 80 ? 16 : 12,
-          fontWeight: 600,
-          fontVariantNumeric: "tabular-nums",
-          letterSpacing: "-0.01em",
-        }}
-      >
+      <div className={`${styles.center} ${size > 80 ? styles.centerLarge : styles.centerCompact}`}>
         <span>{Math.round(value)}</span>
         {label && (
-          <span
-            style={{
-              fontSize: 9,
-              color: "var(--color-fg-muted)",
-              fontWeight: 400,
-              marginTop: 1,
-            }}
-          >
+          <span className={styles.label}>
             {label}
           </span>
         )}

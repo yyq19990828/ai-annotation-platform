@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import styles from "./ResizeHandle.module.css";
 
 interface ResizeHandleProps {
   /** "right" = handle 贴在容器右沿，往右拖增大宽度（左侧栏用）。
@@ -46,6 +47,11 @@ export function ResizeHandle({ side, width, onResize, min = 200, max = 600 }: Re
   }, [width, side, onResize, min, max]);
 
   const active = hover || dragging;
+  const className = [
+    styles.handle,
+    side === "right" ? styles.handleRight : styles.handleLeft,
+    active ? styles.handleActive : "",
+  ].filter(Boolean).join(" ");
 
   return (
     <div
@@ -56,17 +62,7 @@ export function ResizeHandle({ side, width, onResize, min = 200, max = 600 }: Re
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onDoubleClick={() => onResize(side === "right" ? 260 : 280)}
-      style={{
-        position: "absolute",
-        top: 0,
-        bottom: 0,
-        [side === "right" ? "right" : "left"]: -3,
-        width: 6,
-        cursor: "col-resize",
-        zIndex: 5,
-        background: active ? "color-mix(in oklab, var(--color-accent) 55%, transparent)" : "transparent",
-        transition: "background 0.15s",
-      } as React.CSSProperties}
+      className={className}
       title="拖拽调整宽度 · 双击恢复默认"
     />
   );

@@ -3,6 +3,7 @@
 // 不依赖 @rjsf/core 以节省 ~50KB bundle; array / nested object 后续按需扩展.
 
 import { useMemo } from "react";
+import styles from "./SchemaForm.module.css";
 
 export interface JsonSchemaField {
   type?: "number" | "integer" | "boolean" | "string";
@@ -56,7 +57,7 @@ export function SchemaForm({ schema, value, onChange, disabled = false }: Schema
     return (
       <div
         data-testid="schema-form-empty"
-        style={{ fontSize: 11, color: "var(--color-fg-subtle)", padding: "6px 0" }}
+        className={styles.empty}
       >
         当前后端无可配置参数
       </div>
@@ -66,7 +67,7 @@ export function SchemaForm({ schema, value, onChange, disabled = false }: Schema
     onChange({ ...value, [key]: next });
   };
   return (
-    <div data-testid="schema-form" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div data-testid="schema-form" className={styles.form}>
       {entries.map(([key, raw]) => (
         <SchemaField
           key={key}
@@ -91,14 +92,13 @@ interface SchemaFieldProps {
 
 function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProps) {
   const title = field.title ?? name;
-  const labelStyle = { fontSize: 11, color: "var(--color-fg-muted)" };
 
   if (field.type === "boolean") {
     const v = typeof value === "boolean" ? value : Boolean(field.default ?? false);
     return (
       <label
         data-testid={`schema-field-${name}`}
-        style={{ display: "flex", alignItems: "center", gap: 6, cursor: disabled ? "not-allowed" : "pointer" }}
+        className={`${styles.booleanField} ${disabled ? styles.booleanFieldDisabled : ""}`}
       >
         <input
           type="checkbox"
@@ -106,7 +106,7 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
           disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
         />
-        <span style={labelStyle}>{title}</span>
+        <span className={styles.label}>{title}</span>
       </label>
     );
   }
@@ -114,20 +114,13 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
   if (field.type === "string" && Array.isArray(field.enum) && field.enum.length > 0) {
     const v = typeof value === "string" ? value : String(field.default ?? field.enum[0]);
     return (
-      <div data-testid={`schema-field-${name}`} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span style={labelStyle}>{title}</span>
+      <div data-testid={`schema-field-${name}`} className={styles.field}>
+        <span className={styles.label}>{title}</span>
         <select
           value={v}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          style={{
-            fontSize: 12,
-            padding: "4px 6px",
-            background: "var(--color-bg-elev)",
-            color: "var(--color-fg)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-sm)",
-          }}
+          className={styles.control}
         >
           {field.enum.map((opt) => (
             <option key={opt} value={opt}>{opt}</option>
@@ -146,10 +139,10 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
     const step = isInt ? 1 : (max != null && min != null ? (max - min) / 100 : 0.01);
     const hasRange = min != null && max != null;
     return (
-      <div data-testid={`schema-field-${name}`} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <span style={labelStyle}>{title}</span>
-          <span className="mono" style={{ fontSize: 11, color: "var(--color-fg)" }}>
+      <div data-testid={`schema-field-${name}`} className={styles.field}>
+        <div className={styles.numberHeader}>
+          <span className={styles.label}>{title}</span>
+          <span className={`mono ${styles.numberValue}`}>
             {isInt ? v : Number(v).toFixed(2)}
           </span>
         </div>
@@ -162,7 +155,7 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
             value={v}
             disabled={disabled}
             onChange={(e) => onChange(isInt ? parseInt(e.target.value, 10) : parseFloat(e.target.value))}
-            style={{ width: "100%" }}
+            className={styles.range}
           />
         )}
         {!hasRange && (
@@ -174,14 +167,7 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
             value={v}
             disabled={disabled}
             onChange={(e) => onChange(isInt ? parseInt(e.target.value, 10) : parseFloat(e.target.value))}
-            style={{
-              fontSize: 12,
-              padding: "4px 6px",
-              background: "var(--color-bg-elev)",
-              color: "var(--color-fg)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-sm)",
-            }}
+            className={styles.control}
           />
         )}
       </div>
@@ -191,21 +177,14 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
   // string (no enum) → text input
   const v = typeof value === "string" ? value : String(field.default ?? "");
   return (
-    <div data-testid={`schema-field-${name}`} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={labelStyle}>{title}</span>
+    <div data-testid={`schema-field-${name}`} className={styles.field}>
+      <span className={styles.label}>{title}</span>
       <input
         type="text"
         value={v}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        style={{
-          fontSize: 12,
-          padding: "4px 6px",
-          background: "var(--color-bg-elev)",
-          color: "var(--color-fg)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-sm)",
-        }}
+        className={styles.control}
       />
     </div>
   );

@@ -1,5 +1,15 @@
-import { cloneElement, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
+import {
+  cloneElement,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
+import styles from "./Tooltip.module.css";
 
 type Side = "right" | "left" | "top" | "bottom";
 
@@ -32,6 +42,7 @@ export function Tooltip({ name, desc, hotkey, side = "right", delay = 200, child
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const id = useId();
 
@@ -109,59 +120,32 @@ export function Tooltip({ name, desc, hotkey, side = "right", delay = 200, child
     },
   } as Record<string, unknown>);
 
-  const transform =
-    side === "right" ? "translate(0, -50%)"
-    : side === "left" ? "translate(-100%, -50%)"
-    : side === "top" ? "translate(-50%, -100%)"
-    : "translate(-50%, 0)";
+  useLayoutEffect(() => {
+    if (!open || !pos) return;
+    const tooltip = tooltipRef.current;
+    if (!tooltip) return;
+    tooltip.style.setProperty("--tooltip-top", `${pos.top}px`);
+    tooltip.style.setProperty("--tooltip-left", `${pos.left}px`);
+  }, [open, pos]);
 
   return (
     <>
       {cloned}
       {open && pos && createPortal(
         <div
+          ref={tooltipRef}
           id={id}
           role="tooltip"
-          style={{
-            position: "fixed",
-            top: pos.top,
-            left: pos.left,
-            transform,
-            zIndex: 1000,
-            pointerEvents: "none",
-            background: "var(--color-bg-elev)",
-            color: "var(--color-fg)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-            boxShadow: "var(--shadow-md)",
-            padding: "8px 10px",
-            minWidth: 140,
-            maxWidth: 240,
-            fontSize: 12,
-            lineHeight: 1.4,
-          }}
+          className={`${styles.tooltip} ${styles[side]}`}
         >
-          <div style={{ fontWeight: 600, color: "var(--color-fg)" }}>{name}</div>
+          <div className={styles.name}>{name}</div>
           {desc && (
-            <div style={{ color: "var(--color-fg-muted)", marginTop: 2 }}>{desc}</div>
+            <div className={styles.desc}>{desc}</div>
           )}
           {hotkey && (
-            <div style={{ marginTop: 6, display: "flex", gap: 3, flexWrap: "wrap" }}>
+            <div className={styles.hotkeyRow}>
               {hotkey.split(/\s+/).map((k, i) => (
-                <kbd
-                  key={i}
-                  style={{
-                    background: "var(--color-bg)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 3,
-                    padding: "1px 5px",
-                    fontFamily: "var(--font-mono, ui-monospace, monospace)",
-                    fontSize: 10.5,
-                    color: "var(--color-fg-muted)",
-                    minWidth: 14,
-                    textAlign: "center",
-                  }}
-                >
+                <kbd key={i} className={styles.kbd}>
                   {k}
                 </kbd>
               ))}

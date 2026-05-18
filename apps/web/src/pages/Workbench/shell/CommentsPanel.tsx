@@ -13,6 +13,7 @@ import {
 import { useAnnotationAuditHistory } from "@/hooks/useAnnotationAuditHistory";
 import { AnnotationHistoryTimeline } from "@/components/AnnotationHistoryTimeline";
 import { CommentInput, renderCommentBody } from "./CommentInput";
+import styles from "./CommentsPanel.module.css";
 import type {
   AnnotationCommentAnchor,
   CommentAttachment,
@@ -21,6 +22,10 @@ import type {
 } from "@/api/comments";
 
 type Tab = "comments" | "history";
+
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
 
 interface Props {
   annotationId: string | null;
@@ -98,19 +103,19 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 12px", borderTop: "1px solid var(--color-border)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
+    <div className={styles.panel}>
+      <div className={styles.tabRow}>
         <button
           type="button"
           onClick={() => setTab("comments")}
-          style={tabBtnStyle(tab === "comments")}
+          className={cn(styles.tabButton, tab === "comments" && styles.tabButtonActive)}
         >
           评论 {comments && comments.length > 0 && `(${comments.length})`}
         </button>
         <button
           type="button"
           onClick={() => setTab("history")}
-          style={tabBtnStyle(tab === "history")}
+          className={cn(styles.tabButton, tab === "history" && styles.tabButtonActive)}
         >
           历史 {history && history.entries.length > 0 && `(${history.entries.length})`}
         </button>
@@ -136,9 +141,9 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
         onSubmit={handleSubmit}
       />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto" }}>
+      <div className={styles.commentList}>
         {comments.length === 0 && (
-          <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)" }}>暂无评论</div>
+          <div className={styles.emptyState}>暂无评论</div>
         )}
         {comments.map((c) => {
           const isMine = !!currentUserId && currentUserId === c.author_id;
@@ -149,27 +154,25 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
               key={c.id}
               onMouseEnter={() => { if (hoverShapes) setHoveredShapes(hoverShapes); }}
               onMouseLeave={() => { if (hoverShapes) setHoveredShapes(null); }}
-              style={{
-                padding: 8, borderRadius: 4,
-                background: c.is_resolved ? "var(--color-bg-sunken)" : "var(--color-bg-elev)",
-                border: "1px solid var(--color-border)",
-                opacity: c.is_resolved ? 0.7 : 1,
-                cursor: hoverShapes ? "crosshair" : undefined,
-              }}
+              className={cn(
+                styles.commentCard,
+                c.is_resolved && styles.commentCardResolved,
+                hoverShapes && styles.commentCardHoverable,
+              )}
             >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontSize: 11.5, fontWeight: 500, color: "var(--color-fg)" }}>
+              <div className={styles.commentHeader}>
+                <span className={styles.authorName}>
                   {c.author_name ?? "—"}
                   {c.is_resolved && (
-                    <span style={{ marginLeft: 6, fontSize: 10, color: "var(--color-success)" }}>已解决</span>
+                    <span className={styles.resolvedLabel}>已解决</span>
                   )}
                 </span>
-                <div style={{ display: "flex", gap: 4 }}>
+                <div className={styles.commentActions}>
                   <button
                     type="button"
                     title={c.is_resolved ? "标为未解决" : "标为已解决"}
                     onClick={() => patchMut.mutate({ id: c.id, payload: { is_resolved: !c.is_resolved } })}
-                    style={iconBtnStyle}
+                    className={styles.iconButton}
                   >
                     <Icon name="check" size={11} />
                   </button>
@@ -178,14 +181,14 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
                       type="button"
                       title="删除"
                       onClick={() => deleteMut.mutate(c.id)}
-                      style={iconBtnStyle}
+                      className={styles.iconButton}
                     >
                       <Icon name="trash" size={11} />
                     </button>
                   )}
                 </div>
               </div>
-              <div style={{ fontSize: 12, color: "var(--color-fg)", whiteSpace: "pre-wrap" }}>
+              <div className={styles.commentBody}>
                 {renderCommentBody(c.body, c.mentions ?? [], (uid) => navigate(`/audit?actor=${uid}`))}
               </div>
               {c.anchor?.kind === "video_frame" && (
@@ -193,20 +196,7 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
                   type="button"
                   data-testid="comment-anchor-chip"
                   onClick={() => onSeekFrame?.(c.anchor!.frameIndex)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 5,
-                    marginTop: 6,
-                    padding: "2px 6px",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 4,
-                    background: "var(--color-bg-sunken)",
-                    color: "var(--color-fg-muted)",
-                    fontSize: 11,
-                    cursor: onSeekFrame ? "pointer" : "default",
-                    fontFamily: "inherit",
-                  }}
+                  className={cn(styles.anchorChip, onSeekFrame && styles.anchorChipClickable)}
                   title="跳转到评论锚定的视频帧"
                 >
                   <Icon name="film" size={12} />
@@ -214,7 +204,7 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
                 </button>
               )}
               {c.canvas_drawing && c.canvas_drawing.shapes && c.canvas_drawing.shapes.length > 0 && (
-                <div style={{ marginTop: 6 }}>
+                <div className={styles.canvasPreview}>
                   <CanvasDrawingPreview
                     drawing={c.canvas_drawing}
                     width={220}
@@ -225,36 +215,25 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
                 </div>
               )}
               {(c.attachments ?? []).length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                <div className={styles.attachmentList}>
                   {(c.attachments ?? []).map((a) => (
                     <a
                       key={a.storageKey}
                       href={`/api/v1/annotations/${annotationId}/comment-attachments/download?key=${encodeURIComponent(a.storageKey)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 4,
-                        fontSize: 11,
-                        padding: "2px 6px",
-                        background: "var(--color-bg-sunken)",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: 3,
-                        color: "var(--color-fg)",
-                        textDecoration: "none",
-                      }}
+                      className={styles.attachmentLink}
                       title={`${(a.size / 1024).toFixed(1)} KB`}
                     >
                       <Icon name="folder" size={11} />
-                      <span style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span className={styles.attachmentName}>
                         {a.fileName}
                       </span>
                     </a>
                   ))}
                 </div>
               )}
-              <div style={{ fontSize: 10, color: "var(--color-fg-subtle)", marginTop: 4 }}>
+              <div className={styles.commentTimestamp}>
                 {new Date(c.created_at).toLocaleString()}
               </div>
             </div>
@@ -267,17 +246,7 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
             onClick={() => commentsQuery.fetchNextPage()}
             disabled={commentsQuery.isFetchingNextPage}
             data-testid="comments-load-more"
-            style={{
-              alignSelf: "center",
-              padding: "4px 10px",
-              fontSize: 11,
-              background: "transparent",
-              border: "1px solid var(--color-border)",
-              borderRadius: 3,
-              color: "var(--color-fg-muted)",
-              cursor: "pointer",
-              marginTop: 4,
-            }}
+            className={styles.loadMoreButton}
           >
             {commentsQuery.isFetchingNextPage ? "加载中…" : "加载更早评论"}
           </button>
@@ -288,27 +257,3 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
     </div>
   );
 }
-
-function tabBtnStyle(active: boolean): React.CSSProperties {
-  return {
-    background: "transparent",
-    border: "none",
-    padding: "4px 8px",
-    fontSize: 11,
-    fontWeight: 600,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    color: active ? "var(--color-fg)" : "var(--color-fg-muted)",
-    borderBottom: active ? "2px solid var(--color-accent)" : "2px solid transparent",
-    cursor: "pointer",
-    fontFamily: "inherit",
-  };
-}
-
-const iconBtnStyle: React.CSSProperties = {
-  width: 20, height: 20,
-  background: "transparent", border: "none",
-  borderRadius: 3, cursor: "pointer",
-  color: "var(--color-fg-muted)",
-  display: "inline-flex", alignItems: "center", justifyContent: "center",
-};

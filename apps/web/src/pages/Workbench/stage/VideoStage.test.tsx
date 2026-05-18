@@ -5,6 +5,10 @@ import { VideoStage, type VideoStageControls } from "./VideoStage";
 import { VideoTrackSidebar } from "./VideoTrackSidebar";
 import { videoNavigationStorageKey } from "./videoNavigationState";
 import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
+import bitmapStyles from "./VideoBitmapLayer.module.css";
+import interactionStyles from "./VideoInteractionLayer.module.css";
+import playbackOverlayStyles from "./VideoPlaybackOverlay.module.css";
+import qcWarningStyles from "./VideoQcWarnings.module.css";
 
 const apiMocks = vi.hoisted(() => ({
   getVideoFrame: vi.fn(),
@@ -124,7 +128,7 @@ describe("VideoStage", () => {
 
   it("draws a bbox on the current frame while paused", () => {
     const onCreate = vi.fn();
-    const { getByTestId, getByTitle } = render(
+    const { getByTestId } = render(
       <VideoStage
         manifest={manifest}
         annotations={[]}
@@ -154,7 +158,7 @@ describe("VideoStage", () => {
 
   it("does not toggle playback when clicking the paused overlay without drawing", () => {
     const onCreate = vi.fn();
-    const { getByTestId, getByTitle } = render(
+    const { getByTestId } = render(
       <VideoStage
         manifest={manifest}
         annotations={[]}
@@ -483,13 +487,13 @@ describe("VideoStage", () => {
     const playbackOverlay = getByTestId("video-playback-overlay");
     setRect(overlay);
 
-    expect(playbackOverlay).toHaveStyle({ opacity: "1" });
-    expect(playbackOverlay).toHaveStyle({ pointerEvents: "none" });
+    expect(playbackOverlay).toHaveClass(playbackOverlayStyles.overlayVisible);
+    expect(playbackOverlay).not.toHaveClass(playbackOverlayStyles.interactive);
 
     fireEvent(overlay, pointer("pointerdown", 100, 100));
 
-    expect(playbackOverlay).toHaveStyle({ opacity: "0" });
-    expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "none" });
+    expect(playbackOverlay).toHaveClass(playbackOverlayStyles.overlayHidden);
+    expect(getByTitle("播放 / 暂停 (Space)").parentElement).not.toHaveClass(playbackOverlayStyles.interactive);
   });
 
   it("keeps playback controls interactive while an editable box is selected", () => {
@@ -517,14 +521,14 @@ describe("VideoStage", () => {
     const overlay = getByTestId("video-overlay");
     const playbackOverlay = getByTestId("video-playback-overlay");
 
-    expect(playbackOverlay).toHaveStyle({ opacity: "1" });
-    expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "auto" });
-    expect(overlay).toHaveStyle({ zIndex: "6", pointerEvents: "auto" });
+    expect(playbackOverlay).toHaveClass(playbackOverlayStyles.overlayVisible);
+    expect(getByTitle("播放 / 暂停 (Space)").parentElement).toHaveClass(playbackOverlayStyles.interactive);
+    expect(overlay).toHaveClass(interactionStyles.overlay);
 
     fireEvent.mouseMove(stage);
 
-    expect(playbackOverlay).toHaveStyle({ opacity: "1" });
-    expect(overlay).toHaveStyle({ cursor: "crosshair" });
+    expect(playbackOverlay).toHaveClass(playbackOverlayStyles.overlayVisible);
+    expect(overlay).toHaveClass(interactionStyles.cursorCrosshair);
   });
 
   it("mounts CVAT-aligned rendering layers in deterministic order", () => {
@@ -570,13 +574,13 @@ describe("VideoStage", () => {
 
     await waitFor(() => expect(createImageBitmapMock).toHaveBeenCalled());
     const bitmapLayer = getByTestId("video-bitmap-layer");
-    await waitFor(() => expect(bitmapLayer).toHaveStyle({ display: "block" }));
+    await waitFor(() => expect(bitmapLayer).toHaveClass(bitmapStyles.layerVisible));
     expect(drawImage).toHaveBeenCalled();
 
     fireEvent.click(getByTitle("播放 / 暂停 (Space)"));
 
     await waitFor(() => expect(playMock).toHaveBeenCalled());
-    await waitFor(() => expect(bitmapLayer).toHaveStyle({ display: "none" }));
+    await waitFor(() => expect(bitmapLayer).toHaveClass(bitmapStyles.layerHidden));
   });
 
   it("falls back without the bitmap layer when ImageBitmap capture is unsupported", async () => {
@@ -593,7 +597,7 @@ describe("VideoStage", () => {
       />,
     );
 
-    expect(getByTestId("video-bitmap-layer")).toHaveStyle({ display: "none" });
+    expect(getByTestId("video-bitmap-layer")).toHaveClass(bitmapStyles.layerHidden);
     await waitFor(() => {
       const diagnostics = (window as any).__videoWorkbenchDiagnostics?.byTask?.["task-1"];
       expect(diagnostics?.bitmapCache?.supported).toBe(false);
@@ -615,7 +619,7 @@ describe("VideoStage", () => {
       />,
     );
 
-    await waitFor(() => expect(getByTestId("video-bitmap-layer")).toHaveStyle({ display: "block" }));
+    await waitFor(() => expect(getByTestId("video-bitmap-layer")).toHaveClass(bitmapStyles.layerVisible));
 
     rerender(
       <VideoStage
@@ -664,21 +668,23 @@ describe("VideoStage", () => {
     fireEvent(window, new Event("resize"));
 
     fireEvent.keyDown(window, { key: "f" });
-    await waitFor(() => expect(surface).toHaveStyle({ transform: "translate(0px, 0px) scale(0.5)" }));
+    await waitFor(() => expect(surface).toHaveStyle({ "--video-stage-transform": "translate(0px, 0px) scale(0.5)" }));
 
     fireEvent.keyDown(window, { key: "0" });
-    await waitFor(() => expect(surface).toHaveStyle({ transform: "translate(-250px, -125px) scale(1)" }));
+    await waitFor(() => expect(surface).toHaveStyle({ "--video-stage-transform": "translate(-250px, -125px) scale(1)" }));
 
     fireEvent.wheel(stage, { ctrlKey: true, deltaY: -100, clientX: 250, clientY: 125 });
-    await waitFor(() => expect(surface.style.transform).toContain("scale(1.1)"));
-    expect(getByTestId("minimap-current-frame").parentElement).toHaveStyle({ bottom: "64px" });
+    await waitFor(() => expect(surface.style.getPropertyValue("--video-stage-transform")).toContain("scale(1.1)"));
+    await waitFor(() => {
+      expect(getByTestId("minimap-current-frame").parentElement?.style.getPropertyValue("--minimap-bottom")).toBe("64px");
+    });
 
     fireEvent(overlay, pointer("pointerdown", 100, 100, 2));
     fireEvent(overlay, pointer("pointermove", 125, 130));
     fireEvent(overlay, pointer("pointerup", 125, 130));
 
     await waitFor(() => {
-      expect(surface.style.transform).toContain("translate(-275px, -120px)");
+      expect(surface.style.getPropertyValue("--video-stage-transform")).toContain("translate(-275px, -120px)");
     });
   });
 
@@ -728,9 +734,9 @@ describe("VideoStage", () => {
       />,
     );
 
-    expect(getByTestId("video-playback-overlay")).toHaveStyle({ opacity: "1" });
-    expect(getByTestId("video-overlay")).toHaveStyle({ zIndex: "6", pointerEvents: "auto" });
-    expect(getByTitle("播放 / 暂停 (Space)")).toHaveStyle({ pointerEvents: "auto" });
+    expect(getByTestId("video-playback-overlay")).toHaveClass(playbackOverlayStyles.overlayVisible);
+    expect(getByTestId("video-overlay")).toHaveClass(interactionStyles.overlay);
+    expect(getByTitle("播放 / 暂停 (Space)").parentElement).toHaveClass(playbackOverlayStyles.interactive);
   });
 
   it("renders video quality warnings at the top of the stage", () => {
@@ -764,8 +770,7 @@ describe("VideoStage", () => {
 
     const warnings = getByTestId("video-qc-warnings");
     expect(warnings).toHaveTextContent("car trk_car 关键帧间隔 40 帧");
-    expect(warnings).toHaveStyle({ top: "14px" });
-    expect(warnings).not.toHaveStyle({ bottom: "14px" });
+    expect(warnings).toHaveClass(qcWarningStyles.root);
   });
 
   it("renders only annotations from the selected frame", () => {
@@ -854,7 +859,7 @@ describe("VideoStage", () => {
 
     const label = container.querySelector('[data-testid="video-label"]');
     expect(label).toHaveTextContent("car");
-    expect(label).toHaveStyle({ left: "10%", top: "86%" });
+    expect(label).toHaveStyle({ "--video-label-left": "10%", "--video-label-top": "86%" });
     expect(container.querySelector("svg foreignObject")).toBeNull();
   });
 
@@ -1201,7 +1206,7 @@ describe("VideoStage", () => {
     expect(getByTestId("video-label-overlay").textContent).toContain("car · 插值");
     const label = Array.from(getByTestId("video-label-overlay").querySelectorAll('[data-testid="video-label"]'))
       .find((node) => node.textContent?.includes("car · 插值"));
-    expect(label).toHaveStyle({ left: "20%", top: "10%" });
+    expect(label).toHaveStyle({ "--video-label-left": "20%", "--video-label-top": "10%" });
   });
 
   it("filters video entries by review raw/final display mode", () => {

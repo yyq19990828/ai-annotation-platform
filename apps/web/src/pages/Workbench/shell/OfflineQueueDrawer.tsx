@@ -9,6 +9,7 @@ import {
   removeById,
   subscribe,
 } from "../state/offlineQueue";
+import styles from "./OfflineQueueDrawer.module.css";
 
 interface OfflineQueueDrawerProps {
   open: boolean;
@@ -33,17 +34,21 @@ const KIND_LABEL: Record<OfflineOp["kind"], string> = {
   delete: "删除标注",
 };
 
-function kindColor(kind: OfflineOp["kind"]): string {
-  if (kind === "create") return "oklch(0.65 0.15 145)";
-  if (kind === "update") return "oklch(0.70 0.15 75)";
-  return "oklch(0.60 0.18 25)";
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
+function kindClassName(kind: OfflineOp["kind"]): string {
+  if (kind === "create") return styles.kindCreate;
+  if (kind === "update") return styles.kindUpdate;
+  return styles.kindDelete;
 }
 
 /** v0.6.4：retry_count 颜色阈值。0 灰，1-2 黄（已有失败但不严重），≥3 红。*/
-function retryBadgeColor(rc: number): { bg: string; fg: string } {
-  if (rc >= 3) return { bg: "oklch(0.96 0.05 25 / 0.5)", fg: "oklch(0.45 0.18 25)" };
-  if (rc >= 1) return { bg: "oklch(0.96 0.06 80 / 0.5)", fg: "oklch(0.55 0.15 75)" };
-  return { bg: "var(--color-bg-sunken)", fg: "var(--color-fg-muted)" };
+function retryBadgeClassName(rc: number): string {
+  if (rc >= 3) return styles.retryDanger;
+  if (rc >= 1) return styles.retryWarning;
+  return styles.retryNeutral;
 }
 
 type TaskFilter = "all" | "current";
@@ -156,46 +161,20 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
       {/* 背景遮罩，仅供点击关闭，不阻塞画布交互 */}
       <div
         onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "oklch(0 0 0 / 0.25)",
-          zIndex: 60,
-        }}
+        className={styles.backdrop}
       />
       <aside
         role="dialog"
         aria-label="离线队列"
         aria-modal="false"
         onClick={(e) => e.stopPropagation()}
-        style={{
-          position: "fixed",
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: 420,
-          maxWidth: "100vw",
-          background: "var(--color-bg-elev)",
-          borderLeft: "1px solid var(--color-border)",
-          boxShadow: "var(--shadow-lg)",
-          zIndex: 61,
-          display: "flex",
-          flexDirection: "column",
-        }}
+        className={styles.drawer}
       >
-        <header
-          style={{
-            padding: "14px 16px",
-            borderBottom: "1px solid var(--color-border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <header className={styles.header}>
+          <div className={styles.headerContent}>
             <Icon name="inbox" size={14} />
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-fg)" }}>离线队列</div>
-            <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+            <div className={styles.title}>离线队列</div>
+            <div className={styles.summary}>
               {items.length === 0
                 ? "暂无操作"
                 : `${items.length} 条 · 跨 ${taskCount} 题${currentTaskId ? ` · 当前题 ${currentTaskItemCount}` : ""}`}
@@ -205,16 +184,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
             type="button"
             onClick={onClose}
             aria-label="关闭"
-            style={{
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--color-fg-muted)",
-              padding: 4,
-              display: "inline-flex",
-              alignItems: "center",
-              borderRadius: "var(--radius-sm)",
-            }}
+            className={styles.iconButton}
           >
             <Icon name="x" size={16} />
           </button>
@@ -222,18 +192,8 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
 
         {/* v0.6.4：筛选 chip */}
         {items.length > 0 && (
-          <div
-            style={{
-              padding: "8px 16px",
-              borderBottom: "1px solid var(--color-border)",
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 6,
-              fontSize: 11,
-              color: "var(--color-fg-muted)",
-            }}
-          >
-            <span style={{ marginRight: 4 }}>范围：</span>
+          <div className={styles.filters}>
+            <span className={styles.filterLabel}>范围：</span>
             <FilterChip label="全部" active={taskFilter === "all"} onClick={() => setTaskFilter("all")} />
             <FilterChip
               label="当前题"
@@ -241,7 +201,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
               disabled={!currentTaskId}
               onClick={() => setTaskFilter("current")}
             />
-            <span style={{ marginLeft: 8, marginRight: 4 }}>状态：</span>
+            <span className={styles.filterLabelSpaced}>状态：</span>
             <FilterChip label="全部" active={retryFilter === "all"} onClick={() => setRetryFilter("all")} />
             <FilterChip
               label="失败 ≥ 3"
@@ -251,20 +211,12 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
           </div>
         )}
 
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+        <div className={styles.content}>
           {filtered.length === 0 ? (
-            <div
-              style={{
-                padding: "32px 16px",
-                textAlign: "center",
-                color: "var(--color-fg-muted)",
-                fontSize: 12,
-                lineHeight: 1.6,
-              }}
-            >
-              <Icon name="check" size={18} style={{ color: "oklch(0.65 0.15 145)", marginBottom: 8 }} />
+            <div className={styles.emptyState}>
+              <Icon name="check" size={18} className={styles.emptyIcon} />
               <div>{items.length === 0 ? "暂无离线操作" : "当前筛选无匹配项"}</div>
-              <div style={{ marginTop: 4, fontSize: 11 }}>
+              <div className={styles.emptyHint}>
                 {items.length === 0 ? "所有标注操作已同步至服务器。" : "调整上方筛选 chip 查看其他项。"}
               </div>
             </div>
@@ -274,75 +226,43 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
               const isCurrent = tid === currentTaskId;
               const isCollapsed = collapsed[tid] ?? !isCurrent; // 默认展开当前题，其余折叠
               return (
-                <div key={tid} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                <div key={tid} className={styles.taskGroup}>
                   <button
                     type="button"
                     onClick={() => setCollapsed((c) => ({ ...c, [tid]: !isCollapsed }))}
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      padding: "8px 16px",
-                      background: isCurrent ? "var(--color-bg-sunken)" : "transparent",
-                      border: "none",
-                      borderBottom: "1px solid var(--color-border)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      cursor: "pointer",
-                      fontSize: 11.5,
-                      color: "var(--color-fg)",
-                      fontWeight: 600,
-                    }}
+                    className={cn(styles.groupHeader, isCurrent && styles.groupHeaderCurrent)}
                   >
                     <Icon name={isCollapsed ? "chevRight" : "chevDown"} size={11} />
                     <span className="mono">任务 {tid.slice(0, 8)}…</span>
-                    {isCurrent && <span style={{ color: "var(--color-primary)", fontSize: 10 }}>当前</span>}
-                    <span style={{ marginLeft: "auto", color: "var(--color-fg-muted)", fontWeight: 400 }}>
+                    {isCurrent && <span className={styles.currentBadge}>当前</span>}
+                    <span className={styles.groupCount}>
                       {opsInTask.length} 条
                     </span>
                   </button>
                   {!isCollapsed && opsInTask.map((op) => {
                     const isBusy = busyId === op.id;
                     const rc = op.retry_count ?? 0;
-                    const rcColor = retryBadgeColor(rc);
                     return (
                       <div
                         key={op.id}
-                        style={{
-                          padding: "10px 16px 10px 32px",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 6,
-                          opacity: isBusy ? 0.5 : 1,
-                          background: rc >= 3 ? "oklch(0.96 0.04 25 / 0.18)" : "transparent",
-                        }}
+                        className={cn(
+                          styles.queueItem,
+                          isBusy && styles.queueItemBusy,
+                          rc >= 3 && styles.queueItemFailed,
+                        )}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div className={styles.itemMeta}>
                           <span
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 600,
-                              color: kindColor(op.kind),
-                              background: "var(--color-bg-sunken)",
-                              padding: "1px 6px",
-                              borderRadius: 3,
-                            }}
+                            className={cn(styles.kindBadge, kindClassName(op.kind))}
                           >
                             {KIND_LABEL[op.kind]}
                           </span>
-                          <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }} className="mono">
+                          <span className={cn("mono", styles.mutedMono)}>
                             {formatTs(op.ts)}
                           </span>
                           {rc > 0 && (
                             <span
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 600,
-                                background: rcColor.bg,
-                                color: rcColor.fg,
-                                padding: "1px 5px",
-                                borderRadius: 3,
-                              }}
+                              className={cn(styles.retryBadge, retryBadgeClassName(rc))}
                               title={`累计同步失败 ${rc} 次`}
                             >
                               失败 ×{rc}
@@ -350,8 +270,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                           )}
                           {op.kind === "create" && op.tmpId && (
                             <span
-                              style={{ fontSize: 10, color: "var(--color-fg-muted)" }}
-                              className="mono"
+                              className={cn("mono", styles.tmpId)}
                               title={op.tmpId}
                             >
                               {op.tmpId.slice(0, 12)}…
@@ -359,24 +278,16 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                           )}
                         </div>
                         {op.kind !== "create" && (
-                          <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }} className="mono">
+                          <div className={cn("mono", styles.mutedMono)}>
                             标注 {op.annotationId.slice(0, 8)}…
                           </div>
                         )}
-                        <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                        <div className={styles.itemActions}>
                           <button
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleRetry(op)}
-                            style={{
-                              fontSize: 11,
-                              padding: "3px 10px",
-                              border: "1px solid var(--color-border)",
-                              background: "var(--color-bg-elev)",
-                              borderRadius: "var(--radius-sm)",
-                              cursor: isBusy ? "wait" : "pointer",
-                              color: "var(--color-fg)",
-                            }}
+                            className={styles.smallButton}
                           >
                             重试
                           </button>
@@ -384,15 +295,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleDelete(op)}
-                            style={{
-                              fontSize: 11,
-                              padding: "3px 10px",
-                              border: "1px solid var(--color-border)",
-                              background: "transparent",
-                              borderRadius: "var(--radius-sm)",
-                              cursor: isBusy ? "wait" : "pointer",
-                              color: "oklch(0.60 0.18 25)",
-                            }}
+                            className={cn(styles.smallButton, styles.discardButton)}
                           >
                             丢弃
                           </button>
@@ -406,29 +309,12 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
           )}
         </div>
 
-        <footer
-          style={{
-            padding: "12px 16px",
-            borderTop: "1px solid var(--color-border)",
-            display: "flex",
-            gap: 8,
-            justifyContent: "space-between",
-          }}
-        >
+        <footer className={styles.footer}>
           <button
             type="button"
             disabled={items.length === 0}
             onClick={handleClearAll}
-            style={{
-              fontSize: 12,
-              padding: "6px 12px",
-              border: "1px solid var(--color-border)",
-              background: "transparent",
-              borderRadius: "var(--radius-sm)",
-              cursor: items.length === 0 ? "not-allowed" : "pointer",
-              color: items.length === 0 ? "var(--color-fg-muted)" : "oklch(0.60 0.18 25)",
-              opacity: items.length === 0 ? 0.5 : 1,
-            }}
+            className={styles.footerButton}
           >
             全部丢弃
           </button>
@@ -436,17 +322,7 @@ export function OfflineQueueDrawer({ open, onClose, currentTaskId, onFlushOne, o
             type="button"
             disabled={items.length === 0 || flushAllBusy}
             onClick={handleFlushAll}
-            style={{
-              fontSize: 12,
-              padding: "6px 14px",
-              border: "1px solid oklch(0.55 0.18 250)",
-              background: "oklch(0.55 0.18 250)",
-              borderRadius: "var(--radius-sm)",
-              cursor: items.length === 0 || flushAllBusy ? "not-allowed" : "pointer",
-              color: "white",
-              fontWeight: 600,
-              opacity: items.length === 0 || flushAllBusy ? 0.5 : 1,
-            }}
+            className={cn(styles.footerButton, styles.syncAllButton)}
           >
             {flushAllBusy ? "同步中…" : "立即同步全部"}
           </button>
@@ -470,16 +346,7 @@ function FilterChip({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      style={{
-        fontSize: 11,
-        padding: "2px 8px",
-        border: `1px solid ${active ? "var(--color-primary)" : "var(--color-border)"}`,
-        background: active ? "var(--color-primary)" : "transparent",
-        color: active ? "white" : disabled ? "var(--color-fg-subtle)" : "var(--color-fg)",
-        borderRadius: 12,
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.5 : 1,
-      }}
+      className={cn(styles.filterChip, active && styles.filterChipActive)}
     >
       {label}
     </button>

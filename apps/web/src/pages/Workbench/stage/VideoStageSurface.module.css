@@ -1,0 +1,11 @@
+/* v0.10.12 · CSP style-src 收紧续推 — VideoStageSurface.tsx inline style 迁移. */
+
+.surface {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--video-stage-width);
+  height: var(--video-stage-height);
+  transform: var(--video-stage-transform);
+  transform-origin: 0 0;
+}

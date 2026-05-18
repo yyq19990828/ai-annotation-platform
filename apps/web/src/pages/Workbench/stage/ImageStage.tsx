@@ -22,6 +22,7 @@ import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon } from "./ImageStageShapes";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
+import styles from "./ImageStage.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type Drag =
@@ -55,6 +56,38 @@ function translatePolygon(points: Pt[], dx: number, dy: number): Pt[] {
   const cdx = Math.max(-minX, Math.min(1 - maxX, dx));
   const cdy = Math.max(-minY, Math.min(1 - maxY, dy));
   return points.map(([x, y]) => [x + cdx, y + cdy] as Pt);
+}
+
+function SamRefineButton({
+  left,
+  top,
+  onClick,
+}: {
+  left: number;
+  top: number;
+  onClick: React.MouseEventHandler<HTMLButtonElement>;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty("--sam-refine-left", `${left}px`);
+    el.style.setProperty("--sam-refine-top", `${top - 32}px`);
+  }, [left, top]);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={onClick}
+      data-testid="sam-candidate-refine"
+      className={styles.samRefineButton}
+      title="精修 SAM 候选 (R)"
+    >
+      ✎ 精修 <kbd className={styles.samRefineKey}>R</kbd>
+    </button>
+  );
 }
 
 interface ImageStageProps {
@@ -523,6 +556,17 @@ export function ImageStage({
     : tool === "mask" ? "none"
     : pendingDrawing ? "default" : "crosshair";
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.style.setProperty("--image-stage-cursor", containerCursor);
+    if (workbenchConfig.cssImageFilter) {
+      el.style.setProperty("--image-stage-filter", workbenchConfig.cssImageFilter);
+    } else {
+      el.style.removeProperty("--image-stage-filter");
+    }
+  }, [containerCursor, workbenchConfig.cssImageFilter]);
+
   // polygon 草稿当前光标位置（用于动态预览线段）
   const [polygonCursor, setPolygonCursor] = useState<{ x: number; y: number } | null>(null);
   // v0.10.9 · Mask 笔刷光标 (image-space pixels)；overlay 层据此画跟随圆圈。
@@ -565,13 +609,7 @@ export function ImageStage({
     <div
       ref={containerRef}
       data-testid="workbench-stage"
-      style={{
-        flex: 1, position: "relative", overflow: "hidden",
-        background: "repeating-conic-gradient(var(--color-canvas-checker-a) 0% 25%, var(--color-canvas-checker-b) 0% 50%) 0 0/16px 16px",
-        cursor: containerCursor,
-        // v0.9.41 I17 · 用户级 CSS 滤镜（暗图反色、对比度增强等）。
-        filter: workbenchConfig.cssImageFilter || undefined,
-      }}
+      className={styles.root}
       onMouseLeave={() => onCursorMove(null)}
     >
       {/* blurhash 占位（图像加载前） */}
@@ -580,29 +618,25 @@ export function ImageStage({
       )}
 
       {!fileUrl && (
-        <div style={{
-          position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center", gap: 10,
-          color: "var(--color-fg-subtle)", background: "var(--color-bg-sunken)",
-        }}>
+        <div className={styles.emptyState}>
           <Icon name="warning" size={32} />
-          <div style={{ fontSize: 13 }}>图像不可用</div>
+          <div className={styles.emptyStateText}>图像不可用</div>
         </div>
       )}
 
-      <Stage
-        ref={stageRef}
-        width={vpSize.w || 1}
-        height={vpSize.h || 1}
-        x={vp.tx}
-        y={vp.ty}
-        scaleX={vp.scale}
-        scaleY={vp.scale}
-        onMouseDown={handleStageMouseDown}
-        onMouseMove={handleStageMouseMove}
-        onDblClick={handleStageDblClick}
-        style={{ position: "absolute", top: 0, left: 0, display: "block" }}
-      >
+      <div className={styles.konvaHost}>
+        <Stage
+          ref={stageRef}
+          width={vpSize.w || 1}
+          height={vpSize.h || 1}
+          x={vp.tx}
+          y={vp.ty}
+          scaleX={vp.scale}
+          scaleY={vp.scale}
+          onMouseDown={handleStageMouseDown}
+          onMouseMove={handleStageMouseMove}
+          onDblClick={handleStageDblClick}
+        >
         {/* bg 层：图像本体；不响应 hit-test，独立缓存 */}
         <Layer name="bg" listening={false}>
           {image && (
@@ -938,7 +972,8 @@ export function ImageStage({
             />
           )}
         </Layer>
-      </Stage>
+        </Stage>
+      </div>
 
       {/* v0.10.9 · SAM 候选精修浮按钮：active polygonlabels 候选 + 未 Enter 时显示。
           位置贴在候选 polygon 顶点 bbox 右上角；点击/按 R 都触发 onRefineSamCandidate。 */}
@@ -953,30 +988,11 @@ export function ImageStage({
         const left = maxX * imgW * vp.scale + vp.tx;
         const top = minY * imgH * vp.scale + vp.ty;
         return (
-          <button
-            type="button"
+          <SamRefineButton
+            left={left}
+            top={top}
             onClick={(e) => { e.stopPropagation(); onRefineSamCandidate(samActiveIdx); }}
-            data-testid="sam-candidate-refine"
-            style={{
-              position: "absolute",
-              left, top: top - 32,
-              transform: "translateX(-100%)",
-              padding: "3px 8px",
-              fontSize: 11.5,
-              background: "var(--color-bg-elev)",
-              border: "1px solid #a855f7",
-              borderRadius: 4,
-              color: "var(--color-fg)",
-              cursor: "pointer",
-              boxShadow: "var(--shadow-md)",
-              fontFamily: "inherit",
-              zIndex: 20,
-              pointerEvents: "auto",
-            }}
-            title="精修 SAM 候选 (R)"
-          >
-            ✎ 精修 <kbd style={{ marginLeft: 4, fontSize: 9, opacity: 0.7 }}>R</kbd>
-          </button>
+          />
         );
       })()}
 

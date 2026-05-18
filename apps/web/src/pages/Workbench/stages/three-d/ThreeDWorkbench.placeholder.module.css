@@ -1,0 +1,18 @@
+.placeholder {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  place-items: center;
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+}
+
+.content {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.message {
+  font-size: 13px;
+}

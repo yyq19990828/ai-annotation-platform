@@ -1,4 +1,5 @@
 import { forwardRef } from "react";
+import styles from "./VideoMediaLayer.module.css";
 
 interface VideoMediaLayerProps {
   src: string;
@@ -18,14 +19,7 @@ export const VideoMediaLayer = forwardRef<HTMLVideoElement, VideoMediaLayerProps
       src={src}
       poster={poster}
       playsInline
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        objectFit: "contain",
-        zIndex: 1,
-      }}
+      className={styles.video}
       onClick={onClick}
     />
   );

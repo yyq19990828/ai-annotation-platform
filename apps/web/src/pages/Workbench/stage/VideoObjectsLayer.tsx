@@ -2,6 +2,7 @@ import { classColor } from "./colors";
 import { VideoTrackShape } from "./VideoTrackShape";
 import type { VideoFrameEntry, VideoStageGeom, VideoTrackPreview } from "./videoStageTypes";
 import { isFrameOutside } from "./videoTrackOutside";
+import styles from "./VideoObjectsLayer.module.css";
 
 type VideoObjectEntry = {
   key: string;
@@ -30,14 +31,7 @@ export function VideoObjectsLayer({
       data-testid="video-objects-layer"
       viewBox={`0 0 1 ${viewBoxHeight}`}
       preserveAspectRatio="xMidYMid meet"
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        zIndex: 4,
-        pointerEvents: "none",
-      }}
+      className={styles.layer}
     >
       {trackPreviews.map((preview) => {
         const color = classColor(preview.className);

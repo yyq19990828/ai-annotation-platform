@@ -22,7 +22,7 @@ function VideoTrackShapeComponent({ geom, color, selected, dashed, viewBoxHeight
       strokeWidth={selected ? 3 : 2}
       strokeDasharray={dashed ? "6 4" : undefined}
       vectorEffect="non-scaling-stroke"
-      style={{ pointerEvents: "none" }}
+      pointerEvents="none"
     />
   );
 }

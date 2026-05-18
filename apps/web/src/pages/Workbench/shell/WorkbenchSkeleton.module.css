@@ -1,0 +1,173 @@
+.skeleton {
+  display: grid;
+  grid-template-columns: 260px 1fr 280px;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg-sunken);
+}
+
+.block,
+.stagePreview {
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-sunken) 0%,
+    var(--color-bg-elev) 50%,
+    var(--color-bg-sunken) 100%
+  );
+  background-size: 200% 100%;
+  animation: wb-shimmer 1.4s linear infinite;
+}
+
+@keyframes wb-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.block120x16 {
+  width: 120px;
+  height: 16px;
+}
+
+.block80p11 {
+  width: 80%;
+  height: 11px;
+}
+
+.block40x40 {
+  width: 40px;
+  height: 40px;
+}
+
+.block60p11 {
+  width: 60%;
+  height: 11px;
+}
+
+.block80p10 {
+  width: 80%;
+  height: 10px;
+}
+
+.block60x26 {
+  width: 60px;
+  height: 26px;
+}
+
+.block80x26 {
+  width: 80px;
+  height: 26px;
+}
+
+.block26x26 {
+  width: 26px;
+  height: 26px;
+}
+
+.block120x26 {
+  width: 120px;
+  height: 26px;
+}
+
+.block100p32 {
+  width: 100%;
+  height: 32px;
+}
+
+.block100p28 {
+  width: 100%;
+  height: 28px;
+}
+
+.block100p42 {
+  width: 100%;
+  height: 42px;
+}
+
+.block50p14 {
+  width: 50%;
+  height: 14px;
+}
+
+.block40p11 {
+  width: 40%;
+  height: 11px;
+}
+
+.mb6 {
+  margin-bottom: 6px;
+}
+
+.mb8 {
+  margin-bottom: 8px;
+}
+
+.mb10 {
+  margin-bottom: 10px;
+}
+
+.mb20 {
+  margin-bottom: 20px;
+}
+
+.leftPanel {
+  padding: 14px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+}
+
+.taskRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.taskMeta {
+  flex: 1;
+}
+
+.stageShell {
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+}
+
+.toolbarSpacer {
+  flex: 1;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  padding: 40px;
+}
+
+.stagePreview {
+  position: absolute;
+  inset: 40px;
+  border-radius: 6px;
+}
+
+.footer {
+  padding: 8px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+}
+
+.rightPanel {
+  padding: 14px;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+}

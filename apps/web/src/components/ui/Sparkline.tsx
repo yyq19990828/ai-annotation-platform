@@ -1,3 +1,5 @@
+import styles from "./Sparkline.module.css";
+
 interface SparklineProps {
   values: number[];
   color?: string;
@@ -15,7 +17,7 @@ export function Sparkline({ values, color = "var(--color-accent)", width = 120, 
     .join(" ");
   const area = `0,${height} ${points} ${width},${height}`;
   return (
-    <svg width={width} height={height} style={{ display: "block" }}>
+    <svg width={width} height={height} className={styles.root}>
       <polyline points={area} fill={color} opacity="0.08" stroke="none" />
       <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" />
     </svg>

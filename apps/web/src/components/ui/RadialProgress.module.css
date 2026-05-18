@@ -1,0 +1,31 @@
+.root {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.centerCompact {
+  font-size: 12px;
+}
+
+.centerLarge {
+  font-size: 16px;
+}
+
+.label {
+  margin-top: 1px;
+  color: var(--color-fg-muted);
+  font-size: 9px;
+  font-weight: 400;
+}

@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Thumbnail } from "@/components/Thumbnail";
@@ -9,6 +8,7 @@ import type { ClassesConfig } from "@/api/projects";
 import type { BatchResponse } from "@/api/batches";
 import { ClassPalette } from "./ClassPalette";
 import { ResizeHandle } from "./ResizeHandle";
+import styles from "./TaskQueuePanel.module.css";
 
 interface TaskQueuePanelProps {
   open: boolean;
@@ -38,12 +38,18 @@ interface TaskQueuePanelProps {
   onResize: (w: number) => void;
 }
 
-const stripStyle: React.CSSProperties = {
-  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-  height: "100%", gap: 8, cursor: "pointer", userSelect: "none",
-  background: "var(--color-bg-elev)", border: "none", width: "100%", padding: 0,
-  color: "var(--color-fg-muted)",
-};
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
+function statusClassName(task: TaskResponse): string {
+  if (task.status === "completed") return styles.statusCompleted;
+  if (task.status === "review") return styles.statusReview;
+  if (task.status === "rejected") return styles.statusRejected;
+  if (task.total_annotations > 0) return styles.statusAnnotated;
+  if (task.total_predictions > 0) return styles.statusPredicted;
+  return styles.statusEmpty;
+}
 
 function TaskItem({
   task,
@@ -63,92 +69,90 @@ function TaskItem({
     : task.total_annotations > 0 ? "进行中"
     : task.total_predictions > 0 ? "AI 已预标"
     : "未开始";
-  const statusColor =
-    task.status === "completed" ? "var(--color-success)"
-    : task.status === "review" ? "var(--color-warning)"
-    : task.status === "rejected" ? "var(--color-danger)"
-    : task.total_annotations > 0 ? "var(--color-accent)"
-    : task.total_predictions > 0 ? "var(--color-ai)"
-    : "var(--color-fg-subtle)";
+  const markerClassName = cn(
+    styles.taskMarker,
+    isActive ? styles.taskMarkerActive : isRejected && styles.taskMarkerRejected,
+  );
 
   return (
     <div
       onClick={onSelect}
-      style={{
-        position: "relative",
-        display: "flex", alignItems: "center", gap: 10,
-        padding: "9px 10px 9px 12px", margin: "3px 0",
-        borderRadius: "var(--radius-md)",
-        background: isActive ? "var(--color-accent-soft)" : isRejected ? "color-mix(in oklab, var(--color-danger) 6%, transparent)" : "transparent",
-        border: "1px solid " + (isActive ? "color-mix(in oklab, var(--color-accent) 30%, transparent)" : isRejected ? "color-mix(in oklab, var(--color-danger) 25%, transparent)" : "transparent"),
-        cursor: "pointer",
-        transition: "background 0.12s, border-color 0.12s",
-      }}
-      onMouseEnter={(e) => {
-        if (!isActive) e.currentTarget.style.background = "var(--color-bg-hover)";
-      }}
-      onMouseLeave={(e) => {
-        if (!isActive) e.currentTarget.style.background = "transparent";
-      }}
+      className={cn(
+        styles.taskItem,
+        isActive && styles.taskItemActive,
+        isRejected && styles.taskItemRejected,
+      )}
     >
-      {isActive && (
-        <span
-          aria-hidden
-          style={{
-            position: "absolute", left: 2, top: 8, bottom: 8, width: 3,
-            background: "var(--color-accent)", borderRadius: 2,
-          }}
-        />
-      )}
-      {!isActive && isRejected && (
-        <span
-          aria-hidden
-          style={{
-            position: "absolute", left: 2, top: 8, bottom: 8, width: 3,
-            background: "var(--color-danger)", borderRadius: 2,
-          }}
-        />
-      )}
+      {(isActive || isRejected) && <span aria-hidden className={markerClassName} />}
       <Thumbnail src={task.thumbnail_url} blurhash={task.blurhash} width={40} height={40} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
+      <div className={styles.taskBody}>
+        <div className={styles.taskMainRow}>
           <span
-            className="mono"
-            style={{
-              fontSize: 12, fontWeight: 600,
-              color: isActive ? "var(--color-accent-fg)" : "var(--color-fg)",
-            }}
+            className={cn("mono", styles.taskDisplayId, isActive && styles.taskDisplayIdActive)}
           >{task.display_id}</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <div className={styles.taskMetaActions}>
             {isLocked && (
               <span
                 title={task.status === "review" ? "已提交质检 · 已锁定" : "已通过审核 · 已锁定"}
-                style={{ display: "inline-flex", color: "var(--color-fg-subtle)" }}
+                className={styles.lockIcon}
               >
                 <Icon name="lock" size={11} />
               </span>
             )}
             {task.total_annotations > 0 && (
-              <Badge variant="accent" style={{ fontSize: 10, padding: "1px 6px" }}>{task.total_annotations}</Badge>
+              <span className={styles.annotationCountBadge}>{task.total_annotations}</span>
             )}
           </div>
         </div>
-        <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div className={styles.fileName}>
           {task.file_name}
         </div>
         <div
-          style={{
-            fontSize: 10.5, marginTop: 3,
-            display: "inline-flex", alignItems: "center", gap: 4,
-            color: statusColor, fontWeight: 500,
-          }}
+          className={cn(styles.statusMeta, statusClassName(task))}
         >
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: statusColor }} />
+          <span className={styles.statusDot} />
           {statusLabel}
         </div>
       </div>
     </div>
   );
+}
+
+function VirtualInner({
+  height,
+  children,
+}: {
+  height: number;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    ref.current?.style.setProperty("height", `${height}px`);
+  }, [height]);
+
+  return <div ref={ref} className={styles.virtualInner}>{children}</div>;
+}
+
+function VirtualRow({
+  start,
+  dataIndex,
+  measureElement,
+  children,
+}: {
+  start: number;
+  dataIndex?: number;
+  measureElement?: (node: HTMLDivElement | null) => void;
+  children: ReactNode;
+}) {
+  const ref = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      node.style.setProperty("transform", `translateY(${start}px)`);
+    }
+    measureElement?.(node);
+  }, [measureElement, start]);
+
+  return <div ref={ref} data-index={dataIndex} className={styles.virtualRow}>{children}</div>;
 }
 
 export function TaskQueuePanel({
@@ -203,53 +207,38 @@ export function TaskQueuePanel({
 
   if (!open) {
     return (
-      <div style={{ borderRight: "1px solid var(--color-border)", overflow: "hidden" }}>
-        <button onClick={onToggle} title="展开任务列表" style={stripStyle}>
+      <div className={styles.collapsed}>
+        <button onClick={onToggle} title="展开任务列表" className={styles.collapsedToggle}>
           <Icon name="panelLeft" size={16} />
-          <span style={{ fontSize: 10, writingMode: "vertical-rl", letterSpacing: 1, opacity: 0.6 }}>任务列表</span>
+          <span className={styles.collapsedLabel}>任务列表</span>
         </button>
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        position: "relative",
-        background: "var(--color-bg-elev)", borderRight: "1px solid var(--color-border)",
-        display: "flex", flexDirection: "column", overflow: "hidden",
-      }}
-    >
-      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--color-border)" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <Button variant="ghost" size="sm" onClick={onBack} style={{ padding: "2px 6px" }}>
+    <div className={styles.root}>
+      <div className={styles.header}>
+        <div className={styles.headerActions}>
+          <Button variant="ghost" size="sm" onClick={onBack} className={styles.compactButton}>
             <Icon name="chevLeft" size={11} />返回
           </Button>
-          <Button variant="ghost" size="sm" onClick={onToggle} title="收起任务列表" style={{ padding: "2px 6px" }}>
+          <Button variant="ghost" size="sm" onClick={onToggle} title="收起任务列表" className={styles.compactButton}>
             <Icon name="panelLeft" size={14} />
           </Button>
         </div>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{projectName}</div>
-        <div style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+        <div className={styles.projectName}>{projectName}</div>
+        <div className={styles.projectMeta}>
           <span className="mono">{projectDisplayId}</span> · {classes.length} 个类别
         </div>
       </div>
 
       {batches && batches.length > 0 && onSelectBatch && (
-        <div style={{ padding: "6px 14px 0" }}>
+        <div className={styles.batchFilter}>
           <select
             value={selectedBatchId ?? ""}
             onChange={(e) => onSelectBatch(e.target.value || null)}
-            style={{
-              width: "100%",
-              padding: "4px 8px",
-              fontSize: 12,
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--color-bg)",
-              color: "var(--color-fg)",
-              fontFamily: "inherit",
-            }}
+            className={styles.batchSelect}
           >
             <option value="">全部批次（{batches.length}）</option>
             {batches.map((b) => {
@@ -271,20 +260,9 @@ export function TaskQueuePanel({
 
       {/* v0.6.8 B-15：owner 视角且无任何批次时给出明确入口，避免误以为「100 条就是全部」 */}
       {isOwner && (!batches || batches.length === 0) && onGoToBatchSettings && (
-        <div
-          style={{
-            margin: "6px 14px 0",
-            padding: "8px 10px",
-            border: "1px dashed var(--color-border)",
-            borderRadius: "var(--radius-sm)",
-            background: "var(--color-bg)",
-            fontSize: 11,
-            color: "var(--color-fg-muted)",
-            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-          }}
-        >
+        <div className={cn(styles.batchHint, styles.ownerBatchHint)}>
           <span>未分批次 · 任务统一在「未归类」</span>
-          <Button variant="ghost" size="sm" onClick={onGoToBatchSettings} style={{ padding: "2px 6px", fontSize: 11 }}>
+          <Button variant="ghost" size="sm" onClick={onGoToBatchSettings} className={styles.batchSettingsButton}>
             前往分批
           </Button>
         </div>
@@ -292,40 +270,23 @@ export function TaskQueuePanel({
 
       {/* v0.7.1 B-15：非 owner 视角且未分到批次 → 显式提示，避免误以为「列表无尽，但只看见 100」 */}
       {!isOwner && (!batches || batches.length === 0) && (
-        <div
-          style={{
-            margin: "6px 14px 0",
-            padding: "8px 10px",
-            border: "1px dashed var(--color-border)",
-            borderRadius: "var(--radius-sm)",
-            background: "var(--color-bg)",
-            fontSize: 11,
-            color: "var(--color-fg-muted)",
-          }}
-        >
+        <div className={styles.batchHint}>
           暂未被分派到批次 · 联系项目管理员分配
         </div>
       )}
 
-      <div style={{ padding: "10px 14px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+      <div className={styles.queueHeader}>
+        <div className={styles.queueTitle}>
           任务队列
           {selectedBatchId && batches && (
-            <span style={{ fontSize: 11, fontWeight: 400, color: "var(--color-fg-subtle)" }}>
+            <span className={styles.queueSubtitle}>
               · 当前批次
             </span>
           )}
           {rejectedCount > 0 && (
             <span
               title={`${rejectedCount} 个任务被退回，需重做`}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 3,
-                fontSize: 10, fontWeight: 600, color: "var(--color-danger)",
-                background: "color-mix(in oklab, var(--color-danger) 12%, transparent)",
-                border: "1px solid color-mix(in oklab, var(--color-danger) 30%, transparent)",
-                borderRadius: "var(--radius-full)",
-                padding: "1px 6px",
-              }}
+              className={styles.rejectedBadge}
             >
               <Icon name="warning" size={10} />
               {rejectedCount} 待重做
@@ -333,8 +294,7 @@ export function TaskQueuePanel({
           )}
         </div>
         <span
-          className="mono"
-          style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}
+          className={cn("mono", styles.queueCount)}
           title={
             hasNextPage
               ? `已加载 ${tasks.length} / 共 ${totalCount ?? tasks.length}（滚动加载更多）`
@@ -343,59 +303,42 @@ export function TaskQueuePanel({
         >
           {taskIdx + 1} / {tasks.length}
           {totalCount != null && totalCount > tasks.length && (
-            <span style={{ opacity: 0.7 }}> · 共 {totalCount}</span>
+            <span className={styles.totalCount}> · 共 {totalCount}</span>
           )}
         </span>
       </div>
 
-      <div ref={parentRef} style={{ flex: 1, overflowY: "auto", padding: "0 8px 10px" }}>
-        <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+      <div ref={parentRef} className={styles.scrollArea}>
+        <VirtualInner height={virtualizer.getTotalSize()}>
           {virtualizer.getVirtualItems().map((vItem) => {
             const t = sortedTasks[vItem.index];
             if (!t) return null;
             return (
-              <div
+              <VirtualRow
                 key={vItem.key}
-                data-index={vItem.index}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${vItem.start}px)`,
-                }}
+                start={vItem.start}
+                dataIndex={vItem.index}
+                measureElement={virtualizer.measureElement}
               >
                 <TaskItem
                   task={t}
                   isActive={t.id === taskId}
                   onSelect={() => onSelectTask(t.id)}
                 />
-              </div>
+              </VirtualRow>
             );
           })}
           {isFetchingNextPage && (
-            <div
-              style={{
-                position: "absolute",
-                top: virtualizer.getTotalSize(),
-                left: 0,
-                width: "100%",
-                padding: "8px 10px",
-                fontSize: 11,
-                color: "var(--color-fg-subtle)",
-                textAlign: "center",
-              }}
-            >
-              加载更多...
-            </div>
+            <VirtualRow start={virtualizer.getTotalSize()}>
+              <div className={styles.loadingMore}>加载更多...</div>
+            </VirtualRow>
           )}
-        </div>
+        </VirtualInner>
       </div>
 
-      <div style={{ borderTop: "1px solid var(--color-border)", padding: "10px 14px", maxHeight: 320, overflowY: "auto" }}>
-        <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 6 }}>
-          类别图例 <span style={{ color: "var(--color-fg-subtle)" }}>(数字/字母键直接落框时使用)</span>
+      <div className={styles.palettePanel}>
+        <div className={styles.paletteTitle}>
+          类别图例 <span className={styles.paletteHint}>(数字/字母键直接落框时使用)</span>
         </div>
         <ClassPalette
           classes={classes}

@@ -6,6 +6,7 @@ import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { SkipTaskModal, type SkipReason } from "./SkipTaskModal";
 import { BatchStatusBadge } from "@/components/badges/BatchStatusBadge";
 import type { TaskResponse } from "@/types";
+import styles from "./Topbar.module.css";
 
 interface TopbarProps {
   task: TaskResponse | undefined;
@@ -45,6 +46,10 @@ interface TopbarProps {
   isRejecting?: boolean;
   /** M2 · review 模式下 Topbar 左侧附加插槽（ReviewerMiniPanel chip） */
   reviewInfoSlot?: React.ReactNode;
+}
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
 }
 
 /**
@@ -94,50 +99,23 @@ export function Topbar({
   ];
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr auto 1fr",
-        alignItems: "center",
-        gap: 12,
-        padding: "10px 16px",
-        background: "var(--color-bg-elev)", borderBottom: "1px solid var(--color-border)",
-        position: "relative",
-      }}
-    >
+    <div className={styles.topbar}>
       {/* 左：标题段 — display_id 主、文件名次、索引徽章右贴 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+      <div className={styles.titleRow}>
         <span
-          className="mono"
-          style={{
-            fontSize: 13, fontWeight: 600, color: "var(--color-fg)",
-            flexShrink: 0,
-          }}
+          className={cn("mono", styles.taskId)}
         >
           {task?.display_id ?? "—"}
         </span>
         <span
-          style={{
-            fontSize: 12.5, color: "var(--color-fg-muted)",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            minWidth: 0,
-          }}
+          className={styles.fileName}
           title={task?.file_name ?? undefined}
         >
           {task?.file_name ?? "—"}
         </span>
         {indexLabel && (
           <span
-            className="mono"
-            style={{
-              fontSize: 11, fontWeight: 500, color: "var(--color-fg-muted)",
-              padding: "2px 8px",
-              background: "var(--color-bg-sunken)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-pill)",
-              flexShrink: 0,
-              letterSpacing: 0.2,
-            }}
+            className={cn("mono", styles.indexBadge)}
           >
             {indexLabel}
           </span>
@@ -148,7 +126,7 @@ export function Topbar({
         )}
         {/* v0.7.2 · 责任人胶囊：标注员 / 审核员（list_tasks/get_task 已 populate） */}
         {(task?.assignee || task?.reviewer) && (
-          <span style={{ width: 1, height: 16, background: "var(--color-border)", flexShrink: 0 }} />
+          <span className={styles.divider} />
         )}
         {task?.assignee && (
           <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />
@@ -159,7 +137,7 @@ export function Topbar({
       </div>
 
       {/* 中：任务导航 + 状态相关主操作 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className={styles.navRow}>
         <Button size="sm" onClick={onPrev}><Icon name="chevLeft" size={13} />上一</Button>
         {mode === "review" ? (
           <>
@@ -240,11 +218,7 @@ export function Topbar({
                 size="sm"
                 onClick={toggle}
                 title="智能切题 (N / U)"
-                style={{
-                  padding: "4px 6px", marginLeft: 2,
-                  background: open ? "var(--color-bg-hover)" : undefined,
-                  color: "var(--color-fg-muted)",
-                }}
+                className={cn(styles.compactGhostButton, styles.smartNextButton, open && styles.compactGhostButtonOpen)}
               >
                 <Icon name="wandSparkles" size={13} />
               </Button>
@@ -254,25 +228,13 @@ export function Topbar({
       </div>
 
       {/* 右：AI 主操作（annotate）或 ReviewerMini chip（review）+ 溢出菜单 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end", position: "relative" }}>
+      <div className={styles.rightRow}>
         {reviewInfoSlot}
         {showThr && confThreshold !== undefined && (
           <span
-            className="mono"
-            style={{
-              position: "absolute", right: 0, top: "calc(100% + 6px)",
-              padding: "4px 10px", fontSize: 11.5, fontWeight: 500,
-              background: "var(--color-ai-soft)",
-              border: "1px solid color-mix(in oklab, var(--color-ai) 35%, transparent)",
-              borderRadius: "var(--radius-pill)",
-              color: "var(--color-ai)",
-              boxShadow: "var(--shadow-md)",
-              pointerEvents: "none",
-              zIndex: 20,
-              display: "inline-flex", alignItems: "center", gap: 6,
-            }}
+            className={cn("mono", styles.thresholdToast)}
           >
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-ai)" }} />
+            <span className={styles.thresholdDot} />
             阈值 {(confThreshold * 100).toFixed(0)}%
           </span>
         )}
@@ -294,7 +256,7 @@ export function Topbar({
         <DropdownMenu
           minWidth={200}
           items={overflowItems}
-          footer={overflowSlot ? <div style={{ padding: "4px 0 0" }}>{overflowSlot}</div> : null}
+          footer={overflowSlot ? <div className={styles.overflowFooter}>{overflowSlot}</div> : null}
           trigger={({ toggle, ref, open }) => (
             <Button
               ref={ref}
@@ -302,11 +264,7 @@ export function Topbar({
               size="sm"
               onClick={toggle}
               title="更多"
-              style={{
-                padding: "4px 6px",
-                background: open ? "var(--color-bg-hover)" : undefined,
-                color: "var(--color-fg-muted)",
-              }}
+              className={cn(styles.compactGhostButton, open && styles.compactGhostButtonOpen)}
             >
               <Icon name="settings" size={14} />
             </Button>

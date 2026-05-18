@@ -1,8 +1,8 @@
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { Annotation } from "@/types";
 import { classColor } from "./colors";
+import styles from "./BoxListItem.module.css";
 
 function pct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
@@ -79,13 +79,9 @@ function annotationToolMeta(
   };
 }
 
-const rowActionButtonStyle: React.CSSProperties = {
-  width: 30,
-  height: 30,
-  padding: 0,
-  justifyContent: "center",
-  borderRadius: 8,
-};
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
 
 interface BoxListItemProps {
   b: Annotation;
@@ -116,82 +112,40 @@ export function BoxListItem({
   return (
     <div
       onClick={(e) => onSelect({ shiftKey: e.shiftKey })}
-      style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr) auto",
-        gap: 8,
-        alignItems: "center",
-        padding: "8px 10px",
-        borderRadius: 8,
-        cursor: "pointer",
-        background: selected ? "color-mix(in oklab, var(--color-accent) 12%, var(--color-bg-elev))" : "transparent",
-        border: `1px solid ${selected ? "var(--color-accent)" : "var(--color-border)"}`,
-        marginBottom: 8,
-        opacity: dimmed ? 0.55 : 1,
-      }}
+      className={cn(styles.row, selected && styles.rowSelected, dimmed && styles.rowDimmed)}
     >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "auto minmax(0, 1fr)",
-          gap: "4px 8px",
-          alignItems: "center",
-          minWidth: 0,
-        }}
-      >
-        <span style={{ gridRow: "1 / span 2", width: 10, height: 10, borderRadius: 999, background: color }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-          <b style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.cls}</b>
+      <div className={styles.metaGrid}>
+        <svg className={styles.classDot} viewBox="0 0 10 10" aria-hidden="true">
+          <circle cx="5" cy="5" r="5" fill={color} />
+        </svg>
+        <div className={styles.titleRow}>
+          <b className={styles.className}>{b.cls}</b>
           {isAi ? (
-            <Badge variant="ai" style={{ fontSize: 10, padding: "1px 6px" }}>
+            <span className={cn(styles.badge, styles.badgeAi)}>
               <Icon name="sparkle" size={8} />{(b.conf * 100).toFixed(0)}%
-            </Badge>
+            </span>
           ) : (
-            <Badge variant={b.source === "prediction_based" ? "default" : "accent"} style={{ fontSize: 10, padding: "1px 6px" }}>
+            <span className={cn(styles.badge, b.source === "prediction_based" ? styles.badgeDefault : styles.badgeAccent)}>
               {b.source === "prediction_based" ? "AI 采纳" : "手动"}
-            </Badge>
+            </span>
           )}
           {dimmed && (
             <span
-              style={{
-                fontSize: 10, padding: "1px 6px", borderRadius: 6,
-                background: "var(--color-bg-sunken)", color: "var(--color-fg-subtle)",
-                border: "1px solid var(--color-border)",
-              }}
+              className={styles.coveredTag}
               title="已被同类用户框（IoU > 0.7）覆盖"
             >已被覆盖</span>
           )}
         </div>
-        <div
-          className="mono"
-          style={{
-            display: "flex",
-            gap: 6,
-            alignItems: "center",
-            minWidth: 0,
-            fontSize: 11,
-            color: "var(--color-fg-muted)",
-          }}
-        >
-          <span
-            style={{
-              flex: "0 0 auto",
-              padding: "1px 5px",
-              borderRadius: 4,
-              border: "1px solid var(--color-border)",
-              background: "var(--color-bg-sunken)",
-              color: "var(--color-fg-muted)",
-              fontFamily: "inherit",
-            }}
-          >
+        <div className={cn("mono", styles.detailRow)}>
+          <span className={styles.toolPill}>
             {toolMeta.label}
           </span>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span className={styles.toolDetail}>
             {toolMeta.detail}
           </span>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <div className={styles.actions}>
         {isAi ? (
           <>
             {onAccept && (
@@ -201,7 +155,7 @@ export function BoxListItem({
                 title="采纳预测"
                 aria-label="采纳预测"
                 onClick={(e) => { e.stopPropagation(); onAccept(); }}
-                style={rowActionButtonStyle}
+                className={styles.rowActionButton}
               >
                 <Icon name="check" size={14} />
               </Button>
@@ -213,7 +167,7 @@ export function BoxListItem({
                 title="驳回预测"
                 aria-label="驳回预测"
                 onClick={(e) => { e.stopPropagation(); onReject(); }}
-                style={rowActionButtonStyle}
+                className={styles.rowActionButton}
               >
                 <Icon name="x" size={14} />
               </Button>
@@ -224,7 +178,7 @@ export function BoxListItem({
                 title="精修 (Mask 笔刷)"
                 aria-label="精修"
                 onClick={(e) => { e.stopPropagation(); onRefine(); }}
-                style={rowActionButtonStyle}
+                className={styles.rowActionButton}
                 data-testid={`ai-refine-${b.id}`}
               >
                 <Icon name="edit" size={14} />
@@ -241,10 +195,7 @@ export function BoxListItem({
                   aria-label={b.is_hidden ? "显示" : "隐藏"}
                   aria-pressed={!!b.is_hidden}
                   onClick={(e) => { e.stopPropagation(); onToggleFlag("is_hidden"); }}
-                  style={{
-                    ...rowActionButtonStyle,
-                    opacity: b.is_hidden ? 1 : 0.55,
-                  }}
+                  className={cn(styles.rowActionButton, !b.is_hidden && styles.inactiveFlagButton)}
                 >
                   <Icon name={b.is_hidden ? "eyeOff" : "eye"} size={14} />
                 </Button>
@@ -254,10 +205,7 @@ export function BoxListItem({
                   aria-label={b.is_locked ? "解锁" : "锁定"}
                   aria-pressed={!!b.is_locked}
                   onClick={(e) => { e.stopPropagation(); onToggleFlag("is_locked"); }}
-                  style={{
-                    ...rowActionButtonStyle,
-                    opacity: b.is_locked ? 1 : 0.55,
-                  }}
+                  className={cn(styles.rowActionButton, !b.is_locked && styles.inactiveFlagButton)}
                 >
                   <Icon name={b.is_locked ? "lock" : "unlock"} size={14} />
                 </Button>
@@ -267,10 +215,7 @@ export function BoxListItem({
                   aria-label={b.is_occluded ? "取消遮挡" : "标记遮挡"}
                   aria-pressed={!!b.is_occluded}
                   onClick={(e) => { e.stopPropagation(); onToggleFlag("is_occluded"); }}
-                  style={{
-                    ...rowActionButtonStyle,
-                    opacity: b.is_occluded ? 1 : 0.55,
-                  }}
+                  className={cn(styles.rowActionButton, !b.is_occluded && styles.inactiveFlagButton)}
                 >
                   <Icon name="circleDot" size={14} />
                 </Button>
@@ -282,7 +227,7 @@ export function BoxListItem({
                 title="修改类别"
                 aria-label="修改类别"
                 onClick={(e) => { e.stopPropagation(); onChangeClass(); }}
-                style={rowActionButtonStyle}
+                className={styles.rowActionButton}
               >
                 <Icon name="tag" size={14} />
               </Button>
@@ -293,7 +238,7 @@ export function BoxListItem({
                 title="Mask 笔刷精修"
                 aria-label="精修"
                 onClick={(e) => { e.stopPropagation(); onRefine(); }}
-                style={rowActionButtonStyle}
+                className={styles.rowActionButton}
                 data-testid={`user-refine-${b.id}`}
               >
                 <Icon name="edit" size={14} />
@@ -306,7 +251,7 @@ export function BoxListItem({
                 title="删除标注"
                 aria-label="删除标注"
                 onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                style={rowActionButtonStyle}
+                className={styles.rowActionButton}
               >
                 <Icon name="trash" size={14} />
               </Button>

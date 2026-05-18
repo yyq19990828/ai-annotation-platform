@@ -46,7 +46,23 @@ export default tseslint.config(
   // 'unsafe-inline'. 文件级 disable 用 `// eslint-disable-next-line` 即可单点放行
   // (例如把 CSS custom property 作为内联 style 值传给 child component 的场景).
   {
-    files: ["src/pages/Projects/sections/*.tsx"],
+    files: [
+      "src/pages/Projects/sections/*.tsx",
+      "src/pages/Workbench/**/*.tsx",
+      "src/components/ui/AssigneeAvatarStack.tsx",
+      "src/components/ui/DropdownMenu.tsx",
+      "src/components/ui/Histogram.tsx",
+      "src/components/ui/Modal.tsx",
+      "src/components/ui/ProgressBar.tsx",
+      "src/components/ui/RadialProgress.tsx",
+      "src/components/ui/SearchInput.tsx",
+      "src/components/ui/SectionDivider.tsx",
+      "src/components/ui/Sparkline.tsx",
+      "src/components/ui/StatCard.tsx",
+      "src/components/ui/TabRow.tsx",
+      "src/components/ui/Toast.tsx",
+      "src/components/ui/Tooltip.tsx",
+    ],
     rules: {
       "no-restricted-syntax": [
         "error",

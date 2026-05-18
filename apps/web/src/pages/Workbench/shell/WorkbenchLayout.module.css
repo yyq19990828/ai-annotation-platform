@@ -1,0 +1,16 @@
+/* v0.10.12 · CSP style-src 收紧续推 — WorkbenchLayout.tsx inline style 迁移. */
+
+.root {
+  display: grid;
+  grid-template-columns: var(--workbench-grid-template);
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg-sunken);
+  position: relative;
+}
+
+.centerColumn {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

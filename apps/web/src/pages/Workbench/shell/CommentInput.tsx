@@ -11,6 +11,7 @@ import {
   type CommentCanvasDrawing,
   type CommentMention,
 } from "@/api/comments";
+import styles from "./CommentInput.module.css";
 
 interface CommentInputProps {
   annotationId: string;
@@ -59,6 +60,10 @@ function sourceLabel(source: NonNullable<AnnotationCommentAnchor["source"]>): st
   if (source === "interpolated") return "interpolated";
   if (source === "legacy") return "legacy bbox";
   return "manual";
+}
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
 }
 
 /** Serialize contenteditable 内容：扁平化文本 + 抽取 mention chip 的 (offset, length, userId, displayName)。
@@ -119,10 +124,8 @@ function insertMentionChip(triggerRange: { node: Node; offset: number }, opt: Us
   chip.contentEditable = "false";
   chip.setAttribute("data-mention-uid", opt.id);
   chip.setAttribute("data-mention-name", opt.name);
-  chip.className = "mention-chip";
+  chip.className = styles.mentionChip;
   chip.textContent = `@${opt.name}`;
-  chip.style.cssText =
-    "padding: 1px 6px; margin: 0 1px; background: oklch(0.55 0.18 250 / 0.15); color: oklch(0.55 0.18 250); border-radius: 3px; font-weight: 500;";
 
   r.insertNode(chip);
 
@@ -257,7 +260,7 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
   const submitDisabled = busy || uploading;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div className={styles.root}>
       <div
         ref={editorRef}
         contentEditable={!busy}
@@ -271,36 +274,12 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
           }
         }}
         data-placeholder="留言（@ 提及成员，可附图）..."
-        style={{
-          minHeight: 56,
-          maxHeight: 160,
-          overflowY: "auto",
-          fontSize: 12,
-          padding: "6px 8px",
-          background: "var(--color-bg-elev)",
-          border: "1px solid var(--color-border)",
-          borderRadius: 4,
-          color: "var(--color-fg)",
-          fontFamily: "inherit",
-          outline: "none",
-          whiteSpace: "pre-wrap",
-        }}
+        className={styles.editor}
       />
       {anchor?.kind === "video_frame" && (
         <div
           data-testid="comment-anchor-preview"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            alignSelf: "flex-start",
-            padding: "2px 6px",
-            border: "1px solid var(--color-border)",
-            borderRadius: 4,
-            background: "var(--color-bg-sunken)",
-            color: "var(--color-fg-muted)",
-            fontSize: 11,
-          }}
+          className={styles.anchorPreview}
         >
           <Icon name="film" size={12} />
           <span className="mono">F{anchor.frameIndex}</span>
@@ -309,39 +288,21 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
         </div>
       )}
       {attachments.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+        <div className={styles.attachmentList}>
           {attachments.map((a, i) => (
             <div
               key={a.storageKey}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: 11,
-                padding: "2px 6px",
-                background: "var(--color-bg-sunken)",
-                border: "1px solid var(--color-border)",
-                borderRadius: 3,
-                color: "var(--color-fg)",
-              }}
+              className={styles.attachmentPill}
               title={`${(a.size / 1024).toFixed(1)} KB`}
             >
               <Icon name="folder" size={11} />
-              <span style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span className={styles.attachmentName}>
                 {a.fileName}
               </span>
               <button
                 type="button"
                 onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "var(--color-fg-muted)",
-                  cursor: "pointer",
-                  padding: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                }}
+                className={styles.removeAttachmentButton}
                 aria-label="移除附件"
               >
                 <Icon name="x" size={10} />
@@ -350,17 +311,10 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
           ))}
         </div>
       )}
-      <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div className={styles.actionsRow}>
+        <div className={styles.leftActions}>
           <label
-            style={{
-              fontSize: 11,
-              color: "var(--color-fg-muted)",
-              cursor: uploading ? "wait" : "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-            }}
+            className={cn(styles.uploadLabel, uploading && styles.uploadLabelUploading)}
           >
             <Icon name="upload" size={12} />
             {uploading ? "上传中…" : "附件"}
@@ -369,24 +323,14 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
               multiple
               disabled={uploading || busy}
               onChange={(e) => handleFileUpload(e.target.files)}
-              style={{ display: "none" }}
+              className={styles.hiddenInput}
             />
           </label>
           {enableCanvasDrawing && (
             <button
               type="button"
               onClick={() => setCanvasOpen(true)}
-              style={{
-                fontSize: 11,
-                color: canvasDrawing ? "oklch(0.55 0.18 250)" : "var(--color-fg-muted)",
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontWeight: canvasDrawing ? 600 : 400,
-              }}
+              className={cn(styles.toolbarButton, canvasDrawing && styles.toolbarButtonActive)}
               title="弹窗内绘制（与原图比例对齐）"
             >
               <Icon name="edit" size={12} />
@@ -398,16 +342,7 @@ export function CommentInput({ annotationId, members, busy, backgroundUrl, image
               type="button"
               onClick={() => liveCanvas.onStart(canvasDrawing)}
               disabled={liveCanvas.active}
-              style={{
-                fontSize: 11,
-                color: liveCanvas.active ? "var(--color-fg-subtle)" : "oklch(0.55 0.18 250)",
-                background: "transparent",
-                border: "none",
-                cursor: liveCanvas.active ? "default" : "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-              }}
+              className={cn(styles.toolbarButton, styles.liveCanvasButton, liveCanvas.active && styles.toolbarButtonDisabled)}
               title="直接在题图上绘制 — 缩放/平移自动跟随"
             >
               <Icon name="target" size={12} />
@@ -461,15 +396,7 @@ export function renderCommentBody(body: string, mentions: CommentMention[], onMe
       <span
         key={i}
         onClick={() => onMentionClick?.(m.userId)}
-        style={{
-          padding: "1px 6px",
-          margin: "0 1px",
-          background: "oklch(0.55 0.18 250 / 0.15)",
-          color: "oklch(0.55 0.18 250)",
-          borderRadius: 3,
-          fontWeight: 500,
-          cursor: onMentionClick ? "pointer" : "default",
-        }}
+        className={cn(styles.mentionChip, onMentionClick && styles.mentionChipClickable)}
       >
         @{m.displayName}
       </span>,

@@ -3,6 +3,7 @@ import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse } from "@/types";
 import { isVideoTrack } from "./videoStageGeometry";
 import type { VideoTrackConversionOptions } from "./videoStageTypes";
+import styles from "./VideoSelectionActions.module.css";
 
 interface VideoSelectionActionsProps {
   selectedAnnotation: AnnotationResponse | null;
@@ -26,17 +27,7 @@ export function VideoSelectionActions({
   return (
     <div
       data-testid="video-selection-actions"
-      style={{
-        position: "absolute",
-        top: 14,
-        right: 14,
-        display: "flex",
-        gap: 6,
-        padding: 6,
-        borderRadius: 8,
-        background: "rgba(0,0,0,0.68)",
-        boxShadow: "0 6px 18px rgba(0,0,0,0.24)",
-      }}
+      className={styles.actions}
     >
       <Button
         size="sm"

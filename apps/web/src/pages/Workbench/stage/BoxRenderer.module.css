@@ -1,0 +1,59 @@
+.box {
+  position: absolute;
+  left: var(--box-left);
+  top: var(--box-top);
+  z-index: var(--box-z-index);
+  width: var(--box-width);
+  height: var(--box-height);
+  border-width: var(--box-border-width);
+  border-color: var(--box-color);
+  background: color-mix(in oklab, var(--box-color) var(--box-fill-strength), transparent);
+  box-shadow: var(--box-shadow);
+  cursor: pointer;
+  opacity: var(--box-opacity);
+}
+
+.boxAi {
+  border-style: dashed;
+}
+
+.boxManual {
+  border-style: solid;
+}
+
+.boxMoveable {
+  cursor: move;
+}
+
+.label {
+  position: absolute;
+  top: -22px;
+  left: -1px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--box-color);
+  color: white;
+  font-size: 10.5px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.confidence {
+  opacity: 0.85;
+  font-family: var(--font-mono);
+}
+
+.actionBar {
+  position: absolute;
+  right: 0;
+  bottom: -28px;
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 4px;
+  background: white;
+  box-shadow: var(--shadow-md);
+}

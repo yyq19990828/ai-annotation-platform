@@ -9,6 +9,7 @@ import type { MLBackendCapability } from "@/api/ml-backends";
 import type { SamPolarity, Tool } from "../state/useWorkbenchState";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
 import { SchemaForm, deriveDefaults, type JsonSchemaObject } from "../components/SchemaForm";
+import styles from "./AIToolDrawer.module.css";
 
 export interface AIToolDrawerProps {
   tool: Tool;
@@ -35,6 +36,10 @@ const TOOL_HINT: Record<ToolId, string | null> = {
   "text-prompt": "在右侧 AI 面板输入文本（按 [ ] 调阈值）",
   exemplar: "拖框圈出某个示例，后端找全图相似实例",
 };
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
 
 export function AIToolDrawer({
   tool,
@@ -65,40 +70,22 @@ export function AIToolDrawer({
   return (
     <div
       data-testid="ai-tool-drawer"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        width: 240,
-        padding: "10px 12px",
-        background: "var(--color-bg-elev)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        boxShadow: "var(--shadow-md)",
-      }}
+      className={styles.drawer}
     >
       {/* 标题 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className={styles.titleRow}>
         <Icon name={meta.icon as never} size={13} />
-        <b style={{ fontSize: 12 }}>{meta.label}</b>
+        <b className={styles.title}>{meta.label}</b>
       </div>
 
       {/* 后端选择器 (1:1 阶段单项 disabled) */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <span style={{ fontSize: 10.5, color: "var(--color-fg-muted)" }}>后端</span>
+      <div className={styles.field}>
+        <span className={styles.label}>后端</span>
         <select
           data-testid="ai-tool-backend-select"
           value={backendName ?? ""}
           disabled
-          style={{
-            fontSize: 11.5,
-            padding: "3px 6px",
-            background: "var(--color-bg-sunken)",
-            color: "var(--color-fg)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-sm)",
-            opacity: 0.85,
-          }}
+          className={styles.backendSelect}
         >
           <option value={backendName ?? ""}>
             {backendName ?? "未绑定 ML 后端"}
@@ -108,22 +95,16 @@ export function AIToolDrawer({
 
       {/* 工具特定控件 */}
       {tool === "smart-point" && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 10.5, color: "var(--color-fg-muted)" }}>极性</span>
+        <div className={styles.polarityRow}>
+          <span className={styles.label}>极性</span>
           <button
             type="button"
             data-testid="ai-tool-polarity"
             onClick={() => onSetSamPolarity(samPolarity === "positive" ? "negative" : "positive")}
-            style={{
-              width: 24, height: 24,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 13, fontWeight: 700,
-              background:
-                samPolarity === "positive"
-                  ? "var(--color-success, #10b981)"
-                  : "var(--color-warning, #f59e0b)",
-              color: "white", border: "none", borderRadius: "50%", cursor: "pointer", lineHeight: 1,
-            }}
+            className={cn(
+              styles.polarityButton,
+              samPolarity === "positive" ? styles.polarityPositive : styles.polarityNegative,
+            )}
             title={samPolarity === "positive" ? "正向 (+) — 按 - 切负向" : "负向 (−) — 按 + 切正向"}
           >
             {samPolarity === "positive" ? "+" : "−"}
@@ -132,16 +113,7 @@ export function AIToolDrawer({
       )}
 
       {hint && (
-        <div
-          style={{
-            fontSize: 10.5,
-            color: "var(--color-fg-subtle)",
-            lineHeight: 1.4,
-            padding: "4px 6px",
-            background: "var(--color-bg-sunken)",
-            borderRadius: "var(--radius-sm)",
-          }}
-        >
+        <div className={styles.hint}>
           {hint}
         </div>
       )}
@@ -149,30 +121,25 @@ export function AIToolDrawer({
       {/* 参数面板 (schema-form) */}
       {paramsSchema && Object.keys(paramsSchema.properties ?? {}).length > 0 && (
         <>
-          <div style={{ borderTop: "1px solid var(--color-border-subtle, var(--color-border))" }} />
+          <div className={styles.separator} />
           <SchemaForm schema={paramsSchema} value={params} onChange={onSetParams} />
         </>
       )}
 
       {/* 状态指示 */}
-      <div
-        style={{
-          display: "flex", alignItems: "center", gap: 4,
-          fontSize: 10, color: "var(--color-fg-subtle)", marginTop: 2,
-        }}
-      >
+      <div className={styles.statusRow}>
         <span
           aria-hidden
-          style={{
-            width: 6, height: 6, borderRadius: "50%",
-            background: isError
-              ? "var(--color-danger, #ef4444)"
+          className={cn(
+            styles.statusDot,
+            isError
+              ? styles.statusError
               : isLoading
-              ? "var(--color-warning, #f59e0b)"
-              : capability
-              ? "var(--color-success, #10b981)"
-              : "var(--color-fg-subtle)",
-          }}
+                ? styles.statusLoading
+                : capability
+                  ? styles.statusReady
+                  : styles.statusIdle,
+          )}
         />
         <span>
           {isError ? "后端协商失败" : isLoading ? "加载中" : capability ? `${capability.name} v${capability.version ?? ""}` : "无能力数据"}

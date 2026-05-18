@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import styles from "./SkipTaskModal.module.css";
 
 export type SkipReason = "image_corrupt" | "no_target" | "unclear" | "other";
 
@@ -16,6 +17,10 @@ const REASON_LABELS: Record<SkipReason, string> = {
   unclear: "图像不清晰 / 难以判断",
   other: "其他（请补充说明）",
 };
+
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
 
 interface SkipTaskModalProps {
   open: boolean;
@@ -38,29 +43,14 @@ export function SkipTaskModal({
 
   return (
     <Modal open={open} onClose={onClose} title="跳过任务" width={420}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <p style={{ margin: 0, fontSize: 12.5, color: "var(--color-fg-muted)" }}>
+      <div className={styles.content}>
+        <p className={styles.description}>
           被跳过的任务会自动转给审核员复核；请选择主要原因。
         </p>
         {(Object.keys(REASON_LABELS) as SkipReason[]).map((r) => (
           <label
             key={r}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 10px",
-              borderRadius: "var(--radius-md)",
-              background:
-                reason === r ? "var(--color-bg-sunken)" : "transparent",
-              border:
-                "1px solid " +
-                (reason === r
-                  ? "var(--color-border-strong)"
-                  : "var(--color-border)"),
-              cursor: "pointer",
-              fontSize: 13,
-            }}
+            className={cn(styles.reasonOption, reason === r && styles.reasonOptionSelected)}
             data-testid={`skip-reason-${r}`}
           >
             <input
@@ -69,7 +59,7 @@ export function SkipTaskModal({
               value={r}
               checked={reason === r}
               onChange={() => setReason(r)}
-              style={{ accentColor: "var(--color-accent)" }}
+              className={styles.reasonInput}
             />
             <span>{REASON_LABELS[r]}</span>
           </label>
@@ -80,27 +70,11 @@ export function SkipTaskModal({
             onChange={(e) => setNote(e.target.value)}
             placeholder="补充说明…"
             rows={3}
-            style={{
-              width: "100%",
-              padding: 8,
-              fontSize: 13,
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-              background: "var(--color-bg-elev)",
-              fontFamily: "inherit",
-              resize: "vertical",
-            }}
+            className={styles.note}
             data-testid="skip-reason-note"
           />
         )}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 8,
-            marginTop: 6,
-          }}
-        >
+        <div className={styles.actions}>
           <Button onClick={onClose} disabled={isSubmitting}>
             取消
           </Button>

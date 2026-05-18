@@ -3,6 +3,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ALL_TOOLS, type CanvasTool, type ToolId } from "../stage/tools";
 import type { VideoTool } from "../state/useWorkbenchState";
+import styles from "./ToolDock.module.css";
 
 interface ToolDockProps {
   tool: ToolId;
@@ -48,6 +49,8 @@ const VIDEO_TOOLS: Array<{ id: VideoTool; hotkey: string; label: string; icon: I
   { id: "track", hotkey: "T", label: "轨迹", icon: "target", desc: "跨帧对象轨迹", altDigit: 2 },
 ];
 
+const cn = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
+
 /**
  * v0.10.2 · 左侧垂直工具栏 (Prompt-first 重构).
  *
@@ -73,15 +76,7 @@ export function ToolDock({
 }: ToolDockProps) {
   if (videoMode) {
     return (
-      <div
-        style={{
-          position: "relative",
-          display: "flex", flexDirection: "column", alignItems: "center",
-          padding: "10px 4px", gap: 6,
-          background: "var(--color-bg-elev)",
-          borderRight: "1px solid var(--color-border)",
-        }}
-      >
+      <div className={styles.root}>
         {VIDEO_TOOLS.map((t) => {
           const active = videoTool === t.id;
           return (
@@ -99,19 +94,10 @@ export function ToolDock({
                 aria-label={t.label}
                 aria-pressed={active}
                 data-testid={`video-tool-btn-${t.id}`}
-                style={{
-                  position: "relative",
-                  width: 38, height: 38,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  background: active ? "var(--color-accent)" : "transparent",
-                  color: active ? "white" : "var(--color-fg-muted)",
-                  border: "1px solid " + (active ? "var(--color-accent)" : "transparent"),
-                  borderRadius: "var(--radius-md)",
-                  cursor: "pointer",
-                }}
+                className={cn(styles.toolButton, active && styles.toolButtonActive)}
               >
                 <Icon name={t.icon} size={17} />
-                <span aria-hidden style={{ position: "absolute", right: 3, bottom: 1, fontSize: 8, fontWeight: 700, lineHeight: 1 }}>
+                <span aria-hidden className={cn(styles.hotkeyBadge, active && styles.hotkeyBadgeActive)}>
                   {t.hotkey}
                 </span>
               </button>
@@ -132,15 +118,7 @@ export function ToolDock({
     t.id === "hand" ? "view" : isAITool(t) ? "ai" : "draw";
 
   return (
-    <div
-      style={{
-        position: "relative",
-        display: "flex", flexDirection: "column", alignItems: "center",
-        padding: "10px 4px", gap: 6,
-        background: "var(--color-bg-elev)",
-        borderRight: "1px solid var(--color-border)",
-      }}
-    >
+    <div className={styles.root}>
       {visibleTools.map((t, idx) => {
         const active = tool === t.id;
         const prevGroup = idx > 0 ? groupOf(visibleTools[idx - 1]) : null;
@@ -165,17 +143,9 @@ export function ToolDock({
         return (
           <Fragment key={t.id}>
             {showDivider && (
-              <div
-                aria-hidden
-                style={{
-                  width: 24,
-                  height: 1,
-                  background: "var(--color-border-subtle, var(--color-border))",
-                  margin: "2px 0",
-                }}
-              />
+              <div aria-hidden className={styles.divider} />
             )}
-            <div style={{ position: "relative", display: "flex" }}>
+            <div className={styles.toolWrap}>
               <Tooltip
                 name={t.label}
                 desc={disabledHint ?? tooltipDesc}
@@ -194,46 +164,16 @@ export function ToolDock({
                   aria-disabled={disabled || undefined}
                   data-testid={`tool-btn-${t.id}`}
                   disabled={disabled}
-                  style={{
-                    position: "relative",
-                    width: 38, height: 38,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    background: active ? "var(--color-accent)" : "transparent",
-                    color: active ? "white" : "var(--color-fg-muted)",
-                    border: "1px solid " + (active ? "var(--color-accent)" : "transparent"),
-                    borderRadius: "var(--radius-md)",
-                    cursor: disabled ? "not-allowed" : "pointer",
-                    opacity: disabled ? 0.4 : 1,
-                    transition: "background 0.12s, color 0.12s, opacity 0.12s",
-                    boxShadow: active
-                      ? "inset 2px 0 0 color-mix(in oklab, var(--color-accent) 70%, white), 0 2px 6px color-mix(in oklab, var(--color-accent) 45%, transparent)"
-                      : "none",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!active && !disabled) {
-                      e.currentTarget.style.background = "var(--color-bg-hover)";
-                      e.currentTarget.style.color = "var(--color-fg)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!active && !disabled) {
-                      e.currentTarget.style.background = "transparent";
-                      e.currentTarget.style.color = "var(--color-fg-muted)";
-                    }
-                  }}
+                  className={cn(
+                    styles.toolButton,
+                    active && styles.toolButtonActive,
+                    disabled && styles.toolButtonDisabled,
+                  )}
                 >
                   <Icon name={t.icon as IconName} size={17} />
                   <span
                     aria-hidden
-                    style={{
-                      position: "absolute",
-                      right: 3, bottom: 1,
-                      fontSize: 8, fontWeight: 700, lineHeight: 1,
-                      color: active
-                        ? "color-mix(in oklab, white 80%, transparent)"
-                        : "color-mix(in oklab, var(--color-fg-muted) 65%, transparent)",
-                      pointerEvents: "none",
-                    }}
+                    className={cn(styles.hotkeyBadge, active && styles.hotkeyBadgeActive)}
                   >
                     {t.hotkey.toUpperCase()}
                   </span>
@@ -241,15 +181,7 @@ export function ToolDock({
               </Tooltip>
               {/* AIToolDrawer 在 AI 工具激活时挂在该按钮右侧 */}
               {active && isAITool(t) && aiToolDrawer && (
-                <div
-                  style={{
-                    position: "absolute",
-                    left: "100%",
-                    top: -6,
-                    marginLeft: 8,
-                    zIndex: 5,
-                  }}
-                >
+                <div className={styles.aiDrawerSlot}>
                   {aiToolDrawer}
                 </div>
               )}

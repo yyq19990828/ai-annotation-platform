@@ -1,0 +1,8 @@
+/* v0.10.12 · CSP style-src 收紧续推 — VideoAttachmentLayer.tsx inline style 迁移. */
+
+.layer {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}

@@ -1,0 +1,58 @@
+.root {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: repeating-conic-gradient(
+    var(--color-canvas-checker-a) 0% 25%,
+    var(--color-canvas-checker-b) 0% 50%
+  ) 0 0 / 16px 16px;
+  cursor: var(--image-stage-cursor, default);
+  filter: var(--image-stage-filter, none);
+}
+
+.emptyState {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--color-fg-subtle);
+  background: var(--color-bg-sunken);
+}
+
+.emptyStateText {
+  font-size: 13px;
+}
+
+.konvaHost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+.samRefineButton {
+  position: absolute;
+  left: var(--sam-refine-left);
+  top: var(--sam-refine-top);
+  transform: translateX(-100%);
+  padding: 3px 8px;
+  font-size: 11.5px;
+  background: var(--color-bg-elev);
+  border: 1px solid #a855f7;
+  border-radius: 4px;
+  color: var(--color-fg);
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  font-family: inherit;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.samRefineKey {
+  margin-left: 4px;
+  font-size: 9px;
+  opacity: 0.7;
+}

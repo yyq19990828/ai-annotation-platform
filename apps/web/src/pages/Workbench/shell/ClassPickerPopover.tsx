@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { Viewport } from "../state/useViewportTransform";
 import { ClassPalette, shortcutForIndex } from "./ClassPalette";
+import styles from "./ClassPickerPopover.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type FixedAnchor = { left: number; top: number };
@@ -49,6 +50,13 @@ export function ClassPickerPopover({
     ? positionProps.anchor.top
     : ((positionProps.geom.y + positionProps.geom.h) * positionProps.imgH * positionProps.vp.scale + positionProps.vp.ty + 6);
 
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty("--class-picker-left", `${left}px`);
+    el.style.setProperty("--class-picker-top", `${top}px`);
+  }, [left, top]);
+
   // keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -96,28 +104,13 @@ export function ClassPickerPopover({
     <div
       ref={ref}
       data-testid="class-picker-popover"
-      style={{
-        position: isFixed ? "fixed" : "absolute",
-        left,
-        top,
-        minWidth: 220,
-        maxWidth: 280,
-        maxHeight: 360,
-        background: "var(--color-bg-elev)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        boxShadow: "var(--shadow-lg)",
-        padding: 10,
-        zIndex: 30,
-        overflowY: "auto",
-        pointerEvents: "auto",
-      }}
+      className={isFixed ? styles.popoverFixed : styles.popover}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <div style={{ fontSize: 11.5, fontWeight: 600 }}>{title}</div>
-        <div style={{ fontSize: 10, color: "var(--color-fg-subtle)" }}>
+      <div className={styles.header}>
+        <div className={styles.title}>{title}</div>
+        <div className={styles.shortcutHint}>
           Enter ↵ 默认 · Esc 取消
         </div>
       </div>
@@ -130,12 +123,12 @@ export function ClassPickerPopover({
         enableSearch={classes.length > 9}
       />
       {classes.length === 0 && (
-        <div style={{ fontSize: 12, color: "var(--color-fg-subtle)", padding: 8, textAlign: "center" }}>
+        <div className={styles.empty}>
           该项目尚未配置类别
         </div>
       )}
       {classes.length > 0 && (
-        <div style={{ marginTop: 8, fontSize: 10.5, color: "var(--color-fg-subtle)", textAlign: "center" }}>
+        <div className={styles.footerHint}>
           快捷键: {shortcutForIndex(0)}…{shortcutForIndex(Math.min(classes.length - 1, 34))}
         </div>
       )}

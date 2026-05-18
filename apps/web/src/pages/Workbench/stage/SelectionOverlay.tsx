@@ -1,7 +1,9 @@
+import { useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { Viewport } from "../state/useViewportTransform";
 import { classColor } from "./colors";
+import styles from "./SelectionOverlay.module.css";
 
 interface OverlayProps {
   box: { id: string; x: number; y: number; w: number; h: number; cls: string };
@@ -29,36 +31,27 @@ export function SelectionOverlay({
   const right = (box.x + box.w) * imgW * vp.scale + vp.tx;
   const bottom = (box.y + box.h) * imgH * vp.scale + vp.ty;
   const isBatch = !!batchCount && batchCount > 1;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const color = classColor(box.cls);
+
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    el.style.setProperty("--selection-overlay-left", `${right}px`);
+    el.style.setProperty("--selection-overlay-top", `${bottom + 4}px`);
+  }, [bottom, right]);
 
   return (
     <div
-      style={{
-        position: "absolute",
-        left: right,
-        top: bottom + 4,
-        transform: "translateX(-100%)",
-        display: "flex", gap: 4,
-        background: "var(--color-bg-elev)",
-        border: "1px solid var(--color-border)",
-        borderRadius: 4,
-        padding: 2,
-        boxShadow: "var(--shadow-md)",
-        zIndex: 20,
-        pointerEvents: "auto",
-      }}
+      ref={rootRef}
+      className={styles.root}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {isBatch ? (
         <>
-          <span
-            style={{
-              display: "flex", alignItems: "center", padding: "0 8px",
-              fontSize: 11, color: "var(--color-fg-muted)",
-              borderRight: "1px solid var(--color-border)",
-            }}
-          >
-            已选 <b style={{ margin: "0 3px", color: "var(--color-fg)" }}>{batchCount}</b> 个
+          <span className={styles.batchCount}>
+            已选 <b className={styles.batchCountValue}>{batchCount}</b> 个
           </span>
           {onBatchChangeClass && (
             <Button size="sm" onClick={(e) => { e.stopPropagation(); onBatchChangeClass(); }}>
@@ -93,19 +86,13 @@ export function SelectionOverlay({
               type="button"
               onClick={(e) => { e.stopPropagation(); onChangeClass(); }}
               title="改类别 (C)"
-              style={{
-                display: "flex", alignItems: "center", gap: 5,
-                padding: "3px 8px", fontSize: 11.5,
-                background: "var(--color-bg-elev)",
-                border: "1px solid var(--color-border)",
-                borderRadius: 3, cursor: "pointer",
-                color: "var(--color-fg)",
-                fontFamily: "inherit",
-              }}
+              className={styles.changeClassButton}
             >
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: classColor(box.cls) }} />
+              <svg className={styles.classSwatch} viewBox="0 0 8 8" aria-hidden="true">
+                <rect width="8" height="8" rx="2" fill={color} />
+              </svg>
               {box.cls}
-              <span style={{ color: "var(--color-fg-subtle)", fontSize: 10 }}>改类</span>
+              <span className={styles.changeClassHint}>改类</span>
             </button>
           )}
           {!isAi && onDelete && (

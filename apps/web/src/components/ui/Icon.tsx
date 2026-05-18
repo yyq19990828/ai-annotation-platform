@@ -79,6 +79,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import styles from "./Icon.module.css";
+
 /**
  * 图标体系（v0.5.5）—— 内部走 Lucide React，对外保留稳定的 `<Icon name="..." />` API。
  *
@@ -190,8 +192,8 @@ export const Icon = forwardRef<SVGSVGElement, IconProps>(function Icon(
       width={size}
       height={size}
       strokeWidth={stroke}
-      style={{ flexShrink: 0, ...style }}
-      className={className}
+      style={style}
+      className={className ? `${styles.icon} ${className}` : styles.icon}
       aria-hidden="true"
     />
   );

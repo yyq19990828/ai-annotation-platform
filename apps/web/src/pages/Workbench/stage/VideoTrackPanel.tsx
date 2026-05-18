@@ -8,6 +8,7 @@ import type { DiffMode } from "../modes/types";
 import { classColor } from "./colors";
 import { resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
+import styles from "./VideoTrackPanel.module.css";
 import type {
   VideoFrameEntry,
   VideoTrackAnnotation,
@@ -92,31 +93,9 @@ function exactFrameLabel(selectedTrack: VideoTrackAnnotation | null, frameIndex:
   return `F${frameIndex} · ${exact ? "关键帧" : "非关键帧"}`;
 }
 
-const sectionStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 8,
-  paddingTop: 12,
-};
-
-const iconButtonStyle: React.CSSProperties = {
-  width: 28,
-  height: 28,
-  padding: 0,
-  justifyContent: "center",
-  borderRadius: 8,
-};
-
-const compactButtonStyle: React.CSSProperties = {
-  borderRadius: 8,
-  padding: "4px 8px",
-};
-
-const keyframeButtonStyle: React.CSSProperties = {
-  borderRadius: 8,
-  padding: "3px 8px",
-  minWidth: 38,
-  justifyContent: "center",
-};
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
 
 function copyText(text: string): void {
   void navigator.clipboard?.writeText(text);
@@ -137,11 +116,11 @@ function sourceChipText(source: VideoFrameEntry["source"] | null): string {
   return "无当前帧";
 }
 
-function sourceChipColor(source: VideoFrameEntry["source"] | null): React.CSSProperties {
-  if (source === "prediction") return { color: "var(--color-ai)", borderColor: "color-mix(in oklab, var(--color-ai) 40%, var(--color-border))" };
-  if (source === "interpolated") return { color: "var(--color-warning)", borderColor: "color-mix(in oklab, var(--color-warning) 45%, var(--color-border))" };
-  if (source === "manual" || source === "legacy") return { color: "var(--color-success)", borderColor: "color-mix(in oklab, var(--color-success) 40%, var(--color-border))" };
-  return { color: "var(--color-fg-muted)" };
+function sourceChipClass(source: VideoFrameEntry["source"] | null): string | null {
+  if (source === "prediction") return styles.sourcePrediction;
+  if (source === "interpolated") return styles.sourceInterpolated;
+  if (source === "manual" || source === "legacy") return styles.sourceManual;
+  return null;
 }
 
 function visibleInReviewMode(source: VideoFrameEntry["source"] | null, mode?: DiffMode): boolean {
@@ -169,15 +148,7 @@ function TrackFilterTabs({ value, onChange }: { value: TrackFilter; onChange: (f
     <div
       role="tablist"
       aria-label="轨迹过滤"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        marginTop: 7,
-        border: "1px solid var(--color-border)",
-        borderRadius: 6,
-        overflow: "hidden",
-        background: "var(--color-bg)",
-      }}
+      className={styles.filterTabs}
     >
       {options.map((option, index) => {
         const active = option.value === value;
@@ -188,16 +159,11 @@ function TrackFilterTabs({ value, onChange }: { value: TrackFilter; onChange: (f
             role="tab"
             aria-selected={active}
             onClick={() => onChange(option.value)}
-            style={{
-              height: 24,
-              border: 0,
-              borderLeft: index === 0 ? 0 : "1px solid var(--color-border)",
-              background: active ? "var(--color-accent-soft)" : "transparent",
-              color: active ? "var(--color-accent-fg)" : "var(--color-fg-muted)",
-              fontSize: 11,
-              fontWeight: active ? 600 : 500,
-              cursor: "pointer",
-            }}
+            className={cn(
+              styles.filterTab,
+              index > 0 && styles.filterTabWithDivider,
+              active && styles.filterTabActive,
+            )}
           >
             {option.label}
           </button>
@@ -273,25 +239,18 @@ export function VideoTrackPanel({
     : null;
 
   return (
-    <div style={{ display: "grid", gap: 12, padding: "2px 0 8px" }}>
-      <div
-        style={{
-          border: "1px solid var(--color-border)",
-          borderRadius: 8,
-          background: "var(--color-bg-elev)",
-          padding: "7px 10px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-          <b style={{ fontSize: 13 }}>轨迹</b>
-          <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+    <div className={styles.panelRoot}>
+      <div className={styles.filterCard}>
+        <div className={styles.rowBetween}>
+          <b className={styles.heading}>轨迹</b>
+          <span className={cn("mono", styles.mutedMono)}>
             {trackFilter === "current" ? `${filteredVideoTracks.length}/${videoTracks.length}` : videoTracks.length}
           </span>
         </div>
         {selectedBboxCount > 1 && (
           <Button
             size="sm"
-            style={{ ...compactButtonStyle, width: "100%", justifyContent: "center", marginTop: 8 }}
+            className={styles.aggregateButton}
             disabled={!canAggregateBboxes}
             title="把已多选的单帧 video_bbox 聚合为一条 video_track"
             onClick={onAggregateSelectedBboxes}
@@ -301,22 +260,15 @@ export function VideoTrackPanel({
         )}
         <TrackFilterTabs value={trackFilter} onChange={setTrackFilter} />
       </div>
-      <div style={{ display: "grid", gap: 8 }}>
-        <b style={{ fontSize: 13 }}>轨迹列表</b>
+      <div className={styles.section}>
+        <b className={styles.heading}>轨迹列表</b>
       {batchCount > 1 && (
         <div
           data-testid="video-track-batch-toolbar"
-          style={{
-            display: "grid",
-            gap: 8,
-            padding: "6px 8px",
-            border: "1px solid color-mix(in oklab, var(--color-accent) 35%, var(--color-border))",
-            borderRadius: 8,
-            background: "color-mix(in oklab, var(--color-accent) 8%, var(--color-bg-elev))",
-          }}
+          className={styles.batchToolbar}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <b style={{ fontSize: 12 }}>已选 {batchCount} 条轨迹</b>
+          <div className={styles.rowBetween}>
+            <b className={styles.subheading}>已选 {batchCount} 条轨迹</b>
             <select
               aria-label="批量改类"
               value=""
@@ -326,15 +278,7 @@ export function VideoTrackPanel({
                 onBatchRenameTracks?.(e.target.value);
                 e.target.value = "";
               }}
-              style={{
-                minWidth: 96,
-                border: "1px solid var(--color-border)",
-                borderRadius: 6,
-                background: "var(--color-bg)",
-                color: "var(--color-fg)",
-                fontSize: 12,
-                padding: "4px 6px",
-              }}
+              className={styles.batchSelect}
             >
               <option value="">改类</option>
               {(classes ?? []).map((cls) => (
@@ -342,27 +286,27 @@ export function VideoTrackPanel({
               ))}
             </select>
           </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <Button size="sm" style={compactButtonStyle} disabled={!onShowSelectedTracks} onClick={onShowSelectedTracks}>显示</Button>
-            <Button size="sm" style={compactButtonStyle} disabled={!onHideSelectedTracks} onClick={onHideSelectedTracks}>隐藏</Button>
-            <Button size="sm" style={compactButtonStyle} disabled={batchSelectionDisabled || !onLockSelectedTracks} onClick={onLockSelectedTracks}>锁定</Button>
-            <Button size="sm" style={compactButtonStyle} disabled={batchSelectionDisabled || !onUnlockSelectedTracks} onClick={onUnlockSelectedTracks}>解锁</Button>
+          <div className={styles.buttonRow}>
+            <Button size="sm" className={styles.compactButton} disabled={!onShowSelectedTracks} onClick={onShowSelectedTracks}>显示</Button>
+            <Button size="sm" className={styles.compactButton} disabled={!onHideSelectedTracks} onClick={onHideSelectedTracks}>隐藏</Button>
+            <Button size="sm" className={styles.compactButton} disabled={batchSelectionDisabled || !onLockSelectedTracks} onClick={onLockSelectedTracks}>锁定</Button>
+            <Button size="sm" className={styles.compactButton} disabled={batchSelectionDisabled || !onUnlockSelectedTracks} onClick={onUnlockSelectedTracks}>解锁</Button>
             <Button
               size="sm"
-              style={compactButtonStyle}
+              className={styles.compactButton}
               disabled={batchMutationDisabled || !canMergeSelectedTracks || !onMergeSelectedTracks}
               title={canMergeSelectedTracks ? "合并两条同类且不重叠的轨迹" : "只支持合并两条同类轨迹"}
               onClick={onMergeSelectedTracks}
             >
               合并
             </Button>
-            <Button size="sm" style={compactButtonStyle} variant="danger" disabled={batchMutationDisabled || !onBatchDeleteTracks} onClick={onBatchDeleteTracks}>
+            <Button size="sm" className={styles.compactButton} variant="danger" disabled={batchMutationDisabled || !onBatchDeleteTracks} onClick={onBatchDeleteTracks}>
               删除
             </Button>
           </div>
         </div>
       )}
-      <div style={{ display: "grid", gap: 8 }}>
+      <div className={styles.section}>
         {filteredVideoTracks.map((ann) => {
           const track = ann.geometry;
           const color = classColor(ann.class_name);
@@ -388,63 +332,46 @@ export function VideoTrackPanel({
                 }
                 onSelect(ann.id, { toggle });
               }}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1fr) auto",
-                gap: 8,
-                alignItems: "center",
-                padding: "8px 10px",
-                border: `1px solid ${selected ? "var(--color-accent)" : "var(--color-border)"}`,
-                borderRadius: 8,
-                background: selected ? "color-mix(in oklab, var(--color-accent) 12%, var(--color-bg-elev))" : "transparent",
-                cursor: "pointer",
-                boxShadow: primarySelected && batchCount > 1 ? "inset 3px 0 0 var(--color-accent)" : undefined,
-              }}
+              className={cn(
+                styles.trackRow,
+                selected && styles.trackRowSelected,
+                primarySelected && batchCount > 1 && styles.trackRowPrimarySelected,
+              )}
             >
-              <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "4px 8px", alignItems: "center", minWidth: 0 }}>
-                <span style={{ gridRow: "1 / span 2", width: 10, height: 10, borderRadius: 999, background: color }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-                  <b style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div className={styles.trackMeta}>
+                <svg className={styles.trackColorDot} aria-hidden="true" viewBox="0 0 10 10">
+                  <circle cx="5" cy="5" r="5" fill={color} />
+                </svg>
+                <div className={styles.trackTitleRow}>
+                  <b className={styles.truncateTitle}>
                     {ann.class_name}
                   </b>
-                  <Badge variant={ann.source === "prediction_based" ? "default" : "accent"} style={{ fontSize: 10, padding: "1px 6px" }}>
-                    {sourceLabel}
-                  </Badge>
-                  <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>{shortTrackId(track.track_id)}</span>
+                  <span className={styles.compactBadge}>
+                    <Badge variant={ann.source === "prediction_based" ? "default" : "accent"}>
+                      {sourceLabel}
+                    </Badge>
+                  </span>
+                  <span className={cn("mono", styles.mutedMono)}>{shortTrackId(track.track_id)}</span>
                 </div>
-                <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div className={cn("mono", styles.trackMetaText)}>
                   {track.keyframes.length} 关键帧 · {frameRange(frames)}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <div className={styles.trackActionRow}>
                 <span
-                  style={{
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 8,
-                    padding: "5px 8px",
-                    fontSize: 11,
-                    color: outside || exact?.absent ? "var(--color-danger)" : "var(--color-fg-muted)",
-                    background: "var(--color-bg-elev)",
-                  }}
+                  className={cn(styles.statusChip, (outside || exact?.absent) && styles.statusChipDanger)}
                 >
                   {statusChipText(exact, outside)}
                 </span>
                 <span
                   data-testid="video-track-current-source"
-                  style={{
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 8,
-                    padding: "5px 8px",
-                    fontSize: 11,
-                    background: "var(--color-bg-elev)",
-                    ...sourceChipColor(currentSource),
-                  }}
+                  className={cn(styles.sourceChip, sourceChipClass(currentSource))}
                 >
                   {sourceChipText(currentSource)}
                 </span>
                 <Button
                   size="sm"
-                  style={{ ...iconButtonStyle, width: 30, height: 30 }}
+                  className={cn(styles.iconButton, styles.iconButtonLarge)}
                   title={hidden ? "显示轨迹" : "隐藏轨迹"}
                   onClick={(e) => { e.stopPropagation(); onToggleHiddenTrack(track.track_id); }}
                 >
@@ -452,7 +379,7 @@ export function VideoTrackPanel({
                 </Button>
                 <Button
                   size="sm"
-                  style={{ ...iconButtonStyle, width: 30, height: 30 }}
+                  className={cn(styles.iconButton, styles.iconButtonLarge)}
                   title={locked ? "解锁轨迹" : "锁定轨迹"}
                   onClick={(e) => { e.stopPropagation(); onToggleLockedTrack(track.track_id); }}
                 >
@@ -460,7 +387,7 @@ export function VideoTrackPanel({
                 </Button>
                 <Button
                   size="sm"
-                  style={{ ...iconButtonStyle, width: 30, height: 30 }}
+                  className={cn(styles.iconButton, styles.iconButtonLarge)}
                   title="重命名轨迹类别"
                   disabled={readOnly || !onChangeUserBoxClass}
                   onClick={(e) => {
@@ -475,60 +402,54 @@ export function VideoTrackPanel({
           );
         })}
         {videoTracks.length === 0 && (
-          <div style={{ color: "var(--color-fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
+          <div className={styles.emptyText}>
             暂无轨迹。暂停后画框会创建第一条轨迹。
           </div>
         )}
         {videoTracks.length > 0 && filteredVideoTracks.length === 0 && (
-          <div style={{ color: "var(--color-fg-muted)", fontSize: 12, lineHeight: 1.6 }}>
+          <div className={styles.emptyText}>
             当前帧暂无轨迹。
           </div>
         )}
       </div>
       </div>
 
-      <div style={sectionStyle}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-          <b style={{ fontSize: 13 }}>当前轨迹</b>
+      <div className={styles.sectionWithTopPadding}>
+        <div className={styles.rowBetween}>
+          <b className={styles.heading}>当前轨迹</b>
           {selectedTrack && (
-            <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+            <span className={cn("mono", styles.mutedMono)}>
               {shortTrackId(selectedTrack.geometry.track_id)}
             </span>
           )}
         </div>
         {selectedTrack ? (
-          <div
-            style={{
-              display: "grid",
-              gap: 10,
-              padding: "10px 12px",
-              border: "1px solid var(--color-border)",
-              borderRadius: 8,
-              background: "var(--color-bg-elev)",
-              boxShadow: "inset 4px 0 0 var(--color-accent)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "4px 8px", alignItems: "center", minWidth: 0 }}>
-                <span style={{ gridRow: "1 / span 2", width: 10, height: 10, borderRadius: 999, background: classColor(selectedTrack.class_name) }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-                  <b style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div className={styles.selectedTrackCard}>
+            <div className={styles.rowBetween}>
+              <div className={styles.trackMeta}>
+                <svg className={styles.trackColorDot} aria-hidden="true" viewBox="0 0 10 10">
+                  <circle cx="5" cy="5" r="5" fill={classColor(selectedTrack.class_name)} />
+                </svg>
+                <div className={styles.trackTitleRow}>
+                  <b className={styles.truncateTitle}>
                     {selectedTrack.class_name}
                   </b>
-                  <Badge variant={selectedTrack.source === "prediction_based" ? "default" : "accent"} style={{ fontSize: 10, padding: "1px 6px" }}>
-                    {selectedTrack.source === "prediction_based" ? "AI 采纳" : "手动"}
-                  </Badge>
-                  <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+                  <span className={styles.compactBadge}>
+                    <Badge variant={selectedTrack.source === "prediction_based" ? "default" : "accent"}>
+                      {selectedTrack.source === "prediction_based" ? "AI 采纳" : "手动"}
+                    </Badge>
+                  </span>
+                  <span className={cn("mono", styles.mutedMono)}>
                     {shortTrackId(selectedTrack.geometry.track_id)}
                   </span>
                 </div>
-                <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+                <span className={cn("mono", styles.mutedMono)}>
                   当前帧 F{frameIndex} · {currentFrameLabel.replace(/^F\d+ · /, "")}
                 </span>
               </div>
               <Button
                 size="sm"
-                style={{ ...compactButtonStyle, height: 30 }}
+                className={styles.currentActionButton}
                 disabled={readOnly || !onStartNewTrack}
                 title="清除当前轨迹选择，下一次画框会新建轨迹"
                 onClick={onStartNewTrack}
@@ -537,7 +458,7 @@ export function VideoTrackPanel({
               </Button>
               <Button
                 size="sm"
-                style={{ ...compactButtonStyle, height: 30 }}
+                className={styles.currentActionButton}
                 disabled={readOnly || selectedTrackLocked || !onSplitSelectedTrack}
                 title="在当前帧之后拆出后段轨迹"
                 onClick={onSplitSelectedTrack}
@@ -546,7 +467,7 @@ export function VideoTrackPanel({
               </Button>
               <Button
                 size="sm"
-                style={{ ...compactButtonStyle, height: 30 }}
+                className={styles.currentActionButton}
                 title="复制轨迹 ID"
                 onClick={() => copyText(selectedTrack.geometry.track_id)}
               >
@@ -554,7 +475,7 @@ export function VideoTrackPanel({
               </Button>
               <Button
                 size="sm"
-                style={{ ...compactButtonStyle, height: 30 }}
+                className={styles.currentActionButton}
                 disabled={selectedTrackNextPredictionFrame === null || !onSeekFrame}
                 title="跳转到下一条 prediction 关键帧"
                 onClick={() => {
@@ -565,7 +486,7 @@ export function VideoTrackPanel({
               </Button>
               <Button
                 size="sm"
-                style={{ ...compactButtonStyle, height: 30 }}
+                className={styles.currentActionButton}
                 disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
                 title="发起 AI 传播 (Shift+T)"
                 onClick={() => onPropagateTrack?.(selectedTrack)}
@@ -574,17 +495,17 @@ export function VideoTrackPanel({
               </Button>
             </div>
             {trackerJobsByAnnotation[selectedTrack.id] && (
-              <div data-testid="video-tracker-job-row" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div data-testid="video-tracker-job-row" className={styles.trackerJobRow}>
                 <VideoTrackerJobBadge
                   job={trackerJobsByAnnotation[selectedTrack.id]}
                   onCancel={onCancelTrackerJob}
                 />
               </div>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
+            <div className={styles.frameActionGrid}>
               <Button
                 size="sm"
-                style={{ borderRadius: 8, justifyContent: "center", minHeight: 34, padding: "4px 6px" }}
+                className={styles.frameActionButton}
                 disabled={!selectedTrackGhost || readOnly || selectedTrackLocked}
                 title="使用最近关键帧的框在当前帧创建关键帧"
                 onClick={onCopySelectedTrackToCurrentFrame}
@@ -593,7 +514,7 @@ export function VideoTrackPanel({
               </Button>
               <Button
                 size="sm"
-                style={{ borderRadius: 8, justifyContent: "center", minHeight: 34, padding: "4px 6px" }}
+                className={styles.frameActionButton}
                 disabled={!selectedTrack || readOnly || selectedTrackLocked}
                 onClick={() => onMarkSelectedTrack({ absent: true, occluded: false })}
               >
@@ -601,30 +522,30 @@ export function VideoTrackPanel({
               </Button>
               <Button
                 size="sm"
-                style={{ borderRadius: 8, justifyContent: "center", minHeight: 34, padding: "4px 6px" }}
+                className={styles.frameActionButton}
                 disabled={!selectedTrack || readOnly || selectedTrackLocked}
                 onClick={() => onMarkSelectedTrack({ absent: false, occluded: true })}
               >
                 <Icon name="rect" size={14} />标记遮挡
               </Button>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 20 }}>
+            <div className={styles.copyStatusRow}>
               {copiedKeyframeLabel ? (
                 <>
-                  <Icon name="info" size={14} style={{ color: "var(--color-fg-muted)" }} />
-                  <span className="mono" style={{ flex: 1, fontSize: 11, color: "var(--color-fg-muted)" }}>
+                  <Icon name="info" size={14} className={styles.mutedIcon} />
+                  <span className={cn("mono", styles.copyStatusText)}>
                     已复制: {copiedKeyframeLabel}（关键帧）
                   </span>
                 </>
               ) : (
-                <span className="mono" style={{ flex: 1, fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                <span className={cn("mono", styles.subtleMono)}>
                   可复制当前关键帧后粘贴到其它帧
                 </span>
               )}
               <Button
                 size="sm"
                 variant="ghost"
-                style={{ ...compactButtonStyle, color: "var(--color-fg-muted)" }}
+                className={styles.ghostMutedButton}
                 disabled={!canCopyCurrentKeyframe}
                 title="复制当前轨迹在当前帧的关键帧"
                 onClick={onCopyCurrentKeyframe}
@@ -634,7 +555,7 @@ export function VideoTrackPanel({
               <Button
                 size="sm"
                 variant="ghost"
-                style={{ ...compactButtonStyle, color: "var(--color-fg-muted)" }}
+                className={styles.ghostMutedButton}
                 disabled={!canPasteKeyframe}
                 title="把已复制的关键帧粘贴到当前帧"
                 onClick={onPasteKeyframeToCurrentFrame}
@@ -644,25 +565,14 @@ export function VideoTrackPanel({
             </div>
           </div>
         ) : (
-          <div style={{ color: "var(--color-fg-muted)", fontSize: 12 }}>选择一条轨迹后编辑当前帧状态。</div>
+          <div className={styles.emptyCompactText}>选择一条轨迹后编辑当前帧状态。</div>
         )}
         {selectedTrack && (
           <>
-            <div style={{ ...sectionStyle, paddingTop: 12 }}>
-              <b style={{ fontSize: 13 }}>关键帧</b>
-              <div style={{ border: "1px solid var(--color-border)", borderRadius: 8, overflow: "hidden" }}>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "58px minmax(64px, 1fr) auto",
-                    gap: 8,
-                    padding: "7px 10px",
-                    borderBottom: "1px solid var(--color-border)",
-                    color: "var(--color-fg-muted)",
-                    fontSize: 11,
-                    fontWeight: 600,
-                  }}
-                >
+            <div className={styles.sectionWithTopPadding}>
+              <b className={styles.heading}>关键帧</b>
+              <div className={styles.keyframeTable}>
+                <div className={styles.keyframeHeader}>
                   <span>帧</span>
                   <span>状态</span>
                   <span>操作</span>
@@ -671,38 +581,29 @@ export function VideoTrackPanel({
                   <div
                     key={kf.frame_index}
                     data-testid={kf.source === "prediction" ? "video-prediction-keyframe-row" : "video-track-keyframe-row"}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "58px minmax(64px, 1fr) auto",
-                      gap: 8,
-                      alignItems: "center",
-                      padding: "7px 10px",
-                      borderTop: "1px solid var(--color-border)",
-                      background: kf.source === "prediction"
-                        ? "color-mix(in oklab, var(--color-ai) 6%, var(--color-bg-elev))"
-                        : "var(--color-bg-elev)",
-                      fontSize: 12,
-                    }}
+                    className={cn(styles.keyframeRow, kf.source === "prediction" && styles.keyframePredictionRow)}
                   >
-                    <span className="mono" style={{ fontSize: 13 }}>F{kf.frame_index}</span>
-                    <span style={{ display: "flex", alignItems: "center", gap: 6, color: kf.absent ? "var(--color-danger)" : "var(--color-fg)" }}>
-                      <span
-                        style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: 999,
-                          background: kf.absent ? "var(--color-danger)" : kf.source === "prediction" ? "oklch(0.78 0.14 78)" : "oklch(0.68 0.16 145)",
-                        }}
-                      />
+                    <span className={cn("mono", styles.keyframeFrame)}>F{kf.frame_index}</span>
+                    <span className={cn(styles.keyframeStatus, kf.absent && styles.keyframeStatusAbsent)}>
+                      <svg className={styles.keyframeStatusDot} aria-hidden="true" viewBox="0 0 7 7">
+                        <circle
+                          cx="3.5"
+                          cy="3.5"
+                          r="3.5"
+                          fill={kf.absent ? "var(--color-danger)" : kf.source === "prediction" ? "oklch(0.78 0.14 78)" : "oklch(0.68 0.16 145)"}
+                        />
+                      </svg>
                       {keyframeStatus(kf)}
                       {kf.source === "prediction" && (
-                        <Badge variant="default" style={{ fontSize: 10, padding: "1px 6px" }}>预测</Badge>
+                        <span className={styles.compactBadge}>
+                          <Badge variant="default">预测</Badge>
+                        </span>
                       )}
                     </span>
-                    <span style={{ display: "flex", gap: 5 }}>
+                    <span className={styles.keyframeActionRow}>
                       <Button
                         size="sm"
-                        style={keyframeButtonStyle}
+                        className={styles.keyframeButton}
                         disabled={!onSeekFrame}
                         title="跳转到关键帧"
                         onClick={() => onSeekFrame?.(kf.frame_index)}
@@ -712,7 +613,7 @@ export function VideoTrackPanel({
                       {kf.source === "prediction" && onAcceptPredictionKeyframe && (
                         <Button
                           size="sm"
-                          style={{ ...keyframeButtonStyle, color: "var(--color-success)" }}
+                          className={cn(styles.keyframeButton, styles.successButton)}
                           disabled={readOnly}
                           title="接受预测：source 改为 manual"
                           onClick={() => onAcceptPredictionKeyframe(selectedTrack, kf.frame_index)}
@@ -723,7 +624,7 @@ export function VideoTrackPanel({
                       {kf.source === "prediction" && onRejectPredictionKeyframe && (
                         <Button
                           size="sm"
-                          style={{ ...keyframeButtonStyle, color: "var(--color-danger)" }}
+                          className={cn(styles.keyframeButton, styles.dangerButton)}
                           disabled={readOnly}
                           title="拒绝预测：把该帧并入 outside"
                           onClick={() => onRejectPredictionKeyframe(selectedTrack, kf.frame_index)}
@@ -733,7 +634,7 @@ export function VideoTrackPanel({
                       )}
                       <Button
                         size="sm"
-                        style={keyframeButtonStyle}
+                        className={styles.keyframeButton}
                         disabled={readOnly || Boolean(kf.absent)}
                         title="复制此关键帧为独立框"
                         onClick={() => onConvertToBboxes?.(selectedTrack, {
@@ -746,7 +647,7 @@ export function VideoTrackPanel({
                       </Button>
                       <Button
                         size="sm"
-                        style={keyframeButtonStyle}
+                        className={styles.keyframeButton}
                         disabled={readOnly || Boolean(kf.absent)}
                         title="拆此关键帧为独立框"
                         onClick={() => onConvertToBboxes?.(selectedTrack, {
@@ -759,7 +660,7 @@ export function VideoTrackPanel({
                       </Button>
                       <Button
                         size="sm"
-                        style={{ ...iconButtonStyle, color: "var(--color-danger)" }}
+                        className={cn(styles.iconButton, styles.dangerButton)}
                         disabled={readOnly || selectedTrack.geometry.keyframes.length <= 1}
                         title="删除关键帧"
                         onClick={() => onDeleteTrackKeyframe(selectedTrack, kf.frame_index)}
@@ -771,23 +672,15 @@ export function VideoTrackPanel({
                 ))}
               </div>
             </div>
-            <details open style={{ ...sectionStyle, paddingTop: 8, border: "1px solid var(--color-border)", borderRadius: 8, padding: "8px 10px" }}>
-              <summary
-                style={{
-                  cursor: "pointer",
-                  color: "var(--color-fg)",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  listStylePosition: "inside",
-                }}
-              >
+            <details open className={styles.convertPanel}>
+              <summary className={styles.convertSummary}>
                 转换为独立框...
               </summary>
-              <div style={{ display: "grid", gap: 2, marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--color-border)" }}>
+              <div className={styles.convertActions}>
                 <Button
                   size="sm"
                   variant="ghost"
-                  style={{ ...compactButtonStyle, justifyContent: "flex-start", boxShadow: "none" }}
+                  className={styles.menuButton}
                   disabled={readOnly || !onConvertToBboxes}
                   title="复制整条轨迹的关键帧为独立框"
                   onClick={() => onConvertToBboxes?.(selectedTrack, {
@@ -801,7 +694,7 @@ export function VideoTrackPanel({
                 <Button
                   size="sm"
                   variant="ghost"
-                  style={{ ...compactButtonStyle, justifyContent: "flex-start", boxShadow: "none" }}
+                  className={styles.menuButton}
                   disabled={readOnly || !onConvertToBboxes}
                   title="复制整条轨迹插值后的所有帧为独立框"
                   onClick={() => onConvertToBboxes?.(selectedTrack, {
@@ -815,7 +708,7 @@ export function VideoTrackPanel({
                 <Button
                   size="sm"
                   variant="ghost"
-                  style={{ ...compactButtonStyle, justifyContent: "flex-start", boxShadow: "none" }}
+                  className={styles.menuButton}
                   disabled={readOnly || !onConvertToBboxes}
                   title="拆整条轨迹关键帧为独立框并删除原轨迹"
                   onClick={() => onConvertToBboxes?.(selectedTrack, {
@@ -829,7 +722,7 @@ export function VideoTrackPanel({
                 <Button
                   size="sm"
                   variant="ghost"
-                  style={{ ...compactButtonStyle, justifyContent: "flex-start", boxShadow: "none" }}
+                  className={styles.menuButton}
                   disabled={readOnly || !onConvertToBboxes}
                   title="拆整条轨迹所有插值帧为独立框并删除原轨迹"
                   onClick={() => onConvertToBboxes?.(selectedTrack, {

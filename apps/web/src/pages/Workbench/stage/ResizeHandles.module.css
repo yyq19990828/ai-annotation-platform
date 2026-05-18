@@ -1,0 +1,14 @@
+/* v0.10.12 · CSP style-src 收紧续推 — ResizeHandles.tsx inline style 迁移. */
+
+.handle {
+  position: absolute;
+  left: var(--resize-handle-left);
+  top: var(--resize-handle-top);
+  width: 9px;
+  height: 9px;
+  background: white;
+  border: 1.5px solid var(--color-accent);
+  border-radius: 2px;
+  cursor: var(--resize-handle-cursor);
+  z-index: 10;
+}

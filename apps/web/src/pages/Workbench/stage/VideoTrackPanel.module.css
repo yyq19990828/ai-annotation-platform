@@ -1,0 +1,420 @@
+.panelRoot {
+  display: grid;
+  gap: 12px;
+  padding: 2px 0 8px;
+}
+
+.filterCard {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-elev);
+  padding: 7px 10px;
+}
+
+.rowBetween {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.section {
+  display: grid;
+  gap: 8px;
+}
+
+.sectionWithTopPadding {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.heading {
+  font-size: 13px;
+}
+
+.subheading {
+  font-size: 12px;
+}
+
+.mutedMono {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+.subtleMono {
+  flex: 1;
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+}
+
+.emptyText {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.emptyCompactText {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.filterTabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+.filterTab {
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.filterTabWithDivider {
+  border-left: 1px solid var(--color-border);
+}
+
+.filterTabActive {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-fg);
+  font-weight: 600;
+}
+
+.batchToolbar {
+  display: grid;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in oklab, var(--color-accent) 35%, var(--color-border));
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--color-accent) 8%, var(--color-bg-elev));
+}
+
+.batchSelect {
+  min-width: 96px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.buttonRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.compactButton {
+  border-radius: 8px !important;
+  padding: 4px 8px !important;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.aggregateButton {
+  width: 100% !important;
+  justify-content: center !important;
+  margin-top: 8px;
+  border-radius: 8px !important;
+  padding: 4px 8px !important;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.currentActionButton {
+  height: 30px !important;
+  border-radius: 8px !important;
+  padding: 4px 8px !important;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.frameActionButton {
+  min-height: 34px !important;
+  justify-content: center !important;
+  border-radius: 8px !important;
+  padding: 4px 6px !important;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.iconButton {
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  justify-content: center !important;
+  border-radius: 8px !important;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.iconButtonLarge {
+  width: 30px !important;
+  height: 30px !important;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.keyframeButton {
+  min-width: 38px !important;
+  justify-content: center !important;
+  border-radius: 8px !important;
+  padding: 3px 8px !important;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.ghostMutedButton {
+  color: var(--color-fg-muted) !important;
+  border-radius: 8px !important;
+  padding: 4px 8px !important;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.menuButton {
+  justify-content: flex-start !important;
+  box-shadow: none !important;
+  border-radius: 8px !important;
+  padding: 4px 8px !important;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.successButton {
+  color: var(--color-success) !important;
+}
+
+/* Temporary bridge until Button stops applying inline base styles. */
+.dangerButton {
+  color: var(--color-danger) !important;
+}
+
+.trackRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.trackRowSelected {
+  border-color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 12%, var(--color-bg-elev));
+}
+
+.trackRowPrimarySelected {
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.trackMeta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.trackColorDot {
+  grid-row: 1 / span 2;
+  width: 10px;
+  height: 10px;
+  overflow: visible;
+}
+
+.trackTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.truncateTitle {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trackMetaText {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trackActionRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.statusChip {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  background: var(--color-bg-elev);
+}
+
+.statusChipDanger {
+  color: var(--color-danger);
+}
+
+.sourceChip {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  background: var(--color-bg-elev);
+}
+
+.sourcePrediction {
+  color: var(--color-ai);
+  border-color: color-mix(in oklab, var(--color-ai) 40%, var(--color-border));
+}
+
+.sourceInterpolated {
+  color: var(--color-warning);
+  border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border));
+}
+
+.sourceManual {
+  color: var(--color-success);
+  border-color: color-mix(in oklab, var(--color-success) 40%, var(--color-border));
+}
+
+.selectedTrackCard {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-elev);
+  box-shadow: inset 4px 0 0 var(--color-accent);
+}
+
+.trackerJobRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.frameActionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.copyStatusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.copyStatusText {
+  flex: 1;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+.mutedIcon {
+  color: var(--color-fg-muted);
+}
+
+.keyframeTable {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.keyframeHeader {
+  display: grid;
+  grid-template-columns: 58px minmax(64px, 1fr) auto;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.keyframeRow {
+  display: grid;
+  grid-template-columns: 58px minmax(64px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 10px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+  font-size: 12px;
+}
+
+.keyframePredictionRow {
+  background: color-mix(in oklab, var(--color-ai) 6%, var(--color-bg-elev));
+}
+
+.keyframeFrame {
+  font-size: 13px;
+}
+
+.keyframeStatus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-fg);
+}
+
+.keyframeStatusAbsent {
+  color: var(--color-danger);
+}
+
+.keyframeStatusDot {
+  width: 7px;
+  height: 7px;
+}
+
+.keyframeActionRow {
+  display: flex;
+  gap: 5px;
+}
+
+.convertPanel {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.convertSummary {
+  cursor: pointer;
+  color: var(--color-fg);
+  font-size: 12px;
+  font-weight: 600;
+  list-style-position: inside;
+}
+
+.convertActions {
+  display: grid;
+  gap: 2px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.compactBadge > span {
+  font-size: 10px !important;
+  padding: 1px 6px !important;
+}

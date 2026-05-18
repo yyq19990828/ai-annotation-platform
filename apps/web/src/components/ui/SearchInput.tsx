@@ -1,4 +1,6 @@
+import { useLayoutEffect, useRef } from "react";
 import { Icon } from "./Icon";
+import styles from "./SearchInput.module.css";
 
 interface SearchInputProps {
   placeholder?: string;
@@ -21,54 +23,28 @@ export function SearchInput({
   onClick,
   readOnly,
 }: SearchInputProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    rootRef.current?.style.setProperty("--search-input-width", `${width}px`);
+  }, [width]);
+
   return (
     <div
+      ref={rootRef}
       onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "5px 10px",
-        background: "var(--color-bg-elev)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        width,
-        cursor: onClick ? "pointer" : undefined,
-      }}
+      className={`${styles.root} ${onClick ? styles.clickable : ""}`}
     >
-      <Icon name="search" size={13} style={{ color: "var(--color-fg-subtle)" }} />
+      <Icon name="search" size={13} className={styles.icon} />
       <input
         placeholder={placeholder}
         value={value}
         onChange={e => onChange?.(e.target.value)}
         readOnly={readOnly}
-        style={{
-          flex: 1,
-          border: 0,
-          outline: 0,
-          background: "transparent",
-          fontSize: 13,
-          color: "inherit",
-          minWidth: 0,
-          fontFamily: "inherit",
-          cursor: onClick ? "pointer" : undefined,
-        }}
+        className={`${styles.input} ${onClick ? styles.clickable : ""}`}
       />
       {kbd && (
-        <span
-          style={{
-            display: "inline-block",
-            padding: "1px 5px",
-            background: "var(--color-bg-sunken)",
-            border: "1px solid var(--color-border)",
-            borderBottomWidth: 2,
-            borderRadius: 3,
-            fontFamily: "var(--font-mono)",
-            fontSize: 10.5,
-            color: "var(--color-fg-muted)",
-            lineHeight: 1,
-          }}
-        >
+        <span className={styles.kbd}>
           {kbd}
         </span>
       )}

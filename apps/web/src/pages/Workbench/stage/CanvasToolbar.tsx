@@ -4,6 +4,7 @@
 // 颜色 swatch + 撤销 / 清空 / 取消 / 完成。
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import styles from "./CanvasToolbar.module.css";
 
 interface Props {
   stroke: string;
@@ -16,50 +17,33 @@ interface Props {
 }
 
 const SWATCHES = [
-  { value: "#ef4444", label: "红" },
-  { value: "#f59e0b", label: "黄" },
-  { value: "#10b981", label: "绿" },
-  { value: "#3b82f6", label: "蓝" },
+  { value: "#ef4444", label: "红", className: styles.swatchRed },
+  { value: "#f59e0b", label: "黄", className: styles.swatchYellow },
+  { value: "#10b981", label: "绿", className: styles.swatchGreen },
+  { value: "#3b82f6", label: "蓝", className: styles.swatchBlue },
 ];
 
 export function CanvasToolbar({ stroke, onSetStroke, shapeCount, onUndo, onClear, onCancel, onDone }: Props) {
   return (
     <div
-      style={{
-        position: "absolute",
-        top: 12,
-        right: 12,
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 10px",
-        background: "var(--color-bg-elev)",
-        border: "1px solid var(--color-border)",
-        borderRadius: 6,
-        boxShadow: "var(--shadow-md)",
-        zIndex: 5,
-      }}
+      className={styles.root}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>颜色</span>
+      <span className={styles.label}>颜色</span>
       {SWATCHES.map((c) => (
         <button
           key={c.value}
           type="button"
           onClick={() => onSetStroke(c.value)}
           aria-label={c.label}
-          style={{
-            width: 18,
-            height: 18,
-            borderRadius: "50%",
-            border: stroke === c.value ? "2px solid var(--color-fg)" : "1px solid var(--color-border)",
-            background: c.value,
-            cursor: "pointer",
-            padding: 0,
-          }}
+          className={[
+            styles.swatch,
+            c.className,
+            stroke === c.value ? styles.swatchActive : "",
+          ].filter(Boolean).join(" ")}
         />
       ))}
-      <span style={{ fontSize: 11, color: "var(--color-fg-muted)", marginLeft: 4 }}>{shapeCount} 条</span>
+      <span className={styles.count}>{shapeCount} 条</span>
       <Button size="sm" onClick={onUndo} disabled={shapeCount === 0}>
         <Icon name="trash" size={11} /> 撤销
       </Button>

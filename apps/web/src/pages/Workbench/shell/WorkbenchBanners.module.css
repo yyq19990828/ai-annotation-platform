@@ -1,0 +1,73 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.lockBanner {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.claimBanner {
+  color: oklch(0.40 0.15 70);
+  background: oklch(0.95 0.05 70);
+  border-bottom-color: oklch(0.85 0.10 70);
+}
+
+.skipBanner {
+  color: oklch(0.35 0.18 300);
+  background: oklch(0.94 0.06 300);
+  border-bottom-color: oklch(0.78 0.12 300);
+}
+
+.actionBanner {
+  gap: 10px;
+  padding: 8px 14px;
+}
+
+.reviewBanner {
+  color: var(--color-accent-fg);
+  background: var(--color-accent-soft);
+}
+
+.completedBanner {
+  color: var(--color-success);
+  background: var(--color-success-soft);
+}
+
+.rejectedBanner {
+  gap: 8px;
+  padding: 8px 14px;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.redoBanner {
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 14px;
+  color: var(--color-fg-muted);
+  background: color-mix(in oklab, var(--color-warning) 10%, transparent);
+}
+
+.flexText {
+  flex: 1;
+}
+
+.mutedNote {
+  margin-left: 8px;
+  opacity: 0.7;
+}
+
+.shrinkIcon {
+  flex-shrink: 0;
+}
+
+.redoIcon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}

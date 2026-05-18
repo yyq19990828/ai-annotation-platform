@@ -59,6 +59,7 @@ import type {
   VideoTrackGhost,
   VideoTrackPreview,
 } from "./videoStageTypes";
+import styles from "./VideoStage.module.css";
 
 const EMPTY_TRACK_ID_SET = new Set<string>();
 const VIDEO_PLAYBACK_RATES = [0.25, 0.5, 1, 2, 4] as const;
@@ -1011,14 +1012,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
 
   if (isLoading) {
     return (
-      <div style={{ flex: 1, display: "grid", placeItems: "center", color: "var(--color-fg-muted)" }}>
+      <div className={styles.loadingState}>
         <Icon name="loader2" className="spin" /> 加载视频信息...
       </div>
     );
   }
   if (error || !manifest) {
     return (
-      <div style={{ flex: 1, display: "grid", placeItems: "center", color: "var(--color-danger)", gap: 8 }}>
+      <div className={styles.errorState}>
         <Icon name="warning" size={28} />
         视频 manifest 不可用
       </div>
@@ -1041,9 +1042,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         if (!drag) showPlaybackOverlay();
       }}
       onMouseLeave={schedulePlaybackOverlayHide}
-      style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", background: "#050507" }}
+      className={styles.root}
     >
-      <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+      <div className={styles.stageLayer}>
           <VideoStageSurface width={videoPixelWidth} height={videoPixelHeight} viewport={vp}>
             <VideoMediaLayer
               ref={videoRef}
@@ -1080,39 +1081,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             />
           </VideoStageSurface>
           {isPlaybackActive && (
-            <div
-              style={{
-                position: "absolute",
-                top: 14,
-                left: "50%",
-                transform: "translateX(-50%)",
-                padding: "5px 10px",
-                borderRadius: 999,
-                background: "rgba(0,0,0,0.62)",
-                color: "white",
-                fontSize: 12,
-              }}
-            >
+            <div className={styles.playbackStatus}>
               {jogPlayback.direction < 0 ? `反向 ${jogPlayback.rate}x · 暂停后编辑` : "播放中 · 暂停后编辑"}
             </div>
           )}
           {playbackError && (
             <div
               data-testid="video-playback-error"
-              style={{
-                position: "absolute",
-                top: 14,
-                left: "50%",
-                transform: "translateX(-50%)",
-                maxWidth: "min(520px, calc(100% - 28px))",
-                padding: "6px 10px",
-                borderRadius: 6,
-                background: "rgba(127,29,29,0.88)",
-                color: "white",
-                fontSize: 12,
-                lineHeight: 1.4,
-                textAlign: "center",
-              }}
+              className={styles.playbackError}
             >
               视频无法播放：{playbackError}
             </div>

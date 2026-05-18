@@ -5,6 +5,7 @@ import type {
   VideoTrackerDirection,
   VideoTrackerPropagatePayload,
 } from "@/api/videoTracker";
+import styles from "./VideoTrackerPropagateDialog.module.css";
 
 const RANGE_PRESETS = [
   { value: "10", label: "10 帧" },
@@ -21,6 +22,10 @@ const MODELS: Array<{ value: string; label: string; note?: string }> = [
   { value: "sam2_video", label: "sam2_video", note: "需项目绑定 ML backend" },
   { value: "sam3_video", label: "sam3_video", note: "需项目绑定 ML backend" },
 ];
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
 
 interface VideoTrackerPropagateDialogProps {
   open: boolean;
@@ -104,64 +109,32 @@ export function VideoTrackerPropagateDialog({
       role="dialog"
       aria-label="AI 传播"
       data-testid="video-tracker-propagate-dialog"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "grid",
-        placeItems: "center",
-        zIndex: 1000,
-      }}
+      className={styles.backdrop}
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div
-        style={{
-          width: 360,
-          background: "var(--color-bg-elev)",
-          border: "1px solid var(--color-border)",
-          borderRadius: 10,
-          padding: 16,
-          display: "grid",
-          gap: 12,
-          boxShadow: "0 24px 64px rgba(0,0,0,0.32)",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <b style={{ fontSize: 14 }}>AI 传播 (Shift+T)</b>
+      <div className={styles.dialog}>
+        <div className={styles.header}>
+          <b className={styles.title}>AI 传播 (Shift+T)</b>
           <button
             type="button"
             onClick={onCancel}
-            style={{
-              border: 0,
-              background: "transparent",
-              color: "var(--color-fg-muted)",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
+            className={styles.closeButton}
           >
             ✕
           </button>
         </div>
 
-        <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--color-fg-muted)" }}>
+        <label className={styles.field}>
           方向
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+          <div className={styles.segmented}>
             {(["forward", "backward", "bidirectional"] as VideoTrackerDirection[]).map((d) => (
               <button
                 key={d}
                 type="button"
                 onClick={() => setDirection(d)}
-                style={{
-                  padding: "5px 0",
-                  borderRadius: 6,
-                  border: `1px solid ${direction === d ? "var(--color-accent)" : "var(--color-border)"}`,
-                  background: direction === d ? "color-mix(in oklab, var(--color-accent) 12%, var(--color-bg))" : "var(--color-bg)",
-                  color: "var(--color-fg)",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
+                className={cn(styles.optionButton, direction === d && styles.optionButtonSelected)}
               >
                 {d === "forward" ? "向后" : d === "backward" ? "向前" : "双向"}
               </button>
@@ -169,19 +142,12 @@ export function VideoTrackerPropagateDialog({
           </div>
         </label>
 
-        <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--color-fg-muted)" }}>
+        <label className={styles.field}>
           范围
           <select
             value={rangePreset}
             onChange={(e) => setRangePreset(e.target.value as RangePresetValue)}
-            style={{
-              border: "1px solid var(--color-border)",
-              borderRadius: 6,
-              background: "var(--color-bg)",
-              color: "var(--color-fg)",
-              fontSize: 13,
-              padding: "5px 8px",
-            }}
+            className={styles.select}
           >
             {RANGE_PRESETS.map((preset) => (
               <option key={preset.value} value={preset.value}>
@@ -189,24 +155,17 @@ export function VideoTrackerPropagateDialog({
               </option>
             ))}
           </select>
-          <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+          <span className={cn("mono", styles.rangeHint)}>
             F{range.from} → F{range.to}
           </span>
         </label>
 
-        <label style={{ display: "grid", gap: 4, fontSize: 12, color: "var(--color-fg-muted)" }}>
+        <label className={styles.field}>
           模型
           <select
             value={modelKey}
             onChange={(e) => setModelKey(e.target.value)}
-            style={{
-              border: "1px solid var(--color-border)",
-              borderRadius: 6,
-              background: "var(--color-bg)",
-              color: "var(--color-fg)",
-              fontSize: 13,
-              padding: "5px 8px",
-            }}
+            className={styles.select}
           >
             {MODELS.map((m) => (
               <option key={m.value} value={m.value}>
@@ -214,16 +173,16 @@ export function VideoTrackerPropagateDialog({
               </option>
             ))}
           </select>
-          <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+          <span className={styles.modelNote}>
             {MODELS.find((m) => m.value === modelKey)?.note}
           </span>
         </label>
 
         {error && (
-          <div style={{ color: "var(--color-danger)", fontSize: 12 }}>{error}</div>
+          <div className={styles.error}>{error}</div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div className={styles.actions}>
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={submitting}>
             取消
           </Button>

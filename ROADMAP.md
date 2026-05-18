@@ -13,6 +13,7 @@
 ### 计划中
 
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
+- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：Annotation Guide / reject_reason_type / Predictions Import + AAP JSON / 决策底线表。
 
 > 历史 epic 文档已归档：
 > - [`[archived]0.10.x.md`](./ROADMAP/[archived]0.10.x.md) — SAM 3 接入 / Prompt-first ToolDock / 1:N 后端管理（v0.10.0-v0.10.3 已落地，v0.10.4-v0.10.10 收尾 Image Workbench Wave β/γ/δ）。
@@ -29,7 +30,7 @@
 
 ### 现在可做（无前置依赖，作为 `chip:maintenance` 穿插推进，不抢 v0.10.x 主线）
 
-- **CSP `style-src` nonce 收紧**（P3，v0.10.11 已落基建试点：`BatchesSection.tsx` 17 处 inline → CSS modules + 文件级 `no-restricted-syntax` lint guard + [迁移指南](docs-site/dev/how-to/migrate-inline-style-to-css-modules.md)；v0.10.12 已清空 `pages/Projects/sections/*.tsx` inline style，并把 lint guard 收口为 glob；跨全站剩 ~2543 处 inline；待全站迁完后单独 PR 从 `security_headers.py` 摘 `'unsafe-inline'`；script-src 已 v0.9.11 收紧）
+- **CSP `style-src` nonce 收紧**（P3，v0.10.11 已落基建试点：`BatchesSection.tsx` 17 处 inline → CSS modules + 文件级 `no-restricted-syntax` lint guard + [迁移指南](docs-site/dev/how-to/migrate-inline-style-to-css-modules.md)；v0.10.12 已清空 `pages/Projects/sections/*.tsx` 与 `pages/Workbench/**/*.tsx` JSX `style=`，并推进 `components/ui` 基础组件到仅剩 5 处 public `style` prop 兼容 hatch；lint guard 已覆盖 Projects sections / Workbench / 已清零的基础 UI；跨全站剩 2048 处 JSX `style=`（`rg style\\s*=` 口径）；待全站迁完后单独 PR 从 `security_headers.py` 摘 `'unsafe-inline'`；script-src 已 v0.9.11 收紧）
 - **OpenSeadragon 瓦片金字塔**（见 §C.7 图片工作台 · I1 大图 tile；极大图 > 50MP 才必要）
 - **i18n 框架接入**（P3，v0.10.11 已为 sections 群建 CSS modules 试点；i18n 可在迁 inline style 同窗口合并破窗，密度最高的 `pages/Projects/sections/` 仍是首选切入点）
 - **截图 fixture 数据补齐 + 重跑**（P3）：4 张空白态需补数据后重跑（`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`）。
@@ -59,6 +60,7 @@
 
 ### 项目模块
 - **非 image-det / video-track 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / mm 仍未提供真实标注能力。`lidar` 在 Workbench StageHost 中已有 3D placeholder，但 Dashboard 入口仍未把它作为可用工作台开放；接入真实 3D 前不要复用图片 / 视频 geometry。
+- **Annotation Guide（项目级 Markdown 指引 + asset）**（**P2**，~1.5d）：参考 CVAT `Project.annotation_guide` —— ProjectSettingsPage 加「📖 标注指引」section（Markdown 编辑器 + 拖拽截图），工作台左侧栏加「📖 指引」浮层（默认折叠，新人首次自动展开 + localStorage 标记）。**对标注一致性提升远超技术 ROI**，直接降低 reject 率。DB：`projects` 加 `guide_markdown TEXT, guide_assets JSONB`；前端复用现有 `MarkdownView` + dataset upload 链路。与「项目模板」复用同 ProjectSettingsPage 破窗窗口。详见 [取经合集 §1.1](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#11-annotation-guide项目级-markdown-指引--asset)。
 - **项目模板**：v0.10.11 已落「从已有项目复制配置」形态（ProjectGrid 行操作 + AdminDashboard 项目表 + Wizard `sourceProjectId` 预填 + 后端 `POST /projects` 接 `source_project_id` 兜底 16 个可克隆字段 + 6 例后端单测）。**剩余**：独立 `ProjectTemplate` 表 + 模板库 UI（跨项目共享 / 公共模板），触发条件 = 客户提"模板库"明确需求；当前「复制」形态满足 80% 场景，无客户驱动前不开工。
 
 ### 数据 & 存储
@@ -71,6 +73,7 @@
 
 ### AI / 模型
 - **模型市场扩展**：v0.9.3 phase 2 已激活 `/model-market`（合并 backends + failed-predictions tab）；二期：① 模型版本对比 / AB 路由 UI（依赖 v0.10.x sam3-backend 双模型并存）；② 一键热更新模型权重（`/admin/ml-backends/{id}/reload`）；③ **注册 backend 时选模型变体**（详见下条，C → B 两阶段，与本条同窗口）。
+- **Predictions Import 端点 + 平台原生 AAP JSON**（**P2**，~5d 合并窗口）：参考 Label Studio `POST /api/predictions/`。当前 prediction 只能由内部 ML backend 生成，外部模型结果进不来；客户自家训好的模型 / 不愿托管在平台 backend 的场景，可上传 COCO 或**平台原生 AAP JSON** → 平台审核修正 → 导出。**直接降低准入门槛**（学术/初创客户尤其）。新端点 `POST /projects/{id}/predictions/import`，导入宽容（只校验必备字段 `task_match` + `geometry.kind` + `class_name`，未知字段忽略、缺失字段按默认值），写 `predictions` 表 `source='external_import'`。**强烈建议与"平台原生 AAP JSON 无损格式"同窗口做**：单做导入 1.5d，合并 ~5d，多 ~3.5d 但为 §3.1 SDK / §3.4 Plugin / §2.5 项目快照 / dataset snapshot 全员铺路（详见 [取经合集 §1.5](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#15-predictions-import-端点) + [§2.6 AAP JSON](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#26-平台原生-task-json-格式aap-json)）。AAP JSON 关键决策：① schema_version 必备 + breaking change 升 major；② `annotations[]` 和 `predictions[]` 双数组分开（不混用 type 字段，避免 CVAT 部分格式那种 filter 痛苦）；③ 导出严格写满 null、导入 lenient 忽略未知；④ 与 COCO/YOLO/VOC 并列（无损中间），其它格式走 §3.3 datumaro 链转换。
 - **注册 backend 时选模型变体 · C → B 两阶段**（**P2**，与模型市场二期同窗口）：
   - **现状钉死**：grounded-sam2-backend 的 `(SAM_VARIANT, DINO_VARIANT)` 组合在容器启动时由 env 锁死（`apps/grounded-sam2-backend/main.py:43-44` 读 env，`predictor.py:50-58` 选 checkpoint，`lifespan` 一次性 build 占住显存），运行期不可变；改变体 = 改 env + rebuild + 重启。注册端 `MLBackendCreate` 也只接 `name` / `url` / `extra_params`（`apps/api/app/schemas/ml_backend.py:28-34`），平台**不知道**某条 ml_backends 行对应哪个变体，只能从 `health_meta.model_version` 字符串反解。
   - **目标**：把"变体"提升为注册时一等参数，让平台获得变体维度的认知（路由 / mismatch 校验 / AB 对比 UI 全靠这个），并为后续显存吃紧场景的 model pool 留好升级路径。
@@ -128,13 +131,14 @@
 
 ### 安全
 - **2FA / TOTP**：super_admin 必选、其它角色可选。
-- **CSP `style-src` nonce 收紧**（v0.9.11 收紧 script-src，v0.10.11 落基建试点）：style-src `'unsafe-inline'` 仍在头里；v0.10.11 已迁 `BatchesSection.tsx` 试点 + 建 CSS modules 约定 + 文件级 lint guard 防回潮 + 写 [迁移指南](docs-site/dev/how-to/migrate-inline-style-to-css-modules.md)；v0.10.12 已清空 `pages/Projects/sections/*.tsx` inline style（含 `GeneralSection` / `DatasetsSection` / `BatchesSection` / `BatchesKanbanView` / `BatchAuditLogDrawer` / `AttributesSection` / `AttributeSchemaEditor` / `ClassEditor` / bulk/reject/reset/admin/reverse modals 等）并把 lint guard 收口为 glob。**剩余**：① 处理共享 UI 组件自身 inline style（`Button` / `Icon` / `Card` / `Modal` / `Badge` / `ProgressBar` 等；当前 Button 覆盖仍有 `!important` 桥接，Button 自身重构后摘掉所有覆盖类的 `!important`）；② 高密度页面群（`pages/Workbench/` 578 处 / `pages/Dashboard/` 354 处 / `components/` 626 处 / `pages/AIPreAnnotate/` 188 处）；③ 全部迁完后单独 PR 从 [`security_headers.py`](apps/api/app/middleware/security_headers.py) 摘 `'unsafe-inline'` + nginx sub_filter 加 style 标签 nonce 注入（复用 v0.9.11 script-src 路径）。
+- **CSP `style-src` nonce 收紧**（v0.9.11 收紧 script-src，v0.10.11 落基建试点）：style-src `'unsafe-inline'` 仍在头里；v0.10.11 已迁 `BatchesSection.tsx` 试点 + 建 CSS modules 约定 + 文件级 lint guard 防回潮 + 写 [迁移指南](docs-site/dev/how-to/migrate-inline-style-to-css-modules.md)；v0.10.12 已清空 `pages/Projects/sections/*.tsx` inline style（含 `GeneralSection` / `DatasetsSection` / `BatchesSection` / `BatchesKanbanView` / `BatchAuditLogDrawer` / `AttributesSection` / `AttributeSchemaEditor` / `ClassEditor` / bulk/reject/reset/admin/reverse modals 等）与 `pages/Workbench/**/*.tsx` JSX `style=`，并把 lint guard 收口到 Projects sections / Workbench / 已清零的基础 UI；`components/ui` 已清零 13 个组件，剩 `Button` / `Card` / `Badge` / `Icon` / `Avatar` 共 5 处 public `style` prop 兼容 hatch。**剩余**：① 摘基础 UI public `style` prop hatch，并替换调用方覆盖方式；② 高密度页面群（`pages/Dashboard/` / `components/` 非 ui / `pages/AIPreAnnotate/`）；③ 全部迁完后单独 PR 从 [`security_headers.py`](apps/api/app/middleware/security_headers.py) 摘 `'unsafe-inline'` + nginx sub_filter 加 style 标签 nonce 注入（复用 v0.9.11 script-src 路径）。
 
 ### 治理 / 合规
 - **Slack / Webhook 集成**：关键审计事件（角色变更、项目删除、bootstrap_admin）外发到运维群组。
 
 ### 可观测性
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
+- **reject_reason_type 结构化枚举**（**P2**，~1d）：当前 `reject_reason` 自由文本，丢失"漏标率 / 错标率 / 标错类别率"的可分析信号。参考 CVAT `AnnotationConflictType`，加 enum `missing | extra | wrong_label | wrong_geometry`（第一版**刻意收紧到 4 类**，后续按 reviewer 反馈细分；原 free text 留补充）。reviewer UI 强制先选类型再写文本。为 Annotator Performance Dashboard / LLM-as-Judge reject 建议（取经合集 §5.1）提供结构化轴。详见 [取经合集 §1.2](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#12-reject_reason_type-结构化枚举)。
 
 ### 性能 / 扩展
 - **Annotation 列表前端切换 keyset 分页**：v0.7.6 已落后端新端点 `GET /tasks/{id}/annotations/page?limit&cursor` + 复合索引；前端 `useAnnotations` 仍用旧数组端点（cap=2000），改 useInfiniteQuery 推迟到 1000+ 框监控触发。
@@ -245,7 +249,7 @@
 | **P2** | 非视频工作台（image-seg → keypoint → lidar） | 体量大，视频工作台已单独提升为 P0 | — |
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
 | **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
-| **P3** | CSP `style-src` nonce 收紧 sections 群续推 | v0.10.11 已落 `BatchesSection.tsx` 试点 + lint guard + 迁移指南；v0.10.12 已清空 `pages/Projects/sections/*.tsx` 并把 guard 收口为 glob；接下来迁共享 UI / Workbench / Dashboard，全部迁完后摘 `'unsafe-inline'` | [0010](docs/adr/0010-security-headers-middleware.md) |
+| **P3** | CSP `style-src` nonce 收紧 sections 群续推 | v0.10.11 已落 `BatchesSection.tsx` 试点 + lint guard + 迁移指南；v0.10.12 已清空 `pages/Projects/sections/*.tsx` 与 `pages/Workbench/**/*.tsx`，`components/ui` 剩 5 处 public `style` prop hatch；接下来迁基础 UI hatch / Dashboard / 非 ui components，全部迁完后摘 `'unsafe-inline'` | [0010](docs/adr/0010-security-headers-middleware.md) |
 | **P3** | 截图 fixture 数据补齐 + 重跑（v0.9.7 19 张已 commit, 4 张空白态需补 seed） | seed.py 加 prepare 钩子: 5+ pre_annotated 批次 / 类别无 alias 项目 / 同 task 双 prediction (IoU) / 30+ tasks (bulk-edit) | — |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |
@@ -257,6 +261,26 @@
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 | **P3** | Workbench Shell 拆分后续精简 | M6 已归档并确认不拆两套页面；后续只做 prop 分组、Host/Layout focused tests、必要时 `useWorkbenchShellModel`，真实 3D 前不抽通用 geometry / camera controls | [0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md) |
+
+---
+
+## 决策底线 / 反模式备忘
+
+> 这一节**不是 TODO**，是 PR review 时的参考底线。记录"当前正确选择不要走回头路"的决策，避免后续重新踩 CVAT / Label Studio 已经踩过的坑。完整对照表与出处见 [取经合集 §6](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#6-避坑清单保持当前选择不要走回头路)。
+
+| 主题 | 反模式（来源） | 当前正确选择 | 何时检查 |
+|---|---|---|---|
+| 状态字段 | 同时存 status/stage/state 三字段（CVAT Job） | 单 status enum | 加新状态前看一眼现有 enum 能否表达 |
+| 标注配置 | XML DSL（Label Studio） | JSONB `classes_config` + `attributes_schema` | 永远不要为"灵活性"回退到 DSL；要灵活就扩 JSONB schema |
+| Task 双重含义 | task 既是标注题目也是后台 job（Label Studio） | 题目 / Celery 分离 | `async_jobs` 统一表落地后强化（取经合集 §1.7） |
+| 模块化拆分 | 24+ Django apps 跨依赖（Label Studio） | apps/api 单仓 | 不要因"模块化"动机拆出新 apps/* |
+| OSS/EE 分叉 | `if settings.EE` 满地（Label Studio） | 单分支无功能开关 | 商业化前不要拆，灰度走 feature flags |
+| 格式适配 | 自己维护 25+ 格式（CVAT） | COCO/YOLO/VOC + 平台原生 AAP JSON | 客户要新格式走 datumaro 中转，不自己加 |
+| 权限引擎 | Rego / OPA policy DSL（CVAT） | 单 RBAC 中间件 | 权限复杂化时先看 RBAC 内能否表达 |
+| AI backend | 自管 serverless（CVAT Nuclio） | HTTP `/predict` 协议 + 独立容器（[ADR-0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md)） | 保持；Plugin tool 也走 HTTP |
+| Skeleton 嵌套 | 无限 sublabel 递归（CVAT） | §C.7 I10 实现时**只支持 2 层**（label + sublabel） | 不开放任意嵌套 |
+| 标注 / 预测合并 | 同一数组用 type 字段区分（CVAT 部分格式） | `annotations[]` 和 `predictions[]` 双数组分开 | 设计任何新协议（导出、SDK、Plugin、AAP JSON）时保持双数组 |
+| 内部主键当稳定 ID | 用 user_id / annotation_id 数字 ID 跨实例匹配 | 导出可写内部 ID 审计用，导入匹配走 `external_id` + `file_path` + `schema_version` 三元组 | 设计 import 端点 / SDK / Plugin I/O 时 |
 
 ---
 

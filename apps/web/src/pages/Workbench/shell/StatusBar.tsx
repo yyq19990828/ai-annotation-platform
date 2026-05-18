@@ -1,6 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import type { ReconnectState } from "@/hooks/useReconnectingWebSocket";
 import { formatDuration } from "../state/useSessionStats";
+import styles from "./StatusBar.module.css";
 
 interface PreannotationProgress {
   current: number;
@@ -43,6 +44,10 @@ function formatLockTime(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function cn(...classes: Array<string | false | null | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 export function StatusBar({
   userBoxesCount, aiBoxesCount, activeClass,
   imageWidth, imageHeight, cursor,
@@ -60,78 +65,58 @@ export function StatusBar({
     ? `${formatDuration(avgLeadMs)}/题 · 剩 ${remainingTaskCount} · 约 ${formatDuration(avgLeadMs * remainingTaskCount)}`
     : avgLeadMs ? `${formatDuration(avgLeadMs)}/题` : "—";
 
-  const Sep = () => (
-    <span
-      aria-hidden
-      style={{
-        width: 1, height: 12, background: "var(--color-border)",
-        alignSelf: "center", flexShrink: 0,
-      }}
-    />
-  );
+  const Sep = () => <span aria-hidden className={styles.separator} />;
   return (
-    <div
-      style={{
-        padding: "7px 16px",
-        background: "var(--color-bg-elev)", borderTop: "1px solid var(--color-border)",
-        display: "flex", justifyContent: "space-between",
-        fontSize: 11.5, color: "var(--color-fg-muted)",
-      }}
-    >
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+    <div className={styles.root}>
+      <div className={styles.group}>
         {lockRemainingMs !== undefined && lockRemainingMs > 0 && !lockError && (
           <>
-            <span style={{ color: lockRemainingMs < 60_000 ? "var(--color-warning)" : undefined, display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <Icon name="lock" size={11} /> 锁剩余 <span className="mono" style={{ fontWeight: 500 }}>{formatLockTime(lockRemainingMs)}</span>
+            <span className={cn(styles.inlineItem, lockRemainingMs < 60_000 && styles.lockWarning)}>
+              <Icon name="lock" size={11} /> 锁剩余 <span className={cn("mono", styles.monoMedium)}>{formatLockTime(lockRemainingMs)}</span>
             </span>
             <Sep />
           </>
         )}
         {lockError && (
           <>
-            <span style={{ color: "var(--color-danger)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span className={cn(styles.inlineItem, styles.lockError)}>
               <Icon name="warning" size={11} /> {lockError === "Lock expired" ? "锁已过期" : "他人正在编辑"}
             </span>
             <Sep />
           </>
         )}
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-          <span className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-fg)" }}>{userBoxesCount}</span>
+        <span className={styles.inlineItem}>
+          <span className={cn("mono", styles.countValue)}>{userBoxesCount}</span>
           <span>已确认</span>
         </span>
         <Sep />
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-          <Icon name="circleDot" size={11} style={{ color: "var(--color-ai)" }} />
-          <span className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: aiBoxesCount > 0 ? "var(--color-ai)" : "var(--color-fg)" }}>{aiBoxesCount}</span>
+        <span className={styles.inlineItem}>
+          <Icon name="circleDot" size={11} className={styles.aiIcon} />
+          <span className={cn("mono", styles.countValue, aiBoxesCount > 0 && styles.aiCountActive)}>{aiBoxesCount}</span>
           <span>AI 待审</span>
         </span>
         <Sep />
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <span className={styles.inlineItem}>
           当前类别
-          <span style={{
-            color: "var(--color-fg)", fontWeight: 600,
-            padding: "0 6px", borderRadius: "var(--radius-sm)",
-            background: "var(--color-bg-sunken)",
-          }}>{activeClass}</span>
+          <span className={styles.activeClass}>{activeClass}</span>
         </span>
       </div>
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <div className={styles.group}>
         {diffMode !== undefined && onSetDiffMode && (
           <>
-            <div style={{ display: "flex", gap: 2 }}>
+            <div className={styles.diffGroup}>
               {(["final", "raw", "diff"] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
                   onClick={() => onSetDiffMode(m)}
-                  style={{
-                    padding: "1px 8px", fontSize: 11, cursor: "pointer",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: m === "final" ? "3px 0 0 3px" : m === "diff" ? "0 3px 3px 0" : "0",
-                    background: diffMode === m ? "var(--color-accent)" : "var(--color-bg-elev)",
-                    color: diffMode === m ? "white" : "var(--color-fg-muted)",
-                    fontFamily: "inherit",
-                  }}
+                  className={cn(
+                    styles.diffButton,
+                    m === "final" && styles.diffButtonFirst,
+                    m === "raw" && styles.diffButtonMiddle,
+                    m === "diff" && styles.diffButtonLast,
+                    diffMode === m && styles.diffButtonActive,
+                  )}
                 >
                   {m === "final" ? "仅最终" : m === "raw" ? "仅 AI" : "叠加"}
                 </button>
@@ -145,47 +130,45 @@ export function StatusBar({
             type="button"
             onClick={onShowQueueDrawer}
             title={online === false ? "当前离线 · 点击查看离线队列详情" : "点击查看离线队列详情"}
-            style={{
-              fontSize: 11, padding: "1px 8px", borderRadius: 3,
-              background: online === false ? "oklch(0.85 0.10 25 / 0.4)" : "oklch(0.85 0.10 75 / 0.4)",
-              border: "1px solid oklch(0.75 0.10 50)",
-              color: "var(--color-fg)", cursor: onShowQueueDrawer ? "pointer" : "default",
-              fontFamily: "inherit",
-              display: "inline-flex", alignItems: "center", gap: 4,
-            }}
+            className={cn(
+              styles.offlineButton,
+              online === false ? styles.offlineButtonOffline : styles.offlineButtonOnline,
+              !onShowQueueDrawer && styles.offlineButtonIdle,
+            )}
           >
-            <span style={{ fontWeight: 600 }}>{online === false ? "离线" : "暂存"}</span>
+            <span className={styles.offlineLabel}>{online === false ? "离线" : "暂存"}</span>
             <span className="mono">· {offlineQueueCount ?? 0} 操作待同步</span>
           </button>
         ) : null}
         <span title="本会话单题平均耗时与剩余 ETA（&lt; 10 题样本时显示 —）">
-          ETA <span className="mono" style={{ color: "var(--color-fg)", fontWeight: 500 }}>{etaText}</span>
+          ETA <span className={cn("mono", styles.fgText, styles.monoMedium)}>{etaText}</span>
         </span>
         <Sep />
-        <span>分辨率 <span className="mono" style={{ color: "var(--color-fg)" }}>{dimText}</span></span>
+        <span>分辨率 <span className={cn("mono", styles.fgText)}>{dimText}</span></span>
         {cursorText && (
           <>
             <Sep />
-            <span>光标 <span className="mono" style={{ color: "var(--color-fg)" }}>{cursorText}</span></span>
+            <span>光标 <span className={cn("mono", styles.fgText)}>{cursorText}</span></span>
           </>
         )}
         {preannotationProgress && (
           <>
             <Sep />
-            <span style={{ color: "var(--color-ai)", fontWeight: 500 }}>
+            <span className={styles.preannotation}>
               预标注 <span className="mono">{preannotationProgress.current}/{preannotationProgress.total}</span>
             </span>
           </>
         )}
         <Sep />
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{
-            width: 6, height: 6, borderRadius: "50%",
-            background: preannotationConn === "open" ? "oklch(0.65 0.18 142)"
-              : preannotationConn === "reconnecting" ? "oklch(0.75 0.18 75)"
-              : "oklch(0.65 0.05 0)",
-            flexShrink: 0,
-          }} />
+        <span className={styles.connection}>
+          <span
+            className={cn(
+              styles.connectionDot,
+              preannotationConn === "open" && styles.connectionOpen,
+              preannotationConn === "reconnecting" && styles.connectionReconnecting,
+              preannotationConn === "failed" && styles.connectionFailed,
+            )}
+          />
           {preannotationConn === "open" && "实时同步"}
           {preannotationConn === "reconnecting" && `重连中… (${preannotationRetries})`}
           {preannotationConn === "failed" && "实时进度暂停"}

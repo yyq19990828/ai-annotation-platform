@@ -1,0 +1,11 @@
+/* v0.10.12 · CSP style-src 收紧续推 — DrawingPreview.tsx inline style 迁移. */
+
+.preview {
+  position: absolute;
+  left: var(--drawing-left);
+  top: var(--drawing-top);
+  width: var(--drawing-width);
+  height: var(--drawing-height);
+  border: 1.5px dashed var(--drawing-color);
+  background: color-mix(in oklab, var(--drawing-color) 12%, transparent);
+}

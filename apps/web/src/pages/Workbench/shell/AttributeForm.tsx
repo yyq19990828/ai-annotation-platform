@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import type { AttributeField, AttributeSchema } from "@/api/projects";
 import { usePopover } from "@/hooks/usePopover";
 import type { DirtyTracker } from "../state/useDirtyTracker";
+import styles from "./AttributeForm.module.css";
 
 export interface AttributeFormProps {
   schema: AttributeSchema | undefined;
@@ -58,6 +59,10 @@ export function getMissingRequired(
     if (empty) missing.push(f.key);
   }
   return missing;
+}
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
 }
 
 export function AttributeForm({
@@ -120,44 +125,27 @@ export function AttributeForm({
 
   return (
     <div
-      style={{ display: "flex", flexDirection: "column", gap: 10, padding: "10px 12px", borderTop: "1px solid var(--color-border)" }}
+      className={styles.form}
       onBlur={handleFormBlur}
     >
-      <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--color-fg-muted)" }}>
-        属性 {missing.length > 0 && <span style={{ color: "var(--color-danger)" }}>· {missing.length} 项必填未填</span>}
+      <div className={styles.heading}>
+        属性 {missing.length > 0 && <span className={styles.missingSummary}>· {missing.length} 项必填未填</span>}
       </div>
       {visible.map((f) => {
         const v = draft[f.key];
         const isMissing = f.required && missing.includes(f.key);
         const setValue = (newV: unknown) => scheduleCommit({ ...draft, [f.key]: newV });
-        const fieldStyle = {
-          display: "flex", flexDirection: "column" as const, gap: 4,
-          padding: 6, borderRadius: 4,
-          background: isMissing ? "oklch(0.96 0.05 25 / 0.4)" : "transparent",
-          border: isMissing ? "1px solid oklch(0.85 0.10 25)" : "1px solid transparent",
-        };
         return (
-          <label key={f.key} style={fieldStyle}>
-            <span style={{ fontSize: 11.5, color: "var(--color-fg)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <label key={f.key} className={cn(styles.field, isMissing && styles.fieldMissing)}>
+            <span className={styles.labelRow}>
               {f.label}
-              {f.required && <span style={{ color: "var(--color-danger)", marginLeft: 4 }}>*</span>}
+              {f.required && <span className={styles.requiredMarker}>*</span>}
               {/* v0.10.6 M4-γ · I13.2：视频任务下 mutable 字段标记徽标，提示「逐 keyframe 可变」语义。 */}
               {context === "video" && f.mutable === true && (
                 <span
                   title="逐 keyframe 可变（mutable）"
                   data-testid={`attr-mutable-badge-${f.key}`}
-                  style={{
-                    padding: "1px 5px",
-                    fontSize: 9.5,
-                    lineHeight: 1.2,
-                    borderRadius: 3,
-                    background: "color-mix(in oklch, var(--color-warning, oklch(0.78 0.14 70)) 18%, var(--color-bg-elev))",
-                    border: "1px solid color-mix(in oklch, var(--color-warning, oklch(0.78 0.14 70)) 38%, var(--color-border))",
-                    color: "var(--color-warning-fg, var(--color-fg))",
-                    fontWeight: 600,
-                    letterSpacing: 0.3,
-                    textTransform: "uppercase",
-                  }}
+                  className={styles.mutableBadge}
                 >
                   逐帧
                 </span>
@@ -165,19 +153,8 @@ export function AttributeForm({
               {f.description && <DescriptionPopover description={f.description} />}
               {f.hotkey && (f.type === "boolean" || f.type === "select") && (
                 <span
-                  className="mono"
+                  className={cn("mono", styles.hotkeyBadge)}
                   title={`选中标注后按 ${f.hotkey} 切换该属性`}
-                  style={{
-                    // v0.6.6 · 选中态下强化 hotkey badge：改用 accent 色 + 加粗，提示用户「数字键 = 属性快捷键」
-                    padding: "1px 6px",
-                    background: "color-mix(in oklch, var(--color-accent) 12%, var(--color-bg-elev))",
-                    border: "1px solid color-mix(in oklch, var(--color-accent) 30%, var(--color-border))",
-                    borderBottomWidth: 2,
-                    borderRadius: 3,
-                    fontSize: 10.5,
-                    color: "var(--color-accent)",
-                    fontWeight: 600,
-                  }}
                 >
                   ⌨ {f.hotkey}
                 </span>
@@ -189,7 +166,7 @@ export function AttributeForm({
                 value={(v as string) ?? ""}
                 disabled={readOnly}
                 onChange={(e) => setValue(e.target.value)}
-                style={inputStyle}
+                className={styles.input}
               />
             )}
             {f.type === "number" && (
@@ -203,7 +180,7 @@ export function AttributeForm({
                   const n = e.target.value === "" ? undefined : Number(e.target.value);
                   setValue(n);
                 }}
-                style={inputStyle}
+                className={styles.input}
               />
             )}
             {f.type === "boolean" && (
@@ -212,7 +189,7 @@ export function AttributeForm({
                 checked={!!v}
                 disabled={readOnly}
                 onChange={(e) => setValue(e.target.checked)}
-                style={{ alignSelf: "flex-start" }}
+                className={styles.checkbox}
               />
             )}
             {f.type === "select" && (
@@ -220,7 +197,7 @@ export function AttributeForm({
                 value={(v as string) ?? ""}
                 disabled={readOnly}
                 onChange={(e) => setValue(e.target.value || undefined)}
-                style={inputStyle}
+                className={styles.input}
               >
                 <option value="">—</option>
                 {f.options?.map((o) => (
@@ -237,7 +214,7 @@ export function AttributeForm({
                   const arr = Array.from(e.target.selectedOptions).map((o) => o.value);
                   setValue(arr);
                 }}
-                style={{ ...inputStyle, height: 80 }}
+                className={cn(styles.input, styles.multiSelect)}
               >
                 {f.options?.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -261,15 +238,6 @@ export function AttributeForm({
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  fontSize: 12,
-  padding: "4px 6px",
-  background: "var(--color-bg-elev)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 3,
-  color: "var(--color-fg)",
-};
-
 /** v0.6.4：description 支持 markdown（链接 / 加粗 / 列表 / 换行）。
  *  hover 或 focus 时弹出 popover，点击外部关闭。链接强制 target=_blank。
  *  GFM 启用，但禁 raw HTML（react-markdown 默认不开 rehype-raw，避免 XSS）。
@@ -287,27 +255,13 @@ function DescriptionPopover({ description }: { description: string }) {
       }}
       onMouseEnter={() => pop.setOpen(true)}
       onMouseLeave={() => pop.close()}
-      style={{ position: "relative", display: "inline-flex" }}
+      className={styles.descriptionContainer}
     >
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); pop.toggle(); }}
         aria-label={`查看说明：${description.slice(0, 50)}`}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: 14,
-          height: 14,
-          borderRadius: "50%",
-          border: "1px solid var(--color-border)",
-          background: "var(--color-bg-sunken)",
-          color: "var(--color-fg-muted)",
-          fontSize: 9,
-          fontWeight: 600,
-          cursor: "help",
-          padding: 0,
-        }}
+        className={styles.descriptionButton}
       >
         i
       </button>
@@ -315,57 +269,33 @@ function DescriptionPopover({ description }: { description: string }) {
         <div
           ref={pop.popoverRef as React.MutableRefObject<HTMLDivElement | null>}
           role="tooltip"
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            zIndex: 1000,
-            maxWidth: 280,
-            minWidth: 180,
-            padding: "8px 10px",
-            background: "var(--color-bg-elev)",
-            border: "1px solid var(--color-border)",
-            borderRadius: 4,
-            boxShadow: "0 4px 16px oklch(0 0 0 / 0.18)",
-            fontSize: 12,
-            lineHeight: 1.5,
-            color: "var(--color-fg)",
-            pointerEvents: "auto",
-          }}
+          className={styles.descriptionPopover}
         >
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
               a: ({ href, children }) => (
-                <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-primary)" }}>
+                <a href={href} target="_blank" rel="noopener noreferrer" className={styles.markdownLink}>
                   {children}
                 </a>
               ),
-              p: ({ children }) => <p style={{ margin: "0 0 6px" }}>{children}</p>,
-              ul: ({ children }) => <ul style={{ margin: "0 0 6px", paddingLeft: 16 }}>{children}</ul>,
-              ol: ({ children }) => <ol style={{ margin: "0 0 6px", paddingLeft: 16 }}>{children}</ol>,
+              p: ({ children }) => <p className={styles.markdownParagraph}>{children}</p>,
+              ul: ({ children }) => <ul className={styles.markdownList}>{children}</ul>,
+              ol: ({ children }) => <ol className={styles.markdownList}>{children}</ol>,
               code: ({ children }) => (
                 <code
-                  style={{
-                    background: "var(--color-code-bg)",
-                    color: "var(--color-code-fg)",
-                    padding: "1px 4px",
-                    borderRadius: 3,
-                    fontSize: 11,
-                    fontFamily: "var(--font-mono)",
-                    border: "1px solid var(--color-border)",
-                  }}
+                  className={styles.markdownCode}
                 >
                   {children}
                 </code>
               ),
               strong: ({ children }) => (
-                <strong style={{ color: "var(--color-fg)", fontWeight: 600 }}>{children}</strong>
+                <strong className={styles.markdownStrong}>{children}</strong>
               ),
               em: ({ children }) => (
-                <em style={{ color: "var(--color-fg-muted)" }}>{children}</em>
+                <em className={styles.markdownEm}>{children}</em>
               ),
-              li: ({ children }) => <li style={{ marginBottom: 2 }}>{children}</li>,
+              li: ({ children }) => <li className={styles.markdownListItem}>{children}</li>,
             }}
           >
             {description}

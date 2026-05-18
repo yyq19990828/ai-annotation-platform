@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import styles from "./BlurhashLayer.module.css";
 
 export function BlurhashLayer({ hash }: { hash: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -25,11 +26,7 @@ export function BlurhashLayer({ hash }: { hash: string }) {
   return (
     <canvas
       ref={canvasRef}
-      style={{
-        position: "absolute", inset: 0, width: "100%", height: "100%",
-        objectFit: "contain", filter: "blur(8px)", opacity: 0.7,
-        pointerEvents: "none",
-      }}
+      className={styles.canvas}
     />
   );
 }
