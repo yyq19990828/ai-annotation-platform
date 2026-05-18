@@ -3,6 +3,7 @@ from app.db.models.group import Group
 from app.db.models.organization import Organization, OrganizationMember
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from app.db.models.project_template import ProjectTemplate
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_lock import TaskLock, AnnotationDraft
@@ -39,6 +40,7 @@ __all__ = [
     "OrganizationMember",
     "Project",
     "ProjectMember",
+    "ProjectTemplate",
     "Task",
     "TaskBatch",
     "TaskLock",

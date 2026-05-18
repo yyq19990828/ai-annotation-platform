@@ -45,7 +45,8 @@ last_reviewed: 2026-05-11
 3. 7 步流程正常往下走，任何字段都可以在某步覆盖（你的修改优先于源配置）。
 4. 提交后新项目就绪。**只复制配置**：classes / classes_config / attribute_schema / AI 配置 / label_config / rendering_config / 阈值 / 采样规则等。**不复制运行时数据**：datasets / tasks / annotations / members / batches。
 
-> 需要的不是「复制一次」而是「跨项目共享模板库」？请提需求 — 当前形态满足 80% 场景，独立 Template 库待客户驱动触发。
+> 需要跨项目共享 / 跨组织共享 / 模板版本管理？v0.10.14 起补上「项目模板库」独立资产形态，
+> 详见 [项目模板库（Project Templates）](./project-templates.md)。
 
 v0.10.13 起在 banner 中新增 checkbox **「同时复制标注指引」**（默认勾选）：复制配置时连
 带源项目的 Markdown 指引与图片资源带过来。图片资源 storage key 与源项目共享，源项目删除资源会影响

@@ -19,6 +19,7 @@ import {
   CUSTOM_MODEL_KEY,
 } from "@/constants/projectTypes";
 import { projectsApi, type ProjectResponse, type ClassesConfig, type AttributeField, type AttributeSchema } from "@/api/projects";
+import { projectTemplatesApi, type ProjectTemplateOut } from "@/api/projectTemplates";
 import type { ClassConfigEntry } from "@/api/projects";
 import type { DatasetResponse } from "@/api/datasets";
 import { ClassEditor, type ClassRow } from "@/pages/Projects/sections/ClassEditor";
@@ -34,6 +35,9 @@ interface Props {
   /** v0.10.11 · 给定时, 打开后以此项目为模板预填 FormState; 提交时携带
    *  source_project_id, 后端用源项目兜底未显式给出的字段. */
   sourceProjectId?: string;
+  /** v0.10.14 · E2 · 从 ProjectTemplate 应用模板. 与 sourceProjectId 互斥
+   *  (调用方保证). 给定时预填 FormState + 提交携带 template_id, 后端 usage_count + 1. */
+  templateId?: string;
 }
 
 interface FormState {
@@ -138,7 +142,51 @@ function buildFormFromSource(src: ProjectResponse): FormState {
   };
 }
 
-export function CreateProjectWizard({ open, onClose, sourceProjectId }: Props) {
+/** v0.10.14 · E2 · 从模板还原 FormState. 模板字段集合与 source 项目相近, 但
+ *  没有 ml_backend_id (模板不绑 backend), 也没有 dataset/members 等运行时数据. */
+function buildFormFromTemplate(t: ProjectTemplateOut): FormState {
+  const classesConfig: ClassesConfig = (t.classes_config ?? {}) as ClassesConfig;
+  const orderedClasses = [...(t.classes ?? [])].sort((a, b) => {
+    const oa = classesConfig[a]?.order ?? 0;
+    const ob = classesConfig[b]?.order ?? 0;
+    return oa - ob;
+  });
+  const classRows: ClassRow[] = orderedClasses.map((name) => {
+    const cfg: ClassConfigEntry | undefined = classesConfig[name];
+    return {
+      name,
+      color: cfg?.color ?? "#888888",
+      ...(cfg?.alias ? { alias: cfg.alias } : {}),
+    };
+  });
+  const attributeFields: AttributeField[] =
+    (t.attribute_schema as AttributeSchema | undefined)?.fields ?? [];
+  const aiModel = t.ai_model ?? "";
+  const aiModelChoice = aiModel && PRESET_AI_MODELS.includes(aiModel)
+    ? aiModel
+    : aiModel
+      ? CUSTOM_MODEL_KEY
+      : PRESET_AI_MODELS[0];
+  const aiModelCustom = aiModel && !PRESET_AI_MODELS.includes(aiModel) ? aiModel : "";
+  const textOutputDefault =
+    t.text_output_default === "box" || t.text_output_default === "mask" ||
+    t.text_output_default === "both"
+      ? t.text_output_default
+      : "";
+  return {
+    ...INITIAL,
+    name: "",
+    typeKey: t.type_key,
+    classRows,
+    attributeFields,
+    aiEnabled: t.ai_enabled,
+    aiModelChoice,
+    aiModelCustom,
+    textOutputDefault,
+  };
+}
+
+export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId }: Props) {
   const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
   const createProject = useCreateProject();
@@ -185,6 +233,30 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId }: Props) {
         cancelled = true;
       };
     }
+    if (templateId) {
+      let cancelled = false;
+      setPrefilling(true);
+      projectTemplatesApi
+        .get(templateId)
+        .then((t) => {
+          if (cancelled) return;
+          setForm(buildFormFromTemplate(t));
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          pushToast({
+            msg: "模板读取失败, 走普通新建",
+            sub: (e as Error)?.message ?? "请稍后重试",
+            kind: "error",
+          });
+        })
+        .finally(() => {
+          if (!cancelled) setPrefilling(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     try {
       const saved = localStorage.getItem(DRAFT_KEY);
       if (saved) setForm({ ...INITIAL, ...JSON.parse(saved) });
@@ -192,14 +264,15 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId }: Props) {
       // ignore
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sourceProjectId]);
+  }, [open, sourceProjectId, templateId]);
 
   useEffect(() => {
     // v0.10.11 · 复制模式不写草稿 (避免下次普通新建被他人项目模板污染).
-    if (open && !created && !sourceProjectId) {
+    // v0.10.14 · E2 · 模板模式同理.
+    if (open && !created && !sourceProjectId && !templateId) {
       try { localStorage.setItem(DRAFT_KEY, JSON.stringify(form)); } catch {/* */}
     }
-  }, [form, open, created, sourceProjectId]);
+  }, [form, open, created, sourceProjectId, templateId]);
 
   const selectedType = useMemo(
     () => PROJECT_TYPES.find((t) => t.key === form.typeKey) ?? PROJECT_TYPES[0],
@@ -259,6 +332,9 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId }: Props) {
         source_project_id: sourceProjectId ?? null,
         // v0.10.13 · E1 · 仅复制模式下传该 flag; 后端校验若无 source_project_id 会返 400.
         copy_annotation_guide: sourceProjectId ? form.copyAnnotationGuide : undefined,
+        // v0.10.14 · E2 · 模板模式下携带 template_id; 后端 deepcopy 模板载荷 +
+        // usage_count + 1. 与 source_project_id 互斥, schema 已校验.
+        template_id: templateId ?? null,
         due_date: form.dueDate || null,
       },
       {
@@ -293,13 +369,24 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId }: Props) {
       title={
         step === 7
           ? "创建完成"
-          : sourceProjectId
-            ? "复制项目配置"
-            : "新建项目"
+          : templateId
+            ? "从模板创建项目"
+            : sourceProjectId
+              ? "复制项目配置"
+              : "新建项目"
       }
       width={620}
     >
       {step !== 7 && <Stepper current={stepperCurrent} />}
+      {/* v0.10.14 · E2 · 模板模式: 顶部横幅 + 加载态. */}
+      {templateId && !sourceProjectId && step !== 7 && (
+        <div className={styles.copyBanner}>
+          <Icon name="book" size={12} />
+          {prefilling
+            ? "正在从模板加载配置…"
+            : "已用模板字段预填表单, 提交后将复制到新项目 (模板的 annotation_guide 也会一并应用; guide_assets 不携带)"}
+        </div>
+      )}
       {/* v0.10.11 · 复制模式: 顶部横幅 + 加载态. */}
       {sourceProjectId && step !== 7 && (
         <div className={styles.copyBanner}>

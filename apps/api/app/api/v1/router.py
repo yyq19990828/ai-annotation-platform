@@ -23,6 +23,7 @@ from app.api.v1 import (
     notifications,
     predictions,
     projects,
+    project_templates,
     search,
     storage,
     system_settings,
@@ -67,6 +68,10 @@ api_router.include_router(projects.router, prefix="/projects", tags=["projects"]
 # v0.10.13 · E1 · 项目标注指引图片资源端点 (与 datasets items upload 独立, 不污染 dataset_items 表)
 api_router.include_router(
     guide_assets.router, prefix="/projects", tags=["guide-assets"]
+)
+# v0.10.14 · E2 · 项目模板库
+api_router.include_router(
+    project_templates.router, prefix="/project-templates", tags=["project-templates"]
 )
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(videos.router, prefix="/videos", tags=["videos"])

@@ -331,6 +331,62 @@ async def test_copy_annotation_guide_without_source_returns_400(
     assert resp.status_code == 400, resp.text
 
 
+async def test_apply_template_with_explicit_field_override(
+    httpx_client_bound, super_admin, db_session
+):
+    """v0.10.14 · E2 · template_id 路径: 显式给字段优先于模板载荷."""
+    from app.db.models.project_template import ProjectTemplate
+
+    user, token = super_admin
+    t = ProjectTemplate(
+        id=uuid.uuid4(),
+        display_id=f"PT-TX-{uuid.uuid4().hex[:6]}",
+        name="模板",
+        type_label="图像-检测",
+        type_key="image-det",
+        classes=["car"],
+        ai_enabled=True,
+        ai_model="grounded-sam2",
+        scope="public",
+        created_by=user.id,
+    )
+    db_session.add(t)
+    await db_session.flush()
+    await db_session.commit()
+
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "name": "应用模板带覆盖",
+        "type_label": "图像-检测",
+        "type_key": "image-det",
+        "template_id": str(t.id),
+        # 显式覆盖
+        "ai_enabled": False,
+        "classes": ["pedestrian"],
+    }
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["ai_enabled"] is False
+    assert data["classes"] == ["pedestrian"]
+    # 没显式覆盖的字段仍从模板复制
+    assert data["ai_model"] == "grounded-sam2"
+
+
+async def test_apply_nonexistent_template_404(httpx_client_bound, super_admin):
+    """v0.10.14 · E2 · template_id 指向不存在记录 → 404."""
+    _, token = super_admin
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "name": "幽灵模板",
+        "type_label": "图像-检测",
+        "type_key": "image-det",
+        "template_id": str(uuid.uuid4()),
+    }
+    resp = await httpx_client_bound.post("/api/v1/projects", json=body, headers=headers)
+    assert resp.status_code == 404, resp.text
+
+
 async def test_clone_jsonb_is_deep_copied(httpx_client_bound, super_admin, db_session):
     """修改新项目的 classes_config 不应该污染源项目 (避免共享 JSONB 引用)."""
     user, token = super_admin

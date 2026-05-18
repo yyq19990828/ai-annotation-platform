@@ -356,5 +356,7 @@ export type PageKey =
   | "audit"
   | "bugs"
   | "settings"
+  // v0.10.14 · E2 · 项目模板库（project_admin / super_admin）
+  | "project-templates"
   // v0.8.4 · 成员绩效（super_admin only）
   | "admin-people";

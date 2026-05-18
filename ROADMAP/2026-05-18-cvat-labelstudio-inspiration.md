@@ -15,17 +15,21 @@
 
 按"工作量 / 风险"从低到高排，每条都不依赖未做的基建。
 
-### 1.1 Annotation Guide（项目级 Markdown 指引 + asset）
+### 1.1 Annotation Guide（项目级 Markdown 指引 + asset） ✅ 已完成 v0.10.13
+
+> **2026-05-18 落地**：`projects.annotation_guide TEXT` + `projects.guide_assets JSONB`（alembic 0067）；`/projects/{id}/guide-assets/*` 4 端点（upload-init / upload-complete / DELETE / sign-url）；CodeMirror 6 [MarkdownEditor](../../apps/web/src/components/markdown/MarkdownEditor.tsx) + [GuideMarkdownView](../../apps/web/src/components/markdown/GuideMarkdownView.tsx) + 工作台 [GuidePanel](../../apps/web/src/pages/Workbench/sidebar/GuidePanel.tsx) 首次自动展开浮层；CreateProjectWizard 加 `copy_annotation_guide` checkbox。详见 CHANGELOG v0.10.13 / [plan](../../docs/plans/2026-05-18-v0.10.13-annotation-guide.md)。
+>
+> **2026-05-19 复盘**：实际落地与原设计一致；超出原估的部分是用 CodeMirror 6 替代了原计划的 textarea + 工具栏（理由：拖拽图片直传需要 view 拦截，CodeMirror 的 `EditorView.domEventHandlers` 比 contentEditable 更稳）。后续观察项 / 优化方向已转录到主 [ROADMAP §A 项目模块](../ROADMAP.md#项目模块) "Annotation Guide 配套延伸"（guide_assets 跨项目 deepcopy / orphan GC / 视频工作台适配 / LLM 校验等）。
 
 - **来源**：CVAT [`cvat/apps/engine/models.py`](../../cvat/cvat/apps/engine/models.py) `Project.annotation_guide` 字段 + `AnnotationGuide` / `Asset` 两张表（asset 是允许在指引里贴的截图）。
-- **平台现状**：没有项目级标注指引；标注规则只能口头传达或写在外部文档。
+- **平台现状（事前）**：没有项目级标注指引；标注规则只能口头传达或写在外部文档。
 - **价值**：对**标注一致性**的提升远超技术 ROI。一份"什么算合格 / 边界情况怎么处理 / 反例图"的指引能直接降低 reject 率。
-- **设计**：
-  - DB：`projects` 加 `guide_markdown TEXT`、`guide_assets JSONB`（asset 走对象存储，记 URL + alt + size）。
-  - UI：ProjectSettingsPage 加「📖 标注指引」section（Markdown 编辑器 + 拖拽截图上传）。
-  - 工作台左侧栏加「📖 指引」浮层（默认折叠，新标注员首次进入自动展开一次，写 localStorage 标记）。
-- **工作量**：1.5d（后端 0.5d schema + 上传复用 dataset upload；前端 1d，Markdown 编辑器用 `react-markdown` + 已有 `MarkdownView` 组件）。
-- **建议节奏**：与「项目模板/复制」（v0.10.11 已落基础形态）共用 ProjectSettingsPage 破窗窗口。
+- **实际设计（事后回填）**：
+  - DB：`projects` 加 `annotation_guide TEXT` + `guide_assets JSONB`（与原设计的 `guide_markdown` 列名不一致；最终选 `annotation_guide` 对齐 CVAT 命名）。
+  - 后端：单独 `/projects/{id}/guide-assets/*` 端点 module；storage prefix `projects/{id}/guide/...` 与 dataset items 隔离，**不**复用 dataset upload（原设计提到复用，实际为避免污染 dataset_items 表所以拆开）。
+  - 前端：用 CodeMirror 6（lazy import）替代原计划的简单 textarea；预览仍走 react-markdown + remark-gfm。
+  - 工作台浮层：左**上**角而不是左**侧栏**；`localStorage` `wb:guide-seen:{projectId}` + `wb:guide-collapsed:{projectId}` 双 key（前者控制首次自动展开，后者记忆折叠状态）。
+- **实际工作量**：约 1d（与原估 1.5d 接近，CodeMirror 6 接入额外 ~0.3d，但 storage 复用换成独立 module 节省了部分边界检查时间）。
 
 ### 1.2 `reject_reason_type` 结构化枚举
 
@@ -482,7 +486,7 @@
 
 | 本文档条目 | 现 ROADMAP 状态 | 建议动作 |
 |---|---|---|
-| §1.1 Annotation Guide | **新增** | 回流到 §A "项目模块" 群（1 行钩子） |
+| §1.1 Annotation Guide | ✅ **已完成 v0.10.13**（2026-05-18） | 配套延伸条目已转录到 ROADMAP §A 项目模块 |
 | §1.2 reject_reason_type | **新增** | 回流到 §A "项目模块" 或 §B "可观测性" |
 | §1.3 webhook event_version | **新增** | 与 §2.1 合并到一份 ADR 草案 |
 | §1.4 截图 fixture | 已在 §A 后续观察项 | 不动 |
@@ -512,7 +516,7 @@
 
 不一次性全部回流，按下面三波推进，每波收尾后再评估下一波：
 
-**第 1 波（v0.11 内开工）**：§1.1 Annotation Guide / §1.2 reject_reason_type / §1.5 Predictions Import / §1.7 async_jobs。
+**第 1 波（v0.11 内开工）**：~~§1.1 Annotation Guide~~ ✅ v0.10.13 / §1.2 reject_reason_type / §1.5 Predictions Import / §1.7 async_jobs。
 **特征**：低风险、低工作量、高可见价值；落地后给后续大项铺基建。
 
 **第 2 波（v0.11 中后期）**：§2.1 Webhook 系统 / §2.2 AnnotationFeedback 收敛 / §3.1 公开 SDK。

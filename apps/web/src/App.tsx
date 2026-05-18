@@ -42,6 +42,9 @@ const StoragePage = lazy(() =>
 const ProjectSettingsPage = lazy(() =>
   import("@/pages/Projects/ProjectSettingsPage").then((m) => ({ default: m.ProjectSettingsPage }))
 );
+const ProjectTemplatesPage = lazy(() =>
+  import("@/pages/ProjectTemplates/ProjectTemplatesPage").then((m) => ({ default: m.ProjectTemplatesPage }))
+);
 const AuditPage = lazy(() =>
   import("@/pages/Audit/AuditPage").then((m) => ({ default: m.AuditPage }))
 );
@@ -364,6 +367,14 @@ export function App() {
           }
         />
         <Route path="/projects/:id/settings" element={<ProjectSettingsPage />} />
+        <Route
+          path="/project-templates"
+          element={
+            <RequirePagePermission pageKey="project-templates">
+              <ProjectTemplatesPage />
+            </RequirePagePermission>
+          }
+        />
         <Route path="/unauthorized" element={<UnauthorizedPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>

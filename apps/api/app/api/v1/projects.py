@@ -27,6 +27,10 @@ from app.schemas.project import (
     ProjectTransferRequest,
 )
 from app.services.display_id import next_display_id
+from app.services.project_clone import (
+    CLONEABLE_PROJECT_FIELDS as _CLONEABLE_PROJECT_FIELDS,  # noqa: F401 (re-export)
+    merge_from_source as _merge_from_source_project_impl,
+)
 from app.config import settings
 
 router = APIRouter()
@@ -310,6 +314,10 @@ async def create_project(
                 status_code=400, detail="ml_backend_source_id not found"
             )
 
+    # v0.10.14 · E2 · "从模板创建" — schema 已校验 template_id / source_project_id
+    # 互斥. 应用模板时把模板载荷 deepcopy 进 payload, 并 usage_count += 1.
+    template_id = payload.pop("template_id", None)
+
     # v0.10.11 · "从已有项目复制配置" — 用源项目兜底未显式给出的字段;
     # 若源项目带 ml_backend_id 且 caller 未单独指定 ml_backend_source_id,
     # 自动把源项目的 backend 作为 backend 克隆源.
@@ -343,6 +351,20 @@ async def create_project(
             detail="copy_annotation_guide requires source_project_id",
         )
 
+    template = None
+    if template_id is not None:
+        from app.db.models.project_template import ProjectTemplate
+        from app.services.project_template import (
+            assert_template_visible,
+            merge_template_into_payload,
+        )
+
+        template = await db.get(ProjectTemplate, template_id)
+        if template is None:
+            raise HTTPException(status_code=404, detail="模板不存在")
+        await assert_template_visible(db, template, current_user)
+        payload = merge_template_into_payload(template, payload)
+
     if payload.get("ml_backend_id"):
         payload = await _apply_backend_display_hint(db, payload)
 
@@ -365,8 +387,16 @@ async def create_project(
         # 在此场景与直接读 source.name 等价).
         project.ai_model = source_backend.name
 
+    if template is not None:
+        template.usage_count = (template.usage_count or 0) + 1
+
     await db.commit()
     await db.refresh(project)
+    if template is not None:
+        # 测试环境共享 dependency-override session, 后续 GET /project-templates/{id}
+        # 会从 identity map 取出本 template; commit 后属性可能进入"待重新加载"
+        # 状态触发 sync I/O. 显式 refresh 保证下次访问不触发 lazy load.
+        await db.refresh(template)
     return await _serialize_project(db, project)
 
 
@@ -401,49 +431,10 @@ async def _clone_backend_to_new_project(
     return new_id
 
 
-# v0.10.11 · 源项目可克隆字段白名单. 不在此列表的字段 (id/display_id/owner_id/
-# status/created_at/updated_at/total_tasks 等运行时状态, datasets/tasks/members/
-# batches 等关联数据) 不会被复制.
-_CLONEABLE_PROJECT_FIELDS: tuple[str, ...] = (
-    "type_label",
-    "type_key",
-    "classes",
-    "classes_config",
-    "attribute_schema",
-    "ai_enabled",
-    "ai_model",
-    "label_config",
-    "sampling",
-    "maximum_annotations",
-    "show_overlap_first",
-    "iou_dedup_threshold",
-    "box_threshold",
-    "text_threshold",
-    "text_output_default",
-    "rendering_config",
-)
-
-
+# v0.10.14 · E2 · 白名单 + merge 实现迁出至 app.services.project_clone, 供
+# projects + project_templates 共享. 这里保留同名 wrapper, 不改调用点.
 def _merge_from_source_project(payload: dict, source: Project) -> dict:
-    """v0.10.11 · 用 source 项目的可克隆字段兜底 payload 中缺失的项. 请求字段优先.
-
-    JSONB/dict/list 字段深拷贝, 避免新项目和源项目共享底层引用 (后续 mutate
-    污染源).
-    """
-    import copy
-
-    for field in _CLONEABLE_PROJECT_FIELDS:
-        if field in payload:
-            continue
-        if not hasattr(source, field):
-            continue
-        value = getattr(source, field)
-        if value is None:
-            continue
-        if isinstance(value, (dict, list)):
-            value = copy.deepcopy(value)
-        payload[field] = value
-    return payload
+    return _merge_from_source_project_impl(payload, source)
 
 
 async def _apply_backend_display_hint(db: AsyncSession, payload: dict) -> dict:

@@ -25,6 +25,7 @@ last_reviewed: 2026-05-09
 | 跨项目管理 AI 模型 | [模型市场](./model-market) |
 | 排查失败预标 | [失败预测排查](./failed-predictions) |
 | 管理 BUG 反馈 | `/bugs` |
+| 治理公共模板 | [公共模板治理](./public-templates) |
 | 审计与合规 | [审计日志](./audit-logs) |
 | 系统监控 | [系统监控](./system-monitoring) |
 

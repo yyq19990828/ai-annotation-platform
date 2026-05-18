@@ -20,6 +20,7 @@ const PAGE_PATH: Record<PageKey, string> = {
   audit: "/audit",
   bugs: "/bugs",
   settings: "/settings",
+  "project-templates": "/project-templates",
   "admin-people": "/admin/people",
 };
 

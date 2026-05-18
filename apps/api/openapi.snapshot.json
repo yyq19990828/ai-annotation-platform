@@ -7231,6 +7231,18 @@
             ],
             "title": "Source Project Id"
           },
+          "template_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
           "text_output_default": {
             "anyOf": [
               {
@@ -7761,6 +7773,688 @@
           "pending_review"
         ],
         "title": "ProjectStats",
+        "type": "object"
+      },
+      "ProjectTemplateCreate": {
+        "description": "新建模板.\n\n给定 ``source_project_id`` 时, service 层会自动从源项目 dump\n_CLONEABLE_PROJECT_FIELDS 进模板 (caller 传入的同字段值优先);\n``annotation_guide`` 始终走 caller 传入或源项目兜底.",
+        "properties": {
+          "ai_enabled": {
+            "default": false,
+            "title": "Ai Enabled",
+            "type": "boolean"
+          },
+          "ai_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Model"
+          },
+          "annotation_guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Guide"
+          },
+          "attribute_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttributeSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "box_threshold": {
+            "default": 0.35,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Box Threshold",
+            "type": "number"
+          },
+          "classes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "classes_config": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ClassConfigEntry"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classes Config"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "iou_dedup_threshold": {
+            "default": 0.7,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Iou Dedup Threshold",
+            "type": "number"
+          },
+          "label_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Config"
+          },
+          "maximum_annotations": {
+            "default": 1,
+            "title": "Maximum Annotations",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "rendering_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRenderingConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sampling": {
+            "default": "sequence",
+            "title": "Sampling",
+            "type": "string"
+          },
+          "scope": {
+            "default": "private",
+            "enum": [
+              "private",
+              "organization",
+              "public"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "show_overlap_first": {
+            "default": false,
+            "title": "Show Overlap First",
+            "type": "boolean"
+          },
+          "source_project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Project Id"
+          },
+          "text_output_default": {
+            "anyOf": [
+              {
+                "enum": [
+                  "box",
+                  "mask",
+                  "both"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Output Default"
+          },
+          "text_threshold": {
+            "default": 0.25,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Text Threshold",
+            "type": "number"
+          },
+          "type_key": {
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Type Key",
+            "type": "string"
+          },
+          "type_label": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Type Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type_label",
+          "type_key"
+        ],
+        "title": "ProjectTemplateCreate",
+        "type": "object"
+      },
+      "ProjectTemplateOut": {
+        "properties": {
+          "ai_enabled": {
+            "default": false,
+            "title": "Ai Enabled",
+            "type": "boolean"
+          },
+          "ai_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Model"
+          },
+          "annotation_guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Guide"
+          },
+          "attribute_schema": {
+            "$ref": "#/components/schemas/AttributeSchema",
+            "default": {
+              "fields": []
+            }
+          },
+          "box_threshold": {
+            "default": 0.35,
+            "title": "Box Threshold",
+            "type": "number"
+          },
+          "classes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "classes_config": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ClassConfigEntry"
+            },
+            "default": {},
+            "title": "Classes Config",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "created_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_id": {
+            "title": "Display Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "iou_dedup_threshold": {
+            "default": 0.7,
+            "title": "Iou Dedup Threshold",
+            "type": "number"
+          },
+          "label_config": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Label Config",
+            "type": "object"
+          },
+          "maximum_annotations": {
+            "default": 1,
+            "title": "Maximum Annotations",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "rendering_config": {
+            "$ref": "#/components/schemas/ProjectRenderingConfig",
+            "default": {}
+          },
+          "sampling": {
+            "default": "sequence",
+            "title": "Sampling",
+            "type": "string"
+          },
+          "scope": {
+            "default": "private",
+            "enum": [
+              "private",
+              "organization",
+              "public"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "show_overlap_first": {
+            "default": false,
+            "title": "Show Overlap First",
+            "type": "boolean"
+          },
+          "source_project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Project Id"
+          },
+          "text_output_default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Output Default"
+          },
+          "text_threshold": {
+            "default": 0.25,
+            "title": "Text Threshold",
+            "type": "number"
+          },
+          "type_key": {
+            "title": "Type Key",
+            "type": "string"
+          },
+          "type_label": {
+            "title": "Type Label",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "usage_count": {
+            "default": 0,
+            "title": "Usage Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "display_id",
+          "name",
+          "type_label",
+          "type_key",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProjectTemplateOut",
+        "type": "object"
+      },
+      "ProjectTemplateUpdate": {
+        "properties": {
+          "ai_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Enabled"
+          },
+          "ai_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Model"
+          },
+          "annotation_guide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Guide"
+          },
+          "attribute_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttributeSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "box_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Box Threshold"
+          },
+          "classes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classes"
+          },
+          "classes_config": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ClassConfigEntry"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classes Config"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "iou_dedup_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iou Dedup Threshold"
+          },
+          "label_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Config"
+          },
+          "maximum_annotations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum Annotations"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "rendering_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRenderingConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sampling": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "private",
+                  "organization",
+                  "public"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "show_overlap_first": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Overlap First"
+          },
+          "text_output_default": {
+            "anyOf": [
+              {
+                "enum": [
+                  "box",
+                  "mask",
+                  "both"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Output Default"
+          },
+          "text_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Threshold"
+          },
+          "type_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Key"
+          },
+          "type_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Label"
+          }
+        },
+        "title": "ProjectTemplateUpdate",
         "type": "object"
       },
       "ProjectTransferRequest": {
@@ -16703,6 +17397,336 @@
         "summary": "Mark Read",
         "tags": [
           "notifications"
+        ]
+      }
+    },
+    "/api/v1/project-templates": {
+      "get": {
+        "operationId": "list_templates_api_v1_project_templates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(private|organization|public)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectTemplateOut"
+                  },
+                  "title": "Response List Templates Api V1 Project Templates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Templates",
+        "tags": [
+          "project-templates"
+        ]
+      },
+      "post": {
+        "operationId": "create_template_api_v1_project_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTemplateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Template",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/project-templates/{template_id}": {
+      "delete": {
+        "operationId": "delete_template_api_v1_project_templates__template_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Template",
+        "tags": [
+          "project-templates"
+        ]
+      },
+      "get": {
+        "operationId": "get_template_api_v1_project_templates__template_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Template",
+        "tags": [
+          "project-templates"
+        ]
+      },
+      "patch": {
+        "operationId": "update_template_api_v1_project_templates__template_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTemplateUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Template",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/project-templates/{template_id}/duplicate": {
+      "post": {
+        "description": "克隆任意可见模板为当前用户私有模板.",
+        "operationId": "duplicate_template_api_v1_project_templates__template_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Duplicate Template",
+        "tags": [
+          "project-templates"
         ]
       }
     },

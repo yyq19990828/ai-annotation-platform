@@ -13,7 +13,7 @@
 ### 计划中
 
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
-- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：Annotation Guide / reject_reason_type / Predictions Import + AAP JSON / 决策底线表。
+- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：reject_reason_type / Predictions Import + AAP JSON / 决策底线表。已落地：✅ Annotation Guide (v0.10.13)。
 
 > 历史 epic 文档已归档：
 > - [`[archived]0.10.x.md`](./ROADMAP/[archived]0.10.x.md) — SAM 3 接入 / Prompt-first ToolDock / 1:N 后端管理（v0.10.0-v0.10.3 已落地，v0.10.4-v0.10.10 收尾 Image Workbench Wave β/γ/δ）。
@@ -59,8 +59,19 @@
 
 ### 项目模块
 - **非 image-det / video-track 类型的标注工作台**：image-seg / image-kp / lidar / video-mm / mm 仍未提供真实标注能力。`lidar` 在 Workbench StageHost 中已有 3D placeholder，但 Dashboard 入口仍未把它作为可用工作台开放；接入真实 3D 前不要复用图片 / 视频 geometry。
-- **~~Annotation Guide（项目级 Markdown 指引 + asset）~~** ✅ v0.10.13 已落：projects 加 `annotation_guide TEXT` + `guide_assets JSONB`；新建 `/projects/{id}/guide-assets/*` 4 端点；CodeMirror 6 MarkdownEditor + GuideMarkdownView + GuidePanel 工作台浮层；CreateProjectWizard 加 `copy_annotation_guide` checkbox（默认勾选，存储 key 共享）。详见 CHANGELOG。
-- **项目模板**：v0.10.11 已落「从已有项目复制配置」形态（ProjectGrid 行操作 + AdminDashboard 项目表 + Wizard `sourceProjectId` 预填 + 后端 `POST /projects` 接 `source_project_id` 兜底 16 个可克隆字段 + 6 例后端单测）。**v0.10.14 开 epic**：独立 `ProjectTemplate` 表 + 模板库 UI（跨项目共享 / 公共模板 / `usage_count` / scope 三档）—— 用户 2026-05-18 决策，按计划独立 PR 推进，规模 ~5-7d。详见 [plan](docs/plans/2026-05-18-v0.10.14-project-template-library.md)。
+- **Annotation Guide 配套延伸**（v0.10.13 之后开放项，按客户反馈触发）：
+  - **guide_assets 跨项目 deepcopy（Stage 2）**（**P3**）：v0.10.13 复制 / v0.10.14 模板都让 storage key 共享或干脆不携带 assets，源项目删 asset 会让依赖项目失效。触发条件：客户大量在 guide 中用图（首版人均 ≥ 5 张）且明确反馈需要"应用模板时复制图片到新项目独立 namespace"。实现走 Celery worker 异步 deepcopy storage 对象到新项目 prefix + 重写 markdown 中的 `guide-asset:KEY` 引用。
+  - **guide_assets orphan GC**（**P3**）：当前 `PATCH /projects/{id}` 改 `annotation_guide` 时不清理 markdown 中已不被引用的 asset；UI 留「清理未引用资源」按钮口子但未实现。触发条件：客户反馈 storage 占用异常或单项目 guide_assets 数量超 50。
+  - **工作台 guide 浮层适配视频 / 多模态**（**P3**）：当前 `GuidePanel` 仅在 image 工作台试过；video / 3D 工作台 layout 不同，浮层定位需要单独适配。触发条件：video 项目第一次配 annotation_guide。
+  - **CodeMirror 6 bundle 监控**（**P3**）：当前 lazy-import 把 `~180-220 KB gzipped` 放在 ProjectSettings 路由；如果后续把指引编辑挪到工作台内（取消"只能回设置页改"约束），需要重新评估 bundle 切片。当前不动。
+  - **annotation_guide LLM 校验**（**P3**）：参考 [取经合集 §5.1](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#51-llm-as-judge--prompts-模块) LLM-as-Judge，标注员 reject 时附带"指引第 N 段对应规则"。依赖 LLM SDK 接入窗口。
+- **项目模板 v0.10.14 之后开放项**（按客户反馈触发）：
+  - **模板版本号 / changelog**（**P3**）：当前 PATCH 直接覆盖模板字段，多人协作 / 长期演进时无审计轨迹。触发条件：公共模板出现 ≥ 2 次"被某管理员误改后投诉"或 organization 模板数量超 20。设计走 `project_templates_versions` 表追加快照 + UI 给「比较版本」按钮。
+  - **organization admin 提交 public 模板审核流**（**P3**）：当前仅 super_admin 可建 public，组织管理员"看到好模板想推到全平台"必须找超管手动改 scope。触发条件：跨组织 SaaS 场景 / 公共模板数 ≥ 10。设计走 `template_publish_requests` 队列，超管 review 通过后 scope 升级。
+  - **TemplateEditModal 复杂字段编辑 UI**（**P3**）：当前编辑 Modal 只覆盖 `name / description / type / classes CSV / annotation_guide / scope`；`attribute_schema` / `classes_config` / `rendering_config` 必须走「从已有项目导出」。触发条件：客户反馈"想直接在模板上微调属性 schema 不想先建项目"。设计是把 ProjectSettings 的 sections 子表单（AttributeSchemaEditor / ClassEditor）抽出来在模板编辑也可用。
+  - **模板 usage 统计页**（**P3**）：当前 `usage_count` 只在卡片露一个数字；缺"哪些项目用了这个模板 / 平均使用间隔 / 跨组织传播路径"等运营信号。触发条件：公共模板数 ≥ 5 后超管想看治理数据。可与 [§4.1 Annotator Performance Dashboard](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#41-annotator-performance-dashboard) 同窗口做。
+  - **AAP JSON 支持模板携带**（**P3**）：[取经合集 §2.6](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#26-平台原生-task-json-格式aap-json) AAP JSON 是项目级快照格式；后续应把 ProjectTemplate 也加进 `manifest.json`，让"导出 → 跨实例 → 导入即得模板"工作流闭环。与 AAP JSON epic 同窗口做。
+  - **模板审计专项 detail**（**P3**）：当前模板 CUD 走默认 AuditMiddleware；如果 organization / public 模板发生 misuse，标准 detail（http body）不够定位。触发条件：审计期反馈模板侧 detail 不足。设计在 `app/services/audit.py` 加 `template_detail()` helper 派生 audit detail。
 
 ### 数据 & 存储
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。

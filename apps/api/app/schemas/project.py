@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import date, datetime
 from typing import Annotated, Literal
 from uuid import UUID
@@ -34,10 +34,27 @@ class ProjectCreate(BaseModel):
     # v0.10.13 · E1 · 当 source_project_id 给定时, 是否同时复制 annotation_guide
     # + guide_assets. 默认 False; 复制时 guide_assets 共享原 storage key (不重新上传).
     copy_annotation_guide: bool = False
+    # v0.10.14 · E2 · 从 ProjectTemplate 应用模板创建项目. 与 source_project_id
+    # 互斥 (同时给则 400). 给定时, 后端从模板 deepcopy 模板载荷字段进 payload,
+    # 并将模板 usage_count + 1.
+    template_id: UUID | None = None
     due_date: date | None = None
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_output_default: Literal["box", "mask", "both"] | None = None
+
+    @model_validator(mode="after")
+    def _validate_source_template_exclusive(self) -> "ProjectCreate":
+        if self.template_id is not None and self.source_project_id is not None:
+            raise ValueError(
+                "template_id 与 source_project_id 互斥, 不能同时给"
+            )
+        if self.template_id is not None and self.copy_annotation_guide:
+            # 模板自带 annotation_guide, copy_annotation_guide 只对 source_project_id 生效
+            raise ValueError(
+                "copy_annotation_guide 仅在 source_project_id 给定时有效"
+            )
+        return self
 
 
 class ProjectUpdate(BaseModel):

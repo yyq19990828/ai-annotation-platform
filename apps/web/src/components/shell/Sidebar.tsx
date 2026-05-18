@@ -36,6 +36,8 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
       { key: "review", path: "/review", icon: "check", label: "质检审核" },
       { key: "datasets", path: "/datasets", icon: "layers", label: "数据集", count: 42 },
       { key: "storage", path: "/storage", icon: "db", label: "存储管理" },
+      // v0.10.14 · E2 · 项目模板库
+      { key: "project-templates", path: "/project-templates", icon: "book", label: "项目模板" },
     ],
   },
   {

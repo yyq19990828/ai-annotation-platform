@@ -49,6 +49,8 @@ export type ProjectCreatePayload = ProjectCreate & {
   source_project_id?: string | null;
   // v0.10.13 · E1 · 同时复制源项目 annotation_guide + guide_assets (storage key 共享).
   copy_annotation_guide?: boolean;
+  // v0.10.14 · E2 · 从 ProjectTemplate 应用模板创建项目; 与 source_project_id 互斥.
+  template_id?: string | null;
 };
 // v0.10.10 · I17.3 · 加 rendering_config 字段；待 codegen 重跑。
 // v0.10.13 · E1 · 加 annotation_guide / guide_assets; 待 codegen 重跑。
