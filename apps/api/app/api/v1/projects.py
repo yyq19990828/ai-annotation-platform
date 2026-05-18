@@ -686,7 +686,7 @@ async def remove_member(
 @router.get("/{project_id}/export")
 async def export_project(
     request: Request,
-    format: str = Query("coco", pattern="^(coco|voc|yolo)$"),
+    format: str = Query("coco", pattern="^(coco|voc|yolo|aap_json)$"),
     include_attributes: bool = Query(
         True,
         description="是否在导出包中携带 annotation.attributes 与 project.attribute_schema",
@@ -739,6 +739,33 @@ async def export_project(
             media_type="application/json",
             headers={
                 "Content-Disposition": f"attachment; filename={project.display_id}_{suffix}.json"
+            },
+        )
+
+    if format == "aap_json":
+        # v0.10.15 · AAP JSON v1.0 无损中间格式 (含 annotations + predictions 双数组).
+        content = await svc.export_aap_json(project.id)
+        await AuditService.log(
+            db,
+            actor=actor,
+            action=AuditAction.PROJECT_EXPORT,
+            target_type="project",
+            target_id=str(project.id),
+            request=request,
+            status_code=200,
+            detail=export_detail(
+                actor=actor,
+                request=request,
+                base={"format": format, "project_display_id": project.display_id},
+                filter_criteria={},
+            ),
+        )
+        await db.commit()
+        return Response(
+            content=content,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename={project.display_id}_aap.json"
             },
         )
 

@@ -259,7 +259,8 @@ export const batchesApi = {
     }
     const blob = await resp.blob();
     const cd = resp.headers.get("content-disposition") ?? "";
-    const fname = cd.match(/filename=(.+)/)?.[1] ?? `batch_export.${format === "coco" ? "json" : "zip"}`;
+    const isJson = format === "coco" || format === "aap_json";
+    const fname = cd.match(/filename=(.+)/)?.[1] ?? `batch_export.${isJson ? "json" : "zip"}`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

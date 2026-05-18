@@ -1,6 +1,26 @@
 import { apiClient } from "./client";
 import type { PredictionResponse, AnnotationResponse } from "@/types";
 
+/** v0.10.15 · 外部预测导入端点响应 (与后端 AAPImportResult 对齐). */
+export interface PredictionImportError {
+  task_match: Record<string, unknown>;
+  reason: string;
+}
+
+export interface PredictionImportResult {
+  imported: number;
+  skipped: number;
+  errors: PredictionImportError[];
+  dry_run: boolean;
+}
+
+export type PredictionImportFormat = "aap_json" | "coco";
+
+export interface PredictionImportOptions {
+  modelVersion?: string;
+  overwriteExisting?: boolean;
+}
+
 export const predictionsApi = {
   listByTask: (taskId: string, modelVersion?: string, minConfidence?: number, limit?: number, offset?: number) => {
     const params = new URLSearchParams();
@@ -22,5 +42,40 @@ export const predictionsApi = {
     return apiClient.post<AnnotationResponse[]>(
       `/tasks/${taskId}/predictions/${predictionId}/accept${qs}`,
     );
+  },
+
+  /**
+   * v0.10.15 · 外部模型预测导入 (COCO 或 AAP JSON v1.0).
+   * - 走 multipart/form-data, 不用 apiClient (其默认 Content-Type=application/json).
+   * - dryRun=true: 仅校验不入库; 用于 Wizard 第 2 步预览.
+   * - overwriteExisting=true: 替换 task 已有 source='external_import' 的 predictions.
+   */
+  import: async (
+    projectId: string,
+    format: PredictionImportFormat,
+    file: File,
+    options: PredictionImportOptions = {},
+    dryRun = false,
+  ): Promise<PredictionImportResult> => {
+    const params = new URLSearchParams({ format, dry_run: String(dryRun) });
+    const form = new FormData();
+    form.append("file", file);
+    if (options.modelVersion) form.append("model_version", options.modelVersion);
+    if (options.overwriteExisting) form.append("overwrite_existing", "true");
+
+    const token = localStorage.getItem("token");
+    const res = await fetch(
+      `/api/v1/projects/${projectId}/predictions/import?${params}`,
+      {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      },
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { detail?: string };
+      throw new Error(body.detail ?? `HTTP ${res.status}`);
+    }
+    return res.json();
   },
 };

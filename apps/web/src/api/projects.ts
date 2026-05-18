@@ -80,7 +80,7 @@ export interface GuideAssetSignedUrlResponse {
   expires_in: number;
 }
 
-export type ExportFormat = "coco" | "voc" | "yolo";
+export type ExportFormat = "coco" | "voc" | "yolo" | "aap_json";
 export type VideoFrameMode = "keyframes" | "all_frames";
 export interface ExportOptions {
   includeAttributes?: boolean;
@@ -186,7 +186,8 @@ export const projectsApi = {
     const blob = await res.blob();
     const disposition = res.headers.get("Content-Disposition") ?? "";
     const match = disposition.match(/filename=(.+)/);
-    const filename = match ? match[1] : `export.${format === "coco" ? "json" : "zip"}`;
+    const isJson = format === "coco" || format === "aap_json";
+    const filename = match ? match[1] : `export.${isJson ? "json" : "zip"}`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

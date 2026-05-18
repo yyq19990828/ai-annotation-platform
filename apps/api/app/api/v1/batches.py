@@ -844,7 +844,7 @@ async def export_batch(
     request: Request,
     project_id: uuid.UUID,
     batch_id: uuid.UUID,
-    format: str = Query("coco", pattern="^(coco|voc|yolo)$"),
+    format: str = Query("coco", pattern="^(coco|voc|yolo|aap_json)$"),
     include_attributes: bool = Query(True),
     video_frame_mode: str = Query(
         "keyframes",
@@ -905,6 +905,37 @@ async def export_batch(
             media_type="application/json",
             headers={
                 "Content-Disposition": f"attachment; filename={fname}_{suffix}.json"
+            },
+        )
+
+    if format == "aap_json":
+        # v0.10.15 · AAP JSON v1.0 无损中间格式 (含 annotations + predictions 双数组).
+        content = await svc.export_aap_json(project_id, batch_id=batch_id)
+        await AuditService.log(
+            db,
+            actor=actor,
+            action=AuditAction.BATCH_EXPORT,
+            target_type="batch",
+            target_id=str(batch_id),
+            request=request,
+            status_code=200,
+            detail=export_detail(
+                actor=actor,
+                request=request,
+                base={
+                    "format": format,
+                    "project_id": str(project_id),
+                    "batch_display_id": batch.display_id,
+                },
+                filter_criteria={},
+            ),
+        )
+        await db.commit()
+        return Response(
+            content=content,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename={fname}_aap.json"
             },
         )
 

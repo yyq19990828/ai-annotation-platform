@@ -1,0 +1,140 @@
+.wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 480px;
+}
+
+.stepBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-fg-muted);
+}
+
+.stepDot {
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-muted, #2a2a2a);
+  font-size: 12px;
+}
+
+.stepDotActive {
+  background: var(--color-accent, #4488ff);
+  color: #fff;
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formLabel {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+}
+
+.input {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border, #333);
+  border-radius: 6px;
+  background: var(--color-bg, #1a1a1a);
+  color: var(--color-fg, #eee);
+  font-size: 13px;
+}
+
+.fileDrop {
+  border: 1px dashed var(--color-border, #444);
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--color-fg-muted);
+}
+
+.fileDropActive {
+  border-color: var(--color-accent, #4488ff);
+  background: rgba(68, 136, 255, 0.05);
+}
+
+.fileName {
+  color: var(--color-fg);
+  font-weight: 500;
+  margin-top: 6px;
+}
+
+.previewBox {
+  border: 1px solid var(--color-border, #333);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.previewStats {
+  display: flex;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.previewStat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.previewStatLabel {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+}
+
+.previewStatValue {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.errors {
+  max-height: 220px;
+  overflow: auto;
+  border-top: 1px solid var(--color-border, #333);
+  padding-top: 8px;
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.errorRow {
+  padding: 4px 0;
+  color: var(--color-fg-muted);
+}
+
+.errorReason {
+  color: var(--color-warning, #cc8855);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.stepLabel {
+  margin-left: 6px;
+}
+
+.stepSeparator {
+  margin: 0 8px;
+}

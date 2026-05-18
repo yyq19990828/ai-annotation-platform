@@ -26,6 +26,7 @@ import { aliasFrequencyApi } from "@/api/aliasFrequency";
 
 import { TabRow } from "@/components/ui/TabRow";
 import { HistoryTable } from "./HistoryTable";
+import { PredictionImportWizard } from "@/components/predictions/PredictionImportWizard";
 import styles from "./ProjectDetailPanel.module.css";
 
 const OUTPUT_MODE_TABS = ["□ 框", "○ 掩膜", "⊕ 全部"];
@@ -130,6 +131,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const [outputMode, setOutputMode] = useState<TextOutputMode>("mask");
   const [concurrency, setConcurrency] = useState<ConcurrencyMode>("serial");
   const [running, setRunning] = useState(false);
+  // v0.10.15 · 外部预测导入向导 (COCO / AAP JSON)
+  const [importOpen, setImportOpen] = useState(false);
 
   // v0.9.13 · prompt token 集合 (复用 PromptComposer.tsx:84 模式), 用于 chip active 态判定
   const promptTokenSet = useMemo(() => {
@@ -290,7 +293,21 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
         >
           <Icon name="history" size={11} /> 历史 job
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setImportOpen(true)}
+          title="上传 COCO / AAP JSON 把外部模型预测灌进本项目"
+        >
+          <Icon name="upload" size={11} /> 导入预测
+        </Button>
       </div>
+
+      <PredictionImportWizard
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        projectId={projectId}
+      />
 
       <Card>
         <div className={styles.cardHeader}>

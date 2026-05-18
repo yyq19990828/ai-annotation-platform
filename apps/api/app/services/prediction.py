@@ -99,6 +99,7 @@ class PredictionService:
         model_version: str | None = None,
         inference_time_ms: int | None = None,
         token_meta: dict | None = None,
+        source: str = "ml_backend",
     ) -> Prediction:
         prediction = Prediction(
             id=uuid.uuid4(),
@@ -108,6 +109,7 @@ class PredictionService:
             model_version=model_version,
             score=score,
             result=result,
+            source=source,
         )
         self.db.add(prediction)
         await self.db.flush()

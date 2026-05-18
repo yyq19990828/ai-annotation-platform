@@ -19,18 +19,19 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, require_roles
+from app.deps import get_current_user, get_db, require_project_owner, require_roles
 from app.db.enums import UserRole
 from app.db.models.ml_backend import MLBackend
 from app.db.models.prediction import FailedPrediction
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
+from app.schemas.aap_json import AAPImportResult
 from app.services.audit import AuditAction, AuditService
 
 
@@ -240,3 +241,76 @@ async def restore_failed_prediction(
         failed_id=failed_id,
         dismissed_at=None,
     )
+
+
+# ── v0.10.15 · 外部预测导入 (COCO / AAP JSON) ─────────────────────────
+
+
+@router.post(
+    "/projects/{project_id}/predictions/import",
+    response_model=AAPImportResult,
+)
+async def import_predictions(
+    request: Request,
+    file: UploadFile = File(...),
+    format: str = Query("aap_json", pattern="^(aap_json|coco)$"),
+    dry_run: bool = Query(False),
+    model_version: str | None = Form(None),
+    overwrite_existing: bool = Form(False),
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AAPImportResult:
+    """外部模型预测结果导入端点 (v0.10.15).
+
+    支持 COCO Detection 与平台原生 AAP JSON v1.0 两种 input format. 写入的
+    Prediction 行 source='external_import', ml_backend_id=NULL.
+    """
+
+    from app.services.predictions_import import import_aap_json, import_coco
+
+    raw = await file.read()
+    try:
+        if format == "aap_json":
+            result = await import_aap_json(
+                db,
+                project.id,
+                raw,
+                model_version_fallback=model_version,
+                overwrite_existing=overwrite_existing,
+                dry_run=dry_run,
+            )
+        else:
+            result = await import_coco(
+                db,
+                project.id,
+                raw,
+                model_version_fallback=model_version,
+                overwrite_existing=overwrite_existing,
+                dry_run=dry_run,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not dry_run:
+        await AuditService.log(
+            db,
+            actor=current_user,
+            action=AuditAction.PREDICTIONS_IMPORT,
+            target_type="project",
+            target_id=str(project.id),
+            request=request,
+            status_code=200,
+            detail={
+                "format": format,
+                "project_display_id": project.display_id,
+                "imported": result.imported,
+                "skipped": result.skipped,
+                "error_count": len(result.errors),
+                "model_version_fallback": model_version,
+                "overwrite_existing": overwrite_existing,
+            },
+        )
+        await db.commit()
+
+    return result

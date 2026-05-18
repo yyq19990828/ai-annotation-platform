@@ -63,17 +63,13 @@
 
 - 主 ROADMAP 已有，本研究文档**不重复**，仅在映射表（§7）登记。
 
-### 1.5 Predictions Import 端点
+### 1.5 Predictions Import 端点 ✅ 已完成 v0.10.15
 
-- **来源**：Label Studio `POST /api/predictions/` + 批量 JSON 上传。
-- **平台现状**：Prediction 只能由内部 ML backend 生成，外部模型结果进不来。
-- **价值**：客户已有自家模型预测（不愿托管在你的 backend）时，能"上传 COCO predictions → 平台审核修正 → 导出"。**直接降低准入门槛**，对学术/初创客户尤其。
-- **设计**：
-  - 新端点 `POST /projects/{id}/predictions/import`，body 接两种格式：① COCO（反向解析现有 export schema）；② **平台原生 AAP JSON**（见 §2.6，推荐主格式）。
-  - 后端按 task `external_id` 或 `file_path` 匹配 → 写 `predictions` 表，`source='external_import'`，附 `model_version` 字符串。
-  - **导入宽容**：只校验必备字段（`task_match` + `geometry.kind` + 对应几何字段 + `class_name`），未知字段忽略不报错；缺失字段按默认值（如 `confidence=1.0`）。
-- **工作量**：单做 1.5d；**与 §2.6 AAP JSON 同窗口做共 ~4.5d**，多 ~3d 但为 §3.1 SDK / §3.4 Plugin / §2.5 项目快照 铺路。**强烈建议合并**。
-- **联动**：与 §5.1 LLM-as-Judge 共享"外部 prediction 入库"通道。
+> **2026-05-19 落地**：与 §2.6 AAP JSON 同窗口合并实现。新端点 `POST /projects/{id}/predictions/import?format=aap_json|coco`，写入 [`predictions.source='external_import'`](../../apps/api/app/db/models/prediction.py)（alembic 0069 加 source 字段）；支持 `dry_run` 预览 + `overwrite_existing` 按 task 替换。导入 lenient：未知 geometry kind / task 不匹配进 `errors[]` 累计，不让整批挂。Task 匹配走 [`task_matcher.resolve_task`](../../apps/api/app/services/task_matcher.py) 的 `display_id` 优先、`file_path` fallback、跨项目 display_id 视为不匹配（防偷换项目）。详见 CHANGELOG v0.10.15 / [ADR-0024](../../docs/adr/0024-aap-json-format.md) / [plan](../../docs/plans/2026-05-19-v0.10.15-predictions-import-aap-json.md)。
+>
+> **2026-05-19 复盘**：① 当时设计的"按 task `external_id` 或 `file_path` 匹配"实际**没用 external_id**——Task 表当前没这字段，display_id + file_path 两元组够用，external_id 留为 AAP JSON envelope forward compat 字段（实际未消费）；后续 ROADMAP §A 列了"Task 表加 external_id"作 P3 触发项。② `prediction_metas` FK 无 CASCADE 是落地中发现的隐藏陷阱，`overwrite_existing` 必须先删 meta 再删 prediction（已在 `_purge_existing_external_imports` 处理）。③ COCO importer 当时设计的"反向解析现有 export schema"实际改为自己解析最小子集（images + annotations + categories），避开 pycocotools 重依赖；image.width/height 缺失时 errors 不入库（image_size_hint 参数留 forward compat 但 UI 未启）。④ 与 §5.1 LLM-as-Judge 的"外部 prediction 入库"通道复用尚未触发，等 LLM SDK 接入窗口。
+>
+> 后续延伸（annotations import / external_id 字段 / template manifest / 单 prediction 多 shape / video_track 导入）已转录到主 [ROADMAP §A AI/模型](../ROADMAP.md#ai--模型) "Predictions Import / AAP JSON 后续延伸"群。
 
 ### 1.6 DuckDB 离线分析视图（不上 ClickHouse）
 
@@ -187,7 +183,17 @@
   - 导出时按 config_version 分组（避免混合规则的标注被错误归到同一类）。
 - **优先级**：P3，等第一个客户反馈"我改了类别现在历史数据怎么办" 再做。
 
-### 2.6 平台原生 task JSON 格式（"AAP JSON"）
+### 2.6 平台原生 task JSON 格式（"AAP JSON"） ✅ 已完成 v0.10.15
+
+> **2026-05-19 落地**：AAP JSON v1.0 作为导出格式与 COCO/YOLO/VOC 并列接入 `/projects/{id}/export?format=aap_json` + `/projects/{id}/batches/{bid}/export?format=aap_json` 双端点。envelope pydantic schema 见 [`app/schemas/aap_json.py`](../../apps/api/app/schemas/aap_json.py)，关键决策与本节设计**完全一致**：① `schema_version` 必备 + `check_schema_major` 拒绝 `major > 1`；② `annotations[]` 和 `predictions[]` **双数组分开**不混 type 字段；③ 导出 `model_dump_json(exclude_none=False)` 写满 null + 导入 `ConfigDict(extra="ignore")` lenient；④ `geometry` 使用平台**内部格式**（与 annotation.geometry JSONB 对齐），不嵌套 LabelStudio shape；⑤ `task_match` oneof display_id 优先、file_path fallback。详见 CHANGELOG v0.10.15 / [ADR-0024](../../docs/adr/0024-aap-json-format.md) / [用户文档](../../docs-site/user-guide/reference/export-formats.md) / [API 导入指南](../../docs-site/api/guides/import.md)。
+>
+> **2026-05-19 复盘**：本节"完整字段（export 无损模式）"提到的字段实际**没全做**：① `export_meta.filter` 字段未做（当前只暴露 platform / platform_version / project_display_id / batch_display_id 四元组）；② `annotations[].review_status` / `reject_reason_type` / `group_id` 字段当前 envelope 没收口（annotation 表本身有 source 但没 review_status enum）；③ 项目级 ZIP 打包形态（manifest.json + tasks/N.json + assets/）**未做**，当前 AAP JSON 是单文件 envelope 形态；④ `aap-json-schema.json` JSON Schema 文件未生成，前后端 codegen 走 pydantic OpenAPI（生产环境暂无独立 schema 文件需求）。⑤ Datumaro 链转换 (§3.3) 未触发。
+>
+> 后续延伸（ProjectTemplate 进 manifest / `predictions[i].shapes[]` 多 shape / video_track 导入 / annotations import）已转录到主 [ROADMAP §A AI/模型](../ROADMAP.md#ai--模型) "Predictions Import / AAP JSON 后续延伸"群。下列原设计内容保留作为格式 reference, 不再作行动项。
+
+---
+
+### 2.6（原设计 reference）
 
 - **问题**：当前导出走 COCO/YOLO/VOC 三件套，但这三种都是**有损投影**——
   - COCO 没法存 attributes 多字段 / version / source(manual/prediction) / reviewer 元数据 / batch_id / locked/hidden/occluded / reject_reason_type / multiPolygon holes。
@@ -490,7 +496,7 @@
 | §1.2 reject_reason_type | **新增** | 回流到 §A "项目模块" 或 §B "可观测性" |
 | §1.3 webhook event_version | **新增** | 与 §2.1 合并到一份 ADR 草案 |
 | §1.4 截图 fixture | 已在 §A 后续观察项 | 不动 |
-| §1.5 Predictions Import | **新增** | 回流到 §A "AI / 模型" 群 |
+| §1.5 Predictions Import | ✅ **已完成 v0.10.15**（2026-05-19） | 后续延伸条目已转录到 ROADMAP §A "Predictions Import / AAP JSON 后续延伸" |
 | §1.6 DuckDB 离线视图 | **新增** | 回流到 §B "可观测性" |
 | §1.7 async_jobs 统一表 | **新增** | 回流到 §B "性能 / 扩展"，注明"早做收益越大" |
 | §2.1 Webhook 系统 | §B 治理/合规 有 1 句话 | **升级范围**：拆独立 epic + ADR-0018 草案 |
@@ -498,7 +504,7 @@
 | §2.3 Consensus / GT 拆分 | §C.7 I19 是 L 体量打包 | **升级范围**：建议 I19a/I19b 拆分 |
 | §2.4 Tracker 协议层 | §C.5 R23 + §C.7 I20.4 散落 | **升级范围**：R23 前置协议统一 |
 | §2.5 项目规则版本化 | **新增** | 回流到 §A "数据 & 存储" 或长期规划 |
-| §2.6 平台原生 AAP JSON | **新增** | 与 §1.5 合并回流到 §A "AI / 模型"（单 bullet 同窗口） |
+| §2.6 平台原生 AAP JSON | ✅ **已完成 v0.10.15**（2026-05-19，与 §1.5 同窗口） | 后续延伸条目已转录到 ROADMAP §A "Predictions Import / AAP JSON 后续延伸" |
 | §3.1 公开 SDK + CLI | 长期规划 L7（12 月+） | **优先级升级**：建议从 L7 提升到 P2 |
 | §3.2 Cloud Storage Sync | **新增** | 回流到 §A "数据 & 存储"，触发=企业客户需求 |
 | §3.3 Datumaro 集成 | **新增** | 写入 §A "导出" 子节（如有），或新增 |
@@ -516,7 +522,7 @@
 
 不一次性全部回流，按下面三波推进，每波收尾后再评估下一波：
 
-**第 1 波（v0.11 内开工）**：~~§1.1 Annotation Guide~~ ✅ v0.10.13 / §1.2 reject_reason_type / §1.5 Predictions Import / §1.7 async_jobs。
+**第 1 波（v0.11 内开工）**：~~§1.1 Annotation Guide~~ ✅ v0.10.13 / §1.2 reject_reason_type / ~~§1.5 Predictions Import~~ ✅ v0.10.15（与 §2.6 同窗口）/ §1.7 async_jobs。
 **特征**：低风险、低工作量、高可见价值；落地后给后续大项铺基建。
 
 **第 2 波（v0.11 中后期）**：§2.1 Webhook 系统 / §2.2 AnnotationFeedback 收敛 / §3.1 公开 SDK。

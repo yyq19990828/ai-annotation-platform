@@ -26,6 +26,15 @@ class Prediction(Base):
     result: Mapped[dict] = mapped_column(JSONB, nullable=False)
     cluster: Mapped[int | None] = mapped_column(Integer)
     mislabeling: Mapped[float | None] = mapped_column(Float)
+    # v0.10.15: 区分内部 ML backend 生成 vs 外部导入 (predictions/import 端点).
+    # 枚举: 'ml_backend' | 'external_import' | 'unknown'
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="ml_backend",
+        default="ml_backend",
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -12,6 +12,8 @@ const FORMATS: { value: ExportFormat; label: string }[] = [
   { value: "coco", label: "COCO" },
   { value: "voc", label: "VOC" },
   { value: "yolo", label: "YOLO" },
+  // v0.10.15 · 平台原生无损中间格式 (含 predictions + annotations 双数组).
+  { value: "aap_json", label: "AAP JSON" },
 ];
 
 function cn(...xs: Array<string | false | null | undefined>): string {

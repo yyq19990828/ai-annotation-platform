@@ -1,6 +1,52 @@
 {
   "components": {
     "schemas": {
+      "AAPImportErrorEntry": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "task_match": {
+            "additionalProperties": true,
+            "title": "Task Match",
+            "type": "object"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "AAPImportErrorEntry",
+        "type": "object"
+      },
+      "AAPImportResult": {
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/AAPImportErrorEntry"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "imported": {
+            "default": 0,
+            "title": "Imported",
+            "type": "integer"
+          },
+          "skipped": {
+            "default": 0,
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "title": "AAPImportResult",
+        "type": "object"
+      },
       "AdminDashboardStats": {
         "properties": {
           "active_users": {
@@ -2691,6 +2737,36 @@
           "h"
         ],
         "title": "BboxGeometry",
+        "type": "object"
+      },
+      "Body_import_predictions_api_v1_projects__project_id__predictions_import_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "overwrite_existing": {
+            "default": false,
+            "title": "Overwrite Existing",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_predictions_api_v1_projects__project_id__predictions_import_post",
         "type": "object"
       },
       "Body_upload_zip_api_v1_datasets__dataset_id__items_upload_zip_post": {
@@ -19105,7 +19181,7 @@
             "required": false,
             "schema": {
               "default": "coco",
-              "pattern": "^(coco|voc|yolo)$",
+              "pattern": "^(coco|voc|yolo|aap_json)$",
               "title": "Format",
               "type": "string"
             }
@@ -19492,7 +19568,7 @@
             "required": false,
             "schema": {
               "default": "coco",
-              "pattern": "^(coco|voc|yolo)$",
+              "pattern": "^(coco|voc|yolo|aap_json)$",
               "title": "Format",
               "type": "string"
             }
@@ -20732,6 +20808,86 @@
         "summary": "Trigger Preannotation",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/predictions/import": {
+      "post": {
+        "description": "外部模型预测结果导入端点 (v0.10.15).\n\n支持 COCO Detection 与平台原生 AAP JSON v1.0 两种 input format. 写入的\nPrediction 行 source='external_import', ml_backend_id=NULL.",
+        "operationId": "import_predictions_api_v1_projects__project_id__predictions_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "aap_json",
+              "pattern": "^(aap_json|coco)$",
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_predictions_api_v1_projects__project_id__predictions_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AAPImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import Predictions",
+        "tags": [
+          "predictions"
         ]
       }
     },

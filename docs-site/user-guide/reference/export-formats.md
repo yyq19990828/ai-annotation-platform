@@ -64,6 +64,75 @@ nc: 3
 
 平台间迁移用，含完整原数据 + 标注 + 审核备注。
 
+## AAP JSON v1.0（无损）
+
+> v0.10.15 起新增。**平台原生无损中间格式**。与 COCO / YOLO / VOC 并列，但**包含**它们丢失的所有字段：`attribute_schema` 值、`prediction.confidence` / `model_version`、`annotation.source`、项目 `annotation_guide`、`classes_config`、`rendering_config`。
+
+适合场景：
+
+- **跨实例迁移**：A 平台 → B 平台，标注不丢失。
+- **客户自家模型预测导入**：导出空项目结构 → 客户用自家模型填 `predictions[]` → 上传到 `/projects/{id}/predictions/import` 端点。
+- **dataset snapshot 锚点**：版本化备份 / 训练复现。
+
+结构（简化）：
+
+```json
+{
+  "schema_version": "1.0",
+  "exported_at": "2026-05-19T10:00:00Z",
+  "exported_from": {
+    "platform": "aap",
+    "platform_version": "0.10.15",
+    "project_display_id": "P-12",
+    "batch_display_id": "BT-3"
+  },
+  "project": {
+    "name": "Traffic Sign",
+    "type_key": "image-det",
+    "classes_config": { },
+    "attribute_schema": { "fields": [] },
+    "rendering_config": {},
+    "annotation_guide": "..."
+  },
+  "tasks": [
+    {
+      "task_match": {
+        "display_id": "T-101",
+        "file_path": "datasets/foo/img_001.jpg"
+      },
+      "annotations": [
+        {
+          "geometry": { "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
+          "class_name": "stop_sign",
+          "attributes": {},
+          "confidence": null,
+          "source": "manual"
+        }
+      ],
+      "predictions": [
+        {
+          "geometry": { "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
+          "class_name": "stop_sign",
+          "confidence": 0.92,
+          "model_version": "ext-yolov8-v1",
+          "source": "external_import"
+        }
+      ]
+    }
+  ]
+}
+```
+
+关键规则：
+
+- `schema_version` 必填，breaking change 升 major，导入端 `major > 1` 返 422。
+- `annotations[]` 与 `predictions[]` **分开两个数组**（不混 type 字段）。
+- 导出严格写满 null；导入 lenient 忽略未知字段、缺失按默认。
+- `task_match` 走 `display_id` 优先（全局唯一），`file_path` fallback；跨项目 `display_id` 不允许偷换项目。
+- `geometry` 使用平台**内部格式**（`bbox` / `polygon` / `multi_polygon`），不嵌套 LabelStudio shape。
+
+详见 [ADR-0024](../../../docs/adr/0024-aap-json-format.md) 与 [API 导入指南](../../api/guides/import.md)。
+
 ## 视频轨迹
 
 v0.9.18 起，`video-track` 项目导出入口只显示 **Video JSON**。导出文件保留轨迹、关键帧、目标消失段和视频元数据，不会伪装成 COCO / YOLO / VOC。
@@ -87,7 +156,8 @@ Video JSON 顶层包含 `export_type: "video_tracks"`、`frame_mode`、项目 / 
 |---|---|
 | 训练 YOLOv8 | YOLO |
 | 训练 Detectron2 / MMDetection | COCO |
-| 数据迁移 / 备份 | Label Studio JSON |
+| **跨实例无损迁移 / 客户自训模型预测灌入** | **AAP JSON** |
+| 数据迁移 / 备份 | AAP JSON / Label Studio JSON |
 | 视频轨迹备份 / 质检 | Video JSON（关键帧） |
 | 视频逐帧训练 | Video JSON（所有帧） |
 | 老项目维护 | Pascal VOC |

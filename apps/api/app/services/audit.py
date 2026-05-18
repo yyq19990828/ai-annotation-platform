@@ -99,6 +99,8 @@ class AuditAction(str, Enum):
     VIDEO_CHAPTER_CREATE = "video_chapter.create"
     VIDEO_CHAPTER_UPDATE = "video_chapter.update"
     VIDEO_CHAPTER_DELETE = "video_chapter.delete"
+    # v0.10.15 · 外部预测导入 (COCO / AAP JSON)
+    PREDICTIONS_IMPORT = "predictions.import"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

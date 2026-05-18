@@ -1,0 +1,149 @@
+/**
+ * v0.10.15 · PredictionImportWizard 单测.
+ * 覆盖: 格式切换, dry-run 预览 errors 渲染, 确认提交调 API, 文件未选时不能预览.
+ */
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+import { predictionsApi } from "@/api/predictions";
+
+import { PredictionImportWizard } from "./PredictionImportWizard";
+
+vi.mock("@/api/predictions", () => ({
+  predictionsApi: {
+    listByTask: vi.fn(),
+    accept: vi.fn(),
+    import: vi.fn(),
+  },
+}));
+
+const importMock = predictionsApi.import as unknown as ReturnType<typeof vi.fn>;
+
+function makeFile(name = "test.json", content = "{}"): File {
+  return new File([content], name, { type: "application/json" });
+}
+
+describe("PredictionImportWizard", () => {
+  beforeEach(() => {
+    importMock.mockReset();
+  });
+
+  it("初始 step 不允许在没有文件时预览", () => {
+    render(
+      <PredictionImportWizard open onClose={() => {}} projectId="p-1" />,
+    );
+    const previewBtn = screen.getByRole("button", { name: /预览/ });
+    expect(previewBtn).toBeDisabled();
+  });
+
+  it("选择文件后预览 → 显示 imported/skipped/errors 统计", async () => {
+    importMock.mockResolvedValueOnce({
+      imported: 5,
+      skipped: 2,
+      errors: [
+        { task_match: { display_id: "T-NOPE" }, reason: "task not found" },
+      ],
+      dry_run: true,
+    });
+
+    render(
+      <PredictionImportWizard open onClose={() => {}} projectId="p-1" />,
+    );
+
+    const fileInput = document.getElementById("pi-file") as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [makeFile("aap.json")] },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /预览/ }));
+
+    await waitFor(() => {
+      expect(importMock).toHaveBeenCalledWith(
+        "p-1",
+        "aap_json",
+        expect.any(File),
+        expect.objectContaining({ overwriteExisting: false }),
+        true,
+      );
+    });
+
+    // 第 2 步渲染统计
+    expect(await screen.findByText(/确认导入 5 条/)).toBeInTheDocument();
+    expect(screen.getByText(/task not found/)).toBeInTheDocument();
+  });
+
+  it("格式切换为 COCO 后预览时使用 coco 参数", async () => {
+    importMock.mockResolvedValueOnce({
+      imported: 1,
+      skipped: 0,
+      errors: [],
+      dry_run: true,
+    });
+
+    render(
+      <PredictionImportWizard open onClose={() => {}} projectId="p-2" />,
+    );
+
+    const select = screen.getByLabelText(/格式/) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "coco" } });
+
+    const fileInput = document.getElementById("pi-file") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [makeFile("c.json")] } });
+    fireEvent.click(screen.getByRole("button", { name: /预览/ }));
+
+    await waitFor(() => {
+      expect(importMock).toHaveBeenCalledWith(
+        "p-2",
+        "coco",
+        expect.any(File),
+        expect.any(Object),
+        true,
+      );
+    });
+  });
+
+  it("确认提交 → 调用 import 端点 dry_run=false 并触发 onComplete", async () => {
+    importMock
+      .mockResolvedValueOnce({
+        imported: 3,
+        skipped: 0,
+        errors: [],
+        dry_run: true,
+      })
+      .mockResolvedValueOnce({
+        imported: 3,
+        skipped: 0,
+        errors: [],
+        dry_run: false,
+      });
+
+    const onComplete = vi.fn();
+    render(
+      <PredictionImportWizard
+        open
+        onClose={() => {}}
+        projectId="p-3"
+        onComplete={onComplete}
+      />,
+    );
+
+    const fileInput = document.getElementById("pi-file") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [makeFile("a.json")] } });
+    fireEvent.click(screen.getByRole("button", { name: /预览/ }));
+    await waitFor(() => expect(importMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(await screen.findByRole("button", { name: /确认导入 3 条/ }));
+
+    await waitFor(() => {
+      expect(importMock).toHaveBeenCalledTimes(2);
+      expect(importMock).toHaveBeenLastCalledWith(
+        "p-3",
+        "aap_json",
+        expect.any(File),
+        expect.any(Object),
+        false,
+      );
+    });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});

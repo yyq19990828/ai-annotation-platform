@@ -12,8 +12,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
+from app.db.models.prediction import Prediction
 from app.db.models.task import Task
 from app.db.models.project import Project
+from app.schemas.aap_json import (
+    AAP_SCHEMA_VERSION,
+    AAPAnnotationEntry,
+    AAPExportedFrom,
+    AAPJsonV1Envelope,
+    AAPPredictionEntry,
+    AAPProjectMeta,
+    AAPTaskBlock,
+    AAPTaskMatch,
+)
 from app.services.video_tracks import (
     VIDEO_FRAME_MODES,
     clean_keyframe,
@@ -104,6 +115,23 @@ class ExportService:
         annotations = list(annotations_result.scalars().all())
 
         return project, tasks, annotations
+
+    async def _load_predictions(
+        self, project_id: uuid.UUID, task_ids: list[uuid.UUID]
+    ) -> list[Prediction]:
+        """v0.10.15 · AAP JSON 导出需要 predictions[] 双数组."""
+        if not task_ids:
+            return []
+        pred_q = (
+            select(Prediction)
+            .where(
+                Prediction.project_id == project_id,
+                Prediction.task_id.in_(task_ids),
+            )
+            .order_by(Prediction.created_at)
+        )
+        result = await self.db.execute(pred_q)
+        return list(result.scalars().all())
 
     async def _load_dataset_items(
         self, tasks: list[Task]
@@ -451,3 +479,113 @@ class ExportService:
                 )
 
         return buf.getvalue()
+
+    async def export_aap_json(
+        self,
+        project_id: uuid.UUID,
+        *,
+        batch_id: uuid.UUID | None = None,
+    ) -> str:
+        """v0.10.15 · AAP JSON v1.0 无损中间格式.
+
+        与 COCO/YOLO/VOC 并列, 但**包含**它们丢失的字段: attribute_schema 值、
+        prediction.confidence、annotation.source、annotation_guide、classes_config.
+        双数组 annotations[] / predictions[] 分开 (不混 type 字段).
+        """
+        from app.services.prediction import to_internal_shape
+
+        project, tasks, annotations = await self._load_data(project_id, batch_id)
+        if not project:
+            return json.dumps({})
+
+        task_ids = [t.id for t in tasks]
+        predictions = await self._load_predictions(project_id, task_ids)
+
+        ann_by_task: dict[uuid.UUID, list[Annotation]] = {}
+        for ann in annotations:
+            ann_by_task.setdefault(ann.task_id, []).append(ann)
+        pred_by_task: dict[uuid.UUID, list[Prediction]] = {}
+        for pred in predictions:
+            pred_by_task.setdefault(pred.task_id, []).append(pred)
+
+        # batch display_id (项目级导出时为 None)
+        batch_display_id: str | None = None
+        if batch_id:
+            from app.db.models.task_batch import TaskBatch  # 懒导入避免循环
+
+            batch = await self.db.get(TaskBatch, batch_id)
+            batch_display_id = batch.display_id if batch else None
+
+        task_blocks: list[AAPTaskBlock] = []
+        for t in tasks:
+            ann_entries: list[AAPAnnotationEntry] = []
+            for ann in ann_by_task.get(t.id, []):
+                ann_entries.append(
+                    AAPAnnotationEntry(
+                        geometry=ann.geometry or {},
+                        class_name=ann.class_name,
+                        attributes=ann.attributes or {},
+                        confidence=ann.confidence,
+                        source=ann.source,
+                        user_id=ann.user_id,
+                        created_at=ann.created_at,
+                        external_id=None,
+                    )
+                )
+
+            pred_entries: list[AAPPredictionEntry] = []
+            for pred in pred_by_task.get(t.id, []):
+                # prediction.result 存 LS shape 数组; 每个 shape 对应一个目标物.
+                # 走 to_internal_shape() 反推内部 geometry + class_name.
+                for raw_shape in pred.result or []:
+                    internal = to_internal_shape(raw_shape)
+                    geometry = internal.get("geometry") or {}
+                    if not geometry:
+                        continue
+                    pred_entries.append(
+                        AAPPredictionEntry(
+                            geometry=geometry,
+                            class_name=internal.get("class_name") or None,
+                            confidence=internal.get("confidence"),
+                            model_version=pred.model_version,
+                            score=pred.score,
+                            source=pred.source,
+                            created_at=pred.created_at,
+                            external_id=None,
+                        )
+                    )
+
+            task_blocks.append(
+                AAPTaskBlock(
+                    task_match=AAPTaskMatch(
+                        display_id=t.display_id, file_path=t.file_path
+                    ),
+                    file_path=t.file_path,
+                    external_id=None,
+                    annotations=ann_entries,
+                    predictions=pred_entries,
+                )
+            )
+
+        envelope = AAPJsonV1Envelope(
+            schema_version=AAP_SCHEMA_VERSION,
+            exported_at=datetime.utcnow(),
+            exported_from=AAPExportedFrom(
+                platform="aap",
+                platform_version=None,
+                project_display_id=project.display_id,
+                batch_display_id=batch_display_id,
+            ),
+            project=AAPProjectMeta(
+                name=project.name,
+                type_key=project.type_key,
+                classes_config=project.classes_config or {},
+                attribute_schema=project.attribute_schema or {"fields": []},
+                rendering_config=project.rendering_config or {},
+                annotation_guide=getattr(project, "annotation_guide", None),
+            ),
+            tasks=task_blocks,
+        )
+
+        # 严格写满 null: 走 mode="json" + exclude_none=False (默认).
+        return envelope.model_dump_json(indent=2, exclude_none=False)
