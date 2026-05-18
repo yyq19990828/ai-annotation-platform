@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { WorkbenchOverlays } from "./WorkbenchOverlays";
+import classPickerStyles from "./ClassPickerPopover.module.css";
 
 const noop = () => {};
 const baseProps = {
@@ -43,9 +44,9 @@ describe("WorkbenchOverlays", () => {
     );
 
     const popover = screen.getByTestId("class-picker-popover");
-    expect(popover.style.position).toBe("fixed");
-    expect(popover.style.left).toBe("48px");
-    expect(popover.style.top).toBe("64px");
+    expect(popover).toHaveClass(classPickerStyles.popoverFixed);
+    expect(popover.style.getPropertyValue("--class-picker-left")).toBe("48px");
+    expect(popover.style.getPropertyValue("--class-picker-top")).toBe("64px");
 
     fireEvent.click(screen.getByText("Bike"));
     expect(onPickPendingClass).toHaveBeenCalledWith("Bike");
@@ -67,7 +68,7 @@ describe("WorkbenchOverlays", () => {
         pendingDrawing={{ geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } }}
       />,
     );
-    expect(screen.getByTestId("class-picker-popover").style.position).toBe("absolute");
+    expect(screen.getByTestId("class-picker-popover")).toHaveClass(classPickerStyles.popover);
   });
 
   it("reports Escape separately from outside-click cancellation", async () => {
@@ -173,9 +174,9 @@ describe("WorkbenchOverlays", () => {
     );
 
     const popover = screen.getByTestId("class-picker-popover");
-    expect(popover.style.position).toBe("fixed");
-    expect(popover.style.left).toBe("120px");
-    expect(popover.style.top).toBe("88px");
+    expect(popover).toHaveClass(classPickerStyles.popoverFixed);
+    expect(popover.style.getPropertyValue("--class-picker-left")).toBe("120px");
+    expect(popover.style.getPropertyValue("--class-picker-top")).toBe("88px");
 
     fireEvent.click(screen.getByText("Bike"));
     expect(onCommitChangeClass).toHaveBeenCalledWith("Bike");

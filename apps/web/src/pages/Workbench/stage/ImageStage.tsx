@@ -321,7 +321,10 @@ export function ImageStage({
     const onWheel = (e: WheelEvent) => {
       // v0.10.8 · Shift+滚轮在 mask 工具激活时调笔刷半径（步长 ±2，clamp [1,200]）。
       // 仅 deltaY 主导时响应（避免 macOS trackpad 横向滚动误触发）。
-      if (e.shiftKey && !(e.ctrlKey || e.metaKey) && maskEditor?.active &&
+      // 用 `tool === "mask"` 判定而非 `maskEditor.active`：active 只在 buffer 已初始化
+      // （beginBlank / initFromPolygon）后为 true，但用户选了 mask 工具后画第一笔之前
+      // 也需要预调半径。
+      if (e.shiftKey && !(e.ctrlKey || e.metaKey) && tool === "mask" && maskEditor &&
           Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
         e.preventDefault();
         const delta = e.deltaY < 0 ? 2 : -2;
@@ -342,7 +345,7 @@ export function ImageStage({
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [setVp, maskEditor]);
+  }, [setVp, maskEditor, tool]);
 
   // ── window-level drag events (rAF-throttled) ─────────────────────────────
   // 依赖数组用 `!!drag` 而非 `drag` 本身：mousemove 期间 setDrag 频繁触发 React

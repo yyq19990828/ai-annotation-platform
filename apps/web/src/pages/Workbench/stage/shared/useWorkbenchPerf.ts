@@ -31,6 +31,11 @@ export function useWorkbenchPerf(sampleRate?: number): WorkbenchPerfStats {
     if (rate <= 0) return;
     if (rate < 1 && Math.random() > rate) return;
 
+    // BugReport / e2e bench 在工作台 mount 后立刻读 `window.__workbenchPerf`；
+    // 若没有 longtask 触发观测器，window 字段会缺失而读到 undefined。先写入 EMPTY，
+    // 保证 mount 后即可读到一个有效的 counter 对象。
+    if (W && W.__workbenchPerf === undefined) W.__workbenchPerf = EMPTY;
+
     const observer = new PerformanceObserver((list) => {
       const entries = list.getEntries();
       if (entries.length === 0) return;

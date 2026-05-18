@@ -13,8 +13,13 @@ import { test, expect } from "../fixtures/seed";
 
 test("workbench perf · __workbenchPerf 在 image 工作台 mount 后存在", async ({ page, seed }) => {
   const data = await seed.reset();
+  await seed.advanceTask({
+    taskId: data.task_ids[0],
+    toStatus: "pending",
+    annotatorEmail: data.annotator_email,
+  });
   await seed.injectToken(page, data.annotator_email);
-  await page.goto(`/workbench?taskId=${data.task_ids[0]}`);
+  await page.goto(`/projects/${data.project_id}/annotate`);
   // 等工作台 hydrate
   await page.waitForSelector("[data-testid='workbench-stage']", { timeout: 10_000 });
   // useWorkbenchPerf 在 mount 后写入 window；DEV 100%, PROD 5% — 即使采样率 5% 也会先初始化 counters。
