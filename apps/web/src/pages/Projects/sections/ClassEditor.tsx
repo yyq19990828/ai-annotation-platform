@@ -4,11 +4,12 @@
  * 从 ClassesSection 抽出的受控组件：颜色 + 排序 + 删除 + 新增。
  * 由 ClassesSection（保存按钮的薄外壳）和 CreateProjectWizard（向导步骤）共用。
  */
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { classColor } from "@/pages/Workbench/stage/colors";
+import styles from "./ClassEditor.module.css";
 
 export interface ClassRow {
   name: string;
@@ -35,18 +36,6 @@ function normalizeAlias(raw: string): string {
 }
 
 const ALIAS_NORM_HINTED_KEY = "cfg:aliasNormHinted";
-
-const inputStyle: CSSProperties = {
-  boxSizing: "border-box",
-  padding: "5px 8px",
-  fontSize: 13,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-sm)",
-  color: "var(--color-fg)",
-  outline: "none",
-  fontFamily: "inherit",
-};
 
 function rgbToHex(rgb: string): string {
   if (rgb.startsWith("#") && rgb.length === 7) return rgb;
@@ -153,49 +142,21 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div className={styles.root}>
       {value.length === 0 && (
-        <div
-          style={{
-            padding: 24,
-            textAlign: "center",
-            color: "var(--color-fg-subtle)",
-            border: "1px dashed var(--color-border)",
-            borderRadius: "var(--radius-md)",
-            fontSize: 12,
-          }}
-        >
+        <div className={styles.emptyState}>
           {emptyHint}
         </div>
       )}
 
       {value.map((r, i) => (
-        <div
-          key={r.name}
-          style={{
-            display: "grid",
-            gridTemplateColumns: "auto 24px minmax(0, 1.4fr) minmax(0, 1.2fr) 70px auto",
-            gap: 8,
-            alignItems: "center",
-            padding: "6px 10px",
-            background: "var(--color-bg-elev)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-          }}
-        >
-          <span style={{ fontSize: 11, color: "var(--color-fg-subtle)", width: 20, textAlign: "right" }}>
+        <div key={r.name} className={styles.classRow}>
+          <span className={styles.rowIndex}>
             {i + 1}
           </span>
-          <span
-            style={{
-              width: 18,
-              height: 18,
-              borderRadius: 4,
-              background: r.color,
-              border: "1px solid var(--color-border)",
-              display: "inline-block",
-            }}
-          />
+          <svg className={styles.colorSwatch} viewBox="0 0 18 18" aria-hidden="true">
+            <rect width="18" height="18" rx="4" ry="4" fill={r.color} />
+          </svg>
           {onRename ? (
             <input
               value={renameDrafts[r.name] ?? r.name}
@@ -242,10 +203,10 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
               disabled={renaming}
               maxLength={30}
               title="重命名 (回车提交 / Esc 取消) — 会同步迁移已有标注"
-              style={{ ...inputStyle, fontSize: 13 }}
+              className={styles.control}
             />
           ) : (
-            <span style={{ fontSize: 13, color: "var(--color-fg)" }}>{r.name}</span>
+            <span className={styles.className}>{r.name}</span>
           )}
           <input
             value={r.alias ?? ""}
@@ -254,23 +215,15 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
             placeholder="英文 alias（SAM 提示用，可空）"
             maxLength={50}
             title="供 SAM 文本预标 prompt 下拉填入；ASCII 字母/数字/空格/逗号/下划线/连字符；blur 自动规范化"
-            style={{ ...inputStyle, fontSize: 12 }}
+            className={`${styles.control} ${styles.aliasInput}`}
           />
           <input
             type="color"
             value={r.color}
             onChange={(e) => setColor(i, e.target.value)}
-            style={{
-              width: 60,
-              height: 24,
-              padding: 0,
-              border: "1px solid var(--color-border)",
-              borderRadius: 3,
-              background: "transparent",
-              cursor: "pointer",
-            }}
+            className={styles.colorInput}
           />
-          <div style={{ display: "flex", gap: 4 }}>
+          <div className={styles.rowActions}>
             <Button size="sm" variant="ghost" onClick={() => move(i, -1)} disabled={i === 0} title="上移">
               <Icon name="chevUp" size={11} />
             </Button>
@@ -290,7 +243,7 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
         </div>
       ))}
 
-      <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+      <div className={styles.addRow}>
         <input
           value={classInput}
           onChange={(e) => setClassInput(e.target.value)}
@@ -307,7 +260,7 @@ export function ClassEditor({ value, onChange, max = 0, emptyHint = "尚未配�
           }
           maxLength={30}
           disabled={max > 0 && value.length >= max}
-          style={{ ...inputStyle, flex: 1 }}
+          className={styles.addInput}
         />
         <Button onClick={add} disabled={!classInput.trim() || (max > 0 && value.length >= max)}>
           <Icon name="plus" size={12} />添加

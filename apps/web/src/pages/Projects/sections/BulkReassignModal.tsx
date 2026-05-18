@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { useProjectMembers } from "@/hooks/useProjects";
 import type { BulkBatchActionResponse } from "@/api/batches";
+import styles from "./BulkReassignModal.module.css";
 
 interface Props {
   projectId: string;
@@ -19,6 +20,10 @@ interface Props {
 }
 
 type Sentinel = "__keep__" | "__clear__";
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
 
 /**
  * v0.7.3 · 批量改派 modal。
@@ -49,18 +54,18 @@ export function BulkReassignModal({ projectId, count, onClose, onSubmit, pending
 
   return (
     <Modal open onClose={onClose} title={`批量改派 · 已选 ${count} 个批次`} width={560}>
-      <div style={{ fontSize: 13, color: "var(--color-fg-muted)", marginBottom: 12 }}>
+      <div className={styles.description}>
         留空或选择「保留不变」则该字段不会被修改；选择「清空指派」则该字段会被设为未分派。
       </div>
 
       {isLoading && (
-        <div style={{ padding: 16, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+        <div className={styles.loadingState}>
           加载成员…
         </div>
       )}
 
       {!isLoading && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className={styles.columns}>
           <Column
             title="标注员"
             members={annotators}
@@ -78,12 +83,12 @@ export function BulkReassignModal({ projectId, count, onClose, onSubmit, pending
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+      <div className={styles.actions}>
         <Button onClick={onClose}>取消</Button>
         <Button
           onClick={handleSubmit}
           disabled={pending || !dirty}
-          style={{ background: "var(--color-accent)", color: "#fff" }}
+          className={styles.accentSubmitButton}
         >
           {pending ? "提交中…" : `确认改派 ${count} 个批次`}
         </Button>
@@ -118,49 +123,16 @@ function Column({
         key={key}
         type="button"
         onClick={() => onChange(value)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          width: "100%",
-          padding: "6px 8px",
-          borderRadius: "var(--radius-sm)",
-          background: checked ? "var(--color-accent-soft)" : "transparent",
-          border: `1px solid ${checked ? "var(--color-accent)" : "transparent"}`,
-          cursor: "pointer",
-          textAlign: "left",
-          marginBottom: 2,
-          fontFamily: "inherit",
-          color: "var(--color-fg)",
-        }}
+        className={cn(styles.optionRow, checked && styles.optionRowChecked)}
       >
-        <span
-          style={{
-            width: 14,
-            height: 14,
-            borderRadius: "50%",
-            border: "1px solid var(--color-border)",
-            background: checked ? "var(--color-accent)" : "var(--color-bg)",
-            flexShrink: 0,
-            position: "relative",
-          }}
-        >
-          {checked && (
-            <span
-              style={{
-                position: "absolute",
-                inset: 3,
-                borderRadius: "50%",
-                background: "#fff",
-              }}
-            />
-          )}
+        <span className={cn(styles.radioMark, checked && styles.radioMarkChecked)}>
+          {checked && <span className={styles.radioDot} />}
         </span>
         {icon}
-        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          <span style={{ fontSize: 12.5, fontWeight: 500 }}>{label}</span>
+        <span className={styles.optionText}>
+          <span className={styles.optionLabel}>{label}</span>
           {sub && (
-            <span style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginLeft: 6 }}>{sub}</span>
+            <span className={styles.optionSubtext}>{sub}</span>
           )}
         </span>
       </button>
@@ -168,24 +140,15 @@ function Column({
   };
 
   return (
-    <div
-      style={{
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        background: "var(--color-bg-sunken)",
-        padding: 8,
-        maxHeight: 300,
-        overflowY: "auto",
-      }}
-    >
-      <div style={{ padding: "4px 6px 8px" }}>
+    <div className={styles.column}>
+      <div className={styles.columnHeader}>
         <Badge variant={roleColor} dot>{title}</Badge>
       </div>
       {renderRow("__keep__", "保留不变", "__keep__", "（不修改该字段）")}
       {renderRow("__clear__", "清空指派", "__clear__", "（设为未分派）", <Icon name="x" size={11} />)}
-      <div style={{ height: 1, background: "var(--color-border)", margin: "4px 6px" }} />
+      <div className={styles.separator} />
       {members.length === 0 && (
-        <div style={{ fontSize: 12, color: "var(--color-fg-subtle)", padding: 16, textAlign: "center" }}>
+        <div className={styles.emptyState}>
           暂无成员
         </div>
       )}

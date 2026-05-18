@@ -3,6 +3,11 @@ import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import { useBatchAuditLogs } from "@/hooks/useBatches";
 import type { BatchResponse, BatchAuditLogEntry } from "@/api/batches";
+import styles from "./BatchAuditLogDrawer.module.css";
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
 
 const ACTION_LABEL: Record<string, string> = {
   "batch.created": "创建",
@@ -46,17 +51,17 @@ export function BatchAuditLogDrawer({
   return (
     <Modal open onClose={onClose} title={`操作历史 · ${batch.display_id} ${batch.name}`} width={680}>
       {isLoading && (
-        <div style={{ padding: 24, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+        <div className={styles.placeholder}>
           加载中…
         </div>
       )}
       {!isLoading && logs.length === 0 && (
-        <div style={{ padding: 24, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+        <div className={styles.placeholder}>
           暂无操作记录
         </div>
       )}
       {!isLoading && logs.length > 0 && (
-        <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: 4 }}>
+        <div className={styles.logList}>
           {logs.map((log) => (
             <Entry key={log.id} log={log} />
           ))}
@@ -80,36 +85,21 @@ function Entry({ log }: { log: BatchAuditLogEntry }) {
   const reason = (detail as { reason?: string }).reason;
 
   return (
-    <div
-      style={{
-        padding: "10px 12px",
-        borderBottom: "1px solid var(--color-border)",
-        fontSize: 12.5,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span className="mono" style={{ color: "var(--color-fg-subtle)", fontSize: 11 }}>{time}</span>
+    <div className={styles.entry}>
+      <div className={styles.entryHeader}>
+        <span className={cn("mono", styles.time)}>{time}</span>
         {role && (
           <Badge variant={ROLE_VARIANT[role] ?? "default"} dot>
             {ROLE_LABEL[role] ?? role}
           </Badge>
         )}
-        <span style={{ color: "var(--color-fg-muted)" }}>{log.actor_email ?? "—"}</span>
-        <span style={{ fontWeight: 500 }}>{actionLabel}</span>
+        <span className={styles.actorEmail}>{log.actor_email ?? "—"}</span>
+        <span className={styles.actionLabel}>{actionLabel}</span>
         {log.action === "batch.status_changed" && before && after && (
-          <span style={{ color: "var(--color-fg-subtle)" }}>
-            {before} → <strong style={{ color: "var(--color-fg)" }}>{after}</strong>
+          <span className={styles.statusChange}>
+            {before} → <strong className={styles.statusAfter}>{after}</strong>
             {reverse && (
-              <span
-                style={{
-                  marginLeft: 6,
-                  padding: "1px 6px",
-                  borderRadius: 100,
-                  background: "var(--color-warning)",
-                  color: "#fff",
-                  fontSize: 10,
-                }}
-              >
+              <span className={styles.reverseBadge}>
                 逆向
               </span>
             )}
@@ -118,46 +108,18 @@ function Entry({ log }: { log: BatchAuditLogEntry }) {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          style={{
-            marginLeft: "auto",
-            background: "transparent",
-            border: "none",
-            color: "var(--color-accent)",
-            cursor: "pointer",
-            fontSize: 12,
-            fontFamily: "inherit",
-          }}
+          className={styles.detailButton}
         >
           {open ? "收起" : "详情"}
         </button>
       </div>
       {reason && (
-        <div
-          style={{
-            marginTop: 4,
-            padding: "4px 8px",
-            background: "color-mix(in oklab, var(--color-warning) 8%, transparent)",
-            borderLeft: "2px solid var(--color-warning)",
-            color: "var(--color-fg-muted)",
-            fontSize: 12,
-          }}
-        >
+        <div className={styles.reason}>
           原因：{reason}
         </div>
       )}
       {open && (
-        <pre
-          style={{
-            marginTop: 6,
-            padding: 8,
-            background: "var(--color-bg-sunken)",
-            borderRadius: "var(--radius-sm)",
-            fontSize: 11,
-            color: "var(--color-fg-muted)",
-            overflowX: "auto",
-            fontFamily: "var(--font-mono)",
-          }}
-        >
+        <pre className={styles.detailPre}>
           {JSON.stringify(detail, null, 2)}
         </pre>
       )}

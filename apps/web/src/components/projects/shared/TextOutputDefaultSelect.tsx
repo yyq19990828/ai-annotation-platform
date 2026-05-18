@@ -5,6 +5,7 @@ export type TextOutputDefault = "" | "box" | "mask" | "both";
 interface Props {
   value: TextOutputDefault;
   onChange: (v: TextOutputDefault) => void;
+  className?: string;
   /** 透传到 <select> 的样式（保持调用方一致风格）。 */
   style?: CSSProperties;
 }
@@ -15,11 +16,12 @@ interface Props {
  * 由 GeneralSection (项目设置编辑) 与 CreateProjectWizard Step 4 (新建向导)
  * 共用; 改 4 项含义时只动这一处.
  */
-export function TextOutputDefaultSelect({ value, onChange, style }: Props) {
+export function TextOutputDefaultSelect({ value, onChange, className, style }: Props) {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as TextOutputDefault)}
+      className={className}
       style={{ cursor: "pointer", ...style }}
     >
       <option value="">自动按项目类型（image-det → 框 / 其它 → 掩膜）</option>

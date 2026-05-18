@@ -7,6 +7,7 @@ import { useUpdateProject } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import type { ProjectResponse, AttributeField, AttributeSchema } from "@/api/projects";
 import { AttributeSchemaEditor, validateAttributeFields } from "./AttributeSchemaEditor";
+import styles from "./AttributesSection.module.css";
 
 export function AttributesSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
@@ -67,35 +68,35 @@ export function AttributesSection({ project }: { project: ProjectResponse }) {
 
   return (
     <Card>
-      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>标注属性 schema</h3>
-        <div style={{ display: "flex", gap: 6 }}>
+      <div className={styles.cardHeader}>
+        <h3 className={styles.cardTitle}>标注属性 schema</h3>
+        <div className={styles.headerActions}>
           <Button size="sm" variant="ghost" onClick={onExportJson}>
             <Icon name="download" size={11} />导出 JSON
           </Button>
-          <label style={{ cursor: "pointer" }}>
-            <input type="file" accept="application/json" onChange={onImportJson} style={{ display: "none" }} />
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, padding: "3px 8px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", color: "var(--color-fg)" }}>
+          <label className={styles.importLabel}>
+            <input type="file" accept="application/json" onChange={onImportJson} className={styles.fileInput} />
+            <span className={styles.importButton}>
               <Icon name="plus" size={11} />导入
             </span>
           </label>
         </div>
       </div>
 
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-        <p style={{ fontSize: 12, color: "var(--color-fg-muted)", lineHeight: 1.6, margin: 0 }}>
+      <div className={styles.body}>
+        <p className={styles.helpText}>
           为本项目配置标注级业务属性（车型 / 朝向 / 是否遮挡等）。标注员选中标注后，右侧栏将根据 schema 渲染表单；改动即时落库。
         </p>
 
         <AttributeSchemaEditor value={fields} onChange={setFields} />
 
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, paddingTop: 4 }}>
+        <div className={styles.footer}>
           {dirty && (
             <span
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-warning)", fontWeight: 500 }}
+              className={styles.unsavedIndicator}
               data-testid="unsaved-indicator"
             >
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-warning)" }} />
+              <span className={styles.unsavedDot} />
               有未保存的修改
             </span>
           )}

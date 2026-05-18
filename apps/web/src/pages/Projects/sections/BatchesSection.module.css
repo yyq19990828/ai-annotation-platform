@@ -151,9 +151,19 @@
 }
 
 .bulkConfirmPrimary {
-  background: var(--bulk-confirm-bg, var(--color-accent)) !important;
+  background: var(--color-accent) !important;
   color: #fff !important;
-  border-color: var(--bulk-confirm-bg, var(--color-accent)) !important;
+  border-color: var(--color-accent) !important;
+}
+
+.bulkConfirmPrimary.bulkConfirmDanger {
+  background: var(--color-danger) !important;
+  border-color: var(--color-danger) !important;
+}
+
+.bulkConfirmPrimary.bulkConfirmSuccess {
+  background: var(--color-success) !important;
+  border-color: var(--color-success) !important;
 }
 
 /* bulk result strong colors */
@@ -388,9 +398,3 @@
 .dangerText {
   color: var(--color-danger);
 }
-
-/*
- * v0.10.11 · bulk confirm primary button — 3-档颜色 (accent / success / danger).
- * 用 CSS custom property 让 TSX 只指定一个变量值, 避免 3 class 写死.
- * 真正的 .bulkConfirmPrimary 规则在上方 (含 !important), 此处占位.
- */

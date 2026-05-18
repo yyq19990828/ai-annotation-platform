@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -323,15 +323,6 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
       onError: (e) => pushToast({ msg: "删除失败", sub: (e as Error).message }),
     });
   };
-
-  // v0.10.11 · bulk confirm primary button — 3 档颜色用 CSS var 暴露给 TSX, 避免
-  // 3 个 class 写死. 该 style 是 *唯一* 允许的 inline style 残留 (动态变量赋值).
-  const bulkConfirmBg =
-    confirmBulk === "delete"
-      ? "var(--color-danger)"
-      : confirmBulk === "approve"
-        ? "var(--color-success)"
-        : "var(--color-accent)";
 
   return (
     <>
@@ -878,11 +869,11 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                 else if (confirmBulk === "approve") runBulkApprove();
               }}
               disabled={bulkArchive.isPending || bulkDelete.isPending || bulkActivate.isPending || bulkApprove.isPending}
-              className={styles.bulkConfirmPrimary}
-              // CSS custom property 值是真正的运行时动态量 (3 档 status 颜色),
-              // 这是 CSS modules 迁移后唯一被允许的 inline style 形态.
-              // eslint-disable-next-line no-restricted-syntax
-              style={{ ["--bulk-confirm-bg" as never]: bulkConfirmBg } as CSSProperties}
+              className={cn(
+                styles.bulkConfirmPrimary,
+                confirmBulk === "delete" && styles.bulkConfirmDanger,
+                confirmBulk === "approve" && styles.bulkConfirmSuccess,
+              )}
             >
               确认{confirmBulk ? BULK_LABEL[confirmBulk] : ""}
             </Button>

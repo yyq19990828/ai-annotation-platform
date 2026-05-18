@@ -46,14 +46,14 @@ export default tseslint.config(
   // 'unsafe-inline'. 文件级 disable 用 `// eslint-disable-next-line` 即可单点放行
   // (例如把 CSS custom property 作为内联 style 值传给 child component 的场景).
   {
-    files: ["src/pages/Projects/sections/BatchesSection.tsx"],
+    files: ["src/pages/Projects/sections/*.tsx"],
     rules: {
       "no-restricted-syntax": [
         "error",
         {
           selector: "JSXAttribute[name.name='style']",
           message:
-            "本文件已迁到 BatchesSection.module.css。新增样式请加 CSS class; 真正一次性的动态值用 CSS custom property + 局部 eslint-disable-next-line 放行。",
+            "本文件已迁到同名 CSS module。新增样式请加 CSS class; 真正一次性的动态值用 CSS custom property + 局部 eslint-disable-next-line 放行。",
         },
       ],
     },

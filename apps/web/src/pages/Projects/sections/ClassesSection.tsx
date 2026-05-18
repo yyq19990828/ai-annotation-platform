@@ -6,6 +6,7 @@ import { useUpdateProject, useRenameClass } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import type { ProjectResponse, ClassesConfig } from "@/api/projects";
 import { ClassEditor, defaultColorFor, type ClassRow } from "./ClassEditor";
+import styles from "./ClassesSection.module.css";
 
 function buildRows(project: ProjectResponse): ClassRow[] {
   const cfg = project.classes_config ?? {};
@@ -74,11 +75,11 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
 
   return (
     <Card>
-      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>类别管理（颜色 + 排序）</h3>
+      <div className={styles.cardHeader}>
+        <h3 className={styles.cardTitle}>类别管理（颜色 + 排序）</h3>
       </div>
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-        <p style={{ fontSize: 12, color: "var(--color-fg-muted)", margin: 0, lineHeight: 1.5 }}>
+      <div className={styles.body}>
+        <p className={styles.helpText}>
           每个类别可独立配置颜色（标注框 stroke / 标签底色）。顺序影响数字键 1-9 / a-z 映射与左侧类别面板展示。
         </p>
         <ClassEditor
@@ -87,13 +88,13 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
           onRename={handleRename}
           renaming={rename.isPending}
         />
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
+        <div className={styles.footer}>
           {dirty && (
             <span
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-warning)", fontWeight: 500 }}
+              className={styles.unsavedIndicator}
               data-testid="unsaved-indicator"
             >
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-warning)" }} />
+              <span className={styles.unsavedDot} />
               有未保存的修改
             </span>
           )}

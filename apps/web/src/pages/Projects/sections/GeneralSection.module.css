@@ -1,0 +1,219 @@
+/* v0.10.12 · CSP style-src 收紧续推 — GeneralSection.tsx inline style
+ * 迁移到 CSS modules. 命名跟随 BatchesSection.module.css 试点约定.
+ */
+
+.cardHeader {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+  margin-bottom: 6px;
+}
+
+.labelCompact {
+  margin-bottom: 4px;
+}
+
+.labelNote {
+  color: var(--color-fg-subtle);
+  font-weight: 400;
+}
+
+.control {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 11px;
+  font-size: 13.5px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-fg);
+  outline: none;
+  font-family: inherit;
+}
+
+.selectControl {
+  cursor: pointer;
+}
+
+.gridTwo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.readonlyValue {
+  padding: 8px 11px;
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.typeKey {
+  font-size: 11px;
+  margin-left: 8px;
+  color: var(--color-fg-subtle);
+}
+
+.classInputRow {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.classInput {
+  flex: 1;
+}
+
+.classChipBox {
+  min-height: 56px;
+  padding: 10px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-content: flex-start;
+  background: var(--color-bg-sunken);
+}
+
+.emptyText {
+  font-size: 12px;
+  color: var(--color-fg-subtle);
+}
+
+.classChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: 100px;
+  font-size: 12px;
+}
+
+.classChipRemove {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--color-fg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.aiToggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.aiCheckbox,
+.rangeInput {
+  accent-color: var(--color-ai);
+}
+
+.aiIcon {
+  color: var(--color-ai);
+}
+
+.aiPanel {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.warningText {
+  color: var(--color-warning);
+  margin-left: 4px;
+}
+
+.advancedDetails {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.advancedSummary {
+  cursor: pointer;
+}
+
+.advancedBody {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rangeInput {
+  flex: 1;
+}
+
+.metricValue {
+  min-width: 48px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--color-fg);
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.unsavedIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-warning);
+  font-weight: 500;
+}
+
+.unsavedDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-warning);
+}

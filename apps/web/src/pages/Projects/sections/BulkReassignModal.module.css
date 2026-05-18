@@ -1,0 +1,120 @@
+/* v0.10.12 · CSP style-src 收紧续推 — BulkReassignModal.tsx inline style 迁移到 CSS modules. */
+
+.description {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin-bottom: 12px;
+}
+
+.loadingState {
+  padding: 16px;
+  text-align: center;
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Temporary bridge while Button still owns its base colors through inline style. */
+.accentSubmitButton {
+  background: var(--color-accent) !important;
+  color: #fff !important;
+}
+
+.column {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  padding: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.columnHeader {
+  padding: 4px 6px 8px;
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  margin-bottom: 2px;
+  font-family: inherit;
+  color: var(--color-fg);
+}
+
+.optionRowChecked {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.radioMark {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.radioMarkChecked {
+  background: var(--color-accent);
+}
+
+.radioDot {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.optionText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionLabel {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.optionSubtext {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  margin-left: 6px;
+}
+
+.separator {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 6px;
+}
+
+.emptyState {
+  font-size: 12px;
+  color: var(--color-fg-subtle);
+  padding: 16px;
+  text-align: center;
+}

@@ -1,0 +1,126 @@
+/* v0.10.12 · CSP style-src 收紧续推 — MlBackendsSection.tsx inline style
+ * 迁移到 CSS modules. 当前文件没有 Button 颜色覆盖；若后续需要覆盖 Button
+ * 组件内联颜色，临时使用 !important 桥接并在收敛 Button 样式后摘除。
+ */
+
+.cardHeader {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.quota {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+}
+
+.subtitle {
+  font-size: 11.5px;
+  color: var(--color-fg-muted);
+  margin-top: 2px;
+}
+
+.body {
+  padding: 12px;
+}
+
+.placeholder {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-fg-subtle);
+}
+
+.errorText {
+  color: var(--color-danger);
+}
+
+.warningIcon {
+  margin-right: 6px;
+}
+
+.emptyState {
+  padding: 32px;
+  text-align: center;
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.emptyIcon {
+  opacity: 0.25;
+  margin-bottom: 6px;
+}
+
+.emptyHint {
+  font-size: 11.5px;
+  margin-top: 4px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+}
+
+.tableHeadCell {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  padding: 6px 12px;
+  background: var(--color-bg-sunken);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tableCell {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.urlCell {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtleText {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+}
+
+.capabilityList {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.mutedCell {
+  color: var(--color-fg-muted);
+}
+
+.actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.boundBadge {
+  align-self: center;
+}

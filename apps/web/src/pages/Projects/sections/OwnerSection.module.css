@@ -1,0 +1,122 @@
+/* v0.10.12 · CSP style-src 收紧续推 — OwnerSection.tsx inline style
+ * 迁移到 CSS modules. 命名跟随 BatchesSection.module.css 试点约定.
+ */
+
+.cardHeader {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ownerRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ownerName {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ownerHint {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  margin-top: 2px;
+}
+
+.ruleBox {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  line-height: 1.6;
+}
+
+.ruleTitle {
+  color: var(--color-fg);
+}
+
+.modalStack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modalHint {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.candidateList {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.emptyCandidate {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+}
+
+.candidateItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-fg);
+  font-family: inherit;
+}
+
+.candidateItem:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.candidateItemActive {
+  background: var(--color-accent-soft);
+}
+
+.candidateMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.candidateName {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.candidateEmail {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

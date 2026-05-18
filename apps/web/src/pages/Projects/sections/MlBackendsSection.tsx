@@ -17,6 +17,11 @@ import { MlBackendLimitModal } from "@/components/projects/MlBackendLimitModal";
 import { mlBackendsApi, type MLBackendCapability } from "@/api/ml-backends";
 import type { ProjectResponse } from "@/api/projects";
 import type { MLBackendResponse } from "@/types";
+import styles from "./MlBackendsSection.module.css";
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
 
 const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"> = {
   connected: "success",
@@ -112,32 +117,18 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
 
   return (
     <Card>
-      <div
-        style={{
-          padding: "14px 16px",
-          borderBottom: "1px solid var(--color-border)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
+      <div className={styles.cardHeader}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>
+          <h3 className={styles.cardTitle}>
             ML 模型
             <span
               data-testid="ml-backend-quota"
-              style={{
-                marginLeft: 8,
-                fontSize: 11,
-                fontWeight: 500,
-                color: "var(--color-fg-muted)",
-              }}
+              className={styles.quota}
             >
               已用 {backends.length} / {limit > 0 ? limit : "∞"}
             </span>
           </h3>
-          <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginTop: 2 }}>
+          <div className={styles.subtitle}>
             管理本项目作用域的 ML backend；注册后回「基本信息」可绑定为预标注 backend。
           </div>
         </div>
@@ -152,50 +143,33 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
         </Button>
       </div>
 
-      <div style={{ padding: 12 }}>
+      <div className={styles.body}>
         {isLoading && (
-          <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--color-fg-subtle)" }}>
+          <div className={styles.placeholder}>
             加载中…
           </div>
         )}
         {isError && (
-          <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--color-danger)" }}>
-            <Icon name="warning" size={14} style={{ marginRight: 6 }} />
+          <div className={cn(styles.placeholder, styles.errorText)}>
+            <Icon name="warning" size={14} className={styles.warningIcon} />
             加载失败：{(error as Error)?.message ?? "未知错误"}
           </div>
         )}
         {!isLoading && !isError && backends.length === 0 && (
-          <div
-            style={{
-              padding: 32,
-              textAlign: "center",
-              color: "var(--color-fg-subtle)",
-              fontSize: 13,
-              border: "1px dashed var(--color-border)",
-              borderRadius: "var(--radius-md)",
-            }}
-          >
-            <Icon name="bot" size={28} style={{ opacity: 0.25, marginBottom: 6 }} />
+          <div className={styles.emptyState}>
+            <Icon name="bot" size={28} className={styles.emptyIcon} />
             <div>本项目暂未注册任何 ML backend</div>
-            <div style={{ fontSize: 11.5, marginTop: 4 }}>点击右上角「注册 backend」开始接入</div>
+            <div className={styles.emptyHint}>点击右上角「注册 backend」开始接入</div>
           </div>
         )}
         {!isLoading && backends.length > 0 && (
-          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 12.5 }}>
+          <table className={styles.table}>
             <thead>
               <tr>
                 {["名称", "URL", "类型", "能力", "状态", "最近检查", "操作"].map((h) => (
                   <th
                     key={h}
-                    style={{
-                      textAlign: "left",
-                      fontWeight: 500,
-                      fontSize: 11,
-                      color: "var(--color-fg-muted)",
-                      padding: "6px 12px",
-                      background: "var(--color-bg-sunken)",
-                      borderBottom: "1px solid var(--color-border)",
-                    }}
+                    className={styles.tableHeadCell}
                   >
                     {h}
                   </th>
@@ -208,35 +182,24 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                 const cap = capQ?.data as MLBackendCapability | undefined;
                 return (
                   <tr key={b.id}>
-                    <td style={cellStyle}>{b.name}</td>
-                    <td
-                      style={{
-                        ...cellStyle,
-                        fontFamily: "var(--font-mono, monospace)",
-                        fontSize: 11,
-                        color: "var(--color-fg-muted)",
-                        maxWidth: 280,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
+                    <td className={styles.tableCell}>{b.name}</td>
+                    <td className={cn(styles.tableCell, styles.urlCell)}>
                       {b.url}
                     </td>
-                    <td style={cellStyle}>
+                    <td className={styles.tableCell}>
                       <Badge variant={b.is_interactive ? "ai" : "outline"}>
                         {b.is_interactive ? "交互式" : "批量"}
                       </Badge>
                     </td>
-                    <td style={cellStyle}>
+                    <td className={styles.tableCell}>
                       {capQ?.isLoading && (
-                        <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>…</span>
+                        <span className={styles.subtleText}>…</span>
                       )}
                       {capQ?.isError && (
-                        <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>—</span>
+                        <span className={styles.subtleText}>—</span>
                       )}
                       {cap?.supported_prompts && (
-                        <div style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+                        <div className={styles.capabilityList}>
                           {cap.supported_prompts.map((p) => (
                             <Badge key={p} variant="outline">
                               {p}
@@ -245,16 +208,16 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                         </div>
                       )}
                     </td>
-                    <td style={cellStyle}>
+                    <td className={styles.tableCell}>
                       <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
                         {b.state}
                       </Badge>
                     </td>
-                    <td style={{ ...cellStyle, color: "var(--color-fg-muted)" }}>
+                    <td className={cn(styles.tableCell, styles.mutedCell)}>
                       {formatDate(b.last_checked_at)}
                     </td>
-                    <td style={cellStyle}>
-                      <div style={{ display: "inline-flex", gap: 6 }}>
+                    <td className={styles.tableCell}>
+                      <div className={styles.actions}>
                         {project.ml_backend_id !== b.id && (
                           <Button
                             size="sm"
@@ -267,9 +230,11 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                           </Button>
                         )}
                         {project.ml_backend_id === b.id && (
-                          <Badge variant="ai" style={{ alignSelf: "center" }}>
-                            已绑定
-                          </Badge>
+                          <span className={styles.boundBadge}>
+                            <Badge variant="ai">
+                              已绑定
+                            </Badge>
+                          </span>
                         )}
                         <Button
                           size="sm"
@@ -329,8 +294,3 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
     </Card>
   );
 }
-
-const cellStyle = {
-  padding: "8px 12px",
-  borderBottom: "1px solid var(--color-border)",
-} as const;

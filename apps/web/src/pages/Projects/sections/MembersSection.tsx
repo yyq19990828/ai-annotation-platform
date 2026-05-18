@@ -9,6 +9,11 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useProjectMembers, useRemoveProjectMember } from "@/hooks/useProjects";
 import { AssignMemberModal } from "@/components/projects/AssignMemberModal";
 import type { ProjectResponse, ProjectMemberResponse } from "@/api/projects";
+import styles from "./MembersSection.module.css";
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
 
 export function MembersSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
@@ -30,17 +35,9 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
   return (
     <>
       <Card>
-        <div
-          style={{
-            padding: "14px 16px",
-            borderBottom: "1px solid var(--color-border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>项目成员</h3>
-          <div style={{ display: "flex", gap: 8 }}>
+        <div className={styles.cardHeader}>
+          <h3 className={styles.cardTitle}>项目成员</h3>
+          <div className={styles.headerActions}>
             <Button onClick={() => setAssignRole("annotator")}>
               <Icon name="plus" size={12} />指派标注员
             </Button>
@@ -51,33 +48,27 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
         </div>
 
         {isLoading && (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+          <div className={styles.placeholder}>
             加载中...
           </div>
         )}
         {!isLoading && members.length === 0 && (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+          <div className={styles.placeholder}>
             暂无成员，点击右上角按钮指派标注员或审核员
           </div>
         )}
         {!isLoading && members.length > 0 && (
-          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+          <table className={styles.table}>
             <thead>
               <tr>
                 {["成员", "角色", "加入时间", ""].map((h, i) => (
                   <th
                     key={i}
-                    style={{
-                      textAlign: "left",
-                      fontWeight: 500,
-                      fontSize: 12,
-                      color: "var(--color-fg-muted)",
-                      padding: "10px 12px",
-                      borderBottom: "1px solid var(--color-border)",
-                      background: "var(--color-bg-sunken)",
-                      ...(i === 0 ? { paddingLeft: 16 } : {}),
-                      ...(i === 3 ? { paddingRight: 16 } : {}),
-                    }}
+                    className={cn(
+                      styles.tableHeadCell,
+                      i === 0 && styles.tableHeadCellFirst,
+                      i === 3 && styles.tableHeadCellLast,
+                    )}
                   >
                     {h}
                   </th>
@@ -87,26 +78,26 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
             <tbody>
               {members.map((m) => (
                 <tr key={m.id}>
-                  <td style={{ padding: "10px 12px 10px 16px", borderBottom: "1px solid var(--color-border)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <td className={styles.memberCell}>
+                    <div className={styles.memberIdentity}>
                       <Avatar initial={m.user_name.slice(0, 1)} size="sm" />
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 500 }}>{m.user_name}</div>
-                        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{m.user_email}</div>
+                        <div className={styles.memberName}>{m.user_name}</div>
+                        <div className={styles.memberEmail}>{m.user_email}</div>
                       </div>
                     </div>
                   </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)" }}>
+                  <td className={styles.tableCell}>
                     {m.role === "annotator" ? (
                       <Badge variant="accent">标注员</Badge>
                     ) : (
                       <Badge variant="warning">审核员</Badge>
                     )}
                   </td>
-                  <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", color: "var(--color-fg-muted)" }}>
+                  <td className={cn(styles.tableCell, styles.dateCell)}>
                     {new Date(m.assigned_at).toLocaleDateString("zh-CN")}
                   </td>
-                  <td style={{ padding: "10px 16px 10px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right" }}>
+                  <td className={styles.actionCell}>
                     <Button size="sm" variant="ghost" onClick={() => setConfirmRemove(m)}>
                       <Icon name="x" size={11} />移除
                     </Button>
@@ -129,10 +120,10 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
       )}
 
       <Modal open={!!confirmRemove} onClose={() => setConfirmRemove(null)} title="移除成员" width={420}>
-        <div style={{ fontSize: 13, color: "var(--color-fg-muted)", marginBottom: 18 }}>
-          确认将 <strong style={{ color: "var(--color-fg)" }}>{confirmRemove?.user_name}</strong> 从本项目移除？该用户将不再看到此项目，已完成的标注/审核记录保留。
+        <div className={styles.removeBody}>
+          确认将 <strong className={styles.removeName}>{confirmRemove?.user_name}</strong> 从本项目移除？该用户将不再看到此项目，已完成的标注/审核记录保留。
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div className={styles.modalActions}>
           <Button variant="ghost" onClick={() => setConfirmRemove(null)}>取消</Button>
           <Button variant="danger" disabled={remove.isPending} onClick={() => confirmRemove && onRemove(confirmRemove)}>
             {remove.isPending ? "处理中..." : "确认移除"}

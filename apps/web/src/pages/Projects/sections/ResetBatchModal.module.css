@@ -1,0 +1,68 @@
+/* v0.10.12 · CSP style-src 收紧续推 — ResetBatchModal.tsx inline style 迁移到 CSS modules. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.warningBox {
+  padding: 10px;
+  background: color-mix(in oklab, var(--color-warning) 10%, transparent);
+  border-left: 3px solid var(--color-warning);
+  color: var(--color-fg);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.warningList {
+  margin: 6px 0 0 16px;
+  padding: 0;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.labelText {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  resize: vertical;
+  min-height: 80px;
+}
+
+.textareaInvalid {
+  border-color: var(--color-danger);
+}
+
+.errorText {
+  font-size: 11px;
+  color: var(--color-danger);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Temporary bridge while Button still owns its base colors through inline style. */
+.warningSubmitButton {
+  background: var(--color-warning) !important;
+  color: #fff !important;
+}

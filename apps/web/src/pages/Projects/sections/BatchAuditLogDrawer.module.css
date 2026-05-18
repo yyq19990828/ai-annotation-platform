@@ -1,0 +1,85 @@
+.placeholder {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+}
+
+.logList {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.entry {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12.5px;
+}
+
+.entryHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.time {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.actorEmail {
+  color: var(--color-fg-muted);
+}
+
+.actionLabel {
+  font-weight: 500;
+}
+
+.statusChange {
+  color: var(--color-fg-subtle);
+}
+
+.statusAfter {
+  color: var(--color-fg);
+}
+
+.reverseBadge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 100px;
+  background: var(--color-warning);
+  color: #fff;
+  font-size: 10px;
+}
+
+.detailButton {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--color-accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.reason {
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: color-mix(in oklab, var(--color-warning) 8%, transparent);
+  border-left: 2px solid var(--color-warning);
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.detailPre {
+  margin-top: 6px;
+  padding: 8px;
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+}

@@ -12,6 +12,11 @@ import {
 } from "@/hooks/useDatasets";
 import { datasetsApi } from "@/api/datasets";
 import type { ProjectResponse } from "@/api/projects";
+import styles from "./DatasetsSection.module.css";
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
 
 export function DatasetsSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
@@ -31,47 +36,33 @@ export function DatasetsSection({ project }: { project: ProjectResponse }) {
   return (
     <>
       <Card>
-        <div
-          style={{
-            padding: "14px 16px",
-            borderBottom: "1px solid var(--color-border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>关联数据集</h3>
+        <div className={styles.cardHeader}>
+          <h3 className={styles.cardTitle}>关联数据集</h3>
           <Button onClick={() => setLinkOpen(true)} disabled={candidates.length === 0}>
             <Icon name="plus" size={12} /> 关联数据集
           </Button>
         </div>
 
         {isLoading && (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+          <div className={styles.placeholder}>
             加载中...
           </div>
         )}
 
         {!isLoading && linked.length === 0 && (
-          <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+          <div className={styles.placeholder}>
             尚未关联任何数据集。点击右上角「关联数据集」开始。
           </div>
         )}
 
         {!isLoading && linked.length > 0 && (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table className={styles.table}>
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+              <tr className={styles.tableRow}>
                 {["数据集", "类型", "原数据集条目", "本项目任务", "关联时间", "操作"].map((h) => (
                   <th
                     key={h}
-                    style={{
-                      padding: "8px 12px",
-                      textAlign: "left",
-                      fontWeight: 500,
-                      color: "var(--color-fg-muted)",
-                      fontSize: 12,
-                    }}
+                    className={styles.tableHeadCell}
                   >
                     {h}
                   </th>
@@ -80,20 +71,20 @@ export function DatasetsSection({ project }: { project: ProjectResponse }) {
             </thead>
             <tbody>
               {linked.map((d) => (
-                <tr key={d.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
-                  <td style={{ padding: "10px 12px" }}>
-                    <div style={{ fontWeight: 500 }}>{d.name}</div>
-                    <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                <tr key={d.id} className={styles.tableRow}>
+                  <td className={styles.tableCell}>
+                    <div className={styles.datasetName}>{d.name}</div>
+                    <div className={cn("mono", styles.subtleMono)}>
                       {d.display_id}
                     </div>
                   </td>
-                  <td style={{ padding: "10px 12px", color: "var(--color-fg-muted)" }}>{d.data_type}</td>
-                  <td style={{ padding: "10px 12px" }}>{d.items_count}</td>
-                  <td style={{ padding: "10px 12px" }}>{d.tasks_in_project}</td>
-                  <td style={{ padding: "10px 12px", color: "var(--color-fg-muted)", fontSize: 12 }}>
+                  <td className={cn(styles.tableCell, styles.mutedCell)}>{d.data_type}</td>
+                  <td className={styles.tableCell}>{d.items_count}</td>
+                  <td className={styles.tableCell}>{d.tasks_in_project}</td>
+                  <td className={cn(styles.tableCell, styles.dateCell)}>
                     {d.linked_at ? new Date(d.linked_at).toLocaleString() : "—"}
                   </td>
-                  <td style={{ padding: "10px 12px" }}>
+                  <td className={styles.tableCell}>
                     <Button
                       onClick={() => setUnlinkTarget({ dataset_id: d.id, name: d.name })}
                       title="取消关联（会清理对应的任务、标注与空批次）"
@@ -162,26 +153,17 @@ function LinkDatasetModal({
 
   return (
     <Modal open onClose={onClose} title="关联数据集" width={520}>
-      <div style={{ fontSize: 13, color: "var(--color-fg-muted)", marginBottom: 12 }}>
+      <div className={styles.modalIntro}>
         选择一个尚未关联到本项目的数据集。关联后该数据集的全部条目会作为「未归类任务」加入项目，
         在批次管理顶部点击「去分包」即可划分到批次。
       </div>
       {candidates.length === 0 && (
-        <div style={{ padding: 16, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+        <div className={styles.emptyCandidate}>
           暂无可关联的数据集 · 请先在「数据集」页面创建
         </div>
       )}
       {candidates.length > 0 && (
-        <div
-          style={{
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-            background: "var(--color-bg-sunken)",
-            padding: 6,
-            maxHeight: 320,
-            overflowY: "auto",
-          }}
-        >
+        <div className={styles.candidateList}>
           {candidates.map((d) => {
             const checked = selected === d.id;
             return (
@@ -189,51 +171,22 @@ function LinkDatasetModal({
                 key={d.id}
                 type="button"
                 onClick={() => setSelected(d.id)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  width: "100%",
-                  padding: "8px 10px",
-                  borderRadius: "var(--radius-sm)",
-                  background: checked ? "var(--color-accent-soft)" : "transparent",
-                  border: `1px solid ${checked ? "var(--color-accent)" : "transparent"}`,
-                  cursor: "pointer",
-                  textAlign: "left",
-                  marginBottom: 2,
-                  fontFamily: "inherit",
-                  color: "var(--color-fg)",
-                }}
+                className={cn(styles.candidateItem, checked && styles.candidateItemChecked)}
               >
                 <span
-                  style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: "50%",
-                    border: "1px solid var(--color-border)",
-                    background: checked ? "var(--color-accent)" : "var(--color-bg)",
-                    flexShrink: 0,
-                    position: "relative",
-                  }}
+                  className={cn(styles.radioMark, checked && styles.radioMarkChecked)}
                 >
                   {checked && (
-                    <span style={{ position: "absolute", inset: 3, borderRadius: "50%", background: "#fff" }} />
+                    <span className={styles.radioDot} />
                   )}
                 </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{d.name}</span>
-                  <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginLeft: 6 }}>
+                <span className={styles.candidateMain}>
+                  <span className={styles.candidateName}>{d.name}</span>
+                  <span className={cn("mono", styles.candidateId)}>
                     {d.display_id}
                   </span>
                   <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--color-fg-subtle)",
-                      marginLeft: 6,
-                      padding: "1px 6px",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: 100,
-                    }}
+                    className={styles.typePill}
                   >
                     {d.data_type}
                   </span>
@@ -243,12 +196,12 @@ function LinkDatasetModal({
           })}
         </div>
       )}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+      <div className={styles.modalActions}>
         <Button onClick={onClose}>取消</Button>
         <Button
           onClick={onSubmit}
           disabled={!selected || link.isPending}
-          style={{ background: "var(--color-accent)", color: "#fff" }}
+          className={styles.primaryButton}
         >
           {link.isPending ? "关联中…" : "确认关联"}
         </Button>
@@ -323,27 +276,27 @@ function UnlinkConfirmModal({
 
   return (
     <Modal open onClose={onClose} title="确认取消关联">
-      <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-        <p style={{ margin: "0 0 8px" }}>
+      <div className={styles.unlinkBody}>
+        <p className={styles.unlinkParagraph}>
           确认取消数据集 <strong>{datasetName}</strong> 与本项目的关联？
         </p>
-        <div style={{ margin: "0 0 8px", color: "var(--color-fg-muted)" }}>
+        <div className={styles.unlinkPreview}>
           {preview === null ? (
             "正在统计影响范围…"
           ) : preview.tasks === 0 ? (
             "项目中没有由该数据集创建的任务，可放心取消。"
           ) : (
             <>
-              <strong style={{ color: "var(--color-danger)" }}>将一并删除</strong>项目中由该数据集创建的{" "}
+              <strong className={styles.dangerText}>将一并删除</strong>项目中由该数据集创建的{" "}
               <strong>{preview.tasks}</strong> 个任务
               {preview.annotations > 0 && (
                 <>
-                  （含 <strong style={{ color: "var(--color-danger)" }}>{preview.annotations}</strong> 个已有标注）
+                  （含 <strong className={styles.dangerText}>{preview.annotations}</strong> 个已有标注）
                 </>
               )}
               {preview.batches > 0 && (
                 <>
-                  ，并清理 <strong style={{ color: "var(--color-danger)" }}>{preview.batches}</strong> 个失去全部任务的空批次
+                  ，并清理 <strong className={styles.dangerText}>{preview.batches}</strong> 个失去全部任务的空批次
                 </>
               )}
               。<br />
@@ -352,8 +305,8 @@ function UnlinkConfirmModal({
           )}
         </div>
         {dangerous && (
-          <div style={{ margin: "10px 0" }}>
-            <label style={{ display: "block", fontSize: 12, color: "var(--color-fg-muted)", marginBottom: 4 }}>
+          <div className={styles.confirmBlock}>
+            <label className={styles.confirmLabel}>
               请输入数据集名称 <strong>{datasetName}</strong> 以确认：
             </label>
             <input
@@ -362,29 +315,16 @@ function UnlinkConfirmModal({
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder={datasetName}
               autoFocus
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "7px 10px",
-                fontSize: 13,
-                background: "var(--color-bg-sunken)",
-                border: `1px solid ${canSubmit ? "var(--color-success)" : "var(--color-border)"}`,
-                borderRadius: "var(--radius-md)",
-                color: "var(--color-fg)",
-                fontFamily: "inherit",
-              }}
+              className={cn(styles.confirmInput, canSubmit && styles.confirmInputValid)}
             />
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <div className={styles.modalActions}>
           <Button onClick={onClose}>取消</Button>
           <Button
             onClick={onConfirm}
             disabled={!canSubmit || unlink.isPending}
-            style={{
-              background: canSubmit ? "var(--color-danger)" : undefined,
-              color: canSubmit ? "#fff" : undefined,
-            }}
+            className={canSubmit ? styles.dangerButton : undefined}
           >
             {unlink.isPending ? "处理中…" : "确认取消关联"}
           </Button>

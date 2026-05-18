@@ -4,8 +4,13 @@ import { Button } from "@/components/ui/Button";
 import { useToastStore } from "@/components/ui/Toast";
 import { useTransitionBatch } from "@/hooks/useBatches";
 import type { BatchResponse } from "@/api/batches";
+import styles from "./ReverseTransitionModal.module.css";
 
 const REASON_MAX = 500;
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
 
 export type ReverseKind = "unarchive" | "reopen_from_approved" | "reopen_from_rejected";
 
@@ -72,10 +77,10 @@ export function ReverseTransitionModal({
 
   return (
     <Modal open title={copy.title(batch)} onClose={onClose}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
-        <p style={{ margin: 0, color: "var(--color-fg-muted)" }}>{copy.description}</p>
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+      <div className={styles.body}>
+        <p className={styles.description}>{copy.description}</p>
+        <label className={styles.field}>
+          <span className={styles.labelText}>
             操作原因（必填 · {trimmed.length}/{REASON_MAX}） · 会写入审计日志
           </span>
           <textarea
@@ -83,34 +88,21 @@ export function ReverseTransitionModal({
             onChange={(e) => setReason(e.target.value)}
             placeholder="请简要说明操作原因（运维需要 / 误判修正 / …）"
             rows={4}
-            style={{
-              padding: "8px 10px",
-              border: `1px solid ${tooLong ? "var(--color-danger)" : "var(--color-border)"}`,
-              borderRadius: "var(--radius-sm)",
-              fontSize: 13,
-              fontFamily: "inherit",
-              background: "var(--color-bg)",
-              color: "var(--color-fg)",
-              resize: "vertical",
-              minHeight: 80,
-            }}
+            className={cn(styles.textarea, tooLong && styles.textareaInvalid)}
             autoFocus
           />
           {tooLong && (
-            <span style={{ fontSize: 11, color: "var(--color-danger)" }}>
+            <span className={styles.errorText}>
               超出 {REASON_MAX} 字上限
             </span>
           )}
         </label>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div className={styles.actions}>
           <Button onClick={onClose}>取消</Button>
           <Button
             onClick={handleSubmit}
             disabled={!canSubmit}
-            style={{
-              background: canSubmit ? "var(--color-accent)" : undefined,
-              color: canSubmit ? "#fff" : undefined,
-            }}
+            className={canSubmit ? styles.accentSubmitButton : undefined}
           >
             {transition.isPending ? "提交中…" : "确认"}
           </Button>

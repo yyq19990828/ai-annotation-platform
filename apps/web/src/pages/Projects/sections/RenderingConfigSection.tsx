@@ -6,55 +6,16 @@
 // PATCH 整个 rendering_config 对象；后端 Pydantic ProjectRenderingConfig
 // (extra=forbid, 字段范围校验) 兜底。
 
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import type { ProjectResponse, ProjectRenderingConfig } from "@/api/projects";
+import styles from "./RenderingConfigSection.module.css";
 
-const labelStyle: CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 500,
-  color: "var(--color-fg-muted)",
-  marginBottom: 6,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 11px",
-  fontSize: 13.5,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  color: "var(--color-fg)",
-  outline: "none",
-  fontFamily: "inherit",
-};
-
-const rowStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-  padding: "10px 0",
-  borderBottom: "1px solid var(--color-border)",
-};
-
-const overrideToggleStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  fontSize: 12,
-  color: "var(--color-fg-muted)",
-  cursor: "pointer",
-};
-
-const followsHintStyle: CSSProperties = {
-  fontSize: 12,
-  color: "var(--color-fg-muted)",
-  fontStyle: "italic",
-};
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
 
 const DEFAULTS: Required<{ [K in keyof ProjectRenderingConfig]: NonNullable<ProjectRenderingConfig[K]> }> = {
   smoothImage: true,
@@ -99,16 +60,16 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
 
   return (
     <Card>
-      <div style={{ padding: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>渲染配置（项目级覆盖）</h3>
-        <p style={{ fontSize: 12.5, color: "var(--color-fg-muted)", marginTop: 6 }}>
+      <div className={styles.body}>
+        <h3 className={styles.title}>渲染配置（项目级覆盖）</h3>
+        <p className={styles.description}>
           项目级覆盖优先于成员的个人「标注偏好」。常用于医学影像等强制「无插值 / 灰度反色」的场景。
         </p>
 
         {/* smoothImage */}
-        <div style={rowStyle}>
-          <span style={labelStyle}>图像平滑（关闭后像素清晰）</span>
-          <label style={overrideToggleStyle}>
+        <div className={styles.row}>
+          <span className={styles.label}>图像平滑（关闭后像素清晰）</span>
+          <label className={styles.overrideToggle}>
             <input
               type="checkbox"
               checked={isOverridden("smoothImage")}
@@ -117,7 +78,7 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
             <span>覆盖用户偏好</span>
           </label>
           {isOverridden("smoothImage") ? (
-            <label style={{ fontSize: 13, display: "inline-flex", gap: 8 }}>
+            <label className={styles.inlineChoice}>
               <input
                 type="checkbox"
                 checked={draft.smoothImage ?? true}
@@ -126,14 +87,14 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
               {draft.smoothImage ? "强制开启平滑" : "强制关闭平滑（像素 nearest-neighbor）"}
             </label>
           ) : (
-            <span style={followsHintStyle}>跟随用户偏好</span>
+            <span className={styles.followsHint}>跟随用户偏好</span>
           )}
         </div>
 
         {/* cssImageFilter */}
-        <div style={rowStyle}>
-          <span style={labelStyle}>CSS 图像滤镜（例：brightness(1.2) invert(1)）</span>
-          <label style={overrideToggleStyle}>
+        <div className={styles.row}>
+          <span className={styles.label}>CSS 图像滤镜（例：brightness(1.2) invert(1)）</span>
+          <label className={styles.overrideToggle}>
             <input
               type="checkbox"
               checked={isOverridden("cssImageFilter")}
@@ -150,20 +111,20 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
                   commit({ ...draft, cssImageFilter: filterInput.trim() });
               }}
               placeholder="brightness(1.2) contrast(1.1)"
-              style={inputStyle}
+              className={styles.input}
             />
           ) : (
-            <span style={followsHintStyle}>跟随用户偏好</span>
+            <span className={styles.followsHint}>跟随用户偏好</span>
           )}
         </div>
 
         {/* controlPointsSize */}
-        <div style={rowStyle}>
-          <span style={labelStyle}>
+        <div className={styles.row}>
+          <span className={styles.label}>
             控制点大小（顶点拖拽手柄半径）
             {isOverridden("controlPointsSize") ? `：${draft.controlPointsSize}px` : ""}
           </span>
-          <label style={overrideToggleStyle}>
+          <label className={styles.overrideToggle}>
             <input
               type="checkbox"
               checked={isOverridden("controlPointsSize")}
@@ -180,17 +141,17 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
               onChange={(e) =>
                 commit({ ...draft, controlPointsSize: Number(e.target.value) })
               }
-              style={{ width: "100%" }}
+              className={styles.rangeInput}
             />
           ) : (
-            <span style={followsHintStyle}>跟随用户偏好</span>
+            <span className={styles.followsHint}>跟随用户偏好</span>
           )}
         </div>
 
         {/* snapToGrid */}
-        <div style={{ ...rowStyle, borderBottom: "none" }}>
-          <span style={labelStyle}>网格吸附</span>
-          <label style={overrideToggleStyle}>
+        <div className={cn(styles.row, styles.rowLast)}>
+          <span className={styles.label}>网格吸附</span>
+          <label className={styles.overrideToggle}>
             <input
               type="checkbox"
               checked={isOverridden("snapToGrid")}
@@ -199,7 +160,7 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
             <span>覆盖用户偏好</span>
           </label>
           {isOverridden("snapToGrid") ? (
-            <label style={{ fontSize: 13, display: "inline-flex", gap: 8 }}>
+            <label className={styles.inlineChoice}>
               <input
                 type="checkbox"
                 checked={draft.snapToGrid ?? false}
@@ -208,12 +169,12 @@ export function RenderingConfigSection({ project }: { project: ProjectResponse }
               {draft.snapToGrid ? "强制开启吸附" : "强制关闭吸附"}
             </label>
           ) : (
-            <span style={followsHintStyle}>跟随用户偏好</span>
+            <span className={styles.followsHint}>跟随用户偏好</span>
           )}
         </div>
 
         {update.isPending && (
-          <div style={{ marginTop: 12, fontSize: 12, color: "var(--color-fg-muted)" }}>
+          <div className={styles.savingHint}>
             保存中…
           </div>
         )}

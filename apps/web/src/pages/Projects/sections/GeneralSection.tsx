@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
@@ -12,27 +12,7 @@ import {
   type TextOutputDefault,
 } from "@/components/projects/shared/TextOutputDefaultSelect";
 import type { ProjectResponse } from "@/api/projects";
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 500,
-  color: "var(--color-fg-muted)",
-  marginBottom: 6,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 11px",
-  fontSize: 13.5,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  color: "var(--color-fg)",
-  outline: "none",
-  fontFamily: "inherit",
-};
+import styles from "./GeneralSection.module.css";
 
 const STATUS_OPTIONS = [
   { value: "in_progress", label: "进行中" },
@@ -40,6 +20,10 @@ const STATUS_OPTIONS = [
   { value: "completed", label: "已完成" },
   { value: "archived", label: "已归档" },
 ];
+
+function cn(...xs: Array<string | false | null | undefined>): string {
+  return xs.filter(Boolean).join(" ");
+}
 
 export function GeneralSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
@@ -155,46 +139,37 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
 
   return (
     <Card>
-      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>基本信息</h3>
+      <div className={styles.cardHeader}>
+        <h3 className={styles.cardTitle}>基本信息</h3>
       </div>
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className={styles.body}>
         <div>
-          <label style={labelStyle}>项目名称</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} style={inputStyle} />
+          <label className={styles.label}>项目名称</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} className={styles.control} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className={styles.gridTwo}>
           <div>
-            <label style={labelStyle}>状态</label>
-            <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+            <label className={styles.label}>状态</label>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className={cn(styles.control, styles.selectControl)}>
               {STATUS_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
           </div>
           <div>
-            <label style={labelStyle}>截止日期</label>
-            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={inputStyle} />
+            <label className={styles.label}>截止日期</label>
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={styles.control} />
           </div>
         </div>
         <div>
-          <label style={labelStyle}>类型</label>
-          <div
-            style={{
-              padding: "8px 11px",
-              fontSize: 13,
-              color: "var(--color-fg-muted)",
-              background: "var(--color-bg-sunken)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-            }}
-          >
-            {project.type_label} <span className="mono" style={{ fontSize: 11, marginLeft: 8, color: "var(--color-fg-subtle)" }}>{project.type_key}</span>
+          <label className={styles.label}>类型</label>
+          <div className={styles.readonlyValue}>
+            {project.type_label} <span className={cn("mono", styles.typeKey)}>{project.type_key}</span>
           </div>
         </div>
         <div>
-          <label style={labelStyle}>标注类别</label>
-          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+          <label className={styles.label}>标注类别</label>
+          <div className={styles.classInputRow}>
             <input
               value={classInput}
               onChange={(e) => setClassInput(e.target.value)}
@@ -206,59 +181,27 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
               }}
               placeholder="回车添加"
               maxLength={30}
-              style={{ ...inputStyle, flex: 1 }}
+              className={cn(styles.control, styles.classInput)}
             />
             <Button onClick={addClass} disabled={!classInput.trim()}>
               <Icon name="plus" size={12} />添加
             </Button>
           </div>
-          <div
-            style={{
-              minHeight: 56,
-              padding: 10,
-              border: "1px dashed var(--color-border)",
-              borderRadius: "var(--radius-md)",
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 6,
-              alignContent: "flex-start",
-              background: "var(--color-bg-sunken)",
-            }}
-          >
+          <div className={styles.classChipBox}>
             {classes.length === 0 && (
-              <span style={{ fontSize: 12, color: "var(--color-fg-subtle)" }}>暂无类别</span>
+              <span className={styles.emptyText}>暂无类别</span>
             )}
             {classes.map((c) => (
               <span
                 key={c}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "3px 4px 3px 10px",
-                  background: "var(--color-bg-elev)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: 100,
-                  fontSize: 12,
-                }}
+                className={styles.classChip}
               >
                 {c}
                 <button
                   type="button"
                   onClick={() => setClasses((s) => s.filter((x) => x !== c))}
                   aria-label={`删除 ${c}`}
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: "50%",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                    color: "var(--color-fg-muted)",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
+                  className={styles.classChipRemove}
                 >
                   <Icon name="x" size={10} />
                 </button>
@@ -267,26 +210,26 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
           </div>
         </div>
         <div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+          <label className={styles.aiToggleLabel}>
             <input
               type="checkbox"
               checked={aiEnabled}
               onChange={(e) => setAiEnabled(e.target.checked)}
-              style={{ accentColor: "var(--color-ai)" }}
+              className={styles.aiCheckbox}
             />
-            <Icon name="sparkles" size={14} style={{ color: "var(--color-ai)" }} />
+            <Icon name="sparkles" size={14} className={styles.aiIcon} />
             启用 AI 预标注
           </label>
           {aiEnabled && (
-            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className={styles.aiPanel}>
               {/* B-7 · 实际 ML Backend 绑定 — 模型语义直接来自注册的 backend.name,
                   不再用脱离实际部署的 PRESET 占位字符串 */}
               <div>
-                <label style={{ ...labelStyle, marginBottom: 4 }}>实际 ML Backend</label>
+                <label className={cn(styles.label, styles.labelCompact)}>实际 ML Backend</label>
                 <select
                   value={mlBackendId ?? ""}
                   onChange={(e) => setMlBackendId(e.target.value || null)}
-                  style={{ ...inputStyle, cursor: "pointer" }}
+                  className={cn(styles.control, styles.selectControl)}
                 >
                   <option value="">未绑定（项目按肉眼标注运行,AI 待接入）</option>
                   {mlBackends.map((b) => (
@@ -297,10 +240,10 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
                     </option>
                   ))}
                 </select>
-                <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 4, lineHeight: 1.5 }}>
+                <div className={styles.hint}>
                   绑定后,平台所有「模型名」展示均直接来自 backend.name,保证 UI 语义与实际推理后端一致。
                   {mlBackends.length === 0 && (
-                    <span style={{ color: "var(--color-warning)", marginLeft: 4 }}>
+                    <span className={styles.warningText}>
                       暂无可用 backend;先在「ML 模型」选项卡添加。
                     </span>
                   )}
@@ -308,15 +251,15 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
               </div>
 
               {/* B-7 · 折叠 PRESET 占位入口为 advanced — 仅历史项目或离线场景需要手填模型名 */}
-              <details style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
-                <summary style={{ cursor: "pointer" }}>
+              <details className={styles.advancedDetails}>
+                <summary className={styles.advancedSummary}>
                   高级:手动指定模型名 hint（仅当未绑定 backend 时生效）
                 </summary>
-                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className={styles.advancedBody}>
                   <select
                     value={aiChoice}
                     onChange={(e) => setAiChoice(e.target.value)}
-                    style={{ ...inputStyle, cursor: "pointer" }}
+                    className={cn(styles.control, styles.selectControl)}
                   >
                     {PRESET_AI_MODELS.map((m) => (
                       <option key={m} value={m}>{m}</option>
@@ -329,7 +272,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
                       onChange={(e) => setAiCustom(e.target.value)}
                       placeholder="自定义模型名称"
                       maxLength={120}
-                      style={inputStyle}
+                      className={styles.control}
                     />
                   )}
                 </div>
@@ -338,10 +281,10 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
           )}
         </div>
         <div>
-          <label style={labelStyle}>
-            AI 框去重阈值 <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>（与已确认人工框 IoU 高于此值的同类 AI 框将淡化）</span>
+          <label className={styles.label}>
+            AI 框去重阈值 <span className={styles.labelNote}>（与已确认人工框 IoU 高于此值的同类 AI 框将淡化）</span>
           </label>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className={styles.sliderRow}>
             <input
               type="range"
               min={0.3}
@@ -349,77 +292,64 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
               step={0.05}
               value={iouThreshold}
               onChange={(e) => setIouThreshold(Number(e.target.value))}
-              style={{ flex: 1, accentColor: "var(--color-ai)" }}
+              className={styles.rangeInput}
             />
             <span
-              className="mono"
-              style={{
-                minWidth: 48,
-                textAlign: "right",
-                fontSize: 13,
-                color: "var(--color-fg)",
-              }}
+              className={cn("mono", styles.metricValue)}
             >
               {iouThreshold.toFixed(2)}
             </span>
           </div>
         </div>
         <div>
-          <label style={labelStyle}>
-            DINO box 阈值 <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>（SAM 文本 prompt 时使用；车牌/商品等小物可降；噪声多可升）</span>
+          <label className={styles.label}>
+            DINO box 阈值 <span className={styles.labelNote}>（SAM 文本 prompt 时使用；车牌/商品等小物可降；噪声多可升）</span>
           </label>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className={styles.sliderRow}>
             <input
               type="range" min={0} max={1} step={0.05}
               value={boxThreshold}
               onChange={(e) => setBoxThreshold(Number(e.target.value))}
-              style={{ flex: 1, accentColor: "var(--color-ai)" }}
+              className={styles.rangeInput}
             />
-            <span className="mono" style={{ minWidth: 48, textAlign: "right", fontSize: 13, color: "var(--color-fg)" }}>
+            <span className={cn("mono", styles.metricValue)}>
               {boxThreshold.toFixed(2)}
             </span>
           </div>
         </div>
         <div>
-          <label style={labelStyle}>
-            DINO text 阈值 <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>（短语—区域匹配的语义最低分；越高越严格）</span>
+          <label className={styles.label}>
+            DINO text 阈值 <span className={styles.labelNote}>（短语—区域匹配的语义最低分；越高越严格）</span>
           </label>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className={styles.sliderRow}>
             <input
               type="range" min={0} max={1} step={0.05}
               value={textThreshold}
               onChange={(e) => setTextThreshold(Number(e.target.value))}
-              style={{ flex: 1, accentColor: "var(--color-ai)" }}
+              className={styles.rangeInput}
             />
-            <span className="mono" style={{ minWidth: 48, textAlign: "right", fontSize: 13, color: "var(--color-fg)" }}>
+            <span className={cn("mono", styles.metricValue)}>
               {textThreshold.toFixed(2)}
             </span>
           </div>
         </div>
         <div>
-          <label style={labelStyle}>
-            SAM 文本预标默认输出 <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>（工作台「找全图」初始值，可在工作台临时切换）</span>
+          <label className={styles.label}>
+            SAM 文本预标默认输出 <span className={styles.labelNote}>（工作台「找全图」初始值，可在工作台临时切换）</span>
           </label>
           <TextOutputDefaultSelect
             value={textOutputDefault as TextOutputDefault}
             onChange={(v) => setTextOutputDefault(v)}
-            style={inputStyle}
+            className={cn(styles.control, styles.selectControl)}
           />
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
+        <div className={styles.footer}>
           {dirty && (
             <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 12,
-                color: "var(--color-warning)",
-                fontWeight: 500,
-              }}
+              className={styles.unsavedIndicator}
               data-testid="unsaved-indicator"
             >
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-warning)" }} />
+              <span className={styles.unsavedDot} />
               有未保存的修改
             </span>
           )}

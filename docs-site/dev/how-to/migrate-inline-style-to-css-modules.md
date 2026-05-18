@@ -1,7 +1,7 @@
 # 把页面级 inline style 迁到 CSS modules
 
 ::: tip Since v0.10.11
-首个试点：`apps/web/src/pages/Projects/sections/BatchesSection.tsx`（17 处 inline → CSS modules）。本文以它为蓝本，后续 sections 群复刻同样步骤。
+首个试点：`apps/web/src/pages/Projects/sections/BatchesSection.tsx`（17 处 inline → CSS modules）。v0.10.12 已清空 `pages/Projects/sections/*.tsx` inline style，并把 lint guard 收口为 glob。本文以它们为蓝本，后续页面群复刻同样步骤。
 :::
 
 ## 为什么要迁
@@ -58,7 +58,7 @@ function cn(...xs: Array<string | false | null | undefined>): string {
 },
 ```
 
-后续 epic 收尾时把 `files` 列表合并为 glob `src/pages/Projects/sections/*.tsx` 等。
+`pages/Projects/sections/` 已收口为 glob；后续页面群同样在清零后把 `files` 列表合并为对应 glob。
 
 ### 5. 验证
 
@@ -80,3 +80,4 @@ function cn(...xs: Array<string | false | null | undefined>): string {
 完整对照：
 - 前：v0.10.10 [`BatchesSection.tsx`](https://github.com/.../blob/v0.10.10/apps/web/src/pages/Projects/sections/BatchesSection.tsx)（17 处 inline）
 - 后：v0.10.11 [`BatchesSection.tsx`](../../../apps/web/src/pages/Projects/sections/BatchesSection.tsx) + [`BatchesSection.module.css`](../../../apps/web/src/pages/Projects/sections/BatchesSection.module.css)（1 处 CSS variable）
+- 续推：v0.10.12 `pages/Projects/sections/*.tsx` 同名 CSS modules（0 处 inline，guard 已收口为 glob）
