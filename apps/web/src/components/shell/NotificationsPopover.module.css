@@ -1,0 +1,145 @@
+.trigger {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+
+.triggerOpen {
+  background: var(--color-bg-sunken);
+}
+
+.unreadDot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  background: var(--color-danger);
+  border: 1.5px solid var(--color-bg-elev);
+  border-radius: 50%;
+}
+
+.panelContent {
+  overflow: hidden;
+  border-radius: var(--radius-md);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.panelTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.markAllButton {
+  padding: 0;
+  color: var(--color-accent);
+  font-size: 11px;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.markAllButton:disabled {
+  cursor: not-allowed;
+}
+
+.list {
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.rowUnread {
+  background: oklch(0.97 0.01 252);
+}
+
+.unreadMarker {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  margin-top: 6px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+}
+
+.unreadMarkerActive {
+  background: var(--color-accent);
+  border: none;
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowSummary {
+  font-size: 12.5px;
+}
+
+.actorName {
+  font-weight: 500;
+}
+
+.muted {
+  color: var(--color-fg-muted);
+}
+
+.title,
+.snippet {
+  overflow: hidden;
+  margin-top: 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  color: var(--color-fg);
+  font-size: 12px;
+}
+
+.snippet {
+  color: var(--color-fg-muted);
+  font-size: 11px;
+}
+
+.time {
+  margin-top: 2px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.empty {
+  padding: 24px 14px;
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+  text-align: center;
+}
+
+.emptyIcon {
+  margin-bottom: 6px;
+  opacity: 0.25;
+}

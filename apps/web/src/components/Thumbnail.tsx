@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Icon } from "@/components/ui/Icon";
+import { useElementStyle } from "@/components/ui/useElementStyle";
+import styles from "./Thumbnail.module.css";
 
 interface ThumbnailProps {
   src: string | null | undefined;
@@ -14,6 +16,12 @@ export function Thumbnail({ src, blurhash, alt = "", width = 48, height = 48, st
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rootStyle = useMemo<React.CSSProperties>(() => ({
+    width,
+    height,
+    ...style,
+  }), [height, style, width]);
+  const rootRef = useElementStyle<HTMLDivElement>(rootStyle);
 
   useEffect(() => {
     if (!blurhash || !canvasRef.current) return;
@@ -29,34 +37,21 @@ export function Thumbnail({ src, blurhash, alt = "", width = 48, height = 48, st
     }).catch(() => {/* ignore */});
   }, [blurhash, width, height]);
 
-  const boxStyle: React.CSSProperties = {
-    width, height,
-    borderRadius: "var(--radius-sm)",
-    overflow: "hidden",
-    flexShrink: 0,
-    background: "var(--color-bg-sunken)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-    ...style,
-  };
-
   if (!src && !blurhash) {
     return (
-      <div style={boxStyle}>
-        <Icon name="image" size={14} style={{ color: "var(--color-fg-subtle)" }} />
+      <div ref={rootRef} className={styles.root}>
+        <Icon name="image" size={14} className={styles.placeholderIcon} />
       </div>
     );
   }
 
   return (
-    <div style={boxStyle}>
+    <div ref={rootRef} className={styles.root}>
       {/* blurhash canvas placeholder */}
       {blurhash && !loaded && (
         <canvas
           ref={canvasRef}
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+          className={styles.media}
         />
       )}
       {/* actual image */}
@@ -68,17 +63,11 @@ export function Thumbnail({ src, blurhash, alt = "", width = 48, height = 48, st
           decoding="async"
           onLoad={() => setLoaded(true)}
           onError={() => setErrored(true)}
-          style={{
-            position: "absolute", inset: 0,
-            width: "100%", height: "100%",
-            objectFit: "cover",
-            opacity: loaded ? 1 : 0,
-            transition: "opacity 0.2s",
-          }}
+          className={loaded ? styles.imageLoaded : styles.imageLoading}
         />
       )}
       {(!src || errored) && !blurhash && (
-        <Icon name="image" size={14} style={{ color: "var(--color-fg-subtle)" }} />
+        <Icon name="image" size={14} className={styles.placeholderIcon} />
       )}
     </div>
   );

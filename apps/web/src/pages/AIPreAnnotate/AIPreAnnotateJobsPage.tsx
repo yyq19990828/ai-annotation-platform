@@ -18,19 +18,7 @@ import {
   type PredictionJobOut,
 } from "@/api/adminPreannotateJobs";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
-
-import {
-  PAGE_PADDING_X,
-  PAGE_PADDING_Y,
-  cardBodyStyle,
-  cardHeaderStyle,
-  helperTextStyle,
-  tableHeaderCellStyle,
-  tableBodyCellStyle,
-  FS_XS,
-  FS_SM,
-  FS_XL,
-} from "./styles";
+import styles from "./AIPreAnnotateJobsPage.module.css";
 
 type StatusFilter = "" | "running" | "completed" | "failed";
 
@@ -64,43 +52,26 @@ export default function AIPreAnnotateJobsPage() {
   const nextCursor = jobsQ.data?.next_cursor;
 
   return (
-    <div
-      style={{
-        padding: `${PAGE_PADDING_Y}px ${PAGE_PADDING_X}px`,
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <h1 style={{ margin: 0, fontSize: FS_XL, fontWeight: 600 }}>
-          完整预标历史
-        </h1>
-        <span style={{ fontSize: FS_SM, color: "var(--color-fg-muted)" }}>
+    <div className={styles.page}>
+      <div className={styles.pageIntro}>
+        <h1 className={styles.pageTitle}>完整预标历史</h1>
+        <span className={styles.pageSubtitle}>
           覆盖 prediction_jobs 全量 (含已结束 / 已重置批次 / 失败 job).
           仅 pre_annotated 当前批次可在「执行预标」页快速接管。
         </span>
       </div>
 
       <Card>
-        <div style={cardHeaderStyle}>
+        <div className={styles.cardHeader}>
           <span>历史 job ({items.length})</span>
-          <div style={{ display: "inline-flex", gap: 8 }}>
+          <div className={styles.filterGroup}>
             <select
               value={statusFilter}
               onChange={(e) => {
                 setStatusFilter(e.target.value as StatusFilter);
                 setCursorStack([]);
               }}
-              style={{
-                padding: "4px 8px",
-                fontSize: FS_XS,
-                background: "var(--color-bg-sunken)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--color-fg)",
-                outline: "none",
-              }}
+              className={styles.selectControl}
             >
               <option value="">全部状态</option>
               <option value="running">运行中</option>
@@ -115,43 +86,30 @@ export default function AIPreAnnotateJobsPage() {
                 setCursorStack([]);
               }}
               placeholder="搜索 prompt..."
-              style={{
-                padding: "4px 10px",
-                fontSize: FS_XS,
-                background: "var(--color-bg-sunken)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--color-fg)",
-                outline: "none",
-                width: 200,
-              }}
+              className={styles.searchInput}
             />
           </div>
         </div>
-        <div style={cardBodyStyle}>
+        <div className={styles.cardBody}>
           {jobsQ.isLoading ? (
-            <div style={{ ...helperTextStyle, padding: 16, textAlign: "center" }}>
-              加载中…
-            </div>
+            <div className={styles.message}>加载中…</div>
           ) : items.length === 0 ? (
             <EmptyState />
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table
-                style={{ width: "100%", fontSize: FS_SM, borderCollapse: "collapse" }}
-              >
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
                 <thead>
-                  <tr style={{ background: "var(--color-bg-sunken)" }}>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>项目</th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>批次</th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>Prompt</th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>模式</th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>状态</th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>总数</th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>失败</th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>跑时长</th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>开始</th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>操作</th>
+                  <tr className={styles.headerRow}>
+                    <th className={styles.tableHeaderCell}>项目</th>
+                    <th className={styles.tableHeaderCell}>批次</th>
+                    <th className={styles.tableHeaderCell}>Prompt</th>
+                    <th className={styles.tableHeaderCell}>模式</th>
+                    <th className={styles.tableHeaderCell}>状态</th>
+                    <th className={styles.tableHeaderCell}>总数</th>
+                    <th className={styles.tableHeaderCell}>失败</th>
+                    <th className={styles.tableHeaderCell}>跑时长</th>
+                    <th className={styles.tableHeaderCell}>开始</th>
+                    <th className={styles.tableHeaderCell}>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -169,18 +127,9 @@ export default function AIPreAnnotateJobsPage() {
           )}
 
           {(cursorStack.length > 0 || nextCursor) && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                paddingTop: 6,
-              }}
-            >
-              <span style={{ ...helperTextStyle, marginTop: 0 }}>
-                第 {cursorStack.length + 1} 页
-              </span>
-              <div style={{ display: "inline-flex", gap: 6 }}>
+            <div className={styles.pagination}>
+              <span className={styles.helperInline}>第 {cursorStack.length + 1} 页</span>
+              <div className={styles.inlineActions}>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -222,56 +171,51 @@ function JobRow({
 
   return (
     <tr>
-      <td style={tableBodyCellStyle}>
+      <td className={styles.tableCell}>
         {job.project_name ?? "(已删除)"}
         {job.project_display_id && (
-          <span style={{ marginLeft: 6, color: "var(--color-fg-subtle)" }}>
+          <span className={styles.projectDisplayId}>
             ({job.project_display_id})
           </span>
         )}
       </td>
       <td
-        style={{
-          ...tableBodyCellStyle,
-          color: "var(--color-fg-muted)",
-          fontFamily: "var(--font-mono, ui-monospace)",
-          fontSize: FS_XS,
-        }}
+        className={`${styles.tableCell} ${styles.batchCell}`}
         title={job.batch_id ?? ""}
       >
         {job.batch_id ? job.batch_id.slice(0, 8) : "—"}
       </td>
       <td
-        style={tableBodyCellStyle}
+        className={styles.tableCell}
         title={job.prompt || "(无文本 prompt — image-only batch)"}
       >
         {job.prompt ? promptShort : (
-          <span style={{ color: "var(--color-fg-subtle)" }}>—</span>
+          <span className={styles.subtle}>—</span>
         )}
       </td>
-      <td style={{ ...tableBodyCellStyle, color: "var(--color-fg-muted)" }}>
+      <td className={`${styles.tableCell} ${styles.mutedCell}`}>
         {job.output_mode}
       </td>
-      <td style={tableBodyCellStyle}>
+      <td className={styles.tableCell}>
         <StatusBadge status={job.status} />
       </td>
-      <td style={{ ...tableBodyCellStyle, fontVariantNumeric: "tabular-nums" }}>
+      <td className={`${styles.tableCell} ${styles.numeric}`}>
         {job.total_tasks}
       </td>
-      <td style={tableBodyCellStyle}>
+      <td className={styles.tableCell}>
         {job.failed_count > 0 ? (
           <Badge variant="danger">{job.failed_count}</Badge>
         ) : (
-          <span style={{ color: "var(--color-fg-subtle)" }}>0</span>
+          <span className={styles.subtle}>0</span>
         )}
       </td>
-      <td style={{ ...tableBodyCellStyle, color: "var(--color-fg-muted)" }}>
+      <td className={`${styles.tableCell} ${styles.mutedCell}`}>
         {formatDuration(job.duration_ms)}
       </td>
-      <td style={{ ...tableBodyCellStyle, color: "var(--color-fg-muted)" }}>
+      <td className={`${styles.tableCell} ${styles.mutedCell}`}>
         {formatRelative(job.started_at)}
       </td>
-      <td style={tableBodyCellStyle}>
+      <td className={styles.tableCell}>
         <Button
           size="sm"
           variant="ghost"
@@ -299,22 +243,12 @@ function StatusBadge({ status }: { status: PredictionJobOut["status"] }) {
 
 function EmptyState() {
   return (
-    <div
-      style={{
-        padding: "32px 16px",
-        textAlign: "center",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 8,
-        color: "var(--color-fg-subtle)",
-      }}
-    >
+    <div className={styles.emptyState}>
       <Icon name="sparkles" size={28} />
-      <div style={{ fontSize: FS_SM, color: "var(--color-fg-muted)" }}>
+      <div className={styles.emptyTitle}>
         暂无 prediction job 历史
       </div>
-      <div style={{ fontSize: FS_XS }}>
+      <div className={styles.emptyHint}>
         在「执行预标」页跑一次预标，结果会出现在这里。
       </div>
     </div>

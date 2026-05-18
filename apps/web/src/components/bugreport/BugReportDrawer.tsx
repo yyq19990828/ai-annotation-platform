@@ -12,6 +12,7 @@ import {
 import { readWorkbenchPerfSnapshot } from "@/pages/Workbench/stage/shared/useWorkbenchPerf";
 import { ScreenshotEditor } from "./ScreenshotEditor";
 import { MarkdownBlock } from "./MarkdownBlock";
+import styles from "./BugReportDrawer.module.css";
 
 interface Props {
   open: boolean;
@@ -24,6 +25,15 @@ type ViewState = "list" | "create" | "detail" | "edit";
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+const cx = (...classNames: Array<string | false | null | undefined>) => classNames.filter(Boolean).join(" ");
+
+const severityClassName: Record<string, string> = {
+  low: styles.severityLow,
+  medium: styles.severityMedium,
+  high: styles.severityHigh,
+  critical: styles.severityCritical,
+};
 
 interface PendingAttachment {
   id: string;
@@ -304,85 +314,39 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
     duplicate: "重复",
   };
 
-  const severityColor: Record<string, string> = {
-    low: "oklch(0.55 0.08 200)",
-    medium: "oklch(0.65 0.18 75)",
-    high: "oklch(0.65 0.18 45)",
-    critical: "oklch(0.60 0.22 25)",
-  };
-
   if (!open) return null;
 
   return (
     <>
       <div
         data-bug-drawer
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 200,
-          background: "rgba(0,0,0,0.3)",
-        }}
+        className={styles.overlay}
         onClick={onClose}
       />
       <div
         data-bug-drawer
-        style={{
-          position: "fixed",
-          top: 0,
-          right: 0,
-          width: 400,
-          maxWidth: "100vw",
-          height: "100vh",
-          zIndex: 201,
-          background: "var(--color-bg-elev)",
-          boxShadow: "-4px 0 20px rgba(0,0,0,0.12)",
-          display: "flex",
-          flexDirection: "column",
-        }}
+        className={styles.drawer}
       >
         {/* Header */}
-        <div
-          style={{
-            padding: "14px 16px",
-            borderBottom: "1px solid var(--color-border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-fg)" }}>
+        <div className={styles.header}>
+          <span className={styles.title}>
             {view === "list" ? "我的反馈" : view === "create" ? "提交反馈" : view === "edit" ? "编辑反馈" : detail?.display_id ?? "详情"}
           </span>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className={styles.headerActions}>
             {view !== "list" && (
               <button
                 onClick={() => {
                   setView("list");
                   setDetail(null);
                 }}
-                style={{
-                  padding: "3px 10px",
-                  fontSize: 12,
-                  background: "none",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-fg-muted)",
-                  cursor: "pointer",
-                }}
+                className={cx(styles.button, styles.secondaryButton)}
               >
                 返回
               </button>
             )}
             <button
               onClick={onClose}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "var(--color-fg-muted)",
-                padding: 2,
-              }}
+              className={styles.closeButton}
             >
               <Icon name="x" size={16} />
             </button>
@@ -390,7 +354,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: "auto", padding: "12px 16px" }}>
+        <div className={styles.content}>
           {view === "list" && (
             <div>
               <button
@@ -404,25 +368,14 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                   setScreenshotUploadFail(null);
                   setView("create");
                 }}
-                style={{
-                  width: "100%",
-                  padding: "8px 0",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  background: "var(--color-accent)",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "var(--radius-md)",
-                  cursor: "pointer",
-                  marginBottom: 10,
-                }}
+                className={styles.primaryButton}
               >
-                <Icon name="plus" size={13} style={{ marginRight: 4 }} />
+                <Icon name="plus" size={13} className={styles.plusIcon} />
                 提交新反馈
               </button>
-              {loading && <div style={{ fontSize: 12, color: "var(--color-fg-muted)", textAlign: "center", padding: 20 }}>加载中...</div>}
+              {loading && <div className={styles.loadingState}>加载中...</div>}
               {!loading && reports.length === 0 && (
-                <div style={{ fontSize: 12, color: "var(--color-fg-muted)", textAlign: "center", padding: 20 }}>
+                <div className={styles.emptyState}>
                   暂无反馈
                 </div>
               )}
@@ -430,17 +383,13 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 <div
                   key={r.id}
                   onClick={() => loadDetail(r.id)}
-                  style={{
-                    padding: "10px 8px",
-                    borderBottom: "1px solid var(--color-border-subtle)",
-                    cursor: "pointer",
-                  }}
+                  className={styles.reportRow}
                 >
-                  <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--color-fg)" }}>
+                  <div className={styles.reportTitle}>
                     {r.display_id}: {r.title}
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginTop: 3 }}>
-                    <span style={{ color: severityColor[r.severity] ?? "var(--color-fg-muted)", fontWeight: 500 }}>
+                  <div className={styles.reportMeta}>
+                    <span className={cx(styles.severity, severityClassName[r.severity])}>
                       {r.severity}
                     </span>
                     {" · "}
@@ -461,7 +410,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 handleSubmit();
               }}
             >
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>
+              <label className={styles.label}>
                 标题 *
               </label>
               <input
@@ -470,20 +419,10 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 onChange={(e) => setTitle(e.target.value)}
                 maxLength={500}
                 placeholder="发生了什么问题？"
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  padding: "7px 10px",
-                  fontSize: 13,
-                  background: "var(--color-bg-sunken)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-fg)",
-                  marginBottom: 10,
-                }}
+                className={styles.field}
               />
 
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>
+              <label className={styles.label}>
                 描述 *
               </label>
               <textarea
@@ -492,37 +431,16 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 onChange={(e) => setDesc(e.target.value)}
                 rows={4}
                 placeholder="详细描述问题..."
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  padding: "7px 10px",
-                  fontSize: 13,
-                  background: "var(--color-bg-sunken)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-fg)",
-                  resize: "vertical",
-                  marginBottom: 10,
-                  fontFamily: "inherit",
-                }}
+                className={cx(styles.field, styles.textarea)}
               />
 
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>
+              <label className={styles.label}>
                 严重程度
               </label>
               <select
                 value={severity}
                 onChange={(e) => setSeverity(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "7px 10px",
-                  fontSize: 13,
-                  background: "var(--color-bg-sunken)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-fg)",
-                  marginBottom: 10,
-                }}
+                className={styles.field}
               >
                 <option value="low">低 - 小建议</option>
                 <option value="medium">中 - 影响体验</option>
@@ -530,8 +448,8 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 <option value="critical">严重 - 系统不可用</option>
               </select>
 
-              <div style={{ marginBottom: 10 }}>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 5 }}>
+              <div className={styles.screenshotSection}>
+                <label className={styles.strongLabel}>
                   截图（可选）
                 </label>
                 {screenshotEditing && screenshotBlob ? (
@@ -549,58 +467,34 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                   />
                 ) : (
                   <>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <div className={styles.captureRow}>
                       <button
                         type="button"
                         onClick={handleCaptureScreenshot}
                         disabled={pendingAttachments.length >= MAX_ATTACHMENTS}
-                        style={{
-                          padding: "6px 10px", fontSize: 12,
-                          border: "1px dashed var(--color-border)",
-                          borderRadius: "var(--radius-sm)",
-                          background: "transparent",
-                          cursor: pendingAttachments.length >= MAX_ATTACHMENTS ? "not-allowed" : "pointer",
-                          color: "var(--color-fg-muted)",
-                          display: "inline-flex", alignItems: "center", gap: 4,
-                        }}
+                        className={styles.captureButton}
                       >
                         <Icon name="image" size={12} /> 截取当前画面
                       </button>
-                      <span style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>
+                      <span className={styles.hint}>
                         可直接粘贴剪贴板截图，最多 {MAX_ATTACHMENTS} 张
                       </span>
                     </div>
                     {pendingAttachments.length > 0 && (
-                      <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                      <div className={styles.attachmentList}>
                         {pendingAttachments.map((att, index) => (
                           <div
                             key={att.id}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              padding: "6px 8px",
-                              border: "1px solid var(--color-border)",
-                              borderRadius: "var(--radius-sm)",
-                              background: "var(--color-bg-sunken)",
-                            }}
+                            className={cx(styles.attachmentItem, styles.pendingAttachmentItem)}
                           >
                             <Icon name="image" size={12} />
-                            <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--color-fg-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <span className={styles.truncate}>
                               图 {index + 1} · {att.fileName} · {Math.round(att.blob.size / 1024)} KB
                             </span>
                             <button
                               type="button"
                               onClick={() => setPendingAttachments((items) => items.filter((item) => item.id !== att.id))}
-                              style={{
-                                padding: "2px 6px",
-                                border: "1px solid var(--color-border)",
-                                borderRadius: 3,
-                                background: "transparent",
-                                color: "var(--color-fg-muted)",
-                                cursor: "pointer",
-                                fontSize: 11,
-                              }}
+                              className={styles.removeButton}
                             >
                               移除
                             </button>
@@ -613,40 +507,22 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
               </div>
 
               {screenshotUploadFail && (
-                <div
-                  style={{
-                    padding: "8px 10px",
-                    marginBottom: 10,
-                    background: "oklch(0.95 0.04 25)",
-                    border: "1px solid oklch(0.85 0.10 25)",
-                    borderRadius: "var(--radius-sm)",
-                    fontSize: 12,
-                    color: "oklch(0.50 0.20 25)",
-                  }}
-                >
-                  <div style={{ marginBottom: 6 }}>
+                <div className={styles.uploadError}>
+                  <div className={styles.uploadErrorText}>
                     截图上传失败：{screenshotUploadFail}
                   </div>
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div className={styles.inlineActions}>
                     <button
                       type="button"
                       onClick={() => { setScreenshotUploadFail(null); handleSubmit(false); }}
-                      style={{
-                        padding: "4px 10px", fontSize: 11,
-                        background: "var(--color-accent)", color: "#fff",
-                        border: "none", borderRadius: 3, cursor: "pointer",
-                      }}
+                      className={styles.smallPrimaryButton}
                     >
                       重试上传
                     </button>
                     <button
                       type="button"
                       onClick={() => { setScreenshotUploadFail(null); handleSubmit(true); }}
-                      style={{
-                        padding: "4px 10px", fontSize: 11,
-                        background: "transparent", color: "var(--color-fg)",
-                        border: "1px solid var(--color-border)", borderRadius: 3, cursor: "pointer",
-                      }}
+                      className={styles.smallGhostButton}
                     >
                       跳过截图提交
                     </button>
@@ -657,18 +533,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
               <button
                 type="submit"
                 disabled={submitting || !title.trim() || !desc.trim()}
-                style={{
-                  width: "100%",
-                  padding: "8px 0",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  background: submitting ? "var(--color-accent-muted)" : "var(--color-accent)",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "var(--radius-md)",
-                  cursor: submitting ? "not-allowed" : "pointer",
-                  marginTop: 4,
-                }}
+                className={cx(styles.primaryButton, styles.submitButton)}
               >
                 {submitting ? "提交中..." : "提交反馈"}
               </button>
@@ -682,7 +547,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 handleUpdate();
               }}
             >
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>
+              <label className={styles.label}>
                 标题 *
               </label>
               <input
@@ -690,19 +555,9 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 maxLength={500}
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  padding: "7px 10px",
-                  fontSize: 13,
-                  background: "var(--color-bg-sunken)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-fg)",
-                  marginBottom: 10,
-                }}
+                className={styles.field}
               />
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>
+              <label className={styles.label}>
                 描述 *
               </label>
               <textarea
@@ -710,36 +565,15 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
                 rows={4}
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  padding: "7px 10px",
-                  fontSize: 13,
-                  background: "var(--color-bg-sunken)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-fg)",
-                  resize: "vertical",
-                  marginBottom: 10,
-                  fontFamily: "inherit",
-                }}
+                className={cx(styles.field, styles.textarea)}
               />
-              <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>
+              <label className={styles.label}>
                 严重程度
               </label>
               <select
                 value={severity}
                 onChange={(e) => setSeverity(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "7px 10px",
-                  fontSize: 13,
-                  background: "var(--color-bg-sunken)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-fg)",
-                  marginBottom: 10,
-                }}
+                className={styles.field}
               >
                 <option value="low">低 - 小建议</option>
                 <option value="medium">中 - 影响体验</option>
@@ -749,18 +583,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
               <button
                 type="submit"
                 disabled={submitting || !title.trim() || !desc.trim()}
-                style={{
-                  width: "100%",
-                  padding: "8px 0",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  background: submitting ? "var(--color-accent-muted)" : "var(--color-accent)",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "var(--radius-md)",
-                  cursor: submitting ? "not-allowed" : "pointer",
-                  marginTop: 4,
-                }}
+                className={cx(styles.primaryButton, styles.submitButton)}
               >
                 {submitting ? "保存中..." : "保存修改"}
               </button>
@@ -768,122 +591,90 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
           )}
 
           {view === "detail" && detail && (
-            <div style={{ fontSize: 12.5 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontWeight: 600, color: "var(--color-fg)" }}>{detail.title}</span>
-                <div style={{ display: "flex", gap: 6 }}>
+            <div className={styles.detail}>
+              <div className={styles.detailHeader}>
+                <span className={styles.detailTitle}>{detail.title}</span>
+                <div className={styles.detailActions}>
                   <button
                     onClick={() => startEdit(detail)}
-                    style={{
-                      padding: "3px 8px",
-                      fontSize: 11,
-                      background: "none",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-sm)",
-                      color: "var(--color-fg-muted)",
-                      cursor: "pointer",
-                    }}
+                    className={styles.detailButton}
                   >
                     编辑
                   </button>
                   <button
                     onClick={() => handleDelete(detail.id)}
-                    style={{
-                      padding: "3px 8px",
-                      fontSize: 11,
-                      background: "none",
-                      border: "1px solid oklch(0.65 0.2 25)",
-                      borderRadius: "var(--radius-sm)",
-                      color: "oklch(0.65 0.2 25)",
-                      cursor: "pointer",
-                    }}
+                    className={cx(styles.detailButton, styles.dangerButton)}
                   >
                     删除
                   </button>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 10, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <span style={{ color: severityColor[detail.severity] ?? "var(--color-fg-muted)", fontWeight: 500 }}>
+              <div className={styles.detailMeta}>
+                <span className={cx(styles.severity, severityClassName[detail.severity])}>
                   {detail.severity}
                 </span>
-                <span style={{ padding: "1px 6px", borderRadius: 3, fontSize: 11, background: "var(--color-bg-sunken)" }}>
+                <span className={styles.badge}>
                   {statusLabel[detail.status] ?? detail.status}
                 </span>
                 {detail.reopen_count > 0 && (
                   <span
                     title={detail.last_reopened_at ? `最近重开：${new Date(detail.last_reopened_at).toLocaleString("zh-CN")}` : undefined}
-                    style={{
-                      padding: "1px 6px",
-                      borderRadius: 3,
-                      fontSize: 11,
-                      color: "oklch(0.55 0.18 45)",
-                      background: "oklch(0.95 0.04 45)",
-                      border: "1px solid oklch(0.85 0.10 45)",
-                    }}
+                    className={cx(styles.badge, styles.reopenBadge)}
                   >
                     曾重开 {detail.reopen_count} 次
                   </span>
                 )}
-                <span style={{ color: "var(--color-fg-muted)" }}>
+                <span className={styles.muted}>
                   {new Date(detail.created_at).toLocaleString("zh-CN")}
                 </span>
               </div>
-              <div style={{ color: "var(--color-fg-muted)", marginBottom: 10 }}>
-                路由：<code style={{ fontSize: 11 }}>{detail.route}</code>
+              <div className={styles.routeLine}>
+                路由：<code className={styles.routeCode}>{detail.route}</code>
               </div>
-              <div style={{ marginBottom: 14 }}>
+              <div className={styles.sectionBlock}>
                 <MarkdownBlock compact>{detail.description}</MarkdownBlock>
               </div>
               {detail.attachments?.length > 0 && (
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontWeight: 500, marginBottom: 6, fontSize: 12 }}>截图附件 ({detail.attachments.length})</div>
-                  <div style={{ display: "grid", gap: 6 }}>
+                <div className={styles.sectionBlock}>
+                  <div className={styles.sectionTitle}>截图附件 ({detail.attachments.length})</div>
+                  <div className={styles.attachmentGrid}>
                     {detail.attachments.map((att) => (
                       <a
                         key={att.storageKey}
                         href={bugReportsApi.attachmentDownloadUrl(detail.id, att.storageKey)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "6px 8px",
-                          border: "1px solid var(--color-border)",
-                          borderRadius: "var(--radius-sm)",
-                          color: "var(--color-fg-muted)",
-                          textDecoration: "none",
-                        }}
+                        className={styles.attachmentItem}
                       >
                         <Icon name="image" size={12} />
-                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <span className={styles.truncate}>
                           {att.fileName}
                         </span>
-                        <span style={{ fontSize: 11 }}>{Math.round(att.size / 1024)} KB</span>
+                        <span className={styles.attachmentSize}>{Math.round(att.size / 1024)} KB</span>
                       </a>
                     ))}
                   </div>
                 </div>
               )}
               {detail.resolution && (
-                <div style={{ padding: 8, background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)", marginBottom: 14 }}>
-                  <span style={{ fontWeight: 500 }}>处理结果：</span>{detail.resolution}
+                <div className={styles.resolution}>
+                  <span className={styles.resolutionLabel}>处理结果：</span>{detail.resolution}
                 </div>
               )}
-              <div style={{ marginTop: 6 }}>
-                <div style={{ fontWeight: 500, marginBottom: 6, fontSize: 12 }}>
+              <div className={styles.comments}>
+                <div className={styles.sectionTitle}>
                   评论 ({detail.comments.length})
                 </div>
                 {detail.comments.map((c) => (
-                  <div key={c.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--color-border-subtle)" }}>
-                    <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 2 }}>
-                      <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{c.author_name || "未知"}</span>
+                  <div key={c.id} className={styles.comment}>
+                    <div className={styles.commentMeta}>
+                      <span className={styles.commentAuthor}>{c.author_name || "未知"}</span>
                       {c.author_role && (
-                        <span style={{ marginLeft: 6, padding: "0 5px", fontSize: 10, borderRadius: 3, background: "var(--color-bg-sunken)" }}>
+                        <span className={styles.roleBadge}>
                           {c.author_role}
                         </span>
                       )}
-                      <span style={{ marginLeft: 6, color: "var(--color-fg-subtle)" }}>
+                      <span className={styles.commentTime}>
                         {new Date(c.created_at).toLocaleString("zh-CN")}
                       </span>
                     </div>
@@ -891,19 +682,13 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                   </div>
                 ))}
                 {detail.comments.length === 0 && (
-                  <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", padding: "4px 0 8px" }}>暂无评论</div>
+                  <div className={styles.emptyComments}>暂无评论</div>
                 )}
 
                 {/* 评论输入框 */}
-                <div style={{ marginTop: 10 }}>
+                <div className={styles.commentComposer}>
                   {["fixed", "wont_fix", "duplicate"].includes(detail.status) && (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "oklch(0.55 0.18 45)",
-                        marginBottom: 4,
-                      }}
-                    >
+                    <div className={styles.reopenNotice}>
                       ⚠ 当前状态为「{statusLabel[detail.status] ?? detail.status}」，发送评论将自动重新打开此反馈
                     </div>
                   )}
@@ -912,34 +697,13 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                     onChange={(e) => setCommentBody(e.target.value)}
                     placeholder="写下你的回复 / 补充信息..."
                     rows={3}
-                    style={{
-                      width: "100%",
-                      boxSizing: "border-box",
-                      padding: "7px 10px",
-                      fontSize: 12.5,
-                      background: "var(--color-bg-sunken)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-md)",
-                      color: "var(--color-fg)",
-                      resize: "vertical",
-                      fontFamily: "inherit",
-                      marginBottom: 6,
-                    }}
+                    className={cx(styles.field, styles.textarea, styles.commentTextarea)}
                   />
                   <button
                     type="button"
                     onClick={handlePostComment}
                     disabled={postingComment || !commentBody.trim()}
-                    style={{
-                      padding: "6px 14px",
-                      fontSize: 12,
-                      fontWeight: 500,
-                      background: postingComment || !commentBody.trim() ? "var(--color-accent-muted)" : "var(--color-accent)",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: "var(--radius-md)",
-                      cursor: postingComment || !commentBody.trim() ? "not-allowed" : "pointer",
-                    }}
+                    className={styles.sendButton}
                   >
                     {postingComment ? "发送中..." : "发送"}
                   </button>

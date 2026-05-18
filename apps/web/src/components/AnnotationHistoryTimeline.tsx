@@ -1,6 +1,7 @@
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import type { HistoryEntry } from "@/api/annotationHistory";
+import styles from "./AnnotationHistoryTimeline.module.css";
 
 interface Props {
   entries: HistoryEntry[];
@@ -60,21 +61,21 @@ function summarizeDetail(action: string | null, detail: Record<string, unknown> 
 export function AnnotationHistoryTimeline({ entries, loading }: Props) {
   if (loading) {
     return (
-      <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)", padding: 12 }}>
+      <div className={styles.emptyState}>
         加载历史…
       </div>
     );
   }
   if (entries.length === 0) {
     return (
-      <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)", padding: 12 }}>
+      <div className={styles.emptyState}>
         暂无历史记录
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "10px 12px" }}>
+    <div className={styles.root}>
       {entries.map((e, i) => {
         const meta = e.action ? ACTION_LABEL[e.action] : undefined;
         const summary = e.kind === "audit"
@@ -85,21 +86,17 @@ export function AnnotationHistoryTimeline({ entries, loading }: Props) {
         return (
           <div
             key={`${e.kind}-${i}-${e.timestamp}`}
-            style={{
-              display: "flex",
-              gap: 10,
-              opacity: isInactive ? 0.55 : 1,
-            }}
+            className={isInactive ? styles.inactiveEntry : styles.entry}
           >
-            <div style={{ paddingTop: 2 }}>
+            <div className={styles.avatarCell}>
               <Avatar
                 size="sm"
                 initial={(e.actor?.avatar_initial ?? e.actor?.name?.slice(0, 1) ?? "?").toUpperCase()}
               />
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12, fontWeight: 500 }}>
+            <div className={styles.content}>
+              <div className={styles.header}>
+                <span className={styles.actor}>
                   {e.actor?.name ?? "—"}
                 </span>
                 {e.kind === "audit" && meta ? (
@@ -107,25 +104,16 @@ export function AnnotationHistoryTimeline({ entries, loading }: Props) {
                     {meta.label}
                   </Badge>
                 ) : e.kind === "audit" ? (
-                  <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>{e.action}</span>
+                  <span className={styles.actionText}>{e.action}</span>
                 ) : (
                   <Badge variant="outline">评论{isInactive ? "（已撤回）" : ""}</Badge>
                 )}
-                <span style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginLeft: "auto" }}>
+                <span className={styles.time}>
                   {formatRelative(e.timestamp)}
                 </span>
               </div>
               {summary && (
-                <div
-                  style={{
-                    fontSize: 11.5,
-                    color: "var(--color-fg-muted)",
-                    marginTop: 3,
-                    whiteSpace: "pre-wrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
+                <div className={styles.summary}>
                   {summary}
                 </div>
               )}

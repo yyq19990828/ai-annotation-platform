@@ -1,12 +1,13 @@
 import { NavLink } from "react-router-dom";
+import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
-import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useFailedPredictions } from "@/hooks/useFailedPredictions";
 import { useAdminStats } from "@/hooks/useDashboard";
 import type { PageKey } from "@/types";
 import type { IconName } from "@/components/ui/Icon";
+import styles from "./Sidebar.module.css";
 
 interface SidebarProps {
   reviewCount: number;
@@ -76,104 +77,53 @@ export function Sidebar({ reviewCount }: SidebarProps) {
     .filter((sec) => sec.items.length > 0);
 
   return (
-    <aside
-      style={{
-        background: "var(--color-panel)",
-        borderRight: "1px solid var(--color-border)",
-        padding: "10px 8px",
-        overflowY: "auto",
-        display: "flex",
-        flexDirection: "column",
-        gap: 2,
-      }}
-    >
+    <aside className={styles.sidebar}>
       {visibleSections.map((sec) => (
         <div key={sec.label}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              color: "var(--color-fg-subtle)",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              padding: "14px 10px 6px",
-            }}
-          >
+          <div className={styles.sectionLabel}>
             {sec.label}
           </div>
           {sec.items.map((item) => (
             <NavLink
               key={item.key}
               to={item.path}
-              style={({ isActive }) => ({
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "6px 10px",
-                borderRadius: "var(--radius-md)",
-                color: isActive ? "var(--color-fg)" : "var(--color-fg-muted)",
-                cursor: "pointer",
-                fontSize: 13,
-                userSelect: "none",
-                border: isActive ? "1px solid var(--color-border)" : "1px solid transparent",
-                background: isActive ? "var(--color-bg-elev)" : "transparent",
-                boxShadow: isActive ? "var(--shadow-sm)" : "none",
-                fontWeight: isActive ? 500 : 400,
-                textDecoration: "none",
-              })}
+              className={({ isActive }) => clsx(styles.navItem, isActive && styles.navItemActive)}
             >
-              <Icon name={item.icon} size={16} style={{ opacity: 0.85, flexShrink: 0 }} />
+              <Icon name={item.icon} size={16} className={styles.navIcon} />
               <span>{item.label}</span>
               {item.key === "review" && reviewCount > 0 && (
-                <span
-                  style={{
-                    marginLeft: "auto",
-                    fontSize: 11,
-                    color: "var(--color-fg-subtle)",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
+                <span className={styles.navCount}>
                   {reviewCount}
                 </span>
               )}
               {item.count && (
-                <span
-                  style={{
-                    marginLeft: "auto",
-                    fontSize: 11,
-                    color: "var(--color-fg-subtle)",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
+                <span className={styles.navCount}>
                   {item.count}
                 </span>
               )}
               {item.badge && (
-                <Badge variant="ai" style={{ marginLeft: "auto", padding: "0 6px", fontSize: 10 }}>
+                <span className={clsx(styles.badge, styles.badgeAi, styles.navBadge)}>
                   {item.badge}
-                </Badge>
+                </span>
               )}
               {item.key === "ai-pre" && preAnnotatedTotal > 0 && (
                 <span
                   title={`${preAnnotatedTotal} 批 AI 预标完成、待人工接管`}
-                  style={{ marginLeft: "auto", display: "inline-flex" }}
+                  className={styles.navBadgeWrap}
                 >
-                  <Badge variant="ai" style={{ padding: "0 6px", fontSize: 10 }}>
+                  <span className={clsx(styles.badge, styles.badgeAi)}>
                     {preAnnotatedTotal > 99 ? "99+" : preAnnotatedTotal} 待接管
-                  </Badge>
+                  </span>
                 </span>
               )}
               {item.key === "model-market" && failedTotal > 0 && (
                 <span
                   title={`${failedTotal} 条失败预测待处理`}
-                  style={{ marginLeft: "auto", display: "inline-flex" }}
+                  className={styles.navBadgeWrap}
                 >
-                  <Badge
-                    variant="danger"
-                    style={{ padding: "0 6px", fontSize: 10 }}
-                  >
+                  <span className={clsx(styles.badge, styles.badgeDanger)}>
                     {failedTotal > 99 ? "99+" : failedTotal} 失败
-                  </Badge>
+                  </span>
                 </span>
               )}
             </NavLink>
@@ -181,23 +131,15 @@ export function Sidebar({ reviewCount }: SidebarProps) {
         </div>
       ))}
 
-      <div style={{ flex: 1 }} />
+      <div className={styles.spacer} />
 
       {showAiQuota && (
-        <div
-          style={{
-            margin: "12px 4px 4px",
-            padding: 12,
-            background: "linear-gradient(135deg, var(--color-ai-soft), var(--color-accent-soft))",
-            borderRadius: "var(--radius-lg)",
-            border: "1px solid oklch(0.92 0.04 270)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-            <Icon name="sparkles" size={13} style={{ color: "var(--color-ai)" }} />
-            <span style={{ fontSize: 12, fontWeight: 600 }}>AI 配额</span>
+        <div className={styles.aiQuota}>
+          <div className={styles.aiQuotaHeader}>
+            <Icon name="sparkles" size={13} className={styles.aiQuotaIcon} />
+            <span className={styles.aiQuotaTitle}>AI 配额</span>
           </div>
-          <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 8 }}>
+          <div className={styles.aiQuotaText}>
             本月已用 6,842 / 20,000 次
           </div>
           <ProgressBar value={34} color="var(--color-ai)" />

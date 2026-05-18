@@ -1,4 +1,5 @@
 import { useLocation, useNavigate } from "react-router-dom";
+import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
 import {
   useNotifications,
@@ -11,6 +12,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import styles from "./NotificationsPopover.module.css";
 
 function relativeTime(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -61,67 +63,31 @@ function NotifRow({ item, onClick }: NotifRowProps) {
   return (
     <div
       onClick={onClick}
-      style={{
-        padding: "10px 14px",
-        borderBottom: "1px solid var(--color-border)",
-        display: "flex",
-        gap: 10,
-        alignItems: "flex-start",
-        background: isUnread ? "oklch(0.97 0.01 252)" : undefined,
-        cursor: "pointer",
-      }}
+      className={clsx(styles.row, isUnread && styles.rowUnread)}
     >
-      <div
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          marginTop: 6,
-          flexShrink: 0,
-          background: isUnread ? "var(--color-accent)" : "transparent",
-          border: isUnread ? undefined : "1px solid var(--color-border)",
-        }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12.5 }}>
-          <span style={{ fontWeight: 500 }}>{actorName}</span>{" "}
-          <span style={{ color: "var(--color-fg-muted)" }}>{verb}</span>
+      <div className={clsx(styles.unreadMarker, isUnread && styles.unreadMarkerActive)} />
+      <div className={styles.rowBody}>
+        <div className={styles.rowSummary}>
+          <span className={styles.actorName}>{actorName}</span>{" "}
+          <span className={styles.muted}>{verb}</span>
           {displayId && (
             <>
               {" "}
-              <span style={{ color: "var(--color-fg-muted)" }}>· {displayId}</span>
+              <span className={styles.muted}>· {displayId}</span>
             </>
           )}
         </div>
         {title && (
-          <div
-            style={{
-              fontSize: 12,
-              color: "var(--color-fg)",
-              marginTop: 2,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <div className={styles.title}>
             {title}
           </div>
         )}
         {snippet && (
-          <div
-            style={{
-              fontSize: 11,
-              color: "var(--color-fg-muted)",
-              marginTop: 2,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <div className={styles.snippet}>
             "{snippet}"
           </div>
         )}
-        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+        <div className={styles.time}>
           {relativeTime(item.created_at)}
         </div>
       </div>
@@ -147,48 +113,18 @@ export function NotificationsPopover() {
       minWidth={360}
       zIndex={200}
       disablePanelPadding
-      panelStyle={{
-        width: 360,
-        borderRadius: "var(--radius-lg)",
-        boxShadow: "var(--shadow-lg, 0 8px 24px rgba(0,0,0,.12))",
-        overflow: "hidden",
-      }}
       trigger={({ open, toggle, ref }) => (
         <button
           ref={ref}
+          type="button"
           title="通知"
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={toggle}
-          style={{
-            width: 30,
-            height: 30,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: open ? "var(--color-bg-sunken)" : "transparent",
-            border: "1px solid transparent",
-            borderRadius: "var(--radius-md)",
-            color: "var(--color-fg-muted)",
-            cursor: "pointer",
-            position: "relative",
-          }}
+          className={clsx(styles.trigger, open && styles.triggerOpen)}
         >
           <Icon name="bell" size={15} />
-          {unread > 0 && (
-            <span
-              style={{
-                position: "absolute",
-                top: 5,
-                right: 5,
-                width: 7,
-                height: 7,
-                background: "var(--color-danger)",
-                borderRadius: "50%",
-                border: "1.5px solid var(--color-bg-elev)",
-              }}
-            />
-          )}
+          {unread > 0 && <span className={styles.unreadDot} />}
         </button>
       )}
       content={({ close }) => (
@@ -237,48 +173,27 @@ function NotificationsPanel({
   };
 
   return (
-    <div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "12px 14px 10px",
-          borderBottom: "1px solid var(--color-border)",
-        }}
-      >
-        <span style={{ fontWeight: 600, fontSize: 13 }}>
+    <div className={styles.panelContent}>
+      <div className={styles.panelHeader}>
+        <span className={styles.panelTitle}>
           通知{unread > 0 ? ` · ${unread} 未读` : ""}
         </span>
         {unread > 0 && (
           <button
+            type="button"
             onClick={() => markAllRead.mutate()}
             disabled={markAllRead.isPending}
-            style={{
-              fontSize: 11,
-              color: "var(--color-accent)",
-              background: "none",
-              border: "none",
-              cursor: markAllRead.isPending ? "not-allowed" : "pointer",
-              padding: 0,
-            }}
+            className={styles.markAllButton}
           >
             全部已读
           </button>
         )}
       </div>
 
-      <div style={{ maxHeight: 380, overflowY: "auto" }}>
+      <div className={styles.list}>
         {items.length === 0 ? (
-          <div
-            style={{
-              padding: "24px 14px",
-              textAlign: "center",
-              color: "var(--color-fg-subtle)",
-              fontSize: 13,
-            }}
-          >
-            <Icon name="bell" size={22} style={{ opacity: 0.25, marginBottom: 6 }} />
+          <div className={styles.empty}>
+            <Icon name="bell" size={22} className={styles.emptyIcon} />
             <div>暂无通知</div>
           </div>
         ) : (

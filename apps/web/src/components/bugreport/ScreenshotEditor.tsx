@@ -9,6 +9,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
+import styles from "./ScreenshotEditor.module.css";
 
 interface Rect {
   x: number;
@@ -25,6 +26,7 @@ interface Props {
 
 export function ScreenshotEditor({ imageBlob, onConfirm, onCancel }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
   const [rects, setRects] = useState<Rect[]>([]);
   const [drag, setDrag] = useState<{ x0: number; y0: number; cur: Rect } | null>(null);
@@ -59,6 +61,13 @@ export function ScreenshotEditor({ imageBlob, onConfirm, onCancel }: Props) {
       ctx.fillRect(drag.cur.x, drag.cur.y, drag.cur.w, drag.cur.h);
     }
   }, [bgImage, rects, drag]);
+
+  useEffect(() => {
+    const preview = previewRef.current;
+    if (!preview) return;
+    preview.style.setProperty("--bug-screenshot-preview-width", previewSize.w ? `${previewSize.w}px` : "100%");
+    preview.style.setProperty("--bug-screenshot-preview-height", previewSize.h ? `${previewSize.h}px` : "200px");
+  }, [previewSize]);
 
   const toCanvasCoords = (e: React.MouseEvent) => {
     const cv = canvasRef.current!;
@@ -99,66 +108,35 @@ export function ScreenshotEditor({ imageBlob, onConfirm, onCancel }: Props) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+    <div className={styles.root}>
+      <div className={styles.hint}>
         在截图上拖拽鼠标 → 黑色矩形遮挡敏感区。完成后点「确认」上传。
       </div>
-      <div
-        style={{
-          width: previewSize.w || "100%",
-          height: previewSize.h || 200,
-          maxWidth: "100%",
-          border: "1px solid var(--color-border)",
-          background: "var(--color-bg-sunken)",
-          overflow: "hidden",
-        }}
-      >
+      <div ref={previewRef} className={styles.preview}>
         <canvas
           ref={canvasRef}
           onMouseDown={handleDown}
           onMouseMove={handleMove}
           onMouseUp={handleUp}
           onMouseLeave={handleUp}
-          style={{ width: "100%", height: "100%", cursor: "crosshair", display: "block" }}
+          className={styles.canvas}
         />
       </div>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+      <div className={styles.actions}>
         {rects.length > 0 && (
           <button
             type="button"
             onClick={() => setRects((rs) => rs.slice(0, -1))}
-            style={btnGhost}
+            className={`${styles.button} ${styles.ghostButton}`}
           >
             撤销最后一框
           </button>
         )}
-        <button type="button" onClick={onCancel} style={btnGhost}>取消</button>
-        <button type="button" onClick={handleConfirm} style={btnPrimary}>
+        <button type="button" onClick={onCancel} className={`${styles.button} ${styles.ghostButton}`}>取消</button>
+        <button type="button" onClick={handleConfirm} className={`${styles.button} ${styles.primaryButton}`}>
           <Icon name="check" size={11} /> 确认
         </button>
       </div>
     </div>
   );
 }
-
-const btnBase: React.CSSProperties = {
-  padding: "6px 10px",
-  fontSize: 12,
-  borderRadius: "var(--radius-sm)",
-  cursor: "pointer",
-  border: "1px solid var(--color-border)",
-};
-const btnPrimary: React.CSSProperties = {
-  ...btnBase,
-  background: "var(--color-accent)",
-  color: "#fff",
-  border: "1px solid var(--color-accent)",
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 4,
-};
-const btnGhost: React.CSSProperties = {
-  ...btnBase,
-  background: "transparent",
-  color: "var(--color-fg)",
-};

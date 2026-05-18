@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient, useIsFetching } from "@tanstack/react-query";
+import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Avatar } from "@/components/ui/Avatar";
@@ -11,6 +12,7 @@ import { NotificationsPopover } from "./NotificationsPopover";
 import { PreannotateJobsBadge } from "./PreannotateJobsBadge";
 import { CommandPalette } from "@/components/CommandPalette";
 import { usePerfHudStore } from "@/components/PerfHud";
+import styles from "./TopBar.module.css";
 
 interface TopBarProps {
   workspace: string;
@@ -19,10 +21,6 @@ interface TopBarProps {
   showHamburger?: boolean;
   onOpenDrawer?: () => void;
 }
-
-const spinStyle = `
-@keyframes __topbar_spin { to { transform: rotate(360deg); } }
-`;
 
 export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, onOpenDrawer }: TopBarProps) {
   const user = useAuthStore((s) => s.user);
@@ -75,105 +73,37 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
 
   return (
     <>
-      <style>{spinStyle}</style>
-      <header
-        style={{
-          gridColumn: "1 / -1",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 16px",
-          background: "var(--color-bg-elev)",
-          borderBottom: "1px solid var(--color-border)",
-          zIndex: 10,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 24, flexShrink: 0, minWidth: 0 }}>
+      <header className={styles.header}>
+        <div className={styles.left}>
           {showHamburger && (
             <button
               type="button"
               title="打开导航菜单"
               aria-label="打开导航菜单"
               onClick={onOpenDrawer}
-              style={{
-                width: 30,
-                height: 30,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "transparent",
-                border: "1px solid transparent",
-                borderRadius: "var(--radius-md)",
-                color: "var(--color-fg-muted)",
-                cursor: "pointer",
-              }}
+              className={styles.iconButton}
             >
               <Icon name="menu" size={16} />
             </button>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 13, letterSpacing: "0.01em", whiteSpace: "nowrap", flexShrink: 0 }}>
-            <div
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: "var(--radius-md)",
-                background: "linear-gradient(135deg, var(--color-accent), oklch(0.55 0.22 280))",
-                position: "relative",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 4,
-                  border: "1.5px solid rgba(255,255,255,0.85)",
-                  borderRadius: 3,
-                }}
-              />
+          <div className={styles.brand}>
+            <div className={styles.brandMark}>
+              <div className={styles.brandMarkInner} />
             </div>
             <span>标注中心</span>
-            <span style={{ color: "var(--color-fg-subtle)", fontSize: 11, fontWeight: 400, marginLeft: 4 }}>
-              v2.5
-            </span>
+            <span className={styles.version}>v2.5</span>
           </div>
           <div
             onClick={onWorkspaceChange}
-            style={{
-              display: showHamburger ? "none" : "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "4px 10px 4px 8px",
-              background: "var(--color-bg-sunken)",
-              borderRadius: "var(--radius-md)",
-              fontSize: 12,
-              color: "var(--color-fg-muted)",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-            }}
+            className={clsx(styles.workspace, showHamburger && styles.hidden)}
           >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: "var(--color-success)",
-              }}
-            />
+            <span className={styles.workspaceDot} />
             <span>{workspace}</span>
             <Icon name="chevDown" size={12} />
           </div>
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            display: showHamburger ? "none" : "flex",
-            justifyContent: "center",
-            minWidth: 0,
-            padding: "0 12px",
-          }}
-        >
+        <div className={clsx(styles.searchWrap, showHamburger && styles.hidden)}>
           <SearchInput
             placeholder="搜索项目、任务、数据集、成员..."
             width={360}
@@ -183,28 +113,18 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        <div className={styles.actions}>
           {/* 刷新按钮 */}
           <button
+            type="button"
             title="刷新"
             onClick={handleRefresh}
-            style={{
-              width: 30,
-              height: 30,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "transparent",
-              border: "1px solid transparent",
-              borderRadius: "var(--radius-md)",
-              color: "var(--color-fg-muted)",
-              cursor: "pointer",
-            }}
+            className={styles.iconButton}
           >
             <Icon
               name="refresh"
               size={15}
-              style={isFetching > 0 ? { animation: "__topbar_spin 0.8s linear infinite" } : undefined}
+              className={isFetching > 0 ? styles.spin : undefined}
             />
           </button>
 
@@ -214,13 +134,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
             items={themeItems}
             footer={
               theme === "system" ? (
-                <div style={{
-                  padding: "6px 10px 4px",
-                  fontSize: 11,
-                  color: "var(--color-fg-subtle)",
-                  borderTop: "1px solid var(--color-border)",
-                  marginTop: 4,
-                }}>
+                <div className={styles.themeFooter}>
                   当前 {resolved === "dark" ? "夜间" : "日间"}（跟随系统）
                 </div>
               ) : null
@@ -232,18 +146,7 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
                 onClick={toggle}
                 aria-haspopup="menu"
                 aria-expanded={open}
-                style={{
-                  width: 30,
-                  height: 30,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: open ? "var(--color-bg-sunken)" : "transparent",
-                  border: "1px solid transparent",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-fg-muted)",
-                  cursor: "pointer",
-                }}
+                className={clsx(styles.iconButton, open && styles.iconButtonActive)}
               >
                 <Icon name={themeIcon} size={15} />
               </button>
@@ -253,21 +156,11 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           {/* v0.9.11 PerfHud · 性能监控浮窗 toggle (admin only, 快捷键 Ctrl+Shift+P 同步) */}
           {(user?.role === "super_admin" || user?.role === "project_admin") ? (
             <button
+              type="button"
               title="性能监控 (Ctrl+Shift+P)"
               onClick={() => usePerfHudStore.getState().toggle()}
               aria-label="切换性能监控浮窗"
-              style={{
-                width: 30,
-                height: 30,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "transparent",
-                border: "1px solid transparent",
-                borderRadius: "var(--radius-md)",
-                color: "var(--color-fg-muted)",
-                cursor: "pointer",
-              }}
+              className={styles.iconButton}
             >
               <Icon name="activity" size={15} />
             </button>
@@ -280,44 +173,21 @@ export function TopBar({ workspace, onWorkspaceChange, showHamburger = false, on
           <NotificationsPopover />
 
           <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "4px 10px 4px 4px",
-              borderRadius: "var(--radius-lg)",
-              cursor: "pointer",
-            }}
+            className={styles.user}
           >
             <Avatar initial={user?.name?.[0] ?? "?"} size="sm" />
             <div
-              style={{
-                display: showHamburger ? "none" : "flex",
-                flexDirection: "column",
-                alignItems: "flex-start",
-                lineHeight: 1.2,
-                whiteSpace: "nowrap",
-              }}
+              className={clsx(styles.userMeta, showHamburger && styles.hidden)}
             >
-              <span style={{ fontSize: 12, fontWeight: 500 }}>{user?.name ?? "—"}</span>
-              <span style={{ fontSize: 10.5, color: "var(--color-fg-muted)" }}>{user?.role ?? "—"}</span>
+              <span className={styles.userName}>{user?.name ?? "—"}</span>
+              <span className={styles.userRole}>{user?.role ?? "—"}</span>
             </div>
           </div>
           <button
+            type="button"
             title="退出登录"
             onClick={logout}
-            style={{
-              width: 30,
-              height: 30,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "transparent",
-              border: "1px solid transparent",
-              borderRadius: "var(--radius-md)",
-              color: "var(--color-fg-muted)",
-              cursor: "pointer",
-            }}
+            className={styles.iconButton}
           >
             <Icon name="logout" size={15} />
           </button>

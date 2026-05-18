@@ -13,16 +13,8 @@ import { Modal } from "@/components/ui/Modal";
 import type { PreannotateQueueItem, BulkClearMode, BulkClearResponse } from "@/api/adminPreannotate";
 import { useBulkPreannotateClear } from "@/hooks/useBulkPreannotateActions";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
-import {
-  cardBodyStyle,
-  cardHeaderStyle,
-  helperTextStyle,
-  tableHeaderCellStyle,
-  tableBodyCellStyle,
-  HISTORY_PAGE_SIZE,
-  FS_XS,
-  FS_SM,
-} from "../styles";
+import { HISTORY_PAGE_SIZE } from "../styles";
+import styles from "./HistoryTable.module.css";
 
 type SortKey = "last_run_at" | "total_tasks" | "prediction_count" | "failed_count";
 type SortDir = "asc" | "desc";
@@ -107,7 +99,7 @@ export function HistoryTable({ items, isLoading }: Props) {
   const sortIndicator = (key: SortKey) => {
     if (sortKey !== key) return null;
     return (
-      <span style={{ marginLeft: 4, color: "var(--color-ai)" }}>
+      <span className={styles.sortIndicator}>
         {sortDir === "asc" ? "↑" : "↓"}
       </span>
     );
@@ -177,7 +169,7 @@ export function HistoryTable({ items, isLoading }: Props) {
 
   return (
     <Card>
-      <div style={cardHeaderStyle}>
+      <div className={styles.cardHeader}>
         <span>AI 预标已就绪批次（{filtered.length}）</span>
         <input
           type="text"
@@ -187,34 +179,25 @@ export function HistoryTable({ items, isLoading }: Props) {
             setPage(0);
           }}
           placeholder="搜索批次/项目..."
-          style={{
-            padding: "4px 10px",
-            fontSize: FS_XS,
-            background: "var(--color-bg-sunken)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-sm)",
-            color: "var(--color-fg)",
-            outline: "none",
-            width: 200,
-          }}
+          className={styles.searchInput}
         />
       </div>
-      <div style={cardBodyStyle}>
+      <div className={styles.cardBody}>
         {isLoading ? (
-          <div style={{ ...helperTextStyle, padding: 16, textAlign: "center" }}>加载中…</div>
+          <div className={styles.message}>加载中…</div>
         ) : items.length === 0 ? (
           <EmptyState />
         ) : sorted.length === 0 ? (
-          <div style={{ ...helperTextStyle, padding: 16, textAlign: "center" }}>
+          <div className={styles.message}>
             无匹配批次（搜索：{search}）
           </div>
         ) : (
           <>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", fontSize: FS_SM, borderCollapse: "collapse" }}>
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
                 <thead>
-                  <tr style={{ background: "var(--color-bg-sunken)" }}>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default", width: 32 }}>
+                  <tr className={styles.headerRow}>
+                    <th className={`${styles.tableHeaderCell} ${styles.checkboxHeaderCell}`}>
                       <input
                         type="checkbox"
                         aria-label="全选当前页"
@@ -222,21 +205,21 @@ export function HistoryTable({ items, isLoading }: Props) {
                         onChange={togglePageAll}
                       />
                     </th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>项目</th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>批次</th>
-                    <th style={tableHeaderCellStyle} onClick={() => onSort("total_tasks")}>
+                    <th className={styles.tableHeaderCell}>项目</th>
+                    <th className={styles.tableHeaderCell}>批次</th>
+                    <th className={styles.sortableHeaderCell} onClick={() => onSort("total_tasks")}>
                       总数{sortIndicator("total_tasks")}
                     </th>
-                    <th style={tableHeaderCellStyle} onClick={() => onSort("prediction_count")}>
+                    <th className={styles.sortableHeaderCell} onClick={() => onSort("prediction_count")}>
                       已预标{sortIndicator("prediction_count")}
                     </th>
-                    <th style={tableHeaderCellStyle} onClick={() => onSort("failed_count")}>
+                    <th className={styles.sortableHeaderCell} onClick={() => onSort("failed_count")}>
                       失败{sortIndicator("failed_count")}
                     </th>
-                    <th style={tableHeaderCellStyle} onClick={() => onSort("last_run_at")}>
+                    <th className={styles.sortableHeaderCell} onClick={() => onSort("last_run_at")}>
                       最近预标{sortIndicator("last_run_at")}
                     </th>
-                    <th style={{ ...tableHeaderCellStyle, cursor: "default" }}>操作</th>
+                    <th className={styles.tableHeaderCell}>操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -249,23 +232,19 @@ export function HistoryTable({ items, isLoading }: Props) {
                       <Fragment key={g.id}>
                         <tr
                           onClick={() => toggleProject(g.id)}
-                          style={{
-                            cursor: "pointer",
-                            background: "var(--color-bg-elev)",
-                            borderTop: "1px solid var(--color-border)",
-                          }}
+                          className={styles.groupRow}
                         >
-                          <td colSpan={8} style={{ padding: "8px 12px", fontSize: FS_SM }}>
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <td colSpan={8} className={styles.groupCell}>
+                            <span className={styles.groupLabel}>
                               <Icon name={isCollapsed ? "chevRight" : "chevDown"} size={11} />
                               <strong>{g.name}</strong>
                               {g.displayId && (
-                                <span style={{ color: "var(--color-fg-subtle)" }}>({g.displayId})</span>
+                                <span className={styles.subtle}>({g.displayId})</span>
                               )}
-                              <span style={{ color: "var(--color-fg-muted)" }}>
+                              <span className={styles.mutedText}>
                                 · {totalBatches} 批 · {totalTasks} 任务
                                 {totalFailed > 0 && (
-                                  <span style={{ color: "var(--color-danger)", marginLeft: 6 }}>
+                                  <span className={styles.failedCount}>
                                     · {totalFailed} 失败
                                   </span>
                                 )}
@@ -279,13 +258,9 @@ export function HistoryTable({ items, isLoading }: Props) {
                             return (
                               <tr
                                 key={it.batch_id}
-                                style={
-                                  isSel
-                                    ? { background: "color-mix(in oklch, var(--color-accent) 8%, transparent)" }
-                                    : undefined
-                                }
+                                className={isSel ? styles.selectedRow : undefined}
                               >
-                                <td style={tableBodyCellStyle}>
+                                <td className={styles.tableCell}>
                                   <input
                                     type="checkbox"
                                     aria-label={`选择 ${it.batch_name}`}
@@ -293,24 +268,24 @@ export function HistoryTable({ items, isLoading }: Props) {
                                     onChange={() => toggleOne(it.batch_id)}
                                   />
                                 </td>
-                                <td style={{ ...tableBodyCellStyle, paddingLeft: 28, color: "var(--color-fg-subtle)" }}>↳</td>
-                                <td style={tableBodyCellStyle}>{it.batch_name}</td>
-                                <td style={{ ...tableBodyCellStyle, fontVariantNumeric: "tabular-nums" }}>{it.total_tasks}</td>
-                                <td style={tableBodyCellStyle}>
+                                <td className={`${styles.tableCell} ${styles.childMarkerCell}`}>↳</td>
+                                <td className={styles.tableCell}>{it.batch_name}</td>
+                                <td className={`${styles.tableCell} ${styles.numeric}`}>{it.total_tasks}</td>
+                                <td className={styles.tableCell}>
                                   <Badge variant="ai">{it.prediction_count}</Badge>
                                 </td>
-                                <td style={tableBodyCellStyle}>
+                                <td className={styles.tableCell}>
                                   {it.failed_count > 0 ? (
                                     <Badge variant="danger">{it.failed_count}</Badge>
                                   ) : (
-                                    <span style={{ color: "var(--color-fg-subtle)" }}>0</span>
+                                    <span className={styles.subtle}>0</span>
                                   )}
                                 </td>
-                                <td style={{ ...tableBodyCellStyle, color: "var(--color-fg-muted)" }}>
+                                <td className={`${styles.tableCell} ${styles.mutedCell}`}>
                                   {formatRelative(it.last_run_at)}
                                 </td>
-                                <td style={tableBodyCellStyle}>
-                                  <div style={{ display: "inline-flex", gap: 6 }}>
+                                <td className={styles.tableCell}>
+                                  <div className={styles.rowActions}>
                                     <Button
                                       size="sm"
                                       variant="ghost"
@@ -352,18 +327,11 @@ export function HistoryTable({ items, isLoading }: Props) {
               </table>
             </div>
             {totalPages > 1 && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  paddingTop: 6,
-                }}
-              >
-                <span style={{ ...helperTextStyle, marginTop: 0 }}>
+              <div className={styles.pagination}>
+                <span className={styles.helperInline}>
                   共 {sorted.length} 条 · 第 {safePage + 1}/{totalPages} 页
                 </span>
-                <div style={{ display: "inline-flex", gap: 6 }}>
+                <div className={styles.rowActions}>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -434,29 +402,14 @@ function BulkActionBar(props: {
   onReset: () => void;
 }) {
   return (
-    <div
-      style={{
-        position: "sticky",
-        bottom: 0,
-        marginTop: 12,
-        padding: "10px 14px",
-        background: "var(--color-bg-elev)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        boxShadow: "var(--shadow-md)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-      }}
-    >
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: FS_SM }}>
+    <div className={styles.bulkActionBar}>
+      <div className={styles.bulkActionSummary}>
         <strong>已选 {props.count} 项</strong>
         <Button size="sm" variant="ghost" onClick={props.onClear}>
           清除
         </Button>
       </div>
-      <div style={{ display: "inline-flex", gap: 8 }}>
+      <div className={styles.bulkActionButtons}>
         <Button size="sm" variant="ghost" onClick={props.onReactivate} title="清空 prediction, batch 回 active">
           <Icon name="refresh" size={11} /> 批量重激活
         </Button>
@@ -481,17 +434,17 @@ function BulkConfirmForm(props: {
   const isDestructive = props.mode === "reset_to_draft";
   const tooShort = props.reason.trim().length < 10;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: FS_SM }}>
-      <p style={{ margin: 0, color: "var(--color-fg-muted)" }}>
+    <div className={styles.confirmForm}>
+      <p className={styles.confirmCopy}>
         将对 <strong>{props.count}</strong> 个批次执行
         {isDestructive ? (
-          <strong style={{ color: "var(--color-danger)" }}> reset_to_draft</strong>
+          <strong className={styles.dangerText}> reset_to_draft</strong>
         ) : (
-          <strong style={{ color: "var(--color-ai)" }}> 清空 prediction</strong>
+          <strong className={styles.aiText}> 清空 prediction</strong>
         )}
         操作：
       </p>
-      <ul style={{ margin: 0, paddingLeft: 18, color: "var(--color-fg-muted)" }}>
+      <ul className={styles.confirmList}>
         {isDestructive ? (
           <>
             <li>所有 task 回 pending（保留 annotation 记录）</li>
@@ -506,8 +459,8 @@ function BulkConfirmForm(props: {
           </>
         )}
       </ul>
-      <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span style={{ fontSize: FS_XS, color: "var(--color-fg-muted)" }}>
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>
           原因（≥10 字，写入 audit log）
         </span>
         <textarea
@@ -515,22 +468,13 @@ function BulkConfirmForm(props: {
           onChange={(e) => props.onReasonChange(e.target.value)}
           rows={3}
           placeholder="例：批次配置错误，需要重新跑一次预标"
-          style={{
-            padding: "8px 10px",
-            fontSize: FS_SM,
-            background: "var(--color-bg-sunken)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-sm)",
-            color: "var(--color-fg)",
-            fontFamily: "inherit",
-            resize: "vertical",
-          }}
+          className={styles.textarea}
         />
       </label>
       {props.error && (
-        <div style={{ color: "var(--color-danger)", fontSize: FS_XS }}>{props.error}</div>
+        <div className={styles.errorText}>{props.error}</div>
       )}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <div className={styles.formActions}>
         <Button size="sm" variant="ghost" onClick={props.onCancel} disabled={props.isPending}>
           取消
         </Button>
@@ -550,18 +494,18 @@ function BulkConfirmForm(props: {
 function BulkResultView(props: { result: BulkClearResponse; onClose: () => void }) {
   const { succeeded, skipped, failed } = props.result;
   return (
-    <div data-testid="bulk-result" style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: FS_SM }}>
+    <div data-testid="bulk-result" className={styles.bulkResult}>
       <div>
         <strong>{succeeded.length}</strong> 成功 ·{" "}
-        <span style={{ color: "var(--color-warning)" }}>{skipped.length} 跳过</span> ·{" "}
-        <span style={{ color: "var(--color-danger)" }}>{failed.length} 失败</span>
+        <span className={styles.warningText}>{skipped.length} 跳过</span> ·{" "}
+        <span className={styles.dangerText}>{failed.length} 失败</span>
       </div>
       {skipped.length > 0 && (
         <details>
-          <summary style={{ cursor: "pointer", color: "var(--color-fg-muted)" }}>
+          <summary className={styles.mutedSummary}>
             跳过详情 ({skipped.length})
           </summary>
-          <ul style={{ margin: "4px 0 0", paddingLeft: 18, color: "var(--color-fg-muted)", fontSize: FS_XS }}>
+          <ul className={styles.resultListMuted}>
             {skipped.map((it) => (
               <li key={it.batch_id}>
                 <code>{it.batch_id.slice(0, 8)}</code> — {it.reason}
@@ -572,10 +516,10 @@ function BulkResultView(props: { result: BulkClearResponse; onClose: () => void 
       )}
       {failed.length > 0 && (
         <details open>
-          <summary style={{ cursor: "pointer", color: "var(--color-danger)" }}>
+          <summary className={styles.dangerSummary}>
             失败详情 ({failed.length})
           </summary>
-          <ul style={{ margin: "4px 0 0", paddingLeft: 18, color: "var(--color-danger)", fontSize: FS_XS }}>
+          <ul className={styles.resultListDanger}>
             {failed.map((it) => (
               <li key={it.batch_id}>
                 <code>{it.batch_id.slice(0, 8)}</code> — {it.reason}
@@ -584,7 +528,7 @@ function BulkResultView(props: { result: BulkClearResponse; onClose: () => void 
           </ul>
         </details>
       )}
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div className={styles.formActions}>
         <Button size="sm" variant="ghost" onClick={props.onClose}>
           关闭
         </Button>
@@ -595,22 +539,12 @@ function BulkResultView(props: { result: BulkClearResponse; onClose: () => void 
 
 function EmptyState() {
   return (
-    <div
-      style={{
-        padding: "32px 16px",
-        textAlign: "center",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 8,
-        color: "var(--color-fg-subtle)",
-      }}
-    >
+    <div className={styles.emptyState}>
       <Icon name="sparkles" size={28} />
-      <div style={{ fontSize: FS_SM, color: "var(--color-fg-muted)" }}>
+      <div className={styles.emptyTitle}>
         暂无 AI 预标已就绪的批次
       </div>
-      <div style={{ fontSize: FS_XS }}>在上方跑一次预标，结果会出现在这里。</div>
+      <div className={styles.emptyHint}>在上方跑一次预标，结果会出现在这里。</div>
     </div>
   );
 }

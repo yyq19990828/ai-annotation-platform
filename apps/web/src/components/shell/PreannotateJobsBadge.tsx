@@ -5,11 +5,22 @@
  * (项目名 / 进度 / 跳转链接), 让 admin 跑完后切到别处也能看到。
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Icon } from "@/components/ui/Icon";
 import { useGlobalPreannotationJobs } from "@/hooks/useGlobalPreannotationJobs";
+import styles from "./PreannotateJobsBadge.module.css";
+
+function JobProgressFill({ pct }: { pct: number }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    ref.current?.style.setProperty("--preannotate-job-progress", `${pct}%`);
+  }, [pct]);
+
+  return <div ref={ref} className={styles.progressFill} />;
+}
 
 export function PreannotateJobsBadge() {
   const { runningJobs } = useGlobalPreannotationJobs();
@@ -30,26 +41,13 @@ export function PreannotateJobsBadge() {
   };
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className={styles.root}>
       <button
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         title={`${runningJobs.length} 个预标 job 进行中`}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-          padding: "4px 9px",
-          background: "color-mix(in oklab, var(--color-ai) 18%, transparent)",
-          border: "1px solid var(--color-ai)",
-          borderRadius: 999,
-          color: "var(--color-ai)",
-          cursor: "pointer",
-          fontSize: 11,
-          fontWeight: 600,
-          lineHeight: 1.2,
-        }}
+        className={styles.trigger}
       >
         <Icon name="sparkles" size={12} />
         <span>{runningJobs.length}</span>
@@ -59,41 +57,14 @@ export function PreannotateJobsBadge() {
         <>
           <div
             onClick={() => setOpen(false)}
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 200,
-            }}
+            className={styles.backdrop}
           />
           <div
             role="dialog"
             aria-label="预标进行中"
-            style={{
-              position: "absolute",
-              right: 0,
-              top: "calc(100% + 6px)",
-              zIndex: 201,
-              minWidth: 320,
-              maxWidth: 400,
-              background: "var(--color-bg-elevated)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-              boxShadow: "var(--shadow-lg)",
-              padding: 8,
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}
+            className={styles.panel}
           >
-            <div
-              style={{
-                padding: "6px 10px 8px",
-                fontSize: 11,
-                fontWeight: 600,
-                color: "var(--color-fg-muted)",
-                borderBottom: "1px solid var(--color-border)",
-              }}
-            >
+            <div className={styles.panelTitle}>
               预标进行中 ({runningJobs.length})
             </div>
             {sorted.map((j) => {
@@ -103,59 +74,18 @@ export function PreannotateJobsBadge() {
                   key={j.job_id}
                   type="button"
                   onClick={() => jumpToProject(j.project_id)}
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "stretch",
-                    gap: 4,
-                    padding: "8px 10px",
-                    border: "none",
-                    background: "transparent",
-                    color: "var(--color-fg)",
-                    textAlign: "left",
-                    borderRadius: "var(--radius-sm)",
-                    cursor: "pointer",
-                    transition: "background 120ms ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "var(--color-bg-sunken)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "transparent";
-                  }}
+                  className={styles.jobButton}
                 >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      fontSize: 12,
-                      fontWeight: 500,
-                    }}
-                  >
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div className={styles.jobHeader}>
+                    <span className={styles.jobName}>
                       {j.project_name ?? j.project_id.slice(0, 8)}
                     </span>
-                    <span style={{ color: "var(--color-fg-muted)", fontVariantNumeric: "tabular-nums" }}>
+                    <span className={styles.jobProgressText}>
                       {j.current}/{j.total} · {pct}%
                     </span>
                   </div>
-                  <div
-                    style={{
-                      height: 3,
-                      background: "var(--color-border)",
-                      borderRadius: 2,
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        height: "100%",
-                        width: `${pct}%`,
-                        background: "var(--color-ai)",
-                        transition: "width 200ms ease",
-                      }}
-                    />
+                  <div className={styles.progressTrack}>
+                    <JobProgressFill pct={pct} />
                   </div>
                 </button>
               );
