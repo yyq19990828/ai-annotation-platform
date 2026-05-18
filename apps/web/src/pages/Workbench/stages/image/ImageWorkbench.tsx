@@ -81,6 +81,8 @@ export interface ImageWorkbenchProps {
   overlays?: ReactNode;
   /** v0.10.8 · I11 · Mask 编辑器状态；传给 ImageStage 用于 Konva overlay 与 paintAt。 */
   maskEditor?: UseMaskEditorReturn;
+  /** v0.10.9 · SAM 候选「精修」入口（画布浮按钮 + R 键）。 */
+  onRefineSamCandidate?: (idx: number) => void;
 }
 
 export function ImageWorkbench({
@@ -139,6 +141,7 @@ export function ImageWorkbench({
   stageGeom,
   overlays,
   maskEditor,
+  onRefineSamCandidate,
 }: ImageWorkbenchProps) {
   return (
     <ImageStage
@@ -183,6 +186,7 @@ export function ImageWorkbench({
       onCanvasStrokeCommit={onCanvasStrokeCommit}
       historicalShapes={historicalShapes}
       maskEditor={maskEditor}
+      onRefineSamCandidate={onRefineSamCandidate}
       overlay={
         <>
           <FloatingDock

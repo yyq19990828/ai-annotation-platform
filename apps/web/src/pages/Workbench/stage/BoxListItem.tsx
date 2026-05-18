@@ -287,6 +287,18 @@ export function BoxListItem({
                 <Icon name="tag" size={14} />
               </Button>
             )}
+            {onRefine && (
+              <Button
+                size="sm"
+                title="Mask 笔刷精修"
+                aria-label="精修"
+                onClick={(e) => { e.stopPropagation(); onRefine(); }}
+                style={rowActionButtonStyle}
+                data-testid={`user-refine-${b.id}`}
+              >
+                <Icon name="edit" size={14} />
+              </Button>
+            )}
             {onDelete && (
               <Button
                 variant="danger"

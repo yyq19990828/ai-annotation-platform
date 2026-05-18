@@ -222,6 +222,9 @@ export function useImageAnnotationActions({
     setSamPendingAccept(null);
   }, []);
 
+  // v0.10.9 · R 键精修走 ref 间接调用,避免在 useEffect 依赖里前向引用未定义的 handleRefineSamCandidate.
+  const refineSamRef = useRef<(idx: number) => void>(() => {});
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // v0.10.2 · sam 拆分后, Tab/Enter 候选导航在任一 AI 工具激活下都启用.
@@ -248,6 +251,13 @@ export function useImageAnnotationActions({
         e.preventDefault();
         e.stopPropagation();
         sam.cycle(e.shiftKey ? -1 : 1);
+        return;
+      }
+      // v0.10.9 · R 键精修当前 SAM 候选 → Mask 编辑器。仅 polygonlabels 类型有效。
+      if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        e.stopPropagation();
+        refineSamRef.current(sam.activeIdx);
       }
     };
     window.addEventListener("keydown", handler, true);
@@ -351,36 +361,91 @@ export function useImageAnnotationActions({
     );
   }, [acceptPredictionMut, history, pushToast]);
 
-  // v0.10.8 · I11 · Mask 精修：候选 polygon → mask 编辑 → commit 后自动 reject 原候选 + 新 polygon。
-  const pendingRefineRef = useRef<{ predictionId: string; shapeIndex: number; labelId: string } | null>(null);
+  // v0.10.8 · I11 · Mask 精修：候选/已存 polygon → mask 编辑 → commit 路径按 kind 分流。
+  // v0.10.9 · 扩三种 kind：prediction（AI 预标 polygon 行）/ sam（SAM 交互候选，未 Enter）/ user（已落库 polygon，update 替换 geometry）。
+  type PendingRefine =
+    | { kind: "prediction"; predictionId: string; shapeIndex: number; labelId: string }
+    | { kind: "sam"; samIdx: number; labelId: string }
+    | { kind: "user"; annotationId: string; beforeGeometry: AnnotationResponse["geometry"]; labelId: string };
+  const pendingRefineRef = useRef<PendingRefine | null>(null);
 
-  const handleRefinePrediction = useCallback((box: AiBox) => {
+  const initMaskFromNormalizedPoints = useCallback((normPoints: [number, number][]): boolean => {
     if (!maskEditor) {
       pushToast({ msg: "Mask 编辑器未就绪", kind: "warning" });
-      return;
+      return false;
     }
-    // 仅支持 polygon 候选；bbox / mask 候选当前不展示精修按钮，但兜底过滤。
-    const norm = box.polygon;
-    if (!norm || norm.length < 3) {
-      pushToast({ msg: "仅支持 polygon 候选的精修", kind: "warning" });
-      return;
-    }
-    // AiBox.polygon 为归一化 [0,1]；MaskBuffer.fromPolygon 期望 image-space 像素坐标。
     const { imgW, imgH } = stageGeom;
     if (!imgW || !imgH) {
       pushToast({ msg: "图像尺寸未就绪", kind: "warning" });
+      return false;
+    }
+    if (normPoints.length < 3) {
+      pushToast({ msg: "几何顶点 < 3，无法精修", kind: "warning" });
+      return false;
+    }
+    const pxPoints: [number, number][] = normPoints.map(([x, y]) => [x * imgW, y * imgH]);
+    maskEditor.initFromPolygon(pxPoints);
+    return true;
+  }, [maskEditor, pushToast, stageGeom]);
+
+  const handleRefinePrediction = useCallback((box: AiBox) => {
+    if (!box.polygon || box.polygon.length < 3) {
+      pushToast({ msg: "仅支持 polygon 候选的精修", kind: "warning" });
       return;
     }
-    const pxPoints: [number, number][] = norm.map(([x, y]) => [x * imgW, y * imgH]);
+    if (!initMaskFromNormalizedPoints(box.polygon)) return;
     pendingRefineRef.current = {
+      kind: "prediction",
       predictionId: box.predictionId,
       shapeIndex: box.shapeIndex,
       labelId: box.cls,
     };
-    maskEditor.initFromPolygon(pxPoints);
     s.setTool("mask");
     s.setSelectedId(null);
-  }, [maskEditor, s, pushToast, stageGeom]);
+  }, [initMaskFromNormalizedPoints, pushToast, s]);
+
+  // v0.10.9 (A) · SAM 交互候选精修：候选未 Enter 时，直接从 sam.candidates[idx] 启动 mask 编辑。
+  // commit 时 sam.consume(samIdx) 清候选 + submitPolygon 落库（候选 label 优先；无 label 用工具栏当前 label）。
+  const handleRefineSamCandidate = useCallback((idx: number = sam.activeIdx) => {
+    const cand = sam.candidates[idx];
+    if (!cand) {
+      pushToast({ msg: "无可精修的 SAM 候选", kind: "warning" });
+      return;
+    }
+    if (cand.type !== "polygonlabels" || !cand.points || cand.points.length < 3) {
+      pushToast({ msg: "仅支持 polygon 类型的 SAM 候选精修", kind: "warning" });
+      return;
+    }
+    if (!initMaskFromNormalizedPoints(cand.points)) return;
+    const labelId = (cand.label && classes.includes(cand.label)) ? cand.label : s.activeClass;
+    pendingRefineRef.current = { kind: "sam", samIdx: idx, labelId };
+    s.setTool("mask");
+    s.setSelectedId(null);
+  }, [sam, initMaskFromNormalizedPoints, pushToast, classes, s]);
+
+  useEffect(() => { refineSamRef.current = handleRefineSamCandidate; }, [handleRefineSamCandidate]);
+
+  // v0.10.9 (B) · 已落库 user polygon 精修：commit 时走 update mutation 替换原 geometry（in-place）。
+  const handleRefineUserPolygon = useCallback((annotationId: string) => {
+    const ann = annotationsRef.current.find((a) => a.id === annotationId);
+    if (!ann) {
+      pushToast({ msg: "未找到该标注", kind: "warning" });
+      return;
+    }
+    if (ann.geometry.type !== "polygon" || ann.geometry.points.length < 3) {
+      pushToast({ msg: "仅支持 polygon 标注的精修", kind: "warning" });
+      return;
+    }
+    if (!initMaskFromNormalizedPoints(ann.geometry.points)) return;
+    pendingRefineRef.current = {
+      kind: "user",
+      annotationId: ann.id,
+      beforeGeometry: ann.geometry,
+      labelId: ann.class_name,
+    };
+    s.setTool("mask");
+    s.setSelectedId(null);
+  }, [annotationsRef, initMaskFromNormalizedPoints, pushToast, s]);
 
   const commitMaskAsPolygon = useCallback(() => {
     if (!maskEditor) return;
@@ -395,31 +460,53 @@ export function useImageAnnotationActions({
       pushToast({ msg: "请先选择类别", kind: "warning" });
       return;
     }
-    if (refine) {
-      // 精修模式：客户端 reject 原候选（dismissedShapeKeys + set），保留服务端 prediction.
-      setDismissedShapeKeys((prev) => {
-        const next = new Set(prev);
-        // AiBox.id 在 transforms 中为 `pred-${predictionId}-${shapeIndex}` 形式。
-        next.add(`pred-${refine.predictionId}-${refine.shapeIndex}`);
-        return next;
-      });
-    }
-    // submitPolygon 内部读 s.activeClass；refine 时先临时切到候选 label，再提交。
-    const prevActive = s.activeClass;
-    if (refine && refine.labelId !== prevActive) {
-      s.setActiveClass(refine.labelId);
-    }
-    // maskToPolygon 输出像素坐标，submitPolygon 期望归一化 [0,1]。
     const { imgW, imgH } = stageGeom;
+    // maskToPolygon 输出像素坐标 → 归一化 [0,1]。
     const normPoints: [number, number][] = out.points.map(([x, y]) => [x / imgW, y / imgH]);
-    submitPolygon(normPoints);
+
+    if (refine?.kind === "user") {
+      // 原地替换 geometry，走 update mutation + history.push update；不新建 annotation。
+      const before = { geometry: refine.beforeGeometry };
+      const after = { geometry: { type: "polygon", points: normPoints } as const };
+      mutations.update.mutate(
+        { annotationId: refine.annotationId, payload: after },
+        {
+          onSuccess: () => {
+            history.push({
+              kind: "update",
+              annotationId: refine.annotationId,
+              before,
+              after,
+            });
+            pushToast({ msg: "已更新 polygon", sub: `${out.points.length} 顶点`, kind: "success" });
+          },
+        },
+      );
+    } else {
+      // prediction / sam / 空白工具：新建 polygon。
+      if (refine?.kind === "prediction") {
+        setDismissedShapeKeys((prev) => {
+          const next = new Set(prev);
+          next.add(`pred-${refine.predictionId}-${refine.shapeIndex}`);
+          return next;
+        });
+      } else if (refine?.kind === "sam") {
+        // 立即从 SAM 候选列表移除：避免 commit 后紫虚线还残留一条。
+        sam.consume(refine.samIdx);
+      }
+      // submitPolygon 内部读 s.activeClass；refine 时先临时切到目标 label，再提交。
+      if (refine && refine.labelId !== s.activeClass) {
+        s.setActiveClass(refine.labelId);
+      }
+      submitPolygon(normPoints);
+    }
     pendingRefineRef.current = null;
     maskEditor.cancel();
     s.setTool("box");
     if (out.multipleComponents) {
       pushToast({ msg: "Mask 含多个连通区，仅落最大外环", kind: "warning" });
     }
-  }, [maskEditor, s, submitPolygon, pushToast, stageGeom]);
+  }, [maskEditor, s, submitPolygon, pushToast, stageGeom, mutations.update, history, sam]);
 
   const cancelMaskEdit = useCallback(() => {
     if (!maskEditor) return;
@@ -529,6 +616,8 @@ export function useImageAnnotationActions({
     handleRejectPrediction,
     handleAcceptPrediction,
     handleRefinePrediction,
+    handleRefineSamCandidate,
+    handleRefineUserPolygon,
     commitMaskAsPolygon,
     cancelMaskEdit,
     handleAcceptAll,

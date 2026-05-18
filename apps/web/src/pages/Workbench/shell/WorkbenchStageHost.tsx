@@ -117,6 +117,8 @@ interface WorkbenchStageHostProps {
   stageGeom: StageGeometry;
   /** v0.10.8 · I11 · Mask 编辑器状态；仅图像舞台消费。 */
   maskEditor?: UseMaskEditorReturn;
+  /** v0.10.9 · SAM 候选「精修」入口（画布浮按钮 + R 键）。 */
+  onRefineSamCandidate?: (idx: number) => void;
 }
 
 export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageHostProps>(
@@ -194,6 +196,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     onDoneCanvasDraft,
     stageGeom,
     maskEditor,
+    onRefineSamCandidate,
   }, ref) {
     return (
       <div style={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column" }}>
@@ -285,6 +288,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             stageGeom={stageGeom}
             overlays={overlays}
             maskEditor={maskEditor}
+            onRefineSamCandidate={onRefineSamCandidate}
           />
         )}
         {stageKind !== "image" && overlays}

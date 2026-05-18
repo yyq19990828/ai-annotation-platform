@@ -64,6 +64,8 @@ interface AIInspectorPanelProps {
   onRejectPrediction?: (b: AiBox) => void;
   /** v0.10.8 · I11 · polygon 候选行展示「精修」按钮 → 启动 Mask 编辑器。 */
   onRefinePrediction?: (b: AiBox) => void;
+  /** v0.10.9 · 已落库 user polygon 行展示「精修」按钮 → 启动 Mask 编辑器（update mutation）。 */
+  onRefineUserPolygon?: (annotationId: string) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
@@ -92,7 +94,7 @@ export function AIInspectorPanel({
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   currentFrameIndex, onSeekFrame, commentAnchor,
   onToggle,
-  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction,
+  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon,
   onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   onToggleUserBoxFlag,
   readOnly = false,
@@ -200,6 +202,7 @@ export function AIInspectorPanel({
         onAcceptPrediction={onAcceptPrediction}
         onRejectPrediction={onRejectPrediction}
         onRefinePrediction={onRefinePrediction}
+        onRefineUserPolygon={onRefineUserPolygon}
         onClearSelection={onClearSelection}
         onDeleteUserBox={onDeleteUserBox}
         onChangeUserBoxClass={onChangeUserBoxClass}
@@ -727,6 +730,8 @@ interface BoxesListProps {
   onRejectPrediction?: (b: AiBox) => void;
   /** v0.10.8 · I11 · 仅 polygon 候选会展示「精修」按钮，由 WorkbenchShell 注入 handleRefinePrediction。 */
   onRefinePrediction?: (b: AiBox) => void;
+  /** v0.10.9 · 已落库 user polygon 行的「精修」按钮，update mutation 替换 geometry。 */
+  onRefineUserPolygon?: (annotationId: string) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
@@ -741,7 +746,7 @@ function BoxesList({
   hasMore, isFetchingMore, onFetchMore,
   currentFrameIndex,
   onSeekFrame,
-  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction,
+  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon,
   onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   onToggleUserBoxFlag,
   videoTrackPanel,
@@ -889,6 +894,9 @@ function BoxesList({
                   onDelete={() => onDeleteUserBox(r.box.id)}
                   onChangeClass={onChangeUserBoxClass ? () => onChangeUserBoxClass(r.box.id) : undefined}
                   onToggleFlag={onToggleUserBoxFlag ? (flag) => onToggleUserBoxFlag(r.box.id, flag) : undefined}
+                  onRefine={onRefineUserPolygon && r.box.geometry?.type === "polygon"
+                    ? () => onRefineUserPolygon(r.box.id)
+                    : undefined}
                 />
               )}
             </div>

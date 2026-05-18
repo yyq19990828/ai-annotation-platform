@@ -140,6 +140,8 @@ interface ImageStageProps {
   historicalShapes?: NonNullable<CommentCanvasDrawing["shapes"]>;
   /** v0.10.8 · Mask 编辑器 hook 返回；mask 工具激活时挂 MaskOverlayLayer + 派发 paintAt。 */
   maskEditor?: UseMaskEditorReturn;
+  /** v0.10.9 · 当前 SAM 候选「精修」入口；点击后由 useImageAnnotationActions.handleRefineSamCandidate 启动 mask 编辑。 */
+  onRefineSamCandidate?: (idx: number) => void;
 }
 
 // ── main component ──────────────────────────────────────────────────────────
@@ -155,6 +157,7 @@ export function ImageStage({
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
   historicalShapes,
   maskEditor,
+  onRefineSamCandidate,
 }: ImageStageProps) {
   // selSet 引用稳定化（I3）：以排序后的 id 串作为签名，签名不变则返回上次同一 Set 实例，
   // 让下游 KonvaBox / KonvaPolygon 的 selected prop 维持引用稳定，避免误触发 memo 失效。
@@ -500,16 +503,25 @@ export function ImageStage({
     } else if (polygonCursor) {
       setPolygonCursor(null);
     }
+    // v0.10.9 · Mask 工具下追踪笔刷光标位置（image-space pixels），驱动 overlay 圆圈渲染。
+    if (tool === "mask") {
+      setMaskCursor(pt ? { x: pt.x * imgW, y: pt.y * imgH } : null);
+    } else if (maskCursor) {
+      setMaskCursor(null);
+    }
   };
 
   const containerCursor = (tool === "hand" || spacePan)
     ? (drag?.kind === "pan" ? "grabbing" : "grab")
     : tool === "canvas" ? "crosshair"
-    : tool === "mask" ? "crosshair"
+    // v0.10.9 · Mask 工具用自绘 overlay 圆圈替代系统光标，让笔刷大小与图像同比例可视。
+    : tool === "mask" ? "none"
     : pendingDrawing ? "default" : "crosshair";
 
   // polygon 草稿当前光标位置（用于动态预览线段）
   const [polygonCursor, setPolygonCursor] = useState<{ x: number; y: number } | null>(null);
+  // v0.10.9 · Mask 笔刷光标 (image-space pixels)；overlay 层据此画跟随圆圈。
+  const [maskCursor, setMaskCursor] = useState<{ x: number; y: number } | null>(null);
 
   const drawingPreview = drag?.kind === "draw"
     ? { x: Math.min(drag.sx, drag.cx), y: Math.min(drag.sy, drag.cy),
@@ -907,8 +919,61 @@ export function ImageStage({
               </Label>
             </>
           )}
+          {/* v0.10.9 · Mask 笔刷光标圈：仅 mask 工具激活时渲染；圆心 = maskCursor，半径 = maskEditor.radius
+              (image-space px)，描边宽度按 vp.scale 取倒数保持像素级视觉。brush=红、erase=灰。 */}
+          {tool === "mask" && maskCursor && maskEditor && (
+            <Circle
+              x={maskCursor.x}
+              y={maskCursor.y}
+              radius={maskEditor.radius}
+              stroke={maskEditor.mode === "erase" ? "#64748b" : "#dc2626"}
+              strokeWidth={1.5 / vp.scale}
+              dash={[4 / vp.scale, 3 / vp.scale]}
+              listening={false}
+            />
+          )}
         </Layer>
       </Stage>
+
+      {/* v0.10.9 · SAM 候选精修浮按钮：active polygonlabels 候选 + 未 Enter 时显示。
+          位置贴在候选 polygon 顶点 bbox 右上角；点击/按 R 都触发 onRefineSamCandidate。 */}
+      {onRefineSamCandidate && samCandidates && samCandidates.length > 0 && (() => {
+        const cand = samCandidates[samActiveIdx];
+        if (!cand || cand.type !== "polygonlabels" || !cand.points || cand.points.length < 3) return null;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity;
+        for (const [x, y] of cand.points) {
+          if (x < minX) minX = x; if (y < minY) minY = y; if (x > maxX) maxX = x;
+        }
+        if (!isFinite(minX)) return null;
+        const left = maxX * imgW * vp.scale + vp.tx;
+        const top = minY * imgH * vp.scale + vp.ty;
+        return (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onRefineSamCandidate(samActiveIdx); }}
+            data-testid="sam-candidate-refine"
+            style={{
+              position: "absolute",
+              left, top: top - 32,
+              transform: "translateX(-100%)",
+              padding: "3px 8px",
+              fontSize: 11.5,
+              background: "var(--color-bg-elev)",
+              border: "1px solid #a855f7",
+              borderRadius: 4,
+              color: "var(--color-fg)",
+              cursor: "pointer",
+              boxShadow: "var(--shadow-md)",
+              fontFamily: "inherit",
+              zIndex: 20,
+              pointerEvents: "auto",
+            }}
+            title="精修 SAM 候选 (R)"
+          >
+            ✎ 精修 <kbd style={{ marginLeft: 4, fontSize: 9, opacity: 0.7 }}>R</kbd>
+          </button>
+        );
+      })()}
 
       {selectedBox && !readOnly && !pendingDrawing && tool !== "canvas" && (
         <SelectionOverlay

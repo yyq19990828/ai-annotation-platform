@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { BoxListItem } from "./BoxListItem";
 import type { Annotation } from "@/types";
@@ -33,6 +33,51 @@ describe("BoxListItem", () => {
 
     expect(getByText("矩形框")).toBeInTheDocument();
     expect(getByText("(100, 100) · 300×200")).toBeInTheDocument();
+  });
+
+  it("v0.10.9 · 渲染 onRefine 按钮并触发回调（AI 行）", () => {
+    const b: Annotation = {
+      ...base,
+      annotation_type: "polygon",
+      geometry: { type: "polygon", points: [[0, 0], [1, 0], [0.5, 1]] },
+    };
+    const onRefine = vi.fn();
+    const { getByLabelText } = render(
+      <BoxListItem
+        b={b}
+        isAi
+        selected={false}
+        imageWidth={1000}
+        imageHeight={500}
+        onSelect={vi.fn()}
+        onAccept={vi.fn()}
+        onReject={vi.fn()}
+        onRefine={onRefine}
+      />,
+    );
+    fireEvent.click(getByLabelText("精修"));
+    expect(onRefine).toHaveBeenCalledOnce();
+  });
+
+  it("v0.10.9 · 渲染 onRefine 按钮并触发回调（user polygon 行）", () => {
+    const b: Annotation = {
+      ...base,
+      annotation_type: "polygon",
+      geometry: { type: "polygon", points: [[0, 0], [1, 0], [0.5, 1]] },
+    };
+    const onRefine = vi.fn();
+    const { getByLabelText } = render(
+      <BoxListItem
+        b={b}
+        selected={false}
+        imageWidth={1000}
+        imageHeight={500}
+        onSelect={vi.fn()}
+        onRefine={onRefine}
+      />,
+    );
+    fireEvent.click(getByLabelText("精修"));
+    expect(onRefine).toHaveBeenCalledOnce();
   });
 
   it("shows track-specific metadata", () => {

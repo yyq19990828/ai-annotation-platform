@@ -118,6 +118,22 @@ SAM（grounded-sam2 / sam3）的候选 mask 一直走「polygon 化 → 用户�
 
 未触达（仍按原计划留 v0.11+）：bbox 候选 → mask 初始填充、RLE schema、mask 多组件入库、dirtyRect 增量重绘、跨任务持久化。
 
+## v0.10.9 入口补齐 + 光标可视化（2026-05-18）
+
+补 v0.10.8 留的两个入口缺口和一个光标体感问题。
+
+- **SAM 候选精修 (A)**：`useImageAnnotationActions.handleRefineSamCandidate(idx)`。从 `sam.candidates[idx].points` 启动 mask 编辑；commit 路径调 `sam.consume(samIdx)` + `submitPolygon` 新建。label 优先用 `candidate.label`，缺省回退当前 activeClass。R 键在 SAM 候选 keydown handler 的 capture 阶段消费（走 `refineSamRef` 间接调用避免 forward 依赖），同时 ImageStage 在 polygonlabels 候选 active 时浮一个画布按钮（位置贴 polygon 顶点 bbox 右上）。
+- **user polygon 精修 (B)**：`useImageAnnotationActions.handleRefineUserPolygon(annotationId)`。从 annotationsRef 取 polygon → initFromPolygon。commit 路径走 `mutations.update.mutate` 替换 `geometry`（不新建 annotation），同步 `history.push({ kind: "update", before: { geometry }, after: { geometry } })`，可 undo 回原状。BoxListItem `onRefine` 在 user 分支（`!isAi`）也渲染同样的按钮。
+- **commit 分流**：`pendingRefineRef` 扩为 `{ kind: "prediction" | "sam" | "user", ... }`；`commitMaskAsPolygon` 按 kind 分发到 `submitPolygon`（prediction/sam/无 refine）或 `mutations.update`（user）。
+- **笔刷光标可视化**：mask 工具下 container `cursor: "none"`；ImageStage overlay 层挂 `Konva.Circle`，圆心 = maskCursor（image-space px），半径 = `maskEditor.radius`，stroke `1.5/vp.scale` 保持像素级视觉一致；brush 模式红 `#dc2626` / erase 灰 `#64748b`；handleStageMouseMove 维护 maskCursor 状态。
+
+代码位置（v0.10.8 之外新增的）：
+- `useImageAnnotationActions.ts`：新增 `handleRefineSamCandidate` / `handleRefineUserPolygon` / `initMaskFromNormalizedPoints`；SAM keydown 加 R 分支；commit 按 kind 分流。
+- `ImageStage.tsx`：props 加 `onRefineSamCandidate`；maskCursor state + Konva.Circle 渲染；container cursor 在 mask 工具下为 `none`。
+- `BoxListItem.tsx`：`onRefine` 按钮在 user 分支也渲染（v0.10.8 只 AI 分支）。
+- `AIInspectorPanel.tsx` / `WorkbenchShell.tsx` / `WorkbenchStageHost.tsx` / `ImageWorkbench.tsx`：props/绑定逐层透传 `onRefineUserPolygon` + `onRefineSamCandidate`。
+- 测试：`BoxListItem.test.tsx` +2 例覆盖 AI/user 两条路径的 onRefine 按钮渲染 + 点击回调。
+
 代码位置：
 - 工具：`apps/web/src/pages/Workbench/stage/tools/MaskTool.ts` (+ `.test.ts`, 4 例)
 - 渲染层：`apps/web/src/pages/Workbench/stage/overlays/MaskOverlayLayer.tsx`

@@ -22,6 +22,39 @@
 
 ## 最新版本
 
+## [0.10.9] - 2026-05-18
+
+> **Mask 编辑器入口补齐 + 笔刷光标可视化.** v0.10.8 留下两个入口缺口（SAM 交互候选 / 已落库 user polygon 均不可精修）和一个体感问题（mask 工具下系统 crosshair 光标看不出笔刷半径与图像的比例）。本期一并补齐：① **SAM 候选精修 (A)**：useImageAnnotationActions 新增 `handleRefineSamCandidate(idx)`，从 `sam.candidates[idx].points`（归一化 [0,1] × imgW/imgH 转像素）启动 mask 编辑；commit 路径调 `sam.consume(samIdx)` 移除原候选 + `submitPolygon` 新建 polygon（label 优先用候选 label，缺省 / 不在 classes 时回退工具栏当前 label）；R 键 hotkey 在 SAM 候选键盘 handler 内 capture 阶段消费（与现有 Tab/Enter/Esc 同模式，走 ref 间接绕过 forward 依赖）；ImageStage 画布上 active polygonlabels 候选附近浮一个 `✎ 精修 R` 按钮，位置贴 polygon 顶点 bbox 右上角。② **user polygon 精修 (B)**：useImageAnnotationActions 新增 `handleRefineUserPolygon(annotationId)`，从 `ann.geometry.points` 启动；commit 路径走 `mutations.update.mutate` 替换 `geometry`（不新建 annotation），同步 `history.push({ kind: "update", before: { geometry }, after: { geometry } })`；BoxListItem 加 `onRefine` 用于 user polygon 行（之前 v0.10.8 仅 AI 行用），按钮图标同 AI 行。`pendingRefineRef` 内部扩成 discriminated union（`prediction` / `sam` / `user`），`commitMaskAsPolygon` 按 kind 分流。③ **笔刷光标可视化 (Cursor)**：mask 工具激活时 container `cursor: "none"`，ImageStage overlay 层挂一个跟随鼠标的 `Konva.Circle`（半径 = `maskEditor.radius` image-space px，stroke 1.5/scale 保持视觉一致），brush 模式红色 / erase 模式灰色，让笔触大小直接相对图像可视；handleStageMouseMove 在 tool === "mask" 时同步 maskCursor 状态。**不引入**：BoxesList 上 AI 行 + user 行精修按钮的二级 confirm（直接进 mask 工具，cancel 时退回原状）、SAM 候选浮按钮的拖动（位置固定在候选 bbox 右上）、user polygon 精修的多选批量（仅单行入口）。这些待 v0.11+ 评估。→ [CHANGELOG 0.10.8](#0108---2026-05-18) · [ROADMAP I11](ROADMAP/2026-05-12-image-workbench-optimization.md) · [ADR-0022](docs/adr/0022-mask-editor-tool-architecture.md) v0.10.9 段.
+
+### Added
+
+- **`handleRefineSamCandidate(idx)`**（[useImageAnnotationActions.ts](apps/web/src/pages/Workbench/stages/image/useImageAnnotationActions.ts)）：仅 polygonlabels 候选启用；不存在 / bbox 候选 / 顶点 <3 时 toast 提示。
+- **`handleRefineUserPolygon(annotationId)`**：从 annotationsRef 取 polygon → initFromPolygon；commit 走 update mutation + history.push update。
+- **R 键 hotkey**：在 SAM 候选 keydown handler 内（仅 AI 工具激活 + 候选存在时生效），与 Tab/Enter/Esc 同 capture 路径。
+- **ImageStage SAM 精修浮按钮**：`onRefineSamCandidate` 可选 prop；polygon 候选 active 时浮在 bbox 右上角，按钮 hint 显示 `R`。
+- **MaskBrushCursor**（ImageStage overlay 层）：跟随鼠标的 Konva.Circle，半径 = maskEditor.radius，brush 红 / erase 灰；container `cursor: "none"` 在 mask 工具下生效。
+- **BoxListItem 单测**：v0.10.9 新增 2 例（AI 行 + user polygon 行各 1 例 onRefine 渲染 + 点击回调）。
+
+### Changed
+
+- **`useImageAnnotationActions`**：`pendingRefineRef` 类型扩为 `{ kind: "prediction" | "sam" | "user", ... }`；commit 路径按 kind 分流（user → update / 其余 → submitPolygon）；抽出 `initMaskFromNormalizedPoints(norm)` 内部工具，三个 refine 入口共用。
+- **`ImageStage.tsx`**：DragInit 之外加 `maskCursor` 状态 + Konva.Circle 渲染；container `cursor: "mask" → "none"`；props 加 `onRefineSamCandidate`；handleStageMouseMove 维护 maskCursor。
+- **`ImageWorkbench` / `WorkbenchStageHost`**：props 加 `onRefineSamCandidate`，单点透传。
+- **`AIInspectorPanel` / `BoxesList`**：props 加 `onRefineUserPolygon`，user 行 + `geometry?.type === "polygon"` 时把 `onRefine` 绑给 `BoxListItem`。
+- **`BoxListItem`**：user 分支（`!isAi`）也渲染 `onRefine` 按钮（图标 `edit`），`data-testid="user-refine-{id}"`。
+- **`WorkbenchShell`**：解构 `handleRefineSamCandidate` / `handleRefineUserPolygon`，分别绑给 `stageHost.onRefineSamCandidate` / `inspector.onRefineUserPolygon`。
+
+### Fixed
+
+- **预存：`AttributeForm.mutable` 类型缺字段**（v0.10.6 M4-γ I13.2 遗留）：跑 `pnpm --filter web codegen` 重生 `apps/web/src/api/generated/types.gen.ts`，`AttributeField.mutable?: boolean | null` 已写入；本次 commit 不入 generated（.gitignore），文档说明开发者本地 codegen 一次即可。
+
+### Verified
+
+- `pnpm --filter web typecheck` 全绿（0 错；之前预存的 3 处 AttributeForm 错误本次随 codegen 消除）。
+- `pnpm --filter web lint` 0 errors / 126 warnings（warnings 全部预存）。
+- `pnpm --filter web test --run` 92 test files / 679 tests 全绿（+2 BoxListItem onRefine 回归）。
+- 手测脚本（推迟到真实数据）：① smart-point 工具点图像出 polygon SAM 候选 → 不按 Enter，按 R 或点画布上的「精修」按钮 → mask 编辑 → 涂改 → Enter 提交 → 候选消失 + 新 polygon 入库。② 选中已落库 polygon，右侧侧栏 polygon 行的「精修」按钮 → mask 编辑 → 涂改 → Enter → 原 polygon 几何被 update 替换（history 可 undo 回原 geometry）。③ mask 工具下鼠标移动 → 圆圈跟随，Shift+滚轮调半径，圆圈大小随 radius 变化。
+
 ## [0.10.8] - 2026-05-18
 
 > **Mask 编辑器 UI 集成（M4-δ 收尾）.** 把 v0.10.7 / v0.10.7.1 的算法核 + 状态层接到 Konva 渲染层、ToolDock、AI 候选「精修」入口、笔刷 hotkey，完成 I11 v1 端到端可用闭环：① 新增 `MaskTool`（`hotkey="M"`、`onPointerDown` 在空白态自动 `beginBlank` 并返回 `maskBrush` DragInit）、`MaskOverlayLayer`（单 `Konva.Image` 节点 + 内部 `HTMLCanvasElement`，由 `useMaskEditor.revision` 触发 `putImageData`，半透红 `rgba(220,38,38,0.45)`）、`MaskToolbar`（stage 顶部浮条：半径 slider/B·E chips/确认·取消/dirty 指示）；② ImageStage `DragInit` union 加 `maskBrush`，pointermove 线段插值（步长 = radius/2）连续 `paintAt`，pointerup 不 commit；wheel handler 加 Shift+滚轮调半径分支（±2px, clamp [1,200], 仅 deltaY 主导时响应避免 trackpad 横向滚动误触）；③ 工具注册：`TOOL_REGISTRY.mask` / `ALL_TOOLS` / ToolDock `TOOL_DESCRIPTORS` / `useWorkbenchState.Tool` union / AIToolDrawer `TOOL_HINT` / `AIInspectorPanel.AIPredictionPopover.tool` union 全部加 `"mask"`；④ `useImageAnnotationActions` 新增 `handleRefinePrediction` (polygon 候选 → 像素坐标 → `initFromPolygon` + `setTool("mask")` + 缓存 `pendingRefineRef`) 与 `commitMaskAsPolygon` (commit → 像素坐标转归一化 → 客户端 reject 原候选 + 临时切候选 label + `submitPolygon`，空 mask 提示，多连通区警告，成功后 `cancel + setTool("box")`)；⑤ `useWorkbenchHotkeys` 加 mask 工具上下文 useEffect（capture 阶段抢 B/E/Enter/Esc，先于主 dispatchKey），`hotkeys.ts` HOTKEYS 表 + `setTool` action union + `RESERVED_LETTERS` 全部加 `M`，主 dispatchKey 加 `m/M → setTool("mask")`；⑥ `BoxListItem` AI 行 + polygon 几何时显示「精修」按钮（icon=edit），经 `BoxesList` → `AIInspectorPanel` → `WorkbenchShell` 透传到 `imageActions.handleRefinePrediction`；⑦ WorkbenchShell 实例化 `useMaskEditor({ width: imgW, height: imgH })`，把 `maskEditor` 注入 `useImageAnnotationActions` / `useWorkbenchHotkeys` / `WorkbenchStageHost.stageHost` → `ImageWorkbench` → `ImageStage` / overlays 中的 `MaskToolbar`。**不引入**：bbox 候选 → mask 初始填充（v0.11+ 与 I9 一起做 geometry.kind 收口）、RLE schema、mask 多组件入库（仅落最大外环，多连通 toast 提示）、dirtyRect 增量重绘（首期全量 putImageData，留 TODO）、mask 跨任务持久化。是 v0.10.4 epic / I11 的 UI 集成收尾。→ [plan](docs/plans/roadmap-2026-05-12-image-workbench-optim-effervescent-dijkstra.md) · [roadmap I11](ROADMAP/2026-05-12-image-workbench-optimization.md) · [ADR-0022](docs/adr/0022-mask-editor-tool-architecture.md).

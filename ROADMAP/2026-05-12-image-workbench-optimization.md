@@ -175,6 +175,7 @@
   - 不引入 RLE schema：v1 走「mask 临时态 → polygon 入库」单向，与 polygon 等价落库；RLE 留 v0.11+ 与 I9 / I10 一并做 geometry.kind 统一。
 - ✅ **v0.10.7.1 状态层** [`useMaskEditor`](../apps/web/src/pages/Workbench/state/useMaskEditor.ts)：buffer (useRef) + active/mode/radius/dirty (useState) + beginBlank/initFromPolygon/paintAt/setMode/setRadius/cancel/commitToPolygon（12 例单测）。
 - ✅ **v0.10.8 UI 集成**：`MaskTool` ([MaskTool.ts](../apps/web/src/pages/Workbench/stage/tools/MaskTool.ts)) + `MaskOverlayLayer` ([MaskOverlayLayer.tsx](../apps/web/src/pages/Workbench/stage/overlays/MaskOverlayLayer.tsx)) + `MaskToolbar` ([MaskToolbar.tsx](../apps/web/src/pages/Workbench/shell/MaskToolbar.tsx)) + ToolDock mask 按钮 + `BoxListItem` polygon 候选「精修」按钮 → `handleRefinePrediction` (自动 reject + 候选 label) / `commitMaskAsPolygon` (像素→归一化) / `cancelMaskEdit`；hotkey `M / B-mask / E-mask / Enter-mask / Esc-mask / Shift+wheel`。
+- ✅ **v0.10.9 入口补齐 + 光标可视化**：`handleRefineSamCandidate(idx)` (SAM 交互候选未 Enter 时走 R 键 / 画布浮按钮启动精修, commit 调 `sam.consume` 移除候选并新建 polygon) + `handleRefineUserPolygon(id)` (已落库 polygon 走 update mutation 替换 geometry, 不新建 annotation, history 可 undo); `pendingRefineRef` 扩 discriminated union (prediction/sam/user) 按 kind 分流; ImageStage overlay 加 `Konva.Circle` 跟随鼠标显示笔触半径 (brush 红/erase 灰, container cursor: none); BoxListItem `onRefine` 在 user polygon 行也启用。
 - 与 I1 大图 tile 共存：mask 编辑时仅在当前 viewport 范围内做像素操作，全图导出时合并。
 - 来源：`cvat-canvas/src/typescript/masksHandler.ts`。
 

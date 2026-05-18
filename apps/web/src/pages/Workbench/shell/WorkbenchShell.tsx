@@ -616,6 +616,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handleRejectPrediction,
     handleAcceptPrediction,
     handleRefinePrediction,
+    handleRefineSamCandidate,
+    handleRefineUserPolygon,
     commitMaskAsPolygon,
     cancelMaskEdit,
     handleAcceptAll,
@@ -968,6 +970,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onClearCanvasShapes: s.clearCanvasShapes, onCancelCanvasDraft: s.cancelCanvasDraft,
         onDoneCanvasDraft: s.endCanvasDraft, stageGeom,
         maskEditor,
+        onRefineSamCandidate: handleRefineSamCandidate,
         overlays: (
           <>
             {s.tool === "mask" && (
@@ -1025,6 +1028,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction,
         onRefinePrediction: handleRefinePrediction,
+        onRefineUserPolygon: handleRefineUserPolygon,
         onClearSelection: () => s.setSelectedId(null), onDeleteUserBox: handleDeleteBox,
         onChangeUserBoxClass: handleStartChangeClass,
         onToggleUserBoxFlag: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => {
