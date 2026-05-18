@@ -83,6 +83,8 @@ export interface ImageWorkbenchProps {
   maskEditor?: UseMaskEditorReturn;
   /** v0.10.9 · SAM 候选「精修」入口（画布浮按钮 + R 键）。 */
   onRefineSamCandidate?: (idx: number) => void;
+  /** v0.10.10 · I17.3 · 项目级 rendering_config 覆盖；透传给 ImageStage 内的 useWorkbenchConfig。 */
+  projectRenderingConfig?: import("@/api/projects").ProjectRenderingConfig | null;
 }
 
 export function ImageWorkbench({
@@ -142,6 +144,7 @@ export function ImageWorkbench({
   overlays,
   maskEditor,
   onRefineSamCandidate,
+  projectRenderingConfig,
 }: ImageWorkbenchProps) {
   return (
     <ImageStage
@@ -187,6 +190,7 @@ export function ImageWorkbench({
       historicalShapes={historicalShapes}
       maskEditor={maskEditor}
       onRefineSamCandidate={onRefineSamCandidate}
+      projectRenderingConfig={projectRenderingConfig}
       overlay={
         <>
           <FloatingDock

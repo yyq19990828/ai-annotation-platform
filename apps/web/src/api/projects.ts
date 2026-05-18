@@ -24,8 +24,20 @@ export type AttributeSchema = GenAttributeSchema;
 export type ClassConfigEntry = GenClassConfigEntry;
 export type ClassesConfig = Record<string, ClassConfigEntry>;
 
+// v0.10.10 · I17.3 · ProjectRenderingConfig — 与后端 ProjectRenderingConfig 同形；
+// 字段 = null/undefined 表示「项目不覆盖该字段」，沿用用户级 preferences。
+export interface ProjectRenderingConfig {
+  smoothImage?: boolean | null;
+  cssImageFilter?: string | null;
+  controlPointsSize?: number | null;
+  snapToGrid?: boolean | null;
+}
+
 /** v0.6.4 起 ProjectOut 已强类型，ProjectResponse 仅作为旧导出名保留。 */
-export type ProjectResponse = ProjectOut;
+// v0.10.10 · 待 codegen 重跑前手动扩 rendering_config 字段。
+export type ProjectResponse = ProjectOut & {
+  rendering_config?: ProjectRenderingConfig;
+};
 export type ProjectStatsResponse = ProjectStats;
 export type ProjectMemberResponse = ProjectMemberOut;
 // v0.9.6 · codegen 旧版 ProjectCreate 缺 text_output_default; 手动扩到 codegen 重跑.
@@ -34,7 +46,10 @@ export type ProjectCreatePayload = ProjectCreate & {
   text_output_default?: "box" | "mask" | "both" | null;
   ml_backend_source_id?: string | null;
 };
-export type ProjectUpdatePayload = ProjectUpdate;
+// v0.10.10 · I17.3 · 加 rendering_config 字段；待 codegen 重跑。
+export type ProjectUpdatePayload = ProjectUpdate & {
+  rendering_config?: ProjectRenderingConfig | null;
+};
 
 export type ExportFormat = "coco" | "voc" | "yolo";
 export type VideoFrameMode = "keyframes" | "all_frames";

@@ -55,6 +55,10 @@ class Project(Base):
     )
     # v0.9.5 · 工作台 SamTextPanel 默认输出形态 (None 走 type_key 智能默认)
     text_output_default: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict = 全部沿用用户级 preferences
+    rendering_config: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}", default=dict
+    )
     model_version: Mapped[str | None] = mapped_column(String(100))
     task_lock_ttl_seconds: Mapped[int] = mapped_column(Integer, default=300)
     total_tasks: Mapped[int] = mapped_column(Integer, default=0)

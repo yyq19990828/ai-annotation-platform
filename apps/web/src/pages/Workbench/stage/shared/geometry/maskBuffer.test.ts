@@ -93,6 +93,108 @@ describe("MaskBuffer · fromPolygon", () => {
   });
 });
 
+describe("MaskBuffer · dirtyRect (v0.10.10)", () => {
+  it("初始无脏区", () => {
+    const m = new MaskBuffer({ width: 30, height: 30 });
+    expect(m.consumeDirty()).toBeNull();
+  });
+
+  it("brush 后 dirtyRect 覆盖笔刷外接方框", () => {
+    const m = new MaskBuffer({ width: 100, height: 100 });
+    m.brush(50, 50, 10);
+    const rect = m.consumeDirty();
+    expect(rect).not.toBeNull();
+    // 外接框 [40, 61) × [40, 61) 上下浮动 1 像素都可接受
+    expect(rect!.x0).toBeGreaterThanOrEqual(39);
+    expect(rect!.x0).toBeLessThanOrEqual(41);
+    expect(rect!.x1).toBeGreaterThanOrEqual(60);
+    expect(rect!.x1).toBeLessThanOrEqual(62);
+    expect(rect!.y0).toBeGreaterThanOrEqual(39);
+    expect(rect!.y0).toBeLessThanOrEqual(41);
+    expect(rect!.y1).toBeGreaterThanOrEqual(60);
+    expect(rect!.y1).toBeLessThanOrEqual(62);
+  });
+
+  it("两次 brush 后脏区是 union", () => {
+    const m = new MaskBuffer({ width: 200, height: 200 });
+    m.brush(20, 20, 5);
+    m.brush(180, 180, 5);
+    const rect = m.consumeDirty()!;
+    expect(rect.x0).toBeLessThanOrEqual(15);
+    expect(rect.x1).toBeGreaterThanOrEqual(185);
+    expect(rect.y0).toBeLessThanOrEqual(15);
+    expect(rect.y1).toBeGreaterThanOrEqual(185);
+  });
+
+  it("consumeDirty 后再次 consume 返 null（数据未变）", () => {
+    const m = new MaskBuffer({ width: 50, height: 50 });
+    m.brush(25, 25, 5);
+    const before = m.countSet();
+    expect(m.consumeDirty()).not.toBeNull();
+    expect(m.consumeDirty()).toBeNull();
+    expect(m.countSet()).toBe(before);
+  });
+
+  it("clear 后脏区 = 全图", () => {
+    const m = new MaskBuffer({ width: 40, height: 30 });
+    m.consumeDirty(); // 重置
+    m.clear();
+    const rect = m.consumeDirty()!;
+    expect(rect).toEqual({ x0: 0, y0: 0, x1: 40, y1: 30 });
+  });
+
+  it("fromPolygon 的脏区 = polygon bbox（clamp 到画布）", () => {
+    const m = new MaskBuffer({ width: 100, height: 100 });
+    m.fromPolygon([[10, 20], [60, 20], [60, 80], [10, 80]]);
+    const rect = m.consumeDirty()!;
+    expect(rect.x0).toBeLessThanOrEqual(10);
+    expect(rect.x1).toBeGreaterThanOrEqual(60);
+    expect(rect.y0).toBeLessThanOrEqual(20);
+    expect(rect.y1).toBeGreaterThanOrEqual(80);
+    expect(rect.x0).toBeGreaterThanOrEqual(0);
+    expect(rect.y0).toBeGreaterThanOrEqual(0);
+  });
+
+  it("brush 越界部分 clamp 进脏区，不越界", () => {
+    const m = new MaskBuffer({ width: 20, height: 20 });
+    m.brush(0, 0, 10);
+    const rect = m.consumeDirty()!;
+    expect(rect.x0).toBe(0);
+    expect(rect.y0).toBe(0);
+    expect(rect.x1).toBeLessThanOrEqual(20);
+    expect(rect.y1).toBeLessThanOrEqual(20);
+  });
+
+  it("toAlphaImageDataRect 切片字节正确", () => {
+    const m = new MaskBuffer({ width: 10, height: 10 });
+    // 在 (5, 5) 画半径 1，紧贴 5,5
+    m.brush(5, 5, 1);
+    const slice = m.toAlphaImageDataRect({ x0: 4, y0: 4, x1: 7, y1: 7 });
+    // 3*3*4 = 36
+    expect(slice.length).toBe(36);
+    // 中心 (5, 5) → 切片局部坐标 (1, 1)
+    const centerIdx = (1 * 3 + 1) * 4;
+    expect(slice[centerIdx + 3]).toBe(255);
+    // 切片角 (4, 4) → 局部 (0, 0)
+    expect(slice[0 + 3]).toBe(0);
+  });
+
+  it("toAlphaImageDataRect 退化区域返空", () => {
+    const m = new MaskBuffer({ width: 10, height: 10 });
+    const empty = m.toAlphaImageDataRect({ x0: 5, y0: 5, x1: 5, y1: 5 });
+    expect(empty.length).toBe(0);
+  });
+
+  it("clone 复制脏区", () => {
+    const m = new MaskBuffer({ width: 20, height: 20 });
+    m.brush(10, 10, 3);
+    const c = m.clone();
+    expect(c.consumeDirty()).not.toBeNull();
+    // 原 buffer 脏区不被消费
+    expect(m.consumeDirty()).not.toBeNull();
+  });
+});
+
 describe("MaskBuffer · toAlphaImageData / clone", () => {
   it("toAlphaImageData 仅 alpha 通道有 mask 值", () => {
     const m = new MaskBuffer({ width: 4, height: 4 });

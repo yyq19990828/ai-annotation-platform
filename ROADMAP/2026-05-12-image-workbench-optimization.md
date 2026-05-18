@@ -131,7 +131,7 @@
 
 ---
 
-### I8 · 观测与回归（**贯穿，借鉴视频 R7**） — ✅ v0.9.41（基准 fixture 推迟到 Wave β）
+### I8 · 观测与回归（**贯穿，借鉴视频 R7**） — ✅ v0.9.41 基础设施 / ✅ v0.10.10 基准 fixture（I8.2）契约 + spec + orchestrator 落地
 
 - **I8.1 PerformanceObserver longtask 上报**：与视频侧共用一个 `useWorkbenchPerf()` hook。
 - **I8.2 基准 fixture**：3 张图片（2K / 8K / 多边形密集）+ 3 套标注密度（10 / 100 / 500 shapes），与视频 fixture 并列。
@@ -175,6 +175,7 @@
   - 不引入 RLE schema：v1 走「mask 临时态 → polygon 入库」单向，与 polygon 等价落库；RLE 留 v0.11+ 与 I9 / I10 一并做 geometry.kind 统一。
 - ✅ **v0.10.7.1 状态层** [`useMaskEditor`](../apps/web/src/pages/Workbench/state/useMaskEditor.ts)：buffer (useRef) + active/mode/radius/dirty (useState) + beginBlank/initFromPolygon/paintAt/setMode/setRadius/cancel/commitToPolygon（12 例单测）。
 - ✅ **v0.10.8 UI 集成**：`MaskTool` ([MaskTool.ts](../apps/web/src/pages/Workbench/stage/tools/MaskTool.ts)) + `MaskOverlayLayer` ([MaskOverlayLayer.tsx](../apps/web/src/pages/Workbench/stage/overlays/MaskOverlayLayer.tsx)) + `MaskToolbar` ([MaskToolbar.tsx](../apps/web/src/pages/Workbench/shell/MaskToolbar.tsx)) + ToolDock mask 按钮 + `BoxListItem` polygon 候选「精修」按钮 → `handleRefinePrediction` (自动 reject + 候选 label) / `commitMaskAsPolygon` (像素→归一化) / `cancelMaskEdit`；hotkey `M / B-mask / E-mask / Enter-mask / Esc-mask / Shift+wheel`。
+- ✅ **v0.10.10 收尾**：① e2e（mask-editor.spec.ts：空白 mask / AI prediction 精修 / B-E-Shift+wheel-Esc hotkey 三用例 + seed.injectPrediction helper）；② MaskBuffer dirtyRect 增量重绘（`_dirty` 半开矩形 + `consumeDirty()` + `toAlphaImageDataRect(rect)`，MaskOverlayLayer 改为只 putImageData 脏区，首次激活仍走全图，新增 9 例单测）；③ 用户文档 [`mask-brush.md`](../docs-site/user-guide/for-annotators/mask-brush.md)（三入口 + hotkey + 已知限制）；④ I17.3 项目级渲染配置覆盖（与 Wave β 收尾打包）。
 - ✅ **v0.10.9 入口补齐 + 光标可视化**：`handleRefineSamCandidate(idx)` (SAM 交互候选未 Enter 时走 R 键 / 画布浮按钮启动精修, commit 调 `sam.consume` 移除候选并新建 polygon) + `handleRefineUserPolygon(id)` (已落库 polygon 走 update mutation 替换 geometry, 不新建 annotation, history 可 undo); `pendingRefineRef` 扩 discriminated union (prediction/sam/user) 按 kind 分流; ImageStage overlay 加 `Konva.Circle` 跟随鼠标显示笔触半径 (brush 红/erase 灰, container cursor: none); BoxListItem `onRefine` 在 user polygon 行也启用。
 - 与 I1 大图 tile 共存：mask 编辑时仅在当前 viewport 范围内做像素操作，全图导出时合并。
 - 来源：`cvat-canvas/src/typescript/masksHandler.ts`。
@@ -234,7 +235,7 @@
 - 与 R11 协同段冲突合并对接（行锁 + 字段级 patch 减少冲突面）。
 - 来源：`cvat-core/src/object-state.ts` UpdateFlags。
 
-#### I17 · 渲染配置化（Configuration 系统）（**S，纯前端**） — ✅ v0.9.41（项目级覆盖留 Wave γ）
+#### I17 · 渲染配置化（Configuration 系统）（**S，纯前端**） — ✅ v0.9.41 用户级 / ✅ v0.10.10 I17.3 项目级覆盖（Project.rendering_config JSONB + ProjectSettings 「渲染配置」tab + useWorkbenchConfig 合并优先级）
 
 > CVAT 的 `canvasModel.ts` 暴露 `Configuration` 接口：`smoothImage`、`CSSImageFilter`、`adaptiveZoom`、`snapToPoint`、`controlPointsSize`、`autoborderHandler` 等十几个开关。
 
@@ -345,20 +346,20 @@
 Wave α · 基础稳态（必做） — ✅ 已落地 v0.9.41
   ✅ I3 selectedIds 稳定引用 (1-2 天)
   ✅ I7 共享 hooks 抽取 (3-5 天，与视频 R2/R8 同期收益)
-  ✅ I8 观测接入 (随时)
+  ✅ I8 观测接入 (随时) / ✅ I8.2 基准 fixture → v0.10.10
   ✅ I16 State 脏标记 (3-5 天)
-  ✅ I17 渲染 Configuration 收口 (3-5 天)
+  ✅ I17 渲染 Configuration 用户级 / ✅ I17.3 项目级覆盖 → v0.10.10
 
-Wave β · 性能（必做） — 🚧 v0.10.4 epic 进行中
+Wave β · 性能（必做） — ✅ v0.10.4 / v0.10.10 收尾完成
   ✅ I2 polygon LOD + 命中测试 → v0.10.4 (M4-α)
   ✅ I6 SAM 缓存与预热 → v0.10.4 (M4-α)
   ⏭ I1 大图 tile → v0.11.0 独立 epic (后端切片 worker 重，不绑 v0.10.x)
 
-Wave γ · 形状能力（按客户场景触发） — 🚧 v0.10.4 epic 进行中
+Wave γ · 形状能力（按客户场景触发） — ✅ v0.10.5-0.10.10 收尾完成
   I9 Ellipse (3-5 天，纯前端) — 留 v0.11.x（与 I10 / I11 v2 共 geometry.kind 收口）
   ✅ I15 z_order / occluded 状态一等化 → v0.10.5 (M4-β)
   ✅ I13 Attribute Schema 进阶 → v0.10.6 (M4-γ)
-  ✅ I11 Mask 编辑器 (v1: polygon 中转) → v0.10.7 算法核 / v0.10.7.1 状态层 / v0.10.8 UI 集成 (M4-δ 完整收尾)
+  ✅ I11 Mask 编辑器 (v1: polygon 中转) → v0.10.7 算法核 / v0.10.7.1 状态层 / v0.10.8 UI 集成 / v0.10.9 入口补齐 + 光标 / v0.10.10 e2e + dirtyRect + 用户文档 (M4-δ 收尾)
   I14 Autoborder / Crop (1-2 周) — 留 v0.11.x
   I10 Skeleton (3-4 周，依赖后端 schema) — 留 v0.12.x
 

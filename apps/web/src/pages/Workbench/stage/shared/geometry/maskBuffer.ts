@@ -15,15 +15,28 @@ export interface MaskBufferOptions {
 }
 
 /**
+ * 脏区半开矩形 [x0, x1) × [y0, y1)，像素坐标。供渲染层增量 putImageData 用。
+ * v0.10.10 加入；典型用法：`const rect = buffer.consumeDirty(); if (rect) ctx.putImageData(...)`。
+ */
+export interface DirtyRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
  * 离屏 alpha mask 缓冲。坐标系 = 归一化前的像素 (0..width, 0..height)。
  *
  * - `data[y*width + x]` 取值 0 或 255。
  * - 笔刷 / 橡皮 / fromPolygon 都改 in-place；调用方按需复制。
+ * - 内部维护 `_dirty` 半开矩形，所有写操作 union 进去；渲染层 `consumeDirty()` 取走并清零。
  */
 export class MaskBuffer {
   readonly width: number;
   readonly height: number;
   readonly data: Uint8Array;
+  private _dirty: DirtyRect | null = null;
 
   constructor({ width, height }: MaskBufferOptions) {
     if (!Number.isInteger(width) || width <= 0) throw new Error("MaskBuffer: width 必须正整数");
@@ -33,9 +46,35 @@ export class MaskBuffer {
     this.data = new Uint8Array(width * height);
   }
 
-  /** 全清零。 */
+  /** 把 [x0, x1) × [y0, y1) 与当前脏区 union；空区间静默忽略。坐标会 clamp 到画布。 */
+  private markDirty(x0: number, y0: number, x1: number, y1: number): void {
+    const cx0 = Math.max(0, Math.floor(x0));
+    const cy0 = Math.max(0, Math.floor(y0));
+    const cx1 = Math.min(this.width, Math.ceil(x1));
+    const cy1 = Math.min(this.height, Math.ceil(y1));
+    if (cx1 <= cx0 || cy1 <= cy0) return;
+    if (!this._dirty) {
+      this._dirty = { x0: cx0, y0: cy0, x1: cx1, y1: cy1 };
+      return;
+    }
+    const d = this._dirty;
+    if (cx0 < d.x0) d.x0 = cx0;
+    if (cy0 < d.y0) d.y0 = cy0;
+    if (cx1 > d.x1) d.x1 = cx1;
+    if (cy1 > d.y1) d.y1 = cy1;
+  }
+
+  /** 取走当前脏区并清零；无脏区返 null。渲染层每次重画后调一次。 */
+  consumeDirty(): DirtyRect | null {
+    const d = this._dirty;
+    this._dirty = null;
+    return d;
+  }
+
+  /** 全清零；脏区 = 全图。 */
   clear(): void {
     this.data.fill(0);
+    this.markDirty(0, 0, this.width, this.height);
   }
 
   /** 当前非零像素数（调试 / 测试用，O(N)）。 */
@@ -73,6 +112,8 @@ export class MaskBuffer {
         }
       }
     }
+    // 脏区 = brush 整个外接方框（半开区间，xCount+1 / yCount+1 是因为上面循环用闭区间）
+    this.markDirty(x0, y0, x1 + 1, y1 + 1);
   }
 
   /** 橡皮 = brush(cx, cy, r, 0) 的语义糖。 */
@@ -90,14 +131,18 @@ export class MaskBuffer {
   fromPolygon(points: ReadonlyArray<readonly [number, number]>): void {
     if (points.length < 3) return;
     const { width, height } = this;
-    // 计算 y 范围裁剪迭代上下界
-    let yMin = Infinity, yMax = -Infinity;
-    for (const [, py] of points) {
+    // 计算 x/y 范围（x 用于脏区，y 用于裁剪迭代上下界）
+    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+    for (const [px, py] of points) {
+      if (px < xMin) xMin = px;
+      if (px > xMax) xMax = px;
       if (py < yMin) yMin = py;
       if (py > yMax) yMax = py;
     }
     const y0 = Math.max(0, Math.floor(yMin));
     const y1 = Math.min(height - 1, Math.ceil(yMax));
+    // 脏区 = polygon bbox（已 clamp）
+    this.markDirty(xMin, yMin, xMax + 1, yMax + 1);
     const n = points.length;
     for (let y = y0; y <= y1; y++) {
       // 收集所有与 y 行相交的 x 值
@@ -141,10 +186,34 @@ export class MaskBuffer {
     return out;
   }
 
-  /** 拷贝。 */
+  /**
+   * 切片版 toAlphaImageData：只输出 [x0, x1) × [y0, y1) 区域的 RGBA 缓冲。
+   * v0.10.10 新增，配合 `consumeDirty()` 让渲染层做增量 `putImageData`。
+   *
+   * 长度 = (x1-x0) * (y1-y0) * 4；R/G/B = 0，A = mask alpha。
+   * rect 必须已 clamp 到画布（与 `consumeDirty` 返回的脏区一致）；越界静默返空。
+   */
+  toAlphaImageDataRect(rect: DirtyRect): Uint8ClampedArray {
+    const { x0, y0, x1, y1 } = rect;
+    const w = x1 - x0;
+    const h = y1 - y0;
+    if (w <= 0 || h <= 0) return new Uint8ClampedArray(0);
+    const out = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      const srcRow = (y0 + y) * this.width + x0;
+      const dstRow = y * w;
+      for (let x = 0; x < w; x++) {
+        out[(dstRow + x) * 4 + 3] = this.data[srcRow + x];
+      }
+    }
+    return out;
+  }
+
+  /** 拷贝。脏区一并复制。 */
   clone(): MaskBuffer {
     const c = new MaskBuffer({ width: this.width, height: this.height });
     c.data.set(this.data);
+    if (this._dirty) c._dirty = { ...this._dirty };
     return c;
   }
 }

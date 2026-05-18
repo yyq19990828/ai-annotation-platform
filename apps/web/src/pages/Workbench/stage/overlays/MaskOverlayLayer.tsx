@@ -1,10 +1,10 @@
 // v0.10.8 M4-δ 收尾 · I11 · Mask 编辑器 Konva 渲染层。
+// v0.10.10：改为脏区增量 putImageData —— MaskBuffer.consumeDirty() 取脏矩形，
+// toAlphaImageDataRect(rect) 只切片对应区域，避免大画布每笔全量拷贝（8K 图 ~256MB Uint8）。
+// 首次激活时强制走一次全图（rect = 全图），保证 canvas 与 buffer 初态一致。
 //
-// 单个 Konva.Image 节点，image 属性指向内部 HTMLCanvasElement；每当 useMaskEditor
-// 的 revision 变化时，从 MaskBuffer.toAlphaImageData() 拷贝到 canvas (putImageData)
-// 再 batchDraw。颜色固定 rgba(220,38,38,0.45)（半透红），与已有紫色 SAM 候选区分。
-//
-// 仅 active 时渲染；非 active / buffer null → 整层 null。
+// 仍以 useMaskEditor.revision 作为「需要重画」的通知信号；脏区数据不进 React state。
+// 颜色固定 rgba(220,38,38,0.45)（半透红），与已有紫色 SAM 候选区分。
 
 import { useEffect, useMemo, useRef } from "react";
 import { Layer, Image as KonvaImage } from "react-konva";
@@ -34,14 +34,26 @@ export function MaskOverlayLayer({ buffer, revision, imgW, imgH, visible }: Mask
     return c;
   }, [imgW, imgH]);
   const imageRef = useRef<Konva.Image | null>(null);
+  // buffer 实例首次见到时强制全量重绘一次（保险：忽略 buffer 已积累的脏区状态，
+  // 直接画当前像素到 canvas）。后续都按 consumeDirty 增量。
+  const seenBufferRef = useRef<MaskBuffer | null>(null);
 
   useEffect(() => {
     if (!buffer || !canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    // 直接拿 buffer alpha 写 RGBA。toAlphaImageData() 给出 W*H*4 Uint8ClampedArray，
-    // 仅 A 通道有值，这里覆盖成「红色 + 0.45 透明」（A>0 处 = 红，A=0 处全透）。
-    const data = buffer.toAlphaImageData();
+    const isFirstSight = seenBufferRef.current !== buffer;
+    seenBufferRef.current = buffer;
+    // 首次看到该 buffer → 全图；后续 → 取脏区，无脏区直接 skip
+    const rect = isFirstSight
+      ? { x0: 0, y0: 0, x1: buffer.width, y1: buffer.height }
+      : buffer.consumeDirty();
+    if (!rect) return;
+    // 首次全量时也把 buffer 内部脏区一并清空，避免下一笔被首次全量「吃掉」
+    if (isFirstSight) buffer.consumeDirty();
+    const w = rect.x1 - rect.x0;
+    const h = rect.y1 - rect.y0;
+    const data = buffer.toAlphaImageDataRect(rect);
     for (let i = 0; i < data.length; i += 4) {
       if (data[i + 3] > 0) {
         data[i] = FILL_R;
@@ -50,9 +62,9 @@ export function MaskOverlayLayer({ buffer, revision, imgW, imgH, visible }: Mask
         data[i + 3] = FILL_A_NUM;
       }
     }
-    const img = ctx.createImageData(imgW, imgH);
+    const img = ctx.createImageData(w, h);
     img.data.set(data);
-    ctx.putImageData(img, 0, 0);
+    ctx.putImageData(img, rect.x0, rect.y0);
     const node = imageRef.current;
     if (node) node.getLayer()?.batchDraw();
   }, [buffer, canvas, revision, imgW, imgH]);

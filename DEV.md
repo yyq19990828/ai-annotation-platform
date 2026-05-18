@@ -158,6 +158,22 @@ import { Button, Badge, Card, Avatar, StatCard, Icon } from "@/components/ui";
 
 前端当前使用 `apps/web/src/data/mock.ts` 中的静态数据，后续联调时替换为 API 调用。
 
+### 前端 codegen（v0.10.10 文档化）
+
+OpenAPI → TypeScript 类型由 `@hey-api/openapi-ts` 生成，落到 `apps/web/src/api/generated/{types.gen.ts, sdk.gen.ts}`。**该目录在 `apps/web/.gitignore` 中，不入仓**（避免 PR diff 噪声与 git lfs 麻烦）。
+
+```bash
+pnpm --filter web codegen          # 手动重新生成（OpenAPI 变动后）
+```
+
+日常无需手动跑：
+
+- `pnpm dev:web` / `pnpm --filter web build` 通过 `prebuild` 钩子调用 `scripts/codegen-if-changed.mjs`，自动检测 OpenAPI snapshot 变化并增量重生；CI 同样走该钩子。
+- **首次 clone 仓库时**：在跑 `pnpm --filter web typecheck` 前应至少跑一次 `pnpm --filter web codegen`，否则 `src/api/generated/` 不存在会 typecheck 报错（导出的强类型 import 缺失）。
+- 改动 `apps/api/app/schemas/` 后，先 `pnpm openapi:export` 刷新 snapshot，再 `pnpm --filter web codegen`。
+
+如果 PR 改动了 ProjectUpdate / ProjectOut 等共享 schema，提交前手动 codegen + typecheck 确认无回归。
+
 ## 后端开发
 
 ### API 端点

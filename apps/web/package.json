@@ -23,7 +23,8 @@
     "screenshots:regression": "playwright test --config=playwright.screenshots.config.ts --project=regression",
     "screenshots:lint": "node scripts/screenshots-lint.mjs",
     "size": "node scripts/check-bundle-size.mjs",
-    "video:bench": "node scripts/video-bench/run-video-bench.mjs"
+    "video:bench": "node scripts/video-bench/run-video-bench.mjs",
+    "image:bench": "node scripts/image-bench/run-image-bench.mjs"
   },
   "dependencies": {
     "@sentry/react": "^8.45.0",

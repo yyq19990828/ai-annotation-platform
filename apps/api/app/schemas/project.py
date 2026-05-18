@@ -3,7 +3,11 @@ from datetime import date, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from app.schemas._jsonb_types import AttributeSchema, ClassesConfig
+from app.schemas._jsonb_types import (
+    AttributeSchema,
+    ClassesConfig,
+    ProjectRenderingConfig,
+)
 
 
 class ProjectCreate(BaseModel):
@@ -49,6 +53,8 @@ class ProjectUpdate(BaseModel):
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     # v0.9.5 · 工作台 SamTextPanel 默认输出形态（None 走 type_key 智能默认）
     text_output_default: Literal["box", "mask", "both"] | None = None
+    # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict / 字段缺省 = 沿用用户级偏好
+    rendering_config: ProjectRenderingConfig | None = None
 
 
 class ProjectBatchSummary(BaseModel):
@@ -85,6 +91,8 @@ class ProjectOut(BaseModel):
     box_threshold: float = 0.35
     text_threshold: float = 0.25
     text_output_default: str | None = None
+    # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict 表示项目不覆盖任何字段
+    rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
     model_version: str | None = None
     task_lock_ttl_seconds: int = 300
     total_tasks: int

@@ -142,6 +142,9 @@ interface ImageStageProps {
   maskEditor?: UseMaskEditorReturn;
   /** v0.10.9 · 当前 SAM 候选「精修」入口；点击后由 useImageAnnotationActions.handleRefineSamCandidate 启动 mask 编辑。 */
   onRefineSamCandidate?: (idx: number) => void;
+  /** v0.10.10 · I17.3 · 当前项目级渲染配置覆盖；与用户级 preferences 合并后驱动 KonvaImage 等。
+   *  缺省 / null = 项目不覆盖，纯用户级。 */
+  projectRenderingConfig?: import("@/api/projects").ProjectRenderingConfig | null;
 }
 
 // ── main component ──────────────────────────────────────────────────────────
@@ -158,6 +161,7 @@ export function ImageStage({
   historicalShapes,
   maskEditor,
   onRefineSamCandidate,
+  projectRenderingConfig,
 }: ImageStageProps) {
   // selSet 引用稳定化（I3）：以排序后的 id 串作为签名，签名不变则返回上次同一 Set 实例，
   // 让下游 KonvaBox / KonvaPolygon 的 selected prop 维持引用稳定，避免误触发 memo 失效。
@@ -185,7 +189,8 @@ export function ImageStage({
   // ai 层只要不在只读模式都开（支持点击采纳），HandTool 下也可点选 AI 候选。
   const userLayerListening = tool !== "hand" && !readOnly;
   // v0.9.41 · 标注偏好（I17）：smoothImage / cssImageFilter / longTaskSampleRate。
-  const { config: workbenchConfig } = useWorkbenchConfig();
+  // v0.10.10 · I17.3 · 合并项目级 rendering_config 覆盖（项目级 > 用户级 > 默认）。
+  const { config: workbenchConfig } = useWorkbenchConfig(projectRenderingConfig);
   useWorkbenchPerf(workbenchConfig.longTaskSampleRate);
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);

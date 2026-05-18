@@ -1,0 +1,71 @@
+---
+audience: [annotator]
+type: how-to
+since: v0.10.8
+status: stable
+last_reviewed: 2026-05-19
+---
+
+# Mask 笔刷编辑器（I11）
+
+> 用笔刷 / 橡皮把粗略的 polygon 精修到像素级，或从空白开始画一块 mask 直接落库为 polygon。
+
+v0.10.8 起，工作台新增 Mask 笔刷工具（`M` 键）。常见用法：
+
+- **AI 候选过糙** —— 文本 / SmartBox 出来的 polygon 边缘偏移几个像素 → 一笔刷快速纠
+- **已落库 polygon 局部修正** —— 不想重画整个轮廓，只想把右上角凸出去的几个像素擦掉
+- **从零开始** —— 当 AI 没合适候选、polygon 工具又嫌点位太繁琐时，直接刷个 mask
+
+mask 编辑器走的是「polygon 中转」：mask 在前端临时态编辑，提交时转回 polygon 落库，schema 不变。
+
+## 三种进入方式
+
+1. **空白 mask（从零开始）**
+   - 按 `M` 或工具栏点 Mask 图标 → 鼠标在画布上拖拽即开始画
+   - 完成后按 `Enter` 提交，落一个 polygon annotation（label = 工具栏当前类别）
+
+2. **AI prediction polygon 精修**
+   - 右侧 AIInspector 中找到 polygon 候选行 → 点该行的「精修」按钮
+   - 自动进 mask 工具，buffer 从候选 polygon 初始化（已涂为红色 mask）
+   - 用 `B`(笔刷)/`E`(橡皮) 修正 → `Enter` 提交
+   - 原候选会自动 reject，新 polygon 用候选 label 落库
+
+3. **SAM 候选精修（v0.10.9）**
+   - SAM 工具（SmartPoint / SmartBox）出 polygon 候选后，**不要按 Enter 采纳**
+   - 按 `R`，或点画布上候选附近的「✎ 精修」浮按钮
+   - 进 mask 编辑 → `Enter` 提交 → 原 SAM 候选消失，新 polygon 入库
+
+4. **已落库 user polygon 精修（v0.10.9）**
+   - 选中右侧侧栏的 polygon 行 → 点该行「精修」按钮（用户行 / AI 行都有）
+   - mask 编辑 → `Enter` 提交：直接 **update** 原 annotation 的 geometry（不新建，可 undo 回原状）
+
+## 快捷键
+
+| 键 | 作用 |
+|---|---|
+| `M` | 切到 Mask 工具 |
+| `B` | mask 工具激活时切笔刷（涂） |
+| `E` | mask 工具激活时切橡皮（擦） |
+| `Shift + 滚轮` | 调笔刷半径 ±2px（clamp [1, 200]） |
+| `Enter` | 提交 mask → polygon 落库 / 更新 |
+| `Esc` | 取消，丢弃当前 mask buffer |
+| `R` | SAM 候选存在时启动「精修」（同浮按钮） |
+
+完整快捷键索引见 [hotkeys.generated.md](./hotkeys.generated.md)。
+
+## 已知限制
+
+- **bbox 候选不支持初始化**：AI 给的是 bbox 时「精修」按钮不显示；待 v0.11+ 与 Ellipse / Skeleton 一并做 `geometry.kind` 收口时一起支持
+- **多连通区只保留最大外环**：mask 包含多块互不相连的区域时，只把最大连通块转回 polygon 入库，其它区域丢弃 + toast 提示
+- **不支持 RLE 持久化**：mask 不入库；提交即转 polygon。跨任务连续编辑同一 mask 不可行
+- **大画布性能**：v0.10.8 首版每笔全量 putImageData；v0.10.10 起 MaskBuffer 引入 dirtyRect 增量重绘（8K 图 brush 拖动更顺）
+
+## 故障排查
+
+- **按 M 不响应**：确认非只读模式（task 已锁定 / 已审完），输入框聚焦时 hotkey 会被吞
+- **Enter 后无 polygon 落库**：可能 mask 为空（dirty 指示灰）；toast 会提示
+- **mask 与 SAM 候选重叠看不清**：mask 是 `rgba(220,38,38,0.45)` 半透红，SAM 是紫虚线，可按 `E` 临时擦掉 mask 中已被 SAM 覆盖的部分
+
+## 相关 ADR
+
+- [ADR-0022 · Mask 编辑器工具架构](../../../docs/adr/0022-mask-editor-tool-architecture.md)

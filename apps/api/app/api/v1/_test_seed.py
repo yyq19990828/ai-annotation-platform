@@ -387,6 +387,60 @@ async def seed_peek(db: AsyncSession = Depends(get_db)) -> SeedPeekResponse:
     )
 
 
+class InjectPredictionRequest(BaseModel):
+    """v0.10.10 · I11 e2e 辅助：直接 INSERT 一条 polygon prediction，
+    绕过 ml-backend 让 mask 编辑器「AI prediction 精修」入口可测。"""
+
+    task_id: str
+    project_id: str
+    label: str
+    polygon: list[list[float]]  # 归一化 [0,1] points
+    score: float = 0.9
+
+
+class InjectPredictionResponse(BaseModel):
+    prediction_id: str
+
+
+@router.post(
+    "/seed/inject-prediction",
+    response_model=InjectPredictionResponse,
+    include_in_schema=False,
+)
+async def seed_inject_prediction(
+    payload: InjectPredictionRequest,
+    db: AsyncSession = Depends(get_db),
+) -> InjectPredictionResponse:
+    """直插一条 polygonlabels 类型的 prediction。"""
+    _ensure_non_production()
+
+    from uuid import UUID
+    from app.db.models.prediction import Prediction
+
+    # DB 存 LabelStudio 标准 list[shape]，read 路径会走 to_internal_shape 转内部 schema。
+    result = [
+        {
+            "type": "polygonlabels",
+            "value": {
+                "points": payload.polygon,
+                "polygonlabels": [payload.label],
+            },
+            "score": payload.score,
+        }
+    ]
+    pred = Prediction(
+        task_id=UUID(payload.task_id),
+        project_id=UUID(payload.project_id),
+        score=payload.score,
+        result=result,
+    )
+    db.add(pred)
+    await db.flush()
+    pred_id = str(pred.id)
+    await db.commit()
+    return InjectPredictionResponse(prediction_id=pred_id)
+
+
 class AdvanceTaskRequest(BaseModel):
     """v0.8.5 · E2E 辅助：直接把 task 推到目标状态，绕过 UI 链路。
 

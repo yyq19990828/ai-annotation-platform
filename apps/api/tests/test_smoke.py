@@ -106,6 +106,49 @@ def test_project_iou_threshold_range():
         ProjectUpdate.model_validate({"iou_dedup_threshold": 1.0})
 
 
+def test_project_rendering_config_v0_10_10():
+    """v0.10.10 · I17.3 · ProjectUpdate 接受 rendering_config，校验字段范围与 extra=forbid。"""
+    from app.schemas.project import ProjectUpdate
+    from pydantic import ValidationError
+
+    # 全字段合法
+    pu = ProjectUpdate.model_validate(
+        {
+            "rendering_config": {
+                "smoothImage": False,
+                "cssImageFilter": "invert(1)",
+                "controlPointsSize": 8,
+                "snapToGrid": True,
+            }
+        }
+    )
+    assert pu.rendering_config is not None
+    assert pu.rendering_config.smoothImage is False
+    assert pu.rendering_config.controlPointsSize == 8
+
+    # 部分字段：未提供的字段 = None（前端按 None 视作「不覆盖」）
+    pu2 = ProjectUpdate.model_validate({"rendering_config": {"smoothImage": True}})
+    assert pu2.rendering_config is not None
+    assert pu2.rendering_config.smoothImage is True
+    assert pu2.rendering_config.cssImageFilter is None
+
+    # 拒绝 extra key（防 typo）
+    with pytest.raises(ValidationError):
+        ProjectUpdate.model_validate({"rendering_config": {"bogus": 1}})
+
+    # controlPointsSize 越界
+    with pytest.raises(ValidationError):
+        ProjectUpdate.model_validate({"rendering_config": {"controlPointsSize": 1}})
+    with pytest.raises(ValidationError):
+        ProjectUpdate.model_validate({"rendering_config": {"controlPointsSize": 21}})
+
+    # cssImageFilter 超长
+    with pytest.raises(ValidationError):
+        ProjectUpdate.model_validate(
+            {"rendering_config": {"cssImageFilter": "x" * 300}}
+        )
+
+
 def test_audit_query_supports_detail_filter():
     """A.3：_build_base_query 支持 detail_key + detail_value 入参（不抛异常）。"""
     from app.api.v1.audit_logs import _build_base_query

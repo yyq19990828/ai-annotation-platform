@@ -150,6 +150,23 @@ class ClassConfigEntry(BaseModel):
 ClassesConfig = dict[str, ClassConfigEntry]
 
 
+# ── 项目级渲染配置覆盖（v0.10.10 · I17.3） ─────────────────────────────
+#
+# 字段语义与 UserPreferences.workbench 同集（apps/api/app/schemas/user.py）。
+# `None`/缺省 = 不覆盖，沿用用户级偏好。前端 useWorkbenchConfig 按
+# `DEFAULTS → user prefs → project rendering_config` 合并。
+# 不含 longTaskSampleRate：perf 取样属用户/环境层，不该被项目锁。
+
+
+class ProjectRenderingConfig(BaseModel):
+    smoothImage: bool | None = None
+    cssImageFilter: str | None = Field(default=None, max_length=255)
+    controlPointsSize: int | None = Field(default=None, ge=2, le=20)
+    snapToGrid: bool | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 # ── Geometry discriminated union ────────────────────────────────────
 
 

@@ -91,6 +91,36 @@ class SeedAPI {
   }
 
   /**
+   * v0.10.10 · I11 e2e 辅助：直接 INSERT 一条 polygon prediction，绕过 ml-backend。
+   * 用于 mask 编辑器「AI prediction 精修」入口测试。
+   */
+  async injectPrediction(opts: {
+    taskId: string;
+    projectId: string;
+    label: string;
+    /** 归一化 [0,1] points, ≥3 顶点 */
+    polygon: [number, number][];
+    score?: number;
+  }): Promise<{ prediction_id: string }> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/inject-prediction`,
+      {
+        data: {
+          task_id: opts.taskId,
+          project_id: opts.projectId,
+          label: opts.label,
+          polygon: opts.polygon,
+          score: opts.score ?? 0.9,
+        },
+      },
+    );
+    if (!res.ok()) {
+      throw new Error(`seed/inject-prediction failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as { prediction_id: string };
+  }
+
+  /**
    * v0.8.5 · E2E 辅助：直接置 task 状态，绕过 UI 链路。
    * 多角色串联 spec 用此跳过画框 / 提交流程，专注验证下游交接。
    */

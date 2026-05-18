@@ -971,6 +971,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onDoneCanvasDraft: s.endCanvasDraft, stageGeom,
         maskEditor,
         onRefineSamCandidate: handleRefineSamCandidate,
+        // v0.10.10 · I17.3 · 项目级渲染配置覆盖（合进 useWorkbenchConfig）
+        projectRenderingConfig: currentProject?.rendering_config ?? null,
         overlays: (
           <>
             {s.tool === "mask" && (

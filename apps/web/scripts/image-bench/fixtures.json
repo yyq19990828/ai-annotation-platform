@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "_doc": "v0.10.10 · I8.2 · image-bench fixture matrix. 3 sizes × 3 densities = 9 scenarios.",
+  "fixtures": [
+    {
+      "id": "image-2k",
+      "label": "2K (2048×2048 渐变)",
+      "imageSize": "2k",
+      "widthPx": 2048,
+      "heightPx": 2048
+    },
+    {
+      "id": "image-8k",
+      "label": "8K (8192×8192 渐变)",
+      "imageSize": "8k",
+      "widthPx": 8192,
+      "heightPx": 8192
+    },
+    {
+      "id": "image-polygon-dense",
+      "label": "Polygon-dense (2K 复杂边界)",
+      "imageSize": "polygon-dense",
+      "widthPx": 2048,
+      "heightPx": 2048
+    }
+  ],
+  "annotationDensities": [
+    { "id": "shapes-10", "count": 10 },
+    { "id": "shapes-100", "count": 100 },
+    { "id": "shapes-500", "count": 500 }
+  ],
+  "scenarios": [
+    "open-image-workbench",
+    "pan-stage-2s",
+    "zoom-cycle-ctrl-wheel",
+    "select-all-iterate"
+  ],
+  "budgets": {
+    "_doc": "Soft budgets v0.10.10 — baseline 待 image:bench 首跑产出后回填。",
+    "longTaskMaxMs": 200,
+    "longTaskCountUpper": 5
+  }
+}

@@ -7451,6 +7451,10 @@
             ],
             "title": "Owner Name"
           },
+          "rendering_config": {
+            "$ref": "#/components/schemas/ProjectRenderingConfig",
+            "default": {}
+          },
           "review_tasks": {
             "title": "Review Tasks",
             "type": "integer"
@@ -7526,6 +7530,60 @@
           "updated_at"
         ],
         "title": "ProjectOut",
+        "type": "object"
+      },
+      "ProjectRenderingConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "controlPointsSize": {
+            "anyOf": [
+              {
+                "maximum": 20.0,
+                "minimum": 2.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controlpointssize"
+          },
+          "cssImageFilter": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cssimagefilter"
+          },
+          "smoothImage": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smoothimage"
+          },
+          "snapToGrid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snaptogrid"
+          }
+        },
+        "title": "ProjectRenderingConfig",
         "type": "object"
       },
       "ProjectStats": {
@@ -7713,6 +7771,16 @@
               }
             ],
             "title": "Name"
+          },
+          "rendering_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRenderingConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sampling": {
             "anyOf": [

@@ -119,6 +119,8 @@ interface WorkbenchStageHostProps {
   maskEditor?: UseMaskEditorReturn;
   /** v0.10.9 · SAM 候选「精修」入口（画布浮按钮 + R 键）。 */
   onRefineSamCandidate?: (idx: number) => void;
+  /** v0.10.10 · I17.3 · 项目级 rendering_config 覆盖（仅图像舞台消费）。 */
+  projectRenderingConfig?: import("@/api/projects").ProjectRenderingConfig | null;
 }
 
 export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageHostProps>(
@@ -197,6 +199,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     stageGeom,
     maskEditor,
     onRefineSamCandidate,
+    projectRenderingConfig,
   }, ref) {
     return (
       <div style={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column" }}>
@@ -289,6 +292,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             overlays={overlays}
             maskEditor={maskEditor}
             onRefineSamCandidate={onRefineSamCandidate}
+            projectRenderingConfig={projectRenderingConfig}
           />
         )}
         {stageKind !== "image" && overlays}

@@ -22,6 +22,50 @@
 
 ## 最新版本
 
+## [0.10.10] - 2026-05-18
+
+> **0.10.x 收尾：I11 Mask 编辑器 e2e + dirtyRect + 用户文档 + I17.3 项目级渲染配置覆盖.** 把 v0.10.4-v0.10.9 留下的四个尾巴一次发完，0.10.x 系列收口，之后进入 v0.11.0（I1 大图 tile 独立 epic）。① **§3 MaskBuffer dirtyRect 增量重绘**：[maskBuffer.ts](apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts) 加 `_dirty` 半开矩形私有字段 + `markDirty()` clamp/union + `consumeDirty(): DirtyRect | null` 取走清空 + `toAlphaImageDataRect(rect): Uint8ClampedArray` 切片输出；`brush/erase/fromPolygon/clear` 全部更新内部脏区。[MaskOverlayLayer.tsx](apps/web/src/pages/Workbench/stage/overlays/MaskOverlayLayer.tsx) 改为只 `putImageData` 脏区，首次激活（`seenBufferRef` 切换）走一次全图保证 canvas 与 buffer 初态一致；消除 v0.10.8 「每笔 W×H 全量拷贝」性能债。9 例新单测覆盖 union / consumeDirty / clear=全图 / fromPolygon=bbox / 边界 clamp / 切片字节 / 退化区域返空 / clone 复制脏区。② **§1 I11 Playwright e2e**：新 [`mask-editor.spec.ts`](apps/web/e2e/tests/mask-editor.spec.ts) 三用例（空白 mask→Enter / AI prediction 精修 reject+新 polygon / B-E-Shift+wheel-Esc hotkey）；`_test_seed` 加 `POST /__test/seed/inject-prediction`（LabelStudio 标准 shape）+ [`SeedAPI.injectPrediction`](apps/web/e2e/fixtures/seed.ts) helper 绕过 ml-backend；SAM 候选精修入口需真实 backend 不进 e2e，留单测 `useImageAnnotationActions.test` 分流过。③ **§2 用户文档**：新 [`mask-brush.md`](docs-site/user-guide/for-annotators/mask-brush.md)（since=v0.10.8）—— 三种进入方式（空白 / AI polygon / user polygon / SAM 候选 R 键）、hotkey 速查、已知限制（bbox 不可初始化 / 多连通区只留最大外环 / 不持久化 RLE）+ 故障排查；[index.md](docs-site/user-guide/for-annotators/index.md) 加链入。④ **§5 I17.3 项目级渲染配置覆盖**：alembic 0066 加 `projects.rendering_config JSONB NOT NULL DEFAULT '{}'`；后端 [`ProjectRenderingConfig`](apps/api/app/schemas/_jsonb_types.py) Pydantic 模型（smoothImage/cssImageFilter/controlPointsSize/snapToGrid 全 optional, extra=forbid, controlPointsSize ∈ [2,20], cssImageFilter ≤255 字符），写入 [`ProjectUpdate`](apps/api/app/schemas/project.py) / `ProjectOut`；前端新 [`RenderingConfigSection`](apps/web/src/pages/Projects/sections/RenderingConfigSection.tsx) 子页（每行「覆盖此项」开关 + 控件 + 「跟随用户偏好」回退文案），[`ProjectSettingsPage`](apps/web/src/pages/Projects/ProjectSettingsPage.tsx) sidebar 加「渲染配置」tab（icon=eye，在 ml-backends 与 owner 之间）；[`useWorkbenchConfig`](apps/web/src/pages/Workbench/state/useWorkbenchConfig.ts) 加 `projectRenderingConfig` 可选入参，合并优先级 `DEFAULTS → user.preferences.workbench → project.rendering_config`，返回新增 `lockedFields: LockableField[]`；prop 通过 WorkbenchShell → WorkbenchStageHost → ImageWorkbench → ImageStage 四级透传（ReviewWorkbench 不传 = 默认无项目覆盖）。`apps/web/src/api/projects.ts` 加 `ProjectRenderingConfig` 类型 + `ProjectResponse` / `ProjectUpdatePayload` 手动扩 `rendering_config` 字段（待 codegen 重跑）。⑤ **§4 I8.2 image-bench fixture 矩阵**：新 [`scripts/image-bench/fixtures.json`](apps/web/scripts/image-bench/fixtures.json)（3 size × 3 density = 9 场景）+ [`run-image-bench.mjs`](apps/web/scripts/image-bench/run-image-bench.mjs) orchestrator（镜像 `scripts/video-bench`，写 manifest.json 到 `test-results/image-bench/{runId}/`）+ [`e2e/tests/image-bench-fixtures.spec.ts`](apps/web/e2e/tests/image-bench-fixtures.spec.ts) 按 `IMAGE_BENCH_SIZE` / `IMAGE_BENCH_DENSITY` env 跑单场景读 `window.__workbenchPerf` + `package.json` 加 `image:bench` script + [`docs/benchmarks/image-bench-v0.10.10.json`](docs/benchmarks/image-bench-v0.10.10.json) 基线占位 JSON（待 `_test_seed` 加 `?image_size=` / `?annotation_density=` 入参 + 真实测试图片后回填真数）。⑥ **§6 v0.10.9 收尾**：[`DEV.md`](DEV.md) 加「前端 codegen」章节说明 `apps/web/src/api/generated/` 在 .gitignore、`prebuild` 钩子 `codegen-if-changed.mjs` 自动重生、首次 clone 时 `pnpm --filter web typecheck` 前需手动跑一次 codegen 的开发流程（解释 v0.10.9 AttributeForm 类型未入仓的原因）。**不引入**：① SAM 候选精修 e2e（需真实 ml-backend）；② I17 项目级「lock」语义元数据（本期只做覆盖优先级，前端 `lockedFields` 已就位但未渲染 disabled badge，留 v0.11+）；③ bbox 候选 → mask 初始填充（与 I9 / geometry.kind 同期，留 v0.11+）；④ image-bench 真实图片素材入仓 + `_test_seed` 加 density/size 参（本期落契约 + spec，真数回填留 v0.10.10.1 / v0.11.x）；⑤ lint warnings 清理（126 基线，按计划摘低垂果实未在本 commit 动手，量化降到 < 80 留 v0.10.10.1）。是 v0.10.4 epic / 图片工作台 Wave β + γ 的最后一个收尾发布。→ [plan](docs/plans/roadmap-2026-05-12-image-workbench-optim-zany-crab.md) · [ROADMAP](ROADMAP/2026-05-12-image-workbench-optimization.md) · [ADR-0022](docs/adr/0022-mask-editor-tool-architecture.md).
+
+### Added
+
+- **MaskBuffer dirtyRect** ([maskBuffer.ts](apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts))：`DirtyRect` 接口（半开 [x0,x1)×[y0,y1)）+ `_dirty` 私有字段 + `consumeDirty(): DirtyRect | null` + `toAlphaImageDataRect(rect): Uint8ClampedArray`；9 例新单测。
+- **`_test_seed` · `POST /__test/seed/inject-prediction`** ([_test_seed.py](apps/api/app/api/v1/_test_seed.py))：直插 LabelStudio polygon prediction，e2e 不依赖 ml-backend。
+- **`SeedAPI.injectPrediction`** ([e2e/fixtures/seed.ts](apps/web/e2e/fixtures/seed.ts))：前端 e2e helper。
+- **`mask-editor.spec.ts`**（apps/web/e2e/tests/）：3 用例（空白 mask 提交 / AI prediction 精修 / hotkey 全集）。
+- **`image-bench/fixtures.json` + `run-image-bench.mjs`**（apps/web/scripts/image-bench/）：I8.2 矩阵契约 + orchestrator（镜像 video-bench）。
+- **`image-bench-fixtures.spec.ts`**（apps/web/e2e/tests/）：env-driven 单场景执行。
+- **`pnpm --filter web image:bench`** script。
+- **`docs/benchmarks/image-bench-v0.10.10.json`**：基线占位 JSON（待真数回填）。
+- **`Project.rendering_config` JSONB** ([project.py](apps/api/app/db/models/project.py))：alembic 0066，NOT NULL DEFAULT '{}'。
+- **`ProjectRenderingConfig` Pydantic 模型** ([_jsonb_types.py](apps/api/app/schemas/_jsonb_types.py))：4 字段全 optional, extra=forbid, controlPointsSize ∈ [2,20], cssImageFilter ≤255 字符。
+- **`RenderingConfigSection`** ([RenderingConfigSection.tsx](apps/web/src/pages/Projects/sections/RenderingConfigSection.tsx))：「覆盖此项」开关 + 控件 + 「跟随用户偏好」回退；ProjectSettings 新「渲染配置」tab。
+- **`useWorkbenchConfig` · 项目级覆盖 + `lockedFields`** ([useWorkbenchConfig.ts](apps/web/src/pages/Workbench/state/useWorkbenchConfig.ts))：新增可选 `projectRenderingConfig` 入参；返回 `lockedFields: LockableField[]`；3 例新单测。
+- **`ProjectRenderingConfig` 前端类型** ([api/projects.ts](apps/web/src/api/projects.ts))：`ProjectResponse` / `ProjectUpdatePayload` 手动扩 `rendering_config` 字段（待 codegen 重跑）。
+- **`mask-brush.md` 用户文档** ([docs-site/user-guide/for-annotators/mask-brush.md](docs-site/user-guide/for-annotators/mask-brush.md))：三入口 + hotkey + 已知限制 + 故障排查；[index.md](docs-site/user-guide/for-annotators/index.md) 链入。
+- **DEV.md「前端 codegen」章节**：解释 generated 不入仓 + 何时手动跑 codegen。
+
+### Changed
+
+- **`MaskOverlayLayer`** ([MaskOverlayLayer.tsx](apps/web/src/pages/Workbench/stage/overlays/MaskOverlayLayer.tsx))：useEffect 改为消费 `buffer.consumeDirty()` 切片绘制；首次激活（`seenBufferRef` 切换）仍走全图。
+- **`ImageStage` / `ImageWorkbench` / `WorkbenchStageHost` / `WorkbenchShell`**：新增 `projectRenderingConfig?: ProjectRenderingConfig | null` prop 四级透传；`WorkbenchShell` 从 `currentProject?.rendering_config ?? null` 取值。
+- **`ProjectUpdate` / `ProjectOut`** ([schemas/project.py](apps/api/app/schemas/project.py))：加 `rendering_config: ProjectRenderingConfig | None` / `= ProjectRenderingConfig()`。
+- **`ProjectSettingsPage`**：sidebar 加「渲染配置」tab（icon=eye），`SectionKey` union 加 `"rendering"`。
+
+### Fixed
+
+- **v0.10.8 MaskOverlayLayer 全量 putImageData TODO**：见 §3 dirtyRect 增量重绘。
+- **v0.10.7 epic「完整 e2e 推迟到 v0.10.7.1 UI 集成时一并跑」**：见 §1 mask-editor.spec.ts。
+- **v0.10.9「手测推迟到真实数据」**：本期 e2e 不依赖真实数据（seed.injectPrediction 绕过 ml-backend）。
+
+### Verified
+
+- `pnpm --filter web typecheck` 全绿（0 错；新增四级 prop 透传 + ProjectRenderingConfig 类型 + useWorkbenchConfig 入参全部传通）。
+- `pnpm --filter web vitest run` 692 tests 全绿（+9 maskBuffer dirtyRect / +3 useWorkbenchConfig 合并优先级；既有 0 回归）。
+- `cd apps/api && uv run pytest tests/test_smoke.py` 6 passed（+1 `test_project_rendering_config_v0_10_10`：合法 / 部分覆盖 / extra=forbid / 范围越界 / 超长 五个校验分支）。
+- `pnpm --filter web image:bench --dry-run` 输出 9 场景矩阵正常。
+- E2E `mask-editor.spec.ts` 与 `image-bench-fixtures.spec.ts` 待本地 docker compose + dev server + alembic upgrade 全开后人测（与 v0.10.9 节奏相同）。
+- 手测：① admin 在 ProjectSettings 「渲染配置」tab 开启 smoothImage 覆盖 = false → annotator 进工作台像素无插值。② 关闭覆盖开关 → annotator 字段恢复跟随用户偏好。
+
 ## [0.10.9] - 2026-05-18
 
 > **Mask 编辑器入口补齐 + 笔刷光标可视化.** v0.10.8 留下两个入口缺口（SAM 交互候选 / 已落库 user polygon 均不可精修）和一个体感问题（mask 工具下系统 crosshair 光标看不出笔刷半径与图像的比例）。本期一并补齐：① **SAM 候选精修 (A)**：useImageAnnotationActions 新增 `handleRefineSamCandidate(idx)`，从 `sam.candidates[idx].points`（归一化 [0,1] × imgW/imgH 转像素）启动 mask 编辑；commit 路径调 `sam.consume(samIdx)` 移除原候选 + `submitPolygon` 新建 polygon（label 优先用候选 label，缺省 / 不在 classes 时回退工具栏当前 label）；R 键 hotkey 在 SAM 候选键盘 handler 内 capture 阶段消费（与现有 Tab/Enter/Esc 同模式，走 ref 间接绕过 forward 依赖）；ImageStage 画布上 active polygonlabels 候选附近浮一个 `✎ 精修 R` 按钮，位置贴 polygon 顶点 bbox 右上角。② **user polygon 精修 (B)**：useImageAnnotationActions 新增 `handleRefineUserPolygon(annotationId)`，从 `ann.geometry.points` 启动；commit 路径走 `mutations.update.mutate` 替换 `geometry`（不新建 annotation），同步 `history.push({ kind: "update", before: { geometry }, after: { geometry } })`；BoxListItem 加 `onRefine` 用于 user polygon 行（之前 v0.10.8 仅 AI 行用），按钮图标同 AI 行。`pendingRefineRef` 内部扩成 discriminated union（`prediction` / `sam` / `user`），`commitMaskAsPolygon` 按 kind 分流。③ **笔刷光标可视化 (Cursor)**：mask 工具激活时 container `cursor: "none"`，ImageStage overlay 层挂一个跟随鼠标的 `Konva.Circle`（半径 = `maskEditor.radius` image-space px，stroke 1.5/scale 保持视觉一致），brush 模式红色 / erase 模式灰色，让笔触大小直接相对图像可视；handleStageMouseMove 在 tool === "mask" 时同步 maskCursor 状态。**不引入**：BoxesList 上 AI 行 + user 行精修按钮的二级 confirm（直接进 mask 工具，cancel 时退回原状）、SAM 候选浮按钮的拖动（位置固定在候选 bbox 右上）、user polygon 精修的多选批量（仅单行入口）。这些待 v0.11+ 评估。→ [CHANGELOG 0.10.8](#0108---2026-05-18) · [ROADMAP I11](ROADMAP/2026-05-12-image-workbench-optimization.md) · [ADR-0022](docs/adr/0022-mask-editor-tool-architecture.md) v0.10.9 段.
