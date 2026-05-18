@@ -5,6 +5,7 @@
  * 20s 自动 refetch（useReviewerTodayMini staleTime+interval）。
  */
 import { useReviewerTodayMini } from "@/hooks/useDashboard";
+import styles from "./ReviewerMiniPanel.module.css";
 
 function formatSeconds(s: number | null): string {
   if (s === null || !Number.isFinite(s)) return "—";
@@ -23,15 +24,7 @@ export function ReviewerMiniPanel() {
   return (
     <div
       data-testid="reviewer-mini-panel"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: 8,
-        padding: "10px 12px",
-        background: "var(--color-bg-elev)",
-        borderBottom: "1px solid var(--color-border)",
-        fontSize: 11,
-      }}
+      className={styles.panel}
     >
       <Stat label="今日通过" value={isLoading ? "…" : approved.toString()} accent="success" />
       <Stat label="今日退回" value={isLoading ? "…" : rejected.toString()} accent="danger" />
@@ -49,22 +42,17 @@ function Stat({
   value: string;
   accent: "success" | "danger" | "muted";
 }) {
-  const color =
+  const accentClass =
     accent === "success"
-      ? "var(--color-success, #22c55e)"
+      ? styles.valueSuccess
       : accent === "danger"
-        ? "var(--color-danger, #ef4444)"
-        : "var(--color-fg-muted)";
+        ? styles.valueDanger
+        : styles.valueMuted;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <span style={{ color: "var(--color-fg-subtle)", fontSize: 10 }}>{label}</span>
+    <div className={styles.stat}>
+      <span className={styles.label}>{label}</span>
       <span
-        className="mono"
-        style={{
-          fontSize: 16,
-          fontWeight: 600,
-          color,
-        }}
+        className={`mono ${styles.value} ${accentClass}`}
       >
         {value}
       </span>

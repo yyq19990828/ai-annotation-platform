@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { clsx } from "clsx";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
@@ -7,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProjectMembers } from "@/hooks/useProjects";
 import { useDistributeBatches } from "@/hooks/useBatches";
+import styles from "./ProjectDistributeBatchesModal.module.css";
 
 interface Props {
   projectId: string;
@@ -62,15 +64,15 @@ export function ProjectDistributeBatchesModal({ projectId, onClose }: Props) {
 
   return (
     <Modal open onClose={onClose} title="按项目分派批次" width={560}>
-      <div style={{ fontSize: 13, color: "var(--color-fg-muted)", marginBottom: 12 }}>
+      <div className={styles.description}>
         把项目下的批次圆周均分给所选标注员 / 审核员。每个批次落到 <strong>1 个标注员 + 1 个审核员</strong>。
       </div>
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+      <div className={styles.scopeTabs}>
         <button
           type="button"
           onClick={() => setScope("unassigned")}
-          style={chipStyle(scope === "unassigned")}
+          className={clsx(styles.scopeChip, scope === "unassigned" && styles.scopeChipActive)}
           title="只分派那些 annotator/reviewer 为空的批次（不覆盖已分派）"
         >
           仅未分派的批次
@@ -78,7 +80,7 @@ export function ProjectDistributeBatchesModal({ projectId, onClose }: Props) {
         <button
           type="button"
           onClick={() => setScope("all")}
-          style={chipStyle(scope === "all")}
+          className={clsx(styles.scopeChip, scope === "all" && styles.scopeChipActive)}
           title="覆盖所有非归档批次（含已分派）"
         >
           覆盖全部批次
@@ -86,11 +88,11 @@ export function ProjectDistributeBatchesModal({ projectId, onClose }: Props) {
       </div>
 
       {isLoading && (
-        <div style={{ padding: 16, textAlign: "center", fontSize: 13, color: "var(--color-fg-subtle)" }}>加载中…</div>
+        <div className={styles.loading}>加载中…</div>
       )}
 
       {!isLoading && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className={styles.columns}>
           <Column
             title="参与标注员"
             members={annotatorMembers}
@@ -108,18 +110,18 @@ export function ProjectDistributeBatchesModal({ projectId, onClose }: Props) {
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
-        <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
-          标注员 <strong style={{ color: "var(--color-fg)" }}>{annotators.size}</strong>
+      <div className={styles.footer}>
+        <span className={styles.selectionSummary}>
+          标注员 <strong className={styles.selectionCount}>{annotators.size}</strong>
           {" · "}
-          审核员 <strong style={{ color: "var(--color-fg)" }}>{reviewers.size}</strong>
+          审核员 <strong className={styles.selectionCount}>{reviewers.size}</strong>
         </span>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className={styles.actions}>
           <Button onClick={onClose}>取消</Button>
           <Button
+            variant="primary"
             onClick={onSubmit}
             disabled={distribute.isPending || (annotators.size === 0 && reviewers.size === 0)}
-            style={{ background: "var(--color-accent)", color: "#fff" }}
           >
             {distribute.isPending ? "分派中…" : "执行分派"}
           </Button>
@@ -127,19 +129,6 @@ export function ProjectDistributeBatchesModal({ projectId, onClose }: Props) {
       </div>
     </Modal>
   );
-}
-
-function chipStyle(active: boolean): React.CSSProperties {
-  return {
-    padding: "4px 10px",
-    fontSize: 12,
-    borderRadius: 999,
-    border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border)"}`,
-    background: active ? "var(--color-accent-soft)" : "transparent",
-    color: active ? "var(--color-accent)" : "var(--color-fg)",
-    cursor: "pointer",
-    fontFamily: "inherit",
-  };
 }
 
 function Column({
@@ -156,21 +145,12 @@ function Column({
   roleColor: "accent" | "warning";
 }) {
   return (
-    <div
-      style={{
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        background: "var(--color-bg-sunken)",
-        padding: 8,
-        maxHeight: 240,
-        overflowY: "auto",
-      }}
-    >
-      <div style={{ padding: "4px 6px 8px" }}>
+    <div className={styles.column}>
+      <div className={styles.columnHeader}>
         <Badge variant={roleColor} dot>{title}</Badge>
       </div>
       {members.length === 0 && (
-        <div style={{ fontSize: 12, color: "var(--color-fg-subtle)", padding: 16, textAlign: "center" }}>
+        <div className={styles.emptyMembers}>
           暂无成员
         </div>
       )}
@@ -181,38 +161,15 @@ function Column({
             key={m.id}
             type="button"
             onClick={() => onToggle(m.user_id)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: "var(--radius-sm)",
-              background: checked ? "var(--color-accent-soft)" : "transparent",
-              border: `1px solid ${checked ? "var(--color-accent)" : "transparent"}`,
-              cursor: "pointer",
-              textAlign: "left",
-              marginBottom: 2,
-              fontFamily: "inherit",
-              color: "var(--color-fg)",
-            }}
+            className={clsx(styles.memberButton, checked && styles.memberButtonChecked)}
           >
-            <span
-              style={{
-                width: 14, height: 14, borderRadius: 3,
-                border: "1px solid var(--color-border)",
-                background: checked ? "var(--color-accent)" : "var(--color-bg)",
-                color: "#fff",
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
+            <span className={clsx(styles.checkMark, checked && styles.checkMarkChecked)}>
               {checked && <Icon name="check" size={10} />}
             </span>
             <Avatar initial={(m.user_name || "?").slice(0, 1).toUpperCase()} size="sm" />
-            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              <span style={{ fontSize: 12.5, fontWeight: 500 }}>{m.user_name}</span>
-              <span style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginLeft: 6 }}>{m.user_email}</span>
+            <span className={styles.memberText}>
+              <span className={styles.memberName}>{m.user_name}</span>
+              <span className={styles.memberEmail}>{m.user_email}</span>
             </span>
           </button>
         );

@@ -1,0 +1,395 @@
+.stepper {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.stepItem {
+  display: flex;
+  flex: 1;
+  align-items: center;
+}
+
+.stepItemLast {
+  flex: 0 0 auto;
+}
+
+.stepDot {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+}
+
+.stepDotActive,
+.stepDotDone {
+  color: #fff;
+  background: var(--color-accent);
+}
+
+.stepDotActive {
+  border: 2px solid var(--color-accent-soft);
+}
+
+.stepLabel {
+  margin-left: 8px;
+  color: var(--color-fg-subtle);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.stepLabelActive,
+.stepLabelDone {
+  color: var(--color-accent);
+}
+
+.stepLabelActive {
+  font-weight: 600;
+}
+
+.stepLine {
+  flex: 1;
+  height: 1px;
+  margin: 0 12px;
+  background: var(--color-border);
+}
+
+.stepLineDone {
+  background: var(--color-accent);
+}
+
+.stackLarge,
+.stackMedium {
+  display: flex;
+  flex-direction: column;
+}
+
+.stackLarge {
+  gap: 16px;
+}
+
+.stackMedium {
+  gap: 12px;
+}
+
+.label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.input,
+.textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 11px;
+  color: var(--color-fg);
+  font-family: inherit;
+  font-size: 13.5px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+}
+
+.inputInvalid {
+  border-color: var(--color-danger);
+}
+
+.textarea {
+  resize: vertical;
+}
+
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modeTabs {
+  display: flex;
+  gap: 6px;
+}
+
+.segmentButton {
+  padding: 6px 12px;
+  color: var(--color-fg);
+  font-size: 12.5px;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.modeButton {
+  padding: 6px 14px;
+}
+
+.segmentButtonActive {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.dropZone {
+  padding: 28px 16px;
+  text-align: center;
+  background: var(--color-bg-sunken);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.dropZoneHover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.uploadIcon,
+.mutedIcon {
+  color: var(--color-fg-muted);
+}
+
+.uploadIcon {
+  margin-bottom: 8px;
+}
+
+.dropTitle {
+  margin-bottom: 4px;
+  color: var(--color-fg);
+  font-size: 13.5px;
+}
+
+.accentText {
+  color: var(--color-accent);
+}
+
+.dropHint,
+.mutedSmall,
+.mutedMedium {
+  color: var(--color-fg-muted);
+}
+
+.dropHint {
+  font-size: 11.5px;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.filePanel,
+.progressPanel,
+.resultPanel {
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.filePanel {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.filePanelHeader {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.fileRow,
+.zipFileRow,
+.progressFileHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fileRow {
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+
+.fileRow:not(:last-child),
+.progressItem:not(:last-child) {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.fileName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mutedSmall {
+  font-size: 11px;
+}
+
+.mutedMedium {
+  font-size: 12px;
+}
+
+.iconButton {
+  color: var(--color-fg-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.zipFileRow,
+.summaryPanel,
+.zipSummary {
+  padding: 10px 12px;
+  font-size: 13px;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.zipFileRow {
+  gap: 10px;
+}
+
+.summaryPanel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  background: var(--color-bg-sunken);
+}
+
+.runningText {
+  color: var(--color-accent);
+}
+
+.progressPanel {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.progressItem {
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+
+.successIcon,
+.successText {
+  color: var(--color-success);
+}
+
+.dangerIcon,
+.dangerText {
+  color: var(--color-danger);
+}
+
+.progressTrack,
+.zipProgressTrack {
+  overflow: hidden;
+  background: var(--color-bg-sunken);
+}
+
+.progressTrack {
+  height: 3px;
+  margin-top: 4px;
+  border-radius: 2px;
+}
+
+.zipProgressTrack {
+  height: 6px;
+  border-radius: 3px;
+}
+
+.progressFill {
+  width: var(--progress, 0%);
+  height: 100%;
+  background: var(--progress-color, var(--color-accent));
+  transition: width 0.2s;
+}
+
+.errorMessage {
+  margin-top: 3px;
+  color: var(--color-danger);
+  font-size: 11px;
+}
+
+.actions,
+.footer,
+.footerActions {
+  display: flex;
+}
+
+.actions,
+.footerActions {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.footer {
+  justify-content: space-between;
+  margin-top: 18px;
+}
+
+.zipSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.zipProgressLabel {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.errorDetails {
+  margin-top: 4px;
+}
+
+.errorSummary {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.errorList {
+  max-height: 160px;
+  margin-top: 6px;
+  overflow: auto;
+  font-size: 11.5px;
+}
+
+.errorRow {
+  padding: 3px 0;
+  color: var(--color-danger);
+}
+
+.omittedRow {
+  padding: 3px 0;
+  color: var(--color-fg-muted);
+}
+
+.zipError {
+  padding: 10px 12px;
+  color: #ef4444;
+  font-size: 12.5px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid #ef4444;
+  border-radius: var(--radius-md);
+}

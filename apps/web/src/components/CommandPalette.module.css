@@ -1,0 +1,111 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background: oklch(0 0 0 / 40%);
+  backdrop-filter: blur(2px);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.input {
+  padding: 14px 18px;
+  color: var(--color-fg);
+  font-family: inherit;
+  font-size: 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  outline: none;
+}
+
+.results {
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.empty {
+  padding: 32px 18px;
+  color: var(--color-fg-subtle);
+  font-size: 12px;
+  text-align: center;
+}
+
+.groupLabel {
+  padding: 10px 18px 4px;
+  color: var(--color-fg-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.resultButton {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 18px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+}
+
+.resultButtonActive {
+  background: var(--color-bg-sunken);
+  border-left-color: var(--color-accent);
+}
+
+.kindBadge {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 38px;
+}
+
+.itemText {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemLabel,
+.itemSublabel {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemLabel {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.itemSublabel {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 18px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+  border-top: 1px solid var(--color-border);
+}

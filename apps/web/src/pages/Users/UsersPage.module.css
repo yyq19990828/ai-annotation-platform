@@ -1,0 +1,342 @@
+.page {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 20px 28px 40px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.subtitle,
+.muted {
+  color: var(--color-fg-muted);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 13px;
+}
+
+.headerActions,
+.memberFilters,
+.modalActions,
+.roleBadgeRow {
+  display: flex;
+  gap: 8px;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.select,
+.transferSelect {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  font-family: inherit;
+  color: var(--color-fg);
+  outline: none;
+}
+
+.select {
+  padding: 5px 8px;
+  font-size: 12.5px;
+}
+
+.table {
+  width: 100%;
+  border-spacing: 0;
+  border-collapse: separate;
+  font-size: 13px;
+}
+
+.th {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.firstTh {
+  padding-left: 16px;
+}
+
+.td,
+.memberCell,
+.actionCell {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.memberCell {
+  padding-left: 16px;
+}
+
+.actionCell {
+  text-align: right;
+}
+
+.emptyCell {
+  padding: 40px;
+  color: var(--color-fg-subtle);
+  text-align: center;
+}
+
+.memberInfo,
+.groupRowMain,
+.userSummary,
+.warningLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.memberName,
+.summaryName,
+.groupName {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.memberEmail,
+.summaryEmail {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.summaryEmail {
+  font-size: 11.5px;
+}
+
+.subtleDash {
+  color: var(--color-fg-subtle);
+  font-size: 12px;
+}
+
+.dateCell {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.rowActions {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.dangerIcon {
+  color: var(--color-danger);
+}
+
+.disabledIcon {
+  opacity: 0.4;
+}
+
+.rolesGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 16px;
+}
+
+.roleCard {
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elev);
+}
+
+.roleHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.smallMono {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.roleDesc {
+  margin-bottom: 10px;
+  color: var(--color-fg-muted);
+  font-size: 12.5px;
+}
+
+.permissionGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.permissionGroupTitle {
+  margin-bottom: 4px;
+  color: var(--color-fg-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.permissionBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.groupsPane {
+  padding: 16px;
+}
+
+.groupsEmpty {
+  padding: 30px;
+  color: var(--color-fg-muted);
+  text-align: center;
+  font-size: 13px;
+}
+
+.linkButton {
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.groupItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+}
+
+.groupMain {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.groupMeta {
+  color: var(--color-fg-muted);
+  font-size: 11.5px;
+}
+
+.groupAvatars {
+  display: flex;
+}
+
+.groupAvatars > div + div {
+  margin-left: -6px;
+}
+
+.groupAvatars > div {
+  border: 2px solid var(--color-bg-elev);
+}
+
+.modalStack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 13px;
+}
+
+.summaryCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+}
+
+.summaryRole {
+  margin-left: auto;
+}
+
+.secretBox {
+  padding: 12px;
+  border: 1px dashed var(--color-warning);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+  font-weight: 500;
+  user-select: all;
+  word-break: break-all;
+}
+
+.warningBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  background: rgba(245, 158, 11, 0.08);
+  font-size: 12.5px;
+}
+
+.sampleTasks {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.transferLabel {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.transferSelect {
+  width: 100%;
+  padding: 8px 11px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.errorBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #ef4444;
+  border-radius: var(--radius-md);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  font-size: 12.5px;
+}
+
+.modalActions {
+  justify-content: flex-end;
+}

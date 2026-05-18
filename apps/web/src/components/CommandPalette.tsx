@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
+import { clsx } from "clsx";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { useGlobalSearch } from "@/hooks/useGlobalSearch";
+import styles from "./CommandPalette.module.css";
 
 interface Props {
   open: boolean;
@@ -133,33 +135,13 @@ export function CommandPalette({ open, onClose }: Props) {
   return createPortal(
     <div
       onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "oklch(0 0 0 / 0.4)",
-        zIndex: 100,
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        paddingTop: "12vh",
-        backdropFilter: "blur(2px)",
-      }}
+      className={styles.backdrop}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        style={{
-          width: 560,
-          maxWidth: "calc(100vw - 32px)",
-          background: "var(--color-bg-elev)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-lg)",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
+        className={styles.dialog}
       >
         <input
           ref={inputRef}
@@ -170,47 +152,29 @@ export function CommandPalette({ open, onClose }: Props) {
             setActiveIdx(0);
           }}
           placeholder="搜索项目、任务、数据集、成员..."
-          style={{
-            border: "none",
-            outline: "none",
-            padding: "14px 18px",
-            fontSize: 14,
-            background: "transparent",
-            color: "var(--color-fg)",
-            borderBottom: "1px solid var(--color-border)",
-            fontFamily: "inherit",
-          }}
+          className={styles.input}
         />
 
-        <div style={{ maxHeight: 380, overflowY: "auto" }}>
+        <div className={styles.results}>
           {!debounced && (
-            <div style={{ padding: "32px 18px", textAlign: "center", fontSize: 12, color: "var(--color-fg-subtle)" }}>
+            <div className={styles.empty}>
               开始输入以搜索
             </div>
           )}
           {debounced && isLoading && items.length === 0 && (
-            <div style={{ padding: "32px 18px", textAlign: "center", fontSize: 12, color: "var(--color-fg-subtle)" }}>
+            <div className={styles.empty}>
               搜索中…
             </div>
           )}
           {debounced && !isLoading && items.length === 0 && (
-            <div style={{ padding: "32px 18px", textAlign: "center", fontSize: 12, color: "var(--color-fg-subtle)" }}>
+            <div className={styles.empty}>
               没有找到结果
             </div>
           )}
 
           {grouped.map((g) => (
             <div key={g.kind}>
-              <div
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.6,
-                  color: "var(--color-fg-subtle)",
-                  padding: "10px 18px 4px",
-                }}
-              >
+              <div className={styles.groupLabel}>
                 {KIND_LABEL[g.kind]} ({g.rows.length})
               </div>
               {g.rows.map(({ item, flatIdx: idx }) => {
@@ -224,32 +188,22 @@ export function CommandPalette({ open, onClose }: Props) {
                       navigate(item.href);
                       onClose();
                     }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      width: "100%",
-                      padding: "8px 18px",
-                      border: "none",
-                      background: active ? "var(--color-bg-sunken)" : "transparent",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      fontFamily: "inherit",
-                      borderLeft: active ? "2px solid var(--color-accent)" : "2px solid transparent",
-                    }}
+                    className={clsx(styles.resultButton, active && styles.resultButtonActive)}
                   >
                     {item.kind === "member" ? (
                       <Avatar size="sm" initial={(item.label || "?").slice(0, 1).toUpperCase()} />
                     ) : (
-                      <Badge variant="outline" style={{ minWidth: 38, justifyContent: "center" }}>
+                      <span className={styles.kindBadge}>
+                        <Badge variant="outline">
                         {KIND_LABEL[item.kind]}
-                      </Badge>
+                        </Badge>
+                      </span>
                     )}
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 13, fontWeight: 500, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span className={styles.itemText}>
+                      <span className={styles.itemLabel}>
                         {item.label}
                       </span>
-                      <span style={{ fontSize: 11, color: "var(--color-fg-subtle)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span className={styles.itemSublabel}>
                         {item.sublabel}
                       </span>
                     </span>
@@ -260,16 +214,7 @@ export function CommandPalette({ open, onClose }: Props) {
           ))}
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            padding: "8px 18px",
-            borderTop: "1px solid var(--color-border)",
-            fontSize: 11,
-            color: "var(--color-fg-subtle)",
-          }}
-        >
+        <div className={styles.footer}>
           <span>↑↓ 选择 · ↵ 跳转</span>
           <span>Esc 关闭</span>
         </div>

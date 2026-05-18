@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
+import { clsx } from "clsx";
 import { Sparkline } from "@/components/ui/Sparkline";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useAuthStore } from "@/stores/authStore";
 import { useMLBackendStats, type BackendSnapshot, type BackendHistory } from "./useMLBackendStats";
 import { usePerfHudStore } from "./usePerfHudStore";
+import styles from "./PerfHud.module.css";
 
 /**
  * v0.9.11 · PerfHud GPU MVP 浮窗.
@@ -11,10 +14,6 @@ import { usePerfHudStore } from "./usePerfHudStore";
  * 权限 gating: super_admin / project_admin only (其他角色 store 即便 open 也不渲染).
  * 数据源: /ws/ml-backend-stats, 1s 粒度. 关闭即断, 后端 Celery beat skip.
  */
-
-const PANEL_WIDTH = 280;
-const PANEL_HEIGHT_COLLAPSED = 200;
-const PANEL_HEIGHT_EXPANDED = 360;
 
 function colorFor(pct: number | null | undefined): string {
   if (pct == null) return "var(--color-fg-muted, #888)";
@@ -35,39 +34,22 @@ function MetricBar({
   pct: number | null | undefined;
 }) {
   const color = colorFor(pct);
+  const valueRef = useElementStyle<HTMLSpanElement>({ "--perf-hud-metric-color": color } as CSSProperties);
+  const fillRef = useElementStyle<HTMLDivElement>({
+    "--perf-hud-metric-width": `${Math.max(0, Math.min(100, pct ?? 0))}%`,
+    "--perf-hud-metric-color": color,
+  } as CSSProperties);
   return (
-    <div style={{ marginBottom: 6 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          fontSize: 11,
-          color: "var(--color-fg-muted, #888)",
-          marginBottom: 2,
-        }}
-      >
+    <div className={styles.metric}>
+      <div className={styles.metricHeader}>
         <span>{label}</span>
-        <span style={{ color, fontFeatureSettings: "'tnum'" }}>
+        <span ref={valueRef} className={styles.metricValue}>
           {value}
-          {unit ? <span style={{ opacity: 0.6, marginLeft: 2 }}>{unit}</span> : null}
+          {unit ? <span className={styles.metricUnit}>{unit}</span> : null}
         </span>
       </div>
-      <div
-        style={{
-          height: 4,
-          background: "var(--color-bg-subtle, #2a2a2a)",
-          borderRadius: 2,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            height: "100%",
-            width: `${Math.max(0, Math.min(100, pct ?? 0))}%`,
-            background: color,
-            transition: "width 0.3s ease, background 0.3s ease",
-          }}
-        />
+      <div className={styles.metricTrack}>
+        <div ref={fillRef} className={styles.metricFill} />
       </div>
     </div>
   );
@@ -93,7 +75,7 @@ function BackendPanel({
   const hitRate = snap.cache?.hit_rate;
 
   return (
-    <div style={{ padding: "8px 10px" }}>
+    <div className={styles.backendPanel}>
       <MetricBar
         label="GPU util"
         value={gpuUtil != null ? `${gpuUtil}%` : "—"}
@@ -116,23 +98,14 @@ function BackendPanel({
         pct={mem}
       />
       {expanded && hist ? (
-        <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+        <div className={styles.sparkGrid}>
           <SparkRow label="GPU" values={hist.gpuUtil} color="var(--color-success, #2da44e)" />
           <SparkRow label="VRAM" values={hist.vramPercent} color="var(--color-accent, #5e92ff)" />
           <SparkRow label="CPU" values={hist.cpu} color="var(--color-warning, #e6a700)" />
           <SparkRow label="RAM" values={hist.mem} color="var(--color-danger, #e54d4d)" />
         </div>
       ) : null}
-      <div
-        style={{
-          marginTop: 8,
-          fontSize: 10,
-          color: "var(--color-fg-muted, #888)",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 6,
-        }}
-      >
+      <div className={styles.backendMeta}>
         {snap.gpu_info?.device_name ? <span>{snap.gpu_info.device_name}</span> : null}
         {temp != null ? <span>· {temp}°C</span> : null}
         {power != null ? <span>· {power}W</span> : null}
@@ -146,8 +119,8 @@ function BackendPanel({
 function SparkRow({ label, values, color }: { label: string; values: number[]; color: string }) {
   if (values.length < 2) return null;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10 }}>
-      <span style={{ width: 32, color: "var(--color-fg-muted, #888)" }}>{label}</span>
+    <div className={styles.sparkRow}>
+      <span className={styles.sparkLabel}>{label}</span>
       <Sparkline values={values} color={color} width={220} height={20} />
     </div>
   );
@@ -174,55 +147,20 @@ export function PerfHud() {
     <div
       role="dialog"
       aria-label="GPU 性能监控"
-      style={{
-        position: "fixed",
-        top: 60,
-        right: 12,
-        width: PANEL_WIDTH,
-        height: expanded ? PANEL_HEIGHT_EXPANDED : PANEL_HEIGHT_COLLAPSED,
-        background: "var(--color-bg-panel, #1e1e1e)",
-        color: "var(--color-fg, #e0e0e0)",
-        border: "1px solid var(--color-border, #333)",
-        borderRadius: 6,
-        boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
-        zIndex: 1000,
-        display: "flex",
-        flexDirection: "column",
-        fontFamily: "var(--font-sans, system-ui)",
-      }}
+      className={clsx(styles.panel, expanded && styles.panelExpanded)}
     >
-      <div
-        style={{
-          padding: "6px 10px",
-          borderBottom: "1px solid var(--color-border, #333)",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 12,
-        }}
-      >
+      <div className={styles.header}>
         <span
           aria-hidden
           title={connected ? "实时连接中" : "未连接"}
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: 3,
-            background: connected ? "#2da44e" : "#888",
-          }}
+          className={clsx(styles.statusDot, connected && styles.statusDotConnected)}
         />
-        <span style={{ flex: 1, fontWeight: 600 }}>性能监控</span>
+        <span className={styles.headerTitle}>性能监控</span>
         {backendIds.length > 1 ? (
           <select
             value={activeId ?? ""}
             onChange={(e) => setSelectedId(e.target.value)}
-            style={{
-              background: "transparent",
-              color: "inherit",
-              border: "1px solid var(--color-border, #444)",
-              borderRadius: 3,
-              fontSize: 11,
-            }}
+            className={styles.backendSelect}
           >
             {backendIds.map((id) => (
               <option key={id} value={id}>
@@ -236,14 +174,7 @@ export function PerfHud() {
           onClick={() => setExpanded(!expanded)}
           aria-label={expanded ? "收起趋势图" : "展开趋势图"}
           title={expanded ? "收起" : "展开 60s 趋势"}
-          style={{
-            background: "transparent",
-            color: "inherit",
-            border: "none",
-            cursor: "pointer",
-            padding: "0 4px",
-            fontSize: 12,
-          }}
+          className={styles.iconButton}
         >
           {expanded ? "▾" : "▴"}
         </button>
@@ -251,36 +182,21 @@ export function PerfHud() {
           type="button"
           onClick={close}
           aria-label="关闭"
-          style={{
-            background: "transparent",
-            color: "inherit",
-            border: "none",
-            cursor: "pointer",
-            padding: "0 4px",
-            fontSize: 14,
-          }}
+          className={styles.closeButton}
         >
           ×
         </button>
       </div>
-      <div style={{ flex: 1, overflow: "auto" }}>
+      <div className={styles.body}>
         {activeSnap ? (
           <BackendPanel snap={activeSnap} hist={activeHist} expanded={expanded} />
         ) : (
-          <div
-            style={{
-              padding: 16,
-              fontSize: 12,
-              color: "var(--color-fg-muted, #888)",
-              textAlign: "center",
-              lineHeight: 1.6,
-            }}
-          >
+          <div className={styles.empty}>
             {status === "connecting" ? "正在连接 /ws/ml-backend-stats…" : null}
             {status === "auth_failed" ? (
               <>
                 鉴权失败 (1008)
-                <div style={{ fontSize: 10, marginTop: 4 }}>
+                <div className={styles.emptyHint}>
                   仅 super_admin / project_admin 可见此面板
                 </div>
               </>
@@ -288,7 +204,7 @@ export function PerfHud() {
             {status === "closed" ? (
               <>
                 连接关闭
-                <div style={{ fontSize: 10, marginTop: 4 }}>
+                <div className={styles.emptyHint}>
                   确认 API + Celery beat 已重启
                 </div>
               </>
@@ -296,7 +212,7 @@ export function PerfHud() {
             {status === "connected" ? (
               <>
                 等待 backend 上报…
-                <div style={{ fontSize: 10, marginTop: 4 }}>
+                <div className={styles.emptyHint}>
                   Celery beat 1s task 是否在跑？(check{" "}
                   <code>publish-ml-backend-stats</code>)
                 </div>

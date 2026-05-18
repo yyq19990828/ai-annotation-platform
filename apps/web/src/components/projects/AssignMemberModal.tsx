@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -8,6 +9,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useAddProjectMember } from "@/hooks/useProjects";
 import { usersApi } from "@/api/users";
 import type { ProjectMemberResponse } from "@/api/projects";
+import styles from "./AssignMemberModal.module.css";
 
 interface Props {
   open: boolean;
@@ -67,38 +69,21 @@ export function AssignMemberModal({ open, projectId, role, existing, onClose }: 
 
   return (
     <Modal open={open} onClose={onClose} title={`指派${ROLE_LABEL[role]}`} width={520}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className={styles.stack}>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="按姓名、邮箱、分组搜索"
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            padding: "8px 11px",
-            fontSize: 13.5,
-            background: "var(--color-bg-sunken)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-            outline: "none",
-            fontFamily: "inherit",
-          }}
+          className={styles.searchInput}
         />
-        <div
-          style={{
-            maxHeight: 320,
-            overflowY: "auto",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-          }}
-        >
+        <div className={styles.list}>
           {isLoading && (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+            <div className={styles.emptyState}>
               加载中...
             </div>
           )}
           {!isLoading && candidates.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
+            <div className={styles.emptyState}>
               没有可用的{ROLE_LABEL[role]}
             </div>
           )}
@@ -109,35 +94,22 @@ export function AssignMemberModal({ open, projectId, role, existing, onClose }: 
                 key={u.id}
                 type="button"
                 onClick={() => setSelected(u.id)}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 12px",
-                  background: active ? "var(--color-accent-soft)" : "transparent",
-                  border: "none",
-                  borderBottom: "1px solid var(--color-border)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  color: "var(--color-fg)",
-                  fontFamily: "inherit",
-                }}
+                className={clsx(styles.userButton, active && styles.userButtonActive)}
               >
                 <Avatar initial={u.name.slice(0, 1)} size="sm" />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{u.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                <div className={styles.userBody}>
+                  <div className={styles.userName}>{u.name}</div>
+                  <div className={styles.userMeta}>
                     {u.email}
                     {u.group_name ? ` · ${u.group_name}` : ""}
                   </div>
                 </div>
-                {active && <Icon name="check" size={14} style={{ color: "var(--color-accent)" }} />}
+                {active && <Icon name="check" size={14} className={styles.checkIcon} />}
               </button>
             );
           })}
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div className={styles.actions}>
           <Button variant="ghost" onClick={onClose}>取消</Button>
           <Button variant="primary" disabled={!selected || add.isPending} onClick={onConfirm}>
             {add.isPending ? "指派中..." : "确认指派"}

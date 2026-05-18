@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import type { MyBatchItem } from "@/api/dashboard";
+import styles from "./AnnotateSidebar.module.css";
 
 interface Props {
   batches: MyBatchItem[];
@@ -77,50 +78,38 @@ export function AnnotateSidebar({ batches, selectedBatchId, onSelect }: Props) {
 
   if (batches.length === 0) {
     return (
-      <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 12 }}>
-        <Icon name="inbox" size={32} style={{ opacity: 0.25, marginBottom: 8 }} />
+      <div className={styles.emptyState}>
+        <Icon name="inbox" size={32} className={styles.emptyIcon} />
         <div>暂无分派批次</div>
-        <div style={{ fontSize: 11, marginTop: 4 }}>请联系项目管理员将你加入批次</div>
+        <div className={styles.emptyHint}>请联系项目管理员将你加入批次</div>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: "8px 4px" }}>
+    <div className={styles.root}>
       {groups.map((g) => {
         const isCollapsed = collapsed.has(g.project_id) && g.project_id !== selectedProjectId;
         return (
-          <div key={g.project_id} style={{ marginBottom: 4 }}>
+          <div key={g.project_id} className={styles.projectGroup}>
             <button
               type="button"
               onClick={() => toggle(g.project_id)}
-              style={{
-                width: "100%",
-                padding: "6px 10px",
-                background: "transparent",
-                border: "none",
-                fontFamily: "inherit",
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--color-fg-muted)",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                textAlign: "left",
-              }}
+              className={styles.projectButton}
             >
               <Icon name={isCollapsed ? "chevRight" : "chevDown"} size={11} />
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span className={styles.ellipsis}>
                 {g.project_name}
               </span>
               {g.remaining > 0 && (
-                <Badge variant="accent" style={{ fontSize: 10, padding: "0 6px" }}>{g.remaining}</Badge>
+                <span className={styles.countBadge}>
+                  <Badge variant="accent">{g.remaining}</Badge>
+                </span>
               )}
             </button>
 
             {!isCollapsed && (
-              <div style={{ marginLeft: 12, borderLeft: "1px solid var(--color-border-subtle, var(--color-border))" }}>
+              <div className={styles.batchList}>
                 {g.items.map((b) => {
                   const active = b.batch_id === selectedBatchId;
                   const remaining = Math.max(0, b.total_tasks - b.completed_tasks);
@@ -130,40 +119,22 @@ export function AnnotateSidebar({ batches, selectedBatchId, onSelect }: Props) {
                       key={b.batch_id}
                       type="button"
                       onClick={() => onSelect(b)}
-                      style={{
-                        width: "100%",
-                        padding: "8px 10px",
-                        margin: "2px 0",
-                        borderRadius: "var(--radius-sm)",
-                        border: "none",
-                        background: active ? "var(--color-accent-soft)" : "transparent",
-                        color: "var(--color-fg)",
-                        fontFamily: "inherit",
-                        fontSize: 12.5,
-                        textAlign: "left",
-                        cursor: "pointer",
-                      }}
+                      className={`${styles.batchButton} ${active ? styles.batchButtonActive : ""}`}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span className="mono" style={{ fontSize: 11, color: "var(--color-accent)", fontWeight: 600 }}>
+                      <div className={styles.batchTitleRow}>
+                        <span className={`mono ${styles.batchId}`}>
                           {b.batch_display_id}
                         </span>
-                        <span
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
+                        <span className={styles.batchName}>
                           {b.batch_name}
                         </span>
-                        <Badge variant={variant} style={{ fontSize: 10, padding: "0 5px" }}>
-                          {b.status === "annotating" ? "进行" : b.status === "rejected" ? "驳回" : b.status === "reviewing" ? "送审" : "未启"}
-                        </Badge>
+                        <span className={styles.statusBadge}>
+                          <Badge variant={variant}>
+                            {b.status === "annotating" ? "进行" : b.status === "rejected" ? "驳回" : b.status === "reviewing" ? "送审" : "未启"}
+                          </Badge>
+                        </span>
                       </div>
-                      <div style={{ fontSize: 10.5, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+                      <div className={styles.batchMeta}>
                         共 {b.total_tasks} · 完成 {b.completed_tasks}
                         {remaining > 0 && ` · 待标 ${remaining}`}
                       </div>

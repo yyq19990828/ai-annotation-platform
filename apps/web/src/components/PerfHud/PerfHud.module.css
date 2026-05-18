@@ -1,0 +1,157 @@
+.metric {
+  margin-bottom: 6px;
+}
+
+.metricHeader {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2px;
+  color: var(--color-fg-muted, #888);
+  font-size: 11px;
+}
+
+.metricValue {
+  color: var(--perf-hud-metric-color, var(--color-fg-muted, #888));
+  font-feature-settings: "tnum";
+}
+
+.metricUnit {
+  margin-left: 2px;
+  opacity: 0.6;
+}
+
+.metricTrack {
+  height: 4px;
+  overflow: hidden;
+  background: var(--color-bg-subtle, #2a2a2a);
+  border-radius: 2px;
+}
+
+.metricFill {
+  width: var(--perf-hud-metric-width, 0%);
+  height: 100%;
+  background: var(--perf-hud-metric-color, var(--color-fg-muted, #888));
+  transition:
+    width 0.3s ease,
+    background 0.3s ease;
+}
+
+.backendPanel {
+  padding: 8px 10px;
+}
+
+.sparkGrid {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.backendMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--color-fg-muted, #888);
+  font-size: 10px;
+}
+
+.sparkRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.sparkLabel {
+  width: 32px;
+  color: var(--color-fg-muted, #888);
+}
+
+.panel {
+  position: fixed;
+  top: 60px;
+  right: 12px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  height: 200px;
+  color: var(--color-fg, #e0e0e0);
+  font-family: var(--font-sans, system-ui);
+  background: var(--color-bg-panel, #1e1e1e);
+  border: 1px solid var(--color-border, #333);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 35%);
+}
+
+.panelExpanded {
+  height: 360px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border, #333);
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  background: #888;
+  border-radius: 3px;
+}
+
+.statusDotConnected {
+  background: #2da44e;
+}
+
+.headerTitle {
+  flex: 1;
+  font-weight: 600;
+}
+
+.backendSelect {
+  color: inherit;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--color-border, #444);
+  border-radius: 3px;
+}
+
+.iconButton,
+.closeButton {
+  padding: 0 4px;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+
+.iconButton {
+  font-size: 12px;
+}
+
+.closeButton {
+  font-size: 14px;
+}
+
+.body {
+  flex: 1;
+  overflow: auto;
+}
+
+.empty {
+  padding: 16px;
+  color: var(--color-fg-muted, #888);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.emptyHint {
+  margin-top: 4px;
+  font-size: 10px;
+}

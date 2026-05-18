@@ -1,0 +1,77 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.createRow {
+  display: flex;
+  gap: 8px;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-size: 13px;
+}
+
+.grow {
+  flex: 1;
+}
+
+.loading {
+  padding: 12px;
+  color: var(--color-fg-muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+.empty {
+  padding: 24px;
+  color: var(--color-fg-muted);
+  text-align: center;
+  font-size: 13px;
+}
+
+.list {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--color-border);
+}
+
+.mutedIcon,
+.count {
+  color: var(--color-fg-muted);
+}
+
+.count {
+  font-size: 11px;
+}
+
+.deleteConfirm {
+  color: var(--color-danger);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}

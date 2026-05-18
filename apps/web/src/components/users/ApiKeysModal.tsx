@@ -10,6 +10,7 @@ import {
   useRevokeApiKey,
 } from "@/hooks/useApiKeys";
 import type { ApiKey, ApiKeyCreated } from "@/api/apiKeys";
+import styles from "./ApiKeysModal.module.css";
 
 interface Props {
   open: boolean;
@@ -80,7 +81,7 @@ export function ApiKeysModal({ open, onClose }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title="API 密钥" width={640}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
+      <div className={styles.root}>
         {secret ? (
           <SecretReveal
             data={secret}
@@ -96,22 +97,14 @@ export function ApiKeysModal({ open, onClose }: Props) {
           />
         ) : (
           <>
-            <div style={{ color: "var(--color-fg-muted)" }}>
+            <div className={styles.muted}>
               密钥用于程序化访问 API（CI / 脚本）；创建后请立即复制保存，关闭弹窗后将无法再次查看明文。
             </div>
 
             {creating ? (
               <form
                 onSubmit={submit}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                  padding: 12,
-                  background: "var(--color-bg-sunken)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
-                }}
+                className={styles.createForm}
               >
                 <Field label="名称">
                   <input
@@ -121,22 +114,15 @@ export function ApiKeysModal({ open, onClose }: Props) {
                     onChange={(e) => setName(e.target.value)}
                     maxLength={60}
                     placeholder="如 ci-bot / 数据导出脚本"
-                    style={{
-                      width: "100%",
-                      padding: "7px 10px",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-md)",
-                      background: "var(--color-bg-elev)",
-                      fontSize: 13,
-                    }}
+                    className={styles.input}
                   />
                 </Field>
                 <Field label="权限范围（scope）">
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div className={styles.scopeList}>
                     {SCOPE_OPTIONS.map((opt) => (
                       <label
                         key={opt.id}
-                        style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer" }}
+                        className={styles.scopeOption}
                       >
                         <input
                           type="checkbox"
@@ -149,23 +135,23 @@ export function ApiKeysModal({ open, onClose }: Props) {
                             );
                           }}
                         />
-                        <code style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 11.5 }}>
+                        <code className={styles.scopeCode}>
                           {opt.id}
                         </code>
-                        <span style={{ color: "var(--color-fg-muted)" }}>{opt.label}</span>
+                        <span className={styles.muted}>{opt.label}</span>
                       </label>
                     ))}
                   </div>
                 </Field>
-                <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                <div className={styles.note}>
                   注：v0.9.3 phase 1 仅记录 scope，未在路由层强制拦截；后续版本启用。
                 </div>
                 {createKey.isError && (
-                  <div style={{ fontSize: 12, color: "var(--color-danger)" }}>
+                  <div className={styles.errorText}>
                     {(createKey.error as Error).message ?? "创建失败"}
                   </div>
                 )}
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                <div className={styles.actions}>
                   <Button type="button" onClick={() => setCreating(false)} disabled={createKey.isPending}>
                     取消
                   </Button>
@@ -179,29 +165,21 @@ export function ApiKeysModal({ open, onClose }: Props) {
                 </div>
               </form>
             ) : (
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <div className={styles.rightAction}>
                 <Button variant="primary" onClick={() => setCreating(true)}>
                   <Icon name="plus" size={12} /> 新建密钥
                 </Button>
               </div>
             )}
 
-            <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
-              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 12.5 }}>
+            <div className={styles.tableShell}>
+              <table className={styles.table}>
                 <thead>
                   <tr>
                     {["名称", "前缀", "权限", "最后使用", "创建", ""].map((h, i) => (
                       <th
                         key={i}
-                        style={{
-                          textAlign: "left",
-                          fontWeight: 500,
-                          fontSize: 11,
-                          color: "var(--color-fg-muted)",
-                          padding: "8px 10px",
-                          borderBottom: "1px solid var(--color-border)",
-                          background: "var(--color-bg-sunken)",
-                        }}
+                        className={styles.th}
                       >
                         {h}
                       </th>
@@ -211,14 +189,14 @@ export function ApiKeysModal({ open, onClose }: Props) {
                 <tbody>
                   {isLoading && (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--color-fg-subtle)" }}>
+                      <td colSpan={6} className={styles.emptyCell}>
                         加载中…
                       </td>
                     </tr>
                   )}
                   {!isLoading && keys.length === 0 && (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--color-fg-subtle)" }}>
+                      <td colSpan={6} className={styles.emptyCell}>
                         尚未创建任何密钥
                       </td>
                     </tr>
@@ -226,46 +204,42 @@ export function ApiKeysModal({ open, onClose }: Props) {
                   {keys.map((k) => {
                     const revoked = !!k.revoked_at;
                     return (
-                      <tr key={k.id} style={{ opacity: revoked ? 0.5 : 1 }}>
-                        <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--color-border)" }}>
+                      <tr key={k.id} className={revoked ? styles.revokedRow : undefined}>
+                        <td className={styles.cell}>
                           {k.name}
                           {revoked && (
-                            <Badge variant="outline" style={{ marginLeft: 6, fontSize: 10 }}>
+                            <span className={styles.revokedBadge}>
+                              <Badge variant="outline">
                               已吊销
-                            </Badge>
+                              </Badge>
+                            </span>
                           )}
                         </td>
                         <td
-                          className="mono"
-                          style={{
-                            padding: "8px 10px",
-                            borderBottom: "1px solid var(--color-border)",
-                            fontFamily: "var(--font-mono, monospace)",
-                            fontSize: 11.5,
-                          }}
+                          className={`${styles.cell} mono ${styles.keyPrefix}`}
                         >
                           {k.key_prefix}…
                         </td>
-                        <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--color-border)" }}>
+                        <td className={styles.cell}>
                           {k.scopes.length === 0 ? (
-                            <span style={{ color: "var(--color-fg-subtle)" }}>—</span>
+                            <span className={styles.subtle}>—</span>
                           ) : (
-                            <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                            <div className={styles.scopeBadges}>
                               {k.scopes.map((s) => (
-                                <Badge key={s} variant="outline" style={{ fontSize: 10 }}>
+                                <Badge key={s} variant="outline">
                                   {s}
                                 </Badge>
                               ))}
                             </div>
                           )}
                         </td>
-                        <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--color-border)", color: "var(--color-fg-muted)" }}>
+                        <td className={`${styles.cell} ${styles.dateCell}`}>
                           {formatDate(k.last_used_at)}
                         </td>
-                        <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--color-border)", color: "var(--color-fg-muted)" }}>
+                        <td className={`${styles.cell} ${styles.dateCell}`}>
                           {formatDate(k.created_at)}
                         </td>
-                        <td style={{ padding: "8px 10px", borderBottom: "1px solid var(--color-border)", textAlign: "right" }}>
+                        <td className={`${styles.cell} ${styles.actionsCell}`}>
                           {!revoked && (
                             <Button
                               variant="ghost"
@@ -274,7 +248,7 @@ export function ApiKeysModal({ open, onClose }: Props) {
                               disabled={revokeKey.isPending}
                               title="吊销密钥"
                             >
-                              <Icon name="trash" size={11} style={{ color: "var(--color-danger)" }} />
+                              <Icon name="trash" size={11} className={styles.dangerIcon} />
                             </Button>
                           )}
                         </td>
@@ -293,8 +267,8 @@ export function ApiKeysModal({ open, onClose }: Props) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontSize: 11, color: "var(--color-fg-muted)", fontWeight: 500 }}>{label}</span>
+    <label className={styles.field}>
+      <span className={styles.fieldLabel}>{label}</span>
       {children}
     </label>
   );
@@ -310,26 +284,16 @@ function SecretReveal({
   onCopy: () => void | Promise<void>;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ color: "var(--color-fg-muted)" }}>
+    <div className={styles.secretRoot}>
+      <div className={styles.muted}>
         密钥 <strong>{data.name}</strong> 已生成。请立即复制保存，关闭后无法再次查看。
       </div>
       <div
-        style={{
-          padding: 12,
-          background: "var(--color-bg-sunken)",
-          border: "1px dashed var(--color-warning)",
-          borderRadius: "var(--radius-md)",
-          fontFamily: "var(--font-mono, monospace)",
-          fontSize: 13,
-          fontWeight: 500,
-          userSelect: "all",
-          wordBreak: "break-all",
-        }}
+        className={styles.secretBox}
       >
         {data.plaintext}
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <div className={styles.actions}>
         <Button onClick={() => onCopy()}>复制</Button>
         <Button variant="primary" onClick={onAck}>
           我已记下

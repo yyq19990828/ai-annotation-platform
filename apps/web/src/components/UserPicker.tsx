@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { clsx } from "clsx";
+
+import { useElementStyle } from "@/components/ui/useElementStyle";
+import styles from "./UserPicker.module.css";
 
 export interface UserPickerOption {
   id: string;
@@ -24,6 +28,10 @@ interface UserPickerProps {
 export function UserPicker({ anchor, options, query, onPick, onClose }: UserPickerProps) {
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useElementStyle<HTMLDivElement>({
+    "--user-picker-left": anchor.left,
+    "--user-picker-top": anchor.top,
+  } as React.CSSProperties, listRef);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -71,26 +79,13 @@ export function UserPicker({ anchor, options, query, onPick, onClose }: UserPick
 
   return createPortal(
     <div
-      ref={listRef}
+      ref={popoverRef}
       role="listbox"
       aria-label="选择用户"
-      style={{
-        position: "fixed",
-        left: anchor.left,
-        top: anchor.top,
-        zIndex: 80,
-        minWidth: 200,
-        maxHeight: 240,
-        overflowY: "auto",
-        background: "var(--color-bg-elev)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        boxShadow: "var(--shadow-md)",
-        padding: 4,
-      }}
+      className={styles.popover}
     >
       {filtered.length === 0 ? (
-        <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--color-fg-muted)" }}>
+        <div className={styles.empty}>
           {query ? `无匹配 "${query}"` : "无项目成员"}
         </div>
       ) : (
@@ -104,21 +99,11 @@ export function UserPicker({ anchor, options, query, onPick, onClose }: UserPick
               e.preventDefault();
               onPick(o);
             }}
-            style={{
-              padding: "6px 10px",
-              fontSize: 12,
-              borderRadius: 3,
-              cursor: "pointer",
-              background: i === active ? "oklch(0.55 0.18 250 / 0.15)" : "transparent",
-              color: "var(--color-fg)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}
+            className={clsx(styles.option, i === active && styles.optionActive)}
           >
-            <span style={{ fontWeight: 500 }}>{o.name}</span>
+            <span className={styles.name}>{o.name}</span>
             {(o.email || o.hint) && (
-              <span style={{ fontSize: 10.5, color: "var(--color-fg-muted)" }}>
+              <span className={styles.hint}>
                 {o.email ?? o.hint}
               </span>
             )}

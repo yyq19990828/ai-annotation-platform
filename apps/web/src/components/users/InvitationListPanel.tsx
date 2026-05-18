@@ -8,6 +8,7 @@ import { ROLE_LABELS } from "@/constants/roles";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { InvitationResponse, InvitationStatus } from "@/api/invitations";
 import type { UserRole } from "@/types";
+import styles from "./InvitationListPanel.module.css";
 
 const STATUS_FILTERS: Array<{ key: InvitationStatus | "all"; label: string }> = [
   { key: "all", label: "全部" },
@@ -77,22 +78,14 @@ export function InvitationListPanel() {
   };
 
   return (
-    <div style={{ padding: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <div style={{ display: "flex", gap: 6 }}>
+    <div className={styles.root}>
+      <div className={styles.toolbar}>
+        <div className={styles.filters}>
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.key}
               onClick={() => setFilter(f.key)}
-              style={{
-                padding: "4px 10px",
-                fontSize: 12,
-                borderRadius: "var(--radius-md)",
-                border: `1px solid ${filter === f.key ? "var(--color-accent)" : "var(--color-border)"}`,
-                background: filter === f.key ? "var(--color-accent-soft)" : "var(--color-bg-elev)",
-                color: filter === f.key ? "var(--color-accent)" : "var(--color-fg)",
-                cursor: "pointer",
-              }}
+              className={`${styles.filterButton} ${filter === f.key ? styles.filterButtonActive : ""}`}
             >
               {f.label}
             </button>
@@ -102,13 +95,7 @@ export function InvitationListPanel() {
           <select
             value={scope}
             onChange={(e) => setScope(e.target.value as "me" | "all")}
-            style={{
-              padding: "5px 8px",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-              fontSize: 12.5,
-              background: "var(--color-bg-elev)",
-            }}
+            className={styles.select}
           >
             <option value="me">我邀请的</option>
             <option value="all">全部邀请</option>
@@ -116,21 +103,13 @@ export function InvitationListPanel() {
         )}
       </div>
 
-      <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+      <table className={styles.table}>
         <thead>
           <tr>
             {["邮箱", "角色", "数据组", "状态", "邀请人", "过期时间", ""].map((h, i) => (
               <th
                 key={i}
-                style={{
-                  textAlign: "left",
-                  fontWeight: 500,
-                  fontSize: 11.5,
-                  color: "var(--color-fg-muted)",
-                  padding: "8px 10px",
-                  borderBottom: "1px solid var(--color-border)",
-                  background: "var(--color-bg-sunken)",
-                }}
+                className={styles.th}
               >
                 {h}
               </th>
@@ -140,14 +119,14 @@ export function InvitationListPanel() {
         <tbody>
           {isLoading && (
             <tr>
-              <td colSpan={7} style={{ padding: 24, textAlign: "center", color: "var(--color-fg-subtle)" }}>
+              <td colSpan={7} className={styles.emptyCell}>
                 加载中…
               </td>
             </tr>
           )}
           {!isLoading && invites.length === 0 && (
             <tr>
-              <td colSpan={7} style={{ padding: 24, textAlign: "center", color: "var(--color-fg-subtle)" }}>
+              <td colSpan={7} className={styles.emptyCell}>
                 暂无邀请记录
               </td>
             </tr>
@@ -158,19 +137,19 @@ export function InvitationListPanel() {
             const revoked = inv.status === "revoked";
             return (
               <tr key={inv.id}>
-                <td style={cellStyle}>
-                  <span className="mono" style={{ fontSize: 12.5 }}>{inv.email}</span>
+                <td className={styles.cell}>
+                  <span className={`mono ${styles.email}`}>{inv.email}</span>
                 </td>
-                <td style={cellStyle}>{ROLE_LABELS[inv.role as UserRole] ?? inv.role}</td>
-                <td style={cellStyle}>{inv.group_name ?? "—"}</td>
-                <td style={cellStyle}>
+                <td className={styles.cell}>{ROLE_LABELS[inv.role as UserRole] ?? inv.role}</td>
+                <td className={styles.cell}>{inv.group_name ?? "—"}</td>
+                <td className={styles.cell}>
                   <Badge variant={STATUS_COLORS[inv.status]}>{STATUS_LABEL[inv.status]}</Badge>
                 </td>
-                <td style={{ ...cellStyle, color: "var(--color-fg-muted)" }}>{inv.invited_by_name ?? "—"}</td>
-                <td style={{ ...cellStyle, fontSize: 12, color: "var(--color-fg-muted)" }}>
+                <td className={`${styles.cell} ${styles.muted}`}>{inv.invited_by_name ?? "—"}</td>
+                <td className={`${styles.cell} ${styles.dateCell}`}>
                   {new Date(inv.expires_at).toLocaleString("zh-CN")}
                 </td>
-                <td style={{ ...cellStyle, textAlign: "right" }}>
+                <td className={`${styles.cell} ${styles.actionsCell}`}>
                   {!accepted && (
                     <>
                       <Button
@@ -205,9 +184,3 @@ export function InvitationListPanel() {
     </div>
   );
 }
-
-const cellStyle: React.CSSProperties = {
-  padding: "10px 10px",
-  borderBottom: "1px solid var(--color-border)",
-  verticalAlign: "middle",
-};

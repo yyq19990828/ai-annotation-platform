@@ -25,6 +25,7 @@ import { ApiKeysModal } from "@/components/users/ApiKeysModal";
 import { usersApi, type UserResponse } from "@/api/users";
 import { ApiError } from "@/api/client";
 import type { UserRole } from "@/types";
+import styles from "./UsersPage.module.css";
 
 // actor.role × target.role → 可点"编辑"（即可改角色或可删）
 const EDITABLE_TARGET_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
@@ -125,13 +126,13 @@ export function UsersPage() {
   const activeLabel = tabLabels.find(([k]) => k === tab)?.[1] ?? tabLabels[0][1];
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24, marginBottom: 20 }}>
+    <div className={styles.page}>
+      <div className={styles.header}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>用户与权限</h1>
-          <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>管理团队成员、角色权限与数据组分配</p>
+          <h1 className={styles.title}>用户与权限</h1>
+          <p className={styles.subtitle}>管理团队成员、角色权限与数据组分配</p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className={styles.headerActions}>
           <Button onClick={() => setApiKeysOpen(true)} title="管理我的 API 密钥（用于 CI / 脚本访问）">
             <Icon name="key" size={13} />API 密钥
           </Button>
@@ -148,7 +149,7 @@ export function UsersPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className={styles.statsGrid}>
         <StatCard icon="users" label="团队成员" value={allUsers.length} hint="活跃" sparkValues={[8, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 12]} sparkColor="var(--color-accent)" />
         <StatCard icon="shield" label="角色组" value={roleKeys.length} hint="自定义" />
         <StatCard icon="folder" label="数据组" value={groupsData.length} hint="可分配" />
@@ -163,7 +164,7 @@ export function UsersPage() {
       </div>
 
       <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--color-border)" }}>
+        <div className={styles.cardHeader}>
           <TabRow
             tabs={tabLabels.map(([, l]) => l)}
             active={activeLabel}
@@ -173,11 +174,11 @@ export function UsersPage() {
             }}
           />
           {tab === "members" && (
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className={styles.memberFilters}>
               <select
                 value={selectedRole}
                 onChange={(e) => setSelectedRole(e.target.value)}
-                style={{ padding: "5px 8px", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", fontSize: 12.5, background: "var(--color-bg-elev)" }}
+                className={styles.select}
               >
                 <option>全部</option>
                 {roleKeys.map((r) => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
@@ -195,17 +196,11 @@ export function UsersPage() {
         </div>
 
         {tab === "members" && (
-          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+          <table className={styles.table}>
             <thead>
               <tr>
                 {["成员", "角色", "数据组", "状态", "近期标注量", "准确率", "加入时间", ""].map((h, i) => (
-                  <th key={i} style={{
-                    textAlign: "left", fontWeight: 500, fontSize: 12,
-                    color: "var(--color-fg-muted)", padding: "10px 12px",
-                    borderBottom: "1px solid var(--color-border)",
-                    background: "var(--color-bg-sunken)",
-                    ...(i === 0 ? { paddingLeft: 16 } : {}),
-                  }}>
+                  <th key={i} className={`${styles.th} ${i === 0 ? styles.firstTh : ""}`}>
                     {h}
                   </th>
                 ))}
@@ -214,42 +209,42 @@ export function UsersPage() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>加载中...</td>
+                  <td colSpan={8} className={styles.emptyCell}>加载中...</td>
                 </tr>
               )}
               {filtered.map((u: UserResponse) => {
                 const statusLabel = STATUS_LABEL[u.status] ?? u.status;
                 return (
                   <tr key={u.id}>
-                    <td style={{ padding: "12px 12px 12px 16px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <td className={styles.memberCell}>
+                      <div className={styles.memberInfo}>
                         <Avatar initial={u.name[0]} size="md" />
                         <div>
-                          <div style={{ fontWeight: 500, fontSize: 13.5 }}>{u.name}</div>
-                          <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{u.email}</div>
+                          <div className={styles.memberName}>{u.name}</div>
+                          <div className={`mono ${styles.memberEmail}`}>{u.email}</div>
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+                    <td className={styles.td}>
                       <Badge variant={ROLE_COLORS[u.role] || "outline"}>{ROLE_LABELS[u.role as UserRole] ?? u.role}</Badge>
                     </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle", fontSize: 12.5 }}>
+                    <td className={styles.td}>
                       {u.group_name ?? "—"}
                     </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+                    <td className={styles.td}>
                       <Badge variant={STATUS_COLORS[statusLabel] || "outline"} dot>{statusLabel}</Badge>
                     </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-                      <span style={{ color: "var(--color-fg-subtle)", fontSize: 12 }}>—</span>
+                    <td className={styles.td}>
+                      <span className={styles.subtleDash}>—</span>
                     </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-                      <span style={{ color: "var(--color-fg-subtle)", fontSize: 12 }}>—</span>
+                    <td className={styles.td}>
+                      <span className={styles.subtleDash}>—</span>
                     </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle", fontSize: 12, color: "var(--color-fg-muted)" }}>
+                    <td className={`${styles.td} ${styles.dateCell}`}>
                       {formatDate(u.created_at)}
                     </td>
-                    <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", textAlign: "right", verticalAlign: "middle" }}>
-                      <div style={{ display: "inline-flex", gap: 2 }}>
+                    <td className={styles.actionCell}>
+                      <div className={styles.rowActions}>
                         {canViewAudit && (
                           <Button
                             variant="ghost"
@@ -282,13 +277,13 @@ export function UsersPage() {
                                 onClick={() => setDeleting(u)}
                                 title="删除账号"
                               >
-                                <Icon name="trash" size={11} style={{ color: "var(--color-danger)" }} />
+                                <Icon name="trash" size={11} className={styles.dangerIcon} />
                               </Button>
                             )}
                           </>
                         ) : (
                           <Button variant="ghost" size="sm" disabled title={me?.id === u.id ? "不能修改自己" : "无权修改该用户"}>
-                            <Icon name="edit" size={11} style={{ opacity: 0.4 }} />
+                            <Icon name="edit" size={11} className={styles.disabledIcon} />
                           </Button>
                         )}
                       </div>
@@ -301,38 +296,38 @@ export function UsersPage() {
         )}
 
         {tab === "roles" && (
-          <div style={{ padding: 16, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+          <div className={styles.rolesGrid}>
             {roleKeys.map((rk) => {
               const perms = ROLE_PERMISSIONS[rk];
               const permsSet = new Set<Permission>(perms);
               const memberCount = allUsers.filter((u: UserResponse) => u.role === rk).length;
               return (
-                <div key={rk} style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-lg)", padding: 14, background: "var(--color-bg-elev)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <Badge variant={ROLE_COLORS[rk] || "outline"} style={{ fontSize: 12, padding: "3px 10px" }}>
+                <div key={rk} className={styles.roleCard}>
+                  <div className={styles.roleHeader}>
+                    <Badge variant={ROLE_COLORS[rk] || "outline"}>
                       {ROLE_LABELS[rk] ?? rk}
                     </Badge>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{memberCount} 人</span>
+                    <span className={`mono ${styles.smallMono}`}>{memberCount} 人</span>
                   </div>
-                  <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)", marginBottom: 10 }}>{ROLE_DESC[rk]}</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div className={styles.roleDesc}>{ROLE_DESC[rk]}</div>
+                  <div className={styles.permissionGroups}>
                     {PERMISSION_GROUPS.map((group) => {
                       const granted = group.perms.filter((p) => permsSet.has(p));
                       const denied = group.perms.filter((p) => !permsSet.has(p));
                       if (granted.length === 0 && denied.length === 0) return null;
                       return (
                         <div key={group.key}>
-                          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--color-fg-subtle)", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 4 }}>
+                          <div className={styles.permissionGroupTitle}>
                             {group.title}
                           </div>
-                          <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                          <div className={styles.permissionBadges}>
                             {granted.map((p) => (
-                              <Badge key={p} variant="success" style={{ fontSize: 10 }}>
+                              <Badge key={p} variant="success">
                                 <Icon name="check" size={9} />{PERMISSION_LABELS[p]}
                               </Badge>
                             ))}
                             {denied.map((p) => (
-                              <Badge key={p} variant="outline" style={{ fontSize: 10, opacity: 0.4 }}>
+                              <Badge key={p} variant="outline">
                                 {PERMISSION_LABELS[p]}
                               </Badge>
                             ))}
@@ -348,33 +343,29 @@ export function UsersPage() {
         )}
 
         {tab === "groups" && (
-          <div style={{ padding: 16 }}>
+          <div className={styles.groupsPane}>
             {groupsData.length === 0 && (
-              <div style={{ padding: 30, textAlign: "center", color: "var(--color-fg-muted)", fontSize: 13 }}>
-                暂无数据组。<Can permission="group.manage"><a onClick={() => setManageGroupsOpen(true)} style={{ cursor: "pointer", color: "var(--color-accent)" }}>新建一个</a></Can>
+              <div className={styles.groupsEmpty}>
+                暂无数据组。<Can permission="group.manage"><a onClick={() => setManageGroupsOpen(true)} className={styles.linkButton}>新建一个</a></Can>
               </div>
             )}
             {groupsData.map((g) => {
               const members = allUsers.filter((u: UserResponse) => u.group_id === g.id);
               return (
-                <div key={g.id} style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "12px 14px", border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)", marginBottom: 8, background: "var(--color-bg-elev)",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <Icon name="folder" size={18} style={{ color: "var(--color-fg-muted)" }} />
+                <div key={g.id} className={styles.groupItem}>
+                  <div className={styles.groupMain}>
+                    <Icon name="folder" size={18} className={styles.muted} />
                     <div>
-                      <div style={{ fontWeight: 500, fontSize: 13.5 }}>{g.name}</div>
-                      <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>{members.length} 名成员{g.description ? ` · ${g.description}` : ""}</div>
+                      <div className={styles.groupName}>{g.name}</div>
+                      <div className={styles.groupMeta}>{members.length} 名成员{g.description ? ` · ${g.description}` : ""}</div>
                     </div>
                   </div>
-                  <div style={{ display: "flex" }}>
-                    {members.slice(0, 5).map((m, i) => (
-                      <Avatar key={m.id} initial={m.name[0]} size="sm" style={{ marginLeft: i ? -6 : 0, border: "2px solid var(--color-bg-elev)" }} />
+                  <div className={styles.groupAvatars}>
+                    {members.slice(0, 5).map((m) => (
+                      <Avatar key={m.id} initial={m.name[0]} size="sm" />
                     ))}
                     {members.length > 5 && (
-                      <Avatar initial={`+${members.length - 5}`} size="sm" style={{ marginLeft: -6, border: "2px solid var(--color-bg-elev)", background: "var(--color-bg-sunken)", color: "var(--color-fg-muted)" }} />
+                      <Avatar initial={`+${members.length - 5}`} size="sm" />
                     )}
                   </div>
                 </div>
@@ -401,28 +392,24 @@ export function UsersPage() {
         width={460}
       >
         {resettingPwd && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
-            <div style={{ color: "var(--color-fg-muted)" }}>
+          <div className={styles.modalStack}>
+            <div className={styles.muted}>
               将为以下用户生成一次性临时密码。请通过安全渠道（IM / 当面）告知用户，
               并提醒首次登录后立即修改密码。
             </div>
-            <div style={{
-              padding: "10px 12px",
-              background: "var(--color-bg-sunken)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-              display: "flex", alignItems: "center", gap: 10,
-            }}>
+            <div className={styles.summaryCard}>
               <Avatar initial={resettingPwd.name[0]} size="md" />
               <div>
-                <div style={{ fontWeight: 500 }}>{resettingPwd.name}</div>
-                <div className="mono" style={{ fontSize: 11.5, color: "var(--color-fg-subtle)" }}>{resettingPwd.email}</div>
+                <div className={styles.summaryName}>{resettingPwd.name}</div>
+                <div className={`mono ${styles.summaryEmail}`}>{resettingPwd.email}</div>
               </div>
-              <Badge variant={ROLE_COLORS[resettingPwd.role] || "outline"} style={{ marginLeft: "auto" }}>
-                {ROLE_LABELS[resettingPwd.role as UserRole] ?? resettingPwd.role}
-              </Badge>
+              <span className={styles.summaryRole}>
+                <Badge variant={ROLE_COLORS[resettingPwd.role] || "outline"}>
+                  {ROLE_LABELS[resettingPwd.role as UserRole] ?? resettingPwd.role}
+                </Badge>
+              </span>
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <div className={styles.modalActions}>
               <Button onClick={() => setResettingPwd(null)} disabled={pwdResetSubmitting}>取消</Button>
               <Button
                 variant="primary"
@@ -455,25 +442,15 @@ export function UsersPage() {
         width={460}
       >
         {tempPwdResult && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
-            <div style={{ color: "var(--color-fg-muted)" }}>
+          <div className={styles.modalStack}>
+            <div className={styles.muted}>
               请立即复制并通过安全渠道告知 <b>{tempPwdResult.user.email}</b>。
               关闭此窗口后无法再次查看；用户首次登录后系统会强制要求修改密码。
             </div>
-            <div style={{
-              padding: 12,
-              background: "var(--color-bg-sunken)",
-              border: "1px dashed var(--color-warning)",
-              borderRadius: "var(--radius-md)",
-              fontFamily: "var(--font-mono, monospace)",
-              fontSize: 14,
-              fontWeight: 500,
-              userSelect: "all",
-              wordBreak: "break-all",
-            }}>
+            <div className={styles.secretBox}>
               {tempPwdResult.password}
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <div className={styles.modalActions}>
               <Button
                 onClick={async () => {
                   try {
@@ -507,72 +484,47 @@ export function UsersPage() {
         width={520}
       >
         {deleting && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
-            <div style={{ color: "var(--color-fg-muted)" }}>
+          <div className={styles.modalStack}>
+            <div className={styles.muted}>
               {transferStage
                 ? "该用户当前持有未完成任务或锁定任务；删除前请选择一名接收者，所有任务将被转交。"
                 : "确认删除以下账号？该用户将无法登录，但历史标注与审计记录仍会保留。"}
             </div>
-            <div style={{
-              padding: "10px 12px",
-              background: "var(--color-bg-sunken)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-              display: "flex", alignItems: "center", gap: 10,
-            }}>
+            <div className={styles.summaryCard}>
               <Avatar initial={deleting.name[0]} size="md" />
               <div>
-                <div style={{ fontWeight: 500 }}>{deleting.name}</div>
-                <div className="mono" style={{ fontSize: 11.5, color: "var(--color-fg-subtle)" }}>{deleting.email}</div>
+                <div className={styles.summaryName}>{deleting.name}</div>
+                <div className={`mono ${styles.summaryEmail}`}>{deleting.email}</div>
               </div>
-              <Badge variant={ROLE_COLORS[deleting.role] || "outline"} style={{ marginLeft: "auto" }}>
-                {ROLE_LABELS[deleting.role as UserRole] ?? deleting.role}
-              </Badge>
+              <span className={styles.summaryRole}>
+                <Badge variant={ROLE_COLORS[deleting.role] || "outline"}>
+                  {ROLE_LABELS[deleting.role as UserRole] ?? deleting.role}
+                </Badge>
+              </span>
             </div>
 
             {transferStage && (
               <>
-                <div style={{
-                  padding: "10px 12px",
-                  background: "rgba(245,158,11,0.08)",
-                  border: "1px solid var(--color-warning)",
-                  borderRadius: "var(--radius-md)",
-                  fontSize: 12.5,
-                  display: "flex", flexDirection: "column", gap: 4,
-                }}>
+                <div className={styles.warningBox}>
                   <div>
                     <Icon name="warning" size={12} /> 未完成任务 <strong>{transferStage.pending}</strong> 个
                     {transferStage.locked > 0 && <> · 锁定任务 <strong>{transferStage.locked}</strong> 个</>}
                   </div>
                   {transferStage.sample.length > 0 && (
-                    <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                    <div className={`mono ${styles.sampleTasks}`}>
                       示例：{transferStage.sample.slice(0, 3).join(", ")}
                       {transferStage.sample.length > 3 && " ..."}
                     </div>
                   )}
                 </div>
                 <div>
-                  <label style={{
-                    display: "block", fontSize: 12, fontWeight: 500,
-                    color: "var(--color-fg-muted)", marginBottom: 6,
-                  }}>
+                  <label className={styles.transferLabel}>
                     转交给（同项目活跃用户）
                   </label>
                   <select
                     value={transferToId}
                     onChange={(e) => setTransferToId(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "8px 11px",
-                      fontSize: 13,
-                      background: "var(--color-bg-elev)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-md)",
-                      color: "var(--color-fg)",
-                      outline: "none",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
+                    className={styles.transferSelect}
                   >
                     <option value="">— 选择接收用户 —</option>
                     {allUsers
@@ -591,18 +543,11 @@ export function UsersPage() {
             )}
 
             {deleteUser.error && (
-              <div style={{
-                padding: "8px 12px",
-                background: "rgba(239,68,68,0.08)",
-                border: "1px solid #ef4444",
-                borderRadius: "var(--radius-md)",
-                color: "#ef4444",
-                fontSize: 12.5,
-              }}>
+              <div className={styles.errorBox}>
                 <Icon name="warning" size={12} /> {(deleteUser.error as Error)?.message ?? "删除失败"}
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <div className={styles.modalActions}>
               <Button
                 onClick={() => {
                   setDeleting(null);

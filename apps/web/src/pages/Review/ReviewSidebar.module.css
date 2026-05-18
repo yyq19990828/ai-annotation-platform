@@ -1,0 +1,122 @@
+.emptyState {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--color-fg-subtle);
+  font-size: 12px;
+}
+
+.emptyIcon {
+  opacity: 0.25;
+  margin-bottom: 8px;
+}
+
+.root {
+  padding: 8px 4px;
+}
+
+.allButton {
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-fg);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.allButtonActive {
+  background: var(--color-accent-soft);
+}
+
+.projectGroup {
+  margin-bottom: 4px;
+}
+
+.projectButton {
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+}
+
+.ellipsis {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.countBadge > :global(span) {
+  font-size: 10px;
+  padding: 0 6px;
+}
+
+.batchList {
+  margin-left: 12px;
+  border-left: 1px solid var(--color-border-subtle, var(--color-border));
+}
+
+.batchButton {
+  width: 100%;
+  padding: 8px 10px;
+  margin: 2px 0;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-fg);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.batchButtonActive {
+  background: var(--color-accent-soft);
+}
+
+.batchTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.batchId {
+  font-size: 11px;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.batchName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusBadge > :global(span) {
+  font-size: 10px;
+  padding: 0 5px;
+}
+
+.batchMeta {
+  font-size: 10.5px;
+  color: var(--color-fg-subtle);
+  margin-top: 2px;
+}

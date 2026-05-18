@@ -1,0 +1,458 @@
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 28px 40px;
+}
+
+.pageHeader {
+  margin-bottom: 16px;
+}
+
+.pageTitle {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.pageDescription {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+}
+
+.navList {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.navButton {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.navButtonActive {
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+.sectionStack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.actionsEnd {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.actionsGapEnd {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.primaryButton {
+  padding: 7px 18px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.primaryButtonPending,
+.primaryButton:disabled {
+  background: var(--color-accent-muted, oklch(0.45 0.18 250));
+  cursor: not-allowed;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+  font-size: 13px;
+  outline: none;
+}
+
+.inputError {
+  border-color: #ef4444;
+}
+
+.textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.fieldError {
+  margin-top: 4px;
+  color: #ef4444;
+  font-size: 11.5px;
+}
+
+.dangerCard > * {
+  border-color: #ef4444;
+  border-width: 1px;
+}
+
+.dangerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #ef4444;
+}
+
+.dangerTitle {
+  margin: 0;
+  color: #ef4444;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dangerIcon {
+  color: #ef4444;
+}
+
+.dangerBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.bodyText {
+  color: var(--color-fg);
+  font-size: 13px;
+}
+
+.mutedBodyText {
+  color: var(--color-fg-muted);
+  font-size: 13px;
+}
+
+.pendingTitle {
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.mutedText {
+  color: var(--color-fg-muted);
+}
+
+.checkLabel,
+.checkLabelMuted {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.checkLabelMuted {
+  color: var(--color-fg-muted);
+  font-size: 12.5px;
+}
+
+.secondaryButton,
+.inputButton {
+  width: auto;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.secondaryButton {
+  padding: 7px 14px;
+}
+
+.inputButton:disabled {
+  cursor: not-allowed;
+}
+
+.dangerButton {
+  padding: 7px 18px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: #ef4444;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dangerButtonDisabled,
+.dangerButton:disabled {
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-subtle);
+  cursor: not-allowed;
+}
+
+.dangerOutlineButton {
+  padding: 7px 14px;
+  border: 1px solid #ef4444;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.loadingBlock,
+.loadingBlockSubtle {
+  padding: 20px;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+}
+
+.loadingBlockSubtle {
+  padding: 16px;
+  color: var(--color-fg-subtle);
+}
+
+.groupLabel,
+.label {
+  margin-bottom: 5px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.groupLabel {
+  margin-bottom: 8px;
+}
+
+.twoColumnGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.fieldGroup {
+  margin-top: 10px;
+}
+
+.inlineFields {
+  display: flex;
+  gap: 8px;
+}
+
+.flexInput {
+  flex: 1;
+}
+
+.inlineHint {
+  margin-left: 10px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.range {
+  width: 100%;
+}
+
+.savingText {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.emptyBlock {
+  padding: 20px;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.feedbackTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.tableHeadRow {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tableHeaderCell {
+  padding: 10px 12px;
+  color: var(--color-fg-muted);
+  font-weight: 500;
+  text-align: left;
+}
+
+.tableBodyRow {
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.tableCell {
+  padding: 8px 12px;
+}
+
+.monoCell {
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.titleCell {
+  color: var(--color-fg);
+}
+
+.severity {
+  font-weight: 500;
+}
+
+.severityLow {
+  color: oklch(0.55 0.08 200);
+}
+
+.severityMedium {
+  color: oklch(0.65 0.18 75);
+}
+
+.severityHigh {
+  color: oklch(0.65 0.18 45);
+}
+
+.severityCritical {
+  color: oklch(0.60 0.22 25);
+}
+
+.severityUnknown {
+  color: var(--color-fg-muted);
+}
+
+.statusPill {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--color-bg-sunken);
+  font-size: 11px;
+}
+
+.dateCell {
+  color: var(--color-fg-muted);
+  font-size: 11px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.field {
+  display: block;
+}
+
+.readOnlyRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.readOnlyValue {
+  flex: 1;
+  padding: 7px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-size: 13px;
+}
+
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border: 1px solid #ef4444;
+  border-radius: var(--radius-md);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  font-size: 12.5px;
+}
+
+.notificationBody {
+  padding: 12px 18px 18px;
+}
+
+.notificationDescription {
+  margin: 0 0 10px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.notificationItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: 13px;
+}
+
+.notificationTitle {
+  font-weight: 500;
+}
+
+.notificationType {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.notificationToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.toggleText {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}

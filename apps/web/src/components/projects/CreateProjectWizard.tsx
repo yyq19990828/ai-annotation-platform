@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { clsx } from "clsx";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { adminMlIntegrationsApi } from "@/api/adminMlIntegrations";
@@ -9,7 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { useToastStore } from "@/components/ui/Toast";
 import { useCreateProject, useAddProjectMember } from "@/hooks/useProjects";
-import { useDatasets, useLinkProject } from "@/hooks/useDatasets";
+import { useDatasets } from "@/hooks/useDatasets";
 import { useUsers } from "@/hooks/useUsers";
 import { useSplitBatches } from "@/hooks/useBatches";
 import {
@@ -23,6 +24,7 @@ import type { DatasetResponse } from "@/api/datasets";
 import { ClassEditor, type ClassRow } from "@/pages/Projects/sections/ClassEditor";
 import { TextOutputDefaultSelect } from "@/components/projects/shared/TextOutputDefaultSelect";
 import { AttributeSchemaEditor, validateAttributeFields } from "@/pages/Projects/sections/AttributeSchemaEditor";
+import styles from "./CreateProjectWizard.module.css";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
@@ -294,20 +296,7 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId }: Props) {
       {step !== 7 && <Stepper current={stepperCurrent} />}
       {/* v0.10.11 · 复制模式: 顶部横幅 + 加载态. */}
       {sourceProjectId && step !== 7 && (
-        <div
-          style={{
-            marginBottom: 12,
-            padding: "8px 12px",
-            border: "1px solid var(--color-accent-soft)",
-            background: "var(--color-accent-soft)",
-            borderRadius: "var(--radius-md)",
-            fontSize: 12,
-            color: "var(--color-fg-muted)",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
+        <div className={styles.copyBanner}>
           <Icon name="copy" size={12} />
           {prefilling
             ? "正在从源项目加载配置…"
@@ -413,43 +402,26 @@ function Stepper({ current }: { current: StepperStep }) {
   const steps: StepperStep[] = [1, 2, 3, 4, 5, 6];
   const lastIdx = steps.length - 1;
   return (
-    <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}>
+    <div className={styles.stepper}>
       {steps.map((n, i) => {
         const active = n === current;
         const done = n < current;
-        const color = done || active ? "var(--color-accent)" : "var(--color-fg-subtle)";
         return (
-          <div key={n} style={{ display: "flex", alignItems: "center", flex: i < lastIdx ? 1 : "0 0 auto" }}>
+          <div key={n} className={clsx(styles.stepperItem, i < lastIdx && styles.stepperItemGrow)}>
             <div
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: "50%",
-                background: done || active ? "var(--color-accent)" : "var(--color-bg-sunken)",
-                color: done || active ? "#fff" : "var(--color-fg-muted)",
-                fontSize: 11,
-                fontWeight: 600,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: active ? "2px solid var(--color-accent-soft)" : "1px solid var(--color-border)",
-                flexShrink: 0,
-              }}
+              className={clsx(
+                styles.stepperDot,
+                (done || active) && styles.stepperDotActive,
+                active && styles.stepperDotCurrent,
+              )}
             >
               {done ? <Icon name="check" size={11} /> : n}
             </div>
-            <span style={{ marginLeft: 6, fontSize: 11.5, color, fontWeight: active ? 600 : 500 }}>
+            <span className={clsx(styles.stepperLabel, (done || active) && styles.stepperLabelActive, active && styles.stepperLabelCurrent)}>
               {STEP_LABELS[n]}
             </span>
             {i < lastIdx && (
-              <div
-                style={{
-                  flex: 1,
-                  height: 1,
-                  margin: "0 8px",
-                  background: n < current ? "var(--color-accent)" : "var(--color-border)",
-                }}
-              />
+              <div className={clsx(styles.stepperLine, n < current && styles.stepperLineDone)} />
             )}
           </div>
         );
@@ -457,28 +429,6 @@ function Stepper({ current }: { current: StepperStep }) {
     </div>
   );
 }
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 500,
-  color: "var(--color-fg-muted)",
-  marginBottom: 6,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 11px",
-  fontSize: 13.5,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  color: "var(--color-fg)",
-  outline: "none",
-  transition: "border-color 0.15s",
-  fontFamily: "inherit",
-};
 
 function Step1({
   form,
@@ -492,29 +442,26 @@ function Step1({
   dueValid: boolean;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className={styles.formStackLarge}>
       <div>
-        <label style={labelStyle}>项目名称</label>
+        <label className={styles.label}>项目名称</label>
         <input
           value={form.name}
           onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
           placeholder="如:智能门店货架商品检测"
           maxLength={60}
-          style={{
-            ...inputStyle,
-            borderColor: nameValid ? "var(--color-border)" : "var(--color-danger)",
-          }}
+          className={clsx(styles.input, !nameValid && styles.inputInvalid)}
         />
         {!nameValid && (
-          <div style={{ fontSize: 11, color: "var(--color-danger)", marginTop: 4 }}>
+          <div className={styles.fieldError}>
             名称需 2-60 字符
           </div>
         )}
       </div>
 
       <div>
-        <label style={labelStyle}>数据类型</label>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+        <label className={styles.label}>数据类型</label>
+        <div className={styles.typeGrid}>
           {PROJECT_TYPES.map((t) => {
             const active = t.key === form.typeKey;
             return (
@@ -522,39 +469,14 @@ function Step1({
                 key={t.key}
                 type="button"
                 onClick={() => setForm((s) => ({ ...s, typeKey: t.key }))}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 12px",
-                  background: active ? "var(--color-accent-soft)" : "var(--color-bg-sunken)",
-                  border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border)"}`,
-                  borderRadius: "var(--radius-md)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  color: "var(--color-fg)",
-                  fontFamily: "inherit",
-                }}
+                className={clsx(styles.typeButton, active && styles.typeButtonActive)}
               >
-                <span
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 6,
-                    background: active ? "var(--color-accent)" : "var(--color-bg-elev)",
-                    color: active ? "#fff" : "var(--color-fg-muted)",
-                    border: "1px solid var(--color-border)",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
-                >
+                <span className={clsx(styles.typeIcon, active && styles.typeIconActive)}>
                   <Icon name={t.icon} size={14} />
                 </span>
-                <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{t.label}</span>
-                  <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{t.hint}</span>
+                <span className={styles.typeBody}>
+                  <span className={styles.typeLabel}>{t.label}</span>
+                  <span className={styles.typeHint}>{t.hint}</span>
                 </span>
               </button>
             );
@@ -563,18 +485,15 @@ function Step1({
       </div>
 
       <div>
-        <label style={labelStyle}>截止日期（可空）</label>
+        <label className={styles.label}>截止日期（可空）</label>
         <input
           type="date"
           value={form.dueDate}
           onChange={(e) => setForm((s) => ({ ...s, dueDate: e.target.value }))}
-          style={{
-            ...inputStyle,
-            borderColor: dueValid ? "var(--color-border)" : "var(--color-danger)",
-          }}
+          className={clsx(styles.input, !dueValid && styles.inputInvalid)}
         />
         {!dueValid && (
-          <div style={{ fontSize: 11, color: "var(--color-danger)", marginTop: 4 }}>
+          <div className={styles.fieldError}>
             截止日期不能早于今天
           </div>
         )}
@@ -591,8 +510,8 @@ function Step2Classes({
   onChange: (next: ClassRow[]) => void;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)" }}>
+    <div className={styles.formStack}>
+      <div className={styles.sectionHint}>
         添加该项目的标注类别（可空，后续可在项目设置中继续编辑）。每个类别可独立配置颜色和顺序；顺序影响数字键 1-9 / a-z 映射。
       </div>
       <ClassEditor value={rows} onChange={onChange} max={50} emptyHint="暂无类别（后续可在项目设置中添加）" />
@@ -610,8 +529,8 @@ function Step3Attributes({
   error: string | null;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)", lineHeight: 1.6 }}>
+    <div className={styles.formStack}>
+      <div className={styles.sectionHintTall}>
         为本项目配置标注级业务属性（车型 / 朝向 / 是否遮挡等，可空）。标注员选中标注后，右侧栏将根据 schema 渲染表单；可在项目设置中随时编辑。
       </div>
       <AttributeSchemaEditor
@@ -620,7 +539,7 @@ function Step3Attributes({
         emptyHint="暂无属性（可跳过，后续在项目设置中添加）"
       />
       {error && (
-        <div style={{ fontSize: 11.5, color: "var(--color-danger)" }}>{error}</div>
+        <div className={styles.schemaError}>{error}</div>
       )}
     </div>
   );
@@ -636,29 +555,20 @@ function Step4Ai({
   resolvedAiModel: string;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div className={styles.formStackAi}>
       <label
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "10px 12px",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-md)",
-          background: form.aiEnabled ? "var(--color-ai-soft)" : "var(--color-bg-sunken)",
-          cursor: "pointer",
-        }}
+        className={clsx(styles.aiToggle, form.aiEnabled && styles.aiToggleEnabled)}
       >
         <input
           type="checkbox"
           checked={form.aiEnabled}
           onChange={(e) => setForm((s) => ({ ...s, aiEnabled: e.target.checked }))}
-          style={{ accentColor: "var(--color-ai)", margin: 0 }}
+          className={styles.aiCheckbox}
         />
-        <Icon name="sparkles" size={14} style={{ color: "var(--color-ai)" }} />
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>启用 AI 预标注</span>
-          <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>
+        <Icon name="sparkles" size={14} className={styles.aiIcon} />
+        <div className={styles.aiToggleText}>
+          <span className={styles.aiToggleTitle}>启用 AI 预标注</span>
+          <span className={styles.aiToggleHint}>
             创建后可在项目内挂接真实 ML Backend 推理服务
           </span>
         </div>
@@ -667,11 +577,11 @@ function Step4Ai({
       {form.aiEnabled && (
         <>
           <div>
-            <label style={labelStyle}>模型</label>
+            <label className={styles.label}>模型</label>
             <select
               value={form.aiModelChoice}
               onChange={(e) => setForm((s) => ({ ...s, aiModelChoice: e.target.value }))}
-              style={{ ...inputStyle, cursor: "pointer" }}
+              className={clsx(styles.input, styles.selectInput)}
             >
               {PRESET_AI_MODELS.map((m) => (
                 <option key={m} value={m}>{m}</option>
@@ -682,28 +592,19 @@ function Step4Ai({
 
           {form.aiModelChoice === CUSTOM_MODEL_KEY && (
             <div>
-              <label style={labelStyle}>自定义模型名称</label>
+              <label className={styles.label}>自定义模型名称</label>
               <input
                 value={form.aiModelCustom}
                 onChange={(e) => setForm((s) => ({ ...s, aiModelCustom: e.target.value }))}
                 placeholder="如:MyDet-v1"
                 maxLength={120}
-                style={inputStyle}
+                className={styles.input}
               />
             </div>
           )}
 
-          <div
-            style={{
-              padding: "8px 10px",
-              fontSize: 11.5,
-              color: "var(--color-fg-muted)",
-              background: "var(--color-bg-sunken)",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--color-border)",
-            }}
-          >
-            <span style={{ color: "var(--color-fg)" }}>当前模型:</span>{" "}
+          <div className={styles.modelSummary}>
+            <span className={styles.modelSummaryLabel}>当前模型:</span>{" "}
             <Badge variant="ai">
               <Icon name="sparkles" size={10} />
               {resolvedAiModel || "—"}
@@ -712,16 +613,16 @@ function Step4Ai({
 
           {/* v0.9.6 · SAM 文本预标默认输出 (与 GeneralSection 4 项一致, 复用共享组件) */}
           <div>
-            <label style={labelStyle}>
+            <label className={styles.label}>
               SAM 文本预标默认输出{" "}
-              <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>
+              <span className={styles.labelNote}>
                 （工作台「找全图」初始值，可在工作台临时切换）
               </span>
             </label>
             <TextOutputDefaultSelect
               value={form.textOutputDefault}
               onChange={(v) => setForm((s) => ({ ...s, textOutputDefault: v }))}
-              style={inputStyle}
+              className={styles.input}
             />
           </div>
 
@@ -731,14 +632,7 @@ function Step4Ai({
             onChange={(v) => setForm((s) => ({ ...s, mlBackendSourceId: v }))}
           />
 
-          <div
-            style={{
-              padding: "8px 10px",
-              fontSize: 11,
-              color: "var(--color-fg-subtle)",
-              lineHeight: 1.6,
-            }}
-          >
+          <div className={styles.aiHelpBox}>
             模型名仅作 display hint；选「复用 backend」后, 项目创建时会自动复制 backend 配置到新项目, 无需再回设置页注册.
           </div>
         </>
@@ -765,32 +659,25 @@ function BackendSourceSelect({
 
   return (
     <div>
-      <label style={labelStyle}>
+      <label className={styles.label}>
         ML Backend{" "}
-        <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>
+        <span className={styles.labelNote}>
           （可选, 复用其它项目已注册的 backend）
         </span>
       </label>
       {q.isLoading ? (
-        <div style={{ ...inputStyle, color: "var(--color-fg-subtle)", fontSize: 12 }}>
+        <div className={clsx(styles.input, styles.readonlyInput)}>
           加载中…
         </div>
       ) : items.length === 0 ? (
-        <div
-          style={{
-            ...inputStyle,
-            color: "var(--color-fg-subtle)",
-            fontSize: 12,
-            cursor: "default",
-          }}
-        >
+        <div className={clsx(styles.input, styles.readonlyInput)}>
           系统内尚无已注册 backend; 项目创建后到设置页注册一个.
         </div>
       ) : (
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          style={{ ...inputStyle, cursor: "pointer" }}
+          className={clsx(styles.input, styles.selectInput)}
         >
           <option value="">-- 暂不绑定 (创建后到设置页注册) --</option>
           {items.map((b) => (
@@ -801,7 +688,7 @@ function BackendSourceSelect({
         </select>
       )}
       {selected && (
-        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 4 }}>
+        <div className={styles.helpText}>
           将复制 {selected.name} ({selected.url}) 到新项目, 含 auth 配置, state 重置为 disconnected.
         </div>
       )}
@@ -876,28 +763,21 @@ function Step5Datasets({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)" }}>
+    <div className={styles.formStack}>
+      <div className={styles.sectionHint}>
         选择要关联到本项目的数据集（可空 / 多选）。关联后任务会作为「未归类」加入项目；选择下面的「随机切分」可以一并把任务切分到 N 个批次。
       </div>
 
-      {isLoading && <div style={{ padding: 12, fontSize: 12, color: "var(--color-fg-subtle)" }}>加载数据集…</div>}
+      {isLoading && <div className={styles.inlineLoading}>加载数据集…</div>}
 
       {!isLoading && datasets.length === 0 && (
-        <div style={{
-          padding: 16, fontSize: 12.5, color: "var(--color-fg-muted)",
-          background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)", textAlign: "center",
-        }}>
+        <div className={styles.emptyPanel}>
           暂无可用数据集，可跳过此步骤稍后在「数据集」页关联。
         </div>
       )}
 
       {!isLoading && datasets.length > 0 && (
-        <div style={{
-          maxHeight: 220, overflowY: "auto",
-          border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
-          background: "var(--color-bg-sunken)", padding: 6,
-        }}>
+        <div className={styles.datasetList}>
           {datasets.map((d) => {
             const checked = form.datasetIds.includes(d.id);
             return (
@@ -905,29 +785,14 @@ function Step5Datasets({
                 key={d.id}
                 type="button"
                 onClick={() => toggle(d.id)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8, width: "100%",
-                  padding: "6px 10px",
-                  borderRadius: "var(--radius-sm)",
-                  background: checked ? "var(--color-accent-soft)" : "transparent",
-                  border: `1px solid ${checked ? "var(--color-accent)" : "transparent"}`,
-                  cursor: "pointer", textAlign: "left", marginBottom: 2,
-                  fontFamily: "inherit", color: "var(--color-fg)",
-                }}
+                className={clsx(styles.choiceButton, checked && styles.choiceButtonChecked)}
               >
-                <span style={{
-                  width: 14, height: 14, borderRadius: 3,
-                  border: "1px solid var(--color-border)",
-                  background: checked ? "var(--color-accent)" : "var(--color-bg)",
-                  color: "#fff",
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  flexShrink: 0,
-                }}>
+                <span className={clsx(styles.checkMark, checked && styles.checkMarkChecked)}>
                   {checked && <Icon name="check" size={10} />}
                 </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 500 }}>{d.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                <span className={styles.choiceBody}>
+                  <div className={styles.choiceTitle}>{d.name}</div>
+                  <div className={styles.choiceMeta}>
                     <span className="mono">{d.display_id}</span> · {d.file_count} 个文件 · {d.data_type}
                   </div>
                 </span>
@@ -938,15 +803,12 @@ function Step5Datasets({
       )}
 
       {form.datasetIds.length > 0 && (
-        <div style={{
-          padding: 10, border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-md)", background: "var(--color-bg-sunken)",
-        }}>
-          <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 8 }}>
+        <div className={styles.splitPanel}>
+          <div className={styles.splitTitle}>
             关联后的初始分包
           </div>
-          <div style={{ display: "flex", gap: 12, alignItems: "center", fontSize: 12 }}>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+          <div className={styles.splitOptions}>
+            <label className={styles.radioLabel}>
               <input
                 type="radio"
                 checked={form.splitNBatches === 0}
@@ -954,7 +816,7 @@ function Step5Datasets({
               />
               保留默认包（每个数据集一个包）
             </label>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <label className={styles.radioLabel}>
               <input
                 type="radio"
                 checked={form.splitNBatches >= 2}
@@ -966,7 +828,7 @@ function Step5Datasets({
                 value={form.splitNBatches >= 2 ? form.splitNBatches : 3}
                 disabled={form.splitNBatches < 2}
                 onChange={(e) => setForm((s) => ({ ...s, splitNBatches: Math.max(2, Math.min(20, Number(e.target.value))) }))}
-                style={{ ...inputStyle, width: 56, padding: "4px 8px", fontSize: 12 }}
+                className={clsx(styles.input, styles.batchCountInput)}
               />
               个批次
             </label>
@@ -974,7 +836,7 @@ function Step5Datasets({
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--color-border)" }}>
+      <div className={styles.stepActions}>
         <Button variant="ghost" onClick={() => onNext(0)} disabled={linking}>跳过</Button>
         <Button variant="primary" onClick={onContinue} disabled={linking}>
           {linking ? "关联中…" : form.datasetIds.length === 0 ? "下一步" : `关联 ${form.datasetIds.length} 个并继续`}
@@ -1032,28 +894,21 @@ function Step6Members({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontSize: 12.5, color: "var(--color-fg-muted)" }}>
+    <div className={styles.formStack}>
+      <div className={styles.sectionHint}>
         选择标注员 / 审核员（可空）。每位成员的角色由其账户角色决定。
       </div>
 
-      {isLoading && <div style={{ padding: 12, fontSize: 12, color: "var(--color-fg-subtle)" }}>加载用户…</div>}
+      {isLoading && <div className={styles.inlineLoading}>加载用户…</div>}
 
       {!isLoading && eligible.length === 0 && (
-        <div style={{
-          padding: 16, fontSize: 12.5, color: "var(--color-fg-muted)",
-          background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)", textAlign: "center",
-        }}>
+        <div className={styles.emptyPanel}>
           暂无 annotator / reviewer 角色的用户，可跳过此步骤。
         </div>
       )}
 
       {!isLoading && eligible.length > 0 && (
-        <div style={{
-          maxHeight: 240, overflowY: "auto",
-          border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
-          background: "var(--color-bg-sunken)", padding: 6,
-        }}>
+        <div className={styles.memberList}>
           {eligible.map((u) => {
             const checked = form.members.some((m) => m.userId === u.id);
             const role = (u.role === "reviewer" ? "reviewer" : "annotator") as "annotator" | "reviewer";
@@ -1062,30 +917,15 @@ function Step6Members({
                 key={u.id}
                 type="button"
                 onClick={() => toggle(u.id, role)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8, width: "100%",
-                  padding: "6px 10px",
-                  borderRadius: "var(--radius-sm)",
-                  background: checked ? "var(--color-accent-soft)" : "transparent",
-                  border: `1px solid ${checked ? "var(--color-accent)" : "transparent"}`,
-                  cursor: "pointer", textAlign: "left", marginBottom: 2,
-                  fontFamily: "inherit", color: "var(--color-fg)",
-                }}
+                className={clsx(styles.choiceButton, checked && styles.choiceButtonChecked)}
               >
-                <span style={{
-                  width: 14, height: 14, borderRadius: 3,
-                  border: "1px solid var(--color-border)",
-                  background: checked ? "var(--color-accent)" : "var(--color-bg)",
-                  color: "#fff",
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  flexShrink: 0,
-                }}>
+                <span className={clsx(styles.checkMark, checked && styles.checkMarkChecked)}>
                   {checked && <Icon name="check" size={10} />}
                 </span>
                 <Avatar initial={(u.name || u.email).slice(0, 1).toUpperCase()} size="sm" />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 500 }}>{u.name || u.email}</div>
-                  <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{u.email}</div>
+                <span className={styles.choiceBody}>
+                  <div className={styles.choiceTitle}>{u.name || u.email}</div>
+                  <div className={styles.choiceMeta}>{u.email}</div>
                 </span>
                 <Badge variant={role === "reviewer" ? "warning" : "accent"}>
                   {role === "reviewer" ? "审核员" : "标注员"}
@@ -1096,7 +936,7 @@ function Step6Members({
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--color-border)" }}>
+      <div className={styles.stepActions}>
         <Button variant="ghost" onClick={() => onNext(0)} disabled={adding}>跳过</Button>
         <Button variant="primary" onClick={onContinue} disabled={adding}>
           {adding ? "添加中…" : form.members.length === 0 ? "完成" : `添加 ${form.members.length} 位并完成`}
@@ -1121,35 +961,23 @@ function SuccessStep({
 }) {
   const canOpen = project.type_key === "image-det" || project.type_key === "video-track";
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 0 4px" }}>
-      <div
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: "50%",
-          background: "var(--color-success-soft)",
-          color: "var(--color-success)",
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          marginBottom: 14,
-        }}
-      >
+    <div className={styles.successRoot}>
+      <div className={styles.successIcon}>
         <Icon name="check" size={28} />
       </div>
-      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>{project.name}</div>
-      <div style={{ fontSize: 12, color: "var(--color-fg-muted)", marginBottom: 4 }}>
+      <div className={styles.successTitle}>{project.name}</div>
+      <div className={styles.successMeta}>
         <span className="mono">{project.display_id}</span> · {project.type_label}
       </div>
-      <div style={{ fontSize: 12, color: "var(--color-fg-subtle)", marginBottom: 18, textAlign: "center", maxWidth: 400 }}>
+      <div className={styles.successSummary}>
         已关联 {summary.datasets} 个数据集 · 已添加 {summary.members} 位成员
         {summary.datasets === 0 && (
-          <div style={{ marginTop: 4, color: "var(--color-warning)" }}>
+          <div className={styles.successWarning}>
             尚未关联数据集，可去设置页继续配置
           </div>
         )}
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+      <div className={styles.successActions}>
         <Button variant="primary" onClick={onOpenSettings}>
           <Icon name="settings" size={12} />项目设置
         </Button>
@@ -1181,16 +1009,7 @@ function Footer({
 }) {
   const isFinalEditStep = step === 4;
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "flex-end",
-        gap: 8,
-        marginTop: 22,
-        paddingTop: 14,
-        borderTop: "1px solid var(--color-border)",
-      }}
-    >
+    <div className={styles.footer}>
       <Button variant="ghost" onClick={onCancel}>取消</Button>
       {step > 1 && (
         <Button onClick={onPrev}>

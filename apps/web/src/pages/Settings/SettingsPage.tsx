@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { clsx } from "clsx";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
@@ -13,6 +14,7 @@ import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
 import { notificationsApi, type NotificationPreferenceItem } from "@/api/notifications";
 import { useWorkbenchConfig } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { UserRole } from "@/types";
+import styles from "./SettingsPage.module.css";
 
 type SectionKey = "profile" | "workbench" | "feedback" | "notifications" | "system";
 
@@ -30,38 +32,23 @@ export function SettingsPage() {
   ];
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1100, margin: "0 auto" }}>
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px" }}>设置</h1>
-        <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>管理你的账号信息与平台配置</p>
+    <div className={styles.page}>
+      <header className={styles.pageHeader}>
+        <h1 className={styles.pageTitle}>设置</h1>
+        <p className={styles.pageDescription}>管理你的账号信息与平台配置</p>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 16 }}>
+      <div className={styles.layout}>
         <nav>
           <Card>
-            <ul style={{ listStyle: "none", margin: 0, padding: 6 }}>
+            <ul className={styles.navList}>
               {sections.map((s) => {
                 const active = section === s.key;
                 return (
                   <li key={s.key}>
                     <button
                       onClick={() => setSection(s.key)}
-                      style={{
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "9px 12px",
-                        border: "none",
-                        background: active ? "var(--color-bg-sunken)" : "transparent",
-                        borderRadius: "var(--radius-md)",
-                        cursor: "pointer",
-                        color: active ? "var(--color-fg)" : "var(--color-fg-muted)",
-                        fontWeight: active ? 600 : 500,
-                        fontSize: 13,
-                        textAlign: "left",
-                        fontFamily: "inherit",
-                      }}
+                      className={clsx(styles.navButton, active && styles.navButtonActive)}
                     >
                       <Icon name={s.icon} size={13} />{s.label}
                     </button>
@@ -123,10 +110,10 @@ function ProfileSection() {
   const passwordsMatch = !newPwd || !newPwd2 || newPwd === newPwd2;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className={styles.sectionStack}>
       <Card>
         <SectionHeader title="基本资料" />
-        <form onSubmit={submitName} style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+        <form onSubmit={submitName} className={styles.form}>
           <ReadOnly label="邮箱" value={user.email} mono />
           <ReadOnly label="角色" value={ROLE_LABELS[user.role as UserRole] ?? user.role} />
           {user.group_name && <ReadOnly label="数据组" value={user.group_name} />}
@@ -136,17 +123,17 @@ function ProfileSection() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
-              style={inputStyle}
+              className={styles.input}
             />
           </Field>
           {updateProfile.isError && (
             <ErrorBanner msg={(updateProfile.error as Error).message} />
           )}
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <div className={styles.actionsEnd}>
             <button
               type="submit"
               disabled={!name.trim() || name === user.name || updateProfile.isPending}
-              style={primaryBtn(updateProfile.isPending)}
+              className={primaryButtonClassName(updateProfile.isPending)}
             >
               {updateProfile.isPending ? "保存中..." : "保存"}
             </button>
@@ -156,14 +143,14 @@ function ProfileSection() {
 
       <Card>
         <SectionHeader title="修改密码" />
-        <form onSubmit={submitPwd} style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+        <form onSubmit={submitPwd} className={styles.form}>
           <Field label="原密码">
             <input
               required
               type="password"
               value={oldPwd}
               onChange={(e) => setOldPwd(e.target.value)}
-              style={inputStyle}
+              className={styles.input}
             />
           </Field>
           <Field label="新密码（至少 8 位，需含大小写字母和数字）">
@@ -173,7 +160,7 @@ function ProfileSection() {
               value={newPwd}
               onChange={(e) => setNewPwd(e.target.value)}
               minLength={6}
-              style={inputStyle}
+              className={styles.input}
             />
           </Field>
           <Field label="再次输入新密码">
@@ -182,20 +169,20 @@ function ProfileSection() {
               type="password"
               value={newPwd2}
               onChange={(e) => setNewPwd2(e.target.value)}
-              style={{ ...inputStyle, borderColor: passwordsMatch ? "var(--color-border)" : "#ef4444" }}
+              className={clsx(styles.input, !passwordsMatch && styles.inputError)}
             />
             {!passwordsMatch && (
-              <div style={{ fontSize: 11.5, color: "#ef4444", marginTop: 4 }}>两次密码不一致</div>
+              <div className={styles.fieldError}>两次密码不一致</div>
             )}
           </Field>
           {changePwd.isError && (
             <ErrorBanner msg={(changePwd.error as Error).message} />
           )}
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <div className={styles.actionsEnd}>
             <button
               type="submit"
               disabled={!oldPwd || newPwd.length < 6 || !passwordsMatch || changePwd.isPending}
-              style={primaryBtn(changePwd.isPending)}
+              className={primaryButtonClassName(changePwd.isPending)}
             >
               {changePwd.isPending ? "提交中..." : "修改密码"}
             </button>
@@ -243,20 +230,21 @@ function DangerZoneCard() {
   };
 
   return (
-    <Card style={{ borderColor: "#ef4444", borderWidth: 1 }}>
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid #ef4444", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#ef4444" }}>危险区</h3>
-        <Icon name="warning" size={14} style={{ color: "#ef4444" }} />
-      </div>
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {isPending ? (
+    <div className={styles.dangerCard}>
+      <Card>
+        <div className={styles.dangerHeader}>
+          <h3 className={styles.dangerTitle}>危险区</h3>
+          <Icon name="warning" size={14} className={styles.dangerIcon} />
+        </div>
+        <div className={styles.dangerBody}>
+          {isPending ? (
           <>
-            <div style={{ fontSize: 13, color: "var(--color-fg)" }}>
-              <div style={{ fontWeight: 500, marginBottom: 4 }}>注销申请已提交</div>
-              <div style={{ color: "var(--color-fg-muted)" }}>
+            <div className={styles.bodyText}>
+              <div className={styles.pendingTitle}>注销申请已提交</div>
+              <div className={styles.mutedText}>
                 提交时间：{requestedAt ? new Date(requestedAt).toLocaleString("zh-CN") : "—"}
               </div>
-              <div style={{ color: "var(--color-fg-muted)" }}>
+              <div className={styles.mutedText}>
                 生效时间：{new Date(scheduledAt!).toLocaleString("zh-CN")}（届时账号自动停用）
               </div>
             </div>
@@ -265,7 +253,7 @@ function DangerZoneCard() {
                 type="button"
                 onClick={cancel}
                 disabled={cancelMut.isPending}
-                style={primaryBtn(cancelMut.isPending)}
+                className={primaryButtonClassName(cancelMut.isPending)}
               >
                 {cancelMut.isPending ? "撤销中..." : "撤销注销申请"}
               </button>
@@ -273,7 +261,7 @@ function DangerZoneCard() {
           </>
         ) : confirmOpen ? (
           <>
-            <div style={{ fontSize: 13, color: "var(--color-fg)" }}>
+            <div className={styles.bodyText}>
               注销账号后，您将无法再登录此系统；标注历史与审计记录会保留以满足合规要求。
               <strong>提交后将进入 7 天冷静期，期间可随时撤销。</strong>
             </div>
@@ -284,21 +272,21 @@ function DangerZoneCard() {
                 onChange={(e) => setReason(e.target.value)}
                 maxLength={500}
                 placeholder="如：不再使用 / 切换账号 / 隐私顾虑..."
-                style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
+                className={clsx(styles.input, styles.textarea)}
               />
             </Field>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--color-fg-muted)", cursor: "pointer" }}>
+            <label className={styles.checkLabelMuted}>
               <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
               我已知晓 7 天冷静期 + 历史数据保留
             </label>
             {requestMut.isError && (
               <ErrorBanner msg={(requestMut.error as Error).message} />
             )}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <div className={styles.actionsGapEnd}>
               <button
                 type="button"
                 onClick={() => { setConfirmOpen(false); setAcknowledged(false); setReason(""); }}
-                style={{ ...inputStyle, width: "auto", padding: "7px 14px", cursor: "pointer" }}
+                className={styles.secondaryButton}
               >
                 取消
               </button>
@@ -306,16 +294,7 @@ function DangerZoneCard() {
                 type="button"
                 disabled={!acknowledged || requestMut.isPending}
                 onClick={submit}
-                style={{
-                  padding: "7px 18px",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  background: !acknowledged ? "var(--color-bg-sunken)" : "#ef4444",
-                  color: !acknowledged ? "var(--color-fg-subtle)" : "#fff",
-                  border: "none",
-                  borderRadius: "var(--radius-md)",
-                  cursor: !acknowledged ? "not-allowed" : "pointer",
-                }}
+                className={clsx(styles.dangerButton, !acknowledged && styles.dangerButtonDisabled)}
               >
                 {requestMut.isPending ? "提交中..." : "确认申请注销"}
               </button>
@@ -323,31 +302,23 @@ function DangerZoneCard() {
           </>
         ) : (
           <>
-            <div style={{ fontSize: 13, color: "var(--color-fg-muted)" }}>
+            <div className={styles.mutedBodyText}>
               如不再需要本账号，可申请自助注销。提交后将进入 7 天冷静期，期间可撤销。
             </div>
             <div>
               <button
                 type="button"
                 onClick={() => setConfirmOpen(true)}
-                style={{
-                  padding: "7px 14px",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  background: "transparent",
-                  color: "#ef4444",
-                  border: "1px solid #ef4444",
-                  borderRadius: "var(--radius-md)",
-                  cursor: "pointer",
-                }}
+                className={styles.dangerOutlineButton}
               >
                 申请注销账号
               </button>
             </div>
           </>
         )}
-      </div>
-    </Card>
+        </div>
+      </Card>
+    </div>
   );
 }
 
@@ -385,7 +356,7 @@ function SystemSection() {
     return (
       <Card>
         <SectionHeader title="系统设置" />
-        <div style={{ padding: 16, color: "var(--color-fg-subtle)" }}>
+        <div className={styles.loadingBlockSubtle}>
           {isLoading ? "加载中..." : null}
           {error && <ErrorBanner msg={(error as Error).message} />}
         </div>
@@ -442,14 +413,13 @@ function SystemSection() {
   return (
     <Card>
       <SectionHeader title="系统设置" />
-      <form onSubmit={onSave} style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={onSave} className={styles.form}>
         <ReadOnly
           label="环境"
           value={data.environment}
           hint={
             <Badge
               variant={data.environment === "production" ? "danger" : data.environment === "staging" ? "warning" : "outline"}
-              style={{ fontSize: 10 }}
             >
               {data.environment}
             </Badge>
@@ -457,7 +427,7 @@ function SystemSection() {
         />
 
         <Field label="开放注册（🟢 立即生效）">
-          <label style={{ display: "inline-flex", gap: 8, alignItems: "center", cursor: "pointer", fontSize: 13 }}>
+          <label className={styles.checkLabel}>
             <input
               type="checkbox"
               checked={allowOpen}
@@ -474,7 +444,7 @@ function SystemSection() {
             max={90}
             value={invTtl}
             onChange={(e) => setInvTtl(e.target.value)}
-            style={inputStyle}
+            className={styles.input}
           />
         </Field>
 
@@ -483,52 +453,52 @@ function SystemSection() {
             value={frontUrl}
             onChange={(e) => setFrontUrl(e.target.value)}
             placeholder="https://your-domain.com"
-            style={inputStyle}
+            className={styles.input}
           />
         </Field>
 
         <div>
-          <div style={{ ...labelStyle, marginBottom: 8 }}>
+          <div className={styles.groupLabel}>
             SMTP 邮件 ·{" "}
             <Badge variant={data.smtp.configured ? "success" : "outline"} dot>
               {data.smtp.configured ? "已配置" : "未配置"}
             </Badge>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className={styles.twoColumnGrid}>
             <Field label="主机">
-              <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} style={inputStyle} placeholder="smtp.example.com" />
+              <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} className={styles.input} placeholder="smtp.example.com" />
             </Field>
             <Field label="端口">
               <input
                 type="number"
                 value={smtpPort}
                 onChange={(e) => setSmtpPort(e.target.value)}
-                style={inputStyle}
+                className={styles.input}
                 placeholder="587 / 465"
               />
             </Field>
             <Field label="账号">
-              <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} style={inputStyle} />
+              <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} className={styles.input} />
             </Field>
             <Field label="发件人">
-              <input value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} style={inputStyle} placeholder="noreply@example.com" />
+              <input value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} className={styles.input} placeholder="noreply@example.com" />
             </Field>
           </div>
-          <div style={{ marginTop: 10 }}>
-            <div style={labelStyle}>密码 {data.smtp.password_set && !pwdEditing ? "（已设置）" : ""}</div>
+          <div className={styles.fieldGroup}>
+            <div className={styles.label}>密码 {data.smtp.password_set && !pwdEditing ? "（已设置）" : ""}</div>
             {pwdEditing ? (
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className={styles.inlineFields}>
                 <input
                   type="password"
                   value={smtpPwd}
                   onChange={(e) => setSmtpPwd(e.target.value)}
                   placeholder="留空保存视为清除"
-                  style={{ ...inputStyle, flex: 1 }}
+                  className={clsx(styles.input, styles.flexInput)}
                 />
                 <button
                   type="button"
                   onClick={() => { setPwdEditing(false); setSmtpPwd(""); }}
-                  style={{ ...inputStyle, width: "auto", padding: "8px 14px", cursor: "pointer" }}
+                  className={styles.inputButton}
                 >
                   取消
                 </button>
@@ -537,22 +507,22 @@ function SystemSection() {
               <button
                 type="button"
                 onClick={() => setPwdEditing(true)}
-                style={{ ...inputStyle, width: "auto", padding: "8px 14px", cursor: "pointer" }}
+                className={styles.inputButton}
               >
                 {data.smtp.password_set ? "更换密码" : "设置密码"}
               </button>
             )}
           </div>
-          <div style={{ marginTop: 10 }}>
+          <div className={styles.fieldGroup}>
             <button
               type="button"
               onClick={onTestSmtp}
               disabled={testSmtpMut.isPending || !data.smtp.configured}
-              style={{ ...inputStyle, width: "auto", padding: "8px 14px", cursor: testSmtpMut.isPending ? "not-allowed" : "pointer" }}
+              className={styles.inputButton}
             >
               {testSmtpMut.isPending ? "发送中..." : "发送测试邮件到我"}
             </button>
-            <span style={{ marginLeft: 10, fontSize: 11, color: "var(--color-fg-subtle)" }}>
+            <span className={styles.inlineHint}>
               收件人：当前账号邮箱
             </span>
           </div>
@@ -561,11 +531,11 @@ function SystemSection() {
         {updateMut.isError && (
           <ErrorBanner msg={(updateMut.error as Error).message} />
         )}
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div className={styles.actionsEnd}>
           <button
             type="submit"
             disabled={!dirty || updateMut.isPending}
-            style={primaryBtn(updateMut.isPending)}
+            className={primaryButtonClassName(updateMut.isPending)}
           >
             {updateMut.isPending ? "保存中..." : "保存"}
           </button>
@@ -585,7 +555,7 @@ function WorkbenchPreferencesSection() {
     return (
       <Card>
         <SectionHeader title="标注偏好" />
-        <div style={{ padding: 20, color: "var(--color-fg-muted)", fontSize: 13 }}>加载中…</div>
+        <div className={styles.loadingBlock}>加载中…</div>
       </Card>
     );
   }
@@ -597,9 +567,9 @@ function WorkbenchPreferencesSection() {
   return (
     <Card>
       <SectionHeader title="标注偏好" />
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className={styles.form}>
         <Field label="图像平滑（关闭后像素清晰，适合医学影像 / 像素艺术）">
-          <label style={{ display: "inline-flex", gap: 8, alignItems: "center", cursor: "pointer", fontSize: 13 }}>
+          <label className={styles.checkLabel}>
             <input
               type="checkbox"
               checked={config.smoothImage}
@@ -616,7 +586,7 @@ function WorkbenchPreferencesSection() {
             onChange={(e) => setLocalFilter(e.target.value.slice(0, 255))}
             onBlur={() => { if (localFilter !== config.cssImageFilter) commit({ cssImageFilter: localFilter.trim() }); }}
             placeholder="brightness(1.2) contrast(1.1)"
-            style={inputStyle}
+            className={styles.input}
           />
         </Field>
 
@@ -628,7 +598,7 @@ function WorkbenchPreferencesSection() {
             value={config.controlPointsSize}
             disabled={saving}
             onChange={(e) => commit({ controlPointsSize: Number(e.target.value) })}
-            style={{ width: "100%" }}
+            className={styles.range}
           />
         </Field>
 
@@ -641,11 +611,11 @@ function WorkbenchPreferencesSection() {
             value={config.longTaskSampleRate}
             disabled={saving}
             onChange={(e) => commit({ longTaskSampleRate: Number(e.target.value) })}
-            style={{ width: "100%" }}
+            className={styles.range}
           />
         </Field>
 
-        {saving && <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>保存中…</div>}
+        {saving && <div className={styles.savingText}>保存中…</div>}
       </div>
     </Card>
   );
@@ -672,19 +642,14 @@ function MyFeedbackSection() {
     new: "新提交", triaged: "已确认", in_progress: "处理中",
     fixed: "已修复", wont_fix: "不修复", duplicate: "重复",
   };
-  const severityColor: Record<string, string> = {
-    low: "oklch(0.55 0.08 200)", medium: "oklch(0.65 0.18 75)",
-    high: "oklch(0.65 0.18 45)", critical: "oklch(0.60 0.22 25)",
-  };
-
   if (loading) {
-    return <Card><div style={{ padding: 20, fontSize: 13, color: "var(--color-fg-muted)" }}>加载中...</div></Card>;
+    return <Card><div className={styles.loadingBlock}>加载中...</div></Card>;
   }
 
   if (reports.length === 0) {
     return (
       <Card>
-        <div style={{ padding: 20, fontSize: 13, color: "var(--color-fg-muted)", textAlign: "center" }}>
+        <div className={styles.emptyBlock}>
           暂无反馈记录。遇到问题？点击右下角的反馈按钮提交。
         </div>
       </Card>
@@ -693,30 +658,30 @@ function MyFeedbackSection() {
 
   return (
     <Card>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+      <table className={styles.feedbackTable}>
         <thead>
-          <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-            <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>ID</th>
-            <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>标题</th>
-            <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>严重度</th>
-            <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>状态</th>
-            <th style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>时间</th>
+          <tr className={styles.tableHeadRow}>
+            <th className={styles.tableHeaderCell}>ID</th>
+            <th className={styles.tableHeaderCell}>标题</th>
+            <th className={styles.tableHeaderCell}>严重度</th>
+            <th className={styles.tableHeaderCell}>状态</th>
+            <th className={styles.tableHeaderCell}>时间</th>
           </tr>
         </thead>
         <tbody>
           {reports.map((r) => (
-            <tr key={r.id} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
-              <td style={{ padding: "8px 12px", fontFamily: "monospace", fontSize: 11 }}>{r.display_id}</td>
-              <td style={{ padding: "8px 12px", color: "var(--color-fg)" }}>{r.title}</td>
-              <td style={{ padding: "8px 12px" }}>
-                <span style={{ color: severityColor[r.severity] ?? "var(--color-fg-muted)", fontWeight: 500 }}>{r.severity}</span>
+            <tr key={r.id} className={styles.tableBodyRow}>
+              <td className={clsx(styles.tableCell, styles.monoCell)}>{r.display_id}</td>
+              <td className={clsx(styles.tableCell, styles.titleCell)}>{r.title}</td>
+              <td className={styles.tableCell}>
+                <span className={clsx(styles.severity, severityClassName(r.severity))}>{r.severity}</span>
               </td>
-              <td style={{ padding: "8px 12px" }}>
-                <span style={{ padding: "1px 6px", borderRadius: 3, fontSize: 11, background: "var(--color-bg-sunken)" }}>
+              <td className={styles.tableCell}>
+                <span className={styles.statusPill}>
                   {statusLabel[r.status] ?? r.status}
                 </span>
               </td>
-              <td style={{ padding: "8px 12px", fontSize: 11, color: "var(--color-fg-muted)" }}>
+              <td className={clsx(styles.tableCell, styles.dateCell)}>
                 {new Date(r.created_at).toLocaleDateString("zh-CN")}
               </td>
             </tr>
@@ -729,16 +694,8 @@ function MyFeedbackSection() {
 
 function SectionHeader({ title, right }: { title: string; right?: React.ReactNode }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "12px 16px",
-        borderBottom: "1px solid var(--color-border)",
-      }}
-    >
-      <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{title}</h3>
+    <div className={styles.sectionHeader}>
+      <h3 className={styles.sectionTitle}>{title}</h3>
       {right}
     </div>
   );
@@ -746,8 +703,8 @@ function SectionHeader({ title, right }: { title: string; right?: React.ReactNod
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: "block" }}>
-      <div style={labelStyle}>{label}</div>
+    <label className={styles.field}>
+      <div className={styles.label}>{label}</div>
       {children}
     </label>
   );
@@ -756,19 +713,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function ReadOnly({ label, value, mono, hint }: { label: string; value: string; mono?: boolean; hint?: React.ReactNode }) {
   return (
     <div>
-      <div style={labelStyle}>{label}</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div className={styles.label}>{label}</div>
+      <div className={styles.readOnlyRow}>
         <div
-          className={mono ? "mono" : undefined}
-          style={{
-            flex: 1,
-            padding: "7px 11px",
-            background: "var(--color-bg-sunken)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-            fontSize: 13,
-            color: "var(--color-fg)",
-          }}
+          className={clsx(styles.readOnlyValue, mono && "mono")}
         >
           {value}
         </div>
@@ -780,53 +728,29 @@ function ReadOnly({ label, value, mono, hint }: { label: string; value: string; 
 
 function ErrorBanner({ msg }: { msg: string }) {
   return (
-    <div
-      style={{
-        padding: "8px 11px",
-        background: "rgba(239,68,68,0.08)",
-        border: "1px solid #ef4444",
-        borderRadius: "var(--radius-md)",
-        color: "#ef4444",
-        fontSize: 12.5,
-        display: "flex",
-        gap: 8,
-        alignItems: "center",
-      }}
-    >
+    <div className={styles.errorBanner}>
       <Icon name="warning" size={13} />{msg}
     </div>
   );
 }
 
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 500,
-  marginBottom: 5,
-  color: "var(--color-fg-muted)",
-};
+const primaryButtonClassName = (pending: boolean) =>
+  clsx(styles.primaryButton, pending && styles.primaryButtonPending);
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 11px",
-  fontSize: 13,
-  background: "var(--color-bg-elev)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  color: "var(--color-fg)",
-  outline: "none",
-};
-
-const primaryBtn = (pending: boolean): React.CSSProperties => ({
-  padding: "7px 18px",
-  fontSize: 13,
-  fontWeight: 500,
-  background: pending ? "var(--color-accent-muted, oklch(0.45 0.18 250))" : "var(--color-accent)",
-  color: "#fff",
-  border: "none",
-  borderRadius: "var(--radius-md)",
-  cursor: pending ? "not-allowed" : "pointer",
-});
+function severityClassName(severity: string) {
+  switch (severity) {
+    case "low":
+      return styles.severityLow;
+    case "medium":
+      return styles.severityMedium;
+    case "high":
+      return styles.severityHigh;
+    case "critical":
+      return styles.severityCritical;
+    default:
+      return styles.severityUnknown;
+  }
+}
 
 const NOTIF_TYPE_LABELS: Record<string, string> = {
   "bug_report.commented": "BUG 反馈：有新评论",
@@ -876,40 +800,33 @@ function NotificationPreferencesSection() {
   return (
     <Card>
       <SectionHeader title="通知偏好" />
-      <div style={{ padding: "12px 18px 18px" }}>
-        <p style={{ fontSize: 12, color: "var(--color-fg-muted)", margin: "0 0 10px" }}>
+      <div className={styles.notificationBody}>
+        <p className={styles.notificationDescription}>
           关闭某类通知后，新事件不会进入站内通知中心；已存档通知不受影响。邮件 digest 暂未开启。
         </p>
         {loading && (
-          <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>加载中…</div>
+          <div className={styles.savingText}>加载中…</div>
         )}
         {!loading &&
           items.map((it) => (
             <div
               key={it.type}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "10px 0",
-                borderBottom: "1px solid var(--color-border-subtle)",
-                fontSize: 13,
-              }}
+              className={styles.notificationItem}
             >
               <div>
-                <div style={{ fontWeight: 500 }}>{NOTIF_TYPE_LABELS[it.type] ?? it.type}</div>
-                <div className="mono" style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                <div className={styles.notificationTitle}>{NOTIF_TYPE_LABELS[it.type] ?? it.type}</div>
+                <div className={clsx("mono", styles.notificationType)}>
                   {it.type}
                 </div>
               </div>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+              <label className={styles.notificationToggle}>
                 <input
                   type="checkbox"
                   checked={it.in_app}
                   disabled={savingType === it.type}
                   onChange={(e) => toggle(it.type, e.target.checked)}
                 />
-                <span style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+                <span className={styles.toggleText}>
                   站内通知 {it.in_app ? "已开启" : "已静音"}
                 </span>
               </label>

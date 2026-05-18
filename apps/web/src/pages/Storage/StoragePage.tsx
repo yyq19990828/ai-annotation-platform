@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -11,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { DatasetResponse } from "@/api/datasets";
 import type { BucketSummary, VideoAssetFailureItem, VideoAssetKind } from "@/api/storage";
 import type { IconName } from "@/components/ui/Icon";
+import styles from "./StoragePage.module.css";
 
 const TYPE_ICONS: Record<string, IconName> = {
   image: "image",
@@ -52,44 +52,37 @@ function formatBytes(bytes: number): string {
 function BucketCard({ bucket }: { bucket: BucketSummary }) {
   const isError = bucket.status === "error";
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 12,
-      padding: 14, borderRadius: "var(--radius-lg)",
-      border: "1px solid var(--color-border)", background: "var(--color-bg-elev)",
-      marginBottom: 10,
-    }}>
-      <div style={{
-        width: 38, height: 38, borderRadius: 8, flexShrink: 0,
-        background: isError ? "oklch(0.95 0.05 25)" : "oklch(0.95 0.05 152)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
-        <Icon name="db" size={18} style={{ color: isError ? "var(--color-danger)" : "var(--color-success)" }} />
+    <div className={styles.bucketCard}>
+      <div className={isError ? styles.bucketIconError : styles.bucketIconSuccess}>
+        <Icon name="db" size={18} className={isError ? styles.dangerIcon : styles.successIcon} />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 13 }}>{bucket.name}</div>
-        <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginTop: 1 }}>
+      <div className={styles.bucketMain}>
+        <div className={styles.bucketName}>{bucket.name}</div>
+        <div className={styles.bucketMeta}>
           {ROLE_LABELS[bucket.role] ?? bucket.role}
           {isError && bucket.error && ` · ${bucket.error}`}
         </div>
       </div>
-      <div style={{ textAlign: "right", flexShrink: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{formatBytes(bucket.total_size_bytes)}</div>
-        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 1 }}>
+      <div className={styles.bucketStats}>
+        <div className={styles.bucketSize}>{formatBytes(bucket.total_size_bytes)}</div>
+        <div className={styles.bucketObjects}>
           {bucket.object_count.toLocaleString()} 个对象
         </div>
       </div>
-      <Badge variant={isError ? "danger" : "success"} dot style={{ flexShrink: 0 }}>
-        {isError ? "连接失败" : "已连接"}
-      </Badge>
+      <span className={styles.shrinkBadge}>
+        <Badge variant={isError ? "danger" : "success"} dot>
+          {isError ? "连接失败" : "已连接"}
+        </Badge>
+      </span>
     </div>
   );
 }
 
 function InfoItem({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ padding: "10px 12px", background: "var(--color-bg-sunken)", borderRadius: "var(--radius-md)" }}>
-      <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 500 }}>{value}</div>
+    <div className={styles.infoItem}>
+      <div className={styles.infoLabel}>{label}</div>
+      <div className={styles.infoValue}>{value}</div>
     </div>
   );
 }
@@ -97,28 +90,28 @@ function InfoItem({ label, value }: { label: string; value: string }) {
 function DatasetStorageRow({ ds }: { ds: DatasetResponse & { total_size?: number } }) {
   return (
     <tr>
-      <td style={{ padding: "10px 12px 10px 16px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Icon name={TYPE_ICONS[ds.data_type] || "layers"} size={14} style={{ color: "var(--color-fg-muted)" }} />
+      <td className={styles.datasetNameCell}>
+        <div className={styles.datasetNameWrap}>
+          <Icon name={TYPE_ICONS[ds.data_type] || "layers"} size={14} className={styles.mutedIcon} />
           <div>
-            <div style={{ fontWeight: 500, fontSize: 13 }}>{ds.name}</div>
-            <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{ds.display_id}</div>
+            <div className={styles.datasetName}>{ds.name}</div>
+            <div className={styles.datasetId}>{ds.display_id}</div>
           </div>
         </div>
       </td>
-      <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+      <td className={styles.datasetCell}>
         <Badge variant="outline">{TYPE_LABELS[ds.data_type] || ds.data_type}</Badge>
       </td>
-      <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <span className="mono" style={{ fontSize: 13 }}>{ds.file_count.toLocaleString()}</span>
+      <td className={styles.datasetCell}>
+        <span className={`mono ${styles.monoValue}`}>{ds.file_count.toLocaleString()}</span>
       </td>
-      <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <span className="mono" style={{ fontSize: 13 }}>
+      <td className={styles.datasetCell}>
+        <span className={`mono ${styles.monoValue}`}>
           {ds.total_size !== undefined ? formatBytes(ds.total_size) : "—"}
         </span>
       </td>
-      <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <span className="mono" style={{ fontSize: 13 }}>{ds.project_count}</span>
+      <td className={styles.datasetCell}>
+        <span className={`mono ${styles.monoValue}`}>{ds.project_count}</span>
       </td>
     </tr>
   );
@@ -157,67 +150,70 @@ function VideoAssetFailuresPanel() {
   };
 
   return (
-    <Card style={{ marginTop: 16 }}>
-      <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)", display: "flex", justifyContent: "space-between", gap: 12 }}>
+    <div className={styles.failuresPanel}>
+      <Card>
+      <div className={styles.cardHeaderSplit}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>视频资产失败</h3>
-          <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--color-fg-muted)" }}>
+          <h3 className={styles.cardTitle}>视频资产失败</h3>
+          <p className={styles.cardDescription}>
             probe、poster、时间表和帧缓存失败会在这里集中处理。
           </p>
         </div>
-        <Badge variant={items.length ? "danger" : "success"} dot style={{ alignSelf: "center" }}>
-          {items.length ? `${data?.total ?? items.length} 个失败` : "正常"}
-        </Badge>
+        <span className={styles.centerBadge}>
+          <Badge variant={items.length ? "danger" : "success"} dot>
+            {items.length ? `${data?.total ?? items.length} 个失败` : "正常"}
+          </Badge>
+        </span>
       </div>
       {isLoading ? (
-        <div style={emptyState}>加载中...</div>
+        <div className={styles.emptyState}>加载中...</div>
       ) : isError ? (
-        <div style={{ ...emptyState, color: "var(--color-danger)" }}>无法加载视频资产状态</div>
+        <div className={styles.errorState}>无法加载视频资产状态</div>
       ) : items.length === 0 ? (
-        <div style={emptyState}>
-          <Icon name="check" size={26} style={{ opacity: 0.28, marginBottom: 8 }} />
+        <div className={styles.emptyState}>
+          <Icon name="check" size={26} className={styles.emptyIcon} />
           <div>暂无视频资产失败</div>
         </div>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <div className={styles.tableScroll}>
+          <table className={styles.assetTable}>
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-                <th style={assetTh}>类型</th>
-                <th style={assetTh}>视频</th>
-                <th style={assetTh}>项目 / 任务</th>
-                <th style={assetTh}>错误</th>
-                <th style={assetTh}>更新时间</th>
-                <th style={assetTh}>操作</th>
+              <tr className={styles.tableBorderRow}>
+                <th className={styles.assetTh}>类型</th>
+                <th className={styles.assetTh}>视频</th>
+                <th className={styles.assetTh}>项目 / 任务</th>
+                <th className={styles.assetTh}>错误</th>
+                <th className={styles.assetTh}>更新时间</th>
+                <th className={styles.assetTh}>操作</th>
               </tr>
             </thead>
             <tbody>
               {items.map((asset) => (
-                <tr key={asset.asset_key} style={{ borderBottom: "1px solid var(--color-border)" }}>
-                  <td style={assetTd}>
+                <tr key={asset.asset_key} className={styles.tableBorderRow}>
+                  <td className={styles.assetTd}>
                     <Badge variant="outline">{VIDEO_ASSET_LABELS[asset.asset_type]}</Badge>
                   </td>
-                  <td style={assetTd}>
-                    <div style={{ fontWeight: 500 }}>{asset.file_name}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+                  <td className={styles.assetTd}>
+                    <div className={styles.assetFileName}>{asset.file_name}</div>
+                    <div className={styles.assetSubtle}>
                       {assetDetail(asset)}
                     </div>
                   </td>
-                  <td style={assetTd}>
+                  <td className={styles.assetTd}>
                     <div>{asset.project_name ?? "—"}</div>
-                    <div className="mono" style={{ fontSize: 11.5, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+                    <div className={`mono ${styles.assetSubtle}`}>
                       {asset.task_display_id ?? "—"}
                     </div>
                   </td>
-                  <td style={{ ...assetTd, maxWidth: 420 }}>
-                    <div title={asset.error} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-fg-muted)" }}>
+                  <td className={`${styles.assetTd} ${styles.assetErrorCell}`}>
+                    <div title={asset.error} className={styles.assetErrorText}>
                       {asset.error}
                     </div>
                   </td>
-                  <td style={{ ...assetTd, color: "var(--color-fg-subtle)", fontSize: 12 }}>
+                  <td className={`${styles.assetTd} ${styles.assetDateCell}`}>
                     {asset.updated_at ? new Date(asset.updated_at).toLocaleString() : "—"}
                   </td>
-                  <td style={{ ...assetTd, whiteSpace: "nowrap" }}>
+                  <td className={`${styles.assetTd} ${styles.nowrap}`}>
                     <Button
                       size="sm"
                       variant="primary"
@@ -234,29 +230,10 @@ function VideoAssetFailuresPanel() {
           </table>
         </div>
       )}
-    </Card>
+      </Card>
+    </div>
   );
 }
-
-const emptyState: CSSProperties = {
-  padding: "34px 16px",
-  textAlign: "center",
-  color: "var(--color-fg-subtle)",
-  fontSize: 13,
-};
-
-const assetTh: CSSProperties = {
-  textAlign: "left",
-  fontWeight: 500,
-  fontSize: 12,
-  color: "var(--color-fg-muted)",
-  padding: "10px 12px",
-};
-
-const assetTd: CSSProperties = {
-  padding: "10px 12px",
-  verticalAlign: "middle",
-};
 
 export function StoragePage() {
   const qc = useQueryClient();
@@ -273,12 +250,12 @@ export function StoragePage() {
   };
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
+    <div className={styles.page}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24, marginBottom: 20 }}>
+      <div className={styles.pageHeader}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>存储管理</h1>
-          <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>查看存储后端状态与数据集分布</p>
+          <h1 className={styles.pageTitle}>存储管理</h1>
+          <p className={styles.pageDescription}>查看存储后端状态与数据集分布</p>
         </div>
         <Button onClick={handleRefresh}>
           <Icon name="refresh" size={13} /> 刷新状态
@@ -286,7 +263,7 @@ export function StoragePage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className={styles.statsGrid}>
         <StatCard icon="db" label="存储后端" value="MinIO (S3)" />
         <StatCard icon="folder" label="存储桶" value={String(buckets.length)} />
         <StatCard icon="layers" label="数据集数量" value={String(totalDatasets)} />
@@ -297,22 +274,22 @@ export function StoragePage() {
         />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div className={styles.contentGrid}>
         {/* Storage backends */}
         <Card>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>存储桶</h3>
+          <div className={styles.cardHeader}>
+            <h3 className={styles.cardTitle}>存储桶</h3>
           </div>
-          <div style={{ padding: 16 }}>
+          <div className={styles.cardBody}>
             {bucketsError && buckets.length === 0 ? (
-              <div style={{ padding: "20px 0", textAlign: "center", color: "var(--color-danger)", fontSize: 13 }}>
-                <Icon name="db" size={24} style={{ opacity: 0.4, marginBottom: 6 }} />
+              <div className={styles.storageError}>
+                <Icon name="db" size={24} className={styles.storageErrorIcon} />
                 <div>无法连接存储后端</div>
               </div>
             ) : (
               buckets.map((b) => <BucketCard key={b.name} bucket={b} />)
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
+            <div className={styles.infoGrid}>
               <InfoItem label="存储类型" value="S3 兼容 (MinIO)" />
               <InfoItem label="协议" value="HTTP (开发环境)" />
               <InfoItem
@@ -329,21 +306,15 @@ export function StoragePage() {
 
         {/* Dataset storage overview */}
         <Card>
-          <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>数据集存储概览</h3>
+          <div className={styles.cardHeader}>
+            <h3 className={styles.cardTitle}>数据集存储概览</h3>
           </div>
           {datasets.length > 0 ? (
-            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+            <table className={styles.datasetTable}>
               <thead>
                 <tr>
                   {["数据集", "类型", "文件数", "容量", "关联项目"].map((h, i) => (
-                    <th key={i} style={{
-                      textAlign: "left", fontWeight: 500, fontSize: 11,
-                      color: "var(--color-fg-muted)", padding: "8px 12px",
-                      borderBottom: "1px solid var(--color-border)",
-                      background: "var(--color-bg-sunken)",
-                      ...(i === 0 ? { paddingLeft: 16 } : {}),
-                    }}>{h}</th>
+                    <th key={i} className={i === 0 ? styles.datasetThFirst : styles.datasetTh}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -354,8 +325,8 @@ export function StoragePage() {
               </tbody>
             </table>
           ) : (
-            <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 13 }}>
-              <Icon name="layers" size={28} style={{ opacity: 0.25, marginBottom: 8 }} />
+            <div className={styles.emptyDataset}>
+              <Icon name="layers" size={28} className={styles.emptyIcon} />
               <div>暂无数据集</div>
             </div>
           )}

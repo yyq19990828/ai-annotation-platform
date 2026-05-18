@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import styles from "./RejectReasonModal.module.css";
 
 const PRESETS = [
   "类别错误",
@@ -41,18 +42,11 @@ export function RejectReasonModal({
 
   return (
     <Modal open={open} onClose={onClose} title={`退回原因（${count} 个任务）`} width={460}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className={styles.body}>
         {skipReasonHint && (
           <div
             data-testid="reject-skip-hint"
-            style={{
-              padding: "8px 10px",
-              borderRadius: "var(--radius-md)",
-              background: "oklch(0.94 0.06 300)",
-              border: "1px solid oklch(0.78 0.12 300)",
-              fontSize: 12,
-              color: "oklch(0.35 0.18 300)",
-            }}
+            className={styles.skipHint}
           >
             此任务被标注员跳过：<strong>{skipReasonHint}</strong>。退回后会重新派给其他标注员；
             如果该任务确实无可标注目标，建议改为「通过」。
@@ -61,13 +55,7 @@ export function RejectReasonModal({
         {[...PRESETS, "其他"].map((p) => (
           <label
             key={p}
-            style={{
-              display: "flex", alignItems: "center", gap: 8,
-              padding: "8px 10px", borderRadius: "var(--radius-md)",
-              background: selected === p ? "var(--color-bg-sunken)" : "transparent",
-              border: "1px solid " + (selected === p ? "var(--color-border-strong)" : "var(--color-border)"),
-              cursor: "pointer", fontSize: 13,
-            }}
+            className={`${styles.option} ${selected === p ? styles.optionSelected : ""}`}
           >
             <input
               type="radio"
@@ -75,7 +63,7 @@ export function RejectReasonModal({
               value={p}
               checked={selected === p}
               onChange={() => setSelected(p)}
-              style={{ accentColor: "var(--color-accent)" }}
+              className={styles.accentInput}
             />
             <span>{p}</span>
           </label>
@@ -86,16 +74,10 @@ export function RejectReasonModal({
             onChange={(e) => setCustom(e.target.value)}
             placeholder="自定义原因…"
             rows={3}
-            style={{
-              width: "100%", padding: 8, fontSize: 13,
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-              background: "var(--color-bg-elev)",
-              fontFamily: "inherit", resize: "vertical",
-            }}
+            className={styles.textarea}
           />
         )}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
+        <div className={styles.actions}>
           <Button onClick={onClose}>取消</Button>
           <Button
             variant="danger"

@@ -1,0 +1,319 @@
+.page {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 20px 28px 40px;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.pageTitle {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.pageDescription,
+.cardDescription {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+}
+
+.cardDescription {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.contentGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.cardHeader,
+.cardHeaderSplit {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cardHeaderSplit {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cardBody {
+  padding: 16px;
+}
+
+.bucketCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-elev);
+}
+
+.bucketIconError,
+.bucketIconSuccess {
+  display: flex;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.bucketIconError {
+  background: oklch(0.95 0.05 25);
+}
+
+.bucketIconSuccess {
+  background: oklch(0.95 0.05 152);
+}
+
+.dangerIcon {
+  color: var(--color-danger);
+}
+
+.successIcon {
+  color: var(--color-success);
+}
+
+.mutedIcon {
+  color: var(--color-fg-muted);
+}
+
+.bucketMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.bucketName,
+.bucketSize {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bucketMeta {
+  margin-top: 1px;
+  color: var(--color-fg-muted);
+  font-size: 11.5px;
+}
+
+.bucketStats {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.bucketObjects {
+  margin-top: 1px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.shrinkBadge {
+  flex-shrink: 0;
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.infoItem {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+}
+
+.infoLabel {
+  margin-bottom: 2px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.infoValue {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.storageError,
+.emptyDataset,
+.emptyState,
+.errorState {
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+  text-align: center;
+}
+
+.storageError {
+  padding: 20px 0;
+  color: var(--color-danger);
+}
+
+.storageErrorIcon {
+  margin-bottom: 6px;
+  opacity: 0.4;
+}
+
+.emptyDataset {
+  padding: 32px 16px;
+}
+
+.emptyState,
+.errorState {
+  padding: 34px 16px;
+}
+
+.errorState {
+  color: var(--color-danger);
+}
+
+.emptyIcon {
+  margin-bottom: 8px;
+  opacity: 0.28;
+}
+
+.datasetTable {
+  width: 100%;
+  border-spacing: 0;
+  border-collapse: separate;
+  font-size: 13px;
+}
+
+.datasetTh,
+.datasetThFirst {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.datasetThFirst {
+  padding-left: 16px;
+}
+
+.datasetNameCell,
+.datasetCell {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.datasetNameCell {
+  padding-left: 16px;
+}
+
+.datasetNameWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.datasetName {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.datasetId {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.monoValue {
+  font-size: 13px;
+}
+
+.failuresPanel {
+  margin-top: 16px;
+}
+
+.centerBadge {
+  align-self: center;
+}
+
+.tableScroll {
+  overflow-x: auto;
+}
+
+.assetTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tableBorderRow {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.assetTh {
+  padding: 10px 12px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.assetTd {
+  padding: 10px 12px;
+  vertical-align: middle;
+}
+
+.assetFileName {
+  font-weight: 500;
+}
+
+.assetSubtle {
+  margin-top: 2px;
+  color: var(--color-fg-subtle);
+  font-size: 11.5px;
+}
+
+.assetErrorCell {
+  max-width: 420px;
+}
+
+.assetErrorText {
+  overflow: hidden;
+  color: var(--color-fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assetDateCell {
+  color: var(--color-fg-subtle);
+  font-size: 12px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}

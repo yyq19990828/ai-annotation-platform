@@ -8,6 +8,7 @@ interface BadgeProps {
   variant?: "default" | "success" | "warning" | "danger" | "accent" | "ai" | "outline";
   dot?: boolean;
   children: ReactNode;
+  className?: string;
   style?: React.CSSProperties;
 }
 
@@ -21,10 +22,10 @@ const variantClassNames: Record<NonNullable<BadgeProps["variant"]>, string> = {
   outline: styles.outline,
 };
 
-export function Badge({ variant = "default", dot, children, style }: BadgeProps) {
+export function Badge({ variant = "default", dot, children, className, style }: BadgeProps) {
   const styleRef = useElementStyle<HTMLSpanElement>(style);
   return (
-    <span ref={styleRef} className={clsx(styles.badge, variantClassNames[variant])}>
+    <span ref={styleRef} className={clsx(styles.badge, variantClassNames[variant], className)}>
       {dot && <span className={styles.dot} />}
       {children}
     </span>

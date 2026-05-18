@@ -3,6 +3,7 @@ import { bugReportsApi, type BugReportResponse, type BugReportDetail } from "@/a
 import { useToastStore } from "@/components/ui/Toast";
 import { Icon } from "@/components/ui/Icon";
 import { MarkdownBlock } from "@/components/bugreport/MarkdownBlock";
+import styles from "./BugsPage.module.css";
 
 const STATUS_OPTIONS = ["new", "triaged", "in_progress", "fixed", "wont_fix", "duplicate"];
 const SEVERITY_OPTIONS = ["low", "medium", "high", "critical"];
@@ -12,11 +13,11 @@ const statusLabel: Record<string, string> = {
   fixed: "已修复", wont_fix: "不修复", duplicate: "重复",
 };
 
-const severityColor: Record<string, string> = {
-  low: "oklch(0.55 0.08 200)",
-  medium: "oklch(0.65 0.18 75)",
-  high: "oklch(0.65 0.18 45)",
-  critical: "oklch(0.60 0.22 25)",
+const severityClass: Record<string, string> = {
+  low: styles.severityLow,
+  medium: styles.severityMedium,
+  high: styles.severityHigh,
+  critical: styles.severityCritical,
 };
 
 export function BugsPage() {
@@ -84,15 +85,15 @@ export function BugsPage() {
   };
 
   return (
-    <div style={{ padding: 24, height: "100%", overflow: "auto" }}>
-      <h1 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px", color: "var(--color-fg)" }}>Bug 反馈管理</h1>
+    <div className={styles.page}>
+      <h1 className={styles.title}>Bug 反馈管理</h1>
 
       {/* Filters */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+      <div className={styles.filters}>
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
-          style={{ padding: "5px 10px", fontSize: 12.5, background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", color: "var(--color-fg)" }}
+          className={styles.select}
         >
           <option value="">全部状态</option>
           {STATUS_OPTIONS.map((s) => (
@@ -102,31 +103,31 @@ export function BugsPage() {
         <select
           value={filterSeverity}
           onChange={(e) => setFilterSeverity(e.target.value)}
-          style={{ padding: "5px 10px", fontSize: 12.5, background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", color: "var(--color-fg)" }}
+          className={styles.select}
         >
           <option value="">全部严重度</option>
           {SEVERITY_OPTIONS.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
-        <span style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>共 {total} 条</span>
+        <span className={styles.totalText}>共 {total} 条</span>
       </div>
 
       {/* List */}
-      <div style={{ display: "grid", gridTemplateColumns: detailId ? "1fr 1fr" : "1fr", gap: 14 }}>
+      <div className={detailId ? styles.layoutWithDetail : styles.layout}>
         <div>
-          {loading && <div style={{ fontSize: 13, color: "var(--color-fg-muted)", padding: 20, textAlign: "center" }}>加载中...</div>}
+          {loading && <div className={styles.emptyState}>加载中...</div>}
           {!loading && items.length === 0 && (
-            <div style={{ fontSize: 13, color: "var(--color-fg-muted)", padding: 20, textAlign: "center" }}>暂无反馈</div>
+            <div className={styles.emptyState}>暂无反馈</div>
           )}
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <table className={styles.table}>
             <thead>
-              <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-                <th style={{ padding: "8px 6px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>ID</th>
-                <th style={{ padding: "8px 6px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>标题</th>
-                <th style={{ padding: "8px 6px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>严重度</th>
-                <th style={{ padding: "8px 6px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>状态</th>
-                <th style={{ padding: "8px 6px", textAlign: "left", fontWeight: 500, color: "var(--color-fg-muted)" }}>时间</th>
+              <tr className={styles.headerRow}>
+                <th className={styles.th}>ID</th>
+                <th className={styles.th}>标题</th>
+                <th className={styles.th}>严重度</th>
+                <th className={styles.th}>状态</th>
+                <th className={styles.th}>时间</th>
               </tr>
             </thead>
             <tbody>
@@ -134,37 +135,25 @@ export function BugsPage() {
                 <tr
                   key={item.id}
                   onClick={() => loadDetail(item.id)}
-                  style={{
-                    borderBottom: "1px solid var(--color-border-subtle)",
-                    cursor: "pointer",
-                    background: detailId === item.id ? "var(--color-bg-sunken)" : undefined,
-                  }}
+                  className={detailId === item.id ? `${styles.itemRow} ${styles.itemRowSelected}` : styles.itemRow}
                 >
-                  <td style={{ padding: "8px 6px", fontFamily: "monospace", fontSize: 11 }}>{item.display_id}</td>
-                  <td style={{ padding: "8px 6px", color: "var(--color-fg)" }}>{item.title.length > 40 ? item.title.slice(0, 40) + "..." : item.title}</td>
-                  <td style={{ padding: "8px 6px" }}>
-                    <span style={{ color: severityColor[item.severity] ?? "var(--color-fg-muted)", fontWeight: 500 }}>{item.severity}</span>
+                  <td className={styles.idCell}>{item.display_id}</td>
+                  <td className={styles.titleCell}>{item.title.length > 40 ? item.title.slice(0, 40) + "..." : item.title}</td>
+                  <td className={styles.td}>
+                    <span className={`${styles.severity} ${severityClass[item.severity] ?? ""}`}>{item.severity}</span>
                   </td>
-                  <td style={{ padding: "8px 6px" }}>
+                  <td className={styles.td}>
                     {statusLabel[item.status] ?? item.status}
                     {item.reopen_count > 0 && (
                       <span
                         title={item.last_reopened_at ? `最近重开：${new Date(item.last_reopened_at).toLocaleString("zh-CN")}` : undefined}
-                        style={{
-                          marginLeft: 6,
-                          padding: "0 5px",
-                          fontSize: 10,
-                          color: "oklch(0.55 0.18 45)",
-                          background: "oklch(0.95 0.04 45)",
-                          border: "1px solid oklch(0.85 0.10 45)",
-                          borderRadius: 3,
-                        }}
+                        className={styles.reopenPill}
                       >
                         ↻{item.reopen_count}
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: "8px 6px", fontSize: 11, color: "var(--color-fg-muted)" }}>
+                  <td className={styles.dateCell}>
                     {new Date(item.created_at).toLocaleDateString("zh-CN")}
                   </td>
                 </tr>
@@ -175,79 +164,53 @@ export function BugsPage() {
 
         {/* Detail panel */}
         {detailId && detail && (
-          <div
-            style={{
-              padding: 14,
-              background: "var(--color-bg-sunken)",
-              borderRadius: "var(--radius-md)",
-              fontSize: 12.5,
-              maxHeight: "calc(100vh - 140px)",
-              overflow: "auto",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: "var(--color-fg)" }}>{detail.display_id}: {detail.title}</h2>
+          <div className={styles.detailPanel}>
+            <div className={styles.detailHeader}>
+              <h2 className={styles.detailTitle}>{detail.display_id}: {detail.title}</h2>
               <button
                 onClick={() => setDetailId(null)}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-fg-muted)" }}
+                className={styles.closeButton}
               >
                 <Icon name="x" size={14} />
               </button>
             </div>
 
-            <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ color: "var(--color-fg-muted)" }}>路由：<code style={{ fontSize: 11 }}>{detail.route}</code></span>
-              <span style={{ color: "var(--color-fg-muted)" }}>角色：{detail.user_role}</span>
-              {detail.viewport && <span style={{ color: "var(--color-fg-muted)" }}>{detail.viewport}</span>}
+            <div className={styles.metaRow}>
+              <span className={styles.metaText}>路由：<code className={styles.routeCode}>{detail.route}</code></span>
+              <span className={styles.metaText}>角色：{detail.user_role}</span>
+              {detail.viewport && <span className={styles.metaText}>{detail.viewport}</span>}
               {detail.reopen_count > 0 && (
                 <span
                   title={detail.last_reopened_at ? `最近重开：${new Date(detail.last_reopened_at).toLocaleString("zh-CN")}` : undefined}
-                  style={{
-                    padding: "1px 6px",
-                    fontSize: 11,
-                    color: "oklch(0.55 0.18 45)",
-                    background: "oklch(0.95 0.04 45)",
-                    border: "1px solid oklch(0.85 0.10 45)",
-                    borderRadius: 3,
-                  }}
+                  className={styles.reopenPillLarge}
                 >
                   曾重开 {detail.reopen_count} 次
                 </span>
               )}
             </div>
-            <div style={{ marginBottom: 14 }}>
+            <div className={styles.section}>
               <MarkdownBlock>{detail.description}</MarkdownBlock>
             </div>
 
             {detail.attachments?.length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontWeight: 500, fontSize: 12, marginBottom: 6 }}>
+              <div className={styles.section}>
+                <div className={styles.sectionTitle}>
                   截图附件 ({detail.attachments.length})
                 </div>
-                <div style={{ display: "grid", gap: 6 }}>
+                <div className={styles.attachments}>
                   {detail.attachments.map((att) => (
                     <a
                       key={att.storageKey}
                       href={bugReportsApi.attachmentDownloadUrl(detail.id, att.storageKey)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "6px 8px",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: "var(--radius-sm)",
-                        background: "var(--color-bg-elev)",
-                        color: "var(--color-fg-muted)",
-                        textDecoration: "none",
-                      }}
+                      className={styles.attachmentLink}
                     >
                       <Icon name="image" size={13} />
-                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span className={styles.attachmentName}>
                         {att.fileName}
                       </span>
-                      <span style={{ fontSize: 11 }}>{Math.round(att.size / 1024)} KB</span>
+                      <span className={styles.attachmentSize}>{Math.round(att.size / 1024)} KB</span>
                     </a>
                   ))}
                 </div>
@@ -255,27 +218,19 @@ export function BugsPage() {
             )}
 
             {detail.resolution && (
-              <div style={{ padding: 8, background: "var(--color-bg-elev)", borderRadius: "var(--radius-md)", marginBottom: 14 }}>
-                <span style={{ fontWeight: 500 }}>处理结果：</span>{detail.resolution}
+              <div className={styles.resolution}>
+                <span className={styles.mediumText}>处理结果：</span>{detail.resolution}
               </div>
             )}
 
             {/* Status actions */}
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            <div className={styles.statusActions}>
               {STATUS_OPTIONS.map((s) => (
                 <button
                   key={s}
                   onClick={() => updateStatus(detail.id, s)}
                   disabled={detail.status === s}
-                  style={{
-                    padding: "3px 10px",
-                    fontSize: 11.5,
-                    background: detail.status === s ? "var(--color-accent)" : "var(--color-bg-elev)",
-                    color: detail.status === s ? "#fff" : "var(--color-fg)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "var(--radius-md)",
-                    cursor: detail.status === s ? "default" : "pointer",
-                  }}
+                  className={detail.status === s ? `${styles.statusButton} ${styles.statusButtonActive}` : styles.statusButton}
                 >
                   {statusLabel[s]}
                 </button>
@@ -283,20 +238,20 @@ export function BugsPage() {
             </div>
 
             {/* Comments */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontWeight: 500, fontSize: 12, marginBottom: 6 }}>
+            <div className={styles.commentsSection}>
+              <div className={styles.sectionTitle}>
                 评论 ({detail.comments?.length ?? 0})
               </div>
               {detail.comments?.map((c) => (
-                <div key={c.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--color-border-subtle)" }}>
-                  <div style={{ fontSize: 11, color: "var(--color-fg-muted)", marginBottom: 2 }}>
-                    <span style={{ color: "var(--color-fg)", fontWeight: 500 }}>{c.author_name || "未知"}</span>
+                <div key={c.id} className={styles.comment}>
+                  <div className={styles.commentMeta}>
+                    <span className={styles.commentAuthor}>{c.author_name || "未知"}</span>
                     {c.author_role && (
-                      <span style={{ marginLeft: 6, padding: "0 5px", fontSize: 10, borderRadius: 3, background: "var(--color-bg-elev)" }}>
+                      <span className={styles.rolePill}>
                         {c.author_role}
                       </span>
                     )}
-                    <span style={{ marginLeft: 6, color: "var(--color-fg-subtle)" }}>
+                    <span className={styles.commentTime}>
                       {new Date(c.created_at).toLocaleString("zh-CN")}
                     </span>
                   </div>
@@ -304,23 +259,13 @@ export function BugsPage() {
                 </div>
               ))}
             </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+            <div className={styles.commentForm}>
               <textarea
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
                 placeholder="添加评论，支持 Markdown..."
                 rows={3}
-                style={{
-                  flex: 1,
-                  padding: "6px 8px",
-                  fontSize: 12.5,
-                  background: "var(--color-bg-elev)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-fg)",
-                  fontFamily: "inherit",
-                  resize: "vertical",
-                }}
+                className={styles.commentInput}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();
@@ -331,16 +276,7 @@ export function BugsPage() {
               <button
                 onClick={addComment}
                 disabled={!commentText.trim()}
-                style={{
-                  padding: "6px 12px",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  background: "var(--color-accent)",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "var(--radius-md)",
-                  cursor: commentText.trim() ? "pointer" : "not-allowed",
-                }}
+                className={commentText.trim() ? styles.sendButton : `${styles.sendButton} ${styles.sendButtonDisabled}`}
               >
                 发送
               </button>

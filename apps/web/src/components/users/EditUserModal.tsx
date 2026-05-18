@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -13,6 +13,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { UserResponse } from "@/api/users";
 import type { UserRole } from "@/types";
+import styles from "./EditUserModal.module.css";
 
 interface Props {
   open: boolean;
@@ -134,9 +135,9 @@ export function EditUserModal({ open, user, onClose }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title={`编辑成员 · ${user.name}`} width={520}>
-      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <form onSubmit={submit} className={styles.form}>
         <Field label="邮箱">
-          <input value={user.email} readOnly style={{ ...inputStyle, color: "var(--color-fg-muted)" }} />
+          <input value={user.email} readOnly className={`${styles.input} ${styles.mutedInput}`} />
         </Field>
 
         <Field label={`角色${editRoleHint ? `（${editRoleHint}）` : ""}`}>
@@ -144,7 +145,7 @@ export function EditUserModal({ open, user, onClose }: Props) {
             value={roleVal}
             onChange={(e) => setRoleVal(e.target.value as UserRole)}
             disabled={!canEditRole}
-            style={{ ...inputStyle, opacity: canEditRole ? 1 : 0.7 }}
+            className={`${styles.input} ${canEditRole ? "" : styles.disabledInput}`}
           >
             {roleOptions.map((r) => (
               <option key={r} value={r} disabled={!canEditRole && r !== targetRole}>
@@ -158,7 +159,7 @@ export function EditUserModal({ open, user, onClose }: Props) {
           <select
             value={groupId}
             onChange={(e) => setGroupId(e.target.value)}
-            style={inputStyle}
+            className={styles.input}
           >
             <option value="">— 未分配 —</option>
             {groups.map((g) => (
@@ -170,12 +171,12 @@ export function EditUserModal({ open, user, onClose }: Props) {
         </Field>
 
         {error && (
-          <div style={errorBoxStyle}>
+          <div className={styles.errorBox}>
             <Icon name="warning" size={13} /> {(error as Error)?.message ?? "操作失败"}
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
+        <div className={styles.footer}>
           <div>
             {canDelete && user.is_active && !confirmDelete && (
               <Button type="button" variant="danger" onClick={() => setConfirmDelete(true)}>
@@ -183,8 +184,8 @@ export function EditUserModal({ open, user, onClose }: Props) {
               </Button>
             )}
             {canDelete && confirmDelete && (
-              <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5 }}>
-                <span style={{ color: "var(--color-danger)" }}>确认删除？该用户将无法登录</span>
+              <div className={styles.confirmDelete}>
+                <span className={styles.dangerText}>确认删除？该用户将无法登录</span>
                 <Button type="button" variant="danger" onClick={handleDelete} disabled={deleteUser.isPending}>
                   {deleteUser.isPending ? "删除中…" : "确认删除"}
                 </Button>
@@ -194,7 +195,7 @@ export function EditUserModal({ open, user, onClose }: Props) {
               </div>
             )}
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className={styles.actions}>
             <Button type="button" onClick={onClose}>
               取消
             </Button>
@@ -214,33 +215,9 @@ export function EditUserModal({ open, user, onClose }: Props) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: "block" }}>
-      <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 5, color: "var(--color-fg-muted)" }}>{label}</div>
+    <label className={styles.field}>
+      <div className={styles.fieldLabel}>{label}</div>
       {children}
     </label>
   );
 }
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 10px",
-  fontSize: 13,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  color: "var(--color-fg)",
-  outline: "none",
-};
-
-const errorBoxStyle: CSSProperties = {
-  padding: "8px 12px",
-  background: "rgba(239,68,68,0.08)",
-  border: "1px solid #ef4444",
-  borderRadius: "var(--radius-md)",
-  color: "#ef4444",
-  fontSize: 12.5,
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-};

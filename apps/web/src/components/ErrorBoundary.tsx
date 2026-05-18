@@ -1,6 +1,8 @@
 import React from "react";
 import * as Sentry from "@sentry/react";
 
+import styles from "./ErrorBoundary.module.css";
+
 interface Props {
   children: React.ReactNode;
   fallback?: (error: Error, reset: () => void) => React.ReactNode;
@@ -18,7 +20,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // eslint-disable-next-line no-console
     console.error("[ErrorBoundary]", error, info.componentStack);
     Sentry.captureException(error, { extra: { componentStack: info.componentStack } });
   }
@@ -37,40 +38,21 @@ export class ErrorBoundary extends React.Component<Props, State> {
 function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void }) {
   const [showStack, setShowStack] = React.useState(false);
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--color-bg)",
-        padding: 24,
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 560,
-          width: "100%",
-          padding: 28,
-          background: "var(--color-bg-elev)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-lg)",
-        }}
-      >
-        <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
-        <h2 style={{ margin: "0 0 8px", fontSize: 18, color: "var(--color-fg)" }}>页面出现错误</h2>
-        <p style={{ margin: "0 0 16px", color: "var(--color-fg-muted)", fontSize: 13, lineHeight: 1.5 }}>
+    <div className={styles.page}>
+      <div className={styles.card}>
+        <div className={styles.icon}>⚠️</div>
+        <h2 className={styles.title}>页面出现错误</h2>
+        <p className={styles.message}>
           {error.message || "未知错误"}
         </p>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <div className={styles.actions}>
           <button
             onClick={() => {
               onReset();
               window.location.reload();
             }}
-            style={btnPrimary}
+            className={styles.primaryButton}
           >
             刷新页面
           </button>
@@ -79,32 +61,17 @@ function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void
               onReset();
               window.location.href = "/dashboard";
             }}
-            style={btnGhost}
+            className={styles.ghostButton}
           >
             回到首页
           </button>
-          <button onClick={() => setShowStack((v) => !v)} style={btnGhost}>
+          <button onClick={() => setShowStack((v) => !v)} className={styles.ghostButton}>
             {showStack ? "隐藏" : "查看"}详情
           </button>
         </div>
 
         {showStack && (
-          <pre
-            style={{
-              margin: 0,
-              padding: 12,
-              background: "var(--color-bg)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-              fontSize: 11,
-              lineHeight: 1.4,
-              color: "var(--color-fg-muted)",
-              overflow: "auto",
-              maxHeight: 240,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-            }}
-          >
+          <pre className={styles.stack}>
             {error.stack || error.message}
           </pre>
         )}
@@ -112,22 +79,3 @@ function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void
     </div>
   );
 }
-
-const btnBase: React.CSSProperties = {
-  padding: "8px 14px",
-  fontSize: 13,
-  borderRadius: "var(--radius-md)",
-  cursor: "pointer",
-  border: "1px solid var(--color-border)",
-};
-const btnPrimary: React.CSSProperties = {
-  ...btnBase,
-  background: "var(--color-primary)",
-  color: "#fff",
-  borderColor: "var(--color-primary)",
-};
-const btnGhost: React.CSSProperties = {
-  ...btnBase,
-  background: "transparent",
-  color: "var(--color-fg)",
-};

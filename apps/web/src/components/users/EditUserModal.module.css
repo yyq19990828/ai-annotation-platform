@@ -1,0 +1,71 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field {
+  display: block;
+}
+
+.fieldLabel {
+  margin-bottom: 5px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-size: 13px;
+}
+
+.mutedInput {
+  color: var(--color-fg-muted);
+}
+
+.disabledInput {
+  opacity: 0.7;
+}
+
+.errorBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #ef4444;
+  border-radius: var(--radius-md);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  font-size: 12.5px;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.confirmDelete {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.dangerText {
+  color: var(--color-danger);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}

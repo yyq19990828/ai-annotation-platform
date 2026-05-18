@@ -3,6 +3,7 @@ import { Navigate, useParams } from "react-router-dom";
 import { useProject } from "@/hooks/useProjects";
 import { useToastStore } from "@/components/ui/Toast";
 import { ApiError } from "@/api/client";
+import styles from "./RequireProjectMember.module.css";
 
 interface Props {
   children: ReactNode;
@@ -33,7 +34,7 @@ export function RequireProjectMember({ children }: Props) {
   if (!projectId) return <Navigate to="/projects" replace />;
   if (isLoading) {
     return (
-      <div style={{ padding: 60, textAlign: "center", color: "var(--color-fg-muted)", fontSize: 13 }}>
+      <div className={styles.loading}>
         正在校验项目权限…
       </div>
     );

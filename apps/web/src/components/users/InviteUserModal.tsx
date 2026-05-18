@@ -9,6 +9,7 @@ import { ROLE_LABELS } from "@/constants/roles";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { InvitationCreated } from "@/api/users";
 import type { UserRole } from "@/types";
+import styles from "./InviteUserModal.module.css";
 
 interface Props {
   open: boolean;
@@ -72,7 +73,7 @@ export function InviteUserModal({ open, onClose }: Props) {
   return (
     <Modal open={open} onClose={onClose} title={result ? "邀请已生成" : "邀请新成员"} width={520}>
       {!result ? (
-        <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <form onSubmit={submit} className={styles.form}>
           <Field label="邮箱">
             <input
               type="email"
@@ -81,7 +82,7 @@ export function InviteUserModal({ open, onClose }: Props) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="newuser@your-org.com"
-              style={inputStyle}
+              className={styles.input}
             />
           </Field>
 
@@ -90,7 +91,7 @@ export function InviteUserModal({ open, onClose }: Props) {
               required
               value={roleVal}
               onChange={(e) => setRoleVal(e.target.value as UserRole)}
-              style={inputStyle}
+              className={styles.input}
             >
               {allowedRoles.map((r) => (
                 <option key={r} value={r}>
@@ -106,30 +107,18 @@ export function InviteUserModal({ open, onClose }: Props) {
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
               placeholder="例如：标注组A"
-              style={inputStyle}
+              className={styles.input}
             />
           </Field>
 
           {invite.isError && (
-            <div
-              style={{
-                padding: "8px 12px",
-                background: "rgba(239,68,68,0.08)",
-                border: "1px solid #ef4444",
-                borderRadius: "var(--radius-md)",
-                color: "#ef4444",
-                fontSize: 12.5,
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-              }}
-            >
+            <div className={styles.errorBox}>
               <Icon name="warning" size={13} />
               {(invite.error as Error)?.message ?? "邀请失败"}
             </div>
           )}
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+          <div className={styles.actions}>
             <Button type="button" onClick={onClose}>取消</Button>
             <Button type="submit" variant="primary" disabled={invite.isPending}>
               {invite.isPending ? "生成中..." : "生成邀请链接"}
@@ -137,37 +126,26 @@ export function InviteUserModal({ open, onClose }: Props) {
           </div>
         </form>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div
-            style={{
-              padding: "10px 12px",
-              background: "rgba(34,197,94,0.08)",
-              border: "1px solid rgba(34,197,94,0.4)",
-              borderRadius: "var(--radius-md)",
-              fontSize: 12.5,
-              display: "flex",
-              gap: 8,
-              alignItems: "flex-start",
-            }}
-          >
-            <Icon name="check" size={14} style={{ color: "var(--color-success)", marginTop: 2 }} />
+        <div className={styles.result}>
+          <div className={styles.successBox}>
+            <Icon name="check" size={14} className={styles.successIcon} />
             <div>
-              <div style={{ fontWeight: 500, color: "var(--color-success)" }}>
+              <div className={styles.successTitle}>
                 邀请已写入审计日志，链接 {formatExpiry(result.expires_at)} 内有效
               </div>
-              <div style={{ marginTop: 4, color: "var(--color-fg-muted)" }}>
+              <div className={styles.successText}>
                 请妥善转发链接给被邀请人。链接仅显示一次，本平台不会代为发送邮件。
               </div>
             </div>
           </div>
 
           <Field label="一次性注册链接">
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className={styles.linkRow}>
               <input
                 readOnly
                 value={result.invite_url}
                 onClick={(e) => (e.currentTarget as HTMLInputElement).select()}
-                style={{ ...inputStyle, fontFamily: "var(--font-mono, monospace)", fontSize: 12 }}
+                className={`${styles.input} ${styles.monoInput}`}
               />
               <Button type="button" onClick={copy}>
                 <Icon name="link" size={12} />复制
@@ -175,15 +153,15 @@ export function InviteUserModal({ open, onClose }: Props) {
             </div>
           </Field>
 
-          <div style={{ display: "flex", gap: 6, fontSize: 12, color: "var(--color-fg-muted)" }}>
+          <div className={styles.metaRow}>
             <Badge variant="outline">{ROLE_LABELS[roleVal]}</Badge>
             {groupName && <Badge variant="outline">{groupName}</Badge>}
-            <span style={{ marginLeft: "auto" }} className="mono">
+            <span className={`mono ${styles.expiresAt}`}>
               过期：{new Date(result.expires_at).toLocaleString("zh-CN")}
             </span>
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <div className={styles.actions}>
             <Button type="button" onClick={() => setResult(null)}>继续邀请</Button>
             <Button type="button" variant="primary" onClick={onClose}>完成</Button>
           </div>
@@ -195,8 +173,8 @@ export function InviteUserModal({ open, onClose }: Props) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: "block" }}>
-      <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 5, color: "var(--color-fg-muted)" }}>{label}</div>
+    <label className={styles.field}>
+      <div className={styles.fieldLabel}>{label}</div>
       {children}
     </label>
   );
@@ -207,15 +185,3 @@ function formatExpiry(iso: string): string {
   const days = Math.max(0, Math.round(ms / 86400000));
   return `${days} 天`;
 }
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 10px",
-  fontSize: 13,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  color: "var(--color-fg)",
-  outline: "none",
-};

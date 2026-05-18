@@ -1,0 +1,402 @@
+.page {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 20px 28px 40px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.tableToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.toolbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--color-fg);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.table,
+.itemsTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table {
+  font-size: 13px;
+}
+
+.itemsTable {
+  font-size: 12.5px;
+}
+
+.headerCell,
+.itemsHeaderCell {
+  text-align: left;
+  font-weight: 500;
+  color: var(--color-fg-muted);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-sunken);
+}
+
+.headerCell {
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+.headerCell:first-child {
+  padding-left: 16px;
+}
+
+.headerCell:last-child {
+  padding-right: 16px;
+}
+
+.itemsHeaderCell {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.datasetRow {
+  cursor: pointer;
+}
+
+.datasetRowExpanded {
+  background: var(--color-bg-sunken);
+}
+
+.datasetCell {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.datasetNameCell {
+  padding-left: 16px;
+}
+
+.datasetActionCell {
+  padding-right: 16px;
+  text-align: right;
+}
+
+.datasetIdentity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.datasetIconBox {
+  display: flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--color-fg-muted);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.datasetName {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.datasetMeta {
+  margin-top: 1px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.monoCell,
+.createdCell {
+  font-size: 13px;
+}
+
+.createdCell {
+  font-size: 12.5px;
+}
+
+.detailCell {
+  padding: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.detailPanel {
+  padding: 16px 20px;
+  background: var(--color-bg);
+}
+
+.detailLayout {
+  display: flex;
+  gap: 16px;
+}
+
+.filesColumn {
+  flex: 2;
+}
+
+.projectsColumn {
+  flex: 1;
+  padding-left: 16px;
+  border-left: 1px solid var(--color-border);
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.detailTitle {
+  margin: 0;
+  color: var(--color-fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.detailCount {
+  color: var(--color-fg-muted);
+  font-weight: 400;
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 6px;
+}
+
+.itemCell {
+  padding: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mutedCell {
+  color: var(--color-fg-muted);
+}
+
+.itemNameWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.truncateFileName,
+.mediaInfo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.truncateFileName {
+  max-width: 180px;
+}
+
+.mediaInfo {
+  max-width: 220px;
+  color: var(--color-fg-muted);
+}
+
+.dangerText {
+  color: var(--color-danger);
+}
+
+.emptyCell {
+  padding: 20px;
+  color: var(--color-fg-subtle);
+  text-align: center;
+}
+
+.emptyCellLarge {
+  padding: 40px;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.invisible {
+  visibility: hidden;
+}
+
+.pageIndicator {
+  padding: 4px 8px;
+  color: var(--color-fg-muted);
+  font-size: 11px;
+}
+
+.projectRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.projectName {
+  color: var(--color-fg);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.projectMeta,
+.emptyProject {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.emptyProject {
+  padding: 12px 0;
+  font-size: 12px;
+}
+
+.projectSelect {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.confirmBody {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.confirmParagraph,
+.confirmPreview {
+  margin: 0 0 8px;
+}
+
+.confirmPreview {
+  color: var(--color-fg-muted);
+}
+
+.confirmInputGroup {
+  margin: 10px 0;
+}
+
+.confirmLabel {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.textInput,
+.textarea,
+.confirmInput {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.confirmInput {
+  padding: 7px 10px;
+  color: var(--color-fg);
+  background: var(--color-bg-sunken);
+}
+
+.confirmInputReady {
+  border-color: var(--color-success);
+}
+
+.textarea {
+  resize: vertical;
+}
+
+.modalActions,
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modalActions {
+  margin-top: 16px;
+}
+
+.createCard {
+  margin-bottom: 16px;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.createCardBody {
+  padding: 16px;
+}
+
+.createTitle {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.formStack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.formLabel {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.formActions {
+  margin-top: 4px;
+}

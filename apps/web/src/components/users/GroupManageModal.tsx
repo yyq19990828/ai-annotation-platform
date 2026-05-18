@@ -1,10 +1,11 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useCreateGroup, useDeleteGroup, useGroups, useUpdateGroup } from "@/hooks/useGroups";
 import type { GroupResponse } from "@/api/groups";
+import styles from "./GroupManageModal.module.css";
 
 interface Props {
   open: boolean;
@@ -86,14 +87,14 @@ export function GroupManageModal({ open, onClose }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title="管理数据组" width={560}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div className={styles.root}>
+        <div className={styles.createRow}>
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="新建数据组（如：标注组D）"
             maxLength={100}
-            style={inputStyle}
+            className={styles.input}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -107,35 +108,28 @@ export function GroupManageModal({ open, onClose }: Props) {
         </div>
 
         {isLoading && (
-          <div style={{ padding: 12, textAlign: "center", color: "var(--color-fg-muted)", fontSize: 12 }}>
+          <div className={styles.loading}>
             加载中…
           </div>
         )}
 
         {!isLoading && groups.length === 0 && (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--color-fg-muted)", fontSize: 13 }}>
+          <div className={styles.empty}>
             暂无数据组，输入名称后点击「新建」
           </div>
         )}
 
         {!isLoading && groups.length > 0 && (
-          <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
-            {groups.map((g, i) => {
+          <div className={styles.list}>
+            {groups.map((g) => {
               const isEditing = editingId === g.id;
               const isPending = pendingDelete === g.id;
               return (
                 <div
                   key={g.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "10px 12px",
-                    borderBottom: i < groups.length - 1 ? "1px solid var(--color-border)" : undefined,
-                    fontSize: 13,
-                  }}
+                  className={styles.row}
                 >
-                  <Icon name="folder" size={14} style={{ color: "var(--color-fg-muted)" }} />
+                  <Icon name="folder" size={14} className={styles.mutedIcon} />
                   {isEditing ? (
                     <input
                       autoFocus
@@ -145,12 +139,12 @@ export function GroupManageModal({ open, onClose }: Props) {
                         if (e.key === "Enter") handleRename(g);
                         if (e.key === "Escape") setEditingId(null);
                       }}
-                      style={{ ...inputStyle, flex: 1 }}
+                      className={`${styles.input} ${styles.grow}`}
                     />
                   ) : (
-                    <span style={{ flex: 1 }}>{g.name}</span>
+                    <span className={styles.grow}>{g.name}</span>
                   )}
-                  <span style={{ fontSize: 11, color: "var(--color-fg-muted)" }}>{g.member_count} 人</span>
+                  <span className={styles.count}>{g.member_count} 人</span>
                   {isEditing ? (
                     <>
                       <Button size="sm" variant="primary" onClick={() => handleRename(g)} disabled={updateMut.isPending}>
@@ -162,7 +156,7 @@ export function GroupManageModal({ open, onClose }: Props) {
                     </>
                   ) : isPending ? (
                     <>
-                      <span style={{ fontSize: 12, color: "var(--color-danger)" }}>确认删除？</span>
+                      <span className={styles.deleteConfirm}>确认删除？</span>
                       <Button size="sm" variant="danger" onClick={() => handleDelete(g)} disabled={deleteMut.isPending}>
                         删除
                       </Button>
@@ -193,7 +187,7 @@ export function GroupManageModal({ open, onClose }: Props) {
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+        <div className={styles.actions}>
           <Button variant="primary" onClick={onClose}>
             完成
           </Button>
@@ -202,15 +196,3 @@ export function GroupManageModal({ open, onClose }: Props) {
     </Modal>
   );
 }
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 10px",
-  fontSize: 13,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  color: "var(--color-fg)",
-  outline: "none",
-};

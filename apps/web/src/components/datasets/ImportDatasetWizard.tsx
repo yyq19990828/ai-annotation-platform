@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useToastStore } from "@/components/ui/Toast";
 import { useCreateDataset } from "@/hooks/useDatasets";
 import { datasetsApi } from "@/api/datasets";
 import { putWithProgress, runUploadQueue, type QueueItem } from "@/utils/uploadQueue";
 import type { DatasetResponse } from "@/api/datasets";
+import styles from "./ImportDatasetWizard.module.css";
 
 type Step = 1 | 2 | 3;
 type UploadMode = "files" | "zip";
@@ -43,6 +45,18 @@ const STEP_LABELS: Record<Step, string> = {
   2: "选择文件",
   3: "上传完成",
 };
+
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
+function ProgressFill({ progress, color }: { progress: number; color: string }) {
+  const ref = useElementStyle<HTMLDivElement>({
+    "--progress": `${progress}%`,
+    "--progress-color": color,
+  } as CSSProperties);
+  return <div ref={ref} className={styles.progressFill} />;
+}
 
 export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onUploaded }: Props) {
   const navigate = useNavigate();
@@ -312,44 +326,21 @@ export function ImportDatasetWizard({ open, onClose, datasetId, datasetName, onU
 
 function Stepper({ current, steps }: { current: Step; steps: Step[] }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}>
+    <div className={styles.stepper}>
       {steps.map((n, i) => {
         const active = n === current;
         const done = n < current;
-        const color = done || active ? "var(--color-accent)" : "var(--color-fg-subtle)";
         const last = i === steps.length - 1;
         return (
-          <div key={n} style={{ display: "flex", alignItems: "center", flex: !last ? 1 : "0 0 auto" }}>
-            <div
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: "50%",
-                background: done || active ? "var(--color-accent)" : "var(--color-bg-sunken)",
-                color: done || active ? "#fff" : "var(--color-fg-muted)",
-                fontSize: 12,
-                fontWeight: 600,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: active ? "2px solid var(--color-accent-soft)" : "1px solid var(--color-border)",
-                flexShrink: 0,
-              }}
-            >
+          <div key={n} className={cx(styles.stepItem, last && styles.stepItemLast)}>
+            <div className={cx(styles.stepDot, active && styles.stepDotActive, done && styles.stepDotDone)}>
               {done ? <Icon name="check" size={12} /> : n}
             </div>
-            <span style={{ marginLeft: 8, fontSize: 12, color, fontWeight: active ? 600 : 500 }}>
+            <span className={cx(styles.stepLabel, active && styles.stepLabelActive, done && styles.stepLabelDone)}>
               {STEP_LABELS[n]}
             </span>
             {!last && (
-              <div
-                style={{
-                  flex: 1,
-                  height: 1,
-                  margin: "0 12px",
-                  background: n < current ? "var(--color-accent)" : "var(--color-border)",
-                }}
-              />
+              <div className={cx(styles.stepLine, n < current && styles.stepLineDone)} />
             )}
           </div>
         );
@@ -357,27 +348,6 @@ function Stepper({ current, steps }: { current: Step; steps: Step[] }) {
     </div>
   );
 }
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 500,
-  color: "var(--color-fg-muted)",
-  marginBottom: 6,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 11px",
-  fontSize: 13.5,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  color: "var(--color-fg)",
-  outline: "none",
-  fontFamily: "inherit",
-};
 
 // ── Step 1 ───────────────────────────────────────────────────────────────────
 
@@ -399,30 +369,30 @@ function Step1({
   nameValid: boolean;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className={styles.stackLarge}>
       <div>
-        <label style={labelStyle}>数据集名称</label>
+        <label className={styles.label}>数据集名称</label>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="如：商品检测训练集 v1"
           maxLength={60}
-          style={{ ...inputStyle, borderColor: nameValid ? "var(--color-border)" : "var(--color-danger)" }}
+          className={cx(styles.input, !nameValid && styles.inputInvalid)}
         />
       </div>
       <div>
-        <label style={labelStyle}>描述（可选）</label>
+        <label className={styles.label}>描述（可选）</label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
           placeholder="简要说明数据来源、采集场景等"
-          style={{ ...inputStyle, resize: "vertical" }}
+          className={styles.textarea}
         />
       </div>
       <div>
-        <label style={labelStyle}>数据类型</label>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <label className={styles.label}>数据类型</label>
+        <div className={styles.segmented}>
           {DATA_TYPES.map((t) => {
             const active = dataType === t.key;
             return (
@@ -430,15 +400,7 @@ function Step1({
                 key={t.key}
                 type="button"
                 onClick={() => setDataType(t.key)}
-                style={{
-                  padding: "6px 12px",
-                  fontSize: 12.5,
-                  borderRadius: "var(--radius-md)",
-                  border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border)"}`,
-                  background: active ? "var(--color-accent-soft)" : "var(--color-bg-elev)",
-                  color: active ? "var(--color-accent)" : "var(--color-fg)",
-                  cursor: "pointer",
-                }}
+                className={cx(styles.segmentButton, active && styles.segmentButtonActive)}
               >
                 {t.label}
               </button>
@@ -490,9 +452,9 @@ function Step2({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div className={styles.stackMedium}>
       {/* mode toggle */}
-      <div style={{ display: "flex", gap: 6 }}>
+      <div className={styles.modeTabs}>
         {([
           { key: "files", label: "多文件" },
           { key: "zip", label: "ZIP 包 (≤200MB)" },
@@ -503,15 +465,7 @@ function Step2({
               key={opt.key}
               type="button"
               onClick={() => setMode(opt.key)}
-              style={{
-                padding: "6px 14px",
-                fontSize: 12.5,
-                borderRadius: "var(--radius-md)",
-                border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border)"}`,
-                background: active ? "var(--color-accent-soft)" : "var(--color-bg-elev)",
-                color: active ? "var(--color-accent)" : "var(--color-fg)",
-                cursor: "pointer",
-              }}
+              className={cx(styles.segmentButton, styles.modeButton, active && styles.segmentButtonActive)}
             >
               {opt.label}
             </button>
@@ -532,26 +486,18 @@ function Step2({
               onDrop(e);
             }}
             onClick={() => filesInputRef.current?.click()}
-            style={{
-              padding: "28px 16px",
-              textAlign: "center",
-              border: `2px dashed ${hover ? "var(--color-accent)" : "var(--color-border)"}`,
-              borderRadius: "var(--radius-md)",
-              background: hover ? "var(--color-accent-soft)" : "var(--color-bg-sunken)",
-              cursor: "pointer",
-              transition: "background 0.15s, border-color 0.15s",
-            }}
+            className={cx(styles.dropZone, hover && styles.dropZoneHover)}
           >
-            <Icon name="upload" size={22} style={{ color: "var(--color-fg-muted)", marginBottom: 8 }} />
-            <div style={{ fontSize: 13.5, color: "var(--color-fg)", marginBottom: 4 }}>
-              拖拽文件到此处，或<span style={{ color: "var(--color-accent)" }}> 点击选择</span>
+            <Icon name="upload" size={22} className={styles.uploadIcon} />
+            <div className={styles.dropTitle}>
+              拖拽文件到此处，或<span className={styles.accentText}> 点击选择</span>
             </div>
-            <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>支持图像 / 视频 / 任意二进制；单文件 ≤ 5GB</div>
+            <div className={styles.dropHint}>支持图像 / 视频 / 任意二进制；单文件 ≤ 5GB</div>
             <input
               ref={filesInputRef}
               type="file"
               multiple
-              style={{ display: "none" }}
+              className={styles.hiddenInput}
               onChange={(e) => {
                 if (e.target.files) onAddFiles(e.target.files);
                 e.target.value = "";
@@ -560,48 +506,24 @@ function Step2({
           </div>
 
           {files.length > 0 && (
-            <div
-              style={{
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-elev)",
-                maxHeight: 240,
-                overflow: "auto",
-              }}
-            >
-              <div
-                style={{
-                  padding: "8px 12px",
-                  borderBottom: "1px solid var(--color-border)",
-                  fontSize: 12,
-                  color: "var(--color-fg-muted)",
-                  display: "flex",
-                  justifyContent: "space-between",
-                }}
-              >
+            <div className={styles.filePanel}>
+              <div className={styles.filePanelHeader}>
                 <span>已选 {files.length} 个文件</span>
                 <span>{formatBytes(totalSize)}</span>
               </div>
               {files.map((f, i) => (
                 <div
                   key={`${f.name}-${i}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "6px 12px",
-                    borderBottom: i < files.length - 1 ? "1px solid var(--color-border)" : undefined,
-                    fontSize: 12.5,
-                  }}
+                  className={styles.fileRow}
                 >
-                  <Icon name={iconForFile(f)} size={12} style={{ color: "var(--color-fg-muted)" }} />
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
-                  <span style={{ color: "var(--color-fg-muted)", fontSize: 11 }}>{formatBytes(f.size)}</span>
+                  <Icon name={iconForFile(f)} size={12} className={styles.mutedIcon} />
+                  <span className={styles.fileName}>{f.name}</span>
+                  <span className={styles.mutedSmall}>{formatBytes(f.size)}</span>
                   <button
                     type="button"
                     onClick={() => onRemove(i)}
                     aria-label="移除"
-                    style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-fg-muted)" }}
+                    className={styles.iconButton}
                   >
                     <Icon name="x" size={12} />
                   </button>
@@ -627,27 +549,20 @@ function Step2({
               const f = e.dataTransfer?.files?.[0];
               handleZipPick(f ?? null);
             }}
-            style={{
-              padding: "28px 16px",
-              textAlign: "center",
-              border: `2px dashed ${hover ? "var(--color-accent)" : "var(--color-border)"}`,
-              borderRadius: "var(--radius-md)",
-              background: hover ? "var(--color-accent-soft)" : "var(--color-bg-sunken)",
-              cursor: "pointer",
-            }}
+            className={cx(styles.dropZone, hover && styles.dropZoneHover)}
           >
-            <Icon name="upload" size={22} style={{ color: "var(--color-fg-muted)", marginBottom: 8 }} />
-            <div style={{ fontSize: 13.5, color: "var(--color-fg)", marginBottom: 4 }}>
-              拖入或<span style={{ color: "var(--color-accent)" }}> 点击选择</span> ZIP 包
+            <Icon name="upload" size={22} className={styles.uploadIcon} />
+            <div className={styles.dropTitle}>
+              拖入或<span className={styles.accentText}> 点击选择</span> ZIP 包
             </div>
-            <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)" }}>
+            <div className={styles.dropHint}>
               整包 ≤ 200MB；包内文件数 ≤ 5000；自动跳过 __MACOSX/ 与隐藏文件
             </div>
             <input
               ref={zipInputRef}
               type="file"
               accept=".zip,application/zip"
-              style={{ display: "none" }}
+              className={styles.hiddenInput}
               onChange={(e) => {
                 handleZipPick(e.target.files?.[0] ?? null);
                 e.target.value = "";
@@ -656,26 +571,15 @@ function Step2({
           </div>
 
           {zipFile && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 12px",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-elev)",
-                fontSize: 13,
-              }}
-            >
-              <Icon name="folder" size={14} style={{ color: "var(--color-fg-muted)" }} />
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{zipFile.name}</span>
-              <span style={{ color: "var(--color-fg-muted)", fontSize: 12 }}>{formatBytes(zipFile.size)}</span>
+            <div className={styles.zipFileRow}>
+              <Icon name="folder" size={14} className={styles.mutedIcon} />
+              <span className={styles.fileName}>{zipFile.name}</span>
+              <span className={styles.mutedMedium}>{formatBytes(zipFile.size)}</span>
               <button
                 type="button"
                 onClick={() => onSetZip(null)}
                 aria-label="移除"
-                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-fg-muted)" }}
+                className={styles.iconButton}
               >
                 <Icon name="x" size={12} />
               </button>
@@ -708,93 +612,56 @@ function Step3({
   const overall = arr.length === 0 ? 0 : Math.round(arr.reduce((s, x) => s + (x.item?.progress ?? 0), 0) / arr.length);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div
-        style={{
-          padding: "10px 12px",
-          background: "var(--color-bg-sunken)",
-          borderRadius: "var(--radius-md)",
-          border: "1px solid var(--color-border)",
-          display: "flex",
-          justifyContent: "space-between",
-          fontSize: 12.5,
-        }}
-      >
+    <div className={styles.stackMedium}>
+      <div className={styles.summaryPanel}>
         <span>
           总进度 <strong>{overall}%</strong> · 成功 {done} / 失败 {failed} / 共 {arr.length}
         </span>
-        <span style={{ color: running ? "var(--color-accent)" : "var(--color-fg-muted)" }}>
+        <span className={running ? styles.runningText : styles.mutedMedium}>
           {running ? "上传中…" : "已完成"}
         </span>
       </div>
 
-      <div
-        style={{
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-md)",
-          background: "var(--color-bg-elev)",
-          maxHeight: 280,
-          overflow: "auto",
-        }}
-      >
+      <div className={styles.progressPanel}>
         {arr.map(({ file, item }, i) => (
-          <div
-            key={i}
-            style={{
-              padding: "8px 12px",
-              borderBottom: i < arr.length - 1 ? "1px solid var(--color-border)" : undefined,
-              fontSize: 12.5,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div key={i} className={styles.progressItem}>
+            <div className={styles.progressFileHeader}>
               <Icon
                 name={item?.status === "done" ? "check" : item?.status === "error" ? "warning" : iconForFile(file)}
                 size={12}
-                style={{
-                  color:
-                    item?.status === "done"
-                      ? "var(--color-success)"
-                      : item?.status === "error"
-                        ? "var(--color-danger)"
-                        : "var(--color-fg-muted)",
-                }}
+                className={
+                  item?.status === "done"
+                    ? styles.successIcon
+                    : item?.status === "error"
+                      ? styles.dangerIcon
+                      : styles.mutedIcon
+                }
               />
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
-              <span style={{ color: "var(--color-fg-muted)", fontSize: 11 }}>
+              <span className={styles.fileName}>{file.name}</span>
+              <span className={styles.mutedSmall}>
                 {item?.status === "error" ? "失败" : `${Math.round(item?.progress ?? 0)}%`}
               </span>
             </div>
-            <div
-              style={{
-                marginTop: 4,
-                height: 3,
-                background: "var(--color-bg-sunken)",
-                borderRadius: 2,
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${item?.progress ?? 0}%`,
-                  height: "100%",
-                  background:
-                    item?.status === "error"
-                      ? "var(--color-danger)"
-                      : item?.status === "done"
-                        ? "var(--color-success)"
-                        : "var(--color-accent)",
-                  transition: "width 0.2s",
-                }}
+            <div className={styles.progressTrack}>
+              <ProgressFill
+                progress={item?.progress ?? 0}
+                color={
+                  item?.status === "error"
+                    ? "var(--color-danger)"
+                    : item?.status === "done"
+                      ? "var(--color-success)"
+                      : "var(--color-accent)"
+                }
               />
             </div>
             {item?.error && (
-              <div style={{ marginTop: 3, fontSize: 11, color: "var(--color-danger)" }}>{item.error}</div>
+              <div className={styles.errorMessage}>{item.error}</div>
             )}
           </div>
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+      <div className={styles.actions}>
         <Button onClick={onClose}>关闭</Button>
         <Button variant="primary" onClick={onView} disabled={running}>
           查看数据集
@@ -828,7 +695,7 @@ function Footer({
   const showPrev = !skipCreate && step > 1;
   const submitLabel = mode === "zip" ? "上传 ZIP" : "开始上传";
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 18 }}>
+    <div className={styles.footer}>
       <div>
         {showPrev && (
           <Button onClick={onPrev}>
@@ -836,7 +703,7 @@ function Footer({
           </Button>
         )}
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className={styles.footerActions}>
         <Button onClick={onCancel}>取消</Button>
         <Button variant="primary" onClick={onNext} disabled={!canNext || loading}>
           {step === 2 ? (loading ? "处理中…" : submitLabel) : "下一步"}
@@ -867,86 +734,49 @@ function Step3Zip({
   onView: () => void;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div
-        style={{
-          padding: "10px 12px",
-          background: "var(--color-bg-sunken)",
-          borderRadius: "var(--radius-md)",
-          border: "1px solid var(--color-border)",
-          fontSize: 12.5,
-          display: "flex",
-          gap: 10,
-          alignItems: "center",
-        }}
-      >
-        <Icon name="folder" size={14} style={{ color: "var(--color-fg-muted)" }} />
-        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+    <div className={styles.stackMedium}>
+      <div className={styles.zipFileRow}>
+        <Icon name="folder" size={14} className={styles.mutedIcon} />
+        <span className={styles.fileName}>
           {zipFile.name}
         </span>
-        <span style={{ color: "var(--color-fg-muted)", fontSize: 12 }}>{formatBytes(zipFile.size)}</span>
+        <span className={styles.mutedMedium}>{formatBytes(zipFile.size)}</span>
       </div>
 
       <div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--color-fg-muted)", marginBottom: 4 }}>
+        <div className={styles.zipProgressLabel}>
           <span>{running ? "上传中…（服务端解压通常在 0% 跳到 100% 后等待几秒）" : result ? "解包完成" : error ? "失败" : "等待"}</span>
           <span>{Math.round(progress)}%</span>
         </div>
-        <div
-          style={{
-            height: 6,
-            background: "var(--color-bg-sunken)",
-            borderRadius: 3,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              width: `${progress}%`,
-              height: "100%",
-              background: error
-                ? "var(--color-danger)"
-                : result
-                  ? "var(--color-success)"
-                  : "var(--color-accent)",
-              transition: "width 0.2s",
-            }}
+        <div className={styles.zipProgressTrack}>
+          <ProgressFill
+            progress={progress}
+            color={error ? "var(--color-danger)" : result ? "var(--color-success)" : "var(--color-accent)"}
           />
         </div>
       </div>
 
       {result && (
-        <div
-          style={{
-            padding: "10px 12px",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius-md)",
-            background: "var(--color-bg-elev)",
-            fontSize: 13,
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-          }}
-        >
+        <div className={styles.zipSummary}>
           <div>
-            <strong style={{ color: "var(--color-success)" }}>新增 {result.added}</strong> 个文件 ·{" "}
-            <span style={{ color: "var(--color-fg-muted)" }}>
+            <strong className={styles.successText}>新增 {result.added}</strong> 个文件 ·{" "}
+            <span className={styles.mutedMedium}>
               ZIP 内共 {result.total_in_zip} · 跳过 {result.skipped} · 失败 {result.errors.length}
             </span>
           </div>
           {result.errors.length > 0 && (
-            <details style={{ marginTop: 4 }}>
-              <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--color-fg-muted)" }}>
+            <details className={styles.errorDetails}>
+              <summary className={styles.errorSummary}>
                 查看 {result.errors.length} 条失败明细
               </summary>
-              <div style={{ marginTop: 6, maxHeight: 160, overflow: "auto", fontSize: 11.5 }}>
+              <div className={styles.errorList}>
                 {result.errors.slice(0, 50).map((e, i) => (
-                  <div key={i} style={{ padding: "3px 0", color: "var(--color-danger)" }}>
+                  <div key={i} className={styles.errorRow}>
                     <span className="mono">{e.name}</span> — {e.error}
                   </div>
                 ))}
                 {result.errors.length > 50 && (
-                  <div style={{ padding: "3px 0", color: "var(--color-fg-muted)" }}>
+                  <div className={styles.omittedRow}>
                     …其余 {result.errors.length - 50} 条已省略
                   </div>
                 )}
@@ -957,21 +787,12 @@ function Step3Zip({
       )}
 
       {error && (
-        <div
-          style={{
-            padding: "10px 12px",
-            background: "rgba(239,68,68,0.08)",
-            border: "1px solid #ef4444",
-            borderRadius: "var(--radius-md)",
-            color: "#ef4444",
-            fontSize: 12.5,
-          }}
-        >
+        <div className={styles.zipError}>
           {error}
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+      <div className={styles.actions}>
         <Button onClick={onClose}>关闭</Button>
         <Button variant="primary" onClick={onView} disabled={running}>
           查看数据集

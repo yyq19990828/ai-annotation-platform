@@ -1,0 +1,309 @@
+.page {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 20px 28px 40px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.description {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+}
+
+.actions,
+.autoRefresh,
+.filters,
+.focusBar,
+.focusTags,
+.actorWrap,
+.pagination,
+.detailActions,
+.kvRow {
+  display: flex;
+}
+
+.actions {
+  align-items: center;
+  gap: 8px;
+}
+
+.autoRefresh {
+  align-items: center;
+  gap: 6px;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.checkbox {
+  cursor: pointer;
+}
+
+.filters {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.control {
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  color: var(--color-fg);
+  font-size: 12.5px;
+}
+
+.actorControl {
+  min-width: 200px;
+}
+
+.targetInput,
+.detailKeyInput,
+.detailValueInput {
+  font-family: var(--font-mono, monospace);
+}
+
+.targetInput {
+  width: 220px;
+}
+
+.detailKeyInput {
+  width: 160px;
+}
+
+.detailValueInput {
+  width: 200px;
+}
+
+.controlDisabled {
+  opacity: 0.5;
+}
+
+.totalText {
+  margin-left: auto;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.focusBar {
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(99, 102, 241, 0.08);
+  font-size: 12.5px;
+}
+
+.focusTags {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.accentIcon {
+  color: var(--color-accent);
+}
+
+.mutedText {
+  color: var(--color-fg-muted);
+}
+
+.tableHeader,
+.auditRow {
+  display: grid;
+  grid-template-columns: 44px 160px 1.4fr 1fr 1.6fr 120px 80px 80px;
+}
+
+.tableHeader {
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.headerCell,
+.cell,
+.timeCell,
+.targetCell,
+.ipCell,
+.detailCell {
+  padding: 10px 12px;
+}
+
+.tableViewport {
+  position: relative;
+  height: 560px;
+  overflow: auto;
+}
+
+.emptyState {
+  padding: 32px;
+  color: var(--color-fg-subtle);
+  text-align: center;
+}
+
+.virtualSizer {
+  position: relative;
+}
+
+.auditRow {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  border-bottom: 1px solid var(--color-border);
+  transform: translateY(var(--audit-row-y));
+}
+
+.auditRowChild {
+  padding-left: 24px;
+  background: var(--color-bg-sunken);
+}
+
+.expandCell {
+  display: flex;
+  align-items: center;
+  padding: 10px 8px;
+}
+
+.focusButton {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  cursor: pointer;
+  font-size: 12.5px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.childCount {
+  margin-left: 4px;
+  font-size: 11px;
+}
+
+.timeCell {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.actorWrap {
+  align-items: center;
+  gap: 8px;
+}
+
+.actorEmail {
+  font-size: 12.5px;
+}
+
+.tinyBadge > span {
+  font-size: 10px;
+}
+
+.smallBadge {
+  font-size: 11px;
+}
+
+.anonymous {
+  color: var(--color-fg-subtle);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.targetCell {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.targetId {
+  margin-left: 4px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.ipCell {
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+}
+
+.detailCell {
+  text-align: right;
+}
+
+.pagination {
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.detailStack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.detailActions {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.detailJsonLabel {
+  margin-bottom: 4px;
+  color: var(--color-fg-muted);
+  font-size: 11.5px;
+}
+
+.detailJson {
+  max-height: 320px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  font-size: 12px;
+}
+
+.subtleText {
+  color: var(--color-fg-subtle);
+}
+
+.kvRow {
+  gap: 12px;
+}
+
+.kvLabel {
+  width: 80px;
+  color: var(--color-fg-muted);
+}
+
+.kvValue {
+  flex: 1;
+  word-break: break-all;
+}

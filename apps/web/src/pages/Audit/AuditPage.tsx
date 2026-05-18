@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useSearchParams } from "react-router-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Card } from "@/components/ui/Card";
@@ -18,6 +27,8 @@ import {
 import { ROLE_LABELS } from "@/constants/roles";
 import type { AuditLogResponse } from "@/api/audit";
 import type { UserRole } from "@/types";
+import { useElementStyle } from "@/components/ui/useElementStyle";
+import styles from "./AuditPage.module.css";
 
 const PAGE_SIZE = 20;
 
@@ -187,21 +198,21 @@ export function AuditPage() {
   };
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
-      <header style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24, marginBottom: 16 }}>
+    <div className={styles.page}>
+      <header className={styles.header}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px" }}>审计日志</h1>
-          <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>
+          <h1 className={styles.title}>审计日志</h1>
+          <p className={styles.description}>
             所有写操作（POST/PATCH/PUT/DELETE）由中间件捕获；关键业务事件携带结构化 detail。
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--color-fg-muted)", cursor: "pointer" }}>
+        <div className={styles.actions}>
+          <label className={styles.autoRefresh}>
             <input
               type="checkbox"
               checked={autoRefresh}
               onChange={(e) => setAutoRefresh(e.target.checked)}
-              style={{ cursor: "pointer" }}
+              className={styles.checkbox}
             />
             30s 自动刷新
           </label>
@@ -218,24 +229,24 @@ export function AuditPage() {
       </header>
 
       <Card>
-        <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderBottom: "1px solid var(--color-border)", flexWrap: "wrap", alignItems: "center" }}>
-          <select value={scope} onChange={(e) => setScope(e.target.value as "business" | "all")} style={selectStyle}>
+        <div className={styles.filters}>
+          <select value={scope} onChange={(e) => setScope(e.target.value as "business" | "all")} className={styles.control}>
             <option value="business">仅业务事件</option>
             <option value="all">全部（含 HTTP 元数据）</option>
           </select>
-          <select value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(1); }} style={selectStyle}>
+          <select value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(1); }} className={styles.control}>
             <option value="">全部动作</option>
             {AUDIT_BUSINESS_ACTIONS.map((a) => (
               <option key={a} value={a}>{auditActionLabel(a)}</option>
             ))}
           </select>
-          <select value={targetType} onChange={(e) => { setTargetType(e.target.value); setPage(1); }} style={selectStyle}>
+          <select value={targetType} onChange={(e) => { setTargetType(e.target.value); setPage(1); }} className={styles.control}>
             <option value="">全部对象</option>
             {AUDIT_TARGET_TYPES.map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
-          <select value={actorId} onChange={(e) => { setActorId(e.target.value); setPage(1); }} style={{ ...selectStyle, minWidth: 200 }}>
+          <select value={actorId} onChange={(e) => { setActorId(e.target.value); setPage(1); }} className={`${styles.control} ${styles.actorControl}`}>
             <option value="">全部用户</option>
             {usersData.map((u) => (
               <option key={u.id} value={u.id}>{u.name} · {u.email}</option>
@@ -245,14 +256,14 @@ export function AuditPage() {
             value={targetId}
             placeholder="对象 ID（精确匹配）"
             onChange={(e) => { setTargetId(e.target.value); setPage(1); }}
-            style={{ ...selectStyle, width: 220, fontFamily: "var(--font-mono, monospace)" }}
+            className={`${styles.control} ${styles.targetInput}`}
           />
           <input
             value={detailKey}
             placeholder="detail 键名（如 role）"
             title="A.3：detail_json 字段级 GIN 过滤——键名"
             onChange={(e) => { setDetailKey(e.target.value); setPage(1); }}
-            style={{ ...selectStyle, width: 160, fontFamily: "var(--font-mono, monospace)" }}
+            className={`${styles.control} ${styles.detailKeyInput}`}
           />
           <input
             value={detailValue}
@@ -260,38 +271,29 @@ export function AuditPage() {
             title="A.3：detail_json 字段级 GIN 过滤——键值（与键名共同生效）"
             onChange={(e) => { setDetailValue(e.target.value); setPage(1); }}
             disabled={!detailKey}
-            style={{ ...selectStyle, width: 200, fontFamily: "var(--font-mono, monospace)", opacity: detailKey ? 1 : 0.5 }}
+            className={`${styles.control} ${styles.detailValueInput} ${detailKey ? "" : styles.controlDisabled}`}
           />
-          <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--color-fg-muted)" }}>
+          <span className={styles.totalText}>
             共 {total} 条 · 第 {page} / {pageCount} 页
           </span>
         </div>
 
         {focused && (
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "8px 16px", borderBottom: "1px solid var(--color-border)",
-            background: "rgba(99, 102, 241, 0.08)",
-            fontSize: 12.5,
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <Icon name="target" size={13} style={{ color: "var(--color-accent)" }} />
-              <span style={{ color: "var(--color-fg-muted)" }}>追溯模式：</span>
+          <div className={styles.focusBar}>
+            <div className={styles.focusTags}>
+              <Icon name="target" size={13} className={styles.accentIcon} />
+              <span className={styles.mutedText}>追溯模式：</span>
               {focusedActor && (
-                <Badge variant="accent" style={{ fontSize: 11 }}>
-                  操作人 {focusedActor.name} · {focusedActor.email}
-                </Badge>
+                <SmallBadge>操作人 {focusedActor.name} · {focusedActor.email}</SmallBadge>
               )}
               {!focusedActor && actorId && (
-                <Badge variant="accent" style={{ fontSize: 11 }}>actor_id = <span className="mono">{actorId.slice(0, 8)}…</span></Badge>
+                <SmallBadge>actor_id = <span className="mono">{actorId.slice(0, 8)}…</span></SmallBadge>
               )}
-              {targetType && <Badge variant="accent" style={{ fontSize: 11 }}>对象类型 {targetType}</Badge>}
-              {targetId && <Badge variant="accent" style={{ fontSize: 11 }}>对象 ID <span className="mono">{targetId.length > 24 ? targetId.slice(0, 8) + "…" : targetId}</span></Badge>}
-              {actionFilter && <Badge variant="accent" style={{ fontSize: 11 }}>动作 {actionFilter}</Badge>}
+              {targetType && <SmallBadge>对象类型 {targetType}</SmallBadge>}
+              {targetId && <SmallBadge>对象 ID <span className="mono">{targetId.length > 24 ? targetId.slice(0, 8) + "…" : targetId}</span></SmallBadge>}
+              {actionFilter && <SmallBadge>动作 {actionFilter}</SmallBadge>}
               {detailKey && (
-                <Badge variant="accent" style={{ fontSize: 11 }}>
-                  detail.{detailKey}{detailValue ? ` = ${detailValue}` : ""}
-                </Badge>
+                <SmallBadge>detail.{detailKey}{detailValue ? ` = ${detailValue}` : ""}</SmallBadge>
               )}
             </div>
             <Button size="sm" variant="ghost" onClick={clearFocus}>
@@ -301,33 +303,23 @@ export function AuditPage() {
         )}
 
         {/* v0.6.6 · 按 request_id 折叠为单行 + ▸ 展开；virtualized 容器 */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: HEADER_COLS,
-            fontSize: 12,
-            fontWeight: 500,
-            color: "var(--color-fg-muted)",
-            background: "var(--color-bg-sunken)",
-            borderBottom: "1px solid var(--color-border)",
-          }}
-        >
+        <div className={styles.tableHeader}>
           {["", "时间", "操作人", "动作", "对象", "IP", "状态", ""].map((h, i) => (
-            <div key={i} style={{ padding: "10px 12px" }}>{h}</div>
+            <div key={i} className={styles.headerCell}>{h}</div>
           ))}
         </div>
 
         <div
           ref={tableContainerRef}
-          style={{ height: 560, overflow: "auto", position: "relative" }}
+          className={styles.tableViewport}
         >
           {(isLoading || isFetching) && flatRows.length === 0 && (
-            <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)" }}>加载中...</div>
+            <div className={styles.emptyState}>加载中...</div>
           )}
           {!isLoading && flatRows.length === 0 && (
-            <div style={{ padding: 32, textAlign: "center", color: "var(--color-fg-subtle)" }}>暂无记录</div>
+            <div className={styles.emptyState}>暂无记录</div>
           )}
-          <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+          <VirtualSizer height={virtualizer.getTotalSize()}>
             {virtualizer.getVirtualItems().map((virt) => {
               const row = flatRows[virt.index];
               const expanded = row.kind === "leader" && expandedReqIds.has(row.group.id);
@@ -335,70 +327,62 @@ export function AuditPage() {
               const isLeader = row.kind === "leader";
               const hasChildren = isLeader && row.group.children.length > 0;
               return (
-                <div
+                <VirtualAuditRow
                   key={virt.key}
-                  data-index={virt.index}
-                  ref={virtualizer.measureElement}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    transform: `translateY(${virt.start}px)`,
-                    display: "grid",
-                    gridTemplateColumns: HEADER_COLS,
-                    borderBottom: "1px solid var(--color-border)",
-                    background: row.kind === "child" ? "var(--color-bg-sunken)" : undefined,
-                    paddingLeft: row.kind === "child" ? 24 : 0,
-                  }}
+                  index={virt.index}
+                  start={virt.start}
+                  isChild={row.kind === "child"}
+                  measureElement={virtualizer.measureElement}
                 >
-                  <div style={{ padding: "10px 8px", display: "flex", alignItems: "center" }}>
+                  <div className={styles.expandCell}>
                     {hasChildren ? (
                       <button
                         type="button"
                         onClick={() => toggleGroup(row.group.id)}
                         title={expanded ? "折叠" : `展开同请求 ${row.group.children.length + 1} 条`}
-                        style={focusBtnStyle}
+                        className={styles.focusButton}
                       >
                         <Icon name={expanded ? "chevDown" : "chevRight"} size={12} />
-                        <span style={{ marginLeft: 4, fontSize: 11 }}>{row.group.children.length + 1}</span>
+                        <span className={styles.childCount}>{row.group.children.length + 1}</span>
                       </button>
                     ) : null}
                   </div>
-                  <div style={{ padding: "10px 12px", color: "var(--color-fg-muted)", fontSize: 12, whiteSpace: "nowrap" }}>
+                  <div className={styles.timeCell}>
                     {new Date(it.created_at).toLocaleString("zh-CN", { hour12: false })}
                   </div>
-                  <div style={{ padding: "10px 12px" }}>
+                  <div className={styles.cell}>
                     {it.actor_email ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div className={styles.actorWrap}>
                         {it.actor_id ? (
                           <button
                             type="button"
                             onClick={() => { setActorId(it.actor_id!); setPage(1); }}
                             title="按操作人追溯"
-                            style={focusBtnStyle}
+                            className={styles.focusButton}
                           >
                             {it.actor_email}
                           </button>
                         ) : (
-                          <span style={{ fontSize: 12.5 }}>{it.actor_email}</span>
+                          <span className={styles.actorEmail}>{it.actor_email}</span>
                         )}
                         {it.actor_role && (
-                          <Badge variant="outline" style={{ fontSize: 10 }}>
+                          <span className={styles.tinyBadge}>
+                          <Badge variant="outline">
                             {ROLE_LABELS[it.actor_role as UserRole] ?? it.actor_role}
                           </Badge>
+                          </span>
                         )}
                       </div>
                     ) : (
-                      <span style={{ color: "var(--color-fg-subtle)", fontStyle: "italic", fontSize: 12 }}>匿名</span>
+                      <span className={styles.anonymous}>匿名</span>
                     )}
                   </div>
-                  <div style={{ padding: "10px 12px" }}>
-                    <Badge variant={it.action.startsWith("http.") ? "outline" : "accent"} style={{ fontSize: 11 }}>
+                  <div className={styles.cell}>
+                    <SmallBadge variant={it.action.startsWith("http.") ? "outline" : "accent"}>
                       {auditActionLabel(it.action)}
-                    </Badge>
+                    </SmallBadge>
                   </div>
-                  <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--color-fg-muted)" }}>
+                  <div className={styles.targetCell}>
                     {it.target_type && it.target_id ? (
                       <button
                         type="button"
@@ -408,10 +392,10 @@ export function AuditPage() {
                           setPage(1);
                         }}
                         title={`按对象 ${it.target_type}/${it.target_id} 追溯`}
-                        style={focusBtnStyle}
+                        className={styles.focusButton}
                       >
                         {it.target_type}
-                        <span className="mono" style={{ marginLeft: 4, fontSize: 11, color: "var(--color-fg-subtle)" }}>
+                        <span className={`mono ${styles.targetId}`}>
                           {it.target_id.length > 24 ? it.target_id.slice(0, 8) + "…" : it.target_id}
                         </span>
                       </button>
@@ -421,20 +405,20 @@ export function AuditPage() {
                       "—"
                     )}
                   </div>
-                  <div style={{ padding: "10px 12px", fontSize: 11.5, color: "var(--color-fg-muted)", fontFamily: "var(--font-mono, monospace)" }}>
+                  <div className={styles.ipCell}>
                     {it.ip ?? "—"}
                   </div>
-                  <div style={{ padding: "10px 12px" }}>{statusBadge(it.status_code)}</div>
-                  <div style={{ padding: "10px 12px", textAlign: "right" }}>
+                  <div className={styles.cell}>{statusBadge(it.status_code)}</div>
+                  <div className={styles.detailCell}>
                     <Button size="sm" variant="ghost" onClick={() => setDetail(it)}>详情</Button>
                   </div>
-                </div>
+                </VirtualAuditRow>
               );
             })}
-          </div>
+          </VirtualSizer>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, padding: 12, borderTop: "1px solid var(--color-border)" }}>
+        <div className={styles.pagination}>
           <Button size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
             <Icon name="chevLeft" size={11} />上一页
           </Button>
@@ -446,8 +430,8 @@ export function AuditPage() {
 
       <Modal open={!!detail} onClose={() => setDetail(null)} title="审计日志详情" width={620}>
         {detail && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12.5 }}>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+          <div className={styles.detailStack}>
+            <div className={styles.detailActions}>
               {detail.actor_id && (
                 <Button
                   size="sm"
@@ -489,12 +473,8 @@ export function AuditPage() {
             <KV label="状态" value={String(detail.status_code ?? "-")} />
             <KV label="IP" value={detail.ip ?? "-"} mono />
             <div>
-              <div style={{ fontSize: 11.5, color: "var(--color-fg-muted)", marginBottom: 4 }}>detail_json</div>
-              <pre style={{
-                margin: 0, padding: 12, background: "var(--color-bg-sunken)",
-                border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
-                fontSize: 12, overflow: "auto", maxHeight: 320,
-              }}>
+              <div className={styles.detailJsonLabel}>detail_json</div>
+              <pre className={styles.detailJson}>
                 {detail.detail_json ? JSON.stringify(detail.detail_json, null, 2) : "(空 — 中间件元数据行)"}
               </pre>
             </div>
@@ -506,60 +486,74 @@ export function AuditPage() {
 }
 
 function statusBadge(code: number | null) {
-  if (code === null) return <span style={{ color: "var(--color-fg-subtle)" }}>—</span>;
-  if (code >= 500) return <Badge variant="danger" style={{ fontSize: 11 }}>{code}</Badge>;
-  if (code >= 400) return <Badge variant="warning" style={{ fontSize: 11 }}>{code}</Badge>;
-  if (code >= 200) return <Badge variant="success" style={{ fontSize: 11 }}>{code}</Badge>;
-  return <Badge variant="outline" style={{ fontSize: 11 }}>{code}</Badge>;
+  if (code === null) return <span className={styles.subtleText}>—</span>;
+  if (code >= 500) return <SmallBadge variant="danger">{code}</SmallBadge>;
+  if (code >= 400) return <SmallBadge variant="warning">{code}</SmallBadge>;
+  if (code >= 200) return <SmallBadge variant="success">{code}</SmallBadge>;
+  return <SmallBadge variant="outline">{code}</SmallBadge>;
 }
 
 function KV({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div style={{ display: "flex", gap: 12 }}>
-      <div style={{ width: 80, color: "var(--color-fg-muted)" }}>{label}</div>
-      <div className={mono ? "mono" : undefined} style={{ flex: 1, wordBreak: "break-all" }}>{value}</div>
+    <div className={styles.kvRow}>
+      <div className={styles.kvLabel}>{label}</div>
+      <div className={mono ? `mono ${styles.kvValue}` : styles.kvValue}>{value}</div>
     </div>
   );
 }
 
-const selectStyle: React.CSSProperties = {
-  padding: "5px 8px",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  fontSize: 12.5,
-  background: "var(--color-bg-elev)",
-  color: "var(--color-fg)",
-};
+function SmallBadge({
+  children,
+  variant = "accent",
+}: {
+  children: ReactNode;
+  variant?: ComponentProps<typeof Badge>["variant"];
+}) {
+  return <Badge variant={variant} className={styles.smallBadge}>{children}</Badge>;
+}
 
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  fontWeight: 500,
-  fontSize: 12,
-  color: "var(--color-fg-muted)",
-  padding: "10px 12px",
-  borderBottom: "1px solid var(--color-border)",
-  background: "var(--color-bg-sunken)",
-};
+function VirtualSizer({ height, children }: { height: number; children: ReactNode }) {
+  const styleRef = useElementStyle<HTMLDivElement>(useMemo<CSSProperties>(() => ({ height }), [height]));
+  return (
+    <div ref={styleRef} className={styles.virtualSizer}>
+      {children}
+    </div>
+  );
+}
 
-const tdStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderBottom: "1px solid var(--color-border)",
-  verticalAlign: "middle",
-};
+function VirtualAuditRow({
+  index,
+  start,
+  isChild,
+  measureElement,
+  children,
+}: {
+  index: number;
+  start: number;
+  isChild: boolean;
+  measureElement: (element: Element | null) => void;
+  children: ReactNode;
+}) {
+  const rowStyle = useMemo<CSSProperties>(
+    () => ({ "--audit-row-y": `${start}px` }) as CSSProperties,
+    [start],
+  );
+  const styleRef = useElementStyle<HTMLDivElement>(rowStyle);
+  const setRowRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      styleRef(node);
+      measureElement(node);
+    },
+    [measureElement, styleRef],
+  );
 
-const focusBtnStyle: React.CSSProperties = {
-  background: "transparent",
-  border: "none",
-  padding: 0,
-  margin: 0,
-  cursor: "pointer",
-  color: "var(--color-accent)",
-  fontSize: 12.5,
-  textAlign: "left",
-  textDecoration: "none",
-  display: "inline-flex",
-  alignItems: "center",
-};
-
-// v0.6.6 折叠表 grid 列模板：[▸] 时间 操作人 动作 对象 IP 状态 [详情]
-const HEADER_COLS = "44px 160px 1.4fr 1fr 1.6fr 120px 80px 80px";
+  return (
+    <div
+      ref={setRowRef}
+      data-index={index}
+      className={isChild ? `${styles.auditRow} ${styles.auditRowChild}` : styles.auditRow}
+    >
+      {children}
+    </div>
+  );
+}

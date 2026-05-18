@@ -1,0 +1,45 @@
+.popover {
+  position: fixed;
+  top: var(--user-picker-top, 0);
+  left: var(--user-picker-left, 0);
+  z-index: 80;
+  min-width: 200px;
+  max-height: 240px;
+  padding: 4px;
+  overflow-y: auto;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.empty {
+  padding: 8px 10px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  color: var(--color-fg);
+  font-size: 12px;
+  cursor: pointer;
+  background: transparent;
+  border-radius: 3px;
+}
+
+.optionActive {
+  background: oklch(0.55 0.18 250 / 15%);
+}
+
+.name {
+  font-weight: 500;
+}
+
+.hint {
+  color: var(--color-fg-muted);
+  font-size: 10.5px;
+}

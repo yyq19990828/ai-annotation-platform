@@ -4,6 +4,7 @@ import {
   renderTurnstile,
   removeTurnstile,
 } from "@/lib/turnstile";
+import styles from "./Captcha.module.css";
 
 /**
  * Cloudflare Turnstile widget (v0.8.7).
@@ -52,7 +53,7 @@ export function Captcha({ onChange, theme = "auto" }: CaptchaProps) {
   }, [onChange, theme]);
 
   if (!getTurnstileSiteKey()) return null;
-  return <div ref={ref} data-testid="captcha-widget" style={{ marginTop: 4 }} />;
+  return <div ref={ref} data-testid="captcha-widget" className={styles.widget} />;
 }
 
 /** 当且仅当 site key 配置时才需要 token；dev 模式 site key 缺省直接放行。 */

@@ -1,0 +1,265 @@
+.page {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 16px;
+  padding: 20px 24px;
+  max-width: 1480px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.sidebarShell {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  overflow: auto;
+  align-self: stretch;
+  max-height: calc(100vh - 80px);
+}
+
+.sidebarHeader {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sidebarTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sidebarSubtitle,
+.progressTitle,
+.progressNote {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+}
+
+.sidebarSubtitle {
+  margin-top: 2px;
+}
+
+.content {
+  min-width: 0;
+  overflow: auto;
+  max-height: calc(100vh - 80px);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 16px;
+}
+
+.headerText {
+  min-width: 0;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--color-fg-muted);
+  margin: 4px 0 0;
+}
+
+.accentText {
+  color: var(--color-accent);
+}
+
+.headerActions,
+.bulkActions,
+.annotationPreview {
+  display: flex;
+}
+
+.headerActions,
+.bulkActions {
+  gap: 6px;
+}
+
+.headerActions {
+  flex-shrink: 0;
+}
+
+.progressCard {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+}
+
+.progressHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  margin-top: 4px;
+}
+
+.progressLabel {
+  flex: 0 0 48px;
+}
+
+.progressTrack {
+  flex: 1;
+  height: 5px;
+  background: var(--color-bg-sunken);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progressFill {
+  width: var(--progress-pct);
+  height: 100%;
+  background: var(--progress-color);
+}
+
+.progressValue {
+  flex: 0 0 100px;
+  text-align: right;
+  color: var(--color-fg-subtle);
+}
+
+.progressNote {
+  margin-top: 6px;
+}
+
+.emptyState,
+.loadingState {
+  text-align: center;
+  color: var(--color-fg-subtle);
+}
+
+.emptyState {
+  padding: 60px;
+}
+
+.loadingState {
+  padding: 40px;
+}
+
+.emptyIcon {
+  opacity: 0.3;
+  margin-bottom: 12px;
+}
+
+.emptyTitle {
+  font-size: 14px;
+}
+
+.bulkBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.bulkBarActive {
+  background: var(--color-accent-soft);
+}
+
+.bulkLabel,
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.bulkLabel {
+  gap: 8px;
+}
+
+.accentInput {
+  accent-color: var(--color-accent);
+}
+
+.taskRow {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elev);
+  margin-bottom: 8px;
+  display: grid;
+  grid-template-columns: 32px 48px minmax(0, 1fr) 140px 200px 96px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.taskMain {
+  min-width: 0;
+  cursor: pointer;
+}
+
+.taskTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.taskId {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.taskFileName {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskMeta {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+  margin-top: 2px;
+}
+
+.taskStatus {
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.annotationEmpty {
+  font-size: 11px;
+  color: var(--color-fg-subtle);
+}
+
+.annotationPreview {
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.annotationBadge > :global(span) {
+  font-size: 10px;
+  padding: 1px 5px;
+}
+
+.annotationMore {
+  font-size: 10px;
+  color: var(--color-fg-subtle);
+}
+
+.actionCell {
+  text-align: right;
+}

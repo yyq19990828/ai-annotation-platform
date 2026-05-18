@@ -17,6 +17,7 @@ import { useProjects } from "@/hooks/useProjects";
 import type { DatasetResponse } from "@/api/datasets";
 import type { ProjectResponse } from "@/api/projects";
 import type { IconName } from "@/components/ui/Icon";
+import styles from "./DatasetsPage.module.css";
 
 const TYPE_LABELS: Record<string, string> = {
   image: "图像",
@@ -83,42 +84,37 @@ function formatMediaInfo(item: { file_type: string; width: number | null; height
 function DatasetRow({ ds, isExpanded, onToggle }: { ds: DatasetResponse; isExpanded: boolean; onToggle: () => void }) {
   const created = new Date(ds.created_at).toLocaleDateString("zh-CN");
   return (
-    <tr onClick={onToggle} style={{ cursor: "pointer", background: isExpanded ? "var(--color-bg-sunken)" : undefined }}>
-      <td style={{ padding: "12px 12px 12px 16px", borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 6,
-            background: "var(--color-bg-sunken)", border: "1px solid var(--color-border)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "var(--color-fg-muted)", flex: "0 0 28px",
-          }}>
+    <tr className={`${styles.datasetRow} ${isExpanded ? styles.datasetRowExpanded : ""}`} onClick={onToggle}>
+      <td className={`${styles.datasetCell} ${styles.datasetNameCell}`}>
+        <div className={styles.datasetIdentity}>
+          <div className={styles.datasetIconBox}>
             <Icon name={TYPE_ICONS[ds.data_type] || "layers"} size={14} />
           </div>
           <div>
-            <div style={{ fontWeight: 500, fontSize: 13.5 }}>{ds.name}</div>
-            <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 1 }}>
+            <div className={styles.datasetName}>{ds.name}</div>
+            <div className={styles.datasetMeta}>
               {ds.display_id}
               {ds.description && <> · {ds.description.length > 30 ? ds.description.slice(0, 30) + "…" : ds.description}</>}
             </div>
           </div>
         </div>
       </td>
-      <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
+      <td className={styles.datasetCell}>
         <Badge variant={TYPE_VARIANTS[ds.data_type] || "outline"}>
           <Icon name={TYPE_ICONS[ds.data_type] || "layers"} size={10} />
           {TYPE_LABELS[ds.data_type] || ds.data_type}
         </Badge>
       </td>
-      <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <span className="mono" style={{ fontSize: 13 }}>{ds.file_count.toLocaleString()}</span>
+      <td className={styles.datasetCell}>
+        <span className={`mono ${styles.monoCell}`}>{ds.file_count.toLocaleString()}</span>
       </td>
-      <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <span className="mono" style={{ fontSize: 13 }}>{ds.project_count}</span>
+      <td className={styles.datasetCell}>
+        <span className={`mono ${styles.monoCell}`}>{ds.project_count}</span>
       </td>
-      <td style={{ padding: 12, borderBottom: "1px solid var(--color-border)", verticalAlign: "middle" }}>
-        <span style={{ fontSize: 12.5 }}>{created}</span>
+      <td className={styles.datasetCell}>
+        <span className={styles.createdCell}>{created}</span>
       </td>
-      <td style={{ padding: "12px 16px 12px 12px", borderBottom: "1px solid var(--color-border)", textAlign: "right", verticalAlign: "middle" }}>
+      <td className={`${styles.datasetCell} ${styles.datasetActionCell}`}>
         <Button size="sm">
           {isExpanded ? "收起" : "展开"} <Icon name={isExpanded ? "chevDown" : "chevRight"} size={11} />
         </Button>
@@ -153,16 +149,16 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
 
   return (
     <tr>
-      <td colSpan={6} style={{ padding: 0, borderBottom: "1px solid var(--color-border)" }}>
-        <div style={{ padding: "16px 20px", background: "var(--color-bg)" }}>
-          <div style={{ display: "flex", gap: 16 }}>
+      <td colSpan={6} className={styles.detailCell}>
+        <div className={styles.detailPanel}>
+          <div className={styles.detailLayout}>
             {/* 文件列表 */}
-            <div style={{ flex: 2 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
-                  文件列表 <span style={{ fontWeight: 400, color: "var(--color-fg-muted)" }}>({totalItems})</span>
+            <div className={styles.filesColumn}>
+              <div className={styles.detailHeader}>
+                <h4 className={styles.detailTitle}>
+                  文件列表 <span className={styles.detailCount}>({totalItems})</span>
                 </h4>
-                <div style={{ display: "flex", gap: 6 }}>
+                <div className={styles.buttonGroup}>
                   <Button
                     size="sm"
                     onClick={() => {
@@ -240,70 +236,57 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
 
                 </div>
               </div>
-              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 12.5 }}>
+              <table className={styles.itemsTable}>
                 <thead>
                   <tr>
                     {["文件名", "类型", "大小", "媒体信息", "上传时间"].map((h, i) => (
-                      <th key={i} style={{
-                        textAlign: "left", fontWeight: 500, fontSize: 11,
-                        color: "var(--color-fg-muted)", padding: "6px 8px",
-                        borderBottom: "1px solid var(--color-border)",
-                        background: "var(--color-bg-sunken)",
-                      }}>{h}</th>
+                      <th key={i} className={styles.itemsHeaderCell}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {itemsLoading && (
-                    <tr><td colSpan={5} style={{ textAlign: "center", padding: 20, color: "var(--color-fg-subtle)" }}>加载中...</td></tr>
+                    <tr><td colSpan={5} className={styles.emptyCell}>加载中...</td></tr>
                   )}
                   {!itemsLoading && items.map((item) => (
                     <tr key={item.id}>
-                      <td style={{ padding: "8px", borderBottom: "1px solid var(--color-border)" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <td className={styles.itemCell}>
+                        <div className={styles.itemNameWrap}>
                           <Thumbnail src={item.thumbnail_url} blurhash={item.blurhash} width={32} height={32} />
-                          <span style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.file_name}</span>
+                          <span className={styles.truncateFileName}>{item.file_name}</span>
                         </div>
                       </td>
-                      <td style={{ padding: "8px", borderBottom: "1px solid var(--color-border)" }}>
+                      <td className={styles.itemCell}>
                         <Badge variant="outline">{item.file_type}</Badge>
                       </td>
-                      <td style={{ padding: "8px", borderBottom: "1px solid var(--color-border)", color: "var(--color-fg-muted)" }}>
+                      <td className={`${styles.itemCell} ${styles.mutedCell}`}>
                         {item.file_size ? `${(item.file_size / 1024).toFixed(1)} KB` : "—"}
                       </td>
                       <td
                         title={formatMediaInfo(item)}
-                        style={{
-                          padding: "8px",
-                          borderBottom: "1px solid var(--color-border)",
-                          color: formatMediaInfo(item).includes("失败") ? "var(--color-danger)" : "var(--color-fg-muted)",
-                          maxWidth: 220,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
+                        className={`${styles.itemCell} ${styles.mediaInfo} ${formatMediaInfo(item).includes("失败") ? styles.dangerText : ""}`}
                       >
                         {formatMediaInfo(item)}
                       </td>
-                      <td style={{ padding: "8px", borderBottom: "1px solid var(--color-border)", color: "var(--color-fg-muted)" }}>
+                      <td className={`${styles.itemCell} ${styles.mutedCell}`}>
                         {new Date(item.created_at).toLocaleDateString("zh-CN")}
                       </td>
                     </tr>
                   ))}
                   {!itemsLoading && items.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: "center", padding: 20, color: "var(--color-fg-subtle)" }}>暂无文件</td></tr>
+                    <tr><td colSpan={5} className={styles.emptyCell}>暂无文件</td></tr>
                   )}
                 </tbody>
               </table>
               {totalPages > 1 && (
-                <div style={{ display: "flex", gap: 4, justifyContent: "center", marginTop: 8 }}>
-                  <Button size="sm" onClick={() => setItemPage(Math.max(0, itemPage - 1))} style={{ visibility: itemPage > 0 ? "visible" : "hidden" }}>
+                <div className={styles.pagination}>
+                  <Button size="sm" onClick={() => setItemPage(Math.max(0, itemPage - 1))} className={itemPage > 0 ? undefined : styles.invisible}>
                     <Icon name="chevLeft" size={11} />
                   </Button>
-                  <span style={{ fontSize: 11, color: "var(--color-fg-muted)", padding: "4px 8px" }}>
+                  <span className={styles.pageIndicator}>
                     {itemPage + 1} / {totalPages}
                   </span>
-                  <Button size="sm" onClick={() => setItemPage(Math.min(totalPages - 1, itemPage + 1))} style={{ visibility: itemPage < totalPages - 1 ? "visible" : "hidden" }}>
+                  <Button size="sm" onClick={() => setItemPage(Math.min(totalPages - 1, itemPage + 1))} className={itemPage < totalPages - 1 ? undefined : styles.invisible}>
                     <Icon name="chevRight" size={11} />
                   </Button>
                 </div>
@@ -311,20 +294,17 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
             </div>
 
             {/* 关联项目 */}
-            <div style={{ flex: 1, borderLeft: "1px solid var(--color-border)", paddingLeft: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--color-fg)" }}>
-                  关联项目 <span style={{ fontWeight: 400, color: "var(--color-fg-muted)" }}>({linkedProjects.length})</span>
+            <div className={styles.projectsColumn}>
+              <div className={styles.detailHeader}>
+                <h4 className={styles.detailTitle}>
+                  关联项目 <span className={styles.detailCount}>({linkedProjects.length})</span>
                 </h4>
               </div>
               {linkedProjects.map((p) => (
-                <div key={p.id} style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "8px 0", borderBottom: "1px solid var(--color-border)",
-                }}>
+                <div key={p.id} className={styles.projectRow}>
                   <div>
-                    <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--color-fg)" }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>{p.display_id} · {p.type_label}</div>
+                    <div className={styles.projectName}>{p.name}</div>
+                    <div className={styles.projectMeta}>{p.display_id} · {p.type_label}</div>
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => setConfirmUnlink(p)} title="取消关联">
                     <Icon name="x" size={11} />
@@ -332,7 +312,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                 </div>
               ))}
               {linkedProjects.length === 0 && (
-                <div style={{ fontSize: 12, color: "var(--color-fg-subtle)", padding: "12px 0" }}>未关联任何项目</div>
+                <div className={styles.emptyProject}>未关联任何项目</div>
               )}
               {availableProjects.length > 0 && (
                 <select
@@ -343,11 +323,7 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
                     }
                   }}
                   defaultValue=""
-                  style={{
-                    marginTop: 8, width: "100%", padding: "6px 8px", fontSize: 12,
-                    borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)",
-                    background: "var(--color-bg-elev)", cursor: "pointer",
-                  }}
+                  className={styles.projectSelect}
                 >
                   <option value="" disabled>关联到项目...</option>
                   {availableProjects.map((p) => (
@@ -423,31 +399,31 @@ function UnlinkConfirmModal({
 
   return (
     <Modal open onClose={onClose} title="确认取消关联">
-      <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-        <p style={{ margin: "0 0 8px" }}>
+      <div className={styles.confirmBody}>
+        <p className={styles.confirmParagraph}>
           确认取消数据集 <strong>{datasetName}</strong> 与项目 <strong>{project.name}</strong> 的关联？
         </p>
-        <div style={{ margin: "0 0 8px", color: "var(--color-fg-muted)" }}>
+        <div className={styles.confirmPreview}>
           {preview === null ? (
             "正在统计影响范围…"
           ) : preview.tasks === 0 ? (
             "项目中没有由该数据集创建的任务，可放心取消。"
           ) : (
             <>
-              <strong style={{ color: "var(--color-danger)" }}>将一并删除</strong>项目中由该数据集创建的 <strong>{preview.tasks}</strong> 个任务
+              <strong className={styles.dangerText}>将一并删除</strong>项目中由该数据集创建的 <strong>{preview.tasks}</strong> 个任务
               {preview.annotations > 0 && (
-                <>（含 <strong style={{ color: "var(--color-danger)" }}>{preview.annotations}</strong> 个已有标注）</>
+                <>（含 <strong className={styles.dangerText}>{preview.annotations}</strong> 个已有标注）</>
               )}
               {preview.batches > 0 && (
-                <>，并清理 <strong style={{ color: "var(--color-danger)" }}>{preview.batches}</strong> 个失去全部任务的空批次</>
+                <>，并清理 <strong className={styles.dangerText}>{preview.batches}</strong> 个失去全部任务的空批次</>
               )}
               。<br />此操作不可恢复。
             </>
           )}
         </div>
         {dangerous && (
-          <div style={{ margin: "10px 0" }}>
-            <label style={{ display: "block", fontSize: 12, color: "var(--color-fg-muted)", marginBottom: 4 }}>
+          <div className={styles.confirmInputGroup}>
+            <label className={styles.confirmLabel}>
               请输入数据集名称 <strong>{datasetName}</strong> 以确认：
             </label>
             <input
@@ -456,29 +432,16 @@ function UnlinkConfirmModal({
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder={datasetName}
               autoFocus
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "7px 10px",
-                fontSize: 13,
-                background: "var(--color-bg-sunken)",
-                border: `1px solid ${canSubmit ? "var(--color-success)" : "var(--color-border)"}`,
-                borderRadius: "var(--radius-md)",
-                color: "var(--color-fg)",
-                fontFamily: "inherit",
-              }}
+              className={`${styles.confirmInput} ${canSubmit ? styles.confirmInputReady : ""}`}
             />
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <div className={styles.modalActions}>
           <Button onClick={onClose}>取消</Button>
           <Button
             onClick={onConfirm}
             disabled={!canSubmit}
-            style={{
-              background: canSubmit ? "var(--color-danger)" : undefined,
-              color: canSubmit ? "#fff" : undefined,
-            }}
+            variant={canSubmit ? "danger" : "default"}
           >
             确认删除并取消关联
           </Button>
@@ -494,39 +457,31 @@ function CreateDatasetForm({ onClose, onCreate }: { onClose: () => void; onCreat
   const [dataType, setDataType] = useState("image");
 
   return (
-    <Card style={{ marginBottom: 16 }}>
-      <div style={{ padding: 16 }}>
-        <h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 600 }}>新建数据集</h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div className={styles.createCard}>
+      <div className={styles.createCardBody}>
+        <h3 className={styles.createTitle}>新建数据集</h3>
+        <div className={styles.formStack}>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>名称</label>
+            <label className={styles.formLabel}>名称</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="输入数据集名称"
-              style={{
-                width: "100%", padding: "8px 10px", fontSize: 13,
-                border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-elev)", boxSizing: "border-box",
-              }}
+              className={styles.textInput}
             />
           </div>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>描述</label>
+            <label className={styles.formLabel}>描述</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="可选描述"
               rows={2}
-              style={{
-                width: "100%", padding: "8px 10px", fontSize: 13,
-                border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-elev)", resize: "vertical", boxSizing: "border-box",
-              }}
+              className={styles.textarea}
             />
           </div>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-fg-muted)", display: "block", marginBottom: 4 }}>数据类型</label>
+            <label className={styles.formLabel}>数据类型</label>
             <TabRow
               tabs={["图像", "视频", "3D 点云", "多模态"]}
               active={TYPE_LABELS[dataType] || "图像"}
@@ -536,7 +491,7 @@ function CreateDatasetForm({ onClose, onCreate }: { onClose: () => void; onCreat
               }}
             />
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+          <div className={styles.formActions}>
             <Button onClick={onClose}>取消</Button>
             <Button variant="primary" onClick={() => name.trim() && onCreate({ name: name.trim(), description, data_type: dataType })}>
               <Icon name="plus" size={13} /> 创建
@@ -544,7 +499,7 @@ function CreateDatasetForm({ onClose, onCreate }: { onClose: () => void; onCreat
           </div>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -576,12 +531,12 @@ export function DatasetsPage() {
   };
 
   return (
-    <div style={{ padding: "20px 28px 40px", maxWidth: 1480, margin: "0 auto" }}>
+    <div className={styles.page}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24, marginBottom: 20 }}>
+      <div className={styles.header}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 4px", letterSpacing: "-0.01em" }}>数据集</h1>
-          <p style={{ color: "var(--color-fg-muted)", fontSize: 13, margin: 0 }}>管理标注数据集，上传文件并关联到标注项目</p>
+          <h1 className={styles.title}>数据集</h1>
+          <p className={styles.subtitle}>管理标注数据集，上传文件并关联到标注项目</p>
         </div>
         <Button variant="primary" onClick={() => setShowCreate(true)}>
           <Icon name="plus" size={13} /> 新建数据集
@@ -589,7 +544,7 @@ export function DatasetsPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div className={styles.statsGrid}>
         <StatCard icon="layers" label="数据集总数" value={total.toLocaleString()} />
         <StatCard icon="image" label="文件总量" value={totalFiles.toLocaleString()} />
         <StatCard icon="folder" label="已关联项目" value={String(linkedCount)} />
@@ -601,25 +556,18 @@ export function DatasetsPage() {
 
       {/* Main table */}
       <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--color-border)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>全部数据集</h3>
+        <div className={styles.tableToolbar}>
+          <div className={styles.toolbarLeft}>
+            <h3 className={styles.sectionTitle}>全部数据集</h3>
             <TabRow tabs={[...TYPE_FILTERS]} active={filter} onChange={setFilter} />
           </div>
           <SearchInput placeholder="搜索数据集..." value={query} onChange={setQuery} width={220} />
         </div>
-        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+        <table className={styles.table}>
           <thead>
             <tr>
               {["数据集", "类型", "文件数", "关联项目", "创建时间", ""].map((h, i) => (
-                <th key={i} style={{
-                  textAlign: "left", fontWeight: 500, fontSize: 12,
-                  color: "var(--color-fg-muted)", padding: "10px 12px",
-                  borderBottom: "1px solid var(--color-border)",
-                  background: "var(--color-bg-sunken)",
-                  ...(i === 0 ? { paddingLeft: 16 } : {}),
-                  ...(i === 5 ? { paddingRight: 16 } : {}),
-                }}>
+                <th key={i} className={styles.headerCell}>
                   {h}
                 </th>
               ))}
@@ -627,7 +575,7 @@ export function DatasetsPage() {
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={6} style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>加载中...</td></tr>
+              <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>加载中...</td></tr>
             )}
             {!isLoading && datasets.map((ds) => (
               <Fragment key={ds.id}>
@@ -640,7 +588,7 @@ export function DatasetsPage() {
               </Fragment>
             ))}
             {!isLoading && datasets.length === 0 && (
-              <tr><td colSpan={6} style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>
+              <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>
                 {query || filter !== "全部" ? "没有匹配的数据集" : '暂无数据集，点击「新建数据集」开始'}
               </td></tr>
             )}

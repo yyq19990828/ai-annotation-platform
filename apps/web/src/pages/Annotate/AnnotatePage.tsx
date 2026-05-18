@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { Thumbnail } from "@/components/Thumbnail";
+import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useTaskList } from "@/hooks/useTasks";
 import { useMyBatches } from "@/hooks/useDashboard";
 import { batchesApi, type BatchResponse } from "@/api/batches";
@@ -13,6 +14,8 @@ import type { MyBatchItem } from "@/api/dashboard";
 import type { TaskResponse } from "@/types";
 import { AnnotateSidebar } from "./AnnotateSidebar";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import styles from "./AnnotatePage.module.css";
+import type { CSSProperties } from "react";
 
 const STATUS_BADGE: Record<string, { label: string; variant: "accent" | "warning" | "danger" | "outline" }> = {
   active: { label: "未开始", variant: "outline" },
@@ -20,6 +23,15 @@ const STATUS_BADGE: Record<string, { label: string; variant: "accent" | "warning
   reviewing: { label: "审核中", variant: "warning" },
   rejected: { label: "已驳回", variant: "danger" },
 };
+
+function ProgressFill({ pct, color }: { pct: number; color: string }) {
+  const ref = useElementStyle<HTMLDivElement>({
+    "--progress-pct": `${Math.min(100, pct)}%`,
+    "--progress-color": color,
+  } as CSSProperties);
+
+  return <div ref={ref} className={styles.progressFill} />;
+}
 
 function TaskRow({ task, onOpen }: { task: TaskResponse; onOpen: () => void }) {
   const isLocked = task.status === "review" || task.status === "completed";
@@ -38,42 +50,31 @@ function TaskRow({ task, onOpen }: { task: TaskResponse; onOpen: () => void }) {
   return (
     <div
       onClick={onOpen}
-      style={{
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        background: "var(--color-bg-elev)",
-        marginBottom: 8,
-        display: "grid",
-        gridTemplateColumns: "48px 1fr 140px 100px 100px",
-        alignItems: "center",
-        gap: 12,
-        padding: "10px 14px",
-        cursor: "pointer",
-      }}
+      className={styles.taskRow}
     >
       <Thumbnail src={task.thumbnail_url} blurhash={task.blurhash} width={40} height={40} />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>{task.display_id}</span>
-          <span style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      <div className={styles.taskMain}>
+        <div className={styles.taskTitleRow}>
+          <span className={`mono ${styles.taskId}`}>{task.display_id}</span>
+          <span className={styles.taskFileName}>
             {task.file_name}
           </span>
         </div>
-        <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+        <div className={styles.taskMeta}>
           {task.total_annotations} 个标注 · {task.total_predictions} 个预测
         </div>
       </div>
-      <div style={{ fontSize: 12, color: "var(--color-fg-muted)" }}>
+      <div className={styles.taskStatus}>
         <Badge variant={statusVariant} dot>{statusLabel}</Badge>
       </div>
-      <div style={{ fontSize: 11.5, color: "var(--color-fg-subtle)" }}>
+      <div className={styles.lockCell}>
         {isLocked && (
-          <span title="已锁定" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span title="已锁定" className={styles.lockBadge}>
             <Icon name="lock" size={11} />已锁定
           </span>
         )}
       </div>
-      <div style={{ textAlign: "right" }}>
+      <div className={styles.actionCell}>
         <Button
           size="sm"
           variant="primary"
@@ -161,35 +162,16 @@ export function AnnotatePage() {
   const pendingTasks = Math.max(0, totalTasks - startedDone);
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "300px 1fr",
-        gap: 16,
-        padding: "20px 24px",
-        maxWidth: 1480,
-        height: "100%",
-        boxSizing: "border-box",
-      }}
-    >
-      <aside
-        style={{
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius-md)",
-          background: "var(--color-bg-elev)",
-          overflow: "auto",
-          alignSelf: "stretch",
-          maxHeight: "calc(100vh - 80px)",
-        }}
-      >
-        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--color-border)" }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>项目 · 批次</div>
-          <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 2 }}>
+    <div className={styles.page}>
+      <aside className={styles.sidebarShell}>
+        <div className={styles.sidebarHeader}>
+          <div className={styles.sidebarTitle}>项目 · 批次</div>
+          <div className={styles.sidebarSubtitle}>
             按项目分组的我的批次
           </div>
         </div>
         {batchesLoading ? (
-          <div style={{ padding: 20, textAlign: "center", color: "var(--color-fg-subtle)", fontSize: 12 }}>加载中...</div>
+          <div className={styles.sidebarLoading}>加载中...</div>
         ) : (
           <AnnotateSidebar
             batches={batches}
@@ -199,16 +181,16 @@ export function AnnotatePage() {
         )}
       </aside>
 
-      <section style={{ minWidth: 0, overflow: "auto", maxHeight: "calc(100vh - 80px)" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16, gap: 16 }}>
-          <div style={{ minWidth: 0 }}>
-            <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>
+      <section className={styles.content}>
+        <div className={styles.header}>
+          <div className={styles.headerText}>
+            <h1 className={styles.title}>
               {selectedBatch ? selectedBatch.batch_name : "标注工作台"}
             </h1>
-            <p style={{ fontSize: 13, color: "var(--color-fg-muted)", margin: "4px 0 0" }}>
+            <p className={styles.subtitle}>
               {selectedBatch ? (
                 <>
-                  <span className="mono" style={{ color: "var(--color-accent)" }}>{selectedBatch.batch_display_id}</span>
+                  <span className={`mono ${styles.accentText}`}>{selectedBatch.batch_display_id}</span>
                   <span> · {selectedBatch.project_name}</span>
                   <span> · 共 {selectedBatch.total_tasks} 任务</span>
                   {pendingTasks > 0 && <span> · 待标 {pendingTasks}</span>}
@@ -222,7 +204,7 @@ export function AnnotatePage() {
             </p>
           </div>
           {selectedBatch && (
-            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <div className={styles.headerActions}>
               {selectedBatch.status === "annotating" && (
                 <Button
                   variant="primary"
@@ -248,26 +230,16 @@ export function AnnotatePage() {
         </div>
 
         {selectedBatch?.status === "rejected" && selectedBatch.review_feedback && (
-          <div
-            style={{
-              marginBottom: 12,
-              padding: "10px 12px",
-              background: "color-mix(in oklab, var(--color-danger) 10%, transparent)",
-              borderLeft: "3px solid var(--color-danger)",
-              borderRadius: "var(--radius-sm)",
-              fontSize: 12.5,
-              color: "var(--color-fg)",
-            }}
-          >
-            <strong style={{ color: "var(--color-danger)" }}>审核员驳回反馈：</strong>
-            <div style={{ marginTop: 4, color: "var(--color-fg-muted)" }}>{selectedBatch.review_feedback}</div>
+          <div className={styles.rejectFeedback}>
+            <strong className={styles.dangerText}>审核员驳回反馈：</strong>
+            <div className={styles.rejectFeedbackBody}>{selectedBatch.review_feedback}</div>
           </div>
         )}
 
         {selectedBatch && (
-          <div style={{ marginBottom: 12, padding: "10px 12px", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", background: "var(--color-bg-elev)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>批次进度</span>
+          <div className={styles.progressCard}>
+            <div className={styles.progressHeader}>
+              <span className={styles.progressTitle}>批次进度</span>
               <Badge variant={STATUS_BADGE[selectedBatch.status]?.variant ?? "outline"} dot>
                 {STATUS_BADGE[selectedBatch.status]?.label ?? selectedBatch.status}
               </Badge>
@@ -277,12 +249,12 @@ export function AnnotatePage() {
               { label: "送审", pct: reviewPct, count: reviewDone, bar: "var(--color-warning)" },
               { label: "通过", pct: approvedPct, count: approvedDone, bar: "var(--color-success)" },
             ].map((r) => (
-              <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--color-fg-muted)", marginTop: 4 }}>
-                <span style={{ flex: "0 0 48px" }}>{r.label}</span>
-                <div style={{ flex: 1, height: 5, background: "var(--color-bg-sunken)", borderRadius: 2, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.min(100, r.pct)}%`, height: "100%", background: r.bar }} />
+              <div key={r.label} className={styles.progressRow}>
+                <span className={styles.progressLabel}>{r.label}</span>
+                <div className={styles.progressTrack}>
+                  <ProgressFill pct={r.pct} color={r.bar} />
                 </div>
-                <span className="mono" style={{ flex: "0 0 100px", textAlign: "right", color: "var(--color-fg-subtle)" }}>
+                <span className={`mono ${styles.progressValue}`}>
                   {r.count}/{selectedBatch.total_tasks} · {r.pct}%
                 </span>
               </div>
@@ -291,33 +263,24 @@ export function AnnotatePage() {
         )}
 
         {!selectedBatch ? (
-          <div style={{ textAlign: "center", padding: 60, color: "var(--color-fg-subtle)" }}>
-            <Icon name="target" size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
-            <div style={{ fontSize: 14 }}>请从左侧选择一个批次</div>
+          <div className={styles.emptyState}>
+            <Icon name="target" size={40} className={styles.emptyIcon} />
+            <div className={styles.emptyTitle}>请从左侧选择一个批次</div>
           </div>
         ) : tasksLoading ? (
-          <div style={{ textAlign: "center", padding: 40, color: "var(--color-fg-subtle)" }}>加载中...</div>
+          <div className={styles.loadingState}>加载中...</div>
         ) : tasks.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 60, color: "var(--color-fg-subtle)" }}>
-            <Icon name="inbox" size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
-            <div style={{ fontSize: 14 }}>该批次暂无任务</div>
+          <div className={styles.emptyState}>
+            <Icon name="inbox" size={40} className={styles.emptyIcon} />
+            <div className={styles.emptyTitle}>该批次暂无任务</div>
           </div>
         ) : (
           <>
-            <div
-              style={{
-                fontSize: 12, color: "var(--color-fg-muted)", marginBottom: 12,
-                padding: "8px 12px",
-                background: "var(--color-bg-elev)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-              }}
-            >
+            <div className={styles.taskListSummary}>
               <span>
                 共 {total} 个任务{tasks.length < total && `（已加载 ${tasks.length}）`}
               </span>
-              <span style={{ fontSize: 11, color: "var(--color-fg-subtle)" }}>
+              <span className={styles.taskListHint}>
                 点击行打开画布 · 进度自动保存
               </span>
             </div>

@@ -1,4 +1,5 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
+import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -17,6 +18,7 @@ import {
   type ProbeResponse,
 } from "@/api/adminMlIntegrations";
 import type { MLBackendResponse } from "@/types";
+import styles from "./MlBackendFormModal.module.css";
 
 interface LimitReachedDetail {
   limit?: number;
@@ -33,27 +35,6 @@ interface Props {
   /** v0.10.3 · 后端返 409 ML_BACKEND_LIMIT_REACHED 时回调; 由父组件弹 LimitModal. */
   onLimitReached?: (detail: LimitReachedDetail) => void;
 }
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 500,
-  color: "var(--color-fg-muted)",
-  marginBottom: 6,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "8px 11px",
-  fontSize: 13.5,
-  background: "var(--color-bg-sunken)",
-  border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius-md)",
-  color: "var(--color-fg)",
-  outline: "none",
-  fontFamily: "inherit",
-};
 
 export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitReached }: Props) {
   const isEdit = !!backend;
@@ -251,19 +232,19 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
       title={isEdit ? "编辑 ML Backend" : "注册 ML Backend"}
       width={560}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className={styles.stack}>
         <div>
-          <label style={labelStyle}>名称</label>
+          <label className={styles.label}>名称</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="例如 grounded-sam2-prod"
             maxLength={120}
-            style={inputStyle}
+            className={styles.input}
           />
         </div>
         <div>
-          <label style={labelStyle}>URL</label>
+          <label className={styles.label}>URL</label>
           <input
             value={url}
             onChange={(e) => {
@@ -271,21 +252,13 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
               setProbeResult(null);
             }}
             placeholder={urlPlaceholder}
-            style={{ ...inputStyle, fontFamily: "var(--font-mono, monospace)", fontSize: 12.5 }}
+            className={clsx(styles.input, styles.monoInput)}
           />
-          <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 4 }}>
+          <div className={styles.helpText}>
             后端容器内可达地址。Docker 同主机宿主网常用 <span className="mono">172.17.0.1</span>。
           </div>
           {/* v0.9.6 · 测试连接 (POST /admin/ml-integrations/probe, 无 DB 副作用) */}
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
+          <div className={styles.probeRow}>
             <Button size="sm" variant="ghost" onClick={onProbe} disabled={probing}>
               {probing
                 ? <Icon name="loader2" size={11} className="spin" />
@@ -294,15 +267,10 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
             </Button>
             {probeResult && (
               <span
-                style={{
-                  fontSize: 11.5,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  color: probeResult.ok
-                    ? "var(--color-success, #10b981)"
-                    : "var(--color-danger, #ef4444)",
-                }}
+                className={clsx(
+                  styles.probeResult,
+                  probeResult.ok ? styles.probeResultOk : styles.probeResultError,
+                )}
               >
                 <Icon name={probeResult.ok ? "check" : "warning"} size={11} />
                 {probeResult.ok ? (
@@ -318,45 +286,45 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
           </div>
         </div>
         <div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+          <label className={styles.checkboxLabel}>
             <input
               type="checkbox"
               checked={isInteractive}
               onChange={(e) => setIsInteractive(e.target.checked)}
-              style={{ accentColor: "var(--color-ai)" }}
+              className={styles.aiCheckbox}
             />
-            <Icon name="sparkles" size={14} style={{ color: "var(--color-ai)" }} />
+            <Icon name="sparkles" size={14} className={styles.aiIcon} />
             交互式 backend
           </label>
-          <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 4, marginLeft: 24 }}>
+          <div className={styles.indentedHelp}>
             支持 SAM 等点 / 框 prompt；批量预标注 backend 不需勾选。
           </div>
         </div>
         <div>
-          <label style={labelStyle}>认证方式</label>
+          <label className={styles.label}>认证方式</label>
           <select
             value={authMethod}
             onChange={(e) => setAuthMethod(e.target.value as "none" | "token")}
-            style={{ ...inputStyle, cursor: "pointer" }}
+            className={clsx(styles.input, styles.selectInput)}
           >
             <option value="none">none（无认证）</option>
             <option value="token">token（Bearer header）</option>
           </select>
           {authMethod === "token" && (
-            <div style={{ marginTop: 8 }}>
-              <label style={labelStyle}>Token</label>
+            <div className={styles.tokenField}>
+              <label className={styles.label}>Token</label>
               <input
                 type="password"
                 value={authToken}
                 onChange={(e) => setAuthToken(e.target.value)}
                 placeholder={isEdit ? "••• 留空则保持原值" : "Bearer token"}
-                style={inputStyle}
+                className={styles.input}
               />
             </div>
           )}
         </div>
         <div>
-          <label style={labelStyle}>最大并发（max_concurrency）</label>
+          <label className={styles.label}>最大并发（max_concurrency）</label>
           <input
             type="number"
             min={1}
@@ -364,9 +332,9 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
             value={maxConcurrency}
             onChange={(e) => setMaxConcurrency(e.target.value)}
             placeholder="默认 4"
-            style={{ ...inputStyle, width: 120 }}
+            className={clsx(styles.input, styles.concurrencyInput)}
           />
-          <div style={{ fontSize: 11, color: "var(--color-fg-subtle)", marginTop: 4 }}>
+          <div className={styles.helpText}>
             单 backend 同时处理的预标请求上限；留空走默认（4）。
           </div>
         </div>
@@ -374,18 +342,7 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
           <button
             type="button"
             onClick={() => setExtraOpen((s) => !s)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: 12,
-              color: "var(--color-fg-muted)",
-              background: "transparent",
-              border: "none",
-              padding: 0,
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
+            className={styles.extraToggle}
           >
             <Icon name={extraOpen ? "chevDown" : "chevRight"} size={12} />
             高级 · extra_params (JSON)
@@ -396,35 +353,17 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
               onChange={(e) => setExtraText(e.target.value)}
               placeholder='{ "model_size": "large" }'
               rows={4}
-              style={{
-                ...inputStyle,
-                marginTop: 6,
-                fontFamily: "var(--font-mono, monospace)",
-                fontSize: 12,
-                resize: "vertical",
-              }}
+              className={clsx(styles.input, styles.extraTextarea)}
             />
           )}
         </div>
         {error && (
-          <div
-            style={{
-              padding: "8px 11px",
-              fontSize: 12,
-              color: "var(--color-danger)",
-              background: "var(--color-danger-soft, transparent)",
-              border: "1px solid var(--color-danger)",
-              borderRadius: "var(--radius-md)",
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 6,
-            }}
-          >
-            <Icon name="warning" size={12} style={{ marginTop: 2, flexShrink: 0 }} />
+          <div className={styles.errorBox}>
+            <Icon name="warning" size={12} className={styles.errorIcon} />
             <span>{error}</span>
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div className={styles.actions}>
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
             取消
           </Button>
