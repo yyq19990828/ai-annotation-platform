@@ -194,7 +194,7 @@ ProjectSettings → ML 后端：
 
 ### v0.10.0 — sam3-backend 容器化（M0，~5 工作日） ✅ 2026-05-13
 
-> [plan](../docs/plans/roadmap-0-10-x-md-0-10-0-mellow-lantern.md) · [CHANGELOG](../CHANGELOG.md#0100---2026-05-13)
+> [plan](../docs/plans/2026-05-13-v0.10.0-mellow-lantern.md) · [CHANGELOG](../CHANGELOG.md#0100---2026-05-13)
 
 **已完成**：sam3-backend 跑通；ProjectSettings 能挂；与 grounded-sam2 互不干扰。详见原 §4.v0.10.0（git 历史）。
 
