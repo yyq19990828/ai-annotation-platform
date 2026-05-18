@@ -46,13 +46,21 @@ _ALEMBIC_LOCK_ID = 727274
 
 
 def do_run_migrations(connection: Connection) -> None:
+    # 第一句 execute 会隐式开启 outer transaction; context.begin_transaction()
+    # 因此降级为 SAVEPOINT, 内层 commit 不会推到 DB. asyncpg + NullPool 下连接
+    # 归还时无显式 commit → 整段 migration 被静默回滚, alembic_version 不更新
+    # 但 "Running upgrade" 日志已打 — 表象就是「跑了但没生效」.
+    # 修法: 显式 connection.commit() 把 outer transaction 推进去. 由于 advisory lock
+    # 是 session 级 (pg_advisory_lock 而非 pg_advisory_xact_lock), commit 不释放锁.
     connection.execute(text("SELECT pg_advisory_lock(:k)").bindparams(k=_ALEMBIC_LOCK_ID))
     try:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
+        connection.commit()
     finally:
         connection.execute(text("SELECT pg_advisory_unlock(:k)").bindparams(k=_ALEMBIC_LOCK_ID))
+        connection.commit()
 
 
 async def run_async_migrations() -> None:
