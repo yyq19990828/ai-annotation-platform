@@ -18,8 +18,12 @@ const banner = (srcRel) =>
 // 转义代码块外的尖括号：CHANGELOG/ROADMAP 里有大量 `<reason>` `<JWT>` `<AppShell>`
 // 这种 placeholder 文本，写在代码里没事，但 VitePress 的 Vue compiler 会把代码块外的
 // 裸 `<word>` 当成未闭合标签报错。这里把代码 fence (```...```) 与 inline code (`...`)
-// 之外的所有 `<` `>` 转成实体。
-function escapeAnglesOutsideCode(text) {
+// 之外的所有 `<` 转成实体。
+//
+// 同时：inline code 里的 `{{...}}`（例如 `style={{...}}`、`grep -c "style={{"`）会被
+// Vue compiler 当成模板插值导致解析失败。把含 `{{` 或 `}}` 的 inline code 从反引号
+// 改写为 `<code v-pre>...</code>`，直接关掉 Vue 编译。
+function escapeForVue(text) {
   const lines = text.split("\n");
   let inFence = false;
   for (let i = 0; i < lines.length; i++) {
@@ -29,14 +33,28 @@ function escapeAnglesOutsideCode(text) {
       continue;
     }
     if (inFence) continue;
-    // 行内：按 `...` 切片，奇数下标是 code，偶数下标是文本，仅文本部分转义
-    // 只转义 `<`：Vue 解析器只对未闭合 `<tag>` 报错；保留 `>` 以免破坏 markdown
-    // blockquote。autolinks `<url>` 在源文件中未使用（已 grep 确认）。
+    // 行内：按 `...` 切片，奇数下标是 inline code，偶数下标是文本
     const parts = line.split("`");
-    for (let j = 0; j < parts.length; j += 2) {
-      parts[j] = parts[j].replace(/</g, "&lt;");
+    let rebuilt = "";
+    for (let j = 0; j < parts.length; j++) {
+      if (j % 2 === 0) {
+        // 文本：只转义 `<` 防 Vue 把 `<reason>` / `<JWT>` 当未闭合标签
+        rebuilt += parts[j].replace(/</g, "&lt;");
+      } else {
+        // inline code：含 `{{`/`}}` 的改用 <code v-pre> 关掉 Vue 编译
+        const code = parts[j];
+        if (/\{\{|\}\}/.test(code)) {
+          const escaped = code
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+          rebuilt += `<code v-pre>${escaped}</code>`;
+        } else {
+          rebuilt += "`" + code + "`";
+        }
+      }
     }
-    lines[i] = parts.join("`");
+    lines[i] = rebuilt;
   }
   return lines.join("\n");
 }
@@ -78,9 +96,17 @@ function rewriteLinks(text) {
     .replace(new RegExp(`\\]\\(${REL}docs\\/(plans|research)\\/([^)#\\s]+?\\.md)${HASH}\\)`, "g"),
       `](${GITHUB_BLOB}/docs/$1/$2$3)`)
     // 同目录 ./0.10.x.md（在 ROADMAP/ 内或 docs/changelogs/ 内的版本互引）→ 站点干净 URL
-    .replace(/\]\(\.\/(\[archived\][^)#\s]+?)\.md(#[^)\s]*)?\)/g, (_m, stem, hash = "") =>
+    // `./` 前缀可选：ROADMAP 源里既有 `]([archived]xxx.md)` 也有 `](./[archived]xxx.md)`
+    .replace(/\]\((?:\.\/)?(\[archived\][^)#\s]+?)\.md(#[^)\s]*)?\)/g, (_m, stem, hash = "") =>
       `](./${encodeRouteStem(stem)}${hash})`)
-    .replace(/\]\(\.\/(\d+(?:\.\d+)*\.x)\.md(#[^)\s]*)?\)/g, "](./$1$2)");
+    .replace(/\]\((?:\.\/)?(\d+(?:\.\d+)*\.x)\.md(#[^)\s]*)?\)/g, "](./$1$2)")
+    // docs-site/<x>.md 引用：CHANGELOG / ROADMAP 用相对仓库根的路径指向站点页面，
+    // 镜像后落到站点内需要改成站点绝对 URL。
+    .replace(new RegExp(`\\]\\(${REL}docs-site\\/([^)#\\s]+?)\\.md${HASH}\\)`, "g"),
+      (_m, rel, hash = "") => `](/${rel}${hash})`)
+    // DEV.md / AGENTS.md / README.md 在仓库根，没有站点镜像 → 指向 GitHub blob URL
+    .replace(new RegExp(`\\]\\(${REL}(DEV|AGENTS|README)\\.md${HASH}\\)`, "g"),
+      (_m, name, hash = "") => `](${GITHUB_BLOB}/${name}.md${hash})`);
 }
 
 // 版本号自然倒序：0.10.x 在 0.9.x 之前
@@ -97,7 +123,7 @@ function compareVersionDesc(a, b) {
 
 function mirrorOne({ srcFile, srcRel, dstFile }) {
   const text = readFileSync(srcFile, "utf8");
-  const body = escapeAnglesOutsideCode(rewriteLinks(text));
+  const body = escapeForVue(rewriteLinks(text));
   writeFileSync(dstFile, banner(srcRel) + body);
 }
 

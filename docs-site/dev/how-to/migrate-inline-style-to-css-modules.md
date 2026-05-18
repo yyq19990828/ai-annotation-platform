@@ -6,7 +6,7 @@
 
 ## 为什么要迁
 
-[`CSP style-src nonce 收紧`](../../ops/security/) 的前置依赖是全站 ~2900 处 `style={{...}}` 重构。迁移完成后，生产 CSP 已收窄为只接受同源样式表和带 nonce 的 HTML `<style>` 标签（与 v0.9.11 收紧 script-src 同模式）。
+[`CSP style-src nonce 收紧`](../../ops/security/) 的前置依赖是全站 ~2900 处 <code v-pre>style={{...}}</code> 重构。迁移完成后，生产 CSP 已收窄为只接受同源样式表和带 nonce 的 HTML `<style>` 标签（与 v0.9.11 收紧 script-src 同模式）。
 
 后续新增/回归样式必须继续遵守这个约束：用 CSS modules / class 切换；真正动态值用 ref 同步 CSS custom properties，不能重新引入 JSX `style=`。
 
@@ -29,7 +29,7 @@ sections/
 - **Button 覆盖类**：优先使用组件现有 `variant` / `size` / `className` 能力；不要为了覆盖基础 UI 再引入 inline style。
 - **真正动态值**：用 CSS custom property，并通过 `useElementStyle` / ref 写入 DOM style，避免 TSX JSX 上出现 `style=`。
 
-### 3. 在 TSX 里 `import styles from "./X.module.css"` 并把 `style={{...}}` 替换成 `className={styles.xxx}`
+### 3. 在 TSX 里 `import styles from "./X.module.css"` 并把 <code v-pre>style={{...}}</code> 替换成 `className={styles.xxx}`
 
 简单工具函数避免引第三方依赖：
 

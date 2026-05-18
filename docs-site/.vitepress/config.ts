@@ -32,6 +32,9 @@ export default withMermaid(defineConfig({
     (url) => /\.(tsx?|py|json|ya?ml|sh|toml|Dockerfile\w*)$/.test(url),
     (url) => /\/(apps|infra)\//.test(url),
     (url) => /IMAGE_CHECKLIST/.test(url),
+    // ROADMAP/inspiration 文档引用本地 clone 的 CVAT 源码（`../../cvat/...`），
+    // 这些不是站点页面，构建期不应判为 dead。
+    (url) => /\/cvat\//.test(url) || /\/cvat-(sdk|cli)(\/|$)/.test(url),
   ],
 
   // mermaid 11.x 的 chunk 直接 import `dayjs/dayjs.min.js`（UMD 文件），Vite 当 ESM

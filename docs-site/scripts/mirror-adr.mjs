@@ -27,6 +27,42 @@ mkdirSync(DST, { recursive: true });
 const banner = (srcRel) =>
   `> ⚠️ **自动镜像** · 此页由 \`docs-site/scripts/mirror-adr.mjs\` 从 \`${srcRel}\` 生成，请勿直接编辑此处；改源文件后 \`pnpm docs:build\` 会自动同步。\n\n`;
 
+// inline code 里的 `{{...}}`（如 `style={{...}}`、`<style={{}}>`）会被 VitePress 的
+// Vue compiler 当模板插值解析失败。把含 `{{` 或 `}}` 的 inline code 从反引号改写为
+// `<code v-pre>...</code>`，关掉该片段的 Vue 编译。
+function escapeForVue(text) {
+  const lines = text.split("\n");
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const parts = line.split("`");
+    let rebuilt = "";
+    for (let j = 0; j < parts.length; j++) {
+      if (j % 2 === 0) {
+        rebuilt += parts[j];
+      } else {
+        const code = parts[j];
+        if (/\{\{|\}\}/.test(code)) {
+          const escaped = code
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+          rebuilt += `<code v-pre>${escaped}</code>`;
+        } else {
+          rebuilt += "`" + code + "`";
+        }
+      }
+    }
+    lines[i] = rebuilt;
+  }
+  return lines.join("\n");
+}
+
 const files = readdirSync(SRC).filter((f) => f.endsWith(".md")).sort();
 const sidebar = [];
 
@@ -59,7 +95,28 @@ for (const name of files) {
     (_m, rel, _md, hash = "") => `](/${rel}${hash})`,
   );
 
-  writeFileSync(resolve(DST, dstName), banner(srcRel) + body);
+  // ../../CHANGELOG.md → /changelog/
+  body = body.replace(
+    /\]\((?:\.\/)?\.\.\/\.\.\/CHANGELOG\.md(#[^)\s]*)?\)/g,
+    (_m, hash = "") => `](/changelog/${hash})`,
+  );
+
+  // ../../ROADMAP/<file>.md → /roadmap/<encoded-stem>
+  body = body.replace(
+    /\]\((?:\.\/)?\.\.\/\.\.\/ROADMAP\/([^)#\s]+?)\.md(#[^)\s]*)?\)/g,
+    (_m, stem, hash = "") => {
+      const encoded = stem.replace(/^\[archived\]/, "archived-").replace(/\[/g, "").replace(/\]/g, "");
+      return `](/roadmap/${encoded}${hash})`;
+    },
+  );
+
+  // ../../ROADMAP.md → /roadmap/
+  body = body.replace(
+    /\]\((?:\.\/)?\.\.\/\.\.\/ROADMAP\.md(#[^)\s]*)?\)/g,
+    (_m, hash = "") => `](/roadmap/${hash})`,
+  );
+
+  writeFileSync(resolve(DST, dstName), banner(srcRel) + escapeForVue(body));
 
   if (!isReadme) {
     sidebar.push({
