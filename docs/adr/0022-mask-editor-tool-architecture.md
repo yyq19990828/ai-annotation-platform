@@ -99,6 +99,27 @@ SAM（grounded-sam2 / sam3）的候选 mask 一直走「polygon 化 → 用户�
   - ADR-0013 mask-to-polygon-server-side（后端把 SAM mask 转 polygon 的服务侧决策，本文是其前端对偶面）
   - ADR-0021 polygon-lod-and-spatial-index（本文借用了 `simplifyPolygon`）
 - 后续可能演进 / 触发条件：
-  - v0.10.7.1 / v0.11.0：Konva MaskTool 组件 + ToolDock 按钮 + AIPredictionPopover「精修」入口 + hotkey 路径；
+  - v0.10.7.1 状态层（`useMaskEditor`）+ v0.10.8 UI 集成已落地（详见下方 v0.10.8 收尾段）；
   - v0.11+：RLE mask schema 与 I9 Ellipse / I10 Skeleton 一并做 geometry.kind 统一；
   - 引入方笔刷、polygon-plus / polygon-minus 布尔工具与 multipolygon 落库（依赖 RLE schema）。
+
+## v0.10.8 UI 集成收尾（2026-05-18）
+
+落地清单：
+
+- **入口 1**（候选精修）：`BoxListItem` AI 行 + `geometry?.type === "polygon"` 时显示「精修」按钮；点击 → `handleRefinePrediction(box)` → 把 `box.polygon`（归一化 [0,1]）× `imgW/imgH` 转像素 → `useMaskEditor.initFromPolygon` → `setTool("mask")` + 缓存 `pendingRefineRef = { predictionId, shapeIndex, labelId }`。
+- **入口 2**（空白工具）：ToolDock `mask` 按钮 / 全局 `M` 键 → `setTool("mask")`；用户按下指针时 `MaskTool.onPointerDown` 在 `!active` 自动 `beginBlank()`。
+- **commit**：Enter / MaskToolbar「确认」 → `commitMaskAsPolygon()` → `commitToPolygon()`（像素顶点）→ 像素 / `imgW`/`imgH` 转归一化 → 复用 `submitPolygon`。refine 模式：临时把 `s.activeClass` 切到候选 label，再 commit；同时把候选 id 写入 `dismissedShapeKeys`（同 `handleRejectPrediction` 路径）实现「自动 reject」；`multipleComponents=true` 时 toast 提示「仅落最大外环」。
+- **cancel**：Esc / MaskToolbar「取消」 → `cancelMaskEdit()` → `maskEditor.cancel()` + 清 `pendingRefineRef` + `setTool("box")`。
+- **B / E 上下文键**：仅 `tool === "mask"` 时在 `useWorkbenchHotkeys` 的 capture 阶段抢键（与 polygon 工具的 Enter/Esc/Backspace 同模式），切 `setMode("brush")` / `setMode("erase")`；非 mask 工具下 B 仍由主 dispatchKey 切 box。
+- **Shift+滚轮调半径**：ImageStage wheel handler 加 Shift 分支，步长 ±2px，clamp [1, 200]；仅 `Math.abs(deltaY) > Math.abs(deltaX)` 时响应（避免 macOS trackpad 横向滚动误触）；Ctrl/Cmd+滚轮仍 zoom。
+- **Konva 渲染**：`MaskOverlayLayer` 单 `Konva.Image` + 内部 `HTMLCanvasElement(imgW,imgH)`；`useMaskEditor.revision` 变化时 `buffer.toAlphaImageData()` → 染红 `rgba(220,38,38,0.45)` → `createImageData + putImageData + layer.batchDraw`。仅 `tool === "mask"` 且 `active` 且 `buffer != null` 时挂在 user 层之上、historical-canvas 层之下。
+- **新 polygon 的 label**：精修流程用候选 label；空白流程用工具栏当前 `s.activeClass`。
+
+未触达（仍按原计划留 v0.11+）：bbox 候选 → mask 初始填充、RLE schema、mask 多组件入库、dirtyRect 增量重绘、跨任务持久化。
+
+代码位置：
+- 工具：`apps/web/src/pages/Workbench/stage/tools/MaskTool.ts` (+ `.test.ts`, 4 例)
+- 渲染层：`apps/web/src/pages/Workbench/stage/overlays/MaskOverlayLayer.tsx`
+- 工具条：`apps/web/src/pages/Workbench/shell/MaskToolbar.tsx`
+- 接线点：`useImageAnnotationActions.ts` (`handleRefinePrediction` / `commitMaskAsPolygon` / `cancelMaskEdit`)、`useWorkbenchHotkeys.ts` (mask context useEffect)、`hotkeys.ts` (HOTKEYS / setTool union / dispatchKey M 路由 / RESERVED_LETTERS)、`BoxListItem.tsx` (`onRefine` prop + 按钮)、`AIInspectorPanel.tsx` / `BoxesList` (`onRefinePrediction` 透传)、`WorkbenchShell.tsx` (实例化 `useMaskEditor` + 注入下游 + overlays 包 MaskToolbar)、`WorkbenchStageHost.tsx` / `ImageWorkbench.tsx` / `ImageStage.tsx` (props 透传 `maskEditor` + DragInit `maskBrush` 分支 + Shift+滚轮 + MaskOverlayLayer 挂载)。

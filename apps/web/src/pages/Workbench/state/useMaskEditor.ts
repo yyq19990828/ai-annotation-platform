@@ -42,6 +42,11 @@ export interface UseMaskEditorReturn {
   dirty: boolean;
   /** 当前 buffer 引用（调用方只读访问）；非编辑态返回 null。 */
   buffer: MaskBuffer | null;
+  /**
+   * v0.10.8 · buffer 写入计数。paintAt / brush 都会 ++，渲染层（MaskOverlayLayer）可
+   * 把它放进 useEffect 依赖来触发 putImageData 重画；不直接代表 buffer 引用变化。
+   */
+  revision: number;
   /** 从空白 buffer 开始（独立 mask 工具入口）。 */
   beginBlank: () => void;
   /** 从 polygon 顶点初始化（AI 候选精修入口）。 */
@@ -82,7 +87,7 @@ export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAUL
   const [radius, _setRadius] = useState<number>(clampRadius(initialRadius));
   const [dirty, setDirty] = useState(false);
   // 引用计数用 revision 让 mask 写入触发 buffer-getter 的消费者 rerender（如 Konva.Image）
-  const [, setRev] = useState(0);
+  const [revision, setRev] = useState(0);
   const bump = useCallback(() => setRev((n) => n + 1), []);
 
   const setRadius = useCallback((r: number) => {
@@ -135,6 +140,7 @@ export function useMaskEditor({ width, height, initialRadius = MASK_BRUSH_DEFAUL
     radius,
     dirty,
     buffer: bufferRef.current,
+    revision,
     beginBlank,
     initFromPolygon,
     paintAt,

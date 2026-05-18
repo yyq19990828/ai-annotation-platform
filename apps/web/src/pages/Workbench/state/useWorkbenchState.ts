@@ -10,6 +10,7 @@ export type Tool =
   | "hand"
   | "polygon"
   | "canvas"
+  | "mask"
   | "smart-point"
   | "smart-box"
   | "text-prompt"

@@ -29,6 +29,7 @@ const TOOL_HINT: Record<ToolId, string | null> = {
   hand: null,
   polygon: null,
   canvas: null,
+  mask: null,
   "smart-point": "单击图像 = 正向点；Alt+点 = 负向点",
   "smart-box": "在图像上拖框作为 SAM 提示",
   "text-prompt": "在右侧 AI 面板输入文本（按 [ ] 调阈值）",

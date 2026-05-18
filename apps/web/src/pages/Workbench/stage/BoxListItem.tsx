@@ -99,6 +99,8 @@ interface BoxListItemProps {
   onSelect: (e?: { shiftKey?: boolean }) => void;
   onAccept?: () => void;
   onReject?: () => void;
+  /** v0.10.8 · I11 · 精修：仅 AI 行 + polygon 几何时由父级注入，否则不渲染按钮。 */
+  onRefine?: () => void;
   onDelete?: () => void;
   onChangeClass?: () => void;
   /** v0.10.5 M4-β · I15 切换 lock/hidden/occluded；仅人工框传入。 */
@@ -107,7 +109,7 @@ interface BoxListItemProps {
 
 export function BoxListItem({
   b, isAi, selected, dimmed = false, imageWidth, imageHeight,
-  onSelect, onAccept, onReject, onDelete, onChangeClass, onToggleFlag,
+  onSelect, onAccept, onReject, onRefine, onDelete, onChangeClass, onToggleFlag,
 }: BoxListItemProps) {
   const color = classColor(b.cls);
   const toolMeta = annotationToolMeta(b, imageWidth, imageHeight);
@@ -214,6 +216,18 @@ export function BoxListItem({
                 style={rowActionButtonStyle}
               >
                 <Icon name="x" size={14} />
+              </Button>
+            )}
+            {onRefine && (
+              <Button
+                size="sm"
+                title="精修 (Mask 笔刷)"
+                aria-label="精修"
+                onClick={(e) => { e.stopPropagation(); onRefine(); }}
+                style={rowActionButtonStyle}
+                data-testid={`ai-refine-${b.id}`}
+              >
+                <Icon name="edit" size={14} />
               </Button>
             )}
           </>

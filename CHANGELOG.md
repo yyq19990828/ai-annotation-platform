@@ -22,6 +22,44 @@
 
 ## 最新版本
 
+## [0.10.8] - 2026-05-18
+
+> **Mask 编辑器 UI 集成（M4-δ 收尾）.** 把 v0.10.7 / v0.10.7.1 的算法核 + 状态层接到 Konva 渲染层、ToolDock、AI 候选「精修」入口、笔刷 hotkey，完成 I11 v1 端到端可用闭环：① 新增 `MaskTool`（`hotkey="M"`、`onPointerDown` 在空白态自动 `beginBlank` 并返回 `maskBrush` DragInit）、`MaskOverlayLayer`（单 `Konva.Image` 节点 + 内部 `HTMLCanvasElement`，由 `useMaskEditor.revision` 触发 `putImageData`，半透红 `rgba(220,38,38,0.45)`）、`MaskToolbar`（stage 顶部浮条：半径 slider/B·E chips/确认·取消/dirty 指示）；② ImageStage `DragInit` union 加 `maskBrush`，pointermove 线段插值（步长 = radius/2）连续 `paintAt`，pointerup 不 commit；wheel handler 加 Shift+滚轮调半径分支（±2px, clamp [1,200], 仅 deltaY 主导时响应避免 trackpad 横向滚动误触）；③ 工具注册：`TOOL_REGISTRY.mask` / `ALL_TOOLS` / ToolDock `TOOL_DESCRIPTORS` / `useWorkbenchState.Tool` union / AIToolDrawer `TOOL_HINT` / `AIInspectorPanel.AIPredictionPopover.tool` union 全部加 `"mask"`；④ `useImageAnnotationActions` 新增 `handleRefinePrediction` (polygon 候选 → 像素坐标 → `initFromPolygon` + `setTool("mask")` + 缓存 `pendingRefineRef`) 与 `commitMaskAsPolygon` (commit → 像素坐标转归一化 → 客户端 reject 原候选 + 临时切候选 label + `submitPolygon`，空 mask 提示，多连通区警告，成功后 `cancel + setTool("box")`)；⑤ `useWorkbenchHotkeys` 加 mask 工具上下文 useEffect（capture 阶段抢 B/E/Enter/Esc，先于主 dispatchKey），`hotkeys.ts` HOTKEYS 表 + `setTool` action union + `RESERVED_LETTERS` 全部加 `M`，主 dispatchKey 加 `m/M → setTool("mask")`；⑥ `BoxListItem` AI 行 + polygon 几何时显示「精修」按钮（icon=edit），经 `BoxesList` → `AIInspectorPanel` → `WorkbenchShell` 透传到 `imageActions.handleRefinePrediction`；⑦ WorkbenchShell 实例化 `useMaskEditor({ width: imgW, height: imgH })`，把 `maskEditor` 注入 `useImageAnnotationActions` / `useWorkbenchHotkeys` / `WorkbenchStageHost.stageHost` → `ImageWorkbench` → `ImageStage` / overlays 中的 `MaskToolbar`。**不引入**：bbox 候选 → mask 初始填充（v0.11+ 与 I9 一起做 geometry.kind 收口）、RLE schema、mask 多组件入库（仅落最大外环，多连通 toast 提示）、dirtyRect 增量重绘（首期全量 putImageData，留 TODO）、mask 跨任务持久化。是 v0.10.4 epic / I11 的 UI 集成收尾。→ [plan](docs/plans/roadmap-2026-05-12-image-workbench-optim-effervescent-dijkstra.md) · [roadmap I11](ROADMAP/2026-05-12-image-workbench-optimization.md) · [ADR-0022](docs/adr/0022-mask-editor-tool-architecture.md).
+
+### Added
+
+- **MaskTool** ([MaskTool.ts](apps/web/src/pages/Workbench/stage/tools/MaskTool.ts))：`CanvasTool`，`id="mask"`, `hotkey="M"`, `cursor="crosshair"`；`onPointerDown` 在 `!active` 时 `beginBlank()`，立即 `paintAt(pt.x*imgW, pt.y*imgH)`，返回 `{ kind: "maskBrush", lastX, lastY }`。4 例单测（readOnly / 无 editor / 空白 → beginBlank+paintAt / 已激活 → 直接 paintAt）。
+- **MaskOverlayLayer** ([MaskOverlayLayer.tsx](apps/web/src/pages/Workbench/stage/overlays/MaskOverlayLayer.tsx))：单 `Konva.Image` 绑定内部 canvas；`revision` 变更时 `buffer.toAlphaImageData()` → 染红 → `createImageData` + `putImageData` + `layer.batchDraw()`。仅 active 时挂载在 user 层之上。
+- **MaskToolbar** ([MaskToolbar.tsx](apps/web/src/pages/Workbench/shell/MaskToolbar.tsx))：stage 顶部居中浮条：半径 slider [1,200]、笔刷/橡皮 chips、确认/取消按钮、dirty 与「Shift+滚轮调半径」提示；仅 `tool === "mask"` 显示。
+- **`useImageAnnotationActions` · `handleRefinePrediction` / `commitMaskAsPolygon` / `cancelMaskEdit`**：精修流程 (polygon 候选 → mask 编辑 → 自动 reject 原候选 + 新 polygon 用候选 label)；空白流程 (空白 mask 编辑 → polygon 用工具栏当前 label)；多连通区时 toast 警告。
+- **`useWorkbenchHotkeys` · mask 工具专用 keydown 块**：tool === "mask" 且 maskEditor 注入时，capture 阶段抢 `B` (setMode brush) / `E` (setMode erase) / `Enter` (commitMaskAsPolygon) / `Esc` (cancelMaskEdit)，先于主 dispatchKey；与 polygon 工具的专用键体系并列。
+- **hotkeys.ts HOTKEYS 表新增**：`M / Shift+wheel / B-mask / E-mask / Enter-mask`，便于 HotkeyCheatSheet 展示。
+- **`BoxListItem.onRefine` 可选 prop + 精修按钮**（[BoxListItem.tsx](apps/web/src/pages/Workbench/stage/BoxListItem.tsx)）：AI 行 + polygon 几何时显示 `edit` 图标按钮。
+
+### Changed
+
+- **`useMaskEditor`**：把内部 `setRev` 的值通过 `revision: number` 暴露到返回，MaskOverlayLayer 可作为 React 依赖触发重画；buffer 引用本身不变也能正确刷新。单测加 1 例 revision 回归。
+- **`ImageStage.tsx`**：DragInit union 加 `maskBrush`；pointermove 加 maskBrush 分支（线段插值 paintAt）；pointerup 不 commit maskBrush；wheel 加 Shift 分支调半径；user 层后挂 `<MaskOverlayLayer>`；container cursor 加 `tool === "mask" → crosshair`；`ToolPointerContext` 加 `maskEditor` 字段并在 handleStageMouseDown 透传。
+- **工具注册**：`tools/index.ts` `ToolId` 加 `"mask"`；`TOOL_REGISTRY.mask = MaskTool`；`ALL_TOOLS` 在 PolygonTool 后插入 MaskTool。`useWorkbenchState.Tool` union 与 `AIInspectorPanel.AIPredictionPopover.tool` union 同步加 `"mask"`；`AIToolDrawer.TOOL_HINT` 加 `mask: null`。
+- **`ToolDock.tsx`**：`TOOL_DESCRIPTORS.mask` 描述「Mask 笔刷 · B/E 切模式, Shift+滚轮调半径, Enter 提交」。
+- **`AIInspectorPanel`**：`AIInspectorPanelProps` / `BoxesListProps` 加 `onRefinePrediction` 可选 prop，逐层透传；AI 行 + `geometry?.type === "polygon"` 时把 `onRefine` 绑给 `BoxListItem`。
+- **`WorkbenchShell`**：实例化 `useMaskEditor({ width: stageGeom.imgW||1, height: stageGeom.imgH||1 })`；注入 `useImageAnnotationActions` (新 `maskEditor` arg) / `useWorkbenchHotkeys` (新 `maskEditor`/`commitMaskAsPolygon`/`cancelMaskEdit` args) / `WorkbenchStageHost.stageHost.maskEditor`；overlays 包裹 `<MaskToolbar>` (tool === "mask" 时) + 原 `<WorkbenchOverlays>`；inspector 的 `onRefinePrediction` 绑到 `imageActions.handleRefinePrediction`。
+- **`WorkbenchStageHost` / `ImageWorkbench`**：props 加 `maskEditor`，单点透传到 `ImageStage`。
+- **`hotkeys.ts`**：`HotkeyAction.setTool.tool` union 加 `"mask"`；`RESERVED_LETTERS` 加 `m/M`；主 dispatchKey 加 `e.key === "m"/"M" → setTool("mask")` 单键路由（在 polygon 之后）。
+
+### Verified
+
+- `pnpm --filter web typecheck` 全绿（本次 0 新错；遗留 3 处 `AttributeForm.mutable` 为 v0.10.6 预存，与本期无关）。
+- `pnpm --filter web lint` 0 errors / 126 warnings（warnings 全部预存，未新增）。
+- `pnpm --filter web test --run` 92 test files / 677 tests 全绿（新增 +4 MaskTool 例 + 1 useMaskEditor revision 回归）。
+- 浏览器手测推迟到引入有 polygon AI 候选的真实数据后单独跑（本期算法层 + 状态层 + UI 集成的纯单测 + typecheck 已覆盖回归面）。
+
+### Notes
+
+- 半径单位是图像像素，半透红色 `rgba(220,38,38,0.45)` 在浅底图清晰，深色底图考虑后续加 1px 白色外描边。
+- 「自动 reject 原候选」采用客户端 `dismissedShapeKeys` 集合 (与原 `handleRejectPrediction` 同路径)，prediction 实体仍在服务端；submitPolygon 失败时 dismissed 已写入但 prediction 不入库 — 用户重新进入任务时原候选仍会回归，符合「重做需手动驳回新候选」语义。
+- Konva.Image 大画布（>4K）每笔全量 `putImageData` 可能掉帧；本期不做 dirtyRect 增量，留 v0.11+ MaskBuffer 暴露脏矩形再优化。
+
 ## [0.10.7.1] - 2026-05-15
 
 > **Mask 编辑器状态层（M4-δ 后续）.** 把 v0.10.7 落地的 `MaskBuffer` / `maskToPolygon` 算法核组装成 `useMaskEditor` 状态 hook（[useMaskEditor.ts](apps/web/src/pages/Workbench/state/useMaskEditor.ts)）：维护 buffer 引用（useRef，paintAt 每笔不 rerender）+ active / mode (`brush`|`erase`) / radius (clamp 到 1-200px) / dirty (改过 buffer 没 commit 时 true) 状态，暴露 `beginBlank` / `initFromPolygon` (AI 候选精修入口) / `paintAt(x,y)` (按 mode + radius 调 brush/erase) / `setMode` / `setRadius` (clamp) / `cancel` / `commitToPolygon`（空 mask 返 null；非空走 maskToPolygon → 外环顶点）。状态层独立可单测，为 v0.10.7.2 / v0.11.0 的 Konva 集成 / ToolDock 按钮 / AIPredictionPopover「精修」入口 / 笔刷 hotkey 铺路。

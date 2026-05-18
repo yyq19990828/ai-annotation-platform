@@ -15,13 +15,14 @@ import {
 } from "./useMaskEditor";
 
 describe("useMaskEditor · 初始态", () => {
-  it("初始非 active，dirty=false，buffer=null", () => {
+  it("初始非 active，dirty=false，buffer=null，revision=0", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 50, height: 50 }));
     expect(result.current.active).toBe(false);
     expect(result.current.dirty).toBe(false);
     expect(result.current.buffer).toBeNull();
     expect(result.current.mode).toBe("brush");
     expect(result.current.radius).toBe(MASK_BRUSH_DEFAULT_PX);
+    expect(result.current.revision).toBe(0);
   });
 
   it("initialRadius clamp 到合法区间", () => {
@@ -59,10 +60,13 @@ describe("useMaskEditor · paintAt / mode / radius", () => {
   it("paintAt brush 模式在 buffer 留下圆形", () => {
     const { result } = renderHook(() => useMaskEditor({ width: 80, height: 80, initialRadius: 10 }));
     act(() => { result.current.beginBlank(); });
+    const revAfterBegin = result.current.revision;
     act(() => { result.current.paintAt(40, 40); });
     expect(result.current.dirty).toBe(true);
     expect(result.current.buffer!.get(40, 40)).toBe(255);
     expect(result.current.buffer!.countSet()).toBeGreaterThan(250);
+    // v0.10.8 · revision 在每次 paintAt 后 bump，供 MaskOverlayLayer 触发重画。
+    expect(result.current.revision).toBeGreaterThan(revAfterBegin);
   });
 
   it("paintAt erase 模式抹掉已画区域", () => {

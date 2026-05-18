@@ -12,6 +12,9 @@ import { SelectionOverlay } from "./SelectionOverlay";
 import { TOOL_REGISTRY, type PolygonDraftHandle } from "./tools";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
+import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
+import type { UseMaskEditorReturn } from "../state/useMaskEditor";
+import { MASK_BRUSH_MIN_PX, MASK_BRUSH_MAX_PX } from "../state/useMaskEditor";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
@@ -38,7 +41,8 @@ type Drag =
   | { kind: "polyVertex"; id: string; vidx: number; start: Pt[]; cur: Pt[] }
   | { kind: "polyMove"; id: string; start: Pt[]; sx: number; sy: number; cur: Pt[] }
   | { kind: "pan"; sx: number; sy: number }
-  | { kind: "canvasStroke"; points: number[] };
+  | { kind: "canvasStroke"; points: number[] }
+  | { kind: "maskBrush"; lastX: number; lastY: number };
 
 function translatePolygon(points: Pt[], dx: number, dy: number): Pt[] {
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -134,6 +138,8 @@ interface ImageStageProps {
   /** v0.6.6：历史画布批注（来自 hover 的某条 comment.canvas_drawing），半透明叠加只读。
    *  与 canvasShapes 并存：上层主笔触不变，下方覆盖一层 0.5 opacity 的「历史回看」。*/
   historicalShapes?: NonNullable<CommentCanvasDrawing["shapes"]>;
+  /** v0.10.8 · Mask 编辑器 hook 返回；mask 工具激活时挂 MaskOverlayLayer + 派发 paintAt。 */
+  maskEditor?: UseMaskEditorReturn;
 }
 
 // ── main component ──────────────────────────────────────────────────────────
@@ -148,6 +154,7 @@ export function ImageStage({
   onStageGeometry, overlay, polygonDraft, samPolarity,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
   historicalShapes,
+  maskEditor,
 }: ImageStageProps) {
   // selSet 引用稳定化（I3）：以排序后的 id 串作为签名，签名不变则返回上次同一 Set 实例，
   // 让下游 KonvaBox / KonvaPolygon 的 selected prop 维持引用稳定，避免误触发 memo 失效。
@@ -271,6 +278,16 @@ export function ImageStage({
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      // v0.10.8 · Shift+滚轮在 mask 工具激活时调笔刷半径（步长 ±2，clamp [1,200]）。
+      // 仅 deltaY 主导时响应（避免 macOS trackpad 横向滚动误触发）。
+      if (e.shiftKey && !(e.ctrlKey || e.metaKey) && maskEditor?.active &&
+          Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 2 : -2;
+        const next = Math.max(MASK_BRUSH_MIN_PX, Math.min(MASK_BRUSH_MAX_PX, maskEditor.radius + delta));
+        maskEditor.setRadius(next);
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       const rect = el.getBoundingClientRect();
@@ -284,7 +301,7 @@ export function ImageStage({
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [setVp]);
+  }, [setVp, maskEditor]);
 
   // ── window-level drag events (rAF-throttled) ─────────────────────────────
   // 依赖数组用 `!!drag` 而非 `drag` 本身：mousemove 期间 setDrag 频繁触发 React
@@ -363,6 +380,22 @@ export function ImageStage({
           if (!cur || cur.kind !== "canvasStroke") return cur;
           return { ...cur, points: [...cur.points, pt.x, pt.y] };
         }));
+      } else if (d.kind === "maskBrush") {
+        // v0.10.8 · 相邻两点线段插值 (步长 = radius/2)；不走 rAF 节流，避免漏笔。
+        if (!maskEditor) return;
+        const px = pt.x * imgW;
+        const py = pt.y * imgH;
+        const dx = px - d.lastX;
+        const dy = py - d.lastY;
+        const dist = Math.hypot(dx, dy);
+        const step = Math.max(1, maskEditor.radius / 2);
+        const n = Math.max(1, Math.floor(dist / step));
+        for (let i = 1; i <= n; i++) {
+          const t = i / n;
+          maskEditor.paintAt(d.lastX + dx * t, d.lastY + dy * t);
+        }
+        d.lastX = px;
+        d.lastY = py;
       }
     };
     const onUp = () => {
@@ -411,6 +444,7 @@ export function ImageStage({
           // 至少 2 个点（4 个数字）才算一笔；点击没有移动会被丢弃
           if (d.points.length >= 4) onCanvasStrokeCommit?.(d.points, canvasStroke);
         }
+        // v0.10.8 · maskBrush 松手不 commit；buffer 累积笔迹，由 Enter / MaskToolbar 显式触发 commitMaskAsPolygon。
       }
       setDrag(null);
     };
@@ -421,7 +455,7 @@ export function ImageStage({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [dragging, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt]);
+  }, [dragging, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -444,6 +478,7 @@ export function ImageStage({
       onClearSelection: () => onSelectBox(null),
       polygonDraft,
       samPolarity,
+      maskEditor,
     });
     if (init) setDrag(init);
   };
@@ -470,6 +505,7 @@ export function ImageStage({
   const containerCursor = (tool === "hand" || spacePan)
     ? (drag?.kind === "pan" ? "grabbing" : "grab")
     : tool === "canvas" ? "crosshair"
+    : tool === "mask" ? "crosshair"
     : pendingDrawing ? "default" : "crosshair";
 
   // polygon 草稿当前光标位置（用于动态预览线段）
@@ -685,6 +721,17 @@ export function ImageStage({
             );
           })}
         </Layer>
+
+        {/* v0.10.8 · Mask 编辑器临时叠加层 (仅 tool === "mask" 且 active 时挂)。 */}
+        {tool === "mask" && maskEditor?.active && maskEditor.buffer && (
+          <MaskOverlayLayer
+            buffer={maskEditor.buffer}
+            revision={maskEditor.revision}
+            imgW={imgW}
+            imgH={imgH}
+            visible={true}
+          />
+        )}
 
         {/* v0.6.6 · 历史画布批注（hover 评论触发）：半透明只读叠加，比主层 z 高一点点 */}
         {historicalShapes && historicalShapes.length > 0 && (

@@ -21,6 +21,12 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["= / +"], desc: "智能点工具：切正向", group: "ai", actionType: "samPolarity" },
   { keys: ["-"], desc: "智能点工具：切负向", group: "ai", actionType: "samPolarity" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
+  // v0.10.8 · I11 Mask 编辑器: 全局 M 切工具; 工具内 B/E 切笔刷/橡皮 (capture, dispatchKey 之前).
+  { keys: ["M"], desc: "Mask 笔刷工具", group: "draw", actionType: "setTool" },
+  { keys: ["Shift", "+ wheel"], desc: "Mask 工具: 调笔刷半径 (±2px)", group: "draw" },
+  { keys: ["B"], desc: "Mask 工具激活时: 切笔刷模式", group: "draw" },
+  { keys: ["E"], desc: "Mask 工具激活时: 切橡皮模式", group: "draw" },
+  { keys: ["Enter"], desc: "Mask 工具激活时: 提交 mask → polygon 落库", group: "draw" },
   { keys: ["Alt", "3"], desc: "多边形工具（备用）", group: "draw", actionType: "setTool" },
   { keys: ["V"], desc: "平移工具", group: "draw", actionType: "setTool" },
   { keys: ["Alt", "4"], desc: "平移工具（备用）", group: "draw", actionType: "setTool" },
@@ -117,7 +123,7 @@ export type HotkeyAction =
   | { type: "cycleUser"; dir: 1 | -1; loop: boolean }
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
-  | { type: "setTool"; tool: "box" | "hand" | "polygon" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "ai-cycle" }
+  | { type: "setTool"; tool: "box" | "hand" | "polygon" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "ai-cycle" }
   | { type: "setVideoTool"; tool: "box" | "track" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
@@ -172,7 +178,7 @@ export interface DispatchCtx {
 }
 
 // v0.10.5 M4-β · L/H/O 用于 shape 状态位切换（仅选中态消费；保留以防 setClassByLetter 抢键）。
-const RESERVED_LETTERS = new Set(["v","V","b","B","p","P","s","S","a","A","d","D","e","E","n","N","u","U","j","J","k","K","c","C","l","L","h","H","o","O"]);
+const RESERVED_LETTERS = new Set(["v","V","b","B","p","P","s","S","a","A","d","D","e","E","n","N","u","U","j","J","k","K","c","C","l","L","h","H","o","O","m","M"]);
 
 /** 纯函数：解析 keydown 事件为 HotkeyAction。返回 null 表示不消费。 */
 export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | null {
@@ -298,6 +304,9 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   // v0.10.2 · S 循环 4 个 AI 工具 (具体下一个工具由消费侧根据 capabilities 决定).
   if (e.key === "s" || e.key === "S") return { type: "setTool", tool: "ai-cycle" };
   if (e.key === "p" || e.key === "P") return { type: "setTool", tool: "polygon" };
+  // v0.10.8 · I11 · M 切 mask 工具。注意：mask 工具激活后 B/E 是模式切换 (capture 阶段 useEffect 抢键)，
+  // 不会落到这里；这里 B 仍然返回 setTool("box")。
+  if (e.key === "m" || e.key === "M") return { type: "setTool", tool: "mask" };
 
   if (e.key >= "1" && e.key <= "9") {
     // D.1：选中态下，如属性 schema 在该数字键有命中，优先走属性切换；否则保留类别 fallback

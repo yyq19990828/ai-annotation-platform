@@ -20,6 +20,7 @@ import type { StageKind } from "../stages/types";
 import { ThreeDWorkbenchPlaceholder } from "../stages/three-d/ThreeDWorkbench.placeholder";
 import { VideoWorkbench } from "../stages/video/VideoWorkbench";
 import type { VideoConvertOptions } from "../stages/video/useVideoAnnotationActions";
+import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -114,6 +115,8 @@ interface WorkbenchStageHostProps {
   onCancelCanvasDraft: () => void;
   onDoneCanvasDraft: () => void;
   stageGeom: StageGeometry;
+  /** v0.10.8 · I11 · Mask 编辑器状态；仅图像舞台消费。 */
+  maskEditor?: UseMaskEditorReturn;
 }
 
 export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageHostProps>(
@@ -190,6 +193,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     onCancelCanvasDraft,
     onDoneCanvasDraft,
     stageGeom,
+    maskEditor,
   }, ref) {
     return (
       <div style={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column" }}>
@@ -280,6 +284,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onDoneCanvasDraft={onDoneCanvasDraft}
             stageGeom={stageGeom}
             overlays={overlays}
+            maskEditor={maskEditor}
           />
         )}
         {stageKind !== "image" && overlays}

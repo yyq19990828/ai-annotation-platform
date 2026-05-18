@@ -173,7 +173,8 @@
   - 数据层 [`stage/shared/geometry/maskBuffer.ts`](../apps/web/src/pages/Workbench/stage/shared/geometry/maskBuffer.ts)：纯 TS Uint8Array alpha 缓冲，brush / erase / clear / fromPolygon / toAlphaImageData / clone（12 例单测）；
   - 算法层 [`stage/shared/geometry/maskToPolygon.ts`](../apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts)：marching-squares + Moore-Neighborhood tracing + polygon-clipping union 去自相交 + RDP 简化（7 例单测）；
   - 不引入 RLE schema：v1 走「mask 临时态 → polygon 入库」单向，与 polygon 等价落库；RLE 留 v0.11+ 与 I9 / I10 一并做 geometry.kind 统一。
-- 🚧 **v0.10.7.1 / v0.11.0 待补**：Konva `stage/tools/MaskTool.tsx` 集成 + ToolDock 独立工具按钮 + AIPredictionPopover「精修」入口 + 笔刷 hotkey（B/E + Shift+滚轮 + Esc/Enter）。
+- ✅ **v0.10.7.1 状态层** [`useMaskEditor`](../apps/web/src/pages/Workbench/state/useMaskEditor.ts)：buffer (useRef) + active/mode/radius/dirty (useState) + beginBlank/initFromPolygon/paintAt/setMode/setRadius/cancel/commitToPolygon（12 例单测）。
+- ✅ **v0.10.8 UI 集成**：`MaskTool` ([MaskTool.ts](../apps/web/src/pages/Workbench/stage/tools/MaskTool.ts)) + `MaskOverlayLayer` ([MaskOverlayLayer.tsx](../apps/web/src/pages/Workbench/stage/overlays/MaskOverlayLayer.tsx)) + `MaskToolbar` ([MaskToolbar.tsx](../apps/web/src/pages/Workbench/shell/MaskToolbar.tsx)) + ToolDock mask 按钮 + `BoxListItem` polygon 候选「精修」按钮 → `handleRefinePrediction` (自动 reject + 候选 label) / `commitMaskAsPolygon` (像素→归一化) / `cancelMaskEdit`；hotkey `M / B-mask / E-mask / Enter-mask / Esc-mask / Shift+wheel`。
 - 与 I1 大图 tile 共存：mask 编辑时仅在当前 viewport 范围内做像素操作，全图导出时合并。
 - 来源：`cvat-canvas/src/typescript/masksHandler.ts`。
 
@@ -356,7 +357,7 @@ Wave γ · 形状能力（按客户场景触发） — 🚧 v0.10.4 epic 进行�
   I9 Ellipse (3-5 天，纯前端) — 留 v0.11.x（与 I10 / I11 v2 共 geometry.kind 收口）
   ✅ I15 z_order / occluded 状态一等化 → v0.10.5 (M4-β)
   ✅ I13 Attribute Schema 进阶 → v0.10.6 (M4-γ)
-  ✅ I11 Mask 编辑器 (v1: polygon 中转) → v0.10.7 (M4-δ)
+  ✅ I11 Mask 编辑器 (v1: polygon 中转) → v0.10.7 算法核 / v0.10.7.1 状态层 / v0.10.8 UI 集成 (M4-δ 完整收尾)
   I14 Autoborder / Crop (1-2 周) — 留 v0.11.x
   I10 Skeleton (3-4 周，依赖后端 schema) — 留 v0.12.x
 

@@ -9,6 +9,7 @@ import type { AiBox } from "../../state/transforms";
 import type { PendingDrawing, SamPolarity, SamSubTool, Tool } from "../../state/useWorkbenchState";
 import type { Viewport } from "../../state/useViewportTransform";
 import type { PolygonDraftHandle } from "../../stage/tools";
+import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -78,6 +79,8 @@ export interface ImageWorkbenchProps {
   onDoneCanvasDraft: () => void;
   stageGeom: StageGeometry;
   overlays?: ReactNode;
+  /** v0.10.8 · I11 · Mask 编辑器状态；传给 ImageStage 用于 Konva overlay 与 paintAt。 */
+  maskEditor?: UseMaskEditorReturn;
 }
 
 export function ImageWorkbench({
@@ -135,6 +138,7 @@ export function ImageWorkbench({
   onDoneCanvasDraft,
   stageGeom,
   overlays,
+  maskEditor,
 }: ImageWorkbenchProps) {
   return (
     <ImageStage
@@ -178,6 +182,7 @@ export function ImageWorkbench({
       canvasStroke={canvasStroke}
       onCanvasStrokeCommit={onCanvasStrokeCommit}
       historicalShapes={historicalShapes}
+      maskEditor={maskEditor}
       overlay={
         <>
           <FloatingDock

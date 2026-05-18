@@ -66,6 +66,8 @@ import {
 import { useWorkbenchOfflineQueue } from "../state/useWorkbenchOfflineQueue";
 import { WorkbenchSkeleton } from "./WorkbenchSkeleton";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
+import { useMaskEditor } from "../state/useMaskEditor";
+import { MaskToolbar } from "./MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
 
 export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "review" }) {
@@ -552,6 +554,13 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const isLockedForActions = mode === "review"
     ? task?.status === "completed"
     : task?.status === "review" || task?.status === "completed";
+  // v0.10.8 · I11 · Mask 编辑器状态层。width/height 跟 stage 图像像素同步；
+  // imgW/imgH 未就绪时 hook 仍返回完整 API（active=false），不影响 box/polygon 等其它工具。
+  const maskEditor = useMaskEditor({
+    width: stageGeom.imgW || 1,
+    height: stageGeom.imgH || 1,
+  });
+
   const imageActions = useImageAnnotationActions({
     taskId,
     projectId,
@@ -572,6 +581,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     createAnnotationAsync: (payload) => createAnnotation.mutateAsync(payload),
     isLocked: isLockedForActions,
     enqueueOnError,
+    maskEditor,
     mutations: {
       create: createAnnotation,
       update: { mutate: (vars, opts) => updateAnnotationMut.mutate(vars, opts) },
@@ -605,6 +615,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handleCancelBatchChange,
     handleRejectPrediction,
     handleAcceptPrediction,
+    handleRefinePrediction,
+    commitMaskAsPolygon,
+    cancelMaskEdit,
     handleAcceptAll,
     handleCommitDrawing,
     handleStartChangeClass,
@@ -814,6 +827,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     videoMode: isVideoTask,
     videoControlsRef,
     isPromptSupported: mlCapabilities.isPromptSupported,
+    maskEditor,
+    commitMaskAsPolygon,
+    cancelMaskEdit,
   });
   if (isProjectLoading) {
     return <WorkbenchSkeleton />;
@@ -951,8 +967,22 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         canvasShapeCount: s.canvasDraft.shapes.length, onUndoCanvasShape: s.undoCanvasShape,
         onClearCanvasShapes: s.clearCanvasShapes, onCancelCanvasDraft: s.cancelCanvasDraft,
         onDoneCanvasDraft: s.endCanvasDraft, stageGeom,
+        maskEditor,
         overlays: (
-          <WorkbenchOverlays
+          <>
+            {s.tool === "mask" && (
+              <MaskToolbar
+                active={maskEditor.active}
+                mode={maskEditor.mode}
+                radius={maskEditor.radius}
+                dirty={maskEditor.dirty}
+                onSetMode={maskEditor.setMode}
+                onSetRadius={maskEditor.setRadius}
+                onCommit={commitMaskAsPolygon}
+                onCancel={cancelMaskEdit}
+              />
+            )}
+            <WorkbenchOverlays
             pendingDrawing={s.pendingDrawing}
             editingClass={s.editingClass}
             samPendingGeom={samPendingGeom}
@@ -974,6 +1004,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             onCommitBatchChangeClass={handleCommitBatchChangeClass}
             onCancelBatchChange={handleCancelBatchChange}
           />
+          </>
         ),
       }}
       videoControlsRef={videoControlsRef}
@@ -993,6 +1024,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onSelect: handleSelectBox,
         onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction,
+        onRefinePrediction: handleRefinePrediction,
         onClearSelection: () => s.setSelectedId(null), onDeleteUserBox: handleDeleteBox,
         onChangeUserBoxClass: handleStartChangeClass,
         onToggleUserBoxFlag: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => {

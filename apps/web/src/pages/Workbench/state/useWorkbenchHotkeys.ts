@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { dispatchKey, ARROW_KEY_SET } from "./hotkeys";
+import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
 import type { useWorkbenchState } from "./useWorkbenchState";
@@ -108,6 +109,10 @@ export interface UseWorkbenchHotkeysArgs {
   videoControlsRef?: React.RefObject<VideoStageControls | null>;
   /** v0.10.2 · 由 useMLCapabilities 透传; S 键循环 AI 工具时用来跳过置灰. */
   isPromptSupported?: (type: string) => boolean;
+  /** v0.10.8 · mask 工具激活时的 B/E/Enter/Esc 上下文键由这组 callback 消费。 */
+  maskEditor?: UseMaskEditorReturn;
+  commitMaskAsPolygon?: () => void;
+  cancelMaskEdit?: () => void;
 }
 
 export interface UseWorkbenchHotkeysReturn {
@@ -135,6 +140,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, videoControlsRef,
     isPromptSupported,
+    maskEditor, commitMaskAsPolygon, cancelMaskEdit,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -191,6 +197,42 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [disabled, s.tool, polygonDraftPoints, submitPolygon, setPolygonDraftPoints]);
+
+  // v0.10.8 · I11 · Mask 工具专用键（capture 阶段，先于主 dispatchKey 抢键）：
+  //   B → brush 模式  · E → erase 模式  · Enter → commit  · Esc → cancel
+  // 仅 tool === "mask" 且 maskEditor 注入时生效；输入聚焦 / pending popover 时让位。
+  useEffect(() => {
+    if (disabled) return;
+    if (s.tool !== "mask") return;
+    if (!maskEditor) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (s.pendingDrawing || s.editingClass) return;
+      if (e.key === "b" || e.key === "B") {
+        e.preventDefault(); e.stopPropagation();
+        maskEditor.setMode("brush");
+        return;
+      }
+      if (e.key === "e" || e.key === "E") {
+        e.preventDefault(); e.stopPropagation();
+        maskEditor.setMode("erase");
+        return;
+      }
+      if (e.key === "Enter" && maskEditor.active) {
+        e.preventDefault(); e.stopPropagation();
+        commitMaskAsPolygon?.();
+        return;
+      }
+      if (e.key === "Escape" && maskEditor.active) {
+        e.preventDefault(); e.stopPropagation();
+        cancelMaskEdit?.();
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [disabled, s.tool, s.pendingDrawing, s.editingClass, maskEditor, commitMaskAsPolygon, cancelMaskEdit]);
 
   // 主 keydown / keyup
   useEffect(() => {

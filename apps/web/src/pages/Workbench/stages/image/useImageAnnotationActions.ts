@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Annotation, AnnotationResponse, PredictionResponse } from "@/types";
 import type { AnnotationPayload } from "@/api/tasks";
@@ -8,6 +8,7 @@ import { iouShape } from "../../stage/iou";
 import type { useAnnotationHistory } from "../../state/useAnnotationHistory";
 import type { UseInteractiveAIReturn } from "../../state/useInteractiveAI";
 import { geometryToShape, polygonBounds, predictionsToBoxes, type AiBox } from "../../state/transforms";
+import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import { useClipboard } from "../../state/useClipboard";
 import {
   useWorkbenchAnnotationActions,
@@ -45,6 +46,8 @@ interface UseImageAnnotationActionsArgs {
   mutations: AnnotationMutations;
   enqueueOnError: (err: unknown, fallback: () => void) => void;
   isLocked?: boolean;
+  /** v0.10.8 · 由 WorkbenchShell 注入；mask 编辑器状态层。空时 refine/commitMask 返回 false。 */
+  maskEditor?: UseMaskEditorReturn;
 }
 
 export function getBatchChangeTarget(
@@ -97,6 +100,7 @@ export function useImageAnnotationActions({
   mutations,
   enqueueOnError,
   isLocked = false,
+  maskEditor,
 }: UseImageAnnotationActionsArgs) {
   const annotationActions = useWorkbenchAnnotationActions({
     taskId,
@@ -347,6 +351,83 @@ export function useImageAnnotationActions({
     );
   }, [acceptPredictionMut, history, pushToast]);
 
+  // v0.10.8 · I11 · Mask 精修：候选 polygon → mask 编辑 → commit 后自动 reject 原候选 + 新 polygon。
+  const pendingRefineRef = useRef<{ predictionId: string; shapeIndex: number; labelId: string } | null>(null);
+
+  const handleRefinePrediction = useCallback((box: AiBox) => {
+    if (!maskEditor) {
+      pushToast({ msg: "Mask 编辑器未就绪", kind: "warning" });
+      return;
+    }
+    // 仅支持 polygon 候选；bbox / mask 候选当前不展示精修按钮，但兜底过滤。
+    const norm = box.polygon;
+    if (!norm || norm.length < 3) {
+      pushToast({ msg: "仅支持 polygon 候选的精修", kind: "warning" });
+      return;
+    }
+    // AiBox.polygon 为归一化 [0,1]；MaskBuffer.fromPolygon 期望 image-space 像素坐标。
+    const { imgW, imgH } = stageGeom;
+    if (!imgW || !imgH) {
+      pushToast({ msg: "图像尺寸未就绪", kind: "warning" });
+      return;
+    }
+    const pxPoints: [number, number][] = norm.map(([x, y]) => [x * imgW, y * imgH]);
+    pendingRefineRef.current = {
+      predictionId: box.predictionId,
+      shapeIndex: box.shapeIndex,
+      labelId: box.cls,
+    };
+    maskEditor.initFromPolygon(pxPoints);
+    s.setTool("mask");
+    s.setSelectedId(null);
+  }, [maskEditor, s, pushToast, stageGeom]);
+
+  const commitMaskAsPolygon = useCallback(() => {
+    if (!maskEditor) return;
+    const out = maskEditor.commitToPolygon();
+    if (!out) {
+      pushToast({ msg: "Mask 为空,无可提交几何", kind: "warning" });
+      return;
+    }
+    const refine = pendingRefineRef.current;
+    const labelForCommit = refine ? refine.labelId : s.activeClass;
+    if (!labelForCommit) {
+      pushToast({ msg: "请先选择类别", kind: "warning" });
+      return;
+    }
+    if (refine) {
+      // 精修模式：客户端 reject 原候选（dismissedShapeKeys + set），保留服务端 prediction.
+      setDismissedShapeKeys((prev) => {
+        const next = new Set(prev);
+        // AiBox.id 在 transforms 中为 `pred-${predictionId}-${shapeIndex}` 形式。
+        next.add(`pred-${refine.predictionId}-${refine.shapeIndex}`);
+        return next;
+      });
+    }
+    // submitPolygon 内部读 s.activeClass；refine 时先临时切到候选 label，再提交。
+    const prevActive = s.activeClass;
+    if (refine && refine.labelId !== prevActive) {
+      s.setActiveClass(refine.labelId);
+    }
+    // maskToPolygon 输出像素坐标，submitPolygon 期望归一化 [0,1]。
+    const { imgW, imgH } = stageGeom;
+    const normPoints: [number, number][] = out.points.map(([x, y]) => [x / imgW, y / imgH]);
+    submitPolygon(normPoints);
+    pendingRefineRef.current = null;
+    maskEditor.cancel();
+    s.setTool("box");
+    if (out.multipleComponents) {
+      pushToast({ msg: "Mask 含多个连通区，仅落最大外环", kind: "warning" });
+    }
+  }, [maskEditor, s, submitPolygon, pushToast, stageGeom]);
+
+  const cancelMaskEdit = useCallback(() => {
+    if (!maskEditor) return;
+    maskEditor.cancel();
+    pendingRefineRef.current = null;
+    s.setTool("box");
+  }, [maskEditor, s]);
+
   const handleAcceptAll = useCallback(() => {
     if (aiBoxes.length === 0) return;
     const totalBoxes = aiBoxes.length;
@@ -447,6 +528,9 @@ export function useImageAnnotationActions({
     handleCancelBatchChange,
     handleRejectPrediction,
     handleAcceptPrediction,
+    handleRefinePrediction,
+    commitMaskAsPolygon,
+    cancelMaskEdit,
     handleAcceptAll,
     handleCommitDrawing,
     handleStartChangeClass,

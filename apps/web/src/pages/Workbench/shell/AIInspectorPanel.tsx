@@ -62,6 +62,8 @@ interface AIInspectorPanelProps {
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
   onAcceptPrediction: (b: AiBox) => void;
   onRejectPrediction?: (b: AiBox) => void;
+  /** v0.10.8 · I11 · polygon 候选行展示「精修」按钮 → 启动 Mask 编辑器。 */
+  onRefinePrediction?: (b: AiBox) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
@@ -90,7 +92,8 @@ export function AIInspectorPanel({
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   currentFrameIndex, onSeekFrame, commentAnchor,
   onToggle,
-  onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction,
+  onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   onToggleUserBoxFlag,
   readOnly = false,
   videoTrackPanel,
@@ -196,6 +199,7 @@ export function AIInspectorPanel({
         onSelect={onSelect}
         onAcceptPrediction={onAcceptPrediction}
         onRejectPrediction={onRejectPrediction}
+        onRefinePrediction={onRefinePrediction}
         onClearSelection={onClearSelection}
         onDeleteUserBox={onDeleteUserBox}
         onChangeUserBoxClass={onChangeUserBoxClass}
@@ -221,7 +225,8 @@ interface AIPredictionPopoverProps {
   onAcceptAll: () => void;
   onSetConfThreshold: (v: number) => void;
   // v0.10.2 · Tool union 扩展; SamTextPanel 现在仅在 tool === "text-prompt" 时显示.
-  tool?: "box" | "hand" | "polygon" | "canvas" | "smart-point" | "smart-box" | "text-prompt" | "exemplar";
+  // v0.10.8 · 加 "mask".
+  tool?: "box" | "hand" | "polygon" | "canvas" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar";
   onRunSamText?: (text: string, outputMode: TextOutputMode) => void;
   samRunning?: boolean;
   samCandidateCount?: number;
@@ -720,6 +725,8 @@ interface BoxesListProps {
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
   onAcceptPrediction: (b: AiBox) => void;
   onRejectPrediction?: (b: AiBox) => void;
+  /** v0.10.8 · I11 · 仅 polygon 候选会展示「精修」按钮，由 WorkbenchShell 注入 handleRefinePrediction。 */
+  onRefinePrediction?: (b: AiBox) => void;
   onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
@@ -734,7 +741,8 @@ function BoxesList({
   hasMore, isFetchingMore, onFetchMore,
   currentFrameIndex,
   onSeekFrame,
-  onSelect, onAcceptPrediction, onRejectPrediction, onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
+  onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction,
+  onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   onToggleUserBoxFlag,
   videoTrackPanel,
 }: BoxesListProps) {
@@ -840,6 +848,9 @@ function BoxesList({
                     onRejectPrediction?.(r.box);
                     onClearSelection();
                   }}
+                  onRefine={onRefinePrediction && r.box.geometry?.type === "polygon"
+                    ? () => onRefinePrediction(r.box)
+                    : undefined}
                 />
               )}
               {r.kind === "header" && (

@@ -1,5 +1,6 @@
 import type { Viewport } from "../../state/useViewportTransform";
 import type { SamPolarity } from "../../state/useWorkbenchState";
+import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import { BboxTool } from "./BboxTool";
 import { HandTool } from "./HandTool";
 import { PolygonTool } from "./PolygonTool";
@@ -8,6 +9,7 @@ import { SmartPointTool } from "./SmartPointTool";
 import { SmartBoxTool } from "./SmartBoxTool";
 import { TextPromptTool } from "./TextPromptTool";
 import { ExemplarTool } from "./ExemplarTool";
+import { MaskTool } from "./MaskTool";
 
 // v0.10.2 · Prompt-first ToolDock 重构:
 //   SAM 单工具拆为 4 个独立工具, 每个声明 requiredPrompt (point/bbox/text/exemplar) 由
@@ -17,6 +19,7 @@ export type ToolId =
   | "hand"
   | "polygon"
   | "canvas"
+  | "mask"
   | "smart-point"
   | "smart-box"
   | "text-prompt"
@@ -51,7 +54,13 @@ export type DragInit =
       alt: boolean;
     }
   | { kind: "pan"; sx: number; sy: number }
-  | { kind: "canvasStroke"; points: number[] };
+  | { kind: "canvasStroke"; points: number[] }
+  /**
+   * v0.10.8 · Mask 笔刷拖动负载。lastX/Y 为像素坐标，ImageStage 在 pointermove 中对
+   * 相邻两点做线段插值 (步长 = radius/2) 调 paintAt，松手不 commit；commit 由
+   * Enter / MaskToolbar 显式触发。
+   */
+  | { kind: "maskBrush"; lastX: number; lastY: number };
 
 export interface PolygonDraftHandle {
   points: [number, number][];
@@ -75,6 +84,11 @@ export interface ToolPointerContext {
   polygonDraft?: PolygonDraftHandle;
   /** v0.10.2 · 仅 SmartPointTool 消费, "+/-" 极性 (与 Alt 修饰键合并). */
   samPolarity?: SamPolarity;
+  /**
+   * v0.10.8 · 仅 MaskTool 消费. WorkbenchShell 注入 useMaskEditor 返回; MaskTool 在
+   * pointerdown 时 beginBlank / paintAt 一次, 返回 maskBrush DragInit.
+   */
+  maskEditor?: UseMaskEditorReturn;
 }
 
 /** 画布工具接口。新增 polygon / keypoint 等类型时，实现此接口并注册到 TOOL_REGISTRY。 */
@@ -92,6 +106,7 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
   hand: HandTool,
   polygon: PolygonTool,
   canvas: CanvasTool,
+  mask: MaskTool,
   "smart-point": SmartPointTool,
   "smart-box": SmartBoxTool,
   "text-prompt": TextPromptTool,
@@ -105,6 +120,7 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
 export const ALL_TOOLS: CanvasTool[] = [
   BboxTool,
   PolygonTool,
+  MaskTool,
   SmartPointTool,
   SmartBoxTool,
   TextPromptTool,
@@ -125,6 +141,7 @@ export {
   HandTool,
   PolygonTool,
   CanvasTool,
+  MaskTool,
   SmartPointTool,
   SmartBoxTool,
   TextPromptTool,
