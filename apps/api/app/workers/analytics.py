@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.db.base import async_session
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.config import settings
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -21,9 +23,19 @@ def sync_to_duckdb() -> dict:
 
 
 async def _sync_async() -> dict:
+    """v0.10.16 · 同步入口。每次任务**独立** engine + session，避免 Celery prefork
+    多 worker 共享全局连接池触发 asyncpg "another operation in progress"。
+    """
     from app.services.duckdb_sync import sync_all
 
-    async with async_session() as db:
-        result = await sync_all(db)
+    engine = create_async_engine(settings.database_url, echo=False)
+    SessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    try:
+        async with SessionLocal() as db:
+            result = await sync_all(db)
+    finally:
+        await engine.dispose()
     log.info("sync_to_duckdb: %s", result)
     return result
