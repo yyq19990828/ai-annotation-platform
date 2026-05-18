@@ -184,7 +184,11 @@ async def test_upload_complete_rejects_foreign_key(
     headers = {"Authorization": f"Bearer {token}"}
     resp = await httpx_client_bound.post(
         f"/api/v1/projects/{proj.id}/guide-assets/upload-complete",
-        json={"key": foreign_key, "original_name": "x.png", "content_type": "image/png"},
+        json={
+            "key": foreign_key,
+            "original_name": "x.png",
+            "content_type": "image/png",
+        },
         headers=headers,
     )
     assert resp.status_code == 404

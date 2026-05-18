@@ -132,7 +132,9 @@ async def test_export_aap_json_project_envelope(
     assert len(body["tasks"]) == 2
 
     # task[0] 有 1 ann + 1 pred; task[1] 空
-    t0 = next(t for t in body["tasks"] if t["task_match"]["display_id"] == tasks[0].display_id)
+    t0 = next(
+        t for t in body["tasks"] if t["task_match"]["display_id"] == tasks[0].display_id
+    )
     assert len(t0["annotations"]) == 1
     assert t0["annotations"][0]["geometry"]["type"] == "bbox"
     assert t0["annotations"][0]["class_name"] == "car"
@@ -245,7 +247,9 @@ async def test_export_aap_json_round_trip_after_external_import(
     )
     assert r2.status_code == 200
     body = json.loads(r2.text)
-    t0 = next(t for t in body["tasks"] if t["task_match"]["display_id"] == tasks[0].display_id)
+    t0 = next(
+        t for t in body["tasks"] if t["task_match"]["display_id"] == tasks[0].display_id
+    )
     assert len(t0["predictions"]) == 1
     assert t0["predictions"][0]["class_name"] == "car"
     assert t0["predictions"][0]["model_version"] == "rt-test"

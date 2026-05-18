@@ -32,11 +32,20 @@ async def get_analytics_panel(
 
     try:
         if panel_name == "throughput_daily":
-            return {"panel": panel_name, "data": analytics_queries.user_throughput_daily(days)}
+            return {
+                "panel": panel_name,
+                "data": analytics_queries.user_throughput_daily(days),
+            }
         if panel_name == "reject_rate_by_type":
-            return {"panel": panel_name, "data": analytics_queries.reject_rate_by_type(days)}
+            return {
+                "panel": panel_name,
+                "data": analytics_queries.reject_rate_by_type(days),
+            }
         if panel_name == "duration_dist":
-            return {"panel": panel_name, "data": analytics_queries.annotation_duration_distribution(days)}
+            return {
+                "panel": panel_name,
+                "data": analytics_queries.annotation_duration_distribution(days),
+            }
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=503, detail=f"analytics not ready: {exc}"

@@ -88,8 +88,6 @@ class AsyncJob(Base):
 
     __table_args__ = (
         Index("ix_async_jobs_user_status_created", "user_id", "status", "created_at"),
-        Index(
-            "ix_async_jobs_project_kind_status", "project_id", "kind", "status"
-        ),
+        Index("ix_async_jobs_project_kind_status", "project_id", "kind", "status"),
         Index("ix_async_jobs_celery_task", "celery_task_id"),
     )

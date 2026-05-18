@@ -97,9 +97,7 @@ async def mark_complete(
         job.result = result
 
 
-async def mark_failed(
-    db: AsyncSession, job_id: uuid.UUID, *, error: str
-) -> None:
+async def mark_failed(db: AsyncSession, job_id: uuid.UUID, *, error: str) -> None:
     """v0.10.16 · 失败态。幂等。"""
     job = await db.get(AsyncJob, job_id)
     if job is None:

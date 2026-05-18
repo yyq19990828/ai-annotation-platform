@@ -137,10 +137,14 @@ async def test_import_aap_json_bbox_happy(
 
     # 验证写入: source='external_import', ml_backend_id=None
     rows = (
-        await db_session.execute(
-            select(Prediction).where(Prediction.task_id == tasks[0].id)
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id == tasks[0].id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     pred = rows[0]
     assert pred.source == "external_import"
@@ -186,10 +190,14 @@ async def test_import_aap_json_polygon(
     assert r.json()["imported"] == 1
 
     rows = (
-        await db_session.execute(
-            select(Prediction).where(Prediction.task_id == tasks[0].id)
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id == tasks[0].id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert rows[0].result[0]["type"] == "polygonlabels"
     assert len(rows[0].result[0]["value"]["points"]) == 3
 
@@ -632,10 +640,14 @@ async def test_import_coco_happy(
     assert body["imported"] == 1
 
     rows = (
-        await db_session.execute(
-            select(Prediction).where(Prediction.task_id == tasks[0].id)
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id == tasks[0].id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     bbox = rows[0].result[0]["value"]
     # 192/1920=0.1, 108/1080=0.1, 576/1920=0.3, 432/1080=0.4 -> *100

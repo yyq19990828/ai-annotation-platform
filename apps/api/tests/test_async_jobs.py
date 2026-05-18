@@ -95,9 +95,7 @@ class TestAsyncJobService:
         await db_session.refresh(aj)
         assert aj.status == AsyncJobStatus.COMPLETED.value
 
-    async def test_track_job_context_marks_failed_on_raise(
-        self, db_session, annotator
-    ):
+    async def test_track_job_context_marks_failed_on_raise(self, db_session, annotator):
         user, _ = annotator
         with pytest.raises(ValueError):
             async with async_job_svc.track_job(

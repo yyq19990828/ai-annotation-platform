@@ -77,9 +77,7 @@ def assert_can_create_scope(scope: str, user: User) -> None:
     from fastapi import HTTPException
 
     if scope == "public" and user.role != UserRole.SUPER_ADMIN:
-        raise HTTPException(
-            status_code=403, detail="仅超级管理员可创建公共模板"
-        )
+        raise HTTPException(status_code=403, detail="仅超级管理员可创建公共模板")
 
 
 def dump_project_to_template_payload(project: Any) -> dict[str, Any]:

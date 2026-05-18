@@ -94,7 +94,11 @@ def internal_geometry_to_ls_shape(
         holes = geometry.get("holes") or []
         if holes:
             value["holes"] = [
-                [[float(pt[0]) * 100, float(pt[1]) * 100] for pt in hole if len(pt) == 2]
+                [
+                    [float(pt[0]) * 100, float(pt[1]) * 100]
+                    for pt in hole
+                    if len(pt) == 2
+                ]
                 for hole in holes
             ]
         return {"type": "polygonlabels", "value": value, "score": score}
@@ -228,11 +232,7 @@ async def import_aap_json(
                 result.skipped += 1
             continue
 
-        if (
-            overwrite_existing
-            and not dry_run
-            and task.id not in purged_tasks
-        ):
+        if overwrite_existing and not dry_run and task.id not in purged_tasks:
             await _purge_existing_external_imports(db, task.id)
             purged_tasks.add(task.id)
 
@@ -240,7 +240,11 @@ async def import_aap_json(
         for entry in block.predictions:
             ls_shape = _entry_to_ls_shape(entry)
             if ls_shape is None:
-                kind = entry.geometry.get("type") if isinstance(entry.geometry, dict) else None
+                kind = (
+                    entry.geometry.get("type")
+                    if isinstance(entry.geometry, dict)
+                    else None
+                )
                 result.errors.append(
                     AAPImportErrorEntry(
                         task_match=match_dict,
@@ -351,8 +355,12 @@ async def import_coco(
             continue
 
         file_name = img.get("file_name") or ""
-        img_w = float(img.get("width") or (image_size_hint[0] if image_size_hint else 0))
-        img_h = float(img.get("height") or (image_size_hint[1] if image_size_hint else 0))
+        img_w = float(
+            img.get("width") or (image_size_hint[0] if image_size_hint else 0)
+        )
+        img_h = float(
+            img.get("height") or (image_size_hint[1] if image_size_hint else 0)
+        )
         if img_w <= 0 or img_h <= 0:
             result.errors.append(
                 AAPImportErrorEntry(
@@ -387,11 +395,7 @@ async def import_coco(
             result.skipped += 1
             continue
 
-        if (
-            overwrite_existing
-            and not dry_run
-            and task.id not in purged_tasks
-        ):
+        if overwrite_existing and not dry_run and task.id not in purged_tasks:
             await _purge_existing_external_imports(db, task.id)
             purged_tasks.add(task.id)
 

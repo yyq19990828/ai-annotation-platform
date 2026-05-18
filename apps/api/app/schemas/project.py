@@ -46,14 +46,10 @@ class ProjectCreate(BaseModel):
     @model_validator(mode="after")
     def _validate_source_template_exclusive(self) -> "ProjectCreate":
         if self.template_id is not None and self.source_project_id is not None:
-            raise ValueError(
-                "template_id 与 source_project_id 互斥, 不能同时给"
-            )
+            raise ValueError("template_id 与 source_project_id 互斥, 不能同时给")
         if self.template_id is not None and self.copy_annotation_guide:
             # 模板自带 annotation_guide, copy_annotation_guide 只对 source_project_id 生效
-            raise ValueError(
-                "copy_annotation_guide 仅在 source_project_id 给定时有效"
-            )
+            raise ValueError("copy_annotation_guide 仅在 source_project_id 给定时有效")
         return self
 
 

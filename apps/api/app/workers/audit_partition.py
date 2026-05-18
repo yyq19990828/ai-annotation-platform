@@ -42,9 +42,7 @@ def archive_old_audit_partitions(self) -> dict:
     return asyncio.run(_archive_async(retain, getattr(self.request, "id", None)))
 
 
-async def _archive_async(
-    retain_months: int, celery_task_id: str | None = None
-) -> dict:
+async def _archive_async(retain_months: int, celery_task_id: str | None = None) -> dict:
     """v0.10.16 · 归档操作走 async_jobs track_job 上下文管理器（汇总索引）。"""
     from app.services import async_job as async_job_svc
 

@@ -46,9 +46,7 @@ async def _serialize(db: AsyncSession, template: ProjectTemplate) -> dict:
     """挂上 created_by_name 方便前端展示."""
     creator_name: str | None = None
     if template.created_by:
-        row = await db.execute(
-            select(User.name).where(User.id == template.created_by)
-        )
+        row = await db.execute(select(User.name).where(User.id == template.created_by))
         creator_name = row.scalar_one_or_none()
     data = {c.name: getattr(template, c.name) for c in template.__table__.columns}
     data["created_by_name"] = creator_name
@@ -57,7 +55,9 @@ async def _serialize(db: AsyncSession, template: ProjectTemplate) -> dict:
 
 @router.get("", response_model=list[ProjectTemplateOut])
 async def list_templates(
-    scope: Annotated[str | None, Query(pattern="^(private|organization|public)$")] = None,
+    scope: Annotated[
+        str | None, Query(pattern="^(private|organization|public)$")
+    ] = None,
     type_key: Annotated[list[str] | None, Query()] = None,
     search: str | None = None,
     db: AsyncSession = Depends(get_db),
@@ -106,7 +106,9 @@ async def create_template(
 ):
     # 角色门槛: super_admin / project_admin 可建; 其它角色拒
     if user.role not in (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN):
-        raise HTTPException(status_code=403, detail="仅项目管理员或超级管理员可创建模板")
+        raise HTTPException(
+            status_code=403, detail="仅项目管理员或超级管理员可创建模板"
+        )
 
     assert_can_create_scope(data.scope, user)
     if data.scope == "organization" and data.organization_id is None:
@@ -128,7 +130,11 @@ async def create_template(
         payload.setdefault("type_label", source_project.type_label)
         payload.setdefault("type_key", source_project.type_key)
 
-    if not payload.get("name") or not payload.get("type_label") or not payload.get("type_key"):
+    if (
+        not payload.get("name")
+        or not payload.get("type_label")
+        or not payload.get("type_key")
+    ):
         raise HTTPException(
             status_code=400,
             detail="name / type_label / type_key 必填 (或通过 source_project_id 兜底)",
@@ -147,7 +153,9 @@ async def create_template(
     return await _serialize(db, template)
 
 
-async def _load_template_or_404(db: AsyncSession, template_id: uuid.UUID) -> ProjectTemplate:
+async def _load_template_or_404(
+    db: AsyncSession, template_id: uuid.UUID
+) -> ProjectTemplate:
     template = await db.get(ProjectTemplate, template_id)
     if template is None:
         raise HTTPException(status_code=404, detail="模板不存在")
@@ -211,7 +219,9 @@ async def delete_template(
     await db.commit()
 
 
-@router.post("/{template_id}/duplicate", response_model=ProjectTemplateOut, status_code=201)
+@router.post(
+    "/{template_id}/duplicate", response_model=ProjectTemplateOut, status_code=201
+)
 async def duplicate_template(
     template_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -219,7 +229,9 @@ async def duplicate_template(
 ):
     """克隆任意可见模板为当前用户私有模板."""
     if user.role not in (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN):
-        raise HTTPException(status_code=403, detail="仅项目管理员或超级管理员可克隆模板")
+        raise HTTPException(
+            status_code=403, detail="仅项目管理员或超级管理员可克隆模板"
+        )
 
     src = await _load_template_or_404(db, template_id)
     await assert_template_visible(db, src, user)

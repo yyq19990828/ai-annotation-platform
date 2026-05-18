@@ -60,9 +60,7 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
             except Exception as e:
                 if async_job_id is not None:
                     try:
-                        await async_job_svc.mark_failed(
-                            db, async_job_id, error=str(e)
-                        )
+                        await async_job_svc.mark_failed(db, async_job_id, error=str(e))
                         await db.commit()
                     except Exception:
                         await db.rollback()

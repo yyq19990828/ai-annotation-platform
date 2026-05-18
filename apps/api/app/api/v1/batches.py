@@ -934,9 +934,7 @@ async def export_batch(
         return Response(
             content=content,
             media_type="application/json",
-            headers={
-                "Content-Disposition": f"attachment; filename={fname}_aap.json"
-            },
+            headers={"Content-Disposition": f"attachment; filename={fname}_aap.json"},
         )
 
     if format == "yolo":

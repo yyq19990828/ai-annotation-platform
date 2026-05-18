@@ -127,7 +127,9 @@ async def test_list_visibility_filters(httpx_client_bound, db_session, super_adm
 
     other_pm = await _seed_user(db_session, UserRole.PROJECT_ADMIN.value, "other-pm")
     org = Organization(
-        id=uuid.uuid4(), name="org-x", slug=f"orgx-{uuid.uuid4().hex[:6]}",
+        id=uuid.uuid4(),
+        name="org-x",
+        slug=f"orgx-{uuid.uuid4().hex[:6]}",
         created_by=admin_user.id,
     )
     db_session.add(org)
@@ -150,7 +152,9 @@ async def test_list_visibility_filters(httpx_client_bound, db_session, super_adm
     await db_session.commit()
     from app.core.security import create_access_token
 
-    pm_token = create_access_token(subject=str(pm.id), role=UserRole.PROJECT_ADMIN.value)
+    pm_token = create_access_token(
+        subject=str(pm.id), role=UserRole.PROJECT_ADMIN.value
+    )
 
     resp = await httpx_client_bound.get(
         "/api/v1/project-templates", headers=_auth(pm_token)
@@ -170,7 +174,9 @@ async def test_list_visible_organization_template_for_member(
     creator = await _seed_user(db_session, UserRole.PROJECT_ADMIN.value, "creator-pm")
     viewer = await _seed_user(db_session, UserRole.PROJECT_ADMIN.value, "viewer-pm")
     org = Organization(
-        id=uuid.uuid4(), name="org-y", slug=f"orgy-{uuid.uuid4().hex[:6]}",
+        id=uuid.uuid4(),
+        name="org-y",
+        slug=f"orgy-{uuid.uuid4().hex[:6]}",
         created_by=admin_user.id,
     )
     db_session.add(org)
@@ -193,7 +199,9 @@ async def test_list_visible_organization_template_for_member(
 
     from app.core.security import create_access_token
 
-    token = create_access_token(subject=str(viewer.id), role=UserRole.PROJECT_ADMIN.value)
+    token = create_access_token(
+        subject=str(viewer.id), role=UserRole.PROJECT_ADMIN.value
+    )
     resp = await httpx_client_bound.get(
         "/api/v1/project-templates", headers=_auth(token)
     )

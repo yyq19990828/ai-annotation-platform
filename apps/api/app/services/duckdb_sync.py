@@ -93,9 +93,7 @@ def _get_high_water(con: duckdb.DuckDBPyConnection, source: str) -> datetime:
     return row[0].replace(tzinfo=timezone.utc) if row[0].tzinfo is None else row[0]
 
 
-def _set_high_water(
-    con: duckdb.DuckDBPyConnection, source: str, ts: datetime
-) -> None:
+def _set_high_water(con: duckdb.DuckDBPyConnection, source: str, ts: datetime) -> None:
     now = datetime.now(timezone.utc)
     con.execute(
         """
@@ -136,7 +134,11 @@ async def sync_task_events(db: AsyncSession) -> dict:
         result = await db.execute(stmt)
         rows = result.all()
         if not rows:
-            return {"source": "task_events", "rows": 0, "high_water": watermark.isoformat()}
+            return {
+                "source": "task_events",
+                "rows": 0,
+                "high_water": watermark.isoformat(),
+            }
 
         # batch insert
         con.executemany(
@@ -184,7 +186,11 @@ async def sync_audit_logs(db: AsyncSession) -> dict:
         result = await db.execute(stmt)
         rows = result.all()
         if not rows:
-            return {"source": "audit_logs", "rows": 0, "high_water": watermark.isoformat()}
+            return {
+                "source": "audit_logs",
+                "rows": 0,
+                "high_water": watermark.isoformat(),
+            }
 
         con.executemany(
             """
@@ -219,7 +225,5 @@ def _connect_reader() -> duckdb.DuckDBPyConnection:
     """
     path = settings.duckdb_path
     if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"DuckDB 文件不存在: {path}。首次同步可能尚未运行。"
-        )
+        raise FileNotFoundError(f"DuckDB 文件不存在: {path}。首次同步可能尚未运行。")
     return duckdb.connect(path, read_only=True)

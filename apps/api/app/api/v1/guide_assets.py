@@ -31,9 +31,7 @@ from app.services.storage import storage_service
 router = APIRouter()
 
 # storage key 形如 projects/{project_id}/guide/{uuid}-{safe_filename}
-_GUIDE_KEY_RE = re.compile(
-    r"^projects/[0-9a-f-]{36}/guide/[0-9a-f-]{36}-[^/]+$"
-)
+_GUIDE_KEY_RE = re.compile(r"^projects/[0-9a-f-]{36}/guide/[0-9a-f-]{36}-[^/]+$")
 
 
 def _sanitize_filename(name: str) -> str:
@@ -76,9 +74,7 @@ async def guide_asset_upload_init(
     upload_url = storage_service.generate_upload_url(
         key, content_type=data.content_type, expires_in=900
     )
-    return GuideAssetUploadInitResponse(
-        key=key, upload_url=upload_url, expires_in=900
-    )
+    return GuideAssetUploadInitResponse(key=key, upload_url=upload_url, expires_in=900)
 
 
 @router.post(

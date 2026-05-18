@@ -21,9 +21,7 @@ def test_event_envelope_serializes_with_all_fields():
         event="task.rejected",
         delivery_id="01JX0000000000000000000000",
         occurred_at=datetime(2026, 5, 19, 10, 0, 0, tzinfo=timezone.utc),
-        data=_RejectData(
-            task_id="t1", reason_type="missing", reason="框漏了 3 处"
-        ),
+        data=_RejectData(task_id="t1", reason_type="missing", reason="框漏了 3 处"),
     )
     payload = env.model_dump(mode="json")
     assert payload["event_version"] == "1.0"

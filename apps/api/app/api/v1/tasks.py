@@ -1468,9 +1468,9 @@ class ReviewAction(BaseModel):
     """v0.10.16 · reviewer 驳回 payload。`reason_type` 自 v0.10.16 起必填，
     `reason` 仍为可空自由文本补充。"""
 
-    reason_type: Literal[
-        "missing", "extra", "wrong_label", "wrong_geometry"
-    ] | None = None
+    reason_type: Literal["missing", "extra", "wrong_label", "wrong_geometry"] | None = (
+        None
+    )
     reason: str | None = None
 
 
