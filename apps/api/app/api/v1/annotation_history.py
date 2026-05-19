@@ -193,11 +193,7 @@ async def get_task_audit_history(
 
     # 该 task 下所有 annotation.id
     ann_ids = (
-        (
-            await db.execute(
-                select(Annotation.id).where(Annotation.task_id == task_id)
-            )
-        )
+        (await db.execute(select(Annotation.id).where(Annotation.task_id == task_id)))
         .scalars()
         .all()
     )

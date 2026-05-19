@@ -59,9 +59,7 @@ class AnnotationFeedbackCreate(BaseModel):
                 raise ValueError("annotation anchor must not carry anchor_position")
         elif self.anchor_type == "pixel":
             if not (self.task_id and self.anchor_position):
-                raise ValueError(
-                    "pixel anchor requires task_id and anchor_position"
-                )
+                raise ValueError("pixel anchor requires task_id and anchor_position")
         return self
 
 

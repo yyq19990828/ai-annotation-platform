@@ -1,6 +1,15 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import BigInteger, Integer, String, Float, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import (
+    BigInteger,
+    Integer,
+    String,
+    Float,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base

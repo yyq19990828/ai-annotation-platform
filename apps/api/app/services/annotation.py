@@ -308,10 +308,10 @@ class AnnotationService:
         if not ids:
             return []
         rows = (
-            await self.db.execute(
-                select(Annotation).where(Annotation.id.in_(ids))
-            )
-        ).scalars().all()
+            (await self.db.execute(select(Annotation).where(Annotation.id.in_(ids))))
+            .scalars()
+            .all()
+        )
         if len(rows) != len(ids):
             missing = set(ids) - {r.id for r in rows}
             raise HTTPException(
@@ -384,10 +384,10 @@ class AnnotationService:
             )
         # 校验 ids 都属于该 task.
         rows = (
-            await self.db.execute(
-                select(Annotation).where(Annotation.id.in_(ids))
-            )
-        ).scalars().all()
+            (await self.db.execute(select(Annotation).where(Annotation.id.in_(ids))))
+            .scalars()
+            .all()
+        )
         if len(rows) != len(ids):
             raise HTTPException(status_code=404, detail="some annotations not found")
         for r in rows:
@@ -427,10 +427,10 @@ class AnnotationService:
         if not ids:
             return [], []
         rows = (
-            await self.db.execute(
-                select(Annotation).where(Annotation.id.in_(ids))
-            )
-        ).scalars().all()
+            (await self.db.execute(select(Annotation).where(Annotation.id.in_(ids))))
+            .scalars()
+            .all()
+        )
         if len(rows) != len(ids):
             raise HTTPException(status_code=404, detail="some annotations not found")
         affected_groups: dict[tuple[uuid.UUID, int], None] = {}
@@ -441,16 +441,20 @@ class AnnotationService:
             r.version += 1
         # 检查每个被影响 group 的剩余成员; 仅剩 1 个时自动 ungroup.
         orphans: list[uuid.UUID] = []
-        for (tid, gid) in affected_groups.keys():
+        for tid, gid in affected_groups.keys():
             remaining = (
-                await self.db.execute(
-                    select(Annotation).where(
-                        Annotation.task_id == tid,
-                        Annotation.group_id == gid,
-                        Annotation.is_active == True,  # noqa: E712
+                (
+                    await self.db.execute(
+                        select(Annotation).where(
+                            Annotation.task_id == tid,
+                            Annotation.group_id == gid,
+                            Annotation.is_active == True,  # noqa: E712
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             if len(remaining) == 1:
                 orphan = remaining[0]
                 orphan.group_id = None

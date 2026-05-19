@@ -42,9 +42,7 @@ _ALL = (
 )
 
 
-async def _to_out(
-    db: AsyncSession, entry: AnnotationFeedback
-) -> AnnotationFeedbackOut:
+async def _to_out(db: AsyncSession, entry: AnnotationFeedback) -> AnnotationFeedbackOut:
     briefs = await resolve_briefs(db, [entry.author_id])
     brief = briefs.get(entry.author_id)
     return AnnotationFeedbackOut(
@@ -251,9 +249,7 @@ async def delete_feedback(
     await db.commit()
 
 
-@router.post(
-    "/feedbacks/{feedback_id}/replies", response_model=AnnotationFeedbackOut
-)
+@router.post("/feedbacks/{feedback_id}/replies", response_model=AnnotationFeedbackOut)
 async def reply_feedback(
     feedback_id: uuid.UUID,
     payload: AnnotationFeedbackReply,

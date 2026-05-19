@@ -1238,9 +1238,7 @@ async def accept_prediction(
     return await svc.list_by_task(task_id)
 
 
-@router.post(
-    "/{task_id}/predictions/{prediction_id}/reject", status_code=204
-)
+@router.post("/{task_id}/predictions/{prediction_id}/reject", status_code=204)
 async def reject_prediction(
     task_id: uuid.UUID,
     prediction_id: uuid.UUID,
