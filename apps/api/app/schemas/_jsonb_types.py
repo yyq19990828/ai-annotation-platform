@@ -150,6 +150,91 @@ class ClassConfigEntry(BaseModel):
 ClassesConfig = dict[str, ClassConfigEntry]
 
 
+# ── v0.10.17 · 工具维度类别 / 属性绑定 ──────────────────────────────
+#
+# 把原来的项目级扁平 classes_config + attribute_schema, 改为按"工具单位"
+# (tool_unit) 嵌套. 五个稳定 enum 值; polyline / lidar_box_3d 当前为留位
+# (前端工具未实现), 但后端 schema 已就位, 后续版本无需迁移.
+#
+# 旧 classes_config + attribute_schema 在 v0.10.17 期间仍由 service 层
+# 从 tool_bindings 派生, 供未迁移的导出 / 聚合查询继续读, v0.10.18 删.
+
+ToolUnitId = Literal["bbox", "polyline", "region", "ai_interactive", "lidar_box_3d"]
+TOOL_UNIT_IDS: tuple[str, ...] = (
+    "bbox",
+    "polyline",
+    "region",
+    "ai_interactive",
+    "lidar_box_3d",
+)
+
+
+class ToolClassEntry(BaseModel):
+    """工具单位下的一条类别. name 必填且工具内唯一; color / alias 语义同 ClassConfigEntry."""
+
+    name: str = Field(min_length=1, max_length=100)
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    order: int | None = Field(default=None, ge=0)
+    alias: str | None = Field(
+        default=None,
+        max_length=50,
+        pattern=r"^[a-zA-Z0-9 ,_\-]+$",
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("alias", mode="before")
+    @classmethod
+    def _normalize_alias(cls, v: Any) -> Any:
+        if v is None or not isinstance(v, str):
+            return v
+        s = v.lower().strip()
+        if not s:
+            return None
+        s = re.sub(r"\s*,[\s,]*", ",", s)
+        s = re.sub(r"\s+", " ", s)
+        s = s.strip(",").strip()
+        return s or None
+
+
+class ToolBinding(BaseModel):
+    """单一工具单位下的 enable 状态 + 类别集合 + 属性 schema."""
+
+    enabled: bool = False
+    classes: list[ToolClassEntry] = Field(default_factory=list)
+    attribute_schema: AttributeSchema = Field(default_factory=AttributeSchema)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _check_class_name_unique(self) -> "ToolBinding":
+        seen: set[str] = set()
+        for c in self.classes:
+            if c.name in seen:
+                raise ValueError(
+                    f"tool_binding.classes[].name 在工具单位内重复: {c.name!r}"
+                )
+            seen.add(c.name)
+        return self
+
+
+# Key 必须是 ToolUnitId 枚举值之一; 用 dict 让 codegen 出 Record<string, ToolBinding>.
+# Schema 层会用 ToolBindings 别名, 项目级校验在 _validate_tool_unit_id 完成.
+ToolBindings = dict[str, ToolBinding]
+
+
+def validate_tool_bindings_keys(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    """校验 ToolBindings 顶层 key 全在 TOOL_UNIT_IDS 内 (允许子集)."""
+    if value is None:
+        return value
+    for k in value:
+        if k not in TOOL_UNIT_IDS:
+            raise ValueError(
+                f"tool_bindings 顶层 key 必须是 {TOOL_UNIT_IDS} 之一, 收到: {k!r}"
+            )
+    return value
+
+
 # ── 项目级渲染配置覆盖（v0.10.10 · I17.3） ─────────────────────────────
 #
 # 字段语义与 UserPreferences.workbench 同集（apps/api/app/schemas/user.py）。

@@ -12,7 +12,10 @@ from app.schemas._jsonb_types import (
     AttributeSchema,
     ClassesConfig,
     ProjectRenderingConfig,
+    ToolBindings,
+    validate_tool_bindings_keys,
 )
+from pydantic import field_validator
 
 
 TemplateScope = Literal["private", "organization", "public"]
@@ -27,6 +30,8 @@ class ProjectTemplateBase(BaseModel):
     classes: list[str] = []
     classes_config: ClassesConfig | None = None
     attribute_schema: AttributeSchema | None = None
+    # v0.10.17 · 工具维度类别 / 属性绑定; 优先于扁平字段, 兼容 Project schema.
+    tool_bindings: ToolBindings | None = None
     label_config: dict | None = None
     ai_enabled: bool = False
     ai_model: str | None = None
@@ -43,6 +48,11 @@ class ProjectTemplateBase(BaseModel):
 
     scope: TemplateScope = "private"
     organization_id: UUID | None = None
+
+    @field_validator("tool_bindings", mode="before")
+    @classmethod
+    def _check_tool_bindings_keys(cls, v):
+        return validate_tool_bindings_keys(v)
 
 
 class ProjectTemplateCreate(ProjectTemplateBase):
@@ -64,9 +74,17 @@ class ProjectTemplateUpdate(BaseModel):
     classes: list[str] | None = None
     classes_config: ClassesConfig | None = None
     attribute_schema: AttributeSchema | None = None
+    # v0.10.17 · 工具维度类别 / 属性绑定.
+    tool_bindings: ToolBindings | None = None
     label_config: dict | None = None
     ai_enabled: bool | None = None
     ai_model: str | None = None
+
+    @field_validator("tool_bindings", mode="before")
+    @classmethod
+    def _check_tool_bindings_keys(cls, v):
+        return validate_tool_bindings_keys(v)
+
     sampling: str | None = None
     maximum_annotations: int | None = None
     show_overlap_first: bool | None = None
@@ -91,6 +109,8 @@ class ProjectTemplateOut(BaseModel):
     classes: list[str] = []
     classes_config: ClassesConfig = {}
     attribute_schema: AttributeSchema = AttributeSchema()
+    # v0.10.17 · 工具维度类别 / 属性绑定; 旧扁平字段在过渡期由 service 派生.
+    tool_bindings: ToolBindings = {}
     label_config: dict = {}
     ai_enabled: bool = False
     ai_model: str | None = None

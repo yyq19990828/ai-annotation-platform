@@ -16,8 +16,9 @@ export interface HotkeyDef {
 export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
   { keys: ["Alt", "1"], desc: "矩形框工具（备用，避免与切类别冲突）", group: "draw", actionType: "setTool" },
-  { keys: ["S"], desc: "AI 工具循环：智能点 → 智能框 → 文本提示 → Exemplar → 退出（跳过置灰）", group: "ai", actionType: "setTool" },
+  { keys: ["S"], desc: "AI 工具循环：智能点 → 智能框 → Magic Box → 文本提示 → Exemplar → 退出（跳过置灰）", group: "ai", actionType: "setTool" },
   { keys: ["Alt", "3"], desc: "AI 工具（备用）", group: "ai", actionType: "setTool" },
+  { keys: ["G"], desc: "Magic Box: 粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox（v0.10.17+）", group: "ai", actionType: "setTool" },
   { keys: ["= / +"], desc: "智能点工具：切正向", group: "ai", actionType: "samPolarity" },
   { keys: ["-"], desc: "智能点工具：切负向", group: "ai", actionType: "samPolarity" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
@@ -123,7 +124,7 @@ export type HotkeyAction =
   | { type: "cycleUser"; dir: 1 | -1; loop: boolean }
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
-  | { type: "setTool"; tool: "box" | "hand" | "polygon" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "ai-cycle" }
+  | { type: "setTool"; tool: "box" | "hand" | "polygon" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
   | { type: "setVideoTool"; tool: "box" | "track" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
@@ -301,8 +302,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
 
   if (e.key === "v" || e.key === "V") return { type: "setTool", tool: "hand" };
   if (e.key === "b" || e.key === "B") return { type: "setTool", tool: "box" };
-  // v0.10.2 · S 循环 4 个 AI 工具 (具体下一个工具由消费侧根据 capabilities 决定).
+  // v0.10.2 · S 循环 5 个 AI 工具 (具体下一个工具由消费侧根据 capabilities 决定).
   if (e.key === "s" || e.key === "S") return { type: "setTool", tool: "ai-cycle" };
+  // v0.10.17 · G 单键直达 Magic Box.
+  if (e.key === "g" || e.key === "G") return { type: "setTool", tool: "magic-box" };
   if (e.key === "p" || e.key === "P") return { type: "setTool", tool: "polygon" };
   // v0.10.8 · I11 · M 切 mask 工具。注意：mask 工具激活后 B/E 是模式切换 (capture 阶段 useEffect 抢键)，
   // 不会落到这里；这里 B 仍然返回 setTool("box")。

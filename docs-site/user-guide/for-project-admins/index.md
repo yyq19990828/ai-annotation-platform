@@ -3,7 +3,7 @@ audience: [project_admin]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-11
+last_reviewed: 2026-05-19
 ---
 
 # 创建项目
@@ -18,8 +18,13 @@ last_reviewed: 2026-05-11
 1. 顶部菜单 → 「项目管理」 → 「新建项目」
 2. 填写基本信息：
    - **项目名**
-   - **类型**：bbox / polygon / keypoint / classification / OCR
-   - **类别 schema**（JSONB）：例如 `["person", "car", "bicycle"]`
+   - **数据类型**：图片 / 视频 / 3D 点云（三选一，v0.10.17 起从原 7 种 type_key 收敛）
+   - **工具集**（v0.10.17+, 多选）：勾选本项目要用的工具单位
+     - **矩形框 (bbox)**：拖框圈选,基础几何
+     - **区域 (polygon + mask)** ⭐ 打包：实例分割,多边形与笔刷掩码一起启用
+     - **AI 交互** ⭐ 打包：SAM 点 / 框 / 文本 / 示例 + Magic Box 一起启用
+     - **折线 (polyline)** / **3D 立体框 (lidar_box_3d)**：本版置灰,后续版本上线
+   - **类别 + 属性**：每个启用的工具单位独立编辑（v0.10.17+, 详见下文「工具维度类别 / 属性」）
    - **AI 模型**（可选）：选择预标注模型
 3. 上传初始数据集（zip / 图片直传 / OSS 路径）
 4. 设置标注规范文档（Markdown，标注员在工作台可见）
@@ -27,6 +32,28 @@ last_reviewed: 2026-05-11
    - **单审**：1 名审核员通过即可
    - **双审**：2 名审核员一致才通过
    - **采样审核**：随机抽 N% 审核
+
+## 工具维度类别 / 属性（v0.10.17+）
+
+v0.10.17 起,类别与属性 schema 按**工具单位**(`tool_unit`)**强隔离**绑定:
+
+- 每个被启用的工具单位**独立**持有自己的类别列表与属性 schema。
+- 不同工具下的同名类是两条**独立**记录,可同名不同色。例如 bbox 工具下的「人」(红色) 与 region 工具下的「人」(蓝色) 互不干扰。
+- 工作台切换工具时,左侧调色板会自动切换为对应工具单位的类别集。
+
+**典型场景**:
+
+| 场景 | 工具集勾选 | 类别配置 |
+|---|---|---|
+| 道路检测 | bbox + region | bbox: 人 / 车 / 交通标识; region: 可行驶区 / 天空 |
+| 商品标注 | bbox + AI 交互 | bbox: 商品 / 价签; AI 交互: 用 SAM 智能框定细节 |
+| 仅 AI 加速 | 仅 AI 交互 | AI 交互单位下配类别, 用 SAM 反复迭代 |
+
+**注意**:
+
+- 强隔离意味着**跨工具复用同名类需要重复输入**(bbox 加「人」 / region 加「人」是两次操作)。后续版本视客户反馈可能加可选「类别软关联」链。
+- v0.10.16 之前创建的旧项目升级后,默认按 `type_key` 推断:`image-seg` → region unit;其它 → bbox unit。若实际混用 polygon 工具,需到项目设置页把类**复制**到 region unit。
+- 详细架构决策见 [ADR-0026](../../dev/adr/0026-tool-unit-class-and-attribute-binding)。
 
 ![向导步骤](../images/projects/wizard-steps.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 6 步 wizard 各步关键截图（基本信息 / 类型 / 类别 schema / 属性 schema / AI 模型 / 审核策略），可拼成一张长图。 -->

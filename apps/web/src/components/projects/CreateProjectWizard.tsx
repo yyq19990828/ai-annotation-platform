@@ -18,7 +18,21 @@ import {
   PRESET_AI_MODELS,
   CUSTOM_MODEL_KEY,
 } from "@/constants/projectTypes";
-import { projectsApi, type ProjectResponse, type ClassesConfig, type AttributeField, type AttributeSchema } from "@/api/projects";
+import {
+  TOOL_UNIT_GROUPS,
+  defaultEnabledUnits,
+  dataTypeFromLegacy,
+  toolUnitFromLegacy,
+  type ToolUnitId,
+} from "@/constants/toolUnits";
+import {
+  projectsApi,
+  type ProjectResponse,
+  type ClassesConfig,
+  type AttributeField,
+  type AttributeSchema,
+  type ToolBindings,
+} from "@/api/projects";
 import { projectTemplatesApi, type ProjectTemplateOut } from "@/api/projectTemplates";
 import type { ClassConfigEntry } from "@/api/projects";
 import type { DatasetResponse } from "@/api/datasets";
@@ -40,14 +54,24 @@ interface Props {
   templateId?: string;
 }
 
+/** v0.10.17 · 单一工具单位的表单状态: enabled + 类别列表 + 属性 schema. */
+export interface UnitBindingForm {
+  enabled: boolean;
+  classRows: ClassRow[];
+  attributeFields: AttributeField[];
+}
+
+export type UnitBindingMap = Partial<Record<ToolUnitId, UnitBindingForm>>;
+
 interface FormState {
   name: string;
   typeKey: string;
   dueDate: string;
-  // v0.7.0：升级为 ClassRow[]（含颜色），提交时序列化为 classes + classes_config
-  classRows: ClassRow[];
-  // v0.7.6：属性 schema 步骤；提交时序列化为 attribute_schema = { fields }
-  attributeFields: AttributeField[];
+  // v0.10.17 · 取代扁平 classRows / attributeFields, 按工具单位拆开. 提交时序列化
+  // 为 tool_bindings; 旧 classes / classes_config / attribute_schema 由 active unit
+  // 派生作老 reader 兜底 (后端 coalesce 也会反向同步).
+  unitBindings: UnitBindingMap;
+  activeUnit: ToolUnitId;
   aiEnabled: boolean;
   aiModelChoice: string;
   aiModelCustom: string;
@@ -64,12 +88,29 @@ interface FormState {
   copyAnnotationGuide: boolean;
 }
 
+/** 取默认 unitBindings: 按 type_key 推 data type, 启用对应 unit. */
+function defaultUnitBindings(typeKey: string): UnitBindingMap {
+  const dt = dataTypeFromLegacy(typeKey);
+  const enabled = new Set(defaultEnabledUnits(dt));
+  const out: UnitBindingMap = {};
+  for (const g of TOOL_UNIT_GROUPS) {
+    if (!g.available) continue;
+    if (!g.dataTypes.includes(dt)) continue;
+    out[g.id] = {
+      enabled: enabled.has(g.id),
+      classRows: [],
+      attributeFields: [],
+    };
+  }
+  return out;
+}
+
 const INITIAL: FormState = {
   name: "",
   typeKey: "image-det",
   dueDate: "",
-  classRows: [],
-  attributeFields: [],
+  unitBindings: defaultUnitBindings("image-det"),
+  activeUnit: "bbox",
   aiEnabled: false,
   aiModelChoice: PRESET_AI_MODELS[0],
   aiModelCustom: "",
@@ -98,23 +139,76 @@ const DRAFT_KEY = "create_project_draft_v0_7_6";
 /** v0.10.11 · 把 ProjectResponse 的可克隆配置字段还原为 Wizard FormState. 不包含
  *  运行时数据 (datasets / tasks / members / batches); 后端 source_project_id 兜底
  *  那些不在表单中的字段 (label_config / sampling / rendering_config 等). */
-function buildFormFromSource(src: ProjectResponse): FormState {
-  const classesConfig: ClassesConfig = (src.classes_config ?? {}) as ClassesConfig;
-  const orderedClasses = [...(src.classes ?? [])].sort((a, b) => {
-    const oa = classesConfig[a]?.order ?? 0;
-    const ob = classesConfig[b]?.order ?? 0;
-    return oa - ob;
-  });
-  const classRows: ClassRow[] = orderedClasses.map((name) => {
-    const cfg: ClassConfigEntry | undefined = classesConfig[name];
-    return {
-      name,
-      color: cfg?.color ?? "#888888",
-      ...(cfg?.alias ? { alias: cfg.alias } : {}),
+/** v0.10.17 · 把 ProjectResponse 的 tool_bindings (优先) 或扁平 classes_config /
+ *  attribute_schema (兜底) 还原为 Wizard 的 unitBindings + activeUnit. */
+function buildUnitBindingsFromSource(src: {
+  type_key?: string;
+  classes?: string[];
+  classes_config?: Record<string, unknown> | null;
+  attribute_schema?: AttributeSchema | null;
+  tool_bindings?: ToolBindings | Record<string, unknown> | null;
+}): { unitBindings: UnitBindingMap; activeUnit: ToolUnitId } {
+  const typeKey = src.type_key ?? "image-det";
+  const base = defaultUnitBindings(typeKey);
+  const tb = (src.tool_bindings ?? {}) as ToolBindings;
+
+  // 把 tool_bindings 各 unit 拍进 base; 缺失 unit 沿用默认 (disabled / 空)
+  for (const unitId of Object.keys(tb) as ToolUnitId[]) {
+    const binding = tb[unitId];
+    if (!binding) continue;
+    const classRows: ClassRow[] = (binding.classes ?? [])
+      .slice()
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map((c) => ({
+        name: c.name,
+        color: c.color ?? "#888888",
+        ...(c.alias ? { alias: c.alias } : {}),
+      }));
+    const attributeFields: AttributeField[] =
+      (binding.attribute_schema as AttributeSchema | undefined)?.fields ?? [];
+    base[unitId] = {
+      enabled: !!binding.enabled,
+      classRows,
+      attributeFields,
     };
-  });
-  const attributeFields: AttributeField[] =
-    (src.attribute_schema as AttributeSchema | undefined)?.fields ?? [];
+  }
+
+  // 兼容: 老项目无 tool_bindings, 但有扁平 classes_config / attribute_schema —
+  // 派生到默认 unit (按 type_key 推).
+  const hasTb = Object.keys(tb).length > 0;
+  if (!hasTb) {
+    const defaultUnit = toolUnitFromLegacy(typeKey);
+    const cfg = (src.classes_config ?? {}) as ClassesConfig;
+    const ordered = [...(src.classes ?? [])].sort((a, b) => {
+      const oa = cfg[a]?.order ?? 0;
+      const ob = cfg[b]?.order ?? 0;
+      return oa - ob;
+    });
+    const classRows = ordered.map((name) => {
+      const c: ClassConfigEntry | undefined = cfg[name];
+      return {
+        name,
+        color: c?.color ?? "#888888",
+        ...(c?.alias ? { alias: c.alias } : {}),
+      } as ClassRow;
+    });
+    base[defaultUnit] = {
+      enabled: true,
+      classRows,
+      attributeFields:
+        (src.attribute_schema as AttributeSchema | undefined)?.fields ?? [],
+    };
+  }
+
+  // activeUnit = 第一个 enabled 的 unit, 没有就选 bbox
+  const firstEnabled = (Object.keys(base) as ToolUnitId[]).find(
+    (k) => base[k]?.enabled,
+  );
+  return { unitBindings: base, activeUnit: firstEnabled ?? "bbox" };
+}
+
+function buildFormFromSource(src: ProjectResponse): FormState {
+  const { unitBindings, activeUnit } = buildUnitBindingsFromSource(src);
   const aiModel = src.ai_model ?? "";
   const aiModelChoice = aiModel && PRESET_AI_MODELS.includes(aiModel)
     ? aiModel
@@ -131,8 +225,8 @@ function buildFormFromSource(src: ProjectResponse): FormState {
     ...INITIAL,
     name: src.name ? `${src.name} (副本)` : "",
     typeKey: src.type_key,
-    classRows,
-    attributeFields,
+    unitBindings,
+    activeUnit,
     aiEnabled: src.ai_enabled,
     aiModelChoice,
     aiModelCustom,
@@ -145,22 +239,9 @@ function buildFormFromSource(src: ProjectResponse): FormState {
 /** v0.10.14 · E2 · 从模板还原 FormState. 模板字段集合与 source 项目相近, 但
  *  没有 ml_backend_id (模板不绑 backend), 也没有 dataset/members 等运行时数据. */
 function buildFormFromTemplate(t: ProjectTemplateOut): FormState {
-  const classesConfig: ClassesConfig = (t.classes_config ?? {}) as ClassesConfig;
-  const orderedClasses = [...(t.classes ?? [])].sort((a, b) => {
-    const oa = classesConfig[a]?.order ?? 0;
-    const ob = classesConfig[b]?.order ?? 0;
-    return oa - ob;
-  });
-  const classRows: ClassRow[] = orderedClasses.map((name) => {
-    const cfg: ClassConfigEntry | undefined = classesConfig[name];
-    return {
-      name,
-      color: cfg?.color ?? "#888888",
-      ...(cfg?.alias ? { alias: cfg.alias } : {}),
-    };
-  });
-  const attributeFields: AttributeField[] =
-    (t.attribute_schema as AttributeSchema | undefined)?.fields ?? [];
+  const { unitBindings, activeUnit } = buildUnitBindingsFromSource(
+    t as Parameters<typeof buildUnitBindingsFromSource>[0],
+  );
   const aiModel = t.ai_model ?? "";
   const aiModelChoice = aiModel && PRESET_AI_MODELS.includes(aiModel)
     ? aiModel
@@ -177,8 +258,8 @@ function buildFormFromTemplate(t: ProjectTemplateOut): FormState {
     ...INITIAL,
     name: "",
     typeKey: t.type_key,
-    classRows,
-    attributeFields,
+    unitBindings,
+    activeUnit,
     aiEnabled: t.ai_enabled,
     aiModelChoice,
     aiModelCustom,
@@ -282,16 +363,34 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
   const trimmedName = form.name.trim();
   const nameValid = trimmedName.length >= 2 && trimmedName.length <= 60;
   const dueValid = !form.dueDate || form.dueDate >= new Date().toISOString().slice(0, 10);
-  const step1Valid = nameValid && !!form.typeKey && dueValid;
+  const enabledUnitCount = (Object.keys(form.unitBindings) as ToolUnitId[]).filter(
+    (k) => form.unitBindings[k]?.enabled,
+  ).length;
+  const step1Valid =
+    nameValid && !!form.typeKey && dueValid && enabledUnitCount > 0;
 
   const resolvedAiModel = form.aiModelChoice === CUSTOM_MODEL_KEY
     ? form.aiModelCustom.trim()
     : form.aiModelChoice;
   const step4Valid = !form.aiEnabled || resolvedAiModel.length > 0;
-  // step 3 属性 schema：用 AttributeSchemaEditor 自带校验复用；空数组合法（可跳过）
-  const step3AttrError = form.attributeFields.length === 0
-    ? null
-    : validateAttributeFields(form.attributeFields);
+
+  // v0.10.17 · 各 enabled unit 各自的 attribute_schema 必须独立校验通过.
+  const enabledUnitIds = useMemo(
+    () =>
+      (Object.keys(form.unitBindings) as ToolUnitId[]).filter(
+        (k) => form.unitBindings[k]?.enabled,
+      ),
+    [form.unitBindings],
+  );
+  const step3AttrError = useMemo<string | null>(() => {
+    for (const unitId of enabledUnitIds) {
+      const fields = form.unitBindings[unitId]?.attributeFields ?? [];
+      if (fields.length === 0) continue;
+      const err = validateAttributeFields(fields);
+      if (err) return `[${unitId}] ${err}`;
+    }
+    return null;
+  }, [enabledUnitIds, form.unitBindings]);
   const step3Valid = step3AttrError === null;
 
   const submit = () => {
@@ -300,9 +399,32 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
       pushToast({ msg: step3AttrError, kind: "error" });
       return;
     }
-    const classes = form.classRows.map((r) => r.name);
+    // 构造 tool_bindings 主真值
+    const tool_bindings: ToolBindings = {};
+    for (const unitId of enabledUnitIds) {
+      const ub = form.unitBindings[unitId];
+      if (!ub) continue;
+      tool_bindings[unitId] = {
+        enabled: true,
+        classes: ub.classRows.map((r, i) => ({
+          name: r.name,
+          color: r.color,
+          order: i,
+          ...(r.alias ? { alias: r.alias } : {}),
+        })),
+        attribute_schema:
+          ub.attributeFields.length > 0
+            ? { fields: ub.attributeFields }
+            : { fields: [] },
+      };
+    }
+    // 老 reader 兜底: 派生 classes / classes_config / attribute_schema 自 activeUnit
+    const activeRows = form.unitBindings[form.activeUnit]?.classRows ?? [];
+    const activeFields =
+      form.unitBindings[form.activeUnit]?.attributeFields ?? [];
+    const classes = activeRows.map((r) => r.name);
     const classes_config: ClassesConfig = {};
-    form.classRows.forEach((r, i) => {
+    activeRows.forEach((r, i) => {
       classes_config[r.name] = {
         color: r.color,
         order: i,
@@ -310,7 +432,7 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
       };
     });
     const attribute_schema: AttributeSchema | undefined =
-      form.attributeFields.length > 0 ? { fields: form.attributeFields } : undefined;
+      activeFields.length > 0 ? { fields: activeFields } : undefined;
     createProject.mutate(
       {
         name: trimmedName,
@@ -319,6 +441,7 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
         classes,
         classes_config,
         attribute_schema,
+        tool_bindings,
         ai_enabled: form.aiEnabled,
         ai_model: form.aiEnabled ? resolvedAiModel : null,
         // v0.9.6 · 仅启用 AI 时携带; "" = null (走智能默认)
@@ -419,18 +542,11 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
       )}
 
       {step === 2 && (
-        <Step2Classes
-          rows={form.classRows}
-          onChange={(rows) => setForm((s) => ({ ...s, classRows: rows }))}
-        />
+        <Step2Classes form={form} setForm={setForm} />
       )}
 
       {step === 3 && (
-        <Step3Attributes
-          fields={form.attributeFields}
-          onChange={(fields) => setForm((s) => ({ ...s, attributeFields: fields }))}
-          error={step3AttrError}
-        />
+        <Step3Attributes form={form} setForm={setForm} error={step3AttrError} />
       )}
 
       {step === 4 && (
@@ -573,7 +689,26 @@ function Step1({
               <button
                 key={t.key}
                 type="button"
-                onClick={() => setForm((s) => ({ ...s, typeKey: t.key }))}
+                onClick={() =>
+                  setForm((s) => {
+                    // v0.10.17 · 切类型时按新 data_type 重置默认 unitBindings,
+                    // 但保留同一 unit 之前已配置的 classRows / attributeFields (避免误删).
+                    const next = defaultUnitBindings(t.key);
+                    for (const k of Object.keys(next) as ToolUnitId[]) {
+                      const prev = s.unitBindings[k];
+                      if (prev) next[k] = { ...next[k]!, ...prev };
+                    }
+                    const stillEnabled = (Object.keys(next) as ToolUnitId[]).find(
+                      (k) => next[k]?.enabled,
+                    );
+                    return {
+                      ...s,
+                      typeKey: t.key,
+                      unitBindings: next,
+                      activeUnit: stillEnabled ?? "bbox",
+                    };
+                  })
+                }
                 className={clsx(styles.typeButton, active && styles.typeButtonActive)}
               >
                 <span className={clsx(styles.typeIcon, active && styles.typeIconActive)}>
@@ -584,6 +719,60 @@ function Step1({
                   <span className={styles.typeHint}>{t.hint}</span>
                 </span>
               </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* v0.10.17 · 工具集多选 chip. 三组: 矩形框 / 区域 / AI 交互 (region 与 AI 各自打包). */}
+      <div>
+        <label className={styles.label}>
+          工具集{" "}
+          <span className={styles.labelNote}>
+            （勾选本项目要用的工具单位，每个单位有独立的类别与属性）
+          </span>
+        </label>
+        <div className={styles.unitChipGrid}>
+          {TOOL_UNIT_GROUPS.map((g) => {
+            const binding = form.unitBindings[g.id];
+            // 占位 unit 不显示 (polyline / lidar_box_3d 暂未实现, 但 region 等 data type 限制也要过滤)
+            if (!binding) return null;
+            const disabled = !g.available;
+            return (
+              <label
+                key={g.id}
+                className={clsx(
+                  styles.unitChip,
+                  binding.enabled && styles.unitChipActive,
+                  disabled && styles.unitChipDisabled,
+                )}
+                title={disabled ? "本版未实现, 后续版本上线" : g.hint}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!binding.enabled}
+                  disabled={disabled}
+                  onChange={(e) =>
+                    setForm((s) => ({
+                      ...s,
+                      unitBindings: {
+                        ...s.unitBindings,
+                        [g.id]: {
+                          enabled: e.target.checked,
+                          classRows: s.unitBindings[g.id]?.classRows ?? [],
+                          attributeFields:
+                            s.unitBindings[g.id]?.attributeFields ?? [],
+                        },
+                      },
+                    }))
+                  }
+                />
+                <Icon name={g.icon} size={12} />
+                <div className={styles.unitChipBody}>
+                  <span className={styles.unitChipLabel}>{g.label}</span>
+                  <span className={styles.unitChipHint}>{g.hint}</span>
+                </div>
+              </label>
             );
           })}
         </div>
@@ -607,45 +796,131 @@ function Step1({
   );
 }
 
-function Step2Classes({
-  rows,
-  onChange,
+/** v0.10.17 · 工具单位 Tab. enabled=false 的 unit 仍能切到 (展示空状态), 在 Step1
+ *  的工具集 chips 区切换. 不可用 (本版无实现的 polyline / lidar_box_3d) 不显示. */
+function UnitTabs({
+  form,
+  setForm,
 }: {
-  rows: ClassRow[];
-  onChange: (next: ClassRow[]) => void;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
 }) {
+  const visible = TOOL_UNIT_GROUPS.filter((g) => g.available && form.unitBindings[g.id]);
+  return (
+    <div className={styles.unitTabs}>
+      {visible.map((g) => {
+        const ub = form.unitBindings[g.id];
+        const active = form.activeUnit === g.id;
+        return (
+          <button
+            key={g.id}
+            type="button"
+            onClick={() => setForm((s) => ({ ...s, activeUnit: g.id }))}
+            className={clsx(
+              styles.unitTab,
+              active && styles.unitTabActive,
+              !ub?.enabled && styles.unitTabDisabled,
+            )}
+            title={ub?.enabled ? undefined : "未启用此工具集 (回到第 1 步可勾选)"}
+          >
+            <Icon name={g.icon} size={12} />
+            <span>{g.label}</span>
+            {!ub?.enabled && <span className={styles.unitTabBadge}>未启用</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Step2Classes({
+  form,
+  setForm,
+}: {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+}) {
+  const activeBinding = form.unitBindings[form.activeUnit];
+  const rows = activeBinding?.classRows ?? [];
+  const onChange = (next: ClassRow[]) => {
+    setForm((s) => ({
+      ...s,
+      unitBindings: {
+        ...s.unitBindings,
+        [s.activeUnit]: {
+          enabled: s.unitBindings[s.activeUnit]?.enabled ?? true,
+          classRows: next,
+          attributeFields:
+            s.unitBindings[s.activeUnit]?.attributeFields ?? [],
+        },
+      },
+    }));
+  };
   return (
     <div className={styles.formStack}>
       <div className={styles.sectionHint}>
-        添加该项目的标注类别（可空，后续可在项目设置中继续编辑）。每个类别可独立配置颜色和顺序；顺序影响数字键 1-9 / a-z 映射。
+        v0.10.17 类别按工具单位独立配置。切换下方 Tab 给每个启用的工具单位单独维护类别。
+        强隔离: 不同工具的同名类是独立记录, 可以同名不同色。
       </div>
-      <ClassEditor value={rows} onChange={onChange} max={50} emptyHint="暂无类别（后续可在项目设置中添加）" />
+      <UnitTabs form={form} setForm={setForm} />
+      {!activeBinding?.enabled ? (
+        <div className={styles.sectionHint}>
+          当前工具单位未启用。回到第 1 步「工具集」勾选后再来配置。
+        </div>
+      ) : (
+        <ClassEditor
+          value={rows}
+          onChange={onChange}
+          max={50}
+          emptyHint="暂无类别（后续可在项目设置中添加）"
+        />
+      )}
     </div>
   );
 }
 
 function Step3Attributes({
-  fields,
-  onChange,
+  form,
+  setForm,
   error,
 }: {
-  fields: AttributeField[];
-  onChange: (next: AttributeField[]) => void;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
   error: string | null;
 }) {
+  const activeBinding = form.unitBindings[form.activeUnit];
+  const fields = activeBinding?.attributeFields ?? [];
+  const onChange = (next: AttributeField[]) => {
+    setForm((s) => ({
+      ...s,
+      unitBindings: {
+        ...s.unitBindings,
+        [s.activeUnit]: {
+          enabled: s.unitBindings[s.activeUnit]?.enabled ?? true,
+          classRows: s.unitBindings[s.activeUnit]?.classRows ?? [],
+          attributeFields: next,
+        },
+      },
+    }));
+  };
   return (
     <div className={styles.formStack}>
       <div className={styles.sectionHintTall}>
-        为本项目配置标注级业务属性（车型 / 朝向 / 是否遮挡等，可空）。标注员选中标注后，右侧栏将根据 schema 渲染表单；可在项目设置中随时编辑。
+        属性 schema 也按工具单位独立。同一项目可让 bbox 工具有「朝向 / 遮挡」, region 工具有「面积估值」, 互不影响。
       </div>
-      <AttributeSchemaEditor
-        value={fields}
-        onChange={onChange}
-        emptyHint="暂无属性（可跳过，后续在项目设置中添加）"
-      />
-      {error && (
-        <div className={styles.schemaError}>{error}</div>
+      <UnitTabs form={form} setForm={setForm} />
+      {!activeBinding?.enabled ? (
+        <div className={styles.sectionHint}>
+          当前工具单位未启用。回到第 1 步「工具集」勾选后再来配置。
+        </div>
+      ) : (
+        <AttributeSchemaEditor
+          value={fields}
+          onChange={onChange}
+          emptyHint="暂无属性（可跳过，后续在项目设置中添加）"
+        />
       )}
+      {error && <div className={styles.schemaError}>{error}</div>}
     </div>
   );
 }

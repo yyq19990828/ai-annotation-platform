@@ -23,6 +23,11 @@ class Annotation(Base):
     )
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
     annotation_type: Mapped[str] = mapped_column(String(30), default="bbox")
+    # v0.10.17 · 标注所属工具单位; 校验 class_name ∈ project.tool_bindings[unit].classes.
+    # 默认 bbox 兼容旧数据; migration backfill 按 annotation_type 反推 (polygon/mask → region).
+    tool_unit_id: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default="bbox", default="bbox"
+    )
     class_name: Mapped[str] = mapped_column(String(100), nullable=False)
     geometry: Mapped[dict] = mapped_column(JSONB, nullable=False)
     confidence: Mapped[float | None] = mapped_column(Float)

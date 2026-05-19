@@ -9,7 +9,10 @@ import type {
   AttributeFieldOption as GenAttributeFieldOption,
   AttributeSchema as GenAttributeSchema,
   ClassConfigEntry as GenClassConfigEntry,
+  ToolBinding as GenToolBinding,
+  ToolClassEntry as GenToolClassEntry,
 } from "./generated/types.gen";
+import type { ToolUnitId } from "@/constants/toolUnits";
 
 // ── 类型再导出（向后兼容旧 import 名） ─────────────────────────────
 //
@@ -23,6 +26,12 @@ export type AttributeFieldType = GenAttributeField["type"];
 export type AttributeSchema = GenAttributeSchema;
 export type ClassConfigEntry = GenClassConfigEntry;
 export type ClassesConfig = Record<string, ClassConfigEntry>;
+
+// v0.10.17 · 工具维度类别 / 属性绑定. codegen 派生 dict<string, ToolBinding>, 这里
+// 用 ToolUnitId Literal 收窄 key, 供前端编辑器强类型.
+export type ToolClassEntry = GenToolClassEntry;
+export type ToolBinding = GenToolBinding;
+export type ToolBindings = Partial<Record<ToolUnitId, ToolBinding>>;
 
 // v0.10.10 · I17.3 · ProjectRenderingConfig — 与后端 ProjectRenderingConfig 同形；
 // 字段 = null/undefined 表示「项目不覆盖该字段」，沿用用户级 preferences。
@@ -128,8 +137,18 @@ export const projectsApi = {
     apiClient.post<ProjectResponse>(`/projects/${id}/transfer`, { new_owner_id }),
 
   // B-13 · 重命名类别 (后端原子更新 classes / classes_config / annotations.class_name)
-  renameClass: (id: string, old_name: string, new_name: string) =>
-    apiClient.post<ProjectResponse>(`/projects/${id}/classes/rename`, { old_name, new_name }),
+  // v0.10.17 · 加可选 tool_unit_id 限定工具单位; 不传时跨所有 unit 同名一起改 (兼容旧客户端).
+  renameClass: (
+    id: string,
+    old_name: string,
+    new_name: string,
+    tool_unit_id?: string,
+  ) =>
+    apiClient.post<ProjectResponse>(`/projects/${id}/classes/rename`, {
+      old_name,
+      new_name,
+      ...(tool_unit_id ? { tool_unit_id } : {}),
+    }),
 
   listMembers: (id: string) =>
     apiClient.get<ProjectMemberResponse[]>(`/projects/${id}/members`),

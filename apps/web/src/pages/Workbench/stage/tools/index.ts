@@ -10,6 +10,7 @@ import { SmartBoxTool } from "./SmartBoxTool";
 import { TextPromptTool } from "./TextPromptTool";
 import { ExemplarTool } from "./ExemplarTool";
 import { MaskTool } from "./MaskTool";
+import { MagicBoxTool } from "./MagicBoxTool";
 
 // v0.10.2 · Prompt-first ToolDock 重构:
 //   SAM 单工具拆为 4 个独立工具, 每个声明 requiredPrompt (point/bbox/text/exemplar) 由
@@ -23,7 +24,9 @@ export type ToolId =
   | "smart-point"
   | "smart-box"
   | "text-prompt"
-  | "exemplar";
+  | "exemplar"
+  // v0.10.17 · 复用 SAM bbox prompt → polygon → 紧凑外接矩形 → bbox 标注.
+  | "magic-box";
 
 /** v0.10.2 · 后端 /setup.supported_prompts 字段对应的 prompt 类型集合. */
 export type RequiredPrompt = "point" | "bbox" | "text" | "exemplar";
@@ -111,6 +114,7 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
   "smart-box": SmartBoxTool,
   "text-prompt": TextPromptTool,
   exemplar: ExemplarTool,
+  "magic-box": MagicBoxTool,
 };
 
 /** v0.10.2 · ToolDock 渲染顺序:

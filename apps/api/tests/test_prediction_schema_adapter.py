@@ -66,12 +66,27 @@ def test_legacy_class_field_fallback():
 
 
 def test_already_internal_shape_passthrough():
-    """已是内部 schema (向后兼容): 原样返回."""
+    """已是内部 schema (向后兼容): 原样返回, v0.10.17 在缺 tool_unit_id 时回填."""
     raw = {
         "type": "rectanglelabels",
         "class_name": "cat",
         "geometry": {"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1},
         "confidence": 0.9,
+    }
+    out = to_internal_shape(raw)
+    assert out["class_name"] == "cat"
+    assert out["geometry"] == raw["geometry"]
+    # v0.10.17 · 缺 tool_unit_id 时按 type 反推回填
+    assert out["tool_unit_id"] == "bbox"
+
+
+def test_internal_shape_passthrough_keeps_explicit_tool_unit_id():
+    raw = {
+        "type": "polygonlabels",
+        "class_name": "road",
+        "geometry": {"type": "polygon", "points": [[0, 0], [1, 0], [1, 1]]},
+        "confidence": 0.5,
+        "tool_unit_id": "region",
     }
     assert to_internal_shape(raw) == raw
 

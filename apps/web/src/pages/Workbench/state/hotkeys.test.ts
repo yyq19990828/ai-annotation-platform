@@ -53,6 +53,11 @@ describe("dispatchKey · 单键", () => {
     expect(dispatch({ key: "s" })).toEqual({ type: "setTool", tool: "ai-cycle" });
     expect(dispatch({ key: "S" })).toEqual({ type: "setTool", tool: "ai-cycle" });
   });
+  // v0.10.17 · G 单键直达 Magic Box (跳过 ai-cycle).
+  it("G → setTool magic-box (v0.10.17)", () => {
+    expect(dispatch({ key: "g" })).toEqual({ type: "setTool", tool: "magic-box" });
+    expect(dispatch({ key: "G" })).toEqual({ type: "setTool", tool: "magic-box" });
+  });
   it("数字键 1-9 → setClassByDigit", () => {
     expect(dispatch({ key: "3" })).toEqual({ type: "setClassByDigit", idx: 2 });
     expect(dispatch({ key: "9" })).toEqual({ type: "setClassByDigit", idx: 8 });

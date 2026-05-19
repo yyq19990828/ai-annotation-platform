@@ -75,11 +75,16 @@ export function useTransferProject(id: string) {
 }
 
 // B-13 · 重命名项目类别 (后端原子改 classes_config + annotations.class_name)
+// v0.10.17 · 加 tool_unit_id 限定工具单位 (强隔离下不同 unit 同名是独立记录).
 export function useRenameClass(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { old_name: string; new_name: string }) =>
-      projectsApi.renameClass(id, vars.old_name, vars.new_name),
+    mutationFn: (vars: {
+      old_name: string;
+      new_name: string;
+      tool_unit_id?: string;
+    }) =>
+      projectsApi.renameClass(id, vars.old_name, vars.new_name, vars.tool_unit_id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project", id] });
       qc.invalidateQueries({ queryKey: ["projects"] });

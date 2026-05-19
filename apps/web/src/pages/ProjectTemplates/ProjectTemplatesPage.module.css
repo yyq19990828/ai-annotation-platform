@@ -158,3 +158,43 @@
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
+
+/* v0.10.17 · TemplateEditModal tab + helper styles */
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab,
+.tabActive {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.tabActive {
+  background: var(--color-primary-bg, rgba(0, 100, 220, 0.08));
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.help {
+  font-size: 12px;
+  color: var(--color-text-muted, #6b7280);
+  margin: 8px 0 12px;
+}
+
+.subheading {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 14px 0 6px;
+  color: var(--color-text);
+}

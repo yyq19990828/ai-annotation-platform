@@ -804,6 +804,18 @@
               }
             ],
             "title": "Parent Prediction Id"
+          },
+          "tool_unit_id": {
+            "default": "bbox",
+            "enum": [
+              "bbox",
+              "polyline",
+              "region",
+              "ai_interactive",
+              "lidar_box_3d"
+            ],
+            "title": "Tool Unit Id",
+            "type": "string"
           }
         },
         "required": [
@@ -1038,6 +1050,18 @@
           "task_id": {
             "format": "uuid",
             "title": "Task Id",
+            "type": "string"
+          },
+          "tool_unit_id": {
+            "default": "bbox",
+            "enum": [
+              "bbox",
+              "polyline",
+              "region",
+              "ai_interactive",
+              "lidar_box_3d"
+            ],
+            "title": "Tool Unit Id",
             "type": "string"
           },
           "updated_at": {
@@ -4265,6 +4289,17 @@
           "old_name": {
             "title": "Old Name",
             "type": "string"
+          },
+          "tool_unit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Unit Id"
           }
         },
         "required": [
@@ -7122,6 +7157,18 @@
             "title": "Task Id",
             "type": "string"
           },
+          "tool_unit_id": {
+            "default": "bbox",
+            "enum": [
+              "bbox",
+              "polyline",
+              "region",
+              "ai_interactive",
+              "lidar_box_3d"
+            ],
+            "title": "Tool Unit Id",
+            "type": "string"
+          },
           "total_cost": {
             "anyOf": [
               {
@@ -7506,6 +7553,20 @@
             ],
             "title": "Text Threshold"
           },
+          "tool_bindings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ToolBinding"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Bindings"
+          },
           "type_key": {
             "title": "Type Key",
             "type": "string"
@@ -7879,6 +7940,14 @@
             "title": "Text Threshold",
             "type": "number"
           },
+          "tool_bindings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolBinding"
+            },
+            "default": {},
+            "title": "Tool Bindings",
+            "type": "object"
+          },
           "total_tasks": {
             "title": "Total Tasks",
             "type": "integer"
@@ -8196,6 +8265,20 @@
             "title": "Text Threshold",
             "type": "number"
           },
+          "tool_bindings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ToolBinding"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Bindings"
+          },
           "type_key": {
             "maxLength": 30,
             "minLength": 1,
@@ -8397,6 +8480,14 @@
             "default": 0.25,
             "title": "Text Threshold",
             "type": "number"
+          },
+          "tool_bindings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolBinding"
+            },
+            "default": {},
+            "title": "Tool Bindings",
+            "type": "object"
           },
           "type_key": {
             "title": "Type Key",
@@ -8664,6 +8755,20 @@
               }
             ],
             "title": "Text Threshold"
+          },
+          "tool_bindings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ToolBinding"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Bindings"
           },
           "type_key": {
             "anyOf": [
@@ -8936,6 +9041,20 @@
               }
             ],
             "title": "Text Threshold"
+          },
+          "tool_bindings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ToolBinding"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Bindings"
           },
           "type_key": {
             "anyOf": [
@@ -10383,6 +10502,83 @@
           "access_token"
         ],
         "title": "Token",
+        "type": "object"
+      },
+      "ToolBinding": {
+        "additionalProperties": false,
+        "description": "单一工具单位下的 enable 状态 + 类别集合 + 属性 schema.",
+        "properties": {
+          "attribute_schema": {
+            "$ref": "#/components/schemas/AttributeSchema"
+          },
+          "classes": {
+            "items": {
+              "$ref": "#/components/schemas/ToolClassEntry"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "ToolBinding",
+        "type": "object"
+      },
+      "ToolClassEntry": {
+        "additionalProperties": false,
+        "description": "工具单位下的一条类别. name 必填且工具内唯一; color / alias 语义同 ClassConfigEntry.",
+        "properties": {
+          "alias": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "pattern": "^[a-zA-Z0-9 ,_\\-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "order": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ToolClassEntry",
         "type": "object"
       },
       "UnreadCount": {
@@ -19894,7 +20090,7 @@
     },
     "/api/v1/projects/{project_id}/classes/rename": {
       "post": {
-        "description": "B-13 · 原子地把类别 old_name 重命名为 new_name:\n- 更新 classes 数组与 classes_config 字典 key (保留 color/order/alias)\n- 同步更新所有 annotations.class_name (限本项目)\n- 不动 predictions.result (alias 不变)",
+        "description": "B-13 · 原子地把类别 old_name 重命名为 new_name:\n- 更新 tool_bindings 中对应 unit (或所有 unit) 的 classes[].name\n- 同步更新 classes 数组与 classes_config 字典 key 派生 (保留 color/order/alias)\n- 同步更新所有 annotations.class_name (限本项目; 给 tool_unit_id 时仅限该 unit)\n- 不动 predictions.result (alias 不变)",
         "operationId": "rename_class_api_v1_projects__project_id__classes_rename_post",
         "parameters": [
           {

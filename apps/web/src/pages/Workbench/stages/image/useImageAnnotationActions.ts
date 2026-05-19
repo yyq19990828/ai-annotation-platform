@@ -9,6 +9,7 @@ import type { useAnnotationHistory } from "../../state/useAnnotationHistory";
 import type { UseInteractiveAIReturn } from "../../state/useInteractiveAI";
 import { geometryToShape, polygonBounds, predictionsToBoxes, type AiBox } from "../../state/transforms";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
+import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
 import { useClipboard } from "../../state/useClipboard";
 import {
   useWorkbenchAnnotationActions,
@@ -221,6 +222,31 @@ export function useImageAnnotationActions({
   const handleSamCancelClass = useCallback(() => {
     setSamPendingAccept(null);
   }, []);
+
+  // v0.10.17 · Magic Box · 监听 sam.candidates 变化, 当工具是 magic-box 时自动取首个
+  // 候选的紧凑外接矩形落 bbox, 跳过候选层 UI. 行为: bbox prompt → polygon → tight bbox.
+  useEffect(() => {
+    if (s.tool !== "magic-box") return;
+    if (sam.isRunning) return;
+    if (sam.candidates.length === 0) return;
+    const cand = sam.candidates[0];
+    if (!cand) return;
+    let tight: { x: number; y: number; w: number; h: number } | null = null;
+    if (cand.type === "rectanglelabels" && cand.bbox) {
+      tight = {
+        x: cand.bbox.x,
+        y: cand.bbox.y,
+        w: cand.bbox.width,
+        h: cand.bbox.height,
+      };
+    } else if (cand.type === "polygonlabels" && cand.points) {
+      tight = tightenBboxFromPolygon(cand.points);
+    }
+    sam.cancel();
+    if (!tight) return;
+    const cls = s.activeClass || cand.label || classes[0] || "object";
+    createBboxWithClass(tight, cls);
+  }, [s.tool, sam, classes, s.activeClass, createBboxWithClass]);
 
   // v0.10.9 · R 键精修走 ref 间接调用,避免在 useEffect 依赖里前向引用未定义的 handleRefineSamCandidate.
   const refineSamRef = useRef<(idx: number) => void>(() => {});

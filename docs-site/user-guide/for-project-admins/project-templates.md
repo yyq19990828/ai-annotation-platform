@@ -41,10 +41,11 @@ v0.10.14 起新增独立的「项目模板」资产。模板可被多个新项�
 
 两种入口：
 
-### 1. 「+ 新建模板」（空白）
+### 1. 「+ 新建模板」（空白，v0.10.17 升级为 3 tab Modal）
 
-- 填写 名称 / 描述 / 项目类型 / 类别（CSV）/ 标注指引（Markdown）/ 可见范围。
-- 复杂字段（attribute_schema / classes_config / rendering_config）首版未提供 UI 编辑，建议走「从已有项目导出」。
+- **基础信息**: 名称 / 描述 / 项目类型 / 标注指引（Markdown）/ 可见范围。
+- **工具与类别**（v0.10.17+）: 与新建项目向导相同的多 unit 编辑界面 — 勾启用工具单位(bbox / region / ai_interactive 等),在每个 unit 内独立编辑类别与属性 schema。详见[创建项目 · 工具维度类别 / 属性](./index.md#工具维度类别--属性v01017)。
+- **渲染配置**: 占位,v0.10.18 接入共享编辑器后可直接在模板上微调 snapToGrid / smoothImage / cssImageFilter / controlPointsSize;当前若需调可应用模板创建项目后再到项目设置页改。
 
 ### 2. 「从已有项目导出」
 

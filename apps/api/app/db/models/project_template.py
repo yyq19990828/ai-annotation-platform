@@ -52,6 +52,10 @@ class ProjectTemplate(Base):
         server_default='{"fields": []}',
         default=lambda: {"fields": []},
     )
+    # v0.10.17 · 工具维度类别 / 属性绑定; 与 Project 对齐. backfill 见 alembic 0073.
+    tool_bindings: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}", default=dict
+    )
     label_config: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )

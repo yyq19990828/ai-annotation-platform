@@ -40,6 +40,8 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   "smart-box": { desc: "拖框作为 SAM 提示" },
   "text-prompt": { desc: "文本召回 (右侧 AI 面板输入)" },
   exemplar: { desc: "拖框示例 → 全图相似实例 (SAM 3)" },
+  // v0.10.17 · Magic Box: 粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox.
+  "magic-box": { desc: "Magic Box · 粗框 → SAM 收紧 → 落 bbox" },
   hand: { desc: "拖拽平移画布", altDigit: 4 },
   canvas: { desc: "评论批注 (内部, 不展示)" },
 };

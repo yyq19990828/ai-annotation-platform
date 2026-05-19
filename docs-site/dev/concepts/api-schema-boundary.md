@@ -82,9 +82,23 @@ cd apps/web && pnpm codegen
 
 1. **Idempotent** — 二次调用结果同首次, 防止 read path 多层意外叠加
 2. **`geometry` pass-through 优先** — 当输入既含 `geometry` 又含 `value` (迁移期 / 老 fixture) 时, 走内部 shape 不再二次解释
-3. **非标字段无损** — 已是内部 shape 时同对象返回 (extra meta 不丢)
+3. **非标字段无损** — 已是内部 shape 时同对象返回 (extra meta 不丢); v0.10.17 `tool_unit_id` 缺失时**就地 mutate 回填**(`s["tool_unit_id"] = derive_tool_unit_from_ls_type(s["type"])`), 保 dict identity 兼容历史 test
 
 这三条在 `apps/api/tests/test_prediction_schema_adapter.py` 末尾 v0.9.8 黄金样本里有 explicit 测试。
+
+## v0.10.17 工具维度 schema (tool_bindings + tool_unit_id)
+
+[ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding) 把项目级扁平 `classes_config` / `attribute_schema` 改为按 `tool_unit_id` 嵌套的 `tool_bindings`。三层 schema 影响:
+
+| 层 | 字段 / 类型 | 备注 |
+|---|---|---|
+| DB | `projects.tool_bindings JSONB` + `annotations.tool_unit_id String(30)` + `predictions.tool_unit_id String(30)` | alembic 0072 / 0073, 老数据按 `type_key` / `annotation_type` 反推 backfill |
+| Pydantic | `_jsonb_types.ToolUnitId` Literal + `ToolBinding` / `ToolClassEntry` / `validate_tool_bindings_keys` 校验器 | `ProjectCreate / Update / Out` + `AnnotationCreate / Out` + `PredictionOut` + `ProjectTemplate*` 全部加字段 |
+| codegen (前端) | `ToolBinding` / `ToolClassEntry` 派生; `api/projects.ts` 重导出 + `ToolBindings = Partial<Record<ToolUnitId, ToolBinding>>` 收窄 key | `constants/toolUnits.ts` 与后端 Literal 严格对齐, 5 个枚举值不可漂移 |
+
+**兼容层**: v0.10.17 期间 `app/services/project.py` 的 `apply_tool_bindings_legacy_sync` 双写派生回写 `classes / classes_config / attribute_schema`, 老 reader 仍可读;`coalesce_legacy_into_tool_bindings` 反向把老客户端只传扁平字段反推到对应 unit。v0.10.18 完成所有读端切换后删除派生字段。
+
+**AAP JSON**: `schema_version` 升 `1.1`, envelope `project.tool_bindings` 整段嵌入, annotations / predictions 数组每条加 `tool_unit_id`;1.0 reader 走 `extra="ignore"` 仍兼容。
 
 ## 何时跑 codegen
 

@@ -200,7 +200,7 @@ interface AIPredictionPopoverProps {
   onSetConfThreshold: (v: number) => void;
   // v0.10.2 · Tool union 扩展; SamTextPanel 现在仅在 tool === "text-prompt" 时显示.
   // v0.10.8 · 加 "mask".
-  tool?: "box" | "hand" | "polygon" | "canvas" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar";
+  tool?: "box" | "hand" | "polygon" | "canvas" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box";
   onRunSamText?: (text: string, outputMode: TextOutputMode) => void;
   samRunning?: boolean;
   samCandidateCount?: number;

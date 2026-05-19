@@ -64,9 +64,9 @@ nc: 3
 
 平台间迁移用，含完整原数据 + 标注 + 审核备注。
 
-## AAP JSON v1.0（无损）
+## AAP JSON v1.1（无损）
 
-> v0.10.15 起新增。**平台原生无损中间格式**。与 COCO / YOLO / VOC 并列，但**包含**它们丢失的所有字段：`attribute_schema` 值、`prediction.confidence` / `model_version`、`annotation.source`、项目 `annotation_guide`、`classes_config`、`rendering_config`。
+> v0.10.15 引入 1.0；**v0.10.17 升 1.1** 加 `tool_unit_id` / `tool_bindings` 字段（向后兼容,1.0 reader 走 `extra="ignore"` 仍可解析）。**平台原生无损中间格式**。与 COCO / YOLO / VOC 并列，但**包含**它们丢失的所有字段：`tool_bindings`(工具维度类别/属性绑定) / `attribute_schema` 值、`prediction.confidence` / `model_version`、`annotation.source`、项目 `annotation_guide`、`classes_config`、`rendering_config`。
 
 适合场景：
 
@@ -78,11 +78,11 @@ nc: 3
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "exported_at": "2026-05-19T10:00:00Z",
   "exported_from": {
     "platform": "aap",
-    "platform_version": "0.10.15",
+    "platform_version": "0.10.17",
     "project_display_id": "P-12",
     "batch_display_id": "BT-3"
   },
@@ -91,6 +91,13 @@ nc: 3
     "type_key": "image-det",
     "classes_config": { },
     "attribute_schema": { "fields": [] },
+    "tool_bindings": {
+      "bbox": {
+        "enabled": true,
+        "classes": [{ "name": "stop_sign", "color": "#ff0000", "order": 0 }],
+        "attribute_schema": { "fields": [] }
+      }
+    },
     "rendering_config": {},
     "annotation_guide": "..."
   },
@@ -104,6 +111,7 @@ nc: 3
         {
           "geometry": { "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
           "class_name": "stop_sign",
+          "tool_unit_id": "bbox",
           "attributes": {},
           "confidence": null,
           "source": "manual"
@@ -113,6 +121,7 @@ nc: 3
         {
           "geometry": { "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
           "class_name": "stop_sign",
+          "tool_unit_id": "bbox",
           "confidence": 0.92,
           "model_version": "ext-yolov8-v1",
           "source": "external_import"
@@ -125,13 +134,14 @@ nc: 3
 
 关键规则：
 
-- `schema_version` 必填，breaking change 升 major，导入端 `major > 1` 返 422。
+- `schema_version` 必填，breaking change 升 major，导入端 `major > 1` 返 422; minor 升级(如 1.0 → 1.1) 只加可空字段, 老 reader 走 `extra="ignore"` 继续兼容。
 - `annotations[]` 与 `predictions[]` **分开两个数组**（不混 type 字段）。
 - 导出严格写满 null；导入 lenient 忽略未知字段、缺失按默认。
 - `task_match` 走 `display_id` 优先（全局唯一），`file_path` fallback；跨项目 `display_id` 不允许偷换项目。
 - `geometry` 使用平台**内部格式**（`bbox` / `polygon` / `multi_polygon`），不嵌套 LabelStudio shape。
+- **v0.10.17 新增** `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `ai_interactive` / ...)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, polygonlabels→region)。
 
-详见 [ADR-0024](../../../docs/adr/0024-aap-json-format.md) 与 [API 导入指南](../../api/guides/import.md)。
+详见 [ADR-0024](../../dev/adr/0024-aap-json-format) · [ADR-0026](../../dev/adr/0026-tool-unit-class-and-attribute-binding) · [API 导入指南](../../api/guides/import.md)。
 
 ## 视频轨迹
 

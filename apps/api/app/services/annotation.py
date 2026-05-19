@@ -82,6 +82,34 @@ class AnnotationService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def _validate_class_name(
+        self, project_id: uuid.UUID | None, tool_unit_id: str, class_name: str
+    ) -> None:
+        """v0.10.17 · 软校验: 若 project.tool_bindings 中该 unit 给出了 classes 集合,
+        class_name 必须在内. 集合为空 (未配置 / 历史项目) 时放行兼容旧数据.
+        create / accept_prediction / accept_all 共用同一段以避免分支漏校验.
+        """
+        if project_id is None:
+            return
+        from app.db.models.project import Project
+        from app.services.project import lookup_classes_for_tool_unit
+        from fastapi import HTTPException
+
+        project = await self.db.get(Project, project_id)
+        if project is None:
+            return
+        allowed = lookup_classes_for_tool_unit(
+            project.tool_bindings or {}, tool_unit_id
+        )
+        if allowed and class_name not in allowed:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"class_name '{class_name}' 不在工具单位 "
+                    f"'{tool_unit_id}' 的类别集合内"
+                ),
+            )
+
     async def create(
         self,
         task_id: uuid.UUID,
@@ -93,9 +121,13 @@ class AnnotationService:
         parent_prediction_id: uuid.UUID | None = None,
         lead_time: float | None = None,
         attributes: dict | None = None,
+        tool_unit_id: str = "bbox",
     ) -> Annotation:
         task = await self.db.get(Task, task_id)
         source = "prediction_based" if parent_prediction_id else "manual"
+
+        if task and task.project_id:
+            await self._validate_class_name(task.project_id, tool_unit_id, class_name)
 
         annotation = Annotation(
             id=uuid.uuid4(),
@@ -104,6 +136,7 @@ class AnnotationService:
             user_id=user_id,
             source=source,
             annotation_type=annotation_type,
+            tool_unit_id=tool_unit_id,
             class_name=class_name,
             geometry=geometry,
             confidence=confidence,
@@ -138,16 +171,21 @@ class AnnotationService:
         from app.db.models.project import Project
 
         # B-11 · DINO 写入的 class_name 是项目类别的英文 alias; 采纳时反查
-        # classes_config 把 alias 映射回原类别名 (中文 / 业务名).
+        # 对应 tool_unit 的 classes 把 alias 映射回原类别名 (中文 / 业务名).
+        # v0.10.17 · 强隔离: 只查 prediction.tool_unit_id 对应 unit 的 classes,
+        # 不再跨 unit 走派生 classes_config (不同 unit 同名类可有不同 alias).
         project = await self.db.get(Project, prediction.project_id)
+        prediction_unit = getattr(prediction, "tool_unit_id", None) or "bbox"
         alias_to_name: dict[str, str] = {}
-        if project and isinstance(project.classes_config, dict):
-            for cls_name, entry in project.classes_config.items():
-                if not isinstance(entry, dict):
+        if project is not None:
+            binding = (project.tool_bindings or {}).get(prediction_unit) or {}
+            for cls in binding.get("classes") or []:
+                if not isinstance(cls, dict):
                     continue
-                alias = entry.get("alias")
-                if isinstance(alias, str) and alias.strip():
-                    alias_to_name[alias.strip().lower()] = cls_name
+                alias = cls.get("alias")
+                cname = cls.get("name")
+                if isinstance(alias, str) and alias.strip() and isinstance(cname, str):
+                    alias_to_name[alias.strip().lower()] = cname
 
         raw_shapes = list(prediction.result or [])
         if shape_index is not None:
@@ -162,6 +200,11 @@ class AnnotationService:
             shape = to_internal_shape(raw_shape)
             raw_class = shape.get("class_name", "") or ""
             mapped_class = alias_to_name.get(raw_class.strip().lower(), raw_class)
+            # v0.10.17 · 走与 create 同一段 class_name 软校验, 避免 accept_prediction 写入
+            # 不在 unit allowed 集合内的"幽灵类别"导致 UI 看不见 DB 仍有的记录.
+            await self._validate_class_name(
+                prediction.project_id, prediction_unit, mapped_class
+            )
             annotation = Annotation(
                 id=uuid.uuid4(),
                 task_id=prediction.task_id,
@@ -169,6 +212,9 @@ class AnnotationService:
                 user_id=user_id,
                 source="prediction_based",
                 annotation_type=shape.get("type", "bbox"),
+                # v0.10.17 · 沿用 prediction 的 tool_unit_id; to_internal_shape 输出的
+                # shape.type 也可派生 unit (polygon → region), 但优先 prediction 行已落实.
+                tool_unit_id=prediction_unit,
                 class_name=mapped_class,
                 geometry=shape.get("geometry", {}),
                 confidence=shape.get("confidence"),
