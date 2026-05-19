@@ -34,43 +34,44 @@ jobs:
             --write=.tmp/docs-impact.json \
             --write-markdown=.tmp/docs-impact.md
 
-      - name: Check if Claude review needed
-        id: needs-claude
-        run: |
-          NEEDED=$(node -e "const r=JSON.parse(require('fs').readFileSync('.tmp/docs-impact.json','utf8')); console.log(r.hasPotentialMiss ? 'true' : 'false')")
-          echo "needed=$NEEDED" >> $GITHUB_OUTPUT
-
       - name: Run Claude Docs Impact Review
-        if: steps.needs-claude.outputs.needed == 'true'
         id: claude-docs-impact
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
-            Analyze whether PR #${{ github.event.pull_request.number }} in ${{ github.repository }} likely needs documentation updates.
+            Analyze whether PR #${{ github.event.pull_request.number }} in ${{ github.repository }} likely needs documentation updates OR new documentation files. You are the primary judge — perform a full analysis of the PR diff regardless of any rule hits.
 
-            Use these local inputs:
-            - `.github/docs-impact-map.json` as the repository-maintained path-to-doc mapping.
-            - `.tmp/docs-impact.json` and `.tmp/docs-impact.md` as deterministic hints generated from the changed files.
-            - The actual PR diff as the source of truth.
+            Inputs (in order of authority):
+            1. The actual PR diff — **source of truth**. Always read it.
+            2. `CLAUDE.md` and `docs-site/` — the project's documentation taxonomy (Diátaxis: user-guide / dev / ops / api; plus `docs/adr/` for architecture decisions and `CHANGELOG.md` for version notes). Use to decide where docs should live.
+            3. `.github/docs-impact-map.json` and `.tmp/docs-impact.json` / `.tmp/docs-impact.md` — **weak hints only**, generated from path patterns. Treat them as starting points, not as a whitelist. Missing matches do NOT imply "no docs needed"; matched rules do NOT imply the listed docs are the only relevant ones. Override freely when the diff tells a different story.
 
             Output rules:
             - Return structured JSON only.
-            - Use `.tmp/docs-impact.json` recommended docs as the candidate set whenever possible.
-            - Do not invent new doc paths unless the deterministic candidate set is clearly insufficient.
-            - Keep at most 5 suggested files, deduplicated, sorted by priority.
+            - Each entry in `suggested_files` must include `action`: `update` for existing docs to revise, or `create` for new docs that should be added.
+            - For `update` entries, propose any existing doc in the repo that the diff actually invalidates or extends — not limited to the hint set.
+            - For `create` entries, propose a path that fits the existing docs taxonomy. Examples:
+              * New user-facing feature with no home → `docs-site/user-guide/<role>/<feature>.md`
+              * New developer concept/protocol → `docs-site/dev/concepts/<topic>.md` or `docs-site/dev/reference/<topic>.md`
+              * New operational runbook → `docs-site/ops/runbooks/<topic>.md`
+              * Architecturally significant change → `docs/adr/NNNN-<slug>.md` (use the next available number)
+            - Only suggest `create` when (a) the PR introduces a non-trivial new capability, concept, protocol, env var, or architectural shift, AND (b) no existing doc would naturally house it.
+            - Keep at most 5 suggested files total (update + create combined), deduplicated, sorted by priority.
+            - Each entry should include a short `reason` (≤120 chars) explaining what to write/change and why.
             - Confidence must be one of: `high`, `medium`, `low`.
 
             Decision rules:
+            - Drive the analysis from the diff. The deterministic hints may miss things entirely or flag false positives — verify against the diff before trusting either signal.
             - Prefer repository docs paths over generic advice.
             - Mention ADR only when the change appears architectural or semantics-changing.
-            - For EVERY rule in `matchedRules` (regardless of `hasAcceptedDocChanges`): check whether the files in that rule's `recommendDocs` were individually present in `docsTouched`. A rule's `hasAcceptedDocChanges: true` only means *some* doc was touched — it does NOT mean all `recommendDocs` were covered. If key `recommendDocs` files were not touched, treat them as potential gaps.
-            - For `unmatchedRules` (where `hasAcceptedDocChanges: false`): examine the actual PR diff to decide if this rule is a true positive or a false positive for this specific PR.
-            - Only use `probably_not_needed` if you can justify that EVERY rule's `recommendDocs` either (a) were specifically touched, or (b) genuinely don't need updating given the nature of this PR's changes. When in doubt, prefer `uncertain` over `probably_not_needed`.
+            - Treat `docsTouched` as evidence that *some* doc moved, not that the right docs were covered. If a referenced doc still looks stale relative to the diff, surface it.
+            - When the PR diff shows anything user-visible or contract-changing without a corresponding doc edit — new API endpoint, env var, worker task, permission, ML protocol field, role, UI surface, error code, etc. — propose either an `update` for the natural existing home or a `create` for a new doc.
+            - Use `needs_update` whenever you find at least one credible gap. Use `probably_not_needed` only when the diff is purely internal (refactor / test-only / build config / dependency bump with no behavior change) and nothing user-facing or contractual was added. When in doubt, prefer `uncertain` over `probably_not_needed`.
           claude_args: >-
             --model claude-haiku-4-5
             --json-schema
-            '{"type":"object","properties":{"status":{"type":"string","enum":["needs_update","probably_not_needed","uncertain"]},"suggested_files":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"path":{"type":"string"},"confidence":{"type":"string","enum":["high","medium","low"]}},"required":["path","confidence"],"additionalProperties":false}}},"required":["status","suggested_files"],"additionalProperties":false}'
+            '{"type":"object","properties":{"status":{"type":"string","enum":["needs_update","probably_not_needed","uncertain"]},"suggested_files":{"type":"array","maxItems":5,"items":{"type":"object","properties":{"path":{"type":"string"},"action":{"type":"string","enum":["update","create"]},"confidence":{"type":"string","enum":["high","medium","low"]},"reason":{"type":"string"}},"required":["path","action","confidence"],"additionalProperties":false}}},"required":["status","suggested_files"],"additionalProperties":false}'
 
       - name: Render docs impact comment
         id: render-docs-impact-comment
@@ -105,9 +106,23 @@ jobs:
               : "Docs impact: probably not needed.";
             lines.push(status);
           } else {
+            const fmt = (item) => {
+              const reason = item.reason ? ` — ${item.reason}` : "";
+              return `- \`${item.path}\` — ${item.confidence}${reason}`;
+            };
+            const updates = files.filter((f) => (f.action || "update") === "update");
+            const creates = files.filter((f) => f.action === "create");
+
             lines.push("Docs impact:");
-            for (const item of files) {
-              lines.push(`- \`${item.path}\` — ${item.confidence}`);
+            if (updates.length > 0) {
+              lines.push("");
+              lines.push("**建议更新：**");
+              for (const item of updates) lines.push(fmt(item));
+            }
+            if (creates.length > 0) {
+              lines.push("");
+              lines.push("**建议新增：**");
+              for (const item of creates) lines.push(fmt(item));
             }
           }
 
