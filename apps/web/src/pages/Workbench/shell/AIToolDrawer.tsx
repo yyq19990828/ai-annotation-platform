@@ -35,6 +35,8 @@ const TOOL_HINT: Record<ToolId, string | null> = {
   "smart-box": "在图像上拖框作为 SAM 提示",
   "text-prompt": "在右侧 AI 面板输入文本（按 [ ] 调阈值）",
   exemplar: "拖框圈出某个示例，后端找全图相似实例",
+  // v0.10.17 · Magic Box: 复用 SAM bbox prompt 把粗框收紧到对象紧凑外接矩形.
+  "magic-box": "粗略拖框 → SAM 返回 mask → 取紧凑外接矩形落 bbox",
 };
 
 function cn(...xs: Array<string | false | null | undefined>): string {

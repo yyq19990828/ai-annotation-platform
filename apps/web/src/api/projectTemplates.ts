@@ -8,6 +8,7 @@ import type {
   AttributeSchema,
   ClassesConfig,
   ProjectRenderingConfig,
+  ToolBindings,
 } from "./projects";
 
 export type TemplateScope = "private" | "organization" | "public";
@@ -23,6 +24,8 @@ export interface ProjectTemplateOut {
   classes: string[];
   classes_config: ClassesConfig;
   attribute_schema: AttributeSchema;
+  // v0.10.17 · 工具维度类别 / 属性绑定 (后端 schema 与 Project 对齐).
+  tool_bindings?: ToolBindings;
   label_config: Record<string, unknown>;
   ai_enabled: boolean;
   ai_model: string | null;
@@ -55,6 +58,8 @@ export interface ProjectTemplateCreatePayload {
   classes?: string[];
   classes_config?: ClassesConfig | null;
   attribute_schema?: AttributeSchema | null;
+  // v0.10.17 · 工具维度类别 / 属性绑定; 优先于扁平 classes_config / attribute_schema.
+  tool_bindings?: ToolBindings | null;
   label_config?: Record<string, unknown> | null;
   ai_enabled?: boolean;
   ai_model?: string | null;

@@ -125,7 +125,7 @@ async def test_export_aap_json_project_envelope(
     assert r.status_code == 200, r.text
     body = json.loads(r.text)
 
-    assert body["schema_version"] == "1.0"
+    assert body["schema_version"] == "1.1"
     assert body["exported_from"]["project_display_id"] == project.display_id
     assert body["project"]["annotation_guide"] == "# 测试指引\n请标注所有车辆."
     assert body["project"]["type_key"] == "image-det"
@@ -190,7 +190,7 @@ async def test_export_aap_json_empty_project(
     )
     assert r.status_code == 200, r.text
     body = json.loads(r.text)
-    assert body["schema_version"] == "1.0"
+    assert body["schema_version"] == "1.1"
     assert body["tasks"] == []
 
 

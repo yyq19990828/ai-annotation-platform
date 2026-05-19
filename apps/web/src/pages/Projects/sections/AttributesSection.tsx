@@ -1,49 +1,79 @@
-import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
-import type { ProjectResponse, AttributeField, AttributeSchema } from "@/api/projects";
+import type {
+  ProjectResponse,
+  AttributeField,
+  AttributeSchema,
+} from "@/api/projects";
 import { AttributeSchemaEditor, validateAttributeFields } from "./AttributeSchemaEditor";
+import { ToolUnitTabs } from "./ToolUnitTabs";
+import {
+  unitBindingsToPayload,
+  useProjectToolBindings,
+} from "./useProjectToolBindings";
 import styles from "./AttributesSection.module.css";
 
 export function AttributesSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
   const update = useUpdateProject(project.id);
-  const initial = project.attribute_schema?.fields ?? [];
-  const [fields, setFields] = useState<AttributeField[]>(initial);
+  const { bindings, setBindings, activeUnit, setActiveUnit, dirty } =
+    useProjectToolBindings(project);
 
-  useEffect(() => {
-    setFields(project.attribute_schema?.fields ?? []);
-  }, [project.id, project.attribute_schema]);
-
-  const dirty = JSON.stringify(fields) !== JSON.stringify(initial);
   useUnsavedWarning(dirty);
 
+  const activeBinding = bindings[activeUnit];
+
+  const onChange = (next: AttributeField[]) => {
+    setBindings((b) => ({
+      ...b,
+      [activeUnit]: {
+        enabled: b[activeUnit]?.enabled ?? true,
+        classRows: b[activeUnit]?.classRows ?? [],
+        attributeFields: next,
+      },
+    }));
+  };
+
   const onSave = () => {
-    const err = validateAttributeFields(fields);
-    if (err) {
-      pushToast({ msg: err, kind: "error" });
-      return;
+    // 校验所有 enabled unit
+    for (const k of Object.keys(bindings) as (keyof typeof bindings)[]) {
+      const ub = bindings[k];
+      if (!ub?.enabled) continue;
+      const err = validateAttributeFields(ub.attributeFields);
+      if (err) {
+        pushToast({ msg: `[${k}] ${err}`, kind: "error" });
+        return;
+      }
     }
-    const payload: AttributeSchema = { fields };
+    const tool_bindings = unitBindingsToPayload(bindings);
     update.mutate(
-      { attribute_schema: payload },
+      { tool_bindings },
       {
-        onSuccess: () => pushToast({ msg: "属性 schema 已保存", kind: "success" }),
-        onError: (err) => pushToast({ msg: "保存失败", sub: (err as Error).message, kind: "error" }),
+        onSuccess: () =>
+          pushToast({ msg: "属性 schema 已保存", kind: "success" }),
+        onError: (err) =>
+          pushToast({
+            msg: "保存失败",
+            sub: (err as Error).message,
+            kind: "error",
+          }),
       },
     );
   };
 
   const onExportJson = () => {
-    const blob = new Blob([JSON.stringify({ fields }, null, 2)], { type: "application/json" });
+    const fields = activeBinding?.attributeFields ?? [];
+    const blob = new Blob([JSON.stringify({ fields }, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${project.display_id}-attribute-schema.json`;
+    a.download = `${project.display_id}-${activeUnit}-attribute-schema.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -56,10 +86,14 @@ export function AttributesSection({ project }: { project: ProjectResponse }) {
       try {
         const parsed = JSON.parse(String(reader.result ?? "")) as AttributeSchema;
         if (!Array.isArray(parsed.fields)) throw new Error("缺少 fields 数组");
-        setFields(parsed.fields);
-        pushToast({ msg: "已导入", kind: "success" });
+        onChange(parsed.fields);
+        pushToast({ msg: `已导入到 ${activeUnit} 工具单位`, kind: "success" });
       } catch (err) {
-        pushToast({ msg: "JSON 格式错误", sub: (err as Error).message, kind: "error" });
+        pushToast({
+          msg: "JSON 格式错误",
+          sub: (err as Error).message,
+          kind: "error",
+        });
       }
     };
     reader.readAsText(f);
@@ -69,13 +103,18 @@ export function AttributesSection({ project }: { project: ProjectResponse }) {
   return (
     <Card>
       <div className={styles.cardHeader}>
-        <h3 className={styles.cardTitle}>标注属性 schema</h3>
+        <h3 className={styles.cardTitle}>标注属性 schema（按工具单位 · v0.10.17）</h3>
         <div className={styles.headerActions}>
           <Button size="sm" variant="ghost" onClick={onExportJson}>
             <Icon name="download" size={11} />导出 JSON
           </Button>
           <label className={styles.importLabel}>
-            <input type="file" accept="application/json" onChange={onImportJson} className={styles.fileInput} />
+            <input
+              type="file"
+              accept="application/json"
+              onChange={onImportJson}
+              className={styles.fileInput}
+            />
             <span className={styles.importButton}>
               <Icon name="plus" size={11} />导入
             </span>
@@ -85,10 +124,25 @@ export function AttributesSection({ project }: { project: ProjectResponse }) {
 
       <div className={styles.body}>
         <p className={styles.helpText}>
-          为本项目配置标注级业务属性（车型 / 朝向 / 是否遮挡等）。标注员选中标注后，右侧栏将根据 schema 渲染表单；改动即时落库。
+          属性 schema 按工具单位独立维护; 同一项目可让 bbox 工具有「朝向 / 遮挡」, region 工具有「面积估值」, 互不影响。
         </p>
 
-        <AttributeSchemaEditor value={fields} onChange={setFields} />
+        <ToolUnitTabs
+          bindings={bindings}
+          activeUnit={activeUnit}
+          onSelect={setActiveUnit}
+        />
+
+        {!activeBinding?.enabled ? (
+          <p className={styles.helpText}>
+            当前工具单位未启用 — 到「类别」页勾选启用后才能配置属性。
+          </p>
+        ) : (
+          <AttributeSchemaEditor
+            value={activeBinding.attributeFields}
+            onChange={onChange}
+          />
+        )}
 
         <div className={styles.footer}>
           {dirty && (

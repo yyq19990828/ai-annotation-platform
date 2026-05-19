@@ -16,6 +16,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { isSelfIntersecting, type Pt } from "../stage/polygonGeom";
 import { UNKNOWN_CLASS } from "../stage/colors";
 import type { PolygonDraftHandle } from "../stage/tools";
+import { toolUnitForTool } from "../stage/tools/toolUnits";
 import { bboxGeom, polygonGeom } from "../state/transforms";
 import { enqueue } from "../state/offlineQueue";
 import type { useWorkbenchState } from "../state/useWorkbenchState";
@@ -176,6 +177,8 @@ export function useWorkbenchAnnotationActions({
       }
       const payload: AnnotationPayload = {
         annotation_type: "polygon",
+        // v0.10.17 · 工具维度: polygon 工具归 region unit; 后端据此校验 class_name.
+        tool_unit_id: toolUnitForTool(s.tool),
         class_name: cls,
         geometry: { type: "polygon", points },
         confidence: 1,
@@ -213,6 +216,8 @@ export function useWorkbenchAnnotationActions({
       const isUnknown = cls === UNKNOWN_CLASS;
       const payload: AnnotationPayload = {
         annotation_type: "bbox",
+        // v0.10.17 · 工具维度: bbox / smart-box / magic-box 各自映射的 unit.
+        tool_unit_id: toolUnitForTool(s.tool),
         class_name: cls,
         geometry: bboxGeom(geom),
         confidence: 1,

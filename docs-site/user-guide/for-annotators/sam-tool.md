@@ -3,23 +3,24 @@ audience: [annotator]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-14
+last_reviewed: 2026-05-19
 ---
 
-# AI 工具组（Prompt-first，v0.10.2 重构）
+# AI 工具组（Prompt-first，v0.10.2 重构 + v0.10.17 Magic Box）
 
-> 点 / 框 / 文本 / 示例 — 选一种交互方式让 AI 把 polygon 画出来。
+> 点 / 框 / 文本 / 示例 / Magic Box — 选一种交互方式让 AI 把 polygon 画出来,或直接收紧到 bbox。
 
-v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆分的 4 个独立工具**。你直接在工具栏选「想怎么交互」，AI 自动跑对应的模型 prompt。
+v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆分的 5 个独立工具**(v0.10.17 起含 Magic Box)。你直接在工具栏选「想怎么交互」，AI 自动跑对应的模型 prompt。
 
-| 工具 | 图标 | 默认快捷键 | 后端要求 |
-|---|---|---|---|
-| **智能点** | 🎯 | `S` 循环 | `point` |
-| **智能框** | ▭ | `S` 循环 | `bbox` |
-| **文本提示** | 💬 | `S` 循环 | `text` |
-| **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` (仅 SAM 3) |
+| 工具 | 图标 | 默认快捷键 | 后端要求 | 输出形态 |
+|---|---|---|---|---|
+| **智能点** | 🎯 | `S` 循环 | `point` | polygon 候选 |
+| **智能框** | ▭ | `S` 循环 | `bbox` | polygon 候选 |
+| **Magic Box** | ✨ | `G` / `S` 循环 | `bbox` | **直接** bbox 标注 |
+| **文本提示** | 💬 | `S` 循环 | `text` | polygon / bbox 候选 |
+| **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` (仅 SAM 3) | polygon 候选 |
 
-按 `S` 在 4 个 AI 工具之间循环，**跳过当前后端不支持的工具**（按钮置灰）；第 5 次按 `S` 回到默认矩形工具。`Alt+3` 与 `S` 等价。
+按 `S` 在 5 个 AI 工具之间循环，**跳过当前后端不支持的工具**（按钮置灰）；循环顺序: smart-point → smart-box → **magic-box** → text-prompt → exemplar → 回 smart-point。`Alt+3` 与 `S` 等价。
 
 > **能力来自后端 `/setup.supported_prompts`**：项目挂的是 `grounded-sam2`（point/bbox/text）时 Exemplar 灰；挂 `sam3-backend` 时 Smart Point 灰。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。
 
@@ -34,6 +35,19 @@ v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆
 ### 智能框（Smart Box）— 拖框作 bbox prompt
 
 拖框，SAM 把框内主要前景的 polygon 找出来。比智能点更明确「就是这一块」，适合背景杂乱时。
+
+### Magic Box（v0.10.17+）— 拖框 → SAM 收紧到对象紧凑外接矩形
+
+拖框时不要求精准，拖一个**大致包住目标**的框就行;SAM 跑 mask → 自动取 mask 的紧凑外接矩形 → **直接落 bbox 标注**(不经过候选层确认)。
+
+| 与 Smart Box 的区别 |
+|---|
+| Smart Box: 输出 polygon 候选,等 `Enter` 接受 + 选类 |
+| Magic Box: 输出 **bbox** 直接落库,跳过候选层 |
+
+**使用场景**: 想要精准 bbox 但不想拖到对象边缘的精细位置 — 粗框一下,SAM 帮你把"距离对象边 5px"的浪费空间砍掉。
+
+**注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 的标注归 `ai_interactive` 工具单位,类别集从该单位读取(v0.10.17+ 工具维度类别详见[创建项目](../for-project-admins/index.md#工具维度类别--属性v01017))。
 
 ### 文本提示（Text Prompt）— 不知道有几个目标就用文本
 
@@ -88,13 +102,14 @@ v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆
 
 | 键 | 行为 |
 |---|---|
-| `S` | 在 4 个 AI 工具间循环（跳过置灰） |
+| `S` | 在 5 个 AI 工具间循环（跳过置灰；含 Magic Box） |
+| `G` | 直接切到 Magic Box |
 | `Alt + 3` | 同 `S` |
 | 单击 | Smart Point: positive point |
 | `Alt + 单击` | Smart Point: negative point |
 | `=` / `+` / `-` | Smart Point 默认极性切换 |
-| 拖框 | Smart Box / Exemplar 触发 |
-| `Enter` | 接受当前候选 |
+| 拖框 | Smart Box / Magic Box / Exemplar 触发 |
+| `Enter` | 接受当前候选（Magic Box 跳过此步直接落库） |
 | `Esc` | 取消所有候选 |
 | `Tab` / `Shift+Tab` | 切换候选 |
 

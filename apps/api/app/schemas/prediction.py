@@ -2,6 +2,7 @@ from app.schemas._jsonb_types import (
     BboxGeometry,
     MultiPolygonGeometry,
     PolygonGeometry,
+    ToolUnitId,
 )
 from pydantic import BaseModel
 from typing import Any, Union
@@ -32,6 +33,9 @@ class PredictionOut(BaseModel):
     ml_backend_id: UUID | None = None
     model_version: str | None = None
     score: float | None = None
+    # v0.10.17 · 工具单位; to_internal_shape 按 result.type 推断 (rectanglelabels→bbox,
+    # polygonlabels/multipolygonlabels→region, point/line→bbox 占位).
+    tool_unit_id: ToolUnitId = "bbox"
     result: list[PredictionShape]
     cluster: int | None = None
     created_at: datetime

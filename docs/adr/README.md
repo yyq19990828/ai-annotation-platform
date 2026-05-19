@@ -61,3 +61,4 @@
 - [0023](0023-project-template-vs-clone.md) — 项目模板 vs 克隆策略
 - [0024](0024-aap-json-format.md) — AAP JSON v1.0 平台原生格式
 - [0025](0025-webhook-event-envelope-versioning.md) — Webhook 事件信封与版本化（草案，未实现）
+- [0026](0026-tool-unit-class-and-attribute-binding.md) — 类别与属性按工具单位 (tool_unit) 强隔离绑定

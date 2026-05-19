@@ -23,6 +23,10 @@ class Prediction(Base):
     )
     model_version: Mapped[str | None] = mapped_column(String(100))
     score: Mapped[float | None] = mapped_column(Float)
+    # v0.10.17 · 与 Annotation.tool_unit_id 对齐; to_internal_shape 按 result.type 推断.
+    tool_unit_id: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default="bbox", default="bbox"
+    )
     result: Mapped[dict] = mapped_column(JSONB, nullable=False)
     cluster: Mapped[int | None] = mapped_column(Integer)
     mislabeling: Mapped[float | None] = mapped_column(Float)

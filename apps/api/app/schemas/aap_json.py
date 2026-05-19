@@ -28,7 +28,9 @@ from pydantic import BaseModel, ConfigDict, Field
 # ── schema 常量 ─────────────────────────────────────────────────────
 
 AAP_SCHEMA_MAJOR = 1
-AAP_SCHEMA_VERSION = "1.0"
+# v0.10.17 · 升 1.1: envelope 增加 project.tool_bindings (工具维度类别/属性绑定)
+# 与 annotations/predictions 数组每条 tool_unit_id. 1.0 reader 仍能读 (extra=ignore).
+AAP_SCHEMA_VERSION = "1.1"
 
 
 # ── task_match (oneof) ───────────────────────────────────────────────
@@ -54,6 +56,8 @@ class AAPAnnotationEntry(BaseModel):
 
     geometry: dict[str, Any]
     class_name: str | None = None
+    # v0.10.17 · 工具维度绑定 (1.1+). 老 1.0 reader 走 extra=ignore 容忍缺失.
+    tool_unit_id: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
     confidence: float | None = None
     source: str | None = None  # manual / prediction_based / prediction / interpolated
@@ -67,6 +71,8 @@ class AAPAnnotationEntry(BaseModel):
 class AAPPredictionEntry(BaseModel):
     geometry: dict[str, Any]
     class_name: str | None = None
+    # v0.10.17 · 工具维度绑定 (1.1+).
+    tool_unit_id: str | None = None
     confidence: float | None = None
     model_version: str | None = None
     score: float | None = None  # 模型整体置信度 (与 prediction.score 对齐)
@@ -105,8 +111,11 @@ class AAPExportedFrom(BaseModel):
 class AAPProjectMeta(BaseModel):
     name: str | None = None
     type_key: str | None = None
+    # v0.10.17 · classes_config / attribute_schema 在 1.x 期间继续保留 (老 reader 派生用);
+    # tool_bindings 是 1.1+ 真值字段, 1.0 reader 走 extra=ignore 容忍.
     classes_config: dict[str, Any] = Field(default_factory=dict)
     attribute_schema: dict[str, Any] = Field(default_factory=lambda: {"fields": []})
+    tool_bindings: dict[str, Any] = Field(default_factory=dict)
     rendering_config: dict[str, Any] = Field(default_factory=dict)
     annotation_guide: str | None = None
 

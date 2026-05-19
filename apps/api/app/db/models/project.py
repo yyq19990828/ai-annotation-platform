@@ -50,6 +50,13 @@ class Project(Base):
         server_default='{"fields": []}',
         default=lambda: {"fields": []},
     )
+    # v0.10.17 · 工具维度类别 / 属性绑定 (ROADMAP §A 新建向导通用化).
+    # 形状: { tool_unit_id: { enabled, classes: [...], attribute_schema: {...} } }
+    # 旧 classes_config / attribute_schema 在 v0.10.17 仍由 service 派生只读;
+    # v0.10.18 起 tool_bindings 是唯一真相, 删除派生.
+    tool_bindings: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}", default=dict
+    )
     sampling: Mapped[str] = mapped_column(String(30), default="sequence")
     maximum_annotations: Mapped[int] = mapped_column(Integer, default=1)
     show_overlap_first: Mapped[bool] = mapped_column(Boolean, default=False)

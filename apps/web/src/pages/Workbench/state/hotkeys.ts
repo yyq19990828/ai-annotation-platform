@@ -16,8 +16,9 @@ export interface HotkeyDef {
 export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
   { keys: ["Alt", "1"], desc: "矩形框工具（备用，避免与切类别冲突）", group: "draw", actionType: "setTool" },
-  { keys: ["S"], desc: "AI 工具循环：智能点 → 智能框 → 文本提示 → Exemplar → 退出（跳过置灰）", group: "ai", actionType: "setTool" },
+  { keys: ["S"], desc: "AI 工具循环：智能点 → 智能框 → Magic Box → 文本提示 → Exemplar → 退出（跳过置灰）", group: "ai", actionType: "setTool" },
   { keys: ["Alt", "3"], desc: "AI 工具（备用）", group: "ai", actionType: "setTool" },
+  { keys: ["G"], desc: "Magic Box: 粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox（v0.10.17+）", group: "ai", actionType: "setTool" },
   { keys: ["= / +"], desc: "智能点工具：切正向", group: "ai", actionType: "samPolarity" },
   { keys: ["-"], desc: "智能点工具：切负向", group: "ai", actionType: "samPolarity" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
@@ -123,7 +124,7 @@ export type HotkeyAction =
   | { type: "cycleUser"; dir: 1 | -1; loop: boolean }
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
-  | { type: "setTool"; tool: "box" | "hand" | "polygon" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "ai-cycle" }
+  | { type: "setTool"; tool: "box" | "hand" | "polygon" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
   | { type: "setVideoTool"; tool: "box" | "track" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }

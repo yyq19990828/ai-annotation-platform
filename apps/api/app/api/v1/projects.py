@@ -368,6 +368,20 @@ async def create_project(
     if payload.get("ml_backend_id"):
         payload = await _apply_backend_display_hint(db, payload)
 
+    # v0.10.17 · tool_bindings 是单源真值; 旧客户端仅传 classes_config / attribute_schema
+    # 时反向派生 (按 type_key 推 unit); 写入前由 helper 把派生 classes / classes_config /
+    # attribute_schema 同步刷新到 payload, 供未迁移读端兜底.
+    from app.services.project import (
+        apply_tool_bindings_legacy_sync,
+        coalesce_legacy_into_tool_bindings,
+    )
+
+    coalesce_legacy_into_tool_bindings(
+        payload, existing_tool_bindings=None, type_key=payload.get("type_key")
+    )
+    if payload.get("tool_bindings") is not None:
+        apply_tool_bindings_legacy_sync(payload, payload["tool_bindings"])
+
     new_project_id = uuid.uuid4()
     project = Project(
         id=new_project_id,
@@ -465,6 +479,21 @@ async def update_project(
     # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）
     if payload.get("ml_backend_id"):
         payload = await _apply_backend_display_hint(db, payload)
+
+    # v0.10.17 · 同 create_project 同步逻辑.
+    from app.services.project import (
+        apply_tool_bindings_legacy_sync,
+        coalesce_legacy_into_tool_bindings,
+    )
+
+    coalesce_legacy_into_tool_bindings(
+        payload,
+        existing_tool_bindings=project.tool_bindings,
+        type_key=payload.get("type_key") or project.type_key,
+    )
+    if payload.get("tool_bindings") is not None:
+        apply_tool_bindings_legacy_sync(payload, payload["tool_bindings"])
+
     for k, v in payload.items():
         setattr(project, k, v)
     await db.commit()
@@ -532,6 +561,8 @@ async def delete_project(
 class ClassRenameRequest(BaseModel):
     old_name: str
     new_name: str
+    # v0.10.17 · 工具单位限定; 不传时为兼容 (旧客户端) 在所有 enabled unit 内同名类一起改.
+    tool_unit_id: str | None = None
 
 
 @router.post("/{project_id}/classes/rename", response_model=ProjectOut)
@@ -541,10 +572,13 @@ async def rename_class(
     db: AsyncSession = Depends(get_db),
 ):
     """B-13 · 原子地把类别 old_name 重命名为 new_name:
-    - 更新 classes 数组与 classes_config 字典 key (保留 color/order/alias)
-    - 同步更新所有 annotations.class_name (限本项目)
+    - 更新 tool_bindings 中对应 unit (或所有 unit) 的 classes[].name
+    - 同步更新 classes 数组与 classes_config 字典 key 派生 (保留 color/order/alias)
+    - 同步更新所有 annotations.class_name (限本项目; 给 tool_unit_id 时仅限该 unit)
     - 不动 predictions.result (alias 不变)
     """
+    from app.services.project import apply_tool_bindings_legacy_sync
+
     old = body.old_name.strip()
     new = body.new_name.strip()
     if not old or not new:
@@ -552,25 +586,69 @@ async def rename_class(
     if old == new:
         return await _serialize_project(db, project)
 
-    classes = list(project.classes or [])
-    cfg = dict(project.classes_config or {})
-    if old not in classes:
+    tool_bindings = dict(project.tool_bindings or {})
+    target_units: list[str]
+    if body.tool_unit_id is not None:
+        if body.tool_unit_id not in tool_bindings:
+            raise HTTPException(
+                status_code=404, detail=f"tool_unit_id '{body.tool_unit_id}' 不存在"
+            )
+        target_units = [body.tool_unit_id]
+    else:
+        target_units = list(tool_bindings.keys())
+
+    found_any = False
+    for unit_id in target_units:
+        binding = tool_bindings.get(unit_id)
+        if not isinstance(binding, dict):
+            continue
+        classes_list = list(binding.get("classes") or [])
+        names = [c.get("name") for c in classes_list if isinstance(c, dict)]
+        if old not in names:
+            continue
+        if new in names:
+            raise HTTPException(
+                status_code=409,
+                detail=f"类别 '{new}' 在工具单位 '{unit_id}' 已存在",
+            )
+        renamed = []
+        for c in classes_list:
+            if isinstance(c, dict) and c.get("name") == old:
+                renamed.append({**c, "name": new})
+            else:
+                renamed.append(c)
+        tool_bindings[unit_id] = {**binding, "classes": renamed}
+        found_any = True
+
+    if not found_any:
         raise HTTPException(status_code=404, detail=f"类别 '{old}' 不存在")
-    if new in classes:
-        raise HTTPException(status_code=409, detail=f"类别 '{new}' 已存在")
 
-    project.classes = [new if c == old else c for c in classes]
-    if old in cfg:
-        cfg[new] = cfg.pop(old)
-    project.classes_config = cfg
+    project.tool_bindings = tool_bindings
+    apply_tool_bindings_legacy_sync(project, tool_bindings)
 
-    await db.execute(
-        text(
-            "UPDATE annotations SET class_name = :new "
-            "WHERE project_id = :pid AND class_name = :old"
-        ),
-        {"pid": str(project.id), "old": old, "new": new},
-    )
+    # 同步 annotations.class_name; 限指定 unit 时按 tool_unit_id 过滤.
+    if body.tool_unit_id is not None:
+        await db.execute(
+            text(
+                "UPDATE annotations SET class_name = :new "
+                "WHERE project_id = :pid AND class_name = :old "
+                "  AND tool_unit_id = :unit"
+            ),
+            {
+                "pid": str(project.id),
+                "old": old,
+                "new": new,
+                "unit": body.tool_unit_id,
+            },
+        )
+    else:
+        await db.execute(
+            text(
+                "UPDATE annotations SET class_name = :new "
+                "WHERE project_id = :pid AND class_name = :old"
+            ),
+            {"pid": str(project.id), "old": old, "new": new},
+        )
     await db.commit()
     await db.refresh(project)
     return await _serialize_project(db, project)

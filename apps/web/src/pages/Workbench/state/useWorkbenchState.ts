@@ -14,7 +14,9 @@ export type Tool =
   | "smart-point"
   | "smart-box"
   | "text-prompt"
-  | "exemplar";
+  | "exemplar"
+  // v0.10.17 · 复用 SAM bbox prompt 返回的 mask, 取紧凑外接矩形落 bbox 标注 (Magic Box).
+  | "magic-box";
 export type VideoTool = "box" | "track";
 
 /**
@@ -33,6 +35,9 @@ export function toolToSamSubTool(tool: Tool): SamSubTool | null {
       return "point";
     case "smart-box":
       return "bbox";
+    // v0.10.17 · Magic Box 也是 bbox prompt; 共用 AIToolDrawer 的 bbox subtool UI.
+    case "magic-box":
+      return "bbox";
     case "text-prompt":
       return "text";
     case "exemplar":
@@ -42,7 +47,13 @@ export function toolToSamSubTool(tool: Tool): SamSubTool | null {
   }
 }
 
-const AI_TOOL_CYCLE: Tool[] = ["smart-point", "smart-box", "text-prompt", "exemplar"];
+const AI_TOOL_CYCLE: Tool[] = [
+  "smart-point",
+  "smart-box",
+  "magic-box",
+  "text-prompt",
+  "exemplar",
+];
 
 /** v0.10.2 · S 键循环 4 个 AI 工具; isEnabled 判定是否跳过 (置灰工具). */
 export function nextAITool(current: Tool, isEnabled: (t: Tool) => boolean): Tool {

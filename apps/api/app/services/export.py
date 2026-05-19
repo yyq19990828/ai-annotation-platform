@@ -306,8 +306,51 @@ class ExportService:
             )
         _assert_image_export_supported(project, "coco")
 
-        categories = [{"id": i, "name": name} for i, name in enumerate(project.classes)]
-        cat_map = {c["name"]: c["id"] for c in categories}
+        # v0.10.17 · COCO categories 按 tool_unit 分组. tool_bindings 提供 N 个工具
+        # 单位, 每单位贡献一段 categories; supercategory = tool_unit_id; category.id
+        # 全局唯一. 同名类不去重 (强隔离). cat_map 由 (tool_unit_id, class_name) → id 查.
+        # 兼容: 老项目 tool_bindings 为空时回落到扁平 project.classes (一段 bbox).
+        categories: list[dict] = []
+        cat_map: dict[tuple[str, str], int] = {}
+        tb = project.tool_bindings or {}
+        next_cat_id = 0
+        if tb:
+            for unit_id, binding in tb.items():
+                if not isinstance(binding, dict) or not binding.get("enabled"):
+                    continue
+                for cls in binding.get("classes") or []:
+                    if not isinstance(cls, dict):
+                        continue
+                    name = cls.get("name")
+                    if not name:
+                        continue
+                    categories.append(
+                        {
+                            "id": next_cat_id,
+                            "name": name,
+                            "supercategory": unit_id,
+                        }
+                    )
+                    cat_map[(unit_id, name)] = next_cat_id
+                    next_cat_id += 1
+        else:
+            for name in project.classes or []:
+                categories.append(
+                    {"id": next_cat_id, "name": name, "supercategory": "bbox"}
+                )
+                cat_map[("bbox", name)] = next_cat_id
+                next_cat_id += 1
+
+        def _find_category_id(ann_obj) -> int:
+            unit = getattr(ann_obj, "tool_unit_id", None) or "bbox"
+            cid = cat_map.get((unit, ann_obj.class_name))
+            if cid is not None:
+                return cid
+            # 兜底: 强隔离同名不存在时, 跨 unit 同名取第一个; 都没有就 0.
+            for (_, n), v in cat_map.items():
+                if n == ann_obj.class_name:
+                    return v
+            return 0
 
         images = []
         for i, t in enumerate(tasks):
@@ -336,7 +379,7 @@ class ExportService:
             row = {
                 "id": len(coco_annotations),
                 "image_id": img_id,
-                "category_id": cat_map.get(ann.class_name, 0),
+                "category_id": _find_category_id(ann),
                 "bbox": [
                     round(x_px, 2),
                     round(y_px, 2),
@@ -524,6 +567,8 @@ class ExportService:
                     AAPAnnotationEntry(
                         geometry=ann.geometry or {},
                         class_name=ann.class_name,
+                        # v0.10.17 · 工具维度绑定 (1.1+).
+                        tool_unit_id=getattr(ann, "tool_unit_id", None) or "bbox",
                         attributes=ann.attributes or {},
                         confidence=ann.confidence,
                         source=ann.source,
@@ -537,6 +582,7 @@ class ExportService:
             for pred in pred_by_task.get(t.id, []):
                 # prediction.result 存 LS shape 数组; 每个 shape 对应一个目标物.
                 # 走 to_internal_shape() 反推内部 geometry + class_name.
+                pred_unit = getattr(pred, "tool_unit_id", None) or "bbox"
                 for raw_shape in pred.result or []:
                     internal = to_internal_shape(raw_shape)
                     geometry = internal.get("geometry") or {}
@@ -546,6 +592,7 @@ class ExportService:
                         AAPPredictionEntry(
                             geometry=geometry,
                             class_name=internal.get("class_name") or None,
+                            tool_unit_id=pred_unit,
                             confidence=internal.get("confidence"),
                             model_version=pred.model_version,
                             score=pred.score,
@@ -581,6 +628,8 @@ class ExportService:
                 type_key=project.type_key,
                 classes_config=project.classes_config or {},
                 attribute_schema=project.attribute_schema or {"fields": []},
+                # v0.10.17 · 工具维度绑定 (1.1+).
+                tool_bindings=project.tool_bindings or {},
                 rendering_config=project.rendering_config or {},
                 annotation_guide=getattr(project, "annotation_guide", None),
             ),

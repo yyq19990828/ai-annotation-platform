@@ -820,6 +820,7 @@ async def create_annotation(
         task_id=task_id,
         user_id=current_user.id,
         annotation_type=data.annotation_type,
+        tool_unit_id=data.tool_unit_id,
         class_name=data.class_name,
         geometry=data.geometry.model_dump(),
         confidence=data.confidence,

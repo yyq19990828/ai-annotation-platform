@@ -21,6 +21,8 @@ CLONEABLE_PROJECT_FIELDS: tuple[str, ...] = (
     "classes",
     "classes_config",
     "attribute_schema",
+    # v0.10.17 · 工具维度类别 / 属性绑定; 与 Project 对齐.
+    "tool_bindings",
     "ai_enabled",
     "ai_model",
     "label_config",

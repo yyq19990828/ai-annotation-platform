@@ -8,6 +8,25 @@ from app.db.models.prediction import Prediction, PredictionMeta, FailedPredictio
 from app.db.models.task import Task
 
 
+def derive_tool_unit_from_ls_type(typ: str | None) -> str:
+    """v0.10.17 · LabelStudio result.type → tool_unit_id.
+
+    polygonlabels / brushlabels / multi_polygon → region; rectanglelabels →
+    bbox; 其它 (keypointlabels / linelabels / ...) 当前归 bbox 占位.
+    """
+    if typ in {"polygonlabels", "brushlabels", "multi_polygon"}:
+        return "region"
+    return "bbox"
+
+
+def derive_tool_unit_from_result(result: list[dict] | None) -> str:
+    """v0.10.17 · 从 prediction.result 数组首条 shape.type 派生 tool_unit_id."""
+    if not result:
+        return "bbox"
+    first = result[0] if isinstance(result[0], dict) else {}
+    return derive_tool_unit_from_ls_type(first.get("type"))
+
+
 def to_internal_shape(s: dict) -> dict:
     """v0.9.7 fix · LabelStudio 标准 result shape → 内部前端 schema.
 
@@ -19,10 +38,15 @@ def to_internal_shape(s: dict) -> dict:
     DB 维持 LabelStudio 标准 (与导出 / CVAT 等通用工具兼容).
 
     兼容旧格式: 已有 ``geometry`` 字段时 pass-through, 不做二次转换.
+    v0.10.17 · 返回字典含 ``tool_unit_id``, 由 LS type 派生.
     """
     if not isinstance(s, dict):
         return {}
     if "geometry" in s:
+        # 老路径已经是内部 schema; v0.10.17 在缺 tool_unit_id 时按 type 反推**就地**回填,
+        # 保留原 dict identity (`is raw`) 以保兼容历史调用方依赖.
+        if "tool_unit_id" not in s:
+            s["tool_unit_id"] = derive_tool_unit_from_ls_type(s.get("type"))
         return s
 
     typ = s.get("type", "rectanglelabels")
@@ -82,6 +106,8 @@ def to_internal_shape(s: dict) -> dict:
         "class_name": class_name,
         "geometry": geometry,
         "confidence": confidence,
+        # v0.10.17 · 与 prediction.tool_unit_id 派生同源.
+        "tool_unit_id": derive_tool_unit_from_ls_type(typ),
     }
 
 
@@ -108,6 +134,8 @@ class PredictionService:
             ml_backend_id=ml_backend_id,
             model_version=model_version,
             score=score,
+            # v0.10.17 · 按 result[0].type 派生 tool_unit_id.
+            tool_unit_id=derive_tool_unit_from_result(result),
             result=result,
             source=source,
         )

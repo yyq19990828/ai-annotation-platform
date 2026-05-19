@@ -23,6 +23,7 @@ import { predictionsApi } from "@/api/predictions";
 import type { TaskResponse, AnnotationResponse } from "@/types";
 
 import { useWorkbenchState } from "../state/useWorkbenchState";
+import { useToolBindings } from "../state/useToolBindings";
 import { useViewportTransform } from "../state/useViewportTransform";
 import { useAnnotationHistory } from "../state/useAnnotationHistory";
 import { useRecentClasses } from "../state/useRecentClasses";
@@ -39,7 +40,7 @@ import { annotationToBox } from "../state/transforms";
 import { applyVideoKeyframeToGeometry } from "../state/videoTrackCommands";
 import { useAnnotateMode } from "../modes/useAnnotateMode";
 import { useReviewMode } from "../modes/useReviewMode";
-import { setActiveClassesConfig, sortClassesByConfig, UNKNOWN_CLASS } from "../stage/colors";
+import { setActiveClassesConfig, UNKNOWN_CLASS } from "../stage/colors";
 import type { VideoStageControls } from "../stage/VideoStage";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
@@ -98,18 +99,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const projectId = currentProject?.id;
-  const rawClasses: string[] = currentProject?.classes ?? [];
-  const classesConfig = currentProject?.classes_config;
-  const classes: string[] = useMemo(
-    () => sortClassesByConfig(rawClasses, classesConfig),
-    [rawClasses, classesConfig],
-  );
-
-  // 设置全局色板覆盖（让 ImageStage / SelectionOverlay 等无需逐层接 prop）
-  useEffect(() => {
-    setActiveClassesConfig(classesConfig);
-    return () => setActiveClassesConfig(undefined);
-  }, [classesConfig]);
+  // v0.10.17 · 工作台按当前激活工具映射到 tool_unit 拉取类别 / 属性 schema; 老项目
+  // tool_bindings 为空时 fallback 到旧扁平 classes_config. 真正赋值在 s 声明之后.
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
@@ -159,6 +150,24 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const tasksTotal = taskListData?.pages[0]?.total ?? tasks.length;
 
   const s = useWorkbenchState();
+  // v0.10.17 · 按当前激活工具的 tool_unit 派生 classes / classesConfig / attributeSchema.
+  const toolView = useToolBindings(currentProject ?? null, s.tool);
+  const classes = toolView.classes;
+  const classesConfig = toolView.classesConfig;
+  // toolView.toolUnitId 当前未直接被 shell 用 (POST 时由 useWorkbenchAnnotationActions
+  // 内部按 s.tool 派生); 留此变量给后续 review / batch UI 显示用.
+  void toolView.toolUnitId;
+  // 设置全局色板覆盖 (让 ImageStage / SelectionOverlay 等无需逐层接 prop)
+  useEffect(() => {
+    setActiveClassesConfig(classesConfig);
+    return () => setActiveClassesConfig(undefined);
+  }, [classesConfig]);
+  // v0.10.17 · 切工具时若 activeClass 不在新 unit 的类别集内, 自动选首个类避免错位标注.
+  useEffect(() => {
+    if (s.activeClass && classes.length > 0 && !classes.includes(s.activeClass)) {
+      s.setActiveClass(classes[0] ?? "");
+    }
+  }, [s, classes]);
   const currentTaskId = s.currentTaskId;
   const setCurrentTaskId = s.setCurrentTaskId;
   const setSelectedId = s.setSelectedId;
@@ -1099,7 +1108,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           const cur = !!ann[flag];
           handlePatchShapeFlag(id, flag, !cur);
         },
-        attributeSchema: currentProject?.attribute_schema,
+        // v0.10.17 · 按当前激活工具 unit 派生 attribute_schema (替代项目级扁平字段).
+        attributeSchema: toolView.attributeSchema,
         selectedAnnotation: selectedAnnotationForPanel, onUpdateAttributes: handleUpdateAttributes,
         currentUserId: meUserId, taskFileUrl: task?.file_url,
         hasMorePredictions: modeState.diffMode !== "final" && !!predictionsInfinite.hasNextPage,
@@ -1173,7 +1183,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         taskAiAvgMs: taskAiMeta.avgMs,
         taskAiPredictionCount: taskAiMeta.count,
       }}
-      hotkeys={{ open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: currentProject?.attribute_schema }}
+      hotkeys={{ open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: toolView.attributeSchema }}
       offlineQueue={{ open: offlineDrawerOpen, onClose: closeOfflineDrawer, currentTaskId: taskId, onFlushOne: executeOp, onFlushAll: flushOffline }}
       conflict={{ open: conflictOpen, onReload: handleConflictReload, onOverwrite: handleConflictOverwrite, onClose: () => setConflictOpen(false) }}
       rejectModal={modeState.rejectModal ? {

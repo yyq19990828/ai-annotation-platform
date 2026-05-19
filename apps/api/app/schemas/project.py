@@ -7,7 +7,10 @@ from app.schemas._jsonb_types import (
     AttributeSchema,
     ClassesConfig,
     ProjectRenderingConfig,
+    ToolBindings,
+    validate_tool_bindings_keys,
 )
+from pydantic import field_validator
 
 
 class ProjectCreate(BaseModel):
@@ -17,6 +20,13 @@ class ProjectCreate(BaseModel):
     classes: list[str] = []
     classes_config: ClassesConfig | None = None
     attribute_schema: AttributeSchema | None = None
+    # v0.10.17 · 工具维度类别 / 属性绑定. 给定时优先于扁平 classes_config / attribute_schema.
+    tool_bindings: ToolBindings | None = None
+
+    @field_validator("tool_bindings", mode="before")
+    @classmethod
+    def _check_tool_bindings_keys(cls, v):
+        return validate_tool_bindings_keys(v)
     ai_enabled: bool = False
     ai_model: str | None = None
     # v0.8.6 F3 · 真实绑定 MLBackend；为 None 表示未绑定（ai_model 仍可作为 display hint）
@@ -61,6 +71,13 @@ class ProjectUpdate(BaseModel):
     classes: list[str] | None = None
     classes_config: ClassesConfig | None = None
     attribute_schema: AttributeSchema | None = None
+    # v0.10.17 · 工具维度类别 / 属性绑定; PATCH 用整体替换语义 (与现有 classes_config 一致).
+    tool_bindings: ToolBindings | None = None
+
+    @field_validator("tool_bindings", mode="before")
+    @classmethod
+    def _check_tool_bindings_keys(cls, v):
+        return validate_tool_bindings_keys(v)
     ai_enabled: bool | None = None
     ai_model: str | None = None
     # v0.8.6 F3 · 显式 None 表示解绑（与 ProjectOut 序列化对齐；handler 区分 unset vs None）
@@ -110,6 +127,8 @@ class ProjectOut(BaseModel):
     classes: list[str] = []
     classes_config: ClassesConfig = {}
     attribute_schema: AttributeSchema = AttributeSchema()
+    # v0.10.17 · 工具维度类别 / 属性绑定. 旧扁平字段在过渡期由 service 派生.
+    tool_bindings: ToolBindings = {}
     label_config: dict = {}
     sampling: str = "sequence"
     maximum_annotations: int = 1

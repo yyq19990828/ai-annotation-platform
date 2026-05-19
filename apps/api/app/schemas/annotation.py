@@ -6,12 +6,16 @@ from typing import Literal
 from app.schemas._jsonb_types import (
     AnnotationAttributes,
     Geometry,
+    ToolUnitId,
     normalize_legacy_geometry,
 )
 
 
 class AnnotationCreate(BaseModel):
     annotation_type: str = "bbox"
+    # v0.10.17 · 工具单位; service 层据此校验 class_name ∈ project.tool_bindings[unit].
+    # 旧调用方不传时默认 "bbox" 兼容向后.
+    tool_unit_id: ToolUnitId = "bbox"
     class_name: str
     geometry: Geometry
     confidence: float | None = None
@@ -84,6 +88,8 @@ class AnnotationOut(BaseModel):
     user_id: UUID | None = None
     source: str
     annotation_type: str
+    # v0.10.17 · 旧记录回落默认值 "bbox" (migration 已 backfill).
+    tool_unit_id: ToolUnitId = "bbox"
     class_name: str
     geometry: Geometry
     confidence: float | None = None

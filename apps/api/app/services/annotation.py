@@ -93,9 +93,31 @@ class AnnotationService:
         parent_prediction_id: uuid.UUID | None = None,
         lead_time: float | None = None,
         attributes: dict | None = None,
+        tool_unit_id: str = "bbox",
     ) -> Annotation:
         task = await self.db.get(Task, task_id)
         source = "prediction_based" if parent_prediction_id else "manual"
+
+        # v0.10.17 · 软校验: 若 project.tool_bindings 中该 unit 给出了 classes 集合,
+        # class_name 必须在内. 集合为空 (未配置 / 历史项目) 时放行兼容旧数据.
+        if task and task.project_id:
+            from app.db.models.project import Project
+            from app.services.project import lookup_classes_for_tool_unit
+            from fastapi import HTTPException
+
+            project = await self.db.get(Project, task.project_id)
+            if project is not None:
+                allowed = lookup_classes_for_tool_unit(
+                    project.tool_bindings or {}, tool_unit_id
+                )
+                if allowed and class_name not in allowed:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"class_name '{class_name}' 不在工具单位 "
+                            f"'{tool_unit_id}' 的类别集合内"
+                        ),
+                    )
 
         annotation = Annotation(
             id=uuid.uuid4(),
@@ -104,6 +126,7 @@ class AnnotationService:
             user_id=user_id,
             source=source,
             annotation_type=annotation_type,
+            tool_unit_id=tool_unit_id,
             class_name=class_name,
             geometry=geometry,
             confidence=confidence,
@@ -169,6 +192,11 @@ class AnnotationService:
                 user_id=user_id,
                 source="prediction_based",
                 annotation_type=shape.get("type", "bbox"),
+                # v0.10.17 · 沿用 prediction 的 tool_unit_id; to_internal_shape 输出的
+                # shape.type 也可派生 unit (polygon → region), 但优先 prediction 行已落实.
+                tool_unit_id=(
+                    getattr(prediction, "tool_unit_id", None) or "bbox"
+                ),
                 class_name=mapped_class,
                 geometry=shape.get("geometry", {}),
                 confidence=shape.get("confidence"),

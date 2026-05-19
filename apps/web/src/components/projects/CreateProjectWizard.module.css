@@ -479,3 +479,105 @@
   padding-top: 14px;
   border-top: 1px solid var(--color-border);
 }
+
+/* v0.10.17 · 工具集 chip + unit tab */
+.unitChipGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.unitChip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--color-bg-card);
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.unitChip:hover {
+  border-color: var(--color-primary);
+}
+
+.unitChip input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: var(--color-primary);
+}
+
+.unitChipActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg, rgba(0, 100, 220, 0.06));
+}
+
+.unitChipDisabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.unitChipBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.unitChipLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-strong, #1f2937);
+}
+
+.unitChipHint {
+  font-size: 11px;
+  color: var(--color-text-muted, #6b7280);
+  margin-top: 2px;
+}
+
+.unitTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.unitTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--color-text-muted, #6b7280);
+  cursor: pointer;
+}
+
+.unitTab:hover {
+  background: var(--color-hover-bg, rgba(0, 0, 0, 0.04));
+}
+
+.unitTabActive {
+  background: var(--color-primary-bg, rgba(0, 100, 220, 0.08));
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.unitTabDisabled {
+  opacity: 0.55;
+}
+
+.unitTabBadge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--color-border);
+  color: var(--color-text-muted, #6b7280);
+}
