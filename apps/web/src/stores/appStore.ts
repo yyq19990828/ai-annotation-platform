@@ -5,5 +5,5 @@ interface AppStore {
 }
 
 export const useAppStore = create<AppStore>(() => ({
-  workspace: "智能业务部 · 生产环境",
+  workspace: "默认工作区",
 }));

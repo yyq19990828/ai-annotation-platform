@@ -552,8 +552,11 @@ export function ImageStage({
     }
   };
 
-  const containerCursor = (tool === "hand" || spacePan)
-    ? (drag?.kind === "pan" ? "grabbing" : "grab")
+  const containerCursor = drag?.kind === "pan"
+    // 右键 pan / hand pan / spacePan 期间, 不论 tool 都显示 grabbing
+    ? "grabbing"
+    : (tool === "hand" || spacePan)
+    ? "grab"
     : tool === "canvas" ? "crosshair"
     // v0.10.9 · Mask 工具用自绘 overlay 圆圈替代系统光标，让笔刷大小与图像同比例可视。
     : tool === "mask" ? "none"
@@ -614,6 +617,14 @@ export function ImageStage({
       data-testid="workbench-stage"
       className={styles.root}
       onMouseLeave={() => onCursorMove(null)}
+      onContextMenu={(evt) => evt.preventDefault()}
+      onPointerDown={(evt) => {
+        // 右键任意位置拖 = pan, 不论当前 tool. 走与 hand 工具 / spacePan 同一个
+        // window pointer listener 管线 (drag.kind === "pan").
+        if (evt.button !== 2 || drag || readOnly) return;
+        evt.preventDefault();
+        setDrag({ kind: "pan", sx: evt.clientX, sy: evt.clientY });
+      }}
     >
       {/* blurhash 占位（图像加载前） */}
       {!imageLoaded && fileUrl && blurhash && (

@@ -55,26 +55,43 @@ export function useViewportTransform(initial: Viewport = { scale: 1, tx: 0, ty: 
 
 export function useElementSize<T extends HTMLElement>(ref: React.RefObject<T | null>) {
   const [size, setSize] = useState({ w: 0, h: 0 });
+  // B-30 · 用 state 跟踪当前实际被 observe 的 element. 之前依赖 [ref] 让 effect 只跑一次,
+  // 当 VideoStage / ImageStage 从 loading/error 状态切回主渲染、或切换 task 导致
+  // ref.current 指向的 DOM 被 unmount → remount 时, ResizeObserver 还粘在旧节点上,
+  // viewport.size 永远不再更新, 表现为 "好了一会儿又不行了" (fit/zoom/Minimap 全失效).
+  const [el, setEl] = useState<T | null>(null);
+  // 每次 render 后检测 ref.current 与上次 observed 节点的差异; 仅在变化时 setEl 触发
+  // 第二个 effect 重新 observe. 不加依赖 = 每次 render 后跑, 但 setEl 是幂等的, 不会循环.
   useEffect(() => {
-    const el = ref.current;
+    if (ref.current !== el) {
+      setEl(ref.current);
+    }
+  });
+  useEffect(() => {
     if (!el) return;
     if (typeof ResizeObserver === "undefined") {
       const update = () => {
         const r = el.getBoundingClientRect();
-        setSize({ w: r.width, h: r.height });
+        if (r.width > 0 && r.height > 0) setSize({ w: r.width, h: r.height });
       };
       update();
       window.addEventListener("resize", update);
       return () => window.removeEventListener("resize", update);
     }
+    // 同步初次测量, 避免 ResizeObserver 首次回调落地前 size 停在 0×0
+    const initial = el.getBoundingClientRect();
+    if (initial.width > 0 && initial.height > 0) {
+      setSize({ w: initial.width, h: initial.height });
+    }
+    // 忽略 contentRect = 0×0 (容器 detached / display:none 过渡瞬间), 保留上一次有效尺寸
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
         const r = e.contentRect;
-        setSize({ w: r.width, h: r.height });
+        if (r.width > 0 && r.height > 0) setSize({ w: r.width, h: r.height });
       }
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [ref]);
+  }, [el]);
   return size;
 }

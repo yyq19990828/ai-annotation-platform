@@ -1,10 +1,13 @@
 .board {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(180px, 1fr);
+  /* B-34 · 多行响应式布局: 列宽不小于 200px, 装不下就自动换行.
+     之前强制 8 列横排, 窄屏要么横向滚动要么把列压得过窄裁标题; 现在宽屏一行 8 列,
+     中屏 4 列两行, 窄屏 2-3 列多行, 都不再拉长页面或裁切. */
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  /* 列按内容高度收缩, 不再被 grid 自动 stretch 拉成整面高 */
+  align-items: start;
   gap: 8px;
   padding: 8px;
-  overflow-x: auto;
 }
 
 .column {
@@ -12,7 +15,12 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 8px;
-  min-height: 240px;
+  /* B-34 · 卡片少时列只占内容高度; 卡片多时由 max-height 触发列内滚动 */
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
+  /* min-width: 0 是 grid 子项可被 1fr 压缩到 < 内容宽度的前提;
+     否则 Badge "AI 预标已就绪" 等 nowrap 内容会把列撑到内容宽度, 让父级横向溢出. */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -31,8 +39,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   padding: 2px 4px 6px;
   border-bottom: 1px solid var(--color-border);
+  /* B-34 · 让标题在窄列里被裁切而不是撑大列 (例如 "AI 预标已就绪"). */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .columnCount {

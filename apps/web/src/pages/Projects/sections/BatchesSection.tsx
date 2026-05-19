@@ -43,6 +43,9 @@ import styles from "./BatchesSection.module.css";
 const STATUS_LABELS: Record<string, string> = {
   draft: "草稿",
   active: "激活",
+  // B-33 · 补全 pre_annotated 标签 — 之前缺失导致列表回退为原文"pre_annotated",
+  // 重置后若数据短暂残留或被误读为状态未变,容易让人以为重置未生效
+  pre_annotated: "AI 预标已就绪",
   annotating: "标注中",
   reviewing: "审核中",
   approved: "已通过",
@@ -53,6 +56,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_VARIANTS: Record<string, "default" | "accent" | "success" | "warning" | "danger"> = {
   draft: "default",
   active: "accent",
+  pre_annotated: "accent",
   annotating: "accent",
   reviewing: "warning",
   approved: "success",

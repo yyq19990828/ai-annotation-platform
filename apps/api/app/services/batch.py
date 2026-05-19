@@ -822,12 +822,20 @@ class BatchService:
         """v0.7.6 · 终极重置：任意状态 → draft.
 
         v0.9.12 BUG B-15 · 加 prediction 级联清理 (predictions / failed_predictions /
-        prediction_jobs / prediction_metas), 否则 `/ai-pre` 仍渲染该 batch 卡片. 删除顺序
-        遵循 projects.py:416-434 同款 (NULL annotations.parent_prediction_id → DELETE
-        prediction_metas → DELETE predictions/failed_predictions → DELETE prediction_jobs).
+        prediction_jobs / prediction_metas), 否则 `/ai-pre` 仍渲染该 batch 卡片.
+
+        B-33 (v0.10.17) · 之前只删 prediction 行, 却漏改 task 上的物化字段
+        (total_predictions / total_annotations / is_labeled) 与 AI 已采纳的 annotation,
+        导致 reset 之后 task 仍标 "AI 已预标"; 更严重的是再次跑预标时新 prediction
+        会与残留的 prediction_based annotation 叠加. 修复:
+          - 软删 source='prediction_based' 的 annotation (人工标注 source='manual' 保留)
+          - task.total_predictions 归 0; 重算 total_annotations / is_labeled
+        删除顺序: NULL annotations.parent_prediction_id → DELETE prediction_metas →
+        DELETE predictions/failed_predictions → DELETE prediction_jobs.
 
         Returns: (batch, tasks_reset, cascade_counts)
-            cascade_counts = {"predictions": N, "failed_predictions": N, "prediction_jobs": N}
+            cascade_counts = {"predictions": N, "failed_predictions": N,
+                              "prediction_jobs": N, "ai_annotations_deactivated": N}
         """
         from app.db.models.task_lock import TaskLock
         from app.db.models.prediction import Prediction, FailedPrediction
@@ -855,8 +863,21 @@ class BatchService:
             )
         )
 
-        # annotations.parent_prediction_id FK 无 ondelete; 必须先 NULL 才能 DELETE predictions
         task_ids_subq = select(Task.id).where(Task.batch_id == batch_id)
+
+        # B-33 · 软删 AI 采纳的 annotation. 保留 source='manual' 的人工标注 (用户已动手时不丢工作量).
+        # is_active=False 保留行用于审计; _update_task_stats 已按 is_active 过滤计数.
+        ai_anno_result = await self.db.execute(
+            update(Annotation)
+            .where(
+                Annotation.task_id.in_(task_ids_subq),
+                Annotation.source == "prediction_based",
+                Annotation.is_active.is_(True),
+            )
+            .values(is_active=False)
+        )
+
+        # annotations.parent_prediction_id FK 无 ondelete; 必须先 NULL 才能 DELETE predictions
         await self.db.execute(
             update(Annotation)
             .where(Annotation.task_id.in_(task_ids_subq))
@@ -886,10 +907,36 @@ class BatchService:
             delete(PredictionJob).where(PredictionJob.batch_id == batch_id)
         )
 
+        # B-33 · 同步 task 物化字段: total_predictions 归 0, total_annotations / is_labeled
+        # 按剩余 active+未取消的 annotation 重算. 不用 ORM 循环, 用一条 UPDATE+子查询.
+        await self.db.execute(
+            text(
+                """
+                UPDATE tasks AS t
+                SET total_predictions = 0,
+                    total_annotations = COALESCE(sub.cnt, 0),
+                    is_labeled = COALESCE(sub.cnt, 0) > 0
+                FROM (
+                    SELECT t2.id AS task_id, (
+                        SELECT COUNT(*) FROM annotations a
+                        WHERE a.task_id = t2.id
+                          AND a.is_active = TRUE
+                          AND a.was_cancelled = FALSE
+                    ) AS cnt
+                    FROM tasks t2
+                    WHERE t2.batch_id = :bid
+                ) AS sub
+                WHERE t.id = sub.task_id
+                """
+            ),
+            {"bid": str(batch_id)},
+        )
+
         cascade_counts = {
             "predictions": pred_result.rowcount or 0,
             "failed_predictions": failed_result.rowcount or 0,
             "prediction_jobs": job_result.rowcount or 0,
+            "ai_annotations_deactivated": ai_anno_result.rowcount or 0,
         }
 
         batch.status = BatchStatus.DRAFT

@@ -51,7 +51,7 @@ describe("authStore", () => {
 
 describe("appStore", () => {
   it("默认 workspace 已设", () => {
-    expect(useAppStore.getState().workspace).toContain("智能业务部");
+    expect(useAppStore.getState().workspace).toBe("默认工作区");
   });
 });
 

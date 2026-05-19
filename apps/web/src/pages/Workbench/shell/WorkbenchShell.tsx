@@ -465,6 +465,24 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     if (s.tool !== "box" && s.tool !== "hand") s.setTool("box");
   }, [isVideoTask, s.tool, s.setTool]);
 
+  // B-29 · AI 工具激活时, 按 ESC 切回 hand → AIToolDrawer 自动收起.
+  // input/textarea/contentEditable 内的 ESC 不触发, 避免吃掉用户在文本提示框里的 IME 取消等.
+  useEffect(() => {
+    if (!isAIToolId(s.tool)) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        const tag = active.tagName.toLowerCase();
+        if (tag === "input" || tag === "textarea" || active.isContentEditable) return;
+      }
+      e.preventDefault();
+      s.setTool("hand");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [s.tool, s.setTool]);
+
   // 编辑冲突状态
   const conflictIdRef = useRef<string>("");
   const [conflictOpen, setConflictOpen] = useState(false);

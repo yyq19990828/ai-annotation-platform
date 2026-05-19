@@ -40,6 +40,14 @@
   pointer-events: none;
 }
 
+/* B-30 · timeline 控件 (prev/play/next) 在 visible 时必须可点.
+   单写 `.interactive { pointer-events: auto }` 与 `.controls` 同特异性,
+   被 CSS modules 拼接顺序影响时容易输; 用 .controls.interactive
+   提到 (0,0,2,0) 必胜. */
+.controls.interactive {
+  pointer-events: auto;
+}
+
 /* Temporary bridge while Button still applies inline base color, border, and background. */
 .controlButton {
   border-color: rgba(255, 255, 255, 0.18) !important;
@@ -60,6 +68,11 @@
   height: 28px;
   outline: none;
   pointer-events: none;
+}
+
+/* B-30 · 同 .controls.interactive: 用双类组合提优先级, 避免被 .interactive 单写覆盖失败 */
+.timelineShell.interactive {
+  pointer-events: auto;
 }
 
 .rangeInput {
@@ -113,6 +126,10 @@
   pointer-events: none;
 }
 
+.chapterMarker.interactive {
+  pointer-events: auto;
+}
+
 .bookmarkMarker {
   position: absolute;
   top: -1px;
@@ -127,6 +144,10 @@
   cursor: pointer;
   pointer-events: none;
   transform: translateX(-50%);
+}
+
+.bookmarkMarker.interactive {
+  pointer-events: auto;
 }
 
 .densityTrack {
@@ -270,4 +291,8 @@
   color: rgba(255, 255, 255, 0.86);
   cursor: pointer;
   pointer-events: none;
+}
+
+.clearLoopButton.interactive {
+  pointer-events: auto;
 }

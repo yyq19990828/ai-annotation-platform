@@ -4,6 +4,10 @@
    ============================================ */
 
 :root {
+  /* B-32 · 让浏览器 native 控件 (input/select/scrollbar/placeholder/datepicker) 跟随主题渲染.
+     缺失时暗色模式下 native 表单会保留 light user-agent 样式 → 白底黑字看不见. */
+  color-scheme: light;
+
   --color-bg: #f7f7f8;
   --color-bg-elev: #ffffff;
   --color-bg-sunken: #f1f1f3;
@@ -58,6 +62,8 @@
 
 /* ── 暗色模式（v0.5.3） ──────────────────────────────────────────────── */
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --color-bg: #0f0f12;
   --color-bg-elev: #1a1a1d;
   --color-bg-sunken: #0a0a0c;

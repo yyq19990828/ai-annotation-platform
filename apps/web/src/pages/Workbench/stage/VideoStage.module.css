@@ -23,6 +23,13 @@
   background: #050507;
 }
 
+/* B-30 · pan 拖动期间整层显示 grabbing, 覆盖 VideoInteractionLayer 的
+   crosshair/copy/default 子层 cursor (!important 优先). */
+.rootPanning,
+.rootPanning * {
+  cursor: grabbing !important;
+}
+
 .stageLayer {
   position: absolute;
   inset: 0;

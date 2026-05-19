@@ -879,7 +879,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
 
   const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
 
-  const beginPan = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
+  const beginPan = useCallback((evt: ReactPointerEvent<Element>) => {
+    // currentTarget 在 root div 与 SVG 都支持 setPointerCapture; 接受 letterbox 区域触发的拖动
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     pausePlayback();
     setPlaybackOverlayVisible(false);
@@ -1042,7 +1043,39 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         if (!drag) showPlaybackOverlay();
       }}
       onMouseLeave={schedulePlaybackOverlayHide}
-      className={styles.root}
+      onPointerDown={(evt) => {
+        // 接管 letterbox (视频画面以外的黑/灰边) 的右键 pan; 视频画面内 (SVG overlay)
+        // 的右键由 VideoInteractionLayer 现有逻辑处理.
+        // letterbox 区域点击 target 是 stageLayer / surface 等子层而非 root, 不能用
+        // target === currentTarget 判断; 改用 "目标是否在 SVG overlay 之外" 区分.
+        if (drag) return;
+        if (evt.button !== 2) return;
+        const overlay = overlayRef.current;
+        if (overlay && overlay.contains(evt.target as Node)) return;
+        evt.preventDefault();
+        beginPan(evt);
+      }}
+      onPointerMove={(evt) => {
+        // SVG overlay 上的 pointermove 已经由 VideoInteractionLayer 处理 + 冒泡到这里.
+        // 只处理 letterbox 起始的 pan, 避免 dx/dy 被加两次.
+        if (drag?.kind !== "pan") return;
+        const overlay = overlayRef.current;
+        if (overlay && overlay.contains(evt.target as Node)) return;
+        onPointerMove(evt as unknown as ReactPointerEvent<SVGSVGElement>);
+      }}
+      onPointerUp={(evt) => {
+        if (drag?.kind !== "pan") return;
+        const overlay = overlayRef.current;
+        if (overlay && overlay.contains(evt.target as Node)) return;
+        finishDrag(evt as unknown as ReactPointerEvent<SVGSVGElement>);
+      }}
+      onPointerCancel={(evt) => {
+        if (drag?.kind !== "pan") return;
+        const overlay = overlayRef.current;
+        if (overlay && overlay.contains(evt.target as Node)) return;
+        setDrag(null);
+      }}
+      className={drag?.kind === "pan" ? `${styles.root} ${styles.rootPanning}` : styles.root}
     >
       <div className={styles.stageLayer}>
           <VideoStageSurface width={videoPixelWidth} height={videoPixelHeight} viewport={vp}>
