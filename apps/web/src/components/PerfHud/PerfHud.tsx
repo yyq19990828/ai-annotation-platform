@@ -4,6 +4,7 @@ import { Sparkline } from "@/components/ui/Sparkline";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useAuthStore } from "@/stores/authStore";
 import { useMLBackendStats, type BackendSnapshot, type BackendHistory } from "./useMLBackendStats";
+import { useBrowserStats } from "./useBrowserStats";
 import { usePerfHudStore } from "./usePerfHudStore";
 import styles from "./PerfHud.module.css";
 
@@ -116,6 +117,43 @@ function BackendPanel({
   );
 }
 
+function BrowserPanel({ enabled }: { enabled: boolean }) {
+  const stats = useBrowserStats(enabled);
+  return (
+    <div className={styles.browserPanel}>
+      <h4 className={styles.browserSectionTitle}>Browser</h4>
+      <Kv label="FPS" value={stats.fps != null ? `${stats.fps}` : "—"} />
+      <Kv
+        label="JS heap"
+        value={stats.jsHeapMB != null ? `${stats.jsHeapMB} MB` : "N/A"}
+      />
+      <Kv
+        label="API p95"
+        value={stats.apiP95Ms != null ? `${stats.apiP95Ms} ms` : "—"}
+      />
+      <Kv
+        label="Longtask 60s"
+        value={
+          stats.longtaskLastMs != null
+            ? `${stats.longtaskCount60s} · last ${stats.longtaskLastMs}ms`
+            : `${stats.longtaskCount60s}`
+        }
+      />
+      <Kv label="WS reconnects" value={`${stats.wsReconnects}`} />
+      <Kv label="Task boxes" value={`${stats.taskBoxCount}`} />
+    </div>
+  );
+}
+
+function Kv({ label, value }: { label: string; value: string }) {
+  return (
+    <div className={styles.browserKv}>
+      <span className={styles.browserKvLabel}>{label}</span>
+      <span className={styles.browserKvValue}>{value}</span>
+    </div>
+  );
+}
+
 function SparkRow({ label, values, color }: { label: string; values: number[]; color: string }) {
   if (values.length < 2) return null;
   return (
@@ -221,6 +259,8 @@ export function PerfHud() {
             {status === "idle" ? "未连接" : null}
           </div>
         )}
+        {/* v0.10.18 · 浏览器侧指标; 与后端连接无关, 始终展示 */}
+        <BrowserPanel enabled={visible} />
       </div>
     </div>
   );

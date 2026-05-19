@@ -17,13 +17,14 @@ import type {
   ProjectTemplateOut,
   TemplateScope,
 } from "@/api/projectTemplates";
-import type { AttributeField } from "@/api/projects";
+import type { AttributeField, ProjectRenderingConfig } from "@/api/projects";
 import {
   ClassEditor,
   type ClassRow,
 } from "@/pages/Projects/sections/ClassEditor";
 import { AttributeSchemaEditor } from "@/pages/Projects/sections/AttributeSchemaEditor";
 import { ToolUnitTabs } from "@/pages/Projects/sections/ToolUnitTabs";
+import { RenderingConfigEditor } from "@/pages/Projects/sections/RenderingConfigEditor";
 import {
   buildUnitBindings,
   unitBindingsToPayload,
@@ -67,6 +68,9 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
     }),
   );
   const [activeUnit, setActiveUnit] = useState<ToolUnitId>("bbox");
+  const [renderingConfig, setRenderingConfig] = useState<ProjectRenderingConfig>(
+    initial?.rendering_config ?? {},
+  );
 
   useEffect(() => {
     setName(initial?.name ?? "");
@@ -83,6 +87,7 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
         tool_bindings: initial?.tool_bindings,
       }),
     );
+    setRenderingConfig(initial?.rendering_config ?? {});
     setTab("basic");
   }, [initial, open]);
 
@@ -152,6 +157,7 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
       tool_bindings,
       annotation_guide: annotationGuide.trim() || null,
       scope,
+      rendering_config: renderingConfig,
     };
 
     if (isEdit) {
@@ -302,11 +308,17 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
         )}
 
         {tab === "rendering" && (
-          <p className={styles.help}>
-            渲染配置 (snapToGrid / smoothImage / cssImageFilter / controlPointsSize) 编辑器
-            在 v0.10.18 同 ProjectSettings RenderingConfigSection 抽出共享 editor 后接入,
-            本版可通过应用模板后到项目设置页继续微调。
-          </p>
+          <>
+            <p className={styles.help}>
+              项目级渲染配置覆盖（snapToGrid / smoothImage / cssImageFilter / controlPointsSize）。
+              覆盖关闭时该字段不下发，使用成员个人「标注偏好」。
+            </p>
+            <RenderingConfigEditor
+              value={renderingConfig}
+              onChange={setRenderingConfig}
+              disabled={submitting}
+            />
+          </>
         )}
 
         <div className={styles.modalActions}>

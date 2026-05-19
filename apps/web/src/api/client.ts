@@ -1,3 +1,5 @@
+import { recordApiDuration } from "./_metrics";
+
 const BASE = "/api/v1";
 
 class ApiError extends Error {
@@ -24,6 +26,8 @@ const EXPOSED_HEADERS = ["x-login-failed-count"] as const;
 
 async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?: boolean }): Promise<T> {
   const token = opts?.anonymous ? null : localStorage.getItem("token");
+  // v0.10.18 · PerfHud 浏览器侧 API p95 指标; recordApiDuration 内部包 try/catch 不会抛.
+  const t0 = performance.now();
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
@@ -32,6 +36,11 @@ async function request<T>(path: string, init?: RequestInit, opts?: { anonymous?:
       ...init?.headers,
     },
   });
+  try {
+    recordApiDuration(performance.now() - t0);
+  } catch {
+    // 监控不影响业务
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

@@ -21,6 +21,7 @@ import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
 import type { TaskResponse, AnnotationResponse } from "@/types";
+import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 
 import { useWorkbenchState } from "../state/useWorkbenchState";
 import { useToolBindings } from "../state/useToolBindings";
@@ -358,6 +359,11 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const { data: annotationsData } = useAnnotations(taskId);
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
+
+  // v0.10.18 · 发布当前 task 框数到 PerfHud 浏览器侧指标 store
+  useEffect(() => {
+    publishTaskBoxCount(annotationsRef.current.length);
+  }, [annotationsData]);
 
   // Shift+T 在视频模式下对选中轨迹打开 propagate 对话框
   useEffect(() => {

@@ -27,7 +27,18 @@ type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
 
+/**
+ * v0.10.18 · 字段按语义分组 (JSDoc only, 类型仍平铺以兼容 WorkbenchShell 调用面):
+ *   - common: stageKind / overlays / readOnly / activeClass / selectedId / annotations + selection 回调
+ *   - video : video* / hidden|lockedVideoTrackIds + video 回调 (stageKind="video" 才消费)
+ *   - image : fileUrl / blurhash / thumbnailUrl / tool / vp / sam* / canvas* + image 回调 (stageKind="image" 才消费)
+ *   - ai    : samCandidates / samActive* / sam 子工具 / onRefineSamCandidate
+ *   - editor: maskEditor / polygonDraft / pendingDrawing / projectRenderingConfig
+ *
+ * 后续若 Shell 再次膨胀, 可以按以上分组拆嵌套 prop 对象 (call site 一并改).
+ */
 interface WorkbenchStageHostProps {
+  // ── common ────────────────────────────────────────────────
   stageKind: StageKind;
   overlays: ReactNode;
   readOnly: boolean;
@@ -37,6 +48,7 @@ interface WorkbenchStageHostProps {
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
 
+  // ── video stage ───────────────────────────────────────────
   videoManifest: TaskVideoManifestResponse | undefined;
   videoFrameTimetable?: TaskVideoFrameTimetableResponse;
   videoManifestLoading?: boolean;
@@ -59,6 +71,7 @@ interface WorkbenchStageHostProps {
   onVideoRename: (annotation: AnnotationResponse, className: string) => void;
   onVideoConvertToBboxes: (annotation: AnnotationResponse, options: VideoConvertOptions) => void;
 
+  // ── image stage ───────────────────────────────────────────
   fileUrl: string | null;
   blurhash?: string | null;
   thumbnailUrl: string | null;
@@ -83,6 +96,7 @@ interface WorkbenchStageHostProps {
     | { kind: "bbox"; bbox: [number, number, number, number] }
     | { kind: "exemplar"; bbox: [number, number, number, number] }
   ) => void;
+  // ── ai (SAM 候选) ─────────────────────────────────────────
   samCandidates: {
     id: string;
     type: "polygonlabels" | "rectanglelabels";
@@ -99,6 +113,7 @@ interface WorkbenchStageHostProps {
   onBatchDelete: () => void;
   onBatchChangeClass: () => void;
   onStageGeometry: (g: StageGeometry) => void;
+  // ── editors (mask / polygon / canvas) ─────────────────────
   polygonDraft?: PolygonDraftHandle;
   canvasShapes: NonNullable<CommentCanvasDrawing["shapes"]>;
   canvasEditable: boolean;

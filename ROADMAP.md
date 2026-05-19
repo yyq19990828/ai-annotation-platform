@@ -13,7 +13,7 @@
 ### 计划中
 
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
-- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：reject_reason_type / 决策底线表。已落地：✅ Annotation Guide (v0.10.13), ✅ Predictions Import + AAP JSON (v0.10.15), ✅ 工具维度类别 / 属性绑定 + Magic Box (v0.10.17)。
+- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：reject_reason_type / 决策底线表。已落地：✅ Annotation Guide (v0.10.13), ✅ Predictions Import + AAP JSON (v0.10.15), ✅ 工具维度类别 / 属性绑定 + Magic Box (v0.10.17), ✅ P3 维护项收尾 5 项 (v0.10.18: RenderingConfigEditor 抽出 + Wizard 拆 7 step + PerfHud 浏览器侧指标 + Layout/StageHost focused tests + 截图 fixture mock)。
 
 > 历史 epic 文档已归档：
 > - [`[archived]0.10.x.md`](./ROADMAP/[archived]0.10.x.md) — SAM 3 接入 / Prompt-first ToolDock / 1:N 后端管理（v0.10.0-v0.10.3 已落地，v0.10.4-v0.10.10 收尾 Image Workbench Wave β/γ/δ）。
@@ -32,12 +32,10 @@
 
 - **OpenSeadragon 瓦片金字塔**（见 §C.7 图片工作台 · I1 大图 tile；极大图 > 50MP 才必要）
 - **i18n 框架接入**（P3，v0.10.11 已为 sections 群建 CSS modules 试点；i18n 可在迁 inline style 同窗口合并破窗，密度最高的 `pages/Projects/sections/` 仍是首选切入点）
-- **截图 fixture 数据补齐 + 重跑**（P3）：4 张空白态需补数据后重跑（`ai-pre-history-search` / `ai-pre-empty-alias` / `bbox-iou` / `bbox-bulk-edit`）。
-- **PerfHud 浏览器侧指标**（P3）：FPS / JS heap / longtask / API p95 / WS 重连数 / 当前 task 框数，留到 §C.1 keyset 分页拐点判断时一并加。
-- **dev SMTP 测试链路**（P3）：docker-compose 缺 mailpit / mailhog dev SMTP service；可加 `mailpit` service + `.env` `SMTP_HOST=mailpit SMTP_PORT=1025`。
-- **Workbench Shell 拆分后续精简**（P3，M6 归档后的维护项）：`WorkbenchShell.tsx` 已降到 790 行并保留单 Shell + mode hooks；下一步只做低风险瘦身：① 把 `WorkbenchStageHostProps` 按 image/video 分组，降低 Host prop 面积；② 等真实 3D 需求出现再抽通用 `StageControls`，当前不为 camera/viewport 预设接口；③ 给 `WorkbenchLayout` / `WorkbenchStageHost` 补 focused render tests，避免后续改 topbar/overlay 时回归；④ 若 Shell 再超过 900 行，再考虑 `useWorkbenchShellModel` 装配 hook。
-- **`RenderingConfigSection` 抽出 `RenderingConfigEditor` 受控视图**（P3, v0.10.17 之后维护项）:Section 当前耦合 `useProject`,TemplateEditModal 「渲染配置」tab 因此只能挂占位语;抽出 `value/onChange` 视图后两边复用,Section 仅作保存外壳。与 §A「rendering_config 共享受控编辑器」同窗口做。
-- **CreateProjectWizard step 拆分**（P3, v0.10.17 之后维护项）:文件 1100+ 行包括 Step1-7 + buildFormFromSource/Template + UnitTabs;计划拆到 `steps/DataTypeStep.tsx` / `ToolsetStep.tsx` / `ClassAttributeStep.tsx` 三个子组件供模板 Modal 复用。**触发条件**:再加 step 或被 v0.10.18+ 复杂字段(rendering_config 编辑)塞炸到 1300+ 行才动手。
+- **dev SMTP 测试链路**（P3，v0.10.18 排除项, 单独排期）：docker-compose 缺 mailpit / mailhog dev SMTP service；可加 `mailpit` service + `.env` `SMTP_HOST=mailpit SMTP_PORT=1025`。
+- **WorkbenchStageHostProps 类型嵌套重构 (call-site 改造)**（P3，v0.10.18 后续维护项）：v0.10.18 已加 JSDoc 分组注释 (common / video / image / ai / editors) 但类型仍平铺以兼容 WorkbenchShell 1210 行 call site；后续若 Shell 再次膨胀超过 900 行触发线，把 props 改为嵌套对象形态 `{ common: {...}, image?: {...}, video?: {...}, ai?: {...}, editors?: {...} }` 同时改造 call site，分组注释已就位作切分参考。
+- **`useWorkbenchShellModel` 装配 hook**（P3，触发条件）：WorkbenchShell 仍 1210 行；触发条件 Shell 再次超过 900 行（v0.10.18 后续观察）。
+- **截图 fixture 实际重跑**（P3，maintainer 任务）：v0.10.18 已落地 `page.route` mock 注入式 prepare 脚本（`ai-pre/history-search` / `ai-pre/empty-alias` / `bbox/iou` / `bbox/bulk-edit`）；需 maintainer 在 docker + uvicorn + pnpm dev + seed.py 全栈环境下手动跑 `pnpm exec playwright test --config=playwright.screenshots.config.ts --project=desktop-light --grep "ai-pre/history-search|ai-pre/empty-alias|bbox/iou|bbox/bulk-edit"` 验证 4 张图非空白。
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **predictions 月分区 Stage 2**：单月 INSERT > 100k 或 总行数 > 1M（ADR-0006）
@@ -68,7 +66,7 @@
   - **`lidar_box_3d` 工具实现**（**P0**,体量大）:见上条 3D 工作台;依赖 3D viewer + 后端 frame service 视点处理。独立 epic,与长期 L3 跨模态挂钩。
   - **删除派生 `classes_config` / `attribute_schema` 字段**（**P2**,v0.10.18 计划）:v0.10.17 期间 `tool_bindings` 是单源真值,旧扁平字段由 `apply_tool_bindings_legacy_sync` 双写派生供未迁移读端兜底;v0.10.18 完成所有读端切到 `tool_bindings` 后(主要是 COCO 导出已切, 剩 audit log / dashboard 个别引用 grep 清查)删除派生列 + 同步 alembic migration。
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）:v0.10.17 强隔离意味"bbox 工具的人 / region 工具的人是两条独立记录",同名颜色 / alias 都得重复输入;触发条件:客户后续反馈"想共享类别名字"。设计走 `ToolClassEntry.alias_to: { tool_unit_id, class_name } | null` 链,导出时按 alias_to 合并 categories(可选)。**强隔离决策为默认底线,alias_to 仅作可选叠加**,不破坏 ADR-0026 决策。
-  - **rendering_config 共享受控编辑器**（**P3**）:TemplateEditModal "渲染配置" tab 当前仅显示提示语;`apps/web/src/pages/Projects/sections/RenderingConfigSection.tsx` 当前耦合 `useProject`,先抽出受控视图 `RenderingConfigEditor (value/onChange)`,Section 仅作保存外壳,Modal 直接复用。触发条件:客户反馈"想在模板上微调渲染参数"。
+  - ~~**rendering_config 共享受控编辑器**~~ ✅ **v0.10.18 已落地**: `RenderingConfigEditor` 抽出受控视图 ([RenderingConfigEditor.tsx](apps/web/src/pages/Projects/sections/RenderingConfigEditor.tsx)); `RenderingConfigSection` 瘦身为保存外壳; `TemplateEditModal` 渲染配置 tab 接入 + 修复 payload 漏传 `rendering_config` bug.
   - **工作台 ToolDock 按 tool_bindings 过滤**（**P3**）:当前 ToolDock 仍渲染全部工具(只是 AI 工具按 `useMLCapabilities` 置灰);v0.10.17 引入 tool_unit 后,可进一步按"项目启用的 tool_unit"隐藏不相关工具(例如未启用 region 时不显示 polygon/mask 按钮)。触发条件:工具栏拥挤反馈 + UI 用户调研显示"看不懂为什么有 polygon 按钮但点了画不出"。
   - **rename_class 端点跨 unit 重命名 UX**（**P3**）:v0.10.17 `useRenameClass` 加了 `tool_unit_id` 参数,但 ClassesSection 仅传当前 active unit;若客户想"同时在所有 unit 内把'人'改成'pedestrian'"需要扩 UI 入口(批量勾选 unit + 单次重命名)。触发条件:客户反馈"重命名要跑 N 次"。
 - **Annotation Guide 配套延伸**（v0.10.13 之后开放项，按客户反馈触发）：
@@ -277,21 +275,21 @@
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
 | **P2** | v0.10.18 删除派生 `classes_config` / `attribute_schema` 字段 | v0.10.17 单源真值已切到 `tool_bindings`,旧字段 service 双写派生兜底;切完所有读端后删 + alembic migration | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
-| **P3** | 截图 fixture 数据补齐 + 重跑（v0.9.7 19 张已 commit, 4 张空白态需补 seed） | seed.py 加 prepare 钩子: 5+ pre_annotated 批次 / 类别无 alias 项目 / 同 task 双 prediction (IoU) / 30+ tasks (bulk-edit) | — |
+| **P3** | 截图 fixture 实际重跑 (v0.10.18 已落 prepare 脚本) | v0.10.18 已落地 `page.route` mock 注入式 prepare; maintainer 跑 `pnpm exec playwright test --config=playwright.screenshots.config.ts --project=desktop-light --grep "ai-pre/history-search\|bbox/iou\|bbox/bulk-edit"` 验证 (`ai-pre/empty-alias` 在 PromptComposer 深层 modal 流, 留作手截) | — |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |
 | **P3** | 前端单测从 30 推到 35 | v0.9.14 实测 30.30%；下阶段补 `BatchesSection` 完整交互（创建/bulk/逆向迁移/看板）+ `WorkbenchShell` 关键 hook + `useBatchEventsSocket` 端到端 | — |
-| **P3** | PerfHud 浏览器侧指标扩展（FPS / JS heap / longtask / API p95 / WS 重连数 / task 框数） | v0.9.11 落地 GPU MVP 后, 浏览器侧指标延期到 §C.1 keyset 分页拐点判断时一并加；当前后端视角 GPU/容器指标已足够排预标卡顿/OOM | — |
+| ~~**P3**~~ | ~~PerfHud 浏览器侧指标扩展~~ | ✅ **v0.10.18 已落地**: FPS / JS heap / longtask / API p95 / WS 重连数 / 当前 task 框数 6 指标; useBrowserStats hook + 3 个全局 store + BrowserPanel | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
 | **P3** | C.3 SAM 后续延伸: 类别确认 hint / pixel-level Snap-to-edge | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) + 像素级 Snap-to-edge(Canny/Sobel WebWorker) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P3** | TemplateEditModal 渲染配置 tab 接入共享编辑器 | v0.10.17 模板 Modal 3 tab 已落基础信息 / 工具与类别; rendering_config tab 等 `RenderingConfigSection` 抽出 `RenderingConfigEditor` 共享视图后接入 | — |
+| ~~**P3**~~ | ~~TemplateEditModal 渲染配置 tab 接入共享编辑器~~ | ✅ **v0.10.18 已落地**: 删占位语 + 接入 `RenderingConfigEditor` + 补 payload 漏传 `rendering_config` | — |
 | **P3** | 工作台 ToolDock 按 `tool_bindings` 过滤 | v0.10.17 未做; 客户反馈"看不懂为什么 polygon 按钮点不开"时启动 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | `polyline` 工具实现 | v0.10.17 schema 与 UI 留位置灰; 车道线 / 折线段需求出现时启动; 与 §C.7 I9 Ellipse 同窗口可并行 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
-| **P3** | Workbench Shell 拆分后续精简 | M6 已归档并确认不拆两套页面；后续只做 prop 分组、Host/Layout focused tests、必要时 `useWorkbenchShellModel`，真实 3D 前不抽通用 geometry / camera controls | [0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md) |
+| **P3** | Workbench Shell 拆分后续精简（v0.10.18 部分收口） | v0.10.18 已落 `WorkbenchStageHostProps` JSDoc 分组 + `WorkbenchLayout.test.tsx` / `WorkbenchStageHost.test.tsx` 共 6 例 focused render tests; 剩 props 嵌套类型重构 (call-site 改造, 触发条件 Shell 再次膨胀) + `useWorkbenchShellModel` (Shell 仍 1210 行, 未破 900) 未做 | [0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md) |
 
 ---
 

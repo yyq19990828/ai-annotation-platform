@@ -1,0 +1,178 @@
+// v0.10.18 · CreateProjectWizard 第 4 步: AI 接入 (启用开关 + 模型选 + backend 复用).
+// 从 CreateProjectWizard.tsx 抽出. 含本步专用的 BackendSourceSelect 子组件.
+
+import { clsx } from "clsx";
+import { useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/Badge";
+import { Icon } from "@/components/ui/Icon";
+import { adminMlIntegrationsApi } from "@/api/adminMlIntegrations";
+import {
+  PRESET_AI_MODELS,
+  CUSTOM_MODEL_KEY,
+} from "@/constants/projectTypes";
+import { TextOutputDefaultSelect } from "@/components/projects/shared/TextOutputDefaultSelect";
+import type { FormState } from "../CreateProjectWizard";
+import styles from "../CreateProjectWizard.module.css";
+
+export function Step4Ai({
+  form,
+  setForm,
+  resolvedAiModel,
+}: {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  resolvedAiModel: string;
+}) {
+  return (
+    <div className={styles.formStackAi}>
+      <label
+        className={clsx(styles.aiToggle, form.aiEnabled && styles.aiToggleEnabled)}
+      >
+        <input
+          type="checkbox"
+          checked={form.aiEnabled}
+          onChange={(e) =>
+            setForm((s) => ({ ...s, aiEnabled: e.target.checked }))
+          }
+          className={styles.aiCheckbox}
+        />
+        <Icon name="sparkles" size={14} className={styles.aiIcon} />
+        <div className={styles.aiToggleText}>
+          <span className={styles.aiToggleTitle}>启用 AI 预标注</span>
+          <span className={styles.aiToggleHint}>
+            创建后可在项目内挂接真实 ML Backend 推理服务
+          </span>
+        </div>
+      </label>
+
+      {form.aiEnabled && (
+        <>
+          <div>
+            <label className={styles.label}>模型</label>
+            <select
+              value={form.aiModelChoice}
+              onChange={(e) =>
+                setForm((s) => ({ ...s, aiModelChoice: e.target.value }))
+              }
+              className={clsx(styles.input, styles.selectInput)}
+            >
+              {PRESET_AI_MODELS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+              <option value={CUSTOM_MODEL_KEY}>自定义...</option>
+            </select>
+          </div>
+
+          {form.aiModelChoice === CUSTOM_MODEL_KEY && (
+            <div>
+              <label className={styles.label}>自定义模型名称</label>
+              <input
+                value={form.aiModelCustom}
+                onChange={(e) =>
+                  setForm((s) => ({ ...s, aiModelCustom: e.target.value }))
+                }
+                placeholder="如:MyDet-v1"
+                maxLength={120}
+                className={styles.input}
+              />
+            </div>
+          )}
+
+          <div className={styles.modelSummary}>
+            <span className={styles.modelSummaryLabel}>当前模型:</span>{" "}
+            <Badge variant="ai">
+              <Icon name="sparkles" size={10} />
+              {resolvedAiModel || "—"}
+            </Badge>
+          </div>
+
+          {/* v0.9.6 · SAM 文本预标默认输出 (与 GeneralSection 4 项一致, 复用共享组件) */}
+          <div>
+            <label className={styles.label}>
+              SAM 文本预标默认输出{" "}
+              <span className={styles.labelNote}>
+                （工作台「找全图」初始值，可在工作台临时切换）
+              </span>
+            </label>
+            <TextOutputDefaultSelect
+              value={form.textOutputDefault}
+              onChange={(v) =>
+                setForm((s) => ({ ...s, textOutputDefault: v }))
+              }
+              className={styles.input}
+            />
+          </div>
+
+          {/* v0.9.7 · 复用现有 backend dropdown — 让新项目立即可用 AI */}
+          <BackendSourceSelect
+            value={form.mlBackendSourceId}
+            onChange={(v) =>
+              setForm((s) => ({ ...s, mlBackendSourceId: v }))
+            }
+          />
+
+          <div className={styles.aiHelpBox}>
+            模型名仅作 display hint；选「复用 backend」后, 项目创建时会自动复制 backend 配置到新项目, 无需再回设置页注册.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** v0.9.7 · Wizard step 4 复用 backend 下拉. 拉 /admin/ml-integrations/all */
+function BackendSourceSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const q = useQuery({
+    queryKey: ["admin", "ml-integrations", "all"],
+    queryFn: () => adminMlIntegrationsApi.listAll(),
+    staleTime: 1000 * 60 * 5,
+  });
+  const items = q.data?.items ?? [];
+  const selected = items.find((b) => b.id === value);
+
+  return (
+    <div>
+      <label className={styles.label}>
+        ML Backend{" "}
+        <span className={styles.labelNote}>
+          （可选, 复用其它项目已注册的 backend）
+        </span>
+      </label>
+      {q.isLoading ? (
+        <div className={clsx(styles.input, styles.readonlyInput)}>
+          加载中…
+        </div>
+      ) : items.length === 0 ? (
+        <div className={clsx(styles.input, styles.readonlyInput)}>
+          系统内尚无已注册 backend; 项目创建后到设置页注册一个.
+        </div>
+      ) : (
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={clsx(styles.input, styles.selectInput)}
+        >
+          <option value="">-- 暂不绑定 (创建后到设置页注册) --</option>
+          {items.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name} ({b.url}) · {b.state} · 来源: {b.source_project_name}
+            </option>
+          ))}
+        </select>
+      )}
+      {selected && (
+        <div className={styles.helpText}>
+          将复制 {selected.name} ({selected.url}) 到新项目, 含 auth 配置, state 重置为 disconnected.
+        </div>
+      )}
+    </div>
+  );
+}

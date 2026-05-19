@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { bumpWsReconnectCount } from "./_wsMetrics";
 
 export type ReconnectState = "connecting" | "open" | "reconnecting" | "closed" | "failed";
 
@@ -85,6 +86,8 @@ export function useReconnectingWebSocket(
       attempt += 1;
       setRetries(attempt);
       setState("reconnecting");
+      // v0.10.18 · PerfHud 浏览器侧累计 WS 重连数
+      bumpWsReconnectCount();
       reconnectTimer = setTimeout(connect, delay);
     };
 
