@@ -591,7 +591,7 @@ function GroupCard({ groupId, memberCount, expanded, onToggle, onSelectGroup }: 
         className={styles.groupCardToggle}
         title={expanded ? "折叠组" : "展开组"}
       >
-        <Icon name={expanded ? "chevronDown" : "chevronRight"} size={12} />
+        <Icon name={expanded ? "chevDown" : "chevRight"} size={14} />
       </button>
       <button
         type="button"
@@ -739,10 +739,12 @@ function BoxesList({
   const [aiFrameFilter, setAiFrameFilter] = useState<FrameFilter>("all");
   const [userFrameFilter, setUserFrameFilter] = useState<FrameFilter>("all");
   const showFrameFilter = typeof currentFrameIndex === "number";
-  // v0.10.20 · I12 group 折叠展开态; key = group_id 字符串.
-  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  // v0.10.20 · I12 group 折叠态. v0.10.21 反转语义: 默认展开 (B-44 反馈 "不能展开"
+  // 实为 chevron icon 名写错导致按钮看不到); 用 collapsedGroups 记 *显式收起* 的组,
+  // 默认空集 = 所有组都展开 + 成员可见.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(new Set());
   const toggleGroup = (groupId: number) =>
-    setExpandedGroups((prev) => {
+    setCollapsedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(groupId)) next.delete(groupId);
       else next.add(groupId);
@@ -799,7 +801,7 @@ function BoxesList({
     for (const bucket of bucketed) {
       if (bucket.groupId != null && bucket.boxes.length >= 2) {
         const gid = bucket.groupId;
-        const expanded = expandedGroups.has(gid);
+        const expanded = !collapsedGroups.has(gid);
         out.push({
           kind: "userGroup",
           groupId: gid,
@@ -817,7 +819,7 @@ function BoxesList({
     }
     if (videoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
     return out;
-  }, [aiBoxes.length, aiFrameFilter, filteredAiBoxes, filteredUserBoxes, showFrameFilter, userBoxes.length, userFrameFilter, videoTrackPanel, expandedGroups]);
+  }, [aiBoxes.length, aiFrameFilter, filteredAiBoxes, filteredUserBoxes, showFrameFilter, userBoxes.length, userFrameFilter, videoTrackPanel, collapsedGroups]);
 
   const selectBox = (box: Annotation | AiBox, shift: boolean | undefined) => {
     if (!shift) {

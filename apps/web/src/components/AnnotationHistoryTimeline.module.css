@@ -9,6 +9,11 @@
   flex-direction: column;
   gap: 10px;
   padding: 10px 12px;
+  /* v0.10.21 · B-45 反馈: 全部历史太长, 锚定最大高度 + 滚轮.
+     与 CommentsPanel .commentList max-height: 240px 保持一致, 给评论与历史
+     一样的可视高度上限, 让两 tab 在右栏不抢空间. */
+  max-height: 240px;
+  overflow-y: auto;
 }
 
 .entry,
