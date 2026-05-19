@@ -127,9 +127,7 @@ class AnnotationService:
         source = "prediction_based" if parent_prediction_id else "manual"
 
         if task and task.project_id:
-            await self._validate_class_name(
-                task.project_id, tool_unit_id, class_name
-            )
+            await self._validate_class_name(task.project_id, tool_unit_id, class_name)
 
         annotation = Annotation(
             id=uuid.uuid4(),

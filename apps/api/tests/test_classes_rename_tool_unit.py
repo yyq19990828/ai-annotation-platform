@@ -103,9 +103,7 @@ async def test_rename_class_unknown_unit_returns_404(httpx_client, super_admin):
 
 
 @pytest.mark.asyncio
-async def test_rename_class_conflict_within_unit_returns_409(
-    httpx_client, super_admin
-):
+async def test_rename_class_conflict_within_unit_returns_409(httpx_client, super_admin):
     _, token = super_admin
     # 单 bbox unit, 两个类 person + pedestrian, 然后 rename person → pedestrian → 409.
     body = {

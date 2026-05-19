@@ -312,9 +312,7 @@ def test_coalesce_empty_dict_tool_bindings_is_treated_as_unset():
     # 模板 fixture 默认 tool_bindings={}, 应触发反向派生.
     payload = {"tool_bindings": {}, "classes": ["car"]}
     coalesce_legacy_into_tool_bindings(payload, None, "image-det")
-    assert payload["tool_bindings"]["bbox"]["classes"] == [
-        {"name": "car", "order": 0}
-    ]
+    assert payload["tool_bindings"]["bbox"]["classes"] == [{"name": "car", "order": 0}]
 
 
 def test_coalesce_classes_list_priority_over_cfg_map():

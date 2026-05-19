@@ -27,6 +27,7 @@ class ProjectCreate(BaseModel):
     @classmethod
     def _check_tool_bindings_keys(cls, v):
         return validate_tool_bindings_keys(v)
+
     ai_enabled: bool = False
     ai_model: str | None = None
     # v0.8.6 F3 · 真实绑定 MLBackend；为 None 表示未绑定（ai_model 仍可作为 display hint）
@@ -78,6 +79,7 @@ class ProjectUpdate(BaseModel):
     @classmethod
     def _check_tool_bindings_keys(cls, v):
         return validate_tool_bindings_keys(v)
+
     ai_enabled: bool | None = None
     ai_model: str | None = None
     # v0.8.6 F3 · 显式 None 表示解绑（与 ProjectOut 序列化对齐；handler 区分 unset vs None）

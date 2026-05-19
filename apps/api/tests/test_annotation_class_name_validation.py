@@ -141,7 +141,9 @@ async def _create_prediction(
 
 
 @pytest.mark.asyncio
-async def test_accept_prediction_alias_scoped_to_prediction_unit(db_session, super_admin):
+async def test_accept_prediction_alias_scoped_to_prediction_unit(
+    db_session, super_admin
+):
     """v0.10.17 强隔离: alias 反查必须限 prediction.tool_unit_id 对应 unit;
     旧实现走 classes_config union 会拿到错 unit 的同名类配置.
     """
@@ -223,7 +225,9 @@ async def test_accept_prediction_raises_when_class_not_in_unit(db_session, super
 
 
 @pytest.mark.asyncio
-async def test_accept_prediction_no_match_pass_through_class_name(db_session, super_admin):
+async def test_accept_prediction_no_match_pass_through_class_name(
+    db_session, super_admin
+):
     """无 alias 配置时 class_name 不变 (旧行为不破坏)."""
     user, _ = super_admin
     proj = await create_project(db_session, owner_id=user.id, type_key="image-det")

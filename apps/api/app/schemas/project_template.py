@@ -84,6 +84,7 @@ class ProjectTemplateUpdate(BaseModel):
     @classmethod
     def _check_tool_bindings_keys(cls, v):
         return validate_tool_bindings_keys(v)
+
     sampling: str | None = None
     maximum_annotations: int | None = None
     show_overlap_first: bool | None = None
