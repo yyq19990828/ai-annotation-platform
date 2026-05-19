@@ -211,13 +211,23 @@ AI 采纳入口：
 
 ### alias 映射
 
-`accept_prediction()` 会读取 `project.classes_config`，把 ML backend 写入的英文 alias 映射回项目真实类目名。
+`accept_prediction()` 会读取 `project.classes_config` (派生自 `tool_bindings`),把 ML backend 写入的英文 alias 映射回项目真实类目名。生成的 annotation `tool_unit_id` 沿用 `prediction.tool_unit_id`。
 
-所以如果你改类目别名逻辑，要一起看：
+所以如果你改类目别名逻辑,要一起看:
 
 - `annotation.py:accept_prediction`
-- `project.classes_config`
+- `project.tool_bindings` / 派生 `classes_config`(v0.10.17+ 单源真值在 tool_bindings)
 - 前端 predictions 渲染与 class badge
+
+## 工具单位 (tool_unit) 维度 (v0.10.17+)
+
+v0.10.17 起 annotation 必须携带 `tool_unit_id: String(30)` (枚举 bbox / polyline / region / ai_interactive / lidar_box_3d, 与 `app/schemas/_jsonb_types.ToolUnitId` Literal 对齐):
+
+- 写入路径: `AnnotationService.create(..., tool_unit_id="bbox")` 按 `project.tool_bindings[unit].classes` **软校验** `class_name` 命中, 空集合放行兼容旧数据, 不命中返 422。
+- `accept_prediction` 沿用 `prediction.tool_unit_id` 给生成的 annotation, 保持工具维度一致。
+- 老数据由 alembic 0072 backfill: `annotation_type IN ('polygon', 'mask')` → `region`, 其它 → `bbox` 占位。
+
+强隔离: 同名类在不同 unit 下是独立记录, 不能跨 unit 共享 (避免回退到"项目级扁平类别表"反模式)。详见 [ADR-0026](../../../docs/adr/0026-tool-unit-class-and-attribute-binding.md)。
 
 ## Task / Batch 回写
 

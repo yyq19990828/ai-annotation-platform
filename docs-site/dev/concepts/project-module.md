@@ -64,8 +64,9 @@ graph TD
 | `type_key` / `type_label` | 任务类型，例如 `image-det` |
 | `owner_id` | 项目 owner，决定写权限上限 |
 | `status` | 项目生命周期状态 |
-| `classes` / `classes_config` | 类目与显示配置 |
-| `attribute_schema` | 属性 schema |
+| `classes` / `classes_config` | 类目与显示配置 (v0.10.16 前为单源真值; v0.10.17 起由 `tool_bindings` 派生只读, v0.10.18 删除) |
+| `attribute_schema` | 属性 schema (同上, 由 `tool_bindings` 派生只读) |
+| `tool_bindings` (v0.10.17+) | 工具维度类别 / 属性绑定 JSONB, `{ tool_unit_id: { enabled, classes: [...], attribute_schema: {...} } }` 嵌套结构, **单源真值** |
 | `sampling` | 工作台派题策略 |
 | `maximum_annotations` | 多人重叠标注上限 |
 | `show_overlap_first` | 是否优先展示重叠任务 |
@@ -101,15 +102,32 @@ archived
 
 ## Project 负责哪些配置
 
-### 1. 标注 schema
+### 1. 标注 schema (v0.10.17 起按工具单位拆分)
 
-项目定义：
+项目定义:
 
-- 支持哪些类目：`classes`
-- 类目颜色 / 别名等扩展：`classes_config`
-- 每个标注可以带哪些属性：`attribute_schema`
+- 启用哪些**工具单位** (tool_unit) 与各 unit 持有的类别 / 属性 schema: `tool_bindings`
+- 兼容旧端的派生只读字段: `classes` / `classes_config` / `attribute_schema`
 
-如果你改的是“标注长什么样”，十有八九要从 project 配置入手，而不是 task。
+`tool_bindings` 结构示例:
+
+```json
+{
+  "bbox": {
+    "enabled": true,
+    "classes": [{ "name": "person", "color": "#ff0000", "order": 0 }],
+    "attribute_schema": { "fields": [] }
+  },
+  "region": { ... },
+  "ai_interactive": { ... }
+}
+```
+
+工具单位枚举 (与 `app/schemas/_jsonb_types.ToolUnitId` Literal 对齐): `bbox` / `polyline` (留位) / `region` (polygon + mask 打包) / `ai_interactive` (smart-* + magic-box 打包) / `lidar_box_3d` (留位)。**强隔离决策**: 不同工具的同名类是两条独立记录, 详见 [ADR-0026](../../../docs/adr/0026-tool-unit-class-and-attribute-binding.md)。
+
+如果你改的是「标注长什么样」, 十有八九要从 project.tool_bindings 入手, 而不是 task。
+
+写入路径: `apps/api/app/api/v1/projects.py` 的 `create_project` / `update_project` 调用 [`coalesce_legacy_into_tool_bindings`](../../../apps/api/app/services/project.py) (旧客户端只传扁平字段时反向派生到对应 unit) + [`apply_tool_bindings_legacy_sync`](../../../apps/api/app/services/project.py) (派生回写 classes / classes_config / attribute_schema), 保证单源真值。
 
 ### 2. 工作台派题策略
 
