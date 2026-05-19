@@ -280,6 +280,13 @@ async def create_comment(
     )
     db.add(comment)
     await db.flush()
+    # ADR-0027 第二段 · 双写到 annotation_feedbacks (kind=comment, anchor=annotation)
+    if ann.project_id is not None and ann.task_id is not None:
+        from app.services.feedback import FeedbackService
+
+        await FeedbackService(db).mirror_annotation_comment(
+            comment, task_id=ann.task_id
+        )
     await AuditService.log(
         db,
         actor=current_user,

@@ -49,3 +49,12 @@
   min-width: 16px;
   text-align: center;
 }
+
+/* v0.10.20 · I18 · drop-arm FAB. 默认沉于 issueFab 之下; armed 状态描边变色提示已激活. */
+.issuePinFab {
+  bottom: 128px;
+}
+.issuePinFabArmed {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}

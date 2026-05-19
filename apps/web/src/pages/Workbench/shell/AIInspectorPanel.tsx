@@ -10,6 +10,7 @@ import type { AnnotationCommentAnchor } from "@/api/comments";
 import type { AttributeSchema } from "@/api/projects";
 import type { AiBox } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
+import { groupOutlineColor } from "../stage/ImageStageShapes";
 import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { AttributeForm } from "./AttributeForm";
 import { CommentsPanel } from "./CommentsPanel";
@@ -38,6 +39,16 @@ interface AIInspectorPanelProps {
   selectedAnnotation?: AnnotationResponse | null;
   /** 属性表单提交回调（防抖后触发）。 */
   onUpdateAttributes?: (annotationId: string, next: Record<string, unknown>) => void;
+  /**
+   * v0.10.20 · I12 多选批量编辑回调; 多选时 AttributeForm.onChange 改走此路径调用 useAnnotationBulkUpdate.
+   * 不传时多选只显示 batch banner, 但 onChange 仍按单条 PATCH 走 (退化兼容).
+   */
+  onBulkUpdateAttributes?: (
+    ids: string[],
+    patch: { attributes?: Record<string, unknown> },
+  ) => void;
+  /** v0.10.20 · I12 BoxList group card 头部单击 → 整组选中 (replaceSelected). */
+  onSelectGroup?: (memberIds: string[]) => void;
   /** 当前用户 id（驱动评论作者操作权限）。 */
   currentUserId?: string;
   /** 当前题图 URL：作为评论画布批注的预览背景。 */
@@ -89,7 +100,9 @@ export function AIInspectorPanel({
   userBoxes, selectedId, selectedIds,
   dimmedAiIds,
   imageWidth, imageHeight,
-  attributeSchema, selectedAnnotation, onUpdateAttributes, currentUserId,
+  attributeSchema, selectedAnnotation, onUpdateAttributes,
+  onBulkUpdateAttributes, onSelectGroup,
+  currentUserId,
   taskFileUrl, enableCommentCanvasDrawing = true, liveCommentCanvas,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   currentFrameIndex, onSeekFrame, commentAnchor,
@@ -140,7 +153,15 @@ export function AIInspectorPanel({
           schema={attributeSchema}
           className={selectedAnnotation.class_name}
           attributes={selectedAnnotation.attributes ?? {}}
-          onChange={(next) => onUpdateAttributes(selectedAnnotation.id, next)}
+          // v0.10.20 · I12 多选批量: 有 onBulkUpdateAttributes 且选中 >1 时 fan-out, 否则单条 PATCH.
+          onChange={(next) => {
+            if (multiCount > 1 && onBulkUpdateAttributes) {
+              onBulkUpdateAttributes(Array.from(selSet), { attributes: next });
+            } else {
+              onUpdateAttributes(selectedAnnotation.id, next);
+            }
+          }}
+          batchCount={multiCount > 1 ? multiCount : undefined}
           readOnly={readOnly}
         />
       )}
@@ -182,6 +203,7 @@ export function AIInspectorPanel({
         onDeleteUserBox={onDeleteUserBox}
         onChangeUserBoxClass={onChangeUserBoxClass}
         onToggleUserBoxFlag={onToggleUserBoxFlag}
+        onSelectGroup={onSelectGroup}
         videoTrackPanel={videoTrackPanel}
       />
     </div>
@@ -547,6 +569,48 @@ function SamTextPanel({
   );
 }
 
+// ── I12 · Object Group 折叠卡片 ────────────────────────────────────────────
+interface GroupCardProps {
+  groupId: number;
+  memberCount: number;
+  expanded: boolean;
+  onToggle: () => void;
+  onSelectGroup?: () => void;
+}
+
+function GroupCard({ groupId, memberCount, expanded, onToggle, onSelectGroup }: GroupCardProps) {
+  const color = groupOutlineColor(groupId);
+  return (
+    <div
+      className={styles.groupCard}
+      data-testid={`box-list-group-card-${groupId}`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className={styles.groupCardToggle}
+        title={expanded ? "折叠组" : "展开组"}
+      >
+        <Icon name={expanded ? "chevronDown" : "chevronRight"} size={12} />
+      </button>
+      <button
+        type="button"
+        onClick={onSelectGroup}
+        disabled={!onSelectGroup}
+        className={styles.groupCardHeader}
+        title="选中整组"
+      >
+        <span
+          className={styles.groupCardDot}
+          ref={(node) => node?.style.setProperty("--group-color", color)}
+        />
+        <span>组 #{groupId}</span>
+        <span className={styles.groupCardCount}>· {memberCount} 个标注</span>
+      </button>
+    </div>
+  );
+}
+
 // ── 虚拟化合并列表 ─────────────────────────────────────────────────────────
 type Row =
   | { kind: "ai"; box: AiBox; key: string }
@@ -561,6 +625,15 @@ type Row =
     showFrameFilter: boolean;
   }
   | { kind: "videoTracks"; key: string }
+  /** v0.10.20 · I12 同 group_id 折叠卡片头部. 单击 → 整组选中. 展开 → 下方插入 user 行. */
+  | {
+    kind: "userGroup";
+    groupId: number;
+    memberIds: string[];
+    expanded: boolean;
+    onToggle: () => void;
+    key: string;
+  }
   | { kind: "user"; box: Annotation; key: string };
 
 type FrameFilter = "all" | "current";
@@ -647,6 +720,7 @@ interface BoxesListProps {
   /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden/occluded）。 */
   onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => void;
   onSeekFrame?: (frameIndex: number) => void;
+  onSelectGroup?: (memberIds: string[]) => void;
   videoTrackPanel?: React.ReactNode;
 }
 
@@ -658,12 +732,22 @@ function BoxesList({
   onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon,
   onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   onToggleUserBoxFlag,
+  onSelectGroup,
   videoTrackPanel,
 }: BoxesListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [aiFrameFilter, setAiFrameFilter] = useState<FrameFilter>("all");
   const [userFrameFilter, setUserFrameFilter] = useState<FrameFilter>("all");
   const showFrameFilter = typeof currentFrameIndex === "number";
+  // v0.10.20 · I12 group 折叠展开态; key = group_id 字符串.
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  const toggleGroup = (groupId: number) =>
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
 
   const filteredAiBoxes = useMemo(
     () => filterBoxesByFrame(aiBoxes, currentFrameIndex, aiFrameFilter),
@@ -697,10 +781,43 @@ function BoxesList({
       onFilterChange: setUserFrameFilter,
       showFrameFilter,
     });
-    filteredUserBoxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
+    // v0.10.20 · I12 按 group_id 分桶: 同 group_id (≥2 个成员) → group 卡片头, 展开时下方插入 user 行;
+    // group_id null 或单成员 group → 平铺. 保持 filteredUserBoxes 原顺序内的相对位置.
+    const bucketed: { groupId: number | null; boxes: Annotation[] }[] = [];
+    const groupBuckets = new Map<number, Annotation[]>();
+    for (const b of filteredUserBoxes) {
+      if (typeof b.group_id === "number") {
+        if (!groupBuckets.has(b.group_id)) {
+          groupBuckets.set(b.group_id, []);
+          bucketed.push({ groupId: b.group_id, boxes: groupBuckets.get(b.group_id)! });
+        }
+        groupBuckets.get(b.group_id)!.push(b);
+      } else {
+        bucketed.push({ groupId: null, boxes: [b] });
+      }
+    }
+    for (const bucket of bucketed) {
+      if (bucket.groupId != null && bucket.boxes.length >= 2) {
+        const gid = bucket.groupId;
+        const expanded = expandedGroups.has(gid);
+        out.push({
+          kind: "userGroup",
+          groupId: gid,
+          memberIds: bucket.boxes.map((b) => b.id),
+          expanded,
+          onToggle: () => toggleGroup(gid),
+          key: `user-group-${gid}`,
+        });
+        if (expanded) {
+          bucket.boxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
+        }
+      } else {
+        bucket.boxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
+      }
+    }
     if (videoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
     return out;
-  }, [aiBoxes.length, aiFrameFilter, filteredAiBoxes, filteredUserBoxes, showFrameFilter, userBoxes.length, userFrameFilter, videoTrackPanel]);
+  }, [aiBoxes.length, aiFrameFilter, filteredAiBoxes, filteredUserBoxes, showFrameFilter, userBoxes.length, userFrameFilter, videoTrackPanel, expandedGroups]);
 
   const selectBox = (box: Annotation | AiBox, shift: boolean | undefined) => {
     if (!shift) {
@@ -788,6 +905,15 @@ function BoxesList({
                 <div data-testid="video-track-panel-row">
                   {videoTrackPanel}
                 </div>
+              )}
+              {r.kind === "userGroup" && (
+                <GroupCard
+                  groupId={r.groupId}
+                  memberCount={r.memberIds.length}
+                  expanded={r.expanded}
+                  onToggle={r.onToggle}
+                  onSelectGroup={onSelectGroup ? () => onSelectGroup(r.memberIds) : undefined}
+                />
               )}
               {r.kind === "user" && (
                 <BoxListItem

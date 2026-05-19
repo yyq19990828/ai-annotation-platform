@@ -31,6 +31,10 @@ class BugReportService:
         )
         self.db.add(report)
         await self.db.flush()
+        # ADR-0027 第二段 · 双写到 annotation_feedbacks (同事务一致性, 失败一起回滚)
+        from app.services.feedback import FeedbackService
+
+        await FeedbackService(self.db).mirror_bug_report(report)
         return report
 
     async def update(self, report_id: uuid.UUID, **fields) -> BugReport | None:

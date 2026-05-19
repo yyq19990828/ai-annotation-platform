@@ -64,6 +64,12 @@
 .statusCard_resolved { opacity: 0.6; }
 .statusCard_wont_fix { opacity: 0.55; }
 
+/* v0.10.20 · I18 · Konva pin 单击高亮的列表项 (描边加亮 + 微闪一下). */
+.cardHighlighted {
+  border-color: var(--color-warning);
+  box-shadow: 0 0 0 1px var(--color-warning);
+}
+
 .cardHeader {
   display: flex;
   align-items: center;

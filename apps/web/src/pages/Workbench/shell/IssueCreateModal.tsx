@@ -8,7 +8,7 @@
  *
  * 提交成功后调用 onSuccess 让 useFeedbacks 失效重拉.
  */
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useCreateFeedback } from "@/hooks/useFeedbacks";
@@ -24,16 +24,26 @@ interface Props {
   taskId: string;
   /** useFeedbacks 当前订阅的 params; 提交后 invalidate 这个 key. */
   listParams: ListFeedbacksParams;
+  /** v0.10.20 · I18 · drop-arm 单击图像落点后预填的相对坐标 (0-1). 传入时自动设到 x/y 输入框. */
+  prefilledAnchor?: { x: number; y: number } | null;
   onClose: () => void;
 }
 
-export function IssueCreateModal({ open, projectId, taskId, listParams, onClose }: Props) {
+export function IssueCreateModal({ open, projectId, taskId, listParams, prefilledAnchor, onClose }: Props) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [severity, setSeverity] = useState<FeedbackSeverity>("warn");
   const [x, setX] = useState<string>("");
   const [y, setY] = useState<string>("");
   const createMut = useCreateFeedback(listParams);
+
+  // v0.10.20 · 打开 modal 且 prefilledAnchor 非空时, 自动填入 x/y (保留 2 位小数, 用户仍可调整).
+  useEffect(() => {
+    if (open && prefilledAnchor) {
+      setX(prefilledAnchor.x.toFixed(3));
+      setY(prefilledAnchor.y.toFixed(3));
+    }
+  }, [open, prefilledAnchor]);
 
   if (!open) return null;
 

@@ -137,6 +137,12 @@ interface WorkbenchStageHostProps {
   onRefineSamCandidate?: (idx: number) => void;
   /** v0.10.10 · I17.3 · 项目级 rendering_config 覆盖（仅图像舞台消费）。 */
   projectRenderingConfig?: import("@/api/projects").ProjectRenderingConfig | null;
+  // ── v0.10.20 · I18 IssueLayer (仅图像舞台消费) ─────────────
+  issuePixelFeedbacks?: import("@/api/feedbacks").AnnotationFeedback[];
+  highlightIssueId?: string | null;
+  onIssuePinClick?: (id: string) => void;
+  issuePinDropArmed?: boolean;
+  onIssuePinDrop?: (x: number, y: number) => void;
 }
 
 export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageHostProps>(
@@ -216,6 +222,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     maskEditor,
     onRefineSamCandidate,
     projectRenderingConfig,
+    issuePixelFeedbacks,
+    highlightIssueId,
+    onIssuePinClick,
+    issuePinDropArmed,
+    onIssuePinDrop,
   }, ref) {
     return (
       <div className={styles.root} data-workbench-stage>
@@ -309,6 +320,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             maskEditor={maskEditor}
             onRefineSamCandidate={onRefineSamCandidate}
             projectRenderingConfig={projectRenderingConfig}
+            issuePixelFeedbacks={issuePixelFeedbacks}
+            highlightIssueId={highlightIssueId}
+            onIssuePinClick={onIssuePinClick}
+            issuePinDropArmed={issuePinDropArmed}
+            onIssuePinDrop={onIssuePinDrop}
           />
         )}
         {stageKind !== "image" && overlays}

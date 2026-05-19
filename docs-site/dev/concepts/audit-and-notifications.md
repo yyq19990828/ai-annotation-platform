@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-05-19
 ---
 
 # 审计与通知
@@ -280,6 +280,22 @@ WS 握手时会校验 JWT，然后订阅：
 
 在这个仓库里，重要业务动作通常都应该至少有 audit。
 如果你发现某个关键工作流只有通知没有审计，通常值得补。
+
+## 反馈统一表(ADR-0027)
+
+历史上反馈入口散在 4 处:`bug_reports`(产品 BUG)/`annotation_comments`(标注评论)/`tasks.reject_reason`(审核驳回)/未来计划的 pixel-anchored issue。v0.10.19 起新立 `annotation_feedbacks` 表统一锚点(`anchor_type` ∈ project/task/annotation/pixel) + `kind` ∈ issue/comment/reject/bug,逐步收口为单一写入入口。详见 [ADR-0027](/dev/adr/0027-annotation-feedback-unified-table)(规范由 docs/adr 维护)。
+
+迁移按三段式推进,每段独立可回退:
+
+| 阶段 | 状态 | 行为 |
+|---|---|---|
+| v0.10.19 第一段 | ✅ 已落 | 立新表 + 新 API(`GET/POST/PATCH/DELETE /feedbacks`),旧三表读写不动;前端 IssueLayer 直接读新表 |
+| v0.10.20 第二段 | ✅ 已落 | alembic 0077 加 `v_annotation_feedback_unified` UNION ALL view(带 `source_table` 列对账);`FeedbackService.mirror_bug_report` / `mirror_annotation_comment` / `mirror_task_reject` 3 个 helper 接入旧三处写路径,**同事务**双写,失败一起回滚;前端只读暂不切到 view(避免老 bug/reject 出现在 DiscussionPanel) |
+| v0.10.21 第三段 | 🟡 计划中 | 验证双写一致性 → 旧表存量数据一次性 backfill 到 `annotation_feedbacks` → 删旧写路径,旧表保留只读一个版本作回退 |
+
+**audit 落点对齐**:新表的写操作走 `FEEDBACK_CREATED` / `FEEDBACK_STATUS_CHANGED` / `FEEDBACK_DELETED` 三个 AuditAction(v0.10.19 引入),不再为 4 个 source 各维护 detail helper。旧 `bug_report.*` 通知类型保留。
+
+**双写一致性监控**:view 的 `source_table` 列可用于对账查询(`SELECT source_table, COUNT(*) FROM v_annotation_feedback_unified GROUP BY source_table` 对比 `annotation_feedbacks` 行数);日志关键字 `[ADR-0027 double-write]` 用于排障。`bug_reports.project_id IS NULL` 行(登录页等无项目归属 bug)不 mirror,留 v0.10.21 切单源时单独处理。
 
 ## 常见修改落点
 

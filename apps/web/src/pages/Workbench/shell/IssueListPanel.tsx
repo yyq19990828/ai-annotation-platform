@@ -12,11 +12,13 @@ interface Props {
   open: boolean;
   projectId: string;
   taskId: string | undefined;
+  /** v0.10.20 · 单击 Konva pin 时高亮的 feedback id (列表项加粗 + 滚动可见). */
+  highlightId?: string | null;
   onClose: () => void;
   onCreateNew: () => void;
 }
 
-export function IssueListPanel({ open, projectId, taskId, onClose, onCreateNew }: Props) {
+export function IssueListPanel({ open, projectId, taskId, highlightId, onClose, onCreateNew }: Props) {
   const params: ListFeedbacksParams = {
     project_id: projectId,
     task_id: taskId,
@@ -55,7 +57,14 @@ export function IssueListPanel({ open, projectId, taskId, onClose, onCreateNew }
             <div className={styles.muted}>当前任务暂无 issue。点「新建」记录第一条。</div>
           )}
           {items.map((it) => (
-            <div key={it.id} className={`${styles.card} ${styles[`statusCard_${it.status}`] ?? ""}`}>
+            <div
+              key={it.id}
+              ref={(node) => {
+                if (highlightId === it.id && node) node.scrollIntoView({ block: "nearest" });
+              }}
+              className={`${styles.card} ${styles[`statusCard_${it.status}`] ?? ""}${highlightId === it.id ? " " + (styles.cardHighlighted ?? "") : ""}`}
+              data-testid={`issue-card-${it.id}`}
+            >
               <div className={styles.cardHeader}>
                 <span className={`${styles.statusChip} ${styles[`status_${it.status}`] ?? ""}`}>
                   {it.status === "open" ? "未解决" : it.status === "resolved" ? "已解决" : "搁置"}

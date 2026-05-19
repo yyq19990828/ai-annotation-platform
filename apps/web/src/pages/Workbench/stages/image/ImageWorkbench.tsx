@@ -85,6 +85,12 @@ export interface ImageWorkbenchProps {
   onRefineSamCandidate?: (idx: number) => void;
   /** v0.10.10 · I17.3 · 项目级 rendering_config 覆盖；透传给 ImageStage 内的 useWorkbenchConfig。 */
   projectRenderingConfig?: import("@/api/projects").ProjectRenderingConfig | null;
+  /** v0.10.20 · I18 · pixel-anchored issue feedback 数据源 (Shell 通过 useFeedbacks 提供). */
+  issuePixelFeedbacks?: import("@/api/feedbacks").AnnotationFeedback[];
+  highlightIssueId?: string | null;
+  onIssuePinClick?: (id: string) => void;
+  issuePinDropArmed?: boolean;
+  onIssuePinDrop?: (x: number, y: number) => void;
 }
 
 export function ImageWorkbench({
@@ -145,6 +151,11 @@ export function ImageWorkbench({
   maskEditor,
   onRefineSamCandidate,
   projectRenderingConfig,
+  issuePixelFeedbacks,
+  highlightIssueId,
+  onIssuePinClick,
+  issuePinDropArmed,
+  onIssuePinDrop,
 }: ImageWorkbenchProps) {
   return (
     <ImageStage
@@ -191,6 +202,11 @@ export function ImageWorkbench({
       maskEditor={maskEditor}
       onRefineSamCandidate={onRefineSamCandidate}
       projectRenderingConfig={projectRenderingConfig}
+      issuePixelFeedbacks={issuePixelFeedbacks}
+      highlightIssueId={highlightIssueId}
+      onIssuePinClick={onIssuePinClick}
+      issuePinDropArmed={issuePinDropArmed}
+      onIssuePinDrop={onIssuePinDrop}
       overlay={
         <>
           <FloatingDock

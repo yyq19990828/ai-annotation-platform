@@ -22,6 +22,53 @@
 
 ## 最新版本
 
+## [0.10.20] - 2026-05-19
+
+> **v0.10.19 epic 留下的 5 项 deferred 收口 + ADR-0027 第二段迁移.** 把 I4 任务级评论 (POST /feedbacks · kind=comment / anchor_type=task) / I12 BoxList group 折叠卡片 + AttributeForm 多选 batch banner / I18 IssueLayer Konva pin 渲染 + 单击落点创建 / ADR-0027 三段式迁移第二段 (`v_annotation_feedback_unified` UNION ALL view + bug_reports / annotation_comments / tasks.reject_reason 双写 mirror) 一次性落地。**纯 UI / 双写迁移工作**, 后端契约延用 v0.10.19 已定型的 `annotation_feedbacks` + `annotations.group_id`, 不引入新 schema。关键决策: ① 任务级评论**不**新加 POST /tasks/{id}/comments 端点 (复用 v0.10.19 已落的 POST /feedbacks, 减少端点数量 + 直接走未来主存储); ② 旧三表写入路径接入 `FeedbackService.mirror_*` helper, 同事务 INSERT 新表, 失败一起回滚 (一致性由 PG 事务保证); ③ `v_annotation_feedback_unified` view 带 `source_table` 列, 用于双写一致性对账与 v0.10.21 切单源前的过渡; ④ I12 BoxList 同 group_id (≥2 成员) 折叠为带哈希色点的 group 卡片 (单击头部 = 整组选中, 单击 chevron = 展开/折叠), AttributeForm 在 `selectedIds.length > 1` 时顶部 batch banner + onChange fan-out 走 useAnnotationBulkUpdate; ⑤ I18 IssueLayer Konva 层挂在 ImageStage `</Stage>` 之前 (位于 ImageStageShapes 层之上), status 配色 (open=橙/resolved=绿/wont_fix=灰) + 高亮态加阴影, drop-arm FAB (crosshair 图标) 激活后单击图像落点 → 派发归一化坐标 → IssueCreateModal 自动预填 x/y. **不引入**: ① 独立 `DiscussionPanel.tsx` + WorkbenchLayout 右栏两段固定结构 (无 UX 增量, 控制 PR 体量); ② POST /tasks/{id}/comments 端点 (决策见 D1); ③ 旧 bug_reports / annotation_comments 数据 backfill 到 feedbacks (留 v0.10.21 切单源时一次性 backfill); ④ I4 笔画 timeline (canvas_drawing.shapes[i] 加 id/started_at/ended_at + 评论卡片下方迷你时间条) (stretch goal, 无客户触发信号 → 延期 v0.10.21); ⑤ IssueLayer 在 video stage 的 frame 维度 pin (anchor_position 已预留 frame 字段, 后续切片). → [plan](docs/plans/2026-05-19-v0.10.20-i4-i12-i18-deferred-closure.md) · [ADR-0027](docs/adr/0027-annotation-feedback-unified-table.md).
+
+### Added
+
+#### 后端
+
+- **alembic 0077 · `v_annotation_feedback_unified` view** ([0077_annotation_feedback_unified_view.py](apps/api/alembic/versions/0077_annotation_feedback_unified_view.py)): UNION ALL 4 个数据源 (annotation_feedbacks / bug_reports / annotation_comments / tasks.reject_reason), 字段对齐到统一 schema (id/kind/anchor_type/project_id/task_id/annotation_id/anchor_position/status/severity/title/body/author_id/created_at/updated_at/is_active) + 额外 `source_table` 列方便对账; bug_reports.status 值域映射到统一 open/resolved/wont_fix (fixed → resolved, duplicate → wont_fix); annotation_comments 仅 is_active=true 行出现; tasks 仅 status='rejected' AND reject_reason IS NOT NULL 行出现; bug_reports.project_id IS NULL 行不出现 (新表 project_id NOT NULL).
+- **`FeedbackService.mirror_bug_report / mirror_annotation_comment / mirror_task_reject`** ([feedback.py](apps/api/app/services/feedback.py)): 3 个双写 mirror helper, 接受 legacy 模型实例 → 同事务 INSERT AnnotationFeedback (kind=bug/comment/reject); bug_report.project_id IS NULL 时跳过 mirror (登录页等无项目归属 bug 暂不入新表); 日志 `[ADR-0027 double-write] {source} → feedback {id}` 方便排查不一致.
+- **3 处 legacy 写路径接入 mirror** ([bug_report.py:create](apps/api/app/services/bug_report.py) · [annotation_comments.py:create_comment](apps/api/app/api/v1/annotation_comments.py) · [tasks.py:reject_task](apps/api/app/api/v1/tasks.py)): legacy INSERT 后立即调 mirror, db.commit() 一起落库; 失败回滚不留半边写.
+- **4 例 pytest** ([tests/test_annotation_feedbacks.py](apps/api/tests/test_annotation_feedbacks.py)): `test_mirror_bug_report_creates_feedback` / `test_mirror_bug_report_skips_when_project_null` / `test_mirror_task_reject_creates_feedback` / `test_view_unions_sources` (4 源插入 → view SELECT 验证 source_table 分组计数).
+
+#### 前端
+
+- **`groupOutlineColor` export** ([ImageStageShapes.tsx](apps/web/src/pages/Workbench/stage/ImageStageShapes.tsx)): 把 v0.10.19 内联的 group_id 哈希配色函数 export 出来, 给 AIInspectorPanel BoxList group 卡片头色点复用.
+- **BoxList group 折叠卡片** ([AIInspectorPanel.tsx](apps/web/src/pages/Workbench/shell/AIInspectorPanel.tsx)): 新 Row kind `userGroup`; 按 group_id 分桶 (≥2 成员的 group_id 显示折叠卡片 `组 #N · k 个标注` + 哈希色点; group_id null 或单成员仍平铺); chevron 按钮 toggle expandedGroups Set; 头部点击 → `onSelectGroup(memberIds)` → 整组 replaceSelected; 展开后内部仍按 BoxListItem 渲染单条.
+- **AttributeForm batch banner** ([AttributeForm.tsx](apps/web/src/pages/Workbench/shell/AttributeForm.tsx) · [AttributeForm.module.css](apps/web/src/pages/Workbench/shell/AttributeForm.module.css)): 新增 `batchCount?: number` prop; > 1 时表单顶部渲染 warning 色 banner `N 个标注被选中, 修改将应用到全部`; AIInspectorPanel 在多选时把 banner 显示出来 + onChange 改派到 `onBulkUpdateAttributes(Array.from(selSet), { attributes: next })` (WorkbenchShell 接 useAnnotationBulkUpdate); 单选 / 未传时 banner 不渲染 (退化兼容).
+- **`onBulkUpdateAttributes` / `onSelectGroup` props** ([AIInspectorPanel.tsx](apps/web/src/pages/Workbench/shell/AIInspectorPanel.tsx) · [WorkbenchShell.tsx](apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx)): WorkbenchShell 把 `void useAnnotationBulkUpdate(...)` 替换为实参 mut, 传 `onBulkUpdateAttributes` / `onSelectGroup`; inspector prop 默认通过 `WorkbenchLayout {...inspector}` 直传.
+- **任务级评论 POST + 合并显示** ([CommentsPanel.tsx](apps/web/src/pages/Workbench/shell/CommentsPanel.tsx)): annotationId=null + taskId+projectId 时 CommentInput 显示, 提交走 `useCreateFeedback({ kind:"comment", anchor_type:"task" })` POST /feedbacks; 列表合并 annotation_comments (useTaskCommentsInfinite) + task-level feedbacks (useFeedbacks · kind=comment/anchor_type=task), 按 created_at desc; feedback-source 行带 `__source` 标记, 不展示 patch/delete 按钮 (走不同端点, 暂不开放编辑入口).
+- **`IssueLayer.tsx` Konva 层** ([IssueLayer.tsx](apps/web/src/pages/Workbench/stage/image/IssueLayer.tsx)): 渲染 pixel-anchored feedback 为图钉 (Circle + Text "i"); status 配色 (open=橙/resolved=绿/wont_fix=灰); 反向缩放保持视觉恒定 (`8/scale` 等); 高亮 id 加阴影; armedForDrop=true 时挂全画布透明 Rect 拦截 click, 转换为相对坐标 [0,1] → onDrop; crosshair cursor 提示.
+- **drop-arm FAB + IssueListPanel highlight** ([WorkbenchShell.tsx](apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) · [IssueCreateModal.tsx](apps/web/src/pages/Workbench/shell/IssueCreateModal.tsx) · [IssueListPanel.tsx](apps/web/src/pages/Workbench/shell/IssueListPanel.tsx)): 新加圆形 FAB (crosshair 图标, 位置 bottom:128px 沉于 issueFab 之下), 单击 toggle `issuePinDropArmed` 状态; pin 单击落点 → 关闭 arm + 打开 IssueCreateModal 预填 anchor (`prefilledAnchor` prop · useEffect 同步到 x/y 输入框); IssueListPanel 接 `highlightId` prop (单击 Konva pin → setHighlightIssueId + 打开列表), 高亮项 border-color=warning + box-shadow + scrollIntoView.
+- **AttributeForm batch banner 2 例单测** ([AttributeForm.test.tsx](apps/web/src/pages/Workbench/shell/AttributeForm.test.tsx)): batchCount > 1 时显示 + 1/未传时不显示.
+
+### Changed
+
+- **`bug_reports` / `annotation_comments` POST / `tasks reject` 写路径**: 同事务追加 INSERT annotation_feedbacks. 旧 reader 不动 (本切片不切单源), 前端 useFeedbacks 仍直接读新表 (view 仅用于对账); 待 v0.10.21 验证双写一致性后切单源 + 一次性 backfill 老数据.
+- **`AnnotationFeedback service` 文档说明** ([feedback.py](apps/api/app/services/feedback.py)): 从"第一阶段, 旧表不动"更新为"第二阶段, 双写已开"; 新加 mirror helper 章节注释.
+
+### Verified
+
+- 后端 `cd apps/api && uv run pytest tests/test_annotation_feedbacks.py tests/test_bug_reports.py tests/test_annotation_comments_paged.py tests/test_comment_polish.py tests/test_task_lock.py -v` → **30 passed** (含 4 例新 mirror + view 测试).
+- `uv run alembic upgrade head` 应用 0077; `SELECT source_table, COUNT(*) FROM v_annotation_feedback_unified GROUP BY source_table` 在 dev / annotation_test 两库均可查.
+- 前端 `pnpm --filter web typecheck`: 与 v0.10.19 基线一致 (旧 generated/types.gen `ToolBinding` / `tool_bindings` 同样 21 处, 与本期 deferred 收口无关; 修复留 v0.10.21 codegen 重生).
+- 前端 `pnpm --filter web test` → **733 passed / 102 files** (含 2 例新 AttributeForm batch banner 单测).
+- 前端 `pnpm --filter web lint` → 0 errors / 116 warnings (基线 115 + 1 个本期 IssueLayer 内 react-hooks/exhaustive-deps 兼容性 warning); `check-css-tokens` 通过.
+- 手动 smoke (未跑 e2e, 本切片由 maintainer 在 docker + uvicorn + pnpm dev 全栈环境 smoke): ① 未选中标注 → CommentsPanel 任务级模式 CommentInput 显示, 提交后通过 GET /feedbacks 看到 kind=comment / anchor_type=task 行; ② Shift+点击 5 框 Ctrl+G 后 BoxList 出现 group 卡片, 点击头部整组选中; ③ 多选 3 框 → AttributeForm 顶部 batch banner, 改 attribute 后 3 框同步; ④ 按 crosshair FAB → 单击图像落点 → IssueCreateModal 自动填 x/y; ⑤ 单击 Konva 图钉 → IssueListPanel 打开并高亮对应项.
+
+### Deferred to v0.10.21
+
+- **独立 `DiscussionPanel.tsx` + WorkbenchLayout 右栏两段固定结构**: 内嵌 CommentsPanel 已能承担 UX, 拆分纯结构改造对用户行为无增量, 本期不做.
+- **I4 笔画 timeline**: `canvas_drawing.shapes[i]` 加 id/started_at/ended_at + CanvasDrawingPreview 评论卡片下方迷你 CSS flex 时间条 + hover 评论高亮对应 stroke.
+- **ADR-0027 第三段 (切单源)**: 验证双写一致性 (cron 跑 view source_table 对账) → 一次性 backfill 旧表存量数据到 annotation_feedbacks → 删除 legacy 写路径; 旧表保留只读一个版本作回退.
+- **IssueLayer video stage frame-aware pin**: 当前仅图像 stage; video stage 的 frame-aware pin 后续切片 (anchor_position 已预留 frame 字段).
+- **任务级 feedback patch/delete UI 入口**: 当前 CommentsPanel feedback-source 行仅展示, 不允许 patch/delete (usePatchFeedback / useDeleteFeedback 已存在, UI 暂不开放).
+- **POST /tasks/{id}/comments 端点**: 决策延续 — 不开新端点, 任务级评论一律走 POST /feedbacks.
+
 ## [0.10.19] - 2026-05-19
 
 > **ROADMAP §C.7 I4 + I12 + I18 单 epic 一次性落地.** 三项工作台扩展 (I4 评论/历史常驻 / I12 Object Group 分组+批量编辑 / I18 Issue 锚定到像素位置) 作单一 epic 推进, 共享同一片 UI 表面 (右栏标注详情区 + Konva overlay 层),避免分三 PR 反复触碰热点。本切片**后端契约 + 前端核心 UI 流程**一次到位; 渐进式策略避免一次性重构 1210 行的 WorkbenchShell。 → [plan](docs/plans/2026-05-19-v0.10.19-i4-i12-i18-workbench-detail-extensions.md) · [ADR-0027](docs/adr/0027-annotation-feedback-unified-table.md).

@@ -15,12 +15,6 @@
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：reject_reason_type / 决策底线表。已落地：✅ Annotation Guide (v0.10.13), ✅ Predictions Import + AAP JSON (v0.10.15), ✅ 工具维度类别 / 属性绑定 + Magic Box (v0.10.17), ✅ P3 维护项收尾 5 项 (v0.10.18), ✅ §2.2 AnnotationFeedback 统一表后端基线 (v0.10.19, ADR-0027 三段式迁移第一段)。
 
-> 历史 epic 文档已归档：
-> - [`[archived]0.10.x.md`](./ROADMAP/[archived]0.10.x.md) — SAM 3 接入 / Prompt-first ToolDock / 1:N 后端管理（v0.10.0-v0.10.3 已落地，v0.10.4-v0.10.10 收尾 Image Workbench Wave β/γ/δ）。
-> - [`[archived]2026-05-11-video-workbench-vs-image-gap.md`](./ROADMAP/[archived]2026-05-11-video-workbench-vs-image-gap.md) — V4/V5/V6 已分别在 v0.9.33 / v0.9.35 / v0.9.37 收尾。
-> - [`[archived]2026-05-12-video-workbench-rendering-optimization.md`](./ROADMAP/[archived]2026-05-12-video-workbench-rendering-optimization.md) — Wave 0-4 已收尾；剩余 Wave 5-7 已按类目转录到 §C.5。
-> - [`[archived]2026-05-12-video-backend-frame-service.md`](./ROADMAP/[archived]2026-05-12-video-backend-frame-service.md) — Wave 0-1 已收尾；剩余 Wave 2-6 已转录到 §C.6。
-> - [`[archived]2026-05-12-image-workbench-optimization.md`](./ROADMAP/[archived]2026-05-12-image-workbench-optimization.md) — Wave α/β/γ/δ 已收尾；剩余 Wave ε + Wave γ 末段已转录到 §C.7。
 
 ---
 

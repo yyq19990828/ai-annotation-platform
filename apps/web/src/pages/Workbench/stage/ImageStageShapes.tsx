@@ -54,7 +54,7 @@ interface KonvaBoxProps {
 }
 
 /** I12 · 同 group_id 的多框共享同色虚线外圈; 用 group_id 哈希派生稳定色. */
-function groupOutlineColor(groupId: number): string {
+export function groupOutlineColor(groupId: number): string {
   // 8 档预设色, modulo 取色; 与类别色刻意区分 (类别色来自 classColorForCanvas).
   const palette = [
     "#f59e0b", // amber

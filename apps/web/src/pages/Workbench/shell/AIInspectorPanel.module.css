@@ -409,3 +409,59 @@
   cursor: pointer;
   font-size: 11px;
 }
+
+/* v0.10.20 · I12 BoxList group 折叠卡片. 头部色点取自 groupOutlineColor (CSS var --group-color). */
+.groupCard {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--color-bg-muted);
+  margin: 2px 0;
+}
+
+.groupCardToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.groupCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-fg);
+  text-align: left;
+  padding: 2px 4px;
+}
+
+.groupCardHeader:disabled {
+  cursor: default;
+}
+
+.groupCardHeader:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+}
+
+.groupCardDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--group-color);
+}
+
+.groupCardCount {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}

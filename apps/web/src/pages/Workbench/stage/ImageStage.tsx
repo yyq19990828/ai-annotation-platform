@@ -20,6 +20,7 @@ import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon } from "./ImageStageShapes";
+import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
 import styles from "./ImageStage.module.css";
@@ -178,6 +179,18 @@ interface ImageStageProps {
   /** v0.10.10 · I17.3 · 当前项目级渲染配置覆盖；与用户级 preferences 合并后驱动 KonvaImage 等。
    *  缺省 / null = 项目不覆盖，纯用户级。 */
   projectRenderingConfig?: import("@/api/projects").ProjectRenderingConfig | null;
+  /**
+   * v0.10.20 · I18 · pixel-anchored issue feedback 数据源, 由 Shell 通过 useFeedbacks 提供.
+   * 仅 kind=issue + anchor_type=pixel 的行会被消费; 其它 anchor_type 由调用方过滤.
+   */
+  issuePixelFeedbacks?: import("@/api/feedbacks").AnnotationFeedback[];
+  /** v0.10.20 · pin 高亮 id (IssueListPanel 单击列表项时聚焦). */
+  highlightIssueId?: string | null;
+  /** v0.10.20 · 单击图钉; Shell 据此切换 IssueListPanel 高亮 / 跳转. */
+  onIssuePinClick?: (id: string) => void;
+  /** v0.10.20 · drop-arm 模式: 渲染 catcher 拦截单击, 派发归一化坐标 → Shell 打开 IssueCreateModal. */
+  issuePinDropArmed?: boolean;
+  onIssuePinDrop?: (x: number, y: number) => void;
 }
 
 // ── main component ──────────────────────────────────────────────────────────
@@ -195,6 +208,11 @@ export function ImageStage({
   maskEditor,
   onRefineSamCandidate,
   projectRenderingConfig,
+  issuePixelFeedbacks,
+  highlightIssueId,
+  onIssuePinClick,
+  issuePinDropArmed,
+  onIssuePinDrop,
 }: ImageStageProps) {
   // selSet 引用稳定化（I3）：以排序后的 id 串作为签名，签名不变则返回上次同一 Set 实例，
   // 让下游 KonvaBox / KonvaPolygon 的 selected prop 维持引用稳定，避免误触发 memo 失效。
@@ -1010,6 +1028,21 @@ export function ImageStage({
             />
           )}
         </Layer>
+        {/* v0.10.20 · I18 IssueLayer · pixel-anchored feedback 可视化 + 单击 drop. */}
+        {(issuePixelFeedbacks && issuePixelFeedbacks.length > 0) || issuePinDropArmed ? (
+          <IssueLayer
+            pixelIssues={(issuePixelFeedbacks ?? []).filter(
+              (f) => f.kind === "issue" && f.anchor_type === "pixel" && !!f.anchor_position,
+            )}
+            imgW={imgW}
+            imgH={imgH}
+            scale={vp.scale}
+            highlightId={highlightIssueId ?? null}
+            onPinClick={onIssuePinClick}
+            armedForDrop={!!issuePinDropArmed}
+            onDrop={onIssuePinDrop}
+          />
+        ) : null}
         </Stage>
       </div>
 

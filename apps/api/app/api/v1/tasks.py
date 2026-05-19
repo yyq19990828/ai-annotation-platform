@@ -1665,6 +1665,12 @@ async def reject_task(
         task.reviewer_id = current_user.id
     if task.reviewer_claimed_at is None:
         task.reviewer_claimed_at = now
+    await db.flush()
+
+    # ADR-0027 第二段 · 双写到 annotation_feedbacks (kind=reject, anchor=task)
+    from app.services.feedback import FeedbackService
+
+    await FeedbackService(db).mirror_task_reject(task, reviewer_id=current_user.id)
 
     from app.db.models.project import Project
 

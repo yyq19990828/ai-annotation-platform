@@ -13,6 +13,12 @@ export interface AttributeFormProps {
   onChange: (next: Record<string, unknown>) => void;
   readOnly?: boolean;
   /**
+   * v0.10.20 · I12 多选批量编辑模式: > 1 时在表单顶部渲染 banner 提示「N 个标注被选中, 修改将应用到全部」。
+   * 实际 bulk-update 路径由调用方在 onChange 中分发 (走 useAnnotationBulkUpdate);
+   * 表单本身只负责 UI 提示与初始值展示 (取第一个选中标注的属性).
+   */
+  batchCount?: number;
+  /**
    * v0.10.6 M4-γ · I13.2：可选环境位。
    * - `image`（默认）：忽略 `field.mutable` 标记，行为完全 = immutable，向后兼容。
    * - `video`：mutable 字段视觉上展示「mutable」徽标，未来由 video 工作台接 keyframe override 路径。
@@ -68,6 +74,7 @@ function cn(...xs: Array<string | false | null | undefined>): string {
 export function AttributeForm({
   schema, className, attributes, onChange, readOnly,
   context = "image", dirtyTracker, annotationId,
+  batchCount,
 }: AttributeFormProps) {
   const [draft, setDraft] = useState<Record<string, unknown>>(attributes ?? {});
   const lastFromUpstream = useRef<Record<string, unknown>>(attributes ?? {});
@@ -128,6 +135,15 @@ export function AttributeForm({
       className={styles.form}
       onBlur={handleFormBlur}
     >
+      {batchCount && batchCount > 1 && (
+        <div
+          className={styles.batchBanner}
+          data-testid="attribute-form-batch-banner"
+          role="status"
+        >
+          <b>{batchCount}</b> 个标注被选中, 修改将应用到全部
+        </div>
+      )}
       <div className={styles.heading}>
         属性 {missing.length > 0 && <span className={styles.missingSummary}>· {missing.length} 项必填未填</span>}
       </div>

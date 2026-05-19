@@ -50,7 +50,7 @@ API: `GET /feedbacks?project_id=&task_id=&annotation_id=&kind=&anchor_type=&stat
 
 **v0.10.19 (本切片)**: 仅立新表 + 新 API。旧 `bug_reports` / `annotation_comments` / `tasks.reject_reason` 读写路径**完全不动**。前端 IssueLayer (I18) 直接读新表, 因为这本来就是新功能, 没有旧数据。
 
-**v0.10.20 (双写阶段)**: 加 UNION ALL view `v_annotation_feedback_unified`, 字段对齐到统一 schema。旧三处的写路径加双写:`bug_reports` 写入时同步 INSERT 到 `annotation_feedbacks` (kind='bug', anchor_type='project'/'task' 视情况);`annotation_comments` 同步 INSERT (kind='comment', anchor_type='annotation');`tasks.reject_reason` 在 PATCH 时同步 INSERT (kind='reject', anchor_type='task')。前端只读切到 view。
+**v0.10.20 (双写阶段)** ✅ 已落: alembic 0077 加 UNION ALL view `v_annotation_feedback_unified` (字段对齐到统一 schema, 带额外 `source_table` 列方便对账)。`FeedbackService.mirror_bug_report / mirror_annotation_comment / mirror_task_reject` 3 个 helper 接入旧三处写路径 (`BugReportService.create` / `annotation_comments.py:create_comment` / `tasks.py:reject_task`), 同事务 INSERT `annotation_feedbacks`, 失败一起回滚。**前端只读暂不切到 view** (view 仅作后端对账 + v0.10.21 切单源前的过渡; 切了会让旧 bug / reject 也出现在前端 useFeedbacks 列表, UX 未必合适)。bug_reports.project_id IS NULL 行不 mirror (登录页等无项目归属 bug 暂留旧表), v0.10.21 切单源时单独处理。
 
 **v0.10.21 (切单源)**: 验证双写一致性后, 删除旧表的写路径, 旧表存量数据通过一次性 backfill migration 灌入 `annotation_feedbacks`, 旧表保留只读一个版本作回退。
 

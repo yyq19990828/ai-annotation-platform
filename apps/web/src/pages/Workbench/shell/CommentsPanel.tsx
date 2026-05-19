@@ -21,6 +21,8 @@ import type {
   CommentCanvasDrawing,
   CommentMention,
 } from "@/api/comments";
+// v0.10.20 · D1 · 任务级评论复用 POST /feedbacks (kind=comment, anchor_type=task).
+import { useFeedbacks, useCreateFeedback } from "@/hooks/useFeedbacks";
 
 type Tab = "comments" | "history";
 
@@ -67,10 +69,51 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
   // I4 · annotationId null 时走 task 级 hook (DiscussionPanel 雏形 — 评论/历史常驻).
   const annotationCommentsQuery = useAnnotationCommentsInfinite(annotationId);
   const taskCommentsQuery = useTaskCommentsInfinite(taskId ?? null, !annotationId && !!taskId);
+  // v0.10.20 · D1 · 任务级评论从 annotation_feedbacks 读 (kind=comment, anchor_type=task); 与 annotation_comments 任务聚合合并展示.
+  const taskLevelFeedbacksParams = useMemo(
+    () => ({
+      project_id: projectId ?? "",
+      task_id: taskId ?? undefined,
+      kind: "comment" as const,
+      anchor_type: "task" as const,
+    }),
+    [projectId, taskId],
+  );
+  const taskLevelFeedbacksQuery = useFeedbacks(
+    taskLevelFeedbacksParams,
+    !annotationId && !!taskId && !!projectId,
+  );
+  const createTaskFeedbackMut = useCreateFeedback(taskLevelFeedbacksParams);
   const commentsQuery = annotationId ? annotationCommentsQuery : taskCommentsQuery;
   const comments = useMemo(
-    () => (commentsQuery.data?.pages ?? []).flatMap((p) => p.items),
-    [commentsQuery.data],
+    () => {
+      const annComments = (commentsQuery.data?.pages ?? []).flatMap((p) => p.items);
+      if (annotationId) return annComments;
+      // 任务级模式: merge annotation_comments + 任务级 feedback (kind=comment), 按 created_at desc.
+      const fb = (taskLevelFeedbacksQuery.data?.items ?? []).map((f) => ({
+        id: f.id,
+        annotation_id: null as string | null,
+        author_id: f.author_id,
+        author_name: f.author_name,
+        body: f.body,
+        is_resolved: f.status === "resolved",
+        is_active: f.is_active,
+        mentions: [] as CommentMention[],
+        attachments: (f.attachments ?? []) as CommentAttachment[],
+        canvas_drawing: null as CommentCanvasDrawing | null,
+        anchor: null as AnnotationCommentAnchor | null,
+        created_at: f.created_at,
+        updated_at: f.updated_at,
+        // v0.10.20 · 标记任务级 feedback 行, UI 上不允许 patch/delete (走不同端点).
+        __source: "feedback" as const,
+      }));
+      const merged = [...annComments.map((c) => ({ ...c, __source: "comment" as const })), ...fb];
+      merged.sort((a, b) =>
+        (b.created_at ?? "").localeCompare(a.created_at ?? ""),
+      );
+      return merged;
+    },
+    [commentsQuery.data, taskLevelFeedbacksQuery.data, annotationId],
   );
   const { data: members } = useProjectMembers(projectId ?? "");
   const createMut = useCreateComment(annotationId);
@@ -111,7 +154,21 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
     anchor?: AnnotationCommentAnchor | null;
   }) => {
     if (!body && attachments.length === 0 && !canvas_drawing) return;
-    createMut.mutate({ body, mentions, attachments, canvas_drawing, anchor });
+    if (annotationId) {
+      createMut.mutate({ body, mentions, attachments, canvas_drawing, anchor });
+      return;
+    }
+    // v0.10.20 · D1 · 任务级评论 POST /feedbacks (kind=comment, anchor_type=task).
+    // 任务级 feedback 不支持 mentions / canvas_drawing / anchor (走不同 schema), 仅传 body + attachments.
+    if (!taskId || !projectId) return;
+    createTaskFeedbackMut.mutate({
+      kind: "comment",
+      anchor_type: "task",
+      project_id: projectId,
+      task_id: taskId,
+      body,
+      attachments: attachments as Array<Record<string, unknown>>,
+    });
   };
 
   return (
@@ -153,10 +210,17 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
           anchor={commentAnchor}
           onSubmit={handleSubmit}
         />
-      ) : (
-        // I4 · 未选中标注时为只读视图; 任务级评论创建端点 (POST /tasks/{id}/comments) 留 v0.10.20.
-        <div className={styles.emptyState}>选中一个标注后可发表评论;此处为该任务下所有标注的评论汇总。</div>
-      )}
+      ) : taskId && projectId ? (
+        // v0.10.20 · D1 · 任务级评论 (POST /feedbacks · kind=comment / anchor_type=task).
+        // 不支持 mentions / canvas_drawing / anchor (任务无具体标注上下文); 仅文本 + 附件.
+        <CommentInput
+          annotationId={`task:${taskId}`}
+          members={[]}
+          busy={createTaskFeedbackMut.isPending}
+          enableCanvasDrawing={false}
+          onSubmit={handleSubmit}
+        />
+      ) : null}
 
       <div className={styles.commentList}>
         {comments.length === 0 && (
@@ -185,23 +249,29 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                   )}
                 </span>
                 <div className={styles.commentActions}>
-                  <button
-                    type="button"
-                    title={c.is_resolved ? "标为未解决" : "标为已解决"}
-                    onClick={() => patchMut.mutate({ id: c.id, payload: { is_resolved: !c.is_resolved } })}
-                    className={styles.iconButton}
-                  >
-                    <Icon name="check" size={11} />
-                  </button>
-                  {isMine && (
-                    <button
-                      type="button"
-                      title="删除"
-                      onClick={() => deleteMut.mutate(c.id)}
-                      className={styles.iconButton}
-                    >
-                      <Icon name="trash" size={11} />
-                    </button>
+                  {/* v0.10.20 · 任务级 feedback 行的 patch/delete 走不同端点 (usePatchFeedback / useDeleteFeedback);
+                      本期暂不开放任务级编辑入口, 仅支持创建. */}
+                  {"__source" in c && c.__source === "feedback" ? null : (
+                    <>
+                      <button
+                        type="button"
+                        title={c.is_resolved ? "标为未解决" : "标为已解决"}
+                        onClick={() => patchMut.mutate({ id: c.id, payload: { is_resolved: !c.is_resolved } })}
+                        className={styles.iconButton}
+                      >
+                        <Icon name="check" size={11} />
+                      </button>
+                      {isMine && (
+                        <button
+                          type="button"
+                          title="删除"
+                          onClick={() => deleteMut.mutate(c.id)}
+                          className={styles.iconButton}
+                        >
+                          <Icon name="trash" size={11} />
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

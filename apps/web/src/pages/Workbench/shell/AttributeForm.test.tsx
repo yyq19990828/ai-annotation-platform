@@ -98,3 +98,42 @@ describe("AttributeForm · dirtyTracker 首次消费", () => {
     vi.useRealTimers();
   });
 });
+
+describe("AttributeForm · v0.10.20 · I12 batch banner", () => {
+  it("batchCount > 1 时在顶部渲染 banner 提示 N 个标注被选中", () => {
+    const { queryByTestId, getByTestId } = render(
+      <AttributeForm
+        schema={schema}
+        className="car"
+        attributes={{ color: "red" }}
+        onChange={() => {}}
+        batchCount={3}
+      />,
+    );
+    const banner = queryByTestId("attribute-form-batch-banner");
+    expect(banner).not.toBeNull();
+    expect(getByTestId("attribute-form-batch-banner").textContent).toContain("3");
+  });
+
+  it("batchCount = 1 或未传时不渲染 banner (退化兼容单条编辑)", () => {
+    const { queryByTestId, rerender } = render(
+      <AttributeForm
+        schema={schema}
+        className="car"
+        attributes={{ color: "red" }}
+        onChange={() => {}}
+        batchCount={1}
+      />,
+    );
+    expect(queryByTestId("attribute-form-batch-banner")).toBeNull();
+    rerender(
+      <AttributeForm
+        schema={schema}
+        className="car"
+        attributes={{ color: "red" }}
+        onChange={() => {}}
+      />,
+    );
+    expect(queryByTestId("attribute-form-batch-banner")).toBeNull();
+  });
+});

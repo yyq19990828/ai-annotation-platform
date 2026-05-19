@@ -433,11 +433,16 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   // bulkUpdate hook 已就位但本切片 UI 未消费 (留 v0.10.20 接 BoxList group 卡片 + AttributeForm 多选 banner).
   const groupAnnotationMut = useAnnotationGroup(taskId ?? "");
   const ungroupAnnotationMut = useAnnotationUngroup(taskId ?? "");
-  void useAnnotationBulkUpdate(taskId ?? "");
+  // v0.10.20 · I12 完整 UI: 多选 AttributeForm.onChange fan-out 走此 mutation; 单条 PATCH 仍走 handleUpdateAttributes.
+  const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");
 
   // I18 · Issue 浮层入口 (v0.10.19 简化版, Konva pin 渲染留 v0.10.20).
   const [issueCreateOpen, setIssueCreateOpen] = useState(false);
   const [issueListOpen, setIssueListOpen] = useState(false);
+  // v0.10.20 · I18 IssueLayer · drop-arm 模式 + pin 高亮 + 单击落点预填 anchor.
+  const [issuePinDropArmed, setIssuePinDropArmed] = useState(false);
+  const [issuePinPrefill, setIssuePinPrefill] = useState<{ x: number; y: number } | null>(null);
+  const [highlightIssueId, setHighlightIssueId] = useState<string | null>(null);
   const issueListParams = useMemo(
     () => ({
       project_id: projectId ?? "",
@@ -1118,6 +1123,19 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onRefineSamCandidate: handleRefineSamCandidate,
         // v0.10.10 · I17.3 · 项目级渲染配置覆盖（合进 useWorkbenchConfig）
         projectRenderingConfig: currentProject?.rendering_config ?? null,
+        // v0.10.20 · I18 · pixel-anchored issue 同步到 Konva pin 渲染.
+        issuePixelFeedbacks: issuesQuery.data?.items ?? [],
+        highlightIssueId: highlightIssueId,
+        onIssuePinClick: (id) => {
+          setHighlightIssueId(id);
+          setIssueListOpen(true);
+        },
+        issuePinDropArmed: issuePinDropArmed,
+        onIssuePinDrop: (x, y) => {
+          setIssuePinDropArmed(false);
+          setIssuePinPrefill({ x, y });
+          setIssueCreateOpen(true);
+        },
         overlays: (
           <>
             {s.tool === "mask" && (
@@ -1187,6 +1205,12 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         // v0.10.17 · 按当前激活工具 unit 派生 attribute_schema (替代项目级扁平字段).
         attributeSchema: toolView.attributeSchema,
         selectedAnnotation: selectedAnnotationForPanel, onUpdateAttributes: handleUpdateAttributes,
+        // v0.10.20 · I12 完整 UI: 多选 fan-out 到 useAnnotationBulkUpdate; group 卡片头点击 → 整组选中.
+        onBulkUpdateAttributes: (ids, patch) => {
+          if (!taskId || ids.length === 0) return;
+          bulkUpdateMut.mutate({ ids, patch });
+        },
+        onSelectGroup: (memberIds) => s.replaceSelected(memberIds),
         currentUserId: meUserId, taskFileUrl: task?.file_url,
         hasMorePredictions: modeState.diffMode !== "final" && !!predictionsInfinite.hasNextPage,
         isFetchingMorePredictions: modeState.diffMode !== "final" && predictionsInfinite.isFetchingNextPage,
@@ -1282,7 +1306,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       onCancel={() => setPropagateDialog(null)}
       onSubmit={handlePropagateSubmit}
     />
-    {/* I18 · Issue 浮动入口 (v0.10.19 简化版, v0.10.20 并入 DiscussionPanel) */}
+    {/* I18 · Issue 浮动入口 + v0.10.20 Pin drop-arm FAB. */}
     {projectId && taskId && (
       <>
         <button
@@ -1296,11 +1320,26 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           <Icon name="flag" size={14} />
           {openIssueCount > 0 && <span className={styles.issueFabBadge}>{openIssueCount}</span>}
         </button>
+        {/* v0.10.20 · drop-arm FAB; 激活后单击图像落点弹 IssueCreateModal 预填 anchor. */}
+        {stageKind === "image" && (
+          <button
+            type="button"
+            aria-label={issuePinDropArmed ? "取消像素 issue 落点模式" : "进入像素 issue 落点模式"}
+            title={issuePinDropArmed ? "再次点击取消" : "单击图像落点创建像素 issue"}
+            onClick={() => setIssuePinDropArmed((v) => !v)}
+            className={`${styles.issueFab} ${styles.issuePinFab}${issuePinDropArmed ? " " + styles.issuePinFabArmed : ""}`}
+            data-testid="issue-pin-fab"
+            data-armed={issuePinDropArmed ? "true" : "false"}
+          >
+            <Icon name="crosshair" size={14} />
+          </button>
+        )}
         <IssueListPanel
           open={issueListOpen}
           projectId={projectId}
           taskId={taskId}
-          onClose={() => setIssueListOpen(false)}
+          highlightId={highlightIssueId}
+          onClose={() => { setIssueListOpen(false); setHighlightIssueId(null); }}
           onCreateNew={() => { setIssueListOpen(false); setIssueCreateOpen(true); }}
         />
         <IssueCreateModal
@@ -1308,7 +1347,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           projectId={projectId}
           taskId={taskId}
           listParams={issueListParams}
-          onClose={() => setIssueCreateOpen(false)}
+          prefilledAnchor={issuePinPrefill}
+          onClose={() => { setIssueCreateOpen(false); setIssuePinPrefill(null); }}
         />
       </>
     )}
