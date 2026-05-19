@@ -163,11 +163,12 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     return () => setActiveClassesConfig(undefined);
   }, [classesConfig]);
   // v0.10.17 · 切工具时若 activeClass 不在新 unit 的类别集内, 自动选首个类避免错位标注.
+  // 依赖只取 activeClass / classes / setActiveClass, 避免整 s 引用导致每次 state 变都 re-run.
   useEffect(() => {
     if (s.activeClass && classes.length > 0 && !classes.includes(s.activeClass)) {
       s.setActiveClass(classes[0] ?? "");
     }
-  }, [s, classes]);
+  }, [s.activeClass, classes, s.setActiveClass]);
   const currentTaskId = s.currentTaskId;
   const setCurrentTaskId = s.setCurrentTaskId;
   const setSelectedId = s.setSelectedId;

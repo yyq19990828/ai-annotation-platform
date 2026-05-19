@@ -29,6 +29,10 @@ from app.schemas.project_template import (
     ProjectTemplateUpdate,
 )
 from app.services.display_id import next_display_id
+from app.services.project import (
+    apply_tool_bindings_legacy_sync,
+    coalesce_legacy_into_tool_bindings,
+)
 from app.services.project_template import (
     TEMPLATE_PAYLOAD_FIELDS,
     assert_can_create_scope,
@@ -140,6 +144,11 @@ async def create_template(
             detail="name / type_label / type_key 必填 (或通过 source_project_id 兜底)",
         )
 
+    # v0.10.17 · 旧客户端只传 legacy classes / classes_config / attribute_schema 时反向派生 tool_bindings,
+    # 同时把 tool_bindings 派生回 legacy 三字段, 保 1.x 期间两端都能读.
+    coalesce_legacy_into_tool_bindings(payload, None, payload.get("type_key"))
+    apply_tool_bindings_legacy_sync(payload, payload.get("tool_bindings"))
+
     template = ProjectTemplate(
         id=uuid.uuid4(),
         display_id=await next_display_id(db, "project_templates"),
@@ -197,6 +206,12 @@ async def update_template(
                 status_code=400,
                 detail="organization scope 必须指定 organization_id",
             )
+
+    # v0.10.17 · 同 create 路径: 兼容旧客户端 legacy 字段 + 双写派生 legacy 三字段.
+    coalesce_legacy_into_tool_bindings(
+        payload, template.tool_bindings, payload.get("type_key") or template.type_key
+    )
+    apply_tool_bindings_legacy_sync(payload, payload.get("tool_bindings"))
 
     for k, v in payload.items():
         setattr(template, k, v)

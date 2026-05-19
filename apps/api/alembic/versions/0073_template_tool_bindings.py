@@ -62,12 +62,18 @@ def upgrade() -> None:
         for i, entry in enumerate(classes_list):
             entry.setdefault("order", i)
 
+        ai_classes_list = [dict(entry) for entry in classes_list]
         tool_bindings = {
             unit: {
                 "enabled": True,
                 "classes": classes_list,
                 "attribute_schema": row.attribute_schema or {"fields": []},
-            }
+            },
+            "ai_interactive": {
+                "enabled": True,
+                "classes": ai_classes_list,
+                "attribute_schema": row.attribute_schema or {"fields": []},
+            },
         }
         bind.execute(
             sa.text(

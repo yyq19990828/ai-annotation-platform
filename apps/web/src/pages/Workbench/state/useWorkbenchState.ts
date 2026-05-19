@@ -47,28 +47,6 @@ export function toolToSamSubTool(tool: Tool): SamSubTool | null {
   }
 }
 
-const AI_TOOL_CYCLE: Tool[] = [
-  "smart-point",
-  "smart-box",
-  "magic-box",
-  "text-prompt",
-  "exemplar",
-];
-
-/** v0.10.2 · S 键循环 4 个 AI 工具; isEnabled 判定是否跳过 (置灰工具). */
-export function nextAITool(current: Tool, isEnabled: (t: Tool) => boolean): Tool {
-  const i = AI_TOOL_CYCLE.indexOf(current);
-  if (i < 0) {
-    return AI_TOOL_CYCLE.find(isEnabled) ?? "box";
-  }
-  for (let k = 1; k <= AI_TOOL_CYCLE.length; k++) {
-    const next = AI_TOOL_CYCLE[(i + k) % AI_TOOL_CYCLE.length];
-    if (next === AI_TOOL_CYCLE[0] && k === AI_TOOL_CYCLE.length) return "box";
-    if (isEnabled(next)) return next;
-  }
-  return "box";
-}
-
 /** v0.6.4：canvas 工具激活时的草稿状态。
  *  CommentInput 点「在题图上绘制」→ beginCanvasDraft；ImageStage 在 canvas tool 下
  *  读取 active + shapes 渲染 + 写入新笔触；用户点 Done → endCanvasDraft 把结果

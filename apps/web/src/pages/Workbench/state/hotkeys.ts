@@ -302,8 +302,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
 
   if (e.key === "v" || e.key === "V") return { type: "setTool", tool: "hand" };
   if (e.key === "b" || e.key === "B") return { type: "setTool", tool: "box" };
-  // v0.10.2 · S 循环 4 个 AI 工具 (具体下一个工具由消费侧根据 capabilities 决定).
+  // v0.10.2 · S 循环 5 个 AI 工具 (具体下一个工具由消费侧根据 capabilities 决定).
   if (e.key === "s" || e.key === "S") return { type: "setTool", tool: "ai-cycle" };
+  // v0.10.17 · G 单键直达 Magic Box.
+  if (e.key === "g" || e.key === "G") return { type: "setTool", tool: "magic-box" };
   if (e.key === "p" || e.key === "P") return { type: "setTool", tool: "polygon" };
   // v0.10.8 · I11 · M 切 mask 工具。注意：mask 工具激活后 B/E 是模式切换 (capture 阶段 useEffect 抢键)，
   // 不会落到这里；这里 B 仍然返回 setTool("box")。

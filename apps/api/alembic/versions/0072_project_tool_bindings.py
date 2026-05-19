@@ -25,6 +25,44 @@ down_revision = "0071"
 branch_labels = None
 depends_on = None
 
+# 分批 UPDATE 一批的行数. 经验值: 单批 5k 在中等规格 PG (4 vCPU / 16G) 上
+# 一般 1 秒内能跑完, 持锁短, 不会阻塞业务读写; 业务低峰也可一次扫完.
+_BATCH_SIZE = 5000
+
+
+def _chunked_update_region(bind, *, table: str, where_clause: str) -> None:
+    """按 ctid 分批把符合 where_clause 的行 tool_unit_id 改成 'region'.
+
+    新列加入时 server_default='bbox', 所有历史行先默认 bbox; 只需把要变 region
+    的子集翻一遍 (例如 annotation_type IN ('polygon','mask') 或
+    prediction result[0].type IN ('polygonlabels',...)). 不需扫全表.
+
+    单批限 _BATCH_SIZE 行, 持锁时间 < 1s 减小对在线业务的阻塞.
+    用 ctid 而非 id (UUID) 做分页 key, 因 ctid 是物理位置, 增量推进无开销.
+    """
+    last_ctid = "'(0,0)'::tid"  # 起始 ctid 比所有真实 ctid 都小
+    while True:
+        rows = bind.execute(
+            sa.text(
+                f"SELECT ctid FROM {table} "
+                f"WHERE ctid > {last_ctid} AND ({where_clause}) "
+                f"ORDER BY ctid LIMIT {_BATCH_SIZE}"
+            )
+        ).fetchall()
+        if not rows:
+            break
+        ctids = ", ".join(f"'{r.ctid}'::tid" for r in rows)
+        bind.execute(
+            sa.text(
+                f"UPDATE {table} SET tool_unit_id = 'region' "
+                f"WHERE ctid IN ({ctids})"
+            )
+        )
+        last_ctid = f"'{rows[-1].ctid}'::tid"
+        # 不到一批 → 已是最后一段.
+        if len(rows) < _BATCH_SIZE:
+            break
+
 
 def _derive_tool_unit_from_type_key(type_key: str | None) -> str:
     """
@@ -94,12 +132,21 @@ def upgrade() -> None:
         for i, entry in enumerate(classes_list):
             entry.setdefault("order", i)
 
+        # 同步把同一份 classes / attribute_schema 复制到 ai_interactive,
+        # 避免老项目升级后 SAM / Magic Box / Exemplar 等 AI 工具左侧调色板为空
+        # (强隔离仍成立: ai_interactive 与 bbox/region 是各自独立的记录, 后续编辑互不影响).
+        ai_classes_list = [dict(entry) for entry in classes_list]
         tool_bindings = {
             unit: {
                 "enabled": True,
                 "classes": classes_list,
                 "attribute_schema": row.attribute_schema or {"fields": []},
-            }
+            },
+            "ai_interactive": {
+                "enabled": True,
+                "classes": ai_classes_list,
+                "attribute_schema": row.attribute_schema or {"fields": []},
+            },
         }
         bind.execute(
             sa.text(
@@ -108,31 +155,24 @@ def upgrade() -> None:
             {"tb": json.dumps(tool_bindings), "id": row.id},
         )
 
-    # ── Data backfill: annotations.tool_unit_id ──────────────────────
-    # polygon / mask → region; 其它 (bbox / video_bbox / video_track / point / line)
-    # → bbox 占位 (本版 polyline / keypoint 工具未实现).
-    op.execute(
-        """
-        UPDATE annotations
-        SET tool_unit_id = CASE
-            WHEN annotation_type IN ('polygon', 'mask') THEN 'region'
-            ELSE 'bbox'
-        END
-        """
+    # ── Data backfill: annotations.tool_unit_id (chunked) ────────────
+    # 新列 server_default='bbox', 所有历史行默认已是 bbox; 这里只把
+    # polygon / mask 翻成 region. 不动其它行, 单批 _BATCH_SIZE 限锁时间.
+    _chunked_update_region(
+        bind,
+        table="annotations",
+        where_clause="annotation_type IN ('polygon', 'mask')",
     )
 
-    # ── Data backfill: predictions.tool_unit_id ──────────────────────
-    # 按所属 project.type_key 推断 (与 projects backfill 同规则).
-    op.execute(
-        """
-        UPDATE predictions p
-        SET tool_unit_id = CASE
-            WHEN pr.type_key = 'image-seg' THEN 'region'
-            ELSE 'bbox'
-        END
-        FROM projects pr
-        WHERE p.project_id = pr.id
-        """
+    # ── Data backfill: predictions.tool_unit_id (chunked) ────────────
+    # 按 result[0].type 派生, 与运行时 derive_tool_unit_from_ls_type 严格一致:
+    #   polygonlabels / brushlabels / multi_polygon → region
+    #   其它 (rectanglelabels / keypointlabels / 未知) → 保持默认 bbox
+    # 避免 image-det 项目挂分割 backend 的历史 prediction 被错回填成 bbox.
+    _chunked_update_region(
+        bind,
+        table="predictions",
+        where_clause="result->0->>'type' IN ('polygonlabels', 'brushlabels', 'multi_polygon')",
     )
 
 

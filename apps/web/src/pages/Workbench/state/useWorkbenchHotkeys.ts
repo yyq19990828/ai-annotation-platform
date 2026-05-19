@@ -458,14 +458,20 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         }
 
         case "setTool": {
-          // v0.10.2 · S / Alt+3 → "ai-cycle": 在 4 个 AI 工具中循环, 跳过置灰的;
-          // 末位再按退回 box. capabilities 通过 props 传入 isPromptSupported.
+          // v0.10.2 · S / Alt+3 → "ai-cycle": 在 5 个 AI 工具中循环 (v0.10.17 含 magic-box),
+          // 跳过置灰的; 末位再按退回 box. capabilities 通过 props 传入 isPromptSupported.
           if (action.tool === "ai-cycle") {
-            const cycle: Array<"smart-point" | "smart-box" | "text-prompt" | "exemplar"> = [
-              "smart-point", "smart-box", "text-prompt", "exemplar",
+            const cycle: Array<"smart-point" | "smart-box" | "magic-box" | "text-prompt" | "exemplar"> = [
+              "smart-point", "smart-box", "magic-box", "text-prompt", "exemplar",
             ];
             const requiredOf = (t: typeof cycle[number]) =>
-              ({ "smart-point": "point", "smart-box": "bbox", "text-prompt": "text", exemplar: "exemplar" } as const)[t];
+              ({
+                "smart-point": "point",
+                "smart-box": "bbox",
+                "magic-box": "bbox",
+                "text-prompt": "text",
+                exemplar: "exemplar",
+              } as const)[t];
             const isEnabled = (t: typeof cycle[number]) =>
               isPromptSupported ? isPromptSupported(requiredOf(t)) : true;
             const curIdx = cycle.indexOf(s.tool as typeof cycle[number]);

@@ -35,27 +35,22 @@ export function useToolBindings(
   const toolUnitId = toolUnitForTool(activeToolId);
   return useMemo(() => {
     const tb = (project?.tool_bindings ?? {}) as ToolBindings;
-    const binding = tb[toolUnitId];
-    if (binding && binding.enabled) {
-      const ordered = (binding.classes ?? [])
-        .slice()
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-      const classes = ordered.map((c) => c.name);
-      const classesConfig: ClassesConfig = {};
-      ordered.forEach((c, i) => {
-        classesConfig[c.name] = {
-          color: c.color ?? null,
-          order: c.order ?? i,
-          alias: c.alias ?? null,
-        };
-      });
-      const attributeSchema: AttributeSchema =
-        (binding.attribute_schema as AttributeSchema | undefined) ?? {
-          fields: [],
-        };
-      return { classes, classesConfig, attributeSchema, toolUnitId };
+    const view = _materialize(tb, toolUnitId);
+    if (view.classes.length > 0) {
+      return view;
     }
-    // Fallback: 老项目无 tool_bindings, 用项目级扁平字段
+    // v0.10.17 兜底: 当前 unit 未配置或类集合为空 (尤其是
+    // ai_interactive — 历史项目升级后曾因迁移漏配导致 AI 调色板清空).
+    // 退到 bbox / region 默认 unit 借类名; toolUnitId 仍保持当前激活工具的 unit,
+    // 让 POST 写入时仍按工具维度落 tool_unit_id, 仅 UI 借用类名展示.
+    for (const fallbackUnit of ["bbox", "region"] as const) {
+      if (fallbackUnit === toolUnitId) continue;
+      const fb = _materialize(tb, fallbackUnit);
+      if (fb.classes.length > 0) {
+        return { ...fb, toolUnitId };
+      }
+    }
+    // 还不行就走老项目 fallback (扁平 classes_config).
     return {
       classes: project?.classes ?? [],
       classesConfig: (project?.classes_config ?? {}) as ClassesConfig,
@@ -64,4 +59,36 @@ export function useToolBindings(
       toolUnitId,
     };
   }, [project, toolUnitId]);
+}
+
+function _materialize(
+  tb: ToolBindings,
+  unit: ToolUnitId,
+): ToolBindingsView {
+  const binding = tb[unit];
+  if (!binding || !binding.enabled) {
+    return {
+      classes: [],
+      classesConfig: {} as ClassesConfig,
+      attributeSchema: { fields: [] } as AttributeSchema,
+      toolUnitId: unit,
+    };
+  }
+  const ordered = (binding.classes ?? [])
+    .slice()
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const classes = ordered.map((c) => c.name);
+  const classesConfig: ClassesConfig = {};
+  ordered.forEach((c, i) => {
+    classesConfig[c.name] = {
+      color: c.color ?? null,
+      order: c.order ?? i,
+      alias: c.alias ?? null,
+    };
+  });
+  const attributeSchema: AttributeSchema =
+    (binding.attribute_schema as AttributeSchema | undefined) ?? {
+      fields: [],
+    };
+  return { classes, classesConfig, attributeSchema, toolUnitId: unit };
 }
