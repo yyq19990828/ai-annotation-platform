@@ -625,11 +625,19 @@ async def test_rebuild_timetable_cli_helper_replaces_rows(
     class FakeClient:
         def download_fileobj(self, Bucket, Key, Fileobj):
             assert Key == "playback/clip.mp4"
+            assert Bucket == "media-cache"
             Fileobj.write(b"fake video")
 
     class FakeStorage:
         datasets_bucket = "datasets"
+        media_cache_bucket = "media-cache"
+        MEDIA_CACHE_PREFIXES = ("thumbnails/", "videos/", "playback/")
         client = FakeClient()
+
+        def bucket_for_cache_key(self, key, default=None):
+            if key and key.startswith(self.MEDIA_CACHE_PREFIXES):
+                return self.media_cache_bucket
+            return default or self.datasets_bucket
 
     monkeypatch.setattr(
         "app.cli.video.rebuild_timetable.probe_video_frame_timetable",

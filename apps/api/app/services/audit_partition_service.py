@@ -144,10 +144,12 @@ class AuditPartitionService:
                 )
             )
 
-            object_key = f"audit-archive/{from_dt.year}/{from_dt.month:02d}.jsonl.gz"
+            # v0.10.17 · 归档迁到独立桶 audit-archive,object 内 key 不再带 prefix
+            object_key = f"{from_dt.year}/{from_dt.month:02d}.jsonl.gz"
             try:
+                storage_service.ensure_bucket(storage_service.audit_archive_bucket)
                 storage_service.client.put_object(
-                    Bucket=storage_service.bucket,
+                    Bucket=storage_service.audit_archive_bucket,
                     Key=object_key,
                     Body=buf,
                     ContentType="application/gzip",

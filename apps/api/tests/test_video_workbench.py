@@ -215,12 +215,13 @@ async def test_store_frame_cache_image_uses_shared_video_frame_cache(
 
     class FakeStorage:
         datasets_bucket = "datasets"
+        media_cache_bucket = "media-cache"
 
         def __init__(self):
             self.client = FakeClient()
 
         def ensure_bucket(self, bucket):
-            assert bucket == "datasets"
+            assert bucket == "media-cache"
 
     def fake_extract(input_path, output_path, pts_ms, width):
         assert input_path == source
@@ -298,12 +299,13 @@ class _FakeVideoChunkClient:
 
 class _FakeVideoChunkStorage:
     datasets_bucket = "datasets"
+    media_cache_bucket = "media-cache"
 
     def __init__(self):
         self.client = _FakeVideoChunkClient()
 
     def ensure_bucket(self, bucket):
-        assert bucket == "datasets"
+        assert bucket == "media-cache"
 
 
 async def _make_video_chunk_fixture(db_session, owner_id, *, codec="h264"):

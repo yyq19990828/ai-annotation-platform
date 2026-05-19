@@ -27,6 +27,7 @@ async def test_prefix_mapping_complete() -> None:
         "datasets": "D",
         "projects": "P",
         "batches": "BT",
+        "project_templates": "PT",
     }
 
 

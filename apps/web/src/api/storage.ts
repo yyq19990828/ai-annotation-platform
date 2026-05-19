@@ -11,7 +11,7 @@ export interface BucketSummary {
   object_count: number;
   total_size_bytes: number;
   error?: string;
-  role: "annotations" | "datasets" | string;
+  role: "annotations" | "datasets" | "bug-reports" | "media-cache" | "audit-archive" | string;
 }
 
 export interface BucketsResponse {

@@ -7,7 +7,8 @@ class BucketSummary(BaseModel):
     object_count: int = 0
     total_size_bytes: int = 0
     error: str | None = None
-    role: str  # annotations | datasets — 业务上的角色, 便于前端区分
+    # v0.10.17 · annotations | datasets | bug-reports | media-cache | audit-archive
+    role: str
 
 
 class BucketsResponse(BaseModel):

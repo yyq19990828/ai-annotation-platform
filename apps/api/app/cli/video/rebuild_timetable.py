@@ -88,7 +88,7 @@ async def rebuild_item_timetable(
         input_path = Path(tmp) / f"source{suffix}"
         with input_path.open("wb") as fh:
             storage.client.download_fileobj(
-                Bucket=storage.datasets_bucket,
+                Bucket=storage.bucket_for_cache_key(source_key),
                 Key=source_key,
                 Fileobj=fh,
             )

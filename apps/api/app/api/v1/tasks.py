@@ -310,11 +310,13 @@ async def get_video_manifest(
         raise HTTPException(status_code=503, detail="Video metadata not ready")
 
     video_path = metadata.playback_path or task.file_path
+    # v0.10.17 · playback/* 走 media-cache 桶,原始源文件走 datasets 桶
+    video_bucket = storage_service.bucket_for_cache_key(video_path, default=bucket)
     try:
         video_url = storage_service.generate_download_url(
             video_path,
             expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
-            bucket=bucket,
+            bucket=video_bucket,
         )
     except ClientError as exc:
         code = (exc.response.get("Error") or {}).get("Code")
@@ -325,7 +327,7 @@ async def get_video_manifest(
         logger.exception(
             "Failed to generate video manifest URL task_id=%s bucket=%s key=%s",
             task.id,
-            bucket,
+            video_bucket,
             video_path,
         )
         raise HTTPException(
@@ -335,7 +337,7 @@ async def get_video_manifest(
         logger.exception(
             "Failed to generate video manifest URL task_id=%s bucket=%s key=%s",
             task.id,
-            bucket,
+            video_bucket,
             video_path,
         )
         raise HTTPException(
@@ -345,7 +347,7 @@ async def get_video_manifest(
         logger.exception(
             "Unexpected video manifest URL error task_id=%s bucket=%s key=%s",
             task.id,
-            bucket,
+            video_bucket,
             video_path,
         )
         raise HTTPException(
@@ -354,12 +356,17 @@ async def get_video_manifest(
 
     poster_path = metadata.poster_frame_path or thumb
     poster_url: str | None = None
+    poster_bucket: str | None = None
     if poster_path:
+        # poster 可能是 thumbnails/* 或 videos/*/frames/* (media-cache) 或源 key (datasets)
+        poster_bucket = storage_service.bucket_for_cache_key(
+            poster_path, default=bucket
+        )
         try:
             poster_url = storage_service.generate_download_url(
                 poster_path,
                 expires_in=VIDEO_MANIFEST_URL_EXPIRES_IN,
-                bucket=bucket,
+                bucket=poster_bucket,
             )
         except ClientError as exc:
             code = (exc.response.get("Error") or {}).get("Code")
@@ -367,21 +374,21 @@ async def get_video_manifest(
                 logger.exception(
                     "Failed to generate video poster URL task_id=%s bucket=%s key=%s",
                     task.id,
-                    bucket,
+                    poster_bucket,
                     poster_path,
                 )
         except BotoCoreError:
             logger.exception(
                 "Failed to generate video poster URL task_id=%s bucket=%s key=%s",
                 task.id,
-                bucket,
+                poster_bucket,
                 poster_path,
             )
         except Exception:
             logger.exception(
                 "Unexpected video poster URL error task_id=%s bucket=%s key=%s",
                 task.id,
-                bucket,
+                poster_bucket,
                 poster_path,
             )
 
@@ -1893,9 +1900,13 @@ def _task_with_url(
 
     thumbnail_url: str | None = None
     if thumbnail_path:
+        # v0.10.17 · thumbnails/* 走 media-cache 桶,其它(如旧路径)按 helper 默认走 datasets
+        thumb_bucket = storage_service.bucket_for_cache_key(
+            thumbnail_path, default=bucket
+        )
         try:
             thumbnail_url = storage_service.generate_download_url(
-                thumbnail_path, bucket=bucket
+                thumbnail_path, bucket=thumb_bucket
             )
         except Exception:
             pass

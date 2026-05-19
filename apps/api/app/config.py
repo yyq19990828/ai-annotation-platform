@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     minio_datasets_bucket: str = "datasets"
     # B-4 · bug 反馈截图独立桶,与 anno/datasets 隔离,180 天 lifecycle
     minio_bug_reports_bucket: str = "bug-reports"
+    # v0.10.17 · 派生媒体缓存独立桶。承载 thumbnails / video frames / chunks / playback,
+    # 数据全部可由源文件重生,挂 30 天 lifecycle,清理与源数据解耦。
+    minio_media_cache_bucket: str = "media-cache"
+    # v0.10.17 · 审计冷分区归档独立桶。归档后永久保留,合规相关,与运营数据物理隔离。
+    minio_audit_archive_bucket: str = "audit-archive"
     minio_use_ssl: bool = False
     minio_public_url: str = ""  # if set, replaces the endpoint host in presigned URLs
 

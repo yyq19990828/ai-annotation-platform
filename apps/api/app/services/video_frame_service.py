@@ -111,7 +111,7 @@ def _asset_url(key: str) -> str:
         return storage_service.generate_download_url(
             key,
             expires_in=3600,
-            bucket=storage_service.datasets_bucket,
+            bucket=storage_service.bucket_for_cache_key(key),
         )
     except (BotoCoreError, ClientError) as exc:
         raise HTTPException(
@@ -561,7 +561,7 @@ async def get_frame_array(
     if row is None or not row.storage_key:
         raise RuntimeError("video frame is not cached")
     resp = storage_service.client.get_object(
-        Bucket=storage_service.datasets_bucket,
+        Bucket=storage_service.bucket_for_cache_key(row.storage_key),
         Key=row.storage_key,
     )
     array = image_bytes_to_array(resp["Body"].read())

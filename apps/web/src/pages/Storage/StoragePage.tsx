@@ -31,6 +31,9 @@ const TYPE_LABELS: Record<string, string> = {
 const ROLE_LABELS: Record<string, string> = {
   annotations: "标注文件",
   datasets: "数据集文件",
+  "bug-reports": "Bug 截图",
+  "media-cache": "派生媒体缓存",
+  "audit-archive": "审计归档",
 };
 
 const VIDEO_ASSET_LABELS: Record<VideoAssetKind, string> = {

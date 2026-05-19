@@ -414,9 +414,9 @@ async def _store_frame_cache_image(
     extract_video_frame_image(input_path, output_path, pts_ms or 0, row.width)
     key = cache_key_for_frame(item.id, row.frame_index, row.width, fmt)
     body = output_path.read_bytes()
-    storage.ensure_bucket(storage.datasets_bucket)
+    storage.ensure_bucket(storage.media_cache_bucket)
     storage.client.put_object(
-        Bucket=storage.datasets_bucket,
+        Bucket=storage.media_cache_bucket,
         Key=key,
         Body=body,
         ContentType="image/jpeg" if fmt == "jpeg" else "image/webp",
@@ -488,9 +488,9 @@ async def _generate_thumbnail(item_id: str) -> None:
 
         thumb_key = f"thumbnails/{item_id}.webp"
         try:
-            storage.ensure_bucket(storage.datasets_bucket)
+            storage.ensure_bucket(storage.media_cache_bucket)
             storage.client.put_object(
-                Bucket=storage.datasets_bucket,
+                Bucket=storage.media_cache_bucket,
                 Key=thumb_key,
                 Body=buf.getvalue(),
                 ContentType="image/webp",
@@ -603,9 +603,9 @@ async def _generate_video_metadata(item_id: str) -> None:
                 try:
                     transcode_video_for_browser(input_path, playback_path)
                     playback_key = f"playback/{item_id}.mp4"
-                    storage.ensure_bucket(storage.datasets_bucket)
+                    storage.ensure_bucket(storage.media_cache_bucket)
                     storage.client.put_object(
-                        Bucket=storage.datasets_bucket,
+                        Bucket=storage.media_cache_bucket,
                         Key=playback_key,
                         Body=playback_path.read_bytes(),
                         ContentType="video/mp4",
@@ -938,10 +938,10 @@ async def _store_video_chunk(
         diagnostics["output_codec"] = "h264"
 
     key = cache_key_for_chunk(item.id, row.chunk_id)
-    storage.ensure_bucket(storage.datasets_bucket)
+    storage.ensure_bucket(storage.media_cache_bucket)
     body = output_path.read_bytes()
     storage.client.put_object(
-        Bucket=storage.datasets_bucket,
+        Bucket=storage.media_cache_bucket,
         Key=key,
         Body=body,
         ContentType="video/mp4",
@@ -1172,7 +1172,10 @@ async def _cleanup_video_frame_assets() -> None:
         ).scalars()
         for row in frame_rows:
             if row.storage_key:
-                storage.delete_object(row.storage_key, bucket=storage.datasets_bucket)
+                storage.delete_object(
+                    row.storage_key,
+                    bucket=storage.bucket_for_cache_key(row.storage_key),
+                )
             row.status = "pending"
             row.storage_key = None
             row.byte_size = None
@@ -1190,7 +1193,10 @@ async def _cleanup_video_frame_assets() -> None:
         ).scalars()
         for row in chunk_rows:
             if row.storage_key:
-                storage.delete_object(row.storage_key, bucket=storage.datasets_bucket)
+                storage.delete_object(
+                    row.storage_key,
+                    bucket=storage.bucket_for_cache_key(row.storage_key),
+                )
             row.status = "pending"
             row.storage_key = None
             row.byte_size = None

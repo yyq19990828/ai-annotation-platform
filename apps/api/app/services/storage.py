@@ -23,6 +23,8 @@ class StorageService:
         self.bucket = settings.minio_bucket
         self.datasets_bucket = settings.minio_datasets_bucket
         self.bug_reports_bucket = settings.minio_bug_reports_bucket
+        self.media_cache_bucket = settings.minio_media_cache_bucket
+        self.audit_archive_bucket = settings.minio_audit_archive_bucket
 
     def ensure_bucket(self, bucket: str | None = None) -> None:
         b = bucket or self.bucket
@@ -35,11 +37,14 @@ class StorageService:
         self.ensure_bucket(self.bucket)
         self.ensure_bucket(self.datasets_bucket)
         self.ensure_bucket(self.bug_reports_bucket)
+        self.ensure_bucket(self.media_cache_bucket)
+        self.ensure_bucket(self.audit_archive_bucket)
         self._ensure_lifecycle()
 
     def _ensure_lifecycle(self) -> None:
         """v0.6.6 · 评论附件 90 天过期。
         B-4 · bug 截图迁到独立桶 ``bug-reports``,在该桶上挂 180 天 lifecycle。
+        v0.10.17 · 派生媒体缓存独立桶 ``media-cache`` 整桶 30 天过期。
         若 MinIO 不支持（旧版本）静默忽略。
         """
         anno_rules = [
@@ -75,6 +80,26 @@ class StorageService:
             logger.warning(
                 "Failed to set bucket lifecycle on %s: %s", self.bug_reports_bucket, exc
             )
+
+        media_cache_rules = [
+            {
+                "ID": "media-cache-30d",
+                "Status": "Enabled",
+                "Filter": {"Prefix": ""},
+                "Expiration": {"Days": 30},
+            },
+        ]
+        try:
+            self.client.put_bucket_lifecycle_configuration(
+                Bucket=self.media_cache_bucket,
+                LifecycleConfiguration={"Rules": media_cache_rules},
+            )
+        except ClientError as exc:
+            logger.warning(
+                "Failed to set bucket lifecycle on %s: %s", self.media_cache_bucket, exc
+            )
+
+        # audit-archive 桶不挂 lifecycle:合规要求永久保留。运维可单独开 object lock。
 
     def _public_url(self, url: str) -> str:
         if settings.minio_public_url:
@@ -174,7 +199,28 @@ class StorageService:
         }
 
     def list_all_buckets(self) -> list[str]:
-        return [self.bucket, self.datasets_bucket]
+        return [
+            self.bucket,
+            self.datasets_bucket,
+            self.bug_reports_bucket,
+            self.media_cache_bucket,
+            self.audit_archive_bucket,
+        ]
+
+    # v0.10.17 · 派生媒体缓存按 key 前缀路由到 media-cache 桶。
+    # 老数据若仍在 datasets 桶,运维可用 mc mirror 一次性搬迁,期间无下行兼容
+    # (派生缓存可重生)。前缀清单与 workers/media.py / video_frame_service.py 写侧保持一致。
+    MEDIA_CACHE_PREFIXES: tuple[str, ...] = (
+        "thumbnails/",
+        "videos/",
+        "playback/",
+    )
+
+    def bucket_for_cache_key(self, key: str, default: str | None = None) -> str:
+        """根据派生缓存 key 前缀选桶。默认回退到 default(通常 datasets_bucket)。"""
+        if key and key.startswith(self.MEDIA_CACHE_PREFIXES):
+            return self.media_cache_bucket
+        return default or self.datasets_bucket
 
     def create_folder(self, folder_name: str, bucket: str | None = None) -> None:
         b = bucket or self.bucket

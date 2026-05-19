@@ -6,7 +6,7 @@ export interface BucketSummary {
   object_count: number;
   total_size_bytes: number;
   error: string | null;
-  role: "annotations" | "datasets";
+  role: "annotations" | "datasets" | "bug-reports" | "media-cache" | "audit-archive";
 }
 
 export interface StorageOverview {

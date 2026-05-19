@@ -36,6 +36,9 @@ async def storage_buckets(_: User = Depends(get_current_user)):
     bucket_roles = {
         storage_service.bucket: "annotations",
         storage_service.datasets_bucket: "datasets",
+        storage_service.bug_reports_bucket: "bug-reports",
+        storage_service.media_cache_bucket: "media-cache",
+        storage_service.audit_archive_bucket: "audit-archive",
     }
     items: list[BucketSummary] = []
     for b, role in bucket_roles.items():

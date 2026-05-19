@@ -277,6 +277,7 @@ export default withMermaid(defineConfig({
             { text: "代码规范", link: "/dev/reference/conventions" },
             { text: "图标约定", link: "/dev/reference/icon-conventions" },
             { text: "环境变量", link: "/dev/reference/env-vars" },
+            { text: "存储桶布局", link: "/dev/reference/storage-buckets" },
           ],
         },
         {
