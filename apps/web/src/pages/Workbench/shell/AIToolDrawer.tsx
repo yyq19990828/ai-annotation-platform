@@ -70,6 +70,7 @@ export function AIToolDrawer({
   return (
     <div
       data-testid="ai-tool-drawer"
+      data-ai-drawer-root
       className={styles.drawer}
     >
       {/* 标题 */}

@@ -168,6 +168,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const [showHotkeys, setShowHotkeys] = useState(false);
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
   const [aiPopoverPosition, setAiPopoverPosition] = useState<{ left: number; top: number } | null>(null);
+  // B-29 · AI 工具抽屉的"已展开"状态；切到 AI 工具时默认 true，ESC / 外部点击可关闭，
+  // 再次点击同一 AI 子工具按钮可再次展开（onSetTool 包装里同步置 true）。
+  const [aiDrawerOpen, setAiDrawerOpen] = useState(true);
   const [stageGeom, setStageGeom] = useState<{ imgW: number; imgH: number; vpSize: { w: number; h: number } }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
   const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(routeId);
@@ -465,10 +468,12 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     if (s.tool !== "box" && s.tool !== "hand") s.setTool("box");
   }, [isVideoTask, s.tool, s.setTool]);
 
-  // B-29 · AI 工具激活时, 按 ESC 切回 hand → AIToolDrawer 自动收起.
+  // B-29 · AI 工具激活时, 按 ESC 仅关闭 AIToolDrawer 子面板, 不切换工具
+  // (用户反馈: ESC 直接切到 hand 会丢失 SAM 子工具选择, 只想隐藏遮挡画布的子面板).
   // input/textarea/contentEditable 内的 ESC 不触发, 避免吃掉用户在文本提示框里的 IME 取消等.
   useEffect(() => {
     if (!isAIToolId(s.tool)) return;
+    if (!aiDrawerOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const active = document.activeElement;
@@ -476,12 +481,41 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         const tag = active.tagName.toLowerCase();
         if (tag === "input" || tag === "textarea" || active.isContentEditable) return;
       }
+      // capture + stopImmediatePropagation 让 useWorkbenchHotkeys 的 cancel 不被触发
+      // (用户只想关面板, 不想顺带清掉选中 / pendingDrawing 等).
       e.preventDefault();
-      s.setTool("hand");
+      e.stopImmediatePropagation();
+      setAiDrawerOpen(false);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [s.tool, s.setTool]);
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
+  }, [s.tool, aiDrawerOpen]);
+
+  // B-29 · 子面板可见时, 点击画布或其他位置先关闭子面板; 若点击落在画布上还需消耗这次点击,
+  // 避免 SAM 子工具误投点 / 误投框. 用 capture 阶段, 在 ImageStage 的 pointerdown 之前拦截.
+  useEffect(() => {
+    if (!isAIToolId(s.tool)) return;
+    if (!aiDrawerOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      // 抽屉内部 / ToolDock 内部的点击不触发关闭 (ToolDock 内含 AI 工具按钮, 再点击会重开抽屉)
+      if (target.closest("[data-ai-drawer-root]")) return;
+      if (target.closest("[data-workbench-tool-dock]")) return;
+      setAiDrawerOpen(false);
+      if (target.closest("[data-workbench-stage]")) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown, { capture: true });
+    return () => document.removeEventListener("pointerdown", onPointerDown, { capture: true });
+  }, [s.tool, aiDrawerOpen]);
+
+  // 切到 AI 工具时, 默认展开子面板 (从其他工具切回 AI 工具是显式意图).
+  useEffect(() => {
+    if (isAIToolId(s.tool)) setAiDrawerOpen(true);
+  }, [s.tool]);
 
   // 编辑冲突状态
   const conflictIdRef = useRef<string>("");
@@ -901,10 +935,17 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         width: s.leftWidth, onResize: s.setLeftWidth,
       }}
       toolDock={{
-        tool: s.tool, onSetTool: s.setTool, videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
+        tool: s.tool,
+        onSetTool: (next) => {
+          s.setTool(next);
+          // B-29 · 再次点击 AI 子工具按钮 (即使已激活) 也应重开抽屉.
+          // 由于 capture-pointerdown 已经把 aiDrawerOpen 设为 false, 这里同步置回 true.
+          if (isAIToolId(next)) setAiDrawerOpen(true);
+        },
+        videoTool: s.videoTool, onSetVideoTool: s.setVideoTool,
         isPromptSupported: mlCapabilities.isPromptSupported,
         capabilitiesLoading: mlCapabilities.isLoading,
-        aiToolDrawer: isAIToolId(s.tool) ? (
+        aiToolDrawer: isAIToolId(s.tool) && aiDrawerOpen ? (
           <AIToolDrawer
             tool={s.tool}
             backendName={mlCapabilities.capability?.name}

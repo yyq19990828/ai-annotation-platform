@@ -203,7 +203,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     projectRenderingConfig,
   }, ref) {
     return (
-      <div className={styles.root}>
+      <div className={styles.root} data-workbench-stage>
         {stageKind === "3d" ? (
           <ThreeDWorkbenchPlaceholder />
         ) : stageKind === "video" ? (

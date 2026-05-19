@@ -76,7 +76,7 @@ export function ToolDock({
 }: ToolDockProps) {
   if (videoMode) {
     return (
-      <div className={styles.root}>
+      <div className={styles.root} data-workbench-tool-dock>
         {VIDEO_TOOLS.map((t) => {
           const active = videoTool === t.id;
           return (
@@ -118,7 +118,7 @@ export function ToolDock({
     t.id === "hand" ? "view" : isAITool(t) ? "ai" : "draw";
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} data-workbench-tool-dock>
       {visibleTools.map((t, idx) => {
         const active = tool === t.id;
         const prevGroup = idx > 0 ? groupOf(visibleTools[idx - 1]) : null;
