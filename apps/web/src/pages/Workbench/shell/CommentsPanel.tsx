@@ -22,7 +22,8 @@ import type {
   CommentMention,
 } from "@/api/comments";
 // v0.10.20 · D1 · 任务级评论复用 POST /feedbacks (kind=comment, anchor_type=task).
-import { useFeedbacks, useCreateFeedback } from "@/hooks/useFeedbacks";
+// v0.10.21 · D4 · 任务级 feedback patch/delete UI 入口开放.
+import { useFeedbacks, useCreateFeedback, usePatchFeedback, useDeleteFeedback } from "@/hooks/useFeedbacks";
 
 type Tab = "comments" | "history";
 
@@ -84,6 +85,9 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
     !annotationId && !!taskId && !!projectId,
   );
   const createTaskFeedbackMut = useCreateFeedback(taskLevelFeedbacksParams);
+  // v0.10.21 · D4 · 任务级 feedback patch/delete UI 入口.
+  const patchTaskFeedbackMut = usePatchFeedback(taskLevelFeedbacksParams);
+  const deleteTaskFeedbackMut = useDeleteFeedback(taskLevelFeedbacksParams);
   const commentsQuery = annotationId ? annotationCommentsQuery : taskCommentsQuery;
   const comments = useMemo(
     () => {
@@ -249,9 +253,34 @@ export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, 
                   )}
                 </span>
                 <div className={styles.commentActions}>
-                  {/* v0.10.20 · 任务级 feedback 行的 patch/delete 走不同端点 (usePatchFeedback / useDeleteFeedback);
-                      本期暂不开放任务级编辑入口, 仅支持创建. */}
-                  {"__source" in c && c.__source === "feedback" ? null : (
+                  {/* v0.10.21 · D4 · 任务级 feedback 行走 PATCH/DELETE /feedbacks; annotation_comments 行走原路径. */}
+                  {"__source" in c && c.__source === "feedback" ? (
+                    <>
+                      <button
+                        type="button"
+                        title={c.is_resolved ? "重开" : "标为已解决"}
+                        onClick={() =>
+                          patchTaskFeedbackMut.mutate({
+                            id: c.id,
+                            payload: { status: c.is_resolved ? "open" : "resolved" },
+                          })
+                        }
+                        className={styles.iconButton}
+                      >
+                        <Icon name="check" size={11} />
+                      </button>
+                      {isMine && (
+                        <button
+                          type="button"
+                          title="删除"
+                          onClick={() => deleteTaskFeedbackMut.mutate(c.id)}
+                          className={styles.iconButton}
+                        >
+                          <Icon name="trash" size={11} />
+                        </button>
+                      )}
+                    </>
+                  ) : (
                     <>
                       <button
                         type="button"

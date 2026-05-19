@@ -95,3 +95,41 @@
   width: 100%;
   height: 100%;
 }
+
+/* v0.10.21 I4 · 笔画 timeline bar (评论卡片下方迷你时间条).
+   每段 segment 颜色 = stroke 颜色, 宽度 ∝ (ended_at - started_at) / 总时长.
+   hover 段时 SVG 仅高亮对应 stroke; 移开恢复全部高亮 (CanvasDrawingPreview 内部状态). */
+.timelineWrapper {
+  width: var(--canvas-drawing-preview-width, 220px);
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timelineLabel {
+  font-size: 10px;
+  color: var(--color-fg-muted);
+}
+
+.timelineBar {
+  display: flex;
+  width: 100%;
+  height: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--color-bg-sunken);
+}
+
+.timelineSegment {
+  height: 100%;
+  flex-grow: var(--seg-grow, 1);
+  background: var(--seg-color, var(--color-fg-muted));
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+.timelineSegmentDim {
+  opacity: 0.35;
+}

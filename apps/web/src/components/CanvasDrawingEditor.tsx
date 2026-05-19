@@ -45,6 +45,7 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
   const [shapes, setShapes] = useState<Shape[]>(initial?.shapes ?? []);
   const [stroke, setStroke] = useState<string>("#ef4444");
   const [drawing, setDrawing] = useState<number[] | null>(null); // 当前正在画的折线点 [x1, y1, x2, y2, ...]
+  const strokeStartedAtRef = useRef<number | null>(null); // v0.10.21 I4 · 当前 stroke 起点 ms epoch
   const svgRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useElementStyle<HTMLDivElement>(useMemo<CSSProperties>(() => ({
     "--canvas-drawing-aspect-padding": `${aspectRatioPercent(imageWidth, imageHeight)}%`,
@@ -72,6 +73,7 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
     (e.target as Element).setPointerCapture?.(e.pointerId);
     const [x, y] = toNormalized(e);
     setDrawing([x, y]);
+    strokeStartedAtRef.current = Date.now();
   };
 
   const handleMove = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -82,8 +84,24 @@ export function CanvasDrawingEditor({ open, onClose, onSave, initial, background
 
   const handleUp = () => {
     if (drawing && drawing.length >= 4) {
-      setShapes((prev) => [...prev, { type: "line", points: drawing, stroke }]);
+      const startedAt = strokeStartedAtRef.current ?? Date.now();
+      const endedAt = Date.now();
+      setShapes((prev) => [
+        ...prev,
+        {
+          type: "line",
+          points: drawing,
+          stroke,
+          id:
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `s-${Date.now()}-${prev.length}`,
+          started_at: startedAt,
+          ended_at: endedAt,
+        },
+      ]);
     }
+    strokeStartedAtRef.current = null;
     setDrawing(null);
   };
 
@@ -188,7 +206,9 @@ interface PreviewProps {
   imageHeight?: number | null;
 }
 
-/** 只读小缩略：annotator 端在评论卡片里展示 reviewer 的画布批注。 */
+/** 只读小缩略：annotator 端在评论卡片里展示 reviewer 的画布批注。
+ *  v0.10.21 · 若所有 shape 都带 started_at/ended_at, 下方渲染迷你 timeline bar:
+ *  每段颜色 = stroke 颜色, 宽度 ∝ 持续时长; hover 段 → 仅该 stroke 高亮(其他 dim). */
 export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl, imageWidth, imageHeight }: PreviewProps) {
   const aw = imageWidth && imageWidth > 0 ? imageWidth : DEFAULT_W;
   const ah = imageHeight && imageHeight > 0 ? imageHeight : DEFAULT_H;
@@ -200,26 +220,110 @@ export function CanvasDrawingPreview({ drawing, width = 220, backgroundUrl, imag
       ? `center/contain no-repeat url(${backgroundUrl})`
       : "var(--color-bg-sunken)",
   } as CSSProperties), [backgroundUrl, height, width]));
+
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const shapes = drawing.shapes ?? [];
+  const timelineData = useMemo(() => {
+    const segments: { idx: number; color: string; durationMs: number }[] = [];
+    for (let i = 0; i < shapes.length; i += 1) {
+      const s = shapes[i];
+      if (s.started_at == null || s.ended_at == null) return null;
+      const duration = Math.max(1, s.ended_at - s.started_at);
+      segments.push({ idx: i, color: s.stroke ?? "#ef4444", durationMs: duration });
+    }
+    return segments.length > 0 ? segments : null;
+  }, [shapes]);
+
   return (
-    <div ref={previewRef} className={styles.preview}>
-      <svg
-        viewBox="0 0 1 1"
-        preserveAspectRatio="none"
-        className={styles.previewSvg}
-      >
-        {(drawing.shapes ?? []).map((s, i) => (
-          <polyline
-            key={i}
-            points={pointsToString(s.points)}
-            fill="none"
-            stroke={s.stroke ?? "#ef4444"}
-            vectorEffect="non-scaling-stroke"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
+    <div>
+      <div ref={previewRef} className={styles.preview}>
+        <svg
+          viewBox="0 0 1 1"
+          preserveAspectRatio="none"
+          className={styles.previewSvg}
+        >
+          {shapes.map((s, i) => (
+            <polyline
+              key={s.id ?? i}
+              points={pointsToString(s.points)}
+              fill="none"
+              stroke={s.stroke ?? "#ef4444"}
+              vectorEffect="non-scaling-stroke"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={hoveredIdx == null || hoveredIdx === i ? 1 : 0.25}
+            />
+          ))}
+        </svg>
+      </div>
+      {timelineData && (
+        <TimelineBar
+          width={width}
+          segments={timelineData}
+          hoveredIdx={hoveredIdx}
+          onHover={setHoveredIdx}
+        />
+      )}
+    </div>
+  );
+}
+
+interface TimelineBarProps {
+  width: number;
+  segments: { idx: number; color: string; durationMs: number }[];
+  hoveredIdx: number | null;
+  onHover: (idx: number | null) => void;
+}
+
+function TimelineBar({ width, segments, hoveredIdx, onHover }: TimelineBarProps) {
+  const total = segments.reduce((sum, s) => sum + s.durationMs, 0) || 1;
+  const wrapperRef = useElementStyle<HTMLDivElement>(
+    useMemo<CSSProperties>(() => ({
+      "--canvas-drawing-preview-width": `${width}px`,
+    }) as CSSProperties, [width])
+  );
+  return (
+    <div ref={wrapperRef} className={styles.timelineWrapper} data-testid="canvas-drawing-timeline">
+      <span className={styles.timelineLabel}>笔画 timeline · {segments.length} 段</span>
+      <div className={styles.timelineBar}>
+        {segments.map((seg) => (
+          <TimelineSegment
+            key={seg.idx}
+            grow={(seg.durationMs / total) * 100}
+            color={seg.color}
+            dimmed={hoveredIdx != null && hoveredIdx !== seg.idx}
+            onEnter={() => onHover(seg.idx)}
+            onLeave={() => onHover(null)}
           />
         ))}
-      </svg>
+      </div>
     </div>
+  );
+}
+
+interface TimelineSegmentProps {
+  grow: number;
+  color: string;
+  dimmed: boolean;
+  onEnter: () => void;
+  onLeave: () => void;
+}
+
+function TimelineSegment({ grow, color, dimmed, onEnter, onLeave }: TimelineSegmentProps) {
+  const segRef = useElementStyle<HTMLDivElement>(
+    useMemo<CSSProperties>(() => ({
+      "--seg-grow": grow,
+      "--seg-color": color,
+    }) as CSSProperties, [grow, color])
+  );
+  return (
+    <div
+      ref={segRef}
+      className={`${styles.timelineSegment}${dimmed ? " " + styles.timelineSegmentDim : ""}`}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      data-testid="canvas-drawing-timeline-segment"
+    />
   );
 }

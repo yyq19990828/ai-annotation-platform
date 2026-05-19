@@ -4901,6 +4901,28 @@
       "CanvasShape": {
         "additionalProperties": false,
         "properties": {
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
           "points": {
             "items": {
               "type": "number"
@@ -4908,6 +4930,17 @@
             "minItems": 2,
             "title": "Points",
             "type": "array"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
           },
           "stroke": {
             "anyOf": [

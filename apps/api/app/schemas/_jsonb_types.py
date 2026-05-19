@@ -446,6 +446,11 @@ class CanvasShape(BaseModel):
     type: CanvasShapeType
     points: list[float] = Field(min_length=2)
     stroke: str | None = None
+    # v0.10.21 I4 · 笔画 timeline. 全 Optional, 旧记录缺字段时 UI 降级不渲染时间条.
+    # id: client uuid; started_at/ended_at: ms epoch.
+    id: str | None = None
+    started_at: float | None = None
+    ended_at: float | None = None
 
     model_config = ConfigDict(extra="forbid")
 

@@ -225,7 +225,7 @@
 > Wave α / β / γ / δ 已收尾（I2 / I3 / I6 / I7 / I8 / I11 / I13 / I15 / I16 / I17 / I20 Interactor 类型均落地）。以下是 Wave γ 末段 + Wave ε 剩余。
 
 - **I1 大图 tile**（v0.11.0 独立 epic，**必做**）：>4K 图后端 Celery 切 IIIF / 自定义 tile 金字塔（zoom 0/1/2 ... 每级 512×512 PNG/WebP），元数据 `ImageTilePyramid(image_id, max_level, tile_size, format)`；前端 `useTileSource` hook + LRU 缓存 ImageBitmap；Konva 背景 bg 层改 `<Group>` + 多张 `<Image>` tile；保留 BlurhashLayer 兜底。衡量：8K×8K 图、4x 缩放局部、内存 <300MB、FPS ≥30。后端切片服务可与视频 chunk service 共用基础设施。
-- **I4 笔画 timeline 与完整 DiscussionPanel**（v0.10.19 已落渐进式: CommentsPanel 任务级降级 + AIInspectorPanel 常驻渲染; 剩 `canvas_drawing.shapes[i]` 加 `id/started_at/ended_at` 时间戳 + 评论卡片下方迷你时间轴 + `DiscussionPanel.tsx` 独立拆出 + WorkbenchLayout 右栏两段固定结构 + 任务级评论 POST 端点）。
+- **I4 完整 DiscussionPanel 拆分**（v0.10.19/v0.10.20/v0.10.21 渐进式落地: CommentsPanel 任务级降级 + 任务级评论 POST /feedbacks + 任务级 feedback patch/delete UI + `canvas_drawing.shapes[i].id/started_at/ended_at` 时间戳 + 评论卡片下方迷你 timeline bar; 剩 `DiscussionPanel.tsx` 独立拆出 + WorkbenchLayout 右栏两段固定结构 + ResizeHandle — 重估为纯结构改造对用户行为无增量, Workbench Shell 未破 900 行触发线前不开工）。
 - **I5 多图比对（双视图）**：工作台支持左右 / 上下分屏，每个面板独立 ImageStage 实例；可选「锁定 viewport」按钮；标注 diff 左/右面板增删改颜色区分；状态隔离与 R6.2 同理。
 - **I9 Ellipse 形状**（S，纯前端）：`stage/tools/EllipseTool.ts` + `KonvaEllipse` + `ellipseGeom.ts`；存储 `[cx, cy, rx, ry, rotation]`；扩展 `geometry.kind: bbox | polygon | ellipse`，与 R9 视频几何 kind 字段同期收口。
 - **I10 Skeleton（骨架关键点）**（L，后端 schema）：Label 配置器 SVG 拖点 + 连线 + 子标签命名 → JSON 模板；`SkeletonTool` 按模板顺序自动落点，节点支持 occluded / outside；新增 `geometry.kind: skeleton`，payload `{ template_id, points: [{node_id, x, y, occluded}], links: [...] }`。
@@ -278,7 +278,7 @@
 | **P3** | C.3 SAM 后续延伸: 类别确认 hint / pixel-level Snap-to-edge | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) + 像素级 Snap-to-edge(Canny/Sobel WebWorker) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 工作台 ToolDock 按 `tool_bindings` 过滤 | v0.10.17 未做; 客户反馈"看不懂为什么 polygon 按钮点不开"时启动 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P3** | I4/I12/I18 epic 续作 (v0.10.20 收尾) | v0.10.19 已落契约 + 核心 UI: I12 快捷键+Konva 虚线 / I18 IssueCreateModal+IssueListPanel / I4 评论历史 CommentsPanel 任务级降级; 剩: DiscussionPanel 完整拆分 + BoxList group 折叠卡片 + AttributeForm 多选 banner + IssueLayer Konva pin 渲染 + 任务级评论 POST 端点 + 笔画 timeline + ADR-0027 第二段 view + 旧表双写 | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
+| **P3** | I4/I12/I18 epic 续作余 (v0.10.21 收尾) | v0.10.20 已落 I4 任务级评论 POST + I12 group 折叠/batch banner + I18 IssueLayer + ADR-0027 第二段双写; v0.10.21 落 I4 笔画 timeline + 任务级 feedback patch/delete UI; 剩独立 epic 处理: ADR-0027 第三段切单源 (legacy-table-retirement) + DiscussionPanel 完整拆分 (无 UX 增量) + IssueLayer video frame pin | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | `polyline` 工具实现 | v0.10.17 schema 与 UI 留位置灰; 车道线 / 折线段需求出现时启动; 与 §C.7 I9 Ellipse 同窗口可并行 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |

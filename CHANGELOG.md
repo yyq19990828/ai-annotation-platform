@@ -22,6 +22,33 @@
 
 ## 最新版本
 
+## [0.10.21] - 2026-05-19
+
+> **v0.10.20 deferred 项部分收口: I4 笔画 timeline + 任务级 feedback patch/delete UI.** 原计划 5 项 (D1-D5) 开工时重估发现 D1 (ADR-0027 切单源) 远超原计划体量 — 旧三表 (bug_reports / annotation_comments / tasks.reject_reason) 各自带独立 state machine + 子资源 (BugComment) + 前端专用 UI (BugReportDrawer), 不是删 mirror 写路径就能切, 需独立 legacy-table-retirement epic 处理。D3 (DiscussionPanel 完整拆分) 与 D5 (IssueLayer video pin) 为结构性 / stretch 工作, 无 UX 增量, 一并延期。**v0.10.21 收紧到 D2 + D4 两项可立即落地的 UX 完善**, 不破窗 ADR-0027 第三段决策。 → [plan](docs/plans/2026-05-19-v0.10.21-i4-stroke-timeline-adr0027-cutover.md).
+
+### Added
+
+- **I4 · 笔画 timeline 协议字段 + 评论卡片下方迷你时间条** ([_jsonb_types.py CanvasShape](apps/api/app/schemas/_jsonb_types.py) · [CanvasDrawingEditor.tsx](apps/web/src/components/CanvasDrawingEditor.tsx) · [CanvasDrawingEditor.module.css](apps/web/src/components/CanvasDrawingEditor.module.css)): `CanvasShape` 加 3 个 Optional 字段 `id` / `started_at` / `ended_at` (全 Optional, 旧记录缺字段时 UI 降级不渲染 timeline, 无 alembic migration); `CanvasDrawingEditor.handleDown/handleUp` 用 `Date.now()` 记 ms epoch + `crypto.randomUUID()` 生成 id; `CanvasDrawingPreview` 在 SVG 下方渲染 `TimelineBar` (纯 CSS flex bar, 每段 stroke 一个 segment, `flex-grow` ∝ 持续时长, `background` = stroke 颜色); hover segment → 仅该 stroke `opacity=1`, 其他 `opacity=0.25`, 移开恢复全部 1。
+- **D4 · 任务级 feedback patch/delete UI 入口** ([CommentsPanel.tsx](apps/web/src/pages/Workbench/shell/CommentsPanel.tsx)): v0.10.20 任务级 feedback 行 (`__source=feedback`) 仅展示, 本期开放 patch (PATCH /feedbacks/{id} · status=resolved/open) + delete (DELETE /feedbacks/{id} · 软删 is_active=false); 作者本人可见删除按钮 (server 端 permission 兜底); `usePatchFeedback` / `useDeleteFeedback` hook 早在 v0.10.19 已就位, 本期仅 UI 接线。
+- **4 例 vitest** ([CanvasDrawingPreview.timeline.test.tsx](apps/web/src/components/CanvasDrawingPreview.timeline.test.tsx)): ① 旧 shape 缺时间戳 → timeline 不渲染 (降级); ② 全字段 → 段数 = shape 数; ③ 混合 (1 缺 1 全) → 整段降级不渲染 (一致性); ④ hover segment → 对应 polyline opacity=1, 其他=0.25, 移开恢复。
+
+### Changed
+
+- **codegen openapi.snapshot.json 重生**: `CanvasShape` 新字段同步到前端 `generated/types.gen.ts` (id / started_at / ended_at 全 Optional)。
+
+### Verified
+
+- 后端 `cd apps/api && uv run pytest tests/test_annotation_comments_paged.py tests/test_comment_polish.py tests/test_annotation_feedbacks.py` → **16 passed** (无回归; schema 新字段全 Optional 不破老测试)。
+- 前端 `pnpm --filter web typecheck` → 0 errors。
+- 前端 `pnpm --filter web test` → **737 passed / 103 files** (baseline 733 + 4 新增 timeline 测试)。
+- 前端 `pnpm --filter web lint` → 0 errors / 117 warnings (baseline 116 + 1 useElementStyle deps warning in TimelineSegment)。
+
+### Deferred (推迟到独立 epic / v0.11+)
+
+- **D1 · ADR-0027 第三段 (切单源)**: 重估发现旧三表各自带独立 state machine + 子资源 + 前端 UI, 不是删 mirror 写路径就能切。留独立 legacy-table-retirement epic (v0.11+) 处理: 先按表逐个评估迁移影响面 (bug_reports → 整套 BugReportDrawer / BugComment / display_id 体系; annotation_comments → mentions / attachments 子表; tasks.reject_reason → state machine 状态字段)。**双写仍正常进行 (v0.10.20 已落), 不破窗**。
+- **D3 · 独立 DiscussionPanel.tsx + WorkbenchLayout 右栏两段固定结构 + ResizeHandle**: 重估发现 CommentsPanel 内嵌 Tabs (comments / history) 已能承担 UX, 拆出 DiscussionPanel + 右栏两段拆分为纯结构改造, 对用户行为无增量。Workbench Shell 仍 1210 行未破 900 触发线, 暂缓。
+- **D5 · IssueLayer video stage frame-aware pin**: video stage 的 frame-aware pin 需要重做坐标转换 + frame 过滤 store, 与视频时间轴交互细节多, 留单独切片处理 (anchor_position 已预留 frame 字段, 协议不动)。
+
 ## [0.10.20] - 2026-05-19
 
 > **v0.10.19 epic 留下的 5 项 deferred 收口 + ADR-0027 第二段迁移.** 把 I4 任务级评论 (POST /feedbacks · kind=comment / anchor_type=task) / I12 BoxList group 折叠卡片 + AttributeForm 多选 batch banner / I18 IssueLayer Konva pin 渲染 + 单击落点创建 / ADR-0027 三段式迁移第二段 (`v_annotation_feedback_unified` UNION ALL view + bug_reports / annotation_comments / tasks.reject_reason 双写 mirror) 一次性落地。**纯 UI / 双写迁移工作**, 后端契约延用 v0.10.19 已定型的 `annotation_feedbacks` + `annotations.group_id`, 不引入新 schema。关键决策: ① 任务级评论**不**新加 POST /tasks/{id}/comments 端点 (复用 v0.10.19 已落的 POST /feedbacks, 减少端点数量 + 直接走未来主存储); ② 旧三表写入路径接入 `FeedbackService.mirror_*` helper, 同事务 INSERT 新表, 失败一起回滚 (一致性由 PG 事务保证); ③ `v_annotation_feedback_unified` view 带 `source_table` 列, 用于双写一致性对账与 v0.10.21 切单源前的过渡; ④ I12 BoxList 同 group_id (≥2 成员) 折叠为带哈希色点的 group 卡片 (单击头部 = 整组选中, 单击 chevron = 展开/折叠), AttributeForm 在 `selectedIds.length > 1` 时顶部 batch banner + onChange fan-out 走 useAnnotationBulkUpdate; ⑤ I18 IssueLayer Konva 层挂在 ImageStage `</Stage>` 之前 (位于 ImageStageShapes 层之上), status 配色 (open=橙/resolved=绿/wont_fix=灰) + 高亮态加阴影, drop-arm FAB (crosshair 图标) 激活后单击图像落点 → 派发归一化坐标 → IssueCreateModal 自动预填 x/y. **不引入**: ① 独立 `DiscussionPanel.tsx` + WorkbenchLayout 右栏两段固定结构 (无 UX 增量, 控制 PR 体量); ② POST /tasks/{id}/comments 端点 (决策见 D1); ③ 旧 bug_reports / annotation_comments 数据 backfill 到 feedbacks (留 v0.10.21 切单源时一次性 backfill); ④ I4 笔画 timeline (canvas_drawing.shapes[i] 加 id/started_at/ended_at + 评论卡片下方迷你时间条) (stretch goal, 无客户触发信号 → 延期 v0.10.21); ⑤ IssueLayer 在 video stage 的 frame 维度 pin (anchor_position 已预留 frame 字段, 后续切片). → [plan](docs/plans/2026-05-19-v0.10.20-i4-i12-i18-deferred-closure.md) · [ADR-0027](docs/adr/0027-annotation-feedback-unified-table.md).
