@@ -141,7 +141,7 @@ nc: 3
 - `geometry` 使用平台**内部格式**（`bbox` / `polygon` / `multi_polygon`），不嵌套 LabelStudio shape。
 - **v0.10.17 新增** `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `ai_interactive` / ...)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, polygonlabels→region)。
 
-详见 [ADR-0024](../../../docs/adr/0024-aap-json-format.md) · [ADR-0026](../../../docs/adr/0026-tool-unit-class-and-attribute-binding.md) · [API 导入指南](../../api/guides/import.md)。
+详见 [ADR-0024](../../dev/adr/0024-aap-json-format) · [ADR-0026](../../dev/adr/0026-tool-unit-class-and-attribute-binding) · [API 导入指南](../../api/guides/import.md)。
 
 ## 视频轨迹
 

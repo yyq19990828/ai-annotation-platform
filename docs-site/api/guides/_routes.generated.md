@@ -11,6 +11,12 @@
 |---|---|
 | GET | `/admin/projects/{project_id}/alias-frequency` |
 
+## `admin_analytics.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{panel_name}` |
+
 ## `admin_ml_integrations.py`
 
 | Method | Path |
@@ -57,6 +63,14 @@
 | Method | Path |
 |---|---|
 | DELETE | `/{key_id}` |
+
+## `async_jobs.py`
+
+| Method | Path |
+|---|---|
+| GET | `/async-jobs` |
+| GET | `/async-jobs/{job_id}` |
+| POST | `/async-jobs/{job_id}/cancel` |
 
 ## `audit_logs.py`
 
@@ -235,6 +249,16 @@
 | POST | `/admin/failed-predictions/{failed_id}/retry` |
 | POST | `/admin/failed-predictions/{failed_id}/dismiss` |
 | POST | `/admin/failed-predictions/{failed_id}/restore` |
+| POST | `/projects/{project_id}/predictions/import` |
+
+## `project_templates.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{template_id}` |
+| PATCH | `/{template_id}` |
+| DELETE | `/{template_id}` |
+| POST | `/{template_id}/duplicate` |
 
 ## `projects.py`
 
@@ -351,4 +375,4 @@
 
 ---
 
-_共 31 模块 / 199 路由_
+_共 34 模块 / 208 路由_

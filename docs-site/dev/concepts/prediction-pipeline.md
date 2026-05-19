@@ -87,7 +87,7 @@ v0.10.17 起 `predictions.tool_unit_id String(30)` 列必填:
 - `to_internal_shape()` 出参也带 `tool_unit_id`, 供前端候选层 / AAP JSON 导出消费
 - `accept_prediction()` 创建的 annotation 沿用 prediction 的 `tool_unit_id` (与项目 `tool_bindings[unit].classes` 软校验保一致)
 
-详见 [annotation-module · 工具单位](./annotation-module#工具单位-tool_unit-维度-v01017) 与 [ADR-0026](../../../docs/adr/0026-tool-unit-class-and-attribute-binding.md)。
+详见 [annotation-module · 工具单位](./annotation-module#工具单位-tool_unit-维度-v01017) 与 [ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding)。
 
 ## WebSocket 通道
 

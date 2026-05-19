@@ -123,11 +123,11 @@ archived
 }
 ```
 
-工具单位枚举 (与 `app/schemas/_jsonb_types.ToolUnitId` Literal 对齐): `bbox` / `polyline` (留位) / `region` (polygon + mask 打包) / `ai_interactive` (smart-* + magic-box 打包) / `lidar_box_3d` (留位)。**强隔离决策**: 不同工具的同名类是两条独立记录, 详见 [ADR-0026](../../../docs/adr/0026-tool-unit-class-and-attribute-binding.md)。
+工具单位枚举 (与 `app/schemas/_jsonb_types.ToolUnitId` Literal 对齐): `bbox` / `polyline` (留位) / `region` (polygon + mask 打包) / `ai_interactive` (smart-* + magic-box 打包) / `lidar_box_3d` (留位)。**强隔离决策**: 不同工具的同名类是两条独立记录, 详见 [ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding)。
 
 如果你改的是「标注长什么样」, 十有八九要从 project.tool_bindings 入手, 而不是 task。
 
-写入路径: `apps/api/app/api/v1/projects.py` 的 `create_project` / `update_project` 调用 [`coalesce_legacy_into_tool_bindings`](../../../apps/api/app/services/project.py) (旧客户端只传扁平字段时反向派生到对应 unit) + [`apply_tool_bindings_legacy_sync`](../../../apps/api/app/services/project.py) (派生回写 classes / classes_config / attribute_schema), 保证单源真值。
+写入路径: `apps/api/app/api/v1/projects.py` 的 `create_project` / `update_project` 调用 `coalesce_legacy_into_tool_bindings` (旧客户端只传扁平字段时反向派生到对应 unit) + `apply_tool_bindings_legacy_sync` (派生回写 classes / classes_config / attribute_schema), 保证单源真值。详细 helper 实现见 `apps/api/app/services/project.py`。
 
 ### 2. 工作台派题策略
 

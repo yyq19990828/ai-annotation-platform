@@ -227,7 +227,7 @@ v0.10.17 起 annotation 必须携带 `tool_unit_id: String(30)` (枚举 bbox / p
 - `accept_prediction` 沿用 `prediction.tool_unit_id` 给生成的 annotation, 保持工具维度一致。
 - 老数据由 alembic 0072 backfill: `annotation_type IN ('polygon', 'mask')` → `region`, 其它 → `bbox` 占位。
 
-强隔离: 同名类在不同 unit 下是独立记录, 不能跨 unit 共享 (避免回退到"项目级扁平类别表"反模式)。详见 [ADR-0026](../../../docs/adr/0026-tool-unit-class-and-attribute-binding.md)。
+强隔离: 同名类在不同 unit 下是独立记录, 不能跨 unit 共享 (避免回退到"项目级扁平类别表"反模式)。详见 [ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding)。
 
 ## Task / Batch 回写
 

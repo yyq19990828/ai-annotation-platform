@@ -50,10 +50,10 @@ DuckDB 单机能扛到约 **亿级行**。触发以下任一条件后再迁 Clic
 - 单个面板 query 耗时 > 10s（看浏览器 Network）
 - 多用户并发读 read_only 出现锁等待
 
-→ 见 [ROADMAP §4.3 ClickHouse 升级触发条件](../../../ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)。
+→ 见 [ROADMAP §4.3 ClickHouse 升级触发条件](../../roadmap/2026-05-18-cvat-labelstudio-inspiration)。
 
 ## 相关
 
-- [ROADMAP §1.6 DuckDB 离线分析视图](../../../ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)
+- [ROADMAP §1.6 DuckDB 离线分析视图](../../roadmap/2026-05-18-cvat-labelstudio-inspiration)
 - 数据源：[`apps/api/app/services/duckdb_sync.py`](../../../apps/api/app/services/duckdb_sync.py)
 - 固定 query：[`apps/api/app/services/analytics_queries.py`](../../../apps/api/app/services/analytics_queries.py)

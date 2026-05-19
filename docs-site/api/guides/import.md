@@ -53,7 +53,7 @@ overwrite_existing=<true|false default false>
 
 ## AAP JSON 格式
 
-详见 [用户文档 · AAP JSON v1.0](../../user-guide/reference/export-formats#aap-json-v10-无损) + [ADR-0024](../../../docs/adr/0024-aap-json-format).
+详见 [用户文档 · AAP JSON v1.1](../../user-guide/reference/export-formats#aap-json-v11无损) + [ADR-0024](../../dev/adr/0024-aap-json-format).
 
 最小可导入示例：
 

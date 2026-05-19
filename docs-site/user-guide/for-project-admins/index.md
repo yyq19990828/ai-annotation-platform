@@ -53,7 +53,7 @@ v0.10.17 起,类别与属性 schema 按**工具单位**(`tool_unit`)**强隔离*
 
 - 强隔离意味着**跨工具复用同名类需要重复输入**(bbox 加「人」 / region 加「人」是两次操作)。后续版本视客户反馈可能加可选「类别软关联」链。
 - v0.10.16 之前创建的旧项目升级后,默认按 `type_key` 推断:`image-seg` → region unit;其它 → bbox unit。若实际混用 polygon 工具,需到项目设置页把类**复制**到 region unit。
-- 详细架构决策见 [ADR-0026](https://github.com/anthropics/ai-annotation-platform/blob/main/docs/adr/0026-tool-unit-class-and-attribute-binding.md)。
+- 详细架构决策见 [ADR-0026](../../dev/adr/0026-tool-unit-class-and-attribute-binding)。
 
 ![向导步骤](../images/projects/wizard-steps.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 6 步 wizard 各步关键截图（基本信息 / 类型 / 类别 schema / 属性 schema / AI 模型 / 审核策略），可拼成一张长图。 -->

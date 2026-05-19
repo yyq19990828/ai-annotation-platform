@@ -88,7 +88,7 @@ cd apps/web && pnpm codegen
 
 ## v0.10.17 工具维度 schema (tool_bindings + tool_unit_id)
 
-[ADR-0026](../../../docs/adr/0026-tool-unit-class-and-attribute-binding.md) 把项目级扁平 `classes_config` / `attribute_schema` 改为按 `tool_unit_id` 嵌套的 `tool_bindings`。三层 schema 影响:
+[ADR-0026](../adr/0026-tool-unit-class-and-attribute-binding) 把项目级扁平 `classes_config` / `attribute_schema` 改为按 `tool_unit_id` 嵌套的 `tool_bindings`。三层 schema 影响:
 
 | 层 | 字段 / 类型 | 备注 |
 |---|---|---|
