@@ -23,6 +23,11 @@ export const UNKNOWN_CLASS = "__unknown";
 export const UNKNOWN_CLASS_LABEL = "未分类";
 const UNKNOWN_COLOR = "oklch(0.65 0 0)";
 
+/** 类名展示函数: 把 sentinel `__unknown` 换成中文标签 `未分类`, 其他原样返回. */
+export function displayClassName(name: string): string {
+  return name === UNKNOWN_CLASS ? UNKNOWN_CLASS_LABEL : name;
+}
+
 // Canvas(Konva) 用的颜色：通过浏览器 CSS 引擎把 oklch 转换成 hex，并缓存结果。
 const _canvasCache = new Map<string, string>();
 function colorToHex(cssColor: string): string {

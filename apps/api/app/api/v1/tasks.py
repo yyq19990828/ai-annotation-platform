@@ -15,6 +15,7 @@ from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem, VideoFrameIndex
+from app.db.models.prediction import Prediction
 from app.schemas.task import (
     TaskOut,
     TaskListResponse,
@@ -1179,8 +1180,12 @@ async def get_predictions(
 
     base: list[tuple[Any, list[dict]]] = []  # (raw prediction, internal shapes)
     for p in predictions:
+        # B-37 · 跳过被驳回的 shape 下标; 防止刷新后 AI 待审框重现.
+        rejected_set = set(p.rejected_shape_indexes or [])
         shapes = []
         for shape_index, raw_shape in enumerate(p.result or []):
+            if shape_index in rejected_set:
+                continue
             shape = dict(to_internal_shape(raw_shape))
             shape["shape_index"] = shape_index
             shapes.append(shape)
@@ -1231,6 +1236,48 @@ async def accept_prediction(
     await TaskLockService(db).heartbeat(task_id, current_user.id)
     await db.commit()
     return await svc.list_by_task(task_id)
+
+
+@router.post(
+    "/{task_id}/predictions/{prediction_id}/reject", status_code=204
+)
+async def reject_prediction(
+    task_id: uuid.UUID,
+    prediction_id: uuid.UUID,
+    shape_index: int | None = Query(
+        None,
+        ge=0,
+        description="可选: 仅驳回指定下标的 shape; 不传则驳回该 Prediction 全部 shape.",
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+):
+    """B-37 · 驳回 AI 预测候选 shape, 持久化到 predictions.rejected_shape_indexes.
+
+    后续 GET /tasks/{id}/predictions 会跳过这些下标, 刷新页面后 AI 待审框不会重现.
+    驳回是软操作: prediction 行仍在库中, 仅在该数组追加被拒下标 (去重).
+    """
+    _assert_task_editable(await _load_task_or_404(db, task_id))
+    pred = await db.get(Prediction, prediction_id)
+    if not pred or pred.task_id != task_id:
+        raise HTTPException(status_code=404, detail="Prediction not found")
+    total_shapes = len(pred.result or [])
+    if shape_index is not None and shape_index >= total_shapes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"shape_index {shape_index} out of range (0..{total_shapes - 1})",
+        )
+    current = list(pred.rejected_shape_indexes or [])
+    current_set = set(current)
+    targets = [shape_index] if shape_index is not None else list(range(total_shapes))
+    for idx in targets:
+        if idx not in current_set:
+            current.append(idx)
+            current_set.add(idx)
+    pred.rejected_shape_indexes = current
+    await TaskLockService(db).heartbeat(task_id, current_user.id)
+    await db.commit()
+    return None
 
 
 @router.delete("/{task_id}/annotations/{annotation_id}", status_code=204)

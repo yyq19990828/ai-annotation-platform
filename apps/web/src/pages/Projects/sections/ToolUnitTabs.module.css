@@ -18,8 +18,8 @@
 }
 
 .tabActive {
-  background: var(--color-primary-bg, rgba(0, 100, 220, 0.08));
-  border-color: var(--color-primary);
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
 }
 
 .tabDisabled .tabButton {
@@ -35,21 +35,21 @@
   border-radius: 4px;
   background: transparent;
   font-size: 12px;
-  color: var(--color-text, #1f2937);
+  color: var(--color-fg);
   cursor: pointer;
 }
 
 .tabActive .tabButton {
-  color: var(--color-primary);
+  color: var(--color-accent-fg);
   font-weight: 500;
 }
 
 .tabButton:hover {
-  background: var(--color-hover-bg, rgba(0, 0, 0, 0.04));
+  background: var(--color-bg-hover);
 }
 
 .toggle {
-  accent-color: var(--color-primary);
+  accent-color: var(--color-accent);
   margin: 0 2px 0 4px;
   cursor: pointer;
 }
@@ -59,5 +59,5 @@
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--color-border);
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-fg-muted);
 }

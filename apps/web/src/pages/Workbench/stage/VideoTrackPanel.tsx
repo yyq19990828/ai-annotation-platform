@@ -5,7 +5,7 @@ import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
 import type { VideoTrackerJobState } from "@/hooks/useVideoTrackerJobs";
 import type { DiffMode } from "../modes/types";
-import { classColor } from "./colors";
+import { classColor, displayClassName } from "./colors";
 import { resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
 import styles from "./VideoTrackPanel.module.css";
@@ -344,7 +344,7 @@ export function VideoTrackPanel({
                 </svg>
                 <div className={styles.trackTitleRow}>
                   <b className={styles.truncateTitle}>
-                    {ann.class_name}
+                    {displayClassName(ann.class_name)}
                   </b>
                   <span className={styles.compactBadge}>
                     <Badge variant={ann.source === "prediction_based" ? "default" : "accent"}>
@@ -432,7 +432,7 @@ export function VideoTrackPanel({
                 </svg>
                 <div className={styles.trackTitleRow}>
                   <b className={styles.truncateTitle}>
-                    {selectedTrack.class_name}
+                    {displayClassName(selectedTrack.class_name)}
                   </b>
                   <span className={styles.compactBadge}>
                     <Badge variant={selectedTrack.source === "prediction_based" ? "default" : "accent"}>

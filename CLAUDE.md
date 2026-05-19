@@ -70,13 +70,29 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 架构变更 → 检查 `docs-site/dev/concepts/`，必要时新增 ADR（`docs/adr/`）
 - 环境变量变更 → 更新 `.env.example`，运行 `pnpm docs:gen-env-vars`，检查 `DEV.md`
 
-## 6. /plan 模式下计划文件的命名规范
+## 6. 前端颜色 token 规则（防暗色模式失效）
+
+**唯一可信来源：`apps/web/src/styles/tokens.css`。**
+
+历史 B-32/B-36/B-38/B-39 共同病灶：组件 CSS 里凭"经验"写了同义但不存在的变量名（`var(--color-text, #1f2937)`、`var(--color-primary, ...)`），浏览器找不到就退回浅色硬编码 fallback → 暗色模式下不可读。
+
+写组件 CSS 时遵守 3 条硬规则：
+
+1. **不准就地造名**：只能用 `tokens.css` 里已定义的 `--color-*`。需要新语义就先在 `tokens.css` 同时加 light + dark 两套定义，再用。
+2. **不准带 fallback**：禁写 `var(--color-foo, #xxx)` / `var(--color-foo, rgba(...))`，直接 `var(--color-foo)`。fallback 等于给"造名"开后门，且 token 改名时静默退回浅色。
+3. **不准硬编码颜色**：组件 CSS 里不写 `#hex` / `rgb()` / `oklch()`（阴影 / 蒙层等专属 rgba 例外）。颜色一律来自 token。
+
+**CI 卡点**：`pnpm lint` 内置 `node scripts/check-css-tokens.mjs`，扫所有 `apps/web/src/**/*.css`，违反 1 或 2 直接 fail，本地也可 `pnpm lint:css-tokens` 单跑。
+
+**兼容别名**：`tokens.css` 底部维护了一组遗留别名（如 `--color-primary` → `--color-accent`），仅为兼容历史 CSS，新代码请用右侧规范名。
+
+## 7. /plan 模式下计划文件的命名规范
 
 **所有 plan 文件必须以 `yyyy-mm-dd-` 为前缀。涉及版本的, 以 `yyyy-mm-dd-vx.y.z` 为前缀**
 
 示例：`2026-05-06-auth-refactor.md`、`2026-05-06-perf-optimization.md`
 
-## 7. Docker: rebuild vs restart
+## 8. Docker: rebuild vs restart
 
 **Rule of thumb: if the change lives inside the image, rebuild. If it lives in a mounted volume, just restart (or do nothing).**
 

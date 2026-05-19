@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { Annotation } from "@/types";
-import { classColor } from "./colors";
+import { classColor, displayClassName } from "./colors";
 import styles from "./BoxListItem.module.css";
 
 function pct(value: number): string {
@@ -119,7 +119,7 @@ export function BoxListItem({
           <circle cx="5" cy="5" r="5" fill={color} />
         </svg>
         <div className={styles.titleRow}>
-          <b className={styles.className}>{b.cls}</b>
+          <b className={styles.className}>{displayClassName(b.cls)}</b>
           {isAi ? (
             <span className={cn(styles.badge, styles.badgeAi)}>
               <Icon name="sparkle" size={8} />{(b.conf * 100).toFixed(0)}%

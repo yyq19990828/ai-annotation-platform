@@ -39,6 +39,37 @@
   --color-canvas-checker-a: #e9e9ec;
   --color-canvas-checker-b: #f3f3f5;
 
+  /* —— 兼容别名 (B-36 防御) —— 历史上组件就地造了下列名字, 实际语义就是上面已定义的 token.
+     新代码请直接用规范名 (右侧). check-css-tokens.mjs 把别名加入白名单, 不再 fail 暗色 BUG.
+     这些别名长期目标是逐步迁回规范名; 暂时保留以兼容历史 module.css.
+       --color-primary       → --color-accent
+       --color-primary-bg    → --color-accent-soft
+       --color-accent-muted  → --color-accent-hover
+       --color-error         → --color-danger
+       --color-warning-fg    → --color-warning
+       --color-text          → --color-fg
+       --color-text-muted    → --color-fg-muted
+       --color-bg-elevated   → --color-bg-elev
+       --color-bg-subtle     → --color-bg-sunken
+       --color-bg-muted      → --color-bg-sunken
+       --color-border-subtle → --color-border
+       --color-surface-1     → --color-bg
+       --color-surface-2     → --color-bg-elev
+  */
+  --color-primary: var(--color-accent);
+  --color-primary-bg: var(--color-accent-soft);
+  --color-accent-muted: var(--color-accent-hover);
+  --color-error: var(--color-danger);
+  --color-warning-fg: var(--color-warning);
+  --color-text: var(--color-fg);
+  --color-text-muted: var(--color-fg-muted);
+  --color-bg-elevated: var(--color-bg-elev);
+  --color-bg-subtle: var(--color-bg-sunken);
+  --color-bg-muted: var(--color-bg-sunken);
+  --color-border-subtle: var(--color-border);
+  --color-surface-1: var(--color-bg);
+  --color-surface-2: var(--color-bg-elev);
+
   /* v0.6.5: 内联 markdown code 背景。在亮色模式下略低于 bg-elev、暗色模式下
      反而要略高于 bg-elev（否则 popover 上的 inline code 看不清）。 */
   --color-code-bg: #ececef;

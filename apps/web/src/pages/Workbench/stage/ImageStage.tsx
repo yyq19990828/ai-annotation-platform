@@ -904,6 +904,30 @@ export function ImageStage({
             const dashArr = [6 / vp.scale, 4 / vp.scale];
             const fillRgba = hexToRgba(stroke, isActive ? 0.18 : 0.06);
             const opacity = isActive ? 1 : 0.55;
+            // v0.10.17 · Magic Box: polygon 候选只用作几何源, 视觉上以紧凑外接矩形预览, 不渲染多边形 mask.
+            if (tool === "magic-box" && c.points && c.points.length >= 3) {
+              let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+              for (const [x, y] of c.points) {
+                if (x < minX) minX = x; if (y < minY) minY = y;
+                if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+              }
+              if (!isFinite(minX)) return null;
+              return (
+                <Rect
+                  key={c.id}
+                  x={minX * imgW}
+                  y={minY * imgH}
+                  width={(maxX - minX) * imgW}
+                  height={(maxY - minY) * imgH}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  dash={dashArr}
+                  fill={fillRgba}
+                  opacity={opacity}
+                  listening={false}
+                />
+              );
+            }
             // v0.9.4 phase 2 · 按 type 分发渲染: rectanglelabels → Rect; polygonlabels → Line.
             if (c.type === "rectanglelabels" && c.bbox) {
               return (
@@ -990,8 +1014,9 @@ export function ImageStage({
       </div>
 
       {/* v0.10.9 · SAM 候选精修浮按钮：active polygonlabels 候选 + 未 Enter 时显示。
-          位置贴在候选 polygon 顶点 bbox 右上角；点击/按 R 都触发 onRefineSamCandidate。 */}
-      {onRefineSamCandidate && samCandidates && samCandidates.length > 0 && (() => {
+          位置贴在候选 polygon 顶点 bbox 右上角；点击/按 R 都触发 onRefineSamCandidate。
+          v0.10.17 · Magic Box 走 bbox 输出, 不提供 mask 精修入口. */}
+      {tool !== "magic-box" && onRefineSamCandidate && samCandidates && samCandidates.length > 0 && (() => {
         const cand = samCandidates[samActiveIdx];
         if (!cand || cand.type !== "polygonlabels" || !cand.points || cand.points.length < 3) return null;
         let minX = Infinity, minY = Infinity, maxX = -Infinity;

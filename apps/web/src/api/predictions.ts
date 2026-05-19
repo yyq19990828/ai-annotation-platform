@@ -45,6 +45,19 @@ export const predictionsApi = {
   },
 
   /**
+   * B-37 · 驳回预测 shape, 持久化到后端 (rejected_shape_indexes 数组),
+   * 避免刷新后 AI 待审框重新出现.
+   * - shapeIndex 给定: 仅驳回指定 shape.
+   * - 不传:           驳回整条 prediction 的全部 shape.
+   */
+  reject: (taskId: string, predictionId: string, shapeIndex?: number) => {
+    const qs = shapeIndex !== undefined ? `?shape_index=${shapeIndex}` : "";
+    return apiClient.post<void>(
+      `/tasks/${taskId}/predictions/${predictionId}/reject${qs}`,
+    );
+  },
+
+  /**
    * v0.10.15 · 外部模型预测导入 (COCO 或 AAP JSON v1.0).
    * - 走 multipart/form-data, 不用 apiClient (其默认 Content-Type=application/json).
    * - dryRun=true: 仅校验不入库; 用于 Wizard 第 2 步预览.

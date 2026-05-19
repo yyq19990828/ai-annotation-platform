@@ -39,6 +39,14 @@ class Prediction(Base):
         default="ml_backend",
         index=True,
     )
+    # B-37 · 已驳回的 shape 下标列表（一个 Prediction.result 内含多个 shape，可逐个驳回）.
+    # 持久化驳回状态，避免刷新后 AI 待审框重新出现.
+    rejected_shape_indexes: Mapped[list[int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default="[]",
+        default=list,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -176,7 +176,7 @@ export function PerfHud() {
           title={expanded ? "收起" : "展开 60s 趋势"}
           className={styles.iconButton}
         >
-          {expanded ? "▾" : "▴"}
+          {expanded ? "▴" : "▾"}
         </button>
         <button
           type="button"

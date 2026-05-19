@@ -64,11 +64,11 @@
 }
 
 .polarityPositive {
-  background: var(--color-success, #10b981);
+  background: var(--color-success);
 }
 
 .polarityNegative {
-  background: var(--color-warning, #f59e0b);
+  background: var(--color-warning);
 }
 
 .hint {
@@ -100,15 +100,15 @@
 }
 
 .statusError {
-  background: var(--color-danger, #ef4444);
+  background: var(--color-danger);
 }
 
 .statusLoading {
-  background: var(--color-warning, #f59e0b);
+  background: var(--color-warning);
 }
 
 .statusReady {
-  background: var(--color-success, #10b981);
+  background: var(--color-success);
 }
 
 .statusIdle {

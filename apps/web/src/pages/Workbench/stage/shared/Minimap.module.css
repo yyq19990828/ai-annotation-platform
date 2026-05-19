@@ -8,7 +8,7 @@
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-bg-elev, white);
+  background: var(--color-bg-elev);
   box-shadow: var(--shadow-md, 0 4px 12px rgb(0 0 0 / 15%));
   cursor: grab;
   touch-action: none;

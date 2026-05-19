@@ -20090,7 +20090,7 @@
     },
     "/api/v1/projects/{project_id}/classes/rename": {
       "post": {
-        "description": "B-13 · 原子地把类别 old_name 重命名为 new_name:\n- 更新 tool_bindings 中对应 unit (或所有 unit) 的 classes[].name\n- 同步更新 classes 数组与 classes_config 字典 key 派生 (保留 color/order/alias)\n- 同步更新所有 annotations.class_name (限本项目; 给 tool_unit_id 时仅限该 unit)\n- 不动 predictions.result (alias 不变)",
+        "description": "B-13 · 原子地把类别 old_name 重命名为 new_name:\n- 更新 tool_bindings 中对应 unit (或所有 unit) 的 classes[].name (强隔离 · 仅本 unit)\n- 同步更新 classes 数组与 classes_config 字典 key 派生 (保留 color/order/alias)\n- **始终跨 unit** 改全项目内同名 annotations.class_name (避免历史 magic-box /\n  region / 旧 schema 残留留下\"孤儿\"标注: binding 已无该类, 但 annotation 仍引用)\n- 不动 predictions.result (alias 不变)",
         "operationId": "rename_class_api_v1_projects__project_id__classes_rename_post",
         "parameters": [
           {
@@ -22972,6 +22972,77 @@
           }
         ],
         "summary": "Accept Prediction",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/predictions/{prediction_id}/reject": {
+      "post": {
+        "description": "B-37 · 驳回 AI 预测候选 shape, 持久化到 predictions.rejected_shape_indexes.\n\n后续 GET /tasks/{id}/predictions 会跳过这些下标, 刷新页面后 AI 待审框不会重现.\n驳回是软操作: prediction 行仍在库中, 仅在该数组追加被拒下标 (去重).",
+        "operationId": "reject_prediction_api_v1_tasks__task_id__predictions__prediction_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Prediction Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "可选: 仅驳回指定下标的 shape; 不传则驳回该 Prediction 全部 shape.",
+            "in": "query",
+            "name": "shape_index",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "可选: 仅驳回指定下标的 shape; 不传则驳回该 Prediction 全部 shape.",
+              "title": "Shape Index"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reject Prediction",
         "tags": [
           "tasks"
         ]

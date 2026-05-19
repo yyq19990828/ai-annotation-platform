@@ -45,3 +45,18 @@ export function useAcceptPrediction(taskId: string) {
     },
   });
 }
+
+/**
+ * B-37 · 驳回 AI 预测 shape, 持久化到后端.
+ * 成功后 invalidate predictions query, 让该 shape 不再出现在 AI 待审区.
+ */
+export function useRejectPrediction(taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { predictionId: string; shapeIndex?: number }) =>
+      predictionsApi.reject(taskId, vars.predictionId, vars.shapeIndex),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["predictions", taskId] });
+    },
+  });
+}

@@ -92,7 +92,7 @@
 
 .primaryButtonPending,
 .primaryButton:disabled {
-  background: var(--color-accent-muted, oklch(0.45 0.18 250));
+  background: var(--color-accent-muted);
   cursor: not-allowed;
 }
 

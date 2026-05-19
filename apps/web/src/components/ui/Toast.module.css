@@ -37,11 +37,11 @@
 }
 
 .warning {
-  border-color: var(--color-warning, #b45309);
+  border-color: var(--color-warning);
 }
 
 .error {
-  border-color: var(--color-danger, #b91c1c);
+  border-color: var(--color-danger);
 }
 
 .iconWrap {
@@ -60,13 +60,13 @@
 }
 
 .warning .iconWrap {
-  color: var(--color-warning, #b45309);
-  background: var(--color-warning-soft, #fef3c7);
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
 }
 
 .error .iconWrap {
-  color: var(--color-danger, #b91c1c);
-  background: var(--color-danger-soft, #fee2e2);
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
 }
 
 .info .iconWrap {

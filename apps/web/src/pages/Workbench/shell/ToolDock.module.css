@@ -59,10 +59,10 @@
 }
 
 .divider {
-  width: 24px;
+  width: 26px;
   height: 1px;
-  margin: 2px 0;
-  background: var(--color-border-subtle, var(--color-border));
+  margin: 6px 0;
+  background: var(--color-border-strong);
 }
 
 .toolWrap {

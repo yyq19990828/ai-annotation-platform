@@ -125,8 +125,8 @@
   transition: width 200ms ease;
 }
 
-.progressFillCompleted { background: var(--color-success, #16a34a); }
-.progressFillFailed { background: var(--color-error, #dc2626); }
+.progressFillCompleted { background: var(--color-success); }
+.progressFillFailed { background: var(--color-error); }
 .progressFillCancelled { background: var(--color-fg-muted); }
 
 .statusPill {
@@ -138,8 +138,8 @@
 }
 
 .statusRunning { background: color-mix(in oklab, var(--color-accent) 20%, transparent); color: var(--color-accent); }
-.statusCompleted { background: color-mix(in oklab, var(--color-success, #16a34a) 18%, transparent); color: var(--color-success, #16a34a); }
-.statusFailed { background: color-mix(in oklab, var(--color-error, #dc2626) 18%, transparent); color: var(--color-error, #dc2626); }
+.statusCompleted { background: color-mix(in oklab, var(--color-success) 18%, transparent); color: var(--color-success); }
+.statusFailed { background: color-mix(in oklab, var(--color-error) 18%, transparent); color: var(--color-error); }
 .statusPending { background: var(--color-bg-sunken); color: var(--color-fg-muted); }
 .statusCancelled { background: var(--color-bg-sunken); color: var(--color-fg-muted); }
 

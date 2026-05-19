@@ -129,6 +129,7 @@ export const ALL_TOOLS: CanvasTool[] = [
   SmartBoxTool,
   TextPromptTool,
   ExemplarTool,
+  MagicBoxTool,
   HandTool,
 ];
 

@@ -572,9 +572,10 @@ async def rename_class(
     db: AsyncSession = Depends(get_db),
 ):
     """B-13 · 原子地把类别 old_name 重命名为 new_name:
-    - 更新 tool_bindings 中对应 unit (或所有 unit) 的 classes[].name
+    - 更新 tool_bindings 中对应 unit (或所有 unit) 的 classes[].name (强隔离 · 仅本 unit)
     - 同步更新 classes 数组与 classes_config 字典 key 派生 (保留 color/order/alias)
-    - 同步更新所有 annotations.class_name (限本项目; 给 tool_unit_id 时仅限该 unit)
+    - **始终跨 unit** 改全项目内同名 annotations.class_name (避免历史 magic-box /
+      region / 旧 schema 残留留下"孤儿"标注: binding 已无该类, 但 annotation 仍引用)
     - 不动 predictions.result (alias 不变)
     """
     from app.services.project import apply_tool_bindings_legacy_sync
@@ -626,29 +627,17 @@ async def rename_class(
     project.tool_bindings = tool_bindings
     apply_tool_bindings_legacy_sync(project, tool_bindings)
 
-    # 同步 annotations.class_name; 限指定 unit 时按 tool_unit_id 过滤.
-    if body.tool_unit_id is not None:
-        await db.execute(
-            text(
-                "UPDATE annotations SET class_name = :new "
-                "WHERE project_id = :pid AND class_name = :old "
-                "  AND tool_unit_id = :unit"
-            ),
-            {
-                "pid": str(project.id),
-                "old": old,
-                "new": new,
-                "unit": body.tool_unit_id,
-            },
-        )
-    else:
-        await db.execute(
-            text(
-                "UPDATE annotations SET class_name = :new "
-                "WHERE project_id = :pid AND class_name = :old"
-            ),
-            {"pid": str(project.id), "old": old, "new": new},
-        )
+    # 同步 annotations.class_name: 始终跨 unit 全项目改 (即使本次只动了一个 unit 的
+    # binding). 强隔离仅适用于 binding 元数据; annotations 是面向最终用户的可见框,
+    # 同一名字落到 magic-box / region / 旧 schema 等其他 unit 的标注若不一起改, 会
+    # 在工作台显示成"老框没改名"的孤儿数据.
+    await db.execute(
+        text(
+            "UPDATE annotations SET class_name = :new "
+            "WHERE project_id = :pid AND class_name = :old"
+        ),
+        {"pid": str(project.id), "old": old, "new": new},
+    )
     await db.commit()
     await db.refresh(project)
     return await _serialize_project(db, project)

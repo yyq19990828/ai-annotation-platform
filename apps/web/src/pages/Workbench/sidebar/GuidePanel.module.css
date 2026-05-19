@@ -6,7 +6,7 @@
   left: 12px;
   width: 320px;
   max-height: 70vh;
-  background: var(--color-surface-1, #181818);
+  background: var(--color-surface-1);
   border: 1px solid var(--border-subtle, #2c2c2c);
   border-radius: 8px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
@@ -22,7 +22,7 @@
   gap: 6px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-subtle, #2c2c2c);
-  background: var(--color-surface-2, #1f1f1f);
+  background: var(--color-surface-2);
   cursor: pointer;
   user-select: none;
 }

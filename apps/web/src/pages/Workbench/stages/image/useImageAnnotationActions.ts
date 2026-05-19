@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Annotation, AnnotationResponse, PredictionResponse } from "@/types";
 import type { AnnotationPayload } from "@/api/tasks";
-import { useAcceptPrediction } from "@/hooks/usePredictions";
+import { useAcceptPrediction, useRejectPrediction } from "@/hooks/usePredictions";
 import { buildIoUIndex } from "../../stage/iou-index";
 import { iouShape } from "../../stage/iou";
 import type { useAnnotationHistory } from "../../state/useAnnotationHistory";
@@ -122,6 +122,7 @@ export function useImageAnnotationActions({
     submitPolygon,
   } = annotationActions;
   const acceptPredictionMut = useAcceptPrediction(taskId ?? "");
+  const rejectPredictionMut = useRejectPrediction(taskId ?? "");
   const [batchChanging, setBatchChanging] = useState(false);
   const [samPendingAccept, setSamPendingAccept] = useState<{ idx: number } | null>(null);
   const [dismissedShapeKeys, setDismissedShapeKeys] = useState<Set<string>>(new Set());
@@ -208,6 +209,19 @@ export function useImageAnnotationActions({
       setSamPendingAccept(null);
       if (!cand || !cls) return;
       s.setActiveClass(cls);
+      // v0.10.17 · Magic Box: bbox prompt → polygon → 紧凑外接矩形落 bbox.
+      // 不论候选 type 都收紧到 bbox, 跳过 polygon 创建路径.
+      if (s.tool === "magic-box") {
+        let tight: { x: number; y: number; w: number; h: number } | null = null;
+        if (cand.type === "rectanglelabels" && cand.bbox) {
+          tight = { x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height };
+        } else if (cand.points && cand.points.length >= 3) {
+          tight = tightenBboxFromPolygon(cand.points);
+        }
+        sam.cancel();
+        if (tight) createBboxWithClass(tight, cls);
+        return;
+      }
       // v0.9.4 phase 2 · 按 type 分发: rectanglelabels 走 bbox 创建路径，polygonlabels 走 polygon 创建路径。
       if (cand.type === "rectanglelabels" && cand.bbox) {
         createBboxWithClass({ x: cand.bbox.x, y: cand.bbox.y, w: cand.bbox.width, h: cand.bbox.height }, cls);
@@ -221,32 +235,19 @@ export function useImageAnnotationActions({
 
   const handleSamCancelClass = useCallback(() => {
     setSamPendingAccept(null);
-  }, []);
+    // Magic Box 仅有单个候选, 取消后直接清空, 避免 effect 重新弹出 popover.
+    if (s.tool === "magic-box") sam.cancel();
+  }, [s.tool, sam]);
 
-  // v0.10.17 · Magic Box · 监听 sam.candidates 变化, 当工具是 magic-box 时自动取首个
-  // 候选的紧凑外接矩形落 bbox, 跳过候选层 UI. 行为: bbox prompt → polygon → tight bbox.
+  // v0.10.17 · Magic Box · SAM 返回候选后弹出类别选择 popover (复用 samPendingAccept),
+  // 用户选定类别再收紧成 bbox; 默认类沿用 s.activeClass (见 samDefaultClass).
   useEffect(() => {
     if (s.tool !== "magic-box") return;
     if (sam.isRunning) return;
     if (sam.candidates.length === 0) return;
-    const cand = sam.candidates[0];
-    if (!cand) return;
-    let tight: { x: number; y: number; w: number; h: number } | null = null;
-    if (cand.type === "rectanglelabels" && cand.bbox) {
-      tight = {
-        x: cand.bbox.x,
-        y: cand.bbox.y,
-        w: cand.bbox.width,
-        h: cand.bbox.height,
-      };
-    } else if (cand.type === "polygonlabels" && cand.points) {
-      tight = tightenBboxFromPolygon(cand.points);
-    }
-    sam.cancel();
-    if (!tight) return;
-    const cls = s.activeClass || cand.label || classes[0] || "object";
-    createBboxWithClass(tight, cls);
-  }, [s.tool, sam, classes, s.activeClass, createBboxWithClass]);
+    if (samPendingAccept) return;
+    setSamPendingAccept({ idx: 0 });
+  }, [s.tool, sam.isRunning, sam.candidates.length, samPendingAccept]);
 
   // v0.10.9 · R 键精修走 ref 间接调用,避免在 useEffect 依赖里前向引用未定义的 handleRefineSamCandidate.
   const refineSamRef = useRef<(idx: number) => void>(() => {});
@@ -365,13 +366,31 @@ export function useImageAnnotationActions({
   const handleCancelBatchChange = useCallback(() => setBatchChanging(false), []);
 
   const handleRejectPrediction = useCallback((box: AiBox) => {
+    // 先本地隐藏，避免等待网络回包
     setDismissedShapeKeys((prev) => {
       if (prev.has(box.id)) return prev;
       const next = new Set(prev);
       next.add(box.id);
       return next;
     });
-  }, []);
+    // B-37 · 同步持久化到后端, 让刷新 / 切回该 task 时不再出现
+    if (!box.predictionId) return;
+    rejectPredictionMut.mutate(
+      { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
+      {
+        onError: () => {
+          // 失败回滚本地隐藏，提示用户
+          setDismissedShapeKeys((prev) => {
+            if (!prev.has(box.id)) return prev;
+            const next = new Set(prev);
+            next.delete(box.id);
+            return next;
+          });
+          pushToast({ msg: "驳回失败", sub: "请稍后重试", kind: "error" });
+        },
+      },
+    );
+  }, [rejectPredictionMut, pushToast]);
 
   const handleAcceptPrediction = useCallback((box: AiBox) => {
     if (!box.predictionId) return;

@@ -54,8 +54,8 @@
   color: var(--color-warning-fg, var(--color-fg));
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  background: color-mix(in oklch, var(--color-warning, oklch(0.78 0.14 70)) 18%, var(--color-bg-elev));
-  border: 1px solid color-mix(in oklch, var(--color-warning, oklch(0.78 0.14 70)) 38%, var(--color-border));
+  background: color-mix(in oklch, var(--color-warning) 18%, var(--color-bg-elev));
+  border: 1px solid color-mix(in oklch, var(--color-warning) 38%, var(--color-border));
   border-radius: 3px;
 }
 

@@ -496,22 +496,22 @@
   border: 1px solid var(--color-border);
   border-radius: 8px;
   cursor: pointer;
-  background: var(--color-bg-card);
+  background: var(--color-bg-elev);
   transition: border-color 0.12s, background 0.12s;
 }
 
 .unitChip:hover {
-  border-color: var(--color-primary);
+  border-color: var(--color-accent);
 }
 
 .unitChip input[type="checkbox"] {
   margin-top: 2px;
-  accent-color: var(--color-primary);
+  accent-color: var(--color-accent);
 }
 
 .unitChipActive {
-  border-color: var(--color-primary);
-  background: var(--color-primary-bg, rgba(0, 100, 220, 0.06));
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 .unitChipDisabled {
@@ -528,12 +528,12 @@
 .unitChipLabel {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-strong, #1f2937);
+  color: var(--color-fg);
 }
 
 .unitChipHint {
   font-size: 11px;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-fg-muted);
   margin-top: 2px;
 }
 
@@ -555,18 +555,18 @@
   border-radius: 6px;
   background: transparent;
   font-size: 12px;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-fg-muted);
   cursor: pointer;
 }
 
 .unitTab:hover {
-  background: var(--color-hover-bg, rgba(0, 0, 0, 0.04));
+  background: var(--color-bg-hover);
 }
 
 .unitTabActive {
-  background: var(--color-primary-bg, rgba(0, 100, 220, 0.08));
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent-fg);
   font-weight: 500;
 }
 
@@ -579,5 +579,5 @@
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--color-border);
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-fg-muted);
 }

@@ -25,11 +25,11 @@
 }
 
 .valueSuccess {
-  color: var(--color-success, #22c55e);
+  color: var(--color-success);
 }
 
 .valueDanger {
-  color: var(--color-danger, #ef4444);
+  color: var(--color-danger);
 }
 
 .valueMuted {

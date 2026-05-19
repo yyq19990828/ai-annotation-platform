@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { Annotation } from "@/types";
-import { classColor } from "./colors";
+import { classColor, displayClassName } from "./colors";
 import { ResizeHandles, type ResizeDirection } from "./ResizeHandles";
 import styles from "./BoxRenderer.module.css";
 
@@ -65,7 +65,7 @@ export function BoxRenderer({
     >
       <div className={styles.label}>
         {isAi && <Icon name="sparkle" size={9} />}
-        {b.cls}
+        {displayClassName(b.cls)}
         {isAi && b.conf !== undefined && (
           <span className={styles.confidence}>
             {(b.conf * 100).toFixed(0)}%

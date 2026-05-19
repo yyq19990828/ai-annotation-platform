@@ -20,12 +20,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-bg-muted, #2a2a2a);
+  background: var(--color-bg-muted);
   font-size: 12px;
 }
 
 .stepDotActive {
-  background: var(--color-accent, #4488ff);
+  background: var(--color-accent);
   color: #fff;
 }
 
@@ -42,15 +42,15 @@
 
 .input {
   padding: 6px 10px;
-  border: 1px solid var(--color-border, #333);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-bg, #1a1a1a);
-  color: var(--color-fg, #eee);
+  background: var(--color-bg);
+  color: var(--color-fg);
   font-size: 13px;
 }
 
 .fileDrop {
-  border: 1px dashed var(--color-border, #444);
+  border: 1px dashed var(--color-border);
   border-radius: 8px;
   padding: 24px;
   text-align: center;
@@ -59,7 +59,7 @@
 }
 
 .fileDropActive {
-  border-color: var(--color-accent, #4488ff);
+  border-color: var(--color-accent);
   background: rgba(68, 136, 255, 0.05);
 }
 
@@ -70,7 +70,7 @@
 }
 
 .previewBox {
-  border: 1px solid var(--color-border, #333);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 12px;
   display: flex;
@@ -103,7 +103,7 @@
 .errors {
   max-height: 220px;
   overflow: auto;
-  border-top: 1px solid var(--color-border, #333);
+  border-top: 1px solid var(--color-border);
   padding-top: 8px;
   font-size: 12px;
   font-family: monospace;
@@ -115,7 +115,7 @@
 }
 
 .errorReason {
-  color: var(--color-warning, #cc8855);
+  color: var(--color-warning);
 }
 
 .actions {

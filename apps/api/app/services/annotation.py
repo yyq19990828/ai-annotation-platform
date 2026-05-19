@@ -88,8 +88,14 @@ class AnnotationService:
         """v0.10.17 · 软校验: 若 project.tool_bindings 中该 unit 给出了 classes 集合,
         class_name 必须在内. 集合为空 (未配置 / 历史项目) 时放行兼容旧数据.
         create / accept_prediction / accept_all 共用同一段以避免分支漏校验.
+
+        例外: "__unknown" 是前端 (apps/web/.../stage/colors.ts UNKNOWN_CLASS) 的兜底
+        sentinel — 用户画完框按 Esc / 点画布外时落该类, 表示"未分类待补", 不属于
+        任何 unit 的类别集合, 任意 unit 都放行.
         """
         if project_id is None:
+            return
+        if class_name == "__unknown":
             return
         from app.db.models.project import Project
         from app.services.project import lookup_classes_for_tool_unit

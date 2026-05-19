@@ -3,7 +3,7 @@ import { Circle, Group, Label, Line, Rect, Tag, Text } from "react-konva";
 import type { Annotation } from "@/types";
 import { useMemo } from "react";
 import type { ResizeDirection } from "./ResizeHandles";
-import { classColorForCanvas, hexToRgba } from "./colors";
+import { classColorForCanvas, displayClassName, hexToRgba } from "./colors";
 import { buildVertexIndex } from "./iou-index";
 import type { Pt } from "./polygonGeom";
 import { simplifyPolygon } from "./shared/geometry/simplify";
@@ -66,8 +66,8 @@ export function KonvaBox({
   const labelFontSize = BOX_LABEL_FONT_PX / scale;
   const isUserSelected = selected && !isAi && editable;
   const labelText = isAi
-    ? `✦ ${b.cls} ${(b.conf * 100).toFixed(0)}%`
-    : b.cls;
+    ? `✦ ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`
+    : displayClassName(b.cls);
 
   return (
     <Group>
@@ -176,8 +176,8 @@ export function KonvaPolygon({
   const sw = (selected ? 2 : 1.5) / scale;
   const labelFontSize = BOX_LABEL_FONT_PX / scale;
   const labelText = isAi
-    ? `✦ ${b.cls} ${(b.conf * 100).toFixed(0)}%`
-    : b.cls;
+    ? `✦ ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`
+    : displayClassName(b.cls);
   const ps: Pt[] = points && points.length >= 3 ? points : (b.polygon ?? []);
   // I2.1 渲染层 LOD：编辑态 / 选中态用原顶点（保证手感）；其它态按 viewport scale 简化。
   const renderPs = useMemo<Pt[]>(() => {

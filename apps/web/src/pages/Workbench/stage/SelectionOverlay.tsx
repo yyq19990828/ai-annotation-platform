@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { Viewport } from "../state/useViewportTransform";
-import { classColor } from "./colors";
+import { classColor, displayClassName } from "./colors";
 import styles from "./SelectionOverlay.module.css";
 
 interface OverlayProps {
@@ -91,7 +91,7 @@ export function SelectionOverlay({
               <svg className={styles.classSwatch} viewBox="0 0 8 8" aria-hidden="true">
                 <rect width="8" height="8" rx="2" fill={color} />
               </svg>
-              {box.cls}
+              {displayClassName(box.cls)}
               <span className={styles.changeClassHint}>改类</span>
             </button>
           )}
