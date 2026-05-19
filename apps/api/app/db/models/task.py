@@ -82,6 +82,10 @@ class Task(Base):
         DateTime(timezone=True), nullable=True
     )
     reopened_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # I12 · 同 task 内 group_id 自增空间; POST /annotations/group 时 +1 RETURNING.
+    next_group_seq: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     last_reopened_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

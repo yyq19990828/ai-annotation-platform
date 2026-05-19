@@ -16,3 +16,36 @@
   display: grid;
   gap: 12px;
 }
+
+/* I18 · 浮动按钮 (v0.10.19 简易入口, v0.10.20 并入 DiscussionPanel) */
+.issueFab {
+  position: fixed;
+  right: 24px;
+  bottom: 80px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-fg);
+  cursor: pointer;
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.25);
+  z-index: 90;
+}
+.issueFab:hover { background: var(--color-bg-hover); }
+
+.issueFabBadge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--color-warning);
+  color: var(--color-accent-fg);
+  border-radius: 10px;
+  font-size: 10px;
+  padding: 1px 6px;
+  min-width: 16px;
+  text-align: center;
+}

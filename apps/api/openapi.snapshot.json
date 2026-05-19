@@ -469,6 +469,163 @@
         "title": "AliasFrequencyResponse",
         "type": "object"
       },
+      "AnnotationBulkPatch": {
+        "description": "I12 · 批量更新的字段子集.\n\n不允许 bulk 改 geometry (语义模糊;同一 geometry 应用到 N 个不同 shape 无意义),\n也不允许 bulk 改 tool_unit_id (会导致 class_name 校验失败).\ngroup_id=None 表示从原 group 移除.",
+        "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
+          "class_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Name"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "group_id_explicit_clear": {
+            "default": false,
+            "title": "Group Id Explicit Clear",
+            "type": "boolean"
+          },
+          "is_hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Hidden"
+          },
+          "is_locked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Locked"
+          },
+          "is_occluded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Occluded"
+          },
+          "z_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Z Order"
+          }
+        },
+        "title": "AnnotationBulkPatch",
+        "type": "object"
+      },
+      "AnnotationBulkUpdateRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/AnnotationBulkPatch"
+          }
+        },
+        "required": [
+          "ids",
+          "patch"
+        ],
+        "title": "AnnotationBulkUpdateRequest",
+        "type": "object"
+      },
+      "AnnotationBulkUpdateResponse": {
+        "properties": {
+          "updated_count": {
+            "title": "Updated Count",
+            "type": "integer"
+          },
+          "updated_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Updated Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "updated_ids",
+          "updated_count"
+        ],
+        "title": "AnnotationBulkUpdateResponse",
+        "type": "object"
+      },
       "AnnotationCommentCreate": {
         "properties": {
           "anchor": {
@@ -825,12 +982,504 @@
         "title": "AnnotationCreate",
         "type": "object"
       },
+      "AnnotationFeedbackCreate": {
+        "properties": {
+          "anchor_position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackAnchorPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "anchor_type": {
+            "enum": [
+              "project",
+              "task",
+              "annotation",
+              "pixel"
+            ],
+            "title": "Anchor Type",
+            "type": "string"
+          },
+          "annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
+          },
+          "attachments": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "issue",
+              "comment",
+              "reject",
+              "bug"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "info",
+                  "warn",
+                  "blocker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "thread_parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Parent Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "kind",
+          "anchor_type",
+          "project_id",
+          "body"
+        ],
+        "title": "AnnotationFeedbackCreate",
+        "type": "object"
+      },
+      "AnnotationFeedbackListPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationFeedbackOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AnnotationFeedbackListPage",
+        "type": "object"
+      },
+      "AnnotationFeedbackOut": {
+        "properties": {
+          "anchor_position": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor Position"
+          },
+          "anchor_type": {
+            "enum": [
+              "project",
+              "task",
+              "annotation",
+              "pixel"
+            ],
+            "title": "Anchor Type",
+            "type": "string"
+          },
+          "annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
+          },
+          "attachments": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
+          "author_id": {
+            "format": "uuid",
+            "title": "Author Id",
+            "type": "string"
+          },
+          "author_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "issue",
+              "comment",
+              "reject",
+              "bug"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By Id"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "info",
+                  "warn",
+                  "blocker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "resolved",
+              "wont_fix"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "thread_parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Parent Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "anchor_type",
+          "project_id",
+          "status",
+          "body",
+          "author_id",
+          "is_active",
+          "created_at"
+        ],
+        "title": "AnnotationFeedbackOut",
+        "type": "object"
+      },
+      "AnnotationFeedbackPatch": {
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "info",
+                  "warn",
+                  "blocker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "open",
+                  "resolved",
+                  "wont_fix"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "AnnotationFeedbackPatch",
+        "type": "object"
+      },
+      "AnnotationFeedbackReply": {
+        "properties": {
+          "attachments": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "AnnotationFeedbackReply",
+        "type": "object"
+      },
+      "AnnotationGroupRequest": {
+        "description": "I12 · 创建/合入分组. ids 必须属于同一 task.",
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ids",
+          "task_id"
+        ],
+        "title": "AnnotationGroupRequest",
+        "type": "object"
+      },
+      "AnnotationGroupResponse": {
+        "properties": {
+          "affected_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Affected Ids",
+            "type": "array"
+          },
+          "group_id": {
+            "title": "Group Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group_id",
+          "affected_ids"
+        ],
+        "title": "AnnotationGroupResponse",
+        "type": "object"
+      },
       "AnnotationHistoryResponse": {
         "properties": {
           "annotation_id": {
-            "format": "uuid",
-            "title": "Annotation Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
           },
           "entries": {
             "items": {
@@ -846,7 +1495,6 @@
           }
         },
         "required": [
-          "annotation_id",
           "task_id",
           "entries"
         ],
@@ -971,6 +1619,17 @@
             "default": false,
             "title": "Ground Truth",
             "type": "boolean"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
           },
           "id": {
             "format": "uuid",
@@ -1110,6 +1769,49 @@
           "created_at"
         ],
         "title": "AnnotationOut",
+        "type": "object"
+      },
+      "AnnotationUngroupRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "AnnotationUngroupRequest",
+        "type": "object"
+      },
+      "AnnotationUngroupResponse": {
+        "properties": {
+          "auto_cleared_orphans": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Auto Cleared Orphans",
+            "type": "array"
+          },
+          "cleared_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Cleared Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cleared_ids"
+        ],
+        "title": "AnnotationUngroupResponse",
         "type": "object"
       },
       "AnnotationUpdate": {
@@ -5000,6 +5702,36 @@
           "page_size"
         ],
         "title": "FailedPredictionList",
+        "type": "object"
+      },
+      "FeedbackAnchorPosition": {
+        "description": "pixel anchor 携带的坐标 (相对 0-1 与 geometry 同语义); frame 视频时可选.",
+        "properties": {
+          "frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "FeedbackAnchorPosition",
         "type": "object"
       },
       "ForgotPasswordRequest": {
@@ -13650,6 +14382,147 @@
         ]
       }
     },
+    "/api/v1/annotations/bulk-update": {
+      "post": {
+        "description": "I12 · 批量更新 N 个标注. 失败整体回滚 (单事务).\n\n设计取舍:\n- 不允许 bulk 改 geometry (同一 geometry 应用到 N 个 shape 无意义)\n- 不允许 bulk 改 tool_unit_id (会破坏 class_name 校验链)\n- group_id 通过 explicit_clear 字段区分 \"未提供\" vs \"显式清空\"",
+        "operationId": "bulk_update_annotations_api_v1_annotations_bulk_update_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationBulkUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationBulkUpdateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bulk Update Annotations",
+        "tags": [
+          "annotations"
+        ]
+      }
+    },
+    "/api/v1/annotations/group": {
+      "post": {
+        "description": "I12 · 把 ids 合到新 group; 走 tasks.next_group_seq +1 RETURNING.",
+        "operationId": "group_annotations_api_v1_annotations_group_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationGroupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Group Annotations",
+        "tags": [
+          "annotations"
+        ]
+      }
+    },
+    "/api/v1/annotations/ungroup": {
+      "post": {
+        "description": "I12 · 把 ids 的 group_id 置 null; orphan group (仅剩 1 个) 自动级联清理.",
+        "operationId": "ungroup_annotations_api_v1_annotations_ungroup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationUngroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationUngroupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ungroup Annotations",
+        "tags": [
+          "annotations"
+        ]
+      }
+    },
     "/api/v1/annotations/{annotation_id}/comment-attachments/download": {
       "get": {
         "description": "v0.6.3 P0：评论附件下载。校验 key 前缀防越权 + 项目可见性，302 跳转预签名 URL。",
@@ -17248,6 +18121,363 @@
         "summary": "Get Linked Projects",
         "tags": [
           "datasets"
+        ]
+      }
+    },
+    "/api/v1/feedbacks": {
+      "get": {
+        "operationId": "list_feedbacks_api_v1_feedbacks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "task_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "annotation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "anchor_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Anchor Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationFeedbackListPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Feedbacks",
+        "tags": [
+          "annotation-feedbacks"
+        ]
+      },
+      "post": {
+        "operationId": "create_feedback_api_v1_feedbacks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationFeedbackCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationFeedbackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Feedback",
+        "tags": [
+          "annotation-feedbacks"
+        ]
+      }
+    },
+    "/api/v1/feedbacks/{feedback_id}": {
+      "delete": {
+        "operationId": "delete_feedback_api_v1_feedbacks__feedback_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feedback_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Feedback Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Feedback",
+        "tags": [
+          "annotation-feedbacks"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_feedback_api_v1_feedbacks__feedback_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feedback_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Feedback Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationFeedbackPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationFeedbackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Feedback",
+        "tags": [
+          "annotation-feedbacks"
+        ]
+      }
+    },
+    "/api/v1/feedbacks/{feedback_id}/replies": {
+      "post": {
+        "operationId": "reply_feedback_api_v1_feedbacks__feedback_id__replies_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feedback_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Feedback Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationFeedbackReply"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationFeedbackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reply Feedback",
+        "tags": [
+          "annotation-feedbacks"
         ]
       }
     },
@@ -22644,6 +23874,132 @@
         "summary": "Convert Video Track To Bboxes",
         "tags": [
           "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/audit-history": {
+      "get": {
+        "description": "I4 · 任务级时间线 — DiscussionPanel 在未选中标注时降级展示.\n\n合并 2 类事件:\n1. audit_logs.target_type='task' AND target_id=:task_id (含 _RELEVANT_TASK_ACTIONS + bulk_update + group/ungroup)\n2. task 下所有 annotation 的 annotation 级 audit (压平 + 排序; 单题量大时仍可读).",
+        "operationId": "get_task_audit_history_api_v1_tasks__task_id__audit_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task Audit History",
+        "tags": [
+          "annotation-history"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/comments/page": {
+      "get": {
+        "description": "I4 · 任务级评论 — DiscussionPanel 在未选中标注时降级展示.\n\n聚合该 task 下所有 annotation 的 active 评论, DESC(created_at, id) keyset 分页.",
+        "operationId": "list_task_comments_paged_api_v1_tasks__task_id__comments_page_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationCommentListPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Task Comments Paged",
+        "tags": [
+          "annotation-comments"
         ]
       }
     },

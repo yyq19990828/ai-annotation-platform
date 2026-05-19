@@ -20,6 +20,7 @@ from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_comment import AnnotationComment
 from app.db.models.audit_log import AuditLog
+from app.db.models.task import Task
 from app.db.models.user import User
 from app.schemas.annotation_history import (
     AnnotationHistoryResponse,
@@ -156,5 +157,99 @@ async def get_annotation_history(
     return AnnotationHistoryResponse(
         annotation_id=annotation_id,
         task_id=ann.task_id,
+        entries=entries,
+    )
+
+
+@router.get("/tasks/{task_id}/audit-history", response_model=AnnotationHistoryResponse)
+async def get_task_audit_history(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
+):
+    """I4 · 任务级时间线 — DiscussionPanel 在未选中标注时降级展示.
+
+    合并 2 类事件:
+    1. audit_logs.target_type='task' AND target_id=:task_id (含 _RELEVANT_TASK_ACTIONS + bulk_update + group/ungroup)
+    2. task 下所有 annotation 的 annotation 级 audit (压平 + 排序; 单题量大时仍可读).
+    """
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await assert_project_visible(task.project_id, db, current_user)
+
+    task_audits = (
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.target_type == "task",
+                    AuditLog.target_id == str(task_id),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # 该 task 下所有 annotation.id
+    ann_ids = (
+        (
+            await db.execute(
+                select(Annotation.id).where(Annotation.task_id == task_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    ann_audits: list = []
+    if ann_ids:
+        ann_audits = (
+            (
+                await db.execute(
+                    select(AuditLog).where(
+                        AuditLog.target_type == "annotation",
+                        AuditLog.target_id.in_([str(aid) for aid in ann_ids]),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    user_ids: set = set()
+    for a in task_audits:
+        if a.actor_id:
+            user_ids.add(a.actor_id)
+    for a in ann_audits:
+        if a.actor_id:
+            user_ids.add(a.actor_id)
+    briefs = await resolve_briefs(db, user_ids) if user_ids else {}
+
+    entries: list[HistoryEntry] = []
+    for a in task_audits:
+        entries.append(
+            HistoryEntry(
+                kind="audit",
+                timestamp=a.created_at,
+                actor=briefs.get(str(a.actor_id)) if a.actor_id else None,
+                action=a.action,
+                detail=a.detail_json,
+            )
+        )
+    for a in ann_audits:
+        entries.append(
+            HistoryEntry(
+                kind="audit",
+                timestamp=a.created_at,
+                actor=briefs.get(str(a.actor_id)) if a.actor_id else None,
+                action=a.action,
+                detail=a.detail_json,
+            )
+        )
+    entries.sort(key=lambda e: e.timestamp)
+
+    return AnnotationHistoryResponse(
+        annotation_id=None,
+        task_id=task_id,
         entries=entries,
     )

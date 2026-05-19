@@ -35,6 +35,26 @@ export function useAnnotationCommentsInfinite(
   });
 }
 
+/**
+ * I4 · 任务级评论 — DiscussionPanel 未选中标注时降级展示.
+ */
+export function useTaskCommentsInfinite(
+  taskId: string | null | undefined,
+  enabled = true,
+) {
+  return useInfiniteQuery({
+    queryKey: ["task-comments-page", taskId],
+    queryFn: ({ pageParam }) =>
+      commentsApi.listByTaskKeyset(taskId!, {
+        limit: COMMENTS_PAGE_LIMIT,
+        cursor: pageParam ?? undefined,
+      }),
+    enabled: enabled && !!taskId,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  });
+}
+
 export function useCreateComment(annotationId: string | null | undefined) {
   const qc = useQueryClient();
   return useMutation({

@@ -14,3 +14,15 @@ export function useAnnotationAuditHistory(annotationId: string | null) {
     staleTime: 30 * 1000,
   });
 }
+
+/**
+ * I4 · DiscussionPanel 未选中标注时降级到 task 级时间线.
+ */
+export function useTaskAuditHistory(taskId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ["task-audit-history", taskId],
+    queryFn: () => annotationHistoryApi.getByTask(taskId as string),
+    enabled: enabled && !!taskId,
+    staleTime: 30 * 1000,
+  });
+}

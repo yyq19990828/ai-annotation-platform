@@ -53,6 +53,58 @@ class AnnotationListPage(BaseModel):
     next_cursor: str | None = None
 
 
+class AnnotationBulkPatch(BaseModel):
+    """I12 · 批量更新的字段子集.
+
+    不允许 bulk 改 geometry (语义模糊;同一 geometry 应用到 N 个不同 shape 无意义),
+    也不允许 bulk 改 tool_unit_id (会导致 class_name 校验失败).
+    group_id=None 表示从原 group 移除.
+    """
+
+    class_name: str | None = None
+    attributes: AnnotationAttributes | None = None
+    z_order: int | None = None
+    is_locked: bool | None = None
+    is_hidden: bool | None = None
+    is_occluded: bool | None = None
+    group_id: int | None = None
+    # group_id 特殊语义: explicit_clear=True 时把 group_id 置 null;
+    # 单 None 字段 pydantic 无法区分"未提供"与"显式 null".
+    group_id_explicit_clear: bool = False
+
+
+class AnnotationBulkUpdateRequest(BaseModel):
+    ids: list[UUID]
+    patch: AnnotationBulkPatch
+
+
+class AnnotationBulkUpdateResponse(BaseModel):
+    updated_ids: list[UUID]
+    updated_count: int
+
+
+class AnnotationGroupRequest(BaseModel):
+    """I12 · 创建/合入分组. ids 必须属于同一 task."""
+
+    ids: list[UUID]
+    task_id: UUID
+
+
+class AnnotationGroupResponse(BaseModel):
+    group_id: int
+    affected_ids: list[UUID]
+
+
+class AnnotationUngroupRequest(BaseModel):
+    ids: list[UUID]
+
+
+class AnnotationUngroupResponse(BaseModel):
+    cleared_ids: list[UUID]
+    # 若 group 仅剩 1 个成员, 该 orphan 也会被自动 ungroup; 这里列出.
+    auto_cleared_orphans: list[UUID] = []
+
+
 class VideoTrackConvertToBboxesRequest(BaseModel):
     operation: Literal["copy", "split"] = "copy"
     scope: Literal["frame", "track"] = "frame"
@@ -95,6 +147,8 @@ class AnnotationOut(BaseModel):
     confidence: float | None = None
     parent_prediction_id: UUID | None = None
     parent_annotation_id: UUID | None = None
+    # I12 · 同 task 内分组序号; 与 parent_annotation_id 正交.
+    group_id: int | None = None
     lead_time: float | None = None
     is_active: bool
     ground_truth: bool = False

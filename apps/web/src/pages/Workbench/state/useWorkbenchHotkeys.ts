@@ -113,6 +113,10 @@ export interface UseWorkbenchHotkeysArgs {
   maskEditor?: UseMaskEditorReturn;
   commitMaskAsPolygon?: () => void;
   cancelMaskEdit?: () => void;
+
+  // I12 · Object Group + 批量编辑 handlers; 缺省时该快捷键静默 no-op (例如 review-only 场景).
+  handleAnnotationGroup?: () => void;
+  handleAnnotationUngroup?: () => void;
 }
 
 export interface UseWorkbenchHotkeysReturn {
@@ -141,6 +145,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, videoControlsRef,
     isPromptSupported,
     maskEditor, commitMaskAsPolygon, cancelMaskEdit,
+    handleAnnotationGroup, handleAnnotationUngroup,
   } = args;
 
   const [spacePan, setSpacePan] = useState(false);
@@ -354,6 +359,24 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           e.preventDefault();
           if (annotationsRef.current.length > 0) {
             s.replaceSelected(annotationsRef.current.map((a) => a.id));
+          }
+          return;
+
+        case "annotationGroup":
+          e.preventDefault();
+          if (handleAnnotationGroup) {
+            handleAnnotationGroup();
+          } else {
+            pushToast({ msg: "当前工作台未启用 Object Group", kind: "warning" });
+          }
+          return;
+
+        case "annotationUngroup":
+          e.preventDefault();
+          if (handleAnnotationUngroup) {
+            handleAnnotationUngroup();
+          } else {
+            pushToast({ msg: "当前工作台未启用 Object Group", kind: "warning" });
           }
           return;
 

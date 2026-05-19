@@ -10,7 +10,9 @@ from app.api.v1 import (
     auth,
     audit_logs,
     annotation_comments,
+    annotation_feedbacks,
     annotation_history,
+    annotations,
     batches,
     bug_reports,
     dashboard,
@@ -100,6 +102,10 @@ api_router.include_router(
 )
 api_router.include_router(annotation_comments.router, tags=["annotation-comments"])
 api_router.include_router(annotation_history.router, tags=["annotation-history"])
+# I12 · Object Group 与批量编辑
+api_router.include_router(annotations.router, tags=["annotations"])
+# I18 · AnnotationFeedback 统一反馈表
+api_router.include_router(annotation_feedbacks.router, tags=["annotation-feedbacks"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(bug_reports.router, tags=["bug-reports"])
 api_router.include_router(notifications.router, tags=["notifications"])

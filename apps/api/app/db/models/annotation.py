@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Integer, String, Float, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import BigInteger, Integer, String, Float, Boolean, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
@@ -37,6 +37,10 @@ class Annotation(Base):
     parent_annotation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("annotations.id")
     )
+    # I12 · 同 task 内分组序号; 与 parent_annotation_id 正交.
+    # parent 表"车牌属于车"层级语义, group_id 表"平等成员同组" (Ctrl+G 形成).
+    # 数值来源: tasks.next_group_seq 自增序号.
+    group_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     lead_time: Mapped[float | None] = mapped_column(Float)
     was_cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
     ground_truth: Mapped[bool] = mapped_column(Boolean, default=False)

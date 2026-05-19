@@ -13,7 +13,7 @@
 ### 计划中
 
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
-- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：reject_reason_type / 决策底线表。已落地：✅ Annotation Guide (v0.10.13), ✅ Predictions Import + AAP JSON (v0.10.15), ✅ 工具维度类别 / 属性绑定 + Magic Box (v0.10.17), ✅ P3 维护项收尾 5 项 (v0.10.18: RenderingConfigEditor 抽出 + Wizard 拆 7 step + PerfHud 浏览器侧指标 + Layout/StageHost focused tests + 截图 fixture mock)。
+- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：reject_reason_type / 决策底线表。已落地：✅ Annotation Guide (v0.10.13), ✅ Predictions Import + AAP JSON (v0.10.15), ✅ 工具维度类别 / 属性绑定 + Magic Box (v0.10.17), ✅ P3 维护项收尾 5 项 (v0.10.18), ✅ §2.2 AnnotationFeedback 统一表后端基线 (v0.10.19, ADR-0027 三段式迁移第一段)。
 
 > 历史 epic 文档已归档：
 > - [`[archived]0.10.x.md`](./ROADMAP/[archived]0.10.x.md) — SAM 3 接入 / Prompt-first ToolDock / 1:N 后端管理（v0.10.0-v0.10.3 已落地，v0.10.4-v0.10.10 收尾 Image Workbench Wave β/γ/δ）。
@@ -231,13 +231,13 @@
 > Wave α / β / γ / δ 已收尾（I2 / I3 / I6 / I7 / I8 / I11 / I13 / I15 / I16 / I17 / I20 Interactor 类型均落地）。以下是 Wave γ 末段 + Wave ε 剩余。
 
 - **I1 大图 tile**（v0.11.0 独立 epic，**必做**）：>4K 图后端 Celery 切 IIIF / 自定义 tile 金字塔（zoom 0/1/2 ... 每级 512×512 PNG/WebP），元数据 `ImageTilePyramid(image_id, max_level, tile_size, format)`；前端 `useTileSource` hook + LRU 缓存 ImageBitmap；Konva 背景 bg 层改 `<Group>` + 多张 `<Image>` tile；保留 BlurhashLayer 兜底。衡量：8K×8K 图、4x 缩放局部、内存 <300MB、FPS ≥30。后端切片服务可与视频 chunk service 共用基础设施。
-- **I4 批注时间线**（借鉴视频 R4）：批注笔画存 `timeline: { stroke_id, started_at, ended_at }`；评论侧栏底部加迷你时间轴，hover 单条评论时高亮对应笔迹时间段；与视频 `TimelineRibbon` 组件共用（差异仅在 x 轴单位）。
+- **I4 笔画 timeline 与完整 DiscussionPanel**（v0.10.19 已落渐进式: CommentsPanel 任务级降级 + AIInspectorPanel 常驻渲染; 剩 `canvas_drawing.shapes[i]` 加 `id/started_at/ended_at` 时间戳 + 评论卡片下方迷你时间轴 + `DiscussionPanel.tsx` 独立拆出 + WorkbenchLayout 右栏两段固定结构 + 任务级评论 POST 端点）。
 - **I5 多图比对（双视图）**：工作台支持左右 / 上下分屏，每个面板独立 ImageStage 实例；可选「锁定 viewport」按钮；标注 diff 左/右面板增删改颜色区分；状态隔离与 R6.2 同理。
 - **I9 Ellipse 形状**（S，纯前端）：`stage/tools/EllipseTool.ts` + `KonvaEllipse` + `ellipseGeom.ts`；存储 `[cx, cy, rx, ry, rotation]`；扩展 `geometry.kind: bbox | polygon | ellipse`，与 R9 视频几何 kind 字段同期收口。
 - **I10 Skeleton（骨架关键点）**（L，后端 schema）：Label 配置器 SVG 拖点 + 连线 + 子标签命名 → JSON 模板；`SkeletonTool` 按模板顺序自动落点，节点支持 occluded / outside；新增 `geometry.kind: skeleton`，payload `{ template_id, points: [{node_id, x, y, occluded}], links: [...] }`。
-- **I12 Object Group（分组 + 批量编辑）**（M，半后端）：annotation 表加 `group_id: nullable int`，同 group 同色边框 / 侧栏分组；Ctrl+G 分组 / Ctrl+Shift+G 拆组；可选 `parent_id` 表达「车牌属于车」，导出 COCO 时映射到 `parent` 字段。
+- **I12 Object Group UI 细节**（v0.10.19 已落契约 + 快捷键 + Konva 虚线; 剩 AIInspectorPanel BoxList 同 group 折叠卡片 + AttributeForm 多选 batch banner 消费 `useAnnotationBulkUpdate` + 导出 COCO 时 group_id 映射到 `attributes.__group_id`）。
 - **I14 Autoborder / Polygon Crop**（M，纯前端）：开关式 Auto-border，多边形顶点拖动 / 新增时若距其他形状边 < 阈值自动吸附；新建多边形与已有重叠时提供「裁切重叠区」选项（布尔差集，基于已在依赖的 `polygon-clipping@0.15.7`）。
-- **I18 Issue 锚定到像素位置**（M，后端配套）：审核工具栏「Pin」按钮，点击图像任意位置生成图钉 + 评论；状态 open / resolved / wont-fix；可选合流到统一 `AnnotationFeedback` 表（与 BugReportDrawer / TaskComment / Issue 收敛）。
+- **I18 Konva pin 渲染**（v0.10.19 已落 `annotation_feedbacks` 表 + `/feedbacks` API + IssueCreateModal/IssueListPanel 浮动入口; 剩 `IssueLayer.tsx` Konva 层 + ImageStage 单击图像创建 pin 入口替代手填 x/y + ADR-0027 第二段 `v_annotation_feedback_unified` view + 旧三表双写）。
 - **I19 GT job / Consensus / IAA**（L，独立后端 epic）：项目设置「质检」开关从已完成 task 随机抽 N% 或 honeypot 模式；同一 GT task 分给 ≥2 人互不可见；bbox 走 mAP / IoU、polygon 走 mask IoU、class 走 Cohen's κ；按标注员维度滚动统计 + 质检 Dashboard。与长期 L15 配套，可作 L15 前置。
 - **I20.4 Tracker / Auto-Annotation 协议统一收口**（v0.11+）：视频侧 R10 的 `/video-tracker-jobs` 类似协议未与图片 setup 收口为同一 `supported_capabilities` 数组；v0.11.0 做协议统一收口。
 - **I21 用户级快捷键自定义**（M，纯前端）：`User.preferences.keymap` + 冲突校验；SettingsPage 录制框 UI；`?` 弹快捷键参考卡按 keymap 渲染（取代硬编码 KeyboardHintOverlay）。
@@ -265,7 +265,7 @@
 |---|---|---|---|
 | **P0/P1** | 视频工作台前端剩余（R9 / R20 / R16 / R23 / R11+R21 / R22 / R24 / R5.3） | 长视频与协同 / 专属导出 / 质量评估；详见 §C.5 | — |
 | **P1** | 视频后端帧服务剩余（真实 SAM video backend / timetable compact / segment 导出 / frameStep+Chapter 原语 / chunk warmup / MOT 导出 / 质量评估 worker） | 前端 R5.3 / R10 / R11 / R20 / R21 / R23 的服务端依赖；详见 §C.6 | — |
-| **P2** | 图片工作台能力扩展剩余（I1 / I4 / I5 / I9 / I10 / I12 / I14 / I18 / I19 / I20.4 / I21） | 大图 tile / 双图比对 / Ellipse / Skeleton / Object Group / Autoborder / Issue / GT-IAA / 快捷键自定义；详见 §C.7 | [0004](docs/adr/0004-canvas-stack-konva.md) |
+| **P2** | 图片工作台能力扩展剩余（I1 / I5 / I9 / I10 / I14 / I19 / I20.4 / I21） | 大图 tile / 双图比对 / Ellipse / Skeleton / Autoborder / GT-IAA / 快捷键自定义；详见 §C.7 (I4/I12/I18 已 v0.10.19 落地, 仅余 UI 细节: §C.7 各条目内列出) | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | `/ai-pre` 精细单批次预标 modal（v0.9.13 后回归） | v0.9.12 IA 重构 + v0.9.13 chips/threshold UI 已搬到 ProjectDetailPanel；4 个 stepper 子组件 (`PreannotateStepper` / `ProjectBatchPicker` / `RunPanel` / `usePreannotateDraft`) 仍 orphan，客户场景需要单 batch 精细调（草稿恢复 / 阶段进度可视化）时唤起 modal 复用旧组件；如反馈不需要再删 orphan 文件 | — |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
@@ -279,13 +279,12 @@
 | **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
 | **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |
 | **P3** | 前端单测从 30 推到 35 | v0.9.14 实测 30.30%；下阶段补 `BatchesSection` 完整交互（创建/bulk/逆向迁移/看板）+ `WorkbenchShell` 关键 hook + `useBatchEventsSocket` 端到端 | — |
-| ~~**P3**~~ | ~~PerfHud 浏览器侧指标扩展~~ | ✅ **v0.10.18 已落地**: FPS / JS heap / longtask / API p95 / WS 重连数 / 当前 task 框数 6 指标; useBrowserStats hook + 3 个全局 store + BrowserPanel | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
 | **P3** | C.3 SAM 后续延伸: 类别确认 hint / pixel-level Snap-to-edge | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) + 像素级 Snap-to-edge(Canny/Sobel WebWorker) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| ~~**P3**~~ | ~~TemplateEditModal 渲染配置 tab 接入共享编辑器~~ | ✅ **v0.10.18 已落地**: 删占位语 + 接入 `RenderingConfigEditor` + 补 payload 漏传 `rendering_config` | — |
 | **P3** | 工作台 ToolDock 按 `tool_bindings` 过滤 | v0.10.17 未做; 客户反馈"看不懂为什么 polygon 按钮点不开"时启动 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
+| **P3** | I4/I12/I18 epic 续作 (v0.10.20 收尾) | v0.10.19 已落契约 + 核心 UI: I12 快捷键+Konva 虚线 / I18 IssueCreateModal+IssueListPanel / I4 评论历史 CommentsPanel 任务级降级; 剩: DiscussionPanel 完整拆分 + BoxList group 折叠卡片 + AttributeForm 多选 banner + IssueLayer Konva pin 渲染 + 任务级评论 POST 端点 + 笔画 timeline + ADR-0027 第二段 view + 旧表双写 | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | `polyline` 工具实现 | v0.10.17 schema 与 UI 留位置灰; 车道线 / 折线段需求出现时启动; 与 §C.7 I9 Ellipse 同窗口可并行 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |

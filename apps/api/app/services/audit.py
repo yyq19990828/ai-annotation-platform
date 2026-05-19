@@ -101,6 +101,14 @@ class AuditAction(str, Enum):
     VIDEO_CHAPTER_DELETE = "video_chapter.delete"
     # v0.10.15 · 外部预测导入 (COCO / AAP JSON)
     PREDICTIONS_IMPORT = "predictions.import"
+    # I12 · Object Group 分组 + 批量编辑
+    ANNOTATION_GROUP = "annotation.group"
+    ANNOTATION_UNGROUP = "annotation.ungroup"
+    ANNOTATION_BULK_UPDATE = "annotation.bulk_update"
+    # I18 · AnnotationFeedback 统一表
+    FEEDBACK_CREATED = "feedback.created"
+    FEEDBACK_STATUS_CHANGED = "feedback.status_changed"
+    FEEDBACK_DELETED = "feedback.deleted"
 
 
 def extract_client_ip(request: Request | None) -> str | None:

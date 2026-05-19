@@ -242,6 +242,8 @@ export interface Annotation extends AIBox {
   is_locked?: boolean;
   is_hidden?: boolean;
   is_occluded?: boolean;
+  // I12 · Object Group; 同 task 内 group_id 相同的多框为一组 (Ctrl+G 形成).
+  group_id?: number | null;
 }
 
 export interface AnnotationResponse {
@@ -265,6 +267,8 @@ export interface AnnotationResponse {
   is_locked?: boolean;
   is_hidden?: boolean;
   is_occluded?: boolean;
+  // I12 · Object Group; null 表示未分组.
+  group_id?: number | null;
   version?: number;
   created_at: string;
   updated_at: string | null;

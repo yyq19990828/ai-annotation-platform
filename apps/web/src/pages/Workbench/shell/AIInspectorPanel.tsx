@@ -58,6 +58,8 @@ interface AIInspectorPanelProps {
   currentFrameIndex?: number;
   onSeekFrame?: (frameIndex: number) => void;
   commentAnchor?: AnnotationCommentAnchor | null;
+  /** I4 · 任务 id; selectedAnnotation 为 null 时 CommentsPanel 走 task 级降级展示. */
+  taskId?: string | null;
   onToggle: () => void;
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
@@ -91,6 +93,7 @@ export function AIInspectorPanel({
   taskFileUrl, enableCommentCanvasDrawing = true, liveCommentCanvas,
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   currentFrameIndex, onSeekFrame, commentAnchor,
+  taskId,
   onToggle,
   onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon,
   onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
@@ -142,20 +145,21 @@ export function AIInspectorPanel({
         />
       )}
 
-      {selectedAnnotation && (
-        <CommentsPanel
-          annotationId={selectedAnnotation.id}
-          projectId={selectedAnnotation.project_id}
-          currentUserId={currentUserId}
-          backgroundUrl={taskFileUrl}
-          imageWidth={imageWidth}
-          imageHeight={imageHeight}
-          enableCanvasDrawing={enableCommentCanvasDrawing}
-          liveCanvas={liveCommentCanvas}
-          commentAnchor={commentAnchor}
-          onSeekFrame={onSeekFrame}
-        />
-      )}
+      {/* I4 · 评论/历史常驻 (v0.10.19): 未选中标注时降级为该 task 级评论汇总.
+          v0.10.20 计划: 进一步抽出为独立 DiscussionPanel + WorkbenchLayout 右栏两段固定. */}
+      <CommentsPanel
+        annotationId={selectedAnnotation?.id ?? null}
+        taskId={taskId ?? null}
+        projectId={selectedAnnotation?.project_id ?? null}
+        currentUserId={currentUserId}
+        backgroundUrl={taskFileUrl}
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        enableCanvasDrawing={enableCommentCanvasDrawing}
+        liveCanvas={liveCommentCanvas}
+        commentAnchor={commentAnchor}
+        onSeekFrame={onSeekFrame}
+      />
 
       <BoxesList
         aiBoxes={aiBoxes}

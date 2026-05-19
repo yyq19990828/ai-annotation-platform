@@ -142,6 +142,58 @@ def _decode_comment_cursor(raw: str) -> tuple[datetime, uuid.UUID]:
 
 
 @router.get(
+    "/tasks/{task_id}/comments/page",
+    response_model=AnnotationCommentListPage,
+)
+async def list_task_comments_paged(
+    task_id: uuid.UUID,
+    limit: int = Query(50, ge=1, le=200),
+    cursor: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
+):
+    """I4 · 任务级评论 — DiscussionPanel 在未选中标注时降级展示.
+
+    聚合该 task 下所有 annotation 的 active 评论, DESC(created_at, id) keyset 分页.
+    """
+    from app.db.models.task import Task as TaskModel
+
+    task = await db.get(TaskModel, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    q = (
+        select(AnnotationComment, User.name)
+        .join(User, User.id == AnnotationComment.author_id)
+        .join(Annotation, Annotation.id == AnnotationComment.annotation_id)
+        .where(
+            Annotation.task_id == task_id,
+            AnnotationComment.is_active.is_(True),
+        )
+    )
+    if cursor:
+        last_ts, last_id = _decode_comment_cursor(cursor)
+        q = q.where(
+            or_(
+                AnnotationComment.created_at < last_ts,
+                and_(
+                    AnnotationComment.created_at == last_ts,
+                    AnnotationComment.id < last_id,
+                ),
+            )
+        )
+    q = q.order_by(
+        AnnotationComment.created_at.desc(), AnnotationComment.id.desc()
+    ).limit(limit)
+    rows = (await db.execute(q)).all()
+    items = [_to_out(c, name) for c, name in rows]
+    next_cursor: str | None = None
+    if len(rows) == limit and rows:
+        last = rows[-1][0]
+        next_cursor = _encode_comment_cursor(last.created_at, last.id)
+    return AnnotationCommentListPage(items=items, next_cursor=next_cursor)
+
+
+@router.get(
     "/annotations/{annotation_id}/comments/page",
     response_model=AnnotationCommentListPage,
 )

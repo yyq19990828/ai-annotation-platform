@@ -286,6 +286,179 @@ class AnnotationService:
         await self._update_task_stats(annotation.task_id)
         return True
 
+    async def bulk_update(
+        self,
+        ids: list[uuid.UUID],
+        *,
+        class_name: str | None = None,
+        attributes: dict | None = None,
+        z_order: int | None = None,
+        is_locked: bool | None = None,
+        is_hidden: bool | None = None,
+        is_occluded: bool | None = None,
+        group_id: int | None = None,
+        group_id_explicit_clear: bool = False,
+    ) -> list[Annotation]:
+        """I12 · 批量 patch N 个标注. 任一标注被锁/已软删则整体 422.
+
+        调用方负责在外层加 _assert_task_editable + assert_project_visible.
+        """
+        from fastapi import HTTPException
+
+        if not ids:
+            return []
+        rows = (
+            await self.db.execute(
+                select(Annotation).where(Annotation.id.in_(ids))
+            )
+        ).scalars().all()
+        if len(rows) != len(ids):
+            missing = set(ids) - {r.id for r in rows}
+            raise HTTPException(
+                status_code=404,
+                detail=f"annotations not found: {sorted(str(m) for m in missing)}",
+            )
+        # 整体校验: 任一被锁 / 已软删 → 422 + 整体回滚 (调用方上游事务承担).
+        for r in rows:
+            if not r.is_active:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"annotation {r.id} is not active",
+                )
+            if r.is_locked and (
+                class_name is not None
+                or attributes is not None
+                or z_order is not None
+                or group_id is not None
+                or group_id_explicit_clear
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"annotation {r.id} is locked; unlock it first",
+                )
+        # class_name 走软校验 (复用 _validate_class_name); bulk 时按 tool_unit_id 分桶,
+        # 每桶各校验一次, 避免 N 次同 unit 重复查 project.tool_bindings.
+        if class_name is not None:
+            by_unit: dict[tuple[uuid.UUID | None, str], None] = {}
+            for r in rows:
+                by_unit[(r.project_id, r.tool_unit_id)] = None
+            for (pid, unit), _ in by_unit.items():
+                await self._validate_class_name(pid, unit, class_name)
+        for r in rows:
+            if class_name is not None:
+                r.class_name = class_name
+            if attributes is not None:
+                r.attributes = attributes
+            if z_order is not None:
+                r.z_order = z_order
+            if is_locked is not None:
+                r.is_locked = is_locked
+            if is_hidden is not None:
+                r.is_hidden = is_hidden
+            if is_occluded is not None:
+                r.is_occluded = is_occluded
+            if group_id is not None:
+                r.group_id = group_id
+            elif group_id_explicit_clear:
+                r.group_id = None
+            r.version += 1
+        await self.db.flush()
+        return rows
+
+    async def group(
+        self,
+        ids: list[uuid.UUID],
+        task_id: uuid.UUID,
+    ) -> tuple[int, list[Annotation]]:
+        """I12 · 把 ids 合到一个新 group; 序号从 tasks.next_group_seq 自增取.
+
+        ids 中可能已含部分有 group_id 的成员; 此实现"覆盖式": 全部改写到新序号,
+        旧 group 残留的成员保留旧 group_id (不级联清理, 避免误伤其它框).
+        """
+        from fastapi import HTTPException
+
+        if len(ids) < 2:
+            raise HTTPException(
+                status_code=422,
+                detail="grouping requires at least 2 annotations",
+            )
+        # 校验 ids 都属于该 task.
+        rows = (
+            await self.db.execute(
+                select(Annotation).where(Annotation.id.in_(ids))
+            )
+        ).scalars().all()
+        if len(rows) != len(ids):
+            raise HTTPException(status_code=404, detail="some annotations not found")
+        for r in rows:
+            if r.task_id != task_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"annotation {r.id} does not belong to task {task_id}",
+                )
+            if not r.is_active or r.is_locked:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"annotation {r.id} not editable (inactive/locked)",
+                )
+        # 自增 task.next_group_seq, 拿到新 group_id (单 UPDATE ... RETURNING 原子).
+        task = await self.db.get(Task, task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"task {task_id} not found")
+        task.next_group_seq += 1
+        new_group_id = task.next_group_seq
+        for r in rows:
+            r.group_id = new_group_id
+            r.version += 1
+        await self.db.flush()
+        return new_group_id, rows
+
+    async def ungroup(
+        self,
+        ids: list[uuid.UUID],
+    ) -> tuple[list[uuid.UUID], list[uuid.UUID]]:
+        """I12 · 把 ids 的 group_id 置 null;
+        若某 group 在此操作后仅剩 1 个成员, 该成员也自动 ungroup.
+
+        返回 (主清理 ids, 自动清理的 orphan ids).
+        """
+        from fastapi import HTTPException
+
+        if not ids:
+            return [], []
+        rows = (
+            await self.db.execute(
+                select(Annotation).where(Annotation.id.in_(ids))
+            )
+        ).scalars().all()
+        if len(rows) != len(ids):
+            raise HTTPException(status_code=404, detail="some annotations not found")
+        affected_groups: dict[tuple[uuid.UUID, int], None] = {}
+        for r in rows:
+            if r.group_id is not None:
+                affected_groups[(r.task_id, r.group_id)] = None
+            r.group_id = None
+            r.version += 1
+        # 检查每个被影响 group 的剩余成员; 仅剩 1 个时自动 ungroup.
+        orphans: list[uuid.UUID] = []
+        for (tid, gid) in affected_groups.keys():
+            remaining = (
+                await self.db.execute(
+                    select(Annotation).where(
+                        Annotation.task_id == tid,
+                        Annotation.group_id == gid,
+                        Annotation.is_active == True,  # noqa: E712
+                    )
+                )
+            ).scalars().all()
+            if len(remaining) == 1:
+                orphan = remaining[0]
+                orphan.group_id = None
+                orphan.version += 1
+                orphans.append(orphan.id)
+        await self.db.flush()
+        return [r.id for r in rows], orphans
+
     async def update(
         self,
         annotation_id: uuid.UUID,

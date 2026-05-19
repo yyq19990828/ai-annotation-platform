@@ -110,6 +110,8 @@ export function annotationToBox(a: AnnotationResponse): Annotation {
     is_locked: a.is_locked ?? false,
     is_hidden: a.is_hidden ?? false,
     is_occluded: a.is_occluded ?? false,
+    // I12 · Object Group; null/undefined 表示未分组.
+    group_id: a.group_id ?? null,
   };
 }
 

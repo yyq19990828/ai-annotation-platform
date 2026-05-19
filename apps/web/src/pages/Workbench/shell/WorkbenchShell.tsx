@@ -12,6 +12,12 @@ import {
   useVideoFrameTimetable,
 } from "@/hooks/useTasks";
 import { usePredictions } from "@/hooks/usePredictions";
+import {
+  useAnnotationGroup,
+  useAnnotationUngroup,
+  useAnnotationBulkUpdate,
+} from "@/hooks/useAnnotationGroup";
+import { useFeedbacks } from "@/hooks/useFeedbacks";
 import { usePreannotationProgress, useTriggerPreannotation } from "@/hooks/usePreannotation";
 import { useTaskLock } from "@/hooks/useTaskLock";
 import { tasksApi } from "@/api/tasks";
@@ -35,6 +41,8 @@ import { useWorkbenchTaskFlow } from "../state/useWorkbenchTaskFlow";
 import { useInteractiveAI } from "../state/useInteractiveAI";
 import { useMLCapabilities } from "../state/useMLCapabilities";
 import { AIToolDrawer } from "./AIToolDrawer";
+import { IssueCreateModal } from "./IssueCreateModal";
+import { IssueListPanel } from "./IssueListPanel";
 import { isAIToolId } from "../stage/tools";
 import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
 import { annotationToBox } from "../state/transforms";
@@ -421,6 +429,25 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const deleteAnnotationMut = useDeleteAnnotation(taskId);
   const conflictCbRef = useRef<(annotationId: string, version: number) => void>(() => {});
   const updateAnnotationMut = useUpdateAnnotation(taskId, (...args) => conflictCbRef.current(...args));
+  // I12 · Object Group + 批量编辑 mutations; taskId 缺省时 hook 走空字符串占位, mutation 不会被实际触发 (Ctrl+G 在 useWorkbenchHotkeys 内只在 hasSelection 时消费).
+  // bulkUpdate hook 已就位但本切片 UI 未消费 (留 v0.10.20 接 BoxList group 卡片 + AttributeForm 多选 banner).
+  const groupAnnotationMut = useAnnotationGroup(taskId ?? "");
+  const ungroupAnnotationMut = useAnnotationUngroup(taskId ?? "");
+  void useAnnotationBulkUpdate(taskId ?? "");
+
+  // I18 · Issue 浮层入口 (v0.10.19 简化版, Konva pin 渲染留 v0.10.20).
+  const [issueCreateOpen, setIssueCreateOpen] = useState(false);
+  const [issueListOpen, setIssueListOpen] = useState(false);
+  const issueListParams = useMemo(
+    () => ({
+      project_id: projectId ?? "",
+      task_id: taskId,
+      kind: "issue" as const,
+    }),
+    [projectId, taskId],
+  );
+  const issuesQuery = useFeedbacks(issueListParams, !!projectId && !!taskId);
+  const openIssueCount = (issuesQuery.data?.items ?? []).filter((i) => i.status === "open").length;
   const submitTaskMut = useSubmitTask();
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
@@ -882,6 +909,46 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     beginCanvasDraft: s.beginCanvasDraft,
   });
 
+  // I12 · Ctrl+G / Ctrl+Shift+G 触发 group/ungroup; 校验通过后 mutation, 失败 toast.
+  const handleAnnotationGroup = useCallback(() => {
+    if (!taskId) return;
+    const ids = s.selectedIds;
+    if (ids.length < 2) {
+      pushToast({ msg: "至少选择 2 个标注才能成组", kind: "warning" });
+      return;
+    }
+    groupAnnotationMut.mutate(ids, {
+      onSuccess: (resp) => {
+        pushToast({ msg: `已成组 (group #${resp.group_id}, ${resp.affected_ids.length} 个)`, kind: "success" });
+      },
+      onError: (err: unknown) => {
+        const msg = (err as { message?: string })?.message ?? "成组失败";
+        pushToast({ msg, kind: "error" });
+      },
+    });
+  }, [taskId, s.selectedIds, groupAnnotationMut, pushToast]);
+
+  const handleAnnotationUngroup = useCallback(() => {
+    if (!taskId) return;
+    const ids = s.selectedIds;
+    if (ids.length === 0) {
+      pushToast({ msg: "请先选择已成组的标注", kind: "warning" });
+      return;
+    }
+    ungroupAnnotationMut.mutate(ids, {
+      onSuccess: (resp) => {
+        const extra = resp.auto_cleared_orphans.length > 0
+          ? ` (含 ${resp.auto_cleared_orphans.length} 个自动解散的剩 1 个成员)`
+          : "";
+        pushToast({ msg: `已解组 ${resp.cleared_ids.length} 个${extra}`, kind: "success" });
+      },
+      onError: (err: unknown) => {
+        const msg = (err as { message?: string })?.message ?? "解组失败";
+        pushToast({ msg, kind: "error" });
+      },
+    });
+  }, [taskId, s.selectedIds, ungroupAnnotationMut, pushToast]);
+
   // ── 键盘快捷键（v0.6.4 P1 抽 hook） ───────────────────────────────────
   const { spacePan, nudgeMap } = useWorkbenchHotkeys({
     s, history, classes, currentProject, annotationsRef,
@@ -901,6 +968,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     maskEditor,
     commitMaskAsPolygon,
     cancelMaskEdit,
+    handleAnnotationGroup,
+    handleAnnotationUngroup,
   });
   if (isProjectLoading) {
     return <WorkbenchSkeleton />;
@@ -1125,6 +1194,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         currentFrameIndex: isVideoTask ? s.videoFrameIndex : undefined,
         onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
         commentAnchor: videoCommentAnchor,
+        // I4 · 未选中标注时 CommentsPanel 走 task 级降级 (评论/历史汇总该 task 下所有标注).
+        taskId: taskId ?? null,
         videoTrackPanel: isVideoTask ? (
           <div className={styles.videoTrackPanel}>
             <VideoTrackSidebar
@@ -1211,6 +1282,36 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       onCancel={() => setPropagateDialog(null)}
       onSubmit={handlePropagateSubmit}
     />
+    {/* I18 · Issue 浮动入口 (v0.10.19 简化版, v0.10.20 并入 DiscussionPanel) */}
+    {projectId && taskId && (
+      <>
+        <button
+          type="button"
+          aria-label={`查看 issue 列表 (${openIssueCount} 待处理)`}
+          title={`Issue: ${openIssueCount} 个待处理`}
+          onClick={() => setIssueListOpen(true)}
+          className={styles.issueFab}
+          data-testid="issue-fab"
+        >
+          <Icon name="flag" size={14} />
+          {openIssueCount > 0 && <span className={styles.issueFabBadge}>{openIssueCount}</span>}
+        </button>
+        <IssueListPanel
+          open={issueListOpen}
+          projectId={projectId}
+          taskId={taskId}
+          onClose={() => setIssueListOpen(false)}
+          onCreateNew={() => { setIssueListOpen(false); setIssueCreateOpen(true); }}
+        />
+        <IssueCreateModal
+          open={issueCreateOpen}
+          projectId={projectId}
+          taskId={taskId}
+          listParams={issueListParams}
+          onClose={() => setIssueCreateOpen(false)}
+        />
+      </>
+    )}
     </>
   );
 }

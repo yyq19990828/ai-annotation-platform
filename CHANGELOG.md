@@ -22,6 +22,53 @@
 
 ## 最新版本
 
+## [0.10.19] - 2026-05-19
+
+> **ROADMAP §C.7 I4 + I12 + I18 单 epic 一次性落地.** 三项工作台扩展 (I4 评论/历史常驻 / I12 Object Group 分组+批量编辑 / I18 Issue 锚定到像素位置) 作单一 epic 推进, 共享同一片 UI 表面 (右栏标注详情区 + Konva overlay 层),避免分三 PR 反复触碰热点。本切片**后端契约 + 前端核心 UI 流程**一次到位; 渐进式策略避免一次性重构 1210 行的 WorkbenchShell。 → [plan](docs/plans/2026-05-19-v0.10.19-i4-i12-i18-workbench-detail-extensions.md) · [ADR-0027](docs/adr/0027-annotation-feedback-unified-table.md).
+
+### Added
+
+#### 后端
+
+- **I12 · `annotations.group_id` 字段 + `tasks.next_group_seq` 序号** ([0075_annotation_group_id.py](apps/api/alembic/versions/0075_annotation_group_id.py)): `annotations.group_id BIGINT NULL` 同 task 内分组序号; `tasks.next_group_seq INT DEFAULT 0` 每 task 独立序号空间; 复合 partial 索引 `ix_annotations_task_group(task_id, group_id) WHERE group_id IS NOT NULL`。与现有 `parent_annotation_id` 正交 (parent 表层级"车牌属于车", group 表平等成员同组)。
+- **I12 · `/annotations/{bulk-update, group, ungroup}` 三端点** ([annotations.py router](apps/api/app/api/v1/annotations.py) + [AnnotationService.bulk_update/group/ungroup](apps/api/app/services/annotation.py)): bulk-update 批量改 class_name / attributes / 状态位 (locked/hidden/occluded) / z_order / group_id (带 `group_id_explicit_clear` 区分"未提供"与"显式清空"); group 走 `next_group_seq +1 RETURNING` 原子分配; ungroup 自动级联清理"仅剩 1 个成员"的 orphan group。class_name 软校验按 `tool_unit_id` 分桶避免 N 次重复查 project.tool_bindings。整批操作单事务回滚 (任一被锁/已软删则整体 422)。
+- **I18 · `annotation_feedbacks` 统一反馈表** ([annotation_feedback.py model](apps/api/app/db/models/annotation_feedback.py) · [0076 migration](apps/api/alembic/versions/0076_annotation_feedbacks.py)): 取经合集 §2.2 落地第一段。`kind` ∈ {issue, comment, reject, bug}; `anchor_type` ∈ {project, task, annotation, pixel}; `anchor_position JSONB(none_as_null=True)` 携带 pixel 坐标 `{x, y, frame?}` (none_as_null 避免 Python None 序列化成 JSONB null 触发 CHECK 失败); 3 个索引 (project_kind_status / task_kind partial / annotation partial); 3 个 CHECK 约束保证 kind/status enum + anchor 一致性 (例 anchor_type='pixel' 必带 task_id + anchor_position)。
+- **I18 · `/feedbacks` 统一 API** ([annotation_feedbacks.py router](apps/api/app/api/v1/annotation_feedbacks.py) · [feedback.py service](apps/api/app/services/feedback.py)): GET 按 project_id/task_id/annotation_id/kind/anchor_type/status 过滤 + keyset 分页; POST 走 pydantic `model_validator` 提前校验 anchor 一致性 (比 DB CHECK 早一层友好); PATCH 改 status 时自动写 `resolved_at` / `resolved_by_id`; DELETE 软删 (`is_active=false`); `POST /feedbacks/{id}/replies` 子评论继承 parent anchor + `thread_parent_id` 自引用链。**权限**: 作者 + project_admin + super_admin 可改/删; reviewer 可改 status (闭环 issue)。
+- **I4 · 任务级 `/tasks/{id}/audit-history` + `/tasks/{id}/comments/page` 端点** ([annotation_history.py](apps/api/app/api/v1/annotation_history.py) · [annotation_comments.py](apps/api/app/api/v1/annotation_comments.py)): `audit-history` 合并 task 级 audit + 该 task 下所有 annotation 的 annotation 级 audit (压平 + 时序排序); `comments/page` 聚合 task 下所有 annotation 的 active 评论 (DESC 时序 + keyset 分页)。`AnnotationHistoryResponse.annotation_id` 改 nullable 兼容任务级降级。CommentsPanel 在未选中标注时降级到这两个端点的数据。
+- **AuditAction 新增 6 个枚举值** ([audit.py](apps/api/app/services/audit.py)): `ANNOTATION_GROUP` / `ANNOTATION_UNGROUP` / `ANNOTATION_BULK_UPDATE` (I12); `FEEDBACK_CREATED` / `FEEDBACK_STATUS_CHANGED` / `FEEDBACK_DELETED` (I18)。
+- **ADR-0027 · AnnotationFeedback 统一反馈表** ([docs/adr/0027-annotation-feedback-unified-table.md](docs/adr/0027-annotation-feedback-unified-table.md)): 三段式迁移决策 (v0.10.19 仅立新表 → v0.10.20 加 view + 双写 → v0.10.21 切单源), 旧 `bug_reports` / `annotation_comments` / `tasks.reject_reason` 在本切片**完全不动**, 每步单独可回退。
+
+#### 前端
+
+- **I12/I18 · API client + React Query hooks** ([api/feedbacks.ts](apps/web/src/api/feedbacks.ts) · [api/annotationGroup.ts](apps/web/src/api/annotationGroup.ts) · [hooks/useFeedbacks.ts](apps/web/src/hooks/useFeedbacks.ts) · [hooks/useAnnotationGroup.ts](apps/web/src/hooks/useAnnotationGroup.ts)): 含 `useFeedbacks` 列表 + `useCreateFeedback` / `usePatchFeedback` / `useDeleteFeedback` / `useReplyFeedback`; `useAnnotationGroup` / `useAnnotationUngroup` / `useAnnotationBulkUpdate` (bulkUpdate 已落 hook,UI 消费留 v0.10.20)。
+- **I12 · `Ctrl+G / Ctrl+Shift+G` 快捷键** ([hotkeys.ts](apps/web/src/pages/Workbench/state/hotkeys.ts) · [useWorkbenchHotkeys.ts](apps/web/src/pages/Workbench/state/useWorkbenchHotkeys.ts) · [WorkbenchShell.tsx](apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx)): `HotkeyAction` 新增 `annotationGroup` / `annotationUngroup`; dispatchKey 在系统 Ctrl/Meta 分支识别 G 键 + Shift 修饰; useWorkbenchHotkeys 接 `handleAnnotationGroup` / `handleAnnotationUngroup` 注入点; WorkbenchShell 通过 group/ungroup mutation 派发 + toast 报告结果 (含 orphan 自动清理提示)。
+- **I12 · Konva 同 group_id 第二层虚线外圈** ([ImageStageShapes.tsx](apps/web/src/pages/Workbench/stage/ImageStageShapes.tsx)): user 框带 `group_id != null` 时,Rect 外偏移 4px/scale 渲染第二层虚线 Rect; `groupOutlineColor(groupId)` 派生 8 档稳定色 (与类别色刻意区分); `listening={false}` 不阻挡 hit-test。
+- **I12 · `Annotation` / `AnnotationResponse` 类型 + `annotationToBox` 透传 `group_id`** ([types/index.ts](apps/web/src/types/index.ts) · [transforms.ts](apps/web/src/pages/Workbench/state/transforms.ts)): 渲染层与后端 schema 对齐, 旧记录 null/undefined 兼容。
+- **I18 · `IssueCreateModal` + `IssueListPanel` + 浮动入口** ([IssueCreateModal.tsx](apps/web/src/pages/Workbench/shell/IssueCreateModal.tsx) · [IssueListPanel.tsx](apps/web/src/pages/Workbench/shell/IssueListPanel.tsx) · [WorkbenchShell.tsx](apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `.issueFab`): 工作台右下浮动 `🚩` 按钮 (带 open issue 数 badge); 列表面板支持解决/搁置/重开/删除单条 issue + 跳新建; Modal 支持 title/severity (info/warn/blocker)/body + 可选填 0-1 像素坐标 (留空则 task anchor); 提交后 useFeedbacks invalidate 重拉。
+- **I4 · 评论/历史常驻 (渐进式)** ([CommentsPanel.tsx](apps/web/src/pages/Workbench/shell/CommentsPanel.tsx) · [AIInspectorPanel.tsx](apps/web/src/pages/Workbench/shell/AIInspectorPanel.tsx)): CommentsPanel 加 `taskId` prop, annotationId null 时降级走 `useTaskCommentsInfinite` + `useTaskAuditHistory`,显示该任务下所有标注的评论汇总; AIInspectorPanel 不再 `selectedAnnotation && <CommentsPanel/>`,改为常驻渲染; CommentInput 在 task 级降级模式下隐藏 (任务级 POST 端点留 v0.10.20)。
+- **`useTaskCommentsInfinite` / `useTaskAuditHistory` hooks** ([useAnnotationComments.ts](apps/web/src/hooks/useAnnotationComments.ts) · [useAnnotationAuditHistory.ts](apps/web/src/hooks/useAnnotationAuditHistory.ts)): 对应后端 task 级端点; 与现有 annotation 级 hook 并存,CommentsPanel 按 annotationId 是否存在分发。
+
+### Changed
+
+- **`AnnotationHistoryResponse.annotation_id` 改 nullable** ([annotation_history.py schema](apps/api/app/schemas/annotation_history.py)): 兼容 task 级时间线返回 (annotation_id=None)。
+
+### Verified
+
+- 后端 `uv run pytest tests/test_annotation_group_bulk.py tests/test_annotation_feedbacks.py tests/test_annotation_class_name_validation.py -v` → **17/17 passed** (group 序号单调递增 / ungroup orphan 级联清理 / bulk_update 锁定整体回滚 / pixel anchor schema 校验 + DB CHECK / feedback status → resolved 自动写 resolved_at / class_name 软校验回归)。
+- `uv run alembic upgrade --sql 0074:0076` 生成 SQL 与设计一致 (BIGINT / 复合 partial index / 3 个 CHECK constraint)。
+- 前端 `pnpm typecheck` 全绿 (0 错)。
+- 前端 `pnpm test --run` → **731 passed / 102 files** (无回归; 新增 hook/component 文件已就位但暂未补 focused test, 留 v0.10.20 补)。
+- 前端 `pnpm lint` → 0 errors / 115 warnings (warnings 全部为预存在的,与本期改动无关)。
+- `pnpm --filter web build` 未跑 (本期纯前端文件新增, 没有 build 时配置变更, 走 CI 验证)。
+
+### Deferred to v0.10.20 (本 epic 续作)
+
+- **I4 完整拆分**: `DiscussionPanel.tsx` 从 AIInspectorPanel 内嵌升级为独立组件 + `WorkbenchLayout` 右栏两段固定结构 (上「检查器」下「讨论」) + 任务级评论 POST 端点 (允许在未选中标注时直接发任务级评论)。
+- **I12 完整 UI**: AIInspectorPanel BoxList 同 group 折叠卡片 + AttributeForm 多选 batch banner (调用 `useAnnotationBulkUpdate`)。
+- **I18 Konva pin 渲染**: 把 `IssueListPanel` 中的 pixel anchor 同步渲染到 ImageStage (新增 `IssueLayer.tsx` Konva 层 + 单击图像创建 pin 入口),替代当前的"输入框填 x/y"形态。
+- **ADR-0027 第二段**: `v_annotation_feedback_unified` view + 旧三表双写。
+- **I4 笔画 timeline**: `canvas_drawing.shapes[i]` 加 `id/started_at/ended_at` + 评论卡片下方迷你时间条。
+
 ## [0.10.18] - 2026-05-19
 
 > **P3 维护项收尾 (除 dev SMTP).** v0.10.17 后遗留 6 项 P3 维护事项, 本期一次性收口其中 5 项 (排除 dev SMTP mailpit, 单独排期), 全部为**非用户可见行为变更**的代码瘦身 / 可观测增强 / 截图基建 / 测试补完: ① RenderingConfigSection 抽出 `RenderingConfigEditor` 受控视图, TemplateEditModal「渲染配置」tab 接入新 editor 并补 `rendering_config` 进 payload (v0.10.17 占位语清除); ② CreateProjectWizard 主控 1405 → 684 行, 7 个 Step 全部抽到 `components/projects/steps/` 子目录 + 共享 `UnitTabs`; ③ PerfHud 加 6 个浏览器侧指标 (FPS / JS heap / Longtask / API p95 / WS reconnect 累计 / 当前 task 框数), 显隐复用现有 `?perf=1` 开关; ④ WorkbenchStageHostProps 30+ 字段加 JSDoc 分组注释 (类型不变兼容现 call site) + 新增 `WorkbenchLayout.test.tsx` / `WorkbenchStageHost.test.tsx` 共 6 例 focused render tests; ⑤ 截图 4 张空白态 `ai-pre/history-search` / `ai-pre/empty-alias` / `bbox/iou` / `bbox/bulk-edit` 的 prepare 脚本改为 `page.route` mock API 注入示例数据 (避免污染真实 DB). 关键决策: WorkbenchStageHostProps 分组方案选「JSDoc only, 不动类型」, 避免牵动 1210 行的 WorkbenchShell call site (风险/收益不成正比), 后续若 Shell 再次膨胀再做嵌套 prop 对象重构. **不引入**: ① WorkbenchStageHostProps 类型嵌套重构 (call-site 改造延后); ② StageControls 通用抽象 (等真实 3D 需求); ③ `useWorkbenchShellModel` 装配 hook (Shell 1210 行未破 900 触发线); ④ dev SMTP mailpit (单独 排期); ⑤ 截图实际重跑 (本期仅交付 prepare 脚本, `pnpm screenshots` 需在 docker + uvicorn + pnpm dev 全栈环境下手动跑). → [plan](docs/plans/2026-05-19-v0.10.18-p3-maintenance-cleanup.md).

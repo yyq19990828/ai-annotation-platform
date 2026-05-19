@@ -30,6 +30,7 @@ class HistoryEntry(BaseModel):
 
 
 class AnnotationHistoryResponse(BaseModel):
-    annotation_id: UUID
+    # I4 · task 级时间线 (GET /tasks/{id}/audit-history) 时 annotation_id=None.
+    annotation_id: UUID | None = None
     task_id: UUID
     entries: list[HistoryEntry]

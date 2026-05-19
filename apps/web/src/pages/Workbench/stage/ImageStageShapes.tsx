@@ -53,6 +53,22 @@ interface KonvaBoxProps {
   onResizeStart: ((dir: ResizeDirection, e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
 }
 
+/** I12 · 同 group_id 的多框共享同色虚线外圈; 用 group_id 哈希派生稳定色. */
+function groupOutlineColor(groupId: number): string {
+  // 8 档预设色, modulo 取色; 与类别色刻意区分 (类别色来自 classColorForCanvas).
+  const palette = [
+    "#f59e0b", // amber
+    "#10b981", // emerald
+    "#ec4899", // pink
+    "#8b5cf6", // violet
+    "#06b6d4", // cyan
+    "#ef4444", // red
+    "#84cc16", // lime
+    "#6366f1", // indigo
+  ];
+  return palette[Math.abs(groupId) % palette.length];
+}
+
 export function KonvaBox({
   b, isAi, selected, editable, faded, occluded = false,
   imgW, imgH, scale,
@@ -111,6 +127,21 @@ export function KonvaBox({
           fontFamily="var(--font-sans, sans-serif)"
         />
       </Label>
+
+      {/* I12 · 同 group_id 第二层虚线外圈 (offset 4px / scale, 不阻挡 hit-test). */}
+      {b.group_id != null && !isAi && (
+        <Rect
+          x={b.x * imgW - 4 / scale}
+          y={b.y * imgH - 4 / scale}
+          width={b.w * imgW + 8 / scale}
+          height={b.h * imgH + 8 / scale}
+          stroke={groupOutlineColor(b.group_id)}
+          strokeWidth={1.5 / scale}
+          dash={[6 / scale, 4 / scale]}
+          fill="transparent"
+          listening={false}
+        />
+      )}
 
       {isUserSelected && onResizeStart && HANDLE_DIRECTIONS.map(({ dir, cx, cy, cursor }) => (
         <Rect

@@ -48,6 +48,9 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Ctrl", "C"], desc: "复制选中框", group: "draw", actionType: "copy" },
   { keys: ["Ctrl", "V"], desc: "粘贴（偏移 +10px）", group: "draw", actionType: "paste" },
   { keys: ["Ctrl", "D"], desc: "原地复制（偏移 +10px）", group: "draw", actionType: "duplicate" },
+  // I12 · Object Group + 批量编辑
+  { keys: ["Ctrl", "G"], desc: "把选中的 ≥2 个标注合并为一个组（同色虚线外框）", group: "draw", actionType: "annotationGroup" },
+  { keys: ["Ctrl", "Shift", "G"], desc: "把选中的标注从组里拆出（剩 1 个成员的组自动解散）", group: "draw", actionType: "annotationUngroup" },
 
   { keys: ["Ctrl", "Z"], desc: "撤销", group: "draw", actionType: "undo" },
   { keys: ["Ctrl", "Shift", "Z"], desc: "重做", group: "draw", actionType: "redo" },
@@ -146,7 +149,10 @@ export type HotkeyAction =
   | { type: "videoJumpHistory"; dir: -1 | 1 }
   | { type: "videoClearLoopRegion" }
   | { type: "videoDeleteSelected" }
-  | { type: "videoCycleTrack"; dir: 1 | -1 };
+  | { type: "videoCycleTrack"; dir: 1 | -1 }
+  // I12 · Object Group
+  | { type: "annotationGroup" }
+  | { type: "annotationUngroup" };
 
 /** 属性 hotkey 解析结果（D.1）：
  * 由 WorkbenchShell 根据当前 selected box 的 class_name + project.attribute_schema 计算
@@ -200,6 +206,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (k === "c") return { type: "copy" };
     if (k === "v") return { type: "paste" };
     if (k === "d") return { type: "duplicate" };
+    // I12 · Ctrl+G group / Ctrl+Shift+G ungroup; 仅在有选中时消费
+    if (k === "g" && ctx.hasSelection) {
+      return e.shiftKey ? { type: "annotationUngroup" } : { type: "annotationGroup" };
+    }
     return null;
   }
 

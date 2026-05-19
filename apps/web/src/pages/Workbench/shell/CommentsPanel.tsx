@@ -9,8 +9,9 @@ import {
   useCreateComment,
   usePatchComment,
   useDeleteComment,
+  useTaskCommentsInfinite,
 } from "@/hooks/useAnnotationComments";
-import { useAnnotationAuditHistory } from "@/hooks/useAnnotationAuditHistory";
+import { useAnnotationAuditHistory, useTaskAuditHistory } from "@/hooks/useAnnotationAuditHistory";
 import { AnnotationHistoryTimeline } from "@/components/AnnotationHistoryTimeline";
 import { CommentInput, renderCommentBody } from "./CommentInput";
 import styles from "./CommentsPanel.module.css";
@@ -29,6 +30,8 @@ function cn(...parts: Array<string | false | null | undefined>) {
 
 interface Props {
   annotationId: string | null;
+  /** I4 · 未选中标注时降级到任务级评论/历史 (聚合该 task 下所有标注的评论). */
+  taskId?: string | null;
   /** 项目 id：用于拉取成员供 @ 提及 picker 选择。 */
   projectId?: string | null;
   /** 当前用户 id（用于判断"作者操作权"）。 */
@@ -58,11 +61,13 @@ function anchorLabel(anchor: AnnotationCommentAnchor): string {
   return parts.join(" · ");
 }
 
-export function CommentsPanel({ annotationId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame }: Props) {
+export function CommentsPanel({ annotationId, taskId, projectId, currentUserId, backgroundUrl, imageWidth, imageHeight, enableCanvasDrawing, liveCanvas, commentAnchor, onSeekFrame }: Props) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("comments");
-  // v0.8.8 · keyset 分页：单标注 100+ 评论时按需加载，初始首屏只拉最近 50 条。
-  const commentsQuery = useAnnotationCommentsInfinite(annotationId);
+  // I4 · annotationId null 时走 task 级 hook (DiscussionPanel 雏形 — 评论/历史常驻).
+  const annotationCommentsQuery = useAnnotationCommentsInfinite(annotationId);
+  const taskCommentsQuery = useTaskCommentsInfinite(taskId ?? null, !annotationId && !!taskId);
+  const commentsQuery = annotationId ? annotationCommentsQuery : taskCommentsQuery;
   const comments = useMemo(
     () => (commentsQuery.data?.pages ?? []).flatMap((p) => p.items),
     [commentsQuery.data],
@@ -72,12 +77,19 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
   const patchMut = usePatchComment(annotationId);
   const deleteMut = useDeleteComment(annotationId);
   const setHoveredShapes = useHoveredCommentStore((s) => s.setShapes);
-  // v0.7.2 · 历史 tab — 仅切到 history 时拉取
-  const { data: history, isLoading: historyLoading } = useAnnotationAuditHistory(
-    tab === "history" ? annotationId : null,
+  // v0.7.2 · 历史 tab — 仅切到 history 时拉取; I4 · 未选中标注时拉 task 级.
+  const annotationHistoryQuery = useAnnotationAuditHistory(
+    tab === "history" && annotationId ? annotationId : null,
   );
+  const taskHistoryQuery = useTaskAuditHistory(
+    tab === "history" && !annotationId ? (taskId ?? null) : null,
+    tab === "history" && !annotationId,
+  );
+  const history = annotationId ? annotationHistoryQuery.data : taskHistoryQuery.data;
+  const historyLoading = annotationId ? annotationHistoryQuery.isLoading : taskHistoryQuery.isLoading;
 
-  if (!annotationId) return null;
+  // I4 · annotationId 与 taskId 都无 → 真正没东西显示, return null.
+  if (!annotationId && !taskId) return null;
 
   const memberOptions = (members ?? []).map((m) => ({
     id: m.user_id,
@@ -128,22 +140,27 @@ export function CommentsPanel({ annotationId, projectId, currentUserId, backgrou
         />
       ) : (
       <>
-      <CommentInput
-        annotationId={annotationId}
-        members={memberOptions}
-        busy={createMut.isPending}
-        backgroundUrl={backgroundUrl}
-        imageWidth={imageWidth}
-        imageHeight={imageHeight}
-        enableCanvasDrawing={enableCanvasDrawing}
-        liveCanvas={liveCanvas}
-        anchor={commentAnchor}
-        onSubmit={handleSubmit}
-      />
+      {annotationId ? (
+        <CommentInput
+          annotationId={annotationId}
+          members={memberOptions}
+          busy={createMut.isPending}
+          backgroundUrl={backgroundUrl}
+          imageWidth={imageWidth}
+          imageHeight={imageHeight}
+          enableCanvasDrawing={enableCanvasDrawing}
+          liveCanvas={liveCanvas}
+          anchor={commentAnchor}
+          onSubmit={handleSubmit}
+        />
+      ) : (
+        // I4 · 未选中标注时为只读视图; 任务级评论创建端点 (POST /tasks/{id}/comments) 留 v0.10.20.
+        <div className={styles.emptyState}>选中一个标注后可发表评论;此处为该任务下所有标注的评论汇总。</div>
+      )}
 
       <div className={styles.commentList}>
         {comments.length === 0 && (
-          <div className={styles.emptyState}>暂无评论</div>
+          <div className={styles.emptyState}>{annotationId ? "暂无评论" : "该任务暂无任何评论"}</div>
         )}
         {comments.map((c) => {
           const isMine = !!currentUserId && currentUserId === c.author_id;

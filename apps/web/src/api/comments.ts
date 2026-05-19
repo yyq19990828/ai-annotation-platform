@@ -47,6 +47,20 @@ export const commentsApi = {
     );
   },
 
+  // I4 · 任务级评论 — DiscussionPanel 在未选中标注时降级展示, 聚合 task 下所有 annotation 的评论.
+  listByTaskKeyset: (
+    taskId: string,
+    params?: { limit?: number; cursor?: string },
+  ) => {
+    const search = new URLSearchParams();
+    if (params?.limit) search.set("limit", String(params.limit));
+    if (params?.cursor) search.set("cursor", params.cursor);
+    const qs = search.toString();
+    return apiClient.get<AnnotationCommentListPage>(
+      `/tasks/${taskId}/comments/page${qs ? `?${qs}` : ""}`,
+    );
+  },
+
   create: (annotationId: string, payload: CreateCommentPayload) =>
     apiClient.post<AnnotationCommentResponse>(`/annotations/${annotationId}/comments`, payload),
 
