@@ -102,9 +102,7 @@ async def _scope_fingerprint(
     db: AsyncSession, project_id: uuid.UUID, batch_id: uuid.UUID | None
 ) -> tuple[datetime | None, int]:
     """max(updated_at) + count(active annotation)，删除标注让 count 变（缓存失效）。"""
-    q = select(
-        func.max(Annotation.updated_at), func.count(Annotation.id)
-    ).where(
+    q = select(func.max(Annotation.updated_at), func.count(Annotation.id)).where(
         Annotation.project_id == project_id,
         Annotation.is_active.is_(True),
         Annotation.was_cancelled.is_(False),
@@ -112,9 +110,7 @@ async def _scope_fingerprint(
     if batch_id is not None:
         # Annotation 无 batch_id 列；与 _load_data 一致，按 task.batch_id 过滤。
         q = q.where(
-            Annotation.task_id.in_(
-                select(Task.id).where(Task.batch_id == batch_id)
-            )
+            Annotation.task_id.in_(select(Task.id).where(Task.batch_id == batch_id))
         )
     row = (await db.execute(q)).one()
     return row[0], int(row[1] or 0)
@@ -162,9 +158,7 @@ async def _run_export(
                 )
 
                 # 缓存命中：探活 + 刷新预签名 URL，跳过重生成。
-                hit = await export_cache.lookup(
-                    db, cache_key, bucket=export_bucket
-                )
+                hit = await export_cache.lookup(db, cache_key, bucket=export_bucket)
                 if hit is not None:
                     download_url = storage_service.generate_download_url(
                         hit.object_key,
@@ -282,9 +276,7 @@ async def _run_export(
                 try:
                     err = f"{type(exc).__name__}: {exc}"
                     await async_job_svc.mark_failed(db, job_uuid, error=err)
-                    await _emit_export_notification(
-                        db, job_uuid, ok=False, error=err
-                    )
+                    await _emit_export_notification(db, job_uuid, ok=False, error=err)
                     await db.commit()
                 except Exception:
                     await db.rollback()

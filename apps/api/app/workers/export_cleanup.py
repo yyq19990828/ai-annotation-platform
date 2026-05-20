@@ -19,9 +19,7 @@ from app.workers.celery_app import celery_app
 log = logging.getLogger(__name__)
 
 
-@celery_app.task(
-    name="app.workers.export_cleanup.purge_expired_export_artifacts"
-)
+@celery_app.task(name="app.workers.export_cleanup.purge_expired_export_artifacts")
 def purge_expired_export_artifacts() -> dict:
     return asyncio.run(_purge_async())
 
@@ -37,5 +35,7 @@ async def _purge_async() -> dict:
         res = await db.execute(stmt)
         ids = [str(row[0]) for row in res.all()]
         await db.commit()
-    log.info("purge_expired_export_artifacts: removed=%d now=%s", len(ids), now.isoformat())
+    log.info(
+        "purge_expired_export_artifacts: removed=%d now=%s", len(ids), now.isoformat()
+    )
     return {"removed": len(ids), "now": now.isoformat()}

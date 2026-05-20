@@ -32,9 +32,7 @@ def test_prefix_mismatch_returns_path_unchanged():
 
 
 def test_leading_slash_normalized():
-    assert (
-        relative_path_from_file_path("/ds/a/b.jpg", "ds") == "a/b.jpg"
-    )
+    assert relative_path_from_file_path("/ds/a/b.jpg", "ds") == "a/b.jpg"
 
 
 def test_empty_dataset_name_returns_full_path():
