@@ -301,6 +301,18 @@ async def create_project(
     # 优先用 source_project_id 项目的值, 其次走 Project 模型列默认值.
     payload = data.model_dump(exclude_unset=True)
 
+    # v0.10.22 · 先把客户端显式传入的旧扁平 classes / classes_config / attribute_schema
+    # 反向派生进 tool_bindings (按 type_key 推 unit), 再剔除扁平 key. 必须早于下面的
+    # source / template 兜底合并 —— 它们只填"缺失"的 tool_bindings, 故显式输入优先;
+    # 同时扁平字段对应 DB 列已删, 不能作为 ORM kwarg.
+    from app.services.project import coalesce_legacy_into_tool_bindings
+
+    coalesce_legacy_into_tool_bindings(
+        payload, existing_tool_bindings=None, type_key=payload.get("type_key")
+    )
+    for _legacy_key in ("classes", "classes_config", "attribute_schema"):
+        payload.pop(_legacy_key, None)
+
     # v0.9.7 · 取出 source_id (若给定), 校验存在性后再创建项目;
     # 项目 INSERT 完成后再复制 backend (受 FK ml_backends.project_id 约束).
     source_id = payload.pop("ml_backend_source_id", None)
@@ -367,20 +379,6 @@ async def create_project(
 
     if payload.get("ml_backend_id"):
         payload = await _apply_backend_display_hint(db, payload)
-
-    # v0.10.17 · tool_bindings 是单源真值; 旧客户端仅传 classes_config / attribute_schema
-    # 时反向派生 (按 type_key 推 unit); 写入前由 helper 把派生 classes / classes_config /
-    # attribute_schema 同步刷新到 payload, 供未迁移读端兜底.
-    from app.services.project import (
-        apply_tool_bindings_legacy_sync,
-        coalesce_legacy_into_tool_bindings,
-    )
-
-    coalesce_legacy_into_tool_bindings(
-        payload, existing_tool_bindings=None, type_key=payload.get("type_key")
-    )
-    if payload.get("tool_bindings") is not None:
-        apply_tool_bindings_legacy_sync(payload, payload["tool_bindings"])
 
     new_project_id = uuid.uuid4()
     project = Project(
@@ -480,19 +478,16 @@ async def update_project(
     if payload.get("ml_backend_id"):
         payload = await _apply_backend_display_hint(db, payload)
 
-    # v0.10.17 · 同 create_project 同步逻辑.
-    from app.services.project import (
-        apply_tool_bindings_legacy_sync,
-        coalesce_legacy_into_tool_bindings,
-    )
+    # v0.10.22 · 同 create_project: 旧扁平输入反向派生进 tool_bindings 后剔除.
+    from app.services.project import coalesce_legacy_into_tool_bindings
 
     coalesce_legacy_into_tool_bindings(
         payload,
         existing_tool_bindings=project.tool_bindings,
         type_key=payload.get("type_key") or project.type_key,
     )
-    if payload.get("tool_bindings") is not None:
-        apply_tool_bindings_legacy_sync(payload, payload["tool_bindings"])
+    for _legacy_key in ("classes", "classes_config", "attribute_schema"):
+        payload.pop(_legacy_key, None)
 
     for k, v in payload.items():
         setattr(project, k, v)
@@ -573,13 +568,10 @@ async def rename_class(
 ):
     """B-13 · 原子地把类别 old_name 重命名为 new_name:
     - 更新 tool_bindings 中对应 unit (或所有 unit) 的 classes[].name (强隔离 · 仅本 unit)
-    - 同步更新 classes 数组与 classes_config 字典 key 派生 (保留 color/order/alias)
     - **始终跨 unit** 改全项目内同名 annotations.class_name (避免历史 magic-box /
       region / 旧 schema 残留留下"孤儿"标注: binding 已无该类, 但 annotation 仍引用)
     - 不动 predictions.result (alias 不变)
     """
-    from app.services.project import apply_tool_bindings_legacy_sync
-
     old = body.old_name.strip()
     new = body.new_name.strip()
     if not old or not new:
@@ -625,7 +617,6 @@ async def rename_class(
         raise HTTPException(status_code=404, detail=f"类别 '{old}' 不存在")
 
     project.tool_bindings = tool_bindings
-    apply_tool_bindings_legacy_sync(project, tool_bindings)
 
     # 同步 annotations.class_name: 始终跨 unit 全项目改 (即使本次只动了一个 unit 的
     # binding). 强隔离仅适用于 binding 元数据; annotations 是面向最终用户的可见框,

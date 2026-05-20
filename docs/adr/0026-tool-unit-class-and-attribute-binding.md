@@ -5,6 +5,8 @@
 - **Deciders:** core team
 - **Supersedes:** —
 
+> **更新 (v0.10.22):** 完成派生列删除。`projects` / `project_templates` 的旧扁平列 `classes` / `classes_config` / `attribute_schema` 已 drop (migration 0078),写时双写 helper `apply_tool_bindings_legacy_sync` 移除 —— 至此 `tool_bindings` 是**唯一存储真值**,存储侧不再有第二份会漂移的数据。旧 `derive_legacy_*` 改名 `derive_*`,降级为**读时派生投影**(响应序列化 / COCO·YOLO·AAP 导出按需从 `tool_bindings` 拍平)。`ProjectOut` / `ProjectTemplateOut` 仍暴露三个扁平字段以兼容前端众多读端,但其值由 `model_validator` 从 `tool_bindings` 派生,非独立存储。旧客户端 / 旧 AAP JSON 的扁平**输入**仍由 `coalesce_legacy_into_tool_bindings` 反向折叠进 `tool_bindings`(保留输入兼容)。
+
 ## Context
 
 v0.10.16 之前,项目的类别 (`classes` + `classes_config`) 与属性 schema (`attribute_schema`) 是**项目级扁平**字段,所有工具共享同一份:bbox 工具下拉里看到的类、polygon 工具下拉里看到的类、AI 交互工具的类必须完全一致。客户反馈的现实场景需要更细颗粒度:
@@ -77,7 +79,7 @@ v0.10.16 之前,项目的类别 (`classes` + `classes_config`) 与属性 schema 
 ## Notes
 
 - 实现代码位置:
-  - 后端: `apps/api/app/db/models/project.py`、`annotation.py`、`prediction.py`、`project_template.py`;`apps/api/app/schemas/_jsonb_types.py`;`apps/api/app/schemas/project.py` / `annotation.py` / `prediction.py` / `project_template.py` / `aap_json.py`;`apps/api/app/services/project.py` (新建,含 `derive_legacy_classes_config` / `coalesce_legacy_into_tool_bindings` / `apply_tool_bindings_legacy_sync`);`apps/api/app/services/annotation.py` (class_name 软校验);`apps/api/app/services/prediction.py` (`derive_tool_unit_from_ls_type` 派生);`apps/api/app/services/export.py` (COCO categories);`apps/api/app/api/v1/projects.py` (create/update/rename_class);`apps/api/app/api/v1/tasks.py` (create_annotation 透传)。
+  - 后端: `apps/api/app/db/models/project.py`、`annotation.py`、`prediction.py`、`project_template.py`;`apps/api/app/schemas/_jsonb_types.py`;`apps/api/app/schemas/project.py` / `annotation.py` / `prediction.py` / `project_template.py` / `aap_json.py`;`apps/api/app/services/project.py` (含 `derive_classes_config` / `coalesce_legacy_into_tool_bindings`;v0.10.22 删 `apply_tool_bindings_legacy_sync`,`derive_legacy_*` 改名 `derive_*`);`apps/api/app/services/annotation.py` (class_name 软校验);`apps/api/app/services/prediction.py` (`derive_tool_unit_from_ls_type` 派生);`apps/api/app/services/export.py` (COCO categories);`apps/api/app/api/v1/projects.py` (create/update/rename_class);`apps/api/app/api/v1/tasks.py` (create_annotation 透传)。
   - 迁移: `alembic/versions/0072_project_tool_bindings.py`、`0073_template_tool_bindings.py`。
   - 前端: `apps/web/src/constants/toolUnits.ts`、`apps/web/src/components/projects/CreateProjectWizard.tsx`、`apps/web/src/pages/Projects/sections/{ClassesSection,AttributesSection,ToolUnitTabs,useProjectToolBindings}.{tsx,ts}`、`apps/web/src/pages/Workbench/state/useToolBindings.ts`、`apps/web/src/pages/Workbench/stage/tools/{MagicBoxTool,toolUnits}.ts`、`apps/web/src/pages/Workbench/stage/shared/geometry/bbox.ts`、`apps/web/src/pages/ProjectTemplates/TemplateEditModal.tsx`。
 - 相关 ROADMAP / ADR: ROADMAP §A「新建项目向导」「项目模板」、§C.3「Magic Box」、ADR-0023 (ProjectTemplate)、ADR-0024 (AAP JSON)。

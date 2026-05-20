@@ -64,9 +64,7 @@ graph TD
 | `type_key` / `type_label` | 任务类型，例如 `image-det` |
 | `owner_id` | 项目 owner，决定写权限上限 |
 | `status` | 项目生命周期状态 |
-| `classes` / `classes_config` | 类目与显示配置 (v0.10.16 前为单源真值; v0.10.17 起由 `tool_bindings` 派生只读, v0.10.18 删除) |
-| `attribute_schema` | 属性 schema (同上, 由 `tool_bindings` 派生只读) |
-| `tool_bindings` (v0.10.17+) | 工具维度类别 / 属性绑定 JSONB, `{ tool_unit_id: { enabled, classes: [...], attribute_schema: {...} } }` 嵌套结构, **单源真值** |
+| `tool_bindings` (v0.10.17+) | 工具维度类别 / 属性绑定 JSONB, `{ tool_unit_id: { enabled, classes: [...], attribute_schema: {...} } }` 嵌套结构, **唯一存储真值** (v0.10.22 起旧扁平 `classes` / `classes_config` / `attribute_schema` 列已删除) |
 | `sampling` | 工作台派题策略 |
 | `maximum_annotations` | 多人重叠标注上限 |
 | `show_overlap_first` | 是否优先展示重叠任务 |
@@ -106,8 +104,8 @@ archived
 
 项目定义:
 
-- 启用哪些**工具单位** (tool_unit) 与各 unit 持有的类别 / 属性 schema: `tool_bindings`
-- 兼容旧端的派生只读字段: `classes` / `classes_config` / `attribute_schema`
+- 启用哪些**工具单位** (tool_unit) 与各 unit 持有的类别 / 属性 schema: `tool_bindings` (唯一存储真值)
+- 响应 / 导出按需从 `tool_bindings` **读时派生**的扁平投影: `classes` / `classes_config` / `attribute_schema` (v0.10.22 起已无对应 DB 列)
 
 `tool_bindings` 结构示例:
 
@@ -127,7 +125,7 @@ archived
 
 如果你改的是「标注长什么样」, 十有八九要从 project.tool_bindings 入手, 而不是 task。
 
-写入路径: `apps/api/app/api/v1/projects.py` 的 `create_project` / `update_project` 调用 `coalesce_legacy_into_tool_bindings` (旧客户端只传扁平字段时反向派生到对应 unit) + `apply_tool_bindings_legacy_sync` (派生回写 classes / classes_config / attribute_schema), 保证单源真值。详细 helper 实现见 `apps/api/app/services/project.py`。
+写入路径: `apps/api/app/api/v1/projects.py` 的 `create_project` / `update_project` 调用 `coalesce_legacy_into_tool_bindings` (旧客户端只传扁平字段时反向派生到对应 unit), 之后剔除扁平 key —— `tool_bindings` 是唯一写入目标。读出路径由 `ProjectOut` 的 `model_validator` 用 `derive_*` 从 `tool_bindings` 派生扁平投影。详细 helper 实现见 `apps/api/app/services/project.py`。
 
 ### 2. 工作台派题策略
 

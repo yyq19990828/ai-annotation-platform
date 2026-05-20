@@ -1,9 +1,9 @@
-"""v0.10.17 · Project 业务 helper.
+"""v0.10.22 · Project 业务 helper.
 
-主要承担 tool_bindings 与旧扁平 classes_config / attribute_schema 之间的
-派生关系. v0.10.17 期间 tool_bindings 是唯一真值写入路径, 旧字段由 service
-层在写时双写, 供未迁移的读端 (导出 / 聚合 / 旧 UI) 继续工作. v0.10.18 起
-旧字段删除, 此 helper 中的 legacy* 函数同步删除.
+tool_bindings JSONB 是类别 / 属性配置的唯一存储真值 (ADR-0026). 旧扁平列
+classes / classes_config / attribute_schema 已于 v0.10.22 从 DB 删除; 下面的
+derive_* 纯函数把 tool_bindings 拍平成扁平投影, 仅供**读时**使用 (响应序列化 /
+导出 / 聚合) —— 不再回写任何列, 不构成第二份真值.
 """
 
 from __future__ import annotations
@@ -11,15 +11,15 @@ from __future__ import annotations
 from typing import Any
 
 
-def derive_legacy_classes_config(
+def derive_classes_config(
     tool_bindings: dict[str, Any] | None,
 ) -> dict[str, dict]:
     """
-    把 tool_bindings 嵌套结构 union 合并成旧扁平 classes_config:
+    把 tool_bindings 嵌套结构 union 合并成扁平 classes_config:
         { class_name: { color?, order?, alias? } }
 
     跨工具单位同名类按"最先出现的 enabled binding"为准 (强隔离下其它工具同名
-    类不会被旧端读到, 这是有意的: 旧端不区分工具, 任何降级展示都只是兜底).
+    类不会被读到, 这是有意的: 扁平投影不区分工具, 仅作合并展示视图).
     """
     if not tool_bindings:
         return {}
@@ -45,10 +45,10 @@ def derive_legacy_classes_config(
     return out
 
 
-def derive_legacy_classes_list(
+def derive_classes_list(
     tool_bindings: dict[str, Any] | None,
 ) -> list[str]:
-    """旧 projects.classes (list[str]) 派生 — 按 order 升序, name 升序兜底."""
+    """扁平 classes (list[str]) 派生 — 按 order 升序, name 升序兜底."""
     if not tool_bindings:
         return []
     seen: dict[str, int | None] = {}
@@ -65,13 +65,12 @@ def derive_legacy_classes_list(
     return sorted(seen.keys(), key=lambda n: (seen[n] is None, seen[n] or 0, n))
 
 
-def derive_legacy_attribute_schema(
+def derive_attribute_schema(
     tool_bindings: dict[str, Any] | None,
 ) -> dict:
     """
-    旧 attribute_schema 派生: union 所有 enabled binding 的 fields, key 重复时
-    以最先出现为准. 旧端读到的是合并视图; 工具维度精确语义由 tool_bindings 自身
-    提供, 旧端只是兜底.
+    attribute_schema 派生: union 所有 enabled binding 的 fields, key 重复时
+    以最先出现为准. 读到的是合并视图; 工具维度精确语义由 tool_bindings 自身提供.
     """
     if not tool_bindings:
         return {"fields": []}
@@ -91,30 +90,6 @@ def derive_legacy_attribute_schema(
             seen_keys.add(key)
             merged.append(field)
     return {"fields": merged}
-
-
-def apply_tool_bindings_legacy_sync(
-    target: Any, tool_bindings: dict[str, Any] | None
-) -> None:
-    """
-    在 Project ORM 写入路径中调用: 给定 tool_bindings, 同时刷新双写到 target
-    的 classes / classes_config / attribute_schema. target 通常是 Project ORM
-    实例或 dict (alembic data backfill 后服务层补齐).
-    """
-    if tool_bindings is None:
-        return
-    legacy_cc = derive_legacy_classes_config(tool_bindings)
-    legacy_classes = derive_legacy_classes_list(tool_bindings)
-    legacy_as = derive_legacy_attribute_schema(tool_bindings)
-
-    if isinstance(target, dict):
-        target["classes_config"] = legacy_cc
-        target["classes"] = legacy_classes
-        target["attribute_schema"] = legacy_as
-    else:
-        target.classes_config = legacy_cc
-        target.classes = legacy_classes
-        target.attribute_schema = legacy_as
 
 
 def derive_tool_unit_for_type_key(type_key: str | None) -> str:

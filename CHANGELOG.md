@@ -22,6 +22,24 @@
 
 ## 最新版本
 
+## [0.10.22] - 2026-05-20
+
+> **ADR-0026 单源真值收口 · 删除派生 `classes` / `classes_config` / `attribute_schema` 列.** v0.10.17 引入 `tool_bindings` 后,旧扁平列由 service 层在每次写时双写派生兜底 —— 存储层实际存着两份会漂移的真值,ADR-0026 宣称的"单源"未真正达成。本期 drop 三列(`projects` + `project_templates`,migration 0078),移除写时双写 helper `apply_tool_bindings_legacy_sync`,所有读端(响应序列化 / COCO·YOLO·AAP 导出 / clone)改为从 `tool_bindings` **读时派生**。关键决策:① **不删** `ProjectOut` / `ProjectTemplateOut` 的三个扁平字段 —— 它们被 8+ 处活跃前端代码消费(`WorkbenchShell` / `AIInspectorPanel` / `useWorkbenchHotkeys` 等),改为 `model_validator` 序列化时从 `tool_bindings` 派生,前端零改动、API 契约不变(OpenAPI 仅 1 行 docstring 变化);② **保留** `coalesce_legacy_into_tool_bindings` 反向输入兼容(旧客户端 / 旧 AAP JSON schema 1.0 仍可传扁平字段,折叠进 `tool_bindings`);③ `derive_legacy_*` 去 "legacy" 命名升格为规范读时派生 helper。**reject_reason_type 结构化枚举(ROADMAP §B 标 P2 待做)经核查实为 v0.10.16 已落地,ROADMAP 该条陈旧。** → [plan](docs/plans/2026-05-20-v0.10.22-single-source-of-truth-cutover.md) · [ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md)。
+
+### Changed
+
+- **drop 派生列 + 写时双写移除** ([0078_drop_derived_class_columns.py](apps/api/alembic/versions/0078_drop_derived_class_columns.py) · [models/project.py](apps/api/app/db/models/project.py) · [models/project_template.py](apps/api/app/db/models/project_template.py) · [services/project.py](apps/api/app/services/project.py)): drop `projects` / `project_templates` 的 `classes` / `classes_config` / `attribute_schema` 三列(downgrade 重建并从 `tool_bindings` 回填);删 `apply_tool_bindings_legacy_sync`,`derive_legacy_*` → `derive_*`(读时派生投影);移除 create / update / rename_class / 模板 create-update 共 5 处双写调用。
+- **`ProjectOut` / `ProjectTemplateOut` 序列化派生** ([schemas/project.py](apps/api/app/schemas/project.py) · [schemas/project_template.py](apps/api/app/schemas/project_template.py)): 加 `model_validator(mode="after")`,从 `tool_bindings` 派生 `classes` / `classes_config` / `attribute_schema` 三字段(响应形状不变)。
+- **导出读端切派生** ([services/export.py](apps/api/app/services/export.py)): video-track / COCO / YOLO / AAP JSON 导出的 categories / classes.txt / attribute_schema 由读 `project.classes*` 改为 `derive_*(project.tool_bindings)`;clone 白名单([project_clone.py](apps/api/app/services/project_clone.py))去掉三个扁平字段,配置全部经 `tool_bindings` 复制。
+- **create_project 校正显式扁平输入优先级** ([api/v1/projects.py](apps/api/app/api/v1/projects.py)): 把 `coalesce + pop` 提前到 source / template 兜底合并之前,保证客户端显式传的 `classes` 覆盖模板/源项目的 `tool_bindings`(此前模板注入的 `tool_bindings` 会让 coalesce 提前返回、丢失显式覆盖)。
+- **前端 useToolBindings fallback 清理** ([useToolBindings.ts](apps/web/src/pages/Workbench/state/useToolBindings.ts)): 删除"老项目扁平字段 fallback"分支(全部项目已 backfill `tool_bindings`,且扁平字段现由其派生、不可能独立存在),保留 bbox/region 借类逻辑。
+
+### Verified
+
+- 后端 `cd apps/api && uv run pytest` → 全绿(含 `test_tool_bindings_helpers` / `test_projects_clone` / `test_project_templates` / `test_export_aap_json` / `test_openapi_contract`);测试 fixture 用 conftest 注入式兼容层(复用生产 `coalesce` 把旧 `classes=[...]` 风格 ORM 构造翻译为 `tool_bindings`,生产模型无 shim)。
+- 前端 `pnpm vitest run useToolBindings useProjectToolBindings` → 全绿(2 个断言旧 fallback 的用例更新为单源语义)。
+- OpenAPI 快照重生(`pnpm openapi:export`):schema 不变,仅 rename_class 操作描述 1 行变化。
+
 ## [0.10.21] - 2026-05-19
 
 > **v0.10.20 deferred 项部分收口: I4 笔画 timeline + 任务级 feedback patch/delete UI.** 原计划 5 项 (D1-D5) 开工时重估发现 D1 (ADR-0027 切单源) 远超原计划体量 — 旧三表 (bug_reports / annotation_comments / tasks.reject_reason) 各自带独立 state machine + 子资源 (BugComment) + 前端专用 UI (BugReportDrawer), 不是删 mirror 写路径就能切, 需独立 legacy-table-retirement epic 处理。D3 (DiscussionPanel 完整拆分) 与 D5 (IssueLayer video pin) 为结构性 / stretch 工作, 无 UX 增量, 一并延期。**v0.10.21 收紧到 D2 + D4 两项可立即落地的 UX 完善**, 不破窗 ADR-0027 第三段决策。 → [plan](docs/plans/2026-05-19-v0.10.21-i4-stroke-timeline-adr0027-cutover.md).

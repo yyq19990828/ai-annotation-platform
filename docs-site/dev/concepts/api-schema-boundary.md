@@ -96,7 +96,7 @@ cd apps/web && pnpm codegen
 | Pydantic | `_jsonb_types.ToolUnitId` Literal + `ToolBinding` / `ToolClassEntry` / `validate_tool_bindings_keys` 校验器 | `ProjectCreate / Update / Out` + `AnnotationCreate / Out` + `PredictionOut` + `ProjectTemplate*` 全部加字段 |
 | codegen (前端) | `ToolBinding` / `ToolClassEntry` 派生; `api/projects.ts` 重导出 + `ToolBindings = Partial<Record<ToolUnitId, ToolBinding>>` 收窄 key | `constants/toolUnits.ts` 与后端 Literal 严格对齐, 5 个枚举值不可漂移 |
 
-**兼容层**: v0.10.17 期间 `app/services/project.py` 的 `apply_tool_bindings_legacy_sync` 双写派生回写 `classes / classes_config / attribute_schema`, 老 reader 仍可读;`coalesce_legacy_into_tool_bindings` 反向把老客户端只传扁平字段反推到对应 unit。v0.10.18 完成所有读端切换后删除派生字段。
+**单源真值收口 (v0.10.22)**: `projects` / `project_templates` 的旧扁平列 `classes` / `classes_config` / `attribute_schema` 已删除(migration 0078),写时双写 helper `apply_tool_bindings_legacy_sync` 移除 —— `tool_bindings` 是唯一存储真值。`ProjectOut` / `ProjectTemplateOut` 仍暴露三个扁平字段(API 契约不变),但由 `model_validator` 用 `derive_*` 从 `tool_bindings` **读时派生**(响应序列化 / COCO·YOLO·AAP 导出共用)。输入侧 `coalesce_legacy_into_tool_bindings` 保留,把旧客户端 / 旧 AAP JSON 1.0 的扁平字段反推到对应 unit。
 
 **AAP JSON**: `schema_version` 升 `1.1`, envelope `project.tool_bindings` 整段嵌入, annotations / predictions 数组每条加 `tool_unit_id`;1.0 reader 走 `extra="ignore"` 仍兼容。
 

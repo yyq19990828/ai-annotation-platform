@@ -21353,7 +21353,7 @@
     },
     "/api/v1/projects/{project_id}/classes/rename": {
       "post": {
-        "description": "B-13 · 原子地把类别 old_name 重命名为 new_name:\n- 更新 tool_bindings 中对应 unit (或所有 unit) 的 classes[].name (强隔离 · 仅本 unit)\n- 同步更新 classes 数组与 classes_config 字典 key 派生 (保留 color/order/alias)\n- **始终跨 unit** 改全项目内同名 annotations.class_name (避免历史 magic-box /\n  region / 旧 schema 残留留下\"孤儿\"标注: binding 已无该类, 但 annotation 仍引用)\n- 不动 predictions.result (alias 不变)",
+        "description": "B-13 · 原子地把类别 old_name 重命名为 new_name:\n- 更新 tool_bindings 中对应 unit (或所有 unit) 的 classes[].name (强隔离 · 仅本 unit)\n- **始终跨 unit** 改全项目内同名 annotations.class_name (避免历史 magic-box /\n  region / 旧 schema 残留留下\"孤儿\"标注: binding 已无该类, 但 annotation 仍引用)\n- 不动 predictions.result (alias 不变)",
         "operationId": "rename_class_api_v1_projects__project_id__classes_rename_post",
         "parameters": [
           {

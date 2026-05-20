@@ -5,6 +5,7 @@ from uuid import UUID
 
 from app.schemas._jsonb_types import (
     AttributeSchema,
+    ClassConfigEntry,
     ClassesConfig,
     ProjectRenderingConfig,
     ToolBindings,
@@ -126,10 +127,11 @@ class ProjectOut(BaseModel):
     # v0.10.1 · 单项目可绑定的 ML backend 数量上限 (来自 settings.max_ml_backends_per_project).
     # 前端 ProjectSettings 据此渲染「+ 添加后端」按钮的禁用状态及 Modal 文案 (M3).
     ml_backend_limit: int = 1
+    # v0.10.22 · 扁平视图字段不再有 DB 列, 由下方 validator 从 tool_bindings 读时派生.
     classes: list[str] = []
     classes_config: ClassesConfig = {}
     attribute_schema: AttributeSchema = AttributeSchema()
-    # v0.10.17 · 工具维度类别 / 属性绑定. 旧扁平字段在过渡期由 service 派生.
+    # v0.10.17 · 工具维度类别 / 属性绑定 (唯一存储真值).
     tool_bindings: ToolBindings = {}
     label_config: dict = {}
     sampling: str = "sequence"
@@ -156,6 +158,29 @@ class ProjectOut(BaseModel):
     due_date: date | None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def _derive_flat_class_views(self) -> "ProjectOut":
+        # v0.10.22 · classes / classes_config / attribute_schema 无 DB 列,
+        # 从 tool_bindings 派生扁平投影供前端 / 导出消费.
+        from app.services.project import (
+            derive_attribute_schema,
+            derive_classes_config,
+            derive_classes_list,
+        )
+
+        # tool_bindings 的 value 在此已是 ToolBinding 模型实例; derive_* 需要纯 dict.
+        tb = {
+            k: (v.model_dump() if hasattr(v, "model_dump") else v)
+            for k, v in (self.tool_bindings or {}).items()
+        }
+        self.classes = derive_classes_list(tb)
+        self.classes_config = {
+            name: ClassConfigEntry(**cfg)
+            for name, cfg in derive_classes_config(tb).items()
+        }
+        self.attribute_schema = AttributeSchema(**derive_attribute_schema(tb))
+        return self
 
     class Config:
         from_attributes = True

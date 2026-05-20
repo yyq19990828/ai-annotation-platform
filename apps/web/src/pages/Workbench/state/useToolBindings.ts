@@ -7,7 +7,8 @@
  *   - attributeSchema: AttributeSchema  当前 tool_unit 的属性 schema
  *   - toolUnitId: ToolUnitId        派生出的工具单位 (供创建标注时 POST tool_unit_id)
  *
- * 老项目 (tool_bindings 为空) 走 fallback: 用 project.classes_config 全表 + activeUnit=bbox.
+ * v0.10.22 · tool_bindings 是唯一真值 (全部项目已 backfill). 当前 unit 未配置类时,
+ * 借 bbox / region 默认 unit 的类名展示; 都为空则返回空视图.
  */
 
 import { useMemo } from "react";
@@ -50,14 +51,7 @@ export function useToolBindings(
         return { ...fb, toolUnitId };
       }
     }
-    // 还不行就走老项目 fallback (扁平 classes_config).
-    return {
-      classes: project?.classes ?? [],
-      classesConfig: (project?.classes_config ?? {}) as ClassesConfig,
-      attributeSchema:
-        project?.attribute_schema ?? ({ fields: [] } as AttributeSchema),
-      toolUnitId,
-    };
+    return { ...view, toolUnitId };
   }, [project, toolUnitId]);
 }
 

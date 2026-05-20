@@ -18,10 +18,8 @@ from typing import Any
 CLONEABLE_PROJECT_FIELDS: tuple[str, ...] = (
     "type_label",
     "type_key",
-    "classes",
-    "classes_config",
-    "attribute_schema",
-    # v0.10.17 · 工具维度类别 / 属性绑定; 与 Project 对齐.
+    # v0.10.22 · 类别 / 属性配置唯一真值; 旧扁平 classes / classes_config /
+    # attribute_schema 列已删, 配置全部经此字段复制.
     "tool_bindings",
     "ai_enabled",
     "ai_model",

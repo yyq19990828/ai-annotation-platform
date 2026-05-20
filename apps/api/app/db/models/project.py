@@ -39,21 +39,11 @@ class Project(Base):
     ml_backend_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ml_backends.id", ondelete="SET NULL")
     )
-    classes: Mapped[dict] = mapped_column(JSONB, default=list)
-    classes_config: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, server_default="{}", default=dict
-    )
     label_config: Mapped[dict] = mapped_column(JSONB, default=dict)
-    attribute_schema: Mapped[dict] = mapped_column(
-        JSONB,
-        nullable=False,
-        server_default='{"fields": []}',
-        default=lambda: {"fields": []},
-    )
     # v0.10.17 · 工具维度类别 / 属性绑定 (ROADMAP §A 新建向导通用化).
     # 形状: { tool_unit_id: { enabled, classes: [...], attribute_schema: {...} } }
-    # 旧 classes_config / attribute_schema 在 v0.10.17 仍由 service 派生只读;
-    # v0.10.18 起 tool_bindings 是唯一真相, 删除派生.
+    # v0.10.22 · 旧扁平 classes / classes_config / attribute_schema 列已删除,
+    # tool_bindings 是唯一存储真值; 扁平视图由响应 schema / 导出读时派生.
     tool_bindings: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )

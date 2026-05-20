@@ -1,11 +1,11 @@
-"""v0.10.17 · tool_bindings service helper 单测.
+"""v0.10.22 · tool_bindings service helper 单测.
 
-覆盖 services/project.py 的 derive_legacy_* / apply_tool_bindings_legacy_sync /
-coalesce_legacy_into_tool_bindings / lookup_classes_for_tool_unit, 以及
-services/prediction.py 的 derive_tool_unit_from_ls_type / derive_tool_unit_from_result.
+覆盖 services/project.py 的 derive_* (读时派生投影) /
+coalesce_legacy_into_tool_bindings (旧输入反向派生) / lookup_classes_for_tool_unit,
+以及 services/prediction.py 的 derive_tool_unit_from_ls_type / derive_tool_unit_from_result.
 
-这些 helper 是 v0.10.17 兼容层的核心, 双写 / 反向派生 / 工具单位查表都依赖它,
-任何回归都会让旧 reader / 新 wizard / accept_prediction 至少一个分支错位.
+这些 helper 是 tool_bindings 单源真值的派生 / 反向派生 / 工具单位查表核心,
+任何回归都会让导出 reader / 新 wizard / accept_prediction 至少一个分支错位.
 """
 
 from __future__ import annotations
@@ -17,11 +17,10 @@ from app.services.prediction import (
     derive_tool_unit_from_result,
 )
 from app.services.project import (
-    apply_tool_bindings_legacy_sync,
     coalesce_legacy_into_tool_bindings,
-    derive_legacy_attribute_schema,
-    derive_legacy_classes_config,
-    derive_legacy_classes_list,
+    derive_attribute_schema,
+    derive_classes_config,
+    derive_classes_list,
     derive_tool_unit_for_type_key,
     lookup_classes_for_tool_unit,
 )
@@ -79,15 +78,15 @@ def test_derive_tool_unit_for_type_key(type_key, expected):
     assert derive_tool_unit_for_type_key(type_key) == expected
 
 
-# ── derive_legacy_classes_config ───────────────────────────────────────────
+# ── derive_classes_config ───────────────────────────────────────────
 
 
-def test_derive_legacy_classes_config_empty():
-    assert derive_legacy_classes_config(None) == {}
-    assert derive_legacy_classes_config({}) == {}
+def test_derive_classes_config_empty():
+    assert derive_classes_config(None) == {}
+    assert derive_classes_config({}) == {}
 
 
-def test_derive_legacy_classes_config_skips_disabled_binding():
+def test_derive_classes_config_skips_disabled_binding():
     tb = {
         "bbox": {
             "enabled": False,
@@ -98,12 +97,12 @@ def test_derive_legacy_classes_config_skips_disabled_binding():
             "classes": [{"name": "kept", "color": "#000"}],
         },
     }
-    out = derive_legacy_classes_config(tb)
+    out = derive_classes_config(tb)
     assert "ignored" not in out
     assert out["kept"] == {"color": "#000"}
 
 
-def test_derive_legacy_classes_config_first_occurrence_wins():
+def test_derive_classes_config_first_occurrence_wins():
     tb = {
         "bbox": {
             "enabled": True,
@@ -114,13 +113,13 @@ def test_derive_legacy_classes_config_first_occurrence_wins():
             "classes": [{"name": "person", "color": "#bbb", "alias": "x"}],
         },
     }
-    out = derive_legacy_classes_config(tb)
+    out = derive_classes_config(tb)
     # 同名类强隔离 union: 取最先出现的 binding 配色 / alias.
     assert out["person"]["color"] == "#aaa"
     assert out["person"]["alias"] == "p"
 
 
-def test_derive_legacy_classes_config_drops_empty_fields():
+def test_derive_classes_config_drops_empty_fields():
     tb = {
         "bbox": {
             "enabled": True,
@@ -130,17 +129,17 @@ def test_derive_legacy_classes_config_drops_empty_fields():
             ],
         }
     }
-    out = derive_legacy_classes_config(tb)
+    out = derive_classes_config(tb)
     assert "color" not in out["x"]
     assert "alias" not in out["x"]
     assert out["x"]["order"] == 0
     assert out["y"] == {"color": "#fff"}
 
 
-# ── derive_legacy_classes_list ─────────────────────────────────────────────
+# ── derive_classes_list ─────────────────────────────────────────────
 
 
-def test_derive_legacy_classes_list_sorts_by_order():
+def test_derive_classes_list_sorts_by_order():
     tb = {
         "bbox": {
             "enabled": True,
@@ -151,10 +150,10 @@ def test_derive_legacy_classes_list_sorts_by_order():
             ],
         }
     }
-    assert derive_legacy_classes_list(tb) == ["a", "c", "b"]
+    assert derive_classes_list(tb) == ["a", "c", "b"]
 
 
-def test_derive_legacy_classes_list_missing_order_pushed_to_end():
+def test_derive_classes_list_missing_order_pushed_to_end():
     tb = {
         "bbox": {
             "enabled": True,
@@ -164,11 +163,11 @@ def test_derive_legacy_classes_list_missing_order_pushed_to_end():
             ],
         }
     }
-    out = derive_legacy_classes_list(tb)
+    out = derive_classes_list(tb)
     assert out == ["ordered", "no_order"]
 
 
-def test_derive_legacy_classes_list_skips_dup_across_units():
+def test_derive_classes_list_skips_dup_across_units():
     tb = {
         "bbox": {"enabled": True, "classes": [{"name": "person", "order": 0}]},
         "ai_interactive": {
@@ -176,14 +175,14 @@ def test_derive_legacy_classes_list_skips_dup_across_units():
             "classes": [{"name": "person", "order": 9}],
         },
     }
-    out = derive_legacy_classes_list(tb)
+    out = derive_classes_list(tb)
     assert out == ["person"]
 
 
-# ── derive_legacy_attribute_schema ─────────────────────────────────────────
+# ── derive_attribute_schema ─────────────────────────────────────────
 
 
-def test_derive_legacy_attribute_schema_union_first_wins():
+def test_derive_attribute_schema_union_first_wins():
     tb = {
         "bbox": {
             "enabled": True,
@@ -205,53 +204,16 @@ def test_derive_legacy_attribute_schema_union_first_wins():
             },
         },
     }
-    out = derive_legacy_attribute_schema(tb)
+    out = derive_attribute_schema(tb)
     keys = [f["key"] for f in out["fields"]]
     assert keys == ["occluded", "color"]
     # 首次出现的版本保留
     assert out["fields"][0]["type"] == "boolean"
 
 
-def test_derive_legacy_attribute_schema_empty_input():
-    assert derive_legacy_attribute_schema(None) == {"fields": []}
-    assert derive_legacy_attribute_schema({}) == {"fields": []}
-
-
-# ── apply_tool_bindings_legacy_sync ────────────────────────────────────────
-
-
-def test_apply_legacy_sync_writes_to_dict_target():
-    target: dict = {}
-    tb = {
-        "bbox": {
-            "enabled": True,
-            "classes": [{"name": "car", "color": "#f00", "order": 0}],
-            "attribute_schema": {"fields": [{"key": "k1", "type": "boolean"}]},
-        }
-    }
-    apply_tool_bindings_legacy_sync(target, tb)
-    assert target["classes"] == ["car"]
-    assert target["classes_config"] == {"car": {"color": "#f00", "order": 0}}
-    assert target["attribute_schema"]["fields"][0]["key"] == "k1"
-
-
-def test_apply_legacy_sync_none_is_noop():
-    target = {"classes_config": {"keep": {}}, "classes": ["keep"]}
-    apply_tool_bindings_legacy_sync(target, None)
-    # None 不动 target.
-    assert target == {"classes_config": {"keep": {}}, "classes": ["keep"]}
-
-
-def test_apply_legacy_sync_object_target_uses_setattr():
-    class _Stub:
-        pass
-
-    target = _Stub()
-    tb = {"bbox": {"enabled": True, "classes": [{"name": "x", "order": 0}]}}
-    apply_tool_bindings_legacy_sync(target, tb)
-    assert target.classes == ["x"]
-    assert target.classes_config == {"x": {"order": 0}}
-    assert target.attribute_schema == {"fields": []}
+def test_derive_attribute_schema_empty_input():
+    assert derive_attribute_schema(None) == {"fields": []}
+    assert derive_attribute_schema({}) == {"fields": []}
 
 
 # ── lookup_classes_for_tool_unit ───────────────────────────────────────────

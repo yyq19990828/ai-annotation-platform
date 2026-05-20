@@ -13,7 +13,7 @@
 ### 计划中
 
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
-- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：reject_reason_type / 决策底线表。已落地：✅ Annotation Guide (v0.10.13), ✅ Predictions Import + AAP JSON (v0.10.15), ✅ 工具维度类别 / 属性绑定 + Magic Box (v0.10.17), ✅ P3 维护项收尾 5 项 (v0.10.18), ✅ §2.2 AnnotationFeedback 统一表后端基线 (v0.10.19, ADR-0027 三段式迁移第一段)。
+- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。已落地：✅ reject_reason_type 结构化枚举 (v0.10.16), ✅ Annotation Guide (v0.10.13), ✅ Predictions Import + AAP JSON (v0.10.15), ✅ 工具维度类别 / 属性绑定 + Magic Box (v0.10.17), ✅ P3 维护项收尾 5 项 (v0.10.18), ✅ §2.2 AnnotationFeedback 统一表后端基线 (v0.10.19, ADR-0027 三段式迁移第一段)。
 
 
 ---
@@ -29,7 +29,6 @@
 - **dev SMTP 测试链路**（P3，v0.10.18 排除项, 单独排期）：docker-compose 缺 mailpit / mailhog dev SMTP service；可加 `mailpit` service + `.env` `SMTP_HOST=mailpit SMTP_PORT=1025`。
 - **WorkbenchStageHostProps 类型嵌套重构 (call-site 改造)**（P3，v0.10.18 后续维护项）：v0.10.18 已加 JSDoc 分组注释 (common / video / image / ai / editors) 但类型仍平铺以兼容 WorkbenchShell 1210 行 call site；后续若 Shell 再次膨胀超过 900 行触发线，把 props 改为嵌套对象形态 `{ common: {...}, image?: {...}, video?: {...}, ai?: {...}, editors?: {...} }` 同时改造 call site，分组注释已就位作切分参考。
 - **`useWorkbenchShellModel` 装配 hook**（P3，触发条件）：WorkbenchShell 仍 1210 行；触发条件 Shell 再次超过 900 行（v0.10.18 后续观察）。
-- **截图 fixture 实际重跑**（P3，maintainer 任务）：v0.10.18 已落地 `page.route` mock 注入式 prepare 脚本（`ai-pre/history-search` / `ai-pre/empty-alias` / `bbox/iou` / `bbox/bulk-edit`）；需 maintainer 在 docker + uvicorn + pnpm dev + seed.py 全栈环境下手动跑 `pnpm exec playwright test --config=playwright.screenshots.config.ts --project=desktop-light --grep "ai-pre/history-search|ai-pre/empty-alias|bbox/iou|bbox/bulk-edit"` 验证 4 张图非空白。
 
 ### 等业务规模 / 监控触发（先观察、不做）
 - **predictions 月分区 Stage 2**：单月 INSERT > 100k 或 总行数 > 1M（ADR-0006）
@@ -56,11 +55,10 @@
   - `lidar` 在 Workbench StageHost 仍是 3D placeholder,Dashboard 入口未开放,`tool_unit=lidar_box_3d` 留位置灰;接入真实 3D 前不要复用图片 / 视频 geometry。
   - `video-mm` / `mm` 多模态工作台未实现;视频侧能力详见 §C.5 / §C.6。
 - **v0.10.17 落地后开放项**（按客户反馈触发）:
-  - **`polyline` 工具实现**（**P3**）:v0.10.17 在 schema 与 UI 都留了 `polyline` tool_unit 位置但置灰;触发条件:车道线 / 折线段标注的真实客户需求出现。设计走 `LineGeometry` + ToolDock 入口 + image-export 协议同步。与 §C.7 I9 Ellipse 同窗口可并行。
+  - **`polyline` 工具实现**（**P3**）:v0.10.17 在 schema 与 UI 都留了 `polyline` tool_unit 位置但置灰;触发条件:车道线 / 折线段标注的真实客户需求出现。设计走 `LineGeometry` + ToolDock 入口 + image-export 协议同步。
   - **`lidar_box_3d` 工具实现**（**P0**,体量大）:见上条 3D 工作台;依赖 3D viewer + 后端 frame service 视点处理。独立 epic,与长期 L3 跨模态挂钩。
-  - **删除派生 `classes_config` / `attribute_schema` 字段**（**P2**,v0.10.18 计划）:v0.10.17 期间 `tool_bindings` 是单源真值,旧扁平字段由 `apply_tool_bindings_legacy_sync` 双写派生供未迁移读端兜底;v0.10.18 完成所有读端切到 `tool_bindings` 后(主要是 COCO 导出已切, 剩 audit log / dashboard 个别引用 grep 清查)删除派生列 + 同步 alembic migration。
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）:v0.10.17 强隔离意味"bbox 工具的人 / region 工具的人是两条独立记录",同名颜色 / alias 都得重复输入;触发条件:客户后续反馈"想共享类别名字"。设计走 `ToolClassEntry.alias_to: { tool_unit_id, class_name } | null` 链,导出时按 alias_to 合并 categories(可选)。**强隔离决策为默认底线,alias_to 仅作可选叠加**,不破坏 ADR-0026 决策。
-  - ~~**rendering_config 共享受控编辑器**~~ ✅ **v0.10.18 已落地**: `RenderingConfigEditor` 抽出受控视图 ([RenderingConfigEditor.tsx](apps/web/src/pages/Projects/sections/RenderingConfigEditor.tsx)); `RenderingConfigSection` 瘦身为保存外壳; `TemplateEditModal` 渲染配置 tab 接入 + 修复 payload 漏传 `rendering_config` bug.
+
   - **工作台 ToolDock 按 tool_bindings 过滤**（**P3**）:当前 ToolDock 仍渲染全部工具(只是 AI 工具按 `useMLCapabilities` 置灰);v0.10.17 引入 tool_unit 后,可进一步按"项目启用的 tool_unit"隐藏不相关工具(例如未启用 region 时不显示 polygon/mask 按钮)。触发条件:工具栏拥挤反馈 + UI 用户调研显示"看不懂为什么有 polygon 按钮但点了画不出"。
   - **rename_class 端点跨 unit 重命名 UX**（**P3**）:v0.10.17 `useRenameClass` 加了 `tool_unit_id` 参数,但 ClassesSection 仅传当前 active unit;若客户想"同时在所有 unit 内把'人'改成'pedestrian'"需要扩 UI 入口(批量勾选 unit + 单次重命名)。触发条件:客户反馈"重命名要跑 N 次"。
 - **Annotation Guide 配套延伸**（v0.10.13 之后开放项，按客户反馈触发）：
@@ -94,36 +92,7 @@
   - **AAP JSON 单 prediction 多 shape**（**P3**）：当前每个 `predictions[i]` 对应**一条** Prediction 行（单 shape）；与 ML backend 内部协议（一个 prediction 行可携带 N 个 shape）不一致。触发条件：客户希望"一个外部模型一次推理出来的所有框作为同一 prediction 单元，便于整体采纳/驳回"。设计：把 envelope `predictions[i]` 加可选 `shapes[]` 数组，与现有 flat `geometry/class_name` 同源（二选一，flat 兼容旧 schema）。schema 已在 v0.10.17 升 minor `1.1`（带 `tool_unit_id` / `tool_bindings`）；多 shape 仍待客户驱动。
   - **AAP JSON video_track 导入支持**（**P3**）：当前 `internal_geometry_to_ls_shape` 适配器仅覆盖 bbox / polygon / multi_polygon；video_bbox / video_track / skeleton 进 errors[]。触发条件：视频项目客户首次反馈"想把外部 tracker 结果灌进平台"。与 §C.5 R9 / R23 同窗口做。v0.10.17 schema_version 1.1 envelope 已带 `tool_unit_id`,新增 `video_track_bbox` / `video_track` tool_unit 时实现端接通即可。
   - **`predictions_import` 审计 detail 专项**（**P3**）：当前 audit log `detail_json` 含 imported/skipped/error_count；缺"哪些 task 被命中 / 哪些 model_version / 文件大小 hash"等取证字段。触发条件：审计期反馈 detail 不足以定位"哪批外部模型结果先被导入又被撤回"。设计在 `app/services/audit.py` 加 `predictions_import_detail()` helper.
-- **注册 backend 时选模型变体 · C → B 两阶段**（**P2**，与模型市场二期同窗口）：
-  - **现状钉死**：grounded-sam2-backend 的 `(SAM_VARIANT, DINO_VARIANT)` 组合在容器启动时由 env 锁死（`apps/grounded-sam2-backend/main.py:43-44` 读 env，`predictor.py:50-58` 选 checkpoint，`lifespan` 一次性 build 占住显存），运行期不可变；改变体 = 改 env + rebuild + 重启。注册端 `MLBackendCreate` 也只接 `name` / `url` / `extra_params`（`apps/api/app/schemas/ml_backend.py:28-34`），平台**不知道**某条 ml_backends 行对应哪个变体，只能从 `health_meta.model_version` 字符串反解。
-  - **目标**：把"变体"提升为注册时一等参数，让平台获得变体维度的认知（路由 / mismatch 校验 / AB 对比 UI 全靠这个），并为后续显存吃紧场景的 model pool 留好升级路径。
-  - ---
-  - **阶段 1 · C — 注册时声明 + 后端按声明常驻**（**~2-3d**，先做）
-    - **容器拓扑**：仍是「一变体一容器」（与现状一致），predictor / lifespan / Dockerfile **零改动**。
-    - **compose 改造**：`grounded-sam2-backend` 拆成按变体细分的 service（`gsam2-tiny` / `gsam2-large` / ...），各自带独立 profile（如 `gpu-tiny` / `gpu-large`）和端口。dev 默认不启，生产按显存预算 `--profile` opt-in。
-    - **schema 改造**：`MLBackendCreate.extra_params` 收口 `variant: {sam: tiny|small|base|large, dino: T|B}` 字段（用 Pydantic 子模型而非裸 dict，便于 codegen 派生前端类型）。`MLBackendOut` 同步暴露。
-    - **UI 改造**：`apps/web/src/pages/ModelMarket/RegisteredBackendsTab.tsx` 创建表单加 variant 下拉（按 backend 类型动态枚举：grounded-sam2 显示 SAM × DINO 组合，sam3 显示单档）；列表行加 variant chip。
-    - **mismatch 校验**：`services/ml_backend.check_health` 比对声明 variant 和 `/health.model_version` 子串，不一致时 `state=mismatch` + `error_message` 提示 ops 同步 ml_backends 行或 compose env。
-    - **运维侧**：`docs-site/dev/deploy.md` 加「按需启动 + 显存预算」章节（每变体 ~3-7GB 常驻 + embedding cache buffer，列预设组合表：4060 起 1 个 / 3090 起 2 个 / A100 全起）。
-    - **不做**：predictor 抽象 / model pool / 请求级 variant 切换 / ProjectSettings 路由 UI（路由 UI 跟 v0.10.x M1 sam3 路由共做，避免二次破窗）。
-    - **验收**：① ProjectSettings 注册 grounded-sam2-tiny + grounded-sam2-large 两条；② 健康检查 mismatch 用例（手动改 compose env 不改 ml_backends）能告警；③ `/model-market` 列表带 variant chip 渲染；④ AB 对比 UI（v0.10.2）能直接读 `extra_params.variant` 选 backend。
-  - ---
-  - **阶段 2 · B — 单容器 model pool（运行期热切换）**（**触发后再做，估 ~5-7d**）
-    - **触发条件**（任一）：① 客户硬件预算线上一台 GPU 想跑 ≥ 3 个变体且显存吃紧；② 集群场景出现"变体频繁切换"真实工况（运营反馈 / Prometheus 看 ml_backends 切换率）；③ v0.10.x sam3 + grounded-sam2 双 backend 跑稳后，发现"同 backend 内多变体并存"仍是高频需求。**触发前不动手**，避免过度工程。
-    - **实现要点**：
-      - predictor 抽象出 `ModelPool`（LRU cap 由 env 配置，按显存档位预设：3090 cap=1~2，A100 cap=2~4）。
-      - `/predict` 接受 `variant` 参数（header 优先，fallback 到 `extra_params.variant`），命中走原路径，miss 触发驱逐 + build（1-3s 冷启）。
-      - per-variant 异步锁，防并发请求同时触发同一 variant build；pool 满 + 多 variant 并发 miss → 排队 + 超时降级。
-      - `embedding_cache.py` 按 variant 分桶（不同模型的 embedding 不能跨）。
-      - `/health` 暴露 pool 状态（`loaded_variants` / `evict_count` / 每 variant LRU 时间戳），`/admin/ml-integrations/overview` 渲染。
-    - **C → B 平滑迁移**：阶段 1 的 `extra_params.variant` 字段语义保持兼容 —— C 时是「这条 ml_backends 行映射的容器装的变体」，B 时是「请求该 backend 时默认带的 variant 参数」。前端 / 协议无破坏性改动。多容器 → 单容器是 ops 决策（compose profile 切换 + 把多条 ml_backends 行的 URL 合并到同一端口），平台层不强制。
-    - **不做**：自动 pool sizing（按工作集自动调 cap）/ 跨容器 pool 共享（k8s sidecar 模式）—— 留 v0.11+。
-  - ---
-  - **触发与排序**：
-    - 阶段 1（C）跟「v0.10.x M0 sam3-backend 容器化」(`ROADMAP/[archived]0.10.x.md` v0.10.0) 同窗口起，理由：sam3-backend 落地时 ml_backends 的 variant 维度本来就要加（sam3 vs grounded-sam2 各自有变体枚举），合并改 schema 一次到位。
-    - 模型市场二期 ① AB 路由 UI（v0.10.2）依赖阶段 1 的 variant 字段，**强依赖**。
-    - 阶段 2（B）独立触发，与 v0.11+ 视频 / Active Learning 节奏解耦。
-  - **影响面**（阶段 1）：`apps/api/app/schemas/ml_backend.py`、`apps/api/app/services/ml_backend.py`（health 校验）、`apps/web/src/pages/ModelMarket/RegisteredBackendsTab.tsx`、`docker-compose.yml`、`docs-site/dev/ml-backend-protocol.md`、`docs-site/dev/deploy.md`。**不动**：predictor.py / main.py / lifespan / embedding_cache。
+- **ML Backend 模型变体运行期热切换（单容器 model pool）**（**P2**，独立 epic 文档）：见 **[ROADMAP/2026-05-20-ml-backend-variant-hot-switch.md](./ROADMAP/2026-05-20-ml-backend-variant-hot-switch.md)**。grounded-sam2-backend 变体当前 env 锁死、运行期不可变；前端 SchemaForm 变体下拉 + context 透传 + API 转发链路**已就位**，唯一断点是 backend 不认 context 里的 `sam_variant`/`dino_variant`（`apps/grounded-sam2-backend/main.py:315-391` 忽略）。**当前直接需求 = 阶段二（B · ModelPool 运行期热切换，~5-7d）**；原阶段一（C · 注册时声明 + 一变体一容器）在 pool 形态下退化为可选。模型市场二期 AB 路由 UI 改读 `/setup.supported_variants`。
 - **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：dev `ML_BACKEND_STORAGE_HOST` + ADR-0012 框架已收口；生产场景多变, 第一个生产部署遇到再扩策略表（"何时设、设啥值、何时留空"）。
 
@@ -157,7 +126,6 @@
 
 ### 可观测性
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
-- **reject_reason_type 结构化枚举**（**P2**，~1d）：当前 `reject_reason` 自由文本，丢失"漏标率 / 错标率 / 标错类别率"的可分析信号。参考 CVAT `AnnotationConflictType`，加 enum `missing | extra | wrong_label | wrong_geometry`（第一版**刻意收紧到 4 类**，后续按 reviewer 反馈细分；原 free text 留补充）。reviewer UI 强制先选类型再写文本。为 Annotator Performance Dashboard / LLM-as-Judge reject 建议（取经合集 §5.1）提供结构化轴。详见 [取经合集 §1.2](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#12-reject_reason_type-结构化枚举)。
 
 ### 性能 / 扩展
 - **Annotation 列表前端切换 keyset 分页**：v0.7.6 已落后端新端点 `GET /tasks/{id}/annotations/page?limit&cursor` + 复合索引；前端 `useAnnotations` 仍用旧数组端点（cap=2000），改 useInfiniteQuery 推迟到 1000+ 框监控触发。
@@ -227,7 +195,6 @@
 - **I1 大图 tile**（v0.11.0 独立 epic，**必做**）：>4K 图后端 Celery 切 IIIF / 自定义 tile 金字塔（zoom 0/1/2 ... 每级 512×512 PNG/WebP），元数据 `ImageTilePyramid(image_id, max_level, tile_size, format)`；前端 `useTileSource` hook + LRU 缓存 ImageBitmap；Konva 背景 bg 层改 `<Group>` + 多张 `<Image>` tile；保留 BlurhashLayer 兜底。衡量：8K×8K 图、4x 缩放局部、内存 <300MB、FPS ≥30。后端切片服务可与视频 chunk service 共用基础设施。
 - **I4 完整 DiscussionPanel 拆分**（v0.10.19/v0.10.20/v0.10.21 渐进式落地: CommentsPanel 任务级降级 + 任务级评论 POST /feedbacks + 任务级 feedback patch/delete UI + `canvas_drawing.shapes[i].id/started_at/ended_at` 时间戳 + 评论卡片下方迷你 timeline bar; 剩 `DiscussionPanel.tsx` 独立拆出 + WorkbenchLayout 右栏两段固定结构 + ResizeHandle — 重估为纯结构改造对用户行为无增量, Workbench Shell 未破 900 行触发线前不开工）。
 - **I5 多图比对（双视图）**：工作台支持左右 / 上下分屏，每个面板独立 ImageStage 实例；可选「锁定 viewport」按钮；标注 diff 左/右面板增删改颜色区分；状态隔离与 R6.2 同理。
-- **I9 Ellipse 形状**（S，纯前端）：`stage/tools/EllipseTool.ts` + `KonvaEllipse` + `ellipseGeom.ts`；存储 `[cx, cy, rx, ry, rotation]`；扩展 `geometry.kind: bbox | polygon | ellipse`，与 R9 视频几何 kind 字段同期收口。
 - **I10 Skeleton（骨架关键点）**（L，后端 schema）：Label 配置器 SVG 拖点 + 连线 + 子标签命名 → JSON 模板；`SkeletonTool` 按模板顺序自动落点，节点支持 occluded / outside；新增 `geometry.kind: skeleton`，payload `{ template_id, points: [{node_id, x, y, occluded}], links: [...] }`。
 - **I12 Object Group UI 细节**（v0.10.19 已落契约 + 快捷键 + Konva 虚线; 剩 AIInspectorPanel BoxList 同 group 折叠卡片 + AttributeForm 多选 batch banner 消费 `useAnnotationBulkUpdate` + 导出 COCO 时 group_id 映射到 `attributes.__group_id`）。
 - **I14 Autoborder / Polygon Crop**（M，纯前端）：开关式 Auto-border，多边形顶点拖动 / 新增时若距其他形状边 < 阈值自动吸附；新建多边形与已有重叠时提供「裁切重叠区」选项（布尔差集，基于已在依赖的 `polygon-clipping@0.15.7`）。
@@ -259,7 +226,7 @@
 |---|---|---|---|
 | **P0/P1** | 视频工作台前端剩余（R9 / R20 / R16 / R23 / R11+R21 / R22 / R24 / R5.3） | 长视频与协同 / 专属导出 / 质量评估；详见 §C.5 | — |
 | **P1** | 视频后端帧服务剩余（真实 SAM video backend / timetable compact / segment 导出 / frameStep+Chapter 原语 / chunk warmup / MOT 导出 / 质量评估 worker） | 前端 R5.3 / R10 / R11 / R20 / R21 / R23 的服务端依赖；详见 §C.6 | — |
-| **P2** | 图片工作台能力扩展剩余（I1 / I5 / I9 / I10 / I14 / I19 / I20.4 / I21） | 大图 tile / 双图比对 / Ellipse / Skeleton / Autoborder / GT-IAA / 快捷键自定义；详见 §C.7 (I4/I12/I18 已 v0.10.19 落地, 仅余 UI 细节: §C.7 各条目内列出) | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
+| **P2** | 图片工作台能力扩展剩余（I1 / I5 / I10 / I14 / I19 / I20.4 / I21） | 大图 tile / 双图比对 / Skeleton / Autoborder / GT-IAA / 快捷键自定义；详见 §C.7 (I4/I12/I18 已 v0.10.19 落地, 仅余 UI 细节: §C.7 各条目内列出) | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | `/ai-pre` 精细单批次预标 modal（v0.9.13 后回归） | v0.9.12 IA 重构 + v0.9.13 chips/threshold UI 已搬到 ProjectDetailPanel；4 个 stepper 子组件 (`PreannotateStepper` / `ProjectBatchPicker` / `RunPanel` / `usePreannotateDraft`) 仍 orphan，客户场景需要单 batch 精细调（草稿恢复 / 阶段进度可视化）时唤起 modal 复用旧组件；如反馈不需要再删 orphan 文件 | — |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
@@ -267,7 +234,6 @@
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
 | **P2** | 非视频工作台 lidar 真实 3D | v0.10.17 已把 `tool_unit=lidar_box_3d` 留位置灰; image-seg / keypoint 已通过 tool_unit 维度划分(region / 待 polyline / 待 skeleton) 不再算独立工作台 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
-| **P2** | v0.10.18 删除派生 `classes_config` / `attribute_schema` 字段 | v0.10.17 单源真值已切到 `tool_bindings`,旧字段 service 双写派生兜底;切完所有读端后删 + alembic migration | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
 | **P3** | 截图 fixture 实际重跑 (v0.10.18 已落 prepare 脚本) | v0.10.18 已落地 `page.route` mock 注入式 prepare; maintainer 跑 `pnpm exec playwright test --config=playwright.screenshots.config.ts --project=desktop-light --grep "ai-pre/history-search\|bbox/iou\|bbox/bulk-edit"` 验证 (`ai-pre/empty-alias` 在 PromptComposer 深层 modal 流, 留作手截) | — |
 | **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
@@ -279,8 +245,9 @@
 | **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 工作台 ToolDock 按 `tool_bindings` 过滤 | v0.10.17 未做; 客户反馈"看不懂为什么 polygon 按钮点不开"时启动 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | I4/I12/I18 epic 续作余 (v0.10.21 收尾) | v0.10.20 已落 I4 任务级评论 POST + I12 group 折叠/batch banner + I18 IssueLayer + ADR-0027 第二段双写; v0.10.21 落 I4 笔画 timeline + 任务级 feedback patch/delete UI; 剩独立 epic 处理: ADR-0027 第三段切单源 (legacy-table-retirement) + DiscussionPanel 完整拆分 (无 UX 增量) + IssueLayer video frame pin | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
-| **P3** | `polyline` 工具实现 | v0.10.17 schema 与 UI 留位置灰; 车道线 / 折线段需求出现时启动; 与 §C.7 I9 Ellipse 同窗口可并行 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
+| **P3** | `polyline` 工具实现 | v0.10.17 schema 与 UI 留位置灰; 车道线 / 折线段需求出现时启动 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
+| **P2** | ML Backend 模型变体运行期热切换（单容器 model pool） | 当前直接需求 = 阶段二 B；前端选变体 UI + context 透传已就位, 唯一断点是 backend 不认 variant; 详见独立 epic | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 | **P3** | Workbench Shell 拆分后续精简（v0.10.18 部分收口） | v0.10.18 已落 `WorkbenchStageHostProps` JSDoc 分组 + `WorkbenchLayout.test.tsx` / `WorkbenchStageHost.test.tsx` 共 6 例 focused render tests; 剩 props 嵌套类型重构 (call-site 改造, 触发条件 Shell 再次膨胀) + `useWorkbenchShellModel` (Shell 仍 1210 行, 未破 900) 未做 | [0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md) |
 
@@ -293,7 +260,7 @@
 | 主题 | 反模式（来源） | 当前正确选择 | 何时检查 |
 |---|---|---|---|
 | 状态字段 | 同时存 status/stage/state 三字段（CVAT Job） | 单 status enum | 加新状态前看一眼现有 enum 能否表达 |
-| 标注配置 | XML DSL（Label Studio） | JSONB `tool_bindings` 按 tool_unit 嵌套（v0.10.17+; 老 `classes_config` 派生只读） | 永远不要为"灵活性"回退到 DSL；要灵活就扩 JSONB schema |
+| 标注配置 | XML DSL（Label Studio） | JSONB `tool_bindings` 按 tool_unit 嵌套（v0.10.17+; v0.10.22 起为**唯一存储真值**, 扁平 `classes_config` 仅响应/导出读时派生, 无 DB 列） | 永远不要为"灵活性"回退到 DSL；要灵活就扩 JSONB schema；不要重新引入扁平存储列 |
 | 类别绑定 | 项目级扁平类别表（v0.10.16 之前的本平台 / Label Studio） | 按工具单位 `tool_bindings` **强隔离**（v0.10.17+, [ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md)） | 不要回到"项目级扁平 classes_config"; 跨工具复用类需求出现时走可选 `alias_to` 链而不是合并表 |
 | Task 双重含义 | task 既是标注题目也是后台 job（Label Studio） | 题目 / Celery 分离 | `async_jobs` 统一表落地后强化（取经合集 §1.7） |
 | 模块化拆分 | 24+ Django apps 跨依赖（Label Studio） | apps/api 单仓 | 不要因"模块化"动机拆出新 apps/* |

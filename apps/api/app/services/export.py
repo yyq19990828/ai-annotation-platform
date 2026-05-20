@@ -15,6 +15,11 @@ from app.db.models.dataset import DatasetItem
 from app.db.models.prediction import Prediction
 from app.db.models.task import Task
 from app.db.models.project import Project
+from app.services.project import (
+    derive_attribute_schema,
+    derive_classes_config,
+    derive_classes_list,
+)
 from app.schemas.aap_json import (
     AAP_SCHEMA_VERSION,
     AAPAnnotationEntry,
@@ -167,7 +172,10 @@ class ExportService:
 
         dataset_items = await self._load_dataset_items(tasks)
         task_by_id = {task.id: task for task in tasks}
-        categories = [{"id": i, "name": name} for i, name in enumerate(project.classes)]
+        categories = [
+            {"id": i, "name": name}
+            for i, name in enumerate(derive_classes_list(project.tool_bindings))
+        ]
 
         exported_tasks = []
         video_metadata_by_task: dict[uuid.UUID, dict] = {}
@@ -267,7 +275,9 @@ class ExportService:
             "type_key": project.type_key,
         }
         if include_attributes:
-            project_row["attribute_schema"] = project.attribute_schema or {"fields": []}
+            project_row["attribute_schema"] = derive_attribute_schema(
+                project.tool_bindings
+            )
 
         payload = {
             "export_type": "video_tracks",
@@ -309,7 +319,7 @@ class ExportService:
         # v0.10.17 · COCO categories 按 tool_unit 分组. tool_bindings 提供 N 个工具
         # 单位, 每单位贡献一段 categories; supercategory = tool_unit_id; category.id
         # 全局唯一. 同名类不去重 (强隔离). cat_map 由 (tool_unit_id, class_name) → id 查.
-        # 兼容: 老项目 tool_bindings 为空时回落到扁平 project.classes (一段 bbox).
+        # 兼容: tool_bindings 为空 (理论上不应出现, 全部已 backfill) 时派生空类集.
         categories: list[dict] = []
         cat_map: dict[tuple[str, str], int] = {}
         tb = project.tool_bindings or {}
@@ -334,7 +344,7 @@ class ExportService:
                     cat_map[(unit_id, name)] = next_cat_id
                     next_cat_id += 1
         else:
-            for name in project.classes or []:
+            for name in derive_classes_list(project.tool_bindings):
                 categories.append(
                     {"id": next_cat_id, "name": name, "supercategory": "bbox"}
                 )
@@ -399,7 +409,7 @@ class ExportService:
             "date_created": datetime.utcnow().isoformat(),
         }
         if include_attributes:
-            info["attribute_schema"] = project.attribute_schema or {"fields": []}
+            info["attribute_schema"] = derive_attribute_schema(project.tool_bindings)
 
         coco = {
             "info": info,
@@ -421,14 +431,15 @@ class ExportService:
             return b""
         _assert_image_export_supported(project, "yolo")
 
-        cat_map = {name: i for i, name in enumerate(project.classes)}
+        yolo_classes = derive_classes_list(project.tool_bindings)
+        cat_map = {name: i for i, name in enumerate(yolo_classes)}
         ann_by_task: dict[uuid.UUID, list[Annotation]] = {}
         for ann in annotations:
             ann_by_task.setdefault(ann.task_id, []).append(ann)
 
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            classes_txt = "\n".join(project.classes)
+            classes_txt = "\n".join(yolo_classes)
             zf.writestr("classes.txt", classes_txt)
 
             if include_attributes:
@@ -436,7 +447,7 @@ class ExportService:
                 zf.writestr(
                     "attribute_schema.json",
                     json.dumps(
-                        project.attribute_schema or {"fields": []},
+                        derive_attribute_schema(project.tool_bindings),
                         ensure_ascii=False,
                         indent=2,
                     ),
@@ -626,8 +637,8 @@ class ExportService:
             project=AAPProjectMeta(
                 name=project.name,
                 type_key=project.type_key,
-                classes_config=project.classes_config or {},
-                attribute_schema=project.attribute_schema or {"fields": []},
+                classes_config=derive_classes_config(project.tool_bindings),
+                attribute_schema=derive_attribute_schema(project.tool_bindings),
                 # v0.10.17 · 工具维度绑定 (1.1+).
                 tool_bindings=project.tool_bindings or {},
                 rendering_config=project.rendering_config or {},

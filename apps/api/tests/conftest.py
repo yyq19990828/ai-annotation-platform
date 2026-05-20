@@ -35,6 +35,39 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 TEST_DB_DEFAULT = "postgresql+asyncpg://user:pass@localhost:5432/annotation_test"
 
 
+# v0.10.22 · 旧扁平列 classes / classes_config / attribute_schema 已删 (单源真值
+# 收口到 tool_bindings). 历史测试 fixture 大量用 Project(classes=[...]) 风格直接构造
+# ORM 行; 这里在 ORM __init__ 层加一个 **测试专用** 兼容层, 把旧扁平 kwargs 复用
+# 生产同款 coalesce_legacy_into_tool_bindings 翻译成 tool_bindings, 等价于迁移后的
+# 真实行形态. 生产模型不带任何 shim.
+def _install_legacy_class_kwargs_shim() -> None:
+    from app.db.models.project import Project
+    from app.db.models.project_template import ProjectTemplate
+    from app.services.project import coalesce_legacy_into_tool_bindings
+
+    _LEGACY = ("classes", "classes_config", "attribute_schema")
+
+    def _wrap(cls):
+        orig_init = cls.__init__
+
+        def __init__(self, **kw):
+            if any(k in kw for k in _LEGACY):
+                coalesce_legacy_into_tool_bindings(
+                    kw, kw.get("tool_bindings"), kw.get("type_key")
+                )
+                for k in _LEGACY:
+                    kw.pop(k, None)
+            orig_init(self, **kw)
+
+        cls.__init__ = __init__
+
+    _wrap(Project)
+    _wrap(ProjectTemplate)
+
+
+_install_legacy_class_kwargs_shim()
+
+
 @pytest.fixture(scope="session")
 def test_db_url() -> str:
     return os.environ.get("TEST_DATABASE_URL", TEST_DB_DEFAULT)

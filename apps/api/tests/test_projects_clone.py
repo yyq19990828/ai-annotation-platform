@@ -65,20 +65,24 @@ async def test_clone_copies_all_cloneable_fields(
     src = await _seed_project(
         db_session,
         user.id,
-        classes=["car", "pedestrian"],
-        classes_config={
-            "car": {"color": "#ff0000", "order": 0, "alias": "car"},
-            "pedestrian": {"color": "#00ff00", "order": 1},
-        },
-        attribute_schema={
-            "fields": [
-                {
-                    "key": "occluded",
-                    "label": "遮挡",
-                    "type": "boolean",
-                    "required": False,
-                }
-            ]
+        tool_bindings={
+            "bbox": {
+                "enabled": True,
+                "classes": [
+                    {"name": "car", "color": "#ff0000", "order": 0, "alias": "car"},
+                    {"name": "pedestrian", "color": "#00ff00", "order": 1},
+                ],
+                "attribute_schema": {
+                    "fields": [
+                        {
+                            "key": "occluded",
+                            "label": "遮挡",
+                            "type": "boolean",
+                            "required": False,
+                        }
+                    ]
+                },
+            }
         },
         ai_enabled=True,
         ai_model="grounded-sam2",
@@ -344,7 +348,9 @@ async def test_apply_template_with_explicit_field_override(
         name="模板",
         type_label="图像-检测",
         type_key="image-det",
-        classes=["car"],
+        tool_bindings={
+            "bbox": {"enabled": True, "classes": [{"name": "car", "order": 0}]}
+        },
         ai_enabled=True,
         ai_model="grounded-sam2",
         scope="public",
@@ -388,13 +394,17 @@ async def test_apply_nonexistent_template_404(httpx_client_bound, super_admin):
 
 
 async def test_clone_jsonb_is_deep_copied(httpx_client_bound, super_admin, db_session):
-    """修改新项目的 classes_config 不应该污染源项目 (避免共享 JSONB 引用)."""
+    """修改新项目的 tool_bindings 不应该污染源项目 (避免共享 JSONB 引用)."""
     user, token = super_admin
     src = await _seed_project(
         db_session,
         user.id,
-        classes=["a"],
-        classes_config={"a": {"color": "#111111", "order": 0}},
+        tool_bindings={
+            "bbox": {
+                "enabled": True,
+                "classes": [{"name": "a", "color": "#111111", "order": 0}],
+            }
+        },
     )
     await db_session.commit()
     src_id = src.id
@@ -422,4 +432,4 @@ async def test_clone_jsonb_is_deep_copied(httpx_client_bound, super_admin, db_se
     db_session.expire_all()
     refreshed = await db_session.get(Project, src_id)
     assert refreshed is not None
-    assert refreshed.classes_config["a"]["color"] == "#111111"
+    assert refreshed.tool_bindings["bbox"]["classes"][0]["color"] == "#111111"

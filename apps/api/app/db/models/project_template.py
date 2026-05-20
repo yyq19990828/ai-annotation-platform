@@ -39,20 +39,9 @@ class ProjectTemplate(Base):
     type_label: Mapped[str] = mapped_column(String(50), nullable=False)
     type_key: Mapped[str] = mapped_column(String(30), nullable=False)
 
-    # 模板载荷 (与 _CLONEABLE_PROJECT_FIELDS 对应)
-    classes: Mapped[list] = mapped_column(
-        JSONB, nullable=False, server_default="[]", default=list
-    )
-    classes_config: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, server_default="{}", default=dict
-    )
-    attribute_schema: Mapped[dict] = mapped_column(
-        JSONB,
-        nullable=False,
-        server_default='{"fields": []}',
-        default=lambda: {"fields": []},
-    )
+    # 模板载荷 (与 CLONEABLE_PROJECT_FIELDS 对应)
     # v0.10.17 · 工具维度类别 / 属性绑定; 与 Project 对齐. backfill 见 alembic 0073.
+    # v0.10.22 · 旧扁平 classes / classes_config / attribute_schema 列已删除.
     tool_bindings: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )

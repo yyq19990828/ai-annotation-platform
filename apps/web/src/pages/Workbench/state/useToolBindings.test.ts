@@ -112,20 +112,18 @@ describe("useToolBindings · v0.10.17", () => {
     expect(result.current.classes).toEqual(["person"]);
   });
 
-  it("tool_bindings 完全空 → 走老项目 fallback (扁平 classes)", () => {
+  it("tool_bindings 完全空 → 返回空视图 (v0.10.22 单源, 扁平字段由 tool_bindings 派生)", () => {
     const proj = _proj({
-      classes: ["legacy_cls"],
-      classes_config: { legacy_cls: { color: "#abc", order: 0, alias: null } },
       tool_bindings: {},
     });
     const { result } = renderHook(() =>
       useToolBindings(proj, "box" as ToolId),
     );
-    expect(result.current.classes).toEqual(["legacy_cls"]);
-    expect(result.current.classesConfig.legacy_cls.color).toBe("#abc");
+    expect(result.current.classes).toEqual([]);
+    expect(result.current.classesConfig).toEqual({});
   });
 
-  it("bbox unit disabled → 当前 unit 不返回它的 classes", () => {
+  it("bbox unit disabled 且无其它 unit → 空视图", () => {
     const proj = _proj({
       tool_bindings: {
         bbox: {
@@ -134,11 +132,10 @@ describe("useToolBindings · v0.10.17", () => {
           attribute_schema: { fields: [] },
         },
       },
-      classes: ["fallback_cls"],
     });
     const { result } = renderHook(() =>
       useToolBindings(proj, "box" as ToolId),
     );
-    expect(result.current.classes).toEqual(["fallback_cls"]);
+    expect(result.current.classes).toEqual([]);
   });
 });

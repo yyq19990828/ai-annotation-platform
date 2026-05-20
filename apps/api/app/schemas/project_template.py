@@ -6,10 +6,11 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas._jsonb_types import (
     AttributeSchema,
+    ClassConfigEntry,
     ClassesConfig,
     ProjectRenderingConfig,
     ToolBindings,
@@ -106,10 +107,11 @@ class ProjectTemplateOut(BaseModel):
     type_label: str
     type_key: str
 
+    # v0.10.22 · 扁平视图字段不再有 DB 列, 由下方 validator 从 tool_bindings 派生.
     classes: list[str] = []
     classes_config: ClassesConfig = {}
     attribute_schema: AttributeSchema = AttributeSchema()
-    # v0.10.17 · 工具维度类别 / 属性绑定; 旧扁平字段在过渡期由 service 派生.
+    # v0.10.17 · 工具维度类别 / 属性绑定 (唯一存储真值).
     tool_bindings: ToolBindings = {}
     label_config: dict = {}
     ai_enabled: bool = False
@@ -133,5 +135,26 @@ class ProjectTemplateOut(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def _derive_flat_class_views(self) -> "ProjectTemplateOut":
+        # v0.10.22 · 从 tool_bindings 派生扁平投影 (无 DB 列).
+        from app.services.project import (
+            derive_attribute_schema,
+            derive_classes_config,
+            derive_classes_list,
+        )
+
+        tb = {
+            k: (v.model_dump() if hasattr(v, "model_dump") else v)
+            for k, v in (self.tool_bindings or {}).items()
+        }
+        self.classes = derive_classes_list(tb)
+        self.classes_config = {
+            name: ClassConfigEntry(**cfg)
+            for name, cfg in derive_classes_config(tb).items()
+        }
+        self.attribute_schema = AttributeSchema(**derive_attribute_schema(tb))
+        return self
 
     model_config = ConfigDict(from_attributes=True)

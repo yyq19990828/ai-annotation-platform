@@ -211,12 +211,12 @@ AI 采纳入口：
 
 ### alias 映射
 
-`accept_prediction()` 会读取 `project.classes_config` (派生自 `tool_bindings`),把 ML backend 写入的英文 alias 映射回项目真实类目名。生成的 annotation `tool_unit_id` 沿用 `prediction.tool_unit_id`。
+`accept_prediction()` 按 `prediction.tool_unit_id` 读取 `project.tool_bindings` 中对应 unit 的 classes(`lookup_classes_for_tool_unit`),把 ML backend 写入的英文 alias 映射回项目真实类目名。生成的 annotation `tool_unit_id` 沿用 `prediction.tool_unit_id`。
 
 所以如果你改类目别名逻辑,要一起看:
 
 - `annotation.py:accept_prediction`
-- `project.tool_bindings` / 派生 `classes_config`(v0.10.17+ 单源真值在 tool_bindings)
+- `project.tool_bindings`(v0.10.22 起为唯一存储真值;无扁平 `classes_config` 列)
 - 前端 predictions 渲染与 class badge
 
 ## 工具单位 (tool_unit) 维度 (v0.10.17+)
