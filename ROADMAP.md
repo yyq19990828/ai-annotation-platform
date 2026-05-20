@@ -13,7 +13,7 @@
 ### 计划中
 
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
-- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。已落地：✅ reject_reason_type 结构化枚举 (v0.10.16), ✅ Annotation Guide (v0.10.13), ✅ Predictions Import + AAP JSON (v0.10.15), ✅ 工具维度类别 / 属性绑定 + Magic Box (v0.10.17), ✅ P3 维护项收尾 5 项 (v0.10.18), ✅ §2.2 AnnotationFeedback 统一表后端基线 (v0.10.19, ADR-0027 三段式迁移第一段)。
+- **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 
 
 ---
@@ -82,7 +82,7 @@
   - 批量状态迁移类（bulk-approve / bulk-reject）：v0.7.3 故意未做。reject 反馈是逐批次语义、approve 跳过逐批次审视有质检失职风险。落地前先讨论 UX。
 
 ### AI / 模型
-- **模型市场扩展**：v0.9.3 phase 2 已激活 `/model-market`（合并 backends + failed-predictions tab）；二期：① 模型版本对比 / AB 路由 UI —— **变体可观测 + 单变体预热 + 容器直连观测已落（v0.10.26）**：模型市场每 backend 可展开「变体」面板，列已加载变体 + 各变体 cache 命中 + LRU 近度，并支持从 `/setup.params` 变体 enum 选变体预热（`/reload` 泛化带 `{sam_variant, dino_variant}` body）；新增「容器直连观测」面板（env `ML_BACKEND_OBSERVE_URLS`，与项目注册解耦，看健康/变体目录 + 空池「试启动」warm→自动卸载验证可加载性，registered 标记避免冲突）。**仍 defer**：加权 AB 路由（按 task 自动分流打标，需路由配置 + 结果打标协议）、同输入双变体并排对比（工作台级独立 epic）、带 token 的观测容器（当前 observe URL 假定免鉴权）；② ~~一键热更新模型权重~~ **已落地（`/reload` 端点 + 模型市场按钮，v0.10.26 泛化为可指定变体预热）**；③ ~~注册 backend 时选模型变体~~ **已落地（v0.10.23 走 pool 形态请求级变体，注册时声明退化为可选，未做）**。
+- **模型市场扩展 — 二期剩余 defer 项**：加权 AB 路由（按 task 自动分流打标，需路由配置 + 结果打标协议）、同输入双变体并排对比（工作台级独立 epic）、带 token 的观测容器（当前 observe URL 假定免鉴权）。触发条件按客户驱动。
 - **Predictions Import / AAP JSON 后续延伸**（v0.10.15 之后开放项，按客户反馈触发）：
   - **`POST /annotations/import` 端点**（**P3**）：v0.10.15 AAP JSON `annotations[]` 字段当前仅导出可用，导入端只警告日志不入库。涉及 batch/owner/audit 协议复杂度；触发条件：客户反馈"导出 AAP JSON 后无法在另一实例完整重建标注"。设计要点：① 入库 annotation 行需要回写 `user_id` / `source` / `was_cancelled` / `ground_truth` 等元数据；② batch_id 解析需要类似 `task_match` 的 `batch_match` 字段（display_id 优先）；③ 是否走 audit log 需要 ADR 决策。
   - **Task 表加 `external_id` 字段**（**P3**）：v0.10.15 用 display_id + file_path 两元组匹配够用；触发条件：客户跨实例迁移时改 display_id 或文件路径（"重命名也想保稳定 ID"）。设计走 `tasks.external_id String(100) UNIQUE(project_id, external_id)` + AAP JSON `task_match.external_id` 已预留字段直接生效（[`AAPTaskMatch`](apps/api/app/schemas/aap_json.py) 已留 forward compat）。同时给 `predictions` / `annotations` 也加 `external_id` 派生窗口。
@@ -91,7 +91,6 @@
   - **AAP JSON 单 prediction 多 shape**（**P3**）：当前每个 `predictions[i]` 对应**一条** Prediction 行（单 shape）；与 ML backend 内部协议（一个 prediction 行可携带 N 个 shape）不一致。触发条件：客户希望"一个外部模型一次推理出来的所有框作为同一 prediction 单元，便于整体采纳/驳回"。设计：把 envelope `predictions[i]` 加可选 `shapes[]` 数组，与现有 flat `geometry/class_name` 同源（二选一，flat 兼容旧 schema）。schema 已在 v0.10.17 升 minor `1.1`（带 `tool_unit_id` / `tool_bindings`）；多 shape 仍待客户驱动。
   - **AAP JSON video_track 导入支持**（**P3**）：当前 `internal_geometry_to_ls_shape` 适配器仅覆盖 bbox / polygon / multi_polygon；video_bbox / video_track / skeleton 进 errors[]。触发条件：视频项目客户首次反馈"想把外部 tracker 结果灌进平台"。与 §C.5 R9 / R23 同窗口做。v0.10.17 schema_version 1.1 envelope 已带 `tool_unit_id`,新增 `video_track_bbox` / `video_track` tool_unit 时实现端接通即可。
   - **`predictions_import` 审计 detail 专项**（**P3**）：当前 audit log `detail_json` 含 imported/skipped/error_count；缺"哪些 task 被命中 / 哪些 model_version / 文件大小 hash"等取证字段。触发条件：审计期反馈 detail 不足以定位"哪批外部模型结果先被导入又被撤回"。设计在 `app/services/audit.py` 加 `predictions_import_detail()` helper.
-- **ML Backend 模型变体运行期热切换（单容器 model pool）** ✅ **已落地 v0.10.23**（[plan](docs/plans/2026-05-20-v0.10.23-plan.md) · [需求](ROADMAP/2026-05-20-ml-backend-variant-hot-switch.md)）：grounded-sam2-backend 引入容器内 `ModelPool`，请求级 `(sam_variant,dino_variant)` LRU 热切换 + embedding cache 按变体分桶；前端变体上移 AI 面板（会话级）、文本下沉子工具面板。后续开放项见下「变体热切换后续延伸」。
 - **变体热切换后续延伸**（v0.10.23 之后开放项，按需触发）：
   - **`/setup.supported_variants` 富元数据**（**P3**）：当前变体选项来源是 `/setup.params` 的 `sam_variant`/`dino_variant` enum（纯字符串）；原需求 §3 设想的 `supported_variants` 数组（携带每变体显存占用 / 推荐档 / labels）未做。触发条件：模型市场二期 AB 路由 UI 需要按变体展示「显存 7GB / 精度高」等元数据时再扩。
   - **SchemaForm 单字段 `readOnly` 支持**（**P3**）：v0.10.23 用「从 SchemaForm 排除变体字段」绕开了单字段只读缺口（`SchemaForm` 的 `disabled` 仍是整组）；若未来后端 `/setup.params` 出现需单字段只读的参数，需补 `field.readOnly → disabled` 透传。触发条件：新增只读参数字段。
