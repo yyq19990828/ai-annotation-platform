@@ -10,6 +10,7 @@ import type { IconName } from "@/components/ui/Icon";
 
 export type ToolUnitId =
   | "bbox"
+  | "rotated_bbox"
   | "polyline"
   | "region"
   | "ai_interactive"
@@ -17,6 +18,7 @@ export type ToolUnitId =
 
 export const TOOL_UNIT_IDS: ReadonlyArray<ToolUnitId> = [
   "bbox",
+  "rotated_bbox",
   "polyline",
   "region",
   "ai_interactive",
@@ -79,6 +81,15 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
     icon: "rect",
     tools: ["box"],
     dataTypes: ["image", "video"],
+    available: true,
+  },
+  {
+    id: "rotated_bbox",
+    label: "旋转框 (OBB)",
+    hint: "拖框后旋转手柄调角度;有向包围盒",
+    icon: "rect",
+    tools: ["rotated-box"],
+    dataTypes: ["image"],
     available: true,
   },
   {

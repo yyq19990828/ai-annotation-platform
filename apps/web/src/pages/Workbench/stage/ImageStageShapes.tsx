@@ -1,6 +1,6 @@
 import type Konva from "konva";
 import { Circle, Group, Label, Line, Rect, Tag, Text } from "react-konva";
-import type { Annotation } from "@/types";
+import type { Annotation, RotatedBboxGeometry } from "@/types";
 import { useMemo } from "react";
 import type { ResizeDirection } from "./ResizeHandles";
 import { classColorForCanvas, displayClassName, hexToRgba } from "./colors";
@@ -333,6 +333,121 @@ export function KonvaPolygon({
         />
         );
       })}
+    </Group>
+  );
+}
+
+// v0.10.28 · 旋转框 (OBB)。把整框放进一个绕中心 (cx,cy) 旋转 angle 度的 Group:
+//   - 主体 Rect 用 offsetX/offsetY = 半宽高, 让本地原点落在框中心。
+//   - 标签贴在框左上角 (本地坐标 -hw,-hh)。
+//   - 选中可编辑时, 顶部边外侧画一个旋转手柄圆点 + 连接线。
+// 样式 (色 / 选中 / faded / occluded) 比照 KonvaBox。
+interface KonvaRotatedBoxProps {
+  b: Annotation;
+  geometry: RotatedBboxGeometry;
+  /** 实时角度 (拖拽中由 ImageStage override; 否则 = geometry.angle)。度数 [0,360) 顺时针。 */
+  angle: number;
+  isAi: boolean;
+  selected: boolean;
+  editable: boolean;
+  faded: boolean;
+  occluded?: boolean;
+  imgW: number;
+  imgH: number;
+  scale: number;
+  onClick: (e?: Konva.KonvaEventObject<MouseEvent>) => void;
+  onRotateStart: ((e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
+}
+
+export function KonvaRotatedBox({
+  b, geometry, angle, isAi, selected, editable, faded, occluded = false,
+  imgW, imgH, scale,
+  onClick,
+  onRotateStart,
+}: KonvaRotatedBoxProps) {
+  const color = classColorForCanvas(b.cls);
+  const sw = (selected ? 2 : 1.5) / scale;
+  const handleSize = BOX_HANDLE_SCREEN_PX / scale;
+  const labelFontSize = BOX_LABEL_FONT_PX / scale;
+  const isUserSelected = selected && !isAi && editable;
+  const labelText = isAi
+    ? `✦ ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`
+    : displayClassName(b.cls);
+
+  const cx = geometry.cx * imgW;
+  const cy = geometry.cy * imgH;
+  const wPx = geometry.w * imgW;
+  const hPx = geometry.h * imgH;
+  const hw = wPx / 2;
+  const hh = hPx / 2;
+  // 旋转手柄: 顶边中点外侧 (本地坐标 y < -hh)。
+  const handleOffset = 18 / scale;
+  const handleY = -hh - handleOffset;
+
+  return (
+    <Group x={cx} y={cy} rotation={angle}>
+      <Rect
+        x={0}
+        y={0}
+        offsetX={hw}
+        offsetY={hh}
+        width={wPx}
+        height={hPx}
+        stroke={color}
+        strokeWidth={sw}
+        dash={isAi || occluded ? [4 / scale, 3 / scale] : undefined}
+        fill={hexToRgba(color, isAi ? 0.08 : 0.07)}
+        opacity={faded ? 0.35 : occluded ? 0.5 : 1}
+        shadowEnabled={selected && !faded}
+        shadowColor={color}
+        shadowBlur={8 / scale}
+        shadowOpacity={0.4}
+        onClick={(e) => { e.cancelBubble = true; onClick(e); }}
+      />
+
+      <Label x={-hw} y={-hh - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+        <Tag fill={color} cornerRadius={3 / scale} />
+        <Text
+          text={labelText}
+          fill="white"
+          fontSize={labelFontSize}
+          padding={BOX_LABEL_PAD_PX / scale}
+          fontFamily="var(--font-sans, sans-serif)"
+        />
+      </Label>
+
+      {isUserSelected && onRotateStart && (
+        <>
+          <Line
+            points={[0, -hh, 0, handleY]}
+            stroke={color}
+            strokeWidth={1.5 / scale}
+            listening={false}
+          />
+          <Circle
+            x={0}
+            y={handleY}
+            radius={handleSize / 2}
+            hitStrokeWidth={handleSize}
+            fill="white"
+            stroke={color}
+            strokeWidth={1.5 / scale}
+            onMouseDown={(e) => {
+              if (e.evt.button !== 0) return;
+              e.cancelBubble = true;
+              onRotateStart(e);
+            }}
+            onMouseEnter={(e) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = "grab";
+            }}
+            onMouseLeave={(e) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = "";
+            }}
+          />
+        </>
+      )}
     </Group>
   );
 }

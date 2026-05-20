@@ -73,6 +73,12 @@ function annotationToolMeta(
       detail: `${geometry.points.length} 点${geometry.holes?.length ? ` · ${geometry.holes.length} 内环` : ""}`,
     };
   }
+  if (geometry.type === "rotated_bbox") {
+    return {
+      label: "旋转框",
+      detail: `${(geometry.w * 100).toFixed(0)}% × ${(geometry.h * 100).toFixed(0)}% · ${geometry.angle.toFixed(0)}°`,
+    };
+  }
   return {
     label: "多连通域",
     detail: `${geometry.polygons.length} 区域 · ${geometry.polygons.reduce((sum, p) => sum + p.points.length, 0)} 点`,

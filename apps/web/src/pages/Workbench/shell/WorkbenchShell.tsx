@@ -723,6 +723,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     cancelMaskEdit,
     handleAcceptAll,
     handleCommitDrawing,
+    createRotatedBbox,
+    handleCommitRotateBbox,
     handleStartChangeClass,
     handleCommitChangeClass,
     handleCancelChangeClass,
@@ -1105,6 +1107,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         pendingDrawing: s.pendingDrawing, onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction, onDeleteUserBox: handleDeleteBox,
         onCommitDrawing: handleCommitDrawing,
+        // v0.10.28 · 旋转框 (OBB) 创建 + 旋转角更新.
+        onCommitRotatedBbox: createRotatedBbox,
+        onCommitRotateBbox: handleCommitRotateBbox,
         onSamPrompt: (prompt) => {
           // v0.10.2 · 按 prompt.kind 路由; exemplar 与 bbox 同手势但走独立 dispatcher.
           // params 透传 (box_threshold 等) — 见 useInteractiveAI.extraParams.

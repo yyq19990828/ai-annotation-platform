@@ -211,7 +211,19 @@ export type MultiPolygonGeometry = {
   type: "multi_polygon";
   polygons: PolygonGeometry[];
 };
-export type Geometry = BboxGeometry | VideoBboxGeometry | VideoTrackGeometry | PolygonGeometry | MultiPolygonGeometry;
+/**
+ * v0.10.28 · 旋转框 (OBB). 归一化中心 (cx, cy) + 宽高 (w, h), angle 为度数 [0,360)
+ * 顺时针. 渲染时绕中心旋转; geometryToShape 返回其轴对齐外接矩形 (AABB) 供选择 / IoU.
+ */
+export type RotatedBboxGeometry = {
+  type: "rotated_bbox";
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  angle: number;
+};
+export type Geometry = BboxGeometry | VideoBboxGeometry | VideoTrackGeometry | PolygonGeometry | MultiPolygonGeometry | RotatedBboxGeometry;
 
 export interface AIBox {
   id: string;

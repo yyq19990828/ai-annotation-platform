@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Annotation } from "@/types";
+import type { Annotation, RotatedBboxGeometry } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { CanvasToolbar } from "../../stage/CanvasToolbar";
 import { FloatingDock } from "../../shell/FloatingDock";
@@ -38,6 +38,10 @@ export interface ImageWorkbenchProps {
   onRejectPrediction: (b: AiBox) => void;
   onDeleteUserBox: (id: string) => void;
   onCommitDrawing: (geo: Geom) => void;
+  /** v0.10.28 · 旋转框: 拖出矩形 → 提交 angle=0 的 rotated_bbox。 */
+  onCommitRotatedBbox: (geo: Geom) => void;
+  /** v0.10.28 · 旋转框: 旋转手柄落定 → 更新 angle。 */
+  onCommitRotateBbox: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
   onSamPrompt: (prompt:
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
@@ -117,6 +121,8 @@ export function ImageWorkbench({
   onRejectPrediction,
   onDeleteUserBox,
   onCommitDrawing,
+  onCommitRotatedBbox,
+  onCommitRotateBbox,
   onSamPrompt,
   samCandidates,
   samActiveIdx,
@@ -180,6 +186,8 @@ export function ImageWorkbench({
       onRejectPrediction={onRejectPrediction}
       onDeleteUserBox={onDeleteUserBox}
       onCommitDrawing={onCommitDrawing}
+      onCommitRotatedBbox={onCommitRotatedBbox}
+      onCommitRotateBbox={onCommitRotateBbox}
       onSamPrompt={onSamPrompt}
       samCandidates={samCandidates}
       samActiveIdx={samActiveIdx}

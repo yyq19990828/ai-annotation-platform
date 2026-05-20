@@ -22,7 +22,7 @@ import { enqueue } from "../state/offlineQueue";
 import type { useWorkbenchState } from "../state/useWorkbenchState";
 import type { useAnnotationHistory } from "../state/useAnnotationHistory";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
-import type { AnnotationResponse } from "@/types";
+import type { AnnotationResponse, RotatedBboxGeometry } from "@/types";
 
 type Geom = { x: number; y: number; w: number; h: number };
 
@@ -59,6 +59,10 @@ export interface UseWorkbenchAnnotationActionsReturn {
   /** 共用 create fallback：分配 tmpId → cache → history → enqueue。*/
   optimisticEnqueueCreate: (payload: AnnotationPayload) => void;
   createBboxWithClass: (geom: Geom, cls: string) => boolean;
+  /** v0.10.28 · 旋转框: 由轴对齐矩形 (归一化 x/y/w/h) 提交 angle=0 的 rotated_bbox; 类别用 activeClass。 */
+  createRotatedBbox: (geom: Geom) => boolean;
+  /** v0.10.28 · 旋转框: 旋转手柄拖拽落定时更新 angle (走 update mutation + history)。 */
+  handleCommitRotateBbox: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
   handlePickPendingClass: (cls: string) => void;
   submitPolygon: (points: [number, number][]) => void;
   handleDeleteBox: (id: string) => void;
@@ -237,6 +241,75 @@ export function useWorkbenchAnnotationActions({
       return true;
     },
     [blockIfLocked, s, mutations, history, recordRecentClass, enqueueOnError, optimisticEnqueueCreate],
+  );
+
+  // v0.10.28 · 旋转框: 轴对齐矩形 → angle=0 的 rotated_bbox。中心 = 矩形中点; 类别用 activeClass。
+  const createRotatedBbox = useCallback(
+    (geom: Geom): boolean => {
+      if (blockIfLocked()) return false;
+      const cls = s.activeClass;
+      if (!cls) {
+        pushToast({ msg: "请先选择类别", kind: "warning" });
+        return false;
+      }
+      const geometry: RotatedBboxGeometry = {
+        type: "rotated_bbox",
+        cx: geom.x + geom.w / 2,
+        cy: geom.y + geom.h / 2,
+        w: geom.w,
+        h: geom.h,
+        angle: 0,
+      };
+      const payload: AnnotationPayload = {
+        annotation_type: "rotated_bbox",
+        tool_unit_id: toolUnitForTool(s.tool),
+        class_name: cls,
+        geometry,
+        confidence: 1,
+      };
+      s.setActiveClass(cls);
+      recordRecentClass(cls);
+      mutations.create.mutate(payload, {
+        onSuccess: (newAnnotation) => {
+          s.setSelectedId(newAnnotation.id);
+          history.push({ kind: "create", annotationId: newAnnotation.id, payload });
+        },
+        onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
+      });
+      return true;
+    },
+    [blockIfLocked, s, mutations, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate],
+  );
+
+  // v0.10.28 · 旋转框: 旋转手柄落定时仅 angle 变更 (cx/cy/w/h 不变), 走 update mutation。
+  const handleCommitRotateBbox = useCallback(
+    (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => {
+      if (blockIfLocked()) return;
+      if (!taskId) return;
+      if (before.angle === after.angle) return;
+      const payload = { geometry: after };
+      mutations.update.mutate(
+        { annotationId: id, payload },
+        {
+          onSuccess: () => {
+            history.push({
+              kind: "update", annotationId: id,
+              before: { geometry: before }, after: { geometry: after },
+            });
+          },
+          onError: (err) =>
+            enqueueOnError(err, () => {
+              optimisticUpdateGeom(id, after as unknown as Record<string, unknown>);
+              history.push({
+                kind: "update", annotationId: id,
+                before: { geometry: before }, after: { geometry: after },
+              });
+              enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
+            }),
+        },
+      );
+    },
+    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom],
   );
 
   const handlePickPendingClass = useCallback(
@@ -424,6 +497,8 @@ export function useWorkbenchAnnotationActions({
   return {
     optimisticEnqueueCreate,
     createBboxWithClass,
+    createRotatedBbox,
+    handleCommitRotateBbox,
     handlePickPendingClass,
     submitPolygon,
     handleDeleteBox,

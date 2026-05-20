@@ -90,6 +90,17 @@ export function geometryToShape(g: Geometry): {
     const keyframe = g.keyframes.find((kf) => !kf.absent) ?? g.keyframes[0];
     return keyframe?.bbox ?? { x: 0, y: 0, w: 0, h: 0 };
   }
+  if (g.type === "rotated_bbox") {
+    // v0.10.28 · 旋转框 → 轴对齐外接矩形 (AABB)。绕中心旋转 angle 度后取四角 union。
+    const rad = (g.angle * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const hw = g.w / 2;
+    const hh = g.h / 2;
+    const exX = Math.abs(hw * cos) + Math.abs(hh * sin);
+    const exY = Math.abs(hw * sin) + Math.abs(hh * cos);
+    return { x: g.cx - exX, y: g.cy - exY, w: exX * 2, h: exY * 2 };
+  }
   return { x: g.x, y: g.y, w: g.w, h: g.h };
 }
 

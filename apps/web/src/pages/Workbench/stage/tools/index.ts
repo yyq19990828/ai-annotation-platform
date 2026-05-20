@@ -2,6 +2,7 @@ import type { Viewport } from "../../state/useViewportTransform";
 import type { SamPolarity } from "../../state/useWorkbenchState";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import { BboxTool } from "./BboxTool";
+import { RotatedBboxTool } from "./RotatedBboxTool";
 import { HandTool } from "./HandTool";
 import { PolygonTool } from "./PolygonTool";
 import { CanvasTool } from "./CanvasTool";
@@ -17,6 +18,8 @@ import { MagicBoxTool } from "./MagicBoxTool";
 //   useMLCapabilities 决定可用性. 旧 "sam" id 移除.
 export type ToolId =
   | "box"
+  // v0.10.28 · 旋转框 (OBB).
+  | "rotated-box"
   | "hand"
   | "polygon"
   | "canvas"
@@ -63,7 +66,12 @@ export type DragInit =
    * 相邻两点做线段插值 (步长 = radius/2) 调 paintAt，松手不 commit；commit 由
    * Enter / MaskToolbar 显式触发。
    */
-  | { kind: "maskBrush"; lastX: number; lastY: number };
+  | { kind: "maskBrush"; lastX: number; lastY: number }
+  /**
+   * v0.10.28 · 旋转框 (OBB) 旋转手柄拖拽。cx/cy 为框中心 (归一化), startAngle 为按下时角度,
+   * cur 为拖拽中实时角度 (度数 [0,360) 顺时针)。ImageStage 松手时 commit angle 变更。
+   */
+  | { kind: "rotateBox"; id: string; cx: number; cy: number; startAngle: number; cur: number };
 
 export interface PolygonDraftHandle {
   points: [number, number][];
@@ -106,6 +114,7 @@ export interface CanvasTool extends ToolMeta {
 
 export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
   box: BboxTool,
+  "rotated-box": RotatedBboxTool,
   hand: HandTool,
   polygon: PolygonTool,
   canvas: CanvasTool,
@@ -123,6 +132,7 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
  */
 export const ALL_TOOLS: CanvasTool[] = [
   BboxTool,
+  RotatedBboxTool,
   PolygonTool,
   MaskTool,
   SmartPointTool,
@@ -143,6 +153,7 @@ export function isAIToolId(id: ToolId): boolean {
 
 export {
   BboxTool,
+  RotatedBboxTool,
   HandTool,
   PolygonTool,
   CanvasTool,

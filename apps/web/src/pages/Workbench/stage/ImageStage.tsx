@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Image as KonvaImage, Rect, Line, Circle, Label, Tag, Text } from "react-konva";
 import type Konva from "konva";
 import useImage from "use-image";
-import type { Annotation } from "@/types";
+import type { Annotation, RotatedBboxGeometry } from "@/types";
 import type { Tool } from "../state/useWorkbenchState";
 import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
@@ -19,7 +19,7 @@ import type { CommentCanvasDrawing } from "@/api/comments";
 import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
 import { BlurhashLayer } from "./BlurhashLayer";
-import { KonvaBox, KonvaPolygon } from "./ImageStageShapes";
+import { KonvaBox, KonvaPolygon, KonvaRotatedBox } from "./ImageStageShapes";
 import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
@@ -44,7 +44,9 @@ type Drag =
   | { kind: "polyMove"; id: string; start: Pt[]; sx: number; sy: number; cur: Pt[] }
   | { kind: "pan"; sx: number; sy: number }
   | { kind: "canvasStroke"; points: number[] }
-  | { kind: "maskBrush"; lastX: number; lastY: number };
+  | { kind: "maskBrush"; lastX: number; lastY: number }
+  // v0.10.28 · 旋转框旋转手柄拖拽。cx/cy 为框中心 (归一化), startAngle 为按下时角度, cur 实时角度。
+  | { kind: "rotateBox"; id: string; cx: number; cy: number; startAngle: number; cur: number };
 
 function translatePolygon(points: Pt[], dx: number, dy: number): Pt[] {
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -121,6 +123,10 @@ interface ImageStageProps {
   onDeleteUserBox?: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
   onCommitDrawing?: (geo: Geom) => void;
+  /** v0.10.28 · 旋转框: 拖出轴对齐矩形松手 → 提交 angle=0 的 rotated_bbox (类别用 activeClass)。 */
+  onCommitRotatedBbox?: (geo: Geom) => void;
+  /** v0.10.28 · 旋转框: 旋转手柄落定 → 更新 angle (before/after 为完整 RotatedBboxGeometry)。 */
+  onCommitRotateBbox?: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
   /**
    * v0.9.2 · SAM 工具松手时派发 prompt.
    * v0.10.2 · 新增 exemplar 类型 (与 bbox 同手势, kind 区分由父层路由到 runExemplar).
@@ -200,7 +206,7 @@ export function ImageStage({
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
   onBatchDelete, onBatchChangeClass,
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass,
-  onCommitDrawing, onSamPrompt, samCandidates, samActiveIdx = 0,
+  onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft, samPolarity,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
@@ -458,6 +464,17 @@ export function ImageStage({
         }
         d.lastX = px;
         d.lastY = py;
+      } else if (d.kind === "rotateBox") {
+        // v0.10.28 · 旋转手柄: 光标相对框中心的方位角。手柄默认在正上方 (angle=0),
+        // 顺时针为正; atan2(dx, -dy) 给出从上方起顺时针角度 (y 轴向下需取负)。
+        schedule(() => setDrag((cur) => {
+          if (!cur || cur.kind !== "rotateBox") return cur;
+          const dx = pt.x - cur.cx;
+          const dy = pt.y - cur.cy;
+          let deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+          deg = ((deg % 360) + 360) % 360;
+          return { ...cur, cur: deg };
+        }));
       }
     };
     const onUp = () => {
@@ -468,7 +485,17 @@ export function ImageStage({
           const y = Math.min(d.sy, d.cy);
           const w = Math.abs(d.cx - d.sx);
           const h = Math.abs(d.cy - d.sy);
-          if (w > 0.005 && h > 0.005) onCommitDrawing?.({ x, y, w, h });
+          if (w > 0.005 && h > 0.005) {
+            // v0.10.28 · 旋转框工具拖出的矩形直接提交为 rotated_bbox (angle=0); 其它走普通 bbox pending。
+            if (tool === "rotated-box") onCommitRotatedBbox?.({ x, y, w, h });
+            else onCommitDrawing?.({ x, y, w, h });
+          }
+        } else if (d.kind === "rotateBox") {
+          const target = userBoxes.find((bx) => bx.id === d.id);
+          const g = target?.geometry;
+          if (g && g.type === "rotated_bbox" && d.cur !== d.startAngle) {
+            onCommitRotateBbox?.(d.id, g, { ...g, angle: d.cur });
+          }
         } else if (d.kind === "samProbe") {
           // v0.10.2 · 按 mode 分发 (point / bbox / exemplar).
           if (d.mode === "point") {
@@ -517,7 +544,7 @@ export function ImageStage({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [dragging, setVp, toImg, onCommitDrawing, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH]);
+  }, [dragging, setVp, toImg, onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, tool, userBoxes, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -720,6 +747,33 @@ export function ImageStage({
           {visibleSortedUserBoxes.map((b) => {
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;
+            // v0.10.28 · 旋转框: 绕中心旋转的 Rect + 顶部旋转手柄。
+            if (b.geometry?.type === "rotated_bbox") {
+              const g = b.geometry;
+              // 拖拽中实时角度 override (rotateBox)。
+              const liveAngle = drag?.kind === "rotateBox" && drag.id === b.id ? drag.cur : g.angle;
+              const isPrimarySingleSelect = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+              return (
+                <KonvaRotatedBox
+                  key={b.id}
+                  b={b}
+                  geometry={g}
+                  angle={liveAngle}
+                  isAi={false}
+                  selected={selSet.has(b.id)}
+                  editable={isPrimarySingleSelect}
+                  faded={false}
+                  occluded={!!b.is_occluded}
+                  imgW={imgW} imgH={imgH} scale={vp.scale}
+                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onRotateStart={isPrimarySingleSelect ? (e) => {
+                    const pt = toImg(e.evt.clientX, e.evt.clientY);
+                    if (!pt) return;
+                    setDrag({ kind: "rotateBox", id: b.id, cx: g.cx, cy: g.cy, startAngle: g.angle, cur: g.angle });
+                  } : null}
+                />
+              );
+            }
             // polygon 走多边形渲染（v0.5.4 加顶点编辑 / Alt 新增 / Shift 删除）
             if (display.polygon && display.polygon.length >= 3) {
               const polyOv = polyOverridePoints(b.id);
