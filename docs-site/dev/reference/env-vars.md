@@ -44,6 +44,12 @@ last_reviewed: 2026-05-20
 |---|---|---|
 | `ML_BACKEND_DEFAULT_URL` | `http://172.17.0.1:8001` | 留空则用前端硬编码默认 http://172.17.0.1:8001; 生产 K8s 同 namespace 时可设为 service DNS, 让运维注册时直接 ready. |
 
+## v0.10.26 · 模型市场「容器直连观测」面板要观测的后端容器 URL 列表 (逗号分隔 / JSON list)。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `ML_BACKEND_OBSERVE_URLS` | `—` | 与项目注册解耦: 没有任何项目注册 backend 时, 运维也能在模型市场直连这些容器看 健康度 / 变体目录 / 试启动。留空则回退到 ML_BACKEND_DEFAULT_URL (若其非空)。 例: ML_BACKEND_OBSERVE_URLS=http://172.17.0.1:8001,http://172.17.0.1:8002 |
+
 ## v0.10.1 · 单项目最多可绑定的 ML backend 数量上限. DB / API / UI 均按 1:N 设计,
 
 | 变量 | 默认值 | 说明 |
@@ -109,6 +115,16 @@ last_reviewed: 2026-05-20
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `VITE_TURNSTILE_SITE_KEY` | `—` | — |
+
+## SMTP 邮件 (v0.8.1+ admin「发送测试邮件」; v0.10.24 dev mailpit)
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `SMTP_HOST` | `localhost` | 留空则 GET /settings/system 显示「未配置」，发送测试邮件按钮报错。 dev 推荐用 docker-compose 内置的 mailpit 收件箱（不外发真实邮件）： docker compose up -d mailpit  → Web UI http://localhost:8025 API 跑 host 时连 localhost:1025；API 也进 Docker 时把 SMTP_HOST 改成 mailpit。 |
+| `SMTP_PORT` | `1025` | — |
+| `SMTP_FROM` | `noreply@local.test` | — |
+| `SMTP_USER` | `—` | — |
+| `SMTP_PASSWORD` | `—` | — |
 
 ## 跨域 (CORS)
 

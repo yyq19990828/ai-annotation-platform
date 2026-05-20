@@ -3,6 +3,7 @@ import {
   mlBackendsApi,
   type MLBackendCreatePayload,
   type MLBackendUpdatePayload,
+  type MLBackendVariant,
 } from "@/api/ml-backends";
 
 function invalidateBackendQueries(qc: QueryClient, projectId: string) {
@@ -62,7 +63,9 @@ export function useMLBackendUnload(projectId: string) {
 export function useMLBackendReload(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (backendId: string) => mlBackendsApi.reload(projectId, backendId),
+    // v0.10.26 · variant 可选; 缺省预热默认变体 (旧「重载」按钮行为不变).
+    mutationFn: ({ backendId, variant }: { backendId: string; variant?: MLBackendVariant }) =>
+      mlBackendsApi.reload(projectId, backendId, variant),
     onSuccess: () => invalidateBackendQueries(qc, projectId),
   });
 }

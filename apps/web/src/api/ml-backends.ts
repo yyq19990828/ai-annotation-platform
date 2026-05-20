@@ -17,6 +17,12 @@ export interface InteractiveRequest {
   context: Record<string, unknown>;
 }
 
+// v0.10.26 · 模型市场单变体预热. 字段对应 grounded-sam2 /setup.params 的变体 enum.
+export interface MLBackendVariant {
+  sam_variant?: string;
+  dino_variant?: string;
+}
+
 // v0.10.1 · /setup 协议自描述响应 (与后端 sam3/grounded-sam2 main.py 同构).
 // `params` 为 JSON Schema (Draft-07 子集), M2 schema-form 据此渲染参数面板.
 export interface MLBackendCapability {
@@ -63,10 +69,15 @@ export const mlBackendsApi = {
       `/projects/${projectId}/ml-backends/${backendId}/unload`,
     ),
 
-  reload: (projectId: string, backendId: string) =>
-    apiClient.post<{ ok: boolean; loaded: boolean; reloaded: boolean }>(
-      `/projects/${projectId}/ml-backends/${backendId}/reload`,
-    ),
+  // v0.10.26 · 可选 variant body 预热指定变体 (模型市场单变体预热); 缺省回退默认变体.
+  reload: (projectId: string, backendId: string, variant?: MLBackendVariant) =>
+    apiClient.post<{
+      ok: boolean;
+      loaded: boolean;
+      reloaded: boolean;
+      sam_variant?: string;
+      dino_variant?: string;
+    }>(`/projects/${projectId}/ml-backends/${backendId}/reload`, variant ?? undefined),
 
   predictTest: (projectId: string, backendId: string, taskId: string) =>
     apiClient.post(`/projects/${projectId}/ml-backends/${backendId}/predict-test?task_id=${taskId}`),

@@ -79,12 +79,17 @@ class MLBackendService:
         client = MLBackendClient(backend)
         return await client.unload()
 
-    async def reload(self, backend_id: uuid.UUID) -> dict | None:
+    async def reload(
+        self,
+        backend_id: uuid.UUID,
+        sam_variant: str | None = None,
+        dino_variant: str | None = None,
+    ) -> dict | None:
         backend = await self.get(backend_id)
         if not backend:
             return None
         client = MLBackendClient(backend)
-        return await client.reload()
+        return await client.reload(sam_variant=sam_variant, dino_variant=dino_variant)
 
     async def check_health(self, backend_id: uuid.UUID) -> bool:
         from datetime import UTC, datetime

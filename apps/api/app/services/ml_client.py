@@ -86,9 +86,11 @@ class MLBackendClient:
                 except Exception:
                     return True, None
                 # v0.9.11 · 加 host (PerfHud 容器 CPU/RAM); gpu_info/cache/model_version 保留
+                # v0.10.26 · 加 pool (loaded_variants / cap / per_variant_lru_ts),
+                # 供模型市场变体面板展示 (backend 无 pool 字段时静默跳过).
                 meta = {
                     k: data[k]
-                    for k in ("gpu_info", "host", "cache", "model_version")
+                    for k in ("gpu_info", "host", "cache", "model_version", "pool")
                     if k in data
                 }
                 return True, meta or None
@@ -196,10 +198,24 @@ class MLBackendClient:
             resp.raise_for_status()
             return resp.json()
 
-    async def reload(self) -> dict:
-        """B-28+ · 让 backend 重新加载模型. 重载耗时可能远高于 health 探活, 用 predict 超时配额."""
+    async def reload(
+        self, sam_variant: str | None = None, dino_variant: str | None = None
+    ) -> dict:
+        """B-28+ · 让 backend 重新加载模型. 重载耗时可能远高于 health 探活, 用 predict 超时配额.
+
+        v0.10.26 · 可选指定变体预热 (模型市场单变体预热); 缺省时 body 留空, backend 用默认变体.
+        """
+        body: dict[str, str] = {}
+        if sam_variant:
+            body["sam_variant"] = sam_variant
+        if dino_variant:
+            body["dino_variant"] = dino_variant
         async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
-            resp = await client.post(f"{self.base_url}/reload", headers=self._headers())
+            resp = await client.post(
+                f"{self.base_url}/reload",
+                json=body or None,
+                headers=self._headers(),
+            )
             resp.raise_for_status()
             return resp.json()
 

@@ -22,6 +22,32 @@
 
 ## 最新版本
 
+## [0.10.26] - 2026-05-20
+
+> **模型市场扩展二期 · 变体可观测 + 单变体预热 + 容器直连观测.** 把 v0.10.23 `ModelPool`「单容器多变体并存」的能力暴露到模型市场(super admin)。此前 backend `/health` 已返回 `pool`(已加载变体 / cap / 各变体 LRU)与 `cache.buckets`(每变体命中), 但平台 `health_meta()` 只保留 4 个键、未含 `pool`, 这些信号到不了前端; `/reload` 也只热默认变体; 且模型市场**按项目分组**, 没有任何项目注册 backend 时一片空白(哪怕 AI 容器在跑)。本期: ① `health_meta()` 保留 `pool` 键; ② `/reload` 泛化为可选 `{sam_variant, dino_variant}` 预热指定变体; ③ 模型市场每个已注册 backend 加可展开「变体」面板; ④ **新增「容器直连观测」面板**: 与项目注册解耦, env 配 `ML_BACKEND_OBSERVE_URLS` 后直连探测容器的健康/变体目录, 并支持「试启动」(空池时 warm→自动 unload 验证可加载性, 已有变体常驻时只确认不挤显存以免与注册 backend 冲突)。这是 ROADMAP「模型版本对比 / AB 路由 UI」中可落地、不膨胀的一片。**不做(仍 defer)**: 加权 AB 路由(按 task 自动分流打标)、同输入双变体并排对比(工作台级独立 epic)。 → [plan](docs/plans/2026-05-20-v0.10.26-model-market-variant-ops.md)。
+
+### Added
+
+- **模型市场「变体」面板** ([apps/web/src/pages/ModelMarket/VariantPanel.tsx](apps/web/src/pages/ModelMarket/VariantPanel.tsx)): 每个 backend 行可展开; 懒拉 `/setup` 取变体 enum(仅 params 含 `sam_variant`/`dino_variant` 才显示, 否则提示「不支持运行期变体切换」)。展示已加载变体表(`health_meta.pool.loaded_variants` × `cache.buckets` 命中率 × `per_variant_lru_ts` 近度)+ 预热控件(变体下拉 + 「预热」按钮 → `reload(variant)`)。
+- **模型市场「容器直连观测」面板** ([apps/web/src/pages/ModelMarket/ObserveBackendsPanel.tsx](apps/web/src/pages/ModelMarket/ObserveBackendsPanel.tsx) · [apps/api/app/api/v1/admin_ml_integrations.py](apps/api/app/api/v1/admin_ml_integrations.py)): 与项目注册解耦。`GET /admin/ml-integrations/observe` 并发探测 env 配的 `ML_BACKEND_OBSERVE_URLS`(留空回退 `ML_BACKEND_DEFAULT_URL`)各容器的 `/health`+`/setup`, 返回健康/延迟/显存/`model_version`/已加载变体/变体目录, 并标注哪些 URL 已被项目注册占用(`registered`)。`POST /admin/ml-integrations/observe/smoke-test` 试启动: **仅空池时** warm 指定变体验证可加载性、成功后自动 `/unload` 还原; 容器已有变体常驻时不预热不卸载(避免驱逐在用模型、不和注册 backend 冲突)。super_admin only + 审计 `ml_backend.smoke_tested`。
+- **`ML_BACKEND_OBSERVE_URLS` 配置** ([apps/api/app/config.py](apps/api/app/config.py) · [.env.example](.env.example)): 逗号分隔 / JSON list 的容器观测 URL 列表(CSV validator 镜像 cors), 供上面的直连观测面板使用。
+- **`/reload` 单变体预热** ([apps/grounded-sam2-backend/main.py](apps/grounded-sam2-backend/main.py) · [apps/api/app/api/v1/ml_backends.py](apps/api/app/api/v1/ml_backends.py)): grounded-sam2 `/reload` 接受可选 `{sam_variant, dino_variant}`(复用 `SAM2_CONFIGS`/`DINO_CONFIGS` 校验, 非法 422), 预热指定变体进 pool; 缺省回退默认变体(旧行为不变)。平台端点加可选 body, 审计 detail 带变体。
+
+### Changed
+
+- **`health_meta()` 保留 `pool` 键** ([apps/api/app/services/ml_client.py](apps/api/app/services/ml_client.py)): 健康检查缓存到 `ml_backends.health_meta` 的键集从 `gpu_info/host/cache/model_version` 加 `pool`(backend 无此字段时静默跳过), 让多变体并存快照能流到模型市场。
+- **reload 链路透传变体** ([apps/api/app/services/ml_client.py](apps/api/app/services/ml_client.py) · [apps/api/app/services/ml_backend.py](apps/api/app/services/ml_backend.py)): `MLBackendClient.reload` / `MLBackendService.reload` 加可选变体 kwargs; 前端 `useMLBackendReload` mutation 改 `{ backendId, variant? }`(原「重载」按钮缺省不带 variant, 行为不变)。
+- **版本号同步到 0.10.26** ([apps/api/app/config.py](apps/api/app/config.py) · [apps/api/pyproject.toml](apps/api/pyproject.toml) · [apps/web/package.json](apps/web/package.json))。
+
+### Fixed
+
+- **`ML_BACKEND_OBSERVE_URLS` 用逗号分隔时 API 启动崩溃** ([apps/api/app/config.py](apps/api/app/config.py)): pydantic-settings 对 `list[str]` 复杂字段会在 `field_validator` 之前先对 env 值做 JSON 解析, CSV 串(`http://a,http://b`)解析失败抛 `SettingsError` → `app.main` import 失败、uvicorn 起不来。给该字段加 `Annotated[list[str], NoDecode]` 关掉这一个字段的 JSON 自动解码, 让 validator 收原始串自行拆 CSV。(注: 既有 `cors_allow_origins` 同款 CSV validator 有相同潜在缺口, 但 env 默认注释未触发, 本次未改。)
+
+### Tests
+
+- **reload 变体 body + health_meta pool 单测** ([apps/api/tests/test_ml_client_reload_variant.py](apps/api/tests/test_ml_client_reload_variant.py)): `httpx.MockTransport` 捕获 reload 请求 body(带变体 / 缺省不发 body)+ 校验 `health_meta()` 保留 `pool` 键。
+- **observe + smoke-test 端到端测试** ([apps/api/tests/test_admin_ml_integrations.py](apps/api/tests/test_admin_ml_integrations.py)): `/observe` 返回变体目录 + `registered` 标记; smoke-test **空池 warm→unload** 与**非空池跳过**(冲突守护)两条路径 + super_admin 鉴权。
+
 ## [0.10.25] - 2026-05-20
 
 > **业务规模 / 监控触发项提前布局.** 把 ROADMAP「等业务规模 / 监控触发(先观察、不做)」一节积压的 4 项**提前**做成可上线 / 可上手的就绪形态, 不等阈值真正触发: ① predictions 按月 RANGE 分区(ADR-0006 Stage 2), dev 已应用验证, 生产侧仍按阈值触发执行但迁移已 battle-tested; ② `projects.batch_summary` 从实时 GROUP BY 改物化列(写时维护); ③ 审计归档冷数据查询回源(partition+archive 框架已闭环, 补 MinIO 回源端点); ④ `/health/celery` worker 心跳从硬编码 `0` 改真实秒数(beat 写 Redis + health 读差值)。**不做**: Celery 全局 task 超时 / 归档物化视图 / predictions 生产强制执行 —— 详见 plan。 → [plan](docs/plans/2026-05-20-v0.10.25-scale-monitoring-prep.md)。

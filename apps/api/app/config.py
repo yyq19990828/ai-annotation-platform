@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, NoDecode
 
 # repo root .env (apps/api/app/config.py → ../../.. = repo root)
 # 容器布局是 /app/app/config.py 只有 3 层 parents, parents[3] 越界 IndexError;
@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.10.25"
+    app_version: str = "0.10.26"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
 
@@ -80,6 +80,26 @@ class Settings(BaseSettings):
     # v0.9.6 · ML Backend 注册表单 URL 默认值预填 hint (avoid 手敲 http://172.17.0.1:8001).
     # dev 推荐 http://172.17.0.1:8001; 生产 K8s 同 namespace 时留空, 让运维直接输 service DNS.
     ml_backend_default_url: str = ""
+
+    # v0.10.26 · 模型市场「容器直连观测」面板要观测的后端容器 URL 列表 (CSV / JSON list)。
+    # 与项目注册解耦: 即使没有任何项目注册 backend, 运维也能在模型市场直连这些容器看
+    # 健康度 / 变体目录 / 试启动。留空时回退到 [ml_backend_default_url] (若其非空)。
+    # NoDecode: 关掉 pydantic-settings 对该字段的 JSON 自动解码, 否则 CSV env 值
+    # (http://a,http://b) 会在 validator 前被当 JSON 解析失败 → SettingsError。
+    ml_backend_observe_urls: Annotated[list[str], NoDecode] = []
+
+    @field_validator("ml_backend_observe_urls", mode="before")
+    @classmethod
+    def _parse_observe_urls(cls, v):
+        """允许 env 用 JSON list 或逗号分隔字符串。"""
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("["):
+                return json.loads(v)
+            return [u.strip() for u in v.split(",") if u.strip()]
+        return v
 
     ml_predict_timeout: int = 100
     ml_health_timeout: int = 10

@@ -17,6 +17,7 @@ from app.schemas.ml_backend import (
     MLBackendUpdate,
     MLBackendOut,
     MLBackendHealthResponse,
+    MLBackendReloadRequest,
     InteractiveRequest,
 )
 from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
@@ -239,13 +240,22 @@ async def reload_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     request: Request,
+    body: MLBackendReloadRequest | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
-    """B-28+ · 触发 backend 重新加载模型. 已加载则 noop."""
+    """B-28+ · 触发 backend 重新加载模型. 已加载则 noop.
+
+    v0.10.26 · 可选 body {sam_variant, dino_variant} 预热指定变体 (模型市场单变体预热);
+    缺省回退 backend 默认变体.
+    """
     svc = MLBackendService(db)
+    sam_variant = body.sam_variant if body else None
+    dino_variant = body.dino_variant if body else None
     try:
-        result = await svc.reload(backend_id)
+        result = await svc.reload(
+            backend_id, sam_variant=sam_variant, dino_variant=dino_variant
+        )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"backend reload failed: {exc}")
     if result is None:
@@ -258,7 +268,12 @@ async def reload_ml_backend(
         target_id=str(backend_id),
         request=request,
         status_code=200,
-        detail={"project_id": str(project_id), "result": result},
+        detail={
+            "project_id": str(project_id),
+            "sam_variant": sam_variant,
+            "dino_variant": dino_variant,
+            "result": result,
+        },
     )
     await db.commit()
     return result

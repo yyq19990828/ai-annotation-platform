@@ -208,3 +208,161 @@ async def test_runtime_hints_null_when_not_set(httpx_client, super_admin, monkey
     )
     assert res.status_code == 200
     assert res.json()["ml_backend_default_url"] is None
+
+
+# ── v0.10.26 · 容器直连观测 /observe + /observe/smoke-test ──────────────
+
+
+class _FakeResp:
+    def __init__(self, status_code, payload):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import httpx as _h
+
+            raise _h.HTTPStatusError("err", request=None, response=None)
+
+
+def _fake_client(routes):
+    """routes: dict[("get"|"post", path_suffix)] -> _FakeResp。"""
+
+    class FakeClient:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def get(self, url, **_kw):
+            for (m, suffix), resp in routes.items():
+                if m == "get" and url.endswith(suffix):
+                    return resp
+            return _FakeResp(404, {})
+
+        async def post(self, url, **_kw):
+            for (m, suffix), resp in routes.items():
+                if m == "post" and url.endswith(suffix):
+                    return resp
+            return _FakeResp(404, {})
+
+    return FakeClient
+
+
+@pytest.mark.asyncio
+async def test_observe_returns_variant_catalog_and_registered_flag(
+    httpx_client, db_session, super_admin, monkeypatch
+):
+    user, token = super_admin
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ml_backend_observe_urls", ["http://obs1:8001"])
+
+    # 注册一个同 URL 的 backend → observe 应标 registered。
+    proj = await create_project(db_session, owner_id=user.id, name="POBS")
+    from app.db.models.ml_backend import MLBackend
+
+    db_session.add(
+        MLBackend(project_id=proj.id, name="b", url="http://obs1:8001", state="connected")
+    )
+    await db_session.flush()
+
+    routes = {
+        ("get", "/health"): _FakeResp(
+            200,
+            {"ok": True, "loaded": False, "model_version": "mv",
+             "pool": {"cap": 1, "loaded_variants": []}, "gpu_info": {"memory_used_mb": 1}},
+        ),
+        ("get", "/setup"): _FakeResp(
+            200,
+            {"params": {"properties": {
+                "sam_variant": {"enum": ["tiny", "large"]},
+                "dino_variant": {"enum": ["T", "B"]}}}},
+        ),
+    }
+    with patch("app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)):
+        res = await httpx_client.get(
+            "/api/v1/admin/ml-integrations/observe",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["configured_count"] == 1
+    t = body["targets"][0]
+    assert t["ok"] is True
+    assert t["supports_variants"] is True
+    assert t["variant_catalog"]["sam_variant"] == ["tiny", "large"]
+    assert t["registered"] is True
+    assert "POBS" in (t["registered_label"] or "")
+
+
+@pytest.mark.asyncio
+async def test_smoke_test_skips_when_pool_already_loaded(
+    httpx_client, super_admin
+):
+    """冲突守护: 池子已有变体常驻时不预热/不卸载, 只确认可加载性。"""
+    _, token = super_admin
+    routes = {
+        ("get", "/health"): _FakeResp(
+            200,
+            {"ok": True, "loaded": True,
+             "pool": {"loaded_variants": [{"sam_variant": "tiny", "dino_variant": "T"}]}},
+        ),
+    }
+    with patch("app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)):
+        res = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/observe/smoke-test",
+            json={"url": "http://obs1:8001", "sam_variant": "large", "dino_variant": "B"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["skipped"] is True
+    assert body["auto_unloaded"] is False
+
+
+@pytest.mark.asyncio
+async def test_smoke_test_warms_and_unloads_empty_pool(httpx_client, super_admin):
+    _, token = super_admin
+    routes = {
+        ("get", "/health"): _FakeResp(
+            200, {"ok": True, "loaded": False, "pool": {"loaded_variants": []}}
+        ),
+        ("post", "/reload"): _FakeResp(
+            200, {"ok": True, "loaded": True, "reloaded": True,
+                  "sam_variant": "large", "dino_variant": "B"}
+        ),
+        ("post", "/unload"): _FakeResp(200, {"ok": True, "unloaded": True}),
+    }
+    with patch("app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)):
+        res = await httpx_client.post(
+            "/api/v1/admin/ml-integrations/observe/smoke-test",
+            json={"url": "http://obs1:8001", "sam_variant": "large", "dino_variant": "B"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["skipped"] is False
+    assert body["reloaded"] is True
+    assert body["auto_unloaded"] is True
+    assert body["loaded_variant"]["sam_variant"] == "large"
+
+
+@pytest.mark.asyncio
+async def test_smoke_test_requires_super_admin(httpx_client, annotator):
+    _, anno_token = annotator
+    res = await httpx_client.post(
+        "/api/v1/admin/ml-integrations/observe/smoke-test",
+        json={"url": "http://x:8001"},
+        headers={"Authorization": f"Bearer {anno_token}"},
+    )
+    assert res.status_code == 403

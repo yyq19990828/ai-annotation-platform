@@ -176,3 +176,8 @@
   display: inline-flex;
   gap: 6px;
 }
+
+.expandCell {
+  padding: 0;
+  border-bottom: 1px solid var(--color-border);
+}

@@ -15,6 +15,22 @@ export interface StorageOverview {
   total_size_bytes: number;
 }
 
+// v0.10.26 · 单变体 cache 桶 (来自 backend /cache/stats，key="sam/dino")。
+export interface CacheBucketStat {
+  size?: number;
+  hits?: number;
+  misses?: number;
+  hit_rate?: number;
+}
+
+// v0.10.26 · ModelPool 健康快照 (来自 backend /health.pool)。
+export interface BackendPoolMeta {
+  cap?: number;
+  loaded_variants?: Array<{ sam_variant: string; dino_variant: string }>;
+  evict_count?: number;
+  per_variant_lru_ts?: Record<string, number>;
+}
+
 export interface BackendHealthMeta {
   gpu_info?: {
     device_name?: string;
@@ -26,9 +42,12 @@ export interface BackendHealthMeta {
     hit_rate?: number;
     hits?: number;
     misses?: number;
+    buckets?: Record<string, CacheBucketStat>;
     [key: string]: unknown;
   } | null;
   model_version?: string | null;
+  /** v0.10.26 · ModelPool 多变体并存快照 (grounded-sam2 才有)。 */
+  pool?: BackendPoolMeta | null;
 }
 
 export interface MLBackendItem {
@@ -101,6 +120,50 @@ export interface GlobalBackendListResponse {
   items: GlobalBackendItem[];
 }
 
+// ── v0.10.26 · 容器直连观测 (与项目注册解耦) ─────────────────────────
+export interface VariantCatalog {
+  sam_variant: string[];
+  dino_variant: string[];
+}
+
+export interface ObserveTarget {
+  url: string;
+  ok: boolean;
+  latency_ms: number;
+  status_code?: number | null;
+  error?: string | null;
+  gpu_info?: { memory_used_mb?: number; memory_total_mb?: number } | null;
+  model_version?: string | null;
+  pool?: BackendPoolMeta | null;
+  cache?: { hit_rate?: number; buckets?: Record<string, CacheBucketStat> } | null;
+  variant_catalog?: VariantCatalog | null;
+  supports_variants: boolean;
+  registered: boolean;
+  registered_label?: string | null;
+}
+
+export interface ObserveResponse {
+  targets: ObserveTarget[];
+  configured_count: number;
+}
+
+export interface SmokeTestRequest {
+  url: string;
+  sam_variant?: string;
+  dino_variant?: string;
+}
+
+export interface SmokeTestResponse {
+  ok: boolean;
+  skipped: boolean;
+  reloaded?: boolean | null;
+  auto_unloaded: boolean;
+  load_latency_ms?: number | null;
+  loaded_variant?: { sam_variant?: string; dino_variant?: string } | null;
+  message: string;
+  error?: string | null;
+}
+
 export const adminMlIntegrationsApi = {
   overview: () =>
     apiClient.get<MLIntegrationsOverview>("/admin/ml-integrations/overview"),
@@ -111,4 +174,9 @@ export const adminMlIntegrationsApi = {
   /** v0.9.7 · 全局 backend 去重列表, 用于 Wizard step 4 dropdown. */
   listAll: () =>
     apiClient.get<GlobalBackendListResponse>("/admin/ml-integrations/all"),
+  /** v0.10.26 · 直连观测 env 配的后端容器 (健康/变体目录/registered 标记). */
+  observe: () => apiClient.get<ObserveResponse>("/admin/ml-integrations/observe"),
+  /** v0.10.26 · 试启动: 空池时 warm→自动 unload 验证可加载性. */
+  observeSmokeTest: (payload: SmokeTestRequest) =>
+    apiClient.post<SmokeTestResponse>("/admin/ml-integrations/observe/smoke-test", payload),
 };

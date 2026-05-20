@@ -32,6 +32,7 @@ import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from PIL import Image
+from pydantic import BaseModel
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from embedding_cache import EmbeddingCache, compute_cache_key
@@ -357,12 +358,41 @@ async def unload() -> dict:
     return {"ok": True, "unloaded": unloaded, "loaded": _pool.loaded}
 
 
+class ReloadRequest(BaseModel):
+    """v0.10.26 · 可选指定变体预热. 缺省回退 env 默认变体 (保持旧行为)."""
+
+    sam_variant: str | None = None
+    dino_variant: str | None = None
+
+
 @app.post("/reload")
-async def reload() -> dict:
-    """主动 (重新) 加载默认变体进 pool. 已加载时是 noop."""
-    was_loaded = _pool.loaded
-    await _get_predictor(SAM_VARIANT, DINO_VARIANT)
-    return {"ok": True, "loaded": True, "reloaded": not was_loaded}
+async def reload(req: ReloadRequest | None = None) -> dict:
+    """主动 (重新) 加载变体进 pool. 已加载该变体时 reloaded=false.
+
+    v0.10.26 · 接受可选 {sam_variant, dino_variant} 预热指定变体 (模型市场单变体预热);
+    缺省回退 env 默认变体. 非法变体 422 (同 predict 的 _resolve_variant 校验).
+    """
+    sv = (req.sam_variant if req else None) or SAM_VARIANT
+    dv = (req.dino_variant if req else None) or DINO_VARIANT
+    if sv not in SAM2_CONFIGS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
+        )
+    if dv not in DINO_CONFIGS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unsupported dino_variant: {dv!r}; allowed={sorted(DINO_CONFIGS)}",
+        )
+    already = {"sam_variant": sv, "dino_variant": dv} in _pool.loaded_variants()
+    await _get_predictor(sv, dv)
+    return {
+        "ok": True,
+        "loaded": True,
+        "reloaded": not already,
+        "sam_variant": sv,
+        "dino_variant": dv,
+    }
 
 
 def _fetch_image(file_path: str) -> Image.Image:

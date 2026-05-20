@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/Card";
@@ -18,7 +18,9 @@ import {
   useMLBackendUnload,
 } from "@/hooks/useMLBackends";
 import { MlBackendFormModal } from "@/components/projects/MlBackendFormModal";
+import type { MLBackendVariant } from "@/api/ml-backends";
 import type { MLBackendResponse } from "@/types";
+import { VariantPanel } from "./VariantPanel";
 import styles from "./RegisteredBackendsTab.module.css";
 
 const STATE_VARIANT: Record<string, "success" | "warning" | "outline" | "danger"> = {
@@ -145,6 +147,8 @@ function ProjectGroup({
   const health = useMLBackendHealth(group.project_id);
   const unload = useMLBackendUnload(group.project_id);
   const reload = useMLBackendReload(group.project_id);
+  // v0.10.26 · 每 backend 可展开「变体」面板.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const onDelete = (b: MLBackendItem) => {
     if (!window.confirm(`确认删除 backend「${b.name}」？此操作不可撤销。`)) return;
@@ -176,15 +180,20 @@ function ProjectGroup({
     });
   };
 
-  const onReload = (b: MLBackendItem) => {
-    reload.mutate(b.id, {
-      onSuccess: (res) =>
-        pushToast({
-          msg: res.reloaded ? `${b.name} 已重载到显存` : `${b.name} 已在显存中`,
-          kind: "success",
-        }),
-      onError: (e) => pushToast({ msg: "重载失败", sub: (e as Error).message }),
-    });
+  const onReload = (b: MLBackendItem, variant?: MLBackendVariant) => {
+    reload.mutate(
+      { backendId: b.id, variant },
+      {
+        onSuccess: (res) => {
+          const tag = res.sam_variant ? ` (${res.sam_variant}/${res.dino_variant})` : "";
+          pushToast({
+            msg: res.reloaded ? `${b.name} 已预热到显存${tag}` : `${b.name} 已在显存中${tag}`,
+            kind: "success",
+          });
+        },
+        onError: (e) => pushToast({ msg: "预热失败", sub: (e as Error).message }),
+      },
+    );
   };
 
   return (
@@ -219,7 +228,8 @@ function ProjectGroup({
         </thead>
         <tbody>
           {group.backends.map((b) => (
-            <tr key={b.id}>
+            <Fragment key={b.id}>
+            <tr>
               <td className={styles.tableCell}>{b.name}</td>
               <td className={clsx(styles.tableCell, styles.urlCell)}>
                 {b.url}
@@ -269,6 +279,13 @@ function ProjectGroup({
               </td>
               <td className={styles.tableCell}>
                 <div className={styles.actionList}>
+                  <Button
+                    size="sm"
+                    onClick={() => setExpandedId((id) => (id === b.id ? null : b.id))}
+                    title="变体（多模型并存 / 预热）"
+                  >
+                    <Icon name={expandedId === b.id ? "chevUp" : "chevDown"} size={11} />
+                  </Button>
                   <Button size="sm" onClick={() => onHealth(b)} disabled={health.isPending} title="健康检查">
                     <Icon name="refresh" size={11} />
                   </Button>
@@ -303,6 +320,19 @@ function ProjectGroup({
                 </div>
               </td>
             </tr>
+            {expandedId === b.id && (
+              <tr>
+                <td colSpan={6} className={styles.expandCell}>
+                  <VariantPanel
+                    projectId={group.project_id}
+                    backend={b}
+                    onWarm={(variant) => onReload(b, variant)}
+                    isWarming={reload.isPending}
+                  />
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>

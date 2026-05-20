@@ -6869,6 +6869,34 @@
         "title": "MLBackendOut",
         "type": "object"
       },
+      "MLBackendReloadRequest": {
+        "properties": {
+          "dino_variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dino Variant"
+          },
+          "sam_variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sam Variant"
+          }
+        },
+        "title": "MLBackendReloadRequest",
+        "type": "object"
+      },
       "MLBackendUpdate": {
         "properties": {
           "auth_method": {
@@ -7271,6 +7299,150 @@
           "items"
         ],
         "title": "NotificationPreferencesOut",
+        "type": "object"
+      },
+      "ObserveResponse": {
+        "properties": {
+          "configured_count": {
+            "title": "Configured Count",
+            "type": "integer"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ObserveTarget"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets",
+          "configured_count"
+        ],
+        "title": "ObserveResponse",
+        "type": "object"
+      },
+      "ObserveTarget": {
+        "properties": {
+          "cache": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "gpu_info": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Info"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "pool": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pool"
+          },
+          "registered": {
+            "default": false,
+            "title": "Registered",
+            "type": "boolean"
+          },
+          "registered_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registered Label"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          },
+          "supports_variants": {
+            "default": false,
+            "title": "Supports Variants",
+            "type": "boolean"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "variant_catalog": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VariantCatalog"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "url",
+          "ok",
+          "latency_ms"
+        ],
+        "title": "ObserveTarget",
         "type": "object"
       },
       "OpenRegisterRequest": {
@@ -10492,6 +10664,116 @@
         "title": "SkipTaskRequest",
         "type": "object"
       },
+      "SmokeTestRequest": {
+        "properties": {
+          "dino_variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dino Variant"
+          },
+          "sam_variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sam Variant"
+          },
+          "url": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "SmokeTestRequest",
+        "type": "object"
+      },
+      "SmokeTestResponse": {
+        "properties": {
+          "auto_unloaded": {
+            "default": false,
+            "title": "Auto Unloaded",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "load_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Latency Ms"
+          },
+          "loaded_variant": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loaded Variant"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "reloaded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reloaded"
+          },
+          "skipped": {
+            "default": false,
+            "title": "Skipped",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "message"
+        ],
+        "title": "SmokeTestResponse",
+        "type": "object"
+      },
       "SmtpStatus": {
         "properties": {
           "configured": {
@@ -11741,6 +12023,28 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VariantCatalog": {
+        "properties": {
+          "dino_variant": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Dino Variant",
+            "type": "array"
+          },
+          "sam_variant": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sam Variant",
+            "type": "array"
+          }
+        },
+        "title": "VariantCatalog",
         "type": "object"
       },
       "VideoAssetFailureItem": {
@@ -13756,7 +14060,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.10.25"
+    "version": "0.10.26"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -14068,6 +14372,80 @@
           }
         ],
         "summary": "List All Backends",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/observe": {
+      "get": {
+        "description": "直连观测 env 配的后端容器: 并发探测各 URL 的 /health + /setup, 标注是否已被注册。",
+        "operationId": "observe_backends_api_v1_admin_ml_integrations_observe_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObserveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Observe Backends",
+        "tags": [
+          "admin-ml-integrations"
+        ]
+      }
+    },
+    "/api/v1/admin/ml-integrations/observe/smoke-test": {
+      "post": {
+        "description": "试启动: 空池时 warm 指定变体验证可加载性, 成功后自动 /unload 还原现场。\n\n若容器已有变体常驻 (很可能某注册 backend 正在用), 不预热也不卸载 —— 既然已载着\n就证明能启, 避免驱逐在用模型 (不和注册的 backend 冲突)。",
+        "operationId": "smoke_test_backend_api_v1_admin_ml_integrations_observe_smoke_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmokeTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmokeTestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Smoke Test Backend",
         "tags": [
           "admin-ml-integrations"
         ]
@@ -22603,7 +22981,7 @@
     },
     "/api/v1/projects/{project_id}/ml-backends/{backend_id}/reload": {
       "post": {
-        "description": "B-28+ · 触发 backend 重新加载模型. 已加载则 noop.",
+        "description": "B-28+ · 触发 backend 重新加载模型. 已加载则 noop.\n\nv0.10.26 · 可选 body {sam_variant, dino_variant} 预热指定变体 (模型市场单变体预热);\n缺省回退 backend 默认变体.",
         "operationId": "reload_ml_backend_api_v1_projects__project_id__ml_backends__backend_id__reload_post",
         "parameters": [
           {
@@ -22627,6 +23005,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/MLBackendReloadRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

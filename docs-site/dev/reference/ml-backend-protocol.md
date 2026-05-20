@@ -57,7 +57,9 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - 项目管理员在前端点「测试连接」（`POST /api/v1/projects/{pid}/ml-backends/{bid}/health`）。
 - v0.8.x 之后可能加入周期 cron（参见 ROADMAP §A「ML Backend 健康检查」）。
 
-> **`pool` 子对象**（v0.10.23, 仅 grounded-sam2 返回，运维观测用，平台不强制解析）：`{ cap, loaded_variants: [{sam_variant, dino_variant}], evict_count, per_variant_lru_ts: {"sam/dino": <monotonic_ts>} }`，反映 ModelPool 当前并存的变体及 LRU 顺序。`cache` 子对象同步聚合各变体桶（`buckets["sam/dino"]` 各自独立 hits/misses），`/cache/stats` 与 `/metrics` 口径一致。idle 超时后整池清空、`loaded` 变 false。
+> **`pool` 子对象**（v0.10.23, 仅 grounded-sam2 返回，运维观测用，平台不强制解析）：`{ cap, loaded_variants: [{sam_variant, dino_variant}], evict_count, per_variant_lru_ts: {"sam/dino": <monotonic_ts>} }`，反映 ModelPool 当前并存的变体及 LRU 顺序。`cache` 子对象同步聚合各变体桶（`buckets["sam/dino"]` 各自独立 hits/misses），`/cache/stats` 与 `/metrics` 口径一致。idle 超时后整池清空、`loaded` 变 false。v0.10.26 起平台 `health_meta()` 把 `pool` 一并缓存到 `ml_backends.health_meta`，供模型市场「变体」面板展示。
+
+> **可选模型管理端点 `POST /reload` / `POST /unload`**（非协议必需，grounded-sam2 实现）：`/unload` 清空整池释放显存；`/reload` 预热模型进 pool。v0.10.26 起 `/reload` 接受可选 body `{ "sam_variant": "small", "dino_variant": "B" }` 预热**指定变体**（缺省回退 backend 启动默认变体；非法变体值 422，校验同 `/predict` 的 `context.sam_variant`）；返回 `{ ok, loaded, reloaded, sam_variant, dino_variant }`。平台经 `POST /api/v1/projects/{pid}/ml-backends/{bid}/reload`（同 body）代理，模型市场「变体」面板的「预热」按钮即走此链路。
 
 ---
 

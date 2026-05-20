@@ -135,6 +135,12 @@ class MLBackendHealthResponse(BaseModel):
     backend_name: str
 
 
+# v0.10.26 · 模型市场单变体预热. 缺省时 backend 用默认变体 (保持旧 /reload 行为).
+class MLBackendReloadRequest(BaseModel):
+    sam_variant: str | None = None
+    dino_variant: str | None = None
+
+
 class InteractiveRequest(BaseModel):
     """工作台「AI 助手」单次推理请求。`context` 透传至 backend，平台不做 schema 校验。
 
