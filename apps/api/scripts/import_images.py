@@ -71,7 +71,7 @@ async def import_to_dataset(
     bucket_folder = folder_name or name
 
     images = sorted(
-        p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTS
+        p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS
     )
     if not images:
         print(f"错误: {image_dir} 中未找到图片文件")
@@ -108,7 +108,10 @@ async def import_to_dataset(
 
         imported = 0
         for img_path in images:
-            storage_key = f"{bucket_folder}/{img_path.name}"
+            # 保留 image_dir 下的相对目录结构 (posix `/` 分隔, Windows 兼容),
+            # 与 Web/scan_and_import 入口的「file_path = 完整 key 保留嵌套」对齐。
+            rel = img_path.relative_to(folder).as_posix()
+            storage_key = f"{bucket_folder}/{rel}"
 
             s3.upload_file(
                 str(img_path),

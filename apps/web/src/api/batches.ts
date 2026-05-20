@@ -241,31 +241,14 @@ export const batchesApi = {
       `/projects/${projectId}/batches/unclassified-count`,
     ),
 
-  exportBatch: async (projectId: string, batchId: string, format: ExportFormat, opts?: ExportOptions) => {
+  // v0.10.27 · 导出异步化：POST 创建 async_job(kind=export)，返回 {job_id}。
+  // 不再直接 blob 下载；产物完成后在 JobsBell 里用预签名 URL 下载。
+  exportBatch: (projectId: string, batchId: string, format: ExportFormat, opts?: ExportOptions) => {
     const includeAttr = opts?.includeAttributes !== false;
     const params = new URLSearchParams({ format, include_attributes: String(includeAttr) });
     if (opts?.videoFrameMode) params.set("video_frame_mode", opts.videoFrameMode);
-    const resp = await fetch(
-      `/api/v1/projects/${projectId}/batches/${batchId}/export?${params.toString()}`,
-      {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      },
+    return apiClient.post<{ job_id: string }>(
+      `/projects/${projectId}/batches/${batchId}/export?${params.toString()}`,
     );
-    if (!resp.ok) {
-      const body = await resp.json().catch(() => null);
-      throw new Error(body?.detail ?? "Export failed");
-    }
-    const blob = await resp.blob();
-    const cd = resp.headers.get("content-disposition") ?? "";
-    const isJson = format === "coco" || format === "aap_json";
-    const fname = cd.match(/filename=(.+)/)?.[1] ?? `batch_export.${isJson ? "json" : "zip"}`;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fname;
-    a.click();
-    URL.revokeObjectURL(url);
   },
 };

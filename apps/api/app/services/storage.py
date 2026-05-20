@@ -25,6 +25,8 @@ class StorageService:
         self.bug_reports_bucket = settings.minio_bug_reports_bucket
         self.media_cache_bucket = settings.minio_media_cache_bucket
         self.audit_archive_bucket = settings.minio_audit_archive_bucket
+        self.import_bucket = settings.minio_import_bucket
+        self.export_bucket = settings.minio_export_bucket
 
     def ensure_bucket(self, bucket: str | None = None) -> None:
         b = bucket or self.bucket
@@ -39,6 +41,8 @@ class StorageService:
         self.ensure_bucket(self.bug_reports_bucket)
         self.ensure_bucket(self.media_cache_bucket)
         self.ensure_bucket(self.audit_archive_bucket)
+        self.ensure_bucket(self.import_bucket)
+        self.ensure_bucket(self.export_bucket)
         self._ensure_lifecycle()
 
     def _ensure_lifecycle(self) -> None:
@@ -98,6 +102,30 @@ class StorageService:
             logger.warning(
                 "Failed to set bucket lifecycle on %s: %s", self.media_cache_bucket, exc
             )
+
+        # v0.10.27 · 导入/导出产物桶整桶 7 天过期(短生命周期产物)。
+        for short_lived_bucket, rule_id in (
+            (self.import_bucket, "import-artifacts-7d"),
+            (self.export_bucket, "export-artifacts-7d"),
+        ):
+            try:
+                self.client.put_bucket_lifecycle_configuration(
+                    Bucket=short_lived_bucket,
+                    LifecycleConfiguration={
+                        "Rules": [
+                            {
+                                "ID": rule_id,
+                                "Status": "Enabled",
+                                "Filter": {"Prefix": ""},
+                                "Expiration": {"Days": 7},
+                            },
+                        ]
+                    },
+                )
+            except ClientError as exc:
+                logger.warning(
+                    "Failed to set bucket lifecycle on %s: %s", short_lived_bucket, exc
+                )
 
         # audit-archive 桶不挂 lifecycle:合规要求永久保留。运维可单独开 object lock。
 
@@ -205,6 +233,8 @@ class StorageService:
             self.bug_reports_bucket,
             self.media_cache_bucket,
             self.audit_archive_bucket,
+            self.import_bucket,
+            self.export_bucket,
         ]
 
     # v0.10.17 · 派生媒体缓存按 key 前缀路由到 media-cache 桶。

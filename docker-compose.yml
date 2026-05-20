@@ -138,6 +138,47 @@ services:
       minio:
         condition: service_healthy
 
+  # v0.10.27 · 导出专用 worker. 独立 export 队列资源隔离, 导出大任务不拖累预标/媒体处理。
+  # 配置照抄 celery-worker, 仅改 -Q export --concurrency=2 与容器名。
+  celery-worker-export:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    command: celery -A app.workers.celery_app worker -l info -Q export --concurrency=2
+    environment:
+      DATABASE_URL: postgresql+asyncpg://user:pass@postgres:5432/annotation
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      # v0.10.16 · DuckDB 离线分析视图 (ROADMAP §1.6); host ./data/duckdb 挂到容器 /var/lib/duckdb
+      DUCKDB_PATH: /var/lib/duckdb/analytics.duckdb
+    volumes:
+      # v0.10.16 · DuckDB 文件 bind mount, worker 写 / API 跑 host 时只读
+      - ./data/duckdb:/var/lib/duckdb
+      # v0.10.25 · dev 源码热挂载: 改 worker 业务码 / 加 alembic 迁移只需 docker restart, 不必 rebuild。
+      # deps 装在 --system site-packages (见 Dockerfile.api), 不在 /app 下, 挂 /app 不盖依赖;
+      # 匿名卷屏蔽 host 的 apps/api/.venv 避免泄入容器。Celery 无 --reload, 改码后仍需 restart。
+      - ./apps/api:/app
+      - /app/.venv
+    # v0.10.24 · worker 健康探针: inspect ping 自身节点 (-d 限定当前 worker, 不等其它副本)。
+    # 必须用 CMD-SHELL — exec-form 无 shell, $$HOSTNAME 不展开会 ping 字面节点名导致永远 unhealthy。
+    # start_period 留足 image 冷启 + broker 连接; SIGTERM 后给 30s warm shutdown 跑完在途任务。
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 30s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
   # v0.9.11 · Celery beat 独立 service. worker 与 beat 解耦 (worker 可 scale 多副本,
   # beat 必须单实例避免 schedule 重复触发). 复用同一 image (Dockerfile.api).
   # PerfHud 1s 推送 + audit partition 月度任务 + ml health 60s 等都依赖此进程.

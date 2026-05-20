@@ -20,7 +20,23 @@ const KIND_LABEL: Record<string, string> = {
   video_tracker: "视频追踪",
   audit_archive: "审计分区归档",
   predictions_import: "预测导入",
+  export: "数据导出",
 };
+
+/** export job 完成时 result 的下载字段（后端 mark_complete 写入）。 */
+function exportDownloadUrl(result: Record<string, unknown>): string | null {
+  const url = result?.download_url;
+  return typeof url === "string" && url ? url : null;
+}
+
+/** 从 payload 取一段副标题（导出 job 显示「项目 display_id · 格式」）。 */
+function jobDetail(job: AsyncJob): string | null {
+  const p = job.payload || {};
+  const display = typeof p.project_display_id === "string" ? p.project_display_id : null;
+  const fmt = typeof p.format === "string" ? p.format.toUpperCase() : null;
+  const parts = [display, fmt].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
 
 const STATUS_LABEL: Record<AsyncJobStatus, string> = {
   pending: "等待中",
@@ -71,10 +87,19 @@ function StatusPill({ status }: { status: AsyncJobStatus }) {
 function JobRow({ job }: { job: AsyncJob }) {
   const kindLabel = KIND_LABEL[job.kind] ?? job.kind;
   const pct = Math.max(0, Math.min(100, job.progress_pct));
+  // v0.10.27 · 导出完成后的下载链接（预签名 URL，7 天内可反复点）。
+  const downloadUrl =
+    job.kind === "export" && job.status === "completed"
+      ? exportDownloadUrl(job.result)
+      : null;
+  const detail = jobDetail(job);
   return (
     <div className={styles.jobRow} data-testid={`job-row-${job.id}`}>
       <div className={styles.jobHeader}>
-        <span>{kindLabel}</span>
+        <span>
+          {kindLabel}
+          {detail && <span className={styles.jobDetail}> · {detail}</span>}
+        </span>
         <StatusPill status={job.status} />
       </div>
       <ProgressBar pct={pct} status={job.status} />
@@ -85,6 +110,17 @@ function JobRow({ job }: { job: AsyncJob }) {
             ? (job.error_message ?? "失败").slice(0, 80)
             : new Date(job.completed_at ?? job.updated_at).toLocaleString("zh-CN")}
       </div>
+      {downloadUrl && (
+        <a
+          href={downloadUrl}
+          download
+          className={styles.downloadLink}
+          data-testid={`job-download-${job.id}`}
+        >
+          <Icon name="download" size={12} />
+          下载
+        </a>
+      )}
     </div>
   );
 }

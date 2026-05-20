@@ -105,6 +105,11 @@
   color: var(--color-fg);
 }
 
+.jobDetail {
+  color: var(--color-fg-muted);
+  font-weight: 400;
+}
+
 .jobMeta {
   color: var(--color-fg-muted);
   font-size: 11px;
@@ -142,6 +147,29 @@
 .statusFailed { background: color-mix(in oklab, var(--color-error) 18%, transparent); color: var(--color-error); }
 .statusPending { background: var(--color-bg-sunken); color: var(--color-fg-muted); }
 .statusCancelled { background: var(--color-bg-sunken); color: var(--color-fg-muted); }
+
+.downloadLink {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-accent);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.downloadLink:hover {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-accent);
+}
 
 .empty {
   padding: 20px 12px;

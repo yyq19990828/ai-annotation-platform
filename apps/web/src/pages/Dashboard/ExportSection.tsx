@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { projectsApi, type ExportFormat, type VideoFrameMode } from "@/api/projects";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
+import { useToastStore } from "@/components/ui/Toast";
 import styles from "./ExportSection.module.css";
 
 interface ExportSectionProps {
@@ -8,9 +9,9 @@ interface ExportSectionProps {
   projectTypeKey?: string;
 }
 
+// v0.10.27 · VOC 隐藏（硬编码尺寸 bug + 少用），ExportFormat 类型保留兼容后端契约。
 const FORMATS: { value: ExportFormat; label: string }[] = [
   { value: "coco", label: "COCO" },
-  { value: "voc", label: "VOC" },
   { value: "yolo", label: "YOLO" },
   // v0.10.15 · 平台原生无损中间格式 (含 predictions + annotations 双数组).
   { value: "aap_json", label: "AAP JSON" },
@@ -58,6 +59,7 @@ function ExportForm({ projectId, projectTypeKey, onDone }: { projectId: string; 
   const [includeAttributes, setIncludeAttributes] = useState(true);
   const [videoFrameMode, setVideoFrameMode] = useState<VideoFrameMode>("keyframes");
   const [busy, setBusy] = useState(false);
+  const pushToast = useToastStore((s) => s.push);
 
   const handleExport = async () => {
     setBusy(true);
@@ -66,7 +68,18 @@ function ExportForm({ projectId, projectTypeKey, onDone }: { projectId: string; 
         includeAttributes,
         ...(isVideoProject ? { videoFrameMode } : {}),
       });
+      pushToast({
+        msg: "导出已入队",
+        sub: "可在右上角任务铃查看进度并下载",
+        kind: "success",
+      });
       onDone();
+    } catch (err) {
+      pushToast({
+        msg: "导出发起失败",
+        sub: err instanceof Error ? err.message : undefined,
+        kind: "error",
+      });
     } finally {
       setBusy(false);
     }

@@ -303,6 +303,7 @@ class ExportService:
         batch_id: uuid.UUID | None = None,
         include_attributes: bool = True,
         video_frame_mode: str = "keyframes",
+        dataset_items: dict[uuid.UUID, DatasetItem] | None = None,
     ) -> str:
         project, tasks, annotations = await self._load_data(project_id, batch_id)
         if not project:
@@ -362,14 +363,26 @@ class ExportService:
                     return v
             return 0
 
+        # v0.10.27 · 像素坐标改用 DatasetItem.width/height 真值, 缺失再回退常量。
+        items = dataset_items or {}
+
+        def _dims_for(task: Task) -> tuple[int, int]:
+            item = items.get(task.dataset_item_id) if task.dataset_item_id else None
+            w = item.width if item and item.width else IMG_W
+            h = item.height if item and item.height else IMG_H
+            return w, h
+
         images = []
+        dims_by_task: dict[uuid.UUID, tuple[int, int]] = {}
         for i, t in enumerate(tasks):
+            w, h = _dims_for(t)
+            dims_by_task[t.id] = (w, h)
             images.append(
                 {
                     "id": i,
                     "file_name": t.file_name,
-                    "width": IMG_W,
-                    "height": IMG_H,
+                    "width": w,
+                    "height": h,
                 }
             )
         task_id_to_img_id = {t.id: i for i, t in enumerate(tasks)}
@@ -382,10 +395,11 @@ class ExportService:
             g = _bbox_geometry(ann)
             if g is None:
                 continue
-            x_px = g["x"] * IMG_W
-            y_px = g["y"] * IMG_H
-            w_px = g["w"] * IMG_W
-            h_px = g["h"] * IMG_H
+            img_w, img_h = dims_by_task.get(ann.task_id, (IMG_W, IMG_H))
+            x_px = g["x"] * img_w
+            y_px = g["y"] * img_h
+            w_px = g["w"] * img_w
+            h_px = g["h"] * img_h
             row = {
                 "id": len(coco_annotations),
                 "image_id": img_id,

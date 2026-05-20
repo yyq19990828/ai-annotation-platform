@@ -36,6 +36,8 @@ last_reviewed: 2026-05-20
 | `MINIO_BUG_REPORTS_BUCKET` | `bug-reports` | Bug 反馈截图桶（180 天 lifecycle） |
 | `MINIO_MEDIA_CACHE_BUCKET` | `media-cache` | v0.10.17 · 派生媒体缓存桶（thumbnails / 视频帧 / chunks / playback，30 天 lifecycle，可重生） |
 | `MINIO_AUDIT_ARCHIVE_BUCKET` | `audit-archive` | v0.10.17 · 审计冷分区归档桶（永久保留，合规相关，建议开启 versioning + object lock） |
+| `MINIO_IMPORT_BUCKET` | `import` | v0.10.27 · 导入预标注产物桶（7 天 lifecycle，短生命周期） |
+| `MINIO_EXPORT_BUCKET` | `export` | v0.10.27 · 导出标注产物桶（7 天 lifecycle，短生命周期） |
 | `ML_BACKEND_STORAGE_HOST` | `172.17.0.1:9000` | v0.9.4 · ML backend 在 docker compose 网内、平台 api 在 host 进程时, SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge 网关地址即可。 Linux: 172.17.0.1:9000; macOS/Win Docker Desktop: host.docker.internal:9000; 生产 (api/sam/minio 同 K8s 网) 留空。 |
 
 ## v0.9.6 · ML Backend 注册表单 URL 默认值预填 hint (avoid 手敲).

@@ -77,7 +77,7 @@ last_reviewed: 2026-05-11
 ## Step 6：导出数据
 
 所有任务 `approved` 后（或达到导出阈值）：
-1. 项目详情 → **导出** → 选择格式（COCO / YOLO / Pascal VOC / Label Studio JSON）
-2. 下载 ZIP 包
+1. 项目详情 → **导出** → 选择格式（COCO / YOLO / AAP JSON）
+2. 导出在后台异步生成，完成后到右上角任务铃下载 ZIP 包（7 天内可反复下载）
 
 详见 [数据导出格式](../reference/export-formats)。

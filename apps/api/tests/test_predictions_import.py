@@ -313,6 +313,86 @@ async def test_import_aap_json_file_path_match(
     assert r.json()["imported"] == 1
 
 
+async def test_import_aap_json_relative_path_match_nested(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    """v0.10.27 导入对称: file_path 带相对目录时按相对路径匹配, 同名跨目录不误匹配.
+
+    库内 task.file_path 带 dataset 前缀 (`{ds}/animals/{kind}/001.jpg`); 外部入参是
+    去前缀的相对路径 (`animals/cat/001.jpg`). 相对路径层应精确命中 cat, 不命中 dog.
+    """
+    user, token = super_admin
+    project, _ = await _seed_project_with_tasks(db_session, user.id, n_tasks=0)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    short = uuid.uuid4().hex[:6]
+    cat_task = Task(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        display_id=f"T-CAT-{short}",
+        file_name="001.jpg",
+        file_path=f"ds{short}/animals/cat/001.jpg",
+        file_type="image",
+        status="pending",
+    )
+    dog_task = Task(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        display_id=f"T-DOG-{short}",
+        file_name="001.jpg",
+        file_path=f"ds{short}/animals/dog/001.jpg",
+        file_type="image",
+        status="pending",
+    )
+    db_session.add_all([cat_task, dog_task])
+    await db_session.flush()
+
+    payload = _aap_envelope(
+        [
+            {
+                "task_match": {"file_path": "animals/cat/001.jpg"},
+                "predictions": [
+                    {
+                        "geometry": {
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
+                        "class_name": "car",
+                        "confidence": 0.5,
+                    }
+                ],
+            }
+        ]
+    )
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=aap_json",
+        files=_upload_files(payload),
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["imported"] == 1
+
+    # 命中 cat, 未误匹配 dog.
+    cat_count = (
+        await db_session.execute(
+            select(func.count(Prediction.id)).where(Prediction.task_id == cat_task.id)
+        )
+    ).scalar()
+    dog_count = (
+        await db_session.execute(
+            select(func.count(Prediction.id)).where(Prediction.task_id == dog_task.id)
+        )
+    ).scalar()
+    assert cat_count == 1
+    assert dog_count == 0
+
+
 async def test_import_aap_json_task_miss(
     httpx_client: httpx.AsyncClient,
     super_admin,

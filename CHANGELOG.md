@@ -22,6 +22,38 @@
 
 ## 最新版本
 
+## [0.10.27] - 2026-05-20
+
+> **导出异步化 + 目录镜像.** 修两个生产级隐患: ① 导出**完全同步**——`_load_data()` 一次性把项目全部 task+annotation 拉进内存、在请求里拼完整 ZIP/JSON 再流式返回, 万级 task 项目内存暴涨 + 请求超时; ② 产物**扁平化丢目录**——YOLO/VOC 用 `file_name` 叶子名写 `labels/{base}.txt`, 不同子目录同名文件(`animals/cat/001.jpg` 与 `animals/dog/001.jpg`)互相**静默覆盖 = 数据丢失**。本期: 导出转 Celery 后台任务(独立 `export` 队列 + 专用 worker)+ 复用 `async_jobs` 追踪 + 产物落 MinIO `export` 桶(7 天 lifecycle)+ 前端任务铃轮询/下载; 产物改为**仅 labels 镜像目录(保留递归子目录)+ `fetch_images.py` 回源脚本**(不打包图片本体, 体积小、尊重用户本地已有数据集); 新增 `export_artifacts` 缓存表(双字段指纹, 同范围+格式+参数且标注未变则瞬时复用); 顺修 COCO/VOC 硬编码 `1920×1280` 改用 `DatasetItem.width/height` 真值; 导入端对称支持相对目录匹配 + CLI `import_images.py` 改递归扫描保留嵌套。本期范围限 **image**, video/lidar 留后续窗口。**不做(仍 defer)**: `POST /annotations/import` round-trip、Task `external_id` 跨实例匹配、video/lidar 导出形态。 → [plan](docs/plans/2026-05-20-v0.10.27-export-import-async-folder-mirroring.md)。
+
+### Added
+
+- **导出异步任务** ([apps/api/app/workers/export.py](apps/api/app/workers/export.py) · [apps/api/app/services/export_packaging.py](apps/api/app/services/export_packaging.py)): Celery `run_export` 照 `batch_predict` 模板(`asyncio.run` + `async_sessionmaker` + `async_jobs` create/mark_running/update_progress/mark_complete); 生成 labels 镜像 ZIP → `put_object` 到 `export` 桶 `image/{project_id}/{job_id}.zip` → result 写 `{download_url, expires_at, object_key, file_count, size_bytes, cache_hit}`。新 `AsyncJobKind.EXPORT`; 前端复用现成 `GET /async-jobs/{id}`, 无新查询端点。
+- **导出产物缓存表 `export_artifacts`** ([apps/api/app/db/models/export_artifact.py](apps/api/app/db/models/export_artifact.py) · [apps/api/app/services/export_cache.py](apps/api/app/services/export_cache.py) · [apps/api/alembic/versions/0081_export_artifacts.py](apps/api/alembic/versions/0081_export_artifacts.py)): `cache_key`(唯一索引) = sha256(scope_id, format, include_attributes, video_frame_mode, **max(annotation.updated_at)**, **count(active)**)——双字段指纹, count 覆盖「删标注 max 不变」漏洞。命中后 `verify_upload` 探活(被 7 天 lifecycle 清掉则删行回退重生成)+ 刷新预签名 URL。新 beat 任务 `purge_expired_export_artifacts`(daily, cleanup 队列)清过期行。
+- **目录镜像回源产物** ([apps/api/app/services/export_packaging.py](apps/api/app/services/export_packaging.py)): YOLO label 按 `{project_id}/{dataset_id}/labels/<相对路径>.txt` 镜像(保留递归子目录, `relative_path_from_file_path` 剥 dataset 前缀); 三格式都附 `data.yaml` / `images_manifest.json`(每图 7 天预签名 URL + expires_at) / `fetch_images.py`(纯 stdlib, 把图片回源到 `images/` 与 labels 平行树, 启动校验过期)。
+- **独立 export worker** ([docker-compose.yml](docker-compose.yml)): 新增 `celery-worker-export` 服务 `-Q export --concurrency=2`, 与预标/媒体处理资源隔离; `celery_app.py` 加 `run_export → export` 队列路由 + include。
+- **`MINIO_IMPORT_BUCKET` / `MINIO_EXPORT_BUCKET` 配置** ([apps/api/app/config.py](apps/api/app/config.py) · [.env.example](.env.example)): 两桶纳入 `ensure_all_buckets` / `list_all_buckets`, 各挂整桶 **7 天** lifecycle。
+- **导出完成/失败通知** ([apps/api/app/workers/export.py](apps/api/app/workers/export.py) · [apps/web/src/components/shell/NotificationsPopover.tsx](apps/web/src/components/shell/NotificationsPopover.tsx)): worker 终态调现成 `NotificationService.notify`(WS 推送 + 持久化 + 偏好静音)发 `export.ready` / `export.failed`(payload 带 `project_display_id` / `format` / `download_url` / `file_count`); 通知面板加类型标签, 点「导出完成」直接用预签名 URL 触发下载。三处终态(缓存命中 / 新生成 / 失败)都发, 通知失败不阻断导出。
+- **`docs:gen-env-vars` 命令** ([package.json](package.json)): 补上漏挂的脚本映射(生成器 `docs-site/scripts/generate-env-vars.mjs` 本就存在), CLAUDE.md §5 引用恢复有效。
+
+### Changed
+
+- **导出端点同步流式 → 异步 job** ([apps/api/app/api/v1/projects.py](apps/api/app/api/v1/projects.py) · [apps/api/app/api/v1/batches.py](apps/api/app/api/v1/batches.py)): `/projects/{id}/export` 与 `/batches/{bid}/export` 由 `GET` 返回 blob 改为 `POST` → 创建 `async_job(kind=export)` + 派发 `run_export.delay` → 202 `{job_id}`(保留 `require_project_visible` 鉴权; VOC 后端分支保留)。
+- **导出前端入队 + 任务铃下载** ([apps/web/src/pages/Dashboard/ExportSection.tsx](apps/web/src/pages/Dashboard/ExportSection.tsx) · [apps/web/src/components/shell/JobsBell.tsx](apps/web/src/components/shell/JobsBell.tsx)): 点导出 → toast「已入队, 右上角任务铃查看」+ 关弹窗(不自动下载); JobsBell 加 `export: 数据导出` 标签, completed 行渲染「下载」链接(预签名 URL, 7 天内可反复点)。`exportProject` / `exportBatch` 改 POST 返回 `{job_id}`, 删旧 blob 下载逻辑; 导出格式下拉移除 **VOC**(`ExportFormat` 类型保留兼容后端契约)。
+- **导入按相对目录匹配 + CLI 递归扫描** ([apps/api/app/services/task_matcher.py](apps/api/app/services/task_matcher.py) · [apps/api/scripts/import_images.py](apps/api/scripts/import_images.py)): `resolve_task` 入参带子目录时前置相对路径精确匹配(`LIKE '%/{rel}'` 吸收 dataset 前缀, 消除同名跨目录误匹配, 匹配不到回退原逻辑); CLI 导入从非递归 `iterdir` 改 `rglob` + `relative_to` 保留嵌套 key。
+- **JobsBell 任务铃显示项目 + 格式** ([apps/web/src/components/shell/JobsBell.tsx](apps/web/src/components/shell/JobsBell.tsx)): 导出 job 标题从单一「数据导出」补充为「数据导出 · {project_display_id} · {格式}」(读现成 `async_job.payload`, 零后端改动), 多个导出任务可区分。
+- **版本号同步到 0.10.27** ([apps/api/app/config.py](apps/api/app/config.py) · [apps/api/pyproject.toml](apps/api/pyproject.toml) · [apps/web/package.json](apps/web/package.json))。
+
+### Fixed
+
+- **COCO/VOC 导出硬编码图片尺寸** ([apps/api/app/services/export.py](apps/api/app/services/export.py)): 像素坐标此前用常量 `IMG_W, IMG_H = 1920, 1280` 计算(真实尺寸其实存在 `DatasetItem.width/height`), 非该尺寸的图片坐标系统性偏差。改用真值, 缺失再回退常量。
+- **YOLO/VOC 导出同名跨目录文件静默覆盖** (见上「目录镜像」): 过去 `labels/{file_name 叶子名}.txt` 让不同子目录同名图的标注互相覆盖丢数据, 镜像目录后按相对路径落盘不再冲突。
+
+### Tests
+
+- **`relative_path_from_file_path` 纯函数单测** ([apps/api/tests/test_export_packaging.py](apps/api/tests/test_export_packaging.py)): 6 例覆盖前缀剥离、同名跨目录不冲突、前缀不匹配保守返回。
+- **相对路径匹配回归** ([apps/api/tests/test_predictions_import.py](apps/api/tests/test_predictions_import.py)): 新增 `test_import_aap_json_relative_path_match_nested` 验证 cat/dog 同名跨目录不误匹配。
+
 ## [0.10.26] - 2026-05-20
 
 > **模型市场扩展二期 · 变体可观测 + 单变体预热 + 容器直连观测.** 把 v0.10.23 `ModelPool`「单容器多变体并存」的能力暴露到模型市场(super admin)。此前 backend `/health` 已返回 `pool`(已加载变体 / cap / 各变体 LRU)与 `cache.buckets`(每变体命中), 但平台 `health_meta()` 只保留 4 个键、未含 `pool`, 这些信号到不了前端; `/reload` 也只热默认变体; 且模型市场**按项目分组**, 没有任何项目注册 backend 时一片空白(哪怕 AI 容器在跑)。本期: ① `health_meta()` 保留 `pool` 键; ② `/reload` 泛化为可选 `{sam_variant, dino_variant}` 预热指定变体; ③ 模型市场每个已注册 backend 加可展开「变体」面板; ④ **新增「容器直连观测」面板**: 与项目注册解耦, env 配 `ML_BACKEND_OBSERVE_URLS` 后直连探测容器的健康/变体目录, 并支持「试启动」(空池时 warm→自动 unload 验证可加载性, 已有变体常驻时只确认不挤显存以免与注册 backend 冲突)。这是 ROADMAP「模型版本对比 / AB 路由 UI」中可落地、不膨胀的一片。**不做(仍 defer)**: 加权 AB 路由(按 task 自动分流打标)、同输入双变体并排对比(工作台级独立 epic)。 → [plan](docs/plans/2026-05-20-v0.10.26-model-market-variant-ops.md)。

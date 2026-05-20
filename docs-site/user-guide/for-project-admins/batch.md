@@ -130,7 +130,7 @@ stateDiagram-v2
 
 ## 批次导出
 
-项目管理员可以按批次导出当前批次内的任务标注。图片项目沿用 COCO / YOLO / Pascal VOC；视频轨迹项目导出 Video JSON。
+项目管理员可以按批次导出当前批次内的任务标注。图片项目沿用 COCO / YOLO / AAP JSON；视频轨迹项目导出 Video JSON。
 
 视频轨迹批次支持两种帧模式：
 

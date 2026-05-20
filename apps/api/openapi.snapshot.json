@@ -14060,7 +14060,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.10.26"
+    "version": "0.10.27"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -21641,8 +21641,8 @@
       }
     },
     "/api/v1/projects/{project_id}/batches/{batch_id}/export": {
-      "get": {
-        "operationId": "export_batch_api_v1_projects__project_id__batches__batch_id__export_get",
+      "post": {
+        "operationId": "export_batch_api_v1_projects__project_id__batches__batch_id__export_post",
         "parameters": [
           {
             "in": "path",
@@ -21700,7 +21700,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {}
@@ -22038,8 +22038,8 @@
       }
     },
     "/api/v1/projects/{project_id}/export": {
-      "get": {
-        "operationId": "export_project_api_v1_projects__project_id__export_get",
+      "post": {
+        "operationId": "export_project_api_v1_projects__project_id__export_post",
         "parameters": [
           {
             "in": "path",
@@ -22089,7 +22089,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {}

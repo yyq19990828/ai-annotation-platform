@@ -27,6 +27,8 @@ const TYPE_LABEL: Record<string, string> = {
   "bug_report.status_changed": "更新了反馈状态",
   "bug_report.reopened": "重新打开了反馈",
   "batch.rejected": "驳回了批次",
+  "export.ready": "导出完成",
+  "export.failed": "导出失败",
 };
 
 interface NotifRowProps {
@@ -44,14 +46,22 @@ function NotifRow({ item, onClick }: NotifRowProps) {
 
   // v0.7.0：batch.rejected 复用同一行渲染，但 payload 字段不同
   const isBatchRejected = item.type === "batch.rejected";
+  // v0.10.27：导出完成/失败复用同一行；payload 含 project_display_id / format / download_url / error
+  const isExport = item.target_type === "export";
   const displayId = isBatchRejected
     ? (payload as { batch_display_id?: string }).batch_display_id || ""
+    : isExport
+    ? (payload as { project_display_id?: string }).project_display_id || ""
     : (payload as { display_id?: string }).display_id || "";
   const title = isBatchRejected
     ? (payload as { batch_name?: string }).batch_name || ""
+    : isExport
+    ? ((payload as { format?: string }).format || "").toUpperCase()
     : (payload as { title?: string }).title || "";
   const snippet = isBatchRejected
     ? (payload as { feedback?: string }).feedback || ""
+    : isExport
+    ? (payload as { error?: string }).error || ""
     : (payload as { snippet?: string }).snippet || "";
 
   const verb = reopen
@@ -145,6 +155,12 @@ export function NotificationsPopover() {
                   batchId: item.target_id,
                   returnTo: currentWorkbenchReturnTo(location),
                 }));
+              }
+            } else if (item.target_type === "export") {
+              // v0.10.27：点导出完成通知 → 用预签名 URL 触发下载（7 天内有效）。
+              const payload = (item.payload || {}) as { download_url?: string };
+              if (payload.download_url) {
+                window.open(payload.download_url, "_blank", "noopener");
               }
             }
             close();

@@ -34,6 +34,7 @@ from app.db.models.notification_preference import NotificationPreference
 from app.db.models.system_setting import SystemSetting
 from app.db.models.api_key import ApiKey
 from app.db.models.async_job import AsyncJob, AsyncJobKind, AsyncJobStatus
+from app.db.models.export_artifact import ExportArtifact
 
 __all__ = [
     "User",
@@ -79,4 +80,5 @@ __all__ = [
     "AsyncJob",
     "AsyncJobKind",
     "AsyncJobStatus",
+    "ExportArtifact",
 ]

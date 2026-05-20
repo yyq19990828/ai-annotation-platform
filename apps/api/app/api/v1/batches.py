@@ -839,7 +839,7 @@ async def list_batch_audit_logs(
     ]
 
 
-@router.get("/{batch_id}/export")
+@router.post("/{batch_id}/export", status_code=202)
 async def export_batch(
     request: Request,
     project_id: uuid.UUID,
@@ -855,7 +855,8 @@ async def export_batch(
     actor: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.export import ExportService, UnsupportedExportError
+    # v0.10.27 · 导出异步化：创建 async_job(kind=export) + 派发 run_export，返回 {job_id}。
+    # VOC 后端保留同步 blob（前端已隐藏）；不删避免破坏 API 契约。
     from app.services.audit import AuditService, AuditAction, export_detail
 
     svc_batch = BatchService(db)
@@ -863,83 +864,14 @@ async def export_batch(
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
 
-    svc = ExportService(db)
     fname = f"{project.display_id}_{batch.display_id}"
 
-    if format == "coco":
-        try:
-            content = await svc.export_coco(
-                project_id,
-                batch_id=batch_id,
-                include_attributes=include_attributes,
-                video_frame_mode=video_frame_mode,
-            )
-        except UnsupportedExportError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        await AuditService.log(
-            db,
-            actor=actor,
-            action=AuditAction.BATCH_EXPORT,
-            target_type="batch",
-            target_id=str(batch_id),
-            request=request,
-            status_code=200,
-            detail=export_detail(
-                actor=actor,
-                request=request,
-                base={
-                    "format": format,
-                    "project_id": str(project_id),
-                    "batch_display_id": batch.display_id,
-                },
-                filter_criteria={
-                    "include_attributes": include_attributes,
-                    "video_frame_mode": video_frame_mode,
-                },
-            ),
-        )
-        await db.commit()
-        suffix = "video_tracks" if project.type_key == "video-track" else "coco"
-        return Response(
-            content=content,
-            media_type="application/json",
-            headers={
-                "Content-Disposition": f"attachment; filename={fname}_{suffix}.json"
-            },
-        )
+    if format == "voc":
+        from app.services.export import ExportService, UnsupportedExportError
 
-    if format == "aap_json":
-        # v0.10.15 · AAP JSON v1.0 无损中间格式 (含 annotations + predictions 双数组).
-        content = await svc.export_aap_json(project_id, batch_id=batch_id)
-        await AuditService.log(
-            db,
-            actor=actor,
-            action=AuditAction.BATCH_EXPORT,
-            target_type="batch",
-            target_id=str(batch_id),
-            request=request,
-            status_code=200,
-            detail=export_detail(
-                actor=actor,
-                request=request,
-                base={
-                    "format": format,
-                    "project_id": str(project_id),
-                    "batch_display_id": batch.display_id,
-                },
-                filter_criteria={},
-            ),
-        )
-        await db.commit()
-        return Response(
-            content=content,
-            media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename={fname}_aap.json"},
-        )
-
-    if format == "yolo":
+        svc = ExportService(db)
         try:
-            data = await svc.export_yolo(
+            data = await svc.export_voc(
                 project_id, batch_id=batch_id, include_attributes=include_attributes
             )
         except UnsupportedExportError as exc:
@@ -952,30 +884,36 @@ async def export_batch(
             target_id=str(batch_id),
             request=request,
             status_code=200,
-            detail=export_detail(
-                actor=actor,
-                request=request,
-                base={
-                    "format": format,
-                    "project_id": str(project_id),
-                    "batch_display_id": batch.display_id,
-                },
-                filter_criteria={"include_attributes": include_attributes},
-            ),
+            detail={
+                "format": format,
+                "project_id": str(project_id),
+                "batch_display_id": batch.display_id,
+            },
         )
         await db.commit()
         return Response(
             content=data,
             media_type="application/zip",
-            headers={"Content-Disposition": f"attachment; filename={fname}_yolo.zip"},
+            headers={"Content-Disposition": f"attachment; filename={fname}_voc.zip"},
         )
 
-    try:
-        data = await svc.export_voc(
-            project_id, batch_id=batch_id, include_attributes=include_attributes
-        )
-    except UnsupportedExportError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    from app.services import async_job as async_job_svc
+    from app.db.models.async_job import AsyncJobKind
+    from app.workers.export import run_export
+
+    job = await async_job_svc.create_job(
+        db,
+        kind=AsyncJobKind.EXPORT.value,
+        user_id=actor.id,
+        project_id=project.id,
+        payload={
+            "format": format,
+            "include_attributes": include_attributes,
+            "video_frame_mode": video_frame_mode,
+            "project_id": str(project_id),
+            "batch_display_id": batch.display_id,
+        },
+    )
     await AuditService.log(
         db,
         actor=actor,
@@ -983,16 +921,31 @@ async def export_batch(
         target_type="batch",
         target_id=str(batch_id),
         request=request,
-        status_code=200,
-        detail={
-            "format": format,
-            "project_id": str(project_id),
-            "batch_display_id": batch.display_id,
-        },
+        status_code=202,
+        detail=export_detail(
+            actor=actor,
+            request=request,
+            base={
+                "format": format,
+                "project_id": str(project_id),
+                "batch_display_id": batch.display_id,
+            },
+            filter_criteria={
+                "include_attributes": include_attributes,
+                "video_frame_mode": video_frame_mode,
+            },
+        ),
     )
     await db.commit()
-    return Response(
-        content=data,
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={fname}_voc.zip"},
+
+    run_export.delay(
+        project_id=str(project_id),
+        batch_id=str(batch_id),
+        format=format,
+        opts={
+            "include_attributes": include_attributes,
+            "video_frame_mode": video_frame_mode,
+        },
+        async_job_id=str(job.id),
     )
+    return {"job_id": str(job.id)}

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # v0.10.24 · 版本号单源真值。FastAPI title version 与 /health version 都读它，
     # 发版只改这一处（+ pyproject.toml / package.json）。运维 scrape /health 拿到的
     # 版本号此前长期 stale（曾硬编码 0.7.6），故收口到 settings。
-    app_version: str = "0.10.26"
+    app_version: str = "0.10.27"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
 
@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     minio_media_cache_bucket: str = "media-cache"
     # v0.10.17 · 审计冷分区归档独立桶。归档后永久保留,合规相关,与运营数据物理隔离。
     minio_audit_archive_bucket: str = "audit-archive"
+    # v0.10.27 · 导入预标注 / 导出标注产物的短生命周期独立桶,各挂整桶 7 天 lifecycle。
+    minio_import_bucket: str = "import"
+    minio_export_bucket: str = "export"
     minio_use_ssl: bool = False
     minio_public_url: str = ""  # if set, replaces the endpoint host in presigned URLs
 

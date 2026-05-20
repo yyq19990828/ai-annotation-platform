@@ -704,7 +704,7 @@ async def remove_member(
     return Response(status_code=204)
 
 
-@router.get("/{project_id}/export")
+@router.post("/{project_id}/export", status_code=202)
 async def export_project(
     request: Request,
     format: str = Query("coco", pattern="^(coco|voc|yolo|aap_json)$"),
@@ -721,17 +721,18 @@ async def export_project(
     actor: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.export import ExportService, UnsupportedExportError
+    # v0.10.27 · 导出异步化：创建 async_job(kind=export) + 派发 run_export，返回 {job_id}。
+    # 状态/下载走 GET /async-jobs/{id}（result.download_url 为 7d 预签名）。
+    # VOC 后端保留同步 blob（前端已隐藏）；不删避免破坏 API 契约。
     from app.services.audit import AuditService, AuditAction, export_detail
 
-    svc = ExportService(db)
+    if format == "voc":
+        from app.services.export import ExportService, UnsupportedExportError
 
-    if format == "coco":
+        svc = ExportService(db)
         try:
-            content = await svc.export_coco(
-                project.id,
-                include_attributes=include_attributes,
-                video_frame_mode=video_frame_mode,
+            data = await svc.export_voc(
+                project.id, include_attributes=include_attributes
             )
         except UnsupportedExportError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -743,89 +744,33 @@ async def export_project(
             target_id=str(project.id),
             request=request,
             status_code=200,
-            detail=export_detail(
-                actor=actor,
-                request=request,
-                base={"format": format, "project_display_id": project.display_id},
-                filter_criteria={
-                    "include_attributes": include_attributes,
-                    "video_frame_mode": video_frame_mode,
-                },
-            ),
-        )
-        await db.commit()
-        suffix = "video_tracks" if project.type_key == "video-track" else "coco"
-        return Response(
-            content=content,
-            media_type="application/json",
-            headers={
-                "Content-Disposition": f"attachment; filename={project.display_id}_{suffix}.json"
-            },
-        )
-
-    if format == "aap_json":
-        # v0.10.15 · AAP JSON v1.0 无损中间格式 (含 annotations + predictions 双数组).
-        content = await svc.export_aap_json(project.id)
-        await AuditService.log(
-            db,
-            actor=actor,
-            action=AuditAction.PROJECT_EXPORT,
-            target_type="project",
-            target_id=str(project.id),
-            request=request,
-            status_code=200,
-            detail=export_detail(
-                actor=actor,
-                request=request,
-                base={"format": format, "project_display_id": project.display_id},
-                filter_criteria={},
-            ),
-        )
-        await db.commit()
-        return Response(
-            content=content,
-            media_type="application/json",
-            headers={
-                "Content-Disposition": f"attachment; filename={project.display_id}_aap.json"
-            },
-        )
-
-    if format == "yolo":
-        try:
-            data = await svc.export_yolo(
-                project.id,
-                include_attributes=include_attributes,
-            )
-        except UnsupportedExportError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        await AuditService.log(
-            db,
-            actor=actor,
-            action=AuditAction.PROJECT_EXPORT,
-            target_type="project",
-            target_id=str(project.id),
-            request=request,
-            status_code=200,
-            detail=export_detail(
-                actor=actor,
-                request=request,
-                base={"format": format, "project_display_id": project.display_id},
-                filter_criteria={"include_attributes": include_attributes},
-            ),
+            detail={"format": format, "project_display_id": project.display_id},
         )
         await db.commit()
         return Response(
             content=data,
             media_type="application/zip",
             headers={
-                "Content-Disposition": f"attachment; filename={project.display_id}_yolo.zip"
+                "Content-Disposition": f"attachment; filename={project.display_id}_voc.zip"
             },
         )
 
-    try:
-        data = await svc.export_voc(project.id, include_attributes=include_attributes)
-    except UnsupportedExportError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    from app.services import async_job as async_job_svc
+    from app.db.models.async_job import AsyncJobKind
+    from app.workers.export import run_export
+
+    job = await async_job_svc.create_job(
+        db,
+        kind=AsyncJobKind.EXPORT.value,
+        user_id=actor.id,
+        project_id=project.id,
+        payload={
+            "format": format,
+            "include_attributes": include_attributes,
+            "video_frame_mode": video_frame_mode,
+            "project_display_id": project.display_id,
+        },
+    )
     await AuditService.log(
         db,
         actor=actor,
@@ -833,17 +778,30 @@ async def export_project(
         target_type="project",
         target_id=str(project.id),
         request=request,
-        status_code=200,
-        detail={"format": format, "project_display_id": project.display_id},
+        status_code=202,
+        detail=export_detail(
+            actor=actor,
+            request=request,
+            base={"format": format, "project_display_id": project.display_id},
+            filter_criteria={
+                "include_attributes": include_attributes,
+                "video_frame_mode": video_frame_mode,
+            },
+        ),
     )
     await db.commit()
-    return Response(
-        content=data,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f"attachment; filename={project.display_id}_voc.zip"
+
+    run_export.delay(
+        project_id=str(project.id),
+        batch_id=None,
+        format=format,
+        opts={
+            "include_attributes": include_attributes,
+            "video_frame_mode": video_frame_mode,
         },
+        async_job_id=str(job.id),
     )
+    return {"job_id": str(job.id)}
 
 
 class PreannotateRequest(BaseModel):

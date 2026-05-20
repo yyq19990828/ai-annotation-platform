@@ -24,6 +24,9 @@ celery_app = Celery(
         "app.workers.signals",
         "app.workers.analytics",
         "app.workers.async_jobs_cleanup",
+        # v0.10.27 · 导出异步化 + 过期产物清理
+        "app.workers.export",
+        "app.workers.export_cleanup",
         # v0.10.25 · worker 心跳上报
         "app.workers.heartbeat",
         # v0.10.25 · predictions 月分区维护（ADR-0006 Stage 2）
@@ -60,6 +63,11 @@ celery_app.conf.update(
         # v0.10.16 · DuckDB 同步 + async_jobs 清理走 cleanup 队列
         "app.workers.analytics.sync_to_duckdb": {"queue": "cleanup"},
         "app.workers.async_jobs_cleanup.purge_old_async_jobs": {"queue": "cleanup"},
+        # v0.10.27 · 导出 worker 独立 export 队列；过期产物清理走 cleanup
+        "app.workers.export.run_export": {"queue": "export"},
+        "app.workers.export_cleanup.purge_expired_export_artifacts": {
+            "queue": "cleanup"
+        },
         # v0.7.6 · audit 异步 INSERT 走独立队列，不与 ml/media 抢资源
         "app.workers.audit.persist_audit_entry": {"queue": "audit"},
         # v0.8.4 · task_events 批量 INSERT 走独立队列
@@ -133,6 +141,11 @@ celery_app.conf.update(
         "purge-old-async-jobs": {
             "task": "app.workers.async_jobs_cleanup.purge_old_async_jobs",
             "schedule": crontab(hour=4, minute=15),
+        },
+        # v0.10.27 · 导出产物缓存清理：每日 04:30 删 expires_at 过期的 export_artifacts 行
+        "purge-expired-export-artifacts": {
+            "task": "app.workers.export_cleanup.purge_expired_export_artifacts",
+            "schedule": crontab(hour=4, minute=30),
         },
         # v0.10.25 · worker 心跳：周期写 Redis（celery:hb:{worker}），/health/celery 读差值。
         "worker-heartbeat": {
