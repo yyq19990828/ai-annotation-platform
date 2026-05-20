@@ -96,6 +96,8 @@ export interface UseWorkbenchHotkeysArgs {
   polygonDraftPoints: [number, number][];
   setPolygonDraftPoints: React.Dispatch<React.SetStateAction<[number, number][]>>;
   submitPolygon: (points: [number, number][]) => void;
+  // v0.10.28 · polyline 复用同一草稿 state，Enter 阈值为 2 顶点。
+  submitPolyline: (points: [number, number][]) => void;
 
   // nudge 提交所用 mutation
   updateMutation: UpdateMutationLike;
@@ -141,7 +143,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     handleStartChangeClass, handleStartBatchChangeClass,
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
-    polygonDraftPoints, setPolygonDraftPoints, submitPolygon,
+    polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
     updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, videoControlsRef,
     isPromptSupported,
     maskEditor, commitMaskAsPolygon, cancelMaskEdit,
@@ -175,17 +177,22 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     nudgeOrigRef.current = new Map();
   }, [nudgeMap, updateMutation, history]);
 
-  // polygon 专用键：Enter / Esc / Backspace
+  // polygon / polyline 专用键：Enter / Esc / Backspace
+  // v0.10.28 · 两者共用 polygonDraftPoints 草稿；polygon Enter 需 ≥3 顶点（闭合），
+  //            polyline Enter 需 ≥2 顶点（不闭合），分别走 submitPolygon / submitPolyline。
   useEffect(() => {
     if (disabled) return;
-    if (s.tool !== "polygon") return;
+    if (s.tool !== "polygon" && s.tool !== "polyline") return;
+    const isPolyline = s.tool === "polyline";
+    const minPts = isPolyline ? 2 : 3;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target;
       if (t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (polygonDraftPoints.length === 0) return;
-      if (e.key === "Enter" && polygonDraftPoints.length >= 3) {
+      if (e.key === "Enter" && polygonDraftPoints.length >= minPts) {
         e.preventDefault(); e.stopPropagation();
-        submitPolygon(polygonDraftPoints);
+        if (isPolyline) submitPolyline(polygonDraftPoints);
+        else submitPolygon(polygonDraftPoints);
         return;
       }
       if (e.key === "Escape") {
@@ -201,7 +208,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [disabled, s.tool, polygonDraftPoints, submitPolygon, setPolygonDraftPoints]);
+  }, [disabled, s.tool, polygonDraftPoints, submitPolygon, submitPolyline, setPolygonDraftPoints]);
 
   // v0.10.8 · I11 · Mask 工具专用键（capture 阶段，先于主 dispatchKey 抢键）：
   //   B → brush 模式  · E → erase 模式  · Enter → commit  · Esc → cancel

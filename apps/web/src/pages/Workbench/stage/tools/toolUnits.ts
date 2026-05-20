@@ -13,6 +13,7 @@ import type { ToolId } from "./index";
 export const TOOL_TO_UNIT: Record<ToolId, ToolUnitId> = {
   box: "bbox",
   polygon: "region",
+  polyline: "polyline",
   mask: "region",
   "smart-point": "ai_interactive",
   "smart-box": "ai_interactive",

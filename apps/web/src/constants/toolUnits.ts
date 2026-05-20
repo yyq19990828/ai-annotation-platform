@@ -84,11 +84,11 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
   {
     id: "polyline",
     label: "折线 (polyline)",
-    hint: "本版未实现, schema 留位",
+    hint: "逐点落点画开放折线;不闭合",
     icon: "polygon",
     tools: ["polyline"],
     dataTypes: ["image", "video"],
-    available: false,
+    available: true,
   },
   {
     id: "region",

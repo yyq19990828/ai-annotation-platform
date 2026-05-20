@@ -19,7 +19,7 @@ import type { CommentCanvasDrawing } from "@/api/comments";
 import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
 import { BlurhashLayer } from "./BlurhashLayer";
-import { KonvaBox, KonvaPolygon } from "./ImageStageShapes";
+import { KonvaBox, KonvaPolygon, KonvaPolyline } from "./ImageStageShapes";
 import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
@@ -546,8 +546,12 @@ export function ImageStage({
   };
 
   const handleStageDblClick = () => {
-    // polygon 模式下双击 → 闭合（≥ 3 点）；否则适应视口
+    // polygon 模式下双击 → 闭合（≥ 3 点）；polyline 模式下双击 → 结束（≥ 2 点，不闭合）；否则适应视口
     if (tool === "polygon" && polygonDraft && polygonDraft.points.length >= 3) {
+      polygonDraft.close();
+      return;
+    }
+    if (tool === "polyline" && polygonDraft && polygonDraft.points.length >= 2) {
       polygonDraft.close();
       return;
     }
@@ -557,7 +561,7 @@ export function ImageStage({
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     onCursorMove(pt && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1 ? pt : null);
-    if (tool === "polygon" && polygonDraft && polygonDraft.points.length > 0) {
+    if ((tool === "polygon" || tool === "polyline") && polygonDraft && polygonDraft.points.length > 0) {
       setPolygonCursor(pt);
     } else if (polygonCursor) {
       setPolygonCursor(null);
@@ -688,7 +692,18 @@ export function ImageStage({
             但与 user 层分离后，user 框的 move/resize 重绘不再连带触发 AI 层重绘。 */}
         <Layer name="ai">
           {aiBoxes.map((b) => (
-            b.polygon && b.polygon.length >= 3 ? (
+            b.polyline && b.polyline.length >= 2 ? (
+              <KonvaPolyline
+                key={b.id}
+                b={b}
+                isAi
+                selected={selSet.has(b.id)}
+                faded={fadedAiIds?.has(b.id) ?? false}
+                imgW={imgW} imgH={imgH} scale={vp.scale}
+                points={b.polyline as Pt[]}
+                onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+              />
+            ) : b.polygon && b.polygon.length >= 3 ? (
               <KonvaPolygon
                 key={b.id}
                 b={b}
@@ -720,6 +735,53 @@ export function ImageStage({
           {visibleSortedUserBoxes.map((b) => {
             const ov = overrideGeom(b.id);
             const display: Annotation = ov ? { ...b, ...ov } : b;
+            // v0.10.28 · polyline 走折线渲染（顶点编辑 / Alt 新增 / Shift 删除，不闭合、无自交检测）。
+            if (display.polyline && display.polyline.length >= 2) {
+              const polyOv = polyOverridePoints(b.id);
+              const livePoints = polyOv ?? (display.polyline as Pt[]);
+              const isOnlySelected = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+              return (
+                <KonvaPolyline
+                  key={b.id}
+                  b={display}
+                  isAi={false}
+                  selected={selSet.has(b.id)}
+                  faded={false}
+                  imgW={imgW} imgH={imgH} scale={vp.scale}
+                  points={livePoints}
+                  editable={isOnlySelected}
+                  occluded={!!b.is_occluded}
+                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onVertexMouseDown={(vidx, e) => {
+                    const cur = (polyOverridePoints(b.id) ?? (b.polyline as Pt[])).slice();
+                    if (e.evt.shiftKey) {
+                      // Shift+点击 → 删除顶点（≤2 顶点拒绝）
+                      if (cur.length <= 2) return;
+                      const next = cur.slice();
+                      next.splice(vidx, 1);
+                      onCommitPolygonGeometry?.(b.id, cur, next);
+                      return;
+                    }
+                    setDrag({ kind: "polyVertex", id: b.id, vidx, start: cur, cur });
+                  }}
+                  onEdgeMouseDown={(edgeIdx, e) => {
+                    if (!e.evt.altKey) return;
+                    const pt = toImg(e.evt.clientX, e.evt.clientY);
+                    if (!pt) return;
+                    const cur = (polyOverridePoints(b.id) ?? (b.polyline as Pt[])).slice();
+                    const next = cur.slice();
+                    next.splice(edgeIdx + 1, 0, [pt.x, pt.y]);
+                    onCommitPolygonGeometry?.(b.id, cur, next);
+                  }}
+                  onBodyMouseDown={isOnlySelected ? (e) => {
+                    const pt = toImg(e.evt.clientX, e.evt.clientY);
+                    if (!pt) return;
+                    const cur = (polyOverridePoints(b.id) ?? (b.polyline as Pt[])).slice();
+                    setDrag({ kind: "polyMove", id: b.id, start: cur, sx: pt.x, sy: pt.y, cur });
+                  } : null}
+                />
+              );
+            }
             // polygon 走多边形渲染（v0.5.4 加顶点编辑 / Alt 新增 / Shift 删除）
             if (display.polygon && display.polygon.length >= 3) {
               const polyOv = polyOverridePoints(b.id);
@@ -854,16 +916,18 @@ export function ImageStage({
 
         {/* overlay 层：绘制预览 + pending 框 + polygon 草稿；不参与 hit-test */}
         <Layer name="overlay" listening={false}>
-          {/* polygon 草稿：已落点 + 跟随光标的预览线段 + 顶点圆点 + 首点高亮（提示可闭合） */}
+          {/* polygon / polyline 草稿：已落点 + 跟随光标的预览线段 + 顶点圆点。
+              polygon 额外渲染半透填充 + 首点高亮（提示可闭合）；polyline 不闭合、无填充。 */}
           {polygonDraft && polygonDraft.points.length > 0 && (() => {
+            const isPolyline = polygonDraft.closed === false;
             const ps = polygonDraft.points;
             const flat: number[] = [];
             for (const [px, py] of ps) flat.push(px * imgW, py * imgH);
             // 加上指向当前光标的预览段
             if (polygonCursor) flat.push(polygonCursor.x * imgW, polygonCursor.y * imgH);
-            const draftColor = classColorForCanvas(activeClass || "polygon");
-            // 首点是否处于"可闭合"距离
-            const canClose = ps.length >= 3 && polygonCursor &&
+            const draftColor = classColorForCanvas(activeClass || (isPolyline ? "polyline" : "polygon"));
+            // 首点是否处于"可闭合"距离（仅 polygon）
+            const canClose = !isPolyline && ps.length >= 3 && polygonCursor &&
               Math.hypot(polygonCursor.x - ps[0][0], polygonCursor.y - ps[0][1]) <= CLOSE_DISTANCE;
             return (
               <>
@@ -873,7 +937,9 @@ export function ImageStage({
                   stroke={draftColor}
                   strokeWidth={1.5 / vp.scale}
                   dash={[4 / vp.scale, 3 / vp.scale]}
-                  fill={hexToRgba(draftColor, 0.10)}
+                  lineCap="round"
+                  lineJoin="round"
+                  fill={isPolyline ? undefined : hexToRgba(draftColor, 0.10)}
                 />
                 {ps.map(([px, py], i) => (
                   <Circle

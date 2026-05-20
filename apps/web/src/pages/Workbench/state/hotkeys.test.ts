@@ -300,9 +300,12 @@ describe("v0.10.5 M4-β · shape 状态位快捷键", () => {
     expect(dispatch({ key: "o" }, { hasSelection: true }))
       .toEqual({ type: "toggleShapeFlag", flag: "is_occluded" });
   });
-  it("无选中 L/H/O → null（不消费）", () => {
-    expect(dispatch({ key: "l" })).toBeNull();
+  it("无选中 H/O → null（不消费）", () => {
     expect(dispatch({ key: "h" })).toBeNull();
     expect(dispatch({ key: "o" })).toBeNull();
+  });
+  // v0.10.28 · 无选中 L → 折线工具（与选中态 L=lock 互补）。
+  it("无选中 L → setTool polyline", () => {
+    expect(dispatch({ key: "l" })).toEqual({ type: "setTool", tool: "polyline" });
   });
 });

@@ -336,3 +336,144 @@ export function KonvaPolygon({
     </Group>
   );
 }
+
+interface KonvaPolylineProps {
+  b: Annotation;
+  isAi: boolean;
+  selected: boolean;
+  faded: boolean;
+  /** v0.10.5 M4-β · I15 occluded：渲染为虚线 + 半透。 */
+  occluded?: boolean;
+  imgW: number;
+  imgH: number;
+  scale: number;
+  onClick: (e?: Konva.KonvaEventObject<MouseEvent>) => void;
+  /** 折线顶点（归一化，≥2 点，不闭合）。 */
+  points: Pt[];
+  editable?: boolean;
+  onVertexMouseDown?: (vidx: number, e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onEdgeMouseDown?: (edgeIdx: number, e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onBodyMouseDown?: ((e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
+}
+
+/**
+ * v0.10.28 · 折线 (polyline) 渲染：Konva <Line closed={false}>，无填充、无首尾连边、无自交检测。
+ * 顶点拖拽 / Alt 边插点 / Shift 删点的交互与 KonvaPolygon 一致，但边集合不环绕 (0..n-2)。
+ */
+export function KonvaPolyline({
+  b, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
+  points,
+  editable,
+  onVertexMouseDown,
+  onEdgeMouseDown,
+  onBodyMouseDown,
+}: KonvaPolylineProps) {
+  const color = classColorForCanvas(b.cls);
+  const sw = (selected ? 2 : 1.5) / scale;
+  const labelFontSize = BOX_LABEL_FONT_PX / scale;
+  const labelText = isAi
+    ? `✦ ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`
+    : displayClassName(b.cls);
+  const ps: Pt[] = points;
+  const flat: number[] = [];
+  for (const [px, py] of ps) flat.push(px * imgW, py * imgH);
+
+  return (
+    <Group>
+      <Line
+        points={flat}
+        closed={false}
+        stroke={color}
+        strokeWidth={sw}
+        lineCap="round"
+        lineJoin="round"
+        dash={isAi || occluded ? [4 / scale, 3 / scale] : undefined}
+        opacity={faded ? 0.35 : occluded ? 0.5 : 1}
+        hitStrokeWidth={10 / scale}
+        shadowEnabled={selected && !faded}
+        shadowColor={color}
+        shadowBlur={8 / scale}
+        shadowOpacity={0.4}
+        onClick={(e) => { e.cancelBubble = true; onClick(e); }}
+        onMouseDown={(e) => {
+          if (!editable || !onBodyMouseDown || e.evt.button !== 0) return;
+          e.cancelBubble = true;
+          onBodyMouseDown(e);
+        }}
+        onMouseEnter={(e) => {
+          const stage = e.target.getStage();
+          if (stage && editable && onBodyMouseDown) stage.container().style.cursor = "move";
+        }}
+        onMouseLeave={(e) => {
+          const stage = e.target.getStage();
+          if (stage) stage.container().style.cursor = "";
+        }}
+      />
+      {flat.length >= 2 && (
+        <Label x={flat[0]} y={flat[1] - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+          <Tag fill={color} cornerRadius={3 / scale} />
+          <Text
+            text={labelText}
+            fill="white"
+            fontSize={labelFontSize}
+            padding={BOX_LABEL_PAD_PX / scale}
+            fontFamily="var(--font-sans, sans-serif)"
+          />
+        </Label>
+      )}
+
+      {/* 折线边：0..n-2（不环绕）。Alt+点击在该段插入顶点。 */}
+      {editable && onEdgeMouseDown && ps.slice(0, -1).map((a, i) => {
+        const c = ps[i + 1];
+        return (
+          <Line
+            key={`edge-${i}`}
+            points={[a[0] * imgW, a[1] * imgH, c[0] * imgW, c[1] * imgH]}
+            stroke="rgba(0,0,0,0)"
+            strokeWidth={10 / scale}
+            hitStrokeWidth={10 / scale}
+            onMouseDown={(e) => {
+              if (!e.evt.altKey) return;
+              e.cancelBubble = true;
+              onEdgeMouseDown(i, e);
+            }}
+            onMouseEnter={(e) => {
+              if (!e.evt.altKey) return;
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = "copy";
+            }}
+            onMouseLeave={(e) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = "";
+            }}
+          />
+        );
+      })}
+
+      {editable && onVertexMouseDown && ps.map(([px, py], i) => (
+        <Circle
+          key={`v-${i}`}
+          x={px * imgW}
+          y={py * imgH}
+          radius={6 / scale}
+          hitStrokeWidth={9 / scale}
+          fill="white"
+          stroke={color}
+          strokeWidth={1.5 / scale}
+          onMouseDown={(e) => {
+            e.cancelBubble = true;
+            onVertexMouseDown(i, e);
+          }}
+          onMouseEnter={(e) => {
+            const stage = e.target.getStage();
+            if (stage) stage.container().style.cursor = e.evt.shiftKey ? "not-allowed" : "grab";
+          }}
+          onMouseLeave={(e) => {
+            const stage = e.target.getStage();
+            if (stage) stage.container().style.cursor = "";
+          }}
+        />
+      ))}
+    </Group>
+  );
+}
