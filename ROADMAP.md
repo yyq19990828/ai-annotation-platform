@@ -30,10 +30,7 @@
 - **`useWorkbenchShellModel` 装配 hook**（P3，触发条件）：WorkbenchShell 仍 1210 行；触发条件 Shell 再次超过 900 行（v0.10.18 后续观察）。
 
 ### 等业务规模 / 监控触发（先观察、不做）
-- **predictions 月分区 Stage 2**：单月 INSERT > 100k 或 总行数 > 1M（ADR-0006）
-- **batch_summary stored 列**：当前 GROUP BY 性能未到瓶颈（v0.7.6 评估推迟）
-- **审计日志归档物化**：v0.8.1 已落 partition + Celery beat archive，AuditMiddleware 队列化已完成；冷数据数据量未到 1M 行
-- **`/health/celery` 真实心跳秒数**：当前 round-trip 近似为 0；分钟级新鲜度待客户提需求
+- **审计日志归档物化视图**：partition + archive + 冷数据回源（`/audit-logs/archives`）已落（v0.10.25）；剩月度汇总 BI 物化视图，等 10M+ 行触发。
 - **OAuth2 / SSO**：等具体客户驱动（企业场景需求触发再做）
 
 ### 等独立 epic（体量大、不适合塞进收尾版）
@@ -113,9 +110,7 @@
 
 ### 后续观察项（仍 open）
 
-- **standalone batch_summary stored 列**：v0.7.6 评估后推迟，触发点 8 处维护成本高 + GROUP BY 未到瓶颈。监控触发再做（P3）.
 - **getting-started 与 SoT 漂移**：文档站硬编码快捷键如再漂移可考虑给 .md 内联 `` `<键>` `` 建一份从 hotkeys.ts 推导的 ESLint/markdownlint 规则；优先级低，等漂移触发.
-- **`/health/celery` 心跳秒数占位**：worker 当前「在线/不在线」二元够用；要真实秒数需 broker 侧报告（kombu / rabbitmq events），分钟级新鲜度待客户提需求（P3）.
 
 ---
 
@@ -132,7 +127,7 @@
 
 ### 性能 / 扩展
 - **Annotation 列表前端切换 keyset 分页**：v0.7.6 已落后端新端点 `GET /tasks/{id}/annotations/page?limit&cursor` + 复合索引；前端 `useAnnotations` 仍用旧数组端点（cap=2000），改 useInfiniteQuery 推迟到 1000+ 框监控触发。
-- **Predictions 表分区**：v0.7.6 已落 Stage 1（`ix_predictions_created_at` 索引）+ ADR-0006 设计 Stage 2 完整 RANGE(created_at) 月分区。Stage 2 触发条件：单月 INSERT > 100k 或 总行数 > 1M（FK 复合化代价 + annotations 表迁移成本）。
+- **Predictions 表分区生产执行**：Stage 1 + Stage 2 迁移（0080）均已落（dev 已应用，v0.10.25）；生产侧按阈值（单月 INSERT > 100k 或总行数 > 1M）执行 `alembic upgrade` 即可，迁移已 battle-tested。
 
 ### 测试 / 开发体验
 - **前端单元测试 — 页面级覆盖**：vitest + MSW 基座 v0.7.4；v0.8.5 推到 25.28% / 阈值 25；v0.8.7 因引入 8 个新组件回退到 22.04% / 阈值临时降到 22；**v0.8.8 推回 25.17% / 阈值 25**（5 个新 test 文件 ~35 case：turnstile / useCanvasDraftPersistence / RejectReasonModal / FailedPredictionsPage / useNotificationSocket / AnnotationHistoryTimeline）。下阶段目标 25→30：补 `pages/Projects/sections/BatchesSection`（948 行）/ `GeneralSection`（433 行）/ `DatasetsSection`（395 行）/ `AuditPage` / `WorkbenchShell` 关键 hook（`ProjectSettingsPage` shell 自身 v0.9.x 已拆到 181 行，无业务逻辑可测）。
@@ -239,8 +234,6 @@
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
 | **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
 | **P3** | 截图 fixture 实际重跑 (v0.10.18 已落 prepare 脚本) | v0.10.18 已落地 `page.route` mock 注入式 prepare; maintainer 跑 `pnpm exec playwright test --config=playwright.screenshots.config.ts --project=desktop-light --grep "ai-pre/history-search\|bbox/iou\|bbox/bulk-edit"` 验证 (`ai-pre/empty-alias` 在 PromptComposer 深层 modal 流, 留作手截) | — |
-| **P3** | predictions 月分区 Stage 2 完整迁移 | ADR-0006；触发条件单月 INSERT > 100k 或 总行数 > 1M | [0006](docs/adr/0006-predictions-partition-by-month.md) |
-| **P3** | projects.batch_summary stored 列 | v0.7.6 评估后推迟；触发点 8 处维护成本高，当前 GROUP BY 性能未到瓶颈 | — |
 | **P3** | 前端单测从 30 推到 35 | v0.9.14 实测 30.30%；下阶段补 `BatchesSection` 完整交互（创建/bulk/逆向迁移/看板）+ `WorkbenchShell` 关键 hook + `useBatchEventsSocket` 端到端 | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
@@ -250,7 +243,7 @@
 | **P3** | I4/I12/I18 epic 续作余 (v0.10.21 收尾) | v0.10.20 已落 I4 任务级评论 POST + I12 group 折叠/batch banner + I18 IssueLayer + ADR-0027 第二段双写; v0.10.21 落 I4 笔画 timeline + 任务级 feedback patch/delete UI; 剩独立 epic 处理: ADR-0027 第三段切单源 (legacy-table-retirement) + DiscussionPanel 完整拆分 (无 UX 增量) + IssueLayer video frame pin | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | `polyline` 工具实现 | v0.10.17 schema 与 UI 留位置灰; 车道线 / 折线段需求出现时启动 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
-| **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
+| **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 | **P3** | Workbench Shell 拆分后续精简（v0.10.18 部分收口） | v0.10.18 已落 `WorkbenchStageHostProps` JSDoc 分组 + `WorkbenchLayout.test.tsx` / `WorkbenchStageHost.test.tsx` 共 6 例 focused render tests; 剩 props 嵌套类型重构 (call-site 改造, 触发条件 Shell 再次膨胀) + `useWorkbenchShellModel` (Shell 仍 1210 行, 未破 900) 未做 | [0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md) |
 
 ---

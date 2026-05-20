@@ -10,6 +10,7 @@ from app.db.models.task_lock import TaskLock, AnnotationDraft
 from app.db.models.task_event import TaskEvent
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_comment import AnnotationComment
+from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.dataset import (
     Dataset,
     DatasetItem,
@@ -49,6 +50,7 @@ __all__ = [
     "TaskEvent",
     "Annotation",
     "AnnotationComment",
+    "AnnotationFeedback",
     "Dataset",
     "DatasetItem",
     "ProjectDataset",

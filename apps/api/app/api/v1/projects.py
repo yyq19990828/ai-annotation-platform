@@ -89,30 +89,16 @@ async def _serialize_project(
         )
         ai_completed = int(ai_row.scalar() or 0)
 
+    # v0.10.25 · 直接读物化列 batch_summary (迁移 0079 + _sync_project_counters 维护).
     if batch_summary_lookup is not None:
         batch_summary = batch_summary_lookup.get(
             project.id, {"total": 0, "assigned": 0, "in_review": 0}
         )
     else:
-        from app.db.models.task_batch import TaskBatch
-
-        bs_row = (
-            await db.execute(
-                select(
-                    func.count().label("total"),
-                    func.count()
-                    .filter(TaskBatch.annotator_id.is_not(None))
-                    .label("assigned"),
-                    func.count()
-                    .filter(TaskBatch.status == "reviewing")
-                    .label("in_review"),
-                ).where(TaskBatch.project_id == project.id)
-            )
-        ).one()
-        batch_summary = {
-            "total": int(bs_row.total),
-            "assigned": int(bs_row.assigned),
-            "in_review": int(bs_row.in_review),
+        batch_summary = project.batch_summary or {
+            "total": 0,
+            "assigned": 0,
+            "in_review": 0,
         }
 
     data = {c.name: getattr(project, c.name) for c in project.__table__.columns}
@@ -164,11 +150,14 @@ async def list_projects(
 
     # v0.7.0：批量预查 ai_completed_tasks 避免 N+1 — 单 GROUP BY 查询
     from app.db.models.annotation import Annotation
-    from app.db.models.task_batch import TaskBatch
 
     project_ids = [p.id for p in projects]
     ai_lookup: dict[uuid.UUID, int] = {}
-    bs_lookup: dict[uuid.UUID, dict] = {}
+    # v0.10.25 · batch_summary 改读物化列 (迁移 0079), 直接从已加载的 project 取.
+    bs_lookup: dict[uuid.UUID, dict] = {
+        p.id: (p.batch_summary or {"total": 0, "assigned": 0, "in_review": 0})
+        for p in projects
+    }
     if project_ids:
         ai_rows = (
             await db.execute(
@@ -185,32 +174,6 @@ async def list_projects(
             )
         ).all()
         ai_lookup = {row[0]: int(row[1]) for row in ai_rows}
-
-        # batch_summary：每项目一行，{total, assigned, in_review}
-        bs_rows = (
-            await db.execute(
-                select(
-                    TaskBatch.project_id,
-                    func.count().label("total"),
-                    func.count()
-                    .filter(TaskBatch.annotator_id.is_not(None))
-                    .label("assigned"),
-                    func.count()
-                    .filter(TaskBatch.status == "reviewing")
-                    .label("in_review"),
-                )
-                .where(TaskBatch.project_id.in_(project_ids))
-                .group_by(TaskBatch.project_id)
-            )
-        ).all()
-        bs_lookup = {
-            row[0]: {
-                "total": int(row[1]),
-                "assigned": int(row[2]),
-                "in_review": int(row[3]),
-            }
-            for row in bs_rows
-        }
 
     return [
         await _serialize_project(

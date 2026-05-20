@@ -14,6 +14,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import MetaData
 
+import app.db.models  # noqa: F401 · 确保全部 model 注册进 Base.metadata（消除导入顺序偶发 drift）
 from app.db.base import Base
 
 
@@ -46,11 +47,19 @@ async def test_models_match_database(test_engine, apply_migrations):
     audit_partitions = {
         t for t in reflected.tables if t.startswith("audit_logs_y") and len(t) >= 18
     }
+    # v0.10.25 · 排除 predictions 月 RANGE 分区子表（predictions_y2026m05 / predictions_default
+    # 等），同 audit_logs 子分区，是 PG 物理分区不在 ORM 模型层注册（用 predictions 父表即可）。
+    prediction_partitions = {
+        t
+        for t in reflected.tables
+        if t.startswith("predictions_y") or t == "predictions_default"
+    }
     db_only_tables = (
         set(reflected.tables.keys())
         - set(Base.metadata.tables.keys())
         - {"alembic_version"}
         - audit_partitions
+        - prediction_partitions
     )
     if db_only_tables:
         drift.append(

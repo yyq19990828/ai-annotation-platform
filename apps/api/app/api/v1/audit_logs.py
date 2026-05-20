@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, outerjoin, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,13 @@ from app.deps import get_db, require_roles
 from app.db.enums import UserRole
 from app.db.models.audit_log import AuditLog
 from app.db.models.user import User
-from app.schemas.audit import AuditLogList, AuditLogOut
+from app.schemas.audit import (
+    AuditArchiveOut,
+    AuditArchiveRowsOut,
+    AuditLogList,
+    AuditLogOut,
+)
+from app.services.audit_partition_service import AuditPartitionService
 
 router = APIRouter()
 
@@ -140,6 +146,44 @@ async def list_audit_logs(
         page=page,
         page_size=page_size,
         next_cursor=next_cursor,
+    )
+
+
+@router.get("/archives", response_model=list[AuditArchiveOut])
+async def list_audit_archives(
+    _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+):
+    """列出已归档到 MinIO 冷存储的审计月份（合规回源前置查询）。
+
+    无归档对象时返回空列表。
+    """
+    return AuditPartitionService.list_archives()
+
+
+@router.get("/archives/{year}/{month}", response_model=AuditArchiveRowsOut)
+async def read_audit_archive(
+    year: int = Path(..., ge=2000, le=9999),
+    month: int = Path(..., ge=1, le=12),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    _: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
+):
+    """回源读取指定月份的归档 jsonl.gz，解压解析后分页返回归档行。
+
+    对象不存在 → 404。
+    """
+    rows = AuditPartitionService.read_archive_rows(year, month)
+    if rows is None:
+        raise HTTPException(
+            status_code=404, detail=f"未找到归档对象: {year}/{month:02d}.jsonl.gz"
+        )
+    return AuditArchiveRowsOut(
+        items=rows[offset : offset + limit],
+        total=len(rows),
+        limit=limit,
+        offset=offset,
+        year=year,
+        month=month,
     )
 
 

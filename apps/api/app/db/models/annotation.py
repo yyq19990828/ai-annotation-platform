@@ -40,9 +40,9 @@ class Annotation(Base):
     class_name: Mapped[str] = mapped_column(String(100), nullable=False)
     geometry: Mapped[dict] = mapped_column(JSONB, nullable=False)
     confidence: Mapped[float | None] = mapped_column(Float)
-    parent_prediction_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("predictions.id")
-    )
+    # v0.10.25 · ADR-0006 Stage 2：predictions 改分区表后此列降级为软引用（无 DB FK）。
+    # 业务侧已手动管理（删 prediction 前先 NULL），大表上重建复合 FK 收益低、锁表代价高。
+    parent_prediction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     parent_annotation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("annotations.id")
     )

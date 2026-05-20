@@ -18,6 +18,7 @@ import json
 import logging
 from datetime import date, datetime, timezone
 
+from botocore.exceptions import ClientError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -191,6 +192,67 @@ class AuditPartitionService:
             "archive_keys": archive_keys,
             "total_rows": total_rows,
         }
+
+
+    @staticmethod
+    def list_archives() -> list[dict]:
+        """列出 audit-archive 桶内已归档的月份。
+
+        object key 形如 ``{YYYY}/{MM}.jsonl.gz``，返回按时间倒序的
+        [{year, month, object_key, size_bytes, archived_at}]。
+        """
+        bucket = storage_service.audit_archive_bucket
+        out: list[dict] = []
+        for obj in storage_service.list_objects("", bucket=bucket):
+            key = obj["key"]
+            if key.endswith("/") or not key.endswith(".jsonl.gz"):
+                continue
+            try:
+                year_str, fname = key.split("/", 1)
+                month_str = fname.removesuffix(".jsonl.gz")
+                year, month = int(year_str), int(month_str)
+            except (ValueError, IndexError):
+                logger.warning("skip non-archive key: %s", key)
+                continue
+            lm = obj.get("last_modified")
+            out.append(
+                {
+                    "year": year,
+                    "month": month,
+                    "object_key": key,
+                    "size_bytes": int(obj["size"]),
+                    "archived_at": lm.isoformat() if lm else None,
+                }
+            )
+        out.sort(key=lambda x: (x["year"], x["month"]), reverse=True)
+        return out
+
+    @staticmethod
+    def read_archive_rows(year: int, month: int) -> list[dict] | None:
+        """回源读取并解压指定月份的 jsonl.gz，逐行解析成 dict 列表。
+
+        对象不存在返回 None。最末行的 ``_partition_meta`` 行也作为普通行返回。
+        """
+        bucket = storage_service.audit_archive_bucket
+        object_key = f"{year}/{month:02d}.jsonl.gz"
+        try:
+            resp = storage_service.client.get_object(Bucket=bucket, Key=object_key)
+            raw = resp["Body"].read()
+        except storage_service.client.exceptions.NoSuchKey:
+            return None
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+                return None
+            raise
+
+        text_data = gzip.decompress(raw).decode("utf-8")
+        rows: list[dict] = []
+        for line in text_data.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            rows.append(json.loads(line))
+        return rows
 
 
 def _serialize_row(row: dict) -> str:

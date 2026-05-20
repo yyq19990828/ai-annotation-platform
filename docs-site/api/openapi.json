@@ -2628,6 +2628,93 @@
         "title": "AttributeSchema",
         "type": "object"
       },
+      "AuditArchiveOut": {
+        "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "month": {
+            "title": "Month",
+            "type": "integer"
+          },
+          "object_key": {
+            "title": "Object Key",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "month",
+          "object_key"
+        ],
+        "title": "AuditArchiveOut",
+        "type": "object"
+      },
+      "AuditArchiveRowsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "month": {
+            "title": "Month",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "year",
+          "month"
+        ],
+        "title": "AuditArchiveRowsOut",
+        "type": "object"
+      },
       "AuditDetail": {
         "additionalProperties": true,
         "description": "通用审计 detail：所有 23 种 action 的 detail_json shape。\n\ncommon：所有写请求都带 request_id（middleware 注入）\n业务字段：随 action 不同而不同；用 extra=\"allow\" 容纳，\n几个高频字段单列出来好让 codegen 生成强类型 hint。\n\n后续按需要把高频 action 拆成自己的 BaseModel + discriminated union。",
@@ -13669,7 +13756,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.10.24"
+    "version": "0.10.25"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -15307,6 +15394,121 @@
           }
         ],
         "summary": "List Audit Logs",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/audit-logs/archives": {
+      "get": {
+        "description": "列出已归档到 MinIO 冷存储的审计月份（合规回源前置查询）。\n\n无归档对象时返回空列表。",
+        "operationId": "list_audit_archives_api_v1_audit_logs_archives_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditArchiveOut"
+                  },
+                  "title": "Response List Audit Archives Api V1 Audit Logs Archives Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Audit Archives",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/audit-logs/archives/{year}/{month}": {
+      "get": {
+        "description": "回源读取指定月份的归档 jsonl.gz，解压解析后分页返回归档行。\n\n对象不存在 → 404。",
+        "operationId": "read_audit_archive_api_v1_audit_logs_archives__year___month__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "year",
+            "required": true,
+            "schema": {
+              "maximum": 9999,
+              "minimum": 2000,
+              "title": "Year",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "maximum": 12,
+              "minimum": 1,
+              "title": "Month",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditArchiveRowsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Audit Archive",
         "tags": [
           "audit"
         ]

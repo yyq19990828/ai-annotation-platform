@@ -694,6 +694,26 @@ class BatchService:
         project.completed_tasks = row.completed
         project.review_tasks = row.review
         project.in_progress_tasks = row.in_progress
+
+        # v0.10.25 · 同步 batch_summary 物化列 (取代 list_projects 实时 GROUP BY)
+        bs_row = (
+            await self.db.execute(
+                select(
+                    func.count().label("total"),
+                    func.count()
+                    .filter(TaskBatch.annotator_id.is_not(None))
+                    .label("assigned"),
+                    func.count()
+                    .filter(TaskBatch.status == "reviewing")
+                    .label("in_review"),
+                ).where(TaskBatch.project_id == project_id)
+            )
+        ).one()
+        project.batch_summary = {
+            "total": int(bs_row.total),
+            "assigned": int(bs_row.assigned),
+            "in_review": int(bs_row.in_review),
+        }
         await self.db.flush()
 
     # ── Auto-transitions ───────────────────────────────────────────────────

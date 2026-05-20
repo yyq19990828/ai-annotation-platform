@@ -1256,7 +1256,10 @@ async def reject_prediction(
     驳回是软操作: prediction 行仍在库中, 仅在该数组追加被拒下标 (去重).
     """
     _assert_task_editable(await _load_task_or_404(db, task_id))
-    pred = await db.get(Prediction, prediction_id)
+    # v0.10.25 · predictions 复合 PK (id, created_at) 后不能用 db.get(单值)，改按 id 查。
+    pred = (
+        await db.execute(select(Prediction).where(Prediction.id == prediction_id))
+    ).scalar_one_or_none()
     if not pred or pred.task_id != task_id:
         raise HTTPException(status_code=404, detail="Prediction not found")
     total_shapes = len(pred.result or [])

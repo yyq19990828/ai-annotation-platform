@@ -1,6 +1,6 @@
 # 0006 — predictions 表按月 RANGE 分区
 
-- **Status:** Accepted（设计完成 · 真正迁移延期到行数 > 1M）
+- **Status:** Accepted · Stage 1 已落（v0.7.6, 0031）· **Stage 2 v0.10.25 提前实现（迁移 0080，dev 已应用）**，生产侧仍按阈值触发执行
 - **Date:** 2026-05-06
 - **Deciders:** core team
 - **Supersedes:** —

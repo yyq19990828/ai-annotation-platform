@@ -81,6 +81,11 @@ class Project(Base):
     in_progress_tasks: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0", default=0
     )
+    # v0.10.25 · batch 聚合物化列 {total, assigned, in_review}; 由
+    # batch._sync_project_counters 写时维护, 取代 list_projects 的实时 GROUP BY.
+    batch_summary: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}", default=dict
+    )
     due_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

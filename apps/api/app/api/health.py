@@ -107,14 +107,34 @@ def _check_celery() -> dict:
             stats = inspect.stats() or {}
         except Exception:
             stats = {}
+        # v0.10.25 · 心跳新鲜度：beat 任务 publish_worker_heartbeat 周期把 unix 时间戳
+        # 写进 Redis（key celery:hb:{worker}，worker 名与 ping().keys() 同源）。这里同步读
+        # 同名 key 算 now - ts。读 Redis 失败整体降级为 None，不影响 /health 其它统计。
+        import redis  # noqa: PLC0415
+
+        from app.workers.heartbeat import HEARTBEAT_KEY_PREFIX  # noqa: PLC0415
+
+        heartbeats: dict[str, float | None] = {}
+        try:
+            r = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=3)
+            now = time.time()
+            for name in ping.keys():
+                raw = r.get(f"{HEARTBEAT_KEY_PREFIX}{name}")
+                heartbeats[name] = (now - float(raw)) if raw is not None else None
+            r.close()
+        except Exception:
+            heartbeats = {}
+
         workers_payload = []
         for name in sorted(ping.keys()):
-            # ping 不带 timestamp，用「当前响应时刻」作 0 秒近似（broker 对 inspect 已是 round trip）
-            CELERY_WORKER_HEARTBEAT_SECONDS.labels(worker=name).set(0)
+            last = heartbeats.get(name)
+            # 仅在有真实心跳值时填 Gauge，无值不 set 避免误报 0。
+            if last is not None:
+                CELERY_WORKER_HEARTBEAT_SECONDS.labels(worker=name).set(last)
             workers_payload.append(
                 {
                     "name": name,
-                    "last_heartbeat_seconds_ago": 0,
+                    "last_heartbeat_seconds_ago": last,
                     "pool_max": (stats.get(name, {}).get("pool", {}) or {}).get(
                         "max-concurrency"
                     ),

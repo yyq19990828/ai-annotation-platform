@@ -168,7 +168,12 @@ class AnnotationService:
         - shape_index=i:    仅采纳第 i 个 shape (用于画布单点"采纳"按钮, 避免一键采纳波及同 prediction 下其它框).
           每条 annotation 在 attributes 里写入 _shape_index, 让前端能按 (predictionId, shapeIndex) 双键判定.
         """
-        prediction = await self.db.get(Prediction, prediction_id)
+        # v0.10.25 · predictions 复合 PK (id, created_at) 后不能用 db.get(单值)，改按 id 查。
+        prediction = (
+            await self.db.execute(
+                select(Prediction).where(Prediction.id == prediction_id)
+            )
+        ).scalar_one_or_none()
         if not prediction:
             return None
 

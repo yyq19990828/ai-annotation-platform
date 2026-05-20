@@ -22,6 +22,27 @@
 
 ## 最新版本
 
+## [0.10.25] - 2026-05-20
+
+> **业务规模 / 监控触发项提前布局.** 把 ROADMAP「等业务规模 / 监控触发(先观察、不做)」一节积压的 4 项**提前**做成可上线 / 可上手的就绪形态, 不等阈值真正触发: ① predictions 按月 RANGE 分区(ADR-0006 Stage 2), dev 已应用验证, 生产侧仍按阈值触发执行但迁移已 battle-tested; ② `projects.batch_summary` 从实时 GROUP BY 改物化列(写时维护); ③ 审计归档冷数据查询回源(partition+archive 框架已闭环, 补 MinIO 回源端点); ④ `/health/celery` worker 心跳从硬编码 `0` 改真实秒数(beat 写 Redis + health 读差值)。**不做**: Celery 全局 task 超时 / 归档物化视图 / predictions 生产强制执行 —— 详见 plan。 → [plan](docs/plans/2026-05-20-v0.10.25-scale-monitoring-prep.md)。
+
+### Added
+
+- **predictions 月分区自动维护** ([apps/api/app/services/prediction_partition_service.py](apps/api/app/services/prediction_partition_service.py) · [apps/api/app/workers/prediction_partition.py](apps/api/app/workers/prediction_partition.py)): 新增 `ensure_future_prediction_partitions` beat 任务(每月 25 日 03:30 UTC), 提前补建未来 3 个月分区, 与 audit_logs 分区维护同构。
+- **审计归档查询回源端点** ([apps/api/app/api/v1/audit_logs.py](apps/api/app/api/v1/audit_logs.py)): `GET /audit-logs/archives`(列出已归档月份) + `GET /audit-logs/archives/{year}/{month}`(回源解压 jsonl.gz 分页返回), 均 super_admin only。归档冷数据(此前只写入 MinIO 无端点可读)现可合规回源。
+- **worker 心跳 beat 任务** ([apps/api/app/workers/heartbeat.py](apps/api/app/workers/heartbeat.py)): `publish_worker_heartbeat` 周期(默认 30s, `WORKER_HEARTBEAT_INTERVAL_SECONDS` 可配)把 worker node 名 + unix 时间戳 SETEX 写 Redis(`celery:hb:{worker}`, TTL=间隔×3)。
+
+### Changed
+
+- **predictions 改按月 RANGE 分区** (ADR-0006 Stage 2 · 迁移 [0080](apps/api/alembic/versions/0080_predictions_partition.py)): PK `id → (id, created_at)`(分区键必须进 PK), 含 `predictions_default` 兜底分区(吸收回填 / 导入 / backdate 等超范围行)。`prediction_metas` 加冗余 `prediction_created_at` 列 + 复合 FK 指向 `predictions(id, created_at)`; `annotations.parent_prediction_id` 降级为软引用(无 DB FK, 大表上重建复合 FK 收益低、业务侧已手动管理)。`db.get(Prediction, id)` 调用点(tasks.py / annotation.py)改按 id select。
+- **`projects.batch_summary` 改物化列** (迁移 [0079](apps/api/alembic/versions/0079_project_batch_summary.py)): 新增 JSONB 列, 由 `BatchService._sync_project_counters()` 写时维护(8 个触发点全部汇入此处), `list_projects` / `get_project` 删实时 GROUP BY 改读列。
+- **`/health/celery` worker 心跳改真实秒数** ([apps/api/app/api/health.py](apps/api/app/api/health.py)): `last_heartbeat_seconds_ago` 与 Prometheus Gauge `CELERY_WORKER_HEARTBEAT_SECONDS` 从硬编码 `0` 改为读 Redis 心跳 key 算 `now - ts`(无 key → None, 不再误报 0)。
+- **版本号同步到 0.10.25** ([apps/api/app/config.py](apps/api/app/config.py) · [apps/api/pyproject.toml](apps/api/pyproject.toml) · [apps/web/package.json](apps/web/package.json))。
+
+### Fixed
+
+- **`annotation_feedbacks` model 漏注册** ([apps/api/app/db/models/__init__.py](apps/api/app/db/models/__init__.py)): v0.10.19 加表时未把 `AnnotationFeedback` 加进模型注册表, 导致 `test_alembic_drift` 按导入顺序偶发误报 drift; 补注册并让 drift 测试显式 `import app.db.models` 消除顺序依赖。
+
 ## [0.10.24] - 2026-05-20
 
 > **生产上线 / 监控触发杂项收口.** 巡检生产就绪面挑三处低风险缺口一次收口: ① 版本号四处漂移(`/health` 硬编码 `0.7.6` / FastAPI `0.8.8` / pyproject `0.1.0` / web `0.8.8`)收敛到 `settings.app_version` 单源真值 —— 运维 scrape `/health` 拿到的版本号此前长期 stale; ② ROADMAP「现在可做」的 dev SMTP 收件箱(mailpit)接入, 让 `email.py` 的 admin「发送测试邮件」本地可端到端验证; ③ Celery `worker`/`beat` 补 healthcheck + 优雅关闭窗口。**不做**: Celery 全局 task 超时(gpu 队列视频 tracker 可能合法长跑, 全局硬超时误杀风险)。 → [plan](docs/plans/2026-05-20-v0.10.24-production-misc.md)。

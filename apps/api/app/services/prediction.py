@@ -146,6 +146,8 @@ class PredictionService:
         meta = PredictionMeta(
             id=uuid.uuid4(),
             prediction_id=prediction.id,
+            # v0.10.25 · 复合 FK 冗余分区键；flush 后 prediction.created_at 已由 RETURNING 回写。
+            prediction_created_at=prediction.created_at,
             inference_time_ms=inference_time_ms,
             prompt_tokens=meta_data.get("prompt_tokens"),
             completion_tokens=meta_data.get("completion_tokens"),

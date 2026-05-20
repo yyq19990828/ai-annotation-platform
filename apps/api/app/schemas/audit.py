@@ -37,3 +37,20 @@ class AuditLogList(BaseModel):
     page: int
     page_size: int
     next_cursor: str | None = None
+
+
+class AuditArchiveOut(BaseModel):
+    year: int
+    month: int
+    object_key: str
+    size_bytes: int | None = None
+    archived_at: str | None = None
+
+
+class AuditArchiveRowsOut(BaseModel):
+    items: list[dict]
+    total: int
+    limit: int
+    offset: int
+    year: int
+    month: int

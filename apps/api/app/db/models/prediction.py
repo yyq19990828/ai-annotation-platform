@@ -1,6 +1,15 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Integer, Float, Text, DateTime, ForeignKey, func
+from sqlalchemy import (
+    String,
+    Integer,
+    Float,
+    Text,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
@@ -47,19 +56,31 @@ class Prediction(Base):
         server_default="[]",
         default=list,
     )
+    # v0.10.25 · ADR-0006 Stage 2：predictions 按月 RANGE 分区，分区键 created_at 必须进 PK。
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True), primary_key=True, server_default=func.now()
     )
 
 
 class PredictionMeta(Base):
     __tablename__ = "prediction_metas"
+    # v0.10.25 · 复合 FK 指向分区表 predictions(id, created_at)；prediction_created_at
+    # 为冗余分区键列，写入路径在 prediction flush 后回填。
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["prediction_id", "prediction_created_at"],
+            ["predictions.id", "predictions.created_at"],
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     prediction_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("predictions.id"), unique=True
+        UUID(as_uuid=True), unique=True
+    )
+    prediction_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
     )
     failed_prediction_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("failed_predictions.id")

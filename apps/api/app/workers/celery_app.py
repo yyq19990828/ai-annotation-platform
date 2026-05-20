@@ -24,6 +24,10 @@ celery_app = Celery(
         "app.workers.signals",
         "app.workers.analytics",
         "app.workers.async_jobs_cleanup",
+        # v0.10.25 · worker 心跳上报
+        "app.workers.heartbeat",
+        # v0.10.25 · predictions 月分区维护（ADR-0006 Stage 2）
+        "app.workers.prediction_partition",
     ],
 )
 
@@ -78,6 +82,11 @@ celery_app.conf.update(
             "task": "app.workers.audit_partition.ensure_future_audit_partitions",
             "schedule": crontab(day_of_month=25, hour=3, minute=0),
         },
+        # v0.10.25 · predictions 月分区维护（ADR-0006 Stage 2）：25 日 03:30 提前建未来分区
+        "ensure-future-prediction-partitions": {
+            "task": "app.workers.prediction_partition.ensure_future_prediction_partitions",
+            "schedule": crontab(day_of_month=25, hour=3, minute=30),
+        },
         # v0.8.1 · 审计冷数据归档：每月 2 日把保留期外分区归档至 MinIO 后 DROP
         "archive-old-audit-partitions": {
             "task": "app.workers.audit_partition.archive_old_audit_partitions",
@@ -118,6 +127,13 @@ celery_app.conf.update(
         "purge-old-async-jobs": {
             "task": "app.workers.async_jobs_cleanup.purge_old_async_jobs",
             "schedule": crontab(hour=4, minute=15),
+        },
+        # v0.10.25 · worker 心跳：周期写 Redis（celery:hb:{worker}），/health/celery 读差值。
+        "worker-heartbeat": {
+            "task": "app.workers.heartbeat.publish_worker_heartbeat",
+            "schedule": timedelta(
+                seconds=settings.worker_heartbeat_interval_seconds
+            ),
         },
     },
 )
