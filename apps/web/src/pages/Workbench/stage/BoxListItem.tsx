@@ -73,6 +73,14 @@ function annotationToolMeta(
       detail: `${geometry.points.length} 点${geometry.holes?.length ? ` · ${geometry.holes.length} 内环` : ""}`,
     };
   }
+  // v0.10.28 · keypoint: 可见点 / 总点数.
+  if (geometry.type === "keypoint") {
+    const visible = geometry.points.filter((p) => p.v > 0).length;
+    return {
+      label: "关键点",
+      detail: `${visible}/${geometry.points.length} 可见`,
+    };
+  }
   return {
     label: "多连通域",
     detail: `${geometry.polygons.length} 区域 · ${geometry.polygons.reduce((sum, p) => sum + p.points.length, 0)} 点`,

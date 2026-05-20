@@ -5,7 +5,9 @@ import { useUpdateProject, useRenameClass } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import type { ProjectResponse } from "@/api/projects";
 import { ClassEditor, type ClassRow } from "./ClassEditor";
+import { KeypointSchemaEditor } from "./KeypointSchemaEditor";
 import { ToolUnitTabs } from "./ToolUnitTabs";
+import type { KeypointSchema } from "@/types";
 import {
   unitBindingsToPayload,
   useProjectToolBindings,
@@ -52,6 +54,18 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
         enabled: b[activeUnit]?.enabled ?? true,
         classRows: next,
         attributeFields: b[activeUnit]?.attributeFields ?? [],
+      },
+    }));
+  };
+
+  const onKeypointSchemaChange = (next: KeypointSchema) => {
+    setBindings((b) => ({
+      ...b,
+      keypoint: {
+        enabled: b.keypoint?.enabled ?? true,
+        classRows: b.keypoint?.classRows ?? [],
+        attributeFields: b.keypoint?.attributeFields ?? [],
+        keypointSchema: next,
       },
     }));
   };
@@ -106,12 +120,20 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
             当前工具单位未启用 — 勾选上方复选框以启用并配置类别。
           </div>
         ) : (
-          <ClassEditor
-            value={activeBinding.classRows}
-            onChange={onChange}
-            onRename={handleRename}
-            renaming={rename.isPending}
-          />
+          <>
+            <ClassEditor
+              value={activeBinding.classRows}
+              onChange={onChange}
+              onRename={handleRename}
+              renaming={rename.isPending}
+            />
+            {activeUnit === "keypoint" && (
+              <KeypointSchemaEditor
+                value={activeBinding.keypointSchema}
+                onChange={onKeypointSchemaChange}
+              />
+            )}
+          </>
         )}
         <div className={styles.footer}>
           {dirty && (

@@ -11,6 +11,8 @@ import { TextPromptTool } from "./TextPromptTool";
 import { ExemplarTool } from "./ExemplarTool";
 import { MaskTool } from "./MaskTool";
 import { MagicBoxTool } from "./MagicBoxTool";
+import { KeypointTool } from "./KeypointTool";
+import type { Keypoint } from "@/types";
 
 // v0.10.2 · Prompt-first ToolDock 重构:
 //   SAM 单工具拆为 4 个独立工具, 每个声明 requiredPrompt (point/bbox/text/exemplar) 由
@@ -26,7 +28,9 @@ export type ToolId =
   | "text-prompt"
   | "exemplar"
   // v0.10.17 · 复用 SAM bbox prompt → polygon → 紧凑外接矩形 → bbox 标注.
-  | "magic-box";
+  | "magic-box"
+  // v0.10.28 · 关键点 (COCO 范式: 命名节点 + 骨骼连线).
+  | "keypoint";
 
 /** v0.10.2 · 后端 /setup.supported_prompts 字段对应的 prompt 类型集合. */
 export type RequiredPrompt = "point" | "bbox" | "text" | "exemplar";
@@ -72,6 +76,17 @@ export interface PolygonDraftHandle {
   cancel: () => void;
 }
 
+/**
+ * v0.10.28 · 关键点草稿句柄。KeypointTool 依次 addPoint，放满 nodeCount 个后 Shell 自动 commit。
+ *   nodeCount: 当前类别 keypoint_schema.nodes 的长度 (0 = 未配置 schema → 工具不可落点)。
+ */
+export interface KeypointDraftHandle {
+  points: Keypoint[];
+  nodeCount: number;
+  addPoint: (kp: Keypoint) => void;
+  cancel: () => void;
+}
+
 export interface ToolPointerContext {
   pt: { x: number; y: number };
   evt: MouseEvent;
@@ -85,6 +100,8 @@ export interface ToolPointerContext {
   onClearSelection: () => void;
   /** 仅 PolygonTool 用. */
   polygonDraft?: PolygonDraftHandle;
+  /** v0.10.28 · 仅 KeypointTool 用. */
+  keypointDraft?: KeypointDraftHandle;
   /** v0.10.2 · 仅 SmartPointTool 消费, "+/-" 极性 (与 Alt 修饰键合并). */
   samPolarity?: SamPolarity;
   /**
@@ -115,6 +132,7 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
   "text-prompt": TextPromptTool,
   exemplar: ExemplarTool,
   "magic-box": MagicBoxTool,
+  keypoint: KeypointTool,
 };
 
 /** v0.10.2 · ToolDock 渲染顺序:
@@ -124,6 +142,7 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
 export const ALL_TOOLS: CanvasTool[] = [
   BboxTool,
   PolygonTool,
+  KeypointTool,
   MaskTool,
   SmartPointTool,
   SmartBoxTool,
@@ -151,4 +170,5 @@ export {
   SmartBoxTool,
   TextPromptTool,
   ExemplarTool,
+  KeypointTool,
 };

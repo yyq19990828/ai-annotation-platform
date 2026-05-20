@@ -39,6 +39,7 @@ const TOOL_HINT: Record<ToolId, string | null> = {
   box: null,
   hand: null,
   polygon: null,
+  keypoint: null,
   canvas: null,
   mask: null,
   "smart-point": "单击图像 = 正向点；Alt+点 = 负向点",

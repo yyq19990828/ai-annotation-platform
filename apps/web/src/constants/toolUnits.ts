@@ -11,6 +11,7 @@ import type { IconName } from "@/components/ui/Icon";
 export type ToolUnitId =
   | "bbox"
   | "polyline"
+  | "keypoint"
   | "region"
   | "ai_interactive"
   | "lidar_box_3d";
@@ -18,6 +19,7 @@ export type ToolUnitId =
 export const TOOL_UNIT_IDS: ReadonlyArray<ToolUnitId> = [
   "bbox",
   "polyline",
+  "keypoint",
   "region",
   "ai_interactive",
   "lidar_box_3d",
@@ -89,6 +91,15 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
     tools: ["polyline"],
     dataTypes: ["image", "video"],
     available: false,
+  },
+  {
+    id: "keypoint",
+    label: "关键点 (keypoint)",
+    hint: "命名节点 + 骨骼连线; COCO 范式姿态 / 部件标注",
+    icon: "point",
+    tools: ["keypoint"],
+    dataTypes: ["image"],
+    available: true,
   },
   {
     id: "region",

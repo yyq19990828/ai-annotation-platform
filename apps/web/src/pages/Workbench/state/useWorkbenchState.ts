@@ -16,7 +16,9 @@ export type Tool =
   | "text-prompt"
   | "exemplar"
   // v0.10.17 · 复用 SAM bbox prompt 返回的 mask, 取紧凑外接矩形落 bbox 标注 (Magic Box).
-  | "magic-box";
+  | "magic-box"
+  // v0.10.28 · 关键点 (COCO 范式).
+  | "keypoint";
 export type VideoTool = "box" | "track";
 
 /**

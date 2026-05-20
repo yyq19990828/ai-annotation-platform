@@ -109,12 +109,17 @@ interface WorkbenchStageHostProps {
   onCommitMove: (id: string, before: Geom, after: Geom) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
   onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
+  // v0.10.28 · keypoint 节点几何/可见性变更。
+  onCommitKeypointGeometry?: (id: string, before: import("@/types").Keypoint[], after: import("@/types").Keypoint[]) => void;
   onChangeUserBoxClass: (id: string) => void;
   onBatchDelete: () => void;
   onBatchChangeClass: () => void;
   onStageGeometry: (g: StageGeometry) => void;
-  // ── editors (mask / polygon / canvas) ─────────────────────
+  // ── editors (mask / polygon / keypoint / canvas) ─────────────────────
   polygonDraft?: PolygonDraftHandle;
+  // v0.10.28 · keypoint 工具草稿 + 骨骼模板。
+  keypointDraft?: import("../stage/tools").KeypointDraftHandle;
+  keypointSchema?: import("@/types").KeypointSchema | null;
   canvasShapes: NonNullable<CommentCanvasDrawing["shapes"]>;
   canvasEditable: boolean;
   canvasStroke: string;
@@ -198,11 +203,14 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     onCommitMove,
     onCommitResize,
     onCommitPolygonGeometry,
+    onCommitKeypointGeometry,
     onChangeUserBoxClass,
     onBatchDelete,
     onBatchChangeClass,
     onStageGeometry,
     polygonDraft,
+    keypointDraft,
+    keypointSchema,
     canvasShapes,
     canvasEditable,
     canvasStroke,
@@ -294,12 +302,15 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onCommitMove={onCommitMove}
             onCommitResize={onCommitResize}
             onCommitPolygonGeometry={onCommitPolygonGeometry}
+            onCommitKeypointGeometry={onCommitKeypointGeometry}
             onCursorMove={onCursorMove}
             onChangeUserBoxClass={onChangeUserBoxClass}
             onBatchDelete={onBatchDelete}
             onBatchChangeClass={onBatchChangeClass}
             onStageGeometry={onStageGeometry}
             polygonDraft={polygonDraft}
+            keypointDraft={keypointDraft}
+            keypointSchema={keypointSchema}
             canvasShapes={canvasShapes}
             canvasEditable={canvasEditable}
             canvasStroke={canvasStroke}

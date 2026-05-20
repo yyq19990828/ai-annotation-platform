@@ -42,6 +42,8 @@ interface UseImageAnnotationActionsArgs {
   stageGeom: StageGeometry;
   iouDedupThreshold: number;
   classes: string[];
+  /** v0.10.28 · 当前 keypoint 单元 schema 节点数，透传给 useWorkbenchAnnotationActions。 */
+  keypointNodeCount?: number;
   sam: UseInteractiveAIReturn;
   createAnnotationAsync: (payload: AnnotationPayload) => Promise<AnnotationResponse>;
   mutations: AnnotationMutations;
@@ -96,6 +98,7 @@ export function useImageAnnotationActions({
   stageGeom,
   iouDedupThreshold,
   classes,
+  keypointNodeCount = 0,
   sam,
   createAnnotationAsync,
   mutations,
@@ -116,6 +119,7 @@ export function useImageAnnotationActions({
     enqueueOnError,
     isLocked,
     mutations,
+    keypointNodeCount,
   });
   const {
     createBboxWithClass,
