@@ -211,7 +211,36 @@ export type MultiPolygonGeometry = {
   type: "multi_polygon";
   polygons: PolygonGeometry[];
 };
-export type Geometry = BboxGeometry | VideoBboxGeometry | VideoTrackGeometry | PolygonGeometry | MultiPolygonGeometry;
+/** v0.10.28 · 旋转矩形 (OBB). cx,cy 中心, w,h 边长, angle 顺时针角度 [0,360). 坐标归一化. */
+export type RotatedBboxGeometry = {
+  type: "rotated_bbox";
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  angle: number;
+};
+/** v0.10.28 · 开放折线 (不闭合). points 至少 2 个归一化顶点. */
+export type PolylineGeometry = {
+  type: "polyline";
+  points: [number, number][];
+};
+/** v0.10.28 · 单个关键点. v 为 COCO 可见性: 0 未标注 / 1 遮挡 / 2 可见. */
+export type Keypoint = { x: number; y: number; v: 0 | 1 | 2 };
+/** v0.10.28 · 关键点集合. 骨骼拓扑 (节点名/连线) 走类别级 ToolBinding.keypoint_schema. */
+export type KeypointGeometry = {
+  type: "keypoint";
+  points: Keypoint[];
+};
+export type Geometry =
+  | BboxGeometry
+  | VideoBboxGeometry
+  | VideoTrackGeometry
+  | PolygonGeometry
+  | MultiPolygonGeometry
+  | RotatedBboxGeometry
+  | PolylineGeometry
+  | KeypointGeometry;
 
 export interface AIBox {
   id: string;

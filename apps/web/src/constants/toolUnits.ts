@@ -13,7 +13,9 @@ export type ToolUnitId =
   | "polyline"
   | "region"
   | "ai_interactive"
-  | "lidar_box_3d";
+  | "lidar_box_3d"
+  | "rotated_bbox"
+  | "keypoint";
 
 export const TOOL_UNIT_IDS: ReadonlyArray<ToolUnitId> = [
   "bbox",
@@ -21,6 +23,8 @@ export const TOOL_UNIT_IDS: ReadonlyArray<ToolUnitId> = [
   "region",
   "ai_interactive",
   "lidar_box_3d",
+  "rotated_bbox",
+  "keypoint",
 ];
 
 export interface ToolUnitGroupSpec {
@@ -84,11 +88,29 @@ export const TOOL_UNIT_GROUPS: ReadonlyArray<ToolUnitGroupSpec> = [
   {
     id: "polyline",
     label: "折线 (polyline)",
-    hint: "本版未实现, schema 留位",
+    hint: "开放折线;车道线 / 道路",
     icon: "polygon",
     tools: ["polyline"],
-    dataTypes: ["image", "video"],
-    available: false,
+    dataTypes: ["image"],
+    available: true,
+  },
+  {
+    id: "rotated_bbox",
+    label: "旋转框 (OBB)",
+    hint: "带角度矩形;遥感 / 文本 / 车辆",
+    icon: "rect",
+    tools: ["rotated-box"],
+    dataTypes: ["image"],
+    available: true,
+  },
+  {
+    id: "keypoint",
+    label: "关键点 (keypoint)",
+    hint: "命名点 + 骨骼;姿态 / 人脸",
+    icon: "point",
+    tools: ["keypoint"],
+    dataTypes: ["image"],
+    available: true,
   },
   {
     id: "region",

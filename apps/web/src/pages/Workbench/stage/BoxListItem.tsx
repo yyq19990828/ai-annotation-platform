@@ -73,6 +73,19 @@ function annotationToolMeta(
       detail: `${geometry.points.length} 点${geometry.holes?.length ? ` · ${geometry.holes.length} 内环` : ""}`,
     };
   }
+  if (geometry.type === "rotated_bbox") {
+    return {
+      label: "旋转框",
+      detail: `${rectText(geometry.cx - geometry.w / 2, geometry.cy - geometry.h / 2, geometry.w, geometry.h, imageWidth, imageHeight)} · ${Math.round(geometry.angle)}°`,
+    };
+  }
+  if (geometry.type === "polyline") {
+    return { label: "折线", detail: `${geometry.points.length} 点` };
+  }
+  if (geometry.type === "keypoint") {
+    const visible = geometry.points.filter((p) => p.v === 2).length;
+    return { label: "关键点", detail: `${visible}/${geometry.points.length} 可见` };
+  }
   return {
     label: "多连通域",
     detail: `${geometry.polygons.length} 区域 · ${geometry.polygons.reduce((sum, p) => sum + p.points.length, 0)} 点`,

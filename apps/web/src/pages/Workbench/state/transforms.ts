@@ -90,6 +90,22 @@ export function geometryToShape(g: Geometry): {
     const keyframe = g.keyframes.find((kf) => !kf.absent) ?? g.keyframes[0];
     return keyframe?.bbox ?? { x: 0, y: 0, w: 0, h: 0 };
   }
+  if (g.type === "rotated_bbox") {
+    // 旋转矩形四角旋转后的轴对齐包围盒（供列表 / Minimap / 选中浮条锚点）。
+    const rad = (g.angle * Math.PI) / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const hw = g.w / 2, hh = g.h / 2;
+    const corners = ([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as [number, number][]).map(
+      ([dx, dy]) => [g.cx + dx * cos - dy * sin, g.cy + dx * sin + dy * cos] as [number, number],
+    );
+    return polygonBounds(corners);
+  }
+  if (g.type === "polyline") {
+    return polygonBounds(g.points);
+  }
+  if (g.type === "keypoint") {
+    return polygonBounds(g.points.map((p) => [p.x, p.y] as [number, number]));
+  }
   return { x: g.x, y: g.y, w: g.w, h: g.h };
 }
 
