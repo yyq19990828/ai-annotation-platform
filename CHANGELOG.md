@@ -24,10 +24,14 @@
 
 ## [0.10.28] - 2026-05-20
 
-> **项目级 `data_type` 引入 + 新建项目数据类型 UI 退役任务语义 (B 路线).** 此前项目的"媒体类型"信息全靠 `type_key`(编码媒体+任务: image-det/image-seg/image-kp/video-track/video-mm/lidar/mm)隐式承载, 展示/筛选/媒体维度分流都得在 7 种 type_key 上硬匹配。本期给 `Project` / `ProjectTemplate` 各加独立 `data_type` 列(image/video/lidar 媒体粒度), 新建向导第 1 步从 7 任务预设改为纯媒体类型三选一(文案去检测/分割等任务暗示), `type_key` 由所选媒体类型派生兼容默认值(image→image-det / video→video-track / lidar→lidar)以保旧分流不破。展示(Dashboard/卡片图标)、筛选(FilterDrawer)、AI 预标卡片改读 `data_type`。**`type_key` 列保留不删**: video 子类型分流(video-track vs video-mm 的轨迹导出路由)与 AI 输出形态分流(image-det→box/其余→mask, 标为遗留技术债)继续用 `type_key`。
+> **项目级 `data_type` 引入 + 新建项目数据类型 UI 退役任务语义 (B 路线) + 三种几何工具 (旋转框 / 折线 / 关键点).** 此前项目的"媒体类型"信息全靠 `type_key`(编码媒体+任务: image-det/image-seg/image-kp/video-track/video-mm/lidar/mm)隐式承载, 展示/筛选/媒体维度分流都得在 7 种 type_key 上硬匹配。本期给 `Project` / `ProjectTemplate` 各加独立 `data_type` 列(image/video/lidar 媒体粒度), 新建向导第 1 步从 7 任务预设改为纯媒体类型三选一(文案去检测/分割等任务暗示), `type_key` 由所选媒体类型派生兼容默认值(image→image-det / video→video-track / lidar→lidar)以保旧分流不破。展示(Dashboard/卡片图标)、筛选(FilterDrawer)、AI 预标卡片改读 `data_type`。**`type_key` 列保留不删**: video 子类型分流(video-track vs video-mm 的轨迹导出路由)与 AI 输出形态分流(image-det→box/其余→mask, 标为遗留技术债)继续用 `type_key`。同期图像几何工具从单一 bbox 扩到 **旋转框 (rotated_bbox / OBB)**、**折线 (polyline)**、**关键点 (keypoint, COCO 范式命名节点 + 骨骼)** 三种, 后端 `Geometry` 判别联合 + `ToolUnitId` 枚举同步扩展, 前端 react-konva 渲染 + 工具接线并行开发后主进程串行 review 合并。
 
 ### Added
 
+- **三种图像几何工具 — 旋转框 / 折线 / 关键点** (前端 [ImageStage.tsx](apps/web/src/pages/Workbench/stage/ImageStage.tsx) · [ImageStageShapes.tsx](apps/web/src/pages/Workbench/stage/ImageStageShapes.tsx) · [tools/](apps/web/src/pages/Workbench/stage/tools/); 后端 [_jsonb_types.py](apps/api/app/schemas/_jsonb_types.py)):
+  - **旋转框 (`rotated_bbox` / OBB, W 键)**: `{cx,cy,w,h,angle}` 归一化, angle 顺时针 `[0,360)`; 拖框成轴对齐矩形 → 顶部手柄旋转; 适用遥感 / 文本 / 车辆。
+  - **折线 (`polyline`, L 键)**: 开放不闭合顶点序列 (≥2 点); 顶点拖拽 / Alt 边插点 / Shift 删点, 无自交检测; 适用车道线 / 道路。
+  - **关键点 (`keypoint`, K 键, COCO 范式)**: 按类别级 `keypoint_schema`(命名节点 + 骨骼 edges) 依次落点 (Alt=遮挡 v1, 右键=跳过 v0, 默认 v2 可见), 放满 nodeCount 自动提交; 节点拖拽 + 点击循环切可见性 (2→1→0); 骨骼模板在类别配置区 `KeypointSchemaEditor` 维护; 适用姿态 / 人脸。
 - **`Project.data_type` / `ProjectTemplate.data_type`** ([apps/api/app/db/models/project.py](apps/api/app/db/models/project.py) · [project_template.py](apps/api/app/db/models/project_template.py)): `String(30)` server_default `'image'`; 媒体维度真值, 与 `Dataset.data_type` 对齐。迁移 [0082_project_data_type.py](apps/api/alembic/versions/0082_project_data_type.py) 加列 + 按 ctid 分批回填(`type_key LIKE 'video%'`→video / `=lidar`→lidar / 其余→image)。
 - **项目列表 `data_type` 筛选** ([apps/api/app/api/v1/projects.py](apps/api/app/api/v1/projects.py)): `GET /projects?data_type=image&data_type=video`; search / admin_preannotate 项目摘要补 `data_type`。
 

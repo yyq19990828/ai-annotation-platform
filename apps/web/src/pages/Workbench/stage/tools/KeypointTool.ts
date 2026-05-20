@@ -13,7 +13,7 @@ import type { CanvasTool, DragInit, ToolPointerContext } from "./index";
  */
 export const KeypointTool: CanvasTool = {
   id: "keypoint",
-  hotkey: "K",
+  hotkey: "F",
   label: "关键点",
   icon: "point",
   cursor: "crosshair",

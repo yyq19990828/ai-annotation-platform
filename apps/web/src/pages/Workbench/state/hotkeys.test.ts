@@ -76,7 +76,7 @@ describe("dispatchKey · 单键", () => {
     expect(dispatch({ key: "1", altKey: true, ctrlKey: true })).toBeNull();
   });
   it("字母键（非保留）→ setClassByLetter", () => {
-    expect(dispatch({ key: "f" })).toEqual({ type: "setClassByLetter", letter: "f" });
+    expect(dispatch({ key: "y" })).toEqual({ type: "setClassByLetter", letter: "y" });
     expect(dispatch({ key: "z" })).toEqual({ type: "setClassByLetter", letter: "z" });
   });
   it("保留字母（v/b/a/d/e/n/u/j/k/c）走专用 action 而非 letter", () => {
@@ -307,5 +307,9 @@ describe("v0.10.5 M4-β · shape 状态位快捷键", () => {
   // v0.10.28 · 无选中 L → 折线工具（与选中态 L=lock 互补）。
   it("无选中 L → setTool polyline", () => {
     expect(dispatch({ key: "l" })).toEqual({ type: "setTool", tool: "polyline" });
+  });
+  it("F → setTool keypoint (v0.10.28; K 已被 cycleUser 占用)", () => {
+    expect(dispatch({ key: "f" })).toEqual({ type: "setTool", tool: "keypoint" });
+    expect(dispatch({ key: "F" })).toEqual({ type: "setTool", tool: "keypoint" });
   });
 });

@@ -24,6 +24,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["-"], desc: "智能点工具：切负向", group: "ai", actionType: "samPolarity" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
   { keys: ["L"], desc: "折线工具（开放、不闭合；无选中时生效）", group: "draw", actionType: "setTool" },
+  { keys: ["F"], desc: "关键点工具：按骨骼模板依次落点（Alt = 遮挡，右键 = 跳过）", group: "draw", actionType: "setTool" },
   // v0.10.8 · I11 Mask 编辑器: 全局 M 切工具; 工具内 B/E 切笔刷/橡皮 (capture, dispatchKey 之前).
   { keys: ["M"], desc: "Mask 笔刷工具", group: "draw", actionType: "setTool" },
   { keys: ["Shift", "+ wheel"], desc: "Mask 工具: 调笔刷半径 (±2px)", group: "draw" },
@@ -129,7 +130,7 @@ export type HotkeyAction =
   | { type: "cycleUser"; dir: 1 | -1; loop: boolean }
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
-  | { type: "setTool"; tool: "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
+  | { type: "setTool"; tool: "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "keypoint" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
   | { type: "setVideoTool"; tool: "box" | "track" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
@@ -187,7 +188,7 @@ export interface DispatchCtx {
 }
 
 // v0.10.5 M4-β · L/H/O 用于 shape 状态位切换（仅选中态消费；保留以防 setClassByLetter 抢键）。
-const RESERVED_LETTERS = new Set(["v","V","b","B","w","W","p","P","s","S","a","A","d","D","e","E","n","N","u","U","j","J","k","K","c","C","l","L","h","H","o","O","m","M"]);
+const RESERVED_LETTERS = new Set(["v","V","b","B","w","W","p","P","s","S","a","A","d","D","e","E","f","F","n","N","u","U","j","J","k","K","c","C","l","L","h","H","o","O","m","M"]);
 
 /** 纯函数：解析 keydown 事件为 HotkeyAction。返回 null 表示不消费。 */
 export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | null {
@@ -318,6 +319,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
   if (e.key === "b" || e.key === "B") return { type: "setTool", tool: "box" };
   // v0.10.28 · W 单键直达旋转框 (OBB) 工具 (O 已被 occluded 占用)。
   if (e.key === "w" || e.key === "W") return { type: "setTool", tool: "rotated-box" };
+  // v0.10.28 · F 单键直达关键点工具 (K 已被 cycleUser「上一个框」占用)。
+  if (e.key === "f" || e.key === "F") return { type: "setTool", tool: "keypoint" };
   // v0.10.2 · S 循环 5 个 AI 工具 (具体下一个工具由消费侧根据 capabilities 决定).
   if (e.key === "s" || e.key === "S") return { type: "setTool", tool: "ai-cycle" };
   // v0.10.17 · G 单键直达 Magic Box.
