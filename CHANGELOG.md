@@ -41,7 +41,12 @@
 
 ### Fixed
 
+- **Celery 未路由任务落无人消费的 `celery` 队列**(系统性 · [apps/api/app/workers/celery_app.py](apps/api/app/workers/celery_app.py)): worker 订阅 `default,ml,media,gpu,cleanup,audit` 不含 Celery 内置默认队列 `celery`; 凡未在 `task_routes` 显式路由的任务(本期 `worker-heartbeat` / `ensure_future_prediction_partitions`, 及**既有的** `mark_inactive_offline` / `process_deactivation_requests` / `ensure_future_audit_partitions` / `refresh_user_perf_mv` 等)全落进 `celery` 队列堆积、永不执行(实测堆积 8127 条)。设 `task_default_queue="default"` 收口, 兜底任务真正运行; 清理历史死信。
 - **`annotation_feedbacks` model 漏注册** ([apps/api/app/db/models/__init__.py](apps/api/app/db/models/__init__.py)): v0.10.19 加表时未把 `AnnotationFeedback` 加进模型注册表, 导致 `test_alembic_drift` 按导入顺序偶发误报 drift; 补注册并让 drift 测试显式 `import app.db.models` 消除顺序依赖。
+
+### Dev
+
+- **Celery `worker`/`beat` 源码热挂载** ([docker-compose.yml](docker-compose.yml)): 加 `./apps/api:/app` bind mount + 匿名卷 `/app/.venv` 屏蔽 host venv; deps 装在 `--system`(Dockerfile.api)不在 `/app` 下故不被盖掉。此前 worker 源码 COPY 进镜像, 改 worker 码 / 加迁移要 rebuild; 现在只需 `docker restart`。同步修正 CLAUDE.md rule #8 描述。
 
 ## [0.10.24] - 2026-05-20
 

@@ -38,6 +38,12 @@ celery_app.conf.update(
     timezone="UTC",
     task_track_started=True,
     worker_max_memory_per_child=512_000,
+    # v0.10.25 · 默认队列从 Celery 内置 "celery" 改为 "default"。worker 订阅
+    # default,ml,media,gpu,cleanup,audit —— 不含 "celery", 故任何未在 task_routes 显式
+    # 路由的任务(beat 的 worker-heartbeat / ensure_future_*_partitions / mark_inactive_offline
+    # / process_deactivation_requests / refresh_user_perf_mv 等)此前都落进无人消费的 "celery"
+    # 队列堆积、永不执行。收口到 default 让兜底任务真正跑起来。
+    task_default_queue="default",
     task_routes={
         "app.workers.tasks.batch_predict": {"queue": "ml"},
         "app.workers.predictions_retry.retry_failed_prediction": {"queue": "ml"},

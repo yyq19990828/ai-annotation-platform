@@ -100,7 +100,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 | Change | Action |
 |---|---|
-| Python business code under `apps/api/app/**` (source is volume-mounted in dev) | API auto-reloads via `uvicorn --reload`. **Celery workers do NOT auto-reload — `docker restart <worker>` is required.** |
+| Python business code under `apps/api/**` incl. `app/**` and `alembic/**` | dev API 跑 host(`uvicorn --reload`)自动重载。Celery `worker`/`beat` 自 v0.10.25 起把 `./apps/api:/app` 源码挂载进容器(deps 装在 `--system`,不在 `/app` 下,匿名卷 `/app/.venv` 屏蔽 host venv),故**改 worker 业务码 / 新增 alembic 迁移只需 `docker restart`,不必 rebuild**。Celery 无 `--reload`,改码后仍须 restart。 |
 | Frontend `apps/web/src/**` with vite dev server | HMR handles it |
 | Runtime env vars in `.env` | `docker compose up -d` (recreates container, does not rebuild image) |
 | DB schema changes via alembic | `docker exec ... alembic upgrade head` |
