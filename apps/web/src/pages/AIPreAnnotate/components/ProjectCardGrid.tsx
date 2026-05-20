@@ -63,7 +63,7 @@ function ProjectCard({
             {item.project_name}
           </div>
           <div className={styles.projectMeta}>
-            {item.project_display_id ?? "—"} · {item.type_key}
+            {item.project_display_id ?? "—"} · {item.data_type}
           </div>
         </div>
         <Icon name="chevRight" size={14} />

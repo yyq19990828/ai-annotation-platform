@@ -13,6 +13,7 @@ function makeItem(over: Partial<PreannotateProjectSummary> = {}): PreannotatePro
     project_name: "项目甲",
     project_display_id: "P-1",
     type_key: "image-det",
+    data_type: "image",
     ml_backend_id: "bk1",
     ml_backend_name: "grounded-sam2",
     ml_backend_state: "ready",

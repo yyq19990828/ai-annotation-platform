@@ -20,6 +20,8 @@ export interface ProjectTemplateOut {
   description: string | null;
   type_label: string;
   type_key: string;
+  // v0.10.28 · 媒体维度数据类型 (image / video / lidar).
+  data_type?: string;
 
   classes: string[];
   classes_config: ClassesConfig;

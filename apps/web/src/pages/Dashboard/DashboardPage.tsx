@@ -25,14 +25,11 @@ import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNa
 
 import styles from "./DashboardPage.module.css";
 
-const TYPE_ICONS: Record<string, IconName> = {
-  "image-det": "rect",
-  "image-seg": "polygon",
-  "image-kp": "point",
+// v0.10.28 · 列表图标改读媒体维度 data_type (image / video / lidar).
+const DATA_TYPE_ICONS: Record<string, IconName> = {
+  image: "image",
+  video: "video",
   lidar: "cube",
-  "video-mm": "video",
-  "video-track": "video",
-  mm: "mm",
 };
 const WORKBENCH_PROJECT_TYPES = new Set(["image-det", "video-track"]);
 
@@ -66,7 +63,7 @@ function ProjectRow({
       <td className={styles.projectCellPrimary}>
         <div className={styles.projectIdentity}>
           <div className={styles.projectTypeIcon}>
-            <Icon name={TYPE_ICONS[p.type_key] || "image"} size={14} />
+            <Icon name={DATA_TYPE_ICONS[p.data_type ?? "image"] || "image"} size={14} />
           </div>
           <div>
             <div className={styles.projectName}>{p.name}</div>
@@ -234,7 +231,7 @@ export function DashboardPage() {
   const { data: projects = [], isLoading } = useProjects({
     status: effectiveStatus,
     search: query || undefined,
-    type_key: advanced.type_key.length > 0 ? advanced.type_key : undefined,
+    data_type: advanced.data_type.length > 0 ? advanced.data_type : undefined,
     member_id: advanced.member_id,
     created_from: advanced.created_from,
     created_to: advanced.created_to,
@@ -242,7 +239,7 @@ export function DashboardPage() {
 
   const advancedActiveCount = useMemo(() => {
     let n = 0;
-    if (advanced.type_key.length) n += 1;
+    if (advanced.data_type.length) n += 1;
     if (advanced.member_id) n += 1;
     if (advanced.created_from || advanced.created_to) n += 1;
     if (advanced.status && advanced.status !== FILTER_STATUS_MAP[filter]) n += 1;

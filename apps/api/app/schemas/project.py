@@ -17,7 +17,10 @@ from pydantic import field_validator
 class ProjectCreate(BaseModel):
     name: str
     type_label: str
-    type_key: str
+    # v0.10.28 · B 路线: 新建项目以 data_type (媒体维度) 为主. type_key 可缺省,
+    # 由 data_type 派生兼容值 (见 api/v1/projects.create_project) 保旧分流不破.
+    type_key: str | None = None
+    data_type: str | None = None
     classes: list[str] = []
     classes_config: ClassesConfig | None = None
     attribute_schema: AttributeSchema | None = None
@@ -69,6 +72,7 @@ class ProjectUpdate(BaseModel):
     name: str | None = None
     type_label: str | None = None
     type_key: str | None = None
+    data_type: str | None = None
     status: str | None = None
     classes: list[str] | None = None
     classes_config: ClassesConfig | None = None
@@ -117,6 +121,8 @@ class ProjectOut(BaseModel):
     name: str
     type_label: str
     type_key: str
+    # v0.10.28 · 媒体维度数据类型 (image / video / lidar).
+    data_type: str = "image"
     owner_id: UUID
     owner_name: str | None = None
     member_count: int = 0

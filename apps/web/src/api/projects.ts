@@ -101,6 +101,8 @@ export interface ProjectListParams {
   search?: string;
   /** v0.7.2 · 高级筛选 */
   type_key?: string[];
+  /** v0.10.28 · 媒体维度筛选 (image / video / lidar) */
+  data_type?: string[];
   member_id?: string;
   created_from?: string;
   created_to?: string;

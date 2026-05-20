@@ -11,14 +11,11 @@ import { projectsApi, type ProjectResponse, type ExportFormat } from "@/api/proj
 
 import styles from "./ProjectGrid.module.css";
 
-const TYPE_ICONS: Record<string, IconName> = {
-  "image-det": "rect",
-  "image-seg": "polygon",
-  "image-kp": "point",
+// v0.10.28 · 卡片图标改读媒体维度 data_type (image / video / lidar).
+const DATA_TYPE_ICONS: Record<string, IconName> = {
+  image: "image",
+  video: "video",
   lidar: "cube",
-  "video-mm": "video",
-  "video-track": "video",
-  mm: "mm",
 };
 
 interface Props {
@@ -81,7 +78,7 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
             <div className={styles.projectCard}>
               <div className={styles.projectHeader}>
                 <div className={styles.typeIcon}>
-                  <Icon name={TYPE_ICONS[p.type_key] || "image"} size={15} />
+                  <Icon name={DATA_TYPE_ICONS[p.data_type ?? "image"] || "image"} size={15} />
                 </div>
                 <div className={styles.projectInfo}>
                   <div className={styles.projectName}>

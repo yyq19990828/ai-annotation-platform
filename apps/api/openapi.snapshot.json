@@ -7726,6 +7726,11 @@
             "title": "Active Batches",
             "type": "integer"
           },
+          "data_type": {
+            "default": "image",
+            "title": "Data Type",
+            "type": "string"
+          },
           "last_job_at": {
             "anyOf": [
               {
@@ -8666,6 +8671,17 @@
             "title": "Copy Annotation Guide",
             "type": "boolean"
           },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Type"
+          },
           "due_date": {
             "anyOf": [
               {
@@ -8774,8 +8790,15 @@
             "title": "Tool Bindings"
           },
           "type_key": {
-            "title": "Type Key",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Key"
           },
           "type_label": {
             "title": "Type Label",
@@ -8784,8 +8807,7 @@
         },
         "required": [
           "name",
-          "type_label",
-          "type_key"
+          "type_label"
         ],
         "title": "ProjectCreate",
         "type": "object"
@@ -8985,6 +9007,11 @@
           "created_at": {
             "format": "date-time",
             "title": "Created At",
+            "type": "string"
+          },
+          "data_type": {
+            "default": "image",
+            "title": "Data Type",
             "type": "string"
           },
           "display_id": {
@@ -9353,6 +9380,11 @@
             ],
             "title": "Classes Config"
           },
+          "data_type": {
+            "default": "image",
+            "title": "Data Type",
+            "type": "string"
+          },
           "description": {
             "anyOf": [
               {
@@ -9583,6 +9615,11 @@
             ],
             "title": "Created By Name"
           },
+          "data_type": {
+            "default": "image",
+            "title": "Data Type",
+            "type": "string"
+          },
           "description": {
             "anyOf": [
               {
@@ -9812,6 +9849,17 @@
               }
             ],
             "title": "Classes Config"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Type"
           },
           "description": {
             "anyOf": [
@@ -10101,6 +10149,17 @@
               }
             ],
             "title": "Classes Config"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Type"
           },
           "due_date": {
             "anyOf": [
@@ -20585,6 +20644,25 @@
                 }
               ],
               "title": "Type Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "data_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Data Type"
             }
           },
           {

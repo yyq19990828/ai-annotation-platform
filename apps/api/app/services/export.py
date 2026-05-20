@@ -39,7 +39,6 @@ from app.services.video_tracks import (
 )
 
 IMG_W, IMG_H = 1920, 1280
-VIDEO_PROJECT_TYPES = {"video-track", "video-mm"}
 
 
 class UnsupportedExportError(ValueError):
@@ -47,7 +46,9 @@ class UnsupportedExportError(ValueError):
 
 
 def _assert_image_export_supported(project: Project, export_format: str) -> None:
-    if project.type_key in VIDEO_PROJECT_TYPES:
+    # v0.10.28 · 媒体维度判断改用 data_type; video 子类型路由 (video-track vs
+    # video-mm) 仍用 type_key.
+    if project.data_type == "video":
         if project.type_key == "video-track":
             raise UnsupportedExportError(
                 f"video-track projects do not support {export_format.upper()} export yet"

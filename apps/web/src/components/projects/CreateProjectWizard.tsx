@@ -11,16 +11,17 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useCreateProject } from "@/hooks/useProjects";
 import {
-  PROJECT_TYPES,
   PRESET_AI_MODELS,
   CUSTOM_MODEL_KEY,
 } from "@/constants/projectTypes";
 import {
   TOOL_UNIT_GROUPS,
+  PROJECT_DATA_TYPES,
   defaultEnabledUnits,
   dataTypeFromLegacy,
   toolUnitFromLegacy,
   type ToolUnitId,
+  type ProjectDataType,
 } from "@/constants/toolUnits";
 import {
   projectsApi,
@@ -67,6 +68,9 @@ export type UnitBindingMap = Partial<Record<ToolUnitId, UnitBindingForm>>;
 
 export interface FormState {
   name: string;
+  // v0.10.28 · B 路线: 新建项目以 dataType (媒体维度) 为主选项;
+  // typeKey 由 PROJECT_DATA_TYPES[].legacyTypeKey 派生, 保旧分流兼容.
+  dataType: ProjectDataType;
   typeKey: string;
   dueDate: string;
   // v0.10.17 · 取代扁平 classRows / attributeFields, 按工具单位拆开. 提交时序列化
@@ -109,6 +113,7 @@ export function defaultUnitBindings(typeKey: string): UnitBindingMap {
 
 const INITIAL: FormState = {
   name: "",
+  dataType: "image",
   typeKey: "image-det",
   dueDate: "",
   unitBindings: defaultUnitBindings("image-det"),
@@ -226,6 +231,9 @@ function buildFormFromSource(src: ProjectResponse): FormState {
   return {
     ...INITIAL,
     name: src.name ? `${src.name} (副本)` : "",
+    dataType: src.data_type
+      ? (src.data_type as ProjectDataType)
+      : dataTypeFromLegacy(src.type_key),
     typeKey: src.type_key,
     unitBindings,
     activeUnit,
@@ -259,6 +267,9 @@ function buildFormFromTemplate(t: ProjectTemplateOut): FormState {
   return {
     ...INITIAL,
     name: "",
+    dataType: t.data_type
+      ? (t.data_type as ProjectDataType)
+      : dataTypeFromLegacy(t.type_key),
     typeKey: t.type_key,
     unitBindings,
     activeUnit,
@@ -357,9 +368,12 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
     }
   }, [form, open, created, sourceProjectId, templateId]);
 
-  const selectedType = useMemo(
-    () => PROJECT_TYPES.find((t) => t.key === form.typeKey) ?? PROJECT_TYPES[0],
-    [form.typeKey],
+  // v0.10.28 · B 路线: 媒体维度选项 (image / video / lidar) 取代任务级 PROJECT_TYPES.
+  const selectedDataType = useMemo(
+    () =>
+      PROJECT_DATA_TYPES.find((t) => t.id === form.dataType) ??
+      PROJECT_DATA_TYPES[0],
+    [form.dataType],
   );
 
   const trimmedName = form.name.trim();
@@ -369,7 +383,7 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
     (k) => form.unitBindings[k]?.enabled,
   ).length;
   const step1Valid =
-    nameValid && !!form.typeKey && dueValid && enabledUnitCount > 0;
+    nameValid && !!form.dataType && dueValid && enabledUnitCount > 0;
 
   const resolvedAiModel = form.aiModelChoice === CUSTOM_MODEL_KEY
     ? form.aiModelCustom.trim()
@@ -438,8 +452,10 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
     createProject.mutate(
       {
         name: trimmedName,
-        type_key: selectedType.key,
-        type_label: selectedType.label,
+        // v0.10.28 · B 路线: data_type 为主, type_key 由 legacyTypeKey 派生兼容旧分流.
+        data_type: selectedDataType.id,
+        type_key: selectedDataType.legacyTypeKey,
+        type_label: selectedDataType.label,
         classes,
         classes_config,
         attribute_schema,

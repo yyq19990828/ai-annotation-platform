@@ -27,6 +27,8 @@ class ProjectTemplateBase(BaseModel):
     description: str | None = None
     type_label: str = Field(min_length=1, max_length=50)
     type_key: str = Field(min_length=1, max_length=30)
+    # v0.10.28 · 媒体维度数据类型 (image / video / lidar); 与 Project 对齐.
+    data_type: str = "image"
 
     classes: list[str] = []
     classes_config: ClassesConfig | None = None
@@ -72,6 +74,7 @@ class ProjectTemplateUpdate(BaseModel):
     description: str | None = None
     type_label: str | None = None
     type_key: str | None = None
+    data_type: str | None = None
     classes: list[str] | None = None
     classes_config: ClassesConfig | None = None
     attribute_schema: AttributeSchema | None = None
@@ -106,6 +109,8 @@ class ProjectTemplateOut(BaseModel):
     description: str | None = None
     type_label: str
     type_key: str
+    # v0.10.28 · 媒体维度数据类型 (image / video / lidar).
+    data_type: str = "image"
 
     # v0.10.22 · 扁平视图字段不再有 DB 列, 由下方 validator 从 tool_bindings 派生.
     classes: list[str] = []
