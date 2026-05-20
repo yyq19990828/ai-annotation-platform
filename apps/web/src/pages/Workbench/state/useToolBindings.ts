@@ -27,6 +27,8 @@ export interface ToolBindingsView {
   classesConfig: ClassesConfig;
   attributeSchema: AttributeSchema;
   toolUnitId: ToolUnitId;
+  /** v0.10.28 · keypoint 单元的骨骼模板 (仅 toolUnitId === "keypoint" 时有意义)。 */
+  keypointSchema: import("@/types").KeypointSchema | null;
 }
 
 export function useToolBindings(
@@ -66,6 +68,7 @@ function _materialize(
       classesConfig: {} as ClassesConfig,
       attributeSchema: { fields: [] } as AttributeSchema,
       toolUnitId: unit,
+      keypointSchema: null,
     };
   }
   const ordered = (binding.classes ?? [])
@@ -84,5 +87,11 @@ function _materialize(
     (binding.attribute_schema as AttributeSchema | undefined) ?? {
       fields: [],
     };
-  return { classes, classesConfig, attributeSchema, toolUnitId: unit };
+  return {
+    classes,
+    classesConfig,
+    attributeSchema,
+    toolUnitId: unit,
+    keypointSchema: binding.keypoint_schema ?? null,
+  };
 }

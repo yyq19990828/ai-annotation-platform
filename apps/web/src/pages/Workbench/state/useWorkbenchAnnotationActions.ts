@@ -15,9 +15,10 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import { isSelfIntersecting, type Pt } from "../stage/polygonGeom";
 import { UNKNOWN_CLASS } from "../stage/colors";
-import type { PolygonDraftHandle } from "../stage/tools";
+import type { KeypointDraftHandle, PolygonDraftHandle } from "../stage/tools";
 import { toolUnitForTool } from "../stage/tools/toolUnits";
-import { bboxGeom, polygonGeom, polylineGeom } from "../state/transforms";
+import { bboxGeom, keypointGeom, polygonGeom, polylineGeom } from "../state/transforms";
+import type { Keypoint } from "@/types";
 import { enqueue } from "../state/offlineQueue";
 import type { useWorkbenchState } from "../state/useWorkbenchState";
 import type { useAnnotationHistory } from "../state/useAnnotationHistory";
@@ -53,6 +54,8 @@ export interface UseWorkbenchAnnotationActionsArgs {
   annotationsRef: { current: AnnotationResponse[] };
   /** v0.6.5：任务已锁定（review/completed），所有写动作直接 short-circuit + toast。 */
   isLocked?: boolean;
+  /** v0.10.28 · 当前 keypoint 单元 schema 节点数；放满即自动提交一个实例。0 = 未配置 schema。 */
+  keypointNodeCount?: number;
 }
 
 export interface UseWorkbenchAnnotationActionsReturn {
@@ -71,6 +74,8 @@ export interface UseWorkbenchAnnotationActionsReturn {
   handleCommitMove: (id: string, before: Geom, after: Geom) => void;
   handleCommitResize: (id: string, before: Geom, after: Geom) => void;
   handleCommitPolygonGeometry: (id: string, before: Pt[], after: Pt[]) => void;
+  /** v0.10.28 · keypoint 节点几何/可见性变更。 */
+  handleCommitKeypointGeometry: (id: string, before: Keypoint[], after: Keypoint[]) => void;
   /** v0.10.5 M4-β · I15 shape 状态位 (z_order / is_locked / is_hidden / is_occluded) 字段级 PATCH。*/
   handlePatchShapeFlag: (
     id: string,
@@ -84,6 +89,8 @@ export interface UseWorkbenchAnnotationActionsReturn {
   polygonHandle: PolygonDraftHandle;
   /** v0.10.28 · 折线草稿 handle（closed:false，复用同一 polygonDraftPoints）。*/
   polylineHandle: PolygonDraftHandle;
+  /** v0.10.28 · 给 ImageStage 用的 KeypointDraftHandle，已 memoize。*/
+  keypointHandle: KeypointDraftHandle;
 }
 
 export function useWorkbenchAnnotationActions({
@@ -99,6 +106,7 @@ export function useWorkbenchAnnotationActions({
   enqueueOnError,
   annotationsRef,
   isLocked = false,
+  keypointNodeCount = 0,
 }: UseWorkbenchAnnotationActionsArgs): UseWorkbenchAnnotationActionsReturn {
   const setQ = queryClient.setQueryData.bind(queryClient);
 
@@ -260,6 +268,93 @@ export function useWorkbenchAnnotationActions({
     }),
     [polygonDraftPoints, submitPolyline],
   );
+
+  // ── v0.10.28 · keypoint 草稿 ──────────────────────────────────────────
+  const [keypointDraftPoints, setKeypointDraftPoints] = useState<Keypoint[]>([]);
+  useEffect(() => { if (s.tool !== "keypoint") setKeypointDraftPoints([]); }, [s.tool]);
+  useEffect(() => { setKeypointDraftPoints([]); }, [taskId]);
+  // schema 节点数变化 (切类别 → 不同 schema) 时清空半成品草稿。
+  useEffect(() => { setKeypointDraftPoints([]); }, [keypointNodeCount]);
+
+  const submitKeypoint = useCallback(
+    (points: Keypoint[]) => {
+      if (blockIfLocked()) return;
+      const cls = s.activeClass;
+      if (!cls) {
+        pushToast({ msg: "请先选择类别", kind: "warning" });
+        return;
+      }
+      if (points.length === 0) return;
+      const payload: AnnotationPayload = {
+        annotation_type: "keypoint",
+        tool_unit_id: toolUnitForTool(s.tool),
+        class_name: cls,
+        geometry: keypointGeom(points),
+        confidence: 1,
+      };
+      setKeypointDraftPoints([]);
+      mutations.create.mutate(payload, {
+        onSuccess: (created) => {
+          history.push({ kind: "create", annotationId: created.id, payload });
+          s.setSelectedId(created.id);
+          recordRecentClass(cls);
+          const visible = points.filter((p) => p.v > 0).length;
+          pushToast({ msg: "已创建关键点", sub: `${visible}/${points.length} 可见 · ${cls}`, kind: "success" });
+        },
+        onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
+      });
+    },
+    [blockIfLocked, s, mutations, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate],
+  );
+
+  // 放满 nodeCount 个点 → 自动提交一个实例。
+  useEffect(() => {
+    if (keypointNodeCount > 0 && keypointDraftPoints.length >= keypointNodeCount) {
+      submitKeypoint(keypointDraftPoints.slice(0, keypointNodeCount));
+    }
+  }, [keypointDraftPoints, keypointNodeCount, submitKeypoint]);
+
+  const keypointHandle = useMemo<KeypointDraftHandle>(
+    () => ({
+      points: keypointDraftPoints,
+      nodeCount: keypointNodeCount,
+      addPoint: (kp) => setKeypointDraftPoints((p) => [...p, kp]),
+      cancel: () => setKeypointDraftPoints([]),
+    }),
+    [keypointDraftPoints, keypointNodeCount],
+  );
+
+  const handleCommitKeypointGeometry = useCallback(
+    (id: string, before: Keypoint[], after: Keypoint[]) => {
+      if (blockIfLocked()) return;
+      if (!taskId) return;
+      const beforeG = keypointGeom(before);
+      const afterG = keypointGeom(after);
+      const payload = { geometry: afterG };
+      mutations.update.mutate(
+        { annotationId: id, payload },
+        {
+          onSuccess: () => {
+            history.push({
+              kind: "update", annotationId: id,
+              before: { geometry: beforeG }, after: { geometry: afterG },
+            });
+          },
+          onError: (err) =>
+            enqueueOnError(err, () => {
+              optimisticUpdateGeom(id, afterG);
+              history.push({
+                kind: "update", annotationId: id,
+                before: { geometry: beforeG }, after: { geometry: afterG },
+              });
+              enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: id, payload, ts: Date.now() });
+            }),
+        },
+      );
+    },
+    [blockIfLocked, mutations, history, taskId, enqueueOnError, optimisticUpdateGeom],
+  );
+
 
   // ── handlers ───────────────────────────────────────────────────────
 
@@ -566,10 +661,12 @@ export function useWorkbenchAnnotationActions({
     handleCommitMove,
     handleCommitResize,
     handleCommitPolygonGeometry,
+    handleCommitKeypointGeometry,
     handlePatchShapeFlag,
     polygonDraftPoints,
     setPolygonDraftPoints,
     polygonHandle,
     polylineHandle,
+    keypointHandle,
   };
 }

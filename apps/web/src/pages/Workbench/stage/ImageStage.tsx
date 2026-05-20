@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Image as KonvaImage, Rect, Line, Circle, Label, Tag, Text } from "react-konva";
 import type Konva from "konva";
 import useImage from "use-image";
-import type { Annotation, RotatedBboxGeometry } from "@/types";
+import type { Annotation, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import type { Tool } from "../state/useWorkbenchState";
 import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
 import { applyResize, type ResizeDirection } from "./ResizeHandles";
 import { classColorForCanvas, hexToRgba } from "./colors";
 import { SelectionOverlay } from "./SelectionOverlay";
-import { TOOL_REGISTRY, type PolygonDraftHandle } from "./tools";
+import { TOOL_REGISTRY, type PolygonDraftHandle, type KeypointDraftHandle } from "./tools";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
@@ -19,7 +19,7 @@ import type { CommentCanvasDrawing } from "@/api/comments";
 import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
 import { BlurhashLayer } from "./BlurhashLayer";
-import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline } from "./ImageStageShapes";
+import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex } from "./ImageStageShapes";
 import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
@@ -42,6 +42,8 @@ type Drag =
   | { kind: "resize"; id: string; start: Geom; sx: number; sy: number; dir: ResizeDirection; cur: Geom }
   | { kind: "polyVertex"; id: string; vidx: number; start: Pt[]; cur: Pt[] }
   | { kind: "polyMove"; id: string; start: Pt[]; sx: number; sy: number; cur: Pt[] }
+  // v0.10.28 · 关键点单节点拖拽。start/cur 为完整 keypoints 列表，nidx 为被拖节点。
+  | { kind: "kpNode"; id: string; nidx: number; start: Keypoint[]; cur: Keypoint[] }
   | { kind: "pan"; sx: number; sy: number }
   | { kind: "canvasStroke"; points: number[] }
   | { kind: "maskBrush"; lastX: number; lastY: number }
@@ -159,6 +161,12 @@ interface ImageStageProps {
   overlay?: React.ReactNode;
   /** polygon 工具草稿（v0.5.3）。仅 tool === "polygon" 时使用。 */
   polygonDraft?: PolygonDraftHandle;
+  /** v0.10.28 · keypoint 工具草稿。仅 tool === "keypoint" 时使用。 */
+  keypointDraft?: KeypointDraftHandle;
+  /** v0.10.28 · 当前 keypoint 单元的骨骼模板 (命名节点 + 连线)，驱动草稿提示与渲染取色 / 连线。 */
+  keypointSchema?: KeypointSchema | null;
+  /** v0.10.28 · keypoint 节点几何变更 (拖动单点 / 切换可见性)；before/after 为完整 keypoints 列表。 */
+  onCommitKeypointGeometry?: (id: string, before: Keypoint[], after: Keypoint[]) => void;
   /**
    * v0.9.4 phase 2 / v0.10.2 · 派生型 sub-tool; 仅作 cursor / preview hint 用.
    * 派生自 tool: smart-point → "point", smart-box → "bbox", text-prompt → "text", exemplar → "exemplar".
@@ -208,7 +216,7 @@ export function ImageStage({
   onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
-  onStageGeometry, overlay, polygonDraft, samPolarity,
+  onStageGeometry, overlay, polygonDraft, keypointDraft, keypointSchema, onCommitKeypointGeometry, samPolarity,
   canvasShapes, canvasEditable = false, canvasStroke = "#ef4444", onCanvasStrokeCommit,
   historicalShapes,
   maskEditor,
@@ -443,6 +451,14 @@ export function ImageStage({
           if (!cur || cur.kind !== "polyMove") return cur;
           return { ...cur, cur: translatePolygon(cur.start, pt.x - cur.sx, pt.y - cur.sy) };
         }));
+      } else if (d.kind === "kpNode") {
+        const cx = Math.max(0, Math.min(1, pt.x));
+        const cy = Math.max(0, Math.min(1, pt.y));
+        schedule(() => setDrag((cur) => {
+          if (!cur || cur.kind !== "kpNode") return cur;
+          const next = cur.cur.map((kp, i) => (i === cur.nidx ? { ...kp, x: cx, y: cy } : kp));
+          return { ...cur, cur: next };
+        }));
       } else if (d.kind === "canvasStroke") {
         schedule(() => setDrag((cur) => {
           if (!cur || cur.kind !== "canvasStroke") return cur;
@@ -529,6 +545,11 @@ export function ImageStage({
           const changed = before.length !== after.length ||
             before.some((p, i) => p[0] !== after[i][0] || p[1] !== after[i][1]);
           if (changed) onCommitPolygonGeometry?.(d.id, before, after);
+        } else if (d.kind === "kpNode") {
+          const before = d.start;
+          const after = d.cur;
+          const moved = before.some((p, i) => p.x !== after[i].x || p.y !== after[i].y);
+          if (moved) onCommitKeypointGeometry?.(d.id, before, after);
         } else if (d.kind === "canvasStroke") {
           // 至少 2 个点（4 个数字）才算一笔；点击没有移动会被丢弃
           if (d.points.length >= 4) onCanvasStrokeCommit?.(d.points, canvasStroke);
@@ -544,7 +565,7 @@ export function ImageStage({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [dragging, setVp, toImg, onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, tool, userBoxes, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH]);
+  }, [dragging, setVp, toImg, onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, tool, userBoxes, onCommitMove, onCommitResize, onCommitPolygonGeometry, onCommitKeypointGeometry, onCanvasStrokeCommit, canvasStroke, onSamPrompt, maskEditor, imgW, imgH]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -566,6 +587,7 @@ export function ImageStage({
       pendingDrawing: !!pendingDrawing,
       onClearSelection: () => onSelectBox(null),
       polygonDraft,
+      keypointDraft,
       samPolarity,
       maskEditor,
     });
@@ -589,6 +611,9 @@ export function ImageStage({
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     onCursorMove(pt && pt.x >= 0 && pt.x <= 1 && pt.y >= 0 && pt.y <= 1 ? pt : null);
     if ((tool === "polygon" || tool === "polyline") && polygonDraft && polygonDraft.points.length > 0) {
+      setPolygonCursor(pt);
+    } else if (tool === "keypoint" && keypointDraft && keypointDraft.nodeCount > 0) {
+      // v0.10.28 · 复用 polygonCursor 跟踪光标, 给下一个待放节点画提示。
       setPolygonCursor(pt);
     } else if (polygonCursor) {
       setPolygonCursor(null);
@@ -650,6 +675,12 @@ export function ImageStage({
     return null;
   };
 
+  /** v0.10.28 · keypoint 单节点拖拽期间的实时 override。 */
+  const kpOverridePoints = (id: string): Keypoint[] | null => {
+    if (drag && drag.kind === "kpNode" && drag.id === id) return drag.cur;
+    return null;
+  };
+
   const selectedBox = useMemo(() => {
     if (!selectedId) return null;
     return (userBoxes as (Annotation | AiBox)[]).concat(aiBoxes).find((b) => b.id === selectedId) ?? null;
@@ -670,7 +701,10 @@ export function ImageStage({
       onPointerDown={(evt) => {
         // 右键任意位置拖 = pan, 不论当前 tool. 走与 hand 工具 / spacePan 同一个
         // window pointer listener 管线 (drag.kind === "pan").
+        // v0.10.28 · keypoint 工具下右键 = 跳过当前节点 (v=0), 让 Konva onMouseDown 处理, 不抢 pan.
         if (evt.button !== 2 || drag || readOnly) return;
+        if (tool === "keypoint" && keypointDraft && keypointDraft.nodeCount > 0
+            && keypointDraft.points.length < keypointDraft.nodeCount) return;
         evt.preventDefault();
         setDrag({ kind: "pan", sx: evt.clientX, sy: evt.clientY });
       }}
@@ -833,6 +867,38 @@ export function ImageStage({
                     const cur = (polyOverridePoints(b.id) ?? (b.polyline as Pt[])).slice();
                     setDrag({ kind: "polyMove", id: b.id, start: cur, sx: pt.x, sy: pt.y, cur });
                   } : null}
+                />
+              );
+            }
+            // v0.10.28 · keypoint 走关键点渲染（单点拖拽 + Alt 切换可见性）
+            if (b.geometry?.type === "keypoint") {
+              const kpOv = kpOverridePoints(b.id);
+              const liveKps = kpOv ?? (b.keypoints ?? []);
+              const isKpEditable = selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+              return (
+                <KonvaKeypoint
+                  key={b.id}
+                  b={kpOv ? { ...display, keypoints: liveKps } : display}
+                  isAi={false}
+                  selected={selSet.has(b.id)}
+                  faded={false}
+                  imgW={imgW} imgH={imgH} scale={vp.scale}
+                  schema={keypointSchema}
+                  editable={isKpEditable}
+                  onClick={(evt) => onSelectBox(b.id, { shift: !!evt?.evt?.shiftKey })}
+                  onNodeMouseDown={(nidx) => {
+                    const cur = (kpOverridePoints(b.id) ?? (b.keypoints ?? [])).slice();
+                    setDrag({ kind: "kpNode", id: b.id, nidx, start: cur, cur });
+                  }}
+                  onToggleVisibility={(nidx) => {
+                    const cur = (b.keypoints ?? []).slice();
+                    const p = cur[nidx];
+                    if (!p) return;
+                    // 2 → 1 → 0 → 2 循环
+                    const nextV = (p.v === 2 ? 1 : p.v === 1 ? 0 : 2) as Keypoint["v"];
+                    const next = cur.map((kp, i) => (i === nidx ? { ...kp, v: nextV } : kp));
+                    onCommitKeypointGeometry?.(b.id, cur, next);
+                  }}
                 />
               );
             }
@@ -1006,6 +1072,68 @@ export function ImageStage({
                     strokeWidth={1.5 / vp.scale}
                   />
                 ))}
+              </>
+            );
+          })()}
+          {/* v0.10.28 · keypoint 草稿：已放节点 (按 schema 取色) + 下一个待放节点光标提示 */}
+          {tool === "keypoint" && keypointDraft && keypointDraft.nodeCount > 0 && (() => {
+            const placed = keypointDraft.points;
+            const nextIdx = placed.length;
+            const done = nextIdx >= keypointDraft.nodeCount;
+            const nextName = keypointSchema?.nodes[nextIdx]?.name ?? `#${nextIdx + 1}`;
+            return (
+              <>
+                {placed.map((p, i) => {
+                  if (p.v === 0) {
+                    return (
+                      <Circle
+                        key={`d-${i}`}
+                        x={p.x * imgW}
+                        y={p.y * imgH}
+                        radius={2.5 / vp.scale}
+                        fill={hexToRgba(keypointColorByIndex(i, keypointSchema), 0.3)}
+                      />
+                    );
+                  }
+                  const c = keypointColorByIndex(i, keypointSchema);
+                  return (
+                    <Circle
+                      key={`d-${i}`}
+                      x={p.x * imgW}
+                      y={p.y * imgH}
+                      radius={4 / vp.scale}
+                      fill={p.v === 2 ? c : "white"}
+                      stroke={c}
+                      strokeWidth={1.5 / vp.scale}
+                    />
+                  );
+                })}
+                {!done && polygonCursor && (
+                  <>
+                    <Circle
+                      x={polygonCursor.x * imgW}
+                      y={polygonCursor.y * imgH}
+                      radius={5 / vp.scale}
+                      fill={hexToRgba(keypointColorByIndex(nextIdx, keypointSchema), 0.25)}
+                      stroke={keypointColorByIndex(nextIdx, keypointSchema)}
+                      strokeWidth={1.5 / vp.scale}
+                      dash={[3 / vp.scale, 2 / vp.scale]}
+                    />
+                    <Label
+                      x={polygonCursor.x * imgW + 8 / vp.scale}
+                      y={polygonCursor.y * imgH - 8 / vp.scale}
+                    >
+                      <Tag fill={keypointColorByIndex(nextIdx, keypointSchema)} cornerRadius={3 / vp.scale} />
+                      <Text
+                        text={`${nextName} (${nextIdx + 1}/${keypointDraft.nodeCount})`}
+                        fill="white"
+                        fontSize={10.5 / vp.scale}
+                        padding={4 / vp.scale}
+                        fontFamily="var(--font-sans, sans-serif)"
+                      />
+                    </Label>
+                  </>
+                )}
               </>
             );
           })()}

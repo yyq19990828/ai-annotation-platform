@@ -30,7 +30,12 @@ export type ClassesConfig = Record<string, ClassConfigEntry>;
 // v0.10.17 · 工具维度类别 / 属性绑定. codegen 派生 dict<string, ToolBinding>, 这里
 // 用 ToolUnitId Literal 收窄 key, 供前端编辑器强类型.
 export type ToolClassEntry = GenToolClassEntry;
-export type ToolBinding = GenToolBinding;
+// v0.10.28 · keypoint 单元骨骼模板. 后端 ToolBinding.keypoint_schema 就位前, 前端先在
+// 此处扩展可选字段贯通配置 UI ↔ 工作台渲染. 注意: 当前 codegen ToolBinding 无此字段,
+// 故 PATCH 时后端会忽略 keypoint_schema (不落库) — 详见提交说明的「未竟部分」.
+export type ToolBinding = GenToolBinding & {
+  keypoint_schema?: import("@/types").KeypointSchema | null;
+};
 export type ToolBindings = Partial<Record<ToolUnitId, ToolBinding>>;
 
 // v0.10.10 · I17.3 · ProjectRenderingConfig — 与后端 ProjectRenderingConfig 同形；

@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationResponse, BboxGeometry, Geometry, MultiPolygonGeometry, PolygonGeometry, PolylineGeometry, PredictionResponse } from "@/types";
+import type { Annotation, AnnotationResponse, BboxGeometry, Geometry, Keypoint, MultiPolygonGeometry, PolygonGeometry, PolylineGeometry, PredictionResponse } from "@/types";
 
 /** 把 {x,y,w,h} 包装为 bbox geometry。常用于 commit 几何变更时。 */
 export function bboxGeom(g: { x: number; y: number; w: number; h: number }): BboxGeometry {
@@ -12,6 +12,11 @@ export function polygonGeom(points: [number, number][]): PolygonGeometry {
 /** v0.10.28 · 把顶点序列包装为 polyline geometry（不闭合）。 */
 export function polylineGeom(points: [number, number][]): PolylineGeometry {
   return { type: "polyline", points };
+}
+
+/** v0.10.28 · 把 keypoint 列表包装为 keypoint geometry。 */
+export function keypointGeom(points: Keypoint[]): { type: "keypoint"; points: Keypoint[] } {
+  return { type: "keypoint", points };
 }
 
 /** 计算 polygon 顶点的轴对齐包围盒（归一化）。 */
@@ -74,7 +79,21 @@ export function geometryToShape(g: Geometry): {
   polyline?: [number, number][];
   holes?: [number, number][][];
   multiPolygon?: { points: [number, number][]; holes?: [number, number][][] }[];
+  keypoints?: Keypoint[];
 } {
+  // v0.10.28 · keypoint: bounding rect 取所有已标注 (v>0) 点的 AABB; keypoints 透传供画布渲染。
+  if (g.type === "keypoint") {
+    const visible = g.points.filter((p) => p.v > 0);
+    if (visible.length === 0) return { x: 0, y: 0, w: 0, h: 0, keypoints: g.points };
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of visible) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY, keypoints: g.points };
+  }
   if (g.type === "polygon") {
     const b = polygonBounds(g.points);
     return { ...b, polygon: g.points, holes: g.holes };
@@ -110,9 +129,6 @@ export function geometryToShape(g: Geometry): {
       ([dx, dy]) => [g.cx + dx * cos - dy * sin, g.cy + dx * sin + dy * cos] as [number, number],
     );
     return polygonBounds(corners);
-  }
-  if (g.type === "keypoint") {
-    return polygonBounds(g.points.map((p) => [p.x, p.y] as [number, number]));
   }
   return { x: g.x, y: g.y, w: g.w, h: g.h };
 }

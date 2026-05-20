@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Annotation, RotatedBboxGeometry } from "@/types";
+import type { Annotation, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import { CanvasToolbar } from "../../stage/CanvasToolbar";
 import { FloatingDock } from "../../shell/FloatingDock";
@@ -8,7 +8,7 @@ import { Minimap } from "../../stage/Minimap";
 import type { AiBox } from "../../state/transforms";
 import type { PendingDrawing, SamPolarity, SamSubTool, Tool } from "../../state/useWorkbenchState";
 import type { Viewport } from "../../state/useViewportTransform";
-import type { PolygonDraftHandle } from "../../stage/tools";
+import type { KeypointDraftHandle, PolygonDraftHandle } from "../../stage/tools";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -60,12 +60,15 @@ export interface ImageWorkbenchProps {
   onCommitMove: (id: string, before: Geom, after: Geom) => void;
   onCommitResize: (id: string, before: Geom, after: Geom) => void;
   onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
+  onCommitKeypointGeometry?: (id: string, before: Keypoint[], after: Keypoint[]) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
   onChangeUserBoxClass: (id: string) => void;
   onBatchDelete: () => void;
   onBatchChangeClass: () => void;
   onStageGeometry: (g: StageGeometry) => void;
   polygonDraft?: PolygonDraftHandle;
+  keypointDraft?: KeypointDraftHandle;
+  keypointSchema?: KeypointSchema | null;
   canvasShapes: NonNullable<CommentCanvasDrawing["shapes"]>;
   canvasEditable: boolean;
   canvasStroke: string;
@@ -131,12 +134,15 @@ export function ImageWorkbench({
   onCommitMove,
   onCommitResize,
   onCommitPolygonGeometry,
+  onCommitKeypointGeometry,
   onCursorMove,
   onChangeUserBoxClass,
   onBatchDelete,
   onBatchChangeClass,
   onStageGeometry,
   polygonDraft,
+  keypointDraft,
+  keypointSchema,
   canvasShapes,
   canvasEditable,
   canvasStroke,
@@ -196,12 +202,15 @@ export function ImageWorkbench({
       onCommitMove={onCommitMove}
       onCommitResize={onCommitResize}
       onCommitPolygonGeometry={onCommitPolygonGeometry}
+      onCommitKeypointGeometry={onCommitKeypointGeometry}
       onCursorMove={onCursorMove}
       onChangeUserBoxClass={onChangeUserBoxClass}
       onBatchDelete={onBatchDelete}
       onBatchChangeClass={onBatchChangeClass}
       onStageGeometry={onStageGeometry}
       polygonDraft={polygonDraft}
+      keypointDraft={keypointDraft}
+      keypointSchema={keypointSchema}
       canvasShapes={canvasShapes}
       canvasEditable={canvasEditable}
       canvasStroke={canvasStroke}

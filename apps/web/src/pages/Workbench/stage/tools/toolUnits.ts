@@ -22,6 +22,8 @@ export const TOOL_TO_UNIT: Record<ToolId, ToolUnitId> = {
   exemplar: "ai_interactive",
   // v0.10.17 · Magic Box 复用 SAM 链路, 与其它 AI 工具共享 ai_interactive 单位.
   "magic-box": "ai_interactive",
+  // v0.10.28 · 关键点工具归 keypoint 单位.
+  keypoint: "keypoint",
   // hand / canvas 是视图 / 批注工具, 不归任何 unit; 给个占位 (兜底 bbox)
   hand: "bbox",
   canvas: "bbox",

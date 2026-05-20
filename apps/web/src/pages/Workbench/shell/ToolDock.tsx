@@ -37,6 +37,8 @@ const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   polygon: { desc: "逐点画多边形 (Enter 闭合)", altDigit: 2 },
   // v0.10.28 · 折线（开放、不闭合）。Enter / 双击结束（≥2 点）。
   polyline: { desc: "逐点画折线 (Enter 结束, 不闭合)" },
+  // v0.10.28 · 关键点: 按 schema 依次落点 (Alt 遮挡, 右键跳过), 放满自动提交.
+  keypoint: { desc: "依次落关键点 · Alt=遮挡, 右键=跳过" },
   // v0.10.8 · I11 Mask 编辑器：空白笔刷或精修 AI polygon 候选 (B/E 切笔刷/橡皮, Shift+滚轮调半径)。
   mask: { desc: "Mask 笔刷 · B/E 切模式, Shift+滚轮调半径, Enter 提交" },
   "smart-point": { desc: "单击 = 正向点；Alt+点 = 负向点", altDigit: 3 },

@@ -25,6 +25,8 @@ export interface UnitBindingState {
   enabled: boolean;
   classRows: ClassRow[];
   attributeFields: AttributeField[];
+  /** v0.10.28 · 仅 keypoint 单元用：骨骼模板 (命名节点 + 连线)。 */
+  keypointSchema?: import("@/types").KeypointSchema | null;
 }
 
 export type UnitBindingMap = Partial<Record<ToolUnitId, UnitBindingState>>;
@@ -60,6 +62,7 @@ export function buildUnitBindings(project: {
         classRows,
         attributeFields:
           (b.attribute_schema as AttributeSchema | undefined)?.fields ?? [],
+        keypointSchema: b.keypoint_schema ?? null,
       };
     }
     return out;
@@ -107,6 +110,10 @@ export function unitBindingsToPayload(bindings: UnitBindingMap): ToolBindings {
         ub.attributeFields.length > 0
           ? { fields: ub.attributeFields }
           : { fields: [] },
+      // v0.10.28 · keypoint 单元附带骨骼模板 (后端 ToolBinding.keypoint_schema 就位前不落库)。
+      ...(k === "keypoint" && ub.keypointSchema
+        ? { keypoint_schema: ub.keypointSchema }
+        : {}),
     };
   }
   return out;

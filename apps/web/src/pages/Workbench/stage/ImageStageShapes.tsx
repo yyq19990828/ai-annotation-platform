@@ -1,6 +1,6 @@
 import type Konva from "konva";
 import { Circle, Group, Label, Line, Rect, Tag, Text } from "react-konva";
-import type { Annotation, RotatedBboxGeometry } from "@/types";
+import type { Annotation, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import { useMemo } from "react";
 import type { ResizeDirection } from "./ResizeHandles";
 import { classColorForCanvas, displayClassName, hexToRgba } from "./colors";
@@ -589,6 +589,170 @@ export function KonvaPolyline({
           }}
         />
       ))}
+    </Group>
+  );
+}
+
+const KEYPOINT_PALETTE = [
+  "#f59e0b", "#10b981", "#ec4899", "#8b5cf6",
+  "#06b6d4", "#ef4444", "#84cc16", "#6366f1",
+];
+
+export function keypointColorByIndex(idx: number, schema?: KeypointSchema | null): string {
+  const c = schema?.nodes[idx]?.color;
+  return c ?? KEYPOINT_PALETTE[Math.abs(idx) % KEYPOINT_PALETTE.length];
+}
+
+interface KonvaKeypointProps {
+  b: Annotation;
+  isAi: boolean;
+  selected: boolean;
+  faded: boolean;
+  imgW: number;
+  imgH: number;
+  scale: number;
+  /** 当前类别的骨骼模板 (命名节点 + 连线)。缺省时按 index 取色、无连线。 */
+  schema?: KeypointSchema | null;
+  onClick: (e?: Konva.KonvaEventObject<MouseEvent>) => void;
+  editable?: boolean;
+  /** 单点拖拽起始 (移动该 keypoint)。 */
+  onNodeMouseDown?: (nodeIdx: number, e: Konva.KonvaEventObject<MouseEvent>) => void;
+  /** Alt+点击节点切换可见性 (2 → 1 → 0 → 2 循环)。 */
+  onToggleVisibility?: (nodeIdx: number) => void;
+}
+
+/**
+ * v0.10.28 · 关键点渲染：
+ *   - 按 schema.edges 在对应两点间画骨骼连线 (两端 v>0 时才连)；
+ *   - 每个节点画圆点：v=2 实心 / v=1 空心 / v=0 淡显小点；颜色取 schema.nodes[i].color；
+ *   - 节点标签 = schema.nodes[i].name；选中态加阴影 + 类别标签。
+ */
+export function KonvaKeypoint({
+  b, isAi, selected, faded, imgW, imgH, scale, schema,
+  onClick, editable = false, onNodeMouseDown, onToggleVisibility,
+}: KonvaKeypointProps) {
+  const color = classColorForCanvas(b.cls);
+  const kps: Keypoint[] = b.keypoints ?? [];
+  const r = (selected ? 5 : 4) / scale;
+  const sw = (selected ? 2 : 1.5) / scale;
+  const labelFontSize = BOX_LABEL_FONT_PX / scale;
+  const labelText = isAi
+    ? `✦ ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`
+    : displayClassName(b.cls);
+  const edges = schema?.edges ?? [];
+
+  // 类别标签锚点：第一个已标注点；都没有则用 bbox 左上。
+  const anchor = kps.find((p) => p.v > 0);
+  const anchorX = (anchor?.x ?? b.x) * imgW;
+  const anchorY = (anchor?.y ?? b.y) * imgH;
+
+  return (
+    <Group opacity={faded ? 0.35 : 1}>
+      {/* 骨骼连线 (两端可见 / 遮挡才连) */}
+      {edges.map(([i, j], idx) => {
+        const a = kps[i];
+        const c = kps[j];
+        if (!a || !c || a.v === 0 || c.v === 0) return null;
+        return (
+          <Line
+            key={`edge-${idx}`}
+            points={[a.x * imgW, a.y * imgH, c.x * imgW, c.y * imgH]}
+            stroke={color}
+            strokeWidth={sw}
+            opacity={a.v === 1 || c.v === 1 ? 0.6 : 1}
+            listening={false}
+          />
+        );
+      })}
+
+      {/* 节点圆点 */}
+      {kps.map((p, i) => {
+        const nodeColor = keypointColorByIndex(i, schema);
+        const cx = p.x * imgW;
+        const cy = p.y * imgH;
+        if (p.v === 0) {
+          // 未标注：淡显小点 (不可拖)
+          return (
+            <Circle
+              key={`kp-${i}`}
+              x={cx}
+              y={cy}
+              radius={r * 0.6}
+              fill={hexToRgba(nodeColor, 0.25)}
+              listening={false}
+            />
+          );
+        }
+        return (
+          <Circle
+            key={`kp-${i}`}
+            x={cx}
+            y={cy}
+            radius={r}
+            hitStrokeWidth={9 / scale}
+            // v=2 实心 / v=1 空心
+            fill={p.v === 2 ? nodeColor : "white"}
+            stroke={nodeColor}
+            strokeWidth={sw}
+            shadowEnabled={selected}
+            shadowColor={nodeColor}
+            shadowBlur={6 / scale}
+            shadowOpacity={0.5}
+            onClick={(e) => {
+              e.cancelBubble = true;
+              if (editable && onToggleVisibility && e.evt.altKey) {
+                onToggleVisibility(i);
+                return;
+              }
+              onClick(e);
+            }}
+            onMouseDown={(e) => {
+              if (!editable || !onNodeMouseDown || e.evt.button !== 0 || e.evt.altKey) return;
+              e.cancelBubble = true;
+              onNodeMouseDown(i, e);
+            }}
+            onMouseEnter={(e) => {
+              const stage = e.target.getStage();
+              if (stage && editable) stage.container().style.cursor = e.evt.altKey ? "pointer" : "grab";
+            }}
+            onMouseLeave={(e) => {
+              const stage = e.target.getStage();
+              if (stage) stage.container().style.cursor = "";
+            }}
+          />
+        );
+      })}
+
+      {/* 节点名标签 (选中或编辑态时显示, 避免拥挤) */}
+      {(selected || editable) && schema?.nodes && kps.map((p, i) => {
+        if (p.v === 0) return null;
+        const name = schema.nodes[i]?.name;
+        if (!name) return null;
+        return (
+          <Text
+            key={`kp-label-${i}`}
+            x={p.x * imgW + r + 2 / scale}
+            y={p.y * imgH - labelFontSize / 2}
+            text={name}
+            fill={keypointColorByIndex(i, schema)}
+            fontSize={(BOX_LABEL_FONT_PX - 1) / scale}
+            fontFamily="var(--font-sans, sans-serif)"
+            listening={false}
+          />
+        );
+      })}
+
+      {/* 类别标签 */}
+      <Label x={anchorX} y={anchorY - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+        <Tag fill={color} cornerRadius={3 / scale} />
+        <Text
+          text={labelText}
+          fill="white"
+          fontSize={labelFontSize}
+          padding={BOX_LABEL_PAD_PX / scale}
+          fontFamily="var(--font-sans, sans-serif)"
+        />
+      </Label>
     </Group>
   );
 }

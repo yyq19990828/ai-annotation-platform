@@ -262,7 +262,18 @@ export interface AIBox {
   /** v0.9.14 · 多连通域时填全部 polygon (含 holes). 当前前端按主外环渲染降级,
    *  保留全字段供 v0.10.x 镂空渲染升级与多 ring 拆分使用. */
   multiPolygon?: { points: [number, number][]; holes?: [number, number][][] }[];
+  /** v0.10.28 · keypoint 形状时填各命名节点 (与 keypoint_schema.nodes 同 index). bbox/polygon 时 undefined. */
+  keypoints?: Keypoint[];
 }
+
+/**
+ * v0.10.28 · 单元级骨骼模板 (COCO 范式). 与后端 KeypointSchema (KeypointNode + edges) 对齐;
+ * 后端 ToolBinding.keypoint_schema 就位前, 前端先用此类型贯通配置 UI 与画布渲染.
+ *   nodes: 命名节点列表 (顺序即 keypoint index); color 可选 (缺省按 index 取预设色).
+ *   edges: 骨骼连线, 每条是 nodes 的两个 index [i, j].
+ */
+export type KeypointNode = { name: string; color?: string | null };
+export type KeypointSchema = { nodes: KeypointNode[]; edges: [number, number][] };
 
 export interface Annotation extends AIBox {
   source: "manual" | "prediction_based";
