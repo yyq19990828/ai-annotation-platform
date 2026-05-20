@@ -25,6 +25,8 @@
 | POST | `/probe` |
 | GET | `/runtime-hints` |
 | GET | `/all` |
+| GET | `/observe` |
+| POST | `/observe/smoke-test` |
 
 ## `admin_preannotate.py`
 
@@ -136,7 +138,7 @@
 | POST | `/bulk-approve` |
 | POST | `/bulk-reject` |
 | GET | `/{batch_id}/audit-logs` |
-| GET | `/{batch_id}/export` |
+| POST | `/{batch_id}/export` |
 
 ## `bug_reports.py`
 
@@ -295,7 +297,7 @@
 | GET | `/{project_id}/members` |
 | POST | `/{project_id}/members` |
 | DELETE | `/{project_id}/members/{member_id}` |
-| GET | `/{project_id}/export` |
+| POST | `/{project_id}/export` |
 | POST | `/{project_id}/preannotate` |
 | GET | `/{project_id}/orphan-tasks/preview` |
 | POST | `/{project_id}/orphan-tasks/cleanup` |
@@ -398,4 +400,4 @@
 
 ---
 
-_共 36 模块 / 221 路由_
+_共 36 模块 / 223 路由_
