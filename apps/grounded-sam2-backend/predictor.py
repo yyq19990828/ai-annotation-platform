@@ -60,7 +60,10 @@ SAM2_CONFIGS = {
 }
 DINO_CONFIGS = {
     "T": ("GroundingDINO_SwinT_OGC.py", "groundingdino_swint_ogc.pth"),
-    "B": ("GroundingDINO_SwinB_cogcoor.py", "groundingdino_swinb_cogcoor.pth"),
+    # vendor 里 SwinB 的 config 实际命名为 GroundingDINO_SwinB_cfg.py (不是 _cogcoor.py);
+    # checkpoint 仍是 groundingdino_swinb_cogcoor.pth. 变体热切换 (v0.10.23) 前 DINO 永远锁 T,
+    # 此 config 文件名错配从未被触发.
+    "B": ("GroundingDINO_SwinB_cfg.py", "groundingdino_swinb_cogcoor.pth"),
 }
 
 

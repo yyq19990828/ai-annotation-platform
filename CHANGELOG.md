@@ -22,6 +22,31 @@
 
 ## 最新版本
 
+## [0.10.23] - 2026-05-20
+
+> **ML Backend 变体运行期热切换 + 工作台变体/文本面板收敛.** grounded-sam2-backend 原用全局单例 `_predictor` + 单 cache, 变体由启动 env `SAM_VARIANT`/`DINO_VARIANT` 锁死, `_run_prompt` 完全忽略请求变体。本期引入容器内 `ModelPool`: 按请求级 `(sam_variant, dino_variant)` LRU 缓存 predictor, 命中复用 / miss 冷启 1–3s / 超 cap 驱逐 LRU + 释放显存; embedding cache 按变体分桶隔离。前端把变体选择上移 AI 面板(会话级, 切工具保留), 文本输入下沉子工具面板。**前置 bug 修复**: `/setup` 的 `sam_variant` enum 原暴露 `["tiny","small","base","large"]`, 但 `SAM2_CONFIGS` key 是 `base_plus` —— 选 `base` 会在 backend 真消费 variant 后 KeyError → 422; 统一为 `["tiny","small","base_plus","large"]`。 → [plan](ROADMAP/2026-05-20-v0.10.23-plan.md) · [需求](ROADMAP/2026-05-20-ml-backend-variant-hot-switch.md)。
+
+### Added
+
+- **`model_pool.py` · 容器内变体 LRU 池** ([apps/grounded-sam2-backend/model_pool.py](apps/grounded-sam2-backend/model_pool.py)): `OrderedDict[(sam,dino), GroundedSAM2Predictor]` LRU(cap=`MODEL_POOL_CAP`); `async get()` 命中 `move_to_end`, miss 在 per-variant `asyncio.Lock` 内 `run_in_executor` build(防并发同变体重复 build), 超 cap 先驱逐到 cap-1 再 build(避免峰值 cap+1 模型); pool 满 + 并发 miss 排队超 `MODEL_POOL_BUILD_TIMEOUT` 抛 RuntimeError(main.py 翻 503); embedding cache 按变体分桶 `dict[(sam,dino), EmbeddingCache]`, 驱逐时连带 clear 桶 + `_free_gpu_memory()`; idle watcher 超时 `clear_all()` 清整池。
+- **新 env `MODEL_POOL_CAP`(默认 1) / `MODEL_POOL_BUILD_TIMEOUT`(默认 30s)** ([docker-compose.yml](docker-compose.yml) · [.env.example](.env.example)): 加显存预算注释(4060=1 / 3090=1-2 / A100=2-4)。
+- **多变体 checkpoint 预拉 `PREFETCH_SAM_VARIANTS` / `PREFETCH_DINO_VARIANTS`** ([scripts/download_checkpoints.py](apps/grounded-sam2-backend/scripts/download_checkpoints.py) · [docker-compose.yml](docker-compose.yml) · [.env.example](.env.example)): pool 能服务多变体, 但 entrypoint 原只下主变体 checkpoint → 运行期请求其他变体 `FileNotFoundError`。新增逗号分隔的预拉列表(默认全量 `tiny,small,base_plus,large` × `T,B`, 磁盘紧张可裁剪); 主变体下载失败 `exit 1`(不带半残上线), 额外变体失败仅 warn 不阻塞启动(运行期由 pool 报 503)。
+- **后台 prefetch + `/health.provisioning` warming-up** ([Dockerfile](apps/grounded-sam2-backend/Dockerfile) · [main.py](apps/grounded-sam2-backend/main.py) · [download_checkpoints.py](apps/grounded-sam2-backend/scripts/download_checkpoints.py)): 全量 prefetch 在全新 volume 上要下 ~3GB, 原 entrypoint 阻塞下载期间(数分钟)容器对外是 `error`。改为 entrypoint 仅阻塞下**主变体**(单档, 秒级)→ uvicorn 立即起 → app startup 后台 subprocess 跑 `download_checkpoints.py prefetch` 边服务边补额外变体。`/health` 加 `provisioning` 子对象(`idle`/`downloading`/`ready`/`partial`/`error`), 下载脚本加 `primary`/`prefetch`/`both` 三模式。期间请求未下完的变体仍 503(可诊断), 但容器对外 healthy。
+
+### Changed
+
+- **`main.py` 接入 pool + 请求级变体** ([apps/grounded-sam2-backend/main.py](apps/grounded-sam2-backend/main.py)): startup 预热默认变体进 pool(保持单变体常驻); `_run_prompt` 经 `_resolve_variant(ctx)` 读 `ctx.{sam_variant,dino_variant}`(缺省回退 env 默认, 非法值 422), `await _pool.get(sv,dv)`, `cache_key`/cache 桶按请求变体隔离; `model_version` 经 `_model_version(sv,dv)` 按请求变体拼; `/setup` 去两个 variant 的 `readOnly` 并对齐 enum 为 `base_plus`; `/health` 加 `pool` 子对象(`cap`/`loaded_variants`/`evict_count`/`per_variant_lru_ts`), `/cache/stats`+`/metrics` 聚合各桶; `/unload`/`/reload` 改整池语义。
+- **embedding cache 加 `variant`/`size()`** ([apps/grounded-sam2-backend/embedding_cache.py](apps/grounded-sam2-backend/embedding_cache.py)): `EmbeddingCache(sam_variant=...)` 记录所属变体, `stats()` 暴露 `variant`, 新增 `size()` 供 pool 聚合。
+- **前端变体上移 AI 面板 / 文本下沉子工具** ([AIInspectorPanel.tsx](apps/web/src/pages/Workbench/shell/AIInspectorPanel.tsx) · [SchemaForm/index.tsx](apps/web/src/pages/Workbench/components/SchemaForm/index.tsx) · [WorkbenchShell.tsx](apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) · [useWorkbenchState.ts](apps/web/src/pages/Workbench/state/useWorkbenchState.ts)): 变体选择移到 AI 面板(会话级 `aiVariant`, 切工具不重置), `SchemaForm` 排除 variant enum 字段, enum 原值直接渲染不映射。
+- **变体切换三态通知** ([useInteractiveAI.ts](apps/web/src/pages/Workbench/state/useInteractiveAI.ts)): 变体切换是惰性的(选完下次预测才生效), 故在切换后首次预测期间复用全局 `useToastStore` 弹「正在切换到 SAM x/DINO y 模型…」→「已切换到 …」/「模型切换失败: {detail}」三态(透 backend 503 detail); `lastAppliedVariantRef` 记上次成功应用的变体签名, 同变体后续预测不弹, 切 backend 时清空。不加「应用」按钮 / 不主动预热(选择即应用)。
+- **协议/部署文档同步** ([ml-backend-protocol.md](docs-site/dev/reference/ml-backend-protocol.md) · [docker-compose.md](docs-site/ops/deploy/docker-compose.md)): `/predict` context 加 `sam_variant`/`dino_variant` 字段说明, `/health` pool 子对象, `/setup` 去 readOnly + 修 enum, deploy 加按显存配 pool cap + 多变体 prefetch 章节。
+
+### Fixed
+
+- **Dockerfile 漏 COPY `model_pool.py`** ([apps/grounded-sam2-backend/Dockerfile](apps/grounded-sam2-backend/Dockerfile)): 该 Dockerfile 用显式文件名白名单 COPY 各 `.py`, 新增的 `model_pool.py` 未加进列表 → 镜像内缺文件, 容器启动 `ModuleNotFoundError: No module named 'model_pool'`。加进 COPY 行。(GPU 真机重建时发现; 纯 lint/单测覆盖不到打包完整性。)
+- **缺 checkpoint 变体从 500 → 503 可诊断** ([apps/grounded-sam2-backend/main.py](apps/grounded-sam2-backend/main.py)): 请求未预拉的变体时 `_build_predictor` 抛 `FileNotFoundError` 原裸传成 500; 改为 `_get_predictor` 捕获翻 503, 提示"把该变体加入 PREFETCH_* 后重建 / 手动下载 checkpoint"。
+- **`DINO_CONFIGS["B"]` config 文件名错配** ([apps/grounded-sam2-backend/predictor.py](apps/grounded-sam2-backend/predictor.py)): vendor 里 SwinB 的 config 实际叫 `GroundingDINO_SwinB_cfg.py`, 但映射表写成 `GroundingDINO_SwinB_cogcoor.py` → 加载 DINO B 时 `FileNotFoundError`。变体热切换前 DINO 永远锁 `T`, 此错配从未被触发; 本期 GPU 真机切到 `dino_variant=B` 才暴露 (checkpoint `.pth` 下载正常, 只是 config `.py` 名错)。修正为 `GroundingDINO_SwinB_cfg.py`。
+
 ## [0.10.22] - 2026-05-20
 
 > **ADR-0026 单源真值收口 · 删除派生 `classes` / `classes_config` / `attribute_schema` 列.** v0.10.17 引入 `tool_bindings` 后,旧扁平列由 service 层在每次写时双写派生兜底 —— 存储层实际存着两份会漂移的真值,ADR-0026 宣称的"单源"未真正达成。本期 drop 三列(`projects` + `project_templates`,migration 0078),移除写时双写 helper `apply_tool_bindings_legacy_sync`,所有读端(响应序列化 / COCO·YOLO·AAP 导出 / clone)改为从 `tool_bindings` **读时派生**。关键决策:① **不删** `ProjectOut` / `ProjectTemplateOut` 的三个扁平字段 —— 它们被 8+ 处活跃前端代码消费(`WorkbenchShell` / `AIInspectorPanel` / `useWorkbenchHotkeys` 等),改为 `model_validator` 序列化时从 `tool_bindings` 派生,前端零改动、API 契约不变(OpenAPI 仅 1 行 docstring 变化);② **保留** `coalesce_legacy_into_tool_bindings` 反向输入兼容(旧客户端 / 旧 AAP JSON schema 1.0 仍可传扁平字段,折叠进 `tool_bindings`);③ `derive_legacy_*` 去 "legacy" 命名升格为规范读时派生 helper。**reject_reason_type 结构化枚举(ROADMAP §B 标 P2 待做)经核查实为 v0.10.16 已落地,ROADMAP 该条陈旧。** → [plan](docs/plans/2026-05-20-v0.10.22-single-source-of-truth-cutover.md) · [ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md)。

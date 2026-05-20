@@ -83,7 +83,7 @@
   - 批量状态迁移类（bulk-approve / bulk-reject）：v0.7.3 故意未做。reject 反馈是逐批次语义、approve 跳过逐批次审视有质检失职风险。落地前先讨论 UX。
 
 ### AI / 模型
-- **模型市场扩展**：v0.9.3 phase 2 已激活 `/model-market`（合并 backends + failed-predictions tab）；二期：① 模型版本对比 / AB 路由 UI（依赖 v0.10.x sam3-backend 双模型并存）；② 一键热更新模型权重（`/admin/ml-backends/{id}/reload`）；③ **注册 backend 时选模型变体**（详见下条，C → B 两阶段，与本条同窗口）。
+- **模型市场扩展**：v0.9.3 phase 2 已激活 `/model-market`（合并 backends + failed-predictions tab）；二期：① 模型版本对比 / AB 路由 UI（依赖 v0.10.x sam3-backend 双模型并存；v0.10.23 ModelPool 落地后 grounded-sam2 单容器内已可多变体并存，AB 路由选项来源走 `/setup.params` 变体 enum）；② 一键热更新模型权重（`/admin/ml-backends/{id}/reload`）；③ ~~注册 backend 时选模型变体~~ **已落地（v0.10.23 走 pool 形态请求级变体，注册时声明退化为可选，未做）**。
 - **Predictions Import / AAP JSON 后续延伸**（v0.10.15 之后开放项，按客户反馈触发）：
   - **`POST /annotations/import` 端点**（**P3**）：v0.10.15 AAP JSON `annotations[]` 字段当前仅导出可用，导入端只警告日志不入库。涉及 batch/owner/audit 协议复杂度；触发条件：客户反馈"导出 AAP JSON 后无法在另一实例完整重建标注"。设计要点：① 入库 annotation 行需要回写 `user_id` / `source` / `was_cancelled` / `ground_truth` 等元数据；② batch_id 解析需要类似 `task_match` 的 `batch_match` 字段（display_id 优先）；③ 是否走 audit log 需要 ADR 决策。
   - **Task 表加 `external_id` 字段**（**P3**）：v0.10.15 用 display_id + file_path 两元组匹配够用；触发条件：客户跨实例迁移时改 display_id 或文件路径（"重命名也想保稳定 ID"）。设计走 `tasks.external_id String(100) UNIQUE(project_id, external_id)` + AAP JSON `task_match.external_id` 已预留字段直接生效（[`AAPTaskMatch`](apps/api/app/schemas/aap_json.py) 已留 forward compat）。同时给 `predictions` / `annotations` 也加 `external_id` 派生窗口。
@@ -92,7 +92,11 @@
   - **AAP JSON 单 prediction 多 shape**（**P3**）：当前每个 `predictions[i]` 对应**一条** Prediction 行（单 shape）；与 ML backend 内部协议（一个 prediction 行可携带 N 个 shape）不一致。触发条件：客户希望"一个外部模型一次推理出来的所有框作为同一 prediction 单元，便于整体采纳/驳回"。设计：把 envelope `predictions[i]` 加可选 `shapes[]` 数组，与现有 flat `geometry/class_name` 同源（二选一，flat 兼容旧 schema）。schema 已在 v0.10.17 升 minor `1.1`（带 `tool_unit_id` / `tool_bindings`）；多 shape 仍待客户驱动。
   - **AAP JSON video_track 导入支持**（**P3**）：当前 `internal_geometry_to_ls_shape` 适配器仅覆盖 bbox / polygon / multi_polygon；video_bbox / video_track / skeleton 进 errors[]。触发条件：视频项目客户首次反馈"想把外部 tracker 结果灌进平台"。与 §C.5 R9 / R23 同窗口做。v0.10.17 schema_version 1.1 envelope 已带 `tool_unit_id`,新增 `video_track_bbox` / `video_track` tool_unit 时实现端接通即可。
   - **`predictions_import` 审计 detail 专项**（**P3**）：当前 audit log `detail_json` 含 imported/skipped/error_count；缺"哪些 task 被命中 / 哪些 model_version / 文件大小 hash"等取证字段。触发条件：审计期反馈 detail 不足以定位"哪批外部模型结果先被导入又被撤回"。设计在 `app/services/audit.py` 加 `predictions_import_detail()` helper.
-- **ML Backend 模型变体运行期热切换（单容器 model pool）**（**P2**，独立 epic 文档）：见 **[ROADMAP/2026-05-20-ml-backend-variant-hot-switch.md](./ROADMAP/2026-05-20-ml-backend-variant-hot-switch.md)**。grounded-sam2-backend 变体当前 env 锁死、运行期不可变；前端 SchemaForm 变体下拉 + context 透传 + API 转发链路**已就位**，唯一断点是 backend 不认 context 里的 `sam_variant`/`dino_variant`（`apps/grounded-sam2-backend/main.py:315-391` 忽略）。**当前直接需求 = 阶段二（B · ModelPool 运行期热切换，~5-7d）**；原阶段一（C · 注册时声明 + 一变体一容器）在 pool 形态下退化为可选。模型市场二期 AB 路由 UI 改读 `/setup.supported_variants`。
+- **ML Backend 模型变体运行期热切换（单容器 model pool）** ✅ **已落地 v0.10.23**（[plan](docs/plans/2026-05-20-v0.10.23-plan.md) · [需求](ROADMAP/2026-05-20-ml-backend-variant-hot-switch.md)）：grounded-sam2-backend 引入容器内 `ModelPool`，请求级 `(sam_variant,dino_variant)` LRU 热切换 + embedding cache 按变体分桶；前端变体上移 AI 面板（会话级）、文本下沉子工具面板。后续开放项见下「变体热切换后续延伸」。
+- **变体热切换后续延伸**（v0.10.23 之后开放项，按需触发）：
+  - **`/setup.supported_variants` 富元数据**（**P3**）：当前变体选项来源是 `/setup.params` 的 `sam_variant`/`dino_variant` enum（纯字符串）；原需求 §3 设想的 `supported_variants` 数组（携带每变体显存占用 / 推荐档 / labels）未做。触发条件：模型市场二期 AB 路由 UI 需要按变体展示「显存 7GB / 精度高」等元数据时再扩。
+  - **SchemaForm 单字段 `readOnly` 支持**（**P3**）：v0.10.23 用「从 SchemaForm 排除变体字段」绕开了单字段只读缺口（`SchemaForm` 的 `disabled` 仍是整组）；若未来后端 `/setup.params` 出现需单字段只读的参数，需补 `field.readOnly → disabled` 透传。触发条件：新增只读参数字段。
+  - **grounded-sam2-backend lint 债**（**P3 maintenance**）：包内 `ruff check .` 仍有 ~179 报错（多为 vendor / 历史遗留，本期改动文件已全过）；触发条件：给该包加 CI lint gate 前需先清债或显式 exclude vendor。
 - **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：dev `ML_BACKEND_STORAGE_HOST` + ADR-0012 框架已收口；生产场景多变, 第一个生产部署遇到再扩策略表（"何时设、设啥值、何时留空"）。
 
@@ -247,7 +251,6 @@
 | **P3** | I4/I12/I18 epic 续作余 (v0.10.21 收尾) | v0.10.20 已落 I4 任务级评论 POST + I12 group 折叠/batch banner + I18 IssueLayer + ADR-0027 第二段双写; v0.10.21 落 I4 笔画 timeline + 任务级 feedback patch/delete UI; 剩独立 epic 处理: ADR-0027 第三段切单源 (legacy-table-retirement) + DiscussionPanel 完整拆分 (无 UX 增量) + IssueLayer video frame pin | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | `polyline` 工具实现 | v0.10.17 schema 与 UI 留位置灰; 车道线 / 折线段需求出现时启动 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
-| **P2** | ML Backend 模型变体运行期热切换（单容器 model pool） | 当前直接需求 = 阶段二 B；前端选变体 UI + context 透传已就位, 唯一断点是 backend 不认 variant; 详见独立 epic | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志冷数据物化触发 | v0.8.1 partition + Celery beat archive 已就位；当前数据量未到 1M 行 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 | **P3** | Workbench Shell 拆分后续精简（v0.10.18 部分收口） | v0.10.18 已落 `WorkbenchStageHostProps` JSDoc 分组 + `WorkbenchLayout.test.tsx` / `WorkbenchStageHost.test.tsx` 共 6 例 focused render tests; 剩 props 嵌套类型重构 (call-site 改造, 触发条件 Shell 再次膨胀) + `useWorkbenchShellModel` (Shell 仍 1210 行, 未破 900) 未做 | [0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md) |
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { mlBackendsApi } from "@/api/ml-backends";
 import { useToastStore } from "@/components/ui/Toast";
+import { VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { createSamCache, makeSamCacheKey } from "./useSamCache";
 
 /**
@@ -83,6 +84,15 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflightRef = useRef(0);
 
+  // v0.10.23 · 会话级模型变体切换反馈。变体切换是惰性的：用户在 AI 面板下拉选了新变体后,
+  // 直到下一次预测才把它发给 backend (首次冷启 1-3s+)。lastAppliedVariantRef 记「上次成功
+  // 应用的变体签名」, 切换后首次预测期间弹「切换中…→ 成功/失败」三态通知; 同变体后续预测不弹。
+  // 切 backend → 清空 (新 backend 的变体语义独立)。
+  const lastAppliedVariantRef = useRef<string | null>(null);
+  useEffect(() => {
+    lastAppliedVariantRef.current = null;
+  }, [mlBackendId]);
+
   // v0.10.4 I6.1 · 按 (taskId, mlBackendId, ctx) 缓存候选；切 backend 时全清。
   const cache = useMemo(() => createSamCache(), []);
   useEffect(() => {
@@ -120,6 +130,13 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         setActiveIdx(0);
         return;
       }
+      // v0.10.23 · 本次请求携带的变体是否与上次成功应用的不同 → 切换后首次预测, 弹三态通知。
+      const variantSig = variantSignature(context);
+      const isVariantSwitch =
+        variantSig !== null && variantSig !== lastAppliedVariantRef.current;
+      if (isVariantSwitch) {
+        pushToast({ msg: `正在切换到 ${variantLabel(context)} 模型…` });
+      }
       const myInflight = ++inflightRef.current;
       setIsRunning(true);
       try {
@@ -129,6 +146,10 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         });
         // 只接受最新一次请求的结果（防止防抖窗口外的旧请求覆盖新候选）
         if (myInflight !== inflightRef.current) return;
+        if (isVariantSwitch) {
+          lastAppliedVariantRef.current = variantSig;
+          pushToast({ msg: `已切换到 ${variantLabel(context)}`, kind: "success" });
+        }
         const next: PendingCandidate[] = (resp.result ?? [])
           .map((r, i) => normalizeResult(r, i, source))
           .filter((c): c is PendingCandidate => c !== null);
@@ -146,9 +167,11 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       } catch (err) {
         if (myInflight !== inflightRef.current) return;
         const msg = err instanceof Error ? err.message : String(err);
+        // 切换后首次预测失败 → 不更新 lastAppliedVariant (下次重试仍视为切换), 落到切换失败态;
+        // backend 503 (变体 checkpoint 未预置) 的 detail 经 ApiError.message 透出。
         pushToast({
-          msg: "SAM 推理失败",
-          sub: msg.slice(0, 80),
+          msg: isVariantSwitch ? "模型切换失败" : "SAM 推理失败",
+          sub: msg.slice(0, 120),
           kind: "error",
         });
       } finally {
@@ -275,6 +298,30 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * v0.10.23 · 从 context 抽出变体字段 (sam_variant/dino_variant) 拼一个稳定签名,
+ * 用于判定「是否切换了变体」。无任何变体字段时返回 null (该 backend 不暴露变体,
+ * 或用户从未选过 → 不弹切换通知)。
+ */
+function variantSignature(context: Record<string, unknown>): string | null {
+  const parts = VARIANT_FIELD_KEYS.map((k) => {
+    const v = context[k];
+    return typeof v === "string" ? `${k}=${v}` : null;
+  }).filter((p): p is string => p !== null);
+  return parts.length > 0 ? parts.join("|") : null;
+}
+
+/** v0.10.23 · 通知文案: 「SAM tiny/DINO base」; 缺 dino_variant 时只显示 SAM 段。 */
+function variantLabel(context: Record<string, unknown>): string {
+  const sam = typeof context.sam_variant === "string" ? context.sam_variant : null;
+  const dino = typeof context.dino_variant === "string" ? context.dino_variant : null;
+  const segs: string[] = [];
+  if (sam) segs.push(`SAM ${sam}`);
+  if (dino) segs.push(`DINO ${dino}`);
+  return segs.join("/");
+}
+
 
 interface BackendResult {
   type?: string;

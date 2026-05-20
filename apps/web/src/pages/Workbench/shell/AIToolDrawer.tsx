@@ -1,14 +1,17 @@
 // v0.10.2 · Prompt-first ToolDock 的右侧抽屉.
 // 任一 AI 工具激活时浮出, 含: 工具标题 + 后端选择器 (1:1 锁定阶段单项 disabled) +
 // 工具特定控件 (smart-point 极性 / 提示文案) + Schema-form 参数面板 + 状态指示.
-// 文本提示工具的输入框仍走右栏 AIPredictionPopover 的 SamTextPanel (沿用 alias 链路).
+// v0.10.23 · 设计 B · text-prompt 工具的输入段 (SamTextPanel) 下沉到此处, 替换原 hint;
+// 预测结果列表仍留右栏 AIInspectorPanel.
 
 import { useEffect, useMemo } from "react";
 import { Icon } from "@/components/ui/Icon";
 import type { MLBackendCapability } from "@/api/ml-backends";
 import type { SamPolarity, Tool } from "../state/useWorkbenchState";
+import type { TextOutputMode } from "../state/useInteractiveAI";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
 import { SchemaForm, deriveDefaults, type JsonSchemaObject } from "../components/SchemaForm";
+import { SamTextPanel } from "./SamTextPanel";
 import styles from "./AIToolDrawer.module.css";
 
 export interface AIToolDrawerProps {
@@ -23,6 +26,13 @@ export interface AIToolDrawerProps {
   onSetSamPolarity: (p: SamPolarity) => void;
   isLoading: boolean;
   isError: boolean;
+  // v0.10.23 · 设计 B · text-prompt 输入段下沉到 drawer; 沿用现有 runText 链路 (逻辑零改).
+  onRunSamText?: (text: string, outputMode: TextOutputMode) => void;
+  samRunning?: boolean;
+  samCandidateCount?: number;
+  projectId?: string;
+  projectTypeKey?: string | null;
+  samTextFocusKey?: number;
 }
 
 const TOOL_HINT: Record<ToolId, string | null> = {
@@ -33,7 +43,8 @@ const TOOL_HINT: Record<ToolId, string | null> = {
   mask: null,
   "smart-point": "单击图像 = 正向点；Alt+点 = 负向点",
   "smart-box": "在图像上拖框作为 SAM 提示",
-  "text-prompt": "在右侧 AI 面板输入文本（按 [ ] 调阈值）",
+  // v0.10.23 · 设计 B · text-prompt 不再用 hint, 改在下方渲染 SamTextPanel 输入段.
+  "text-prompt": null,
   exemplar: "拖框圈出某个示例，后端找全图相似实例",
   // v0.10.17 · Magic Box: 复用 SAM bbox prompt 把粗框收紧到对象紧凑外接矩形.
   "magic-box": "粗略拖框 → SAM 返回 mask → 取紧凑外接矩形落 bbox",
@@ -54,6 +65,12 @@ export function AIToolDrawer({
   onSetSamPolarity,
   isLoading,
   isError,
+  onRunSamText,
+  samRunning,
+  samCandidateCount,
+  projectId,
+  projectTypeKey,
+  samTextFocusKey,
 }: AIToolDrawerProps) {
   const meta = TOOL_REGISTRY[tool];
   const hint = TOOL_HINT[tool];
@@ -119,6 +136,18 @@ export function AIToolDrawer({
         <div className={styles.hint}>
           {hint}
         </div>
+      )}
+
+      {/* v0.10.23 · 设计 B · text-prompt 输入段下沉到此处 (文本框 + 输出模式 + 「找全图」). */}
+      {tool === "text-prompt" && onRunSamText && (
+        <SamTextPanel
+          onRun={onRunSamText}
+          running={samRunning ?? false}
+          candidateCount={samCandidateCount ?? 0}
+          projectId={projectId}
+          projectTypeKey={projectTypeKey}
+          focusKey={samTextFocusKey}
+        />
       )}
 
       {/* 参数面板 (schema-form) */}

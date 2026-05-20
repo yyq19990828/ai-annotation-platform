@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { TabRow } from "@/components/ui/TabRow";
 import type { Annotation, AnnotationResponse } from "@/types";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import type { AttributeSchema } from "@/api/projects";
@@ -15,9 +14,7 @@ import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { AttributeForm } from "./AttributeForm";
 import { CommentsPanel } from "./CommentsPanel";
 import { ResizeHandle } from "./ResizeHandle";
-import type { TextOutputMode } from "../state/useInteractiveAI";
-import { resolveInitialOutputMode, writeStoredOutputMode } from "../state/samTextOutput";
-import { useProject } from "@/hooks/useProjects";
+import { VARIANT_FIELD_KEYS, type JsonSchemaObject } from "../components/SchemaForm";
 import styles from "./AIInspectorPanel.module.css";
 
 interface AIInspectorPanelProps {
@@ -224,18 +221,14 @@ interface AIPredictionPopoverProps {
   onRunAi: () => void;
   onAcceptAll: () => void;
   onSetConfThreshold: (v: number) => void;
-  // v0.10.2 · Tool union 扩展; SamTextPanel 现在仅在 tool === "text-prompt" 时显示.
-  // v0.10.8 · 加 "mask".
-  tool?: "box" | "hand" | "polygon" | "canvas" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box";
-  onRunSamText?: (text: string, outputMode: TextOutputMode) => void;
-  samRunning?: boolean;
-  samCandidateCount?: number;
-  projectId?: string;
-  projectTypeKey?: string | null;
-  samTextFocusKey?: number;
+  // v0.10.23 · 设计 B · 文本输入段下沉到 AIToolDrawer; popover 不再承载 SAM 文本提示控件.
   taskAiCost?: number;
   taskAiAvgMs?: number | null;
   taskAiPredictionCount?: number;
+  // v0.10.23 · 会话级模型变体选择 (设计 A): 选项来自 /setup.params 的 sam_variant/dino_variant enum.
+  paramsSchema?: JsonSchemaObject;
+  aiVariant?: Record<string, unknown>;
+  onSetAiVariant?: (next: Record<string, unknown>) => void;
 }
 
 export function AIPredictionPopover({
@@ -252,16 +245,12 @@ export function AIPredictionPopover({
   onRunAi,
   onAcceptAll,
   onSetConfThreshold,
-  tool,
-  onRunSamText,
-  samRunning = false,
-  samCandidateCount = 0,
-  projectId,
-  projectTypeKey,
-  samTextFocusKey,
   taskAiCost,
   taskAiAvgMs,
   taskAiPredictionCount,
+  paramsSchema,
+  aiVariant,
+  onSetAiVariant,
 }: AIPredictionPopoverProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
@@ -382,14 +371,12 @@ export function AIPredictionPopover({
         </div>
       </div>
 
-      {tool === "text-prompt" && onRunSamText && (
-        <SamTextPanel
-          onRun={onRunSamText}
-          running={samRunning}
-          candidateCount={samCandidateCount}
-          projectId={projectId}
-          projectTypeKey={projectTypeKey}
-          focusKey={samTextFocusKey}
+      {/* v0.10.23 · 设计 A · 会话级模型变体选择 (切工具不丢); /setup.params 无变体字段时整段隐藏. */}
+      {onSetAiVariant && (
+        <VariantSelector
+          schema={paramsSchema}
+          value={aiVariant ?? {}}
+          onChange={onSetAiVariant}
         />
       )}
 
@@ -425,146 +412,47 @@ export function AIPredictionPopover({
   );
 }
 
-// ── SAM 文本提示面板（v0.9.2 引入，v0.10.2 由 tool === "text-prompt" 时显） ─────────────────────────
-interface SamTextPanelProps {
-  /** v0.9.4 phase 2 · onRun 接 outputMode (box / mask / both) 参数 */
-  onRun: (text: string, outputMode: TextOutputMode) => void;
-  running: boolean;
-  candidateCount: number;
-  /** v0.9.4 phase 2 · sessionStorage 持久化 key + 智能默认按 type_key */
-  projectId?: string;
-  projectTypeKey?: string | null;
-  /** v0.9.4 phase 2 · 切到 sam-text 子工具时父级自增此值, panel 拿到后自动 focus input. */
-  focusKey?: number;
+// ── v0.10.23 · 设计 A · 会话级模型变体选择 ───────────────────────────────────
+// 选项来自 /setup.params 的 sam_variant / dino_variant enum, 原值直接渲染 (不做名称映射,
+// 对齐 backend 已统一的 ["tiny","small","base_plus","large"]). grounded-sam2 双轴 → 两个下拉;
+// /setup.params 不含变体字段时整段隐藏 (如 sam3-backend).
+interface VariantSelectorProps {
+  schema?: JsonSchemaObject;
+  value: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>) => void;
 }
 
-// v0.9.4 phase 2 · 中文标签 ↔ TextOutputMode 双向映射 (TabRow 直接显示标签字符串).
-const OUTPUT_MODE_LABELS: Record<TextOutputMode, string> = {
-  box: "□ 框",
-  mask: "○ 掩膜",
-  both: "⊕ 全部",
-};
-const OUTPUT_MODE_BY_LABEL: Record<string, TextOutputMode> = {
-  "□ 框": "box",
-  "○ 掩膜": "mask",
-  "⊕ 全部": "both",
-};
-const OUTPUT_MODE_TABS = Object.values(OUTPUT_MODE_LABELS);
+function VariantSelector({ schema, value, onChange }: VariantSelectorProps) {
+  const fields = VARIANT_FIELD_KEYS.map((key) => {
+    const raw = schema?.properties?.[key];
+    const field = raw && typeof raw === "object" ? (raw as { title?: string; enum?: unknown; default?: unknown }) : null;
+    const options = Array.isArray(field?.enum) ? (field!.enum as unknown[]).filter((o): o is string => typeof o === "string") : [];
+    if (!field || options.length === 0) return null;
+    return { key, title: field.title ?? key, options, fallback: typeof field.default === "string" ? field.default : options[0] };
+  }).filter((f): f is NonNullable<typeof f> => f !== null);
 
-function SamTextPanel({
-  onRun,
-  running,
-  candidateCount,
-  projectId,
-  projectTypeKey,
-  focusKey,
-}: SamTextPanelProps) {
-  const [text, setText] = useState("");
-  // v0.9.5 · 类别 alias 快速填入; 必须先于使用其 data 的 useState 初始化器声明, 避免 TDZ.
-  const projectQ = useProject(projectId ?? "");
-  const [outputMode, setOutputMode] = useState<TextOutputMode>(() =>
-    resolveInitialOutputMode(projectId, projectTypeKey, projectQ.data?.text_output_default),
-  );
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const aliases = useMemo(() => {
-    const cfg = projectQ.data?.classes_config ?? {};
-    return Object.entries(cfg)
-      .map(([name, entry]) => ({ name, alias: entry?.alias ?? null }))
-      .filter((e): e is { name: string; alias: string } => !!e.alias);
-  }, [projectQ.data?.classes_config]);
-  // 切项目重新计算默认 (跨 project 不串扰); v0.9.5 项目级 default 拉到后再应用一次.
-  useEffect(() => {
-    setOutputMode(resolveInitialOutputMode(projectId, projectTypeKey, projectQ.data?.text_output_default));
-  }, [projectId, projectTypeKey, projectQ.data?.text_output_default]);
-  // v0.9.4 phase 2 · S 键循环到 sam-text 子工具时父级 bumpSamTextFocus → focusKey 变 → 抓焦.
-  useEffect(() => {
-    if (focusKey === undefined || focusKey === 0) return;
-    inputRef.current?.focus();
-  }, [focusKey]);
-  const handleModeChange = (label: string) => {
-    const mode = OUTPUT_MODE_BY_LABEL[label];
-    if (!mode) return;
-    setOutputMode(mode);
-    if (projectId) writeStoredOutputMode(projectId, mode);
-  };
-  const trimmed = text.trim();
+  if (fields.length === 0) return null;
+
   return (
-    <div
-      data-testid="sam-text-panel"
-      className={styles.samTextPanel}
-    >
-      <div className={styles.samTextHeader}>
-        <span className={styles.samTextTitle}>
-          <Icon name="messageSquareText" size={11} /> SAM 文本提示
-        </span>
-        {candidateCount > 0 && (
-          <span className={styles.compactBadge}>
-            <Badge variant="ai">
-              {candidateCount} 候选 · Tab 切换 · Enter 接受
-            </Badge>
-          </span>
-        )}
-      </div>
-      {/* v0.9.4 phase 2 · 输出形态三选一 (智能默认按 type_key, 用户切换写 sessionStorage) */}
-      <div className={styles.samTextOutputMode} data-testid="sam-text-output-mode">
-        <TabRow
-          tabs={OUTPUT_MODE_TABS}
-          active={OUTPUT_MODE_LABELS[outputMode]}
-          onChange={handleModeChange}
-        />
-      </div>
-      {aliases.length > 0 && (
-        <div
-          data-testid="sam-text-aliases"
-          className={styles.samTextAliases}
-        >
-          {aliases.map((a) => (
-            <button
-              key={a.name}
-              type="button"
-              onClick={() => setText(a.alias)}
-              title={`使用类别「${a.name}」alias`}
-              className={styles.samAliasButton}
+    <div data-testid="ai-variant-selector" className={styles.variantSelector}>
+      {fields.map(({ key, title, options, fallback }) => {
+        const current = typeof value[key] === "string" ? (value[key] as string) : fallback;
+        return (
+          <div key={key} className={styles.variantField}>
+            <span className={styles.variantLabel}>{title}</span>
+            <select
+              data-testid={`ai-variant-${key}`}
+              value={current}
+              onChange={(e) => onChange({ ...value, [key]: e.target.value })}
+              className={styles.variantSelect}
             >
-              {a.alias}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className={styles.samInputRow}>
-        <input
-          data-testid="sam-text-input"
-          ref={inputRef}
-          type="text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && trimmed && !running) {
-              e.preventDefault();
-              onRun(trimmed, outputMode);
-            }
-          }}
-          placeholder="e.g. person / car / ripe apple"
-          disabled={running}
-          className={styles.samTextInput}
-        />
-        <Button
-          variant="ai"
-          size="sm"
-          disabled={!trimmed || running}
-          onClick={() => onRun(trimmed, outputMode)}
-          className={styles.inlineIconButton}
-        >
-          {running && <Icon name="loader2" size={11} className="spin" />}
-          {running ? "推理中…" : "找全图"}
-        </Button>
-      </div>
-      <div className={styles.samHint}>
-        {outputMode === "box" && "仅 DINO 出框,跳过 SAM mask, 速度最快; "}
-        {outputMode === "mask" && "DINO + SAM mask → polygon, 默认行为; "}
-        {outputMode === "both" && "同实例配对返回框 + 掩膜, Tab 切换活跃形态; "}
-        英文 prompt 召回最佳;DINO 阈值由项目设置控制。
-      </div>
+              {options.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+        );
+      })}
     </div>
   );
 }

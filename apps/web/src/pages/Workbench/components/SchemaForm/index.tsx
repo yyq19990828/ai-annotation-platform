@@ -29,6 +29,13 @@ function asField(v: unknown): JsonSchemaField {
   return {};
 }
 
+/**
+ * v0.10.23 · 模型变体字段移到 AI 面板 (会话级设置), 不在每个子工具 drawer 重复渲染.
+ * SchemaForm / deriveDefaults 统一排除这些 key; AI 面板单独消费 (见 VARIANT_FIELD_KEYS 引用方).
+ */
+export const VARIANT_FIELD_KEYS = ["sam_variant", "dino_variant"] as const;
+const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
+
 export interface SchemaFormProps {
   schema: JsonSchemaObject | undefined;
   value: Record<string, unknown>;
@@ -42,6 +49,7 @@ export function deriveDefaults(schema: JsonSchemaObject | undefined): Record<str
   const out: Record<string, unknown> = {};
   if (!schema?.properties) return out;
   for (const [key, raw] of Object.entries(schema.properties)) {
+    if (VARIANT_FIELD_SET.has(key)) continue; // 变体字段归 AI 面板, 不进 aiToolParams.
     const field = asField(raw);
     if (field.default !== undefined) out[key] = field.default;
   }
@@ -50,7 +58,9 @@ export function deriveDefaults(schema: JsonSchemaObject | undefined): Record<str
 
 export function SchemaForm({ schema, value, onChange, disabled = false }: SchemaFormProps) {
   const entries = useMemo(
-    () => (schema?.properties ? Object.entries(schema.properties) : []),
+    () => (schema?.properties
+      ? Object.entries(schema.properties).filter(([key]) => !VARIANT_FIELD_SET.has(key))
+      : []),
     [schema],
   );
   if (entries.length === 0) {

@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-12
+last_reviewed: 2026-05-20
 ---
 
 # 环境变量参考
@@ -32,6 +32,10 @@ last_reviewed: 2026-05-12
 | `MINIO_ACCESS_KEY` | `minioadmin` | MinIO 访问密钥（相当于 AWS Access Key ID） |
 | `MINIO_SECRET_KEY` | `minioadmin` | MinIO 密钥（相当于 AWS Secret Access Key）；生产环境务必更换 |
 | `MINIO_BUCKET` | `annotations` | 存放标注文件（图片、音频等）的桶名称 |
+| `MINIO_DATASETS_BUCKET` | `datasets` | 数据集源文件桶（图片/视频/文本原始文件） |
+| `MINIO_BUG_REPORTS_BUCKET` | `bug-reports` | Bug 反馈截图桶（180 天 lifecycle） |
+| `MINIO_MEDIA_CACHE_BUCKET` | `media-cache` | v0.10.17 · 派生媒体缓存桶（thumbnails / 视频帧 / chunks / playback，30 天 lifecycle，可重生） |
+| `MINIO_AUDIT_ARCHIVE_BUCKET` | `audit-archive` | v0.10.17 · 审计冷分区归档桶（永久保留，合规相关，建议开启 versioning + object lock） |
 | `ML_BACKEND_STORAGE_HOST` | `172.17.0.1:9000` | v0.9.4 · ML backend 在 docker compose 网内、平台 api 在 host 进程时, SAM 容器无法 hit host 的 localhost:9000; 设为 docker bridge 网关地址即可。 Linux: 172.17.0.1:9000; macOS/Win Docker Desktop: host.docker.internal:9000; 生产 (api/sam/minio 同 K8s 网) 留空。 |
 
 ## v0.9.6 · ML Backend 注册表单 URL 默认值预填 hint (avoid 手敲).
@@ -40,11 +44,11 @@ last_reviewed: 2026-05-12
 |---|---|---|
 | `ML_BACKEND_DEFAULT_URL` | `http://172.17.0.1:8001` | 留空则用前端硬编码默认 http://172.17.0.1:8001; 生产 K8s 同 namespace 时可设为 service DNS, 让运维注册时直接 ready. |
 
-## v0.10.1 · 单项目 ML backend 数量上限
+## v0.10.1 · 单项目最多可绑定的 ML backend 数量上限. DB / API / UI 均按 1:N 设计,
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `MAX_ML_BACKENDS_PER_PROJECT` | `1` | 单项目最多可绑定的 ML backend 数量上限. DB/API/UI 均按 1:N 设计, 运行时通过此值锁定. 默认 1 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB) 显存爆炸. 超限时 POST /projects/{id}/ml-backends 返回 409 + detail{code:"ML_BACKEND_LIMIT_REACHED"}. 生产可调大; prompt-routing / fallback 在 v0.11+ 落地. |
+| `MAX_ML_BACKENDS_PER_PROJECT` | `1` | 运行时通过此值锁定. 默认 1 防止测试环境同时常驻 grounded-sam2 (~2GB) + sam3 (~7GB) 显存爆炸. 生产可调大; prompt-routing / fallback 在 v0.11+ 落地. |
 
 ## 视频帧服务 (v0.9.25+)
 
@@ -128,6 +132,29 @@ last_reviewed: 2026-05-12
 | `BOX_THRESHOLD` | `0.35` | DINO 检测阈值; 业务图召回不足可下调到 0.25, 误检多则上调到 0.45. |
 | `TEXT_THRESHOLD` | `0.25` | DINO 文本-标签匹配阈值; 短语 prompt 通常 0.25 即可. |
 | `GSAM2_LOG_LEVEL` | `INFO` | Backend 日志级别 (DEBUG / INFO / WARNING). |
+| `IDLE_UNLOAD_SECONDS` | `600` | B-28+ · 空闲多少秒后自动卸载模型释放显存 (默认 600s); <=0 关闭定时卸载, 仍可手动 /unload. |
+| `IDLE_CHECK_INTERVAL` | `60` | B-28+ · idle 检查器轮询间隔 (默认 60s). |
+| `MODEL_POOL_CAP` | `1` | v0.10.23 · ModelPool 同容器内并存的变体数上限 (LRU 驱逐). 显存预算: 4060(8G) 用 1, 3090(24G) 1-2, A100 2-4. 默认 1 = 维持单变体常驻行为, 切变体走"驱逐旧+冷启新". |
+| `MODEL_POOL_BUILD_TIMEOUT` | `30` | v0.10.23 · pool 满 + 并发 miss 时排队等待显存的超时 (秒), 超时返回 503 "显存繁忙". |
+| `PREFETCH_SAM_VARIANTS` | `tiny,small,base_plus,large` | v0.10.23 · entrypoint 启动时额外预拉的变体 checkpoint (主变体之外). pool 能服务多变体, 但只有这里声明 (+ 主变体) 的 checkpoint 会落盘; 运行期请求未预拉的变体会 503. 逗号分隔. 默认全量, 让 pool 任意切换不踩缺失; 磁盘紧张时裁剪 (大致 tiny~150M/small~180M/base_plus~320M/large~900M, SwinB~940M). |
+| `PREFETCH_DINO_VARIANTS` | `T,B` | — |
+
+## SAM 3 ML Backend (v0.10.0+, GPU profile gpu-sam3)
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `HF_TOKEN` | `hf_xxxxxxxxxxxx` | ⚠️ HF_TOKEN 必填: facebook/sam3.1 是 gated repo, 必须先在 HuggingFace 接受 license (https://huggingface.co/facebook/sam3.1), 再创建 read-only token (https://huggingface.co/settings/tokens) 填到这里. |
+| `SAM3_EMBEDDING_CACHE_SIZE` | `32` | Embedding cache LRU 容量; A100 充裕可调到 64, 4060 别部 sam3. |
+| `SAM3_SCORE_THRESHOLD` | `0.5` | SAM 3 PCS text / exemplar 路径 score 过滤阈值; 召回不足下调到 0.3, 误检多调到 0.6. |
+| `SAM3_LOG_LEVEL` | `INFO` | Backend 日志级别 (DEBUG / INFO / WARNING). |
+| `SAM3_IDLE_UNLOAD_SECONDS` | `600` | 空闲 N 秒后自动卸载模型释放显存 (sam3 FP16 ~7GB, 与 grounded-sam2 并存强烈建议保留); <=0 关闭定时卸载, 仍可通过 POST /unload 手动卸载. 下次 /predict 自动懒重载 (冷启动 ~8-12s). |
+| `SAM3_IDLE_CHECK_INTERVAL` | `60` | idle 检查器轮询间隔 (默认 60s). |
+
+## DuckDB 离线分析视图 (v0.10.16, ROADMAP §1.6)
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `DUCKDB_PATH` | `./data/duckdb/analytics.duckdb` | Celery worker 每日 02:30 UTC 增量同步 task_events + audit_logs 到这个 DuckDB 文件; FastAPI /admin/analytics 端点以 read_only 模式读取它出固定面板. Docker 部署: worker 容器把 host ./data/duckdb 挂到 /var/lib/duckdb; 本地 API 进程跑 host 时直接读 host 文件 (单 writer 多 reader). |
 
 ## 部署环境
 

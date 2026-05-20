@@ -96,6 +96,9 @@ export function useWorkbenchState() {
   const [samTextFocusKey, setSamTextFocusKey] = useState(0);
   /** v0.10.2 · AIToolDrawer 维护的后端参数 (来自 /setup.params schema). 切换工具时重置. */
   const [aiToolParams, setAiToolParams] = useState<Record<string, unknown>>({});
+  // v0.10.23 · 模型变体 (sam_variant / dino_variant) 从 aiToolParams 拆出: 落点 AI 面板, 会话级,
+  // 切工具不重置 (设置型). 值在 run 时合进 context (链路见 useInteractiveAI.extraParams).
+  const [aiVariant, setAiVariant] = useState<Record<string, unknown>>({});
   const samSubTool = useMemo(() => toolToSamSubTool(tool), [tool]);
   /**
    * activeClass 语义：默认/最近使用类别。仅作为绘制时浮框颜色预览 + popover 的默认选中。
@@ -262,6 +265,7 @@ export function useWorkbenchState() {
     samPolarity, setSamPolarity,
     samTextFocusKey, bumpSamTextFocus: () => setSamTextFocusKey((k) => k + 1),
     aiToolParams, setAiToolParams,
+    aiVariant, setAiVariant,
     activeClass, setActiveClass,
     pendingDrawing, setPendingDrawing,
     editingClass, setEditingClass,

@@ -1047,6 +1047,12 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             onSetSamPolarity={s.setSamPolarity}
             isLoading={mlCapabilities.isLoading}
             isError={mlCapabilities.isError}
+            onRunSamText={(text, mode) => sam.runText(text, mode, { ...s.aiVariant, ...s.aiToolParams })}
+            samRunning={sam.isRunning}
+            samCandidateCount={sam.candidates.length}
+            projectId={projectId}
+            projectTypeKey={currentProject?.type_key ?? null}
+            samTextFocusKey={s.samTextFocusKey}
           />
         ) : null,
         reviewMode: mode === "review", videoMode: isVideoTask,
@@ -1102,7 +1108,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onSamPrompt: (prompt) => {
           // v0.10.2 · 按 prompt.kind 路由; exemplar 与 bbox 同手势但走独立 dispatcher.
           // params 透传 (box_threshold 等) — 见 useInteractiveAI.extraParams.
-          const extra = s.aiToolParams;
+          // v0.10.23 · 会话级模型变体 (aiVariant) 合进 context; tool 级参数 (aiToolParams) 覆盖之.
+          const extra = { ...s.aiVariant, ...s.aiToolParams };
           if (prompt.kind === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
           if (prompt.kind === "exemplar") return sam.runExemplar(prompt.bbox, extra);
           return sam.runBbox(prompt.bbox, extra);
@@ -1274,16 +1281,13 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onRunAi: handleRunAi,
         onAcceptAll: handleAcceptAll,
         onSetConfThreshold: s.setConfThreshold,
-        tool: s.tool,
-        onRunSamText: (text, mode) => sam.runText(text, mode, s.aiToolParams),
-        samRunning: sam.isRunning,
-        samCandidateCount: sam.candidates.length,
-        projectId,
-        projectTypeKey: currentProject?.type_key ?? null,
-        samTextFocusKey: s.samTextFocusKey,
         taskAiCost: taskAiMeta.totalCost,
         taskAiAvgMs: taskAiMeta.avgMs,
         taskAiPredictionCount: taskAiMeta.count,
+        // v0.10.23 · 设计 A · 会话级模型变体选择 (切工具不丢); /setup.params enum 直接渲染.
+        paramsSchema: mlCapabilities.paramsSchema,
+        aiVariant: s.aiVariant,
+        onSetAiVariant: s.setAiVariant,
       }}
       hotkeys={{ open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: toolView.attributeSchema }}
       offlineQueue={{ open: offlineDrawerOpen, onClose: closeOfflineDrawer, currentTaskId: taskId, onFlushOne: executeOp, onFlushAll: flushOffline }}

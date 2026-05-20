@@ -81,10 +81,12 @@ COPY _shared/mask_utils/ /app/mask_utils/
 RUN pip install --no-build-isolation -e /app/mask_utils
 
 COPY grounded-sam2-backend/scripts/ ./scripts/
-COPY grounded-sam2-backend/main.py grounded-sam2-backend/predictor.py grounded-sam2-backend/schemas.py grounded-sam2-backend/embedding_cache.py grounded-sam2-backend/observability.py ./
+COPY grounded-sam2-backend/main.py grounded-sam2-backend/predictor.py grounded-sam2-backend/schemas.py grounded-sam2-backend/embedding_cache.py grounded-sam2-backend/model_pool.py grounded-sam2-backend/observability.py ./
 COPY grounded-sam2-backend/tests/ ./tests/
 RUN mkdir -p /app/checkpoints /app/.cache/huggingface
 
 EXPOSE 8001
 
-ENTRYPOINT ["/bin/bash", "-c", "python /app/scripts/download_checkpoints.py && exec uvicorn main:app --host 0.0.0.0 --port 8001 --workers 1"]
+# 仅阻塞下载主变体 (单档, 秒级~分钟级) 让 uvicorn 尽快起; 额外 PREFETCH 变体由 app
+# startup 后台下 (边服务边补, /health.provisioning 可见进度), 避免全量 ~3GB 阻塞启动期间容器对外 error.
+ENTRYPOINT ["/bin/bash", "-c", "python /app/scripts/download_checkpoints.py primary && exec uvicorn main:app --host 0.0.0.0 --port 8001 --workers 1"]

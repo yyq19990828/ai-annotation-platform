@@ -120,6 +120,24 @@ last_reviewed: 2026-05-09
 | `BOX_THRESHOLD` | `0.35` | DINO 检测阈值；召回不足 → `0.25`，误检多 → `0.45`。 |
 | `TEXT_THRESHOLD` | `0.25` | DINO 文本-标签匹配阈值；短语 prompt 一般 0.25 即可。 |
 | `GSAM2_LOG_LEVEL` | `INFO` | `DEBUG / INFO / WARNING`。 |
+| `MODEL_POOL_CAP` (v0.10.23) | `1` | 同容器内并存的 `(sam_variant, dino_variant)` 变体数上限（LRU 驱逐）。`1` = 维持单变体常驻；切变体走「驱逐旧 + 冷启新」。按显存预算调，见下表。 |
+| `MODEL_POOL_BUILD_TIMEOUT` (v0.10.23) | `30` | pool 满 + 并发 miss 时排队等显存腾挪的超时（秒），超时返回 503「显存繁忙，稍后重试」。 |
+| `PREFETCH_SAM_VARIANTS` (v0.10.23) | `tiny,small,base_plus,large` | entrypoint 启动时额外预拉的 SAM 变体 checkpoint（主变体 `SAM_VARIANT` 之外）。逗号分隔。pool 能服务多变体，但只有这里声明（+ 主变体）的 checkpoint 会落盘，**运行期请求未预拉的变体返回 503**。磁盘紧张时裁剪。 |
+| `PREFETCH_DINO_VARIANTS` (v0.10.23) | `T,B` | 同上，GroundingDINO 变体。 |
+
+> **多变体 checkpoint 预拉**（v0.10.23）：ModelPool 让运行期能切任意 `(sam_variant, dino_variant)`，但 checkpoint 必须先落盘。磁盘预算大致 `tiny ~150M / small ~180M / base_plus ~320M / large ~900M`，DINO `T ~680M / B(SwinB) ~940M`；全量约 3.2GB。
+>
+> 启动顺序（避免全量 ~3GB 阻塞期间容器对外 `error`）：entrypoint 只**阻塞**下载主变体（`SAM_VARIANT`/`DINO_VARIANT`，单档、秒级）→ uvicorn 立即起、`/health` 可达 → app startup 后台异步下载 `PREFETCH_*` 列表里的额外变体（边服务边补）。`/health.provisioning.status` 反映进度：`downloading`（额外变体下载中，容器仍 healthy）→ `ready`（全下完）/ `partial`（部分失败）/ `error`。下载期间请求尚未下完的变体返回 503（可诊断），主变体始终可用。主变体下载失败则容器启动失败（不带半残上线）；额外变体失败仅 warn 不阻塞。
+>
+> **按显存预算配 `MODEL_POOL_CAP`**（v0.10.23）：变体热切换让前端可按会话切 `(sam_variant, dino_variant)`，pool 把多个变体常驻显存以省冷启。cap 越大并存越多、切换越快，但显存占用线性上升（单变体 tiny/small ~2–4GB，large + SwinB 峰值 ~6–8GB）。
+>
+> | GPU | 显存 | 建议 `MODEL_POOL_CAP` | 说明 |
+> |---|---|---|---|
+> | RTX 4060 | 8G | `1` | 仅够单变体常驻；切变体冷启 1–3s，可接受。 |
+> | RTX 3090 | 24G | `1–2` | 2 时 tiny/large 可并存，切换无冷启。 |
+> | A100 | 40/80G | `2–4` | 多变体并存，团队多人并发切换最顺。 |
+>
+> cap 设过大触发 OOM 时，pool 在驱逐前先腾位（驱逐到 cap-1 再 build 新变体），并发 miss 排队超 `MODEL_POOL_BUILD_TIMEOUT` 返回 503 而非 OOM。保守起步用 `1`，观察 `/health.pool.evict_count` 与显存占用再调高。
 
 ### 2.9 部署环境
 

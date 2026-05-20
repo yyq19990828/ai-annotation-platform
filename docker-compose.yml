@@ -150,6 +150,18 @@ services:
       # B-28+ · 空闲 N 秒后自动卸载模型释放显存; <=0 关闭定时卸载, 仍可手动 POST /unload.
       IDLE_UNLOAD_SECONDS: ${IDLE_UNLOAD_SECONDS:-600}
       IDLE_CHECK_INTERVAL: ${IDLE_CHECK_INTERVAL:-60}
+      # v0.10.23 · ModelPool 同容器内并存的变体数上限 (LRU). 显存预算:
+      #   单变体常驻 ~2-4GB (tiny/small) · large+SwinB 峰值 ~6-8GB.
+      #   4060(8G) 建议 1; 3090(24G) 1-2; A100 2-4. 默认 1 = 维持单变体常驻行为.
+      MODEL_POOL_CAP: ${MODEL_POOL_CAP:-1}
+      # pool 满 + 并发 miss 时排队等待显存腾挪 / 同变体 build 的超时 (秒), 超时返回 503.
+      MODEL_POOL_BUILD_TIMEOUT: ${MODEL_POOL_BUILD_TIMEOUT:-30}
+      # v0.10.23 · entrypoint 启动时额外预拉的变体 checkpoint (主变体 SAM_VARIANT/DINO_VARIANT
+      # 之外). pool 能服务多变体, 但只有这里声明 (+ 主变体) 的 checkpoint 会落盘; 运行期请求
+      # 未预拉的变体会 503. 逗号分隔. 默认全量, 让 pool 任意切换不踩 checkpoint 缺失;
+      # 磁盘紧张时可裁剪 (tiny~150M / small~180M / base_plus~320M / large~900M · SwinB~940M).
+      PREFETCH_SAM_VARIANTS: ${PREFETCH_SAM_VARIANTS:-tiny,small,base_plus,large}
+      PREFETCH_DINO_VARIANTS: ${PREFETCH_DINO_VARIANTS:-T,B}
     volumes:
       - gsam2_checkpoints:/app/checkpoints
       - gsam2_hf_cache:/app/.cache/huggingface

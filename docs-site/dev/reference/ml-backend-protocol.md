@@ -57,6 +57,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 - 项目管理员在前端点「测试连接」（`POST /api/v1/projects/{pid}/ml-backends/{bid}/health`）。
 - v0.8.x 之后可能加入周期 cron（参见 ROADMAP §A「ML Backend 健康检查」）。
 
+> **`pool` 子对象**（v0.10.23, 仅 grounded-sam2 返回，运维观测用，平台不强制解析）：`{ cap, loaded_variants: [{sam_variant, dino_variant}], evict_count, per_variant_lru_ts: {"sam/dino": <monotonic_ts>} }`，反映 ModelPool 当前并存的变体及 LRU 顺序。`cache` 子对象同步聚合各变体桶（`buckets["sam/dino"]` 各自独立 hits/misses），`/cache/stats` 与 `/metrics` 口径一致。idle 超时后整池清空、`loaded` 变 false。
+
 ---
 
 ## 2. `POST /predict`
@@ -119,7 +121,9 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
     "box_threshold": 0.35,                  // 可选; type=text 时 backend 的 DINO 阈值 override (grounded-sam2 专属)
     "text_threshold": 0.25,                 // 可选; 同上
     "score_threshold": 0.5,                 // v0.10.0 · SAM 3 PCS text/exemplar 路径 score 过滤阈值
-    "simplify_tolerance": 1.0               // v0.9.4 phase 3 · shapely.simplify 像素级覆盖, 仅 mask/both 路径生效
+    "simplify_tolerance": 1.0,              // v0.9.4 phase 3 · shapely.simplify 像素级覆盖, 仅 mask/both 路径生效
+    "sam_variant": "large",                 // v0.10.23 · grounded-sam2 请求级模型变体热切换 (tiny|small|base_plus|large); 缺省回退 backend env 默认
+    "dino_variant": "B"                     // v0.10.23 · 同上 (T|B); 非法值 422
   }
 }
 ```
@@ -127,6 +131,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 `context` 是个开放 dict——平台和 backend 协商具体字段，平台不做 schema 校验（`ml_client.py:64-82`）。
 
 > **`type=text`**：v0.9.x（Grounded-SAM-2）走 GroundingDINO 文本 → boxes → SAM mask 复合链路；v0.10.x（SAM 3）走 PCS 单模型一步出 mask。两者返回 `result[]` 字面一致（多 polygon / 多 rect / 配对）。`box_threshold` / `text_threshold` 仅 grounded-sam2 消费；`score_threshold` 仅 SAM 3 消费。
+
+> **`sam_variant` / `dino_variant`**（v0.10.23 新增，仅 grounded-sam2 消费）：请求级模型变体热切换。backend 内 ModelPool 按 `(sam_variant, dino_variant)` 做 LRU 缓存：命中复用、miss 冷启 1–3s（超 cap 驱逐最久未用变体）、pool 满 + 并发排队超 `MODEL_POOL_BUILD_TIMEOUT` 返回 503。缺省回退 backend env 默认 (`SAM_VARIANT`/`DINO_VARIANT`)；非法值（不在 `SAM2_CONFIGS`/`DINO_CONFIGS` key 内）返回 422，不影响后续请求。变体合法但其 checkpoint 未预拉到 `CHECKPOINT_DIR`（不在 `PREFETCH_SAM_VARIANTS`/`PREFETCH_DINO_VARIANTS` 内）返回 503，提示把该变体加入 prefetch 后重建容器。返回 `model_version` 按本次请求变体拼（如 `grounded-sam2-dinoB-sam2.1large`）。embedding cache 按变体分桶（不同变体张量不可跨用），命中只在同变体同图。SAM 3 忽略这两个字段。
 
 > **`type=exemplar`**（v0.10.0 新增，仅 SAM 3 支持）：取图中已有的一个 bbox 作为视觉示例，由 SAM 3 PCS 一步出全图相似实例的 masks。`bbox` 字段承载 4 坐标（与 `type=bbox` 共用字段，语义靠 `type` 区分）。返回 `result[]` 是多个 `polygonlabels`，`polygonlabels: ["object"]`（前端按当前 active label 批量改写）。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口（工作台 Shift+拖框）在 v0.10.1 落地。
 
@@ -207,13 +213,15 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
         "default": 0.35, "title": "Box 置信度阈值"
       },
       "sam_variant": {
-        "type": "string", "enum": ["tiny", "small", "base", "large"],
-        "default": "tiny", "title": "SAM 2 变体", "readOnly": true
+        "type": "string", "enum": ["tiny", "small", "base_plus", "large"],
+        "default": "tiny", "title": "SAM 2 变体"
       }
     }
   }
 }
 ```
+
+> **变体 `readOnly` 语义（v0.10.23 起）**：grounded-sam2-backend 内置 ModelPool 后，`sam_variant` / `dino_variant` 去掉了 `readOnly`，前端可按会话切换，每次 `/predict` 经 `context.{sam_variant,dino_variant}` 携带请求级变体（详见 §2.2）。`sam_variant` enum 与 backend `SAM2_CONFIGS` key 一致：`tiny | small | base_plus | large`（注意是 `base_plus` 不是 `base`）。sam3-backend 单模型无 pool，其 variant 字段仍可保留 `readOnly`。
 
 > **`supported_prompts`**：枚举 `point | bbox | text | exemplar | sketch | scribble | …`。前端 ToolDock 据此置灰不支持的工具（M2 / v0.10.2 落地）。
 >

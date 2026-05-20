@@ -171,6 +171,72 @@ describe("useInteractiveAI", () => {
     expect(result.current.activeIdx).toBe(2);
   });
 
+  // v0.10.23 · 会话级模型变体切换三态通知
+  it("切换变体后首次预测 → 切换中 + 成功 toast", async () => {
+    interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() =>
+      result.current.runBbox([0, 0, 0.5, 0.5], { sam_variant: "large", dino_variant: "base" }),
+    );
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    expect(pushToastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ msg: "正在切换到 SAM large/DINO base 模型…" }),
+    );
+    expect(pushToastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ msg: "已切换到 SAM large/DINO base", kind: "success" }),
+    );
+  });
+
+  it("同变体的后续预测不再弹切换 toast", async () => {
+    interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runBbox([0, 0, 0.5, 0.5], { sam_variant: "large" }));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    pushToastMock.mockClear();
+    // 不同 bbox (避开前端缓存) 但同变体 → 不应再弹切换通知
+    act(() => result.current.runBbox([0.1, 0.1, 0.6, 0.6], { sam_variant: "large" }));
+    await waitFor(() => expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2));
+    expect(pushToastMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ msg: expect.stringContaining("切换") }),
+    );
+  });
+
+  it("缺 dino_variant → 文案仅显示 SAM 段", async () => {
+    interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runBbox([0, 0, 0.5, 0.5], { sam_variant: "tiny" }));
+    await waitFor(() =>
+      expect(pushToastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ msg: "已切换到 SAM tiny", kind: "success" }),
+      ),
+    );
+  });
+
+  it("切换变体后预测失败 → 模型切换失败 toast 且 backend detail 透出", async () => {
+    interactiveAnnotateMock.mockRejectedValue(new Error("checkpoint not provisioned"));
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runBbox([0, 0, 0.5, 0.5], { sam_variant: "large" }));
+    await waitFor(() =>
+      expect(pushToastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          msg: "模型切换失败",
+          sub: "checkpoint not provisioned",
+          kind: "error",
+        }),
+      ),
+    );
+  });
+
+  it("无变体字段的预测不弹任何切换 toast", async () => {
+    interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runBbox([0, 0, 0.5, 0.5]));
+    await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+    expect(pushToastMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ msg: expect.stringContaining("切换") }),
+    );
+  });
+
   it("cancel 清空候选", async () => {
     interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
     const { result } = renderHook(() => useInteractiveAI(ARGS));
