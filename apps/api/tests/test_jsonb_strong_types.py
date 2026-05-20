@@ -21,8 +21,15 @@ from app.schemas._jsonb_types import (
     CanvasDrawing,
     CanvasShape,
     ClassConfigEntry,
+    Keypoint,
+    KeypointGeometry,
+    KeypointNode,
+    KeypointSchema,
     Mention,
     PolygonGeometry,
+    PolylineGeometry,
+    RotatedBboxGeometry,
+    ToolBinding,
     VideoTrackBbox,
     VideoTrackGeometry,
     VideoTrackKeyframe,
@@ -47,6 +54,100 @@ def test_polygon_geometry_min_3_points():
 def test_polygon_geometry_pair_shape():
     with pytest.raises(ValidationError):
         PolygonGeometry(points=[[0, 0, 0], [1, 0, 0], [1, 1, 0]])
+
+
+# ── v0.10.28 · rotated_bbox / polyline / keypoint ────────────────────
+
+
+def test_rotated_bbox_geometry_valid():
+    g = RotatedBboxGeometry(cx=0.5, cy=0.5, w=0.2, h=0.1, angle=45)
+    assert g.type == "rotated_bbox"
+    assert g.angle == 45
+    # 边界: angle=0 合法, 359.9 合法
+    RotatedBboxGeometry(cx=0.5, cy=0.5, w=0.2, h=0.1, angle=0)
+    RotatedBboxGeometry(cx=0.5, cy=0.5, w=0.2, h=0.1, angle=359.9)
+
+
+def test_rotated_bbox_geometry_invalid():
+    # w/h 必须 > 0
+    with pytest.raises(ValidationError):
+        RotatedBboxGeometry(cx=0.5, cy=0.5, w=0, h=0.1, angle=10)
+    with pytest.raises(ValidationError):
+        RotatedBboxGeometry(cx=0.5, cy=0.5, w=0.2, h=-0.1, angle=10)
+    # angle 必须 [0, 360)
+    with pytest.raises(ValidationError):
+        RotatedBboxGeometry(cx=0.5, cy=0.5, w=0.2, h=0.1, angle=360)
+    with pytest.raises(ValidationError):
+        RotatedBboxGeometry(cx=0.5, cy=0.5, w=0.2, h=0.1, angle=-1)
+
+
+def test_polyline_geometry_valid():
+    g = PolylineGeometry(points=[[0, 0], [0.5, 0.5]])
+    assert g.type == "polyline"
+    assert len(g.points) == 2
+
+
+def test_polyline_geometry_invalid():
+    # 至少 2 点
+    with pytest.raises(ValidationError):
+        PolylineGeometry(points=[[0, 0]])
+    # 每点必须 [x, y]
+    with pytest.raises(ValidationError):
+        PolylineGeometry(points=[[0, 0], [1, 1, 1]])
+
+
+def test_keypoint_geometry_valid():
+    g = KeypointGeometry(points=[Keypoint(x=0.1, y=0.2, v=2)])
+    assert g.type == "keypoint"
+    assert g.points[0].v == 2
+    # v 取 0/1/2 都合法
+    KeypointGeometry(points=[Keypoint(x=0, y=0, v=0), Keypoint(x=1, y=1, v=1)])
+
+
+def test_keypoint_geometry_invalid():
+    # v 必须 in {0,1,2}
+    with pytest.raises(ValidationError):
+        Keypoint(x=0.1, y=0.2, v=3)
+    # 至少 1 个关键点
+    with pytest.raises(ValidationError):
+        KeypointGeometry(points=[])
+
+
+def test_keypoint_schema_valid():
+    s = KeypointSchema(
+        nodes=[KeypointNode(name="nose", color="#ff0000"), KeypointNode(name="eye")],
+        edges=[[0, 1]],
+    )
+    assert len(s.nodes) == 2
+    assert s.edges == [[0, 1]]
+
+
+def test_keypoint_schema_invalid_edge():
+    # edge 必须长度 2
+    with pytest.raises(ValidationError):
+        KeypointSchema(nodes=[KeypointNode(name="a")], edges=[[0]])
+    # edge 索引 >= 0
+    with pytest.raises(ValidationError):
+        KeypointSchema(nodes=[KeypointNode(name="a")], edges=[[0, -1]])
+    # node color 必须 #RRGGBB
+    with pytest.raises(ValidationError):
+        KeypointNode(name="a", color="red")
+
+
+def test_tool_binding_keypoint_schema_optional():
+    # 默认 None
+    b = ToolBinding()
+    assert b.keypoint_schema is None
+    # keypoint 单元可携带骨骼拓扑
+    b2 = ToolBinding(
+        enabled=True,
+        keypoint_schema=KeypointSchema(
+            nodes=[KeypointNode(name="nose"), KeypointNode(name="eye")],
+            edges=[[0, 1]],
+        ),
+    )
+    assert b2.keypoint_schema is not None
+    assert len(b2.keypoint_schema.nodes) == 2
 
 
 # ── Attribute schema ────────────────────────────────────────────────

@@ -1,7 +1,10 @@
 from app.schemas._jsonb_types import (
     BboxGeometry,
+    KeypointGeometry,
     MultiPolygonGeometry,
     PolygonGeometry,
+    PolylineGeometry,
+    RotatedBboxGeometry,
     ToolUnitId,
 )
 from pydantic import BaseModel
@@ -19,7 +22,15 @@ from datetime import datetime
 class PredictionShape(BaseModel):
     type: str  # LabelStudio 类型: rectanglelabels | polygonlabels | ...
     class_name: str
-    geometry: Union[BboxGeometry, PolygonGeometry, MultiPolygonGeometry, dict[str, Any]]
+    geometry: Union[
+        BboxGeometry,
+        PolygonGeometry,
+        MultiPolygonGeometry,
+        RotatedBboxGeometry,
+        PolylineGeometry,
+        KeypointGeometry,
+        dict[str, Any],
+    ]
     confidence: float
     # 原始 predictions.result 数组下标。GET /predictions 可能过滤/重排 shape,
     # 采纳时必须把这个原始下标传回 /accept?shape_index=...

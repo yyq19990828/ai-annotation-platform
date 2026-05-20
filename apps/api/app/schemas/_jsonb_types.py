@@ -159,13 +159,23 @@ ClassesConfig = dict[str, ClassConfigEntry]
 # 旧 classes_config + attribute_schema 在 v0.10.17 期间仍由 service 层
 # 从 tool_bindings 派生, 供未迁移的导出 / 聚合查询继续读, v0.10.18 删.
 
-ToolUnitId = Literal["bbox", "polyline", "region", "ai_interactive", "lidar_box_3d"]
+ToolUnitId = Literal[
+    "bbox",
+    "polyline",
+    "region",
+    "ai_interactive",
+    "lidar_box_3d",
+    "rotated_bbox",
+    "keypoint",
+]
 TOOL_UNIT_IDS: tuple[str, ...] = (
     "bbox",
     "polyline",
     "region",
     "ai_interactive",
     "lidar_box_3d",
+    "rotated_bbox",
+    "keypoint",
 )
 
 
@@ -197,12 +207,45 @@ class ToolClassEntry(BaseModel):
         return s or None
 
 
+class KeypointNode(BaseModel):
+    """关键点骨骼的一个节点（有序）。color 为可选 #RRGGBB。"""
+
+    name: str = Field(min_length=1)
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class KeypointSchema(BaseModel):
+    """关键点骨骼拓扑（COCO 范式，类别级元数据，不进实例几何）。
+
+    nodes 有序，edges 每条是 [i, j] 两个节点索引的骨骼连线。
+    """
+
+    nodes: list[KeypointNode] = Field(default_factory=list)
+    edges: list[list[int]] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("edges")
+    @classmethod
+    def _check_edges(cls, v: list[list[int]]) -> list[list[int]]:
+        for i, e in enumerate(v):
+            if len(e) != 2:
+                raise ValueError(f"edges[{i}] 必须是 [i, j] 两个节点索引")
+            if e[0] < 0 or e[1] < 0:
+                raise ValueError(f"edges[{i}] 节点索引必须 >= 0")
+        return v
+
+
 class ToolBinding(BaseModel):
     """单一工具单位下的 enable 状态 + 类别集合 + 属性 schema."""
 
     enabled: bool = False
     classes: list[ToolClassEntry] = Field(default_factory=list)
     attribute_schema: AttributeSchema = Field(default_factory=AttributeSchema)
+    # v0.10.28 · 仅 keypoint 单元用：骨骼拓扑（节点名 / 连线）。其它单元留 None。
+    keypoint_schema: KeypointSchema | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -375,12 +418,74 @@ class MultiPolygonGeometry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# ── v0.10.28 · rotated_bbox / polyline / keypoint 几何（坐标归一化 [0,1]） ──
+
+
+class RotatedBboxGeometry(BaseModel):
+    """旋转矩形。cx,cy 为中心点，w,h 为边长，angle 为顺时针旋转角度（度，[0,360)）。"""
+
+    type: Literal["rotated_bbox"] = "rotated_bbox"
+    cx: float
+    cy: float
+    w: float = Field(gt=0)
+    h: float = Field(gt=0)
+    angle: float = Field(ge=0, lt=360)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PolylineGeometry(BaseModel):
+    """开放折线（不闭合）。points 至少 2 个 [x, y] 顶点。"""
+
+    type: Literal["polyline"] = "polyline"
+    points: list[list[float]] = Field(min_length=2)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("points")
+    @classmethod
+    def _check_points(cls, v: list[list[float]]) -> list[list[float]]:
+        for i, pt in enumerate(v):
+            if len(pt) != 2:
+                raise ValueError(f"points[{i}] 必须是 [x, y]")
+        return v
+
+
+class Keypoint(BaseModel):
+    """单个关键点。v 为 COCO 可见性：0 未标注 / 1 遮挡 / 2 可见。"""
+
+    x: float
+    y: float
+    v: int
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("v")
+    @classmethod
+    def _check_visibility(cls, v: int) -> int:
+        if v not in {0, 1, 2}:
+            raise ValueError("v 必须是 0(未标注)/1(遮挡)/2(可见) 之一")
+        return v
+
+
+class KeypointGeometry(BaseModel):
+    """关键点集合实例几何。骨骼拓扑（节点名/连线）走类别级 ToolBinding.keypoint_schema。"""
+
+    type: Literal["keypoint"] = "keypoint"
+    points: list[Keypoint] = Field(min_length=1)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 Geometry = Annotated[
     BboxGeometry
     | VideoBboxGeometry
     | VideoTrackGeometry
     | PolygonGeometry
-    | MultiPolygonGeometry,
+    | MultiPolygonGeometry
+    | RotatedBboxGeometry
+    | PolylineGeometry
+    | KeypointGeometry,
     Field(discriminator="type"),
 ]
 

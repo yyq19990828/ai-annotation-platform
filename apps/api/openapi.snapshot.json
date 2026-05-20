@@ -913,8 +913,11 @@
             "discriminator": {
               "mapping": {
                 "bbox": "#/components/schemas/BboxGeometry",
+                "keypoint": "#/components/schemas/KeypointGeometry",
                 "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry",
+                "polyline": "#/components/schemas/PolylineGeometry",
+                "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
                 "video_track": "#/components/schemas/VideoTrackGeometry"
               },
@@ -935,6 +938,15 @@
               },
               {
                 "$ref": "#/components/schemas/MultiPolygonGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/RotatedBboxGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/PolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/KeypointGeometry"
               }
             ],
             "title": "Geometry"
@@ -969,7 +981,9 @@
               "polyline",
               "region",
               "ai_interactive",
-              "lidar_box_3d"
+              "lidar_box_3d",
+              "rotated_bbox",
+              "keypoint"
             ],
             "title": "Tool Unit Id",
             "type": "string"
@@ -1589,8 +1603,11 @@
             "discriminator": {
               "mapping": {
                 "bbox": "#/components/schemas/BboxGeometry",
+                "keypoint": "#/components/schemas/KeypointGeometry",
                 "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
                 "polygon": "#/components/schemas/PolygonGeometry",
+                "polyline": "#/components/schemas/PolylineGeometry",
+                "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                 "video_bbox": "#/components/schemas/VideoBboxGeometry",
                 "video_track": "#/components/schemas/VideoTrackGeometry"
               },
@@ -1611,6 +1628,15 @@
               },
               {
                 "$ref": "#/components/schemas/MultiPolygonGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/RotatedBboxGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/PolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/KeypointGeometry"
               }
             ],
             "title": "Geometry"
@@ -1718,7 +1744,9 @@
               "polyline",
               "region",
               "ai_interactive",
-              "lidar_box_3d"
+              "lidar_box_3d",
+              "rotated_bbox",
+              "keypoint"
             ],
             "title": "Tool Unit Id",
             "type": "string"
@@ -1880,8 +1908,11 @@
                 "discriminator": {
                   "mapping": {
                     "bbox": "#/components/schemas/BboxGeometry",
+                    "keypoint": "#/components/schemas/KeypointGeometry",
                     "multi_polygon": "#/components/schemas/MultiPolygonGeometry",
                     "polygon": "#/components/schemas/PolygonGeometry",
+                    "polyline": "#/components/schemas/PolylineGeometry",
+                    "rotated_bbox": "#/components/schemas/RotatedBboxGeometry",
                     "video_bbox": "#/components/schemas/VideoBboxGeometry",
                     "video_track": "#/components/schemas/VideoTrackGeometry"
                   },
@@ -1902,6 +1933,15 @@
                   },
                   {
                     "$ref": "#/components/schemas/MultiPolygonGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RotatedBboxGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PolylineGeometry"
+                  },
+                  {
+                    "$ref": "#/components/schemas/KeypointGeometry"
                   }
                 ]
               },
@@ -6674,6 +6714,109 @@
         "title": "InvitationResolve",
         "type": "object"
       },
+      "Keypoint": {
+        "additionalProperties": false,
+        "description": "单个关键点。v 为 COCO 可见性：0 未标注 / 1 遮挡 / 2 可见。",
+        "properties": {
+          "v": {
+            "title": "V",
+            "type": "integer"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "v"
+        ],
+        "title": "Keypoint",
+        "type": "object"
+      },
+      "KeypointGeometry": {
+        "additionalProperties": false,
+        "description": "关键点集合实例几何。骨骼拓扑（节点名/连线）走类别级 ToolBinding.keypoint_schema。",
+        "properties": {
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/Keypoint"
+            },
+            "minItems": 1,
+            "title": "Points",
+            "type": "array"
+          },
+          "type": {
+            "const": "keypoint",
+            "default": "keypoint",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "title": "KeypointGeometry",
+        "type": "object"
+      },
+      "KeypointNode": {
+        "additionalProperties": false,
+        "description": "关键点骨骼的一个节点（有序）。color 为可选 #RRGGBB。",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "KeypointNode",
+        "type": "object"
+      },
+      "KeypointSchema": {
+        "additionalProperties": false,
+        "description": "关键点骨骼拓扑（COCO 范式，类别级元数据，不进实例几何）。\n\nnodes 有序，edges 每条是 [i, j] 两个节点索引的骨骼连线。",
+        "properties": {
+          "edges": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/KeypointNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "title": "KeypointSchema",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "captcha_token": {
@@ -7548,6 +7691,34 @@
         "title": "PolygonGeometry",
         "type": "object"
       },
+      "PolylineGeometry": {
+        "additionalProperties": false,
+        "description": "开放折线（不闭合）。points 至少 2 个 [x, y] 顶点。",
+        "properties": {
+          "points": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "minItems": 2,
+            "title": "Points",
+            "type": "array"
+          },
+          "type": {
+            "const": "polyline",
+            "default": "polyline",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "title": "PolylineGeometry",
+        "type": "object"
+      },
       "PreannotateProjectSummary": {
         "properties": {
           "active_batches": {
@@ -8188,7 +8359,9 @@
               "polyline",
               "region",
               "ai_interactive",
-              "lidar_box_3d"
+              "lidar_box_3d",
+              "rotated_bbox",
+              "keypoint"
             ],
             "title": "Tool Unit Id",
             "type": "string"
@@ -8235,6 +8408,15 @@
               },
               {
                 "$ref": "#/components/schemas/MultiPolygonGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/RotatedBboxGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/PolylineGeometry"
+              },
+              {
+                "$ref": "#/components/schemas/KeypointGeometry"
               },
               {
                 "additionalProperties": true,
@@ -10579,6 +10761,51 @@
         "title": "RoleChangePayload",
         "type": "object"
       },
+      "RotatedBboxGeometry": {
+        "additionalProperties": false,
+        "description": "旋转矩形。cx,cy 为中心点，w,h 为边长，angle 为顺时针旋转角度（度，[0,360)）。",
+        "properties": {
+          "angle": {
+            "exclusiveMaximum": 360.0,
+            "minimum": 0.0,
+            "title": "Angle",
+            "type": "number"
+          },
+          "cx": {
+            "title": "Cx",
+            "type": "number"
+          },
+          "cy": {
+            "title": "Cy",
+            "type": "number"
+          },
+          "h": {
+            "exclusiveMinimum": 0.0,
+            "title": "H",
+            "type": "number"
+          },
+          "type": {
+            "const": "rotated_bbox",
+            "default": "rotated_bbox",
+            "title": "Type",
+            "type": "string"
+          },
+          "w": {
+            "exclusiveMinimum": 0.0,
+            "title": "W",
+            "type": "number"
+          }
+        },
+        "required": [
+          "cx",
+          "cy",
+          "w",
+          "h",
+          "angle"
+        ],
+        "title": "RotatedBboxGeometry",
+        "type": "object"
+      },
       "RuntimeHints": {
         "description": "v0.9.6 · 前端 modal 启动时一次性查; 提供注册 form 的 placeholder hint.",
         "properties": {
@@ -11656,6 +11883,16 @@
             "default": false,
             "title": "Enabled",
             "type": "boolean"
+          },
+          "keypoint_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KeypointSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "ToolBinding",
