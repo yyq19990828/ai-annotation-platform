@@ -163,6 +163,9 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // 项目切换时重置选择 / 默认 outputMode / prompt
   useEffect(() => {
     setSelectedBatchIds(new Set());
+    // v0.10.28 · 遗留技术债: AI 输出形态分流仍按 type_key (image-det → box, 其余 mask).
+    // data_type 只到媒体粒度, 无法区分检测 vs 分割; 后续应改读 tool_bindings 是否启用
+    // region. 本次 data_type 迁移不动此处, 保持原 AI 分流行为.
     setOutputMode(
       project?.type_key === "image-det" ? "box" : "mask",
     );

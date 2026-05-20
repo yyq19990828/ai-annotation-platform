@@ -117,6 +117,8 @@ async def list_projects(
     search: str | None = None,
     # v0.7.2 · 高级筛选维度（FilterDrawer 对接）
     type_key: list[str] | None = Query(None),
+    # v0.10.28 · 媒体维度筛选 (image / video / lidar)
+    data_type: list[str] | None = Query(None),
     member_id: uuid.UUID | None = None,
     created_from: str | None = None,  # ISO date "2026-01-01"
     created_to: str | None = None,
@@ -133,6 +135,8 @@ async def list_projects(
         q = q.where(Project.name.ilike(f"%{search}%"))
     if type_key:
         q = q.where(Project.type_key.in_(type_key))
+    if data_type:
+        q = q.where(Project.data_type.in_(data_type))
     if member_id is not None:
         q = q.where(
             Project.id.in_(
@@ -263,6 +267,20 @@ async def create_project(
     # v0.10.11 · exclude_unset 让"未显式给出"与"显式给出默认值"可区分; 兜底字段
     # 优先用 source_project_id 项目的值, 其次走 Project 模型列默认值.
     payload = data.model_dump(exclude_unset=True)
+
+    # v0.10.28 · B 路线: 新建以 data_type 为主. type_key 缺省时由 data_type 派生兼容值;
+    # data_type 缺省时由 type_key 反推, 二者互填后均落库 (Project.type_key NOT NULL).
+    from app.services.project import (
+        data_type_from_type_key,
+        legacy_type_key_from_data_type,
+    )
+
+    _dt = payload.get("data_type")
+    _tk = payload.get("type_key")
+    if not _tk:
+        payload["type_key"] = legacy_type_key_from_data_type(_dt)
+    if not _dt:
+        payload["data_type"] = data_type_from_type_key(payload.get("type_key"))
 
     # v0.10.22 · 先把客户端显式传入的旧扁平 classes / classes_config / attribute_schema
     # 反向派生进 tool_bindings (按 type_key 推 unit), 再剔除扁平 key. 必须早于下面的

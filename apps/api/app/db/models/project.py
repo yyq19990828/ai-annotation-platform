@@ -29,6 +29,12 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     type_label: Mapped[str] = mapped_column(String(50), nullable=False)
     type_key: Mapped[str] = mapped_column(String(30), nullable=False)
+    # v0.10.28 · 媒体维度数据类型 (image / video / lidar); type_key 继续编码
+    # 媒体+任务子类型 (video-track vs video-mm 等), data_type 只到媒体粒度,
+    # 用于展示/筛选/媒体维度分流. backfill 见 alembic 0082.
+    data_type: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default="image"
+    )
     owner_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")
     )

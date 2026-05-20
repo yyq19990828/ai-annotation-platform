@@ -5,6 +5,8 @@ export interface SearchProjectItem {
   display_id: string;
   name: string;
   type_key: string;
+  // v0.10.28 · 媒体维度数据类型 (image / video / lidar).
+  data_type: string;
   type_label: string;
 }
 

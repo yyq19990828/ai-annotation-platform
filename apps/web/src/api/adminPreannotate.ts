@@ -43,6 +43,8 @@ export interface PreannotateProjectSummary {
   project_name: string;
   project_display_id?: string | null;
   type_key: string;
+  // v0.10.28 · 媒体维度数据类型 (image / video / lidar).
+  data_type: string;
   ml_backend_id?: string | null;
   ml_backend_name?: string | null;
   ml_backend_state?: string | null;

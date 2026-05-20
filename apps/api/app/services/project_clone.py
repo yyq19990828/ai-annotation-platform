@@ -18,6 +18,8 @@ from typing import Any
 CLONEABLE_PROJECT_FIELDS: tuple[str, ...] = (
     "type_label",
     "type_key",
+    # v0.10.28 · 媒体维度数据类型 (image / video / lidar); 克隆 / 模板携带.
+    "data_type",
     # v0.10.22 · 类别 / 属性配置唯一真值; 旧扁平 classes / classes_config /
     # attribute_schema 列已删, 配置全部经此字段复制.
     "tool_bindings",

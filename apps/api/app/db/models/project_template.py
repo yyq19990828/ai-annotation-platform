@@ -38,6 +38,11 @@ class ProjectTemplate(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     type_label: Mapped[str] = mapped_column(String(50), nullable=False)
     type_key: Mapped[str] = mapped_column(String(30), nullable=False)
+    # v0.10.28 · 媒体维度数据类型 (image / video / lidar); 与 Project 对齐.
+    # backfill 见 alembic 0082.
+    data_type: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default="image"
+    )
 
     # 模板载荷 (与 CLONEABLE_PROJECT_FIELDS 对应)
     # v0.10.17 · 工具维度类别 / 属性绑定; 与 Project 对齐. backfill 见 alembic 0073.

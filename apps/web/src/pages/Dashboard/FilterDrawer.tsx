@@ -5,12 +5,13 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { useUsers } from "@/hooks/useUsers";
 import { useAuthStore } from "@/stores/authStore";
-import { PROJECT_TYPES } from "@/constants/projectTypes";
+import { PROJECT_DATA_TYPES } from "@/constants/toolUnits";
 import styles from "./FilterDrawer.module.css";
 
 export interface DashboardFilters {
   status?: string;
-  type_key: string[];
+  // v0.10.28 · 媒体维度筛选 (image / video / lidar), 取代任务级 type_key.
+  data_type: string[];
   member_id?: string;
   created_from?: string;
   created_to?: string;
@@ -18,7 +19,7 @@ export interface DashboardFilters {
 
 export const EMPTY_FILTERS: DashboardFilters = {
   status: undefined,
-  type_key: [],
+  data_type: [],
   member_id: undefined,
   created_from: undefined,
   created_to: undefined,
@@ -53,10 +54,12 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
 
   const toggleType = (key: string) => {
     setDraft((prev) => {
-      const has = prev.type_key.includes(key);
+      const has = prev.data_type.includes(key);
       return {
         ...prev,
-        type_key: has ? prev.type_key.filter((k) => k !== key) : [...prev.type_key, key],
+        data_type: has
+          ? prev.data_type.filter((k) => k !== key)
+          : [...prev.data_type, key],
       };
     });
   };
@@ -91,15 +94,15 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
           </div>
         </Section>
 
-        <Section title="类型">
+        <Section title="数据类型">
           <div className={styles.chipGroup}>
-            {PROJECT_TYPES.map((t) => {
-              const active = draft.type_key.includes(t.key);
+            {PROJECT_DATA_TYPES.map((t) => {
+              const active = draft.data_type.includes(t.id);
               return (
                 <button
-                  key={t.key}
+                  key={t.id}
                   type="button"
-                  onClick={() => toggleType(t.key)}
+                  onClick={() => toggleType(t.id)}
                   className={cn(styles.chip, active && styles.chipActive)}
                   title={t.hint}
                 >

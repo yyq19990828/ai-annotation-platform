@@ -299,6 +299,7 @@ class PreannotateProjectSummary(BaseModel):
     project_name: str
     project_display_id: str | None = None
     type_key: str
+    data_type: str = "image"
     ml_backend_id: uuid.UUID | None = None
     ml_backend_name: str | None = None
     ml_backend_state: str | None = None
@@ -390,6 +391,7 @@ async def list_preannotate_project_summary(
                 project_name=proj.name,
                 project_display_id=proj.display_id,
                 type_key=proj.type_key,
+                data_type=proj.data_type,
                 ml_backend_id=bk.id if bk else None,
                 ml_backend_name=bk.name if bk else None,
                 ml_backend_state=bk.state if bk else None,

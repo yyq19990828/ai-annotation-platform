@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.10.28] - 2026-05-20
+
+> **项目级 `data_type` 引入 + 新建项目数据类型 UI 退役任务语义 (B 路线).** 此前项目的"媒体类型"信息全靠 `type_key`(编码媒体+任务: image-det/image-seg/image-kp/video-track/video-mm/lidar/mm)隐式承载, 展示/筛选/媒体维度分流都得在 7 种 type_key 上硬匹配。本期给 `Project` / `ProjectTemplate` 各加独立 `data_type` 列(image/video/lidar 媒体粒度), 新建向导第 1 步从 7 任务预设改为纯媒体类型三选一(文案去检测/分割等任务暗示), `type_key` 由所选媒体类型派生兼容默认值(image→image-det / video→video-track / lidar→lidar)以保旧分流不破。展示(Dashboard/卡片图标)、筛选(FilterDrawer)、AI 预标卡片改读 `data_type`。**`type_key` 列保留不删**: video 子类型分流(video-track vs video-mm 的轨迹导出路由)与 AI 输出形态分流(image-det→box/其余→mask, 标为遗留技术债)继续用 `type_key`。
+
+### Added
+
+- **`Project.data_type` / `ProjectTemplate.data_type`** ([apps/api/app/db/models/project.py](apps/api/app/db/models/project.py) · [project_template.py](apps/api/app/db/models/project_template.py)): `String(30)` server_default `'image'`; 媒体维度真值, 与 `Dataset.data_type` 对齐。迁移 [0082_project_data_type.py](apps/api/alembic/versions/0082_project_data_type.py) 加列 + 按 ctid 分批回填(`type_key LIKE 'video%'`→video / `=lidar`→lidar / 其余→image)。
+- **项目列表 `data_type` 筛选** ([apps/api/app/api/v1/projects.py](apps/api/app/api/v1/projects.py)): `GET /projects?data_type=image&data_type=video`; search / admin_preannotate 项目摘要补 `data_type`。
+
+### Changed
+
+- **新建向导第 1 步改媒体类型** ([Step1DataTypeAndTools.tsx](apps/web/src/components/projects/steps/Step1DataTypeAndTools.tsx) · [CreateProjectWizard.tsx](apps/web/src/components/projects/CreateProjectWizard.tsx)): 数据类型选择源从 `PROJECT_TYPES`(7 任务预设)改为 `toolUnits.ts::PROJECT_DATA_TYPES`(image/video/lidar); 提交 payload 带 `data_type`, `type_key` 取 `legacyTypeKey`; 切类型仍按 `defaultUnitBindings` 重置工具集。
+- **展示/筛选改读 `data_type`** ([DashboardPage.tsx](apps/web/src/pages/Dashboard/DashboardPage.tsx) · [ProjectGrid.tsx](apps/web/src/pages/Dashboard/ProjectGrid.tsx) · [FilterDrawer.tsx](apps/web/src/pages/Dashboard/FilterDrawer.tsx) · [ProjectCardGrid.tsx](apps/web/src/pages/AIPreAnnotate/components/ProjectCardGrid.tsx)): 媒体类型图标/筛选 chip 按 `data_type`。
+- **导出媒体维度判断改 `data_type`** ([export.py](apps/api/app/services/export.py)): `_assert_image_export_supported` 由 `type_key in VIDEO_PROJECT_TYPES` 改为 `data_type == "video"`; video-track 轨迹导出子类型路由仍用 `type_key`(不变)。
+
 ## [0.10.27] - 2026-05-20
 
 > **导出异步化 + 目录镜像.** 修两个生产级隐患: ① 导出**完全同步**——`_load_data()` 一次性把项目全部 task+annotation 拉进内存、在请求里拼完整 ZIP/JSON 再流式返回, 万级 task 项目内存暴涨 + 请求超时; ② 产物**扁平化丢目录**——YOLO/VOC 用 `file_name` 叶子名写 `labels/{base}.txt`, 不同子目录同名文件(`animals/cat/001.jpg` 与 `animals/dog/001.jpg`)互相**静默覆盖 = 数据丢失**。本期: 导出转 Celery 后台任务(独立 `export` 队列 + 专用 worker)+ 复用 `async_jobs` 追踪 + 产物落 MinIO `export` 桶(7 天 lifecycle)+ 前端任务铃轮询/下载; 产物改为**仅 labels 镜像目录(保留递归子目录)+ `fetch_images.py` 回源脚本**(不打包图片本体, 体积小、尊重用户本地已有数据集); 新增 `export_artifacts` 缓存表(双字段指纹, 同范围+格式+参数且标注未变则瞬时复用); 顺修 COCO/VOC 硬编码 `1920×1280` 改用 `DatasetItem.width/height` 真值; 导入端对称支持相对目录匹配 + CLI `import_images.py` 改递归扫描保留嵌套。本期范围限 **image**, video/lidar 留后续窗口。**不做(仍 defer)**: `POST /annotations/import` round-trip、Task `external_id` 跨实例匹配、video/lidar 导出形态。 → [plan](docs/plans/2026-05-20-v0.10.27-export-import-async-folder-mirroring.md)。

@@ -3,9 +3,9 @@
 
 import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
-import { PROJECT_TYPES } from "@/constants/projectTypes";
 import {
   TOOL_UNIT_GROUPS,
+  PROJECT_DATA_TYPES,
   type ToolUnitId,
 } from "@/constants/toolUnits";
 import {
@@ -44,17 +44,18 @@ export function Step1DataTypeAndTools({
       <div>
         <label className={styles.label}>数据类型</label>
         <div className={styles.typeGrid}>
-          {PROJECT_TYPES.map((t) => {
-            const active = t.key === form.typeKey;
+          {PROJECT_DATA_TYPES.map((t) => {
+            const active = t.id === form.dataType;
             return (
               <button
-                key={t.key}
+                key={t.id}
                 type="button"
                 onClick={() =>
                   setForm((s) => {
-                    // v0.10.17 · 切类型时按新 data_type 重置默认 unitBindings,
-                    // 但保留同一 unit 之前已配置的 classRows / attributeFields (避免误删).
-                    const next = defaultUnitBindings(t.key);
+                    // v0.10.28 · B 路线: 选媒体类型时同步派生兼容 typeKey,
+                    // 并按新 data_type 重置默认 unitBindings; 保留同一 unit 之前已
+                    // 配置的 classRows / attributeFields (避免误删, 沿用 v0.10.17 逻辑).
+                    const next = defaultUnitBindings(t.legacyTypeKey);
                     for (const k of Object.keys(next) as ToolUnitId[]) {
                       const prev = s.unitBindings[k];
                       if (prev) next[k] = { ...next[k]!, ...prev };
@@ -64,7 +65,8 @@ export function Step1DataTypeAndTools({
                     );
                     return {
                       ...s,
-                      typeKey: t.key,
+                      dataType: t.id,
+                      typeKey: t.legacyTypeKey,
                       unitBindings: next,
                       activeUnit: stillEnabled ?? "bbox",
                     };

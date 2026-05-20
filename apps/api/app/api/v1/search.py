@@ -50,6 +50,7 @@ async def global_search(
             "display_id": p.display_id,
             "name": p.name,
             "type_key": p.type_key,
+            "data_type": p.data_type,
             "type_label": p.type_label,
         }
         for p in projects

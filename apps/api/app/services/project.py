@@ -182,6 +182,30 @@ def coalesce_legacy_into_tool_bindings(
     payload["tool_bindings"] = merged
 
 
+# v0.10.28 · 媒体维度 data_type ↔ 兼容 type_key 互推.
+# data_type 只到 image/video/lidar 粒度, 无法区分 video-track vs video-mm;
+# 派生 type_key 仅在新建项目只给 data_type 时兜底一个默认子类型, 保旧分流不破.
+_DATA_TYPE_TO_LEGACY_TYPE_KEY = {
+    "image": "image-det",
+    "video": "video-track",
+    "lidar": "lidar",
+}
+
+
+def data_type_from_type_key(type_key: str | None) -> str:
+    """把 type_key 推导到媒体维度 data_type (与 alembic 0082 回填同规则)."""
+    if type_key and type_key.startswith("video"):
+        return "video"
+    if type_key == "lidar":
+        return "lidar"
+    return "image"
+
+
+def legacy_type_key_from_data_type(data_type: str | None) -> str:
+    """新建项目只给 data_type 时, 派生一个兼容 type_key 默认值."""
+    return _DATA_TYPE_TO_LEGACY_TYPE_KEY.get(data_type or "image", "image-det")
+
+
 def lookup_classes_for_tool_unit(
     tool_bindings: dict[str, Any] | None,
     tool_unit_id: str,
