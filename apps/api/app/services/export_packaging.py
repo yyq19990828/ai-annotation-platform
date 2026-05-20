@@ -205,7 +205,9 @@ async def build_export_zip(
             for ann in annotations:
                 ann_by_task.setdefault(ann.task_id, []).append(ann)
             for t in tasks:
-                item = dataset_items.get(t.dataset_item_id) if t.dataset_item_id else None
+                item = (
+                    dataset_items.get(t.dataset_item_id) if t.dataset_item_id else None
+                )
                 rel = _label_rel(t, item)
                 lines, attrs_per_line = _yolo_lines(
                     ann_by_task.get(t.id, []), cat_map, include_attributes
@@ -217,9 +219,7 @@ async def build_export_zip(
                 if include_attributes and attrs_per_line:
                     zf.writestr(
                         f"{base}.attrs.json",
-                        json.dumps(
-                            {"attributes": attrs_per_line}, ensure_ascii=False
-                        ),
+                        json.dumps({"attributes": attrs_per_line}, ensure_ascii=False),
                     )
         elif format == "coco":
             # COCO 单文档；传入 dataset_items 让像素坐标用真值（修硬编码 bug）。
