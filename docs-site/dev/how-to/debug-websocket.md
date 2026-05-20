@@ -116,20 +116,18 @@ docker compose up -d                                  # restart
 
 **症状**：`docker logs celery-beat` 看到 `Sending due task ...` 每秒一次，但 `docker logs celery-worker` 没有 `received` / `succeeded`。Redis `LLEN celery` 很大，`LLEN default` 是 0。
 
-**根因**：task 没在 `task_routes` 显式声明，默认进 `celery` 队列；但 worker 启动 `-Q default,ml,media` 不订阅 `celery`，task 永远卡在队列里。
+**根因**：task 没在 `task_routes` 显式声明，落到 `task_default_queue`；若该值仍是 Celery 内置默认 `celery`，而 worker 启动 `-Q default,ml,media,gpu,cleanup,audit` **不订阅 `celery`**，task 就永远卡在队列里静默堆积。
 
-**修复**：
+**这是复发型坑**：v0.9.x 曾因此堆积 65 条（只补了那两个 task 的 route），v0.10.25 又因新增 `worker-heartbeat` 等堆到 8127 条。逐个补 route 治标不治本。
+
+**修复（系统性，v0.10.25）**：把默认队列改成 worker 实际订阅的 `default`，未路由任务自动落到被消费的队列：
 
 ```python
-# apps/api/app/workers/celery_app.py
-task_routes = {
-    "app.workers.ml_health.publish_ml_backend_stats": {"queue": "default"},
-    "app.workers.ml_health.check_ml_backends_health": {"queue": "default"},
-    # 其他显式列出
-}
+# apps/api/app/workers/celery_app.py · celery_app.conf.update(...)
+task_default_queue="default",   # 不再是 Celery 内置的 "celery"
 ```
 
-每加新 task 必须配套加 task_routes 一行。或者改 worker 启动为 `-Q default,ml,media,celery`（但容易引入 stale 队列堆积无人消费的旧任务）。
+只有需要专用队列（`ml` / `media` / `gpu` / `cleanup` / `audit`）的 task 才在 `task_routes` 显式路由；其余兜底任务无需逐个补 route。排查时 `redis-cli llen celery` 看死队列是否堆积。队列与订阅模型详见 [backend-infrastructure 的「队列与订阅模型」一节](../concepts/backend-infrastructure)。
 
 ### 6. asyncpg `cannot perform operation: another operation is in progress`
 

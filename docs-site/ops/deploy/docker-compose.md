@@ -238,13 +238,16 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 ```bash
 cd apps/api
-uv run celery -A app.workers.celery_app worker -l info -Q default,ml,media --concurrency=4
+uv run celery -A app.workers.celery_app worker -l info -Q default,ml,media,gpu,cleanup,audit --concurrency=4
 ```
 
-队列含义：
-- `default` — 通知、审计异步写、轻量任务
+队列含义（worker 必须订阅全部 6 个，否则未订阅队列的任务静默堆积）：
+- `default` — 兜底队列（`task_default_queue`）、PerfHud 推送、心跳、在线状态、分区维护等
 - `ml` — 自动预标注、模型调用
-- `media` — 图像/视频转码、缩略图
+- `media` — 图像/视频转码、缩略图、视频帧
+- `gpu` — 视频目标追踪
+- `cleanup` — 软删清理、效率看板物化视图刷新、DuckDB 同步
+- `audit` — 审计日志 / task event 批量入库
 
 或直接用 `docker-compose up celery-worker`（已配置好）。
 

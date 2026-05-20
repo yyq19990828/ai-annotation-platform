@@ -126,16 +126,27 @@ docker compose down -v
 
 - **构建**：`infra/docker/Dockerfile.api`（与 api 同镜像，仅启动命令不同）
 - **端口**：无（不对外暴露）
-- **代码挂载**：`apps/api/app/**` 是 volume mount —— **业务代码改 .py 文件需 `docker restart` worker**（Celery 没有 `--reload`，详见 [docker rebuild vs restart](../troubleshooting/docker-rebuild-vs-restart)）
-- **消费哪些队列**：`default,ml,media`（`--concurrency=4`），任务路由在 `apps/api/app/workers/celery_app.py:31-43`：
+- **代码挂载**（v0.10.25+）：`docker-compose.yml` 把 `./apps/api:/app` 整目录 bind mount 进 worker/beat（匿名卷 `/app/.venv` 屏蔽 host venv；依赖装在 `--system` site-packages 不在 `/app` 下故不被盖掉）。**改业务码 / 新增 alembic 迁移只需 `docker restart` worker，不必 rebuild**（Celery 没有 `--reload`，故仍须 restart，详见 [docker rebuild vs restart](../troubleshooting/docker-rebuild-vs-restart)）。
 
-  | Queue | 谁路由进来 | 典型任务 |
-  |---|---|---|
-  | `default` | 兜底 | 通用异步任务 |
-  | `ml` | `batch_predict` / `retry_failed_prediction` | 跑 ML backend / 重试失败预测 |
-  | `media` | `generate_thumbnail` / `backfill_media` 等 | 缩略图、媒体 backfill |
-  | `cleanup` | `purge_soft_deleted_attachments` / `refresh_user_perf_mv` | 默认 worker **不消费**，需另起 |
-  | `audit` | `persist_audit_entry` / `persist_task_events_batch` | 默认 worker **不消费**，需另起 |
+#### 队列与「订阅」模型
+
+Celery 里任务先被**投递（publish）到某个命名队列**，worker 只**消费它显式订阅（`-Q`）的队列**。投到没人订阅的队列的任务会一直躺着、永不执行。
+
+- **worker 订阅**：`-Q default,ml,media,gpu,cleanup,audit`（`--concurrency=4`）—— 当前单 worker 订阅全部 6 个业务队列。
+- **任务 → 队列 的映射**：`apps/api/app/workers/celery_app.py` 的 `task_routes` 显式指定；**未显式路由的任务落到 `task_default_queue`**。
+
+  | Queue | 谁路由进来 | 典型任务 | 前端可见？ |
+  |---|---|---|---|
+  | `default` | `task_default_queue` 兜底 + ml_health | `publish_ml_backend_stats`(PerfHud) / `check_ml_backends_health` / `worker-heartbeat` / `mark_inactive_offline`(在线状态) / 各 `ensure_future_*_partitions` | 部分（PerfHud / 在线状态点） |
+  | `ml` | `batch_predict` / `retry_failed_prediction` | 跑 ML backend / 重试失败预测 | ✅ 工作台 AI 候选框 |
+  | `media` | `generate_thumbnail` / `extract_video_frames` 等 | 缩略图、视频帧、媒体 backfill | ✅ 列表 / 工作台的图与帧 |
+  | `gpu` | `run_video_tracker_job` | 视频目标追踪 | ✅ 视频追踪结果 |
+  | `cleanup` | `purge_soft_deleted_attachments` / `refresh_user_perf_mv` / `sync_to_duckdb` 等 | 清理、效率看板物化视图刷新、DuckDB 同步 | 间接（效率看板数据） |
+  | `audit` | `persist_audit_entry` / `persist_task_events_batch` | 审计日志 / task event 批量入库 | ✅ admin 审计页 |
+
+  ::: warning 易踩坑：`task_default_queue`
+  Celery 内置默认队列名是 `celery`，**不在 worker 的 `-Q` 列表里**。若某 beat / 异步任务忘了在 `task_routes` 里路由、且 `task_default_queue` 仍是 `celery`，它就投进无人消费的 `celery` 队列里**静默堆积、永不执行**（v0.10.25 曾因此让 `worker-heartbeat`/`mark_inactive_offline`/审计分区维护等任务全部失效，死队列堆积 8127 条）。修复：`celery_app.conf` 设 `task_default_queue="default"`，让兜底任务落到 worker 实际订阅的 `default` 队列。排查时 `redis-cli llen celery` 看死队列是否堆积。
+  :::
 - **常用命令**
 
   ```bash

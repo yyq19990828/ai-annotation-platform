@@ -176,7 +176,7 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 
 - 返回 409：当前用户没有持有覆盖 frame range 的有效 segment lock。先调用 segment claim，再发起 tracker job。
 - 返回 400：frame range 越界、反向，或跨越多个 segment。第一版要求单 job 在一个 segment 内。
-- job 长时间停留 `queued`：确认 worker 订阅了 `gpu` 队列。开发 compose 默认命令应包含 `-Q default,ml,media,gpu`。
+- job 长时间停留 `queued`：确认 worker 订阅了 `gpu` 队列。compose 默认命令是 `-Q default,ml,media,gpu,cleanup,audit`（必须含 `gpu`）。
 - job 进入 `failed`：查看 `error_message`。`Unsupported tracker model` 通常表示前端传了后端 registry 尚未支持的 `model_key`；`sam2_video` / `sam3_video` 需要项目绑定的 ML Backend 处于 `connected`。
 - 取消后仍看到部分结果：worker 会保留已发布或已写回的 prediction keyframes，未完成区间不落库。
 
