@@ -4,6 +4,10 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
+## 0. Write in English
+
+**All content in this file (CLAUDE.md) must be written in English.** Do not mix in other languages. This rule applies only to CLAUDE.md itself — other docs, code comments, and commit messages follow the project's existing conventions, and replying to the user in their language is fine.
+
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
@@ -60,37 +64,37 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-## 5. 提交前文档检查
+## 5. Pre-Commit Documentation Check
 
-**每次版本提交前，检查相关文档是否需要同步更新。**
+**Before every versioned commit, check whether related docs need to be updated in sync.**
 
-涉及以下变更时，必须检查对应文档：
-- 新增/修改 API → 检查 `docs-site/api/`、`README.md`
-- 新增/修改功能 → 检查 `docs-site/user-guide/`、`CHANGELOG.md`
-- 架构变更 → 检查 `docs-site/dev/concepts/`，必要时新增 ADR（`docs/adr/`）
-- 环境变量变更 → 更新 `.env.example`，运行 `pnpm docs:gen-env-vars`，检查 `DEV.md`
+When the following changes occur, you must check the corresponding docs:
+- Added/changed API → check `docs-site/api/`, `README.md`
+- Added/changed feature → check `docs-site/user-guide/`, `CHANGELOG.md`
+- Architecture change → check `docs-site/dev/concepts/`, add an ADR if needed (`docs/adr/`)
+- Environment variable change → update `.env.example`, run `pnpm docs:gen-env-vars`, check `DEV.md`
 
-## 6. 前端颜色 token 规则（防暗色模式失效）
+## 6. Frontend Color Token Rules (prevent dark-mode breakage)
 
-**唯一可信来源：`apps/web/src/styles/tokens.css`。**
+**Single source of truth: `apps/web/src/styles/tokens.css`.**
 
-历史 B-32/B-36/B-38/B-39 共同病灶：组件 CSS 里凭"经验"写了同义但不存在的变量名（`var(--color-text, #1f2937)`、`var(--color-primary, ...)`），浏览器找不到就退回浅色硬编码 fallback → 暗色模式下不可读。
+The shared root cause of past bugs B-32/B-36/B-38/B-39: component CSS used variable names that "felt right" but didn't exist (`var(--color-text, #1f2937)`, `var(--color-primary, ...)`); the browser couldn't find them and fell back to a hardcoded light color → unreadable in dark mode.
 
-写组件 CSS 时遵守 3 条硬规则：
+Follow 3 hard rules when writing component CSS:
 
-1. **不准就地造名**：只能用 `tokens.css` 里已定义的 `--color-*`。需要新语义就先在 `tokens.css` 同时加 light + dark 两套定义，再用。
-2. **不准带 fallback**：禁写 `var(--color-foo, #xxx)` / `var(--color-foo, rgba(...))`，直接 `var(--color-foo)`。fallback 等于给"造名"开后门，且 token 改名时静默退回浅色。
-3. **不准硬编码颜色**：组件 CSS 里不写 `#hex` / `rgb()` / `oklch()`（阴影 / 蒙层等专属 rgba 例外）。颜色一律来自 token。
+1. **No inventing names on the spot**: only use `--color-*` already defined in `tokens.css`. If you need a new semantic, first add both light + dark definitions in `tokens.css`, then use it.
+2. **No fallbacks**: never write `var(--color-foo, #xxx)` / `var(--color-foo, rgba(...))`; write `var(--color-foo)` directly. A fallback is a back door for invented names and silently reverts to light when a token is renamed.
+3. **No hardcoded colors**: don't write `#hex` / `rgb()` / `oklch()` in component CSS (shadow / overlay-specific rgba are exceptions). All colors come from tokens.
 
-**CI 卡点**：`pnpm lint` 内置 `node scripts/check-css-tokens.mjs`，扫所有 `apps/web/src/**/*.css`，违反 1 或 2 直接 fail，本地也可 `pnpm lint:css-tokens` 单跑。
+**CI gate**: `pnpm lint` includes `node scripts/check-css-tokens.mjs`, which scans all `apps/web/src/**/*.css` and fails on violations of rule 1 or 2; run it standalone with `pnpm lint:css-tokens`.
 
-**兼容别名**：`tokens.css` 底部维护了一组遗留别名（如 `--color-primary` → `--color-accent`），仅为兼容历史 CSS，新代码请用右侧规范名。
+**Compatibility aliases**: the bottom of `tokens.css` maintains a set of legacy aliases (e.g. `--color-primary` → `--color-accent`), kept only for historical CSS compatibility. New code should use the canonical names on the right.
 
-## 7. /plan 模式下计划文件的命名规范
+## 7. Plan File Naming Convention (in /plan mode)
 
-**所有 plan 文件必须以 `yyyy-mm-dd-` 为前缀。涉及版本的, 以 `yyyy-mm-dd-vx.y.z` 为前缀**
+**All plan files must be prefixed with `yyyy-mm-dd-`. If version-related, prefix with `yyyy-mm-dd-vx.y.z`.**
 
-示例：`2026-05-06-auth-refactor.md`、`2026-05-06-perf-optimization.md`
+Examples: `2026-05-06-auth-refactor.md`, `2026-05-06-perf-optimization.md`
 
 ## 8. Docker: rebuild vs restart
 
@@ -100,7 +104,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 | Change | Action |
 |---|---|
-| Python business code under `apps/api/**` incl. `app/**` and `alembic/**` | dev API 跑 host(`uvicorn --reload`)自动重载。Celery `worker`/`beat` 自 v0.10.25 起把 `./apps/api:/app` 源码挂载进容器(deps 装在 `--system`,不在 `/app` 下,匿名卷 `/app/.venv` 屏蔽 host venv),故**改 worker 业务码 / 新增 alembic 迁移只需 `docker restart`,不必 rebuild**。Celery 无 `--reload`,改码后仍须 restart。 |
+| Python business code under `apps/api/**` incl. `app/**` and `alembic/**` | dev API runs on host (`uvicorn --reload`) and auto-reloads. Since v0.10.25 the Celery `worker`/`beat` mounts `./apps/api:/app` source into the container (deps installed with `--system`, not under `/app`; an anonymous volume `/app/.venv` shadows the host venv), so **editing worker business code / adding an alembic migration only needs `docker restart`, no rebuild**. Celery has no `--reload`, so you still must restart after editing code. |
 | Frontend `apps/web/src/**` with vite dev server | HMR handles it |
 | Runtime env vars in `.env` | `docker compose up -d` (recreates container, does not rebuild image) |
 | DB schema changes via alembic | `docker exec ... alembic upgrade head` |
@@ -132,6 +136,12 @@ docker exec ai-annotation-platform-celery-worker-1 \
 
 **Common pitfall:** Celery workers silently run stale code after editing a task signature, because Celery has no `--reload` equivalent. Symptom is dispatch-time `TypeError` on new kwargs while source on disk looks correct. Always restart the worker container after editing files under `apps/api/app/workers/`.
 
+## Parallel Subagent Worktree Rule
+- When dispatching any subagent (the `Agent` tool) that will **modify code**, always pass `isolation: "worktree"` so the agent works in its own git worktree (auto-cleaned if it makes no changes).
+- Read-only / search-only subagents (e.g. `Explore`, pure lookups) do **not** need a worktree.
+- **When the main process spots independent, parallelizable tasks, proactively split them out and dispatch subagents to run in parallel** — don't serialize work that could run concurrently. Put the independent (dependency-free) subagent calls in a single message so they actually run concurrently.
+- **After a subagent's branch is merged back into the main branch, remember to delete its local worktree** (`git worktree remove <path>`, plus `git worktree prune` and deleting the `worktree-agent-*` branch if needed) to avoid piling up locked leftovers under `.claude/worktrees/`.
+
 ## Keep Docs in Sync
 - When code changes affect documented behavior, update the relevant docs **in the same change** — not in a follow-up.
 - Removed/renamed symbols → grep all `*.md` for the old name and fix every reference. Stale doc links are bugs.
@@ -141,67 +151,67 @@ docker exec ai-annotation-platform-celery-worker-1 \
 
 ---
 
-## BUG 反馈查询
+## BUG Report Queries
 
-用户通过前端 BugReportDrawer 提交的 BUG 反馈存储在 PostgreSQL 的 `bug_reports` 表中。
-由于本地 API 没有现成的认证 token，直接通过 Docker 内的 psql 查询：
+BUG reports submitted by users via the frontend BugReportDrawer are stored in the PostgreSQL `bug_reports` table.
+Since the local API has no ready-made auth token, query directly via psql inside Docker:
 
 ```bash
 docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT display_id, title, severity, status, created_at FROM bug_reports ORDER BY created_at DESC LIMIT 20;"
 ```
 
-如需查看完整详情（含描述、API 调用记录、console 错误等）：
+To view full details (including description, API call log, console errors, etc.):
 
 ```bash
 docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
   "SELECT display_id, title, description, severity, status, route, browser_ua, recent_api_calls, recent_console_errors FROM bug_reports WHERE display_id = 'B-1';"
 ```
-前端BUG合理利用chrome devtools mcp功能，查看最近的API调用和console错误，帮助定位问题。
+For frontend bugs, make good use of the chrome devtools MCP to inspect recent API calls and console errors to help locate the problem.
 ---
 
-## 项目文档索引
+## Project Documentation Index
 
-开发前务必阅读以下文档，了解项目全貌。
+Read the following docs before development to understand the whole project.
 
-### 核心文档
+### Core Docs
 
-- [README.md](README.md) — 仓库入口
-- [DEV.md](DEV.md) — 快速参考（完整开发文档已迁移到 docs-site）
-- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录 + 待实现 Roadmap
+- [README.md](README.md) — repository entry point
+- [DEV.md](DEV.md) — quick reference (full dev docs have moved to docs-site)
+- [CHANGELOG.md](CHANGELOG.md) — version change log + planned Roadmap
 
-### VitePress 文档站（docs-site/）
+### VitePress Documentation Site (docs-site/)
 
-按 [Diátaxis](https://diataxis.fr/) 框架组织，按角色 × 任务分层。
+Organized by the [Diátaxis](https://diataxis.fr/) framework, layered by role × task.
 
-- [docs-site/user-guide/](docs-site/user-guide/) — 用户手册（按角色：for-annotators / for-project-admins / for-reviewers / for-superadmins）
-- [docs-site/dev/](docs-site/dev/) — 开发文档（tutorials / concepts / how-to / reference / troubleshooting）
-- [docs-site/ops/](docs-site/ops/) — 部署与运维（deploy / observability / security / runbooks）
-- [docs-site/api/](docs-site/api/) — 后端 API 文档（基于 OpenAPI 自动渲染）
+- [docs-site/user-guide/](docs-site/user-guide/) — user manual (by role: for-annotators / for-project-admins / for-reviewers / for-superadmins)
+- [docs-site/dev/](docs-site/dev/) — dev docs (tutorials / concepts / how-to / reference / troubleshooting)
+- [docs-site/ops/](docs-site/ops/) — deployment & ops (deploy / observability / security / runbooks)
+- [docs-site/api/](docs-site/api/) — backend API docs (auto-rendered from OpenAPI)
 
-关键路径：
-- 架构文档：`docs-site/dev/concepts/`（原 `dev/architecture/`）
-- 协议规范：`docs-site/dev/reference/`（含 env-vars.md / ml-backend-protocol.md）
-- 环境变量变更 → 同步更新 `.env.example`，再运行 `pnpm docs:gen-env-vars` 重生成 `dev/reference/env-vars.md`
+Key paths:
+- Architecture docs: `docs-site/dev/concepts/` (formerly `dev/architecture/`)
+- Protocol specs: `docs-site/dev/reference/` (includes env-vars.md / ml-backend-protocol.md)
+- Environment variable changes → update `.env.example` in sync, then run `pnpm docs:gen-env-vars` to regenerate `dev/reference/env-vars.md`
 
-本地预览：`pnpm docs:dev` → http://localhost:5173
+Local preview: `pnpm docs:dev` → http://localhost:5173
 
-### 架构决策（docs/adr/）
+### Architecture Decisions (docs/adr/)
 
-- [README.md](docs/adr/README.md) — 写 ADR 的指南
+- [README.md](docs/adr/README.md) — guide to writing ADRs
 - [0001-record-architecture-decisions.md](docs/adr/0001-record-architecture-decisions.md)
 
-### 调研报告（docs/research/）
+### Research Reports (docs/research/)
 
-- [README.md](docs/research/README.md) — 调研报告摘要与总览
-- [01-label-studio.md](docs/research/01-label-studio.md) — Label Studio 深度分析
-- [02-adala.md](docs/research/02-adala.md) — Adala LLM Agent 框架分析
-- [03-cvat.md](docs/research/03-cvat.md) — CVAT 深度分析
-- [04-x-anylabeling.md](docs/research/04-x-anylabeling.md) — X-AnyLabeling 分析
-- [05-commercial.md](docs/research/05-commercial.md) — 商业产品动向
-- [06-ai-patterns.md](docs/research/06-ai-patterns.md) — AI 集成模式总结
-- [07-production-capabilities.md](docs/research/07-production-capabilities.md) — 生产级能力对比
-- [08-comparison-matrix.md](docs/research/08-comparison-matrix.md) — 功能对比矩阵
-- [09-recommendations.md](docs/research/09-recommendations.md) — 落地建议
-- [10-roadmap.md](docs/research/10-roadmap.md) — 路线图
-- [11-references.md](docs/research/11-references.md) — 参考文献
+- [README.md](docs/research/README.md) — research report summaries and overview
+- [01-label-studio.md](docs/research/01-label-studio.md) — Label Studio deep dive
+- [02-adala.md](docs/research/02-adala.md) — Adala LLM Agent framework analysis
+- [03-cvat.md](docs/research/03-cvat.md) — CVAT deep dive
+- [04-x-anylabeling.md](docs/research/04-x-anylabeling.md) — X-AnyLabeling analysis
+- [05-commercial.md](docs/research/05-commercial.md) — commercial product trends
+- [06-ai-patterns.md](docs/research/06-ai-patterns.md) — summary of AI integration patterns
+- [07-production-capabilities.md](docs/research/07-production-capabilities.md) — production-grade capability comparison
+- [08-comparison-matrix.md](docs/research/08-comparison-matrix.md) — feature comparison matrix
+- [09-recommendations.md](docs/research/09-recommendations.md) — adoption recommendations
+- [10-roadmap.md](docs/research/10-roadmap.md) — roadmap
+- [11-references.md](docs/research/11-references.md) — references
