@@ -193,7 +193,6 @@ class AuditPartitionService:
             "total_rows": total_rows,
         }
 
-
     @staticmethod
     def list_archives() -> list[dict]:
         """列出 audit-archive 桶内已归档的月份。

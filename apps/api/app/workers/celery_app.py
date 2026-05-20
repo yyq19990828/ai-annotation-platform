@@ -137,9 +137,7 @@ celery_app.conf.update(
         # v0.10.25 · worker 心跳：周期写 Redis（celery:hb:{worker}），/health/celery 读差值。
         "worker-heartbeat": {
             "task": "app.workers.heartbeat.publish_worker_heartbeat",
-            "schedule": timedelta(
-                seconds=settings.worker_heartbeat_interval_seconds
-            ),
+            "schedule": timedelta(seconds=settings.worker_heartbeat_interval_seconds),
         },
     },
 )

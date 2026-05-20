@@ -270,24 +270,38 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
     from app.db.models.ml_backend import MLBackend
 
     db_session.add(
-        MLBackend(project_id=proj.id, name="b", url="http://obs1:8001", state="connected")
+        MLBackend(
+            project_id=proj.id, name="b", url="http://obs1:8001", state="connected"
+        )
     )
     await db_session.flush()
 
     routes = {
         ("get", "/health"): _FakeResp(
             200,
-            {"ok": True, "loaded": False, "model_version": "mv",
-             "pool": {"cap": 1, "loaded_variants": []}, "gpu_info": {"memory_used_mb": 1}},
+            {
+                "ok": True,
+                "loaded": False,
+                "model_version": "mv",
+                "pool": {"cap": 1, "loaded_variants": []},
+                "gpu_info": {"memory_used_mb": 1},
+            },
         ),
         ("get", "/setup"): _FakeResp(
             200,
-            {"params": {"properties": {
-                "sam_variant": {"enum": ["tiny", "large"]},
-                "dino_variant": {"enum": ["T", "B"]}}}},
+            {
+                "params": {
+                    "properties": {
+                        "sam_variant": {"enum": ["tiny", "large"]},
+                        "dino_variant": {"enum": ["T", "B"]},
+                    }
+                }
+            },
         ),
     }
-    with patch("app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)):
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)
+    ):
         res = await httpx_client.get(
             "/api/v1/admin/ml-integrations/observe",
             headers={"Authorization": f"Bearer {token}"},
@@ -304,22 +318,31 @@ async def test_observe_returns_variant_catalog_and_registered_flag(
 
 
 @pytest.mark.asyncio
-async def test_smoke_test_skips_when_pool_already_loaded(
-    httpx_client, super_admin
-):
+async def test_smoke_test_skips_when_pool_already_loaded(httpx_client, super_admin):
     """冲突守护: 池子已有变体常驻时不预热/不卸载, 只确认可加载性。"""
     _, token = super_admin
     routes = {
         ("get", "/health"): _FakeResp(
             200,
-            {"ok": True, "loaded": True,
-             "pool": {"loaded_variants": [{"sam_variant": "tiny", "dino_variant": "T"}]}},
+            {
+                "ok": True,
+                "loaded": True,
+                "pool": {
+                    "loaded_variants": [{"sam_variant": "tiny", "dino_variant": "T"}]
+                },
+            },
         ),
     }
-    with patch("app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)):
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)
+    ):
         res = await httpx_client.post(
             "/api/v1/admin/ml-integrations/observe/smoke-test",
-            json={"url": "http://obs1:8001", "sam_variant": "large", "dino_variant": "B"},
+            json={
+                "url": "http://obs1:8001",
+                "sam_variant": "large",
+                "dino_variant": "B",
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
     assert res.status_code == 200
@@ -337,15 +360,27 @@ async def test_smoke_test_warms_and_unloads_empty_pool(httpx_client, super_admin
             200, {"ok": True, "loaded": False, "pool": {"loaded_variants": []}}
         ),
         ("post", "/reload"): _FakeResp(
-            200, {"ok": True, "loaded": True, "reloaded": True,
-                  "sam_variant": "large", "dino_variant": "B"}
+            200,
+            {
+                "ok": True,
+                "loaded": True,
+                "reloaded": True,
+                "sam_variant": "large",
+                "dino_variant": "B",
+            },
         ),
         ("post", "/unload"): _FakeResp(200, {"ok": True, "unloaded": True}),
     }
-    with patch("app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)):
+    with patch(
+        "app.api.v1.admin_ml_integrations.httpx.AsyncClient", _fake_client(routes)
+    ):
         res = await httpx_client.post(
             "/api/v1/admin/ml-integrations/observe/smoke-test",
-            json={"url": "http://obs1:8001", "sam_variant": "large", "dino_variant": "B"},
+            json={
+                "url": "http://obs1:8001",
+                "sam_variant": "large",
+                "dino_variant": "B",
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
     assert res.status_code == 200
