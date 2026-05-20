@@ -42,6 +42,23 @@ services:
       timeout: 5s
       retries: 5
 
+  # v0.10.24 · dev SMTP 收件箱。后端 email.py 的 admin「发送测试邮件」按钮
+  # 把邮件投到这里; Web UI http://localhost:8025 直接看收到的邮件, 不外发真实邮件。
+  # 配合 .env: SMTP_HOST=localhost SMTP_PORT=1025 SMTP_FROM=noreply@local.test
+  # (API 跑 host 时连 localhost:1025; 若 API 也进 Docker 则填 SMTP_HOST=mailpit)。
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    environment:
+      MP_MAX_MESSAGES: 500
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8025/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # api 和 web 在本地运行，不走 Docker
   # api:
   #   build:
@@ -98,6 +115,16 @@ services:
     volumes:
       # v0.10.16 · DuckDB 文件 bind mount, worker 写 / API 跑 host 时只读
       - ./data/duckdb:/var/lib/duckdb
+    # v0.10.24 · worker 健康探针: inspect ping 自身节点 (-d 限定当前 worker, 不等其它副本)。
+    # 必须用 CMD-SHELL — exec-form 无 shell, $$HOSTNAME 不展开会 ping 字面节点名导致永远 unhealthy。
+    # start_period 留足 image 冷启 + broker 连接; SIGTERM 后给 30s warm shutdown 跑完在途任务。
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 30s
     depends_on:
       redis:
         condition: service_healthy
@@ -120,6 +147,9 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+    # v0.10.24 · beat 是调度进程不响应 inspect ping, 故无 healthcheck;
+    # 仅给优雅关闭窗口让它落盘 /tmp/celerybeat-schedule 后退出。
+    stop_grace_period: 30s
     depends_on:
       redis:
         condition: service_healthy

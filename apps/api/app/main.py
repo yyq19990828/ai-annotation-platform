@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI):
         pass
 
 
-app = FastAPI(title=settings.app_name, version="0.8.8", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.10.24] - 2026-05-20
+
+> **生产上线 / 监控触发杂项收口.** 巡检生产就绪面挑三处低风险缺口一次收口: ① 版本号四处漂移(`/health` 硬编码 `0.7.6` / FastAPI `0.8.8` / pyproject `0.1.0` / web `0.8.8`)收敛到 `settings.app_version` 单源真值 —— 运维 scrape `/health` 拿到的版本号此前长期 stale; ② ROADMAP「现在可做」的 dev SMTP 收件箱(mailpit)接入, 让 `email.py` 的 admin「发送测试邮件」本地可端到端验证; ③ Celery `worker`/`beat` 补 healthcheck + 优雅关闭窗口。**不做**: Celery 全局 task 超时(gpu 队列视频 tracker 可能合法长跑, 全局硬超时误杀风险)。 → [plan](docs/plans/2026-05-20-v0.10.24-production-misc.md)。
+
+### Added
+
+- **dev SMTP 收件箱 `mailpit`** ([docker-compose.yml](docker-compose.yml) · [.env.example](.env.example)): 加 `axllent/mailpit` service(SMTP `1025` / Web UI `8025`, `readyz` healthcheck, `MP_MAX_MESSAGES=500`)。`email.py` 的 admin「发送测试邮件」投到此处不外发真实邮件; `.env.example` 加 SMTP 段给出 mailpit 默认值与 host/容器两种连法。后端无需改码 —— `SystemSettingsService` 已有 env fallback(`_env_default → getattr(settings, key)`), env 配的 `SMTP_*` 直接被读到。
+- **`settings.app_version` 版本号单源真值** ([apps/api/app/config.py](apps/api/app/config.py)): 新增 `app_version="0.10.24"`, 发版只改此处 + 两个 manifest。
+
+### Changed
+
+- **`/health` 与 FastAPI title 版本号改读 settings** ([apps/api/app/main.py](apps/api/app/main.py) · [apps/api/app/api/health.py](apps/api/app/api/health.py)): `FastAPI(version=settings.app_version)`、`/health` 聚合响应 `version` 字段读 `settings.app_version`, 删此前硬编码的 `0.8.8` / `0.7.6`。
+- **版本号同步到 0.10.24** ([apps/api/pyproject.toml](apps/api/pyproject.toml) · [apps/web/package.json](apps/web/package.json)): `pyproject 0.1.0 → 0.10.24`、`package.json 0.8.8 → 0.10.24`。
+- **Celery `worker`/`beat` 生产硬化** ([docker-compose.yml](docker-compose.yml)): `celery-worker` 加 `healthcheck`(`celery -A app.workers.celery_app inspect ping -d celery@$HOSTNAME`, interval 30s / start_period 40s) + `stop_grace_period: 30s`; `celery-beat` 是调度进程不响应 inspect ping, 仅加 `stop_grace_period: 30s` 让其落盘 schedule 后退出。
+
 ## [0.10.23] - 2026-05-20
 
 > **ML Backend 变体运行期热切换 + 工作台变体/文本面板收敛.** grounded-sam2-backend 原用全局单例 `_predictor` + 单 cache, 变体由启动 env `SAM_VARIANT`/`DINO_VARIANT` 锁死, `_run_prompt` 完全忽略请求变体。本期引入容器内 `ModelPool`: 按请求级 `(sam_variant, dino_variant)` LRU 缓存 predictor, 命中复用 / miss 冷启 1–3s / 超 cap 驱逐 LRU + 释放显存; embedding cache 按变体分桶隔离。前端把变体选择上移 AI 面板(会话级, 切工具保留), 文本输入下沉子工具面板。**前置 bug 修复**: `/setup` 的 `sam_variant` enum 原暴露 `["tiny","small","base","large"]`, 但 `SAM2_CONFIGS` key 是 `base_plus` —— 选 `base` 会在 backend 真消费 variant 后 KeyError → 422; 统一为 `["tiny","small","base_plus","large"]`。 → [plan](ROADMAP/2026-05-20-v0.10.23-plan.md) · [需求](ROADMAP/2026-05-20-ml-backend-variant-hot-switch.md)。
