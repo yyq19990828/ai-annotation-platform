@@ -35,7 +35,7 @@
 
 ### 等独立 epic（体量大、不适合塞进收尾版）
 - **视频工作台（功能 + 渲染 + 后端）三联**：见 §C.5（前端）与 §C.6（后端）；原 epic 文档已归档。
-- **lidar 真实 3D 工作台**（C.4 Layer 2 触发;v0.10.17 已收 image-seg → region tool_unit / keypoint 待 polyline+skeleton 实现,真正的独立 epic 只剩 lidar 3D 部分;图片侧形状能力扩展见 §C.7）
+- **lidar 真实 3D 工作台**（C.4 Layer 2 触发;v0.10.17 已收 image-seg → region tool_unit,v0.10.28 已落 polyline / rotated_bbox / keypoint(COCO 骨骼),真正的独立 epic 只剩 lidar 3D 部分;图片侧形状能力扩展见 §C.7）
 - **大文件分片上传**（>5GB 视频 / 点云）
 - **数据集版本 snapshot + 主动学习闭环**（与训练队列一起做，长期规划 L1 / L2）
 - **2FA / TOTP**（super_admin 必选 / 其它角色可选）
@@ -51,12 +51,15 @@
   - `lidar` 在 Workbench StageHost 仍是 3D placeholder,Dashboard 入口未开放,`tool_unit=lidar_box_3d` 留位置灰;接入真实 3D 前不要复用图片 / 视频 geometry。
   - `video-mm` / `mm` 多模态工作台未实现;视频侧能力详见 §C.5 / §C.6。
 - **v0.10.17 落地后开放项**（按客户反馈触发）:
-  - **`polyline` 工具实现**（**P3**）:v0.10.17 在 schema 与 UI 都留了 `polyline` tool_unit 位置但置灰;触发条件:车道线 / 折线段标注的真实客户需求出现。设计走 `LineGeometry` + ToolDock 入口 + image-export 协议同步。
   - **`lidar_box_3d` 工具实现**（**P0**,体量大）:见上条 3D 工作台;依赖 3D viewer + 后端 frame service 视点处理。独立 epic,与长期 L3 跨模态挂钩。
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）:v0.10.17 强隔离意味"bbox 工具的人 / region 工具的人是两条独立记录",同名颜色 / alias 都得重复输入;触发条件:客户后续反馈"想共享类别名字"。设计走 `ToolClassEntry.alias_to: { tool_unit_id, class_name } | null` 链,导出时按 alias_to 合并 categories(可选)。**强隔离决策为默认底线,alias_to 仅作可选叠加**,不破坏 ADR-0026 决策。
 
   - **工作台 ToolDock 按 tool_bindings 过滤**（**P3**）:当前 ToolDock 仍渲染全部工具(只是 AI 工具按 `useMLCapabilities` 置灰);v0.10.17 引入 tool_unit 后,可进一步按"项目启用的 tool_unit"隐藏不相关工具(例如未启用 region 时不显示 polygon/mask 按钮)。触发条件:工具栏拥挤反馈 + UI 用户调研显示"看不懂为什么有 polygon 按钮但点了画不出"。
   - **rename_class 端点跨 unit 重命名 UX**（**P3**）:v0.10.17 `useRenameClass` 加了 `tool_unit_id` 参数,但 ClassesSection 仅传当前 active unit;若客户想"同时在所有 unit 内把'人'改成'pedestrian'"需要扩 UI 入口(批量勾选 unit + 单次重命名)。触发条件:客户反馈"重命名要跑 N 次"。
+- **v0.10.28 新几何导出/导入/预测支持**（三种新几何 rotated_bbox / polyline / keypoint 落地后新发现，端到端绘制 + 持久化已通，但与外部格式 / 模型协议的对接仍缺口）:
+  - **导出协议覆盖新几何**（**P2**，客户用了新工具就会立刻撞上）:`export.py` / `export_packaging.py` 当前只导 bbox / polygon / mask;rotated_bbox / polyline / keypoint **没有 COCO / YOLO / VOC 映射**(rotated_bbox→COCO 无原生表示需选 OBB 扩展或 segmentation 退化;keypoint→COCO `keypoints` 数组 + `skeleton`;polyline→无标准格式需走平台原生 AAP JSON)。触发条件:任一新工具的项目走到导出环节。设计先补 AAP JSON(平台原生无损)再按客户要的标准格式逐个加。
+  - **predictions import / AAP JSON 适配新几何**（**P3**）:[`internal_geometry_to_ls_shape`](apps/api/app/services/predictions_import.py) 仍只覆盖 bbox / polygon / multi_polygon,rotated_bbox / polyline / keypoint 进 errors[]。与 §A「AAP JSON video_track 导入支持」同窗口做。
+  - **ML backend 输出新几何**（**P3**）:`prediction.py` 的 LS shape 适配把 `keypointlabels` / `linelabels` 当前**归 bbox 占位**;真正让外部模型预测 rotated_bbox / polyline / keypoint 需要补 `to_internal_shape` 分支 + ML backend 协议侧约定。触发条件:有支持这些输出的模型接入。
 - **Annotation Guide 配套延伸**（v0.10.13 之后开放项，按客户反馈触发）：
   - **guide_assets 跨项目 deepcopy（Stage 2）**（**P3**）：v0.10.13 复制 / v0.10.14 模板都让 storage key 共享或干脆不携带 assets，源项目删 asset 会让依赖项目失效。触发条件：客户大量在 guide 中用图（首版人均 ≥ 5 张）且明确反馈需要"应用模板时复制图片到新项目独立 namespace"。实现走 Celery worker 异步 deepcopy storage 对象到新项目 prefix + 重写 markdown 中的 `guide-asset:KEY` 引用。
   - **guide_assets orphan GC**（**P3**）：当前 `PATCH /projects/{id}` 改 `annotation_guide` 时不清理 markdown 中已不被引用的 asset；UI 留「清理未引用资源」按钮口子但未实现。触发条件：客户反馈 storage 占用异常或单项目 guide_assets 数量超 50。
@@ -193,7 +196,7 @@
 - **I1 大图 tile**（v0.11.0 独立 epic，**必做**）：>4K 图后端 Celery 切 IIIF / 自定义 tile 金字塔（zoom 0/1/2 ... 每级 512×512 PNG/WebP），元数据 `ImageTilePyramid(image_id, max_level, tile_size, format)`；前端 `useTileSource` hook + LRU 缓存 ImageBitmap；Konva 背景 bg 层改 `<Group>` + 多张 `<Image>` tile；保留 BlurhashLayer 兜底。衡量：8K×8K 图、4x 缩放局部、内存 <300MB、FPS ≥30。后端切片服务可与视频 chunk service 共用基础设施。
 - **I4 完整 DiscussionPanel 拆分**（v0.10.19/v0.10.20/v0.10.21 渐进式落地: CommentsPanel 任务级降级 + 任务级评论 POST /feedbacks + 任务级 feedback patch/delete UI + `canvas_drawing.shapes[i].id/started_at/ended_at` 时间戳 + 评论卡片下方迷你 timeline bar; 剩 `DiscussionPanel.tsx` 独立拆出 + WorkbenchLayout 右栏两段固定结构 + ResizeHandle — 重估为纯结构改造对用户行为无增量, Workbench Shell 未破 900 行触发线前不开工）。
 - **I5 多图比对（双视图）**：工作台支持左右 / 上下分屏，每个面板独立 ImageStage 实例；可选「锁定 viewport」按钮；标注 diff 左/右面板增删改颜色区分；状态隔离与 R6.2 同理。
-- **I10 Skeleton（骨架关键点）**（L，后端 schema）：Label 配置器 SVG 拖点 + 连线 + 子标签命名 → JSON 模板；`SkeletonTool` 按模板顺序自动落点，节点支持 occluded / outside；新增 `geometry.kind: skeleton`，payload `{ template_id, points: [{node_id, x, y, occluded}], links: [...] }`。
+- **I10 Skeleton 进阶（骨架关键点）**（基础 COCO 关键点已落 v0.10.28，仅以下进阶项 open，按需触发）：① 配置器从表单升级为 SVG 拖点 + 连线可视化编辑；② 2 层子标签命名（label + sublabel，决策底线表禁止任意嵌套，见 §决策底线「Skeleton 嵌套」）；③ keypoint 的导出 / 导入 / ML 预测协议（见 §A「v0.10.28 新几何导出/导入/预测支持」）；④ 关键点 OKS（Object Keypoint Similarity）质量评估，配合 §C.7 I19 GT / Consensus。
 - **I12 Object Group UI 细节**（v0.10.19 已落契约 + 快捷键 + Konva 虚线; 剩 AIInspectorPanel BoxList 同 group 折叠卡片 + AttributeForm 多选 batch banner 消费 `useAnnotationBulkUpdate` + 导出 COCO 时 group_id 映射到 `attributes.__group_id`）。
 - **I14 Autoborder / Polygon Crop**（M，纯前端）：开关式 Auto-border，多边形顶点拖动 / 新增时若距其他形状边 < 阈值自动吸附；新建多边形与已有重叠时提供「裁切重叠区」选项（布尔差集，基于已在依赖的 `polygon-clipping@0.15.7`）。
 - **I18 Konva pin 渲染**（v0.10.19 已落 `annotation_feedbacks` 表 + `/feedbacks` API + IssueCreateModal/IssueListPanel 浮动入口; 剩 `IssueLayer.tsx` Konva 层 + ImageStage 单击图像创建 pin 入口替代手填 x/y + ADR-0027 第二段 `v_annotation_feedback_unified` view + 旧三表双写）。
@@ -230,7 +233,7 @@
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
-| **P2** | 非视频工作台 lidar 真实 3D | v0.10.17 已把 `tool_unit=lidar_box_3d` 留位置灰; image-seg / keypoint 已通过 tool_unit 维度划分(region / 待 polyline / 待 skeleton) 不再算独立工作台 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
+| **P2** | 非视频工作台 lidar 真实 3D | v0.10.17 已把 `tool_unit=lidar_box_3d` 留位置灰; 图片侧形状 region / polyline / rotated_bbox / keypoint 已通过 tool_unit 维度落地(v0.10.17 + v0.10.28), 不再算独立工作台 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
 | **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
 | **P3** | 截图 fixture 实际重跑 (v0.10.18 已落 prepare 脚本) | v0.10.18 已落地 `page.route` mock 注入式 prepare; maintainer 跑 `pnpm exec playwright test --config=playwright.screenshots.config.ts --project=desktop-light --grep "ai-pre/history-search\|bbox/iou\|bbox/bulk-edit"` 验证 (`ai-pre/empty-alias` 在 PromptComposer 深层 modal 流, 留作手截) | — |
@@ -241,7 +244,7 @@
 | **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 工作台 ToolDock 按 `tool_bindings` 过滤 | v0.10.17 未做; 客户反馈"看不懂为什么 polygon 按钮点不开"时启动 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | I4/I12/I18 epic 续作余 (v0.10.21 收尾) | v0.10.20 已落 I4 任务级评论 POST + I12 group 折叠/batch banner + I18 IssueLayer + ADR-0027 第二段双写; v0.10.21 落 I4 笔画 timeline + 任务级 feedback patch/delete UI; 剩独立 epic 处理: ADR-0027 第三段切单源 (legacy-table-retirement) + DiscussionPanel 完整拆分 (无 UX 增量) + IssueLayer video frame pin | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
-| **P3** | `polyline` 工具实现 | v0.10.17 schema 与 UI 留位置灰; 车道线 / 折线段需求出现时启动 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
+| **P2** | v0.10.28 新几何导出/导入/预测支持 (rotated_bbox / polyline / keypoint) | 三工具 v0.10.28 已落地绘制 + 持久化, 但 export.py / predictions_import / ML 预测协议未覆盖新几何; 客户用了新工具走到导出立刻撞上; 详见 §A「v0.10.28 新几何导出/导入/预测支持」 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 | **P3** | Workbench Shell 拆分后续精简（v0.10.18 部分收口） | v0.10.18 已落 `WorkbenchStageHostProps` JSDoc 分组 + `WorkbenchLayout.test.tsx` / `WorkbenchStageHost.test.tsx` 共 6 例 focused render tests; 剩 props 嵌套类型重构 (call-site 改造, 触发条件 Shell 再次膨胀) + `useWorkbenchShellModel` (Shell 仍 1210 行, 未破 900) 未做 | [0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md) |

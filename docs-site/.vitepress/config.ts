@@ -118,7 +118,9 @@ export default withMermaid(defineConfig({
           items: [
             { text: "工作台概览", link: "/user-guide/for-annotators/" },
             { text: "Bbox 标注", link: "/user-guide/for-annotators/bbox" },
+            { text: "旋转框标注 (OBB)", link: "/user-guide/for-annotators/rotated-bbox" },
             { text: "Polygon 标注", link: "/user-guide/for-annotators/polygon" },
+            { text: "折线标注", link: "/user-guide/for-annotators/polyline" },
             { text: "关键点标注", link: "/user-guide/for-annotators/keypoint" },
             { text: "视频追踪标注", link: "/user-guide/for-annotators/video-track" },
             { text: "SAM 智能工具", link: "/user-guide/for-annotators/sam-tool" },
