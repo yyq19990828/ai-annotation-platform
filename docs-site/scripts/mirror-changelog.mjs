@@ -106,7 +106,10 @@ function rewriteLinks(text) {
       (_m, rel, hash = "") => `](/${rel}${hash})`)
     // DEV.md / AGENTS.md / README.md 在仓库根，没有站点镜像 → 指向 GitHub blob URL
     .replace(new RegExp(`\\]\\(${REL}(DEV|AGENTS|README)\\.md${HASH}\\)`, "g"),
-      (_m, name, hash = "") => `](${GITHUB_BLOB}/${name}.md${hash})`);
+      (_m, name, hash = "") => `](${GITHUB_BLOB}/${name}.md${hash})`)
+    // 仓库根配置文件（.env.example / docker-compose.yml 等，无站点镜像）→ GitHub blob URL
+    .replace(new RegExp(`\\]\\(${REL}(\\.env\\.example|\\.env|docker-compose\\.ya?ml)${HASH}\\)`, "g"),
+      (_m, name, hash = "") => `](${GITHUB_BLOB}/${name}${hash})`);
 }
 
 // 版本号自然倒序：0.10.x 在 0.9.x 之前

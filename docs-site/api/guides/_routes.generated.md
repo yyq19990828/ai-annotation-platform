@@ -45,6 +45,7 @@
 | Method | Path |
 |---|---|
 | GET | `/annotations/{annotation_id}/comments` |
+| GET | `/tasks/{task_id}/comments/page` |
 | GET | `/annotations/{annotation_id}/comments/page` |
 | POST | `/annotations/{annotation_id}/comments` |
 | PATCH | `/comments/{comment_id}` |
@@ -52,11 +53,30 @@
 | POST | `/annotations/{annotation_id}/comment-attachments/upload-init` |
 | GET | `/annotations/{annotation_id}/comment-attachments/download` |
 
+## `annotation_feedbacks.py`
+
+| Method | Path |
+|---|---|
+| GET | `/feedbacks` |
+| POST | `/feedbacks` |
+| PATCH | `/feedbacks/{feedback_id}` |
+| DELETE | `/feedbacks/{feedback_id}` |
+| POST | `/feedbacks/{feedback_id}/replies` |
+
 ## `annotation_history.py`
 
 | Method | Path |
 |---|---|
 | GET | `/annotations/{annotation_id}/history` |
+| GET | `/tasks/{task_id}/audit-history` |
+
+## `annotations.py`
+
+| Method | Path |
+|---|---|
+| POST | `/annotations/bulk-update` |
+| POST | `/annotations/group` |
+| POST | `/annotations/ungroup` |
 
 ## `api_keys.py`
 
@@ -76,6 +96,8 @@
 
 | Method | Path |
 |---|---|
+| GET | `/archives` |
+| GET | `/archives/{year}/{month}` |
 | GET | `/export` |
 
 ## `auth.py`
@@ -323,6 +345,7 @@
 | POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
 | GET | `/{task_id}/predictions` |
 | POST | `/{task_id}/predictions/{prediction_id}/accept` |
+| POST | `/{task_id}/predictions/{prediction_id}/reject` |
 | DELETE | `/{task_id}/annotations/{annotation_id}` |
 | POST | `/{task_id}/submit` |
 | POST | `/{task_id}/skip` |
@@ -375,4 +398,4 @@
 
 ---
 
-_共 34 模块 / 208 路由_
+_共 36 模块 / 221 路由_
