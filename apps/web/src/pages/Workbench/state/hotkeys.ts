@@ -23,6 +23,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["= / +"], desc: "智能点工具：切正向", group: "ai", actionType: "samPolarity" },
   { keys: ["-"], desc: "智能点工具：切负向", group: "ai", actionType: "samPolarity" },
   { keys: ["P"], desc: "多边形工具", group: "draw", actionType: "setTool" },
+  { keys: ["L"], desc: "折线工具（开放、不闭合；无选中时生效）", group: "draw", actionType: "setTool" },
   // v0.10.8 · I11 Mask 编辑器: 全局 M 切工具; 工具内 B/E 切笔刷/橡皮 (capture, dispatchKey 之前).
   { keys: ["M"], desc: "Mask 笔刷工具", group: "draw", actionType: "setTool" },
   { keys: ["Shift", "+ wheel"], desc: "Mask 工具: 调笔刷半径 (±2px)", group: "draw" },
@@ -128,7 +129,7 @@ export type HotkeyAction =
   | { type: "cycleUser"; dir: 1 | -1; loop: boolean }
   | { type: "smartNext"; mode: "open" | "uncertain" }
   | { type: "changeClass" }
-  | { type: "setTool"; tool: "box" | "rotated-box" | "hand" | "polygon" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
+  | { type: "setTool"; tool: "box" | "rotated-box" | "hand" | "polygon" | "polyline" | "mask" | "smart-point" | "smart-box" | "text-prompt" | "exemplar" | "magic-box" | "ai-cycle" }
   | { type: "setVideoTool"; tool: "box" | "track" }
   | { type: "setClassByDigit"; idx: number }
   | { type: "setClassByLetter"; letter: string }
@@ -295,6 +296,8 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "h" || e.key === "H") return { type: "toggleShapeFlag", flag: "is_hidden" };
     if (e.key === "o" || e.key === "O") return { type: "toggleShapeFlag", flag: "is_occluded" };
   }
+  // v0.10.28 · 无选中时 L → 折线工具（与上方 L=lock 互补：lock 仅选中态消费）。
+  if ((e.key === "l" || e.key === "L") && !ctx.hasSelection) return { type: "setTool", tool: "polyline" };
 
   // v0.9.4 phase 2 · SAM 子工具栏 polarity (sam-point 下生效, 由消费端 gate by tool/samSubTool).
   // "+" 需要 Shift+=, "=" 单按 = SAM positive; "-" 单按 = SAM negative.

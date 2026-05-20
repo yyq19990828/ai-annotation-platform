@@ -17,7 +17,7 @@ import { isSelfIntersecting, type Pt } from "../stage/polygonGeom";
 import { UNKNOWN_CLASS } from "../stage/colors";
 import type { PolygonDraftHandle } from "../stage/tools";
 import { toolUnitForTool } from "../stage/tools/toolUnits";
-import { bboxGeom, polygonGeom } from "../state/transforms";
+import { bboxGeom, polygonGeom, polylineGeom } from "../state/transforms";
 import { enqueue } from "../state/offlineQueue";
 import type { useWorkbenchState } from "../state/useWorkbenchState";
 import type { useAnnotationHistory } from "../state/useAnnotationHistory";
@@ -65,6 +65,8 @@ export interface UseWorkbenchAnnotationActionsReturn {
   handleCommitRotateBbox: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
   handlePickPendingClass: (cls: string) => void;
   submitPolygon: (points: [number, number][]) => void;
+  /** v0.10.28 · 提交折线（不闭合，≥2 顶点）。*/
+  submitPolyline: (points: [number, number][]) => void;
   handleDeleteBox: (id: string) => void;
   handleCommitMove: (id: string, before: Geom, after: Geom) => void;
   handleCommitResize: (id: string, before: Geom, after: Geom) => void;
@@ -80,6 +82,8 @@ export interface UseWorkbenchAnnotationActionsReturn {
   setPolygonDraftPoints: React.Dispatch<React.SetStateAction<[number, number][]>>;
   /** 给 ImageStage 用的 PolygonDraftHandle，已 memoize。*/
   polygonHandle: PolygonDraftHandle;
+  /** v0.10.28 · 折线草稿 handle（closed:false，复用同一 polygonDraftPoints）。*/
+  polylineHandle: PolygonDraftHandle;
 }
 
 export function useWorkbenchAnnotationActions({
@@ -161,10 +165,10 @@ export function useWorkbenchAnnotationActions({
     [taskId, projectId, meUserId, setQ, s, history],
   );
 
-  // ── polygon 草稿 ──────────────────────────────────────────────────
+  // ── polygon / polyline 草稿（共用顶点累积 state）──────────────────────
   const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
-  // 切到非 polygon 工具或切题清空草稿
-  useEffect(() => { if (s.tool !== "polygon") setPolygonDraftPoints([]); }, [s.tool]);
+  // 切到非 polygon/polyline 工具或切题清空草稿
+  useEffect(() => { if (s.tool !== "polygon" && s.tool !== "polyline") setPolygonDraftPoints([]); }, [s.tool]);
   useEffect(() => { setPolygonDraftPoints([]); }, [taskId]);
 
   const submitPolygon = useCallback(
@@ -207,8 +211,54 @@ export function useWorkbenchAnnotationActions({
       addPoint: (pt) => setPolygonDraftPoints((p) => [...p, pt]),
       close: () => submitPolygon(polygonDraftPoints),
       cancel: () => setPolygonDraftPoints([]),
+      closed: true,
     }),
     [polygonDraftPoints, submitPolygon],
+  );
+
+  // ── polyline 提交 (v0.10.28) ──────────────────────────────────────
+  const submitPolyline = useCallback(
+    (points: [number, number][]) => {
+      if (blockIfLocked()) return;
+      const cls = s.activeClass;
+      if (points.length < 2) {
+        pushToast({ msg: "折线需至少 2 个顶点", kind: "warning" });
+        return;
+      }
+      if (!cls) {
+        pushToast({ msg: "请先选择类别", kind: "warning" });
+        return;
+      }
+      const payload: AnnotationPayload = {
+        annotation_type: "polyline",
+        tool_unit_id: toolUnitForTool(s.tool),
+        class_name: cls,
+        geometry: { type: "polyline", points },
+        confidence: 1,
+      };
+      setPolygonDraftPoints([]);
+      mutations.create.mutate(payload, {
+        onSuccess: (created) => {
+          history.push({ kind: "create", annotationId: created.id, payload });
+          s.setSelectedId(created.id);
+          recordRecentClass(cls);
+          pushToast({ msg: "已创建折线", sub: `${points.length} 顶点 · ${cls}`, kind: "success" });
+        },
+        onError: (err) => enqueueOnError(err, () => optimisticEnqueueCreate(payload)),
+      });
+    },
+    [blockIfLocked, s, mutations, history, recordRecentClass, pushToast, enqueueOnError, optimisticEnqueueCreate],
+  );
+
+  const polylineHandle = useMemo<PolygonDraftHandle>(
+    () => ({
+      points: polygonDraftPoints,
+      addPoint: (pt) => setPolygonDraftPoints((p) => [...p, pt]),
+      close: () => submitPolyline(polygonDraftPoints),
+      cancel: () => setPolygonDraftPoints([]),
+      closed: false,
+    }),
+    [polygonDraftPoints, submitPolyline],
   );
 
   // ── handlers ───────────────────────────────────────────────────────
@@ -414,17 +464,27 @@ export function useWorkbenchAnnotationActions({
   const handleCommitPolygonGeometry = useCallback(
     (id: string, before: Pt[], after: Pt[]) => {
       if (blockIfLocked()) return;
-      if (after.length < 3) {
-        pushToast({ msg: "多边形至少需要 3 顶点", kind: "error" });
-        return;
-      }
-      if (!isSelfIntersecting(after).ok) {
-        pushToast({ msg: "多边形自相交，已撤销", kind: "error" });
-        return;
+      // v0.10.28 · 折线 (polyline) 复用同一顶点编辑路径，但不闭合 → 跳过 polygon 专属校验。
+      const isPolyline =
+        annotationsRef.current.find((a) => a.id === id)?.geometry.type === "polyline";
+      if (isPolyline) {
+        if (after.length < 2) {
+          pushToast({ msg: "折线至少需要 2 顶点", kind: "error" });
+          return;
+        }
+      } else {
+        if (after.length < 3) {
+          pushToast({ msg: "多边形至少需要 3 顶点", kind: "error" });
+          return;
+        }
+        if (!isSelfIntersecting(after).ok) {
+          pushToast({ msg: "多边形自相交，已撤销", kind: "error" });
+          return;
+        }
       }
       if (!taskId) return;
-      const beforeG = polygonGeom(before);
-      const afterG = polygonGeom(after);
+      const beforeG = isPolyline ? polylineGeom(before) : polygonGeom(before);
+      const afterG = isPolyline ? polylineGeom(after) : polygonGeom(after);
       const payload = { geometry: afterG };
       mutations.update.mutate(
         { annotationId: id, payload },
@@ -447,7 +507,7 @@ export function useWorkbenchAnnotationActions({
         },
       );
     },
-    [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom],
+    [blockIfLocked, mutations, history, pushToast, taskId, enqueueOnError, optimisticUpdateGeom, annotationsRef],
   );
 
   // v0.10.5 M4-β · I15 shape 状态位字段级 PATCH。
@@ -501,6 +561,7 @@ export function useWorkbenchAnnotationActions({
     handleCommitRotateBbox,
     handlePickPendingClass,
     submitPolygon,
+    submitPolyline,
     handleDeleteBox,
     handleCommitMove,
     handleCommitResize,
@@ -509,5 +570,6 @@ export function useWorkbenchAnnotationActions({
     polygonDraftPoints,
     setPolygonDraftPoints,
     polygonHandle,
+    polylineHandle,
   };
 }

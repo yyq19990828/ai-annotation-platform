@@ -11,6 +11,8 @@ export type Tool =
   | "rotated-box"
   | "hand"
   | "polygon"
+  // v0.10.28 · 折线（开放、不闭合）。
+  | "polyline"
   | "canvas"
   | "mask"
   | "smart-point"

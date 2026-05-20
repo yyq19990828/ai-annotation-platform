@@ -255,6 +255,8 @@ export interface AIBox {
   conf: number;
   /** polygon 形状时填具体外环顶点（归一化坐标）。bbox 时为 undefined。 */
   polygon?: [number, number][];
+  /** v0.10.28 · polyline 形状时填顶点序列（归一化坐标，不闭合）。 */
+  polyline?: [number, number][];
   /** v0.9.14 · 单连通带 hole 时填内环顶点（归一化坐标）。仅作只读渲染参考, 不参与编辑路径. */
   holes?: [number, number][][];
   /** v0.9.14 · 多连通域时填全部 polygon (含 holes). 当前前端按主外环渲染降级,

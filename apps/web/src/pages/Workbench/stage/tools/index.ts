@@ -5,6 +5,7 @@ import { BboxTool } from "./BboxTool";
 import { RotatedBboxTool } from "./RotatedBboxTool";
 import { HandTool } from "./HandTool";
 import { PolygonTool } from "./PolygonTool";
+import { PolylineTool } from "./PolylineTool";
 import { CanvasTool } from "./CanvasTool";
 import { SmartPointTool } from "./SmartPointTool";
 import { SmartBoxTool } from "./SmartBoxTool";
@@ -22,6 +23,8 @@ export type ToolId =
   | "rotated-box"
   | "hand"
   | "polygon"
+  // v0.10.28 · 折线（开放、不闭合）。
+  | "polyline"
   | "canvas"
   | "mask"
   | "smart-point"
@@ -76,8 +79,11 @@ export type DragInit =
 export interface PolygonDraftHandle {
   points: [number, number][];
   addPoint: (pt: [number, number]) => void;
+  /** 结束草稿并提交：polygon 闭合提交 / polyline 直接提交（不闭合）。 */
   close: () => void;
   cancel: () => void;
+  /** v0.10.28 · false 表示折线（不闭合）；缺省 / true 表示多边形。 */
+  closed?: boolean;
 }
 
 export interface ToolPointerContext {
@@ -117,6 +123,7 @@ export const TOOL_REGISTRY: Record<ToolId, CanvasTool> = {
   "rotated-box": RotatedBboxTool,
   hand: HandTool,
   polygon: PolygonTool,
+  polyline: PolylineTool,
   canvas: CanvasTool,
   mask: MaskTool,
   "smart-point": SmartPointTool,
@@ -134,6 +141,7 @@ export const ALL_TOOLS: CanvasTool[] = [
   BboxTool,
   RotatedBboxTool,
   PolygonTool,
+  PolylineTool,
   MaskTool,
   SmartPointTool,
   SmartBoxTool,
@@ -156,6 +164,7 @@ export {
   RotatedBboxTool,
   HandTool,
   PolygonTool,
+  PolylineTool,
   CanvasTool,
   MaskTool,
   SmartPointTool,

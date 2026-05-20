@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationResponse, BboxGeometry, Geometry, MultiPolygonGeometry, PolygonGeometry, PredictionResponse } from "@/types";
+import type { Annotation, AnnotationResponse, BboxGeometry, Geometry, MultiPolygonGeometry, PolygonGeometry, PolylineGeometry, PredictionResponse } from "@/types";
 
 /** 把 {x,y,w,h} 包装为 bbox geometry。常用于 commit 几何变更时。 */
 export function bboxGeom(g: { x: number; y: number; w: number; h: number }): BboxGeometry {
@@ -7,6 +7,11 @@ export function bboxGeom(g: { x: number; y: number; w: number; h: number }): Bbo
 
 export function polygonGeom(points: [number, number][]): PolygonGeometry {
   return { type: "polygon", points };
+}
+
+/** v0.10.28 · 把顶点序列包装为 polyline geometry（不闭合）。 */
+export function polylineGeom(points: [number, number][]): PolylineGeometry {
+  return { type: "polyline", points };
 }
 
 /** 计算 polygon 顶点的轴对齐包围盒（归一化）。 */
@@ -66,12 +71,18 @@ export function geometryToShape(g: Geometry): {
   w: number;
   h: number;
   polygon?: [number, number][];
+  polyline?: [number, number][];
   holes?: [number, number][][];
   multiPolygon?: { points: [number, number][]; holes?: [number, number][][] }[];
 } {
   if (g.type === "polygon") {
     const b = polygonBounds(g.points);
     return { ...b, polygon: g.points, holes: g.holes };
+  }
+  if (g.type === "polyline") {
+    // 复用 polygonBounds 计算顶点 AABB（与闭合无关，仅取 min/max）。
+    const b = polygonBounds(g.points);
+    return { ...b, polyline: g.points };
   }
   if (g.type === "multi_polygon") {
     const primary = pickPrimaryPolygon(g);
@@ -99,9 +110,6 @@ export function geometryToShape(g: Geometry): {
       ([dx, dy]) => [g.cx + dx * cos - dy * sin, g.cy + dx * sin + dy * cos] as [number, number],
     );
     return polygonBounds(corners);
-  }
-  if (g.type === "polyline") {
-    return polygonBounds(g.points);
   }
   if (g.type === "keypoint") {
     return polygonBounds(g.points.map((p) => [p.x, p.y] as [number, number]));

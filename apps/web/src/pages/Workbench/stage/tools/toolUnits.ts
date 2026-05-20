@@ -14,6 +14,7 @@ export const TOOL_TO_UNIT: Record<ToolId, ToolUnitId> = {
   box: "bbox",
   "rotated-box": "rotated_bbox",
   polygon: "region",
+  polyline: "polyline",
   mask: "region",
   "smart-point": "ai_interactive",
   "smart-box": "ai_interactive",
