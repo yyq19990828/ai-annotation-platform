@@ -335,18 +335,25 @@ async def _probe_one(client: httpx.AsyncClient, base: str) -> ObserveTarget:
         latency_ms = int((time.monotonic() - start) * 1000)
         if resp.status_code != 200:
             return ObserveTarget(
-                url=base, ok=False, latency_ms=latency_ms, status_code=resp.status_code,
+                url=base,
+                ok=False,
+                latency_ms=latency_ms,
+                status_code=resp.status_code,
                 error=f"HTTP {resp.status_code}",
             )
         health = resp.json()
     except (httpx.TimeoutException, httpx.RequestError) as e:
         return ObserveTarget(
-            url=base, ok=False, latency_ms=int((time.monotonic() - start) * 1000),
+            url=base,
+            ok=False,
+            latency_ms=int((time.monotonic() - start) * 1000),
             error=str(e)[:200] or "连接失败",
         )
     except Exception as e:  # noqa: BLE001 — 响应非 JSON 等
         return ObserveTarget(
-            url=base, ok=False, latency_ms=int((time.monotonic() - start) * 1000),
+            url=base,
+            ok=False,
+            latency_ms=int((time.monotonic() - start) * 1000),
             error=f"响应解析失败: {str(e)[:120]}",
         )
 
@@ -394,7 +401,9 @@ async def observe_backends(
     proj_names: dict = {}
     all_pids = {pid for pids in reg_by_url.values() for pid in pids}
     if all_pids:
-        pres = await db.execute(select(Project.id, Project.name).where(Project.id.in_(all_pids)))
+        pres = await db.execute(
+            select(Project.id, Project.name).where(Project.id.in_(all_pids))
+        )
         proj_names = {pid: name for pid, name in pres.all()}
 
     for t in targets:
@@ -442,21 +451,34 @@ async def smoke_test_backend(
 
     async def _audit(result: SmokeTestResponse) -> None:
         await AuditService.log(
-            db, actor=admin, action="ml_backend.smoke_tested", target_type="ml_backend",
-            target_id=base, request=request, status_code=200,
-            detail={**audit_detail, "ok": result.ok, "skipped": result.skipped,
-                    "auto_unloaded": result.auto_unloaded},
+            db,
+            actor=admin,
+            action="ml_backend.smoke_tested",
+            target_type="ml_backend",
+            target_id=base,
+            request=request,
+            status_code=200,
+            detail={
+                **audit_detail,
+                "ok": result.ok,
+                "skipped": result.skipped,
+                "auto_unloaded": result.auto_unloaded,
+            },
         )
         await db.commit()
 
     async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
         # 1) 看池子是否已有变体常驻。
         try:
-            hresp = await client.get(f"{base}/health", timeout=settings.ml_health_timeout)
+            hresp = await client.get(
+                f"{base}/health", timeout=settings.ml_health_timeout
+            )
             hresp.raise_for_status()
             health = hresp.json()
         except Exception as e:  # noqa: BLE001
-            r = SmokeTestResponse(ok=False, message="试启动失败：/health 不可达", error=str(e)[:200])
+            r = SmokeTestResponse(
+                ok=False, message="试启动失败：/health 不可达", error=str(e)[:200]
+            )
             await _audit(r)
             return r
 
@@ -466,7 +488,9 @@ async def smoke_test_backend(
 
         if was_loaded:
             r = SmokeTestResponse(
-                ok=True, skipped=True, loaded_variant=loaded_variants[0] if loaded_variants else None,
+                ok=True,
+                skipped=True,
+                loaded_variant=loaded_variants[0] if loaded_variants else None,
                 message=(
                     f"容器已有变体常驻（{loaded_variants}），可加载性已证实；"
                     "为避免驱逐在用模型，未执行试启动。"
@@ -483,7 +507,9 @@ async def smoke_test_backend(
             rresp.raise_for_status()
             reload_data = rresp.json()
         except Exception as e:  # noqa: BLE001
-            r = SmokeTestResponse(ok=False, message="试启动失败：模型未能加载", error=str(e)[:200])
+            r = SmokeTestResponse(
+                ok=False, message="试启动失败：模型未能加载", error=str(e)[:200]
+            )
             await _audit(r)
             return r
         load_latency_ms = int((time.monotonic() - start) * 1000)
@@ -491,7 +517,9 @@ async def smoke_test_backend(
         # 3) 还原现场: 卸载我们刚预热的变体 (空池时 unload 不会动到别人)。
         auto_unloaded = False
         try:
-            uresp = await client.post(f"{base}/unload", timeout=settings.ml_health_timeout)
+            uresp = await client.post(
+                f"{base}/unload", timeout=settings.ml_health_timeout
+            )
             auto_unloaded = uresp.status_code == 200
         except Exception:  # noqa: BLE001 — 卸载失败不影响「能启起来」结论, idle watcher 兜底
             auto_unloaded = False
@@ -501,11 +529,18 @@ async def smoke_test_backend(
             "dino_variant": reload_data.get("dino_variant"),
         }
         r = SmokeTestResponse(
-            ok=True, reloaded=reload_data.get("reloaded"), auto_unloaded=auto_unloaded,
-            load_latency_ms=load_latency_ms, loaded_variant=loaded_variant,
+            ok=True,
+            reloaded=reload_data.get("reloaded"),
+            auto_unloaded=auto_unloaded,
+            load_latency_ms=load_latency_ms,
+            loaded_variant=loaded_variant,
             message=(
                 f"试启动成功（加载 {load_latency_ms}ms）"
-                + ("，已自动卸载还原。" if auto_unloaded else "，但自动卸载失败，idle 超时后会释放。")
+                + (
+                    "，已自动卸载还原。"
+                    if auto_unloaded
+                    else "，但自动卸载失败，idle 超时后会释放。"
+                )
             ),
         )
         await _audit(r)

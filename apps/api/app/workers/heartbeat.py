@@ -29,7 +29,9 @@ def publish_worker_heartbeat(self) -> dict:
 
     # bound task 的 request.hostname 即 worker node 名（celery@host），与
     # inspect.ping() 的 key 同源；fallback 到 socket 拼接以防 hostname 缺失。
-    worker_name = getattr(self.request, "hostname", None) or f"celery@{socket.gethostname()}"
+    worker_name = (
+        getattr(self.request, "hostname", None) or f"celery@{socket.gethostname()}"
+    )
     now = int(time.time())
     ttl = max(1, settings.worker_heartbeat_interval_seconds * 3)
     try:
