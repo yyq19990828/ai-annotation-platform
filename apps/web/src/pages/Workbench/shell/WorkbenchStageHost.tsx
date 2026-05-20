@@ -2,6 +2,7 @@ import { forwardRef, type ReactNode } from "react";
 import type {
   Annotation,
   AnnotationResponse,
+  RotatedBboxGeometry,
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
   VideoBboxGeometry,
@@ -91,6 +92,10 @@ interface WorkbenchStageHostProps {
   onRejectPrediction: (b: AiBox) => void;
   onDeleteUserBox: (id: string) => void;
   onCommitDrawing: (geo: Geom) => void;
+  /** v0.10.28 · 旋转框: 拖出矩形 → 提交 angle=0 的 rotated_bbox。 */
+  onCommitRotatedBbox: (geo: Geom) => void;
+  /** v0.10.28 · 旋转框: 旋转手柄落定 → 更新 angle。 */
+  onCommitRotateBbox: (id: string, before: RotatedBboxGeometry, after: RotatedBboxGeometry) => void;
   onSamPrompt: (prompt:
     | { kind: "point"; pt: [number, number]; alt: boolean }
     | { kind: "bbox"; bbox: [number, number, number, number] }
@@ -190,6 +195,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     onRejectPrediction,
     onDeleteUserBox,
     onCommitDrawing,
+    onCommitRotatedBbox,
+    onCommitRotateBbox,
     onSamPrompt,
     samCandidates,
     samActiveIdx,
@@ -286,6 +293,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onRejectPrediction={onRejectPrediction}
             onDeleteUserBox={onDeleteUserBox}
             onCommitDrawing={onCommitDrawing}
+            onCommitRotatedBbox={onCommitRotatedBbox}
+            onCommitRotateBbox={onCommitRotateBbox}
             onSamPrompt={onSamPrompt}
             samCandidates={samCandidates}
             samActiveIdx={samActiveIdx}

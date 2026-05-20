@@ -7,6 +7,8 @@ import type { CommentCanvasDrawing } from "@/api/comments";
 // 用) 和 aiToolParams (AIToolDrawer 用); samSubTool 由 tool 派生, 不再独立持有.
 export type Tool =
   | "box"
+  // v0.10.28 · 旋转框 (OBB): 先拖轴对齐矩形, 提交后用旋转手柄调角度.
+  | "rotated-box"
   | "hand"
   | "polygon"
   | "canvas"

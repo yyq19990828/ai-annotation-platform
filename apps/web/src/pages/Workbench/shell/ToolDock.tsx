@@ -33,6 +33,7 @@ interface ToolDescriptor {
 /** v0.10.2 · Tooltip + Alt+digit 副 hotkey. */
 const TOOL_DESCRIPTORS: Record<ToolId, ToolDescriptor> = {
   box: { desc: "拖鼠标画矩形框", altDigit: 1 },
+  "rotated-box": { desc: "拖框 → 顶部手柄旋转 (OBB)" },
   polygon: { desc: "逐点画多边形 (Enter 闭合)", altDigit: 2 },
   // v0.10.8 · I11 Mask 编辑器：空白笔刷或精修 AI polygon 候选 (B/E 切笔刷/橡皮, Shift+滚轮调半径)。
   mask: { desc: "Mask 笔刷 · B/E 切模式, Shift+滚轮调半径, Enter 提交" },

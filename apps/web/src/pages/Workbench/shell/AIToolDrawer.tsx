@@ -37,6 +37,7 @@ export interface AIToolDrawerProps {
 
 const TOOL_HINT: Record<ToolId, string | null> = {
   box: null,
+  "rotated-box": null,
   hand: null,
   polygon: null,
   canvas: null,
