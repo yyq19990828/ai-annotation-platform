@@ -53,10 +53,12 @@ export type VideoTrackConversionOptions = {
 };
 
 export type VideoTrackCompositionOptions = {
-  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks" | "join_tracks";
   annotationIds: string[];
   frameIndex?: number;
   deleteSources?: boolean;
+  // v0.10.30 · 2.5 join 的 gap 填充模式 (interpolate / outside)。
+  gapMode?: "interpolate" | "outside";
 };
 
 export type VideoTrackKeyframePatch = Partial<VideoTrackKeyframe>;
