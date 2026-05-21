@@ -154,6 +154,35 @@ describe("predictionsToBoxes", () => {
     expect(box.shapeIndex).toBe(2);
     expect(box.cls).toBe("person");
   });
+
+  it("把 DINO 写入的英文 alias 归一回原类别名 (按 prediction 的 tool_unit_id 隔离)", () => {
+    const toolBindings = {
+      bbox: {
+        enabled: true,
+        classes: [{ name: "汽车", alias: "Car", order: 0 }],
+      },
+    } as any;
+    const preds = [
+      {
+        id: "p1",
+        tool_unit_id: "bbox",
+        result: [
+          { geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 }, class_name: "car", confidence: 0.8 },
+          { geometry: { type: "bbox", x: 1, y: 1, w: 1, h: 1 }, class_name: "tree", confidence: 0.7 },
+        ],
+      },
+    ] as any;
+    const boxes = predictionsToBoxes(preds, toolBindings);
+    expect(boxes[0].cls).toBe("汽车"); // alias 大小写不敏感命中 → 原名
+    expect(boxes[1].cls).toBe("tree"); // 无 alias 配置 → 原样保留
+  });
+
+  it("无 toolBindings 时保持 class_name 原样 (向后兼容)", () => {
+    const preds = [
+      { id: "p1", result: [{ geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 }, class_name: "car", confidence: 0.8 }] },
+    ] as any;
+    expect(predictionsToBoxes(preds)[0].cls).toBe("car");
+  });
 });
 
 /**

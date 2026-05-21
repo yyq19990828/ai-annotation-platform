@@ -721,6 +721,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     stageGeom,
     iouDedupThreshold: currentProject?.iou_dedup_threshold ?? 0.7,
     classes,
+    toolBindings: currentProject?.tool_bindings,
     activeToolHasOwnClasses: toolView.hasOwnClasses,
     keypointNodeCount: toolView.keypointSchema?.nodes.length ?? 0,
     sam,

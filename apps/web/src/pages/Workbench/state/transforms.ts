@@ -1,3 +1,5 @@
+import type { ToolBindings } from "@/api/projects";
+import type { ToolUnitId } from "@/constants/toolUnits";
 import type { Annotation, AnnotationResponse, BboxGeometry, Geometry, Keypoint, MultiPolygonGeometry, PolygonGeometry, PolylineGeometry, PredictionResponse } from "@/types";
 
 /** 把 {x,y,w,h} 包装为 bbox geometry。常用于 commit 几何变更时。 */
@@ -157,9 +159,38 @@ export function annotationToBox(a: AnnotationResponse): Annotation {
 
 export type AiBox = Annotation & { predictionId: string; shapeIndex: number };
 
-export function predictionsToBoxes(predictions: PredictionResponse[]): AiBox[] {
-  return predictions.flatMap((p) =>
-    p.result.map((shape, i) => {
+/**
+ * DINO 写入的 class_name 是项目类别的英文 alias; 反查对应 tool_unit 的 classes
+ * 把 alias 映射回原类别名 (镜像后端 accept_prediction 的归一, 强隔离: 仅查本 unit)。
+ * 命中不到则原样返回。返回大小写敏感的原始名。
+ */
+function aliasResolverForUnit(
+  toolBindings: ToolBindings | undefined,
+  unit: ToolUnitId,
+): (raw: string) => string {
+  const map = new Map<string, string>();
+  for (const c of toolBindings?.[unit]?.classes ?? []) {
+    if (c.alias && c.alias.trim() && c.name) {
+      map.set(c.alias.trim().toLowerCase(), c.name);
+    }
+  }
+  if (map.size === 0) return (raw) => raw;
+  return (raw) => map.get(raw.trim().toLowerCase()) ?? raw;
+}
+
+export function predictionsToBoxes(
+  predictions: PredictionResponse[],
+  toolBindings?: ToolBindings,
+): AiBox[] {
+  const resolverCache = new Map<ToolUnitId, (raw: string) => string>();
+  return predictions.flatMap((p) => {
+    const unit = (p.tool_unit_id ?? "bbox") as ToolUnitId;
+    let resolve = resolverCache.get(unit);
+    if (!resolve) {
+      resolve = aliasResolverForUnit(toolBindings, unit);
+      resolverCache.set(unit, resolve);
+    }
+    return p.result.map((shape, i) => {
       const s = geometryToShape(shape.geometry);
       const shapeIndex = typeof shape.shape_index === "number" ? shape.shape_index : i;
       return {
@@ -169,10 +200,10 @@ export function predictionsToBoxes(predictions: PredictionResponse[]): AiBox[] {
         predictionId: p.id,
         shapeIndex,
         ...s,
-        cls: shape.class_name,
+        cls: resolve(shape.class_name),
         conf: shape.confidence,
         source: "prediction_based" as const,
       };
-    }),
-  );
+    });
+  });
 }

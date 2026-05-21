@@ -117,16 +117,18 @@ export function KonvaBox({
         }}
       />
 
-      <Label x={b.x * imgW} y={b.y * imgH - BOX_LABEL_OFFSET_PX / scale} listening={false}>
-        <Tag fill={color} cornerRadius={3 / scale} />
-        <Text
-          text={labelText}
-          fill="white"
-          fontSize={labelFontSize}
-          padding={BOX_LABEL_PAD_PX / scale}
-          fontFamily="var(--font-sans, sans-serif)"
-        />
-      </Label>
+      {!(isAi && faded) && (
+        <Label x={b.x * imgW} y={b.y * imgH - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+          <Tag fill={color} cornerRadius={3 / scale} />
+          <Text
+            text={labelText}
+            fill="white"
+            fontSize={labelFontSize}
+            padding={BOX_LABEL_PAD_PX / scale}
+            fontFamily="var(--font-sans, sans-serif)"
+          />
+        </Label>
+      )}
 
       {/* I12 · 同 group_id 第二层虚线外圈 (offset 4px / scale, 不阻挡 hit-test). */}
       {b.group_id != null && !isAi && (
@@ -260,7 +262,7 @@ export function KonvaPolygon({
           if (stage) stage.container().style.cursor = "";
         }}
       />
-      {flat.length >= 2 && (
+      {flat.length >= 2 && !(isAi && faded) && (
         <Label x={flat[0]} y={flat[1] - BOX_LABEL_OFFSET_PX / scale} listening={false}>
           <Tag fill={strokeColor} cornerRadius={3 / scale} />
           <Text
@@ -405,16 +407,18 @@ export function KonvaRotatedBox({
         onClick={(e) => { e.cancelBubble = true; onClick(e); }}
       />
 
-      <Label x={-hw} y={-hh - BOX_LABEL_OFFSET_PX / scale} listening={false}>
-        <Tag fill={color} cornerRadius={3 / scale} />
-        <Text
-          text={labelText}
-          fill="white"
-          fontSize={labelFontSize}
-          padding={BOX_LABEL_PAD_PX / scale}
-          fontFamily="var(--font-sans, sans-serif)"
-        />
-      </Label>
+      {!(isAi && faded) && (
+        <Label x={-hw} y={-hh - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+          <Tag fill={color} cornerRadius={3 / scale} />
+          <Text
+            text={labelText}
+            fill="white"
+            fontSize={labelFontSize}
+            padding={BOX_LABEL_PAD_PX / scale}
+            fontFamily="var(--font-sans, sans-serif)"
+          />
+        </Label>
+      )}
 
       {isUserSelected && onRotateStart && (
         <>
@@ -524,7 +528,7 @@ export function KonvaPolyline({
           if (stage) stage.container().style.cursor = "";
         }}
       />
-      {flat.length >= 2 && (
+      {flat.length >= 2 && !(isAi && faded) && (
         <Label x={flat[0]} y={flat[1] - BOX_LABEL_OFFSET_PX / scale} listening={false}>
           <Tag fill={color} cornerRadius={3 / scale} />
           <Text
@@ -743,16 +747,18 @@ export function KonvaKeypoint({
       })}
 
       {/* 类别标签 */}
-      <Label x={anchorX} y={anchorY - BOX_LABEL_OFFSET_PX / scale} listening={false}>
-        <Tag fill={color} cornerRadius={3 / scale} />
-        <Text
-          text={labelText}
-          fill="white"
-          fontSize={labelFontSize}
-          padding={BOX_LABEL_PAD_PX / scale}
-          fontFamily="var(--font-sans, sans-serif)"
-        />
-      </Label>
+      {!(isAi && faded) && (
+        <Label x={anchorX} y={anchorY - BOX_LABEL_OFFSET_PX / scale} listening={false}>
+          <Tag fill={color} cornerRadius={3 / scale} />
+          <Text
+            text={labelText}
+            fill="white"
+            fontSize={labelFontSize}
+            padding={BOX_LABEL_PAD_PX / scale}
+            fontFamily="var(--font-sans, sans-serif)"
+          />
+        </Label>
+      )}
     </Group>
   );
 }

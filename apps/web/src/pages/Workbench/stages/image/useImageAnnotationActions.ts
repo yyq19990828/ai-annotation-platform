@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Annotation, AnnotationResponse, PredictionResponse } from "@/types";
 import type { AnnotationPayload } from "@/api/tasks";
+import type { ToolBindings } from "@/api/projects";
 import { useAcceptPrediction, useRejectPrediction } from "@/hooks/usePredictions";
 import { buildIoUIndex } from "../../stage/iou-index";
 import { iouShape } from "../../stage/iou";
@@ -43,6 +44,8 @@ interface UseImageAnnotationActionsArgs {
   stageGeom: StageGeometry;
   iouDedupThreshold: number;
   classes: string[];
+  /** v0.10.x · 项目 tool_bindings；用于把 AI 预测 class_name 的英文 alias 归一回原类别名。 */
+  toolBindings?: ToolBindings;
   /**
    * 当前激活工具「自身的 unit」是否定义了类别。false 时落框直接以 __unknown 落库,
    * 不弹选类别窗 (修复老项目用无类别工具仍弹窗的 BUG)。来自 useToolBindings.hasOwnClasses。
@@ -104,6 +107,7 @@ export function useImageAnnotationActions({
   stageGeom,
   iouDedupThreshold,
   classes,
+  toolBindings,
   activeToolHasOwnClasses = true,
   keypointNodeCount = 0,
   sam,
@@ -159,8 +163,8 @@ export function useImageAnnotationActions({
     [annotationsData],
   );
   const allAiBoxes = useMemo(
-    () => predictionsToBoxes(predictionsData),
-    [predictionsData],
+    () => predictionsToBoxes(predictionsData, toolBindings),
+    [predictionsData, toolBindings],
   );
   const aiBoxes = useMemo(
     () => allAiBoxes.filter((b) => {
@@ -573,11 +577,18 @@ export function useImageAnnotationActions({
 
   const handleAcceptAll = useCallback(() => {
     if (aiBoxes.length === 0) return;
-    const totalBoxes = aiBoxes.length;
+    // 跳过被同类人工框覆盖 (IoU 高于去重阈值) 而淡化的 AI 框，避免采纳出重复标注。
+    const target = aiBoxes.filter((box) => !dimmedAiIds.has(box.id));
+    const skipped = aiBoxes.length - target.length;
+    if (target.length === 0) {
+      pushToast({ msg: "无可采纳的 AI 框", sub: `${skipped} 个与人工框重复已跳过` });
+      return;
+    }
+    const totalBoxes = target.length;
     let succeeded = 0;
     let failed = 0;
-    let pending = aiBoxes.length;
-    aiBoxes.forEach((box) => {
+    let pending = target.length;
+    target.forEach((box) => {
       acceptPredictionMut.mutate(
         { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
         {
@@ -593,9 +604,10 @@ export function useImageAnnotationActions({
           onSettled: () => {
             pending--;
             if (pending === 0) {
+              const parts = [failed ? `${failed} 项失败` : null, skipped ? `${skipped} 个重复已跳过` : null].filter(Boolean);
               pushToast({
                 msg: `采纳 ${succeeded}/${totalBoxes} 个 AI 框`,
-                sub: failed ? `${failed} 项失败` : undefined,
+                sub: parts.length ? parts.join("，") : undefined,
                 kind: failed ? "error" : "success",
               });
             }
@@ -603,7 +615,7 @@ export function useImageAnnotationActions({
         },
       );
     });
-  }, [aiBoxes, acceptPredictionMut, history, pushToast]);
+  }, [aiBoxes, dimmedAiIds, acceptPredictionMut, history, pushToast]);
 
   const handleCommitDrawing = useCallback((geo: Geom) => {
     // 当前工具自身的 unit 没有类别定义 → 不弹选类别窗, 直接以 __unknown 落库。
