@@ -577,6 +577,10 @@ class ExportService:
         for pred in predictions:
             pred_by_task.setdefault(pred.task_id, []).append(pred)
 
+        # v0.10.31 · 视频项目: 给每个 task block 填 media_type + video 子块.
+        is_video = project.data_type == "video"
+        dataset_items = await self._load_dataset_items(tasks) if is_video else {}
+
         # batch display_id (项目级导出时为 None)
         batch_display_id: str | None = None
         if batch_id:
@@ -628,12 +632,33 @@ class ExportService:
                         )
                     )
 
+            media_type = "image"
+            video_block: dict | None = None
+            if is_video:
+                media_type = "video"
+                item = (
+                    dataset_items.get(t.dataset_item_id)
+                    if t.dataset_item_id
+                    else None
+                )
+                vmeta = _video_metadata(item)
+                video_block = {
+                    "sampling": project.video_sampling or {},
+                    "fps": vmeta.get("fps"),
+                    "frame_count": vmeta.get("frame_count"),
+                    "duration_ms": vmeta.get("duration_ms"),
+                    "width": vmeta.get("width"),
+                    "height": vmeta.get("height"),
+                }
+
             task_blocks.append(
                 AAPTaskBlock(
                     task_match=AAPTaskMatch(
                         display_id=t.display_id, file_path=t.file_path
                     ),
                     file_path=t.file_path,
+                    media_type=media_type,
+                    video=video_block,
                     external_id=None,
                     annotations=ann_entries,
                     predictions=pred_entries,

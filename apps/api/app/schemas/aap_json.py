@@ -30,7 +30,9 @@ from pydantic import BaseModel, ConfigDict, Field
 AAP_SCHEMA_MAJOR = 1
 # v0.10.17 · 升 1.1: envelope 增加 project.tool_bindings (工具维度类别/属性绑定)
 # 与 annotations/predictions 数组每条 tool_unit_id. 1.0 reader 仍能读 (extra=ignore).
-AAP_SCHEMA_VERSION = "1.1"
+# v0.10.31 · 升 1.2: task 层增加 media_type + video 子块 (视频采样/fps/帧元数据).
+# 1.x reader 走 extra=ignore 容忍, media_type 缺失时默认 "image".
+AAP_SCHEMA_VERSION = "1.2"
 
 
 # ── task_match (oneof) ───────────────────────────────────────────────
@@ -89,6 +91,10 @@ class AAPPredictionEntry(BaseModel):
 class AAPTaskBlock(BaseModel):
     task_match: AAPTaskMatch
     file_path: str | None = None
+    # v0.10.31 · 媒体维度 (1.2+). 1.x reader 走 extra=ignore, 缺失默认 "image".
+    media_type: Literal["image", "video", "lidar"] = "image"
+    # v0.10.31 · 视频专属元数据: 采样配置/fps/frame_count/timetable 摘要/segment/chapter.
+    video: dict[str, Any] | None = None
     external_id: str | None = None
     annotations: list[AAPAnnotationEntry] = Field(default_factory=list)
     predictions: list[AAPPredictionEntry] = Field(default_factory=list)
