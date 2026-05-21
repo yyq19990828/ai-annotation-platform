@@ -55,7 +55,12 @@ from observability import (
     shutdown_perfhud_collectors,
     update_cache_size,
 )
-from predictor import MODEL_VARIANT, SAM3Predictor
+from predictor import (
+    DEFAULT_SCORE_THRESHOLD,
+    DEFAULT_SIMPLIFY_TOLERANCE,
+    MODEL_VARIANT,
+    SAM3Predictor,
+)
 from schemas import BatchPredictResponse, PredictionResult
 
 logger = logging.getLogger("sam3-backend")
@@ -239,18 +244,38 @@ def setup() -> dict:
         "params": {
             "type": "object",
             "properties": {
+                # 可调: PCS 置信度阈值 (text / exemplar 路径)。前端工作台 AI 面板据此渲染滑块,
+                # 每位标注员可独立调整; per-request 经 context.score_threshold 覆盖 backend 默认值。
+                "score_threshold": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "default": DEFAULT_SCORE_THRESHOLD,
+                    "title": "置信度阈值",
+                    "description": "只保留置信度高于此值的实例。调高=更少更准的框，调低=更多但可能含误检。",
+                },
+                "simplify_tolerance": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                    "default": DEFAULT_SIMPLIFY_TOLERANCE,
+                    "title": "轮廓简化容差(像素)",
+                    "description": "多边形轮廓抽稀强度（像素）。调大=顶点更少、边更直更轻量；调小=更贴合细节但顶点更多。仅影响 mask 输出。",
+                },
                 "model_variant": {
                     "type": "string",
                     "default": MODEL_VERSION,
                     "title": "模型版本",
                     "readOnly": True,
+                    "description": "当前部署的 SAM 3 模型版本，由后端固定，不可在前端切换。",
                 },
                 "embedding_cache_size": {
                     "type": "integer",
                     "minimum": 0,
                     "default": EMBEDDING_CACHE_SIZE,
-                    "title": "Embedding 缓存容量",
+                    "title": "图像缓存容量",
                     "readOnly": True,
+                    "description": "后端缓存的图像 embedding 数量上限，启动时设定。命中缓存可跳过重复编码、加速同图多次交互。",
                 },
             },
         },

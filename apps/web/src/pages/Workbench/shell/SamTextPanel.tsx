@@ -128,10 +128,10 @@ export function SamTextPanel({
         </Button>
       </div>
       <div className={styles.samHint}>
-        {outputMode === "box" && "仅 DINO 出框,跳过 SAM mask, 速度最快; "}
-        {outputMode === "mask" && "DINO + SAM mask → polygon, 默认行为; "}
+        {outputMode === "box" && "仅出检测框,跳过掩膜,速度最快; "}
+        {outputMode === "mask" && "输出掩膜 → polygon, 默认行为; "}
         {outputMode === "both" && "同实例配对返回框 + 掩膜, Tab 切换活跃形态; "}
-        英文 prompt 召回最佳;DINO 阈值由项目设置控制。
+        英文 prompt 召回通常更佳;阈值等参数在 AI 面板调整。
       </div>
     </div>
   );

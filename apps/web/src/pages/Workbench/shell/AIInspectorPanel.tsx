@@ -14,7 +14,7 @@ import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
 import { AttributeForm } from "./AttributeForm";
 import { CommentsPanel } from "./CommentsPanel";
 import { ResizeHandle } from "./ResizeHandle";
-import { VARIANT_FIELD_KEYS, type JsonSchemaObject } from "../components/SchemaForm";
+import { SchemaForm, VARIANT_FIELD_KEYS, type JsonSchemaObject } from "../components/SchemaForm";
 import styles from "./AIInspectorPanel.module.css";
 
 interface AIInspectorPanelProps {
@@ -229,6 +229,9 @@ interface AIPredictionPopoverProps {
   paramsSchema?: JsonSchemaObject;
   aiVariant?: Record<string, unknown>;
   onSetAiVariant?: (next: Record<string, unknown>) => void;
+  // 后端级推理参数 (阈值等非变体字段): SchemaForm 渲染。值/回调即 workbench 的 aiToolParams。
+  params?: Record<string, unknown>;
+  onSetParams?: (next: Record<string, unknown>) => void;
 }
 
 export function AIPredictionPopover({
@@ -251,6 +254,8 @@ export function AIPredictionPopover({
   paramsSchema,
   aiVariant,
   onSetAiVariant,
+  params,
+  onSetParams,
 }: AIPredictionPopoverProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
@@ -348,13 +353,11 @@ export function AIPredictionPopover({
         </div>
         <div>
           <div className={styles.thresholdHeader}>
-            <span
-              className={styles.mutedText}
-              title="只显示置信度 >= 该阈值的 AI 框；低于阈值的框被隐藏，全部采纳也不会采纳它们。"
-            >
-              置信度阈值
-            </span>
+            <span className={styles.mutedText}>置信度阈值</span>
             <span className={cn("mono", styles.thresholdValue)}>{(confThreshold * 100).toFixed(0)}%</span>
+          </div>
+          <div className={styles.thresholdHint}>
+            过滤批量预标注结果：仅显示并采纳置信度 ≥ 此值的 AI 框，低于的隐藏且「全部采纳」也不纳入。
           </div>
           <div
             className={styles.thresholdDisplay}
@@ -379,6 +382,18 @@ export function AIPredictionPopover({
           onChange={onSetAiVariant}
         />
       )}
+
+      {/* 后端级推理参数 (阈值等非变体字段)。SchemaForm 内部已排除 variant 字段, 不与上方变体选择器重复;
+          无非变体可调字段时整段隐藏 (避免空白容器)。 */}
+      {onSetParams &&
+        paramsSchema &&
+        Object.keys(paramsSchema.properties ?? {}).some(
+          (k) => !VARIANT_FIELD_KEYS.includes(k as (typeof VARIANT_FIELD_KEYS)[number]),
+        ) && (
+          <div className={styles.aiParamsForm}>
+            <SchemaForm schema={paramsSchema} value={params ?? {}} onChange={onSetParams} />
+          </div>
+        )}
 
       <div className={styles.aiStats}>
         <div className={styles.aiStatsLabel}>本次效率</div>

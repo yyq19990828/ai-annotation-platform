@@ -11,7 +11,6 @@ from app.db.enums import UserRole
 from app.db.models.ml_backend import MLBackend
 from app.db.models.user import User
 from app.db.models.task import Task
-from app.db.models.project import Project
 from app.schemas.ml_backend import (
     MLBackendCreate,
     MLBackendUpdate,
@@ -386,13 +385,10 @@ async def interactive_annotating(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # v0.9.2 · text prompt 时把项目级 DINO 阈值注入 context；客户端如已显式传值则尊重客户端。
+    # AI 推理参数 (阈值 / 变体等) 已统一改走工作台 AI 面板: 前端按所绑定 backend 的
+    # /setup.params 动态渲染、每用户独立调整, 并随 context 透传。平台不再注入项目级 DINO
+    # 阈值 (那会把 gsam2 专属参数塞给 sam3 等不支持的后端); 各 backend 缺省值由自身 /setup 决定。
     context = dict(body.context or {})
-    if context.get("type") == "text":
-        project = await db.get(Project, project_id)
-        if project is not None:
-            context.setdefault("box_threshold", float(project.box_threshold))
-            context.setdefault("text_threshold", float(project.text_threshold))
 
     client = MLBackendClient(backend)
     result = await client.predict_interactive(

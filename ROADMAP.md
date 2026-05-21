@@ -54,7 +54,6 @@
   - **`lidar_box_3d` 工具实现**（**P0**,体量大）:见上条 3D 工作台;依赖 3D viewer + 后端 frame service 视点处理。独立 epic,与长期 L3 跨模态挂钩。
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）:v0.10.17 强隔离意味"bbox 工具的人 / region 工具的人是两条独立记录",同名颜色 / alias 都得重复输入;触发条件:客户后续反馈"想共享类别名字"。设计走 `ToolClassEntry.alias_to: { tool_unit_id, class_name } | null` 链,导出时按 alias_to 合并 categories(可选)。**强隔离决策为默认底线,alias_to 仅作可选叠加**,不破坏 ADR-0026 决策。
 
-  - **工作台 ToolDock 按 tool_bindings 过滤**（**P3**）:当前 ToolDock 仍渲染全部工具(只是 AI 工具按 `useMLCapabilities` 置灰);v0.10.17 引入 tool_unit 后,可进一步按"项目启用的 tool_unit"隐藏不相关工具(例如未启用 region 时不显示 polygon/mask 按钮)。触发条件:工具栏拥挤反馈 + UI 用户调研显示"看不懂为什么有 polygon 按钮但点了画不出"。
   - **rename_class 端点跨 unit 重命名 UX**（**P3**）:v0.10.17 `useRenameClass` 加了 `tool_unit_id` 参数,但 ClassesSection 仅传当前 active unit;若客户想"同时在所有 unit 内把'人'改成'pedestrian'"需要扩 UI 入口(批量勾选 unit + 单次重命名)。触发条件:客户反馈"重命名要跑 N 次"。
 - **v0.10.28 新几何导出/导入/预测支持**（三种新几何 rotated_bbox / polyline / keypoint 落地后新发现，端到端绘制 + 持久化已通，但与外部格式 / 模型协议的对接仍缺口）:
   - **导出协议覆盖新几何**（**P2**，客户用了新工具就会立刻撞上）:`export.py` / `export_packaging.py` 当前只导 bbox / polygon / mask;rotated_bbox / polyline / keypoint **没有 COCO / YOLO / VOC 映射**(rotated_bbox→COCO 无原生表示需选 OBB 扩展或 segmentation 退化;keypoint→COCO `keypoints` 数组 + `skeleton`;polyline→无标准格式需走平台原生 AAP JSON)。触发条件:任一新工具的项目走到导出环节。设计先补 AAP JSON(平台原生无损)再按客户要的标准格式逐个加。
@@ -93,8 +92,8 @@
   - **`predictions_import` 审计 detail 专项**（**P3**）：当前 audit log `detail_json` 含 imported/skipped/error_count；缺"哪些 task 被命中 / 哪些 model_version / 文件大小 hash"等取证字段。触发条件：审计期反馈 detail 不足以定位"哪批外部模型结果先被导入又被撤回"。设计在 `app/services/audit.py` 加 `predictions_import_detail()` helper.
 - **变体热切换后续延伸**（v0.10.23 之后开放项，按需触发）：
   - **`/setup.supported_variants` 富元数据**（**P3**）：当前变体选项来源是 `/setup.params` 的 `sam_variant`/`dino_variant` enum（纯字符串）；原需求 §3 设想的 `supported_variants` 数组（携带每变体显存占用 / 推荐档 / labels）未做。触发条件：模型市场二期 AB 路由 UI 需要按变体展示「显存 7GB / 精度高」等元数据时再扩。
-  - **SchemaForm 单字段 `readOnly` 支持**（**P3**）：v0.10.23 用「从 SchemaForm 排除变体字段」绕开了单字段只读缺口（`SchemaForm` 的 `disabled` 仍是整组）；若未来后端 `/setup.params` 出现需单字段只读的参数，需补 `field.readOnly → disabled` 透传。触发条件：新增只读参数字段。
   - **grounded-sam2-backend lint 债**（**P3 maintenance**）：包内 `ruff check .` 仍有 ~179 报错（多为 vendor / 历史遗留，本期改动文件已全过）；触发条件：给该包加 CI lint gate 前需先清债或显式 exclude vendor。
+- **项目多后端绑定 + 按后端参数面板（重设计，未排期）**（**P2**）：当前一个项目只绑定单一 ML backend；未来支持项目绑定多个后端、预标注时选择用哪个跑，每个后端可调参数不同。基础设施已就位——工作台 AI 面板按所绑定后端 `/setup.params` 动态渲染参数（`SchemaForm`/`AIInspectorPanel`），用户级偏好已按 backend id 分桶存储（`User.preferences.ai.params_by_backend`），多用户互不影响。重设计要点：项目侧 `ml_backend_id` 单值 → 多值/默认值 + 预标注入口加后端选择器；批量预标注页（`ProjectDetailPanel`）的项目级 DINO 阈值是否一并收口到「按后端动态」也在此窗口决策。触发：客户需要同项目多模型并存 / 切换时。**本期不做。**
 - **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：dev `ML_BACKEND_STORAGE_HOST` + ADR-0012 框架已收口；生产场景多变, 第一个生产部署遇到再扩策略表（"何时设、设啥值、何时留空"）。
 
@@ -241,7 +240,6 @@
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
 | **P3** | C.3 SAM 后续延伸: 类别确认 hint / pixel-level Snap-to-edge | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) + 像素级 Snap-to-edge(Canny/Sobel WebWorker) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P3** | 工作台 ToolDock 按 `tool_bindings` 过滤 | v0.10.17 未做; 客户反馈"看不懂为什么 polygon 按钮点不开"时启动 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | I4/I12/I18 epic 续作余 (v0.10.21 收尾) | v0.10.20 已落 I4 任务级评论 POST + I12 group 折叠/batch banner + I18 IssueLayer + ADR-0027 第二段双写; v0.10.21 落 I4 笔画 timeline + 任务级 feedback patch/delete UI; 剩独立 epic 处理: ADR-0027 第三段切单源 (legacy-table-retirement) + DiscussionPanel 完整拆分 (无 UX 增量) + IssueLayer video frame pin | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P2** | v0.10.28 新几何导出/导入/预测支持 (rotated_bbox / polyline / keypoint) | 三工具 v0.10.28 已落地绘制 + 持久化, 但 export.py / predictions_import / ML 预测协议未覆盖新几何; 客户用了新工具走到导出立刻撞上; 详见 §A「v0.10.28 新几何导出/导入/预测支持」 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |

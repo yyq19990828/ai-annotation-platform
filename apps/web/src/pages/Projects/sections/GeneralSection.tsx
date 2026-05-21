@@ -52,9 +52,6 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
   );
   const { data: mlBackends = [] } = useMLBackends(project.id);
   const [iouThreshold, setIouThreshold] = useState(project.iou_dedup_threshold ?? 0.7);
-  // v0.9.2 · GroundingDINO 阈值（仅 SAM 文本 prompt 路径生效；point/bbox 不参与）
-  const [boxThreshold, setBoxThreshold] = useState(project.box_threshold ?? 0.35);
-  const [textThreshold, setTextThreshold] = useState(project.text_threshold ?? 0.25);
   // v0.9.5 · SAM 文本预标默认输出形态（"" = 自动按 type_key）
   const [textOutputDefault, setTextOutputDefault] = useState<string>(
     project.text_output_default ?? "",
@@ -70,8 +67,6 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     setAiCustom(project.ai_model && !PRESET_AI_MODELS.includes(project.ai_model) ? project.ai_model : "");
     setMlBackendId(project.ml_backend_id ?? null);
     setIouThreshold(project.iou_dedup_threshold ?? 0.7);
-    setBoxThreshold(project.box_threshold ?? 0.35);
-    setTextThreshold(project.text_threshold ?? 0.25);
     setTextOutputDefault(project.text_output_default ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
@@ -96,8 +91,6 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     (aiEnabled ? resolvedAiModel : null) !== (project.ai_model ?? null) ||
     (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
     Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001 ||
-    Math.abs(boxThreshold - (project.box_threshold ?? 0.35)) > 0.001 ||
-    Math.abs(textThreshold - (project.text_threshold ?? 0.25)) > 0.001 ||
     textOutputDefault !== (project.text_output_default ?? "");
 
   useUnsavedWarning(dirty);
@@ -125,8 +118,6 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
         ai_model: aiEnabled ? effectiveAiModel : null,
         ml_backend_id: aiEnabled ? mlBackendId : null,
         iou_dedup_threshold: iouThreshold,
-        box_threshold: boxThreshold,
-        text_threshold: textThreshold,
         text_output_default: (textOutputDefault || null) as "box" | "mask" | "both" | null,
       },
       {
@@ -242,6 +233,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
                 </select>
                 <div className={styles.hint}>
                   绑定后,平台所有「模型名」展示均直接来自 backend.name,保证 UI 语义与实际推理后端一致。
+                  后端专属推理参数（如 DINO 阈值、模型变体）已移至工作台 AI 面板，按所绑定后端动态显示，且每位标注员可独立调整、互不影响。
                   {mlBackends.length === 0 && (
                     <span className={styles.warningText}>
                       暂无可用 backend;先在「ML 模型」选项卡添加。
@@ -298,38 +290,6 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
               className={cn("mono", styles.metricValue)}
             >
               {iouThreshold.toFixed(2)}
-            </span>
-          </div>
-        </div>
-        <div>
-          <label className={styles.label}>
-            DINO box 阈值 <span className={styles.labelNote}>（SAM 文本 prompt 时使用；车牌/商品等小物可降；噪声多可升）</span>
-          </label>
-          <div className={styles.sliderRow}>
-            <input
-              type="range" min={0} max={1} step={0.05}
-              value={boxThreshold}
-              onChange={(e) => setBoxThreshold(Number(e.target.value))}
-              className={styles.rangeInput}
-            />
-            <span className={cn("mono", styles.metricValue)}>
-              {boxThreshold.toFixed(2)}
-            </span>
-          </div>
-        </div>
-        <div>
-          <label className={styles.label}>
-            DINO text 阈值 <span className={styles.labelNote}>（短语—区域匹配的语义最低分；越高越严格）</span>
-          </label>
-          <div className={styles.sliderRow}>
-            <input
-              type="range" min={0} max={1} step={0.05}
-              value={textThreshold}
-              onChange={(e) => setTextThreshold(Number(e.target.value))}
-              className={styles.rangeInput}
-            />
-            <span className={cn("mono", styles.metricValue)}>
-              {textThreshold.toFixed(2)}
             </span>
           </div>
         </div>

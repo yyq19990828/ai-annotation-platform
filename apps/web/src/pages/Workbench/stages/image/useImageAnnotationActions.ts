@@ -10,6 +10,7 @@ import type { UseInteractiveAIReturn } from "../../state/useInteractiveAI";
 import { geometryToShape, polygonBounds, predictionsToBoxes, type AiBox } from "../../state/transforms";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
+import { UNKNOWN_CLASS } from "../../stage/colors";
 import { useClipboard } from "../../state/useClipboard";
 import {
   useWorkbenchAnnotationActions,
@@ -42,6 +43,11 @@ interface UseImageAnnotationActionsArgs {
   stageGeom: StageGeometry;
   iouDedupThreshold: number;
   classes: string[];
+  /**
+   * 当前激活工具「自身的 unit」是否定义了类别。false 时落框直接以 __unknown 落库,
+   * 不弹选类别窗 (修复老项目用无类别工具仍弹窗的 BUG)。来自 useToolBindings.hasOwnClasses。
+   */
+  activeToolHasOwnClasses?: boolean;
   /** v0.10.28 · 当前 keypoint 单元 schema 节点数，透传给 useWorkbenchAnnotationActions。 */
   keypointNodeCount?: number;
   sam: UseInteractiveAIReturn;
@@ -98,6 +104,7 @@ export function useImageAnnotationActions({
   stageGeom,
   iouDedupThreshold,
   classes,
+  activeToolHasOwnClasses = true,
   keypointNodeCount = 0,
   sam,
   createAnnotationAsync,
@@ -599,8 +606,14 @@ export function useImageAnnotationActions({
   }, [aiBoxes, acceptPredictionMut, history, pushToast]);
 
   const handleCommitDrawing = useCallback((geo: Geom) => {
+    // 当前工具自身的 unit 没有类别定义 → 不弹选类别窗, 直接以 __unknown 落库。
+    // 修复老项目用无类别工具落框仍弹窗 (借 bbox/region 类) 的 BUG。
+    if (!activeToolHasOwnClasses) {
+      annotationActions.createBboxWithClass(geo, UNKNOWN_CLASS);
+      return;
+    }
     s.setPendingDrawing({ geom: geo });
-  }, [s]);
+  }, [s, activeToolHasOwnClasses, annotationActions]);
 
   const handleStartChangeClass = useCallback((annotationId: string) => {
     const ann = annotationsRef.current.find((a) => a.id === annotationId);

@@ -45,7 +45,12 @@ from observability import (
     shutdown_perfhud_collectors,
     update_cache_size,
 )
-from predictor import DINO_CONFIGS, SAM2_CONFIGS, GroundedSAM2Predictor
+from predictor import (
+    DEFAULT_SIMPLIFY_TOLERANCE,
+    DINO_CONFIGS,
+    SAM2_CONFIGS,
+    GroundedSAM2Predictor,
+)
 from schemas import BatchPredictResponse, PredictionResult
 
 logger = logging.getLogger("grounded-sam2-backend")
@@ -309,6 +314,7 @@ def setup() -> dict:
                     "maximum": 1.0,
                     "default": BOX_THRESHOLD,
                     "title": "Box 置信度阈值",
+                    "description": "GroundingDINO 框检测的最低置信度（文本 prompt 路径）。调低=召回更多小物/弱目标但噪声增多；调高=更干净但易漏检。",
                 },
                 "text_threshold": {
                     "type": "number",
@@ -316,18 +322,29 @@ def setup() -> dict:
                     "maximum": 1.0,
                     "default": TEXT_THRESHOLD,
                     "title": "Text 置信度阈值",
+                    "description": "短语与图像区域语义匹配的最低分。调高=匹配更严格、更贴合 prompt 词；调低=更宽松、易误配。",
+                },
+                "simplify_tolerance": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 10.0,
+                    "default": DEFAULT_SIMPLIFY_TOLERANCE,
+                    "title": "轮廓简化容差(像素)",
+                    "description": "多边形轮廓抽稀强度（像素）。调大=顶点更少、更轻量；调小=更贴合细节但顶点更多。仅影响 mask 输出。",
                 },
                 "sam_variant": {
                     "type": "string",
                     "enum": ["tiny", "small", "base_plus", "large"],
                     "default": SAM_VARIANT,
                     "title": "SAM 2 变体",
+                    "description": "SAM 2 分割模型大小。越大越精细但越慢、越吃显存；tiny 最快。切换会触发一次冷加载。",
                 },
                 "dino_variant": {
                     "type": "string",
                     "enum": ["T", "B"],
                     "default": DINO_VARIANT,
                     "title": "GroundingDINO 变体",
+                    "description": "文本检测模型大小：T(Tiny) 更快，B(Base) 更准更吃资源。切换会触发一次冷加载。",
                 },
             },
         },

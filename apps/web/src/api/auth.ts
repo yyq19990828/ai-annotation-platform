@@ -20,8 +20,14 @@ export interface WorkbenchPreferences {
   longTaskSampleRate: number;
 }
 
+/** 每用户的 AI 工具推理参数偏好，按 ML backend id 分桶（不同后端参数 schema 不同）。 */
+export interface AIToolPreferences {
+  params_by_backend: Record<string, Record<string, unknown>>;
+}
+
 export interface UserPreferences {
   workbench: WorkbenchPreferences;
+  ai: AIToolPreferences;
 }
 
 export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
@@ -59,6 +65,7 @@ export const authApi = {
   refresh: () => apiClient.post<TokenResponse>("/auth/refresh", {}),
   // v0.9.41 · 工作台偏好读写
   getPreferences: () => apiClient.get<UserPreferences>("/auth/me/preferences"),
-  updatePreferences: (payload: UserPreferences) =>
+  // 后端按顶层子树合并（exclude_unset），故可只提交单个子树（workbench 或 ai）。
+  updatePreferences: (payload: Partial<UserPreferences>) =>
     apiClient.patch<UserPreferences>("/auth/me/preferences", payload),
 };

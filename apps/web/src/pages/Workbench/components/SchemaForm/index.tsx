@@ -13,6 +13,8 @@ export interface JsonSchemaField {
   minimum?: number;
   maximum?: number;
   enum?: string[];
+  /** 只读字段 (如模型版本 / 缓存容量): 渲染为禁用控件展示, 不进 aiToolParams。 */
+  readOnly?: boolean;
 }
 
 export interface JsonSchemaObject {
@@ -51,6 +53,7 @@ export function deriveDefaults(schema: JsonSchemaObject | undefined): Record<str
   for (const [key, raw] of Object.entries(schema.properties)) {
     if (VARIANT_FIELD_SET.has(key)) continue; // 变体字段归 AI 面板, 不进 aiToolParams.
     const field = asField(raw);
+    if (field.readOnly) continue; // 只读字段仅展示, 不作为可调参数发给后端.
     if (field.default !== undefined) out[key] = field.default;
   }
   return out;
@@ -102,22 +105,27 @@ interface SchemaFieldProps {
 
 function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProps) {
   const title = field.title ?? name;
+  // 只读字段 (model_variant / embedding_cache_size 等): 禁用控件, 仅作信息展示。
+  const ro = disabled || field.readOnly === true;
+  const desc = field.description ? (
+    <span className={styles.hint}>{field.description}</span>
+  ) : null;
 
   if (field.type === "boolean") {
     const v = typeof value === "boolean" ? value : Boolean(field.default ?? false);
     return (
-      <label
-        data-testid={`schema-field-${name}`}
-        className={`${styles.booleanField} ${disabled ? styles.booleanFieldDisabled : ""}`}
-      >
-        <input
-          type="checkbox"
-          checked={v}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-        <span className={styles.label}>{title}</span>
-      </label>
+      <div data-testid={`schema-field-${name}`} className={styles.field}>
+        <label className={`${styles.booleanField} ${ro ? styles.booleanFieldDisabled : ""}`}>
+          <input
+            type="checkbox"
+            checked={v}
+            disabled={ro}
+            onChange={(e) => onChange(e.target.checked)}
+          />
+          <span className={styles.label}>{title}</span>
+        </label>
+        {desc}
+      </div>
     );
   }
 
@@ -128,7 +136,7 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
         <span className={styles.label}>{title}</span>
         <select
           value={v}
-          disabled={disabled}
+          disabled={ro}
           onChange={(e) => onChange(e.target.value)}
           className={styles.control}
         >
@@ -136,6 +144,7 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
             <option key={opt} value={opt}>{opt}</option>
           ))}
         </select>
+        {desc}
       </div>
     );
   }
@@ -163,7 +172,7 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
             max={max}
             step={step}
             value={v}
-            disabled={disabled}
+            disabled={ro}
             onChange={(e) => onChange(isInt ? parseInt(e.target.value, 10) : parseFloat(e.target.value))}
             className={styles.range}
           />
@@ -175,11 +184,12 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
             max={max}
             step={step}
             value={v}
-            disabled={disabled}
+            disabled={ro}
             onChange={(e) => onChange(isInt ? parseInt(e.target.value, 10) : parseFloat(e.target.value))}
             className={styles.control}
           />
         )}
+        {desc}
       </div>
     );
   }
@@ -192,10 +202,11 @@ function SchemaField({ name, field, value, disabled, onChange }: SchemaFieldProp
       <input
         type="text"
         value={v}
-        disabled={disabled}
+        disabled={ro}
         onChange={(e) => onChange(e.target.value)}
         className={styles.control}
       />
+      {desc}
     </div>
   );
 }

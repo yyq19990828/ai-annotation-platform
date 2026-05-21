@@ -124,10 +124,15 @@ async def update_preferences(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> UserPreferences:
-    """v0.9.41 · 整体替换 preferences（含默认值填充）。pydantic forbid extra 防脏写入。"""
-    user.preferences = payload.model_dump(mode="json")
+    """更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。
+
+    pydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与
+    AI 工具参数偏好可各自独立保存，互不覆盖。"""
+    incoming = payload.model_dump(mode="json", exclude_unset=True)
+    merged = {**(user.preferences or {}), **incoming}
+    user.preferences = merged
     await db.commit()
-    return payload
+    return UserPreferences.model_validate(merged)
 
 
 @router.delete("/deactivation-request", response_model=UserOut)

@@ -2,6 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ALL_TOOLS, type CanvasTool, type ToolId } from "../stage/tools";
+import { toolUnitForTool } from "../stage/tools/toolUnits";
 import type { VideoTool } from "../state/useWorkbenchState";
 import styles from "./ToolDock.module.css";
 
@@ -23,6 +24,12 @@ interface ToolDockProps {
   reviewMode?: boolean;
   /** v0.9.20 · 视频工作台分离单帧 bbox 与 track 工具. */
   videoMode?: boolean;
+  /**
+   * 项目已启用的 tool_unit 集合 (来自 project.tool_bindings[unit].enabled)。
+   * 仅过滤普通绘制工具: 未启用的隐藏。AI 工具按后端能力置灰、hand 视图工具恒显示, 均不受此过滤。
+   * null = 老项目无 tool_bindings 配置 → 视为全部启用, 不隐藏任何工具 (向后兼容)。
+   */
+  enabledToolUnits?: Set<string> | null;
 }
 
 interface ToolDescriptor {
@@ -80,6 +87,7 @@ export function ToolDock({
   aiToolDrawer,
   reviewMode = false,
   videoMode = false,
+  enabledToolUnits = null,
 }: ToolDockProps) {
   if (videoMode) {
     return (
@@ -117,7 +125,13 @@ export function ToolDock({
 
   const visibleTools = reviewMode
     ? ALL_TOOLS.filter((t) => t.id === "hand")
-    : ALL_TOOLS;
+    : ALL_TOOLS.filter((t) => {
+        // hand (视图) 与 AI 工具 (requiredPrompt, 按后端能力置灰) 不受 tool_bindings 过滤。
+        if (t.id === "hand" || t.requiredPrompt) return true;
+        // 老项目无 tool_bindings → enabledToolUnits 为 null → 全显示 (向后兼容)。
+        if (!enabledToolUnits) return true;
+        return enabledToolUnits.has(toolUnitForTool(t.id));
+      });
 
   // 分组分隔: 普通绘制 → AI 工具 → 视图工具
   const isAITool = (t: CanvasTool) => !!t.requiredPrompt;

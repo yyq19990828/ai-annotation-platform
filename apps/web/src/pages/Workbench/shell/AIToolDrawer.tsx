@@ -4,13 +4,11 @@
 // v0.10.23 · 设计 B · text-prompt 工具的输入段 (SamTextPanel) 下沉到此处, 替换原 hint;
 // 预测结果列表仍留右栏 AIInspectorPanel.
 
-import { useEffect, useMemo } from "react";
 import { Icon } from "@/components/ui/Icon";
 import type { MLBackendCapability } from "@/api/ml-backends";
 import type { SamPolarity, Tool } from "../state/useWorkbenchState";
 import type { TextOutputMode } from "../state/useInteractiveAI";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
-import { SchemaForm, deriveDefaults, type JsonSchemaObject } from "../components/SchemaForm";
 import { SamTextPanel } from "./SamTextPanel";
 import { SamOutputModeTabs } from "./SamOutputModeTabs";
 import styles from "./AIToolDrawer.module.css";
@@ -20,9 +18,6 @@ export interface AIToolDrawerProps {
   /** v0.10.2 · 当前项目挂的 backend 名称 (来自 /setup.name); undefined → "未绑定". */
   backendName: string | undefined;
   capability: MLBackendCapability | undefined;
-  paramsSchema: JsonSchemaObject | undefined;
-  params: Record<string, unknown>;
-  onSetParams: (next: Record<string, unknown>) => void;
   samPolarity: SamPolarity;
   onSetSamPolarity: (p: SamPolarity) => void;
   isLoading: boolean;
@@ -65,9 +60,6 @@ export function AIToolDrawer({
   tool,
   backendName,
   capability,
-  paramsSchema,
-  params,
-  onSetParams,
   samPolarity,
   onSetSamPolarity,
   isLoading,
@@ -83,17 +75,6 @@ export function AIToolDrawer({
 }: AIToolDrawerProps) {
   const meta = TOOL_REGISTRY[tool];
   const hint = TOOL_HINT[tool];
-
-  // 切工具或后端刷新 schema 时, 用 defaults 重置 params (避免上个工具的脏数据带进新工具).
-  // 用 schema reference 作为 key 触发 reset, params 由父层管理.
-  const defaults = useMemo(() => deriveDefaults(paramsSchema), [paramsSchema]);
-  useEffect(() => {
-    // 仅在 params 为空时填默认值; 否则尊重用户已编辑的值.
-    if (Object.keys(params).length === 0 && Object.keys(defaults).length > 0) {
-      onSetParams(defaults);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paramsSchema]);
 
   return (
     <div
@@ -165,14 +146,6 @@ export function AIToolDrawer({
           projectTypeKey={projectTypeKey}
           focusKey={samTextFocusKey}
         />
-      )}
-
-      {/* 参数面板 (schema-form) */}
-      {paramsSchema && Object.keys(paramsSchema.properties ?? {}).length > 0 && (
-        <>
-          <div className={styles.separator} />
-          <SchemaForm schema={paramsSchema} value={params} onChange={onSetParams} />
-        </>
       )}
 
       {/* 状态指示 */}

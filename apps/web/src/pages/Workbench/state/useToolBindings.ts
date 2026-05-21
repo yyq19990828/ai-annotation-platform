@@ -29,6 +29,12 @@ export interface ToolBindingsView {
   toolUnitId: ToolUnitId;
   /** v0.10.28 · keypoint 单元的骨骼模板 (仅 toolUnitId === "keypoint" 时有意义)。 */
   keypointSchema: import("@/types").KeypointSchema | null;
+  /**
+   * 当前激活工具「自身的 unit」是否定义了类别 (借 bbox/region 兜底之前判断)。
+   * 工作台据此决定: 落框提交时若工具本身没有类别定义, 直接以 __unknown 落库而非弹选类别窗
+   * (修复老项目用无类别工具仍弹窗的 BUG)。
+   */
+  hasOwnClasses: boolean;
 }
 
 export function useToolBindings(
@@ -39,7 +45,8 @@ export function useToolBindings(
   return useMemo(() => {
     const tb = (project?.tool_bindings ?? {}) as ToolBindings;
     const view = _materialize(tb, toolUnitId);
-    if (view.classes.length > 0) {
+    const hasOwnClasses = view.classes.length > 0;
+    if (hasOwnClasses) {
       return view;
     }
     // v0.10.17 兜底: 当前 unit 未配置或类集合为空 (尤其是
@@ -50,10 +57,10 @@ export function useToolBindings(
       if (fallbackUnit === toolUnitId) continue;
       const fb = _materialize(tb, fallbackUnit);
       if (fb.classes.length > 0) {
-        return { ...fb, toolUnitId };
+        return { ...fb, toolUnitId, hasOwnClasses };
       }
     }
-    return { ...view, toolUnitId };
+    return { ...view, toolUnitId, hasOwnClasses };
   }, [project, toolUnitId]);
 }
 
@@ -69,6 +76,7 @@ function _materialize(
       attributeSchema: { fields: [] } as AttributeSchema,
       toolUnitId: unit,
       keypointSchema: null,
+      hasOwnClasses: false,
     };
   }
   const ordered = (binding.classes ?? [])
@@ -93,5 +101,6 @@ function _materialize(
     attributeSchema,
     toolUnitId: unit,
     keypointSchema: binding.keypoint_schema ?? null,
+    hasOwnClasses: classes.length > 0,
   };
 }

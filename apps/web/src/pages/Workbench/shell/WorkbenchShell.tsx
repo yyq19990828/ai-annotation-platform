@@ -40,6 +40,8 @@ import { useCanvasDraftPersistence } from "../state/useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "../state/useWorkbenchTaskFlow";
 import { useInteractiveAI } from "../state/useInteractiveAI";
 import { useMLCapabilities } from "../state/useMLCapabilities";
+import { useAiToolParamPrefs } from "../state/useAiToolParamPrefs";
+import { deriveDefaults } from "../components/SchemaForm";
 import { AIToolDrawer } from "./AIToolDrawer";
 import { IssueCreateModal } from "./IssueCreateModal";
 import { IssueListPanel } from "./IssueListPanel";
@@ -161,6 +163,17 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const s = useWorkbenchState();
   // v0.10.17 · 按当前激活工具的 tool_unit 派生 classes / classesConfig / attributeSchema.
   const toolView = useToolBindings(currentProject ?? null, s.tool);
+  // 工具栏隐藏未启用的普通工具: 收集 tool_bindings 中 enabled 的 unit。
+  // 空配置 (老项目无 tool_bindings) → null = 不过滤, 全部显示 (向后兼容)。
+  const enabledToolUnits = useMemo<Set<string> | null>(() => {
+    const tb = currentProject?.tool_bindings;
+    if (!tb || Object.keys(tb).length === 0) return null;
+    const set = new Set<string>();
+    for (const [unit, binding] of Object.entries(tb)) {
+      if (binding?.enabled) set.add(unit);
+    }
+    return set;
+  }, [currentProject?.tool_bindings]);
   const classes = toolView.classes;
   const classesConfig = toolView.classesConfig;
   // toolView.toolUnitId 当前未直接被 shell 用 (POST 时由 useWorkbenchAnnotationActions
@@ -472,6 +485,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     projectId ?? null,
     currentProject?.ml_backend_id ?? null,
   );
+  // 用户级 AI 工具参数偏好 (按 backend 分桶, 多用户隔离不打架)。读取优先级链:
+  // 用户保存值 → 后端 /setup 默认。参数是后端级 (非工具级), 在悬浮 AI 面板调整。
+  const aiParamPrefs = useAiToolParamPrefs(currentProject?.ml_backend_id ?? null);
   // 切题清候选；切工具离开 AI 工具组也清（避免用户切回 box 时仍残留紫虚线）
   useEffect(() => {
     sam.cancel();
@@ -492,12 +508,35 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     if (!isAIToolId(s.tool) && sam.candidates.length > 0) sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.tool]);
-  // v0.10.2 · 切换 AI 工具时清空 params (避免上工具的脏值带过来); 切到 text-prompt 时 bump 焦点
+  // 切到 text-prompt 工具时 bump 输入焦点。(参数不再随工具重置 — 已是后端级。)
   useEffect(() => {
-    s.setAiToolParams({});
     if (s.tool === "text-prompt") s.bumpSamTextFocus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.tool]);
+  // 后端级 AI 参数 seed: 后端 /setup 能力 + 用户偏好就绪后, 按 用户保存值 → /setup 默认 填入,
+  // 每个 backend 只 seed 一次 (避免覆盖用户当前会话内的调整)。
+  const aiParamDefaults = useMemo(
+    () => deriveDefaults(mlCapabilities.paramsSchema),
+    [mlCapabilities.paramsSchema],
+  );
+  const seededBackendRef = useRef<string | null>(null);
+  useEffect(() => {
+    const bid = currentProject?.ml_backend_id ?? null;
+    if (!bid || !mlCapabilities.paramsSchema || !aiParamPrefs.loaded) return;
+    if (seededBackendRef.current === bid) return;
+    seededBackendRef.current = bid;
+    s.setAiToolParams(aiParamPrefs.savedParams ?? aiParamDefaults);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.ml_backend_id, mlCapabilities.paramsSchema, aiParamPrefs.loaded, aiParamPrefs.savedParams]);
+  // 用户在悬浮 AI 面板调整参数后持久化到用户偏好 (按 backend 分桶, 防抖)。与 /setup 默认一致时不落库,
+  // 避免把默认值污染成"用户保存值"; 仅持久化用户实际改动。
+  useEffect(() => {
+    if (!currentProject?.ml_backend_id) return;
+    if (Object.keys(s.aiToolParams).length === 0) return;
+    if (JSON.stringify(s.aiToolParams) === JSON.stringify(aiParamDefaults)) return;
+    aiParamPrefs.save(s.aiToolParams);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.aiToolParams, currentProject?.ml_backend_id]);
   // v0.10.2 · 兜底: 能力变化使当前 AI 工具不再支持 → 切回 hand + toast
   useEffect(() => {
     if (mlCapabilities.isLoading) return;
@@ -682,6 +721,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     stageGeom,
     iouDedupThreshold: currentProject?.iou_dedup_threshold ?? 0.7,
     classes,
+    activeToolHasOwnClasses: toolView.hasOwnClasses,
     keypointNodeCount: toolView.keypointSchema?.nodes.length ?? 0,
     sam,
     createAnnotationAsync: (payload) => createAnnotation.mutateAsync(payload),
@@ -1051,9 +1091,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             tool={s.tool}
             backendName={mlCapabilities.capability?.name}
             capability={mlCapabilities.capability}
-            paramsSchema={mlCapabilities.paramsSchema}
-            params={s.aiToolParams}
-            onSetParams={s.setAiToolParams}
             samPolarity={s.samPolarity}
             onSetSamPolarity={s.setSamPolarity}
             isLoading={mlCapabilities.isLoading}
@@ -1069,6 +1106,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           />
         ) : null,
         reviewMode: mode === "review", videoMode: isVideoTask,
+        enabledToolUnits,
       }}
       banners={{
         mode, task, lockError, claimInfo: modeState.claimInfo, canWithdraw: bannerActions.canWithdraw,
@@ -1309,6 +1347,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         paramsSchema: mlCapabilities.paramsSchema,
         aiVariant: s.aiVariant,
         onSetAiVariant: s.setAiVariant,
+        // 后端级推理参数 (阈值等, 非变体字段): 在悬浮 AI 面板用 SchemaForm 渲染, 而非子工具抽屉。
+        params: s.aiToolParams,
+        onSetParams: s.setAiToolParams,
       }}
       hotkeys={{ open: showHotkeys, onClose: () => setShowHotkeys(false), attributeSchema: toolView.attributeSchema }}
       offlineQueue={{ open: offlineDrawerOpen, onClose: closeOfflineDrawer, currentTaskId: taskId, onFlushOne: executeOp, onFlushAll: flushOffline }}

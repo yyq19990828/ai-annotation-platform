@@ -1,3 +1,4 @@
+from typing import Any
 from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
@@ -16,12 +17,25 @@ class WorkbenchPreferences(BaseModel):
     longTaskSampleRate: float = Field(default=0.05, ge=0.0, le=1.0)
 
 
+class AIToolPreferences(BaseModel):
+    """每用户的 AI 工具推理参数偏好，按 ML backend id 分桶。
+
+    不同 backend 的 /setup.params schema 不同（gsam2 有 box/text_threshold，sam3 有
+    score_threshold 等），故按 backend id 各存一份，互不污染；多用户各自一份 preferences，
+    天然隔离不打架。值为 /setup.params 对应的自由 dict，平台只做存取不强校验字段。"""
+
+    model_config = {"extra": "forbid"}
+
+    params_by_backend: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
 class UserPreferences(BaseModel):
     """User.preferences JSONB root. 仅声明已知子树；未来按 epic 追加。"""
 
     model_config = {"extra": "forbid"}
 
     workbench: WorkbenchPreferences = Field(default_factory=WorkbenchPreferences)
+    ai: AIToolPreferences = Field(default_factory=AIToolPreferences)
 
 
 class UserCreate(BaseModel):

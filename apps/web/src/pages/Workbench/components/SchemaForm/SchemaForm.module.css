@@ -32,6 +32,12 @@
   font-size: 11px;
 }
 
+.hint {
+  color: var(--color-fg-subtle);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .control {
   padding: 4px 6px;
   border: 1px solid var(--color-border);
