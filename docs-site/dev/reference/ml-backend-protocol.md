@@ -205,7 +205,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "model_version": "sam3.1",                    // 必填. 实际加载的模型 ckpt 版本
   "is_interactive": true,
   "labels": [],                                 // 可选. backend 已知类别 hint
-  "supported_prompts": ["bbox", "text", "exemplar"],
+  "supported_prompts": ["text", "exemplar"],     // 选项 A 的 sam3 不暴露 point/bbox: 物理上只有 PCS 找相似(exemplar)与 text; 单物体点/框需 grounded-sam2 或开 inst_interactivity
   "supported_text_outputs": ["box", "mask", "both"],
   "params": {
     "type": "object",

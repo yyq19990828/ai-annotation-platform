@@ -226,10 +226,15 @@ def setup() -> dict:
         "labels": [],
         "is_interactive": True,
         # v0.10.0 选项 A: 不暴露 "point" (Sam3Processor image API 不支持).
-        # 单点交互项目挂 grounded-sam2-backend 兜底.
-        "supported_prompts": ["bbox", "text", "exemplar"],
+        # 也不暴露 "bbox": 选项 A 下 sam3 的 bbox 物理上走 add_geometric_prompt (PCS 找全图
+        # 相似实例), 不是 SAM2 式「框内单物体单 mask」。前端的 smart-box / magic-box 工具语义
+        # 是单物体框, 与 PCS 不符, 故不宣称 bbox, 让 ToolDock 把这两个工具与 point 一起置灰;
+        # 想用「找相似」的用户走 exemplar 工具 (同底层, 协议层语义明确)。
+        # 单物体框 / 单点交互需挂 grounded-sam2-backend, 或在大显存卡上开 inst_interactivity 后
+        # 由该 build 重新宣称 point/bbox (按 build 真实能力声明)。
+        "supported_prompts": ["text", "exemplar"],
         "supported_text_outputs": ["box", "mask", "both"],
-        # bbox / exemplar 走同一 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
+        # exemplar 走 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
         "supported_geometric_outputs": ["box", "mask", "both"],
         "params": {
             "type": "object",

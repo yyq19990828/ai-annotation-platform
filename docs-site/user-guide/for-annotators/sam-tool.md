@@ -22,7 +22,7 @@ v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆
 
 按 `S` 在 5 个 AI 工具之间循环，**跳过当前后端不支持的工具**（按钮置灰）；循环顺序: smart-point → smart-box → **magic-box** → text-prompt → exemplar → 回 smart-point。`Alt+3` 与 `S` 等价。
 
-> **能力来自后端 `/setup.supported_prompts`**：项目挂的是 `grounded-sam2`（point/bbox/text）时 Exemplar 灰；挂 `sam3-backend` 时 Smart Point 灰。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。
+> **能力来自后端 `/setup.supported_prompts`**：项目挂的是 `grounded-sam2`（point/bbox/text）时 Exemplar 灰；挂 `sam3-backend`（text/exemplar）时 **Smart Point、Smart Box、Magic Box 都灰**——sam3 这一档物理上只做 PCS「找全图相似」（走 Exemplar）与文本提示，不做单物体的点/框分割（需 grounded-sam2 或大显存卡开 inst_interactivity）。鼠标 hover 灰按钮会显示「当前后端不支持此交互模式」。
 
 ## 工具说明
 
