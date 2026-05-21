@@ -14,6 +14,26 @@ from app.schemas._jsonb_types import (
 from pydantic import field_validator
 
 
+class VideoSamplingConfig(BaseModel):
+    # v0.10.29 · 视频帧逻辑采样配置. mode=none 退化为不采样 (step=1).
+    mode: Literal["none", "fps", "step"] = "none"
+    target_fps: float | None = Field(default=None, gt=0)
+    frame_step: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _validate_mode_fields(self) -> "VideoSamplingConfig":
+        if self.mode == "fps":
+            if self.target_fps is None:
+                raise ValueError("mode=fps 必须提供 target_fps")
+        elif self.mode == "step":
+            if self.frame_step is None:
+                raise ValueError("mode=step 必须提供 frame_step")
+        else:  # mode == "none"
+            if self.target_fps is not None or self.frame_step is not None:
+                raise ValueError("mode=none 时 target_fps / frame_step 应为 None")
+        return self
+
+
 class ProjectCreate(BaseModel):
     name: str
     type_label: str
@@ -57,6 +77,8 @@ class ProjectCreate(BaseModel):
     box_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_threshold: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     text_output_default: Literal["box", "mask", "both"] | None = None
+    # v0.10.29 · 视频帧逻辑采样配置; None / 缺省 = 不采样 (空 dict).
+    video_sampling: VideoSamplingConfig | None = None
 
     @model_validator(mode="after")
     def _validate_source_template_exclusive(self) -> "ProjectCreate":
@@ -106,6 +128,8 @@ class ProjectUpdate(BaseModel):
     # 重置 list (例如批量删 orphan 后端 sync), 一般 UI 不直接写.
     annotation_guide: str | None = None
     guide_assets: list[dict] | None = None
+    # v0.10.29 · 视频帧逻辑采样配置; PATCH 用整体替换语义 (与 rendering_config 一致).
+    video_sampling: VideoSamplingConfig | None = None
 
 
 class ProjectBatchSummary(BaseModel):
@@ -149,6 +173,8 @@ class ProjectOut(BaseModel):
     text_output_default: str | None = None
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict 表示项目不覆盖任何字段
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
+    # v0.10.29 · 视频帧逻辑采样配置; 空 dict (mode=none) 表示不采样.
+    video_sampling: VideoSamplingConfig = VideoSamplingConfig()
     # v0.10.13 · E1 · 标注指引 Markdown 原文; None 表示未配置.
     annotation_guide: str | None = None
     # v0.10.13 · E1 · 已上传的指引图片资源元数据列表.

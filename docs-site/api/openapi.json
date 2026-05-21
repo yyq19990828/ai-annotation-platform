@@ -8819,6 +8819,16 @@
           "type_label": {
             "title": "Type Label",
             "type": "string"
+          },
+          "video_sampling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoSamplingConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -9213,6 +9223,12 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "video_sampling": {
+            "$ref": "#/components/schemas/VideoSamplingConfig",
+            "default": {
+              "mode": "none"
+            }
           }
         },
         "required": [
@@ -10358,6 +10374,16 @@
               }
             ],
             "title": "Type Label"
+          },
+          "video_sampling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoSamplingConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "ProjectUpdate",
@@ -13622,6 +13648,46 @@
           }
         },
         "title": "VideoMetadata",
+        "type": "object"
+      },
+      "VideoSamplingConfig": {
+        "properties": {
+          "frame_step": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Step"
+          },
+          "mode": {
+            "default": "none",
+            "enum": [
+              "none",
+              "fps",
+              "step"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "target_fps": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Fps"
+          }
+        },
+        "title": "VideoSamplingConfig",
         "type": "object"
       },
       "VideoSegmentOut": {
