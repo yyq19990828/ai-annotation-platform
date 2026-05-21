@@ -11,7 +11,7 @@ last_reviewed: 2026-05-20
 ![导出格式选择](../images/export/format-select.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 导出对话框，COCO / YOLO / AAP JSON 选项 + 当前选中状态 + 导出范围（项目 / 批次）。 -->
 
-项目 Dashboard 的「导出」入口支持以下格式。图片项目可选择 **COCO / YOLO / AAP JSON**；视频轨迹项目只显示 Video JSON。
+项目 Dashboard 的「导出」入口支持以下格式。图片项目可选择 **COCO / YOLO / AAP JSON**；视频轨迹项目可选 **Video JSON / AAP JSON / MOT / KITTI**（v0.10.31 起）。
 
 ## 导出流程（v0.10.27 起异步化）
 
@@ -102,9 +102,9 @@ nc: 3
 
 平台间迁移用，含完整原数据 + 标注 + 审核备注。
 
-## AAP JSON v1.1（无损）
+## AAP JSON v1.2（无损）
 
-> v0.10.15 引入 1.0；**v0.10.17 升 1.1** 加 `tool_unit_id` / `tool_bindings` 字段（向后兼容,1.0 reader 走 `extra="ignore"` 仍可解析）。**平台原生无损中间格式**。与 COCO / YOLO 并列，但**包含**它们丢失的所有字段：`tool_bindings`(工具维度类别/属性绑定) / `attribute_schema` 值、`prediction.confidence` / `model_version`、`annotation.source`、项目 `annotation_guide`、`classes_config`、`rendering_config`。
+> v0.10.15 引入 1.0；**v0.10.17 升 1.1** 加 `tool_unit_id` / `tool_bindings`；**v0.10.31 升 1.2** 在 task 层加 `media_type`（image/video/lidar）+ `video` 子块（采样配置 / fps / 帧数 / 分辨率），视频 `video_track` geometry 无损透传，envelope 不拆。各版本向后兼容，旧 reader 走 `extra="ignore"` 仍可解析。**平台原生无损中间格式**。与 COCO / YOLO 并列，但**包含**它们丢失的所有字段：`tool_bindings`(工具维度类别/属性绑定) / `attribute_schema` 值、`prediction.confidence` / `model_version`、`annotation.source`、项目 `annotation_guide`、`classes_config`、`rendering_config`。
 
 适合场景：
 
@@ -118,7 +118,7 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "exported_at": "2026-05-19T10:00:00Z",
   "exported_from": {
     "platform": "aap",
@@ -147,6 +147,8 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
         "display_id": "T-101",
         "file_path": "datasets/foo/img_001.jpg"
       },
+      "media_type": "image",
+      "video": null,
       "annotations": [
         {
           "geometry": { "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
@@ -185,20 +187,25 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 ## 视频轨迹
 
-v0.9.18 起，`video-track` 项目导出入口只显示 **Video JSON**。导出文件保留轨迹、关键帧、目标消失段和视频元数据，不会伪装成 COCO / YOLO。
+v0.10.31 起，`video-track` 项目导出可选 **Video JSON / AAP JSON / MOT / KITTI** 四种格式，统一走异步 zip 管线。导出包含标注主体 + `manifest.json` + `fetch_videos.py`（按预签名 URL 回源视频）；MOT/KITTI 另带 `fetch_frames.py`（用本地 ffmpeg 按采样网格帧号抽 `img1/` 帧序列，遵循「不物理打包帧」）。
 
-可选帧模式：
+**Video JSON**（帧模式二选一）：
 
 - **关键帧**：默认模式，只导出人工 / 预测关键帧，适合备份、质检和后续继续编辑。
 - **所有帧**：导出时按相邻有效关键帧线性插值展开每帧 bbox，适合下游训练或逐帧质检。
+- 顶层包含 `export_type: "video_tracks"`、`frame_mode`、项目 / 类别 / 任务信息、`tracks[]`、扁平 `keyframes[]`、旧版 `video_bbox[]` 和 `video_metadata`。
 
-目标消失语义：
+**MOT 16/17/20**：每个视频 = 一个 sequence，落 `{sequence}/gt/gt.txt`（`frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z`）+ `{sequence}/seqinfo.ini`，可直接喂 trackeval。轨迹整数 `id` 自动派生；帧号按采样网格重排 1..N（如 60fps 采 10fps 则 `frameRate=10`）。
+
+**KITTI Tracking 2D**：每视频落 `labels/{sequence}.txt`，18 列空格分隔（`frame track_id type truncated occluded alpha bbox… 3D占位`），帧号网格序号 0-based。
+
+**AAP JSON**：单文档无损中间格式，`video_track` geometry 原样保留；详见上节（schema 1.2 起 task 层带 `media_type` + `video` 子块）。
+
+目标消失语义（各格式共用）：
 
 - `outside` 闭区间段表示目标在该段帧内不存在（v0.10.30 起统一用此表达，旧 `absent` 字段已删除）。
-- 所有帧模式不会跨越 `outside` 段插值，也不在其中输出 bbox。
-- `occluded=true` 表示目标存在但被遮挡，仍可参与插值。
-
-Video JSON 顶层包含 `export_type: "video_tracks"`、`frame_mode`、项目 / 类别 / 任务信息、`tracks[]`、扁平 `keyframes[]`、旧版 `video_bbox[]` 和 `video_metadata`。
+- 所有帧模式 / MOT / KITTI 都不跨越 `outside` 段插值，也不在其中输出 bbox（MOT/KITTI 直接省略该帧）。
+- `occluded=true` 表示目标存在但被遮挡，仍可参与插值；MOT 仍输出该帧，KITTI 置 occluded 列=1。
 
 ## 选哪个？
 
@@ -210,3 +217,6 @@ Video JSON 顶层包含 `export_type: "video_tracks"`、`frame_mode`、项目 / 
 | 数据迁移 / 备份 | AAP JSON / Label Studio JSON |
 | 视频轨迹备份 / 质检 | Video JSON（关键帧） |
 | 视频逐帧训练 | Video JSON（所有帧） |
+| 视频多目标跟踪评测（trackeval） | MOT 16/17/20 |
+| 视频跟踪（KITTI 工具链） | KITTI Tracking |
+| 视频跨实例无损迁移 | AAP JSON |

@@ -65,24 +65,15 @@
 
 ## Phase 4 · 视频导出（D3 落地）
 
-> 现状不一致：图像 COCO/YOLO/VOC/AAP 走异步 zip 管线（manifest + fetch_images + 缓存）；**视频导出是异类**——[`export_video_tracks`](../apps/api/app/services/export.py)（`export.py:153`）直接返回**裸 JSON 不打 zip**，仅 keyframes/all_frames 两模式，无 MOT/KITTI/DAVIS。
+> **4.1 + 4.2 导出端 + 4.3 + 4.4 + 4.7 已于 v0.10.31 落地**（执行计划见 [2026-05-21-v0.10.31-phase4-video-export-plan](../docs/plans/2026-05-21-v0.10.31-phase4-video-export-plan.md)，详情见 [CHANGELOG v0.10.31](../CHANGELOG.md)）：
+>
+> - 4.1 视频并入异步 zip 管线（`manifest.json` + `annotations.json` + `fetch_videos.py`），修掉误用 YOLO 图片入口；4.7 前端格式选项扩 Video JSON / AAP / MOT / KITTI。
+> - 4.2 **导出端**：AAP schema 升 1.2，task 层 `media_type` + `video` 子块，`video_track` geometry 无损透传（envelope 不拆，D3）。
+> - 4.3 MOT 16/17/20（`gt.txt` + `seqinfo.ini`）/ 4.4 KITTI Tracking 2D，整数 id 用 `derive_track_number`，按采样网格重编号（D2）、outside 帧省略；附 `fetch_frames.py`（ffmpeg 抽 `img1/`，D1 不物理打包帧）。
+> - **统一映射约定**（已落地于 [export_video.py](../apps/api/app/services/export_video.py) 顶部）：MOT 省略 outside 帧 / occluded 仍输出；KITTI 用 occluded 列；帧号 MOT 1-based、KITTI 0-based。
 
-### 4.1 视频并入 zip 管线（先做，消除历史不一致）
-- 视频项目也产出标准 zip：`manifest.json` + `annotations.json`(AAP) + 视频回源脚本，与图像共用异步打包 / 缓存 / 指纹基建（`export_packaging.py` / `workers/export.py`）。
-
-### 4.2 AAP 单信封模态感知（D3，原 §A「AAP JSON video_track 导入支持」并入）
-- envelope **不拆**，task 层加 `media_type`（image/video/lidar）判别字段；视频专属元数据（采样配置 / fps / 时间表 / segment / chapter）放 task 层 `video` 子块，仍在同一 envelope、同一 importer。
-- 导出端：`AAPAnnotationEntry.geometry` 原样承载 `video_track`（已无损透传），补 `video` 子块元数据。
-- 导入端：`internal_geometry_to_ls_shape`（[`predictions_import.py`](../apps/api/app/services/predictions_import.py)）当前仅 bbox/polygon/multi_polygon，`video_bbox`/`video_track`/`skeleton` 进 errors[]；本 Phase 接通 video_track 导入。schema 已带 `tool_unit_id`（v0.10.17 1.1），新增 tool_unit 实现端接通即可。
-- 触发与 §A「predictions import / AAP JSON 适配新几何」同窗口。
-
-### 4.3 MOT 16/17/20 CSV（原 R22 + C.6 P2 后端）
-- 格式：`frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z`，**强依赖 Phase 2.1 整数 `track_number`**。
-- MOT challenge 目录布局：`{sequence}/gt/gt.txt` + `{sequence}/seqinfo.ini`（写 frameRate / 分辨率 / 帧数），可直接喂 trackeval 工具链。
-- **与 Phase 1 采样耦合**：若 10fps 采样自 60fps，`seqinfo.frameRate=10`、帧号在采样网格上重排 1..N（体现 D2 的"导出时重编号"）；outside 帧从 gt 省略。
-
-### 4.4 KITTI Tracking（原 R22 + C.6 P2）
-- 2D 版相对简单，与 MOT 同窗口；空格分隔逐帧 + track id + type + truncated/occluded + bbox。
+### 4.2 导入端（**延后**）
+- `internal_geometry_to_ls_shape`（[`predictions_import.py`](../apps/api/app/services/predictions_import.py)）当前仅 bbox/polygon/multi_polygon，`video_bbox`/`video_track`/`skeleton` 进 errors[]；接通 video_track 导入需新增 tool_unit 实现端，跟 §A「predictions import / AAP JSON 适配新几何」同窗口做。
 
 ### 4.5 DAVIS mask 序列（原 R22 + C.6 P2，**依赖 Phase 2.9**）
 - 逐帧 PNG mask 序列，依赖多几何 mask track（Phase 2.9 / R9）；mask track 未落地前不做。
@@ -90,11 +81,6 @@
 ### 4.6 Segment 导出聚合（后端，原 C.6 P1）
 - `Annotation` 查询 / 导出按 `segment_id` 或 frame range 聚合；跨 segment 合并按 `frame_index` 排序，outside / prediction keyframe 不丢；overlap 区间元数据为 Phase 5 / IAA / IDF1 预留。
 - Video Tracks JSON 作内部稳定格式，MOT/KITTI/DAVIS 从它派生。
-
-### 4.7 前端导出选项（现状 + 扩展）
-- 现 `ExportSection.tsx` 对 video-track 项目强制 Video JSON + 关键帧/所有帧两选一；扩展为可选 AAP / MOT / KITTI，沿用图像侧异步 zip 下载流。
-
-> **统一映射约定**：outside / occluded / prediction source 在各格式中的映射要统一定义一张表（MOT 省略 outside 帧、KITTI 用 occluded 列、DAVIS 用空 mask），避免每格式各写一套。
 
 ---
 
@@ -119,7 +105,7 @@
 | 1 ✅ | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1 | v0.10.29 落地；WebCodecs demux 接入延后 |
 | 2 ✅ | 轨迹工具对齐 CVAT | R16 / R9(暂缓) + 新增 2.1/2.6/2.7/2.8 | P0/P1 | 2.1–2.8 v0.10.30 落地；**2.9 多几何 track 延后** |
 | 3 | 真实 tracker backend | C.6 P0 / R23 / I20.4 | P0(体量大) | 遵循 ADR-0012 不入 apps/api |
-| 4 | 视频导出（D3） | R22 / C.6 P2 / §A AAP video_track 导入 | P1 | 4.5 DAVIS 依赖 2.9 |
+| 4 ◑ | 视频导出（D3） | R22 / C.6 P2 / §A AAP video_track 导入 | P1 | 4.1+4.2 导出端+4.3+4.4+4.7 v0.10.31 落地；**4.2 导入端 / 4.5 DAVIS(依赖 2.9) / 4.6 Segment 延后** |
 | 5 | 长视频协同 overlap | R11 / R21 / C.6 P1 segment | P1 | 不做 OT/CRDT |
 | 6 | Track 质量评估 | R24 / C.6 P2 worker | P2 | 与 L15 打通 |
 

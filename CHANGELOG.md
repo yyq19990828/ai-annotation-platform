@@ -22,6 +22,23 @@
 
 ## 最新版本
 
+## [0.10.31] - 2026-05-21
+
+> **视频导出（视频工作台 Phase 4，落地架构决策 D3）。** 视频项目导出从「裸 JSON 不打包」的异类，并入与图像共用的**异步 zip 管线**（async_job + 缓存 + 预签名），并扩出 **MOT 16/17/20** 与 **KITTI Tracking 2D** 两种主流跟踪格式。MOT/KITTI 严格遵循决策 **D2**：geometry 的 `frame_index` 永远是源视频帧号，导出时按**采样网格** `[0,step,2*step,…]` 重编号（60fps@step6 → `seqinfo.frameRate=10`、帧号 1..N 重排），outside 帧从 gt 省略。遵循 **D1**（不物理打包帧），导出包附带 `fetch_videos.py`（按 manifest 预签名 URL 回源视频）+ `fetch_frames.py`（用本地 ffmpeg 按网格帧号抽 `img1/` 帧序列）。AAP JSON 升 schema **1.2**：task 层加 `media_type`（image/video/lidar）判别 + `video` 子块（采样配置 / fps / 帧数 / 分辨率），envelope 不拆（决策 **D3**），`video_track` geometry 无损透传。前端导出选项从写死 Video JSON 扩为可选 Video JSON / AAP / MOT / KITTI。详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md) Phase 4。
+>
+> **本期不含**：4.2 导入端（`predictions_import` 接通 video_track，跟 §A predictions import 窗口走）、4.5 DAVIS mask（依赖延后的 2.9 多几何 track）、4.6 Segment 聚合（依赖 Phase 5）。
+
+### Added
+
+- **MOT 16/17/20 / KITTI Tracking 2D 导出** (后端 [export_video.py](apps/api/app/services/export_video.py)): 纯函数底座 `source_to_grid` / `track_grid_rows`（采样网格 D2 重编号，`resolved_track_frames(all_frames)` 展开插值 + 跳 outside，只取落网格帧）+ `build_mot_gt`（`gt.txt` 列 `frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z`）/ `build_mot_seqinfo`（`frameRate`=采样后 fps）/ `build_kitti_labels`（18 列，`occluded` 列 ∈{0,1}，3D 字段占位 -1）。整数 `id` 复用 [`derive_track_number`](apps/api/app/services/video_tracks.py)。
+- **视频导出回源脚本** (后端 [export_packaging.py](apps/api/app/services/export_packaging.py)): `manifest.json`（task→视频 rel_path + 预签名 URL + 采样配置 + 网格帧号）+ `fetch_videos.py` + MOT/KITTI 另带 `fetch_frames.py`（纯标准库 + 系统 ffmpeg）。
+- **AAP JSON schema 1.2 视频感知** (后端 [aap_json.py](apps/api/app/schemas/aap_json.py) · [export.py](apps/api/app/services/export.py)): `AAPTaskBlock` 增 `media_type` + `video` 子块；视频项目导出时填充，`video_track` geometry 原样透传。1.x reader 走 `extra="ignore"` 向后兼容。
+
+### Changed
+
+- **视频导出并入异步 zip 管线** (后端 [export_packaging.py](apps/api/app/services/export_packaging.py) `build_export_zip`): `data_type="video"` 走独立 `_build_video_export_zip` 分支；修掉此前视频凑合走 coco 分支时**误附带 YOLO 图片入口**（`data.yaml` / `images_manifest.json` / `fetch_images.py`，对视频文件错误签 URL）的问题。导出 endpoint `format` pattern 扩 `video_json|mot|kitti`（[projects.py](apps/api/app/api/v1/projects.py) · [batches.py](apps/api/app/api/v1/batches.py)）。
+- **前端导出格式选项** (前端 [ExportSection.tsx](apps/web/src/pages/Dashboard/ExportSection.tsx)): 视频项目格式从写死 Video JSON 改为按钮组（Video JSON / AAP / MOT / KITTI）；帧模式仅 Video JSON 显示。
+
 ## [0.10.30] - 2026-05-21
 
 > **视频轨迹工具对齐 CVAT（视频工作台 Phase 2，除多几何 track）。** 落地 8 个子项并收敛 track 数据模型。**数据模型收敛**：删除 `VideoTrackKeyframe.absent` 字段，轨迹"消失"语义统一并入 `outside` 区间（对齐 CVAT 两态 outside/occluded，alembic [0084](apps/api/alembic/versions/0084_video_track_drop_absent.py) 把存量 `absent=true` 关键帧转写为 outside 并删键）；`VideoTrackGeometry` 新增用户可编辑的 `semantic_label`（跨任务 Re-ID 心智，不参与主键、不强制唯一）；`track_number` 改为按「首关键帧帧号升序、并列按 `track_id` 字典序」**确定性派生**（不持久化，改采样/增删 track 时自然重排，符合架构决策 D2）。**工具增强**：track 级 / 帧级 mutable 属性 UI；split / merge UI 接通；新增 **Track Join / Re-ID 跳连**（两条帧号不重叠的同类 track 补 gap 合并，`gap_mode=interpolate`(线性插值过渡) / `outside`(gap 标消失)）；当前帧框 **Propagate** 到后续 N 帧；track **导航**快捷键（`,`/`.` 跳上/下关键帧，`Home`/`End` 跳首/末出现帧）；侧栏 track **隐藏 / 锁定 / 选色**。多几何 track（polygon/polyline/mask）本期暂缓。详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md) Phase 2。
