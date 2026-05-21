@@ -14,6 +14,7 @@
 
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
+- **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出）。三项已拍板决策：抽帧=逻辑采样不动原视频、frame_index 存源帧号、AAP 单信封模态感知。原 §C.5 / §C.6 / 视频相关 §A 条目已全部并入该文，按 Phase 1-6 顺序排布。
 
 
 ---
@@ -33,7 +34,7 @@
 - **OAuth2 / SSO**：等具体客户驱动（企业场景需求触发再做）
 
 ### 等独立 epic（体量大、不适合塞进收尾版）
-- **视频工作台（功能 + 渲染 + 后端）三联**：见 §C.5（前端）与 §C.6（后端）；原 epic 文档已归档。
+- **视频工作台（导入采样 / 轨迹工具 / 导出）**：已抽离为独立 epic，见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](./ROADMAP/2026-05-21-video-workbench-roadmap.md)（原 §C.5 / §C.6 已并入）。
 - **lidar 真实 3D 工作台**（C.4 Layer 2 触发;v0.10.17 已收 image-seg → region tool_unit,v0.10.28 已落 polyline / rotated_bbox / keypoint(COCO 骨骼),真正的独立 epic 只剩 lidar 3D 部分;图片侧形状能力扩展见 §C.7）
 - **大文件分片上传**（>5GB 视频 / 点云）
 - **数据集版本 snapshot + 主动学习闭环**（与训练队列一起做，长期规划 L1 / L2）
@@ -48,7 +49,7 @@
 ### 项目模块
 - **3D / 视频多模态工作台**（v0.10.17 已把项目"类型"从 7 种 type_key 收敛到「image / video / lidar 三种数据载体 + 工具集多选」形态,详见 [ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md)）:
   - `lidar` 在 Workbench StageHost 仍是 3D placeholder,Dashboard 入口未开放,`tool_unit=lidar_box_3d` 留位置灰;接入真实 3D 前不要复用图片 / 视频 geometry。
-  - `video-mm` / `mm` 多模态工作台未实现;视频侧能力详见 §C.5 / §C.6。
+  - `video-mm` / `mm` 多模态工作台未实现;视频侧能力详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md)。
 - **v0.10.17 落地后开放项**（按客户反馈触发）:
   - **`lidar_box_3d` 工具实现**（**P0**,体量大）:见上条 3D 工作台;依赖 3D viewer + 后端 frame service 视点处理。独立 epic,与长期 L3 跨模态挂钩。
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）:v0.10.17 强隔离意味"bbox 工具的人 / region 工具的人是两条独立记录",同名颜色 / alias 都得重复输入;触发条件:客户后续反馈"想共享类别名字"。设计走 `ToolClassEntry.alias_to: { tool_unit_id, class_name } | null` 链,导出时按 alias_to 合并 categories(可选)。**强隔离决策为默认底线,alias_to 仅作可选叠加**,不破坏 ADR-0026 决策。
@@ -87,7 +88,7 @@
   - **ProjectTemplate 进 AAP JSON manifest**（**P3**）：[取经合集 §2.6](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#26-平台原生-task-json-格式aap-json) AAP JSON 是项目级快照格式；后续应把 ProjectTemplate 也加进 envelope 末层（与 §A「项目模板 § AAP JSON 支持模板携带」同条条目），让"导出 → 跨实例 → 导入即得模板"工作流闭环。与公开 SDK epic 同窗口做。
   - **COCO importer image_size_hint 参数化**（**P3**）：当前 [`import_coco`](apps/api/app/services/predictions_import.py) 强制要求 `images[i].width/height` 非零，缺失时整条 entry 进 errors[]。触发条件：客户上传"裸 annotations"（无 images metadata，只有 file_name）。设计：UI Wizard 可选填"全局图像尺寸 hint"作 fallback，预填到 `image_size_hint` 参数。
   - **AAP JSON 单 prediction 多 shape**（**P3**）：当前每个 `predictions[i]` 对应**一条** Prediction 行（单 shape）；与 ML backend 内部协议（一个 prediction 行可携带 N 个 shape）不一致。触发条件：客户希望"一个外部模型一次推理出来的所有框作为同一 prediction 单元，便于整体采纳/驳回"。设计：把 envelope `predictions[i]` 加可选 `shapes[]` 数组，与现有 flat `geometry/class_name` 同源（二选一，flat 兼容旧 schema）。schema 已在 v0.10.17 升 minor `1.1`（带 `tool_unit_id` / `tool_bindings`）；多 shape 仍待客户驱动。
-  - **AAP JSON video_track 导入支持**（**P3**）：当前 `internal_geometry_to_ls_shape` 适配器仅覆盖 bbox / polygon / multi_polygon；video_bbox / video_track / skeleton 进 errors[]。触发条件：视频项目客户首次反馈"想把外部 tracker 结果灌进平台"。与 §C.5 R9 / R23 同窗口做。v0.10.17 schema_version 1.1 envelope 已带 `tool_unit_id`,新增 `video_track_bbox` / `video_track` tool_unit 时实现端接通即可。
+  - **AAP JSON video_track 导入支持**（**P3**）：当前 `internal_geometry_to_ls_shape` 适配器仅覆盖 bbox / polygon / multi_polygon；video_bbox / video_track / skeleton 进 errors[]。**已并入视频 epic Phase 4.2**（[`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md)），随 AAP 单信封模态感知 + 视频导出一并接通。
   - **`predictions_import` 审计 detail 专项**（**P3**）：当前 audit log `detail_json` 含 imported/skipped/error_count；缺"哪些 task 被命中 / 哪些 model_version / 文件大小 hash"等取证字段。触发条件：审计期反馈 detail 不足以定位"哪批外部模型结果先被导入又被撤回"。设计在 `app/services/audit.py` 加 `predictions_import_detail()` helper.
 - **变体热切换后续延伸**（v0.10.23 之后开放项，按需触发）：
   - **`/setup.supported_variants` 富元数据**（**P3**）：当前变体选项来源是 `/setup.params` 的 `sam_variant`/`dino_variant` enum（纯字符串）；原需求 §3 设想的 `supported_variants` 数组（携带每变体显存占用 / 推荐档 / labels）未做。触发条件：模型市场二期 AB 路由 UI 需要按变体展示「显存 7GB / 精度高」等元数据时再扩。
@@ -155,36 +156,14 @@
 
 ### C.3 标注体验（核心生产力杠杆）
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90%；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式）。
-- **关键帧插值（视频/序列）**：CVAT 同款；标注员只标 1 / 30 / 60 帧，中间线性插值。需配合 `Task.dimension` 字段。
 - **类别确认 hint**：刚画完一个框时，AI 后台跑一次单框分类，右上角弹「建议：标识牌（92%）」+ 一键采纳。
 - **Snap-to-edge（贴边吸附）**：v0.10.17 已落地 Magic Box（粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox）;剩 pixel-level Snap-to-edge（顶点拖动距已有形状边 < 阈值时吸附 / Canny/Sobel 边缘吸附)留 v0.11+。复用 `apps/web/src/pages/Workbench/stage/shared/geometry/polygon.ts:nearestEdge` 做几何吸附;Canny/Sobel 走 WebWorker 实测开销后再决定。
 - **会话级标注辅助**：① 框过小（< 0.005 × 0.005）已过滤，需提示「框太小未保存」；② 框越界自动 clamp 到 [0,1]；③ 重叠完全相同框（IoU > 0.95）拒绝并提示「疑似重复」。
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。
 
-### C.5 视频工作台前端剩余（原 `[archived]2026-05-12-video-workbench-rendering-optimization.md` 转录）
+### C.5 / C.6 视频工作台前端 + 后端剩余 → 已抽离
 
-> Wave 0-4 已收尾（V4-V6、R1-R10、R13、R17-R19、R5.2、R8 均落地）；以下是 Wave 5-7 剩余。
-
-- **R5.3 WebCodecs chunk decode**：依赖后端帧服务 chunk smart-copy（已 v0.9.38），按真实卡顿数据触发；不上 ffmpeg.wasm / Broadway.js。
-- **R9 Polygon / Polyline / Mask Track**：`video_track.geometry.kind` 扩 `bbox` → `polygon | polyline | mask`，旧 bbox track 缺省兼容；按周长 / 长度参数化插值；mask track 依赖 R5.2/R5.3 的 canvas / bitmap 能力；同步 `docs-site/dev/reference/` 与导出协议。
-- **R20 frameStep 跳帧标注**：项目级 `frameStep` 配置 → 时间轴 / 方向键按 step 导航；`Shift+←/→` 保留单帧微调；segment overlap 边界按 step 对齐。
-- **R16 Track Join (Re-ID)**：tracker 完成后补两段 track 之间的 Re-ID 跳连判定；与 V6 split-merge 共享 UI 模式。
-- **R23 Tracker Registry UI**：管理员侧 tracker adapter 注册 / 启停 / 显示当前 backend；与 v0.10.3 ML Backend 1:N 管理形态一致。
-- **R11 / R21 长视频协同与 overlap**：segment 切换 UI、单段单人 lock 只读提示、overlap 区 IAA / IDF1 报告；Presence 可选，不做 OT / CRDT。
-- **R22 视频专属导出**：MOT 16/17/20 CSV、KITTI Tracking、DAVIS mask 序列；outside / absent / occluded / prediction source 在各格式中的统一映射。YouTube VOS / ImageNet Video 等客户明确需要再做。
-- **R24 Track 级质量评估**：MOTA / IDF1 / HOTA worker；时间轴错误定位；与 R21 overlap 和长期 L15 标注质量 AI 审计打通。
-
-### C.6 视频后端帧服务剩余（原 `[archived]2026-05-12-video-backend-frame-service.md` 转录）
-
-> Wave 0-1 已收尾（B1-B7 第一版、B4 segment、B5 tracker job、tracker adapter MVP、SAM video 协议桥、chunk smart-copy）。以下是 Wave 2-6 剩余。
-
-- **P0 真实 SAM 2/3 video backend**：把 v0.9.36 的 `sam2_video` / `sam3_video` 协议桥接到真实模型服务（grounded-sam2 / sam3-backend 实现 `/predict context.type="video_tracker"`），输入 `task.file_path` + `from_frame/to_frame` + `direction` + `prompt` + `source_geometry`，输出逐帧 `{frame_index, geometry, confidence, outside}`；GPU profile 覆盖 30s/30fps、10min、长 segment 分窗；OOM / timeout / backend 5xx 在 `video_tracker_jobs.error_message` 可诊断。**不做**：不把 predictor 加进 `apps/api`（遵循 ADR-0012）。
-- **P1 Timetable Compact / Sparse**：长视频按 keyframe + fixed stride 存 sparse timetable（1h 30fps 压缩后 < 500KB），API 保持 `frame_index → pts_ms` 语义；缺口由服务端估算 / 插值；导出与 worker 共用同一 timetable helper。
-- **P1 Segment 导出聚合与 Overlap 底座**：`Annotation` 查询 / 导出按 `segment_id` 或 frame range 聚合；跨 segment 合并按 `frame_index` 排序，outside / prediction keyframe 不丢；overlap 区间元数据为前端 R21 / IAA / IDF1 预留。
-- **P1 FrameStep / Chapter 后端原语**：项目或任务级 `frameStep` 配置，导出时明确 sampled / interpolated / held frame 来源；`VideoChapter` 元数据扩展；segment 边界按 step 对齐。
-- **P1 Chunk warmup**：在 manifest / timeline 预取命中热点 range 时提前投递 media 任务（chunk smart-copy 已落，仅缺 warmup 触发器）。
-- **P2 视频专属导出**：MOT 16/17/20 CSV / KITTI Tracking / DAVIS mask 序列后端实现（Video Tracks JSON 作内部稳定格式）。
-- **P2 Track 级质量评估 worker**：MOTA / IDF1 / HOTA 评估 worker，按 track / segment / chapter 输出错误定位；与长期 L15 标注质量 AI 审计打通。
+> 原 §C.5（前端：R5.3 / R9 / R20 / R16 / R23 / R11+R21 / R22 / R24）与 §C.6（后端帧服务：真实 SAM video backend / timetable compact / segment 导出 / frameStep+Chapter / chunk warmup / MOT 导出 / 质量评估 worker）已全部并入独立 epic：[`ROADMAP/2026-05-21-video-workbench-roadmap.md`](./ROADMAP/2026-05-21-video-workbench-roadmap.md)，按 Phase 1-6 顺序排布。
 
 ### C.7 图片工作台能力扩展剩余（原 `[archived]2026-05-12-image-workbench-optimization.md` 转录）
 
@@ -222,8 +201,7 @@
 
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
-| **P0/P1** | 视频工作台前端剩余（R9 / R20 / R16 / R23 / R11+R21 / R22 / R24 / R5.3） | 长视频与协同 / 专属导出 / 质量评估；详见 §C.5 | — |
-| **P1** | 视频后端帧服务剩余（真实 SAM video backend / timetable compact / segment 导出 / frameStep+Chapter 原语 / chunk warmup / MOT 导出 / 质量评估 worker） | 前端 R5.3 / R10 / R11 / R20 / R21 / R23 的服务端依赖；详见 §C.6 | — |
+| **P0/P1** | 视频工作台总 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出 / 长视频协同 / 质量评估） | 已抽离为独立 epic，前后端 Phase 1-6 详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P2** | 图片工作台能力扩展剩余（I1 / I5 / I10 / I14 / I19 / I20.4 / I21） | 大图 tile / 双图比对 / Skeleton / Autoborder / GT-IAA / 快捷键自定义；详见 §C.7 (I4/I12/I18 已 v0.10.19 落地, 仅余 UI 细节: §C.7 各条目内列出) | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | `/ai-pre` 精细单批次预标 modal（v0.9.13 后回归） | v0.9.12 IA 重构 + v0.9.13 chips/threshold UI 已搬到 ProjectDetailPanel；4 个 stepper 子组件 (`PreannotateStepper` / `ProjectBatchPicker` / `RunPanel` / `usePreannotateDraft`) 仍 orphan，客户场景需要单 batch 精细调（草稿恢复 / 阶段进度可视化）时唤起 modal 复用旧组件；如反馈不需要再删 orphan 文件 | — |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
