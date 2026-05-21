@@ -329,6 +329,9 @@ import type {
   PredictionOut as GeneratedPredictionOut,
 } from "@/api/generated/types.gen";
 
+// v0.10.29 · 视频项目级采样配置 (软网格导航). 形状由后端 schema 派生.
+export type { VideoSamplingConfig } from "@/api/generated/types.gen";
+
 export type PredictionShape = Omit<GeneratedPredictionShape, "geometry"> & {
   geometry: Geometry;
   shape_index?: number;

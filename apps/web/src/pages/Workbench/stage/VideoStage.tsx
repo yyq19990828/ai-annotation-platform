@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { FloatingDock } from "../shell/FloatingDock";
-import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse } from "@/types";
+import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoSamplingConfig } from "@/types";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
@@ -15,6 +15,7 @@ import { VideoSelectionActions } from "./VideoSelectionActions";
 import { VideoStageSurface } from "./VideoStageSurface";
 import { applyResize } from "./ResizeHandles";
 import { buildFrameTimebase, frameToTime } from "./frameTimebase";
+import { deriveSamplingStep, gridNext, gridPrev, microStep, snapToGrid } from "./videoSamplingGrid";
 import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import { useVideoFramePreview } from "./useVideoFramePreview";
@@ -101,6 +102,8 @@ interface VideoStageProps {
   videoTool?: VideoTool;
   pendingDrawing?: PendingDrawing;
   chapters?: VideoTimelineChapter[];
+  /** v0.10.29 · 项目级采样配置 (软网格导航)。缺省 / mode=none → step=1 退化为现状。 */
+  videoSampling?: VideoSamplingConfig | null;
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange?: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: VideoStageGeom) => void;
@@ -123,6 +126,10 @@ export interface VideoStageControls {
   jogPlayback: (dir: -1 | 1) => void;
   pausePlayback: () => void;
   seekByFrames: (delta: number, options?: { recordHistory?: boolean }) => void;
+  /** v0.10.29 · 软网格跳：采样开启时 ←/→ 跳到严格大/小的最近网格点。 */
+  seekGrid: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
+  /** v0.10.29 · 逃生口：±1 源帧微调 (off-grid)。 */
+  microStep: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
   seekToKeyframe: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
   seekToFrame: (frameIndex: number, options?: { recordHistory?: boolean }) => void;
   toggleBookmark: () => void;
@@ -146,6 +153,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   videoTool = "box",
   pendingDrawing = null,
   chapters = [],
+  videoSampling = null,
   onSelect,
   onFrameIndexChange,
   onCreate,
@@ -202,6 +210,10 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const fps = timebase.fps;
   const frameCount = timebase.frameCount;
   const maxFrame = Math.max(0, frameCount - 1);
+  // v0.10.29 · 采样网格步长 (源帧空间)。step=1 → 退化为现状 (向后兼容)。
+  const samplingStep = useMemo(() => deriveSamplingStep(videoSampling, fps), [videoSampling, fps]);
+  const samplingStepRef = useRef(samplingStep);
+  samplingStepRef.current = samplingStep;
   const videoAspectRatio = manifest?.metadata.width && manifest.metadata.height
     ? manifest.metadata.width / manifest.metadata.height
     : 16 / 9;
@@ -400,7 +412,16 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     }
     setIsPlaying(false);
     setJogPlayback(PAUSED_JOG_PLAYBACK);
-  }, []);
+    // v0.10.29 · 暂停吸附：采样开启 (step>1) 时把当前帧吸附到最近网格点并 seek 过去；
+    //            step=1 时网格点 = 所有源帧，吸附为 no-op，行为不变 (向后兼容)。
+    const step = samplingStepRef.current;
+    if (step > 1) {
+      const snapped = snapToGrid(frameIndexRef.current, step, maxFrame);
+      if (snapped !== frameIndexRef.current) {
+        void seekFrameAsyncRef.current(snapped, { recordHistory: false });
+      }
+    }
+  }, [maxFrame]);
 
   const seekFrameAsync = useCallback(
     async (nextFrame: number, options?: { recordHistory?: boolean }) => {
@@ -491,6 +512,32 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       void seekFrameAsync(frameIndexRef.current + delta, { recordHistory: options?.recordHistory ?? true });
     },
     [flashPlaybackAction, pausePlayback, seekFrameAsync, showPlaybackOverlay],
+  );
+
+  // v0.10.29 · 软网格跳：采样开启时 ←/→ 跳到严格大/小的最近网格点 (自动回正 off-grid)。
+  const seekGrid = useCallback(
+    (dir: -1 | 1, options?: { recordHistory?: boolean }) => {
+      const step = samplingStepRef.current;
+      const cur = frameIndexRef.current;
+      const target = dir < 0 ? gridPrev(cur, step, maxFrame) : gridNext(cur, step, maxFrame);
+      showPlaybackOverlay();
+      flashPlaybackAction(dir < 0 ? "prev" : "next");
+      pausePlayback();
+      void seekFrameAsync(target, { recordHistory: options?.recordHistory ?? true });
+    },
+    [flashPlaybackAction, maxFrame, pausePlayback, seekFrameAsync, showPlaybackOverlay],
+  );
+
+  // v0.10.29 · 逃生口：±1 源帧微调 (落回源帧空间，可打 off-grid 关键帧)。
+  const microStepBy = useCallback(
+    (dir: -1 | 1, options?: { recordHistory?: boolean }) => {
+      const target = microStep(frameIndexRef.current, dir, maxFrame);
+      showPlaybackOverlay();
+      flashPlaybackAction(dir < 0 ? "prev" : "next");
+      pausePlayback();
+      void seekFrameAsync(target, { recordHistory: options?.recordHistory ?? true });
+    },
+    [flashPlaybackAction, maxFrame, pausePlayback, seekFrameAsync, showPlaybackOverlay],
   );
 
   const seekToKeyframe = useCallback(
@@ -616,13 +663,15 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       jogPlayback: jogPlaybackBy,
       pausePlayback,
       seekByFrames,
+      seekGrid,
+      microStep: microStepBy,
       seekToKeyframe,
       seekToFrame,
       toggleBookmark,
       jumpHistory: jumpHistoryBy,
       clearLoopRegion,
     }),
-    [clearLoopRegion, jogPlaybackBy, jumpHistoryBy, pausePlayback, seekByFrames, seekToFrame, seekToKeyframe, toggleBookmark, togglePlayback],
+    [clearLoopRegion, jogPlaybackBy, jumpHistoryBy, microStepBy, pausePlayback, seekByFrames, seekGrid, seekToFrame, seekToKeyframe, toggleBookmark, togglePlayback],
   );
 
   useEffect(() => {
@@ -1138,6 +1187,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
           <VideoPlaybackOverlay
             frameIndex={frameIndex}
             maxFrame={maxFrame}
+            samplingStep={samplingStep}
             timebase={timebase}
             isPlaying={isPlaybackActive}
             playbackRateLabel={isJogPlaying ? `${jogPlayback.direction < 0 ? "-" : ""}${jogPlayback.rate}x` : undefined}

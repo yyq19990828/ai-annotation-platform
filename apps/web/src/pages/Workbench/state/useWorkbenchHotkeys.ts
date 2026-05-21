@@ -108,6 +108,8 @@ export interface UseWorkbenchHotkeysArgs {
   disabled?: boolean;
   ignoredKeys?: Set<string>;
   videoMode?: boolean;
+  /** v0.10.29 · 视频采样网格生效 (step>1) 时改写 ←/→ 键位；step=1 维持现状。 */
+  samplingActive?: boolean;
   videoControlsRef?: React.RefObject<VideoStageControls | null>;
   /** v0.10.2 · 由 useMLCapabilities 透传; S 键循环 AI 工具时用来跳过置灰. */
   isPromptSupported?: (type: string) => boolean;
@@ -144,7 +146,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     handleSubmitTask, handleAcceptPrediction, handleRejectPrediction, handleUpdateAttributes, handleVideoSetSelectedClass,
     aiBoxes, setShowHotkeys, clipboard, pushToast, stageGeom,
     polygonDraftPoints, setPolygonDraftPoints, submitPolygon, submitPolyline,
-    updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, videoControlsRef,
+    updateMutation, taskId, disabled = false, ignoredKeys, videoMode = false, samplingActive = false, videoControlsRef,
     isPromptSupported,
     maskEditor, commitMaskAsPolygon, cancelMaskEdit,
     handleAnnotationGroup, handleAnnotationUngroup,
@@ -303,6 +305,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging,
         attributeHotkey,
         videoMode,
+        samplingActive,
         hasSelectedVideoTrack: videoMode && !!s.selectedId && annotationsRef.current.some(
           (ann) => ann.id === s.selectedId && ann.geometry.type === "video_track",
         ),
@@ -331,6 +334,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         case "videoSeek":
           e.preventDefault();
           videoControlsRef?.current?.seekByFrames(action.delta);
+          return;
+        case "videoSeekGrid":
+          e.preventDefault();
+          videoControlsRef?.current?.seekGrid(action.dir);
+          return;
+        case "videoMicroStep":
+          e.preventDefault();
+          videoControlsRef?.current?.microStep(action.dir);
           return;
         case "videoSeekKeyframe":
           e.preventDefault();
@@ -604,6 +615,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     disabled,
     ignoredKeys,
     videoMode,
+    samplingActive,
     videoControlsRef,
     s, history, classes, currentProject, annotationsRef, batchChanging, setBatchChanging, showHotkeys,
     navigateTask, smartNext, setFitTick,

@@ -53,6 +53,7 @@ import { useAnnotateMode } from "../modes/useAnnotateMode";
 import { useReviewMode } from "../modes/useReviewMode";
 import { setActiveClassesConfig, UNKNOWN_CLASS } from "../stage/colors";
 import type { VideoStageControls } from "../stage/VideoStage";
+import { deriveSamplingStep } from "../stage/videoSamplingGrid";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
@@ -304,6 +305,12 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   const videoFrameCount = videoManifest.data?.metadata.frame_count ?? 0;
   const videoFps = videoManifest.data?.metadata.fps ?? null;
+  // v0.10.29 · 项目级采样配置 → 软网格导航。step>1 时开启网格键位 (向后兼容: 缺省 step=1 不变)。
+  const videoSampling = currentProject?.video_sampling ?? null;
+  const samplingActive = useMemo(
+    () => isVideoTask && deriveSamplingStep(videoSampling, videoFps ?? 0) > 1,
+    [isVideoTask, videoSampling, videoFps],
+  );
   const videoChapterTimebase = useMemo(
     () =>
       videoFps && videoFrameCount > 0
@@ -1020,6 +1027,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
     videoMode: isVideoTask,
+    samplingActive,
     videoControlsRef,
     isPromptSupported: mlCapabilities.isPromptSupported,
     maskEditor,
@@ -1142,6 +1150,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         videoManifest: videoManifest.data, videoManifestLoading: videoManifest.isLoading,
         videoFrameTimetable: videoFrameTimetable.data,
         videoChapters: isVideoTask ? videoTimelineChapters : undefined,
+        videoSampling,
         videoManifestError: videoManifest.error, videoTool: s.videoTool,
         videoFrameIndex: s.videoFrameIndex,
         videoReviewDisplayMode: mode === "review" ? modeState.diffMode : undefined,

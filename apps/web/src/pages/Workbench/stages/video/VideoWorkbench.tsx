@@ -4,6 +4,7 @@ import type {
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
   VideoBboxGeometry,
+  VideoSamplingConfig,
   VideoTrackGeometry,
 } from "@/types";
 import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
@@ -31,6 +32,7 @@ export interface VideoWorkbenchProps {
   videoTool: VideoTool;
   pendingDrawing: PendingDrawing;
   chapters?: VideoTimelineChapter[];
+  videoSampling?: VideoSamplingConfig | null;
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: Geom) => void;
@@ -65,6 +67,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     videoTool,
     pendingDrawing,
     chapters,
+    videoSampling,
     onSelect,
     onFrameIndexChange,
     onCreate,
@@ -94,6 +97,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         videoTool={videoTool}
         pendingDrawing={pendingDrawing}
         chapters={chapters}
+        videoSampling={videoSampling}
         onSelect={onSelect}
         onFrameIndexChange={onFrameIndexChange}
         onCreate={onCreate}

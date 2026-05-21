@@ -26,6 +26,8 @@ export interface VideoTimelineChapter {
 interface VideoPlaybackOverlayProps {
   frameIndex: number;
   maxFrame: number;
+  /** v0.10.29 · 采样网格步长 (源帧空间)。>1 时在时间轴渲染网格刻度；1 时不画。 */
+  samplingStep?: number;
   timebase: FrameTimebase;
   isPlaying: boolean;
   playbackRateLabel?: string;
@@ -90,6 +92,7 @@ function TimelineDiv({ vars, ...props }: HTMLAttributes<HTMLDivElement> & { vars
 export function VideoPlaybackOverlay({
   frameIndex,
   maxFrame,
+  samplingStep = 1,
   timebase,
   isPlaying,
   playbackRateLabel,
@@ -126,6 +129,19 @@ export function VideoPlaybackOverlay({
     () => Math.max(1, ...globalTimelineDensity.map((bin) => bin.density)),
     [globalTimelineDensity],
   );
+  // v0.10.29 · 采样网格刻度：step>1 时在时间轴渲染网格帧 tick。
+  // 网格点过密时 (>200) 按比例抽稀，避免长视频生成海量 DOM 节点。
+  const gridTicks = useMemo(() => {
+    if (samplingStep <= 1 || maxFrame <= 0) return [];
+    const total = Math.floor(maxFrame / samplingStep) + 1;
+    const stride = total > 200 ? Math.ceil(total / 200) : 1;
+    const ticks: number[] = [];
+    for (let i = 0; i < total; i += stride) {
+      ticks.push(Math.min(maxFrame, i * samplingStep));
+    }
+    return ticks;
+  }, [maxFrame, samplingStep]);
+  const currentFrameOffGrid = samplingStep > 1 && frameIndex % samplingStep !== 0;
   const frameLeft = (frame: number) => `${maxFrame > 0 ? (frame / maxFrame) * 100 : 0}%`;
   const frameFromPointer = (clientX: number, rect: DOMRect) => {
     const pointerX = Number.isFinite(clientX) ? clientX : rect.left;
@@ -315,6 +331,25 @@ export function VideoPlaybackOverlay({
           onPointerUp={(e) => focusTimelineShell(e.currentTarget)}
         />
         <div className={styles.timelineLayer}>
+          {gridTicks.length > 0 && (
+            <div data-testid="video-timeline-grid" className={styles.gridTrack}>
+              {gridTicks.map((frame) => (
+                <TimelineSpan
+                  key={`grid-${frame}`}
+                  data-testid="video-timeline-grid-tick"
+                  className={styles.gridTick}
+                  vars={{ "--timeline-left": frameLeft(frame) }}
+                />
+              ))}
+            </div>
+          )}
+          {currentFrameOffGrid && (
+            <TimelineSpan
+              data-testid="video-timeline-offgrid-marker"
+              className={styles.offGridMarker}
+              vars={{ "--timeline-left": frameLeft(frameIndex) }}
+            />
+          )}
           {(loopRegion || loopDraft) && (
             <TimelineSpan
               data-testid={loopDraft ? "video-loop-region-preview" : "video-loop-region"}

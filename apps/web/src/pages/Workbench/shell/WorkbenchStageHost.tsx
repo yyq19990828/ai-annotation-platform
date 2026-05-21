@@ -6,6 +6,7 @@ import type {
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
   VideoBboxGeometry,
+  VideoSamplingConfig,
   VideoTrackGeometry,
 } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
@@ -55,6 +56,8 @@ interface WorkbenchStageHostProps {
   videoManifestLoading?: boolean;
   videoManifestError?: unknown;
   videoChapters?: VideoTimelineChapter[];
+  /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
+  videoSampling?: VideoSamplingConfig | null;
   videoTool: VideoTool;
   videoFrameIndex: number;
   videoReviewDisplayMode?: DiffMode;
@@ -170,6 +173,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     videoManifestLoading,
     videoManifestError,
     videoChapters,
+    videoSampling,
     videoTool,
     videoFrameIndex,
     videoReviewDisplayMode,
@@ -265,6 +269,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             videoTool={videoTool}
             pendingDrawing={pendingDrawing}
             chapters={videoChapters}
+            videoSampling={videoSampling}
             onSelect={onSelectBox}
             onFrameIndexChange={onVideoFrameIndexChange}
             onCreate={onVideoCreate}

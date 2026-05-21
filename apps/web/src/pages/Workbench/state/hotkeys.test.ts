@@ -228,6 +228,44 @@ describe("dispatchKey · video mode", () => {
   });
 });
 
+describe("dispatchKey · video sampling grid (v0.10.29)", () => {
+  const gridCtx: Partial<DispatchCtx> = { videoMode: true, samplingActive: true };
+
+  it("ArrowLeft / ArrowRight → videoSeekGrid (grid jump)", () => {
+    expect(dispatch({ key: "ArrowRight" }, gridCtx)).toEqual({ type: "videoSeekGrid", dir: 1 });
+    expect(dispatch({ key: "ArrowLeft" }, gridCtx)).toEqual({ type: "videoSeekGrid", dir: -1 });
+  });
+
+  it("Shift + ArrowLeft / ArrowRight → videoMicroStep ±1 (escape hatch)", () => {
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, gridCtx)).toEqual({ type: "videoMicroStep", dir: 1 });
+    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, gridCtx)).toEqual({ type: "videoMicroStep", dir: -1 });
+  });
+
+  it(", / . → videoMicroStep ±1", () => {
+    expect(dispatch({ key: "." }, gridCtx)).toEqual({ type: "videoMicroStep", dir: 1 });
+    expect(dispatch({ key: "," }, gridCtx)).toEqual({ type: "videoMicroStep", dir: -1 });
+  });
+
+  it("Alt + ArrowLeft / ArrowRight → videoSeekKeyframe when a track is selected", () => {
+    const altCtx: Partial<DispatchCtx> = { videoMode: true, samplingActive: true, hasSelectedVideoTrack: true };
+    expect(dispatch({ key: "ArrowRight", altKey: true }, altCtx)).toEqual({ type: "videoSeekKeyframe", dir: 1 });
+    expect(dispatch({ key: "ArrowLeft", altKey: true }, altCtx)).toEqual({ type: "videoSeekKeyframe", dir: -1 });
+  });
+
+  it("Alt + Arrow falls back to grid jump when no track is selected", () => {
+    expect(dispatch({ key: "ArrowRight", altKey: true }, gridCtx)).toEqual({ type: "videoSeekGrid", dir: 1 });
+    expect(dispatch({ key: "ArrowLeft", altKey: true }, gridCtx)).toEqual({ type: "videoSeekGrid", dir: -1 });
+  });
+
+  it("sampling-off (step=1) keeps legacy keymap unchanged", () => {
+    const offCtx: Partial<DispatchCtx> = { videoMode: true, samplingActive: false };
+    expect(dispatch({ key: "ArrowRight" }, offCtx)).toEqual({ type: "videoSeek", delta: 1 });
+    expect(dispatch({ key: "ArrowLeft" }, offCtx)).toEqual({ type: "videoSeek", delta: -1 });
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, offCtx)).toEqual({ type: "videoSeek", delta: 10 });
+    expect(dispatch({ key: "." }, offCtx)).toEqual({ type: "videoSeek", delta: 1 });
+  });
+});
+
 describe("dispatchKey · 属性 hotkey 绑定 (D.1)", () => {
   it("无选中按 1 → setClassByDigit (保留原行为)", () => {
     expect(dispatch({ key: "1" }, { hasSelection: false }))

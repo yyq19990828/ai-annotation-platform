@@ -68,9 +68,10 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["J / K / L"], desc: "视频反向 / 暂停 / 正向多速率播放", group: "video", actionType: "videoJogPlayback" },
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
-  { keys: ["← / →"], desc: "视频逐帧后退 / 前进", group: "video", actionType: "videoSeek" },
-  { keys: [", / ."], desc: "视频上一帧 / 下一帧（备用）", group: "video", actionType: "videoSeek" },
-  { keys: ["Shift", "← / →"], desc: "选中轨迹跳上/下关键帧；否则后退 / 前进 10 帧", group: "video", actionType: "videoSeekKeyframe" },
+  { keys: ["← / →"], desc: "视频逐帧后退 / 前进（采样开启时按网格跳）", group: "video", actionType: "videoSeek" },
+  { keys: [", / ."], desc: "视频上一帧 / 下一帧（采样开启时为 ±1 微调）", group: "video", actionType: "videoSeek" },
+  { keys: ["Shift", "← / →"], desc: "采样开启：±1 源帧微调（逃生口）；否则选中轨迹跳关键帧 / ±10 帧", group: "video", actionType: "videoSeekKeyframe" },
+  { keys: ["Alt", "← / →"], desc: "采样开启：选中轨迹跳上/下关键帧", group: "video", actionType: "videoSeekKeyframe" },
   { keys: ["Ctrl", "M"], desc: "视频当前帧添加 / 移除书签", group: "video", actionType: "videoToggleBookmark" },
   { keys: ["Ctrl", "[ / ]"], desc: "视频跳转历史后退 / 前进", group: "video", actionType: "videoJumpHistory" },
   { keys: ["Alt", "L"], desc: "清除视频播放范围", group: "video", actionType: "videoClearLoopRegion" },
@@ -147,6 +148,10 @@ export type HotkeyAction =
   | { type: "videoJogPlayback"; dir: -1 | 1 }
   | { type: "videoPausePlayback" }
   | { type: "videoSeek"; delta: number }
+  // v0.10.29 · 软网格导航：采样开启 (step>1) 时 ←/→ 走网格跳。
+  | { type: "videoSeekGrid"; dir: -1 | 1 }
+  // v0.10.29 · 逃生口：±1 源帧微调 (采样开启时 Shift+←/→ 与 ,/. )。
+  | { type: "videoMicroStep"; dir: -1 | 1 }
   | { type: "videoSeekKeyframe"; dir: -1 | 1 }
   | { type: "videoToggleBookmark" }
   | { type: "videoJumpHistory"; dir: -1 | 1 }
@@ -185,6 +190,9 @@ export interface DispatchCtx {
   videoMode?: boolean;
   /** selected annotation is a video_track; used for contextual video timeline shortcuts. */
   hasSelectedVideoTrack?: boolean;
+  /** v0.10.29 · 视频采样网格生效 (step>1)：←/→ 改为网格跳，Shift/Alt 重映射。
+   *  step=1 (不采样) 时为 false，键位维持现状不变 (向后兼容)。 */
+  samplingActive?: boolean;
 }
 
 // v0.10.5 M4-β · L/H/O 用于 shape 状态位切换（仅选中态消费；保留以防 setClassByLetter 抢键）。
@@ -225,6 +233,11 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
       if (e.key === "1") return { type: "setVideoTool", tool: "box" };
       if (e.key === "2") return { type: "setVideoTool", tool: "track" };
       if (e.key === "l" || e.key === "L") return { type: "videoClearLoopRegion" };
+      // v0.10.29 · 采样开启时 Alt+←/→ 承接「选中轨迹跳关键帧」(原 Shift 行为迁移至此)。
+      if (ctx.samplingActive && ctx.hasSelectedVideoTrack) {
+        if (e.key === "ArrowRight") return { type: "videoSeekKeyframe", dir: 1 };
+        if (e.key === "ArrowLeft") return { type: "videoSeekKeyframe", dir: -1 };
+      }
     }
     if (e.key === " ") return { type: "videoTogglePlayback" };
     if (e.key === "j" || e.key === "J") return { type: "videoJogPlayback", dir: -1 };
@@ -232,16 +245,31 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "l" || e.key === "L") return { type: "videoJogPlayback", dir: 1 };
     if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };
     if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };
-    if (e.key === "ArrowRight") {
-      if (e.shiftKey && ctx.hasSelectedVideoTrack) return { type: "videoSeekKeyframe", dir: 1 };
-      return { type: "videoSeek", delta: e.shiftKey ? 10 : 1 };
+    // v0.10.29 · 采样开启 (step>1)：←/→ 网格跳；Shift+←/→ 与 ,/. 走 ±1 源帧微调 (逃生口)。
+    //            采样关闭 (step=1)：维持现状键位 (向后兼容)。
+    if (ctx.samplingActive) {
+      if (e.key === "ArrowRight") {
+        if (e.shiftKey) return { type: "videoMicroStep", dir: 1 };
+        return { type: "videoSeekGrid", dir: 1 };
+      }
+      if (e.key === "ArrowLeft") {
+        if (e.shiftKey) return { type: "videoMicroStep", dir: -1 };
+        return { type: "videoSeekGrid", dir: -1 };
+      }
+      if (e.key === ".") return { type: "videoMicroStep", dir: 1 };
+      if (e.key === ",") return { type: "videoMicroStep", dir: -1 };
+    } else {
+      if (e.key === "ArrowRight") {
+        if (e.shiftKey && ctx.hasSelectedVideoTrack) return { type: "videoSeekKeyframe", dir: 1 };
+        return { type: "videoSeek", delta: e.shiftKey ? 10 : 1 };
+      }
+      if (e.key === "ArrowLeft") {
+        if (e.shiftKey && ctx.hasSelectedVideoTrack) return { type: "videoSeekKeyframe", dir: -1 };
+        return { type: "videoSeek", delta: e.shiftKey ? -10 : -1 };
+      }
+      if (e.key === ".") return { type: "videoSeek", delta: 1 };
+      if (e.key === ",") return { type: "videoSeek", delta: -1 };
     }
-    if (e.key === "ArrowLeft") {
-      if (e.shiftKey && ctx.hasSelectedVideoTrack) return { type: "videoSeekKeyframe", dir: -1 };
-      return { type: "videoSeek", delta: e.shiftKey ? -10 : -1 };
-    }
-    if (e.key === ".") return { type: "videoSeek", delta: 1 };
-    if (e.key === ",") return { type: "videoSeek", delta: -1 };
     if (e.key === "Tab") return { type: "videoCycleTrack", dir: e.shiftKey ? -1 : 1 };
     if (e.key === "Escape") return { type: "cancel" };
     if (e.key === "Delete" || e.key === "Backspace") return { type: "videoDeleteSelected" };
