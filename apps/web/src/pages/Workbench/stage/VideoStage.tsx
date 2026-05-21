@@ -18,6 +18,7 @@ import { buildFrameTimebase, frameToTime } from "./frameTimebase";
 import { deriveSamplingStep, gridNext, gridPrev, microStep, snapToGrid } from "./videoSamplingGrid";
 import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
+import { useVideoChunkDecoder } from "./useVideoChunkDecoder";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import {
   emptyVideoJumpHistory,
@@ -322,7 +323,16 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   } = useVideoBitmapCache({
     taskId: manifest?.task_id,
   });
-  const showCachedBitmap = Boolean(activeBitmap && !isPlaybackActive);
+  // v0.10.29 · Wave3-H · 实验性 WebCodecs 精确帧解码 (默认关闭, 由 ?webcodecs=1 /
+  // localStorage video.experimental.webcodecs 开启)。关闭 / 不支持时 active=false,
+  // decoderBitmap 恒为 null, 本路径零行为变化, 继续走 <video> 位图缓存。
+  // demux (chunk 字节 → EncodedVideoChunk) 尚未接入, 见 useVideoChunkDecoder.ts 注释边界。
+  const { activeBitmap: decoderBitmap, diagnostics: chunkDecoderDiagnostics } = useVideoChunkDecoder({
+    taskId: manifest?.task_id,
+  });
+  // 精确帧优先用解码器结果, 否则回退 <video> 缓存位图。
+  const displayBitmap = (!isPlaybackActive && decoderBitmap) || activeBitmap;
+  const showCachedBitmap = Boolean(displayBitmap && !isPlaybackActive);
 
   const pendingDraft = useMemo(() => {
     if (
@@ -871,6 +881,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       frameClock: frameClock.diagnostics,
       framePreview: framePreviewDiagnostics,
       bitmapCache: bitmapCacheDiagnostics,
+      chunkDecoder: chunkDecoderDiagnostics,
       viewport: {
         scale: vp.scale,
         tx: vp.tx,
@@ -899,6 +910,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     frameIndex,
     framePreviewDiagnostics,
     bitmapCacheDiagnostics,
+    chunkDecoderDiagnostics,
     isJogPlaying,
     isPlaying,
     jogPlayback.direction,
@@ -1136,7 +1148,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             />
             <VideoFrameOverlay
               overlayRef={overlayRef}
-              cachedBitmap={activeBitmap}
+              cachedBitmap={displayBitmap}
               showCachedBitmap={showCachedBitmap}
               entries={currentFrameEntries}
               trackPreviews={trackPreviews}
