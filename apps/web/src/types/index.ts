@@ -179,6 +179,9 @@ export type VideoTrackKeyframe = {
   bbox: VideoTrackBbox;
   source: "manual" | "interpolated" | "prediction";
   occluded?: boolean;
+  // v0.10.30 · 2.3 逐帧属性覆盖: 仅承载 schema 中 mutable=true 的键; 为空表示该帧用
+  // track 默认值 (annotation.attributes)。
+  attributes?: Record<string, unknown> | null;
 };
 export type VideoTrackOutsideRange = {
   from: number;

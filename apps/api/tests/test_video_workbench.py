@@ -1841,6 +1841,10 @@ async def test_video_track_composition_join_interpolate_no_gap_outside(
     user, token = super_admin
     project, _, _ = await _create_video_export_fixture(db_session, user)
     task, first = await _video_fixture_task_and_track(db_session, project)
+    # fixture 的 car track 自带 {4,4} outside (frame4 消失); join 测试聚焦 gap 行为,
+    # 先清空使 [0,2,4] 全可见, 与 "gap [5..5]" 断言对齐。
+    first.geometry = {**first.geometry, "outside": []}
+    await db_session.flush()
     tail = await _add_car_tail_track(db_session, task, project, user)
 
     resp = await httpx_client_bound.post(
@@ -1874,6 +1878,8 @@ async def test_video_track_composition_join_outside_marks_gap(
     user, token = super_admin
     project, _, _ = await _create_video_export_fixture(db_session, user)
     task, first = await _video_fixture_task_and_track(db_session, project)
+    first.geometry = {**first.geometry, "outside": []}
+    await db_session.flush()
     tail = await _add_car_tail_track(db_session, task, project, user)
 
     resp = await httpx_client_bound.post(
@@ -1904,6 +1910,8 @@ async def test_video_track_composition_join_default_gap_mode_is_interpolate(
     user, token = super_admin
     project, _, _ = await _create_video_export_fixture(db_session, user)
     task, first = await _video_fixture_task_and_track(db_session, project)
+    first.geometry = {**first.geometry, "outside": []}
+    await db_session.flush()
     tail = await _add_car_tail_track(db_session, task, project, user)
 
     resp = await httpx_client_bound.post(
