@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { VideoStage, type VideoStageControls } from "./VideoStage";
 import { VideoTrackSidebar } from "./VideoTrackSidebar";
 import { videoNavigationStorageKey } from "./videoNavigationState";
-import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
+import type { AnnotationResponse, TaskVideoManifestResponse, VideoTrackGeometry } from "@/types";
 import bitmapStyles from "./VideoBitmapLayer.module.css";
 import interactionStyles from "./VideoInteractionLayer.module.css";
 import playbackOverlayStyles from "./VideoPlaybackOverlay.module.css";
@@ -226,6 +226,45 @@ describe("VideoStage", () => {
     });
     expect(pauseMock).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("3"));
+  });
+
+  it("keeps overlay prev/next controls on the sampling grid after an off-grid timeline seek", async () => {
+    const sampledManifest: TaskVideoManifestResponse = {
+      ...manifest,
+      metadata: {
+        ...manifest.metadata,
+        duration_ms: 2100,
+        frame_count: 21,
+      },
+    };
+    const { getByLabelText, getByTestId, getByTitle } = render(
+      <VideoStage
+        manifest={sampledManifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        videoSampling={{ mode: "step", frame_step: 5 }}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const range = getByLabelText("视频帧时间轴");
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+
+    fireEvent(shell, pointer("pointerdown", 350, 20));
+    await waitFor(() => expect(range).toHaveValue("7"));
+
+    fireEvent.click(getByTitle("下一帧"));
+    await waitFor(() => expect(range).toHaveValue("10"));
+
+    fireEvent.click(getByTitle("下一帧"));
+    await waitFor(() => expect(range).toHaveValue("15"));
+
+    fireEvent.click(getByTitle("上一帧"));
+    await waitFor(() => expect(range).toHaveValue("10"));
   });
 
   it("supports J/K/L style jog playback through ref controls", async () => {
@@ -1593,7 +1632,7 @@ describe("VideoStage", () => {
       },
     ] as AnnotationResponse[];
 
-    const { getByText } = render(
+    const { getByRole } = render(
       <VideoTrackSidebar
         annotations={annotations}
         selectedId="t1"
@@ -1608,9 +1647,76 @@ describe("VideoStage", () => {
       />,
     );
 
-    fireEvent.click(getByText("新建轨迹"));
+    fireEvent.click(getByRole("button", { name: "新建轨迹" }));
 
     expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it("toggles current frame outside and occluded marks back to normal", () => {
+    const baseTrack = {
+      id: "t1",
+      class_name: "car",
+      geometry: {
+        type: "video_track",
+        track_id: "trk_car",
+        keyframes: [
+          { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+        ],
+      },
+    } as AnnotationResponse;
+    const renderSidebar = (annotation: AnnotationResponse, buttonName: string) => {
+      const onUpdate = vi.fn();
+      const view = render(
+        <VideoTrackSidebar
+          annotations={[annotation]}
+          selectedId="t1"
+          frameIndex={0}
+          readOnly={false}
+          hiddenTrackIds={new Set()}
+          lockedTrackIds={new Set()}
+          onSelect={() => {}}
+          onUpdate={onUpdate}
+          onToggleHiddenTrack={() => {}}
+          onToggleLockedTrack={() => {}}
+        />,
+      );
+      fireEvent.click(view.getByRole("button", { name: buttonName }));
+      view.unmount();
+      return onUpdate.mock.calls[0]?.[1] as VideoTrackGeometry;
+    };
+
+    const restoredOutside = renderSidebar({
+      ...baseTrack,
+      geometry: {
+        ...baseTrack.geometry,
+        outside: [{ from: 0, to: 0, source: "manual" }],
+      },
+    } as AnnotationResponse, "标记消失");
+    expect(restoredOutside.outside).toEqual([]);
+    expect(restoredOutside.keyframes.find((kf) => kf.frame_index === 0)?.occluded).toBe(false);
+
+    const restoredOccluded = renderSidebar({
+      ...baseTrack,
+      geometry: {
+        ...baseTrack.geometry,
+        keyframes: [
+          { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", occluded: true },
+        ],
+      },
+    } as AnnotationResponse, "标记遮挡");
+    expect(restoredOccluded.outside).toEqual([]);
+    expect(restoredOccluded.keyframes.find((kf) => kf.frame_index === 0)?.occluded).toBe(false);
+
+    const switchedToOutside = renderSidebar({
+      ...baseTrack,
+      geometry: {
+        ...baseTrack.geometry,
+        keyframes: [
+          { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", occluded: true },
+        ],
+      },
+    } as AnnotationResponse, "标记消失");
+    expect(switchedToOutside.outside).toEqual([{ from: 0, to: 0, source: "manual" }]);
   });
 
   it("filters track rows to tracks present on the current frame", () => {
@@ -1655,12 +1761,21 @@ describe("VideoStage", () => {
     );
 
     expect(view.getAllByTestId("video-track-row")).toHaveLength(2);
-
-    const filter = view.getByRole("tablist", { name: "轨迹过滤" });
-    expect(within(filter).queryByText("隐藏")).not.toBeInTheDocument();
-    fireEvent.click(within(filter).getByText("当前帧"));
-
-    expect(view.getAllByTestId("video-track-row")).toHaveLength(1);
+    view.rerender(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId={null}
+        frameIndex={0}
+        trackFilter="current"
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={() => {}}
+        onUpdate={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+      />,
+    );
     expect(view.getByText("car")).toBeInTheDocument();
     expect(view.queryByText("person")).not.toBeInTheDocument();
   });
@@ -1899,7 +2014,7 @@ describe("VideoStage", () => {
     );
 
     fireEvent.click(view.getByTitle("复制当前轨迹在当前帧的关键帧"));
-    expect(view.getByText(/已复制:/).textContent).toContain("F0");
+    expect(view.getByText(/已复制.*F0/)).toBeInTheDocument();
 
     view.rerender(
       <VideoTrackSidebar

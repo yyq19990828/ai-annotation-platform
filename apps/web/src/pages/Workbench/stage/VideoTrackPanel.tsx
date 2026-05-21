@@ -45,6 +45,7 @@ interface VideoTrackPanelProps {
   selectedTrackLocked: boolean;
   currentFrameOutside: boolean;
   frameIndex: number;
+  trackFilter?: TrackFilter;
   readOnly: boolean;
   selectedBboxCount?: number;
   classes?: string[];
@@ -174,41 +175,7 @@ function nextPredictionFrame(track: VideoTrackAnnotation["geometry"], frameIndex
   return predictionFrames.find((frame) => frame > frameIndex) ?? predictionFrames[0] ?? null;
 }
 
-type TrackFilter = "all" | "current";
-
-function TrackFilterTabs({ value, onChange }: { value: TrackFilter; onChange: (filter: TrackFilter) => void }) {
-  const options: Array<{ value: TrackFilter; label: string }> = [
-    { value: "all", label: "全部" },
-    { value: "current", label: "当前帧" },
-  ];
-  return (
-    <div
-      role="tablist"
-      aria-label="轨迹过滤"
-      className={styles.filterTabs}
-    >
-      {options.map((option, index) => {
-        const active = option.value === value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(option.value)}
-            className={cn(
-              styles.filterTab,
-              index > 0 && styles.filterTabWithDivider,
-              active && styles.filterTabActive,
-            )}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+export type TrackFilter = "all" | "current";
 
 export function VideoTrackPanel({
   videoTracks,
@@ -219,6 +186,7 @@ export function VideoTrackPanel({
   selectedTrackLocked,
   currentFrameOutside,
   frameIndex,
+  trackFilter = "all",
   readOnly,
   selectedBboxCount = 0,
   classes,
@@ -270,7 +238,6 @@ export function VideoTrackPanel({
   const batchMutationDisabled = readOnly || batchSelectionDisabled;
   const canAggregateBboxes = !readOnly && selectedBboxCount > 1 && Boolean(onAggregateSelectedBboxes);
   const currentFrameLabel = exactFrameLabel(selectedTrack, frameIndex, currentFrameOutside);
-  const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
   const [propagateOpen, setPropagateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   // 当前打开取色器的 trackId; null 表示关闭。
@@ -317,12 +284,32 @@ export function VideoTrackPanel({
   const selectedTrackNextPredictionFrame = selectedTrack
     ? nextPredictionFrame(selectedTrack.geometry, frameIndex)
     : null;
+  const selectedTrackCurrentSource = selectedTrack
+    ? resolveTrackAtFrame(selectedTrack.geometry, frameIndex)?.source ?? null
+    : null;
+  const selectedTrackCurrentKeyframe = selectedTrack
+    ? selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null
+    : null;
+  const selectedTrackOccluded = !currentFrameOutside && Boolean(selectedTrackCurrentKeyframe?.occluded);
+  const selectedTrackFrames = selectedTrack?.geometry.keyframes.map((kf) => kf.frame_index) ?? [];
 
   return (
     <div className={styles.panelRoot}>
       <div className={styles.filterCard}>
         <div className={styles.rowBetween}>
-          <b className={styles.heading}>轨迹</b>
+          <div className={styles.headingActionGroup}>
+            <b className={styles.heading}>轨迹</b>
+            <Button
+              size="sm"
+              className={styles.iconButton}
+              disabled={readOnly || !onStartNewTrack}
+              title="清除当前轨迹选择，下一次画框会新建轨迹"
+              aria-label="新建轨迹"
+              onClick={onStartNewTrack}
+            >
+              <Icon name="plus" size={14} />
+            </Button>
+          </div>
           <span className={cn("mono", styles.mutedMono)}>
             {trackFilter === "current" ? `${filteredVideoTracks.length}/${videoTracks.length}` : videoTracks.length}
           </span>
@@ -338,63 +325,61 @@ export function VideoTrackPanel({
             <Icon name="link" size={13} />聚合 {selectedBboxCount} 个框
           </Button>
         )}
-        <TrackFilterTabs value={trackFilter} onChange={setTrackFilter} />
       </div>
-      <div className={styles.section}>
-        <b className={styles.heading}>轨迹列表</b>
-      {batchCount > 1 && (
-        <div
-          data-testid="video-track-batch-toolbar"
-          className={styles.batchToolbar}
-        >
-          <div className={styles.rowBetween}>
-            <b className={styles.subheading}>已选 {batchCount} 条轨迹</b>
-            <select
-              aria-label="批量改类"
-              value=""
-              disabled={batchMutationDisabled || !onBatchRenameTracks || !classes?.length}
-              onChange={(e) => {
-                if (!e.target.value) return;
-                onBatchRenameTracks?.(e.target.value);
-                e.target.value = "";
-              }}
-              className={styles.batchSelect}
-            >
-              <option value="">改类</option>
-              {(classes ?? []).map((cls) => (
-                <option key={cls} value={cls}>{cls}</option>
-              ))}
-            </select>
+      <div className={cn(styles.section, selectedTrack && styles.trackListSection)}>
+        {batchCount > 1 && (
+          <div
+            data-testid="video-track-batch-toolbar"
+            className={styles.batchToolbar}
+          >
+            <div className={styles.rowBetween}>
+              <b className={styles.subheading}>已选 {batchCount} 条轨迹</b>
+              <select
+                aria-label="批量改类"
+                value=""
+                disabled={batchMutationDisabled || !onBatchRenameTracks || !classes?.length}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  onBatchRenameTracks?.(e.target.value);
+                  e.target.value = "";
+                }}
+                className={styles.batchSelect}
+              >
+                <option value="">改类</option>
+                {(classes ?? []).map((cls) => (
+                  <option key={cls} value={cls}>{cls}</option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.buttonRow}>
+              <Button size="sm" className={styles.compactButton} disabled={!onShowSelectedTracks} onClick={onShowSelectedTracks}>显示</Button>
+              <Button size="sm" className={styles.compactButton} disabled={!onHideSelectedTracks} onClick={onHideSelectedTracks}>隐藏</Button>
+              <Button size="sm" className={styles.compactButton} disabled={batchSelectionDisabled || !onLockSelectedTracks} onClick={onLockSelectedTracks}>锁定</Button>
+              <Button size="sm" className={styles.compactButton} disabled={batchSelectionDisabled || !onUnlockSelectedTracks} onClick={onUnlockSelectedTracks}>解锁</Button>
+              <Button
+                size="sm"
+                className={styles.compactButton}
+                disabled={batchMutationDisabled || !canMergeSelectedTracks || !onMergeSelectedTracks}
+                title={canMergeSelectedTracks ? "合并两条同类且不重叠的轨迹" : "只支持合并两条同类轨迹"}
+                onClick={onMergeSelectedTracks}
+              >
+                合并
+              </Button>
+              <Button
+                size="sm"
+                className={styles.compactButton}
+                disabled={batchMutationDisabled || !canJoinSelectedTracks || !onJoinSelectedTracks}
+                title={canJoinSelectedTracks ? "跳连两条同类且帧号不重叠的轨迹 (补 gap)" : "只支持跳连两条同类且帧号不重叠的轨迹"}
+                onClick={() => setJoinOpen(true)}
+              >
+                跳连
+              </Button>
+              <Button size="sm" className={styles.compactButton} variant="danger" disabled={batchMutationDisabled || !onBatchDeleteTracks} onClick={onBatchDeleteTracks}>
+                删除
+              </Button>
+            </div>
           </div>
-          <div className={styles.buttonRow}>
-            <Button size="sm" className={styles.compactButton} disabled={!onShowSelectedTracks} onClick={onShowSelectedTracks}>显示</Button>
-            <Button size="sm" className={styles.compactButton} disabled={!onHideSelectedTracks} onClick={onHideSelectedTracks}>隐藏</Button>
-            <Button size="sm" className={styles.compactButton} disabled={batchSelectionDisabled || !onLockSelectedTracks} onClick={onLockSelectedTracks}>锁定</Button>
-            <Button size="sm" className={styles.compactButton} disabled={batchSelectionDisabled || !onUnlockSelectedTracks} onClick={onUnlockSelectedTracks}>解锁</Button>
-            <Button
-              size="sm"
-              className={styles.compactButton}
-              disabled={batchMutationDisabled || !canMergeSelectedTracks || !onMergeSelectedTracks}
-              title={canMergeSelectedTracks ? "合并两条同类且不重叠的轨迹" : "只支持合并两条同类轨迹"}
-              onClick={onMergeSelectedTracks}
-            >
-              合并
-            </Button>
-            <Button
-              size="sm"
-              className={styles.compactButton}
-              disabled={batchMutationDisabled || !canJoinSelectedTracks || !onJoinSelectedTracks}
-              title={canJoinSelectedTracks ? "跳连两条同类且帧号不重叠的轨迹 (补 gap)" : "只支持跳连两条同类且帧号不重叠的轨迹"}
-              onClick={() => setJoinOpen(true)}
-            >
-              跳连
-            </Button>
-            <Button size="sm" className={styles.compactButton} variant="danger" disabled={batchMutationDisabled || !onBatchDeleteTracks} onClick={onBatchDeleteTracks}>
-              删除
-            </Button>
-          </div>
-        </div>
-      )}
+        )}
       <div className={styles.section}>
         {filteredVideoTracks.map((ann) => {
           const track = ann.geometry;
@@ -428,55 +413,87 @@ export function VideoTrackPanel({
                 primarySelected && batchCount > 1 && styles.trackRowPrimarySelected,
               )}
             >
-              <div className={styles.trackMeta}>
-                <button
-                  type="button"
-                  className={styles.colorDotButton}
-                  data-testid="video-track-color-dot"
-                  title={canEditColor ? "修改轨迹颜色" : undefined}
-                  disabled={!canEditColor}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setColorPickerTrackId((prev) => (prev === track.track_id ? null : track.track_id));
-                  }}
-                >
-                  <svg className={styles.trackColorDot} aria-hidden="true" viewBox="0 0 10 10">
-                    <circle cx="5" cy="5" r="5" fill={color} />
-                  </svg>
-                  {colorPickerTrackId === track.track_id && (
-                    <div className={styles.colorPickerPopover} onClick={(e) => e.stopPropagation()}>
-                      <VideoTrackColorPicker
-                        currentColor={color}
-                        hasOverride={hasColorOverride}
-                        onPick={(picked) => {
-                          onSetTrackColor?.(track.track_id, picked);
-                          setColorPickerTrackId(null);
-                        }}
-                        onReset={() => {
-                          onSetTrackColor?.(track.track_id, null);
-                          setColorPickerTrackId(null);
-                        }}
-                        onClose={() => setColorPickerTrackId(null)}
-                      />
-                    </div>
-                  )}
-                </button>
-                <div className={styles.trackTitleRow}>
-                  <b className={styles.truncateTitle}>
-                    {displayClassName(ann.class_name)}
-                  </b>
-                  <span className={styles.compactBadge}>
-                    <Badge variant={ann.source === "prediction_based" ? "default" : "accent"}>
-                      {sourceLabel}
-                    </Badge>
-                  </span>
-                  <span className={cn("mono", styles.mutedMono)}>{shortTrackId(track.track_id)}</span>
+              <div className={styles.trackRowTop}>
+                <div className={styles.trackMeta}>
+                  <button
+                    type="button"
+                    className={styles.colorDotButton}
+                    data-testid="video-track-color-dot"
+                    title={canEditColor ? "修改轨迹颜色" : undefined}
+                    disabled={!canEditColor}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setColorPickerTrackId((prev) => (prev === track.track_id ? null : track.track_id));
+                    }}
+                  >
+                    <svg className={styles.trackColorDot} aria-hidden="true" viewBox="0 0 10 10">
+                      <circle cx="5" cy="5" r="5" fill={color} />
+                    </svg>
+                    {colorPickerTrackId === track.track_id && (
+                      <div className={styles.colorPickerPopover} onClick={(e) => e.stopPropagation()}>
+                        <VideoTrackColorPicker
+                          currentColor={color}
+                          hasOverride={hasColorOverride}
+                          onPick={(picked) => {
+                            onSetTrackColor?.(track.track_id, picked);
+                            setColorPickerTrackId(null);
+                          }}
+                          onReset={() => {
+                            onSetTrackColor?.(track.track_id, null);
+                            setColorPickerTrackId(null);
+                          }}
+                          onClose={() => setColorPickerTrackId(null)}
+                        />
+                      </div>
+                    )}
+                  </button>
+                  <div className={styles.trackTitleRow}>
+                    <b className={styles.truncateTitle}>
+                      {displayClassName(ann.class_name)}
+                    </b>
+                    <span className={styles.compactBadge}>
+                      <Badge variant={ann.source === "prediction_based" ? "default" : "accent"}>
+                        {sourceLabel}
+                      </Badge>
+                    </span>
+                    <span className={cn("mono", styles.mutedMono)}>{shortTrackId(track.track_id)}</span>
+                  </div>
+                  <div className={cn("mono", styles.trackMetaText)}>
+                    {track.keyframes.length} 关键帧 · {frameRange(frames)}
+                  </div>
                 </div>
-                <div className={cn("mono", styles.trackMetaText)}>
-                  {track.keyframes.length} 关键帧 · {frameRange(frames)}
+                <div className={styles.trackRowActions}>
+                  <Button
+                    size="sm"
+                    className={cn(styles.iconButton, styles.iconButtonLarge)}
+                    title={hidden ? "显示轨迹" : "隐藏轨迹"}
+                    onClick={(e) => { e.stopPropagation(); onToggleHiddenTrack(track.track_id); }}
+                  >
+                    <Icon name={hidden ? "eyeOff" : "eye"} size={14} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={cn(styles.iconButton, styles.iconButtonLarge)}
+                    title={locked ? "解锁轨迹" : "锁定轨迹"}
+                    onClick={(e) => { e.stopPropagation(); onToggleLockedTrack(track.track_id); }}
+                  >
+                    <Icon name={locked ? "lock" : "unlock"} size={14} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    className={cn(styles.iconButton, styles.iconButtonLarge)}
+                    title="重命名轨迹类别"
+                    disabled={readOnly || !onChangeUserBoxClass}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChangeUserBoxClass?.(ann.id);
+                    }}
+                  >
+                    <Icon name="edit" size={14} />
+                  </Button>
                 </div>
               </div>
-              <div className={styles.trackActionRow}>
+              <div className={styles.trackSignals}>
                 <span
                   className={cn(styles.statusChip, outside && styles.statusChipDanger)}
                 >
@@ -488,34 +505,6 @@ export function VideoTrackPanel({
                 >
                   {sourceChipText(currentSource)}
                 </span>
-                <Button
-                  size="sm"
-                  className={cn(styles.iconButton, styles.iconButtonLarge)}
-                  title={hidden ? "显示轨迹" : "隐藏轨迹"}
-                  onClick={(e) => { e.stopPropagation(); onToggleHiddenTrack(track.track_id); }}
-                >
-                  <Icon name={hidden ? "eyeOff" : "eye"} size={14} />
-                </Button>
-                <Button
-                  size="sm"
-                  className={cn(styles.iconButton, styles.iconButtonLarge)}
-                  title={locked ? "解锁轨迹" : "锁定轨迹"}
-                  onClick={(e) => { e.stopPropagation(); onToggleLockedTrack(track.track_id); }}
-                >
-                  <Icon name={locked ? "lock" : "unlock"} size={14} />
-                </Button>
-                <Button
-                  size="sm"
-                  className={cn(styles.iconButton, styles.iconButtonLarge)}
-                  title="重命名轨迹类别"
-                  disabled={readOnly || !onChangeUserBoxClass}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onChangeUserBoxClass?.(ann.id);
-                  }}
-                >
-                  <Icon name="edit" size={14} />
-                </Button>
               </div>
             </div>
           );
@@ -533,7 +522,7 @@ export function VideoTrackPanel({
       </div>
       </div>
 
-      <div className={styles.sectionWithTopPadding}>
+      <div className={cn(styles.sectionWithTopPadding, selectedTrack && styles.selectedTrackSection)}>
         <div className={styles.rowBetween}>
           <b className={styles.heading}>当前轨迹</b>
           {selectedTrack && (
@@ -544,7 +533,7 @@ export function VideoTrackPanel({
         </div>
         {selectedTrack ? (
           <div className={styles.selectedTrackCard}>
-            <div className={styles.rowBetween}>
+            <div className={styles.selectedHeader}>
               <div className={styles.trackMeta}>
                 <svg className={styles.trackColorDot} aria-hidden="true" viewBox="0 0 10 10">
                   <circle cx="5" cy="5" r="5" fill={getTrackColor(selectedTrack.geometry.track_id, selectedTrack.class_name, trackColorOverrides)} />
@@ -562,65 +551,80 @@ export function VideoTrackPanel({
                     {shortTrackId(selectedTrack.geometry.track_id)}
                   </span>
                 </div>
-                <span className={cn("mono", styles.mutedMono)}>
-                  当前帧 F{frameIndex} · {currentFrameLabel.replace(/^F\d+ · /, "")}
-                </span>
               </div>
               <Button
                 size="sm"
-                className={styles.currentActionButton}
-                disabled={readOnly || !onStartNewTrack}
-                title="清除当前轨迹选择，下一次画框会新建轨迹"
-                onClick={onStartNewTrack}
-              >
-                <Icon name="plus" size={13} />新建轨迹
-              </Button>
-              <Button
-                size="sm"
-                className={styles.currentActionButton}
-                disabled={readOnly || selectedTrackLocked || !onSplitSelectedTrack}
-                title="在当前帧之后拆出后段轨迹"
-                onClick={onSplitSelectedTrack}
-              >
-                <Icon name="scissors" size={13} />拆轨迹
-              </Button>
-              <Button
-                size="sm"
-                className={styles.currentActionButton}
+                className={styles.iconButton}
                 title="复制轨迹 ID"
                 onClick={() => copyText(selectedTrack.geometry.track_id)}
               >
-                <Icon name="copy" size={13} />复制 ID
+                <Icon name="copy" size={13} />
               </Button>
-              <Button
-                size="sm"
-                className={styles.currentActionButton}
-                disabled={selectedTrackNextPredictionFrame === null || !onSeekFrame}
-                title="跳转到下一条 prediction 关键帧"
-                onClick={() => {
-                  if (selectedTrackNextPredictionFrame !== null) onSeekFrame?.(selectedTrackNextPredictionFrame);
-                }}
-              >
-                <Icon name="arrowRight" size={13} />下一预测
-              </Button>
-              <Button
-                size="sm"
-                className={styles.currentActionButton}
-                disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
-                title="发起 AI 传播 (Shift+T)"
-                onClick={() => onPropagateTrack?.(selectedTrack)}
-              >
-                <Icon name="bot" size={13} />AI 传播
-              </Button>
-              <Button
-                size="sm"
-                className={styles.currentActionButton}
-                disabled={!canPropagate}
-                title="把当前帧的框复制到后续/向前 N 帧"
-                onClick={() => setPropagateOpen(true)}
-              >
-                <Icon name="copy" size={13} />复制后续
-              </Button>
+            </div>
+            <div className={styles.selectedStatsGrid}>
+              <div className={styles.statCell}>
+                <span className={styles.statLabel}>当前帧</span>
+                <b className={cn("mono", styles.statValue)}>{currentFrameLabel}</b>
+              </div>
+              <div className={styles.statCell}>
+                <span className={styles.statLabel}>当前来源</span>
+                <b className={cn(styles.statValue, sourceChipClass(selectedTrackCurrentSource))}>
+                  {sourceChipText(selectedTrackCurrentSource)}
+                </b>
+              </div>
+              <div className={styles.statCell}>
+                <span className={styles.statLabel}>关键帧</span>
+                <b className={cn("mono", styles.statValue)}>{selectedTrack.geometry.keyframes.length}</b>
+              </div>
+              <div className={styles.statCell}>
+                <span className={styles.statLabel}>范围</span>
+                <b className={cn("mono", styles.statValue)}>{frameRange(selectedTrackFrames)}</b>
+              </div>
+            </div>
+            <div className={styles.actionGroup}>
+              <div className={styles.actionGroupHeader}>
+                <span>轨迹操作</span>
+              </div>
+              <div className={styles.actionGrid}>
+                <Button
+                  size="sm"
+                  className={styles.currentActionButton}
+                  disabled={readOnly || selectedTrackLocked || !onSplitSelectedTrack}
+                  title="在当前帧之后拆出后段轨迹"
+                  onClick={onSplitSelectedTrack}
+                >
+                  <Icon name="scissors" size={13} />拆轨迹
+                </Button>
+                <Button
+                  size="sm"
+                  className={styles.currentActionButton}
+                  disabled={selectedTrackNextPredictionFrame === null || !onSeekFrame}
+                  title="跳转到下一条 prediction 关键帧"
+                  onClick={() => {
+                    if (selectedTrackNextPredictionFrame !== null) onSeekFrame?.(selectedTrackNextPredictionFrame);
+                  }}
+                >
+                  <Icon name="arrowRight" size={13} />下一预测
+                </Button>
+                <Button
+                  size="sm"
+                  className={styles.currentActionButton}
+                  disabled={readOnly || selectedTrackLocked || !onPropagateTrack}
+                  title="发起 AI 传播 (Shift+T)"
+                  onClick={() => onPropagateTrack?.(selectedTrack)}
+                >
+                  <Icon name="bot" size={13} />AI 传播
+                </Button>
+                <Button
+                  size="sm"
+                  className={styles.currentActionButton}
+                  disabled={!canPropagate}
+                  title="把当前帧的框复制到后续/向前 N 帧"
+                  onClick={() => setPropagateOpen(true)}
+                >
+                  <Icon name="copy" size={13} />复制后续
+                </Button>
+              </div>
             </div>
             {onUpdateSemanticLabel && (
               <label className={styles.semanticRow}>
@@ -649,66 +653,66 @@ export function VideoTrackPanel({
                 />
               </div>
             )}
-            <div className={styles.frameActionGrid}>
-              <Button
-                size="sm"
-                className={styles.frameActionButton}
-                disabled={!selectedTrackGhost || readOnly || selectedTrackLocked}
-                title="使用最近关键帧的框在当前帧创建关键帧"
-                onClick={onCopySelectedTrackToCurrentFrame}
-              >
-                <Icon name="copy" size={14} />复制到当前帧
-              </Button>
-              <Button
-                size="sm"
-                className={styles.frameActionButton}
-                disabled={!selectedTrack || readOnly || selectedTrackLocked}
-                onClick={() => onMarkSelectedTrack({ outside: true, occluded: false })}
-              >
-                <Icon name="eyeOff" size={14} />标记消失
-              </Button>
-              <Button
-                size="sm"
-                className={styles.frameActionButton}
-                disabled={!selectedTrack || readOnly || selectedTrackLocked}
-                onClick={() => onMarkSelectedTrack({ outside: false, occluded: true })}
-              >
-                <Icon name="rect" size={14} />标记遮挡
-              </Button>
-            </div>
-            <div className={styles.copyStatusRow}>
-              {copiedKeyframeLabel ? (
-                <>
-                  <Icon name="info" size={14} className={styles.mutedIcon} />
-                  <span className={cn("mono", styles.copyStatusText)}>
-                    已复制: {copiedKeyframeLabel}（关键帧）
-                  </span>
-                </>
-              ) : (
-                <span className={cn("mono", styles.subtleMono)}>
-                  可复制当前关键帧后粘贴到其它帧
+            <div className={styles.actionGroup}>
+              <div className={styles.actionGroupHeader}>
+                <span>当前帧操作</span>
+                <span className={cn("mono", styles.copyStatusText)}>
+                  {copiedKeyframeLabel ? `已复制 ${copiedKeyframeLabel}` : "未复制关键帧"}
                 </span>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                className={styles.ghostMutedButton}
-                disabled={!canCopyCurrentKeyframe}
-                title="复制当前轨迹在当前帧的关键帧"
-                onClick={onCopyCurrentKeyframe}
-              >
-                复制关键帧
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className={styles.ghostMutedButton}
-                disabled={!canPasteKeyframe}
-                title="把已复制的关键帧粘贴到当前帧"
-                onClick={onPasteKeyframeToCurrentFrame}
-              >
-                粘贴
-              </Button>
+              </div>
+              <div className={styles.actionGrid}>
+                <Button
+                  size="sm"
+                  className={styles.frameActionButton}
+                  disabled={!selectedTrackGhost || readOnly || selectedTrackLocked}
+                  title="使用最近关键帧的框在当前帧创建关键帧"
+                  onClick={onCopySelectedTrackToCurrentFrame}
+                >
+                  <Icon name="copy" size={14} />复制到当前帧
+                </Button>
+                <Button
+                  size="sm"
+                  className={styles.frameActionButton}
+                  disabled={!canCopyCurrentKeyframe}
+                  title="复制当前轨迹在当前帧的关键帧"
+                  onClick={onCopyCurrentKeyframe}
+                >
+                  <Icon name="copy" size={14} />复制关键帧
+                </Button>
+                <Button
+                  size="sm"
+                  className={styles.frameActionButton}
+                  disabled={!canPasteKeyframe}
+                  title="把已复制的关键帧粘贴到当前帧"
+                  onClick={onPasteKeyframeToCurrentFrame}
+                >
+                  <Icon name="copy" size={14} />粘贴关键帧
+                </Button>
+                <Button
+                  size="sm"
+                  className={styles.frameActionButton}
+                  disabled={!selectedTrack || readOnly || selectedTrackLocked}
+                  aria-pressed={currentFrameOutside}
+                  title={currentFrameOutside ? "恢复当前帧为正常状态" : "标记当前帧消失"}
+                  onClick={() => onMarkSelectedTrack(currentFrameOutside
+                    ? { outside: false, occluded: false }
+                    : { outside: true, occluded: false })}
+                >
+                  <Icon name="eyeOff" size={14} />标记消失
+                </Button>
+                <Button
+                  size="sm"
+                  className={styles.frameActionButton}
+                  disabled={!selectedTrack || readOnly || selectedTrackLocked}
+                  aria-pressed={selectedTrackOccluded}
+                  title={selectedTrackOccluded ? "恢复当前帧为正常状态" : "标记当前帧遮挡"}
+                  onClick={() => onMarkSelectedTrack(selectedTrackOccluded
+                    ? { outside: false, occluded: false }
+                    : { outside: false, occluded: true })}
+                >
+                  <Icon name="rect" size={14} />标记遮挡
+                </Button>
+              </div>
             </div>
           </div>
         ) : (
@@ -755,9 +759,10 @@ export function VideoTrackPanel({
                         className={styles.keyframeButton}
                         disabled={!onSeekFrame}
                         title="跳转到关键帧"
+                        aria-label="跳转到关键帧"
                         onClick={() => onSeekFrame?.(kf.frame_index)}
                       >
-                        <Icon name="arrowRight" size={12} />跳转
+                        <Icon name="arrowRight" size={13} />
                       </Button>
                       {kf.source === "prediction" && onAcceptPredictionKeyframe && (
                         <Button
@@ -765,9 +770,10 @@ export function VideoTrackPanel({
                           className={cn(styles.keyframeButton, styles.successButton)}
                           disabled={readOnly}
                           title="接受预测：source 改为 manual"
+                          aria-label="接受预测"
                           onClick={() => onAcceptPredictionKeyframe(selectedTrack, kf.frame_index)}
                         >
-                          <Icon name="check" size={12} />接受
+                          <Icon name="check" size={13} />
                         </Button>
                       )}
                       {kf.source === "prediction" && onRejectPredictionKeyframe && (
@@ -776,9 +782,10 @@ export function VideoTrackPanel({
                           className={cn(styles.keyframeButton, styles.dangerButton)}
                           disabled={readOnly}
                           title="拒绝预测：把该帧并入 outside"
+                          aria-label="拒绝预测"
                           onClick={() => onRejectPredictionKeyframe(selectedTrack, kf.frame_index)}
                         >
-                          <Icon name="x" size={12} />拒绝
+                          <Icon name="x" size={13} />
                         </Button>
                       )}
                       <Button
@@ -786,35 +793,38 @@ export function VideoTrackPanel({
                         className={styles.keyframeButton}
                         disabled={readOnly || kfOutside}
                         title="复制此关键帧为独立框"
+                        aria-label="复制此关键帧为独立框"
                         onClick={() => onConvertToBboxes?.(selectedTrack, {
                           operation: "copy",
                           scope: "frame",
                           frameIndex: kf.frame_index,
                         })}
                       >
-                        <Icon name="copy" size={12} />复制
+                        <Icon name="copy" size={13} />
                       </Button>
                       <Button
                         size="sm"
                         className={styles.keyframeButton}
                         disabled={readOnly || kfOutside}
                         title="拆此关键帧为独立框"
+                        aria-label="拆此关键帧为独立框"
                         onClick={() => onConvertToBboxes?.(selectedTrack, {
                           operation: "split",
                           scope: "frame",
                           frameIndex: kf.frame_index,
                         })}
                       >
-                        <Icon name="scissors" size={12} />拆分
+                        <Icon name="scissors" size={13} />
                       </Button>
                       <Button
                         size="sm"
-                        className={cn(styles.iconButton, styles.dangerButton)}
+                        className={cn(styles.keyframeButton, styles.dangerButton)}
                         disabled={readOnly || selectedTrack.geometry.keyframes.length <= 1}
                         title="删除关键帧"
+                        aria-label="删除关键帧"
                         onClick={() => onDeleteTrackKeyframe(selectedTrack, kf.frame_index)}
                       >
-                        <Icon name="trash" size={12} />
+                        <Icon name="trash" size={13} />
                       </Button>
                     </span>
                   </div>
@@ -841,7 +851,7 @@ export function VideoTrackPanel({
                 />
               </div>
             )}
-            <details open className={styles.convertPanel}>
+            <details className={styles.convertPanel}>
               <summary className={styles.convertSummary}>
                 转换为独立框...
               </summary>

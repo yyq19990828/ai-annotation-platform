@@ -419,7 +419,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     });
   }, [setVp, videoPixelHeight, videoPixelWidth, viewportSize.h, viewportSize.w]);
 
-  const pausePlayback = useCallback(() => {
+  const pausePlayback = useCallback((options?: { snapToGrid?: boolean }) => {
     const video = videoRef.current;
     if (video) {
       video.pause();
@@ -430,7 +430,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     // v0.10.29 · 暂停吸附：采样开启 (step>1) 时把当前帧吸附到最近网格点并 seek 过去；
     //            step=1 时网格点 = 所有源帧，吸附为 no-op，行为不变 (向后兼容)。
     const step = samplingStepRef.current;
-    if (step > 1) {
+    if ((options?.snapToGrid ?? true) && step > 1) {
       const snapped = snapToGrid(frameIndexRef.current, step, maxFrame);
       if (snapped !== frameIndexRef.current) {
         void seekFrameAsyncRef.current(snapped, { recordHistory: false });
@@ -523,7 +523,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     (delta: number, options?: { recordHistory?: boolean }) => {
       showPlaybackOverlay();
       flashPlaybackAction(delta < 0 ? "prev" : "next");
-      pausePlayback();
+      pausePlayback({ snapToGrid: false });
       void seekFrameAsync(frameIndexRef.current + delta, { recordHistory: options?.recordHistory ?? true });
     },
     [flashPlaybackAction, pausePlayback, seekFrameAsync, showPlaybackOverlay],
@@ -537,7 +537,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       const target = dir < 0 ? gridPrev(cur, step, maxFrame) : gridNext(cur, step, maxFrame);
       showPlaybackOverlay();
       flashPlaybackAction(dir < 0 ? "prev" : "next");
-      pausePlayback();
+      pausePlayback({ snapToGrid: false });
       void seekFrameAsync(target, { recordHistory: options?.recordHistory ?? true });
     },
     [flashPlaybackAction, maxFrame, pausePlayback, seekFrameAsync, showPlaybackOverlay],
@@ -549,7 +549,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       const target = microStep(frameIndexRef.current, dir, maxFrame);
       showPlaybackOverlay();
       flashPlaybackAction(dir < 0 ? "prev" : "next");
-      pausePlayback();
+      pausePlayback({ snapToGrid: false });
       void seekFrameAsync(target, { recordHistory: options?.recordHistory ?? true });
     },
     [flashPlaybackAction, maxFrame, pausePlayback, seekFrameAsync, showPlaybackOverlay],
@@ -562,16 +562,35 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       if (nextFrame === null) return;
       showPlaybackOverlay();
       flashPlaybackAction(dir < 0 ? "prev" : "next");
-      pausePlayback();
+      pausePlayback({ snapToGrid: false });
       void seekFrameAsync(nextFrame, { recordHistory: options?.recordHistory ?? true });
     },
     [flashPlaybackAction, pausePlayback, seekFrameAsync, selectedTrack, showPlaybackOverlay],
   );
 
+  const seekOverlayByFrames = useCallback(
+    (delta: number, options?: { recordHistory?: boolean }) => {
+      const step = samplingStepRef.current;
+      if (step > 1) {
+        const dir: -1 | 1 = delta < 0 ? -1 : 1;
+        if (Math.abs(delta) === 1) {
+          seekGrid(dir, options);
+          return;
+        }
+        if (Math.abs(delta) === 10) {
+          microStepBy(dir, options);
+          return;
+        }
+      }
+      seekByFrames(delta, options);
+    },
+    [microStepBy, seekByFrames, seekGrid],
+  );
+
   const seekToFrame = useCallback(
     (nextFrame: number, options?: { recordHistory?: boolean }) => {
       showPlaybackOverlay();
-      pausePlayback();
+      pausePlayback({ snapToGrid: false });
       void seekFrameAsync(nextFrame, { recordHistory: options?.recordHistory ?? true });
     },
     [pausePlayback, seekFrameAsync, showPlaybackOverlay],
@@ -587,7 +606,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     setJumpHistory(result.history);
     if (result.frameIndex === null) return;
     showPlaybackOverlay();
-    pausePlayback();
+    pausePlayback({ snapToGrid: false });
     void seekFrameAsync(result.frameIndex, { recordHistory: false });
   }, [jumpHistory, pausePlayback, seekFrameAsync, showPlaybackOverlay]);
 
@@ -1243,7 +1262,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               pausePlayback();
               void seekFrameAsync(frame, { recordHistory: true });
             }}
-            onSeekByFrames={seekByFrames}
+            onSeekByFrames={seekOverlayByFrames}
             onTogglePlay={togglePlayback}
             onLoopRegionChange={setNormalizedLoopRegion}
             onClearLoopRegion={clearLoopRegion}

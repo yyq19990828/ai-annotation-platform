@@ -13,7 +13,7 @@ import {
 } from "./videoStageGeometry";
 import { addOutsideRange, isFrameOutside, removeOutsideFrame } from "./videoTrackOutside";
 import type { AttributeSchema } from "@/api/projects";
-import { VideoTrackPanel, type TrackMarkPatch } from "./VideoTrackPanel";
+import { VideoTrackPanel, type TrackFilter, type TrackMarkPatch } from "./VideoTrackPanel";
 import type { VideoTrackGapMode } from "./VideoTrackComposeDialog";
 // VideoTrackerJobState type imported lazily via inline import in props
 import type {
@@ -29,6 +29,7 @@ interface VideoTrackSidebarProps {
   selectedId: string | null;
   selectedIds?: string[];
   frameIndex: number;
+  trackFilter?: TrackFilter;
   readOnly: boolean;
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
@@ -106,6 +107,7 @@ export function VideoTrackSidebar({
   selectedId,
   selectedIds = [],
   frameIndex,
+  trackFilter = "all",
   readOnly,
   hiddenTrackIds,
   lockedTrackIds,
@@ -402,6 +404,7 @@ export function VideoTrackSidebar({
       selectedTrackLocked={selectedTrackLocked}
       currentFrameOutside={selectedTrack ? isFrameOutside(selectedTrack.geometry, frameIndex) : false}
       frameIndex={frameIndex}
+      trackFilter={trackFilter}
       readOnly={readOnly}
       selectedBboxCount={selectedBboxes.length}
       classes={classes}

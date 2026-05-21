@@ -1299,13 +1299,14 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         commentAnchor: videoCommentAnchor,
         // I4 · 未选中标注时 CommentsPanel 走 task 级降级 (评论/历史汇总该 task 下所有标注).
         taskId: taskId ?? null,
-        videoTrackPanel: isVideoTask ? (
+        videoTrackPanel: isVideoTask ? ((frameFilter) => (
           <div className={styles.videoTrackPanel}>
             <VideoTrackSidebar
               annotations={annotationsData ?? []}
               selectedId={s.selectedId}
               selectedIds={s.selectedIds}
               frameIndex={s.videoFrameIndex}
+              trackFilter={frameFilter}
               readOnly={isLocked}
               hiddenTrackIds={s.hiddenVideoTrackIds}
               lockedTrackIds={s.lockedVideoTrackIds}
@@ -1340,7 +1341,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
               onSeekFrame={s.setVideoFrameIndex}
             />
           </div>
-        ) : undefined,
+        )) : undefined,
         liveCommentCanvas: {
           active: s.canvasDraft.active,
           result: s.canvasDraft.pendingResult,

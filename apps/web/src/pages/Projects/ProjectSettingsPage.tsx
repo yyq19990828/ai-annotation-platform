@@ -100,6 +100,7 @@ export function ProjectSettingsPage() {
   }
 
   const isVideoProject = project.data_type === "video";
+  const canOpenWorkbench = project.type_key === "image-det" || isVideoProject;
   const visibleSections = SECTIONS.filter((s) => {
     if (s.key === "owner") return role === "super_admin";
     if (s.key === "danger") return isOwner;
@@ -143,7 +144,7 @@ export function ProjectSettingsPage() {
                 <Icon name="activity" size={12} />审计追溯
               </Button>
             )}
-            {project.type_key === "image-det" && (
+            {canOpenWorkbench && (
               <Button onClick={() => navigate(buildWorkbenchUrl(project.id, {
                 returnTo: currentWorkbenchReturnTo(location),
               }))}>
