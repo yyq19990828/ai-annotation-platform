@@ -60,11 +60,11 @@ function annotationToolMeta(
   }
   if (geometry.type === "video_track") {
     const frames = geometry.keyframes.map((kf) => kf.frame_index);
-    const absent = geometry.keyframes.filter((kf) => kf.absent).length;
+    const outsideFrames = (geometry.outside ?? []).reduce((sum, r) => sum + (r.to - r.from + 1), 0);
     const occluded = geometry.keyframes.filter((kf) => kf.occluded).length;
     return {
       label: "轨迹",
-      detail: `${shortId(geometry.track_id)} · ${geometry.keyframes.length} 关键帧 · ${frameRange(frames)}${absent ? ` · ${absent} 消失` : ""}${occluded ? ` · ${occluded} 遮挡` : ""}`,
+      detail: `${shortId(geometry.track_id)} · ${geometry.keyframes.length} 关键帧 · ${frameRange(frames)}${outsideFrames ? ` · ${outsideFrames} 消失` : ""}${occluded ? ` · ${occluded} 遮挡` : ""}`,
     };
   }
   if (geometry.type === "polygon") {

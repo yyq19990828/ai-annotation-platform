@@ -6,7 +6,6 @@ export interface VideoFrameBucket {
   trackIds: string[];
   hasManual: boolean;
   hasPrediction: boolean;
-  hasAbsent: boolean;
 }
 
 export type VideoFrameBucketMarker = VideoFrameBucket & {
@@ -20,7 +19,6 @@ export type VideoTimelineMarker =
     trackIds: string[];
     hasManual: boolean;
     hasPrediction: boolean;
-    hasAbsent: boolean;
     density: number;
   }
   | {
@@ -39,7 +37,6 @@ function ensureBucket(buckets: Map<number, VideoFrameBucket>, frame: number) {
       trackIds: [],
       hasManual: false,
       hasPrediction: false,
-      hasAbsent: false,
     };
     buckets.set(frame, bucket);
   }
@@ -58,7 +55,6 @@ export function buildVideoFrameBuckets(tracks: readonly VideoTrackGeometry[]): M
     for (const keyframe of latestByFrame.values()) {
       const bucket = ensureBucket(buckets, keyframe.frame_index);
       if (!bucket.trackIds.includes(track.track_id)) bucket.trackIds.push(track.track_id);
-      if (keyframe.absent) bucket.hasAbsent = true;
       if (keyframe.source === "prediction") bucket.hasPrediction = true;
       else bucket.hasManual = true;
     }
@@ -102,7 +98,6 @@ export function videoTimelineMarkers(tracks: readonly VideoTrackGeometry[]): Vid
     trackIds: bucket.trackIds,
     hasManual: bucket.hasManual,
     hasPrediction: bucket.hasPrediction,
-    hasAbsent: bucket.hasAbsent,
     density: bucket.density,
   }));
   const outsideMarkers = new Map<string, Extract<VideoTimelineMarker, { type: "outside" }>>();

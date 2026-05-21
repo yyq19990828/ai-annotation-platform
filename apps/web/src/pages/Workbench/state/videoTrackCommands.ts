@@ -10,7 +10,6 @@ function cloneKeyframe(kf: VideoTrackKeyframe): VideoTrackKeyframe {
     frame_index: kf.frame_index,
     bbox: { ...kf.bbox },
     source: kf.source,
-    absent: kf.absent,
     occluded: kf.occluded,
   };
 }
@@ -20,7 +19,6 @@ function sameKeyframe(a: VideoTrackKeyframe | undefined, b: VideoTrackKeyframe |
   return (
     a.frame_index === b.frame_index &&
     a.source === b.source &&
-    (a.absent ?? false) === (b.absent ?? false) &&
     (a.occluded ?? false) === (b.occluded ?? false) &&
     a.bbox.x === b.bbox.x &&
     a.bbox.y === b.bbox.y &&

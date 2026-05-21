@@ -28,12 +28,14 @@ describe("videoStageGeometry", () => {
     });
   });
 
-  it("does not interpolate across absent keyframes", () => {
+  it("does not interpolate across an outside keyframe", () => {
     const geometry = track([
       { frame_index: 0, bbox: { x: 0, y: 0, w: 0.2, h: 0.2 }, source: "manual" },
-      { frame_index: 5, bbox: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 }, source: "manual", absent: true },
+      { frame_index: 5, bbox: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 }, source: "manual" },
       { frame_index: 10, bbox: { x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, source: "manual" },
-    ]);
+    ], {
+      outside: [{ from: 5, to: 5 }],
+    });
 
     expect(resolveTrackAtFrame(geometry, 5)).toBeNull();
     expect(resolveTrackAtFrame(geometry, 7)).toBeNull();

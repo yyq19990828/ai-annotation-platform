@@ -74,9 +74,10 @@ describe("geometryToShape", () => {
       type: "video_track",
       track_id: "trk_1",
       keyframes: [
-        { frame_index: 0, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual", absent: true },
+        { frame_index: 0, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
         { frame_index: 12, bbox: { x: 0.2, y: 0.3, w: 0.4, h: 0.5 }, source: "manual" },
       ],
+      outside: [{ from: 0, to: 0 }],
     });
     expect(s).toEqual({ x: 0.2, y: 0.3, w: 0.4, h: 0.5 });
   });

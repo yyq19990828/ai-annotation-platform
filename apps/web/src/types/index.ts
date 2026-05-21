@@ -178,7 +178,6 @@ export type VideoTrackKeyframe = {
   frame_index: number;
   bbox: VideoTrackBbox;
   source: "manual" | "interpolated" | "prediction";
-  absent?: boolean;
   occluded?: boolean;
 };
 export type VideoTrackOutsideRange = {
@@ -189,6 +188,8 @@ export type VideoTrackOutsideRange = {
 export type VideoTrackGeometry = {
   type: "video_track";
   track_id: string;
+  // v0.10.30 · 2.1 用户可编辑语义标签 (跨任务 Re-ID 心智), 不参与主键、不强制唯一。
+  semantic_label?: string | null;
   keyframes: VideoTrackKeyframe[];
   outside?: VideoTrackOutsideRange[];
 };

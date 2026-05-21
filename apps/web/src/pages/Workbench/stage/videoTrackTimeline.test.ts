@@ -43,13 +43,13 @@ describe("videoTrackTimeline", () => {
     ]);
   });
 
-  it("filters outside and legacy absent keyframes from keyframe navigation", () => {
+  it("filters outside keyframes from keyframe navigation", () => {
     const geometry = track({
-      outside: [{ from: 5, to: 6 }],
+      outside: [{ from: 5, to: 6 }, { from: 8, to: 8 }],
       keyframes: [
         { frame_index: 1, bbox, source: "manual" },
         { frame_index: 5, bbox, source: "manual" },
-        { frame_index: 8, bbox, source: "manual", absent: true },
+        { frame_index: 8, bbox, source: "manual" },
         { frame_index: 12, bbox, source: "prediction" },
       ],
     });

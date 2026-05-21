@@ -40,7 +40,6 @@ def _composition_keyframe(
         "frame_index": int(frame_index),
         "bbox": _clean_bbox_geometry(bbox),
         "source": "prediction" if source == "prediction" else "manual",
-        "absent": False,
         "occluded": False,
     }
 
@@ -49,8 +48,7 @@ def _track_visible_keyframes(geometry: dict) -> list[dict]:
     return [
         kf
         for kf in sorted_keyframes(geometry)
-        if not kf.get("absent")
-        and not frame_is_outside(geometry, int(kf.get("frame_index", 0)))
+        if not frame_is_outside(geometry, int(kf.get("frame_index", 0)))
     ]
 
 
@@ -539,13 +537,9 @@ class AnnotationService:
                     ),
                     None,
                 )
-                if (
-                    not exact
-                    or exact.get("absent")
-                    or frame_is_outside(geometry, frame_index)
-                ):
+                if not exact or frame_is_outside(geometry, frame_index):
                     raise ValueError(
-                        "frame split requires an exact non-absent keyframe"
+                        "frame split requires an exact visible keyframe"
                     )
                 frames = [
                     {
@@ -789,6 +783,7 @@ class AnnotationService:
             geometry={
                 "type": "video_track",
                 "track_id": _new_track_id(),
+                "semantic_label": geometry.get("semantic_label"),
                 "keyframes": after_keyframes,
                 "outside": _clip_outside_ranges(geometry, start=next_frame, end=None),
             },

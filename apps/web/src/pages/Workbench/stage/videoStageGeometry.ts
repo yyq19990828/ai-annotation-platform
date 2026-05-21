@@ -72,7 +72,7 @@ function getTrackIndex(track: VideoTrackGeometry): TrackIndex {
   if (cached) return cached;
   const keyframes = [...track.keyframes].sort((a, b) => a.frame_index - b.frame_index);
   const outsideRanges = effectiveOutsideRanges(track);
-  const visibleKeyframes = keyframes.filter((kf) => !kf.absent && !isFrameInOutsideRanges(outsideRanges, kf.frame_index));
+  const visibleKeyframes = keyframes.filter((kf) => !isFrameInOutsideRanges(outsideRanges, kf.frame_index));
   const index = { keyframes, visibleKeyframes, outsideRanges };
   trackIndexCache.set(track, index);
   return index;
@@ -117,7 +117,6 @@ export function upsertKeyframe(
     frame_index: frameIndex,
     bbox: clampGeom(bbox),
     source: "manual",
-    absent: false,
     occluded: false,
     ...patch,
   } satisfies VideoTrackKeyframe;
@@ -125,7 +124,8 @@ export function upsertKeyframe(
     ...keyframe,
   });
   const withKeyframes = { ...track, keyframes: next.sort((a, b) => a.frame_index - b.frame_index) };
-  return keyframe.absent ? withKeyframes : removeOutsideFrame(withKeyframes, frameIndex);
+  // 新增可见关键帧时, 自动清除该帧上的 outside 标记。
+  return removeOutsideFrame(withKeyframes, frameIndex);
 }
 
 function interpolate(a: VideoTrackKeyframe, b: VideoTrackKeyframe, frameIndex: number): VideoStageGeom {
@@ -155,10 +155,6 @@ export function resolveTrackAtFrame(
   const exactIndex = lowerBound(keyframes, frameIndex, (kf) => kf.frame_index);
   const exact = keyframes[exactIndex]?.frame_index === frameIndex ? keyframes[exactIndex] : null;
   if (exact) {
-    if (exact.absent) {
-      setResolvedCache(track, frameIndex, null);
-      return null;
-    }
     const resolved = { geom: exact.bbox, source: exact.source === "prediction" ? "prediction" : "manual", occluded: exact.occluded } satisfies ResolvedTrackFrame;
     setResolvedCache(track, frameIndex, resolved);
     return resolved;
@@ -209,4 +205,29 @@ export function shapeIou(a: VideoStageGeom, b: VideoStageGeom) {
 
 export function shortTrackId(trackId: string) {
   return trackId.length > 8 ? trackId.slice(0, 8) : trackId;
+}
+
+/**
+ * v0.10.30 · D-2.1a 确定性派生 track_number, 不持久化。
+ *
+ * 按「首关键帧 frame_index 升序、并列再按 track_id 字典序」给每条 video_track 派生
+ * 1..N 的显示/导出编号。改采样 / 增删 track 时编号自然重排, 符合 D2。
+ * 返回 `Map<annotationId, number>`。
+ */
+export function deriveTrackNumber(
+  tracks: ReadonlyArray<{ id: string; geometry: VideoTrackGeometry }>,
+): Map<string, number> {
+  const firstFrame = (geometry: VideoTrackGeometry) => {
+    const frames = geometry.keyframes.map((kf) => kf.frame_index);
+    return frames.length > 0 ? Math.min(...frames) : 0;
+  };
+  const ordered = [...tracks].sort((a, b) => {
+    const fa = firstFrame(a.geometry);
+    const fb = firstFrame(b.geometry);
+    if (fa !== fb) return fa - fb;
+    return a.geometry.track_id.localeCompare(b.geometry.track_id);
+  });
+  const result = new Map<string, number>();
+  ordered.forEach((track, index) => result.set(track.id, index + 1));
+  return result;
 }

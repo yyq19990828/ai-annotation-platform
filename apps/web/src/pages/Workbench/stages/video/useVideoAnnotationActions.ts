@@ -92,7 +92,6 @@ export function buildVideoCreatePayload(
         frame_index: frameIndex,
         bbox: geo,
         source: "manual",
-        absent: false,
         occluded: false,
       },
     ],

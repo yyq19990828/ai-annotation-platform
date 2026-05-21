@@ -11,6 +11,7 @@ import type { AiBox } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
 import { groupOutlineColor } from "../stage/ImageStageShapes";
 import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { isFrameOutside } from "../stage/videoTrackOutside";
 import { AttributeForm } from "./AttributeForm";
 import { CommentsPanel } from "./CommentsPanel";
 import { ResizeHandle } from "./ResizeHandle";
@@ -554,7 +555,7 @@ function firstTrackFrame(box: Annotation | AiBox): number | null {
   if (!geometry) return null;
   if (geometry.type === "video_bbox") return geometry.frame_index;
   if (geometry.type !== "video_track" || geometry.keyframes.length === 0) return null;
-  const visible = geometry.keyframes.filter((kf) => !kf.absent);
+  const visible = geometry.keyframes.filter((kf) => !isFrameOutside(geometry, kf.frame_index));
   const frames = (visible.length > 0 ? visible : geometry.keyframes).map((kf) => kf.frame_index);
   return Math.min(...frames);
 }

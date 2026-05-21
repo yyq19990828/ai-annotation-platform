@@ -17,6 +17,14 @@ import type {
 } from "./videoStageTypes";
 import { VideoTrackerJobBadge } from "./VideoTrackerJobBadge";
 
+// v0.10.30 · 当前帧状态标记动作信号: outside 表示在当前帧把该 track 标记为消失
+// (写入 outside range), occluded 表示该帧遮挡 (写入可见关键帧的 occluded)。
+export type TrackMarkPatch = {
+  outside?: boolean;
+  occluded?: boolean;
+  source?: "manual" | "prediction";
+};
+
 interface VideoTrackPanelProps {
   videoTracks: VideoTrackAnnotation[];
   selectedId: string | null;
@@ -47,7 +55,7 @@ interface VideoTrackPanelProps {
   onHideSelectedTracks?: () => void;
   onLockSelectedTracks?: () => void;
   onUnlockSelectedTracks?: () => void;
-  onMarkSelectedTrack: (patch: Partial<VideoTrackKeyframe>) => void;
+  onMarkSelectedTrack: (patch: TrackMarkPatch) => void;
   onCopySelectedTrackToCurrentFrame: () => void;
   copiedKeyframeLabel?: string | null;
   canCopyCurrentKeyframe: boolean;
@@ -71,15 +79,15 @@ function frameRange(frames: number[]): string {
   return min === max ? `F${min}` : `F${min}-F${max}`;
 }
 
-function keyframeStatus(kf: VideoTrackKeyframe): string {
-  if (kf.absent) return "消失";
+function keyframeStatus(kf: VideoTrackKeyframe, outside: boolean): string {
+  if (outside) return "消失";
   if (kf.occluded) return "遮挡";
   return "正常";
 }
 
 function firstVisibleTrackFrame(track: VideoTrackAnnotation["geometry"]): number | null {
   if (track.keyframes.length === 0) return null;
-  const visible = track.keyframes.filter((kf) => !kf.absent);
+  const visible = track.keyframes.filter((kf) => !isFrameOutside(track, kf.frame_index));
   const frames = (visible.length > 0 ? visible : track.keyframes).map((kf) => kf.frame_index);
   return Math.min(...frames);
 }
@@ -88,7 +96,6 @@ function exactFrameLabel(selectedTrack: VideoTrackAnnotation | null, frameIndex:
   if (!selectedTrack) return `F${frameIndex}`;
   if (outside) return `F${frameIndex} · 消失`;
   const exact = selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex);
-  if (exact?.absent) return `F${frameIndex} · 消失`;
   if (exact?.occluded) return `F${frameIndex} · 遮挡`;
   return `F${frameIndex} · ${exact ? "关键帧" : "非关键帧"}`;
 }
@@ -103,7 +110,6 @@ function copyText(text: string): void {
 
 function statusChipText(kf: VideoTrackKeyframe | undefined, outside = false): string {
   if (outside) return "当前消失";
-  if (kf?.absent) return "当前消失";
   if (kf?.occluded) return "当前遮挡";
   return kf ? "关键帧" : "非关键帧";
 }
@@ -132,7 +138,7 @@ function visibleInReviewMode(source: VideoFrameEntry["source"] | null, mode?: Di
 
 function nextPredictionFrame(track: VideoTrackAnnotation["geometry"], frameIndex: number): number | null {
   const predictionFrames = sortedKeyframes(track)
-    .filter((kf) => kf.source === "prediction" && !kf.absent)
+    .filter((kf) => kf.source === "prediction" && !isFrameOutside(track, kf.frame_index))
     .map((kf) => kf.frame_index);
   return predictionFrames.find((frame) => frame > frameIndex) ?? predictionFrames[0] ?? null;
 }
@@ -359,7 +365,7 @@ export function VideoTrackPanel({
               </div>
               <div className={styles.trackActionRow}>
                 <span
-                  className={cn(styles.statusChip, (outside || exact?.absent) && styles.statusChipDanger)}
+                  className={cn(styles.statusChip, outside && styles.statusChipDanger)}
                 >
                   {statusChipText(exact, outside)}
                 </span>
@@ -516,7 +522,7 @@ export function VideoTrackPanel({
                 size="sm"
                 className={styles.frameActionButton}
                 disabled={!selectedTrack || readOnly || selectedTrackLocked}
-                onClick={() => onMarkSelectedTrack({ absent: true, occluded: false })}
+                onClick={() => onMarkSelectedTrack({ outside: true, occluded: false })}
               >
                 <Icon name="eyeOff" size={14} />标记消失
               </Button>
@@ -524,7 +530,7 @@ export function VideoTrackPanel({
                 size="sm"
                 className={styles.frameActionButton}
                 disabled={!selectedTrack || readOnly || selectedTrackLocked}
-                onClick={() => onMarkSelectedTrack({ absent: false, occluded: true })}
+                onClick={() => onMarkSelectedTrack({ outside: false, occluded: true })}
               >
                 <Icon name="rect" size={14} />标记遮挡
               </Button>
@@ -577,23 +583,25 @@ export function VideoTrackPanel({
                   <span>状态</span>
                   <span>操作</span>
                 </div>
-                {sortedKeyframes(selectedTrack.geometry).map((kf) => (
+                {sortedKeyframes(selectedTrack.geometry).map((kf) => {
+                  const kfOutside = isFrameOutside(selectedTrack.geometry, kf.frame_index);
+                  return (
                   <div
                     key={kf.frame_index}
                     data-testid={kf.source === "prediction" ? "video-prediction-keyframe-row" : "video-track-keyframe-row"}
                     className={cn(styles.keyframeRow, kf.source === "prediction" && styles.keyframePredictionRow)}
                   >
                     <span className={cn("mono", styles.keyframeFrame)}>F{kf.frame_index}</span>
-                    <span className={cn(styles.keyframeStatus, kf.absent && styles.keyframeStatusAbsent)}>
+                    <span className={cn(styles.keyframeStatus, kfOutside && styles.keyframeStatusAbsent)}>
                       <svg className={styles.keyframeStatusDot} aria-hidden="true" viewBox="0 0 7 7">
                         <circle
                           cx="3.5"
                           cy="3.5"
                           r="3.5"
-                          fill={kf.absent ? "var(--color-danger)" : kf.source === "prediction" ? "oklch(0.78 0.14 78)" : "oklch(0.68 0.16 145)"}
+                          fill={kfOutside ? "var(--color-danger)" : kf.source === "prediction" ? "oklch(0.78 0.14 78)" : "oklch(0.68 0.16 145)"}
                         />
                       </svg>
-                      {keyframeStatus(kf)}
+                      {keyframeStatus(kf, kfOutside)}
                       {kf.source === "prediction" && (
                         <span className={styles.compactBadge}>
                           <Badge variant="default">预测</Badge>
@@ -635,7 +643,7 @@ export function VideoTrackPanel({
                       <Button
                         size="sm"
                         className={styles.keyframeButton}
-                        disabled={readOnly || Boolean(kf.absent)}
+                        disabled={readOnly || kfOutside}
                         title="复制此关键帧为独立框"
                         onClick={() => onConvertToBboxes?.(selectedTrack, {
                           operation: "copy",
@@ -648,7 +656,7 @@ export function VideoTrackPanel({
                       <Button
                         size="sm"
                         className={styles.keyframeButton}
-                        disabled={readOnly || Boolean(kf.absent)}
+                        disabled={readOnly || kfOutside}
                         title="拆此关键帧为独立框"
                         onClick={() => onConvertToBboxes?.(selectedTrack, {
                           operation: "split",
@@ -669,7 +677,8 @@ export function VideoTrackPanel({
                       </Button>
                     </span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
             <details open className={styles.convertPanel}>

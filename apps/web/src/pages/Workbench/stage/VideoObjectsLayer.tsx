@@ -42,7 +42,7 @@ export function VideoObjectsLayer({
           outside: preview.outside,
         };
         const points = [...preview.keyframes]
-          .filter((kf) => !kf.absent && !isFrameOutside(previewTrack, kf.frame_index))
+          .filter((kf) => !isFrameOutside(previewTrack, kf.frame_index))
           .sort((a, b) => a.frame_index - b.frame_index)
           .map((kf) => ({
             frame: kf.frame_index,

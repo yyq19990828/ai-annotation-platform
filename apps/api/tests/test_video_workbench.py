@@ -1095,9 +1095,9 @@ async def _create_video_export_fixture(db_session, user):
                     "frame_index": 4,
                     "bbox": {"x": 0.5, "y": 0.6, "w": 0.2, "h": 0.2},
                     "source": "manual",
-                    "absent": True,
                 },
             ],
+            "outside": [{"from": 4, "to": 4}],
         },
         attributes={"speed": 42},
     )

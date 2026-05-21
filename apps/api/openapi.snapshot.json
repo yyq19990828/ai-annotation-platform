@@ -14109,6 +14109,17 @@
             "title": "Outside",
             "type": "array"
           },
+          "semantic_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Label"
+          },
           "track_id": {
             "minLength": 1,
             "title": "Track Id",
@@ -14131,11 +14142,6 @@
       "VideoTrackKeyframe": {
         "additionalProperties": false,
         "properties": {
-          "absent": {
-            "default": false,
-            "title": "Absent",
-            "type": "boolean"
-          },
           "attributes": {
             "anyOf": [
               {

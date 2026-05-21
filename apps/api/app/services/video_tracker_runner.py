@@ -87,7 +87,6 @@ def _source_keyframe(annotation: Annotation, job: VideoTrackerJob) -> dict:
         "frame_index": frame_index,
         "bbox": _normalize_bbox(geometry),
         "source": "manual",
-        "absent": False,
         "occluded": False,
     }
 
@@ -156,7 +155,6 @@ def apply_tracker_results(
             "frame_index": result.frame_index,
             "bbox": _normalize_bbox(result.geometry),
             "source": "prediction",
-            "absent": False,
             "occluded": False,
         }
 

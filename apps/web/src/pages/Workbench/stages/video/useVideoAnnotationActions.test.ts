@@ -54,7 +54,6 @@ describe("video annotation actions helpers", () => {
         frame_index: 9,
         bbox: box,
         source: "manual",
-        absent: false,
         occluded: false,
       },
     ]);

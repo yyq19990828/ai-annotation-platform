@@ -303,11 +303,11 @@ describe("VideoStage", () => {
         geometry: {
           type: "video_track",
           track_id: "trk_car",
-          outside: [{ from: 3, to: 4 }],
+          outside: [{ from: 3, to: 4 }, { from: 5, to: 5 }],
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
             { frame_index: 3, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
-            { frame_index: 5, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", absent: true },
+            { frame_index: 5, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
             { frame_index: 7, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "prediction" },
           ],
         },
@@ -1269,7 +1269,7 @@ describe("VideoStage", () => {
     expect(final.getByTestId("video-label-overlay")).not.toHaveTextContent("prediction-car");
   });
 
-  it("does not interpolate across an absent keyframe", () => {
+  it("does not interpolate across an outside keyframe", () => {
     const annotations = [
       {
         id: "t1",
@@ -1277,9 +1277,10 @@ describe("VideoStage", () => {
         geometry: {
           type: "video_track",
           track_id: "trk_car",
+          outside: [{ from: 1, to: 1 }],
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
-            { frame_index: 1, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", absent: true },
+            { frame_index: 1, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
             { frame_index: 2, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
           ],
         },

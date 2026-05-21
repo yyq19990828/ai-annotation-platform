@@ -119,7 +119,9 @@ export function geometryToShape(g: Geometry): {
     return { x: g.x, y: g.y, w: g.w, h: g.h };
   }
   if (g.type === "video_track") {
-    const keyframe = g.keyframes.find((kf) => !kf.absent) ?? g.keyframes[0];
+    const outside = g.outside ?? [];
+    const isOutside = (frame: number) => outside.some((r) => frame >= r.from && frame <= r.to);
+    const keyframe = g.keyframes.find((kf) => !isOutside(kf.frame_index)) ?? g.keyframes[0];
     return keyframe?.bbox ?? { x: 0, y: 0, w: 0, h: 0 };
   }
   if (g.type === "rotated_bbox") {

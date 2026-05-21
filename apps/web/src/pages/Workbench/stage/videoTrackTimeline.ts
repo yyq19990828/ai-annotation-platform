@@ -48,7 +48,7 @@ function sortedLatestKeyframes(track: VideoTrackGeometry): VideoTrackKeyframe[] 
 export function visibleKeyframesForTimeline(track: VideoTrackGeometry): VideoTrackKeyframe[] {
   const outsideRanges = effectiveOutsideRanges(track);
   return sortedLatestKeyframes(track).filter(
-    (keyframe) => !keyframe.absent && !isFrameInOutsideRanges(outsideRanges, keyframe.frame_index),
+    (keyframe) => !isFrameInOutsideRanges(outsideRanges, keyframe.frame_index),
   );
 }
 

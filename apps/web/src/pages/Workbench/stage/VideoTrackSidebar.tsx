@@ -12,7 +12,7 @@ import {
   upsertKeyframe,
 } from "./videoStageGeometry";
 import { addOutsideRange, isFrameOutside, removeOutsideFrame } from "./videoTrackOutside";
-import { VideoTrackPanel } from "./VideoTrackPanel";
+import { VideoTrackPanel, type TrackMarkPatch } from "./VideoTrackPanel";
 // VideoTrackerJobState type imported lazily via inline import in props
 import type {
   VideoFrameEntry,
@@ -248,9 +248,9 @@ export function VideoTrackSidebar({
     });
   }, [canMergeSelectedTracks, onComposeTracks, readOnly, selectedTracks]);
 
-  const markSelectedTrack = useCallback((patch: Partial<VideoTrackKeyframe>) => {
+  const markSelectedTrack = useCallback((patch: TrackMarkPatch) => {
     if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
-    if (patch.absent) {
+    if (patch.outside) {
       onUpdate(selectedTrack, addOutsideRange(selectedTrack.geometry, {
         from: frameIndex,
         to: frameIndex,
@@ -259,7 +259,7 @@ export function VideoTrackSidebar({
       return;
     }
     const bbox = nearestTrackBbox(selectedTrack.geometry, frameIndex);
-    onUpdate(selectedTrack, upsertKeyframe(removeOutsideFrame(selectedTrack.geometry, frameIndex), frameIndex, bbox, patch));
+    onUpdate(selectedTrack, upsertKeyframe(removeOutsideFrame(selectedTrack.geometry, frameIndex), frameIndex, bbox, { occluded: patch.occluded, source: patch.source }));
   }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack]);
 
   const copySelectedTrackToCurrentFrame = useCallback(() => {
@@ -295,7 +295,6 @@ export function VideoTrackSidebar({
         copiedKeyframe.keyframe.bbox,
         {
           source: "manual",
-          absent: copiedKeyframe.keyframe.absent ?? false,
           occluded: copiedKeyframe.keyframe.occluded ?? false,
         },
       ),
