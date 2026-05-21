@@ -22161,7 +22161,7 @@
             "required": false,
             "schema": {
               "default": "coco",
-              "pattern": "^(coco|voc|yolo|aap_json)$",
+              "pattern": "^(coco|voc|yolo|aap_json|video_json|mot|kitti)$",
               "title": "Format",
               "type": "string"
             }
@@ -22548,7 +22548,7 @@
             "required": false,
             "schema": {
               "default": "coco",
-              "pattern": "^(coco|voc|yolo|aap_json)$",
+              "pattern": "^(coco|voc|yolo|aap_json|video_json|mot|kitti)$",
               "title": "Format",
               "type": "string"
             }
