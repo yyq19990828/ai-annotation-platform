@@ -241,9 +241,9 @@ async def test_export_aap_json_round_trip_after_external_import(
     assert t0["predictions"][0]["model_version"] == "rt-test"
 
 
-def test_aap_task_block_media_type_defaults_and_serialization():
+async def test_aap_task_block_media_type_defaults_and_serialization():
     """v0.10.31 · schema 1.2: media_type 默认 image, video 默认 None;
-    序列化时 media_type 字段必出现 (严格写满)."""
+    序列化时 media_type 字段必出现 (严格写满). (module 级 pytestmark=asyncio, 故 async def)"""
     block = AAPTaskBlock(task_match=AAPTaskMatch(display_id="T-1"))
     assert block.media_type == "image"
     assert block.video is None
