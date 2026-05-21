@@ -25,7 +25,6 @@
 ### 现在可做（无前置依赖，作为 `chip:maintenance` 穿插推进，不抢 v0.10.x 主线）
 
 - **OpenSeadragon 瓦片金字塔**（见 §C.7 图片工作台 · I1 大图 tile；极大图 > 50MP 才必要）
-- **i18n 框架接入**（P3，v0.10.11 已为 sections 群建 CSS modules 试点；i18n 可在迁 inline style 同窗口合并破窗，密度最高的 `pages/Projects/sections/` 仍是首选切入点）
 - **WorkbenchStageHostProps 类型嵌套重构 (call-site 改造)**（P3，v0.10.18 后续维护项）：v0.10.18 已加 JSDoc 分组注释 (common / video / image / ai / editors) 但类型仍平铺以兼容 WorkbenchShell 1210 行 call site；后续若 Shell 再次膨胀超过 900 行触发线，把 props 改为嵌套对象形态 `{ common: {...}, image?: {...}, video?: {...}, ai?: {...}, editors?: {...} }` 同时改造 call site，分组注释已就位作切分参考。
 - **`useWorkbenchShellModel` 装配 hook**（P3，触发条件）：WorkbenchShell 仍 1210 行；触发条件 Shell 再次超过 900 行（v0.10.18 后续观察）。
 
