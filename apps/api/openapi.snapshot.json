@@ -13947,11 +13947,21 @@
             ],
             "title": "Frame Index"
           },
+          "gap_mode": {
+            "default": "interpolate",
+            "enum": [
+              "interpolate",
+              "outside"
+            ],
+            "title": "Gap Mode",
+            "type": "string"
+          },
           "operation": {
             "enum": [
               "aggregate_bboxes",
               "split_track",
-              "merge_tracks"
+              "merge_tracks",
+              "join_tracks"
             ],
             "title": "Operation",
             "type": "string"
@@ -13986,7 +13996,8 @@
             "enum": [
               "aggregate_bboxes",
               "split_track",
-              "merge_tracks"
+              "merge_tracks",
+              "join_tracks"
             ],
             "title": "Operation",
             "type": "string"

@@ -629,6 +629,7 @@ class AnnotationService:
         operation: str,
         frame_index: int | None = None,
         delete_sources: bool = True,
+        gap_mode: str = "interpolate",
     ) -> tuple[list[Annotation], list[Annotation], list[uuid.UUID]]:
         if operation == "aggregate_bboxes":
             updated, created, deleted = await self._aggregate_video_bboxes(
@@ -648,6 +649,12 @@ class AnnotationService:
             updated, created, deleted = await self._merge_video_tracks(
                 task=task,
                 annotations=annotations,
+            )
+        elif operation == "join_tracks":
+            updated, created, deleted = await self._join_video_tracks(
+                task=task,
+                annotations=annotations,
+                gap_mode=gap_mode,
             )
         else:
             raise ValueError("unsupported composition operation")
@@ -800,27 +807,64 @@ class AnnotationService:
         task: Task,
         annotations: list[Annotation],
     ) -> tuple[list[Annotation], list[Annotation], list[uuid.UUID]]:
+        # merge_tracks 默认把 gap 区间标 outside 后合并.
+        return self._combine_two_video_tracks(
+            annotations=annotations,
+            operation="merge_tracks",
+            fill_gap_outside=True,
+        )
+
+    async def _join_video_tracks(
+        self,
+        *,
+        task: Task,
+        annotations: list[Annotation],
+        gap_mode: str,
+    ) -> tuple[list[Annotation], list[Annotation], list[uuid.UUID]]:
+        # v0.10.30 · D-2.5 · 两条帧号不重叠的 track 之间补 gap 后合并.
+        # gap_mode="outside" 与 merge_tracks 行为一致 (gap 标 outside);
+        # gap_mode="interpolate" 不写 gap outside, gap 端点间靠现有线性插值连接.
+        return self._combine_two_video_tracks(
+            annotations=annotations,
+            operation="join_tracks",
+            fill_gap_outside=(gap_mode == "outside"),
+        )
+
+    def _combine_two_video_tracks(
+        self,
+        *,
+        annotations: list[Annotation],
+        operation: str,
+        fill_gap_outside: bool,
+    ) -> tuple[list[Annotation], list[Annotation], list[uuid.UUID]]:
+        """merge / join 共用的两条 track 合并落库路径.
+
+        校验恰好两条同 class 的 video_track 且帧号区间不重叠, 合并 keyframes
+        (frame_index 唯一), 透传 survivor 既有 geometry (含 semantic_label) 与两条
+        track 的 outside; ``fill_gap_outside`` 决定是否把 gap 区间额外标 outside.
+        落库约定: survivor 保留并 version+1, removed 置 is_active=False.
+        """
         if len(annotations) != 2:
-            raise ValueError("merge_tracks requires exactly two annotations")
+            raise ValueError(f"{operation} requires exactly two annotations")
         if any(
             (ann.geometry or {}).get("type") != "video_track" for ann in annotations
         ):
-            raise ValueError("merge_tracks only accepts video_track annotations")
+            raise ValueError(f"{operation} only accepts video_track annotations")
         if annotations[0].class_name != annotations[1].class_name:
-            raise ValueError("merge_tracks requires tracks with the same class")
+            raise ValueError(f"{operation} requires tracks with the same class")
 
         ranges: list[tuple[int, int, Annotation]] = []
         for ann in annotations:
             visible = _track_visible_keyframes(ann.geometry or {})
             if not visible:
-                raise ValueError("merge_tracks requires visible keyframes")
+                raise ValueError(f"{operation} requires visible keyframes")
             frames = [int(kf.get("frame_index", 0)) for kf in visible]
             ranges.append((min(frames), max(frames), ann))
         ranges.sort(key=lambda item: item[0])
         first_start, first_end, first = ranges[0]
         second_start, second_end, second = ranges[1]
         if first_end >= second_start:
-            raise ValueError("merge_tracks requires non-overlapping tracks")
+            raise ValueError(f"{operation} requires non-overlapping tracks")
 
         survivor = annotations[0]
         removed = annotations[1]
@@ -834,7 +878,7 @@ class AnnotationService:
             frame = int(kf.get("frame_index", 0))
             frame_counts[frame] = frame_counts.get(frame, 0) + 1
         if any(count > 1 for count in frame_counts.values()):
-            raise ValueError("merge_tracks requires unique keyframe frame_index values")
+            raise ValueError(f"{operation} requires unique keyframe frame_index values")
         keyframes.sort(key=lambda kf: int(kf.get("frame_index", 0)))
 
         outside = [
@@ -842,7 +886,7 @@ class AnnotationService:
             for ann in annotations
             for range_ in ((ann.geometry or {}).get("outside") or [])
         ]
-        if first_end + 1 <= second_start - 1:
+        if fill_gap_outside and first_end + 1 <= second_start - 1:
             outside.append(
                 {
                     "from": first_end + 1,

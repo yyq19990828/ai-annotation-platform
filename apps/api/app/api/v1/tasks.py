@@ -994,6 +994,7 @@ async def compose_video_tracks(
             operation=data.operation,
             frame_index=data.frame_index,
             delete_sources=data.delete_sources,
+            gap_mode=data.gap_mode,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
