@@ -1,12 +1,17 @@
 #!/usr/bin/env node
-// PreToolUse hook (matcher: "Edit|Write|MultiEdit")
-// Safety net for harness path-resolution bugs: blocks any file write whose
-// resolved target escapes the current working directory subtree.
+// PreToolUse hook (matcher: "Edit|Write|MultiEdit|NotebookEdit|Bash")
+// Safety net for worktree subagents. Two enforcement rules, both gated on the
+// session cwd being inside `.claude/worktrees/` (i.e. a subagent worktree):
 //
-// Rationale: code-modifying subagents run in their own git worktree (forced by
-// inject-worktree.mjs). If a write resolves OUTSIDE the session cwd — e.g. a
-// subagent edit that lands in the main repo instead of its worktree — we deny
-// it. For the main agent, cwd == repo root, so normal edits pass untouched.
+//   1. File writes (Edit/Write/MultiEdit/NotebookEdit) whose resolved target
+//      escapes the worktree subtree are DENIED — guards against harness
+//      path-resolution bugs leaking subagent edits into the main repo.
+//   2. Bash is DENIED outright. Policy: worktree subagents don't need Bash;
+//      tests/validation run in the main process AFTER the branch is merged.
+//      This removes Bash as a path-escape vector entirely.
+//
+// For the main agent (cwd == repo root) the gate is skipped, so it edits and
+// runs Bash freely (auto-memory, global config, post-merge validation, etc.).
 //
 // Fail-open: if the payload lacks the fields we need, we allow (never wedge the
 // session on malformed input). A debug line is appended to a log for auditing.
@@ -61,12 +66,11 @@ process.stdin.on('end', () => {
   }
 
   const toolInput = event.tool_input ?? {};
+  const toolName = event.tool_name ?? '';
   const cwd = event.cwd;
-  // Edit / Write / MultiEdit all carry a single file_path.
-  const filePath = toolInput.file_path;
 
-  if (!cwd || !filePath) {
-    log(`SKIP missing fields cwd=${cwd ?? ''} file_path=${filePath ?? ''}`);
+  if (!cwd) {
+    log(`SKIP missing cwd tool=${toolName}`);
     emit({}); // not enough info -> allow
   }
 
@@ -74,10 +78,30 @@ process.stdin.on('end', () => {
 
   // Only enforce when running inside a worktree. The main agent (cwd = repo
   // root) legitimately writes outside the repo (auto-memory at
-  // ~/.claude/.../memory, global config, etc.) and must not be restricted.
+  // ~/.claude/.../memory, global config, etc.) and runs Bash freely
+  // (post-merge tests, validation), so it must not be restricted.
   const WORKTREE_MARKER = `${sep}.claude${sep}worktrees${sep}`;
   if (!cwdAbs.includes(WORKTREE_MARKER)) {
     emit({}); // not a worktree session -> allow
+  }
+
+  // Rule 2: worktree subagents don't get Bash. Validation runs in the main
+  // process after merge. Denying outright removes Bash as an escape vector.
+  if (toolName === 'Bash') {
+    deny(
+      `Bash is disabled inside subagent worktrees.\n` +
+        `Worktree subagents only edit files; run tests/validation in the main ` +
+        `process after the branch is merged.`,
+    );
+  }
+
+  // Rule 1: file-write tools must stay inside the worktree subtree.
+  // Edit / Write / MultiEdit carry file_path; NotebookEdit carries notebook_path.
+  const filePath = toolInput.file_path ?? toolInput.notebook_path;
+
+  if (!filePath) {
+    log(`SKIP missing path tool=${toolName} cwd=${cwdAbs}`);
+    emit({}); // not enough info -> allow
   }
 
   const targetAbs = resolve(cwd, filePath); // resolves both relative and absolute
