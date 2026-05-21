@@ -15,6 +15,10 @@
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出）。三项已拍板决策：抽帧=逻辑采样不动原视频、frame_index 存源帧号、AAP 单信封模态感知。原 §C.5 / §C.6 / 视频相关 §A 条目已全部并入该文，按 Phase 1-6 顺序排布。
+  - **进度**：Phase 1（帧采样，v0.10.29）✅ · Phase 2 轨迹工具 2.1–2.8（v0.10.30）✅ · Phase 3-6 待开工。
+  - **从已完成 Phase 延后的项**（仍在 epic 内，单列以免遗漏）：
+    - **2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）：扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap 能力；DAVIS mask 导出（Phase 4.5）依赖此项。
+    - **WebCodecs 精确帧解码 demux 接入**（P2，按真实卡顿数据决定）：Phase 1 已落地解码核心 + feature flag（默认关闭），但 mp4 demux 链路（mp4 字节 → `EncodedVideoChunk`）尚未接入。
 
 
 ---

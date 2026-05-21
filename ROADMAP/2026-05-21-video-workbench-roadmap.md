@@ -34,44 +34,15 @@
 
 ## Phase 2 · 轨迹工具对齐 CVAT（核心生产力）
 
-> **状态（v0.10.30 收尾）**：2.1–2.8 已落地（执行计划见 [2026-05-21-v0.10.30-phase2-tracks-plan](../docs/plans/2026-05-21-v0.10.30-phase2-tracks-plan.md)）。数据模型已收敛：删除 `absent`、新增 `semantic_label`、`track_number` 确定性派生（alembic 0084）。**2.9 多几何 track 暂缓**。下文各子项保留作背景。
-
-> 现状：`VideoTrackGeometry`（[`_jsonb_types.py:359`](../apps/api/app/schemas/_jsonb_types.py)）已有 `track_id`(自动 `trk_<uuid>`, 只读) + `keyframes[{frame_index, bbox, source, occluded, attributes}]` + `outside` 区间（`absent` 已于 v0.10.30 删除并并入 outside）；前端线性插值；`split_track`/`merge_tracks` 后端有实现（[`annotation.py:629`](../apps/api/app/services/annotation.py)）但**无 UI**；geometry 仅 bbox。
+> **2.1–2.8 已于 v0.10.30 落地**（执行计划见 [2026-05-21-v0.10.30-phase2-tracks-plan](../docs/plans/2026-05-21-v0.10.30-phase2-tracks-plan.md)，详情见 [CHANGELOG v0.10.30](../CHANGELOG.md)）：
 >
-> 下表是对齐 CVAT 的能力盘点：✅已有 / ⚠️半成品 / ❌缺。本 Phase 聚焦低成本高收益 + 解锁 MOT 导出的项。
+> - 2.1 `semantic_label`（可编辑语义标签）+ `track_number` 确定性派生（不持久化）；内部 `track_id` uuid 保持只读。
+> - 2.2 删除 `absent`、语义并入 `outside`（对齐 CVAT 两态 outside/occluded，alembic 0084 迁移存量）。
+> - 2.3 track 级 / 帧级（`mutable`）属性 UI；2.4 split / merge UI 接通；2.5 Track Join（`gap_mode` interpolate/outside）；2.6 Propagate 铺帧；2.7 导航（`,`/`.` 关键帧、`Home`/`End` 首末出现帧）；2.8 侧栏隐藏 / 锁定 / 选色。
 
-### 2.1 显式可编辑 ID（❌ → 做，**优先**）
-- 现 `track_id` 是只读 uuid，对标注员无意义。拆成两个概念：
-  - **`track_number`（整数，任务内连续，后端确定性派生）**：导出 MOT/KITTI 必须（见 Phase 4）；按 track 在任务内的稳定排序派生，不持久化也行（导出时算）。
-  - **用户可编辑语义 ID/标签**（如 `car_3`）：放 `VideoTrackGeometry` 新字段或 annotation 属性，用于跨任务 Re-ID 心智；不参与内部主键。
-- 内部 `track_id` uuid 保持只读不变（D2 同源思路）。
-
-### 2.2 outside / occluded 语义收敛（⚠️ → 做）
-- CVAT 三态：`outside`（目标离开画面，轨迹暂停）/ `occluded`（在画面但被遮，仍画虚线框）/ `keyframe`（手动 vs 插值）。
-- 本平台现有 `outside`（区间）+ `occluded`（逐关键帧）+ **多出一个 `absent`，与 outside 语义重叠**。
-- 决策：借此次收敛掉 `absent`，对齐 CVAT 两态（outside 区间 + occluded 逐帧）。`videoTrackOutside.ts` 已有"遗留 absent 标志转 outside 范围"兼容逻辑，可平滑迁移。
-
-### 2.3 track 级 vs 帧级属性 UI 暴露（✅ 已有，缺 UI）
-- 数据层已支持：track 默认属性 + `mutable=true` 走 `keyframe.attributes`（v0.10.6）。仅需属性面板把"此属性逐帧可变"显式呈现。
-
-### 2.4 split / merge UI（⚠️ 后端有、缺 UI；原 R16 / V6）
-- 时间轴右键 / 快捷键：在当前帧 split track 成两条；选中两条 merge（帧号不重叠）。后端 `split_track`/`merge_tracks` 直接接通。
-
-### 2.5 Track Join / Re-ID 跳连（❌；原 R16）
-- tracker 完成后补两段 track 之间的 gap 跳连判定；与 split-merge 共享 UI 模式。
-
-### 2.6 Propagate（复制到后续 N 帧）（❌，新，低成本高频）
-- CVAT 高频操作：当前帧画一框，一键铺到后续 N 帧（作为关键帧或 held）。纯前端 + 现有 keyframe upsert。
-
-### 2.7 Track 导航（❌，新）
-- 跳到该 track 的下一个/上一个关键帧；跳到目标"首次出现 / 消失"帧。
-
-### 2.8 侧栏 track 隐藏 / 锁定 / 选色（❌，新，纯前端）
-- 每条 track 可单独隐藏 / 锁定；颜色按 track 还是按类可切。
-
-### 2.9 多几何 track（polygon / polyline / mask）（❌；原 R9，**本期暂缓**）
-- 扩 `video_track.geometry.kind` → `polygon | polyline | mask`，旧 bbox track 缺省兼容；按周长 / 长度参数化插值；mask track 依赖 R5.2/R5.3 canvas / bitmap 能力；同步 `docs-site/dev/reference/` 与导出协议。
-- **体量大、依赖点对应插值**，排在轨迹基础能力之后；DAVIS mask 导出依赖此项。
+### 2.9 多几何 track（polygon / polyline / mask）（**延后**；原 R9）
+- 扩 `video_track.geometry.kind` → `polygon | polyline | mask`，旧 bbox track 缺省兼容；按周长 / 长度参数化插值；mask track 依赖 canvas / bitmap 能力；同步 `docs-site/dev/reference/` 与导出协议。
+- **体量大、依赖点对应插值**，排在轨迹基础能力之后；DAVIS mask 导出（Phase 4.5）依赖此项。
 
 ---
 
@@ -123,7 +94,7 @@
 ### 4.7 前端导出选项（现状 + 扩展）
 - 现 `ExportSection.tsx` 对 video-track 项目强制 Video JSON + 关键帧/所有帧两选一；扩展为可选 AAP / MOT / KITTI，沿用图像侧异步 zip 下载流。
 
-> **统一映射约定**：outside / absent(收敛后) / occluded / prediction source 在各格式中的映射要统一定义一张表（MOT 省略 outside 帧、KITTI 用 occluded 列、DAVIS 用空 mask），避免每格式各写一套。
+> **统一映射约定**：outside / occluded / prediction source 在各格式中的映射要统一定义一张表（MOT 省略 outside 帧、KITTI 用 occluded 列、DAVIS 用空 mask），避免每格式各写一套。
 
 ---
 
@@ -145,8 +116,8 @@
 
 | Phase | 主题 | 原 ROADMAP 对应 | 优先级 | 备注 |
 |---|---|---|---|---|
-| 1 | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1 | "抽帧放哪"的落地；Phase 4 MOT 依赖其帧号语义 |
-| 2 | 轨迹工具对齐 CVAT | R16 / R9(暂缓) + 新增 2.1/2.6/2.7/2.8 | P0/P1 | 2.1 整数 ID 是 Phase 4 MOT 前置 |
+| 1 ✅ | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1 | v0.10.29 落地；WebCodecs demux 接入延后 |
+| 2 ✅ | 轨迹工具对齐 CVAT | R16 / R9(暂缓) + 新增 2.1/2.6/2.7/2.8 | P0/P1 | 2.1–2.8 v0.10.30 落地；**2.9 多几何 track 延后** |
 | 3 | 真实 tracker backend | C.6 P0 / R23 / I20.4 | P0(体量大) | 遵循 ADR-0012 不入 apps/api |
 | 4 | 视频导出（D3） | R22 / C.6 P2 / §A AAP video_track 导入 | P1 | 4.5 DAVIS 依赖 2.9 |
 | 5 | 长视频协同 overlap | R11 / R21 / C.6 P1 segment | P1 | 不做 OT/CRDT |
