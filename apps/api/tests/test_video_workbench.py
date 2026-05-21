@@ -1821,6 +1821,194 @@ async def test_video_track_composition_merge_rejects_overlap_and_mixed_classes(
     )
 
 
+async def _add_car_tail_track(db_session, task, project, user, *, frame_index=6):
+    # trk_car 已有 keyframes [0, 2, 4]; 这里造一条帧号在后、与之不重叠的同 class track,
+    # 形成 gap [5..frame_index-1] 供 join 测试.
+    tail = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="car",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_car_tail",
+            "keyframes": [
+                {
+                    "frame_index": frame_index,
+                    "bbox": {"x": 0.8, "y": 0.2, "w": 0.2, "h": 0.2},
+                    "source": "manual",
+                },
+            ],
+        },
+    )
+    db_session.add(tail)
+    await db_session.flush()
+    return tail
+
+
+async def test_video_track_composition_join_interpolate_no_gap_outside(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    tail = await _add_car_tail_track(db_session, task, project, user)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "join_tracks",
+            "annotation_ids": [str(first.id), str(tail.id)],
+            "gap_mode": "interpolate",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["operation"] == "join_tracks"
+    assert body["deleted_annotation_ids"] == [str(tail.id)]
+    merged = body["updated_annotations"][0]
+    assert merged["id"] == str(first.id)
+    assert [kf["frame_index"] for kf in merged["geometry"]["keyframes"]] == [0, 2, 4, 6]
+    # interpolate 模式: gap [5..5] 不写 outside, 靠现有线性插值连接.
+    assert merged["geometry"]["outside"] == []
+    await db_session.refresh(tail)
+    assert tail.is_active is False
+
+
+async def test_video_track_composition_join_outside_marks_gap(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    tail = await _add_car_tail_track(db_session, task, project, user)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "join_tracks",
+            "annotation_ids": [str(first.id), str(tail.id)],
+            "gap_mode": "outside",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    merged = body["updated_annotations"][0]
+    assert [kf["frame_index"] for kf in merged["geometry"]["keyframes"]] == [0, 2, 4, 6]
+    # outside 模式: gap [5..5] 标 outside 后合并 (与 merge_tracks 一致).
+    assert {"from": 5, "to": 5, "source": "manual"} in merged["geometry"]["outside"]
+    await db_session.refresh(tail)
+    assert tail.is_active is False
+
+
+async def test_video_track_composition_join_default_gap_mode_is_interpolate(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    tail = await _add_car_tail_track(db_session, task, project, user)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "join_tracks",
+            "annotation_ids": [str(first.id), str(tail.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    merged = resp.json()["updated_annotations"][0]
+    assert merged["geometry"]["outside"] == []
+
+
+async def test_video_track_composition_join_rejects_overlap_and_mixed_classes(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    overlap = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="car",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_join_overlap",
+            "keyframes": [
+                {
+                    "frame_index": 2,
+                    "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2},
+                    "source": "manual",
+                },
+            ],
+        },
+    )
+    mixed = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="person",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_join_person_tail",
+            "keyframes": [
+                {
+                    "frame_index": 6,
+                    "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2},
+                    "source": "manual",
+                },
+            ],
+        },
+    )
+    db_session.add_all([overlap, mixed])
+    await db_session.flush()
+
+    overlap_resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "join_tracks",
+            "annotation_ids": [str(first.id), str(overlap.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    mixed_resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "join_tracks",
+            "annotation_ids": [str(first.id), str(mixed.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert overlap_resp.status_code == 400
+    assert (
+        overlap_resp.json()["detail"] == "join_tracks requires non-overlapping tracks"
+    )
+    assert mixed_resp.status_code == 400
+    assert (
+        mixed_resp.json()["detail"]
+        == "join_tracks requires tracks with the same class"
+    )
+
+
 async def test_video_track_composition_rejects_annotation_from_other_task(
     db_session,
     httpx_client_bound,

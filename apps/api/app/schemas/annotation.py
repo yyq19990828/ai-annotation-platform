@@ -120,14 +120,22 @@ class VideoTrackConvertToBboxesResponse(BaseModel):
 
 
 class VideoTrackCompositionRequest(BaseModel):
-    operation: Literal["aggregate_bboxes", "split_track", "merge_tracks"]
+    operation: Literal[
+        "aggregate_bboxes", "split_track", "merge_tracks", "join_tracks"
+    ]
     annotation_ids: list[UUID] = []
     frame_index: int | None = None
     delete_sources: bool = True
+    # v0.10.30 · D-2.5 join_tracks gap 填充模式; 仅 join_tracks 使用.
+    # "interpolate": gap 端点间靠现有线性插值连接, 不写 gap outside;
+    # "outside": 把 gap 区间标 outside 后合并 (与 merge_tracks 默认一致).
+    gap_mode: Literal["interpolate", "outside"] = "interpolate"
 
 
 class VideoTrackCompositionResponse(BaseModel):
-    operation: Literal["aggregate_bboxes", "split_track", "merge_tracks"]
+    operation: Literal[
+        "aggregate_bboxes", "split_track", "merge_tracks", "join_tracks"
+    ]
     updated_annotations: list["AnnotationOut"] = []
     created_annotations: list["AnnotationOut"] = []
     deleted_annotation_ids: list[UUID] = []
