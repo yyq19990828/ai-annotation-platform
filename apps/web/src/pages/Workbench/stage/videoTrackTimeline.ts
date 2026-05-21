@@ -131,3 +131,25 @@ export function nextVisibleKeyframeFrame(
   }
   return null;
 }
+
+/** 上一个可见关键帧（不在 outside 区间）；无则 null。 */
+export function prevKeyframeFrame(track: VideoTrackGeometry, frameIndex: number): number | null {
+  return nextVisibleKeyframeFrame(track, frameIndex, -1);
+}
+
+/** 下一个可见关键帧（不在 outside 区间）；无则 null。 */
+export function nextKeyframeFrame(track: VideoTrackGeometry, frameIndex: number): number | null {
+  return nextVisibleKeyframeFrame(track, frameIndex, 1);
+}
+
+/** 轨迹首次出现（最早可见关键帧）的源帧号；无可见关键帧则 null。 */
+export function firstAppearFrame(track: VideoTrackGeometry): number | null {
+  const frames = visibleKeyframesForTimeline(track);
+  return frames.length > 0 ? frames[0].frame_index : null;
+}
+
+/** 轨迹最后出现（最晚可见关键帧）的源帧号；无可见关键帧则 null。 */
+export function lastAppearFrame(track: VideoTrackGeometry): number | null {
+  const frames = visibleKeyframesForTimeline(track);
+  return frames.length > 0 ? frames[frames.length - 1].frame_index : null;
+}

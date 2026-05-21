@@ -35,6 +35,8 @@ import type { VideoBookmark, VideoJumpHistory, VideoLoopRegion } from "./videoNa
 import {
   buildGlobalTimelineDensity,
   buildSelectedTrackTimeline,
+  firstAppearFrame,
+  lastAppearFrame,
   nextVisibleKeyframeFrame,
 } from "./videoTrackTimeline";
 import { clientPointToVideoPoint } from "./videoStageCoordinates";
@@ -57,6 +59,7 @@ import type {
   VideoResizeDirection,
   VideoStageGeom,
   VideoStageGeometry,
+  VideoTrackAnnotation,
   VideoTrackConversionOptions,
   VideoTrackGhost,
   VideoTrackPreview,
@@ -188,6 +191,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const frameIndexRef = useRef(0);
   const jogPlaybackRef = useRef<VideoJogPlayback>(PAUSED_JOG_PLAYBACK);
+  const selectedTrackRef = useRef<VideoTrackAnnotation | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -226,6 +230,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     () => videoTracks.find((ann) => ann.id === selectedId) ?? null,
     [selectedId, videoTracks],
   );
+  selectedTrackRef.current = selectedTrack;
   const selectedAnnotation = useMemo(
     () => annotations.find((ann) => ann.id === selectedId) ?? null,
     [annotations, selectedId],
@@ -741,13 +746,41 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       if (e.key === "0" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         setActualSize();
+        return;
+      }
+      // Track 导航快捷键：仅在有选中 track 时生效；与 ←/→ 软网格 (在时间轴上处理) 不冲突。
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const track = selectedTrackRef.current;
+      if (!track) return;
+      if (e.key === ",") {
+        e.preventDefault();
+        seekToKeyframe(-1);
+        return;
+      }
+      if (e.key === ".") {
+        e.preventDefault();
+        seekToKeyframe(1);
+        return;
+      }
+      if (e.key === "Home") {
+        const frame = firstAppearFrame(track.geometry);
+        if (frame === null) return;
+        e.preventDefault();
+        seekToFrame(frame);
+        return;
+      }
+      if (e.key === "End") {
+        const frame = lastAppearFrame(track.geometry);
+        if (frame === null) return;
+        e.preventDefault();
+        seekToFrame(frame);
       }
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [fitViewport, setActualSize]);
+  }, [fitViewport, seekToFrame, seekToKeyframe, setActualSize]);
 
   useEffect(() => {
     if (!selectedTrack) return;

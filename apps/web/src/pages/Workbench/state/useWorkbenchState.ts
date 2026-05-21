@@ -97,6 +97,8 @@ export function useWorkbenchState() {
   const [videoFrameIndex, setVideoFrameIndex] = useState(0);
   const [hiddenVideoTrackIds, setHiddenVideoTrackIds] = useState<Set<string>>(() => new Set());
   const [lockedVideoTrackIds, setLockedVideoTrackIds] = useState<Set<string>>(() => new Set());
+  // v0.10.30 · session 级 track 颜色覆盖：trackId -> oklch 颜色字符串（取色器写入）。
+  const [trackColorOverrides, setTrackColorOverrides] = useState<Record<string, string>>(() => ({}));
   // v0.10.2 · samSubTool 改为派生 (见 toolToSamSubTool); polarity + aiToolParams 仍是 state.
   const [samPolarity, setSamPolarity] = useState<SamPolarity>("positive");
   // text 子工具激活时让 AIToolDrawer 抓焦点; 每次切到 text-prompt 自增.
@@ -168,10 +170,23 @@ export function useWorkbenchState() {
       return next;
     });
   }, []);
+  const setVideoTrackColor = useCallback((trackId: string, color: string | null) => {
+    setTrackColorOverrides((prev) => {
+      if (color === null) {
+        if (!(trackId in prev)) return prev;
+        const next = { ...prev };
+        delete next[trackId];
+        return next;
+      }
+      if (prev[trackId] === color) return prev;
+      return { ...prev, [trackId]: color };
+    });
+  }, []);
   const resetVideoStageUi = useCallback(() => {
     setVideoFrameIndex(0);
     setHiddenVideoTrackIds(new Set());
     setLockedVideoTrackIds(new Set());
+    setTrackColorOverrides({});
   }, []);
   /** 同任务内剪贴板（仅本会话内存）。 */
   const [clipboard, setClipboard] = useState<Annotation[]>([]);
@@ -269,6 +284,7 @@ export function useWorkbenchState() {
     videoFrameIndex, setVideoFrameIndex,
     hiddenVideoTrackIds, lockedVideoTrackIds,
     toggleHiddenVideoTrack, toggleLockedVideoTrack, resetVideoStageUi,
+    trackColorOverrides, setVideoTrackColor,
     // v0.10.2 · 派生 samSubTool (read-only) + polarity + AI 工具参数 + 文本焦点 trigger.
     samSubTool,
     samPolarity, setSamPolarity,

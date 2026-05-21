@@ -3,7 +3,11 @@ import type { VideoTrackGeometry } from "@/types";
 import {
   buildGlobalTimelineDensity,
   buildSelectedTrackTimeline,
+  firstAppearFrame,
+  lastAppearFrame,
+  nextKeyframeFrame,
   nextVisibleKeyframeFrame,
+  prevKeyframeFrame,
   visibleKeyframesForTimeline,
 } from "./videoTrackTimeline";
 
@@ -58,6 +62,36 @@ describe("videoTrackTimeline", () => {
     expect(nextVisibleKeyframeFrame(geometry, 1, 1)).toBe(12);
     expect(nextVisibleKeyframeFrame(geometry, 12, -1)).toBe(1);
     expect(nextVisibleKeyframeFrame(geometry, 12, 1)).toBeNull();
+  });
+
+  it("navigates prev/next keyframe and first/last appear over visible frames", () => {
+    const geometry = track({
+      outside: [{ from: 5, to: 6 }, { from: 8, to: 8 }],
+      keyframes: [
+        { frame_index: 1, bbox, source: "manual" },
+        { frame_index: 5, bbox, source: "manual" },
+        { frame_index: 8, bbox, source: "manual" },
+        { frame_index: 12, bbox, source: "prediction" },
+      ],
+    });
+
+    expect(nextKeyframeFrame(geometry, 1)).toBe(12);
+    expect(nextKeyframeFrame(geometry, 12)).toBeNull();
+    expect(prevKeyframeFrame(geometry, 12)).toBe(1);
+    expect(prevKeyframeFrame(geometry, 1)).toBeNull();
+    expect(firstAppearFrame(geometry)).toBe(1);
+    expect(lastAppearFrame(geometry)).toBe(12);
+  });
+
+  it("returns null appear frames when no visible keyframe exists", () => {
+    const geometry = track({
+      outside: [{ from: 0, to: 10 }],
+      keyframes: [{ frame_index: 3, bbox, source: "manual" }],
+    });
+    expect(firstAppearFrame(geometry)).toBeNull();
+    expect(lastAppearFrame(geometry)).toBeNull();
+    expect(prevKeyframeFrame(geometry, 5)).toBeNull();
+    expect(nextKeyframeFrame(geometry, 0)).toBeNull();
   });
 
   it("aggregates global density into stable bins", () => {
