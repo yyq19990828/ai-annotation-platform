@@ -22,6 +22,29 @@
 
 ## 最新版本
 
+## [0.10.30] - 2026-05-21
+
+> **视频轨迹工具对齐 CVAT（视频工作台 Phase 2，除多几何 track）。** 落地 8 个子项并收敛 track 数据模型。**数据模型收敛**：删除 `VideoTrackKeyframe.absent` 字段，轨迹"消失"语义统一并入 `outside` 区间（对齐 CVAT 两态 outside/occluded，alembic [0084](apps/api/alembic/versions/0084_video_track_drop_absent.py) 把存量 `absent=true` 关键帧转写为 outside 并删键）；`VideoTrackGeometry` 新增用户可编辑的 `semantic_label`（跨任务 Re-ID 心智，不参与主键、不强制唯一）；`track_number` 改为按「首关键帧帧号升序、并列按 `track_id` 字典序」**确定性派生**（不持久化，改采样/增删 track 时自然重排，符合架构决策 D2）。**工具增强**：track 级 / 帧级 mutable 属性 UI；split / merge UI 接通；新增 **Track Join / Re-ID 跳连**（两条帧号不重叠的同类 track 补 gap 合并，`gap_mode=interpolate`(线性插值过渡) / `outside`(gap 标消失)）；当前帧框 **Propagate** 到后续 N 帧；track **导航**快捷键（`,`/`.` 跳上/下关键帧，`Home`/`End` 跳首/末出现帧）；侧栏 track **隐藏 / 锁定 / 选色**。多几何 track（polygon/polyline/mask）本期暂缓。详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md) Phase 2。
+
+### Added
+
+- **Track Join / Re-ID 跳连** (后端 [annotation.py](apps/api/app/services/annotation.py) · [schemas/annotation.py](apps/api/app/schemas/annotation.py); 前端 [VideoTrackComposeDialog.tsx](apps/web/src/pages/Workbench/stage/VideoTrackComposeDialog.tsx)): `compose_video_tracks` 新增 `operation="join_tracks"` + `gap_mode: interpolate|outside`，校验两条 track 同类且帧号不重叠，复用 merge 落库路径（抽出公共 helper `_combine_two_video_tracks`，merge 行为零变化）。前端侧栏选中两条不重叠同类 track 时出现「跳连」按钮 + gap_mode 选择对话框。
+- **可编辑 track 语义标签 `semantic_label`** (schema [_jsonb_types.py](apps/api/app/schemas/_jsonb_types.py); 前端 [VideoTrackPanel.tsx](apps/web/src/pages/Workbench/stage/VideoTrackPanel.tsx)): track 卡片内 inline 编辑（如 `car_3`），split 时透传给尾段。
+- **track_number 确定性派生** (后端 util `derive_track_number` [video_tracks.py](apps/api/app/services/video_tracks.py); 前端 `deriveTrackNumber` [videoStageGeometry.ts](apps/web/src/pages/Workbench/stage/videoStageGeometry.ts)): 显示/导出用编号，按 D-2.1a 规则派生，不写库。
+- **track / 帧级属性 UI** (前端 [VideoAttributesEditor.tsx](apps/web/src/pages/Workbench/stage/VideoAttributesEditor.tsx)): 暴露 schema 中 `mutable=true` 的属性，区分「track 默认值」(写 `annotation.attributes`) 与「当前帧覆盖」(写 `keyframe.attributes`)。
+- **关键帧 Propagate** (前端 [VideoKeyframesPropagateDialog.tsx](apps/web/src/pages/Workbench/stage/VideoKeyframesPropagateDialog.tsx) · [videoTrackCommands.ts](apps/web/src/pages/Workbench/state/videoTrackCommands.ts)): 当前帧框复制到后续/向前 N 帧（可选覆盖），合成单条 undo command（纯前端）。
+- **Track 导航快捷键** (前端 [videoTrackTimeline.ts](apps/web/src/pages/Workbench/stage/videoTrackTimeline.ts) · [VideoStage.tsx](apps/web/src/pages/Workbench/stage/VideoStage.tsx)): `,`/`.` 跳选中 track 上/下可见关键帧，`Home`/`End` 跳首/末出现帧（均排除 outside 帧）。
+- **侧栏 track 隐藏 / 锁定 / 选色** (前端 [VideoTrackColorPicker.tsx](apps/web/src/pages/Workbench/stage/VideoTrackColorPicker.tsx) · `getTrackColor` [colors.ts](apps/web/src/pages/Workbench/stage/colors.ts)): session 级 `trackColorOverrides`；锁定 track 在 stage 不可拖拽/缩放。
+
+### Changed
+
+- **删除 `VideoTrackKeyframe.absent`，语义并入 `outside`** (schema [_jsonb_types.py](apps/api/app/schemas/_jsonb_types.py) · 迁移 [0084](apps/api/alembic/versions/0084_video_track_drop_absent.py); 前端全量 sweep): 后端读写 keyframe、前端 `effectiveOutsideRanges`/状态判定全部改走 outside 区间；标记"消失"动作改为写 outside range。downgrade 不还原 absent（语义已不可逆并入 outside）。
+
+### Fixed
+
+- **导出测试迁移异步契约** (测试): v0.10.27 导出端点 GET→异步 POST(job_id) 后，旧的同步 GET 导出断言全部 405；改为直接断言 `ExportService` 方法 / `UnsupportedExportError`，并给视频 fixture 补 `data_type="video"`（v0.10.28 data_type 分流依赖）。
+- **过时的 interactive 阈值注入测试** (测试): 59dfffa 后平台不再注入项目级 DINO 阈值（避免把 gsam2 专属参数塞给 sam3），更新测试断言新透传契约。
+
 ## [0.10.29] - 2026-05-21
 
 > **视频帧逻辑采样 + 软网格导航（视频工作台 Phase 1）。** 落地三项已拍板架构决策：抽帧 = **逻辑采样**（不物理重采样、不取代原视频，只叠一层项目级导航/打点网格）；标注 geometry 的 `frame_index` **永远存源视频帧号**（改采样密度不破坏旧标注）；播放与导航**两层分离**（连续播放仍走原生 `<video>` 的完整原视频 + 原始 fps + 所有帧，采样只约束逐帧导航与打点）。项目设置可配 `mode=fps target_fps` 或 `mode=step frame_step`；工作台 `←/→` 在**绝对网格**（锚定 0：{0,N,2N,…}）间跳、暂停吸附最近网格点，`Shift+←/→` 作为**逃生口**微调 ±1 源帧打合法 off-grid 关键帧，关键帧跳转迁移到 `Alt+←/→`。不采样（step=1）时键位/行为与 v0.10.28 完全一致，旧视频项目零行为变化。配套长视频 sparse timetable、chunk warmup 预解码与实验性 WebCodecs 解码骨架。详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md) Phase 1。

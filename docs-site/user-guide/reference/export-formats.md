@@ -194,8 +194,8 @@ v0.9.18 起，`video-track` 项目导出入口只显示 **Video JSON**。导出�
 
 目标消失语义：
 
-- `absent=true` 表示该帧目标不存在。
-- 所有帧模式不会跨越 `absent=true` 的关键帧插值。
+- `outside` 闭区间段表示目标在该段帧内不存在（v0.10.30 起统一用此表达，旧 `absent` 字段已删除）。
+- 所有帧模式不会跨越 `outside` 段插值，也不在其中输出 bbox。
 - `occluded=true` 表示目标存在但被遮挡，仍可参与插值。
 
 Video JSON 顶层包含 `export_type: "video_tracks"`、`frame_mode`、项目 / 类别 / 任务信息、`tracks[]`、扁平 `keyframes[]`、旧版 `video_bbox[]` 和 `video_metadata`。

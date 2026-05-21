@@ -131,7 +131,6 @@ v0.9.17 起，新建视频标注默认使用 compact `video_track`，一条 anno
         "frame_index": 0,
         "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
         "source": "manual",
-        "absent": false,
         "occluded": false
       }
     ]
@@ -184,6 +183,7 @@ POST /api/v1/tasks/:id/annotations/video/track-compositions
 | `aggregate_bboxes` | 将同任务、同类、无重复帧的 `video_bbox[]` 聚合为一条 `video_track` |
 | `split_track` | 在 `frame_index` 可见帧之后，把一条 track 拆成前后两条 |
 | `merge_tracks` | 合并两条同类、可见帧区间不重叠的 track，并自动补中间 `outside` gap |
+| `join_tracks` | 跳连两条同类、可见帧区间不重叠的 track（v0.10.30）；`gap_mode=interpolate` 靠插值过渡 / `outside` 把 gap 标消失后合并 |
 
 响应包含 `updated_annotations[]`、`created_annotations[]` 和 `deleted_annotation_ids[]`，客户端应按这三组结果更新 annotation 列表。
 

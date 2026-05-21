@@ -60,7 +60,6 @@ v0.9.18 起，`video-track` 项目通过 `format=coco` 入口返回专用 Video 
           "frame_index": 0,
           "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
           "source": "manual",
-          "absent": false,
           "occluded": false
         }
       ]
@@ -75,7 +74,7 @@ v0.9.18 起，`video-track` 项目通过 `format=coco` 入口返回专用 Video 
 `video_frame_mode`：
 
 - `keyframes`：只输出持久化关键帧，适合备份、质检和后续可编辑 ingest。
-- `all_frames`：在每条 track 的 `frames[]` 中展开逐帧 bbox。后端按相邻有效关键帧线性插值，`absent=true` 阻断跨段插值。缺少 `frame_count` 时用最大已标注帧兜底。
+- `all_frames`：在每条 track 的 `frames[]` 中展开逐帧 bbox。后端按相邻有效关键帧线性插值，`outside` 段阻断跨段插值、不输出 bbox。缺少 `frame_count` 时用最大已标注帧兜底。
 
 `include_attributes=false` 时，视频 JSON 不输出 `project.attribute_schema`，也不输出 track / legacy `video_bbox` 的 `attributes`。
 

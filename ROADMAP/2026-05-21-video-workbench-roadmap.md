@@ -34,7 +34,9 @@
 
 ## Phase 2 · 轨迹工具对齐 CVAT（核心生产力）
 
-> 现状：`VideoTrackGeometry`（[`_jsonb_types.py:359`](../apps/api/app/schemas/_jsonb_types.py)）已有 `track_id`(自动 `trk_<uuid>`, 只读) + `keyframes[{frame_index, bbox, source, absent, occluded, attributes}]` + `outside` 区间；前端线性插值；`split_track`/`merge_tracks` 后端有实现（[`annotation.py:629`](../apps/api/app/services/annotation.py)）但**无 UI**；geometry 仅 bbox。
+> **状态（v0.10.30 收尾）**：2.1–2.8 已落地（执行计划见 [2026-05-21-v0.10.30-phase2-tracks-plan](../docs/plans/2026-05-21-v0.10.30-phase2-tracks-plan.md)）。数据模型已收敛：删除 `absent`、新增 `semantic_label`、`track_number` 确定性派生（alembic 0084）。**2.9 多几何 track 暂缓**。下文各子项保留作背景。
+
+> 现状：`VideoTrackGeometry`（[`_jsonb_types.py:359`](../apps/api/app/schemas/_jsonb_types.py)）已有 `track_id`(自动 `trk_<uuid>`, 只读) + `keyframes[{frame_index, bbox, source, occluded, attributes}]` + `outside` 区间（`absent` 已于 v0.10.30 删除并并入 outside）；前端线性插值；`split_track`/`merge_tracks` 后端有实现（[`annotation.py:629`](../apps/api/app/services/annotation.py)）但**无 UI**；geometry 仅 bbox。
 >
 > 下表是对齐 CVAT 的能力盘点：✅已有 / ⚠️半成品 / ❌缺。本 Phase 聚焦低成本高收益 + 解锁 MOT 导出的项。
 
