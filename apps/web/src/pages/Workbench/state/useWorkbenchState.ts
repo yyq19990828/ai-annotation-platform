@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { Annotation } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
+import type { TextOutputMode } from "./useInteractiveAI";
 
 // v0.10.2 · Tool union 扩展: 旧 "sam" 拆为 4 个独立 AI 工具 (smart-point / smart-box /
 // text-prompt / exemplar), 每个绑定一个 prompt 范式. 状态层仅保留 polarity (smart-point
@@ -100,6 +101,8 @@ export function useWorkbenchState() {
   const [samPolarity, setSamPolarity] = useState<SamPolarity>("positive");
   // text 子工具激活时让 AIToolDrawer 抓焦点; 每次切到 text-prompt 自增.
   const [samTextFocusKey, setSamTextFocusKey] = useState(0);
+  // exemplar 子工具输出形态 (box/mask/both); 会话级, 与 text 各自独立 (text 走 sessionStorage).
+  const [exemplarOutputMode, setExemplarOutputMode] = useState<TextOutputMode>("mask");
   /** v0.10.2 · AIToolDrawer 维护的后端参数 (来自 /setup.params schema). 切换工具时重置. */
   const [aiToolParams, setAiToolParams] = useState<Record<string, unknown>>({});
   // v0.10.23 · 模型变体 (sam_variant / dino_variant) 从 aiToolParams 拆出: 落点 AI 面板, 会话级,
@@ -270,6 +273,7 @@ export function useWorkbenchState() {
     samSubTool,
     samPolarity, setSamPolarity,
     samTextFocusKey, bumpSamTextFocus: () => setSamTextFocusKey((k) => k + 1),
+    exemplarOutputMode, setExemplarOutputMode,
     aiToolParams, setAiToolParams,
     aiVariant, setAiVariant,
     activeClass, setActiveClass,

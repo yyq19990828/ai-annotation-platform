@@ -1060,6 +1060,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             projectId={projectId}
             projectTypeKey={currentProject?.type_key ?? null}
             samTextFocusKey={s.samTextFocusKey}
+            exemplarOutputMode={s.exemplarOutputMode}
+            onSetExemplarOutputMode={s.setExemplarOutputMode}
           />
         ) : null,
         reviewMode: mode === "review", videoMode: isVideoTask,
@@ -1121,7 +1123,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           // v0.10.23 · 会话级模型变体 (aiVariant) 合进 context; tool 级参数 (aiToolParams) 覆盖之.
           const extra = { ...s.aiVariant, ...s.aiToolParams };
           if (prompt.kind === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
-          if (prompt.kind === "exemplar") return sam.runExemplar(prompt.bbox, extra);
+          if (prompt.kind === "exemplar") return sam.runExemplar(prompt.bbox, s.exemplarOutputMode, extra);
           return sam.runBbox(prompt.bbox, extra);
         },
         samCandidates: sam.candidates, samActiveIdx: sam.activeIdx, samSubTool: s.samSubTool,

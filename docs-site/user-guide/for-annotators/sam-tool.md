@@ -18,7 +18,7 @@ v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆
 | **智能框** | ▭ | `S` 循环 | `bbox` | polygon 候选 |
 | **Magic Box** | ✨ | `G` / `S` 循环 | `bbox` | **直接** bbox 标注 |
 | **文本提示** | 💬 | `S` 循环 | `text` | polygon / bbox 候选 |
-| **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` (仅 SAM 3) | polygon 候选 |
+| **Exemplar 示例** | ⎘ | `S` 循环 | `exemplar` (仅 SAM 3) | polygon / bbox 候选 |
 
 按 `S` 在 5 个 AI 工具之间循环，**跳过当前后端不支持的工具**（按钮置灰）；循环顺序: smart-point → smart-box → **magic-box** → text-prompt → exemplar → 回 smart-point。`Alt+3` 与 `S` 等价。
 
@@ -63,7 +63,9 @@ v0.10.2 起，原「SAM 智能工具 + 子工具栏」改为**按交互范式拆
 
 ### Exemplar 示例（v0.10.2 新增，仅 SAM 3）
 
-拖框圈出图中**已有的一个示例实例**，SAM 3 PCS 一步返回**全图相似实例**的 mask。
+拖框圈出图中**已有的一个示例实例**，SAM 3 PCS 一步返回**全图相似实例**。
+
+AIToolDrawer 提供与文本提示相同的输出形态三选一（`□ 框` / `○ 掩膜` / `⊕ 全部`），默认 `○ 掩膜`；选 `□ 框` 仅返回 box，`⊕ 全部` 同实例配对 box + polygon。
 
 适用场景：
 

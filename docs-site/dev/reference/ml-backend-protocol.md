@@ -253,7 +253,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 平台对所有非 2xx 走 `httpx.HTTPStatusError`：
 
 - 同步 batch（`/predict` 批量）：worker 捕获并写一行 `failed_predictions`（`apps/api/app/db/models/prediction.py:59-79`），字段 `error_type` = HTTP 状态码，`message` = response body 截断到 4KB。继续下一 batch。
-- 交互式（`/predict` 单条）：错误向上抛到 HTTP 端点 (`ml_backends.py:153-186`)，FastAPI 返回 502 给前端，前端弹 toast。
+- 交互式（`/predict` 单条）：服务层 `predict_interactive` (`ml_client.py`) 把上游响应映射后再抛给 HTTP 端点：**上游 4xx 原样透传 4xx**（如 SAM 3 不支持 `point` 探针返回的 400），**上游 5xx / 连接超时映射为 502** Bad Gateway，detail 带上 backend 原始文案。前端全局拦截器只对 403/≥500 弹 toast，故透传的 4xx 不会刷屏（warmup 探针的预期失败被静默吞掉），真正的 backend 故障才以 502 提示。
 
 推荐 backend 错误格式（不强制）：
 ```json

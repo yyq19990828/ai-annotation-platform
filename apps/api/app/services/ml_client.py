@@ -6,6 +6,8 @@ import time
 import httpx
 from dataclasses import dataclass
 
+from fastapi import HTTPException
+
 from app.config import settings
 from app.db.models.ml_backend import MLBackend
 from app.observability.metrics import observe_ml_backend
@@ -17,6 +19,39 @@ logger = logging.getLogger(__name__)
 # 重启才生效 (信号量按 backend_id 永久缓存; 工时换简洁性的取舍, 见 docs-site/dev/architecture/ai-models.md).
 _DEFAULT_MAX_CONCURRENCY = 4
 _semaphores: dict[str, asyncio.Semaphore] = {}
+
+
+def _backend_detail(resp: httpx.Response) -> str:
+    """提取上游 backend 的错误说明: 优先 JSON 的 detail/error/message, 回退裁剪后的 text."""
+    try:
+        data = resp.json()
+        if isinstance(data, dict):
+            for key in ("detail", "error", "message"):
+                val = data.get(key)
+                if val:
+                    return str(val)
+    except Exception:
+        pass
+    return (resp.text or "")[:512]
+
+
+def _raise_for_backend_status(resp: httpx.Response) -> None:
+    """把上游 backend 的非 2xx 映射成对前端友好的 HTTPException:
+
+    - 上游 4xx (如 SAM3 不支持 point 的 400) → 原样透传 4xx, 不再被放大成 500.
+    - 上游 5xx → 502 Bad Gateway, 表明是 backend 故障而非平台故障.
+
+    交互式探针 (warmup) 拿到透传的 400 后, 前端全局拦截器 (只对 403/>=500 弹 toast)
+    不再刷屏 "服务器错误 HTTP 500".
+    """
+    if resp.status_code < 400:
+        return
+    detail = _backend_detail(resp)
+    if resp.status_code < 500:
+        raise HTTPException(
+            status_code=resp.status_code, detail=f"ML backend: {detail}"
+        )
+    raise HTTPException(status_code=502, detail=f"ML backend error: {detail}")
 
 
 def _get_semaphore(backend_id: str | None, max_cc: int) -> asyncio.Semaphore | None:
@@ -167,14 +202,23 @@ class MLBackendClient:
                 async with httpx.AsyncClient(
                     timeout=settings.ml_predict_timeout
                 ) as client:
-                    resp = await client.post(
-                        f"{self.base_url}/predict",
-                        json={"task": task_data, "context": context},
-                        headers=self._headers(),
-                    )
-                    resp.raise_for_status()
+                    try:
+                        resp = await client.post(
+                            f"{self.base_url}/predict",
+                            json={"task": task_data, "context": context},
+                            headers=self._headers(),
+                        )
+                    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                        # backend 不可达 / 超时 → 502 (而非含糊的 500)
+                        raise HTTPException(
+                            status_code=502,
+                            detail=f"ML backend unreachable: {exc}",
+                        ) from exc
+                    # 上游 4xx 原样透传, 5xx → 502 (见 _raise_for_backend_status)
+                    _raise_for_backend_status(resp)
                     data = resp.json()
         except Exception:
+            # 仍记 error 指标 (HTTPException 也走这里), 再原样抛出, 指标语义不变.
             outcome = "error"
             observe_ml_backend(self.backend_id, outcome, time.monotonic() - start)
             raise

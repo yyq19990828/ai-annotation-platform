@@ -12,6 +12,7 @@ import type { TextOutputMode } from "../state/useInteractiveAI";
 import { TOOL_REGISTRY, type ToolId } from "../stage/tools";
 import { SchemaForm, deriveDefaults, type JsonSchemaObject } from "../components/SchemaForm";
 import { SamTextPanel } from "./SamTextPanel";
+import { SamOutputModeTabs } from "./SamOutputModeTabs";
 import styles from "./AIToolDrawer.module.css";
 
 export interface AIToolDrawerProps {
@@ -33,6 +34,9 @@ export interface AIToolDrawerProps {
   projectId?: string;
   projectTypeKey?: string | null;
   samTextFocusKey?: number;
+  // exemplar 工具输出形态 (box/mask/both), 对齐 text-prompt; 会话级状态由 WorkbenchShell 持有.
+  exemplarOutputMode?: TextOutputMode;
+  onSetExemplarOutputMode?: (mode: TextOutputMode) => void;
 }
 
 const TOOL_HINT: Record<ToolId, string | null> = {
@@ -74,6 +78,8 @@ export function AIToolDrawer({
   projectId,
   projectTypeKey,
   samTextFocusKey,
+  exemplarOutputMode,
+  onSetExemplarOutputMode,
 }: AIToolDrawerProps) {
   const meta = TOOL_REGISTRY[tool];
   const hint = TOOL_HINT[tool];
@@ -138,6 +144,14 @@ export function AIToolDrawer({
       {hint && (
         <div className={styles.hint}>
           {hint}
+        </div>
+      )}
+
+      {/* exemplar 输出形态三选一 (box/mask/both), 对齐 text-prompt; 拖框时按此 mode 派发. */}
+      {tool === "exemplar" && exemplarOutputMode && onSetExemplarOutputMode && (
+        <div className={styles.field} data-testid="exemplar-output-mode">
+          <span className={styles.label}>输出形态</span>
+          <SamOutputModeTabs value={exemplarOutputMode} onChange={onSetExemplarOutputMode} />
         </div>
       )}
 

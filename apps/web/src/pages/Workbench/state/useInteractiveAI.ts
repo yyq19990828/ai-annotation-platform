@@ -56,8 +56,12 @@ export interface UseInteractiveAIReturn {
   runPoint: (pt: [number, number], polarity: 1 | 0, extraParams?: Record<string, unknown>) => void;
   runBbox: (bbox: [number, number, number, number], extraParams?: Record<string, unknown>) => void;
   runText: (text: string, outputMode?: TextOutputMode, extraParams?: Record<string, unknown>) => void;
-  /** v0.10.2 · SAM 3 exemplar prompt: 与 bbox 同手势, 但 context.type="exemplar". */
-  runExemplar: (bbox: [number, number, number, number], extraParams?: Record<string, unknown>) => void;
+  /** v0.10.2 · SAM 3 exemplar prompt: 与 bbox 同手势, 但 context.type="exemplar". outputMode 同 text 选 box/mask/both. */
+  runExemplar: (
+    bbox: [number, number, number, number],
+    outputMode?: TextOutputMode,
+    extraParams?: Record<string, unknown>,
+  ) => void;
   cycle: (dir: 1 | -1) => void;
   /** 接受一个候选；调用方拿到 candidate 后落库（创建 polygon annotation），随后调 consume(idx) 清除该条。 */
   consume: (idx: number) => void;
@@ -215,10 +219,15 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   );
 
   const runExemplar = useCallback(
-    (bbox: [number, number, number, number], extraParams?: Record<string, unknown>) => {
+    (
+      bbox: [number, number, number, number],
+      outputMode: TextOutputMode = "mask",
+      extraParams?: Record<string, unknown>,
+    ) => {
       if (!guard()) return;
       // v0.10.2 · 协议 §2.2: type=exemplar 复用 bbox 字段, 语义靠 type 区分.
-      dispatch({ ...(extraParams ?? {}), type: "exemplar", bbox }, "exemplar");
+      // output 字段控制 box/mask/both (对齐 text); 老 backend 缺字段时仍走 mask 兼容.
+      dispatch({ ...(extraParams ?? {}), type: "exemplar", bbox, output: outputMode }, "exemplar");
     },
     [guard, dispatch],
   );

@@ -7,9 +7,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { TabRow } from "@/components/ui/TabRow";
 import type { TextOutputMode } from "../state/useInteractiveAI";
 import { resolveInitialOutputMode, writeStoredOutputMode } from "../state/samTextOutput";
+import { SamOutputModeTabs } from "./SamOutputModeTabs";
 import { useProject } from "@/hooks/useProjects";
 import styles from "./SamTextPanel.module.css";
 
@@ -24,19 +24,6 @@ interface SamTextPanelProps {
   /** v0.9.4 phase 2 · 切到 sam-text 子工具时父级自增此值, panel 拿到后自动 focus input. */
   focusKey?: number;
 }
-
-// v0.9.4 phase 2 · 中文标签 ↔ TextOutputMode 双向映射 (TabRow 直接显示标签字符串).
-const OUTPUT_MODE_LABELS: Record<TextOutputMode, string> = {
-  box: "□ 框",
-  mask: "○ 掩膜",
-  both: "⊕ 全部",
-};
-const OUTPUT_MODE_BY_LABEL: Record<string, TextOutputMode> = {
-  "□ 框": "box",
-  "○ 掩膜": "mask",
-  "⊕ 全部": "both",
-};
-const OUTPUT_MODE_TABS = Object.values(OUTPUT_MODE_LABELS);
 
 export function SamTextPanel({
   onRun,
@@ -68,9 +55,7 @@ export function SamTextPanel({
     if (focusKey === undefined || focusKey === 0) return;
     inputRef.current?.focus();
   }, [focusKey]);
-  const handleModeChange = (label: string) => {
-    const mode = OUTPUT_MODE_BY_LABEL[label];
-    if (!mode) return;
+  const handleModeChange = (mode: TextOutputMode) => {
     setOutputMode(mode);
     if (projectId) writeStoredOutputMode(projectId, mode);
   };
@@ -94,11 +79,7 @@ export function SamTextPanel({
       </div>
       {/* v0.9.4 phase 2 · 输出形态三选一 (智能默认按 type_key, 用户切换写 sessionStorage) */}
       <div className={styles.samTextOutputMode} data-testid="sam-text-output-mode">
-        <TabRow
-          tabs={OUTPUT_MODE_TABS}
-          active={OUTPUT_MODE_LABELS[outputMode]}
-          onChange={handleModeChange}
-        />
+        <SamOutputModeTabs value={outputMode} onChange={handleModeChange} />
       </div>
       {aliases.length > 0 && (
         <div
