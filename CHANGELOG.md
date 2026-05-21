@@ -22,6 +22,19 @@
 
 ## 最新版本
 
+## [0.10.29] - 2026-05-21
+
+> **视频帧逻辑采样 + 软网格导航（视频工作台 Phase 1）。** 落地三项已拍板架构决策：抽帧 = **逻辑采样**（不物理重采样、不取代原视频，只叠一层项目级导航/打点网格）；标注 geometry 的 `frame_index` **永远存源视频帧号**（改采样密度不破坏旧标注）；播放与导航**两层分离**（连续播放仍走原生 `<video>` 的完整原视频 + 原始 fps + 所有帧，采样只约束逐帧导航与打点）。项目设置可配 `mode=fps target_fps` 或 `mode=step frame_step`；工作台 `←/→` 在**绝对网格**（锚定 0：{0,N,2N,…}）间跳、暂停吸附最近网格点，`Shift+←/→` 作为**逃生口**微调 ±1 源帧打合法 off-grid 关键帧，关键帧跳转迁移到 `Alt+←/→`。不采样（step=1）时键位/行为与 v0.10.28 完全一致，旧视频项目零行为变化。配套长视频 sparse timetable、chunk warmup 预解码与实验性 WebCodecs 解码骨架。详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md) Phase 1。
+
+### Added
+
+- **项目级视频帧采样配置** (后端 [project.py](apps/api/app/db/models/project.py) · [schemas/project.py](apps/api/app/schemas/project.py); 前端 [VideoSamplingSection.tsx](apps/web/src/pages/Projects/sections/VideoSamplingSection.tsx)): `Project.video_sampling` JSONB 列(迁移 [0083](apps/api/alembic/versions/0083_project_video_sampling.py), server_default `'{}'`), 强类型 `VideoSamplingConfig`(`mode: none|fps|step` + `target_fps>0` / `frame_step≥1` 校验)。项目设置页仅 `data_type="video"` 时渲染采样配置卡。
+- **软网格导航** (前端 [videoSamplingGrid.ts](apps/web/src/pages/Workbench/stage/videoSamplingGrid.ts)): `gridNext`/`gridPrev`/`snapToGrid`/`microStep` 纯函数; 后端 [video_frame_service.py](apps/api/app/services/video_frame_service.py) 共用 `derive_step` / `derive_sampled_frames`。`←/→` 跳网格、暂停吸附、`Shift+←/→` 微调 ±1 源帧、`Alt+←/→` 关键帧跳; 时间轴渲染采样网格刻度。
+- **长视频 sparse timetable** (后端 [video_frame_service.py](apps/api/app/services/video_frame_service.py)): 只持久化锚点(stride 网格真值 ∪ 关键帧)进现有 `VideoFrameIndex`(无新表/迁移), 中间帧 pts_ms 由相邻锚点线性插值、范围外按 fps 外推; `frame_index→pts_ms` 对外契约不变。CLI `rebuild_timetable --sparse-stride` 控制。
+- **chunk warmup 预解码** (后端 [video_frame_service.py](apps/api/app/services/video_frame_service.py)): 请求命中 chunk 时向后 look-ahead 预解码相邻 chunk(保守降级, 只对非 ready/pending 投递)。新 env `VIDEO_CHUNK_WARMUP_LOOKAHEAD`(默认 1, 设 0 关闭)。
+- **视频章节采样语义** (后端 [video_chapter.py](apps/api/app/schemas/video_chapter.py) · [videos.py](apps/api/app/api/v1/videos.py); 前端 [VideoChapterSidebar.tsx](apps/web/src/pages/Workbench/stage/VideoChapterSidebar.tsx)): 章节经 `chapter_metadata` 承载 `frame_step` / `source`(manual|sampled), `snap_chapter_to_grid` 把章节边界对齐采样网格; sidebar 展示采样 badge 与步长。
+- **WebCodecs 精确帧解码 hook(实验性, 默认关闭)** (前端 [useVideoChunkDecoder.ts](apps/web/src/pages/Workbench/stage/useVideoChunkDecoder.ts)): `VideoDecoder` 解码核心 + LRU 缓存 + 资源释放 + 能力探测; feature flag(`?webcodecs=1` / localStorage)关闭时零行为变化。**mp4 demux 链路尚未接入(预留骨架)**, 关时回退原生 `<video>` 路径。
+
 ## [0.10.28] - 2026-05-20
 
 > **项目级 `data_type` 引入 + 新建项目数据类型 UI 退役任务语义 (B 路线) + 三种几何工具 (旋转框 / 折线 / 关键点).** 此前项目的"媒体类型"信息全靠 `type_key`(编码媒体+任务: image-det/image-seg/image-kp/video-track/video-mm/lidar/mm)隐式承载, 展示/筛选/媒体维度分流都得在 7 种 type_key 上硬匹配。本期给 `Project` / `ProjectTemplate` 各加独立 `data_type` 列(image/video/lidar 媒体粒度), 新建向导第 1 步从 7 任务预设改为纯媒体类型三选一(文案去检测/分割等任务暗示), `type_key` 由所选媒体类型派生兼容默认值(image→image-det / video→video-track / lidar→lidar)以保旧分流不破。展示(Dashboard/卡片图标)、筛选(FilterDrawer)、AI 预标卡片改读 `data_type`。**`type_key` 列保留不删**: video 子类型分流(video-track vs video-mm 的轨迹导出路由)与 AI 输出形态分流(image-det→box/其余→mask, 标为遗留技术债)继续用 `type_key`。同期图像几何工具从单一 bbox 扩到 **旋转框 (rotated_bbox / OBB)**、**折线 (polyline)**、**关键点 (keypoint, COCO 范式命名节点 + 骨骼)** 三种, 后端 `Geometry` 判别联合 + `ToolUnitId` 枚举同步扩展, 前端 react-konva 渲染 + 工具接线并行开发后主进程串行 review 合并。

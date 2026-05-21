@@ -24,50 +24,11 @@
 
 ## Phase 1 · 导入与帧采样（D1 + D2 落地）
 
-> 这是"抽帧放哪"的答案：不动原视频，叠一层项目级采样视图。对应原 R20（前端）+ C.6 P1 FrameStep/Chapter 后端原语 + C.6 P1 Timetable Compact + C.6 P1 Chunk warmup。
-
-### 1.1 项目级采样配置（新）
-- 项目设置加 `video_sampling` 配置：`{ mode: "fps" | "step", target_fps?: number, frame_step?: number }`。
-  - `target_fps` 更直观（"我要 10fps 标"），内部换算成相对源帧的 stride；非整数比（60→25）按 `pts_ms` 就近取帧，复用 `VideoFrameIndex` 时间表。
-  - `frame_step`（每 N 帧取一帧）作为等价的低层表达，UI 二选一。
-- 配置只影响**标注导航网格**，不生成新资产、不改 `VideoFrameIndex`。
-
-### 1.2 采样时间表视图（后端，原 C.6 P1 Timetable）
-- 在全量 `VideoFrameIndex`（`frame_index → pts_ms` 真实时间戳，含 VFR）之上派生**采样网格**：sampled frame list = 源帧子集。
-- 长视频按 keyframe + fixed stride 存 sparse timetable（1h@30fps 压缩后 < 500KB），API 保持 `frame_index → pts_ms` 语义；缺口服务端估算 / 插值；导出与 worker 共用同一 timetable helper。
-- 关键不变量：导出 / worker / 前端三方共用同一 timetable helper，避免帧号语义漂移。
-
-### 1.3 播放 vs 导航：两层分离（重要，前端混合架构）
-- **连续播放走原生 `<video>` 元素**（`VideoMediaLayer.tsx` + `useFrameClock.ts`），播的是**完整原视频、原始 fps、所有帧**。采样配置**完全不影响播放**——这正是 D1"不动原视频"的体现。播放给的是上下文连续性。
-- **采样只约束"导航 + 打点网格"**：暂停后逐帧导航、时间轴关键帧才落在采样网格上。暂停态用帧图覆盖层（`VideoFrameOverlay` / `useVideoFramePreview`）显示精确单帧。
-
-### 1.4 软网格导航语义（原 R20 frameStep；2026-05-21 拍板）
-- **网格 = 绝对网格**，锚定 0：step=5 → {0,5,10,15,...}。**不是相对步长**（不做"从第1帧 +5 跳到第6帧"那种，会导致不同标注员标在不同网格、破坏 IAA/共识/MOT 导出）。
-- 导航规则（以 step=5 为例）：
-
-  | 当前帧 | `→` next | `←` prev | `Shift+→` 微调 |
-  |---|---|---|---|
-  | 3 | 5 | 0 | 4 |
-  | 5 | 10 | 0 | 6 |
-  | 37 | 40 | 35 | 38 |
-
-  - `→`/`←`：跳到比当前帧**严格大/小的最近网格点**；微调偏离后，普通方向键自动把你拉回网格。
-  - `Shift+←/→`：±1 源帧微调（**逃生口**，落回源帧空间，体现 D2）。
-- **播放暂停吸附到最近网格点**：原生播放逐帧过，按暂停时吸附到最近网格帧（不停在 off-grid，避免突兀）。
-- **软网格 = 默认体验≈硬网格 + 逃生口**：箭头/暂停都落网格，所以默认所有人标在同一批帧；但 `Shift` 能钻到任意源帧（如第37帧）打**合法的 off-grid 关键帧**，应对"关键事件卡在网格之间"。
-- **逃生口不污染导出/共识**：MOT / IAA / 共识仍在网格 {0,5,10} 上计算，off-grid 关键帧只影响该 track 在网格点之间的**插值取值**，导出帧号照样干净（D2 导出重编号）。
-- segment overlap 边界按 step 对齐（为 Phase 5 长视频协同预留）。
-
-### 1.5 Chapter / 章节原语（后端，原 C.6 P1）
-- `VideoChapter` 元数据扩展；项目或任务级 `frame_step` 配置；导出时明确每帧来源 = sampled / interpolated / held；segment 边界按 step 对齐。
-
-### 1.6 Chunk warmup（后端，原 C.6 P1）
-- manifest / timeline 命中热点 range 时提前投递 media 任务预解码（chunk smart-copy 已落，仅缺 warmup 触发器）。
-
-### 1.7 WebCodecs chunk decode（前端，原 R5.3）
-- 依赖后端帧服务 chunk smart-copy（已 v0.9.38），按真实卡顿数据触发；**不上** ffmpeg.wasm / Broadway.js。
-
-> **明确不做（D1）**：物理重采样 / 生成低 fps 新 mp4 / 从视频抽成独立图片数据集。后者（连续帧抽成图片数据集）是另一条线，本 epic 不碰。
+> 已于 v0.10.29 落地，详见 [CHANGELOG v0.10.29](../CHANGELOG.md)。软网格语义（绝对网格锚定 0、`←/→` 跳网格、暂停吸附、`Shift+←/→` 逃生口微调 ±1 源帧、`Alt+←/→` 关键帧跳）是后续 Phase 的设计前提，保留于此供参考。
+>
+> **遗留待续**：WebCodecs 精确帧解码当前是**预留骨架**——`useVideoChunkDecoder` 解码核心 + feature flag（默认关闭）已就位，但 mp4 demux 链路（mp4 字节 → `EncodedVideoChunk`）尚未接入，前端 manifest 也未暴露 chunk 字节获取链路。端到端跑通需补 demux（轻量自写 mp4 box 解析或后端预 demux sample 列表），按真实卡顿数据决定是否推进。
+>
+> **明确不做（D1）**：物理重采样 / 生成低 fps 新 mp4 / 从视频抽成独立图片数据集。
 
 ---
 
