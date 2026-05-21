@@ -748,20 +748,12 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
         setActualSize();
         return;
       }
-      // Track 导航快捷键：仅在有选中 track 时生效；与 ←/→ 软网格 (在时间轴上处理) 不冲突。
+      // Track 导航快捷键：仅在有选中 track 时生效。
+      // ,/. 跳上/下关键帧由中央 hotkeys 分发器统一处理 (videoSeekKeyframe), 避免与
+      // ±1 帧 seek 双触发; 此处只接非分发器覆盖的 Home/End (首/末出现帧)。
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const track = selectedTrackRef.current;
       if (!track) return;
-      if (e.key === ",") {
-        e.preventDefault();
-        seekToKeyframe(-1);
-        return;
-      }
-      if (e.key === ".") {
-        e.preventDefault();
-        seekToKeyframe(1);
-        return;
-      }
       if (e.key === "Home") {
         const frame = firstAppearFrame(track.geometry);
         if (frame === null) return;
@@ -780,7 +772,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [fitViewport, seekToFrame, seekToKeyframe, setActualSize]);
+  }, [fitViewport, seekToFrame, setActualSize]);
 
   useEffect(() => {
     if (!selectedTrack) return;

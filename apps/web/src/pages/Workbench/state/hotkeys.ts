@@ -69,7 +69,8 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "视频矩形框工具", group: "video", actionType: "setVideoTool" },
   { keys: ["T"], desc: "视频轨迹工具", group: "video", actionType: "setVideoTool" },
   { keys: ["← / →"], desc: "视频逐帧后退 / 前进（采样开启时按网格跳）", group: "video", actionType: "videoSeek" },
-  { keys: [", / ."], desc: "视频上一帧 / 下一帧（采样开启时为 ±1 微调）", group: "video", actionType: "videoSeek" },
+  { keys: [", / ."], desc: "选中轨迹时跳上/下关键帧；否则上一帧 / 下一帧（采样开启时为 ±1 微调）", group: "video", actionType: "videoSeek" },
+  { keys: ["Home / End"], desc: "选中轨迹时跳该轨迹首次 / 最后出现帧", group: "video", actionType: "videoSeekKeyframe" },
   { keys: ["Shift", "← / →"], desc: "采样开启：±1 源帧微调（逃生口）；否则选中轨迹跳关键帧 / ±10 帧", group: "video", actionType: "videoSeekKeyframe" },
   { keys: ["Alt", "← / →"], desc: "采样开启：选中轨迹跳上/下关键帧", group: "video", actionType: "videoSeekKeyframe" },
   { keys: ["Ctrl", "M"], desc: "视频当前帧添加 / 移除书签", group: "video", actionType: "videoToggleBookmark" },
@@ -267,8 +268,17 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
         if (e.shiftKey && ctx.hasSelectedVideoTrack) return { type: "videoSeekKeyframe", dir: -1 };
         return { type: "videoSeek", delta: e.shiftKey ? -10 : -1 };
       }
-      if (e.key === ".") return { type: "videoSeek", delta: 1 };
-      if (e.key === ",") return { type: "videoSeek", delta: -1 };
+      // v0.10.30 · 选中 track 时 ,/. 跳上/下关键帧 (对齐 CVAT); 否则 ±1 帧。
+      if (e.key === ".") {
+        return ctx.hasSelectedVideoTrack
+          ? { type: "videoSeekKeyframe", dir: 1 }
+          : { type: "videoSeek", delta: 1 };
+      }
+      if (e.key === ",") {
+        return ctx.hasSelectedVideoTrack
+          ? { type: "videoSeekKeyframe", dir: -1 }
+          : { type: "videoSeek", delta: -1 };
+      }
     }
     if (e.key === "Tab") return { type: "videoCycleTrack", dir: e.shiftKey ? -1 : 1 };
     if (e.key === "Escape") return { type: "cancel" };
