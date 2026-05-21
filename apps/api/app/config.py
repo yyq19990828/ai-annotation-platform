@@ -115,6 +115,9 @@ class Settings(BaseSettings):
 
     # v0.9.25 · 视频后端帧服务 Wave B。Chunk 与单帧缓存都落在 datasets bucket。
     video_chunk_size_frames: int = 60
+    # v0.10.29 · chunk warmup look-ahead: 请求命中 chunk N 时顺带预解码 N+1..N+K。
+    # 默认 1 (只 warmup 紧邻的下一个 chunk), 保守且向后兼容; 设 0 完全关闭 warmup。
+    video_chunk_warmup_lookahead: int = 1
     video_frame_cache_ttl_days: int = 14
     video_chunk_cache_ttl_days: int = 30
     video_frame_memory_cache_items: int = 64
