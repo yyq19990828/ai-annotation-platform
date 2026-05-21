@@ -67,14 +67,16 @@ export interface VideoTrackConvertToBboxesResponse {
 }
 
 export interface VideoTrackCompositionPayload {
-  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks" | "join_tracks";
   annotation_ids: string[];
   frame_index?: number;
   delete_sources?: boolean;
+  // v0.10.30 · 2.5 join: gap 填充模式 (interpolate 线性过渡 / outside 标记 gap 区为消失)。
+  gap_mode?: "interpolate" | "outside";
 }
 
 export interface VideoTrackCompositionResponse {
-  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks" | "join_tracks";
   updated_annotations: AnnotationResponse[];
   created_annotations: AnnotationResponse[];
   deleted_annotation_ids: string[];

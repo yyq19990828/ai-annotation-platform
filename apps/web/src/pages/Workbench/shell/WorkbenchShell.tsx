@@ -854,6 +854,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handleVideoSetSelectedClass,
     handleVideoConvertToBboxes,
     handleVideoComposeTracks,
+    handleUpdateTrackAttributes,
+    handleUpdateKeyframeAttributes,
+    handlePropagateKeyframe,
   } = useVideoAnnotationActions({
     taskId,
     queryClient,
@@ -1321,6 +1324,12 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
               trackerJobsByAnnotation={trackerJobs.byAnnotation}
               onPropagateTrack={openPropagateDialog}
               onCancelTrackerJob={trackerJobs.cancel}
+              trackColorOverrides={s.trackColorOverrides}
+              onSetTrackColor={s.setVideoTrackColor}
+              attributeSchema={toolView.attributeSchema}
+              onUpdateTrackAttributes={handleUpdateTrackAttributes}
+              onUpdateKeyframeAttributes={handleUpdateKeyframeAttributes}
+              onPropagateKeyframe={handlePropagateKeyframe}
             />
             <VideoChapterSidebar
               datasetItemId={videoDatasetItemId}

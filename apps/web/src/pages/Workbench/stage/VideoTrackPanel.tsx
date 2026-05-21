@@ -6,10 +6,15 @@ import type { AttributeSchema } from "@/api/projects";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
 import type { VideoTrackerJobState } from "@/hooks/useVideoTrackerJobs";
 import type { DiffMode } from "../modes/types";
-import { classColor, displayClassName } from "./colors";
+import { displayClassName, getTrackColor } from "./colors";
 import { resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
 import { VideoAttributesEditor } from "./VideoAttributesEditor";
+import { VideoTrackColorPicker } from "./VideoTrackColorPicker";
+import {
+  VideoTrackComposeDialog,
+  type VideoTrackGapMode,
+} from "./VideoTrackComposeDialog";
 import {
   VideoKeyframesPropagateDialog,
   type VideoKeyframesPropagateSubmit,
@@ -57,6 +62,9 @@ interface VideoTrackPanelProps {
   onSplitSelectedTrack?: () => void;
   onMergeSelectedTracks?: () => void;
   canMergeSelectedTracks?: boolean;
+  // v0.10.30 · 2.5 Join: 选中两条同类且帧号不重叠的轨迹时跳连, gapMode 由 ComposeDialog 选定。
+  onJoinSelectedTracks?: (gapMode: VideoTrackGapMode) => void;
+  canJoinSelectedTracks?: boolean;
   onShowSelectedTracks?: () => void;
   onHideSelectedTracks?: () => void;
   onLockSelectedTracks?: () => void;
@@ -90,6 +98,9 @@ interface VideoTrackPanelProps {
   ) => void;
   // v0.10.30 · 2.1 semantic_label inline 编辑 (回写 geometry.semantic_label)。
   onUpdateSemanticLabel?: (annotation: VideoTrackAnnotation, semanticLabel: string) => void;
+  // v0.10.30 · 1A 选色器: session 级覆盖 (trackId → oklch), 未接线时回落到 classColor。
+  trackColorOverrides?: Record<string, string>;
+  onSetTrackColor?: (trackId: string, colorToken: string | null) => void;
 }
 
 function frameRange(frames: number[]): string {
@@ -225,6 +236,8 @@ export function VideoTrackPanel({
   onSplitSelectedTrack,
   onMergeSelectedTracks,
   canMergeSelectedTracks = false,
+  onJoinSelectedTracks,
+  canJoinSelectedTracks = false,
   onShowSelectedTracks,
   onHideSelectedTracks,
   onLockSelectedTracks,
@@ -249,6 +262,8 @@ export function VideoTrackPanel({
   onUpdateKeyframeAttributes,
   onPropagateKeyframe,
   onUpdateSemanticLabel,
+  trackColorOverrides,
+  onSetTrackColor,
 }: VideoTrackPanelProps) {
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
@@ -257,6 +272,10 @@ export function VideoTrackPanel({
   const currentFrameLabel = exactFrameLabel(selectedTrack, frameIndex, currentFrameOutside);
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
   const [propagateOpen, setPropagateOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
+  // 当前打开取色器的 trackId; null 表示关闭。
+  const [colorPickerTrackId, setColorPickerTrackId] = useState<string | null>(null);
+  const canEditColor = !readOnly && Boolean(onSetTrackColor);
   // semantic_label inline 编辑草稿; null 表示同步 selectedTrack 当前值。
   const [semanticDraft, setSemanticDraft] = useState<string | null>(null);
   const selectedTrackKey = selectedTrack?.id ?? null;
@@ -361,6 +380,15 @@ export function VideoTrackPanel({
             >
               合并
             </Button>
+            <Button
+              size="sm"
+              className={styles.compactButton}
+              disabled={batchMutationDisabled || !canJoinSelectedTracks || !onJoinSelectedTracks}
+              title={canJoinSelectedTracks ? "跳连两条同类且帧号不重叠的轨迹 (补 gap)" : "只支持跳连两条同类且帧号不重叠的轨迹"}
+              onClick={() => setJoinOpen(true)}
+            >
+              跳连
+            </Button>
             <Button size="sm" className={styles.compactButton} variant="danger" disabled={batchMutationDisabled || !onBatchDeleteTracks} onClick={onBatchDeleteTracks}>
               删除
             </Button>
@@ -370,7 +398,8 @@ export function VideoTrackPanel({
       <div className={styles.section}>
         {filteredVideoTracks.map((ann) => {
           const track = ann.geometry;
-          const color = classColor(ann.class_name);
+          const color = getTrackColor(track.track_id, ann.class_name, trackColorOverrides);
+          const hasColorOverride = Boolean(trackColorOverrides?.[track.track_id]);
           const primarySelected = ann.id === selectedId;
           const selected = selectedTrackIds.has(ann.id) || primarySelected;
           const hidden = hiddenTrackIds.has(track.track_id);
@@ -400,9 +429,38 @@ export function VideoTrackPanel({
               )}
             >
               <div className={styles.trackMeta}>
-                <svg className={styles.trackColorDot} aria-hidden="true" viewBox="0 0 10 10">
-                  <circle cx="5" cy="5" r="5" fill={color} />
-                </svg>
+                <button
+                  type="button"
+                  className={styles.colorDotButton}
+                  data-testid="video-track-color-dot"
+                  title={canEditColor ? "修改轨迹颜色" : undefined}
+                  disabled={!canEditColor}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setColorPickerTrackId((prev) => (prev === track.track_id ? null : track.track_id));
+                  }}
+                >
+                  <svg className={styles.trackColorDot} aria-hidden="true" viewBox="0 0 10 10">
+                    <circle cx="5" cy="5" r="5" fill={color} />
+                  </svg>
+                  {colorPickerTrackId === track.track_id && (
+                    <div className={styles.colorPickerPopover} onClick={(e) => e.stopPropagation()}>
+                      <VideoTrackColorPicker
+                        currentColor={color}
+                        hasOverride={hasColorOverride}
+                        onPick={(picked) => {
+                          onSetTrackColor?.(track.track_id, picked);
+                          setColorPickerTrackId(null);
+                        }}
+                        onReset={() => {
+                          onSetTrackColor?.(track.track_id, null);
+                          setColorPickerTrackId(null);
+                        }}
+                        onClose={() => setColorPickerTrackId(null)}
+                      />
+                    </div>
+                  )}
+                </button>
                 <div className={styles.trackTitleRow}>
                   <b className={styles.truncateTitle}>
                     {displayClassName(ann.class_name)}
@@ -489,7 +547,7 @@ export function VideoTrackPanel({
             <div className={styles.rowBetween}>
               <div className={styles.trackMeta}>
                 <svg className={styles.trackColorDot} aria-hidden="true" viewBox="0 0 10 10">
-                  <circle cx="5" cy="5" r="5" fill={classColor(selectedTrack.class_name)} />
+                  <circle cx="5" cy="5" r="5" fill={getTrackColor(selectedTrack.geometry.track_id, selectedTrack.class_name, trackColorOverrides)} />
                 </svg>
                 <div className={styles.trackTitleRow}>
                   <b className={styles.truncateTitle}>
@@ -860,6 +918,14 @@ export function VideoTrackPanel({
             direction: payload.direction,
             overwrite: payload.overwrite,
           });
+        }}
+      />
+      <VideoTrackComposeDialog
+        open={joinOpen}
+        onCancel={() => setJoinOpen(false)}
+        onSubmit={(gapMode: VideoTrackGapMode) => {
+          setJoinOpen(false);
+          onJoinSelectedTracks?.(gapMode);
         }}
       />
     </div>
