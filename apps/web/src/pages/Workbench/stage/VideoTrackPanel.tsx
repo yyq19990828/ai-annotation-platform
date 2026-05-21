@@ -1,13 +1,19 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import type { AttributeSchema } from "@/api/projects";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
 import type { VideoTrackerJobState } from "@/hooks/useVideoTrackerJobs";
 import type { DiffMode } from "../modes/types";
 import { classColor, displayClassName } from "./colors";
 import { resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
+import { VideoAttributesEditor } from "./VideoAttributesEditor";
+import {
+  VideoKeyframesPropagateDialog,
+  type VideoKeyframesPropagateSubmit,
+} from "./VideoKeyframesPropagateDialog";
 import styles from "./VideoTrackPanel.module.css";
 import type {
   VideoFrameEntry,
@@ -70,6 +76,20 @@ interface VideoTrackPanelProps {
   onCancelTrackerJob?: (jobId: string) => void;
   onAcceptPredictionKeyframe?: (annotation: VideoTrackAnnotation, frameIndex: number) => void;
   onRejectPredictionKeyframe?: (annotation: VideoTrackAnnotation, frameIndex: number) => void;
+  // v0.10.30 · 2.3 属性 UI: 当前激活工具的属性 schema + track/帧级属性回写。
+  // 全部可选, 未接线时编辑器自动隐藏 (Wave 2 由主进程经 Sidebar 透传)。
+  attributeSchema?: AttributeSchema;
+  onUpdateTrackAttributes?: (annotation: VideoTrackAnnotation, attributes: Record<string, unknown>) => void;
+  onUpdateKeyframeAttributes?: (annotation: VideoTrackAnnotation, frameIndex: number, attributes: Record<string, unknown>) => void;
+  // v0.10.30 · 2.6 Propagate: 当前帧框复制到后续 N 帧 (纯前端)。
+  onPropagateKeyframe?: (
+    annotation: VideoTrackAnnotation,
+    fromFrame: number,
+    count: number,
+    options: { direction: "forward" | "backward"; overwrite: boolean },
+  ) => void;
+  // v0.10.30 · 2.1 semantic_label inline 编辑 (回写 geometry.semantic_label)。
+  onUpdateSemanticLabel?: (annotation: VideoTrackAnnotation, semanticLabel: string) => void;
 }
 
 function frameRange(frames: number[]): string {
@@ -224,6 +244,11 @@ export function VideoTrackPanel({
   onCancelTrackerJob,
   onAcceptPredictionKeyframe,
   onRejectPredictionKeyframe,
+  attributeSchema,
+  onUpdateTrackAttributes,
+  onUpdateKeyframeAttributes,
+  onPropagateKeyframe,
+  onUpdateSemanticLabel,
 }: VideoTrackPanelProps) {
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
@@ -231,6 +256,36 @@ export function VideoTrackPanel({
   const canAggregateBboxes = !readOnly && selectedBboxCount > 1 && Boolean(onAggregateSelectedBboxes);
   const currentFrameLabel = exactFrameLabel(selectedTrack, frameIndex, currentFrameOutside);
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
+  const [propagateOpen, setPropagateOpen] = useState(false);
+  // semantic_label inline 编辑草稿; null 表示同步 selectedTrack 当前值。
+  const [semanticDraft, setSemanticDraft] = useState<string | null>(null);
+  const selectedTrackKey = selectedTrack?.id ?? null;
+  // 切换选中 track 时重置草稿, 避免上一条 track 的编辑残留。
+  useEffect(() => {
+    setSemanticDraft(null);
+  }, [selectedTrackKey]);
+  const semanticValue = semanticDraft ?? selectedTrack?.geometry.semantic_label ?? "";
+  const commitSemanticLabel = () => {
+    if (!selectedTrack || semanticDraft === null) return;
+    const next = semanticDraft.trim();
+    if (next === (selectedTrack.geometry.semantic_label ?? "")) {
+      setSemanticDraft(null);
+      return;
+    }
+    onUpdateSemanticLabel?.(selectedTrack, next);
+    setSemanticDraft(null);
+  };
+  // 当前帧是否有可写关键帧 (非消失帧)。
+  const currentFrameHasKeyframe = selectedTrack
+    ? resolveTrackAtFrame(selectedTrack.geometry, frameIndex) !== null
+    : false;
+  const canPropagate = Boolean(
+    selectedTrack
+    && !readOnly
+    && !selectedTrackLocked
+    && onPropagateKeyframe
+    && resolveTrackAtFrame(selectedTrack.geometry, frameIndex) !== null,
+  );
   const filteredVideoTracks = useMemo(
     () => videoTracks.filter((ann) => {
       const currentSource = resolveTrackAtFrame(ann.geometry, frameIndex)?.source ?? null;
@@ -499,7 +554,35 @@ export function VideoTrackPanel({
               >
                 <Icon name="bot" size={13} />AI 传播
               </Button>
+              <Button
+                size="sm"
+                className={styles.currentActionButton}
+                disabled={!canPropagate}
+                title="把当前帧的框复制到后续/向前 N 帧"
+                onClick={() => setPropagateOpen(true)}
+              >
+                <Icon name="copy" size={13} />复制后续
+              </Button>
             </div>
+            {onUpdateSemanticLabel && (
+              <label className={styles.semanticRow}>
+                <span className={styles.semanticLabel}>语义标签</span>
+                <input
+                  type="text"
+                  data-testid="video-track-semantic-label-input"
+                  className={styles.semanticInput}
+                  placeholder="如 car_3 (跨任务 Re-ID)"
+                  value={semanticValue}
+                  disabled={readOnly || selectedTrackLocked}
+                  onChange={(e) => setSemanticDraft(e.target.value)}
+                  onBlur={commitSemanticLabel}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") setSemanticDraft(null);
+                  }}
+                />
+              </label>
+            )}
             {trackerJobsByAnnotation[selectedTrack.id] && (
               <div data-testid="video-tracker-job-row" className={styles.trackerJobRow}>
                 <VideoTrackerJobBadge
@@ -681,6 +764,25 @@ export function VideoTrackPanel({
                 })}
               </div>
             </div>
+            {attributeSchema && (onUpdateTrackAttributes || onUpdateKeyframeAttributes) && (
+              <div className={styles.sectionWithTopPadding}>
+                <VideoAttributesEditor
+                  schema={attributeSchema}
+                  className={selectedTrack.class_name}
+                  trackAttributes={selectedTrack.attributes}
+                  keyframeAttributes={
+                    (selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) as
+                      | { attributes?: Record<string, unknown> | null }
+                      | undefined)?.attributes ?? undefined
+                  }
+                  frameIndex={frameIndex}
+                  canEditKeyframe={currentFrameHasKeyframe}
+                  readOnly={readOnly || selectedTrackLocked}
+                  onChangeTrackAttributes={(attrs) => onUpdateTrackAttributes?.(selectedTrack, attrs)}
+                  onChangeKeyframeAttributes={(attrs) => onUpdateKeyframeAttributes?.(selectedTrack, frameIndex, attrs)}
+                />
+              </div>
+            )}
             <details open className={styles.convertPanel}>
               <summary className={styles.convertSummary}>
                 转换为独立框...
@@ -747,6 +849,19 @@ export function VideoTrackPanel({
           </>
         )}
       </div>
+      <VideoKeyframesPropagateDialog
+        open={propagateOpen}
+        frameIndex={frameIndex}
+        onCancel={() => setPropagateOpen(false)}
+        onSubmit={(payload: VideoKeyframesPropagateSubmit) => {
+          setPropagateOpen(false);
+          if (!selectedTrack) return;
+          onPropagateKeyframe?.(selectedTrack, frameIndex, payload.count, {
+            direction: payload.direction,
+            overwrite: payload.overwrite,
+          });
+        }}
+      />
     </div>
   );
 }
