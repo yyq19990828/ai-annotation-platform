@@ -1,0 +1,138 @@
+import { useEffect, useState } from "react";
+
+import { Button } from "@/components/ui/Button";
+import type { VideoPropagateDirection } from "../state/videoTrackCommands";
+import styles from "./VideoKeyframesPropagateDialog.module.css";
+
+const COUNT_PRESETS = [1, 5, 10, 30] as const;
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
+export interface VideoKeyframesPropagateSubmit {
+  direction: VideoPropagateDirection;
+  count: number;
+  overwrite: boolean;
+}
+
+interface VideoKeyframesPropagateDialogProps {
+  open: boolean;
+  frameIndex: number;
+  onCancel: () => void;
+  onSubmit: (payload: VideoKeyframesPropagateSubmit) => void;
+}
+
+/**
+ * v0.10.30 · 2.6 关键帧 Propagate 对话框 (纯前端, 区别于 AI 版 VideoTrackerPropagateDialog)。
+ * 把当前帧的框复制到后续 / 向前 N 帧, overwrite 控制是否覆盖目标帧已有关键帧。
+ */
+export function VideoKeyframesPropagateDialog({
+  open,
+  frameIndex,
+  onCancel,
+  onSubmit,
+}: VideoKeyframesPropagateDialogProps) {
+  const [direction, setDirection] = useState<VideoPropagateDirection>("forward");
+  const [count, setCount] = useState<number>(10);
+  const [overwrite, setOverwrite] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (open) {
+      setDirection("forward");
+      setCount(10);
+      setOverwrite(false);
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const step = direction === "backward" ? -1 : 1;
+  const target = Math.max(0, frameIndex + step * count);
+
+  const handleSubmit = () => {
+    if (count <= 0) return;
+    onSubmit({ direction, count, overwrite });
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-label="复制到后续帧"
+      data-testid="video-keyframes-propagate-dialog"
+      className={styles.backdrop}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div className={styles.dialog}>
+        <div className={styles.header}>
+          <b className={styles.title}>复制框到后续帧</b>
+          <button type="button" onClick={onCancel} className={styles.closeButton}>
+            ✕
+          </button>
+        </div>
+
+        <label className={styles.field}>
+          方向
+          <div className={styles.segmented}>
+            {(["forward", "backward"] as VideoPropagateDirection[]).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDirection(d)}
+                className={cn(styles.optionButton, direction === d && styles.optionButtonSelected)}
+              >
+                {d === "forward" ? "向后" : "向前"}
+              </button>
+            ))}
+          </div>
+        </label>
+
+        <label className={styles.field}>
+          帧数
+          <div className={styles.segmented}>
+            {COUNT_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setCount(preset)}
+                className={cn(styles.optionButton, count === preset && styles.optionButtonSelected)}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+          <input
+            type="number"
+            min={1}
+            value={count}
+            onChange={(e) => setCount(Math.max(1, Math.floor(Number(e.target.value) || 0)))}
+            className={styles.numberInput}
+          />
+          <span className={cn("mono", styles.rangeHint)}>
+            F{frameIndex} → F{target}
+          </span>
+        </label>
+
+        <label className={styles.checkboxField}>
+          <input
+            type="checkbox"
+            checked={overwrite}
+            onChange={(e) => setOverwrite(e.target.checked)}
+          />
+          覆盖目标帧已有关键帧
+        </label>
+
+        <div className={styles.actions}>
+          <Button variant="ghost" size="sm" onClick={onCancel}>
+            取消
+          </Button>
+          <Button size="sm" onClick={handleSubmit} disabled={count <= 0}>
+            复制
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

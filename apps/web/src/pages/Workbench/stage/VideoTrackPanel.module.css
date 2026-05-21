@@ -310,6 +310,29 @@
   gap: 6px;
 }
 
+.semanticRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.semanticLabel {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+}
+
+.semanticInput {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: 12px;
+}
+
 .frameActionGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
