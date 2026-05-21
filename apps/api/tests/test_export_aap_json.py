@@ -22,6 +22,7 @@ from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services.display_id import next_display_id
+from app.services.export import ExportService
 
 pytestmark = pytest.mark.asyncio
 
@@ -74,11 +75,11 @@ async def _seed(
 
 
 async def test_export_aap_json_project_envelope(
-    httpx_client: httpx.AsyncClient,
     super_admin,
     db_session: AsyncSession,
 ):
-    user, token = super_admin
+    # v0.10.27 导出已异步化 (POST→job); 内容正确性直接断言 ExportService。
+    user, _ = super_admin
     project, tasks, _ = await _seed(db_session, user.id)
 
     # 加 1 条 annotation + 1 条 prediction
@@ -118,12 +119,7 @@ async def test_export_aap_json_project_envelope(
     db_session.add(pred)
     await db_session.flush()
 
-    headers = {"Authorization": f"Bearer {token}"}
-    r = await httpx_client.get(
-        f"/api/v1/projects/{project.id}/export?format=aap_json", headers=headers
-    )
-    assert r.status_code == 200, r.text
-    body = json.loads(r.text)
+    body = json.loads(await ExportService(db_session).export_aap_json(project.id))
 
     assert body["schema_version"] == "1.1"
     assert body["exported_from"]["project_display_id"] == project.display_id
@@ -148,28 +144,22 @@ async def test_export_aap_json_project_envelope(
 
 
 async def test_export_aap_json_batch_endpoint(
-    httpx_client: httpx.AsyncClient,
     super_admin,
     db_session: AsyncSession,
 ):
-    user, token = super_admin
+    user, _ = super_admin
     project, _, batch = await _seed(db_session, user.id)
-    headers = {"Authorization": f"Bearer {token}"}
-    r = await httpx_client.get(
-        f"/api/v1/projects/{project.id}/batches/{batch.id}/export?format=aap_json",
-        headers=headers,
+    body = json.loads(
+        await ExportService(db_session).export_aap_json(project.id, batch_id=batch.id)
     )
-    assert r.status_code == 200, r.text
-    body = json.loads(r.text)
     assert body["exported_from"]["batch_display_id"] == batch.display_id
 
 
 async def test_export_aap_json_empty_project(
-    httpx_client: httpx.AsyncClient,
     super_admin,
     db_session: AsyncSession,
 ):
-    user, token = super_admin
+    user, _ = super_admin
     short = uuid.uuid4().hex[:6]
     project = Project(
         id=uuid.uuid4(),
@@ -184,12 +174,7 @@ async def test_export_aap_json_empty_project(
     db_session.add(project)
     await db_session.flush()
 
-    headers = {"Authorization": f"Bearer {token}"}
-    r = await httpx_client.get(
-        f"/api/v1/projects/{project.id}/export?format=aap_json", headers=headers
-    )
-    assert r.status_code == 200, r.text
-    body = json.loads(r.text)
+    body = json.loads(await ExportService(db_session).export_aap_json(project.id))
     assert body["schema_version"] == "1.1"
     assert body["tasks"] == []
 
@@ -242,11 +227,7 @@ async def test_export_aap_json_round_trip_after_external_import(
     assert r.status_code == 200, r.text
 
     # 立即导出, 应能读到刚导入的 prediction
-    r2 = await httpx_client.get(
-        f"/api/v1/projects/{project.id}/export?format=aap_json", headers=headers
-    )
-    assert r2.status_code == 200
-    body = json.loads(r2.text)
+    body = json.loads(await ExportService(db_session).export_aap_json(project.id))
     t0 = next(
         t for t in body["tasks"] if t["task_match"]["display_id"] == tasks[0].display_id
     )

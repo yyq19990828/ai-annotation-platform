@@ -133,10 +133,11 @@ async def test_project_export_creates_audit_log(
     db_session.add(project)
     await db_session.flush()
 
-    r = await httpx_client.get(
+    # v0.10.27 导出异步化: POST 创建 async_job 并返回 202; 审计日志仍同步落库。
+    r = await httpx_client.post(
         f"/api/v1/projects/{project.id}/export?format=coco", headers=headers
     )
-    assert r.status_code == 200
+    assert r.status_code == 202
 
     result = await db_session.execute(
         select(AuditLog).where(
