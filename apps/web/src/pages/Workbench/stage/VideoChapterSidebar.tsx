@@ -215,9 +215,15 @@ export function VideoChapterSidebar({
               >
                 <b className={styles.chapterTitle}>
                   {idx + 1}. {chapter.title}
+                  {chapter.source === "sampled" && (
+                    <span className={styles.sampledBadge} title="由采样网格派生">
+                      采样
+                    </span>
+                  )}
                 </b>
                 <span className={cn("mono", styles.chapterMeta)}>
                   F{chapter.start_frame}–F{chapter.end_frame} · {formatChapterDuration(chapter.start_frame, chapter.end_frame, timebase)}
+                  {chapter.frame_step != null && ` · 步长 ${chapter.frame_step}`}
                 </span>
               </button>
               {canEdit && (

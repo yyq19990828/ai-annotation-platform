@@ -12732,10 +12732,37 @@
             "title": "End Frame",
             "type": "integer"
           },
+          "frame_step": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Step"
+          },
           "metadata": {
             "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "manual",
+                  "sampled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "start_frame": {
             "minimum": 0.0,
@@ -12809,6 +12836,17 @@
             "title": "End Frame",
             "type": "integer"
           },
+          "frame_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Step"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -12818,6 +12856,15 @@
             "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "sampled"
+            ],
+            "title": "Source",
+            "type": "string"
           },
           "start_frame": {
             "title": "Start Frame",
@@ -12877,6 +12924,18 @@
             ],
             "title": "End Frame"
           },
+          "frame_step": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Step"
+          },
           "metadata": {
             "anyOf": [
               {
@@ -12888,6 +12947,21 @@
               }
             ],
             "title": "Metadata"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "manual",
+                  "sampled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "start_frame": {
             "anyOf": [
