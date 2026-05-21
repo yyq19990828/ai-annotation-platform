@@ -66,10 +66,12 @@ export interface VideoConvertOptions {
 }
 
 export interface VideoTrackCompositionOptions {
-  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks" | "join_tracks";
   annotationIds: string[];
   frameIndex?: number;
   deleteSources?: boolean;
+  // v0.10.30 · 2.5 join: gap 填充模式, 仅 join_tracks 透传给后端 gap_mode。
+  gapMode?: "interpolate" | "outside";
 }
 
 export function buildVideoCreatePayload(
@@ -416,6 +418,7 @@ export function useVideoAnnotationActions({
         annotation_ids: options.annotationIds,
         frame_index: options.frameIndex,
         delete_sources: options.deleteSources,
+        gap_mode: options.gapMode,
       });
       queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) => {
         const deleted = new Set(result.deleted_annotation_ids);
@@ -440,7 +443,9 @@ export function useVideoAnnotationActions({
         ? "已聚合为轨迹"
         : options.operation === "split_track"
           ? "轨迹已拆分"
-          : "轨迹已合并";
+          : options.operation === "join_tracks"
+            ? "轨迹已跳连"
+            : "轨迹已合并";
       pushToast({ msg: label, kind: "success" });
     } catch (err) {
       pushToast({ msg: "轨迹组合失败", sub: String(err), kind: "error" });

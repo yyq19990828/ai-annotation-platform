@@ -228,6 +228,29 @@
   overflow: visible;
 }
 
+.colorDotButton {
+  grid-row: 1 / span 2;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.colorDotButton:disabled {
+  cursor: default;
+}
+
+.colorPickerPopover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  margin-top: 4px;
+}
+
 .trackTitleRow {
   display: flex;
   align-items: center;
