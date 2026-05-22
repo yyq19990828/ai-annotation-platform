@@ -20,7 +20,7 @@ from app.schemas.ml_backend import (
     InteractiveRequest,
 )
 from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
-from app.services.ml_client import MLBackendClient
+from app.services import ml_client as ml_client_module
 from app.services.storage import StorageService
 from app.services.audit import AuditService
 
@@ -305,7 +305,7 @@ async def get_ml_backend_setup(
     if cached is not None and (now - cached[0]) < _SETUP_CACHE_TTL_SECONDS:
         return cached[1]
 
-    client = MLBackendClient(backend)
+    client = ml_client_module.MLBackendClient(backend)
     try:
         data = await client.setup()
     except Exception as exc:  # httpx.HTTPError 或 timeout
@@ -353,7 +353,7 @@ async def predict_test(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    client = MLBackendClient(backend)
+    client = ml_client_module.MLBackendClient(backend)
     results = await client.predict(
         [{"id": str(task.id), "file_path": _resolve_task_url(task)}]
     )
@@ -394,7 +394,7 @@ async def interactive_annotating(
     # 阈值 (那会把 gsam2 专属参数塞给 sam3 等不支持的后端); 各 backend 缺省值由自身 /setup 决定。
     context = dict(body.context or {})
 
-    client = MLBackendClient(backend)
+    client = ml_client_module.MLBackendClient(backend)
     result = await client.predict_interactive(
         task_data={"id": str(task.id), "file_path": _resolve_task_url(task)},
         context=context,
