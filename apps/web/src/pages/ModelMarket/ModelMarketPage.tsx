@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { RegisteredBackendsTab } from "./RegisteredBackendsTab";
 import { ObserveBackendsPanel } from "./ObserveBackendsPanel";
 import styles from "./ModelMarketPage.module.css";
@@ -26,6 +26,10 @@ export function ModelMarketPage() {
         <p className={styles.subtitle}>
           全局总览：env 配置的 AI 后端容器（直连观测）+ 所有项目已注册的 ML Backend。
         </p>
+        {/* v0.10.36 · 视频追踪任务聚合监控入口 */}
+        <Link to="/model-market/video-jobs" className={styles.entryLink}>
+          视频追踪任务 →
+        </Link>
       </div>
 
       <ObserveBackendsPanel />

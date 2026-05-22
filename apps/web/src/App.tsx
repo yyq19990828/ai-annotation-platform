@@ -70,6 +70,10 @@ const AIPreAnnotateLayout = lazy(() =>
 const AIPreAnnotateJobsPage = lazy(() =>
   import("@/pages/AIPreAnnotate/AIPreAnnotateJobsPage").then((m) => ({ default: m.default }))
 );
+// v0.10.36 · 视频追踪任务聚合监控页
+const VideoTrackerJobsPage = lazy(() =>
+  import("@/pages/ModelMarket/VideoTrackerJobsPage").then((m) => ({ default: m.default }))
+);
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
 import { RequireProjectMember } from "@/components/routing/RequireProjectMember";
@@ -341,6 +345,15 @@ export function App() {
           element={
             <RequirePagePermission pageKey="model-market">
               <ModelMarketPage />
+            </RequirePagePermission>
+          }
+        />
+        {/* v0.10.36 · 视频追踪任务聚合监控页 (与 ModelMarketPage 同权限) */}
+        <Route
+          path="/model-market/video-jobs"
+          element={
+            <RequirePagePermission pageKey="model-market">
+              <VideoTrackerJobsPage />
             </RequirePagePermission>
           }
         />

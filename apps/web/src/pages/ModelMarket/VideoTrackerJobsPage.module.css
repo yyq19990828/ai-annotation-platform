@@ -1,0 +1,190 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 28px;
+}
+
+.pageIntro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.pageSubtitle {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.countCards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.countCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 120px;
+  padding: 12px 16px;
+}
+
+.countLabel {
+  font-size: 11px;
+}
+
+.countValue {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.filterGroup,
+.inlineActions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.inlineActions {
+  gap: 6px;
+}
+
+.selectControl,
+.searchInput {
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  font-size: 11px;
+  outline: none;
+}
+
+.selectControl {
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+.searchInput {
+  width: 200px;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.message {
+  padding: 16px;
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+  text-align: center;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.headerRow {
+  background: var(--color-bg-sunken);
+}
+
+.tableHeaderCell {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-fg-muted);
+  font-weight: 500;
+  text-align: left;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.tableCell {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.projectDisplayId {
+  margin-left: 6px;
+  color: var(--color-fg-subtle);
+}
+
+.mutedCell {
+  color: var(--color-fg-muted);
+}
+
+.subtle {
+  color: var(--color-fg-subtle);
+}
+
+.numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+.errorMessage {
+  color: var(--color-danger);
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 6px;
+}
+
+.helperInline {
+  color: var(--color-fg-subtle);
+  font-size: 11px;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--color-fg-subtle);
+  text-align: center;
+}
+
+.emptyTitle {
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
+.emptyHint {
+  font-size: 11px;
+}
+
+.entryLink {
+  align-self: flex-start;
+}
