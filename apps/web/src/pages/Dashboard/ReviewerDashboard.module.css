@@ -32,13 +32,13 @@
 
 .statsGridFour {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
 }
 
 .statsGridThree {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
 }
 
@@ -165,12 +165,12 @@
 }
 
 .recentReviewRow {
-  grid-template-columns: 1fr 200px 100px 160px;
+  grid-template-columns: minmax(0, 1fr) 200px 100px 160px;
   cursor: pointer;
 }
 
 .reviewTaskRow {
-  grid-template-columns: 1fr 140px 100px 160px;
+  grid-template-columns: minmax(0, 1fr) 140px 100px 160px;
 }
 
 .rowTitleLine {
@@ -212,4 +212,27 @@
   display: flex;
   gap: 6px;
   justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .page {
+    padding: 16px;
+  }
+
+  .header,
+  .cardHeaderSplit {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .recentReviewRow,
+  .reviewTaskRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .rowDate,
+  .chevronCell {
+    display: none;
+  }
 }

@@ -29,7 +29,7 @@
 
 .fieldGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   gap: 8px;
 }
 
@@ -73,11 +73,22 @@
 
 .twoColumnGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 8px;
 }
 
 .footer {
   display: flex;
   justify-content: flex-start;
+}
+
+@media (max-width: 760px) {
+  .fieldGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .rowActions {
+    align-items: center;
+    justify-content: flex-start;
+  }
 }

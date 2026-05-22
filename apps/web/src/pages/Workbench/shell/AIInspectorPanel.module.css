@@ -79,8 +79,8 @@
   z-index: 30;
   display: flex;
   flex-direction: column;
-  width: 360px;
-  max-width: calc(100vw - 80px);
+  width: min(360px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
   max-height: calc(100vh - 92px);
   overflow: hidden;
   border: 1px solid color-mix(in oklab, var(--color-ai) 35%, var(--color-border));

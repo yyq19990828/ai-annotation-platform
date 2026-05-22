@@ -61,6 +61,25 @@
   gap: 16px;
 }
 
+@media (max-width: 760px) {
+  .page {
+    padding: 16px;
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .navList {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .navButton {
+    white-space: nowrap;
+  }
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -262,7 +281,7 @@
 
 .twoColumnGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
 }
 
