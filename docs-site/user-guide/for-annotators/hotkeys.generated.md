@@ -75,7 +75,8 @@
 | `Ctrl` + `B` | 选中轨迹时打开 AI 传播 |
 | `Ctrl` + `[ / ]` | 视频跳转历史后退 / 前进 |
 | `Alt` + `L` | 清除视频播放范围 |
-| `Delete / Backspace` | 删除选中轨迹 |
+| `Delete / Backspace` | 选中轨迹时删除当前关键帧；选中单帧框时删除该框 |
+| `Ctrl` + `Delete / Backspace` | 删除整条选中轨迹 |
 | `PageUp` | 跳到上一章节 |
 | `PageDown` | 跳到下一章节 |
 | `Tab` | 下一个轨迹（循环） |

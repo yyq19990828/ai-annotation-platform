@@ -370,7 +370,8 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `Ctrl+M` 当前帧添加 / 移除书签
 - `Ctrl+[` / `Ctrl+]` 跳转历史后退 / 前进
 - `Alt+L` 清除本地 loop region
-- `Delete` / `Backspace` 删除选中轨迹
+- `Delete` / `Backspace` 选中 `video_track` 时删除当前帧关键帧；选中 `video_bbox` 时删除该框
+- `Ctrl+Delete` / `Ctrl+Backspace` 删除整条选中轨迹
 - `Tab` / `Shift+Tab` 循环轨迹
 - `Esc` 取消选择
 - `1-9` 有选中视频对象时改其 `class_name`；无选中时切 active class
@@ -394,6 +395,8 @@ v0.9.22 起，视频画布结构对齐 CVAT 的 canvas layer contract，但仍�
 | Attachment | `VideoAttachmentLayer.tsx` | 后续 hover thumbnail、review issue、comment anchor 的 DOM 挂载点 |
 
 `VideoStageSurface` 负责统一尺寸、aspect ratio、层叠顺序和 viewport transform。对象层不再给每个 bbox 主体挂 `pointerdown`，Interaction 层通过 `videoStageCoordinates.ts` 把 client 坐标映射到视频归一化坐标，再用 `videoStagePicking.ts` 选择顶层框。
+
+v0.10.33 起，画布上下文菜单使用通用 `ContextMenu` + `useCanvasContextMenu` 原语：Stage 负责把命中对象转换成 `DropdownItem[]`，菜单组件只处理 fixed 坐标定位、视口翻转和关闭行为。视频轨迹是第一个消费者，图片 Stage 后续可复用同一外壳。
 
 v0.9.39 起，视频工作台的 viewport 与图片工作台复用同一套 `useViewportTransform` 行为：`F` 适应视口、`0` 回到 1:1、Ctrl/Meta+滚轮以光标为锚点缩放、右键拖拽平移。缩放和平移只影响显示层，保存到 annotation 的 bbox / keyframe 仍是 `[0,1]` 归一化视频坐标。
 

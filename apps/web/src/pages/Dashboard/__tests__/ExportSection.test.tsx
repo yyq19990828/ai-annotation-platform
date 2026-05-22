@@ -18,7 +18,7 @@ import { projectsApi } from "@/api/projects";
 
 describe("ExportSection", () => {
   beforeEach(() => {
-    (projectsApi.exportProject as any).mockClear();
+    vi.mocked(projectsApi.exportProject).mockClear();
   });
 
   it("默认勾选 → 调用时 includeAttributes=true", async () => {
@@ -56,17 +56,20 @@ describe("ExportSection", () => {
     });
   });
 
-  it("视频项目只展示 Video JSON 并传递 frame mode", async () => {
+  it("视频项目展示视频导出格式并传递 Video JSON frame mode", async () => {
     render(<ExportSection projectId="p3" projectTypeKey="video-track" />);
     fireEvent.click(screen.getByText("导出 ▾"));
 
     expect(screen.getByText("Video JSON")).toBeInTheDocument();
+    expect(screen.getByText("AAP JSON")).toBeInTheDocument();
+    expect(screen.getByText("MOT")).toBeInTheDocument();
+    expect(screen.getByText("KITTI")).toBeInTheDocument();
     expect(screen.queryByText("YOLO")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("所有帧"));
     fireEvent.click(screen.getByText("导出"));
     await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
-    expect(projectsApi.exportProject).toHaveBeenCalledWith("p3", "coco", {
+    expect(projectsApi.exportProject).toHaveBeenCalledWith("p3", "video_json", {
       includeAttributes: true,
       videoFrameMode: "all_frames",
     });

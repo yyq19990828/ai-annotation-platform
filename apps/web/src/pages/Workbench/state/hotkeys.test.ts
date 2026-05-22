@@ -212,9 +212,17 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "l", altKey: true }, videoCtx)).toEqual({ type: "videoClearLoopRegion" });
   });
 
-  it("Delete / Backspace → videoDeleteSelected", () => {
-    expect(dispatch({ key: "Delete" }, videoCtx)).toEqual({ type: "videoDeleteSelected" });
-    expect(dispatch({ key: "Backspace" }, videoCtx)).toEqual({ type: "videoDeleteSelected" });
+  it("Delete / Backspace → video keyframe delete by default", () => {
+    expect(dispatch({ key: "Delete" }, videoCtx)).toEqual({ type: "videoDeleteSelected", scope: "keyframe" });
+    expect(dispatch({ key: "Backspace" }, videoCtx)).toEqual({ type: "videoDeleteSelected", scope: "keyframe" });
+  });
+
+  it("Ctrl+Delete / Ctrl+Backspace → video track delete", () => {
+    const selectedVideoCtx: Partial<DispatchCtx> = { videoMode: true, hasSelection: true, hasSelectedVideoTrack: true };
+    expect(dispatch({ key: "Delete", ctrlKey: true }, selectedVideoCtx))
+      .toEqual({ type: "videoDeleteSelected", scope: "track" });
+    expect(dispatch({ key: "Backspace", ctrlKey: true }, selectedVideoCtx))
+      .toEqual({ type: "videoDeleteSelected", scope: "track" });
   });
 
   it("Tab / Shift+Tab → videoCycleTrack", () => {

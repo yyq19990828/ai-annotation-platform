@@ -81,7 +81,8 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Ctrl", "B"], desc: "选中轨迹时打开 AI 传播", group: "video", actionType: "videoPropagateTrack" },
   { keys: ["Ctrl", "[ / ]"], desc: "视频跳转历史后退 / 前进", group: "video", actionType: "videoJumpHistory" },
   { keys: ["Alt", "L"], desc: "清除视频播放范围", group: "video", actionType: "videoClearLoopRegion" },
-  { keys: ["Delete / Backspace"], desc: "删除选中轨迹", group: "video", actionType: "videoDeleteSelected" },
+  { keys: ["Delete / Backspace"], desc: "选中轨迹时删除当前关键帧；选中单帧框时删除该框", group: "video", actionType: "videoDeleteSelected" },
+  { keys: ["Ctrl", "Delete / Backspace"], desc: "删除整条选中轨迹", group: "video", actionType: "videoDeleteSelected" },
   { keys: ["PageUp"], desc: "跳到上一章节", group: "video" },
   { keys: ["PageDown"], desc: "跳到下一章节", group: "video" },
   { keys: ["Tab"], desc: "下一个轨迹（循环）", group: "video", actionType: "videoCycleTrack" },
@@ -167,7 +168,7 @@ export type HotkeyAction =
   | { type: "videoPropagateTrack" }
   | { type: "videoJumpHistory"; dir: -1 | 1 }
   | { type: "videoClearLoopRegion" }
-  | { type: "videoDeleteSelected" }
+  | { type: "videoDeleteSelected"; scope: "keyframe" | "track" }
   | { type: "videoCycleTrack"; dir: 1 | -1 }
   // I12 · Object Group
   | { type: "annotationGroup" }
@@ -225,6 +226,9 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (ctx.videoMode && ctx.hasSelectedVideoTrack && k === "b") return { type: "videoPropagateTrack" };
     if (ctx.videoMode && e.key === "[") return { type: "videoJumpHistory", dir: -1 };
     if (ctx.videoMode && e.key === "]") return { type: "videoJumpHistory", dir: 1 };
+    if (ctx.videoMode && ctx.hasSelection && (e.key === "Delete" || e.key === "Backspace")) {
+      return { type: "videoDeleteSelected", scope: "track" };
+    }
     if (k === "a") return { type: "selectAllUser" };
     if (k === "c") return { type: "copy" };
     if (k === "v") return { type: "paste" };
@@ -299,7 +303,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     }
     if (e.key === "Tab") return { type: "videoCycleTrack", dir: e.shiftKey ? -1 : 1 };
     if (e.key === "Escape") return { type: "cancel" };
-    if (e.key === "Delete" || e.key === "Backspace") return { type: "videoDeleteSelected" };
+    if (e.key === "Delete" || e.key === "Backspace") return { type: "videoDeleteSelected", scope: "keyframe" };
     if (e.key >= "1" && e.key <= "9") {
       return { type: "setClassByDigit", idx: parseInt(e.key, 10) - 1 };
     }

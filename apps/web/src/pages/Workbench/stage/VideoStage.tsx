@@ -1,5 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import { ContextMenu } from "@/components/ui/ContextMenu";
+import type { DropdownItem } from "@/components/ui/DropdownMenu";
 import { Icon } from "@/components/ui/Icon";
 import { FloatingDock } from "../shell/FloatingDock";
 import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoSamplingConfig } from "@/types";
@@ -21,6 +23,7 @@ import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import { useVideoChunkDecoder } from "./useVideoChunkDecoder";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import { useVideoTrackActions } from "./useVideoTrackActions";
+import { useCanvasContextMenu } from "./useCanvasContextMenu";
 import {
   emptyVideoJumpHistory,
   jumpVideoHistory,
@@ -42,6 +45,7 @@ import {
 } from "./videoTrackTimeline";
 import { clientPointToVideoPoint } from "./videoStageCoordinates";
 import { modeFromDrag, getVideoStageModeGuard } from "./videoStageMode";
+import { pickTopVideoEntryAt } from "./videoStagePicking";
 import {
   clampGeom,
   isVideoBbox,
@@ -69,6 +73,7 @@ import styles from "./VideoStage.module.css";
 
 const EMPTY_TRACK_ID_SET = new Set<string>();
 const VIDEO_PLAYBACK_RATES = [0.25, 0.5, 1, 2, 4] as const;
+const CONTEXT_MENU_DRAG_THRESHOLD_PX = 5;
 
 type VideoPlaybackRate = typeof VIDEO_PLAYBACK_RATES[number];
 type VideoJogPlayback = { direction: -1 | 0 | 1; rate: VideoPlaybackRate };
@@ -148,6 +153,7 @@ export interface VideoStageControls {
   toggleSelectedTrackHidden: () => void;
   toggleSelectedTrackLocked: () => void;
   propagateSelectedTrack: () => void;
+  deleteSelectedTrackKeyframe: () => boolean;
 }
 
 export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(function VideoStage({
@@ -195,6 +201,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const [loopRegion, setLoopRegion] = useState<VideoLoopRegion | null>(null);
   const [bookmarks, setBookmarks] = useState<VideoBookmark[]>([]);
   const [jumpHistory, setJumpHistory] = useState<VideoJumpHistory>(() => emptyVideoJumpHistory());
+  const contextMenu = useCanvasContextMenu();
   const onSelectRef = useRef(onSelect);
   const lastResetTaskIdRef = useRef<string | null>(null);
   const fittedTaskIdRef = useRef<string | null>(null);
@@ -204,6 +211,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const frameIndexRef = useRef(0);
   const jogPlaybackRef = useRef<VideoJogPlayback>(PAUSED_JOG_PLAYBACK);
   const selectedTrackRef = useRef<VideoTrackAnnotation | null>(null);
+  const rightDownRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -236,6 +244,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     : 16 / 9;
   const videoPixelWidth = manifest?.metadata.width || 1280;
   const videoPixelHeight = manifest?.metadata.height || Math.round(videoPixelWidth / videoAspectRatio);
+  const videoViewBoxHeight = Number.isFinite(videoAspectRatio) && videoAspectRatio > 0 ? 1 / videoAspectRatio : 9 / 16;
 
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const selectedTrack = useMemo(
@@ -301,6 +310,26 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     onToggleLockedTrack,
     onPropagateTrack,
   });
+  const selectedTrackCurrentKeyframe = useMemo(
+    () => selectedTrack?.geometry.keyframes.find((keyframe) => keyframe.frame_index === frameIndex) ?? null,
+    [frameIndex, selectedTrack],
+  );
+  const canDeleteSelectedTrackKeyframe = Boolean(
+    selectedTrack
+    && selectedTrackCurrentKeyframe
+    && !readOnly
+    && !trackActions.selectedTrackLocked
+    && selectedTrack.geometry.keyframes.length > 1,
+  );
+  const deleteSelectedTrackKeyframe = useCallback(() => {
+    if (!selectedTrack || !selectedTrackCurrentKeyframe || !canDeleteSelectedTrackKeyframe) return false;
+    onUpdate(selectedTrack, {
+      ...selectedTrack.geometry,
+      keyframes: sortedKeyframes(selectedTrack.geometry)
+        .filter((keyframe) => keyframe.frame_index !== frameIndex),
+    });
+    return true;
+  }, [canDeleteSelectedTrackKeyframe, frameIndex, onUpdate, selectedTrack, selectedTrackCurrentKeyframe]);
 
   const trackPreviews = useMemo<VideoTrackPreview[]>(
     () => videoTracks
@@ -733,9 +762,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       toggleSelectedTrackHidden: trackActions.toggleSelectedTrackHidden,
       toggleSelectedTrackLocked: trackActions.toggleSelectedTrackLocked,
       propagateSelectedTrack: trackActions.propagateSelectedTrack,
+      deleteSelectedTrackKeyframe,
     }),
     [
       clearLoopRegion,
+      deleteSelectedTrackKeyframe,
       jogPlaybackBy,
       jumpHistoryBy,
       microStepBy,
@@ -1019,9 +1050,8 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const pointFromEvent = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     const svg = overlayRef.current;
     if (!svg) return null;
-    const viewBoxHeight = Number.isFinite(videoAspectRatio) && videoAspectRatio > 0 ? 1 / videoAspectRatio : 9 / 16;
-    return clientPointToVideoPoint(svg, { x: evt.clientX, y: evt.clientY }, viewBoxHeight);
-  }, [videoAspectRatio]);
+    return clientPointToVideoPoint(svg, { x: evt.clientX, y: evt.clientY }, videoViewBoxHeight);
+  }, [videoViewBoxHeight]);
 
   const updateCursor = useCallback((evt: ReactPointerEvent<SVGSVGElement>) => {
     const pt = pointFromEvent(evt);
@@ -1032,6 +1062,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
 
   const beginPan = useCallback((evt: ReactPointerEvent<Element>) => {
     // currentTarget 在 root div 与 SVG 都支持 setPointerCapture; 接受 letterbox 区域触发的拖动
+    rightDownRef.current = { x: evt.clientX, y: evt.clientY };
     evt.currentTarget.setPointerCapture?.(evt.pointerId);
     pausePlayback();
     setPlaybackOverlayVisible(false);
@@ -1162,6 +1193,129 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     if (drag) finishDrag(evt);
   }, [drag, finishDrag, onCursorMove]);
 
+  const trackContextMenuItems = useMemo<DropdownItem[]>(() => {
+    if (!selectedAnnotation || !isVideoTrack(selectedAnnotation)) return [];
+    const frameEditDisabled = !trackActions.canEditSelectedTrack;
+    const trackMutationDisabled = readOnly || trackActions.selectedTrackLocked;
+    return [
+      {
+        id: "outside",
+        label: trackActions.currentFrameOutside ? "恢复显示" : "标记消失",
+        icon: "eyeOff",
+        kbd: "O",
+        disabled: frameEditDisabled,
+        onSelect: trackActions.toggleSelectedTrackOutside,
+      },
+      {
+        id: "occluded",
+        label: trackActions.currentFrameOccluded ? "取消遮挡" : "标记遮挡",
+        icon: "rect",
+        kbd: "Q",
+        disabled: frameEditDisabled,
+        onSelect: trackActions.toggleSelectedTrackOccluded,
+      },
+      { id: "state-divider", divider: true, label: "" },
+      {
+        id: "locked",
+        label: trackActions.selectedTrackLocked ? "解锁轨迹" : "锁定轨迹",
+        icon: trackActions.selectedTrackLocked ? "unlock" : "lock",
+        kbd: "L",
+        disabled: readOnly || !onToggleLockedTrack,
+        onSelect: trackActions.toggleSelectedTrackLocked,
+      },
+      {
+        id: "hidden",
+        label: trackActions.selectedTrackHidden ? "显示轨迹" : "隐藏轨迹",
+        icon: trackActions.selectedTrackHidden ? "eyeOff" : "eye",
+        kbd: "H",
+        disabled: readOnly || !onToggleHiddenTrack,
+        onSelect: trackActions.toggleSelectedTrackHidden,
+      },
+      {
+        id: "propagate",
+        label: "AI 传播",
+        icon: "bot",
+        kbd: "Ctrl+B",
+        disabled: frameEditDisabled || !onPropagateTrack,
+        onSelect: trackActions.propagateSelectedTrack,
+      },
+      { id: "edit-divider", divider: true, label: "" },
+      {
+        id: "class",
+        label: "改类别",
+        icon: "tag",
+        disabled: trackMutationDisabled || !onChangeUserBoxClass,
+        onSelect: () => onChangeUserBoxClass?.(selectedAnnotation.id),
+      },
+      {
+        id: "split-frame",
+        label: "拆当前帧为独立框",
+        icon: "scissors",
+        disabled: trackMutationDisabled || !onConvertToBboxes,
+        onSelect: () => onConvertToBboxes?.(selectedAnnotation, {
+          operation: "split",
+          scope: "frame",
+          frameIndex,
+        }),
+      },
+      {
+        id: "delete-keyframe",
+        label: "删除当前关键帧",
+        icon: "trash",
+        kbd: "Del",
+        disabled: !canDeleteSelectedTrackKeyframe,
+        onSelect: deleteSelectedTrackKeyframe,
+      },
+      {
+        id: "delete-track",
+        label: "删除整条轨迹",
+        icon: "trash",
+        kbd: "Ctrl+Del",
+        disabled: trackMutationDisabled || !onDelete,
+        onSelect: () => onDelete?.(selectedAnnotation),
+      },
+    ];
+  }, [
+    frameIndex,
+    canDeleteSelectedTrackKeyframe,
+    deleteSelectedTrackKeyframe,
+    onChangeUserBoxClass,
+    onConvertToBboxes,
+    onDelete,
+    onPropagateTrack,
+    onToggleHiddenTrack,
+    onToggleLockedTrack,
+    readOnly,
+    selectedAnnotation,
+    trackActions,
+  ]);
+
+  const handleContextMenu = useCallback((evt: ReactMouseEvent<HTMLDivElement>) => {
+    evt.preventDefault();
+    const down = rightDownRef.current;
+    rightDownRef.current = null;
+    contextMenu.close();
+    if (down && Math.hypot(evt.clientX - down.x, evt.clientY - down.y) >= CONTEXT_MENU_DRAG_THRESHOLD_PX) return;
+    if (readOnly) return;
+    const svg = overlayRef.current;
+    if (!svg) return;
+    const point = clientPointToVideoPoint(svg, { x: evt.clientX, y: evt.clientY }, videoViewBoxHeight);
+    const hit = pickTopVideoEntryAt(
+      selectedTrackGhost ? [...currentFrameEntries, selectedTrackGhost] : currentFrameEntries,
+      point,
+    );
+    if (!hit || !isVideoTrack(hit.ann)) return;
+    onSelect(hit.ann.id);
+    contextMenu.openAt(evt.clientX, evt.clientY);
+  }, [
+    contextMenu,
+    currentFrameEntries,
+    onSelect,
+    readOnly,
+    selectedTrackGhost,
+    videoViewBoxHeight,
+  ]);
+
   if (isLoading) {
     return (
       <div className={styles.loadingState}>
@@ -1188,7 +1342,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     <div
       ref={containerRef}
       data-testid="video-stage"
-      onContextMenu={(evt) => evt.preventDefault()}
+      onContextMenu={handleContextMenu}
       onMouseEnter={showPlaybackOverlay}
       onMouseMove={() => {
         if (!drag) showPlaybackOverlay();
@@ -1288,10 +1442,19 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             currentFrameOccluded={trackActions.currentFrameOccluded}
             selectedTrackHidden={trackActions.selectedTrackHidden}
             selectedTrackLocked={trackActions.selectedTrackLocked}
+            currentFrameHasKeyframe={Boolean(selectedTrackCurrentKeyframe)}
             onToggleOutside={trackActions.canEditSelectedTrack ? trackActions.toggleSelectedTrackOutside : undefined}
             onToggleOccluded={trackActions.canEditSelectedTrack ? trackActions.toggleSelectedTrackOccluded : undefined}
             onToggleHidden={onToggleHiddenTrack ? trackActions.toggleSelectedTrackHidden : undefined}
             onToggleLocked={onToggleLockedTrack ? trackActions.toggleSelectedTrackLocked : undefined}
+            onDeleteTrackKeyframe={canDeleteSelectedTrackKeyframe ? deleteSelectedTrackKeyframe : undefined}
+          />
+          <ContextMenu
+            open={contextMenu.open && trackContextMenuItems.length > 0}
+            x={contextMenu.x}
+            y={contextMenu.y}
+            items={trackContextMenuItems}
+            onClose={contextMenu.close}
           />
           <VideoQcWarnings warnings={qualityWarnings} />
           <VideoPlaybackOverlay

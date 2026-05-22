@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRef } from "react";
+import { createRef, useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { VideoStage, type VideoStageControls } from "./VideoStage";
 import { VideoTrackSidebar } from "./VideoTrackSidebar";
@@ -67,6 +67,16 @@ function pointer(type: string, clientX: number, clientY: number, button = 0) {
     clientX,
     clientY,
     button,
+  });
+}
+
+function contextMenu(clientX: number, clientY: number) {
+  return new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    clientX,
+    clientY,
+    button: 2,
   });
 }
 
@@ -795,6 +805,148 @@ describe("VideoStage", () => {
     await waitFor(() => {
       expect(surface.style.getPropertyValue("--video-stage-transform")).toContain("translate(-275px, -120px)");
     });
+  });
+
+  it("opens a track context menu on a right-click tap and routes actions through selected track state", async () => {
+    const onSelect = vi.fn();
+    const onUpdate = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    function Harness() {
+      const [selectedId, setSelectedId] = useState<string | null>(null);
+      return (
+        <VideoStage
+          manifest={manifest}
+          annotations={annotations}
+          selectedId={selectedId}
+          activeClass="car"
+          onSelect={(id) => {
+            onSelect(id);
+            setSelectedId(id);
+          }}
+          onCreate={() => {}}
+          onUpdate={onUpdate}
+          onRename={() => {}}
+        />
+      );
+    }
+
+    const { getByTestId } = render(<Harness />);
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 150, 100, 2));
+    fireEvent(overlay, pointer("pointerup", 151, 101, 2));
+    fireEvent(overlay, contextMenu(151, 101));
+
+    expect(onSelect).toHaveBeenCalledWith("t1");
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: /标记消失/ }));
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      annotations[0],
+      expect.objectContaining({
+        outside: [expect.objectContaining({ from: 0, to: 0, source: "manual" })],
+      }),
+    );
+  });
+
+  it("deletes the current keyframe from the track context menu without deleting the track", async () => {
+    const onUpdate = vi.fn();
+    const onDelete = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 3, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        frameIndex={0}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={onUpdate}
+        onRename={() => {}}
+        onDelete={onDelete}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 150, 100, 2));
+    fireEvent(overlay, pointer("pointerup", 151, 101, 2));
+    fireEvent(overlay, contextMenu(151, 101));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /删除当前关键帧/ }));
+
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const [, geometry] = onUpdate.mock.calls[0];
+    expect(geometry.keyframes.map((keyframe: { frame_index: number }) => keyframe.frame_index)).toEqual([3]);
+  });
+
+  it("keeps right-button drag as pan and does not open the track context menu", () => {
+    const onSelect = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        onSelect={onSelect}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 150, 100, 2));
+    fireEvent(overlay, pointer("pointermove", 175, 130, 2));
+    fireEvent(overlay, pointer("pointerup", 175, 130, 2));
+    fireEvent(overlay, contextMenu(175, 130));
+
+    expect(onSelect).not.toHaveBeenCalledWith("t1");
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("keeps the pending video box visible while class selection is open", () => {

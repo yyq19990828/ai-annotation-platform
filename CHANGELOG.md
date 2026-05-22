@@ -22,6 +22,19 @@
 
 ## 最新版本
 
+## [0.10.33] - 2026-05-22
+
+> **画布右键轨迹菜单。** 视频工作台补齐轨迹操作的第四条到达路径：右键轻点当前帧轨迹框会在光标处打开操作菜单，可标记消失 / 遮挡、锁定 / 隐藏、AI 传播、改类、拆当前帧为独立框、删除当前关键帧或删除整条轨迹。右键拖拽平移画布的既有行为保持不变。
+
+### Added
+
+- **坐标锚定 ContextMenu 原语** (前端 [ContextMenu.tsx](apps/web/src/components/ui/ContextMenu.tsx) · [useCanvasContextMenu.ts](apps/web/src/pages/Workbench/stage/useCanvasContextMenu.ts)): 新增可复用的画布上下文菜单外壳，支持 fixed 坐标定位、视口边界翻转、Esc / 外部点击关闭和 disabled 菜单项。
+- **视频轨迹右键菜单** (前端 [VideoStage.tsx](apps/web/src/pages/Workbench/stage/VideoStage.tsx)): 右键轻点命中 `video_track` 时先选中该轨迹，再复用 `useVideoTrackActions` 与现有改类 / 拆框 / 删除回调渲染菜单；位移达到拖拽阈值时只平移、不弹菜单。
+
+### Changed
+
+- **轨迹删除优先级** (前端 [hotkeys.ts](apps/web/src/pages/Workbench/state/hotkeys.ts) · [VideoSelectionActions.tsx](apps/web/src/pages/Workbench/stage/VideoSelectionActions.tsx)): 选中 `video_track` 时 `Delete` / `Backspace` 优先删除当前帧精确关键帧；删除整条轨迹改为 `Ctrl+Delete` / `Ctrl+Backspace` 或右键菜单的「删除整条轨迹」。单帧 `video_bbox` 删除行为保持不变。
+
 ## [0.10.32] - 2026-05-22
 
 > **轨迹操作搬出侧栏。** 视频工作台的常用 track 状态操作不再只依赖右侧轨迹面板：选中轨迹后，画布浮动条可直接标记/恢复当前帧消失、遮挡，并可锁定/隐藏轨迹；键盘新增 `O` outside、`Q`/`Slash` occluded、`H` hide、`L` lock、`Ctrl+B` 打开 AI 传播。状态写入抽成共享 `useVideoTrackActions`，侧栏、画布浮动条和快捷键都走同一条 `onUpdate` / track view-state 路径。

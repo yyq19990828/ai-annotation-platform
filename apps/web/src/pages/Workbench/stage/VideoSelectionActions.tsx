@@ -16,10 +16,12 @@ interface VideoSelectionActionsProps {
   currentFrameOccluded?: boolean;
   selectedTrackHidden?: boolean;
   selectedTrackLocked?: boolean;
+  currentFrameHasKeyframe?: boolean;
   onToggleOutside?: () => void;
   onToggleOccluded?: () => void;
   onToggleHidden?: () => void;
   onToggleLocked?: () => void;
+  onDeleteTrackKeyframe?: () => void;
 }
 
 export function VideoSelectionActions({
@@ -33,10 +35,12 @@ export function VideoSelectionActions({
   currentFrameOccluded = false,
   selectedTrackHidden = false,
   selectedTrackLocked = false,
+  currentFrameHasKeyframe = false,
   onToggleOutside,
   onToggleOccluded,
   onToggleHidden,
   onToggleLocked,
+  onDeleteTrackKeyframe,
 }: VideoSelectionActionsProps) {
   if (!selectedAnnotation || readOnly) return null;
 
@@ -119,9 +123,20 @@ export function VideoSelectionActions({
           </Button>
         </>
       )}
-      <Button size="sm" title="删除" onClick={() => onDelete?.(selectedAnnotation)}>
-        <Icon name="trash" size={12} />
-      </Button>
+      {isVideoTrack(selectedAnnotation) ? (
+        <Button
+          size="sm"
+          title="删除当前关键帧"
+          disabled={selectedTrackLocked || !currentFrameHasKeyframe || !onDeleteTrackKeyframe}
+          onClick={() => onDeleteTrackKeyframe?.()}
+        >
+          <Icon name="trash" size={12} />
+        </Button>
+      ) : (
+        <Button size="sm" title="删除" onClick={() => onDelete?.(selectedAnnotation)}>
+          <Icon name="trash" size={12} />
+        </Button>
+      )}
     </div>
   );
 }

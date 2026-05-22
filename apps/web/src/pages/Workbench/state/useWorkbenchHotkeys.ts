@@ -381,7 +381,15 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           return;
         case "videoDeleteSelected":
           e.preventDefault();
-          if (s.selectedId) handleDeleteBox(s.selectedId);
+          if (!s.selectedId) return;
+          if (action.scope === "keyframe") {
+            const selected = annotationsRef.current.find((ann) => ann.id === s.selectedId);
+            if (selected?.geometry.type === "video_track") {
+              videoControlsRef?.current?.deleteSelectedTrackKeyframe();
+              return;
+            }
+          }
+          handleDeleteBox(s.selectedId);
           return;
         case "videoCycleTrack": {
           const list = annotationsRef.current.filter((ann) => ann.geometry.type === "video_track");
