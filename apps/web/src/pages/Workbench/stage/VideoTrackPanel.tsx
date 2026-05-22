@@ -19,6 +19,7 @@ import {
   VideoKeyframesPropagateDialog,
   type VideoKeyframesPropagateSubmit,
 } from "./VideoKeyframesPropagateDialog";
+import type { TrackMarkPatch } from "./useVideoTrackActions";
 import styles from "./VideoTrackPanel.module.css";
 import type {
   VideoFrameEntry,
@@ -27,14 +28,6 @@ import type {
   VideoTrackGhost,
 } from "./videoStageTypes";
 import { VideoTrackerJobBadge } from "./VideoTrackerJobBadge";
-
-// v0.10.30 · 当前帧状态标记动作信号: outside 表示在当前帧把该 track 标记为消失
-// (写入 outside range), occluded 表示该帧遮挡 (写入可见关键帧的 occluded)。
-export type TrackMarkPatch = {
-  outside?: boolean;
-  occluded?: boolean;
-  source?: "manual" | "prediction";
-};
 
 interface VideoTrackPanelProps {
   videoTracks: VideoTrackAnnotation[];

@@ -22,6 +22,19 @@
 
 ## 最新版本
 
+## [0.10.32] - 2026-05-22
+
+> **轨迹操作搬出侧栏。** 视频工作台的常用 track 状态操作不再只依赖右侧轨迹面板：选中轨迹后，画布浮动条可直接标记/恢复当前帧消失、遮挡，并可锁定/隐藏轨迹；键盘新增 `O` outside、`Q`/`Slash` occluded、`H` hide、`L` lock、`Ctrl+B` 打开 AI 传播。状态写入抽成共享 `useVideoTrackActions`，侧栏、画布浮动条和快捷键都走同一条 `onUpdate` / track view-state 路径。
+
+### Added
+
+- **选中轨迹快捷键** (前端 [hotkeys.ts](apps/web/src/pages/Workbench/state/hotkeys.ts) · [useWorkbenchHotkeys.ts](apps/web/src/pages/Workbench/state/useWorkbenchHotkeys.ts)): `O` 标记/恢复当前帧 outside，`Q`/`Slash` 标记/恢复当前帧 occluded，`H` 隐藏/显示轨迹，`L` 锁定/解锁轨迹，`Ctrl+B` 打开 AI 传播；仅 `videoMode + hasSelectedVideoTrack` 时消费，未选中 track 时保留既有 `L` 正向播放。
+- **画布浮动轨迹操作条** (前端 [VideoSelectionActions.tsx](apps/web/src/pages/Workbench/stage/VideoSelectionActions.tsx)): 选中 `video_track` 后补齐消失、遮挡、锁定、隐藏按钮，按钮 `aria-pressed` 反映当前状态，锁定轨迹时禁用帧级写入。
+
+### Changed
+
+- **轨迹状态动作共享化** (前端 [useVideoTrackActions.ts](apps/web/src/pages/Workbench/stage/useVideoTrackActions.ts)): 把原先封在 `VideoTrackSidebar` 内的当前帧 outside/occluded 写入与选中轨迹隐藏/锁定/传播回调抽成共享 hook，侧栏行为保持不变，快捷键与浮动条复用同一实现。
+
 ## [0.10.31] - 2026-05-21
 
 > **视频导出（视频工作台 Phase 4，落地架构决策 D3）。** 视频项目导出从「裸 JSON 不打包」的异类，并入与图像共用的**异步 zip 管线**（async_job + 缓存 + 预签名），并扩出 **MOT 16/17/20** 与 **KITTI Tracking 2D** 两种主流跟踪格式。MOT/KITTI 严格遵循决策 **D2**：geometry 的 `frame_index` 永远是源视频帧号，导出时按**采样网格** `[0,step,2*step,…]` 重编号（60fps@step6 → `seqinfo.frameRate=10`、帧号 1..N 重排），outside 帧从 gt 省略。遵循 **D1**（不物理打包帧），导出包附带 `fetch_videos.py`（按 manifest 预签名 URL 回源视频）+ `fetch_frames.py`（用本地 ffmpeg 按网格帧号抽 `img1/` 帧序列）。AAP JSON 升 schema **1.2**：task 层加 `media_type`（image/video/lidar）判别 + `video` 子块（采样配置 / fps / 帧数 / 分辨率），envelope 不拆（决策 **D3**），`video_track` geometry 无损透传。前端导出选项从写死 Video JSON 扩为可选 Video JSON / AAP / MOT / KITTI。详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md) Phase 4。

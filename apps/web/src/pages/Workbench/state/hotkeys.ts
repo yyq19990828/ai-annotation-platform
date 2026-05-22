@@ -74,6 +74,11 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["Shift", "← / →"], desc: "采样开启：±1 源帧微调（逃生口）；否则选中轨迹跳关键帧 / ±10 帧", group: "video", actionType: "videoSeekKeyframe" },
   { keys: ["Alt", "← / →"], desc: "采样开启：选中轨迹跳上/下关键帧", group: "video", actionType: "videoSeekKeyframe" },
   { keys: ["Ctrl", "M"], desc: "视频当前帧添加 / 移除书签", group: "video", actionType: "videoToggleBookmark" },
+  { keys: ["O"], desc: "选中轨迹时标记 / 恢复当前帧消失", group: "video", actionType: "videoToggleOutside" },
+  { keys: ["Q / Slash"], desc: "选中轨迹时标记 / 恢复当前帧遮挡", group: "video", actionType: "videoToggleOccluded" },
+  { keys: ["L"], desc: "选中轨迹时锁定 / 解锁轨迹", group: "video", actionType: "videoToggleLockedTrack" },
+  { keys: ["H"], desc: "选中轨迹时隐藏 / 显示轨迹", group: "video", actionType: "videoToggleHiddenTrack" },
+  { keys: ["Ctrl", "B"], desc: "选中轨迹时打开 AI 传播", group: "video", actionType: "videoPropagateTrack" },
   { keys: ["Ctrl", "[ / ]"], desc: "视频跳转历史后退 / 前进", group: "video", actionType: "videoJumpHistory" },
   { keys: ["Alt", "L"], desc: "清除视频播放范围", group: "video", actionType: "videoClearLoopRegion" },
   { keys: ["Delete / Backspace"], desc: "删除选中轨迹", group: "video", actionType: "videoDeleteSelected" },
@@ -155,6 +160,11 @@ export type HotkeyAction =
   | { type: "videoMicroStep"; dir: -1 | 1 }
   | { type: "videoSeekKeyframe"; dir: -1 | 1 }
   | { type: "videoToggleBookmark" }
+  | { type: "videoToggleOutside" }
+  | { type: "videoToggleOccluded" }
+  | { type: "videoToggleHiddenTrack" }
+  | { type: "videoToggleLockedTrack" }
+  | { type: "videoPropagateTrack" }
   | { type: "videoJumpHistory"; dir: -1 | 1 }
   | { type: "videoClearLoopRegion" }
   | { type: "videoDeleteSelected" }
@@ -212,6 +222,7 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === "ArrowRight") return { type: "navigateTask", dir: "next" };
     if (e.key === "ArrowLeft")  return { type: "navigateTask", dir: "prev" };
     if (ctx.videoMode && k === "m") return { type: "videoToggleBookmark" };
+    if (ctx.videoMode && ctx.hasSelectedVideoTrack && k === "b") return { type: "videoPropagateTrack" };
     if (ctx.videoMode && e.key === "[") return { type: "videoJumpHistory", dir: -1 };
     if (ctx.videoMode && e.key === "]") return { type: "videoJumpHistory", dir: 1 };
     if (k === "a") return { type: "selectAllUser" };
@@ -243,6 +254,12 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
     if (e.key === " ") return { type: "videoTogglePlayback" };
     if (e.key === "j" || e.key === "J") return { type: "videoJogPlayback", dir: -1 };
     if (e.key === "k" || e.key === "K") return { type: "videoPausePlayback" };
+    if (ctx.hasSelectedVideoTrack) {
+      if (e.key === "o" || e.key === "O") return { type: "videoToggleOutside" };
+      if (e.key === "q" || e.key === "Q" || e.key === "/") return { type: "videoToggleOccluded" };
+      if (e.key === "h" || e.key === "H") return { type: "videoToggleHiddenTrack" };
+      if (e.key === "l" || e.key === "L") return { type: "videoToggleLockedTrack" };
+    }
     if (e.key === "l" || e.key === "L") return { type: "videoJogPlayback", dir: 1 };
     if (e.key === "b" || e.key === "B") return { type: "setVideoTool", tool: "box" };
     if (e.key === "t" || e.key === "T") return { type: "setVideoTool", tool: "track" };

@@ -4,17 +4,17 @@ import type { DiffMode } from "../modes/types";
 import {
   isVideoBbox,
   isVideoTrack,
-  nearestTrackBbox,
   nearestTrackKeyframe,
   resolveTrackAtFrame,
   shortTrackId,
   sortedKeyframes,
   upsertKeyframe,
 } from "./videoStageGeometry";
-import { addOutsideRange, isFrameOutside, removeOutsideFrame } from "./videoTrackOutside";
+import { addOutsideRange, isFrameOutside } from "./videoTrackOutside";
 import type { AttributeSchema } from "@/api/projects";
-import { VideoTrackPanel, type TrackFilter, type TrackMarkPatch } from "./VideoTrackPanel";
+import { VideoTrackPanel, type TrackFilter } from "./VideoTrackPanel";
 import type { VideoTrackGapMode } from "./VideoTrackComposeDialog";
+import { useVideoTrackActions } from "./useVideoTrackActions";
 // VideoTrackerJobState type imported lazily via inline import in props
 import type {
   VideoFrameEntry,
@@ -217,6 +217,17 @@ export function VideoTrackSidebar({
   }, [currentFrameEntries, frameIndex, hiddenTrackIds, selectedTrack]);
 
   const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
+  const trackActions = useVideoTrackActions({
+    selectedTrack,
+    frameIndex,
+    readOnly,
+    hiddenTrackIds,
+    lockedTrackIds,
+    onUpdate,
+    onToggleHiddenTrack,
+    onToggleLockedTrack,
+    onPropagateTrack,
+  });
 
   const selectTrack = useCallback((id: string, opts?: { toggle?: boolean }) => {
     if (opts?.toggle) {
@@ -307,20 +318,6 @@ export function VideoTrackSidebar({
     onUpdate(ann, { ...ann.geometry, semantic_label: semanticLabel || undefined });
   }, [lockedTrackIds, onUpdate, readOnly]);
 
-  const markSelectedTrack = useCallback((patch: TrackMarkPatch) => {
-    if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
-    if (patch.outside) {
-      onUpdate(selectedTrack, addOutsideRange(selectedTrack.geometry, {
-        from: frameIndex,
-        to: frameIndex,
-        source: patch.source === "prediction" ? "prediction" : "manual",
-      }));
-      return;
-    }
-    const bbox = nearestTrackBbox(selectedTrack.geometry, frameIndex);
-    onUpdate(selectedTrack, upsertKeyframe(removeOutsideFrame(selectedTrack.geometry, frameIndex), frameIndex, bbox, { occluded: patch.occluded, source: patch.source }));
-  }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack]);
-
   const copySelectedTrackToCurrentFrame = useCallback(() => {
     if (!selectedTrack || !selectedTrackGhost || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
     onUpdate(selectedTrack, upsertKeyframe(selectedTrack.geometry, frameIndex, selectedTrackGhost.geom));
@@ -402,7 +399,7 @@ export function VideoTrackSidebar({
       selectedTrack={selectedTrack}
       selectedTrackGhost={selectedTrackGhost}
       selectedTrackLocked={selectedTrackLocked}
-      currentFrameOutside={selectedTrack ? isFrameOutside(selectedTrack.geometry, frameIndex) : false}
+      currentFrameOutside={trackActions.currentFrameOutside}
       frameIndex={frameIndex}
       trackFilter={trackFilter}
       readOnly={readOnly}
@@ -428,7 +425,7 @@ export function VideoTrackSidebar({
       onHideSelectedTracks={() => setSelectedTracksHidden(true)}
       onLockSelectedTracks={() => setSelectedTracksLocked(true)}
       onUnlockSelectedTracks={() => setSelectedTracksLocked(false)}
-      onMarkSelectedTrack={markSelectedTrack}
+      onMarkSelectedTrack={trackActions.markSelectedTrack}
       onCopySelectedTrackToCurrentFrame={copySelectedTrackToCurrentFrame}
       copiedKeyframeLabel={copiedKeyframeLabel}
       canCopyCurrentKeyframe={Boolean(selectedTrack && currentKeyframe)}

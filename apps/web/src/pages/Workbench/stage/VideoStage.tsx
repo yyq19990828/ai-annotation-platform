@@ -20,6 +20,7 @@ import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import { useVideoChunkDecoder } from "./useVideoChunkDecoder";
 import { useVideoFramePreview } from "./useVideoFramePreview";
+import { useVideoTrackActions } from "./useVideoTrackActions";
 import {
   emptyVideoJumpHistory,
   jumpVideoHistory,
@@ -122,6 +123,9 @@ interface VideoStageProps {
   onChangeUserBoxClass?: (id: string) => void;
   onDelete?: (annotation: AnnotationResponse) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
+  onToggleHiddenTrack?: (trackId: string) => void;
+  onToggleLockedTrack?: (trackId: string) => void;
+  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onCursorMove?: (pt: { x: number; y: number } | null) => void;
 }
 
@@ -139,6 +143,11 @@ export interface VideoStageControls {
   toggleBookmark: () => void;
   jumpHistory: (dir: -1 | 1) => void;
   clearLoopRegion: () => void;
+  toggleSelectedTrackOutside: () => void;
+  toggleSelectedTrackOccluded: () => void;
+  toggleSelectedTrackHidden: () => void;
+  toggleSelectedTrackLocked: () => void;
+  propagateSelectedTrack: () => void;
 }
 
 export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(function VideoStage({
@@ -166,6 +175,9 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   onChangeUserBoxClass,
   onDelete,
   onConvertToBboxes,
+  onToggleHiddenTrack,
+  onToggleLockedTrack,
+  onPropagateTrack,
   onCursorMove,
 }: VideoStageProps, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -277,6 +289,18 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       originFrame: nearest.frame_index,
     };
   }, [currentFrameEntries, frameIndex, hiddenTrackIds, reviewDisplayMode, selectedTrack]);
+
+  const trackActions = useVideoTrackActions({
+    selectedTrack,
+    frameIndex,
+    readOnly,
+    hiddenTrackIds,
+    lockedTrackIds,
+    onUpdate,
+    onToggleHiddenTrack,
+    onToggleLockedTrack,
+    onPropagateTrack,
+  });
 
   const trackPreviews = useMemo<VideoTrackPreview[]>(
     () => videoTracks
@@ -704,8 +728,30 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       toggleBookmark,
       jumpHistory: jumpHistoryBy,
       clearLoopRegion,
+      toggleSelectedTrackOutside: trackActions.toggleSelectedTrackOutside,
+      toggleSelectedTrackOccluded: trackActions.toggleSelectedTrackOccluded,
+      toggleSelectedTrackHidden: trackActions.toggleSelectedTrackHidden,
+      toggleSelectedTrackLocked: trackActions.toggleSelectedTrackLocked,
+      propagateSelectedTrack: trackActions.propagateSelectedTrack,
     }),
-    [clearLoopRegion, jogPlaybackBy, jumpHistoryBy, microStepBy, pausePlayback, seekByFrames, seekGrid, seekToFrame, seekToKeyframe, toggleBookmark, togglePlayback],
+    [
+      clearLoopRegion,
+      jogPlaybackBy,
+      jumpHistoryBy,
+      microStepBy,
+      pausePlayback,
+      seekByFrames,
+      seekGrid,
+      seekToFrame,
+      seekToKeyframe,
+      toggleBookmark,
+      togglePlayback,
+      trackActions.propagateSelectedTrack,
+      trackActions.toggleSelectedTrackHidden,
+      trackActions.toggleSelectedTrackLocked,
+      trackActions.toggleSelectedTrackOccluded,
+      trackActions.toggleSelectedTrackOutside,
+    ],
   );
 
   useEffect(() => {
@@ -1238,6 +1284,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             onChangeUserBoxClass={onChangeUserBoxClass}
             onDelete={onDelete}
             onConvertToBboxes={onConvertToBboxes}
+            currentFrameOutside={trackActions.currentFrameOutside}
+            currentFrameOccluded={trackActions.currentFrameOccluded}
+            selectedTrackHidden={trackActions.selectedTrackHidden}
+            selectedTrackLocked={trackActions.selectedTrackLocked}
+            onToggleOutside={trackActions.canEditSelectedTrack ? trackActions.toggleSelectedTrackOutside : undefined}
+            onToggleOccluded={trackActions.canEditSelectedTrack ? trackActions.toggleSelectedTrackOccluded : undefined}
+            onToggleHidden={onToggleHiddenTrack ? trackActions.toggleSelectedTrackHidden : undefined}
+            onToggleLocked={onToggleLockedTrack ? trackActions.toggleSelectedTrackLocked : undefined}
           />
           <VideoQcWarnings warnings={qualityWarnings} />
           <VideoPlaybackOverlay

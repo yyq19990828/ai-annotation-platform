@@ -5,7 +5,10 @@
   top: 14px;
   right: 14px;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
+  max-width: min(420px, calc(100% - 28px));
   padding: 6px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.68);

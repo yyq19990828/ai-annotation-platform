@@ -165,6 +165,22 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "l" }, videoCtx)).toEqual({ type: "videoJogPlayback", dir: 1 });
   });
 
+  it("selected video track owns O / Q / H / L state toggles", () => {
+    const selectedTrackCtx: Partial<DispatchCtx> = { videoMode: true, hasSelectedVideoTrack: true };
+    expect(dispatch({ key: "o" }, selectedTrackCtx)).toEqual({ type: "videoToggleOutside" });
+    expect(dispatch({ key: "Q" }, selectedTrackCtx)).toEqual({ type: "videoToggleOccluded" });
+    expect(dispatch({ key: "/" }, selectedTrackCtx)).toEqual({ type: "videoToggleOccluded" });
+    expect(dispatch({ key: "h" }, selectedTrackCtx)).toEqual({ type: "videoToggleHiddenTrack" });
+    expect(dispatch({ key: "l" }, selectedTrackCtx)).toEqual({ type: "videoToggleLockedTrack" });
+  });
+
+  it("Ctrl+B opens selected video track propagation only in video mode", () => {
+    expect(dispatch({ key: "b", ctrlKey: true }, { videoMode: true, hasSelectedVideoTrack: true }))
+      .toEqual({ type: "videoPropagateTrack" });
+    expect(dispatch({ key: "b", ctrlKey: true }, videoCtx)).toBeNull();
+    expect(dispatch({ key: "b", ctrlKey: true }, { hasSelectedVideoTrack: true })).toBeNull();
+  });
+
   it("ArrowLeft / ArrowRight → videoSeek", () => {
     expect(dispatch({ key: "ArrowRight" }, videoCtx)).toEqual({ type: "videoSeek", delta: 1 });
     expect(dispatch({ key: "ArrowLeft" }, videoCtx)).toEqual({ type: "videoSeek", delta: -1 });

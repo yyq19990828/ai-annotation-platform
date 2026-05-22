@@ -351,6 +351,26 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           e.preventDefault();
           videoControlsRef?.current?.toggleBookmark();
           return;
+        case "videoToggleOutside":
+          e.preventDefault();
+          videoControlsRef?.current?.toggleSelectedTrackOutside();
+          return;
+        case "videoToggleOccluded":
+          e.preventDefault();
+          videoControlsRef?.current?.toggleSelectedTrackOccluded();
+          return;
+        case "videoToggleHiddenTrack":
+          e.preventDefault();
+          videoControlsRef?.current?.toggleSelectedTrackHidden();
+          return;
+        case "videoToggleLockedTrack":
+          e.preventDefault();
+          videoControlsRef?.current?.toggleSelectedTrackLocked();
+          return;
+        case "videoPropagateTrack":
+          e.preventDefault();
+          videoControlsRef?.current?.propagateSelectedTrack();
+          return;
         case "videoJumpHistory":
           e.preventDefault();
           videoControlsRef?.current?.jumpHistory(action.dir);

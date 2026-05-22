@@ -17,6 +17,7 @@ import type { DiffMode } from "../modes/types";
 import type { PolygonDraftHandle } from "../stage/tools";
 import type { VideoStageControls } from "../stage/VideoStage";
 import type { VideoTimelineChapter } from "../stage/VideoPlaybackOverlay";
+import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import { ImageWorkbench } from "../stages/image/ImageWorkbench";
 import type { StageKind } from "../stages/types";
 import { ThreeDWorkbenchPlaceholder } from "../stages/three-d/ThreeDWorkbench.placeholder";
@@ -74,6 +75,9 @@ interface WorkbenchStageHostProps {
   onVideoUpdate: (annotation: AnnotationResponse, geometry: VideoGeometry) => void;
   onVideoRename: (annotation: AnnotationResponse, className: string) => void;
   onVideoConvertToBboxes: (annotation: AnnotationResponse, options: VideoConvertOptions) => void;
+  onToggleHiddenVideoTrack?: (trackId: string) => void;
+  onToggleLockedVideoTrack?: (trackId: string) => void;
+  onPropagateVideoTrack?: (annotation: VideoTrackAnnotation) => void;
 
   // ── image stage ───────────────────────────────────────────
   fileUrl: string | null;
@@ -185,6 +189,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     onVideoUpdate,
     onVideoRename,
     onVideoConvertToBboxes,
+    onToggleHiddenVideoTrack,
+    onToggleLockedVideoTrack,
+    onPropagateVideoTrack,
     fileUrl,
     blurhash,
     thumbnailUrl,
@@ -279,6 +286,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onChangeUserBoxClass={onChangeUserBoxClass}
             onDeleteUserBox={onDeleteUserBox}
             onConvertToBboxes={onVideoConvertToBboxes}
+            onToggleHiddenTrack={onToggleHiddenVideoTrack}
+            onToggleLockedTrack={onToggleLockedVideoTrack}
+            onPropagateTrack={onPropagateVideoTrack}
             onCursorMove={onCursorMove}
           />
         ) : (

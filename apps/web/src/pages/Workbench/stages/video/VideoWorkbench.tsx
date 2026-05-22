@@ -9,6 +9,7 @@ import type {
 } from "@/types";
 import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
 import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
+import type { VideoTrackAnnotation } from "../../stage/videoStageTypes";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import type { DiffMode } from "../../modes/types";
 import type { VideoConvertOptions } from "./useVideoAnnotationActions";
@@ -47,6 +48,9 @@ export interface VideoWorkbenchProps {
   onChangeUserBoxClass: (id: string) => void;
   onDeleteUserBox: (id: string) => void;
   onConvertToBboxes: (annotation: AnnotationResponse, options: VideoConvertOptions) => void;
+  onToggleHiddenTrack?: (trackId: string) => void;
+  onToggleLockedTrack?: (trackId: string) => void;
+  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
 }
 
@@ -77,6 +81,9 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onChangeUserBoxClass,
     onDeleteUserBox,
     onConvertToBboxes,
+    onToggleHiddenTrack,
+    onToggleLockedTrack,
+    onPropagateTrack,
     onCursorMove,
   }, ref) {
     return (
@@ -107,6 +114,9 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onChangeUserBoxClass={onChangeUserBoxClass}
         onDelete={(ann) => onDeleteUserBox(ann.id)}
         onConvertToBboxes={onConvertToBboxes}
+        onToggleHiddenTrack={onToggleHiddenTrack}
+        onToggleLockedTrack={onToggleLockedTrack}
+        onPropagateTrack={onPropagateTrack}
         onCursorMove={onCursorMove}
       />
     );

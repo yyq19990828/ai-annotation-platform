@@ -39,6 +39,8 @@
 > - 2.1 `semantic_label`（可编辑语义标签）+ `track_number` 确定性派生（不持久化）；内部 `track_id` uuid 保持只读。
 > - 2.2 删除 `absent`、语义并入 `outside`（对齐 CVAT 两态 outside/occluded，alembic 0084 迁移存量）。
 > - 2.3 track 级 / 帧级（`mutable`）属性 UI；2.4 split / merge UI 接通；2.5 Track Join（`gap_mode` interpolate/outside）；2.6 Propagate 铺帧；2.7 导航（`,`/`.` 关键帧、`Home`/`End` 首末出现帧）；2.8 侧栏隐藏 / 锁定 / 选色。
+>
+> **2.10 侧栏外操作入口已于 v0.10.32 落地**（执行计划见 [2026-05-22-v0.10.32-track-ops-out-of-sidebar](../docs/plans/2026-05-22-v0.10.32-track-ops-out-of-sidebar.md)）：选中 track 后，`O` / `Q` / `H` / `L` / `Ctrl+B` 可直接改 outside、occluded、hidden、locked、AI propagate；画布浮动条同步补齐消失 / 遮挡 / 锁定 / 隐藏，侧栏、快捷键和浮动条共享同一组 track actions。
 
 ### 2.9 多几何 track（polygon / polyline / mask）（**延后**；原 R9）
 - 扩 `video_track.geometry.kind` → `polygon | polyline | mask`，旧 bbox track 缺省兼容；按周长 / 长度参数化插值；mask track 依赖 canvas / bitmap 能力；同步 `docs-site/dev/reference/` 与导出协议。
