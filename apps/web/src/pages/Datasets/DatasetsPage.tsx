@@ -236,48 +236,50 @@ function DatasetDetail({ ds }: { ds: DatasetResponse }) {
 
                 </div>
               </div>
-              <table className={styles.itemsTable}>
-                <thead>
-                  <tr>
-                    {["文件名", "类型", "大小", "媒体信息", "上传时间"].map((h, i) => (
-                      <th key={i} className={styles.itemsHeaderCell}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {itemsLoading && (
-                    <tr><td colSpan={5} className={styles.emptyCell}>加载中...</td></tr>
-                  )}
-                  {!itemsLoading && items.map((item) => (
-                    <tr key={item.id}>
-                      <td className={styles.itemCell}>
-                        <div className={styles.itemNameWrap}>
-                          <Thumbnail src={item.thumbnail_url} blurhash={item.blurhash} width={32} height={32} />
-                          <span className={styles.truncateFileName}>{item.file_name}</span>
-                        </div>
-                      </td>
-                      <td className={styles.itemCell}>
-                        <Badge variant="outline">{item.file_type}</Badge>
-                      </td>
-                      <td className={`${styles.itemCell} ${styles.mutedCell}`}>
-                        {item.file_size ? `${(item.file_size / 1024).toFixed(1)} KB` : "—"}
-                      </td>
-                      <td
-                        title={formatMediaInfo(item)}
-                        className={`${styles.itemCell} ${styles.mediaInfo} ${formatMediaInfo(item).includes("失败") ? styles.dangerText : ""}`}
-                      >
-                        {formatMediaInfo(item)}
-                      </td>
-                      <td className={`${styles.itemCell} ${styles.mutedCell}`}>
-                        {new Date(item.created_at).toLocaleDateString("zh-CN")}
-                      </td>
+              <div className={styles.itemsTableScroller}>
+                <table className={styles.itemsTable}>
+                  <thead>
+                    <tr>
+                      {["文件名", "类型", "大小", "媒体信息", "上传时间"].map((h, i) => (
+                        <th key={i} className={styles.itemsHeaderCell}>{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                  {!itemsLoading && items.length === 0 && (
-                    <tr><td colSpan={5} className={styles.emptyCell}>暂无文件</td></tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {itemsLoading && (
+                      <tr><td colSpan={5} className={styles.emptyCell}>加载中...</td></tr>
+                    )}
+                    {!itemsLoading && items.map((item) => (
+                      <tr key={item.id}>
+                        <td className={styles.itemCell}>
+                          <div className={styles.itemNameWrap}>
+                            <Thumbnail src={item.thumbnail_url} blurhash={item.blurhash} width={32} height={32} />
+                            <span className={styles.truncateFileName}>{item.file_name}</span>
+                          </div>
+                        </td>
+                        <td className={styles.itemCell}>
+                          <Badge variant="outline">{item.file_type}</Badge>
+                        </td>
+                        <td className={`${styles.itemCell} ${styles.mutedCell}`}>
+                          {item.file_size ? `${(item.file_size / 1024).toFixed(1)} KB` : "—"}
+                        </td>
+                        <td
+                          title={formatMediaInfo(item)}
+                          className={`${styles.itemCell} ${styles.mediaInfo} ${formatMediaInfo(item).includes("失败") ? styles.dangerText : ""}`}
+                        >
+                          {formatMediaInfo(item)}
+                        </td>
+                        <td className={`${styles.itemCell} ${styles.mutedCell}`}>
+                          {new Date(item.created_at).toLocaleDateString("zh-CN")}
+                        </td>
+                      </tr>
+                    ))}
+                    {!itemsLoading && items.length === 0 && (
+                      <tr><td colSpan={5} className={styles.emptyCell}>暂无文件</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
               {totalPages > 1 && (
                 <div className={styles.pagination}>
                   <Button size="sm" onClick={() => setItemPage(Math.max(0, itemPage - 1))} className={itemPage > 0 ? undefined : styles.invisible}>
@@ -563,37 +565,39 @@ export function DatasetsPage() {
           </div>
           <SearchInput placeholder="搜索数据集..." value={query} onChange={setQuery} width={220} />
         </div>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              {["数据集", "类型", "文件数", "关联项目", "创建时间", ""].map((h, i) => (
-                <th key={i} className={styles.headerCell}>
-                  {h}
-                </th>
+        <div className={styles.tableScroller}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                {["数据集", "类型", "文件数", "关联项目", "创建时间", ""].map((h, i) => (
+                  <th key={i} className={styles.headerCell}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading && (
+                <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>加载中...</td></tr>
+              )}
+              {!isLoading && datasets.map((ds) => (
+                <Fragment key={ds.id}>
+                  <DatasetRow
+                    ds={ds}
+                    isExpanded={expandedId === ds.id}
+                    onToggle={() => setExpandedId(expandedId === ds.id ? null : ds.id)}
+                  />
+                  {expandedId === ds.id && <DatasetDetail ds={ds} />}
+                </Fragment>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && (
-              <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>加载中...</td></tr>
-            )}
-            {!isLoading && datasets.map((ds) => (
-              <Fragment key={ds.id}>
-                <DatasetRow
-                  ds={ds}
-                  isExpanded={expandedId === ds.id}
-                  onToggle={() => setExpandedId(expandedId === ds.id ? null : ds.id)}
-                />
-                {expandedId === ds.id && <DatasetDetail ds={ds} />}
-              </Fragment>
-            ))}
-            {!isLoading && datasets.length === 0 && (
-              <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>
-                {query || filter !== "全部" ? "没有匹配的数据集" : '暂无数据集，点击「新建数据集」开始'}
-              </td></tr>
-            )}
-          </tbody>
-        </table>
+              {!isLoading && datasets.length === 0 && (
+                <tr><td colSpan={6} className={`${styles.emptyCell} ${styles.emptyCellLarge}`}>
+                  {query || filter !== "全部" ? "没有匹配的数据集" : '暂无数据集，点击「新建数据集」开始'}
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );
