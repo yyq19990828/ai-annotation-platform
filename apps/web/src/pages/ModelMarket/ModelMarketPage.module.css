@@ -19,16 +19,3 @@
   color: var(--color-fg-muted);
   font-size: 13px;
 }
-
-.entryLink {
-  display: inline-block;
-  margin-top: 8px;
-  color: var(--color-accent);
-  font-size: 13px;
-  text-decoration: none;
-}
-
-.entryLink:hover {
-  color: var(--color-accent-hover);
-  text-decoration: underline;
-}

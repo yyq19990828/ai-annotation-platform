@@ -5,24 +5,6 @@
   padding: 20px 28px;
 }
 
-.pageIntro {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.pageTitle {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-.pageSubtitle {
-  color: var(--color-fg-muted);
-  font-size: 12px;
-}
-
 .countCards {
   display: flex;
   flex-wrap: wrap;
