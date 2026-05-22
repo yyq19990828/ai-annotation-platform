@@ -180,12 +180,15 @@ function ProjectGroup({
     });
   };
 
-  const onReload = (b: MLBackendItem, variant?: MLBackendVariant) => {
+  const onReload = (b: MLBackendItem, variant?: MLBackendVariant, taskType?: "image" | "video") => {
     reload.mutate(
-      { backendId: b.id, variant },
+      { backendId: b.id, variant, taskType },
       {
         onSuccess: (res) => {
-          const tag = res.sam_variant ? ` (${res.sam_variant}/${res.dino_variant})` : "";
+          // v0.10.36 · video 预热响应无 dino_variant, tag 只拼 sam_variant.
+          const tag = res.sam_variant
+            ? ` (${res.sam_variant}${res.dino_variant ? `/${res.dino_variant}` : ""})`
+            : "";
           pushToast({
             msg: res.reloaded ? `${b.name} 已预热到显存${tag}` : `${b.name} 已在显存中${tag}`,
             kind: "success",
@@ -327,7 +330,7 @@ function ProjectGroup({
                     <VariantPanel
                       projectId={group.project_id}
                       backend={b}
-                      onWarm={(variant) => onReload(b, variant)}
+                      onWarm={(variant, taskType) => onReload(b, variant, taskType)}
                       isWarming={reload.isPending}
                     />
                   </td>

@@ -34,6 +34,8 @@ export interface MLBackendCapability {
   supported_prompts: string[];
   supported_text_outputs?: string[];
   supported_geometric_outputs?: string[];
+  // v0.10.36 · 支持的视频 tracker 列表 (如 ["sam2_video"]); 空/缺 = 不支持视频追踪.
+  supported_trackers?: string[];
   params?: {
     type?: string;
     properties?: Record<string, unknown>;
@@ -70,14 +72,26 @@ export const mlBackendsApi = {
     ),
 
   // v0.10.26 · 可选 variant body 预热指定变体 (模型市场单变体预热); 缺省回退默认变体.
-  reload: (projectId: string, backendId: string, variant?: MLBackendVariant) =>
+  // v0.10.36 · 可选 taskType ("image" | "video"): "video" 预热独立 video tracker 池 (仅认 sam_variant, 无 dino).
+  reload: (
+    projectId: string,
+    backendId: string,
+    variant?: MLBackendVariant,
+    taskType?: "image" | "video",
+  ) =>
     apiClient.post<{
       ok: boolean;
       loaded: boolean;
       reloaded: boolean;
       sam_variant?: string;
       dino_variant?: string;
-    }>(`/projects/${projectId}/ml-backends/${backendId}/reload`, variant ?? undefined),
+      task_type?: "image" | "video";
+    }>(
+      `/projects/${projectId}/ml-backends/${backendId}/reload`,
+      variant || taskType
+        ? { ...(variant ?? {}), ...(taskType ? { task_type: taskType } : {}) }
+        : undefined,
+    ),
 
   predictTest: (projectId: string, backendId: string, taskId: string) =>
     apiClient.post(`/projects/${projectId}/ml-backends/${backendId}/predict-test?task_id=${taskId}`),

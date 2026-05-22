@@ -31,6 +31,15 @@ export interface BackendPoolMeta {
   per_variant_lru_ts?: Record<string, number>;
 }
 
+// v0.10.36 · video tracker 独立显存池快照 (来自 backend /health.video_pool)。
+// 注意: video 的 loaded_variants 是 string[] (每项就是一个 sam_variant), 与图片池的对象数组不同; 且不含 dino。
+export interface VideoPoolMeta {
+  cap: number;
+  loaded_variants: string[];
+  active_sessions: number;
+  idle_seconds?: number;
+}
+
 export interface BackendHealthMeta {
   gpu_info?: {
     device_name?: string;
@@ -48,6 +57,8 @@ export interface BackendHealthMeta {
   model_version?: string | null;
   /** v0.10.26 · ModelPool 多变体并存快照 (grounded-sam2 才有)。 */
   pool?: BackendPoolMeta | null;
+  /** v0.10.36 · video tracker 独立显存池快照 (支持视频追踪的 backend 才有)。 */
+  video_pool?: VideoPoolMeta | null;
 }
 
 export interface MLBackendItem {
@@ -135,6 +146,10 @@ export interface ObserveTarget {
   gpu_info?: { memory_used_mb?: number; memory_total_mb?: number } | null;
   model_version?: string | null;
   pool?: BackendPoolMeta | null;
+  /** v0.10.36 · video tracker 独立显存池观测。 */
+  video_pool?: VideoPoolMeta | null;
+  /** v0.10.36 · 支持的视频 tracker 列表 (如 ["sam2_video"]); 空 = 不支持视频追踪。 */
+  supported_trackers?: string[];
   cache?: { hit_rate?: number; buckets?: Record<string, CacheBucketStat> } | null;
   variant_catalog?: VariantCatalog | null;
   supports_variants: boolean;

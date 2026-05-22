@@ -64,8 +64,16 @@ export function useMLBackendReload(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     // v0.10.26 · variant 可选; 缺省预热默认变体 (旧「重载」按钮行为不变).
-    mutationFn: ({ backendId, variant }: { backendId: string; variant?: MLBackendVariant }) =>
-      mlBackendsApi.reload(projectId, backendId, variant),
+    // v0.10.36 · taskType 可选; "video" 预热独立 video tracker 池.
+    mutationFn: ({
+      backendId,
+      variant,
+      taskType,
+    }: {
+      backendId: string;
+      variant?: MLBackendVariant;
+      taskType?: "image" | "video";
+    }) => mlBackendsApi.reload(projectId, backendId, variant, taskType),
     onSuccess: () => invalidateBackendQueries(qc, projectId),
   });
 }

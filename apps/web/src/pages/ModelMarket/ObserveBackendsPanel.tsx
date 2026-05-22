@@ -65,6 +65,11 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
   const [sam, setSam] = useState(samEnum[0] ?? "");
   const [dino, setDino] = useState(dinoEnum[0] ?? "");
   const loaded = t.pool?.loaded_variants ?? [];
+  // v0.10.36 · 视频追踪观测: supported_trackers + 独立 video 池.
+  const supportedTrackers = t.supported_trackers ?? [];
+  const supportsVideo = supportedTrackers.length > 0;
+  const hasVideoMeta = "video_pool" in t;
+  const videoLoaded = t.video_pool?.loaded_variants ?? [];
 
   const onSmokeTest = async () => {
     const payload: SmokeTestRequest = {
@@ -113,12 +118,35 @@ function TargetCard({ target: t }: { target: ObserveTarget }) {
                 GPU {t.gpu_info.memory_used_mb}/{t.gpu_info.memory_total_mb} MB
               </span>
             )}
+          </div>
+
+          {/* 图像推理: 图片池已加载变体 (行为不变). */}
+          <div className={styles.metaRow}>
+            <span className={styles.groupLabel}>图像推理</span>
             <span>
               已加载{" "}
               {loaded.length === 0
                 ? "无（空池）"
                 : loaded.map((v) => `${v.sam_variant}/${v.dino_variant}`).join("、")}
+              {t.pool?.cap != null && `（${loaded.length}/${t.pool.cap}）`}
             </span>
+          </div>
+
+          {/* v0.10.36 · 视频追踪: 独立 video 池 + supported_trackers. */}
+          <div className={styles.metaRow}>
+            <span className={styles.groupLabel}>视频追踪</span>
+            {!supportsVideo ? (
+              <span>不支持视频追踪</span>
+            ) : !hasVideoMeta ? (
+              <span>未上报 video 观测</span>
+            ) : (
+              <span>
+                已加载{" "}
+                {videoLoaded.length === 0 ? "无（空池）" : videoLoaded.join("、")}
+                {t.video_pool?.cap != null && `（${videoLoaded.length}/${t.video_pool.cap}）`}
+                {t.video_pool?.active_sessions != null && ` · ${t.video_pool.active_sessions} 会话`}
+              </span>
+            )}
           </div>
 
           {!t.supports_variants ? (
