@@ -256,6 +256,12 @@ async def run_tracker_job(
             "file_type": item.file_type,
         }
 
+        # Cross-window continuation: window 1 seeds from the original keyframe,
+        # each subsequent window seeds from the previous window's last
+        # non-outside frame geometry so the tracker keeps following a moving
+        # target instead of restarting from the original box every window.
+        last_geometry = annotation.geometry or {}
+
         for from_frame, to_frame in _tracker_windows(job):
             ctx = TrackerContext(
                 job_id=job.id,
@@ -267,7 +273,7 @@ async def run_tracker_job(
                 to_frame=to_frame,
                 direction=job.direction,
                 prompt=job.prompt or {},
-                source_geometry=annotation.geometry or {},
+                source_geometry=last_geometry,
                 task_data=task_data,
                 ml_backend=backend,
             )
@@ -286,6 +292,12 @@ async def run_tracker_job(
                     return job
 
                 results.append(result)
+                # Seed the next window with this window's latest non-outside
+                # geometry. The adapter yields in propagation order, so the
+                # last such result is the boundary frame adjacent to the next
+                # window (works for both forward and backward windows).
+                if not result.outside and result.geometry:
+                    last_geometry = result.geometry
                 progress += 1
                 frame_payload = {
                     "frame_index": result.frame_index,
