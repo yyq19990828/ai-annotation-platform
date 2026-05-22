@@ -70,10 +70,6 @@ const AIPreAnnotateLayout = lazy(() =>
 const AIPreAnnotateJobsPage = lazy(() =>
   import("@/pages/AIPreAnnotate/AIPreAnnotateJobsPage").then((m) => ({ default: m.default }))
 );
-// v0.10.36 · 视频追踪任务聚合监控页
-const VideoTrackerJobsPage = lazy(() =>
-  import("@/pages/ModelMarket/VideoTrackerJobsPage").then((m) => ({ default: m.default }))
-);
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
 import { RequireProjectMember } from "@/components/routing/RequireProjectMember";
@@ -348,14 +344,10 @@ export function App() {
             </RequirePagePermission>
           }
         />
-        {/* v0.10.36 · 视频追踪任务聚合监控页 (与 ModelMarketPage 同权限) */}
+        {/* v0.10.38 · 视频追踪监控并入 /ai-pre/jobs 视频 tab (epic 阶段 3); 旧链接 301 到新址 */}
         <Route
           path="/model-market/video-jobs"
-          element={
-            <RequirePagePermission pageKey="model-market">
-              <VideoTrackerJobsPage />
-            </RequirePagePermission>
-          }
+          element={<Navigate to="/ai-pre/jobs?tab=video" replace />}
         />
         <Route
           path="/training"

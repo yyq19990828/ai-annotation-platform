@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import { useProject, useUpdateProject } from "@/hooks/useProjects";
+import { useProject } from "@/hooks/useProjects";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useMLBackends } from "@/hooks/useMLBackends";
@@ -23,9 +23,17 @@ import {
 } from "@/hooks/usePreannotation";
 import { adminPreannotateApi } from "@/api/adminPreannotate";
 import { aliasFrequencyApi } from "@/api/aliasFrequency";
+import { mlBackendsApi } from "@/api/ml-backends";
+import {
+  SchemaForm,
+  deriveDefaults,
+  type JsonSchemaObject,
+} from "@/pages/Workbench/components/SchemaForm";
+import { useAiToolParamPrefs } from "@/pages/Workbench/state/useAiToolParamPrefs";
 
 import { TabRow } from "@/components/ui/TabRow";
 import { HistoryTable } from "./HistoryTable";
+import { VideoPreannotateGuide } from "./VideoPreannotateGuide";
 import { PredictionImportWizard } from "@/components/predictions/PredictionImportWizard";
 import styles from "./ProjectDetailPanel.module.css";
 
@@ -54,6 +62,8 @@ interface Props {
   summary?: {
     project_name: string;
     project_display_id?: string | null;
+    /** v0.10.38 · 媒体维度, 用于按模态分流 (image=文本批量预标 / video=引导卡片). */
+    data_type?: string | null;
     ml_backend_id?: string | null;
     ml_backend_name?: string | null;
     ml_backend_state?: string | null;
@@ -72,14 +82,15 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   const project = projectQ.data as unknown as
     | {
         type_key?: string;
+        data_type?: string | null;
         ml_backend_id?: string | null;
         classes_config?: Record<string, { alias?: string | null }>;
         box_threshold?: number | null;
         text_threshold?: number | null;
       }
     | undefined;
-  const updateProject = useUpdateProject(projectId);
-
+  // v0.10.38 · 模态分流: summary 优先 (列表已带), 回落 project 查询.
+  const dataType = summary?.data_type ?? project?.data_type ?? "image";
   // v0.9.12 · 复活 v0.9.7 alias 频率排序: prompt 默认勾选项目所有 alias (按预标频率降序).
   const freqQ = useQuery({
     queryKey: ["alias-frequency", projectId],
@@ -105,7 +116,37 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
 
   const backendsQ = useMLBackends(projectId);
   const backends = (backendsQ.data ?? []) as unknown as Array<{ id: string; name: string }>;
-  const boundBackend = backends.find((b) => b.id === project?.ml_backend_id) ?? null;
+  // v0.10.38 · 多 backend 选择: 默认绑定值, 用户可在项目已注册 backend 间切换 (epic 阶段 2).
+  const [selectedBackendId, setSelectedBackendId] = useState<string | null>(null);
+  const firstBackendId = backends[0]?.id ?? null;
+  useEffect(() => {
+    // 项目切换 / 列表加载后, 默认选绑定 backend (否则第一个)
+    setSelectedBackendId(project?.ml_backend_id ?? firstBackendId);
+  }, [projectId, project?.ml_backend_id, firstBackendId]);
+  const selectedBackend =
+    backends.find((b) => b.id === selectedBackendId) ?? null;
+
+  // v0.10.38 · 按后端参数面板: 拉选中 backend 的 /setup.params 渲染 SchemaForm,
+  // 值按 backend 分桶持久化 (复用工作台 useAiToolParamPrefs), 运行时塞进请求 params.
+  const setupQ = useQuery({
+    queryKey: ["ml-backends", projectId, selectedBackendId, "setup"],
+    queryFn: () => mlBackendsApi.setup(projectId, selectedBackendId as string),
+    enabled: !!selectedBackendId,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const paramsSchema = setupQ.data?.params as JsonSchemaObject | undefined;
+  const { savedParams, save: saveParams } = useAiToolParamPrefs(selectedBackendId);
+  const [paramsValue, setParamsValue] = useState<Record<string, unknown>>({});
+  // 选中 backend / schema / 偏好就绪时, 用 偏好 → schema 默认 重建参数值
+  useEffect(() => {
+    if (!selectedBackendId) return;
+    setParamsValue({ ...deriveDefaults(paramsSchema), ...(savedParams ?? {}) });
+  }, [selectedBackendId, paramsSchema, savedParams]);
+  const onParamsChange = (next: Record<string, unknown>) => {
+    setParamsValue(next);
+    saveParams(next);
+  };
 
   const batchesQ = useBatches(projectId, "active");
   const batches = (batchesQ.data ?? []) as unknown as Array<{
@@ -216,18 +257,19 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   };
 
   const canRun =
-    !!boundBackend &&
+    !!selectedBackend &&
     selectedBatchIds.size > 0 &&
     !!prompt.trim() &&
     !running;
 
   const onRun = async () => {
-    if (!boundBackend || !prompt.trim() || selectedBatchIds.size === 0) return;
+    if (!selectedBackend || !prompt.trim() || selectedBatchIds.size === 0) return;
     const ids = Array.from(selectedBatchIds);
     const baseArgs = {
-      ml_backend_id: boundBackend.id,
+      ml_backend_id: selectedBackend.id,
       prompt: prompt.trim(),
       output_mode: outputMode,
+      params: paramsValue,
     };
     setRunning(true);
     try {
@@ -266,6 +308,34 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
 
   const headerName = summary?.project_name ?? `项目 ${projectId.slice(0, 8)}`;
 
+  // v0.10.38 · 模态分流: 视频项目无批量文本预标语义 (AI 预标在工作台逐轨迹 Shift+T 发起),
+  // 渲染引导卡片 + job 历史链接, 不误用图像批量面板 (epic 阶段 2).
+  if (dataType === "video") {
+    return (
+      <VideoPreannotateGuide
+        projectId={projectId}
+        projectName={headerName}
+        displayId={summary?.project_display_id}
+        onBack={onBack}
+      />
+    );
+  }
+  if (dataType === "lidar") {
+    return (
+      <div className={styles.root}>
+        <div className={styles.header}>
+          <Button size="sm" variant="ghost" onClick={onBack}>
+            <Icon name="chevLeft" size={11} /> 返回项目列表
+          </Button>
+          <h2 className={styles.title}>{headerName}</h2>
+        </div>
+        <Card>
+          <div className={styles.mutedText}>点云（lidar）项目暂不支持 AI 预标。</div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.root}>
       <div className={styles.header}>
@@ -278,8 +348,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
             ({summary.project_display_id})
           </span>
         )}
-        {boundBackend ? (
-          <Badge variant="ai">{boundBackend.name}</Badge>
+        {selectedBackend ? (
+          <Badge variant="ai">{selectedBackend.name}</Badge>
         ) : (
           <Badge variant="warning">未绑定 ML backend</Badge>
         )}
@@ -413,19 +483,46 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
               />
             </label>
 
-            {/* v0.9.13 · 项目级 GroundingDINO 阈值快捷调节 (仅 SAM 文本路径生效).
-                复用 GeneralSection.tsx:368-397 的 range slider 模式; 改完即写后端 (useUpdateProject). */}
-            <ThresholdRow
-              boxThreshold={project?.box_threshold ?? 0.35}
-              textThreshold={project?.text_threshold ?? 0.25}
-              saving={updateProject.isPending}
-              onCommit={(box, text) =>
-                updateProject.mutate({
-                  box_threshold: box,
-                  text_threshold: text,
-                } as never)
-              }
-            />
+            {/* v0.10.38 · 多 backend 选择: 在项目已注册 backend 间选, 默认绑定值 (epic 阶段 2) */}
+            {backends.length > 1 && (
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>ML Backend</span>
+                <select
+                  value={selectedBackendId ?? ""}
+                  onChange={(e) => setSelectedBackendId(e.target.value || null)}
+                  className={styles.promptInput}
+                >
+                  {backends.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                      {b.id === project?.ml_backend_id ? "（绑定）" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {/* v0.10.38 · 按后端参数面板: 复用 SchemaForm 按选中 backend 的 /setup.params 渲染.
+                gsam2 即 box/text_threshold; 值按 backend 记忆 (params_by_backend), 运行时随请求覆盖
+                项目级阈值兜底. 取代旧的项目级 ThresholdRow (项目默认仍可在项目设置 GeneralSection 改). */}
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>
+                后端推理参数（按 backend 记忆，覆盖项目默认）
+              </span>
+              {setupQ.isLoading ? (
+                <div className={styles.mutedText}>加载参数…</div>
+              ) : setupQ.isError ? (
+                <div className={styles.mutedText}>
+                  无法拉取 backend /setup，运行时回落项目级阈值。
+                </div>
+              ) : (
+                <SchemaForm
+                  schema={paramsSchema}
+                  value={paramsValue}
+                  onChange={onParamsChange}
+                />
+              )}
+            </div>
 
             <div className={styles.field}>
               <span className={styles.fieldLabel}>输出形态</span>
@@ -478,83 +575,6 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
       )}
 
       <HistoryTable items={projectQueue} isLoading={queueQ.isLoading} />
-    </div>
-  );
-}
-
-/**
- * v0.9.13 · 项目级 GroundingDINO 阈值快捷调节. 拖动时本地 state 跟手, 松手 (onChange
- * commit 一次) 才落库. 避免拖动过程触发 N 次 PATCH /projects/{id}.
- */
-function ThresholdRow({
-  boxThreshold,
-  textThreshold,
-  saving,
-  onCommit,
-}: {
-  boxThreshold: number;
-  textThreshold: number;
-  saving: boolean;
-  onCommit: (box: number, text: number) => void;
-}) {
-  const [box, setBox] = useState(boxThreshold);
-  const [text, setText] = useState(textThreshold);
-
-  // 切项目 / 后端推送新值时同步本地 (avoid 拖动中被外部值覆盖)
-  useEffect(() => {
-    setBox(boxThreshold);
-  }, [boxThreshold]);
-  useEffect(() => {
-    setText(textThreshold);
-  }, [textThreshold]);
-
-  const dirty =
-    Math.abs(box - boxThreshold) > 0.001 || Math.abs(text - textThreshold) > 0.001;
-
-  return (
-    <div className={styles.thresholdRoot}>
-      <span className={styles.fieldLabel}>
-        阈值（仅 SAM 文本路径生效）
-        {saving && <span className={styles.savingText}>· 保存中…</span>}
-      </span>
-      <div className={styles.thresholdFields}>
-        <label className={styles.thresholdLabel}>
-          <span className={styles.thresholdName}>box_threshold</span>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={box}
-            onChange={(e) => setBox(Number(e.target.value))}
-            className={styles.thresholdInput}
-          />
-          <span className={styles.thresholdValue}>{box.toFixed(2)}</span>
-        </label>
-        <label className={styles.thresholdLabel}>
-          <span className={styles.thresholdName}>text_threshold</span>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={text}
-            onChange={(e) => setText(Number(e.target.value))}
-            className={styles.thresholdInput}
-          />
-          <span className={styles.thresholdValue}>{text.toFixed(2)}</span>
-        </label>
-        {dirty && (
-          <button
-            type="button"
-            onClick={() => onCommit(box, text)}
-            disabled={saving}
-            className={styles.saveThresholdButton}
-          >
-            保存
-          </button>
-        )}
-      </div>
     </div>
   );
 }

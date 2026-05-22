@@ -1,8 +1,11 @@
 /**
- * v0.10.36 · /model-market/video-jobs — 视频追踪任务聚合监控页.
+ * v0.10.36 · 视频追踪任务聚合监控.
  *
  * 拉 /video-tracker-jobs (video_tracker_jobs 全量), 含 queued/running/completed/failed/cancelled.
  * 形态参照 AIPreAnnotateJobsPage: cursor 分页 + 状态过滤 + Card 表格.
+ *
+ * v0.10.38 · 由独立页 (原 /model-market/video-jobs) 改为可复用 Panel, 挂到 /ai-pre/jobs 的
+ * 「视频」模态 tab (epic 阶段 3); 支持 projectId 过滤供引导卡片深链。
  */
 
 import { useState } from "react";
@@ -37,16 +40,17 @@ const STATUS_LABEL: Record<VideoTrackerJobStatus, string> = {
   cancelled: "已取消",
 };
 
-export default function VideoTrackerJobsPage() {
+export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
   const [modelKey, setModelKey] = useState("");
   const [cursorStack, setCursorStack] = useState<string[]>([]);
   const currentCursor = cursorStack[cursorStack.length - 1] ?? undefined;
 
   const jobsQ = useQuery({
-    queryKey: ["video-tracker-jobs", statusFilter, modelKey, currentCursor],
+    queryKey: ["video-tracker-jobs", projectId, statusFilter, modelKey, currentCursor],
     queryFn: () =>
       videoTrackerJobsApi.list({
+        project_id: projectId || undefined,
         status: statusFilter || undefined,
         model_key: modelKey.trim() || undefined,
         cursor: currentCursor,
@@ -61,14 +65,6 @@ export default function VideoTrackerJobsPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageIntro}>
-        <h1 className={styles.pageTitle}>视频追踪任务</h1>
-        <span className={styles.pageSubtitle}>
-          覆盖 video_tracker_jobs 全量 (排队 / 运行 / 完成 / 失败 / 取消)。
-          在视频工作台按 Shift+T 可发起新的追踪任务。
-        </span>
-      </div>
-
       <div className={styles.countCards}>
         {STATUS_ORDER.map((s) => (
           <Card key={s}>
