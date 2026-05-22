@@ -73,26 +73,13 @@
 
 ### 3.2 Tracker Registry UI（原 R23）
 - 管理员侧 tracker adapter 注册 / 启停 / 显示当前 backend；与 v0.10.3 ML Backend 1:N 管理形态一致。
-- **video tracker 模型尺寸（sam_variant）选择**（计划 v0.10.36）：后端基础设施已就绪——`video_pool` 按 `sam_variant` 分桶、`video_predictor(sam_variant=...)` 可加载 tiny/small/base_plus/large；缺的是请求链路传参：`VideoTrackerPropagatePayload` 无 `sam_variant` 字段 → adapter context 只发 `model_key` → 后端永远用默认 tiny。补齐 = 纯 plumbing（propagate 对话框加变体下拉，复用图片侧 `paramsSchema`/`aiVariant` 模式 → payload → adapter context → 后端 `/predict` video_tracker 分支读 `sam_variant` → `video_pool.get(variant)`）。
-  - **现状（2026-05-22）**：图片工作台的悬浮 AI 面板（变体 + 阈值 SchemaForm）对视频任务**显式禁用**（[`WorkbenchShell.tsx`](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `aiPopover.open = aiPopoverOpen && !isVideoTask`，**by design**）；视频的 AI 入口是 `VideoTrackerPropagateDialog`（Shift+T），尚无变体选择。
+- **现状（2026-05-22）**：tracker 模型尺寸（sam_variant）选择已于 v0.10.36 落地（propagate 对话框 SAM 尺寸下拉 → payload → adapter context → backend video 池）；图片工作台的悬浮 AI 面板对视频任务仍**显式禁用**（[`WorkbenchShell.tsx`](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `aiPopover.open = aiPopoverOpen && !isVideoTask`，**by design**），视频 AI 入口是 `VideoTrackerPropagateDialog`（Shift+T）。
 
 ### 3.3 图片 / 视频 tracker 协议统一收口（原 I20.4，跨模态；v0.11.0）
 - 视频侧 `/video-tracker-jobs` 协议与图片 setup 收口为同一 `supported_capabilities` 数组；放 v0.11.0 协议统一窗口做。
 - **现状痛点（2026-05-22 调研）**：图片/视频**完全共用**单表 `MLBackend` + 单套注册/绑定 UI（`MlBackendsSection` / wizard `Step4Ai`），`Project.ml_backend_id` 单值绑定，平台**不区分模态**——`MLBackend` 无 modality 字段、绑定时不校验已有的 `Project.data_type`；`sam2_video`/`sam3_video` 是**写死在** [`video_tracker_adapters.py` `_REGISTRY`](../apps/api/app/services/video_tracker_adapters.py)，backend 无法自报支持哪些 tracker。→ 视频项目可能误绑只支持图片的 backend；用户不知道 backend 支持哪些 tracker；加新 tracker 要改代码发版。
 - **统一目标**：backend `/setup` 自报 `supported_capabilities`（含 `{type:"video_tracker", model_key, media_type}`）；平台动态读取替代写死 `_REGISTRY`；注册/绑定按 `data_type` 过滤校验；wizard 按模态推荐。
 - **演进路径（关键）**：**不在 v0.10.35 重构注册流程**（会与本统一窗口撞车、提前固化错误抽象）；v0.10.35 §B.3 先让 backend `/setup` 声明 `supported_trackers`，是本统一收口的**第一块砖**，平台动态消费 + 模态校验 + wizard 过滤留到 v0.11.0。
-
----
-
-## v0.10.36 · 模型市场观测增强（image / video 分类 + 视频追踪任务聚合）
-
-> 承接 v0.10.35 §B 的 `/health` video 池暴露（容器观测层已就位），本版本补**前端分类**与**任务观测层**。
-
-- **模型市场 image/video 标题分类**：`ObserveBackendsPanel` / `VariantPanel` 消费 v0.10.35 暴露的 `video_pool` + `task_type` 指标，按「图像推理 / 视频追踪」分组展示（cache 命中、延迟、显存按模态拆分）。
-- **视频追踪任务聚合监控**：`video_tracker_jobs` 当前只在工作台单 job badge 显示、**无聚合视图**（对比图片侧 preannotate jobs 已有聚合）。新增聚合查询端点 + 监控页（active / running / completed / failed 计数、error_message、按 model_key/项目分组），形态对齐图片侧任务监控。
-- **video tracker 模型尺寸选择**：见 Phase 3.2 的 sam_variant 选择项（后端已就绪，补 propagate 对话框变体下拉 → payload → adapter → backend 的 plumbing）。
-- **不做**：协议统一（Phase 3.3）、模态校验（Phase 3.3）；本版本纯观测增强，不改注册/绑定。
-- 详见 [v0.10.36 计划](../docs/plans/2026-05-22-v0.10.36-model-market-tracker-observability.md)。
 
 ---
 

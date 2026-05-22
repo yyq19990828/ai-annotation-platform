@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.10.36] - 2026-05-22
+
+> **模型市场观测按图像/视频模态拆分 + 视频追踪任务聚合监控 + tracker 模型尺寸可选。** 接续 v0.10.35 的 video 独立池：模型市场观测/预热面板拆出「图像推理 / 视频追踪」两组（修正了对视频后端误用图片池预热、且暴露无意义 DINO 的问题）；新增视频追踪任务聚合监控页；AI 传播可选 SAM 模型尺寸（sam_variant）一路透传到 backend。纯观测增强 + plumbing，不动 backend 推理/协议。
+
+### Added
+
+- **模型市场预热按模态拆分** (前端 [VariantPanel.tsx](apps/web/src/pages/ModelMarket/VariantPanel.tsx) · [ObserveBackendsPanel.tsx](apps/web/src/pages/ModelMarket/ObserveBackendsPanel.tsx)): 观测/预热面板拆「图像推理变体」（SAM+DINO → 图片池）与「视频追踪变体」（仅 SAM → 独立 video 池，**无 DINO**）两组。背景：原面板的「预热」只热图片池 `_pool`，对纯视频项目白占显存且碰不到 video tracker（video 用独立 `_video_pool`，首请求冷启）；tracker 不用 DINO。视频组读 `health_meta.video_pool` / `/setup.supported_trackers`，不支持/未上报时降级显示，不报错。
+- **video 池预热入口** (gsam2 [main.py](apps/grounded-sam2-backend/main.py)): `/reload` 增 `task_type: "image"|"video"`（默认 image，向后兼容）；`task_type="video"` 时只认 `sam_variant`（无 dino）预热独立 video 池。前端 `ml-backends.ts` 的 `reload` 透传 `task_type`。
+- **视频追踪任务聚合监控** (后端 [video_tracker_jobs.py](apps/api/app/api/v1/video_tracker_jobs.py) · 前端 [VideoTrackerJobsPage.tsx](apps/web/src/pages/ModelMarket/VideoTrackerJobsPage.tsx)): 新增 `GET /video-tracker-jobs`（cursor 分页 + `project_id`/`status`/`model_key` 过滤 + 按 status 聚合计数，权限对齐图片侧 preannotate-jobs）；模型市场新增 `/model-market/video-jobs` 监控页（queued/running/completed/failed/cancelled 计数卡 + 列表 + failed 行展开 `error_message`），形态对齐图片侧任务历史页。
+- **AI 传播可选模型尺寸 (sam_variant)** (前端 [VideoTrackerPropagateDialog.tsx](apps/web/src/pages/Workbench/stage/VideoTrackerPropagateDialog.tsx) · 后端链路): 传播对话框对真实 tracker（非 mock_bbox）显示 SAM 尺寸下拉（tiny/small/base_plus/large，默认 tiny）；`sam_variant` 经 `VideoTrackerPropagateRequest` → job.prompt → `TrackerContext` → adapter `/predict` context 透传到 backend video 池（缺省回退 tiny，无 DB 迁移）。
+
+### Changed
+
+- **观测探针透传 video 字段** (后端 [ml_client.py](apps/api/app/services/ml_client.py) · [admin_ml_integrations.py](apps/api/app/api/v1/admin_ml_integrations.py)): `health_meta` 白名单增 `video_pool`；`/observe` 的 `ObserveTarget` 增 `video_pool` + `supported_trackers` 透传，供前端模态分组消费。
+
 ## [0.10.35] - 2026-05-22
 
 > **真实 SAM 2 video tracker + 采样网格对齐。** gsam2 backend 接通真实 `sam2_video` 逐帧追踪（独立显存池、不影响图片推理），跨窗用上一窗末帧续追；采样开启时 propagate 的「N」改用网格格子为单位、只回填网格帧；工作台内补 tracker 任务 toast 通知。遵循 [ADR-0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md)：predictor 不入 `apps/api`。
