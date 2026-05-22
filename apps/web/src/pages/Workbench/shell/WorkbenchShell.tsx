@@ -1162,9 +1162,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onToggleLeftSidebar: toggleLeftSidebar,
         onToggleRightSidebar: toggleRightSidebar,
         onRunAi: () => {
-          const nextOpen = !aiPopoverOpen;
-          setAiPopoverOpen(nextOpen);
-          if (nextOpen && !s.rightOpen) s.setRightOpen(true);
+          setAiPopoverOpen((open) => !open);
         },
         aiDisabled: isVideoTask,
         onPrev: () => navigateTask("prev"), onNext: () => navigateTask("next"),
