@@ -359,6 +359,10 @@ async def create_project(
         payload = merge_template_into_payload(template, payload)
 
     if payload.get("ml_backend_id"):
+        # v0.10.37 · 创建即绑定 backend 时同样按 data_type 校验模态 (与 update_project 对称)
+        await _validate_backend_modality(
+            db, payload["ml_backend_id"], payload["data_type"]
+        )
         payload = await _apply_backend_display_hint(db, payload)
 
     new_project_id = uuid.uuid4()
@@ -376,6 +380,9 @@ async def create_project(
             db, source=source_backend, new_project_id=new_project_id
         )
         project.ml_backend_id = new_backend_id
+        # v0.10.37 · 克隆源项目 backend 落定后, 同样按新项目 data_type 校验模态
+        # (clone 复制了 url/auth, 实时探 /setup 与校验 source 等价).
+        await _validate_backend_modality(db, new_backend_id, project.data_type)
         # 同步 ai_model display hint (复制后 backend 名一致, _apply_backend_display_hint
         # 在此场景与直接读 source.name 等价).
         project.ai_model = source_backend.name

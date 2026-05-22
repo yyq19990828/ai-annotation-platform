@@ -147,3 +147,33 @@ async def test_bind_failopen_when_setup_unreachable(
             headers={"Authorization": f"Bearer {token}"},
         )
     assert res.status_code == 200, res.text  # fail-open
+
+
+@pytest.mark.asyncio
+async def test_create_video_project_with_image_backend_rejected(
+    httpx_client, db_session, super_admin
+):
+    """创建即绑定 backend 也走模态校验 (与 PATCH 对称, 防止 create 路径绕过)."""
+    user, token = super_admin
+    # 绑定的 backend 必须先存在 (挂在任意已有项目上)
+    dummy = await create_project(db_session, owner_id=user.id)
+    backend = await _seed_backend(db_session, dummy.id, name="image-bk")
+    await db_session.commit()
+
+    async def fake_setup(self):
+        return _IMAGE_SETUP
+
+    with patch("app.services.ml_client.MLBackendClient.setup", new=fake_setup):
+        res = await httpx_client.post(
+            "/api/v1/projects",
+            json={
+                "name": "新视频项目",
+                "type_label": "视频-追踪",
+                "type_key": "video-track",
+                "ai_enabled": True,
+                "ml_backend_id": str(backend.id),
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert res.status_code == 422, res.text
+    assert "video" in res.json()["detail"]
