@@ -150,6 +150,28 @@ async def test_bind_failopen_when_setup_unreachable(
 
 
 @pytest.mark.asyncio
+async def test_bind_backend_with_empty_modalities_failopen(
+    httpx_client, db_session, super_admin
+):
+    """探测成功但能力快照不含模态信号 (无 prompt/tracker) → fail-open 放行, 不误拦纯批量检测后端."""
+    user, token = super_admin
+    proj = await create_project(db_session, owner_id=user.id)  # image 项目
+    backend = await _seed_backend(db_session, proj.id)
+    await db_session.commit()
+
+    async def fake_setup(self):
+        return {"name": "plain-detector", "is_interactive": False}
+
+    with patch("app.services.ml_client.MLBackendClient.setup", new=fake_setup):
+        res = await httpx_client.patch(
+            f"/api/v1/projects/{proj.id}",
+            json={"ml_backend_id": str(backend.id)},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert res.status_code == 200, res.text  # 空模态 → fail-open
+
+
+@pytest.mark.asyncio
 async def test_create_video_project_with_image_backend_rejected(
     httpx_client, db_session, super_admin
 ):

@@ -471,6 +471,8 @@ async def _validate_backend_modality(
     if caps is None:
         return
     modalities = derive_modalities(caps)
+    if not modalities:
+        return  # 能力快照不含模态信号 (无 prompt/tracker) → fail-open, 不误拦纯批量检测后端
     if data_type not in modalities:
         raise HTTPException(
             status_code=422,

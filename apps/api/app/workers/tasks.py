@@ -108,8 +108,16 @@ async def _run_batch(
                 context["box_threshold"] = float(project.box_threshold)
                 context["text_threshold"] = float(project.text_threshold)
             # v0.10.38 · 按后端参数面板 (epic 阶段 2): 选中 backend 的 /setup.params 值覆盖项目级兜底.
+            # 保留 context 结构性键 (type/text/output) 不被 params 覆盖, 防止破坏 predict 请求语义.
+            _reserved = {"type", "text", "output"}
             if params:
-                context.update({k: v for k, v in params.items() if v is not None})
+                context.update(
+                    {
+                        k: v
+                        for k, v in params.items()
+                        if v is not None and k not in _reserved
+                    }
+                )
 
         if task_ids:
             uuids = [uuid.UUID(tid) for tid in task_ids]
