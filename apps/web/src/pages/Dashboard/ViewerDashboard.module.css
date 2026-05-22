@@ -23,7 +23,7 @@
 
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -48,8 +48,15 @@
   font-weight: 600;
 }
 
+.tableScroller {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
 .table {
   width: 100%;
+  min-width: 760px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
@@ -63,6 +70,7 @@
   padding: 10px 12px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-sunken);
+  white-space: nowrap;
 }
 
 .table th:first-child {
@@ -72,6 +80,12 @@
 .table td {
   padding: 12px;
   border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.table td:nth-child(3),
+.table td:nth-child(4) {
+  white-space: nowrap;
 }
 
 .table td:first-child {
@@ -89,13 +103,22 @@
 }
 
 .projectName {
+  max-width: 260px;
+  overflow: hidden;
   font-weight: 500;
   font-size: 13.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .projectId {
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
   font-size: 11px;
   color: var(--color-fg-subtle);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .progressCell {

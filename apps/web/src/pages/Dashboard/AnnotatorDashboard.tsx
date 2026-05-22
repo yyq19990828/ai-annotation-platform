@@ -217,55 +217,57 @@ export function AnnotatorDashboard() {
             <div className={styles.emptyHint}>请联系项目管理员将你加入项目成员</div>
           </div>
         ) : (
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                {["项目", "类型", "进度", "待标", ""].map((h, i) => (
-                  <th key={i}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedProjects.map((p: any) => {
-                const remaining = Math.max(0, (p.total_tasks ?? 0) - (p.completed_tasks ?? 0));
-                const pct = p.total_tasks ? Math.round(((p.completed_tasks ?? 0) / p.total_tasks) * 100) : 0;
-                return (
-                  <tr
-                    key={p.id}
-                    className={styles.clickableRow}
-                    onClick={() => openWorkbench(p.id)}
-                  >
-                    <td>
-                      <div className={styles.projectName}>{p.name}</div>
-                      <div className={styles.projectId}>
-                        <span className="mono">{p.display_id}</span>
-                      </div>
-                    </td>
-                    <td className={styles.mutedCell}>
-                      {p.type_label}
-                    </td>
-                    <td className={styles.mutedCell}>
-                      {p.completed_tasks ?? 0} / {p.total_tasks ?? 0} <span className="mono">({pct}%)</span>
-                    </td>
-                    <td>
-                      <span className={styles.smallBadge}>
-                        <Badge variant={remaining > 0 ? "accent" : "outline"}>{remaining}</Badge>
-                      </span>
-                    </td>
-                    <td className={styles.actionCell}>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={(e: any) => { e.stopPropagation(); openWorkbench(p.id); }}
-                      >
-                        <Icon name="target" size={11} />打开
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className={styles.tableScroller}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  {["项目", "类型", "进度", "待标", ""].map((h, i) => (
+                    <th key={i}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedProjects.map((p: any) => {
+                  const remaining = Math.max(0, (p.total_tasks ?? 0) - (p.completed_tasks ?? 0));
+                  const pct = p.total_tasks ? Math.round(((p.completed_tasks ?? 0) / p.total_tasks) * 100) : 0;
+                  return (
+                    <tr
+                      key={p.id}
+                      className={styles.clickableRow}
+                      onClick={() => openWorkbench(p.id)}
+                    >
+                      <td>
+                        <div className={styles.projectName}>{p.name}</div>
+                        <div className={styles.projectId}>
+                          <span className="mono">{p.display_id}</span>
+                        </div>
+                      </td>
+                      <td className={styles.mutedCell}>
+                        {p.type_label}
+                      </td>
+                      <td className={styles.mutedCell}>
+                        {p.completed_tasks ?? 0} / {p.total_tasks ?? 0} <span className="mono">({pct}%)</span>
+                      </td>
+                      <td>
+                        <span className={styles.smallBadge}>
+                          <Badge variant={remaining > 0 ? "accent" : "outline"}>{remaining}</Badge>
+                        </span>
+                      </td>
+                      <td className={styles.actionCell}>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          onClick={(e: any) => { e.stopPropagation(); openWorkbench(p.id); }}
+                        >
+                          <Icon name="target" size={11} />打开
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
         </Card>
       </div>
