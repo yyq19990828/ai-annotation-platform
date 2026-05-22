@@ -429,10 +429,15 @@ async def unload() -> dict:
 
 
 class ReloadRequest(BaseModel):
-    """v0.10.26 · 可选指定变体预热. 缺省回退 env 默认变体 (保持旧行为)."""
+    """v0.10.26 · 可选指定变体预热. 缺省回退 env 默认变体 (保持旧行为).
+
+    v0.10.36 · task_type 区分预热目标池: "image" (默认, 图片池) / "video"
+    (独立 video tracker 池). 旧调用不传 = "image", 行为完全不变.
+    """
 
     sam_variant: str | None = None
     dino_variant: str | None = None
+    task_type: str = "image"
 
 
 @app.post("/reload")
@@ -441,7 +446,42 @@ async def reload(req: ReloadRequest | None = None) -> dict:
 
     v0.10.26 · 接受可选 {sam_variant, dino_variant} 预热指定变体 (模型市场单变体预热);
     缺省回退 env 默认变体. 非法变体 422 (同 predict 的 _resolve_variant 校验).
+    v0.10.36 · task_type="video" 改预热独立 video tracker 池 (不用 dino).
     """
+    task_type = (req.task_type if req else None) or "image"
+
+    # v0.10.36 · video 分支: 预热独立 video tracker 池 (单维 sam_variant, 无 dino).
+    if task_type == "video":
+        sv = (req.sam_variant if req else None) or SAM_VARIANT
+        if sv not in SAM2_CONFIGS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
+            )
+        already = sv in _video_pool.loaded_variants()
+        try:
+            await _video_pool.get(sv)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"sam_variant {sv!r} video checkpoint not provisioned: {exc}",
+            ) from exc
+        return {
+            "ok": True,
+            "loaded": True,
+            "reloaded": not already,
+            "sam_variant": sv,
+            "task_type": "video",
+        }
+
+    if task_type != "image":
+        raise HTTPException(
+            status_code=422,
+            detail=f"unsupported task_type: {task_type!r}; allowed=['image', 'video']",
+        )
+
     sv = (req.sam_variant if req else None) or SAM_VARIANT
     dv = (req.dino_variant if req else None) or DINO_VARIANT
     if sv not in SAM2_CONFIGS:
@@ -462,6 +502,7 @@ async def reload(req: ReloadRequest | None = None) -> dict:
         "reloaded": not already,
         "sam_variant": sv,
         "dino_variant": dv,
+        "task_type": "image",
     }
 
 
