@@ -15,8 +15,8 @@
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出）。三项已拍板决策：抽帧=逻辑采样不动原视频、frame_index 存源帧号、AAP 单信封模态感知。原 §C.5 / §C.6 / 视频相关 §A 条目已全部并入该文，按 Phase 1-6 顺序排布。
-  - **进度**：Phase 1（帧采样，v0.10.29）✅ · Phase 2 轨迹工具 2.1–2.8（v0.10.30）✅ · Phase 3.1 真实 `sam2_video` backend + 独立池 + 观测（v0.10.35/36）✅ · Phase 3.2-3.3 / 4-6 待开工。
-  - **衍生 epic**：v0.10.35/36 接通真实视频 tracker 后暴露「平台对 backend 模态/能力无持久化感知」，已抽出独立 epic：[ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md)（含视频 Phase 3.3 的能力协商落库 + 注册收敛 + ai-pre 模态化）。
+  - **进度**：Phase 1（帧采样，v0.10.29）✅ · Phase 2 轨迹工具 2.1–2.8（v0.10.30）✅ · Phase 3.1 真实 `sam2_video` backend + 独立池 + 观测（v0.10.35/36）✅ · Phase 3.2-3.3 经能力协商 epic（v0.10.37/38）✅ · Phase 4-6 待开工（sam3_video 待续）。
+  - **衍生 epic（已全部落地）**：v0.10.35/36 接通真实视频 tracker 后暴露「平台对 backend 模态/能力无持久化感知」，抽出独立 epic：[ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md)——阶段 1 能力协商落库 + 模态派生（v0.10.37）✅ · 阶段 2 ai-pre 模态化 + 多 backend 参数面板（v0.10.38）✅ · 阶段 3 video-jobs 并入 ai-pre/jobs（v0.10.38）✅。
   - **从已完成 Phase 延后的项**（仍在 epic 内，单列以免遗漏）：
     - **2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）：扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap 能力；DAVIS mask 导出（Phase 4.5）依赖此项。
     - **WebCodecs 精确帧解码 demux 接入**（P2，按真实卡顿数据决定）：Phase 1 已落地解码核心 + feature flag（默认关闭），但 mp4 demux 链路（mp4 字节 → `EncodedVideoChunk`）尚未接入。
@@ -98,7 +98,6 @@
 - **变体热切换后续延伸**（v0.10.23 之后开放项，按需触发）：
   - **`/setup.supported_variants` 富元数据**（**P3**）：当前变体选项来源是 `/setup.params` 的 `sam_variant`/`dino_variant` enum（纯字符串）；原需求 §3 设想的 `supported_variants` 数组（携带每变体显存占用 / 推荐档 / labels）未做。触发条件：模型市场二期 AB 路由 UI 需要按变体展示「显存 7GB / 精度高」等元数据时再扩。
   - **grounded-sam2-backend lint 债**（**P3 maintenance**）：包内 `ruff check .` 仍有 ~179 报错（多为 vendor / 历史遗留，本期改动文件已全过）；触发条件：给该包加 CI lint gate 前需先清债或显式 exclude vendor。
-- **项目多后端绑定 + 按后端参数面板 + ai-pre 模态化（重设计，未排期）**（**P2**）：已抽为独立 epic [ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md)（阶段 2）。要点：项目侧 `ml_backend_id` 单值 → 多值/默认值、预标注入口加后端选择器、按后端参数面板（基础设施已就位：`SchemaForm` 按 `/setup.params` 动态渲染、`User.preferences.ai.params_by_backend` 已分桶）、`/ai-pre` 按 `data_type` 分流图像/视频。触发：客户需要同项目多模型并存 / 切换，或视频项目要进 ai-pre。**本期不做。**
 - **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：dev `ML_BACKEND_STORAGE_HOST` + ADR-0012 框架已收口；生产场景多变, 第一个生产部署遇到再扩策略表（"何时设、设啥值、何时留空"）。
 
@@ -182,7 +181,7 @@
 - **I14 Autoborder / Polygon Crop**（M，纯前端）：开关式 Auto-border，多边形顶点拖动 / 新增时若距其他形状边 < 阈值自动吸附；新建多边形与已有重叠时提供「裁切重叠区」选项（布尔差集，基于已在依赖的 `polygon-clipping@0.15.7`）。
 - **I18 Konva pin 渲染**（v0.10.19 已落 `annotation_feedbacks` 表 + `/feedbacks` API + IssueCreateModal/IssueListPanel 浮动入口; 剩 `IssueLayer.tsx` Konva 层 + ImageStage 单击图像创建 pin 入口替代手填 x/y + ADR-0027 第二段 `v_annotation_feedback_unified` view + 旧三表双写）。
 - **I19 GT job / Consensus / IAA**（L，独立后端 epic）：项目设置「质检」开关从已完成 task 随机抽 N% 或 honeypot 模式；同一 GT task 分给 ≥2 人互不可见；bbox 走 mAP / IoU、polygon 走 mask IoU、class 走 Cohen's κ；按标注员维度滚动统计 + 质检 Dashboard。与长期 L15 配套，可作 L15 前置。
-- **I20.4 Tracker / Auto-Annotation 协议统一收口**：视频侧 R10 的 `/video-tracker-jobs` 类似协议未与图片 setup 收口为同一 `supported_capabilities` 数组。**已并入** [ML Backend 能力协商 + AI 预标注模态化重设计 epic](ROADMAP/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1（能力协商落库）。
+- **I20.4 Tracker / Auto-Annotation 协议统一收口**：**已落地**（[ML Backend 能力协商 epic](ROADMAP/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1，v0.10.37）——`/setup` 能力快照落 `health_meta["capabilities"]`、平台按 `data_type` 派生模态消费，替代图片/视频两套独立协商。
 - **I21 用户级快捷键自定义**（M，纯前端）：`User.preferences.keymap` + 冲突校验；SettingsPage 录制框 UI；`?` 弹快捷键参考卡按 keymap 渲染（取代硬编码 KeyboardHintOverlay）。
 
 ### C.4 工作台架构分层（多任务类型如何复用同一外壳）

@@ -40,43 +40,32 @@
 
 ---
 
-## 阶段 2 · AI 预标注模态化重设计（多 backend × 多数据类型）
+## 阶段 2 · AI 预标注模态化重设计（多 backend × 多数据类型）（v0.10.38 落地）
 
-> 对应主 [ROADMAP.md](../ROADMAP.md) §A「项目多后端绑定 + 按后端参数面板（重设计，未排期）」。基础设施部分已就位：`SchemaForm` 按 `/setup.params` 动态渲染、`User.preferences.ai.params_by_backend` 已按 backend 分桶。
-
-**做什么**
-1. **模态感知路由**：`/ai-pre` 按 `project.data_type` 分流入口——图像走现有批量文本预标（`PredictionJob`），视频走 tracker 式预标（接 `VideoTrackerJob`）。彻底取代「症状止血式过滤」。
-2. **多 backend 选择**：项目侧 `ml_backend_id` 单值 → 多值 / 默认值；预标注入口加 backend 选择器 + 按后端参数面板（复用现有 infra）；批量预标决策「项目级阈值是否收口到按后端动态」。
-3. **统一 job 视图层（不合表）**：`PredictionJob`（批次×模型，粗粒度）与 `VideoTrackerJob`（任务×标注，帧级）粒度不同，**保留两表**；只统一**展示层**——一个能按模态分 tab 的 job 历史。底层长期收敛到「async_jobs 统一表」（见 [取经合集 §1.7](2026-05-18-cvat-labelstudio-inspiration.md)），不在本 epic 强推。
-
-**边界**：分清「快速批量预标」（现有流程）与「精细单 batch 多模型对比」（modal 模式，可复用 v0.9.x orphan 的 `PreannotateStepper` 等组件）——本阶段先做模态路由 + 多 backend，精细对比模式按客户驱动延后。不造「batch×backend 矩阵配置」怪物。
-
-**验收**：视频项目能在 ai-pre 正常发起 / 查看预标；同项目可选不同 backend 跑预标；job 历史一处看全模态。
+> 已落地，详见 [CHANGELOG v0.10.38](../CHANGELOG.md) / [v0.10.38 计划](../docs/plans/2026-05-22-v0.10.38-ai-preannotate-modality-redesign.md)。落地要点：
+>
+> - **模态感知路由**：`/ai-pre` 撤回 v0.10.36 的 image-only 止血过滤，前端 `ProjectDetailPanel` 按 `data_type` 分流（image=文本批量预标 / video=工作台逐轨迹追踪引导卡片 / lidar=占位）。
+> - **多 backend 选择 + 按后端参数面板**：基于已有 1:N 注册 + 请求显式 `ml_backend_id`（**未动单值 schema**）；执行页加 backend 选择器 + 复用 `SchemaForm` 按 `/setup.params` 渲染，值按 backend 记忆（`params_by_backend`），随请求 `params` 透传，worker 合并进 `/predict` context。项目级阈值收口为按后端动态（项目默认仍在 GeneralSection）。
+> - **统一 job 视图层（未合表）**：纯前端展示层统一——`/ai-pre/jobs` 加模态 tab；两套 job 模型保留。
+>
+> **延后（按客户驱动）**：精细单 batch 多模型对比 modal（复用 v0.9.x orphan `PreannotateStepper`）；底层 `async_jobs` 统一表收敛（见 [取经合集 §1.7](2026-05-18-cvat-labelstudio-inspiration.md)）。
 
 ---
 
-## 阶段 3 · video-jobs 并入统一 job 历史
+## 阶段 3 · video-jobs 并入统一 job 历史（v0.10.38 落地）
 
-> v0.10.36 把视频追踪任务监控页放在 ModelMarket（`/model-market/video-jobs`），是当「观测面」临时落地。概念上 tracker job 是一种 AI 预测 job，归属 ai-pre 的 job 历史。
-
-**做什么**
-- 把视频追踪 job 监控**作为 image/video 模态 tab 并入 `/ai-pre/jobs`** 的统一 job 历史（接阶段 2 的统一视图层）。
-- 复用既有解耦资产：`GET /video-tracker-jobs` 端点 + `VideoTrackerJobsPage` 组件**改挂载点 + 加 tab 即可**，逻辑不重写。
-
-**关键边界——两个面别混**：
-- **ModelMarket = 后端 / 显存池健康**（v0.10.36 模态拆分预热面板，容器视角）→ 留在 ModelMarket。
-- **ai-pre = 任务（job）历史**（谁跑的 / 成没成 / 错在哪）→ video-jobs 归这里。
-
-**验收**：`/ai-pre/jobs` 一处看图像 + 视频两类 AI 任务历史；ModelMarket 仅保留后端 / 池健康观测。
+> 已落地（与阶段 2 同版）：视频追踪监控从 ModelMarket（`/model-market/video-jobs`）迁入 `/ai-pre/jobs` 的「视频」模态 tab，复用 `GET /video-tracker-jobs` + 重构后的 `VideoTrackerJobsPanel`；旧路由 301 跳转。**边界守住**：ModelMarket 只留后端 / 显存池健康观测，ai-pre 收任务 job 历史。
 
 ---
 
 ## 依赖顺序
 
 ```
-阶段 1 能力协商落库 + 模态派生   ← 前置（v0.10.37 落地；后两阶段都依赖可靠的模态识别）
+阶段 1 能力协商落库 + 模态派生   ← 前置（v0.10.37 落地）
         ↓
-阶段 2 ai-pre 模态化重设计（模态路由 + 多 backend + 统一 job 视图层）
+阶段 2 ai-pre 模态化重设计       ← v0.10.38 落地
         ↓
-阶段 3 video-jobs 并入 ai-pre/jobs（modality tab）
+阶段 3 video-jobs 并入 ai-pre/jobs ← v0.10.38 落地
 ```
+
+> **本 epic 三阶段已全部落地（v0.10.37 + v0.10.38）。** 剩余长期项（精细对比 modal、async_jobs 合表）按客户驱动另行排期。
