@@ -74,8 +74,8 @@
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  width: 280px;
-  height: 200px;
+  width: min(340px, calc(100vw - 24px));
+  height: min(280px, calc(100vh - 72px));
   color: var(--color-fg);
   font-family: var(--font);
   background: var(--color-panel);
@@ -85,7 +85,7 @@
 }
 
 .panelExpanded {
-  height: 360px;
+  height: min(420px, calc(100vh - 72px));
 }
 
 .header {

@@ -622,7 +622,7 @@ export function VideoTrackPanel({
                   title="把当前帧的框复制到后续/向前 N 帧"
                   onClick={() => setPropagateOpen(true)}
                 >
-                  <Icon name="copy" size={13} />复制后续
+                  <Icon name="layers" size={13} />复制后续
                 </Button>
               </div>
             </div>
@@ -668,7 +668,7 @@ export function VideoTrackPanel({
                   title="使用最近关键帧的框在当前帧创建关键帧"
                   onClick={onCopySelectedTrackToCurrentFrame}
                 >
-                  <Icon name="copy" size={14} />复制到当前帧
+                  <Icon name="plus" size={14} />复制到当前帧
                 </Button>
                 <Button
                   size="sm"
@@ -686,7 +686,7 @@ export function VideoTrackPanel({
                   title="把已复制的关键帧粘贴到当前帧"
                   onClick={onPasteKeyframeToCurrentFrame}
                 >
-                  <Icon name="copy" size={14} />粘贴关键帧
+                  <Icon name="clipboardPaste" size={14} />粘贴关键帧
                 </Button>
                 <Button
                   size="sm"
@@ -800,7 +800,7 @@ export function VideoTrackPanel({
                           frameIndex: kf.frame_index,
                         })}
                       >
-                        <Icon name="copy" size={13} />
+                        <Icon name="box" size={13} />
                       </Button>
                       <Button
                         size="sm"
@@ -868,7 +868,7 @@ export function VideoTrackPanel({
                     frameMode: "keyframes",
                   })}
                 >
-                  <Icon name="copy" size={15} />复制关键帧
+                  <Icon name="box" size={15} />复制关键帧
                 </Button>
                 <Button
                   size="sm"
