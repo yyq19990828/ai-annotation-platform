@@ -858,9 +858,9 @@ describe("VideoStage", () => {
     const overlay = getByTestId("video-overlay");
     setRect(overlay);
 
-    fireEvent(overlay, pointer("pointerdown", 150, 100, 2));
-    fireEvent(overlay, pointer("pointerup", 151, 101, 2));
-    fireEvent(overlay, contextMenu(151, 101));
+    fireEvent(overlay, pointer("pointerdown", 150, 60, 2));
+    fireEvent(overlay, pointer("pointerup", 151, 61, 2));
+    fireEvent(overlay, contextMenu(151, 61));
 
     expect(onSelect).toHaveBeenCalledWith("t1");
     expect(await screen.findByRole("menu")).toBeInTheDocument();
@@ -909,15 +909,95 @@ describe("VideoStage", () => {
     const overlay = getByTestId("video-overlay");
     setRect(overlay);
 
-    fireEvent(overlay, pointer("pointerdown", 150, 100, 2));
-    fireEvent(overlay, pointer("pointerup", 151, 101, 2));
-    fireEvent(overlay, contextMenu(151, 101));
+    fireEvent(overlay, pointer("pointerdown", 150, 60, 2));
+    fireEvent(overlay, pointer("pointerup", 151, 61, 2));
+    fireEvent(overlay, contextMenu(151, 61));
     fireEvent.click(await screen.findByRole("menuitem", { name: /删除当前关键帧/ }));
 
     expect(onDelete).not.toHaveBeenCalled();
     expect(onUpdate).toHaveBeenCalledTimes(1);
     const [, geometry] = onUpdate.mock.calls[0];
     expect(geometry.keyframes.map((keyframe: { frame_index: number }) => keyframe.frame_index)).toEqual([3]);
+  });
+
+  it("opens a bbox context menu on right-click and deletes the hit bbox", async () => {
+    const onDelete = vi.fn();
+    const annotations = [
+      {
+        id: "b1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 0, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="b1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onDelete={onDelete}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 150, 60, 2));
+    fireEvent(overlay, pointer("pointerup", 151, 61, 2));
+    fireEvent(overlay, contextMenu(151, 61));
+
+    const menu = await screen.findByRole("menu");
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /删除/ }));
+    expect(onDelete).toHaveBeenCalledWith(annotations[0]);
+  });
+
+  it("keeps selected video bboxes aggregated from the bbox context menu", async () => {
+    const onComposeTracks = vi.fn();
+    const annotations = [
+      {
+        id: "b1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 0, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      },
+      {
+        id: "b2",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 3, x: 0.2, y: 0.1, w: 0.2, h: 0.2 },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="b2"
+        selectedIds={["b1", "b2"]}
+        activeClass="car"
+        frameIndex={0}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onComposeTracks={onComposeTracks}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 250, 60, 2));
+    fireEvent(overlay, pointer("pointerup", 251, 61, 2));
+    fireEvent(overlay, contextMenu(251, 61));
+
+    fireEvent.click(await screen.findByRole("menuitem", { name: /聚合为轨迹/ }));
+    expect(onComposeTracks).toHaveBeenCalledWith({
+      operation: "aggregate_bboxes",
+      annotationIds: ["b1", "b2"],
+      deleteSources: true,
+    });
   });
 
   it("keeps right-button drag as pan and does not open the track context menu", () => {

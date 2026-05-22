@@ -10,6 +10,7 @@ import type { PendingDrawing, SamPolarity, SamSubTool, Tool } from "../../state/
 import type { Viewport } from "../../state/useViewportTransform";
 import type { KeypointDraftHandle, PolygonDraftHandle } from "../../stage/tools";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
+import type { ImageContextMenuClipboardActions } from "../../stage/imageStageContextMenu";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -37,6 +38,12 @@ export interface ImageWorkbenchProps {
   onAcceptPrediction: (b: AiBox) => void;
   onRejectPrediction: (b: AiBox) => void;
   onDeleteUserBox: (id: string) => void;
+  onPatchShapeFlag?: (
+    id: string,
+    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    value: number | boolean,
+  ) => void;
+  clipboardActions?: ImageContextMenuClipboardActions | null;
   onCommitDrawing: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出矩形 → 提交 angle=0 的 rotated_bbox。 */
   onCommitRotatedBbox: (geo: Geom) => void;
@@ -123,6 +130,8 @@ export function ImageWorkbench({
   onAcceptPrediction,
   onRejectPrediction,
   onDeleteUserBox,
+  onPatchShapeFlag,
+  clipboardActions,
   onCommitDrawing,
   onCommitRotatedBbox,
   onCommitRotateBbox,
@@ -192,6 +201,8 @@ export function ImageWorkbench({
       onRejectPrediction={onRejectPrediction}
       onDeleteUserBox={onDeleteUserBox}
       onCommitDrawing={onCommitDrawing}
+      onPatchShapeFlag={onPatchShapeFlag}
+      clipboardActions={clipboardActions}
       onCommitRotatedBbox={onCommitRotatedBbox}
       onCommitRotateBbox={onCommitRotateBbox}
       onSamPrompt={onSamPrompt}

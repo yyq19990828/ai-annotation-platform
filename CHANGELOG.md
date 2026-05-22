@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.10.34] - 2026-05-22
+
+> **右键菜单推广到全标注类型。** 图片工作台的人工标注现在统一支持右键轻点操作；视频工作台补上单帧 `video_bbox` 右键菜单。右键拖拽平移、图片关键点绘制时的「右键跳过当前节点」和现有快捷键语义都保持不变。
+
+### Added
+
+- **图片 Stage 全类型右键菜单** (前端 [ImageStage.tsx](apps/web/src/pages/Workbench/stage/ImageStage.tsx) · [imageStageContextMenu.ts](apps/web/src/pages/Workbench/stage/imageStageContextMenu.ts)): 选中 bbox / rotated_bbox / polygon / multi_polygon / polyline / keypoint 后，右键轻点命中 shape 会在光标处弹出通用菜单，统一接通改类、锁定 / 解锁、隐藏 / 显示、遮挡、层级调整、复制 / 粘贴和删除。
+- **图片几何通用复制/粘贴** (前端 [useClipboard.ts](apps/web/src/pages/Workbench/state/useClipboard.ts)): `copySelection` / `paste` 从原先只覆盖 bbox / polygon，扩到 rotated bbox、polyline、keypoint 和 multi polygon，右键菜单与 `Ctrl+C` / `Ctrl+V` 走同一套剪贴板路径。
+- **视频单帧框右键菜单** (前端 [VideoStage.tsx](apps/web/src/pages/Workbench/stage/VideoStage.tsx)): 右键轻点命中 `video_bbox` 时可直接改类、删除；若当前已多选多个同类且帧号不重复的 `video_bbox`，菜单补出「聚合为轨迹」入口，复用既有 compose 逻辑。
+
+### Changed
+
+- **图片 Stage Konva 命中接线** (前端 [ImageStageShapes.tsx](apps/web/src/pages/Workbench/stage/ImageStageShapes.tsx) · [WorkbenchShell.tsx](apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx)): Konva shape 根节点补 annotation id，Stage 在容器层用 `getIntersection()` 统一做命中判定；画布右键菜单改为复用 Workbench 现有改类 / PATCH flag / 删除 / 剪贴板 handler，不额外分叉业务逻辑。
+
 ## [0.10.33] - 2026-05-22
 
 > **画布右键轨迹菜单。** 视频工作台补齐轨迹操作的第四条到达路径：右键轻点当前帧轨迹框会在光标处打开操作菜单，可标记消失 / 遮挡、锁定 / 隐藏、AI 传播、改类、拆当前帧为独立框、删除当前关键帧或删除整条轨迹。右键拖拽平移画布的既有行为保持不变。

@@ -66,6 +66,7 @@ import type {
   VideoStageGeom,
   VideoStageGeometry,
   VideoTrackAnnotation,
+  VideoTrackCompositionOptions,
   VideoTrackConversionOptions,
   VideoTrackGhost,
   VideoTrackPreview,
@@ -104,6 +105,7 @@ interface VideoStageProps {
   error?: unknown;
   annotations: AnnotationResponse[];
   selectedId: string | null;
+  selectedIds?: string[];
   activeClass: string;
   frameIndex?: number;
   reviewDisplayMode?: DiffMode;
@@ -129,6 +131,7 @@ interface VideoStageProps {
   onChangeUserBoxClass?: (id: string) => void;
   onDelete?: (annotation: AnnotationResponse) => void;
   onConvertToBboxes?: (annotation: AnnotationResponse, options: VideoTrackConversionOptions) => void;
+  onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
@@ -164,6 +167,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   error,
   annotations,
   selectedId,
+  selectedIds = [],
   activeClass,
   frameIndex: controlledFrameIndex,
   reviewDisplayMode,
@@ -182,6 +186,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   onChangeUserBoxClass,
   onDelete,
   onConvertToBboxes,
+  onComposeTracks,
   onToggleHiddenTrack,
   onToggleLockedTrack,
   onPropagateTrack,
@@ -203,6 +208,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const [bookmarks, setBookmarks] = useState<VideoBookmark[]>([]);
   const [jumpHistory, setJumpHistory] = useState<VideoJumpHistory>(() => emptyVideoJumpHistory());
   const contextMenu = useCanvasContextMenu();
+  const [contextMenuTargetId, setContextMenuTargetId] = useState<string | null>(null);
   const onSelectRef = useRef(onSelect);
   const lastResetTaskIdRef = useRef<string | null>(null);
   const fittedTaskIdRef = useRef<string | null>(null);
@@ -213,6 +219,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const jogPlaybackRef = useRef<VideoJogPlayback>(PAUSED_JOG_PLAYBACK);
   const selectedTrackRef = useRef<VideoTrackAnnotation | null>(null);
   const rightDownRef = useRef<{ x: number; y: number } | null>(null);
+
+  const closeContextMenu = useCallback(() => {
+    contextMenu.close();
+    setContextMenuTargetId(null);
+  }, [contextMenu]);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -257,6 +268,14 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const selectedAnnotation = useMemo(
     () => annotations.find((ann) => ann.id === selectedId) ?? null,
     [annotations, selectedId],
+  );
+  const contextMenuAnnotation = useMemo(
+    () => annotations.find((ann) => ann.id === contextMenuTargetId) ?? null,
+    [annotations, contextMenuTargetId],
+  );
+  const selectedVideoBboxes = useMemo(
+    () => annotations.filter((ann) => isVideoBbox(ann) && selectedIds.includes(ann.id)),
+    [annotations, selectedIds],
   );
 
   const currentFrameEntries = useMemo(() => {
@@ -1197,8 +1216,52 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     if (drag) finishDrag(evt);
   }, [drag, finishDrag, onCursorMove]);
 
-  const trackContextMenuItems = useMemo<DropdownItem[]>(() => {
-    if (!selectedAnnotation || !isVideoTrack(selectedAnnotation)) return [];
+  const contextMenuItems = useMemo<DropdownItem[]>(() => {
+    if (contextMenuAnnotation && isVideoBbox(contextMenuAnnotation)) {
+      const aggregateTargets = selectedVideoBboxes.some((ann) => ann.id === contextMenuAnnotation.id)
+        ? selectedVideoBboxes
+        : [];
+      const sameClass = new Set(aggregateTargets.map((ann) => ann.class_name)).size <= 1;
+      const uniqueFrames = new Set(
+        aggregateTargets.map((ann) => (isVideoBbox(ann) ? ann.geometry.frame_index : -1)),
+      ).size === aggregateTargets.length;
+      const canAggregate = aggregateTargets.length > 1 && sameClass && uniqueFrames;
+      return [
+        {
+          id: "bbox-class",
+          label: "改类别",
+          icon: "tag",
+          disabled: readOnly || !onChangeUserBoxClass,
+          onSelect: () => onChangeUserBoxClass?.(contextMenuAnnotation.id),
+        },
+        ...(aggregateTargets.length > 1
+          ? [
+            { id: "bbox-divider", divider: true, label: "" } as DropdownItem,
+            {
+              id: "bbox-aggregate",
+              label: "聚合为轨迹",
+              disabled: readOnly || !onComposeTracks || !canAggregate,
+              onSelect: () => onComposeTracks?.({
+                operation: "aggregate_bboxes",
+                annotationIds: aggregateTargets.map((ann) => ann.id),
+                deleteSources: true,
+              }),
+            } satisfies DropdownItem,
+          ]
+          : []),
+        { id: "bbox-delete-divider", divider: true, label: "" },
+        {
+          id: "bbox-delete",
+          label: "删除",
+          icon: "trash",
+          kbd: "Del",
+          disabled: readOnly || !onDelete,
+          onSelect: () => onDelete?.(contextMenuAnnotation),
+        },
+      ];
+    }
+
+    if (!selectedAnnotation || selectedAnnotation.id !== contextMenuTargetId || !isVideoTrack(selectedAnnotation)) return [];
     const frameEditDisabled = !trackActions.canEditSelectedTrack;
     const trackMutationDisabled = readOnly || trackActions.selectedTrackLocked;
     return [
@@ -1282,8 +1345,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }, [
     frameIndex,
     canDeleteSelectedTrackKeyframe,
+    contextMenuAnnotation,
+    contextMenuTargetId,
     deleteSelectedTrackKeyframe,
     onChangeUserBoxClass,
+    onComposeTracks,
     onConvertToBboxes,
     onDelete,
     onPropagateTrack,
@@ -1291,6 +1357,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     onToggleLockedTrack,
     readOnly,
     selectedAnnotation,
+    selectedVideoBboxes,
     trackActions,
   ]);
 
@@ -1298,7 +1365,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     evt.preventDefault();
     const down = rightDownRef.current;
     rightDownRef.current = null;
-    contextMenu.close();
+    closeContextMenu();
     if (down && Math.hypot(evt.clientX - down.x, evt.clientY - down.y) >= CONTEXT_MENU_DRAG_THRESHOLD_PX) return;
     if (readOnly) return;
     const svg = overlayRef.current;
@@ -1308,14 +1375,26 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
       selectedTrackGhost ? [...currentFrameEntries, selectedTrackGhost] : currentFrameEntries,
       point,
     );
-    if (!hit || !isVideoTrack(hit.ann)) return;
+    if (!hit) return;
+    setContextMenuTargetId(hit.ann.id);
+    if (
+      isVideoBbox(hit.ann)
+      && selectedIds.includes(hit.ann.id)
+      && selectedVideoBboxes.length > 1
+    ) {
+      contextMenu.openAt(evt.clientX, evt.clientY);
+      return;
+    }
     onSelect(hit.ann.id);
     contextMenu.openAt(evt.clientX, evt.clientY);
   }, [
+    closeContextMenu,
     contextMenu,
     currentFrameEntries,
     onSelect,
     readOnly,
+    selectedIds,
+    selectedVideoBboxes.length,
     selectedTrackGhost,
     videoViewBoxHeight,
   ]);
@@ -1455,11 +1534,11 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
             onDeleteTrackKeyframe={canDeleteSelectedTrackKeyframe ? deleteSelectedTrackKeyframe : undefined}
           />
           <ContextMenu
-            open={contextMenu.open && trackContextMenuItems.length > 0}
+            open={contextMenu.open && contextMenuItems.length > 0}
             x={contextMenu.x}
             y={contextMenu.y}
-            items={trackContextMenuItems}
-            onClose={contextMenu.close}
+            items={contextMenuItems}
+            onClose={closeContextMenu}
           />
           <VideoQcWarnings warnings={qualityWarnings} />
           <VideoPlaybackOverlay

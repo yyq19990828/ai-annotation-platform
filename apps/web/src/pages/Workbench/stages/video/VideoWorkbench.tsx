@@ -12,7 +12,7 @@ import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
 import type { VideoTrackAnnotation } from "../../stage/videoStageTypes";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import type { DiffMode } from "../../modes/types";
-import type { VideoConvertOptions } from "./useVideoAnnotationActions";
+import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
@@ -26,6 +26,7 @@ export interface VideoWorkbenchProps {
   selectedId: string | null;
   activeClass: string;
   frameIndex: number;
+  selectedIds?: string[];
   reviewDisplayMode?: DiffMode;
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
@@ -48,6 +49,7 @@ export interface VideoWorkbenchProps {
   onChangeUserBoxClass: (id: string) => void;
   onDeleteUserBox: (id: string) => void;
   onConvertToBboxes: (annotation: AnnotationResponse, options: VideoConvertOptions) => void;
+  onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onToggleHiddenTrack?: (trackId: string) => void;
   onToggleLockedTrack?: (trackId: string) => void;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
@@ -64,6 +66,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     selectedId,
     activeClass,
     frameIndex,
+    selectedIds = [],
     reviewDisplayMode,
     hiddenTrackIds,
     lockedTrackIds,
@@ -81,6 +84,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onChangeUserBoxClass,
     onDeleteUserBox,
     onConvertToBboxes,
+    onComposeTracks,
     onToggleHiddenTrack,
     onToggleLockedTrack,
     onPropagateTrack,
@@ -97,6 +101,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         selectedId={selectedId}
         activeClass={activeClass}
         frameIndex={frameIndex}
+        selectedIds={selectedIds}
         reviewDisplayMode={reviewDisplayMode}
         hiddenTrackIds={hiddenTrackIds}
         lockedTrackIds={lockedTrackIds}
@@ -114,6 +119,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onChangeUserBoxClass={onChangeUserBoxClass}
         onDelete={(ann) => onDeleteUserBox(ann.id)}
         onConvertToBboxes={onConvertToBboxes}
+        onComposeTracks={onComposeTracks}
         onToggleHiddenTrack={onToggleHiddenTrack}
         onToggleLockedTrack={onToggleLockedTrack}
         onPropagateTrack={onPropagateTrack}

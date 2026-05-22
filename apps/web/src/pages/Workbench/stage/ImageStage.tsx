@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Stage, Layer, Image as KonvaImage, Rect, Line, Circle, Label, Tag, Text } from "react-konva";
 import type Konva from "konva";
 import useImage from "use-image";
 import type { Annotation, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
+import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { Tool } from "../state/useWorkbenchState";
 import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
@@ -20,9 +21,16 @@ import { Icon } from "@/components/ui/Icon";
 import { isSelfIntersecting, isSelfIntersectingIncremental, moveVertex, type Pt } from "./polygonGeom";
 import { BlurhashLayer } from "./BlurhashLayer";
 import { KonvaBox, KonvaPolygon, KonvaRotatedBox, KonvaPolyline, KonvaKeypoint, keypointColorByIndex } from "./ImageStageShapes";
+import {
+  buildImageContextMenuItems,
+  findContextMenuAnnotationId,
+  shouldSuppressImageContextMenu,
+  type ImageContextMenuClipboardActions,
+} from "./imageStageContextMenu";
 import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
+import { useCanvasContextMenu } from "./useCanvasContextMenu";
 import styles from "./ImageStage.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -124,6 +132,12 @@ interface ImageStageProps {
   onRejectPrediction?: (b: AiBox) => void;
   onDeleteUserBox?: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
+  onPatchShapeFlag?: (
+    id: string,
+    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    value: number | boolean,
+  ) => void;
+  clipboardActions?: ImageContextMenuClipboardActions | null;
   onCommitDrawing?: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出轴对齐矩形松手 → 提交 angle=0 的 rotated_bbox (类别用 activeClass)。 */
   onCommitRotatedBbox?: (geo: Geom) => void;
@@ -213,7 +227,7 @@ export function ImageStage({
   selectedId, selectedIds, userBoxes, aiBoxes, spacePan, vp, setVp, fitTick,
   readOnly = false, fadedAiIds, pendingDrawing, nudgeMap,
   onBatchDelete, onBatchChangeClass,
-  onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass,
+  onSelectBox, onAcceptPrediction, onRejectPrediction, onDeleteUserBox, onChangeUserBoxClass, onPatchShapeFlag, clipboardActions,
   onCommitDrawing, onCommitRotatedBbox, onCommitRotateBbox, onSamPrompt, samCandidates, samActiveIdx = 0,
   onCommitMove, onCommitResize, onCommitPolygonGeometry, onCursorMove,
   onStageGeometry, overlay, polygonDraft, keypointDraft, keypointSchema, onCommitKeypointGeometry, samPolarity,
@@ -299,10 +313,18 @@ export function ImageStage({
   }, [imgW, imgH, vpSize, onStageGeometry]);
 
   const [drag, setDrag] = useState<Drag | null>(null);
+  const contextMenu = useCanvasContextMenu();
+  const [contextMenuTargetId, setContextMenuTargetId] = useState<string | null>(null);
+  const rightDownRef = useRef<{ x: number; y: number } | null>(null);
   // mousemove 监听走 ref 读取 kind/坐标，避免每次 setDrag 都让 useEffect 重挂监听 →
   // 解决 v0.6.4 BUG B-2「画框时框体不实时 / 拖动卡」。
   const dragRef = useRef<Drag | null>(null);
   useEffect(() => { dragRef.current = drag; }, [drag]);
+
+  const closeContextMenu = useCallback(() => {
+    contextMenu.close();
+    setContextMenuTargetId(null);
+  }, [contextMenu]);
 
   // ── coordinate: client → normalized image [0,1] ──────────────────────────
   const toImg = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
@@ -685,11 +707,73 @@ export function ImageStage({
     if (!selectedId) return null;
     return (userBoxes as (Annotation | AiBox)[]).concat(aiBoxes).find((b) => b.id === selectedId) ?? null;
   }, [selectedId, userBoxes, aiBoxes]);
+  const contextMenuTarget = useMemo(
+    () => userBoxes.find((annotation) => annotation.id === contextMenuTargetId) ?? null,
+    [contextMenuTargetId, userBoxes],
+  );
+  const keypointDraftPending = tool === "keypoint"
+    && Boolean(keypointDraft && keypointDraft.nodeCount > 0 && keypointDraft.points.length < keypointDraft.nodeCount);
+  const contextMenuItems = useMemo(() => {
+    if (!contextMenuTarget) return [];
+    const zOrders = userBoxes.map((annotation) => annotation.z_order ?? 0);
+    const ownZ = contextMenuTarget.z_order ?? 0;
+    return buildImageContextMenuItems({
+      annotation: contextMenuTarget,
+      readOnly,
+      minZOrder: zOrders.length > 0 ? Math.min(...zOrders, ownZ) : ownZ,
+      maxZOrder: zOrders.length > 0 ? Math.max(...zOrders, ownZ) : ownZ,
+      clipboard: clipboardActions ?? null,
+      onChangeClass: onChangeUserBoxClass,
+      onDelete: onDeleteUserBox,
+      onPatchFlag: onPatchShapeFlag,
+    });
+  }, [
+    clipboardActions,
+    contextMenuTarget,
+    onChangeUserBoxClass,
+    onDeleteUserBox,
+    onPatchShapeFlag,
+    readOnly,
+    userBoxes,
+  ]);
 
   const isSelectedAi = selectedBox ? "predictionId" in selectedBox : false;
 
   // pending color = activeClass (default class for visual preview)
   const pendingColor = classColorForCanvas(activeClass || "pending");
+  const handleContextMenu = useCallback((evt: ReactMouseEvent<HTMLDivElement>) => {
+    evt.preventDefault();
+    const down = rightDownRef.current;
+    rightDownRef.current = null;
+    if (shouldSuppressImageContextMenu({
+      readOnly,
+      keypointDraftPending,
+      down,
+      point: { x: evt.clientX, y: evt.clientY },
+    })) {
+      closeContextMenu();
+      return;
+    }
+    const stage = stageRef.current;
+    if (!stage) {
+      closeContextMenu();
+      return;
+    }
+    const rect = stage.container().getBoundingClientRect();
+    const hitNode = stage.getIntersection({
+      x: evt.clientX - rect.left,
+      y: evt.clientY - rect.top,
+    });
+    const hitId = findContextMenuAnnotationId(hitNode);
+    const target = hitId ? userBoxes.find((annotation) => annotation.id === hitId) ?? null : null;
+    if (!target) {
+      closeContextMenu();
+      return;
+    }
+    setContextMenuTargetId(target.id);
+    onSelectBox(target.id);
+    contextMenu.openAt(evt.clientX, evt.clientY);
+  }, [closeContextMenu, contextMenu, keypointDraftPending, onSelectBox, readOnly, userBoxes]);
 
   return (
     <div
@@ -697,14 +781,16 @@ export function ImageStage({
       data-testid="workbench-stage"
       className={styles.root}
       onMouseLeave={() => onCursorMove(null)}
-      onContextMenu={(evt) => evt.preventDefault()}
+      onContextMenu={handleContextMenu}
       onPointerDown={(evt) => {
         // 右键任意位置拖 = pan, 不论当前 tool. 走与 hand 工具 / spacePan 同一个
         // window pointer listener 管线 (drag.kind === "pan").
         // v0.10.28 · keypoint 工具下右键 = 跳过当前节点 (v=0), 让 Konva onMouseDown 处理, 不抢 pan.
-        if (evt.button !== 2 || drag || readOnly) return;
-        if (tool === "keypoint" && keypointDraft && keypointDraft.nodeCount > 0
-            && keypointDraft.points.length < keypointDraft.nodeCount) return;
+        if (evt.button !== 2) return;
+        rightDownRef.current = { x: evt.clientX, y: evt.clientY };
+        closeContextMenu();
+        if (drag || readOnly) return;
+        if (keypointDraftPending) return;
         evt.preventDefault();
         setDrag({ kind: "pan", sx: evt.clientX, sy: evt.clientY });
       }}
@@ -806,6 +892,7 @@ export function ImageStage({
                 <KonvaRotatedBox
                   key={b.id}
                   b={b}
+                  annotationId={b.id}
                   geometry={g}
                   angle={liveAngle}
                   isAi={false}
@@ -832,6 +919,7 @@ export function ImageStage({
                 <KonvaPolyline
                   key={b.id}
                   b={display}
+                  annotationId={b.id}
                   isAi={false}
                   selected={selSet.has(b.id)}
                   faded={false}
@@ -879,6 +967,7 @@ export function ImageStage({
                 <KonvaKeypoint
                   key={b.id}
                   b={kpOv ? { ...display, keypoints: liveKps } : display}
+                  annotationId={b.id}
                   isAi={false}
                   selected={selSet.has(b.id)}
                   faded={false}
@@ -918,6 +1007,7 @@ export function ImageStage({
                 <KonvaPolygon
                   key={b.id}
                   b={display}
+                  annotationId={b.id}
                   isAi={false}
                   selected={selSet.has(b.id)}
                   faded={false}
@@ -965,6 +1055,7 @@ export function ImageStage({
               <KonvaBox
                 key={b.id}
                 b={display}
+                annotationId={b.id}
                 isAi={false}
                 selected={selSet.has(b.id)}
                 faded={false}
@@ -1344,6 +1435,14 @@ export function ImageStage({
           onClearSelection={selSet.size > 1 ? () => onSelectBox(null) : undefined}
         />
       )}
+
+      <ContextMenu
+        open={contextMenu.open && contextMenuItems.length > 0}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={contextMenuItems}
+        onClose={closeContextMenu}
+      />
 
       {overlay}
     </div>

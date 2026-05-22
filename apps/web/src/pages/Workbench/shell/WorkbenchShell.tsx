@@ -26,7 +26,7 @@ import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
-import type { TaskResponse, AnnotationResponse } from "@/types";
+import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 
 import { useWorkbenchState } from "../state/useWorkbenchState";
@@ -788,6 +788,11 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handleSamCommitClass,
     handleSamCancelClass,
   } = imageActions;
+  const imageContextMenuClipboard = useMemo(() => ({
+    copyAnnotation: (annotation: Annotation) => clipboard.copyAnnotations([annotation]),
+    paste: clipboard.paste,
+    hasClipboard: clipboard.hasClipboard,
+  }), [clipboard]);
 
 
   /** Shift+click 多选；普通 click 单选；点 AI 框始终单选。 */
@@ -1163,6 +1168,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onVideoCreate: handleVideoCreate,
         onVideoPendingDraw: handleVideoPendingDraw, onVideoUpdate: handleVideoUpdate,
         onVideoRename: handleVideoRename, onVideoConvertToBboxes: handleVideoConvertToBboxes,
+        onVideoComposeTracks: handleVideoComposeTracks,
         onToggleHiddenVideoTrack: s.toggleHiddenVideoTrack,
         onToggleLockedVideoTrack: s.toggleLockedVideoTrack,
         onPropagateVideoTrack: openPropagateDialog,
@@ -1171,6 +1177,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         aiBoxes: modeState.diffMode === "final" ? [] : aiBoxes, spacePan, vp, setVp, fitTick, setFitTick,
         pendingDrawing: s.pendingDrawing, onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction, onDeleteUserBox: handleDeleteBox,
+        onPatchShapeFlag: handlePatchShapeFlag,
+        imageClipboardActions: imageContextMenuClipboard,
         onCommitDrawing: handleCommitDrawing,
         // v0.10.28 · 旋转框 (OBB) 创建 + 旋转角更新.
         onCommitRotatedBbox: createRotatedBbox,

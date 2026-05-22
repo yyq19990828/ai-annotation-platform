@@ -22,8 +22,9 @@ import { ImageWorkbench } from "../stages/image/ImageWorkbench";
 import type { StageKind } from "../stages/types";
 import { ThreeDWorkbenchPlaceholder } from "../stages/three-d/ThreeDWorkbench.placeholder";
 import { VideoWorkbench } from "../stages/video/VideoWorkbench";
-import type { VideoConvertOptions } from "../stages/video/useVideoAnnotationActions";
+import type { VideoConvertOptions, VideoTrackCompositionOptions } from "../stages/video/useVideoAnnotationActions";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
+import type { ImageContextMenuClipboardActions } from "../stage/imageStageContextMenu";
 import styles from "./WorkbenchStageHost.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -75,6 +76,7 @@ interface WorkbenchStageHostProps {
   onVideoUpdate: (annotation: AnnotationResponse, geometry: VideoGeometry) => void;
   onVideoRename: (annotation: AnnotationResponse, className: string) => void;
   onVideoConvertToBboxes: (annotation: AnnotationResponse, options: VideoConvertOptions) => void;
+  onVideoComposeTracks?: (options: VideoTrackCompositionOptions) => void;
   onToggleHiddenVideoTrack?: (trackId: string) => void;
   onToggleLockedVideoTrack?: (trackId: string) => void;
   onPropagateVideoTrack?: (annotation: VideoTrackAnnotation) => void;
@@ -98,6 +100,12 @@ interface WorkbenchStageHostProps {
   onAcceptPrediction: (b: AiBox) => void;
   onRejectPrediction: (b: AiBox) => void;
   onDeleteUserBox: (id: string) => void;
+  onPatchShapeFlag?: (
+    id: string,
+    flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
+    value: number | boolean,
+  ) => void;
+  imageClipboardActions?: ImageContextMenuClipboardActions | null;
   onCommitDrawing: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出矩形 → 提交 angle=0 的 rotated_bbox。 */
   onCommitRotatedBbox: (geo: Geom) => void;
@@ -189,6 +197,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     onVideoUpdate,
     onVideoRename,
     onVideoConvertToBboxes,
+    onVideoComposeTracks,
     onToggleHiddenVideoTrack,
     onToggleLockedVideoTrack,
     onPropagateVideoTrack,
@@ -210,6 +219,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     onAcceptPrediction,
     onRejectPrediction,
     onDeleteUserBox,
+    onPatchShapeFlag,
+    imageClipboardActions,
     onCommitDrawing,
     onCommitRotatedBbox,
     onCommitRotateBbox,
@@ -272,6 +283,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             reviewDisplayMode={videoReviewDisplayMode}
             hiddenTrackIds={hiddenVideoTrackIds}
             lockedTrackIds={lockedVideoTrackIds}
+            selectedIds={selectedIds}
             readOnly={readOnly}
             videoTool={videoTool}
             pendingDrawing={pendingDrawing}
@@ -286,6 +298,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onChangeUserBoxClass={onChangeUserBoxClass}
             onDeleteUserBox={onDeleteUserBox}
             onConvertToBboxes={onVideoConvertToBboxes}
+            onComposeTracks={onVideoComposeTracks}
             onToggleHiddenTrack={onToggleHiddenVideoTrack}
             onToggleLockedTrack={onToggleLockedVideoTrack}
             onPropagateTrack={onPropagateVideoTrack}
@@ -315,6 +328,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onAcceptPrediction={onAcceptPrediction}
             onRejectPrediction={onRejectPrediction}
             onDeleteUserBox={onDeleteUserBox}
+            onPatchShapeFlag={onPatchShapeFlag}
+            clipboardActions={imageClipboardActions}
             onCommitDrawing={onCommitDrawing}
             onCommitRotatedBbox={onCommitRotatedBbox}
             onCommitRotateBbox={onCommitRotateBbox}
