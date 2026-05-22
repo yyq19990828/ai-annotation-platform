@@ -28,20 +28,15 @@
 
 ---
 
-## 阶段 1 · 能力协商落库 + 模态派生（前置基石）
+## 阶段 1 · 能力协商落库 + 模态派生（前置基石）（v0.10.37 落地）
 
-> 这是 [视频 roadmap Phase 3.3](2026-05-21-video-workbench-roadmap.md) 说的「第一块砖」的延续——v0.10.35 已让 `/setup` 自报 `supported_trackers`，本阶段把它**存下来并消费**。后两阶段都依赖本阶段，否则 ai-pre 无法可靠按模态分流。
-
-**做什么**
-1. **注册 / 健康检查时探 `/setup`，持久化能力快照**：把 `supported_prompts` / `supported_trackers` / `is_interactive` / `supported_geometric_outputs` 落进 `health_meta` 或 `MLBackend` 新列（取一种，倾向 health_meta 复用现有缓存通道，见 [ml_client.py:107 health_meta()](../apps/api/app/services/ml_client.py)）。
-2. **`is_interactive` 改为派生 / 对账**：以 `/setup.is_interactive` 为真值，不再纯手填（手填可保留为覆盖，但默认对齐 backend 自报）。
-3. **modality 派生而非手填**：`supported_trackers` 非空 ⇒ 支持 video；`supported_prompts` 非空 ⇒ 支持 image。不新增手填 modality 列。
-4. **绑定按 data_type 校验**：`PATCH /projects/{id}` 绑定 backend 时，校验 backend 能力覆盖项目 `data_type`（视频项目不能绑只支持图片的 backend）；wizard `Step4Ai` 按模态过滤推荐。
-5. **注册表单收敛**：表单收到 `url/auth` 即可；探测后**只读展示**检测到的能力，前端不同显示由持久化能力驱动，而非另一份手填配置（[Step4Ai.tsx](../apps/web/src/components/projects/steps/Step4Ai.tsx)、[MlBackendFormModal.tsx](../apps/web/src/components/projects/MlBackendFormModal.tsx)）。
-
-**边界**：不动 `/predict` 协议本身；不引入 backend 端 modality 字段（modality 是平台从能力派生的视图概念）。
-
-**验收**：注册视频 backend 后平台能正确识别其模态；视频项目绑只支持图片的 backend 被拒；`is_interactive` 与 backend 自报一致。
+> 已落地，详见 [CHANGELOG v0.10.37](../CHANGELOG.md) / [v0.10.37 计划](../docs/plans/2026-05-22-v0.10.37-ml-backend-capability-persistence.md)。后两阶段的设计前提（保留供参考）：
+>
+> - `check_health` 探 `/setup` 把能力快照（`supported_prompts`/`supported_trackers`/`supported_text_outputs`/`supported_geometric_outputs` + 派生 `modalities`）落进 `health_meta["capabilities"]`（无迁移）；`services/ml_capabilities.derive_modalities` 是模态派生的单一真值（`supported_prompts⇒image`、`supported_trackers⇒video`）。
+> - `is_interactive` 改派生对账（以 backend `/setup` 自报为真值，注册表单不再手填）。
+> - `PATCH /projects/{id}` 绑定按 `data_type` 校验（不兼容 422、探测失败 fail-open）；`Step4Ai` wizard 按模态标注。
+>
+> **后两阶段直接消费 `health_meta["capabilities"]` 与 `derive_modalities`，不必再实时拉 `/setup`。**
 
 ---
 
@@ -79,7 +74,7 @@
 ## 依赖顺序
 
 ```
-阶段 1 能力协商落库 + 模态派生   ← 前置（后两阶段都依赖可靠的模态识别）
+阶段 1 能力协商落库 + 模态派生   ← 前置（v0.10.37 落地；后两阶段都依赖可靠的模态识别）
         ↓
 阶段 2 ai-pre 模态化重设计（模态路由 + 多 backend + 统一 job 视图层）
         ↓
