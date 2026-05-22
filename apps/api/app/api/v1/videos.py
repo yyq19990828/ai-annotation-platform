@@ -395,7 +395,11 @@ async def update_video_chapter(
         or payload.frame_step is not None
         or payload.source is not None
     ):
-        base = payload.metadata if payload.metadata is not None else chapter.chapter_metadata
+        base = (
+            payload.metadata
+            if payload.metadata is not None
+            else chapter.chapter_metadata
+        )
         chapter.chapter_metadata = merge_chapter_metadata(
             base,
             frame_step=payload.frame_step,

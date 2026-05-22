@@ -763,7 +763,9 @@ async def remove_member(
 @router.post("/{project_id}/export", status_code=202)
 async def export_project(
     request: Request,
-    format: str = Query("coco", pattern="^(coco|voc|yolo|aap_json|video_json|mot|kitti)$"),
+    format: str = Query(
+        "coco", pattern="^(coco|voc|yolo|aap_json|video_json|mot|kitti)$"
+    ),
     include_attributes: bool = Query(
         True,
         description="是否在导出包中携带 annotation.attributes 与 project.attribute_schema",

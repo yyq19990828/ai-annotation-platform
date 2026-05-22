@@ -120,9 +120,7 @@ class VideoTrackConvertToBboxesResponse(BaseModel):
 
 
 class VideoTrackCompositionRequest(BaseModel):
-    operation: Literal[
-        "aggregate_bboxes", "split_track", "merge_tracks", "join_tracks"
-    ]
+    operation: Literal["aggregate_bboxes", "split_track", "merge_tracks", "join_tracks"]
     annotation_ids: list[UUID] = []
     frame_index: int | None = None
     delete_sources: bool = True
@@ -133,9 +131,7 @@ class VideoTrackCompositionRequest(BaseModel):
 
 
 class VideoTrackCompositionResponse(BaseModel):
-    operation: Literal[
-        "aggregate_bboxes", "split_track", "merge_tracks", "join_tracks"
-    ]
+    operation: Literal["aggregate_bboxes", "split_track", "merge_tracks", "join_tracks"]
     updated_annotations: list["AnnotationOut"] = []
     created_annotations: list["AnnotationOut"] = []
     deleted_annotation_ids: list[UUID] = []

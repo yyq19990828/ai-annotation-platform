@@ -656,9 +656,7 @@ def select_sparse_anchor_rows(
         return rows
     frame_count = max(r["frame_index"] for r in rows) + 1
     anchor_set = set(derive_anchor_frames(frame_count, stride))
-    return [
-        r for r in rows if r["frame_index"] in anchor_set or r.get("is_keyframe")
-    ]
+    return [r for r in rows if r["frame_index"] in anchor_set or r.get("is_keyframe")]
 
 
 def resolve_pts_ms_sparse(

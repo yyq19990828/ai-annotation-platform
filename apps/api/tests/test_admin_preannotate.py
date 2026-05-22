@@ -251,9 +251,7 @@ async def test_preannotate_summary_includes_all_modalities_with_data_type(
     p_video.data_type = "video"
     for proj in (p_img, p_video):
         db_session.add(
-            MLBackend(
-                id=uuid.uuid4(), project_id=proj.id, name="bk", url="http://x/"
-            )
+            MLBackend(id=uuid.uuid4(), project_id=proj.id, name="bk", url="http://x/")
         )
     await db_session.commit()
 

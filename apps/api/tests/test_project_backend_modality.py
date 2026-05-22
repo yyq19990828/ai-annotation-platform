@@ -64,7 +64,9 @@ async def test_check_health_persists_capabilities_and_derives_is_interactive(
         return _VIDEO_SETUP
 
     with (
-        patch("app.services.ml_client.MLBackendClient.health_meta", new=fake_health_meta),
+        patch(
+            "app.services.ml_client.MLBackendClient.health_meta", new=fake_health_meta
+        ),
         patch("app.services.ml_client.MLBackendClient.setup", new=fake_setup),
     ):
         svc = MLBackendService(db_session)

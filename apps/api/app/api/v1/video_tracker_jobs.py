@@ -79,6 +79,7 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=400, detail=f"invalid cursor: {exc}")
 
+
 _ANNOTATORS = (
     UserRole.SUPER_ADMIN,
     UserRole.PROJECT_ADMIN,
@@ -122,9 +123,7 @@ async def list_video_tracker_jobs(
     cursor: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(
-        require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)
-    ),
+    _admin: User = Depends(require_roles(UserRole.PROJECT_ADMIN, UserRole.SUPER_ADMIN)),
 ) -> VideoTrackerJobsResponse:
     """列 video_tracker_jobs 时间线 (created_at DESC + cursor 分页) + 按 status 聚合计数.
 
@@ -219,13 +218,9 @@ async def list_video_tracker_jobs(
         )
 
     last_job = rows[-1][0]
-    next_cursor = (
-        _encode_cursor(last_job.created_at, last_job.id) if has_more else None
-    )
+    next_cursor = _encode_cursor(last_job.created_at, last_job.id) if has_more else None
 
-    return VideoTrackerJobsResponse(
-        items=items, next_cursor=next_cursor, counts=counts
-    )
+    return VideoTrackerJobsResponse(items=items, next_cursor=next_cursor, counts=counts)
 
 
 @router.get("/{job_id}", response_model=VideoTrackerJobOut)

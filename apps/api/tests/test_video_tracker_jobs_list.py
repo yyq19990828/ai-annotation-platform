@@ -17,7 +17,9 @@ def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _make_video_task(db: AsyncSession, owner_id: uuid.UUID) -> tuple[Task, DatasetItem]:
+async def _make_video_task(
+    db: AsyncSession, owner_id: uuid.UUID
+) -> tuple[Task, DatasetItem]:
     suffix = uuid.uuid4().hex[:6]
     project = Project(
         display_id=f"P-VTL-{suffix}",
@@ -97,9 +99,7 @@ async def _make_job(
 
 async def test_list_empty(httpx_client, super_admin):
     _, token = super_admin
-    res = await httpx_client.get(
-        "/api/v1/video-tracker-jobs", headers=_bearer(token)
-    )
+    res = await httpx_client.get("/api/v1/video-tracker-jobs", headers=_bearer(token))
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["items"] == []
@@ -115,20 +115,28 @@ async def test_list_empty(httpx_client, super_admin):
 
 async def test_list_requires_admin(httpx_client, annotator):
     _, token = annotator
-    res = await httpx_client.get(
-        "/api/v1/video-tracker-jobs", headers=_bearer(token)
-    )
+    res = await httpx_client.get("/api/v1/video-tracker-jobs", headers=_bearer(token))
     assert res.status_code == 403
 
 
 async def test_counts_and_status_filter(httpx_client_bound, super_admin, db_session):
     user, token = super_admin
     task, item = await _make_video_task(db_session, user.id)
-    await _make_job(db_session, task, item, user.id, status=VideoTrackerJobStatus.QUEUED.value)
-    await _make_job(db_session, task, item, user.id, status=VideoTrackerJobStatus.RUNNING.value)
-    await _make_job(db_session, task, item, user.id, status=VideoTrackerJobStatus.RUNNING.value)
-    await _make_job(db_session, task, item, user.id, status=VideoTrackerJobStatus.COMPLETED.value)
-    await _make_job(db_session, task, item, user.id, status=VideoTrackerJobStatus.FAILED.value)
+    await _make_job(
+        db_session, task, item, user.id, status=VideoTrackerJobStatus.QUEUED.value
+    )
+    await _make_job(
+        db_session, task, item, user.id, status=VideoTrackerJobStatus.RUNNING.value
+    )
+    await _make_job(
+        db_session, task, item, user.id, status=VideoTrackerJobStatus.RUNNING.value
+    )
+    await _make_job(
+        db_session, task, item, user.id, status=VideoTrackerJobStatus.COMPLETED.value
+    )
+    await _make_job(
+        db_session, task, item, user.id, status=VideoTrackerJobStatus.FAILED.value
+    )
     await db_session.commit()
 
     res = await httpx_client_bound.get(
@@ -156,12 +164,18 @@ async def test_counts_and_status_filter(httpx_client_bound, super_admin, db_sess
     assert body["counts"]["completed"] == 1  # counts 忽略 status 过滤
 
 
-async def test_project_and_model_key_filter(httpx_client_bound, super_admin, db_session):
+async def test_project_and_model_key_filter(
+    httpx_client_bound, super_admin, db_session
+):
     user, token = super_admin
     task_a, item_a = await _make_video_task(db_session, user.id)
     task_b, item_b = await _make_video_task(db_session, user.id)
-    await _make_job(db_session, task_a, item_a, user.id, status="completed", model_key="sam2_video")
-    await _make_job(db_session, task_b, item_b, user.id, status="completed", model_key="sam3_video")
+    await _make_job(
+        db_session, task_a, item_a, user.id, status="completed", model_key="sam2_video"
+    )
+    await _make_job(
+        db_session, task_b, item_b, user.id, status="completed", model_key="sam3_video"
+    )
     await db_session.commit()
 
     res = await httpx_client_bound.get(

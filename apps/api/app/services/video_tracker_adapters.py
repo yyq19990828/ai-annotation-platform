@@ -34,7 +34,9 @@ class TrackerContext:
     source_geometry: dict
     task_data: dict
     ml_backend: "MLBackend | None" = None
-    sam_variant: str | None = None  # v0.10.36 · 透传到 backend /predict video_tracker 分支
+    sam_variant: str | None = (
+        None  # v0.10.36 · 透传到 backend /predict video_tracker 分支
+    )
 
 
 class TrackerAdapter(Protocol):

@@ -439,7 +439,9 @@ async def test_run_batch_merges_params_into_context(
 
     import sqlalchemy.ext.asyncio as sa_async
 
-    monkeypatch.setattr(sa_async, "create_async_engine", lambda *a, **k: _PassThroughEngine())
+    monkeypatch.setattr(
+        sa_async, "create_async_engine", lambda *a, **k: _PassThroughEngine()
+    )
     monkeypatch.setattr(sa_async, "async_sessionmaker", _PassThroughSessionFactory)
 
     await worker_tasks._run_batch(

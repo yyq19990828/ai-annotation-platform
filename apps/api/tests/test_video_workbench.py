@@ -1998,8 +1998,7 @@ async def test_video_track_composition_join_rejects_overlap_and_mixed_classes(
     )
     assert mixed_resp.status_code == 400
     assert (
-        mixed_resp.json()["detail"]
-        == "join_tracks requires tracks with the same class"
+        mixed_resp.json()["detail"] == "join_tracks requires tracks with the same class"
     )
 
 

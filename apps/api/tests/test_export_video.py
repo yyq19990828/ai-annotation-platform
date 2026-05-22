@@ -15,12 +15,18 @@ from app.services.export_video import (
 )
 
 
-def _track(track_id: str, keyframes: list[tuple[int, float, float, float, float]], outside=None) -> dict:
+def _track(
+    track_id: str, keyframes: list[tuple[int, float, float, float, float]], outside=None
+) -> dict:
     return {
         "type": "video_track",
         "track_id": track_id,
         "keyframes": [
-            {"frame_index": f, "bbox": {"x": x, "y": y, "w": w, "h": h}, "source": "manual"}
+            {
+                "frame_index": f,
+                "bbox": {"x": x, "y": y, "w": w, "h": h},
+                "source": "manual",
+            }
             for (f, x, y, w, h) in keyframes
         ],
         "outside": outside or [],

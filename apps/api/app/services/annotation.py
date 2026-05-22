@@ -538,9 +538,7 @@ class AnnotationService:
                     None,
                 )
                 if not exact or frame_is_outside(geometry, frame_index):
-                    raise ValueError(
-                        "frame split requires an exact visible keyframe"
-                    )
+                    raise ValueError("frame split requires an exact visible keyframe")
                 frames = [
                     {
                         "frame_index": frame_index,

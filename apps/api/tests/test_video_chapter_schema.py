@@ -92,9 +92,7 @@ def test_merge_writes_keys_into_empty_base():
 
 
 def test_merge_preserves_unrelated_keys():
-    merged = merge_chapter_metadata(
-        {"note": "x"}, frame_step=2, source="manual"
-    )
+    merged = merge_chapter_metadata({"note": "x"}, frame_step=2, source="manual")
     assert merged == {"note": "x", "frame_step": 2, "source": "manual"}
 
 

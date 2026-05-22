@@ -637,9 +637,7 @@ class ExportService:
             if is_video:
                 media_type = "video"
                 item = (
-                    dataset_items.get(t.dataset_item_id)
-                    if t.dataset_item_id
-                    else None
+                    dataset_items.get(t.dataset_item_id) if t.dataset_item_id else None
                 )
                 vmeta = _video_metadata(item)
                 video_block = {
