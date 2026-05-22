@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-21
+last_reviewed: 2026-05-22
 ---
 
 # 环境变量参考
@@ -157,6 +157,10 @@ last_reviewed: 2026-05-21
 | `MODEL_POOL_BUILD_TIMEOUT` | `30` | v0.10.23 · pool 满 + 并发 miss 时排队等待显存的超时 (秒), 超时返回 503 "显存繁忙". |
 | `PREFETCH_SAM_VARIANTS` | `tiny,small,base_plus,large` | v0.10.23 · entrypoint 启动时额外预拉的变体 checkpoint (主变体之外). pool 能服务多变体, 但只有这里声明 (+ 主变体) 的 checkpoint 会落盘; 运行期请求未预拉的变体会 503. 逗号分隔. 默认全量, 让 pool 任意切换不踩缺失; 磁盘紧张时裁剪 (大致 tiny~150M/small~180M/base_plus~320M/large~900M, SwinB~940M). |
 | `PREFETCH_DINO_VARIANTS` | `T,B` | — |
+| `VIDEO_MODEL_POOL_CAP` | `1` | v0.10.35 §B · sam2_video tracker 独立显存池 (与图片池预算分离, 互不驱逐). 同容器内并存的 video 变体上限 (LRU); 默认 1. |
+| `VIDEO_MODEL_POOL_BUILD_TIMEOUT` | `60` | video 池满 + 并发 miss 排队等显存的超时 (秒), 超时 503; video build 比图片慢, 默认 60. |
+| `VIDEO_TRACKER_MAX_WINDOW_FRAMES` | `300` | 单次 init_state 一次性加载的最大帧数 (安全上限, 防超长窗口灌爆显存); 超此值的窗口拒绝. |
+| `VIDEO_IDLE_UNLOAD_SECONDS` | `600` | video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时); <=0 关闭. |
 
 ## SAM 3 ML Backend (v0.10.0+, GPU profile gpu-sam3)
 
