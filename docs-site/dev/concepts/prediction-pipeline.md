@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-22
 ---
 
 # 预标注流水线（Prediction Pipeline）
@@ -104,10 +104,56 @@ v0.10.17 起 `predictions.tool_unit_id String(30)` 列必填:
 
 详见 [Docker rebuild vs restart](../troubleshooting/docker-rebuild-vs-restart)。
 
+## 能力协商与模态路由（v0.10.37 / v0.10.38）
+
+### 能力快照落库（v0.10.37）
+
+`check_health`（`apps/api/app/services/ml_backend.py`）在拉完 `/health` 后 best-effort 探一次 backend `/setup`，调 `extract_capabilities`（`apps/api/app/services/ml_capabilities.py`）把能力快照写进 `ml_backends.health_meta["capabilities"]`：
+
+| 字段 | 来源 | 含义 |
+|---|---|---|
+| `supported_prompts` | `/setup` 直传 | 支持的图像提示类型（text/point/bbox/exemplar 等）|
+| `supported_trackers` | `/setup` 直传 | 支持的视频追踪器（如 `sam2_video`）|
+| `modalities` | `derive_modalities()` 派生 | `supported_prompts` 非空 → `image`；`supported_trackers` 非空 → `video` |
+| `is_interactive` | `/setup.is_interactive` | 健康检查时回写，不再手填 |
+
+`health_meta` 字段类型为 `HealthMeta(extra="allow")`，无需 alembic 迁移。探测失败时静默跳过，不影响健康检查结果（fail-open）。
+
+### 绑定时模态校验（v0.10.37）
+
+`PATCH /projects/{id}` 绑定 backend 时（`apps/api/app/api/v1/projects.py::_check_backend_modality_compat`），实时探 `/setup` 派生模态，与项目 `data_type` 不兼容返回 422。探测失败则 fail-open 放行，mismatch 留到 predict 时暴露。
+
+### 前端按 data_type 模态分流（v0.10.38）
+
+`/ai-pre` 执行页按项目 `data_type` 在前端分流，不再统一进入批量预标流水线：
+
+| `data_type` | `/ai-pre` 行为 |
+|---|---|
+| `image` | 文本批量预标面板 → 走本页描述的 `batch_predict` 流水线 |
+| `video` | 引导卡片（`VideoPreannotateGuide`）→ 跳工作台逐轨迹 Shift+T 发起追踪，**不进入批量 predict 流水线** |
+| `lidar` | 占位提示（待实现） |
+
+视频项目的 AI 标注通过工作台 video tracker 发起，走 `video_tracker_jobs` 表而非 `prediction_jobs` 表，历史汇总在 `/ai-pre/jobs?tab=video`。
+
+## 按后端动态参数透传（v0.10.38）
+
+`PreannotateRequest`（`apps/api/app/api/v1/projects.py`）新增 `params: dict | None` 字段，由前端按选中 backend 的 `/setup.params` 用 SchemaForm 渲染并按 backend 记忆（`User.preferences.ai.params_by_backend`）后带上。
+
+Worker（`apps/api/app/workers/tasks.py::batch_predict`）构建 `/predict` context 时：
+
+```python
+# v0.10.38 · 按后端参数面板 (epic 阶段 2): 选中 backend 的 /setup.params 值覆盖项目级兜底.
+if params:
+    context.update({k: v for k, v in params.items() if v is not None})
+```
+
+即 `params` 的非 None 值覆盖项目级 `box_threshold` / `text_threshold` 兜底值。无 `params` 时行为与 v0.10.37 前完全一致，状态机本身不变。
+
 ## 代码索引
 
 - 模型：`apps/api/app/db/models/prediction_job.py`
 - Worker：`apps/api/app/workers/tasks.py::batch_predict`
-- 端点：`apps/api/app/api/v1/predictions.py`
+- 端点：`apps/api/app/api/v1/predictions.py`（结果查询）、`apps/api/app/api/v1/projects.py::trigger_preannotation`（触发）
+- 能力协商：`apps/api/app/services/ml_capabilities.py`（`extract_capabilities` / `derive_modalities`）
 - 前端：`apps/web/src/pages/AIPreAnnotate/`、`hooks/useGlobalPreannotationJobs.ts`
 - 迁移：`apps/api/alembic/versions/0052_*.py`
