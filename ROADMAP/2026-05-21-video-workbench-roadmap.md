@@ -46,40 +46,27 @@
 - 扩 `video_track.geometry.kind` → `polygon | polyline | mask`，旧 bbox track 缺省兼容；按周长 / 长度参数化插值；mask track 依赖 canvas / bitmap 能力；同步 `docs-site/dev/reference/` 与导出协议。
 - **体量大、依赖点对应插值**，排在轨迹基础能力之后；DAVIS mask 导出（Phase 4.5）依赖此项。
 
-### 2.11 采样下 propagate「N 帧」单位对齐导航网格（**v0.10.35 落地**，前端）
-- **背景**：v0.10.29 起 `←/→` 在采样开启时按**网格格子**步进（`seekGrid`），但两个 propagate 对话框的「N 帧」仍按**源帧**算（`VideoTrackerPropagateDialog` 预设 10/30/60 帧 = 源帧；`VideoKeyframesPropagateDialog` `count` = 源帧）。step=10 时「30 帧」只覆盖 3 个格子，与「按 3 次 →」的心智割裂；AI 传播还会把 keyframe 写在用户导航不到的 off-grid 源帧上。
-- **底层不动（D2）**：tracker / 插值仍逐源帧算、`frame_index` 仍存源帧、导出仍按网格重编号——只改**表现层**：采样开启时两个对话框的「N」改用网格格子为单位（内部乘 `step` 还原源帧范围喂后端），range 提示同时显示网格序号；可选把写回 keyframe 吸附网格。
-- **只回填网格帧（v0.10.35 落地，后端）**：tracker 仍逐源帧跑 + 跨窗续追，但 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧（off-grid 帧丢弃），编辑器关键帧与导航/导出网格一致，避免堆满够不到的关键帧。
-- 详见 [v0.10.35 计划](../docs/plans/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md) §A。
+### 2.11 采样下 propagate「N 帧」单位对齐导航网格（**v0.10.35 落地**）
+- 已落地（设计前提保留供后续 Phase 参考）：采样开启时 propagate 对话框「N」改以网格格子为单位、tracker 只回填 `frame_index % step == 0` 的网格帧（底层仍逐源帧算、`frame_index` 存源帧，D2）。详见 [CHANGELOG v0.10.35](../CHANGELOG.md) / [v0.10.35 计划](../docs/plans/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md) §A。
 
 ---
 
 ## Phase 3 · 真实 tracker / 自动标注
 
-### 3.1 真实 SAM 2/3 video backend（原 C.6 P0，**P0 体量大**；gsam2 首发 **v0.10.35**）
-- 把 v0.9.36 的 `sam2_video` / `sam3_video` 协议桥接到真实模型服务（grounded-sam2 / sam3-backend 实现 `/predict context.type="video_tracker"`）：
-  - 输入：`task.file_path` + `from_frame/to_frame` + `direction` + `prompt` + `source_geometry`；
-  - 输出：逐帧 `{frame_index, geometry, confidence, outside}`（frame_index 为源帧号，D2）。
-- GPU profile 覆盖 30s@30fps / 10min / 长 segment 分窗；OOM / timeout / backend 5xx 在 `video_tracker_jobs.error_message` 可诊断。
-- **不做**：不把 predictor 加进 `apps/api`（遵循 [ADR-0012](../docs/adr/0012-sam-backend-as-independent-gpu-service.md)）。
+### 3.1 真实 SAM 2/3 video backend（原 C.6 P0）
 
-**复用边界（2026-05-22 调研结论）**：
-- ✅ **协议 + 平台管线 100% 复用**：同一 `POST /predict`（`context.type="video_tracker"` 分流）、同一 `MLBackendClient`、同一 1:N backend 注册（v0.10.3）；`video_tracker_jobs` + [`video_tracker_runner.py`](../apps/api/app/services/video_tracker_runner.py) 分窗调度 + Redis 事件 + 低置信度自动 `outside` + Mock adapter 全就位。平台侧基本不动。
-- ❌ **backend 推理代码要新写**：现有两个 backend 收到 `video_tracker` 都 422。SAM2 视频要用 **`build_sam2_video_predictor` + `SAM2VideoPredictor`**（带跨帧 memory bank 的**有状态**预测），**不是循环调图片接口**；不复用 `EmbeddingCache`（那是 `set_image` 图片专用桶）。
-- **跨窗续追（关键正确性）**：现 runner 每个窗都用**原始** `source_geometry` 重新起追（[runner:270](../apps/api/app/services/video_tracker_runner.py)），mock 无所谓但真实 video 会让窗 2..N 全从首帧框起追 → 错。v0.10.35 先走**无状态近似**：runner 把上一窗末帧 geometry 作为下一窗 seed 续追（实现简单、容错好、边界略漂）；后续再上 session/context-token 让 backend 跨窗保状态。
-- **显存（已拍板）**：video predictor 与图片模型**权重独立**（两份对象 + 视频会话 memory bank，即便共用同一 checkpoint / Hiera encoder）。**先在 gsam2 同容器内放独立池 / 独立显存预算**（不塞进按 `(sam,dino)` 分桶的图片 `ModelPool`），与图片池**并存**、互不驱逐；按 job 结束释放会话状态（不复用图片 idle watcher）。显存吃紧时再退到"共享预算、互相驱逐、同时只留一个"。
-- **观测（独立池的应有之义）**：video 独立池**必须在 `/health` 暴露**（video 池显存 / 已加载 / 会话数，与图片池分列）+ `/metrics` 加 `task_type` 维度，否则模型市场观测只看到显存被占却不知是谁占。这半部分并进 v0.10.35 §B；模型市场前端的 image/video 分类 + 视频追踪任务聚合监控页见下文 **v0.10.36** 章节。
-- **首发范围**：v0.10.35 只做 gsam2 `sam2_video`；`sam3_video` 待 SAM3 video 能力随后跟进（新约束同上）。详见 [v0.10.35 计划](../docs/plans/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md) §B。
+> **gsam2 `sam2_video` 已于 v0.10.35/36 落地**（独立显存池 + 跨窗末帧续追 + `/health.video_pool` 观测 + `task_type` 指标 + 模型市场 image/video 模态拆分 + sam_variant 选择）。详见 [CHANGELOG v0.10.35/36](../CHANGELOG.md)、[v0.10.35 计划](../docs/plans/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md)、[ml-backend-protocol.md](../docs-site/dev/reference/ml-backend-protocol.md) `type=video_tracker`。
+
+**遗留待续**：
+- **`sam3_video` 真实 backend**：sam3-backend 尚未实现 `/predict context.type="video_tracker"`（收到即 422），待 SAM3 video 能力跟进，约束同 sam2（独立池 / 不入 `apps/api` / 跨窗续追）。
+- **跨窗有状态续追**：当前是无状态近似（上一窗末帧 geometry 作下一窗 seed，边界略漂）；后续可上 session/context-token 让 backend 跨窗保 memory bank 状态。
 
 ### 3.2 Tracker Registry UI（原 R23）
 - 管理员侧 tracker adapter 注册 / 启停 / 显示当前 backend；与 v0.10.3 ML Backend 1:N 管理形态一致。
 - **现状（2026-05-22）**：tracker 模型尺寸（sam_variant）选择已于 v0.10.36 落地（propagate 对话框 SAM 尺寸下拉 → payload → adapter context → backend video 池）；图片工作台的悬浮 AI 面板对视频任务仍**显式禁用**（[`WorkbenchShell.tsx`](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `aiPopover.open = aiPopoverOpen && !isVideoTask`，**by design**），视频 AI 入口是 `VideoTrackerPropagateDialog`（Shift+T）。
 
-### 3.3 图片 / 视频 tracker 协议统一收口（原 I20.4，跨模态；v0.11.0）
-- 视频侧 `/video-tracker-jobs` 协议与图片 setup 收口为同一 `supported_capabilities` 数组；放 v0.11.0 协议统一窗口做。
-- **现状痛点（2026-05-22 调研）**：图片/视频**完全共用**单表 `MLBackend` + 单套注册/绑定 UI（`MlBackendsSection` / wizard `Step4Ai`），`Project.ml_backend_id` 单值绑定，平台**不区分模态**——`MLBackend` 无 modality 字段、绑定时不校验已有的 `Project.data_type`；`sam2_video`/`sam3_video` 是**写死在** [`video_tracker_adapters.py` `_REGISTRY`](../apps/api/app/services/video_tracker_adapters.py)，backend 无法自报支持哪些 tracker。→ 视频项目可能误绑只支持图片的 backend；用户不知道 backend 支持哪些 tracker；加新 tracker 要改代码发版。
-- **统一目标**：backend `/setup` 自报 `supported_capabilities`（含 `{type:"video_tracker", model_key, media_type}`）；平台动态读取替代写死 `_REGISTRY`；注册/绑定按 `data_type` 过滤校验；wizard 按模态推荐。
-- **演进路径（关键）**：**不在 v0.10.35 重构注册流程**（会与本统一窗口撞车、提前固化错误抽象）；v0.10.35 §B.3 先让 backend `/setup` 声明 `supported_trackers`，是本统一收口的**第一块砖**，平台动态消费 + 模态校验 + wizard 过滤留到 v0.11.0。
+### 3.3 图片 / 视频 tracker 协议统一收口（原 I20.4，跨模态）
+- **已抽为独立 epic**：[ML Backend 能力协商 + AI 预标注模态化重设计](2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1。要点：backend `/setup` 自报 `supported_capabilities`、平台动态读取替代写死 `_REGISTRY`、注册/绑定按 `data_type` 过滤校验、`is_interactive`/modality 从能力派生。v0.10.35 §B.3 的 `supported_trackers` 声明是「第一块砖」，落库 + 消费在该 epic 做。
 
 ---
 
@@ -124,7 +111,7 @@
 |---|---|---|---|---|
 | 1 ✅ | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1 | v0.10.29 落地；WebCodecs demux 接入延后 |
 | 2 ✅ | 轨迹工具对齐 CVAT | R16 / R9(暂缓) + 新增 2.1/2.6/2.7/2.8 | P0/P1 | 2.1–2.8 v0.10.30 落地；**2.9 多几何 track 延后** |
-| 3 | 真实 tracker backend | C.6 P0 / R23 / I20.4 | P0(体量大) | 遵循 ADR-0012 不入 apps/api |
+| 3 ◑ | 真实 tracker backend | C.6 P0 / R23 / I20.4 | P0 | 3.1 gsam2 `sam2_video` v0.10.35/36 落地；**sam3_video / 3.2 Registry UI / 3.3 协议统一(→独立 epic) 待续** |
 | 4 ◑ | 视频导出（D3） | R22 / C.6 P2 / §A AAP video_track 导入 | P1 | 4.1+4.2 导出端+4.3+4.4+4.7 v0.10.31 落地；**4.2 导入端 / 4.5 DAVIS(依赖 2.9) / 4.6 Segment 延后** |
 | 5 | 长视频协同 overlap | R11 / R21 / C.6 P1 segment | P1 | 不做 OT/CRDT |
 | 6 | Track 质量评估 | R24 / C.6 P2 worker | P2 | 与 L15 打通 |
