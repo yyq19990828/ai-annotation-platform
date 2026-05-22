@@ -138,7 +138,18 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 > **`type=exemplar`**（v0.10.0 新增，仅 SAM 3 支持）：取图中已有的一个 bbox 作为视觉示例，由 SAM 3 PCS 一步出全图相似实例的 masks。`bbox` 字段承载 4 坐标（与 `type=bbox` 共用字段，语义靠 `type` 区分）。返回 `result[]` 是多个 `polygonlabels`，`polygonlabels: ["object"]`（前端按当前 active label 批量改写）。apps/api 仅在项目挂了支持 exemplar 的 backend（`/setup.supported_prompts` 含 `exemplar`）时才放行；未挂返回 400。前端 UI 入口（工作台 Shift+拖框）在 v0.10.1 落地。
 
-> **`type=video_tracker`**：v0.9.36 起由 `VideoTrackerJob` worker 使用。平台会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 把长区间分窗，多次调用项目绑定的 connected ML Backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt` 和 `source_geometry`。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside? }`；低于平台阈值的 `confidence` 会被写成 outside prediction range。
+> **`type=video_tracker`**：v0.9.36 起由 `VideoTrackerJob` worker 使用，v0.10.35 起 gsam2 backend 接通真实 `sam2_video`。平台会按 `VIDEO_TRACKER_WINDOW_SIZE_FRAMES` 把长区间分窗，多次调用项目绑定的 connected ML Backend。请求 `task.file_path` 是视频 signed URL；`context` 包含 `model_key`（`sam2_video` / `sam3_video`）、`job_id`、`dataset_item_id`、`annotation_id`、`from_frame`、`to_frame`、`direction`、`prompt` 和 `source_geometry`。响应 `result[]` 每项为 `{ frame_index, geometry, confidence?, outside? }`；低于平台阈值的 `confidence` 会被写成 outside prediction range。
+>
+> v0.10.35 落地细节：
+> - **真实推理（gsam2）**：backend 用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口），逐帧 mask → 外接 bbox → 归一化坐标。视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`。`confidence` 非空 mask 记 1.0、空 mask（outside）记 0.0。
+> - **独立显存池**：video predictor 用独立的 `VideoPool`（按 `sam_variant` 分桶），与图片 `ModelPool` 显存预算分离、互不驱逐，按 job 结束释放会话状态。遵循 [ADR-0012](../adr/0012-sam-backend-as-independent-gpu-service)，predictor 不入 `apps/api`。
+> - **`sam_variant`**：当前请求链路未传，backend 用默认 tiny；变体选择留待后续（见视频工作台 roadmap Phase 3.2 / v0.10.36）。
+> - **跨窗续追（平台侧）**：`video_tracker_runner.py` 窗 1 用原始 keyframe seed，后续窗用上一窗末帧（非 outside）geometry 作 `source_geometry` 续追，避免每窗从首帧框重新起追导致目标漂移。
+> - **只回填网格帧（平台侧）**：采样开启时 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧（tracker 仍逐源帧跑，off-grid 帧丢弃），与导航 / 导出网格一致。
+>
+> **能力声明（`/setup`）**：支持 video tracker 的 backend 在 `/setup` 返回 `supported_trackers: ["sam2_video", ...]`（v0.10.35 起，平台动态消费 + 模态校验留 v0.11.0 协议统一窗口，见 roadmap Phase 3.3）。
+>
+> **观测（`/health` + `/metrics`）**：开了 video 独立池的 backend，`/health` 返回 `video_pool` 区块（`{cap, loaded_variants, active_sessions, idle_seconds}`，与图片池 `pool` / `gpu_info.image_pool_loaded_variants` 分列）；`/metrics` 增 `video_tracker_frames_processed_total{sam_variant}` / `video_tracker_latency_seconds{sam_variant}`，并对推理指标加 `task_type="image|video"` 维度。模型市场观测页据此按图像 / 视频分类（v0.10.36）。
 
 > **`output: "box" | "mask" | "both"`**（v0.9.4 phase 2，仅 `type=text` 生效）：
 > - `box`：仅 GroundingDINO 出框，跳过 SAM image embedding + mask 推理 + cv2/shapely 简化。返回 `result[]` 全为 `rectanglelabels`，单图 ~50-100ms（4060 / tiny），相比 mask 全链路 200-500ms 快 50-80%。**适用 image-det 项目**：标注员要的就是 bbox annotation。

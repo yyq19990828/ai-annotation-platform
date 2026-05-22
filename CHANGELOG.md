@@ -22,6 +22,22 @@
 
 ## 最新版本
 
+## [0.10.35] - 2026-05-22
+
+> **真实 SAM 2 video tracker + 采样网格对齐。** gsam2 backend 接通真实 `sam2_video` 逐帧追踪（独立显存池、不影响图片推理），跨窗用上一窗末帧续追；采样开启时 propagate 的「N」改用网格格子为单位、只回填网格帧；工作台内补 tracker 任务 toast 通知。遵循 [ADR-0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md)：predictor 不入 `apps/api`。
+
+### Added
+
+- **真实 `sam2_video` video tracker** (gsam2 backend [video_predictor.py](apps/grounded-sam2-backend/video_predictor.py) · [video_pool.py](apps/grounded-sam2-backend/video_pool.py) · [main.py](apps/grounded-sam2-backend/main.py)): `/predict` 新增 `context.type="video_tracker"` 分支，用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口）逐帧输出 `{frame_index, geometry, confidence, outside}`；视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`，无新依赖。video predictor 用**独立显存池** `VideoPool`（按 `sam_variant` 分桶，与图片 `ModelPool` 预算分离、互不驱逐，按 job 释放会话状态）。
+- **backend 能力声明 + 观测** (gsam2 [main.py](apps/grounded-sam2-backend/main.py) · [observability.py](apps/grounded-sam2-backend/observability.py)): `/setup` 增 `supported_trackers: ["sam2_video"]`；`/health` 增 `video_pool` 区块（显存 / 已加载变体 / 会话数，与图片池分列）；`/metrics` 增 `video_tracker_frames_processed_total{sam_variant}` / `video_tracker_latency_seconds{sam_variant}`。新增 env `VIDEO_MODEL_POOL_CAP` / `VIDEO_MODEL_POOL_BUILD_TIMEOUT` / `VIDEO_TRACKER_MAX_WINDOW_FRAMES` / `VIDEO_IDLE_UNLOAD_SECONDS`。
+- **工作台内 tracker 任务通知** (前端 [useVideoTrackerJobs.ts](apps/web/src/hooks/useVideoTrackerJobs.ts)): AI 传播发起 / 完成 / 失败 / 取消时弹全局 toast；与顶栏「后台任务」铃铛（`video_tracker` 类型，全站持久列表）互补。
+
+### Changed
+
+- **采样下 propagate「N」改用网格格子为单位** (前端 [VideoTrackerPropagateDialog.tsx](apps/web/src/pages/Workbench/stage/VideoTrackerPropagateDialog.tsx) · [VideoKeyframesPropagateDialog.tsx](apps/web/src/pages/Workbench/stage/VideoKeyframesPropagateDialog.tsx)): 采样开启（step>1）时两个对话框的「N」按网格格子计（内部乘 step 还原源帧范围喂后端），range 提示同时显示网格序号；step=1 行为不变。底层仍逐源帧算、`frame_index` 存源帧（D2）。
+- **tracker 只回填网格帧** (后端 [video_tracker_runner.py](apps/api/app/services/video_tracker_runner.py)): tracker 仍逐源帧跑 + 跨窗续追，但 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧，编辑器关键帧与导航 / 导出网格一致。
+- **tracker 跨窗续追** (后端 [video_tracker_runner.py](apps/api/app/services/video_tracker_runner.py)): 窗 1 用原始 keyframe seed，后续窗用上一窗末帧（非 outside）geometry 作 seed 续追，避免每窗从首帧框重新起追导致目标漂移（forward / backward 统一取本窗最后一个非 outside result）。
+
 ## [0.10.34] - 2026-05-22
 
 > **右键菜单推广到全标注类型。** 图片工作台的人工标注现在统一支持右键轻点操作；视频工作台补上单帧 `video_bbox` 右键菜单。右键拖拽平移、图片关键点绘制时的「右键跳过当前节点」和现有快捷键语义都保持不变。
