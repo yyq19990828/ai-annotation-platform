@@ -56,46 +56,48 @@ export function DatasetsSection({ project }: { project: ProjectResponse }) {
         )}
 
         {!isLoading && linked.length > 0 && (
-          <table className={styles.table}>
-            <thead>
-              <tr className={styles.tableRow}>
-                {["数据集", "类型", "原数据集条目", "本项目任务", "关联时间", "操作"].map((h) => (
-                  <th
-                    key={h}
-                    className={styles.tableHeadCell}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {linked.map((d) => (
-                <tr key={d.id} className={styles.tableRow}>
-                  <td className={styles.tableCell}>
-                    <div className={styles.datasetName}>{d.name}</div>
-                    <div className={cn("mono", styles.subtleMono)}>
-                      {d.display_id}
-                    </div>
-                  </td>
-                  <td className={cn(styles.tableCell, styles.mutedCell)}>{d.data_type}</td>
-                  <td className={styles.tableCell}>{d.items_count}</td>
-                  <td className={styles.tableCell}>{d.tasks_in_project}</td>
-                  <td className={cn(styles.tableCell, styles.dateCell)}>
-                    {d.linked_at ? new Date(d.linked_at).toLocaleString() : "—"}
-                  </td>
-                  <td className={styles.tableCell}>
-                    <Button
-                      onClick={() => setUnlinkTarget({ dataset_id: d.id, name: d.name })}
-                      title="取消关联（会清理对应的任务、标注与空批次）"
+          <div className={styles.tableScroller}>
+            <table className={styles.table}>
+              <thead>
+                <tr className={styles.tableRow}>
+                  {["数据集", "类型", "原数据集条目", "本项目任务", "关联时间", "操作"].map((h) => (
+                    <th
+                      key={h}
+                      className={styles.tableHeadCell}
                     >
-                      <Icon name="x" size={12} /> 取消关联
-                    </Button>
-                  </td>
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {linked.map((d) => (
+                  <tr key={d.id} className={styles.tableRow}>
+                    <td className={styles.tableCell}>
+                      <div className={styles.datasetName} title={d.name}>{d.name}</div>
+                      <div className={cn("mono", styles.subtleMono)}>
+                        {d.display_id}
+                      </div>
+                    </td>
+                    <td className={cn(styles.tableCell, styles.mutedCell)}>{d.data_type}</td>
+                    <td className={styles.tableCell}>{d.items_count}</td>
+                    <td className={styles.tableCell}>{d.tasks_in_project}</td>
+                    <td className={cn(styles.tableCell, styles.dateCell)}>
+                      {d.linked_at ? new Date(d.linked_at).toLocaleString() : "—"}
+                    </td>
+                    <td className={cn(styles.tableCell, styles.actionCell)}>
+                      <Button
+                        onClick={() => setUnlinkTarget({ dataset_id: d.id, name: d.name })}
+                        title="取消关联（会清理对应的任务、标注与空批次）"
+                      >
+                        <Icon name="x" size={12} /> 取消关联
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 

@@ -23,8 +23,14 @@
   font-size: 13px;
 }
 
+.tableScroller {
+  width: 100%;
+  overflow-x: auto;
+}
+
 .table {
   width: 100%;
+  min-width: 840px;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -39,19 +45,27 @@
   font-weight: 500;
   color: var(--color-fg-muted);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .tableCell {
   padding: 10px 12px;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .datasetName {
   font-weight: 500;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subtleMono {
   font-size: 11px;
   color: var(--color-fg-subtle);
+  white-space: nowrap;
 }
 
 .mutedCell {
@@ -61,6 +75,10 @@
 .dateCell {
   color: var(--color-fg-muted);
   font-size: 12px;
+}
+
+.actionCell {
+  text-align: right;
 }
 
 .modalIntro {

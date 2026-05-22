@@ -58,54 +58,56 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
           </div>
         )}
         {!isLoading && members.length > 0 && (
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                {["成员", "角色", "加入时间", ""].map((h, i) => (
-                  <th
-                    key={i}
-                    className={cn(
-                      styles.tableHeadCell,
-                      i === 0 && styles.tableHeadCellFirst,
-                      i === 3 && styles.tableHeadCellLast,
-                    )}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((m) => (
-                <tr key={m.id}>
-                  <td className={styles.memberCell}>
-                    <div className={styles.memberIdentity}>
-                      <Avatar initial={m.user_name.slice(0, 1)} size="sm" />
-                      <div>
-                        <div className={styles.memberName}>{m.user_name}</div>
-                        <div className={styles.memberEmail}>{m.user_email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className={styles.tableCell}>
-                    {m.role === "annotator" ? (
-                      <Badge variant="accent">标注员</Badge>
-                    ) : (
-                      <Badge variant="warning">审核员</Badge>
-                    )}
-                  </td>
-                  <td className={cn(styles.tableCell, styles.dateCell)}>
-                    {new Date(m.assigned_at).toLocaleDateString("zh-CN")}
-                  </td>
-                  <td className={styles.actionCell}>
-                    <Button size="sm" variant="ghost" onClick={() => setConfirmRemove(m)}>
-                      <Icon name="x" size={11} />移除
-                    </Button>
-                  </td>
+          <div className={styles.tableScroller}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  {["成员", "角色", "加入时间", ""].map((h, i) => (
+                    <th
+                      key={i}
+                      className={cn(
+                        styles.tableHeadCell,
+                        i === 0 && styles.tableHeadCellFirst,
+                        i === 3 && styles.tableHeadCellLast,
+                      )}
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {members.map((m) => (
+                  <tr key={m.id}>
+                    <td className={styles.memberCell}>
+                      <div className={styles.memberIdentity}>
+                        <Avatar initial={m.user_name.slice(0, 1)} size="sm" />
+                        <div className={styles.memberText}>
+                          <div className={styles.memberName} title={m.user_name}>{m.user_name}</div>
+                          <div className={styles.memberEmail} title={m.user_email}>{m.user_email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className={styles.tableCell}>
+                      {m.role === "annotator" ? (
+                        <Badge variant="accent">标注员</Badge>
+                      ) : (
+                        <Badge variant="warning">审核员</Badge>
+                      )}
+                    </td>
+                    <td className={cn(styles.tableCell, styles.dateCell)}>
+                      {new Date(m.assigned_at).toLocaleDateString("zh-CN")}
+                    </td>
+                    <td className={styles.actionCell}>
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmRemove(m)}>
+                        <Icon name="x" size={11} />移除
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
