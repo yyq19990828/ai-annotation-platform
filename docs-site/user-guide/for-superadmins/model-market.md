@@ -65,13 +65,11 @@ backend 的变体面板拆成两组：
 >
 > 若 backend 的 `/setup.supported_trackers` 为空（不支持视频）或未上报 `video_pool`（旧版本），视频组会降级提示，不影响图像组。
 
-### 视频追踪任务监控（/model-market/video-jobs）
+### 视频追踪任务监控（v0.10.38 起迁至 /ai-pre/jobs）
 
-模型市场顶部「视频追踪任务 →」入口进入聚合监控页：
-
-- 计数卡：queued / running / completed / failed / cancelled。
-- 列表：按状态 / model_key / 项目过滤，cursor 分页；failed 行展开 `error_message` 排查。
-- 数据来自 `GET /video-tracker-jobs`（聚合端点，权限对齐图片侧预标任务历史）。
+> **v0.10.38**：视频追踪任务监控已从模型市场迁出，并入 [`/ai-pre/jobs`](../for-project-admins/ai-preannotate) 的「视频」模态 tab（与图像 `prediction_jobs` 并列，统一 AI 任务历史）。旧链接 `/model-market/video-jobs` 自动跳转到 `/ai-pre/jobs?tab=video`。**模型市场只保留后端 / 显存池健康观测**（上面的模态拆分预热面板），任务（job）历史归 ai-pre。
+>
+> 监控内容不变：计数卡（queued / running / completed / failed / cancelled）+ 按状态 / model_key / 项目过滤的 cursor 分页列表（failed 行展开 `error_message`），数据来自 `GET /video-tracker-jobs`。
 
 ## 新建 / 编辑 Backend
 

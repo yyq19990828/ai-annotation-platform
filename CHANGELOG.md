@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.10.38] - 2026-05-22
+
+> **AI 预标注模态化重设计 + video-jobs 并入（epic 阶段 2 + 3）。** `/ai-pre` 从「图像单后端文本批量预标」升级为模态感知（图像走文本批量预标 / 视频走工作台逐轨迹追踪引导）+ 多 backend 选择 + 按后端动态参数面板；`/ai-pre/jobs` 统一图像/视频两类 AI 任务历史，把 v0.10.36 临时落在 ModelMarket 的视频追踪监控页并入。依赖 v0.10.37（阶段 1）的能力快照 / 模态派生。计划见 [v0.10.38 计划](docs/plans/2026-05-22-v0.10.38-ai-preannotate-modality-redesign.md)。
+
+### Added
+
+- **多 backend 选择 + 按后端参数面板** (前端 [ProjectDetailPanel.tsx](apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx) · 后端 [projects.py](apps/api/app/api/v1/projects.py) · [tasks.py](apps/api/app/workers/tasks.py)): ai-pre 执行页加 backend 选择器（在项目已注册 backend 间选，默认绑定值）+ 复用 `SchemaForm` 按选中 backend 的 `/setup.params` 渲染参数面板，值按 backend 记忆（`User.preferences.ai.params_by_backend`）。`PreannotateRequest` 加 `params`，worker 把 params 合并进 `/predict` context（覆盖项目级阈值兜底，无 params 时行为不变）。取代旧的项目级 `ThresholdRow`（项目默认仍在项目设置 GeneralSection 改）。
+- **视频项目 AI 预标引导卡片** (前端 [VideoPreannotateGuide.tsx](apps/web/src/pages/AIPreAnnotate/components/VideoPreannotateGuide.tsx)): 视频 AI 预标无批量派发语义（追踪在工作台逐轨迹 Shift+T 发起），视频项目进 ai-pre 渲染引导卡片（跳工作台 + 视频 job 历史深链），不误用图像批量面板。
+- **统一 AI 任务历史模态 tab** (前端 [AIPreAnnotateJobsPage.tsx](apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx)): `/ai-pre/jobs` 加「图像 / 视频」模态 tab（`?tab` 同步深链）——图像走 `prediction_jobs`、视频走 `video_tracker_jobs`（复用重构后的 `VideoTrackerJobsPanel`）。
+
+### Changed
+
+- **ai-pre 按 data_type 模态分流** (后端 [admin_preannotate.py](apps/api/app/api/v1/admin_preannotate.py) · 前端 ProjectDetailPanel): 撤回 v0.10.36 的 `data_type="image"` 止血过滤（视频项目重新出现在列表），分流改到前端按 `data_type` 路由（image=文本批量预标 / video=引导卡片 / lidar=占位）。
+- **视频追踪监控并入 ai-pre** (前端 [App.tsx](apps/web/src/App.tsx) · [ModelMarketPage.tsx](apps/web/src/pages/ModelMarket/ModelMarketPage.tsx)): 退役 `/model-market/video-jobs` 路由（301 → `/ai-pre/jobs?tab=video`）+ 删 ModelMarket 入口链接；ModelMarket 只留后端 / 显存池健康观测，AI 任务历史归 ai-pre。
+
 ## [0.10.37] - 2026-05-22
 
 > **ML Backend 能力协商落库 + 模态派生（epic 阶段 1）。** 平台第一次对 backend 的「能力 / 模态」有持久化感知：健康检查时顺带探 `/setup`，把 `supported_prompts`/`supported_trackers`/`is_interactive` 等能力快照落进 `health_meta`，`is_interactive` 改为从 backend 自报派生（不再手填）；项目绑定 backend 时按 `data_type` 校验模态匹配。是 [ML Backend 能力协商 + ai-pre 模态化 epic](ROADMAP/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 的前置基石，后续 ai-pre 模态化（阶段 2）、video-jobs 并入（阶段 3）都依赖本版。计划见 [v0.10.37 计划](docs/plans/2026-05-22-v0.10.37-ml-backend-capability-persistence.md)。
