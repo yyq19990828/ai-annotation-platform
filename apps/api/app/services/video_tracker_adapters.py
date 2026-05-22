@@ -34,6 +34,7 @@ class TrackerContext:
     source_geometry: dict
     task_data: dict
     ml_backend: "MLBackend | None" = None
+    sam_variant: str | None = None  # v0.10.36 · 透传到 backend /predict video_tracker 分支
 
 
 class TrackerAdapter(Protocol):
@@ -101,22 +102,26 @@ class MLBackendVideoTrackerAdapter:
             )
 
         client = MLBackendClient(backend)
+        context: dict = {
+            "type": "video_tracker",
+            "model_key": self.model_key,
+            "job_id": str(ctx.job_id),
+            "task_id": str(ctx.task_id),
+            "project_id": str(ctx.project_id),
+            "dataset_item_id": str(ctx.dataset_item_id),
+            "annotation_id": str(ctx.annotation_id),
+            "from_frame": ctx.from_frame,
+            "to_frame": ctx.to_frame,
+            "direction": ctx.direction,
+            "prompt": ctx.prompt,
+            "source_geometry": ctx.source_geometry,
+        }
+        # v0.10.36 · 仅当显式指定时透传 sam_variant, 缺省让后端回退默认 tiny.
+        if ctx.sam_variant:
+            context["sam_variant"] = ctx.sam_variant
         result = await client.predict_interactive(
             task_data=ctx.task_data,
-            context={
-                "type": "video_tracker",
-                "model_key": self.model_key,
-                "job_id": str(ctx.job_id),
-                "task_id": str(ctx.task_id),
-                "project_id": str(ctx.project_id),
-                "dataset_item_id": str(ctx.dataset_item_id),
-                "annotation_id": str(ctx.annotation_id),
-                "from_frame": ctx.from_frame,
-                "to_frame": ctx.to_frame,
-                "direction": ctx.direction,
-                "prompt": ctx.prompt,
-                "source_geometry": ctx.source_geometry,
-            },
+            context=context,
         )
 
         for item in result.result:

@@ -292,6 +292,7 @@ async def run_tracker_job(
                 source_geometry=last_geometry,
                 task_data=task_data,
                 ml_backend=backend,
+                sam_variant=(job.prompt or {}).get("sam_variant"),  # v0.10.36
             )
             async for result in adapter.propagate(ctx):
                 await db.refresh(job)

@@ -18,6 +18,7 @@ class VideoTrackerPropagateRequest(BaseModel):
     direction: TrackerDirection = "forward"
     segment_id: UUID | None = None
     prompt: dict[str, Any] = Field(default_factory=dict)
+    sam_variant: str | None = None  # v0.10.36 · 透传到 adapter context (缺省后端回退 tiny)
 
     @field_validator("prompt")
     @classmethod

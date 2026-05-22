@@ -164,7 +164,11 @@ async def create_tracker_job(
         direction=payload.direction,
         from_frame=payload.from_frame,
         to_frame=payload.to_frame,
-        prompt=payload.prompt,
+        # v0.10.36 · sam_variant 存进自由 JSONB prompt (无需 DB 迁移).
+        prompt={
+            **(payload.prompt or {}),
+            **({"sam_variant": payload.sam_variant} if payload.sam_variant else {}),
+        },
         event_channel="pending",
     )
     db.add(row)

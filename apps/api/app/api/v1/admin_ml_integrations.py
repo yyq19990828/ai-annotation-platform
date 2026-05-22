@@ -303,8 +303,10 @@ class ObserveTarget(BaseModel):
     gpu_info: dict | None = None
     model_version: str | None = None
     pool: dict | None = None
+    video_pool: dict | None = None  # v0.10.36 · 视频追踪显存池
     cache: dict | None = None
     variant_catalog: VariantCatalog | None = None
+    supported_trackers: list[str] = []  # v0.10.36 · /setup 暴露的 video tracker model_key 列表
     supports_variants: bool = False
     registered: bool = False
     registered_label: str | None = None
@@ -374,9 +376,11 @@ async def _probe_one(client: httpx.AsyncClient, base: str) -> ObserveTarget:
         gpu_info=health.get("gpu_info"),
         model_version=health.get("model_version"),
         pool=health.get("pool"),
+        video_pool=health.get("video_pool"),  # v0.10.36
         cache=health.get("cache"),
         variant_catalog=catalog,
         supports_variants=catalog is not None,
+        supported_trackers=list((setup or {}).get("supported_trackers") or []),  # v0.10.36
     )
 
 

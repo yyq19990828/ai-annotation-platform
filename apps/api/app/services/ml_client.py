@@ -123,9 +123,18 @@ class MLBackendClient:
                 # v0.9.11 · 加 host (PerfHud 容器 CPU/RAM); gpu_info/cache/model_version 保留
                 # v0.10.26 · 加 pool (loaded_variants / cap / per_variant_lru_ts),
                 # 供模型市场变体面板展示 (backend 无 pool 字段时静默跳过).
+                # v0.10.36 · 加 video_pool (cap / loaded_variants / active_sessions / idle_seconds),
+                # 供视频追踪显存池观测 (backend 无该字段时静默跳过).
                 meta = {
                     k: data[k]
-                    for k in ("gpu_info", "host", "cache", "model_version", "pool")
+                    for k in (
+                        "gpu_info",
+                        "host",
+                        "cache",
+                        "model_version",
+                        "pool",
+                        "video_pool",
+                    )
                     if k in data
                 }
                 return True, meta or None
