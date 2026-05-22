@@ -31,6 +31,15 @@ const MODELS: Array<{ value: string; label: string; note?: string }> = [
   { value: "sam3_video", label: "sam3_video", note: "需项目绑定 ML backend" },
 ];
 
+// v0.10.36: SAM 模型尺寸 (tracker 不用 DINO, 只选 SAM 尺寸)。空 = 默认/tiny。
+const SAM_VARIANTS: Array<{ value: string; label: string }> = [
+  { value: "", label: "默认 (tiny)" },
+  { value: "tiny", label: "tiny" },
+  { value: "small", label: "small" },
+  { value: "base_plus", label: "base_plus" },
+  { value: "large", label: "large" },
+];
+
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -60,6 +69,8 @@ export function VideoTrackerPropagateDialog({
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
   const [modelKey, setModelKey] = useState<string>("mock_bbox");
+  // v0.10.36: SAM 模型尺寸; 空 = 默认 (tiny)。
+  const [samVariant, setSamVariant] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,6 +78,7 @@ export function VideoTrackerPropagateDialog({
       setDirection("forward");
       setRangePreset("30");
       setModelKey("mock_bbox");
+      setSamVariant("");
       setError(null);
     }
   }, [open]);
@@ -112,6 +124,7 @@ export function VideoTrackerPropagateDialog({
         to_frame: range.to,
         model_key: modelKey,
         direction,
+        sam_variant: samVariant || undefined,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "提交失败");
@@ -200,6 +213,26 @@ export function VideoTrackerPropagateDialog({
             {MODELS.find((m) => m.value === modelKey)?.note}
           </span>
         </label>
+
+        {modelKey !== "mock_bbox" && (
+          <label className={styles.field}>
+            模型尺寸
+            <select
+              value={samVariant}
+              onChange={(e) => setSamVariant(e.target.value)}
+              className={styles.select}
+            >
+              {SAM_VARIANTS.map((v) => (
+                <option key={v.value} value={v.value}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+            <span className={styles.modelNote}>
+              更大尺寸更准但更慢/更吃显存; 默认 tiny。
+            </span>
+          </label>
+        )}
 
         {error && (
           <div className={styles.error}>{error}</div>
