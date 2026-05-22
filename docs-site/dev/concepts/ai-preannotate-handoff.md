@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-05-10
+last_reviewed: 2026-05-22
 ---
 
 # AI 预标注接管
@@ -55,6 +55,8 @@ flowchart TD
   O --> P["batch pre_annotated -> annotating"]
 ```
 
+> **模态说明（v0.10.38+）**：`/ai-pre` 入口按项目 `data_type` 分流。图像项目走上图所示批量链路；视频项目显示引导卡片，实际追踪由工作台逐轨迹 Shift+T 发起，不走本页批量 Celery 链路；lidar 项目暂显占位。
+
 ## 代码入口
 
 | 位置 | 作用 |
@@ -82,6 +84,7 @@ flowchart TD
 - `prompt`
 - `output_mode`
 - `batch_id`
+- `params`（v0.10.38+）——选中 backend 的 `/setup.params` 值；worker 合并进 `/predict` context，覆盖项目级阈值兜底；无此字段时行为不变
 
 ### 当前约束
 
@@ -200,7 +203,9 @@ annotator 可选择：
 
 ## `/ai-pre` 管理面
 
-`apps/api/app/api/v1/admin_preannotate.py` 提供两类接口：
+`apps/api/app/api/v1/admin_preannotate.py` 提供两类接口。
+
+**统一任务历史（v0.10.38+）**：`/ai-pre/jobs`（`AIPreAnnotateJobsPage.tsx`）新增「图像 / 视频」两个模态 tab（`?tab` 深链）——图像 tab 拉 `prediction_jobs`，视频 tab 复用 `VideoTrackerJobsPanel`（原 `/model-market/video-jobs` 301 重定向至此）。
 
 ### 1. 预标队列
 
@@ -292,9 +297,12 @@ ML backend 对某题失败时，不会中断整批；worker 会写：
 
 | 文件 | 为什么要看 |
 |---|---|
-| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx` | 批量预标主入口 |
+| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotatePage.tsx` | 批量预标主入口；按项目 `data_type` 路由到对应面板（v0.10.38+） |
+| `apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx` | 图像项目详情面板（含 backend 选择器、SchemaForm 参数面板、RunPanel、HistoryTable） |
+| `apps/web/src/pages/AIPreAnnotate/components/VideoPreannotateGuide.tsx` | 视频项目引导卡片（提示在工作台逐轨迹 Shift+T 发起，提供跳工作台 + `/ai-pre/jobs?tab=video` 深链） |
 | `apps/web/src/pages/AIPreAnnotate/components/RunPanel.tsx` | 运行触发与进度提示 |
 | `apps/web/src/pages/AIPreAnnotate/components/HistoryTable.tsx` | `pre_annotated` 历史列表与 bulk clear |
+| `apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx` | AI 任务历史；含「图像」(prediction_jobs) 和「视频」(video_tracker_jobs) 两个模态 tab，`?tab=video` 深链 |
 | `apps/web/src/hooks/usePredictions.ts` | prediction 查询与采纳 |
 | `apps/web/src/pages/Workbench/shell/Topbar.tsx` | 当前 task 所属批次的 `pre_annotated` 提示 |
 | `apps/web/src/components/badges/BatchStatusBadge.tsx` | `pre_annotated` 徽章 |
