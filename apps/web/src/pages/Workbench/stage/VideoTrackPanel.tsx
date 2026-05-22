@@ -95,6 +95,8 @@ interface VideoTrackPanelProps {
   // v0.10.30 · 1A 选色器: session 级覆盖 (trackId → oklch), 未接线时回落到 classColor。
   trackColorOverrides?: Record<string, string>;
   onSetTrackColor?: (trackId: string, colorToken: string | null) => void;
+  // v0.10.35 · §A: 采样网格步长, 透传给 propagate 对话框 (>1 时 count 以网格格子为单位)。
+  samplingStep?: number;
 }
 
 function frameRange(frames: number[]): string {
@@ -225,6 +227,7 @@ export function VideoTrackPanel({
   onUpdateSemanticLabel,
   trackColorOverrides,
   onSetTrackColor,
+  samplingStep,
 }: VideoTrackPanelProps) {
   const batchCount = selectedTrackIds.size;
   const batchSelectionDisabled = batchCount <= 1;
@@ -917,6 +920,7 @@ export function VideoTrackPanel({
       <VideoKeyframesPropagateDialog
         open={propagateOpen}
         frameIndex={frameIndex}
+        samplingStep={samplingStep}
         onCancel={() => setPropagateOpen(false)}
         onSubmit={(payload: VideoKeyframesPropagateSubmit) => {
           setPropagateOpen(false);

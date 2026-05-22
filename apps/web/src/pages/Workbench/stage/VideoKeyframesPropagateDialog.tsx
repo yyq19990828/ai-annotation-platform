@@ -19,6 +19,8 @@ export interface VideoKeyframesPropagateSubmit {
 interface VideoKeyframesPropagateDialogProps {
   open: boolean;
   frameIndex: number;
+  /** 采样网格步长 (源帧). >1 时 count 以网格格子为单位; 缺省 1 = 现状 (按源帧). */
+  samplingStep?: number;
   onCancel: () => void;
   onSubmit: (payload: VideoKeyframesPropagateSubmit) => void;
 }
@@ -26,10 +28,14 @@ interface VideoKeyframesPropagateDialogProps {
 /**
  * v0.10.30 · 2.6 关键帧 Propagate 对话框 (纯前端, 区别于 AI 版 VideoTrackerPropagateDialog)。
  * 把当前帧的框复制到后续 / 向前 N 帧, overwrite 控制是否覆盖目标帧已有关键帧。
+ *
+ * v0.10.35 · §A: 采样开启 (samplingStep>1) 时, count 以网格格子为单位, 与 ←/→ 网格导航统一;
+ * 提交时换算回源帧 count (count * samplingStep), 底层 D2 (propagateKeyframes) 仍逐源帧不变。
  */
 export function VideoKeyframesPropagateDialog({
   open,
   frameIndex,
+  samplingStep = 1,
   onCancel,
   onSubmit,
 }: VideoKeyframesPropagateDialogProps) {
@@ -47,12 +53,15 @@ export function VideoKeyframesPropagateDialog({
 
   if (!open) return null;
 
-  const step = direction === "backward" ? -1 : 1;
-  const target = Math.max(0, frameIndex + step * count);
+  const grid = Math.max(1, Math.round(samplingStep));
+  const dir = direction === "backward" ? -1 : 1;
+  // count 是网格格子数; 采样开启时换算成源帧跨度。
+  const sourceCount = count * grid;
+  const target = Math.max(0, frameIndex + dir * sourceCount);
 
   const handleSubmit = () => {
     if (count <= 0) return;
-    onSubmit({ direction, count, overwrite });
+    onSubmit({ direction, count: sourceCount, overwrite });
   };
 
   return (
@@ -90,7 +99,7 @@ export function VideoKeyframesPropagateDialog({
         </label>
 
         <label className={styles.field}>
-          帧数
+          {grid > 1 ? "格数" : "帧数"}
           <div className={styles.segmented}>
             {COUNT_PRESETS.map((preset) => (
               <button
@@ -111,7 +120,16 @@ export function VideoKeyframesPropagateDialog({
             className={styles.numberInput}
           />
           <span className={cn("mono", styles.rangeHint)}>
-            F{frameIndex} → F{target}
+            {grid > 1 ? (
+              <>
+                G{Math.round(frameIndex / grid)} → G{Math.round(target / grid)} (F
+                {frameIndex} → F{target})
+              </>
+            ) : (
+              <>
+                F{frameIndex} → F{target}
+              </>
+            )}
           </span>
         </label>
 

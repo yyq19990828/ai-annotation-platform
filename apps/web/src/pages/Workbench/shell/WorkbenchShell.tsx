@@ -307,10 +307,11 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   const videoFps = videoManifest.data?.metadata.fps ?? null;
   // v0.10.29 · 项目级采样配置 → 软网格导航。step>1 时开启网格键位 (向后兼容: 缺省 step=1 不变)。
   const videoSampling = currentProject?.video_sampling ?? null;
-  const samplingActive = useMemo(
-    () => isVideoTask && deriveSamplingStep(videoSampling, videoFps ?? 0) > 1,
+  const samplingStep = useMemo(
+    () => (isVideoTask ? deriveSamplingStep(videoSampling, videoFps ?? 0) : 1),
     [isVideoTask, videoSampling, videoFps],
   );
+  const samplingActive = samplingStep > 1;
   const videoChapterTimebase = useMemo(
     () =>
       videoFps && videoFrameCount > 0
@@ -1342,6 +1343,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
               onUpdateTrackAttributes={handleUpdateTrackAttributes}
               onUpdateKeyframeAttributes={handleUpdateKeyframeAttributes}
               onPropagateKeyframe={handlePropagateKeyframe}
+              samplingStep={samplingStep}
             />
             <VideoChapterSidebar
               datasetItemId={videoDatasetItemId}
@@ -1399,6 +1401,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       frameIndex={s.videoFrameIndex}
       maxFrame={Math.max(0, videoFrameCount - 1)}
       nextKeyframeAfter={propagateDialogNextKeyframe}
+      samplingStep={samplingStep}
       submitting={Boolean(propagateDialog?.submitting)}
       onCancel={() => setPropagateDialog(null)}
       onSubmit={handlePropagateSubmit}

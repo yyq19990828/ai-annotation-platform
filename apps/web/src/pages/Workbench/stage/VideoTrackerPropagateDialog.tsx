@@ -7,15 +7,23 @@ import type {
 } from "@/api/videoTracker";
 import styles from "./VideoTrackerPropagateDialog.module.css";
 
+const SPAN_PRESETS = ["10", "30", "60"] as const;
 const RANGE_PRESETS = [
-  { value: "10", label: "10 帧" },
-  { value: "30", label: "30 帧" },
-  { value: "60", label: "60 帧" },
-  { value: "next-keyframe", label: "到下一关键帧" },
-  { value: "end", label: "到结尾" },
+  ...SPAN_PRESETS,
+  "next-keyframe",
+  "end",
 ] as const;
 
-type RangePresetValue = (typeof RANGE_PRESETS)[number]["value"];
+type RangePresetValue = (typeof RANGE_PRESETS)[number];
+
+// 采样开启 (step>1) 时数字预设以网格格子为单位, 标签显示如「10 格 (≈100 帧)」;
+// 关闭时维持「N 帧」。next-keyframe / end 与单位无关, 标签固定。
+function presetLabel(value: RangePresetValue, step: number): string {
+  if (value === "next-keyframe") return "到下一关键帧";
+  if (value === "end") return "到结尾";
+  const n = Number(value);
+  return step > 1 ? `${n} 格 (≈${n * step} 帧)` : `${n} 帧`;
+}
 
 const MODELS: Array<{ value: string; label: string; note?: string }> = [
   { value: "mock_bbox", label: "mock_bbox", note: "测试用 (不依赖 ML backend)" },
@@ -32,6 +40,8 @@ interface VideoTrackerPropagateDialogProps {
   frameIndex: number;
   maxFrame: number;
   nextKeyframeAfter: number | null;
+  /** 采样网格步长 (源帧). >1 时数字预设以网格格子为单位; 缺省 1 = 现状 (按源帧). */
+  samplingStep?: number;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (payload: VideoTrackerPropagatePayload) => Promise<void>;
@@ -42,6 +52,7 @@ export function VideoTrackerPropagateDialog({
   frameIndex,
   maxFrame,
   nextKeyframeAfter,
+  samplingStep = 1,
   submitting,
   onCancel,
   onSubmit,
@@ -60,6 +71,8 @@ export function VideoTrackerPropagateDialog({
     }
   }, [open]);
 
+  const grid = Math.max(1, Math.round(samplingStep));
+
   const range = useMemo(() => {
     if (rangePreset === "next-keyframe") {
       if (nextKeyframeAfter !== null && nextKeyframeAfter > frameIndex) {
@@ -72,7 +85,8 @@ export function VideoTrackerPropagateDialog({
         ? { from: 0, to: frameIndex }
         : { from: frameIndex, to: maxFrame };
     }
-    const span = Number(rangePreset);
+    // 数字预设是网格格子数; 采样开启时换算成源帧跨度 (span * grid)。
+    const span = Number(rangePreset) * grid;
     if (direction === "backward") {
       return { from: Math.max(0, frameIndex - span), to: frameIndex };
     }
@@ -83,7 +97,7 @@ export function VideoTrackerPropagateDialog({
       };
     }
     return { from: frameIndex, to: Math.min(maxFrame, frameIndex + span) };
-  }, [direction, frameIndex, maxFrame, nextKeyframeAfter, rangePreset]);
+  }, [direction, frameIndex, grid, maxFrame, nextKeyframeAfter, rangePreset]);
 
   if (!open) return null;
 
@@ -150,13 +164,22 @@ export function VideoTrackerPropagateDialog({
             className={styles.select}
           >
             {RANGE_PRESETS.map((preset) => (
-              <option key={preset.value} value={preset.value}>
-                {preset.label}
+              <option key={preset} value={preset}>
+                {presetLabel(preset, grid)}
               </option>
             ))}
           </select>
           <span className={cn("mono", styles.rangeHint)}>
-            F{range.from} → F{range.to}
+            {grid > 1 ? (
+              <>
+                G{Math.round(range.from / grid)} → G{Math.round(range.to / grid)} (F
+                {range.from} → F{range.to})
+              </>
+            ) : (
+              <>
+                F{range.from} → F{range.to}
+              </>
+            )}
           </span>
         </label>
 

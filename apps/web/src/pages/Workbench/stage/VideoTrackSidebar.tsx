@@ -62,6 +62,8 @@ interface VideoTrackSidebarProps {
     options: { direction: "forward" | "backward"; overwrite: boolean },
   ) => void;
   onUpdateSemanticLabel?: (annotation: VideoTrackAnnotation, semanticLabel: string) => void;
+  /** v0.10.35 · §A: 采样网格步长, 透传给 propagate 对话框 (>1 时 count 以网格格子为单位)。 */
+  samplingStep?: number;
 }
 
 interface CopiedKeyframe {
@@ -133,6 +135,7 @@ export function VideoTrackSidebar({
   onUpdateKeyframeAttributes,
   onPropagateKeyframe,
   onUpdateSemanticLabel,
+  samplingStep,
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const selectedBboxes = useMemo(
@@ -447,6 +450,7 @@ export function VideoTrackSidebar({
       onUpdateKeyframeAttributes={onUpdateKeyframeAttributes}
       onPropagateKeyframe={onPropagateKeyframe}
       onUpdateSemanticLabel={onUpdateSemanticLabel ?? updateSemanticLabel}
+      samplingStep={samplingStep}
     />
   );
 }
