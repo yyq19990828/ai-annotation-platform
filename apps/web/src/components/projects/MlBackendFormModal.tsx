@@ -44,7 +44,6 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
 
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
-  const [isInteractive, setIsInteractive] = useState(false);
   const [authMethod, setAuthMethod] = useState<"none" | "token">("none");
   const [authToken, setAuthToken] = useState("");
   // v0.9.13 · max_concurrency 单独 number input, 提交时合并进 extra_params (覆盖
@@ -107,7 +106,6 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
     if (backend) {
       setName(backend.name);
       setUrl(backend.url);
-      setIsInteractive(backend.is_interactive);
       setAuthMethod((backend.auth_method as "none" | "token") ?? "none");
       setAuthToken("");
       const extra = { ...(backend.extra_params ?? {}) } as Record<string, unknown>;
@@ -120,7 +118,6 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
     } else {
       setName("");
       setUrl("");
-      setIsInteractive(false);
       setAuthMethod("none");
       setAuthToken("");
       setMaxConcurrency("");
@@ -177,7 +174,6 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
         const payload: MLBackendUpdatePayload = {
           name: trimmedName,
           url: trimmedUrl,
-          is_interactive: isInteractive,
           auth_method: authMethod,
           extra_params: extraParams,
         };
@@ -190,7 +186,6 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
         const payload: MLBackendCreatePayload = {
           name: trimmedName,
           url: trimmedUrl,
-          is_interactive: isInteractive,
           auth_method: authMethod,
           extra_params: extraParams,
         };
@@ -285,20 +280,10 @@ export function MlBackendFormModal({ open, projectId, backend, onClose, onLimitR
             )}
           </div>
         </div>
-        <div>
-          <label className={styles.checkboxLabel}>
-            <input
-              type="checkbox"
-              checked={isInteractive}
-              onChange={(e) => setIsInteractive(e.target.checked)}
-              className={styles.aiCheckbox}
-            />
-            <Icon name="sparkles" size={14} className={styles.aiIcon} />
-            交互式 backend
-          </label>
-          <div className={styles.indentedHelp}>
-            支持 SAM 等点 / 框 prompt；批量预标注 backend 不需勾选。
-          </div>
+        <div className={styles.helpText}>
+          <Icon name="sparkles" size={12} className={styles.aiIcon} />
+          交互能力 / 支持模态（图像 prompt、视频 tracker）将在健康检查时从 backend
+          自报的 <span className="mono">/setup</span> 自动探测，无需手填。
         </div>
         <div>
           <label className={styles.label}>认证方式</label>

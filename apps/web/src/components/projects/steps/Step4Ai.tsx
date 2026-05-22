@@ -106,8 +106,10 @@ export function Step4Ai({
           </div>
 
           {/* v0.9.7 · 复用现有 backend dropdown — 让新项目立即可用 AI */}
+          {/* v0.10.37 · 按项目 data_type 标注 backend 模态匹配 (epic 阶段 1) */}
           <BackendSourceSelect
             value={form.mlBackendSourceId}
+            dataType={form.dataType}
             onChange={(v) =>
               setForm((s) => ({ ...s, mlBackendSourceId: v }))
             }
@@ -125,9 +127,12 @@ export function Step4Ai({
 /** v0.9.7 · Wizard step 4 复用 backend 下拉. 拉 /admin/ml-integrations/all */
 function BackendSourceSelect({
   value,
+  dataType,
   onChange,
 }: {
   value: string;
+  // v0.10.37 · 项目媒体维度, 用于标注 backend 模态匹配
+  dataType: string;
   onChange: (v: string) => void;
 }) {
   const q = useQuery({
@@ -137,6 +142,15 @@ function BackendSourceSelect({
   });
   const items = q.data?.items ?? [];
   const selected = items.find((b) => b.id === value);
+
+  // v0.10.37 · 由 backend 能力快照派生模态; 未健康检查过 (modalities 空) 视为「未知」, 不标不匹配。
+  const modalityHint = (b: (typeof items)[number]): string => {
+    const mods = b.health_meta?.capabilities?.modalities;
+    if (!mods || mods.length === 0) return "模态未知";
+    if (dataType !== "image" && dataType !== "video") return "";
+    return mods.includes(dataType) ? "" : "⚠ 不支持本项目模态";
+  };
+  const selectedHint = selected ? modalityHint(selected) : "";
 
   return (
     <div>
@@ -161,16 +175,21 @@ function BackendSourceSelect({
           className={clsx(styles.input, styles.selectInput)}
         >
           <option value="">-- 暂不绑定 (创建后到设置页注册) --</option>
-          {items.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name} ({b.url}) · {b.state} · 来源: {b.source_project_name}
-            </option>
-          ))}
+          {items.map((b) => {
+            const hint = modalityHint(b);
+            return (
+              <option key={b.id} value={b.id}>
+                {b.name} ({b.url}) · {b.state}
+                {hint ? ` · ${hint}` : ""} · 来源: {b.source_project_name}
+              </option>
+            );
+          })}
         </select>
       )}
       {selected && (
         <div className={styles.helpText}>
           将复制 {selected.name} ({selected.url}) 到新项目, 含 auth 配置, state 重置为 disconnected.
+          {selectedHint ? ` ${selectedHint}（仍可选, 绑定时后端会按模态二次校验）。` : ""}
         </div>
       )}
     </div>

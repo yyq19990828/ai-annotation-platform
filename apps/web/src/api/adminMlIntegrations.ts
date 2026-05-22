@@ -59,6 +59,18 @@ export interface BackendHealthMeta {
   pool?: BackendPoolMeta | null;
   /** v0.10.36 · video tracker 独立显存池快照 (支持视频追踪的 backend 才有)。 */
   video_pool?: VideoPoolMeta | null;
+  /** v0.10.37 · /setup 能力快照 (epic 阶段 1); check_health 探 /setup 后落库。 */
+  capabilities?: BackendCapabilities | null;
+}
+
+// v0.10.37 · backend /setup 能力快照 (epic 阶段 1); modalities 为派生视图 (image/video)。
+export interface BackendCapabilities {
+  is_interactive: boolean;
+  supported_prompts: string[];
+  supported_trackers: string[];
+  supported_text_outputs: string[];
+  supported_geometric_outputs: string[];
+  modalities: string[];
 }
 
 export interface MLBackendItem {

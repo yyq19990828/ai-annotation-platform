@@ -208,6 +208,13 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                                 {p}
                               </Badge>
                             ))}
+                            {/* v0.10.37 · 视频追踪能力 (supported_trackers 非空 ⇒ 支持 video 模态) */}
+                            {cap.supported_trackers?.map((t) => (
+                              <Badge key={t} variant="ai">
+                                <Icon name="video" size={10} />
+                                {t}
+                              </Badge>
+                            ))}
                           </div>
                         )}
                       </td>
