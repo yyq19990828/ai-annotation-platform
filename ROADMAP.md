@@ -16,7 +16,7 @@
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出）。三项已拍板决策：抽帧=逻辑采样不动原视频、frame_index 存源帧号、AAP 单信封模态感知。原 §C.5 / §C.6 / 视频相关 §A 条目已全部并入该文，按 Phase 1-6 顺序排布。
   - **进度**：Phase 1（帧采样，v0.10.29）✅ · Phase 2 轨迹工具 2.1–2.8（v0.10.30）✅ · Phase 3.1 真实 `sam2_video` backend + 独立池 + 观测（v0.10.35/36）✅ · Phase 3.2-3.3 经能力协商 epic（v0.10.37/38）✅ · Phase 4-6 待开工（sam3_video 待续）。
-  - **衍生 epic（已全部落地）**：v0.10.35/36 接通真实视频 tracker 后暴露「平台对 backend 模态/能力无持久化感知」，抽出独立 epic：[ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md)——阶段 1 能力协商落库 + 模态派生（v0.10.37）✅ · 阶段 2 ai-pre 模态化 + 多 backend 参数面板（v0.10.38）✅ · 阶段 3 video-jobs 并入 ai-pre/jobs（v0.10.38）✅。
+  - **衍生 epic（三阶段全部落地，已归档）**：[ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md)——能力协商落库 + 模态派生（v0.10.37）、ai-pre 模态化 + 多 backend 参数面板 + video-jobs 并入 ai-pre/jobs（v0.10.38）。剩余按客户驱动：精细单 batch 多模型对比 modal（见优先级表 P3）、底层 `async_jobs` 统一表收敛（见 §B）。
   - **从已完成 Phase 延后的项**（仍在 epic 内，单列以免遗漏）：
     - **2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）：扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap 能力；DAVIS mask 导出（Phase 4.5）依赖此项。
     - **WebCodecs 精确帧解码 demux 接入**（P2，按真实卡顿数据决定）：Phase 1 已落地解码核心 + feature flag（默认关闭），但 mp4 demux 链路（mp4 字节 → `EncodedVideoChunk`）尚未接入。
@@ -131,6 +131,7 @@
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
 
 ### 性能 / 扩展
+- **`async_jobs` 统一表收敛**（**P3**，源自已归档 ML Backend 能力协商 epic 阶段 3 延后项）：当前 `PredictionJob`（批×模型，图像）与 `VideoTrackerJob`（任务×标注，帧级）双写 `async_jobs` 索引表，但统一仅停在 `/ai-pre/jobs` 的前端模态 tab 展示层，两套 job 模型未合表。后续若统一历史 / 跨模态查询压力上来，把 `async_jobs` 从索引表升级为单一真值（含状态机收敛）。参考 [取经合集 §1.7](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)；底线见决策表「Task 双重含义」行。触发条件：客户驱动 / 跨模态 job 查询成为瓶颈。
 - **Annotation 列表前端切换 keyset 分页**：v0.7.6 已落后端新端点 `GET /tasks/{id}/annotations/page?limit&cursor` + 复合索引；前端 `useAnnotations` 仍用旧数组端点（cap=2000），改 useInfiniteQuery 推迟到 1000+ 框监控触发。
 - **Predictions 表分区生产执行**：Stage 1 + Stage 2 迁移（0080）均已落（dev 已应用，v0.10.25）；生产侧按阈值（单月 INSERT > 100k 或总行数 > 1M）执行 `alembic upgrade` 即可，迁移已 battle-tested。
 
@@ -181,7 +182,7 @@
 - **I14 Autoborder / Polygon Crop**（M，纯前端）：开关式 Auto-border，多边形顶点拖动 / 新增时若距其他形状边 < 阈值自动吸附；新建多边形与已有重叠时提供「裁切重叠区」选项（布尔差集，基于已在依赖的 `polygon-clipping@0.15.7`）。
 - **I18 Konva pin 渲染**（v0.10.19 已落 `annotation_feedbacks` 表 + `/feedbacks` API + IssueCreateModal/IssueListPanel 浮动入口; 剩 `IssueLayer.tsx` Konva 层 + ImageStage 单击图像创建 pin 入口替代手填 x/y + ADR-0027 第二段 `v_annotation_feedback_unified` view + 旧三表双写）。
 - **I19 GT job / Consensus / IAA**（L，独立后端 epic）：项目设置「质检」开关从已完成 task 随机抽 N% 或 honeypot 模式；同一 GT task 分给 ≥2 人互不可见；bbox 走 mAP / IoU、polygon 走 mask IoU、class 走 Cohen's κ；按标注员维度滚动统计 + 质检 Dashboard。与长期 L15 配套，可作 L15 前置。
-- **I20.4 Tracker / Auto-Annotation 协议统一收口**：**已落地**（[ML Backend 能力协商 epic](ROADMAP/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1，v0.10.37）——`/setup` 能力快照落 `health_meta["capabilities"]`、平台按 `data_type` 派生模态消费，替代图片/视频两套独立协商。
+- **I20.4 Tracker / Auto-Annotation 协议统一收口**：**已落地**（[ML Backend 能力协商 epic](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1，v0.10.37）——`/setup` 能力快照落 `health_meta["capabilities"]`、平台按 `data_type` 派生模态消费，替代图片/视频两套独立协商。
 - **I21 用户级快捷键自定义**（M，纯前端）：`User.preferences.keymap` + 冲突校验；SettingsPage 录制框 UI；`?` 弹快捷键参考卡按 keymap 渲染（取代硬编码 KeyboardHintOverlay）。
 
 ### C.4 工作台架构分层（多任务类型如何复用同一外壳）

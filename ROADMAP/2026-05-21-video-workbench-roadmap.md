@@ -62,12 +62,12 @@
 - **跨窗有状态续追**：当前是无状态近似（上一窗末帧 geometry 作下一窗 seed，边界略漂）；后续可上 session/context-token 让 backend 跨窗保 memory bank 状态。
 
 ### 3.2 Tracker 选择 / 展示（原 R23「Tracker Registry UI」）
-- **R23 的「人工注册表 UI」前提已被新 epic 架空**：原设想管理员去「注册 / 启停 tracker adapter」，对应写死的 [`_REGISTRY`](../apps/api/app/services/video_tracker_adapters.py)。但 [ML Backend 能力协商 epic](2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1 改为 backend `/setup` 自报能力、平台动态发现替代 `_REGISTRY`——没有需要人工维护的注册表；「启停」即现有 RegisteredBackendsTab 的 backend 暂停/恢复，无需 tracker 级单独入口。
+- **R23 的「人工注册表 UI」前提已被新 epic 架空**：原设想管理员去「注册 / 启停 tracker adapter」，对应写死的 [`_REGISTRY`](../apps/api/app/services/video_tracker_adapters.py)。但 [ML Backend 能力协商 epic]([archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1 改为 backend `/setup` 自报能力、平台动态发现替代 `_REGISTRY`——没有需要人工维护的注册表；「启停」即现有 RegisteredBackendsTab 的 backend 暂停/恢复，无需 tracker 级单独入口。
 - **R23 剩余诉求归口到 epic**：「显示 backend 支持哪些 tracker」= 阶段 1 的能力派生只读视图（**已于 v0.10.37 落地**：backend 列表能力列展示 `supported_trackers`、能力快照落 `health_meta["capabilities"]`）；「多 backend 选择 / 1:N 管理形态」= 阶段 2 的多 backend 选择器。本节不再作独立条目。
 - **已落地现状（2026-05-22）**：tracker 模型尺寸（sam_variant）选择已于 v0.10.36 落地（propagate 对话框 SAM 尺寸下拉 → payload → adapter context → backend video 池）；图片工作台的悬浮 AI 面板对视频任务仍**显式禁用**（[`WorkbenchShell.tsx`](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `aiPopover.open = aiPopoverOpen && !isVideoTask`，**by design**），视频 AI 入口是 `VideoTrackerPropagateDialog`（Shift+T）。
 
 ### 3.3 图片 / 视频 tracker 协议统一收口（原 I20.4，跨模态）
-- **已抽为独立 epic 并落地阶段 1**：[ML Backend 能力协商 + AI 预标注模态化重设计](2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1 **已于 v0.10.37 落地**：backend `/setup` 能力快照落 `health_meta["capabilities"]`、注册/绑定按 `data_type` 校验、`is_interactive`/modality 从能力派生。v0.10.35 §B.3 的 `supported_trackers` 声明是「第一块砖」，落库 + 消费已完成；动态读取替代写死 `_REGISTRY` 的消费端在 epic 阶段 2/3 继续。
+- **已抽为独立 epic 并落地阶段 1**：[ML Backend 能力协商 + AI 预标注模态化重设计]([archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1 **已于 v0.10.37 落地**：backend `/setup` 能力快照落 `health_meta["capabilities"]`、注册/绑定按 `data_type` 校验、`is_interactive`/modality 从能力派生。v0.10.35 §B.3 的 `supported_trackers` 声明是「第一块砖」，落库 + 消费已完成；动态读取替代写死 `_REGISTRY` 的消费端在 epic 阶段 2/3 继续。
 
 ---
 

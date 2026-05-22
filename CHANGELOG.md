@@ -39,7 +39,7 @@
 
 ## [0.10.37] - 2026-05-22
 
-> **ML Backend 能力协商落库 + 模态派生（epic 阶段 1）。** 平台第一次对 backend 的「能力 / 模态」有持久化感知：健康检查时顺带探 `/setup`，把 `supported_prompts`/`supported_trackers`/`is_interactive` 等能力快照落进 `health_meta`，`is_interactive` 改为从 backend 自报派生（不再手填）；项目绑定 backend 时按 `data_type` 校验模态匹配。是 [ML Backend 能力协商 + ai-pre 模态化 epic](ROADMAP/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 的前置基石，后续 ai-pre 模态化（阶段 2）、video-jobs 并入（阶段 3）都依赖本版。计划见 [v0.10.37 计划](docs/plans/2026-05-22-v0.10.37-ml-backend-capability-persistence.md)。
+> **ML Backend 能力协商落库 + 模态派生（epic 阶段 1）。** 平台第一次对 backend 的「能力 / 模态」有持久化感知：健康检查时顺带探 `/setup`，把 `supported_prompts`/`supported_trackers`/`is_interactive` 等能力快照落进 `health_meta`，`is_interactive` 改为从 backend 自报派生（不再手填）；项目绑定 backend 时按 `data_type` 校验模态匹配。是 [ML Backend 能力协商 + ai-pre 模态化 epic](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 的前置基石，后续 ai-pre 模态化（阶段 2）、video-jobs 并入（阶段 3）都依赖本版。计划见 [v0.10.37 计划](docs/plans/2026-05-22-v0.10.37-ml-backend-capability-persistence.md)。
 
 ### Added
 
