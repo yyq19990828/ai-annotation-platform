@@ -7,7 +7,7 @@ import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
 import type { VideoTrackerJobState } from "@/hooks/useVideoTrackerJobs";
 import type { DiffMode } from "../modes/types";
 import { displayClassName, getTrackColor } from "./colors";
-import { resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
+import { deriveTrackNumber, resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "./videoStageGeometry";
 import { isFrameOutside } from "./videoTrackOutside";
 import { VideoAttributesEditor } from "./VideoAttributesEditor";
 import { VideoTrackColorPicker } from "./VideoTrackColorPicker";
@@ -274,6 +274,7 @@ export function VideoTrackPanel({
     }),
     [frameIndex, reviewDisplayMode, trackFilter, videoTracks],
   );
+  const trackNumbers = useMemo(() => deriveTrackNumber(videoTracks), [videoTracks]);
   const selectedTrackNextPredictionFrame = selectedTrack
     ? nextPredictionFrame(selectedTrack.geometry, frameIndex)
     : null;
@@ -441,6 +442,9 @@ export function VideoTrackPanel({
                     )}
                   </button>
                   <div className={styles.trackTitleRow}>
+                    <span className={cn("mono", styles.trackNumberBadge)}>
+                      #{trackNumbers.get(ann.id) ?? "?"}
+                    </span>
                     <b className={styles.truncateTitle}>
                       {displayClassName(ann.class_name)}
                     </b>

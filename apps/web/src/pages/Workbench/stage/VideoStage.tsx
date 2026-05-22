@@ -48,6 +48,7 @@ import { modeFromDrag, getVideoStageModeGuard } from "./videoStageMode";
 import { pickTopVideoEntryAt } from "./videoStagePicking";
 import {
   clampGeom,
+  deriveTrackNumber,
   isVideoBbox,
   isVideoTrack,
   nearestTrackKeyframe,
@@ -247,6 +248,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   const videoViewBoxHeight = Number.isFinite(videoAspectRatio) && videoAspectRatio > 0 ? 1 / videoAspectRatio : 9 / 16;
 
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
+  const trackNumbers = useMemo(() => deriveTrackNumber(videoTracks), [videoTracks]);
   const selectedTrack = useMemo(
     () => videoTracks.find((ann) => ann.id === selectedId) ?? null,
     [selectedId, videoTracks],
@@ -1397,6 +1399,7 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
               cachedBitmap={displayBitmap}
               showCachedBitmap={showCachedBitmap}
               entries={currentFrameEntries}
+              trackNumbers={trackNumbers}
               trackPreviews={trackPreviews}
               pendingDraft={pendingDraft}
               aspectRatio={videoAspectRatio}
