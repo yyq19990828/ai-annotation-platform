@@ -234,3 +234,34 @@ async def test_preannotate_summary_filters_to_projects_with_ml_backend(
     assert (
         item["ml_backend_max_concurrency"] is None
     )  # 未配 extra_params.max_concurrency
+
+
+@pytest.mark.asyncio
+async def test_preannotate_summary_excludes_non_image_projects(
+    httpx_client, db_session, super_admin
+):
+    """v0.10.36 · 视频/lidar 项目即便绑了 backend 也不该出现在「AI 文本批量预标」页."""
+    from app.db.models.ml_backend import MLBackend
+
+    user, token = super_admin
+    p_img = await create_project(db_session, owner_id=user.id, name="img-proj")
+    p_video = await create_project(
+        db_session, owner_id=user.id, name="video-proj", type_key="video-track"
+    )
+    p_video.data_type = "video"
+    for proj in (p_img, p_video):
+        db_session.add(
+            MLBackend(
+                id=uuid.uuid4(), project_id=proj.id, name="bk", url="http://x/"
+            )
+        )
+    await db_session.commit()
+
+    res = await httpx_client.get(
+        "/api/v1/admin/preannotate-summary",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200, res.text
+    names = [it["project_name"] for it in res.json()["items"]]
+    assert "img-proj" in names
+    assert "video-proj" not in names
