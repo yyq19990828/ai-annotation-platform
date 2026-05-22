@@ -41,20 +41,8 @@ export function normalizeOutsideRanges(ranges: readonly OutsideInput[] | undefin
   return merged;
 }
 
-export function legacyAbsentRanges(track: VideoTrackGeometry): VideoTrackOutsideRange[] {
-  return normalizeOutsideRanges(
-    track.keyframes
-      .filter((keyframe) => keyframe.absent)
-      .map((keyframe) => ({
-        from: keyframe.frame_index,
-        to: keyframe.frame_index,
-        source: keyframe.source === "prediction" ? "prediction" : "manual",
-      })),
-  );
-}
-
 export function effectiveOutsideRanges(track: VideoTrackGeometry): VideoTrackOutsideRange[] {
-  return normalizeOutsideRanges([...(track.outside ?? []), ...legacyAbsentRanges(track)]);
+  return normalizeOutsideRanges(track.outside ?? []);
 }
 
 export function isFrameInOutsideRanges(ranges: readonly VideoTrackOutsideRange[], frameIndex: number) {

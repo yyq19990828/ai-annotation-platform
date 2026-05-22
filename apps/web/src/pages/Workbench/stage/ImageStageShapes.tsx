@@ -39,6 +39,7 @@ const HANDLE_DIRECTIONS: { dir: ResizeDirection; cx: number; cy: number; cursor:
 ];
 interface KonvaBoxProps {
   b: Annotation;
+  annotationId?: string;
   isAi: boolean;
   selected: boolean;
   editable: boolean;
@@ -70,7 +71,7 @@ export function groupOutlineColor(groupId: number): string {
 }
 
 export function KonvaBox({
-  b, isAi, selected, editable, faded, occluded = false,
+  b, annotationId, isAi, selected, editable, faded, occluded = false,
   imgW, imgH, scale,
   onClick,
   onMoveStart,
@@ -86,7 +87,7 @@ export function KonvaBox({
     : displayClassName(b.cls);
 
   return (
-    <Group>
+    <Group id={annotationId}>
       <Rect
         x={b.x * imgW}
         y={b.y * imgH}
@@ -176,6 +177,7 @@ export function KonvaBox({
 
 interface KonvaPolygonProps {
   b: Annotation;
+  annotationId?: string;
   isAi: boolean;
   selected: boolean;
   faded: boolean;
@@ -196,7 +198,7 @@ interface KonvaPolygonProps {
 }
 
 export function KonvaPolygon({
-  b, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
+  b, annotationId, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
   points,
   selfIntersect,
   editable,
@@ -234,7 +236,7 @@ export function KonvaPolygon({
   }, [editable, viewportBBox, ps]);
 
   return (
-    <Group>
+    <Group id={annotationId}>
       <Line
         points={flat}
         closed
@@ -346,6 +348,7 @@ export function KonvaPolygon({
 // 样式 (色 / 选中 / faded / occluded) 比照 KonvaBox。
 interface KonvaRotatedBoxProps {
   b: Annotation;
+  annotationId?: string;
   geometry: RotatedBboxGeometry;
   /** 实时角度 (拖拽中由 ImageStage override; 否则 = geometry.angle)。度数 [0,360) 顺时针。 */
   angle: number;
@@ -362,7 +365,7 @@ interface KonvaRotatedBoxProps {
 }
 
 export function KonvaRotatedBox({
-  b, geometry, angle, isAi, selected, editable, faded, occluded = false,
+  b, annotationId, geometry, angle, isAi, selected, editable, faded, occluded = false,
   imgW, imgH, scale,
   onClick,
   onRotateStart,
@@ -387,7 +390,7 @@ export function KonvaRotatedBox({
   const handleY = -hh - handleOffset;
 
   return (
-    <Group x={cx} y={cy} rotation={angle}>
+    <Group id={annotationId} x={cx} y={cy} rotation={angle}>
       <Rect
         x={0}
         y={0}
@@ -458,6 +461,7 @@ export function KonvaRotatedBox({
 
 interface KonvaPolylineProps {
   b: Annotation;
+  annotationId?: string;
   isAi: boolean;
   selected: boolean;
   faded: boolean;
@@ -480,7 +484,7 @@ interface KonvaPolylineProps {
  * 顶点拖拽 / Alt 边插点 / Shift 删点的交互与 KonvaPolygon 一致，但边集合不环绕 (0..n-2)。
  */
 export function KonvaPolyline({
-  b, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
+  b, annotationId, isAi, selected, faded, occluded = false, imgW, imgH, scale, onClick,
   points,
   editable,
   onVertexMouseDown,
@@ -498,7 +502,7 @@ export function KonvaPolyline({
   for (const [px, py] of ps) flat.push(px * imgW, py * imgH);
 
   return (
-    <Group>
+    <Group id={annotationId}>
       <Line
         points={flat}
         closed={false}
@@ -609,6 +613,7 @@ export function keypointColorByIndex(idx: number, schema?: KeypointSchema | null
 
 interface KonvaKeypointProps {
   b: Annotation;
+  annotationId?: string;
   isAi: boolean;
   selected: boolean;
   faded: boolean;
@@ -632,7 +637,7 @@ interface KonvaKeypointProps {
  *   - 节点标签 = schema.nodes[i].name；选中态加阴影 + 类别标签。
  */
 export function KonvaKeypoint({
-  b, isAi, selected, faded, imgW, imgH, scale, schema,
+  b, annotationId, isAi, selected, faded, imgW, imgH, scale, schema,
   onClick, editable = false, onNodeMouseDown, onToggleVisibility,
 }: KonvaKeypointProps) {
   const color = classColorForCanvas(b.cls);
@@ -651,7 +656,7 @@ export function KonvaKeypoint({
   const anchorY = (anchor?.y ?? b.y) * imgH;
 
   return (
-    <Group opacity={faded ? 0.35 : 1}>
+    <Group id={annotationId} opacity={faded ? 0.35 : 1}>
       {/* 骨骼连线 (两端可见 / 遮挡才连) */}
       {edges.map(([i, j], idx) => {
         const a = kps[i];

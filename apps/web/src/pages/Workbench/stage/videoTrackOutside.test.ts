@@ -12,7 +12,7 @@ const track: VideoTrackGeometry = {
   type: "video_track",
   track_id: "trk",
   keyframes: [
-    { frame_index: 2, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual", absent: true },
+    { frame_index: 2, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
     { frame_index: 8, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
   ],
 };
@@ -30,18 +30,17 @@ describe("videoTrackOutside", () => {
     ]);
   });
 
-  it("combines explicit outside ranges with legacy absent keyframes", () => {
+  it("derives effective outside ranges from the explicit outside field only", () => {
     const ranges = effectiveOutsideRanges({
       ...track,
       outside: [{ from: 4, to: 5 }],
     });
 
-    expect(ranges).toEqual([
-      { from: 2, to: 2, source: "manual" },
-      { from: 4, to: 5, source: "manual" },
-    ]);
+    expect(ranges).toEqual([{ from: 4, to: 5, source: "manual" }]);
     expect(isFrameOutside({ ...track, outside: [{ from: 4, to: 5 }] }, 4)).toBe(true);
     expect(isFrameOutside({ ...track, outside: [{ from: 4, to: 5 }] }, 8)).toBe(false);
+    // 关键帧本身不再携带 absent, 不影响 outside 判定。
+    expect(isFrameOutside({ ...track, outside: [{ from: 4, to: 5 }] }, 2)).toBe(false);
   });
 
   it("adds and removes a single frame from explicit outside ranges", () => {

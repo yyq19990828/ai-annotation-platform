@@ -61,6 +61,25 @@
   gap: 16px;
 }
 
+@media (max-width: 760px) {
+  .page {
+    padding: 16px;
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .navList {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .navButton {
+    white-space: nowrap;
+  }
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -262,7 +281,7 @@
 
 .twoColumnGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
 }
 
@@ -301,8 +320,14 @@
   text-align: center;
 }
 
+.feedbackTableShell {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .feedbackTable {
   width: 100%;
+  min-width: 680px;
   border-collapse: collapse;
   font-size: 12.5px;
 }
@@ -316,6 +341,7 @@
   color: var(--color-fg-muted);
   font-weight: 500;
   text-align: left;
+  white-space: nowrap;
 }
 
 .tableBodyRow {
@@ -332,7 +358,11 @@
 }
 
 .titleCell {
+  max-width: 320px;
+  overflow: hidden;
   color: var(--color-fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .severity {
@@ -369,6 +399,11 @@
 .dateCell {
   color: var(--color-fg-muted);
   font-size: 11px;
+  white-space: nowrap;
+}
+
+.nowrapCell {
+  white-space: nowrap;
 }
 
 .sectionHeader {

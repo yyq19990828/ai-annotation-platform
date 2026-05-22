@@ -325,10 +325,12 @@ async def list_preannotate_project_summary(
     """v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.
 
     仅返回有 ml_backend 注册的项目 (EXISTS ml_backends WHERE project_id=...).
+    v0.10.38 · 撤回 v0.10.36 的 data_type="image" 过滤: 模态分流改到前端 ProjectDetailPanel
+    (image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.
     """
     pres = await db.execute(
         select(Project).where(
-            select(MLBackend.id).where(MLBackend.project_id == Project.id).exists()
+            select(MLBackend.id).where(MLBackend.project_id == Project.id).exists(),
         )
     )
     projects = list(pres.scalars().all())

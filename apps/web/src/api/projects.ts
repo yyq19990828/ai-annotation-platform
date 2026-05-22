@@ -11,6 +11,7 @@ import type {
   ClassConfigEntry as GenClassConfigEntry,
   ToolBinding as GenToolBinding,
   ToolClassEntry as GenToolClassEntry,
+  VideoSamplingConfig as GenVideoSamplingConfig,
 } from "./generated/types.gen";
 import type { ToolUnitId } from "@/constants/toolUnits";
 
@@ -26,6 +27,9 @@ export type AttributeFieldType = GenAttributeField["type"];
 export type AttributeSchema = GenAttributeSchema;
 export type ClassConfigEntry = GenClassConfigEntry;
 export type ClassesConfig = Record<string, ClassConfigEntry>;
+
+// v0.10.29 · 项目级视频帧采样配置 (逻辑采样, 见 docs/plans/.../video-frame-sampling.md §2).
+export type VideoSamplingConfig = GenVideoSamplingConfig;
 
 // v0.10.17 · 工具维度类别 / 属性绑定. codegen 派生 dict<string, ToolBinding>, 这里
 // 用 ToolUnitId Literal 收窄 key, 供前端编辑器强类型.
@@ -94,7 +98,8 @@ export interface GuideAssetSignedUrlResponse {
   expires_in: number;
 }
 
-export type ExportFormat = "coco" | "voc" | "yolo" | "aap_json";
+// v0.10.31 · Phase 4.7 · 视频项目导出格式 video_json/mot/kitti（aap_json 图像视频共用）。
+export type ExportFormat = "coco" | "voc" | "yolo" | "aap_json" | "video_json" | "mot" | "kitti";
 export type VideoFrameMode = "keyframes" | "all_frames";
 export interface ExportOptions {
   includeAttributes?: boolean;

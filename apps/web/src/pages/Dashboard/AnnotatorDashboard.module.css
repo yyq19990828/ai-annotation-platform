@@ -64,13 +64,13 @@
 
 .statsGridFour {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
 }
 
 .statsGridThree {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
 }
 
@@ -113,7 +113,7 @@
 
 .analyticsGrid {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
   margin-top: 16px;
 }
@@ -184,8 +184,15 @@
   margin-top: 4px;
 }
 
+.tableScroller {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
 .table {
   width: 100%;
+  min-width: 760px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
@@ -199,6 +206,7 @@
   padding: 10px 12px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-sunken);
+  white-space: nowrap;
 }
 
 .table th:first-child {
@@ -212,6 +220,7 @@
 .table td {
   padding: 12px;
   border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
 }
 
 .table td:first-child {
@@ -227,22 +236,32 @@
 }
 
 .projectName {
+  max-width: 260px;
+  overflow: hidden;
   font-size: 13px;
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .projectId {
+  max-width: 260px;
+  overflow: hidden;
   font-size: 11px;
   color: var(--color-fg-subtle);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mutedCell {
   color: var(--color-fg-muted);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .actionCell {
   text-align: right;
+  white-space: nowrap;
 }
 
 .smallBadge > span {

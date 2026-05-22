@@ -123,9 +123,18 @@ class MLBackendClient:
                 # v0.9.11 · 加 host (PerfHud 容器 CPU/RAM); gpu_info/cache/model_version 保留
                 # v0.10.26 · 加 pool (loaded_variants / cap / per_variant_lru_ts),
                 # 供模型市场变体面板展示 (backend 无 pool 字段时静默跳过).
+                # v0.10.36 · 加 video_pool (cap / loaded_variants / active_sessions / idle_seconds),
+                # 供视频追踪显存池观测 (backend 无该字段时静默跳过).
                 meta = {
                     k: data[k]
-                    for k in ("gpu_info", "host", "cache", "model_version", "pool")
+                    for k in (
+                        "gpu_info",
+                        "host",
+                        "cache",
+                        "model_version",
+                        "pool",
+                        "video_pool",
+                    )
                     if k in data
                 }
                 return True, meta or None
@@ -243,17 +252,23 @@ class MLBackendClient:
             return resp.json()
 
     async def reload(
-        self, sam_variant: str | None = None, dino_variant: str | None = None
+        self,
+        sam_variant: str | None = None,
+        dino_variant: str | None = None,
+        task_type: str | None = None,
     ) -> dict:
         """B-28+ · 让 backend 重新加载模型. 重载耗时可能远高于 health 探活, 用 predict 超时配额.
 
         v0.10.26 · 可选指定变体预热 (模型市场单变体预热); 缺省时 body 留空, backend 用默认变体.
+        v0.10.36 · 可选 task_type="video" 预热独立 video tracker 池 (仅认 sam_variant, 无 dino).
         """
         body: dict[str, str] = {}
         if sam_variant:
             body["sam_variant"] = sam_variant
         if dino_variant:
             body["dino_variant"] = dino_variant
+        if task_type:
+            body["task_type"] = task_type
         async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
             resp = await client.post(
                 f"{self.base_url}/reload",

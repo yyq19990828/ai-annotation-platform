@@ -38,7 +38,7 @@
 
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -66,8 +66,13 @@
   font-size: 12.5px;
 }
 
+.tableScroller {
+  overflow-x: auto;
+}
+
 .table {
   width: 100%;
+  min-width: 1040px;
   border-spacing: 0;
   border-collapse: separate;
   font-size: 13px;
@@ -81,6 +86,7 @@
   text-align: left;
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .firstTh {
@@ -101,6 +107,7 @@
 
 .actionCell {
   text-align: right;
+  white-space: nowrap;
 }
 
 .emptyCell {
@@ -118,6 +125,10 @@
   gap: 10px;
 }
 
+.memberText {
+  min-width: 0;
+}
+
 .memberName,
 .summaryName,
 .groupName {
@@ -129,6 +140,23 @@
 .summaryEmail {
   color: var(--color-fg-subtle);
   font-size: 11px;
+}
+
+.memberName,
+.memberEmail,
+.groupCell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberName,
+.memberEmail {
+  max-width: 240px;
+}
+
+.groupCell {
+  max-width: 160px;
 }
 
 .summaryEmail {
@@ -148,6 +176,7 @@
 .rowActions {
   display: inline-flex;
   gap: 2px;
+  white-space: nowrap;
 }
 
 .dangerIcon {

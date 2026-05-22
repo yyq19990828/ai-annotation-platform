@@ -16,6 +16,7 @@ import { ClassesSection } from "./sections/ClassesSection";
 import { DatasetsSection } from "./sections/DatasetsSection";
 import { MlBackendsSection } from "./sections/MlBackendsSection";
 import { RenderingConfigSection } from "./sections/RenderingConfigSection";
+import { VideoSamplingSection } from "./sections/VideoSamplingSection";
 import { AnnotationGuideSection } from "./sections/AnnotationGuideSection";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import styles from "./ProjectSettingsPage.module.css";
@@ -29,6 +30,7 @@ type SectionKey =
   | "batches"
   | "ml-backends"
   | "rendering"
+  | "video-sampling"
   | "annotation-guide"
   | "owner"
   | "danger";
@@ -36,7 +38,7 @@ type SectionKey =
 const SECTIONS: {
   key: SectionKey;
   label: string;
-  icon: "settings" | "users" | "user" | "trash" | "tag" | "rect" | "layers" | "db" | "bot" | "eye" | "book";
+  icon: "settings" | "users" | "user" | "trash" | "tag" | "rect" | "layers" | "db" | "bot" | "eye" | "book" | "target";
 }[] = [
   { key: "general", label: "基本信息", icon: "settings" },
   { key: "classes", label: "类别管理", icon: "rect" },
@@ -47,6 +49,8 @@ const SECTIONS: {
   { key: "ml-backends", label: "ML 模型", icon: "bot" },
   // v0.10.10 · I17.3
   { key: "rendering", label: "渲染配置", icon: "eye" },
+  // v0.10.29 · 视频帧采样（仅 video 项目可见）
+  { key: "video-sampling", label: "视频采样", icon: "target" },
   // v0.10.13 · E1
   { key: "annotation-guide", label: "标注指引", icon: "book" },
   { key: "owner", label: "负责人", icon: "user" },
@@ -62,6 +66,7 @@ const VALID_SECTIONS: SectionKey[] = [
   "batches",
   "ml-backends",
   "rendering",
+  "video-sampling",
   "annotation-guide",
   "owner",
   "danger",
@@ -94,9 +99,13 @@ export function ProjectSettingsPage() {
     return <Navigate to="/unauthorized" replace />;
   }
 
+  const isVideoProject = project.data_type === "video";
+  const canOpenWorkbench = project.type_key === "image-det" || isVideoProject;
   const visibleSections = SECTIONS.filter((s) => {
     if (s.key === "owner") return role === "super_admin";
     if (s.key === "danger") return isOwner;
+    // v0.10.29 · 视频帧采样仅对 video 项目展示。
+    if (s.key === "video-sampling") return isVideoProject;
     return true;
   });
 
@@ -135,7 +144,7 @@ export function ProjectSettingsPage() {
                 <Icon name="activity" size={12} />审计追溯
               </Button>
             )}
-            {project.type_key === "image-det" && (
+            {canOpenWorkbench && (
               <Button onClick={() => navigate(buildWorkbenchUrl(project.id, {
                 returnTo: currentWorkbenchReturnTo(location),
               }))}>
@@ -174,6 +183,9 @@ export function ProjectSettingsPage() {
           {section === "batches" && <BatchesSection project={project} />}
           {section === "ml-backends" && <MlBackendsSection project={project} />}
           {section === "rendering" && <RenderingConfigSection project={project} />}
+          {section === "video-sampling" && isVideoProject && (
+            <VideoSamplingSection project={project} />
+          )}
           {section === "annotation-guide" && <AnnotationGuideSection project={project} />}
           {section === "owner" && role === "super_admin" && <OwnerSection project={project} />}
           {section === "danger" && <DangerSection project={project} />}

@@ -94,6 +94,18 @@
   white-space: nowrap;
 }
 
+/* sampled 章节标记: 淡色 accent badge, 与手动章节区分。 */
+.sampledBadge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-fg);
+  font-size: 10px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
 .rowActions {
   display: flex;
   gap: 4px;

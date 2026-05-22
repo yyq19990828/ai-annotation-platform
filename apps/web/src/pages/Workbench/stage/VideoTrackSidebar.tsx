@@ -4,15 +4,17 @@ import type { DiffMode } from "../modes/types";
 import {
   isVideoBbox,
   isVideoTrack,
-  nearestTrackBbox,
   nearestTrackKeyframe,
   resolveTrackAtFrame,
   shortTrackId,
   sortedKeyframes,
   upsertKeyframe,
 } from "./videoStageGeometry";
-import { addOutsideRange, isFrameOutside, removeOutsideFrame } from "./videoTrackOutside";
-import { VideoTrackPanel } from "./VideoTrackPanel";
+import { addOutsideRange, isFrameOutside } from "./videoTrackOutside";
+import type { AttributeSchema } from "@/api/projects";
+import { VideoTrackPanel, type TrackFilter } from "./VideoTrackPanel";
+import type { VideoTrackGapMode } from "./VideoTrackComposeDialog";
+import { useVideoTrackActions } from "./useVideoTrackActions";
 // VideoTrackerJobState type imported lazily via inline import in props
 import type {
   VideoFrameEntry,
@@ -27,6 +29,7 @@ interface VideoTrackSidebarProps {
   selectedId: string | null;
   selectedIds?: string[];
   frameIndex: number;
+  trackFilter?: TrackFilter;
   readOnly: boolean;
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
@@ -45,6 +48,22 @@ interface VideoTrackSidebarProps {
   trackerJobsByAnnotation?: Record<string, import("@/hooks/useVideoTrackerJobs").VideoTrackerJobState>;
   onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onCancelTrackerJob?: (jobId: string) => void;
+  // v0.10.30 · 1A 选色器透传 (session 级覆盖)。
+  trackColorOverrides?: Record<string, string>;
+  onSetTrackColor?: (trackId: string, colorToken: string | null) => void;
+  // v0.10.30 · 1B 属性 / propagate / semantic_label 透传。
+  attributeSchema?: AttributeSchema;
+  onUpdateTrackAttributes?: (annotation: VideoTrackAnnotation, attributes: Record<string, unknown>) => void;
+  onUpdateKeyframeAttributes?: (annotation: VideoTrackAnnotation, frameIndex: number, attributes: Record<string, unknown>) => void;
+  onPropagateKeyframe?: (
+    annotation: VideoTrackAnnotation,
+    fromFrame: number,
+    count: number,
+    options: { direction: "forward" | "backward"; overwrite: boolean },
+  ) => void;
+  onUpdateSemanticLabel?: (annotation: VideoTrackAnnotation, semanticLabel: string) => void;
+  /** v0.10.35 · §A: 采样网格步长, 透传给 propagate 对话框 (>1 时 count 以网格格子为单位)。 */
+  samplingStep?: number;
 }
 
 interface CopiedKeyframe {
@@ -61,6 +80,22 @@ function cloneKeyframe(keyframe: VideoTrackKeyframe): VideoTrackKeyframe {
   };
 }
 
+// 取一条 track 的可见关键帧帧号区间 (排除 outside 帧)。无可见帧时回落到全部关键帧。
+function visibleFrameRange(track: VideoTrackAnnotation["geometry"]): [number, number] | null {
+  const visible = track.keyframes.filter((kf) => !isFrameOutside(track, kf.frame_index));
+  const frames = (visible.length > 0 ? visible : track.keyframes).map((kf) => kf.frame_index);
+  if (frames.length === 0) return null;
+  return [Math.min(...frames), Math.max(...frames)];
+}
+
+// 两条 track 的可见帧区间是否重叠 (join 要求不重叠)。
+export function trackRangesOverlap(a: VideoTrackAnnotation, b: VideoTrackAnnotation): boolean {
+  const ra = visibleFrameRange(a.geometry);
+  const rb = visibleFrameRange(b.geometry);
+  if (!ra || !rb) return true;
+  return ra[0] <= rb[1] && rb[0] <= ra[1];
+}
+
 function sameStringSet(a: Set<string>, b: Set<string>): boolean {
   if (a.size !== b.size) return false;
   for (const item of a) {
@@ -74,6 +109,7 @@ export function VideoTrackSidebar({
   selectedId,
   selectedIds = [],
   frameIndex,
+  trackFilter = "all",
   readOnly,
   hiddenTrackIds,
   lockedTrackIds,
@@ -92,6 +128,14 @@ export function VideoTrackSidebar({
   trackerJobsByAnnotation,
   onPropagateTrack,
   onCancelTrackerJob,
+  trackColorOverrides,
+  onSetTrackColor,
+  attributeSchema,
+  onUpdateTrackAttributes,
+  onUpdateKeyframeAttributes,
+  onPropagateKeyframe,
+  onUpdateSemanticLabel,
+  samplingStep,
 }: VideoTrackSidebarProps) {
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const selectedBboxes = useMemo(
@@ -126,6 +170,10 @@ export function VideoTrackSidebar({
     [selectedTrackIds, videoTracks],
   );
   const canMergeSelectedTracks = selectedTracks.length === 2 && selectedTracks[0].class_name === selectedTracks[1].class_name;
+  // join: 恰好两条同类且可见帧区间不重叠的 track。
+  const canJoinSelectedTracks = selectedTracks.length === 2
+    && selectedTracks[0].class_name === selectedTracks[1].class_name
+    && !trackRangesOverlap(selectedTracks[0], selectedTracks[1]);
 
   const currentKeyframe = useMemo(
     () => selectedTrack?.geometry.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null,
@@ -172,6 +220,17 @@ export function VideoTrackSidebar({
   }, [currentFrameEntries, frameIndex, hiddenTrackIds, selectedTrack]);
 
   const selectedTrackLocked = selectedTrack ? lockedTrackIds.has(selectedTrack.geometry.track_id) : false;
+  const trackActions = useVideoTrackActions({
+    selectedTrack,
+    frameIndex,
+    readOnly,
+    hiddenTrackIds,
+    lockedTrackIds,
+    onUpdate,
+    onToggleHiddenTrack,
+    onToggleLockedTrack,
+    onPropagateTrack,
+  });
 
   const selectTrack = useCallback((id: string, opts?: { toggle?: boolean }) => {
     if (opts?.toggle) {
@@ -248,19 +307,19 @@ export function VideoTrackSidebar({
     });
   }, [canMergeSelectedTracks, onComposeTracks, readOnly, selectedTracks]);
 
-  const markSelectedTrack = useCallback((patch: Partial<VideoTrackKeyframe>) => {
-    if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
-    if (patch.absent) {
-      onUpdate(selectedTrack, addOutsideRange(selectedTrack.geometry, {
-        from: frameIndex,
-        to: frameIndex,
-        source: patch.source === "prediction" ? "prediction" : "manual",
-      }));
-      return;
-    }
-    const bbox = nearestTrackBbox(selectedTrack.geometry, frameIndex);
-    onUpdate(selectedTrack, upsertKeyframe(removeOutsideFrame(selectedTrack.geometry, frameIndex), frameIndex, bbox, patch));
-  }, [frameIndex, lockedTrackIds, onUpdate, readOnly, selectedTrack]);
+  const joinSelectedTracks = useCallback((gapMode: VideoTrackGapMode) => {
+    if (!canJoinSelectedTracks || readOnly || !onComposeTracks) return;
+    onComposeTracks({
+      operation: "join_tracks",
+      annotationIds: selectedTracks.map((ann) => ann.id),
+      gapMode,
+    });
+  }, [canJoinSelectedTracks, onComposeTracks, readOnly, selectedTracks]);
+
+  const updateSemanticLabel = useCallback((ann: VideoTrackAnnotation, semanticLabel: string) => {
+    if (readOnly || lockedTrackIds.has(ann.geometry.track_id)) return;
+    onUpdate(ann, { ...ann.geometry, semantic_label: semanticLabel || undefined });
+  }, [lockedTrackIds, onUpdate, readOnly]);
 
   const copySelectedTrackToCurrentFrame = useCallback(() => {
     if (!selectedTrack || !selectedTrackGhost || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
@@ -295,7 +354,6 @@ export function VideoTrackSidebar({
         copiedKeyframe.keyframe.bbox,
         {
           source: "manual",
-          absent: copiedKeyframe.keyframe.absent ?? false,
           occluded: copiedKeyframe.keyframe.occluded ?? false,
         },
       ),
@@ -344,8 +402,9 @@ export function VideoTrackSidebar({
       selectedTrack={selectedTrack}
       selectedTrackGhost={selectedTrackGhost}
       selectedTrackLocked={selectedTrackLocked}
-      currentFrameOutside={selectedTrack ? isFrameOutside(selectedTrack.geometry, frameIndex) : false}
+      currentFrameOutside={trackActions.currentFrameOutside}
       frameIndex={frameIndex}
+      trackFilter={trackFilter}
       readOnly={readOnly}
       selectedBboxCount={selectedBboxes.length}
       classes={classes}
@@ -363,11 +422,13 @@ export function VideoTrackSidebar({
       onSplitSelectedTrack={onComposeTracks ? splitSelectedTrack : undefined}
       onMergeSelectedTracks={onComposeTracks ? mergeSelectedTracks : undefined}
       canMergeSelectedTracks={canMergeSelectedTracks}
+      onJoinSelectedTracks={onComposeTracks ? joinSelectedTracks : undefined}
+      canJoinSelectedTracks={canJoinSelectedTracks}
       onShowSelectedTracks={() => setSelectedTracksHidden(false)}
       onHideSelectedTracks={() => setSelectedTracksHidden(true)}
       onLockSelectedTracks={() => setSelectedTracksLocked(true)}
       onUnlockSelectedTracks={() => setSelectedTracksLocked(false)}
-      onMarkSelectedTrack={markSelectedTrack}
+      onMarkSelectedTrack={trackActions.markSelectedTrack}
       onCopySelectedTrackToCurrentFrame={copySelectedTrackToCurrentFrame}
       copiedKeyframeLabel={copiedKeyframeLabel}
       canCopyCurrentKeyframe={Boolean(selectedTrack && currentKeyframe)}
@@ -382,6 +443,14 @@ export function VideoTrackSidebar({
       onCancelTrackerJob={onCancelTrackerJob}
       onAcceptPredictionKeyframe={acceptPredictionKeyframe}
       onRejectPredictionKeyframe={rejectPredictionKeyframe}
+      trackColorOverrides={trackColorOverrides}
+      onSetTrackColor={onSetTrackColor}
+      attributeSchema={attributeSchema}
+      onUpdateTrackAttributes={onUpdateTrackAttributes}
+      onUpdateKeyframeAttributes={onUpdateKeyframeAttributes}
+      onPropagateKeyframe={onPropagateKeyframe}
+      onUpdateSemanticLabel={onUpdateSemanticLabel ?? updateSemanticLabel}
+      samplingStep={samplingStep}
     />
   );
 }

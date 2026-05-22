@@ -163,61 +163,71 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
           </div>
         )}
         {!isLoading && backends.length > 0 && (
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                {["名称", "URL", "类型", "能力", "状态", "最近检查", "操作"].map((h) => (
-                  <th
-                    key={h}
-                    className={styles.tableHeadCell}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {backends.map((b, i) => {
-                const capQ = capabilities[i];
-                const cap = capQ?.data as MLBackendCapability | undefined;
-                return (
-                  <tr key={b.id}>
-                    <td className={styles.tableCell}>{b.name}</td>
-                    <td className={cn(styles.tableCell, styles.urlCell)}>
-                      {b.url}
-                    </td>
-                    <td className={styles.tableCell}>
-                      <Badge variant={b.is_interactive ? "ai" : "outline"}>
-                        {b.is_interactive ? "交互式" : "批量"}
-                      </Badge>
-                    </td>
-                    <td className={styles.tableCell}>
-                      {capQ?.isLoading && (
-                        <span className={styles.subtleText}>…</span>
-                      )}
-                      {capQ?.isError && (
-                        <span className={styles.subtleText}>—</span>
-                      )}
-                      {cap?.supported_prompts && (
-                        <div className={styles.capabilityList}>
-                          {cap.supported_prompts.map((p) => (
-                            <Badge key={p} variant="outline">
-                              {p}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    <td className={styles.tableCell}>
-                      <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
-                        {b.state}
-                      </Badge>
-                    </td>
-                    <td className={cn(styles.tableCell, styles.mutedCell)}>
-                      {formatDate(b.last_checked_at)}
-                    </td>
-                    <td className={styles.tableCell}>
-                      <div className={styles.actions}>
+          <div className={styles.tableScroller}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  {["名称", "URL", "类型", "能力", "状态", "最近检查", "操作"].map((h) => (
+                    <th
+                      key={h}
+                      className={styles.tableHeadCell}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {backends.map((b, i) => {
+                  const capQ = capabilities[i];
+                  const cap = capQ?.data as MLBackendCapability | undefined;
+                  return (
+                    <tr key={b.id}>
+                      <td className={styles.tableCell}>
+                        <div className={styles.nameCell} title={b.name}>{b.name}</div>
+                      </td>
+                      <td className={cn(styles.tableCell, styles.urlCell)} title={b.url}>
+                        {b.url}
+                      </td>
+                      <td className={cn(styles.tableCell, styles.nowrapCell)}>
+                        <Badge variant={b.is_interactive ? "ai" : "outline"}>
+                          {b.is_interactive ? "交互式" : "批量"}
+                        </Badge>
+                      </td>
+                      <td className={styles.tableCell}>
+                        {capQ?.isLoading && (
+                          <span className={styles.subtleText}>…</span>
+                        )}
+                        {capQ?.isError && (
+                          <span className={styles.subtleText}>—</span>
+                        )}
+                        {cap?.supported_prompts && (
+                          <div className={styles.capabilityList}>
+                            {cap.supported_prompts.map((p) => (
+                              <Badge key={p} variant="outline">
+                                {p}
+                              </Badge>
+                            ))}
+                            {/* v0.10.37 · 视频追踪能力 (supported_trackers 非空 ⇒ 支持 video 模态) */}
+                            {cap.supported_trackers?.map((t) => (
+                              <Badge key={t} variant="ai">
+                                <Icon name="video" size={10} />
+                                {t}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className={cn(styles.tableCell, styles.nowrapCell)}>
+                        <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
+                          {b.state}
+                        </Badge>
+                      </td>
+                      <td className={cn(styles.tableCell, styles.mutedCell)}>
+                        {formatDate(b.last_checked_at)}
+                      </td>
+                      <td className={styles.tableCell}>
+                        <div className={styles.actions}>
                         {project.ml_backend_id !== b.id && (
                           <Button
                             size="sm"
@@ -261,13 +271,14 @@ export function MlBackendsSection({ project }: { project: ProjectResponse }) {
                         >
                           <Icon name="trash" size={11} />
                         </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

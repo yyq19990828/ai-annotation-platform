@@ -1,10 +1,10 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRef } from "react";
+import { createRef, useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { VideoStage, type VideoStageControls } from "./VideoStage";
 import { VideoTrackSidebar } from "./VideoTrackSidebar";
 import { videoNavigationStorageKey } from "./videoNavigationState";
-import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
+import type { AnnotationResponse, TaskVideoManifestResponse, VideoTrackGeometry } from "@/types";
 import bitmapStyles from "./VideoBitmapLayer.module.css";
 import interactionStyles from "./VideoInteractionLayer.module.css";
 import playbackOverlayStyles from "./VideoPlaybackOverlay.module.css";
@@ -67,6 +67,16 @@ function pointer(type: string, clientX: number, clientY: number, button = 0) {
     clientX,
     clientY,
     button,
+  });
+}
+
+function contextMenu(clientX: number, clientY: number) {
+  return new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    clientX,
+    clientY,
+    button: 2,
   });
 }
 
@@ -228,6 +238,115 @@ describe("VideoStage", () => {
     await waitFor(() => expect(getByLabelText("视频帧时间轴")).toHaveValue("3"));
   });
 
+  it("exposes selected track state operations through ref controls and the floating toolbar", () => {
+    const ref = createRef<VideoStageControls>();
+    const onUpdate = vi.fn();
+    const onToggleHiddenTrack = vi.fn();
+    const onToggleLockedTrack = vi.fn();
+    const onPropagateTrack = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 5, bbox: { x: 0.2, y: 0.2, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTitle } = render(
+      <VideoStage
+        ref={ref}
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        frameIndex={3}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={onUpdate}
+        onRename={() => {}}
+        onToggleHiddenTrack={onToggleHiddenTrack}
+        onToggleLockedTrack={onToggleLockedTrack}
+        onPropagateTrack={onPropagateTrack}
+      />,
+    );
+
+    act(() => {
+      ref.current?.toggleSelectedTrackOutside();
+    });
+    expect(onUpdate).toHaveBeenLastCalledWith(
+      annotations[0],
+      expect.objectContaining({
+        outside: [expect.objectContaining({ from: 3, to: 3, source: "manual" })],
+      }),
+    );
+
+    fireEvent.click(getByTitle("标记当前帧遮挡"));
+    expect(onUpdate).toHaveBeenLastCalledWith(
+      annotations[0],
+      expect.objectContaining({
+        keyframes: expect.arrayContaining([
+          expect.objectContaining({ frame_index: 3, occluded: true }),
+        ]),
+      }),
+    );
+
+    fireEvent.click(getByTitle("隐藏轨迹"));
+    expect(onToggleHiddenTrack).toHaveBeenCalledWith("trk_car");
+    fireEvent.click(getByTitle("锁定轨迹"));
+    expect(onToggleLockedTrack).toHaveBeenCalledWith("trk_car");
+
+    act(() => {
+      ref.current?.propagateSelectedTrack();
+    });
+    expect(onPropagateTrack).toHaveBeenCalledWith(annotations[0]);
+  });
+
+  it("keeps overlay prev/next controls on the sampling grid after an off-grid timeline seek", async () => {
+    const sampledManifest: TaskVideoManifestResponse = {
+      ...manifest,
+      metadata: {
+        ...manifest.metadata,
+        duration_ms: 2100,
+        frame_count: 21,
+      },
+    };
+    const { getByLabelText, getByTestId, getByTitle } = render(
+      <VideoStage
+        manifest={sampledManifest}
+        annotations={[]}
+        selectedId={null}
+        activeClass="car"
+        videoSampling={{ mode: "step", frame_step: 5 }}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const range = getByLabelText("视频帧时间轴");
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+
+    fireEvent(shell, pointer("pointerdown", 350, 20));
+    await waitFor(() => expect(range).toHaveValue("7"));
+
+    fireEvent.click(getByTitle("下一帧"));
+    await waitFor(() => expect(range).toHaveValue("10"));
+
+    fireEvent.click(getByTitle("下一帧"));
+    await waitFor(() => expect(range).toHaveValue("15"));
+
+    fireEvent.click(getByTitle("上一帧"));
+    await waitFor(() => expect(range).toHaveValue("10"));
+  });
+
   it("supports J/K/L style jog playback through ref controls", async () => {
     const ref = createRef<VideoStageControls>();
     const { container, getByTestId, queryByTestId } = render(
@@ -303,11 +422,11 @@ describe("VideoStage", () => {
         geometry: {
           type: "video_track",
           track_id: "trk_car",
-          outside: [{ from: 3, to: 4 }],
+          outside: [{ from: 3, to: 4 }, { from: 5, to: 5 }],
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
             { frame_index: 3, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
-            { frame_index: 5, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", absent: true },
+            { frame_index: 5, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
             { frame_index: 7, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "prediction" },
           ],
         },
@@ -673,7 +792,18 @@ describe("VideoStage", () => {
     fireEvent.keyDown(window, { key: "0" });
     await waitFor(() => expect(surface).toHaveStyle({ "--video-stage-transform": "translate(-250px, -125px) scale(1)" }));
 
-    fireEvent.wheel(stage, { ctrlKey: true, deltaY: -100, clientX: 250, clientY: 125 });
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY: -100,
+      clientX: 250,
+      clientY: 125,
+    });
+    act(() => {
+      overlay.dispatchEvent(wheelEvent);
+    });
+    expect(wheelEvent.defaultPrevented).toBe(true);
     await waitFor(() => expect(surface.style.getPropertyValue("--video-stage-transform")).toContain("scale(1.1)"));
     await waitFor(() => {
       expect(getByTestId("minimap-current-frame").parentElement?.style.getPropertyValue("--minimap-bottom")).toBe("64px");
@@ -686,6 +816,228 @@ describe("VideoStage", () => {
     await waitFor(() => {
       expect(surface.style.getPropertyValue("--video-stage-transform")).toContain("translate(-275px, -120px)");
     });
+  });
+
+  it("opens a track context menu on a right-click tap and routes actions through selected track state", async () => {
+    const onSelect = vi.fn();
+    const onUpdate = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    function Harness() {
+      const [selectedId, setSelectedId] = useState<string | null>(null);
+      return (
+        <VideoStage
+          manifest={manifest}
+          annotations={annotations}
+          selectedId={selectedId}
+          activeClass="car"
+          onSelect={(id) => {
+            onSelect(id);
+            setSelectedId(id);
+          }}
+          onCreate={() => {}}
+          onUpdate={onUpdate}
+          onRename={() => {}}
+        />
+      );
+    }
+
+    const { getByTestId } = render(<Harness />);
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 150, 60, 2));
+    fireEvent(overlay, pointer("pointerup", 151, 61, 2));
+    fireEvent(overlay, contextMenu(151, 61));
+
+    expect(onSelect).toHaveBeenCalledWith("t1");
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: /标记消失/ }));
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      annotations[0],
+      expect.objectContaining({
+        outside: [expect.objectContaining({ from: 0, to: 0, source: "manual" })],
+      }),
+    );
+  });
+
+  it("deletes the current keyframe from the track context menu without deleting the track", async () => {
+    const onUpdate = vi.fn();
+    const onDelete = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+            { frame_index: 3, bbox: { x: 0.4, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="t1"
+        activeClass="car"
+        frameIndex={0}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={onUpdate}
+        onRename={() => {}}
+        onDelete={onDelete}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 150, 60, 2));
+    fireEvent(overlay, pointer("pointerup", 151, 61, 2));
+    fireEvent(overlay, contextMenu(151, 61));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /删除当前关键帧/ }));
+
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const [, geometry] = onUpdate.mock.calls[0];
+    expect(geometry.keyframes.map((keyframe: { frame_index: number }) => keyframe.frame_index)).toEqual([3]);
+  });
+
+  it("opens a bbox context menu on right-click and deletes the hit bbox", async () => {
+    const onDelete = vi.fn();
+    const annotations = [
+      {
+        id: "b1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 0, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="b1"
+        activeClass="car"
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onDelete={onDelete}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 150, 60, 2));
+    fireEvent(overlay, pointer("pointerup", 151, 61, 2));
+    fireEvent(overlay, contextMenu(151, 61));
+
+    const menu = await screen.findByRole("menu");
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /删除/ }));
+    expect(onDelete).toHaveBeenCalledWith(annotations[0]);
+  });
+
+  it("keeps selected video bboxes aggregated from the bbox context menu", async () => {
+    const onComposeTracks = vi.fn();
+    const annotations = [
+      {
+        id: "b1",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 0, x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      },
+      {
+        id: "b2",
+        class_name: "car",
+        geometry: { type: "video_bbox", frame_index: 3, x: 0.2, y: 0.1, w: 0.2, h: 0.2 },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId="b2"
+        selectedIds={["b1", "b2"]}
+        activeClass="car"
+        frameIndex={0}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+        onComposeTracks={onComposeTracks}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 250, 60, 2));
+    fireEvent(overlay, pointer("pointerup", 251, 61, 2));
+    fireEvent(overlay, contextMenu(251, 61));
+
+    fireEvent.click(await screen.findByRole("menuitem", { name: /聚合为轨迹/ }));
+    expect(onComposeTracks).toHaveBeenCalledWith({
+      operation: "aggregate_bboxes",
+      annotationIds: ["b1", "b2"],
+      deleteSources: true,
+    });
+  });
+
+  it("keeps right-button drag as pan and does not open the track context menu", () => {
+    const onSelect = vi.fn();
+    const annotations = [
+      {
+        id: "t1",
+        class_name: "car",
+        geometry: {
+          type: "video_track",
+          track_id: "trk_car",
+          keyframes: [
+            { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+          ],
+        },
+      },
+    ] as AnnotationResponse[];
+
+    const { getByTestId } = render(
+      <VideoStage
+        manifest={manifest}
+        annotations={annotations}
+        selectedId={null}
+        activeClass="car"
+        onSelect={onSelect}
+        onCreate={() => {}}
+        onUpdate={() => {}}
+        onRename={() => {}}
+      />,
+    );
+    const overlay = getByTestId("video-overlay");
+    setRect(overlay);
+
+    fireEvent(overlay, pointer("pointerdown", 150, 100, 2));
+    fireEvent(overlay, pointer("pointermove", 175, 130, 2));
+    fireEvent(overlay, pointer("pointerup", 175, 130, 2));
+    fireEvent(overlay, contextMenu(175, 130));
+
+    expect(onSelect).not.toHaveBeenCalledWith("t1");
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("keeps the pending video box visible while class selection is open", () => {
@@ -1269,7 +1621,7 @@ describe("VideoStage", () => {
     expect(final.getByTestId("video-label-overlay")).not.toHaveTextContent("prediction-car");
   });
 
-  it("does not interpolate across an absent keyframe", () => {
+  it("does not interpolate across an outside keyframe", () => {
     const annotations = [
       {
         id: "t1",
@@ -1277,9 +1629,10 @@ describe("VideoStage", () => {
         geometry: {
           type: "video_track",
           track_id: "trk_car",
+          outside: [{ from: 1, to: 1 }],
           keyframes: [
             { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
-            { frame_index: 1, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", absent: true },
+            { frame_index: 1, bbox: { x: 0.2, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
             { frame_index: 2, bbox: { x: 0.3, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
           ],
         },
@@ -1592,7 +1945,7 @@ describe("VideoStage", () => {
       },
     ] as AnnotationResponse[];
 
-    const { getByText } = render(
+    const { getByRole } = render(
       <VideoTrackSidebar
         annotations={annotations}
         selectedId="t1"
@@ -1607,9 +1960,76 @@ describe("VideoStage", () => {
       />,
     );
 
-    fireEvent.click(getByText("新建轨迹"));
+    fireEvent.click(getByRole("button", { name: "新建轨迹" }));
 
     expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it("toggles current frame outside and occluded marks back to normal", () => {
+    const baseTrack = {
+      id: "t1",
+      class_name: "car",
+      geometry: {
+        type: "video_track",
+        track_id: "trk_car",
+        keyframes: [
+          { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual" },
+        ],
+      },
+    } as AnnotationResponse;
+    const renderSidebar = (annotation: AnnotationResponse, buttonName: string) => {
+      const onUpdate = vi.fn();
+      const view = render(
+        <VideoTrackSidebar
+          annotations={[annotation]}
+          selectedId="t1"
+          frameIndex={0}
+          readOnly={false}
+          hiddenTrackIds={new Set()}
+          lockedTrackIds={new Set()}
+          onSelect={() => {}}
+          onUpdate={onUpdate}
+          onToggleHiddenTrack={() => {}}
+          onToggleLockedTrack={() => {}}
+        />,
+      );
+      fireEvent.click(view.getByRole("button", { name: buttonName }));
+      view.unmount();
+      return onUpdate.mock.calls[0]?.[1] as VideoTrackGeometry;
+    };
+
+    const restoredOutside = renderSidebar({
+      ...baseTrack,
+      geometry: {
+        ...baseTrack.geometry,
+        outside: [{ from: 0, to: 0, source: "manual" }],
+      },
+    } as AnnotationResponse, "标记消失");
+    expect(restoredOutside.outside).toEqual([]);
+    expect(restoredOutside.keyframes.find((kf) => kf.frame_index === 0)?.occluded).toBe(false);
+
+    const restoredOccluded = renderSidebar({
+      ...baseTrack,
+      geometry: {
+        ...baseTrack.geometry,
+        keyframes: [
+          { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", occluded: true },
+        ],
+      },
+    } as AnnotationResponse, "标记遮挡");
+    expect(restoredOccluded.outside).toEqual([]);
+    expect(restoredOccluded.keyframes.find((kf) => kf.frame_index === 0)?.occluded).toBe(false);
+
+    const switchedToOutside = renderSidebar({
+      ...baseTrack,
+      geometry: {
+        ...baseTrack.geometry,
+        keyframes: [
+          { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, source: "manual", occluded: true },
+        ],
+      },
+    } as AnnotationResponse, "标记消失");
+    expect(switchedToOutside.outside).toEqual([{ from: 0, to: 0, source: "manual" }]);
   });
 
   it("filters track rows to tracks present on the current frame", () => {
@@ -1654,12 +2074,21 @@ describe("VideoStage", () => {
     );
 
     expect(view.getAllByTestId("video-track-row")).toHaveLength(2);
-
-    const filter = view.getByRole("tablist", { name: "轨迹过滤" });
-    expect(within(filter).queryByText("隐藏")).not.toBeInTheDocument();
-    fireEvent.click(within(filter).getByText("当前帧"));
-
-    expect(view.getAllByTestId("video-track-row")).toHaveLength(1);
+    view.rerender(
+      <VideoTrackSidebar
+        annotations={annotations}
+        selectedId={null}
+        frameIndex={0}
+        trackFilter="current"
+        readOnly={false}
+        hiddenTrackIds={new Set()}
+        lockedTrackIds={new Set()}
+        onSelect={() => {}}
+        onUpdate={() => {}}
+        onToggleHiddenTrack={() => {}}
+        onToggleLockedTrack={() => {}}
+      />,
+    );
     expect(view.getByText("car")).toBeInTheDocument();
     expect(view.queryByText("person")).not.toBeInTheDocument();
   });
@@ -1898,7 +2327,7 @@ describe("VideoStage", () => {
     );
 
     fireEvent.click(view.getByTitle("复制当前轨迹在当前帧的关键帧"));
-    expect(view.getByText(/已复制:/).textContent).toContain("F0");
+    expect(view.getByText(/已复制.*F0/)).toBeInTheDocument();
 
     view.rerender(
       <VideoTrackSidebar

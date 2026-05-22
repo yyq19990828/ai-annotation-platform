@@ -52,6 +52,26 @@ INFERENCE_LATENCY = Histogram(
 )
 
 
+# v0.10.35 §B · sam2_video tracker 指标 (与图片池可分辨; sam_variant 维度).
+VIDEO_TRACKER_FRAMES = Counter(
+    "video_tracker_frames_processed_total",
+    "sam2_video tracker 逐帧传播处理的帧数",
+    labelnames=("sam_variant",),
+)
+
+VIDEO_TRACKER_LATENCY = Histogram(
+    "video_tracker_latency_seconds",
+    "sam2_video 单次窗口传播 (init_state→propagate→release) 端到端耗时 (秒)",
+    labelnames=("sam_variant",),
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0),
+)
+
+
+def record_video_tracker(sam_variant: str, frames: int, duration_seconds: float) -> None:
+    VIDEO_TRACKER_FRAMES.labels(sam_variant=sam_variant).inc(frames)
+    VIDEO_TRACKER_LATENCY.labels(sam_variant=sam_variant).observe(duration_seconds)
+
+
 # v0.9.11 PerfHud · NVML / psutil 实时指标 (lifespan startup 初始化, /health + /metrics 共用)
 GPU_UTILIZATION = Gauge("gpu_utilization_percent", "GPU SM 利用率 (%)")
 GPU_TEMPERATURE = Gauge("gpu_temperature_celsius", "GPU 温度 (°C)")

@@ -8,7 +8,7 @@
 }
 
 .shell {
-  width: 400px;
+  width: min(400px, 100%);
 }
 
 .brand {

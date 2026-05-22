@@ -3049,6 +3049,58 @@
         "title": "AuditLogOut",
         "type": "object"
       },
+      "BackendCapabilities": {
+        "description": "v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).\n\n由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta[\"capabilities\"];\n`modalities` 为派生视图 (image / video), 见 services/ml_capabilities.derive_modalities.",
+        "properties": {
+          "is_interactive": {
+            "default": false,
+            "title": "Is Interactive",
+            "type": "boolean"
+          },
+          "modalities": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Modalities",
+            "type": "array"
+          },
+          "supported_geometric_outputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Geometric Outputs",
+            "type": "array"
+          },
+          "supported_prompts": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Prompts",
+            "type": "array"
+          },
+          "supported_text_outputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Text Outputs",
+            "type": "array"
+          },
+          "supported_trackers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Trackers",
+            "type": "array"
+          }
+        },
+        "title": "BackendCapabilities",
+        "type": "object"
+      },
       "BackendCostBreakdown": {
         "properties": {
           "avg_inference_time_ms": {
@@ -6352,6 +6404,16 @@
               }
             ]
           },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackendCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "gpu_info": {
             "anyOf": [
               {
@@ -7051,6 +7113,17 @@
               }
             ],
             "title": "Sam Variant"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
           }
         },
         "title": "MLBackendReloadRequest",
@@ -7576,6 +7649,14 @@
             ],
             "title": "Status Code"
           },
+          "supported_trackers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Trackers",
+            "type": "array"
+          },
           "supports_variants": {
             "default": false,
             "title": "Supports Variants",
@@ -7594,6 +7675,18 @@
                 "type": "null"
               }
             ]
+          },
+          "video_pool": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Pool"
           }
         },
         "required": [
@@ -7985,6 +8078,18 @@
             ],
             "title": "Output Mode",
             "type": "string"
+          },
+          "params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Params"
           },
           "prompt": {
             "anyOf": [
@@ -8819,6 +8924,16 @@
           "type_label": {
             "title": "Type Label",
             "type": "string"
+          },
+          "video_sampling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoSamplingConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -9213,6 +9328,12 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "video_sampling": {
+            "$ref": "#/components/schemas/VideoSamplingConfig",
+            "default": {
+              "mode": "none"
+            }
           }
         },
         "required": [
@@ -10358,6 +10479,16 @@
               }
             ],
             "title": "Type Label"
+          },
+          "video_sampling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoSamplingConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "ProjectUpdate",
@@ -12706,10 +12837,37 @@
             "title": "End Frame",
             "type": "integer"
           },
+          "frame_step": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Step"
+          },
           "metadata": {
             "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "manual",
+                  "sampled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "start_frame": {
             "minimum": 0.0,
@@ -12783,6 +12941,17 @@
             "title": "End Frame",
             "type": "integer"
           },
+          "frame_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Step"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -12792,6 +12961,15 @@
             "additionalProperties": true,
             "title": "Metadata",
             "type": "object"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "sampled"
+            ],
+            "title": "Source",
+            "type": "string"
           },
           "start_frame": {
             "title": "Start Frame",
@@ -12851,6 +13029,18 @@
             ],
             "title": "End Frame"
           },
+          "frame_step": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Step"
+          },
           "metadata": {
             "anyOf": [
               {
@@ -12862,6 +13052,21 @@
               }
             ],
             "title": "Metadata"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "manual",
+                  "sampled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "start_frame": {
             "anyOf": [
@@ -13624,6 +13829,46 @@
         "title": "VideoMetadata",
         "type": "object"
       },
+      "VideoSamplingConfig": {
+        "properties": {
+          "frame_step": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Step"
+          },
+          "mode": {
+            "default": "none",
+            "enum": [
+              "none",
+              "fps",
+              "step"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "target_fps": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Fps"
+          }
+        },
+        "title": "VideoSamplingConfig",
+        "type": "object"
+      },
       "VideoSegmentOut": {
         "properties": {
           "assignee_id": {
@@ -13807,11 +14052,21 @@
             ],
             "title": "Frame Index"
           },
+          "gap_mode": {
+            "default": "interpolate",
+            "enum": [
+              "interpolate",
+              "outside"
+            ],
+            "title": "Gap Mode",
+            "type": "string"
+          },
           "operation": {
             "enum": [
               "aggregate_bboxes",
               "split_track",
-              "merge_tracks"
+              "merge_tracks",
+              "join_tracks"
             ],
             "title": "Operation",
             "type": "string"
@@ -13846,7 +14101,8 @@
             "enum": [
               "aggregate_bboxes",
               "split_track",
-              "merge_tracks"
+              "merge_tracks",
+              "join_tracks"
             ],
             "title": "Operation",
             "type": "string"
@@ -13969,6 +14225,17 @@
             "title": "Outside",
             "type": "array"
           },
+          "semantic_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Label"
+          },
           "track_id": {
             "minLength": 1,
             "title": "Track Id",
@@ -13991,11 +14258,6 @@
       "VideoTrackKeyframe": {
         "additionalProperties": false,
         "properties": {
-          "absent": {
-            "default": false,
-            "title": "Absent",
-            "type": "boolean"
-          },
           "attributes": {
             "anyOf": [
               {
@@ -14067,6 +14329,194 @@
           "to"
         ],
         "title": "VideoTrackOutsideRange",
+        "type": "object"
+      },
+      "VideoTrackerJobCounts": {
+        "properties": {
+          "cancelled": {
+            "default": 0,
+            "title": "Cancelled",
+            "type": "integer"
+          },
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "queued": {
+            "default": 0,
+            "title": "Queued",
+            "type": "integer"
+          },
+          "running": {
+            "default": 0,
+            "title": "Running",
+            "type": "integer"
+          }
+        },
+        "title": "VideoTrackerJobCounts",
+        "type": "object"
+      },
+      "VideoTrackerJobListItem": {
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "from_frame": {
+            "title": "From Frame",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "model_key": {
+            "title": "Model Key",
+            "type": "string"
+          },
+          "project_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Display Id"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "segment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "to_frame": {
+            "title": "To Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "project_id",
+          "dataset_item_id",
+          "annotation_id",
+          "status",
+          "model_key",
+          "direction",
+          "from_frame",
+          "to_frame",
+          "created_at"
+        ],
+        "title": "VideoTrackerJobListItem",
         "type": "object"
       },
       "VideoTrackerJobOut": {
@@ -14248,6 +14698,48 @@
         "title": "VideoTrackerJobOut",
         "type": "object"
       },
+      "VideoTrackerJobStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "VideoTrackerJobStatus",
+        "type": "string"
+      },
+      "VideoTrackerJobsResponse": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/VideoTrackerJobCounts"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTrackerJobListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "counts"
+        ],
+        "title": "VideoTrackerJobsResponse",
+        "type": "object"
+      },
       "VideoTrackerPropagateRequest": {
         "properties": {
           "direction": {
@@ -14276,6 +14768,17 @@
             "additionalProperties": true,
             "title": "Prompt",
             "type": "object"
+          },
+          "sam_variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sam Variant"
           },
           "segment_id": {
             "anyOf": [
@@ -15121,7 +15624,7 @@
     },
     "/api/v1/admin/preannotate-summary": {
       "get": {
-        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有 ml_backend 注册的项目 (EXISTS ml_backends WHERE project_id=...).",
+        "description": "v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.\n\n仅返回有 ml_backend 注册的项目 (EXISTS ml_backends WHERE project_id=...).\nv0.10.38 · 撤回 v0.10.36 的 data_type=\"image\" 过滤: 模态分流改到前端 ProjectDetailPanel\n(image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.",
         "operationId": "list_preannotate_project_summary_api_v1_admin_preannotate_summary_get",
         "responses": {
           "200": {
@@ -22004,7 +22507,7 @@
             "required": false,
             "schema": {
               "default": "coco",
-              "pattern": "^(coco|voc|yolo|aap_json)$",
+              "pattern": "^(coco|voc|yolo|aap_json|video_json|mot|kitti)$",
               "title": "Format",
               "type": "string"
             }
@@ -22391,7 +22894,7 @@
             "required": false,
             "schema": {
               "default": "coco",
-              "pattern": "^(coco|voc|yolo|aap_json)$",
+              "pattern": "^(coco|voc|yolo|aap_json|video_json|mot|kitti)$",
               "title": "Format",
               "type": "string"
             }
@@ -27001,6 +27504,123 @@
         "summary": "Change User Role",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/v1/video-tracker-jobs": {
+      "get": {
+        "description": "列 video_tracker_jobs 时间线 (created_at DESC + cursor 分页) + 按 status 聚合计数.\n\nproject_id 过滤需 join Task (VideoTrackerJob 无 project_id 列)。\ncounts 在当前 project_id/model_key 过滤下 (忽略 status/cursor) 分组统计。",
+        "operationId": "list_video_tracker_jobs_api_v1_video_tracker_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/VideoTrackerJobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTrackerJobsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Video Tracker Jobs",
+        "tags": [
+          "video-tracker-jobs"
         ]
       }
     },

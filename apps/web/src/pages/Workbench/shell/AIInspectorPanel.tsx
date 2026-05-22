@@ -11,6 +11,7 @@ import type { AiBox } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
 import { groupOutlineColor } from "../stage/ImageStageShapes";
 import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
+import { isFrameOutside } from "../stage/videoTrackOutside";
 import { AttributeForm } from "./AttributeForm";
 import { CommentsPanel } from "./CommentsPanel";
 import { ResizeHandle } from "./ResizeHandle";
@@ -84,7 +85,7 @@ interface AIInspectorPanelProps {
   onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => void;
   /** v0.6.5 · 任务已锁定（review/completed），属性表单只读。 */
   readOnly?: boolean;
-  videoTrackPanel?: React.ReactNode;
+  videoTrackPanel?: React.ReactNode | ((frameFilter: FrameFilter) => React.ReactNode);
 }
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -517,15 +518,13 @@ function GroupCard({ groupId, memberCount, expanded, onToggle, onSelectGroup }: 
 // ── 虚拟化合并列表 ─────────────────────────────────────────────────────────
 type Row =
   | { kind: "ai"; box: AiBox; key: string }
+  | { kind: "frameFilter"; filter: FrameFilter; key: string; onFilterChange: (filter: FrameFilter) => void }
   | {
     kind: "header";
     count: number;
     totalCount: number;
     key: string;
     label: string;
-    filter: FrameFilter;
-    onFilterChange: (filter: FrameFilter) => void;
-    showFrameFilter: boolean;
   }
   | { kind: "videoTracks"; key: string }
   /** v0.10.20 · I12 同 group_id 折叠卡片头部. 单击 → 整组选中. 展开 → 下方插入 user 行. */
@@ -554,7 +553,7 @@ function firstTrackFrame(box: Annotation | AiBox): number | null {
   if (!geometry) return null;
   if (geometry.type === "video_bbox") return geometry.frame_index;
   if (geometry.type !== "video_track" || geometry.keyframes.length === 0) return null;
-  const visible = geometry.keyframes.filter((kf) => !kf.absent);
+  const visible = geometry.keyframes.filter((kf) => !isFrameOutside(geometry, kf.frame_index));
   const frames = (visible.length > 0 ? visible : geometry.keyframes).map((kf) => kf.frame_index);
   return Math.min(...frames);
 }
@@ -624,7 +623,7 @@ interface BoxesListProps {
   onToggleUserBoxFlag?: (id: string, flag: "is_locked" | "is_hidden" | "is_occluded") => void;
   onSeekFrame?: (frameIndex: number) => void;
   onSelectGroup?: (memberIds: string[]) => void;
-  videoTrackPanel?: React.ReactNode;
+  videoTrackPanel?: React.ReactNode | ((frameFilter: FrameFilter) => React.ReactNode);
 }
 
 function BoxesList({
@@ -639,8 +638,7 @@ function BoxesList({
   videoTrackPanel,
 }: BoxesListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const [aiFrameFilter, setAiFrameFilter] = useState<FrameFilter>("all");
-  const [userFrameFilter, setUserFrameFilter] = useState<FrameFilter>("all");
+  const [frameFilter, setFrameFilter] = useState<FrameFilter>("all");
   const showFrameFilter = typeof currentFrameIndex === "number";
   // v0.10.20 · I12 group 折叠态. v0.10.21 反转语义: 默认展开 (B-44 反馈 "不能展开"
   // 实为 chevron icon 名写错导致按钮看不到); 用 collapsedGroups 记 *显式收起* 的组,
@@ -654,38 +652,44 @@ function BoxesList({
       return next;
     });
 
+  const resolvedVideoTrackPanel = useMemo(
+    () => typeof videoTrackPanel === "function" ? videoTrackPanel(frameFilter) : videoTrackPanel,
+    [frameFilter, videoTrackPanel],
+  );
+
   const filteredAiBoxes = useMemo(
-    () => filterBoxesByFrame(aiBoxes, currentFrameIndex, aiFrameFilter),
-    [aiBoxes, currentFrameIndex, aiFrameFilter],
+    () => filterBoxesByFrame(aiBoxes, currentFrameIndex, frameFilter),
+    [aiBoxes, currentFrameIndex, frameFilter],
   );
   const filteredUserBoxes = useMemo(
-    () => filterBoxesByFrame(userBoxes, currentFrameIndex, userFrameFilter),
-    [userBoxes, currentFrameIndex, userFrameFilter],
+    () => filterBoxesByFrame(userBoxes, currentFrameIndex, frameFilter),
+    [userBoxes, currentFrameIndex, frameFilter],
   );
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
-    out.push({
-      kind: "header",
-      label: "AI 待审",
-      count: filteredAiBoxes.length,
-      totalCount: aiBoxes.length,
-      key: "ai-header",
-      filter: aiFrameFilter,
-      onFilterChange: setAiFrameFilter,
-      showFrameFilter,
-    });
-    filteredAiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
-    out.push({
-      kind: "header",
-      label: "人工",
-      count: filteredUserBoxes.length,
-      totalCount: userBoxes.length,
-      key: "user-header",
-      filter: userFrameFilter,
-      onFilterChange: setUserFrameFilter,
-      showFrameFilter,
-    });
+    if (showFrameFilter && (aiBoxes.length > 0 || userBoxes.length > 0 || resolvedVideoTrackPanel)) {
+      out.push({ kind: "frameFilter", key: "frame-filter", filter: frameFilter, onFilterChange: setFrameFilter });
+    }
+    if (aiBoxes.length > 0) {
+      out.push({
+        kind: "header",
+        label: "AI 待审",
+        count: filteredAiBoxes.length,
+        totalCount: aiBoxes.length,
+        key: "ai-header",
+      });
+      filteredAiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
+    }
+    if (userBoxes.length > 0) {
+      out.push({
+        kind: "header",
+        label: "人工",
+        count: filteredUserBoxes.length,
+        totalCount: userBoxes.length,
+        key: "user-header",
+      });
+    }
     // v0.10.20 · I12 按 group_id 分桶: 同 group_id (≥2 个成员) → group 卡片头, 展开时下方插入 user 行;
     // group_id null 或单成员 group → 平铺. 保持 filteredUserBoxes 原顺序内的相对位置.
     const bucketed: { groupId: number | null; boxes: Annotation[] }[] = [];
@@ -720,9 +724,9 @@ function BoxesList({
         bucket.boxes.forEach((b) => out.push({ kind: "user", box: b, key: `user-${b.id}` }));
       }
     }
-    if (videoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
+    if (resolvedVideoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
     return out;
-  }, [aiBoxes.length, aiFrameFilter, filteredAiBoxes, filteredUserBoxes, showFrameFilter, userBoxes.length, userFrameFilter, videoTrackPanel, collapsedGroups]);
+  }, [aiBoxes.length, filteredAiBoxes, filteredUserBoxes, frameFilter, showFrameFilter, userBoxes.length, resolvedVideoTrackPanel, collapsedGroups]);
 
   const selectBox = (box: Annotation | AiBox, shift: boolean | undefined) => {
     if (!shift) {
@@ -737,7 +741,8 @@ function BoxesList({
     getScrollElement: () => parentRef.current,
     estimateSize: (i) => {
       const row = rows[i];
-      if (row?.kind === "header") return row.showFrameFilter ? 62 : 36;
+      if (row?.kind === "frameFilter") return 38;
+      if (row?.kind === "header") return 36;
       if (row?.kind === "videoTracks") return 420;
       return 68;
     },
@@ -798,17 +803,20 @@ function BoxesList({
                   <div className={styles.listHeaderRow}>
                     <span className={styles.listHeaderLabel}>{r.label}</span>
                     <span className={cn("mono", styles.listHeaderCount)}>
-                      {r.showFrameFilter && r.filter === "current" ? `${r.count}/${r.totalCount}` : r.count}
+                      {showFrameFilter && frameFilter === "current" ? `${r.count}/${r.totalCount}` : r.count}
                     </span>
                   </div>
-                  {r.showFrameFilter && (
-                    <FrameFilterTabs value={r.filter} onChange={r.onFilterChange} />
-                  )}
+                </div>
+              )}
+              {r.kind === "frameFilter" && (
+                <div className={styles.frameFilterCard}>
+                  <span className={styles.frameFilterLabel}>显示范围</span>
+                  <FrameFilterTabs value={r.filter} onChange={r.onFilterChange} />
                 </div>
               )}
               {r.kind === "videoTracks" && (
                 <div data-testid="video-track-panel-row">
-                  {videoTrackPanel}
+                  {resolvedVideoTrackPanel}
                 </div>
               )}
               {r.kind === "userGroup" && (

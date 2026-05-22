@@ -103,84 +103,94 @@ export function InvitationListPanel() {
         )}
       </div>
 
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            {["邮箱", "角色", "数据组", "状态", "邀请人", "过期时间", ""].map((h, i) => (
-              <th
-                key={i}
-                className={styles.th}
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading && (
+      <div className={styles.tableScroller}>
+        <table className={styles.table}>
+          <thead>
             <tr>
-              <td colSpan={7} className={styles.emptyCell}>
-                加载中…
-              </td>
+              {["邮箱", "角色", "数据组", "状态", "邀请人", "过期时间", ""].map((h, i) => (
+                <th
+                  key={i}
+                  className={styles.th}
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
-          )}
-          {!isLoading && invites.length === 0 && (
-            <tr>
-              <td colSpan={7} className={styles.emptyCell}>
-                暂无邀请记录
-              </td>
-            </tr>
-          )}
-          {invites.map((inv) => {
-            const expired = inv.status === "expired";
-            const accepted = inv.status === "accepted";
-            const revoked = inv.status === "revoked";
-            return (
-              <tr key={inv.id}>
-                <td className={styles.cell}>
-                  <span className={`mono ${styles.email}`}>{inv.email}</span>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr>
+                <td colSpan={7} className={styles.emptyCell}>
+                  加载中…
                 </td>
-                <td className={styles.cell}>{ROLE_LABELS[inv.role as UserRole] ?? inv.role}</td>
-                <td className={styles.cell}>{inv.group_name ?? "—"}</td>
-                <td className={styles.cell}>
-                  <Badge variant={STATUS_COLORS[inv.status]}>{STATUS_LABEL[inv.status]}</Badge>
+              </tr>
+            )}
+            {!isLoading && invites.length === 0 && (
+              <tr>
+                <td colSpan={7} className={styles.emptyCell}>
+                  暂无邀请记录
                 </td>
-                <td className={`${styles.cell} ${styles.muted}`}>{inv.invited_by_name ?? "—"}</td>
-                <td className={`${styles.cell} ${styles.dateCell}`}>
-                  {new Date(inv.expires_at).toLocaleString("zh-CN")}
-                </td>
-                <td className={`${styles.cell} ${styles.actionsCell}`}>
-                  {!accepted && (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleResend(inv)}
-                        disabled={resendMut.isPending}
-                        title="重发邀请（生成新链接并复制）"
-                      >
-                        <Icon name="refresh" size={11} />
-                        {revoked || expired ? "重发" : "重发"}
-                      </Button>
-                      {!revoked && (
+              </tr>
+            )}
+            {invites.map((inv) => {
+              const expired = inv.status === "expired";
+              const accepted = inv.status === "accepted";
+              const revoked = inv.status === "revoked";
+              return (
+                <tr key={inv.id}>
+                  <td className={styles.cell}>
+                    <span className={`mono ${styles.email}`} title={inv.email}>{inv.email}</span>
+                  </td>
+                  <td className={styles.cell}>{ROLE_LABELS[inv.role as UserRole] ?? inv.role}</td>
+                  <td className={styles.cell}>
+                    <span className={styles.truncateText} title={inv.group_name ?? undefined}>
+                      {inv.group_name ?? "—"}
+                    </span>
+                  </td>
+                  <td className={styles.cell}>
+                    <Badge variant={STATUS_COLORS[inv.status]}>{STATUS_LABEL[inv.status]}</Badge>
+                  </td>
+                  <td className={`${styles.cell} ${styles.muted}`}>
+                    <span className={styles.truncateText} title={inv.invited_by_name ?? undefined}>
+                      {inv.invited_by_name ?? "—"}
+                    </span>
+                  </td>
+                  <td className={`${styles.cell} ${styles.dateCell}`}>
+                    {new Date(inv.expires_at).toLocaleString("zh-CN")}
+                  </td>
+                  <td className={`${styles.cell} ${styles.actionsCell}`}>
+                    {!accepted && (
+                      <>
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleRevoke(inv)}
-                          disabled={revokeMut.isPending}
-                          title="撤销邀请"
+                          onClick={() => handleResend(inv)}
+                          disabled={resendMut.isPending}
+                          title="重发邀请（生成新链接并复制）"
                         >
-                          <Icon name="x" size={11} />
+                          <Icon name="refresh" size={11} />
+                          {revoked || expired ? "重发" : "重发"}
                         </Button>
-                      )}
-                    </>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                        {!revoked && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleRevoke(inv)}
+                            disabled={revokeMut.isPending}
+                            title="撤销邀请"
+                          >
+                            <Icon name="x" size={11} />
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

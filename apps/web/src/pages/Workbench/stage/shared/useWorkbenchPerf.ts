@@ -29,12 +29,16 @@ export function useWorkbenchPerf(sampleRate?: number): WorkbenchPerfStats {
     const isDev = typeof import.meta !== "undefined" && (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV;
     const rate = typeof sampleRate === "number" ? sampleRate : isDev ? 1 : 0.05;
     if (rate <= 0) return;
-    if (rate < 1 && Math.random() > rate) return;
 
     // BugReport / e2e bench 在工作台 mount 后立刻读 `window.__workbenchPerf`；
     // 若没有 longtask 触发观测器，window 字段会缺失而读到 undefined。先写入 EMPTY，
-    // 保证 mount 后即可读到一个有效的 counter 对象。
+    // 保证 mount 后即可读到一个有效的 counter 对象。必须早于下面的采样早退 —— 否则
+    // production build (rate=0.05) 下约 95% 概率在采样 gate 处直接 return，counter 永不
+    // 初始化 (e2e workbench-perf / image-bench 读 window.__workbenchPerf 得 null 而 flaky 失败)。
     if (W && W.__workbenchPerf === undefined) W.__workbenchPerf = EMPTY;
+
+    // 采样仅决定是否挂昂贵的 longtask 观测器, 不影响上面的 counter 初始化。
+    if (rate < 1 && Math.random() > rate) return;
 
     const observer = new PerformanceObserver((list) => {
       const entries = list.getEntries();

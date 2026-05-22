@@ -88,6 +88,12 @@ def _chunk_ids_for_range(start: int, end: int) -> list[int]:
     return list(range(start // size, end // size + 1))
 
 
+def _last_chunk_id(metadata: VideoMetadata) -> int:
+    size = max(1, settings.video_chunk_size_frames)
+    last_frame = max(0, int(metadata.frame_count or 1) - 1)
+    return last_frame // size
+
+
 def _chunk_bounds(chunk_id: int, metadata: VideoMetadata) -> tuple[int, int]:
     _metadata_ready(metadata)
     size = max(1, settings.video_chunk_size_frames)
@@ -213,6 +219,30 @@ def _chunk_out(row: VideoChunk) -> VideoChunkOut:
     )
 
 
+async def _warmup_neighbor_chunks(
+    db: AsyncSession, ctx: VideoContext, requested_chunk_ids: list[int]
+) -> None:
+    """对热点 frame range 的相邻 (向后) chunk 做 look-ahead 预解码 (计划 §1.6)。
+
+    保守降级: 只对「还没 ready 且没在 pending 进行中」的相邻 chunk 投递, 不重复
+    投递、不阻塞主请求。warmup 失败/被关闭时静默跳过, 不影响主流程。
+    """
+    candidates = warmup_chunk_ids(
+        requested_chunk_ids,
+        _last_chunk_id(ctx.metadata),
+        settings.video_chunk_warmup_lookahead,
+    )
+    if not candidates:
+        return
+    rows = await _ensure_chunk_rows(db, ctx, candidates)
+    to_warm = [r.chunk_id for r in rows if r.status not in {"ready", "pending"}]
+    await db.commit()
+    if to_warm:
+        from app.workers.media import ensure_video_chunks
+
+        ensure_video_chunks.delay(str(ctx.item.id), to_warm)
+
+
 async def list_chunks(
     db: AsyncSession,
     ctx: VideoContext,
@@ -220,7 +250,8 @@ async def list_chunks(
     to_frame: int | None,
 ) -> VideoChunksResponse:
     start, end = _safe_frame_range(ctx.metadata, from_frame, to_frame)
-    rows = await _ensure_chunk_rows(db, ctx, _chunk_ids_for_range(start, end))
+    requested_ids = _chunk_ids_for_range(start, end)
+    rows = await _ensure_chunk_rows(db, ctx, requested_ids)
     missing = [r.chunk_id for r in rows if r.status != "ready"]
     now = _now()
     for row in rows:
@@ -231,6 +262,8 @@ async def list_chunks(
         from app.workers.media import ensure_video_chunks
 
         ensure_video_chunks.delay(str(ctx.item.id), missing)
+
+    await _warmup_neighbor_chunks(db, ctx, requested_ids)
 
     return VideoChunksResponse(
         dataset_item_id=ctx.item.id,
@@ -262,6 +295,7 @@ async def get_chunk(
         from app.workers.media import ensure_video_chunks
 
         ensure_video_chunks.delay(str(ctx.item.id), [chunk_id])
+    await _warmup_neighbor_chunks(db, ctx, [chunk_id])
     return _chunk_out(row)
 
 
@@ -502,7 +536,14 @@ def cache_key_for_chunk(dataset_item_id: uuid.UUID, chunk_id: int) -> str:
 
 
 def source_key_for_item(item: DatasetItem) -> str:
-    return _source_key(item, _video_meta(item))
+    """ffmpeg 处理(抽帧 / 抽 chunk / 时间表探测)用的源 key —— 永远是**原始视频**。
+
+    原始视频在 datasets_bucket。不要返回 `playback_path`(浏览器播放用的 h264 转码版,
+    存在 media_cache_bucket): 用它会(1)与 worker 的 datasets_bucket 不匹配 → HeadObject
+    404 抽帧全失败;(2)转码重编码后帧数 / 时序可能与原视频不一致 → 破坏 D2「frame_index
+    永远对齐原视频帧号」。playback_path 只用于浏览器 <video> 播放 URL(见 _source_key)。
+    """
+    return item.file_path
 
 
 def metadata_for_item(item: DatasetItem) -> VideoMetadata:
@@ -535,6 +576,168 @@ def image_bytes_to_array(data: bytes) -> Any:
 
     with Image.open(io.BytesIO(data)) as img:
         return np.asarray(img.convert("RGB"))
+
+
+# ── v0.10.29 · 视频帧逻辑采样网格 helper (纯函数, 供导出 / 前端共用) ──────
+#
+# 采样只是项目级导航/打点网格的视图层 (决策 D1/D2): frame_index 永远是源视频
+# 帧号, 这里只从配置派生「步长 step」与「采样帧列表」。算法见计划 §1。
+
+
+def derive_step(source_fps: float | None, sampling: dict) -> int:
+    """从采样配置派生网格步长 step (源帧空间), 最小为 1。
+
+    - mode="step" → frame_step
+    - mode="fps"  → max(1, round(source_fps / target_fps))
+    - mode="none" / 缺省 / 配置不全 → 1 (退化为不采样, 所有帧都是网格点)
+    """
+    if not sampling:
+        return 1
+    mode = sampling.get("mode", "none")
+    if mode == "step":
+        frame_step = sampling.get("frame_step")
+        if frame_step is None:
+            return 1
+        return max(1, int(frame_step))
+    if mode == "fps":
+        target_fps = sampling.get("target_fps")
+        if not source_fps or not target_fps:
+            return 1
+        return max(1, round(source_fps / target_fps))
+    return 1
+
+
+def derive_sampled_frames(frame_count: int, step: int) -> list[int]:
+    """绝对网格 (锚定 0) 上的采样帧列表: [0, step, 2*step, ...] 且 < frame_count。"""
+    if frame_count <= 0:
+        return []
+    step = max(1, int(step))
+    return list(range(0, frame_count, step))
+
+
+# ── v0.10.29 · 长视频 sparse timetable helper (计划 §1.2, 纯函数) ─────────
+#
+# 超长视频不必给每帧都存一行 VideoFrameIndex(frame_index, pts_ms)。改成 sparse:
+# 只持久化「锚点帧」(stride 网格上的真值 pts_ms), 中间帧的 pts_ms 由相邻锚点线性
+# 插值得到; 落在锚点范围外则退化为 fps 估算 (沿用 _estimated_pts_ms 的语义)。
+#
+# 对外契约不变 (决策 D2): frame_index 永远是源视频帧号; pts_ms_for_frame 命中
+# DB 真值优先, miss 时落到 fps 估算。本 helper 只是给「无 DB 全帧表」的 sparse
+# 写入路径提供一个可单测的纯函数。锚点本身仍存进 VideoFrameIndex (无需新表)。
+
+
+def derive_anchor_frames(frame_count: int, stride: int) -> list[int]:
+    """sparse 锚点帧网格: [0, stride, 2*stride, ...] 且 < frame_count, 末帧也补上。
+
+    末帧补锚点是为了让插值有右边界, 避免视频尾部全靠外推。
+    """
+    if frame_count <= 0:
+        return []
+    stride = max(1, int(stride))
+    anchors = list(range(0, frame_count, stride))
+    last = frame_count - 1
+    if anchors[-1] != last:
+        anchors.append(last)
+    return anchors
+
+
+def select_sparse_anchor_rows(
+    rows: list[dict[str, Any]], stride: int
+) -> list[dict[str, Any]]:
+    """从全帧 timetable 行里挑出要持久化的 sparse 锚点子集 (按 frame_index)。
+
+    锚点 = derive_anchor_frames(frame_count, stride) 网格上的帧 ∪ 所有关键帧。
+    保留关键帧是为了 chunk smart-copy 的 keyframe 对齐判定 (依赖 is_keyframe) 不退化。
+    rows 需含 frame_index / is_keyframe 字段; 返回保持原顺序的子集。
+    stride<=1 时退化为全帧 (返回原列表), 即不做 sparse。
+    """
+    stride = max(1, int(stride))
+    if stride == 1 or not rows:
+        return rows
+    frame_count = max(r["frame_index"] for r in rows) + 1
+    anchor_set = set(derive_anchor_frames(frame_count, stride))
+    return [r for r in rows if r["frame_index"] in anchor_set or r.get("is_keyframe")]
+
+
+def resolve_pts_ms_sparse(
+    frame_index: int,
+    anchors: list[tuple[int, int]],
+    fps: float | None,
+    stride: int,
+) -> int | None:
+    """由 sparse 锚点解析任意源帧号的 pts_ms。
+
+    - anchors: 已按 frame_index 升序排列的 (frame_index, pts_ms) 列表 (锚点真值)。
+    - 命中锚点 → 直接返回真值。
+    - 落在两个相邻锚点之间 → 按 frame_index 线性插值。
+    - 落在锚点范围外 (或 anchors 为空) → 用最近锚点 + fps 外推; 无锚点无 fps → None。
+
+    stride 仅作语义占位 (与 derive_anchor_frames 共享步长概念), 解析本身不依赖它。
+    """
+    _ = stride
+    if not anchors:
+        if not fps:
+            return None
+        return int(round((frame_index / fps) * 1000))
+
+    first_f, first_pts = anchors[0]
+    last_f, last_pts = anchors[-1]
+
+    # 范围外: 从最近端锚点按 fps 外推
+    if frame_index <= first_f:
+        if frame_index == first_f:
+            return first_pts
+        if not fps:
+            return None
+        return int(round(first_pts + ((frame_index - first_f) / fps) * 1000))
+    if frame_index >= last_f:
+        if frame_index == last_f:
+            return last_pts
+        if not fps:
+            return None
+        return int(round(last_pts + ((frame_index - last_f) / fps) * 1000))
+
+    # 范围内: 找到 bracketing 锚点 (lo < frame_index <= hi) 做线性插值
+    lo_f, lo_pts = first_f, first_pts
+    for f, pts in anchors:
+        if f == frame_index:
+            return pts
+        if f > frame_index:
+            hi_f, hi_pts = f, pts
+            span = hi_f - lo_f
+            if span <= 0:
+                return lo_pts
+            ratio = (frame_index - lo_f) / span
+            return int(round(lo_pts + ratio * (hi_pts - lo_pts)))
+        lo_f, lo_pts = f, pts
+    return last_pts
+
+
+# ── v0.10.29 · chunk warmup look-ahead 选择 (计划 §1.6, 纯函数) ───────────
+
+
+def warmup_chunk_ids(
+    requested_chunk_ids: list[int],
+    last_chunk_id: int,
+    look_ahead: int,
+) -> list[int]:
+    """请求命中某些 chunk 时, 计算应预解码的相邻 (向后) chunk id。
+
+    - 只向后看 (逐帧导航多为向前推进): 取 max(requested)+1 .. +look_ahead。
+    - 不超过 last_chunk_id (视频末尾 chunk), 不与 requested 重叠。
+    - look_ahead<=0 或无请求 → 空列表 (warmup 完全降级)。
+    """
+    if look_ahead <= 0 or not requested_chunk_ids:
+        return []
+    frontier = max(requested_chunk_ids)
+    requested = set(requested_chunk_ids)
+    out: list[int] = []
+    for cid in range(frontier + 1, frontier + 1 + look_ahead):
+        if cid > last_chunk_id:
+            break
+        if cid not in requested:
+            out.append(cid)
+    return out
 
 
 async def get_frame_array(

@@ -196,103 +196,105 @@ export function UsersPage() {
         </div>
 
         {tab === "members" && (
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                {["成员", "角色", "数据组", "状态", "近期标注量", "准确率", "加入时间", ""].map((h, i) => (
-                  <th key={i} className={`${styles.th} ${i === 0 ? styles.firstTh : ""}`}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
+          <div className={styles.tableScroller}>
+            <table className={styles.table}>
+              <thead>
                 <tr>
-                  <td colSpan={8} className={styles.emptyCell}>加载中...</td>
+                  {["成员", "角色", "数据组", "状态", "近期标注量", "准确率", "加入时间", ""].map((h, i) => (
+                    <th key={i} className={`${styles.th} ${i === 0 ? styles.firstTh : ""}`}>
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              )}
-              {filtered.map((u: UserResponse) => {
-                const statusLabel = STATUS_LABEL[u.status] ?? u.status;
-                return (
-                  <tr key={u.id}>
-                    <td className={styles.memberCell}>
-                      <div className={styles.memberInfo}>
-                        <Avatar initial={u.name[0]} size="md" />
-                        <div>
-                          <div className={styles.memberName}>{u.name}</div>
-                          <div className={`mono ${styles.memberEmail}`}>{u.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className={styles.td}>
-                      <Badge variant={ROLE_COLORS[u.role] || "outline"}>{ROLE_LABELS[u.role as UserRole] ?? u.role}</Badge>
-                    </td>
-                    <td className={styles.td}>
-                      {u.group_name ?? "—"}
-                    </td>
-                    <td className={styles.td}>
-                      <Badge variant={STATUS_COLORS[statusLabel] || "outline"} dot>{statusLabel}</Badge>
-                    </td>
-                    <td className={styles.td}>
-                      <span className={styles.subtleDash}>—</span>
-                    </td>
-                    <td className={styles.td}>
-                      <span className={styles.subtleDash}>—</span>
-                    </td>
-                    <td className={`${styles.td} ${styles.dateCell}`}>
-                      {formatDate(u.created_at)}
-                    </td>
-                    <td className={styles.actionCell}>
-                      <div className={styles.rowActions}>
-                        {canViewAudit && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => navigate(`/audit?actor_id=${u.id}`)}
-                            title={`查看 ${u.name} 的审计追溯`}
-                          >
-                            <Icon name="activity" size={11} />
-                          </Button>
-                        )}
-                        {me?.id !== u.id && editableTargets.includes(u.role as UserRole) ? (
-                          <>
-                            <Button variant="ghost" size="sm" onClick={() => setEditing(u)} title="编辑成员">
-                              <Icon name="edit" size={11} />
-                            </Button>
-                            {u.is_active && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setResettingPwd(u)}
-                                title="重置密码"
-                              >
-                                <Icon name="key" size={11} />
-                              </Button>
-                            )}
-                            {u.is_active && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setDeleting(u)}
-                                title="删除账号"
-                              >
-                                <Icon name="trash" size={11} className={styles.dangerIcon} />
-                              </Button>
-                            )}
-                          </>
-                        ) : (
-                          <Button variant="ghost" size="sm" disabled title={me?.id === u.id ? "不能修改自己" : "无权修改该用户"}>
-                            <Icon name="edit" size={11} className={styles.disabledIcon} />
-                          </Button>
-                        )}
-                      </div>
-                    </td>
+              </thead>
+              <tbody>
+                {isLoading && (
+                  <tr>
+                    <td colSpan={8} className={styles.emptyCell}>加载中...</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                )}
+                {filtered.map((u: UserResponse) => {
+                  const statusLabel = STATUS_LABEL[u.status] ?? u.status;
+                  return (
+                    <tr key={u.id}>
+                      <td className={styles.memberCell}>
+                        <div className={styles.memberInfo}>
+                          <Avatar initial={u.name[0]} size="md" />
+                          <div className={styles.memberText}>
+                            <div className={styles.memberName}>{u.name}</div>
+                            <div className={`mono ${styles.memberEmail}`}>{u.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className={styles.td}>
+                        <Badge variant={ROLE_COLORS[u.role] || "outline"}>{ROLE_LABELS[u.role as UserRole] ?? u.role}</Badge>
+                      </td>
+                      <td className={`${styles.td} ${styles.groupCell}`}>
+                        {u.group_name ?? "—"}
+                      </td>
+                      <td className={styles.td}>
+                        <Badge variant={STATUS_COLORS[statusLabel] || "outline"} dot>{statusLabel}</Badge>
+                      </td>
+                      <td className={styles.td}>
+                        <span className={styles.subtleDash}>—</span>
+                      </td>
+                      <td className={styles.td}>
+                        <span className={styles.subtleDash}>—</span>
+                      </td>
+                      <td className={`${styles.td} ${styles.dateCell}`}>
+                        {formatDate(u.created_at)}
+                      </td>
+                      <td className={styles.actionCell}>
+                        <div className={styles.rowActions}>
+                          {canViewAudit && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => navigate(`/audit?actor_id=${u.id}`)}
+                              title={`查看 ${u.name} 的审计追溯`}
+                            >
+                              <Icon name="activity" size={11} />
+                            </Button>
+                          )}
+                          {me?.id !== u.id && editableTargets.includes(u.role as UserRole) ? (
+                            <>
+                              <Button variant="ghost" size="sm" onClick={() => setEditing(u)} title="编辑成员">
+                                <Icon name="edit" size={11} />
+                              </Button>
+                              {u.is_active && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setResettingPwd(u)}
+                                  title="重置密码"
+                                >
+                                  <Icon name="key" size={11} />
+                                </Button>
+                              )}
+                              {u.is_active && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setDeleting(u)}
+                                  title="删除账号"
+                                >
+                                  <Icon name="trash" size={11} className={styles.dangerIcon} />
+                                </Button>
+                              )}
+                            </>
+                          ) : (
+                            <Button variant="ghost" size="sm" disabled title={me?.id === u.id ? "不能修改自己" : "无权修改该用户"}>
+                              <Icon name="edit" size={11} className={styles.disabledIcon} />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
 
         {tab === "roles" && (

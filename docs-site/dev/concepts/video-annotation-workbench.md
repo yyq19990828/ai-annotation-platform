@@ -24,6 +24,8 @@ v0.9.23 引入 `outside` 段语义：`video_track` 可用闭区间表达目标�
 
 v0.9.24 升级时间轴可视化：选中轨迹时显示 keyframe、outside、interpolated 和 prediction 分布；未选中轨迹时显示全局 keyframe 密度条，并支持 `Shift+←/→` 跳上/下可见关键帧。
 
+v0.10.30（视频工作台 Phase 2）对齐 CVAT 的 track 工具：**删除 `keyframe.absent`**，"消失"语义彻底并入 `outside`（两态 outside/occluded）；新增可编辑 `semantic_label` 与确定性派生的 `track_number`；接通 track/帧级属性 UI、split/merge、新增 **join（Re-ID 跳连，`gap_mode` interpolate/outside）**、Propagate 铺帧、track 导航快捷键、侧栏隐藏/锁定/选色。多几何 track 暂缓。
+
 v0.9.26 补齐轻量视频导航：时间轴支持本地 loop region，播放可在片段内循环；当前帧可打书签并通过 marker 跳回；显式 seek 会记录最近 50 个位置用于前进 / 后退。
 
 v0.9.27 接入后端单帧缓存的第一层前端消费：时间轴 hover 显示当前帧缩略图，并对选中轨迹关键帧、书签帧和 loop region 边界做预取 hint。
@@ -171,6 +173,7 @@ v0.9.20 起，前端通过 `videoTool` 决定新拖框落库类型：矩形框�
 {
   "type": "video_track",
   "track_id": "trk_...",
+  "semantic_label": "car_3",
   "outside": [
     { "from": 24, "to": 48, "source": "manual" }
   ],
@@ -179,7 +182,6 @@ v0.9.20 起，前端通过 `videoTool` 决定新拖框落库类型：矩形框�
       "frame_index": 0,
       "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
       "source": "manual",
-      "absent": false,
       "occluded": false
     }
   ]
@@ -189,14 +191,16 @@ v0.9.20 起，前端通过 `videoTool` 决定新拖框落库类型：矩形框�
 约定：
 
 - `annotation_type` 写 `video_track`。
-- `track_id` 在单条 annotation 内稳定，用于 UI 展示和审核定位。
+- `track_id` 在单条 annotation 内稳定，用于 UI 展示和审核定位（uuid，只读不变）。
+- `semantic_label`（v0.10.30 起）是用户可编辑的语义标签（如 `car_3`），仅作跨任务 Re-ID 心智，不参与主键、不强制唯一。
 - 类别继续使用 annotation 顶层 `class_name`，本期不引入稳定 `class_id`。
 - `keyframes[]` 是持久化数据；插值结果由前端按相邻关键帧计算，不写库。v0.9.21 起前端用缓存索引和二分查找解析当前帧。
 - `outside[]` 是 v0.9.23 起的一等消失段，使用闭区间 `{ from, to }` 表示目标在该段帧内不存在；相邻或重叠区间会在读写 helper 中归一化。
 - `source` 当前支持 `manual` / `prediction` / `interpolated`；前端不会把计算得到的 interpolated frame 展开保存。
-- `absent=true` 是旧版单帧消失标记；读路径会把它视为单帧 outside，新的 UI 写入优先使用 `outside`。
-- outside/absent 对渲染和导出优先级最高：落在 outside 的帧不显示对象、不导出 bbox，也不会参与 track → `video_bbox` 转换。
-- `occluded=true` 表示目标存在但被遮挡，前端用虚线状态显示。
+- **v0.10.30 起删除 `keyframe.absent` 字段**：轨迹"消失"语义完全由 `outside` 区间表达（对齐 CVAT 两态 outside/occluded）。alembic 0084 已把存量 `absent=true` 关键帧转写为单帧 outside 并删除该键。
+- `outside` 对渲染和导出优先级最高：落在 outside 的帧不显示对象、不导出 bbox，也不会参与 track → `video_bbox` 转换。
+- `occluded=true` 表示目标存在但被遮挡，前端用虚线状态显示，不阻断插值。
+- `track_number`（v0.10.30）是显示/导出用的确定性派生整数：按「首关键帧帧号升序、并列按 `track_id` 字典序」派生 `1..N`，**不持久化**（util `derive_track_number` / 前端 `deriveTrackNumber`）。
 
 `video_bbox` geometry：
 
@@ -245,7 +249,7 @@ POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes
 | `frame_index` | number | `scope=frame` 时必填 |
 | `frame_mode` | `keyframes` / `all_frames` | `scope=track` 时决定只转关键帧还是展开插值帧 |
 
-响应返回源 annotation 的新状态、创建出的 `video_bbox[]`、是否删除源 track，以及被移除的 frame indexes。`copy` 不会改动源轨迹，`removed_frame_indexes` 为空；`split` 才会移除源关键帧或删除整条源轨迹，并返回被移除的帧号。`all_frames` 使用与 Video Tracks JSON 导出相同的后端插值 helper：outside/absent 范围不输出 bbox，也不会跨消失段转换。为避免长视频一次性写爆 annotation 表，单次请求最多生成 5000 个 `video_bbox`。
+响应返回源 annotation 的新状态、创建出的 `video_bbox[]`、是否删除源 track，以及被移除的 frame indexes。`copy` 不会改动源轨迹，`removed_frame_indexes` 为空；`split` 才会移除源关键帧或删除整条源轨迹，并返回被移除的帧号。`all_frames` 使用与 Video Tracks JSON 导出相同的后端插值 helper：outside 范围不输出 bbox，也不会跨消失段转换。为避免长视频一次性写爆 annotation 表，单次请求最多生成 5000 个 `video_bbox`。
 
 ### Track Composition
 
@@ -269,9 +273,10 @@ POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
 
 | 字段 | 取值 | 说明 |
 |---|---|---|
-| `operation` | `aggregate_bboxes` / `split_track` / `merge_tracks` | 聚合单帧框、拆分轨迹、合并轨迹 |
-| `annotation_ids` | UUID[] | 聚合时传 `video_bbox[]`；拆分时传 1 条 `video_track`；合并时传 2 条 `video_track` |
+| `operation` | `aggregate_bboxes` / `split_track` / `merge_tracks` / `join_tracks` | 聚合单帧框、拆分轨迹、合并轨迹、跳连轨迹 |
+| `annotation_ids` | UUID[] | 聚合时传 `video_bbox[]`；拆分时传 1 条 `video_track`；合并/跳连时传 2 条 `video_track` |
 | `frame_index` | number | `split_track` 必填，表示在当前可见帧之后切出后段 |
+| `gap_mode` | `interpolate` / `outside` | `join_tracks` 用（v0.10.30）：`interpolate` 不写 gap、靠线性插值过渡；`outside` 把 gap 区标 outside 后合并。默认 `interpolate` |
 | `delete_sources` | boolean | `aggregate_bboxes` 默认为 true，成功后删除源 `video_bbox` |
 
 约束：
@@ -279,6 +284,7 @@ POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
 - `aggregate_bboxes` 要求同任务、同类、每帧最多一个 `video_bbox`。
 - `split_track` 要求切点是可见帧，源 annotation 保留前段，新 annotation 保存后段。
 - `merge_tracks` 只接受两条同类且可见帧区间不重叠的 track；中间 gap 会写入 `outside` 段。
+- `join_tracks`（v0.10.30）同样要求两条同类、可见帧区间不重叠的 track；与 merge 共用合并落库 helper，区别仅在 gap 处理（见 `gap_mode`）。
 - 响应返回 `updated_annotations[]`、`created_annotations[]` 和 `deleted_annotation_ids[]`，前端用这些结果更新 annotation cache 并组成 undo/redo batch。
 
 ## 插值与质量检查
@@ -286,7 +292,7 @@ POST /api/v1/tasks/{task_id}/annotations/video/track-compositions
 前端只在相邻有效关键帧之间做 bbox 线性插值：
 
 - `x/y/w/h` 按 `frame_index` 距离线性计算。
-- 如果两个关键帧之间存在 `absent=true`，不显示跨段插值。
+- 如果两个关键帧之间落入 `outside` 段，不显示跨段插值。
 - 手工 / 预测关键帧优先于插值结果。
 - 编辑时 bbox 会 clamp 到 `[0, 1]` 归一化范围。
 
@@ -327,7 +333,6 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
           "frame_index": 0,
           "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
           "source": "manual",
-          "absent": false,
           "occluded": false
         }
       ]
@@ -344,7 +349,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `keyframes`：只输出持久化关键帧。
 - `all_frames`：每条 track 增加 `frames[]`，后端按相邻有效关键帧线性插值 `x/y/w/h`。
 
-插值规则与前端显示保持一致：outside 段优先；精确关键帧其次；`absent=true` 的旧关键帧会被当作单帧 outside；`occluded=true` 表示目标存在但遮挡，不阻断插值。`video_frame_mode=all_frames` 不输出 outside 范围内的 bbox，也不会把 track → `video_bbox` 转换到 outside 帧上。
+插值规则与前端显示保持一致：outside 段优先；精确关键帧其次；`occluded=true` 表示目标存在但遮挡，不阻断插值。`video_frame_mode=all_frames` 不输出 outside 范围内的 bbox，也不会把 track → `video_bbox` 转换到 outside 帧上。
 
 `include_attributes=false` 会移除 `project.attribute_schema` 以及 track / legacy `video_bbox` 上的 `attributes`。`format=yolo|voc` 对视频项目返回 400，因为这两个格式会丢失 track 与关键帧语义。
 
@@ -365,7 +370,8 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `Ctrl+M` 当前帧添加 / 移除书签
 - `Ctrl+[` / `Ctrl+]` 跳转历史后退 / 前进
 - `Alt+L` 清除本地 loop region
-- `Delete` / `Backspace` 删除选中轨迹
+- `Delete` / `Backspace` 选中 `video_track` 时删除当前帧关键帧；选中 `video_bbox` 时删除该框
+- `Ctrl+Delete` / `Ctrl+Backspace` 删除整条选中轨迹
 - `Tab` / `Shift+Tab` 循环轨迹
 - `Esc` 取消选择
 - `1-9` 有选中视频对象时改其 `class_name`；无选中时切 active class
@@ -390,6 +396,8 @@ v0.9.22 起，视频画布结构对齐 CVAT 的 canvas layer contract，但仍�
 
 `VideoStageSurface` 负责统一尺寸、aspect ratio、层叠顺序和 viewport transform。对象层不再给每个 bbox 主体挂 `pointerdown`，Interaction 层通过 `videoStageCoordinates.ts` 把 client 坐标映射到视频归一化坐标，再用 `videoStagePicking.ts` 选择顶层框。
 
+v0.10.33 起，画布上下文菜单使用通用 `ContextMenu` + `useCanvasContextMenu` 原语：Stage 负责把命中对象转换成 `DropdownItem[]`，菜单组件只处理 fixed 坐标定位、视口翻转和关闭行为。v0.10.34 起，这套外壳同时服务于视频 `video_track` / `video_bbox` 和图片 Stage 的 bbox、rotated bbox、polygon、polyline、keypoint 等人工标注；图片侧通过 Konva `getIntersection()` 在容器层统一命中 shape，再把 annotation action 映射成 `DropdownItem[]`。
+
 v0.9.39 起，视频工作台的 viewport 与图片工作台复用同一套 `useViewportTransform` 行为：`F` 适应视口、`0` 回到 1:1、Ctrl/Meta+滚轮以光标为锚点缩放、右键拖拽平移。缩放和平移只影响显示层，保存到 annotation 的 bbox / keyframe 仍是 `[0,1]` 归一化视频坐标。
 
 R5.2 的 bitmap cache 只优化前端体感，不替代 `<video>` 播放源。`useVideoBitmapCache` 在浏览器支持 `createImageBitmap(video)` 时按 `taskId + frameIndex` 保存 LRU；seek / scrub 命中时 `VideoBitmapLayer` 先绘制缓存帧，`<video>` 异步追赶。浏览器不支持或抓帧失败时，bitmap 层保持隐藏并在诊断里标记 unsupported / errors。
@@ -403,7 +411,7 @@ v0.9.19 后，`VideoStage` 底部固定控制条改为 `VideoPlaybackOverlay`：
 - 保留播放 / 暂停、逐帧按钮、range scrubber、关键帧 tick、当前帧号、时间和当前帧框数。
 - v0.9.23 起，底部标记的数据源升级为 timeline markers：keyframe 仍显示为细线，prediction 使用不同颜色，outside 段显示为灰色区间。
 - v0.9.24 起，选中 `video_track` 时显示该轨迹的单轨 timeline：keyframe 圆点、outside 灰段、interpolated 虚线段和 prediction 标记；未选中轨迹时显示全局 keyframe 密度条。
-- `Shift+←/→` 复用同一套可见关键帧计算，跳过 outside 和 legacy `absent=true` 帧；如果没有选中轨迹，则保持原有 ±10 帧跳转。
+- `Shift+←/→` 复用同一套可见关键帧计算，跳过 outside 帧；如果没有选中轨迹，则保持原有 ±10 帧跳转。v0.10.30 另加 `,`/`.` 跳上/下可见关键帧、`Home`/`End` 跳首/末出现帧。
 - v0.9.26 起，`Shift+drag` 时间轴可创建本地 loop region；播放越过范围末帧后 seek 回起始帧，逐帧和手动 seek 不被限制。
 - loop region、书签和跳转历史只存前端会话状态，按 task 写入 `sessionStorage`，不改变 annotation schema 或后端 API。
 - 书签以小三角 marker 显示，`Ctrl+M` 在当前帧加 / 删；显式 seek、bookmark 跳转和关键帧跳转写入最近 50 条跳转历史，播放 tick 不写历史。
@@ -416,7 +424,7 @@ v0.9.19 后，`VideoStage` 底部固定控制条改为 `VideoPlaybackOverlay`：
 
 图片工作台的 `useAnnotationHistory` 仍处理 annotation 级 create / update / delete。视频侧在 v0.9.19 增加 `videoKeyframe` command：
 
-- 单个 `frame_index` 的关键帧新增、移动、`absent` 和 `occluded` 切换只撤销该关键帧。
+- 单个 `frame_index` 的关键帧新增、移动、`occluded` 切换只撤销该关键帧；标记"消失"改为写 `outside` 区间（独立撤销）。
 - 创建 / 删除整条 track、重命名类别仍按 annotation 级命令处理。
 - apply 时读取当前最新 `video_track` geometry，只替换目标帧 keyframe，保留其它关键帧。
 
@@ -431,5 +439,5 @@ v0.9.19 后，`VideoStage` 底部固定控制条改为 `VideoPlaybackOverlay`：
 
 - 显隐和锁定只影响当前工作台会话，不持久化。
 - 重命名轨迹会更新 annotation 顶层 `class_name`。
-- 选中轨迹但当前帧无可显示 bbox 时，stage 会用最近非 `absent` 且未落入 outside 的关键帧渲染虚线参考框；拖动参考框或点击「复制到当前帧」会通过同一 `upsertKeyframe` 路径创建当前帧关键帧，并清理当前帧 outside 覆盖。
+- 选中轨迹但当前帧无可显示 bbox 时，stage 会用最近未落入 outside 的关键帧渲染虚线参考框；拖动参考框或点击「复制到当前帧」会通过同一 `upsertKeyframe` 路径创建当前帧关键帧，并清理当前帧 outside 覆盖。
 - 当前轨迹面板展示 `track_id` + `frame_index`，审核退回时可复制到原因文本中定位问题。

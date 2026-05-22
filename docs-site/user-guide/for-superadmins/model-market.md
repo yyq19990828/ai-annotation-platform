@@ -50,6 +50,27 @@ v0.9.3-phase2 把分散的 `/ml-integrations` 与 `/failed-predictions` 两个�
 - grounded-sam2-backend 还会显示 embedding 缓存命中率（v0.9.1 LRU）
 - Prometheus 指标见 [可观测性](../../dev/monitoring)
 
+## 视频追踪观测（v0.10.36）
+
+有了真实 video tracker（v0.10.35，gsam2 `sam2_video`）后，模型市场区分**图像推理**与**视频追踪**两种模态。
+
+### 观测 / 预热面板按模态拆分
+
+backend 的变体面板拆成两组：
+
+- **图像推理变体**：SAM + DINO 双下拉，预热加载到图片池（grounded-sam2 图片 predictor）。
+- **视频追踪变体**：**仅 SAM 单下拉**（video tracker 不使用 DINO），预热加载到**独立 video 池**。
+
+> ⚠️ **常见误区**：在 v0.10.36 之前，对一个纯视频项目的 backend 点「预热」其实只热了**图片池**——video tracker 用的是独立 `_video_pool`，首次追踪请求才冷启，预热按钮碰不到它，等于白占图片侧显存。现在视频组的预热走 `/reload?task_type=video`，正确加载 video 池。
+>
+> 若 backend 的 `/setup.supported_trackers` 为空（不支持视频）或未上报 `video_pool`（旧版本），视频组会降级提示，不影响图像组。
+
+### 视频追踪任务监控（v0.10.38 起迁至 /ai-pre/jobs）
+
+> **v0.10.38**：视频追踪任务监控已从模型市场迁出，并入 [`/ai-pre/jobs`](../for-project-admins/ai-preannotate) 的「视频」模态 tab（与图像 `prediction_jobs` 并列，统一 AI 任务历史）。旧链接 `/model-market/video-jobs` 自动跳转到 `/ai-pre/jobs?tab=video`。**模型市场只保留后端 / 显存池健康观测**（上面的模态拆分预热面板），任务（job）历史归 ai-pre。
+>
+> 监控内容不变：计数卡（queued / running / completed / failed / cancelled）+ 按状态 / model_key / 项目过滤的 cursor 分页列表（failed 行展开 `error_message`），数据来自 `GET /video-tracker-jobs`。
+
 ## 新建 / 编辑 Backend
 
 按钮「新建 ML Backend」弹表单，与 [ML Backend 注册](./ml-backend-registry) 等价。差别在这里创建的 backend 默认 `project_id=NULL`（全局可选），项目设置 wizard 复制时才落到具体项目。

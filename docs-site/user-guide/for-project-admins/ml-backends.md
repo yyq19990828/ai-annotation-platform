@@ -21,9 +21,10 @@ last_reviewed: 2026-05-14
 - 必填项：
   - **名称**：本项目内唯一，建议带模型/环境后缀，如 `grounded-sam2-prod`。
   - **URL**：后端容器内可达的 HTTP(S) 地址。Docker 同主机宿主网常用 `http://172.17.0.1:8001`。
-  - **类型**：交互式 / 批量。交互式 backend 才能在工作台被 SAM 工具调用。
 - 可选项：鉴权方式、`max_concurrency`（1-32，控制单 backend 并发预标请求数）。
 - 注册前点 **「测试连接」**——平台会用临时探针打一次 `/health`，确认 URL 可达且鉴权配置正确，**不会**写 DB。
+
+> **交互能力 / 支持模态自动探测（v0.10.37 起）**：「是否交互式 backend」不再手填。平台在**健康检查**时会顺带探一次 `/setup`，按 backend 自报的 `is_interactive` / `supported_prompts`（图像 prompt）/ `supported_trackers`（视频 tracker）派生交互能力与支持模态，写库后在列表只读展示。注册一个新 backend 后，先在表格里点一次「健康检查」（刷新图标）即可看到检测到的能力。
 
 ## 绑定为预标注 backend
 
@@ -32,12 +33,13 @@ last_reviewed: 2026-05-14
 - 会同时把项目 `ml_backend_id` 设为该 backend、`ai_enabled` 置 true。
 - 已绑定的行显示蓝色 `已绑定` 角标，其他行仍可"绑定到本项目"实现切换。
 - 工作台进入时会拉这个 backend 的 `/setup`，按返回的 `supported_prompts` 决定工具栏哪些 AI 工具置灰。
+- **模态校验（v0.10.37 起）**：绑定时平台会按项目数据类型校验——视频项目只能绑自报 `supported_trackers`（支持视频追踪）的 backend，否则拒绝绑定。若 backend 此刻不可达探测失败，则放行（不因瞬时宕机卡住操作）。
 
 ## 能力列
 
-表格的「能力」列展示每个 backend 的 `supported_prompts`，例如：
+表格的「能力」列展示每个 backend 的 `supported_prompts` 与 `supported_trackers`（视频追踪），例如：
 
-- `grounded-sam2`：`point` `bbox` `text`
+- `grounded-sam2`：`point` `bbox` `text` `sam2_video`（最后一项为视频追踪能力徽标）
 - `sam3-backend`：`bbox` `text` `exemplar`
 
 数据来自后端 `GET /setup`（详见 [开发文档 § ML Backend Protocol](../../dev/reference/ml-backend-protocol.md)）。后端如返回 `—`，说明 `/setup` 不可达或未升级到 v0.10.1+。

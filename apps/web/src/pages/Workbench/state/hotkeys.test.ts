@@ -165,6 +165,22 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "l" }, videoCtx)).toEqual({ type: "videoJogPlayback", dir: 1 });
   });
 
+  it("selected video track owns O / Q / H / L state toggles", () => {
+    const selectedTrackCtx: Partial<DispatchCtx> = { videoMode: true, hasSelectedVideoTrack: true };
+    expect(dispatch({ key: "o" }, selectedTrackCtx)).toEqual({ type: "videoToggleOutside" });
+    expect(dispatch({ key: "Q" }, selectedTrackCtx)).toEqual({ type: "videoToggleOccluded" });
+    expect(dispatch({ key: "/" }, selectedTrackCtx)).toEqual({ type: "videoToggleOccluded" });
+    expect(dispatch({ key: "h" }, selectedTrackCtx)).toEqual({ type: "videoToggleHiddenTrack" });
+    expect(dispatch({ key: "l" }, selectedTrackCtx)).toEqual({ type: "videoToggleLockedTrack" });
+  });
+
+  it("Ctrl+B opens selected video track propagation only in video mode", () => {
+    expect(dispatch({ key: "b", ctrlKey: true }, { videoMode: true, hasSelectedVideoTrack: true }))
+      .toEqual({ type: "videoPropagateTrack" });
+    expect(dispatch({ key: "b", ctrlKey: true }, videoCtx)).toBeNull();
+    expect(dispatch({ key: "b", ctrlKey: true }, { hasSelectedVideoTrack: true })).toBeNull();
+  });
+
   it("ArrowLeft / ArrowRight → videoSeek", () => {
     expect(dispatch({ key: "ArrowRight" }, videoCtx)).toEqual({ type: "videoSeek", delta: 1 });
     expect(dispatch({ key: "ArrowLeft" }, videoCtx)).toEqual({ type: "videoSeek", delta: -1 });
@@ -196,9 +212,17 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "l", altKey: true }, videoCtx)).toEqual({ type: "videoClearLoopRegion" });
   });
 
-  it("Delete / Backspace → videoDeleteSelected", () => {
-    expect(dispatch({ key: "Delete" }, videoCtx)).toEqual({ type: "videoDeleteSelected" });
-    expect(dispatch({ key: "Backspace" }, videoCtx)).toEqual({ type: "videoDeleteSelected" });
+  it("Delete / Backspace → video keyframe delete by default", () => {
+    expect(dispatch({ key: "Delete" }, videoCtx)).toEqual({ type: "videoDeleteSelected", scope: "keyframe" });
+    expect(dispatch({ key: "Backspace" }, videoCtx)).toEqual({ type: "videoDeleteSelected", scope: "keyframe" });
+  });
+
+  it("Ctrl+Delete / Ctrl+Backspace → video track delete", () => {
+    const selectedVideoCtx: Partial<DispatchCtx> = { videoMode: true, hasSelection: true, hasSelectedVideoTrack: true };
+    expect(dispatch({ key: "Delete", ctrlKey: true }, selectedVideoCtx))
+      .toEqual({ type: "videoDeleteSelected", scope: "track" });
+    expect(dispatch({ key: "Backspace", ctrlKey: true }, selectedVideoCtx))
+      .toEqual({ type: "videoDeleteSelected", scope: "track" });
   });
 
   it("Tab / Shift+Tab → videoCycleTrack", () => {
@@ -225,6 +249,44 @@ describe("dispatchKey · video mode", () => {
     expect(dispatch({ key: "Delete" }, pendingVideoCtx)).toBeNull();
     expect(dispatch({ key: "Backspace" }, pendingVideoCtx)).toBeNull();
     expect(dispatch({ key: "Escape" }, pendingVideoCtx)).toEqual({ type: "cancel" });
+  });
+});
+
+describe("dispatchKey · video sampling grid (v0.10.29)", () => {
+  const gridCtx: Partial<DispatchCtx> = { videoMode: true, samplingActive: true };
+
+  it("ArrowLeft / ArrowRight → videoSeekGrid (grid jump)", () => {
+    expect(dispatch({ key: "ArrowRight" }, gridCtx)).toEqual({ type: "videoSeekGrid", dir: 1 });
+    expect(dispatch({ key: "ArrowLeft" }, gridCtx)).toEqual({ type: "videoSeekGrid", dir: -1 });
+  });
+
+  it("Shift + ArrowLeft / ArrowRight → videoMicroStep ±1 (escape hatch)", () => {
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, gridCtx)).toEqual({ type: "videoMicroStep", dir: 1 });
+    expect(dispatch({ key: "ArrowLeft", shiftKey: true }, gridCtx)).toEqual({ type: "videoMicroStep", dir: -1 });
+  });
+
+  it(", / . → videoMicroStep ±1", () => {
+    expect(dispatch({ key: "." }, gridCtx)).toEqual({ type: "videoMicroStep", dir: 1 });
+    expect(dispatch({ key: "," }, gridCtx)).toEqual({ type: "videoMicroStep", dir: -1 });
+  });
+
+  it("Alt + ArrowLeft / ArrowRight → videoSeekKeyframe when a track is selected", () => {
+    const altCtx: Partial<DispatchCtx> = { videoMode: true, samplingActive: true, hasSelectedVideoTrack: true };
+    expect(dispatch({ key: "ArrowRight", altKey: true }, altCtx)).toEqual({ type: "videoSeekKeyframe", dir: 1 });
+    expect(dispatch({ key: "ArrowLeft", altKey: true }, altCtx)).toEqual({ type: "videoSeekKeyframe", dir: -1 });
+  });
+
+  it("Alt + Arrow falls back to grid jump when no track is selected", () => {
+    expect(dispatch({ key: "ArrowRight", altKey: true }, gridCtx)).toEqual({ type: "videoSeekGrid", dir: 1 });
+    expect(dispatch({ key: "ArrowLeft", altKey: true }, gridCtx)).toEqual({ type: "videoSeekGrid", dir: -1 });
+  });
+
+  it("sampling-off (step=1) keeps legacy keymap unchanged", () => {
+    const offCtx: Partial<DispatchCtx> = { videoMode: true, samplingActive: false };
+    expect(dispatch({ key: "ArrowRight" }, offCtx)).toEqual({ type: "videoSeek", delta: 1 });
+    expect(dispatch({ key: "ArrowLeft" }, offCtx)).toEqual({ type: "videoSeek", delta: -1 });
+    expect(dispatch({ key: "ArrowRight", shiftKey: true }, offCtx)).toEqual({ type: "videoSeek", delta: 10 });
+    expect(dispatch({ key: "." }, offCtx)).toEqual({ type: "videoSeek", delta: 1 });
   });
 });
 

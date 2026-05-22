@@ -64,57 +64,59 @@ export function ViewerDashboard() {
           </div>
           <SearchInput placeholder="搜索项目..." value={query} onChange={setQuery} width={220} />
         </div>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              {["项目", "进度", "AI 模型", "状态"].map((h, i) => (
-                <th key={i}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && (
+        <div className={styles.tableScroller}>
+          <table className={styles.table}>
+            <thead>
               <tr>
-                <td colSpan={4} className={styles.emptyCell}>加载中...</td>
+                {["项目", "进度", "AI 模型", "状态"].map((h, i) => (
+                  <th key={i}>
+                    {h}
+                  </th>
+                ))}
               </tr>
-            )}
-            {!isLoading && projects.map((p) => {
-              const total = p.total_tasks || 1;
-              const pct = Math.round((p.completed_tasks / total) * 100);
-              return (
-                <tr key={p.id} onClick={() => onOpenProject(p)} className={styles.clickableRow}>
-                  <td>
-                    <div className={styles.projectName}>{p.name}</div>
-                    <span className={`mono ${styles.projectId}`}>{p.display_id}</span>
-                  </td>
-                  <td className={styles.progressCell}>
-                    <ProgressBar value={pct} />
-                    <span className={`mono ${styles.progressPct}`}>{pct}%</span>
-                  </td>
-                  <td>
-                    {p.ai_enabled ? (
-                      <Badge variant="ai"><Icon name="sparkles" size={10} />{p.ai_model}</Badge>
-                    ) : (
-                      <span className={styles.noneText}>—</span>
-                    )}
-                  </td>
-                  <td>
-                    {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
-                    {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
-                    {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
-                  </td>
+            </thead>
+            <tbody>
+              {isLoading && (
+                <tr>
+                  <td colSpan={4} className={styles.emptyCell}>加载中...</td>
                 </tr>
-              );
-            })}
-            {!isLoading && projects.length === 0 && (
-              <tr>
-                <td colSpan={4} className={styles.emptyCell}>没有匹配的项目</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+              {!isLoading && projects.map((p) => {
+                const total = p.total_tasks || 1;
+                const pct = Math.round((p.completed_tasks / total) * 100);
+                return (
+                  <tr key={p.id} onClick={() => onOpenProject(p)} className={styles.clickableRow}>
+                    <td>
+                      <div className={styles.projectName}>{p.name}</div>
+                      <span className={`mono ${styles.projectId}`}>{p.display_id}</span>
+                    </td>
+                    <td className={styles.progressCell}>
+                      <ProgressBar value={pct} />
+                      <span className={`mono ${styles.progressPct}`}>{pct}%</span>
+                    </td>
+                    <td>
+                      {p.ai_enabled ? (
+                        <Badge variant="ai"><Icon name="sparkles" size={10} />{p.ai_model}</Badge>
+                      ) : (
+                        <span className={styles.noneText}>—</span>
+                      )}
+                    </td>
+                    <td>
+                      {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
+                      {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
+                      {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!isLoading && projects.length === 0 && (
+                <tr>
+                  <td colSpan={4} className={styles.emptyCell}>没有匹配的项目</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

@@ -344,6 +344,11 @@ export function App() {
             </RequirePagePermission>
           }
         />
+        {/* v0.10.38 · 视频追踪监控并入 /ai-pre/jobs 视频 tab (epic 阶段 3); 旧链接 301 到新址 */}
+        <Route
+          path="/model-market/video-jobs"
+          element={<Navigate to="/ai-pre/jobs?tab=video" replace />}
+        />
         <Route
           path="/training"
           element={

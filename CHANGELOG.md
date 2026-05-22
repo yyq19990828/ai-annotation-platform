@@ -22,6 +22,160 @@
 
 ## 最新版本
 
+## [0.10.38] - 2026-05-22
+
+> **AI 预标注模态化重设计 + video-jobs 并入（epic 阶段 2 + 3）。** `/ai-pre` 从「图像单后端文本批量预标」升级为模态感知（图像走文本批量预标 / 视频走工作台逐轨迹追踪引导）+ 多 backend 选择 + 按后端动态参数面板；`/ai-pre/jobs` 统一图像/视频两类 AI 任务历史，把 v0.10.36 临时落在 ModelMarket 的视频追踪监控页并入。依赖 v0.10.37（阶段 1）的能力快照 / 模态派生。计划见 [v0.10.38 计划](docs/plans/2026-05-22-v0.10.38-ai-preannotate-modality-redesign.md)。
+
+### Added
+
+- **多 backend 选择 + 按后端参数面板** (前端 [ProjectDetailPanel.tsx](apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx) · 后端 [projects.py](apps/api/app/api/v1/projects.py) · [tasks.py](apps/api/app/workers/tasks.py)): ai-pre 执行页加 backend 选择器（在项目已注册 backend 间选，默认绑定值）+ 复用 `SchemaForm` 按选中 backend 的 `/setup.params` 渲染参数面板，值按 backend 记忆（`User.preferences.ai.params_by_backend`）。`PreannotateRequest` 加 `params`，worker 把 params 合并进 `/predict` context（覆盖项目级阈值兜底，无 params 时行为不变）。取代旧的项目级 `ThresholdRow`（项目默认仍在项目设置 GeneralSection 改）。
+- **视频项目 AI 预标引导卡片** (前端 [VideoPreannotateGuide.tsx](apps/web/src/pages/AIPreAnnotate/components/VideoPreannotateGuide.tsx)): 视频 AI 预标无批量派发语义（追踪在工作台逐轨迹 Shift+T 发起），视频项目进 ai-pre 渲染引导卡片（跳工作台 + 视频 job 历史深链），不误用图像批量面板。
+- **统一 AI 任务历史模态 tab** (前端 [AIPreAnnotateJobsPage.tsx](apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx)): `/ai-pre/jobs` 加「图像 / 视频」模态 tab（`?tab` 同步深链）——图像走 `prediction_jobs`、视频走 `video_tracker_jobs`（复用重构后的 `VideoTrackerJobsPanel`）。
+
+### Changed
+
+- **ai-pre 按 data_type 模态分流** (后端 [admin_preannotate.py](apps/api/app/api/v1/admin_preannotate.py) · 前端 ProjectDetailPanel): 撤回 v0.10.36 的 `data_type="image"` 止血过滤（视频项目重新出现在列表），分流改到前端按 `data_type` 路由（image=文本批量预标 / video=引导卡片 / lidar=占位）。
+- **视频追踪监控并入 ai-pre** (前端 [App.tsx](apps/web/src/App.tsx) · [ModelMarketPage.tsx](apps/web/src/pages/ModelMarket/ModelMarketPage.tsx)): 退役 `/model-market/video-jobs` 路由（301 → `/ai-pre/jobs?tab=video`）+ 删 ModelMarket 入口链接；ModelMarket 只留后端 / 显存池健康观测，AI 任务历史归 ai-pre。
+
+## [0.10.37] - 2026-05-22
+
+> **ML Backend 能力协商落库 + 模态派生（epic 阶段 1）。** 平台第一次对 backend 的「能力 / 模态」有持久化感知：健康检查时顺带探 `/setup`，把 `supported_prompts`/`supported_trackers`/`is_interactive` 等能力快照落进 `health_meta`，`is_interactive` 改为从 backend 自报派生（不再手填）；项目绑定 backend 时按 `data_type` 校验模态匹配。是 [ML Backend 能力协商 + ai-pre 模态化 epic](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 的前置基石，后续 ai-pre 模态化（阶段 2）、video-jobs 并入（阶段 3）都依赖本版。计划见 [v0.10.37 计划](docs/plans/2026-05-22-v0.10.37-ml-backend-capability-persistence.md)。
+
+### Added
+
+- **能力快照落库** (后端 [ml_backend.py](apps/api/app/services/ml_backend.py) · [ml_capabilities.py](apps/api/app/services/ml_capabilities.py) · [ml_backend schema](apps/api/app/schemas/ml_backend.py)): `check_health` 拉完 `/health` 后 best-effort 再探一次 `/setup`，把能力快照（`supported_prompts`/`supported_trackers`/`supported_text_outputs`/`supported_geometric_outputs` + 派生 `modalities`）落进 `health_meta["capabilities"]`（`HealthMeta` schema `extra=allow`，无 alembic 迁移）；探测失败静默跳过，不影响 health 结果。新增 `services/ml_capabilities.py`（`extract_capabilities` + `derive_modalities`：`supported_prompts⇒image`、`supported_trackers⇒video`）供健康检查与绑定校验共用。
+- **绑定按 data_type 校验** (后端 [projects.py](apps/api/app/api/v1/projects.py)): `PATCH /projects/{id}` 绑定 backend 时实时探 `/setup` 派生模态，与项目 `data_type` 不兼容 → 422 拒绝（如视频项目绑只支持图片的 backend）；探测失败 → fail-open 放行（不因瞬时宕机卡住绑定，mismatch 留到 predict 时暴露）。
+- **能力只读展示** (前端 [MlBackendsSection.tsx](apps/web/src/pages/Projects/sections/MlBackendsSection.tsx)): backend 列表「能力」列在 `supported_prompts` 之外补 `supported_trackers` 徽标，视频追踪能力可见。
+- **wizard 模态标注** (前端 [Step4Ai.tsx](apps/web/src/components/projects/steps/Step4Ai.tsx)): 建项目第 4 步复用 backend 下拉按项目 `data_type` 标注模态匹配（从 `health_meta.capabilities.modalities` 派生；未健康检查过=「模态未知」，不硬隐藏，绑定时后端二次校验）。
+
+### Changed
+
+- **`is_interactive` 改派生对账** (后端 [ml_backend.py](apps/api/app/services/ml_backend.py) · 前端 [MlBackendFormModal.tsx](apps/web/src/components/projects/MlBackendFormModal.tsx)): 以 backend `/setup.is_interactive` 自报为真值，`check_health` 时回写；注册/编辑表单删手填「交互式 backend」checkbox，改为「健康检查时自动探测」提示，create/update payload 不再带 `is_interactive`。
+
+## [0.10.36] - 2026-05-22
+
+> **模型市场观测按图像/视频模态拆分 + 视频追踪任务聚合监控 + tracker 模型尺寸可选。** 接续 v0.10.35 的 video 独立池：模型市场观测/预热面板拆出「图像推理 / 视频追踪」两组（修正了对视频后端误用图片池预热、且暴露无意义 DINO 的问题）；新增视频追踪任务聚合监控页；AI 传播可选 SAM 模型尺寸（sam_variant）一路透传到 backend。纯观测增强 + plumbing，不动 backend 推理/协议。
+
+### Added
+
+- **模型市场预热按模态拆分** (前端 [VariantPanel.tsx](apps/web/src/pages/ModelMarket/VariantPanel.tsx) · [ObserveBackendsPanel.tsx](apps/web/src/pages/ModelMarket/ObserveBackendsPanel.tsx)): 观测/预热面板拆「图像推理变体」（SAM+DINO → 图片池）与「视频追踪变体」（仅 SAM → 独立 video 池，**无 DINO**）两组。背景：原面板的「预热」只热图片池 `_pool`，对纯视频项目白占显存且碰不到 video tracker（video 用独立 `_video_pool`，首请求冷启）；tracker 不用 DINO。视频组读 `health_meta.video_pool` / `/setup.supported_trackers`，不支持/未上报时降级显示，不报错。
+- **video 池预热入口** (gsam2 [main.py](apps/grounded-sam2-backend/main.py)): `/reload` 增 `task_type: "image"|"video"`（默认 image，向后兼容）；`task_type="video"` 时只认 `sam_variant`（无 dino）预热独立 video 池。前端 `ml-backends.ts` 的 `reload` 透传 `task_type`。
+- **视频追踪任务聚合监控** (后端 [video_tracker_jobs.py](apps/api/app/api/v1/video_tracker_jobs.py) · 前端 [VideoTrackerJobsPage.tsx](apps/web/src/pages/ModelMarket/VideoTrackerJobsPage.tsx)): 新增 `GET /video-tracker-jobs`（cursor 分页 + `project_id`/`status`/`model_key` 过滤 + 按 status 聚合计数，权限对齐图片侧 preannotate-jobs）；模型市场新增 `/model-market/video-jobs` 监控页（queued/running/completed/failed/cancelled 计数卡 + 列表 + failed 行展开 `error_message`），形态对齐图片侧任务历史页。
+- **AI 传播可选模型尺寸 (sam_variant)** (前端 [VideoTrackerPropagateDialog.tsx](apps/web/src/pages/Workbench/stage/VideoTrackerPropagateDialog.tsx) · 后端链路): 传播对话框对真实 tracker（非 mock_bbox）显示 SAM 尺寸下拉（tiny/small/base_plus/large，默认 tiny）；`sam_variant` 经 `VideoTrackerPropagateRequest` → job.prompt → `TrackerContext` → adapter `/predict` context 透传到 backend video 池（缺省回退 tiny，无 DB 迁移）。
+
+### Changed
+
+- **观测探针透传 video 字段** (后端 [ml_client.py](apps/api/app/services/ml_client.py) · [admin_ml_integrations.py](apps/api/app/api/v1/admin_ml_integrations.py)): `health_meta` 白名单增 `video_pool`；`/observe` 的 `ObserveTarget` 增 `video_pool` + `supported_trackers` 透传，供前端模态分组消费。
+
+## [0.10.35] - 2026-05-22
+
+> **真实 SAM 2 video tracker + 采样网格对齐。** gsam2 backend 接通真实 `sam2_video` 逐帧追踪（独立显存池、不影响图片推理），跨窗用上一窗末帧续追；采样开启时 propagate 的「N」改用网格格子为单位、只回填网格帧；工作台内补 tracker 任务 toast 通知。遵循 [ADR-0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md)：predictor 不入 `apps/api`。
+
+### Added
+
+- **真实 `sam2_video` video tracker** (gsam2 backend [video_predictor.py](apps/grounded-sam2-backend/video_predictor.py) · [video_pool.py](apps/grounded-sam2-backend/video_pool.py) · [main.py](apps/grounded-sam2-backend/main.py)): `/predict` 新增 `context.type="video_tracker"` 分支，用 `build_sam2_video_predictor` + `SAM2VideoPredictor`（带跨帧 memory bank 的有状态预测，非循环调图片接口）逐帧输出 `{frame_index, geometry, confidence, outside}`；视频解码用容器内 opencv 抽窗内帧到临时 JPEG 目录喂 `init_state`，无新依赖。video predictor 用**独立显存池** `VideoPool`（按 `sam_variant` 分桶，与图片 `ModelPool` 预算分离、互不驱逐，按 job 释放会话状态）。
+- **backend 能力声明 + 观测** (gsam2 [main.py](apps/grounded-sam2-backend/main.py) · [observability.py](apps/grounded-sam2-backend/observability.py)): `/setup` 增 `supported_trackers: ["sam2_video"]`；`/health` 增 `video_pool` 区块（显存 / 已加载变体 / 会话数，与图片池分列）；`/metrics` 增 `video_tracker_frames_processed_total{sam_variant}` / `video_tracker_latency_seconds{sam_variant}`。新增 env `VIDEO_MODEL_POOL_CAP` / `VIDEO_MODEL_POOL_BUILD_TIMEOUT` / `VIDEO_TRACKER_MAX_WINDOW_FRAMES` / `VIDEO_IDLE_UNLOAD_SECONDS`。
+- **工作台内 tracker 任务通知** (前端 [useVideoTrackerJobs.ts](apps/web/src/hooks/useVideoTrackerJobs.ts)): AI 传播发起 / 完成 / 失败 / 取消时弹全局 toast；与顶栏「后台任务」铃铛（`video_tracker` 类型，全站持久列表）互补。
+
+### Changed
+
+- **采样下 propagate「N」改用网格格子为单位** (前端 [VideoTrackerPropagateDialog.tsx](apps/web/src/pages/Workbench/stage/VideoTrackerPropagateDialog.tsx) · [VideoKeyframesPropagateDialog.tsx](apps/web/src/pages/Workbench/stage/VideoKeyframesPropagateDialog.tsx)): 采样开启（step>1）时两个对话框的「N」按网格格子计（内部乘 step 还原源帧范围喂后端），range 提示同时显示网格序号；step=1 行为不变。底层仍逐源帧算、`frame_index` 存源帧（D2）。
+- **tracker 只回填网格帧** (后端 [video_tracker_runner.py](apps/api/app/services/video_tracker_runner.py)): tracker 仍逐源帧跑 + 跨窗续追，但 `apply_tracker_results` 按项目 `derive_step` 只持久化 `frame_index % step == 0` 的预测帧，编辑器关键帧与导航 / 导出网格一致。
+- **tracker 跨窗续追** (后端 [video_tracker_runner.py](apps/api/app/services/video_tracker_runner.py)): 窗 1 用原始 keyframe seed，后续窗用上一窗末帧（非 outside）geometry 作 seed 续追，避免每窗从首帧框重新起追导致目标漂移（forward / backward 统一取本窗最后一个非 outside result）。
+
+## [0.10.34] - 2026-05-22
+
+> **右键菜单推广到全标注类型。** 图片工作台的人工标注现在统一支持右键轻点操作；视频工作台补上单帧 `video_bbox` 右键菜单。右键拖拽平移、图片关键点绘制时的「右键跳过当前节点」和现有快捷键语义都保持不变。
+
+### Added
+
+- **图片 Stage 全类型右键菜单** (前端 [ImageStage.tsx](apps/web/src/pages/Workbench/stage/ImageStage.tsx) · [imageStageContextMenu.ts](apps/web/src/pages/Workbench/stage/imageStageContextMenu.ts)): 选中 bbox / rotated_bbox / polygon / multi_polygon / polyline / keypoint 后，右键轻点命中 shape 会在光标处弹出通用菜单，统一接通改类、锁定 / 解锁、隐藏 / 显示、遮挡、层级调整、复制 / 粘贴和删除。
+- **图片几何通用复制/粘贴** (前端 [useClipboard.ts](apps/web/src/pages/Workbench/state/useClipboard.ts)): `copySelection` / `paste` 从原先只覆盖 bbox / polygon，扩到 rotated bbox、polyline、keypoint 和 multi polygon，右键菜单与 `Ctrl+C` / `Ctrl+V` 走同一套剪贴板路径。
+- **视频单帧框右键菜单** (前端 [VideoStage.tsx](apps/web/src/pages/Workbench/stage/VideoStage.tsx)): 右键轻点命中 `video_bbox` 时可直接改类、删除；若当前已多选多个同类且帧号不重复的 `video_bbox`，菜单补出「聚合为轨迹」入口，复用既有 compose 逻辑。
+
+### Changed
+
+- **图片 Stage Konva 命中接线** (前端 [ImageStageShapes.tsx](apps/web/src/pages/Workbench/stage/ImageStageShapes.tsx) · [WorkbenchShell.tsx](apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx)): Konva shape 根节点补 annotation id，Stage 在容器层用 `getIntersection()` 统一做命中判定；画布右键菜单改为复用 Workbench 现有改类 / PATCH flag / 删除 / 剪贴板 handler，不额外分叉业务逻辑。
+
+## [0.10.33] - 2026-05-22
+
+> **画布右键轨迹菜单。** 视频工作台补齐轨迹操作的第四条到达路径：右键轻点当前帧轨迹框会在光标处打开操作菜单，可标记消失 / 遮挡、锁定 / 隐藏、AI 传播、改类、拆当前帧为独立框、删除当前关键帧或删除整条轨迹。右键拖拽平移画布的既有行为保持不变。
+
+### Added
+
+- **坐标锚定 ContextMenu 原语** (前端 [ContextMenu.tsx](apps/web/src/components/ui/ContextMenu.tsx) · [useCanvasContextMenu.ts](apps/web/src/pages/Workbench/stage/useCanvasContextMenu.ts)): 新增可复用的画布上下文菜单外壳，支持 fixed 坐标定位、视口边界翻转、Esc / 外部点击关闭和 disabled 菜单项。
+- **视频轨迹右键菜单** (前端 [VideoStage.tsx](apps/web/src/pages/Workbench/stage/VideoStage.tsx)): 右键轻点命中 `video_track` 时先选中该轨迹，再复用 `useVideoTrackActions` 与现有改类 / 拆框 / 删除回调渲染菜单；位移达到拖拽阈值时只平移、不弹菜单。
+
+### Changed
+
+- **轨迹删除优先级** (前端 [hotkeys.ts](apps/web/src/pages/Workbench/state/hotkeys.ts) · [VideoSelectionActions.tsx](apps/web/src/pages/Workbench/stage/VideoSelectionActions.tsx)): 选中 `video_track` 时 `Delete` / `Backspace` 优先删除当前帧精确关键帧；删除整条轨迹改为 `Ctrl+Delete` / `Ctrl+Backspace` 或右键菜单的「删除整条轨迹」。单帧 `video_bbox` 删除行为保持不变。
+
+## [0.10.32] - 2026-05-22
+
+> **轨迹操作搬出侧栏。** 视频工作台的常用 track 状态操作不再只依赖右侧轨迹面板：选中轨迹后，画布浮动条可直接标记/恢复当前帧消失、遮挡，并可锁定/隐藏轨迹；键盘新增 `O` outside、`Q`/`Slash` occluded、`H` hide、`L` lock、`Ctrl+B` 打开 AI 传播。状态写入抽成共享 `useVideoTrackActions`，侧栏、画布浮动条和快捷键都走同一条 `onUpdate` / track view-state 路径。
+
+### Added
+
+- **选中轨迹快捷键** (前端 [hotkeys.ts](apps/web/src/pages/Workbench/state/hotkeys.ts) · [useWorkbenchHotkeys.ts](apps/web/src/pages/Workbench/state/useWorkbenchHotkeys.ts)): `O` 标记/恢复当前帧 outside，`Q`/`Slash` 标记/恢复当前帧 occluded，`H` 隐藏/显示轨迹，`L` 锁定/解锁轨迹，`Ctrl+B` 打开 AI 传播；仅 `videoMode + hasSelectedVideoTrack` 时消费，未选中 track 时保留既有 `L` 正向播放。
+- **画布浮动轨迹操作条** (前端 [VideoSelectionActions.tsx](apps/web/src/pages/Workbench/stage/VideoSelectionActions.tsx)): 选中 `video_track` 后补齐消失、遮挡、锁定、隐藏按钮，按钮 `aria-pressed` 反映当前状态，锁定轨迹时禁用帧级写入。
+
+### Changed
+
+- **轨迹状态动作共享化** (前端 [useVideoTrackActions.ts](apps/web/src/pages/Workbench/stage/useVideoTrackActions.ts)): 把原先封在 `VideoTrackSidebar` 内的当前帧 outside/occluded 写入与选中轨迹隐藏/锁定/传播回调抽成共享 hook，侧栏行为保持不变，快捷键与浮动条复用同一实现。
+
+## [0.10.31] - 2026-05-21
+
+> **视频导出（视频工作台 Phase 4，落地架构决策 D3）。** 视频项目导出从「裸 JSON 不打包」的异类，并入与图像共用的**异步 zip 管线**（async_job + 缓存 + 预签名），并扩出 **MOT 16/17/20** 与 **KITTI Tracking 2D** 两种主流跟踪格式。MOT/KITTI 严格遵循决策 **D2**：geometry 的 `frame_index` 永远是源视频帧号，导出时按**采样网格** `[0,step,2*step,…]` 重编号（60fps@step6 → `seqinfo.frameRate=10`、帧号 1..N 重排），outside 帧从 gt 省略。遵循 **D1**（不物理打包帧），导出包附带 `fetch_videos.py`（按 manifest 预签名 URL 回源视频）+ `fetch_frames.py`（用本地 ffmpeg 按网格帧号抽 `img1/` 帧序列）。AAP JSON 升 schema **1.2**：task 层加 `media_type`（image/video/lidar）判别 + `video` 子块（采样配置 / fps / 帧数 / 分辨率），envelope 不拆（决策 **D3**），`video_track` geometry 无损透传。前端导出选项从写死 Video JSON 扩为可选 Video JSON / AAP / MOT / KITTI。详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md) Phase 4。
+>
+> **本期不含**：4.2 导入端（`predictions_import` 接通 video_track，跟 §A predictions import 窗口走）、4.5 DAVIS mask（依赖延后的 2.9 多几何 track）、4.6 Segment 聚合（依赖 Phase 5）。
+
+### Added
+
+- **MOT 16/17/20 / KITTI Tracking 2D 导出** (后端 [export_video.py](apps/api/app/services/export_video.py)): 纯函数底座 `source_to_grid` / `track_grid_rows`（采样网格 D2 重编号，`resolved_track_frames(all_frames)` 展开插值 + 跳 outside，只取落网格帧）+ `build_mot_gt`（`gt.txt` 列 `frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z`）/ `build_mot_seqinfo`（`frameRate`=采样后 fps）/ `build_kitti_labels`（18 列，`occluded` 列 ∈{0,1}，3D 字段占位 -1）。整数 `id` 复用 [`derive_track_number`](apps/api/app/services/video_tracks.py)。
+- **视频导出回源脚本** (后端 [export_packaging.py](apps/api/app/services/export_packaging.py)): `manifest.json`（task→视频 rel_path + 预签名 URL + 采样配置 + 网格帧号）+ `fetch_videos.py` + MOT/KITTI 另带 `fetch_frames.py`（纯标准库 + 系统 ffmpeg）。
+- **AAP JSON schema 1.2 视频感知** (后端 [aap_json.py](apps/api/app/schemas/aap_json.py) · [export.py](apps/api/app/services/export.py)): `AAPTaskBlock` 增 `media_type` + `video` 子块；视频项目导出时填充，`video_track` geometry 原样透传。1.x reader 走 `extra="ignore"` 向后兼容。
+
+### Changed
+
+- **视频导出并入异步 zip 管线** (后端 [export_packaging.py](apps/api/app/services/export_packaging.py) `build_export_zip`): `data_type="video"` 走独立 `_build_video_export_zip` 分支；修掉此前视频凑合走 coco 分支时**误附带 YOLO 图片入口**（`data.yaml` / `images_manifest.json` / `fetch_images.py`，对视频文件错误签 URL）的问题。导出 endpoint `format` pattern 扩 `video_json|mot|kitti`（[projects.py](apps/api/app/api/v1/projects.py) · [batches.py](apps/api/app/api/v1/batches.py)）。
+- **前端导出格式选项** (前端 [ExportSection.tsx](apps/web/src/pages/Dashboard/ExportSection.tsx)): 视频项目格式从写死 Video JSON 改为按钮组（Video JSON / AAP / MOT / KITTI）；帧模式仅 Video JSON 显示。
+
+## [0.10.30] - 2026-05-21
+
+> **视频轨迹工具对齐 CVAT（视频工作台 Phase 2，除多几何 track）。** 落地 8 个子项并收敛 track 数据模型。**数据模型收敛**：删除 `VideoTrackKeyframe.absent` 字段，轨迹"消失"语义统一并入 `outside` 区间（对齐 CVAT 两态 outside/occluded，alembic [0084](apps/api/alembic/versions/0084_video_track_drop_absent.py) 把存量 `absent=true` 关键帧转写为 outside 并删键）；`VideoTrackGeometry` 新增用户可编辑的 `semantic_label`（跨任务 Re-ID 心智，不参与主键、不强制唯一）；`track_number` 改为按「首关键帧帧号升序、并列按 `track_id` 字典序」**确定性派生**（不持久化，改采样/增删 track 时自然重排，符合架构决策 D2）。**工具增强**：track 级 / 帧级 mutable 属性 UI；split / merge UI 接通；新增 **Track Join / Re-ID 跳连**（两条帧号不重叠的同类 track 补 gap 合并，`gap_mode=interpolate`(线性插值过渡) / `outside`(gap 标消失)）；当前帧框 **Propagate** 到后续 N 帧；track **导航**快捷键（`,`/`.` 跳上/下关键帧，`Home`/`End` 跳首/末出现帧）；侧栏 track **隐藏 / 锁定 / 选色**。多几何 track（polygon/polyline/mask）本期暂缓。详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md) Phase 2。
+
+### Added
+
+- **Track Join / Re-ID 跳连** (后端 [annotation.py](apps/api/app/services/annotation.py) · [schemas/annotation.py](apps/api/app/schemas/annotation.py); 前端 [VideoTrackComposeDialog.tsx](apps/web/src/pages/Workbench/stage/VideoTrackComposeDialog.tsx)): `compose_video_tracks` 新增 `operation="join_tracks"` + `gap_mode: interpolate|outside`，校验两条 track 同类且帧号不重叠，复用 merge 落库路径（抽出公共 helper `_combine_two_video_tracks`，merge 行为零变化）。前端侧栏选中两条不重叠同类 track 时出现「跳连」按钮 + gap_mode 选择对话框。
+- **可编辑 track 语义标签 `semantic_label`** (schema [_jsonb_types.py](apps/api/app/schemas/_jsonb_types.py); 前端 [VideoTrackPanel.tsx](apps/web/src/pages/Workbench/stage/VideoTrackPanel.tsx)): track 卡片内 inline 编辑（如 `car_3`），split 时透传给尾段。
+- **track_number 确定性派生** (后端 util `derive_track_number` [video_tracks.py](apps/api/app/services/video_tracks.py); 前端 `deriveTrackNumber` [videoStageGeometry.ts](apps/web/src/pages/Workbench/stage/videoStageGeometry.ts)): 显示/导出用编号，按 D-2.1a 规则派生，不写库。
+- **track / 帧级属性 UI** (前端 [VideoAttributesEditor.tsx](apps/web/src/pages/Workbench/stage/VideoAttributesEditor.tsx)): 暴露 schema 中 `mutable=true` 的属性，区分「track 默认值」(写 `annotation.attributes`) 与「当前帧覆盖」(写 `keyframe.attributes`)。
+- **关键帧 Propagate** (前端 [VideoKeyframesPropagateDialog.tsx](apps/web/src/pages/Workbench/stage/VideoKeyframesPropagateDialog.tsx) · [videoTrackCommands.ts](apps/web/src/pages/Workbench/state/videoTrackCommands.ts)): 当前帧框复制到后续/向前 N 帧（可选覆盖），合成单条 undo command（纯前端）。
+- **Track 导航快捷键** (前端 [videoTrackTimeline.ts](apps/web/src/pages/Workbench/stage/videoTrackTimeline.ts) · [VideoStage.tsx](apps/web/src/pages/Workbench/stage/VideoStage.tsx)): `,`/`.` 跳选中 track 上/下可见关键帧，`Home`/`End` 跳首/末出现帧（均排除 outside 帧）。
+- **侧栏 track 隐藏 / 锁定 / 选色** (前端 [VideoTrackColorPicker.tsx](apps/web/src/pages/Workbench/stage/VideoTrackColorPicker.tsx) · `getTrackColor` [colors.ts](apps/web/src/pages/Workbench/stage/colors.ts)): session 级 `trackColorOverrides`；锁定 track 在 stage 不可拖拽/缩放。
+
+### Changed
+
+- **删除 `VideoTrackKeyframe.absent`，语义并入 `outside`** (schema [_jsonb_types.py](apps/api/app/schemas/_jsonb_types.py) · 迁移 [0084](apps/api/alembic/versions/0084_video_track_drop_absent.py); 前端全量 sweep): 后端读写 keyframe、前端 `effectiveOutsideRanges`/状态判定全部改走 outside 区间；标记"消失"动作改为写 outside range。downgrade 不还原 absent（语义已不可逆并入 outside）。
+
+### Fixed
+
+- **导出测试迁移异步契约** (测试): v0.10.27 导出端点 GET→异步 POST(job_id) 后，旧的同步 GET 导出断言全部 405；改为直接断言 `ExportService` 方法 / `UnsupportedExportError`，并给视频 fixture 补 `data_type="video"`（v0.10.28 data_type 分流依赖）。
+- **过时的 interactive 阈值注入测试** (测试): 59dfffa 后平台不再注入项目级 DINO 阈值（避免把 gsam2 专属参数塞给 sam3），更新测试断言新透传契约。
+
+## [0.10.29] - 2026-05-21
+
+> **视频帧逻辑采样 + 软网格导航（视频工作台 Phase 1）。** 落地三项已拍板架构决策：抽帧 = **逻辑采样**（不物理重采样、不取代原视频，只叠一层项目级导航/打点网格）；标注 geometry 的 `frame_index` **永远存源视频帧号**（改采样密度不破坏旧标注）；播放与导航**两层分离**（连续播放仍走原生 `<video>` 的完整原视频 + 原始 fps + 所有帧，采样只约束逐帧导航与打点）。项目设置可配 `mode=fps target_fps` 或 `mode=step frame_step`；工作台 `←/→` 在**绝对网格**（锚定 0：{0,N,2N,…}）间跳、暂停吸附最近网格点，`Shift+←/→` 作为**逃生口**微调 ±1 源帧打合法 off-grid 关键帧，关键帧跳转迁移到 `Alt+←/→`。不采样（step=1）时键位/行为与 v0.10.28 完全一致，旧视频项目零行为变化。配套长视频 sparse timetable、chunk warmup 预解码与实验性 WebCodecs 解码骨架。详见 [视频工作台总 epic](ROADMAP/2026-05-21-video-workbench-roadmap.md) Phase 1。
+
+### Added
+
+- **项目级视频帧采样配置** (后端 [project.py](apps/api/app/db/models/project.py) · [schemas/project.py](apps/api/app/schemas/project.py); 前端 [VideoSamplingSection.tsx](apps/web/src/pages/Projects/sections/VideoSamplingSection.tsx)): `Project.video_sampling` JSONB 列(迁移 [0083](apps/api/alembic/versions/0083_project_video_sampling.py), server_default `'{}'`), 强类型 `VideoSamplingConfig`(`mode: none|fps|step` + `target_fps>0` / `frame_step≥1` 校验)。项目设置页仅 `data_type="video"` 时渲染采样配置卡。
+- **软网格导航** (前端 [videoSamplingGrid.ts](apps/web/src/pages/Workbench/stage/videoSamplingGrid.ts)): `gridNext`/`gridPrev`/`snapToGrid`/`microStep` 纯函数; 后端 [video_frame_service.py](apps/api/app/services/video_frame_service.py) 共用 `derive_step` / `derive_sampled_frames`。`←/→` 跳网格、暂停吸附、`Shift+←/→` 微调 ±1 源帧、`Alt+←/→` 关键帧跳; 时间轴渲染采样网格刻度。
+- **长视频 sparse timetable** (后端 [video_frame_service.py](apps/api/app/services/video_frame_service.py)): 只持久化锚点(stride 网格真值 ∪ 关键帧)进现有 `VideoFrameIndex`(无新表/迁移), 中间帧 pts_ms 由相邻锚点线性插值、范围外按 fps 外推; `frame_index→pts_ms` 对外契约不变。CLI `rebuild_timetable --sparse-stride` 控制。
+- **chunk warmup 预解码** (后端 [video_frame_service.py](apps/api/app/services/video_frame_service.py)): 请求命中 chunk 时向后 look-ahead 预解码相邻 chunk(保守降级, 只对非 ready/pending 投递)。新 env `VIDEO_CHUNK_WARMUP_LOOKAHEAD`(默认 1, 设 0 关闭)。
+- **视频章节采样语义** (后端 [video_chapter.py](apps/api/app/schemas/video_chapter.py) · [videos.py](apps/api/app/api/v1/videos.py); 前端 [VideoChapterSidebar.tsx](apps/web/src/pages/Workbench/stage/VideoChapterSidebar.tsx)): 章节经 `chapter_metadata` 承载 `frame_step` / `source`(manual|sampled), `snap_chapter_to_grid` 把章节边界对齐采样网格; sidebar 展示采样 badge 与步长。
+- **WebCodecs 精确帧解码 hook(实验性, 默认关闭)** (前端 [useVideoChunkDecoder.ts](apps/web/src/pages/Workbench/stage/useVideoChunkDecoder.ts)): `VideoDecoder` 解码核心 + LRU 缓存 + 资源释放 + 能力探测; feature flag(`?webcodecs=1` / localStorage)关闭时零行为变化。**mp4 demux 链路尚未接入(预留骨架)**, 关时回退原生 `<video>` 路径。
+
 ## [0.10.28] - 2026-05-20
 
 > **项目级 `data_type` 引入 + 新建项目数据类型 UI 退役任务语义 (B 路线) + 三种几何工具 (旋转框 / 折线 / 关键点).** 此前项目的"媒体类型"信息全靠 `type_key`(编码媒体+任务: image-det/image-seg/image-kp/video-track/video-mm/lidar/mm)隐式承载, 展示/筛选/媒体维度分流都得在 7 种 type_key 上硬匹配。本期给 `Project` / `ProjectTemplate` 各加独立 `data_type` 列(image/video/lidar 媒体粒度), 新建向导第 1 步从 7 任务预设改为纯媒体类型三选一(文案去检测/分割等任务暗示), `type_key` 由所选媒体类型派生兼容默认值(image→image-det / video→video-track / lidar→lidar)以保旧分流不破。展示(Dashboard/卡片图标)、筛选(FilterDrawer)、AI 预标卡片改读 `data_type`。**`type_key` 列保留不删**: video 子类型分流(video-track vs video-mm 的轨迹导出路由)与 AI 输出形态分流(image-det→box/其余→mask, 标为遗留技术债)继续用 `type_key`。同期图像几何工具从单一 bbox 扩到 **旋转框 (rotated_bbox / OBB)**、**折线 (polyline)**、**关键点 (keypoint, COCO 范式命名节点 + 骨骼)** 三种, 后端 `Geometry` 判别联合 + `ToolUnitId` 枚举同步扩展, 前端 react-konva 渲染 + 工具接线并行开发后主进程串行 review 合并。

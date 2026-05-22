@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.25
 status: stable
-last_reviewed: 2026-05-12
+last_reviewed: 2026-05-21
 ---
 
 # 视频后端帧服务
@@ -73,6 +73,10 @@ MinIO key：
 videos/{dataset_item_id}/chunks/{chunk_id}.mp4
 ```
 
+### Chunk warmup（v0.10.29）
+
+`list_chunks` / `get_chunk` 命中某些 chunk 后，会向后 look-ahead 预解码相邻 chunk（逐帧导航多为向前推进），减少后续等待。受 `VIDEO_CHUNK_WARMUP_LOOKAHEAD` 控制（默认 1，设 0 关闭）。warmup 保守降级：只对**还没 ready 且没在 pending 进行中**的相邻 chunk 投递 `ensure_video_chunks`，不重复投递、不阻塞主请求。纯选择逻辑见 `video_frame_service.warmup_chunk_ids`。
+
 ## 单帧缓存
 
 ```http
@@ -133,6 +137,16 @@ uv run python -m app.cli.video.rebuild_timetable --all --limit 100
 ```
 
 命令会下载源视频或 playback 视频，调用 `ffprobe -show_frames`，替换该视频的 `video_frame_indices` 行，并更新 `metadata.video.frame_timetable_frame_count`。失败时写入 `metadata.video.frame_timetable_error`。
+
+### Sparse timetable（长视频，v0.10.29）
+
+超长视频不必给每帧都存一行 `VideoFrameIndex`。`--sparse-stride <N>`（默认 1 = 全帧）让重建只持久化**锚点子集**：`select_sparse_anchor_rows` 取「stride 网格上的帧 ∪ 所有关键帧」（保留关键帧使 chunk smart-copy 的 keyframe 对齐判定不退化）。锚点仍写进现有 `video_frame_indices`，**不新增表**。
+
+读取时 `frame_index → pts_ms` 对外语义不变：命中锚点用 DB 真值，否则由相邻锚点线性插值、范围外按 fps 外推（纯函数 `resolve_pts_ms_sparse`）。`frame_timetable_frame_count` 仍记源视频总帧数。旧的全帧 timetable 视频零行为变化。
+
+### 帧采样网格 helper（v0.10.29）
+
+项目级 `Project.video_sampling`（`{mode: none|fps|step, target_fps?, frame_step?}`）只约束**标注导航/打点网格**，不改 `VideoFrameIndex`、不生成新资产（决策 D1）；标注 geometry 的 `frame_index` 永远是源视频帧号（决策 D2）。后端 `video_frame_service` 提供与前端共用的纯函数：`derive_step(source_fps, sampling)` 派生步长、`derive_sampled_frames(frame_count, step)` 给出绝对网格（锚定 0：`[0, step, 2*step, …]`）。导出按采样网格重编号，逐帧导航语义见标注员手册「帧采样与软网格导航」。
 
 ## Segment 协同
 
@@ -251,6 +265,7 @@ Backend 响应沿用交互式 `/predict` 响应，其中 `result` 是逐帧数�
 | 配置 | 默认值 | 用途 |
 |---|---:|---|
 | `VIDEO_CHUNK_SIZE_FRAMES` | 60 | chunk 帧数 |
+| `VIDEO_CHUNK_WARMUP_LOOKAHEAD` | 1 | chunk warmup look-ahead，命中 chunk N 时顺带预解码 N+1..N+K；设 0 关闭 |
 | `VIDEO_FRAME_CACHE_TTL_DAYS` | 14 | 单帧缓存 TTL |
 | `VIDEO_CHUNK_CACHE_TTL_DAYS` | 30 | chunk 缓存 TTL |
 | `VIDEO_FRAME_MEMORY_CACHE_ITEMS` | 64 | 进程内 frame array LRU 上限 |

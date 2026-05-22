@@ -17,6 +17,15 @@ const FORMATS: { value: ExportFormat; label: string }[] = [
   { value: "aap_json", label: "AAP JSON" },
 ];
 
+// v0.10.31 · Phase 4.7 · 视频项目导出格式。帧模式仅 Video JSON 有意义；
+// MOT/KITTI 隐含「采样网格 + all_frames」(D2)，AAP 透传源帧。
+const VIDEO_FORMATS: { value: ExportFormat; label: string }[] = [
+  { value: "video_json", label: "Video JSON" },
+  { value: "aap_json", label: "AAP JSON" },
+  { value: "mot", label: "MOT" },
+  { value: "kitti", label: "KITTI" },
+];
+
 function cn(...xs: Array<string | false | null | undefined>): string {
   return xs.filter(Boolean).join(" ");
 }
@@ -55,18 +64,21 @@ export function ExportSection({ projectId, projectTypeKey }: ExportSectionProps)
 
 function ExportForm({ projectId, projectTypeKey, onDone }: { projectId: string; projectTypeKey?: string; onDone: () => void }) {
   const isVideoProject = projectTypeKey === "video-track";
-  const [format, setFormat] = useState<ExportFormat>("coco");
+  const [format, setFormat] = useState<ExportFormat>(isVideoProject ? "video_json" : "coco");
   const [includeAttributes, setIncludeAttributes] = useState(true);
   const [videoFrameMode, setVideoFrameMode] = useState<VideoFrameMode>("keyframes");
   const [busy, setBusy] = useState(false);
   const pushToast = useToastStore((s) => s.push);
 
+  // 帧模式仅对 Video JSON 有意义（MOT/KITTI 走采样网格，AAP 透传源帧）。
+  const showFrameMode = isVideoProject && format === "video_json";
+
   const handleExport = async () => {
     setBusy(true);
     try {
-      await projectsApi.exportProject(projectId, isVideoProject ? "coco" : format, {
+      await projectsApi.exportProject(projectId, format, {
         includeAttributes,
-        ...(isVideoProject ? { videoFrameMode } : {}),
+        ...(showFrameMode ? { videoFrameMode } : {}),
       });
       pushToast({
         msg: "导出已入队",
@@ -91,45 +103,36 @@ function ExportForm({ projectId, projectTypeKey, onDone }: { projectId: string; 
       aria-label="导出选项"
       className={styles.form}
     >
-      {isVideoProject ? (
-        <>
-          <div className={styles.field}>
-            <div className={styles.label}>格式</div>
-            <div className={styles.readonlyValue}>
-              Video JSON
-            </div>
-          </div>
-          <div className={styles.field}>
-            <div className={styles.label}>帧模式</div>
-            <div className={styles.optionRow}>
-              {[
-                { value: "keyframes" as const, label: "关键帧" },
-                { value: "all_frames" as const, label: "所有帧" },
-              ].map((item) => (
-                <button
-                  key={item.value}
-                  type="button"
-                  onClick={() => setVideoFrameMode(item.value)}
-                  className={cn(styles.optionButton, videoFrameMode === item.value && styles.optionButtonActive)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
-      ) : (
+      <div className={styles.field}>
+        <div className={styles.label}>格式</div>
+        <div className={styles.optionRow}>
+          {(isVideoProject ? VIDEO_FORMATS : FORMATS).map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setFormat(f.value)}
+              className={cn(styles.optionButton, format === f.value && styles.optionButtonActive)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {showFrameMode && (
         <div className={styles.field}>
-          <div className={styles.label}>格式</div>
+          <div className={styles.label}>帧模式</div>
           <div className={styles.optionRow}>
-            {FORMATS.map((f) => (
+            {[
+              { value: "keyframes" as const, label: "关键帧" },
+              { value: "all_frames" as const, label: "所有帧" },
+            ].map((item) => (
               <button
-                key={f.value}
+                key={item.value}
                 type="button"
-                onClick={() => setFormat(f.value)}
-                className={cn(styles.optionButton, format === f.value && styles.optionButtonActive)}
+                onClick={() => setVideoFrameMode(item.value)}
+                className={cn(styles.optionButton, videoFrameMode === item.value && styles.optionButtonActive)}
               >
-                {f.label}
+                {item.label}
               </button>
             ))}
           </div>

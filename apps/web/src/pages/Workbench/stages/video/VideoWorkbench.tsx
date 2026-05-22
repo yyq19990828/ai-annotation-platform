@@ -4,13 +4,15 @@ import type {
   TaskVideoFrameTimetableResponse,
   TaskVideoManifestResponse,
   VideoBboxGeometry,
+  VideoSamplingConfig,
   VideoTrackGeometry,
 } from "@/types";
 import { VideoStage, type VideoStageControls } from "../../stage/VideoStage";
 import type { VideoTimelineChapter } from "../../stage/VideoPlaybackOverlay";
+import type { VideoTrackAnnotation } from "../../stage/videoStageTypes";
 import type { PendingDrawing, VideoTool } from "../../state/useWorkbenchState";
 import type { DiffMode } from "../../modes/types";
-import type { VideoConvertOptions } from "./useVideoAnnotationActions";
+import type { VideoConvertOptions, VideoTrackCompositionOptions } from "./useVideoAnnotationActions";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
@@ -24,6 +26,7 @@ export interface VideoWorkbenchProps {
   selectedId: string | null;
   activeClass: string;
   frameIndex: number;
+  selectedIds?: string[];
   reviewDisplayMode?: DiffMode;
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
@@ -31,6 +34,7 @@ export interface VideoWorkbenchProps {
   videoTool: VideoTool;
   pendingDrawing: PendingDrawing;
   chapters?: VideoTimelineChapter[];
+  videoSampling?: VideoSamplingConfig | null;
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
   onFrameIndexChange: (frameIndex: number) => void;
   onCreate: (frameIndex: number, geom: Geom) => void;
@@ -45,6 +49,10 @@ export interface VideoWorkbenchProps {
   onChangeUserBoxClass: (id: string) => void;
   onDeleteUserBox: (id: string) => void;
   onConvertToBboxes: (annotation: AnnotationResponse, options: VideoConvertOptions) => void;
+  onComposeTracks?: (options: VideoTrackCompositionOptions) => void;
+  onToggleHiddenTrack?: (trackId: string) => void;
+  onToggleLockedTrack?: (trackId: string) => void;
+  onPropagateTrack?: (annotation: VideoTrackAnnotation) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
 }
 
@@ -58,6 +66,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     selectedId,
     activeClass,
     frameIndex,
+    selectedIds = [],
     reviewDisplayMode,
     hiddenTrackIds,
     lockedTrackIds,
@@ -65,6 +74,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     videoTool,
     pendingDrawing,
     chapters,
+    videoSampling,
     onSelect,
     onFrameIndexChange,
     onCreate,
@@ -74,6 +84,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     onChangeUserBoxClass,
     onDeleteUserBox,
     onConvertToBboxes,
+    onComposeTracks,
+    onToggleHiddenTrack,
+    onToggleLockedTrack,
+    onPropagateTrack,
     onCursorMove,
   }, ref) {
     return (
@@ -87,6 +101,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         selectedId={selectedId}
         activeClass={activeClass}
         frameIndex={frameIndex}
+        selectedIds={selectedIds}
         reviewDisplayMode={reviewDisplayMode}
         hiddenTrackIds={hiddenTrackIds}
         lockedTrackIds={lockedTrackIds}
@@ -94,6 +109,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         videoTool={videoTool}
         pendingDrawing={pendingDrawing}
         chapters={chapters}
+        videoSampling={videoSampling}
         onSelect={onSelect}
         onFrameIndexChange={onFrameIndexChange}
         onCreate={onCreate}
@@ -103,6 +119,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         onChangeUserBoxClass={onChangeUserBoxClass}
         onDelete={(ann) => onDeleteUserBox(ann.id)}
         onConvertToBboxes={onConvertToBboxes}
+        onComposeTracks={onComposeTracks}
+        onToggleHiddenTrack={onToggleHiddenTrack}
+        onToggleLockedTrack={onToggleLockedTrack}
+        onPropagateTrack={onPropagateTrack}
         onCursorMove={onCursorMove}
       />
     );

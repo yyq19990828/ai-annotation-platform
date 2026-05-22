@@ -92,6 +92,13 @@ class Project(Base):
     batch_summary: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default="{}", default=dict
     )
+    # v0.10.29 · 视频帧逻辑采样配置 (项目级). {} = 不采样 (step=1); 或
+    #   { "mode": "fps",  "target_fps": 10 }
+    #   { "mode": "step", "frame_step": 5 }
+    # frame_index 永远存源视频帧号 (决策 D2), 采样只是导航/打点视图层.
+    video_sampling: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}", default=dict
+    )
     due_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

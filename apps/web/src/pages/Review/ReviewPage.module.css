@@ -44,6 +44,19 @@
   max-height: calc(100vh - 80px);
 }
 
+@media (max-width: 900px) {
+  .page {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    height: auto;
+  }
+
+  .sidebarShell,
+  .content {
+    max-height: none;
+  }
+}
+
 .header {
   display: flex;
   align-items: flex-start;

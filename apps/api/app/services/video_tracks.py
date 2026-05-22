@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 VIDEO_FRAME_MODES = {"keyframes", "all_frames"}
 
 
@@ -26,7 +28,6 @@ def clean_keyframe(kf: dict, *, include_attributes: bool = True) -> dict:
         "frame_index": int(kf.get("frame_index", 0)),
         "bbox": kf.get("bbox") or {},
         "source": kf.get("source", "manual"),
-        "absent": bool(kf.get("absent", False)),
         "occluded": bool(kf.get("occluded", False)),
     }
     if include_attributes and isinstance(kf.get("attributes"), dict):
@@ -67,29 +68,8 @@ def normalize_outside_ranges(ranges: list[dict] | None) -> list[dict]:
     return merged
 
 
-def legacy_absent_ranges(keyframes: list[dict]) -> list[dict]:
-    return normalize_outside_ranges(
-        [
-            {
-                "from": int(kf.get("frame_index", 0)),
-                "to": int(kf.get("frame_index", 0)),
-                "source": "prediction"
-                if kf.get("source") == "prediction"
-                else "manual",
-            }
-            for kf in keyframes
-            if bool(kf.get("absent"))
-        ]
-    )
-
-
 def effective_outside_ranges(geometry: dict) -> list[dict]:
-    return normalize_outside_ranges(
-        [
-            *(geometry.get("outside") or []),
-            *legacy_absent_ranges(sorted_keyframes(geometry)),
-        ]
-    )
+    return normalize_outside_ranges(geometry.get("outside") or [])
 
 
 def frame_is_outside(geometry: dict, frame_index: int) -> bool:
@@ -146,8 +126,6 @@ def resolve_track_at_frame(
         None,
     )
     if exact:
-        if exact.get("absent"):
-            return None
         return {
             "frame_index": frame_index,
             "bbox": exact.get("bbox") or {},
@@ -160,7 +138,6 @@ def resolve_track_at_frame(
             kf
             for kf in reversed(keyframes)
             if int(kf.get("frame_index", 0)) < frame_index
-            and not kf.get("absent")
             and not range_intersects_outside(
                 outside_ranges,
                 int(kf.get("frame_index", 0)),
@@ -174,7 +151,6 @@ def resolve_track_at_frame(
             kf
             for kf in keyframes
             if int(kf.get("frame_index", 0)) > frame_index
-            and not kf.get("absent")
             and not range_intersects_outside(
                 outside_ranges,
                 int(kf.get("frame_index", 0)),
@@ -220,8 +196,7 @@ def resolved_track_frames(
                 "occluded": bool(kf.get("occluded", False)),
             }
             for kf in keyframes
-            if not kf.get("absent")
-            and not range_intersects_outside(
+            if not range_intersects_outside(
                 outside_ranges,
                 int(kf.get("frame_index", 0)),
                 int(kf.get("frame_index", 0)),
@@ -235,3 +210,27 @@ def resolved_track_frames(
         for frame_index in range(total)
         if (resolved := resolve_track_at_frame(geometry, frame_index))
     ]
+
+
+def _first_keyframe_frame(geometry: dict) -> int:
+    keyframes = sorted_keyframes(geometry)
+    if not keyframes:
+        return 0
+    return int(keyframes[0].get("frame_index", 0))
+
+
+def derive_track_number(tracks: list[tuple[Any, dict]]) -> dict[Any, int]:
+    """v0.10.30 · D-2.1a 确定性派生 track_number, 不持久化。
+
+    输入: task 内所有 active video_track 的 ``(annotation_id, geometry)`` 列表。
+    规则: 按首关键帧 ``frame_index`` 升序、并列再按 ``track_id`` 字典序, 返回
+    ``{annotation_id: 1..N}``。改采样 / 增删 track 时编号自然重排, 符合 D2。
+    """
+    ordered = sorted(
+        tracks,
+        key=lambda item: (
+            _first_keyframe_frame(item[1] or {}),
+            str((item[1] or {}).get("track_id") or ""),
+        ),
+    )
+    return {annotation_id: index for index, (annotation_id, _) in enumerate(ordered, 1)}

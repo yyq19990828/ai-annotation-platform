@@ -78,6 +78,35 @@ export function classColor(name: string, config?: ClassesConfig): string {
   return `oklch(0.62 0.18 ${hue})`;
 }
 
+/**
+ * Track 选色调色板（会话级覆盖用）。沿用 CLASS_COLORS 的 oklch 表达，
+ * 与画布/类别色同源；这些是数据域颜色而非组件 CSS，不走 tokens.css 规则。
+ */
+export const TRACK_COLOR_PALETTE: { label: string; value: string }[] = [
+  { label: "蓝", value: "oklch(0.62 0.18 252)" },
+  { label: "绿", value: "oklch(0.65 0.18 152)" },
+  { label: "橙", value: "oklch(0.68 0.16 75)" },
+  { label: "红", value: "oklch(0.62 0.20 25)" },
+  { label: "紫", value: "oklch(0.60 0.20 295)" },
+  { label: "青", value: "oklch(0.64 0.14 200)" },
+  { label: "粉", value: "oklch(0.68 0.18 350)" },
+  { label: "灰", value: "oklch(0.65 0 0)" },
+];
+
+/**
+ * Track 显示色：命中 session 级覆盖则用覆盖色，否则回落到既有 classColor(className)。
+ * overrides 以 trackId 为键，值为调色板中的 oklch 字符串。
+ */
+export function getTrackColor(
+  trackId: string,
+  className: string,
+  overrides?: Record<string, string>,
+): string {
+  const override = overrides?.[trackId];
+  if (override) return override;
+  return classColor(className);
+}
+
 /** 按 classes_config.order 升序排序类别名（无 order 的排末尾）。 */
 export function sortClassesByConfig(classes: string[], config?: ClassesConfig): string[] {
   if (!config) return classes;

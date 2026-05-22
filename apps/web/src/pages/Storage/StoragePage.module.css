@@ -32,14 +32,14 @@
 
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
 
 .contentGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 16px;
 }
 
@@ -141,7 +141,7 @@
 
 .infoGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
   margin-top: 4px;
 }
@@ -316,4 +316,16 @@
 
 .nowrap {
   white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 16px;
+  }
+
+  .pageHeader,
+  .cardHeaderSplit {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }

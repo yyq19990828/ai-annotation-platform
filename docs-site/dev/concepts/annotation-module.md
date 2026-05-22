@@ -102,7 +102,7 @@ graph TD
 
 `keypoint` 的骨骼拓扑（命名节点 + 连线）不存进 geometry，而是 unit 级模板：`project.tool_bindings["keypoint"].keypoint_schema`（`KeypointSchema = {nodes: KeypointNode[], edges: [int,int][]}`，后端见 `_jsonb_types.py`，前端在类别配置区 `KeypointSchemaEditor` 维护）。geometry 只存各节点的 `{x,y,v}`，按 index 与 schema 节点一一对应。
 
-`video_track` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。`absent=true` 表示目标在该关键帧消失，插值不能跨过该点；`occluded=true` 表示目标仍存在但被遮挡。
+`video_track` 是 compact 轨迹模型，不把插值帧逐条写库。编辑同一对象其它帧时，前端会更新同一条 annotation 的 `geometry.keyframes[]`；前端显示的 interpolated bbox 只是视图结果。目标"消失"用 `outside` 闭区间段表达（v0.10.30 起删除旧 `absent` 字段），插值不跨消失段、其中不输出 bbox；`occluded=true` 表示目标仍存在但被遮挡。
 
 ### `AnnotationDraft`
 
@@ -177,7 +177,7 @@ graph TD
 - `scope=frame`：只转换指定 `frame_index`。
 - `scope=track`：转换整条轨迹，`frame_mode=keyframes|all_frames` 决定只转换关键帧还是展开后端插值帧。
 
-`all_frames` 与视频导出共用插值 helper，`absent=true` 不生成 bbox，并会阻断跨段插值。单次转换最多创建 5000 个 `video_bbox`，避免长视频一次写入过多 annotation。
+`all_frames` 与视频导出共用插值 helper，`outside` 段不生成 bbox，并会阻断跨段插值。单次转换最多创建 5000 个 `video_bbox`，避免长视频一次写入过多 annotation。
 
 ### 4. 删除 annotation
 

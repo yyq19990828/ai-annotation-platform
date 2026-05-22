@@ -25,6 +25,7 @@ from app.schemas.video_chapter import (
     VideoChapterList,
     VideoChapterOut,
     VideoChapterUpdate,
+    merge_chapter_metadata,
 )
 from app.schemas.video_frame_service import (
     VideoChunkOut,
@@ -317,7 +318,12 @@ async def create_video_chapter(
         end_frame=payload.end_frame,
         title=payload.title,
         color=payload.color,
-        chapter_metadata=dict(payload.metadata or {}),
+        # frame_step / source 落进 chapter_metadata 约定键 (不新增数据库列)。
+        chapter_metadata=merge_chapter_metadata(
+            payload.metadata,
+            frame_step=payload.frame_step,
+            source=payload.source,
+        ),
         created_by=current_user.id,
     )
     db.add(chapter)
@@ -382,8 +388,23 @@ async def update_video_chapter(
     if payload.color is not None:
         chapter.color = payload.color
         changes["color"] = payload.color
-    if payload.metadata is not None:
-        chapter.chapter_metadata = dict(payload.metadata)
+    # metadata / frame_step / source 都写进 chapter_metadata: 给出 metadata 时以它为基底,
+    # 否则在现有值上叠加; frame_step / source 显式给出时覆盖对应键。
+    if (
+        payload.metadata is not None
+        or payload.frame_step is not None
+        or payload.source is not None
+    ):
+        base = (
+            payload.metadata
+            if payload.metadata is not None
+            else chapter.chapter_metadata
+        )
+        chapter.chapter_metadata = merge_chapter_metadata(
+            base,
+            frame_step=payload.frame_step,
+            source=payload.source,
+        )
         changes["metadata"] = True
 
     try:

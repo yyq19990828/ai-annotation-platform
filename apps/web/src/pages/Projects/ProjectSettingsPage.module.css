@@ -92,3 +92,28 @@
   font-weight: 600;
   background: var(--color-bg-sunken);
 }
+
+@media (max-width: 760px) {
+  .page {
+    padding: 16px;
+  }
+
+  .titleRow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .nav {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .navButton {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}

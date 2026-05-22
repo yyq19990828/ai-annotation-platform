@@ -359,6 +359,10 @@ async def create_project(
         payload = merge_template_into_payload(template, payload)
 
     if payload.get("ml_backend_id"):
+        # v0.10.37 · 创建即绑定 backend 时同样按 data_type 校验模态 (与 update_project 对称)
+        await _validate_backend_modality(
+            db, payload["ml_backend_id"], payload["data_type"]
+        )
         payload = await _apply_backend_display_hint(db, payload)
 
     new_project_id = uuid.uuid4()
@@ -376,6 +380,9 @@ async def create_project(
             db, source=source_backend, new_project_id=new_project_id
         )
         project.ml_backend_id = new_backend_id
+        # v0.10.37 · 克隆源项目 backend 落定后, 同样按新项目 data_type 校验模态
+        # (clone 复制了 url/auth, 实时探 /setup 与校验 source 等价).
+        await _validate_backend_modality(db, new_backend_id, project.data_type)
         # 同步 ai_model display hint (复制后 backend 名一致, _apply_backend_display_hint
         # 在此场景与直接读 source.name 等价).
         project.ai_model = source_backend.name
@@ -440,6 +447,42 @@ async def _apply_backend_display_hint(db: AsyncSession, payload: dict) -> dict:
     return payload
 
 
+async def _validate_backend_modality(
+    db: AsyncSession, backend_id, data_type: str
+) -> None:
+    """v0.10.37 · 绑定 backend 时按项目 data_type 校验模态匹配 (epic 阶段 1).
+
+    实时探一次 `/setup` 派生 backend 模态; fail-open: 探测失败 (backend 暂不可达) → 放行,
+    不因瞬时宕机卡住绑定, mismatch 留到 predict 时暴露. lidar 暂无 backend 支持, 跳过校验.
+    """
+    if data_type not in ("image", "video"):
+        return
+    from app.db.models.ml_backend import MLBackend as _MLB
+    from app.services.ml_capabilities import derive_modalities, extract_capabilities
+    from app.services.ml_client import MLBackendClient
+
+    backend = await db.get(_MLB, backend_id)
+    if backend is None:
+        return
+    try:
+        caps = extract_capabilities(await MLBackendClient(backend).setup())
+    except Exception:
+        return  # fail-open
+    if caps is None:
+        return
+    modalities = derive_modalities(caps)
+    if not modalities:
+        return  # 能力快照不含模态信号 (无 prompt/tracker) → fail-open, 不误拦纯批量检测后端
+    if data_type not in modalities:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"该 ML Backend 不支持「{data_type}」模态 (检测到: "
+                f"{modalities or '无'}); 视频项目需绑定自报 supported_trackers 的 backend."
+            ),
+        )
+
+
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(
     project: Project = Depends(require_project_visible),
@@ -457,6 +500,10 @@ async def update_project(
     payload = data.model_dump(exclude_unset=True)
     # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）
     if payload.get("ml_backend_id"):
+        # v0.10.37 · 绑定按 data_type 校验模态 (用应用 payload 后的有效 data_type)
+        await _validate_backend_modality(
+            db, payload["ml_backend_id"], payload.get("data_type") or project.data_type
+        )
         payload = await _apply_backend_display_hint(db, payload)
 
     # v0.10.22 · 同 create_project: 旧扁平输入反向派生进 tool_bindings 后剔除.
@@ -725,7 +772,9 @@ async def remove_member(
 @router.post("/{project_id}/export", status_code=202)
 async def export_project(
     request: Request,
-    format: str = Query("coco", pattern="^(coco|voc|yolo|aap_json)$"),
+    format: str = Query(
+        "coco", pattern="^(coco|voc|yolo|aap_json|video_json|mot|kitti)$"
+    ),
     include_attributes: bool = Query(
         True,
         description="是否在导出包中携带 annotation.attributes 与 project.attribute_schema",
@@ -829,6 +878,9 @@ class PreannotateRequest(BaseModel):
     prompt: str | None = None
     output_mode: Literal["box", "mask", "both"] = "mask"
     batch_id: uuid.UUID | None = None
+    # v0.10.38 · 按后端参数面板 (epic 阶段 2): 选中 backend 的 /setup.params 值,
+    # 由前端按 backend 分桶解析后显式带上, worker 合并进 /predict context (覆盖项目级阈值兜底).
+    params: dict | None = None
 
 
 @router.post("/{project_id}/preannotate")
@@ -880,6 +932,7 @@ async def trigger_preannotation(
         prompt=body.prompt,
         output_mode=body.output_mode,
         batch_id=str(body.batch_id) if body.batch_id else None,
+        params=body.params or None,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(

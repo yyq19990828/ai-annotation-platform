@@ -1,0 +1,50 @@
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: var(--swatch-color);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.swatch:hover {
+  border-color: var(--color-border-strong);
+}
+
+.swatchActive {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.resetButton {
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.resetButton:hover {
+  color: var(--color-fg);
+  background: var(--color-bg-hover);
+}

@@ -13,7 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.base import async_session, engine
 from app.db.models.dataset import DatasetItem, VideoFrameIndex
 from app.services.storage import StorageService
-from app.services.video_frame_service import source_key_for_item
+from app.services.video_frame_service import (
+    select_sparse_anchor_rows,
+    source_key_for_item,
+)
 from app.workers.media import probe_video_frame_timetable
 
 
@@ -34,6 +37,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Rebuild all video dataset items.",
     )
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--sparse-stride",
+        type=int,
+        default=1,
+        help=(
+            "长视频 sparse timetable: 每隔 N 帧存一个 pts_ms 锚点 (+ 所有关键帧), "
+            "中间帧由相邻锚点线性插值。默认 1 = 全帧 (不 sparse)。"
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--keep-going", action="store_true")
     return parser
@@ -77,6 +89,7 @@ async def rebuild_item_timetable(
     *,
     storage: StorageService | None = None,
     dry_run: bool = False,
+    sparse_stride: int = 1,
 ) -> int:
     storage = storage or StorageService()
     meta = dict(item.metadata_ or {})
@@ -94,8 +107,13 @@ async def rebuild_item_timetable(
             )
         rows = probe_video_frame_timetable(input_path)
 
+    # sparse: 只持久化锚点行 (+ 关键帧)。frame_timetable_frame_count 仍记录源视频
+    # 总帧数, 中间帧的 pts_ms 在读取时由相邻锚点插值/估算补齐 (对外语义不变)。
+    total_frames = len(rows)
+    persisted_rows = select_sparse_anchor_rows(rows, sparse_stride)
+
     if dry_run:
-        return len(rows)
+        return len(persisted_rows)
 
     await db.execute(
         delete(VideoFrameIndex).where(VideoFrameIndex.dataset_item_id == item.id)
@@ -110,15 +128,15 @@ async def rebuild_item_timetable(
                 pict_type=row.get("pict_type"),
                 byte_offset=row.get("byte_offset"),
             )
-            for row in rows
+            for row in persisted_rows
         ]
     )
-    video_meta["frame_timetable_frame_count"] = len(rows)
+    video_meta["frame_timetable_frame_count"] = total_frames
     video_meta.pop("frame_timetable_error", None)
     meta["video"] = video_meta
     item.metadata_ = meta
     await db.commit()
-    return len(rows)
+    return len(persisted_rows)
 
 
 async def _mark_item_error(db: AsyncSession, item: DatasetItem, error: str) -> None:
@@ -150,9 +168,12 @@ async def async_main(argv: Sequence[str] | None = None) -> int:
         failures = 0
         for item in items:
             try:
-                count = await rebuild_item_timetable(db, item, dry_run=args.dry_run)
+                count = await rebuild_item_timetable(
+                    db, item, dry_run=args.dry_run, sparse_stride=args.sparse_stride
+                )
                 prefix = "would rebuild" if args.dry_run else "rebuilt"
-                print(f"{prefix} {item.id}: {count} frames")
+                suffix = " (sparse)" if args.sparse_stride > 1 else ""
+                print(f"{prefix} {item.id}: {count} anchor rows{suffix}")
             except Exception as exc:
                 failures += 1
                 await db.rollback()

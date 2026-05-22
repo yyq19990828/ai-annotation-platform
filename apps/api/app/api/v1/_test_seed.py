@@ -139,7 +139,16 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
                 log.warning("seed_reset · child id lookup failed: %s", exc)
                 await sp.rollback()
 
-        # 2b) 删 annotation_comments → annotations → predictions / failed_predictions
+        # 2b) 删 annotation_feedbacks (FK → tasks/annotations/projects 均无 ondelete,
+        #     必须早于 annotations/tasks/project 删除; review-feedback-loop spec 会造此行,
+        #     漏删会让后续 seed/reset 删 task 撞 FK → 级联到 project/user 删不掉 → 重建
+        #     时 admin@e2e.test 撞唯一约束 → 500)。按 project_id 一刀清。
+        await _try_delete(
+            "DELETE FROM annotation_feedbacks WHERE project_id = ANY(:pids)",
+            {"pids": fixture_project_ids},
+        )
+
+        # 删 annotation_comments → annotations → predictions / failed_predictions
         if fixture_annotation_ids:
             await _try_delete(
                 "DELETE FROM annotation_comments WHERE annotation_id = ANY(:aids)",

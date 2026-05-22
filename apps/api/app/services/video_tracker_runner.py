@@ -87,7 +87,6 @@ def _source_keyframe(annotation: Annotation, job: VideoTrackerJob) -> dict:
         "frame_index": frame_index,
         "bbox": _normalize_bbox(geometry),
         "source": "manual",
-        "absent": False,
         "occluded": False,
     }
 
@@ -130,6 +129,7 @@ def apply_tracker_results(
     annotation: Annotation,
     job: VideoTrackerJob,
     results: list[TrackerFrameResult],
+    grid_step: int = 1,
 ) -> None:
     geometry = _coerce_video_track_geometry(annotation, job)
     keyframes = geometry["keyframes"]
@@ -146,6 +146,10 @@ def apply_tracker_results(
     outside_frames: list[int] = []
 
     for result in results:
+        # 采样开启时只回填落在网格上的帧（D2：tracker 仍逐源帧算并用于跨窗续追，
+        # 但只持久化网格帧，与导航/导出网格一致，避免编辑器里堆满够不到的关键帧）。
+        if grid_step > 1 and result.frame_index % grid_step != 0:
+            continue
         if result.outside:
             outside_frames.append(result.frame_index)
             prediction_by_frame.pop(result.frame_index, None)
@@ -156,7 +160,6 @@ def apply_tracker_results(
             "frame_index": result.frame_index,
             "bbox": _normalize_bbox(result.geometry),
             "source": "prediction",
-            "absent": False,
             "occluded": False,
         }
 
@@ -247,6 +250,17 @@ async def run_tracker_job(
 
         backend = await MLBackendService(db).get_project_backend(task.project_id)
         adapter = get_tracker_adapter(job.model_key)
+
+        # 采样网格步长：只回填网格帧（见 apply_tracker_results）。
+        from app.db.models.project import Project
+        from app.services.video_frame_service import derive_step
+
+        project = await db.get(Project, task.project_id)
+        source_fps = ((item.metadata_ or {}).get("video") or {}).get("fps")
+        grid_step = derive_step(
+            source_fps, (project.video_sampling or {}) if project else {}
+        )
+
         results: list[TrackerFrameResult] = []
         total = max(1, job.to_frame - job.from_frame + 1)
         progress = 0
@@ -257,6 +271,12 @@ async def run_tracker_job(
             "file_name": item.file_name,
             "file_type": item.file_type,
         }
+
+        # Cross-window continuation: window 1 seeds from the original keyframe,
+        # each subsequent window seeds from the previous window's last
+        # non-outside frame geometry so the tracker keeps following a moving
+        # target instead of restarting from the original box every window.
+        last_geometry = annotation.geometry or {}
 
         for from_frame, to_frame in _tracker_windows(job):
             ctx = TrackerContext(
@@ -269,9 +289,10 @@ async def run_tracker_job(
                 to_frame=to_frame,
                 direction=job.direction,
                 prompt=job.prompt or {},
-                source_geometry=annotation.geometry or {},
+                source_geometry=last_geometry,
                 task_data=task_data,
                 ml_backend=backend,
+                sam_variant=(job.prompt or {}).get("sam_variant"),  # v0.10.36
             )
             async for result in adapter.propagate(ctx):
                 await db.refresh(job)
@@ -280,7 +301,7 @@ async def run_tracker_job(
                     or job.status == VideoTrackerJobStatus.CANCELLED.value
                 ):
                     if results:
-                        apply_tracker_results(annotation, job, results)
+                        apply_tracker_results(annotation, job, results, grid_step)
                     job.status = VideoTrackerJobStatus.CANCELLED.value
                     job.completed_at = job.completed_at or _now()
                     await db.commit()
@@ -288,6 +309,12 @@ async def run_tracker_job(
                     return job
 
                 results.append(result)
+                # Seed the next window with this window's latest non-outside
+                # geometry. The adapter yields in propagation order, so the
+                # last such result is the boundary frame adjacent to the next
+                # window (works for both forward and backward windows).
+                if not result.outside and result.geometry:
+                    last_geometry = result.geometry
                 progress += 1
                 frame_payload = {
                     "frame_index": result.frame_index,
@@ -312,14 +339,14 @@ async def run_tracker_job(
         await db.refresh(job)
         if job.cancel_requested_at is not None:
             if results:
-                apply_tracker_results(annotation, job, results)
+                apply_tracker_results(annotation, job, results, grid_step)
             job.status = VideoTrackerJobStatus.CANCELLED.value
             job.completed_at = job.completed_at or _now()
             await db.commit()
             await publisher(job.event_channel, _event(job, "job_cancelled"))
             return job
 
-        apply_tracker_results(annotation, job, results)
+        apply_tracker_results(annotation, job, results, grid_step)
         job.status = VideoTrackerJobStatus.COMPLETED.value
         job.completed_at = _now()
         await db.commit()

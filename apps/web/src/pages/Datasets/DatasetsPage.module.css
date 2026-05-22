@@ -26,7 +26,7 @@
 
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -59,11 +59,18 @@
   border-spacing: 0;
 }
 
+.tableScroller,
+.itemsTableScroller {
+  overflow-x: auto;
+}
+
 .table {
+  min-width: 900px;
   font-size: 13px;
 }
 
 .itemsTable {
+  min-width: 720px;
   font-size: 12.5px;
 }
 
@@ -74,6 +81,7 @@
   color: var(--color-fg-muted);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-sunken);
+  white-space: nowrap;
 }
 
 .headerCell {
@@ -106,6 +114,7 @@
   padding: 12px;
   border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .datasetNameCell {
@@ -121,6 +130,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .datasetIconBox {
@@ -147,6 +157,20 @@
   font-size: 11px;
 }
 
+.datasetIdentity > div:not(.datasetIconBox),
+.projectRow > div {
+  min-width: 0;
+}
+
+.datasetName,
+.datasetMeta,
+.projectName,
+.projectMeta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .monoCell,
 .createdCell {
   font-size: 13px;
@@ -159,6 +183,7 @@
 .detailCell {
   padding: 0;
   border-bottom: 1px solid var(--color-border);
+  white-space: normal;
 }
 
 .detailPanel {
@@ -173,10 +198,12 @@
 
 .filesColumn {
   flex: 2;
+  min-width: 0;
 }
 
 .projectsColumn {
   flex: 1;
+  min-width: 220px;
   padding-left: 16px;
   border-left: 1px solid var(--color-border);
 }
@@ -208,6 +235,7 @@
 .itemCell {
   padding: 8px;
   border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
 }
 
 .mutedCell {
@@ -218,6 +246,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .truncateFileName,
@@ -228,7 +257,7 @@
 }
 
 .truncateFileName {
-  max-width: 180px;
+  max-width: 240px;
 }
 
 .mediaInfo {

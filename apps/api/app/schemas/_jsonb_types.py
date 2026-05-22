@@ -338,7 +338,6 @@ class VideoTrackKeyframe(BaseModel):
     frame_index: int = Field(ge=0)
     bbox: VideoTrackBbox
     source: Literal["manual", "interpolated", "prediction"] = "manual"
-    absent: bool = False
     occluded: bool = False
     # v0.10.6 M4-γ · I13.2 · mutable attribute 的逐帧覆盖。仅承载 schema 里
     # `mutable=true` 的属性键值；为 None 时表示该帧用 annotation.attributes
@@ -365,6 +364,9 @@ class VideoTrackGeometry(BaseModel):
 
     type: Literal["video_track"] = "video_track"
     track_id: str = Field(min_length=1)
+    # v0.10.30 · 2.1 用户可编辑的语义标签 (如 "car_3"), 仅作跨任务 Re-ID 心智,
+    # 不参与主键、不强制唯一。track_number 由 derive_track_number 确定性派生, 不持久化。
+    semantic_label: str | None = None
     keyframes: list[VideoTrackKeyframe] = Field(min_length=1)
     outside: list[VideoTrackOutsideRange] = Field(default_factory=list)
 

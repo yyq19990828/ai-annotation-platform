@@ -13,16 +13,59 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
+import { TabRow } from "@/components/ui/TabRow";
 import {
   adminPreannotateJobsApi,
   type PredictionJobOut,
 } from "@/api/adminPreannotateJobs";
+import { VideoTrackerJobsPanel } from "@/pages/ModelMarket/VideoTrackerJobsPage";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import styles from "./AIPreAnnotateJobsPage.module.css";
 
 type StatusFilter = "" | "running" | "completed" | "failed";
 
+const JOB_TABS = ["图像", "视频"];
+
+/**
+ * v0.10.38 · /ai-pre/jobs 统一 AI 任务历史 (epic 阶段 3): 「图像」(prediction_jobs) /
+ * 「视频」(video_tracker_jobs, 原 /model-market/video-jobs) 两个模态 tab。tab 用 ?tab 同步,
+ * 供 ProjectDetailPanel 视频引导卡片深链 (?tab=video&project_id=)。
+ */
 export default function AIPreAnnotateJobsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") === "video" ? "video" : "image";
+  const projectId = searchParams.get("project_id") ?? undefined;
+  const setTab = (next: "image" | "video") => {
+    setSearchParams((prev) => {
+      const n = new URLSearchParams(prev);
+      n.set("tab", next);
+      return n;
+    });
+  };
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.pageIntro}>
+        <h1 className={styles.pageTitle}>AI 任务历史</h1>
+        <span className={styles.pageSubtitle}>
+          图像批量预标 (prediction_jobs) + 视频追踪 (video_tracker_jobs)，一处看全模态。
+        </span>
+      </div>
+      <TabRow
+        tabs={JOB_TABS}
+        active={tab === "video" ? "视频" : "图像"}
+        onChange={(label) => setTab(label === "视频" ? "video" : "image")}
+      />
+      {tab === "video" ? (
+        <VideoTrackerJobsPanel projectId={projectId} />
+      ) : (
+        <ImageJobsPanel />
+      )}
+    </div>
+  );
+}
+
+function ImageJobsPanel() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -52,16 +95,7 @@ export default function AIPreAnnotateJobsPage() {
   const nextCursor = jobsQ.data?.next_cursor;
 
   return (
-    <div className={styles.page}>
-      <div className={styles.pageIntro}>
-        <h1 className={styles.pageTitle}>完整预标历史</h1>
-        <span className={styles.pageSubtitle}>
-          覆盖 prediction_jobs 全量 (含已结束 / 已重置批次 / 失败 job).
-          仅 pre_annotated 当前批次可在「执行预标」页快速接管。
-        </span>
-      </div>
-
-      <Card>
+    <Card>
         <div className={styles.cardHeader}>
           <span>历史 job ({items.length})</span>
           <div className={styles.filterGroup}>
@@ -153,7 +187,6 @@ export default function AIPreAnnotateJobsPage() {
           )}
         </div>
       </Card>
-    </div>
   );
 }
 

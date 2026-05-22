@@ -205,7 +205,7 @@ export function ApiKeysModal({ open, onClose }: Props) {
                     const revoked = !!k.revoked_at;
                     return (
                       <tr key={k.id} className={revoked ? styles.revokedRow : undefined}>
-                        <td className={styles.cell}>
+                        <td className={`${styles.cell} ${styles.nameCell}`} title={k.name}>
                           {k.name}
                           {revoked && (
                             <span className={styles.revokedBadge}>

@@ -178,8 +178,10 @@ export type VideoTrackKeyframe = {
   frame_index: number;
   bbox: VideoTrackBbox;
   source: "manual" | "interpolated" | "prediction";
-  absent?: boolean;
   occluded?: boolean;
+  // v0.10.30 · 2.3 逐帧属性覆盖: 仅承载 schema 中 mutable=true 的键; 为空表示该帧用
+  // track 默认值 (annotation.attributes)。
+  attributes?: Record<string, unknown> | null;
 };
 export type VideoTrackOutsideRange = {
   from: number;
@@ -189,6 +191,8 @@ export type VideoTrackOutsideRange = {
 export type VideoTrackGeometry = {
   type: "video_track";
   track_id: string;
+  // v0.10.30 · 2.1 用户可编辑语义标签 (跨任务 Re-ID 心智), 不参与主键、不强制唯一。
+  semantic_label?: string | null;
   keyframes: VideoTrackKeyframe[];
   outside?: VideoTrackOutsideRange[];
 };
@@ -328,6 +332,9 @@ import type {
   PredictionShape as GeneratedPredictionShape,
   PredictionOut as GeneratedPredictionOut,
 } from "@/api/generated/types.gen";
+
+// v0.10.29 · 视频项目级采样配置 (软网格导航). 形状由后端 schema 派生.
+export type { VideoSamplingConfig } from "@/api/generated/types.gen";
 
 export type PredictionShape = Omit<GeneratedPredictionShape, "geometry"> & {
   geometry: Geometry;

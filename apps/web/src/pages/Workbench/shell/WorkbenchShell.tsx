@@ -26,7 +26,7 @@ import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
-import type { TaskResponse, AnnotationResponse } from "@/types";
+import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 
 import { useWorkbenchState } from "../state/useWorkbenchState";
@@ -53,6 +53,7 @@ import { useAnnotateMode } from "../modes/useAnnotateMode";
 import { useReviewMode } from "../modes/useReviewMode";
 import { setActiveClassesConfig, UNKNOWN_CLASS } from "../stage/colors";
 import type { VideoStageControls } from "../stage/VideoStage";
+import { deriveSamplingStep } from "../stage/videoSamplingGrid";
 import { VideoChapterSidebar, pickChapterTargetFrame } from "../stage/VideoChapterSidebar";
 import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
@@ -304,6 +305,13 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
 
   const videoFrameCount = videoManifest.data?.metadata.frame_count ?? 0;
   const videoFps = videoManifest.data?.metadata.fps ?? null;
+  // v0.10.29 · 项目级采样配置 → 软网格导航。step>1 时开启网格键位 (向后兼容: 缺省 step=1 不变)。
+  const videoSampling = currentProject?.video_sampling ?? null;
+  const samplingStep = useMemo(
+    () => (isVideoTask ? deriveSamplingStep(videoSampling, videoFps ?? 0) : 1),
+    [isVideoTask, videoSampling, videoFps],
+  );
+  const samplingActive = samplingStep > 1;
   const videoChapterTimebase = useMemo(
     () =>
       videoFps && videoFrameCount > 0
@@ -781,6 +789,11 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handleSamCommitClass,
     handleSamCancelClass,
   } = imageActions;
+  const imageContextMenuClipboard = useMemo(() => ({
+    copyAnnotation: (annotation: Annotation) => clipboard.copyAnnotations([annotation]),
+    paste: clipboard.paste,
+    hasClipboard: clipboard.hasClipboard,
+  }), [clipboard]);
 
 
   /** Shift+click 多选；普通 click 单选；点 AI 框始终单选。 */
@@ -847,6 +860,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handleVideoSetSelectedClass,
     handleVideoConvertToBboxes,
     handleVideoComposeTracks,
+    handleUpdateTrackAttributes,
+    handleUpdateKeyframeAttributes,
+    handlePropagateKeyframe,
   } = useVideoAnnotationActions({
     taskId,
     queryClient,
@@ -1020,6 +1036,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
     videoMode: isVideoTask,
+    samplingActive,
     videoControlsRef,
     isPromptSupported: mlCapabilities.isPromptSupported,
     maskEditor,
@@ -1142,6 +1159,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         videoManifest: videoManifest.data, videoManifestLoading: videoManifest.isLoading,
         videoFrameTimetable: videoFrameTimetable.data,
         videoChapters: isVideoTask ? videoTimelineChapters : undefined,
+        videoSampling,
         videoManifestError: videoManifest.error, videoTool: s.videoTool,
         videoFrameIndex: s.videoFrameIndex,
         videoReviewDisplayMode: mode === "review" ? modeState.diffMode : undefined,
@@ -1151,11 +1169,17 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         onVideoCreate: handleVideoCreate,
         onVideoPendingDraw: handleVideoPendingDraw, onVideoUpdate: handleVideoUpdate,
         onVideoRename: handleVideoRename, onVideoConvertToBboxes: handleVideoConvertToBboxes,
+        onVideoComposeTracks: handleVideoComposeTracks,
+        onToggleHiddenVideoTrack: s.toggleHiddenVideoTrack,
+        onToggleLockedVideoTrack: s.toggleLockedVideoTrack,
+        onPropagateVideoTrack: openPropagateDialog,
         fileUrl, blurhash, thumbnailUrl, tool: s.tool, selectedIds: s.selectedIds, fadedAiIds: dimmedAiIds,
         nudgeMap, userBoxes: modeState.diffMode === "raw" ? [] : userBoxes,
         aiBoxes: modeState.diffMode === "final" ? [] : aiBoxes, spacePan, vp, setVp, fitTick, setFitTick,
         pendingDrawing: s.pendingDrawing, onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction, onDeleteUserBox: handleDeleteBox,
+        onPatchShapeFlag: handlePatchShapeFlag,
+        imageClipboardActions: imageContextMenuClipboard,
         onCommitDrawing: handleCommitDrawing,
         // v0.10.28 · 旋转框 (OBB) 创建 + 旋转角更新.
         onCommitRotatedBbox: createRotatedBbox,
@@ -1287,13 +1311,14 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         commentAnchor: videoCommentAnchor,
         // I4 · 未选中标注时 CommentsPanel 走 task 级降级 (评论/历史汇总该 task 下所有标注).
         taskId: taskId ?? null,
-        videoTrackPanel: isVideoTask ? (
+        videoTrackPanel: isVideoTask ? ((frameFilter) => (
           <div className={styles.videoTrackPanel}>
             <VideoTrackSidebar
               annotations={annotationsData ?? []}
               selectedId={s.selectedId}
               selectedIds={s.selectedIds}
               frameIndex={s.videoFrameIndex}
+              trackFilter={frameFilter}
               readOnly={isLocked}
               hiddenTrackIds={s.hiddenVideoTrackIds}
               lockedTrackIds={s.lockedVideoTrackIds}
@@ -1312,6 +1337,13 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
               trackerJobsByAnnotation={trackerJobs.byAnnotation}
               onPropagateTrack={openPropagateDialog}
               onCancelTrackerJob={trackerJobs.cancel}
+              trackColorOverrides={s.trackColorOverrides}
+              onSetTrackColor={s.setVideoTrackColor}
+              attributeSchema={toolView.attributeSchema}
+              onUpdateTrackAttributes={handleUpdateTrackAttributes}
+              onUpdateKeyframeAttributes={handleUpdateKeyframeAttributes}
+              onPropagateKeyframe={handlePropagateKeyframe}
+              samplingStep={samplingStep}
             />
             <VideoChapterSidebar
               datasetItemId={videoDatasetItemId}
@@ -1322,7 +1354,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
               onSeekFrame={s.setVideoFrameIndex}
             />
           </div>
-        ) : undefined,
+        )) : undefined,
         liveCommentCanvas: {
           active: s.canvasDraft.active,
           result: s.canvasDraft.pendingResult,
@@ -1369,6 +1401,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
       frameIndex={s.videoFrameIndex}
       maxFrame={Math.max(0, videoFrameCount - 1)}
       nextKeyframeAfter={propagateDialogNextKeyframe}
+      samplingStep={samplingStep}
       submitting={Boolean(propagateDialog?.submitting)}
       onCancel={() => setPropagateDialog(null)}
       onSubmit={handlePropagateSubmit}

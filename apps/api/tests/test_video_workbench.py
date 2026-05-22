@@ -1,3 +1,4 @@
+import json
 import subprocess
 import uuid
 
@@ -18,6 +19,7 @@ from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.schemas._jsonb_types import Geometry
 from app.schemas.task import VideoMetadata
+from app.services.export import ExportService, UnsupportedExportError
 from app.workers.media import (
     FFMPEG_CHUNK_TIMEOUT_SECONDS,
     FFMPEG_POSTER_TIMEOUT_SECONDS,
@@ -987,6 +989,7 @@ async def _create_video_export_fixture(db_session, user):
         name="Video Project",
         type_key="video-track",
         type_label="视频 · 时序追踪",
+        data_type="video",
         owner_id=user.id,
         classes=["car", "person"],
         attribute_schema={
@@ -1095,9 +1098,9 @@ async def _create_video_export_fixture(db_session, user):
                     "frame_index": 4,
                     "bbox": {"x": 0.5, "y": 0.6, "w": 0.2, "h": 0.2},
                     "source": "manual",
-                    "absent": True,
                 },
             ],
+            "outside": [{"from": 4, "to": 4}],
         },
         attributes={"speed": 42},
     )
@@ -1163,21 +1166,14 @@ async def _video_fixture_task_and_track(db_session, project):
 
 async def test_video_project_export_returns_video_tracks_json(
     db_session,
-    httpx_client_bound,
     super_admin,
 ):
-    user, token = super_admin
+    # v0.10.27 导出已异步化 (POST→job); 内容正确性直接断言 ExportService。
+    user, _ = super_admin
     project, _, _ = await _create_video_export_fixture(db_session, user)
 
-    resp = await httpx_client_bound.get(
-        f"/api/v1/projects/{project.id}/export?format=coco",
-        headers={"Authorization": f"Bearer {token}"},
-    )
+    body = json.loads(await ExportService(db_session).export_coco(project.id))
 
-    assert resp.status_code == 200
-    assert "P-VID" in resp.headers["content-disposition"]
-    assert "_video_tracks.json" in resp.headers["content-disposition"]
-    body = resp.json()
     assert body["export_type"] == "video_tracks"
     assert body["frame_mode"] == "keyframes"
     assert body["project"]["attribute_schema"]["fields"][0]["key"] == "speed"
@@ -1192,20 +1188,14 @@ async def test_video_project_export_returns_video_tracks_json(
 
 async def test_video_batch_export_filters_tasks_and_annotations(
     db_session,
-    httpx_client_bound,
     super_admin,
 ):
-    user, token = super_admin
+    user, _ = super_admin
     project, batch_a, _ = await _create_video_export_fixture(db_session, user)
 
-    resp = await httpx_client_bound.get(
-        f"/api/v1/projects/{project.id}/batches/{batch_a.id}/export?format=coco",
-        headers={"Authorization": f"Bearer {token}"},
+    body = json.loads(
+        await ExportService(db_session).export_coco(project.id, batch_id=batch_a.id)
     )
-
-    assert resp.status_code == 200
-    assert "_video_tracks.json" in resp.headers["content-disposition"]
-    body = resp.json()
     assert [task["display_id"] for task in body["tasks"]] == [
         batch_a.display_id.replace("B-A", "T-A")
     ]
@@ -1213,21 +1203,18 @@ async def test_video_batch_export_filters_tasks_and_annotations(
     assert len(body["video_bbox"]) == 1
 
 
-async def test_video_export_all_frames_interpolates_and_absent_blocks(
+async def test_video_export_all_frames_interpolates_and_outside_blocks(
     db_session,
-    httpx_client_bound,
     super_admin,
 ):
-    user, token = super_admin
+    user, _ = super_admin
     project, _, _ = await _create_video_export_fixture(db_session, user)
 
-    resp = await httpx_client_bound.get(
-        f"/api/v1/projects/{project.id}/export?format=coco&video_frame_mode=all_frames",
-        headers={"Authorization": f"Bearer {token}"},
+    body = json.loads(
+        await ExportService(db_session).export_coco(
+            project.id, video_frame_mode="all_frames"
+        )
     )
-
-    assert resp.status_code == 200
-    body = resp.json()
     car = next(track for track in body["tracks"] if track["track_id"] == "trk_car")
     assert body["frame_mode"] == "all_frames"
     assert [frame["frame_index"] for frame in car["frames"]] == [0, 1, 2]
@@ -1237,33 +1224,32 @@ async def test_video_export_all_frames_interpolates_and_absent_blocks(
 
 async def test_video_export_preserves_and_applies_outside_ranges(
     db_session,
-    httpx_client_bound,
     super_admin,
 ):
-    user, token = super_admin
+    user, _ = super_admin
     project, _, _ = await _create_video_export_fixture(db_session, user)
     _, track = await _video_fixture_task_and_track(db_session, project)
+    # frame 4 关键帧仍消失 (沿用 fixture 的 {4,4} outside); 再叠加 {1,1} 与 {5,6}。
+    # {4,4}+{5,6} 相邻合并为 {4,6,prediction}，验证 normalize 行为。
     track.geometry = {
         **track.geometry,
         "outside": [
             {"from": 1, "to": 1},
+            {"from": 4, "to": 4},
             {"from": 5, "to": 6, "source": "prediction"},
         ],
     }
     await db_session.flush()
 
-    resp = await httpx_client_bound.get(
-        f"/api/v1/projects/{project.id}/export?format=coco&video_frame_mode=all_frames",
-        headers={"Authorization": f"Bearer {token}"},
+    body = json.loads(
+        await ExportService(db_session).export_coco(
+            project.id, video_frame_mode="all_frames"
+        )
     )
-
-    assert resp.status_code == 200
-    car = next(
-        track for track in resp.json()["tracks"] if track["track_id"] == "trk_car"
-    )
+    car = next(track for track in body["tracks"] if track["track_id"] == "trk_car")
     assert car["outside"] == [
         {"from": 1, "to": 1, "source": "manual"},
-        {"from": 5, "to": 6, "source": "prediction"},
+        {"from": 4, "to": 6, "source": "prediction"},
     ]
     assert [frame["frame_index"] for frame in car["frames"]] == [0, 2]
 
@@ -1821,6 +1807,201 @@ async def test_video_track_composition_merge_rejects_overlap_and_mixed_classes(
     )
 
 
+async def _add_car_tail_track(db_session, task, project, user, *, frame_index=6):
+    # trk_car 已有 keyframes [0, 2, 4]; 这里造一条帧号在后、与之不重叠的同 class track,
+    # 形成 gap [5..frame_index-1] 供 join 测试.
+    tail = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="car",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_car_tail",
+            "keyframes": [
+                {
+                    "frame_index": frame_index,
+                    "bbox": {"x": 0.8, "y": 0.2, "w": 0.2, "h": 0.2},
+                    "source": "manual",
+                },
+            ],
+        },
+    )
+    db_session.add(tail)
+    await db_session.flush()
+    return tail
+
+
+async def test_video_track_composition_join_interpolate_no_gap_outside(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    # fixture 的 car track 自带 {4,4} outside (frame4 消失); join 测试聚焦 gap 行为,
+    # 先清空使 [0,2,4] 全可见, 与 "gap [5..5]" 断言对齐。
+    first.geometry = {**first.geometry, "outside": []}
+    await db_session.flush()
+    tail = await _add_car_tail_track(db_session, task, project, user)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "join_tracks",
+            "annotation_ids": [str(first.id), str(tail.id)],
+            "gap_mode": "interpolate",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["operation"] == "join_tracks"
+    assert body["deleted_annotation_ids"] == [str(tail.id)]
+    merged = body["updated_annotations"][0]
+    assert merged["id"] == str(first.id)
+    assert [kf["frame_index"] for kf in merged["geometry"]["keyframes"]] == [0, 2, 4, 6]
+    # interpolate 模式: gap [5..5] 不写 outside, 靠现有线性插值连接.
+    assert merged["geometry"]["outside"] == []
+    await db_session.refresh(tail)
+    assert tail.is_active is False
+
+
+async def test_video_track_composition_join_outside_marks_gap(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    first.geometry = {**first.geometry, "outside": []}
+    await db_session.flush()
+    tail = await _add_car_tail_track(db_session, task, project, user)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "join_tracks",
+            "annotation_ids": [str(first.id), str(tail.id)],
+            "gap_mode": "outside",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    merged = body["updated_annotations"][0]
+    assert [kf["frame_index"] for kf in merged["geometry"]["keyframes"]] == [0, 2, 4, 6]
+    # outside 模式: gap [5..5] 标 outside 后合并 (与 merge_tracks 一致).
+    assert {"from": 5, "to": 5, "source": "manual"} in merged["geometry"]["outside"]
+    await db_session.refresh(tail)
+    assert tail.is_active is False
+
+
+async def test_video_track_composition_join_default_gap_mode_is_interpolate(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    first.geometry = {**first.geometry, "outside": []}
+    await db_session.flush()
+    tail = await _add_car_tail_track(db_session, task, project, user)
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "join_tracks",
+            "annotation_ids": [str(first.id), str(tail.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    merged = resp.json()["updated_annotations"][0]
+    assert merged["geometry"]["outside"] == []
+
+
+async def test_video_track_composition_join_rejects_overlap_and_mixed_classes(
+    db_session,
+    httpx_client_bound,
+    super_admin,
+):
+    user, token = super_admin
+    project, _, _ = await _create_video_export_fixture(db_session, user)
+    task, first = await _video_fixture_task_and_track(db_session, project)
+    overlap = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="car",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_join_overlap",
+            "keyframes": [
+                {
+                    "frame_index": 2,
+                    "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2},
+                    "source": "manual",
+                },
+            ],
+        },
+    )
+    mixed = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=user.id,
+        annotation_type="video_track",
+        class_name="person",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk_join_person_tail",
+            "keyframes": [
+                {
+                    "frame_index": 6,
+                    "bbox": {"x": 0.6, "y": 0.2, "w": 0.2, "h": 0.2},
+                    "source": "manual",
+                },
+            ],
+        },
+    )
+    db_session.add_all([overlap, mixed])
+    await db_session.flush()
+
+    overlap_resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "join_tracks",
+            "annotation_ids": [str(first.id), str(overlap.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    mixed_resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",
+        json={
+            "operation": "join_tracks",
+            "annotation_ids": [str(first.id), str(mixed.id)],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert overlap_resp.status_code == 400
+    assert (
+        overlap_resp.json()["detail"] == "join_tracks requires non-overlapping tracks"
+    )
+    assert mixed_resp.status_code == 400
+    assert (
+        mixed_resp.json()["detail"] == "join_tracks requires tracks with the same class"
+    )
+
+
 async def test_video_track_composition_rejects_annotation_from_other_task(
     db_session,
     httpx_client_bound,
@@ -1879,62 +2060,51 @@ async def test_video_track_composition_requires_task_visibility(
 
 async def test_video_export_include_attributes_false_removes_schema_and_attrs(
     db_session,
-    httpx_client_bound,
     super_admin,
 ):
-    user, token = super_admin
+    user, _ = super_admin
     project, _, _ = await _create_video_export_fixture(db_session, user)
 
-    resp = await httpx_client_bound.get(
-        f"/api/v1/projects/{project.id}/export?format=coco&include_attributes=false",
-        headers={"Authorization": f"Bearer {token}"},
+    body = json.loads(
+        await ExportService(db_session).export_coco(
+            project.id, include_attributes=False
+        )
     )
-
-    assert resp.status_code == 200
-    body = resp.json()
     assert "attribute_schema" not in body["project"]
     assert "attributes" not in body["tracks"][0]
     assert "attributes" not in body["video_bbox"][0]
 
 
 @pytest.mark.parametrize("format", ["yolo", "voc"])
-async def test_video_project_yolo_voc_export_returns_clear_400(
+async def test_video_project_yolo_voc_export_raises_unsupported(
     db_session,
-    httpx_client_bound,
     super_admin,
     format,
 ):
-    user, token = super_admin
+    user, _ = super_admin
     project, _, _ = await _create_video_export_fixture(db_session, user)
 
-    resp = await httpx_client_bound.get(
-        f"/api/v1/projects/{project.id}/export?format={format}",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-
-    assert resp.status_code == 400
-    assert resp.json()["detail"] == (
+    svc = ExportService(db_session)
+    method = svc.export_yolo if format == "yolo" else svc.export_voc
+    with pytest.raises(UnsupportedExportError) as exc:
+        await method(project.id)
+    assert str(exc.value) == (
         f"video-track projects do not support {format.upper()} export yet"
     )
 
 
-async def test_video_mm_coco_export_returns_clear_400(
+async def test_video_mm_coco_export_raises_unsupported(
     db_session,
-    httpx_client_bound,
     super_admin,
 ):
-    user, token = super_admin
+    user, _ = super_admin
     project, _, _ = await _create_video_export_fixture(db_session, user)
     project.type_key = "video-mm"
     project.type_label = "视频 · 多模态"
     await db_session.flush()
 
-    resp = await httpx_client_bound.get(
-        f"/api/v1/projects/{project.id}/export?format=coco",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-
-    assert resp.status_code == 400
-    assert resp.json()["detail"] == (
+    with pytest.raises(UnsupportedExportError) as exc:
+        await ExportService(db_session).export_coco(project.id)
+    assert str(exc.value) == (
         "Video annotation export is not supported for video-mm projects"
     )

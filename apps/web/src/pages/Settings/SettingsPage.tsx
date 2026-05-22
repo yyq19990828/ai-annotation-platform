@@ -658,36 +658,38 @@ function MyFeedbackSection() {
 
   return (
     <Card>
-      <table className={styles.feedbackTable}>
-        <thead>
-          <tr className={styles.tableHeadRow}>
-            <th className={styles.tableHeaderCell}>ID</th>
-            <th className={styles.tableHeaderCell}>标题</th>
-            <th className={styles.tableHeaderCell}>严重度</th>
-            <th className={styles.tableHeaderCell}>状态</th>
-            <th className={styles.tableHeaderCell}>时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          {reports.map((r) => (
-            <tr key={r.id} className={styles.tableBodyRow}>
-              <td className={clsx(styles.tableCell, styles.monoCell)}>{r.display_id}</td>
-              <td className={clsx(styles.tableCell, styles.titleCell)}>{r.title}</td>
-              <td className={styles.tableCell}>
-                <span className={clsx(styles.severity, severityClassName(r.severity))}>{r.severity}</span>
-              </td>
-              <td className={styles.tableCell}>
-                <span className={styles.statusPill}>
-                  {statusLabel[r.status] ?? r.status}
-                </span>
-              </td>
-              <td className={clsx(styles.tableCell, styles.dateCell)}>
-                {new Date(r.created_at).toLocaleDateString("zh-CN")}
-              </td>
+      <div className={styles.feedbackTableShell}>
+        <table className={styles.feedbackTable}>
+          <thead>
+            <tr className={styles.tableHeadRow}>
+              <th className={styles.tableHeaderCell}>ID</th>
+              <th className={styles.tableHeaderCell}>标题</th>
+              <th className={styles.tableHeaderCell}>严重度</th>
+              <th className={styles.tableHeaderCell}>状态</th>
+              <th className={styles.tableHeaderCell}>时间</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {reports.map((r) => (
+              <tr key={r.id} className={styles.tableBodyRow}>
+                <td className={clsx(styles.tableCell, styles.monoCell)}>{r.display_id}</td>
+                <td className={clsx(styles.tableCell, styles.titleCell)} title={r.title}>{r.title}</td>
+                <td className={clsx(styles.tableCell, styles.nowrapCell)}>
+                  <span className={clsx(styles.severity, severityClassName(r.severity))}>{r.severity}</span>
+                </td>
+                <td className={clsx(styles.tableCell, styles.nowrapCell)}>
+                  <span className={styles.statusPill}>
+                    {statusLabel[r.status] ?? r.status}
+                  </span>
+                </td>
+                <td className={clsx(styles.tableCell, styles.dateCell)}>
+                  {new Date(r.created_at).toLocaleDateString("zh-CN")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Card>
   );
 }

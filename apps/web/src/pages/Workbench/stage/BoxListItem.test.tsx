@@ -90,8 +90,9 @@ describe("BoxListItem", () => {
         keyframes: [
           { frame_index: 0, bbox: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 }, source: "manual" },
           { frame_index: 10, bbox: { x: 0.3, y: 0.2, w: 0.3, h: 0.4 }, source: "manual", occluded: true },
-          { frame_index: 12, bbox: { x: 0.3, y: 0.2, w: 0.3, h: 0.4 }, source: "manual", absent: true },
+          { frame_index: 12, bbox: { x: 0.3, y: 0.2, w: 0.3, h: 0.4 }, source: "manual" },
         ],
+        outside: [{ from: 12, to: 12 }],
       },
     };
     const { getByText } = render(

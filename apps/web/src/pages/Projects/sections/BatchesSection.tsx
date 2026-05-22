@@ -491,101 +491,102 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         )}
 
         {!isLoading && batches.length > 0 && view === "list" && (
-          <table className={styles.table}>
-            <thead>
-              <tr className={styles.tableHeadRow}>
-                {isOwner && (
-                  <th className={styles.thCheckbox}>
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={toggleAll}
-                      title={allSelected ? "取消全选" : "全选"}
-                      className={styles.checkbox}
-                    />
-                  </th>
-                )}
-                {["批次", "状态", "分派", "优先级", "截止日期", "进度", "操作"].map((h) => (
-                  <th key={h} className={styles.thLabel}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((b) => (
-                <tr key={b.id} className={styles.tableBodyRow}>
+          <div className={styles.tableScroller}>
+            <table className={styles.table}>
+              <thead>
+                <tr className={styles.tableHeadRow}>
                   {isOwner && (
-                    <td className={styles.tdCheckbox}>
-                      {b.display_id !== "B-DEFAULT" ? (
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(b.id)}
-                          onChange={() => toggleOne(b.id)}
-                          className={styles.checkbox}
-                        />
-                      ) : null}
-                    </td>
+                    <th className={styles.thCheckbox}>
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        title={allSelected ? "取消全选" : "全选"}
+                        className={styles.checkbox}
+                      />
+                    </th>
                   )}
-                  <td className={styles.td}>
-                    <div className={styles.cellTitle}>{b.name}</div>
-                    <div className={cn("mono", styles.cellSubId)}>
-                      {b.display_id}
-                    </div>
-                  </td>
-                  <td className={styles.td}>
-                    <div className={styles.cellStatusRow}>
-                      <Badge variant={STATUS_VARIANTS[b.status] ?? "default"} dot>
-                        {STATUS_LABELS[b.status] ?? b.status}
-                      </Badge>
-                      {b.admin_locked && (
-                        <span title={b.admin_lock_reason ?? "已锁定"}>
-                          <Badge variant="warning">
-                            <Icon name="lock" size={10} /> 已锁定
-                          </Badge>
+                  {["批次", "状态", "分派", "优先级", "截止日期", "进度", "操作"].map((h) => (
+                    <th key={h} className={styles.thLabel}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {batches.map((b) => (
+                  <tr key={b.id} className={styles.tableBodyRow}>
+                    {isOwner && (
+                      <td className={styles.tdCheckbox}>
+                        {b.display_id !== "B-DEFAULT" ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(b.id)}
+                            onChange={() => toggleOne(b.id)}
+                            className={styles.checkbox}
+                          />
+                        ) : null}
+                      </td>
+                    )}
+                    <td className={styles.td}>
+                      <div className={styles.cellTitle} title={b.name}>{b.name}</div>
+                      <div className={cn("mono", styles.cellSubId)}>
+                        {b.display_id}
+                      </div>
+                    </td>
+                    <td className={styles.td}>
+                      <div className={styles.cellStatusRow}>
+                        <Badge variant={STATUS_VARIANTS[b.status] ?? "default"} dot>
+                          {STATUS_LABELS[b.status] ?? b.status}
+                        </Badge>
+                        {b.admin_locked && (
+                          <span title={b.admin_lock_reason ?? "已锁定"}>
+                            <Badge variant="warning">
+                              <Icon name="lock" size={10} /> 已锁定
+                            </Badge>
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className={styles.td}>
+                      {(() => {
+                        const unassigned = !b.annotator_id && !b.reviewer_id;
+                        const assignees = [b.annotator, b.reviewer].filter(Boolean) as NonNullable<typeof b.annotator>[];
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => setAssignTarget(b)}
+                            title={unassigned ? "未分派 · 点击设置" : "点击修改分派"}
+                            className={cn(
+                              styles.assignChip,
+                              unassigned && styles.assignChipUnassigned,
+                            )}
+                          >
+                            {unassigned ? (
+                              <>
+                                <Icon name="users" size={11} />未分派
+                              </>
+                            ) : (
+                              <AssigneeAvatarStack users={assignees} max={2} />
+                            )}
+                          </button>
+                        );
+                      })()}
+                    </td>
+                    <td className={styles.td}>{b.priority}</td>
+                    <td className={styles.tdMuted}>
+                      {b.deadline ?? "—"}
+                    </td>
+                    <td className={styles.tdProgress}>
+                      <ProgressBar value={b.progress_pct} />
+                      <div className={styles.progressSublabel}>
+                        <span className="mono">
+                          {b.completed_tasks} / {b.total_tasks}
                         </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className={styles.td}>
-                    {(() => {
-                      const unassigned = !b.annotator_id && !b.reviewer_id;
-                      const assignees = [b.annotator, b.reviewer].filter(Boolean) as NonNullable<typeof b.annotator>[];
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => setAssignTarget(b)}
-                          title={unassigned ? "未分派 · 点击设置" : "点击修改分派"}
-                          className={cn(
-                            styles.assignChip,
-                            unassigned && styles.assignChipUnassigned,
-                          )}
-                        >
-                          {unassigned ? (
-                            <>
-                              <Icon name="users" size={11} />未分派
-                            </>
-                          ) : (
-                            <AssigneeAvatarStack users={assignees} max={2} />
-                          )}
-                        </button>
-                      );
-                    })()}
-                  </td>
-                  <td className={styles.td}>{b.priority}</td>
-                  <td className={styles.tdMuted}>
-                    {b.deadline ?? "—"}
-                  </td>
-                  <td className={styles.tdProgress}>
-                    <ProgressBar value={b.progress_pct} />
-                    <div className={styles.progressSublabel}>
-                      <span className="mono">
-                        {b.completed_tasks} / {b.total_tasks}
-                      </span>
-                    </div>
-                  </td>
-                  <td className={styles.td}>
-                    <div className={styles.actionRow}>
+                      </div>
+                    </td>
+                    <td className={styles.td}>
+                      <div className={styles.actionRow}>
                       {b.status === "draft" && (
                         <Button
                           onClick={() => handleTransition(b, "active")}
@@ -699,23 +700,24 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <Icon name="unlock" size={12} />
                         </Button>
                       )}
-                    </div>
-                    {b.status === "rejected" && b.review_feedback && (
-                      <div
-                        className={styles.rejectFeedback}
-                        title={b.review_feedback}
-                      >
-                        <strong className={styles.rejectFeedbackLabel}>驳回原因：</strong>
-                        {b.review_feedback.length > 80
-                          ? b.review_feedback.slice(0, 80) + "…"
-                          : b.review_feedback}
                       </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      {b.status === "rejected" && b.review_feedback && (
+                        <div
+                          className={styles.rejectFeedback}
+                          title={b.review_feedback}
+                        >
+                          <strong className={styles.rejectFeedbackLabel}>驳回原因：</strong>
+                          {b.review_feedback.length > 80
+                            ? b.review_feedback.slice(0, 80) + "…"
+                            : b.review_feedback}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 

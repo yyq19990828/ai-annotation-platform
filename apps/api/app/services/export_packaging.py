@@ -35,11 +35,22 @@ from app.services.export import (
     UnsupportedExportError,
     _bbox_geometry,
 )
+from app.services.export_video import (
+    FALLBACK_H,
+    FALLBACK_W,
+    build_kitti_labels,
+    build_mot_gt,
+    build_mot_seqinfo,
+)
 from app.services.project import (
     derive_attribute_schema,
     derive_classes_list,
 )
 from app.services.storage import storage_service
+from app.services.video_frame_service import derive_sampled_frames, derive_step
+from app.services.video_tracks import derive_track_number
+
+VIDEO_EXPORT_FORMATS = {"video_json", "aap_json", "mot", "kitti"}
 
 # 预签名 URL / 桶 lifecycle 对齐 7 天。
 PRESIGN_EXPIRES_SECONDS = 7 * 24 * 3600
@@ -186,6 +197,22 @@ async def build_export_zip(
         return b"", 0
     dataset_items = await svc._load_dataset_items(tasks)
 
+    # v0.10.31 · Phase 4.1 · 视频项目走独立组装（manifest + 视频回源脚本 + 多格式），
+    # 不复用图像的 data.yaml / images_manifest / fetch_images（YOLO 图片专用）。
+    if project.data_type == "video":
+        return await _build_video_export_zip(
+            db,
+            svc,
+            project,
+            tasks,
+            annotations,
+            dataset_items,
+            batch_id=batch_id,
+            format=format,
+            include_attributes=include_attributes,
+            video_frame_mode=video_frame_mode,
+        )
+
     classes_list = derive_classes_list(project.tool_bindings)
     attribute_schema = derive_attribute_schema(project.tool_bindings)
 
@@ -293,3 +320,272 @@ def _build_data_yaml(classes_list: list[str]) -> str:
         "names:\n"
         f"{names}\n"
     )
+
+
+# ── v0.10.31 · Phase 4 视频导出组装 ──────────────────────────────────
+
+_FETCH_VIDEOS_TEMPLATE = '''#!/usr/bin/env python3
+"""按 manifest.json 的预签名 URL 把视频回源到 videos/<相对路径>。
+
+纯标准库，无需 MinIO 密钥（URL 已带 7 天签名）。本地已有视频则跳过。
+"""
+import json
+import os
+import sys
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def main() -> int:
+    with open(os.path.join(HERE, "manifest.json"), "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    ok = 0
+    fail = 0
+    for it in manifest.get("videos", []):
+        rel = it.get("rel_path")
+        url = it.get("presigned_url")
+        if not rel or not url:
+            continue
+        dest = os.path.join(HERE, "videos", *rel.split("/"))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if os.path.exists(dest):
+            ok += 1
+            continue
+        try:
+            urllib.request.urlretrieve(url, dest)
+            ok += 1
+        except Exception as exc:  # noqa: BLE001
+            print("[x] 下载失败 %s: %s" % (rel, exc))
+            fail += 1
+    print("[done] 视频回源 成功 %d，失败 %d，输出目录 videos/" % (ok, fail))
+    return 0 if fail == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+
+_FETCH_FRAMES_TEMPLATE = '''#!/usr/bin/env python3
+"""按 manifest.json 的采样网格帧号，用本地 ffmpeg 从回源视频抽 {sequence}/img1/ 帧序列。
+
+遵循 D1（不物理打包帧）：导出包只带标注 + 网格帧号，帧由本脚本就地抽取。
+依赖：先跑 fetch_videos.py 回源视频；系统需安装 ffmpeg。
+帧号语义（D2）：grid_source_frames 是源视频帧号；输出按抽取顺序编号，
+start_number=1（MOT，1-based）或 0（KITTI，0-based）。
+"""
+import json
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def main() -> int:
+    with open(os.path.join(HERE, "manifest.json"), "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    ok = 0
+    fail = 0
+    for it in manifest.get("videos", []):
+        rel = it.get("rel_path")
+        seq = it.get("sequence")
+        frames = it.get("grid_source_frames") or []
+        start = int(it.get("frame_start_number", 1))
+        if not rel or not seq or not frames:
+            continue
+        video_path = os.path.join(HERE, "videos", *rel.split("/"))
+        if not os.path.exists(video_path):
+            print("[x] 视频缺失（先跑 fetch_videos.py）: %s" % rel)
+            fail += 1
+            continue
+        out_dir = os.path.join(HERE, *seq.split("/"), "img1")
+        os.makedirs(out_dir, exist_ok=True)
+        select_expr = "+".join("eq(n\\\\,%d)" % fr for fr in frames)
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error", "-i", video_path,
+            "-vf", "select='%s'" % select_expr, "-vsync", "0",
+            "-start_number", str(start),
+            os.path.join(out_dir, "%06d.jpg"),
+        ]
+        try:
+            subprocess.run(cmd, check=True)
+            ok += 1
+        except Exception as exc:  # noqa: BLE001
+            print("[x] 抽帧失败 %s: %s" % (seq, exc))
+            fail += 1
+    print("[done] 抽帧 成功 %d 序列，失败 %d" % (ok, fail))
+    return 0 if fail == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+
+def _video_seq_name(task: Task, item: DatasetItem | None) -> str:
+    """sequence 名 = 数据集内相对路径去扩展名（保留层级，去重靠相对路径）。"""
+    return _label_rel(task, item)
+
+
+def _video_meta(item: DatasetItem | None) -> dict:
+    if not item:
+        return {}
+    v = (item.metadata_ or {}).get("video")
+    return v if isinstance(v, dict) else {}
+
+
+async def _build_video_export_zip(
+    db: AsyncSession,
+    svc: ExportService,
+    project,
+    tasks: list[Task],
+    annotations: list[Annotation],
+    dataset_items: dict[uuid.UUID, DatasetItem],
+    *,
+    batch_id: uuid.UUID | None,
+    format: str,
+    include_attributes: bool,
+    video_frame_mode: str,
+) -> tuple[bytes, int]:
+    """视频项目 zip：annotations(按 format) + manifest.json + fetch_videos.py（MOT/KITTI 另带 fetch_frames.py）。"""
+    if format not in VIDEO_EXPORT_FORMATS:
+        raise UnsupportedExportError(f"unsupported video export format: {format}")
+
+    sampling = project.video_sampling or {}
+
+    # 按 task 分组 video_track，派生 track_number。
+    tracks_by_task: dict[uuid.UUID, list[Annotation]] = {}
+    for ann in annotations:
+        if (ann.geometry or {}).get("type") == "video_track":
+            tracks_by_task.setdefault(ann.task_id, []).append(ann)
+
+    is_mot = format == "mot"
+    is_kitti = format == "kitti"
+    buf = io.BytesIO()
+    manifest_videos: list[dict] = []
+    now = datetime.now(timezone.utc)
+    expires_iso = datetime.fromtimestamp(
+        now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
+    ).isoformat()
+
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 标注主体。
+        if format == "video_json":
+            zf.writestr(
+                "annotations.json",
+                await svc.export_video_tracks(
+                    project.id,
+                    batch_id=batch_id,
+                    include_attributes=include_attributes,
+                    video_frame_mode=video_frame_mode,
+                ),
+            )
+        elif format == "aap_json":
+            zf.writestr(
+                "annotations.json",
+                await svc.export_aap_json(project.id, batch_id=batch_id),
+            )
+
+        # 逐 task = sequence。
+        for t in tasks:
+            item = dataset_items.get(t.dataset_item_id) if t.dataset_item_id else None
+            seq = _video_seq_name(t, item)
+            vmeta = _video_meta(item)
+            source_fps = vmeta.get("fps")
+            img_w = int(vmeta.get("width") or FALLBACK_W)
+            img_h = int(vmeta.get("height") or FALLBACK_H)
+            step = derive_step(source_fps, sampling)
+
+            anns = tracks_by_task.get(t.id, [])
+            # frame_count：元数据优先，缺失回退最大关键帧 + 1。
+            max_kf = 0
+            for ann in anns:
+                for kf in (ann.geometry or {}).get("keyframes") or []:
+                    max_kf = max(max_kf, int(kf.get("frame_index", 0)))
+            frame_count = int(vmeta.get("frame_count") or (max_kf + 1))
+            frame_count = max(frame_count, max_kf + 1)
+
+            if is_mot or is_kitti:
+                numbers = derive_track_number(
+                    [(ann.id, ann.geometry or {}) for ann in anns]
+                )
+                track_args = [
+                    (numbers[ann.id], ann.class_name, ann.geometry or {})
+                    for ann in anns
+                ]
+                if is_mot:
+                    zf.writestr(
+                        f"{seq}/gt/gt.txt",
+                        build_mot_gt(
+                            track_args,
+                            frame_count=frame_count,
+                            step=step,
+                            img_w=img_w,
+                            img_h=img_h,
+                        ),
+                    )
+                    zf.writestr(
+                        f"{seq}/seqinfo.ini",
+                        build_mot_seqinfo(
+                            seq.split("/")[-1],
+                            source_fps=source_fps,
+                            step=step,
+                            frame_count=frame_count,
+                            img_w=img_w,
+                            img_h=img_h,
+                        ),
+                    )
+                else:
+                    zf.writestr(
+                        f"labels/{seq}.txt",
+                        build_kitti_labels(
+                            track_args,
+                            frame_count=frame_count,
+                            step=step,
+                            img_w=img_w,
+                            img_h=img_h,
+                        ),
+                    )
+
+            # manifest 视频条目（含网格帧号供 fetch_frames.py 抽帧）。
+            dataset_name = _dataset_name_for_task(t, item)
+            video_rel = relative_path_from_file_path(t.file_path, dataset_name)
+            presigned = storage_service.generate_download_url(
+                t.file_path,
+                expires_in=PRESIGN_EXPIRES_SECONDS,
+                bucket=storage_service.datasets_bucket,
+            )
+            manifest_videos.append(
+                {
+                    "sequence": seq,
+                    "task_display_id": t.display_id,
+                    "rel_path": video_rel,
+                    "presigned_url": presigned,
+                    "expires_at": expires_iso,
+                    "video_metadata": vmeta,
+                    "sampling": sampling,
+                    "step": step,
+                    "grid_source_frames": derive_sampled_frames(frame_count, step),
+                    "frame_start_number": 1 if is_mot else 0,
+                }
+            )
+
+        zf.writestr(
+            "manifest.json",
+            json.dumps(
+                {
+                    "format": format,
+                    "videos": manifest_videos,
+                    "expires_at": expires_iso,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+        zf.writestr("fetch_videos.py", _FETCH_VIDEOS_TEMPLATE)
+        if is_mot or is_kitti:
+            zf.writestr("fetch_frames.py", _FETCH_FRAMES_TEMPLATE)
+
+    return buf.getvalue(), len(tasks)

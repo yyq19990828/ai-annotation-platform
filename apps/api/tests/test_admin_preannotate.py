@@ -234,3 +234,35 @@ async def test_preannotate_summary_filters_to_projects_with_ml_backend(
     assert (
         item["ml_backend_max_concurrency"] is None
     )  # 未配 extra_params.max_concurrency
+
+
+@pytest.mark.asyncio
+async def test_preannotate_summary_includes_all_modalities_with_data_type(
+    httpx_client, db_session, super_admin
+):
+    """v0.10.38 · 撤回 v0.10.36 的 image-only 过滤: 视频/图像项目都出现, 带 data_type 供前端分流."""
+    from app.db.models.ml_backend import MLBackend
+
+    user, token = super_admin
+    p_img = await create_project(db_session, owner_id=user.id, name="img-proj")
+    p_video = await create_project(
+        db_session, owner_id=user.id, name="video-proj", type_key="video-track"
+    )
+    p_video.data_type = "video"
+    for proj in (p_img, p_video):
+        db_session.add(
+            MLBackend(id=uuid.uuid4(), project_id=proj.id, name="bk", url="http://x/")
+        )
+    await db_session.commit()
+
+    res = await httpx_client.get(
+        "/api/v1/admin/preannotate-summary",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200, res.text
+    items = res.json()["items"]
+    by_name = {it["project_name"]: it for it in items}
+    assert "img-proj" in by_name
+    assert "video-proj" in by_name  # 不再被过滤
+    assert by_name["img-proj"]["data_type"] == "image"
+    assert by_name["video-proj"]["data_type"] == "video"

@@ -150,6 +150,34 @@
   pointer-events: auto;
 }
 
+/* v0.10.29 · 采样网格刻度轨道 + off-grid 当前帧标记。 */
+.gridTrack {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.gridTick {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: var(--timeline-left);
+  width: 1px;
+  background: var(--color-fg-muted);
+  opacity: 0.4;
+  transform: translateX(-50%);
+}
+
+.offGridMarker {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: var(--timeline-left);
+  width: 2px;
+  background: var(--color-accent);
+  transform: translateX(-50%);
+}
+
 .densityTrack {
   position: absolute;
   inset: 5px 0 16px;

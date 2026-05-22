@@ -7,7 +7,13 @@ import { UNKNOWN_CLASS } from "../../stage/colors";
 import { enqueue } from "../../state/offlineQueue";
 import type { useAnnotationHistory, Command } from "../../state/useAnnotationHistory";
 import type { PendingDrawing, useWorkbenchState } from "../../state/useWorkbenchState";
-import { buildVideoKeyframeCommand } from "../../state/videoTrackCommands";
+import {
+  buildVideoKeyframeCommand,
+  propagateKeyframes,
+  type VideoPropagateOptions,
+  type VideoTrackKeyframeWithAttrs,
+} from "../../state/videoTrackCommands";
+import { nearestTrackBbox, upsertKeyframe } from "../../stage/videoStageGeometry";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
@@ -60,10 +66,12 @@ export interface VideoConvertOptions {
 }
 
 export interface VideoTrackCompositionOptions {
-  operation: "aggregate_bboxes" | "split_track" | "merge_tracks";
+  operation: "aggregate_bboxes" | "split_track" | "merge_tracks" | "join_tracks";
   annotationIds: string[];
   frameIndex?: number;
   deleteSources?: boolean;
+  // v0.10.30 · 2.5 join: gap 填充模式, 仅 join_tracks 透传给后端 gap_mode。
+  gapMode?: "interpolate" | "outside";
 }
 
 export function buildVideoCreatePayload(
@@ -92,7 +100,6 @@ export function buildVideoCreatePayload(
         frame_index: frameIndex,
         bbox: geo,
         source: "manual",
-        absent: false,
         occluded: false,
       },
     ],
@@ -411,6 +418,7 @@ export function useVideoAnnotationActions({
         annotation_ids: options.annotationIds,
         frame_index: options.frameIndex,
         delete_sources: options.deleteSources,
+        gap_mode: options.gapMode,
       });
       queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) => {
         const deleted = new Set(result.deleted_annotation_ids);
@@ -435,12 +443,77 @@ export function useVideoAnnotationActions({
         ? "已聚合为轨迹"
         : options.operation === "split_track"
           ? "轨迹已拆分"
-          : "轨迹已合并";
+          : options.operation === "join_tracks"
+            ? "轨迹已跳连"
+            : "轨迹已合并";
       pushToast({ msg: label, kind: "success" });
     } catch (err) {
       pushToast({ msg: "轨迹组合失败", sub: String(err), kind: "error" });
     }
   }, [annotationsRef, history, pushToast, queryClient, s, taskId]);
+
+  // v0.10.30 · 2.3 track 级属性默认值: 写入 annotation.attributes (顶层)。复用既有
+  // update mutation + offline 回退路径 (同 handleVideoRename 风格), undo 用 update 命令。
+  const handleUpdateTrackAttributes = useCallback((ann: AnnotationResponse, attributes: Record<string, unknown>) => {
+    const before = { attributes: ann.attributes };
+    const after = { attributes };
+    mutations.update.mutate(
+      { annotationId: ann.id, payload: after },
+      {
+        onSuccess: () => history.push({ kind: "update", annotationId: ann.id, before, after }),
+        onError: (err) => {
+          if (isConflictError(err)) return;
+          enqueueOnError(err, () => {
+            queryClient.setQueryData<AnnotationResponse[]>(
+              ["annotations", taskId ?? ""],
+              (prev) => (prev ?? []).map((a) => (a.id === ann.id ? { ...a, attributes } : a)),
+            );
+            history.push({ kind: "update", annotationId: ann.id, before, after });
+            if (taskId) enqueue({ kind: "update", id: crypto.randomUUID(), taskId, annotationId: ann.id, payload: after, ts: Date.now() });
+          });
+        },
+      },
+    );
+  }, [enqueueOnError, history, mutations.update, queryClient, taskId]);
+
+  // v0.10.30 · 2.3 当前帧逐帧覆盖: 写入该帧 keyframe.attributes。复用 upsertKeyframe (保留当前帧框)
+  // + handleVideoUpdate (geometry 单条 keyframe 变化 → videoKeyframe undo 命令)。
+  const handleUpdateKeyframeAttributes = useCallback((ann: AnnotationResponse, frameIndex: number, attributes: Record<string, unknown>) => {
+    if (ann.geometry.type !== "video_track") return;
+    const track = ann.geometry;
+    const bbox = nearestTrackBbox(track, frameIndex);
+    const patch: Partial<VideoTrackKeyframeWithAttrs> = { attributes };
+    const next = upsertKeyframe(track, frameIndex, bbox, patch);
+    handleVideoUpdate(ann, next);
+  }, [handleVideoUpdate]);
+
+  // v0.10.30 · 2.6 Propagate: 把 fromFrame 处框复制到后续/向前 N 帧, 合成单条 undo 命令。
+  const handlePropagateKeyframe = useCallback((
+    ann: AnnotationResponse,
+    fromFrame: number,
+    count: number,
+    options: { direction: VideoPropagateOptions["direction"]; overwrite: boolean },
+  ) => {
+    if (ann.geometry.type !== "video_track") return;
+    const track = ann.geometry;
+    const fromBbox = nearestTrackBbox(track, fromFrame);
+    const next = propagateKeyframes(track, fromFrame, fromBbox, {
+      direction: options.direction,
+      count,
+      overwrite: options.overwrite,
+    });
+    if (!next) {
+      pushToast({ msg: "无可铺设的帧", kind: "warning" });
+      return;
+    }
+    handleVideoUpdate(ann, next);
+    const added = next.keyframes.length - track.keyframes.length;
+    pushToast({
+      msg: `已传播到 ${count} 帧`,
+      sub: added > 0 ? `新增 ${added} 个关键帧` : undefined,
+      kind: "success",
+    });
+  }, [handleVideoUpdate, pushToast]);
 
   return {
     handleVideoCreate,
@@ -453,5 +526,8 @@ export function useVideoAnnotationActions({
     handleVideoSetSelectedClass,
     handleVideoConvertToBboxes,
     handleVideoComposeTracks,
+    handleUpdateTrackAttributes,
+    handleUpdateKeyframeAttributes,
+    handlePropagateKeyframe,
   };
 }

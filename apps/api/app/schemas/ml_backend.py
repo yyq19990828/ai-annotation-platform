@@ -82,6 +82,20 @@ class CacheStats(BaseModel):
         extra = "allow"  # backend 可能扩展指标, 不强约束
 
 
+class BackendCapabilities(BaseModel):
+    """v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).
+
+    由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta["capabilities"];
+    `modalities` 为派生视图 (image / video), 见 services/ml_capabilities.derive_modalities."""
+
+    is_interactive: bool = False
+    supported_prompts: list[str] = []
+    supported_trackers: list[str] = []
+    supported_text_outputs: list[str] = []
+    supported_geometric_outputs: list[str] = []
+    modalities: list[str] = []
+
+
 class HealthMeta(BaseModel):
     """v0.9.11 · backend `/health` 深度指标缓存. 由 services/ml_backend.check_health 写入,
     `/admin/ml-integrations/overview` + PerfHud WS 消费."""
@@ -90,6 +104,8 @@ class HealthMeta(BaseModel):
     host: HostInfo | None = None
     cache: CacheStats | None = None
     model_version: str | None = None
+    # v0.10.37 · /setup 能力快照 (epic 阶段 1)
+    capabilities: BackendCapabilities | None = None
 
     class Config:
         extra = "allow"
@@ -139,6 +155,8 @@ class MLBackendHealthResponse(BaseModel):
 class MLBackendReloadRequest(BaseModel):
     sam_variant: str | None = None
     dino_variant: str | None = None
+    # v0.10.36 · "image" 预热图片池 (默认), "video" 预热独立 video tracker 池 (仅认 sam_variant)
+    task_type: str | None = None
 
 
 class InteractiveRequest(BaseModel):

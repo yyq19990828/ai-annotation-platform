@@ -25,6 +25,7 @@ export function ModelMarketPage() {
         <h1 className={styles.title}>模型市场</h1>
         <p className={styles.subtitle}>
           全局总览：env 配置的 AI 后端容器（直连观测）+ 所有项目已注册的 ML Backend。
+          {/* v0.10.38 · 视频追踪任务监控已迁至 /ai-pre/jobs 视频 tab (epic 阶段 3) */}
         </p>
       </div>
 

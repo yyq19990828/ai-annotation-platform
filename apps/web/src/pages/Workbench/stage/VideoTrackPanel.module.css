@@ -18,6 +18,13 @@
   gap: 8px;
 }
 
+.headingActionGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .section {
   display: grid;
   gap: 8px;
@@ -27,6 +34,15 @@
   display: grid;
   gap: 8px;
   padding-top: 12px;
+}
+
+.selectedTrackSection {
+  order: 1;
+  padding-top: 0;
+}
+
+.trackListSection {
+  order: 2;
 }
 
 .heading {
@@ -40,6 +56,18 @@
 .mutedMono {
   font-size: 11px;
   color: var(--color-fg-muted);
+}
+
+.trackNumberBadge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--color-accent-fg);
+  background: var(--color-accent-soft);
 }
 
 .subtleMono {
@@ -57,36 +85,6 @@
 .emptyCompactText {
   color: var(--color-fg-muted);
   font-size: 12px;
-}
-
-.filterTabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin-top: 7px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--color-bg);
-}
-
-.filterTab {
-  height: 24px;
-  border: 0;
-  background: transparent;
-  color: var(--color-fg-muted);
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.filterTabWithDivider {
-  border-left: 1px solid var(--color-border);
-}
-
-.filterTabActive {
-  background: var(--color-accent-soft);
-  color: var(--color-accent-fg);
-  font-weight: 600;
 }
 
 .batchToolbar {
@@ -131,17 +129,25 @@
 
 /* Temporary bridge until Button stops applying inline base styles. */
 .currentActionButton {
-  height: 30px !important;
+  height: 28px !important;
   border-radius: 8px !important;
-  padding: 4px 8px !important;
+  padding: 3px 7px !important;
+  font-size: 12px !important;
 }
 
 /* Temporary bridge until Button stops applying inline base styles. */
 .frameActionButton {
-  min-height: 34px !important;
-  justify-content: center !important;
+  min-height: 30px !important;
+  justify-content: flex-start !important;
   border-radius: 8px !important;
-  padding: 4px 6px !important;
+  padding: 3px 8px !important;
+  font-size: 12px !important;
+}
+
+.frameActionButton[aria-pressed="true"] {
+  border-color: color-mix(in oklab, var(--color-accent) 55%, var(--color-border)) !important;
+  background: var(--color-accent-soft) !important;
+  color: var(--color-accent-fg) !important;
 }
 
 /* Temporary bridge until Button stops applying inline base styles. */
@@ -161,10 +167,12 @@
 
 /* Temporary bridge until Button stops applying inline base styles. */
 .keyframeButton {
-  min-width: 38px !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
   justify-content: center !important;
   border-radius: 8px !important;
-  padding: 3px 8px !important;
+  padding: 0 !important;
 }
 
 /* Temporary bridge until Button stops applying inline base styles. */
@@ -194,9 +202,7 @@
 
 .trackRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
+  gap: 7px;
   padding: 8px 10px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -213,6 +219,13 @@
   box-shadow: inset 3px 0 0 var(--color-accent);
 }
 
+.trackRowTop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
 .trackMeta {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -226,6 +239,29 @@
   width: 10px;
   height: 10px;
   overflow: visible;
+}
+
+.colorDotButton {
+  grid-row: 1 / span 2;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.colorDotButton:disabled {
+  cursor: default;
+}
+
+.colorPickerPopover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  margin-top: 4px;
 }
 
 .trackTitleRow {
@@ -251,17 +287,25 @@
   white-space: nowrap;
 }
 
-.trackActionRow {
+.trackRowActions {
   display: flex;
   gap: 6px;
   align-items: center;
 }
 
+.trackSignals {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-left: 18px;
+}
+
 .statusChip {
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  padding: 5px 8px;
+  padding: 3px 7px;
   font-size: 11px;
+  line-height: 1.35;
   color: var(--color-fg-muted);
   background: var(--color-bg-elev);
 }
@@ -273,8 +317,9 @@
 .sourceChip {
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  padding: 5px 8px;
+  padding: 3px 7px;
   font-size: 11px;
+  line-height: 1.35;
   color: var(--color-fg-muted);
   background: var(--color-bg-elev);
 }
@@ -296,18 +341,102 @@
 
 .selectedTrackCard {
   display: grid;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px 10px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-bg-elev);
-  box-shadow: inset 4px 0 0 var(--color-accent);
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.selectedHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.selectedStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.statCell {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+}
+
+.statLabel {
+  color: var(--color-fg-muted);
+  font-size: 10px;
+}
+
+.statValue {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-fg);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actionGroup {
+  display: grid;
+  gap: 5px;
+  padding-top: 1px;
+}
+
+.actionGroupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--color-fg-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.actionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
 }
 
 .trackerJobRow {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.semanticRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.semanticLabel {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  white-space: nowrap;
+}
+
+.semanticInput {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: 11px;
 }
 
 .frameActionGrid {
@@ -325,8 +454,13 @@
 
 .copyStatusText {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
   font-size: 11px;
   color: var(--color-fg-muted);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mutedIcon {
@@ -336,29 +470,35 @@
 .keyframeTable {
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: auto;
+  max-height: 320px;
 }
 
 .keyframeHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: grid;
-  grid-template-columns: 58px minmax(64px, 1fr) auto;
-  gap: 8px;
-  padding: 7px 10px;
+  grid-template-columns: 46px minmax(54px, 1fr) minmax(64px, auto);
+  gap: 6px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
   color: var(--color-fg-muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
 }
 
 .keyframeRow {
   display: grid;
-  grid-template-columns: 58px minmax(64px, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: 46px minmax(54px, 1fr) minmax(64px, auto);
+  gap: 6px;
   align-items: center;
-  padding: 7px 10px;
+  padding: 6px 8px;
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-elev);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .keyframePredictionRow {
@@ -366,14 +506,16 @@
 }
 
 .keyframeFrame {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .keyframeStatus {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  min-width: 0;
   color: var(--color-fg);
+  white-space: nowrap;
 }
 
 .keyframeStatusAbsent {
@@ -387,7 +529,10 @@
 
 .keyframeActionRow {
   display: flex;
-  gap: 5px;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .convertPanel {

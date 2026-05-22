@@ -22,6 +22,7 @@ interface VideoFrameOverlayProps {
   cachedBitmap?: CachedVideoBitmap | null;
   showCachedBitmap?: boolean;
   entries: VideoFrameEntry[];
+  trackNumbers: ReadonlyMap<string, number>;
   trackPreviews: VideoTrackPreview[];
   pendingDraft?: { geom: VideoStageGeom; className: string } | null;
   aspectRatio: number;
@@ -54,6 +55,7 @@ export function VideoFrameOverlay({
   cachedBitmap = null,
   showCachedBitmap = false,
   entries,
+  trackNumbers,
   trackPreviews,
   pendingDraft,
   aspectRatio,
@@ -87,6 +89,8 @@ export function VideoFrameOverlay({
       : entry.occluded
         ? " · 遮挡"
         : "";
+    const trackNumber = trackNumbers.get(entry.ann.id);
+    const labelPrefix = trackNumber !== undefined ? `#${trackNumber} · ` : "";
     return {
       key: `${entry.id}-${entry.trackId ?? "legacy"}`,
       entry,
@@ -95,7 +99,7 @@ export function VideoFrameOverlay({
       selected,
       canEditSelected,
       dashed: entry.source === "interpolated" || Boolean(entry.occluded),
-      labelText: `${entry.className}${labelSuffix}`,
+      labelText: `${labelPrefix}${entry.className}${labelSuffix}`,
     };
   });
   const pendingDraftColor = pendingDraft ? classColor(pendingDraft.className) : "";
@@ -115,7 +119,7 @@ export function VideoFrameOverlay({
         key: `ghost-${selectedTrackGhost.ann.id}`,
         geom: selectedTrackGhost.geom,
         color: ghostColor,
-        text: `${selectedTrackGhost.className} · 参考 F${selectedTrackGhost.originFrame}`,
+        text: `${trackNumbers.has(selectedTrackGhost.ann.id) ? `#${trackNumbers.get(selectedTrackGhost.ann.id)} · ` : ""}${selectedTrackGhost.className} · 参考 F${selectedTrackGhost.originFrame}`,
         opacity: 0.86,
       }]
       : []),

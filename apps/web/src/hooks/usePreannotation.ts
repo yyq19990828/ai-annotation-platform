@@ -44,6 +44,8 @@ export interface TriggerPreannotationPayload {
   prompt?: string;
   output_mode?: TextOutputMode;
   batch_id?: string;
+  /** v0.10.38 · 按后端参数面板 (epic 阶段 2): 选中 backend 的 /setup.params 值, 覆盖项目级阈值兜底. */
+  params?: Record<string, unknown>;
 }
 
 export interface TriggerPreannotationResponse {

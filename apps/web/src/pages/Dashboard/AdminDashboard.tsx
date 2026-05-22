@@ -253,70 +253,72 @@ export function AdminDashboard() {
           </div>
         )}
         {!projectsLoading && projects.length > 0 && (
-          <table className={styles.projectTable}>
-            <thead>
-              <tr>
-                {["项目", "负责人", "成员", "状态", ""].map((h, i) => (
-                  <th
-                    key={i}
-                    className={[
-                      styles.tableHeadCell,
-                      i === 0 ? styles.tableHeadCellFirst : "",
-                      i === 4 ? styles.tableHeadCellLast : "",
-                    ].filter(Boolean).join(" ")}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {projects.map((p) => (
-                <tr key={p.id} className={styles.projectRow} onClick={() => navigate(`/projects/${p.id}/settings`)}>
-                  <td className={`${styles.tableCell} ${styles.tableCellFirst}`}>
-                    <div className={styles.projectName}>{p.name}</div>
-                    <div className={styles.projectMeta}>
-                      <span className="mono">{p.display_id}</span> · {p.type_label}
-                    </div>
-                  </td>
-                  <td className={styles.tableCell}>
-                    <div className={styles.ownerCell}>
-                      <Avatar initial={p.owner_name?.slice(0, 1) ?? "?"} size="sm" />
-                      <span className={styles.ownerName}>{p.owner_name ?? "—"}</span>
-                    </div>
-                  </td>
-                  <td className={`${styles.tableCell} ${styles.mutedCell}`}>
-                    {p.member_count}
-                  </td>
-                  <td className={styles.tableCell}>
-                    {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
-                    {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
-                    {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
-                    {p.status === "archived" && <Badge variant="outline" dot>已归档</Badge>}
-                  </td>
-                  <td className={`${styles.tableCell} ${styles.tableCellRight}`}>
-                    <div className={styles.rowActions}>
-                      {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/dashboard?new=1&from=${p.id}`);
-                        }}
-                        title="复制项目配置（不复制数据集 / 任务 / 成员）"
-                      >
-                        <Icon name="copy" size={13} />复制
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(`/projects/${p.id}/settings`); }}>
-                        <Icon name="settings" size={13} />设置
-                      </Button>
-                    </div>
-                  </td>
+          <div className={styles.projectTableScroller}>
+            <table className={styles.projectTable}>
+              <thead>
+                <tr>
+                  {["项目", "负责人", "成员", "状态", ""].map((h, i) => (
+                    <th
+                      key={i}
+                      className={[
+                        styles.tableHeadCell,
+                        i === 0 ? styles.tableHeadCellFirst : "",
+                        i === 4 ? styles.tableHeadCellLast : "",
+                      ].filter(Boolean).join(" ")}
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {projects.map((p) => (
+                  <tr key={p.id} className={styles.projectRow} onClick={() => navigate(`/projects/${p.id}/settings`)}>
+                    <td className={`${styles.tableCell} ${styles.tableCellFirst}`}>
+                      <div className={styles.projectName}>{p.name}</div>
+                      <div className={styles.projectMeta}>
+                        <span className="mono">{p.display_id}</span> · {p.type_label}
+                      </div>
+                    </td>
+                    <td className={styles.tableCell}>
+                      <div className={styles.ownerCell}>
+                        <Avatar initial={p.owner_name?.slice(0, 1) ?? "?"} size="sm" />
+                        <span className={styles.ownerName}>{p.owner_name ?? "—"}</span>
+                      </div>
+                    </td>
+                    <td className={`${styles.tableCell} ${styles.mutedCell}`}>
+                      {p.member_count}
+                    </td>
+                    <td className={styles.tableCell}>
+                      {p.status === "in_progress" && <Badge variant="accent" dot>进行中</Badge>}
+                      {p.status === "completed" && <Badge variant="success" dot>已完成</Badge>}
+                      {p.status === "pending_review" && <Badge variant="warning" dot>待审核</Badge>}
+                      {p.status === "archived" && <Badge variant="outline" dot>已归档</Badge>}
+                    </td>
+                    <td className={`${styles.tableCell} ${styles.tableCellRight}`}>
+                      <div className={styles.rowActions}>
+                        {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/dashboard?new=1&from=${p.id}`);
+                          }}
+                          title="复制项目配置（不复制数据集 / 任务 / 成员）"
+                        >
+                          <Icon name="copy" size={13} />复制
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); navigate(`/projects/${p.id}/settings`); }}>
+                          <Icon name="settings" size={13} />设置
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         </Card>
       </div>

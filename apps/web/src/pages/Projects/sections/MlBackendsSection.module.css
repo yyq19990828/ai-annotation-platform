@@ -69,8 +69,14 @@
   margin-top: 4px;
 }
 
+.tableScroller {
+  width: 100%;
+  overflow-x: auto;
+}
+
 .table {
   width: 100%;
+  min-width: 1040px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12.5px;
@@ -84,11 +90,24 @@
   padding: 6px 12px;
   background: var(--color-bg-sunken);
   border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
 }
 
 .tableCell {
   padding: 8px 12px;
   border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.nameCell {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nowrapCell {
+  white-space: nowrap;
 }
 
 .urlCell {
@@ -114,11 +133,13 @@
 
 .mutedCell {
   color: var(--color-fg-muted);
+  white-space: nowrap;
 }
 
 .actions {
   display: inline-flex;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .boundBadge {

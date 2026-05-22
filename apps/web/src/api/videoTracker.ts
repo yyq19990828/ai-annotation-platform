@@ -38,6 +38,8 @@ export interface VideoTrackerPropagatePayload {
   direction: VideoTrackerDirection;
   segment_id?: string | null;
   prompt?: Record<string, unknown>;
+  // v0.10.36: SAM 模型尺寸 (tiny/small/base_plus/large); 省略时后端回退 tiny。
+  sam_variant?: string;
 }
 
 export const videoTrackerApi = {

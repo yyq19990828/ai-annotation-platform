@@ -17,7 +17,7 @@ describe("videoFrameBuckets", () => {
         type: "video_track",
         track_id: "trk_a",
         keyframes: [
-          { frame_index: 10, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual", absent: true },
+          { frame_index: 10, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
         ],
       },
     ];
@@ -30,7 +30,6 @@ describe("videoFrameBuckets", () => {
         trackIds: ["trk_a", "trk_b"],
         hasManual: true,
         hasPrediction: false,
-        hasAbsent: true,
         density: 2,
       },
       {
@@ -38,7 +37,6 @@ describe("videoFrameBuckets", () => {
         trackIds: ["trk_b"],
         hasManual: false,
         hasPrediction: true,
-        hasAbsent: false,
         density: 1,
       },
     ]);
@@ -50,7 +48,7 @@ describe("videoFrameBuckets", () => {
       track_id: "trk",
       keyframes: [
         { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "prediction" },
-        { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual", absent: true },
+        { frame_index: 1, bbox: { x: 0, y: 0, w: 0.1, h: 0.1 }, source: "manual" },
       ],
     }];
 
@@ -58,7 +56,6 @@ describe("videoFrameBuckets", () => {
       frame: 1,
       hasManual: true,
       hasPrediction: false,
-      hasAbsent: true,
     });
   });
 
@@ -80,7 +77,6 @@ describe("videoFrameBuckets", () => {
         trackIds: ["trk"],
         hasManual: true,
         hasPrediction: false,
-        hasAbsent: false,
         density: 1,
       },
       {
@@ -96,7 +92,6 @@ describe("videoFrameBuckets", () => {
         trackIds: ["trk"],
         hasManual: false,
         hasPrediction: true,
-        hasAbsent: false,
         density: 1,
       },
     ]);

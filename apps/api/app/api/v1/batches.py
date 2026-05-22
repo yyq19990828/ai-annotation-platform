@@ -844,7 +844,9 @@ async def export_batch(
     request: Request,
     project_id: uuid.UUID,
     batch_id: uuid.UUID,
-    format: str = Query("coco", pattern="^(coco|voc|yolo|aap_json)$"),
+    format: str = Query(
+        "coco", pattern="^(coco|voc|yolo|aap_json|video_json|mot|kitti)$"
+    ),
     include_attributes: bool = Query(True),
     video_frame_mode: str = Query(
         "keyframes",

@@ -1,7 +1,9 @@
-"""v0.9.2 · interactive-annotating 把 project 级 box_threshold / text_threshold 注入 context。
+"""interactive-annotating 的 DINO 阈值透传契约。
 
-只针对 type=text 注入；point / bbox 路径不受影响（DINO 不参与）。
-客户端如已显式给阈值则尊重客户端（运营手动覆盖项目默认）。
+v0.9.2 曾让平台把 project 级 box_threshold / text_threshold 注入 context；自
+59dfffa(AI 参数迁至工作台悬浮面板, 按后端 /setup.params 动态渲染并按用户持久化)起,
+平台**不再**注入项目级阈值——那会把 gsam2 专属参数塞给 sam3 等不支持的后端。阈值现由
+前端随 context 透传, 客户端给什么就用什么, 平台只做透传。
 """
 
 from __future__ import annotations
@@ -79,9 +81,10 @@ def patched_client():
         yield captured
 
 
-async def test_text_prompt_injects_project_thresholds(
+async def test_text_prompt_does_not_inject_project_thresholds(
     httpx_client_bound, super_admin, db_session, patched_client
 ):
+    """自 59dfffa 起平台不再注入项目级阈值; 客户端未给阈值时 context 里就没有。"""
     user, token = super_admin
     proj, backend, task = await _seed(db_session, user.id, box=0.42, text=0.18)
     await db_session.commit()
@@ -94,8 +97,8 @@ async def test_text_prompt_injects_project_thresholds(
     assert resp.status_code == 200, resp.text
     ctx = patched_client["context"]
     assert ctx["type"] == "text"
-    assert ctx["box_threshold"] == pytest.approx(0.42)
-    assert ctx["text_threshold"] == pytest.approx(0.18)
+    assert "box_threshold" not in ctx
+    assert "text_threshold" not in ctx
 
 
 async def test_text_prompt_respects_explicit_client_thresholds(
