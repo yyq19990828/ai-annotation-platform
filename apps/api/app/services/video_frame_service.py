@@ -536,7 +536,14 @@ def cache_key_for_chunk(dataset_item_id: uuid.UUID, chunk_id: int) -> str:
 
 
 def source_key_for_item(item: DatasetItem) -> str:
-    return _source_key(item, _video_meta(item))
+    """ffmpeg 处理(抽帧 / 抽 chunk / 时间表探测)用的源 key —— 永远是**原始视频**。
+
+    原始视频在 datasets_bucket。不要返回 `playback_path`(浏览器播放用的 h264 转码版,
+    存在 media_cache_bucket): 用它会(1)与 worker 的 datasets_bucket 不匹配 → HeadObject
+    404 抽帧全失败;(2)转码重编码后帧数 / 时序可能与原视频不一致 → 破坏 D2「frame_index
+    永远对齐原视频帧号」。playback_path 只用于浏览器 <video> 播放 URL(见 _source_key)。
+    """
+    return item.file_path
 
 
 def metadata_for_item(item: DatasetItem) -> VideoMetadata:

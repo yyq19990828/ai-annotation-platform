@@ -624,7 +624,11 @@ async def test_rebuild_timetable_cli_helper_replaces_rows(
 
     class FakeClient:
         def download_fileobj(self, Bucket, Key, Fileobj):
-            assert Key == "playback/clip.mp4"
+            # v0.10.x · ffmpeg 处理(含时间表探测)用原始视频 file_path, 不用 playback_path
+            # (转码版只供浏览器播放; 用它会 bucket 串台 404 + 帧号漂移破坏 D2)。
+            # bucket 仍按 key 前缀路由: 本 fixture file_path 撞 "videos/" 缓存前缀 → media-cache;
+            # 真实 dataset 原视频在用户文件夹下(如 "测试视频/")→ datasets。
+            assert Key == "videos/clip.mp4"
             assert Bucket == "media-cache"
             Fileobj.write(b"fake video")
 
