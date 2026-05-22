@@ -440,6 +440,40 @@ async def _apply_backend_display_hint(db: AsyncSession, payload: dict) -> dict:
     return payload
 
 
+async def _validate_backend_modality(
+    db: AsyncSession, backend_id, data_type: str
+) -> None:
+    """v0.10.37 · 绑定 backend 时按项目 data_type 校验模态匹配 (epic 阶段 1).
+
+    实时探一次 `/setup` 派生 backend 模态; fail-open: 探测失败 (backend 暂不可达) → 放行,
+    不因瞬时宕机卡住绑定, mismatch 留到 predict 时暴露. lidar 暂无 backend 支持, 跳过校验.
+    """
+    if data_type not in ("image", "video"):
+        return
+    from app.db.models.ml_backend import MLBackend as _MLB
+    from app.services.ml_capabilities import derive_modalities, extract_capabilities
+    from app.services.ml_client import MLBackendClient
+
+    backend = await db.get(_MLB, backend_id)
+    if backend is None:
+        return
+    try:
+        caps = extract_capabilities(await MLBackendClient(backend).setup())
+    except Exception:
+        return  # fail-open
+    if caps is None:
+        return
+    modalities = derive_modalities(caps)
+    if data_type not in modalities:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"该 ML Backend 不支持「{data_type}」模态 (检测到: "
+                f"{modalities or '无'}); 视频项目需绑定自报 supported_trackers 的 backend."
+            ),
+        )
+
+
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(
     project: Project = Depends(require_project_visible),
@@ -457,6 +491,10 @@ async def update_project(
     payload = data.model_dump(exclude_unset=True)
     # v0.8.6 F3 · 绑定 backend 时用 backend.name 覆盖 ai_model（display hint）
     if payload.get("ml_backend_id"):
+        # v0.10.37 · 绑定按 data_type 校验模态 (用应用 payload 后的有效 data_type)
+        await _validate_backend_modality(
+            db, payload["ml_backend_id"], payload.get("data_type") or project.data_type
+        )
         payload = await _apply_backend_display_hint(db, payload)
 
     # v0.10.22 · 同 create_project: 旧扁平输入反向派生进 tool_bindings 后剔除.

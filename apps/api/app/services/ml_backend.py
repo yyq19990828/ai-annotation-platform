@@ -106,6 +106,18 @@ class MLBackendService:
         backend.state = "connected" if healthy else "error"
         backend.last_checked_at = datetime.now(UTC)
         if meta is not None:
+            # v0.10.37 · 顺带探 /setup, 把能力快照落进 health_meta["capabilities"]
+            # (epic 阶段 1); 探测失败不影响 health 结果, 静默跳过.
+            from app.services.ml_capabilities import extract_capabilities
+
+            try:
+                caps = extract_capabilities(await client.setup())
+            except Exception:
+                caps = None
+            if caps is not None:
+                meta = {**meta, "capabilities": caps}
+                # is_interactive 改派生对账: 以 /setup 自报为真值
+                backend.is_interactive = caps["is_interactive"]
             backend.health_meta = meta
         await self.db.flush()
         return healthy

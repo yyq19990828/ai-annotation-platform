@@ -3049,6 +3049,58 @@
         "title": "AuditLogOut",
         "type": "object"
       },
+      "BackendCapabilities": {
+        "description": "v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).\n\n由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta[\"capabilities\"];\n`modalities` 为派生视图 (image / video), 见 services/ml_capabilities.derive_modalities.",
+        "properties": {
+          "is_interactive": {
+            "default": false,
+            "title": "Is Interactive",
+            "type": "boolean"
+          },
+          "modalities": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Modalities",
+            "type": "array"
+          },
+          "supported_geometric_outputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Geometric Outputs",
+            "type": "array"
+          },
+          "supported_prompts": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Prompts",
+            "type": "array"
+          },
+          "supported_text_outputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Text Outputs",
+            "type": "array"
+          },
+          "supported_trackers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Trackers",
+            "type": "array"
+          }
+        },
+        "title": "BackendCapabilities",
+        "type": "object"
+      },
       "BackendCostBreakdown": {
         "properties": {
           "avg_inference_time_ms": {
@@ -6346,6 +6398,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/CacheStats"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackendCapabilities"
               },
               {
                 "type": "null"
