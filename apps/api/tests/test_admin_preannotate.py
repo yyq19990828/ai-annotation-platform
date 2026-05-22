@@ -237,10 +237,10 @@ async def test_preannotate_summary_filters_to_projects_with_ml_backend(
 
 
 @pytest.mark.asyncio
-async def test_preannotate_summary_excludes_non_image_projects(
+async def test_preannotate_summary_includes_all_modalities_with_data_type(
     httpx_client, db_session, super_admin
 ):
-    """v0.10.36 · 视频/lidar 项目即便绑了 backend 也不该出现在「AI 文本批量预标」页."""
+    """v0.10.38 · 撤回 v0.10.36 的 image-only 过滤: 视频/图像项目都出现, 带 data_type 供前端分流."""
     from app.db.models.ml_backend import MLBackend
 
     user, token = super_admin
@@ -262,6 +262,9 @@ async def test_preannotate_summary_excludes_non_image_projects(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert res.status_code == 200, res.text
-    names = [it["project_name"] for it in res.json()["items"]]
-    assert "img-proj" in names
-    assert "video-proj" not in names
+    items = res.json()["items"]
+    by_name = {it["project_name"]: it for it in items}
+    assert "img-proj" in by_name
+    assert "video-proj" in by_name  # 不再被过滤
+    assert by_name["img-proj"]["data_type"] == "image"
+    assert by_name["video-proj"]["data_type"] == "video"

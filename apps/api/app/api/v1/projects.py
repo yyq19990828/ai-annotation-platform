@@ -867,6 +867,9 @@ class PreannotateRequest(BaseModel):
     prompt: str | None = None
     output_mode: Literal["box", "mask", "both"] = "mask"
     batch_id: uuid.UUID | None = None
+    # v0.10.38 · 按后端参数面板 (epic 阶段 2): 选中 backend 的 /setup.params 值,
+    # 由前端按 backend 分桶解析后显式带上, worker 合并进 /predict context (覆盖项目级阈值兜底).
+    params: dict | None = None
 
 
 @router.post("/{project_id}/preannotate")
@@ -918,6 +921,7 @@ async def trigger_preannotation(
         prompt=body.prompt,
         output_mode=body.output_mode,
         batch_id=str(body.batch_id) if body.batch_id else None,
+        params=body.params or None,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(

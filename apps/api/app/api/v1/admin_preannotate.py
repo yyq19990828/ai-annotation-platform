@@ -325,12 +325,11 @@ async def list_preannotate_project_summary(
     """v0.9.12 B-17 · 给 ProjectCardGrid 提供 per-project 聚合.
 
     仅返回有 ml_backend 注册的项目 (EXISTS ml_backends WHERE project_id=...).
-    v0.10.36 · 限 data_type="image": 本页是「AI 文本批量预标」(文本驱动检测), 仅图像项目适用;
-    视频项目的 AI 预标走工作台 tracker 流 (Shift+T), 不该误入此页 → ProjectDetailPanel 全按 image 走会崩.
+    v0.10.38 · 撤回 v0.10.36 的 data_type="image" 过滤: 模态分流改到前端 ProjectDetailPanel
+    (image 走文本批量预标, video 走引导卡片+job 历史), summary 返回 data_type 供前端路由.
     """
     pres = await db.execute(
         select(Project).where(
-            Project.data_type == "image",
             select(MLBackend.id).where(MLBackend.project_id == Project.id).exists(),
         )
     )

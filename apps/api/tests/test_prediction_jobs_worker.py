@@ -372,6 +372,91 @@ async def test_run_batch_accumulates_total_cost(
     assert job.total_cost == Decimal("0.0024")
 
 
+async def test_run_batch_merges_params_into_context(
+    db_session: AsyncSession, monkeypatch, super_admin
+):
+    """v0.10.38 · _run_batch 把请求 params 合并进 /predict context, 覆盖项目级阈值兜底 (epic 阶段 2)."""
+    from app.db.models.task import Task
+    from app.services.ml_client import PredictionResult
+    from app.workers import tasks as worker_tasks
+
+    user, _ = super_admin
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+    proj.box_threshold = 0.35
+    proj.text_threshold = 0.25
+    t1 = Task(
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        display_id="T-P1",
+        file_name="a.jpg",
+        file_path="http://x/a.jpg",
+        file_type="image",
+        status="pending",
+    )
+    db_session.add(t1)
+    await db_session.flush()
+
+    captured: dict = {}
+
+    class _StubClient:
+        def __init__(self, _backend):
+            self._backend = _backend
+
+        async def predict(self, tasks_payload, context=None):
+            captured["context"] = context
+            return [
+                PredictionResult(
+                    task_id=tasks_payload[0]["id"],
+                    result=[],
+                    score=0.9,
+                    model_version="stub-v1",
+                    inference_time_ms=10,
+                    meta={},
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient", _StubClient, raising=True
+    )
+
+    class _PassThroughEngine:
+        async def dispose(self):
+            pass
+
+    class _PassThroughSessionFactory:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        def __call__(self):
+            class _Ctx:
+                async def __aenter__(self_inner):
+                    return db_session
+
+                async def __aexit__(self_inner, *args):
+                    return False
+
+            return _Ctx()
+
+    import sqlalchemy.ext.asyncio as sa_async
+
+    monkeypatch.setattr(sa_async, "create_async_engine", lambda *a, **k: _PassThroughEngine())
+    monkeypatch.setattr(sa_async, "async_sessionmaker", _PassThroughSessionFactory)
+
+    await worker_tasks._run_batch(
+        project_id=str(proj.id),
+        ml_backend_id=str(backend.id),
+        task_ids=[str(t1.id)],
+        prompt="cars",
+        params={"box_threshold": 0.7, "sam_variant": "large", "ignored": None},
+    )
+
+    ctx = captured["context"]
+    assert ctx["box_threshold"] == 0.7  # params 覆盖项目级 0.35
+    assert ctx["text_threshold"] == 0.25  # 未被 params 覆盖, 保留项目级兜底
+    assert ctx["sam_variant"] == "large"  # params 透传
+    assert "ignored" not in ctx  # None 值被过滤
+
+
 def test_batch_predict_task_on_failure_dispatches_mark_helper(monkeypatch):
     """_BatchPredictTask.on_failure 同步调用 _mark_job_failed (asyncio.run 包裹)."""
     from app.workers import tasks as worker_tasks
