@@ -246,6 +246,12 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 **前端兜底**：返回体缺 `supported_prompts` 时前端回落 `["point","bbox","text"]` 并 `console.warn` 提示升级 backend。`/setup` 502 时整套 AI 工具置灰。
 
+> **能力快照持久化（v0.10.37 起）**：除上述代理端点的实时拉取外，平台在 `check_health`（services/ml_backend.py）拉完 `/health` 后会 best-effort 再探一次 `/setup`，把能力快照（`supported_prompts` / `supported_trackers` / `supported_text_outputs` / `supported_geometric_outputs` + 平台派生的 `modalities`）落进 `ml_backends.health_meta["capabilities"]`，供「按模态分流 / 绑定校验 / 列表只读展示」消费（无需每处实时拉 `/setup`）。模态派生规则：`supported_prompts` 非空 ⇒ image、`supported_trackers` 非空 ⇒ video（见 services/ml_capabilities.py）。
+>
+> **`is_interactive` 改派生（v0.10.37 起）**：`is_interactive` 不再由注册表单手填，而是以 backend `/setup.is_interactive` 自报为真值，在 `check_health` 时回写 `MLBackend.is_interactive`。backend 必须在 `/setup` 如实声明该位。
+>
+> **绑定按 data_type 校验（v0.10.37 起）**：`PATCH /projects/{id}` 绑定 backend 时实时探 `/setup` 派生模态，与项目 `data_type` 不兼容 → 422；探测失败则 fail-open 放行（mismatch 留到 `/predict` 暴露）。
+
 ---
 
 ## 5. `GET /versions`（可选）

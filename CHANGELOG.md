@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.10.37] - 2026-05-22
+
+> **ML Backend 能力协商落库 + 模态派生（epic 阶段 1）。** 平台第一次对 backend 的「能力 / 模态」有持久化感知：健康检查时顺带探 `/setup`，把 `supported_prompts`/`supported_trackers`/`is_interactive` 等能力快照落进 `health_meta`，`is_interactive` 改为从 backend 自报派生（不再手填）；项目绑定 backend 时按 `data_type` 校验模态匹配。是 [ML Backend 能力协商 + ai-pre 模态化 epic](ROADMAP/2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 的前置基石，后续 ai-pre 模态化（阶段 2）、video-jobs 并入（阶段 3）都依赖本版。计划见 [v0.10.37 计划](docs/plans/2026-05-22-v0.10.37-ml-backend-capability-persistence.md)。
+
+### Added
+
+- **能力快照落库** (后端 [ml_backend.py](apps/api/app/services/ml_backend.py) · [ml_capabilities.py](apps/api/app/services/ml_capabilities.py) · [ml_backend schema](apps/api/app/schemas/ml_backend.py)): `check_health` 拉完 `/health` 后 best-effort 再探一次 `/setup`，把能力快照（`supported_prompts`/`supported_trackers`/`supported_text_outputs`/`supported_geometric_outputs` + 派生 `modalities`）落进 `health_meta["capabilities"]`（`HealthMeta` schema `extra=allow`，无 alembic 迁移）；探测失败静默跳过，不影响 health 结果。新增 `services/ml_capabilities.py`（`extract_capabilities` + `derive_modalities`：`supported_prompts⇒image`、`supported_trackers⇒video`）供健康检查与绑定校验共用。
+- **绑定按 data_type 校验** (后端 [projects.py](apps/api/app/api/v1/projects.py)): `PATCH /projects/{id}` 绑定 backend 时实时探 `/setup` 派生模态，与项目 `data_type` 不兼容 → 422 拒绝（如视频项目绑只支持图片的 backend）；探测失败 → fail-open 放行（不因瞬时宕机卡住绑定，mismatch 留到 predict 时暴露）。
+- **能力只读展示** (前端 [MlBackendsSection.tsx](apps/web/src/pages/Projects/sections/MlBackendsSection.tsx)): backend 列表「能力」列在 `supported_prompts` 之外补 `supported_trackers` 徽标，视频追踪能力可见。
+- **wizard 模态标注** (前端 [Step4Ai.tsx](apps/web/src/components/projects/steps/Step4Ai.tsx)): 建项目第 4 步复用 backend 下拉按项目 `data_type` 标注模态匹配（从 `health_meta.capabilities.modalities` 派生；未健康检查过=「模态未知」，不硬隐藏，绑定时后端二次校验）。
+
+### Changed
+
+- **`is_interactive` 改派生对账** (后端 [ml_backend.py](apps/api/app/services/ml_backend.py) · 前端 [MlBackendFormModal.tsx](apps/web/src/components/projects/MlBackendFormModal.tsx)): 以 backend `/setup.is_interactive` 自报为真值，`check_health` 时回写；注册/编辑表单删手填「交互式 backend」checkbox，改为「健康检查时自动探测」提示，create/update payload 不再带 `is_interactive`。
+
 ## [0.10.36] - 2026-05-22
 
 > **模型市场观测按图像/视频模态拆分 + 视频追踪任务聚合监控 + tracker 模型尺寸可选。** 接续 v0.10.35 的 video 独立池：模型市场观测/预热面板拆出「图像推理 / 视频追踪」两组（修正了对视频后端误用图片池预热、且暴露无意义 DINO 的问题）；新增视频追踪任务聚合监控页；AI 传播可选 SAM 模型尺寸（sam_variant）一路透传到 backend。纯观测增强 + plumbing，不动 backend 推理/协议。
