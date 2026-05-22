@@ -30,7 +30,7 @@ export function Modal({ open, onClose, title, width = 560, children }: ModalProp
 
   useLayoutEffect(() => {
     dialogRef.current?.style.setProperty("--modal-width", `${width}px`);
-  }, [width]);
+  }, [open, width]);
 
   if (!open) return null;
 

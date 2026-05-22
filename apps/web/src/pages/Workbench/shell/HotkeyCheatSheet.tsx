@@ -74,7 +74,7 @@ export function HotkeyCheatSheet({ open, onClose, attributeSchema }: HotkeyCheat
   }, [sortByFreq, usage, q]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Modal open={open} onClose={onClose} title="键盘快捷键" width={640}>
+    <Modal open={open} onClose={onClose} title="键盘快捷键" width={860}>
       <div className={styles.toolbar}>
         <input
           type="text"
@@ -115,7 +115,7 @@ export function HotkeyCheatSheet({ open, onClose, attributeSchema }: HotkeyCheat
             const items = HOTKEYS.filter((h) => h.group === g && matches(h));
             if (items.length === 0) return null;
             return (
-              <div key={g}>
+              <div key={g} className={styles.sectionBlock}>
                 <div className={styles.sectionTitle}>
                   {GROUP_LABEL[g]}
                 </div>

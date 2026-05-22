@@ -460,7 +460,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         }
 
         case "spacePanOn": e.preventDefault(); setSpacePan(true); return;
-        case "showHotkeys": setShowHotkeys(true); return;
+        case "showHotkeys": e.preventDefault(); setShowHotkeys(true); return;
         case "cancel":
           if (showHotkeys) { setShowHotkeys(false); return; }
           if (batchChanging) { setBatchChanging(false); return; }
