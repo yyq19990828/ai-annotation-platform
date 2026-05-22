@@ -61,9 +61,10 @@
 - **`sam3_video` 真实 backend**：sam3-backend 尚未实现 `/predict context.type="video_tracker"`（收到即 422），待 SAM3 video 能力跟进，约束同 sam2（独立池 / 不入 `apps/api` / 跨窗续追）。
 - **跨窗有状态续追**：当前是无状态近似（上一窗末帧 geometry 作下一窗 seed，边界略漂）；后续可上 session/context-token 让 backend 跨窗保 memory bank 状态。
 
-### 3.2 Tracker Registry UI（原 R23）
-- 管理员侧 tracker adapter 注册 / 启停 / 显示当前 backend；与 v0.10.3 ML Backend 1:N 管理形态一致。
-- **现状（2026-05-22）**：tracker 模型尺寸（sam_variant）选择已于 v0.10.36 落地（propagate 对话框 SAM 尺寸下拉 → payload → adapter context → backend video 池）；图片工作台的悬浮 AI 面板对视频任务仍**显式禁用**（[`WorkbenchShell.tsx`](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `aiPopover.open = aiPopoverOpen && !isVideoTask`，**by design**），视频 AI 入口是 `VideoTrackerPropagateDialog`（Shift+T）。
+### 3.2 Tracker 选择 / 展示（原 R23「Tracker Registry UI」）
+- **R23 的「人工注册表 UI」前提已被新 epic 架空**：原设想管理员去「注册 / 启停 tracker adapter」，对应写死的 [`_REGISTRY`](../apps/api/app/services/video_tracker_adapters.py)。但 [ML Backend 能力协商 epic](2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1 改为 backend `/setup` 自报能力、平台动态发现替代 `_REGISTRY`——没有需要人工维护的注册表；「启停」即现有 RegisteredBackendsTab 的 backend 暂停/恢复，无需 tracker 级单独入口。
+- **R23 剩余诉求归口到 epic**：「显示 backend 支持哪些 tracker」= 阶段 1 的能力派生只读视图；「多 backend 选择 / 1:N 管理形态」= 阶段 2 的多 backend 选择器。本节不再作独立条目。
+- **已落地现状（2026-05-22）**：tracker 模型尺寸（sam_variant）选择已于 v0.10.36 落地（propagate 对话框 SAM 尺寸下拉 → payload → adapter context → backend video 池）；图片工作台的悬浮 AI 面板对视频任务仍**显式禁用**（[`WorkbenchShell.tsx`](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `aiPopover.open = aiPopoverOpen && !isVideoTask`，**by design**），视频 AI 入口是 `VideoTrackerPropagateDialog`（Shift+T）。
 
 ### 3.3 图片 / 视频 tracker 协议统一收口（原 I20.4，跨模态）
 - **已抽为独立 epic**：[ML Backend 能力协商 + AI 预标注模态化重设计](2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1。要点：backend `/setup` 自报 `supported_capabilities`、平台动态读取替代写死 `_REGISTRY`、注册/绑定按 `data_type` 过滤校验、`is_interactive`/modality 从能力派生。v0.10.35 §B.3 的 `supported_trackers` 声明是「第一块砖」，落库 + 消费在该 epic 做。
@@ -111,7 +112,7 @@
 |---|---|---|---|---|
 | 1 ✅ | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1 | v0.10.29 落地；WebCodecs demux 接入延后 |
 | 2 ✅ | 轨迹工具对齐 CVAT | R16 / R9(暂缓) + 新增 2.1/2.6/2.7/2.8 | P0/P1 | 2.1–2.8 v0.10.30 落地；**2.9 多几何 track 延后** |
-| 3 ◑ | 真实 tracker backend | C.6 P0 / R23 / I20.4 | P0 | 3.1 gsam2 `sam2_video` v0.10.35/36 落地；**sam3_video / 3.2 Registry UI / 3.3 协议统一(→独立 epic) 待续** |
+| 3 ◑ | 真实 tracker backend | C.6 P0 / R23 / I20.4 | P0 | 3.1 gsam2 `sam2_video` v0.10.35/36 落地；**sam3_video 待续；3.2 R23 + 3.3 协议统一已并入独立 epic** |
 | 4 ◑ | 视频导出（D3） | R22 / C.6 P2 / §A AAP video_track 导入 | P1 | 4.1+4.2 导出端+4.3+4.4+4.7 v0.10.31 落地；**4.2 导入端 / 4.5 DAVIS(依赖 2.9) / 4.6 Segment 延后** |
 | 5 | 长视频协同 overlap | R11 / R21 / C.6 P1 segment | P1 | 不做 OT/CRDT |
 | 6 | Track 质量评估 | R24 / C.6 P2 worker | P2 | 与 L15 打通 |
