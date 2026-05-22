@@ -38,8 +38,15 @@
   font-size: 12.5px;
 }
 
+.tableScroller {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
 .table {
   width: 100%;
+  min-width: 820px;
   border-spacing: 0;
   border-collapse: separate;
   font-size: 13px;
@@ -53,6 +60,7 @@
   text-align: left;
   font-size: 11.5px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .cell {
@@ -68,7 +76,22 @@
 }
 
 .email {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
   font-size: 12.5px;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.truncateText {
+  display: inline-block;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
 }
 
 .muted {
@@ -78,8 +101,10 @@
 .dateCell {
   color: var(--color-fg-muted);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .actionsCell {
   text-align: right;
+  white-space: nowrap;
 }

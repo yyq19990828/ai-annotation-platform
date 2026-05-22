@@ -65,7 +65,7 @@ function ProjectRow({
           <div className={styles.projectTypeIcon}>
             <Icon name={DATA_TYPE_ICONS[p.data_type ?? "image"] || "image"} size={14} />
           </div>
-          <div>
+          <div className={styles.projectText}>
             <div className={styles.projectName}>{p.name}</div>
             <div className={styles.projectMeta}>
               <span className={`mono ${styles.projectId}`}>{p.display_id}</span>
@@ -321,42 +321,44 @@ export function DashboardPage() {
             />
           )
         ) : (
-        <table className={styles.projectTable}>
-          <thead>
-            <tr>
-              {["项目", "负责人", "进度", "AI 模型", "状态", "截止 / 更新", ""].map((h, i) => (
-                <th key={i}>
-                  {h}
-                </th>
+        <div className={styles.projectTableScroller}>
+          <table className={styles.projectTable}>
+            <thead>
+              <tr>
+                {["项目", "负责人", "进度", "AI 模型", "状态", "截止 / 更新", ""].map((h, i) => (
+                  <th key={i}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading && (
+                <tr>
+                  <td colSpan={7} className={styles.tableEmptyCell}>
+                    加载中...
+                  </td>
+                </tr>
+              )}
+              {!isLoading && projects.map((p) => (
+                <ProjectRow
+                  key={p.id}
+                  p={p}
+                  onOpen={onOpenProject}
+                  canManage={canManageProject(p)}
+                  onSettings={onSettings}
+                />
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && (
-              <tr>
-                <td colSpan={7} className={styles.tableEmptyCell}>
-                  加载中...
-                </td>
-              </tr>
-            )}
-            {!isLoading && projects.map((p) => (
-              <ProjectRow
-                key={p.id}
-                p={p}
-                onOpen={onOpenProject}
-                canManage={canManageProject(p)}
-                onSettings={onSettings}
-              />
-            ))}
-            {!isLoading && projects.length === 0 && (
-              <tr>
-                <td colSpan={7} className={styles.tableEmptyCell}>
-                  没有匹配的项目
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              {!isLoading && projects.length === 0 && (
+                <tr>
+                  <td colSpan={7} className={styles.tableEmptyCell}>
+                    没有匹配的项目
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
         )}
       </Card>
 
