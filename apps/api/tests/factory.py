@@ -59,15 +59,21 @@ async def create_project(
     classes: list[str] | None = None,
 ):
     from app.db.models.project import Project
+    from app.services.project import coalesce_legacy_into_tool_bindings
 
     suffix = secrets.token_hex(3)
+    # v0.10.22 起 Project 无 classes 列, tool_bindings 是单源真值. 直接传 classes= 仅在
+    # conftest 装了测试专用 shim 时才合法; 而 _test_seed.seed_reset 在**真实 app**(无 shim)
+    # 里调本工厂, 故这里自己把 classes 翻译成 tool_bindings, 两侧都能用 (修 E2E seed/reset 500).
+    kw: dict = {"classes": list(classes or ["car", "person"])}
+    coalesce_legacy_into_tool_bindings(kw, None, type_key)
     project = Project(
         display_id=f"P-E2E-{suffix}",
         name=name,
         type_label=type_label,
         type_key=type_key,
         owner_id=owner_id,
-        classes=list(classes or ["car", "person"]),
+        tool_bindings=kw["tool_bindings"],
         ai_enabled=False,
     )
     db.add(project)
