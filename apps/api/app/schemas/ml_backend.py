@@ -139,6 +139,8 @@ class MLBackendHealthResponse(BaseModel):
 class MLBackendReloadRequest(BaseModel):
     sam_variant: str | None = None
     dino_variant: str | None = None
+    # v0.10.36 · "image" 预热图片池 (默认), "video" 预热独立 video tracker 池 (仅认 sam_variant)
+    task_type: str | None = None
 
 
 class InteractiveRequest(BaseModel):

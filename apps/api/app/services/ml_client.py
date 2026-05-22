@@ -252,17 +252,23 @@ class MLBackendClient:
             return resp.json()
 
     async def reload(
-        self, sam_variant: str | None = None, dino_variant: str | None = None
+        self,
+        sam_variant: str | None = None,
+        dino_variant: str | None = None,
+        task_type: str | None = None,
     ) -> dict:
         """B-28+ · 让 backend 重新加载模型. 重载耗时可能远高于 health 探活, 用 predict 超时配额.
 
         v0.10.26 · 可选指定变体预热 (模型市场单变体预热); 缺省时 body 留空, backend 用默认变体.
+        v0.10.36 · 可选 task_type="video" 预热独立 video tracker 池 (仅认 sam_variant, 无 dino).
         """
         body: dict[str, str] = {}
         if sam_variant:
             body["sam_variant"] = sam_variant
         if dino_variant:
             body["dino_variant"] = dino_variant
+        if task_type:
+            body["task_type"] = task_type
         async with httpx.AsyncClient(timeout=settings.ml_predict_timeout) as client:
             resp = await client.post(
                 f"{self.base_url}/reload",

@@ -7051,6 +7051,17 @@
               }
             ],
             "title": "Sam Variant"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
           }
         },
         "title": "MLBackendReloadRequest",

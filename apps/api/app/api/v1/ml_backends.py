@@ -251,9 +251,13 @@ async def reload_ml_backend(
     svc = MLBackendService(db)
     sam_variant = body.sam_variant if body else None
     dino_variant = body.dino_variant if body else None
+    task_type = body.task_type if body else None
     try:
         result = await svc.reload(
-            backend_id, sam_variant=sam_variant, dino_variant=dino_variant
+            backend_id,
+            sam_variant=sam_variant,
+            dino_variant=dino_variant,
+            task_type=task_type,
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"backend reload failed: {exc}")
