@@ -81,7 +81,7 @@ COPY _shared/mask_utils/ /app/mask_utils/
 RUN pip install --no-build-isolation -e /app/mask_utils
 
 COPY grounded-sam2-backend/scripts/ ./scripts/
-COPY grounded-sam2-backend/main.py grounded-sam2-backend/predictor.py grounded-sam2-backend/schemas.py grounded-sam2-backend/embedding_cache.py grounded-sam2-backend/model_pool.py grounded-sam2-backend/observability.py ./
+COPY grounded-sam2-backend/main.py grounded-sam2-backend/predictor.py grounded-sam2-backend/schemas.py grounded-sam2-backend/embedding_cache.py grounded-sam2-backend/model_pool.py grounded-sam2-backend/observability.py grounded-sam2-backend/video_predictor.py grounded-sam2-backend/video_pool.py ./
 COPY grounded-sam2-backend/tests/ ./tests/
 RUN mkdir -p /app/checkpoints /app/.cache/huggingface
 

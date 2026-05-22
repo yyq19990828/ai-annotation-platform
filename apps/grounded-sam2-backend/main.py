@@ -41,6 +41,7 @@ from observability import (
     init_perfhud_collectors,
     record_cache,
     record_inference,
+    record_video_tracker,
     sample_perfhud,
     shutdown_perfhud_collectors,
     update_cache_size,
@@ -52,6 +53,8 @@ from predictor import (
     GroundedSAM2Predictor,
 )
 from schemas import BatchPredictResponse, PredictionResult
+from video_pool import VideoPool
+from video_predictor import SAM2VideoTracker
 
 logger = logging.getLogger("grounded-sam2-backend")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
@@ -68,6 +71,13 @@ IDLE_CHECK_INTERVAL = float(os.getenv("IDLE_CHECK_INTERVAL", "60"))
 # v0.10.23 · ModelPool 配置. CAP=1 保持现有"单变体常驻"行为; 大显存卡可调高并存多变体.
 MODEL_POOL_CAP = int(os.getenv("MODEL_POOL_CAP", "1"))
 MODEL_POOL_BUILD_TIMEOUT = float(os.getenv("MODEL_POOL_BUILD_TIMEOUT", "30"))
+# v0.10.35 §B · sam2_video tracker 独立显存池 (与图片池预算分离, 互不驱逐).
+VIDEO_MODEL_POOL_CAP = int(os.getenv("VIDEO_MODEL_POOL_CAP", "1"))
+VIDEO_MODEL_POOL_BUILD_TIMEOUT = float(os.getenv("VIDEO_MODEL_POOL_BUILD_TIMEOUT", "60"))
+# 单次 init_state 安全上限 (帧); 超此值的窗口直接拒绝, 防显存灌爆.
+VIDEO_TRACKER_MAX_WINDOW_FRAMES = int(os.getenv("VIDEO_TRACKER_MAX_WINDOW_FRAMES", "300"))
+# video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时, 不连带).
+VIDEO_IDLE_UNLOAD_SECONDS = float(os.getenv("VIDEO_IDLE_UNLOAD_SECONDS", "600"))
 
 # v0.10.1 · /setup 协议标准化暴露 backend 镜像版本 (与 FastAPI app.version 同源).
 BACKEND_VERSION = os.getenv("BACKEND_VERSION", "0.10.1")
@@ -141,6 +151,24 @@ _pool = ModelPool(
 )
 
 
+def _build_video_tracker(sam_variant: str) -> SAM2VideoTracker:
+    """video 池的 build 回调 (在 executor 内同步执行)."""
+    return SAM2VideoTracker(
+        sam_variant=sam_variant,
+        max_window_frames=VIDEO_TRACKER_MAX_WINDOW_FRAMES,
+    )
+
+
+_video_pool = VideoPool(
+    cap=VIDEO_MODEL_POOL_CAP,
+    build_tracker=_build_video_tracker,
+    free_gpu_memory=_free_gpu_memory,
+    build_timeout=VIDEO_MODEL_POOL_BUILD_TIMEOUT,
+    idle_unload_seconds=VIDEO_IDLE_UNLOAD_SECONDS,
+)
+_video_idle_task: asyncio.Task | None = None
+
+
 def _model_version(sam_variant: str, dino_variant: str) -> str:
     return f"grounded-sam2-dino{dino_variant}-sam2.1{sam_variant}"
 
@@ -204,9 +232,21 @@ async def _idle_watcher() -> None:
             logger.exception("idle watcher loop error; continuing")
 
 
+async def _video_idle_watcher() -> None:
+    """周期检查 video 池 idle; 独立于图片池 idle watcher, 各自计时不连带清空."""
+    while True:
+        try:
+            await asyncio.sleep(IDLE_CHECK_INTERVAL)
+            _video_pool.maybe_idle_unload()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            logger.exception("video idle watcher loop error; continuing")
+
+
 @app.on_event("startup")
 async def _load_models() -> None:
-    global _idle_task, _last_request_at, _prefetch_task
+    global _idle_task, _last_request_at, _prefetch_task, _video_idle_task
     logger.info(
         "loading default variant: dino=%s sam=%s box_th=%.2f text_th=%.2f "
         "cache_size=%d pool_cap=%d idle_unload=%.0fs",
@@ -226,14 +266,18 @@ async def _load_models() -> None:
     init_perfhud_collectors()
     if IDLE_UNLOAD_SECONDS > 0:
         _idle_task = asyncio.create_task(_idle_watcher())
+    # v0.10.35 §B · video 池独立 idle watcher (不与图片池连带). 不预热 video 变体:
+    # 首个 video_tracker 请求触发冷启, 避免空载常驻额外显存.
+    if VIDEO_IDLE_UNLOAD_SECONDS > 0:
+        _video_idle_task = asyncio.create_task(_video_idle_watcher())
     # 主变体已就绪可服务; 额外 PREFETCH 变体后台补 (不阻塞 uvicorn / /health).
     _prefetch_task = asyncio.create_task(_prefetch_extras())
 
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
-    global _idle_task, _prefetch_task
-    for task_name in ("_idle_task", "_prefetch_task"):
+    global _idle_task, _prefetch_task, _video_idle_task
+    for task_name in ("_idle_task", "_prefetch_task", "_video_idle_task"):
         task = globals()[task_name]
         if task is not None:
             task.cancel()
@@ -275,6 +319,11 @@ def health() -> dict:
         "container_cpu_percent": perf["container_cpu_percent"],
         "container_memory_percent": perf["container_memory_percent"],
     }
+    if gpu_info is not None:
+        # v0.10.35 §B · 让 gpu_info 里图片池 / video 池的占用可分辨 (整卡 mem_get_info
+        # 无法按进程内 allocator 切分, 这里给出"哪些池有权重常驻"的定性标记).
+        gpu_info["image_pool_loaded_variants"] = _pool.loaded_variants()
+        gpu_info["video_pool_loaded_variants"] = _video_pool.loaded_variants()
     return {
         "ok": True,
         "gpu": available,
@@ -284,6 +333,8 @@ def health() -> dict:
         "model_version": MODEL_VERSION,
         "loaded": _pool.loaded,
         "pool": _pool.health(),
+        # v0.10.35 §B · video tracker 独立池区块 (cap / loaded_variants / active_sessions / idle_seconds).
+        "video_pool": _video_pool.health(),
         "provisioning": _provisioning,
         "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
         "last_request_age_seconds": round(time.monotonic() - _last_request_at, 2),
@@ -305,6 +356,8 @@ def setup() -> dict:
         "supported_prompts": ["point", "bbox", "text"],
         # v0.9.4 phase 2 · text 路径输出形态选择 (box=DINO 直出, mask=DINO+SAM, both=配对返回).
         "supported_text_outputs": ["box", "mask", "both"],
+        # v0.10.35 §B · 平台 video_tracker 协议桥据此判断 backend 是否支持视频跟踪.
+        "supported_trackers": ["sam2_video"],
         "params": {
             "type": "object",
             "properties": {
@@ -520,6 +573,152 @@ def _observe(prompt_type: str, hit: bool, started: float) -> int:
     return int(elapsed * 1000)
 
 
+def _seed_bbox_from_ctx(ctx: dict) -> dict:
+    """从 video_tracker context 取归一化 seed bbox {x,y,w,h}。
+
+    优先 prompt.geometry, 回退 source_geometry (与平台 MockBboxTrackerAdapter
+    / _bbox_from_geometry 同一约定: video_track 取首关键帧 bbox, bbox/video_bbox
+    取 x/y/w(width)/h(height))。
+    """
+
+    def _extract(geometry: dict | None) -> dict | None:
+        if not isinstance(geometry, dict):
+            return None
+        gtype = geometry.get("type")
+        if gtype == "video_track":
+            keyframes = sorted(
+                geometry.get("keyframes") or [],
+                key=lambda item: int(item.get("frame_index", 0)),
+            )
+            if keyframes:
+                bbox = keyframes[0].get("bbox") or {}
+                return _norm_bbox(bbox)
+            return None
+        if gtype in {"bbox", "video_bbox"} or any(
+            k in geometry for k in ("x", "y", "w", "width")
+        ):
+            return _norm_bbox(geometry)
+        return None
+
+    def _norm_bbox(bbox: dict) -> dict:
+        return {
+            "x": float(bbox.get("x", 0.0)),
+            "y": float(bbox.get("y", 0.0)),
+            "w": float(bbox.get("w", bbox.get("width", 0.0))),
+            "h": float(bbox.get("h", bbox.get("height", 0.0))),
+        }
+
+    prompt = ctx.get("prompt")
+    if isinstance(prompt, dict):
+        seed = _extract(prompt.get("geometry"))
+        if seed is not None:
+            return seed
+    seed = _extract(ctx.get("source_geometry"))
+    if seed is not None:
+        return seed
+    raise HTTPException(
+        status_code=422,
+        detail="video_tracker requires a seed bbox in prompt.geometry or source_geometry",
+    )
+
+
+def _video_local_path(file_path: str) -> str:
+    """video_tracker 的 file_path → OpenCV 可打开的源.
+
+    本地文件直接用; http(s) 先下载到临时文件 (OpenCV 对 presigned URL 的
+    HTTP range/seek 支持不稳, 整段拉下来再解码更可靠)。调用方负责清理临时文件。
+    """
+    if file_path.startswith(("http://", "https://")):
+        import tempfile
+        from urllib.parse import urlsplit
+
+        suffix = os.path.splitext(urlsplit(file_path).path)[-1] or ".mp4"
+        fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="sam2vid_src_")
+        try:
+            with os.fdopen(fd, "wb") as fh, httpx.Client(
+                timeout=IMAGE_DOWNLOAD_TIMEOUT, follow_redirects=True
+            ) as client:
+                with client.stream("GET", file_path) as resp:
+                    resp.raise_for_status()
+                    for chunk in resp.iter_bytes():
+                        fh.write(chunk)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        return tmp_path
+    if os.path.isfile(file_path):
+        return file_path
+    raise HTTPException(
+        status_code=400, detail=f"unsupported video file_path: {file_path[:64]}"
+    )
+
+
+async def _run_video_tracker(file_path: str, ctx: dict) -> tuple[list[dict], str]:
+    """sam2_video tracker: 取 video pool tracker, 窗内传播 seed bbox。
+
+    返回 (result 列表, sam_variant)。OOM / timeout 等不吞, 让 api 落 error_message
+    (ADR-0012: predictor 不进 api, 故障外抛)。
+    """
+    sv = ctx.get("sam_variant") or SAM_VARIANT
+    if sv not in SAM2_CONFIGS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unsupported sam_variant: {sv!r}; allowed={sorted(SAM2_CONFIGS)}",
+        )
+    try:
+        from_frame = int(ctx["from_frame"])
+        to_frame = int(ctx["to_frame"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="video_tracker requires integer from_frame / to_frame",
+        ) from exc
+    direction = ctx.get("direction") or "forward"
+    if direction not in ("forward", "backward"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"video_tracker direction must be forward|backward, got {direction!r}",
+        )
+    seed_bbox = _seed_bbox_from_ctx(ctx)
+
+    try:
+        tracker = await _video_pool.get(sv)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"sam_variant {sv!r} video checkpoint not provisioned: {exc}",
+        ) from exc
+
+    local_path = _video_local_path(file_path)
+    cleanup = local_path != file_path
+    started = time.perf_counter()
+    try:
+        loop = asyncio.get_running_loop()
+        # propagate 是 CPU/GPU 阻塞调用, 丢到 executor 避免堵事件循环 (含 /health).
+        result = await loop.run_in_executor(
+            None,
+            tracker.propagate,
+            local_path,
+            from_frame,
+            to_frame,
+            direction,
+            seed_bbox,
+        )
+    finally:
+        if cleanup:
+            try:
+                os.unlink(local_path)
+            except OSError:
+                pass
+    record_video_tracker(sv, len(result), time.perf_counter() - started)
+    return result, sv
+
+
 @app.post("/predict")
 async def predict(request: Request):
     body = await request.json()
@@ -529,6 +728,15 @@ async def predict(request: Request):
     if isinstance(body, dict) and "task" in body and "context" in body:
         task = body["task"]
         ctx = body.get("context") or {}
+        # v0.10.35 §B · video_tracker 分支 (走独立 video pool, 不进图片缓存路径).
+        if ctx.get("type") == "video_tracker":
+            result, sv = await _run_video_tracker(task["file_path"], ctx)
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            return PredictionResult(
+                result=result,
+                model_version=f"sam2_video-2.1{sv}",
+                inference_time_ms=elapsed_ms,
+            ).model_dump(exclude_none=True)
         # _run_prompt 内部经 pool 取请求级变体 predictor (miss 触发冷启).
         result, hit, sv, dv = await _run_prompt(task["file_path"], ctx)
         elapsed_ms = _observe(ctx.get("type") or "unknown", hit, started)

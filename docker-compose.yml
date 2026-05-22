@@ -242,6 +242,13 @@ services:
       # 磁盘紧张时可裁剪 (tiny~150M / small~180M / base_plus~320M / large~900M · SwinB~940M).
       PREFETCH_SAM_VARIANTS: ${PREFETCH_SAM_VARIANTS:-tiny,small,base_plus,large}
       PREFETCH_DINO_VARIANTS: ${PREFETCH_DINO_VARIANTS:-T,B}
+      # v0.10.35 §B · sam2_video tracker 独立显存池 (与图片池预算分离, 互不驱逐).
+      VIDEO_MODEL_POOL_CAP: ${VIDEO_MODEL_POOL_CAP:-1}
+      VIDEO_MODEL_POOL_BUILD_TIMEOUT: ${VIDEO_MODEL_POOL_BUILD_TIMEOUT:-60}
+      # 单次 init_state 一次性加载的最大帧数 (安全上限, 防超长窗口灌爆显存).
+      VIDEO_TRACKER_MAX_WINDOW_FRAMES: ${VIDEO_TRACKER_MAX_WINDOW_FRAMES:-300}
+      # video 池独立 idle 卸载 (与图片池 IDLE_UNLOAD_SECONDS 各自计时); <=0 关闭.
+      VIDEO_IDLE_UNLOAD_SECONDS: ${VIDEO_IDLE_UNLOAD_SECONDS:-600}
     volumes:
       - gsam2_checkpoints:/app/checkpoints
       - gsam2_hf_cache:/app/.cache/huggingface
