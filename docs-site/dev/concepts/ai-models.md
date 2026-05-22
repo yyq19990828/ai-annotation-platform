@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-22
 ---
 
 # AI 模型集成（grounded-sam2-backend / 后续 sam3-backend）
@@ -251,6 +251,64 @@ histogram_quantile(0.95,
 ## 5. 协议契约引用
 
 请求与响应字段以 [`ml-backend-protocol.md`](../ml-backend-protocol.md) §2 为准。`/cache/stats` / `/metrics` **不进协议契约**——它们是 backend 内部端点，平台 API 不会消费。
+
+---
+
+## 7. 能力协商 + 模态派生（v0.10.37）
+
+平台从 v0.10.37 起对 backend 的「能力 / 模态」有持久化感知。实现集中在两个文件：
+- `apps/api/app/services/ml_capabilities.py`（`extract_capabilities` + `derive_modalities`）
+- `apps/api/app/services/ml_backend.py`（`check_health`）
+
+### 7.1 健康检查时能力快照落库
+
+`check_health` 拉完 `/health`（得到 `healthy + meta`）后，best-effort 再探一次 `/setup`，把能力快照写入 `health_meta["capabilities"]`：
+
+```python
+# apps/api/app/services/ml_backend.py  check_health()
+caps = extract_capabilities(await client.setup())
+if caps is not None:
+    meta = {**meta, "capabilities": caps}
+    backend.is_interactive = caps["is_interactive"]   # 改派生对账
+backend.health_meta = meta
+```
+
+探测失败（网络抖动 / backend 尚未实现 `/setup`）捕获后静默跳过，不影响 `check_health` 的 bool 返回值。`HealthMeta` schema 用 `extra="allow"`，无需 alembic 迁移。
+
+### 7.2 能力快照字段
+
+`health_meta["capabilities"]` 由 `extract_capabilities(setup_resp)` 填充，字段来自 backend `/setup` 响应：
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `is_interactive` | `bool` | backend 是否为交互式（点/框/文本 prompt 模式） |
+| `supported_prompts` | `list[str]` | 支持的 prompt 类型，如 `["point","bbox","text"]` |
+| `supported_trackers` | `list[str]` | 支持的 tracker，如 `["sam2_video"]` |
+| `supported_text_outputs` | `list[str]` | 文本类输出，如 `["caption"]` |
+| `supported_geometric_outputs` | `list[str]` | 几何类输出，如 `["polygonlabels","rectanglelabels"]` |
+| `modalities` | `list[str]` | 派生字段，见 §7.3 |
+
+### 7.3 模态派生规则
+
+`derive_modalities(caps)` 从能力快照推断支持的标注模态（不入库、读时算，同步写入快照中）：
+
+```python
+# apps/api/app/services/ml_capabilities.py
+if caps.get("supported_prompts"):   # 非空 ⇒ image
+    modalities.append("image")
+if caps.get("supported_trackers"):  # 非空 ⇒ video
+    modalities.append("video")
+```
+
+`grounded-sam2-backend` 只有 `supported_prompts` 时 `modalities=["image"]`；v0.10.35 接通真实 video tracker 后上报 `supported_trackers: ["sam2_video"]`，`modalities=["image","video"]`。
+
+### 7.4 绑定校验（PATCH /projects/{id}）
+
+项目绑定 backend（`PATCH /projects/{id}`）时平台实时探 `/setup` 派生模态，与项目 `data_type` 不兼容则返回 422；探测失败 fail-open 放行（避免 backend 瞬时宕机卡住绑定，真正的模态不匹配留到 `/predict` 时暴露）。
+
+### 7.5 `is_interactive` 改派生对账
+
+v0.10.37 前 `is_interactive` 由注册表单手填。v0.10.37 起改为：每次 `check_health` 从 `/setup.is_interactive` 自报回写，注册/编辑表单不再含手填 checkbox（改为「健康检查时自动探测」提示），create/update payload 不带 `is_interactive`。
 
 ---
 
