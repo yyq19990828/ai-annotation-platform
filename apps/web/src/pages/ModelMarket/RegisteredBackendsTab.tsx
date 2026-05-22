@@ -216,126 +216,128 @@ function ProjectGroup({
           </a>
         </div>
       </div>
-      <table className={styles.backendTable}>
-        <thead>
-          <tr>
-            {["名称", "URL", "类型", "状态", "最近检查", "操作"].map((h) => (
-              <th key={h} className={styles.tableHeaderCell}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {group.backends.map((b) => (
-            <Fragment key={b.id}>
+      <div className={styles.tableScroller}>
+        <table className={styles.backendTable}>
+          <thead>
             <tr>
-              <td className={styles.tableCell}>{b.name}</td>
-              <td className={clsx(styles.tableCell, styles.urlCell)}>
-                {b.url}
-              </td>
-              <td className={styles.tableCell}>
-                <div className={styles.badgeList}>
-                  <Badge variant={b.is_interactive ? "ai" : "outline"}>
-                    {b.is_interactive ? "交互式" : "批量"}
-                  </Badge>
-                  {/* v0.9.13 · max_concurrency chip; 缺省（默认 4）不显示, 避免列表噪音 */}
-                  {typeof b.extra_params?.max_concurrency === "number" && (
-                    <span title="单 backend 最大并发预标请求数" className={styles.inlineChip}>
-                      <Badge variant="outline">≤{b.extra_params.max_concurrency} 并发</Badge>
-                    </span>
-                  )}
-                </div>
-              </td>
-              <td className={styles.tableCell}>
-                <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
-                  {b.state}
-                </Badge>
-                {/* v0.9.6 · 深度健康指标 (gpu_info / cache hit / model_version), 由 /health 缓存. */}
-                {b.health_meta && (
-                  <div className={styles.healthMeta}>
-                    {b.health_meta.model_version && (
-                      <div className="mono" title="model_version">
-                        {b.health_meta.model_version}
-                      </div>
-                    )}
-                    {b.health_meta.gpu_info?.memory_used_mb != null &&
-                      b.health_meta.gpu_info?.memory_total_mb != null && (
-                        <div title="GPU 显存 used / total">
-                          GPU {b.health_meta.gpu_info.memory_used_mb}/
-                          {b.health_meta.gpu_info.memory_total_mb} MB
-                        </div>
-                      )}
-                    {typeof b.health_meta.cache?.hit_rate === "number" && (
-                      <div title="cache hit rate">
-                        cache {(b.health_meta.cache.hit_rate * 100).toFixed(1)}%
-                      </div>
+              {["名称", "URL", "类型", "状态", "最近检查", "操作"].map((h) => (
+                <th key={h} className={styles.tableHeaderCell}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {group.backends.map((b) => (
+              <Fragment key={b.id}>
+              <tr>
+                <td className={clsx(styles.tableCell, styles.nameCell)} title={b.name}>{b.name}</td>
+                <td className={clsx(styles.tableCell, styles.urlCell)} title={b.url}>
+                  {b.url}
+                </td>
+                <td className={styles.tableCell}>
+                  <div className={styles.badgeList}>
+                    <Badge variant={b.is_interactive ? "ai" : "outline"}>
+                      {b.is_interactive ? "交互式" : "批量"}
+                    </Badge>
+                    {/* v0.9.13 · max_concurrency chip; 缺省（默认 4）不显示, 避免列表噪音 */}
+                    {typeof b.extra_params?.max_concurrency === "number" && (
+                      <span title="单 backend 最大并发预标请求数" className={styles.inlineChip}>
+                        <Badge variant="outline">≤{b.extra_params.max_concurrency} 并发</Badge>
+                      </span>
                     )}
                   </div>
-                )}
-              </td>
-              <td className={clsx(styles.tableCell, styles.mutedCell)}>
-                {formatDate(b.last_checked_at)}
-              </td>
-              <td className={styles.tableCell}>
-                <div className={styles.actionList}>
-                  <Button
-                    size="sm"
-                    onClick={() => setExpandedId((id) => (id === b.id ? null : b.id))}
-                    title="变体（多模型并存 / 预热）"
-                  >
-                    <Icon name={expandedId === b.id ? "chevUp" : "chevDown"} size={11} />
-                  </Button>
-                  <Button size="sm" onClick={() => onHealth(b)} disabled={health.isPending} title="健康检查">
-                    <Icon name="refresh" size={11} />
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => onUnload(b)}
-                    disabled={unload.isPending}
-                    title="卸载模型释放显存 (空闲时建议)"
-                  >
-                    <Icon name="pause" size={11} />
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => onReload(b)}
-                    disabled={reload.isPending}
-                    title="重新加载模型到显存"
-                  >
-                    <Icon name="play" size={11} />
-                  </Button>
-                  <Button size="sm" onClick={() => onEdit(itemToResponse(b))} title="编辑">
-                    <Icon name="edit" size={11} />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    onClick={() => onDelete(b)}
-                    disabled={del.isPending}
-                    title="删除"
-                  >
-                    <Icon name="trash" size={11} />
-                  </Button>
-                </div>
-              </td>
-            </tr>
-            {expandedId === b.id && (
-              <tr>
-                <td colSpan={6} className={styles.expandCell}>
-                  <VariantPanel
-                    projectId={group.project_id}
-                    backend={b}
-                    onWarm={(variant) => onReload(b, variant)}
-                    isWarming={reload.isPending}
-                  />
+                </td>
+                <td className={clsx(styles.tableCell, styles.statusCell)}>
+                  <Badge variant={STATE_VARIANT[b.state] ?? "outline"} dot>
+                    {b.state}
+                  </Badge>
+                  {/* v0.9.6 · 深度健康指标 (gpu_info / cache hit / model_version), 由 /health 缓存. */}
+                  {b.health_meta && (
+                    <div className={styles.healthMeta}>
+                      {b.health_meta.model_version && (
+                        <div className="mono" title="model_version">
+                          {b.health_meta.model_version}
+                        </div>
+                      )}
+                      {b.health_meta.gpu_info?.memory_used_mb != null &&
+                        b.health_meta.gpu_info?.memory_total_mb != null && (
+                          <div title="GPU 显存 used / total">
+                            GPU {b.health_meta.gpu_info.memory_used_mb}/
+                            {b.health_meta.gpu_info.memory_total_mb} MB
+                          </div>
+                        )}
+                      {typeof b.health_meta.cache?.hit_rate === "number" && (
+                        <div title="cache hit rate">
+                          cache {(b.health_meta.cache.hit_rate * 100).toFixed(1)}%
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </td>
+                <td className={clsx(styles.tableCell, styles.mutedCell, styles.dateCell)}>
+                  {formatDate(b.last_checked_at)}
+                </td>
+                <td className={clsx(styles.tableCell, styles.actionsCell)}>
+                  <div className={styles.actionList}>
+                    <Button
+                      size="sm"
+                      onClick={() => setExpandedId((id) => (id === b.id ? null : b.id))}
+                      title="变体（多模型并存 / 预热）"
+                    >
+                      <Icon name={expandedId === b.id ? "chevUp" : "chevDown"} size={11} />
+                    </Button>
+                    <Button size="sm" onClick={() => onHealth(b)} disabled={health.isPending} title="健康检查">
+                      <Icon name="refresh" size={11} />
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => onUnload(b)}
+                      disabled={unload.isPending}
+                      title="卸载模型释放显存 (空闲时建议)"
+                    >
+                      <Icon name="pause" size={11} />
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => onReload(b)}
+                      disabled={reload.isPending}
+                      title="重新加载模型到显存"
+                    >
+                      <Icon name="play" size={11} />
+                    </Button>
+                    <Button size="sm" onClick={() => onEdit(itemToResponse(b))} title="编辑">
+                      <Icon name="edit" size={11} />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => onDelete(b)}
+                      disabled={del.isPending}
+                      title="删除"
+                    >
+                      <Icon name="trash" size={11} />
+                    </Button>
+                  </div>
                 </td>
               </tr>
-            )}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+              {expandedId === b.id && (
+                <tr>
+                  <td colSpan={6} className={styles.expandCell}>
+                    <VariantPanel
+                      projectId={group.project_id}
+                      backend={b}
+                      onWarm={(variant) => onReload(b, variant)}
+                      isWarming={reload.isPending}
+                    />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

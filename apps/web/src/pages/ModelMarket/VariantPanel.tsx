@@ -80,35 +80,37 @@ export function VariantPanel({
         {loaded.length === 0 ? (
           <div className={styles.note}>暂无变体常驻显存（idle 卸载或未预热）</div>
         ) : (
-          <table className={styles.variantTable}>
-            <thead>
-              <tr>
-                {["变体", "cache 命中", "最近使用"].map((h) => (
-                  <th key={h}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loaded.map((v) => {
-                const key = `${v.sam_variant}/${v.dino_variant}`;
-                const bucket = buckets[key];
-                const ts = lruTs[key];
-                return (
-                  <tr key={key}>
-                    <td>
-                      <span className="mono">{key}</span>
-                    </td>
-                    <td>
-                      {bucket?.hit_rate != null
-                        ? `${(bucket.hit_rate * 100).toFixed(1)}% (${bucket.hits ?? 0}/${(bucket.hits ?? 0) + (bucket.misses ?? 0)})`
-                        : "—"}
-                    </td>
-                    <td className={styles.muted}>{ts != null ? `t+${ts.toFixed(0)}s` : "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className={styles.tableScroller}>
+            <table className={styles.variantTable}>
+              <thead>
+                <tr>
+                  {["变体", "cache 命中", "最近使用"].map((h) => (
+                    <th key={h}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loaded.map((v) => {
+                  const key = `${v.sam_variant}/${v.dino_variant}`;
+                  const bucket = buckets[key];
+                  const ts = lruTs[key];
+                  return (
+                    <tr key={key}>
+                      <td className={styles.variantCell} title={key}>
+                        <span className="mono">{key}</span>
+                      </td>
+                      <td className={styles.metricCell}>
+                        {bucket?.hit_rate != null
+                          ? `${(bucket.hit_rate * 100).toFixed(1)}% (${bucket.hits ?? 0}/${(bucket.hits ?? 0) + (bucket.misses ?? 0)})`
+                          : "—"}
+                      </td>
+                      <td className={styles.muted}>{ts != null ? `t+${ts.toFixed(0)}s` : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
