@@ -67,6 +67,11 @@ export function useFrameClock({
   const diagnosticsRef = useRef(diagnostics);
   const targetFrameRef = useRef<number | null>(null);
   const seekResolversRef = useRef(new Map<number, (result: FrameSeekResult) => void>());
+  // 已提交帧 / 播放态的最新值，给 updateFrameFromTime 在闭包外读取（避免 stale）。
+  const frameIndexRef = useRef(frameIndex);
+  frameIndexRef.current = frameIndex;
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
 
   diagnosticsRef.current = diagnostics;
 
@@ -121,7 +126,21 @@ export function useFrameClock({
   const updateFrameFromTime = useCallback((mediaTime: number, source: FrameReadySource) => {
     const mediaFrame = timeToFrame(mediaTime, timebase);
     const seekTarget = targetFrameRef.current;
-    const nextFrame = seekTarget !== null && Math.abs(seekTarget - mediaFrame) <= 1 ? seekTarget : mediaFrame;
+    let nextFrame: number;
+    if (seekTarget !== null && Math.abs(seekTarget - mediaFrame) <= 1) {
+      // 活跃 seek：±1 容差内吸附回目标帧。
+      nextFrame = seekTarget;
+    } else if (
+      seekTarget === null &&
+      !isPlayingRef.current &&
+      Math.abs(mediaFrame - frameIndexRef.current) <= 1
+    ) {
+      // 暂停且无活跃 seek 时，seeked/timeupdate 把 currentTime 反算成相邻帧的 ±1 抖动
+      // 不要漂移已提交帧（否则 seek 到网格帧 30 后落成 29，破坏采样网格导航 → “逢9”帧、卡顿）。
+      nextFrame = frameIndexRef.current;
+    } else {
+      nextFrame = mediaFrame;
+    }
     onFrameChange(nextFrame);
     recordFrameReady(source, nextFrame);
   }, [onFrameChange, recordFrameReady, timebase]);

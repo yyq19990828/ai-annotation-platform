@@ -7,6 +7,7 @@ import {
   type VideoTrackerJob,
   type VideoTrackerJobStatus,
 } from "@/api/videoTracker";
+import { useToastStore } from "@/components/ui";
 import { buildWsUrl } from "@/lib/wsHost";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -64,6 +65,11 @@ class TrackerJobStore {
     };
     this.jobs = { ...this.jobs, [job.id]: state };
     this.emit();
+    useToastStore.getState().push({
+      msg: "AI 传播已开始",
+      sub: `${job.model_key} · F${job.from_frame}-F${job.to_frame}`,
+      kind: "",
+    });
     this.connect(job.id, token);
   }
 
@@ -122,6 +128,19 @@ class TrackerJobStore {
     }
     this.jobs = { ...this.jobs, [jobId]: next };
     this.emit();
+
+    const range = `${cur.modelKey} · F${cur.fromFrame}-F${cur.toFrame}`;
+    if (payload.type === "job_completed") {
+      useToastStore.getState().push({ msg: "AI 传播完成", sub: range, kind: "success" });
+    } else if (payload.type === "job_failed") {
+      useToastStore.getState().push({
+        msg: "AI 传播失败",
+        sub: payload.error_message ?? cur.errorMessage ?? range,
+        kind: "error",
+      });
+    } else if (payload.type === "job_cancelled") {
+      useToastStore.getState().push({ msg: "AI 传播已取消", sub: range, kind: "warning" });
+    }
 
     if (payload.type === "job_completed" || payload.type === "job_cancelled") {
       this.invalidateAnnotations(cur.taskId);

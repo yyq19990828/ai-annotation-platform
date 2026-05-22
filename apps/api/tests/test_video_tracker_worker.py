@@ -151,6 +151,47 @@ async def test_tracker_worker_marks_unknown_model_failed(db_session, super_admin
     assert annotation.geometry["type"] == "bbox"
 
 
+def test_apply_tracker_results_only_backfills_grid_frames():
+    """采样开启 (grid_step>1) 时只回填网格帧，off-grid 预测帧丢弃。"""
+    from app.services.video_tracker_runner import apply_tracker_results
+
+    annotation = Annotation(
+        annotation_type="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "x": 1, "y": 2, "w": 10, "h": 12},
+    )
+    job = VideoTrackerJob(
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="sam2_video",
+        direction="forward",
+        from_frame=0,
+        to_frame=30,
+        prompt={},
+        event_channel="video-tracker-job:test",
+    )
+    results = [
+        TrackerFrameResult(
+            frame_index=i,
+            geometry={"type": "bbox", "x": float(i), "y": 0.0, "w": 5.0, "h": 5.0},
+            confidence=0.9,
+            outside=False,
+        )
+        for i in range(0, 31)
+    ]
+
+    apply_tracker_results(annotation, job, results, grid_step=10)
+
+    frames = [kf["frame_index"] for kf in annotation.geometry["keyframes"]]
+    # 手动 seed 帧 0 + 网格预测帧 10/20/30；1..9/11..29 等 off-grid 帧不持久化。
+    assert frames == [0, 10, 20, 30]
+    assert annotation.geometry["keyframes"][0]["source"] == "manual"
+    assert all(
+        kf["source"] == "prediction"
+        for kf in annotation.geometry["keyframes"]
+        if kf["frame_index"] != 0
+    )
+
+
 async def test_tracker_worker_preserves_partial_results_on_cancel(
     db_session, super_admin
 ):

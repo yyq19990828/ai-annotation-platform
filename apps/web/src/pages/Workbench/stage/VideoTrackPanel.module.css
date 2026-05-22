@@ -138,9 +138,9 @@
 /* Temporary bridge until Button stops applying inline base styles. */
 .frameActionButton {
   min-height: 30px !important;
-  justify-content: center !important;
+  justify-content: flex-start !important;
   border-radius: 8px !important;
-  padding: 3px 6px !important;
+  padding: 3px 8px !important;
   font-size: 12px !important;
 }
 
@@ -470,15 +470,21 @@
 .keyframeTable {
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  overflow: clip;
+  overflow-x: clip;
+  overflow-y: auto;
+  max-height: 320px;
 }
 
 .keyframeHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: grid;
   grid-template-columns: 46px minmax(54px, 1fr) minmax(64px, auto);
   gap: 6px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
   color: var(--color-fg-muted);
   font-size: 10px;
   font-weight: 600;

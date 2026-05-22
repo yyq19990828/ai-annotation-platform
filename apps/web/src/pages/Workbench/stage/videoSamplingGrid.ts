@@ -38,10 +38,15 @@ function clamp(value: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, value));
 }
 
-/** 严格大于 f 的最近网格点；到尾部钳到 maxFrame。 */
+/**
+ * 严格大于 f 的最近网格点。尾部不足一格（下一网格点已越过 maxFrame）时停在当前位置，
+ * **不落到 off-grid 的 maxFrame** —— 否则 step=30/maxFrame=299 时会跳到 299 再卡死
+ * （gridNext(299)=299 反复同值）。最末几帧（末网格点~maxFrame）靠 Shift 逃生口微调到达。
+ */
 export function gridNext(f: number, step: number, maxFrame: number): number {
   const N = Math.max(1, step);
-  return Math.min(maxFrame, Math.ceil((f + 1) / N) * N);
+  const next = (Math.floor(f / N) + 1) * N;
+  return next <= maxFrame ? next : f;
 }
 
 /** 严格小于 f 的最近网格点；到头部钳到 0。 */

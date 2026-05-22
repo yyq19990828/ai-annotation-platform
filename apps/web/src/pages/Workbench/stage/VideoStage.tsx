@@ -837,14 +837,28 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   }, [fitViewport, manifest?.task_id, videoPixelHeight, videoPixelWidth, viewportSize.h, viewportSize.w]);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+    // 注意：不在此处捕获 containerRef.current。容器在 isLoading / 无 manifest 时不渲染
+    // （见下方 return 占位），若刷新页面时 manifest 异步加载，本 effect 首跑时 container
+    // 还是 null，捕获 + 早退会导致监听永不挂载、且 deps 稳定不再重跑 → ctrl+滚轮缩放“刷新后失效”。
+    // 改为在 handler 内实时读 containerRef.current，监听只要 VideoStage 挂载就在。
     const onWheel = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
-      const target = e.target;
-      if (!(target instanceof Node) || !el.contains(target)) return;
-      e.preventDefault();
+      const el = containerRef.current;
+      if (!el) return;
+      // 用几何边界判断指针是否在舞台内，而非 el.contains(e.target)：
+      // 悬在 portal 渲染的浮层（tooltip / 播放浮层 / 框标签等，DOM 上不在 el 子树）上时
+      // contains() 为 false 会直接 return，preventDefault 不执行 → 浏览器把 ctrl+滚轮当成
+      // 页面缩放，舞台缩放“偶现失效”。几何判断对 portal 浮层同样生效。
       const rect = el.getBoundingClientRect();
+      if (
+        e.clientX < rect.left ||
+        e.clientX > rect.right ||
+        e.clientY < rect.top ||
+        e.clientY > rect.bottom
+      ) {
+        return;
+      }
+      e.preventDefault();
       const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
       zoomAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current.scale * factor);
     };

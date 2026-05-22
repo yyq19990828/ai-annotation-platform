@@ -104,8 +104,11 @@ describe("grid navigation step=5 (e.g. 5fps from 25fps)", () => {
 
 describe("grid navigation boundaries", () => {
   const step = 5;
-  it("gridNext clamps to maxFrame at the tail", () => {
-    expect(gridNext(98, step, 99)).toBe(99); // ceil(99/5)*5=100 → clamp 99
+  it("gridNext stays on grid at the tail (never lands off-grid maxFrame)", () => {
+    // 网格点 0,5,...,95；max=99 时末网格点是 95。
+    expect(gridNext(90, step, 99)).toBe(95);
+    expect(gridNext(95, step, 99)).toBe(95); // 末网格点，无更靠后网格 → 停住
+    expect(gridNext(98, step, 99)).toBe(98); // off-grid 尾部，不前进、也不跳到 99
     expect(gridNext(99, step, 99)).toBe(99);
   });
   it("gridPrev clamps to 0 at the head", () => {
@@ -119,5 +122,19 @@ describe("grid navigation boundaries", () => {
   it("microStep clamps both ends", () => {
     expect(microStep(0, -1, 99)).toBe(0);
     expect(microStep(99, 1, 99)).toBe(99);
+  });
+});
+
+describe("regression: 2fps from 60fps (step=30, max=299) tail does not stick", () => {
+  const step = 30;
+  const max = 299; // frame_count=300 → maxFrame=299，末网格点是 270
+  it("gridNext climbs grid then stops at 270 (no jump to off-grid 299, no stick)", () => {
+    expect(gridNext(240, step, max)).toBe(270);
+    expect(gridNext(270, step, max)).toBe(270); // 旧 bug：→299，再 →299 卡死
+    expect(gridNext(299, step, max)).toBe(299); // 即便误落 299，也不再反复同值卡死
+  });
+  it("gridPrev from off-grid tail returns to grid", () => {
+    expect(gridPrev(299, step, max)).toBe(270);
+    expect(gridPrev(270, step, max)).toBe(240);
   });
 });
