@@ -21,6 +21,20 @@
   min-width: 0;
 }
 
+.chromeControls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.chromeDivider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 18px;
+  background: var(--color-border);
+}
+
 .navRow {
   gap: 6px;
 }
@@ -108,4 +122,30 @@
 
 .compactGhostButtonOpen {
   background: var(--color-bg-hover) !important;
+}
+
+.chromeButton {
+  padding: 3px 7px !important;
+  color: var(--color-fg-muted) !important;
+}
+
+.chromeIconButton {
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  border-color: transparent !important;
+  border-radius: var(--radius-sm) !important;
+  background: transparent !important;
+  color: var(--color-fg-muted) !important;
+}
+
+.chromeIconButton:hover {
+  background: var(--color-bg-hover) !important;
+  color: var(--color-fg) !important;
+}
+
+.chromeIconButtonActive {
+  color: var(--color-fg) !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }

@@ -1045,6 +1045,30 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     handleAnnotationGroup,
     handleAnnotationUngroup,
   });
+
+  // 窄屏强制收两侧
+  const leftOpen = isNarrow ? false : s.leftOpen;
+  const rightOpen = isNarrow ? false : s.rightOpen;
+  const toggleLeftSidebar = useCallback(() => {
+    s.setLeftOpen(!s.leftOpen);
+  }, [s.leftOpen, s.setLeftOpen]);
+  const toggleRightSidebar = useCallback(() => {
+    s.setRightOpen(!s.rightOpen);
+  }, [s.rightOpen, s.setRightOpen]);
+  useEffect(() => {
+    if (stageKind !== "image") return;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        setFitTick((n) => n + 1);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [leftOpen, rightOpen, stageKind]);
+
   if (isProjectLoading) {
     return <WorkbenchSkeleton />;
   }
@@ -1069,10 +1093,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     );
   }
 
-  // 窄屏强制收两侧
-  const leftOpen = isNarrow ? false : s.leftOpen;
-  const rightOpen = isNarrow ? false : s.rightOpen;
-
   const propagateDialogTrack = propagateDialog?.annotation ?? null;
   const propagateDialogNextKeyframe = propagateDialogTrack
     ? [...propagateDialogTrack.geometry.keyframes]
@@ -1084,11 +1104,11 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
   return (
     <>
     <WorkbenchLayout
-      gridTemplateColumns={`${leftOpen ? `${s.leftWidth}px` : "32px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "32px"}`}
+      gridTemplateColumns={`${leftOpen ? `${s.leftWidth}px` : "0px"} 48px 1fr ${rightOpen ? `${s.rightWidth}px` : "0px"}`}
       taskQueue={{
         open: leftOpen, projectName, projectDisplayId, classes, classesConfig: currentProject?.classes_config,
         activeClass: s.activeClass, recentClasses, tasks, taskId, taskIdx, hasNextPage,
-        isFetchingNextPage, onFetchNextPage: fetchNextPage, onBack, onToggle: () => s.setLeftOpen(!s.leftOpen),
+        isFetchingNextPage, onFetchNextPage: fetchNextPage,
         onSelectTask: selectTask, batches: activeBatches, selectedBatchId, onSelectBatch: handleSelectBatch,
         totalCount: tasksTotal, isOwner, onGoToBatchSettings: () => { if (projectId) navigate(`/projects/${projectId}/settings?section=batches`); },
         width: s.leftWidth, onResize: s.setLeftWidth,
@@ -1136,6 +1156,11 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         task, taskIdx, taskTotal: tasks.length, aiRunning, batchStatus: currentBatchStatus,
         isSubmitting: topbarActions.isSubmitting ?? submitTaskMut.isPending, confThreshold: s.confThreshold,
         onShowHotkeys: () => setShowHotkeys(true),
+        onBack,
+        leftSidebarOpen: leftOpen,
+        rightSidebarOpen: rightOpen,
+        onToggleLeftSidebar: toggleLeftSidebar,
+        onToggleRightSidebar: toggleRightSidebar,
         onRunAi: () => {
           const nextOpen = !aiPopoverOpen;
           setAiPopoverOpen(nextOpen);
@@ -1279,7 +1304,7 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
         aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
         userBoxes, selectedId: s.selectedId, selectedIds: s.selectedIds,
         dimmedAiIds,
-        imageWidth, imageHeight, onToggle: () => s.setRightOpen(!s.rightOpen),
+        imageWidth, imageHeight,
         onSelect: handleSelectBox,
         onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction,

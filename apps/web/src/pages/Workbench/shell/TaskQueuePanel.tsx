@@ -24,8 +24,6 @@ interface TaskQueuePanelProps {
   hasNextPage: boolean | undefined;
   isFetchingNextPage: boolean;
   onFetchNextPage: () => void;
-  onBack: () => void;
-  onToggle: () => void;
   onSelectTask: (id: string) => void;
   batches?: BatchResponse[];
   selectedBatchId: string | null;
@@ -159,7 +157,7 @@ export function TaskQueuePanel({
   open, projectName, projectDisplayId, classes, classesConfig, activeClass, recentClasses,
   tasks, taskId, taskIdx,
   hasNextPage, isFetchingNextPage, onFetchNextPage,
-  onBack, onToggle, onSelectTask,
+  onSelectTask,
   batches, selectedBatchId, onSelectBatch,
   totalCount, isOwner, onGoToBatchSettings,
   width, onResize,
@@ -206,27 +204,12 @@ export function TaskQueuePanel({
   }, [open, activeTaskIndex, virtualizer]);
 
   if (!open) {
-    return (
-      <div className={styles.collapsed}>
-        <button onClick={onToggle} title="展开任务列表" className={styles.collapsedToggle}>
-          <Icon name="panelLeft" size={16} />
-          <span className={styles.collapsedLabel}>任务列表</span>
-        </button>
-      </div>
-    );
+    return null;
   }
 
   return (
     <div className={styles.root}>
       <div className={styles.header}>
-        <div className={styles.headerActions}>
-          <Button variant="ghost" size="sm" onClick={onBack} className={styles.compactButton}>
-            <Icon name="chevLeft" size={11} />返回
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onToggle} title="收起任务列表" className={styles.compactButton}>
-            <Icon name="panelLeft" size={14} />
-          </Button>
-        </div>
         <div className={styles.projectName}>{projectName}</div>
         <div className={styles.projectMeta}>
           <span className="mono">{projectDisplayId}</span> · {classes.length} 个类别

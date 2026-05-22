@@ -69,7 +69,6 @@ interface AIInspectorPanelProps {
   commentAnchor?: AnnotationCommentAnchor | null;
   /** I4 · 任务 id; selectedAnnotation 为 null 时 CommentsPanel 走 task 级降级展示. */
   taskId?: string | null;
-  onToggle: () => void;
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
   onAcceptPrediction: (b: AiBox) => void;
@@ -105,7 +104,6 @@ export function AIInspectorPanel({
   hasMorePredictions, isFetchingMorePredictions, onFetchMorePredictions,
   currentFrameIndex, onSeekFrame, commentAnchor,
   taskId,
-  onToggle,
   onSelect, onAcceptPrediction, onRejectPrediction, onRefinePrediction, onRefineUserPolygon,
   onClearSelection, onDeleteUserBox, onChangeUserBoxClass,
   onToggleUserBoxFlag,
@@ -117,14 +115,7 @@ export function AIInspectorPanel({
     : selectedId ? new Set([selectedId]) : new Set<string>();
   const multiCount = selSet.size > 1 ? selSet.size : 0;
   if (!open) {
-    return (
-      <div className={styles.collapsedShell}>
-        <button onClick={onToggle} title="展开标注详情" className={styles.collapsedButton}>
-          <Icon name="panelRight" size={16} />
-          <span className={styles.collapsedLabel}>标注详情</span>
-        </button>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -133,9 +124,6 @@ export function AIInspectorPanel({
       <div className={styles.panelHeader}>
         <div className={styles.panelHeaderRow}>
           <b className={styles.panelTitle}>标注详情</b>
-          <Button variant="ghost" size="sm" onClick={onToggle} title="收起标注详情" className={styles.compactIconButton}>
-            <Icon name="panelRight" size={14} />
-          </Button>
         </div>
       </div>
 

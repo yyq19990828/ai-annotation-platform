@@ -1,16 +1,31 @@
 /* v0.10.12 · CSP style-src 收紧续推 — WorkbenchLayout.tsx inline style 迁移. */
 
 .root {
-  display: grid;
-  grid-template-columns: var(--workbench-grid-template);
+  position: relative;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   overflow: hidden;
   background: var(--color-bg-sunken);
-  position: relative;
+}
+
+.bodyGrid {
+  display: grid;
+  grid-template-columns: var(--workbench-grid-template);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sideSlot {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .centerColumn {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   overflow: hidden;
 }

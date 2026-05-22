@@ -61,17 +61,25 @@ export function WorkbenchLayout({
       ref={rootRef}
       className={styles.root}
     >
-      <TaskQueuePanel {...taskQueue} />
-      <ToolDock {...toolDock} />
+      <Topbar {...topbar} />
 
-      <div className={styles.centerColumn}>
-        <WorkbenchBanners {...banners} />
-        <Topbar {...topbar} />
-        <WorkbenchStageHost ref={videoControlsRef} {...stageHost} />
-        <StatusBar {...statusBar} />
+      <div className={styles.bodyGrid}>
+        <div className={styles.sideSlot}>
+          <TaskQueuePanel {...taskQueue} />
+        </div>
+        <ToolDock {...toolDock} />
+
+        <div className={styles.centerColumn}>
+          <WorkbenchBanners {...banners} />
+          <WorkbenchStageHost ref={videoControlsRef} {...stageHost} />
+          <StatusBar {...statusBar} />
+        </div>
+
+        <div className={styles.sideSlot}>
+          <AIInspectorPanel {...inspector} />
+        </div>
       </div>
 
-      <AIInspectorPanel {...inspector} />
       <AIPredictionPopover {...aiPopover} />
       <HotkeyCheatSheet {...hotkeys} />
       <OfflineQueueDrawer {...offlineQueue} />

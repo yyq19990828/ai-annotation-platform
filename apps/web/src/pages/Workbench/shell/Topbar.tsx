@@ -19,6 +19,11 @@ interface TopbarProps {
   /** 当前置信度阈值（0~1）；变化时短暂浮出反馈，给 [ ] 盲调用。 */
   confThreshold?: number;
   onShowHotkeys: () => void;
+  onBack?: () => void;
+  leftSidebarOpen?: boolean;
+  rightSidebarOpen?: boolean;
+  onToggleLeftSidebar?: () => void;
+  onToggleRightSidebar?: () => void;
   onRunAi: () => void;
   aiDisabled?: boolean;
   onPrev: () => void;
@@ -62,7 +67,8 @@ function cn(...xs: Array<string | false | null | undefined>): string {
  */
 export function Topbar({
   task, taskIdx, taskTotal, aiRunning, batchStatus, isSubmitting, confThreshold,
-  onShowHotkeys, onRunAi, aiDisabled = false, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
+  onShowHotkeys, onBack, leftSidebarOpen, rightSidebarOpen, onToggleLeftSidebar, onToggleRightSidebar,
+  onRunAi, aiDisabled = false, onPrev, onNext, onSubmit, onSmartNextOpen, onSmartNextUncertain,
   overflowSlot,
   canWithdraw = false, canReopen = false, isWithdrawing = false, isReopening = false,
   onWithdraw, onReopen,
@@ -102,6 +108,25 @@ export function Topbar({
     <div className={styles.topbar}>
       {/* 左：标题段 — display_id 主、文件名次、索引徽章右贴 */}
       <div className={styles.titleRow}>
+        <div className={styles.chromeControls}>
+          {onBack && (
+            <Button variant="ghost" size="sm" onClick={onBack} className={styles.chromeButton}>
+              <Icon name="chevLeft" size={13} />返回
+            </Button>
+          )}
+          {onToggleLeftSidebar && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleLeftSidebar}
+              title={leftSidebarOpen ? "收起任务列表" : "展开任务列表"}
+              className={cn(styles.chromeIconButton, leftSidebarOpen && styles.chromeIconButtonActive)}
+            >
+              <Icon name="panelLeft" size={14} />
+            </Button>
+          )}
+        </div>
+        <span className={styles.chromeDivider} />
         <span
           className={cn("mono", styles.taskId)}
         >
@@ -229,6 +254,17 @@ export function Topbar({
 
       {/* 右：AI 主操作（annotate）或 ReviewerMini chip（review）+ 溢出菜单 */}
       <div className={styles.rightRow}>
+        {onToggleRightSidebar && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleRightSidebar}
+            title={rightSidebarOpen ? "收起标注详情" : "展开标注详情"}
+            className={cn(styles.chromeIconButton, rightSidebarOpen && styles.chromeIconButtonActive)}
+          >
+            <Icon name="panelRight" size={14} />
+          </Button>
+        )}
         {reviewInfoSlot}
         {showThr && confThreshold !== undefined && (
           <span
