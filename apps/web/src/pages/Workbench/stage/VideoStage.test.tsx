@@ -792,7 +792,18 @@ describe("VideoStage", () => {
     fireEvent.keyDown(window, { key: "0" });
     await waitFor(() => expect(surface).toHaveStyle({ "--video-stage-transform": "translate(-250px, -125px) scale(1)" }));
 
-    fireEvent.wheel(stage, { ctrlKey: true, deltaY: -100, clientX: 250, clientY: 125 });
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY: -100,
+      clientX: 250,
+      clientY: 125,
+    });
+    act(() => {
+      overlay.dispatchEvent(wheelEvent);
+    });
+    expect(wheelEvent.defaultPrevented).toBe(true);
     await waitFor(() => expect(surface.style.getPropertyValue("--video-stage-transform")).toContain("scale(1.1)"));
     await waitFor(() => {
       expect(getByTestId("minimap-current-frame").parentElement?.style.getPropertyValue("--minimap-bottom")).toBe("64px");

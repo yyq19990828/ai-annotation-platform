@@ -820,13 +820,15 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
+      const target = e.target;
+      if (!(target instanceof Node) || !el.contains(target)) return;
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
       zoomAt(e.clientX - rect.left, e.clientY - rect.top, vpRef.current.scale * factor);
     };
-    el.addEventListener("wheel", onWheel, { capture: true, passive: false });
-    return () => el.removeEventListener("wheel", onWheel, { capture: true });
+    window.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    return () => window.removeEventListener("wheel", onWheel, { capture: true });
   }, [vpRef, zoomAt]);
 
   useEffect(() => {
