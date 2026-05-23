@@ -27,6 +27,7 @@ import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { predictionsApi } from "@/api/predictions";
 import type { Annotation, TaskResponse, AnnotationResponse } from "@/types";
+import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState } from "./useWorkbenchState";
 import { useToolBindings } from "./useToolBindings";
@@ -1402,7 +1403,7 @@ export function useWorkbenchShellModel({
       open: modeState.rejectModal.open, count: 1, onClose: modeState.rejectModal.onClose,
       onConfirm: modeState.rejectModal.onConfirm, skipReasonHint: modeState.rejectModal.skipReasonHint,
     } : undefined,
-    guidePanel: projectId ? {
+    guidePanel: ANNOTATION_GUIDE_UI_ENABLED && projectId ? {
       projectId,
       content: (currentProject as unknown as { annotation_guide?: string | null } | undefined)?.annotation_guide ?? null,
     } : undefined,

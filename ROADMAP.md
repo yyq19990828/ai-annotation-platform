@@ -63,6 +63,7 @@
   - **predictions import / AAP JSON 适配新几何**（**P3**）:[`internal_geometry_to_ls_shape`](apps/api/app/services/predictions_import.py) 仍只覆盖 bbox / polygon / multi_polygon,rotated_bbox / polyline / keypoint 进 errors[]。与 §A「AAP JSON video_track 导入支持」同窗口做。
   - **ML backend 输出新几何**（**P3**）:`prediction.py` 的 LS shape 适配把 `keypointlabels` / `linelabels` 当前**归 bbox 占位**;真正让外部模型预测 rotated_bbox / polyline / keypoint 需要补 `to_internal_shape` 分支 + ML backend 协议侧约定。触发条件:有支持这些输出的模型接入。
 - **Annotation Guide 配套延伸**（v0.10.13 之后开放项，按客户反馈触发）：
+  - ⚠️ **前端 UI 已整体下线**（feature flag `ANNOTATION_GUIDE_UI_ENABLED=false`，关闭工作台 GuidePanel 浮层 + 项目设置「标注指引」tab）。功能形态待重新设计，后端 API / 数据保留。**下列延伸项在前端重新启用前不开工**。
   - **guide_assets 跨项目 deepcopy（Stage 2）**（**P3**）：v0.10.13 复制 / v0.10.14 模板都让 storage key 共享或干脆不携带 assets，源项目删 asset 会让依赖项目失效。触发条件：客户大量在 guide 中用图（首版人均 ≥ 5 张）且明确反馈需要"应用模板时复制图片到新项目独立 namespace"。实现走 Celery worker 异步 deepcopy storage 对象到新项目 prefix + 重写 markdown 中的 `guide-asset:KEY` 引用。
   - **guide_assets orphan GC**（**P3**）：当前 `PATCH /projects/{id}` 改 `annotation_guide` 时不清理 markdown 中已不被引用的 asset；UI 留「清理未引用资源」按钮口子但未实现。触发条件：客户反馈 storage 占用异常或单项目 guide_assets 数量超 50。
   - **工作台 guide 浮层适配视频 / 多模态**（**P3**）：当前 `GuidePanel` 仅在 image 工作台试过；video / 3D 工作台 layout 不同，浮层定位需要单独适配。触发条件：video 项目第一次配 annotation_guide。

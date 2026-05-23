@@ -19,6 +19,7 @@ import { RenderingConfigSection } from "./sections/RenderingConfigSection";
 import { VideoSamplingSection } from "./sections/VideoSamplingSection";
 import { AnnotationGuideSection } from "./sections/AnnotationGuideSection";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import styles from "./ProjectSettingsPage.module.css";
 
 type SectionKey =
@@ -83,7 +84,9 @@ export function ProjectSettingsPage() {
   // v0.6.7 B-12-④：解析 ?section=batches 等深链参数。
   const initialSection = (() => {
     const q = searchParams.get("section");
-    return q && (VALID_SECTIONS as string[]).includes(q) ? (q as SectionKey) : "general";
+    if (!q || !(VALID_SECTIONS as string[]).includes(q)) return "general";
+    if (q === "annotation-guide" && !ANNOTATION_GUIDE_UI_ENABLED) return "general";
+    return q as SectionKey;
   })();
   const [section, setSection] = useState<SectionKey>(initialSection);
 
@@ -106,6 +109,8 @@ export function ProjectSettingsPage() {
     if (s.key === "danger") return isOwner;
     // v0.10.29 · 视频帧采样仅对 video 项目展示。
     if (s.key === "video-sampling") return isVideoProject;
+    // Annotation Guide 前端暂时下线（见 featureFlags）。
+    if (s.key === "annotation-guide") return ANNOTATION_GUIDE_UI_ENABLED;
     return true;
   });
 
