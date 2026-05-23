@@ -155,6 +155,40 @@ def parse_ffprobe_frame_timetable(payload: dict[str, Any]) -> list[dict[str, Any
     return out
 
 
+def parse_ffprobe_packet_samples(
+    payload: dict[str, Any], start_frame: int
+) -> list[dict[str, Any]]:
+    packets = payload.get("packets") or []
+    valid: list[dict[str, Any]] = []
+    for pkt in packets:
+        pos = _parse_int(pkt.get("pos"))
+        pts_time = pkt.get("pts_time")
+        if pos is None or pts_time in (None, "N/A"):
+            continue
+        pts_ms = int(round(float(pts_time) * 1000))
+        dur = pkt.get("duration_time")
+        duration_ms = int(round(float(dur) * 1000)) if dur not in (None, "N/A") else 0
+        size_bytes = _parse_int(pkt.get("size")) or 0
+        flags = pkt.get("flags") or ""
+        is_keyframe = "K" in flags
+        valid.append(
+            {
+                "pts_ms": pts_ms,
+                "duration_ms": duration_ms,
+                "is_keyframe": is_keyframe,
+                "size_bytes": size_bytes,
+                "offset_in_chunk": pos,
+            }
+        )
+    if not valid:
+        return []
+    order = sorted(range(len(valid)), key=lambda i: valid[i]["pts_ms"])
+    rank = {idx: r for r, idx in enumerate(order)}
+    for i in range(len(valid)):
+        valid[i]["frame_index"] = start_frame + rank[i]
+    return valid
+
+
 def probe_video_file(path: str | Path) -> dict[str, Any]:
     proc = subprocess.run(
         [
@@ -204,6 +238,31 @@ def probe_video_frame_timetable(path: str | Path) -> list[dict[str, Any]]:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "ffprobe frame timetable failed")
     return parse_ffprobe_frame_timetable(json.loads(proc.stdout or "{}"))
+
+
+def probe_chunk_samples(path: str | Path, start_frame: int) -> list[dict[str, Any]]:
+    proc = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_packets",
+            "-show_entries",
+            "packet=pts_time,dts_time,duration_time,size,pos,flags",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=FFPROBE_TIMEOUT_SECONDS,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "ffprobe packet probe failed")
+    return parse_ffprobe_packet_samples(json.loads(proc.stdout or "{}"), start_frame)
 
 
 def extract_video_poster(input_path: str | Path, output_path: str | Path) -> None:
@@ -895,6 +954,35 @@ async def _chunk_diagnostics(
     }
 
 
+def _webcodecs_codec_string(output_codec: str | None) -> str:
+    normalized = (output_codec or "").lower()
+    if "hevc" in normalized or "h265" in normalized:
+        return "hev1.1.6.L93.B0"
+    return "avc1.4d001e"
+
+
+def _extract_chunk_samples(
+    chunk_path: Path,
+    start_frame: int,
+    metadata: VideoMetadata,
+    output_codec: str | None,
+) -> dict[str, Any]:
+    """扫 chunk mp4 的 packet, 提取 sample manifest (WebCodecs demux 用)。失败返回 {}。"""
+    try:
+        samples = probe_chunk_samples(chunk_path, start_frame)
+        if not samples:
+            return {}
+        codec_string = _webcodecs_codec_string(output_codec)
+        return {
+            "codec_string": codec_string,
+            "width": metadata.width or 0,
+            "height": metadata.height or 0,
+            "samples": samples,
+        }
+    except Exception:
+        return {}
+
+
 async def _store_video_chunk(
     db,
     storage,
@@ -949,6 +1037,11 @@ async def _store_video_chunk(
     row.storage_key = key
     row.byte_size = len(body)
     row.generation_mode = generation_mode
+    sample_meta = _extract_chunk_samples(
+        output_path, row.start_frame, metadata, diagnostics.get("output_codec")
+    )
+    if sample_meta:
+        diagnostics.update(sample_meta)
     row.diagnostics = diagnostics
     row.status = "ready"
     row.error = None

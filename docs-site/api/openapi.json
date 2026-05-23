@@ -13304,6 +13304,86 @@
         "title": "VideoChunkOut",
         "type": "object"
       },
+      "VideoChunkSampleOut": {
+        "properties": {
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "is_keyframe": {
+            "title": "Is Keyframe",
+            "type": "boolean"
+          },
+          "offset_in_chunk": {
+            "title": "Offset In Chunk",
+            "type": "integer"
+          },
+          "pts_ms": {
+            "title": "Pts Ms",
+            "type": "integer"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame_index",
+          "pts_ms",
+          "duration_ms",
+          "is_keyframe",
+          "size_bytes",
+          "offset_in_chunk"
+        ],
+        "title": "VideoChunkSampleOut",
+        "type": "object"
+      },
+      "VideoChunkSamplesResponse": {
+        "properties": {
+          "chunk_id": {
+            "title": "Chunk Id",
+            "type": "integer"
+          },
+          "codec_string": {
+            "title": "Codec String",
+            "type": "string"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/VideoChunkSampleOut"
+            },
+            "title": "Samples",
+            "type": "array"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "chunk_id",
+          "codec_string",
+          "width",
+          "height",
+          "samples"
+        ],
+        "title": "VideoChunkSamplesResponse",
+        "type": "object"
+      },
       "VideoChunksResponse": {
         "properties": {
           "chunk_size_frames": {
@@ -28144,6 +28224,63 @@
           }
         ],
         "summary": "Get Video Chunk",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/chunks/{chunk_id}/samples": {
+      "get": {
+        "operationId": "get_video_chunk_samples_api_v1_videos__dataset_item_id__chunks__chunk_id__samples_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "chunk_id",
+            "required": true,
+            "schema": {
+              "title": "Chunk Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChunkSamplesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Chunk Samples",
         "tags": [
           "videos"
         ]

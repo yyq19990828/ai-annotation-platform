@@ -38,6 +38,24 @@ class VideoChunksResponse(BaseModel):
     chunks: list[VideoChunkOut]
 
 
+class VideoChunkSampleOut(BaseModel):
+    frame_index: int
+    pts_ms: int
+    duration_ms: int
+    is_keyframe: bool
+    size_bytes: int
+    offset_in_chunk: int
+
+
+class VideoChunkSamplesResponse(BaseModel):
+    dataset_item_id: UUID
+    chunk_id: int
+    codec_string: str
+    width: int
+    height: int
+    samples: list[VideoChunkSampleOut]
+
+
 class VideoFrameOut(BaseModel):
     frame_index: int
     width: int
