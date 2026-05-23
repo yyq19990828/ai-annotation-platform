@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from app.db.models.async_job import AsyncJobStatus
+from app.db.models.project import Project
 from app.services import async_job as async_job_svc
 
 
@@ -141,6 +142,73 @@ class TestAsyncJobsAPI:
         )
         assert r.status_code == 200
         assert r.json()["total"] >= 1
+
+    async def test_list_filters_and_project_meta(
+        self, httpx_client_bound, db_session, annotator
+    ):
+        user, token = annotator
+        project = Project(
+            display_id="PROJ-AJ-1",
+            name="Async Jobs Project",
+            type_label="Image Classification",
+            type_key="image_classification",
+            owner_id=user.id,
+        )
+        other_project = Project(
+            display_id="PROJ-AJ-2",
+            name="Other Project",
+            type_label="Image Classification",
+            type_key="image_classification",
+            owner_id=user.id,
+        )
+        db_session.add_all([project, other_project])
+        await db_session.flush()
+
+        matching = await async_job_svc.create_job(
+            db_session,
+            kind="batch_predict",
+            user_id=user.id,
+            project_id=project.id,
+            payload={
+                "prompt": "detect buses",
+                "batch_display_id": "BATCH-AJ-1",
+            },
+        )
+        await async_job_svc.mark_running(db_session, matching.id)
+        await async_job_svc.create_job(
+            db_session,
+            kind="batch_predict",
+            user_id=user.id,
+            project_id=project.id,
+            payload={"prompt": "detect cars", "batch_display_id": "BATCH-AJ-2"},
+        )
+        await async_job_svc.create_job(
+            db_session,
+            kind="batch_predict",
+            user_id=user.id,
+            project_id=other_project.id,
+            payload={"prompt": "detect buses", "batch_display_id": "BATCH-AJ-3"},
+        )
+        await db_session.flush()
+
+        r = await httpx_client_bound.get(
+            "/api/v1/async-jobs",
+            params=[
+                ("project_id", str(project.id)),
+                ("search", "BATCH-AJ-1"),
+                ("status", "pending"),
+                ("status", "running"),
+            ],
+            headers=_bearer(token),
+        )
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        item = body["items"][0]
+        assert item["id"] == str(matching.id)
+        assert item["project_display_id"] == "PROJ-AJ-1"
+        assert item["project_name"] == "Async Jobs Project"
 
     async def test_cancel_unsupported_kind_rejected(
         self, httpx_client_bound, db_session, annotator

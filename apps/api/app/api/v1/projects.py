@@ -951,6 +951,7 @@ async def trigger_preannotation(
         prompt=body.prompt,
         output_mode=body.output_mode,
         batch_id=str(body.batch_id) if body.batch_id else None,
+        user_id=str(current_user.id),
         params=body.params or None,
     )
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI

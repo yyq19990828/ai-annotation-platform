@@ -2378,6 +2378,17 @@
             "title": "Progress Pct",
             "type": "integer"
           },
+          "project_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Display Id"
+          },
           "project_id": {
             "anyOf": [
               {
@@ -2389,6 +2400,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
           },
           "result": {
             "additionalProperties": true,
@@ -16200,14 +16222,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "enum": [
-                    "pending",
-                    "running",
-                    "completed",
-                    "failed",
-                    "cancelled"
-                  ],
-                  "type": "string"
+                  "items": {
+                    "enum": [
+                      "pending",
+                      "running",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16230,6 +16255,40 @@
                 }
               ],
               "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
             }
           },
           {

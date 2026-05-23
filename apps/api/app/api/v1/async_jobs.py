@@ -11,11 +11,12 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
+from app.db.models.project import Project
 from app.db.models.user import User
 from app.deps import get_current_user, get_db
 from app.schemas.async_job import AsyncJobListResponse, AsyncJobOut
@@ -25,12 +26,47 @@ router = APIRouter()
 # MVP 范围：仅这两类支持取消（kind 集合见 §1.7 计划）
 CANCELLABLE_KINDS = {"predictions_import", "audit_archive"}
 
+AsyncJobStatusParam = Literal[
+    "pending", "running", "completed", "failed", "cancelled"
+]
+
+
+async def _to_async_job_out(
+    db: AsyncSession,
+    job: AsyncJob,
+    project_cache: dict[uuid.UUID, Project | None] | None = None,
+) -> AsyncJobOut:
+    project: Project | None = None
+    if job.project_id is not None:
+        if project_cache is None:
+            project = await db.get(Project, job.project_id)
+        else:
+            if job.project_id not in project_cache:
+                project_cache[job.project_id] = await db.get(Project, job.project_id)
+            project = project_cache[job.project_id]
+
+    payload_project_display_id = None
+    if isinstance(job.payload, dict):
+        raw_display_id = job.payload.get("project_display_id")
+        if isinstance(raw_display_id, str):
+            payload_project_display_id = raw_display_id
+
+    return AsyncJobOut.model_validate(job).model_copy(
+        update={
+            "project_display_id": (
+                project.display_id if project else payload_project_display_id
+            ),
+            "project_name": project.name if project else None,
+        }
+    )
+
 
 @router.get("/async-jobs", response_model=AsyncJobListResponse)
 async def list_async_jobs(
-    status: Literal["pending", "running", "completed", "failed", "cancelled"]
-    | None = Query(None),
+    status: list[AsyncJobStatusParam] | None = Query(default=None),
     kind: str | None = Query(None),
+    project_id: uuid.UUID | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=200),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -48,18 +84,33 @@ async def list_async_jobs(
         count_stmt = count_stmt.where(AsyncJob.user_id == current_user.id)
 
     if status:
-        stmt = stmt.where(AsyncJob.status == status)
-        count_stmt = count_stmt.where(AsyncJob.status == status)
+        stmt = stmt.where(AsyncJob.status.in_(status))
+        count_stmt = count_stmt.where(AsyncJob.status.in_(status))
     if kind:
         stmt = stmt.where(AsyncJob.kind == kind)
         count_stmt = count_stmt.where(AsyncJob.kind == kind)
+    if project_id:
+        stmt = stmt.where(AsyncJob.project_id == project_id)
+        count_stmt = count_stmt.where(AsyncJob.project_id == project_id)
+    search_text = search.strip() if search else ""
+    if search_text:
+        pattern = f"%{search_text}%"
+        search_filter = or_(
+            AsyncJob.payload["prompt"].astext.ilike(pattern),
+            AsyncJob.payload["batch_display_id"].astext.ilike(pattern),
+            AsyncJob.payload["model_key"].astext.ilike(pattern),
+        )
+        stmt = stmt.where(search_filter)
+        count_stmt = count_stmt.where(search_filter)
 
     stmt = stmt.order_by(AsyncJob.created_at.desc()).offset(offset).limit(limit)
     rows = (await db.execute(stmt)).scalars().all()
     total = (await db.execute(count_stmt)).scalar_one()
+    project_cache: dict[uuid.UUID, Project | None] = {}
 
     return AsyncJobListResponse(
-        items=[AsyncJobOut.model_validate(r) for r in rows], total=total
+        items=[await _to_async_job_out(db, r, project_cache) for r in rows],
+        total=total,
     )
 
 
@@ -77,7 +128,7 @@ async def get_async_job(
         and job.user_id != current_user.id
     ):
         raise HTTPException(status_code=403, detail="not your job")
-    return AsyncJobOut.model_validate(job)
+    return await _to_async_job_out(db, job)
 
 
 @router.post("/async-jobs/{job_id}/cancel")
