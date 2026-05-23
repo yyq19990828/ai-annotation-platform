@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks import _assert_task_visible
 from app.db.enums import UserRole
-from app.db.models.dataset import VideoFrameIndex
+from app.db.models.dataset import VideoChunk, VideoFrameIndex
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
@@ -29,6 +29,8 @@ from app.schemas.video_chapter import (
 )
 from app.schemas.video_frame_service import (
     VideoChunkOut,
+    VideoChunkSampleOut,
+    VideoChunkSamplesResponse,
     VideoChunksResponse,
     VideoFrameOut,
     VideoFramePrefetchRequest,
@@ -214,6 +216,37 @@ async def get_video_chunk(
         response.status_code = 202
         response.headers["Retry-After"] = str(body.retry_after or 3)
     return body
+
+
+@router.get(
+    "/{dataset_item_id}/chunks/{chunk_id}/samples",
+    response_model=VideoChunkSamplesResponse,
+)
+async def get_video_chunk_samples(
+    dataset_item_id: uuid.UUID,
+    chunk_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> VideoChunkSamplesResponse:
+    task = await _visible_video_task_for_item(db, dataset_item_id, current_user)
+    await build_context_from_dataset_item(db, dataset_item_id, task=task)
+    row = await db.scalar(
+        select(VideoChunk).where(
+            VideoChunk.dataset_item_id == dataset_item_id,
+            VideoChunk.chunk_id == chunk_id,
+        )
+    )
+    if row is None or not row.diagnostics or "samples" not in row.diagnostics:
+        raise HTTPException(status_code=404, detail="samples_not_available")
+    d = row.diagnostics
+    return VideoChunkSamplesResponse(
+        dataset_item_id=dataset_item_id,
+        chunk_id=chunk_id,
+        codec_string=d.get("codec_string", "avc1.4d001e"),
+        width=d.get("width", 0),
+        height=d.get("height", 0),
+        samples=[VideoChunkSampleOut(**s) for s in d["samples"]],
+    )
 
 
 @router.get("/{dataset_item_id}/frames/{frame_index}", response_model=VideoFrameOut)
