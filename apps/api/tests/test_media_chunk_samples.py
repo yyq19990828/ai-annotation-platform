@@ -1,7 +1,12 @@
+import base64
 import struct
 
+from app.schemas.task import VideoMetadata
+from app.workers import media
 from app.workers.media import (
     _avc_codec_string,
+    _extract_chunk_samples,
+    _extract_decoder_config,
     _find_mp4_box_payload,
     _hevc_codec_string,
     parse_ffprobe_packet_samples,
@@ -125,3 +130,70 @@ def test_hevc_codec_string_main_profile():
     hvcc[12] = 93  # level_idc
     assert _hevc_codec_string(bytes(hvcc)) == "hvc1.1.6.L93.B0"
     assert _hevc_codec_string(b"\x01\x02") is None
+
+
+def test_extract_decoder_config_avc(tmp_path):
+    payload = bytes.fromhex("0164000cffe1000a")
+    blob = b"\x00\x00\x00\x10ftypisom" + _box(b"avcC", payload)
+    p = tmp_path / "chunk.mp4"
+    p.write_bytes(blob)
+    codec, desc = _extract_decoder_config(p)
+    assert codec == "avc1.64000c"
+    assert base64.b64decode(desc) == payload
+
+
+def test_extract_decoder_config_hevc(tmp_path):
+    rec = bytearray(13)
+    rec[1] = 0x01
+    rec[2:6] = (0x60000000).to_bytes(4, "big")
+    rec[6] = 0xB0
+    rec[12] = 93
+    p = tmp_path / "chunk.mp4"
+    p.write_bytes(_box(b"hvcC", bytes(rec)))
+    codec, desc = _extract_decoder_config(p)
+    assert codec == "hvc1.1.6.L93.B0"
+    assert base64.b64decode(desc) == bytes(rec)
+
+
+def test_extract_decoder_config_missing(tmp_path):
+    p = tmp_path / "chunk.mp4"
+    p.write_bytes(b"no codec config box here")
+    assert _extract_decoder_config(p) == (None, None)
+    # 文件不存在 → 静默 (None, None)。
+    assert _extract_decoder_config(tmp_path / "nope.mp4") == (None, None)
+
+
+def test_extract_chunk_samples_includes_description(monkeypatch, tmp_path):
+    sample = {
+        "frame_index": 0,
+        "pts_ms": 0,
+        "duration_ms": 33,
+        "is_keyframe": True,
+        "size_bytes": 100,
+        "offset_in_chunk": 0,
+    }
+    monkeypatch.setattr(media, "probe_chunk_samples", lambda *a, **k: [sample])
+    monkeypatch.setattr(
+        media, "_extract_decoder_config", lambda _p: ("avc1.64000c", "Zm9v")
+    )
+    out = _extract_chunk_samples(
+        tmp_path / "c.mp4", 0, VideoMetadata(width=1920, height=1080), "h264"
+    )
+    assert out["codec_string"] == "avc1.64000c"
+    assert out["description"] == "Zm9v"
+    assert out["width"] == 1920 and out["height"] == 1080
+    assert out["samples"] == [sample]
+
+
+def test_extract_chunk_samples_falls_back_codec_without_config(monkeypatch, tmp_path):
+    monkeypatch.setattr(media, "probe_chunk_samples", lambda *a, **k: [{"frame_index": 0}])
+    monkeypatch.setattr(media, "_extract_decoder_config", lambda _p: (None, None))
+    # 无 avcC/hvcC → 退回旧启发式 codec_string, 且不带 description。
+    out = _extract_chunk_samples(tmp_path / "c.mp4", 0, VideoMetadata(), "hevc")
+    assert out["codec_string"] == "hev1.1.6.L93.B0"
+    assert "description" not in out
+
+
+def test_extract_chunk_samples_empty_when_no_packets(monkeypatch, tmp_path):
+    monkeypatch.setattr(media, "probe_chunk_samples", lambda *a, **k: [])
+    assert _extract_chunk_samples(tmp_path / "c.mp4", 0, VideoMetadata(), "h264") == {}
