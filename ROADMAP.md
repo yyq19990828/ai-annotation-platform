@@ -43,7 +43,6 @@
 - **大文件分片上传**（>5GB 视频 / 点云）
 - **数据集版本 snapshot + 主动学习闭环**（与训练队列一起做，长期规划 L1 / L2）
 - **2FA / TOTP**（super_admin 必选 / 其它角色可选）
-- **批次状态机二阶段：admin-locked + bulk-approve / bulk-reject**（ADR-0008 Proposed → 实施前补 scheduler 测试覆盖）
 - **长期方向**：见 [`ROADMAP/2026-05-12-long-term-strategy.md`](ROADMAP/2026-05-12-long-term-strategy.md)（数据中台、主动学习、合规认证、跨模态等 15 个方向）。
 
 ---
@@ -80,9 +79,7 @@
 - **大文件分片上传**：`POST /datasets/{id}/items/upload-init` 当前签发单次 PUT URL，不支持 multipart upload —— 大于 5GB 的视频 / 点云需要切分。
 - **数据集版本（snapshot）**：标注完成后无法生成「不可变快照」用于训练复现实验。
 - **批次相关延伸**：① 智能切批（按难度/类别/不确定度）；② 批次级 IAA / 共识合并算法；③ 不可变训练快照 + 主动学习闭环。调研报告 [docs/research/12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md)。
-- **批次状态机增补 · 二阶段**（v0.7.3 已收 3 条 owner 逆向迁移 + 4 项多选批量；v0.7.6 已收 reset → draft 终极重置；以下为延后项）：
-  - `annotating → active` 暂停：项目临时叫停。**难点**：调度器（`scheduler.check_auto_transitions`）一旦看到 `in_progress` task 就会立刻把 batch 推回 `annotating`，需要同时把 in_progress task 复位到 pending（释放标注员锁）+ 引入 batch 级「admin-locked」标志阻断调度器；ADR-0008 已 Proposed 但未实施。
-  - 批量状态迁移类（bulk-approve / bulk-reject）：v0.7.3 故意未做。reject 反馈是逐批次语义、approve 跳过逐批次审视有质检失职风险。落地前先讨论 UX。
+- **批次 hard pause（严格暂停语义）**（**P3**，源自 [ADR-0008](docs/adr/0008-batch-admin-locked-status.md) Alternatives B 划到范围外的部分）：v0.9.15 已落 `admin_locked` **soft hold**（冻结自动状态推进 + 阻断 `/tasks/next` 新派单）+ bulk-approve / bulk-reject。soft hold **不**保证锁后严格只读——`GET /tasks` / `GET /tasks/{id}` 仍可见、annotation 写接口仍放行、已 `in_progress` 的 task 不复位。若客户要"暂停后任何新进入者都不能打开 / 编辑该 batch，只允许现有会话收尾"，需单独收敛任务可见性查询 + task lock 归属校验 + annotation 写门禁，是另一个更重的设计题。触发条件：客户反馈 soft hold 不够、要求锁后硬只读。
 
 ### AI / 模型
 - **模型市场扩展 — 二期剩余 defer 项**：加权 AB 路由（按 task 自动分流打标，需路由配置 + 结果打标协议）、同输入双变体并排对比（工作台级独立 epic）、带 token 的观测容器（当前 observe URL 假定免鉴权）。触发条件按客户驱动。
@@ -96,7 +93,6 @@
   - **`predictions_import` 审计 detail 专项**（**P3**）：当前 audit log `detail_json` 含 imported/skipped/error_count；缺"哪些 task 被命中 / 哪些 model_version / 文件大小 hash"等取证字段。触发条件：审计期反馈 detail 不足以定位"哪批外部模型结果先被导入又被撤回"。设计在 `app/services/audit.py` 加 `predictions_import_detail()` helper.
 - **变体热切换后续延伸**（v0.10.23 之后开放项，按需触发）：
   - **`/setup.supported_variants` 富元数据**（**P3**）：当前变体选项来源是 `/setup.params` 的 `sam_variant`/`dino_variant` enum（纯字符串）；原需求 §3 设想的 `supported_variants` 数组（携带每变体显存占用 / 推荐档 / labels）未做。触发条件：模型市场二期 AB 路由 UI 需要按变体展示「显存 7GB / 精度高」等元数据时再扩。
-  - **grounded-sam2-backend lint 债**（**P3 maintenance**）：包内 `ruff check .` 仍有 ~179 报错（多为 vendor / 历史遗留，本期改动文件已全过）；触发条件：给该包加 CI lint gate 前需先清债或显式 exclude vendor。
 - **训练队列**：路由 `/training` 占位。等数据集 snapshot + 主动学习闭环成熟一并做。
 - **ML backend storage endpoint 选择机制（生产化）**（**P3**）：dev `ML_BACKEND_STORAGE_HOST` + ADR-0012 框架已收口；生产场景多变, 第一个生产部署遇到再扩策略表（"何时设、设啥值、何时留空"）。
 
@@ -155,12 +151,11 @@
 > 横向参考：CVAT（Konva + 关键帧 + 骨架）、Label Studio（interactive ML backend）、X-AnyLabeling（SAM 工厂）、Encord（SAM2 Smart Polygon + SAM3 文本驱动批量检测）。
 
 ### C.1 渲染性能 / 大图大量框
-- **大图 tile / 多边形 LOD / 双图比对**：多边形 LOD（I2）已落 v0.10.4；大图 tile（I1）与双图比对（I5）见 §C.7。
+- **大图 tile / 多边形 LOD**：多边形 LOD（I2）已落 v0.10.4；大图 tile（I1）见 §C.7。
 - **Annotation 列表后端分页**：与 B「Annotation keyset 分页」共建。`useAnnotations` 全量拉，单任务 1000+ 框阻塞渲染。
 
 ### C.3 标注体验（核心生产力杠杆）
 - **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90%；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式）。
-- **类别确认 hint**：刚画完一个框时，AI 后台跑一次单框分类，右上角弹「建议：标识牌（92%）」+ 一键采纳。
 - **Snap-to-edge（贴边吸附）**：v0.10.17 已落地 Magic Box（粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox）;剩 pixel-level Snap-to-edge（顶点拖动距已有形状边 < 阈值时吸附 / Canny/Sobel 边缘吸附)留 v0.11+。复用 `apps/web/src/pages/Workbench/stage/shared/geometry/polygon.ts:nearestEdge` 做几何吸附;Canny/Sobel 走 WebWorker 实测开销后再决定。
 - **会话级标注辅助**：① 框过小（< 0.005 × 0.005）已过滤，需提示「框太小未保存」；② 框越界自动 clamp 到 [0,1]；③ 重叠完全相同框（IoU > 0.95）拒绝并提示「疑似重复」。
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。
@@ -175,7 +170,6 @@
 
 - **I1 大图 tile**（v0.11.0 独立 epic，**必做**）：>4K 图后端 Celery 切 IIIF / 自定义 tile 金字塔（zoom 0/1/2 ... 每级 512×512 PNG/WebP），元数据 `ImageTilePyramid(image_id, max_level, tile_size, format)`；前端 `useTileSource` hook + LRU 缓存 ImageBitmap；Konva 背景 bg 层改 `<Group>` + 多张 `<Image>` tile；保留 BlurhashLayer 兜底。衡量：8K×8K 图、4x 缩放局部、内存 <300MB、FPS ≥30。后端切片服务可与视频 chunk service 共用基础设施。
 - **I4 完整 DiscussionPanel 拆分**（v0.10.19/v0.10.20/v0.10.21 渐进式落地: CommentsPanel 任务级降级 + 任务级评论 POST /feedbacks + 任务级 feedback patch/delete UI + `canvas_drawing.shapes[i].id/started_at/ended_at` 时间戳 + 评论卡片下方迷你 timeline bar; 剩 `DiscussionPanel.tsx` 独立拆出 + WorkbenchLayout 右栏两段固定结构 + ResizeHandle — 重估为纯结构改造对用户行为无增量, Workbench Shell 未破 900 行触发线前不开工）。
-- **I5 多图比对（双视图）**：工作台支持左右 / 上下分屏，每个面板独立 ImageStage 实例；可选「锁定 viewport」按钮；标注 diff 左/右面板增删改颜色区分；状态隔离与 R6.2 同理。
 - **I10 Skeleton 进阶（骨架关键点）**（基础 COCO 关键点已落 v0.10.28，仅以下进阶项 open，按需触发）：① 配置器从表单升级为 SVG 拖点 + 连线可视化编辑；② 2 层子标签命名（label + sublabel，决策底线表禁止任意嵌套，见 §决策底线「Skeleton 嵌套」）；③ keypoint 的导出 / 导入 / ML 预测协议（见 §A「v0.10.28 新几何导出/导入/预测支持」）；④ 关键点 OKS（Object Keypoint Similarity）质量评估，配合 §C.7 I19 GT / Consensus。
 - **I12 Object Group UI 细节**（v0.10.19 已落契约 + 快捷键 + Konva 虚线; 剩 AIInspectorPanel BoxList 同 group 折叠卡片 + AttributeForm 多选 batch banner 消费 `useAnnotationBulkUpdate` + 导出 COCO 时 group_id 映射到 `attributes.__group_id`）。
 - **I14 Autoborder / Polygon Crop**（M，纯前端）：开关式 Auto-border，多边形顶点拖动 / 新增时若距其他形状边 < 阈值自动吸附；新建多边形与已有重叠时提供「裁切重叠区」选项（布尔差集，基于已在依赖的 `polygon-clipping@0.15.7`）。
@@ -185,16 +179,9 @@
 
 ### C.4 工作台架构分层（多任务类型如何复用同一外壳）
 
-> 决策：**单工作台外壳 + Mode Hooks + StageHost + 按类型独立 action hooks**（M6 已归档）。不要把图片、视频、3D 强行统一成同一个 geometry editor。
-
-- **Layer 1 · 工作台外壳（`<WorkbenchShell>`）**：路由 `/projects/:id/annotate` / review mode、任务队列、Topbar、右栏、状态栏、history、offline、hotkeys。Shell 只做装配。
-- **Layer 2 · 模式策略（`modes/`）**：`useAnnotateMode` / `useReviewMode` 注入提交、跳过、领取审核、通过 / 退回、diffMode 与横幅策略；不拆 `AnnotateWorkbench` / `ReviewWorkbench` 两套页面。
-- **Layer 3 · Stage 分派（`WorkbenchStageHost` + `stages/types.ts`）**：
-  - `ImageWorkbench`：包装 `ImageStage`，承接 image bbox / polygon / SAM / canvas / AI 候选。
-  - `VideoWorkbench`：包装 `VideoStage`，承接 video bbox / track / keyframe / timeline。
-  - `ThreeDWorkbench.placeholder`：仅占位，不接真实 3D 业务。
-- **Layer 4 · Stage-specific actions**：`stages/image/useImageAnnotationActions.ts` 与 `stages/video/useVideoAnnotationActions.ts` 各自维护 payload、optimistic edit、offline fallback 和 focused tests。
-- **后续触发条件**：真实 lidar / 3D 标注需求出现时，先设计 `LidarStage` / 3D geometry / camera controls；只复用 `StageKind` / `StageCapabilities` / `WorkbenchStageHost` 外围边界。
+> **已落地的架构基线，非待办**。单工作台外壳 + Mode 轴 + StageHost + 按类型独立 action hooks 的四层结构（含 `StageKind` / `StageCapabilities` / overlay 边界 / 3D 约束）SoT 见 [`dev/concepts/workbench-shell.md`](docs-site/dev/concepts/workbench-shell.md) 与 [ADR-0017](docs/adr/0017-workbench-shell-mode-and-stage-adapters.md)。
+>
+> 唯一仍 open 的触发条件：真实 lidar / 3D 接入（设计 `LidarStage` / 3D geometry / camera controls，只复用 `StageKind` / `StageCapabilities` / `WorkbenchStageHost` 外围边界）——已在 §A `lidar_box_3d`（P0，客户需求触发）跟踪。
 
 ---
 
@@ -205,7 +192,7 @@
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
 | **P0/P1** | 视频工作台总 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出 / 长视频协同 / 质量评估） | 已抽离为独立 epic，前后端 Phase 1-6 详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P2** | 图片工作台能力扩展剩余（I1 / I5 / I10 / I14 / I19 / I21） | 大图 tile / 双图比对 / Skeleton / Autoborder / GT-IAA / 快捷键自定义；详见 §C.7 (I4/I12/I18 已 v0.10.19 落地, 仅余 UI 细节: §C.7 各条目内列出) | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
+| **P2** | 图片工作台能力扩展剩余（I1 / I10 / I14 / I19 / I21） | 大图 tile / Skeleton / Autoborder / GT-IAA / 快捷键自定义；详见 §C.7 (I4/I12/I18 已 v0.10.19 落地, 仅余 UI 细节: §C.7 各条目内列出) | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | `/ai-pre` 精细单批次预标 modal（v0.9.13 后回归） | v0.9.12 IA 重构 + v0.9.13 chips/threshold UI 已搬到 ProjectDetailPanel；4 个 stepper 子组件 (`PreannotateStepper` / `ProjectBatchPicker` / `RunPanel` / `usePreannotateDraft`) 仍 orphan，客户场景需要单 batch 精细调（草稿恢复 / 阶段进度可视化）时唤起 modal 复用旧组件；如反馈不需要再删 orphan 文件 | — |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
@@ -213,7 +200,6 @@
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
 | **P2** | 非视频工作台 lidar 真实 3D | v0.10.17 已把 `tool_unit=lidar_box_3d` 留位置灰; 图片侧形状 region / polyline / rotated_bbox / keypoint 已通过 tool_unit 维度落地(v0.10.17 + v0.10.28), 不再算独立工作台 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
-| **P2** | 批次状态机二阶段：`annotating → active` 暂停（实施 ADR-0008） + bulk-approve / bulk-reject | ADR-0008 已 Proposed；实施前补 scheduler 测试覆盖；bulk approve/reject UX 待定 | [0008](docs/adr/0008-batch-admin-locked-status.md) |
 | **P3** | 截图 fixture 实际重跑 (v0.10.18 已落 prepare 脚本) | v0.10.18 已落地 `page.route` mock 注入式 prepare; maintainer 跑 `pnpm exec playwright test --config=playwright.screenshots.config.ts --project=desktop-light --grep "ai-pre/history-search\|bbox/iou\|bbox/bulk-edit"` 验证 (`ai-pre/empty-alias` 在 PromptComposer 深层 modal 流, 留作手截) | — |
 | **P3** | 前端单测从 30 推到 35 | v0.9.14 实测 30.30%；下阶段补 `BatchesSection` 完整交互（创建/bulk/逆向迁移/看板）+ `useWorkbenchShellModel` / `useBatchEventsSocket` 端到端 | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
