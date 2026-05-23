@@ -19,7 +19,6 @@
   - **衍生 epic（三阶段全部落地，已归档）**：[ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md)——能力协商落库 + 模态派生（v0.10.37）、ai-pre 模态化 + 多 backend 参数面板 + video-jobs 并入 ai-pre/jobs（v0.10.38）。剩余按客户驱动：精细单 batch 多模型对比 modal（见优先级表 P3）、底层 `async_jobs` 统一表收敛（见 §B）。
   - **从已完成 Phase 延后的项**（仍在 epic 内，单列以免遗漏）：
     - **2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）：扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap 能力；DAVIS mask 导出（Phase 4.5）依赖此项。
-    - **WebCodecs 精确帧解码 demux 接入**（P2，按真实卡顿数据决定）：Phase 1 已落地解码核心 + feature flag（默认关闭），但 mp4 demux 链路（mp4 字节 → `EncodedVideoChunk`）尚未接入。
 
 
 ---

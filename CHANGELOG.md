@@ -22,6 +22,16 @@
 
 ## 最新版本
 
+## [0.10.46] - 2026-05-23
+
+> **WebCodecs 精确帧解码：mp4 demux 链路接入。** 把 v0.10.29 落地的 `useVideoChunkDecoder` 解码核心与已存 mp4 字节的 `VideoChunk` 接通：chunk 生成时用 `ffprobe -show_packets` 扫包提取 sample manifest（每帧 offset / size / pts / 关键帧标记）写入 `diagnostics`，前端按 frameIndex 定位 chunk → 拉 samples → 切割字节 → 构造 `EncodedVideoChunk[]` → 走原生 `VideoDecoder` 精确解码。仍由实验 flag `?webcodecs=1` / localStorage `video.experimental.webcodecs` 控制，**默认关闭**，关闭时零行为变化（继续走 `<video>` 位图缓存）。计划见 [v0.10.46 计划](docs/plans/2026-05-23-v0.10.46-webcodecs-demux.md)。
+
+### Added
+
+- **chunk sample manifest（后端 ffprobe 扫包）** ([media.py](apps/api/app/workers/media.py)): chunk 生成时新增 `_extract_chunk_samples`，用 `ffprobe -show_packets`（**不引入 PyAV**，沿用既有 ffprobe subprocess 风格）提取每个 packet 的 `offset_in_chunk` / `size_bytes` / `pts_ms` / `is_keyframe`，`frame_index` 按 pts 展示顺序（presentation rank）+ `start_frame` 推算，写入 `VideoChunk.diagnostics["samples"]`（含 `codec_string` / `width` / `height`）；扫包失败静默跳过，不影响 chunk 生成。
+- **`GET /videos/{id}/chunks/{cid}/samples` 端点** ([videos.py](apps/api/app/api/v1/videos.py) · [video_frame_service.py schema](apps/api/app/schemas/video_frame_service.py)): 暴露 sample manifest；旧 chunk（无 samples）返回 404 `samples_not_available`，前端静默降级。
+- **前端 demux 链路** (前端 [videos.ts](apps/web/src/api/videos.ts) · [useChunkSamples.ts](apps/web/src/pages/Workbench/stage/useChunkSamples.ts) · [videoChunkDemux.ts](apps/web/src/pages/Workbench/stage/videoChunkDemux.ts)): 新增 `videoApi.getChunks/getChunkSamples`、`useChunkSamples` hook（react-query 缓存，seek 间复用）、`buildEncodedVideoChunks(bytes, samples, frame)` 工具（按最近关键帧切 GOP）；`VideoStage` 在 flag 开启时 seek 触发 chunk 字节下载 → demux → 解码，找不到帧或解码失败时降级回 `<video>`。
+
 ## [0.10.45] - 2026-05-23
 
 > **AI 任务历史切换到统一 async_jobs 数据源。** `/ai-pre/jobs` 的图像 / 视频两个 tab 不再直查 `prediction_jobs` 与 `video_tracker_jobs` 旧专表端点，改为消费统一的 `/async-jobs` 列表；TopBar 后台任务铃铛与历史页现在共享同一汇总索引数据源。计划见 [v0.10.45 计划](docs/plans/2026-05-23-v0.10.45-async-jobs-phase1-frontend-switch.md)。

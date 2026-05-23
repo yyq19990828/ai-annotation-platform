@@ -67,6 +67,31 @@ v0.9.38 起，media worker 会在源 codec 为 H.264 / H.265 且 chunk 起始帧
 
 前端可用这些字段判断 WebCodecs / Worker 解码是否继续使用 chunk，或降级到整段视频 / frame service。
 
+### Sample manifest（WebCodecs demux，v0.10.46）
+
+chunk 生成时，media worker 会用 `ffprobe -show_packets` 扫一遍生成出的 chunk mp4，把每个 packet 的字节偏移 / 大小 / 时间戳 / 关键帧标记写进 `diagnostics["samples"]`（同时写 `codec_string` / `width` / `height`）。扫包失败（如 fragmented mp4 的 `pos` 缺失）时静默跳过，不影响 chunk 生成。
+
+```http
+GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}/samples
+```
+
+返回 sample manifest；旧 chunk（`diagnostics` 无 `samples`）返回 404 `samples_not_available`。响应示例：
+
+```json
+{
+  "dataset_item_id": "…",
+  "chunk_id": 0,
+  "codec_string": "avc1.4d001e",
+  "width": 1920,
+  "height": 1080,
+  "samples": [
+    { "frame_index": 0, "pts_ms": 0, "duration_ms": 33, "is_keyframe": true, "size_bytes": 45123, "offset_in_chunk": 1024 }
+  ]
+}
+```
+
+`samples` 数组按解码顺序排列（满足 `VideoDecoder` 喂入要求），`frame_index` 按 pts 展示顺序（presentation rank）+ chunk `start_frame` 推算。前端实验 flag `?webcodecs=1`（或 localStorage `video.experimental.webcodecs`，默认关闭）开启时，`VideoStage` 按当前帧定位 chunk → 拉 samples → 从 chunk 字节切出「最近关键帧 → 目标帧」的 GOP → 构造 `EncodedVideoChunk[]` 交给 `useVideoChunkDecoder` 精确解码；找不到帧或解码失败时降级回 `<video>` 位图缓存。
+
 MinIO key：
 
 ```text

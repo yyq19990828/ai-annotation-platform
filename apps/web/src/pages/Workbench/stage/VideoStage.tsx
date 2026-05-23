@@ -5,6 +5,8 @@ import type { DropdownItem } from "@/components/ui/DropdownMenu";
 import { Icon } from "@/components/ui/Icon";
 import { FloatingDock } from "../shell/FloatingDock";
 import type { AnnotationResponse, TaskVideoFrameTimetableResponse, TaskVideoManifestResponse, VideoSamplingConfig } from "@/types";
+import { useQuery } from "@tanstack/react-query";
+import { videoApi } from "@/api/videos";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
 import type { DiffMode } from "../modes/types";
@@ -21,6 +23,8 @@ import { deriveSamplingStep, gridNext, gridPrev, microStep, snapToGrid } from ".
 import { useFrameClock } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import { useVideoChunkDecoder } from "./useVideoChunkDecoder";
+import { useChunkSamples } from "./useChunkSamples";
+import { buildEncodedVideoChunks } from "./videoChunkDemux";
 import { useVideoFramePreview } from "./useVideoFramePreview";
 import { useVideoTrackActions } from "./useVideoTrackActions";
 import { useCanvasContextMenu } from "./useCanvasContextMenu";
@@ -405,10 +409,56 @@ export const VideoStage = forwardRef<VideoStageControls, VideoStageProps>(functi
   // v0.10.29 · Wave3-H · 实验性 WebCodecs 精确帧解码 (默认关闭, 由 ?webcodecs=1 /
   // localStorage video.experimental.webcodecs 开启)。关闭 / 不支持时 active=false,
   // decoderBitmap 恒为 null, 本路径零行为变化, 继续走 <video> 位图缓存。
-  // demux (chunk 字节 → EncodedVideoChunk) 尚未接入, 见 useVideoChunkDecoder.ts 注释边界。
-  const { activeBitmap: decoderBitmap, diagnostics: chunkDecoderDiagnostics } = useVideoChunkDecoder({
-    taskId: manifest?.task_id,
+  const chunkDecoder = useVideoChunkDecoder({ taskId: manifest?.task_id });
+  const { activeBitmap: decoderBitmap, diagnostics: chunkDecoderDiagnostics } = chunkDecoder;
+
+  // v0.10.46 · WebCodecs demux 集成: frameIndex → chunk → samples → 字节切割 → 解码。
+  // flag 关闭时 chunkDecoder.active=false, 下面所有 query/effect 均不激活, 零副作用。
+  const videoDatasetItemId = manifest?.dataset_item_id ?? null;
+  const { data: chunkList } = useQuery({
+    queryKey: ["video-chunks", videoDatasetItemId],
+    queryFn: () => videoApi.getChunks(videoDatasetItemId!),
+    enabled: chunkDecoder.active && videoDatasetItemId != null,
+    staleTime: Infinity,
   });
+  const chunkSizeFrames = chunkList?.chunk_size_frames ?? 0;
+  const targetChunkId =
+    chunkDecoder.active && chunkSizeFrames > 0 ? Math.floor(frameIndex / chunkSizeFrames) : null;
+  const targetChunk = useMemo(
+    () => chunkList?.chunks.find((c) => c.chunk_id === targetChunkId) ?? null,
+    [chunkList, targetChunkId],
+  );
+  const targetChunkUrl =
+    targetChunk?.status === "ready" && targetChunk.url ? targetChunk.url : null;
+  const { data: chunkSamples } = useChunkSamples({
+    datasetItemId: videoDatasetItemId,
+    chunkId: targetChunkUrl ? targetChunkId : null,
+    enabled: chunkDecoder.active,
+  });
+
+  useEffect(() => {
+    if (!chunkDecoder.active || !chunkSamples || !targetChunkUrl) return;
+    if (chunkDecoder.showFrame(frameIndex)) return; // 命中解码缓存
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resp = await fetch(targetChunkUrl);
+        const bytes = await resp.arrayBuffer();
+        if (cancelled) return;
+        const built = buildEncodedVideoChunks(bytes, chunkSamples, frameIndex);
+        if (!built) return; // 帧不在 manifest → 降级 <video>
+        await chunkDecoder.decodeChunks(built.config, built.chunks, frameIndex);
+      } catch {
+        // 静默失败: displayBitmap 自动降级回 activeBitmap (<video> 缓存)。
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // chunkDecoder 的方法均为稳定 useCallback; 仅需在帧 / samples / url / active 变化时重跑。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frameIndex, chunkSamples, targetChunkUrl, chunkDecoder.active]);
+
   // 精确帧优先用解码器结果, 否则回退 <video> 缓存位图。
   const displayBitmap = (!isPlaybackActive && decoderBitmap) || activeBitmap;
   const showCachedBitmap = Boolean(displayBitmap && !isPlaybackActive);
