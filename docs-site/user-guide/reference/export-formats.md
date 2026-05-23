@@ -3,7 +3,7 @@ audience: [annotator, project_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-20
+last_reviewed: 2026-05-23
 ---
 
 # 数据导出格式
@@ -11,11 +11,11 @@ last_reviewed: 2026-05-20
 ![导出格式选择](../images/export/format-select.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 导出对话框，COCO / YOLO / AAP JSON 选项 + 当前选中状态 + 导出范围（项目 / 批次）。 -->
 
-项目 Dashboard 的「导出」入口支持以下格式。图片项目可选择 **COCO / YOLO / AAP JSON**；视频轨迹项目可选 **Video JSON / AAP JSON / MOT / KITTI**（v0.10.31 起）。
+项目 Dashboard 的「导出」入口会打开居中的导出弹窗。图片项目可选择 **COCO / YOLO / AAP JSON**；视频轨迹项目可选 **Video JSON / AAP JSON / MOT / KITTI**（v0.10.31 起）。
 
 ## 导出流程（v0.10.27 起异步化）
 
-点「导出」**不再即时下载**：后端会创建一个后台任务并立即弹出 toast「导出已入队，可在右上角任务铃查看进度并下载」，弹窗随即关闭。
+在导出弹窗点「开始导出」**不再即时下载**：后端会创建一个后台任务并立即弹出 toast「导出已入队，可在右上角任务铃查看进度并下载」，弹窗随即关闭。
 
 ![导出进度](../images/export/progress.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 右上角任务铃（JobsBell）里「数据导出」进度条 + 完成后的「下载」按钮。 -->

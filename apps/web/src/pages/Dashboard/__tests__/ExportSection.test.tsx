@@ -1,5 +1,5 @@
 /**
- * v0.6.6 · ExportSection 关键交互单测。
+ * ExportSection 关键交互单测。
  *
  * 覆盖 ROADMAP 列出的：勾掉 includeAttributes → 调用 projectsApi.exportProject 时
  * 第三参数 includeAttributes=false。用 vi.mock 拦截 api 模块，断言入参。
@@ -16,6 +16,14 @@ vi.mock("@/api/projects", () => ({
 
 import { projectsApi } from "@/api/projects";
 
+function openExportModal() {
+  fireEvent.click(screen.getByRole("button", { name: "导出" }));
+}
+
+function submitExport() {
+  fireEvent.click(screen.getByRole("button", { name: "开始导出" }));
+}
+
 describe("ExportSection", () => {
   beforeEach(() => {
     vi.mocked(projectsApi.exportProject).mockClear();
@@ -23,22 +31,23 @@ describe("ExportSection", () => {
 
   it("默认勾选 → 调用时 includeAttributes=true", async () => {
     render(<ExportSection projectId="p1" />);
-    fireEvent.click(screen.getByText("导出 ▾"));
-    fireEvent.click(screen.getByText("导出"));
+    openExportModal();
+    submitExport();
     await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
     expect(projectsApi.exportProject).toHaveBeenCalledWith("p1", "coco", {
       includeAttributes: true,
     });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("勾掉 includeAttributes → 入参 false", async () => {
     render(<ExportSection projectId="p1" />);
-    fireEvent.click(screen.getByText("导出 ▾"));
+    openExportModal();
     const cb = screen.getByLabelText("包含属性数据") as HTMLInputElement;
     expect(cb.checked).toBe(true);
     fireEvent.click(cb);
     expect(cb.checked).toBe(false);
-    fireEvent.click(screen.getByText("导出"));
+    submitExport();
     await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
     expect(projectsApi.exportProject).toHaveBeenCalledWith("p1", "coco", {
       includeAttributes: false,
@@ -47,9 +56,9 @@ describe("ExportSection", () => {
 
   it("切换格式 → 入参跟随", async () => {
     render(<ExportSection projectId="p2" />);
-    fireEvent.click(screen.getByText("导出 ▾"));
-    fireEvent.click(screen.getByText("YOLO"));
-    fireEvent.click(screen.getByText("导出"));
+    openExportModal();
+    fireEvent.click(screen.getByRole("button", { name: /YOLO/ }));
+    submitExport();
     await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
     expect(projectsApi.exportProject).toHaveBeenCalledWith("p2", "yolo", {
       includeAttributes: true,
@@ -58,7 +67,7 @@ describe("ExportSection", () => {
 
   it("视频项目展示视频导出格式并传递 Video JSON frame mode", async () => {
     render(<ExportSection projectId="p3" projectTypeKey="video-track" />);
-    fireEvent.click(screen.getByText("导出 ▾"));
+    openExportModal();
 
     expect(screen.getByText("Video JSON")).toBeInTheDocument();
     expect(screen.getByText("AAP JSON")).toBeInTheDocument();
@@ -66,8 +75,8 @@ describe("ExportSection", () => {
     expect(screen.getByText("KITTI")).toBeInTheDocument();
     expect(screen.queryByText("YOLO")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("所有帧"));
-    fireEvent.click(screen.getByText("导出"));
+    fireEvent.click(screen.getByRole("button", { name: /^所有帧/ }));
+    submitExport();
     await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
     expect(projectsApi.exportProject).toHaveBeenCalledWith("p3", "video_json", {
       includeAttributes: true,

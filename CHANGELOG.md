@@ -22,6 +22,15 @@
 
 ## 最新版本
 
+## [0.10.42] - 2026-05-23
+
+> **项目导出入口改为居中弹窗。** Dashboard 项目行里的「导出」仍保留在原操作列，但点开后不再使用表格单元格内的下拉浮层，改为复用全局 `Modal` 的居中悬浮页；导出格式、帧模式与 `include_attributes` 后端契约不变。计划见 [v0.10.42 计划](docs/plans/2026-05-23-v0.10.42-export-modal.md)。
+
+### Changed
+
+- **导出 Modal 化** ([ExportSection.tsx](apps/web/src/pages/Dashboard/ExportSection.tsx)): 移除 `DropdownMenu content` 模式，触发按钮文案收敛为「导出」，弹窗标题为「导出标注数据」，提交按钮改为「开始导出」；成功入队后继续 toast「导出已入队」并关闭弹窗。
+- **格式选项卡片化** ([ExportSection.module.css](apps/web/src/pages/Dashboard/ExportSection.module.css)): COCO / YOLO / AAP JSON 与 Video JSON / AAP JSON / MOT / KITTI 改为带用途说明的纵向选项卡片；帧模式和属性复选框保留原语义，颜色全部改用现有设计 tokens，去掉旧 `oklch(...)` 硬编码。
+
 ## [0.10.41] - 2026-05-23
 
 > **模型市场模态收敛 + 新建向导 AI 步骤清理。** 模型市场变体面板改以健康检查落库的 `modalities` 作为图像 / 视频组显示真值，AI 已启用但尚未注册 backend 的项目也会进入模型市场并可直接注册第一条 backend；新建项目和项目设置页删除 display-only 的手填模型下拉，`ai_model` 继续只作为绑定 backend 名称的展示 hint。计划见 [v0.10.41 计划](docs/plans/2026-05-23-v0.10.41-ai-access-modality-and-wizard-cleanup.md)。
