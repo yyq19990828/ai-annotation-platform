@@ -596,11 +596,10 @@ export function useWorkbenchShellModel({
       if (!target) return;
       if (target.closest("[data-ai-drawer-root]")) return;
       if (target.closest("[data-workbench-tool-dock]")) return;
+      // 点画布关闭浮层, 但**不要** preventDefault/stopPropagation: 否则浏览器不再生成
+      // 兼容 mousedown, Konva <Stage onMouseDown> 收不到事件 → 首次 AI 拖框被吞掉
+      // (smart-box / exemplar 等画第一框无效)。关闭浮层与触发绘制手势应同帧并存。
       setAiDrawerOpen(false);
-      if (target.closest("[data-workbench-stage]")) {
-        e.stopPropagation();
-        e.preventDefault();
-      }
     };
     document.addEventListener("pointerdown", onPointerDown, { capture: true });
     return () => document.removeEventListener("pointerdown", onPointerDown, { capture: true });

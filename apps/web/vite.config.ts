@@ -77,6 +77,11 @@ const config: Parameters<typeof defineConfig>[0] = {
         "dist/**",
         // v0.8.8 · scripts/ 是 build-time 工具脚本（codegen / size-limit），不应进单测覆盖率分母
         "scripts/**",
+        // v0.10.48 · 测试文件本身（~100% 自覆盖）不应进分母，否则虚高覆盖率口径。
+        // 排除后报告 = 真实源码覆盖率。
+        "**/*.test.{ts,tsx}",
+        "**/*.spec.{ts,tsx}",
+        "**/__tests__/**",
       ],
       // v0.8.3 · 切硬阻断：低于 thresholds 时 vitest 退出非 0；codecov.yml frontend
       // informational=false 双重把关，避免覆盖率回退。
@@ -100,11 +105,19 @@ const config: Parameters<typeof defineConfig>[0] = {
       // GeneralSection / DatasetsSection / AuditPage / BatchesSection (smoke) +
       // transforms.test multi_polygon 几何映射；同时修 ProjectDetailPanel.test
       // 缺 useUpdateProject mock + useBatchEventsSocket WS 触发 worker crash 回归.
+      //
+      // v0.10.48 · 两步：① 把测试文件本身（*.test.* / __tests__）从分母排除，
+      // 让口径=真实源码覆盖率（此前含测试文件虚高到 52%，真实 38.74%）；
+      // ② 新增 12 个 page/组件 test 文件 ~99 case（SettingsPage / UsersPage /
+      // StoragePage / DatasetsPage / DashboardPage / ReviewPage / ImportDatasetWizard /
+      // CreateProjectWizard / AdminPeoplePage / AIPreAnnotateJobsPage /
+      // RegisteredBackendsTab / AIInspectorPanel），真实源码 lines 推到 47.64%。
+      // 阈值随之抬到 45（留 ~2.6pt 缓冲防回退）。
       thresholds: {
-        lines: 30,
-        statements: 30,
-        functions: 30,
-        branches: 60,
+        lines: 45,
+        statements: 45,
+        functions: 45,
+        branches: 70,
       },
     },
   },

@@ -251,13 +251,16 @@ test.describe("annotation workbench", () => {
     await expect(exemplarBtn).toHaveAttribute("aria-pressed", "true");
 
     // 拖框 → exemplar
+    // 注意：选中 AI 工具会打开 AIToolDrawer 悬浮参数面板，覆盖画布左侧约 1/3
+    // （v0.10.x「AI 参数迁至悬浮面板」）。拖框起点须落在面板右侧的空白画布区，
+    // 否则 pointerdown 命中面板而非 Konva canvas，samProbe 不会触发。
     const stage = page.getByTestId("workbench-stage");
     const box = await stage.boundingBox();
     if (!box) throw new Error("workbench-stage boundingBox 不可用");
-    const sx = box.x + box.width * 0.3;
-    const sy = box.y + box.height * 0.3;
-    const ex = box.x + box.width * 0.6;
-    const ey = box.y + box.height * 0.6;
+    const sx = box.x + box.width * 0.55;
+    const sy = box.y + box.height * 0.4;
+    const ex = box.x + box.width * 0.8;
+    const ey = box.y + box.height * 0.65;
     await page.mouse.move(sx, sy);
     await page.mouse.down();
     await page.mouse.move(ex, ey, { steps: 8 });

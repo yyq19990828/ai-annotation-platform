@@ -22,6 +22,28 @@
 
 ## 最新版本
 
+## [0.10.48] - 2026-05-23
+
+> **前端单测覆盖率：真实源码 38.74% → 47.64%。** 先把测试文件本身从覆盖率分母排除（此前含 `*.test.*` 自覆盖虚高到 52.54%，真实源码仅 38.74%），让口径诚实；再为 12 个高杠杆 0% 覆盖的 page / 组件补 ~99 个单测，把真实源码 lines 覆盖率推到 47.64%，落在 40-50% 目标区间。阈值随之从 30 抬到 45（branches 60→70）。计划见 [v0.10.47/48 计划](docs/plans/2026-05-23-v0.10.47-ci-e2e-fix-and-unit-coverage.md)。
+
+### Changed
+
+- **覆盖率口径诚实化** ([vite.config.ts](apps/web/vite.config.ts)): coverage.exclude 增 `**/*.test.{ts,tsx}` / `**/*.spec.{ts,tsx}` / `**/__tests__/**`，测试文件不再进分母；thresholds lines/statements/functions 30→45、branches 60→70，锁定增益防回退。
+
+### Added
+
+- **12 个 page / 组件单测（~99 case）** (`apps/web/src/**`): SettingsPage / UsersPage / StoragePage / DatasetsPage / DashboardPage / ReviewPage / ImportDatasetWizard / CreateProjectWizard / AdminPeoplePage / AIPreAnnotateJobsPage / RegisteredBackendsTab / AIInspectorPanel。统一用 `vi.mock` 隔离数据 hooks/API + RTL 渲染断言，覆盖加载/空/正常/主要交互；AIInspectorPanel 额外 mock `@tanstack/react-virtual` 的 `useVirtualizer` 让虚拟列表在 jsdom 下渲染全部行。全套 979 测试绿。
+
+## [0.10.47] - 2026-05-23
+
+> **修复 CI e2e 持续报错（自 2026-05-14 起红）。** 四个 Playwright 失败：两个真实产品 bug（AI 工具首次拖框被吞 / mask 工具 Esc 未退出）+ 两个陈旧/脆弱测试（reject 结构化原因断言 / 任务选择依赖默认顺序）。本地全栈复现并修复后 17/17 e2e 绿。计划见 [v0.10.47 计划](docs/plans/2026-05-23-v0.10.47-ci-e2e-fix-and-unit-coverage.md)。
+
+### Fixed
+
+- **AI 工具首次拖框被吞（真 bug）** ([useWorkbenchShellModel.tsx](apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx)): 选 AI 工具时 AIToolDrawer 浮层自动打开；其「点画布关闭浮层」的 capture 阶段 `pointerdown` 监听在 target 落于画布时调了 `preventDefault()`，浏览器因此不再生成兼容 `mousedown`，Konva `<Stage onMouseDown>` 收不到事件 → 首次 smart-box / exemplar 等拖框无效（需先点一下关浮层再拖）。改为仅关闭浮层、不再 `preventDefault`/`stopPropagation`，让关闭与绘制手势同帧并存，首框即生效。
+- **mask 工具 Esc 未退出（真 bug）** ([useWorkbenchHotkeys.ts](apps/web/src/pages/Workbench/state/useWorkbenchHotkeys.ts)): mask Esc 处理有 `&& maskEditor.active` 守卫，而 `active` 仅首笔后为 true，导致「按 M 进入但未落笔时按 Esc」无效、工具栏不消失，与 MaskToolbar「取消 (Esc)」文案矛盾。去掉守卫，Esc 无论是否 active 都丢弃缓冲并切回 box 工具。
+- **e2e 陈旧/脆弱测试修正** ([review-feedback-loop.spec.ts](apps/web/e2e/tests/review-feedback-loop.spec.ts) · [mask-editor.spec.ts](apps/web/e2e/tests/mask-editor.spec.ts) · [annotation.spec.ts](apps/web/e2e/tests/annotation.spec.ts)): reject 测试改为显式选 `wrong_label` + 填评论并断言 `reject_reason_type`（v0.10.16 起 `reason_type` 结构化、`reject_reason` 仅存自由文本）；mask 精修测试 goto 带 `?task=` 强制定位到注入了 prediction 的任务（不再依赖工作台默认 `tasks[0]` 顺序）；exemplar 测试拖框起点移到浮层右侧空白画布区。
+
 ## [0.10.46] - 2026-05-23
 
 > **WebCodecs 精确帧解码：mp4 demux 链路接入。** 把 v0.10.29 落地的 `useVideoChunkDecoder` 解码核心与已存 mp4 字节的 `VideoChunk` 接通：chunk 生成时用 `ffprobe -show_packets` 扫包提取 sample manifest（每帧 offset / size / pts / 关键帧标记）写入 `diagnostics`，前端按 frameIndex 定位 chunk → 拉 samples → 切割字节 → 构造 `EncodedVideoChunk[]` → 走原生 `VideoDecoder` 精确解码。仍由实验 flag `?webcodecs=1` / localStorage `video.experimental.webcodecs` 控制，**默认关闭**，关闭时零行为变化（继续走 `<video>` 位图缓存）。计划见 [v0.10.46 计划](docs/plans/2026-05-23-v0.10.46-webcodecs-demux.md)。
