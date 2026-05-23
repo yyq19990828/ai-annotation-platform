@@ -4,12 +4,10 @@
  * 主视图: 项目卡片网格 (仅接了 ml_backend 的项目) → 点卡片进 ProjectDetailPanel.
  * ProjectDetailPanel 内: 多选 batch + 串/并行预标 + 已就绪 HistoryTable (含多选清理).
  *
- * 之前 v0.9.7 拆出的 6 个子组件 (PreannotateStepper / ProjectBatchPicker /
- * PromptComposer / OutputModeSelector / RunPanel / HistoryTable) 中:
- *   - HistoryTable 在 ProjectDetailPanel 内继续渲染
- *   - 其余 4 个 (Stepper / ProjectBatchPicker / PromptComposer / RunPanel) 暂保留文件,
- *     等 v0.9.13+ 「精细单批次模式」回归时复用 (走 modal 入口); 主页不再引用.
- *   - OutputModeSelector 仍被旧 stepper 使用; ProjectDetailPanel 用 inline 简化版.
+ * v0.10.40 · 删除 v0.9.7 遗留且无消费方的 stepper 子组件 (PreannotateStepper /
+ * ProjectBatchPicker / PromptComposer / OutputModeSelector / RunPanel / usePreannotateDraft);
+ * 精细单批次 modal 方向已放弃, ProjectDetailPanel 用 inline 简化版承载全部预标交互.
+ * HistoryTable 仍在 ProjectDetailPanel 内渲染.
  *
  * 旧版本 478 行单文件 + 内嵌 FailedPredictionsTab (B-2) 一并清理 → /ai-pre/jobs?status=failed.
  */

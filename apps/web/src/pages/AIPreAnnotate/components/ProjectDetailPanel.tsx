@@ -175,7 +175,7 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // v0.10.15 · 外部预测导入向导 (COCO / AAP JSON)
   const [importOpen, setImportOpen] = useState(false);
 
-  // v0.9.13 · prompt token 集合 (复用 PromptComposer.tsx:84 模式), 用于 chip active 态判定
+  // v0.9.13 · prompt token 集合 (逗号分隔 → 去空小写), 用于 chip active 态判定
   const promptTokenSet = useMemo(() => {
     const tokens = prompt
       .split(",")
