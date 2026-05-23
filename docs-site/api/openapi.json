@@ -16009,7 +16009,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16159,7 +16162,7 @@
     },
     "/api/v1/async-jobs/{job_id}/cancel": {
       "post": {
-        "description": "v0.10.16 · 软取消。MVP 仅支持 predictions_import / audit_archive。\n\nbatch_predict 无独立取消机制；video_tracker 走自身取消路径（见 video_tracker_runner）；\n本端点不动 Celery revoke。",
+        "description": "v0.10.51 · 软取消。\n\nbatch_predict 走协作取消：写 cancel_requested 标记并 revoke(terminate=False)，\nworker 在下一条预测边界落 cancelled 终态；video_tracker 仍走自身取消路径。",
         "operationId": "cancel_async_job_api_v1_async_jobs__job_id__cancel_post",
         "parameters": [
           {

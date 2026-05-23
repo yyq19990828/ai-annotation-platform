@@ -238,9 +238,13 @@ helper 位于 `apps/api/app/services/async_job_notify.py`，由 worker / API 在
 当前白名单：
 
 - `batch_predict`
+- `prediction_retry`
 - `video_tracker`
 - `predictions_import`
 - `audit_archive`
+
+`failed_prediction.retry.succeeded` / `failed_prediction.retry.failed` 保留为历史通知偏好类型；
+v0.10.51 起失败预测重试的终态改由 `prediction_retry` 的 `job.completed` / `job.failed` 承载。
 
 `export` 不进通用 `job.*`，因为导出 worker 已经发 `export.ready` / `export.failed`
 并携带 `download_url`。

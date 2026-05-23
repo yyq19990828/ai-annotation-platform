@@ -318,12 +318,39 @@ class TestAsyncJobsAPI:
         assert item["project_display_id"] == "PROJ-AJ-1"
         assert item["project_name"] == "Async Jobs Project"
 
+    async def test_list_filters_multiple_kinds(
+        self, httpx_client_bound, db_session, annotator
+    ):
+        user, token = annotator
+        batch_job = await async_job_svc.create_job(
+            db_session, kind="batch_predict", user_id=user.id
+        )
+        retry_job = await async_job_svc.create_job(
+            db_session, kind="prediction_retry", user_id=user.id
+        )
+        await async_job_svc.create_job(
+            db_session, kind="audit_archive", user_id=user.id
+        )
+        await db_session.flush()
+
+        r = await httpx_client_bound.get(
+            "/api/v1/async-jobs",
+            params=[("kind", "batch_predict"), ("kind", "prediction_retry")],
+            headers=_bearer(token),
+        )
+
+        assert r.status_code == 200
+        ids = {item["id"] for item in r.json()["items"]}
+        assert str(batch_job.id) in ids
+        assert str(retry_job.id) in ids
+        assert r.json()["total"] == 2
+
     async def test_cancel_unsupported_kind_rejected(
         self, httpx_client_bound, db_session, annotator
     ):
         user, token = annotator
         aj = await async_job_svc.create_job(
-            db_session, kind="batch_predict", user_id=user.id
+            db_session, kind="video_tracker", user_id=user.id
         )
         await async_job_svc.mark_running(db_session, aj.id)
         await db_session.flush()
@@ -333,6 +360,87 @@ class TestAsyncJobsAPI:
         )
         assert r.status_code == 400
         assert "not cancellable" in r.json()["detail"]
+
+    async def test_cancel_running_batch_predict_requests_cooperative_cancel(
+        self, httpx_client_bound, db_session, annotator, monkeypatch
+    ):
+        user, token = annotator
+        aj = await async_job_svc.create_job(
+            db_session,
+            kind="batch_predict",
+            user_id=user.id,
+            payload={"total_tasks": 5},
+            celery_task_id="celery-batch-running",
+        )
+        await async_job_svc.mark_running(db_session, aj.id)
+        await db_session.flush()
+
+        from app.workers.celery_app import celery_app
+
+        called: dict = {}
+
+        def fake_revoke(task_id: str, terminate: bool = False):
+            called["task_id"] = task_id
+            called["terminate"] = terminate
+
+        monkeypatch.setattr(celery_app.control, "revoke", fake_revoke)
+
+        r = await httpx_client_bound.post(
+            f"/api/v1/async-jobs/{aj.id}/cancel", headers=_bearer(token)
+        )
+
+        assert r.status_code == 200
+        assert r.json()["status"] == "cancel_requested"
+        await db_session.refresh(aj)
+        assert aj.status == AsyncJobStatus.RUNNING.value
+        assert aj.payload["cancel_requested"] is True
+        assert called == {"task_id": "celery-batch-running", "terminate": False}
+        rows = (
+            (
+                await db_session.execute(
+                    select(Notification).where(Notification.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == []
+
+    async def test_cancel_pending_batch_predict_marks_cancelled(
+        self, httpx_client_bound, db_session, annotator, monkeypatch
+    ):
+        user, token = annotator
+        aj = await async_job_svc.create_job(
+            db_session,
+            kind="batch_predict",
+            user_id=user.id,
+            payload={"total_tasks": 5},
+            celery_task_id="celery-batch-pending",
+        )
+        await db_session.flush()
+
+        from app.workers.celery_app import celery_app
+
+        called: dict = {}
+        monkeypatch.setattr(
+            celery_app.control,
+            "revoke",
+            lambda task_id, terminate=False: called.update(
+                {"task_id": task_id, "terminate": terminate}
+            ),
+        )
+
+        r = await httpx_client_bound.post(
+            f"/api/v1/async-jobs/{aj.id}/cancel", headers=_bearer(token)
+        )
+
+        assert r.status_code == 200
+        assert r.json()["status"] == "cancelled"
+        await db_session.refresh(aj)
+        assert aj.status == AsyncJobStatus.CANCELLED.value
+        assert aj.result["done_count"] == 0
+        assert aj.result["skipped_count"] == 5
+        assert called == {"task_id": "celery-batch-pending", "terminate": False}
 
     async def test_cancel_supported_kind_succeeds(
         self, httpx_client_bound, db_session, annotator

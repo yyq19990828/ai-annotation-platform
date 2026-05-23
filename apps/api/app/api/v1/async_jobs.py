@@ -2,11 +2,12 @@
 
 GET /async-jobs        列表（仅 owner 可见，super_admin 可见全部）
 GET /async-jobs/{id}   详情
-POST /async-jobs/{id}/cancel  软取消（MVP 仅 predictions_import / audit_archive）
+POST /async-jobs/{id}/cancel  软取消
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Literal
 
@@ -22,9 +23,10 @@ from app.deps import get_current_user, get_db
 from app.schemas.async_job import AsyncJobListResponse, AsyncJobOut
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
-# MVP 范围：仅这两类支持取消（kind 集合见 §1.7 计划）
-CANCELLABLE_KINDS = {"predictions_import", "audit_archive"}
+# v0.10.51 · batch_predict 支持协作取消；predictions_import / audit_archive 保持软取消。
+CANCELLABLE_KINDS = {"batch_predict", "predictions_import", "audit_archive"}
 
 AsyncJobStatusParam = Literal["pending", "running", "completed", "failed", "cancelled"]
 
@@ -62,7 +64,7 @@ async def _to_async_job_out(
 @router.get("/async-jobs", response_model=AsyncJobListResponse)
 async def list_async_jobs(
     status: list[AsyncJobStatusParam] | None = Query(default=None),
-    kind: str | None = Query(None),
+    kind: list[str] | None = Query(default=None),
     project_id: uuid.UUID | None = Query(default=None),
     search: str | None = Query(default=None, max_length=200),
     limit: int = Query(50, ge=1, le=200),
@@ -85,8 +87,8 @@ async def list_async_jobs(
         stmt = stmt.where(AsyncJob.status.in_(status))
         count_stmt = count_stmt.where(AsyncJob.status.in_(status))
     if kind:
-        stmt = stmt.where(AsyncJob.kind == kind)
-        count_stmt = count_stmt.where(AsyncJob.kind == kind)
+        stmt = stmt.where(AsyncJob.kind.in_(kind))
+        count_stmt = count_stmt.where(AsyncJob.kind.in_(kind))
     if project_id:
         stmt = stmt.where(AsyncJob.project_id == project_id)
         count_stmt = count_stmt.where(AsyncJob.project_id == project_id)
@@ -96,7 +98,10 @@ async def list_async_jobs(
         search_filter = or_(
             AsyncJob.payload["prompt"].astext.ilike(pattern),
             AsyncJob.payload["batch_display_id"].astext.ilike(pattern),
+            AsyncJob.payload["task_display_id"].astext.ilike(pattern),
             AsyncJob.payload["model_key"].astext.ilike(pattern),
+            AsyncJob.payload["ml_backend_name"].astext.ilike(pattern),
+            AsyncJob.payload["error_type"].astext.ilike(pattern),
         )
         stmt = stmt.where(search_filter)
         count_stmt = count_stmt.where(search_filter)
@@ -135,10 +140,10 @@ async def cancel_async_job(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """v0.10.16 · 软取消。MVP 仅支持 predictions_import / audit_archive。
+    """v0.10.51 · 软取消。
 
-    batch_predict 无独立取消机制；video_tracker 走自身取消路径（见 video_tracker_runner）；
-    本端点不动 Celery revoke。
+    batch_predict 走协作取消：写 cancel_requested 标记并 revoke(terminate=False)，
+    worker 在下一条预测边界落 cancelled 终态；video_tracker 仍走自身取消路径。
     """
     job = await db.get(AsyncJob, job_id)
     if job is None:
@@ -151,7 +156,7 @@ async def cancel_async_job(
     if job.kind not in CANCELLABLE_KINDS:
         raise HTTPException(
             status_code=400,
-            detail=f"kind={job.kind} not cancellable in v0.10.16 MVP",
+            detail=f"kind={job.kind} not cancellable",
         )
     if job.status not in {AsyncJobStatus.PENDING.value, AsyncJobStatus.RUNNING.value}:
         raise HTTPException(
@@ -162,7 +167,49 @@ async def cancel_async_job(
     from app.services import async_job as async_job_svc
     from app.services.async_job_notify import notify_job_terminal
 
+    if job.kind == "batch_predict":
+        if job.celery_task_id:
+            try:
+                from app.workers.celery_app import celery_app
+
+                celery_app.control.revoke(job.celery_task_id, terminate=False)
+            except Exception:
+                log.exception("batch_predict revoke failed job=%s", job.id)
+
+        total_tasks = _payload_int(job.payload or {}, "total_tasks") or 0
+        if job.status == AsyncJobStatus.PENDING.value:
+            await async_job_svc.mark_cancelled(
+                db,
+                job.id,
+                result={
+                    "success_count": 0,
+                    "failed_count": 0,
+                    "done_count": 0,
+                    "skipped_count": total_tasks,
+                    "cancelled_at_index": 0,
+                },
+            )
+            await notify_job_terminal(db, job_id=job.id)
+            await db.commit()
+            return {"status": "cancelled", "id": str(job_id)}
+
+        await async_job_svc.request_cancel(db, job.id)
+        await db.commit()
+        return {"status": "cancel_requested", "id": str(job_id)}
+
     await async_job_svc.mark_cancelled(db, job.id)
     await notify_job_terminal(db, job_id=job.id)
     await db.commit()
     return {"status": "cancelled", "id": str(job_id)}
+
+
+def _payload_int(payload: dict, key: str) -> int | None:
+    value = payload.get(key)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None

@@ -205,7 +205,7 @@ annotator 可选择：
 
 `apps/api/app/api/v1/admin_preannotate.py` 提供两类接口。
 
-**统一任务历史（v0.10.38+）**：`/ai-pre/jobs`（`AIPreAnnotateJobsPage.tsx`）新增「图像 / 视频」两个模态 tab（`?tab` 深链）——图像 tab 拉 `prediction_jobs`，视频 tab 复用 `VideoTrackerJobsPanel`（原 `/model-market/video-jobs` 301 重定向至此）。
+**统一任务历史（v0.10.38+，v0.10.51 更新）**：`/ai-pre/jobs`（`AIPreAnnotateJobsPage.tsx`）提供「图像 / 视频」两个模态 tab（`?tab` 深链）——图像 tab 拉 `async_jobs(kind=batch_predict|prediction_retry)`，视频 tab 拉 `async_jobs(kind=video_tracker)`（原 `/model-market/video-jobs` 301 重定向至此）。
 
 ### 1. 预标队列
 

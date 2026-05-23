@@ -35,7 +35,7 @@ v0.9.3-phase2 把分散的 `/ml-integrations` 与 `/failed-predictions` 两个�
 
 ### 2. Failed Predictions（失败预测）
 
-`prediction_jobs` 表中 `status='failed'` 的记录，按 `finished_at desc` 排：
+失败预测明细来自 `failed_predictions`，相关后台任务历史来自 `async_jobs(kind=batch_predict|prediction_retry)`：
 
 - 列 backend 名 / 项目名 / 触发时间 / 错误片段
 - 点击展开看完整 error trace
@@ -68,7 +68,7 @@ backend 的变体面板拆成两组：
 
 ### 视频追踪任务监控（v0.10.38 起迁至 /ai-pre/jobs）
 
-> **v0.10.38**：视频追踪任务监控已从模型市场迁出，并入 [`/ai-pre/jobs`](../projects/ai-preannotate) 的「视频」模态 tab（与图像 `prediction_jobs` 并列，统一 AI 任务历史）。旧链接 `/model-market/video-jobs` 自动跳转到 `/ai-pre/jobs?tab=video`。**模型市场只保留后端 / 显存池健康观测**（上面的模态拆分预热面板），任务（job）历史归 ai-pre。
+> **v0.10.38+**：视频追踪任务监控已从模型市场迁出，并入 [`/ai-pre/jobs`](../projects/ai-preannotate) 的「视频」模态 tab；图像 tab 由 `async_jobs(kind=batch_predict|prediction_retry)` 提供，视频 tab 由 `async_jobs(kind=video_tracker)` 提供。旧链接 `/model-market/video-jobs` 自动跳转到 `/ai-pre/jobs?tab=video`。**模型市场只保留后端 / 显存池健康观测**（上面的模态拆分预热面板），任务（job）历史归 ai-pre。
 >
 > 监控内容不变：计数卡（queued / running / completed / failed / cancelled）+ 按状态 / model_key / 项目过滤的 cursor 分页列表（failed 行展开 `error_message`），数据来自 `GET /video-tracker-jobs`。
 

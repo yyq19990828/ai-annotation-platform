@@ -3,7 +3,7 @@ audience: [project_admin, super_admin, developer]
 type: reference
 since: v0.10.16
 status: stable
-last_reviewed: 2026-05-23
+last_reviewed: 2026-05-24
 ---
 
 # 异步任务（async_jobs）
@@ -17,8 +17,9 @@ last_reviewed: 2026-05-23
 
 | kind | 触发位 | 是否支持 cancel API |
 |---|---|---|
-| `batch_predict` | 项目 / 批次预标按钮（AIPreAnnotate 或 ProjectDetailPanel） | ❌（v0.10.17 计划） |
-| `video_tracker` | 视频工作台 tracker 触发 | ❌（v0.10.17 计划） |
+| `batch_predict` | 项目 / 批次预标按钮（AIPreAnnotate 或 ProjectDetailPanel） | ✅（协作取消） |
+| `prediction_retry` | 失败预测列表的重试按钮 | ❌ |
+| `video_tracker` | 视频工作台 tracker 触发 | ❌（走 video tracker 自身取消接口） |
 | `audit_archive` | Celery beat 每月 2 日 03:00 UTC | ✅ |
 | `predictions_import` | 外部 prediction 上传（[Import guide](./import)） | ✅ |
 | `export` | 项目 / 批次导出 | ❌ |
@@ -32,7 +33,7 @@ last_reviewed: 2026-05-23
 | Query | 类型 | 说明 |
 |---|---|---|
 | `status` | enum, repeatable | `pending` / `running` / `completed` / `failed` / `cancelled`；可重复传入，如 `?status=pending&status=running` |
-| `kind` | string | 上表 kind 字符串 |
+| `kind` | string, repeatable | 上表 kind 字符串；可重复传入，如 `?kind=batch_predict&kind=prediction_retry` |
 | `project_id` | uuid | 只看某个项目的任务 |
 | `search` | string | 匹配 payload 中的 `prompt` / `batch_display_id` / `model_key` |
 | `limit` | int (1-200) | 默认 50 |
@@ -54,7 +55,6 @@ last_reviewed: 2026-05-23
       "progress_pct": 42,
       "payload": {
         "total_tasks": 100,
-        "prediction_job_id": "uuid",
         "batch_display_id": "BATCH-1",
         "output_mode": "mask"
       },
@@ -77,8 +77,24 @@ owner-scoped；非 owner（且非 super_admin）→ `403`。
 
 ### `POST /api/v1/async-jobs/{id}/cancel`
 
-软取消。**MVP 仅支持** `predictions_import` / `audit_archive`；其他 kind 调用返回 `400 not cancellable`。
-已终态（`completed` / `failed` / `cancelled`）调用返回 `409`。
+软取消。支持 `predictions_import` / `audit_archive` / `batch_predict`；其他 kind 调用返回
+`400 not cancellable`。已终态（`completed` / `failed` / `cancelled`）调用返回 `409`。
+
+`batch_predict` 使用协作取消：API 对 `pending` job 直接写 `cancelled`；对 `running` job 写
+`payload.cancel_requested=true`，并对 Celery task 执行 `revoke(..., terminate=False)`。worker 不会强杀
+进程，而是在下一条预测边界停止并写入取消结果：
+
+```json
+{
+  "success_count": 12,
+  "failed_count": 1,
+  "done_count": 13,
+  "skipped_count": 87,
+  "cancelled_at_index": 13,
+  "duration_ms": 42000,
+  "total_cost": "0.0184"
+}
+```
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
@@ -93,6 +109,7 @@ v0.10.50 起，以下 kind 在有 `user_id` 且进入终态后会通过 `notific
 | kind | `completed` | `failed` | `cancelled` |
 |---|---|---|---|
 | `batch_predict` | `job.completed` | `job.failed` | `job.cancelled` |
+| `prediction_retry` | `job.completed` | `job.failed` | - |
 | `video_tracker` | `job.completed` | `job.failed` | `job.cancelled` |
 | `predictions_import` | `job.completed` | `job.failed` | `job.cancelled` |
 | `audit_archive` | `job.completed` | `job.failed` | `job.cancelled` |
@@ -104,7 +121,7 @@ v0.10.50 起，以下 kind 在有 `user_id` 且进入终态后会通过 `notific
 
 ## 进度上报模型
 
-- **service 层显式**：`batch_predict` 等长任务在 worker 内显式调 `async_job_svc.update_progress(job_id, pct)`，每 5% 步长写一次，避免每条 task 都 DB write；
+- **service 层显式**：`batch_predict` 等长任务在 worker 内显式调 `async_job_svc.update_progress(job_id, pct)`，每 5% 步长写一次，避免每条 task 都 DB write；`batch_predict` 额外在每条预测边界检查 `payload.cancel_requested`；
 - **Celery signals 兜底**：`task_failure` / `task_revoked` 信号回调按 `celery_task_id` 反查 `async_jobs` 行，翻 `failed` / `cancelled`，并补发终态通知，覆盖 worker crash / Celery revoke 等未被业务代码 except 接住的极端情况；
 - **失败兜底**：所有 async_jobs 写入都包 try/except，**专表写入失败不阻断主业务流程**（仅记日志）。
 

@@ -22,6 +22,7 @@ TERMINAL_NOTIFY_KINDS = {
     "video_tracker",
     "predictions_import",
     "audit_archive",
+    "prediction_retry",
 }
 
 _STATUS_TO_TYPE = {
@@ -36,6 +37,9 @@ _PAYLOAD_SUMMARY_KEYS = (
     "project_display_id",
     "project_name",
     "ml_backend_name",
+    "failed_prediction_id",
+    "task_display_id",
+    "error_type",
     "output_mode",
     "format",
     "total_tasks",
@@ -49,8 +53,13 @@ _PAYLOAD_SUMMARY_KEYS = (
 _RESULT_SUMMARY_KEYS = (
     "success_count",
     "failed_count",
+    "done_count",
+    "skipped_count",
+    "cancelled_at_index",
     "duration_ms",
     "total_cost",
+    "prediction_id",
+    "reason",
     "imported",
     "skipped",
     "error_count",

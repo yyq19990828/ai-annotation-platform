@@ -14,6 +14,7 @@ export type AsyncJobKind =
   | "video_tracker"
   | "audit_archive"
   | "predictions_import"
+  | "prediction_retry"
   | string;
 
 export interface AsyncJob {
@@ -43,7 +44,7 @@ export interface AsyncJobListResponse {
 }
 
 export interface AsyncJobListParams {
-  kind?: string;
+  kind?: string | string[];
   status?: AsyncJobStatus | AsyncJobStatus[];
   project_id?: string;
   search?: string;
@@ -60,7 +61,12 @@ export const asyncJobsApi = {
         ? [params.status]
         : [];
     statuses.forEach((status) => q.append("status", status));
-    if (params.kind) q.set("kind", params.kind);
+    const kinds = Array.isArray(params.kind)
+      ? params.kind
+      : params.kind
+        ? [params.kind]
+        : [];
+    kinds.forEach((kind) => q.append("kind", kind));
     if (params.project_id) q.set("project_id", params.project_id);
     if (params.search) q.set("search", params.search);
     if (params.limit !== undefined) q.set("limit", String(params.limit));

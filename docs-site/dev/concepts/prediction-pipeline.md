@@ -133,7 +133,7 @@ v0.10.17 起 `predictions.tool_unit_id String(30)` 列必填:
 | `video` | 引导卡片（`VideoPreannotateGuide`）→ 跳工作台逐轨迹 Shift+T 发起追踪，**不进入批量 predict 流水线** |
 | `lidar` | 占位提示（待实现） |
 
-视频项目的 AI 标注通过工作台 video tracker 发起，走 `video_tracker_jobs` 表而非 `prediction_jobs` 表，历史汇总在 `/ai-pre/jobs?tab=video`。
+视频项目的 AI 标注通过工作台 video tracker 发起，运行态保留 `video_tracker_jobs` 专表；历史汇总在 `/ai-pre/jobs?tab=video`，由 `async_jobs(kind=video_tracker)` 提供。
 
 ## 按后端动态参数透传（v0.10.38）
 

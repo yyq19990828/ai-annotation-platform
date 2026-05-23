@@ -112,7 +112,9 @@ async def mark_failed(db: AsyncSession, job_id: uuid.UUID, *, error: str) -> Non
     job.error_message = (error or "")[:4000]
 
 
-async def mark_cancelled(db: AsyncSession, job_id: uuid.UUID) -> None:
+async def mark_cancelled(
+    db: AsyncSession, job_id: uuid.UUID, *, result: dict | None = None
+) -> None:
     """v0.10.16 · 标记取消（终态）。仅 pending/running 可取消。"""
     job = await db.get(AsyncJob, job_id)
     if job is None:
@@ -120,6 +122,22 @@ async def mark_cancelled(db: AsyncSession, job_id: uuid.UUID) -> None:
     if job.status in {AsyncJobStatus.PENDING.value, AsyncJobStatus.RUNNING.value}:
         job.status = AsyncJobStatus.CANCELLED.value
         job.completed_at = datetime.now(timezone.utc)
+        if result is not None:
+            job.result = result
+
+
+async def request_cancel(db: AsyncSession, job_id: uuid.UUID) -> None:
+    """v0.10.51 · 请求协作取消，调用方负责终态转换。"""
+    job = await db.get(AsyncJob, job_id)
+    if job is None:
+        return
+    if job.status not in {AsyncJobStatus.PENDING.value, AsyncJobStatus.RUNNING.value}:
+        return
+    job.payload = {
+        **(job.payload or {}),
+        "cancel_requested": True,
+        "cancel_requested_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 async def find_by_celery_task_id(

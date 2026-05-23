@@ -4,7 +4,7 @@
 
 import { useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -27,6 +27,7 @@ type StatusFilter = "" | AsyncJobStatus;
 
 const JOB_TABS = ["图像", "视频"];
 const PAGE_SIZE = 20;
+const IMAGE_JOB_KINDS = ["batch_predict", "prediction_retry"];
 const STATUS_ORDER: AsyncJobStatus[] = [
   "pending",
   "running",
@@ -85,6 +86,7 @@ export default function AIPreAnnotateJobsPage() {
 function ImageJobsPanel({ projectId }: { projectId?: string }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   // v0.9.12 · ModelMarket failed tab redirect 来源支持 ?status=failed 直接落到失败筛选.
   const initialStatus = (() => {
@@ -94,12 +96,13 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatus);
   const [page, setPage] = useState(0);
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
   const offset = page * PAGE_SIZE;
 
   const jobsQ = useQuery({
     queryKey: [
       "async-jobs",
-      "batch_predict",
+      "image",
       projectId,
       search,
       statusFilter,
@@ -107,7 +110,7 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
     ],
     queryFn: () =>
       asyncJobsApi.list({
-        kind: "batch_predict",
+        kind: IMAGE_JOB_KINDS,
         project_id: projectId || undefined,
         search: search.trim() || undefined,
         status: statusFilter || undefined,
@@ -115,6 +118,13 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
         offset,
       }),
     staleTime: 1000 * 30,
+  });
+  const cancelMut = useMutation({
+    mutationFn: (jobId: string) => asyncJobsApi.cancel(jobId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["async-jobs"] });
+    },
+    onSettled: () => setCancelingId(null),
   });
 
   const items = jobsQ.data?.items ?? [];
@@ -164,8 +174,8 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
               <thead>
                 <tr className={styles.headerRow}>
                   <th className={styles.tableHeaderCell}>项目</th>
-                  <th className={styles.tableHeaderCell}>批次</th>
-                  <th className={styles.tableHeaderCell}>Prompt</th>
+                  <th className={styles.tableHeaderCell}>批次 / 任务</th>
+                  <th className={styles.tableHeaderCell}>Prompt / 错误</th>
                   <th className={styles.tableHeaderCell}>模式</th>
                   <th className={styles.tableHeaderCell}>状态</th>
                   <th className={styles.tableHeaderCell}>总数</th>
@@ -182,6 +192,11 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
                     job={it}
                     navigate={navigate}
                     returnTo={currentWorkbenchReturnTo(location)}
+                    cancelPending={cancelingId === it.id && cancelMut.isPending}
+                    onCancel={(jobId) => {
+                      setCancelingId(jobId);
+                      cancelMut.mutate(jobId);
+                    }}
                   />
                 ))}
               </tbody>
@@ -223,24 +238,43 @@ function JobRow({
   job,
   navigate,
   returnTo,
+  cancelPending,
+  onCancel,
 }: {
   job: AsyncJob;
   navigate: (path: string) => void;
   returnTo: string;
+  cancelPending: boolean;
+  onCancel: (jobId: string) => void;
 }) {
+  const isRetry = job.kind === "prediction_retry";
   const batchId = payloadString(job.payload, "batch_id");
+  const failedPredictionId = payloadString(job.payload, "failed_prediction_id");
+  const taskDisplayId = payloadString(job.payload, "task_display_id");
   const batchLabel =
-    payloadString(job.payload, "batch_display_id") ?? batchId?.slice(0, 8);
-  const prompt = payloadString(job.payload, "prompt") ?? "";
+    isRetry
+      ? taskDisplayId ?? failedPredictionId?.slice(0, 8)
+      : payloadString(job.payload, "batch_display_id") ?? batchId?.slice(0, 8);
+  const prompt = isRetry
+    ? (payloadString(job.payload, "error_type") ??
+      payloadString(job.payload, "message") ??
+      "")
+    : payloadString(job.payload, "prompt") ?? "";
   const promptShort = prompt.length > 50 ? prompt.slice(0, 50) + "…" : prompt;
-  const outputMode = payloadString(job.payload, "output_mode") ?? "—";
-  const totalTasks = payloadNumber(job.payload, "total_tasks") ?? 0;
+  const outputMode = isRetry
+    ? "retry"
+    : payloadString(job.payload, "output_mode") ?? "—";
+  const totalTasks = isRetry ? 1 : payloadNumber(job.payload, "total_tasks") ?? 0;
+  const isTerminal = ["completed", "failed", "cancelled"].includes(job.status);
   const failedCount =
-    job.status === "completed"
+    isTerminal
       ? payloadNumber(job.result, "failed_count") ?? 0
       : null;
   const durationMs =
-    job.status === "completed" ? payloadNumber(job.result, "duration_ms") : null;
+    isTerminal ? payloadNumber(job.result, "duration_ms") : null;
+  const canCancel =
+    job.kind === "batch_predict" &&
+    (job.status === "pending" || job.status === "running");
 
   return (
     <tr>
@@ -254,7 +288,7 @@ function JobRow({
       </td>
       <td
         className={`${styles.tableCell} ${styles.batchCell}`}
-        title={batchId ?? ""}
+        title={isRetry ? failedPredictionId ?? "" : batchId ?? ""}
       >
         {batchLabel ?? "—"}
       </td>
@@ -291,6 +325,17 @@ function JobRow({
         {formatRelative(job.started_at)}
       </td>
       <td className={styles.tableCell}>
+        {canCancel && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onCancel(job.id)}
+            title="取消 job"
+            disabled={cancelPending}
+          >
+            <Icon name="x" size={11} />
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"

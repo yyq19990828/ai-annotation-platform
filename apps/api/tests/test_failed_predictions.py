@@ -11,9 +11,12 @@ from __future__ import annotations
 import uuid
 from unittest.mock import patch
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.ml_backend import MLBackend
+from app.db.models.notification import Notification
 from app.db.models.prediction import FailedPrediction
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -199,6 +202,147 @@ async def test_retry_404_for_unknown_id(httpx_client_bound, super_admin):
         f"/api/v1/admin/failed-predictions/{fake}/retry", headers=headers
     )
     assert resp.status_code == 404
+
+
+def _passthrough_session_factory(db_session: AsyncSession):
+    class _Ctx:
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, *args):
+            return False
+
+    return lambda: _Ctx()
+
+
+async def test_retry_worker_tracks_success_in_async_jobs(
+    db_session, super_admin, monkeypatch
+):
+    from app.services.ml_client import PredictionResult
+    from app.workers import predictions_retry as retry_worker
+
+    user, _ = super_admin
+    proj = await _seed_project(db_session, user.id)
+    task = await _seed_task(db_session, proj.id)
+    backend = await _seed_backend(db_session, proj.id)
+    fp = await _seed_failed(
+        db_session, project_id=proj.id, task_id=task.id, backend_id=backend.id
+    )
+    await db_session.commit()
+
+    async def fake_predict(self, tasks_payload):
+        return [
+            PredictionResult(
+                task_id=tasks_payload[0]["id"],
+                result=[],
+                score=0.95,
+                model_version="retry-v1",
+                inference_time_ms=12,
+            )
+        ]
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.predict", fake_predict
+    )
+
+    result = await retry_worker._do_retry_with_factory(
+        _passthrough_session_factory(db_session), str(fp.id), str(user.id)
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["prediction_id"]
+    jobs = (
+        (
+            await db_session.execute(
+                select(AsyncJob).where(AsyncJob.kind == "prediction_retry")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.status == AsyncJobStatus.COMPLETED.value
+    assert job.user_id == user.id
+    assert job.project_id == proj.id
+    assert job.payload["failed_prediction_id"] == str(fp.id)
+    assert job.payload["task_display_id"] == task.display_id
+    assert job.payload["ml_backend_name"] == backend.name
+    assert job.result["success_count"] == 1
+    assert job.result["failed_count"] == 0
+
+    assert await db_session.get(FailedPrediction, fp.id) is None
+    notifications = (
+        (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == user.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    types = [row.type for row in notifications]
+    assert "failed_prediction.retry.started" in types
+    assert "job.completed" in types
+    assert "failed_prediction.retry.succeeded" not in types
+
+
+async def test_retry_worker_tracks_backend_failure_in_async_jobs(
+    db_session, super_admin, monkeypatch
+):
+    from app.workers import predictions_retry as retry_worker
+
+    user, _ = super_admin
+    proj = await _seed_project(db_session, user.id)
+    task = await _seed_task(db_session, proj.id)
+    backend = await _seed_backend(db_session, proj.id)
+    fp = await _seed_failed(
+        db_session, project_id=proj.id, task_id=task.id, backend_id=backend.id
+    )
+    await db_session.commit()
+
+    async def fake_predict(self, tasks_payload):
+        raise RuntimeError("backend down")
+
+    monkeypatch.setattr(
+        "app.services.ml_client.MLBackendClient.predict", fake_predict
+    )
+
+    result = await retry_worker._do_retry_with_factory(
+        _passthrough_session_factory(db_session), str(fp.id), str(user.id)
+    )
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "backend down"
+    job = (
+        (
+            await db_session.execute(
+                select(AsyncJob).where(AsyncJob.kind == "prediction_retry")
+            )
+        )
+        .scalars()
+        .one()
+    )
+    assert job.status == AsyncJobStatus.FAILED.value
+    assert job.error_message == "backend down"
+    assert job.result["success_count"] == 0
+    assert job.result["failed_count"] == 1
+
+    await db_session.refresh(fp)
+    assert fp.retry_count == 1
+    notifications = (
+        (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == user.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    types = [row.type for row in notifications]
+    assert "failed_prediction.retry.started" in types
+    assert "job.failed" in types
+    assert "failed_prediction.retry.failed" not in types
 
 
 async def test_retry_requires_manager(

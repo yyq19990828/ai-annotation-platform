@@ -70,6 +70,12 @@ export function useNotificationSocket() {
         if (parsed?.type?.startsWith?.("failed_prediction.retry.")) {
           qc.invalidateQueries({ queryKey: ["admin", "failed-predictions"] });
         }
+        if (parsed?.type?.startsWith?.("job.")) {
+          qc.invalidateQueries({ queryKey: ["async-jobs"] });
+          if (parsed.payload?.kind === "prediction_retry") {
+            qc.invalidateQueries({ queryKey: ["admin", "failed-predictions"] });
+          }
+        }
         // M1 · task.rejected → 弹 toast 提醒标注员
         if (parsed?.type === "task.rejected" && parsed.payload) {
           const p = parsed.payload;

@@ -3,18 +3,18 @@ audience: [super_admin]
 type: how-to
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-24
 ---
 
 # 失败预测排查
 
-`prediction_jobs.status='failed'` 的记录就是"AI 预标跑过但失败的"——本页讲怎么定位根因。
+`async_jobs.status='failed'` 的 `batch_predict` / `prediction_retry` 记录，以及 `failed_predictions` 明细行，就是"AI 预标跑过但失败的"——本页讲怎么定位根因。
 
 ## 入口
 
 - 超管：`/model-market` → **Failed Predictions** tab
 - 项目管理员：`/ai-pre` → **失败预测** tab（v0.9.9 B-2 平移）
-- 任何角色：`/ai-pre/jobs` 切「完整历史」 + 状态过滤 = failed
+- 任何角色：`/ai-pre/jobs` 图像 tab + 状态过滤 = failed
 
 ## 失败常见根因
 
@@ -31,9 +31,9 @@ last_reviewed: 2026-05-09
 
 1. **拿 job_id**：从失败 tab 列表点击展开
 2. **看 error 字段**：通常包含 ML Backend 返回的 status code + body 摘要
-3. **对照 prediction_jobs 时间戳**：
+3. **对照 async_jobs 时间戳**：
    - `created_at` → `started_at` 间隔大 → broker / worker 拥堵
-   - `started_at` → `finished_at` 间隔大 → 推理超时
+   - `started_at` → `completed_at` 间隔大 → 推理超时
 4. **看 worker 日志**：`docker logs ai-annotation-platform-celery-worker-1 --since 1h | grep <job_id>`
 5. **看 ML Backend 日志**：grounded-sam2-backend 在 `/metrics` + 容器日志
 6. **复现**：拿 job 的 prompt + 一张样本图，直接 `curl` ML Backend `/predict`

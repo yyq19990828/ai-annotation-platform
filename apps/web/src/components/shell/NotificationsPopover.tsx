@@ -52,6 +52,7 @@ const JOB_KIND_LABEL: Record<string, string> = {
   batch_predict: "批量预标",
   video_tracker: "视频追踪",
   predictions_import: "预测导入",
+  prediction_retry: "失败预测重试",
   audit_archive: "审计归档",
 };
 
@@ -81,6 +82,9 @@ function jobTitle(item: NotificationItem): string {
   }
   if (kind === "predictions_import") {
     return stringValue((payload as { format?: unknown }).format).toUpperCase();
+  }
+  if (kind === "prediction_retry") {
+    return stringValue((payload as { ml_backend_name?: unknown }).ml_backend_name);
   }
   return "";
 }

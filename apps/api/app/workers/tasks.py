@@ -67,6 +67,7 @@ async def _run_batch(
     )
 
     from app.db.enums import BatchStatus
+    from app.db.models.async_job import AsyncJob, AsyncJobStatus
     from app.db.models.ml_backend import MLBackend
     from app.db.models.project import Project
     from app.db.models.task import Task
@@ -182,6 +183,53 @@ async def _run_batch(
             job_meta=job_meta_base,
         )
 
+        async def _cancel_requested() -> bool:
+            job_for_cancel = await db.get(AsyncJob, async_job_id)
+            if job_for_cancel is None:
+                return False
+            await db.refresh(job_for_cancel)
+            if job_for_cancel.status == AsyncJobStatus.CANCELLED.value:
+                return True
+            return bool((job_for_cancel.payload or {}).get("cancel_requested"))
+
+        async def _finish_cancelled(cancelled_at_index: int) -> None:
+            processed_count = success_count + failed_count
+            skipped_count = max(0, total - processed_count)
+            duration_ms = int((time.perf_counter() - started_perf) * 1000)
+            if total > 0:
+                await async_job_svc.update_progress(
+                    db, async_job_id, int((processed_count / total) * 100)
+                )
+            await async_job_svc.mark_cancelled(
+                db,
+                async_job_id,
+                result={
+                    "success_count": success_count,
+                    "failed_count": failed_count,
+                    "done_count": processed_count,
+                    "skipped_count": skipped_count,
+                    "cancelled_at_index": cancelled_at_index,
+                    "duration_ms": duration_ms,
+                    "total_cost": f"{running_total_cost:.4f}",
+                },
+            )
+            await notify_job_terminal(db, job_id=async_job_id)
+            await db.commit()
+            _publish_progress(
+                project_id,
+                processed_count,
+                total,
+                status="cancelled",
+                job_meta={
+                    **job_meta_base,
+                    "success_count": success_count,
+                    "failed_count": failed_count,
+                    "done_count": processed_count,
+                    "skipped_count": skipped_count,
+                    "duration_ms": duration_ms,
+                },
+            )
+
         if total == 0:
             duration_ms = int((time.perf_counter() - started_perf) * 1000)
             await async_job_svc.mark_complete(
@@ -212,6 +260,11 @@ async def _run_batch(
         from app.api.v1.ml_backends import _resolve_task_url
 
         for i, task in enumerate(tasks):
+            if await _cancel_requested():
+                await _finish_cancelled(cancelled_at_index=i)
+                await engine.dispose()
+                return
+
             try:
                 results = await client.predict(
                     [{"id": str(task.id), "file_path": _resolve_task_url(task)}],
@@ -257,6 +310,11 @@ async def _run_batch(
                         await db.commit()
                     except Exception:
                         await db.rollback()
+
+        if await _cancel_requested():
+            await _finish_cancelled(cancelled_at_index=success_count + failed_count)
+            await engine.dispose()
+            return
 
         # v0.9.5 · 跑完自动 active → pre_annotated（仅当指定 batch + 当前还在 active 时）
         if batch_id:

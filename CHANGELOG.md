@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.10.51] - 2026-05-24
+
+> **后台任务可控性 Phase 2。** `batch_predict` 支持协作取消，失败预测重试纳入 `async_jobs(kind=prediction_retry)`，图像 AI 任务历史页可同时查看批量预标与重试任务。
+
+### Added
+
+- **批量预标协作取消** ([async_jobs.py](apps/api/app/api/v1/async_jobs.py) · [tasks.py](apps/api/app/workers/tasks.py)): `POST /async-jobs/{id}/cancel` 支持 `batch_predict`；`pending` job 直接进入 `cancelled`，`running` job 写 `payload.cancel_requested=true` 并执行 Celery `revoke(..., terminate=False)`，worker 在下一条预测边界停止，保留已写入 prediction，并在 `result` 写 `done_count` / `skipped_count` / `cancelled_at_index`。
+- **失败预测重试进入 async_jobs** ([predictions_retry.py](apps/api/app/workers/predictions_retry.py) · [async_job_notify.py](apps/api/app/services/async_job_notify.py)): `retry_failed_prediction` 现在记录 `prediction_retry` job，成功 / 失败终态走统一 `job.completed` / `job.failed` 通知；旧的 `failed_prediction.retry.started` 仍保留作为开始事件。
+- **AI 任务历史可控性 UI** ([AIPreAnnotateJobsPage.tsx](apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx)): 图像 tab 改为查询 `batch_predict` + `prediction_retry`，`pending` / `running` 的批量预标行提供取消按钮。
+
+### Changed
+
+- **`/async-jobs` kind 支持重复查询** ([async_jobs.py](apps/api/app/api/v1/async_jobs.py) · [asyncJobs.ts](apps/web/src/api/asyncJobs.ts)): `kind` 参数可重复传入，用于同一历史页合并展示多个任务类型；搜索范围补充 `task_display_id` / `ml_backend_name` / `error_type`。
+
 ## [0.10.50] - 2026-05-24
 
 > **后台任务终态接入个人通知。** `batch_predict`、`video_tracker`、`predictions_import`、`audit_archive` 在有 `user_id` 的终态切换后统一发 `job.completed` / `job.failed` / `job.cancelled` 站内通知，复用现有 `notifications` 表 + Redis PubSub + `/ws/notifications` 链路；`export` 继续使用语义化的 `export.ready` / `export.failed`，避免双发。

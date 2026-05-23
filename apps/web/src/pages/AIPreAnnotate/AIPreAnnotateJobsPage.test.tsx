@@ -3,15 +3,17 @@
  * 覆盖: 渲染 / 加载态 / 空态 / 有数据 / tab 切换
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // ── mock asyncJobsApi ────────────────────────────────────────────────────────
 const mockAsyncJobsList = vi.fn();
+const mockAsyncJobsCancel = vi.fn();
 vi.mock("@/api/asyncJobs", () => ({
   asyncJobsApi: {
     list: (...args: unknown[]) => mockAsyncJobsList(...args),
+    cancel: (...args: unknown[]) => mockAsyncJobsCancel(...args),
   },
 }));
 
@@ -74,8 +76,10 @@ function renderUI(initialPath = "/ai-pre/jobs") {
 describe("AIPreAnnotateJobsPage", () => {
   beforeEach(() => {
     mockAsyncJobsList.mockReset();
+    mockAsyncJobsCancel.mockReset();
     // 默认: 返回空列表
     mockAsyncJobsList.mockResolvedValue({ items: [], total: 0 });
+    mockAsyncJobsCancel.mockResolvedValue({ status: "cancel_requested", id: "job-1" });
   });
 
   it("渲染页面标题与两个 tab", () => {
@@ -106,6 +110,33 @@ describe("AIPreAnnotateJobsPage", () => {
     await screen.findByText("Demo Project");
     expect(screen.getByText("历史 job (1)")).toBeInTheDocument();
     expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
+    expect(mockAsyncJobsList).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: ["batch_predict", "prediction_retry"] }),
+    );
+  });
+
+  it("图像 tab 渲染 prediction_retry job", async () => {
+    mockAsyncJobsList.mockResolvedValue({
+      items: [
+        makeJob({
+          kind: "prediction_retry",
+          status: "failed",
+          payload: {
+            failed_prediction_id: "fp-12345678",
+            task_display_id: "TASK-9",
+            error_type: "TIMEOUT",
+            ml_backend_name: "bk",
+          },
+          result: { failed_count: 1, duration_ms: 1200 },
+          error_message: "timeout",
+        }),
+      ],
+      total: 1,
+    });
+    renderUI();
+    await screen.findByText("TASK-9");
+    expect(screen.getByText("TIMEOUT")).toBeInTheDocument();
+    expect(screen.getByText("retry")).toBeInTheDocument();
   });
 
   it("点击「视频」tab → 渲染 VideoTrackerPanel", async () => {
@@ -135,5 +166,18 @@ describe("AIPreAnnotateJobsPage", () => {
     await screen.findByText("3");
     // Badge variant=danger 渲染了 '3'
     expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("running batch_predict job 可触发取消", async () => {
+    mockAsyncJobsList.mockResolvedValue({
+      items: [makeJob({ status: "running", progress_pct: 30 })],
+      total: 1,
+    });
+    renderUI();
+    const cancelButton = await screen.findByTitle("取消 job");
+    fireEvent.click(cancelButton);
+    await waitFor(() => {
+      expect(mockAsyncJobsCancel).toHaveBeenCalledWith("job-1");
+    });
   });
 });
