@@ -34,13 +34,7 @@
 
 ## Phase 2 · 轨迹工具对齐 CVAT（核心生产力）
 
-> **2.1–2.8 已于 v0.10.30 落地**（执行计划见 [2026-05-21-v0.10.30-phase2-tracks-plan](../docs/plans/2026-05-21-v0.10.30-phase2-tracks-plan.md)，详情见 [CHANGELOG v0.10.30](../CHANGELOG.md)）：
->
-> - 2.1 `semantic_label`（可编辑语义标签）+ `track_number` 确定性派生（不持久化）；内部 `track_id` uuid 保持只读。
-> - 2.2 删除 `absent`、语义并入 `outside`（对齐 CVAT 两态 outside/occluded，alembic 0084 迁移存量）。
-> - 2.3 track 级 / 帧级（`mutable`）属性 UI；2.4 split / merge UI 接通；2.5 Track Join（`gap_mode` interpolate/outside）；2.6 Propagate 铺帧；2.7 导航（`,`/`.` 关键帧、`Home`/`End` 首末出现帧）；2.8 侧栏隐藏 / 锁定 / 选色。
->
-> **2.10 侧栏外操作入口已于 v0.10.32 落地**（执行计划见 [2026-05-22-v0.10.32-track-ops-out-of-sidebar](../docs/plans/2026-05-22-v0.10.32-track-ops-out-of-sidebar.md)）：选中 track 后，`O` / `Q` / `H` / `L` / `Ctrl+B` 可直接改 outside、occluded、hidden、locked、AI propagate；画布浮动条同步补齐消失 / 遮挡 / 锁定 / 隐藏，侧栏、快捷键和浮动条共享同一组 track actions。
+> **2.1–2.8（v0.10.30）+ 2.10 侧栏外操作入口（v0.10.32）已落地**，详见 [CHANGELOG](../CHANGELOG.md) / [v0.10.30 plan](../docs/plans/2026-05-21-v0.10.30-phase2-tracks-plan.md) / [v0.10.32 plan](../docs/plans/2026-05-22-v0.10.32-track-ops-out-of-sidebar.md)。建立的轨迹模型是 Phase 5/6 底座：`semantic_label` + `track_number` 确定性派生（`track_id` uuid 只读）、`outside`/`occluded` 两态（对齐 CVAT）、track/帧级属性、split/merge/join/propagate、关键帧导航、`O`/`Q`/`H`/`L`/`Ctrl+B` track 快捷键（侧栏/快捷键/浮动条共享同组 actions）。
 
 ### 2.9 多几何 track（polygon / polyline / mask）（**延后**；原 R9）
 - 扩 `video_track.geometry.kind` → `polygon | polyline | mask`，旧 bbox track 缺省兼容；按周长 / 长度参数化插值；mask track 依赖 canvas / bitmap 能力；同步 `docs-site/dev/reference/` 与导出协议。
@@ -55,30 +49,26 @@
 
 ### 3.1 真实 SAM 2/3 video backend（原 C.6 P0）
 
-> **gsam2 `sam2_video` 已于 v0.10.35/36 落地**（独立显存池 + 跨窗末帧续追 + `/health.video_pool` 观测 + `task_type` 指标 + 模型市场 image/video 模态拆分 + sam_variant 选择）。详见 [CHANGELOG v0.10.35/36](../CHANGELOG.md)、[v0.10.35 计划](../docs/plans/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md)、[ml-backend-protocol.md](../docs-site/dev/reference/ml-backend-protocol.md) `type=video_tracker`。
+> **gsam2 `sam2_video` 已于 v0.10.35/36 落地**（独立显存池 + `/health.video_pool` 观测 + 模型市场 image/video 模态拆分 + sam_variant 选择）。详见 [CHANGELOG](../CHANGELOG.md)、[v0.10.35 计划](../docs/plans/2026-05-22-v0.10.35-video-tracker-backend-and-sampling-units.md)、[ml-backend-protocol.md](../docs-site/dev/reference/ml-backend-protocol.md) `type=video_tracker`。
 
 **遗留待续**：
 - **`sam3_video` 真实 backend**：sam3-backend 尚未实现 `/predict context.type="video_tracker"`（收到即 422），待 SAM3 video 能力跟进，约束同 sam2（独立池 / 不入 `apps/api` / 跨窗续追）。
 - **跨窗有状态续追**：当前是无状态近似（上一窗末帧 geometry 作下一窗 seed，边界略漂）；后续可上 session/context-token 让 backend 跨窗保 memory bank 状态。
 
 ### 3.2 Tracker 选择 / 展示（原 R23「Tracker Registry UI」）
-- **R23 的「人工注册表 UI」前提已被新 epic 架空**：原设想管理员去「注册 / 启停 tracker adapter」，对应写死的 [`_REGISTRY`](../apps/api/app/services/video_tracker_adapters.py)。但 [ML Backend 能力协商 epic]([archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1 改为 backend `/setup` 自报能力、平台动态发现替代 `_REGISTRY`——没有需要人工维护的注册表；「启停」即现有 RegisteredBackendsTab 的 backend 暂停/恢复，无需 tracker 级单独入口。
-- **R23 剩余诉求归口到 epic**：「显示 backend 支持哪些 tracker」= 阶段 1 的能力派生只读视图（**已于 v0.10.37 落地**：backend 列表能力列展示 `supported_trackers`、能力快照落 `health_meta["capabilities"]`）；「多 backend 选择 / 1:N 管理形态」= 阶段 2 的多 backend 选择器。本节不再作独立条目。
-- **已落地现状（2026-05-22）**：tracker 模型尺寸（sam_variant）选择已于 v0.10.36 落地（propagate 对话框 SAM 尺寸下拉 → payload → adapter context → backend video 池）；图片工作台的悬浮 AI 面板对视频任务仍**显式禁用**（[`WorkbenchShell.tsx`](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `aiPopover.open = aiPopoverOpen && !isVideoTask`，**by design**），视频 AI 入口是 `VideoTrackerPropagateDialog`（Shift+T）。
+- **关键决策——不做 tracker 注册表 UI，勿走回头路**：原 R23 设想管理员手工「注册 / 启停 tracker adapter」（对应写死的 [`_REGISTRY`](../apps/api/app/services/video_tracker_adapters.py)）；[能力协商 epic]([archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 改为 backend `/setup` 自报能力、平台动态发现，无需人工注册表，「启停」即 backend 暂停/恢复。
+- **已落地**：能力只读展示（v0.10.37，`supported_trackers` 列）+ sam_variant 尺寸选择（v0.10.36，propagate 对话框 → adapter context → video 池）。视频 AI 入口是 `VideoTrackerPropagateDialog`（Shift+T）；图片工作台悬浮 AI 面板对视频任务**显式禁用 by design**（[`WorkbenchShell.tsx`](../apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx) `aiPopover.open = aiPopoverOpen && !isVideoTask`）。
 
 ### 3.3 图片 / 视频 tracker 协议统一收口（原 I20.4，跨模态）
-- **已抽为独立 epic 并落地阶段 1**：[ML Backend 能力协商 + AI 预标注模态化重设计]([archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 阶段 1 **已于 v0.10.37 落地**：backend `/setup` 能力快照落 `health_meta["capabilities"]`、注册/绑定按 `data_type` 校验、`is_interactive`/modality 从能力派生。v0.10.35 §B.3 的 `supported_trackers` 声明是「第一块砖」，落库 + 消费已完成；动态读取替代写死 `_REGISTRY` 的消费端在 epic 阶段 2/3 继续。
+- 已抽为 [能力协商 epic]([archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md) 并落地阶段 1（v0.10.37）：能力快照落 `health_meta["capabilities"]`、按 `data_type` 校验、`is_interactive`/modality 派生，动态读取替代写死 `_REGISTRY`。
 
 ---
 
 ## Phase 4 · 视频导出（D3 落地）
 
-> **4.1 + 4.2 导出端 + 4.3 + 4.4 + 4.7 已于 v0.10.31 落地**（执行计划见 [2026-05-21-v0.10.31-phase4-video-export-plan](../docs/plans/2026-05-21-v0.10.31-phase4-video-export-plan.md)，详情见 [CHANGELOG v0.10.31](../CHANGELOG.md)）：
+> **4.1 + 4.2 导出端 + 4.3 + 4.4 + 4.7 已于 v0.10.31 落地**，详见 [CHANGELOG](../CHANGELOG.md) / [v0.10.31 plan](../docs/plans/2026-05-21-v0.10.31-phase4-video-export-plan.md)：视频并入异步 zip 管线、AAP schema 升 1.2（task 层 `media_type` + `video` 子块、`video_track` 无损透传，envelope 不拆 D3）、MOT 16/17/20 + KITTI Tracking 2D 导出（整数 id 按采样网格重编号 D2、附 `fetch_frames.py` 抽帧不物理打包 D1）。
 >
-> - 4.1 视频并入异步 zip 管线（`manifest.json` + `annotations.json` + `fetch_videos.py`），修掉误用 YOLO 图片入口；4.7 前端格式选项扩 Video JSON / AAP / MOT / KITTI。
-> - 4.2 **导出端**：AAP schema 升 1.2，task 层 `media_type` + `video` 子块，`video_track` geometry 无损透传（envelope 不拆，D3）。
-> - 4.3 MOT 16/17/20（`gt.txt` + `seqinfo.ini`）/ 4.4 KITTI Tracking 2D，整数 id 用 `derive_track_number`，按采样网格重编号（D2）、outside 帧省略；附 `fetch_frames.py`（ffmpeg 抽 `img1/`，D1 不物理打包帧）。
-> - **统一映射约定**（已落地于 [export_video.py](../apps/api/app/services/export_video.py) 顶部）：MOT 省略 outside 帧 / occluded 仍输出；KITTI 用 occluded 列；帧号 MOT 1-based、KITTI 0-based。
+> **统一映射约定**（已落地于 [export_video.py](../apps/api/app/services/export_video.py) 顶部，保留供后续格式扩展参考）：MOT 省略 outside 帧 / occluded 仍输出；KITTI 用 occluded 列；帧号 MOT 1-based、KITTI 0-based。
 
 ### 4.2 导入端（**延后**）
 - `internal_geometry_to_ls_shape`（[`predictions_import.py`](../apps/api/app/services/predictions_import.py)）当前仅 bbox/polygon/multi_polygon，`video_bbox`/`video_track`/`skeleton` 进 errors[]；接通 video_track 导入需新增 tool_unit 实现端，跟 §A「predictions import / AAP JSON 适配新几何」同窗口做。
