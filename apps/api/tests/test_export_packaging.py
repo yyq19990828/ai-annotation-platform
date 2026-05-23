@@ -10,6 +10,8 @@ import json
 import uuid
 import zipfile
 
+import pytest
+
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
@@ -61,6 +63,23 @@ def test_clean_export_targets_accepts_video_yolo_frames_det():
         "video_json",
         "yolo-frames-det",
     ]
+
+
+def test_clean_export_targets_rejects_video_target_for_image_project():
+    # v0.10.47 · 图像项目混入视频目标应在端点层就被拒，而非派发后整批失败。
+    with pytest.raises(ValueError, match="image project"):
+        clean_export_targets(["coco", "mot"], data_type="image")
+
+
+def test_clean_export_targets_rejects_image_target_for_video_project():
+    with pytest.raises(ValueError, match="video project"):
+        clean_export_targets(["video_json", "coco"], data_type="video")
+
+
+def test_clean_export_targets_aap_json_valid_for_both_modalities():
+    # aap_json 同属图像/视频目标集，两侧都应放行。
+    assert clean_export_targets(["aap_json"], data_type="image") == ["aap_json"]
+    assert clean_export_targets(["aap_json"], data_type="video") == ["aap_json"]
 
 
 async def test_video_yolo_frames_zip_writes_grid_labels_and_manifest(monkeypatch):

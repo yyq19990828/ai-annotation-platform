@@ -243,6 +243,7 @@ async def get_video_chunk_samples(
         dataset_item_id=dataset_item_id,
         chunk_id=chunk_id,
         codec_string=d.get("codec_string", "avc1.4d001e"),
+        description=d.get("description"),
         width=d.get("width", 0),
         height=d.get("height", 0),
         samples=[VideoChunkSampleOut(**s) for s in d["samples"]],

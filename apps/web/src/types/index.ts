@@ -208,6 +208,8 @@ export interface VideoChunkSamplesResponse {
   dataset_item_id: string;
   chunk_id: number;
   codec_string: string;
+  /** base64 编码的 avcC/hvcC extradata (SPS/PPS)，填入 VideoDecoderConfig.description；旧 chunk 为 null。 */
+  description?: string | null;
   width: number;
   height: number;
   samples: VideoChunkSampleEntry[];

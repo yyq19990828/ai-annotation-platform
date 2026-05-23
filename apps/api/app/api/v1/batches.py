@@ -865,7 +865,7 @@ async def export_batch(
     from app.services.export_packaging import clean_export_targets
 
     try:
-        targets = clean_export_targets(targets)
+        targets = clean_export_targets(targets, project.data_type)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

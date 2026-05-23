@@ -66,4 +66,16 @@ describe("buildEncodedVideoChunks", () => {
   it("目标帧不在 samples 中 → 返回 null (降级 <video>)", () => {
     expect(buildEncodedVideoChunks(new ArrayBuffer(18), makeResp(), 99)).toBeNull();
   });
+
+  it("有 description 时 base64 解码后填入 config.description", () => {
+    const resp = { ...makeResp(), description: btoa("\x01\x64\x00\x0c") };
+    const { config } = buildEncodedVideoChunks(new ArrayBuffer(18), resp, 0)!;
+    const desc = new Uint8Array(config.description as ArrayBuffer);
+    expect(Array.from(desc)).toEqual([0x01, 0x64, 0x00, 0x0c]);
+  });
+
+  it("无 description 时 config 不带 description (旧 chunk 降级)", () => {
+    const { config } = buildEncodedVideoChunks(new ArrayBuffer(18), makeResp(), 0)!;
+    expect(config.description).toBeUndefined();
+  });
 });

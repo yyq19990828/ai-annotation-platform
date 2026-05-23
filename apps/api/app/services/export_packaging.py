@@ -59,12 +59,27 @@ IMAGE_EXPORT_TARGETS = {"coco", "yolo", "yolo-det", "yolo-obb", "yolo-seg", "aap
 ALL_EXPORT_TARGETS = IMAGE_EXPORT_TARGETS | VIDEO_EXPORT_FORMATS | {"voc"}
 
 
-def clean_export_targets(targets: list[str]) -> list[str]:
-    """去重保序 + 校验目标合法。非法或空抛 ValueError（端点转 400）。"""
+def clean_export_targets(
+    targets: list[str], data_type: str | None = None
+) -> list[str]:
+    """去重保序 + 校验目标合法。非法或空抛 ValueError（端点转 400）。
+
+    v0.10.47 · 传入项目 ``data_type`` 时按模态过滤：图像项目只接受图像目标（+ voc），
+    视频项目只接受视频目标。否则一个跨模态目标会通过端点校验、派发 job，随后在
+    ``build_export_zip`` 抛 ``UnsupportedExportError`` 拖垮整批（含合法目标）。
+    ``data_type=None`` 时退回旧行为（接受全集），保持向后兼容。
+    """
+    if data_type == "video":
+        allowed = VIDEO_EXPORT_FORMATS
+    elif data_type == "image":
+        allowed = IMAGE_EXPORT_TARGETS | {"voc"}
+    else:
+        allowed = ALL_EXPORT_TARGETS
     seen: list[str] = []
     for t in targets:
-        if t not in ALL_EXPORT_TARGETS:
-            raise ValueError(f"unsupported export target: {t}")
+        if t not in allowed:
+            scope = f" for {data_type} project" if data_type else ""
+            raise ValueError(f"unsupported export target{scope}: {t}")
         if t not in seen:
             seen.append(t)
     if not seen:

@@ -13,12 +13,19 @@ import type { VideoChunkSamplesResponse } from "@/types";
  *
  * 找不到 targetFrameIndex 时返回 null, 调用方降级回 <video> 路径。
  */
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 export function buildEncodedVideoChunks(
   chunkBytes: ArrayBuffer,
   samplesResp: VideoChunkSamplesResponse,
   targetFrameIndex: number,
 ): { config: VideoDecoderConfig; chunks: EncodedVideoChunk[] } | null {
-  const { samples, codec_string, width, height } = samplesResp;
+  const { samples, codec_string, description, width, height } = samplesResp;
 
   const targetIdx = samples.findIndex((s) => s.frame_index === targetFrameIndex);
   if (targetIdx === -1) return null;
@@ -40,11 +47,16 @@ export function buildEncodedVideoChunks(
     );
   }
 
+  // 样本是 AVCC 长度前缀格式, 必须带 description (avcC/hvcC extradata, 含 SPS/PPS) 浏览器
+  // 才会按 AVCC 而非 Annex-B 解析; 缺 description 时关键帧 decode() 会抛错触发降级。
   const config: VideoDecoderConfig = {
     codec: codec_string,
     codedWidth: width,
     codedHeight: height,
   };
+  if (description) {
+    config.description = base64ToBytes(description);
+  }
 
   return { config, chunks };
 }

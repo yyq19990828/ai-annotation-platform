@@ -51,6 +51,9 @@ class VideoChunkSamplesResponse(BaseModel):
     dataset_item_id: UUID
     chunk_id: int
     codec_string: str
+    # base64 编码的 AVC/HEVCDecoderConfigurationRecord (avcC/hvcC)，WebCodecs
+    # VideoDecoderConfig.description 所需；旧 chunk 无 extradata 时为 None。
+    description: str | None = None
     width: int
     height: int
     samples: list[VideoChunkSampleOut]

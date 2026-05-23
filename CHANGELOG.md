@@ -28,9 +28,9 @@
 
 ### Added
 
-- **chunk sample manifest（后端 ffprobe 扫包）** ([media.py](apps/api/app/workers/media.py)): chunk 生成时新增 `_extract_chunk_samples`，用 `ffprobe -show_packets`（**不引入 PyAV**，沿用既有 ffprobe subprocess 风格）提取每个 packet 的 `offset_in_chunk` / `size_bytes` / `pts_ms` / `is_keyframe`，`frame_index` 按 pts 展示顺序（presentation rank）+ `start_frame` 推算，写入 `VideoChunk.diagnostics["samples"]`（含 `codec_string` / `width` / `height`）；扫包失败静默跳过，不影响 chunk 生成。
-- **`GET /videos/{id}/chunks/{cid}/samples` 端点** ([videos.py](apps/api/app/api/v1/videos.py) · [video_frame_service.py schema](apps/api/app/schemas/video_frame_service.py)): 暴露 sample manifest；旧 chunk（无 samples）返回 404 `samples_not_available`，前端静默降级。
-- **前端 demux 链路** (前端 [videos.ts](apps/web/src/api/videos.ts) · [useChunkSamples.ts](apps/web/src/pages/Workbench/stage/useChunkSamples.ts) · [videoChunkDemux.ts](apps/web/src/pages/Workbench/stage/videoChunkDemux.ts)): 新增 `videoApi.getChunks/getChunkSamples`、`useChunkSamples` hook（react-query 缓存，seek 间复用）、`buildEncodedVideoChunks(bytes, samples, frame)` 工具（按最近关键帧切 GOP）；`VideoStage` 在 flag 开启时 seek 触发 chunk 字节下载 → demux → 解码，找不到帧或解码失败时降级回 `<video>`。
+- **chunk sample manifest（后端 ffprobe 扫包 + extradata）** ([media.py](apps/api/app/workers/media.py)): chunk 生成时新增 `_extract_chunk_samples`，用 `ffprobe -show_packets`（**不引入 PyAV**，沿用既有 ffprobe subprocess 风格）提取每个 packet 的 `offset_in_chunk` / `size_bytes` / `pts_ms` / `is_keyframe`，`frame_index` 按 pts 展示顺序（presentation rank）+ `start_frame` 推算，写入 `VideoChunk.diagnostics["samples"]`；同时直读 chunk mp4 的 `avcC`/`hvcC` box 提取 `AVC/HEVCDecoderConfigurationRecord`（SPS/PPS）作 base64 `description`，并由其字节派生真实 `codec_string`（avc1.PPCCLL / hvc1.…），不再硬编码。扫包失败静默跳过，不影响 chunk 生成。
+- **`GET /videos/{id}/chunks/{cid}/samples` 端点** ([videos.py](apps/api/app/api/v1/videos.py) · [video_frame_service.py schema](apps/api/app/schemas/video_frame_service.py)): 暴露 sample manifest（含 `description`）；旧 chunk（无 samples）返回 404 `samples_not_available`，前端静默降级。
+- **前端 demux 链路** (前端 [videos.ts](apps/web/src/api/videos.ts) · [useChunkSamples.ts](apps/web/src/pages/Workbench/stage/useChunkSamples.ts) · [videoChunkDemux.ts](apps/web/src/pages/Workbench/stage/videoChunkDemux.ts)): 新增 `videoApi.getChunks/getChunkSamples`、`useChunkSamples` hook（react-query 缓存，seek 间复用）、`buildEncodedVideoChunks(bytes, samples, frame)` 工具（按最近关键帧切 GOP，把 base64 `description` 解出填入 `VideoDecoderConfig.description`，确保浏览器按 AVCC 而非 Annex-B 解析）；`VideoStage` 在 flag 开启时 seek 触发 chunk 字节下载 → demux → 解码，找不到帧或解码失败时降级回 `<video>`。仍由实验 flag 控制、默认关闭。
 
 ## [0.10.45] - 2026-05-23
 

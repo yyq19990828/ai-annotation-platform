@@ -13357,6 +13357,17 @@
             "title": "Dataset Item Id",
             "type": "string"
           },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "height": {
             "title": "Height",
             "type": "integer"

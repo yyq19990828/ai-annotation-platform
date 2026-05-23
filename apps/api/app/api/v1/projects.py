@@ -769,12 +769,14 @@ async def remove_member(
     return Response(status_code=204)
 
 
-def _validate_export_targets(targets: list[str]) -> list[str]:
-    """v0.10.43 · 校验并去重导出目标，非法转 400。"""
+def _validate_export_targets(
+    targets: list[str], data_type: str | None = None
+) -> list[str]:
+    """v0.10.43 · 校验并去重导出目标，非法转 400。v0.10.47 · 按 data_type 过滤模态。"""
     from app.services.export_packaging import clean_export_targets
 
     try:
-        return clean_export_targets(targets)
+        return clean_export_targets(targets, data_type)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -806,7 +808,7 @@ async def export_project(
     # VOC 后端保留同步 blob（前端已隐藏），仅可单选；不删避免破坏 API 契约。
     from app.services.audit import AuditService, AuditAction, export_detail
 
-    targets = _validate_export_targets(targets)
+    targets = _validate_export_targets(targets, project.data_type)
 
     if "voc" in targets:
         if targets != ["voc"]:
