@@ -8,35 +8,38 @@ last_reviewed: 2026-05-11
 
 # 导出
 
-标注数据导出为下游训练可用格式。当前项目 / 批次导出接口直接返回文件响应；历史异步导出 job 设计保留为后续大规模导出方向。
+标注数据导出为下游训练可用格式。v0.10.27 起导出**异步化**：`POST` 创建后台 job 返回 `202 {job_id}`，产物 ZIP 生成后在任务铃用 7 天预签名 URL 下载（VOC 仍同步返回 blob）。v0.10.43 起导出目标**可多选**，一个 job 产一个 ZIP。
 
 ## 触发导出
 
 ```http
-GET /api/v1/projects/{project_id}/export?format=coco&include_attributes=true
-GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&include_attributes=true
+POST /api/v1/projects/{project_id}/export?targets=coco&targets=yolo-det&include_attributes=true
+POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&include_attributes=true
 ```
 
 参数：
 
 | 参数 | 取值 | 说明 |
 |---|---|---|
-| `format` | `coco` / `voc` / `yolo` | 图片项目导出格式；`video-track` 仅支持通过 `coco` 兼容入口导出 Video JSON |
+| `targets` | 可重复，多选 | `coco` / `yolo-det` / `yolo-obb` / `yolo-seg` / `aap_json` / `video_json` / `mot` / `kitti`；`voc` 仅可单选（与其它混选返 400），走同步 blob 下载 |
 | `include_attributes` | `true` / `false` | 是否携带 `annotation.attributes` 与 `project.attribute_schema` |
 | `video_frame_mode` | `keyframes` / `all_frames` | 仅 `video-track` 生效；默认 `keyframes` |
 
-`format=coco` 返回 JSON；`format=voc|yolo` 返回 zip。`video-track` 的 `format=yolo|voc` 会返回 400；其它视频项目类型当前不支持 Video JSON 导出。
+非 VOC 目标返回 `202 {job_id}`；勾选多个目标时产物 ZIP 内各目标落 `{target}/` 子目录，单目标落包根。`video-track` 项目只接受视频目标（`video_json` / `aap_json` / `mot` / `kitti`），选图片目标会返回 400。
 
 ## 格式说明
 
-| 格式 | 适用 |
+| 目标 | 适用 |
 |---|---|
-| **coco** | COCO `instances_*.json`，目标检测标杆 |
-| **yolo** | YOLO txt 格式 + classes.txt，每图一文件 |
-| **voc** | Pascal VOC XML |
-| **video tracks json** | `video-track` 专用 JSON，经 `format=coco` 兼容入口返回 |
+| **coco** | COCO `annotations.json`：bbox + segmentation(polygon/mask) + keypoints(skeleton) + group_id |
+| **yolo-det** | YOLO 检测 txt（矩形框）+ classes.txt，每图一文件 |
+| **yolo-obb** | YOLO 旋转框 txt（rotated_bbox 四角） |
+| **yolo-seg** | YOLO 分割 txt（polygon / mask 归一化多边形） |
+| **aap_json** | 平台原生无损中间格式（双数组 annotations / predictions） |
+| **voc** | Pascal VOC XML（仅同步单选） |
+| **video tracks json** | `video-track` 专用 JSON（`video_json` 目标） |
 
-图片导出的 COCO / YOLO / VOC 只处理 bbox annotation。
+v0.10.43 起 COCO / YOLO 不再只处理 bbox：各目标按其消费的几何（bbox / rotated_bbox / polygon / multi_polygon / keypoint）映射，不匹配的几何跳过（COCO 跳过数记在 `info.skipped_annotations`）。
 
 ## 视频轨迹导出
 

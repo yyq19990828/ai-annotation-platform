@@ -58,9 +58,8 @@
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）:v0.10.17 强隔离意味"bbox 工具的人 / region 工具的人是两条独立记录",同名颜色 / alias 都得重复输入;触发条件:客户后续反馈"想共享类别名字"。设计走 `ToolClassEntry.alias_to: { tool_unit_id, class_name } | null` 链,导出时按 alias_to 合并 categories(可选)。**强隔离决策为默认底线,alias_to 仅作可选叠加**,不破坏 ADR-0026 决策。
 
   - **rename_class 端点跨 unit 重命名 UX**（**P3**）:v0.10.17 `useRenameClass` 加了 `tool_unit_id` 参数,但 ClassesSection 仅传当前 active unit;若客户想"同时在所有 unit 内把'人'改成'pedestrian'"需要扩 UI 入口(批量勾选 unit + 单次重命名)。触发条件:客户反馈"重命名要跑 N 次"。
-- **v0.10.28 新几何导出/导入/预测支持**（三种新几何 rotated_bbox / polyline / keypoint 落地后新发现，端到端绘制 + 持久化已通，但与外部格式 / 模型协议的对接仍缺口）:
-  - **导出协议覆盖新几何**（**P2**，客户用了新工具就会立刻撞上）:`export.py` / `export_packaging.py` 当前只导 bbox / polygon / mask;rotated_bbox / polyline / keypoint **没有 COCO / YOLO / VOC 映射**(rotated_bbox→COCO 无原生表示需选 OBB 扩展或 segmentation 退化;keypoint→COCO `keypoints` 数组 + `skeleton`;polyline→无标准格式需走平台原生 AAP JSON)。触发条件:任一新工具的项目走到导出环节。设计先补 AAP JSON(平台原生无损)再按客户要的标准格式逐个加。
-  - **predictions import / AAP JSON 适配新几何**（**P3**）:[`internal_geometry_to_ls_shape`](apps/api/app/services/predictions_import.py) 仍只覆盖 bbox / polygon / multi_polygon,rotated_bbox / polyline / keypoint 进 errors[]。与 §A「AAP JSON video_track 导入支持」同窗口做。
+- **v0.10.28 新几何导入/预测支持**（三种新几何 rotated_bbox / polyline / keypoint 落地后新发现，端到端绘制 + 持久化已通；**导出侧已于 v0.10.43 落地**（COCO segmentation/keypoints、yolo-obb/yolo-seg），剩导入 / ML 协议缺口）:
+  - **predictions import / AAP JSON 适配新几何**（**P3**）:[`internal_geometry_to_ls_shape`](apps/api/app/services/predictions_import.py) 仍只覆盖 bbox / polygon / multi_polygon,rotated_bbox / polyline / keypoint 进 errors[]。与 §A「AAP JSON video_track 导入支持」同窗口做（导出对称镜像，见 v0.10.43 计划留作 v0.10.45）。
   - **ML backend 输出新几何**（**P3**）:`prediction.py` 的 LS shape 适配把 `keypointlabels` / `linelabels` 当前**归 bbox 占位**;真正让外部模型预测 rotated_bbox / polyline / keypoint 需要补 `to_internal_shape` 分支 + ML backend 协议侧约定。触发条件:有支持这些输出的模型接入。
 - **Annotation Guide 配套延伸**（v0.10.13 之后开放项，按客户反馈触发）：
   - ⚠️ **前端 UI 已整体下线**（feature flag `ANNOTATION_GUIDE_UI_ENABLED=false`，关闭工作台 GuidePanel 浮层 + 项目设置「标注指引」tab）。功能形态待重新设计，后端 API / 数据保留。**下列延伸项在前端重新启用前不开工**。
@@ -206,7 +205,7 @@
 | **P3** | C.3 SAM 后续延伸: 类别确认 hint / pixel-level Snap-to-edge | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) + 像素级 Snap-to-edge(Canny/Sobel WebWorker) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | I4/I12/I18 epic 续作余 (v0.10.21 收尾) | v0.10.20 已落 I4 任务级评论 POST + I12 group 折叠/batch banner + I18 IssueLayer + ADR-0027 第二段双写; v0.10.21 落 I4 笔画 timeline + 任务级 feedback patch/delete UI; 剩独立 epic 处理: ADR-0027 第三段切单源 (legacy-table-retirement) + DiscussionPanel 完整拆分 (无 UX 增量) + IssueLayer video frame pin | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
-| **P2** | v0.10.28 新几何导出/导入/预测支持 (rotated_bbox / polyline / keypoint) | 三工具 v0.10.28 已落地绘制 + 持久化, 但 export.py / predictions_import / ML 预测协议未覆盖新几何; 客户用了新工具走到导出立刻撞上; 详见 §A「v0.10.28 新几何导出/导入/预测支持」 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
+| **P3** | v0.10.28 新几何导入/预测支持 (rotated_bbox / polyline / keypoint) | 导出侧已于 v0.10.43 落地 (COCO segmentation/keypoints + yolo-obb/seg); 剩 predictions_import / ML 预测协议未覆盖新几何; 详见 §A「v0.10.28 新几何导入/预测支持」 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 

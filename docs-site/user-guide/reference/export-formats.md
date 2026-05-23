@@ -11,7 +11,11 @@ last_reviewed: 2026-05-23
 ![导出格式选择](../images/export/format-select.png)
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 导出对话框，COCO / YOLO / AAP JSON 选项 + 当前选中状态 + 导出范围（项目 / 批次）。 -->
 
-项目 Dashboard 的「导出」入口会打开居中的导出弹窗。图片项目可选择 **COCO / YOLO / AAP JSON**；视频轨迹项目可选 **Video JSON / AAP JSON / MOT / KITTI**（v0.10.31 起）。
+项目 Dashboard 的「导出」入口会打开居中的导出弹窗。**v0.10.43 起导出目标可多选**，一次导出产出**一个**压缩包：勾选单个目标时落包根（与旧布局一致），勾选多个目标时各目标落各自的 `{target}/` 子目录。
+
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / AAP JSON / MOT / KITTI**（v0.10.31 起）。
+
+> **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
 ## 导出流程（v0.10.27 起异步化）
 
@@ -22,9 +26,9 @@ last_reviewed: 2026-05-23
 
 1. 在**右上角任务铃（JobsBell）**里能看到一条「数据导出」任务，附带进度条。
 2. 任务完成后，该条目出现「下载」按钮。
-3. 产物（ZIP）的下载链接 **7 天内有效，可反复点击下载**（任务铃在后台不轮询，故不会自动下载，需手动点）。
+3. 产物（ZIP）的下载链接 **7 天内有效，可反复点击下载**（任务铃在后台不轮询，故不会自动下载，需手动点）。下载文件名为可读的 `{项目编号}_{数据集名}_{任务号前 8 位}.zip`（项目跨多个数据集时省略数据集名），v0.10.43 起替代旧的纯 UUID 名。
 
-> **重复导出走缓存**：一周内对**同一范围（项目 / 批次）+ 同一格式 + 同一参数**、且标注未发生增删改的重复导出会**瞬间完成**（复用上次生成的产物）。只要标注有任何增删改，就会重新生成。
+> **重复导出走缓存**：一周内对**同一范围（项目 / 批次）+ 同一组导出目标 + 同一参数**、且标注未发生增删改的重复导出会**瞬间完成**（复用上次生成的产物）。目标集合顺序无关（勾选顺序不影响命中）。只要标注有任何增删改，就会重新生成。
 
 ## 产物形态：仅标注 + 回源脚本（不含图片本体）
 
@@ -52,11 +56,20 @@ python fetch_images.py
 
 最常用格式，适配 Detectron2、MMDetection、YOLOv8 等。COCO 是单文档格式，落在包根的 `annotations.json`（无 per-image label 文件）。图片的 `width` / `height` 现在取**真实尺寸**（来自 dataset 记录；早期版本曾硬编码 1920×1280，已修复）。
 
+**v0.10.43 起 COCO 不再只导矩形框**，单文件可同时承载多种几何：
+
+- `bbox`：矩形框（也作为 polygon / keypoint 标注的外接框）。
+- `segmentation`：polygon / multi_polygon 标注的多边形顶点（像素坐标；孔洞/多连通域的完整还原留作后续）。
+- `keypoints` + `num_keypoints`：keypoint 标注的 `[x,y,v,…]`（v=0 未标注 / 1 遮挡 / 2 可见）。骨架拓扑写在对应 `categories[].keypoints`（节点名）+ `categories[].skeleton`（连线，COCO 1-indexed），直接来自项目 keypoint 工具单位的 `keypoint_schema`。
+- `attributes.__group_id`：Ctrl+G 同组标注的组号（启用 `include_attributes` 时）。
+
+> `rotated_bbox` / `polyline` 无 COCO 原生表示，不进 COCO（rotated 走 `YOLO 旋转框`，polyline 走 AAP JSON）；被跳过的条数记在 `info.skipped_annotations`。
+
 结构：
 
 ```json
 {
-  "info": {...},
+  "info": {"skipped_annotations": 0, "...": "..."},
   "images": [{"id": 1, "file_name": "...", "width": 800, "height": 600}],
   "annotations": [
     {
@@ -65,21 +78,30 @@ python fetch_images.py
       "category_id": 1,
       "bbox": [x, y, w, h],
       "segmentation": [[x1, y1, x2, y2, ...]],
+      "keypoints": [x1, y1, v1, x2, y2, v2],
+      "num_keypoints": 2,
       "area": 12345,
       "iscrowd": 0
     }
   ],
-  "categories": [{"id": 1, "name": "person", "supercategory": ""}]
+  "categories": [
+    {"id": 1, "name": "person", "supercategory": "keypoint",
+     "keypoints": ["nose", "left_eye"], "skeleton": [[1, 2]]}
+  ]
 }
 ```
 
-## YOLO
+## YOLO（det / obb / seg 三个变体）
 
-每张图一个 `.txt`，每行一个 bbox：
+YOLO 不同变体的标注行格式互不相同，v0.10.43 起拆成三个可独立选择的导出目标：
 
-```
-<class_id> <cx> <cy> <w> <h>      # 全部归一化到 [0,1]
-```
+| 目标 | 行格式 | 取哪种几何 |
+|---|---|---|
+| `YOLO 检测`(det) | `<cls> <cx> <cy> <w> <h>`（归一化） | bbox |
+| `YOLO 旋转框`(obb) | `<cls> <x1> <y1> … <x4> <y4>`（归一化四角） | rotated_bbox |
+| `YOLO 分割`(seg) | `<cls> <x1> <y1> <x2> <y2> …`（归一化多边形） | polygon / multi_polygon |
+
+> OBB 四角在像素空间按旋转角计算后再归一化（图像非正方形时直接在归一化坐标旋转会变形）。seg 对 multi_polygon 的每个连通域各出一行。
 
 label 文件按**镜像目录**组织，保留原数据集的递归子目录结构：
 
@@ -211,8 +233,10 @@ v0.10.31 起，`video-track` 项目导出可选 **Video JSON / AAP JSON / MOT / 
 
 | 用途 | 推荐 |
 |---|---|
-| 训练 YOLOv8 | YOLO |
-| 训练 Detectron2 / MMDetection | COCO |
+| 训练 YOLOv8 检测 | YOLO 检测 |
+| 训练 YOLOv8 旋转框 (OBB) | YOLO 旋转框 |
+| 训练 YOLOv8 分割 | YOLO 分割 |
+| 训练 Detectron2 / MMDetection（检测 / 分割 / 关键点） | COCO |
 | **跨实例无损迁移 / 客户自训模型预测灌入** | **AAP JSON** |
 | 数据迁移 / 备份 | AAP JSON / Label Studio JSON |
 | 视频轨迹备份 / 质检 | Video JSON（关键帧） |

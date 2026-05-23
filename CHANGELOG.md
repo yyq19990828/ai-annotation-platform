@@ -22,6 +22,23 @@
 
 ## 最新版本
 
+## [0.10.43] - 2026-05-23
+
+> **导出能力重整（图像）：多目标多选 + 多几何 + 友好下载名。** 导出从「单格式 / 仅矩形框」升级为可一次多选导出目标（一个 job 产一个 zip，>1 目标分子目录），COCO 现可同时承载 segmentation / keypoints / group_id，YOLO 拆为 det / obb / seg 三个变体按几何映射，下载名改为可读的 `{项目}_{数据集}_{job 前 8 位}.zip`。本版即 ROADMAP §A P2「新几何导出支持」的落地。计划见 [v0.10.43 计划](docs/plans/2026-05-23-v0.10.43-export-targets-overhaul.md)。
+
+### Added
+
+- **多目标导出（方案 B）** (后端 [projects.py](apps/api/app/api/v1/projects.py) · [batches.py](apps/api/app/api/v1/batches.py) · [export_packaging.py](apps/api/app/services/export_packaging.py) · [export.py worker](apps/api/app/workers/export.py)): 导出端点 `format` 单值 → `targets` 多值；worker 循环逐目标写入同一 zip，单目标保持旧根布局、>1 目标各落 `{target}/` 子目录；导出缓存键纳入排序后的目标集合（顺序无关稳定命中），桶 object key 由写死 `image/` 改为按 `data_type` 取 `image|video`。
+- **COCO 多几何 + keypoints + group_id** ([export.py](apps/api/app/services/export.py)): COCO 标注现可同时写 `segmentation`(polygon / multi_polygon)、`keypoints` + `num_keypoints`（骨架 `categories[].keypoints`/`skeleton` 直接派生自 `ToolBinding.keypoint_schema`）；`Annotation.group_id` 映射到 `attributes.__group_id`（I12）；`info.skipped_annotations` 记录被跳过几何条数。
+- **YOLO 变体写入器** ([export_packaging.py](apps/api/app/services/export_packaging.py)): 新增 `yolo-det`（矩形框）/ `yolo-obb`（rotated_bbox 像素空间旋转四角）/ `yolo-seg`（polygon / multi_polygon 归一化多边形）三个目标，各取匹配几何、不匹配跳过。
+- **友好下载名** ([storage.py](apps/api/app/services/storage.py) · [export.py worker](apps/api/app/workers/export.py)): 预签名 URL 经 `ResponseContentDisposition` 给出 `{project_display_id}_{dataset_name?}_{job_id[:8]}.zip`（跨多数据集时省略数据集名），桶内 key 仍用完整 job_id 保唯一与缓存稳定。
+- **前端导出目标多选** ([ExportSection.tsx](apps/web/src/pages/Dashboard/ExportSection.tsx) · [projects.ts](apps/web/src/api/projects.ts)): 导出弹窗的「格式」改为「导出目标」多选；图像项目可勾 COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON，视频项目沿用 Video JSON / AAP / MOT / KITTI；`exportProject` / `exportBatch` 入参 `format` → `targets[]`。
+
+### Changed
+
+- **几何闸门收敛** ([export.py](apps/api/app/services/export.py)): COCO 不再用 `_bbox_geometry` 全局只放行矩形框；各导出目标按自己消费的几何过滤（rotated_bbox / polyline 仍只走各自专属目标或 AAP）。
+- **新格式族走 datumaro 不手写**: 本版仅补全既有 COCO / YOLO 三件套对新几何的覆盖；KITTI / DAVIS / Cityscapes / LabelMe 等小众格式族仍按 ROADMAP 决策底线走「导 COCO/AAP JSON → datumaro 中转」，不在平台手写。
+
 ## [0.10.42] - 2026-05-23
 
 > **项目导出入口改为居中弹窗。** Dashboard 项目行里的「导出」仍保留在原操作列，但点开后不再使用表格单元格内的下拉浮层，改为复用全局 `Modal` 的居中悬浮页；导出格式、帧模式与 `include_attributes` 后端契约不变。计划见 [v0.10.42 计划](docs/plans/2026-05-23-v0.10.42-export-modal.md)。

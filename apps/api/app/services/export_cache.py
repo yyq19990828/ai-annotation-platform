@@ -23,7 +23,7 @@ from app.services.storage import storage_service
 
 def compute_cache_key(
     scope_id: uuid.UUID,
-    format: str,
+    targets: list[str],
     include_attributes: bool,
     video_frame_mode: str,
     max_updated_at: datetime | None,
@@ -31,12 +31,13 @@ def compute_cache_key(
 ) -> str:
     """sha256 hex 指纹。scope_id 为 project_id 或 batch_id。
 
+    v0.10.43 · 多目标：指纹纳入**排序后**的目标集合（顺序无关稳定命中）。
     max_updated_at = max(annotation.updated_at WHERE is_active AND not cancelled)，
     active_count = count(active annotation)。两者共同失效，覆盖删除标注场景。
     """
     parts = [
         str(scope_id),
-        format,
+        ",".join(sorted(targets)),
         "1" if include_attributes else "0",
         video_frame_mode,
         max_updated_at.isoformat() if max_updated_at is not None else "",

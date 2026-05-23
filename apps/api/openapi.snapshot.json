@@ -22502,14 +22502,20 @@
             }
           },
           {
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / mot / kitti（voc 仅可单选，走同步下载）",
             "in": "query",
-            "name": "format",
+            "name": "targets",
             "required": false,
             "schema": {
-              "default": "coco",
-              "pattern": "^(coco|voc|yolo|aap_json|video_json|mot|kitti)$",
-              "title": "Format",
-              "type": "string"
+              "default": [
+                "coco"
+              ],
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / mot / kitti（voc 仅可单选，走同步下载）",
+              "items": {
+                "type": "string"
+              },
+              "title": "Targets",
+              "type": "array"
             }
           },
           {
@@ -22889,14 +22895,20 @@
             }
           },
           {
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / mot / kitti（voc 仅可单选，走同步下载）",
             "in": "query",
-            "name": "format",
+            "name": "targets",
             "required": false,
             "schema": {
-              "default": "coco",
-              "pattern": "^(coco|voc|yolo|aap_json|video_json|mot|kitti)$",
-              "title": "Format",
-              "type": "string"
+              "default": [
+                "coco"
+              ],
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / mot / kitti（voc 仅可单选，走同步下载）",
+              "items": {
+                "type": "string"
+              },
+              "title": "Targets",
+              "type": "array"
             }
           },
           {

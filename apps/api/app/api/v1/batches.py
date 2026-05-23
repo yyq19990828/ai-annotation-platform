@@ -844,8 +844,10 @@ async def export_batch(
     request: Request,
     project_id: uuid.UUID,
     batch_id: uuid.UUID,
-    format: str = Query(
-        "coco", pattern="^(coco|voc|yolo|aap_json|video_json|mot|kitti)$"
+    targets: list[str] = Query(
+        default=["coco"],
+        description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json"
+        " / video_json / mot / kitti（voc 仅可单选，走同步下载）",
     ),
     include_attributes: bool = Query(True),
     video_frame_mode: str = Query(
@@ -858,8 +860,14 @@ async def export_batch(
     db: AsyncSession = Depends(get_db),
 ):
     # v0.10.27 · 导出异步化：创建 async_job(kind=export) + 派发 run_export，返回 {job_id}。
-    # VOC 后端保留同步 blob（前端已隐藏）；不删避免破坏 API 契约。
+    # v0.10.43 · 多目标（方案 B）。VOC 仅可单选，走同步 blob；不删避免破坏 API 契约。
     from app.services.audit import AuditService, AuditAction, export_detail
+    from app.services.export_packaging import clean_export_targets
+
+    try:
+        targets = clean_export_targets(targets)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     svc_batch = BatchService(db)
     batch = await svc_batch.get(batch_id)
@@ -868,7 +876,11 @@ async def export_batch(
 
     fname = f"{project.display_id}_{batch.display_id}"
 
-    if format == "voc":
+    if "voc" in targets:
+        if targets != ["voc"]:
+            raise HTTPException(
+                status_code=400, detail="voc 格式只能单独导出，不能与其它目标混选"
+            )
         from app.services.export import ExportService, UnsupportedExportError
 
         svc = ExportService(db)
@@ -887,7 +899,7 @@ async def export_batch(
             request=request,
             status_code=200,
             detail={
-                "format": format,
+                "format": "voc",
                 "project_id": str(project_id),
                 "batch_display_id": batch.display_id,
             },
@@ -909,10 +921,11 @@ async def export_batch(
         user_id=actor.id,
         project_id=project.id,
         payload={
-            "format": format,
+            "targets": targets,
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
             "project_id": str(project_id),
+            "project_display_id": project.display_id,
             "batch_display_id": batch.display_id,
         },
     )
@@ -928,7 +941,7 @@ async def export_batch(
             actor=actor,
             request=request,
             base={
-                "format": format,
+                "targets": targets,
                 "project_id": str(project_id),
                 "batch_display_id": batch.display_id,
             },
@@ -943,7 +956,7 @@ async def export_batch(
     run_export.delay(
         project_id=str(project_id),
         batch_id=str(batch_id),
-        format=format,
+        targets=targets,
         opts={
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,

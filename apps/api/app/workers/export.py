@@ -22,9 +22,12 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+import re
+
 from app.config import settings
 from app.db.models.annotation import Annotation
 from app.db.models.async_job import AsyncJob
+from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services import async_job as async_job_svc
 from app.services import export_cache
@@ -58,6 +61,7 @@ async def _emit_export_notification(
         payload_in = job.payload or {}
         notif_payload: dict = {
             "project_display_id": payload_in.get("project_display_id"),
+            "targets": payload_in.get("targets"),
             "format": payload_in.get("format"),
         }
         if ok and result:
@@ -82,7 +86,7 @@ def run_export(
     self,
     project_id: str,
     batch_id: str | None,
-    format: str,
+    targets: list[str],
     opts: dict | None,
     async_job_id: str,
 ):
@@ -90,7 +94,7 @@ def run_export(
         _run_export(
             project_id=project_id,
             batch_id=batch_id,
-            format=format,
+            targets=targets,
             opts=opts or {},
             async_job_id=async_job_id,
             celery_task_id=self.request.id,
@@ -116,11 +120,51 @@ async def _scope_fingerprint(
     return row[0], int(row[1] or 0)
 
 
+async def _scope_naming(
+    db: AsyncSession, project_id: uuid.UUID, batch_id: uuid.UUID | None
+) -> tuple[str, str | None, str]:
+    """返回 (media, dataset_name|None, project_display_id)。
+
+    media 由 project.data_type 决定（image/video）；dataset_name = 唯一数据集名
+    （file_path 首段，跨多数据集时 None）；用于桶前缀与友好下载名。
+    """
+    row = (
+        await db.execute(
+            select(Project.data_type, Project.display_id).where(Project.id == project_id)
+        )
+    ).first()
+    data_type = (row[0] if row else None) or "image"
+    display_id = (row[1] if row else None) or "export"
+    media = "video" if data_type == "video" else "image"
+
+    name_q = select(func.split_part(Task.file_path, "/", 1)).where(
+        Task.project_id == project_id
+    )
+    if batch_id is not None:
+        name_q = name_q.where(Task.batch_id == batch_id)
+    names = [r[0] for r in (await db.execute(name_q.distinct())).all() if r[0]]
+    dataset_name = names[0] if len(names) == 1 else None
+    return media, dataset_name, display_id
+
+
+def _friendly_zip_name(
+    project_display_id: str, dataset_name: str | None, job_id: str
+) -> str:
+    """{project_display_id}_{dataset_name?}_{job_id[:8]}.zip，非法字符替换为 _。"""
+    parts = [project_display_id]
+    if dataset_name:
+        parts.append(dataset_name)
+    parts.append(job_id[:8])
+    raw = "_".join(parts)
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("_") or "export"
+    return f"{safe}.zip"
+
+
 async def _run_export(
     *,
     project_id: str,
     batch_id: str | None,
-    format: str,
+    targets: list[str],
     opts: dict,
     async_job_id: str,
     celery_task_id: str | None,
@@ -150,11 +194,18 @@ async def _run_export(
                 )
                 cache_key = export_cache.compute_cache_key(
                     scope_id,
-                    format,
+                    targets,
                     include_attributes,
                     video_frame_mode,
                     max_updated_at,
                     active_count,
+                )
+                # v0.10.43 · media 前缀 + 友好下载名（{display_id}_{dataset?}_{job[:8]}.zip）。
+                media, dataset_name, project_display_id = await _scope_naming(
+                    db, proj_uuid, batch_uuid
+                )
+                download_name = _friendly_zip_name(
+                    project_display_id, dataset_name, async_job_id
                 )
 
                 # 缓存命中：探活 + 刷新预签名 URL，跳过重生成。
@@ -164,6 +215,7 @@ async def _run_export(
                         hit.object_key,
                         expires_in=PRESIGN_EXPIRES_SECONDS,
                         bucket=export_bucket,
+                        download_name=download_name,
                     )
                     await async_job_svc.mark_complete(
                         db,
@@ -201,7 +253,7 @@ async def _run_export(
                     db,
                     proj_uuid,
                     batch_id=batch_uuid,
-                    format=format,
+                    targets=targets,
                     include_attributes=include_attributes,
                     video_frame_mode=video_frame_mode,
                 )
@@ -209,7 +261,7 @@ async def _run_export(
                 await async_job_svc.update_progress(db, job_uuid, 70)
                 await db.commit()
 
-                object_key = f"image/{project_id}/{async_job_id}.zip"
+                object_key = f"{media}/{project_id}/{async_job_id}.zip"
                 storage_service.client.put_object(
                     Bucket=export_bucket,
                     Key=object_key,
@@ -225,7 +277,7 @@ async def _run_export(
                     cache_key=cache_key,
                     project_id=proj_uuid,
                     batch_id=batch_uuid,
-                    format=format,
+                    format=",".join(sorted(targets)),
                     object_key=object_key,
                     file_count=file_count,
                     size_bytes=len(data),
@@ -240,6 +292,7 @@ async def _run_export(
                     object_key,
                     expires_in=PRESIGN_EXPIRES_SECONDS,
                     bucket=export_bucket,
+                    download_name=download_name,
                 )
                 await async_job_svc.mark_complete(
                     db,

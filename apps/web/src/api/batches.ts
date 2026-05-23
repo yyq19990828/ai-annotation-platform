@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { ExportFormat, ExportOptions } from "./projects";
+import type { ExportTarget, ExportOptions } from "./projects";
 import type { UserBrief } from "@/types";
 
 export interface BatchResponse {
@@ -243,9 +243,10 @@ export const batchesApi = {
 
   // v0.10.27 · 导出异步化：POST 创建 async_job(kind=export)，返回 {job_id}。
   // 不再直接 blob 下载；产物完成后在 JobsBell 里用预签名 URL 下载。
-  exportBatch: (projectId: string, batchId: string, format: ExportFormat, opts?: ExportOptions) => {
+  exportBatch: (projectId: string, batchId: string, targets: ExportTarget[], opts?: ExportOptions) => {
     const includeAttr = opts?.includeAttributes !== false;
-    const params = new URLSearchParams({ format, include_attributes: String(includeAttr) });
+    const params = new URLSearchParams({ include_attributes: String(includeAttr) });
+    targets.forEach((t) => params.append("targets", t));
     if (opts?.videoFrameMode) params.set("video_frame_mode", opts.videoFrameMode);
     return apiClient.post<{ job_id: string }>(
       `/projects/${projectId}/batches/${batchId}/export?${params.toString()}`,

@@ -769,11 +769,23 @@ async def remove_member(
     return Response(status_code=204)
 
 
+def _validate_export_targets(targets: list[str]) -> list[str]:
+    """v0.10.43 · 校验并去重导出目标，非法转 400。"""
+    from app.services.export_packaging import clean_export_targets
+
+    try:
+        return clean_export_targets(targets)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/{project_id}/export", status_code=202)
 async def export_project(
     request: Request,
-    format: str = Query(
-        "coco", pattern="^(coco|voc|yolo|aap_json|video_json|mot|kitti)$"
+    targets: list[str] = Query(
+        default=["coco"],
+        description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json"
+        " / video_json / mot / kitti（voc 仅可单选，走同步下载）",
     ),
     include_attributes: bool = Query(
         True,
@@ -789,11 +801,18 @@ async def export_project(
     db: AsyncSession = Depends(get_db),
 ):
     # v0.10.27 · 导出异步化：创建 async_job(kind=export) + 派发 run_export，返回 {job_id}。
+    # v0.10.43 · 多目标（方案 B）：一个 job 产一个 zip（>1 目标分子目录）。
     # 状态/下载走 GET /async-jobs/{id}（result.download_url 为 7d 预签名）。
-    # VOC 后端保留同步 blob（前端已隐藏）；不删避免破坏 API 契约。
+    # VOC 后端保留同步 blob（前端已隐藏），仅可单选；不删避免破坏 API 契约。
     from app.services.audit import AuditService, AuditAction, export_detail
 
-    if format == "voc":
+    targets = _validate_export_targets(targets)
+
+    if "voc" in targets:
+        if targets != ["voc"]:
+            raise HTTPException(
+                status_code=400, detail="voc 格式只能单独导出，不能与其它目标混选"
+            )
         from app.services.export import ExportService, UnsupportedExportError
 
         svc = ExportService(db)
@@ -811,7 +830,7 @@ async def export_project(
             target_id=str(project.id),
             request=request,
             status_code=200,
-            detail={"format": format, "project_display_id": project.display_id},
+            detail={"format": "voc", "project_display_id": project.display_id},
         )
         await db.commit()
         return Response(
@@ -832,7 +851,7 @@ async def export_project(
         user_id=actor.id,
         project_id=project.id,
         payload={
-            "format": format,
+            "targets": targets,
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
             "project_display_id": project.display_id,
@@ -849,7 +868,7 @@ async def export_project(
         detail=export_detail(
             actor=actor,
             request=request,
-            base={"format": format, "project_display_id": project.display_id},
+            base={"targets": targets, "project_display_id": project.display_id},
             filter_criteria={
                 "include_attributes": include_attributes,
                 "video_frame_mode": video_frame_mode,
@@ -861,7 +880,7 @@ async def export_project(
     run_export.delay(
         project_id=str(project.id),
         batch_id=None,
-        format=format,
+        targets=targets,
         opts={
             "include_attributes": include_attributes,
             "video_frame_mode": video_frame_mode,
