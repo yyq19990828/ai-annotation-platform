@@ -30,7 +30,7 @@ last_reviewed: 2026-05-11
 2. 填写基本信息：
    - 项目名称（唯一）
    - 标注类型：bbox / polygon / keypoint / classification
-   - 关联 AI 模型（可选，供预标注使用）
+   - 启用 AI 预标注（可选，可复用已有 ML Backend）
 3. 上传数据集（支持批量 ZIP 或逐个文件上传）
 4. 保存后系统自动生成对应 Task（状态 `pending`）
 
@@ -42,7 +42,7 @@ last_reviewed: 2026-05-11
 
 如有可用 ML Backend，可在项目创建后立即触发批量预标注，减少标注员工作量。
 
-1. 项目详情 → **AI 预标注** → 选择模型 → **启动**
+1. 项目详情 → **AI 预标注** → 选择 backend → **启动**
 2. 等待 Job 状态变为 `done`（可在超管 → 失败预测页面监控）
 3. 每个 Task 会生成 Prediction（紫色候选框），标注员可采用（A）或拒绝（D）
 

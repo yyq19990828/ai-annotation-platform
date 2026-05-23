@@ -17,14 +17,3 @@ export const PROJECT_TYPES: ReadonlyArray<ProjectTypeOption> = [
   { key: "video-track", label: "视频 · 时序追踪", icon: "video", hint: "跨帧目标追踪" },
   { key: "mm", label: "多模态 · 图文对", icon: "mm", hint: "图文匹配/描述" },
 ];
-
-export const PRESET_AI_MODELS: ReadonlyArray<string> = [
-  "YOLO v8",
-  "GroundingDINO + SAM",
-  "SAM-HQ",
-  "GPT-4V",
-  "Qwen2-VL",
-  "PointPillars",
-];
-
-export const CUSTOM_MODEL_KEY = "__custom__";

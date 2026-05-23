@@ -164,7 +164,7 @@ export function useWorkbenchShellModel({
 
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
-  const aiModel = currentProject?.ai_model ?? "GroundingDINO + SAM";
+  const aiModel = currentProject?.ai_model ?? "未接入模型";
 
   const meUserId = useAuthStore((s) => s.user?.id);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(requestedBatchId);

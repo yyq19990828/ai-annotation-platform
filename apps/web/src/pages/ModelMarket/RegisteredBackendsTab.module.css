@@ -111,6 +111,16 @@
   white-space: nowrap;
 }
 
+.emptyGroupState {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 14px;
+  color: var(--color-fg-muted);
+  font-size: 12px;
+}
+
 .projectActions {
   flex-shrink: 0;
   display: inline-flex;

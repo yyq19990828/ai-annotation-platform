@@ -49,6 +49,8 @@ export function VariantPanel({
   const samEnum = samField?.enum ?? [];
   const dinoEnum = dinoField?.enum ?? [];
   const supportsVariants = samEnum.length > 0 || dinoEnum.length > 0;
+  const modalities = backend.health_meta?.capabilities?.modalities ?? [];
+  const hasModalitySnapshot = modalities.length > 0;
 
   const pool = backend.health_meta?.pool;
   const buckets = backend.health_meta?.cache?.buckets ?? {};
@@ -60,6 +62,8 @@ export function VariantPanel({
   const hasVideoMeta = backend.health_meta != null && "video_pool" in backend.health_meta;
   const supportedTrackers = setup?.supported_trackers ?? [];
   const supportsVideo = supportedTrackers.length > 0;
+  const showImageGroup = hasModalitySnapshot ? modalities.includes("image") : supportsVariants;
+  const showVideoGroup = hasModalitySnapshot ? modalities.includes("video") : supportsVideo;
   const videoLoaded = useMemo(() => videoPool?.loaded_variants ?? [], [videoPool?.loaded_variants]);
   // 视频 SAM 候选: 优先复用图片侧 enum, 否则用 SAM2 视频变体常量.
   const videoSamEnum = samEnum.length > 0 ? samEnum : SAM2_VIDEO_VARIANTS;
@@ -86,8 +90,8 @@ export function VariantPanel({
 
   return (
     <div className={styles.panel}>
-      {/* 图像推理变体 (走图片池, 行为不变); 仅当 /setup.params 有 image 变体 enum 时显示. */}
-      {supportsVariants && (
+      {/* 图像推理变体 (走图片池); v0.10.41 起优先按持久化 modalities 门控, 未探测时回落旧 enum 判断. */}
+      {showImageGroup && (
         <>
           <div className={styles.section}>
             <div className={styles.sectionTitle}>
@@ -180,75 +184,75 @@ export function VariantPanel({
       )}
 
       {/* v0.10.36 · 视频追踪变体 (走独立 video tracker 池, 仅 SAM 无 DINO). */}
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>
-          视频追踪变体 · 已加载（视频池）
-          {supportsVideo && videoPool?.cap != null && (
-            <span className={styles.cap}>
-              {videoLoaded.length}/{videoPool.cap}
-              {videoPool.active_sessions != null && ` · ${videoPool.active_sessions} 会话`}
-            </span>
+      {showVideoGroup && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>
+            视频追踪变体 · 已加载（视频池）
+            {videoPool?.cap != null && (
+              <span className={styles.cap}>
+                {videoLoaded.length}/{videoPool.cap}
+                {videoPool.active_sessions != null && ` · ${videoPool.active_sessions} 会话`}
+              </span>
+            )}
+          </div>
+          {!hasVideoMeta ? (
+            <div className={styles.note}>该 backend 未上报 video 观测</div>
+          ) : (
+            <>
+              {videoLoaded.length === 0 ? (
+                <div className={styles.note}>视频池暂无常驻变体（首次追踪自动冷启）</div>
+              ) : (
+                <div className={styles.tableScroller}>
+                  <table className={styles.variantTable}>
+                    <thead>
+                      <tr>
+                        <th>SAM 变体</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {videoLoaded.map((v) => (
+                        <tr key={v}>
+                          <td className={styles.variantCell} title={v}>
+                            <span className="mono">{v}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className={styles.warmRow}>
+                <label className={styles.field}>
+                  <span className={styles.label}>SAM</span>
+                  <select
+                    value={videoSam}
+                    onChange={(e) => setVideoSam(e.target.value)}
+                    className={styles.select}
+                  >
+                    {videoSamEnum.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  size="sm"
+                  onClick={() => onWarm({ sam_variant: videoSam || undefined }, "video")}
+                  disabled={isWarming}
+                >
+                  <Icon name="play" size={11} />
+                  预热
+                </Button>
+                {isVideoSelectedLoaded && <Badge variant="success">已在显存</Badge>}
+              </div>
+              <div className={styles.hint}>
+                视频追踪池首次请求自动冷启；预热可提前载入显存。tracker 不使用 DINO。
+              </div>
+            </>
           )}
         </div>
-        {!supportsVideo ? (
-          <div className={styles.note}>该后端不支持视频追踪</div>
-        ) : !hasVideoMeta ? (
-          <div className={styles.note}>该 backend 未上报 video 观测</div>
-        ) : (
-          <>
-            {videoLoaded.length === 0 ? (
-              <div className={styles.note}>视频池暂无常驻变体（首次追踪自动冷启）</div>
-            ) : (
-              <div className={styles.tableScroller}>
-                <table className={styles.variantTable}>
-                  <thead>
-                    <tr>
-                      <th>SAM 变体</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {videoLoaded.map((v) => (
-                      <tr key={v}>
-                        <td className={styles.variantCell} title={v}>
-                          <span className="mono">{v}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div className={styles.warmRow}>
-              <label className={styles.field}>
-                <span className={styles.label}>SAM</span>
-                <select
-                  value={videoSam}
-                  onChange={(e) => setVideoSam(e.target.value)}
-                  className={styles.select}
-                >
-                  {videoSamEnum.map((o) => (
-                    <option key={o} value={o}>
-                      {o}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <Button
-                size="sm"
-                onClick={() => onWarm({ sam_variant: videoSam || undefined }, "video")}
-                disabled={isWarming}
-              >
-                <Icon name="play" size={11} />
-                预热
-              </Button>
-              {isVideoSelectedLoaded && <Badge variant="success">已在显存</Badge>}
-            </div>
-            <div className={styles.hint}>
-              视频追踪池首次请求自动冷启；预热可提前载入显存。tracker 不使用 DINO。
-            </div>
-          </>
-        )}
-      </div>
+      )}
     </div>
   );
 }

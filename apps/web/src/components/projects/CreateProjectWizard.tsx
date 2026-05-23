@@ -11,10 +11,6 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useCreateProject } from "@/hooks/useProjects";
 import {
-  PRESET_AI_MODELS,
-  CUSTOM_MODEL_KEY,
-} from "@/constants/projectTypes";
-import {
   TOOL_UNIT_GROUPS,
   PROJECT_DATA_TYPES,
   defaultEnabledUnits,
@@ -79,8 +75,6 @@ export interface FormState {
   unitBindings: UnitBindingMap;
   activeUnit: ToolUnitId;
   aiEnabled: boolean;
-  aiModelChoice: string;
-  aiModelCustom: string;
   /** v0.9.6 · SAM 文本预标默认输出 ("" = 自动按 type_key, 与 GeneralSection 4 项一致). */
   textOutputDefault: "" | "box" | "mask" | "both";
   /** v0.9.7 · 复用现有 backend; "" = 暂不绑定 (项目创建后到设置页注册). */
@@ -119,8 +113,6 @@ const INITIAL: FormState = {
   unitBindings: defaultUnitBindings("image-det"),
   activeUnit: "bbox",
   aiEnabled: false,
-  aiModelChoice: PRESET_AI_MODELS[0],
-  aiModelCustom: "",
   textOutputDefault: "",
   mlBackendSourceId: "",
   datasetIds: [],
@@ -216,13 +208,6 @@ function buildUnitBindingsFromSource(src: {
 
 function buildFormFromSource(src: ProjectResponse): FormState {
   const { unitBindings, activeUnit } = buildUnitBindingsFromSource(src);
-  const aiModel = src.ai_model ?? "";
-  const aiModelChoice = aiModel && PRESET_AI_MODELS.includes(aiModel)
-    ? aiModel
-    : aiModel
-      ? CUSTOM_MODEL_KEY
-      : PRESET_AI_MODELS[0];
-  const aiModelCustom = aiModel && !PRESET_AI_MODELS.includes(aiModel) ? aiModel : "";
   const textOutputDefault =
     src.text_output_default === "box" || src.text_output_default === "mask" ||
     src.text_output_default === "both"
@@ -238,8 +223,6 @@ function buildFormFromSource(src: ProjectResponse): FormState {
     unitBindings,
     activeUnit,
     aiEnabled: src.ai_enabled,
-    aiModelChoice,
-    aiModelCustom,
     textOutputDefault,
     mlBackendSourceId: src.ml_backend_id ?? "",
     // datasets / batches / members / dueDate 留空 — 这些是运行时数据
@@ -252,13 +235,6 @@ function buildFormFromTemplate(t: ProjectTemplateOut): FormState {
   const { unitBindings, activeUnit } = buildUnitBindingsFromSource(
     t as Parameters<typeof buildUnitBindingsFromSource>[0],
   );
-  const aiModel = t.ai_model ?? "";
-  const aiModelChoice = aiModel && PRESET_AI_MODELS.includes(aiModel)
-    ? aiModel
-    : aiModel
-      ? CUSTOM_MODEL_KEY
-      : PRESET_AI_MODELS[0];
-  const aiModelCustom = aiModel && !PRESET_AI_MODELS.includes(aiModel) ? aiModel : "";
   const textOutputDefault =
     t.text_output_default === "box" || t.text_output_default === "mask" ||
     t.text_output_default === "both"
@@ -274,8 +250,6 @@ function buildFormFromTemplate(t: ProjectTemplateOut): FormState {
     unitBindings,
     activeUnit,
     aiEnabled: t.ai_enabled,
-    aiModelChoice,
-    aiModelCustom,
     textOutputDefault,
   };
 }
@@ -385,11 +359,6 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
   const step1Valid =
     nameValid && !!form.dataType && dueValid && enabledUnitCount > 0;
 
-  const resolvedAiModel = form.aiModelChoice === CUSTOM_MODEL_KEY
-    ? form.aiModelCustom.trim()
-    : form.aiModelChoice;
-  const step4Valid = !form.aiEnabled || resolvedAiModel.length > 0;
-
   // v0.10.17 · 各 enabled unit 各自的 attribute_schema 必须独立校验通过.
   const enabledUnitIds = useMemo(
     () =>
@@ -410,7 +379,6 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
   const step3Valid = step3AttrError === null;
 
   const submit = () => {
-    if (!step4Valid) return;
     if (step3AttrError) {
       pushToast({ msg: step3AttrError, kind: "error" });
       return;
@@ -461,7 +429,6 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
         attribute_schema,
         tool_bindings,
         ai_enabled: form.aiEnabled,
-        ai_model: form.aiEnabled ? resolvedAiModel : null,
         // v0.9.6 · 仅启用 AI 时携带; "" = null (走智能默认)
         text_output_default:
           form.aiEnabled && form.textOutputDefault ? form.textOutputDefault : null,
@@ -566,7 +533,7 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
       )}
 
       {step === 4 && (
-        <Step4Ai form={form} setForm={setForm} resolvedAiModel={resolvedAiModel} />
+        <Step4Ai form={form} setForm={setForm} />
       )}
 
       {step === 5 && created && (
@@ -618,7 +585,7 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
             (step === 1 && step1Valid) ||
             step === 2 ||
             (step === 3 && step3Valid) ||
-            (step === 4 && step4Valid)
+            step === 4
           }
           loading={createProject.isPending}
           onCancel={onClose}

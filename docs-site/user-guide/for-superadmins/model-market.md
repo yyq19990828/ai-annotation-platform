@@ -60,10 +60,11 @@ backend 的变体面板拆成两组：
 
 - **图像推理变体**：SAM + DINO 双下拉，预热加载到图片池（grounded-sam2 图片 predictor）。
 - **视频追踪变体**：**仅 SAM 单下拉**（video tracker 不使用 DINO），预热加载到**独立 video 池**。
+- v0.10.41 起，分组是否显示优先读取健康检查落库的 `health_meta.capabilities.modalities`；纯图像 backend 不再显示视频组，纯视频 backend 不再显示图像组。未健康检查过、没有 modalities 快照时，页面回落到旧的 `/setup` enum / tracker 判断，避免把未知能力的 backend 误隐藏。
 
 > ⚠️ **常见误区**：在 v0.10.36 之前，对一个纯视频项目的 backend 点「预热」其实只热了**图片池**——video tracker 用的是独立 `_video_pool`，首次追踪请求才冷启，预热按钮碰不到它，等于白占图片侧显存。现在视频组的预热走 `/reload?task_type=video`，正确加载 video 池。
 >
-> 若 backend 的 `/setup.supported_trackers` 为空（不支持视频）或未上报 `video_pool`（旧版本），视频组会降级提示，不影响图像组。
+> 若 backend 自报支持视频但未上报 `video_pool`（旧版本），视频组会降级提示，不影响图像组。
 
 ### 视频追踪任务监控（v0.10.38 起迁至 /ai-pre/jobs）
 
@@ -73,7 +74,7 @@ backend 的变体面板拆成两组：
 
 ## 新建 / 编辑 Backend
 
-按钮「新建 ML Backend」弹表单，与 [ML Backend 注册](./ml-backend-registry) 等价。差别在这里创建的 backend 默认 `project_id=NULL`（全局可选），项目设置 wizard 复制时才落到具体项目。
+「项目级 ML Backend」列表会显示两类项目：已注册 backend 的项目，以及已启用 AI 但还没有 backend 的项目。后者会显示「AI 已启用 · 未注册 backend」，可直接点「注册第一个 backend」把第一条 backend 记录注册到该项目；注册表单与 [ML Backend 注册](./ml-backend-registry) 等价。
 
 ## 删除
 

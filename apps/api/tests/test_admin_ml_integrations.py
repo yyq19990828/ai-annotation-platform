@@ -94,6 +94,39 @@ async def test_overview_groups_backends_by_project(
         assert len(body["projects"][0]["backends"]) == 2
 
 
+@pytest.mark.asyncio
+async def test_overview_includes_ai_enabled_project_without_backend(
+    httpx_client, db_session, super_admin
+):
+    user, token = super_admin
+    proj = await create_project(db_session, owner_id=user.id, name="AI Empty")
+    proj.ai_enabled = True
+    await db_session.commit()
+
+    with patch("app.api.v1.admin_ml_integrations.storage_service") as mock_storage:
+        mock_storage.bucket = "annotations"
+        mock_storage.datasets_bucket = "datasets"
+        mock_storage.summarize_bucket.return_value = {
+            "name": "annotations",
+            "status": "ok",
+            "object_count": 0,
+            "total_size_bytes": 0,
+        }
+
+        res = await httpx_client.get(
+            "/api/v1/admin/ml-integrations/overview",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        group = next(
+            p for p in body["projects"] if p["project_id"] == str(proj.id)
+        )
+        assert group["project_name"] == "AI Empty"
+        assert group["backends"] == []
+        assert body["total_backends"] == 0
+
+
 # ── v0.9.6 · /probe + /runtime-hints ──────────────────────────────────
 
 

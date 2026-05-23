@@ -128,7 +128,7 @@ function ProjectRow({
       </td>
       <td className={styles.projectCell}>
         {p.ai_enabled ? (
-          <Badge variant="ai"><Icon name="sparkles" size={10} />{p.ai_model}</Badge>
+          <Badge variant="ai"><Icon name="sparkles" size={10} />{p.ai_model ?? "未接入模型"}</Badge>
         ) : (
           <span className={styles.mutedSmall}>未启用</span>
         )}

@@ -10,7 +10,7 @@ last_reviewed: 2026-05-14
 
 > 适用角色：项目管理员 / 超级管理员
 
-每个项目可以绑定一个 ML backend 用于工作台交互式 AI 工具（智能点 / 智能框 / 文本提示 / Exemplar）和批量预标注。本页解释**注册、绑定、解绑**三件事，以及"为什么 v0.10.x 暂时只能挂一个"。
+每个项目可以绑定 ML backend 用于工作台交互式 AI 工具（智能点 / 智能框 / 文本提示 / Exemplar）和批量预标注。本页解释**注册、绑定、解绑**三件事，以及开发环境为什么默认只允许每个项目注册一个。
 
 ## 注册一个 backend
 
@@ -44,11 +44,11 @@ last_reviewed: 2026-05-14
 
 数据来自后端 `GET /setup`（详见 [开发文档 § ML Backend Protocol](../../dev/reference/ml-backend-protocol.md)）。后端如返回 `—`，说明 `/setup` 不可达或未升级到 v0.10.1+。
 
-## 为什么只能绑一个？（v0.10.x）
+## 为什么开发环境默认只能注册一个？（v0.10.x）
 
-测试环境单机显存有限。**两个 backend（grounded-sam2 + sam3）同时长驻会爆显存**。所以 `MAX_ML_BACKENDS_PER_PROJECT` 当前固定为 1。
+测试环境单机显存有限。**两个 backend（grounded-sam2 + sam3）同时长驻会爆显存**。所以 `MAX_ML_BACKENDS_PER_PROJECT` 默认是 1。
 
-后端 API 和 DB schema 已经按 1:N 设计，未来放开只需调 env：
+后端 API 和 DB schema 已经按 1:N 设计；前端的多 backend 选择器也会在配额放开后出现。生产环境可按显存和并发预算调大 env：
 
 ```bash
 MAX_ML_BACKENDS_PER_PROJECT=2

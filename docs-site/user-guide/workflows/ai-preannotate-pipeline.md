@@ -20,7 +20,7 @@ last_reviewed: 2026-05-09
 ## 流程概览
 
 ```
-超管注册 ML Backend → 项目绑定模型 → 触发批量 Job → Job 完成 → 标注员采用 Prediction
+超管注册 ML Backend → 项目绑定 backend → 触发批量 Job → Job 完成 → 标注员采用 Prediction
 ```
 
 ## Step 1：注册 ML Backend（超管操作）
@@ -32,9 +32,9 @@ last_reviewed: 2026-05-09
 
 详见 [ML Backend 协议](/dev/reference/ml-backend-protocol)。
 
-## Step 2：项目绑定模型（项目管理员操作）
+## Step 2：项目绑定 backend（项目管理员操作）
 
-1. 项目详情 → **设置** → **AI 模型** → 从注册列表选择
+1. 项目详情 → **设置** → **ML 模型** → 从注册列表选择
 2. 保存（不影响现有 Task 和 Prediction）
 
 ## Step 3：触发批量预标注

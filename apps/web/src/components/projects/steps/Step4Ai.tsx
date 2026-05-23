@@ -1,15 +1,10 @@
-// v0.10.18 · CreateProjectWizard 第 4 步: AI 接入 (启用开关 + 模型选 + backend 复用).
+// v0.10.18 · CreateProjectWizard 第 4 步: AI 接入 (启用开关 + backend 复用).
 // 从 CreateProjectWizard.tsx 抽出. 含本步专用的 BackendSourceSelect 子组件.
 
 import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
-import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { adminMlIntegrationsApi } from "@/api/adminMlIntegrations";
-import {
-  PRESET_AI_MODELS,
-  CUSTOM_MODEL_KEY,
-} from "@/constants/projectTypes";
 import { TextOutputDefaultSelect } from "@/components/projects/shared/TextOutputDefaultSelect";
 import type { FormState } from "../CreateProjectWizard";
 import styles from "../CreateProjectWizard.module.css";
@@ -17,11 +12,9 @@ import styles from "../CreateProjectWizard.module.css";
 export function Step4Ai({
   form,
   setForm,
-  resolvedAiModel,
 }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
-  resolvedAiModel: string;
 }) {
   return (
     <div className={styles.formStackAi}>
@@ -47,47 +40,6 @@ export function Step4Ai({
 
       {form.aiEnabled && (
         <>
-          <div>
-            <label className={styles.label}>模型</label>
-            <select
-              value={form.aiModelChoice}
-              onChange={(e) =>
-                setForm((s) => ({ ...s, aiModelChoice: e.target.value }))
-              }
-              className={clsx(styles.input, styles.selectInput)}
-            >
-              {PRESET_AI_MODELS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-              <option value={CUSTOM_MODEL_KEY}>自定义...</option>
-            </select>
-          </div>
-
-          {form.aiModelChoice === CUSTOM_MODEL_KEY && (
-            <div>
-              <label className={styles.label}>自定义模型名称</label>
-              <input
-                value={form.aiModelCustom}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, aiModelCustom: e.target.value }))
-                }
-                placeholder="如:MyDet-v1"
-                maxLength={120}
-                className={styles.input}
-              />
-            </div>
-          )}
-
-          <div className={styles.modelSummary}>
-            <span className={styles.modelSummaryLabel}>当前模型:</span>{" "}
-            <Badge variant="ai">
-              <Icon name="sparkles" size={10} />
-              {resolvedAiModel || "—"}
-            </Badge>
-          </div>
-
           {/* v0.9.6 · SAM 文本预标默认输出 (与 GeneralSection 4 项一致, 复用共享组件) */}
           <div>
             <label className={styles.label}>
@@ -116,7 +68,7 @@ export function Step4Ai({
           />
 
           <div className={styles.aiHelpBox}>
-            模型名仅作 display hint；选「复用 backend」后, 项目创建时会自动复制 backend 配置到新项目, 无需再回设置页注册.
+            选「复用 backend」后, 项目创建时会自动复制 backend 配置到新项目, 无需再回设置页注册.
           </div>
         </>
       )}

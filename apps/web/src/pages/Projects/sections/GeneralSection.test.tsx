@@ -113,16 +113,37 @@ describe("GeneralSection", () => {
     );
   });
 
-  it("启用 AI + 默认 preset 模型 → mutation 携带 ai_enabled=true + ai_model", () => {
+  it("启用 AI 但未绑定 backend → mutation 携带 ai_enabled=true + ai_model=null", () => {
     renderUI(makeProject());
-    // 勾选启用 AI (默认 aiChoice = PRESET_AI_MODELS[0], 即合法模型名)
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: /保存/ }));
     expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
     const [payload] = mockUpdateMutate.mock.calls[0];
     expect(payload.ai_enabled).toBe(true);
-    expect(typeof payload.ai_model).toBe("string");
-    expect((payload.ai_model as string).length).toBeGreaterThan(0);
+    expect(payload.ai_model).toBeNull();
+  });
+
+  it("绑定 backend 保存 → mutation 用 backend.name 回填 ai_model", () => {
+    mockUseMLBackends.mockReturnValue({
+      data: [
+        {
+          id: "b1",
+          name: "grounded-sam2",
+          state: "connected",
+          is_interactive: true,
+        },
+      ],
+    });
+    renderUI(makeProject({ ai_enabled: true, ai_model: null }));
+    fireEvent.change(screen.getByDisplayValue("未绑定（项目按肉眼标注运行,AI 待接入）"), {
+      target: { value: "b1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    expect(mockUpdateMutate).toHaveBeenCalledTimes(1);
+    const [payload] = mockUpdateMutate.mock.calls[0];
+    expect(payload.ai_enabled).toBe(true);
+    expect(payload.ml_backend_id).toBe("b1");
+    expect(payload.ai_model).toBe("grounded-sam2");
   });
 
   it("类别 chip 删除按钮触发删除", () => {

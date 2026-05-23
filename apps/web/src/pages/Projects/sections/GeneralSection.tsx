@@ -6,7 +6,6 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import { useMLBackends } from "@/hooks/useMLBackends";
-import { PRESET_AI_MODELS, CUSTOM_MODEL_KEY } from "@/constants/projectTypes";
 import {
   TextOutputDefaultSelect,
   type TextOutputDefault,
@@ -29,23 +28,12 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
   const update = useUpdateProject(project.id);
 
-  const initialAiChoice =
-    project.ai_model && PRESET_AI_MODELS.includes(project.ai_model)
-      ? project.ai_model
-      : project.ai_model
-        ? CUSTOM_MODEL_KEY
-        : PRESET_AI_MODELS[0];
-
   const [name, setName] = useState(project.name);
   const [status, setStatus] = useState(project.status);
   const [dueDate, setDueDate] = useState(project.due_date ?? "");
   const [classes, setClasses] = useState<string[]>(project.classes ?? []);
   const [classInput, setClassInput] = useState("");
   const [aiEnabled, setAiEnabled] = useState(project.ai_enabled);
-  const [aiChoice, setAiChoice] = useState(initialAiChoice);
-  const [aiCustom, setAiCustom] = useState(
-    project.ai_model && !PRESET_AI_MODELS.includes(project.ai_model) ? project.ai_model : "",
-  );
   // v0.8.6 F3 · MLBackend 真实绑定
   const [mlBackendId, setMlBackendId] = useState<string | null>(
     project.ml_backend_id ?? null,
@@ -63,8 +51,6 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     setDueDate(project.due_date ?? "");
     setClasses(project.classes ?? []);
     setAiEnabled(project.ai_enabled);
-    setAiChoice(initialAiChoice);
-    setAiCustom(project.ai_model && !PRESET_AI_MODELS.includes(project.ai_model) ? project.ai_model : "");
     setMlBackendId(project.ml_backend_id ?? null);
     setIouThreshold(project.iou_dedup_threshold ?? 0.7);
     setTextOutputDefault(project.text_output_default ?? "");
@@ -81,14 +67,19 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
     setClassInput("");
   };
 
-  const resolvedAiModel = aiChoice === CUSTOM_MODEL_KEY ? aiCustom.trim() : aiChoice;
+  const boundBackendName =
+    mlBackendId && mlBackends.find((b) => b.id === mlBackendId)?.name;
+  const effectiveAiModel =
+    boundBackendName ??
+    (mlBackendId === project.ml_backend_id ? project.ai_model ?? null : null);
+  const nextAiModel = aiEnabled ? effectiveAiModel : null;
   const dirty =
     name.trim() !== project.name ||
     status !== project.status ||
     (dueDate || null) !== (project.due_date ?? null) ||
     JSON.stringify(classes) !== JSON.stringify(project.classes ?? []) ||
     aiEnabled !== project.ai_enabled ||
-    (aiEnabled ? resolvedAiModel : null) !== (project.ai_model ?? null) ||
+    nextAiModel !== (project.ai_model ?? null) ||
     (mlBackendId ?? null) !== (project.ml_backend_id ?? null) ||
     Math.abs(iouThreshold - (project.iou_dedup_threshold ?? 0.7)) > 0.001 ||
     textOutputDefault !== (project.text_output_default ?? "");
@@ -100,14 +91,6 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
       pushToast({ msg: "项目名称不能为空" });
       return;
     }
-    // B-7 · 模型名优先取已绑定 backend.name,fallback 到手动 hint
-    const boundBackendName =
-      mlBackendId && mlBackends.find((b) => b.id === mlBackendId)?.name;
-    const effectiveAiModel = boundBackendName || resolvedAiModel;
-    if (aiEnabled && !effectiveAiModel) {
-      pushToast({ msg: "启用 AI 时需绑定 ML Backend 或在高级中指定模型名" });
-      return;
-    }
     update.mutate(
       {
         name: name.trim(),
@@ -115,7 +98,7 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
         due_date: dueDate || null,
         classes,
         ai_enabled: aiEnabled,
-        ai_model: aiEnabled ? effectiveAiModel : null,
+        ai_model: nextAiModel,
         ml_backend_id: aiEnabled ? mlBackendId : null,
         iou_dedup_threshold: iouThreshold,
         text_output_default: (textOutputDefault || null) as "box" | "mask" | "both" | null,
@@ -241,34 +224,6 @@ export function GeneralSection({ project }: { project: ProjectResponse }) {
                   )}
                 </div>
               </div>
-
-              {/* B-7 · 折叠 PRESET 占位入口为 advanced — 仅历史项目或离线场景需要手填模型名 */}
-              <details className={styles.advancedDetails}>
-                <summary className={styles.advancedSummary}>
-                  高级:手动指定模型名 hint（仅当未绑定 backend 时生效）
-                </summary>
-                <div className={styles.advancedBody}>
-                  <select
-                    value={aiChoice}
-                    onChange={(e) => setAiChoice(e.target.value)}
-                    className={cn(styles.control, styles.selectControl)}
-                  >
-                    {PRESET_AI_MODELS.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                    <option value={CUSTOM_MODEL_KEY}>自定义...</option>
-                  </select>
-                  {aiChoice === CUSTOM_MODEL_KEY && (
-                    <input
-                      value={aiCustom}
-                      onChange={(e) => setAiCustom(e.target.value)}
-                      placeholder="自定义模型名称"
-                      maxLength={120}
-                      className={styles.control}
-                    />
-                  )}
-                </div>
-              </details>
             </div>
           )}
         </div>

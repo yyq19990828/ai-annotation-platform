@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.10.41] - 2026-05-23
+
+> **模型市场模态收敛 + 新建向导 AI 步骤清理。** 模型市场变体面板改以健康检查落库的 `modalities` 作为图像 / 视频组显示真值，AI 已启用但尚未注册 backend 的项目也会进入模型市场并可直接注册第一条 backend；新建项目和项目设置页删除 display-only 的手填模型下拉，`ai_model` 继续只作为绑定 backend 名称的展示 hint。计划见 [v0.10.41 计划](docs/plans/2026-05-23-v0.10.41-ai-access-modality-and-wizard-cleanup.md)。
+
+### Added
+
+- **模型市场空 AI 项目入市** (后端 [admin_ml_integrations.py](apps/api/app/api/v1/admin_ml_integrations.py) · 前端 [RegisteredBackendsTab.tsx](apps/web/src/pages/ModelMarket/RegisteredBackendsTab.tsx)): `/admin/ml-integrations/overview` 并入 `ai_enabled=true` 且尚无 backend 的项目，前端显示「AI 已启用 · 未注册 backend」并提供「注册第一个 backend」入口，注册成功后仍走现有项目级 backend 表单与配额校验。
+
+### Changed
+
+- **变体面板按持久化 modalities 门控** ([VariantPanel.tsx](apps/web/src/pages/ModelMarket/VariantPanel.tsx)): 图像 / 视频组优先读取 `health_meta.capabilities.modalities`，纯图像 backend 隐藏视频组、纯视频 backend 隐藏图像组；未健康检查过没有 modalities 快照时回落旧 `/setup` enum / tracker 判断，避免误隐藏未知能力 backend。
+- **AI 接入表单去掉假模型下拉** ([CreateProjectWizard.tsx](apps/web/src/components/projects/CreateProjectWizard.tsx) · [Step4Ai.tsx](apps/web/src/components/projects/steps/Step4Ai.tsx) · [GeneralSection.tsx](apps/web/src/pages/Projects/sections/GeneralSection.tsx)): 新建向导 Step 4 与项目设置「基本信息」只保留真实 `ai_enabled`、`text_output_default`、backend 复用 / 绑定等字段；未绑定 backend 的 AI 项目保存 `ai_model=null`，Dashboard 与工作台显示「未接入模型」，绑定 backend 后继续由后端用 `backend.name` 回填 `ai_model`。
+- **文档同步** ([ml-backend-protocol.md](docs-site/dev/reference/ml-backend-protocol.md) · [model-market.md](docs-site/user-guide/for-superadmins/model-market.md) · [ml-backends.md](docs-site/user-guide/for-project-admins/ml-backends.md)): 补充 `MAX_ML_BACKENDS_PER_PROJECT` 默认 1 的显存原因、生产可调大解锁 1:N backend，以及模型市场空 AI 项目注册入口。
+
 ## [0.10.40] - 2026-05-23
 
 > **ai-pre 变体选择 + `/setup.supported_variants` 富元数据。** grounded-sam2 `/setup` 在保留 `params.*_variant.enum` 的同时新增 `supported_variants` 富数组，前端抽出共享变体选择器，工作台和 ai-pre 共用同一套富元数据显示；ai-pre 现在可选择 SAM / DINO 变体并随预标请求透传到 backend。计划见 [v0.10.40 计划](docs/plans/2026-05-23-v0.10.40-ai-pre-variant-selection.md)。

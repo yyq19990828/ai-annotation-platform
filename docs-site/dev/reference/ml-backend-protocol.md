@@ -3,7 +3,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-05-09
+last_reviewed: 2026-05-23
 ---
 
 # ML Backend 协议契约
@@ -16,6 +16,14 @@ last_reviewed: 2026-05-09
 > - 数据模型: `apps/api/app/db/models/{ml_backend,prediction}.py`
 
 平台不内置任何具体模型。它把每个项目可挂接的「推理服务」抽象成 `MLBackend` 行——一个 URL + 鉴权信息 + 几个布尔位（`is_interactive` / `state`）。本文规定接入方需要实现的 4 个 HTTP 端点与请求/响应 schema。只要遵循，就能在「项目设置 → ML Backends」里挂接。
+
+---
+
+## 项目作用域与数量上限
+
+`ml_backends.project_id` 按 1:N 设计；同一个项目可以注册多条 backend 记录，前端的多 backend 选择器也会在配额放开后自然生效。当前开发环境默认 `MAX_ML_BACKENDS_PER_PROJECT=1`，是为了避免单机同时常驻 grounded-sam2 与 sam3 等大模型导致显存爆掉；生产环境可按机器显存和并发预算调大该值。
+
+这个限制只影响「一个项目能注册多少条 backend」。新建项目时选择「复用 backend」仍会复制一条 backend 行到新项目；未注册 backend 但已启用 AI 的项目也会出现在模型市场，便于从模型市场直接注册第一条 backend。
 
 ---
 
