@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.config import settings
 from app.db.models.project import Project
 from app.db.models.task import Task
-from app.db.models.video_tracker_job import VideoTrackerJob
+from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services import async_job as async_job_svc
 from app.services.video_tracker_runner import run_tracker_job
 from app.workers.celery_app import celery_app
@@ -63,7 +63,7 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                     async_job_id = None
 
             try:
-                await run_tracker_job(db, uuid.UUID(job_id))
+                result_job = await run_tracker_job(db, uuid.UUID(job_id))
             except Exception as e:
                 if async_job_id is not None:
                     try:
@@ -73,9 +73,25 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                         await db.rollback()
                 raise
             else:
+                # v0.10.49 · run_tracker_job 内部消化取消/失败（不抛异常），按专表最终状态
+                # 同步 async_jobs 索引层，避免把 cancelled/failed 误标 completed（双写漂移）。
                 if async_job_id is not None:
+                    final_status = (
+                        result_job.status if result_job is not None else None
+                    )
                     try:
-                        await async_job_svc.mark_complete(db, async_job_id)
+                        if final_status == VideoTrackerJobStatus.CANCELLED.value:
+                            await async_job_svc.mark_cancelled(db, async_job_id)
+                        elif final_status == VideoTrackerJobStatus.FAILED.value:
+                            await async_job_svc.mark_failed(
+                                db,
+                                async_job_id,
+                                error=(
+                                    result_job.error_message or "tracker job failed"
+                                ),
+                            )
+                        else:
+                            await async_job_svc.mark_complete(db, async_job_id)
                         await db.commit()
                     except Exception:
                         await db.rollback()

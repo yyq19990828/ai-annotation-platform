@@ -1,10 +1,11 @@
-"""v0.10.16 · 统一异步任务表 async_jobs（ROADMAP §1.7 MVP）。
+"""v0.10.16 · 统一异步任务表 async_jobs（ROADMAP §1.7）。
 
-汇总索引层：所有长任务（batch_predict / video_tracker / audit_archive /
-predictions_import 等）在 enqueue / progress / finish 三时点写入此表，
-专表（prediction_jobs / video_tracker_jobs）保留为 domain 真值（双写双轨）。
+所有长任务（batch_predict / video_tracker / audit_archive / predictions_import /
+export 等）在 enqueue / progress / finish 三时点写入此表。
 
-前端任务铃铛只读此表；专表细节字段由各 domain 自己消费。
+v0.10.49 · batch_predict 已收敛为单一真值（prediction_jobs 专表删除），
+domain 字段进 payload/result JSONB。video_tracker 保留 video_tracker_jobs 专表
+（带活标注 FK + 运行时状态机，见 ROADMAP/2026-05-23-async-jobs-unification.md）。
 """
 
 import enum

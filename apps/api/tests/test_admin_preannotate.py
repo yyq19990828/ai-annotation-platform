@@ -71,9 +71,9 @@ async def test_preannotate_queue_returns_pre_annotated_batches(
 async def _seed_batch_with_predictions(
     db, project_id, *, status: str = "pre_annotated"
 ):
+    from app.db.models.async_job import AsyncJob
     from app.db.models.ml_backend import MLBackend
     from app.db.models.prediction import Prediction
-    from app.db.models.prediction_job import PredictionJob
 
     batch = await create_batch(db, project_id=project_id, status=status)
     task = await _create_task(db, project_id=project_id, batch_id=batch.id)
@@ -90,16 +90,20 @@ async def _seed_batch_with_predictions(
             result={"shapes": []},
         )
     )
+    # v0.10.49 · prediction_jobs 已收敛进 async_jobs（batch_id 进 payload）
     db.add(
-        PredictionJob(
+        AsyncJob(
+            kind="batch_predict",
             project_id=project_id,
-            batch_id=batch.id,
-            ml_backend_id=backend.id,
-            prompt="x",
-            output_mode="mask",
             status="completed",
-            total_tasks=1,
-            success_count=1,
+            payload={
+                "batch_id": str(batch.id),
+                "ml_backend_id": str(backend.id),
+                "prompt": "x",
+                "output_mode": "mask",
+                "total_tasks": 1,
+            },
+            result={"success_count": 1},
         )
     )
     await db.flush()
@@ -164,12 +168,20 @@ async def test_bulk_clear_predictions_only_resets_to_active(
     )
     assert all(b.status == "active" for b in batches)
 
-    # predictions / prediction_jobs 全清
+    # predictions / batch_predict async_jobs 全清
+    from app.db.models.async_job import AsyncJob
     from app.db.models.prediction import Prediction
-    from app.db.models.prediction_job import PredictionJob
 
     preds = (await db_session.execute(select(Prediction))).scalars().all()
-    jobs = (await db_session.execute(select(PredictionJob))).scalars().all()
+    jobs = (
+        (
+            await db_session.execute(
+                select(AsyncJob).where(AsyncJob.kind == "batch_predict")
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert preds == []
     assert jobs == []
 
