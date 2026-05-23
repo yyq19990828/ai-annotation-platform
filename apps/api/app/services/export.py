@@ -169,7 +169,9 @@ def _coco_keypoints(geometry: dict, w: int, h: int) -> tuple[list[float], int] |
         if not isinstance(p, dict):
             continue
         v = int(p.get("v", 0))
-        flat.extend([round(float(p.get("x", 0)) * w, 2), round(float(p.get("y", 0)) * h, 2), v])
+        flat.extend(
+            [round(float(p.get("x", 0)) * w, 2), round(float(p.get("y", 0)) * h, 2), v]
+        )
         if v > 0:
             n += 1
     return (flat, n) if flat else None
@@ -425,7 +427,11 @@ class ExportService:
                 if unit_id == "keypoint":
                     kp_schema = binding.get("keypoint_schema") or {}
                     nodes = kp_schema.get("nodes") or []
-                    names = [n.get("name") for n in nodes if isinstance(n, dict) and n.get("name")]
+                    names = [
+                        n.get("name")
+                        for n in nodes
+                        if isinstance(n, dict) and n.get("name")
+                    ]
                     if names:
                         kp_names = names
                         kp_skeleton = [

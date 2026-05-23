@@ -114,8 +114,7 @@ def build_yolo_frame_det_labels(
     """
     grid = source_to_grid(frame_count, step)
     labels: dict[int, tuple[list[str], list[dict]]] = {
-        grid_index + frame_start_number: ([], [])
-        for grid_index in grid.values()
+        grid_index + frame_start_number: ([], []) for grid_index in grid.values()
     }
 
     for class_name, geometry, attributes in bboxes:

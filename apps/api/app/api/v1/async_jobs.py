@@ -26,9 +26,7 @@ router = APIRouter()
 # MVP 范围：仅这两类支持取消（kind 集合见 §1.7 计划）
 CANCELLABLE_KINDS = {"predictions_import", "audit_archive"}
 
-AsyncJobStatusParam = Literal[
-    "pending", "running", "completed", "failed", "cancelled"
-]
+AsyncJobStatusParam = Literal["pending", "running", "completed", "failed", "cancelled"]
 
 
 async def _to_async_job_out(

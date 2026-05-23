@@ -31,7 +31,9 @@ class _Ann:
 
 
 def test_aabb_bbox():
-    assert _coco_aabb_norm({"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}) == (
+    assert _coco_aabb_norm(
+        {"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}
+    ) == (
         0.1,
         0.2,
         0.3,
@@ -55,8 +57,23 @@ def test_aabb_keypoint_skips_unlabeled():
 
 
 def test_aabb_rotated_and_polyline_skipped():
-    assert _coco_aabb_norm({"type": "rotated_bbox", "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2, "angle": 30}) is None
-    assert _coco_aabb_norm({"type": "polyline", "points": [[0.1, 0.1], [0.9, 0.9]]}) is None
+    assert (
+        _coco_aabb_norm(
+            {
+                "type": "rotated_bbox",
+                "cx": 0.5,
+                "cy": 0.5,
+                "w": 0.2,
+                "h": 0.2,
+                "angle": 30,
+            }
+        )
+        is None
+    )
+    assert (
+        _coco_aabb_norm({"type": "polyline", "points": [[0.1, 0.1], [0.9, 0.9]]})
+        is None
+    )
 
 
 # ── COCO segmentation ──
@@ -81,7 +98,10 @@ def test_coco_segmentation_multipolygon():
 
 
 def test_coco_segmentation_none_for_bbox():
-    assert _coco_segmentation({"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1}, 10, 10) is None
+    assert (
+        _coco_segmentation({"type": "bbox", "x": 0, "y": 0, "w": 1, "h": 1}, 10, 10)
+        is None
+    )
 
 
 # ── COCO keypoints ──
@@ -102,31 +122,58 @@ def test_coco_keypoints_flatten_and_count():
 
 def test_yolo_det_line():
     anns = [_Ann("car", {"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.2, "h": 0.4})]
-    lines, _ = _yolo_target_lines("yolo-det", anns, {"car": 0}, img_w=100, img_h=100, include_attributes=False)
+    lines, _ = _yolo_target_lines(
+        "yolo-det", anns, {"car": 0}, img_w=100, img_h=100, include_attributes=False
+    )
     # cx=0.2 cy=0.4 w=0.2 h=0.4
     assert lines == ["0 0.200000 0.400000 0.200000 0.400000"]
 
 
 def test_yolo_obb_corners_angle_zero():
-    anns = [_Ann("car", {"type": "rotated_bbox", "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.2, "angle": 0})]
-    lines, _ = _yolo_target_lines("yolo-obb", anns, {"car": 0}, img_w=100, img_h=100, include_attributes=False)
+    anns = [
+        _Ann(
+            "car",
+            {
+                "type": "rotated_bbox",
+                "cx": 0.5,
+                "cy": 0.5,
+                "w": 0.2,
+                "h": 0.2,
+                "angle": 0,
+            },
+        )
+    ]
+    lines, _ = _yolo_target_lines(
+        "yolo-obb", anns, {"car": 0}, img_w=100, img_h=100, include_attributes=False
+    )
     parts = lines[0].split()
     assert parts[0] == "0"
     coords = [float(p) for p in parts[1:]]
     assert len(coords) == 8
     # angle=0 → 轴对齐四角，x ∈ {0.4, 0.6}, y ∈ {0.4, 0.6}
-    assert all(math.isclose(c, 0.4, abs_tol=1e-6) or math.isclose(c, 0.6, abs_tol=1e-6) for c in coords)
+    assert all(
+        math.isclose(c, 0.4, abs_tol=1e-6) or math.isclose(c, 0.6, abs_tol=1e-6)
+        for c in coords
+    )
 
 
 def test_yolo_obb_skips_non_rotated():
     anns = [_Ann("car", {"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2})]
-    lines, _ = _yolo_target_lines("yolo-obb", anns, {"car": 0}, img_w=100, img_h=100, include_attributes=False)
+    lines, _ = _yolo_target_lines(
+        "yolo-obb", anns, {"car": 0}, img_w=100, img_h=100, include_attributes=False
+    )
     assert lines == []
 
 
 def test_yolo_seg_normalized_polygon():
-    anns = [_Ann("road", {"type": "polygon", "points": [[0.1, 0.2], [0.3, 0.2], [0.3, 0.5]]})]
-    lines, _ = _yolo_target_lines("yolo-seg", anns, {"road": 0}, img_w=100, img_h=100, include_attributes=False)
+    anns = [
+        _Ann(
+            "road", {"type": "polygon", "points": [[0.1, 0.2], [0.3, 0.2], [0.3, 0.5]]}
+        )
+    ]
+    lines, _ = _yolo_target_lines(
+        "yolo-seg", anns, {"road": 0}, img_w=100, img_h=100, include_attributes=False
+    )
     assert lines == ["0 0.100000 0.200000 0.300000 0.200000 0.300000 0.500000"]
 
 

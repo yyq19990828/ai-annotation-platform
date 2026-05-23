@@ -119,9 +119,7 @@ async def test_overview_includes_ai_enabled_project_without_backend(
         )
         assert res.status_code == 200
         body = res.json()
-        group = next(
-            p for p in body["projects"] if p["project_id"] == str(proj.id)
-        )
+        group = next(p for p in body["projects"] if p["project_id"] == str(proj.id))
         assert group["project_name"] == "AI Empty"
         assert group["backends"] == []
         assert body["total_backends"] == 0

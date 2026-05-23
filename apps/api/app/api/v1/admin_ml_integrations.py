@@ -110,9 +110,7 @@ async def get_overview(
         grouped[pid_str].backends.append(MLBackendOut.model_validate(b))
 
     ai_projects_res = await db.execute(
-        select(Project)
-        .where(Project.ai_enabled.is_(True))
-        .order_by(Project.name)
+        select(Project).where(Project.ai_enabled.is_(True)).order_by(Project.name)
     )
     for proj in ai_projects_res.scalars().all():
         pid_str = str(proj.id)

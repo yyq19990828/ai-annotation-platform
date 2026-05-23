@@ -130,7 +130,9 @@ async def _scope_naming(
     """
     row = (
         await db.execute(
-            select(Project.data_type, Project.display_id).where(Project.id == project_id)
+            select(Project.data_type, Project.display_id).where(
+                Project.id == project_id
+            )
         )
     ).first()
     data_type = (row[0] if row else None) or "image"

@@ -71,6 +71,7 @@ def clean_export_targets(targets: list[str]) -> list[str]:
         raise ValueError("targets must not be empty")
     return seen
 
+
 # 预签名 URL / 桶 lifecycle 对齐 7 天。
 PRESIGN_EXPIRES_SECONDS = 7 * 24 * 3600
 
@@ -212,7 +213,12 @@ def _rotated_corners_norm(g: dict, w: int, h: int) -> list[float]:
     rad = math.radians(g.get("angle", 0) or 0)
     cos, sin = math.cos(rad), math.sin(rad)
     out: list[float] = []
-    for dx, dy in ((-bw / 2, -bh / 2), (bw / 2, -bh / 2), (bw / 2, bh / 2), (-bw / 2, bh / 2)):
+    for dx, dy in (
+        (-bw / 2, -bh / 2),
+        (bw / 2, -bh / 2),
+        (bw / 2, bh / 2),
+        (-bw / 2, bh / 2),
+    ):
         rx = dx * cos - dy * sin
         ry = dx * sin + dy * cos
         out.extend([(cxp + rx) / w, (cyp + ry) / h])
@@ -650,9 +656,7 @@ async def _build_video_export_zip(
                 if include_attributes:
                     zf.writestr(
                         f"{prefix}attribute_schema.json",
-                        json.dumps(
-                            attribute_schema, ensure_ascii=False, indent=2
-                        ),
+                        json.dumps(attribute_schema, ensure_ascii=False, indent=2),
                     )
                 zf.writestr(
                     f"{prefix}data.yaml", _build_video_yolo_data_yaml(classes_list)
