@@ -32,27 +32,29 @@ type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: numbe
 type VideoGeometry = VideoBboxGeometry | VideoTrackGeometry;
 
 /**
- * v0.10.18 · 字段按语义分组 (JSDoc only, 类型仍平铺以兼容 WorkbenchShell 调用面):
+ * v0.10.39 · WorkbenchStageHostProps 按语义嵌套:
  *   - common: stageKind / overlays / readOnly / activeClass / selectedId / annotations + selection 回调
  *   - video : video* / hidden|lockedVideoTrackIds + video 回调 (stageKind="video" 才消费)
- *   - image : fileUrl / blurhash / thumbnailUrl / tool / vp / sam* / canvas* + image 回调 (stageKind="image" 才消费)
+ *   - image : fileUrl / blurhash / thumbnailUrl / tool / vp / image 标注回调 (stageKind="image" 才消费)
  *   - ai    : samCandidates / samActive* / sam 子工具 / onRefineSamCandidate
- *   - editor: maskEditor / polygonDraft / pendingDrawing / projectRenderingConfig
- *
- * 后续若 Shell 再次膨胀, 可以按以上分组拆嵌套 prop 对象 (call site 一并改).
+ *   - editors: maskEditor / polygonDraft / canvas* / projectRenderingConfig / issue*
  */
-interface WorkbenchStageHostProps {
-  // ── common ────────────────────────────────────────────────
+interface WorkbenchStageHostCommonProps {
   stageKind: StageKind;
   overlays: ReactNode;
   readOnly: boolean;
   activeClass: string;
   selectedId: string | null;
+  selectedIds: string[];
   annotations: AnnotationResponse[];
+  pendingDrawing: PendingDrawing;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onCursorMove: (pt: { x: number; y: number } | null) => void;
+  onDeleteUserBox: (id: string) => void;
+  onChangeUserBoxClass: (id: string) => void;
+}
 
-  // ── video stage ───────────────────────────────────────────
+interface WorkbenchStageHostVideoProps {
   videoManifest: TaskVideoManifestResponse | undefined;
   videoFrameTimetable?: TaskVideoFrameTimetableResponse;
   videoManifestLoading?: boolean;
@@ -80,13 +82,13 @@ interface WorkbenchStageHostProps {
   onToggleHiddenVideoTrack?: (trackId: string) => void;
   onToggleLockedVideoTrack?: (trackId: string) => void;
   onPropagateVideoTrack?: (annotation: VideoTrackAnnotation) => void;
+}
 
-  // ── image stage ───────────────────────────────────────────
+interface WorkbenchStageHostImageProps {
   fileUrl: string | null;
   blurhash?: string | null;
   thumbnailUrl: string | null;
   tool: Tool;
-  selectedIds: string[];
   fadedAiIds: Set<string>;
   nudgeMap: Map<string, Geom>;
   userBoxes: Annotation[];
@@ -96,10 +98,8 @@ interface WorkbenchStageHostProps {
   setVp: React.Dispatch<React.SetStateAction<Viewport>>;
   fitTick: number;
   setFitTick: React.Dispatch<React.SetStateAction<number>>;
-  pendingDrawing: PendingDrawing;
   onAcceptPrediction: (b: AiBox) => void;
   onRejectPrediction: (b: AiBox) => void;
-  onDeleteUserBox: (id: string) => void;
   onPatchShapeFlag?: (
     id: string,
     flag: "z_order" | "is_locked" | "is_hidden" | "is_occluded",
@@ -116,7 +116,17 @@ interface WorkbenchStageHostProps {
     | { kind: "bbox"; bbox: [number, number, number, number] }
     | { kind: "exemplar"; bbox: [number, number, number, number] }
   ) => void;
-  // ── ai (SAM 候选) ─────────────────────────────────────────
+  onCommitMove: (id: string, before: Geom, after: Geom) => void;
+  onCommitResize: (id: string, before: Geom, after: Geom) => void;
+  onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
+  // v0.10.28 · keypoint 节点几何/可见性变更。
+  onCommitKeypointGeometry?: (id: string, before: import("@/types").Keypoint[], after: import("@/types").Keypoint[]) => void;
+  onBatchDelete: () => void;
+  onBatchChangeClass: () => void;
+  onStageGeometry: (g: StageGeometry) => void;
+}
+
+interface WorkbenchStageHostAiProps {
   samCandidates: {
     id: string;
     type: "polygonlabels" | "rectanglelabels";
@@ -126,16 +136,11 @@ interface WorkbenchStageHostProps {
   samActiveIdx: number;
   samSubTool: SamSubTool | null;
   samPolarity: SamPolarity;
-  onCommitMove: (id: string, before: Geom, after: Geom) => void;
-  onCommitResize: (id: string, before: Geom, after: Geom) => void;
-  onCommitPolygonGeometry: (id: string, before: [number, number][], after: [number, number][]) => void;
-  // v0.10.28 · keypoint 节点几何/可见性变更。
-  onCommitKeypointGeometry?: (id: string, before: import("@/types").Keypoint[], after: import("@/types").Keypoint[]) => void;
-  onChangeUserBoxClass: (id: string) => void;
-  onBatchDelete: () => void;
-  onBatchChangeClass: () => void;
-  onStageGeometry: (g: StageGeometry) => void;
-  // ── editors (mask / polygon / keypoint / canvas) ─────────────────────
+  /** v0.10.9 · SAM 候选「精修」入口（画布浮按钮 + R 键）。 */
+  onRefineSamCandidate?: (idx: number) => void;
+}
+
+interface WorkbenchStageHostEditorProps {
   polygonDraft?: PolygonDraftHandle;
   // v0.10.28 · keypoint 工具草稿 + 骨骼模板。
   keypointDraft?: import("../stage/tools").KeypointDraftHandle;
@@ -158,8 +163,6 @@ interface WorkbenchStageHostProps {
   stageGeom: StageGeometry;
   /** v0.10.8 · I11 · Mask 编辑器状态；仅图像舞台消费。 */
   maskEditor?: UseMaskEditorReturn;
-  /** v0.10.9 · SAM 候选「精修」入口（画布浮按钮 + R 键）。 */
-  onRefineSamCandidate?: (idx: number) => void;
   /** v0.10.10 · I17.3 · 项目级 rendering_config 覆盖（仅图像舞台消费）。 */
   projectRenderingConfig?: import("@/api/projects").ProjectRenderingConfig | null;
   // ── v0.10.20 · I18 IssueLayer (仅图像舞台消费) ─────────────
@@ -170,101 +173,128 @@ interface WorkbenchStageHostProps {
   onIssuePinDrop?: (x: number, y: number) => void;
 }
 
+interface WorkbenchStageHostProps {
+  common: WorkbenchStageHostCommonProps;
+  video?: WorkbenchStageHostVideoProps;
+  image?: WorkbenchStageHostImageProps;
+  ai?: WorkbenchStageHostAiProps;
+  editors?: WorkbenchStageHostEditorProps;
+}
+
+function requireStageGroup<T>(group: T | undefined, groupName: string, stageKind: StageKind): T {
+  if (group) return group;
+  throw new Error(`WorkbenchStageHost missing ${groupName} props for ${stageKind} stage`);
+}
+
 export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageHostProps>(
-  function WorkbenchStageHost({
-    stageKind,
-    overlays,
-    readOnly,
-    activeClass,
-    selectedId,
-    annotations,
-    onSelectBox,
-    onCursorMove,
-    videoManifest,
-    videoFrameTimetable,
-    videoManifestLoading,
-    videoManifestError,
-    videoChapters,
-    videoSampling,
-    videoTool,
-    videoFrameIndex,
-    videoReviewDisplayMode,
-    hiddenVideoTrackIds,
-    lockedVideoTrackIds,
-    onVideoFrameIndexChange,
-    onVideoCreate,
-    onVideoPendingDraw,
-    onVideoUpdate,
-    onVideoRename,
-    onVideoConvertToBboxes,
-    onVideoComposeTracks,
-    onToggleHiddenVideoTrack,
-    onToggleLockedVideoTrack,
-    onPropagateVideoTrack,
-    fileUrl,
-    blurhash,
-    thumbnailUrl,
-    tool,
-    selectedIds,
-    fadedAiIds,
-    nudgeMap,
-    userBoxes,
-    aiBoxes,
-    spacePan,
-    vp,
-    setVp,
-    fitTick,
-    setFitTick,
-    pendingDrawing,
-    onAcceptPrediction,
-    onRejectPrediction,
-    onDeleteUserBox,
-    onPatchShapeFlag,
-    imageClipboardActions,
-    onCommitDrawing,
-    onCommitRotatedBbox,
-    onCommitRotateBbox,
-    onSamPrompt,
-    samCandidates,
-    samActiveIdx,
-    samSubTool,
-    samPolarity,
-    onCommitMove,
-    onCommitResize,
-    onCommitPolygonGeometry,
-    onCommitKeypointGeometry,
-    onChangeUserBoxClass,
-    onBatchDelete,
-    onBatchChangeClass,
-    onStageGeometry,
-    polygonDraft,
-    keypointDraft,
-    keypointSchema,
-    canvasShapes,
-    canvasEditable,
-    canvasStroke,
-    onCanvasStrokeCommit,
-    historicalShapes,
-    canUndo,
-    canRedo,
-    onUndo,
-    onRedo,
-    onSetCanvasStroke,
-    canvasShapeCount,
-    onUndoCanvasShape,
-    onClearCanvasShapes,
-    onCancelCanvasDraft,
-    onDoneCanvasDraft,
-    stageGeom,
-    maskEditor,
-    onRefineSamCandidate,
-    projectRenderingConfig,
-    issuePixelFeedbacks,
-    highlightIssueId,
-    onIssuePinClick,
-    issuePinDropArmed,
-    onIssuePinDrop,
-  }, ref) {
+  function WorkbenchStageHost(props, ref) {
+    const { common, video, image, ai, editors } = props;
+    const {
+      stageKind,
+      overlays,
+      readOnly,
+      activeClass,
+      selectedId,
+      selectedIds,
+      annotations,
+      pendingDrawing,
+      onSelectBox,
+      onCursorMove,
+      onDeleteUserBox,
+      onChangeUserBoxClass,
+    } = common;
+    const videoProps = stageKind === "video" ? requireStageGroup(video, "video", stageKind) : undefined;
+    const imageProps = stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
+    const aiProps = stageKind === "image" ? requireStageGroup(ai, "ai", stageKind) : undefined;
+    const editorProps = stageKind === "image" ? requireStageGroup(editors, "editors", stageKind) : undefined;
+    const {
+      videoManifest,
+      videoFrameTimetable,
+      videoManifestLoading,
+      videoManifestError,
+      videoChapters,
+      videoSampling,
+      videoTool,
+      videoFrameIndex,
+      videoReviewDisplayMode,
+      hiddenVideoTrackIds,
+      lockedVideoTrackIds,
+      onVideoFrameIndexChange,
+      onVideoCreate,
+      onVideoPendingDraw,
+      onVideoUpdate,
+      onVideoRename,
+      onVideoConvertToBboxes,
+      onVideoComposeTracks,
+      onToggleHiddenVideoTrack,
+      onToggleLockedVideoTrack,
+      onPropagateVideoTrack,
+    } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
+    const {
+      fileUrl,
+      blurhash,
+      thumbnailUrl,
+      tool,
+      fadedAiIds,
+      nudgeMap,
+      userBoxes,
+      aiBoxes,
+      spacePan,
+      vp,
+      setVp,
+      fitTick,
+      setFitTick,
+      onAcceptPrediction,
+      onRejectPrediction,
+      onPatchShapeFlag,
+      imageClipboardActions,
+      onCommitDrawing,
+      onCommitRotatedBbox,
+      onCommitRotateBbox,
+      onSamPrompt,
+      onCommitMove,
+      onCommitResize,
+      onCommitPolygonGeometry,
+      onCommitKeypointGeometry,
+      onBatchDelete,
+      onBatchChangeClass,
+      onStageGeometry,
+    } = imageProps ?? ({} as WorkbenchStageHostImageProps);
+    const {
+      samCandidates,
+      samActiveIdx,
+      samSubTool,
+      samPolarity,
+      onRefineSamCandidate,
+    } = aiProps ?? ({} as WorkbenchStageHostAiProps);
+    const {
+      polygonDraft,
+      keypointDraft,
+      keypointSchema,
+      canvasShapes,
+      canvasEditable,
+      canvasStroke,
+      onCanvasStrokeCommit,
+      historicalShapes,
+      canUndo,
+      canRedo,
+      onUndo,
+      onRedo,
+      onSetCanvasStroke,
+      canvasShapeCount,
+      onUndoCanvasShape,
+      onClearCanvasShapes,
+      onCancelCanvasDraft,
+      onDoneCanvasDraft,
+      stageGeom,
+      maskEditor,
+      projectRenderingConfig,
+      issuePixelFeedbacks,
+      highlightIssueId,
+      onIssuePinClick,
+      issuePinDropArmed,
+      onIssuePinDrop,
+    } = editorProps ?? ({} as WorkbenchStageHostEditorProps);
     return (
       <div className={styles.root} data-workbench-stage>
         {stageKind === "3d" ? (

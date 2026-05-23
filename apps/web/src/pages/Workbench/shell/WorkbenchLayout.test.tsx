@@ -4,7 +4,7 @@
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { createRef } from "react";
+import { createRef, forwardRef } from "react";
 import type { VideoStageControls } from "../stage/VideoStage";
 
 vi.mock("./TaskQueuePanel", () => ({
@@ -20,7 +20,9 @@ vi.mock("./Topbar", () => ({
   Topbar: () => <div data-testid="topbar" />,
 }));
 vi.mock("./WorkbenchStageHost", () => ({
-  WorkbenchStageHost: () => <div data-testid="stage-host" />,
+  WorkbenchStageHost: forwardRef(function WorkbenchStageHost() {
+    return <div data-testid="stage-host" />;
+  }),
 }));
 vi.mock("./StatusBar", () => ({
   StatusBar: () => <div data-testid="status-bar" />,

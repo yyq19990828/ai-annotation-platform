@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.10.39] - 2026-05-23
+
+> **Workbench shell 继续瘦身：StageHost props 嵌套 + shell model hook。** `WorkbenchStageHost` 改成 `common / video / image / ai / editors` 五组嵌套 props，`WorkbenchShell` 把装配逻辑抽到新的 `useWorkbenchShellModel.tsx` 后回落到 66 行；无用户可见行为变更，属于内部结构重构与测试补强。计划见 [v0.10.39 计划](docs/plans/2026-05-23-v0.10.39-workbench-shell-slim.md)。
+
+### Added
+
+- **`useWorkbenchShellModel` 装配 hook** ([useWorkbenchShellModel.tsx](apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx) · [WorkbenchShell.tsx](apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx)): 把原 `WorkbenchShell` 里路由、查询、批次/任务选择、AI 面板、stageHost/layout props 组装、issue 浮层和 propagate dialog 的装配逻辑整体迁到 `state/`，返回 `loading | empty | ready` 三态 model；Shell 本体只负责状态分支和 JSX 渲染壳。
+- **`WorkbenchShell` focused render test** ([WorkbenchShell.test.tsx](apps/web/src/pages/Workbench/shell/WorkbenchShell.test.tsx)): 新增 3 个薄测试，覆盖 `loading` skeleton、`empty` 回退态和 `ready` 下的 layout / dialog / issue controls 渲染分派，锁住「Shell 只做渲染装配」的新边界。
+
+### Changed
+
+- **`WorkbenchStageHostProps` 改为五组嵌套对象** ([WorkbenchStageHost.tsx](apps/web/src/pages/Workbench/shell/WorkbenchStageHost.tsx) · [WorkbenchShell.tsx](apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx)): 由平铺 80+ 字段改为 `common / video / image / ai / editors` 五组语义化 props，函数头按组二次解构后继续复用原组件主体；`WorkbenchLayout` 继续通过 `stageHost` 透传，不改布局层接口。
+- **StageHost / Layout focused tests 同步到新调用面** ([WorkbenchStageHost.test.tsx](apps/web/src/pages/Workbench/shell/WorkbenchStageHost.test.tsx) · [WorkbenchLayout.test.tsx](apps/web/src/pages/Workbench/shell/WorkbenchLayout.test.tsx)): StageHost 测试改按嵌套 props 构造 mock，保持 image / video / 3d 三态渲染断言不变；Layout 测试继续验证 `stageHost` 透传与可选槽位渲染。
+
 ## [0.10.38] - 2026-05-22
 
 > **AI 预标注模态化重设计 + video-jobs 并入（epic 阶段 2 + 3）。** `/ai-pre` 从「图像单后端文本批量预标」升级为模态感知（图像走文本批量预标 / 视频走工作台逐轨迹追踪引导）+ 多 backend 选择 + 按后端动态参数面板；`/ai-pre/jobs` 统一图像/视频两类 AI 任务历史，把 v0.10.36 临时落在 ModelMarket 的视频追踪监控页并入。依赖 v0.10.37（阶段 1）的能力快照 / 模态派生。计划见 [v0.10.38 计划](docs/plans/2026-05-22-v0.10.38-ai-preannotate-modality-redesign.md)。
