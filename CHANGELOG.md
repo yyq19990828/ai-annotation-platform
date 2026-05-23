@@ -296,7 +296,7 @@
 
 ## [0.10.23] - 2026-05-20
 
-> **ML Backend 变体运行期热切换 + 工作台变体/文本面板收敛.** grounded-sam2-backend 原用全局单例 `_predictor` + 单 cache, 变体由启动 env `SAM_VARIANT`/`DINO_VARIANT` 锁死, `_run_prompt` 完全忽略请求变体。本期引入容器内 `ModelPool`: 按请求级 `(sam_variant, dino_variant)` LRU 缓存 predictor, 命中复用 / miss 冷启 1–3s / 超 cap 驱逐 LRU + 释放显存; embedding cache 按变体分桶隔离。前端把变体选择上移 AI 面板(会话级, 切工具保留), 文本输入下沉子工具面板。**前置 bug 修复**: `/setup` 的 `sam_variant` enum 原暴露 `["tiny","small","base","large"]`, 但 `SAM2_CONFIGS` key 是 `base_plus` —— 选 `base` 会在 backend 真消费 variant 后 KeyError → 422; 统一为 `["tiny","small","base_plus","large"]`。 → [plan](docs/plans/2026-05-20-v0.10.23-plan.md) · [需求](ROADMAP/2026-05-20-ml-backend-variant-hot-switch.md)。
+> **ML Backend 变体运行期热切换 + 工作台变体/文本面板收敛.** grounded-sam2-backend 原用全局单例 `_predictor` + 单 cache, 变体由启动 env `SAM_VARIANT`/`DINO_VARIANT` 锁死, `_run_prompt` 完全忽略请求变体。本期引入容器内 `ModelPool`: 按请求级 `(sam_variant, dino_variant)` LRU 缓存 predictor, 命中复用 / miss 冷启 1–3s / 超 cap 驱逐 LRU + 释放显存; embedding cache 按变体分桶隔离。前端把变体选择上移 AI 面板(会话级, 切工具保留), 文本输入下沉子工具面板。**前置 bug 修复**: `/setup` 的 `sam_variant` enum 原暴露 `["tiny","small","base","large"]`, 但 `SAM2_CONFIGS` key 是 `base_plus` —— 选 `base` 会在 backend 真消费 variant 后 KeyError → 422; 统一为 `["tiny","small","base_plus","large"]`。 → [plan](docs/plans/2026-05-20-v0.10.23-plan.md) · [需求](ROADMAP/[archived]2026-05-20-ml-backend-variant-hot-switch.md)。
 
 ### Added
 
