@@ -618,7 +618,14 @@ async def _run_worker_with_final_status(db_session, super_admin, monkeypatch, st
         user_id=user.id,
         annotation_type="video_bbox",
         class_name="car",
-        geometry={"type": "video_bbox", "frame_index": 0, "x": 1, "y": 2, "w": 10, "h": 12},
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 0,
+            "x": 1,
+            "y": 2,
+            "w": 10,
+            "h": 12,
+        },
     )
     db_session.add(annotation)
     await db_session.flush()

@@ -76,9 +76,7 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                 # v0.10.49 · run_tracker_job 内部消化取消/失败（不抛异常），按专表最终状态
                 # 同步 async_jobs 索引层，避免把 cancelled/failed 误标 completed（双写漂移）。
                 if async_job_id is not None:
-                    final_status = (
-                        result_job.status if result_job is not None else None
-                    )
+                    final_status = result_job.status if result_job is not None else None
                     try:
                         if final_status == VideoTrackerJobStatus.CANCELLED.value:
                             await async_job_svc.mark_cancelled(db, async_job_id)
