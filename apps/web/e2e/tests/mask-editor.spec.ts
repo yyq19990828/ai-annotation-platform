@@ -82,7 +82,11 @@ test.describe("mask editor (I11)", () => {
     });
 
     await seed.injectToken(page, data.annotator_email);
-    await page.goto(`/projects/${data.project_id}/annotate`);
+    // 显式带 ?task= 定位到注入了 prediction 的 task，避免依赖工作台默认 tasks[0] 选择顺序
+    // （后端 list_tasks 排序变化曾导致默认载入别的任务、AI 候选为空）。
+    await page.goto(
+      `/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`,
+    );
     await page.waitForLoadState("networkidle");
 
     // 右侧 AI 行的精修按钮（data-testid 由 BoxListItem 渲染：ai-refine-{annotation 行 id}）。

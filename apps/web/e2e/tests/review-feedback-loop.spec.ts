@@ -42,7 +42,11 @@ test.describe("review feedback loop", () => {
     await expect(rejectBtn).toBeVisible({ timeout: 10_000 });
     await rejectBtn.click();
 
-    // 4. 默认选中第一项「类别错误」→ 直接确认
+    // 4. 选「类别错误」(wrong_label) + 补充自由文本，再确认
+    //    v0.10.16 起 reason_type 为结构化必填字段，reject_reason 仅存可选自由文本，
+    //    故显式勾选类型并填写 comment，断言两者都已持久化（不依赖默认勾选顺序）。
+    await page.getByTestId("reject-type-wrong_label").click();
+    await page.getByTestId("reject-comment").fill("类别错误");
     const confirmBtn = page.getByTestId("reject-confirm");
     await expect(confirmBtn).toBeVisible();
     await confirmBtn.click();
@@ -66,8 +70,10 @@ test.describe("review feedback loop", () => {
     const task = (await taskRes.json()) as {
       status: string;
       reject_reason: string | null;
+      reject_reason_type: string | null;
     };
     expect(task.status).toBe("rejected");
+    expect(task.reject_reason_type).toBe("wrong_label");
     expect(task.reject_reason).toBe("类别错误");
   });
 });
