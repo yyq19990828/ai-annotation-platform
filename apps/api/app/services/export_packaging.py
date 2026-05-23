@@ -59,9 +59,7 @@ IMAGE_EXPORT_TARGETS = {"coco", "yolo", "yolo-det", "yolo-obb", "yolo-seg", "aap
 ALL_EXPORT_TARGETS = IMAGE_EXPORT_TARGETS | VIDEO_EXPORT_FORMATS | {"voc"}
 
 
-def clean_export_targets(
-    targets: list[str], data_type: str | None = None
-) -> list[str]:
+def clean_export_targets(targets: list[str], data_type: str | None = None) -> list[str]:
     """去重保序 + 校验目标合法。非法或空抛 ValueError（端点转 400）。
 
     v0.10.47 · 传入项目 ``data_type`` 时按模态过滤：图像项目只接受图像目标（+ voc），

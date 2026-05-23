@@ -186,7 +186,9 @@ def test_extract_chunk_samples_includes_description(monkeypatch, tmp_path):
 
 
 def test_extract_chunk_samples_falls_back_codec_without_config(monkeypatch, tmp_path):
-    monkeypatch.setattr(media, "probe_chunk_samples", lambda *a, **k: [{"frame_index": 0}])
+    monkeypatch.setattr(
+        media, "probe_chunk_samples", lambda *a, **k: [{"frame_index": 0}]
+    )
     monkeypatch.setattr(media, "_extract_decoder_config", lambda _p: (None, None))
     # 无 avcC/hvcC → 退回旧启发式 codec_string, 且不带 description。
     out = _extract_chunk_samples(tmp_path / "c.mp4", 0, VideoMetadata(), "hevc")
