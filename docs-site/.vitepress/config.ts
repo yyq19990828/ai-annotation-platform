@@ -168,6 +168,7 @@ export default withMermaid(defineConfig({
           collapsed: true,
           items: [
             { text: "数据导出格式", link: "/user-guide/reference/export-formats" },
+            { text: "通知中心", link: "/user-guide/reference/notifications" },
           ],
         },
         {

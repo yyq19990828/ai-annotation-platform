@@ -3,6 +3,8 @@ import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
 import {
   useNotifications,
+  useClearReadNotifications,
+  useDeleteNotification,
   useMarkAllRead,
   useMarkRead,
   useUnreadCount,
@@ -27,16 +29,91 @@ const TYPE_LABEL: Record<string, string> = {
   "bug_report.status_changed": "更新了反馈状态",
   "bug_report.reopened": "重新打开了反馈",
   "batch.rejected": "驳回了批次",
+  "batch.review_reopened": "重新打开了批次审核",
+  "batch.admin_locked": "锁定了批次",
+  "batch.admin_unlocked": "解锁了批次",
+  "batch.unarchived": "取消归档了批次",
+  "task.approved": "通过了任务",
+  "task.rejected": "退回了任务",
+  "task.reopened": "重新打开了任务",
+  "failed_prediction.retry.started": "开始重试失败预测",
+  "failed_prediction.retry.succeeded": "失败预测重试成功",
+  "failed_prediction.retry.failed": "失败预测重试失败",
   "export.ready": "导出完成",
   "export.failed": "导出失败",
+  "job.completed": "后台任务完成",
+  "job.failed": "后台任务失败",
+  "job.cancelled": "后台任务已取消",
+  "user.deactivation_requested": "申请注销账号",
+  "user.deactivation_completed": "账号注销完成",
 };
+
+const JOB_KIND_LABEL: Record<string, string> = {
+  batch_predict: "批量预标",
+  video_tracker: "视频追踪",
+  predictions_import: "预测导入",
+  audit_archive: "审计归档",
+};
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function jobVerb(item: NotificationItem): string | null {
+  if (!item.type.startsWith("job.")) return null;
+  const payload = item.payload || {};
+  const kind = stringValue((payload as { kind?: unknown }).kind);
+  const label = JOB_KIND_LABEL[kind] ?? "后台任务";
+  if (item.type === "job.completed") return `${label}完成`;
+  if (item.type === "job.failed") return `${label}失败`;
+  if (item.type === "job.cancelled") return `${label}已取消`;
+  return null;
+}
+
+function jobTitle(item: NotificationItem): string {
+  const payload = item.payload || {};
+  const kind = stringValue((payload as { kind?: unknown }).kind);
+  if (kind === "batch_predict") {
+    return stringValue((payload as { ml_backend_name?: unknown }).ml_backend_name);
+  }
+  if (kind === "video_tracker") {
+    return stringValue((payload as { model_key?: unknown }).model_key);
+  }
+  if (kind === "predictions_import") {
+    return stringValue((payload as { format?: unknown }).format).toUpperCase();
+  }
+  return "";
+}
+
+function jobSnippet(item: NotificationItem): string {
+  const payload = item.payload || {};
+  const error = stringValue((payload as { error_message?: unknown }).error_message);
+  if (error) return error;
+
+  const success = (payload as { success_count?: unknown }).success_count;
+  const failed = (payload as { failed_count?: unknown }).failed_count;
+  if (success !== undefined || failed !== undefined) {
+    return `成功 ${success ?? 0} / 失败 ${failed ?? 0}`;
+  }
+
+  const imported = (payload as { imported?: unknown }).imported;
+  const skipped = (payload as { skipped?: unknown }).skipped;
+  const errorCount = (payload as { error_count?: unknown }).error_count;
+  if (imported !== undefined || skipped !== undefined || errorCount !== undefined) {
+    return `导入 ${imported ?? 0} / 跳过 ${skipped ?? 0} / 错误 ${errorCount ?? 0}`;
+  }
+
+  return "";
+}
 
 interface NotifRowProps {
   item: NotificationItem;
   onClick: () => void;
+  onDelete: () => void;
+  deletePending: boolean;
 }
 
-function NotifRow({ item, onClick }: NotifRowProps) {
+function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
   const isUnread = item.read_at === null;
   const payload = item.payload || {};
   const actorName = (payload as { actor_name?: string }).actor_name || "系统";
@@ -48,27 +125,38 @@ function NotifRow({ item, onClick }: NotifRowProps) {
   const isBatchRejected = item.type === "batch.rejected";
   // v0.10.27：导出完成/失败复用同一行；payload 含 project_display_id / format / download_url / error
   const isExport = item.target_type === "export";
+  const isJob = item.target_type === "async_job";
   const displayId = isBatchRejected
     ? (payload as { batch_display_id?: string }).batch_display_id || ""
     : isExport
     ? (payload as { project_display_id?: string }).project_display_id || ""
+    : isJob
+    ? stringValue(
+        (payload as { batch_display_id?: unknown }).batch_display_id ||
+          (payload as { task_display_id?: unknown }).task_display_id ||
+          (payload as { project_display_id?: unknown }).project_display_id,
+      )
     : (payload as { display_id?: string }).display_id || "";
   const title = isBatchRejected
     ? (payload as { batch_name?: string }).batch_name || ""
     : isExport
     ? ((payload as { format?: string }).format || "").toUpperCase()
+    : isJob
+    ? jobTitle(item)
     : (payload as { title?: string }).title || "";
   const snippet = isBatchRejected
     ? (payload as { feedback?: string }).feedback || ""
     : isExport
     ? (payload as { error?: string }).error || ""
+    : isJob
+    ? jobSnippet(item)
     : (payload as { snippet?: string }).snippet || "";
 
-  const verb = reopen
+  const verb = jobVerb(item) ?? (reopen
     ? "重新打开了反馈"
     : item.type === "bug_report.status_changed"
     ? `状态 ${fromStatus ?? ""} → ${toStatus ?? ""}`
-    : TYPE_LABEL[item.type] || item.type;
+    : TYPE_LABEL[item.type] || item.type);
 
   return (
     <div
@@ -101,6 +189,19 @@ function NotifRow({ item, onClick }: NotifRowProps) {
           {relativeTime(item.created_at)}
         </div>
       </div>
+      <button
+        type="button"
+        className={styles.deleteButton}
+        title="删除通知"
+        aria-label="删除通知"
+        disabled={deletePending}
+        onClick={(event) => {
+          event.stopPropagation();
+          onDelete();
+        }}
+      >
+        <Icon name="x" size={12} />
+      </button>
     </div>
   );
 }
@@ -162,6 +263,13 @@ export function NotificationsPopover() {
               if (payload.download_url) {
                 window.open(payload.download_url, "_blank", "noopener");
               }
+            } else if (item.target_type === "async_job") {
+              const payload = (item.payload || {}) as { kind?: string };
+              navigate(
+                payload.kind === "video_tracker"
+                  ? "/ai-pre/jobs?tab=video"
+                  : "/ai-pre/jobs",
+              );
             }
             close();
           }}
@@ -179,9 +287,12 @@ function NotificationsPanel({
   onItemClick: (item: NotificationItem) => void;
 }) {
   const { data } = useNotifications(true); // panel 已渲染 = popover 已打开
+  const clearRead = useClearReadNotifications();
+  const deleteNotification = useDeleteNotification();
   const markAllRead = useMarkAllRead();
   const markRead = useMarkRead();
   const items = data?.items ?? [];
+  const hasRead = items.some((item) => item.read_at !== null);
 
   const handleRowClick = (item: NotificationItem) => {
     if (item.read_at === null) markRead.mutate(item.id);
@@ -194,16 +305,28 @@ function NotificationsPanel({
         <span className={styles.panelTitle}>
           通知{unread > 0 ? ` · ${unread} 未读` : ""}
         </span>
-        {unread > 0 && (
-          <button
-            type="button"
-            onClick={() => markAllRead.mutate()}
-            disabled={markAllRead.isPending}
-            className={styles.markAllButton}
-          >
-            全部已读
-          </button>
-        )}
+        <div className={styles.headerActions}>
+          {hasRead && (
+            <button
+              type="button"
+              onClick={() => clearRead.mutate()}
+              disabled={clearRead.isPending}
+              className={styles.markAllButton}
+            >
+              清空已读
+            </button>
+          )}
+          {unread > 0 && (
+            <button
+              type="button"
+              onClick={() => markAllRead.mutate()}
+              disabled={markAllRead.isPending}
+              className={styles.markAllButton}
+            >
+              全部已读
+            </button>
+          )}
+        </div>
       </div>
 
       <div className={styles.list}>
@@ -214,7 +337,13 @@ function NotificationsPanel({
           </div>
         ) : (
           items.map((item) => (
-            <NotifRow key={item.id} item={item} onClick={() => handleRowClick(item)} />
+            <NotifRow
+              key={item.id}
+              item={item}
+              onClick={() => handleRowClick(item)}
+              onDelete={() => deleteNotification.mutate(item.id)}
+              deletePending={deleteNotification.isPending}
+            />
           ))
         )}
       </div>

@@ -9,8 +9,8 @@ last_reviewed: 2026-05-23
 # 异步任务（async_jobs）
 
 平台从 v0.10.16 起把所有用户可见的长任务统一进 `async_jobs` 表，做为前端任务铃铛
-（Topbar `JobsBell`）和 `/ai-pre/jobs` 历史页的统一数据源。底层各类长任务（预标、视频追踪、审计归档、预测导入）
-**保留各自专表**作为 domain 真值（PredictionJob / VideoTrackerJob 等），`async_jobs` 只记
+（Topbar `JobsBell`）和 `/ai-pre/jobs` 历史页的统一数据源。底层各类长任务（预标、视频追踪、审计归档、预测导入、导出）
+按需保留各自专表作为 domain 真值（VideoTrackerJob 等），`async_jobs` 只记
 最小元数据作为汇总索引。这种"双写双轨"让前端只需 polling 一个端点就能看到全部进行中的任务。
 
 ## kind 取值
@@ -21,6 +21,7 @@ last_reviewed: 2026-05-23
 | `video_tracker` | 视频工作台 tracker 触发 | ❌（v0.10.17 计划） |
 | `audit_archive` | Celery beat 每月 2 日 03:00 UTC | ✅ |
 | `predictions_import` | 外部 prediction 上传（[Import guide](./import)） | ✅ |
+| `export` | 项目 / 批次导出 | ❌ |
 
 ## 端点
 
@@ -85,10 +86,26 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 # → 200 {"status": "cancelled", "id": "01JX..."}
 ```
 
+## 终态通知
+
+v0.10.50 起，以下 kind 在有 `user_id` 且进入终态后会通过 `notifications` 体系发站内通知：
+
+| kind | `completed` | `failed` | `cancelled` |
+|---|---|---|---|
+| `batch_predict` | `job.completed` | `job.failed` | `job.cancelled` |
+| `video_tracker` | `job.completed` | `job.failed` | `job.cancelled` |
+| `predictions_import` | `job.completed` | `job.failed` | `job.cancelled` |
+| `audit_archive` | `job.completed` | `job.failed` | `job.cancelled` |
+
+通知 payload 至少包含 `kind` / `status`，并会带上可展示字段（如 `batch_display_id`、
+`task_display_id`、`project_display_id`）和结果摘要（如 `success_count` / `failed_count` /
+`imported` / `error_count`）。`export` 不使用通用 `job.*`，继续发 `export.ready` / `export.failed`
+以保留下载链接。
+
 ## 进度上报模型
 
 - **service 层显式**：`batch_predict` 等长任务在 worker 内显式调 `async_job_svc.update_progress(job_id, pct)`，每 5% 步长写一次，避免每条 task 都 DB write；
-- **Celery signals 兜底**：`task_failure` / `task_revoked` 信号回调按 `celery_task_id` 反查 `async_jobs` 行，翻 `failed` / `cancelled`，覆盖 worker crash / Celery revoke 等未被业务代码 except 接住的极端情况；
+- **Celery signals 兜底**：`task_failure` / `task_revoked` 信号回调按 `celery_task_id` 反查 `async_jobs` 行，翻 `failed` / `cancelled`，并补发终态通知，覆盖 worker crash / Celery revoke 等未被业务代码 except 接住的极端情况；
 - **失败兜底**：所有 async_jobs 写入都包 try/except，**专表写入失败不阻断主业务流程**（仅记日志）。
 
 ## Retention
@@ -102,7 +119,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 |---|---|---|
 | 数据通道 | Redis pub/sub（`project:{id}:preannotate` + `global:prediction-jobs`） | Polling `/api/v1/async-jobs?limit=20`（5s interval） |
 | 实时性 | 秒级 | 5s |
-| kind 覆盖 | 仅 `batch_predict` | 全部 4 kind |
+| kind 覆盖 | 仅 `batch_predict` | 全部 async_jobs kind |
 | 历史记录 | ❌（仅 in-progress） | ✅（含最近完成） |
 | 用户范围 | super_admin / project_admin | 所有登录用户（owner-scoped） |
 

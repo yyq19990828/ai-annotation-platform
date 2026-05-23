@@ -213,6 +213,95 @@ async def test_notifications_endpoints_only_return_own(
 
 
 @pytest.mark.asyncio
+async def test_delete_notification_owner_scoped(
+    httpx_client_bound, db_session, annotator, reviewer
+):
+    user_a, token_a = annotator
+    user_b, _ = reviewer
+    svc = NotificationService(db_session)
+    own = await svc.notify(
+        user_id=user_a.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
+    )
+    other = await svc.notify(
+        user_id=user_b.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
+    )
+    await db_session.commit()
+
+    resp = await httpx_client_bound.delete(
+        f"/api/v1/notifications/{own.id}", headers=_bearer(token_a)
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+    rows = (
+        (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == user_a.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows == []
+    assert await svc.unread_count(user_a.id) == 0
+
+    forbidden = await httpx_client_bound.delete(
+        f"/api/v1/notifications/{other.id}", headers=_bearer(token_a)
+    )
+    assert forbidden.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_clear_read_deletes_only_current_users_read_notifications(
+    httpx_client_bound, db_session, annotator, reviewer
+):
+    user_a, token_a = annotator
+    user_b, _ = reviewer
+    svc = NotificationService(db_session)
+    unread = await svc.notify(
+        user_id=user_a.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
+    )
+    read = await svc.notify(
+        user_id=user_a.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
+    )
+    other_read = await svc.notify(
+        user_id=user_b.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
+    )
+    await svc.mark_read(user_a.id, read.id)
+    await svc.mark_read(user_b.id, other_read.id)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        "/api/v1/notifications/clear-read", headers=_bearer(token_a)
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": 1}
+
+    own_rows = (
+        (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == user_a.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [row.id for row in own_rows] == [unread.id]
+    assert own_rows[0].read_at is None
+
+    other_rows = (
+        (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == user_b.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [row.id for row in other_rows] == [other_read.id]
+
+
+@pytest.mark.asyncio
 async def test_self_action_does_not_notify_self(
     httpx_client_bound, db_session, super_admin
 ):

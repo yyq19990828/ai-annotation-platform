@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
-from sqlalchemy import select, update, func, and_
+from sqlalchemy import select, update, func, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -171,6 +171,26 @@ class NotificationService:
                 Notification.read_at.is_(None),
             )
             .values(read_at=datetime.now(timezone.utc))
+        )
+        return int(result.rowcount or 0)
+
+    async def delete_for_user(
+        self, user_id: uuid.UUID, notification_id: uuid.UUID
+    ) -> bool:
+        result = await self.db.execute(
+            delete(Notification).where(
+                Notification.id == notification_id,
+                Notification.user_id == user_id,
+            )
+        )
+        return (result.rowcount or 0) > 0
+
+    async def clear_read(self, user_id: uuid.UUID) -> int:
+        result = await self.db.execute(
+            delete(Notification).where(
+                Notification.user_id == user_id,
+                Notification.read_at.is_not(None),
+            )
         )
         return int(result.rowcount or 0)
 

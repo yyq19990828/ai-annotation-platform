@@ -9,10 +9,13 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
+from app.db.models.notification import Notification
 from app.db.models.async_job import AsyncJobStatus
 from app.db.models.project import Project
 from app.services import async_job as async_job_svc
+from app.services.async_job_notify import notify_job_terminal
 
 
 def _bearer(token: str) -> dict:
@@ -106,6 +109,111 @@ class TestAsyncJobService:
         await db_session.refresh(aj)
         assert aj.status == AsyncJobStatus.FAILED.value
         assert "bad" in (aj.error_message or "")
+
+
+class TestAsyncJobTerminalNotifications:
+    async def _notification_rows(self, db_session, user_id):
+        return list(
+            (
+                await db_session.execute(
+                    select(Notification)
+                    .where(Notification.user_id == user_id)
+                    .order_by(Notification.created_at.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def test_complete_failed_and_cancelled_emit_job_notifications(
+        self, db_session, annotator
+    ):
+        user, _ = annotator
+
+        completed = await async_job_svc.create_job(
+            db_session,
+            kind="batch_predict",
+            user_id=user.id,
+            payload={"batch_display_id": "BATCH-1", "total_tasks": 3},
+        )
+        await async_job_svc.mark_complete(
+            db_session,
+            completed.id,
+            result={"success_count": 2, "failed_count": 1},
+        )
+        await notify_job_terminal(db_session, job_id=completed.id)
+
+        failed = await async_job_svc.create_job(
+            db_session,
+            kind="video_tracker",
+            user_id=user.id,
+            payload={"task_display_id": "TASK-1", "model_key": "sam2_video"},
+        )
+        await async_job_svc.mark_failed(db_session, failed.id, error="tracker failed")
+        await notify_job_terminal(db_session, job_id=failed.id)
+
+        cancelled = await async_job_svc.create_job(
+            db_session,
+            kind="predictions_import",
+            user_id=user.id,
+            payload={"format": "aap_json"},
+        )
+        await async_job_svc.mark_running(db_session, cancelled.id)
+        await async_job_svc.mark_cancelled(db_session, cancelled.id)
+        await notify_job_terminal(db_session, job_id=cancelled.id)
+
+        rows = await self._notification_rows(db_session, user.id)
+        assert [row.type for row in rows] == [
+            "job.completed",
+            "job.failed",
+            "job.cancelled",
+        ]
+        assert rows[0].target_type == "async_job"
+        assert rows[0].target_id == completed.id
+        assert rows[0].payload["kind"] == "batch_predict"
+        assert rows[0].payload["batch_display_id"] == "BATCH-1"
+        assert rows[0].payload["success_count"] == 2
+        assert rows[1].payload["error_message"] == "tracker failed"
+
+    async def test_terminal_notification_skips_export_and_system_jobs(
+        self, db_session, annotator
+    ):
+        user, _ = annotator
+
+        export_job = await async_job_svc.create_job(
+            db_session,
+            kind="export",
+            user_id=user.id,
+        )
+        await async_job_svc.mark_complete(db_session, export_job.id)
+        await notify_job_terminal(db_session, job_id=export_job.id)
+
+        system_job = await async_job_svc.create_job(
+            db_session,
+            kind="audit_archive",
+            user_id=None,
+        )
+        await async_job_svc.mark_complete(db_session, system_job.id)
+        await notify_job_terminal(db_session, job_id=system_job.id)
+
+        rows = await self._notification_rows(db_session, user.id)
+        assert rows == []
+
+    async def test_terminal_notification_is_idempotent(self, db_session, annotator):
+        user, _ = annotator
+        job = await async_job_svc.create_job(
+            db_session,
+            kind="batch_predict",
+            user_id=user.id,
+        )
+        await async_job_svc.mark_complete(db_session, job.id)
+
+        await notify_job_terminal(db_session, job_id=job.id)
+        await notify_job_terminal(db_session, job_id=job.id)
+
+        rows = await self._notification_rows(db_session, user.id)
+        assert len(rows) == 1
+        assert rows[0].type == "job.completed"
 
 
 class TestAsyncJobsAPI:
@@ -243,6 +351,18 @@ class TestAsyncJobsAPI:
         # 刷新看库
         await db_session.refresh(aj)
         assert aj.status == AsyncJobStatus.CANCELLED.value
+        rows = (
+            (
+                await db_session.execute(
+                    select(Notification).where(Notification.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].type == "job.cancelled"
+        assert rows[0].target_id == aj.id
 
     async def test_cancel_already_terminal_rejected(
         self, httpx_client_bound, db_session, annotator

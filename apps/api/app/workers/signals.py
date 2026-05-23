@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import (
 from app.config import settings
 from app.db.models.async_job import AsyncJobStatus
 from app.services import async_job as async_job_svc
+from app.services.async_job_notify import notify_job_terminal
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ async def _mark_failed(celery_task_id: str, error: str) -> None:
             }:
                 return
             await async_job_svc.mark_failed(db, aj.id, error=error)
+            await notify_job_terminal(db, job_id=aj.id)
             await db.commit()
     finally:
         await engine.dispose()
@@ -61,6 +63,7 @@ async def _mark_cancelled(celery_task_id: str) -> None:
             if aj is None:
                 return
             await async_job_svc.mark_cancelled(db, aj.id)
+            await notify_job_terminal(db, job_id=aj.id)
             await db.commit()
     finally:
         await engine.dispose()

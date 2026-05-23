@@ -36,12 +36,6 @@
 | POST | `/admin/preannotate-queue/bulk-clear` |
 | GET | `/admin/preannotate-summary` |
 
-## `admin_preannotate_jobs.py`
-
-| Method | Path |
-|---|---|
-| GET | `/admin/preannotate-jobs` |
-
 ## `annotation_comments.py`
 
 | Method | Path |
@@ -262,6 +256,8 @@
 | GET | `/notifications/unread-count` |
 | POST | `/notifications/{notification_id}/read` |
 | POST | `/notifications/mark-all-read` |
+| POST | `/notifications/clear-read` |
+| DELETE | `/notifications/{notification_id}` |
 | GET | `/notification-preferences` |
 | PUT | `/notification-preferences` |
 
@@ -390,6 +386,7 @@
 | GET | `/{dataset_item_id}/frame-timetable` |
 | GET | `/{dataset_item_id}/chunks` |
 | GET | `/{dataset_item_id}/chunks/{chunk_id}` |
+| GET | `/{dataset_item_id}/chunks/{chunk_id}/samples` |
 | GET | `/{dataset_item_id}/frames/{frame_index}` |
 | POST | `/{dataset_item_id}/frames:prefetch` |
 | POST | `/{dataset_item_id}/frames:retry` |
@@ -400,4 +397,4 @@
 
 ---
 
-_共 36 模块 / 223 路由_
+_共 35 模块 / 225 路由_

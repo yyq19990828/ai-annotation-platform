@@ -72,6 +72,7 @@ async def _run_batch(
     from app.db.models.task import Task
     from app.db.models.task_batch import TaskBatch
     from app.services import async_job as async_job_svc
+    from app.services.async_job_notify import notify_job_terminal
     from app.services.ml_client import MLBackendClient
     from app.services.prediction import PredictionService
 
@@ -156,6 +157,8 @@ async def _run_batch(
                 "ml_backend_id": ml_backend_id,
                 "total_tasks": total,
                 "prompt": (prompt or "")[:200],
+                "project_display_id": project.display_id if project else None,
+                "project_name": project.name if project else None,
                 "ml_backend_name": backend.name,
                 "output_mode": output_mode,
             },
@@ -191,6 +194,7 @@ async def _run_batch(
                     "total_cost": "0.0000",
                 },
             )
+            await notify_job_terminal(db, job_id=async_job_id)
             await db.commit()
             _publish_progress(
                 project_id,
@@ -274,6 +278,7 @@ async def _run_batch(
                 "total_cost": f"{running_total_cost:.4f}",
             },
         )
+        await notify_job_terminal(db, job_id=async_job_id)
         await db.commit()
 
         _publish_progress(
@@ -304,6 +309,7 @@ async def _mark_job_failed(celery_task_id: str, error_message: str) -> None:
     )
 
     from app.services import async_job as async_job_svc
+    from app.services.async_job_notify import notify_job_terminal
 
     engine = create_async_engine(settings.database_url, echo=False)
     SessionLocal = async_sessionmaker(
@@ -315,6 +321,7 @@ async def _mark_job_failed(celery_task_id: str, error_message: str) -> None:
             if aj is None:
                 return
             await async_job_svc.mark_failed(db, aj.id, error=error_message)
+            await notify_job_terminal(db, job_id=aj.id)
             await db.commit()
     finally:
         await engine.dispose()

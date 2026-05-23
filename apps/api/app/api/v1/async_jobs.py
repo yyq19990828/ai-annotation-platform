@@ -160,7 +160,9 @@ async def cancel_async_job(
         )
 
     from app.services import async_job as async_job_svc
+    from app.services.async_job_notify import notify_job_terminal
 
     await async_job_svc.mark_cancelled(db, job.id)
+    await notify_job_terminal(db, job_id=job.id)
     await db.commit()
     return {"status": "cancelled", "id": str(job_id)}

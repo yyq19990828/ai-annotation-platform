@@ -45,6 +45,12 @@
   font-weight: 600;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .markAllButton {
   padding: 0;
   color: var(--color-accent);
@@ -73,7 +79,7 @@
 }
 
 .rowUnread {
-  background: oklch(0.97 0.01 252);
+  background: var(--color-accent-soft);
 }
 
 .unreadMarker {
@@ -94,6 +100,37 @@
 .rowBody {
   flex: 1;
   min-width: 0;
+}
+
+.deleteButton {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: -2px;
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+}
+
+.row:hover .deleteButton,
+.deleteButton:focus-visible {
+  opacity: 1;
+}
+
+.deleteButton:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.deleteButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .rowSummary {

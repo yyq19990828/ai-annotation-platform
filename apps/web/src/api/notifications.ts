@@ -49,6 +49,12 @@ export const notificationsApi = {
   markAllRead: () =>
     apiClient.post<{ updated: number }>("/notifications/mark-all-read", {}),
 
+  delete: (id: string) =>
+    apiClient.delete<{ ok: boolean }>(`/notifications/${id}`),
+
+  clearRead: () =>
+    apiClient.post<{ deleted: number }>("/notifications/clear-read", {}),
+
   getPreferences: () =>
     apiClient.get<NotificationPreferencesResponse>("/notification-preferences"),
 

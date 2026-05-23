@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.10.50] - 2026-05-24
+
+> **后台任务终态接入个人通知。** `batch_predict`、`video_tracker`、`predictions_import`、`audit_archive` 在有 `user_id` 的终态切换后统一发 `job.completed` / `job.failed` / `job.cancelled` 站内通知，复用现有 `notifications` 表 + Redis PubSub + `/ws/notifications` 链路；`export` 继续使用语义化的 `export.ready` / `export.failed`，避免双发。
+
+### Added
+
+- **async_jobs 终态通知 helper** ([async_job_notify.py](apps/api/app/services/async_job_notify.py) · [tasks.py](apps/api/app/workers/tasks.py) · [video_tracker.py](apps/api/app/workers/video_tracker.py) · [signals.py](apps/api/app/workers/signals.py)): 新增独立 `notify_job_terminal(db, job_id=...)`，按 kind 白名单和终态状态映射发通用 `job.*` 通知；无 owner 的系统级任务跳过，同一 job/type 去重，通知失败仅记日志。
+- **通知删除能力** ([notifications.py API](apps/api/app/api/v1/notifications.py) · [notification.py service](apps/api/app/services/notification.py)): 新增 `DELETE /notifications/{id}` 与 `POST /notifications/clear-read`，前者 owner-scoped 删除单条，后者删除当前用户所有已读通知并返回删除数量。
+- **通知中心 UI 操作** ([NotificationsPopover.tsx](apps/web/src/components/shell/NotificationsPopover.tsx)): 通知行 hover 显示删除按钮；面板 header 新增「清空已读」，删除未读通知后未读数会随 query invalidation 刷新。
+
+### Changed
+
+- **通知类型注册补齐** ([notifications.py](apps/api/app/api/v1/notifications.py) · [SettingsPage.tsx](apps/web/src/pages/Settings/SettingsPage.tsx)): `KNOWN_NOTIFICATION_TYPES` 和设置页标签补齐 task / batch review / failed prediction retry / export / job / deactivation 等现存通知类型，用户可在「通知偏好」里静音。
+- **后台任务通知文案** ([NotificationsPopover.tsx](apps/web/src/components/shell/NotificationsPopover.tsx)): `job.*` 通知按 payload.kind 显示「批量预标完成」「视频追踪失败」等中文文案，并链接到 `/ai-pre/jobs` 对应历史页。
+
 ## [0.10.49] - 2026-05-23
 
 > **async_jobs 收敛 Phase 1：删除 `prediction_jobs` 专表。** batch_predict 自 v0.10.16 起在 `prediction_jobs` 专表与 `async_jobs` 索引层双写双轨；本版把它收敛为 `async_jobs` 单一真值——domain 字段（batch_id / ml_backend_id / prompt / 统计 / total_cost）改存 payload/result JSONB，worker 直接以 async_jobs 为运行时工作状态。`VideoTrackerJob` 经评估**保留专表**（带活标注 FK + CASCADE + 实时状态机，收敛会丢引用完整性，收益小于风险），收敛切片决策见 [计划](ROADMAP/2026-05-23-async-jobs-unification.md)。

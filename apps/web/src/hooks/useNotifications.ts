@@ -39,3 +39,23 @@ export function useMarkAllRead() {
     },
   });
 }
+
+export function useDeleteNotification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => notificationsApi.delete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useClearReadNotifications() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => notificationsApi.clearRead(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}

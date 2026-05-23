@@ -103,6 +103,7 @@ vi.mock("@/api/notifications", () => ({
       items: [
         { type: "batch.rejected", in_app: true },
         { type: "bug_report.status_changed", in_app: false },
+        { type: "job.completed", in_app: true },
       ],
     }),
     updatePreference: vi.fn().mockResolvedValue(undefined),
@@ -215,6 +216,7 @@ describe("SettingsPage", () => {
     await waitFor(() =>
       expect(screen.getByText("batch.rejected")).toBeInTheDocument(),
     );
+    expect(screen.getByText("后台任务完成")).toBeInTheDocument();
   });
 
   it("点击「我的反馈」tab → 显示空态提示", async () => {

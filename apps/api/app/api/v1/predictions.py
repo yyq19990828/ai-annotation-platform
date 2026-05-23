@@ -277,6 +277,7 @@ async def import_predictions(
     """
 
     from app.services import async_job as async_job_svc
+    from app.services.async_job_notify import notify_job_terminal
     from app.services.predictions_import import import_aap_json, import_coco
 
     raw = await file.read()
@@ -293,6 +294,7 @@ async def import_predictions(
                 payload={
                     "format": format,
                     "size_bytes": len(raw),
+                    "project_display_id": project.display_id,
                     "overwrite_existing": overwrite_existing,
                     "model_version_fallback": model_version,
                 },
@@ -327,6 +329,7 @@ async def import_predictions(
         if aj_id is not None:
             try:
                 await async_job_svc.mark_failed(db, aj_id, error=str(exc))
+                await notify_job_terminal(db, job_id=aj_id)
                 await db.commit()
             except Exception:
                 await db.rollback()
@@ -335,6 +338,7 @@ async def import_predictions(
         if aj_id is not None:
             try:
                 await async_job_svc.mark_failed(db, aj_id, error=str(exc))
+                await notify_job_terminal(db, job_id=aj_id)
                 await db.commit()
             except Exception:
                 await db.rollback()
@@ -370,6 +374,7 @@ async def import_predictions(
                         "error_count": len(result.errors),
                     },
                 )
+                await notify_job_terminal(db, job_id=aj_id)
             except Exception:
                 pass
         await db.commit()

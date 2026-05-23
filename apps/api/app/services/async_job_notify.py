@@ -1,0 +1,132 @@
+"""Terminal notification helper for user-visible async_jobs."""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.async_job import AsyncJob, AsyncJobStatus
+from app.db.models.notification import Notification
+from app.services.notification import NotificationService
+
+
+log = logging.getLogger(__name__)
+
+
+TERMINAL_NOTIFY_KINDS = {
+    "batch_predict",
+    "video_tracker",
+    "predictions_import",
+    "audit_archive",
+}
+
+_STATUS_TO_TYPE = {
+    AsyncJobStatus.COMPLETED.value: "job.completed",
+    AsyncJobStatus.FAILED.value: "job.failed",
+    AsyncJobStatus.CANCELLED.value: "job.cancelled",
+}
+
+_PAYLOAD_SUMMARY_KEYS = (
+    "batch_display_id",
+    "task_display_id",
+    "project_display_id",
+    "project_name",
+    "ml_backend_name",
+    "output_mode",
+    "format",
+    "total_tasks",
+    "from_frame",
+    "to_frame",
+    "model_key",
+    "direction",
+    "retain_months",
+)
+
+_RESULT_SUMMARY_KEYS = (
+    "success_count",
+    "failed_count",
+    "duration_ms",
+    "total_cost",
+    "imported",
+    "skipped",
+    "error_count",
+    "file_count",
+    "size_bytes",
+    "cache_hit",
+    "archived",
+    "deleted",
+)
+
+
+def _copy_present(
+    out: dict[str, Any], source: dict[str, Any], keys: tuple[str, ...]
+) -> None:
+    for key in keys:
+        if key in source:
+            out[key] = source[key]
+
+
+def _terminal_payload(job: AsyncJob) -> dict[str, Any]:
+    payload_in = job.payload or {}
+    result_in = job.result or {}
+    payload: dict[str, Any] = {
+        "kind": job.kind,
+        "status": job.status,
+    }
+    if job.project_id is not None:
+        payload["project_id"] = str(job.project_id)
+    _copy_present(payload, payload_in, _PAYLOAD_SUMMARY_KEYS)
+    _copy_present(payload, result_in, _RESULT_SUMMARY_KEYS)
+    if job.error_message:
+        payload["error_message"] = job.error_message[:200]
+    return payload
+
+
+async def notify_job_terminal(db: AsyncSession, *, job_id: uuid.UUID) -> None:
+    """Emit a generic user notification for a whitelisted terminal async job.
+
+    Callers keep transaction ownership: invoke this after mark_complete/failed/cancelled
+    and before the caller's commit. Notification failures are logged and do not affect
+    the job state transition.
+    """
+    try:
+        job = await db.get(AsyncJob, job_id)
+        if job is None:
+            return
+        if job.user_id is None:
+            return
+        if job.kind not in TERMINAL_NOTIFY_KINDS:
+            return
+
+        notif_type = _STATUS_TO_TYPE.get(job.status)
+        if notif_type is None:
+            return
+
+        existing = (
+            await db.execute(
+                select(Notification.id)
+                .where(
+                    Notification.user_id == job.user_id,
+                    Notification.type == notif_type,
+                    Notification.target_type == "async_job",
+                    Notification.target_id == job.id,
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return
+
+        await NotificationService(db).notify(
+            user_id=job.user_id,
+            type=notif_type,
+            target_type="async_job",
+            target_id=job.id,
+            payload=_terminal_payload(job),
+        )
+    except Exception:  # noqa: BLE001
+        log.exception("async job terminal notification failed job=%s", job_id)

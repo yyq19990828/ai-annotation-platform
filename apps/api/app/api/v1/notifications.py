@@ -4,6 +4,8 @@
 - GET /notifications/unread-count  TopBar 角标
 - POST /notifications/{id}/read    标记单条
 - POST /notifications/mark-all-read 批量
+- DELETE /notifications/{id}       删除单条
+- POST /notifications/clear-read   删除所有已读
 """
 
 from __future__ import annotations
@@ -29,8 +31,23 @@ KNOWN_NOTIFICATION_TYPES = [
     "bug_report.reopened",
     "bug_report.status_changed",
     "batch.rejected",
+    "batch.review_reopened",
+    "batch.admin_locked",
+    "batch.admin_unlocked",
+    "batch.unarchived",
     "task.approved",
     "task.rejected",
+    "task.reopened",
+    "failed_prediction.retry.started",
+    "failed_prediction.retry.succeeded",
+    "failed_prediction.retry.failed",
+    "export.ready",
+    "export.failed",
+    "job.completed",
+    "job.failed",
+    "job.cancelled",
+    "user.deactivation_requested",
+    "user.deactivation_completed",
 ]
 
 
@@ -105,6 +122,31 @@ async def mark_all_read(
     n = await svc.mark_all_read(user.id)
     await db.commit()
     return {"updated": n}
+
+
+@router.post("/notifications/clear-read")
+async def clear_read_notifications(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    svc = NotificationService(db)
+    n = await svc.clear_read(user.id)
+    await db.commit()
+    return {"deleted": n}
+
+
+@router.delete("/notifications/{notification_id}")
+async def delete_notification(
+    notification_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    svc = NotificationService(db)
+    ok = await svc.delete_for_user(user.id, notification_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/notification-preferences", response_model=NotificationPreferencesOut)

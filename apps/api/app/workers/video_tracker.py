@@ -10,6 +10,7 @@ from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services import async_job as async_job_svc
+from app.services.async_job_notify import notify_job_terminal
 from app.services.video_tracker_runner import run_tracker_job
 from app.workers.celery_app import celery_app
 
@@ -68,6 +69,7 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                 if async_job_id is not None:
                     try:
                         await async_job_svc.mark_failed(db, async_job_id, error=str(e))
+                        await notify_job_terminal(db, job_id=async_job_id)
                         await db.commit()
                     except Exception:
                         await db.rollback()
@@ -90,6 +92,7 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                             )
                         else:
                             await async_job_svc.mark_complete(db, async_job_id)
+                        await notify_job_terminal(db, job_id=async_job_id)
                         await db.commit()
                     except Exception:
                         await db.rollback()

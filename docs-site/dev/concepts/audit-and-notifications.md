@@ -43,6 +43,7 @@ flowchart TD
 | `apps/api/app/db/models/audit_log.py` | `AuditLog` 数据模型 |
 | `apps/api/app/api/v1/audit_logs.py` | audit 查询与导出 |
 | `apps/api/app/services/notification.py` | 通知写表与 Redis PubSub |
+| `apps/api/app/services/async_job_notify.py` | `async_jobs` 终态 → 通用 `job.*` 通知 helper |
 | `apps/api/app/db/models/notification.py` | `Notification` 模型 |
 | `apps/api/app/api/v1/notifications.py` | 通知列表、已读、偏好设置 |
 | `apps/api/app/api/v1/ws.py` | `/ws/notifications` 在线推送 |
@@ -200,10 +201,49 @@ flowchart TD
 - `bug_report.reopened`
 - `bug_report.status_changed`
 - `batch.rejected`
+- `batch.review_reopened`
+- `batch.admin_locked`
+- `batch.admin_unlocked`
+- `batch.unarchived`
 - `task.approved`
 - `task.rejected`
+- `task.reopened`
+- `failed_prediction.retry.started`
+- `failed_prediction.retry.succeeded`
+- `failed_prediction.retry.failed`
+- `export.ready`
+- `export.failed`
+- `job.completed`
+- `job.failed`
+- `job.cancelled`
+- `user.deactivation_requested`
+- `user.deactivation_completed`
 
-这意味着并不是所有 `notify_many()` 类型都已经进入“用户可配置偏好”的白名单。
+新增通知类型时要同步更新后端 `KNOWN_NOTIFICATION_TYPES` 与前端设置页标签；
+否则用户无法在「通知偏好」里静音它。
+
+### async_jobs 终态通知
+
+v0.10.50 起，用户发起且有 `user_id` 的后台任务在进入终态后会发通用通知：
+
+| 状态 | 通知 type |
+|---|---|
+| `completed` | `job.completed` |
+| `failed` | `job.failed` |
+| `cancelled` | `job.cancelled` |
+
+helper 位于 `apps/api/app/services/async_job_notify.py`，由 worker / API 在各自 `mark_*`
+之后显式调用；不要把通知职责塞进 `services/async_job.py` 的状态方法。
+
+当前白名单：
+
+- `batch_predict`
+- `video_tracker`
+- `predictions_import`
+- `audit_archive`
+
+`export` 不进通用 `job.*`，因为导出 worker 已经发 `export.ready` / `export.failed`
+并携带 `download_url`。
 
 ## 在线推送与离线读取
 
@@ -215,6 +255,8 @@ flowchart TD
 - `GET /notifications/unread-count`
 - `POST /notifications/{id}/read`
 - `POST /notifications/mark-all-read`
+- `DELETE /notifications/{id}`
+- `POST /notifications/clear-read`
 
 这是持久化收件箱。
 
@@ -304,6 +346,7 @@ WS 握手时会校验 JWT，然后订阅：
 | 新增业务动作审计 | `services/audit.py` + 对应 route |
 | 让某动作可通知 | `services/notification.py` + 对应 route |
 | 通知偏好开关 | `api/v1/notifications.py` + `notification_preferences` |
+| 后台任务终态通知 | `services/async_job_notify.py` + 对应 worker/API 终态点 |
 | 审计查询 / 导出 | `api/v1/audit_logs.py` |
 | 批次审计聚合视图 | `api/v1/batches.py:list_batch_audit_logs` |
 

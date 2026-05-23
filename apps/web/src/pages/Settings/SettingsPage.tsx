@@ -759,6 +759,23 @@ const NOTIF_TYPE_LABELS: Record<string, string> = {
   "bug_report.reopened": "BUG 反馈：被重新打开",
   "bug_report.status_changed": "BUG 反馈：状态变更",
   "batch.rejected": "批次被驳回",
+  "batch.review_reopened": "批次重新进入审核",
+  "batch.admin_locked": "批次被管理员锁定",
+  "batch.admin_unlocked": "批次解除管理员锁定",
+  "batch.unarchived": "批次取消归档",
+  "task.approved": "任务审核通过",
+  "task.rejected": "任务被退回",
+  "task.reopened": "任务被重新打开",
+  "failed_prediction.retry.started": "失败预测：开始重试",
+  "failed_prediction.retry.succeeded": "失败预测：重试成功",
+  "failed_prediction.retry.failed": "失败预测：重试失败",
+  "export.ready": "导出完成",
+  "export.failed": "导出失败",
+  "job.completed": "后台任务完成",
+  "job.failed": "后台任务失败",
+  "job.cancelled": "后台任务取消",
+  "user.deactivation_requested": "账号注销申请",
+  "user.deactivation_completed": "账号注销完成",
 };
 
 function NotificationPreferencesSection() {

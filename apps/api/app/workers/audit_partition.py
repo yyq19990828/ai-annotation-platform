@@ -45,6 +45,7 @@ def archive_old_audit_partitions(self) -> dict:
 async def _archive_async(retain_months: int, celery_task_id: str | None = None) -> dict:
     """v0.10.16 · 归档操作走 async_jobs track_job 上下文管理器（汇总索引）。"""
     from app.services import async_job as async_job_svc
+    from app.services.async_job_notify import notify_job_terminal
 
     async with async_session() as db:
         async with async_job_svc.track_job(
@@ -57,6 +58,7 @@ async def _archive_async(retain_months: int, celery_task_id: str | None = None) 
                 db, retain_months=retain_months
             )
             await async_job_svc.mark_complete(db, aj.id, result=result)
+            await notify_job_terminal(db, job_id=aj.id)
             await db.commit()
     log.info("archive_old_audit_partitions: %s", result)
     return result

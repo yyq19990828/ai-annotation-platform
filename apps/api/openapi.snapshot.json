@@ -20507,6 +20507,30 @@
         ]
       }
     },
+    "/api/v1/notifications/clear-read": {
+      "post": {
+        "operationId": "clear_read_notifications_api_v1_notifications_clear_read_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Clear Read Notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/api/v1/notifications/mark-all-read": {
       "post": {
         "operationId": "mark_all_read_api_v1_notifications_mark_all_read_post",
@@ -20552,6 +20576,52 @@
           }
         ],
         "summary": "Unread Count",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/{notification_id}": {
+      "delete": {
+        "operationId": "delete_notification_api_v1_notifications__notification_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Notification",
         "tags": [
           "notifications"
         ]
