@@ -137,8 +137,8 @@ async def cancel_async_job(
 ):
     """v0.10.16 · 软取消。MVP 仅支持 predictions_import / audit_archive。
 
-    batch_predict / video_tracker 走 domain 真值表（PredictionJob / VideoTrackerJob）
-    自己的取消机制；本端点不动 Celery revoke。
+    batch_predict 无独立取消机制；video_tracker 走自身取消路径（见 video_tracker_runner）；
+    本端点不动 Celery revoke。
     """
     job = await db.get(AsyncJob, job_id)
     if job is None:

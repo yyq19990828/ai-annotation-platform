@@ -1,12 +1,14 @@
-"""v0.9.8 · prediction_jobs 表 + worker 写入单测.
+"""v0.10.49 · batch_predict worker 写入单测（async_jobs 单一真值）.
 
+v0.10.49 收敛后 prediction_jobs 专表已删，worker 直接以 async_jobs 为工作状态。
 覆盖：
-1. PredictionJob ORM 基础 round-trip（insert running → update completed）
-2. CHECK constraint 拒绝非法 status
-3. celery_task_id 反查 query 用于 _BatchPredictTask.on_failure
-4. _mark_job_failed 把 running 行翻成 failed + 写 error_message
-5. _mark_job_failed 跳过已 completed 行不覆盖
-6. _BatchPredictTask.on_failure 调用 _mark_job_failed (mock 验证 dispatch 路径)
+1. _mark_job_failed 把 running async_job 翻成 failed + 写 error_message
+2. _mark_job_failed 跳过已 completed async_job 不覆盖
+3. _run_batch 把每条 PredictionResult.meta.total_cost 累加进 async_job.result
+4. _run_batch 把请求 params 合并进 /predict context
+5. _BatchPredictTask.on_failure 调用 _mark_job_failed (mock 验证 dispatch 路径)
+
+AsyncJob ORM / celery_task_id 反查由 test_async_jobs.py 覆盖，本文件不重复。
 """
 
 from __future__ import annotations
@@ -16,11 +18,10 @@ from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.ml_backend import MLBackend
-from app.db.models.prediction_job import PredictionJob, PredictionJobStatus
 from app.db.models.project import Project
 
 
@@ -52,125 +53,13 @@ async def _seed_project_and_backend(
     return proj, backend
 
 
-@pytest.mark.asyncio
-async def test_prediction_job_round_trip(db_session: AsyncSession, super_admin):
-    user, _ = super_admin
-    proj, backend = await _seed_project_and_backend(db_session, user.id)
-
-    job = PredictionJob(
-        project_id=proj.id,
-        ml_backend_id=backend.id,
-        prompt="ripe apples",
-        output_mode="box",
-        status=PredictionJobStatus.RUNNING.value,
-        total_tasks=10,
-        celery_task_id="celery-1",
-    )
-    db_session.add(job)
-    await db_session.flush()
-    job_id = job.id
-
-    # 翻成 completed
-    job.status = PredictionJobStatus.COMPLETED.value
-    job.completed_at = datetime.now(timezone.utc)
-    job.duration_ms = 1234
-    job.success_count = 9
-    job.failed_count = 1
-    await db_session.flush()
-
-    fresh = await db_session.get(PredictionJob, job_id)
-    assert fresh is not None
-    assert fresh.status == "completed"
-    assert fresh.duration_ms == 1234
-    assert fresh.success_count == 9
-    assert fresh.failed_count == 1
-    assert fresh.prompt == "ripe apples"
-    assert fresh.output_mode == "box"
-    assert fresh.celery_task_id == "celery-1"
-
-
-@pytest.mark.asyncio
-async def test_prediction_job_check_constraint_rejects_bad_status(
-    db_session: AsyncSession, super_admin
-):
-    user, _ = super_admin
-    proj, backend = await _seed_project_and_backend(db_session, user.id)
-
-    job = PredictionJob(
-        project_id=proj.id,
-        ml_backend_id=backend.id,
-        status="weird",  # 违反 CHECK
-        prompt="",
-    )
-    db_session.add(job)
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
-    await db_session.rollback()
-
-
-@pytest.mark.asyncio
-async def test_celery_task_id_lookup_query(db_session: AsyncSession, super_admin):
-    user, _ = super_admin
-    proj, backend = await _seed_project_and_backend(db_session, user.id)
-
-    target_task_id = "celery-target"
-    job = PredictionJob(
-        project_id=proj.id,
-        ml_backend_id=backend.id,
-        prompt="x",
-        celery_task_id=target_task_id,
-        status=PredictionJobStatus.RUNNING.value,
-    )
-    other = PredictionJob(
-        project_id=proj.id,
-        ml_backend_id=backend.id,
-        prompt="y",
-        celery_task_id="other-celery",
-        status=PredictionJobStatus.RUNNING.value,
-    )
-    db_session.add_all([job, other])
-    await db_session.flush()
-
-    res = await db_session.execute(
-        select(PredictionJob).where(
-            PredictionJob.celery_task_id == target_task_id,
-            PredictionJob.status == PredictionJobStatus.RUNNING.value,
-        )
-    )
-    found = res.scalar_one_or_none()
-    assert found is not None
-    assert found.id == job.id
-
-
-@pytest.mark.asyncio
-async def test_mark_job_failed_updates_running_row(
-    db_session: AsyncSession, monkeypatch, super_admin
-):
-    """直接 monkeypatch worker 内部 create_async_engine + async_sessionmaker
-    让 _mark_job_failed 复用 db_session 所在 engine, 避免开新 engine 对 SAVEPOINT 不可见."""
-    user, _ = super_admin
-    proj, backend = await _seed_project_and_backend(db_session, user.id)
-
-    job = PredictionJob(
-        project_id=proj.id,
-        ml_backend_id=backend.id,
-        prompt="hello",
-        celery_task_id="celery-fail",
-        status=PredictionJobStatus.RUNNING.value,
-    )
-    db_session.add(job)
-    await db_session.flush()
-    job_id = job.id
-
-    # 让 worker 用同一 db_session
-    from app.workers import tasks as worker_tasks
+def _passthrough_engine_and_factory(db_session: AsyncSession):
+    """让 worker 内部 create_async_engine / async_sessionmaker 复用 db_session,
+    避免开新 engine 对测试 SAVEPOINT 不可见。"""
 
     class _PassThroughEngine:
         async def dispose(self):
             pass
-
-    def _fake_engine(*_a, **_kw):
-        return _PassThroughEngine()
 
     class _PassThroughSessionFactory:
         def __init__(self, *_a, **_kw):
@@ -186,32 +75,44 @@ async def test_mark_job_failed_updates_running_row(
 
             return _Ctx()
 
-    monkeypatch.setattr(
-        worker_tasks, "create_async_engine", _fake_engine, raising=False
-    )
-    monkeypatch.setattr(
-        worker_tasks,
-        "async_sessionmaker",
-        _PassThroughSessionFactory,
-        raising=False,
-    )
+    return (lambda *_a, **_kw: _PassThroughEngine()), _PassThroughSessionFactory
 
-    # 因为 _mark_job_failed 内部 `from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker`
-    # 是函数体内 import, monkeypatch module 属性不会生效. 改用 sqlalchemy.ext.asyncio module-level patch.
+
+@pytest.mark.asyncio
+async def test_mark_job_failed_updates_running_row(
+    db_session: AsyncSession, monkeypatch, super_admin
+):
+    user, _ = super_admin
+    proj, _backend = await _seed_project_and_backend(db_session, user.id)
+
+    job = AsyncJob(
+        kind="batch_predict",
+        project_id=proj.id,
+        user_id=user.id,
+        celery_task_id="celery-fail",
+        status=AsyncJobStatus.RUNNING.value,
+        started_at=datetime.now(timezone.utc),
+        payload={"prompt": "hello"},
+    )
+    db_session.add(job)
+    await db_session.flush()
+    job_id = job.id
+
+    from app.workers import tasks as worker_tasks  # noqa: F401
+
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
     import sqlalchemy.ext.asyncio as sa_async
 
-    monkeypatch.setattr(sa_async, "create_async_engine", _fake_engine)
-    monkeypatch.setattr(sa_async, "async_sessionmaker", _PassThroughSessionFactory)
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
 
     await worker_tasks._mark_job_failed("celery-fail", "kaboom: boom")
 
-    await db_session.refresh(job)
-    fresh = await db_session.get(PredictionJob, job_id)
+    fresh = await db_session.get(AsyncJob, job_id)
     assert fresh is not None
     assert fresh.status == "failed"
     assert fresh.error_message == "kaboom: boom"
     assert fresh.completed_at is not None
-    assert fresh.duration_ms is not None and fresh.duration_ms >= 0
 
 
 @pytest.mark.asyncio
@@ -219,16 +120,16 @@ async def test_mark_job_failed_skips_already_completed(
     db_session: AsyncSession, monkeypatch, super_admin
 ):
     user, _ = super_admin
-    proj, backend = await _seed_project_and_backend(db_session, user.id)
+    proj, _backend = await _seed_project_and_backend(db_session, user.id)
 
-    job = PredictionJob(
+    job = AsyncJob(
+        kind="batch_predict",
         project_id=proj.id,
-        ml_backend_id=backend.id,
-        prompt="hello",
+        user_id=user.id,
         celery_task_id="celery-already",
-        status=PredictionJobStatus.COMPLETED.value,
+        status=AsyncJobStatus.COMPLETED.value,
         completed_at=datetime.now(timezone.utc),
-        duration_ms=100,
+        payload={"prompt": "hello"},
     )
     db_session.add(job)
     await db_session.flush()
@@ -236,35 +137,15 @@ async def test_mark_job_failed_skips_already_completed(
 
     from app.workers import tasks as worker_tasks
 
-    class _PassThroughEngine:
-        async def dispose(self):
-            pass
-
-    def _fake_engine(*_a, **_kw):
-        return _PassThroughEngine()
-
-    class _PassThroughSessionFactory:
-        def __init__(self, *_a, **_kw):
-            pass
-
-        def __call__(self):
-            class _Ctx:
-                async def __aenter__(self_inner):
-                    return db_session
-
-                async def __aexit__(self_inner, *args):
-                    return False
-
-            return _Ctx()
-
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
     import sqlalchemy.ext.asyncio as sa_async
 
-    monkeypatch.setattr(sa_async, "create_async_engine", _fake_engine)
-    monkeypatch.setattr(sa_async, "async_sessionmaker", _PassThroughSessionFactory)
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
 
     await worker_tasks._mark_job_failed("celery-already", "should be ignored")
 
-    fresh = await db_session.get(PredictionJob, job_id)
+    fresh = await db_session.get(AsyncJob, job_id)
     assert fresh is not None
     assert fresh.status == "completed"  # 不被覆盖
     assert fresh.error_message is None
@@ -274,13 +155,7 @@ async def test_mark_job_failed_skips_already_completed(
 async def test_run_batch_accumulates_total_cost(
     db_session: AsyncSession, monkeypatch, super_admin
 ):
-    """v0.9.11 · _run_batch 把每条 PredictionResult.meta.total_cost 累加到 prediction_jobs.total_cost.
-
-    grounded-sam2-backend 不返回 cost (走 None 路径不累加); LLM-backed backend 通过 meta.total_cost
-    透传; 本测试用 stub MLBackendClient 模拟带 cost 的响应, 验证 sum 正确写入 Decimal(10,4) 列.
-    """
-    from decimal import Decimal
-
+    """v0.10.49 · _run_batch 把每条 PredictionResult.meta.total_cost 累加进 async_job.result."""
     from app.db.models.task import Task
     from app.services.ml_client import PredictionResult
     from app.workers import tasks as worker_tasks
@@ -329,31 +204,11 @@ async def test_run_batch_accumulates_total_cost(
         "app.services.ml_client.MLBackendClient", _StubClient, raising=True
     )
 
-    class _PassThroughEngine:
-        async def dispose(self):
-            pass
-
-    def _fake_engine(*_a, **_kw):
-        return _PassThroughEngine()
-
-    class _PassThroughSessionFactory:
-        def __init__(self, *_a, **_kw):
-            pass
-
-        def __call__(self):
-            class _Ctx:
-                async def __aenter__(self_inner):
-                    return db_session
-
-                async def __aexit__(self_inner, *args):
-                    return False
-
-            return _Ctx()
-
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
     import sqlalchemy.ext.asyncio as sa_async
 
-    monkeypatch.setattr(sa_async, "create_async_engine", _fake_engine)
-    monkeypatch.setattr(sa_async, "async_sessionmaker", _PassThroughSessionFactory)
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
 
     await worker_tasks._run_batch(
         project_id=str(proj.id),
@@ -363,19 +218,22 @@ async def test_run_batch_accumulates_total_cost(
     )
 
     res = await db_session.execute(
-        select(PredictionJob).where(PredictionJob.project_id == proj.id)
+        select(AsyncJob).where(
+            AsyncJob.kind == "batch_predict", AsyncJob.project_id == proj.id
+        )
     )
     job = res.scalar_one()
     assert job.status == "completed"
-    assert job.success_count == 2
-    # 0.0012 × 2 = 0.0024 (Numeric(10,4) 截断到 4 位)
-    assert job.total_cost == Decimal("0.0024")
+    assert job.result["success_count"] == 2
+    # 0.0012 × 2 = 0.0024 (格式化到 4 位)
+    assert job.result["total_cost"] == "0.0024"
 
 
+@pytest.mark.asyncio
 async def test_run_batch_merges_params_into_context(
     db_session: AsyncSession, monkeypatch, super_admin
 ):
-    """v0.10.38 · _run_batch 把请求 params 合并进 /predict context, 覆盖项目级阈值兜底 (epic 阶段 2)."""
+    """v0.10.38 · _run_batch 把请求 params 合并进 /predict context, 覆盖项目级阈值兜底."""
     from app.db.models.task import Task
     from app.services.ml_client import PredictionResult
     from app.workers import tasks as worker_tasks
@@ -419,30 +277,11 @@ async def test_run_batch_merges_params_into_context(
         "app.services.ml_client.MLBackendClient", _StubClient, raising=True
     )
 
-    class _PassThroughEngine:
-        async def dispose(self):
-            pass
-
-    class _PassThroughSessionFactory:
-        def __init__(self, *_a, **_kw):
-            pass
-
-        def __call__(self):
-            class _Ctx:
-                async def __aenter__(self_inner):
-                    return db_session
-
-                async def __aexit__(self_inner, *args):
-                    return False
-
-            return _Ctx()
-
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
     import sqlalchemy.ext.asyncio as sa_async
 
-    monkeypatch.setattr(
-        sa_async, "create_async_engine", lambda *a, **k: _PassThroughEngine()
-    )
-    monkeypatch.setattr(sa_async, "async_sessionmaker", _PassThroughSessionFactory)
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
 
     await worker_tasks._run_batch(
         project_id=str(proj.id),
@@ -457,6 +296,36 @@ async def test_run_batch_merges_params_into_context(
     assert ctx["text_threshold"] == 0.25  # 未被 params 覆盖, 保留项目级兜底
     assert ctx["sam_variant"] == "large"  # params 透传
     assert "ignored" not in ctx  # None 值被过滤
+
+
+@pytest.mark.asyncio
+async def test_delete_backend_blocked_by_running_batch_predict(
+    db_session: AsyncSession, super_admin
+):
+    """v0.10.49 · MLBackendService.delete 改读 async_jobs(payload.ml_backend_id)
+    判断是否有 running batch_predict，有则拒删。"""
+    from app.services.ml_backend import MLBackendDeleteBlocked, MLBackendService
+
+    user, _ = super_admin
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+
+    job = AsyncJob(
+        kind="batch_predict",
+        project_id=proj.id,
+        user_id=user.id,
+        status=AsyncJobStatus.RUNNING.value,
+        payload={"ml_backend_id": str(backend.id)},
+    )
+    db_session.add(job)
+    await db_session.flush()
+
+    with pytest.raises(MLBackendDeleteBlocked):
+        await MLBackendService(db_session).delete(backend.id)
+
+    # 把 job 翻成终态后可删
+    job.status = AsyncJobStatus.COMPLETED.value
+    await db_session.flush()
+    assert await MLBackendService(db_session).delete(backend.id) is True
 
 
 def test_batch_predict_task_on_failure_dispatches_mark_helper(monkeypatch):

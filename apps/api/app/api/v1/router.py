@@ -4,7 +4,6 @@ from app.api.v1 import (
     admin_analytics,
     admin_ml_integrations,
     admin_preannotate,
-    admin_preannotate_jobs,
     api_keys,
     async_jobs,
     auth,
@@ -61,12 +60,6 @@ api_router.include_router(
     admin_alias_freq.router,
     prefix="",
     tags=["admin-alias-freq"],
-)
-# v0.9.8 · /admin/preannotate-jobs (完整 prediction job 历史; 与 queue 区分)
-api_router.include_router(
-    admin_preannotate_jobs.router,
-    prefix="",
-    tags=["admin-preannotate-jobs"],
 )
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 # v0.10.13 · E1 · 项目标注指引图片资源端点 (与 datasets items upload 独立, 不污染 dataset_items 表)

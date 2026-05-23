@@ -859,7 +859,7 @@ class BatchService:
         """
         from app.db.models.task_lock import TaskLock
         from app.db.models.prediction import Prediction, FailedPrediction
-        from app.db.models.prediction_job import PredictionJob
+        from app.db.models.async_job import AsyncJob
         from app.db.models.annotation import Annotation
         from sqlalchemy import text
 
@@ -923,8 +923,12 @@ class BatchService:
         failed_result = await self.db.execute(
             delete(FailedPrediction).where(FailedPrediction.task_id.in_(task_ids_subq))
         )
+        # v0.10.49 · prediction_jobs 已收敛进 async_jobs；按 payload.batch_id 清本批 job 历史
         job_result = await self.db.execute(
-            delete(PredictionJob).where(PredictionJob.batch_id == batch_id)
+            delete(AsyncJob).where(
+                AsyncJob.kind == "batch_predict",
+                AsyncJob.payload["batch_id"].astext == str(batch_id),
+            )
         )
 
         # B-33 · 同步 task 物化字段: total_predictions 归 0, total_annotations / is_labeled

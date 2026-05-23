@@ -4,8 +4,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.ml_backend import MLBackend
-from app.db.models.prediction_job import PredictionJob, PredictionJobStatus
 from app.services.ml_client import MLBackendClient
 
 
@@ -59,10 +59,12 @@ class MLBackendService:
         backend = await self.get(backend_id)
         if not backend:
             return False
+        # v0.10.49 · prediction_jobs 已收敛进 async_jobs；按 payload.ml_backend_id 查 running
         running = await self.db.execute(
-            select(PredictionJob).where(
-                PredictionJob.ml_backend_id == backend_id,
-                PredictionJob.status == PredictionJobStatus.RUNNING.value,
+            select(AsyncJob).where(
+                AsyncJob.kind == "batch_predict",
+                AsyncJob.payload["ml_backend_id"].astext == str(backend_id),
+                AsyncJob.status == AsyncJobStatus.RUNNING.value,
             )
         )
         running_jobs = list(running.scalars().all())

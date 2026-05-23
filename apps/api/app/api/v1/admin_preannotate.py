@@ -21,8 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import BatchStatus, UserRole
 from app.db.models.ml_backend import MLBackend
+from app.db.models.async_job import AsyncJob
 from app.db.models.prediction import FailedPrediction, Prediction
-from app.db.models.prediction_job import PredictionJob
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
@@ -248,8 +248,12 @@ async def bulk_clear_preannotate(
                         FailedPrediction.task_id.in_(task_ids_subq)
                     )
                 )
+                # v0.10.49 · prediction_jobs 已收敛进 async_jobs（按 payload.batch_id 清）
                 job_r = await db.execute(
-                    delete(PredictionJob).where(PredictionJob.batch_id == bid)
+                    delete(AsyncJob).where(
+                        AsyncJob.kind == "batch_predict",
+                        AsyncJob.payload["batch_id"].astext == str(bid),
+                    )
                 )
                 cascade = {
                     "predictions": pred_r.rowcount or 0,
@@ -347,10 +351,14 @@ async def list_preannotate_project_summary(
         (pid, status): cnt for pid, status, cnt in bres.all()
     }
 
+    # v0.10.49 · prediction_jobs 已收敛进 async_jobs，最近预标时间改查 kind=batch_predict
     job_q = await db.execute(
-        select(PredictionJob.project_id, func.max(PredictionJob.started_at))
-        .where(PredictionJob.project_id.in_(project_ids))
-        .group_by(PredictionJob.project_id)
+        select(AsyncJob.project_id, func.max(AsyncJob.created_at))
+        .where(
+            AsyncJob.kind == "batch_predict",
+            AsyncJob.project_id.in_(project_ids),
+        )
+        .group_by(AsyncJob.project_id)
     )
     last_jobs = {pid: ts for pid, ts in job_q.all()}
 

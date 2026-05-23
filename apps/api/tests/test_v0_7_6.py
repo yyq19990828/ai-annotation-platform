@@ -504,9 +504,9 @@ async def test_reset_to_draft_cascades_predictions(
 ):
     """v0.9.12 B-15: reset_to_draft 必须清光本 batch 关联的 predictions / failed_predictions /
     prediction_jobs / prediction_metas. 否则 /ai-pre 仍会渲染该 batch 已就绪卡片."""
+    from app.db.models.async_job import AsyncJob
     from app.db.models.ml_backend import MLBackend
     from app.db.models.prediction import FailedPrediction, Prediction, PredictionMeta
-    from app.db.models.prediction_job import PredictionJob
 
     owner, owner_token = super_admin
     user, _ = annotator
@@ -553,17 +553,20 @@ async def test_reset_to_draft_cascades_predictions(
         PredictionMeta(id=uuid.uuid4(), prediction_id=pred.id, total_cost=0.001)
     )
     db_session.add(PredictionMeta(id=uuid.uuid4(), failed_prediction_id=fp.id))
-    job = PredictionJob(
+    # v0.10.49 · prediction_jobs 已收敛进 async_jobs（batch_id 进 payload）
+    job = AsyncJob(
         id=uuid.uuid4(),
+        kind="batch_predict",
         project_id=p.id,
-        batch_id=batch.id,
-        ml_backend_id=backend.id,
-        prompt="x",
-        output_mode="mask",
         status="completed",
-        total_tasks=2,
-        success_count=1,
-        failed_count=1,
+        payload={
+            "batch_id": str(batch.id),
+            "ml_backend_id": str(backend.id),
+            "prompt": "x",
+            "output_mode": "mask",
+            "total_tasks": 2,
+        },
+        result={"success_count": 1, "failed_count": 1},
     )
     db_session.add(job)
     await db_session.commit()
@@ -600,7 +603,10 @@ async def test_reset_to_draft_cascades_predictions(
     jobs_after = (
         (
             await db_session.execute(
-                select(PredictionJob).where(PredictionJob.batch_id == batch.id)
+                select(AsyncJob).where(
+                    AsyncJob.kind == "batch_predict",
+                    AsyncJob.payload["batch_id"].astext == str(batch.id),
+                )
             )
         )
         .scalars()
