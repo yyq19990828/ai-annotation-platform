@@ -36,7 +36,7 @@ last_reviewed: 2026-05-11
 
 项目已经关联数据集后，后续在数据集页继续上传或扫描导入新增文件，也会自动追加对应 Task。
 
-详见 [项目管理](../for-project-admins/)。
+详见 [项目管理](../projects/)。
 
 ## Step 2：配置 AI 预标注（可选）
 
@@ -46,7 +46,7 @@ last_reviewed: 2026-05-11
 2. 等待 Job 状态变为 `done`（可在超管 → 失败预测页面监控）
 3. 每个 Task 会生成 Prediction（紫色候选框），标注员可采用（A）或拒绝（D）
 
-详见 [AI 预标注](../for-project-admins/ai-preannotate)。
+详见 [AI 预标注](../projects/ai-preannotate)。
 
 ## Step 3：创建批次与分配任务
 
@@ -54,7 +54,7 @@ last_reviewed: 2026-05-11
 2. 批次创建后 → **分配** → 选择标注员（支持多人均分）
 3. 被分配的标注员在任务列表中可看到新任务（状态 `in_progress`）
 
-详见 [批次与分配](../for-project-admins/batch)。
+详见 [批次与分配](../projects/batch)。
 
 ## Step 4：标注员完成任务
 
@@ -63,7 +63,7 @@ last_reviewed: 2026-05-11
 2. 工作台完成标注 → **提交**
 3. 任务状态变为 `submitted`
 
-详见 [工作台概览](../for-annotators/)。
+详见 [工作台概览](../workbench/)。
 
 ## Step 5：审核员审核
 
@@ -72,7 +72,7 @@ last_reviewed: 2026-05-11
 2. 审核操作：**通过**（→ `approved`）/ **回退**（→ `rejected`，标注员可修改后重提）
 3. 项目完成率在 Dashboard 实时更新
 
-详见 [审核流程](../for-reviewers/)。
+详见 [审核流程](../review/)。
 
 ## Step 6：导出数据
 

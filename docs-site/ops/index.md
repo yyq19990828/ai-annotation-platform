@@ -8,15 +8,15 @@
 
 ### 部署
 
-- [部署指南](/dev/deploy) — Docker Compose 生产部署、环境变量、反向代理
+- [部署指南](/ops/deploy/docker-compose) — Docker Compose 生产部署、环境变量、反向代理
 
 ### 可观测性
 
-- [监控与告警](/dev/monitoring) — Prometheus / Grafana 集成、Celery 任务监控、性能 HUD
+- [监控与告警](/ops/observability/) — Prometheus / Grafana 集成、Celery 任务监控、性能 HUD
 
 ### 安全
 
-- [安全模型](/dev/security) — JWT 认证、CSP 策略、权限边界
+- [安全模型](/ops/security/) — JWT 认证、CSP 策略、权限边界
 
 ## 即将上线（M2）
 

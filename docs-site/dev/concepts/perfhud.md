@@ -103,6 +103,6 @@ Grounded-SAM-2 / 未来 SAM-3 等 GPU backend 跑预标时, 运维侧需要实�
 
 ## 相关 ADR / 文档
 
-- 上游协议: [ml-backend-protocol.md](../ml-backend-protocol.md)
-- 健康检查总策略: [monitoring.md](../monitoring.md)
+- 上游协议: [ml-backend-protocol.md](../reference/ml-backend-protocol)
+- 健康检查总策略: [monitoring.md](/ops/observability/)
 - 关联 v0.9.6 `health_meta` 缓存: [ai-models.md](./ai-models.md)

@@ -39,7 +39,7 @@ graph TB
   GRAF --> PROM
 ```
 
-> **api / web 不在 compose 里**：dev 直接 host 跑（`uvicorn` / `vite`），compose 只管「不便本机跑的」基础设施。production 形态的 api 容器化在 [部署拓扑](./deployment-topology) 与 [部署指南](../deploy)。
+> **api / web 不在 compose 里**：dev 直接 host 跑（`uvicorn` / `vite`），compose 只管「不便本机跑的」基础设施。production 形态的 api 容器化在 [部署拓扑](./deployment-topology) 与 [部署指南](/ops/deploy/docker-compose)。
 
 ## 启动 / 关停速查
 
@@ -171,7 +171,7 @@ Celery 里任务先被**投递（publish）到某个命名队列**，worker 只*
   | `gsam2_checkpoints` | `/app/checkpoints` | SAM 2.1 / GroundingDINO 模型权重（首启自动下载约 900 MB） |
   | `gsam2_hf_cache` | `/app/.cache/huggingface` | HuggingFace 下载缓存 |
 - **环境变量**：`SAM_VARIANT`（默认 `tiny`）/ `DINO_VARIANT`（默认 `T`）/ `BOX_THRESHOLD` / `TEXT_THRESHOLD`
-- **协议**：`POST /predict` + `GET /health`，详见 [ML Backend 协议](../ml-backend-protocol)
+- **协议**：`POST /predict` + `GET /health`，详见 [ML Backend 协议](../reference/ml-backend-protocol)
 - **GPU 要求**：`deploy.resources.reservations.devices` 占用 1 张 NVIDIA GPU；本地无 GPU 笔记本启动会报 `could not select device driver`，跳过即可
 
 ### prometheus · 指标采集
@@ -217,9 +217,9 @@ dev 上常见 race：刚 `docker compose up -d` 立刻起 api，会因为 postgr
 
 ## 相关文档
 
-- [本地开发](../local-dev) · 怎么把这些容器跑起来 + host 上的 api/web
-- [部署指南](../deploy) · production 形态（api / web 容器化）
+- [本地开发](../tutorials/local-dev) · 怎么把这些容器跑起来 + host 上的 api/web
+- [部署指南](/ops/deploy/docker-compose) · production 形态（api / web 容器化）
 - [部署拓扑](./deployment-topology) · 单机 / 分离 / 多 GPU 三种形态
-- [可观测性 / 监控](../monitoring) · grafana 看板与 alerting 细节
-- [ML Backend 协议](../ml-backend-protocol) · grounded-sam2-backend 的 HTTP 协议
+- [可观测性 / 监控](/ops/observability/) · grafana 看板与 alerting 细节
+- [ML Backend 协议](../reference/ml-backend-protocol) · grounded-sam2-backend 的 HTTP 协议
 - [Docker rebuild vs restart](../troubleshooting/docker-rebuild-vs-restart) · 改完代码什么时候要 rebuild

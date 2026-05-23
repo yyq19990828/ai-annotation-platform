@@ -188,7 +188,7 @@ Read the following docs before development to understand the whole project.
 
 Organized by the [Diátaxis](https://diataxis.fr/) framework, layered by role × task.
 
-- [docs-site/user-guide/](docs-site/user-guide/) — user manual (by role: for-annotators / for-project-admins / for-reviewers / for-superadmins)
+- [docs-site/user-guide/](docs-site/user-guide/) — user manual (by function: workbench / projects / review / superadmin), audience-separated in the sidebar
 - [docs-site/dev/](docs-site/dev/) — dev docs (tutorials / concepts / how-to / reference / troubleshooting)
 - [docs-site/ops/](docs-site/ops/) — deployment & ops (deploy / observability / security / runbooks)
 - [docs-site/api/](docs-site/api/) — backend API docs (auto-rendered from OpenAPI)

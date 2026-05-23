@@ -100,4 +100,4 @@ API Key 按用户授权，权限 = 用户角色权限。
 ## 相关
 
 - [WebSocket token 续签](../../dev/adr/0011-websocket-token-reauth)
-- [安全模型](../../dev/security)
+- [安全模型](../../ops/security/)

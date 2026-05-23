@@ -43,7 +43,7 @@ v0.9.x 时工作台只有 1 个 ML backend（grounded-sam2），SAM 工具栏把
 
 负向：
 
-- ProjectSettings 当下永远只有 1 行表格，配额角标永远是 `已用 1 / 1`——首次看到的开发者会问"为啥不直接做单 backend UI"。需要在管理员文档（[docs-site/user-guide/for-project-admins/ml-backends.md](../../docs-site/user-guide/for-project-admins/ml-backends.md)）和这份 ADR 解释。
+- ProjectSettings 当下永远只有 1 行表格，配额角标永远是 `已用 1 / 1`——首次看到的开发者会问"为啥不直接做单 backend UI"。需要在管理员文档（[docs-site/user-guide/projects/ml-backends.md](../../docs-site/user-guide/projects/ml-backends.md)）和这份 ADR 解释。
 - env 锁绕过（管理员直接改 DB 加行）会让工作台 backend 选择器出现多项。工作台已优雅渲染多项，但路由层尚未实现——属于"已知裸露面"，靠运维纪律和文档约束。
 
 ## Notes

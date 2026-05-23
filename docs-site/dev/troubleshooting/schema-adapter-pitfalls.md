@@ -74,5 +74,5 @@ v0.9.8 同步引入 **schema 边界文档**：
 
 - commit: `0a99cc6` feat(v0.9.7) — 含 adapter 落地
 - commit: `d41236b` feat(v0.9.8) — schema 边界文档化 + transforms.ts 单测
-- 文档：[API Schema 边界](../architecture/api-schema-boundary)
+- 文档：[API Schema 边界](../concepts/api-schema-boundary)
 - 代码：`apps/api/app/services/predictions/adapter.py`

@@ -73,7 +73,7 @@ ML Backend 必须实现：
 | 端点 | 用途 |
 |---|---|
 | `GET /health` | 健康检查 |
-| `POST /predict` | 推理（请求/响应见 [ML Backend 协议](../../dev/ml-backend-protocol)） |
+| `POST /predict` | 推理（请求/响应见 [ML Backend 协议](../../dev/reference/ml-backend-protocol)） |
 
 参考实现：`docs-site/dev/examples/echo-ml-backend/`。
 
@@ -85,4 +85,4 @@ ML Backend 必须实现：
 
 - [超管 - ML Backend 注册](../../user-guide/superadmin/ml-backend-registry)
 - [容器网络与 loopback](../../dev/troubleshooting/container-networking)
-- [预标注流水线](../../dev/architecture/prediction-pipeline)
+- [预标注流水线](../../dev/concepts/prediction-pipeline)

@@ -84,7 +84,7 @@ graph TB
 
 要点：
 - 每个 ML Backend 在 `ml_backends` 表注册一行，项目设置选择绑定（"模型市场"）
-- 协议见 [ML Backend 协议](../ml-backend-protocol)
+- 协议见 [ML Backend 协议](../reference/ml-backend-protocol)
 - 同一项目可以绑定不同模型，由 prompt + alias 路由
 
 ## 网络与端口
@@ -130,5 +130,5 @@ K8s 化目前**没有计划**——compose 已能覆盖到形态三，迁移成�
 ## 相关
 
 - [ADR 0012 — SAM Backend 独立 GPU 服务](../adr/0012-sam-backend-as-independent-gpu-service)
-- [部署指南](../deploy)（运维细则）
+- [部署指南](/ops/deploy/docker-compose)（运维细则）
 - [容器网络与 loopback 限制](../troubleshooting/container-networking)
