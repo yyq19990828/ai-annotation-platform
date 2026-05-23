@@ -3,13 +3,13 @@ audience: [project_admin, super_admin, developer]
 type: reference
 since: v0.10.16
 status: stable
-last_reviewed: 2026-05-19
+last_reviewed: 2026-05-23
 ---
 
 # 异步任务（async_jobs）
 
 平台从 v0.10.16 起把所有用户可见的长任务统一进 `async_jobs` 表，做为前端任务铃铛
-（Topbar `JobsBell`）的单一数据源。底层各类长任务（预标、视频追踪、审计归档、预测导入）
+（Topbar `JobsBell`）和 `/ai-pre/jobs` 历史页的统一数据源。底层各类长任务（预标、视频追踪、审计归档、预测导入）
 **保留各自专表**作为 domain 真值（PredictionJob / VideoTrackerJob 等），`async_jobs` 只记
 最小元数据作为汇总索引。这种"双写双轨"让前端只需 polling 一个端点就能看到全部进行中的任务。
 
@@ -30,8 +30,10 @@ last_reviewed: 2026-05-19
 
 | Query | 类型 | 说明 |
 |---|---|---|
-| `status` | enum | `pending` / `running` / `completed` / `failed` / `cancelled` |
+| `status` | enum, repeatable | `pending` / `running` / `completed` / `failed` / `cancelled`；可重复传入，如 `?status=pending&status=running` |
 | `kind` | string | 上表 kind 字符串 |
+| `project_id` | uuid | 只看某个项目的任务 |
+| `search` | string | 匹配 payload 中的 `prompt` / `batch_display_id` / `model_key` |
 | `limit` | int (1-200) | 默认 50 |
 | `offset` | int | 默认 0 |
 
@@ -45,9 +47,16 @@ last_reviewed: 2026-05-19
       "kind": "batch_predict",
       "project_id": "uuid",
       "user_id": "uuid",
+      "project_display_id": "PROJ-1",
+      "project_name": "Demo Project",
       "status": "running",
       "progress_pct": 42,
-      "payload": { "total_tasks": 100, "prediction_job_id": "uuid" },
+      "payload": {
+        "total_tasks": 100,
+        "prediction_job_id": "uuid",
+        "batch_display_id": "BATCH-1",
+        "output_mode": "mask"
+      },
       "result": {},
       "error_message": null,
       "celery_task_id": "celery-uuid",

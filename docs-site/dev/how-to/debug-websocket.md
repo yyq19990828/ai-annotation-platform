@@ -167,6 +167,6 @@ async def _my_async_task():
 
 ## 相关 ADR / 文档
 
-- 后端 ws 端点协议 → [架构文档 frontend-layers.md](../architecture/frontend-layers.md)
-- PerfHud 的 WS 实时推送架构 → [架构文档 perfhud.md](../architecture/perfhud.md)
+- 后端 ws 端点协议 → [架构文档 frontend-layers.md](../concepts/frontend-layers.md)
+- PerfHud 的 WS 实时推送架构 → [架构文档 perfhud.md](../concepts/perfhud.md)
 - 通知系统设计 → 评估 v0.6.9 通知 WS / 30s 兜底 fallback 设计文档（暂无独立 ADR）

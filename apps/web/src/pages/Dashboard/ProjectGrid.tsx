@@ -7,7 +7,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useNavigate } from "react-router-dom";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { useToastStore } from "@/components/ui/Toast";
-import { projectsApi, type ProjectResponse, type ExportFormat } from "@/api/projects";
+import { projectsApi, type ProjectResponse, type ExportTarget } from "@/api/projects";
 
 import styles from "./ProjectGrid.module.css";
 
@@ -40,9 +40,9 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
     navigate(`/dashboard?new=1&from=${p.id}`);
   };
 
-  const exportProject = async (p: ProjectResponse, format: ExportFormat) => {
+  const exportProject = async (p: ProjectResponse, target: ExportTarget) => {
     try {
-      await projectsApi.exportProject(p.id, format, p.type_key === "video-track" ? { videoFrameMode: "keyframes" } : undefined);
+      await projectsApi.exportProject(p.id, [target], p.type_key === "video-track" ? { videoFrameMode: "keyframes" } : undefined);
     } catch (e) {
       pushToast({ msg: "导出失败", sub: (e as Error).message, kind: "error" });
     }
@@ -153,7 +153,7 @@ function ProjectMoreMenu({
   project: ProjectResponse;
   canManage: boolean;
   onSettings: (p: ProjectResponse, section?: string) => void;
-  onExport: (p: ProjectResponse, format: ExportFormat) => void;
+  onExport: (p: ProjectResponse, target: ExportTarget) => void;
   onDuplicate: (p: ProjectResponse) => void;
 }) {
   const items: DropdownItem[] = [];
@@ -174,12 +174,12 @@ function ProjectMoreMenu({
     items.push({ id: "div-1", divider: true, label: "" });
   }
   if (project.type_key === "video-track") {
-    items.push({ id: "exp-video", label: "导出 Video JSON", icon: "download", onSelect: () => onExport(project, "coco") });
+    items.push({ id: "exp-video", label: "导出 Video JSON", icon: "download", onSelect: () => onExport(project, "video_json") });
   } else {
     items.push(
       { id: "exp-coco", label: "导出 COCO JSON", icon: "download", onSelect: () => onExport(project, "coco") },
       { id: "exp-voc", label: "导出 Pascal VOC", icon: "download", onSelect: () => onExport(project, "voc") },
-      { id: "exp-yolo", label: "导出 YOLO", icon: "download", onSelect: () => onExport(project, "yolo") },
+      { id: "exp-yolo", label: "导出 YOLO 检测", icon: "download", onSelect: () => onExport(project, "yolo-det") },
     );
   }
   return (

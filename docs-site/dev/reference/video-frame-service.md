@@ -67,6 +67,33 @@ v0.9.38 起，media worker 会在源 codec 为 H.264 / H.265 且 chunk 起始帧
 
 前端可用这些字段判断 WebCodecs / Worker 解码是否继续使用 chunk，或降级到整段视频 / frame service。
 
+### Sample manifest（WebCodecs demux，v0.10.46）
+
+chunk 生成时，media worker 会用 `ffprobe -show_packets` 扫一遍生成出的 chunk mp4，把每个 packet 的字节偏移 / 大小 / 时间戳 / 关键帧标记写进 `diagnostics["samples"]`（同时写 `codec_string` / `width` / `height`）。扫包失败（如 fragmented mp4 的 `pos` 缺失）时静默跳过，不影响 chunk 生成。
+
+```http
+GET /api/v1/videos/{dataset_item_id}/chunks/{chunk_id}/samples
+```
+
+返回 sample manifest；旧 chunk（`diagnostics` 无 `samples`）返回 404 `samples_not_available`。响应示例：
+
+```json
+{
+  "dataset_item_id": "…",
+  "chunk_id": 0,
+  "codec_string": "avc1.4d001e",
+  "width": 1920,
+  "height": 1080,
+  "samples": [
+    { "frame_index": 0, "pts_ms": 0, "duration_ms": 33, "is_keyframe": true, "size_bytes": 45123, "offset_in_chunk": 1024 }
+  ]
+}
+```
+
+`samples` 数组按解码顺序排列（满足 `VideoDecoder` 喂入要求），`frame_index` 按 pts 展示顺序（presentation rank）+ chunk `start_frame` 推算。前端实验 flag `?webcodecs=1`（或 localStorage `video.experimental.webcodecs`，默认关闭）开启时，`VideoStage` 按当前帧定位 chunk → 拉 samples → 从 chunk 字节切出「最近关键帧 → 目标帧」的 GOP → 构造 `EncodedVideoChunk[]` 交给 `useVideoChunkDecoder` 精确解码；找不到帧或解码失败时降级回 `<video>` 位图缓存。
+
+manifest 还带 `description`（base64）：后端直读 chunk mp4 的 `avcC`/`hvcC` box，取出 `AVC/HEVCDecoderConfigurationRecord`（含 SPS/PPS），前端解码后填入 `VideoDecoderConfig.description`；`codec_string` 也由该 record 的字节派生（`avc1.PPCCLL` / `hvc1.…`），不再硬编码。这两项是 AVCC 长度前缀样本能被 `VideoDecoder` 正确解码的前提——缺 `description` 时浏览器按 Annex-B 解析必失败。旧 chunk（`diagnostics` 无 `description`）则降级。
+
 MinIO key：
 
 ```text
@@ -146,7 +173,7 @@ uv run python -m app.cli.video.rebuild_timetable --all --limit 100
 
 ### 帧采样网格 helper（v0.10.29）
 
-项目级 `Project.video_sampling`（`{mode: none|fps|step, target_fps?, frame_step?}`）只约束**标注导航/打点网格**，不改 `VideoFrameIndex`、不生成新资产（决策 D1）；标注 geometry 的 `frame_index` 永远是源视频帧号（决策 D2）。后端 `video_frame_service` 提供与前端共用的纯函数：`derive_step(source_fps, sampling)` 派生步长、`derive_sampled_frames(frame_count, step)` 给出绝对网格（锚定 0：`[0, step, 2*step, …]`）。导出按采样网格重编号，逐帧导航语义见标注员手册「帧采样与软网格导航」。
+项目级 `Project.video_sampling`（`{mode: none|fps|step, target_fps?, frame_step?}`）只约束**标注导航/打点网格**，不改 `VideoFrameIndex`、不生成新资产（决策 D1）；标注 geometry 的 `frame_index` 永远是源视频帧号（决策 D2）。后端 `video_frame_service` 提供与前端共用的纯函数：`derive_step(source_fps, sampling)` 派生步长、`derive_sampled_frames(frame_count, step)` 给出绝对网格（锚定 0：`[0, step, 2*step, …]`）。导出按采样网格重编号；MOT / KITTI / `yolo-frames-det` 都只输出网格帧，其中 `yolo-frames-det` 会把 `video_bbox` 与摊平后的 `video_track` 写成逐帧检测 label。逐帧导航语义见标注员手册「帧采样与软网格导航」。
 
 ## Segment 协同
 

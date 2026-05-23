@@ -28,7 +28,7 @@ POST /api/v1/admin/projects/:id/preannotate
 }
 ```
 
-返回 `202` + `job_id`。任务进 Celery，状态机见 [预标注流水线](../../dev/architecture/prediction-pipeline)。
+返回 `202` + `job_id`。任务进 Celery，状态机见 [预标注流水线](../../dev/concepts/prediction-pipeline)。
 
 ## 查询 jobs
 
@@ -83,4 +83,4 @@ POST /api/v1/admin/batches/:id/reset
 - API 读出：经 `to_internal_shape` 转内部 schema
 - 前端只接受内部 schema
 
-详见 [API Schema 边界](../../dev/architecture/api-schema-boundary) 与 [Schema 适配器陷阱](../../dev/troubleshooting/schema-adapter-pitfalls)。
+详见 [API Schema 边界](../../dev/concepts/api-schema-boundary) 与 [Schema 适配器陷阱](../../dev/troubleshooting/schema-adapter-pitfalls)。

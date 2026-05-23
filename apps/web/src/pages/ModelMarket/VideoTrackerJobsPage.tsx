@@ -1,8 +1,8 @@
 /**
  * v0.10.36 · 视频追踪任务聚合监控.
  *
- * 拉 /video-tracker-jobs (video_tracker_jobs 全量), 含 queued/running/completed/failed/cancelled.
- * 形态参照 AIPreAnnotateJobsPage: cursor 分页 + 状态过滤 + Card 表格.
+ * v0.10.45 起拉 /async-jobs?kind=video_tracker.
+ * 形态参照 AIPreAnnotateJobsPage: offset 分页 + 状态过滤 + Card 表格.
  *
  * v0.10.38 · 由独立页 (原 /model-market/video-jobs) 改为可复用 Panel, 挂到 /ai-pre/jobs 的
  * 「视频」模态 tab (epic 阶段 3); 支持 projectId 过滤供引导卡片深链。
@@ -16,24 +16,25 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import {
-  videoTrackerJobsApi,
-  type VideoTrackerJobListItem,
-  type VideoTrackerJobStatus,
-} from "@/api/videoTrackerJobs";
+  asyncJobsApi,
+  type AsyncJob,
+  type AsyncJobStatus,
+} from "@/api/asyncJobs";
 import styles from "./VideoTrackerJobsPage.module.css";
 
-type StatusFilter = "" | VideoTrackerJobStatus;
+type StatusFilter = "" | AsyncJobStatus;
 
-const STATUS_ORDER: VideoTrackerJobStatus[] = [
-  "queued",
+const PAGE_SIZE = 20;
+const STATUS_ORDER: AsyncJobStatus[] = [
+  "pending",
   "running",
   "completed",
   "failed",
   "cancelled",
 ];
 
-const STATUS_LABEL: Record<VideoTrackerJobStatus, string> = {
-  queued: "排队中",
+const STATUS_LABEL: Record<AsyncJobStatus, string> = {
+  pending: "排队中",
   running: "运行中",
   completed: "已完成",
   failed: "失败",
@@ -43,48 +44,45 @@ const STATUS_LABEL: Record<VideoTrackerJobStatus, string> = {
 export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
   const [modelKey, setModelKey] = useState("");
-  const [cursorStack, setCursorStack] = useState<string[]>([]);
-  const currentCursor = cursorStack[cursorStack.length - 1] ?? undefined;
+  const [page, setPage] = useState(0);
+  const offset = page * PAGE_SIZE;
 
   const jobsQ = useQuery({
-    queryKey: ["video-tracker-jobs", projectId, statusFilter, modelKey, currentCursor],
+    queryKey: [
+      "async-jobs",
+      "video_tracker",
+      projectId,
+      statusFilter,
+      modelKey,
+      page,
+    ],
     queryFn: () =>
-      videoTrackerJobsApi.list({
+      asyncJobsApi.list({
+        kind: "video_tracker",
         project_id: projectId || undefined,
         status: statusFilter || undefined,
-        model_key: modelKey.trim() || undefined,
-        cursor: currentCursor,
-        limit: 20,
+        search: modelKey.trim() || undefined,
+        limit: PAGE_SIZE,
+        offset,
       }),
     staleTime: 1000 * 30,
   });
 
   const items = jobsQ.data?.items ?? [];
-  const nextCursor = jobsQ.data?.next_cursor;
-  const counts = jobsQ.data?.counts;
+  const total = jobsQ.data?.total ?? 0;
+  const hasNext = offset + PAGE_SIZE < total;
 
   return (
     <div className={styles.page}>
-      <div className={styles.countCards}>
-        {STATUS_ORDER.map((s) => (
-          <Card key={s}>
-            <div className={styles.countCard}>
-              <CountBadge status={s} />
-              <span className={styles.countValue}>{counts?.[s] ?? 0}</span>
-            </div>
-          </Card>
-        ))}
-      </div>
-
       <Card>
         <div className={styles.cardHeader}>
-          <span>任务列表 ({items.length})</span>
+          <span>任务列表 ({total})</span>
           <div className={styles.filterGroup}>
             <select
               value={statusFilter}
               onChange={(e) => {
                 setStatusFilter(e.target.value as StatusFilter);
-                setCursorStack([]);
+                setPage(0);
               }}
               className={styles.selectControl}
             >
@@ -100,7 +98,7 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
               value={modelKey}
               onChange={(e) => {
                 setModelKey(e.target.value);
-                setCursorStack([]);
+                setPage(0);
               }}
               placeholder="按 model_key 过滤..."
               className={styles.searchInput}
@@ -134,27 +132,25 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {(cursorStack.length > 0 || nextCursor) && (
+          {(page > 0 || hasNext) && (
             <div className={styles.pagination}>
               <span className={styles.helperInline}>
-                第 {cursorStack.length + 1} 页
+                第 {page + 1} 页 / 共 {total} 条
               </span>
               <div className={styles.inlineActions}>
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={cursorStack.length === 0}
-                  onClick={() => setCursorStack((s) => s.slice(0, -1))}
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
                 >
                   <Icon name="chevLeft" size={11} /> 上一页
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={!nextCursor}
-                  onClick={() =>
-                    nextCursor && setCursorStack((s) => [...s, nextCursor])
-                  }
+                  disabled={!hasNext}
+                  onClick={() => setPage((p) => p + 1)}
                 >
                   下一页 <Icon name="chevRight" size={11} />
                 </Button>
@@ -167,7 +163,12 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
   );
 }
 
-function JobRow({ job }: { job: VideoTrackerJobListItem }) {
+function JobRow({ job }: { job: AsyncJob }) {
+  const modelKey = payloadString(job.payload, "model_key");
+  const direction = payloadString(job.payload, "direction");
+  const fromFrame = payloadNumber(job.payload, "from_frame");
+  const toFrame = payloadNumber(job.payload, "to_frame");
+
   return (
     <>
       <tr>
@@ -183,17 +184,17 @@ function JobRow({ job }: { job: VideoTrackerJobListItem }) {
           <StatusBadge status={job.status} />
         </td>
         <td className={`${styles.tableCell} ${styles.mutedCell}`}>
-          {job.model_key ?? <span className={styles.subtle}>—</span>}
+          {modelKey ?? <span className={styles.subtle}>—</span>}
         </td>
         <td className={`${styles.tableCell} ${styles.numeric}`}>
-          {job.from_frame != null && job.to_frame != null ? (
-            `F${job.from_frame}→F${job.to_frame}`
+          {fromFrame != null && toFrame != null ? (
+            `F${fromFrame}→F${toFrame}`
           ) : (
             <span className={styles.subtle}>—</span>
           )}
         </td>
         <td className={`${styles.tableCell} ${styles.mutedCell}`}>
-          {job.direction ?? <span className={styles.subtle}>—</span>}
+          {direction ?? <span className={styles.subtle}>—</span>}
         </td>
         <td className={`${styles.tableCell} ${styles.mutedCell}`}>
           {formatRelative(job.started_at)}
@@ -210,23 +211,15 @@ function JobRow({ job }: { job: VideoTrackerJobListItem }) {
   );
 }
 
-function statusVariant(status: VideoTrackerJobStatus) {
-  if (status === "running") return "ai" as const;
+function statusVariant(status: AsyncJobStatus) {
+  if (status === "pending" || status === "running") return "ai" as const;
   if (status === "completed") return "success" as const;
   if (status === "failed") return "danger" as const;
-  return "default" as const; // queued / cancelled
+  return "default" as const; // cancelled
 }
 
-function StatusBadge({ status }: { status: VideoTrackerJobStatus }) {
+function StatusBadge({ status }: { status: AsyncJobStatus }) {
   return <Badge variant={statusVariant(status)}>{STATUS_LABEL[status]}</Badge>;
-}
-
-function CountBadge({ status }: { status: VideoTrackerJobStatus }) {
-  return (
-    <span className={styles.countLabel}>
-      <Badge variant={statusVariant(status)}>{STATUS_LABEL[status]}</Badge>
-    </span>
-  );
 }
 
 function EmptyState() {
@@ -239,6 +232,28 @@ function EmptyState() {
       </div>
     </div>
   );
+}
+
+function payloadString(
+  record: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = record[key];
+  if (typeof value === "string" && value) return value;
+  return null;
+}
+
+function payloadNumber(
+  record: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = record[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function formatRelative(iso: string | null): string {

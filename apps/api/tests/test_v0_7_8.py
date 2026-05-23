@@ -134,8 +134,9 @@ async def test_project_export_creates_audit_log(
     await db_session.flush()
 
     # v0.10.27 导出异步化: POST 创建 async_job 并返回 202; 审计日志仍同步落库。
+    # v0.10.43 · format → targets 多目标。
     r = await httpx_client.post(
-        f"/api/v1/projects/{project.id}/export?format=coco", headers=headers
+        f"/api/v1/projects/{project.id}/export?targets=coco", headers=headers
     )
     assert r.status_code == 202
 
@@ -147,7 +148,7 @@ async def test_project_export_creates_audit_log(
     )
     audit = result.scalar_one_or_none()
     assert audit is not None
-    assert audit.detail_json["format"] == "coco"
+    assert audit.detail_json["targets"] == ["coco"]
 
 
 # ── 审计日志不可变 ───────────────────────────────────────────────────────

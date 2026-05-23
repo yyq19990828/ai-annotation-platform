@@ -21,6 +21,8 @@ export interface AsyncJob {
   kind: AsyncJobKind;
   project_id: string | null;
   user_id: string | null;
+  project_display_id: string | null;
+  project_name: string | null;
   status: AsyncJobStatus;
   progress_pct: number;
   payload: Record<string, unknown>;
@@ -33,16 +35,34 @@ export interface AsyncJob {
   updated_at: string;
 }
 
+export type AsyncJobOut = AsyncJob;
+
 export interface AsyncJobListResponse {
   items: AsyncJob[];
   total: number;
 }
 
+export interface AsyncJobListParams {
+  kind?: string;
+  status?: AsyncJobStatus | AsyncJobStatus[];
+  project_id?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export const asyncJobsApi = {
-  list: (params: { status?: AsyncJobStatus; kind?: string; limit?: number; offset?: number } = {}) => {
+  list: (params: AsyncJobListParams = {}) => {
     const q = new URLSearchParams();
-    if (params.status) q.set("status", params.status);
+    const statuses = Array.isArray(params.status)
+      ? params.status
+      : params.status
+        ? [params.status]
+        : [];
+    statuses.forEach((status) => q.append("status", status));
     if (params.kind) q.set("kind", params.kind);
+    if (params.project_id) q.set("project_id", params.project_id);
+    if (params.search) q.set("search", params.search);
     if (params.limit !== undefined) q.set("limit", String(params.limit));
     if (params.offset !== undefined) q.set("offset", String(params.offset));
     const qs = q.toString();

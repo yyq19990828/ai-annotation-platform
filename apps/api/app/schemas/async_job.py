@@ -21,6 +21,8 @@ class AsyncJobOut(BaseModel):
     payload: dict
     result: dict
     error_message: str | None
+    project_display_id: str | None = None
+    project_name: str | None = None
     celery_task_id: str | None
     started_at: datetime | None
     completed_at: datetime | None

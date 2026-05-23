@@ -161,6 +161,60 @@ export interface VideoFramePrefetchResponse {
   frames: VideoFrameOut[];
 }
 
+// ── Video chunks (WebCodecs demux, v0.10.46) ────────────────────────────────
+
+export interface VideoChunkDiagnostics {
+  source_codec: string | null;
+  output_codec: string | null;
+  keyframe_aligned: boolean | null;
+  start_byte_offset: number | null;
+  end_byte_offset: number | null;
+  smart_copy_eligible: boolean | null;
+  fallback_reason: string | null;
+}
+
+export interface VideoChunkOut {
+  chunk_id: number;
+  start_frame: number;
+  end_frame: number;
+  status: "pending" | "ready" | "failed";
+  url: string | null;
+  byte_size: number | null;
+  generation_mode: "smart_copy" | "transcode" | null;
+  diagnostics: VideoChunkDiagnostics | null;
+  retry_after: number | null;
+  error: string | null;
+}
+
+export interface VideoChunksResponse {
+  dataset_item_id: string;
+  task_id: string | null;
+  chunk_size_frames: number;
+  fallback_video_url: string | null;
+  chunks: VideoChunkOut[];
+}
+
+/** WebCodecs demux 用 sample manifest 条目 (后端 ffprobe -show_packets 提取)。字段对齐 API JSON (snake_case)。 */
+export interface VideoChunkSampleEntry {
+  frame_index: number;
+  pts_ms: number;
+  duration_ms: number;
+  is_keyframe: boolean;
+  size_bytes: number;
+  offset_in_chunk: number;
+}
+
+export interface VideoChunkSamplesResponse {
+  dataset_item_id: string;
+  chunk_id: number;
+  codec_string: string;
+  /** base64 编码的 avcC/hvcC extradata (SPS/PPS)，填入 VideoDecoderConfig.description；旧 chunk 为 null。 */
+  description?: string | null;
+  width: number;
+  height: number;
+  samples: VideoChunkSampleEntry[];
+}
+
 // ── Annotation ──────────────────────────────────────────────────────────────
 
 /** Discriminated union: 形状自描述。v0.5.3 起新增 polygon, v0.9.14 多连通域升级。后续可扩展 keypoint / mask / cuboid。 */

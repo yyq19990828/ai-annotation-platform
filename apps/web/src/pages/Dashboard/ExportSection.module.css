@@ -15,46 +15,230 @@
   gap: 4px;
 }
 
+.trigger:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-fg);
+}
+
 .form {
-  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .label {
-  font-size: 11px;
-  color: var(--color-fg-muted);
+  font-size: 12px;
+  color: var(--color-fg);
+  font-weight: 600;
 }
 
-.optionRow {
+.optionList {
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.frameModeRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .optionButton {
-  flex: 1;
-  padding: 4px 8px;
-  font-size: 11px;
-  border-radius: var(--radius-sm);
+  min-width: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background: var(--color-bg-sunken);
   color: var(--color-fg);
   cursor: pointer;
   font-weight: 400;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.optionButton:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-strong);
 }
 
 .optionButtonActive {
-  border-color: oklch(0.55 0.18 250);
-  background: oklch(0.55 0.18 250 / 0.10);
-  color: oklch(0.55 0.18 250);
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-fg);
   font-weight: 600;
+}
+
+/* 多选勾选方块（区别于单选 radio 的圆点）。 */
+.check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--color-border-strong);
+  background: var(--color-bg-elev);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-bg-elev);
+}
+
+.checkOn {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-bg-elev);
+}
+
+.optionText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.optionLabel {
+  color: inherit;
+  font-weight: 600;
+}
+
+.optionDescription {
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.optionButtonActive .optionDescription {
+  color: var(--color-accent-fg);
+}
+
+/* YOLO 分组：可展开的标题行 + 缩进的成员区。 */
+.group {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  overflow: hidden;
+}
+
+.groupHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  color: var(--color-fg);
+  cursor: pointer;
+  text-align: left;
+}
+
+.groupHeader:hover {
+  background: var(--color-bg-hover);
+}
+
+.countBadge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-fg);
+}
+
+.groupMembers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 10px 10px;
+}
+
+/* 单选 radio（帧模式）：圆点，明确区别于多选方块。 */
+.radioRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.radioButton {
+  min-width: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-sunken);
+  color: var(--color-fg);
+  cursor: pointer;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.radioButton:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-strong);
+}
+
+.radioButtonActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-fg);
+  font-weight: 600;
+}
+
+.radioDot {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border-radius: 999px;
+  border: 1.5px solid var(--color-border-strong);
+  background: var(--color-bg-elev);
+}
+
+.radioDotOn {
+  border-color: var(--color-accent);
+  border-width: 4px;
+}
+
+.radioButtonActive .optionDescription {
+  color: var(--color-accent-fg);
+}
+
+/* 选择摘要 / 多目标产出说明。 */
+.summary {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  line-height: 1.4;
+}
+
+.summaryWarn {
+  color: var(--color-warning-fg);
+}
+
+.attributesPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
 }
 
 .checkboxLabel {
@@ -74,23 +258,65 @@
 }
 
 .helpText {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--color-fg-muted);
   line-height: 1.4;
 }
 
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.cancelButton,
 .submitButton {
-  padding: 6px 10px;
+  padding: 8px 12px;
   font-size: 12px;
   border-radius: var(--radius-sm);
-  border: 1px solid oklch(0.55 0.18 250);
-  background: oklch(0.55 0.18 250);
-  color: white;
   cursor: pointer;
   font-weight: 600;
+}
+
+.cancelButton {
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-elev);
+  color: var(--color-fg-muted);
+}
+
+.cancelButton:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-fg);
+}
+
+.submitButton {
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-bg-elev);
+}
+
+.submitButton:hover:not(:disabled) {
+  border-color: var(--color-accent-hover);
+  background: var(--color-accent-hover);
 }
 
 .submitButton:disabled {
   cursor: wait;
   opacity: 0.6;
+}
+
+@media (max-width: 520px) {
+  .frameModeRow {
+    grid-template-columns: 1fr;
+  }
+
+  .footer {
+    flex-direction: column-reverse;
+  }
+
+  .cancelButton,
+  .submitButton {
+    width: 100%;
+  }
 }

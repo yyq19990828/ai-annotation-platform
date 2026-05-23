@@ -1,8 +1,31 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRef, useState } from "react";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { createRef, useState, type ReactElement } from "react";
+import {
+  act,
+  fireEvent,
+  render as rtlRender,
+  screen,
+  waitFor,
+  within,
+  type RenderOptions,
+} from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { VideoStage, type VideoStageControls } from "./VideoStage";
 import { VideoTrackSidebar } from "./VideoTrackSidebar";
+
+// VideoStage 自 v0.10.46 起内部用 react-query 拉 chunk 列表/samples (WebCodecs demux),
+// 故所有渲染需包一层 QueryClientProvider (生产环境由 main.tsx 根部提供)。
+function render(ui: ReactElement, options?: RenderOptions) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return rtlRender(ui, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    ),
+    ...options,
+  });
+}
 import { videoNavigationStorageKey } from "./videoNavigationState";
 import type { AnnotationResponse, TaskVideoManifestResponse, VideoTrackGeometry } from "@/types";
 import bitmapStyles from "./VideoBitmapLayer.module.css";

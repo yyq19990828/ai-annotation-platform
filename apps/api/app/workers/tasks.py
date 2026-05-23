@@ -44,6 +44,7 @@ async def _run_batch(
     output_mode: str = "mask",
     batch_id: str | None = None,
     celery_task_id: str | None = None,
+    user_id: str | None = None,
     params: dict | None = None,
 ):
     """v0.9.5 · 批量预标 worker.
@@ -53,6 +54,7 @@ async def _run_batch(
     - output_mode: text 模式输出形态（box / mask / both），仅 prompt 非空生效。
     - batch_id: 跑完后自动转 PRE_ANNOTATED 的目标 batch；None 则不动状态。
     - celery_task_id (v0.9.8): 用于 _BatchPredictTask.on_failure 回查 prediction_jobs 行.
+    - user_id (v0.10.45): 写 async_jobs owner, 供 /async-jobs owner-scope 列表可见.
     """
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import (
@@ -157,15 +159,20 @@ async def _run_batch(
         # v0.10.16 · async_jobs 双写（汇总索引层；失败不阻断主流程）
         async_job_id: uuid.UUID | None = None
         try:
+            batch = await db.get(TaskBatch, uuid.UUID(batch_id)) if batch_id else None
             aj = await async_job_svc.create_job(
                 db,
                 kind="batch_predict",
+                user_id=uuid.UUID(user_id) if user_id else None,
                 project_id=uuid.UUID(project_id),
                 payload={
                     "prediction_job_id": str(job_id),
                     "batch_id": batch_id,
+                    "batch_display_id": batch.display_id if batch else None,
                     "total_tasks": total,
                     "prompt": (prompt or "")[:200],
+                    "ml_backend_name": backend.name,
+                    "output_mode": output_mode,
                 },
                 celery_task_id=celery_task_id,
             )
@@ -409,6 +416,7 @@ def batch_predict(
     prompt: str | None = None,
     output_mode: str = "mask",
     batch_id: str | None = None,
+    user_id: str | None = None,
     params: dict | None = None,
 ):
     asyncio.run(
@@ -420,6 +428,7 @@ def batch_predict(
             output_mode=output_mode,
             batch_id=batch_id,
             celery_task_id=self.request.id,
+            user_id=user_id,
             params=params,
         )
     )

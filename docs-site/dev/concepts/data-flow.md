@@ -87,10 +87,10 @@ sequenceDiagram
 代码索引：
 - 触发端点：`apps/api/app/api/v1/projects.py` 或 `ml_backends.py`
 - ML client：`apps/api/app/services/ml_client.py:predict` (`ml_client.py:41-62`)
-- ML 协议契约：[`docs-site/dev/ml-backend-protocol.md`](../ml-backend-protocol)
+- ML 协议契约：[`docs-site/dev/ml-backend-protocol.md`](../reference/ml-backend-protocol)
 - Worker：`apps/api/app/workers/tasks.py:batch_predict`
 - WS 频道：`apps/api/app/api/v1/ws.py:preannotate_progress` (`ws.py:48-67`)
-- WS 协议：[`docs-site/dev/ws-protocol.md`](../ws-protocol)
+- WS 协议：[`docs-site/dev/ws-protocol.md`](../reference/ws-protocol)
 
 ---
 
@@ -167,4 +167,4 @@ sequenceDiagram
 - 通知模型：`apps/api/app/db/models/notification.py`
 - 前端 hook：`apps/web/src/hooks/useNotificationSocket.ts`
 - 重连基础：`apps/web/src/hooks/useReconnectingWebSocket.ts`
-- WS 协议详细：[`docs-site/dev/ws-protocol.md`](../ws-protocol)
+- WS 协议详细：[`docs-site/dev/ws-protocol.md`](../reference/ws-protocol)

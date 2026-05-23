@@ -3,7 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-05-07
 - **Supersedes**: —
-- **Related**: ADR-0010, [`docs-site/dev/ws-protocol.md`](../../docs-site/dev/ws-protocol.md), [`docs-site/dev/security.md`](../../docs-site/dev/security.md)
+- **Related**: ADR-0010, [`docs-site/dev/reference/ws-protocol.md`](../../docs-site/dev/reference/ws-protocol.md), [`docs-site/ops/security/index.md`](../../docs-site/ops/security/index.md)
 
 ## Context
 

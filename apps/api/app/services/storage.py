@@ -155,11 +155,21 @@ class StorageService:
         return self._public_url(url)
 
     def generate_download_url(
-        self, key: str, expires_in: int = 3600, bucket: str | None = None
+        self,
+        key: str,
+        expires_in: int = 3600,
+        bucket: str | None = None,
+        download_name: str | None = None,
     ) -> str:
+        # v0.10.43 · download_name 经 ResponseContentDisposition 给浏览器一个友好文件名。
+        params: dict = {"Bucket": bucket or self.bucket, "Key": key}
+        if download_name:
+            params["ResponseContentDisposition"] = (
+                f'attachment; filename="{download_name}"'
+            )
         url = self.client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": bucket or self.bucket, "Key": key},
+            Params=params,
             ExpiresIn=expires_in,
         )
         return self._public_url(url)

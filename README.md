@@ -38,7 +38,7 @@ pnpm dev:api &             # http://localhost:8000
 pnpm dev:web               # http://localhost:3000
 ```
 
-详见 [DEV.md](./DEV.md) 与 [docs-site/dev/local-dev.md](./docs-site/dev/local-dev.md)。
+详见 [DEV.md](./DEV.md) 与 [docs-site/dev/tutorials/local-dev.md](./docs-site/dev/tutorials/local-dev.md)。
 
 ## 测试
 

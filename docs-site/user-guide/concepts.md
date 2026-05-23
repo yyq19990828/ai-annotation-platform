@@ -36,7 +36,7 @@
 
 | 名词 | 含义 |
 |---|---|
-| **ML Backend** | 外部模型服务，通过标准协议与平台对接，提供预测或批量预标注能力。详见 [ML Backend 协议](/dev/ml-backend-protocol)。 |
+| **ML Backend** | 外部模型服务，通过标准协议与平台对接，提供预测或批量预标注能力。详见 [ML Backend 协议](/dev/reference/ml-backend-protocol)。 |
 | **预标注（Pre-annotate）** | 在标注员介入前，先让模型对一批任务生成 Prediction，降低手工标注工作量。 |
 | **Job** | 一次批量预标注请求，包含模型调用、结果写入等异步流程。状态：pending → running → done / failed。 |
 

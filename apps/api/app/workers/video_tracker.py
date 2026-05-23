@@ -6,6 +6,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
+from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob
 from app.services import async_job as async_job_svc
@@ -32,6 +33,7 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                 task = await db.get(Task, job.task_id)
                 project_id = task.project_id if task else None
                 try:
+                    project = await db.get(Project, project_id) if project_id else None
                     aj = await async_job_svc.create_job(
                         db,
                         kind="video_tracker",
@@ -40,9 +42,14 @@ async def _run_video_tracker_job(job_id: str, celery_task_id: str | None) -> Non
                         payload={
                             "video_tracker_job_id": str(job.id),
                             "task_id": str(job.task_id),
+                            "task_display_id": task.display_id if task else None,
+                            "project_display_id": (
+                                project.display_id if project else None
+                            ),
                             "from_frame": job.from_frame,
                             "to_frame": job.to_frame,
                             "model_key": job.model_key,
+                            "direction": job.direction,
                         },
                         celery_task_id=celery_task_id,
                     )

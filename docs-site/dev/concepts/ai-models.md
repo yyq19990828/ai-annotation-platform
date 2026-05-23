@@ -9,7 +9,7 @@ last_reviewed: 2026-05-22
 # AI 模型集成（grounded-sam2-backend / 后续 sam3-backend）
 
 > 配套版本：v0.9.1（M1 — embedding 缓存）。后续 v0.10.x SAM 3 接入后本文继续扩展。
-> 协议契约见 [`ml-backend-protocol.md`](../ml-backend-protocol.md)；版本切片见 [`ROADMAP/[archived]0.9.x.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/ROADMAP/%5Barchived%5D0.9.x.md)。
+> 协议契约见 [`ml-backend-protocol.md`](../reference/ml-backend-protocol)；版本切片见 [`ROADMAP/[archived]0.9.x.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/ROADMAP/%5Barchived%5D0.9.x.md)。
 
 ---
 
@@ -250,7 +250,7 @@ histogram_quantile(0.95,
 
 ## 5. 协议契约引用
 
-请求与响应字段以 [`ml-backend-protocol.md`](../ml-backend-protocol.md) §2 为准。`/cache/stats` / `/metrics` **不进协议契约**——它们是 backend 内部端点，平台 API 不会消费。
+请求与响应字段以 [`ml-backend-protocol.md`](../reference/ml-backend-protocol) §2 为准。`/cache/stats` / `/metrics` **不进协议契约**——它们是 backend 内部端点，平台 API 不会消费。
 
 ---
 

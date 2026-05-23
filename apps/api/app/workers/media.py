@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import json
 import math
@@ -155,6 +156,40 @@ def parse_ffprobe_frame_timetable(payload: dict[str, Any]) -> list[dict[str, Any
     return out
 
 
+def parse_ffprobe_packet_samples(
+    payload: dict[str, Any], start_frame: int
+) -> list[dict[str, Any]]:
+    packets = payload.get("packets") or []
+    valid: list[dict[str, Any]] = []
+    for pkt in packets:
+        pos = _parse_int(pkt.get("pos"))
+        pts_time = pkt.get("pts_time")
+        if pos is None or pts_time in (None, "N/A"):
+            continue
+        pts_ms = int(round(float(pts_time) * 1000))
+        dur = pkt.get("duration_time")
+        duration_ms = int(round(float(dur) * 1000)) if dur not in (None, "N/A") else 0
+        size_bytes = _parse_int(pkt.get("size")) or 0
+        flags = pkt.get("flags") or ""
+        is_keyframe = "K" in flags
+        valid.append(
+            {
+                "pts_ms": pts_ms,
+                "duration_ms": duration_ms,
+                "is_keyframe": is_keyframe,
+                "size_bytes": size_bytes,
+                "offset_in_chunk": pos,
+            }
+        )
+    if not valid:
+        return []
+    order = sorted(range(len(valid)), key=lambda i: valid[i]["pts_ms"])
+    rank = {idx: r for r, idx in enumerate(order)}
+    for i in range(len(valid)):
+        valid[i]["frame_index"] = start_frame + rank[i]
+    return valid
+
+
 def probe_video_file(path: str | Path) -> dict[str, Any]:
     proc = subprocess.run(
         [
@@ -204,6 +239,31 @@ def probe_video_frame_timetable(path: str | Path) -> list[dict[str, Any]]:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "ffprobe frame timetable failed")
     return parse_ffprobe_frame_timetable(json.loads(proc.stdout or "{}"))
+
+
+def probe_chunk_samples(path: str | Path, start_frame: int) -> list[dict[str, Any]]:
+    proc = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_packets",
+            "-show_entries",
+            "packet=pts_time,dts_time,duration_time,size,pos,flags",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=FFPROBE_TIMEOUT_SECONDS,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "ffprobe packet probe failed")
+    return parse_ffprobe_packet_samples(json.loads(proc.stdout or "{}"), start_frame)
 
 
 def extract_video_poster(input_path: str | Path, output_path: str | Path) -> None:
@@ -895,6 +955,117 @@ async def _chunk_diagnostics(
     }
 
 
+def _webcodecs_codec_string(output_codec: str | None) -> str:
+    normalized = (output_codec or "").lower()
+    if "hevc" in normalized or "h265" in normalized:
+        return "hev1.1.6.L93.B0"
+    return "avc1.4d001e"
+
+
+def _find_mp4_box_payload(data: bytes, fourcc: bytes) -> bytes | None:
+    """在 mp4 字节里按 fourcc 定位 box, 返回 payload (8 字节 box 头之后的内容)。
+
+    box 结构: ``[uint32 size][4 字节 type][payload...]``, size 含 8 字节头。子串扫描 +
+    size 合法性校验, 避免把 payload 中偶然出现的 fourcc 误判成 box 头。找不到返回 None。
+    """
+    start = 0
+    while True:
+        i = data.find(fourcc, start)
+        if i == -1:
+            return None
+        if i < 4:
+            start = i + 4
+            continue
+        box_start = i - 4
+        size = int.from_bytes(data[box_start:i], "big")
+        end = box_start + size
+        if size > 8 and end <= len(data):
+            return data[i + 4 : end]
+        start = i + 4
+
+
+def _avc_codec_string(avcc: bytes) -> str | None:
+    """从 AVCDecoderConfigurationRecord 派生 RFC6381 codec string (avc1.PPCCLL)。
+
+    byte1/2/3 = profile_idc / profile_compatibility / level_idc, 直接 hex 即 codec 后缀。
+    """
+    if len(avcc) < 4:
+        return None
+    return "avc1." + avcc[1:4].hex()
+
+
+def _hevc_codec_string(hvcc: bytes) -> str | None:
+    """从 HEVCDecoderConfigurationRecord 派生 RFC6381 codec string (hvc1.…)。"""
+    if len(hvcc) < 13:
+        return None
+    b1 = hvcc[1]
+    profile_space = (b1 >> 6) & 0x03
+    tier_flag = (b1 >> 5) & 0x01
+    profile_idc = b1 & 0x1F
+    # general_profile_compatibility_flags: 32 位, codec string 用其逆序位的 hex。
+    compat = int.from_bytes(hvcc[2:6], "big")
+    rev = 0
+    for _ in range(32):
+        rev = (rev << 1) | (compat & 1)
+        compat >>= 1
+    space = {0: "", 1: "A", 2: "B", 3: "C"}.get(profile_space, "")
+    parts = [
+        "hvc1",
+        f"{space}{profile_idc}",
+        format(rev, "x").upper() or "0",
+        ("H" if tier_flag else "L") + str(hvcc[12]),
+    ]
+    # general_constraint_indicator_flags: 6 字节, 去尾部 0 后逐字节 hex。
+    for byte in hvcc[6:12].rstrip(b"\x00"):
+        parts.append(format(byte, "02X"))
+    return ".".join(parts)
+
+
+def _extract_decoder_config(chunk_path: Path) -> tuple[str | None, str | None]:
+    """从 chunk mp4 读取 avcC/hvcC, 返回 (codec_string, description_base64)。
+
+    description = WebCodecs ``VideoDecoderConfig.description`` 所需的 AVC/HEVCDecoderConfigurationRecord
+    (含 SPS/PPS)。样本是 AVCC 长度前缀格式, 缺 description 时浏览器按 Annex-B 解析必失败,
+    所以这里必须把 extradata 透出。读取失败返回 (None, None), 调用方退回旧启发式 codec_string。
+    """
+    try:
+        data = chunk_path.read_bytes()
+    except OSError:
+        return None, None
+    avcc = _find_mp4_box_payload(data, b"avcC")
+    if avcc is not None:
+        return _avc_codec_string(avcc), base64.b64encode(avcc).decode("ascii")
+    hvcc = _find_mp4_box_payload(data, b"hvcC")
+    if hvcc is not None:
+        return _hevc_codec_string(hvcc), base64.b64encode(hvcc).decode("ascii")
+    return None, None
+
+
+def _extract_chunk_samples(
+    chunk_path: Path,
+    start_frame: int,
+    metadata: VideoMetadata,
+    output_codec: str | None,
+) -> dict[str, Any]:
+    """扫 chunk mp4 的 packet, 提取 sample manifest (WebCodecs demux 用)。失败返回 {}。"""
+    try:
+        samples = probe_chunk_samples(chunk_path, start_frame)
+        if not samples:
+            return {}
+        codec_string, description = _extract_decoder_config(chunk_path)
+        result: dict[str, Any] = {
+            "codec_string": codec_string or _webcodecs_codec_string(output_codec),
+            "width": metadata.width or 0,
+            "height": metadata.height or 0,
+            "samples": samples,
+        }
+        if description:
+            result["description"] = description
+        return result
+    except Exception:
+        return {}
+
+
 async def _store_video_chunk(
     db,
     storage,
@@ -949,6 +1120,11 @@ async def _store_video_chunk(
     row.storage_key = key
     row.byte_size = len(body)
     row.generation_mode = generation_mode
+    sample_meta = _extract_chunk_samples(
+        output_path, row.start_frame, metadata, diagnostics.get("output_codec")
+    )
+    if sample_meta:
+        diagnostics.update(sample_meta)
     row.diagnostics = diagnostics
     row.status = "ready"
     row.error = None

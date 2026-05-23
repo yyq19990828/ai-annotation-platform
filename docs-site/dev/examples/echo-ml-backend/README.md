@@ -1,6 +1,6 @@
 # Echo ML Backend（最小协议参考实现）
 
-> 这是 [ML Backend 协议](/dev/ml-backend-protocol) §1-3 的最小可跑参考实现。本目录的 `main.py` 通过 `<!--snippet-->` 注释被协议文档 §8 镜像引用，源端改一字 `pnpm docs:build` 即报漂移。
+> 这是 [ML Backend 协议](/dev/reference/ml-backend-protocol) §1-3 的最小可跑参考实现。本目录的 `main.py` 通过 `<!--snippet-->` 注释被协议文档 §8 镜像引用，源端改一字 `pnpm docs:build` 即报漂移。
 
 ## 快速开始
 
@@ -42,4 +42,4 @@ HOST=http://host.docker.internal:8000 ./test.sh
 
 `main.py:predict()` 把固定 demo bbox 替换为真实推理调用即可——其它端点（health / setup / versions）的 schema 协议要求不变，照搬。
 
-更复杂场景（异步队列、多模型版本、点 / 框交互式 prompt）参考 [ML Backend 协议 §2.2 / §6 / §7](/dev/ml-backend-protocol)。
+更复杂场景（异步队列、多模型版本、点 / 框交互式 prompt）参考 [ML Backend 协议 §2.2 / §6 / §7](/dev/reference/ml-backend-protocol)。

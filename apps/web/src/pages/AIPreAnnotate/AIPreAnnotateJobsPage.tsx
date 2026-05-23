@@ -1,8 +1,5 @@
 /**
- * v0.9.8 · /ai-pre/jobs — 完整 prediction job 历史页.
- *
- * 与 /ai-pre 主页 HistoryTable (仅列 pre_annotated 批次) 拆开:
- * 本页面拉 /admin/preannotate-jobs (prediction_jobs 全量), 含已结束/重置/失败 job.
+ * v0.10.45 · /ai-pre/jobs — 统一 async_jobs AI 任务历史页.
  */
 
 import { useState } from "react";
@@ -15,20 +12,40 @@ import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { TabRow } from "@/components/ui/TabRow";
 import {
-  adminPreannotateJobsApi,
-  type PredictionJobOut,
-} from "@/api/adminPreannotateJobs";
+  asyncJobsApi,
+  type AsyncJob,
+  type AsyncJobStatus,
+} from "@/api/asyncJobs";
 import { VideoTrackerJobsPanel } from "@/pages/ModelMarket/VideoTrackerJobsPage";
-import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import {
+  buildWorkbenchUrl,
+  currentWorkbenchReturnTo,
+} from "@/utils/workbenchNavigation";
 import styles from "./AIPreAnnotateJobsPage.module.css";
 
-type StatusFilter = "" | "running" | "completed" | "failed";
+type StatusFilter = "" | AsyncJobStatus;
 
 const JOB_TABS = ["图像", "视频"];
+const PAGE_SIZE = 20;
+const STATUS_ORDER: AsyncJobStatus[] = [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+];
+
+const STATUS_LABEL: Record<AsyncJobStatus, string> = {
+  pending: "排队中",
+  running: "运行中",
+  completed: "已完成",
+  failed: "失败",
+  cancelled: "已取消",
+};
 
 /**
- * v0.10.38 · /ai-pre/jobs 统一 AI 任务历史 (epic 阶段 3): 「图像」(prediction_jobs) /
- * 「视频」(video_tracker_jobs, 原 /model-market/video-jobs) 两个模态 tab。tab 用 ?tab 同步,
+ * v0.10.38 · /ai-pre/jobs 统一 AI 任务历史 (epic 阶段 3): 「图像」 /
+ * 「视频」两个模态 tab。tab 用 ?tab 同步,
  * 供 ProjectDetailPanel 视频引导卡片深链 (?tab=video&project_id=)。
  */
 export default function AIPreAnnotateJobsPage() {
@@ -48,7 +65,7 @@ export default function AIPreAnnotateJobsPage() {
       <div className={styles.pageIntro}>
         <h1 className={styles.pageTitle}>AI 任务历史</h1>
         <span className={styles.pageSubtitle}>
-          图像批量预标 (prediction_jobs) + 视频追踪 (video_tracker_jobs)，一处看全模态。
+          图像批量预标 + 视频追踪，一处看全模态后台任务。
         </span>
       </div>
       <TabRow
@@ -59,134 +76,146 @@ export default function AIPreAnnotateJobsPage() {
       {tab === "video" ? (
         <VideoTrackerJobsPanel projectId={projectId} />
       ) : (
-        <ImageJobsPanel />
+        <ImageJobsPanel projectId={projectId} />
       )}
     </div>
   );
 }
 
-function ImageJobsPanel() {
+function ImageJobsPanel({ projectId }: { projectId?: string }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   // v0.9.12 · ModelMarket failed tab redirect 来源支持 ?status=failed 直接落到失败筛选.
   const initialStatus = (() => {
-    const s = searchParams.get("status");
-    return s === "running" || s === "completed" || s === "failed" ? s : "";
+    const s = searchParams.get("status") as AsyncJobStatus | null;
+    return s && STATUS_ORDER.includes(s) ? s : "";
   })() as StatusFilter;
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatus);
-  const [cursorStack, setCursorStack] = useState<string[]>([]);
-  const currentCursor = cursorStack[cursorStack.length - 1] ?? undefined;
+  const [page, setPage] = useState(0);
+  const offset = page * PAGE_SIZE;
 
   const jobsQ = useQuery({
-    queryKey: ["admin", "preannotate-jobs", search, statusFilter, currentCursor],
+    queryKey: [
+      "async-jobs",
+      "batch_predict",
+      projectId,
+      search,
+      statusFilter,
+      page,
+    ],
     queryFn: () =>
-      adminPreannotateJobsApi.list({
+      asyncJobsApi.list({
+        kind: "batch_predict",
+        project_id: projectId || undefined,
         search: search.trim() || undefined,
         status: statusFilter || undefined,
-        cursor: currentCursor,
-        limit: 20,
+        limit: PAGE_SIZE,
+        offset,
       }),
     staleTime: 1000 * 30,
   });
 
   const items = jobsQ.data?.items ?? [];
-  const nextCursor = jobsQ.data?.next_cursor;
+  const total = jobsQ.data?.total ?? 0;
+  const hasNext = offset + PAGE_SIZE < total;
 
   return (
     <Card>
-        <div className={styles.cardHeader}>
-          <span>历史 job ({items.length})</span>
-          <div className={styles.filterGroup}>
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as StatusFilter);
-                setCursorStack([]);
-              }}
-              className={styles.selectControl}
-            >
-              <option value="">全部状态</option>
-              <option value="running">运行中</option>
-              <option value="completed">已完成</option>
-              <option value="failed">失败</option>
-            </select>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setCursorStack([]);
-              }}
-              placeholder="搜索 prompt..."
-              className={styles.searchInput}
-            />
+      <div className={styles.cardHeader}>
+        <span>历史 job ({total})</span>
+        <div className={styles.filterGroup}>
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as StatusFilter);
+              setPage(0);
+            }}
+            className={styles.selectControl}
+          >
+            <option value="">全部状态</option>
+            {STATUS_ORDER.map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+            placeholder="搜索 prompt..."
+            className={styles.searchInput}
+          />
+        </div>
+      </div>
+      <div className={styles.cardBody}>
+        {jobsQ.isLoading ? (
+          <div className={styles.message}>加载中…</div>
+        ) : items.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr className={styles.headerRow}>
+                  <th className={styles.tableHeaderCell}>项目</th>
+                  <th className={styles.tableHeaderCell}>批次</th>
+                  <th className={styles.tableHeaderCell}>Prompt</th>
+                  <th className={styles.tableHeaderCell}>模式</th>
+                  <th className={styles.tableHeaderCell}>状态</th>
+                  <th className={styles.tableHeaderCell}>总数</th>
+                  <th className={styles.tableHeaderCell}>失败</th>
+                  <th className={styles.tableHeaderCell}>跑时长</th>
+                  <th className={styles.tableHeaderCell}>开始</th>
+                  <th className={styles.tableHeaderCell}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it) => (
+                  <JobRow
+                    key={it.id}
+                    job={it}
+                    navigate={navigate}
+                    returnTo={currentWorkbenchReturnTo(location)}
+                  />
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-        <div className={styles.cardBody}>
-          {jobsQ.isLoading ? (
-            <div className={styles.message}>加载中…</div>
-          ) : items.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr className={styles.headerRow}>
-                    <th className={styles.tableHeaderCell}>项目</th>
-                    <th className={styles.tableHeaderCell}>批次</th>
-                    <th className={styles.tableHeaderCell}>Prompt</th>
-                    <th className={styles.tableHeaderCell}>模式</th>
-                    <th className={styles.tableHeaderCell}>状态</th>
-                    <th className={styles.tableHeaderCell}>总数</th>
-                    <th className={styles.tableHeaderCell}>失败</th>
-                    <th className={styles.tableHeaderCell}>跑时长</th>
-                    <th className={styles.tableHeaderCell}>开始</th>
-                    <th className={styles.tableHeaderCell}>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((it) => (
-                    <JobRow
-                      key={it.id}
-                      job={it}
-                      navigate={navigate}
-                      returnTo={currentWorkbenchReturnTo(location)}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        )}
 
-          {(cursorStack.length > 0 || nextCursor) && (
-            <div className={styles.pagination}>
-              <span className={styles.helperInline}>第 {cursorStack.length + 1} 页</span>
-              <div className={styles.inlineActions}>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={cursorStack.length === 0}
-                  onClick={() => setCursorStack((s) => s.slice(0, -1))}
-                >
-                  <Icon name="chevLeft" size={11} /> 上一页
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={!nextCursor}
-                  onClick={() =>
-                    nextCursor && setCursorStack((s) => [...s, nextCursor])
-                  }
-                >
-                  下一页 <Icon name="chevRight" size={11} />
-                </Button>
-              </div>
+        {(page > 0 || hasNext) && (
+          <div className={styles.pagination}>
+            <span className={styles.helperInline}>
+              第 {page + 1} 页 / 共 {total} 条
+            </span>
+            <div className={styles.inlineActions}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={page === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                <Icon name="chevLeft" size={11} /> 上一页
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!hasNext}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                下一页 <Icon name="chevRight" size={11} />
+              </Button>
             </div>
-          )}
-        </div>
-      </Card>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -195,12 +224,23 @@ function JobRow({
   navigate,
   returnTo,
 }: {
-  job: PredictionJobOut;
+  job: AsyncJob;
   navigate: (path: string) => void;
   returnTo: string;
 }) {
-  const promptShort =
-    job.prompt.length > 50 ? job.prompt.slice(0, 50) + "…" : job.prompt;
+  const batchId = payloadString(job.payload, "batch_id");
+  const batchLabel =
+    payloadString(job.payload, "batch_display_id") ?? batchId?.slice(0, 8);
+  const prompt = payloadString(job.payload, "prompt") ?? "";
+  const promptShort = prompt.length > 50 ? prompt.slice(0, 50) + "…" : prompt;
+  const outputMode = payloadString(job.payload, "output_mode") ?? "—";
+  const totalTasks = payloadNumber(job.payload, "total_tasks") ?? 0;
+  const failedCount =
+    job.status === "completed"
+      ? payloadNumber(job.result, "failed_count") ?? 0
+      : null;
+  const durationMs =
+    job.status === "completed" ? payloadNumber(job.result, "duration_ms") : null;
 
   return (
     <tr>
@@ -214,36 +254,38 @@ function JobRow({
       </td>
       <td
         className={`${styles.tableCell} ${styles.batchCell}`}
-        title={job.batch_id ?? ""}
+        title={batchId ?? ""}
       >
-        {job.batch_id ? job.batch_id.slice(0, 8) : "—"}
+        {batchLabel ?? "—"}
       </td>
       <td
         className={styles.tableCell}
-        title={job.prompt || "(无文本 prompt — image-only batch)"}
+        title={prompt || "(无文本 prompt — image-only batch)"}
       >
-        {job.prompt ? promptShort : (
+        {prompt ? promptShort : (
           <span className={styles.subtle}>—</span>
         )}
       </td>
       <td className={`${styles.tableCell} ${styles.mutedCell}`}>
-        {job.output_mode}
+        {outputMode}
       </td>
       <td className={styles.tableCell}>
         <StatusBadge status={job.status} />
       </td>
       <td className={`${styles.tableCell} ${styles.numeric}`}>
-        {job.total_tasks}
+        {totalTasks}
       </td>
       <td className={styles.tableCell}>
-        {job.failed_count > 0 ? (
-          <Badge variant="danger">{job.failed_count}</Badge>
+        {failedCount == null ? (
+          <span className={styles.subtle}>—</span>
+        ) : failedCount > 0 ? (
+          <Badge variant="danger">{failedCount}</Badge>
         ) : (
           <span className={styles.subtle}>0</span>
         )}
       </td>
       <td className={`${styles.tableCell} ${styles.mutedCell}`}>
-        {formatDuration(job.duration_ms)}
+        {formatDuration(durationMs)}
       </td>
       <td className={`${styles.tableCell} ${styles.mutedCell}`}>
         {formatRelative(job.started_at)}
@@ -252,14 +294,15 @@ function JobRow({
         <Button
           size="sm"
           variant="ghost"
-          onClick={() =>
+          onClick={() => {
+            if (!job.project_id) return;
             navigate(buildWorkbenchUrl(job.project_id, {
-              batchId: job.batch_id,
+              batchId,
               returnTo,
-            }))
-          }
+            }));
+          }}
           title="去工作台"
-          disabled={!job.batch_id}
+          disabled={!job.project_id || !batchId}
         >
           <Icon name="chevRight" size={11} />
         </Button>
@@ -268,10 +311,12 @@ function JobRow({
   );
 }
 
-function StatusBadge({ status }: { status: PredictionJobOut["status"] }) {
+function StatusBadge({ status }: { status: AsyncJobStatus }) {
+  if (status === "pending") return <Badge variant="ai">排队中</Badge>;
   if (status === "running") return <Badge variant="ai">运行中</Badge>;
   if (status === "completed") return <Badge variant="success">已完成</Badge>;
-  return <Badge variant="danger">失败</Badge>;
+  if (status === "failed") return <Badge variant="danger">失败</Badge>;
+  return <Badge variant="default">已取消</Badge>;
 }
 
 function EmptyState() {
@@ -288,6 +333,28 @@ function EmptyState() {
   );
 }
 
+function payloadString(
+  record: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = record[key];
+  if (typeof value === "string" && value) return value;
+  return null;
+}
+
+function payloadNumber(
+  record: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = record[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function formatDuration(ms: number | null | undefined): string {
   if (ms == null) return "—";
   if (ms < 1000) return `${ms}ms`;
@@ -299,7 +366,7 @@ function formatDuration(ms: number | null | undefined): string {
   return `${hr.toFixed(1)}h`;
 }
 
-function formatRelative(iso: string): string {
+function formatRelative(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";

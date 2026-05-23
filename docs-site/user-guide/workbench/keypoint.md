@@ -1,12 +1,59 @@
 ---
-layout: page
+audience: [annotator]
+type: how-to
+since: v0.10.28
+status: stable
+last_reviewed: 2026-05-22
 ---
 
-<script setup>
-import { onMounted } from 'vue'
-import { useRouter } from 'vitepress'
-const router = useRouter()
-onMounted(() => router.go('/user-guide/for-annotators/keypoint'))
-</script>
+# 关键点标注
 
-本页已迁移至 [关键点标注](/user-guide/for-annotators/keypoint)，正在跳转…
+按 COCO 范式标注命名关键点 + 骨骼。点的语义、顺序和连线由项目管理员在「类别配置」里维护的**骨骼模板（keypoint schema）**决定，标注员只需按模板依次落点。
+
+## 适用场景
+
+- 人体姿态（如 COCO 17 点）
+- 人脸关键点
+- 手势 / 手部骨架
+
+## 前置：骨骼模板
+
+每个启用了关键点工具的类别都带一份 schema：
+
+- **节点（nodes）**：有序的命名点列表（如 `nose` / `left_eye` / `right_eye` …），顺序即关键点 index。
+- **连线（edges）**：节点之间的骨骼连接，仅用于画布可视化，不影响数据。
+
+模板由项目管理员配置，见 [项目管理员 · 类别与工具配置](../projects/)。
+
+## 操作
+
+1. 按 `F` 切到关键点工具（`K` 已被「上一个框」占用）。
+2. 右侧选好类别后，按 schema 节点顺序在图像上依次单击落点。
+3. 落满模板的全部节点后**自动提交**一个关键点实例。
+
+落点时的可见性（COCO `v` 值）：
+
+| 操作 | 可见性 `v` | 含义 |
+|---|---|---|
+| 普通单击 | `2` | 可见 |
+| `Alt` + 单击 | `1` | 被遮挡（位置已知但看不到） |
+| 右键单击 | `0` | 跳过 / 未标注（不落实际坐标） |
+
+> 右键在**绘制过程中**始终表示「跳过当前节点」。只有关键点实例已经提交、并且你重新选中它之后，右键才会打开通用 shape 菜单（改类 / 锁定 / 隐藏 / 复制 / 删除）。
+
+## 编辑已有关键点
+
+- 选中实例后**拖动单个节点** → 修正位置。
+- **单击节点** → 循环切换可见性：可见 `2` → 遮挡 `1` → 未标注 `0` → 回到 `2`。
+
+## 数据语义
+
+关键点几何按 index 与该类别 `keypoint_schema.nodes` 一一对应；每个点存 `{x, y, v}`（归一化坐标 + 可见性）。骨骼拓扑不进 geometry，统一走类别级模板。开发者细节见 [标注模块 · Geometry union](../../dev/concepts/annotation-module#geometry-union)。
+
+## 模板示例
+
+![人体姿态](../images/keypoint/human-pose.png)
+<!-- TODO IMAGE_CHECKLIST: COCO 17 点人体姿态标注示例；点 + 骨架连线可见。 -->
+
+![手部关键点](../images/keypoint/hand.png)
+<!-- TODO IMAGE_CHECKLIST: 21 点手部骨架标注示例。 -->

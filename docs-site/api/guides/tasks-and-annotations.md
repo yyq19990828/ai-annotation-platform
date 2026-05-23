@@ -235,4 +235,4 @@ GET /api/v1/tasks/:id/comments         # 标注评论
 ## 相关
 
 - [审核](./predictions)
-- [WebSocket 协作](../../dev/ws-protocol)
+- [WebSocket 协作](../../dev/reference/ws-protocol)

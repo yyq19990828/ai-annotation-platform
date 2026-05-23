@@ -182,6 +182,7 @@ async def test_preannotate_happy_path_text_box_mode(
     assert _mock_celery["kwargs"]["prompt"] == "ripe apples"
     assert _mock_celery["kwargs"]["output_mode"] == "box"
     assert _mock_celery["kwargs"]["batch_id"] == str(batch.id)
+    assert _mock_celery["kwargs"]["user_id"] == str(owner.id)
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 # grounded-sam2-backend
 
-> v0.9.x AI 基座的 ML Backend — 把 [`IDEA-Research/Grounded-SAM-2`](https://github.com/IDEA-Research/Grounded-SAM-2) 打包成独立 GPU 服务，遵循平台 [ML Backend 协议契约](../../docs-site/dev/ml-backend-protocol.md)。
+> v0.9.x AI 基座的 ML Backend — 把 [`IDEA-Research/Grounded-SAM-2`](https://github.com/IDEA-Research/Grounded-SAM-2) 打包成独立 GPU 服务，遵循平台 [ML Backend 协议契约](../../docs-site/dev/reference/ml-backend-protocol.md)。
 >
 > 当前版本：**v0.9.1 (M1 — embedding 缓存 + Prometheus)**。后续 v0.9.2 ~ v0.9.5 在 [`ROADMAP/[archived]0.9.x.md`](../../ROADMAP/[archived]0.9.x.md) 切片。
 
@@ -104,7 +104,7 @@ curl -X POST http://localhost:8001/predict \
 
 ## 端点速查
 
-完整规范以 [`docs-site/dev/ml-backend-protocol.md`](../../docs-site/dev/ml-backend-protocol.md) 为准。本 backend 实现版本 `grounded-sam2-dino{T,B}-sam2.1{tiny,small,base_plus,large}`。
+完整规范以 [`docs-site/dev/reference/ml-backend-protocol.md`](../../docs-site/dev/reference/ml-backend-protocol.md) 为准。本 backend 实现版本 `grounded-sam2-dino{T,B}-sam2.1{tiny,small,base_plus,large}`。
 
 ```
 GET  /health        → {"ok": true, "gpu": true, "model_version": "...", "loaded": true}

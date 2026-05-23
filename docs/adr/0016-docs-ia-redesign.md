@@ -47,6 +47,12 @@
 
 旧 URL 保留 client-side redirect shim 保持向后兼容。
 
+> **后续修订（2026-05-23）**：目录命名从角色标签（`for-*`）改回功能标签 —
+> `for-annotators/`→`workbench/`、`for-project-admins/`→`projects/`、`for-reviewers/`→`review/`、`for-superadmins/`→`superadmin/`。
+> 本 ADR 的核心价值（按受众分区、标注员不见超管内容）通过 sidebar 分组保留；
+> 仅目录名回归功能语义。重命名后清理了角色目录与原功能目录的所有 redirect shim（双轨残留），
+> 不再保留 `for-*` shim。
+
 ### 3. dev/ 按 Diátaxis 重排，独立 ops/ 板块
 
 ```

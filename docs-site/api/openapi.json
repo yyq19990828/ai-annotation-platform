@@ -2378,6 +2378,17 @@
             "title": "Progress Pct",
             "type": "integer"
           },
+          "project_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Display Id"
+          },
           "project_id": {
             "anyOf": [
               {
@@ -2389,6 +2400,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
           },
           "result": {
             "additionalProperties": true,
@@ -13282,6 +13304,97 @@
         "title": "VideoChunkOut",
         "type": "object"
       },
+      "VideoChunkSampleOut": {
+        "properties": {
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "is_keyframe": {
+            "title": "Is Keyframe",
+            "type": "boolean"
+          },
+          "offset_in_chunk": {
+            "title": "Offset In Chunk",
+            "type": "integer"
+          },
+          "pts_ms": {
+            "title": "Pts Ms",
+            "type": "integer"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame_index",
+          "pts_ms",
+          "duration_ms",
+          "is_keyframe",
+          "size_bytes",
+          "offset_in_chunk"
+        ],
+        "title": "VideoChunkSampleOut",
+        "type": "object"
+      },
+      "VideoChunkSamplesResponse": {
+        "properties": {
+          "chunk_id": {
+            "title": "Chunk Id",
+            "type": "integer"
+          },
+          "codec_string": {
+            "title": "Codec String",
+            "type": "string"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/VideoChunkSampleOut"
+            },
+            "title": "Samples",
+            "type": "array"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "chunk_id",
+          "codec_string",
+          "width",
+          "height",
+          "samples"
+        ],
+        "title": "VideoChunkSamplesResponse",
+        "type": "object"
+      },
       "VideoChunksResponse": {
         "properties": {
           "chunk_size_frames": {
@@ -16200,14 +16313,17 @@
             "schema": {
               "anyOf": [
                 {
-                  "enum": [
-                    "pending",
-                    "running",
-                    "completed",
-                    "failed",
-                    "cancelled"
-                  ],
-                  "type": "string"
+                  "items": {
+                    "enum": [
+                      "pending",
+                      "running",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16230,6 +16346,40 @@
                 }
               ],
               "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
             }
           },
           {
@@ -22502,14 +22652,20 @@
             }
           },
           {
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
             "in": "query",
-            "name": "format",
+            "name": "targets",
             "required": false,
             "schema": {
-              "default": "coco",
-              "pattern": "^(coco|voc|yolo|aap_json|video_json|mot|kitti)$",
-              "title": "Format",
-              "type": "string"
+              "default": [
+                "coco"
+              ],
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
+              "items": {
+                "type": "string"
+              },
+              "title": "Targets",
+              "type": "array"
             }
           },
           {
@@ -22889,14 +23045,20 @@
             }
           },
           {
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
             "in": "query",
-            "name": "format",
+            "name": "targets",
             "required": false,
             "schema": {
-              "default": "coco",
-              "pattern": "^(coco|voc|yolo|aap_json|video_json|mot|kitti)$",
-              "title": "Format",
-              "type": "string"
+              "default": [
+                "coco"
+              ],
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
+              "items": {
+                "type": "string"
+              },
+              "title": "Targets",
+              "type": "array"
             }
           },
           {
@@ -28073,6 +28235,63 @@
           }
         ],
         "summary": "Get Video Chunk",
+        "tags": [
+          "videos"
+        ]
+      }
+    },
+    "/api/v1/videos/{dataset_item_id}/chunks/{chunk_id}/samples": {
+      "get": {
+        "operationId": "get_video_chunk_samples_api_v1_videos__dataset_item_id__chunks__chunk_id__samples_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dataset Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "chunk_id",
+            "required": true,
+            "schema": {
+              "title": "Chunk Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoChunkSamplesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Video Chunk Samples",
         "tags": [
           "videos"
         ]

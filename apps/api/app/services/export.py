@@ -87,6 +87,96 @@ def _clean_video_bbox_geometry(geometry: dict) -> dict:
     }
 
 
+# ── v0.10.43 · 多几何 → COCO 写入 helper（坐标归一化 [0,1]，写入时去归一化到像素） ──
+
+
+def _aabb_from_rings(
+    rings: list[list[list[float]]],
+) -> tuple[float, float, float, float] | None:
+    """从若干环顶点求归一化外接框 (x, y, w, h)。"""
+    xs: list[float] = []
+    ys: list[float] = []
+    for ring in rings:
+        for pt in ring:
+            if len(pt) >= 2:
+                xs.append(pt[0])
+                ys.append(pt[1])
+    if not xs:
+        return None
+    return min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
+
+
+def _coco_aabb_norm(geometry: dict) -> tuple[float, float, float, float] | None:
+    """归一化外接框 (x,y,w,h)，覆盖 COCO 消费的几何：bbox/polygon/multi_polygon/keypoint。
+
+    rotated_bbox / polyline 不进 COCO（各有专属目标 / 仅 AAP），返回 None 表示跳过。
+    """
+    t = geometry.get("type")
+    if t in ("bbox", None):
+        if not all(k in geometry for k in ("x", "y", "w", "h")):
+            return None
+        return geometry["x"], geometry["y"], geometry["w"], geometry["h"]
+    if t == "polygon":
+        return _aabb_from_rings([geometry.get("points") or []])
+    if t == "multi_polygon":
+        rings = [p.get("points") or [] for p in geometry.get("polygons") or []]
+        return _aabb_from_rings(rings)
+    if t == "keypoint":
+        pts = [
+            [p["x"], p["y"]]
+            for p in geometry.get("points") or []
+            if isinstance(p, dict) and int(p.get("v", 0)) > 0
+        ]
+        return _aabb_from_rings([pts]) if pts else None
+    return None
+
+
+def _flatten_ring(points: list[list[float]], w: int, h: int) -> list[float]:
+    out: list[float] = []
+    for pt in points:
+        if len(pt) >= 2:
+            out.append(round(pt[0] * w, 2))
+            out.append(round(pt[1] * h, 2))
+    return out
+
+
+def _coco_segmentation(geometry: dict, w: int, h: int) -> list | None:
+    """polygon / multi_polygon → COCO segmentation（多边形顶点像素坐标）。
+
+    仅取外环（holes 多连通孔洞还原留作触发，见计划 §5）。
+    """
+    t = geometry.get("type")
+    if t == "polygon":
+        ring = _flatten_ring(geometry.get("points") or [], w, h)
+        return [ring] if ring else None
+    if t == "multi_polygon":
+        segs = [
+            _flatten_ring(p.get("points") or [], w, h)
+            for p in geometry.get("polygons") or []
+        ]
+        segs = [s for s in segs if s]
+        return segs or None
+    return None
+
+
+def _coco_keypoints(geometry: dict, w: int, h: int) -> tuple[list[float], int] | None:
+    """keypoint 实例 → COCO (keypoints[x,y,v,...], num_keypoints)。"""
+    if geometry.get("type") != "keypoint":
+        return None
+    flat: list[float] = []
+    n = 0
+    for p in geometry.get("points") or []:
+        if not isinstance(p, dict):
+            continue
+        v = int(p.get("v", 0))
+        flat.extend(
+            [round(float(p.get("x", 0)) * w, 2), round(float(p.get("y", 0)) * h, 2), v]
+        )
+        if v > 0:
+            n += 1
+    return (flat, n) if flat else None
+
+
 class ExportService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -330,19 +420,40 @@ class ExportService:
             for unit_id, binding in tb.items():
                 if not isinstance(binding, dict) or not binding.get("enabled"):
                     continue
+                # v0.10.43 · keypoint 单元的类别附 COCO keypoints(节点名) + skeleton(edges,
+                # COCO 1-indexed)，直接派生自 ToolBinding.keypoint_schema（v0.10.28 已落）。
+                kp_names: list[str] | None = None
+                kp_skeleton: list[list[int]] | None = None
+                if unit_id == "keypoint":
+                    kp_schema = binding.get("keypoint_schema") or {}
+                    nodes = kp_schema.get("nodes") or []
+                    names = [
+                        n.get("name")
+                        for n in nodes
+                        if isinstance(n, dict) and n.get("name")
+                    ]
+                    if names:
+                        kp_names = names
+                        kp_skeleton = [
+                            [int(e[0]) + 1, int(e[1]) + 1]
+                            for e in kp_schema.get("edges") or []
+                            if len(e) == 2
+                        ]
                 for cls in binding.get("classes") or []:
                     if not isinstance(cls, dict):
                         continue
                     name = cls.get("name")
                     if not name:
                         continue
-                    categories.append(
-                        {
-                            "id": next_cat_id,
-                            "name": name,
-                            "supercategory": unit_id,
-                        }
-                    )
+                    cat: dict = {
+                        "id": next_cat_id,
+                        "name": name,
+                        "supercategory": unit_id,
+                    }
+                    if kp_names:
+                        cat["keypoints"] = kp_names
+                        cat["skeleton"] = kp_skeleton or []
+                    categories.append(cat)
                     cat_map[(unit_id, name)] = next_cat_id
                     next_cat_id += 1
         else:
@@ -389,18 +500,22 @@ class ExportService:
         task_id_to_img_id = {t.id: i for i, t in enumerate(tasks)}
 
         coco_annotations = []
+        skipped = 0
         for ann in annotations:
             img_id = task_id_to_img_id.get(ann.task_id)
             if img_id is None:
                 continue
-            g = _bbox_geometry(ann)
-            if g is None:
+            g = ann.geometry or {}
+            aabb = _coco_aabb_norm(g)
+            if aabb is None:
+                # rotated_bbox / polyline / 空几何不进 COCO（各有专属目标）。
+                skipped += 1
                 continue
             img_w, img_h = dims_by_task.get(ann.task_id, (IMG_W, IMG_H))
-            x_px = g["x"] * img_w
-            y_px = g["y"] * img_h
-            w_px = g["w"] * img_w
-            h_px = g["h"] * img_h
+            x_px = aabb[0] * img_w
+            y_px = aabb[1] * img_h
+            w_px = aabb[2] * img_w
+            h_px = aabb[3] * img_h
             row = {
                 "id": len(coco_annotations),
                 "image_id": img_id,
@@ -414,14 +529,25 @@ class ExportService:
                 "area": round(w_px * h_px, 2),
                 "iscrowd": 0,
             }
+            seg = _coco_segmentation(g, img_w, img_h)
+            if seg:
+                row["segmentation"] = seg
+            kp = _coco_keypoints(g, img_w, img_h)
+            if kp is not None:
+                row["keypoints"], row["num_keypoints"] = kp
             if include_attributes:
-                row["attributes"] = ann.attributes or {}
+                attrs = dict(ann.attributes or {})
+                # v0.10.43 · I12 · group_id 平等同组语义 → COCO attributes.__group_id。
+                if getattr(ann, "group_id", None) is not None:
+                    attrs["__group_id"] = ann.group_id
+                row["attributes"] = attrs
             coco_annotations.append(row)
 
         info = {
             "description": project.name,
             "version": "1.0",
             "date_created": datetime.utcnow().isoformat(),
+            "skipped_annotations": skipped,
         }
         if include_attributes:
             info["attribute_schema"] = derive_attribute_schema(project.tool_bindings)

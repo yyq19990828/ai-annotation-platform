@@ -38,6 +38,27 @@ class VideoChunksResponse(BaseModel):
     chunks: list[VideoChunkOut]
 
 
+class VideoChunkSampleOut(BaseModel):
+    frame_index: int
+    pts_ms: int
+    duration_ms: int
+    is_keyframe: bool
+    size_bytes: int
+    offset_in_chunk: int
+
+
+class VideoChunkSamplesResponse(BaseModel):
+    dataset_item_id: UUID
+    chunk_id: int
+    codec_string: str
+    # base64 编码的 AVC/HEVCDecoderConfigurationRecord (avcC/hvcC)，WebCodecs
+    # VideoDecoderConfig.description 所需；旧 chunk 无 extradata 时为 None。
+    description: str | None = None
+    width: int
+    height: int
+    samples: list[VideoChunkSampleOut]
+
+
 class VideoFrameOut(BaseModel):
     frame_index: int
     width: int

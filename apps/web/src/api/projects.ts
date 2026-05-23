@@ -99,7 +99,27 @@ export interface GuideAssetSignedUrlResponse {
 }
 
 // v0.10.31 · Phase 4.7 · 视频项目导出格式 video_json/mot/kitti（aap_json 图像视频共用）。
-export type ExportFormat = "coco" | "voc" | "yolo" | "aap_json" | "video_json" | "mot" | "kitti";
+export type ExportFormat =
+  | "coco"
+  | "voc"
+  | "yolo"
+  | "aap_json"
+  | "video_json"
+  | "mot"
+  | "kitti"
+  | "yolo-frames-det";
+// v0.10.43 · 多目标导出：YOLO 拆 det/obb/seg；一次导出可多选目标（voc 仅可单选）。
+export type ExportTarget =
+  | "coco"
+  | "yolo-det"
+  | "yolo-obb"
+  | "yolo-seg"
+  | "aap_json"
+  | "video_json"
+  | "mot"
+  | "kitti"
+  | "yolo-frames-det"
+  | "voc";
 export type VideoFrameMode = "keyframes" | "all_frames";
 export interface ExportOptions {
   includeAttributes?: boolean;
@@ -203,10 +223,12 @@ export const projectsApi = {
   },
 
   // v0.10.27 · 导出异步化：POST 创建 async_job(kind=export)，返回 {job_id}。
-  // 不再直接 blob 下载；产物完成后在 JobsBell 里用预签名 URL 下载。
-  exportProject: (id: string, format: ExportFormat, opts?: ExportOptions) => {
+  // v0.10.43 · 多目标：targets 可多选，一次导出产一个 zip。不再直接 blob 下载；
+  // 产物完成后在 JobsBell 里用预签名 URL 下载。
+  exportProject: (id: string, targets: ExportTarget[], opts?: ExportOptions) => {
     const includeAttr = opts?.includeAttributes !== false;
-    const params = new URLSearchParams({ format, include_attributes: String(includeAttr) });
+    const params = new URLSearchParams({ include_attributes: String(includeAttr) });
+    targets.forEach((t) => params.append("targets", t));
     if (opts?.videoFrameMode) params.set("video_frame_mode", opts.videoFrameMode);
     return apiClient.post<{ job_id: string }>(
       `/projects/${id}/export?${params.toString()}`,

@@ -14,7 +14,7 @@ last_reviewed: 2026-05-09
 ## 前提条件
 
 - 已有可用 ML Backend（自部署或使用平台内置 Grounded-SAM-2）
-- 超级管理员已在 [ML Backend 注册](../for-superadmins/ml-backend-registry) 中完成注册
+- 超级管理员已在 [ML Backend 注册](../superadmin/ml-backend-registry) 中完成注册
 - 项目已创建并上传数据
 
 ## 流程概览

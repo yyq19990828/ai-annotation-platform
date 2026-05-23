@@ -8,7 +8,7 @@ last_reviewed: 2026-05-09
 
 # WebSocket
 
-完整协议见 [WebSocket 协议](../../dev/ws-protocol)，本页给出 API 视角的常见调用模式。
+完整协议见 [WebSocket 协议](../../dev/reference/ws-protocol)，本页给出 API 视角的常见调用模式。
 
 ## 连接
 

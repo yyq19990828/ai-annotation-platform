@@ -87,5 +87,5 @@
 
 ## 尚未覆盖（待补充）
 
-- WebSocket 实时通知架构（详见 [ws-protocol](/dev/ws-protocol)，ADR 层面的 rationale 待写）
-- 多租户 / 权限边界（见 [安全模型](/dev/security)）
+- WebSocket 实时通知架构（详见 [ws-protocol](/dev/reference/ws-protocol)，ADR 层面的 rationale 待写）
+- 多租户 / 权限边界（见 [安全模型](/ops/security/)）
