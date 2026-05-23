@@ -597,3 +597,114 @@ async def test_tracker_seed_falls_back_to_last_valid_when_window_all_outside(
         "w": 10.0,
         "h": 10.0,
     }
+
+
+# ── v0.10.49 · worker 按专表最终状态同步 async_jobs（修双写漂移）─────────────
+
+
+async def _run_worker_with_final_status(db_session, super_admin, monkeypatch, status):
+    """seed 专表 job + stub run_tracker_job 返回指定终态，跑 worker 包装层，
+    返回它创建/同步的 async_job。验证 cancelled/failed 不被误标 completed。"""
+    from sqlalchemy import select
+
+    from app.db.models.async_job import AsyncJob
+    from app.workers import video_tracker as worker_mod
+
+    user, _ = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=user.id,
+        annotation_type="video_bbox",
+        class_name="car",
+        geometry={"type": "video_bbox", "frame_index": 0, "x": 1, "y": 2, "w": 10, "h": 12},
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        annotation_id=annotation.id,
+        created_by=user.id,
+        status=VideoTrackerJobStatus.QUEUED.value,
+        model_key="mock_bbox",
+        direction="forward",
+        from_frame=1,
+        to_frame=3,
+        prompt={"type": "bbox", "geometry": annotation.geometry},
+        event_channel="video-tracker-job:test",
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    async def _stub_run(db, job_id, **_kw):
+        row = await db.get(VideoTrackerJob, job_id)
+        row.status = status
+        if status == VideoTrackerJobStatus.FAILED.value:
+            row.error_message = "boom"
+        await db.commit()
+        return row
+
+    monkeypatch.setattr(worker_mod, "run_tracker_job", _stub_run)
+
+    # 让 worker 内部 create_async_engine/async_sessionmaker 复用 db_session
+    class _Engine:
+        async def dispose(self):
+            pass
+
+    class _Factory:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        def __call__(self):
+            class _Ctx:
+                async def __aenter__(self_i):
+                    return db_session
+
+                async def __aexit__(self_i, *a):
+                    return False
+
+            return _Ctx()
+
+    # worker 在模块顶层 import，故 patch worker_mod 上的名字（非 sqlalchemy 模块）
+    monkeypatch.setattr(worker_mod, "create_async_engine", lambda *a, **k: _Engine())
+    monkeypatch.setattr(worker_mod, "async_sessionmaker", _Factory)
+
+    await worker_mod._run_video_tracker_job(str(job.id), "celery-vt")
+
+    aj = (
+        (
+            await db_session.execute(
+                select(AsyncJob).where(
+                    AsyncJob.kind == "video_tracker",
+                    AsyncJob.payload["video_tracker_job_id"].astext == str(job.id),
+                )
+            )
+        )
+        .scalars()
+        .one()
+    )
+    return aj
+
+
+async def test_worker_syncs_async_job_cancelled(db_session, super_admin, monkeypatch):
+    aj = await _run_worker_with_final_status(
+        db_session, super_admin, monkeypatch, VideoTrackerJobStatus.CANCELLED.value
+    )
+    assert aj.status == "cancelled"  # 不再被误标 completed
+
+
+async def test_worker_syncs_async_job_failed(db_session, super_admin, monkeypatch):
+    aj = await _run_worker_with_final_status(
+        db_session, super_admin, monkeypatch, VideoTrackerJobStatus.FAILED.value
+    )
+    assert aj.status == "failed"
+    assert aj.error_message == "boom"
+
+
+async def test_worker_syncs_async_job_completed(db_session, super_admin, monkeypatch):
+    aj = await _run_worker_with_final_status(
+        db_session, super_admin, monkeypatch, VideoTrackerJobStatus.COMPLETED.value
+    )
+    assert aj.status == "completed"

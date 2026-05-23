@@ -29,6 +29,9 @@
 ### Removed
 - 删除 `prediction_jobs` 表（迁移 0085）+ `PredictionJob` model + `/admin/preannotate-jobs` 端点（前端无调用，能力由 `/async-jobs?kind=batch_predict` 覆盖）+ 未使用的前端 `adminPreannotateJobs.ts`。
 
+### Fixed
+- 视频追踪 job 被取消 / 失败时，`async_jobs` 索引层误标 `completed` 的双写漂移（铃铛 / 历史页显示错误）。runner 内部消化取消/失败不抛异常，worker 原先无条件走完成分支；现按专表最终状态同步 async_jobs（cancelled/failed/completed）。`VideoTrackerJob` 专表保留（FK + 运行时状态机），仅修索引同步。
+
 ### Changed
 - batch reset / bulk-clear 级联清理、ml_backend 删除前的 running 检查、preannotate-summary 最近预标时间，均改查 `async_jobs(kind=batch_predict)`。
 - 决策底线表「Task 双重含义」行更新：新 job 类型默认进 async_jobs；仅当需 FK 级联到活实体 / 复杂运行时状态机时才建专表。
