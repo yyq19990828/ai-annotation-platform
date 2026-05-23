@@ -41,7 +41,7 @@ import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import { useInteractiveAI } from "./useInteractiveAI";
 import { useMLCapabilities } from "./useMLCapabilities";
 import { useAiToolParamPrefs } from "./useAiToolParamPrefs";
-import { deriveDefaults } from "../components/SchemaForm";
+import { deriveDefaults, VARIANT_FIELD_KEYS } from "../components/SchemaForm";
 import { AIToolDrawer } from "../shell/AIToolDrawer";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { IssueListPanel } from "../shell/IssueListPanel";
@@ -83,6 +83,17 @@ import { useMaskEditor } from "./useMaskEditor";
 import { MaskToolbar } from "../shell/MaskToolbar";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
 import styles from "../shell/WorkbenchShell.module.css";
+
+const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
+
+function omitVariantFields(value: Record<string, unknown> | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!value) return out;
+  for (const [key, v] of Object.entries(value)) {
+    if (!VARIANT_FIELD_SET.has(key)) out[key] = v;
+  }
+  return out;
+}
 
 type WorkbenchShellMode = "annotate" | "review";
 
@@ -525,14 +536,17 @@ export function useWorkbenchShellModel({
     if (!bid || !mlCapabilities.paramsSchema || !aiParamPrefs.loaded) return;
     if (seededBackendRef.current === bid) return;
     seededBackendRef.current = bid;
-    s.setAiToolParams(aiParamPrefs.savedParams ?? aiParamDefaults);
+    s.setAiToolParams({
+      ...aiParamDefaults,
+      ...omitVariantFields(aiParamPrefs.savedParams),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.ml_backend_id, mlCapabilities.paramsSchema, aiParamPrefs.loaded, aiParamPrefs.savedParams]);
   useEffect(() => {
     if (!currentProject?.ml_backend_id) return;
     if (Object.keys(s.aiToolParams).length === 0) return;
     if (JSON.stringify(s.aiToolParams) === JSON.stringify(aiParamDefaults)) return;
-    aiParamPrefs.save(s.aiToolParams);
+    aiParamPrefs.save({ ...(aiParamPrefs.savedParams ?? {}), ...s.aiToolParams });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.aiToolParams, currentProject?.ml_backend_id]);
   useEffect(() => {
@@ -1391,6 +1405,7 @@ export function useWorkbenchShellModel({
       taskAiAvgMs: taskAiMeta.avgMs,
       taskAiPredictionCount: taskAiMeta.count,
       paramsSchema: mlCapabilities.paramsSchema,
+      supportedVariants: mlCapabilities.capability?.supported_variants,
       aiVariant: s.aiVariant,
       onSetAiVariant: s.setAiVariant,
       params: s.aiToolParams,

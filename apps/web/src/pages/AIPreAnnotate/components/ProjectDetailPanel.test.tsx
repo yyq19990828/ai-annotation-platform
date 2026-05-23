@@ -14,6 +14,8 @@ const mockUseTrigger = vi.fn();
 const mockSummaryAPI = vi.fn();
 const mockQueueAPI = vi.fn();
 const mockAliasFreqAPI = vi.fn();
+const mockSetupAPI = vi.fn();
+const mockUpdatePreferences = vi.fn();
 
 vi.mock("@/hooks/useProjects", () => ({
   useProject: (id: string) => mockUseProject(id),
@@ -55,6 +57,17 @@ vi.mock("@/api/aliasFrequency", () => ({
     byProject: (pid: string) => mockAliasFreqAPI(pid),
   },
 }));
+vi.mock("@/api/ml-backends", () => ({
+  mlBackendsApi: {
+    setup: (projectId: string, backendId: string) => mockSetupAPI(projectId, backendId),
+  },
+}));
+vi.mock("@/api/auth", () => ({
+  authApi: {
+    getPreferences: vi.fn().mockResolvedValue({ ai: { params_by_backend: {} } }),
+    updatePreferences: (payload: unknown) => mockUpdatePreferences(payload),
+  },
+}));
 
 import { ProjectDetailPanel } from "./ProjectDetailPanel";
 
@@ -78,6 +91,8 @@ function renderUI(extras: Partial<{ summary: any }> = {}) {
 describe("ProjectDetailPanel v0.9.12", () => {
   beforeEach(() => {
     mockTriggerMutate.mockReset();
+    mockSetupAPI.mockReset();
+    mockUpdatePreferences.mockReset();
     mockUseProject.mockReturnValue({
       data: { type_key: "image-det", ml_backend_id: "bk1" },
       isLoading: false,
@@ -108,6 +123,47 @@ describe("ProjectDetailPanel v0.9.12", () => {
       frequency: {},
       last_computed_at: new Date().toISOString(),
     });
+    mockSetupAPI.mockResolvedValue({
+      name: "grounded-sam2",
+      supported_prompts: ["text"],
+      supported_variants: [
+        {
+          key: "sam_variant",
+          title: "SAM 2",
+          variants: [
+            { value: "tiny", label: "Tiny", vram_gb: 1.5, tier: "fast" },
+            { value: "large", label: "Large", vram_gb: 6, tier: "accurate" },
+          ],
+        },
+        {
+          key: "dino_variant",
+          title: "DINO",
+          variants: [
+            { value: "T", label: "Tiny", vram_gb: 1.5, tier: "fast" },
+            { value: "B", label: "Base", vram_gb: 3.5, tier: "accurate" },
+          ],
+        },
+      ],
+      params: {
+        type: "object",
+        properties: {
+          box_threshold: { type: "number", default: 0.35, minimum: 0, maximum: 1 },
+          sam_variant: {
+            type: "string",
+            enum: ["tiny", "large"],
+            default: "tiny",
+            title: "SAM 2 变体",
+          },
+          dino_variant: {
+            type: "string",
+            enum: ["T", "B"],
+            default: "T",
+            title: "DINO 变体",
+          },
+        },
+      },
+    });
+    mockUpdatePreferences.mockResolvedValue(undefined);
   });
 
   it("渲染 header 含项目名 + ml_backend chip", () => {
@@ -224,6 +280,35 @@ describe("ProjectDetailPanel v0.9.12", () => {
     fireEvent.change(ta, { target: { value: "我手填的" } });
     // 多次 re-render 不应覆盖
     await waitFor(() => expect(ta.value).toBe("我手填的"));
+  });
+
+  it("ai-pre 变体选择随 params 透传到预标请求", async () => {
+    renderUI();
+    fireEvent.click(screen.getAllByRole("checkbox", { name: /选择/ })[0]);
+    fireEvent.change(screen.getByPlaceholderText(/car, person/), {
+      target: { value: "car" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("ai-variant-sam_variant")).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByTestId("ai-variant-sam_variant"), {
+      target: { value: "large" },
+    });
+    fireEvent.change(screen.getByTestId("ai-variant-dino_variant"), {
+      target: { value: "B" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /跑预标.*1 批/ }));
+
+    await waitFor(() => {
+      expect(mockTriggerMutate).toHaveBeenCalledWith(expect.objectContaining({
+        params: expect.objectContaining({
+          box_threshold: 0.35,
+          sam_variant: "large",
+          dino_variant: "B",
+        }),
+      }));
+    });
   });
 
   it("点返回按钮触发 onBack", () => {

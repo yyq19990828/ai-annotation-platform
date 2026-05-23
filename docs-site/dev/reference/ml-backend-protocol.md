@@ -207,7 +207,7 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 > 协议背后的架构决策：[ADR-0020 — ML Backend Capability 协商协议](../adr/0020-ml-backend-capability-negotiation.md)。该 ADR 解释了为什么 `params` 限制为 Draft-07 子集、为什么走 apps/api 代理而非前端直连。
 
-**响应**：JSON Schema 自描述协议。**必填**三元组：`name` / `version` / `model_version`；`supported_prompts` 决定 ToolDock 工具置灰；`params` 是 JSON Schema (Draft-07 子集)，前端 schema-form 自动渲染。
+**响应**：JSON Schema 自描述协议。**必填**三元组：`name` / `version` / `model_version`；`supported_prompts` 决定 ToolDock 工具置灰；`params` 是 JSON Schema (Draft-07 子集)，前端 schema-form 自动渲染；`supported_variants` 可选，用于给变体选择器补充显存 / 档位 / 推荐等富元数据。
 
 ```jsonc
 {
@@ -218,6 +218,16 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
   "labels": [],                                 // 可选. backend 已知类别 hint
   "supported_prompts": ["text", "exemplar"],     // 选项 A 的 sam3 不暴露 point/bbox: 物理上只有 PCS 找相似(exemplar)与 text; 单物体点/框需 grounded-sam2 或开 inst_interactivity
   "supported_text_outputs": ["box", "mask", "both"],
+  "supported_variants": [
+    {
+      "key": "sam_variant",
+      "title": "SAM 2 变体",
+      "variants": [
+        { "value": "tiny", "label": "SAM 2.1 Tiny", "vram_gb": 1.5, "tier": "fast" },
+        { "value": "small", "label": "SAM 2.1 Small", "vram_gb": 2.5, "tier": "balanced", "recommended": true }
+      ]
+    }
+  ],
   "params": {
     "type": "object",
     "properties": {
@@ -235,6 +245,8 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 ```
 
 > **变体 `readOnly` 语义（v0.10.23 起）**：grounded-sam2-backend 内置 ModelPool 后，`sam_variant` / `dino_variant` 去掉了 `readOnly`，前端可按会话切换，每次 `/predict` 经 `context.{sam_variant,dino_variant}` 携带请求级变体（详见 §2.2）。`sam_variant` enum 与 backend `SAM2_CONFIGS` key 一致：`tiny | small | base_plus | large`（注意是 `base_plus` 不是 `base`）。sam3-backend 单模型无 pool，其 variant 字段仍可保留 `readOnly`。
+>
+> **`supported_variants`（v0.10.40 起，可选）**：用于给 `params.sam_variant.enum` / `params.dino_variant.enum` 的裸字符串补富元数据。结构为数组，每项代表一个轴：`{ key, title?, description?, variants: [{ value, label?, vram_gb?, tier?, recommended?, note? }] }`。`key` 必须对应 `params.properties` 里的变体字段；`value` 必须与 enum 使用同一套 runtime 校验来源。前端优先读 `supported_variants` 渲染富选择器，缺失或为空时回落 `params.*_variant.enum`，因此老 backend 不需要立即升级。`tier` 建议使用 `fast | balanced | accurate`，但前端会容忍未知字符串。
 
 > **`supported_prompts`**：枚举 `point | bbox | text | exemplar | sketch | scribble | …`。前端 ToolDock 据此置灰不支持的工具（M2 / v0.10.2 落地）。
 >

@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.10.40] - 2026-05-23
+
+> **ai-pre 变体选择 + `/setup.supported_variants` 富元数据。** grounded-sam2 `/setup` 在保留 `params.*_variant.enum` 的同时新增 `supported_variants` 富数组，前端抽出共享变体选择器，工作台和 ai-pre 共用同一套富元数据显示；ai-pre 现在可选择 SAM / DINO 变体并随预标请求透传到 backend。计划见 [v0.10.40 计划](docs/plans/2026-05-23-v0.10.40-ai-pre-variant-selection.md)。
+
+### Added
+
+- **backend 变体富元数据** (gsam2 [main.py](apps/grounded-sam2-backend/main.py) · sam3 [main.py](apps/sam3-backend/main.py)): `/setup.supported_variants` 新增 `{ key, title, description, variants[] }`，每个变体携带 `value / label / vram_gb / tier / recommended / note`；值从 `SAM2_CONFIGS` / `DINO_CONFIGS` 同一套 runtime key 派生，旧 `params.sam_variant.enum` / `params.dino_variant.enum` 保留兼容。sam3 当前单模型档返回空数组。
+- **共享富变体选择器** (前端 [VariantSelector.tsx](apps/web/src/components/ml/VariantSelector.tsx)): 优先消费 `supported_variants` 展示显存、快速/均衡/精度档和推荐标识；老 backend 未上报时回落到 `/setup.params` 的 enum。保留 `ai-variant-selector` / `ai-variant-{key}` test id。
+- **ai-pre 变体透传** (前端 [ProjectDetailPanel.tsx](apps/web/src/pages/AIPreAnnotate/components/ProjectDetailPanel.tsx)): 图像批量预标参数面板加入 SAM / DINO 变体选择，值按 backend 记忆并并入 `params` 发给预标触发接口，最终落到 backend `/predict` context。
+
+### Changed
+
+- **工作台 AI 面板复用共享组件** (前端 [AIInspectorPanel.tsx](apps/web/src/pages/Workbench/shell/AIInspectorPanel.tsx) · [useWorkbenchShellModel.tsx](apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx)): 原私有裸 enum 选择器替换为共享富选择器；工作台变体仍保持会话级，普通后端参数继续按 backend 存用户偏好，避免 ai-pre 持久化的变体隐式影响工作台请求。
+- **协议与用户文档同步** ([ml-backend-protocol.md](docs-site/dev/reference/ml-backend-protocol.md) · [ai-preannotate.md](docs-site/user-guide/for-project-admins/ai-preannotate.md) · [sam-tool.md](docs-site/user-guide/for-annotators/sam-tool.md)): 补 `supported_variants` 结构、ai-pre 变体选择说明和工作台/ai-pre 持久化边界；ROADMAP 移除已完成的 P3 富元数据条目。
+
 ## [0.10.39] - 2026-05-23
 
 > **Workbench shell 继续瘦身：StageHost props 嵌套 + shell model hook。** `WorkbenchStageHost` 改成 `common / video / image / ai / editors` 五组嵌套 props，`WorkbenchShell` 把装配逻辑抽到新的 `useWorkbenchShellModel.tsx` 后回落到 66 行；无用户可见行为变更，属于内部结构重构与测试补强。计划见 [v0.10.39 计划](docs/plans/2026-05-23-v0.10.39-workbench-shell-slim.md)。

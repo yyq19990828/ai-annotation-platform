@@ -173,6 +173,75 @@ def _model_version(sam_variant: str, dino_variant: str) -> str:
     return f"grounded-sam2-dino{dino_variant}-sam2.1{sam_variant}"
 
 
+SAM2_VARIANT_METADATA = {
+    "tiny": {
+        "label": "SAM 2.1 Tiny",
+        "vram_gb": 1.5,
+        "tier": "fast",
+        "note": "最快冷启动，适合快速框选和资源紧张的显卡。",
+    },
+    "small": {
+        "label": "SAM 2.1 Small",
+        "vram_gb": 2.5,
+        "tier": "balanced",
+        "recommended": True,
+        "note": "速度和轮廓质量的默认推荐折中。",
+    },
+    "base_plus": {
+        "label": "SAM 2.1 Base+",
+        "vram_gb": 4.0,
+        "tier": "accurate",
+        "note": "更稳的细节边界，冷加载和显存占用更高。",
+    },
+    "large": {
+        "label": "SAM 2.1 Large",
+        "vram_gb": 6.0,
+        "tier": "accurate",
+        "note": "最高精度档，建议大显存环境按需预热。",
+    },
+}
+
+DINO_VARIANT_METADATA = {
+    "T": {
+        "label": "GroundingDINO Swin-T",
+        "vram_gb": 1.5,
+        "tier": "fast",
+        "recommended": True,
+        "note": "文本检测默认推荐档，速度优先。",
+    },
+    "B": {
+        "label": "GroundingDINO Swin-B",
+        "vram_gb": 3.5,
+        "tier": "accurate",
+        "note": "文本检测更准，显存和冷启动成本更高。",
+    },
+}
+
+
+def _variant_options(
+    configs: dict[str, tuple[str, str]], metadata: dict[str, dict]
+) -> list[dict]:
+    """Build rich variant options from the same keys used for runtime validation."""
+    return [{"value": key, **metadata.get(key, {"label": key})} for key in configs]
+
+
+def _supported_variants() -> list[dict]:
+    return [
+        {
+            "key": "sam_variant",
+            "title": "SAM 2 变体",
+            "description": "分割模型尺寸。越大通常越精细，但冷加载更慢、显存占用更高。",
+            "variants": _variant_options(SAM2_CONFIGS, SAM2_VARIANT_METADATA),
+        },
+        {
+            "key": "dino_variant",
+            "title": "GroundingDINO 变体",
+            "description": "文本检测模型尺寸。T 更快，B 更准更吃资源。",
+            "variants": _variant_options(DINO_CONFIGS, DINO_VARIANT_METADATA),
+        },
+    ]
+
+
 # 默认变体的 model_version, 供 /setup / /versions 等"无请求上下文"的端点使用.
 MODEL_VERSION = _model_version(SAM_VARIANT, DINO_VARIANT)
 
@@ -358,6 +427,8 @@ def setup() -> dict:
         "supported_text_outputs": ["box", "mask", "both"],
         # v0.10.35 §B · 平台 video_tracker 协议桥据此判断 backend 是否支持视频跟踪.
         "supported_trackers": ["sam2_video"],
+        # v0.10.40 · 富变体元数据: 与 params.*_variant.enum 同源, enum 保留作老前端兼容.
+        "supported_variants": _supported_variants(),
         "params": {
             "type": "object",
             "properties": {

@@ -119,6 +119,12 @@
   font-size: 11px;
 }
 
+.backendParamsStack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .aliasList {
   display: flex;
   flex-wrap: wrap;

@@ -6,7 +6,7 @@ status: stable
 last_reviewed: 2026-05-09
 ---
 
-# AI 预标（v0.9.5 / v0.9.6 / v0.9.7 / v0.9.8 / v0.9.12 / v0.10.38）
+# AI 预标（v0.9.5 / v0.9.6 / v0.9.7 / v0.9.8 / v0.9.12 / v0.10.38 / v0.10.40）
 
 > 一次性给整批图跑 SAM 文本预标，标注员从 AI 候选起步而非从 0 画。
 
@@ -16,6 +16,11 @@ last_reviewed: 2026-05-09
 - **多 backend 选择**：项目注册了多个 ML backend 时，执行页出现 backend 下拉，可在已注册 backend 间切换（默认项目绑定值），不必每次回设置页改绑定。
 - **按后端参数面板**：选中 backend 后，按它 `/setup` 自报的参数（如 `box_threshold` / `text_threshold`）渲染参数面板，**按 backend 分别记忆**（每个用户各自一份）；跑预标时随请求带上，覆盖项目级阈值兜底。取代了旧的项目级阈值滑块（项目默认值仍可在「项目设置 → 基本信息」改）。
 - **统一 AI 任务历史**：`/ai-pre/jobs` 加「图像 / 视频」两个 tab——图像列 `prediction_jobs`、视频列 `video_tracker_jobs`（原模型市场的「视频追踪任务」监控页已并入此处，旧链接 `/model-market/video-jobs` 自动跳转）。模型市场只保留后端 / 显存池健康观测。
+
+**v0.10.40 起** — 图像项目的 ai-pre 参数面板支持模型变体选择：
+
+- grounded-sam2 这类 backend 在 `/setup.supported_variants` 上报富元数据后，ai-pre 会显示 SAM / DINO 变体选择器，选项带显存估算、速度/精度档位和推荐标识。
+- 变体与普通后端参数一起按 backend 记忆；触发预标时会并入请求 `params`，最终透传到 backend `/predict` 的 `context.sam_variant` / `context.dino_variant`。
 
 **v0.9.12 起** (Humming Roaming Oasis) — 信息架构重构：
 
@@ -63,7 +68,7 @@ last_reviewed: 2026-05-09
 
 页面顶部下拉选项目（仅显示已启用 AI 的）；下方批次下拉自动按所选项目过滤，仅 active 状态的可选。
 
-### 2. 输入 prompt + 选输出形态
+### 2. 输入 prompt + 选输出形态 / 后端参数
 
 英文 prompt 召回最佳。例：`person`、`ripe apple`、`car . truck . bicycle`（多类用 `.` 分隔）。
 
@@ -78,6 +83,8 @@ last_reviewed: 2026-05-09
 - `⊕ 全部`：同实例配对返回 box + polygon
 
 默认值按项目 type_key 智能选；项目级 `text_output_default`（项目设置 / 新建项目 wizard step 4 可设）覆盖默认。
+
+**后端参数与变体**：勾选批次后，页面会按选中 backend 的 `/setup.params` 显示参数表单。grounded-sam2 会额外显示 SAM / DINO 变体选择器；选择 `large` / `B` 等变体后再跑预标，请求会带上对应 variant。若 backend 未上报富元数据，页面仍会回落到 enum 下拉。
 
 ### 3. 启动 + 实时进度
 

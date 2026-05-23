@@ -241,6 +241,8 @@ def setup() -> dict:
         "supported_text_outputs": ["box", "mask", "both"],
         # exemplar 走 add_geometric_prompt; state 同时产出 boxes/masks, 三档都支持.
         "supported_geometric_outputs": ["box", "mask", "both"],
+        # v0.10.40 · SAM 3 当前只有单模型档, 保留空数组让前端富选择器自然隐藏.
+        "supported_variants": [],
         "params": {
             "type": "object",
             "properties": {

@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
+import { VariantSelector } from "@/components/ml/VariantSelector";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProject } from "@/hooks/useProjects";
 import { useBatches } from "@/hooks/useBatches";
@@ -26,6 +27,7 @@ import { aliasFrequencyApi } from "@/api/aliasFrequency";
 import { mlBackendsApi } from "@/api/ml-backends";
 import {
   SchemaForm,
+  VARIANT_FIELD_KEYS,
   deriveDefaults,
   type JsonSchemaObject,
 } from "@/pages/Workbench/components/SchemaForm";
@@ -136,6 +138,11 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
     retry: false,
   });
   const paramsSchema = setupQ.data?.params as JsonSchemaObject | undefined;
+  const paramKeys = Object.keys(paramsSchema?.properties ?? {});
+  const hasAnyParams = paramKeys.length > 0;
+  const hasNonVariantParams = paramKeys.some(
+    (key) => !VARIANT_FIELD_KEYS.includes(key as (typeof VARIANT_FIELD_KEYS)[number]),
+  );
   const { savedParams, save: saveParams } = useAiToolParamPrefs(selectedBackendId);
   const [paramsValue, setParamsValue] = useState<Record<string, unknown>>({});
   // 选中 backend / schema / 偏好就绪时, 用 偏好 → schema 默认 重建参数值
@@ -516,11 +523,21 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
                   无法拉取 backend /setup，运行时回落项目级阈值。
                 </div>
               ) : (
-                <SchemaForm
-                  schema={paramsSchema}
-                  value={paramsValue}
-                  onChange={onParamsChange}
-                />
+                <div className={styles.backendParamsStack}>
+                  <VariantSelector
+                    schema={paramsSchema}
+                    supportedVariants={setupQ.data?.supported_variants}
+                    value={paramsValue}
+                    onChange={onParamsChange}
+                  />
+                  {(hasNonVariantParams || !hasAnyParams) && (
+                    <SchemaForm
+                      schema={paramsSchema}
+                      value={paramsValue}
+                      onChange={onParamsChange}
+                    />
+                  )}
+                </div>
               )}
             </div>
 

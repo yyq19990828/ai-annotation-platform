@@ -29,6 +29,7 @@ describe("useMLCapabilities", () => {
       version: "0.10.1",
       model_version: "sam3.1",
       supported_prompts: ["bbox", "text", "exemplar"],
+      supported_variants: [{ key: "sam_variant", variants: [{ value: "tiny" }] }],
       params: { type: "object", properties: { box_threshold: { type: "number" } } },
     });
     const { result } = renderHook(
@@ -40,6 +41,7 @@ describe("useMLCapabilities", () => {
     expect(result.current.isPromptSupported("bbox")).toBe(true);
     expect(result.current.isPromptSupported("point")).toBe(false);
     expect(result.current.paramsSchema?.type).toBe("object");
+    expect(result.current.capability?.supported_variants?.[0]?.key).toBe("sam_variant");
   });
 
   it("falls back to point/bbox/text when supported_prompts missing", async () => {

@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { VariantSelector } from "@/components/ml/VariantSelector";
+import type { MLBackendSupportedVariantGroup } from "@/api/ml-backends";
 import type { Annotation, AnnotationResponse } from "@/types";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import type { AttributeSchema } from "@/api/projects";
@@ -216,6 +218,7 @@ interface AIPredictionPopoverProps {
   taskAiPredictionCount?: number;
   // v0.10.23 · 会话级模型变体选择 (设计 A): 选项来自 /setup.params 的 sam_variant/dino_variant enum.
   paramsSchema?: JsonSchemaObject;
+  supportedVariants?: MLBackendSupportedVariantGroup[];
   aiVariant?: Record<string, unknown>;
   onSetAiVariant?: (next: Record<string, unknown>) => void;
   // 后端级推理参数 (阈值等非变体字段): SchemaForm 渲染。值/回调即 workbench 的 aiToolParams。
@@ -241,6 +244,7 @@ export function AIPredictionPopover({
   taskAiAvgMs,
   taskAiPredictionCount,
   paramsSchema,
+  supportedVariants,
   aiVariant,
   onSetAiVariant,
   params,
@@ -288,6 +292,12 @@ export function AIPredictionPopover({
     node.style.setProperty("--ai-inspector-popover-right", `${rightOffset}px`);
     node.style.removeProperty("--ai-inspector-popover-left");
   }, [open, position, rightOffset]);
+
+  const hasVariantSelector =
+    (supportedVariants ?? []).some((group) => (group.variants ?? []).length > 0) ||
+    Object.keys(paramsSchema?.properties ?? {}).some(
+      (k) => VARIANT_FIELD_KEYS.includes(k as (typeof VARIANT_FIELD_KEYS)[number]),
+    );
 
   if (!open) return null;
 
@@ -364,12 +374,15 @@ export function AIPredictionPopover({
       </div>
 
       {/* v0.10.23 · 设计 A · 会话级模型变体选择 (切工具不丢); /setup.params 无变体字段时整段隐藏. */}
-      {onSetAiVariant && (
-        <VariantSelector
-          schema={paramsSchema}
-          value={aiVariant ?? {}}
-          onChange={onSetAiVariant}
-        />
+      {onSetAiVariant && hasVariantSelector && (
+        <div className={styles.variantSelector}>
+          <VariantSelector
+            schema={paramsSchema}
+            supportedVariants={supportedVariants}
+            value={aiVariant ?? {}}
+            onChange={onSetAiVariant}
+          />
+        </div>
       )}
 
       {/* 后端级推理参数 (阈值等非变体字段)。SchemaForm 内部已排除 variant 字段, 不与上方变体选择器重复;
@@ -412,51 +425,6 @@ export function AIPredictionPopover({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// ── v0.10.23 · 设计 A · 会话级模型变体选择 ───────────────────────────────────
-// 选项来自 /setup.params 的 sam_variant / dino_variant enum, 原值直接渲染 (不做名称映射,
-// 对齐 backend 已统一的 ["tiny","small","base_plus","large"]). grounded-sam2 双轴 → 两个下拉;
-// /setup.params 不含变体字段时整段隐藏 (如 sam3-backend).
-interface VariantSelectorProps {
-  schema?: JsonSchemaObject;
-  value: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
-}
-
-function VariantSelector({ schema, value, onChange }: VariantSelectorProps) {
-  const fields = VARIANT_FIELD_KEYS.map((key) => {
-    const raw = schema?.properties?.[key];
-    const field = raw && typeof raw === "object" ? (raw as { title?: string; enum?: unknown; default?: unknown }) : null;
-    const options = Array.isArray(field?.enum) ? (field!.enum as unknown[]).filter((o): o is string => typeof o === "string") : [];
-    if (!field || options.length === 0) return null;
-    return { key, title: field.title ?? key, options, fallback: typeof field.default === "string" ? field.default : options[0] };
-  }).filter((f): f is NonNullable<typeof f> => f !== null);
-
-  if (fields.length === 0) return null;
-
-  return (
-    <div data-testid="ai-variant-selector" className={styles.variantSelector}>
-      {fields.map(({ key, title, options, fallback }) => {
-        const current = typeof value[key] === "string" ? (value[key] as string) : fallback;
-        return (
-          <div key={key} className={styles.variantField}>
-            <span className={styles.variantLabel}>{title}</span>
-            <select
-              data-testid={`ai-variant-${key}`}
-              value={current}
-              onChange={(e) => onChange({ ...value, [key]: e.target.value })}
-              className={styles.variantSelect}
-            >
-              {options.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-          </div>
-        );
-      })}
     </div>
   );
 }

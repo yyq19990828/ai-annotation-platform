@@ -23,6 +23,22 @@ export interface MLBackendVariant {
   dino_variant?: string;
 }
 
+export interface MLBackendSupportedVariantOption {
+  value: string;
+  label?: string;
+  vram_gb?: number;
+  tier?: "fast" | "balanced" | "accurate" | string;
+  recommended?: boolean;
+  note?: string;
+}
+
+export interface MLBackendSupportedVariantGroup {
+  key: string;
+  title?: string;
+  description?: string;
+  variants?: MLBackendSupportedVariantOption[];
+}
+
 // v0.10.1 · /setup 协议自描述响应 (与后端 sam3/grounded-sam2 main.py 同构).
 // `params` 为 JSON Schema (Draft-07 子集), M2 schema-form 据此渲染参数面板.
 export interface MLBackendCapability {
@@ -36,6 +52,8 @@ export interface MLBackendCapability {
   supported_geometric_outputs?: string[];
   // v0.10.36 · 支持的视频 tracker 列表 (如 ["sam2_video"]); 空/缺 = 不支持视频追踪.
   supported_trackers?: string[];
+  // v0.10.40 · 变体富元数据; 缺失时前端回落 params.*_variant.enum.
+  supported_variants?: MLBackendSupportedVariantGroup[];
   params?: {
     type?: string;
     properties?: Record<string, unknown>;
