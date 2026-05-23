@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-11
+last_reviewed: 2026-05-23
 ---
 
 # 导出
@@ -21,11 +21,11 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 
 | 参数 | 取值 | 说明 |
 |---|---|---|
-| `targets` | 可重复，多选 | `coco` / `yolo-det` / `yolo-obb` / `yolo-seg` / `aap_json` / `video_json` / `mot` / `kitti`；`voc` 仅可单选（与其它混选返 400），走同步 blob 下载 |
+| `targets` | 可重复，多选 | `coco` / `yolo-det` / `yolo-obb` / `yolo-seg` / `aap_json` / `video_json` / `yolo-frames-det` / `mot` / `kitti`；`voc` 仅可单选（与其它混选返 400），走同步 blob 下载 |
 | `include_attributes` | `true` / `false` | 是否携带 `annotation.attributes` 与 `project.attribute_schema` |
 | `video_frame_mode` | `keyframes` / `all_frames` | 仅 `video-track` 生效；默认 `keyframes` |
 
-非 VOC 目标返回 `202 {job_id}`；勾选多个目标时产物 ZIP 内各目标落 `{target}/` 子目录，单目标落包根。`video-track` 项目只接受视频目标（`video_json` / `aap_json` / `mot` / `kitti`），选图片目标会返回 400。
+非 VOC 目标返回 `202 {job_id}`；勾选多个目标时产物 ZIP 内各目标落 `{target}/` 子目录，单目标落包根。`video-track` 项目只接受视频目标（`video_json` / `yolo-frames-det` / `aap_json` / `mot` / `kitti`），选图片目标会返回 400。
 
 ## 格式说明
 
@@ -36,6 +36,9 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 | **yolo-obb** | YOLO 旋转框 txt（rotated_bbox 四角） |
 | **yolo-seg** | YOLO 分割 txt（polygon / mask 归一化多边形） |
 | **aap_json** | 平台原生无损中间格式（双数组 annotations / predictions） |
+| **yolo-frames-det** | `video-track` 专用逐帧 YOLO 检测集，按采样网格抽帧，合并 `video_bbox` 与 `video_track` 摊平框 |
+| **mot** | MOT 16/17/20 tracking 评测格式，按采样网格重排帧号 |
+| **kitti** | KITTI Tracking 2D label 文本 |
 | **voc** | Pascal VOC XML（仅同步单选） |
 | **video tracks json** | `video-track` 专用 JSON（`video_json` 目标） |
 
@@ -43,7 +46,7 @@ v0.10.43 起 COCO / YOLO 不再只处理 bbox：各目标按其消费的几何�
 
 ## 视频轨迹导出
 
-v0.9.18 起，`video-track` 项目通过 `format=coco` 入口返回专用 Video Tracks JSON，文件名为 `*_video_tracks.json`。响应顶层包含：
+`video-track` 项目通过 `targets=video_json` 返回专用 Video Tracks JSON。响应顶层包含：
 
 ```json
 {
@@ -80,6 +83,13 @@ v0.9.18 起，`video-track` 项目通过 `format=coco` 入口返回专用 Video 
 - `all_frames`：在每条 track 的 `frames[]` 中展开逐帧 bbox。后端按相邻有效关键帧线性插值，`outside` 段阻断跨段插值、不输出 bbox。缺少 `frame_count` 时用最大已标注帧兜底。
 
 `include_attributes=false` 时，视频 JSON 不输出 `project.attribute_schema`，也不输出 track / legacy `video_bbox` 的 `attributes`。
+
+`targets=yolo-frames-det` 会生成逐帧 YOLO 检测集：
+
+- 帧集来自项目采样网格 `derive_sampled_frames(frame_count, step)`，不是全帧，也不是仅关键帧。
+- `video_bbox` 单帧框只在 `frame_index` 落网格时输出。
+- `video_track` 先用 `resolved_track_frames(..., frame_mode="all_frames")` 展开，再筛采样网格；`outside` 区间不输出框。
+- ZIP 内写 `labels/{sequence}/{frame:06d}.txt`、`classes.txt`、`data.yaml`、`manifest.json`、`fetch_videos.py`、`fetch_frames.py`。帧图不打包，`fetch_frames.py` 会抽到 `images/{sequence}`，与 label 路径对齐。
 
 schema 语义见 [视频标注工作台](/dev/concepts/video-annotation-workbench)。
 

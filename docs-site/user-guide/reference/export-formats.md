@@ -13,7 +13,7 @@ last_reviewed: 2026-05-23
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。**v0.10.43 起导出目标可多选**，一次导出产出**一个**压缩包：勾选单个目标时落包根（与旧布局一致），勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / AAP JSON / MOT / KITTI**（v0.10.31 起）。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI**。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -30,9 +30,9 @@ last_reviewed: 2026-05-23
 
 > **重复导出走缓存**：一周内对**同一范围（项目 / 批次）+ 同一组导出目标 + 同一参数**、且标注未发生增删改的重复导出会**瞬间完成**（复用上次生成的产物）。目标集合顺序无关（勾选顺序不影响命中）。只要标注有任何增删改，就会重新生成。
 
-## 产物形态：仅标注 + 回源脚本（不含图片本体）
+## 图片产物形态：仅标注 + 回源脚本（不含图片本体）
 
-为了控制体积、并尊重「用户本地往往已有原图」的现实，导出的 ZIP **只包含标注与回源脚本，不打包图片本体**。无论选哪种格式，包内都含以下公共文件：
+为了控制体积、并尊重「用户本地往往已有原图」的现实，图片导出的 ZIP **只包含标注与回源脚本，不打包图片本体**。无论图片项目选哪种格式，包内都含以下公共文件：
 
 | 文件 | 说明 |
 |---|---|
@@ -209,13 +209,20 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 ## 视频轨迹
 
-v0.10.31 起，`video-track` 项目导出可选 **Video JSON / AAP JSON / MOT / KITTI** 四种格式，统一走异步 zip 管线。导出包含标注主体 + `manifest.json` + `fetch_videos.py`（按预签名 URL 回源视频）；MOT/KITTI 另带 `fetch_frames.py`（用本地 ffmpeg 按采样网格帧号抽 `img1/` 帧序列，遵循「不物理打包帧」）。
+v0.10.31 起，`video-track` 项目导出统一走异步 zip 管线；v0.10.44 起可选 **Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI**。导出包含标注主体 + `manifest.json` + `fetch_videos.py`（按预签名 URL 回源视频）；MOT / KITTI / YOLO 逐帧另带 `fetch_frames.py`（用本地 ffmpeg 按采样网格帧号抽帧，遵循「不物理打包帧」）。
 
 **Video JSON**（帧模式二选一）：
 
 - **关键帧**：默认模式，只导出人工 / 预测关键帧，适合备份、质检和后续继续编辑。
 - **所有帧**：导出时按相邻有效关键帧线性插值展开每帧 bbox，适合下游训练或逐帧质检。
 - 顶层包含 `export_type: "video_tracks"`、`frame_mode`、项目 / 类别 / 任务信息、`tracks[]`、扁平 `keyframes[]`、旧版 `video_bbox[]` 和 `video_metadata`。
+
+**YOLO 逐帧（检测）**：目标名 `yolo-frames-det`。每个视频 = 一个 sequence，按项目采样网格抽帧，包内写 `labels/{sequence}/{frame:06d}.txt`，行格式与图片 YOLO 检测一致：`<cls> <cx> <cy> <w> <h>`（归一化）。来源同时包含：
+
+- `video_bbox`：单帧框的 `frame_index` 落在采样网格上才输出，off-grid 框跳过。
+- `video_track`：按相邻有效关键帧线性插值摊平成逐帧框，再只取采样网格帧；`outside` 区间不输出框。
+
+`fetch_frames.py` 会把对应帧抽到 `images/{sequence}/{frame:06d}.jpg`，与 `labels/{sequence}` 对齐；ZIP 不直接包含帧图。每个采样帧都会有一个 label 文件，空帧写空 `.txt`。
 
 **MOT 16/17/20**：每个视频 = 一个 sequence，落 `{sequence}/gt/gt.txt`（`frame,id,bb_left,bb_top,bb_w,bb_h,conf,x,y,z`）+ `{sequence}/seqinfo.ini`，可直接喂 trackeval。轨迹整数 `id` 自动派生；帧号按采样网格重排 1..N（如 60fps 采 10fps 则 `frameRate=10`）。
 
@@ -226,7 +233,7 @@ v0.10.31 起，`video-track` 项目导出可选 **Video JSON / AAP JSON / MOT / 
 目标消失语义（各格式共用）：
 
 - `outside` 闭区间段表示目标在该段帧内不存在（v0.10.30 起统一用此表达，旧 `absent` 字段已删除）。
-- 所有帧模式 / MOT / KITTI 都不跨越 `outside` 段插值，也不在其中输出 bbox（MOT/KITTI 直接省略该帧）。
+- 所有帧模式 / YOLO 逐帧 / MOT / KITTI 都不跨越 `outside` 段插值，也不在其中输出 bbox（MOT/KITTI 直接省略该帧，YOLO 保留该帧空 label 或其它对象的 label）。
 - `occluded=true` 表示目标存在但被遮挡，仍可参与插值；MOT 仍输出该帧，KITTI 置 occluded 列=1。
 
 ## 选哪个？
@@ -240,7 +247,8 @@ v0.10.31 起，`video-track` 项目导出可选 **Video JSON / AAP JSON / MOT / 
 | **跨实例无损迁移 / 客户自训模型预测灌入** | **AAP JSON** |
 | 数据迁移 / 备份 | AAP JSON / Label Studio JSON |
 | 视频轨迹备份 / 质检 | Video JSON（关键帧） |
-| 视频逐帧训练 | Video JSON（所有帧） |
+| 视频逐帧训练（目标检测） | YOLO 逐帧 |
+| 视频逐帧质检 / 自定义脚本处理 | Video JSON（所有帧） |
 | 视频多目标跟踪评测（trackeval） | MOT 16/17/20 |
 | 视频跟踪（KITTI 工具链） | KITTI Tracking |
 | 视频跨实例无损迁移 | AAP JSON |

@@ -38,6 +38,7 @@ const IMAGE_OPTIONS: ImageOption[] = [
 
 const VIDEO_OPTIONS: TargetOption[] = [
   { value: "video_json", label: "Video JSON", description: "平台视频轨迹 JSON，可选关键帧或展开所有帧。" },
+  { value: "yolo-frames-det", label: "YOLO 逐帧", description: "按采样网格抽帧，导出检测训练用 labels。" },
   { value: "aap_json", label: "AAP JSON", description: "无损保留 video_track geometry 与项目配置。" },
   { value: "mot", label: "MOT", description: "MOT 16/17/20 跟踪评测格式，按采样网格重排帧号。" },
   { value: "kitti", label: "KITTI", description: "KITTI Tracking 2D labels，适配 KITTI 工具链。" },

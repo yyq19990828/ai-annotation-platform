@@ -351,7 +351,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 
 插值规则与前端显示保持一致：outside 段优先；精确关键帧其次；`occluded=true` 表示目标存在但遮挡，不阻断插值。`video_frame_mode=all_frames` 不输出 outside 范围内的 bbox，也不会把 track → `video_bbox` 转换到 outside 帧上。
 
-`include_attributes=false` 会移除 `project.attribute_schema` 以及 track / legacy `video_bbox` 上的 `attributes`。`format=yolo|voc` 对视频项目返回 400，因为这两个格式会丢失 track 与关键帧语义。
+`include_attributes=false` 会移除 `project.attribute_schema` 以及 track / legacy `video_bbox` 上的 `attributes`。图片侧 `yolo-det` / `yolo-obb` / `yolo-seg` / `voc` 对视频项目返回 400；视频检测训练集要使用 `targets=yolo-frames-det`，它按采样网格抽帧并把 `video_bbox` 与摊平后的 `video_track` 写成逐帧 YOLO label。
 
 ## 前端 Stage 边界
 

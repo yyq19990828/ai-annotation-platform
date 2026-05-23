@@ -5,7 +5,20 @@
 
 from __future__ import annotations
 
-from app.services.export_packaging import relative_path_from_file_path
+import io
+import json
+import uuid
+import zipfile
+
+from app.db.models.annotation import Annotation
+from app.db.models.dataset import DatasetItem
+from app.db.models.project import Project
+from app.db.models.task import Task
+from app.services.export_packaging import (
+    _build_video_export_zip,
+    clean_export_targets,
+    relative_path_from_file_path,
+)
 
 
 def test_strips_dataset_prefix():
@@ -41,3 +54,125 @@ def test_empty_dataset_name_returns_full_path():
 
 def test_flat_file_at_dataset_root():
     assert relative_path_from_file_path("ds/001.jpg", "ds") == "001.jpg"
+
+
+def test_clean_export_targets_accepts_video_yolo_frames_det():
+    assert clean_export_targets(["video_json", "yolo-frames-det", "video_json"]) == [
+        "video_json",
+        "yolo-frames-det",
+    ]
+
+
+async def test_video_yolo_frames_zip_writes_grid_labels_and_manifest(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.export_packaging.storage_service.generate_download_url",
+        lambda *args, **kwargs: "signed-url",
+    )
+    project_id = uuid.uuid4()
+    item_id = uuid.uuid4()
+    dataset_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    project = Project(
+        id=project_id,
+        display_id="P-1",
+        name="Video Project",
+        type_key="video-track",
+        type_label="Video Track",
+        data_type="video",
+        owner_id=uuid.uuid4(),
+        video_sampling={"mode": "step", "frame_step": 2},
+        tool_bindings={
+            "bbox": {
+                "enabled": True,
+                "classes": [
+                    {"name": "car", "order": 0},
+                    {"name": "person", "order": 1},
+                ],
+                "attribute_schema": {"fields": [{"key": "speed"}]},
+            }
+        },
+    )
+    item = DatasetItem(
+        id=item_id,
+        dataset_id=dataset_id,
+        file_name="clip-a.mp4",
+        file_path="videos/clip-a.mp4",
+        file_type="video",
+        metadata_={"video": {"fps": 10, "frame_count": 5, "width": 640, "height": 360}},
+    )
+    task = Task(
+        id=task_id,
+        project_id=project_id,
+        dataset_item_id=item_id,
+        display_id="T-1",
+        file_name="clip-a.mp4",
+        file_path="videos/clip-a.mp4",
+        file_type="video",
+    )
+    track = Annotation(
+        id=uuid.uuid4(),
+        task_id=task_id,
+        project_id=project_id,
+        user_id=uuid.uuid4(),
+        annotation_type="video_track",
+        class_name="car",
+        geometry={
+            "type": "video_track",
+            "track_id": "trk-1",
+            "keyframes": [
+                {"frame_index": 0, "bbox": {"x": 0.0, "y": 0.0, "w": 0.2, "h": 0.2}},
+                {"frame_index": 4, "bbox": {"x": 0.6, "y": 0.6, "w": 0.2, "h": 0.2}},
+            ],
+            "outside": [{"from": 2, "to": 2}],
+        },
+        attributes={"speed": 50},
+    )
+    bbox = Annotation(
+        id=uuid.uuid4(),
+        task_id=task_id,
+        project_id=project_id,
+        user_id=uuid.uuid4(),
+        annotation_type="video_bbox",
+        class_name="person",
+        geometry={
+            "type": "video_bbox",
+            "frame_index": 2,
+            "x": 0.2,
+            "y": 0.2,
+            "w": 0.2,
+            "h": 0.4,
+        },
+        attributes={"speed": 3},
+    )
+
+    data, file_count = await _build_video_export_zip(
+        None,
+        None,
+        project,
+        [task],
+        [track, bbox],
+        {item_id: item},
+        batch_id=None,
+        targets=["yolo-frames-det"],
+        include_attributes=True,
+        video_frame_mode="keyframes",
+    )
+
+    assert file_count == 3
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert "data.yaml" in zf.namelist()
+        assert "fetch_frames.py" in zf.namelist()
+        assert zf.read("labels/clip-a/000001.txt").decode() == (
+            "0 0.100000 0.100000 0.200000 0.200000"
+        )
+        assert zf.read("labels/clip-a/000002.txt").decode() == (
+            "1 0.300000 0.400000 0.200000 0.400000"
+        )
+        assert zf.read("labels/clip-a/000003.txt").decode() == (
+            "0 0.700000 0.700000 0.200000 0.200000"
+        )
+        manifest = json.loads(zf.read("manifest.json"))
+        video = manifest["videos"][0]
+        assert video["grid_source_frames"] == [0, 2, 4]
+        assert video["frame_start_number"] == 1
+        assert video["frame_output_dirs"] == ["images/clip-a"]

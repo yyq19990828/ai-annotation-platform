@@ -130,12 +130,14 @@ stateDiagram-v2
 
 ## 批次导出
 
-项目管理员可以按批次导出当前批次内的任务标注。图片项目沿用 COCO / YOLO / AAP JSON；视频轨迹项目导出 Video JSON。
+项目管理员可以按批次导出当前批次内的任务标注。图片项目沿用 COCO / YOLO / AAP JSON；视频轨迹项目可导出 Video JSON / YOLO 逐帧 / AAP JSON / MOT / KITTI。
 
 视频轨迹批次支持两种帧模式：
 
 - **关键帧**：默认模式，只导出人工 / 预测关键帧。
 - **所有帧**：按关键帧插值展开逐帧 bbox。
+
+如果要把视频标注导成传统检测训练集，选择 **YOLO 逐帧**：系统会按项目采样网格生成 label，并附 `fetch_frames.py` 用本地 ffmpeg 抽出对应帧图。
 
 如果关闭“包含属性”，导出文件不会包含项目属性 schema，也不会包含标注属性。
 

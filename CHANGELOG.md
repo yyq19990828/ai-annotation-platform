@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.10.44] - 2026-05-23
+
+> **视频逐帧 YOLO 检测集导出。** 视频轨迹项目新增 `yolo-frames-det` 目标，把源视频按项目采样网格投影成 YOLO 检测训练集：`video_bbox` 单帧框直接落帧，`video_track` 通过插值摊平成逐帧框，`outside` 区间不产框；帧图仍不打进 ZIP，随包的 `fetch_frames.py` 按 manifest 抽到 `images/{sequence}`。计划见 [v0.10.44 计划](docs/plans/2026-05-23-v0.10.44-video-frame-yolo-export.md)。
+
+### Added
+
+- **`yolo-frames-det` 视频导出目标** (后端 [export_packaging.py](apps/api/app/services/export_packaging.py) · [export_video.py](apps/api/app/services/export_video.py)): 视频 ZIP 分支新增逐帧 YOLO det 写入器；每个 task 作为一个 sequence，按 `derive_sampled_frames(frame_count, step)` 生成 `labels/{sequence}/{frame:06d}.txt`，同时保留空 label 文件，保证 label 数与抽帧数一致。
+- **单帧 + 轨迹双来源** ([export_video.py](apps/api/app/services/export_video.py)): `video_bbox` 只在其源帧落入采样网格时输出；`video_track` 复用 `resolved_track_frames(..., all_frames)` 展开插值后再筛采样网格，`outside` 帧天然跳过。启用 `include_attributes` 时按 label 行写伴生 `.attrs.json`。
+- **YOLO 帧回源 manifest** ([export_packaging.py](apps/api/app/services/export_packaging.py)): `manifest.json` 增 `frame_output_dirs`，`fetch_frames.py` 会把 yolo 目标的帧抽到 `images/{sequence}`，与 `labels/{sequence}` 对齐；多目标 ZIP 时落在 `yolo-frames-det/images` / `yolo-frames-det/labels` 子树。
+- **前端导出目标** ([ExportSection.tsx](apps/web/src/pages/Dashboard/ExportSection.tsx) · [projects.ts](apps/web/src/api/projects.ts)): 视频导出 Modal 新增「YOLO 逐帧」选项，可与 Video JSON / AAP JSON / MOT / KITTI 多选；单独选择该目标时不显示 Video JSON 的帧模式参数。
+
+### Changed
+
+- **导出 API 目标清单同步** ([projects.py](apps/api/app/api/v1/projects.py) · [batches.py](apps/api/app/api/v1/batches.py)): `targets` 校验与 OpenAPI 描述加入 `yolo-frames-det`；图片 COCO / YOLO / VOC 对视频项目的旧禁令保持不变。
+
 ## [0.10.43] - 2026-05-23
 
 > **导出能力重整（图像）：多目标多选 + 多几何 + 友好下载名。** 导出从「单格式 / 仅矩形框」升级为可一次多选导出目标（一个 job 产一个 zip，>1 目标分子目录），COCO 现可同时承载 segmentation / keypoints / group_id，YOLO 拆为 det / obb / seg 三个变体按几何映射，下载名改为可读的 `{项目}_{数据集}_{job 前 8 位}.zip`。本版即 ROADMAP §A P2「新几何导出支持」的落地。计划见 [v0.10.43 计划](docs/plans/2026-05-23-v0.10.43-export-targets-overhaul.md)。

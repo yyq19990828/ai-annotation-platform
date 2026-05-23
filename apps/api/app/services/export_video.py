@@ -85,6 +85,67 @@ def track_grid_rows(
     return rows
 
 
+# ── YOLO frame detection dataset ──────────────────────────────────────
+
+
+def _yolo_det_line(class_id: int, bbox: dict) -> str:
+    cx = float(bbox.get("x", 0)) + float(bbox.get("w", 0)) / 2
+    cy = float(bbox.get("y", 0)) + float(bbox.get("h", 0)) / 2
+    bw = float(bbox.get("w", 0))
+    bh = float(bbox.get("h", 0))
+    return f"{class_id} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}"
+
+
+def build_yolo_frame_det_labels(
+    tracks: list[tuple[str | None, dict, dict]],
+    bboxes: list[tuple[str | None, dict, dict]],
+    cat_map: dict[str, int],
+    *,
+    frame_count: int,
+    step: int,
+    frame_start_number: int,
+    include_attributes: bool,
+) -> dict[int, tuple[list[str], list[dict]]]:
+    """YOLO det labels for sampled video frames.
+
+    Keys are output frame numbers, matching ``fetch_frames.py`` filenames. Values are
+    ``(label_lines, attrs_per_line)``. All sampled frames are present, including
+    empty labels, so YOLO has a txt file for every extracted image.
+    """
+    grid = source_to_grid(frame_count, step)
+    labels: dict[int, tuple[list[str], list[dict]]] = {
+        grid_index + frame_start_number: ([], [])
+        for grid_index in grid.values()
+    }
+
+    for class_name, geometry, attributes in bboxes:
+        source_frame = int(geometry.get("frame_index", 0))
+        grid_index = grid.get(source_frame)
+        if grid_index is None:
+            continue
+        out_frame = grid_index + frame_start_number
+        lines, attrs = labels[out_frame]
+        lines.append(_yolo_det_line(cat_map.get(class_name or "", 0), geometry))
+        if include_attributes:
+            attrs.append(attributes or {})
+
+    for class_name, geometry, attributes in tracks:
+        class_id = cat_map.get(class_name or "", 0)
+        for frame in resolved_track_frames(
+            geometry, frame_mode="all_frames", frame_count=frame_count
+        ):
+            grid_index = grid.get(int(frame.get("frame_index", 0)))
+            if grid_index is None:
+                continue
+            out_frame = grid_index + frame_start_number
+            lines, attrs = labels[out_frame]
+            lines.append(_yolo_det_line(class_id, frame.get("bbox") or {}))
+            if include_attributes:
+                attrs.append(attributes or {})
+
+    return labels
+
+
 # ── MOT 16/17/20 ─────────────────────────────────────────────────────
 
 

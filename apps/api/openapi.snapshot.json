@@ -22502,7 +22502,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / mot / kitti（voc 仅可单选，走同步下载）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -22510,7 +22510,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / mot / kitti（voc 仅可单选，走同步下载）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
               "items": {
                 "type": "string"
               },
@@ -22895,7 +22895,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / mot / kitti（voc 仅可单选，走同步下载）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -22903,7 +22903,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / mot / kitti（voc 仅可单选，走同步下载）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
               "items": {
                 "type": "string"
               },

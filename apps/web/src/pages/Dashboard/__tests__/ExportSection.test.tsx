@@ -85,6 +85,7 @@ describe("ExportSection", () => {
     openExportModal();
 
     expect(screen.getByText("Video JSON")).toBeInTheDocument();
+    expect(screen.getByText("YOLO 逐帧")).toBeInTheDocument();
     expect(screen.getByText("MOT")).toBeInTheDocument();
     expect(screen.getByText("KITTI")).toBeInTheDocument();
     expect(screen.queryByText("YOLO")).not.toBeInTheDocument();
@@ -95,6 +96,19 @@ describe("ExportSection", () => {
     expect(projectsApi.exportProject).toHaveBeenCalledWith("p3", ["video_json"], {
       includeAttributes: true,
       videoFrameMode: "all_frames",
+    });
+  });
+
+  it("视频项目可单独导出 YOLO 逐帧检测集", async () => {
+    render(<ExportSection projectId="p4" projectTypeKey="video-track" />);
+    openExportModal();
+
+    fireEvent.click(screen.getByText("Video JSON"));
+    fireEvent.click(screen.getByText("YOLO 逐帧"));
+    submitExport();
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(projectsApi.exportProject).toHaveBeenCalledWith("p4", ["yolo-frames-det"], {
+      includeAttributes: true,
     });
   });
 });

@@ -785,7 +785,7 @@ async def export_project(
     targets: list[str] = Query(
         default=["coco"],
         description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json"
-        " / video_json / mot / kitti（voc 仅可单选，走同步下载）",
+        " / video_json / yolo-frames-det / mot / kitti（voc 仅可单选，走同步下载）",
     ),
     include_attributes: bool = Query(
         True,

@@ -66,7 +66,7 @@
 
 ## Phase 4 · 视频导出（D3 落地）
 
-> **4.1 + 4.2 导出端 + 4.3 + 4.4 + 4.7 已于 v0.10.31 落地**，详见 [CHANGELOG](../CHANGELOG.md) / [v0.10.31 plan](../docs/plans/2026-05-21-v0.10.31-phase4-video-export-plan.md)：视频并入异步 zip 管线、AAP schema 升 1.2（task 层 `media_type` + `video` 子块、`video_track` 无损透传，envelope 不拆 D3）、MOT 16/17/20 + KITTI Tracking 2D 导出（整数 id 按采样网格重编号 D2、附 `fetch_frames.py` 抽帧不物理打包 D1）。
+> **4.1 + 4.2 导出端 + 4.3 + 4.4 + 4.7 已于 v0.10.31 落地**，详见 [CHANGELOG](../CHANGELOG.md) / [v0.10.31 plan](../docs/plans/2026-05-21-v0.10.31-phase4-video-export-plan.md)：视频并入异步 zip 管线、AAP schema 升 1.2（task 层 `media_type` + `video` 子块、`video_track` 无损透传，envelope 不拆 D3）、MOT 16/17/20 + KITTI Tracking 2D 导出（整数 id 按采样网格重编号 D2、附 `fetch_frames.py` 抽帧不物理打包 D1）。**v0.10.44 追加 `yolo-frames-det`**：按采样网格抽帧，合并单帧 `video_bbox` 与摊平后的 `video_track`，导出传统检测训练用 YOLO labels。
 >
 > **统一映射约定**（已落地于 [export_video.py](../apps/api/app/services/export_video.py) 顶部，保留供后续格式扩展参考）：MOT 省略 outside 帧 / occluded 仍输出；KITTI 用 occluded 列；帧号 MOT 1-based、KITTI 0-based。
 
@@ -103,7 +103,7 @@
 | 1 ✅ | 导入与帧采样（D1/D2） | R20 / C.6 P1(timetable/frameStep/chapter/warmup) / R5.3 | P0/P1 | v0.10.29 落地；WebCodecs demux 接入延后 |
 | 2 ✅ | 轨迹工具对齐 CVAT | R16 / R9(暂缓) + 新增 2.1/2.6/2.7/2.8 | P0/P1 | 2.1–2.8 v0.10.30 落地；**2.9 多几何 track 延后** |
 | 3 ◑ | 真实 tracker backend | C.6 P0 / R23 / I20.4 | P0 | 3.1 gsam2 `sam2_video` v0.10.35/36 落地；3.2 R23 能力只读展示 + 3.3 协议统一已并入 epic（**epic 阶段 1 v0.10.37 落地**）；**sam3_video 待续** |
-| 4 ◑ | 视频导出（D3） | R22 / C.6 P2 / §A AAP video_track 导入 | P1 | 4.1+4.2 导出端+4.3+4.4+4.7 v0.10.31 落地；**4.2 导入端 / 4.5 DAVIS(依赖 2.9) / 4.6 Segment 延后** |
+| 4 ◑ | 视频导出（D3） | R22 / C.6 P2 / §A AAP video_track 导入 | P1 | 4.1+4.2 导出端+4.3+4.4+4.7 v0.10.31 落地；逐帧 YOLO 检测集 v0.10.44 落地；**4.2 导入端 / 4.5 DAVIS(依赖 2.9) / 4.6 Segment 延后** |
 | 5 | 长视频协同 overlap | R11 / R21 / C.6 P1 segment | P1 | 不做 OT/CRDT |
 | 6 | Track 质量评估 | R24 / C.6 P2 worker | P2 | 与 L15 打通 |
 

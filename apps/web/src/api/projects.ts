@@ -99,7 +99,15 @@ export interface GuideAssetSignedUrlResponse {
 }
 
 // v0.10.31 · Phase 4.7 · 视频项目导出格式 video_json/mot/kitti（aap_json 图像视频共用）。
-export type ExportFormat = "coco" | "voc" | "yolo" | "aap_json" | "video_json" | "mot" | "kitti";
+export type ExportFormat =
+  | "coco"
+  | "voc"
+  | "yolo"
+  | "aap_json"
+  | "video_json"
+  | "mot"
+  | "kitti"
+  | "yolo-frames-det";
 // v0.10.43 · 多目标导出：YOLO 拆 det/obb/seg；一次导出可多选目标（voc 仅可单选）。
 export type ExportTarget =
   | "coco"
@@ -110,6 +118,7 @@ export type ExportTarget =
   | "video_json"
   | "mot"
   | "kitti"
+  | "yolo-frames-det"
   | "voc";
 export type VideoFrameMode = "keyframes" | "all_frames";
 export interface ExportOptions {

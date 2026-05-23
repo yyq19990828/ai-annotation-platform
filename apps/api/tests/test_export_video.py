@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from app.services.export_video import (
+    build_yolo_frame_det_labels,
     build_kitti_labels,
     build_mot_gt,
     build_mot_seqinfo,
@@ -93,3 +94,82 @@ def test_kitti_labels_0based_frame_and_occluded():
     assert parts[1] == "2"  # track id
     assert parts[2] == "Pedestrian"
     assert parts[4] == "1"  # occluded
+
+
+def test_yolo_frame_det_labels_merge_bbox_and_track_on_grid():
+    track = _track(
+        "a",
+        [(0, 0.0, 0.0, 0.2, 0.2), (12, 0.6, 0.6, 0.2, 0.2)],
+        outside=[{"from": 6, "to": 6, "source": "manual"}],
+    )
+    labels = build_yolo_frame_det_labels(
+        tracks=[("car", track, {"track_attr": True})],
+        bboxes=[
+            (
+                "person",
+                {
+                    "type": "video_bbox",
+                    "frame_index": 6,
+                    "x": 0.2,
+                    "y": 0.2,
+                    "w": 0.2,
+                    "h": 0.4,
+                },
+                {"bbox_attr": True},
+            )
+        ],
+        cat_map={"car": 0, "person": 1},
+        frame_count=13,
+        step=6,
+        frame_start_number=1,
+        include_attributes=True,
+    )
+
+    assert sorted(labels.keys()) == [1, 2, 3]
+    assert labels[1][0] == ["0 0.100000 0.100000 0.200000 0.200000"]
+    # Track frame 6 is outside, while video_bbox on the same grid frame remains.
+    assert labels[2][0] == ["1 0.300000 0.400000 0.200000 0.400000"]
+    assert labels[2][1] == [{"bbox_attr": True}]
+    assert labels[3][0] == ["0 0.700000 0.700000 0.200000 0.200000"]
+
+
+def test_yolo_frame_det_skips_off_grid_bboxes_and_keeps_empty_labels():
+    labels = build_yolo_frame_det_labels(
+        tracks=[],
+        bboxes=[
+            (
+                "person",
+                {
+                    "type": "video_bbox",
+                    "frame_index": 3,
+                    "x": 0.2,
+                    "y": 0.2,
+                    "w": 0.2,
+                    "h": 0.4,
+                },
+                {},
+            ),
+            (
+                "person",
+                {
+                    "type": "video_bbox",
+                    "frame_index": 4,
+                    "x": 0.8,
+                    "y": 0.8,
+                    "w": 0.1,
+                    "h": 0.1,
+                },
+                {},
+            ),
+        ],
+        cat_map={"person": 0},
+        frame_count=7,
+        step=3,
+        frame_start_number=1,
+        include_attributes=False,
+    )
+
+    assert sorted(labels.keys()) == [1, 2, 3]
+    assert labels[1][0] == []
+    assert labels[2][0] == ["0 0.300000 0.400000 0.200000 0.400000"]
+    assert labels[3][0] == []

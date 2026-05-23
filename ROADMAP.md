@@ -15,7 +15,7 @@
 - **[长期规划（12 个月以外）](./ROADMAP/2026-05-12-long-term-strategy.md)**：L1-L15 战略方向盘点。数据中台 / 主动学习闭环 / 模型评估 / 跨模态 / 协同与众包 / 插件机制 / 公开 SDK / 合规认证 / 移动端 / 端侧推理 / 合成数据 / SaaS / 可观测性 / i18n / AI 审计。**当前 P0/P1 完成前不开工**。
 - **[CVAT / Label Studio 取经合集（2026-05-18）](./ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)**：跨主题对标盘点研究档。Webhook 完整形态 / 公开 SDK / Annotation Guide / AnnotationFeedback 收敛 / Consensus 拆分 / async_jobs 统一 / LLM-as-Judge / 平台原生 AAP JSON 等。**性质：研究输入**，按颗粒度逐步回流到 §A/§B/§C。当前已回流：决策底线表。
 - **[视频工作台总路线图（2026-05-21）](./ROADMAP/2026-05-21-video-workbench-roadmap.md)**：视频专项独立 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出）。三项已拍板决策：抽帧=逻辑采样不动原视频、frame_index 存源帧号、AAP 单信封模态感知。原 §C.5 / §C.6 / 视频相关 §A 条目已全部并入该文，按 Phase 1-6 顺序排布。
-  - **进度**：Phase 1（帧采样，v0.10.29）✅ · Phase 2 轨迹工具 2.1–2.8（v0.10.30）✅ · Phase 3.1 真实 `sam2_video` backend + 独立池 + 观测（v0.10.35/36）✅ · Phase 3.2-3.3 经能力协商 epic（v0.10.37/38）✅ · Phase 4-6 待开工（sam3_video 待续）。
+  - **进度**：Phase 1（帧采样，v0.10.29）✅ · Phase 2 轨迹工具 2.1–2.8（v0.10.30）✅ · Phase 3.1 真实 `sam2_video` backend + 独立池 + 观测（v0.10.35/36）✅ · Phase 3.2-3.3 经能力协商 epic（v0.10.37/38）✅ · Phase 4 视频导出主体（v0.10.31）+ 逐帧 YOLO 检测集（v0.10.44）✅/◑ · Phase 5-6 待开工（sam3_video 待续）。
   - **衍生 epic（三阶段全部落地，已归档）**：[ML Backend 能力协商 + AI 预标注模态化重设计](ROADMAP/[archived]2026-05-22-ml-backend-modality-and-ai-preannotate-redesign.md)——能力协商落库 + 模态派生（v0.10.37）、ai-pre 模态化 + 多 backend 参数面板 + video-jobs 并入 ai-pre/jobs（v0.10.38）。剩余按客户驱动：精细单 batch 多模型对比 modal（见优先级表 P3）、底层 `async_jobs` 统一表收敛（见 §B）。
   - **从已完成 Phase 延后的项**（仍在 epic 内，单列以免遗漏）：
     - **2.9 多几何 track（polygon / polyline / mask）**（P1，体量大）：扩 `video_track.geometry.kind`，按周长/长度参数化插值；mask track 依赖 canvas/bitmap 能力；DAVIS mask 导出（Phase 4.5）依赖此项。

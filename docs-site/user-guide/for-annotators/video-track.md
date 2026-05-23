@@ -188,7 +188,7 @@ v0.9.20 起，视频工作台明确区分两类对象：
 
 ## 当前版本边界
 
-视频导出支持 Video Tracks JSON，可选择只导出关键帧或展开逐帧结果；章节信息暂不进 COCO / MOT 导出。
+视频导出支持 Video Tracks JSON（关键帧 / 所有帧）、YOLO 逐帧检测集、MOT、KITTI 与 AAP JSON。YOLO 逐帧会按项目采样网格抽帧，把单帧 `video_bbox` 与 `video_track` 摊平框写成检测训练用 label；章节信息暂不进这些导出格式。
 
 v0.9.16 保存的旧 `video_bbox` 会继续在对应帧显示；v0.9.20 后也可以通过矩形框工具继续创建新的单帧 `video_bbox`。
 

@@ -42,6 +42,7 @@ from app.services.export_video import (
     build_kitti_labels,
     build_mot_gt,
     build_mot_seqinfo,
+    build_yolo_frame_det_labels,
 )
 from app.services.project import (
     derive_attribute_schema,
@@ -51,7 +52,7 @@ from app.services.storage import storage_service
 from app.services.video_frame_service import derive_sampled_frames, derive_step
 from app.services.video_tracks import derive_track_number
 
-VIDEO_EXPORT_FORMATS = {"video_json", "aap_json", "mot", "kitti"}
+VIDEO_EXPORT_FORMATS = {"video_json", "aap_json", "mot", "kitti", "yolo-frames-det"}
 
 # v0.10.43 · 多目标导出：图像目标（yolo 旧值=yolo-det）+ 视频目标 + voc（仅同步单目标）。
 IMAGE_EXPORT_TARGETS = {"coco", "yolo", "yolo-det", "yolo-obb", "yolo-seg", "aap_json"}
@@ -431,6 +432,21 @@ def _build_data_yaml(classes_list: list[str]) -> str:
     )
 
 
+def _build_video_yolo_data_yaml(classes_list: list[str]) -> str:
+    """视频逐帧 YOLO 训练入口：fetch_frames.py 把帧抽到 images/。"""
+    names = "\n".join(f"  {i}: {name}" for i, name in enumerate(classes_list))
+    return (
+        "# 视频逐帧 YOLO 数据集入口（由 AAP 导出生成）\n"
+        "# images/ 由 fetch_frames.py 按 manifest.json 抽帧；labels/ 已在包内。\n"
+        "path: .\n"
+        "train: images\n"
+        "val: images\n"
+        f"nc: {len(classes_list)}\n"
+        "names:\n"
+        f"{names}\n"
+    )
+
+
 # ── v0.10.31 · Phase 4 视频导出组装 ──────────────────────────────────
 
 _FETCH_VIDEOS_TEMPLATE = '''#!/usr/bin/env python3
@@ -477,15 +493,17 @@ if __name__ == "__main__":
 
 
 _FETCH_FRAMES_TEMPLATE = '''#!/usr/bin/env python3
-"""按 manifest.json 的采样网格帧号，用本地 ffmpeg 从回源视频抽 {sequence}/img1/ 帧序列。
+"""按 manifest.json 的采样网格帧号，用本地 ffmpeg 从回源视频抽帧序列。
 
 遵循 D1（不物理打包帧）：导出包只带标注 + 网格帧号，帧由本脚本就地抽取。
 依赖：先跑 fetch_videos.py 回源视频；系统需安装 ffmpeg。
 帧号语义（D2）：grid_source_frames 是源视频帧号；输出按抽取顺序编号，
-start_number=1（MOT，1-based）或 0（KITTI，0-based）。
+start_number=1（MOT/YOLO，1-based）或 0（KITTI-only，0-based）。
+输出目录由 frame_output_dirs 指定；旧 manifest 缺失时回退 {sequence}/img1。
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -509,7 +527,15 @@ def main() -> int:
             print("[x] 视频缺失（先跑 fetch_videos.py）: %s" % rel)
             fail += 1
             continue
-        out_dir = os.path.join(HERE, *seq.split("/"), "img1")
+        raw_outputs = it.get("frame_output_dirs") or ["%s/img1" % seq]
+        output_dirs = []
+        for rel_out in raw_outputs:
+            if not rel_out or rel_out in output_dirs:
+                continue
+            output_dirs.append(rel_out)
+        if not output_dirs:
+            continue
+        out_dir = os.path.join(HERE, *output_dirs[0].split("/"))
         os.makedirs(out_dir, exist_ok=True)
         select_expr = "+".join("eq(n\\\\,%d)" % fr for fr in frames)
         cmd = [
@@ -520,6 +546,14 @@ def main() -> int:
         ]
         try:
             subprocess.run(cmd, check=True)
+            for rel_out in output_dirs[1:]:
+                extra_dir = os.path.join(HERE, *rel_out.split("/"))
+                os.makedirs(extra_dir, exist_ok=True)
+                for frame_no in range(start, start + len(frames)):
+                    name = "%06d.jpg" % frame_no
+                    src = os.path.join(out_dir, name)
+                    if os.path.exists(src):
+                        shutil.copy2(src, os.path.join(extra_dir, name))
             ok += 1
         except Exception as exc:  # noqa: BLE001
             print("[x] 抽帧失败 %s: %s" % (seq, exc))
@@ -568,12 +602,23 @@ async def _build_video_export_zip(
     multi = len(targets) > 1
     has_mot = "mot" in targets
     has_kitti = "kitti" in targets
+    has_yolo_frames = "yolo-frames-det" in targets
+    has_frame_sequences = has_mot or has_kitti or has_yolo_frames
+    frame_start_number = 1 if has_mot or has_yolo_frames else 0
 
-    # 按 task 分组 video_track，派生 track_number。
+    classes_list = derive_classes_list(project.tool_bindings)
+    attribute_schema = derive_attribute_schema(project.tool_bindings)
+    cat_map = {name: i for i, name in enumerate(classes_list)}
+
+    # 按 task 分组 video_track / video_bbox，派生 track_number 与逐帧 YOLO labels。
     tracks_by_task: dict[uuid.UUID, list[Annotation]] = {}
+    bboxes_by_task: dict[uuid.UUID, list[Annotation]] = {}
     for ann in annotations:
-        if (ann.geometry or {}).get("type") == "video_track":
+        geometry_type = (ann.geometry or {}).get("type")
+        if geometry_type == "video_track":
             tracks_by_task.setdefault(ann.task_id, []).append(ann)
+        elif geometry_type == "video_bbox":
+            bboxes_by_task.setdefault(ann.task_id, []).append(ann)
 
     buf = io.BytesIO()
     manifest_videos: list[dict] = []
@@ -600,8 +645,21 @@ async def _build_video_export_zip(
                     f"{prefix}annotations.json",
                     await svc.export_aap_json(project.id, batch_id=batch_id),
                 )
+            elif target == "yolo-frames-det":
+                zf.writestr(f"{prefix}classes.txt", "\n".join(classes_list))
+                if include_attributes:
+                    zf.writestr(
+                        f"{prefix}attribute_schema.json",
+                        json.dumps(
+                            attribute_schema, ensure_ascii=False, indent=2
+                        ),
+                    )
+                zf.writestr(
+                    f"{prefix}data.yaml", _build_video_yolo_data_yaml(classes_list)
+                )
 
         # 逐 task = sequence：写 MOT/KITTI 逐序列文件 + 收集 manifest 条目。
+        file_count = 0
         for t in tasks:
             item = dataset_items.get(t.dataset_item_id) if t.dataset_item_id else None
             seq = _video_seq_name(t, item)
@@ -611,22 +669,25 @@ async def _build_video_export_zip(
             img_h = int(vmeta.get("height") or FALLBACK_H)
             step = derive_step(source_fps, sampling)
 
-            anns = tracks_by_task.get(t.id, [])
-            # frame_count：元数据优先，缺失回退最大关键帧 + 1。
+            track_anns = tracks_by_task.get(t.id, [])
+            bbox_anns = bboxes_by_task.get(t.id, [])
+            # frame_count：元数据优先，缺失回退最大标注帧 + 1。
             max_kf = 0
-            for ann in anns:
+            for ann in track_anns:
                 for kf in (ann.geometry or {}).get("keyframes") or []:
                     max_kf = max(max_kf, int(kf.get("frame_index", 0)))
+            for ann in bbox_anns:
+                max_kf = max(max_kf, int((ann.geometry or {}).get("frame_index", 0)))
             frame_count = int(vmeta.get("frame_count") or (max_kf + 1))
             frame_count = max(frame_count, max_kf + 1)
 
             if has_mot or has_kitti:
                 numbers = derive_track_number(
-                    [(ann.id, ann.geometry or {}) for ann in anns]
+                    [(ann.id, ann.geometry or {}) for ann in track_anns]
                 )
                 track_args = [
                     (numbers[ann.id], ann.class_name, ann.geometry or {})
-                    for ann in anns
+                    for ann in track_anns
                 ]
                 if has_mot:
                     mp = "mot/" if multi else ""
@@ -664,6 +725,35 @@ async def _build_video_export_zip(
                         ),
                     )
 
+            if has_yolo_frames:
+                yp = "yolo-frames-det/" if multi else ""
+                labels = build_yolo_frame_det_labels(
+                    [
+                        (ann.class_name, ann.geometry or {}, ann.attributes or {})
+                        for ann in track_anns
+                    ],
+                    [
+                        (ann.class_name, ann.geometry or {}, ann.attributes or {})
+                        for ann in bbox_anns
+                    ],
+                    cat_map,
+                    frame_count=frame_count,
+                    step=step,
+                    frame_start_number=frame_start_number,
+                    include_attributes=include_attributes,
+                )
+                for frame_no, (lines, attrs_per_line) in sorted(labels.items()):
+                    base = f"{yp}labels/{seq}/{frame_no:06d}"
+                    zf.writestr(f"{base}.txt", "\n".join(lines))
+                    file_count += 1
+                    if include_attributes and attrs_per_line:
+                        zf.writestr(
+                            f"{base}.attrs.json",
+                            json.dumps(
+                                {"attributes": attrs_per_line}, ensure_ascii=False
+                            ),
+                        )
+
             # manifest 视频条目（含网格帧号供 fetch_frames.py 抽帧）。
             dataset_name = _dataset_name_for_task(t, item)
             video_rel = relative_path_from_file_path(t.file_path, dataset_name)
@@ -672,6 +762,12 @@ async def _build_video_export_zip(
                 expires_in=PRESIGN_EXPIRES_SECONDS,
                 bucket=storage_service.datasets_bucket,
             )
+            frame_output_dirs: list[str] = []
+            if has_mot or has_kitti:
+                frame_output_dirs.append(f"{seq}/img1")
+            if has_yolo_frames:
+                yp = "yolo-frames-det/" if multi else ""
+                frame_output_dirs.append(f"{yp}images/{seq}")
             manifest_videos.append(
                 {
                     "sequence": seq,
@@ -683,8 +779,9 @@ async def _build_video_export_zip(
                     "sampling": sampling,
                     "step": step,
                     "grid_source_frames": derive_sampled_frames(frame_count, step),
-                    # 帧号 base：含 MOT 取 1（1-based），否则 0（KITTI）。
-                    "frame_start_number": 1 if has_mot else 0,
+                    # 帧号 base：MOT/YOLO 取 1（1-based），KITTI-only 取 0。
+                    "frame_start_number": frame_start_number,
+                    "frame_output_dirs": frame_output_dirs,
                 }
             )
 
@@ -701,7 +798,7 @@ async def _build_video_export_zip(
             ),
         )
         zf.writestr("fetch_videos.py", _FETCH_VIDEOS_TEMPLATE)
-        if has_mot or has_kitti:
+        if has_frame_sequences:
             zf.writestr("fetch_frames.py", _FETCH_FRAMES_TEMPLATE)
 
-    return buf.getvalue(), len(tasks)
+    return buf.getvalue(), file_count or len(tasks)
