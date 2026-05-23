@@ -128,7 +128,7 @@
 - **Predictions 表分区生产执行**：Stage 1 + Stage 2 迁移（0080）均已落（dev 已应用，v0.10.25）；生产侧按阈值（单月 INSERT > 100k 或总行数 > 1M）执行 `alembic upgrade` 即可，迁移已 battle-tested。
 
 ### 测试 / 开发体验
-- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座 v0.7.4；v0.8.5 推到 25.28% / 阈值 25；v0.8.7 因引入 8 个新组件回退到 22.04% / 阈值临时降到 22；**v0.8.8 推回 25.17% / 阈值 25**（5 个新 test 文件 ~35 case：turnstile / useCanvasDraftPersistence / RejectReasonModal / FailedPredictionsPage / useNotificationSocket / AnnotationHistoryTimeline）。下阶段目标 25→30：补 `pages/Projects/sections/BatchesSection`（948 行）/ `GeneralSection`（433 行）/ `DatasetsSection`（395 行）/ `AuditPage` / `useWorkbenchShellModel` 关键 hook（`ProjectSettingsPage` shell 自身 v0.9.x 已拆到 181 行，无业务逻辑可测）。
+- **前端单元测试 — 页面级覆盖**：vitest + MSW 基座 v0.7.4。**v0.10.48 起口径修正**——此前覆盖率把测试文件本身算进分母（`*.test.*` 自覆盖 ~100%）虚高到 52.54%，已排除测试文件，报告即真实源码覆盖率。**v0.10.48 实测真实源码 lines 47.68%（38.74%→47.68%）/ 阈值 45**（branches 70）：新增 12 个 page/组件 test 文件 ~99 case（SettingsPage / UsersPage / StoragePage / DatasetsPage / DashboardPage / ReviewPage / AdminPeoplePage / AIPreAnnotateJobsPage / RegisteredBackendsTab / ImportDatasetWizard / CreateProjectWizard / AIInspectorPanel）。下阶段目标 47→55：补 `BatchesSection`（现 ~32%）/ `useWorkbenchShellModel` / `useImageAnnotationActions` 等复杂 hook；Konva 渲染层（`ImageStage` / `ImageStageShapes`）属难测项，留待。
 - **size-limit / scripts 脚本测试**：v0.8.8 加的 `apps/web/scripts/check-bundle-size.mjs` 自实现 glob match + 单位解析，目前无单测；如未来加更多 build-time 脚本，建议给该目录建独立 vitest 项目（不算主分母覆盖率）。
 - **uvicorn `--reload` + 长 WS = reload 卡死（P3 dev experience）**：如再发，考虑加 `--timeout-graceful-shutdown 5` 兜底。
 - **vite proxy `/ws` 多并发偶发 CONNECTING 卡死（P3 dev experience）**：dev 直连 `localhost:8000` 绕法保留；根因待追，必要时给 vite 上游提 minimal repro。
