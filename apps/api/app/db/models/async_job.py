@@ -4,7 +4,8 @@
 export 等）在 enqueue / progress / finish 三时点写入此表。
 
 v0.10.49 · batch_predict 已收敛为单一真值（prediction_jobs 专表删除），
-domain 字段进 payload/result JSONB。video_tracker 仍有 video_tracker_jobs 专表（Phase 2 待收）。
+domain 字段进 payload/result JSONB。video_tracker 保留 video_tracker_jobs 专表
+（带活标注 FK + 运行时状态机，见 ROADMAP/2026-05-23-async-jobs-unification.md）。
 """
 
 import enum

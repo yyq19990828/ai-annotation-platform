@@ -110,7 +110,7 @@
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
 
 ### 性能 / 扩展
-- **`async_jobs` 统一表收敛**（**P3**）：Phase 1（v0.10.45）已让 `/ai-pre/jobs` + TopBar 铃铛 + 历史页共享 `/async-jobs` 索引；但 `PredictionJob`（图像）与 `VideoTrackerJob`（帧级）仍作 domain 真值双写，未合表。后续把 `async_jobs` 从索引表升级为单一真值（含状态机收敛）。底线见决策表「Task 双重含义」行。触发：跨模态 job 查询成为瓶颈。
+- **`async_jobs` 统一表收敛**（**已部分落地**）：索引层（v0.10.45 起 `/ai-pre/jobs` + TopBar 铃铛 + 历史页共享 `/async-jobs`）+ **batch_predict 单一真值收敛**（v0.10.49 删 `prediction_jobs` 专表，domain 字段进 payload/result）已落。**`VideoTrackerJob` 决定保留专表**（见 [收敛切片计划](ROADMAP/2026-05-23-async-jobs-unification.md)）：它带 `annotation_id / task_id / segment_id` 的 FK + CASCADE，引用的是正在编辑的活标注，runner 又把它当实时状态机（`with_for_update` 协作取消 + WS 逐帧推送）；收敛会丢 FK 完整性、收益小于风险。前端列表已统一走 `/async-jobs`，无需进一步合表。
 
 ### 测试 / 开发体验
 - **前端单元测试 — 页面级覆盖**：vitest + MSW 基座（v0.7.4）。v0.10.48 起覆盖率口径已排除测试文件，当前真实源码 lines 47.68% / 阈值 45（branches 70）。下阶段目标 47→55：补 `BatchesSection`（~32%）/ `useWorkbenchShellModel` / `useImageAnnotationActions` 等复杂 hook；Konva 渲染层（`ImageStage` / `ImageStageShapes`）难测，留待。
@@ -201,7 +201,7 @@
 | 状态字段 | 同时存 status/stage/state 三字段（CVAT Job） | 单 status enum | 加新状态前看一眼现有 enum 能否表达 |
 | 标注配置 | XML DSL（Label Studio） | JSONB `tool_bindings` 按 tool_unit 嵌套（v0.10.17+; v0.10.22 起为**唯一存储真值**, 扁平 `classes_config` 仅响应/导出读时派生, 无 DB 列） | 永远不要为"灵活性"回退到 DSL；要灵活就扩 JSONB schema；不要重新引入扁平存储列 |
 | 类别绑定 | 项目级扁平类别表（v0.10.16 之前的本平台 / Label Studio） | 按工具单位 `tool_bindings` **强隔离**（v0.10.17+, [ADR-0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md)） | 不要回到"项目级扁平 classes_config"; 跨工具复用类需求出现时走可选 `alias_to` 链而不是合并表 |
-| Task 双重含义 | task 既是标注题目也是后台 job（Label Studio） | 题目 / Celery 分离 | `async_jobs` 统一表落地后强化（取经合集 §1.7） |
+| Task 双重含义 | task 既是标注题目也是后台 job（Label Studio） | 题目 / Celery 分离；async_jobs 作 job 索引 + batch_predict 单一真值（v0.10.49），但带活实体 FK + 运行时状态的 job（VideoTrackerJob）保留专表 | 新 job 类型默认进 async_jobs；仅当需 FK 级联到活标注 / 复杂运行时状态机时才建专表 |
 | 模块化拆分 | 24+ Django apps 跨依赖（Label Studio） | apps/api 单仓 | 不要因"模块化"动机拆出新 apps/* |
 | OSS/EE 分叉 | `if settings.EE` 满地（Label Studio） | 单分支无功能开关 | 商业化前不要拆，灰度走 feature flags |
 | 格式适配 | 自己维护 25+ 格式（CVAT） | COCO/YOLO/VOC + 平台原生 AAP JSON | 客户要新格式走 datumaro 中转，不自己加 |

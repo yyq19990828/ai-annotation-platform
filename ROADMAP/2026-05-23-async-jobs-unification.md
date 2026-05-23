@@ -37,27 +37,18 @@
 3. **删表迁移**：drop `prediction_jobs`；删 [prediction_job.py](../apps/api/app/db/models/prediction_job.py) model。
    - → verify：`alembic upgrade head` + 全后端测试通过。
 
-## Phase 2 — 收敛 VideoTrackerJob（v0.10.50，中风险）
+## Phase 2 — 收敛 VideoTrackerJob：**决定不做，保留专表**（2026-05-23 拍板）
 
-runner 把专表当运行时状态机，且有 WebSocket 实时通道，需更细致。
+读完 runner 后评估：收敛 VideoTrackerJob 收益小于风险与副作用，**保留 `video_tracker_jobs` 专表**。
 
-1. **async_jobs 补字段**：新增 `cancel_requested_at DateTime nullable`（取消语义无处安放，进列而非 payload，因 runner 需轮询）。
-2. **event_channel 动态生成**：不再存列，按 `f"video-tracker-jobs:{job_id}"` 在订阅/发布两端一致生成；核对 [video_tracker_runner.py](../apps/api/app/services/video_tracker_runner.py) 与前端 [useVideoTrackerJobs.ts](../apps/web/src/hooks/useVideoTrackerJobs.ts) 通道名一致。
-3. **runner / worker 迁移**：[video_tracker.py](../apps/api/app/workers/video_tracker.py) + [video_tracker_runner.py](../apps/api/app/services/video_tracker_runner.py) 改以 async_jobs 为状态真值。
-   - **补齐取消同步**：runner 取消分支（305-306）当前**没有**同步 async_jobs，收敛后必须补。
-4. **弃用读取端点**：[video_tracker_jobs.py](../apps/api/app/api/v1/video_tracker_jobs.py) `/video-tracker-jobs`（含 JOIN Task + cursor 分页 + status 计数）改为 async_jobs 视图或删除 + 前端 api 定义。
-   - [video_tracker_job_service.py](../apps/api/app/services/video_tracker_job_service.py) 专表读取部分删除。
-5. **删表迁移**：drop `video_tracker_jobs`；删 [video_tracker_job.py](../apps/api/app/db/models/video_tracker_job.py) model。
-   - → verify：视频追踪端到端（创建 → 帧级 WS 进度 → 完成 / 取消）跑通；新增 cancel 同步单测。
+理由：
+1. **丢 FK 完整性**（与 prediction_jobs 的本质区别）：专表带 `annotation_id / task_id / dataset_item_id / segment_id` 的 FK + CASCADE，引用的是**正在被编辑的活标注**。标注删除时 job 级联清理；塞进 payload JSONB 后会留孤儿 job。prediction_jobs 是纯历史记录无此问题。
+2. **runner 是紧耦合实时状态机**：[video_tracker_runner.py](../apps/api/app/services/video_tracker_runner.py) 用 `with_for_update()` 行锁 + `db.refresh` 轮询 `cancel_requested_at` 做协作取消，边追踪边 WS 逐帧推送，读十余个 domain 字段当工作状态。迁移到 async_jobs 需全量改写 + 重写 18.8K worker 测试。
+3. **收益已被前置满足**：前端列表 / 铃铛 / 历史页早已统一走 `/async-jobs?kind=video_tracker`（v0.10.45 索引层），专表只服务运行时 + FK。
 
-## 验证清单（合并后主进程跑）
+底线（写回决策表「Task 双重含义」行）：**新 job 类型默认进 async_jobs；仅当需 FK 级联到活实体 / 复杂运行时状态机时才建专表**——VideoTrackerJob 正属后者。
 
-- [ ] `cd apps/api && uv run pytest`（重点 test_async_jobs / video_tracker / preannotate）
-- [ ] `alembic upgrade head` 在干净 dev 库无误
-- [ ] 前端 `pnpm lint && pnpm test`
-- [ ] 手动：batch_predict 预标 + 视频追踪（含取消）端到端，任务铃铛 / 历史页正常
+## 收尾（已落）
 
-## 收尾
-
-- 删 ROADMAP §B「async_jobs 统一表收敛」条目 + 优先级表相关行；决策表「Task 双重含义」行更新为「已收敛单一真值」。
-- CHANGELOG 记 v0.10.49 / v0.10.50 两段。
+- ROADMAP §B「async_jobs 统一表收敛」改为「已部分落地」+ 决策表「Task 双重含义」行更新。
+- CHANGELOG 记 v0.10.49（仅 Phase 1）。
