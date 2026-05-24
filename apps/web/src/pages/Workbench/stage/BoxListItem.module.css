@@ -65,6 +65,11 @@
   color: var(--color-ai);
 }
 
+.badgeAiImport {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
 .badgeDefault {
   background: var(--color-bg-sunken);
   color: var(--color-fg-muted);

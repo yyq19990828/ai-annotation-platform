@@ -1,6 +1,6 @@
 import type { ToolBindings } from "@/api/projects";
 import type { ToolUnitId } from "@/constants/toolUnits";
-import type { Annotation, AnnotationResponse, BboxGeometry, Geometry, Keypoint, MultiPolygonGeometry, PolygonGeometry, PolylineGeometry, PredictionResponse } from "@/types";
+import type { Annotation, AnnotationResponse, BboxGeometry, Geometry, Keypoint, MultiPolygonGeometry, PolygonGeometry, PolylineGeometry, PredictionResponse, PredictionSourceValue } from "@/types";
 
 /** 把 {x,y,w,h} 包装为 bbox geometry。常用于 commit 几何变更时。 */
 export function bboxGeom(g: { x: number; y: number; w: number; h: number }): BboxGeometry {
@@ -159,7 +159,36 @@ export function annotationToBox(a: AnnotationResponse): Annotation {
   };
 }
 
-export type AiBox = Annotation & { predictionId: string; shapeIndex: number };
+export const PREDICTION_SOURCE_FILTERS = ["ml_backend", "external_import"] as const;
+export type PredictionSourceFilter = typeof PREDICTION_SOURCE_FILTERS[number];
+export type PredictionSourceVisibility = Record<PredictionSourceFilter, boolean>;
+export type PredictionSourceCounts = Record<PredictionSourceFilter, number>;
+
+export function defaultPredictionSourceVisibility(): PredictionSourceVisibility {
+  return { ml_backend: true, external_import: true };
+}
+
+export function emptyPredictionSourceCounts(): PredictionSourceCounts {
+  return { ml_backend: 0, external_import: 0 };
+}
+
+export function normalizePredictionSource(source: PredictionSourceValue | undefined): PredictionSourceFilter | null {
+  if (source === "ml_backend" || source === "external_import") return source as PredictionSourceFilter;
+  return null;
+}
+
+export function predictionSourceLabel(source: PredictionSourceValue | undefined): string {
+  if (source === "ml_backend") return "模型";
+  if (source === "external_import") return "导入";
+  if (source) return "其他";
+  return "未知";
+}
+
+export type AiBox = Annotation & {
+  predictionId: string;
+  shapeIndex: number;
+  predictionSource: PredictionSourceValue;
+};
 
 /**
  * DINO 写入的 class_name 是项目类别的英文 alias; 反查对应 tool_unit 的 classes
@@ -205,6 +234,7 @@ export function predictionsToBoxes(
         cls: resolve(shape.class_name),
         conf: shape.confidence,
         source: "prediction_based" as const,
+        predictionSource: p.source ?? null,
       };
     });
   });

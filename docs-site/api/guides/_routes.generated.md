@@ -73,6 +73,7 @@
 | POST | `/annotations/bulk-update` |
 | POST | `/annotations/group` |
 | POST | `/annotations/ungroup` |
+| POST | `/projects/{project_id}/annotations/import` |
 
 ## `api_keys.py`
 
@@ -397,4 +398,4 @@
 
 ---
 
-_共 35 模块 / 225 路由_
+_共 35 模块 / 226 路由_

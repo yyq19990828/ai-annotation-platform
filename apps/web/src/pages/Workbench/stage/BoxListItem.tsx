@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { Annotation } from "@/types";
+import { predictionSourceLabel, type AiBox } from "../state/transforms";
 import { classColor, displayClassName } from "./colors";
 import styles from "./BoxListItem.module.css";
 
@@ -96,8 +97,12 @@ function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
 }
 
+function getPredictionSource(b: Annotation | AiBox) {
+  return "predictionSource" in b ? b.predictionSource : null;
+}
+
 interface BoxListItemProps {
-  b: Annotation;
+  b: Annotation | AiBox;
   isAi?: boolean;
   selected: boolean;
   /** dimmed 时整行半透明 + "已被覆盖" tag（IoU 去重）。 */
@@ -122,6 +127,7 @@ export function BoxListItem({
 }: BoxListItemProps) {
   const color = classColor(b.cls);
   const toolMeta = annotationToolMeta(b, imageWidth, imageHeight);
+  const predictionSource = isAi ? getPredictionSource(b) : null;
   return (
     <div
       onClick={(e) => onSelect({ shiftKey: e.shiftKey })}
@@ -134,8 +140,14 @@ export function BoxListItem({
         <div className={styles.titleRow}>
           <b className={styles.className}>{displayClassName(b.cls)}</b>
           {isAi ? (
-            <span className={cn(styles.badge, styles.badgeAi)}>
-              <Icon name="sparkle" size={8} />{(b.conf * 100).toFixed(0)}%
+            <span
+              className={cn(
+                styles.badge,
+                predictionSource === "external_import" ? styles.badgeAiImport : styles.badgeAi,
+              )}
+            >
+              <Icon name={predictionSource === "external_import" ? "upload" : "sparkle"} size={8} />
+              {predictionSourceLabel(predictionSource)} · {(b.conf * 100).toFixed(0)}%
             </span>
           ) : (
             <span className={cn(styles.badge, b.source === "prediction_based" ? styles.badgeDefault : styles.badgeAccent)}>

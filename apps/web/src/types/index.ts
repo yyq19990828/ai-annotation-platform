@@ -395,7 +395,11 @@ export type PredictionShape = Omit<GeneratedPredictionShape, "geometry"> & {
   shape_index?: number;
 };
 
-export type PredictionResponse = Omit<GeneratedPredictionOut, "result"> & {
+export type PredictionSource = "ml_backend" | "external_import";
+export type PredictionSourceValue = PredictionSource | (string & {}) | null;
+
+export type PredictionResponse = Omit<GeneratedPredictionOut, "result" | "source"> & {
+  source?: PredictionSourceValue;
   result: PredictionShape[];
 };
 

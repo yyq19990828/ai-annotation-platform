@@ -727,6 +727,7 @@ export function useWorkbenchShellModel({
   });
   const {
     aiBoxes,
+    predictionSourceFilter,
     aiTakeoverRate,
     dimmedAiIds,
     clipboard,
@@ -1307,6 +1308,7 @@ export function useWorkbenchShellModel({
     inspector: {
       open: rightOpen, width: s.rightWidth, onResize: s.setRightWidth, readOnly: isLocked,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
+      predictionSourceFilter,
       userBoxes, selectedId: s.selectedId, selectedIds: s.selectedIds,
       dimmedAiIds,
       imageWidth, imageHeight,

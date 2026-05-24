@@ -2,6 +2,7 @@ import type Konva from "konva";
 import { Circle, Group, Label, Line, Rect, Tag, Text } from "react-konva";
 import type { Annotation, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import { useMemo } from "react";
+import { predictionSourceLabel, type AiBox } from "../state/transforms";
 import type { ResizeDirection } from "./ResizeHandles";
 import { classColorForCanvas, displayClassName, hexToRgba } from "./colors";
 import { buildVertexIndex } from "./iou-index";
@@ -19,6 +20,12 @@ import {
 const LOD_VERTEX_THRESHOLD = 60; // ≤60 顶点不简化（O(n²) 渲染开销低于 RDP 设置成本）。
 // v0.10.4 I2.3 · 编辑态顶点视口粗筛门限：>60 顶点才走 rbush 粗筛，避免小 polygon 开销。
 const VERTEX_CULL_THRESHOLD = 60;
+
+function shapeLabelText(b: Annotation, isAi: boolean): string {
+  if (!isAi) return displayClassName(b.cls);
+  const predictionSource = (b as Partial<AiBox>).predictionSource ?? null;
+  return `✦ ${predictionSourceLabel(predictionSource)} ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`;
+}
 
 export interface ViewportBBox {
   minX: number;
@@ -82,9 +89,7 @@ export function KonvaBox({
   const handleSize = BOX_HANDLE_SCREEN_PX / scale;
   const labelFontSize = BOX_LABEL_FONT_PX / scale;
   const isUserSelected = selected && !isAi && editable;
-  const labelText = isAi
-    ? `✦ ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`
-    : displayClassName(b.cls);
+  const labelText = shapeLabelText(b, isAi);
 
   return (
     <Group id={annotationId}>
@@ -210,9 +215,7 @@ export function KonvaPolygon({
   const color = classColorForCanvas(b.cls);
   const sw = (selected ? 2 : 1.5) / scale;
   const labelFontSize = BOX_LABEL_FONT_PX / scale;
-  const labelText = isAi
-    ? `✦ ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`
-    : displayClassName(b.cls);
+  const labelText = shapeLabelText(b, isAi);
   const ps: Pt[] = points && points.length >= 3 ? points : (b.polygon ?? []);
   // I2.1 渲染层 LOD：编辑态 / 选中态用原顶点（保证手感）；其它态按 viewport scale 简化。
   const renderPs = useMemo<Pt[]>(() => {
@@ -375,9 +378,7 @@ export function KonvaRotatedBox({
   const handleSize = BOX_HANDLE_SCREEN_PX / scale;
   const labelFontSize = BOX_LABEL_FONT_PX / scale;
   const isUserSelected = selected && !isAi && editable;
-  const labelText = isAi
-    ? `✦ ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`
-    : displayClassName(b.cls);
+  const labelText = shapeLabelText(b, isAi);
 
   const cx = geometry.cx * imgW;
   const cy = geometry.cy * imgH;
@@ -494,9 +495,7 @@ export function KonvaPolyline({
   const color = classColorForCanvas(b.cls);
   const sw = (selected ? 2 : 1.5) / scale;
   const labelFontSize = BOX_LABEL_FONT_PX / scale;
-  const labelText = isAi
-    ? `✦ ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`
-    : displayClassName(b.cls);
+  const labelText = shapeLabelText(b, isAi);
   const ps: Pt[] = points;
   const flat: number[] = [];
   for (const [px, py] of ps) flat.push(px * imgW, py * imgH);
@@ -645,9 +644,7 @@ export function KonvaKeypoint({
   const r = (selected ? 5 : 4) / scale;
   const sw = (selected ? 2 : 1.5) / scale;
   const labelFontSize = BOX_LABEL_FONT_PX / scale;
-  const labelText = isAi
-    ? `✦ ${displayClassName(b.cls)} ${(b.conf * 100).toFixed(0)}%`
-    : displayClassName(b.cls);
+  const labelText = shapeLabelText(b, isAi);
   const edges = schema?.edges ?? [];
 
   // 类别标签锚点：第一个已标注点；都没有则用 bbox 左上。

@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import type { ComponentProps } from "react";
 
 // jsdom 没有 ResizeObserver — react-virtual 需要它
 globalThis.ResizeObserver = class {
@@ -130,6 +131,7 @@ function makeAiBox(id: string, cls = "car"): AiBox {
     cls,
     conf: 0.9,
     source: "prediction_based",
+    predictionSource: "ml_backend",
   };
 }
 
@@ -148,7 +150,7 @@ function makeUserBox(id: string, cls = "person"): Annotation {
   };
 }
 
-const baseProps = {
+const baseProps: ComponentProps<typeof AIInspectorPanel> = {
   open: true,
   width: 300,
   onResize: vi.fn(),
@@ -166,7 +168,7 @@ const baseProps = {
   onDeleteUserBox: vi.fn(),
 };
 
-function renderUI(props: Partial<typeof baseProps> = {}) {
+function renderUI(props: Partial<ComponentProps<typeof AIInspectorPanel>> = {}) {
   const merged = { ...baseProps, ...props };
   return render(
     <MemoryRouter>
@@ -195,6 +197,23 @@ describe("AIInspectorPanel", () => {
     renderUI({ aiBoxes });
     expect(screen.getByText("AI 待审")).toBeInTheDocument();
     expect(screen.getByTestId("box-item-ai-1")).toBeInTheDocument();
+  });
+
+  it("来源筛选开关触发 onToggle", () => {
+    const onToggle = vi.fn();
+    renderUI({
+      aiBoxes: [],
+      predictionSourceFilter: {
+        visibility: { ml_backend: true, external_import: true },
+        counts: { ml_backend: 2, external_import: 1 },
+        totalCount: 3,
+        onToggle,
+      },
+    });
+
+    expect(screen.getByText("AI 待审")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: /导入/ }));
+    expect(onToggle).toHaveBeenCalledWith("external_import", false);
   });
 
   it("有 user 框 → 渲染「人工」分组头 + box item", () => {

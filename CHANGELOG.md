@@ -22,6 +22,15 @@
 
 ## 最新版本
 
+## [0.10.55] - 2026-05-24
+
+> **预测来源可见并可筛选。** Workbench 能区分 ML backend 预标与外部导入预测，支持按来源隐藏候选。
+
+### Added
+
+- **PredictionOut 暴露来源** ([prediction.py](apps/api/app/schemas/prediction.py) · [tasks.py](apps/api/app/api/v1/tasks.py)): `GET /tasks/{id}/predictions` 返回 `source` 字段，区分 `ml_backend` 与 `external_import`，OpenAPI / 前端生成类型同步更新。
+- **Workbench 来源标识与筛选** ([transforms.ts](apps/web/src/pages/Workbench/state/transforms.ts) · [AIInspectorPanel.tsx](apps/web/src/pages/Workbench/shell/AIInspectorPanel.tsx)): AI 候选保留独立 `predictionSource`，画布与右栏候选行显示「模型」/「导入」标识，右栏「来源」开关可同步隐藏画布和列表候选。
+
 ## [0.10.54] - 2026-05-24
 
 > **AAP JSON 标注导入,闭环跨实例重建。** 新增 `annotations[]` 导入端点,语义见 [ADR-0028](docs/adr/0028-annotations-import-semantics.md)。

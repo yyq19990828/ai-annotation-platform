@@ -1171,6 +1171,7 @@ async def get_predictions(
                 "ml_backend_id": p.ml_backend_id,
                 "model_version": p.model_version,
                 "score": p.score,
+                "source": getattr(p, "source", None),
                 "tool_unit_id": getattr(p, "tool_unit_id", None) or "bbox",
                 "result": shapes,
                 "cluster": p.cluster,

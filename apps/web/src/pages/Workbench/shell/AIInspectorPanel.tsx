@@ -9,7 +9,14 @@ import type { MLBackendSupportedVariantGroup } from "@/api/ml-backends";
 import type { Annotation, AnnotationResponse } from "@/types";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import type { AttributeSchema } from "@/api/projects";
-import type { AiBox } from "../state/transforms";
+import {
+  PREDICTION_SOURCE_FILTERS,
+  predictionSourceLabel,
+  type AiBox,
+  type PredictionSourceCounts,
+  type PredictionSourceFilter,
+  type PredictionSourceVisibility,
+} from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
 import { groupOutlineColor } from "../stage/ImageStageShapes";
 import { resolveTrackAtFrame } from "../stage/videoStageGeometry";
@@ -26,6 +33,7 @@ interface AIInspectorPanelProps {
   width: number;
   onResize: (w: number) => void;
   aiBoxes: AiBox[];
+  predictionSourceFilter?: PredictionSourceFilterState;
   userBoxes: Annotation[];
   selectedId: string | null;
   selectedIds?: string[];
@@ -93,9 +101,17 @@ function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+interface PredictionSourceFilterState {
+  visibility: PredictionSourceVisibility;
+  counts: PredictionSourceCounts;
+  totalCount: number;
+  onToggle: (source: PredictionSourceFilter, visible: boolean) => void;
+}
+
 export function AIInspectorPanel({
   open, width, onResize,
   aiBoxes,
+  predictionSourceFilter,
   userBoxes, selectedId, selectedIds,
   dimmedAiIds,
   imageWidth, imageHeight,
@@ -172,6 +188,7 @@ export function AIInspectorPanel({
 
       <BoxesList
         aiBoxes={aiBoxes}
+        predictionSourceFilter={predictionSourceFilter}
         userBoxes={userBoxes}
         selSet={selSet}
         dimmedAiIds={dimmedAiIds}
@@ -475,6 +492,7 @@ function GroupCard({ groupId, memberCount, expanded, onToggle, onSelectGroup }: 
 type Row =
   | { kind: "ai"; box: AiBox; key: string }
   | { kind: "frameFilter"; filter: FrameFilter; key: string; onFilterChange: (filter: FrameFilter) => void }
+  | { kind: "sourceFilter"; filter: PredictionSourceFilterState; key: string }
   | {
     kind: "header";
     count: number;
@@ -554,8 +572,47 @@ function FrameFilterTabs({ value, onChange }: { value: FrameFilter; onChange: (f
   );
 }
 
+function PredictionSourceFilterCard({ filter }: { filter: PredictionSourceFilterState }) {
+  return (
+    <div className={styles.sourceFilterCard} aria-label="预测来源筛选">
+      <span className={styles.sourceFilterLabel}>
+        <Icon name="filter" size={12} />来源
+      </span>
+      <div className={styles.sourceFilterControls}>
+        {PREDICTION_SOURCE_FILTERS.map((source) => {
+          const checked = filter.visibility[source];
+          const count = filter.counts[source];
+          const label = predictionSourceLabel(source);
+          return (
+            <label
+              key={source}
+              className={cn(
+                styles.sourceFilterOption,
+                checked && styles.sourceFilterOptionActive,
+                source === "external_import" && styles.sourceFilterOptionImport,
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={count === 0}
+                onChange={(e) => filter.onToggle(source, e.currentTarget.checked)}
+                className={styles.sourceFilterCheckbox}
+              />
+              <Icon name={source === "ml_backend" ? "sparkle" : "upload"} size={11} />
+              <span>{label}</span>
+              <span className={cn("mono", styles.sourceFilterCount)}>{count}</span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 interface BoxesListProps {
   aiBoxes: AiBox[];
+  predictionSourceFilter?: PredictionSourceFilterState;
   userBoxes: Annotation[];
   selSet: Set<string>;
   dimmedAiIds?: Set<string>;
@@ -583,7 +640,7 @@ interface BoxesListProps {
 }
 
 function BoxesList({
-  aiBoxes, userBoxes, selSet, dimmedAiIds, imageWidth, imageHeight,
+  aiBoxes, predictionSourceFilter, userBoxes, selSet, dimmedAiIds, imageWidth, imageHeight,
   hasMore, isFetchingMore, onFetchMore,
   currentFrameIndex,
   onSeekFrame,
@@ -624,17 +681,24 @@ function BoxesList({
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
-    if (showFrameFilter && (aiBoxes.length > 0 || userBoxes.length > 0 || resolvedVideoTrackPanel)) {
+    const aiTotalCount = predictionSourceFilter?.totalCount ?? aiBoxes.length;
+    if (showFrameFilter && (aiTotalCount > 0 || userBoxes.length > 0 || resolvedVideoTrackPanel)) {
       out.push({ kind: "frameFilter", key: "frame-filter", filter: frameFilter, onFilterChange: setFrameFilter });
     }
-    if (aiBoxes.length > 0) {
+    if (aiTotalCount > 0) {
+      const hasKnownPredictionSources = predictionSourceFilter
+        ? PREDICTION_SOURCE_FILTERS.some((source) => predictionSourceFilter.counts[source] > 0)
+        : false;
       out.push({
         kind: "header",
         label: "AI 待审",
         count: filteredAiBoxes.length,
-        totalCount: aiBoxes.length,
+        totalCount: aiTotalCount,
         key: "ai-header",
       });
+      if (predictionSourceFilter && hasKnownPredictionSources) {
+        out.push({ kind: "sourceFilter", key: "prediction-source-filter", filter: predictionSourceFilter });
+      }
       filteredAiBoxes.forEach((b) => out.push({ kind: "ai", box: b, key: `ai-${b.id}` }));
     }
     if (userBoxes.length > 0) {
@@ -682,7 +746,7 @@ function BoxesList({
     }
     if (resolvedVideoTrackPanel) out.push({ kind: "videoTracks", key: "video-track-panel" });
     return out;
-  }, [aiBoxes.length, filteredAiBoxes, filteredUserBoxes, frameFilter, showFrameFilter, userBoxes.length, resolvedVideoTrackPanel, collapsedGroups]);
+  }, [aiBoxes.length, filteredAiBoxes, filteredUserBoxes, frameFilter, predictionSourceFilter, showFrameFilter, userBoxes.length, resolvedVideoTrackPanel, collapsedGroups]);
 
   const selectBox = (box: Annotation | AiBox, shift: boolean | undefined) => {
     if (!shift) {
@@ -698,6 +762,7 @@ function BoxesList({
     estimateSize: (i) => {
       const row = rows[i];
       if (row?.kind === "frameFilter") return 38;
+      if (row?.kind === "sourceFilter") return 48;
       if (row?.kind === "header") return 36;
       if (row?.kind === "videoTracks") return 420;
       return 68;
@@ -769,6 +834,9 @@ function BoxesList({
                   <span className={styles.frameFilterLabel}>显示范围</span>
                   <FrameFilterTabs value={r.filter} onChange={r.onFilterChange} />
                 </div>
+              )}
+              {r.kind === "sourceFilter" && (
+                <PredictionSourceFilterCard filter={r.filter} />
               )}
               {r.kind === "videoTracks" && (
                 <div data-testid="video-track-panel-row">

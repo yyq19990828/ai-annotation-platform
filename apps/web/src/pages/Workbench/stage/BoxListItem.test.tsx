@@ -2,6 +2,7 @@ import { render, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { BoxListItem } from "./BoxListItem";
 import type { Annotation } from "@/types";
+import type { AiBox } from "../state/transforms";
 
 const base: Annotation = {
   id: "a1",
@@ -57,6 +58,32 @@ describe("BoxListItem", () => {
     );
     fireEvent.click(getByLabelText("精修"));
     expect(onRefine).toHaveBeenCalledOnce();
+  });
+
+  it("AI 行展示预测来源", () => {
+    const b: AiBox = {
+      ...base,
+      id: "pred-imported",
+      predictionId: "p-imported",
+      shapeIndex: 0,
+      predictionSource: "external_import",
+      annotation_type: "bbox",
+      geometry: { type: "bbox", x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+      conf: 0.91,
+      source: "prediction_based",
+    };
+    const { getByText } = render(
+      <BoxListItem
+        b={b}
+        isAi
+        selected={false}
+        imageWidth={1000}
+        imageHeight={500}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(getByText("导入 · 91%")).toBeInTheDocument();
   });
 
   it("v0.10.9 · 渲染 onRefine 按钮并触发回调（user polygon 行）", () => {

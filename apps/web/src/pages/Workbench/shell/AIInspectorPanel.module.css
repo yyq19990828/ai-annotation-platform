@@ -279,6 +279,75 @@
   font-weight: 600;
 }
 
+.sourceFilterCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-elev);
+}
+
+.sourceFilterLabel,
+.sourceFilterOption,
+.sourceFilterControls {
+  display: flex;
+  align-items: center;
+}
+
+.sourceFilterLabel {
+  gap: 5px;
+  color: var(--color-fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sourceFilterControls {
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.sourceFilterOption {
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-muted);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.sourceFilterOptionActive {
+  border-color: color-mix(in oklab, var(--color-ai) 45%, var(--color-border));
+  background: var(--color-ai-soft);
+  color: var(--color-ai);
+}
+
+.sourceFilterOptionImport.sourceFilterOptionActive {
+  border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border));
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.sourceFilterCheckbox {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
+.sourceFilterCount {
+  color: inherit;
+  font-size: 10px;
+}
+
 .frameFilterButton {
   height: 24px;
   border: 0;

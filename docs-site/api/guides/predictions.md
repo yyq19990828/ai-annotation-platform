@@ -50,6 +50,21 @@ GET /api/v1/admin/preannotate-queue?project_id=&status=
 
 只看当前 `pre_annotated=true` 的批次（与 jobs 历史区分）。
 
+## 查询任务预测
+
+```http
+GET /api/v1/tasks/:task_id/predictions?model_version=&min_confidence=&limit=&offset=
+```
+
+返回 `PredictionOut[]`。每条 prediction 的 `source` 表示候选来源：
+
+| source | 含义 |
+|---|---|
+| `ml_backend` | 平台内 ML backend 生成的预标 |
+| `external_import` | 通过预测导入端点写入的外部预测 |
+
+Workbench 会用该字段显示来源标识，并支持按来源隐藏 / 恢复候选框。
+
 ## 重置批次
 
 ```http

@@ -115,6 +115,7 @@ describe("predictionsToBoxes", () => {
     const preds = [
       {
         id: "p1",
+        source: "external_import",
         result: [
           {
             geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 },
@@ -134,6 +135,7 @@ describe("predictionsToBoxes", () => {
     expect(boxes[0].id).toBe("pred-p1-0");
     expect(boxes[0].predictionId).toBe("p1");
     expect(boxes[0].source).toBe("prediction_based");
+    expect(boxes[0].predictionSource).toBe("external_import");
   });
 
   it("uses original shape_index for ids and accept payloads when predictions are filtered", () => {

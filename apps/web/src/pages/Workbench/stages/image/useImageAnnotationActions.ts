@@ -8,7 +8,16 @@ import { buildIoUIndex } from "../../stage/iou-index";
 import { iouShape } from "../../stage/iou";
 import type { useAnnotationHistory } from "../../state/useAnnotationHistory";
 import type { UseInteractiveAIReturn } from "../../state/useInteractiveAI";
-import { geometryToShape, polygonBounds, predictionsToBoxes, type AiBox } from "../../state/transforms";
+import {
+  defaultPredictionSourceVisibility,
+  emptyPredictionSourceCounts,
+  geometryToShape,
+  normalizePredictionSource,
+  polygonBounds,
+  predictionsToBoxes,
+  type AiBox,
+  type PredictionSourceFilter,
+} from "../../state/transforms";
 import type { UseMaskEditorReturn } from "../../state/useMaskEditor";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
 import { UNKNOWN_CLASS } from "../../stage/colors";
@@ -141,6 +150,7 @@ export function useImageAnnotationActions({
   const [batchChanging, setBatchChanging] = useState(false);
   const [samPendingAccept, setSamPendingAccept] = useState<{ idx: number } | null>(null);
   const [dismissedShapeKeys, setDismissedShapeKeys] = useState<Set<string>>(new Set());
+  const [predictionSourceVisibility, setPredictionSourceVisibility] = useState(defaultPredictionSourceVisibility);
 
   useEffect(() => {
     setDismissedShapeKeys(new Set());
@@ -166,7 +176,7 @@ export function useImageAnnotationActions({
     () => predictionsToBoxes(predictionsData, toolBindings),
     [predictionsData, toolBindings],
   );
-  const aiBoxes = useMemo(
+  const reviewableAiBoxes = useMemo(
     () => allAiBoxes.filter((b) => {
       if (b.conf < s.confThreshold) return false;
       if (acceptedShapeKeys.has(b.id)) return false;
@@ -175,6 +185,36 @@ export function useImageAnnotationActions({
       return true;
     }),
     [allAiBoxes, s.confThreshold, acceptedShapeKeys, dismissedShapeKeys],
+  );
+  const predictionSourceCounts = useMemo(() => {
+    const counts = emptyPredictionSourceCounts();
+    for (const box of reviewableAiBoxes) {
+      const source = normalizePredictionSource(box.predictionSource);
+      if (source) counts[source] += 1;
+    }
+    return counts;
+  }, [reviewableAiBoxes]);
+  const aiBoxes = useMemo(
+    () => reviewableAiBoxes.filter((b) => {
+      const source = normalizePredictionSource(b.predictionSource);
+      return source ? predictionSourceVisibility[source] : true;
+    }),
+    [reviewableAiBoxes, predictionSourceVisibility],
+  );
+  const handleTogglePredictionSource = useCallback(
+    (source: PredictionSourceFilter, visible: boolean) => {
+      setPredictionSourceVisibility((prev) => ({ ...prev, [source]: visible }));
+    },
+    [],
+  );
+  const predictionSourceFilter = useMemo(
+    () => ({
+      visibility: predictionSourceVisibility,
+      counts: predictionSourceCounts,
+      totalCount: reviewableAiBoxes.length,
+      onToggle: handleTogglePredictionSource,
+    }),
+    [handleTogglePredictionSource, predictionSourceCounts, predictionSourceVisibility, reviewableAiBoxes.length],
   );
   const aiTakeoverRate = useMemo(() => {
     if (!annotationsData || annotationsData.length === 0) return 0;
@@ -675,6 +715,7 @@ export function useImageAnnotationActions({
   return {
     ...annotationActions,
     aiBoxes,
+    predictionSourceFilter,
     aiTakeoverRate,
     dimmedAiIds,
     clipboard,

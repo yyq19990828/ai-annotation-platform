@@ -8362,6 +8362,17 @@
             ],
             "title": "Score"
           },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
           "task_id": {
             "format": "uuid",
             "title": "Task Id",
