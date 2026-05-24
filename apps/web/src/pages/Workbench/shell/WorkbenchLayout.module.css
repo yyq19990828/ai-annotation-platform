@@ -18,9 +18,18 @@
 }
 
 .sideSlot {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+/* 把侧栏面板撑满 slot 高度（恢复重构前 grid item 的 stretch 行为）：
+   否则 block 容器不约束子级高度，左栏虚拟列表撑爆、右栏内容塌成黑框。 */
+.sideSlot > * {
+  flex: 1;
+  min-height: 0;
 }
 
 .centerColumn {
