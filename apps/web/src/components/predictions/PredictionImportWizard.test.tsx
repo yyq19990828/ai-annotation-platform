@@ -177,38 +177,14 @@ describe("PredictionImportWizard", () => {
     expect(screen.getByText("b.json")).toBeInTheDocument();
   });
 
-  it("导入对象=标注时走 importAnnotations 端点 (不调 import)", async () => {
-    importAnnotationsMock.mockResolvedValueOnce({
-      imported: 4,
-      skipped: 0,
-      errors: [],
-      dry_run: true,
-    });
-
+  it("标注导入入口默认隐藏 (ANNOTATIONS_IMPORT_ENABLED=false)", () => {
+    // v0.10.54 · 后端就绪但前端暂隐: 不渲染「导入对象」切换, 向导固定走预测导入。
     render(
       <PredictionImportWizard open onClose={() => {}} projectId="p-anno" />,
     );
-
-    fireEvent.change(screen.getByLabelText(/导入对象/), {
-      target: { value: "annotations" },
-    });
-    // 标注模式下不应再有「格式」选择
-    expect(screen.queryByLabelText(/格式/)).not.toBeInTheDocument();
-
-    const fileInput = document.getElementById("pi-file") as HTMLInputElement;
-    fireEvent.change(fileInput, { target: { files: [makeFile("anno.json")] } });
-    fireEvent.click(screen.getByRole("button", { name: /预览/ }));
-
-    await waitFor(() => {
-      expect(importAnnotationsMock).toHaveBeenCalledWith(
-        "p-anno",
-        expect.any(File),
-        expect.objectContaining({ overwrite: false }),
-        true,
-      );
-    });
-    expect(importMock).not.toHaveBeenCalled();
-    expect(await screen.findByText(/确认导入 4 条/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/导入对象/)).not.toBeInTheDocument();
+    // 预测路径仍可用: 仍能看到「格式」选择。
+    expect(screen.getByLabelText(/格式/)).toBeInTheDocument();
   });
 
   it("确认提交 → 调用 import 端点 dry_run=false 并触发 onComplete", async () => {

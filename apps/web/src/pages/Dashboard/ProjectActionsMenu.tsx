@@ -12,6 +12,7 @@ import { Icon } from "@/components/ui/Icon";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import {
   PredictionImportWizard,
+  ANNOTATIONS_IMPORT_ENABLED,
   type ImportTarget,
 } from "@/components/predictions/PredictionImportWizard";
 import type { ProjectResponse } from "@/api/projects";
@@ -51,12 +52,17 @@ export function ProjectActionsMenu({
       icon: "upload",
       onSelect: () => setImportTarget("predictions"),
     },
-    {
-      id: "import-annotations",
-      label: "导入标注",
-      icon: "upload",
-      onSelect: () => setImportTarget("annotations"),
-    },
+    // v0.10.54 · 标注导入入口暂隐 (后端已就绪, ANNOTATIONS_IMPORT_ENABLED 控制)。
+    ...(ANNOTATIONS_IMPORT_ENABLED
+      ? [
+          {
+            id: "import-annotations",
+            label: "导入标注",
+            icon: "upload" as const,
+            onSelect: () => setImportTarget("annotations"),
+          },
+        ]
+      : []),
   ];
 
   return (
