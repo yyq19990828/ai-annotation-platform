@@ -65,6 +65,43 @@ GET /api/v1/tasks/:task_id/predictions?model_version=&min_confidence=&limit=&off
 
 Workbench 会用该字段显示来源标识，并支持按来源隐藏 / 恢复候选框。
 
+## 按来源清理预测
+
+```http
+POST /api/v1/projects/:project_id/predictions/purge
+{
+  "source_scope": "external_import",
+  "task_ids": null,
+  "dry_run": true
+}
+```
+
+权限：项目 owner 或 super_admin。`source_scope` 可为：
+
+| source_scope | 含义 |
+|---|---|
+| `external_import` | 只清外部导入预测，适合重导前预览或手动回滚导入 |
+| `ml_backend` | 只清平台 ML Backend 生成的预标，清理后需重新运行模型恢复 |
+| `all` | 清理当前项目范围内全部 prediction |
+
+`task_ids=null` 表示项目级清理；传 UUID 数组时仅清这些 task。建议先传 `dry_run=true` 读取计数，再用同一参数正式执行：
+
+```json
+{
+  "source_scope": "external_import",
+  "task_ids": null,
+  "dry_run": true,
+  "counts": {
+    "ml_backend": 0,
+    "external_import": 12,
+    "unknown": 0,
+    "total": 12
+  }
+}
+```
+
+正式清理会先删 `prediction_metas`，再删 `predictions`，并写 `predictions.purge` 审计。当前 `annotations.parent_prediction_id` 没有外键级联，已采纳的人工标注不会被删除。
+
 ## 重置批次
 
 ```http

@@ -40,6 +40,13 @@ describe("PredictionImportWizard", () => {
     expect(previewBtn).toBeDisabled();
   });
 
+  it("预测导入默认勾选替换已有外部导入预测", () => {
+    render(
+      <PredictionImportWizard open onClose={() => {}} projectId="p-default" />,
+    );
+    expect(screen.getByRole("checkbox")).toBeChecked();
+  });
+
   it("选择文件后预览 → 显示 imported/skipped/errors 统计", async () => {
     importMock.mockResolvedValueOnce({
       imported: 5,
@@ -66,7 +73,7 @@ describe("PredictionImportWizard", () => {
         "p-1",
         "aap_json",
         expect.any(File),
-        expect.objectContaining({ overwriteExisting: false }),
+        expect.objectContaining({ overwriteExisting: true }),
         true,
       );
     });
@@ -179,22 +186,15 @@ describe("PredictionImportWizard", () => {
     });
   });
 
-  it("多文件预览会逐文件调用并聚合统计与错误来源", async () => {
-    importMock
-      .mockResolvedValueOnce({
-        imported: 2,
-        skipped: 0,
-        errors: [],
-        dry_run: true,
-      })
-      .mockResolvedValueOnce({
-        imported: 1,
-        skipped: 1,
-        errors: [
-          { task_match: { display_id: "T-NOPE" }, reason: "task not found" },
-        ],
-        dry_run: true,
-      });
+  it("多文件预览会一次请求后端并展示汇总错误", async () => {
+    importMock.mockResolvedValueOnce({
+      imported: 3,
+      skipped: 1,
+      errors: [
+        { task_match: { display_id: "T-NOPE" }, reason: "b.json: task not found" },
+      ],
+      dry_run: true,
+    });
 
     render(
       <PredictionImportWizard open onClose={() => {}} projectId="p-batch" />,
@@ -206,11 +206,16 @@ describe("PredictionImportWizard", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /预览/ }));
 
-    await waitFor(() => expect(importMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(importMock).toHaveBeenCalledTimes(1));
+    expect(importMock).toHaveBeenCalledWith(
+      "p-batch",
+      "aap_json",
+      expect.arrayContaining([expect.any(File), expect.any(File)]),
+      expect.objectContaining({ overwriteExisting: true }),
+      true,
+    );
     expect(await screen.findByText(/确认导入 3 条/)).toBeInTheDocument();
     expect(screen.getByText(/b\.json: task not found/)).toBeInTheDocument();
-    expect(screen.getByText("a.json")).toBeInTheDocument();
-    expect(screen.getByText("b.json")).toBeInTheDocument();
   });
 
   it("标注导入入口默认隐藏 (ANNOTATIONS_IMPORT_ENABLED=false)", () => {

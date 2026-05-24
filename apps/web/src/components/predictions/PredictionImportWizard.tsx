@@ -89,7 +89,9 @@ export function PredictionImportWizard({
   const [yoloVariant, setYoloVariant] = useState<YoloImportVariant>("det");
   const [files, setFiles] = useState<File[]>([]);
   const [modelVersion, setModelVersion] = useState("");
-  const [overwriteExisting, setOverwriteExisting] = useState(false);
+  const [overwriteExisting, setOverwriteExisting] = useState(
+    initialTarget === "predictions",
+  );
   const [imageWidth, setImageWidth] = useState("");
   const [imageHeight, setImageHeight] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -104,7 +106,7 @@ export function PredictionImportWizard({
     setYoloVariant("det");
     setFiles([]);
     setModelVersion("");
-    setOverwriteExisting(false);
+    setOverwriteExisting(initialTarget === "predictions");
     setImageWidth("");
     setImageHeight("");
     setPreview(null);
@@ -174,33 +176,40 @@ export function PredictionImportWizard({
     const options = importOptions();
     if (!options) return null;
 
+    if (target === "predictions") {
+      try {
+        const result = await predictionsApi.import(
+          projectId,
+          format,
+          files.length === 1 ? files[0] : files,
+          options,
+          dryRun,
+        );
+        setFileResults([]);
+        setPreview(result);
+        return result;
+      } catch (err) {
+        const fallback = failedFileResult(
+          files.map((file) => file.name).join(", "),
+          err,
+          dryRun,
+        );
+        setFileResults([]);
+        setPreview(fallback);
+        return fallback;
+      }
+    }
+
     const results: FileImportPreview[] = [];
     for (const [index, selectedFile] of files.entries()) {
-      // overwrite 的 purge 去重集是每次后端调用作用域; 多文件逐个调用时,
-      // 若每个文件都带 overwrite, 后一个文件会再次 purge 同一 task, 把前一个文件
-      // 刚导入的记录也删掉 (静默数据丢失). 整批只在首个文件 purge 一次, 其余追加。
       const firstFile = index === 0;
       try {
-        let result: PredictionImportResult;
-        if (target === "annotations") {
-          result = await predictionsApi.importAnnotations(
-            projectId,
-            selectedFile,
-            { overwrite: firstFile && overwriteExisting },
-            dryRun,
-          );
-        } else {
-          const fileOptions = firstFile
-            ? options
-            : { ...options, overwriteExisting: false };
-          result = await predictionsApi.import(
-            projectId,
-            format,
-            selectedFile,
-            fileOptions,
-            dryRun,
-          );
-        }
+        const result = await predictionsApi.importAnnotations(
+          projectId,
+          selectedFile,
+          { overwrite: firstFile && overwriteExisting },
+          dryRun,
+        );
         results.push({ fileName: selectedFile.name, result });
       } catch (err) {
         results.push({
@@ -282,6 +291,7 @@ export function PredictionImportWizard({
                   onChange={(e) => {
                     const next = e.target.value as ImportTarget;
                     setTarget(next);
+                    setOverwriteExisting(next === "predictions");
                     // 标注只走 aap_json; 切过去时归一格式避免残留 coco。
                     if (next === "annotations") setFormat("aap_json");
                   }}

@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.10.57] - 2026-05-24
+
+> **预测按来源清理 + 导入默认替换。** 外部预测重导默认幂等，项目管理员可按来源清理外部导入或 ML Backend 预标。
+
+### Added
+
+- **按来源清理预测端点** ([predictions.py](apps/api/app/api/v1/predictions.py) · [predictions_import.py](apps/api/app/services/predictions_import.py)): 新增 `POST /projects/{id}/predictions/purge`，支持 `source_scope=external_import|ml_backend|all` 与可选 `task_ids`；`dry_run=true` 返回将删除的来源计数，正式清理先删 `prediction_metas` 再删 `predictions`，并写 `predictions.purge` 审计。
+- **清理预测 UI** ([ProjectActionsMenu.tsx](apps/web/src/pages/Dashboard/ProjectActionsMenu.tsx) · [PredictionPurgeModal.tsx](apps/web/src/components/predictions/PredictionPurgeModal.tsx)): Dashboard 项目 `⋮` 菜单新增「清理预测」，默认只清外部导入；选择 ML Backend 或全部预测时需额外确认，并提示需要重跑模型恢复。
+
+### Changed
+
+- **`overwrite_existing` 默认改为 true** ([predictions.py](apps/api/app/api/v1/predictions.py) · [PredictionImportWizard.tsx](apps/web/src/components/predictions/PredictionImportWizard.tsx)): `POST /projects/{id}/predictions/import` 现在默认替换同 task 下 `source='external_import'` 的旧预测，重导默认幂等；显式传 `overwrite_existing=false` 仍可追加。此行为只影响外部导入预测，绝不清理 `source='ml_backend'`。
+- **多文件预测导入改为单次批处理** ([predictions_import.py](apps/api/app/services/predictions_import.py) · [predictions.ts](apps/web/src/api/predictions.ts)): multipart `file` 字段可重复提交，后端在一次调用内共享 `purged_tasks`，同一 task 整批只 purge 一次，避免后续文件把前序文件刚导入的预测删掉；不同 task 仍各自正确 purge。
+
 ## [0.10.56] - 2026-05-24
 
 > **YOLO 预测导入补齐。** 外部预测导入现在支持 YOLO det / obb / seg zip, 与现有 YOLO 导出目标对称。

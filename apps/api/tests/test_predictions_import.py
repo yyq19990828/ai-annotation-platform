@@ -26,7 +26,8 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.dataset import Dataset, DatasetItem
-from app.db.models.prediction import Prediction
+from app.db.models.audit_log import AuditLog
+from app.db.models.prediction import Prediction, PredictionMeta
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services.export_packaging import _rotated_corners_norm
@@ -91,6 +92,13 @@ def _aap_envelope(tasks_payload: list[dict], schema_version: str = "1.0") -> byt
 
 def _upload_files(content: bytes, filename: str = "test.json") -> dict:
     return {"file": (filename, io.BytesIO(content), "application/json")}
+
+
+def _upload_multi_files(items: list[tuple[str, bytes]]) -> list[tuple[str, tuple]]:
+    return [
+        ("file", (filename, io.BytesIO(content), "application/json"))
+        for filename, content in items
+    ]
 
 
 def _zip_files(files: dict[str, str]) -> bytes:
@@ -819,7 +827,84 @@ async def test_import_aap_json_dry_run_not_persisted(
 # ── overwrite_existing ───────────────────────────────────────────────
 
 
-async def test_import_aap_json_overwrite_replaces_external_only(
+async def test_import_aap_json_default_overwrite_replaces_external_only(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, tasks = await _seed_project_with_tasks(db_session, user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+    db_session.add(
+        Prediction(
+            id=uuid.uuid4(),
+            task_id=tasks[0].id,
+            project_id=project.id,
+            ml_backend_id=None,
+            result=[],
+            source="ml_backend",
+        )
+    )
+    await db_session.flush()
+
+    payload = _aap_envelope(
+        [
+            {
+                "task_match": {"display_id": tasks[0].display_id},
+                "predictions": [
+                    {
+                        "geometry": {
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
+                        "class_name": "car",
+                        "confidence": 0.5,
+                    }
+                ],
+            }
+        ]
+    )
+
+    # 第一次: 无旧 external_import, 只写入新导入.
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=aap_json",
+        files=_upload_files(payload),
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+
+    # 第二次不显式传 overwrite_existing: v0.10.57 起默认替换 external_import.
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=aap_json",
+        files=_upload_files(payload),
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+
+    external_count = (
+        await db_session.execute(
+            select(func.count(Prediction.id)).where(
+                Prediction.task_id == tasks[0].id,
+                Prediction.source == "external_import",
+            )
+        )
+    ).scalar()
+    ml_count = (
+        await db_session.execute(
+            select(func.count(Prediction.id)).where(
+                Prediction.task_id == tasks[0].id,
+                Prediction.source == "ml_backend",
+            )
+        )
+    ).scalar()
+    assert external_count == 1
+    assert ml_count == 1
+
+
+async def test_import_aap_json_explicit_overwrite_false_appends(
     httpx_client: httpx.AsyncClient,
     super_admin,
     db_session: AsyncSession,
@@ -849,7 +934,6 @@ async def test_import_aap_json_overwrite_replaces_external_only(
         ]
     )
 
-    # 第一次: append
     r = await httpx_client.post(
         f"/api/v1/projects/{project.id}/predictions/import?format=aap_json",
         files=_upload_files(payload),
@@ -857,11 +941,10 @@ async def test_import_aap_json_overwrite_replaces_external_only(
     )
     assert r.status_code == 200, r.text
 
-    # 第二次 overwrite_existing=true: 应替换, 总数仍为 1
     r = await httpx_client.post(
         f"/api/v1/projects/{project.id}/predictions/import?format=aap_json",
         files=_upload_files(payload),
-        data={"overwrite_existing": "true"},
+        data={"overwrite_existing": "false"},
         headers=headers,
     )
     assert r.status_code == 200, r.text
@@ -874,7 +957,227 @@ async def test_import_aap_json_overwrite_replaces_external_only(
             )
         )
     ).scalar()
-    assert count == 1
+    assert count == 2
+
+
+async def test_import_aap_json_multi_file_overwrite_shares_purge_scope(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, tasks = await _seed_project_with_tasks(db_session, user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+    db_session.add_all(
+        [
+            Prediction(
+                id=uuid.uuid4(),
+                task_id=tasks[0].id,
+                project_id=project.id,
+                ml_backend_id=None,
+                result=[],
+                source="external_import",
+                model_version="old-task-0",
+            ),
+            Prediction(
+                id=uuid.uuid4(),
+                task_id=tasks[1].id,
+                project_id=project.id,
+                ml_backend_id=None,
+                result=[],
+                source="external_import",
+                model_version="old-task-1",
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    file_a = _aap_envelope(
+        [
+            {
+                "task_match": {"display_id": tasks[0].display_id},
+                "predictions": [
+                    {
+                        "geometry": {
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
+                        "class_name": "car",
+                        "confidence": 0.5,
+                        "model_version": "new-a",
+                    }
+                ],
+            }
+        ]
+    )
+    file_b = _aap_envelope(
+        [
+            {
+                "task_match": {"display_id": tasks[0].display_id},
+                "predictions": [
+                    {
+                        "geometry": {
+                            "type": "bbox",
+                            "x": 0.3,
+                            "y": 0.3,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
+                        "class_name": "truck",
+                        "confidence": 0.6,
+                        "model_version": "new-b",
+                    }
+                ],
+            },
+            {
+                "task_match": {"display_id": tasks[1].display_id},
+                "predictions": [
+                    {
+                        "geometry": {
+                            "type": "bbox",
+                            "x": 0.4,
+                            "y": 0.4,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
+                        "class_name": "car",
+                        "confidence": 0.7,
+                        "model_version": "new-c",
+                    }
+                ],
+            },
+        ]
+    )
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=aap_json",
+        files=_upload_multi_files([("a.json", file_a), ("b.json", file_b)]),
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["imported"] == 3
+
+    rows = (
+        (
+            await db_session.execute(
+                select(Prediction).where(
+                    Prediction.project_id == project.id,
+                    Prediction.source == "external_import",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_task: dict[uuid.UUID, list[Prediction]] = {}
+    for row in rows:
+        by_task.setdefault(row.task_id, []).append(row)
+    assert {row.model_version for row in by_task[tasks[0].id]} == {"new-a", "new-b"}
+    assert {row.model_version for row in by_task[tasks[1].id]} == {"new-c"}
+
+
+async def test_purge_predictions_by_source_scope_counts_and_audits(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, tasks = await _seed_project_with_tasks(db_session, user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+    external = Prediction(
+        id=uuid.uuid4(),
+        task_id=tasks[0].id,
+        project_id=project.id,
+        ml_backend_id=None,
+        result=[],
+        source="external_import",
+    )
+    ml = Prediction(
+        id=uuid.uuid4(),
+        task_id=tasks[0].id,
+        project_id=project.id,
+        ml_backend_id=None,
+        result=[],
+        source="ml_backend",
+    )
+    external_other_task = Prediction(
+        id=uuid.uuid4(),
+        task_id=tasks[1].id,
+        project_id=project.id,
+        ml_backend_id=None,
+        result=[],
+        source="external_import",
+    )
+    db_session.add_all([external, ml, external_other_task])
+    await db_session.flush()
+    meta = PredictionMeta(
+        id=uuid.uuid4(),
+        prediction_id=external.id,
+        prediction_created_at=external.created_at,
+        total_cost=0.1,
+    )
+    db_session.add(meta)
+    await db_session.flush()
+
+    preview = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/purge",
+        json={
+            "source_scope": "external_import",
+            "task_ids": [str(tasks[0].id)],
+            "dry_run": True,
+        },
+        headers=headers,
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["counts"] == {
+        "ml_backend": 0,
+        "external_import": 1,
+        "unknown": 0,
+        "total": 1,
+    }
+    assert (
+        await db_session.scalar(
+            select(func.count(Prediction.id)).where(Prediction.project_id == project.id)
+        )
+    ) == 3
+
+    purge = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/purge",
+        json={
+            "source_scope": "external_import",
+            "task_ids": [str(tasks[0].id)],
+        },
+        headers=headers,
+    )
+    assert purge.status_code == 200, purge.text
+    assert purge.json()["counts"]["total"] == 1
+
+    remaining = (
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.project_id == project.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {row.id for row in remaining} == {ml.id, external_other_task.id}
+    assert (
+        await db_session.scalar(
+            select(func.count(PredictionMeta.id)).where(
+                PredictionMeta.prediction_id == external.id
+            )
+        )
+    ) == 0
+    audit = await db_session.scalar(
+        select(AuditLog).where(AuditLog.action == "predictions.purge")
+    )
+    assert audit is not None
+    assert audit.detail_json["source_scope"] == "external_import"
+    assert audit.detail_json["counts"]["total"] == 1
 
 
 # ── 未知几何 kind 不让整批挂 ────────────────────────────────────────

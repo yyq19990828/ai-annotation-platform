@@ -8,7 +8,7 @@ from app.schemas._jsonb_types import (
     ToolUnitId,
 )
 from pydantic import BaseModel
-from typing import Any, Union
+from typing import Any, Literal, Union
 from uuid import UUID
 from datetime import datetime
 
@@ -66,3 +66,26 @@ class PredictionMetaOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+PredictionSourceScope = Literal["ml_backend", "external_import", "all"]
+
+
+class PredictionPurgeRequest(BaseModel):
+    source_scope: PredictionSourceScope = "external_import"
+    task_ids: list[UUID] | None = None
+    dry_run: bool = False
+
+
+class PredictionPurgeCounts(BaseModel):
+    ml_backend: int = 0
+    external_import: int = 0
+    unknown: int = 0
+    total: int = 0
+
+
+class PredictionPurgeResponse(BaseModel):
+    source_scope: PredictionSourceScope
+    task_ids: list[UUID] | None = None
+    dry_run: bool
+    counts: PredictionPurgeCounts

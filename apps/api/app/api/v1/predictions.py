@@ -40,7 +40,12 @@ from app.db.models.prediction import FailedPrediction
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
-from app.schemas.aap_json import AAPImportResult
+from app.schemas.aap_json import AAPImportErrorEntry, AAPImportResult
+from app.schemas.prediction import (
+    PredictionPurgeCounts,
+    PredictionPurgeRequest,
+    PredictionPurgeResponse,
+)
 from app.services.audit import AuditAction, AuditService
 
 
@@ -261,12 +266,12 @@ async def restore_failed_prediction(
 )
 async def import_predictions(
     request: Request,
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(..., alias="file"),
     format: str = Query("aap_json", pattern="^(aap_json|coco|yolo)$"),
     yolo_variant: str = Query("det", pattern="^(det|obb|seg)$"),
     dry_run: bool = Query(False),
     model_version: str | None = Form(None),
-    overwrite_existing: bool = Form(False),
+    overwrite_existing: bool = Form(True),
     image_width: int | None = Form(None),
     image_height: int | None = Form(None),
     project: Project = Depends(require_project_owner),
@@ -283,7 +288,13 @@ async def import_predictions(
     from app.services.async_job_notify import notify_job_terminal
     from app.services.predictions_import import import_aap_json, import_coco, import_yolo
 
-    raw = await file.read()
+    raw_files = [
+        (upload.filename or "file", await upload.read())
+        for upload in files
+    ]
+    if not raw_files:
+        raise HTTPException(status_code=422, detail="file is required")
+
     image_size_hint: tuple[int, int] | None = None
     if format == "coco":
         if (image_width is None) != (image_height is None):
@@ -310,7 +321,9 @@ async def import_predictions(
                 user_id=current_user.id,
                 payload={
                     "format": format,
-                    "size_bytes": len(raw),
+                    "size_bytes": sum(len(raw) for _, raw in raw_files),
+                    "file_count": len(raw_files),
+                    "file_names": [name for name, _ in raw_files],
                     "project_display_id": project.display_id,
                     "overwrite_existing": overwrite_existing,
                     "model_version_fallback": model_version,
@@ -326,35 +339,66 @@ async def import_predictions(
             aj_id = None
 
     try:
-        if format == "aap_json":
-            result = await import_aap_json(
-                db,
-                project.id,
-                raw,
-                model_version_fallback=model_version,
-                overwrite_existing=overwrite_existing,
-                dry_run=dry_run,
-            )
-        elif format == "coco":
-            result = await import_coco(
-                db,
-                project.id,
-                raw,
-                model_version_fallback=model_version,
-                overwrite_existing=overwrite_existing,
-                dry_run=dry_run,
-                image_size_hint=image_size_hint,
-            )
-        else:
-            result = await import_yolo(
-                db,
-                project.id,
-                raw,
-                yolo_variant=yolo_variant,
-                model_version_fallback=model_version,
-                overwrite_existing=overwrite_existing,
-                dry_run=dry_run,
-            )
+        result = AAPImportResult(dry_run=dry_run)
+        purged_tasks: set[uuid.UUID] = set()
+        for filename, raw in raw_files:
+            try:
+                if format == "aap_json":
+                    part = await import_aap_json(
+                        db,
+                        project.id,
+                        raw,
+                        model_version_fallback=model_version,
+                        overwrite_existing=overwrite_existing,
+                        dry_run=dry_run,
+                        purged_tasks=purged_tasks,
+                    )
+                elif format == "coco":
+                    part = await import_coco(
+                        db,
+                        project.id,
+                        raw,
+                        model_version_fallback=model_version,
+                        overwrite_existing=overwrite_existing,
+                        dry_run=dry_run,
+                        image_size_hint=image_size_hint,
+                        purged_tasks=purged_tasks,
+                    )
+                else:
+                    part = await import_yolo(
+                        db,
+                        project.id,
+                        raw,
+                        yolo_variant=yolo_variant,
+                        model_version_fallback=model_version,
+                        overwrite_existing=overwrite_existing,
+                        dry_run=dry_run,
+                        purged_tasks=purged_tasks,
+                    )
+            except ValueError as exc:
+                if len(raw_files) == 1:
+                    raise
+                result.skipped += 1
+                result.errors.append(
+                    AAPImportErrorEntry(
+                        task_match={"file_name": filename},
+                        reason=str(exc),
+                    )
+                )
+                continue
+
+            result.imported += part.imported
+            result.skipped += part.skipped
+            if len(raw_files) > 1:
+                result.errors.extend(
+                    AAPImportErrorEntry(
+                        task_match=err.task_match,
+                        reason=f"{filename}: {err.reason}",
+                    )
+                    for err in part.errors
+                )
+            else:
+                result.errors.extend(part.errors)
     except ValueError as exc:
         if aj_id is not None:
             try:
@@ -386,6 +430,7 @@ async def import_predictions(
             detail={
                 "format": format,
                 "project_display_id": project.display_id,
+                "file_count": len(raw_files),
                 "imported": result.imported,
                 "skipped": result.skipped,
                 "error_count": len(result.errors),
@@ -412,3 +457,53 @@ async def import_predictions(
         await db.commit()
 
     return result
+
+
+@router.post(
+    "/projects/{project_id}/predictions/purge",
+    response_model=PredictionPurgeResponse,
+)
+async def purge_predictions(
+    payload: PredictionPurgeRequest,
+    request: Request,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PredictionPurgeResponse:
+    """按来源清理项目预测候选。dry_run=true 仅返回将删除的计数。"""
+
+    from app.services.predictions_import import _purge_predictions
+
+    counts = await _purge_predictions(
+        db,
+        project_id=project.id,
+        task_ids=payload.task_ids,
+        source_scope=payload.source_scope,
+        dry_run=payload.dry_run,
+    )
+    if not payload.dry_run:
+        await AuditService.log(
+            db,
+            actor=current_user,
+            action=AuditAction.PREDICTIONS_PURGE,
+            target_type="project",
+            target_id=str(project.id),
+            request=request,
+            status_code=200,
+            detail={
+                "project_display_id": project.display_id,
+                "source_scope": payload.source_scope,
+                "task_ids": [str(task_id) for task_id in payload.task_ids]
+                if payload.task_ids is not None
+                else None,
+                "counts": counts,
+            },
+        )
+        await db.commit()
+
+    return PredictionPurgeResponse(
+        source_scope=payload.source_scope,
+        task_ids=payload.task_ids,
+        dry_run=payload.dry_run,
+        counts=PredictionPurgeCounts(**counts),
+    )

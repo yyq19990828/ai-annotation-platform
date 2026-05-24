@@ -20,7 +20,7 @@ Content-Type: multipart/form-data
 
 file=<JSON file or YOLO zip>
 model_version=<optional fallback string>
-overwrite_existing=<true|false default false>
+overwrite_existing=<true|false default true>
 image_width=<optional COCO fallback width>
 image_height=<optional COCO fallback height>
 ```
@@ -32,9 +32,9 @@ image_height=<optional COCO fallback height>
 | `format` | query | `aap_json` \| `coco` \| `yolo` | 是 | input 格式. 默认 `aap_json`. |
 | `yolo_variant` | query | `det` \| `obb` \| `seg` | 否 | 仅 `format=yolo` 生效,默认 `det`. |
 | `dry_run` | query | bool | 否 | true 时走全部校验路径但**不入库**, 供前端 wizard 预览. |
-| `file` | form | File | 是 | AAP/COCO 为 JSON 文件; YOLO 为 zip 包. |
+| `file` | form | File | 是 | AAP/COCO 为 JSON 文件,可重复提交多个 `file` 字段; YOLO 为 zip 包. |
 | `model_version` | form | string | 否 | AAP JSON 内 `model_version` 缺失时的兜底值. |
-| `overwrite_existing` | form | bool | 否 | true 时按 task 维度删该 task 下 `source='external_import'` 的旧 prediction 后再写入. |
+| `overwrite_existing` | form | bool | 否 | 默认 true。true 时按 task 维度删该 task 下 `source='external_import'` 的旧 prediction 后再写入;显式 false 时追加. |
 | `image_width` / `image_height` | form | int | 否 | 仅 `format=coco` 生效。COCO `images[]` 缺 `width/height` 时作为全局兜底；图片自带尺寸优先。两个字段必须同时提供。 |
 
 权限：项目 owner 或 super_admin（与 ML backend 配置同位）。
@@ -53,7 +53,7 @@ image_height=<optional COCO fallback height>
 }
 ```
 
-错误是逐 entry / shape 累计，不让整批挂；只有 schema_version 不兼容 / JSON 不可解析才整体 422。
+错误是逐 entry / shape 累计，不让整批挂。多文件上传时后端合并响应，并在 errors[].reason 前缀文件名。单文件 schema_version 不兼容 / JSON 不可解析会整体 422；多文件中的坏文件会作为一条错误累计，其他文件继续处理。
 
 ## AAP JSON 格式
 
@@ -130,6 +130,7 @@ task 匹配按 label 文件 stem 进行：`labels/animals/cat/001.txt` 会匹配
 
 - 写入的 `predictions` 行：`source='external_import'`, `ml_backend_id=NULL`, `model_version=<entry 内值或 form 兜底>`, `result=<内部 LS shape 数组>`.
 - AAP JSON 每个 `predictions[i]` 对应**一条** Prediction 行；普通 `geometry` 写 1 个 shape，`shapes[]` 写多个 shape 到同一行的 `result[]`。COCO 每个 `annotations[i]` 对应一条。YOLO 每个非空 label 文件对应一条，文件内多行合并到同一条 `result[]`。
+- `overwrite_existing` 从 v0.10.57 起默认 true，只清 `source='external_import'`；不会删除 ML Backend 生成的 `source='ml_backend'` 预测。多文件同一次上传共享 purge 作用域，同一 task 只清一次旧导入，随后各文件的新预测都会保留。
 - 写入路径复用 `PredictionService.create_from_ml_result`，确保与 ML backend 写入路径同源。
 
 ## task_match 匹配规则
@@ -159,6 +160,15 @@ curl -X POST "https://platform/api/v1/projects/$PID/predictions/import?format=aa
   -F "overwrite_existing=true"
 ```
 
+多文件 JSON 可重复传 `file` 字段：
+
+```bash
+curl -X POST "https://platform/api/v1/projects/$PID/predictions/import?format=aap_json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@part-a.json" \
+  -F "file=@part-b.json"
+```
+
 ## 审计
 
-所有非 dry-run 导入在 `audit_logs` 写一条 `predictions.import` 记录，`detail_json` 含 `format` / `imported` / `skipped` / `error_count` / `overwrite_existing` / `model_version_fallback` / `image_size_hint` / `yolo_variant`。
+所有非 dry-run 导入在 `audit_logs` 写一条 `predictions.import` 记录，`detail_json` 含 `format` / `imported` / `skipped` / `error_count` / `overwrite_existing` / `model_version_fallback` / `image_size_hint` / `yolo_variant` / `file_count`。

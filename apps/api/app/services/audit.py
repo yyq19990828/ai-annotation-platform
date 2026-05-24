@@ -101,6 +101,8 @@ class AuditAction(str, Enum):
     VIDEO_CHAPTER_DELETE = "video_chapter.delete"
     # v0.10.15 · 外部预测导入 (COCO / AAP JSON)
     PREDICTIONS_IMPORT = "predictions.import"
+    # v0.10.57 · 按来源清理 prediction
+    PREDICTIONS_PURGE = "predictions.purge"
     # v0.10.54 · 外部标注导入 (AAP JSON annotations[])
     ANNOTATION_IMPORT = "annotation.import"
     # I12 · Object Group 分组 + 批量编辑

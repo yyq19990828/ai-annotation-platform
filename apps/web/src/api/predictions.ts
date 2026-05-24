@@ -25,6 +25,22 @@ export interface PredictionImportOptions {
   yoloVariant?: YoloImportVariant;
 }
 
+export type PredictionPurgeSourceScope = "ml_backend" | "external_import" | "all";
+
+export interface PredictionPurgeCounts {
+  ml_backend: number;
+  external_import: number;
+  unknown: number;
+  total: number;
+}
+
+export interface PredictionPurgeResult {
+  source_scope: PredictionPurgeSourceScope;
+  task_ids: string[] | null;
+  dry_run: boolean;
+  counts: PredictionPurgeCounts;
+}
+
 export const predictionsApi = {
   listByTask: (taskId: string, modelVersion?: string, minConfidence?: number, limit?: number, offset?: number) => {
     const params = new URLSearchParams();
@@ -70,7 +86,7 @@ export const predictionsApi = {
   import: async (
     projectId: string,
     format: PredictionImportFormat,
-    file: File,
+    file: File | File[],
     options: PredictionImportOptions = {},
     dryRun = false,
   ): Promise<PredictionImportResult> => {
@@ -79,9 +95,12 @@ export const predictionsApi = {
       params.set("yolo_variant", options.yoloVariant);
     }
     const form = new FormData();
-    form.append("file", file);
+    const files = Array.isArray(file) ? file : [file];
+    files.forEach((item) => form.append("file", item));
     if (options.modelVersion) form.append("model_version", options.modelVersion);
-    if (options.overwriteExisting) form.append("overwrite_existing", "true");
+    if (options.overwriteExisting !== undefined) {
+      form.append("overwrite_existing", String(options.overwriteExisting));
+    }
     if (options.imageWidth !== undefined) {
       form.append("image_width", String(options.imageWidth));
     }
@@ -104,6 +123,16 @@ export const predictionsApi = {
     }
     return res.json();
   },
+
+  purge: (projectId: string, payload: {
+    source_scope: PredictionPurgeSourceScope;
+    task_ids?: string[] | null;
+    dry_run?: boolean;
+  }) =>
+    apiClient.post<PredictionPurgeResult>(
+      `/projects/${projectId}/predictions/purge`,
+      payload,
+    ),
 
   /**
    * v0.10.54 · 导入 AAP JSON 的 annotations[] (ADR-0028).

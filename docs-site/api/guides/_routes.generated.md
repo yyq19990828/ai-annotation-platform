@@ -271,6 +271,7 @@
 | POST | `/admin/failed-predictions/{failed_id}/dismiss` |
 | POST | `/admin/failed-predictions/{failed_id}/restore` |
 | POST | `/projects/{project_id}/predictions/import` |
+| POST | `/projects/{project_id}/predictions/purge` |
 
 ## `project_templates.py`
 
@@ -398,4 +399,4 @@
 
 ---
 
-_共 35 模块 / 226 路由_
+_共 35 模块 / 227 路由_

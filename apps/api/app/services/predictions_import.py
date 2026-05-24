@@ -229,31 +229,58 @@ def internal_geometry_to_ls_shape(
     return None
 
 
-# ── overwrite 语义: 同 task 已有 external_import prediction 是否替换 ──────
+# ── purge / overwrite 语义 ────────────────────────────────────────────
 
 
-async def _purge_existing_external_imports(
-    db: AsyncSession, task_id: uuid.UUID
-) -> None:
-    """overwrite_existing=true 时: 删该 task 下 source='external_import' 的 predictions.
+def _empty_purge_counts() -> dict[str, int]:
+    return {"ml_backend": 0, "external_import": 0, "unknown": 0, "total": 0}
+
+
+async def _purge_predictions(
+    db: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    task_ids: list[uuid.UUID] | set[uuid.UUID] | None = None,
+    source_scope: str = "external_import",
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """Count and optionally delete predictions by project, task scope, and source.
 
     PredictionMeta 通过 FK 引用 predictions.id (无 CASCADE), 必须先删 meta 再删 prediction.
     """
-    target_ids_q = await db.execute(
-        select(Prediction.id).where(
-            Prediction.task_id == task_id,
-            Prediction.source == "external_import",
-        )
-    )
-    target_ids = [row[0] for row in target_ids_q.all()]
+    if source_scope not in {"ml_backend", "external_import", "all"}:
+        raise ValueError("source_scope must be one of: ml_backend, external_import, all")
+
+    filters = [Prediction.project_id == project_id]
+    if task_ids is not None:
+        normalized_task_ids = list(dict.fromkeys(task_ids))
+        if not normalized_task_ids:
+            return _empty_purge_counts()
+        filters.append(Prediction.task_id.in_(normalized_task_ids))
+    if source_scope != "all":
+        filters.append(Prediction.source == source_scope)
+
+    target_rows = (
+        await db.execute(select(Prediction.id, Prediction.source).where(*filters))
+    ).all()
+    target_ids = [row[0] for row in target_rows]
+    counts = _empty_purge_counts()
+    for _, source in target_rows:
+        key = source if source in {"ml_backend", "external_import"} else "unknown"
+        counts[key] += 1
+        counts["total"] += 1
     if not target_ids:
-        return
+        return counts
+
+    if dry_run:
+        return counts
 
     await db.execute(
         delete(PredictionMeta).where(PredictionMeta.prediction_id.in_(target_ids))
     )
     await db.execute(delete(Prediction).where(Prediction.id.in_(target_ids)))
     await db.flush()
+    return counts
 
 
 # ── AAP JSON importer ──────────────────────────────────────────────
@@ -267,6 +294,7 @@ async def import_aap_json(
     model_version_fallback: str | None = None,
     overwrite_existing: bool = False,
     dry_run: bool = False,
+    purged_tasks: set[uuid.UUID] | None = None,
 ) -> AAPImportResult:
     try:
         raw = json.loads(file_bytes.decode("utf-8"))
@@ -286,7 +314,7 @@ async def import_aap_json(
     result = AAPImportResult(dry_run=dry_run)
     svc = PredictionService(db)
 
-    purged_tasks: set[uuid.UUID] = set()
+    purged_tasks = purged_tasks if purged_tasks is not None else set()
 
     for block in envelope.tasks:
         match_dict = block.task_match.model_dump(exclude_none=True)
@@ -319,7 +347,12 @@ async def import_aap_json(
             continue
 
         if overwrite_existing and not dry_run and task.id not in purged_tasks:
-            await _purge_existing_external_imports(db, task.id)
+            await _purge_predictions(
+                db,
+                project_id=project_id,
+                task_ids=[task.id],
+                source_scope="external_import",
+            )
             purged_tasks.add(task.id)
 
         # AAP JSON 每个 prediction entry 对应一条平台 Prediction 行; entry.shapes
@@ -439,6 +472,7 @@ async def import_coco(
     overwrite_existing: bool = False,
     dry_run: bool = False,
     image_size_hint: tuple[int, int] | None = None,
+    purged_tasks: set[uuid.UUID] | None = None,
 ) -> AAPImportResult:
     """COCO Detection 格式 importer.
 
@@ -479,7 +513,7 @@ async def import_coco(
 
     result = AAPImportResult(dry_run=dry_run)
     svc = PredictionService(db)
-    purged_tasks: set[uuid.UUID] = set()
+    purged_tasks = purged_tasks if purged_tasks is not None else set()
 
     for ann in annotations_raw:
         if not isinstance(ann, dict):
@@ -541,7 +575,12 @@ async def import_coco(
             continue
 
         if overwrite_existing and not dry_run and task.id not in purged_tasks:
-            await _purge_existing_external_imports(db, task.id)
+            await _purge_predictions(
+                db,
+                project_id=project_id,
+                task_ids=[task.id],
+                source_scope="external_import",
+            )
             purged_tasks.add(task.id)
 
         x, y, w, h = (float(v) for v in bbox)
@@ -599,6 +638,7 @@ async def import_yolo(
     model_version_fallback: str | None = None,
     overwrite_existing: bool = False,
     dry_run: bool = False,
+    purged_tasks: set[uuid.UUID] | None = None,
 ) -> AAPImportResult:
     """YOLO label zip importer.
 
@@ -624,7 +664,7 @@ async def import_yolo(
     project_class_set = set(project_classes)
     result = AAPImportResult(dry_run=dry_run)
     svc = PredictionService(db)
-    purged_tasks: set[uuid.UUID] = set()
+    purged_tasks = purged_tasks if purged_tasks is not None else set()
 
     for label_name in _iter_yolo_label_files(zf):
         match_dict = {"file_stem": normalize_file_stem_path(label_name)}
@@ -673,7 +713,12 @@ async def import_yolo(
             continue
 
         if overwrite_existing and not dry_run and task.id not in purged_tasks:
-            await _purge_existing_external_imports(db, task.id)
+            await _purge_predictions(
+                db,
+                project_id=project_id,
+                task_ids=[task.id],
+                source_scope="external_import",
+            )
             purged_tasks.add(task.id)
 
         ls_shapes: list[dict[str, Any]] = []

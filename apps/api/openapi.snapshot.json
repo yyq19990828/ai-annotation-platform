@@ -3862,9 +3862,12 @@
       "Body_import_predictions_api_v1_projects__project_id__predictions_import_post": {
         "properties": {
           "file": {
-            "contentMediaType": "application/octet-stream",
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
             "title": "File",
-            "type": "string"
+            "type": "array"
           },
           "image_height": {
             "anyOf": [
@@ -3900,7 +3903,7 @@
             "title": "Model Version"
           },
           "overwrite_existing": {
-            "default": false,
+            "default": true,
             "title": "Overwrite Existing",
             "type": "boolean"
           }
@@ -8412,6 +8415,110 @@
           "created_at"
         ],
         "title": "PredictionOut",
+        "type": "object"
+      },
+      "PredictionPurgeCounts": {
+        "properties": {
+          "external_import": {
+            "default": 0,
+            "title": "External Import",
+            "type": "integer"
+          },
+          "ml_backend": {
+            "default": 0,
+            "title": "Ml Backend",
+            "type": "integer"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "unknown": {
+            "default": 0,
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "title": "PredictionPurgeCounts",
+        "type": "object"
+      },
+      "PredictionPurgeRequest": {
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "source_scope": {
+            "default": "external_import",
+            "enum": [
+              "ml_backend",
+              "external_import",
+              "all"
+            ],
+            "title": "Source Scope",
+            "type": "string"
+          },
+          "task_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Ids"
+          }
+        },
+        "title": "PredictionPurgeRequest",
+        "type": "object"
+      },
+      "PredictionPurgeResponse": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/PredictionPurgeCounts"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "source_scope": {
+            "enum": [
+              "ml_backend",
+              "external_import",
+              "all"
+            ],
+            "title": "Source Scope",
+            "type": "string"
+          },
+          "task_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Ids"
+          }
+        },
+        "required": [
+          "source_scope",
+          "dry_run",
+          "counts"
+        ],
+        "title": "PredictionPurgeResponse",
         "type": "object"
       },
       "PredictionShape": {
@@ -24277,6 +24384,65 @@
           }
         ],
         "summary": "Import Predictions",
+        "tags": [
+          "predictions"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/predictions/purge": {
+      "post": {
+        "description": "按来源清理项目预测候选。dry_run=true 仅返回将删除的计数。",
+        "operationId": "purge_predictions_api_v1_projects__project_id__predictions_purge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionPurgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionPurgeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Purge Predictions",
         "tags": [
           "predictions"
         ]
