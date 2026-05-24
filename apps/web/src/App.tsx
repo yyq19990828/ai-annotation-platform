@@ -10,9 +10,6 @@ import { ToastRack, useToastStore } from "@/components/ui/Toast";
 // 仪表盘 / 登录 类首屏关键路径：保持同步加载（避免 Suspense 闪烁）
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
-import { AdminPeoplePage } from "@/pages/Admin/AdminPeoplePage";
-import { AnalyticsPage } from "@/pages/Admin/AnalyticsPage";
-import { SystemHealthPage } from "@/pages/Admin/SystemHealthPage";
 import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
 import { AnnotatorDashboard } from "@/pages/Dashboard/AnnotatorDashboard";
 import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
@@ -70,6 +67,15 @@ const AIPreAnnotateLayout = lazy(() =>
 );
 const AIPreAnnotateJobsPage = lazy(() =>
   import("@/pages/AIPreAnnotate/AIPreAnnotateJobsPage").then((m) => ({ default: m.default }))
+);
+const AdminPeoplePage = lazy(() =>
+  import("@/pages/Admin/AdminPeoplePage").then((m) => ({ default: m.AdminPeoplePage }))
+);
+const AnalyticsPage = lazy(() =>
+  import("@/pages/Admin/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage }))
+);
+const SystemHealthPage = lazy(() =>
+  import("@/pages/Admin/SystemHealthPage").then((m) => ({ default: m.SystemHealthPage }))
 );
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
