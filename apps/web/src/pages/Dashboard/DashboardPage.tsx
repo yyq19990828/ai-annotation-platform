@@ -143,7 +143,10 @@ function ProjectRow({
         <div className={styles.dueDate}>{due}</div>
         <div className={styles.updatedAt}>更新 {updated}</div>
       </td>
-      <td className={styles.projectCellActions}>
+      <td
+        className={styles.projectCellActions}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.rowActions}>
           <ExportSection projectId={p.id} projectTypeKey={p.type_key} />
           <ProjectActionsMenu
@@ -151,7 +154,9 @@ function ProjectRow({
             canManage={canManage}
             onSettings={onSettings}
           />
-          <Button size="sm">打开 <Icon name="chevRight" size={11} /></Button>
+          <Button size="sm" onClick={() => onOpen(p)}>
+            打开 <Icon name="chevRight" size={11} />
+          </Button>
         </div>
       </td>
     </tr>
