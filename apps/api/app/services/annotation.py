@@ -938,7 +938,18 @@ class AnnotationService:
         )
         return result.scalar_one_or_none()
 
-    async def _update_task_stats(self, task_id: uuid.UUID) -> None:
+    async def _update_task_stats(
+        self,
+        task_id: uuid.UUID,
+        trigger_batch_transitions: bool = True,
+    ) -> None:
+        """更新 task 标注计数、is_labeled 与 pending↔in_progress 状态翻转。
+
+        trigger_batch_transitions=True（默认）: 状态翻转时联动 batch 自动流转 +
+        计数重算（现有行为保持不变）。
+        trigger_batch_transitions=False: 只更新 task 本身，跳过 batch 流转
+        （用于批量导入，避免导入过程意外推进整个 batch 状态）。
+        """
         count_result = await self.db.execute(
             select(func.count()).where(
                 Annotation.task_id == task_id,
@@ -963,7 +974,7 @@ class AnnotationService:
                 status_changed = True
         await self.db.flush()
 
-        if status_changed and task and task.batch_id:
+        if trigger_batch_transitions and status_changed and task and task.batch_id:
             # 在函数内 import 避免 services 层循环依赖。
             from app.services.batch import BatchService
 

@@ -3840,6 +3840,25 @@
         "title": "BboxGeometry",
         "type": "object"
       },
+      "Body_import_annotations_api_v1_projects__project_id__annotations_import_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "overwrite": {
+            "default": false,
+            "title": "Overwrite",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_annotations_api_v1_projects__project_id__annotations_import_post",
+        "type": "object"
+      },
       "Body_import_predictions_api_v1_projects__project_id__predictions_import_post": {
         "properties": {
           "file": {
@@ -21399,6 +21418,86 @@
         "summary": "Update Project",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/annotations/import": {
+      "post": {
+        "description": "导入 AAP JSON envelope 中的 annotations[] 数组 (v0.10.54, ADR-0028).\n\ngeometry 透传内部格式（无需 LS 转换），user_id 归当前操作者，\nsource 保留原值，attributes._imported=true 溯源标记。",
+        "operationId": "import_annotations_api_v1_projects__project_id__annotations_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "aap_json",
+              "pattern": "^(aap_json)$",
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_annotations_api_v1_projects__project_id__annotations_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AAPImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import Annotations",
+        "tags": [
+          "annotations"
         ]
       }
     },
