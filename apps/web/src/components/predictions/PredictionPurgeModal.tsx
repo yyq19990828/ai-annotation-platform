@@ -165,6 +165,14 @@ export function PredictionPurgeModal({
                 {preview?.counts.external_import ?? 0}
               </span>
             </div>
+            {(preview?.counts.unknown ?? 0) > 0 && (
+              <div className={styles.previewStat}>
+                <span className={styles.previewStatLabel}>其他来源</span>
+                <span className={styles.previewStatValue}>
+                  {preview?.counts.unknown ?? 0}
+                </span>
+              </div>
+            )}
           </div>
           <div className={styles.purgeNote}>
             本次只清理当前项目的 {sourceLabel}，不会删除已采纳的人工标注。

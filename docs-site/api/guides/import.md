@@ -55,6 +55,8 @@ image_height=<optional COCO fallback height>
 
 错误是逐 entry / shape 累计，不让整批挂。多文件上传时后端合并响应，并在 errors[].reason 前缀文件名。单文件 schema_version 不兼容 / JSON 不可解析会整体 422；多文件中的坏文件会作为一条错误累计，其他文件继续处理。
 
+多文件导入是 best-effort 语义：整批在一个事务内提交，但**不具备原子性**——若某个文件失败被累计为错误，已成功文件写入的预测仍会保留，不会因后续文件失败而回滚。
+
 ## AAP JSON 格式
 
 详见 [用户文档 · AAP JSON v1.2](../../user-guide/reference/export-formats#aap-json-v12无损) + [ADR-0024](../../dev/adr/0024-aap-json-format).
