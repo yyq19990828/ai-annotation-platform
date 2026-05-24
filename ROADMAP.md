@@ -34,12 +34,9 @@
 - **OAuth2 / SSO**：等具体客户驱动（企业场景需求触发再做）
 
 ### 等独立 epic（体量大、不适合塞进收尾版）
-- **视频工作台（导入采样 / 轨迹工具 / 导出）**：已抽离为独立 epic，见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](./ROADMAP/2026-05-21-video-workbench-roadmap.md)（原 §C.5 / §C.6 已并入）。
-- **lidar 真实 3D 工作台**（C.4 Layer 2 触发;v0.10.17 已收 image-seg → region tool_unit,v0.10.28 已落 polyline / rotated_bbox / keypoint(COCO 骨骼),真正的独立 epic 只剩 lidar 3D 部分;图片侧形状能力扩展见 §C.7）
 - **大文件分片上传**（>5GB 视频 / 点云）
 - **数据集版本 snapshot + 主动学习闭环**（与训练队列一起做，长期规划 L1 / L2）
 - **2FA / TOTP**（super_admin 必选 / 其它角色可选）
-- **长期方向**：见 [`ROADMAP/2026-05-12-long-term-strategy.md`](ROADMAP/2026-05-12-long-term-strategy.md)（数据中台、主动学习、合规认证、跨模态等 15 个方向）。
 
 ---
 
@@ -110,7 +107,7 @@
 - **Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest**：v0.6.9 闭环 + 通知已落，剩 LLM SDK + SMTP 链路；`bug_reports` 加 `cluster_id` / `llm_distance`；与通知偏好（按 type 静音）协同。
 
 ### 性能 / 扩展
-- **`async_jobs` 统一表收敛**（**已部分落地**）：索引层（v0.10.45 起 `/ai-pre/jobs` + TopBar 铃铛 + 历史页共享 `/async-jobs`）+ **batch_predict 单一真值收敛**（v0.10.49 删 `prediction_jobs` 专表，domain 字段进 payload/result）已落。**`VideoTrackerJob` 决定保留专表**（见 [收敛切片计划](ROADMAP/2026-05-23-async-jobs-unification.md)）：它带 `annotation_id / task_id / segment_id` 的 FK + CASCADE，引用的是正在编辑的活标注，runner 又把它当实时状态机（`with_for_update` 协作取消 + WS 逐帧推送）；收敛会丢 FK 完整性、收益小于风险。前端列表已统一走 `/async-jobs`，无需进一步合表。
+暂无
 
 ### 测试 / 开发体验
 - **前端单元测试 — 页面级覆盖**：vitest + MSW 基座（v0.7.4）。v0.10.48 起覆盖率口径已排除测试文件，当前真实源码 lines 47.68% / 阈值 45（branches 70）。下阶段目标 47→55：补 `BatchesSection`（~32%）/ `useWorkbenchShellModel` / `useImageAnnotationActions` 等复杂 hook；Konva 渲染层（`ImageStage` / `ImageStageShapes`）难测，留待。
@@ -136,8 +133,6 @@
 - **大图 tile / 多边形 LOD**：多边形 LOD（I2）已落 v0.10.4；大图 tile（I1）见 §C.7。
 
 ### C.3 标注体验（核心生产力杠杆）
-- **marquee 框选**：Shift+点击 / Ctrl+A 已覆盖 90%；marquee 因与 Konva pan 模式冲突未做，需要单独的「选择工具」（在 V/B 之外加 S = 选择模式）。
-- **Snap-to-edge（贴边吸附）**：Magic Box 已落 v0.10.17；剩 pixel-level Snap-to-edge（顶点距已有形状边 < 阈值吸附 / Canny/Sobel 边缘吸附）留 v0.11+。几何吸附复用 `apps/web/src/pages/Workbench/stage/shared/geometry/polygon.ts:nearestEdge`；Canny/Sobel 走 WebWorker，实测开销后再决定。
 - **会话级标注辅助**：① 框过小（< 0.005 × 0.005）已过滤，需提示「框太小未保存」；② 框越界自动 clamp 到 [0,1]；③ 重叠完全相同框（IoU > 0.95）拒绝并提示「疑似重复」。
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。
 
@@ -153,7 +148,7 @@
 - **I4 完整 DiscussionPanel 拆分**（v0.10.19-21 已落任务级评论 + timeline + patch/delete UI）：剩 `DiscussionPanel.tsx` 独立拆出 + 右栏两段结构 + ResizeHandle，纯结构改造无 UX 增量，Workbench Shell 破 900 行前不开工。
 - **I10 Skeleton 进阶**（基础 COCO 关键点已落 v0.10.28）：① 配置器升级为 SVG 拖点 + 连线可视化；② 2 层子标签命名（禁止任意嵌套，见决策底线「Skeleton 嵌套」）；③ keypoint 导出 / 导入 / ML 预测协议（见 §A）。
 - **I12 Object Group UI 细节**（v0.10.19 已落契约 + 快捷键 + Konva 虚线）：剩 BoxList 同 group 折叠卡片 + AttributeForm batch banner 消费 `useAnnotationBulkUpdate` + 导出 COCO 时 group_id 映射 `attributes.__group_id`。
-- **I14 Autoborder / Polygon Crop**（M，纯前端）：开关式 Auto-border，顶点拖动 / 新增距其他形状边 < 阈值自动吸附；新建多边形重叠时提供「裁切重叠区」（布尔差集，基于已依赖的 `polygon-clipping@0.15.7`）。
+- **I14 Polygon Crop**（M，纯前端）：新建多边形重叠时提供「裁切重叠区」（布尔差集，基于已依赖的 `polygon-clipping@0.15.7`）。
 - **I18 Konva pin 渲染**（v0.10.19 已落 `annotation_feedbacks` 表 + API + 浮动入口）：剩 `IssueLayer.tsx` Konva 层 + 单击图像建 pin 入口 + ADR-0027 第二段 `v_annotation_feedback_unified` view + 旧三表双写。
 - **I21 用户级快捷键自定义**（M，纯前端）：`User.preferences.keymap` + 冲突校验；SettingsPage 录制框 UI；`?` 弹快捷键参考卡按 keymap 渲染（取代硬编码 KeyboardHintOverlay）。
 
@@ -172,18 +167,18 @@
 | 优先级 | 候选项 | 触发 / 理由 | Related ADR |
 |---|---|---|---|
 | **P0/P1** | 视频工作台总 epic（导入帧采样 / 轨迹工具对齐 CVAT / 视频导出 / 长视频协同 / 质量评估） | 已抽离为独立 epic，前后端 Phase 1-6 详见 [`ROADMAP/2026-05-21-video-workbench-roadmap.md`](ROADMAP/2026-05-21-video-workbench-roadmap.md) | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P2** | 图片工作台能力扩展剩余（I1 / I10 / I14 / I21） | 大图 tile / Skeleton / Autoborder / 快捷键自定义；详见 §C.7（I4/I12/I18 仅余 UI 细节） | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
+| **P2** | 图片工作台能力扩展剩余（I1 / I10 / I14 / I21） | 大图 tile / Skeleton / Polygon Crop / 快捷键自定义；详见 §C.7（I4/I12/I18 仅余 UI 细节） | [0004](docs/adr/0004-canvas-stack-konva.md) [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | `/ai-pre` 精细单批次预标 modal（v0.9.13 后回归） | v0.9.12 IA 重构 + v0.9.13 chips/threshold UI 已搬到 ProjectDetailPanel；4 个 stepper 子组件 (`PreannotateStepper` / `ProjectBatchPicker` / `RunPanel` / `usePreannotateDraft`) 仍 orphan，客户场景需要单 batch 精细调（草稿恢复 / 阶段进度可视化）时唤起 modal 复用旧组件；如反馈不需要再删 orphan 文件 | — |
 | **P3** | ImageStage Konva sceneFunc + evenodd 镂空渲染（v0.9.14 协议 + transforms 已就位） | v0.9.14 后端 `MultiPolygonGeometry` + 前端 `AIBox.holes` / `multiPolygon` 字段已落, ImageStage `<Line>` 渲染层暂取主外环降级；触发 = 客户反馈「donut 类对象渲染少了内圈」或 v0.10.x sam3 多连通域占比 > 30%, 与 sam3-backend 接入同窗口做避免二次破窗 | [0013](docs/adr/0013-mask-to-polygon-server-side.md) |
 | **P2** | 邮箱验证（开放注册角色提升前置） | 当前 viewer 零权限可跳过；角色调高时必备 | — |
 | **P2** | OAuth2 / 社交登录（Google / GitHub SSO） | 降低注册门槛，企业场景 SSO；客户驱动 | — |
 | **P2** | Bug 反馈延伸 LLM 聚类去重 + SMTP 邮件 digest | v0.7.0 通知偏好基础静音已落，邮件 channel 字段就位但 UI 未启 | — |
 | **P2** | 非视频工作台 lidar 真实 3D | v0.10.17 已把 `tool_unit=lidar_box_3d` 留位置灰; 图片侧形状 region / polyline / rotated_bbox / keypoint 已通过 tool_unit 维度落地(v0.10.17 + v0.10.28), 不再算独立工作台 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
-| **P2** | C.3 marquee / 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
+| **P2** | C.3 关键帧 / 会话级标注辅助 | 业务复杂度起来后必需 | — |
 | **P3** | 截图 fixture 实际重跑 | v0.10.18 已落 `page.route` mock 注入式 prepare；maintainer 跑 `playwright test --config=playwright.screenshots.config.ts` 验证 | — |
 | **P3** | 首次登录 UI walkthrough（onboarding tooltip） | 新客户上线前低优；客户反馈触发再做 | — |
 | **P3** | i18n、2FA | 客户具体需求驱动（SSO 已单独提升到 P2） | — |
-| **P3** | C.3 SAM 后续延伸: 类别确认 hint / pixel-level Snap-to-edge | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) + 像素级 Snap-to-edge(Canny/Sobel WebWorker) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
+| **P3** | C.3 SAM 后续延伸: 类别确认 hint | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | I4/I12/I18 epic 续作余 | 剩 ADR-0027 第三段切单源 (legacy-table-retirement) + DiscussionPanel 完整拆分 + IssueLayer video frame pin；详见 §C.7 | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
 | **P3** | v0.10.28 新几何导入/预测支持 | 导出已落 v0.10.43；剩 predictions_import / ML 预测协议未覆盖新几何，详见 §A | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
