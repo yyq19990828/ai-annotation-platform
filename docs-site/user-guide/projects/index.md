@@ -23,7 +23,8 @@ last_reviewed: 2026-05-19
      - **矩形框 (bbox)**：拖框圈选,基础几何
      - **区域 (polygon + mask)** ⭐ 打包：实例分割,多边形与笔刷掩码一起启用
      - **AI 交互** ⭐ 打包：SAM 点 / 框 / 文本 / 示例 + Magic Box 一起启用
-     - **折线 (polyline)** / **3D 立体框 (lidar_box_3d)**：本版置灰,后续版本上线
+     - **折线 (polyline)** / **旋转框 (rotated_bbox)** / **关键点 (keypoint)**：图片项目可用的新几何工具
+     - **3D 立体框 (lidar_box_3d)**：本版置灰,后续版本上线
    - **类别 + 属性**：每个启用的工具单位独立编辑（v0.10.17+, 详见下文「工具维度类别 / 属性」）
    - **AI 接入**（可选）：启用 AI 预标注，并可复用其它项目已注册的 ML Backend
 3. 上传初始数据集（zip / 图片直传 / OSS 路径）
@@ -78,6 +79,12 @@ v0.10.17 起,类别与属性 schema 按**工具单位**(`tool_unit`)**强隔离*
 v0.10.13 起在 banner 中新增 checkbox **「同时复制标注指引」**（默认勾选）：复制配置时连
 带源项目的 Markdown 指引与图片资源带过来。图片资源 storage key 与源项目共享，源项目删除资源会影响
 新项目；如需独立资源在新项目设置页里重新拖入图片即可。
+
+## 导入外部预测（v0.10.52+）
+
+项目管理员可以在 Dashboard 找到项目卡片 → 右下角 `⋮` → 「导入预测」打开导入向导。该入口不要求项目已绑定 ML Backend，适合把客户自训模型产物以 AAP JSON / COCO Detection 形式导入为待采纳预测。
+
+AAP JSON 当前支持 `bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` 预测导入；`keypoint` 与视频几何暂不导入。格式细节见 [导出格式 · AAP JSON](../reference/export-formats#aap-json-v12无损)。
 
 ## 任务生成
 

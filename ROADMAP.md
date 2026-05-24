@@ -49,9 +49,9 @@
   - **`lidar_box_3d` 工具实现**（**P0**，体量大）：依赖 3D viewer + 后端 frame service 视点处理。独立 epic，与长期 L3 跨模态挂钩。
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）：强隔离意味同名颜色 / alias 跨 unit 要重复输入。设计走 `ToolClassEntry.alias_to` 链（可选叠加，不破坏 ADR-0026 强隔离底线）。触发：客户反馈"想共享类别名字"。
   - **rename_class 跨 unit 重命名 UX**（**P3**）：`useRenameClass` 已带 `tool_unit_id` 参数，但 ClassesSection 仅传 active unit；"同时在所有 unit 内重命名"需扩 UI（批量勾选 unit）。触发：客户反馈"重命名要跑 N 次"。
-- **v0.10.28 新几何（rotated_bbox / polyline / keypoint）导入/预测支持**（绘制 + 持久化 + 导出已通，剩导入 / ML 协议缺口）:
-  - **predictions import / AAP JSON 适配新几何**（**P3**）：[`internal_geometry_to_ls_shape`](apps/api/app/services/predictions_import.py) 仍只覆盖 bbox / polygon / multi_polygon，新几何进 errors[]。与「AAP JSON video_track 导入」同窗口做。
-  - **ML backend 输出新几何**（**P3**）：`prediction.py` 把 `keypointlabels` / `linelabels` 当 bbox 占位；让外部模型预测新几何需补 `to_internal_shape` 分支 + 协议约定。触发：有支持这些输出的模型接入。
+- **v0.10.28 新几何后续导入/预测支持**（绘制 + 持久化 + 导出已通；v0.10.52 已补 AAP JSON `rotated_bbox` / `polyline` 导入与读路径）:
+  - **keypoint 预测导入映射**（**P3**）：LS 无「多点带可见性」标准结构，需单列决策 `keypointlabels` 扩展字段还是内部格式直存；COCO keypoints 解析也归入同窗口。
+  - **ML backend 输出 keypoint 等新几何**（**P3**）：`prediction.py` 仍把 `keypointlabels` 当 bbox 占位；让外部模型预测关键点需补 `to_internal_shape` 分支 + 协议约定。触发：有支持这些输出的模型接入。
 - **项目模板开放项**（按客户反馈触发）：
   - **模板版本号 / changelog**（**P3**）：PATCH 直接覆盖无审计轨迹，走 `project_templates_versions` 快照表 + 比较版本 UI。触发：误改投诉 ≥ 2 次或组织模板 > 20。
   - **organization admin 提交 public 模板审核流**（**P3**）：当前仅 super_admin 可建 public，走 `template_publish_requests` 队列。触发：跨组织 SaaS / 公共模板 ≥ 10。

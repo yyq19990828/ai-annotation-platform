@@ -27,6 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.services.prediction import to_internal_shape
+from app.services.predictions_import import internal_geometry_to_ls_shape
 
 pytestmark = pytest.mark.asyncio
 
@@ -245,6 +247,122 @@ async def test_import_aap_json_multi_polygon(
     )
     assert r.status_code == 200, r.text
     assert r.json()["imported"] == 1
+
+
+async def test_import_aap_json_polyline_and_rotated_bbox(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, tasks = await _seed_project_with_tasks(db_session, user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    payload = _aap_envelope(
+        [
+            {
+                "task_match": {"display_id": tasks[0].display_id},
+                "predictions": [
+                    {
+                        "geometry": {
+                            "type": "polyline",
+                            "points": [[0.1, 0.2], [0.4, 0.5], [0.8, 0.7]],
+                        },
+                        "class_name": "car",
+                        "confidence": 0.71,
+                    },
+                    {
+                        "geometry": {
+                            "type": "rotated_bbox",
+                            "cx": 0.5,
+                            "cy": 0.45,
+                            "w": 0.2,
+                            "h": 0.12,
+                            "angle": 30,
+                        },
+                        "class_name": "truck",
+                        "confidence": 0.82,
+                    },
+                ],
+            }
+        ]
+    )
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=aap_json",
+        files=_upload_files(payload),
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["imported"] == 2
+
+    rows = (
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id == tasks[0].id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_type = {row.result[0]["type"]: row for row in rows}
+    assert by_type["polylinelabels"].tool_unit_id == "polyline"
+    assert by_type["polylinelabels"].result[0]["value"]["points"] == [
+        [10.0, 20.0],
+        [40.0, 50.0],
+        [80.0, 70.0],
+    ]
+    rotated = by_type["rectanglelabels"]
+    assert rotated.tool_unit_id == "rotated_bbox"
+    assert rotated.result[0]["value"]["rotation"] == 30.0
+
+    read_resp = await httpx_client.get(
+        f"/api/v1/tasks/{tasks[0].id}/predictions",
+        headers=headers,
+    )
+    assert read_resp.status_code == 200, read_resp.text
+    assert {p["tool_unit_id"] for p in read_resp.json()} == {
+        "polyline",
+        "rotated_bbox",
+    }
+
+
+async def test_prediction_import_polyline_round_trip():
+    geometry = {"type": "polyline", "points": [[0.1, 0.2], [0.4, 0.5]]}
+    ls_shape = internal_geometry_to_ls_shape(geometry, "lane", 0.77)
+    assert ls_shape is not None
+
+    out = to_internal_shape(ls_shape)
+    assert out["class_name"] == "lane"
+    assert out["confidence"] == 0.77
+    assert out["geometry"] == geometry
+    assert out["tool_unit_id"] == "polyline"
+
+
+@pytest.mark.parametrize("angle", [0, 30, 90, 180, 270, 359])
+async def test_prediction_import_rotated_bbox_round_trip(angle: int):
+    geometry = {
+        "type": "rotated_bbox",
+        "cx": 0.52,
+        "cy": 0.47,
+        "w": 0.23,
+        "h": 0.11,
+        "angle": angle,
+    }
+    ls_shape = internal_geometry_to_ls_shape(geometry, "car", 0.66)
+    assert ls_shape is not None
+    assert ls_shape["type"] == "rectanglelabels"
+    assert ls_shape["value"]["rotation"] == float(angle)
+
+    out = to_internal_shape(ls_shape)
+    assert out["tool_unit_id"] == "rotated_bbox"
+    got = out["geometry"]
+    assert got["type"] == "rotated_bbox"
+    assert got["cx"] == pytest.approx(geometry["cx"], abs=1e-6)
+    assert got["cy"] == pytest.approx(geometry["cy"], abs=1e-6)
+    assert got["w"] == pytest.approx(geometry["w"], abs=1e-6)
+    assert got["h"] == pytest.approx(geometry["h"], abs=1e-6)
+    assert got["angle"] == pytest.approx(float(angle), abs=1e-6)
 
 
 # ── schema_version 守门 ─────────────────────────────────────────────
@@ -613,7 +731,7 @@ async def test_import_aap_json_unknown_kind_in_errors(
                 "predictions": [
                     # 1 个不支持
                     {
-                        "geometry": {"type": "polyline", "points": [[0, 0], [1, 1]]},
+                        "geometry": {"type": "ellipse", "cx": 0.5, "cy": 0.5},
                         "class_name": "car",
                         "confidence": 0.5,
                     },
@@ -643,7 +761,7 @@ async def test_import_aap_json_unknown_kind_in_errors(
     body = r.json()
     assert body["imported"] == 1
     assert body["skipped"] == 1
-    assert any("polyline" in err["reason"] for err in body["errors"])
+    assert any("ellipse" in err["reason"] for err in body["errors"])
 
 
 # ── 权限 ────────────────────────────────────────────────────────────

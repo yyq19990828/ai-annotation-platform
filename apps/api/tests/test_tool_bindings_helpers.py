@@ -33,6 +33,7 @@ from app.services.project import (
     "ls_type, expected",
     [
         ("rectanglelabels", "bbox"),
+        ("polylinelabels", "polyline"),
         ("polygonlabels", "region"),
         ("brushlabels", "region"),
         ("multi_polygon", "region"),
@@ -43,6 +44,12 @@ from app.services.project import (
 )
 def test_derive_tool_unit_from_ls_type(ls_type, expected):
     assert derive_tool_unit_from_ls_type(ls_type) == expected
+
+
+def test_derive_tool_unit_from_rotated_rectangle_value():
+    assert derive_tool_unit_from_ls_type(
+        "rectanglelabels", {"rotation": 0}
+    ) == "rotated_bbox"
 
 
 def test_derive_tool_unit_from_result_empty_or_invalid():
@@ -57,6 +64,11 @@ def test_derive_tool_unit_from_result_picks_first():
         {"type": "rectanglelabels", "value": {}},
     ]
     assert derive_tool_unit_from_result(result) == "region"
+
+
+def test_derive_tool_unit_from_result_uses_shape_value():
+    result = [{"type": "rectanglelabels", "value": {"rotation": 30}}]
+    assert derive_tool_unit_from_result(result) == "rotated_bbox"
 
 
 # ── derive_tool_unit_for_type_key ──────────────────────────────────────────

@@ -22,6 +22,19 @@
 
 ## 最新版本
 
+## [0.10.52] - 2026-05-24
+
+> **预测导入几何补齐与入口对称。** AAP JSON 预测导入支持 `rotated_bbox` / `polyline`，读路径同步反解为内部 geometry，Dashboard 项目卡片菜单新增「导入预测」入口。
+
+### Added
+
+- **AAP JSON 预测导入支持新几何** ([predictions_import.py](apps/api/app/services/predictions_import.py)): `internal_geometry_to_ls_shape` 新增 `polyline` → `polylinelabels` 与 `rotated_bbox` → 带 `rotation` 的 `rectanglelabels` 映射；旋转框按 Label Studio 左上角旋转锚点与平台中心点格式双向换算。
+- **Dashboard 对称导入入口** ([ProjectGrid.tsx](apps/web/src/pages/Dashboard/ProjectGrid.tsx)): 项目卡片 `⋮` 菜单在导出项附近新增「导入预测」，复用现有 `PredictionImportWizard`，仅项目 owner / 管理员可见；AI 预标页旧入口保留。
+
+### Fixed
+
+- **预测读路径识别 polyline / rotated_bbox** ([prediction.py](apps/api/app/services/prediction.py)): `to_internal_shape` 反解 `polylinelabels` 与带 `rotation` 的 `rectanglelabels`，并同步派生 `tool_unit_id=polyline/rotated_bbox`；`GET /tasks/{id}/predictions` 现在返回预测行真实 `tool_unit_id`。
+
 ## [0.10.51] - 2026-05-24
 
 > **后台任务可控性 Phase 2。** `batch_predict` 支持协作取消，失败预测重试纳入 `async_jobs(kind=prediction_retry)`，图像 AI 任务历史页可同时查看批量预标与重试任务。

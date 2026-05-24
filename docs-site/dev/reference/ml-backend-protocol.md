@@ -191,21 +191,25 @@ base URL 由项目管理员在前端 ProjectSettings → ML Backends 录入；�
 
 ```json
 {
-  "type": "rectanglelabels" | "polygonlabels" | "keypointlabels",
+  "type": "rectanglelabels" | "polygonlabels" | "polylinelabels" | "keypointlabels",
   "value": {
     // type=rectanglelabels：归一化 [0,1]
     "x": 0.12, "y": 0.34, "width": 0.45, "height": 0.20,
+    "rotation": 30,                         // 可选; 存在时读为 rotated_bbox
     "rectanglelabels": ["car"],
 
     // type=polygonlabels
     "points": [[x, y], ...],   // 归一化 [0,1]
-    "polygonlabels": ["road"]
+    "polygonlabels": ["road"],
+
+    // type=polylinelabels
+    "polylinelabels": ["lane"]
   },
   "score": 0.91                // 单框置信度，可与外层 score 并存
 }
 ```
 
-平台不强校验 schema，但图片工作台当前只渲染 `rectanglelabels` / `polygonlabels`。返回其它 type 不会报错但也不显示。
+平台不强校验 schema。图片工作台当前渲染 `rectanglelabels` / `polygonlabels` / `polylinelabels`；`rectanglelabels.value.rotation` 存在时会按旋转框读取，缺失时仍按普通 bbox 读取。`keypointlabels` 的多点可见性映射单列在后续版本处理，当前不会作为关键点显示。
 
 ---
 

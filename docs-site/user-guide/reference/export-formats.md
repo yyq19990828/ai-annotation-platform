@@ -131,7 +131,7 @@ nc: 3
 适合场景：
 
 - **跨实例迁移**：A 平台 → B 平台，标注不丢失。
-- **客户自家模型预测导入**：导出空项目结构 → 客户用自家模型填 `predictions[]` → 上传到 `/projects/{id}/predictions/import` 端点。
+- **客户自家模型预测导入**：导出空项目结构 → 客户用自家模型填 `predictions[]` → 在 Dashboard 项目卡片 `⋮` 菜单选择「导入预测」，或上传到 `/projects/{id}/predictions/import` 端点。
 - **dataset snapshot 锚点**：版本化备份 / 训练复现。
 
 AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image label 文件）。
@@ -202,8 +202,8 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 - `annotations[]` 与 `predictions[]` **分开两个数组**（不混 type 字段）。
 - 导出严格写满 null；导入 lenient 忽略未知字段、缺失按默认。
 - `task_match` 走 `display_id` 优先（全局唯一），`file_path` fallback；跨项目 `display_id` 不允许偷换项目。
-- `geometry` 使用平台**内部格式**（`bbox` / `polygon` / `multi_polygon`），不嵌套 LabelStudio shape。
-- **v0.10.17 新增** `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `ai_interactive` / ...)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, polygonlabels→region)。
+- `geometry` 使用平台**内部格式**（`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox`），不嵌套 LabelStudio shape。导入端暂不消费 `keypoint` / `video_bbox` / `video_track`。
+- **v0.10.17 新增** `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `polyline` / `rotated_bbox` / `ai_interactive` / ...)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, 带 rotation 的 rectanglelabels→rotated_bbox, polygonlabels→region, polylinelabels→polyline)。
 
 详见 [ADR-0024](../../dev/adr/0024-aap-json-format) · [ADR-0026](../../dev/adr/0026-tool-unit-class-and-attribute-binding) · [API 导入指南](../../api/guides/import.md)。
 

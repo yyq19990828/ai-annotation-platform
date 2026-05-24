@@ -82,7 +82,8 @@ v0.10.17 起 `predictions.tool_unit_id String(30)` 列必填:
 
 - 写入时由 `PredictionService.create_from_ml_result` 调 [`derive_tool_unit_from_result`](../../../apps/api/app/services/prediction.py) 按 `result[0].type` 派生:
   - `polygonlabels` / `brushlabels` / `multi_polygon` → `region`
-  - `rectanglelabels` → `bbox`
+  - `polylinelabels` → `polyline`
+  - `rectanglelabels` → `bbox`; 若 `value.rotation` 字段存在 → `rotated_bbox`
   - 其它(`keypointlabels` / `linelabels`)→ `bbox` 占位
 - `to_internal_shape()` 出参也带 `tool_unit_id`, 供前端候选层 / AAP JSON 导出消费
 - `accept_prediction()` 创建的 annotation 沿用 prediction 的 `tool_unit_id` (与项目 `tool_bindings[unit].classes` 软校验保一致)

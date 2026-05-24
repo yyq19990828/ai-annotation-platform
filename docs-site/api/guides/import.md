@@ -53,7 +53,7 @@ overwrite_existing=<true|false default false>
 
 ## AAP JSON 格式
 
-详见 [用户文档 · AAP JSON v1.1](../../user-guide/reference/export-formats#aap-json-v11无损) + [ADR-0024](../../dev/adr/0024-aap-json-format).
+详见 [用户文档 · AAP JSON v1.2](../../user-guide/reference/export-formats#aap-json-v12无损) + [ADR-0024](../../dev/adr/0024-aap-json-format).
 
 最小可导入示例：
 
@@ -76,7 +76,7 @@ overwrite_existing=<true|false default false>
 }
 ```
 
-支持的 geometry kind：`bbox` / `polygon` / `multi_polygon`。其他 kind（`video_bbox` / `video_track` / 自定义）进 errors[] 不入库。
+支持的 geometry kind：`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox`。`rotated_bbox` 使用平台内部中心点格式 `{cx, cy, w, h, angle}`，导入时写成 Label Studio `rectanglelabels.rotation`，读回时再还原中心点。其他 kind（`keypoint` / `video_bbox` / `video_track` / 自定义）进 errors[] 不入库。
 
 ## COCO Detection 格式
 

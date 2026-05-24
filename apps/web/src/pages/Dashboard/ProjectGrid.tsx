@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
@@ -8,6 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { useToastStore } from "@/components/ui/Toast";
 import { projectsApi, type ProjectResponse, type ExportTarget } from "@/api/projects";
+import { PredictionImportWizard } from "@/components/predictions/PredictionImportWizard";
 
 import styles from "./ProjectGrid.module.css";
 
@@ -31,6 +33,7 @@ interface Props {
 export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) {
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
+  const [importProject, setImportProject] = useState<ProjectResponse | null>(null);
 
   // v0.10.11 · 跳 Dashboard 并打开 Wizard 复制流; super_admin 看 AdminDashboard /
   // project_admin 看 DashboardPage, 二者都挂在 /dashboard 下由 DashboardRouter 分派.
@@ -126,6 +129,7 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
                   onSettings={onSettings}
                   onExport={exportProject}
                   onDuplicate={onDuplicate}
+                  onImportPredictions={setImportProject}
                 />
                 <Button
                   size="sm"
@@ -139,6 +143,13 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
           </Card>
         );
       })}
+      {importProject && (
+        <PredictionImportWizard
+          open
+          projectId={importProject.id}
+          onClose={() => setImportProject(null)}
+        />
+      )}
     </div>
   );
 }
@@ -149,12 +160,14 @@ function ProjectMoreMenu({
   onSettings,
   onExport,
   onDuplicate,
+  onImportPredictions,
 }: {
   project: ProjectResponse;
   canManage: boolean;
   onSettings: (p: ProjectResponse, section?: string) => void;
   onExport: (p: ProjectResponse, target: ExportTarget) => void;
   onDuplicate: (p: ProjectResponse) => void;
+  onImportPredictions: (p: ProjectResponse) => void;
 }) {
   const items: DropdownItem[] = [];
   if (canManage) {
@@ -172,6 +185,12 @@ function ProjectMoreMenu({
       onSelect: () => onDuplicate(project),
     });
     items.push({ id: "div-1", divider: true, label: "" });
+    items.push({
+      id: "import-predictions",
+      label: "导入预测",
+      icon: "upload",
+      onSelect: () => onImportPredictions(project),
+    });
   }
   if (project.type_key === "video-track") {
     items.push({ id: "exp-video", label: "导出 Video JSON", icon: "download", onSelect: () => onExport(project, "video_json") });

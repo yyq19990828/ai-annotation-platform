@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.services.prediction import to_internal_shape
 
 
@@ -24,6 +26,22 @@ def test_rectanglelabels_with_value_field():
     assert out["geometry"] == {"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}
 
 
+def test_rectanglelabels_percent_value_field_normalized():
+    raw = {
+        "type": "rectanglelabels",
+        "score": 0.92,
+        "value": {
+            "x": 10,
+            "y": 20,
+            "width": 30,
+            "height": 40,
+            "rectanglelabels": ["car"],
+        },
+    }
+    out = to_internal_shape(raw)
+    assert out["geometry"] == {"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}
+
+
 def test_polygonlabels_with_value_field():
     raw = {
         "type": "polygonlabels",
@@ -41,6 +59,50 @@ def test_polygonlabels_with_value_field():
         "type": "polygon",
         "points": [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]],
     }
+
+
+def test_polylinelabels_with_value_field():
+    raw = {
+        "type": "polylinelabels",
+        "score": 0.8,
+        "value": {
+            "points": [[10, 20], [30, 40]],
+            "polylinelabels": ["lane"],
+        },
+    }
+    out = to_internal_shape(raw)
+    assert out["type"] == "polylinelabels"
+    assert out["class_name"] == "lane"
+    assert out["geometry"] == {
+        "type": "polyline",
+        "points": [[0.1, 0.2], [0.3, 0.4]],
+    }
+    assert out["tool_unit_id"] == "polyline"
+
+
+def test_rectanglelabels_with_rotation_to_rotated_bbox():
+    raw = {
+        "type": "rectanglelabels",
+        "score": 0.7,
+        "value": {
+            "x": 40,
+            "y": 45,
+            "width": 20,
+            "height": 10,
+            "rotation": 0,
+            "rectanglelabels": ["car"],
+        },
+    }
+    out = to_internal_shape(raw)
+    assert out["geometry"] == {
+        "type": "rotated_bbox",
+        "cx": pytest.approx(0.5),
+        "cy": pytest.approx(0.5),
+        "w": pytest.approx(0.2),
+        "h": pytest.approx(0.1),
+        "angle": 0.0,
+    }
+    assert out["tool_unit_id"] == "rotated_bbox"
 
 
 def test_legacy_labels_field_fallback():
@@ -78,6 +140,25 @@ def test_already_internal_shape_passthrough():
     assert out["geometry"] == raw["geometry"]
     # v0.10.17 · 缺 tool_unit_id 时按 type 反推回填
     assert out["tool_unit_id"] == "bbox"
+
+
+def test_internal_shape_passthrough_derives_geometry_unit():
+    raw = {
+        "type": "rectanglelabels",
+        "class_name": "car",
+        "geometry": {
+            "type": "rotated_bbox",
+            "cx": 0.5,
+            "cy": 0.5,
+            "w": 0.2,
+            "h": 0.1,
+            "angle": 30,
+        },
+        "confidence": 0.9,
+    }
+    out = to_internal_shape(raw)
+    assert out is raw
+    assert out["tool_unit_id"] == "rotated_bbox"
 
 
 def test_internal_shape_passthrough_keeps_explicit_tool_unit_id():

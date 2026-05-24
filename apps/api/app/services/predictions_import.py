@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import uuid
 from typing import Any
 
@@ -48,7 +49,7 @@ def internal_geometry_to_ls_shape(
     class_name: str,
     confidence: float | None,
 ) -> dict[str, Any] | None:
-    """把内部 Geometry (bbox / polygon / multi_polygon) 反向适配为 LabelStudio shape.
+    """把内部 Geometry 反向适配为 LabelStudio shape.
 
     平台 prediction.result JSONB 列存的是 LS 标准格式 (apps/api/app/services/
     prediction.py:to_internal_shape 是读路径的反向). 这里走"导入端 -> LS shape"
@@ -136,6 +137,52 @@ def internal_geometry_to_ls_shape(
         return {
             "type": "polygonlabels",
             "value": {"polygons": ls_polys, "polygonlabels": [class_name]},
+            "score": score,
+        }
+
+    if kind == "polyline":
+        points = geometry.get("points") or []
+        if len(points) < 2:
+            return None
+        ls_points = [
+            [float(pt[0]) * 100, float(pt[1]) * 100] for pt in points if len(pt) == 2
+        ]
+        if len(ls_points) < 2:
+            return None
+        return {
+            "type": "polylinelabels",
+            "value": {"points": ls_points, "polylinelabels": [class_name]},
+            "score": score,
+        }
+
+    if kind == "rotated_bbox":
+        try:
+            cx = float(geometry["cx"])
+            cy = float(geometry["cy"])
+            w = float(geometry["w"])
+            h = float(geometry["h"])
+            angle = float(geometry["angle"]) % 360
+        except (KeyError, TypeError, ValueError):
+            return None
+        if w <= 0 or h <= 0:
+            return None
+
+        rad = math.radians(angle)
+        cos_a = math.cos(rad)
+        sin_a = math.sin(rad)
+        # LabelStudio rectangle rotation is anchored at the rotated top-left corner.
+        x = cx + (-w / 2) * cos_a - (-h / 2) * sin_a
+        y = cy + (-w / 2) * sin_a + (-h / 2) * cos_a
+        return {
+            "type": "rectanglelabels",
+            "value": {
+                "x": x * 100,
+                "y": y * 100,
+                "width": w * 100,
+                "height": h * 100,
+                "rotation": angle,
+                "rectanglelabels": [class_name],
+            },
             "score": score,
         }
 
