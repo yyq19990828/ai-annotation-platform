@@ -5,6 +5,8 @@
 - **Deciders:** core team（yyq19990828 + Claude）
 - **Supersedes:** —
 
+> **实现状态（2026-05-24）**：本 ADR 的语义已在 v0.10.54 **后端完整落地**（service / 端点 / 审计 / 测试）。**前端入口暂不暴露**——由 `ANNOTATIONS_IMPORT_ENABLED`（`apps/web/src/components/predictions/PredictionImportWizard.tsx`）控制，当前为 `false`：⋮ 菜单无「导入标注」、向导无「导入对象」切换。端点 `POST /projects/{id}/annotations/import` 仍可经 API 直接调用。翻 flag 为 `true` 即恢复 UI 入口。
+
 ## Context
 
 AAP JSON envelope 是双数组 `annotations[]` / `predictions[]`。`predictions[]` 自 v0.10.15 起可导入（`source='external_import'` 落 `predictions` 表），但 `annotations[]` 至今**只导出、导入端仅警告日志后跳过**（[predictions_import.py:211](../../apps/api/app/services/predictions_import.py#L211)）。这使「导出 → 迁移 → 导入」只能重建预测，无法重建**人工标注**——跨实例完整复制的最后缺口（ROADMAP 第71行）。
