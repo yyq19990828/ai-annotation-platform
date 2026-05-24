@@ -14,10 +14,13 @@ vi.mock("@/api/predictions", () => ({
     listByTask: vi.fn(),
     accept: vi.fn(),
     import: vi.fn(),
+    importAnnotations: vi.fn(),
   },
 }));
 
 const importMock = predictionsApi.import as unknown as ReturnType<typeof vi.fn>;
+const importAnnotationsMock =
+  predictionsApi.importAnnotations as unknown as ReturnType<typeof vi.fn>;
 
 function makeFile(name = "test.json", content = "{}"): File {
   return new File([content], name, { type: "application/json" });
@@ -26,6 +29,7 @@ function makeFile(name = "test.json", content = "{}"): File {
 describe("PredictionImportWizard", () => {
   beforeEach(() => {
     importMock.mockReset();
+    importAnnotationsMock.mockReset();
   });
 
   it("初始 step 不允许在没有文件时预览", () => {
@@ -171,6 +175,40 @@ describe("PredictionImportWizard", () => {
     expect(screen.getByText(/b\.json: task not found/)).toBeInTheDocument();
     expect(screen.getByText("a.json")).toBeInTheDocument();
     expect(screen.getByText("b.json")).toBeInTheDocument();
+  });
+
+  it("导入对象=标注时走 importAnnotations 端点 (不调 import)", async () => {
+    importAnnotationsMock.mockResolvedValueOnce({
+      imported: 4,
+      skipped: 0,
+      errors: [],
+      dry_run: true,
+    });
+
+    render(
+      <PredictionImportWizard open onClose={() => {}} projectId="p-anno" />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/导入对象/), {
+      target: { value: "annotations" },
+    });
+    // 标注模式下不应再有「格式」选择
+    expect(screen.queryByLabelText(/格式/)).not.toBeInTheDocument();
+
+    const fileInput = document.getElementById("pi-file") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [makeFile("anno.json")] } });
+    fireEvent.click(screen.getByRole("button", { name: /预览/ }));
+
+    await waitFor(() => {
+      expect(importAnnotationsMock).toHaveBeenCalledWith(
+        "p-anno",
+        expect.any(File),
+        expect.objectContaining({ overwrite: false }),
+        true,
+      );
+    });
+    expect(importMock).not.toHaveBeenCalled();
+    expect(await screen.findByText(/确认导入 4 条/)).toBeInTheDocument();
   });
 
   it("确认提交 → 调用 import 端点 dry_run=false 并触发 onComplete", async () => {

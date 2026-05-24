@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.10.54] - 2026-05-24
+
+> **AAP JSON 标注导入,闭环跨实例重建。** 新增 `annotations[]` 导入端点,语义见 [ADR-0028](docs/adr/0028-annotations-import-semantics.md)。
+
+### Added
+
+- **annotations[] 导入端点** ([annotations.py](apps/api/app/api/v1/annotations.py) · [annotations_import.py](apps/api/app/services/annotations_import.py)): `POST /projects/{id}/annotations/import` 消费 AAP JSON 的 `annotations[]`,geometry 直接透传内部格式(无需 LS 转换,天然支持全部几何 kind)。`dry_run` / `errors[]` 累计 / `resolve_task` 匹配复用预测导入机制。
+- **导入语义 (ADR-0028)**: `user_id` 归当前操作者(源 user_id 存 `attributes._imported_user_id`);保留 entry 原始 `source` + `attributes._imported=true` 溯源;冲突策略 append 默认,显式 `overwrite` 只清该 task 之前导入的标注(`_imported`),**绝不碰人工标注**;新增 `ANNOTATION_IMPORT` 审计汇总一条;状态机更新计数/`is_labeled`/`pending→in_progress` 但**抑制 batch 自动流转**。
+- **导入向导支持标注** ([PredictionImportWizard.tsx](apps/web/src/components/predictions/PredictionImportWizard.tsx) · [predictions.ts](apps/web/src/api/predictions.ts)): 向导新增「导入对象:预测 / 标注」切换,标注模式走 `aap_json` 并隐藏 model_version / COCO 尺寸字段。
+
+### Changed
+
+- **`_update_task_stats` 增 `trigger_batch_transitions` 参数** ([annotation.py](apps/api/app/services/annotation.py)): 默认 `True` 保持既有行为;标注导入传 `False` 抑制 batch 自动流转,防批量导入意外推进批次。
+
 ## [0.10.53] - 2026-05-24
 
 > **预测导入容错与批量导入。** 外部预测导入补齐 COCO 尺寸兜底、AAP JSON 单 prediction 多 shape、前端多文件批量导入和 keypoint 预测读写对称。

@@ -99,4 +99,36 @@ export const predictionsApi = {
     }
     return res.json();
   },
+
+  /**
+   * v0.10.54 · 导入 AAP JSON 的 annotations[] (ADR-0028).
+   * - 仅支持 aap_json; geometry 透传内部格式。
+   * - overwrite=true: 只清该 task 之前导入的标注 (attributes._imported), 不碰人工标注。
+   */
+  importAnnotations: async (
+    projectId: string,
+    file: File,
+    options: { overwrite?: boolean } = {},
+    dryRun = false,
+  ): Promise<PredictionImportResult> => {
+    const params = new URLSearchParams({ format: "aap_json", dry_run: String(dryRun) });
+    const form = new FormData();
+    form.append("file", file);
+    if (options.overwrite) form.append("overwrite", "true");
+
+    const token = localStorage.getItem("token");
+    const res = await fetch(
+      `/api/v1/projects/${projectId}/annotations/import?${params}`,
+      {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      },
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { detail?: string };
+      throw new Error(body.detail ?? `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
 };

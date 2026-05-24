@@ -20,6 +20,9 @@ import styles from "./PredictionImportWizard.module.css";
 
 type WizardStep = "select" | "preview" | "done";
 
+// v0.10.54 · 导入对象: 预测 (predictions[]) 或标注 (annotations[], ADR-0028).
+type ImportTarget = "predictions" | "annotations";
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -73,6 +76,7 @@ export function PredictionImportWizard({
   const pushToast = useToastStore((s) => s.push);
 
   const [step, setStep] = useState<WizardStep>("select");
+  const [target, setTarget] = useState<ImportTarget>("predictions");
   const [format, setFormat] = useState<PredictionImportFormat>("aap_json");
   const [files, setFiles] = useState<File[]>([]);
   const [modelVersion, setModelVersion] = useState("");
@@ -86,6 +90,7 @@ export function PredictionImportWizard({
 
   const reset = () => {
     setStep("select");
+    setTarget("predictions");
     setFormat("aap_json");
     setFiles([]);
     setModelVersion("");
@@ -121,7 +126,8 @@ export function PredictionImportWizard({
       modelVersion: modelVersion || undefined,
       overwriteExisting,
     };
-    if (format !== "coco") return base;
+    // COCO 默认尺寸仅对「预测 + COCO」生效; 标注导入只走 aap_json。
+    if (target !== "predictions" || format !== "coco") return base;
 
     const widthText = imageWidth.trim();
     const heightText = imageHeight.trim();
@@ -150,15 +156,32 @@ export function PredictionImportWizard({
     if (!options) return null;
 
     const results: FileImportPreview[] = [];
-    for (const selectedFile of files) {
+    for (const [index, selectedFile] of files.entries()) {
+      // overwrite 的 purge 去重集是每次后端调用作用域; 多文件逐个调用时,
+      // 若每个文件都带 overwrite, 后一个文件会再次 purge 同一 task, 把前一个文件
+      // 刚导入的记录也删掉 (静默数据丢失). 整批只在首个文件 purge 一次, 其余追加。
+      const firstFile = index === 0;
       try {
-        const result = await predictionsApi.import(
-          projectId,
-          format,
-          selectedFile,
-          options,
-          dryRun,
-        );
+        let result: PredictionImportResult;
+        if (target === "annotations") {
+          result = await predictionsApi.importAnnotations(
+            projectId,
+            selectedFile,
+            { overwrite: firstFile && overwriteExisting },
+            dryRun,
+          );
+        } else {
+          const fileOptions = firstFile
+            ? options
+            : { ...options, overwriteExisting: false };
+          result = await predictionsApi.import(
+            projectId,
+            format,
+            selectedFile,
+            fileOptions,
+            dryRun,
+          );
+        }
         results.push({ fileName: selectedFile.name, result });
       } catch (err) {
         results.push({
@@ -217,28 +240,55 @@ export function PredictionImportWizard({
   };
 
   return (
-    <Modal open={open} onClose={close} title="导入外部预测" width={560}>
+    <Modal
+      open={open}
+      onClose={close}
+      title={target === "annotations" ? "导入外部标注" : "导入外部预测"}
+      width={560}
+    >
       <div className={styles.wizard}>
         <StepBar step={step} />
 
         {step === "select" && (
           <>
             <div className={styles.formRow}>
-              <label htmlFor="pi-format" className={styles.formLabel}>
-                格式
+              <label htmlFor="pi-target" className={styles.formLabel}>
+                导入对象
               </label>
               <select
-                id="pi-format"
+                id="pi-target"
                 className={styles.input}
-                value={format}
-                onChange={(e) =>
-                  setFormat(e.target.value as PredictionImportFormat)
-                }
+                value={target}
+                onChange={(e) => {
+                  const next = e.target.value as ImportTarget;
+                  setTarget(next);
+                  // 标注只走 aap_json; 切过去时归一格式避免残留 coco。
+                  if (next === "annotations") setFormat("aap_json");
+                }}
               >
-                <option value="aap_json">AAP JSON (平台无损)</option>
-                <option value="coco">COCO Detection</option>
+                <option value="predictions">预测 (predictions)</option>
+                <option value="annotations">标注 (annotations)</option>
               </select>
             </div>
+
+            {target === "predictions" && (
+              <div className={styles.formRow}>
+                <label htmlFor="pi-format" className={styles.formLabel}>
+                  格式
+                </label>
+                <select
+                  id="pi-format"
+                  className={styles.input}
+                  value={format}
+                  onChange={(e) =>
+                    setFormat(e.target.value as PredictionImportFormat)
+                  }
+                >
+                  <option value="aap_json">AAP JSON (平台无损)</option>
+                  <option value="coco">COCO Detection</option>
+                </select>
+              </div>
+            )}
 
             <div className={styles.formRow}>
               <label className={styles.formLabel}>文件</label>
@@ -304,18 +354,20 @@ export function PredictionImportWizard({
               </div>
             )}
 
-            <div className={styles.formRow}>
-              <label htmlFor="pi-mv" className={styles.formLabel}>
-                兜底 model_version (可选)
-              </label>
-              <input
-                id="pi-mv"
-                className={styles.input}
-                value={modelVersion}
-                onChange={(e) => setModelVersion(e.target.value)}
-                placeholder="例如 ext-yolov8-v1"
-              />
-            </div>
+            {target === "predictions" && (
+              <div className={styles.formRow}>
+                <label htmlFor="pi-mv" className={styles.formLabel}>
+                  兜底 model_version (可选)
+                </label>
+                <input
+                  id="pi-mv"
+                  className={styles.input}
+                  value={modelVersion}
+                  onChange={(e) => setModelVersion(e.target.value)}
+                  placeholder="例如 ext-yolov8-v1"
+                />
+              </div>
+            )}
 
             <label className={styles.checkboxRow}>
               <input
@@ -323,7 +375,9 @@ export function PredictionImportWizard({
                 checked={overwriteExisting}
                 onChange={(e) => setOverwriteExisting(e.target.checked)}
               />
-              替换已有「外部导入」预测 (按 task 维度)
+              {target === "annotations"
+                ? "替换已有「外部导入」标注 (按 task 维度，不动人工标注)"
+                : "替换已有「外部导入」预测 (按 task 维度)"}
             </label>
 
             <div className={styles.actions}>
