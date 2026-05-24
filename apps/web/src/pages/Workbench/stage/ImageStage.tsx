@@ -523,7 +523,9 @@ export function ImageStage({
           const y = Math.min(d.sy, d.cy);
           const w = Math.abs(d.cx - d.sx);
           const h = Math.abs(d.cy - d.sy);
-          if (w > 0.005 && h > 0.005) {
+          // 误点（几乎没拖动）静默丢弃；任一边 ≥3px 的真实拖拽一律下交，
+          // 过小 / 越界 / 疑似重复由 commit 漏斗 (guardDrawnBox) 统一处理并提示。
+          if (Math.max(w * imgW, h * imgH) >= 3) {
             // v0.10.28 · 旋转框工具拖出的矩形直接提交为 rotated_bbox (angle=0); 其它走普通 bbox pending。
             if (tool === "rotated-box") onCommitRotatedBbox?.({ x, y, w, h });
             else onCommitDrawing?.({ x, y, w, h });

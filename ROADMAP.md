@@ -130,7 +130,7 @@
 - **大图 tile / 多边形 LOD**：多边形 LOD（I2）已落 v0.10.4；大图 tile（I1）见 §C.7。
 
 ### C.3 标注体验（核心生产力杠杆）
-- **会话级标注辅助**：① 框过小（< 0.005 × 0.005）已过滤，需提示「框太小未保存」；② 框越界自动 clamp 到 [0,1]；③ 重叠完全相同框（IoU > 0.95）拒绝并提示「疑似重复」。
+- ~~**会话级落框辅助**：① 框过小提示「框太小未保存」；② 框越界 clamp 到 [0,1]；③ 重叠完全相同框（IoU > 0.95）拒绝并提示「疑似重复」。~~ **已落地**：三道闸收敛到纯函数 [`guardDrawnBox`](apps/web/src/pages/Workbench/stage/drawGuard.ts)，在 image 工作台 commit 漏斗（bbox / smart / magic / rotated-box 各 draw 路径）统一执行；`ImageStage` 拖拽 gate 改为像素级"是否真拖动"，过小/越界/重复改由漏斗统一处理并 toast。
 - **`U` 键准确度升级**：v0.5.2 用启发式；准确「最不确定」需要后端 `?order=conf_asc` 端点（list_tasks 加 LEFT JOIN predictions GROUP BY avg(confidence)）。
 
 ### C.5 / C.6 视频工作台前端 + 后端剩余 → 已抽离

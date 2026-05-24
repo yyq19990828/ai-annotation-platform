@@ -6,6 +6,7 @@ import type { ToolBindings } from "@/api/projects";
 import { useAcceptPrediction, useRejectPrediction } from "@/hooks/usePredictions";
 import { buildIoUIndex } from "../../stage/iou-index";
 import { iouShape } from "../../stage/iou";
+import { guardDrawnBox } from "../../stage/drawGuard";
 import type { useAnnotationHistory } from "../../state/useAnnotationHistory";
 import type { UseInteractiveAIReturn } from "../../state/useInteractiveAI";
 import {
@@ -658,14 +659,24 @@ export function useImageAnnotationActions({
   }, [aiBoxes, dimmedAiIds, acceptPredictionMut, history, pushToast]);
 
   const handleCommitDrawing = useCallback((geo: Geom) => {
+    // 会话级落框守卫：越界 clamp / 过小 / 疑似重复（拦截时已 toast）。
+    const g = guardDrawnBox(geo, userBoxes, pushToast);
+    if (!g) return;
     // 当前工具自身的 unit 没有类别定义 → 不弹选类别窗, 直接以 __unknown 落库。
     // 修复老项目用无类别工具落框仍弹窗 (借 bbox/region 类) 的 BUG。
     if (!activeToolHasOwnClasses) {
-      annotationActions.createBboxWithClass(geo, UNKNOWN_CLASS);
+      annotationActions.createBboxWithClass(g, UNKNOWN_CLASS);
       return;
     }
-    s.setPendingDrawing({ geom: geo });
-  }, [s, activeToolHasOwnClasses, annotationActions]);
+    s.setPendingDrawing({ geom: g });
+  }, [s, activeToolHasOwnClasses, annotationActions, userBoxes, pushToast]);
+
+  // 旋转框工具拖出的轴对齐矩形（angle=0）走同一组守卫后再交给 createRotatedBbox。
+  const handleCommitRotatedBbox = useCallback((geo: Geom) => {
+    const g = guardDrawnBox(geo, userBoxes, pushToast);
+    if (!g) return;
+    annotationActions.createRotatedBbox(g);
+  }, [annotationActions, userBoxes, pushToast]);
 
   const handleStartChangeClass = useCallback((annotationId: string) => {
     const ann = annotationsRef.current.find((a) => a.id === annotationId);
@@ -737,6 +748,8 @@ export function useImageAnnotationActions({
     cancelMaskEdit,
     handleAcceptAll,
     handleCommitDrawing,
+    // 覆盖 ...annotationActions 里的裸 createRotatedBbox，套上会话级落框守卫。
+    createRotatedBbox: handleCommitRotatedBbox,
     handleStartChangeClass,
     handleCommitChangeClass,
     handleCancelChangeClass,
