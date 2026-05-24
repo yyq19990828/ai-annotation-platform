@@ -1,15 +1,12 @@
-import { useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { useNavigate } from "react-router-dom";
-import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
-import { useToastStore } from "@/components/ui/Toast";
-import { projectsApi, type ProjectResponse, type ExportTarget } from "@/api/projects";
-import { PredictionImportWizard } from "@/components/predictions/PredictionImportWizard";
+import { type ProjectResponse } from "@/api/projects";
+import { ExportSection } from "./ExportSection";
+import { ProjectActionsMenu } from "./ProjectActionsMenu";
 
 import styles from "./ProjectGrid.module.css";
 
@@ -31,26 +28,6 @@ interface Props {
  *  v0.7.6 · 卡片右下角次级动作（导出 / 设置）收编到 ⋮ DropdownMenu，主操作"打开"独立。
  */
 export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) {
-  const pushToast = useToastStore((s) => s.push);
-  const navigate = useNavigate();
-  const [importProject, setImportProject] = useState<ProjectResponse | null>(null);
-
-  // v0.10.11 · 跳 Dashboard 并打开 Wizard 复制流; super_admin 看 AdminDashboard /
-  // project_admin 看 DashboardPage, 二者都挂在 /dashboard 下由 DashboardRouter 分派.
-  // (App.tsx 把 "/" index 设成 Navigate to="/dashboard" replace, 它不保留 query
-  // string, 所以这里直接拼 /dashboard.)
-  const onDuplicate = (p: ProjectResponse) => {
-    navigate(`/dashboard?new=1&from=${p.id}`);
-  };
-
-  const exportProject = async (p: ProjectResponse, target: ExportTarget) => {
-    try {
-      await projectsApi.exportProject(p.id, [target], p.type_key === "video-track" ? { videoFrameMode: "keyframes" } : undefined);
-    } catch (e) {
-      pushToast({ msg: "导出失败", sub: (e as Error).message, kind: "error" });
-    }
-  };
-
   if (projects.length === 0) {
     return (
       <div className={styles.empty}>
@@ -123,13 +100,11 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
               </div>
 
               <div className={styles.cardActions} onClick={(e) => e.stopPropagation()}>
-                <ProjectMoreMenu
+                <ExportSection projectId={p.id} projectTypeKey={p.type_key} />
+                <ProjectActionsMenu
                   project={p}
                   canManage={canManage(p)}
                   onSettings={onSettings}
-                  onExport={exportProject}
-                  onDuplicate={onDuplicate}
-                  onImportPredictions={setImportProject}
                 />
                 <Button
                   size="sm"
@@ -143,80 +118,6 @@ export function ProjectGrid({ projects, onOpen, canManage, onSettings }: Props) 
           </Card>
         );
       })}
-      {importProject && (
-        <PredictionImportWizard
-          open
-          projectId={importProject.id}
-          onClose={() => setImportProject(null)}
-        />
-      )}
     </div>
-  );
-}
-
-function ProjectMoreMenu({
-  project,
-  canManage,
-  onSettings,
-  onExport,
-  onDuplicate,
-  onImportPredictions,
-}: {
-  project: ProjectResponse;
-  canManage: boolean;
-  onSettings: (p: ProjectResponse, section?: string) => void;
-  onExport: (p: ProjectResponse, target: ExportTarget) => void;
-  onDuplicate: (p: ProjectResponse) => void;
-  onImportPredictions: (p: ProjectResponse) => void;
-}) {
-  const items: DropdownItem[] = [];
-  if (canManage) {
-    items.push({
-      id: "settings",
-      label: "项目设置",
-      icon: "settings",
-      onSelect: () => onSettings(project),
-    });
-    // v0.10.11 · "复制项目" — 跳 Wizard 复制流, 仅 canManage 用户可见
-    items.push({
-      id: "duplicate",
-      label: "复制项目配置",
-      icon: "copy",
-      onSelect: () => onDuplicate(project),
-    });
-    items.push({ id: "div-1", divider: true, label: "" });
-    items.push({
-      id: "import-predictions",
-      label: "导入预测",
-      icon: "upload",
-      onSelect: () => onImportPredictions(project),
-    });
-  }
-  if (project.type_key === "video-track") {
-    items.push({ id: "exp-video", label: "导出 Video JSON", icon: "download", onSelect: () => onExport(project, "video_json") });
-  } else {
-    items.push(
-      { id: "exp-coco", label: "导出 COCO JSON", icon: "download", onSelect: () => onExport(project, "coco") },
-      { id: "exp-voc", label: "导出 Pascal VOC", icon: "download", onSelect: () => onExport(project, "voc") },
-      { id: "exp-yolo", label: "导出 YOLO 检测", icon: "download", onSelect: () => onExport(project, "yolo-det") },
-    );
-  }
-  return (
-    <DropdownMenu
-      minWidth={180}
-      items={items}
-      trigger={({ open, toggle, ref }) => (
-        <Button
-          ref={ref as React.Ref<HTMLButtonElement>}
-          size="sm"
-          onClick={(e) => { e.stopPropagation(); toggle(); }}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          title="更多操作"
-        >
-          <Icon name="more" size={11} />
-        </Button>
-      )}
-    />
   );
 }

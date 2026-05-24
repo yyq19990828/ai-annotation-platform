@@ -21,6 +21,7 @@ import { useAuditLogs } from "@/hooks/useAudit";
 import { auditActionLabel } from "@/utils/auditLabels";
 import { FilterDrawer, EMPTY_FILTERS, type DashboardFilters } from "./FilterDrawer";
 import { ProjectGrid } from "./ProjectGrid";
+import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 
 import styles from "./DashboardPage.module.css";
@@ -145,18 +146,11 @@ function ProjectRow({
       <td className={styles.projectCellActions}>
         <div className={styles.rowActions}>
           <ExportSection projectId={p.id} projectTypeKey={p.type_key} />
-          {canManage && (
-            <Button
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSettings(p);
-              }}
-              title="项目设置 — 修改信息 / 指派成员 / 转移负责人"
-            >
-              <Icon name="settings" size={13} />设置
-            </Button>
-          )}
+          <ProjectActionsMenu
+            project={p}
+            canManage={canManage}
+            onSettings={onSettings}
+          />
           <Button size="sm">打开 <Icon name="chevRight" size={11} /></Button>
         </div>
       </td>

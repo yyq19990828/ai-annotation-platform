@@ -21,12 +21,14 @@ import styles from "./PredictionImportWizard.module.css";
 type WizardStep = "select" | "preview" | "done";
 
 // v0.10.54 · 导入对象: 预测 (predictions[]) 或标注 (annotations[], ADR-0028).
-type ImportTarget = "predictions" | "annotations";
+export type ImportTarget = "predictions" | "annotations";
 
 interface Props {
   open: boolean;
   onClose: () => void;
   projectId: string;
+  /** v0.10.54 · 打开时预设的导入对象 (菜单两个入口分别预设 预测 / 标注)。 */
+  initialTarget?: ImportTarget;
   onComplete?: (result: PredictionImportResult) => void;
 }
 
@@ -71,12 +73,13 @@ export function PredictionImportWizard({
   open,
   onClose,
   projectId,
+  initialTarget = "predictions",
   onComplete,
 }: Props) {
   const pushToast = useToastStore((s) => s.push);
 
   const [step, setStep] = useState<WizardStep>("select");
-  const [target, setTarget] = useState<ImportTarget>("predictions");
+  const [target, setTarget] = useState<ImportTarget>(initialTarget);
   const [format, setFormat] = useState<PredictionImportFormat>("aap_json");
   const [files, setFiles] = useState<File[]>([]);
   const [modelVersion, setModelVersion] = useState("");
@@ -90,7 +93,7 @@ export function PredictionImportWizard({
 
   const reset = () => {
     setStep("select");
-    setTarget("predictions");
+    setTarget(initialTarget);
     setFormat("aap_json");
     setFiles([]);
     setModelVersion("");
