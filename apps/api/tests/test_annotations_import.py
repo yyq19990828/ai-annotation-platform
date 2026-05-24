@@ -137,14 +137,26 @@ async def test_import_annotations_append_happy(
                 "task_match": {"display_id": tasks[0].display_id},
                 "annotations": [
                     _ann_entry(
-                        geometry={"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
+                        geometry={
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.2,
+                            "w": 0.3,
+                            "h": 0.4,
+                        },
                         class_name="car",
                         source="manual",
                         user_id=orig_user_id,
                         created_at="2026-01-01T00:00:00Z",
                     ),
                     _ann_entry(
-                        geometry={"type": "bbox", "x": 0.5, "y": 0.5, "w": 0.1, "h": 0.1},
+                        geometry={
+                            "type": "bbox",
+                            "x": 0.5,
+                            "y": 0.5,
+                            "w": 0.1,
+                            "h": 0.1,
+                        },
                         class_name="truck",
                         source="prediction_based",
                     ),
@@ -244,7 +256,13 @@ async def test_import_annotations_overwrite_clears_imported_keeps_manual(
                 "task_match": {"display_id": tasks[0].display_id},
                 "annotations": [
                     _ann_entry(
-                        geometry={"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+                        geometry={
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
                         class_name="truck",
                     ),
                 ],
@@ -326,12 +344,24 @@ async def test_import_annotations_class_name_not_in_bindings(
                 "annotations": [
                     # 合法类别
                     _ann_entry(
-                        geometry={"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+                        geometry={
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
                         class_name="car",
                     ),
                     # 不合法类别
                     _ann_entry(
-                        geometry={"type": "bbox", "x": 0.3, "y": 0.3, "w": 0.1, "h": 0.1},
+                        geometry={
+                            "type": "bbox",
+                            "x": 0.3,
+                            "y": 0.3,
+                            "w": 0.1,
+                            "h": 0.1,
+                        },
                         class_name="pedestrian",
                     ),
                 ],
@@ -370,7 +400,13 @@ async def test_import_annotations_task_miss(
                 "task_match": {"display_id": "T-NOTEXIST-XYZ"},
                 "annotations": [
                     _ann_entry(
-                        geometry={"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+                        geometry={
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
                         class_name="car",
                     )
                 ],
@@ -408,7 +444,13 @@ async def test_import_annotations_dry_run_not_persisted(
                 "task_match": {"display_id": tasks[0].display_id},
                 "annotations": [
                     _ann_entry(
-                        geometry={"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+                        geometry={
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
                         class_name="car",
                     ),
                 ],
@@ -429,9 +471,7 @@ async def test_import_annotations_dry_run_not_persisted(
 
     count = (
         await db_session.execute(
-            select(func.count(Annotation.id)).where(
-                Annotation.task_id == tasks[0].id
-            )
+            select(func.count(Annotation.id)).where(Annotation.task_id == tasks[0].id)
         )
     ).scalar()
     assert count == 0
@@ -456,7 +496,13 @@ async def test_import_annotations_batch_transitions_suppressed(
                 "task_match": {"display_id": tasks[0].display_id},
                 "annotations": [
                     _ann_entry(
-                        geometry={"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+                        geometry={
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
                         class_name="car",
                     ),
                 ],
@@ -583,10 +629,24 @@ async def test_import_annotations_missing_class_name(
                 "task_match": {"display_id": tasks[0].display_id},
                 "annotations": [
                     # 无 class_name → skip
-                    {"geometry": {"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}},
+                    {
+                        "geometry": {
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        }
+                    },
                     # 有 class_name → ok
                     _ann_entry(
-                        geometry={"type": "bbox", "x": 0.3, "y": 0.3, "w": 0.1, "h": 0.1},
+                        geometry={
+                            "type": "bbox",
+                            "x": 0.3,
+                            "y": 0.3,
+                            "w": 0.1,
+                            "h": 0.1,
+                        },
                         class_name="truck",
                     ),
                 ],
@@ -651,7 +711,13 @@ async def test_import_annotations_source_default_manual(
                 "task_match": {"display_id": tasks[0].display_id},
                 "annotations": [
                     {
-                        "geometry": {"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+                        "geometry": {
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.1,
+                            "w": 0.2,
+                            "h": 0.2,
+                        },
                         "class_name": "car",
                         "source": "unknown_source",  # 不在允许集合
                     },

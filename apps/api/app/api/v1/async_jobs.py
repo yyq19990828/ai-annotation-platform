@@ -250,8 +250,14 @@ async def retry_failed_async_job_items(
     from app.workers.predictions_retry import retry_failed_prediction as task_fn
 
     rows = (
-        await db.execute(select(FailedPrediction).where(FailedPrediction.id.in_(failed_ids)))
-    ).scalars().all()
+        (
+            await db.execute(
+                select(FailedPrediction).where(FailedPrediction.id.in_(failed_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
     by_id = {row.id: row for row in rows}
     queued = 0
     skipped = 0

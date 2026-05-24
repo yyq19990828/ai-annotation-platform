@@ -286,12 +286,13 @@ async def import_predictions(
 
     from app.services import async_job as async_job_svc
     from app.services.async_job_notify import notify_job_terminal
-    from app.services.predictions_import import import_aap_json, import_coco, import_yolo
+    from app.services.predictions_import import (
+        import_aap_json,
+        import_coco,
+        import_yolo,
+    )
 
-    raw_files = [
-        (upload.filename or "file", await upload.read())
-        for upload in files
-    ]
+    raw_files = [(upload.filename or "file", await upload.read()) for upload in files]
     if not raw_files:
         raise HTTPException(status_code=422, detail="file is required")
 

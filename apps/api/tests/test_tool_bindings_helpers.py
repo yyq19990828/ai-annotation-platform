@@ -47,9 +47,10 @@ def test_derive_tool_unit_from_ls_type(ls_type, expected):
 
 
 def test_derive_tool_unit_from_rotated_rectangle_value():
-    assert derive_tool_unit_from_ls_type(
-        "rectanglelabels", {"rotation": 0}
-    ) == "rotated_bbox"
+    assert (
+        derive_tool_unit_from_ls_type("rectanglelabels", {"rotation": 0})
+        == "rotated_bbox"
+    )
 
 
 def test_derive_tool_unit_from_result_empty_or_invalid():

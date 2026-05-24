@@ -14,7 +14,16 @@ from __future__ import annotations
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,7 +32,13 @@ from app.db.models.annotation import Annotation
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
-from app.deps import assert_project_visible, get_current_user, get_db, require_project_owner, require_roles
+from app.deps import (
+    assert_project_visible,
+    get_current_user,
+    get_db,
+    require_project_owner,
+    require_roles,
+)
 from app.schemas.aap_json import AAPImportResult
 from app.schemas.annotation import (
     AnnotationBulkUpdateRequest,

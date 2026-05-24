@@ -249,7 +249,9 @@ async def _purge_predictions(
     PredictionMeta 通过 FK 引用 predictions.id (无 CASCADE), 必须先删 meta 再删 prediction.
     """
     if source_scope not in {"ml_backend", "external_import", "all"}:
-        raise ValueError("source_scope must be one of: ml_backend, external_import, all")
+        raise ValueError(
+            "source_scope must be one of: ml_backend, external_import, all"
+        )
 
     filters = [Prediction.project_id == project_id]
     if task_ids is not None:
@@ -409,9 +411,7 @@ def _shape_geometry(shape: dict[str, Any]) -> dict[str, Any]:
     return shape
 
 
-def _shape_class_name(
-    shape: dict[str, Any], entry: AAPPredictionEntry
-) -> str | None:
+def _shape_class_name(shape: dict[str, Any], entry: AAPPredictionEntry) -> str | None:
     raw = shape.get("class_name")
     if isinstance(raw, str) and raw:
         return raw
@@ -659,7 +659,9 @@ async def import_yolo(
     project_classes = derive_classes_list(project.tool_bindings if project else None)
     class_names = _read_yolo_class_names(zf) or project_classes
     if not class_names:
-        raise ValueError("YOLO zip 缺少 classes.txt/data.yaml, 且项目没有可回退的类别顺序")
+        raise ValueError(
+            "YOLO zip 缺少 classes.txt/data.yaml, 且项目没有可回退的类别顺序"
+        )
 
     project_class_set = set(project_classes)
     result = AAPImportResult(dry_run=dry_run)
@@ -688,9 +690,7 @@ async def import_yolo(
         if not lines:
             continue
 
-        task, match_error = await resolve_task_by_file_stem(
-            db, project_id, label_name
-        )
+        task, match_error = await resolve_task_by_file_stem(db, project_id, label_name)
         if task is None:
             result.errors.append(
                 AAPImportErrorEntry(
@@ -792,7 +792,9 @@ def _iter_yolo_label_files(zf: zipfile.ZipFile) -> list[str]:
 
 def _read_yolo_class_names(zf: zipfile.ZipFile) -> list[str]:
     classes_files = sorted(
-        n for n in zf.namelist() if n.replace("\\", "/").rsplit("/", 1)[-1] == "classes.txt"
+        n
+        for n in zf.namelist()
+        if n.replace("\\", "/").rsplit("/", 1)[-1] == "classes.txt"
     )
     for name in classes_files:
         try:
@@ -968,8 +970,7 @@ def _yolo_obb_to_geometry(
     points = [[values[i], values[i + 1]] for i in range(0, len(values), 2)]
     px = [(x * img_w, y * img_h) for x, y in points]
     edges = [
-        (px[(i + 1) % 4][0] - px[i][0], px[(i + 1) % 4][1] - px[i][1])
-        for i in range(4)
+        (px[(i + 1) % 4][0] - px[i][0], px[(i + 1) % 4][1] - px[i][1]) for i in range(4)
     ]
     lengths = [math.hypot(dx, dy) for dx, dy in edges]
 

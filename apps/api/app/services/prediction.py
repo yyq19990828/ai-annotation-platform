@@ -220,9 +220,7 @@ def to_internal_shape(s: dict) -> dict:
                 }
                 holes = p.get("holes") or []
                 if holes:
-                    entry["holes"] = [
-                        _normalize_points(hole, scale) for hole in holes
-                    ]
+                    entry["holes"] = [_normalize_points(hole, scale) for hole in holes]
                 new_polys.append(entry)
             geometry = {"type": "multi_polygon", "polygons": new_polys}
         else:

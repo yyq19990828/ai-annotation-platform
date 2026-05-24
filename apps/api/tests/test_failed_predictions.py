@@ -241,9 +241,7 @@ async def test_retry_worker_tracks_success_in_async_jobs(
             )
         ]
 
-    monkeypatch.setattr(
-        "app.services.ml_client.MLBackendClient.predict", fake_predict
-    )
+    monkeypatch.setattr("app.services.ml_client.MLBackendClient.predict", fake_predict)
 
     result = await retry_worker._do_retry_with_factory(
         _passthrough_session_factory(db_session), str(fp.id), str(user.id)
@@ -304,9 +302,7 @@ async def test_retry_worker_tracks_backend_failure_in_async_jobs(
     async def fake_predict(self, tasks_payload):
         raise RuntimeError("backend down")
 
-    monkeypatch.setattr(
-        "app.services.ml_client.MLBackendClient.predict", fake_predict
-    )
+    monkeypatch.setattr("app.services.ml_client.MLBackendClient.predict", fake_predict)
 
     result = await retry_worker._do_retry_with_factory(
         _passthrough_session_factory(db_session), str(fp.id), str(user.id)
