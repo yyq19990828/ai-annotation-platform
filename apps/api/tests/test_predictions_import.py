@@ -327,6 +327,68 @@ async def test_import_aap_json_polyline_and_rotated_bbox(
     }
 
 
+async def test_import_aap_json_keypoint(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, tasks = await _seed_project_with_tasks(db_session, user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    payload = _aap_envelope(
+        [
+            {
+                "task_match": {"display_id": tasks[0].display_id},
+                "predictions": [
+                    {
+                        "geometry": {
+                            "type": "keypoint",
+                            "points": [
+                                {"x": 0.1, "y": 0.2, "v": 2},
+                                {"x": 0.4, "y": 0.5, "v": 1},
+                                {"x": 0.7, "y": 0.8, "v": 0},
+                            ],
+                        },
+                        "class_name": "car",
+                        "confidence": 0.83,
+                    }
+                ],
+            }
+        ]
+    )
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=aap_json",
+        files=_upload_files(payload),
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["imported"] == 1
+
+    rows = (
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id == tasks[0].id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows[0].tool_unit_id == "keypoint"
+    assert rows[0].result[0]["type"] == "keypointlabels"
+
+    read_resp = await httpx_client.get(
+        f"/api/v1/tasks/{tasks[0].id}/predictions",
+        headers=headers,
+    )
+    assert read_resp.status_code == 200, read_resp.text
+    body = read_resp.json()
+    assert body[0]["tool_unit_id"] == "keypoint"
+    assert body[0]["result"][0]["geometry"]["type"] == "keypoint"
+    assert body[0]["result"][0]["geometry"]["points"][1]["v"] == 1
+
+
 async def test_prediction_import_polyline_round_trip():
     geometry = {"type": "polyline", "points": [[0.1, 0.2], [0.4, 0.5]]}
     ls_shape = internal_geometry_to_ls_shape(geometry, "lane", 0.77)
@@ -337,6 +399,31 @@ async def test_prediction_import_polyline_round_trip():
     assert out["confidence"] == 0.77
     assert out["geometry"] == geometry
     assert out["tool_unit_id"] == "polyline"
+
+
+async def test_prediction_import_keypoint_round_trip():
+    geometry = {
+        "type": "keypoint",
+        "points": [
+            {"x": 0.1, "y": 0.2, "v": 2},
+            {"x": 0.4, "y": 0.5, "v": 1},
+            {"x": 0.7, "y": 0.8, "v": 0},
+        ],
+    }
+    ls_shape = internal_geometry_to_ls_shape(geometry, "person", 0.81)
+    assert ls_shape is not None
+    assert ls_shape["type"] == "keypointlabels"
+    assert ls_shape["value"]["points"] == [
+        {"x": 10.0, "y": 20.0, "v": 2},
+        {"x": 40.0, "y": 50.0, "v": 1},
+        {"x": 70.0, "y": 80.0, "v": 0},
+    ]
+
+    out = to_internal_shape(ls_shape)
+    assert out["class_name"] == "person"
+    assert out["confidence"] == 0.81
+    assert out["geometry"] == geometry
+    assert out["tool_unit_id"] == "keypoint"
 
 
 @pytest.mark.parametrize("angle", [0, 30, 90, 180, 270, 359])
@@ -764,6 +851,84 @@ async def test_import_aap_json_unknown_kind_in_errors(
     assert any("ellipse" in err["reason"] for err in body["errors"])
 
 
+async def test_import_aap_json_entry_shapes_merge_into_one_prediction(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, tasks = await _seed_project_with_tasks(db_session, user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    payload = _aap_envelope(
+        [
+            {
+                "task_match": {"display_id": tasks[0].display_id},
+                "predictions": [
+                    {
+                        "geometry": {
+                            "type": "bbox",
+                            "x": 0.9,
+                            "y": 0.9,
+                            "w": 0.05,
+                            "h": 0.05,
+                        },
+                        "shapes": [
+                            {
+                                "type": "bbox",
+                                "x": 0.1,
+                                "y": 0.1,
+                                "w": 0.2,
+                                "h": 0.2,
+                            },
+                            {
+                                "type": "polyline",
+                                "points": [[0.1, 0.2], [0.4, 0.5]],
+                                "confidence": 0.61,
+                            },
+                            {"type": "ellipse", "cx": 0.5, "cy": 0.5},
+                        ],
+                        "class_name": "car",
+                        "confidence": 0.7,
+                        "score": 0.42,
+                    }
+                ],
+            }
+        ]
+    )
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=aap_json",
+        files=_upload_files(payload),
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["imported"] == 1
+    assert body["skipped"] == 1
+    assert any("ellipse" in err["reason"] for err in body["errors"])
+
+    rows = (
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id == tasks[0].id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    pred = rows[0]
+    assert pred.score == 0.42
+    assert len(pred.result) == 2
+    assert [shape["type"] for shape in pred.result] == [
+        "rectanglelabels",
+        "polylinelabels",
+    ]
+    assert pred.result[0]["value"]["x"] == pytest.approx(10.0)
+    assert pred.result[1]["score"] == 0.61
+
+
 # ── 权限 ────────────────────────────────────────────────────────────
 
 
@@ -831,6 +996,7 @@ async def test_import_coco_happy(
     r = await httpx_client.post(
         f"/api/v1/projects/{project.id}/predictions/import?format=coco",
         files=_upload_files(coco_payload, "coco.json"),
+        data={"image_width": "1", "image_height": "1"},
         headers=headers,
     )
     assert r.status_code == 200, r.text
@@ -851,6 +1017,56 @@ async def test_import_coco_happy(
     # 192/1920=0.1, 108/1080=0.1, 576/1920=0.3, 432/1080=0.4 -> *100
     assert bbox["x"] == pytest.approx(10.0, rel=0.01)
     assert bbox["width"] == pytest.approx(30.0, rel=0.01)
+
+
+async def test_import_coco_uses_image_size_hint_when_missing_dimensions(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, tasks = await _seed_project_with_tasks(db_session, user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    coco_payload = json.dumps(
+        {
+            "images": [{"id": 1, "file_name": tasks[0].file_path}],
+            "categories": [{"id": 0, "name": "car"}],
+            "annotations": [
+                {
+                    "id": 1,
+                    "image_id": 1,
+                    "category_id": 0,
+                    "bbox": [10, 20, 30, 40],
+                    "score": 0.88,
+                }
+            ],
+        }
+    ).encode("utf-8")
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=coco",
+        files=_upload_files(coco_payload, "coco-no-size.json"),
+        data={"image_width": "100", "image_height": "200"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["imported"] == 1
+
+    rows = (
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id == tasks[0].id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    bbox = rows[0].result[0]["value"]
+    assert bbox["x"] == pytest.approx(10.0)
+    assert bbox["y"] == pytest.approx(10.0)
+    assert bbox["width"] == pytest.approx(30.0)
+    assert bbox["height"] == pytest.approx(20.0)
 
 
 # ── 老 prediction 默认 source ────────────────────────────────────────

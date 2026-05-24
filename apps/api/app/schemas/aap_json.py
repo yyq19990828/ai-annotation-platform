@@ -71,7 +71,10 @@ class AAPAnnotationEntry(BaseModel):
 
 
 class AAPPredictionEntry(BaseModel):
-    geometry: dict[str, Any]
+    geometry: dict[str, Any] | None = None
+    # v0.10.53 · 一个 prediction entry 可合并多个 shape 写入同一 Prediction.result.
+    # 与 geometry 同时存在时 shapes 优先; 老单 geometry entry 继续兼容.
+    shapes: list[dict[str, Any]] | None = None
     class_name: str | None = None
     # v0.10.17 · 工具维度绑定 (1.1+).
     tool_unit_id: str | None = None

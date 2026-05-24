@@ -202,8 +202,8 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 - `annotations[]` 与 `predictions[]` **分开两个数组**（不混 type 字段）。
 - 导出严格写满 null；导入 lenient 忽略未知字段、缺失按默认。
 - `task_match` 走 `display_id` 优先（全局唯一），`file_path` fallback；跨项目 `display_id` 不允许偷换项目。
-- `geometry` 使用平台**内部格式**（`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox`），不嵌套 LabelStudio shape。导入端暂不消费 `keypoint` / `video_bbox` / `video_track`。
-- **v0.10.17 新增** `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `polyline` / `rotated_bbox` / `ai_interactive` / ...)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, 带 rotation 的 rectanglelabels→rotated_bbox, polygonlabels→region, polylinelabels→polyline)。
+- `geometry` 使用平台**内部格式**（`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`），不嵌套 LabelStudio shape。预测导入端也接受可选 `shapes[]`，用于把多个 shape 合并到同一条 prediction；`video_bbox` / `video_track` 暂不导入。
+- **v0.10.17 新增** `project.tool_bindings` (工具维度类别 / 属性绑定) + 每条 annotation / prediction 的 `tool_unit_id`(`bbox` / `region` / `polyline` / `rotated_bbox` / `keypoint` / `ai_interactive` / ...)。导入端缺失时按 LS shape 类型回退派生(rectanglelabels→bbox, 带 rotation 的 rectanglelabels→rotated_bbox, polygonlabels→region, polylinelabels→polyline, keypointlabels→keypoint)。
 
 详见 [ADR-0024](../../dev/adr/0024-aap-json-format) · [ADR-0026](../../dev/adr/0026-tool-unit-class-and-attribute-binding) · [API 导入指南](../../api/guides/import.md)。
 

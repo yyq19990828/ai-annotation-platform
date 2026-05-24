@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.10.15
 status: stable
-last_reviewed: 2026-05-19
+last_reviewed: 2026-05-24
 ---
 
 # 外部预测导入端点
@@ -21,6 +21,8 @@ Content-Type: multipart/form-data
 file=<JSON file>
 model_version=<optional fallback string>
 overwrite_existing=<true|false default false>
+image_width=<optional COCO fallback width>
+image_height=<optional COCO fallback height>
 ```
 
 参数：
@@ -32,6 +34,7 @@ overwrite_existing=<true|false default false>
 | `file` | form | File | 是 | JSON 文件. |
 | `model_version` | form | string | 否 | AAP JSON 内 `model_version` 缺失时的兜底值. |
 | `overwrite_existing` | form | bool | 否 | true 时按 task 维度删该 task 下 `source='external_import'` 的旧 prediction 后再写入. |
+| `image_width` / `image_height` | form | int | 否 | 仅 `format=coco` 生效。COCO `images[]` 缺 `width/height` 时作为全局兜底；图片自带尺寸优先。两个字段必须同时提供。 |
 
 权限：项目 owner 或 super_admin（与 ML backend 配置同位）。
 
@@ -49,7 +52,7 @@ overwrite_existing=<true|false default false>
 }
 ```
 
-错误是逐 entry 累计，不让整批挂；只有 schema_version 不兼容 / JSON 不可解析才整体 422。
+错误是逐 entry / shape 累计，不让整批挂；只有 schema_version 不兼容 / JSON 不可解析才整体 422。
 
 ## AAP JSON 格式
 
@@ -76,11 +79,28 @@ overwrite_existing=<true|false default false>
 }
 ```
 
-支持的 geometry kind：`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox`。`rotated_bbox` 使用平台内部中心点格式 `{cx, cy, w, h, angle}`，导入时写成 Label Studio `rectanglelabels.rotation`，读回时再还原中心点。其他 kind（`keypoint` / `video_bbox` / `video_track` / 自定义）进 errors[] 不入库。
+`predictions[i]` 也可以用 `shapes[]` 把多个几何合并成同一条 Prediction：
+
+```json
+{
+  "geometry": { "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
+  "class_name": "stop_sign",
+  "confidence": 0.92,
+  "score": 0.88,
+  "shapes": [
+    { "type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4 },
+    { "type": "polyline", "points": [[0.1, 0.2], [0.4, 0.5]] }
+  ]
+}
+```
+
+`shapes[]` 与 `geometry` 同时存在时，以 `shapes[]` 为准；其中某个 shape 不支持时只记录该 shape 的 errors[]，其余 shape 仍合并入库。
+
+支持的 geometry kind：`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`。`rotated_bbox` 使用平台内部中心点格式 `{cx, cy, w, h, angle}`，导入时写成 Label Studio `rectanglelabels.rotation`，读回时再还原中心点。`keypoint` 使用 `{points:[{x,y,v}]}`，`v` 保留 COCO 可见性 0/1/2。其他 kind（`video_bbox` / `video_track` / 自定义）进 errors[] 不入库。
 
 ## COCO Detection 格式
 
-最小子集：`images[]` + `annotations[]` + `categories[]`。bbox 是 COCO 标准 `[x, y, w, h]` 像素坐标，用 `images[].width/height` 归一化。
+最小子集：`images[]` + `annotations[]` + `categories[]`。bbox 是 COCO 标准 `[x, y, w, h]` 像素坐标，用 `images[].width/height` 归一化；若 image 缺尺寸，可通过 form `image_width` / `image_height` 提供全局兜底。
 
 匹配规则：用 `images[].file_name` 当 `task.file_path`（调用方应保证 dataset 命名一致）。
 
@@ -89,7 +109,7 @@ overwrite_existing=<true|false default false>
 ## 写入语义
 
 - 写入的 `predictions` 行：`source='external_import'`, `ml_backend_id=NULL`, `model_version=<entry 内值或 form 兜底>`, `result=<内部 LS shape 数组>`.
-- AAP JSON 每个 `predictions[i]` 对应**一条** Prediction 行（单 shape）；COCO 每个 `annotations[i]` 对应一条。
+- AAP JSON 每个 `predictions[i]` 对应**一条** Prediction 行；普通 `geometry` 写 1 个 shape，`shapes[]` 写多个 shape 到同一行的 `result[]`。COCO 每个 `annotations[i]` 对应一条。
 - 写入路径复用 `PredictionService.create_from_ml_result`，确保与 ML backend 写入路径同源。
 
 ## task_match 匹配规则
@@ -119,4 +139,4 @@ curl -X POST "https://platform/api/v1/projects/$PID/predictions/import?format=aa
 
 ## 审计
 
-所有非 dry-run 导入在 `audit_logs` 写一条 `predictions.import` 记录，`detail_json` 含 `format` / `imported` / `skipped` / `error_count` / `overwrite_existing` / `model_version_fallback`。
+所有非 dry-run 导入在 `audit_logs` 写一条 `predictions.import` 记录，`detail_json` 含 `format` / `imported` / `skipped` / `error_count` / `overwrite_existing` / `model_version_fallback` / `image_size_hint`。

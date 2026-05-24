@@ -206,6 +206,33 @@ def test_unknown_type_returns_empty_geometry():
     assert out["type"] == "keypoints"
 
 
+def test_keypointlabels_points_to_internal_keypoint():
+    raw = {
+        "type": "keypointlabels",
+        "score": 0.75,
+        "value": {
+            "keypointlabels": ["person"],
+            "points": [
+                {"x": 10, "y": 20, "v": 2},
+                {"x": 30, "y": 40, "v": 1},
+                {"x": 50, "y": 60, "v": 0},
+            ],
+        },
+    }
+    out = to_internal_shape(raw)
+    assert out["class_name"] == "person"
+    assert out["confidence"] == 0.75
+    assert out["tool_unit_id"] == "keypoint"
+    assert out["geometry"] == {
+        "type": "keypoint",
+        "points": [
+            {"x": 0.1, "y": 0.2, "v": 2},
+            {"x": 0.3, "y": 0.4, "v": 1},
+            {"x": 0.5, "y": 0.6, "v": 0},
+        ],
+    }
+
+
 def test_non_dict_input_safe():
     assert to_internal_shape(None) == {}
     assert to_internal_shape("garbage") == {}

@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.10.53] - 2026-05-24
+
+> **预测导入容错与批量导入。** 外部预测导入补齐 COCO 尺寸兜底、AAP JSON 单 prediction 多 shape、前端多文件批量导入和 keypoint 预测读写对称。
+
+### Added
+
+- **COCO 导入尺寸兜底** ([predictions.py](apps/api/app/api/v1/predictions.py) · [PredictionImportWizard.tsx](apps/web/src/components/predictions/PredictionImportWizard.tsx)): `format=coco` 时支持可选 `image_width` / `image_height` form 字段，向导在 COCO 模式提供默认宽高输入；COCO image 自带尺寸时仍优先使用文件内尺寸。
+- **AAP JSON `shapes[]` 多 shape 导入** ([aap_json.py](apps/api/app/schemas/aap_json.py) · [predictions_import.py](apps/api/app/services/predictions_import.py)): `AAPPredictionEntry` 增可选 `shapes[]`，一个 entry 仍写一条 Prediction，但 `result[]` 可包含多个 shape；单个 shape 不支持时只进 errors[]，其余 shape 继续入库。
+- **多文件预测导入向导** ([PredictionImportWizard.tsx](apps/web/src/components/predictions/PredictionImportWizard.tsx)): 文件选择支持 multiple，预览和正式导入逐文件顺序调用既有端点并聚合 imported / skipped / errors，同时保留分文件明细。
+- **keypoint 预测导入映射** ([predictions_import.py](apps/api/app/services/predictions_import.py) · [prediction.py](apps/api/app/services/prediction.py)): 内部 `keypoint` 几何写为 `keypointlabels.value.points[]`，读路径还原 `{type:"keypoint", points:[{x,y,v}]}`，`tool_unit_id` 同步派生为 `keypoint`。
+
+### Fixed
+
+- **ML backend 直出 `keypointlabels` 不再降级为 bbox** ([prediction.py](apps/api/app/services/prediction.py)): `derive_tool_unit_from_ls_type` 和 `to_internal_shape` 识别 keypointlabels，多点可见性预测可在工作台按 keypoint 几何渲染。
+
 ## [0.10.52] - 2026-05-24
 
 > **预测导入几何补齐与入口对称。** AAP JSON 预测导入支持 `rotated_bbox` / `polyline`，读路径同步反解为内部 geometry，Dashboard 项目卡片菜单新增「导入预测」入口。

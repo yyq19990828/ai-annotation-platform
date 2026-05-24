@@ -19,6 +19,8 @@ export type PredictionImportFormat = "aap_json" | "coco";
 export interface PredictionImportOptions {
   modelVersion?: string;
   overwriteExisting?: boolean;
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
 export const predictionsApi = {
@@ -75,6 +77,12 @@ export const predictionsApi = {
     form.append("file", file);
     if (options.modelVersion) form.append("model_version", options.modelVersion);
     if (options.overwriteExisting) form.append("overwrite_existing", "true");
+    if (options.imageWidth !== undefined) {
+      form.append("image_width", String(options.imageWidth));
+    }
+    if (options.imageHeight !== undefined) {
+      form.append("image_height", String(options.imageHeight));
+    }
 
     const token = localStorage.getItem("token");
     const res = await fetch(

@@ -50,6 +50,12 @@
   font-size: 13px;
 }
 
+.inlineFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .fileDrop {
   border: 1px dashed var(--color-border);
   border-radius: 8px;
@@ -68,6 +74,7 @@
   color: var(--color-fg);
   font-weight: 500;
   margin-top: 6px;
+  overflow-wrap: anywhere;
 }
 
 .previewBox {
@@ -108,6 +115,28 @@
   padding-top: 8px;
   font-size: 12px;
   font-family: monospace;
+}
+
+.fileDetails {
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-fg-muted);
+}
+
+.fileDetailRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fileDetailName {
+  color: var(--color-fg);
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .errorRow {

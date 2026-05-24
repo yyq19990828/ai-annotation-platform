@@ -27,13 +27,15 @@ def derive_tool_unit_from_ls_type(
     """v0.10.17 · LabelStudio result.type → tool_unit_id.
 
     polygonlabels / brushlabels / multi_polygon → region; polylinelabels →
-    polyline; rectanglelabels 默认 bbox, 带 rotation 字段时归 rotated_bbox.
-    keypointlabels 仍在 v0.10.53 单列处理; 当前继续归 bbox 占位.
+    polyline; keypointlabels → keypoint; rectanglelabels 默认 bbox, 带 rotation
+    字段时归 rotated_bbox.
     """
     if typ in {"polygonlabels", "brushlabels", "multi_polygon"}:
         return "region"
     if typ == "polylinelabels":
         return "polyline"
+    if typ == "keypointlabels":
+        return "keypoint"
     if (
         typ == "rectanglelabels"
         and isinstance(value, dict)
@@ -97,6 +99,31 @@ def _collect_point_values(points: Any) -> list[float]:
         if isinstance(pt, (list, tuple)) and len(pt) == 2:
             values.extend([float(pt[0]), float(pt[1])])
     return values
+
+
+def _normalize_keypoints(points: Any) -> list[dict[str, float | int]]:
+    if not isinstance(points, list):
+        return []
+    values: list[float] = []
+    parsed: list[tuple[float, float, int]] = []
+    for pt in points:
+        try:
+            if isinstance(pt, dict):
+                x = float(pt["x"])
+                y = float(pt["y"])
+                v = int(pt.get("v", 2))
+            elif isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                x = float(pt[0])
+                y = float(pt[1])
+                v = int(pt[2]) if len(pt) >= 3 else 2
+            else:
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        parsed.append((x, y, v))
+        values.extend([x, y])
+    scale = _percent_scale(values)
+    return [{"x": x / scale, "y": y / scale, "v": v} for x, y, v in parsed]
 
 
 def to_internal_shape(s: dict) -> dict:
@@ -216,6 +243,11 @@ def to_internal_shape(s: dict) -> dict:
         geometry = {
             "type": "polyline",
             "points": _normalize_points(points, scale),
+        }
+    elif typ == "keypointlabels" and val.get("points") is not None:
+        geometry = {
+            "type": "keypoint",
+            "points": _normalize_keypoints(val.get("points")),
         }
     else:
         geometry = {}

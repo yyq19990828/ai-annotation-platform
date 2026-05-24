@@ -266,6 +266,8 @@ async def import_predictions(
     dry_run: bool = Query(False),
     model_version: str | None = Form(None),
     overwrite_existing: bool = Form(False),
+    image_width: int | None = Form(None),
+    image_height: int | None = Form(None),
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -281,6 +283,20 @@ async def import_predictions(
     from app.services.predictions_import import import_aap_json, import_coco
 
     raw = await file.read()
+    image_size_hint: tuple[int, int] | None = None
+    if format == "coco":
+        if (image_width is None) != (image_height is None):
+            raise HTTPException(
+                status_code=422,
+                detail="image_width and image_height must be provided together",
+            )
+        if image_width is not None and image_height is not None:
+            if image_width <= 0 or image_height <= 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="image_width and image_height must be positive",
+                )
+            image_size_hint = (image_width, image_height)
 
     # v0.10.16 · async_jobs 双写（同步端点；dry_run 不记录）
     aj_id: uuid.UUID | None = None
@@ -297,6 +313,7 @@ async def import_predictions(
                     "project_display_id": project.display_id,
                     "overwrite_existing": overwrite_existing,
                     "model_version_fallback": model_version,
+                    "image_size_hint": image_size_hint,
                 },
             )
             await async_job_svc.mark_running(db, aj.id)
@@ -324,6 +341,7 @@ async def import_predictions(
                 model_version_fallback=model_version,
                 overwrite_existing=overwrite_existing,
                 dry_run=dry_run,
+                image_size_hint=image_size_hint,
             )
     except ValueError as exc:
         if aj_id is not None:
@@ -361,6 +379,7 @@ async def import_predictions(
                 "error_count": len(result.errors),
                 "model_version_fallback": model_version,
                 "overwrite_existing": overwrite_existing,
+                "image_size_hint": image_size_hint,
             },
         )
         if aj_id is not None:

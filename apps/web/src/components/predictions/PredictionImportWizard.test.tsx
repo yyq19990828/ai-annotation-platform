@@ -102,6 +102,77 @@ describe("PredictionImportWizard", () => {
     });
   });
 
+  it("COCO 默认尺寸填写后预览会透传 image_size_hint 字段", async () => {
+    importMock.mockResolvedValueOnce({
+      imported: 1,
+      skipped: 0,
+      errors: [],
+      dry_run: true,
+    });
+
+    render(
+      <PredictionImportWizard open onClose={() => {}} projectId="p-coco" />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/格式/), {
+      target: { value: "coco" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("宽度"), {
+      target: { value: "1920" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("高度"), {
+      target: { value: "1080" },
+    });
+
+    const fileInput = document.getElementById("pi-file") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [makeFile("coco.json")] } });
+    fireEvent.click(screen.getByRole("button", { name: /预览/ }));
+
+    await waitFor(() => {
+      expect(importMock).toHaveBeenCalledWith(
+        "p-coco",
+        "coco",
+        expect.any(File),
+        expect.objectContaining({ imageWidth: 1920, imageHeight: 1080 }),
+        true,
+      );
+    });
+  });
+
+  it("多文件预览会逐文件调用并聚合统计与错误来源", async () => {
+    importMock
+      .mockResolvedValueOnce({
+        imported: 2,
+        skipped: 0,
+        errors: [],
+        dry_run: true,
+      })
+      .mockResolvedValueOnce({
+        imported: 1,
+        skipped: 1,
+        errors: [
+          { task_match: { display_id: "T-NOPE" }, reason: "task not found" },
+        ],
+        dry_run: true,
+      });
+
+    render(
+      <PredictionImportWizard open onClose={() => {}} projectId="p-batch" />,
+    );
+
+    const fileInput = document.getElementById("pi-file") as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [makeFile("a.json"), makeFile("b.json")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /预览/ }));
+
+    await waitFor(() => expect(importMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/确认导入 3 条/)).toBeInTheDocument();
+    expect(screen.getByText(/b\.json: task not found/)).toBeInTheDocument();
+    expect(screen.getByText("a.json")).toBeInTheDocument();
+    expect(screen.getByText("b.json")).toBeInTheDocument();
+  });
+
   it("确认提交 → 调用 import 端点 dry_run=false 并触发 onComplete", async () => {
     importMock
       .mockResolvedValueOnce({

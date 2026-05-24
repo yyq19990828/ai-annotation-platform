@@ -37,7 +37,7 @@ from app.services.project import (
         ("polygonlabels", "region"),
         ("brushlabels", "region"),
         ("multi_polygon", "region"),
-        ("keypointlabels", "bbox"),  # 占位, v0.10.17 未实现 keypoint unit
+        ("keypointlabels", "keypoint"),
         ("unknown_kind", "bbox"),
         (None, "bbox"),
     ],

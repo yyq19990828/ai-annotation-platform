@@ -186,6 +186,34 @@ def internal_geometry_to_ls_shape(
             "score": score,
         }
 
+    if kind == "keypoint":
+        points = geometry.get("points") or []
+        if not points:
+            return None
+        ls_points: list[dict[str, Any]] = []
+        for pt in points:
+            try:
+                if isinstance(pt, dict):
+                    x = float(pt["x"])
+                    y = float(pt["y"])
+                    v = int(pt.get("v", 2))
+                elif isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                    x = float(pt[0])
+                    y = float(pt[1])
+                    v = int(pt[2]) if len(pt) >= 3 else 2
+                else:
+                    continue
+            except (KeyError, TypeError, ValueError):
+                continue
+            ls_points.append({"x": x * 100, "y": y * 100, "v": v})
+        if not ls_points:
+            return None
+        return {
+            "type": "keypointlabels",
+            "value": {"points": ls_points, "keypointlabels": [class_name]},
+            "score": score,
+        }
+
     # 本期不支持 video_bbox / video_track / 其他 kind.
     return None
 
@@ -283,22 +311,25 @@ async def import_aap_json(
             await _purge_existing_external_imports(db, task.id)
             purged_tasks.add(task.id)
 
-        # AAP JSON 每个 prediction entry 对应一条平台 Prediction 行 (单 shape).
+        # AAP JSON 每个 prediction entry 对应一条平台 Prediction 行; entry.shapes
+        # 可把多个 shape 合并进同一 Prediction.result.
         for entry in block.predictions:
-            ls_shape = _entry_to_ls_shape(entry)
-            if ls_shape is None:
-                kind = (
-                    entry.geometry.get("type")
-                    if isinstance(entry.geometry, dict)
-                    else None
-                )
+            ls_shapes, errors = _entry_to_ls_shapes(entry)
+            for reason in errors:
                 result.errors.append(
-                    AAPImportErrorEntry(
-                        task_match=match_dict,
-                        reason=f"unsupported geometry kind: {kind!r}",
-                    )
+                    AAPImportErrorEntry(task_match=match_dict, reason=reason)
                 )
                 result.skipped += 1
+
+            if not ls_shapes:
+                if not errors:
+                    result.errors.append(
+                        AAPImportErrorEntry(
+                            task_match=match_dict,
+                            reason="prediction entry has no shapes",
+                        )
+                    )
+                    result.skipped += 1
                 continue
 
             if dry_run:
@@ -309,7 +340,7 @@ async def import_aap_json(
                 task_id=task.id,
                 project_id=project_id,
                 ml_backend_id=None,
-                result=[ls_shape],
+                result=ls_shapes,
                 score=entry.score if entry.score is not None else entry.confidence,
                 model_version=entry.model_version or model_version_fallback,
                 source="external_import",
@@ -319,14 +350,70 @@ async def import_aap_json(
     return result
 
 
-def _entry_to_ls_shape(entry: AAPPredictionEntry) -> dict[str, Any] | None:
-    if not entry.class_name:
-        return None
-    return internal_geometry_to_ls_shape(
-        entry.geometry or {},
-        entry.class_name,
-        entry.confidence,
-    )
+def _entry_shape_sources(entry: AAPPredictionEntry) -> list[dict[str, Any]]:
+    if entry.shapes is not None:
+        return entry.shapes
+    if isinstance(entry.geometry, dict):
+        return [entry.geometry]
+    return []
+
+
+def _shape_geometry(shape: dict[str, Any]) -> dict[str, Any]:
+    raw_geometry = shape.get("geometry")
+    if isinstance(raw_geometry, dict):
+        return raw_geometry
+    return shape
+
+
+def _shape_class_name(
+    shape: dict[str, Any], entry: AAPPredictionEntry
+) -> str | None:
+    raw = shape.get("class_name")
+    if isinstance(raw, str) and raw:
+        return raw
+    return entry.class_name
+
+
+def _shape_confidence(shape: dict[str, Any], entry: AAPPredictionEntry) -> float | None:
+    raw = shape.get("confidence")
+    if raw is None:
+        return entry.confidence
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return entry.confidence
+
+
+def _entry_to_ls_shapes(
+    entry: AAPPredictionEntry,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    ls_shapes: list[dict[str, Any]] = []
+    errors: list[str] = []
+
+    for raw_shape in _entry_shape_sources(entry):
+        if not isinstance(raw_shape, dict):
+            errors.append("unsupported geometry kind: None")
+            continue
+
+        class_name = _shape_class_name(raw_shape, entry)
+        if not class_name:
+            errors.append("missing class_name")
+            continue
+
+        geometry = _shape_geometry(raw_shape)
+        ls_shape = internal_geometry_to_ls_shape(
+            geometry,
+            class_name,
+            _shape_confidence(raw_shape, entry),
+        )
+        if ls_shape is None:
+            kind = geometry.get("type") if isinstance(geometry, dict) else None
+            errors.append(f"unsupported geometry kind: {kind!r}")
+            continue
+
+        ls_shapes.append(ls_shape)
+
+    return ls_shapes, errors
 
 
 # ── COCO importer (Detection 子集) ─────────────────────────────────
