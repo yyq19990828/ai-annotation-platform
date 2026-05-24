@@ -53,6 +53,7 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
     items: [
       { key: "users", path: "/users", icon: "users", label: "用户与权限" },
       { key: "audit", path: "/audit", icon: "shield", label: "审计日志" },
+      ...(isSuperAdmin ? [{ key: "admin-health" as PageKey, path: "/admin/health", icon: "activity" as IconName, label: "系统健康" }] : []),
       ...(isSuperAdmin ? [{ key: "bugs" as PageKey, path: "/bugs", icon: "bug" as IconName, label: "BUG反馈" }] : []),
       { key: "settings", path: "/settings", icon: "settings", label: "设置" },
     ],

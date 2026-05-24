@@ -4,6 +4,7 @@ from app.api.v1 import (
     admin_analytics,
     admin_ml_integrations,
     admin_preannotate,
+    admin_system_health,
     api_keys,
     async_jobs,
     auth,
@@ -109,6 +110,12 @@ api_router.include_router(async_jobs.router, tags=["async-jobs"])
 # v0.10.16 · DuckDB 离线分析面板（super_admin only）
 api_router.include_router(
     admin_analytics.router, prefix="/admin/analytics", tags=["admin-analytics"]
+)
+# v0.10.58 · super_admin 系统健康聚合面板
+api_router.include_router(
+    admin_system_health.router,
+    prefix="/admin/system-health",
+    tags=["admin-system-health"],
 )
 
 # v0.8.3 · _test_seed router：仅非 production 暴露，供 Playwright E2E 造数 + 跳登录

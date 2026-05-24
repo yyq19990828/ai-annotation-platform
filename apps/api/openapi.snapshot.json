@@ -2477,6 +2477,36 @@
         "title": "AsyncJobOut",
         "type": "object"
       },
+      "AsyncJobRetryFailedResponse": {
+        "properties": {
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "status": {
+            "const": "queued",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "job_id",
+          "queued",
+          "skipped"
+        ],
+        "title": "AsyncJobRetryFailedResponse",
+        "type": "object"
+      },
       "Attachment": {
         "properties": {
           "fileName": {
@@ -5232,6 +5262,108 @@
         "title": "CanvasShape",
         "type": "object"
       },
+      "CeleryHealthSummary": {
+        "properties": {
+          "active_count": {
+            "title": "Active Count",
+            "type": "integer"
+          },
+          "queues": {
+            "items": {
+              "$ref": "#/components/schemas/CeleryQueueHealth"
+            },
+            "title": "Queues",
+            "type": "array"
+          },
+          "workers": {
+            "items": {
+              "$ref": "#/components/schemas/CeleryWorkerHealth"
+            },
+            "title": "Workers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "active_count",
+          "workers",
+          "queues"
+        ],
+        "title": "CeleryHealthSummary",
+        "type": "object"
+      },
+      "CeleryQueueHealth": {
+        "properties": {
+          "length": {
+            "title": "Length",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded",
+              "down"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "length",
+          "status"
+        ],
+        "title": "CeleryQueueHealth",
+        "type": "object"
+      },
+      "CeleryWorkerHealth": {
+        "properties": {
+          "last_heartbeat_seconds_ago": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat Seconds Ago"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pool_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pool Max"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded",
+              "down"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ],
+        "title": "CeleryWorkerHealth",
+        "type": "object"
+      },
       "ClassConfigEntry": {
         "additionalProperties": false,
         "properties": {
@@ -6454,6 +6586,56 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthComponent": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded",
+              "down"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "status"
+        ],
+        "title": "HealthComponent",
         "type": "object"
       },
       "HealthMeta": {
@@ -11306,6 +11488,41 @@
         "title": "StorageOverview",
         "type": "object"
       },
+      "SystemHealthResponse": {
+        "properties": {
+          "celery": {
+            "$ref": "#/components/schemas/CeleryHealthSummary"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/HealthComponent"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded",
+              "down"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version",
+          "components",
+          "celery"
+        ],
+        "title": "SystemHealthResponse",
+        "type": "object"
+      },
       "SystemSettingsOut": {
         "properties": {
           "allow_open_registration": {
@@ -14976,7 +15193,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.10.27"
+    "version": "0.10.58"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -15637,6 +15854,32 @@
         "summary": "Get Alias Frequency",
         "tags": [
           "admin-alias-freq"
+        ]
+      }
+    },
+    "/api/v1/admin/system-health": {
+      "get": {
+        "operationId": "get_system_health_api_v1_admin_system_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemHealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get System Health",
+        "tags": [
+          "admin-system-health"
         ]
       }
     },
@@ -16361,6 +16604,54 @@
           }
         ],
         "summary": "Cancel Async Job",
+        "tags": [
+          "async-jobs"
+        ]
+      }
+    },
+    "/api/v1/async-jobs/{job_id}/retry-failed": {
+      "post": {
+        "operationId": "retry_failed_async_job_items_api_v1_async_jobs__job_id__retry_failed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncJobRetryFailedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Failed Async Job Items",
         "tags": [
           "async-jobs"
         ]

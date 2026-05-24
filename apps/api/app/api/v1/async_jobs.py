@@ -20,13 +20,18 @@ from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.project import Project
 from app.db.models.user import User
 from app.deps import get_current_user, get_db
-from app.schemas.async_job import AsyncJobListResponse, AsyncJobOut
+from app.schemas.async_job import (
+    AsyncJobListResponse,
+    AsyncJobOut,
+    AsyncJobRetryFailedResponse,
+)
 
 router = APIRouter()
 log = logging.getLogger(__name__)
 
 # v0.10.51 · batch_predict 支持协作取消；predictions_import / audit_archive 保持软取消。
 CANCELLABLE_KINDS = {"batch_predict", "predictions_import", "audit_archive"}
+RETRY_FAILED_KINDS = {"batch_predict"}
 
 AsyncJobStatusParam = Literal["pending", "running", "completed", "failed", "cancelled"]
 
@@ -203,6 +208,79 @@ async def cancel_async_job(
     return {"status": "cancelled", "id": str(job_id)}
 
 
+@router.post(
+    "/async-jobs/{job_id}/retry-failed",
+    status_code=202,
+    response_model=AsyncJobRetryFailedResponse,
+)
+async def retry_failed_async_job_items(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AsyncJobRetryFailedResponse:
+    if current_user.role not in {
+        UserRole.SUPER_ADMIN.value,
+        UserRole.PROJECT_ADMIN.value,
+    }:
+        raise HTTPException(status_code=403, detail="requires project admin")
+
+    job = await db.get(AsyncJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="async_job not found")
+    if (
+        current_user.role != UserRole.SUPER_ADMIN.value
+        and job.user_id != current_user.id
+    ):
+        raise HTTPException(status_code=403, detail="not your job")
+    if job.kind not in RETRY_FAILED_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"kind={job.kind} does not support failed item retry",
+        )
+
+    failed_ids = _payload_uuid_list(job.result or {}, "failed_prediction_ids")
+    if not failed_ids:
+        raise HTTPException(
+            status_code=409,
+            detail="no retryable failed prediction ids recorded for this job",
+        )
+
+    from app.api.v1.predictions import MAX_RETRY_COUNT
+    from app.db.models.prediction import FailedPrediction
+    from app.workers.predictions_retry import retry_failed_prediction as task_fn
+
+    rows = (
+        await db.execute(select(FailedPrediction).where(FailedPrediction.id.in_(failed_ids)))
+    ).scalars().all()
+    by_id = {row.id: row for row in rows}
+    queued = 0
+    skipped = 0
+    for failed_id in failed_ids:
+        row = by_id.get(failed_id)
+        if (
+            row is None
+            or row.dismissed_at is not None
+            or (row.retry_count or 0) >= MAX_RETRY_COUNT
+        ):
+            skipped += 1
+            continue
+        task_fn.delay(str(failed_id), str(current_user.id))
+        queued += 1
+
+    if queued == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="no retryable failed predictions remain for this job",
+        )
+
+    return AsyncJobRetryFailedResponse(
+        status="queued",
+        job_id=job_id,
+        queued=queued,
+        skipped=skipped,
+    )
+
+
 def _payload_int(payload: dict, key: str) -> int | None:
     value = payload.get(key)
     if isinstance(value, int):
@@ -213,3 +291,18 @@ def _payload_int(payload: dict, key: str) -> int | None:
         except ValueError:
             return None
     return None
+
+
+def _payload_uuid_list(payload: dict, key: str) -> list[uuid.UUID]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        return []
+    out: list[uuid.UUID] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        try:
+            out.append(uuid.UUID(item))
+        except ValueError:
+            continue
+    return out

@@ -66,6 +66,10 @@ export function useNotificationSocket() {
         } catch {
           // 非 JSON（理论不会出现），忽略
         }
+        if (parsed?.type === "notifications.sync") {
+          qc.invalidateQueries({ queryKey: ["notifications"] });
+          return;
+        }
         // v0.8.6 F6 · retry.* 进度事件触发失败预测列表 invalidate
         if (parsed?.type?.startsWith?.("failed_prediction.retry.")) {
           qc.invalidateQueries({ queryKey: ["admin", "failed-predictions"] });

@@ -10,10 +10,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // ── mock asyncJobsApi ────────────────────────────────────────────────────────
 const mockAsyncJobsList = vi.fn();
 const mockAsyncJobsCancel = vi.fn();
+const mockAsyncJobsGet = vi.fn();
+const mockAsyncJobsRetryFailed = vi.fn();
 vi.mock("@/api/asyncJobs", () => ({
   asyncJobsApi: {
     list: (...args: unknown[]) => mockAsyncJobsList(...args),
     cancel: (...args: unknown[]) => mockAsyncJobsCancel(...args),
+    get: (...args: unknown[]) => mockAsyncJobsGet(...args),
+    retryFailed: (...args: unknown[]) => mockAsyncJobsRetryFailed(...args),
   },
 }));
 
@@ -77,9 +81,18 @@ describe("AIPreAnnotateJobsPage", () => {
   beforeEach(() => {
     mockAsyncJobsList.mockReset();
     mockAsyncJobsCancel.mockReset();
+    mockAsyncJobsGet.mockReset();
+    mockAsyncJobsRetryFailed.mockReset();
     // 默认: 返回空列表
     mockAsyncJobsList.mockResolvedValue({ items: [], total: 0 });
     mockAsyncJobsCancel.mockResolvedValue({ status: "cancel_requested", id: "job-1" });
+    mockAsyncJobsGet.mockResolvedValue(makeJob());
+    mockAsyncJobsRetryFailed.mockResolvedValue({
+      status: "queued",
+      job_id: "job-1",
+      queued: 1,
+      skipped: 0,
+    });
   });
 
   it("渲染页面标题与两个 tab", () => {
@@ -178,6 +191,49 @@ describe("AIPreAnnotateJobsPage", () => {
     fireEvent.click(cancelButton);
     await waitFor(() => {
       expect(mockAsyncJobsCancel).toHaveBeenCalledWith("job-1");
+    });
+  });
+
+  it("点击详情按钮打开 job 详情并展示 payload/result", async () => {
+    const job = makeJob({
+      result: {
+        success_count: 7,
+        failed_count: 1,
+        total_cost: "0.1234",
+        duration_ms: 1200,
+        failed_prediction_ids: ["fp-1"],
+      },
+    });
+    mockAsyncJobsList.mockResolvedValue({ items: [job], total: 1 });
+    mockAsyncJobsGet.mockResolvedValue(job);
+    renderUI();
+
+    const detailButton = await screen.findByTitle("详情");
+    fireEvent.click(detailButton);
+
+    expect(await screen.findByText("Job 详情")).toBeInTheDocument();
+    expect(mockAsyncJobsGet).toHaveBeenCalledWith("job-1");
+    expect(await screen.findByText("$0.1234")).toBeInTheDocument();
+    expect(screen.getAllByText("重试失败项").length).toBeGreaterThan(0);
+  });
+
+  it("详情里可重试记录了 failed_prediction_ids 的 batch_predict 失败项", async () => {
+    const job = makeJob({
+      result: {
+        failed_count: 1,
+        failed_prediction_ids: ["fp-1"],
+      },
+    });
+    mockAsyncJobsList.mockResolvedValue({ items: [job], total: 1 });
+    mockAsyncJobsGet.mockResolvedValue(job);
+    renderUI();
+
+    fireEvent.click(await screen.findByTitle("详情"));
+    const retryButton = await screen.findByRole("button", { name: /重试失败项/ });
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(mockAsyncJobsRetryFailed).toHaveBeenCalledWith("job-1");
     });
   });
 });

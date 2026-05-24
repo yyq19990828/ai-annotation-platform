@@ -14,11 +14,11 @@ def test_health_subroutes_registered(app_module):
 
 
 def test_check_celery_no_workers(monkeypatch):
-    """celery_app.control.inspect().ping() 返回 None 时 status='error'。"""
+    """celery_app.control.inspect().stats() 返回 None 时 status='error'。"""
     from app.api import health
 
     class _FakeInspect:
-        def ping(self, *a, **kw):
+        def stats(self, *a, **kw):
             return None
 
     class _FakeControl:
@@ -33,21 +33,25 @@ def test_check_celery_no_workers(monkeypatch):
 
 
 def test_check_celery_with_workers(monkeypatch):
-    """celery_app.control.inspect().ping() 返回 worker dict 时 status='ok'。
+    """celery_app.control.inspect().stats() 返回 worker dict 时 status='ok'。
 
     v0.8.7 F2 · workers 字段从 list[str] 升级为 list[{name, last_heartbeat_seconds_ago, pool_max}]，
-    queues 字段新增（无 active/reserved 桩时为空）。"""
+    queues 字段新增（无 broker 队列时为空）。"""
     from app.api import health
 
     class _FakeInspect:
-        def ping(self, *a, **kw):
-            return {"celery@host1": {"ok": "pong"}, "celery@host2": {"ok": "pong"}}
+        def stats(self, *a, **kw):
+            return {
+                "celery@host1": {"pool": {"max-concurrency": 4}},
+                "celery@host2": {"pool": {"max-concurrency": 2}},
+            }
 
     class _FakeControl:
         def inspect(self, *a, **kw):
             return _FakeInspect()
 
     monkeypatch.setattr(health.celery_app, "control", _FakeControl())
+    monkeypatch.setattr(health, "_read_celery_queue_lengths", lambda: {})
     result = health._check_celery()
     assert result["status"] == "ok"
     assert result["active_count"] == 2

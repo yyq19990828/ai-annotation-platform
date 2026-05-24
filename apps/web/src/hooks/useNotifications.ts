@@ -1,10 +1,21 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { notificationsApi } from "../api/notifications";
 
 export function useNotifications(enabled = true, limit = 30) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ["notifications", "list", { limit }],
-    queryFn: () => notificationsApi.list({ limit }),
+    queryFn: ({ pageParam }: { pageParam: number }) =>
+      notificationsApi.list({ limit, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _allPages, lastPageParam: number) => {
+      const nextOffset = lastPageParam + limit;
+      return nextOffset < lastPage.total ? nextOffset : undefined;
+    },
     refetchInterval: enabled ? 30_000 : false,
     enabled,
     retry: false,

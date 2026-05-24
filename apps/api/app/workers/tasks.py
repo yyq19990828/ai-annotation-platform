@@ -85,6 +85,7 @@ async def _run_batch(
     started_perf = time.perf_counter()
     success_count = 0
     failed_count = 0
+    failed_prediction_ids: list[str] = []
     project_name: str | None = None
     # v0.9.11 · 累加每条 prediction.meta.total_cost; job 完成时写 async_job.result.total_cost.
     # grounded-sam2-backend 当前不返回 cost (留 0.0), LLM-backed backend (sam3 / future) 自然到位.
@@ -206,6 +207,7 @@ async def _run_batch(
                 result={
                     "success_count": success_count,
                     "failed_count": failed_count,
+                    "failed_prediction_ids": failed_prediction_ids,
                     "done_count": processed_count,
                     "skipped_count": skipped_count,
                     "cancelled_at_index": cancelled_at_index,
@@ -289,13 +291,14 @@ async def _run_batch(
                 await db.commit()
                 success_count += 1
             except Exception as exc:
-                await pred_svc.create_failed(
+                failed = await pred_svc.create_failed(
                     task_id=task.id,
                     project_id=uuid.UUID(project_id),
                     ml_backend_id=backend.id,
                     error_type=type(exc).__name__,
                     message=str(exc),
                 )
+                failed_prediction_ids.append(str(failed.id))
                 await db.commit()
                 failed_count += 1
 
@@ -331,6 +334,7 @@ async def _run_batch(
             result={
                 "success_count": success_count,
                 "failed_count": failed_count,
+                "failed_prediction_ids": failed_prediction_ids,
                 "duration_ms": duration_ms,
                 # v0.9.11 · total_cost 接通 PredictionMeta.total_cost 累加
                 "total_cost": f"{running_total_cost:.4f}",

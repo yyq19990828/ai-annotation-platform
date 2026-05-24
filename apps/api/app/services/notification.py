@@ -119,6 +119,20 @@ class NotificationService:
                 out.append(row)
         return out
 
+    async def _publish_sync(self, user_id: uuid.UUID, *, reason: str) -> None:
+        try:
+            await _publish(
+                user_id=user_id,
+                message={"type": "notifications.sync", "reason": reason},
+            )
+        except Exception as e:
+            log.warning(
+                "notification sync publish failed user=%s reason=%s err=%s",
+                user_id,
+                reason,
+                e,
+            )
+
     async def list_for_user(
         self,
         user_id: uuid.UUID,
@@ -161,7 +175,10 @@ class NotificationService:
             )
             .values(read_at=datetime.now(timezone.utc))
         )
-        return (result.rowcount or 0) > 0
+        updated = (result.rowcount or 0) > 0
+        if updated:
+            await self._publish_sync(user_id, reason="read")
+        return updated
 
     async def mark_all_read(self, user_id: uuid.UUID) -> int:
         result = await self.db.execute(
@@ -172,7 +189,10 @@ class NotificationService:
             )
             .values(read_at=datetime.now(timezone.utc))
         )
-        return int(result.rowcount or 0)
+        updated = int(result.rowcount or 0)
+        if updated > 0:
+            await self._publish_sync(user_id, reason="read")
+        return updated
 
     async def delete_for_user(
         self, user_id: uuid.UUID, notification_id: uuid.UUID
@@ -183,7 +203,10 @@ class NotificationService:
                 Notification.user_id == user_id,
             )
         )
-        return (result.rowcount or 0) > 0
+        deleted = (result.rowcount or 0) > 0
+        if deleted:
+            await self._publish_sync(user_id, reason="deleted")
+        return deleted
 
     async def clear_read(self, user_id: uuid.UUID) -> int:
         result = await self.db.execute(
@@ -192,7 +215,10 @@ class NotificationService:
                 Notification.read_at.is_not(None),
             )
         )
-        return int(result.rowcount or 0)
+        deleted = int(result.rowcount or 0)
+        if deleted > 0:
+            await self._publish_sync(user_id, reason="deleted")
+        return deleted
 
 
 async def _publish(*, user_id: uuid.UUID, message: dict) -> None:

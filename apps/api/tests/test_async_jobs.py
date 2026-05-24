@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.db.models.notification import Notification
 from app.db.models.async_job import AsyncJobStatus
+from app.db.models.prediction import FailedPrediction
 from app.db.models.project import Project
 from app.services import async_job as async_job_svc
 from app.services.async_job_notify import notify_job_terminal
@@ -344,6 +345,95 @@ class TestAsyncJobsAPI:
         assert str(batch_job.id) in ids
         assert str(retry_job.id) in ids
         assert r.json()["total"] == 2
+
+    async def test_retry_failed_batch_predict_items_queues_recorded_failures(
+        self, httpx_client_bound, db_session, project_admin, monkeypatch
+    ):
+        user, token = project_admin
+        project = Project(
+            display_id="PROJ-AJ-RETRY",
+            name="Retry Project",
+            type_label="Image Classification",
+            type_key="image_classification",
+            owner_id=user.id,
+        )
+        db_session.add(project)
+        await db_session.flush()
+
+        retryable = FailedPrediction(
+            project_id=project.id,
+            task_id=None,
+            ml_backend_id=None,
+            error_type="TimeoutError",
+            message="timeout",
+        )
+        skipped = FailedPrediction(
+            project_id=project.id,
+            task_id=None,
+            ml_backend_id=None,
+            error_type="ValueError",
+            message="bad",
+            retry_count=3,
+        )
+        db_session.add_all([retryable, skipped])
+        await db_session.flush()
+
+        aj = await async_job_svc.create_job(
+            db_session,
+            kind="batch_predict",
+            user_id=user.id,
+            project_id=project.id,
+        )
+        await async_job_svc.mark_complete(
+            db_session,
+            aj.id,
+            result={
+                "failed_count": 2,
+                "failed_prediction_ids": [str(retryable.id), str(skipped.id)],
+            },
+        )
+        await db_session.flush()
+
+        from app.workers import predictions_retry
+
+        queued: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            predictions_retry.retry_failed_prediction,
+            "delay",
+            lambda failed_id, user_id: queued.append((failed_id, user_id)),
+        )
+
+        r = await httpx_client_bound.post(
+            f"/api/v1/async-jobs/{aj.id}/retry-failed", headers=_bearer(token)
+        )
+
+        assert r.status_code == 202
+        assert r.json()["queued"] == 1
+        assert r.json()["skipped"] == 1
+        assert queued == [(str(retryable.id), str(user.id))]
+
+    async def test_retry_failed_batch_predict_items_requires_recorded_ids(
+        self, httpx_client_bound, db_session, project_admin
+    ):
+        user, token = project_admin
+        aj = await async_job_svc.create_job(
+            db_session,
+            kind="batch_predict",
+            user_id=user.id,
+        )
+        await async_job_svc.mark_complete(
+            db_session,
+            aj.id,
+            result={"failed_count": 1},
+        )
+        await db_session.flush()
+
+        r = await httpx_client_bound.post(
+            f"/api/v1/async-jobs/{aj.id}/retry-failed", headers=_bearer(token)
+        )
+
+        assert r.status_code == 409
+        assert "no retryable failed prediction ids" in r.json()["detail"]
 
     async def test_cancel_unsupported_kind_rejected(
         self, httpx_client_bound, db_session, annotator

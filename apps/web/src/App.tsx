@@ -12,6 +12,7 @@ import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
 import { AdminPeoplePage } from "@/pages/Admin/AdminPeoplePage";
 import { AnalyticsPage } from "@/pages/Admin/AnalyticsPage";
+import { SystemHealthPage } from "@/pages/Admin/SystemHealthPage";
 import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
 import { AnnotatorDashboard } from "@/pages/Dashboard/AnnotatorDashboard";
 import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
@@ -281,6 +282,14 @@ export function App() {
           element={
             <RequirePagePermission pageKey="admin-analytics">
               <AnalyticsPage />
+            </RequirePagePermission>
+          }
+        />
+        <Route
+          path="/admin/health"
+          element={
+            <RequirePagePermission pageKey="admin-health">
+              <SystemHealthPage />
             </RequirePagePermission>
           }
         />

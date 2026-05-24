@@ -10,24 +10,13 @@ from httpx import AsyncClient
 
 @pytest.fixture
 def fake_inspect_data():
-    """构造 ping/active/reserved/stats 的 mock 返回值。"""
+    """构造 stats + broker 队列长度的 mock 返回值。"""
     return {
-        "ping": {"worker@h1": {"ok": "pong"}, "worker@h2": {"ok": "pong"}},
-        "active": {
-            "worker@h1": [
-                {"id": "t1", "delivery_info": {"routing_key": "ml"}},
-                {"id": "t2", "delivery_info": {"routing_key": "ml"}},
-            ],
-            "worker@h2": [{"id": "t3", "delivery_info": {"routing_key": "audit"}}],
-        },
-        "reserved": {
-            "worker@h1": [{"id": "t4", "delivery_info": {"routing_key": "ml"}}],
-            "worker@h2": [],
-        },
         "stats": {
             "worker@h1": {"pool": {"max-concurrency": 4}},
             "worker@h2": {"pool": {"max-concurrency": 2}},
         },
+        "queues": {"ml": 3, "audit": 1},
     }
 
 
@@ -36,12 +25,15 @@ async def test_health_celery_returns_queues_and_workers(
     httpx_client: AsyncClient, fake_inspect_data
 ):
     inspect = MagicMock()
-    inspect.ping.return_value = fake_inspect_data["ping"]
-    inspect.active.return_value = fake_inspect_data["active"]
-    inspect.reserved.return_value = fake_inspect_data["reserved"]
     inspect.stats.return_value = fake_inspect_data["stats"]
 
-    with patch("app.api.health.celery_app.control.inspect", return_value=inspect):
+    with (
+        patch("app.api.health.celery_app.control.inspect", return_value=inspect),
+        patch(
+            "app.api.health._read_celery_queue_lengths",
+            return_value=fake_inspect_data["queues"],
+        ),
+    ):
         resp = await httpx_client.get("/health/celery")
     assert resp.status_code == 200
     data = resp.json()
@@ -61,7 +53,7 @@ async def test_health_celery_returns_queues_and_workers(
 @pytest.mark.asyncio
 async def test_health_celery_no_workers_503(httpx_client: AsyncClient):
     inspect = MagicMock()
-    inspect.ping.return_value = None
+    inspect.stats.return_value = None
     with patch("app.api.health.celery_app.control.inspect", return_value=inspect):
         resp = await httpx_client.get("/health/celery")
     assert resp.status_code == 503
@@ -76,12 +68,15 @@ async def test_celery_queue_length_gauge_observed(fake_inspect_data):
     from app.api.health import _check_celery
 
     inspect = MagicMock()
-    inspect.ping.return_value = fake_inspect_data["ping"]
-    inspect.active.return_value = fake_inspect_data["active"]
-    inspect.reserved.return_value = fake_inspect_data["reserved"]
     inspect.stats.return_value = fake_inspect_data["stats"]
 
-    with patch("app.api.health.celery_app.control.inspect", return_value=inspect):
+    with (
+        patch("app.api.health.celery_app.control.inspect", return_value=inspect),
+        patch(
+            "app.api.health._read_celery_queue_lengths",
+            return_value=fake_inspect_data["queues"],
+        ),
+    ):
         _check_celery()
 
     # 直接读 Gauge 内部 value

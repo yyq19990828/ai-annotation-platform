@@ -22,6 +22,21 @@
 
 ## 最新版本
 
+## [0.10.58] - 2026-05-24
+
+> **通知中心与后台增强。** 通知面板补齐分组、筛选、图标和多端已读同步；超管新增系统健康面板；AI 任务历史支持进度、详情、成本和失败项快捷重试。
+
+### Added
+
+- **通知中心分组 / 筛选 / 图标 / 加载更多** ([NotificationsPopover.tsx](apps/web/src/components/shell/NotificationsPopover.tsx) · [useNotifications.ts](apps/web/src/hooks/useNotifications.ts)): 通知面板按 `今天 / 本周 / 更早` 分组，支持 `任务 / 批次 / 反馈 / 后台任务 / 导出` 本地筛选，左侧按类型显示语义图标，并通过 infinite query 支持 offset 累积加载历史通知。
+- **通知多端同步事件** ([notification.py](apps/api/app/services/notification.py) · [useNotificationSocket.ts](apps/web/src/hooks/useNotificationSocket.ts)): `mark_read` / `mark_all_read` / `clear_read` / `delete` 成功后向 `notify:{user_id}` 发布 `notifications.sync`，其他在线端只刷新通知 query，不触发 task/job toast 等业务副作用。
+- **超管系统健康面板** ([admin_system_health.py](apps/api/app/api/v1/admin_system_health.py) · [SystemHealthPage.tsx](apps/web/src/pages/Admin/SystemHealthPage.tsx)): 新增 `GET /admin/system-health` 聚合 DB / Redis / MinIO / Celery 检查，前端 `/admin/health` 展示组件状态、latency、队列积压与 worker 心跳，侧边栏仅 super_admin 可见。
+- **AI 任务详情与失败项重试** ([async_jobs.py](apps/api/app/api/v1/async_jobs.py) · [AIPreAnnotateJobsPage.tsx](apps/web/src/pages/AIPreAnnotate/AIPreAnnotateJobsPage.tsx)): 图像 AI 任务历史新增进度条、成本列与详情 modal；`batch_predict` 结果记录 `failed_prediction_ids`，新增 `POST /async-jobs/{id}/retry-failed` 复用失败预测重试链路批量排队可重试失败项。
+
+### Changed
+
+- **后台任务结果可读性增强** ([tasks.py](apps/api/app/workers/tasks.py)): `batch_predict` 完成 / 取消结果除成功、失败、耗时和成本外，新增失败预测 ID 列表，便于 UI 从 job 详情直接定位可重试失败项。
+
 ## [0.10.57] - 2026-05-24
 
 > **预测按来源清理 + 导入默认替换。** 外部预测重导默认幂等，项目管理员可按来源清理外部导入或 ML Backend 预标。

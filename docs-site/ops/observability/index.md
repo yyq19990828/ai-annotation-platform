@@ -10,7 +10,7 @@ last_reviewed: 2026-05-09
 
 > 适用读者：负责上线运维 / SRE 视角的工程师；需要在 production 看 panel 排查抖动的开发者。
 
-v0.8.7 起 FastAPI `/metrics` 暴露 4 组 Prometheus metrics：
+v0.8.7 起 FastAPI `/metrics` 暴露 4 组 Prometheus metrics。v0.10.58 起，超管还可以直接打开 `/admin/health` 查看同一批基础探测的实时摘要；该页面适合快速确认 DB / Redis / MinIO / Celery 是否可用，长期趋势和告警仍以 Prometheus / Grafana 为准。
 
 | Metric | 类型 | Labels | 用途 |
 |---|---|---|---|
@@ -82,4 +82,5 @@ production 不建议把 prometheus / grafana 跟应用塞同一 docker-compose�
 | Grafana provisioning | `infra/grafana/provisioning/` |
 | Prometheus scrape | `infra/prometheus/prometheus.yml` |
 | docker-compose monitoring profile | `docker-compose.yml` |
+| 超管系统健康聚合端点 | `apps/api/app/api/v1/admin_system_health.py` |
 | GPU/ML backend 实时浮窗 (PerfHud) | [concepts/perfhud](/dev/concepts/perfhud) |

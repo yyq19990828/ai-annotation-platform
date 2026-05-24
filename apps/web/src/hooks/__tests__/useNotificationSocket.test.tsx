@@ -42,6 +42,9 @@ class MockWebSocket {
   triggerOpen() {
     this.onopen?.(new Event("open"));
   }
+  triggerMessage(payload: unknown) {
+    this.onmessage?.({ data: JSON.stringify(payload) } as MessageEvent);
+  }
 }
 
 let originalWS: typeof globalThis.WebSocket | undefined;
@@ -68,12 +71,12 @@ afterEach(() => {
   });
 });
 
-function wrap() {
-  const qc = new QueryClient({
+function wrap(qc?: QueryClient) {
+  const client = qc ?? new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
 }
 
@@ -150,6 +153,24 @@ describe("useNotificationSocket", () => {
       await vi.advanceTimersByTimeAsync(1500);
     });
     expect(MockWebSocket.instances.length).toBe(2);
+  });
+
+  it("notifications.sync 只刷新通知查询，不触发业务查询副作用", () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    renderHook(() => useNotificationSocket(), { wrapper: wrap(qc) });
+
+    act(() => {
+      MockWebSocket.instances[0].triggerMessage({
+        type: "notifications.sync",
+        reason: "read",
+      });
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["notifications"] });
   });
 
   it("卸载时手动 close、不再 retry", () => {

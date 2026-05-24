@@ -474,4 +474,6 @@ export type PageKey =
   // v0.8.4 · 成员绩效（super_admin only）
   | "admin-people"
   // v0.10.16 · DuckDB 离线分析面板（super_admin only）
-  | "admin-analytics";
+  | "admin-analytics"
+  // v0.10.58 · 系统健康面板（super_admin only）
+  | "admin-health";

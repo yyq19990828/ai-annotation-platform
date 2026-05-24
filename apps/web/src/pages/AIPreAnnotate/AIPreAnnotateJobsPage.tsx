@@ -10,6 +10,8 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { TabRow } from "@/components/ui/TabRow";
 import {
   asyncJobsApi,
@@ -21,6 +23,7 @@ import {
   buildWorkbenchUrl,
   currentWorkbenchReturnTo,
 } from "@/utils/workbenchNavigation";
+import { useToastStore } from "@/components/ui/Toast";
 import styles from "./AIPreAnnotateJobsPage.module.css";
 
 type StatusFilter = "" | AsyncJobStatus;
@@ -87,6 +90,7 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const pushToast = useToastStore((s) => s.push);
   const [searchParams] = useSearchParams();
   // v0.9.12 · ModelMarket failed tab redirect 来源支持 ?status=failed 直接落到失败筛选.
   const initialStatus = (() => {
@@ -97,6 +101,7 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatus);
   const [page, setPage] = useState(0);
   const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const offset = page * PAGE_SIZE;
 
   const jobsQ = useQuery({
@@ -178,8 +183,10 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
                   <th className={styles.tableHeaderCell}>Prompt / 错误</th>
                   <th className={styles.tableHeaderCell}>模式</th>
                   <th className={styles.tableHeaderCell}>状态</th>
+                  <th className={styles.tableHeaderCell}>进度</th>
                   <th className={styles.tableHeaderCell}>总数</th>
                   <th className={styles.tableHeaderCell}>失败</th>
+                  <th className={styles.tableHeaderCell}>成本</th>
                   <th className={styles.tableHeaderCell}>跑时长</th>
                   <th className={styles.tableHeaderCell}>开始</th>
                   <th className={styles.tableHeaderCell}>操作</th>
@@ -193,6 +200,7 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
                     navigate={navigate}
                     returnTo={currentWorkbenchReturnTo(location)}
                     cancelPending={cancelingId === it.id && cancelMut.isPending}
+                    onOpenDetail={(jobId) => setSelectedJobId(jobId)}
                     onCancel={(jobId) => {
                       setCancelingId(jobId);
                       cancelMut.mutate(jobId);
@@ -230,6 +238,15 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
           </div>
         )}
       </div>
+      <JobDetailModal
+        jobId={selectedJobId}
+        onClose={() => setSelectedJobId(null)}
+        onRetryQueued={(queued) => {
+          pushToast({ kind: "success", msg: `已排队重试 ${queued} 条失败项` });
+          queryClient.invalidateQueries({ queryKey: ["async-jobs"] });
+          queryClient.invalidateQueries({ queryKey: ["admin", "failed-predictions"] });
+        }}
+      />
     </Card>
   );
 }
@@ -239,12 +256,14 @@ function JobRow({
   navigate,
   returnTo,
   cancelPending,
+  onOpenDetail,
   onCancel,
 }: {
   job: AsyncJob;
   navigate: (path: string) => void;
   returnTo: string;
   cancelPending: boolean;
+  onOpenDetail: (jobId: string) => void;
   onCancel: (jobId: string) => void;
 }) {
   const isRetry = job.kind === "prediction_retry";
@@ -272,12 +291,17 @@ function JobRow({
       : null;
   const durationMs =
     isTerminal ? payloadNumber(job.result, "duration_ms") : null;
+  const cost = payloadNumber(job.result, "total_cost");
   const canCancel =
     job.kind === "batch_predict" &&
     (job.status === "pending" || job.status === "running");
 
   return (
-    <tr>
+    <tr
+      className={styles.clickableRow}
+      onClick={() => onOpenDetail(job.id)}
+      title="查看 job 详情"
+    >
       <td className={styles.tableCell}>
         {job.project_name ?? "(已删除)"}
         {job.project_display_id && (
@@ -306,6 +330,9 @@ function JobRow({
       <td className={styles.tableCell}>
         <StatusBadge status={job.status} />
       </td>
+      <td className={styles.tableCell}>
+        <JobProgress job={job} />
+      </td>
       <td className={`${styles.tableCell} ${styles.numeric}`}>
         {totalTasks}
       </td>
@@ -318,6 +345,9 @@ function JobRow({
           <span className={styles.subtle}>0</span>
         )}
       </td>
+      <td className={`${styles.tableCell} ${styles.numeric}`}>
+        {formatCost(cost)}
+      </td>
       <td className={`${styles.tableCell} ${styles.mutedCell}`}>
         {formatDuration(durationMs)}
       </td>
@@ -329,7 +359,10 @@ function JobRow({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => onCancel(job.id)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onCancel(job.id);
+            }}
             title="取消 job"
             disabled={cancelPending}
           >
@@ -339,7 +372,8 @@ function JobRow({
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => {
+          onClick={(event) => {
+            event.stopPropagation();
             if (!job.project_id) return;
             navigate(buildWorkbenchUrl(job.project_id, {
               batchId,
@@ -351,8 +385,158 @@ function JobRow({
         >
           <Icon name="chevRight" size={11} />
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenDetail(job.id);
+          }}
+          title="详情"
+        >
+          <Icon name="info" size={11} />
+        </Button>
       </td>
     </tr>
+  );
+}
+
+function JobProgress({ job }: { job: AsyncJob }) {
+  const color =
+    job.status === "failed"
+      ? "var(--color-danger)"
+      : job.status === "completed"
+      ? "var(--color-success)"
+      : job.status === "cancelled"
+      ? "var(--color-fg-muted)"
+      : "var(--color-ai)";
+  return (
+    <div className={styles.progressCell}>
+      <ProgressBar value={job.progress_pct} color={color} />
+      <span className={styles.progressText}>{job.progress_pct}%</span>
+    </div>
+  );
+}
+
+function JobDetailModal({
+  jobId,
+  onClose,
+  onRetryQueued,
+}: {
+  jobId: string | null;
+  onClose: () => void;
+  onRetryQueued: (queued: number) => void;
+}) {
+  const queryClient = useQueryClient();
+  const jobQ = useQuery({
+    queryKey: ["async-jobs", "detail", jobId],
+    queryFn: () => asyncJobsApi.get(jobId as string),
+    enabled: Boolean(jobId),
+    retry: false,
+  });
+  const retryMut = useMutation({
+    mutationFn: () => asyncJobsApi.retryFailed(jobId as string),
+    onSuccess: (resp) => {
+      onRetryQueued(resp.queued);
+      queryClient.invalidateQueries({ queryKey: ["async-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "failed-predictions"] });
+    },
+  });
+
+  if (!jobId) return null;
+
+  const job = jobQ.data;
+  const failedCount = job ? payloadNumber(job.result, "failed_count") ?? 0 : 0;
+  const failedPredictionIds = job
+    ? payloadStringArray(job.result, "failed_prediction_ids")
+    : [];
+  const canRetryFailed =
+    Boolean(job) &&
+    job?.kind === "batch_predict" &&
+    failedCount > 0 &&
+    failedPredictionIds.length > 0;
+
+  return (
+    <Modal open={Boolean(jobId)} onClose={onClose} title="Job 详情" width={720}>
+      {jobQ.isLoading && <div className={styles.message}>加载中…</div>}
+      {jobQ.isError && <div className={styles.message}>详情加载失败</div>}
+      {job && (
+        <div className={styles.detail}>
+          <div className={styles.detailHeader}>
+            <div>
+              <div className={styles.detailKind}>{job.kind}</div>
+              <div className={styles.detailId}>{job.id}</div>
+            </div>
+            <StatusBadge status={job.status} />
+          </div>
+
+          <div className={styles.detailStats}>
+            <DetailStat label="进度" value={`${job.progress_pct}%`} />
+            <DetailStat label="成功" value={String(payloadNumber(job.result, "success_count") ?? "—")} />
+            <DetailStat label="失败" value={String(failedCount || "—")} />
+            <DetailStat label="成本" value={formatCost(payloadNumber(job.result, "total_cost"))} />
+            <DetailStat label="耗时" value={formatDuration(payloadNumber(job.result, "duration_ms"))} />
+          </div>
+
+          <div className={styles.detailTimeline}>
+            <span>创建：{formatDateTime(job.created_at)}</span>
+            <span>开始：{formatDateTime(job.started_at)}</span>
+            <span>完成：{formatDateTime(job.completed_at)}</span>
+          </div>
+
+          {job.error_message && (
+            <section className={styles.detailSection}>
+              <h3>错误</h3>
+              <pre className={styles.errorBlock}>{job.error_message}</pre>
+            </section>
+          )}
+
+          <section className={styles.detailSection}>
+            <h3>Payload</h3>
+            <pre className={styles.jsonBlock}>{formatJson(job.payload)}</pre>
+          </section>
+
+          <section className={styles.detailSection}>
+            <h3>Result</h3>
+            <pre className={styles.jsonBlock}>{formatJson(job.result)}</pre>
+          </section>
+
+          {job.kind === "batch_predict" && failedCount > 0 && (
+            <div className={styles.retryPanel}>
+              <div>
+                <div className={styles.retryTitle}>重试失败项</div>
+                <div className={styles.retryHint}>
+                  {failedPredictionIds.length > 0
+                    ? `${failedPredictionIds.length} 条失败项可通过失败预测重试链路重新排队。`
+                    : "此 job 未记录 failed_prediction_ids，无法快捷重试旧失败项。"}
+                </div>
+                {retryMut.isError && (
+                  <div className={styles.retryError}>重试排队失败</div>
+                )}
+              </div>
+              <Button
+                size="sm"
+                variant="ai"
+                disabled={!canRetryFailed || retryMut.isPending}
+                onClick={() => retryMut.mutate()}
+              >
+                <Icon name="refresh" size={12} />
+                {retryMut.isPending ? "排队中…" : "重试失败项"}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function DetailStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className={styles.detailStat}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -398,6 +582,31 @@ function payloadNumber(
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function payloadStringArray(
+  record: Record<string, unknown>,
+  key: string,
+): string[] {
+  const value = record[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.length > 0);
+}
+
+function formatCost(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return `$${value.toFixed(4)}`;
+}
+
+function formatJson(record: Record<string, unknown>): string {
+  return JSON.stringify(record ?? {}, null, 2);
+}
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("zh-CN");
 }
 
 function formatDuration(ms: number | null | undefined): string {

@@ -88,6 +88,7 @@
 | GET | `/async-jobs` |
 | GET | `/async-jobs/{job_id}` |
 | POST | `/async-jobs/{job_id}/cancel` |
+| POST | `/async-jobs/{job_id}/retry-failed` |
 
 ## `audit_logs.py`
 
@@ -399,4 +400,4 @@
 
 ---
 
-_共 35 模块 / 227 路由_
+_共 36 模块 / 228 路由_

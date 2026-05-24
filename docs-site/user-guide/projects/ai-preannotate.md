@@ -6,9 +6,15 @@ status: stable
 last_reviewed: 2026-05-09
 ---
 
-# AI 预标（v0.9.5 / v0.9.6 / v0.9.7 / v0.9.8 / v0.9.12 / v0.10.38 / v0.10.40 / v0.10.51）
+# AI 预标（v0.9.5 / v0.9.6 / v0.9.7 / v0.9.8 / v0.9.12 / v0.10.38 / v0.10.40 / v0.10.51 / v0.10.58）
 
 > 一次性给整批图跑 SAM 文本预标，标注员从 AI 候选起步而非从 0 画。
+
+**v0.10.58 起** — `/ai-pre/jobs` 图像 tab 增强：
+
+- 列表新增进度条与成本列，直接展示 `progress_pct` 和 `result.total_cost`。
+- 点击行或「详情」按钮可打开 job 详情，查看 payload、result、完整 error_message 和创建 / 开始 / 完成时间线。
+- 新产生的 `batch_predict` job 会在 result 记录 `failed_prediction_ids`；详情里可对这些失败项一键排队重试。旧 job 没有该字段时，详情会提示无法快捷重试，需要去失败预测列表按单条处理。
 
 **v0.10.51 起** — 批量预标 job 支持取消：
 

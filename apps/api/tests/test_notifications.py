@@ -83,6 +83,45 @@ async def test_mark_read_and_mark_all(db_session, annotator):
 
 
 @pytest.mark.asyncio
+async def test_read_and_delete_operations_publish_sync_events(
+    db_session, annotator, monkeypatch
+):
+    user, _ = annotator
+    messages: list[dict] = []
+
+    async def fake_publish(*, user_id, message):
+        assert user_id == user.id
+        messages.append(message)
+
+    monkeypatch.setattr("app.services.notification._publish", fake_publish)
+
+    svc = NotificationService(db_session)
+    n1 = await svc.notify(
+        user_id=user.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
+    )
+    n2 = await svc.notify(
+        user_id=user.id, type="t", target_type="bug_report", target_id=uuid.uuid4()
+    )
+    messages.clear()
+
+    assert await svc.mark_read(user.id, n1.id) is True
+    assert messages == [{"type": "notifications.sync", "reason": "read"}]
+    messages.clear()
+
+    assert await svc.mark_all_read(user.id) == 1
+    assert messages == [{"type": "notifications.sync", "reason": "read"}]
+    messages.clear()
+
+    assert await svc.delete_for_user(user.id, n1.id) is True
+    assert messages == [{"type": "notifications.sync", "reason": "deleted"}]
+    messages.clear()
+
+    assert await svc.clear_read(user.id) == 1
+    assert messages == [{"type": "notifications.sync", "reason": "deleted"}]
+    assert n2.id
+
+
+@pytest.mark.asyncio
 async def test_admin_status_change_notifies_reporter(
     httpx_client_bound, db_session, annotator, super_admin
 ):

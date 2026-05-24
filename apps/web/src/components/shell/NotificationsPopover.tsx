@@ -1,6 +1,8 @@
+import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
+import type { IconName } from "@/components/ui/Icon";
 import {
   useNotifications,
   useClearReadNotifications,
@@ -14,7 +16,25 @@ import { useAuthStore } from "@/stores/authStore";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import {
+  FILTERS,
+  GROUP_LABELS,
+  GROUP_ORDER,
+  filterNotificationItems,
+  groupNotificationItems,
+  type NotificationFilter,
+} from "./NotificationsPopover.helpers";
 import styles from "./NotificationsPopover.module.css";
+
+type NotificationTone = "default" | "danger" | "success" | "ai" | "accent";
+
+const TONE_CLASS: Record<NotificationTone, string> = {
+  default: styles.toneDefault,
+  danger: styles.toneDanger,
+  success: styles.toneSuccess,
+  ai: styles.toneAi,
+  accent: styles.toneAccent,
+};
 
 function relativeTime(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -110,6 +130,37 @@ function jobSnippet(item: NotificationItem): string {
   return "";
 }
 
+function notificationVisual(item: NotificationItem): {
+  icon: IconName;
+  tone: NotificationTone;
+} {
+  if (
+    item.type === "task.rejected" ||
+    item.type.endsWith(".failed") ||
+    item.type === "export.failed"
+  ) {
+    return { icon: "warning", tone: "danger" };
+  }
+  if (
+    item.type === "task.approved" ||
+    item.type.endsWith(".succeeded") ||
+    item.type.endsWith(".completed") ||
+    item.type === "export.ready"
+  ) {
+    return { icon: "checkCircle", tone: "success" };
+  }
+  if (item.type.startsWith("job.") || item.type.startsWith("failed_prediction.")) {
+    return { icon: "cpu", tone: "ai" };
+  }
+  if (item.type.startsWith("bug_report.")) {
+    return { icon: "messageCircle", tone: "accent" };
+  }
+  if (item.type.startsWith("batch.")) {
+    return { icon: "layers", tone: "default" };
+  }
+  return { icon: "bell", tone: "default" };
+}
+
 interface NotifRowProps {
   item: NotificationItem;
   onClick: () => void;
@@ -119,6 +170,7 @@ interface NotifRowProps {
 
 function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
   const isUnread = item.read_at === null;
+  const visual = notificationVisual(item);
   const payload = item.payload || {};
   const actorName = (payload as { actor_name?: string }).actor_name || "系统";
   const fromStatus = (payload as { from_status?: string }).from_status;
@@ -167,7 +219,16 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
       onClick={onClick}
       className={clsx(styles.row, isUnread && styles.rowUnread)}
     >
-      <div className={clsx(styles.unreadMarker, isUnread && styles.unreadMarkerActive)} />
+      <div
+        className={clsx(
+          styles.typeIcon,
+          TONE_CLASS[visual.tone],
+          isUnread && styles.typeIconUnread,
+        )}
+      >
+        <Icon name={visual.icon} size={14} />
+        {isUnread && <span className={styles.unreadMarker} />}
+      </div>
       <div className={styles.rowBody}>
         <div className={styles.rowSummary}>
           <span className={styles.actorName}>{actorName}</span>{" "}
@@ -225,8 +286,9 @@ export function NotificationsPopover() {
   return (
     <DropdownMenu
       align="end"
-      minWidth={360}
+      minWidth={0}
       zIndex={200}
+      panelStyle={{ width: "min(520px, calc(100vw - 24px))" }}
       disablePanelPadding
       trigger={({ open, toggle, ref }) => (
         <button
@@ -290,13 +352,27 @@ function NotificationsPanel({
   unread: number;
   onItemClick: (item: NotificationItem) => void;
 }) {
-  const { data } = useNotifications(true); // panel 已渲染 = popover 已打开
+  const notificationsQ = useNotifications(true); // panel 已渲染 = popover 已打开
   const clearRead = useClearReadNotifications();
   const deleteNotification = useDeleteNotification();
   const markAllRead = useMarkAllRead();
   const markRead = useMarkRead();
-  const items = data?.items ?? [];
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
+  const items = useMemo(
+    () => notificationsQ.data?.pages.flatMap((page) => page.items) ?? [],
+    [notificationsQ.data],
+  );
+  const filteredItems = useMemo(
+    () => filterNotificationItems(items, activeFilter),
+    [items, activeFilter],
+  );
+  const groupedItems = useMemo(
+    () => groupNotificationItems(filteredItems),
+    [filteredItems],
+  );
   const hasRead = items.some((item) => item.read_at !== null);
+  const isEmpty = items.length === 0;
+  const isFilteredEmpty = !isEmpty && filteredItems.length === 0;
 
   const handleRowClick = (item: NotificationItem) => {
     if (item.read_at === null) markRead.mutate(item.id);
@@ -333,24 +409,65 @@ function NotificationsPanel({
         </div>
       </div>
 
+      <div className={styles.filterTabs} role="tablist" aria-label="通知类型筛选">
+        {FILTERS.map((filter) => (
+          <button
+            key={filter.key}
+            type="button"
+            role="tab"
+            aria-selected={activeFilter === filter.key}
+            className={clsx(
+              styles.filterTab,
+              activeFilter === filter.key && styles.filterTabActive,
+            )}
+            onClick={() => setActiveFilter(filter.key)}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
       <div className={styles.list}>
-        {items.length === 0 ? (
+        {isEmpty || isFilteredEmpty ? (
           <div className={styles.empty}>
             <Icon name="bell" size={22} className={styles.emptyIcon} />
-            <div>暂无通知</div>
+            <div>{isFilteredEmpty ? "暂无此类型通知" : "暂无通知"}</div>
           </div>
         ) : (
-          items.map((item) => (
-            <NotifRow
-              key={item.id}
-              item={item}
-              onClick={() => handleRowClick(item)}
-              onDelete={() => deleteNotification.mutate(item.id)}
-              deletePending={deleteNotification.isPending}
-            />
-          ))
+          GROUP_ORDER.map((groupKey) => {
+            const groupItems = groupedItems[groupKey];
+            if (groupItems.length === 0) return null;
+            return (
+              <section key={groupKey} className={styles.group}>
+                <div className={styles.groupTitle}>
+                  {GROUP_LABELS[groupKey]}
+                </div>
+                {groupItems.map((item) => (
+                  <NotifRow
+                    key={item.id}
+                    item={item}
+                    onClick={() => handleRowClick(item)}
+                    onDelete={() => deleteNotification.mutate(item.id)}
+                    deletePending={deleteNotification.isPending}
+                  />
+                ))}
+              </section>
+            );
+          })
         )}
       </div>
+      {notificationsQ.hasNextPage && (
+        <div className={styles.loadMoreWrap}>
+          <button
+            type="button"
+            className={styles.loadMoreButton}
+            disabled={notificationsQ.isFetchingNextPage}
+            onClick={() => notificationsQ.fetchNextPage()}
+          >
+            {notificationsQ.isFetchingNextPage ? "加载中…" : "加载更多"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

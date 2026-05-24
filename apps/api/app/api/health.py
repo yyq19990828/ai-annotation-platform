@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 
 from fastapi import APIRouter
@@ -12,6 +13,9 @@ from app.services.storage import storage_service
 from app.workers.celery_app import celery_app
 
 router = APIRouter()
+
+CELERY_INSPECT_TIMEOUT_SECONDS = 0.75
+CELERY_QUEUE_NAMES = ("default", "ml", "media", "gpu", "cleanup", "audit", "export")
 
 
 async def _check_db() -> dict:
@@ -68,10 +72,13 @@ def _check_celery() -> dict:
 
     start = time.monotonic()
     try:
-        inspect = celery_app.control.inspect(timeout=2)
-        ping = inspect.ping()
+        inspect = celery_app.control.inspect(timeout=CELERY_INSPECT_TIMEOUT_SECONDS)
+        try:
+            stats = inspect.stats() or {}
+        except Exception:
+            stats = {}
         latency_ms = round((time.monotonic() - start) * 1000, 1)
-        if not ping:
+        if not stats:
             return {
                 "status": "error",
                 "latency_ms": latency_ms,
@@ -81,32 +88,15 @@ def _check_celery() -> dict:
                 "detail": "no workers responded",
             }
 
-        # 队列长度：active + reserved（已被 worker 拉取但还未处理 / 正在处理）
-        # v0.8.7 · 兼容旧测试桩：active/reserved/stats 任一不可用时降级为空
         try:
-            active = inspect.active() or {}
+            queue_counts = _read_celery_queue_lengths()
         except Exception:
-            active = {}
-        try:
-            reserved = inspect.reserved() or {}
-        except Exception:
-            reserved = {}
-        queue_counts: dict[str, int] = {}
-        for tasks in list(active.values()) + list(reserved.values()):
-            for t in tasks or []:
-                qname = (t.get("delivery_info") or {}).get("routing_key") or "default"
-                queue_counts[qname] = queue_counts.get(qname, 0) + 1
+            queue_counts = {}
 
         # Prometheus Gauge：覆盖式更新
         for qname, count in queue_counts.items():
             CELERY_QUEUE_LENGTH.labels(queue=qname).set(count)
-        # 没出现的队列保持上一次值；不主动 reset 避免 scrape 抖动
 
-        # Worker 心跳：使用 inspect.stats() 中的 broker 报告（无则 fallback 0）
-        try:
-            stats = inspect.stats() or {}
-        except Exception:
-            stats = {}
         # v0.10.25 · 心跳新鲜度：beat 任务 publish_worker_heartbeat 周期把 unix 时间戳
         # 写进 Redis（key celery:hb:{worker}，worker 名与 ping().keys() 同源）。这里同步读
         # 同名 key 算 now - ts。读 Redis 失败整体降级为 None，不影响 /health 其它统计。
@@ -118,7 +108,7 @@ def _check_celery() -> dict:
         try:
             r = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=3)
             now = time.time()
-            for name in ping.keys():
+            for name in stats.keys():
                 raw = r.get(f"{HEARTBEAT_KEY_PREFIX}{name}")
                 heartbeats[name] = (now - float(raw)) if raw is not None else None
             r.close()
@@ -126,7 +116,7 @@ def _check_celery() -> dict:
             heartbeats = {}
 
         workers_payload = []
-        for name in sorted(ping.keys()):
+        for name in sorted(stats.keys()):
             last = heartbeats.get(name)
             # 仅在有真实心跳值时填 Gauge，无值不 set 避免误报 0。
             if last is not None:
@@ -149,6 +139,7 @@ def _check_celery() -> dict:
             "queues": [
                 {"name": qname, "length": count}
                 for qname, count in sorted(queue_counts.items())
+                if count > 0
             ],
         }
     except Exception as e:
@@ -160,6 +151,20 @@ def _check_celery() -> dict:
             "queues": [],
             "detail": str(e),
         }
+
+
+def _read_celery_queue_lengths() -> dict[str, int]:
+    """Read pending broker queue lengths without Celery inspect fan-out."""
+    import redis  # noqa: PLC0415
+
+    counts = {name: 0 for name in CELERY_QUEUE_NAMES}
+    r = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=1)
+    try:
+        for name in CELERY_QUEUE_NAMES:
+            counts[name] = int(r.llen(name))
+    finally:
+        r.close()
+    return counts
 
 
 @router.get("/db")
@@ -185,16 +190,18 @@ async def health_minio():
 
 @router.get("/celery")
 async def health_celery():
-    result = _check_celery()
+    result = await asyncio.to_thread(_check_celery)
     code = 200 if result["status"] == "ok" else 503
     return JSONResponse(status_code=code, content=result)
 
 
 @router.get("")
 async def health_all():
-    db_r, redis_r = await _check_db(), await _check_redis()
-    minio_r = _check_minio()
-    celery_r = _check_celery()
+    db_r, redis_r = await asyncio.gather(_check_db(), _check_redis())
+    minio_r, celery_r = await asyncio.gather(
+        asyncio.to_thread(_check_minio),
+        asyncio.to_thread(_check_celery),
+    )
     checks = {"db": db_r, "redis": redis_r, "minio": minio_r, "celery": celery_r}
     overall = "ok" if all(v["status"] == "ok" for v in checks.values()) else "degraded"
     code = 200 if overall == "ok" else 503

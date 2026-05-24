@@ -8,11 +8,12 @@ last_reviewed: 2026-05-09
 
 # 系统监控
 
-平台用 Prometheus + 结构化日志做可观测，超管可从前端「平台概览」看核心指标，深度排查走 Grafana / 直接 PromQL。
+平台用 Prometheus + 结构化日志做可观测，超管可从前端「平台概览」看核心指标。v0.10.58 起，侧边栏「管理 → 系统健康」提供 DB / Redis / MinIO / Celery 的实时健康面板；深度排查继续走 Grafana / 直接 PromQL。
 
 ## 入口
 
 - 前端：`/dashboard?view=overview`（仅超管）
+- 系统健康面板：`/admin/health`（仅超管，12 秒自动刷新）
 - Prometheus 端点：
   - `apps/api`：`http://api:8000/metrics`
   - `grounded-sam2-backend`：`http://gpu-host:8001/metrics`
@@ -65,8 +66,15 @@ docker logs ai-annotation-platform-api-1 2>&1 | jq 'select(.status>=500)'
 | 服务 | 路径 | 含义 |
 |---|---|---|
 | api | `/health` | DB + Redis + MinIO 联通性 |
+| api | `/api/v1/admin/system-health` | 超管聚合视图，返回组件状态、延迟、Celery 队列和 worker 心跳 |
 | api | `/ready` | lifespan 完成 |
 | grounded-sam2-backend | `/health` | 模型加载完成 |
+
+系统健康面板基于 `/api/v1/admin/system-health`：
+
+- 组件状态：PostgreSQL、Redis、MinIO、Celery，展示 `ok` / `degraded` / `down` 与 latency。
+- Celery 队列：显示各队列积压数量，积压达到阈值时标为降级或不可用。
+- Worker 心跳：显示 worker 名称、最近心跳距现在的秒数和 pool 并发上限；心跳过旧时降级。
 
 ⚠️ FastAPI lifespan 阻塞会让 `/health` 30s 内不可用——曾在 CI 引发卡死，详见 [CI 服务依赖踩坑](../../dev/troubleshooting/ci-flaky-services)。
 

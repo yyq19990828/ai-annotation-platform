@@ -58,7 +58,9 @@ last_reviewed: 2026-05-24
         "batch_display_id": "BATCH-1",
         "output_mode": "mask"
       },
-      "result": {},
+      "result": {
+        "failed_prediction_ids": []
+      },
       "error_message": null,
       "celery_task_id": "celery-uuid",
       "started_at": "2026-05-19T10:00:00Z",
@@ -101,6 +103,18 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   https://api.example.com/api/v1/async-jobs/01JX.../cancel
 # → 200 {"status": "cancelled", "id": "01JX..."}
 ```
+
+### `POST /api/v1/async-jobs/{id}/retry-failed`
+
+v0.10.58 起，`batch_predict` job 如果在结果里记录了 `failed_prediction_ids`，项目管理员可以从 job 详情一键把这些失败项投递到既有 `failed_prediction.retry` 链路。端点要求调用者是该 job owner（或 super_admin），并且角色是 project_admin / super_admin。
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  https://api.example.com/api/v1/async-jobs/01JX.../retry-failed
+# → 202 {"status":"queued","job_id":"01JX...","queued":3,"skipped":1}
+```
+
+跳过项包括：失败预测已被删除、已 dismiss，或超过最大重试次数。旧版本产生的 job 没有 `failed_prediction_ids` 时返回 `409`，需要去「模型市场 → 失败预测」按单条处理。
 
 ## 终态通知
 

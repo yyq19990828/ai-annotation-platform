@@ -43,6 +43,13 @@ export interface AsyncJobListResponse {
   total: number;
 }
 
+export interface AsyncJobRetryFailedResponse {
+  status: "queued";
+  job_id: string;
+  queued: number;
+  skipped: number;
+}
+
 export interface AsyncJobListParams {
   kind?: string | string[];
   status?: AsyncJobStatus | AsyncJobStatus[];
@@ -79,4 +86,8 @@ export const asyncJobsApi = {
   get: (id: string) => apiClient.get<AsyncJob>(`/async-jobs/${id}`),
   cancel: (id: string) =>
     apiClient.post<{ status: string; id: string }>(`/async-jobs/${id}/cancel`),
+  retryFailed: (id: string) =>
+    apiClient.post<AsyncJobRetryFailedResponse>(
+      `/async-jobs/${id}/retry-failed`,
+    ),
 };

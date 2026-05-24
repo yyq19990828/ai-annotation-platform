@@ -33,3 +33,10 @@ class AsyncJobOut(BaseModel):
 class AsyncJobListResponse(BaseModel):
     items: list[AsyncJobOut]
     total: int
+
+
+class AsyncJobRetryFailedResponse(BaseModel):
+    status: Literal["queued"]
+    job_id: uuid.UUID
+    queued: int
+    skipped: int
