@@ -18,15 +18,18 @@ from __future__ import annotations
 import io
 import json
 import uuid
+import zipfile
 
 import httpx
 import pytest
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.task import Task
+from app.services.export_packaging import _rotated_corners_norm
 from app.services.prediction import to_internal_shape
 from app.services.predictions_import import internal_geometry_to_ls_shape
 
@@ -88,6 +91,81 @@ def _aap_envelope(tasks_payload: list[dict], schema_version: str = "1.0") -> byt
 
 def _upload_files(content: bytes, filename: str = "test.json") -> dict:
     return {"file": (filename, io.BytesIO(content), "application/json")}
+
+
+def _zip_files(files: dict[str, str]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, content in files.items():
+            zf.writestr(name, content)
+    return buf.getvalue()
+
+
+def _upload_zip(content: bytes, filename: str = "labels.zip") -> dict:
+    return {"file": (filename, io.BytesIO(content), "application/zip")}
+
+
+async def _seed_yolo_project(
+    db: AsyncSession,
+    owner_id: uuid.UUID,
+    *,
+    rel_paths: list[str] | None = None,
+    size: tuple[int, int] = (200, 100),
+) -> tuple[Project, list[Task]]:
+    rel_paths = rel_paths or ["img_0.jpg"]
+    short = uuid.uuid4().hex[:6]
+    project = Project(
+        id=uuid.uuid4(),
+        display_id=f"P-YOLO{short}",
+        name=f"YoloImp {short}",
+        type_key="image-det",
+        type_label="测试",
+        owner_id=owner_id,
+        status="in_progress",
+        tool_bindings={
+            "bbox": {
+                "enabled": True,
+                "classes": [
+                    {"name": "car", "order": 0},
+                    {"name": "truck", "order": 1},
+                ],
+            }
+        },
+    )
+    dataset = Dataset(
+        id=uuid.uuid4(),
+        display_id=f"D-YOLO{short}",
+        name=f"Yolo Dataset {short}",
+        created_by=owner_id,
+    )
+    db.add_all([project, dataset])
+    await db.flush()
+
+    tasks: list[Task] = []
+    for i, rel_path in enumerate(rel_paths):
+        item = DatasetItem(
+            id=uuid.uuid4(),
+            dataset_id=dataset.id,
+            file_name=rel_path.rsplit("/", 1)[-1],
+            file_path=f"datasets/{short}/{rel_path}",
+            file_type="image",
+            width=size[0],
+            height=size[1],
+        )
+        task = Task(
+            id=uuid.uuid4(),
+            project_id=project.id,
+            dataset_item_id=item.id,
+            display_id=f"T-YOLO{short}-{i}",
+            file_name=item.file_name,
+            file_path=item.file_path,
+            file_type="image",
+            status="pending",
+        )
+        db.add_all([item, task])
+        tasks.append(task)
+    await db.flush()
+    return project, tasks
 
 
 # ── AAP JSON happy paths ─────────────────────────────────────────────
@@ -1067,6 +1145,169 @@ async def test_import_coco_uses_image_size_hint_when_missing_dimensions(
     assert bbox["y"] == pytest.approx(10.0)
     assert bbox["width"] == pytest.approx(30.0)
     assert bbox["height"] == pytest.approx(20.0)
+
+
+# ── YOLO zip importer ────────────────────────────────────────────────
+
+
+async def test_import_yolo_det_zip_happy(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, tasks = await _seed_yolo_project(db_session, user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = _zip_files(
+        {
+            "classes.txt": "car\ntruck\n",
+            "labels/img_0.txt": "0 0.500000 0.500000 0.200000 0.400000\n",
+        }
+    )
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=yolo&yolo_variant=det",
+        files=_upload_zip(payload),
+        data={"model_version": "ext-yolo-det"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["imported"] == 1
+
+    rows = (
+        (
+            await db_session.execute(
+                select(Prediction).where(Prediction.task_id == tasks[0].id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].source == "external_import"
+    assert rows[0].model_version == "ext-yolo-det"
+    shape = to_internal_shape(rows[0].result[0])
+    assert shape["type"] == "rectanglelabels"
+    assert shape["geometry"]["type"] == "bbox"
+    assert shape["geometry"]["x"] == pytest.approx(0.4)
+    assert shape["geometry"]["y"] == pytest.approx(0.3)
+    assert shape["geometry"]["w"] == pytest.approx(0.2)
+    assert shape["geometry"]["h"] == pytest.approx(0.4)
+
+
+async def test_import_yolo_seg_matches_relative_stem_path(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, tasks = await _seed_yolo_project(
+        db_session,
+        user.id,
+        rel_paths=["animals/cat/img_0.jpg"],
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = _zip_files(
+        {
+            "data.yaml": "names:\n  0: car\n  1: truck\n",
+            "labels/animals/cat/img_0.txt": "1 0.100000 0.200000 0.300000 0.200000 0.300000 0.500000\n",
+        }
+    )
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=yolo&yolo_variant=seg",
+        files=_upload_zip(payload),
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["imported"] == 1
+
+    pred = await db_session.scalar(
+        select(Prediction).where(Prediction.task_id == tasks[0].id)
+    )
+    assert pred is not None
+    shape = to_internal_shape(pred.result[0])
+    assert shape["class_name"] == "truck"
+    assert shape["type"] == "polygonlabels"
+    assert shape["geometry"]["type"] == "polygon"
+    assert shape["geometry"]["points"] == [[0.1, 0.2], [0.3, 0.2], [0.3, 0.5]]
+
+
+async def test_import_yolo_obb_round_trips_export_corner_order(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, tasks = await _seed_yolo_project(db_session, user.id, size=(200, 100))
+    headers = {"Authorization": f"Bearer {token}"}
+    source_geom = {
+        "type": "rotated_bbox",
+        "cx": 0.5,
+        "cy": 0.5,
+        "w": 0.2,
+        "h": 0.4,
+        "angle": 30,
+    }
+    corners = _rotated_corners_norm(source_geom, 200, 100)
+    payload = _zip_files(
+        {
+            "classes.txt": "car\ntruck\n",
+            "labels/img_0.txt": "0 " + " ".join(f"{v:.6f}" for v in corners),
+        }
+    )
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=yolo&yolo_variant=obb",
+        files=_upload_zip(payload),
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["imported"] == 1
+
+    pred = await db_session.scalar(
+        select(Prediction).where(Prediction.task_id == tasks[0].id)
+    )
+    assert pred is not None
+    shape = to_internal_shape(pred.result[0])
+    assert shape["type"] == "rectanglelabels"
+    assert shape["geometry"]["type"] == "rotated_bbox"
+    assert shape["geometry"]["cx"] == pytest.approx(source_geom["cx"], abs=1e-5)
+    assert shape["geometry"]["cy"] == pytest.approx(source_geom["cy"], abs=1e-5)
+    assert shape["geometry"]["w"] == pytest.approx(source_geom["w"], abs=1e-5)
+    assert shape["geometry"]["h"] == pytest.approx(source_geom["h"], abs=1e-5)
+    assert shape["geometry"]["angle"] == pytest.approx(source_geom["angle"], abs=1e-3)
+
+
+async def test_import_yolo_ambiguous_leaf_stem_is_error(
+    httpx_client: httpx.AsyncClient,
+    super_admin,
+    db_session: AsyncSession,
+):
+    user, token = super_admin
+    project, _ = await _seed_yolo_project(
+        db_session,
+        user.id,
+        rel_paths=["a/img.jpg", "b/img.png"],
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = _zip_files(
+        {
+            "classes.txt": "car\ntruck\n",
+            "labels/img.txt": "0 0.500000 0.500000 0.200000 0.200000\n",
+        }
+    )
+
+    r = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/predictions/import?format=yolo&yolo_variant=det&dry_run=true",
+        files=_upload_zip(payload),
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["imported"] == 0
+    assert body["skipped"] == 1
+    assert "ambiguous task file stem" in body["errors"][0]["reason"]
 
 
 # ── 老 prediction 默认 source ────────────────────────────────────────

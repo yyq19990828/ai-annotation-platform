@@ -22,6 +22,20 @@
 
 ## 最新版本
 
+## [0.10.56] - 2026-05-24
+
+> **YOLO 预测导入补齐。** 外部预测导入现在支持 YOLO det / obb / seg zip, 与现有 YOLO 导出目标对称。
+
+### Added
+
+- **`format=yolo` 预测导入** ([predictions.py](apps/api/app/api/v1/predictions.py) · [predictions_import.py](apps/api/app/services/predictions_import.py)): `POST /projects/{id}/predictions/import` 新增 `yolo_variant=det|obb|seg`; zip 内读取 `classes.txt` / `data.yaml` 与每图 label txt, 写入 `source='external_import'` Prediction。
+- **YOLO stem task 匹配** ([task_matcher.py](apps/api/app/services/task_matcher.py)): label 路径按 stem 匹配 task 图片路径, 支持 `labels/animals/cat/001.txt` → `animals/cat/001.jpg`; 纯叶子 stem 命中多条时返回歧义错误,不猜测。
+- **导入向导支持 YOLO zip** ([PredictionImportWizard.tsx](apps/web/src/components/predictions/PredictionImportWizard.tsx) · [predictions.ts](apps/web/src/api/predictions.ts)): 格式下拉新增 YOLO, 可选择 det / obb / seg 变体并上传单个 zip 预览/导入。
+
+### Changed
+
+- **YOLO OBB round-trip 对称** ([test_predictions_import.py](apps/api/tests/test_predictions_import.py)): OBB 导入用 `DatasetItem.width/height` 在像素空间还原 `rotated_bbox`; 四角不构成矩形时降级为 polygon。
+
 ## [0.10.55] - 2026-05-24
 
 > **预测来源可见并可筛选。** Workbench 能区分 ML backend 预标与外部导入预测，支持按来源隐藏候选。

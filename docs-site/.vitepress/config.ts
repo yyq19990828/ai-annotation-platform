@@ -278,6 +278,7 @@ export default withMermaid(defineConfig({
           collapsed: true,
           items: [
             { text: "ML Backend 协议", link: "/dev/reference/ml-backend-protocol" },
+            { text: "YOLO 导入适配", link: "/dev/reference/yolo-import" },
             { text: "WebSocket 协议", link: "/dev/reference/ws-protocol" },
             { text: "视频帧服务", link: "/dev/reference/video-frame-service" },
             { text: "代码规范", link: "/dev/reference/conventions" },

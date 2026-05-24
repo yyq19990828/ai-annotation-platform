@@ -22,8 +22,8 @@ const importMock = predictionsApi.import as unknown as ReturnType<typeof vi.fn>;
 const importAnnotationsMock =
   predictionsApi.importAnnotations as unknown as ReturnType<typeof vi.fn>;
 
-function makeFile(name = "test.json", content = "{}"): File {
-  return new File([content], name, { type: "application/json" });
+function makeFile(name = "test.json", content = "{}", type = "application/json"): File {
+  return new File([content], name, { type });
 }
 
 describe("PredictionImportWizard", () => {
@@ -138,6 +138,42 @@ describe("PredictionImportWizard", () => {
         "coco",
         expect.any(File),
         expect.objectContaining({ imageWidth: 1920, imageHeight: 1080 }),
+        true,
+      );
+    });
+  });
+
+  it("格式切换为 YOLO 后预览会透传 zip 与 yoloVariant", async () => {
+    importMock.mockResolvedValueOnce({
+      imported: 1,
+      skipped: 0,
+      errors: [],
+      dry_run: true,
+    });
+
+    render(
+      <PredictionImportWizard open onClose={() => {}} projectId="p-yolo" />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/格式/), {
+      target: { value: "yolo" },
+    });
+    fireEvent.change(screen.getByLabelText(/YOLO 变体/), {
+      target: { value: "obb" },
+    });
+
+    const fileInput = document.getElementById("pi-file") as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [makeFile("labels.zip", "zip", "application/zip")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /预览/ }));
+
+    await waitFor(() => {
+      expect(importMock).toHaveBeenCalledWith(
+        "p-yolo",
+        "yolo",
+        expect.any(File),
+        expect.objectContaining({ yoloVariant: "obb" }),
         true,
       );
     });

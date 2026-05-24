@@ -34,6 +34,86 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.task import Task
 
 
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def normalize_file_stem_path(file_path: str) -> str:
+    """Normalize an external label path into a slash-separated path without ext.
+
+    YOLO labels commonly arrive as either ``labels/foo/bar.txt`` or exported
+    mirror paths like ``<project>/<dataset>/labels/foo/bar.txt``.  Matching uses
+    the original image path stem, so strip everything through the last labels/
+    component before removing the extension.
+    """
+
+    rel = file_path.replace("\\", "/").lstrip("/")
+    parts = [p for p in rel.split("/") if p and p not in (".", "..")]
+    if "labels" in parts:
+        idx = len(parts) - 1 - list(reversed(parts)).index("labels")
+        if idx < len(parts) - 1:
+            parts = parts[idx + 1 :]
+    rel = "/".join(parts)
+    if rel.lower().endswith(".txt"):
+        rel = rel[:-4]
+    elif "." in rel.rsplit("/", 1)[-1]:
+        head, _, leaf = rel.rpartition("/")
+        stem = leaf.rsplit(".", 1)[0]
+        rel = f"{head}/{stem}" if head else stem
+    return rel.strip("/")
+
+
+async def resolve_task_by_file_stem(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    file_path: str,
+) -> tuple[Task | None, str | None]:
+    """Match a task by file stem, returning an ambiguity/miss reason.
+
+    This is intentionally separate from ``resolve_task`` because stem matching
+    is lossy: ``img.txt`` may correspond to ``img.jpg`` or ``img.png`` and may
+    also be duplicated under different subdirectories.  Ambiguous hits are not
+    guessed.
+    """
+
+    rel = normalize_file_stem_path(file_path)
+    if not rel:
+        return None, "empty file stem"
+
+    escaped = _escape_like(rel)
+    leaf = rel.rsplit("/", 1)[-1]
+    escaped_leaf = _escape_like(leaf)
+
+    if "/" in rel:
+        criteria = or_(
+            Task.file_path.like(f"{escaped}.%", escape="\\"),
+            Task.file_path.like(f"%/{escaped}.%", escape="\\"),
+        )
+    else:
+        criteria = or_(
+            Task.file_name.like(f"{escaped_leaf}.%", escape="\\"),
+            Task.file_path.like(f"%/{escaped_leaf}.%", escape="\\"),
+        )
+
+    rows = (
+        (
+            await db.execute(
+                select(Task)
+                .where(Task.project_id == project_id, criteria)
+                .order_by(Task.file_path)
+                .limit(2)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return None, "task not found in project"
+    if len(rows) > 1:
+        return None, f"ambiguous task file stem: {rel}"
+    return rows[0], None
+
+
 async def resolve_task(
     db: AsyncSession,
     project_id: uuid.UUID,

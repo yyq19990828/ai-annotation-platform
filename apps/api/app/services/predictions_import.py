@@ -1,10 +1,11 @@
 """外部预测导入服务 (v0.10.15).
 
-支持两种 input format:
+支持三种 input format:
 - AAP JSON v1.0: 平台原生无损中间格式 (双数组 annotations[]/predictions[]);
   本期仅消费 predictions[], annotations[] 警告日志保留供后续 epic.
 - COCO: 标准 COCO Detection 格式 (images + annotations + categories), 用 image
   的 file_name 匹配 task.file_path.
+- YOLO: zip 包, 内含 classes.txt / data.yaml 与每图一个 label txt.
 
 写入路径: 把内部 geometry 反向适配回 LabelStudio shape -> 复用
 PredictionService.create_from_ml_result, 标记 source='external_import'.
@@ -17,17 +18,22 @@ ROADMAP §6 决策底线 lenient 精神:
 
 from __future__ import annotations
 
+import ast
+import io
 import json
 import logging
 import math
 import uuid
+import zipfile
 from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.dataset import DatasetItem
 from app.db.models.prediction import Prediction, PredictionMeta
+from app.db.models.project import Project
 from app.schemas.aap_json import (
     AAPImportErrorEntry,
     AAPImportResult,
@@ -36,7 +42,12 @@ from app.schemas.aap_json import (
     check_schema_major,
 )
 from app.services.prediction import PredictionService
-from app.services.task_matcher import resolve_task
+from app.services.project import derive_classes_list
+from app.services.task_matcher import (
+    normalize_file_stem_path,
+    resolve_task,
+    resolve_task_by_file_stem,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -571,3 +582,379 @@ async def import_coco(
         result.imported += 1
 
     return result
+
+
+# ── YOLO zip importer (det / obb / seg) ─────────────────────────────
+
+
+YOLO_VARIANTS = {"det", "obb", "seg"}
+
+
+async def import_yolo(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    file_bytes: bytes,
+    *,
+    yolo_variant: str = "det",
+    model_version_fallback: str | None = None,
+    overwrite_existing: bool = False,
+    dry_run: bool = False,
+) -> AAPImportResult:
+    """YOLO label zip importer.
+
+    One non-empty label file becomes one platform Prediction row containing all
+    valid shapes from that file.  Empty label files are treated as no-op, which
+    keeps platform-exported YOLO packages round-trippable.
+    """
+
+    if yolo_variant not in YOLO_VARIANTS:
+        raise ValueError("yolo_variant must be one of: det, obb, seg")
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(file_bytes))
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise ValueError(f"YOLO zip 文件无法解析: {exc}") from exc
+
+    project = await db.get(Project, project_id)
+    project_classes = derive_classes_list(project.tool_bindings if project else None)
+    class_names = _read_yolo_class_names(zf) or project_classes
+    if not class_names:
+        raise ValueError("YOLO zip 缺少 classes.txt/data.yaml, 且项目没有可回退的类别顺序")
+
+    project_class_set = set(project_classes)
+    result = AAPImportResult(dry_run=dry_run)
+    svc = PredictionService(db)
+    purged_tasks: set[uuid.UUID] = set()
+
+    for label_name in _iter_yolo_label_files(zf):
+        match_dict = {"file_stem": normalize_file_stem_path(label_name)}
+        try:
+            text = zf.read(label_name).decode("utf-8-sig")
+        except UnicodeDecodeError:
+            result.errors.append(
+                AAPImportErrorEntry(
+                    task_match=match_dict,
+                    reason="label file is not valid utf-8",
+                )
+            )
+            result.skipped += 1
+            continue
+
+        lines = [
+            (i, line.strip())
+            for i, line in enumerate(text.splitlines(), start=1)
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        if not lines:
+            continue
+
+        task, match_error = await resolve_task_by_file_stem(
+            db, project_id, label_name
+        )
+        if task is None:
+            result.errors.append(
+                AAPImportErrorEntry(
+                    task_match=match_dict,
+                    reason=match_error or "task not found in project",
+                )
+            )
+            result.skipped += 1
+            continue
+
+        image_size = await _task_image_size(db, task)
+        if yolo_variant == "obb" and image_size is None:
+            result.errors.append(
+                AAPImportErrorEntry(
+                    task_match=match_dict,
+                    reason="dataset item width/height required for YOLO OBB",
+                )
+            )
+            result.skipped += 1
+            continue
+
+        if overwrite_existing and not dry_run and task.id not in purged_tasks:
+            await _purge_existing_external_imports(db, task.id)
+            purged_tasks.add(task.id)
+
+        ls_shapes: list[dict[str, Any]] = []
+        for line_no, line in lines:
+            parsed, error = _parse_yolo_line(
+                line,
+                yolo_variant,
+                class_names,
+                project_class_set,
+                image_size=image_size,
+            )
+            if error:
+                result.errors.append(
+                    AAPImportErrorEntry(
+                        task_match=match_dict,
+                        reason=f"{label_name}:{line_no}: {error}",
+                    )
+                )
+                result.skipped += 1
+                continue
+            assert parsed is not None
+            geometry, class_name = parsed
+            ls_shape = internal_geometry_to_ls_shape(geometry, class_name, None)
+            if ls_shape is None:
+                result.errors.append(
+                    AAPImportErrorEntry(
+                        task_match=match_dict,
+                        reason=f"{label_name}:{line_no}: failed to build ls shape",
+                    )
+                )
+                result.skipped += 1
+                continue
+            ls_shapes.append(ls_shape)
+
+        if not ls_shapes:
+            continue
+
+        if dry_run:
+            result.imported += 1
+            continue
+
+        await svc.create_from_ml_result(
+            task_id=task.id,
+            project_id=project_id,
+            ml_backend_id=None,
+            result=ls_shapes,
+            score=None,
+            model_version=model_version_fallback,
+            source="external_import",
+        )
+        result.imported += 1
+
+    return result
+
+
+def _iter_yolo_label_files(zf: zipfile.ZipFile) -> list[str]:
+    names: list[str] = []
+    for info in zf.infolist():
+        if info.is_dir():
+            continue
+        name = info.filename.replace("\\", "/")
+        leaf = name.rsplit("/", 1)[-1].lower()
+        if leaf == "classes.txt" or leaf.endswith(".attrs.json"):
+            continue
+        if leaf.startswith(".") or name.startswith("__MACOSX/"):
+            continue
+        if leaf.endswith(".txt"):
+            names.append(info.filename)
+    return sorted(names)
+
+
+def _read_yolo_class_names(zf: zipfile.ZipFile) -> list[str]:
+    classes_files = sorted(
+        n for n in zf.namelist() if n.replace("\\", "/").rsplit("/", 1)[-1] == "classes.txt"
+    )
+    for name in classes_files:
+        try:
+            names = [
+                line.strip()
+                for line in zf.read(name).decode("utf-8-sig").splitlines()
+                if line.strip() and not line.lstrip().startswith("#")
+            ]
+        except UnicodeDecodeError:
+            continue
+        if names:
+            return names
+
+    yaml_files = sorted(
+        n
+        for n in zf.namelist()
+        if n.replace("\\", "/").rsplit("/", 1)[-1] in {"data.yaml", "data.yml"}
+    )
+    for name in yaml_files:
+        try:
+            names = _parse_yolo_yaml_names(zf.read(name).decode("utf-8-sig"))
+        except UnicodeDecodeError:
+            continue
+        if names:
+            return names
+    return []
+
+
+def _parse_yolo_yaml_names(text: str) -> list[str]:
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith("names:"):
+            continue
+        tail = stripped[len("names:") :].strip()
+        if tail:
+            parsed = _parse_inline_names(tail)
+            if parsed:
+                return parsed
+        out: list[tuple[int, str] | str] = []
+        for child in lines[i + 1 :]:
+            if not child.startswith((" ", "\t")):
+                break
+            item = child.strip()
+            if not item or item.startswith("#"):
+                continue
+            if item.startswith("- "):
+                out.append(item[2:].strip().strip("'\""))
+                continue
+            if ":" in item:
+                key, value = item.split(":", 1)
+                try:
+                    out.append((int(key.strip()), value.strip().strip("'\"")))
+                except ValueError:
+                    continue
+        if out and isinstance(out[0], tuple):
+            pairs = [p for p in out if isinstance(p, tuple)]
+            return [name for _, name in sorted(pairs, key=lambda p: p[0]) if name]
+        return [name for name in out if isinstance(name, str) and name]
+    return []
+
+
+def _parse_inline_names(raw: str) -> list[str]:
+    try:
+        value = ast.literal_eval(raw)
+    except (ValueError, SyntaxError):
+        value = None
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    if isinstance(value, dict):
+        pairs: list[tuple[int, str]] = []
+        for k, v in value.items():
+            try:
+                pairs.append((int(k), str(v).strip()))
+            except (TypeError, ValueError):
+                continue
+        return [name for _, name in sorted(pairs, key=lambda p: p[0]) if name]
+    if raw.startswith("[") and raw.endswith("]"):
+        return [p.strip().strip("'\"") for p in raw[1:-1].split(",") if p.strip()]
+    if raw.startswith("{") and raw.endswith("}"):
+        pairs: list[tuple[int, str]] = []
+        for item in raw[1:-1].split(","):
+            if ":" not in item:
+                continue
+            key, value = item.split(":", 1)
+            try:
+                pairs.append((int(key.strip()), value.strip().strip("'\"")))
+            except ValueError:
+                continue
+        return [name for _, name in sorted(pairs, key=lambda p: p[0]) if name]
+    return []
+
+
+async def _task_image_size(
+    db: AsyncSession,
+    task: Any,
+) -> tuple[int, int] | None:
+    if not getattr(task, "dataset_item_id", None):
+        return None
+    item = await db.get(DatasetItem, task.dataset_item_id)
+    if not item or not item.width or not item.height:
+        return None
+    if item.width <= 0 or item.height <= 0:
+        return None
+    return int(item.width), int(item.height)
+
+
+def _parse_yolo_line(
+    line: str,
+    variant: str,
+    class_names: list[str],
+    project_class_set: set[str],
+    *,
+    image_size: tuple[int, int] | None,
+) -> tuple[tuple[dict[str, Any], str] | None, str | None]:
+    parts = line.split()
+    try:
+        class_idx = int(parts[0])
+    except (IndexError, ValueError):
+        return None, "invalid class index"
+    if class_idx < 0 or class_idx >= len(class_names):
+        return None, f"class index out of range: {class_idx}"
+    class_name = class_names[class_idx]
+    if project_class_set and class_name not in project_class_set:
+        return None, f"class not found in project: {class_name}"
+
+    try:
+        values = [float(p) for p in parts[1:]]
+    except ValueError:
+        return None, "coordinates must be numeric"
+    if any(not math.isfinite(v) for v in values):
+        return None, "coordinates must be finite"
+
+    if variant == "det":
+        if len(values) != 4:
+            return None, "YOLO det row must be: cls cx cy w h"
+        cx, cy, w, h = values
+        if not _all_unit_interval(values) or w <= 0 or h <= 0:
+            return None, "YOLO det coordinates must be normalized and positive"
+        x = cx - w / 2
+        y = cy - h / 2
+        if x < 0 or y < 0 or x + w > 1 or y + h > 1:
+            return None, "YOLO det bbox falls outside image bounds"
+        return ({"type": "bbox", "x": x, "y": y, "w": w, "h": h}, class_name), None
+
+    if variant == "seg":
+        if len(values) < 6 or len(values) % 2 != 0:
+            return None, "YOLO seg row must contain at least 3 points"
+        if not _all_unit_interval(values):
+            return None, "YOLO seg coordinates must be normalized"
+        points = [[values[i], values[i + 1]] for i in range(0, len(values), 2)]
+        return ({"type": "polygon", "points": points}, class_name), None
+
+    if len(values) != 8:
+        return None, "YOLO obb row must be: cls x1 y1 ... x4 y4"
+    if not _all_unit_interval(values):
+        return None, "YOLO obb coordinates must be normalized"
+    if image_size is None:
+        return None, "dataset item width/height required for YOLO OBB"
+    geometry = _yolo_obb_to_geometry(values, image_size)
+    return (geometry, class_name), None
+
+
+def _all_unit_interval(values: list[float]) -> bool:
+    return all(0 <= v <= 1 for v in values)
+
+
+def _yolo_obb_to_geometry(
+    values: list[float],
+    image_size: tuple[int, int],
+) -> dict[str, Any]:
+    img_w, img_h = image_size
+    points = [[values[i], values[i + 1]] for i in range(0, len(values), 2)]
+    px = [(x * img_w, y * img_h) for x, y in points]
+    edges = [
+        (px[(i + 1) % 4][0] - px[i][0], px[(i + 1) % 4][1] - px[i][1])
+        for i in range(4)
+    ]
+    lengths = [math.hypot(dx, dy) for dx, dy in edges]
+
+    def close(a: float, b: float) -> bool:
+        return math.isclose(a, b, rel_tol=0.03, abs_tol=1e-6)
+
+    def orthogonal(a: tuple[float, float], b: tuple[float, float]) -> bool:
+        denom = max(math.hypot(*a) * math.hypot(*b), 1e-9)
+        return abs(a[0] * b[0] + a[1] * b[1]) / denom < 0.03
+
+    is_rectangle = (
+        min(lengths) > 0
+        and close(lengths[0], lengths[2])
+        and close(lengths[1], lengths[3])
+        and orthogonal(edges[0], edges[1])
+        and orthogonal(edges[1], edges[2])
+    )
+    if not is_rectangle:
+        return {"type": "polygon", "points": points}
+
+    cx = sum(x for x, _ in px) / 4 / img_w
+    cy = sum(y for _, y in px) / 4 / img_h
+    width = lengths[0] / img_w
+    height = lengths[1] / img_h
+    angle = math.degrees(math.atan2(edges[0][1], edges[0][0])) % 360
+    return {
+        "type": "rotated_bbox",
+        "cx": cx,
+        "cy": cy,
+        "w": width,
+        "h": height,
+        "angle": angle,
+    }

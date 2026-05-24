@@ -262,7 +262,8 @@ async def restore_failed_prediction(
 async def import_predictions(
     request: Request,
     file: UploadFile = File(...),
-    format: str = Query("aap_json", pattern="^(aap_json|coco)$"),
+    format: str = Query("aap_json", pattern="^(aap_json|coco|yolo)$"),
+    yolo_variant: str = Query("det", pattern="^(det|obb|seg)$"),
     dry_run: bool = Query(False),
     model_version: str | None = Form(None),
     overwrite_existing: bool = Form(False),
@@ -274,13 +275,13 @@ async def import_predictions(
 ) -> AAPImportResult:
     """外部模型预测结果导入端点 (v0.10.15).
 
-    支持 COCO Detection 与平台原生 AAP JSON v1.0 两种 input format. 写入的
+    支持 COCO Detection、YOLO zip 与平台原生 AAP JSON v1.0 三种 input format. 写入的
     Prediction 行 source='external_import', ml_backend_id=NULL.
     """
 
     from app.services import async_job as async_job_svc
     from app.services.async_job_notify import notify_job_terminal
-    from app.services.predictions_import import import_aap_json, import_coco
+    from app.services.predictions_import import import_aap_json, import_coco, import_yolo
 
     raw = await file.read()
     image_size_hint: tuple[int, int] | None = None
@@ -314,6 +315,7 @@ async def import_predictions(
                     "overwrite_existing": overwrite_existing,
                     "model_version_fallback": model_version,
                     "image_size_hint": image_size_hint,
+                    "yolo_variant": yolo_variant if format == "yolo" else None,
                 },
             )
             await async_job_svc.mark_running(db, aj.id)
@@ -333,7 +335,7 @@ async def import_predictions(
                 overwrite_existing=overwrite_existing,
                 dry_run=dry_run,
             )
-        else:
+        elif format == "coco":
             result = await import_coco(
                 db,
                 project.id,
@@ -342,6 +344,16 @@ async def import_predictions(
                 overwrite_existing=overwrite_existing,
                 dry_run=dry_run,
                 image_size_hint=image_size_hint,
+            )
+        else:
+            result = await import_yolo(
+                db,
+                project.id,
+                raw,
+                yolo_variant=yolo_variant,
+                model_version_fallback=model_version,
+                overwrite_existing=overwrite_existing,
+                dry_run=dry_run,
             )
     except ValueError as exc:
         if aj_id is not None:
@@ -380,6 +392,7 @@ async def import_predictions(
                 "model_version_fallback": model_version,
                 "overwrite_existing": overwrite_existing,
                 "image_size_hint": image_size_hint,
+                "yolo_variant": yolo_variant if format == "yolo" else None,
             },
         )
         if aj_id is not None:

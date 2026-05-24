@@ -82,11 +82,13 @@ v0.10.13 起在 banner 中新增 checkbox **「同时复制标注指引」**（�
 
 ## 导入外部预测（v0.10.52+）
 
-项目管理员可以在 Dashboard 找到项目卡片 → 右下角 `⋮` → 「导入预测」打开导入向导。该入口不要求项目已绑定 ML Backend，适合把客户自训模型产物以 AAP JSON / COCO Detection 形式导入为待采纳预测。
+项目管理员可以在 Dashboard 找到项目卡片 → 右下角 `⋮` → 「导入预测」打开导入向导。该入口不要求项目已绑定 ML Backend，适合把客户自训模型产物以 AAP JSON / COCO Detection / YOLO zip 形式导入为待采纳预测。
 
-导入向导支持一次选择多个 JSON 文件，会逐文件预览并汇总写入 / 跳过 / 错误数量。COCO 文件如果 `images[]` 缺 `width/height`，可在向导里填写全局默认宽高；文件内已有尺寸时仍优先使用文件内尺寸。
+导入向导支持一次选择多个 JSON 文件，会逐文件预览并汇总写入 / 跳过 / 错误数量。COCO 文件如果 `images[]` 缺 `width/height`，可在向导里填写全局默认宽高；文件内已有尺寸时仍优先使用文件内尺寸。YOLO 选择一个 zip 包，并在向导里选择 `det` / `obb` / `seg` 变体。
 
 AAP JSON 当前支持 `bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint` 预测导入；同一条 `predictions[i]` 也可以用 `shapes[]` 合并多个 shape。视频几何暂不导入。格式细节见 [导出格式 · AAP JSON](../reference/export-formats#aap-json-v12无损)。
+
+YOLO zip 需包含 `classes.txt` 或 `data.yaml`，以及每图一个 label `.txt`。label 路径按文件 stem 匹配任务，例如 `labels/animals/cat/001.txt` 会匹配项目内 `animals/cat/001.jpg/png/...`；同名跨目录或跨扩展名有歧义时会在预览 errors 里提示，不会自动猜测。
 
 ## 任务生成
 

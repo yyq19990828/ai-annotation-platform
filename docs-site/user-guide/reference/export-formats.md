@@ -120,6 +120,8 @@ names: [person, car, bicycle]
 nc: 3
 ```
 
+v0.10.56 起，导入向导也支持把 YOLO zip 作为外部预测导入。导入时选择对应变体 `det` / `obb` / `seg`；`classes.txt` 或 `data.yaml` 用于把类别索引映射回项目类别。OBB 导入会用 task 对应 `DatasetItem.width/height` 在像素空间还原旋转框，四角不构成矩形时降级为 polygon。
+
 ## Label Studio JSON
 
 平台间迁移用，含完整原数据 + 标注 + 审核备注。

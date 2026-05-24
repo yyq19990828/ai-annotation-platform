@@ -24193,7 +24193,7 @@
     },
     "/api/v1/projects/{project_id}/predictions/import": {
       "post": {
-        "description": "外部模型预测结果导入端点 (v0.10.15).\n\n支持 COCO Detection 与平台原生 AAP JSON v1.0 两种 input format. 写入的\nPrediction 行 source='external_import', ml_backend_id=NULL.",
+        "description": "外部模型预测结果导入端点 (v0.10.15).\n\n支持 COCO Detection、YOLO zip 与平台原生 AAP JSON v1.0 三种 input format. 写入的\nPrediction 行 source='external_import', ml_backend_id=NULL.",
         "operationId": "import_predictions_api_v1_projects__project_id__predictions_import_post",
         "parameters": [
           {
@@ -24212,8 +24212,19 @@
             "required": false,
             "schema": {
               "default": "aap_json",
-              "pattern": "^(aap_json|coco)$",
+              "pattern": "^(aap_json|coco|yolo)$",
               "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "yolo_variant",
+            "required": false,
+            "schema": {
+              "default": "det",
+              "pattern": "^(det|obb|seg)$",
+              "title": "Yolo Variant",
               "type": "string"
             }
           },

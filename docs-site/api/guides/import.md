@@ -10,7 +10,7 @@ last_reviewed: 2026-05-24
 
 v0.10.15 起新增。允许客户把**外部模型**（不通过平台 ML backend 跑的模型）生成的预测灌入平台，进入"AI 预标 → 人工修正 → 导出"工作流。
 
-支持两种输入格式：**COCO Detection** 与平台原生 **AAP JSON v1.0**（无损中间格式）。
+支持三种输入格式：**COCO Detection**、**YOLO zip** 与平台原生 **AAP JSON v1.0**（无损中间格式）。
 
 ## 端点
 
@@ -18,7 +18,7 @@ v0.10.15 起新增。允许客户把**外部模型**（不通过平台 ML backen
 POST /api/v1/projects/{project_id}/predictions/import?format=aap_json&dry_run=false
 Content-Type: multipart/form-data
 
-file=<JSON file>
+file=<JSON file or YOLO zip>
 model_version=<optional fallback string>
 overwrite_existing=<true|false default false>
 image_width=<optional COCO fallback width>
@@ -29,9 +29,10 @@ image_height=<optional COCO fallback height>
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
 |---|---|---|---|---|
-| `format` | query | `aap_json` \| `coco` | 是 | input 格式. 默认 `aap_json`. |
+| `format` | query | `aap_json` \| `coco` \| `yolo` | 是 | input 格式. 默认 `aap_json`. |
+| `yolo_variant` | query | `det` \| `obb` \| `seg` | 否 | 仅 `format=yolo` 生效,默认 `det`. |
 | `dry_run` | query | bool | 否 | true 时走全部校验路径但**不入库**, 供前端 wizard 预览. |
-| `file` | form | File | 是 | JSON 文件. |
+| `file` | form | File | 是 | AAP/COCO 为 JSON 文件; YOLO 为 zip 包. |
 | `model_version` | form | string | 否 | AAP JSON 内 `model_version` 缺失时的兜底值. |
 | `overwrite_existing` | form | bool | 否 | true 时按 task 维度删该 task 下 `source='external_import'` 的旧 prediction 后再写入. |
 | `image_width` / `image_height` | form | int | 否 | 仅 `format=coco` 生效。COCO `images[]` 缺 `width/height` 时作为全局兜底；图片自带尺寸优先。两个字段必须同时提供。 |
@@ -106,10 +107,29 @@ image_height=<optional COCO fallback height>
 
 `annotations[].score` 字段被读为 confidence；缺失则 confidence=None。
 
+## YOLO zip 格式
+
+`format=yolo` 接受一个 zip 包。包内需要：
+
+- `classes.txt` 或 `data.yaml`：类别索引映射。缺失时回退项目当前类别顺序。
+- 一个或多个 label `.txt`：空文件表示该图无预测，导入时 no-op。
+
+支持的 label 行由 `yolo_variant` 决定：
+
+| `yolo_variant` | 行格式 | 写入 geometry |
+|---|---|---|
+| `det` | `<cls> <cx> <cy> <w> <h>` | `bbox` |
+| `obb` | `<cls> <x1> <y1> ... <x4> <y4>` | 矩形四角写 `rotated_bbox`,否则降级为 `polygon` |
+| `seg` | `<cls> <x1> <y1> <x2> <y2> ...` | `polygon` |
+
+所有坐标都是归一化 `[0,1]`。`obb` 需要匹配 task 的 `DatasetItem.width/height`，用于在像素空间还原角度与宽高；不接受用户手填尺寸。
+
+task 匹配按 label 文件 stem 进行：`labels/animals/cat/001.txt` 会匹配项目内 `animals/cat/001.<任意图片扩展名>`。纯叶子 stem（如 `labels/001.txt`）如果命中多个目录或扩展名，进入 `errors[]`，不会猜测。
+
 ## 写入语义
 
 - 写入的 `predictions` 行：`source='external_import'`, `ml_backend_id=NULL`, `model_version=<entry 内值或 form 兜底>`, `result=<内部 LS shape 数组>`.
-- AAP JSON 每个 `predictions[i]` 对应**一条** Prediction 行；普通 `geometry` 写 1 个 shape，`shapes[]` 写多个 shape 到同一行的 `result[]`。COCO 每个 `annotations[i]` 对应一条。
+- AAP JSON 每个 `predictions[i]` 对应**一条** Prediction 行；普通 `geometry` 写 1 个 shape，`shapes[]` 写多个 shape 到同一行的 `result[]`。COCO 每个 `annotations[i]` 对应一条。YOLO 每个非空 label 文件对应一条，文件内多行合并到同一条 `result[]`。
 - 写入路径复用 `PredictionService.create_from_ml_result`，确保与 ML backend 写入路径同源。
 
 ## task_match 匹配规则
@@ -119,6 +139,8 @@ AAP JSON `task_match` 是 oneof：
 1. **`display_id` 优先**：全局唯一，最稳。命中后校验 `project_id` 一致；跨项目命中视为不匹配（防偷换项目）。
 2. **`file_path` fallback**：项目内查；命中第一条即返。
 3. 都没给或都不命中 → entry 进 errors[]，整批继续。
+
+YOLO 不使用 `task_match` 字段，而是按 label 文件 stem 走相同的项目内防歧义匹配规则。
 
 ## dry-run 工作流（推荐）
 
@@ -139,4 +161,4 @@ curl -X POST "https://platform/api/v1/projects/$PID/predictions/import?format=aa
 
 ## 审计
 
-所有非 dry-run 导入在 `audit_logs` 写一条 `predictions.import` 记录，`detail_json` 含 `format` / `imported` / `skipped` / `error_count` / `overwrite_existing` / `model_version_fallback` / `image_size_hint`。
+所有非 dry-run 导入在 `audit_logs` 写一条 `predictions.import` 记录，`detail_json` 含 `format` / `imported` / `skipped` / `error_count` / `overwrite_existing` / `model_version_fallback` / `image_size_hint` / `yolo_variant`。

@@ -49,7 +49,7 @@
   - **`lidar_box_3d` 工具实现**（**P0**，体量大）：依赖 3D viewer + 后端 frame service 视点处理。独立 epic，与长期 L3 跨模态挂钩。
   - **跨 tool_unit 类别软关联 (`alias_to`)**（**P3**）：强隔离意味同名颜色 / alias 跨 unit 要重复输入。设计走 `ToolClassEntry.alias_to` 链（可选叠加，不破坏 ADR-0026 强隔离底线）。触发：客户反馈"想共享类别名字"。
   - **rename_class 跨 unit 重命名 UX**（**P3**）：`useRenameClass` 已带 `tool_unit_id` 参数，但 ClassesSection 仅传 active unit；"同时在所有 unit 内重命名"需扩 UI（批量勾选 unit）。触发：客户反馈"重命名要跑 N 次"。
-- **v0.10.28 新几何后续导入/预测支持**（绘制 + 持久化 + 导出已通；v0.10.52 已补 AAP JSON `rotated_bbox` / `polyline` 导入与读路径；v0.10.53 已补 `keypoint` 预测导入与 `keypointlabels` 读路径）。
+- **v0.10.28 新几何后续导入/预测支持**（绘制 + 持久化 + 导出已通；v0.10.52 已补 AAP JSON `rotated_bbox` / `polyline` 导入与读路径；v0.10.53 已补 `keypoint` 预测导入与 `keypointlabels` 读路径；v0.10.56 已补 YOLO `det/obb/seg` 预测导入）。
 - **项目模板开放项**（按客户反馈触发）：
   - **模板版本号 / changelog**（**P3**）：PATCH 直接覆盖无审计轨迹，走 `project_templates_versions` 快照表 + 比较版本 UI。触发：误改投诉 ≥ 2 次或组织模板 > 20。
   - **organization admin 提交 public 模板审核流**（**P3**）：当前仅 super_admin 可建 public，走 `template_publish_requests` 队列。触发：跨组织 SaaS / 公共模板 ≥ 10。
@@ -177,7 +177,7 @@
 | **P3** | C.3 SAM 后续延伸: 类别确认 hint | Magic Box 已 v0.10.17 落地; 剩类别确认 hint(画完一框 SAM 跑分类弹建议) | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | 跨 tool_unit 类别软关联 (`alias_to`) | 强隔离默认底线;客户反馈"想共享类别名字"再做。设计走 `ToolClassEntry.alias_to` 链, 不破坏 ADR-0026 决策 | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | I4/I12/I18 epic 续作余 | 剩 ADR-0027 第三段切单源 (legacy-table-retirement) + DiscussionPanel 完整拆分 + IssueLayer video frame pin；详见 §C.7 | [0027](docs/adr/0027-annotation-feedback-unified-table.md) |
-| **P3** | v0.10.28 新几何导入/预测支持 | 导出已落 v0.10.43；剩 predictions_import / ML 预测协议未覆盖新几何，详见 §A | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
+| **P3** | v0.10.28 新几何导入/预测支持 | 导出已落 v0.10.43；AAP/YOLO predictions_import 已补到 keypoint/rotated/polyline/polygon；剩 ML 预测协议按客户 backend 输出补齐，详见 §A | [0026](docs/adr/0026-tool-unit-class-and-attribute-binding.md) |
 | **P3** | ML backend storage endpoint 选择机制（生产化） | v0.9.4 phase 1 用 `ML_BACKEND_STORAGE_HOST` 简单覆盖适合 dev + ADR-0012 已写决策框架；生产场景多变，第一个生产部署遇到再扩 ADR 策略表 | [0012](docs/adr/0012-sam-backend-as-independent-gpu-service.md) |
 | **P3** | 审计日志月度汇总物化视图 | partition + archive + 回源端点已落（v0.10.25）；剩 BI 月度汇总物化视图，等 10M+ 行触发 | [0007](docs/adr/0007-audit-log-partitioning.md) |
 

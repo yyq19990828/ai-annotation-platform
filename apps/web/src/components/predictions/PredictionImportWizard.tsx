@@ -14,6 +14,7 @@ import {
   predictionsApi,
   type PredictionImportFormat,
   type PredictionImportResult,
+  type YoloImportVariant,
 } from "@/api/predictions";
 
 import styles from "./PredictionImportWizard.module.css";
@@ -85,6 +86,7 @@ export function PredictionImportWizard({
   const [step, setStep] = useState<WizardStep>("select");
   const [target, setTarget] = useState<ImportTarget>(initialTarget);
   const [format, setFormat] = useState<PredictionImportFormat>("aap_json");
+  const [yoloVariant, setYoloVariant] = useState<YoloImportVariant>("det");
   const [files, setFiles] = useState<File[]>([]);
   const [modelVersion, setModelVersion] = useState("");
   const [overwriteExisting, setOverwriteExisting] = useState(false);
@@ -99,6 +101,7 @@ export function PredictionImportWizard({
     setStep("select");
     setTarget(initialTarget);
     setFormat("aap_json");
+    setYoloVariant("det");
     setFiles([]);
     setModelVersion("");
     setOverwriteExisting(false);
@@ -116,8 +119,15 @@ export function PredictionImportWizard({
 
   const handleFiles = (nextFiles: FileList | File[] | null) => {
     const selected = Array.from(nextFiles ?? []);
-    setFiles(selected);
-    if (selected.some((f) => !f.name.toLowerCase().endsWith(".json"))) {
+    const normalized = format === "yolo" ? selected.slice(0, 1) : selected;
+    setFiles(normalized);
+    if (format === "yolo") {
+      if (normalized.some((f) => !f.name.toLowerCase().endsWith(".zip"))) {
+        pushToast({ msg: "请选择 YOLO zip 文件", kind: "warning" });
+      }
+      return;
+    }
+    if (normalized.some((f) => !f.name.toLowerCase().endsWith(".json"))) {
       pushToast({ msg: "请选择 JSON 文件", kind: "warning" });
     }
   };
@@ -134,7 +144,9 @@ export function PredictionImportWizard({
       overwriteExisting,
     };
     // COCO 默认尺寸仅对「预测 + COCO」生效; 标注导入只走 aap_json。
-    if (target !== "predictions" || format !== "coco") return base;
+    if (target !== "predictions") return base;
+    if (format === "yolo") return { ...base, yoloVariant };
+    if (format !== "coco") return base;
 
     const widthText = imageWidth.trim();
     const heightText = imageHeight.trim();
@@ -289,12 +301,36 @@ export function PredictionImportWizard({
                   id="pi-format"
                   className={styles.input}
                   value={format}
-                  onChange={(e) =>
-                    setFormat(e.target.value as PredictionImportFormat)
-                  }
+                  onChange={(e) => {
+                    setFormat(e.target.value as PredictionImportFormat);
+                    setFiles([]);
+                    setImageWidth("");
+                    setImageHeight("");
+                  }}
                 >
                   <option value="aap_json">AAP JSON (平台无损)</option>
                   <option value="coco">COCO Detection</option>
+                  <option value="yolo">YOLO (zip)</option>
+                </select>
+              </div>
+            )}
+
+            {target === "predictions" && format === "yolo" && (
+              <div className={styles.formRow}>
+                <label htmlFor="pi-yolo-variant" className={styles.formLabel}>
+                  YOLO 变体
+                </label>
+                <select
+                  id="pi-yolo-variant"
+                  className={styles.input}
+                  value={yoloVariant}
+                  onChange={(e) => {
+                    setYoloVariant(e.target.value as YoloImportVariant);
+                  }}
+                >
+                  <option value="det">检测 det</option>
+                  <option value="obb">旋转框 obb</option>
+                  <option value="seg">分割 seg</option>
                 </select>
               </div>
             )}
@@ -322,13 +358,21 @@ export function PredictionImportWizard({
                     </div>
                   </>
                 ) : (
-                  <div>拖入 JSON 文件或点击选择，可多选</div>
+                  <div>
+                    {format === "yolo"
+                      ? "拖入 YOLO zip 文件或点击选择"
+                      : "拖入 JSON 文件或点击选择，可多选"}
+                  </div>
                 )}
                 <input
                   id="pi-file"
                   type="file"
-                  accept="application/json,.json"
-                  multiple
+                  accept={
+                    format === "yolo"
+                      ? "application/zip,.zip"
+                      : "application/json,.json"
+                  }
+                  multiple={format !== "yolo"}
                   hidden
                   onChange={(e) => handleFiles(e.target.files)}
                 />

@@ -14,13 +14,15 @@ export interface PredictionImportResult {
   dry_run: boolean;
 }
 
-export type PredictionImportFormat = "aap_json" | "coco";
+export type PredictionImportFormat = "aap_json" | "coco" | "yolo";
+export type YoloImportVariant = "det" | "obb" | "seg";
 
 export interface PredictionImportOptions {
   modelVersion?: string;
   overwriteExisting?: boolean;
   imageWidth?: number;
   imageHeight?: number;
+  yoloVariant?: YoloImportVariant;
 }
 
 export const predictionsApi = {
@@ -60,7 +62,7 @@ export const predictionsApi = {
   },
 
   /**
-   * v0.10.15 · 外部模型预测导入 (COCO 或 AAP JSON v1.0).
+   * v0.10.15 · 外部模型预测导入 (AAP JSON v1.0 / COCO / YOLO zip).
    * - 走 multipart/form-data, 不用 apiClient (其默认 Content-Type=application/json).
    * - dryRun=true: 仅校验不入库; 用于 Wizard 第 2 步预览.
    * - overwriteExisting=true: 替换 task 已有 source='external_import' 的 predictions.
@@ -73,6 +75,9 @@ export const predictionsApi = {
     dryRun = false,
   ): Promise<PredictionImportResult> => {
     const params = new URLSearchParams({ format, dry_run: String(dryRun) });
+    if (format === "yolo" && options.yoloVariant) {
+      params.set("yolo_variant", options.yoloVariant);
+    }
     const form = new FormData();
     form.append("file", file);
     if (options.modelVersion) form.append("model_version", options.modelVersion);
