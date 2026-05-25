@@ -230,6 +230,7 @@ export default withMermaid(defineConfig({
                 { text: "可见性与权限", link: "/dev/concepts/visibility-and-permissions" },
                 { text: "计数与派生字段", link: "/dev/concepts/counters-and-derived-fields" },
                 { text: "审计与通知", link: "/dev/concepts/audit-and-notifications" },
+                { text: "反馈收敛与双写对账", link: "/dev/concepts/feedback-convergence" },
               ],
             },
             {

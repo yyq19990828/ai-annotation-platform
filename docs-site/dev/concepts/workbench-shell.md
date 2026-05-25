@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.21
 status: stable
-last_reviewed: 2026-05-11
+last_reviewed: 2026-05-25
 ---
 
 # 工作台 Shell 架构
@@ -18,7 +18,10 @@ WorkbenchShell
        -> Topbar
        -> WorkbenchStageHost
        -> StatusBar
-       -> TaskQueuePanel / ToolDock / AIInspectorPanel
+       -> TaskQueuePanel / ToolDock
+       -> 右栏 .rightSplit（列宽可拖拽）
+            -> .rightSplitTop: AIInspectorPanel（高度可拖拽）
+            -> .rightSplitBottom: DiscussionPanel
   -> WorkbenchOverlays
 ```
 
@@ -67,3 +70,23 @@ type StageKind = "image" | "video" | "3d";
 跨 Stage 的弹窗放在 `WorkbenchOverlays`：待选类别、改类、SAM 接受、批量改类。图片画布自己的浮动控件仍放在 `ImageWorkbench` 内部。
 
 这个边界保证视频 bbox / track 新建时也能显示 class picker，不再依赖 `ImageStage.overlay`。
+
+## 右栏：AI 检查器 + 讨论面板
+
+右栏从 v0.11.5 起是一个上下两段的可调整布局（`WorkbenchLayout.tsx` 的 `.rightSplit`）：
+
+- **上段 `.rightSplitTop`**：`AIInspectorPanel`，与下段之间有一个上下拖拽 handle。上段高度持久化到 localStorage `workbench.rightSplit.topHeight`（默认 360px，范围 160–720px）。
+- **下段 `.rightSplitBottom`**：`DiscussionPanel`，承载评论 / 历史 / issue 的统一讨论入口。
+- **列宽拖拽 handle** 提升到 `.rightSplit` 全高层级，覆盖两段（v0.11.5），不再只贴在 AI 检查器一侧。
+
+`DiscussionPanel`（`shell/DiscussionPanel.tsx`）有三个常驻 tab：
+
+| Tab | 内容 | 实现 |
+|---|---|---|
+| comments | 标注级 / 任务级评论 | 复用 `CommentsPanel`（`hideTabs` + `forceTab='comments'`） |
+| history | 标注 / 任务级 audit 历史 | 复用 `CommentsPanel`（`forceTab='history'`） |
+| issues | `kind=issue` 反馈列表 + 图钉联动 | `DiscussionIssuesTab` |
+
+图钉单击 / hover 会通过 `useActiveIssueStore` 的 `tabRequestTick` 自动把面板切到 issues tab。
+
+v0.11.5 起 DiscussionPanel 转正为默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` 与旧浮层 `IssueListPanel` 已删除。讨论面板与评论画布、issue 图钉的交互细节见 [审核模块](./review-module)。
