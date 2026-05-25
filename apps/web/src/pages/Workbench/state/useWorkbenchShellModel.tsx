@@ -47,6 +47,7 @@ import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { IssueListPanel } from "../shell/IssueListPanel";
 import { isAIToolId, TOOL_REGISTRY } from "../stage/tools";
 import { useHoveredCommentStore } from "./useHoveredCommentStore";
+import { useActiveIssueStore } from "./useActiveIssueStore";
 import { annotationToBox } from "./transforms";
 import { applyVideoKeyframeToGeometry } from "./videoTrackCommands";
 import { useAnnotateMode } from "../modes/useAnnotateMode";
@@ -488,6 +489,27 @@ export function useWorkbenchShellModel({
   );
   const issuesQuery = useFeedbacks(issueListParams, !!projectId && !!taskId);
   const openIssueCount = (issuesQuery.data?.items ?? []).filter((i) => i.status === "open").length;
+
+  // v0.11.4 · DiscussionPanel issues tab ↔ IssueLayer 双向联动 store。
+  // 列表单击 → focusTick++ → 把视口平移到对应图钉并高亮 (复用现有 vp/setVp + stageGeom)。
+  const activeIssueHighlightId = useActiveIssueStore((st) => st.highlightId);
+  const highlightIssueFromPin = useActiveIssueStore((st) => st.highlightFromPin);
+  const issueFocusTick = useActiveIssueStore((st) => st.focusTick);
+  const lastIssueFocusRef = useRef(issueFocusTick);
+  useEffect(() => {
+    if (!DISCUSSION_PANEL_ENABLED) return;
+    if (issueFocusTick === lastIssueFocusRef.current) return;
+    lastIssueFocusRef.current = issueFocusTick;
+    const target = (issuesQuery.data?.items ?? []).find((i) => i.id === activeIssueHighlightId);
+    if (!target?.anchor_position) return;
+    const { imgW, imgH, vpSize } = stageGeom;
+    if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
+    setVp((cur) => ({
+      ...cur,
+      tx: vpSize.w / 2 - target.anchor_position!.x * imgW * cur.scale,
+      ty: vpSize.h / 2 - target.anchor_position!.y * imgH * cur.scale,
+    }));
+  }, [issueFocusTick, activeIssueHighlightId, issuesQuery.data, stageGeom, setVp]);
   const submitTaskMut = useSubmitTask();
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const { progress: preannotationProgress, connection: preannotationConn, retries: preannotationRetries } =
@@ -1286,8 +1308,14 @@ export function useWorkbenchShellModel({
         maskEditor,
         projectRenderingConfig: currentProject?.rendering_config ?? null,
         issuePixelFeedbacks: issuesQuery.data?.items ?? [],
-        highlightIssueId: highlightIssueId,
+        // v0.11.4 · flag 开时图钉高亮跟 DiscussionPanel issues tab 共享 store; 否则沿用旧浮层高亮。
+        highlightIssueId: DISCUSSION_PANEL_ENABLED ? activeIssueHighlightId : highlightIssueId,
         onIssuePinClick: (id) => {
+          if (DISCUSSION_PANEL_ENABLED) {
+            // 高亮 + 请求 DiscussionPanel 切到 issues tab + 高亮对应列表行。
+            highlightIssueFromPin(id);
+            return;
+          }
           setHighlightIssueId(id);
           setIssueListOpen(true);
         },
